@@ -7,7 +7,7 @@ namespace bmsx {
 
 RuntimeSaveState captureRuntimeSaveState(Runtime& runtime, RuntimeSaveState storage) {
 	storage.machineState = captureRuntimeSaveMachineState(runtime, std::move(storage.machineState));
-	storage.cpuState = runtime.machine.cpu.captureRuntimeState(std::move(storage.cpuState.snapshot));
+	storage.cpuState = runtime.machine.cpu.captureRuntimeState(std::move(storage.cpuState.completionValues));
 	storage.pendingEntryCall = runtime.m_pendingCall == Runtime::PendingCall::Entry;
 	return storage;
 }

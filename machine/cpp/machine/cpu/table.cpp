@@ -626,13 +626,7 @@ size_t TableRecord::nextEntry(const Value& rawAfter, Value& key, Value& value) c
 	return arraySlots + 2 * (hashSlots() - hashStart);
 }
 
-u32 Table::captureSnapshot(CpuSnapshot& snapshot) const {
-	const u32 offset = snapshot.reserveWords(SNAP_TABLE_SIZE);
-	snapshot.setWord(offset + SNAP_TABLE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Table));
-	snapshot.setWord(offset + SNAP_TABLE_HASH_ID, hashId);
-	snapshot.setWord(offset + SNAP_TABLE_RECORD, m_address);
-	return offset;
-}
+
 
 size_t TableRecord::trackedHeapBytes() const {
 	return trackedHeapBytesForCapacities(arrayCapacity(), hashSlots());

@@ -1,11 +1,13 @@
 #pragma once
 
 #include <chrono>
+#include <cstring>
 #include <stdexcept>
 #include <thread>
 
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/execution_image.h"
+#include "spec/bmsx/memory_map.h"
 
 namespace bmsx::test {
 
@@ -41,6 +43,31 @@ inline void waitForNativeEntry(CPU& cpu, const DecodedInstructionPage& page, u32
 	}
 }
 #endif
+
+inline bool sameLanguageRam(CPU& left, CPU& right) {
+	const u32 floor = left.heapAllocator().floorAddress();
+	if (floor != right.heapAllocator().floorAddress()) return false;
+	const size_t offset = floor - RAM_BASE;
+	return std::memcmp(left.memory().ramData() + offset, right.memory().ramData() + offset,
+		left.memory().ramByteCount() - offset) == 0;
+}
+
+inline u32 allocatedObjectRecords(CPU& cpu) {
+	struct Counter { Memory& memory; u32 count = 0; } records{cpu.memory()};
+	cpu.heapAllocator().visitObjectRecords(&records, [](void* context, u32 address) -> i32 {
+		auto& records = *static_cast<Counter*>(context);
+		switch (records.memory.readRamRecordByte(address)) {
+			case static_cast<u8>(ValueTag::Table):
+			case static_cast<u8>(ValueTag::Closure):
+			case THREAD_RECORD_KIND:
+			case UPVALUE_RECORD_KIND:
+				++records.count;
+				break;
+		}
+		return 1;
+	});
+	return records.count;
+}
 
 // Both routes receive the same grant; compare their actual consumed cycles.
 inline RunResult runCpuParity(CPU& generated, CPU& reference, int grant, int depth = 0) {

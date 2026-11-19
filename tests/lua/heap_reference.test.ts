@@ -1,12 +1,12 @@
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
-import { CLOSURE_CAPTURE_WORDS, closureRecordBytes, UPVALUE_HEAP_BYTES, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, Upvalue } from '../../machine/ts/machine/cpu/closure';
+import { CLOSURE_CAPTURE_WORDS, closureRecordBytes, UPVALUE_HEAP_BYTES, UPVALUE_RECORD_KIND, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, Upvalue } from '../../machine/ts/machine/cpu/closure';
 import { asClosure, valueFloatBits, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { test } from 'node:test';
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
-import { GcKind } from '../../machine/ts/machine/cpu/gc_object';
+import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
 import { asTable, valueTable, valueBuiltinFunction, ValueTag } from '../../machine/ts/machine/cpu/value';
@@ -32,18 +32,16 @@ function machine(): CPU {
 }
 function checkReferences(cpu: CPU): void {
 	const { gc } = cpu;
-	const ids = gc.captureState(object => {
-		const id = gc.reference(object);
-		assert.notEqual(id, 0);
-		switch (object.gcKind) {
-			case GcKind.Table: assert.equal(gc.tableAt(id), object); break;
-			case GcKind.Closure: assert.equal(gc.closureAt(id), object); break;
-			case GcKind.Upvalue: assert.equal(gc.cellAt(id), object); break;
-			case GcKind.Thread: assert.equal(gc.threadAt(id), object); break;
+	const records = allocatedObjectRecords(cpu);
+	for (const address of records) {
+		switch (cpu.memory.readRamRecordByte(address)) {
+			case ValueTag.Table: assert.equal(gc.tableAt(address)?.address, address); break;
+			case ValueTag.Closure: assert.equal(gc.closureAt(address)?.address, address); break;
+			case UPVALUE_RECORD_KIND: assert.equal(gc.cellAt(address)?.address, address); break;
+			case THREAD_RECORD_KIND: assert.equal(gc.threadAt(address)?.address, address); break;
 		}
-		return id;
-	}).allocations;
-	assert.equal(new Set(ids).size, ids.length);
+	}
+	assert.equal(new Set(records).size, records.length);
 }
 
 test('32-bit object payloads survive heap growth and collection', () => {
@@ -66,11 +64,11 @@ test('32-bit object payloads survive heap growth and collection', () => {
 
 test('freed ids recycle without reusing the hash identity or retaining the old object', () => {
 	const cpu = machine(); cpu.collectTrackedHeapBytes();
-	const dead = cpu.createTable(), id = cpu.gc.reference(dead), hash = dead.hashId;
+	const dead = cpu.createTable(), id = cpu.gc.reference(dead);
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.gc.tableAt(id), null);
 	const next = cpu.createTable();
-	assert.equal(cpu.gc.reference(next), id); assert.notEqual(next.hashId, hash);
+	assert.equal(cpu.gc.reference(next), id);
 	assert.equal(cpu.gc.tableAt(id), next);
 });
 
@@ -129,10 +127,10 @@ test('incremental GC and phase-preserving restore keep physical attachments sync
 test('builtin functions retain their own ids outside the GC heap', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, functions = cpu.createTable(BUILTIN_FUNCTIONS.length);
 	frame.registers.setTable(0, cpu.gc.reference(functions)); frame.top = 2;
-	const before = cpu.gc.captureState(object => cpu.gc.reference(object));
+	const before = allocatedObjectRecords(cpu);
 	for (const builtin of BUILTIN_FUNCTIONS) functions.records.setInteger(functions.address, builtin.id + 1, valueBuiltinFunction(builtin.id));
-	const after = cpu.gc.captureState(object => cpu.gc.reference(object));
-	assert.deepEqual(after.allocations, before.allocations);
+	const after = allocatedObjectRecords(cpu);
+	assert.deepEqual(after, before);
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	const restored = cpu.rootThread.currentFrame!.registers.getTable(0, cpu.gc);
 	for (const builtin of BUILTIN_FUNCTIONS) assert.equal(restored.records.getInteger(restored.address, builtin.id + 1), valueBuiltinFunction(builtin.id));

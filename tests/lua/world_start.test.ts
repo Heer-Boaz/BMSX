@@ -1,3 +1,4 @@
+import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { asClosure, asTable, valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -239,10 +240,10 @@ end
 		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
 		const repeat = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('repeat_start')!), cpu.gc);
 		runCompletionClosure(cpu, repeat, []);
-		const before = cpu.captureRuntimeState().nextObjectHashId;
+		const before = allocatedObjectRecords(cpu).length;
 		const bytes = cpu.luaHeap.usedBytes();
 		runCompletionClosure(cpu, repeat, []);
-		assert.equal(cpu.captureRuntimeState().nextObjectHashId, before, 'repeated start allocated guest objects');
+		assert.equal(allocatedObjectRecords(cpu).length, before, 'repeated start allocated guest objects');
 		assert.equal(cpu.luaHeap.usedBytes(), bytes, 'repeated start allocated transient guest storage');
 	});
 }

@@ -36,11 +36,8 @@ for (const optLevel of [0, 3] as const) {
 			if (name === 'checkpoint_after_delete') assert.equal(deletedContinuationObserved, true);
 			if (name === 'delete_reinsert_churn') {
 				const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('churn_kernel')!), cpu.gc);
-				const keys = asTable(cpu.getGlobalByKey(cpu.stringPool.find('churn_keys')!), cpu.gc);
 				const table = asTable(cpu.getGlobalByKey(cpu.stringPool.find('churn_values')!), cpu.gc);
 				assert.equal(table.records.storedSlotCount(table.address), 32);
-				const bucket = asTable(keys.records.getInteger(keys.address, 1), cpu.gc).hashId & 31;
-				for (let index = 2; index <= 32; index++) assert.equal(asTable(keys.records.getInteger(keys.address, index), cpu.gc).hashId & 31, bucket);
 				const profile = profileWarmGuestKernel(cpu, kernel, 128);
 				assert.equal(profile.reservations, 0);
 				assert.equal(profile.reservedBytes, 0);
@@ -51,15 +48,11 @@ for (const optLevel of [0, 3] as const) {
 	}
 }
 
-test('zero-valued object identity remains a deleted-key continuation', () => {
+test('a physical object address remains a deleted-key continuation', () => {
 	const { cpu } = createTestSystemCpu(compileTableIterationTest('return true', 0));
 	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	const state = cpu.captureRuntimeState();
-	state.nextObjectHashId = 0;
-	cpu.restoreRuntimeState(state);
 	const key = cpu.createTable();
-	assert.equal(key.hashId, 0);
 	const table = cpu.createTable(0, 64);
 	const keyValue = valueTable(cpu.gc.reference(key));
 	table.records.set(table.address, keyValue, valueInteger(9));

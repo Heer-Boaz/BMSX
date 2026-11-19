@@ -293,14 +293,19 @@ export class Thread extends GcObject {
 	}
 
 	/** Prepare the first inactive node; stack growth can collect before entry. */
-	public acquireFrame(): CallFrame { return this.frameNode(this.currentFrame, this.frameDepth); }
+	public acquireFrame(): CallFrame {
+		const existing = this.currentFrame === null ? this.firstFrame : this.currentFrame.next;
+		if (existing !== null) return existing;
+		const frame = this.frameNode(this.currentFrame);
+		frame.bindControl(this.frameControlAddress(this.frameDepth));
+		this.armFrameWindowWatch(frame);
+		return frame;
+	}
 
-	private frameNode(previous: CallFrame | null, index: number): CallFrame {
+	private frameNode(previous: CallFrame | null): CallFrame {
 		let frame = previous === null ? this.firstFrame : previous.next;
 		if (frame === null) {
 			frame = new CallFrame(this, previous, this.heap);
-			frame.bindControl(this.frameControlAddress(index));
-			this.armFrameWindowWatch(frame);
 			if (previous === null) this.firstFrame = frame;
 			else previous.next = frame;
 		}
@@ -332,7 +337,7 @@ export class Thread extends GcObject {
 		this.detachFrameViews();
 		const depth = this.frameDepth;
 		for (let index = 0; index < depth; ++index) {
-			const frame = this.frameNode(this.currentFrame, index);
+			const frame = this.frameNode(this.currentFrame);
 			frame.decodedPage = null;
 			frame.compilationEntry = true;
 			this.currentFrame = frame;

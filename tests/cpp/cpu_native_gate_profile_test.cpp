@@ -91,8 +91,7 @@ struct Machine {
 void parity(Machine& generated, Machine& scalar, int grant) {
 	test::runCpuParity(generated.cpu, scalar.cpu, grant);
 	const auto a = generated.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
-		&& std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords())
+	require((a == b && bmsx::test::sameLanguageRam(generated.cpu, scalar.cpu))
 		&& a.causeWord == b.causeWord && a.epcWord == b.epcWord && a.lastPc == b.lastPc
 		&& a.hardHalted == b.hardHalted, "profiling preserves the actual scalar guest graph and fault state");
 	require(generated.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc(), "profiling preserves the real instruction frontier");

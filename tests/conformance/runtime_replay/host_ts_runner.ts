@@ -280,7 +280,6 @@ async function main(): Promise<void> {
 	assert.equal(audioFrames, rewindAudioFrames, 'review delivers no stale or replay audio');
 	assert.equal(runtime.machine.scheduler.currentNowCycles(), selected);
 	snapshot('rewind');
-	const reviewed = captureRuntimeSaveState(runtime);
 	await press('right'); await settle();
 	assert.ok(runtime.machine.scheduler.currentNowCycles() > selected, 'Right seeks forward without resuming gameplay');
 	assert.equal(history.mode, HistoryMode.Reviewing);
@@ -441,8 +440,7 @@ async function main(): Promise<void> {
 	assert.equal(history.checkpointCount, 1, 'new revision starts a new history');
 	assert.ok(suspensions >= 2, 'rewind transitions suspend audio transport');
 	console.log(JSON.stringify({ host: 'ts-host-rewind', selected, latest, branchCycles, audioFrames, suspensions,
-		referenceAgeSeconds, minimumSpanSeconds: minimumSpanCycles / runtime.timing.cpuHz, retentionFrames, checkpointEvictions,
-		reviewedObjects: reviewed.cpuState.snapshot.objectCount, checkpoints: history.checkpointCount }));
+		referenceAgeSeconds, minimumSpanSeconds: minimumSpanCycles / runtime.timing.cpuHz, retentionFrames, checkpointEvictions, checkpoints: history.checkpointCount }));
 	console.log('RUNTIME-HOST-REWIND:PASS');
 	input.dispose();
 	presenter.dispose();

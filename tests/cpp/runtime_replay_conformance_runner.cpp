@@ -131,10 +131,7 @@ int main(int argc, char** argv) {
 			require(bmsx::encodeRuntimeSaveState(capture()) == expected, "libretro replay must reproduce the same runtime state");
 			std::cout << "{\"host\":\"cpp\",\"checkpointTick\":" << checkpointTick
 				<< ",\"captureMs\":" << captureMs << ",\"restoreMs\":" << restoreMs
-				<< ",\"replayMs\":" << replayMs << ",\"bytes\":" << bmsx::encodeRuntimeSaveState(anchor).size()
-				<< ",\"objects\":" << anchor.cpuState.snapshot.objectCount()
-				<< ",\"cpuSnapshotBytes\":" << anchor.cpuState.snapshot.words().size_bytes() + anchor.cpuState.snapshot.objectWords().size_bytes()
-				<< ",\"cpuSnapshotCapacityBytes\":" << anchor.cpuState.snapshot.capacityBytes() << "}\n";
+				<< ",\"replayMs\":" << replayMs << ",\"bytes\":" << bmsx::encodeRuntimeSaveState(anchor).size() << "}\n";
 		}
 		auto& history = runtime.history;
 		history.start({4, 96, runtime.timing.cycleBudgetPerFrame * 20});

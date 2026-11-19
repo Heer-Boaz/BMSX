@@ -78,7 +78,10 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			const closure = cpu.rootThread.frameAtDepth(0).registers.getClosure(0, cpu.gc);
 			const state = cpu.captureRuntimeState();
 			cpu.restoreRuntimeState(state);
-			assert.equal(cpu.rootThread.currentFrame!.closure, closure, 'an active frame restores its shared prototype binding');
+			const restored = cpu.rootThread.currentFrame!.closure!;
+			assert.equal(restored.address, closure.address, 'the active frame retains its physical closure reference');
+			assert.equal(restored.prototypeRecord.functionAddress, record);
+			assert.equal(restored.prototypeRecord.maxStack, 1024, 'the restored binding still supplies the published stack extent');
 			assert.equal(cpu.runUntilDepth(1, 50), RunResult.Halted);
 			assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(4), valueInteger(7));
 		}

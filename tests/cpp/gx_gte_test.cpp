@@ -1,3 +1,4 @@
+#include "support/cpu_execution_parity.h"
 #include "machine/devices/gx/gte.h"
 #include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
@@ -380,8 +381,7 @@ void testCommandObservationPreservesCpu() {
 	require(observed.cpu.instructionBudgetRemaining == baseline.cpu.instructionBudgetRemaining, "observed CPU cycle budget matches baseline");
 	require(observed.cpu.luaHeap().usedBytes() == baseline.cpu.luaHeap().usedBytes(), "observed guest heap matches baseline");
 	const auto actual = observed.cpu.captureRuntimeState(), expected = baseline.cpu.captureRuntimeState();
-	require(std::ranges::equal(actual.snapshot.words(), expected.snapshot.words())
-		&& std::ranges::equal(actual.snapshot.objectWords(), expected.snapshot.objectWords()), "observed CPU heap and register snapshot matches baseline");
+	require((actual == expected && bmsx::test::sameLanguageRam(observed.cpu, baseline.cpu)), "observed CPU heap and register snapshot matches baseline");
 	require(actual.lastPc == expected.lastPc && actual.lastExecutionDomainId == expected.lastExecutionDomainId
 		&& actual.completionValues == expected.completionValues, "observed CPU execution result matches baseline");
 	const auto actualGte = observed.gte.captureState(), expectedGte = baseline.gte.captureState();
@@ -751,8 +751,7 @@ void testPlusObservationPreservesCpuInterlock() {
 	require(observed.cpu.instructionBudgetRemaining == baseline.cpu.instructionBudgetRemaining
 		&& observed.cpu.luaHeap().usedBytes() == baseline.cpu.luaHeap().usedBytes(), "observed CPU budget and heap match baseline");
 	const auto actual = observed.cpu.captureRuntimeState(), expected = baseline.cpu.captureRuntimeState();
-	require(std::ranges::equal(actual.snapshot.words(), expected.snapshot.words())
-		&& std::ranges::equal(actual.snapshot.objectWords(), expected.snapshot.objectWords())
+	require((actual == expected && bmsx::test::sameLanguageRam(observed.cpu, baseline.cpu))
 		&& actual.lastPc == expected.lastPc && actual.completionValues == expected.completionValues,
 		"observed CPU heap, registers and execution results match baseline");
 	const auto actualGte = observed.gte.captureState(), expectedGte = baseline.gte.captureState();

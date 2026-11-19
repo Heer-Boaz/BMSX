@@ -44,8 +44,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		&& a.readEpcWord() == b.readEpcWord() && a.readLuaFaultReasonWord() == b.readLuaFaultReasonWord(),
 		"generated context execution preserves instruction, fault and cycle boundaries");
 	const auto left = a.captureRuntimeState(), right = b.captureRuntimeState();
-	require(std::ranges::equal(left.snapshot.words(), right.snapshot.words())
-		&& std::ranges::equal(left.snapshot.objectWords(), right.snapshot.objectWords()), "the complete retained value graph agrees with scalar execution");
+	require((left == right && bmsx::test::sameLanguageRam(a, b)), "the complete retained value graph agrees with scalar execution");
 	const auto& first = *a.activeThread(); const auto& second = *b.activeThread();
 	require(first.frameDepth() == second.frameDepth() && first.stackTop() == second.stackTop(), "frame and stack extents agree");
 	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
@@ -285,11 +284,9 @@ void hotUpvalueAlias() {
 		auto& heap = m->cpu.gcHeap();
 		auto* closure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2), *frame.attachedClosure()->prototype, false);
 		closure->initializeRecord(heap.white(), 2);
-		closure->hashId = heap.allocateHashId();
 		for (int c = 0; c < 2; ++c) {
 			auto* cell = heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
 				heap.budget.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
-			cell->hashId = heap.allocateHashId();
 			if (c == 0) cell->bind(frame.thread->address, frame.stackBase(), 0);
 			closure->setCaptureAddress(c, cell->address);
 		}

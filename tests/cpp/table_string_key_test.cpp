@@ -27,7 +27,7 @@ void collisionAndMutationParity(CPU& cpu) {
 	auto* generic = cpu.createTable(0, 4);
 	auto* strings = cpu.createTable(0, 4);
 	auto* object = cpu.createTable();
-	object->hashId = 0u;
+
 	const std::array<Value, 8> values {
 		valueBool(false), valueFloatBits(0x80000000u), valueFloat(5.25f),
 		valueFloatBits(0xffc01234u),

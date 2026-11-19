@@ -1,10 +1,9 @@
-import type { GcState } from '../../cpu/gc_heap';
 import type { PendingMemoryKind } from '../../cpu/memory_operation';
 import type { MemoryAccessKind } from '../../../spec/blua32/memory_access_kind';
 import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../../common/serializer/binary_stream';
 import type { MachineSaveState } from '../../save_state';
 import type { CpuRuntimeState } from '../../cpu/cpu';
-import { CpuSnapshot } from '../../cpu/snapshot';
+import type { Value } from '../../cpu/value';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { CartridgeCardState, CartridgeControllerState, CartridgeMailboxState } from '../../devices/cartridge/contracts';
 import type { AudioControllerState, ApuBadpDecoderSaveState, ApuBiquadFilterState, ApuOutputState, ApuOutputVoiceState, ApuSampleTransferState } from '../../devices/audio/save_state';
@@ -42,7 +41,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x4f534d42; // BMSO
+const SAVE_STATE_SIGNATURE = 0x50534d42; // BMSP
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1127,22 +1126,19 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.u32(state.globals.base);
 	writer.u32(state.globals.capacity);
 	writer.u32(state.globals.count);
-	writer.u32(state.stringIndexTable);
-	writer.i32(state.rootThreadRef);
-	writer.i32(state.activeThreadRef);
-	writer.i32(state.completionThreadRef);
+	writer.u64(state.stringIndexTable);
+	writer.u32(state.rootThreadAddress);
+	writer.u32(state.activeThreadAddress);
+	writer.u32(state.completionThreadAddress);
 	writer.u32(state.completionValues.length);
-	writer.u32s(state.completionValues);
-	writeCpuSnapshot(writer, state.snapshot);
+	for (const value of state.completionValues) writer.u64(value);
 	writer.i32(state.lastExecutionDomainId);
 	writer.u32(state.executionResidencyMask);
 	writer.u32s(state.constantPoolBases);
 	writer.u32s(state.globalMapBases);
-	writer.u32(state.nextObjectHashId);
 	writer.bool(state.hardHalted);
-	writeGcState(writer, state.gc);
 	writer.u32(state.lastPc);
-	writer.i32(state.haltedUntilIrqThreadRef);
+	writer.u32(state.haltedUntilIrqThreadAddress);
 	writer.i32(state.haltedUntilIrqFrameDepth);
 	writer.bool(state.interruptEventPending);
 	writer.bool(state.memoryWriteBlocked);
@@ -1175,21 +1171,18 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 		programExecutionDomainId: reader.i32() as ExecutionDomainId,
 		systemGlobals: { base: reader.u32(), capacity: reader.u32(), count: reader.u32() },
 		globals: { base: reader.u32(), capacity: reader.u32(), count: reader.u32() },
-		stringIndexTable: reader.u32(),
-		rootThreadRef: reader.i32(),
-		activeThreadRef: reader.i32(),
-		completionThreadRef: reader.i32(),
-		completionValues: reader.u32s(reader.u32()),
-		snapshot: readCpuSnapshot(reader),
+		stringIndexTable: reader.u64() as Value,
+		rootThreadAddress: reader.u32(),
+		activeThreadAddress: reader.u32(),
+		completionThreadAddress: reader.u32(),
+		completionValues: reader.u64s(reader.u32()) as Value[],
 		lastExecutionDomainId: reader.i32() as ExecutionDomainId,
 		executionResidencyMask: reader.u32(),
 		constantPoolBases: reader.u32s(EXECUTION_DOMAIN_COUNT),
 		globalMapBases: reader.u32s(EXECUTION_DOMAIN_COUNT),
-		nextObjectHashId: reader.u32(),
 		hardHalted: reader.bool(),
-		gc: readGcState(reader),
 		lastPc: reader.u32(),
-		haltedUntilIrqThreadRef: reader.i32(),
+		haltedUntilIrqThreadAddress: reader.u32(),
 		haltedUntilIrqFrameDepth: reader.i32(),
 		interruptEventPending: reader.bool(),
 		memoryWriteBlocked: reader.bool(),
@@ -1273,29 +1266,6 @@ function readApuOutputState(reader: BinaryReader): ApuOutputState {
 	return {
 		voices: reader.array(readApuOutputVoiceState),
 	};
-}
-
-function writeGcState(writer: BinarySink, state: GcState): void {
-	writer.u32(state.allocations.length);
-	writer.u32s(state.allocations);
-}
-function readGcState(reader: BinaryReader): GcState {
-	return {
-		allocations: Array.from(reader.u32s(reader.u32())),
-	};
-}
-
-function writeCpuSnapshot(writer: BinarySink, state: CpuSnapshot): void {
-	writer.u32(state.words.length);
-	writer.u32s(state.words);
-	writer.u32(state.objectWords.length);
-	writer.u32s(state.objectWords);
-}
-
-function readCpuSnapshot(reader: BinaryReader): CpuSnapshot {
-	const words = reader.u32Array(reader.u32());
-	const objectWords = reader.u32Array(reader.u32());
-	return new CpuSnapshot(words, objectWords);
 }
 
 function writeStateImage(writer: BinarySink, state: RuntimeSaveState): void {

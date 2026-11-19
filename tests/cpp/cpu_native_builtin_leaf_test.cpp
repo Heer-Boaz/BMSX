@@ -89,7 +89,7 @@ struct Machine {
 
 void parity(Machine& a, Machine& b) {
 	const auto x = a.cpu.captureRuntimeState(), y = b.cpu.captureRuntimeState();
-	require(std::ranges::equal(x.snapshot.words(), y.snapshot.words()) && std::ranges::equal(x.snapshot.objectWords(), y.snapshot.objectWords())
+	require((x == y && bmsx::test::sameLanguageRam(a.cpu, b.cpu))
 		&& x.causeWord == y.causeWord && x.epcWord == y.epcWord && x.lastPc == y.lastPc && x.hardHalted == y.hardHalted,
 		"ordinary native/scalar execution preserves the guest graph and exception state");
 	require(a.cpu.readCurrentInstructionPc() == b.cpu.readCurrentInstructionPc() && a.cpu.instructionBudgetRemaining == b.cpu.instructionBudgetRemaining,

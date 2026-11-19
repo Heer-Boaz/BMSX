@@ -38,8 +38,7 @@ import {
 	decodeRuntimeSaveState,
 	encodeRuntimeSaveState,
 } from '../../machine/ts/machine/runtime/save_state/codec';
-import { CpuSnapshot, CpuSnapshotWriter, CPU_SNAPSHOT_VALUE_WORDS } from '../../machine/ts/machine/cpu/snapshot';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { valueBuiltinFunction, valueFloatBits, valueInteger, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
 import { DMA_STATUS_BUSY } from '../../machine/ts/spec/bmsx/io';
@@ -59,15 +58,6 @@ function numberedWords(count: number): number[] {
 }
 
 function createRuntimeSaveState(): RuntimeSaveState {
-	const snapshot = new CpuSnapshotWriter(new CpuSnapshot());
-	const integer = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
-	snapshot.setWord(integer, ValueTag.Integer);
-	snapshot.setWord(integer + 1, 0x80000001);
-	const float = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
-	snapshot.setWord(float, ValueTag.Float);
-	snapshot.setWord(float + 1, 0xffc00000);
-	const nil = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
-	snapshot.setWord(nil, ValueTag.Nil);
 	const ram = new Uint8Array(PSX_MACHINE_SPEC.ramBytes);
 	ram.set([1, 2, 3, 4]);
 	const audioRegisterWords = numberedWords(APU_PARAMETER_REGISTER_COUNT);
@@ -540,23 +530,23 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				executionResidencyMask: 3,
 				constantPoolBases: [0x08080000, 0x08090000, 0],
 				globalMapBases: [0x08080010, 0x08090010, 0],
-				nextObjectHashId: 0xfedcba98,
+
 				hardHalted: true,
-				gc: { allocations: [0] },
+
 				executionCartridgeSlot: 0,
 				programExecutionDomainId: 0,
 				systemGlobals: { base: 0x08340000, capacity: 16, count: 11 },
 				globals: { base: 0x08340400, capacity: 32, count: 19 },
-				stringIndexTable: nil,
-			rootThreadRef: 0,
-			activeThreadRef: 0,
-			completionThreadRef: 0,
-			completionValues: [integer, float],
-			snapshot: snapshot.finish(),
+				stringIndexTable: valueNil(),
+			rootThreadAddress: 0x08300000,
+			activeThreadAddress: 0x08300040,
+			completionThreadAddress: 0x08300080,
+			completionValues: [valueInteger(0x80000001), valueFloatBits(0xffc00000)],
+
 			lastExecutionDomainId: 0,
 			lastPc: 0,
 			haltedUntilIrqFrameDepth: -1,
-			haltedUntilIrqThreadRef: -1,
+			haltedUntilIrqThreadAddress: 0,
 			interruptEventPending: false,
 			memoryWriteBlocked: false,
 			memoryWriteBlockedAddress: 0,
@@ -598,7 +588,6 @@ test('runtime save-state codec preserves RAM, device, scheduler and CPU state', 
 	);
 
 	assert.deepEqual(decoded.machineState.machine.memory, state.machineState.machine.memory);
-	assert.deepEqual(decoded.cpuState.gc, state.cpuState.gc);
 	assert.deepEqual(decoded.machineState.machine.cartridge, state.machineState.machine.cartridge);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
 	assert.deepEqual(decoded.machineState.machine.dma, state.machineState.machine.dma);
@@ -663,16 +652,7 @@ test('runtime save-state codec preserves GPUREAD bytes and raw phase bits', () =
 
 test('runtime save-state codec preserves builtin VM primitive ids', () => {
 	const state = createRuntimeSaveState();
-	const snapshot = new CpuSnapshotWriter(state.cpuState.snapshot);
-	snapshot.reserveWords(state.cpuState.snapshot.words.length);
-	const next = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
-	snapshot.setWord(next, ValueTag.BuiltinFunction);
-	snapshot.setWord(next + 1, BuiltinFunctionId.Next);
-	const char = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
-	snapshot.setWord(char, ValueTag.BuiltinFunction);
-	snapshot.setWord(char + 1, BuiltinFunctionId.StringChar);
-	snapshot.finish();
-	state.cpuState.completionValues = [next, char];
+	state.cpuState.completionValues = [valueBuiltinFunction(BuiltinFunctionId.Next), valueBuiltinFunction(BuiltinFunctionId.StringChar)];
 
 	const decoded = decodeRuntimeSaveState(
 		encodeRuntimeSaveState(state),
@@ -682,7 +662,6 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 
 	assert.deepEqual(decoded.cpuState.globals, state.cpuState.globals);
 	assert.deepEqual(decoded.cpuState.completionValues, state.cpuState.completionValues);
-	assert.deepEqual(decoded.cpuState.snapshot, state.cpuState.snapshot);
 });
 
 test('runtime save-state codec retains the USER ingress bank', () => {
@@ -701,20 +680,13 @@ test('runtime save-state codec rejects other formats, incomplete fields and trai
 	assert.throws(() => decode(extra), /Trailing/);
 });
 
-test('CPU words retain every bit and exclude unused arena capacity', () => {
+test('CPU latches retain raw addresses, object words and all float payload bits', () => {
 	const state = createRuntimeSaveState();
-	const words = Uint32Array.of(0x12345678, 0xffffffff, 0, 0x80000000, 0x7ff81234);
-	const arena = new Uint32Array(8192);
-	arena.set(words);
-	const objectWords = Uint32Array.of(2);
-	state.cpuState.snapshot = new CpuSnapshot(arena.subarray(0, words.length), objectWords);
-	const withSpareCapacity = encodeRuntimeSaveState(state);
-	state.cpuState.snapshot = new CpuSnapshot(words, objectWords);
-	assert.deepEqual(encodeRuntimeSaveState(state), withSpareCapacity);
-	const decoded = decodeRuntimeSaveState(withSpareCapacity, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-	assert.deepEqual(decoded.cpuState.snapshot.words, words);
-	assert.deepEqual(decoded.cpuState.snapshot.objectWords, objectWords);
-	assert.equal(decoded.cpuState.snapshot.capacityBytes, words.byteLength + objectWords.byteLength);
+	state.cpuState.activeThreadAddress = 0xfffffffc;
+	state.cpuState.stringIndexTable = valueTable(0x083fdf20);
+	state.cpuState.completionValues = [valueInteger(-1), valueFloatBits(0x80000000), valueFloatBits(0x7f801234), valueFloatBits(0xffc12345)];
+	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	assert.deepEqual(decoded.cpuState, state.cpuState);
 });
 
 test('caller-owned output is byte identical and admitted before writing', () => {

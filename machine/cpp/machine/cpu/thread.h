@@ -103,7 +103,8 @@ private:
 	u32 protectedCapacity() const;
 	u32 frameControlAddress(u32 index) const;
 	void armFrameWindowWatch(const CallFrame& frame);
-	CallFrame* frameNode(CallFrame* previous, size_t index);
+	CallFrame* frameNode(CallFrame* previous);
+	void bindFrameControl(CallFrame& frame, u32 address, u32 index);
 	void publishDepth(u32 depth);
 	u32 protectedAddress(u32 index) const;
 	u32 read(ThreadField field) const;

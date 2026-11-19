@@ -1,3 +1,4 @@
+#include "support/cpu_execution_parity.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/table.h"
@@ -98,13 +99,13 @@ void exactGrant(bool store) {
 			machine->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 			machine->memory.writeU32(address, 0);
 		}
-		const u32 nativeStartHash = native.cpu.captureRuntimeState().nextObjectHashId;
-		const u32 scalarStartHash = scalar.cpu.captureRuntimeState().nextObjectHashId;
+		const u32 nativeStartCount = test::allocatedObjectRecords(native.cpu);
+		const u32 scalarStartCount = test::allocatedObjectRecords(scalar.cpu);
 		const auto nativeResult = native.cpu.runUntilDepth(0, grant);
 		const auto scalarResult = scalar.cpu.runUntilDepth(0, grant);
 		const auto nativePc = native.cpu.readFramePc(0), scalarPc = scalar.cpu.readFramePc(0);
-		const u32 nativeAllocations = native.cpu.captureRuntimeState().nextObjectHashId - nativeStartHash;
-		const u32 scalarAllocations = scalar.cpu.captureRuntimeState().nextObjectHashId - scalarStartHash;
+		const u32 nativeAllocations = test::allocatedObjectRecords(native.cpu) - nativeStartCount;
+		const u32 scalarAllocations = test::allocatedObjectRecords(scalar.cpu) - scalarStartCount;
 		for (auto* machine : {&native, &scalar}) {
 			machine->irq.raise(IRQ_GPU);
 			require(machine->cpu.enterPendingInterrupt(), "IRQ is accepted");
@@ -241,13 +242,13 @@ void exactGrantSweep(bool scalarControl) {
 			machine->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 			machine->memory.writeU32(address, 0);
 		}
-		const u32 nativeStartHash = native.cpu.captureRuntimeState().nextObjectHashId;
-		const u32 scalarStartHash = scalar.cpu.captureRuntimeState().nextObjectHashId;
+		const u32 nativeStartCount = test::allocatedObjectRecords(native.cpu);
+		const u32 scalarStartCount = test::allocatedObjectRecords(scalar.cpu);
 		const auto nativeResult = native.cpu.runUntilDepth(0, grant);
 		const auto scalarResult = scalar.cpu.runUntilDepth(0, grant);
 		const auto nativePc = native.cpu.readFramePc(0), scalarPc = scalar.cpu.readFramePc(0);
-		const u32 nativeAllocations = native.cpu.captureRuntimeState().nextObjectHashId - nativeStartHash;
-		const u32 scalarAllocations = scalar.cpu.captureRuntimeState().nextObjectHashId - scalarStartHash;
+		const u32 nativeAllocations = test::allocatedObjectRecords(native.cpu) - nativeStartCount;
+		const u32 scalarAllocations = test::allocatedObjectRecords(scalar.cpu) - scalarStartCount;
 		bool registersEqual = true;
 		for (const int reg : {0, 1, 2, 4, 5}) {
 			registersEqual &= native.cpu.readFrameRegister(0, reg) == scalar.cpu.readFrameRegister(0, reg);
@@ -318,7 +319,7 @@ void irqAfterNativeMmioBeforeShortSuccessor() {
 			"IRQ mask write preserves the same grant outcome");
 		require(left.statusWord == right.statusWord && left.causeWord == right.causeWord
 			&& left.epcWord == right.epcWord && left.lastPc == right.lastPc
-			&& std::ranges::equal(left.snapshot.words(), right.snapshot.words()),
+			&& (left == right && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu)),
 			"IRQ after MMIO is admitted at the same PC with identical live registers and stack");
 	}
 }
@@ -358,7 +359,7 @@ void nmiAfterShortGrant() {
 		require(a == b && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
 			&& left.statusWord == right.statusWord && left.causeWord == right.causeWord
 			&& left.epcWord == right.epcWord && left.lastPc == right.lastPc
-			&& std::ranges::equal(left.snapshot.words(), right.snapshot.words()),
+			&& (left == right && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu)),
 			"NMI and RFE after a short grant preserve the same PC and complete stack");
 	}
 }
@@ -417,7 +418,7 @@ void rewriteAndObserveAfterShortGrant() {
 		const auto a = native.cpu.runUntilDepth(0, 2), b = scalar.cpu.runUntilDepth(0, 2);
 		const auto left = native.cpu.captureRuntimeState(), right = scalar.cpu.captureRuntimeState();
 		require(a == b && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
-			&& left.lastPc == right.lastPc && std::ranges::equal(left.snapshot.words(), right.snapshot.words()),
+			&& left.lastPc == right.lastPc && (left == right && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu)),
 			"source rewrite and late observation after a short grant preserve the complete guest state");
 		require(seenNative == 1 && seenScalar == 1
 			&& native.cpu.readFrameRegister(0, 1) == valueInteger(1),

@@ -59,8 +59,7 @@ Table* makeTable(CPU& cpu,Kind kind) {
 	return table;
 }
 void sameSnapshot(const CpuRuntimeState& a, const CpuRuntimeState& b) {
-	require(std::ranges::equal(a.snapshot.words(),b.snapshot.words())&&std::ranges::equal(a.snapshot.objectWords(),b.snapshot.objectWords())
-		&&a.nextObjectHashId==b.nextObjectHashId
+	require(a == b
 		&&a.lastPc==b.lastPc&&a.epcWord==b.epcWord&&a.causeWord==b.causeWord,
 		"full guest graph, saved seed, and PC/fault state agree");
 }
@@ -109,6 +108,7 @@ void everyGrant() {
 				&&asTable(r.get(10), generated.cpu.gcHeap())->getInteger(1)==(completed>=4?valueInteger(test.boundary):valueInteger(-1))&&r.get(8)==(completed>=5?valueInteger(37):valueNil()),
 				"aliased Integer result and side-effecting suffix commit only at admitted instruction frontiers");
 			sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
+			require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
 			require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes()
 				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 				"physical allocator and pacing words agree");

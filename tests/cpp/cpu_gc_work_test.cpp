@@ -246,13 +246,13 @@ void incrementalStateAndBarriers() {
 	target->setInteger(1, valueTable(cpu.gcHeap().reference(child)));
 	target->setStringKey(field, valueTable(cpu.gcHeap().reference(child)));
 	target->setMetatable(cpu.createTable());
-	const auto childId = child->hashId;
+	const auto childId = child->address();
 	u32 phases = 0, bornId = 0;
 	for (int step = 0; step < 1000; ++step) {
 		auto state = cpu.captureRuntimeState();
 		phases |= 1u << static_cast<u32>(cpu.gcHeap().phase());
 		if (cpu.gcHeap().phase() == GcPhase::Sweep && bornId == 0) {
-			auto* born = cpu.createTable(); bornId = born->hashId;
+			auto* born = cpu.createTable(); bornId = born->address();
 			auto* frame = cpu.rootThread()->currentFrame;
 			frame->registers.set(1, valueTable(cpu.gcHeap().reference(born))); frame->writeControl(bmsx::FrameField::Top, 2);
 			state = cpu.captureRuntimeState();
@@ -260,8 +260,7 @@ void incrementalStateAndBarriers() {
 		const auto ram = cpu.memory().captureSaveState();
 		cpu.memory().restoreSaveState(ram); cpu.restoreRuntimeState(state);
 		const auto after = cpu.captureRuntimeState();
-		require(std::ranges::equal(state.snapshot.words(), after.snapshot.words())
-			&& state.gc.allocations == after.gc.allocations,
+		require(state == after,
 			"restore preserves collector cursors, queues and dead allocation work, not dead graph pointers");
 		require(cpu.memory().captureSaveState().ram == ram.ram, "restoration never rewrites raw mark colors or phase");
 		if (!cpu.collecting()) break;
@@ -270,14 +269,14 @@ void incrementalStateAndBarriers() {
 	require(phases == 59, "snapshot/restore exercised Mark, Atomic, Sweep, Strings and Pause");
 	roots = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
 	target = asTable(roots->getInteger(1000), cpu.gcHeap());
-	require(asTable(target->getInteger(1), cpu.gcHeap())->hashId == childId
-		&& asTable(target->getStringKey(field), cpu.gcHeap())->hashId == childId && target->metatable(),
+	require(asTable(target->getInteger(1), cpu.gcHeap())->address() == childId
+		&& asTable(target->getStringKey(field), cpu.gcHeap())->address() == childId && target->metatable(),
 		"barriers preserve changed array, hash and metatable edges");
-	require(asTable(cpu.rootThread()->currentFrame->registers.get(1), cpu.gcHeap())->hashId == bornId,
+	require(asTable(cpu.rootThread()->currentFrame->registers.get(1), cpu.gcHeap())->address() == bornId,
 		"an allocation born during sweep is retained");
 	require(!cpu.stringPool().find("dead-0" + std::string(16, 'x')), "incremental String sweep reclaims dead text");
 	cpu.collectHeap();
-	require(cpu.captureRuntimeState().gc.allocations.size() == 1006,
+	require(test::allocatedObjectRecords(cpu) == 1006,
 		"full collection retains root Thread, closure, roots Table, 1000 children and three new live Tables");
 }
 
@@ -441,7 +440,7 @@ void stackShrinkAndAdmission() {
 	thread->resizeStack(2048);
 	require(frame.registers.get(0) == valueInteger(456), "growth preserves values after prior shrink");
 	const auto state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
-	require(std::ranges::equal(state.snapshot.words(), cpu.captureRuntimeState().snapshot.words()),
+	require(state == cpu.captureRuntimeState(),
 		"shrunken and regrown stack storage survives snapshot replay");
 }
 

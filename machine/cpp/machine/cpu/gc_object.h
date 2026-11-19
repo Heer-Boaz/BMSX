@@ -24,8 +24,6 @@ struct GCObject {
 	Memory* gcMemory = nullptr;
 	uint8_t gcColor() const { return gcRecord[GC_COLOR_OFFSET]; }
 	void setGcColor(uint8_t color);
-	bool restored = false;
-	uint32_t hashId = 0;
 	GCObject* next = nullptr;
 	GCObject* previous = nullptr;
 };

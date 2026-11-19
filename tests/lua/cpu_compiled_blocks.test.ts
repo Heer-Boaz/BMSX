@@ -1,3 +1,4 @@
+import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
@@ -163,10 +164,10 @@ test('one admitted compiled NEWT completes even when it exhausts its grant', () 
 	assert.ok(compiledEntries(machines[0].cpu) > 0);
 	for (const { cpu } of machines) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
-		const before = cpu.captureRuntimeState().nextObjectHashId;
+		const before = allocatedObjectRecords(cpu).length;
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.NEWT]);
-		assert.equal(cpu.captureRuntimeState().nextObjectHashId, before + 1);
+		assert.equal(allocatedObjectRecords(cpu).length, before + 1);
 		assert.equal(cpu.readFramePc(0), DYNAMIC_RAM_BASE + INSTRUCTION_BYTES);
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());

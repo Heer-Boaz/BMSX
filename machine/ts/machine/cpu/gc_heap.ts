@@ -32,9 +32,6 @@ export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
 // Two unconnected selector inputs do not clock the collector.
 const GC_PHASE_SELECTOR = [GcPhase.Pause, GcPhase.Mark, GcPhase.MarkAgain, GcPhase.Atomic,
 	GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause, GcPhase.Pause];
-export type GcState = {
-	allocations: number[];
-};
 export class GcHeap {
 	public diagnostics: GcDiagnostics | null = null;
 	private objects: GcObject | null = null;
@@ -94,7 +91,6 @@ export class GcHeap {
 		const object = this.records[(address & GC_RECORD_MASK) >>> 3];
 		return object?.gcKind === GcKind.Thread ? object as Thread : null;
 	}
-	public forgetPhysicalRecords(): void { this.records.fill(null); }
 	public reference(object: GcObject): number { return object.address; }
 	public hash(value: Value): number {
 		switch (valueTag(value)) {
@@ -108,7 +104,6 @@ export class GcHeap {
 			closure.prototypeRecord = this.prototypes.retain(closure.prototypeRecord);
 		}
 		this.records[(object.address & GC_RECORD_MASK) >>> 3] = object;
-		object.restored = false;
 		object.gcOwner = this;
 		object.gcPrevious = null; object.gcNext = this.objects;
 		if (this.objects !== null) this.objects.gcPrevious = object;
@@ -444,36 +439,21 @@ export class GcHeap {
 		do { work += this.step(t0, t1, t2, growingStack); } while (this.active());
 		return work;
 	}
-	public captureState(ref: (object: GcObject) => number): GcState {
-		const state: GcState = { allocations: [] };
-		for (let object = this.objects; object !== null; object = object.gcNext) state.allocations.push(ref(object));
-		return state;
-	}
-	public bindRestoredRecords(state: GcState, objects: readonly GcObject[]): void {
-		for (let object = this.objects; object !== null;) {
+	public discardAttachments(retainedRoot: Thread | null): void {
+		// Host-only disposal: never free or follow references in restored RAM.
+		let object = this.objects;
+		this.objects = null;
+		while (object !== null) {
 			const next = object.gcNext;
-			if (object.restored) object.restored = false;
-			else {
-				this.unlink(object);
-				this.releaseHostMetadata(object);
-			}
+			this.records[(object.address & GC_RECORD_MASK) >>> 3] = null;
+			object.gcPrevious = null;
+			object.gcNext = null;
+			if (object !== retainedRoot) this.releaseHostMetadata(object);
 			object = next;
 		}
-		for (const index of state.allocations) {
-			const object = objects[index];
-			this.records[(object.address & GC_RECORD_MASK) >>> 3] = object;
+		if (retainedRoot !== null) {
+			retainedRoot.detachFrameViews();
+			this.track(retainedRoot);
 		}
-	}
-	public restoreState(state: GcState, objects: GcObject[]): void {
-		this.objects = null;
-		let previous: GcObject | null = null;
-		for (let i = 0; i < state.allocations.length; ++i) {
-			const object = objects[state.allocations[i]];
-			object.gcPrevious = previous; object.gcNext = null;
-			object.gcOwner = this;
-			if (previous !== null) previous.gcNext = object; else this.objects = object;
-			previous = object;
-		}
-
 	}
 }

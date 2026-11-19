@@ -13,8 +13,8 @@ export class TestStopInspection extends TestInspection {
 		super(runtime, program, detached);
 		this.state = { ...stop, inspection: this.id, mode: 'stopped' as const, heap: 'stopped' as const,
 			source: 'compiled-test-images' as const, canEvaluate: false, globals: this.globals,
-			stack: thread.status === ThreadStatus.Dead ? { status: 'thread-closed' as const, thread: thread.hashId }
-				: { status: 'available' as const, thread: thread.hashId,
+			stack: thread.status === ThreadStatus.Dead ? { status: 'thread-closed' as const, thread: thread.address }
+				: { status: 'available' as const, thread: thread.address,
 					reference: this.addStack(new TestStack(thread, program,
 						thread.status === ThreadStatus.Failed ? 'failed-thread' : 'stopped-thread')) } };
 	}

@@ -38,8 +38,7 @@ void parity(Number32Machine& native, Number32Machine& scalar) {
 				a.badAddressWord == b.badAddressWord && a.luaFaultReasonWord == b.luaFaultReasonWord &&
 				a.hardHalted == b.hardHalted,
 		"native context retains exact instruction, privilege, fault and cycle boundaries");
-	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) &&
-				std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()),
+	require((a == b && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu)),
 		"native context retains the complete serialized compact value graph");
 	require(native.cpu.activeThread()->stackTop() == scalar.cpu.activeThread()->stackTop()
 		&& native.cpu.getFrameDepth() == scalar.cpu.getFrameDepth(), "physical Thread cursors agree");

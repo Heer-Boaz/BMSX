@@ -460,7 +460,7 @@ Closure* CPU::staticClosureForRecord(const FunctionPrototype& record) {
 	Closure* first = nullptr;
 	if (found != m_staticClosuresByAddress.end()) {
 		for (Closure* closure : found->second) {
-			if (*closure->prototype == record && (!first || closure->hashId < first->hashId)) first = closure;
+			if (*closure->prototype == record && (!first || closure->address < first->address)) first = closure;
 		}
 	}
 	if (first) return first;
@@ -836,97 +836,21 @@ void CPU::beginCompletionCallInExecutionDomain(
 	beginCompletionCall(*staticClosureForRecord(decodePrototype(m_functionRecordLatch)));
 }
 
-CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
-	snapshot.reset();
-	std::unordered_map<const GCObject*, u32> objectIds;
-	std::vector<const GCObject*> pendingObjects;
-	const auto captureObject = [&](const GCObject* object) -> u32 {
-		const auto it = objectIds.find(object);
-		if (it != objectIds.end()) return it->second;
-		const u32 id = snapshot.addObject();
-		objectIds.emplace(object, id);
-		pendingObjects.push_back(object);
-		return id;
-	};
-	const CpuSnapshotValueWriter writeValue = [&](u32 offset, Value value) {
-		snapshot.setWord(offset, static_cast<u32>(valueTag(value)));
-		snapshot.setWord(offset + 1, valuePayload(value));
-	};
-	const auto captureValueState = [&](Value value) -> u32 {
-		const u32 offset = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
-		writeValue(offset, value);
-		return offset;
-	};
-
+CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) const {
 	CpuRuntimeState state;
-	state.rootThreadRef = static_cast<int>(captureObject(m_rootThread));
-	state.activeThreadRef = static_cast<int>(captureObject(m_activeThread));
-	state.completionThreadRef = static_cast<int>(captureObject(m_completionThread));
-	state.haltedUntilIrqThreadRef = m_haltedUntilIrqThread == nullptr ? -1 : static_cast<int>(captureObject(m_haltedUntilIrqThread));
+	state.rootThreadAddress = m_rootThread->address;
+	state.activeThreadAddress = m_activeThread->address;
+	state.completionThreadAddress = m_completionThread->address;
+	state.haltedUntilIrqThreadAddress = m_haltedUntilIrqThread ? m_haltedUntilIrqThread->address : 0u;
 	state.systemGlobals = m_systemGlobalBank.captureState();
 	state.globals = m_globalBank.captureState();
 	state.executionCartridgeSlot = m_activeExecutionDomainId;
 	state.programExecutionDomainId = m_programExecutionDomainId;
-	state.completionValues.reserve(m_completionValueCount);
-	for (size_t i = 0; i < m_completionValueCount; ++i) {
-		state.completionValues.push_back(captureValueState(m_completionValues.get(i)));
-	}
-	state.stringIndexTable = captureValueState(
-		m_stringIndexTable
-	);
-	// Cache residency is allocation state even when a static closure is no
-	// longer in a live register. Order the cold snapshot by physical address.
-	std::vector<const Closure*> canonicalClosures;
-	canonicalClosures.reserve(m_staticClosuresByAddress.size());
-	for (const auto& [address, versions] : m_staticClosuresByAddress) {
-		for (const Closure* closure : versions) canonicalClosures.push_back(closure);
-	}
-	std::stable_sort(canonicalClosures.begin(), canonicalClosures.end(), [](const Closure* left, const Closure* right) {
-		return std::tie(left->prototype->functionAddress, left->prototype->executionDomainId, left->prototype->codeAddress, left->prototype->numParams, left->prototype->maxStack, left->prototype->flags, left->prototype->upvalueTableAddress, left->prototype->recordUpvalueCount, left->hashId)
-			< std::tie(right->prototype->functionAddress, right->prototype->executionDomainId, right->prototype->codeAddress, right->prototype->numParams, right->prototype->maxStack, right->prototype->flags, right->prototype->upvalueTableAddress, right->prototype->recordUpvalueCount, right->hashId);
-	});
-	for (const Closure* closure : canonicalClosures) {
-		captureObject(closure);
-	}
-	state.gc = m_heap.captureState(captureObject);
-	// Reserve ordinals at each edge, then drain in ordinal order. Guest graph
-	// depth must not consume the host call stack.
-	for (u32 id = 0; id < pendingObjects.size(); ++id) {
-		const auto* object = pendingObjects[id];
-		u32 offset;
-		switch (object->type) {
-			case ObjType::Thread: {
-				const auto* thread = static_cast<const Thread*>(object);
-				offset = snapshot.reserveWords(SNAP_THREAD_SIZE);
-				snapshot.setWord(offset + SNAP_THREAD_KIND, static_cast<u32>(CpuSnapshotObjectKind::Thread));
-				snapshot.setWord(offset + SNAP_THREAD_HASH_ID, thread->hashId);
-
-				snapshot.setWord(offset + SNAP_THREAD_RECORD, thread->address);
-				break;
-			}
-			case ObjType::Table:
-				offset = static_cast<const Table*>(object)->captureSnapshot(snapshot);
-				break;
-			case ObjType::Closure: {
-				const auto* closure = static_cast<const Closure*>(object);
-				offset = snapshot.reserveWords(SNAP_CLOSURE_SIZE);
-				snapshot.setWord(offset + SNAP_CLOSURE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Closure));
-				snapshot.setWord(offset + SNAP_CLOSURE_HASH_ID, closure->hashId);
-				snapshot.setWord(offset + SNAP_CLOSURE_RECORD, closure->address);
-				break;
-			}
-			case ObjType::Upvalue: {
-				const auto* upvalue = static_cast<const Upvalue*>(object);
-				offset = snapshot.reserveWords(SNAP_UPVALUE_SIZE);
-				snapshot.setWord(offset + SNAP_UPVALUE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Upvalue));
-				snapshot.setWord(offset + SNAP_UPVALUE_HASH_ID, upvalue->hashId);
-				snapshot.setWord(offset + SNAP_UPVALUE_ADDRESS, upvalue->address);
-				break;
-			}
-			default: BMSX_UNREACHABLE();
-		}
-		snapshot.setObjectWord(id, offset);
-	}
+	completionStorage.resize(m_completionValueCount);
+	for (size_t i = 0; i < m_completionValueCount; ++i)
+		completionStorage[i] = m_completionValues.get(i);
+	state.completionValues = std::move(completionStorage);
+	state.stringIndexTable = m_stringIndexTable;
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if (m_executionImagesByDomain[index]) {
 			state.executionResidencyMask |= 1u << index;
@@ -934,9 +858,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 			state.globalMapBases[index] = m_executionImagesByDomain[index]->globalMapBase;
 		}
 	}
-	state.nextObjectHashId = m_heap.nextObjectHashId();
 	state.hardHalted = m_hardHalted;
-	state.snapshot = std::move(snapshot);
 	state.lastExecutionDomainId = m_lastExecutionDomainId;
 	state.lastPc = lastPc;
 	state.haltedUntilIrqFrameDepth = m_haltedUntilIrqFrameDepth;
@@ -964,84 +886,40 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	discardNativeCompilation();
 #endif
-	const auto& snapshot = state.snapshot;
-	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
-	// The caller has already restored RAM. Retire only the reused root's
-	// host activations; following or changing old coroutine edges here would
-	// access the restored language records before their attachments exist.
-	m_rootThread->detachFrameViews();
-	auto previousCanonical = std::move(m_staticClosuresByAddress);
-	m_staticClosuresByAddress.clear();
-	m_heap.forgetPhysicalRecords();
-	std::vector<GCObject*> restoredObjects(snapshot.objectCount());
-	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
-		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
-		switch (static_cast<CpuSnapshotObjectKind>(snapshot.word(offset))) {
-			case CpuSnapshotObjectKind::Thread: {
-				Thread* thread = index == static_cast<size_t>(state.rootThreadRef) ? m_rootThread : m_heap.allocate<Thread>(ObjType::Thread, m_heap, snapshot.word(offset + SNAP_THREAD_RECORD));
-				thread->bindStack();
-				thread->restored = true;
-				thread->hashId = snapshot.word(offset + SNAP_THREAD_HASH_ID);
-				restoredObjects[index] = thread;
-				break;
-			}
-			case CpuSnapshotObjectKind::Table: {
-				Table* table = m_heap.allocate<Table>(ObjType::Table, m_heap, snapshot.word(offset + SNAP_TABLE_RECORD));
-				table->restored = true;
-				table->hashId = snapshot.word(offset + SNAP_TABLE_HASH_ID);
-				restoredObjects[index] = table;
-				break;
-			}
-			case CpuSnapshotObjectKind::Closure: {
-				const u32 address = snapshot.word(offset + SNAP_CLOSURE_RECORD);
-				const u8 binding = m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
-				const FunctionPrototype record = Closure::readBinding(m_memory, address, binding);
-				const u32 functionAddress = record.functionAddress;
-				const bool canonical = (binding & CLOSURE_CANONICAL) != 0u;
-				Closure* closure;
-				if (canonical) {
-					const u32 hashId = snapshot.word(offset + SNAP_CLOSURE_HASH_ID);
-					auto& versions = m_staticClosuresByAddress[functionAddress];
-					auto previous = previousCanonical.find(functionAddress);
-					closure = nullptr;
-					if (previous != previousCanonical.end()) {
-						auto& candidates = previous->second;
-						auto existing = std::find_if(candidates.begin(), candidates.end(), [&](const Closure* item) {
-							return item->hashId == hashId && item->address == address && *item->prototype == record;
-						});
-						if (existing != candidates.end()) {
-							closure = *existing;
-							candidates.erase(existing);
-						}
-					}
-					if (!closure) {
-						closure = m_heap.bindClosureRecord(address, record, canonical);
-					}
-					versions.push_back(closure);
-				} else {
-					closure = m_heap.bindClosureRecord(address, record, canonical);
-				}
-				closure->restored = true;
-				closure->hashId = snapshot.word(offset + SNAP_CLOSURE_HASH_ID);
-				restoredObjects[index] = closure;
-				break;
-			}
-			case CpuSnapshotObjectKind::Upvalue: {
-				auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue, m_memory, snapshot.word(offset + SNAP_UPVALUE_ADDRESS));
-				upvalue->restored = true;
-				upvalue->hashId = snapshot.word(offset + SNAP_UPVALUE_HASH_ID);
-				restoredObjects[index] = upvalue;
-				break;
-			}
-		}
-	}
-	m_heap.bindRestoredRecords(state.gc, restoredObjects, state.nextObjectHashId);
-	const CpuSnapshotReader reader(snapshot);
-	m_memory.clearMappedPageWriteWatches();
-	m_heap.armThreadStackWatches();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
 #endif
+	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
+	m_staticClosuresByAddress.clear();
+	Thread* retainedRoot = m_rootThread->address == state.rootThreadAddress ? m_rootThread : nullptr;
+	m_heap.discardAttachments(retainedRoot);
+	m_memory.clearMappedPageWriteWatches();
+	// This scan is independent of the in-flight collector sweep cursor.
+	m_heapAllocator.visitObjectRecords(this, [](void* context, u32 address) -> i32 {
+		auto& cpu = *static_cast<CPU*>(context);
+		auto& heap = cpu.m_heap;
+		switch (cpu.m_memory.readRamRecordByte(address)) {
+			case THREAD_RECORD_KIND:
+				if (!heap.threadAt(address)) heap.allocate<Thread>(ObjType::Thread, heap, address);
+				break;
+			case static_cast<u8>(ValueTag::Table):
+				heap.allocate<Table>(ObjType::Table, heap, address);
+				break;
+			case static_cast<u8>(ValueTag::Closure): {
+				const u8 binding = cpu.m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
+				const auto record = Closure::readBinding(cpu.m_memory, address, binding);
+				const bool canonical = (binding & CLOSURE_CANONICAL) != 0u;
+				auto* closure = heap.bindClosureRecord(address, record, canonical);
+				if (canonical && !heap.sweepGarbage(closure))
+					cpu.m_staticClosuresByAddress[record.functionAddress].push_back(closure);
+				break;
+			}
+			case UPVALUE_RECORD_KIND:
+				heap.allocate<Upvalue>(ObjType::Upvalue, cpu.m_memory, address);
+				break;
+		}
+		return 1;
+	});
 	for (auto& image : m_executionImagesByDomain) {
 		image.reset();
 	}
@@ -1057,26 +935,27 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	Blua32ExecutionImage* executionImage = m_executionImagesByDomain[static_cast<size_t>(state.executionCartridgeSlot + 1)].get();
 	latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
-	m_heap.restoreState(state.gc, restoredObjects);
 	m_heap.visitThreads([&](Thread& thread) {
-		if (!m_heap.sweepGarbage(&thread)) bindPhysicalFrames(thread);
+		if (m_heap.sweepGarbage(&thread)) thread.bindStack(); // The remaining sweep still charges its storage.
+		else {
+			bindPhysicalFrames(thread);
+			thread.armStackWatch();
+		}
 	});
-	m_activeThread = static_cast<Thread*>(restoredObjects[state.activeThreadRef]);
+	m_rootThread = m_heap.threadAt(state.rootThreadAddress);
+	m_activeThread = m_heap.threadAt(state.activeThreadAddress);
 	if (auto* current = m_activeThread->currentFrame) current->executionImage = m_activeExecutionImage;
-	m_completionThread = static_cast<Thread*>(restoredObjects[state.completionThreadRef]);
+	m_completionThread = m_heap.threadAt(state.completionThreadAddress);
 	m_threadSwitchRequested = false;
 
-	const Value stringIndexTable = reader.readValue(state.stringIndexTable);
-	m_stringIndexTable = stringIndexTable;
+	m_stringIndexTable = state.stringIndexTable;
 	m_completionValues.reserveCapacity(state.completionValues.size());
-	for (u32 valueState : state.completionValues) {
-		m_completionValues.set(m_completionValueCount++, reader.readValue(valueState));
-	}
+	for (Value value : state.completionValues) m_completionValues.set(m_completionValueCount++, value);
 	m_programExecutionDomainId = state.programExecutionDomainId;
 	m_lastExecutionDomainId = state.lastExecutionDomainId;
 	lastPc = state.lastPc;
 	m_haltedUntilIrqFrameDepth = state.haltedUntilIrqFrameDepth;
-	m_haltedUntilIrqThread = state.haltedUntilIrqThreadRef == -1 ? nullptr : static_cast<Thread*>(restoredObjects[state.haltedUntilIrqThreadRef]);
+	m_haltedUntilIrqThread = state.haltedUntilIrqThreadAddress == 0u ? nullptr : m_heap.threadAt(state.haltedUntilIrqThreadAddress);
 	m_interruptEventPending = state.interruptEventPending;
 	m_memoryWriteBlocked = state.memoryWriteBlocked;
 	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;

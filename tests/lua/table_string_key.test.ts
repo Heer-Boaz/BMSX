@@ -22,7 +22,6 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 	const generic = cpu.createTable(0, 4);
 	const strings = cpu.createTable(0, 4);
 	const object = cpu.createTable();
-	object.hashId = 0;
 	const objectKey = valueTable(cpu.gc.reference(object));
 	const values: Value[] = [valueBool(false), valueFloatBits(0x80000000), valueFloat(5.25), valueFloatBits(0xffc01234), valueFloat(Infinity), objectKey, valueString(keys[0]), valueNil()];
 	const slots = new ValueSlots(2);

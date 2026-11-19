@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x4f534d42u; // BMSO
+constexpr u32 kSaveStateSignature = 0x50534d42u; // BMSP
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1150,30 +1150,6 @@ RuntimeSaveMachineState readRuntimeSaveMachineState(BinaryReader& reader, size_t
 	return state;
 }
 
-template<class Writer> void writeCpuSnapshot(Writer& writer, const CpuSnapshot& state) {
-	writer.u32(static_cast<u32>(state.words().size()));
-	writer.u32s(state.words());
-	writer.u32(static_cast<u32>(state.objectWords().size()));
-	writer.u32s(state.objectWords());
-}
-
-CpuSnapshot readCpuSnapshot(BinaryReader& reader) {
-	auto words = reader.u32s(reader.u32());
-	auto objectWords = reader.u32s(reader.u32());
-	return CpuSnapshot(std::move(words), std::move(objectWords));
-}
-
-template<class Writer> void writeGcState(Writer& writer, const GcState& state) {
-	writer.u32(static_cast<u32>(state.allocations.size()));
-	writer.u32s(state.allocations);
-}
-GcState readGcState(BinaryReader& reader) {
-	GcState state;
-	state.allocations.resize(reader.u32());
-	reader.u32s(state.allocations);
-	return state;
-}
-
 template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntimeState& state) {
 	writer.i32(state.executionCartridgeSlot);
 	writer.i32(state.programExecutionDomainId);
@@ -1183,22 +1159,19 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	writer.u32(state.globals.base);
 	writer.u32(state.globals.capacity);
 	writer.u32(state.globals.count);
-	writer.u32(state.stringIndexTable);
-	writer.i32(state.rootThreadRef);
-	writer.i32(state.activeThreadRef);
-	writer.i32(state.completionThreadRef);
+	writer.u64(state.stringIndexTable);
+	writer.u32(state.rootThreadAddress);
+	writer.u32(state.activeThreadAddress);
+	writer.u32(state.completionThreadAddress);
 	writer.u32(static_cast<u32>(state.completionValues.size()));
-	writer.u32s(state.completionValues);
-	writeCpuSnapshot(writer, state.snapshot);
+	writer.u64s(state.completionValues);
 	writer.i32(state.lastExecutionDomainId);
 	writer.u32(state.executionResidencyMask);
 	writer.u32s(state.constantPoolBases);
 	writer.u32s(state.globalMapBases);
-	writer.u32(state.nextObjectHashId);
 	writer.boolean(state.hardHalted);
-	writeGcState(writer, state.gc);
 	writer.u32(state.lastPc);
-	writer.i32(state.haltedUntilIrqThreadRef);
+	writer.u32(state.haltedUntilIrqThreadAddress);
 	writer.i32(state.haltedUntilIrqFrameDepth);
 	writer.boolean(state.interruptEventPending);
 	writer.boolean(state.memoryWriteBlocked);
@@ -1231,21 +1204,18 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.programExecutionDomainId = reader.i32();
 	state.systemGlobals = {reader.u32(), reader.u32(), reader.u32()};
 	state.globals = {reader.u32(), reader.u32(), reader.u32()};
-	state.stringIndexTable = reader.u32();
-	state.rootThreadRef = reader.i32();
-	state.activeThreadRef = reader.i32();
-	state.completionThreadRef = reader.i32();
-	state.completionValues = reader.u32s(reader.u32());
-	state.snapshot = readCpuSnapshot(reader);
+	state.stringIndexTable = reader.u64();
+	state.rootThreadAddress = reader.u32();
+	state.activeThreadAddress = reader.u32();
+	state.completionThreadAddress = reader.u32();
+	state.completionValues = reader.u64s(reader.u32());
 	state.lastExecutionDomainId = reader.i32();
 	state.executionResidencyMask = reader.u32();
 	reader.u32s(state.constantPoolBases);
 	reader.u32s(state.globalMapBases);
-	state.nextObjectHashId = reader.u32();
 	state.hardHalted = reader.boolean();
-	state.gc = readGcState(reader);
 	state.lastPc = reader.u32();
-	state.haltedUntilIrqThreadRef = reader.i32();
+	state.haltedUntilIrqThreadAddress = reader.u32();
 	state.haltedUntilIrqFrameDepth = reader.i32();
 	state.interruptEventPending = reader.boolean();
 	state.memoryWriteBlocked = reader.boolean();

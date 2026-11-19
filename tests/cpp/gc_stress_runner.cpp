@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
 				const auto state = cpu.captureRuntimeState();
 				cpu.memory().restoreSaveState(ram);
 				cpu.restoreRuntimeState(state);
-				if (!std::ranges::equal(cpu.captureRuntimeState().snapshot.words(), state.snapshot.words()))
+				if (cpu.captureRuntimeState() != state)
 					throw std::runtime_error("GC stress snapshot round trip changed values");
 			}
 		}

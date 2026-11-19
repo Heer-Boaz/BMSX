@@ -78,7 +78,6 @@ test('compact hash growth, cached string access and inherited reads use real hea
 
 test('tombstone continuation retains a stable object hash, not the recycled reference', () => {
 	const cpu = machine(), table = cpu.createTable(0, 64), keyObject = cpu.createTable();
-	keyObject.hashId = 0;
 	const key = v.valueTable(cpu.gc.reference(keyObject)), target = new ValueSlots(2);
 	table.records.set(table.address, key, v.valueInteger(7));
 	for (let i = 1; i <= 20; ++i) table.records.setStringKey(table.address, cpu.stringPool.intern('other' + i), v.valueInteger(i));
@@ -107,8 +106,6 @@ test('compact Tables participate in incremental tracing, weak clearing and refer
 	assert.equal(weak.records.getInteger(weak.address, 1), v.valueNil());
 	const replacement = cpu.createTable();
 	assert.equal(cpu.gc.reference(replacement), deadReference);
-	// A retired reference id never substitutes for object hash identity.
-	assert.notEqual(replacement.hashId, dead.hashId);
 	assert.equal(weak.records.getInteger(weak.address, 1), v.valueNil());
 });
 

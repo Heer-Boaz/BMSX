@@ -281,7 +281,6 @@ add_library(bmsx_core STATIC
 	machine/cpu/cpu_decode.cpp
 	machine/cpu/thread.cpp
 	machine/cpu/call_state.cpp
-	machine/cpu/snapshot.cpp
 	machine/cpu/execution_image.cpp
 	machine/cpu/gc_heap.cpp
 	machine/cpu/global_bank.cpp

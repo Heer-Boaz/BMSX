@@ -1,3 +1,5 @@
+import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
@@ -6,7 +8,6 @@ import { asClosure, valueInteger, valueNil, valueString, valueTable } from '../.
 
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { CpuSnapshotClosure, CpuSnapshotObjectKind } from '../../machine/ts/machine/cpu/snapshot';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
@@ -217,13 +218,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	}
 	frame.top = 3;
 	const countVersions = (): number => {
-		const snapshot = cpu.captureRuntimeState().snapshot;
 		let count = 0;
-		for (let index = 0; index < snapshot.objectCount; ++index) {
-			const offset = snapshot.objectWord(index);
-			if (snapshot.word(offset) !== CpuSnapshotObjectKind.Closure) continue;
-			const closure = snapshot.word(offset + CpuSnapshotClosure.Record);
-			if (memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) === RAM_FUNCTION_ADDRESS) ++count;
+		for (const closure of allocatedObjectRecords(cpu)) {
+			if (memory.readRamRecordByte(closure) === ValueTag.Closure
+				&& memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) === RAM_FUNCTION_ADDRESS) ++count;
 		}
 		return count;
 	};

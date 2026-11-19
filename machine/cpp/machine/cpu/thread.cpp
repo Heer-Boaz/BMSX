@@ -165,10 +165,7 @@ void Thread::bindStack() {
 	const u32 controls = block + controlOffset(static_cast<u32>(stackCapacity));
 	u32 index = 0;
 	for (auto* frame = firstFrame; frame; frame = frame->next, ++index) {
-		frame->bindControl(heap.memory, controls + index * FRAME_CONTROL_BYTES);
-		if (index >= boundFrameCapacity || FRAME_CONTROL_BYTES > MAIN_RAM_SIZE - frame->controlOffset)
-			frame->nativeControl = nullptr;
-		armFrameWindowWatch(*frame);
+		bindFrameControl(*frame, controls + index * FRAME_CONTROL_BYTES, index);
 	}
 	size_t extent = 0;
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
@@ -177,6 +174,13 @@ void Thread::bindStack() {
 		stackCapacity > (MAIN_RAM_SIZE - block) / THREAD_STACK_SLOT_BYTES || extent > stackCapacity};
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
 		frame->registers = stack.subspan(frame->stackBase(), frame->stackCapacity());
+}
+
+void Thread::bindFrameControl(CallFrame& frame, u32 address, u32 index) {
+	frame.bindControl(heap.memory, address);
+	if (index >= boundFrameCapacity || FRAME_CONTROL_BYTES > MAIN_RAM_SIZE - frame.controlOffset)
+		frame.nativeControl = nullptr;
+	armFrameWindowWatch(frame);
 }
 
 void Thread::armFrameWindowWatch(const CallFrame& frame) {
@@ -295,22 +299,22 @@ size_t Thread::shrinkStack() {
 	return bytes;
 }
 
-CallFrame* Thread::frameNode(CallFrame* previous, size_t index) {
+CallFrame* Thread::frameNode(CallFrame* previous) {
 	CallFrame*& frame = previous ? previous->next : firstFrame;
 	if (!frame) {
 		frame = new CallFrame;
 		frame->thread = this;
 		frame->previous = previous;
-		frame->bindControl(heap.memory, frameControlAddress(static_cast<u32>(index)));
-		if (index >= boundFrameCapacity || FRAME_CONTROL_BYTES > MAIN_RAM_SIZE - frame->controlOffset)
-			frame->nativeControl = nullptr;
-		armFrameWindowWatch(*frame);
 	}
 	return frame;
 }
 
 CallFrame* Thread::acquireFrame() {
-	return frameNode(currentFrame, frameDepth());
+	if (auto* frame = currentFrame ? currentFrame->next : firstFrame) return frame;
+	auto* frame = frameNode(currentFrame);
+	const auto index = static_cast<u32>(frameDepth());
+	bindFrameControl(*frame, frameControlAddress(index), index);
+	return frame;
 }
 
 void Thread::detachFrameViews() {
@@ -330,7 +334,7 @@ void Thread::bindFrameViews() {
 	detachFrameViews();
 	const size_t depth = frameDepth();
 	for (size_t index = 0; index < depth; ++index) {
-		currentFrame = frameNode(currentFrame, index);
+		currentFrame = frameNode(currentFrame);
 		currentFrame->decodedPage = nullptr;
 		currentFrame->compilationEntry = true;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

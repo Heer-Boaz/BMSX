@@ -1,12 +1,13 @@
+import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { CpuSnapshotClosure, CpuSnapshotObjectKind } from '../../machine/ts/machine/cpu/snapshot';
 import { asTable, asClosure, valueTable, valueIsTable, valueFloat, valueFloatBits, valueInteger, valueBool, valueNil, valueBuiltinFunction, type Value, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -54,7 +55,7 @@ for (const [op, name] of [[OpCode.K1, 'constant'], [OpCode.NEWT, 'table']] as co
 	else assert.ok(values[0] === cpu.gc.tables.getInteger(tableAddressPayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!)), 1));
 });
 
-test('the mirrored CPU allocates a closure before its new upvalues', () => {
+test('a closure completion value refers to separate physical closure and capture records', () => {
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource(`
 local root = {}
 return function() return root end
@@ -62,15 +63,13 @@ return function() return root end
 	cpu.runUntilDepth(0, 1000);
 	const state = cpu.captureRuntimeState();
 	const result = state.completionValues[0];
-	const graph = state.snapshot;
-	assert.equal(graph.word(result), ValueTag.Closure);
-	const values: Value[] = [];
-	cpu.readCompletionValues(values);
-	const descriptor = asClosure(values[0], cpu.gc);
-	assert.equal(graph.word(result + 1), descriptor.address);
-	assert.ok(graph.objectWords.some(offset => graph.word(offset) === CpuSnapshotObjectKind.Closure
-		&& graph.word(offset + CpuSnapshotClosure.Record) === descriptor.address));
-	assert.equal(cpu.gc.cellAt(descriptor.captureAddress(0))!.hashId, descriptor.hashId + 1);
+	const descriptor = asClosure(result, cpu.gc);
+	assert.equal(tableAddressPayload(result), descriptor.address);
+	const cell = cpu.gc.cellAt(descriptor.captureAddress(0))!;
+	assert.notEqual(cell.address, descriptor.address);
+	assert.equal(cell.open, false);
+	assert.ok(valueIsTable(cell.value));
+
 });
 
 test('repeated restore replays the full CPU state independently of fresh execution grants', () => {
@@ -94,16 +93,6 @@ return {}, cached, dynamic
 		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
 		assert.deepEqual(cpu.captureRuntimeState(), expected);
 	}
-});
-
-test('restored allocation words wrap identically to the native u32 allocator', () => {
-	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'snapshot-id-wrap.lua')));
-	const state = cpu.captureRuntimeState();
-	state.nextObjectHashId = 0xffffffff;
-	cpu.restoreRuntimeState(state);
-	assert.equal(cpu.createTable().hashId, 0xffffffff);
-	assert.equal(cpu.createTable().hashId, 0);
-	assert.equal(cpu.createTable().hashId, 1);
 });
 
 test('checkpoint capture preserves the authoritative global registers without mutation', () => {
@@ -178,27 +167,45 @@ test('a materialized but unrooted canonical closure remains part of the checkpoi
 		functions: [{ firstWord: 0, wordCount: 5 }, { firstWord: 5, wordCount: 1 }],
 		closureRelocations: [{ wordIndex: 1, functionAddress: address }],
 	}));
+	const entry = cpu.readFramePc(0), functionAddress = cpu.rootThread.frameAtDepth(0).functionAddress;
 	const cold = cpu.captureRuntimeState();
 	const coldRam = cpu.memory.captureSaveState();
 	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.KNIL]), RunResult.Yielded);
 	const warm = cpu.captureRuntimeState();
 	const warmRam = cpu.memory.captureSaveState();
 	assert.equal(cpu.readFrameRegister(0, 0), valueNil());
-	assert.ok(warm.snapshot.objectWords.some(offset => {
-		if (warm.snapshot.word(offset) !== CpuSnapshotObjectKind.Closure) return false;
-		const record = warm.snapshot.word(offset + CpuSnapshotClosure.Record);
-		return cpu.memory.readRamRecordWord(record + CLOSURE_PROTOTYPE_ADDRESS) === address
-			&& (cpu.memory.readRamRecordByte(record + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0;
-	}));
+	const closureAddress = allocatedObjectRecords(cpu).find(record =>
+		cpu.memory.readRamRecordByte(record) === ValueTag.Closure
+		&& cpu.memory.readRamRecordWord(record + CLOSURE_PROTOTYPE_ADDRESS) === address
+		&& (cpu.memory.readRamRecordByte(record + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0)!;
+	assert.ok(closureAddress);
 	cpu.runUntilDepth(0, 1000);
 	const expected = cpu.captureRuntimeState();
 	cpu.memory.restoreSaveState(coldRam);
 	cpu.restoreRuntimeState(cold);
 	cpu.memory.restoreSaveState(warmRam);
 	cpu.restoreRuntimeState(warm);
+	assert.equal(cpu.gc.closureAt(closureAddress)?.address, closureAddress);
 	assert.deepEqual(cpu.captureRuntimeState(), warm);
 	cpu.runUntilDepth(0, 1000);
 	assert.deepEqual(cpu.captureRuntimeState(), expected);
+
+	cpu.memory.restoreSaveState(warmRam);
+	cpu.restoreRuntimeState(warm);
+	while (cpu.gc.phase() !== GcPhase.Sweep) cpu.gc.step();
+	assert.ok(cpu.gc.sweepGarbage(cpu.gc.closureAt(closureAddress)!));
+	const sweep = cpu.captureRuntimeState(), sweepRam = cpu.memory.captureSaveState();
+	const build = () => {
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, entry);
+		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE]), RunResult.Yielded);
+		return cpu.readFrameRegister(0, 0);
+	};
+	const replacement = build();
+	assert.notEqual(tableAddressPayload(replacement), closureAddress);
+	cpu.memory.restoreSaveState(sweepRam);
+	cpu.restoreRuntimeState(sweep);
+	assert.equal(build(), replacement, 'restore does not republish an already retired closure');
+
 });
 
 test('hard-halt is restored independently of the live future CPU latch', () => {
@@ -227,51 +234,38 @@ test('hard-halt is restored independently of the live future CPU latch', () => {
 	assert.equal(cpu.getFrameDepth(), depth, 'hard halt retains the restored physical cursor');
 });
 
-test('CPU snapshots reuse exclusive storage across graph growth, cycles and a shorter capture', () => {
-	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'snapshot-storage.lua')));
+test('CPU capture walks no language records; fresh restore reattaches a graph from RAM', () => {
+	const image = linkTestSystemBlua32(compileLuaSource('return 19, 21', 'snapshot-physical-records.lua'));
+	const { cpu } = createTestSystemCpu(image);
 	const key = cpu.stringPool.intern('graph');
-	const root = cpu.createTable(130, 0);
-	cpu.setGlobalByKey(key, valueTable(cpu.gc.reference(root)));
-	for (let index = 1; index <= 130; index += 1) {
-		const child = cpu.createTable(1, 0);
-		// Allocation ids can wrap. They must never be used as snapshot identities.
-		child.hashId = 0xffffffff;
-		child.records.setInteger(child.address, 1, valueTable(cpu.gc.reference(root)));
-		root.records.setInteger(root.address, index, valueTable(cpu.gc.reference(child)));
-	}
-	const retainedMemory = cpu.memory.captureSaveState();
-	const retained = cpu.captureRuntimeState();
-	const retainedWords = retained.snapshot.words.slice();
-	const retainedObjects = retained.snapshot.objectWords.slice();
-	let recycled = cpu.captureRuntimeState();
-	const words = recycled.snapshot.words.buffer;
-	const objects = recycled.snapshot.objectWords.buffer;
-	const capacity = recycled.snapshot.capacityBytes;
-	assert.ok(recycled.snapshot.objectCount > 130);
-	for (let pass = 0; pass < 4; pass += 1) {
-		recycled = cpu.captureRuntimeState(recycled.snapshot);
-		assert.equal(recycled.snapshot.words.buffer, words);
-		assert.equal(recycled.snapshot.objectWords.buffer, objects);
-		assert.equal(recycled.snapshot.capacityBytes, capacity);
-		assert.deepEqual(recycled, retained);
-	}
 	cpu.setGlobalByKey(key, valueNil());
-	cpu.collectTrackedHeapBytes(); // Uncollected allocations remain part of GC state.
-	recycled = cpu.captureRuntimeState(recycled.snapshot);
-	assert.equal(recycled.snapshot.words.buffer, words);
-	assert.equal(recycled.snapshot.objectWords.buffer, objects);
-	assert.equal(recycled.snapshot.capacityBytes, capacity);
-	assert.ok(recycled.snapshot.words.length < retainedWords.length);
-	assert.ok(recycled.snapshot.objectCount < retainedObjects.length);
-	assert.deepEqual(recycled, cpu.captureRuntimeState(), 'unused capacity is not machine state');
-	assert.deepEqual(retained.snapshot.words, retainedWords, 'a different checkpoint must remain intact');
-	assert.deepEqual(retained.snapshot.objectWords, retainedObjects);
-	cpu.memory.restoreSaveState(retainedMemory);
-	cpu.restoreRuntimeState(retained);
-	const restored = asTable(cpu.getGlobalByKey(key), cpu.gc);
-	assert.notEqual(restored.records.getInteger(restored.address, 1), restored.records.getInteger(restored.address, 2), 'equal allocation ids do not merge objects');
-	assert.equal(cpu.gc.tables.getInteger(tableAddressPayload(restored.records.getInteger(restored.address, 130)), 1), valueTable(cpu.gc.reference(restored)), 'cycle survives buffer growth and restore');
-	assert.deepEqual(cpu.captureRuntimeState(), retained);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	const before = cpu.captureRuntimeState();
+	const root = cpu.createTable(1024, 0);
+	const rootValue = valueTable(root.address);
+	cpu.setGlobalByKey(key, rootValue);
+	for (let index = 1; index <= 1024; ++index) {
+		const child = cpu.createTable(1, 0);
+		child.records.setInteger(child.address, 1, rootValue);
+		root.records.setInteger(root.address, index, valueTable(child.address));
+	}
+	const ram = cpu.memory.captureSaveState();
+	const storage: Value[] = [];
+	const saved = cpu.captureRuntimeState(storage);
+	assert.deepEqual(saved, before, 'language allocations are not additional CPU latch state');
+	assert.equal(saved.completionValues, storage);
+	const future = cpu.createTable().address;
+	const other = createTestSystemCpu(image).cpu;
+	other.memory.restoreSaveState(ram);
+	other.restoreRuntimeState(saved);
+	assert.equal(other.gc.tableAt(future), null);
+	const restored = asTable(other.getGlobalByKey(key), other.gc);
+	assert.equal(restored.address, root.address);
+	assert.notEqual(restored.records.getInteger(restored.address, 1), restored.records.getInteger(restored.address, 2));
+	const child = asTable(restored.records.getInteger(restored.address, 1024), other.gc);
+	assert.equal(child.records.getInteger(child.address, 1), rootValue);
+	assert.deepEqual(other.memory.captureSaveState(), ram, 'rebinding must not write guest bytes');
+	assert.deepEqual(other.captureRuntimeState(), before);
 });
 
 test('snapshot words preserve int32 and f32 bits, primitive tags and interned ids', () => {

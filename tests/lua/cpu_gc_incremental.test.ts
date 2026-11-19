@@ -1,3 +1,4 @@
+import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { HEAP_PAGE_SIZE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -42,16 +43,16 @@ test('incremental marking preserves changed table edges, metatables and final re
 		'repeated stores do not link the same table to itself');
 	const rootChild = cpu.createTable();
 	frame.registers.setTable(1, cpu.gc.reference(rootChild)); frame.top = 2;
-	const expectedIds = [arrayChild.hashId, fieldChild.hashId, metatable.hashId, rootChild.hashId];
+	const expectedIds = [arrayChild.address, fieldChild.address, metatable.address, rootChild.address];
 	let steps = 0;
 	while (cpu.gc.active() && steps++ < 1000) cpu.gc.step();
 	assert.ok(!cpu.gc.active()); assert.ok(steps > 2, 'the graph was not collected in one call');
-	for (const id of expectedIds) assert.ok(cpu.gc.captureState(object => object.hashId).allocations.includes(id));
+	for (const id of expectedIds) assert.ok(allocatedObjectRecords(cpu).includes(id));
 	assert.equal(target.records.getInteger(target.address, 1), valueTable(cpu.gc.reference(arrayChild))); assert.equal(target.records.getStringKey(target.address, field), valueTable(cpu.gc.reference(fieldChild)));
 	assert.equal(target.metatable, metatable); assert.equal(frame.registers.getTable(1, cpu.gc), rootChild);
 	frame.registers.clear(frame.stackCapacity); frame.top = 0;
 	cpu.collectTrackedHeapBytes();
-	for (const id of expectedIds) assert.ok(!cpu.gc.captureState(object => object.hashId).allocations.includes(id));
+	for (const id of expectedIds) assert.ok(!allocatedObjectRecords(cpu).includes(id));
 });
 
 test('consuming a gray record also consumes a self-linked mark edge', () => {
@@ -90,7 +91,7 @@ test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing
 		let state = cpu.captureRuntimeState();
 		phases.add(cpu.gc.phase());
 		if (cpu.gc.phase() === GcPhase.Sweep && bornDuringSweep === 0) {
-			const born = cpu.createTable(); bornDuringSweep = born.hashId;
+			const born = cpu.createTable(); bornDuringSweep = born.address;
 			const frame = cpu.rootThread.currentFrame!;
 			frame.registers.setTable(1, cpu.gc.reference(born)); frame.top = 2;
 			state = cpu.captureRuntimeState();
@@ -102,10 +103,10 @@ test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing
 		if (!cpu.gc.active()) break;
 	}
 	assert.deepEqual(phases, new Set([GcPhase.Mark, GcPhase.Atomic, GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause]));
-	assert.equal(cpu.rootThread.currentFrame!.registers.getTable(1, cpu.gc).hashId, bornDuringSweep);
+	assert.equal(cpu.rootThread.currentFrame!.registers.getTable(1, cpu.gc).address, bornDuringSweep);
 	assert.equal(cpu.stringPool.find(`dead-0-${'x'.repeat(16)}`), undefined);
 	cpu.collectTrackedHeapBytes();
-	assert.equal(cpu.gc.captureState(object => object.hashId).allocations.length, 1004,
+	assert.equal(allocatedObjectRecords(cpu).length, 1004,
 		'root thread, root closure, root table, 1000 children and one sweep-born table remain');
 });
 
@@ -193,7 +194,7 @@ test('changed objects wait for a finite second pass and retain later writes acro
 	const late = cpu.createTable(); target.records.setInteger(target.address, 2, valueTable(cpu.gc.reference(late)));
 	while (cpu.gc.active()) cpu.gc.step();
 	assert.equal(target.records.getInteger(target.address, 2), valueTable(cpu.gc.reference(late)));
-	assert.ok(cpu.gc.captureState(object => object.hashId).allocations.includes(late.hashId));
+	assert.ok(allocatedObjectRecords(cpu).includes(late.address));
 });
 
 test('an oversized scan earns actual-work credit, not another assist after 256 bytes', () => {

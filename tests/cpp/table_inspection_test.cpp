@@ -133,7 +133,7 @@ void boundarySearchAndHashMix(bmsx::CPU& cpu) {
 
 void continueAfterDeletedZeroIdentityKey(bmsx::CPU& cpu) {
 	auto* object = cpu.createTable();
-	object->hashId = 0;
+
 	const auto objectKey = bmsx::valueTable(cpu.gcHeap().reference(object));
 	auto* table = cpu.createTable(0, 64);
 	table->set(objectKey, bmsx::valueInteger(9));

@@ -1,3 +1,4 @@
+#include "support/cpu_execution_parity.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/value_storage.h"
 #include "machine/devices/irq/controller.h"
@@ -36,20 +37,25 @@ struct Machine {
 };
 
 void checkReferences(CPU& cpu) {
-	auto& heap = cpu.gcHeap();
-	const auto state = heap.captureState([&](const GCObject* object) {
-		const u32 id = heap.reference(object);
-		require(id != 0, "every allocation has a nonzero reference");
-		switch (object->type) {
-			case ObjType::Table: require(heap.tableAt(id) == object, "table address round-trips"); break;
-			case ObjType::Closure: require(heap.closureAt(id) == object, "closure address round-trips"); break;
-			case ObjType::Upvalue: require(heap.cellAt(id) == object, "cell address round-trips"); break;
-			case ObjType::Thread: require(heap.threadAt(id) == object, "thread address round-trips"); break;
+	cpu.heapAllocator().visitObjectRecords(&cpu, [](void* context, u32 address) -> i32 {
+		auto& cpu = *static_cast<CPU*>(context);
+		auto& heap = cpu.gcHeap();
+		switch (cpu.memory().readRamRecordByte(address)) {
+			case static_cast<u8>(ValueTag::Table):
+				require(heap.tableAt(address) && heap.tableAt(address)->address() == address, "issued table record has its view");
+				break;
+			case static_cast<u8>(ValueTag::Closure):
+				require(heap.closureAt(address) && heap.closureAt(address)->address == address, "issued closure record has its view");
+				break;
+			case UPVALUE_RECORD_KIND:
+				require(heap.cellAt(address) && heap.cellAt(address)->address == address, "issued cell record has its view");
+				break;
+			case THREAD_RECORD_KIND:
+				require(heap.threadAt(address) && heap.threadAt(address)->address == address, "issued Thread record has its view");
+				break;
 		}
-		return id;
+		return 1;
 	});
-	require(std::unordered_set<u32>(state.allocations.begin(), state.allocations.end()).size() == state.allocations.size(),
-		"each allocation has a distinct reference");
 }
 
 void liveReferencesAndReuse() {
@@ -72,10 +78,10 @@ void liveReferencesAndReuse() {
 	for (size_t i = 0; i < slots.capacity(); ++i)
 		require(cpu.gcHeap().tableAt(slots.words()[i]) == asTable(roots->getInteger(static_cast<int>(i + 1)),cpu.gcHeap()), "32-bit payloads survive allocation growth and collection");
 	checkReferences(cpu);
-	auto* dead = cpu.createTable(); const u32 freeId = cpu.gcHeap().reference(dead), hash = dead->hashId;
+	auto* dead = cpu.createTable(); const u32 freeId = cpu.gcHeap().reference(dead);
 	cpu.collectHeap();
 	auto* replacement = cpu.createTable();
-	require(cpu.gcHeap().reference(replacement) == freeId && replacement->hashId != hash, "allocator reuses the record address; collector ordinals remain distinct");
+	require(cpu.gcHeap().reference(replacement) == freeId, "a freed guest record address becomes available again");
 	require(cpu.gcHeap().tableAt(freeId) == replacement, "recycled ids resolve the replacement object");
 	frame.registers.set(2,valueTable(cpu.gcHeap().reference(replacement))); frame.writeControl(bmsx::FrameField::Top, 3);
 }
@@ -105,9 +111,7 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 		for (const u32 address : future) require(cpu.gcHeap().tableAt(address) == nullptr, "discarded addresses have no attachment");
 		checkReferences(cpu);
 		const auto restored = cpu.captureRuntimeState();
-		require(std::ranges::equal(saved.snapshot.words(), restored.snapshot.words())
-			&& std::ranges::equal(saved.snapshot.objectWords(), restored.snapshot.objectWords())
-			&& saved.gc.allocations == restored.gc.allocations,
+		require(saved == restored,
 			"restore preserves physical record identities");
 		auto* first = cpu.createTable();
 		auto* second = cpu.createTable();
@@ -131,10 +135,8 @@ void incrementalRestore() {
 		const auto saved = cpu.captureRuntimeState(); phases.insert(cpu.gcHeap().phase());
 		cpu.restoreRuntimeState(saved); checkReferences(cpu);
 		const auto restored = cpu.captureRuntimeState();
-		require(std::ranges::equal(saved.snapshot.words(), restored.snapshot.words())
-			&& std::ranges::equal(saved.snapshot.objectWords(), restored.snapshot.objectWords())
-			&& saved.gc.allocations == restored.gc.allocations,
-			"restoring a partial collection preserves graph and allocation order");
+		require(saved == restored,
+			"restoring a partial collection preserves CPU latches");
 		if (!cpu.gcHeap().active()) break;
 	}
 	for (auto phase : {GcPhase::Mark, GcPhase::Atomic, GcPhase::Sweep, GcPhase::Pause})
@@ -145,11 +147,11 @@ void builtinIdentitiesStayOutsideTheGcHeap() {
 	Machine machine; auto& cpu = machine.cpu; auto& frame = *cpu.rootThread()->currentFrame;
 	auto* functions = cpu.createTable(BUILTIN_FUNCTION_COUNT);
 	frame.registers.set(0,valueTable(cpu.gcHeap().reference(functions))); frame.writeControl(bmsx::FrameField::Top, 2);
-	const auto before = cpu.gcHeap().captureState([&](const GCObject* object) { return cpu.gcHeap().reference(object); });
+	const auto before = test::allocatedObjectRecords(cpu);
 	for (size_t i = 0; i < BUILTIN_FUNCTION_COUNT; ++i)
 		functions->setInteger(static_cast<int>(i + 1), cpu.createBuiltinFunction(static_cast<BuiltinFunctionId>(i)));
-	const auto after = cpu.gcHeap().captureState([&](const GCObject* object) { return cpu.gcHeap().reference(object); });
-	require(before.allocations == after.allocations, "builtin functions have CPU-owned ids, not GC registrations");
+	const auto after = test::allocatedObjectRecords(cpu);
+	require(before == after, "builtin functions have CPU-owned ids, not GC registrations");
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	functions = asTable(cpu.rootThread()->currentFrame->registers.get(0),cpu.gcHeap());
 	for (size_t i = 0; i < BUILTIN_FUNCTION_COUNT; ++i)

@@ -16,9 +16,6 @@ class CPU;
 inline constexpr size_t GC_STEP_WORDS = 4096;
 inline constexpr size_t GC_ASSIST_BYTES = 256;
 enum class GcPhase : u32 { Pause, Mark, MarkAgain, Atomic, Sweep, Strings };
-struct GcState {
-	std::vector<u32> allocations;
-};
 
 // Physical records start on an eight-byte boundary, including size-class slots.
 inline constexpr u32 GC_RECORD_ALIGNMENT = 1u << GC_RECORD_SHIFT;
@@ -52,7 +49,7 @@ public:
 		return cell && cell->isOpen() ? cell : nullptr;
 	}
 	Thread* threadAt(u32 address) const { return attachedRecord<Thread, ObjType::Thread>(address); }
-	void forgetPhysicalRecords() { std::fill(m_records.begin(), m_records.end(), nullptr); }
+	void discardAttachments(Thread* retainedRoot);
 	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {
 		T* object;
 		if constexpr (std::is_same_v<T, Table>) object = m_tables.construct(std::forward<Args>(args)...);
@@ -62,8 +59,6 @@ public:
 		return object;
 	}
 	Closure* bindClosureRecord(u32 address, const FunctionPrototype&, bool canonical);
-	u32 allocateHashId() { return m_nextObjectHashId++; }
-	u32 nextObjectHashId() const { return m_nextObjectHashId; }
 	u32 reference(const GCObject* object) const { return physicalAddress(object); }
 	u32 reference(const Table* table) const { return table->address(); }
 	u32 reference(const Closure* closure) const { return closure->address; }
@@ -82,13 +77,6 @@ public:
 		for (auto* object = m_objects; object; object = object->next)
 			if (object->type == ObjType::Thread) visit(*static_cast<Thread*>(object));
 	}
-	template<class Ref> GcState captureState(Ref&& ref) const {
-		GcState state;
-		for (auto* object = m_objects; object; object = object->next) state.allocations.push_back(ref(object));
-		return state;
-	}
-	void restoreState(const GcState& state, const std::vector<GCObject*>& objects);
-	void bindRestoredRecords(const GcState&, const std::vector<GCObject*>& objects, u32 nextHashId);
 	GcPhase phase() const {
 		// Two unconnected selector inputs do not clock the collector.
 		constexpr std::array phases{GcPhase::Pause, GcPhase::Mark, GcPhase::MarkAgain, GcPhase::Atomic,
@@ -146,7 +134,6 @@ private:
 	void unlink(GCObject* object);
 	CPU& m_cpu;
 	GCObject* m_objects = nullptr;
-	u32 m_nextObjectHashId = 1;
 	void setPhase(GcPhase phase) { memory.writeRamRecordByte(m_controlOffset, static_cast<u8>(phase)); }
 	StringId m_modeKey;
 	StringPool& m_stringPool;

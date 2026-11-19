@@ -1,5 +1,5 @@
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
-import { asTable } from '../../machine/ts/machine/cpu/value';
+import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import { Blua32GlobalRegisterFile } from './sources';
 import type { RuntimeLuaFrameBinding, RuntimeLuaFrameScope } from './lua_inspection';
@@ -53,7 +53,7 @@ export class InspectionValues {
 	public describe(value: SuspendedGuestValue): InspectedValue {
 		const guest = this.guest!, kind = guest.kind(value), display = guest.formatValue(value);
 		if (kind !== SuspendedGuestValueKind.Table) return { kind: VALUE_KINDS[kind], display };
-		const identity = asTable(value, guest.cpu.gc).hashId;
+		const identity = valuePayload(value);
 		let reference = this.tables.get(identity);
 		if (reference === undefined) {
 			reference = this.add({ kind: 'table', value });

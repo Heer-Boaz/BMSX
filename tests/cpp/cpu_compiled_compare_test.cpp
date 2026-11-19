@@ -64,7 +64,7 @@ void numericRkComparisonsBelongToTheirExecutionImage() {
 		require(frame.registers.get(1) == valueBool(domain == 0) && frame.readControl(bmsx::FrameField::Pc) == DYNAMIC_RAM_BASE,
 			"the same RAM instruction and RK index use the activation's Number or String pool, not another resident image");
 		const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()), "both image-local comparisons match complete scalar state");
+		require((a == b && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu)), "both image-local comparisons match complete scalar state");
 		owners[domain == 0 ? 1 : 0] = frame.executionImage;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		test::waitForNativeEntry(native.cpu, *frame.decodedPage, 0);
@@ -94,7 +94,7 @@ void numericRkComparisonsBelongToTheirExecutionImage() {
 	require(native.cpu.activeThread()->currentFrame->registers.get(1) == valueBool(true),
 		"image replacement recompiles the same RK index as String rather than retaining numeric specialization");
 	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()), "the relocated replacement preserves full scalar state");
+	require((a == b && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu)), "the relocated replacement preserves full scalar state");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& frame = *native.cpu.activeThread()->currentFrame;
 	test::waitForNativeEntry(native.cpu, *frame.decodedPage, 0);
@@ -206,7 +206,7 @@ void maximumLengthSkipDependencyRetires() {
 #endif
 	test::runCpuParity(native.cpu, scalar.cpu, 8192);
 	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords())
+	require((a == b && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu))
 		&& native.cpu.lastPc == scalar.cpu.lastPc,
 		"updated WIDE skip dependencies preserve guest state at the admitted boundary");
 }
@@ -266,7 +266,7 @@ void resolvedComparisonLinksBothPaths() {
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords())
+		require((a == b && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu))
 			&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc() && native.cpu.lastPc == scalar.cpu.lastPc,
 			"linked comparisons retain the full state and charge of each admitted segment");
 	}
@@ -287,7 +287,7 @@ void resolvedComparisonLinksBothPaths() {
 	test::runCpuParity(native.cpu, scalar.cpu, 512);
 	const auto observedNative = native.cpu.captureRuntimeState(), observedScalar = scalar.cpu.captureRuntimeState();
 	require(observations[0] > 0 && observations[0] == observations[1]
-		&& std::ranges::equal(observedNative.snapshot.words(), observedScalar.snapshot.words()),
+		&& (observedNative == observedScalar && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu)),
 		"an observed JMP still executes its observer exactly once per real instruction");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -432,7 +432,7 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 				}
 				test::runCpuParity(native.cpu, scalar.cpu, grant);
 				const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-				require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords())
+				require((a == b && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu))
 					&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc() && native.cpu.lastPc == scalar.cpu.lastPc,
 					"paired comparison/JMP preserves register state and the complete admitted charge");
 			}
@@ -451,7 +451,7 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 						machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE + entered * INSTRUCTION_BYTES);
 					test::runCpuParity(native.cpu, scalar.cpu, 64);
 					const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-					require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()), "independent entries preserve the full machine state");
+					require((a == b && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu)), "independent entries preserve the full machine state");
 				}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 				require(page.nativeBlocks->entries[entered] && page.nativeBlocks->entries[0],
@@ -473,7 +473,7 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 #endif
 			test::runCpuParity(native.cpu, scalar.cpu, 1024);
 			const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-			require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()), "the rewritten paired jump executes exactly the new target");
+			require((a == b && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu)), "the rewritten paired jump executes exactly the new target");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 			test::waitForFixtureWorkerRequests(native.cpu);
@@ -547,7 +547,7 @@ void pairedJumpLinksAcrossPages() {
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
 	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()), "a paired cross-page jump sees the rewritten target");
+	require((a == b && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu)), "a paired cross-page jump sees the rewritten target");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	test::waitForFixtureWorkerRequests(native.cpu);
@@ -586,14 +586,14 @@ void pairedJumpFaultsOnlyOnTheNextGrant() {
 			"a paired JMP completes without speculatively fetching its unmapped target beyond the grant");
 	}
 	const auto beforeNative = native.cpu.captureRuntimeState(), beforeScalar = scalar.cpu.captureRuntimeState();
-	require(std::ranges::equal(beforeNative.snapshot.words(), beforeScalar.snapshot.words()), "the pre-fetch paired boundary preserves raw frame state");
+	require((beforeNative == beforeScalar && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu)), "the pre-fetch paired boundary preserves raw frame state");
 	for (auto* machine : {&native, &scalar}) {
 		machine->cpu.runUntilDepth(0, 1);
 		require(machine->cpu.readEpcWord() == end && machine->memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == end,
 			"the next grant raises the actual destination fetch fault, not a comparison or JMP fault");
 	}
 	const auto afterNative = native.cpu.captureRuntimeState(), afterScalar = scalar.cpu.captureRuntimeState();
-	require(std::ranges::equal(afterNative.snapshot.words(), afterScalar.snapshot.words())
+	require((afterNative == afterScalar && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu))
 		&& native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining,
 		"paired and scalar destination faults retain the same precise prefix and cycle charge");
 }

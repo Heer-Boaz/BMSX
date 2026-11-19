@@ -715,7 +715,7 @@ void testUnexecutedSecondCartridgeDoesNotAlterGuestIdentity() {
 		"an unexecuted second cartridge does not allocate guest string ids"
 	);
 	require(
-		singleCpu.createTable()->hashId == dualCpu.createTable()->hashId,
+		singleCpu.createTable()->address() == dualCpu.createTable()->address(),
 		"an unexecuted second cartridge does not allocate guest object ids"
 	);
 

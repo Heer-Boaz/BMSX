@@ -46,8 +46,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		&& a.readEpcWord() == b.readEpcWord() && a.readLuaFaultReasonWord() == b.readLuaFaultReasonWord(),
 		"table operations retain exact execution and exception boundaries");
 	const auto left = a.captureRuntimeState(), right = b.captureRuntimeState();
-	require(std::ranges::equal(left.snapshot.words(), right.snapshot.words())
-		&& std::ranges::equal(left.snapshot.objectWords(), right.snapshot.objectWords()) && left.nextObjectHashId == right.nextObjectHashId
+	require((left == right && bmsx::test::sameLanguageRam(a, b))
 		&& native.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes() && native.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 		"complete value graphs and allocation/collection accounting agree");
 	const auto& first = *a.activeThread(); const auto& second = *b.activeThread();

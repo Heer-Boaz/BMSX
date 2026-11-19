@@ -1194,7 +1194,7 @@ return world`), false), cpu = f.runtime.machine.cpu;
 	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected);
 	const restored = asTable(selected.element.node.value!, cpu.gc);
 	assert.ok(restored !== original);
-	assert.equal(restored.hashId, selected.element.node.hashId);
+	assert.equal(restored.address, selected.element.node.hashId);
 	input.invalidate();
 	runCompletionClosure(cpu, asClosure(f.guest.global('add'), cpu.gc), []);
 	projection.update();

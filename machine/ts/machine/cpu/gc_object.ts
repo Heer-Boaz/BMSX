@@ -10,8 +10,6 @@ export const GC_GRAY_INDEX_MASK = (1 << GC_GRAY_INDEX_BITS) - 1;
 /** Collector-owned allocation header; separate from a guest Value's tag. */
 export const enum GcKind { Table, Closure, Upvalue, Thread }
 export abstract class GcObject {
-	public hashId = 0;
-	public restored = false;
 	// 0/1 alternate white generations; 2 is queued gray, 3 is scanned black.
 	public abstract readonly address: number;
 	public get gcColor(): number { return this.gcOwner.memory.readRamRecordByte(this.address + GC_COLOR_OFFSET); }

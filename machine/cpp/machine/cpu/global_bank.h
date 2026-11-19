@@ -13,6 +13,7 @@ struct GlobalBankState {
 	u32 base = 0;
 	u32 capacity = 0;
 	u32 count = 0;
+	bool operator==(const GlobalBankState&) const = default;
 };
 
 // A CPU-owned namespace. Ordinals are stable even when the bank moves.

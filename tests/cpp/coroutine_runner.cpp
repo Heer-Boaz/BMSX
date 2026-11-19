@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
 						const auto status = cpu.runUntilDepth(depth, 17, cpu.rootThread());
 						const auto snapshot = cpu.captureRuntimeState();
 						cpu.restoreRuntimeState(snapshot);
-						if (cpu.captureRuntimeState().haltedUntilIrqThreadRef != snapshot.haltedUntilIrqThreadRef) throw std::runtime_error("HALT owner not restored");
+						if (cpu.captureRuntimeState().haltedUntilIrqThreadAddress != snapshot.haltedUntilIrqThreadAddress) throw std::runtime_error("HALT owner not restored");
 						if (status != bmsx::RunResult::Yielded) break;
 					}
 					if (cpu.activeThread() != cpu.rootThread() || cpu.getFrameDepth() != depth
@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
 					result = cpu.runUntilDepth(0, 17);
 					const auto state = cpu.captureRuntimeState();
 					cpu.restoreRuntimeState(state);
-					if (!std::ranges::equal(cpu.captureRuntimeState().snapshot.words(), state.snapshot.words())) throw std::runtime_error("thread snapshot round trip");
+					if (cpu.captureRuntimeState() != state) throw std::runtime_error("thread snapshot round trip");
 					if (!interruptVector && cpu.readExceptionReturnFrameDepth() != -1) throw std::runtime_error("unexpected machine fault");
 				}
 				const auto values = runtime.readCompletionValues();
@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
 			const auto decoded = bmsx::decodeRuntimeSaveState(bytes, bmsx::PSX_MACHINE_SPEC.ramBytes, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 			if (bmsx::encodeRuntimeSaveState(decoded) != bytes) throw std::runtime_error("runtime codec round trip");
 			bmsx::applyRuntimeSaveState(runtime, decoded);
-			if (!std::ranges::equal(cpu.captureRuntimeState().snapshot.words(), decoded.cpuState.snapshot.words())) throw std::runtime_error("runtime thread restore");
+			if (cpu.captureRuntimeState() != decoded.cpuState) throw std::runtime_error("runtime thread restore");
 			std::ofstream output(std::string(argv[index]) + ".state", std::ios::binary);
 			output.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 			std::cout << argv[index] << " passed\n";

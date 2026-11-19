@@ -71,9 +71,9 @@ void replayAllocationIdentities() {
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "program completes");
 	const auto values = cpu.readCompletionValues();
 	const std::array expectedIds{
-		bmsx::asTable(values.get(0), cpu.gcHeap())->hashId,
-		bmsx::asClosure(values.get(1), cpu.gcHeap())->hashId,
-		bmsx::asClosure(values.get(2), cpu.gcHeap())->hashId,
+		bmsx::valuePayload(values.get(0)),
+		bmsx::valuePayload(values.get(1)),
+		bmsx::valuePayload(values.get(2)),
 	};
 	const auto expected = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime));
 	for (const int budget : {1001, 2001, 4001, 8001}) {
@@ -84,9 +84,9 @@ void replayAllocationIdentities() {
 		require(cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "the next call consumes only its newly supplied grant");
 		require(cpu.runUntilDepth(0, budget) == bmsx::RunResult::Halted, "replay completes with a fresh grant");
 		const auto replay = cpu.readCompletionValues();
-		require(bmsx::asTable(replay.get(0), cpu.gcHeap())->hashId == expectedIds[0], "table identity must replay");
-		require(bmsx::asClosure(replay.get(1), cpu.gcHeap())->hashId == expectedIds[1], "cold canonical closure identity must replay");
-		require(bmsx::asClosure(replay.get(2), cpu.gcHeap())->hashId == expectedIds[2], "dynamic closure identity must replay");
+		require(bmsx::valuePayload(replay.get(0)) == expectedIds[0], "table identity must replay");
+		require(bmsx::valuePayload(replay.get(1)) == expectedIds[1], "cold canonical closure identity must replay");
+		require(bmsx::valuePayload(replay.get(2)) == expectedIds[2], "dynamic closure identity must replay");
 		require(bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime)) == expected, "replay reproduces every state field without normalizing a grant");
 	}
 }
@@ -139,7 +139,7 @@ void preserveCallerPrefixAcrossOpenResultCall() {
 	}
 }
 
-void mirroredAllocationOrder() {
+void capturesUsePhysicalRecords() {
 	auto image = allocationImage();
 	image.functions[1].staticClosure = false;
 	image.functions[1].upvalues = {{true, 0u}};
@@ -147,7 +147,10 @@ void mirroredAllocationOrder() {
 	auto& cpu = machine.runtime.machine.cpu;
 	cpu.runUntilDepth(0, 1000);
 	const auto* closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
-	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().cellAt(closure->captureAddress(0)))->hashId == closure->hashId + 1u, "closure allocation precedes its new upvalue");
+	const auto address = closure->captureAddress(0);
+	const auto* cell = cpu.gcHeap().cellAt(address);
+	require(address != closure->address && cell && !cell->isOpen()
+		&& cell->value() == cpu.readCompletionValues().get(0), "closure points to a distinct closed record retaining its table");
 }
 
 void inspectOpenAndClosedClosure() {
@@ -171,7 +174,7 @@ void inspectOpenAndClosedClosure() {
 	const auto table = cpu.readFrameRegister(0, 0);
 	require(cpu.readClosureUpvalue(closure, 0) == table, "read the live defining register without calling the closure");
 	const auto afterRead = cpu.captureRuntimeState();
-	require(std::ranges::equal(afterRead.snapshot.words(), open.snapshot.words()), "inspection does not change the open cell or heap");
+	require(afterRead == open && cpu.memory().captureSaveState().ram == openRam.ram, "inspection does not change the open cell or heap");
 	cpu.setExecutionHook({});
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "defining frame returns normally");
 	closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
@@ -182,17 +185,6 @@ void inspectOpenAndClosedClosure() {
 	closure = bmsx::asClosure(cpu.readFrameRegister(0, 1), cpu.gcHeap());
 	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().cellAt(closure->captureAddress(0)))->isOpen(), "restore replaces the closure with its open capture");
 	require(cpu.readClosureUpvalue(closure, 0) == cpu.readFrameRegister(0, 0), "restored read follows the restored frame");
-}
-
-void restoreAllocationWordWrap() {
-	SnapshotMachine machine(allocationImage());
-	auto& cpu = machine.runtime.machine.cpu;
-	auto state = cpu.captureRuntimeState();
-	state.nextObjectHashId = 0xffffffffu;
-	cpu.restoreRuntimeState(state);
-	require(cpu.createTable()->hashId == 0xffffffffu, "restored allocator retains the full u32 word");
-	require(cpu.createTable()->hashId == 0u, "allocation sequence wraps as a u32 word");
-	require(cpu.createTable()->hashId == 1u, "wrapped sequence advances deterministically");
 }
 
 void replayWeakCollectionSchedule() {
@@ -221,6 +213,7 @@ void replayWeakCollectionSchedule() {
 	};
 	const int expectedCount = allocateUntilCollected();
 	const auto expected = cpu.captureRuntimeState();
+	const auto expectedRam = cpu.memory().captureSaveState();
 	const auto expectedBytes = cpu.luaHeap().usedBytes();
 	const auto expectedTarget = cpu.luaHeap().collectionTarget();
 	for (int pass = 0; pass < 3; ++pass) {
@@ -230,7 +223,7 @@ void replayWeakCollectionSchedule() {
 		require(cpu.luaHeap().usedBytes() == anchorBytes, "unreachable allocation debt survives restore");
 		require(allocateUntilCollected() == expectedCount, "collection must happen after the same allocation");
 		const auto actual = cpu.captureRuntimeState();
-		require(actual.nextObjectHashId == expected.nextObjectHashId, "GC replay retains the allocator sequence");
+		require(actual == expected && cpu.memory().captureSaveState().ram == expectedRam.ram, "GC replay retains allocator state and every RAM record");
 		require(cpu.luaHeap().usedBytes() == expectedBytes, "GC recomputes actual live bytes after restore");
 		require(cpu.luaHeap().collectionTarget() == expectedTarget, "next GC threshold matches");
 	}
@@ -255,22 +248,42 @@ void restoreUnrootedCanonicalClosure() {
 	const auto warm = cpu.captureRuntimeState();
 	const auto warmRam = cpu.memory().captureSaveState();
 	require(cpu.readFrameRegister(0, 0) == bmsx::valueNil(), "static closure is no longer a guest root");
-	bool captured = false;
-	for (bmsx::u32 offset : warm.snapshot.objectWords()) {
-		if (warm.snapshot.word(offset) != static_cast<bmsx::u32>(bmsx::CpuSnapshotObjectKind::Closure)) continue;
-		const bmsx::u32 record = warm.snapshot.word(offset + bmsx::SNAP_CLOSURE_RECORD);
-		if (cpu.memory().readRamRecordWord(record + bmsx::CLOSURE_PROTOTYPE_ADDRESS) == address
-			&& (cpu.memory().readRamRecordByte(record + bmsx::CLOSURE_BINDING_FLAGS) & bmsx::CLOSURE_CANONICAL)) captured = true;
-	}
-	require(captured, "snapshot must retain unrooted canonical cache entries");
+	struct Probe { bmsx::Memory& memory; bmsx::u32 function; bmsx::u32 record = 0; } probe{cpu.memory(), address};
+	cpu.heapAllocator().visitObjectRecords(&probe, [](void* context, bmsx::u32 record) -> bmsx::i32 {
+		auto& probe = *static_cast<Probe*>(context);
+		if (probe.memory.readRamRecordByte(record) == static_cast<bmsx::u8>(bmsx::ValueTag::Closure)
+			&& probe.memory.readRamRecordWord(record + bmsx::CLOSURE_PROTOTYPE_ADDRESS) == probe.function)
+			probe.record = record;
+		return 1;
+	});
+	require(probe.record != 0u, "unrooted canonical closure is still physically allocated");
 	cpu.runUntilDepth(0, 1000);
-	const auto expectedId = bmsx::asTable(cpu.readCompletionValues().get(0), cpu.gcHeap())->hashId;
+	const auto expectedId = bmsx::valuePayload(cpu.readCompletionValues().get(0));
 	cpu.memory().restoreSaveState(coldRam);
 	cpu.restoreRuntimeState(cold);
 	cpu.memory().restoreSaveState(warmRam);
 	cpu.restoreRuntimeState(warm);
+	require(cpu.gcHeap().closureAt(probe.record) != nullptr, "restore reattaches the canonical record without a host object list");
 	cpu.runUntilDepth(0, 1000);
-	require(bmsx::asTable(cpu.readCompletionValues().get(0), cpu.gcHeap())->hashId == expectedId, "warm cache restore must preserve the next guest allocation identity");
+	require(bmsx::valuePayload(cpu.readCompletionValues().get(0)) == expectedId, "warm cache restore must preserve the next guest allocation identity");
+
+	cpu.memory().restoreSaveState(warmRam);
+	cpu.restoreRuntimeState(warm);
+	while (cpu.gcHeap().phase() != bmsx::GcPhase::Sweep) cpu.stepHeap(bmsx::valueNil(), bmsx::valueNil(), bmsx::valueNil());
+	require(cpu.gcHeap().sweepGarbage(cpu.gcHeap().closureAt(probe.record)),
+		"fixture has a physically allocated but retired canonical closure");
+	const auto sweep = cpu.captureRuntimeState();
+	const auto sweepRam = cpu.memory().captureSaveState();
+	const auto build = [&] {
+		cpu.writeFrameExecution(0, bmsx::SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
+		cpu.runUntilDepth(0, bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE)]);
+		return bmsx::valuePayload(cpu.readFrameRegister(0, 0));
+	};
+	const auto replacement = build();
+	require(replacement != probe.record, "interrupted sweep does not reuse a retired closure before freeing its storage");
+	cpu.memory().restoreSaveState(sweepRam);
+	cpu.restoreRuntimeState(sweep);
+	require(build() == replacement, "restoring the in-flight sweep does not republish an already retired closure");
 }
 
 void capturePreservesGlobalRegisters() {
@@ -319,52 +332,34 @@ void restoreHardHalt() {
 	require(after.hardHalted && cpu.readFramePc(0) == haltedPc, "restored hard halt does not execute further instructions");
 }
 
-void reuseSnapshotStorage() {
+void saveLayoutDoesNotScaleWithHeapObjects() {
 	SnapshotMachine machine(allocationImage());
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto key = cpu.stringPool().intern("graph");
-	auto* root = cpu.createTable(130, 0);
-	cpu.setGlobalByKey(key, bmsx::valueTable(cpu.gcHeap().reference(root)));
-	for (int index = 1; index <= 130; ++index) {
+	cpu.setGlobalByKey(key, bmsx::valueNil()); // Keep the same global-bank extent.
+	const size_t emptySize = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime)).size();
+	auto* root = cpu.createTable(1024, 0);
+	const auto rootValue = bmsx::valueTable(root->address());
+	cpu.setGlobalByKey(key, rootValue);
+	for (int index = 1; index <= 1024; ++index) {
 		auto* child = cpu.createTable(1, 0);
-		child->hashId = 0xffffffffu;
-		child->setInteger(1, bmsx::valueTable(cpu.gcHeap().reference(root)));
-		root->setInteger(index, bmsx::valueTable(cpu.gcHeap().reference(child)));
+		child->setInteger(1, rootValue);
+		root->setInteger(index, bmsx::valueTable(child->address()));
 	}
-	const auto savedRam = cpu.memory().captureSaveState();
-	const auto retained = cpu.captureRuntimeState();
-	auto recycled = cpu.captureRuntimeState();
-	const auto* words = recycled.snapshot.words().data();
-	const auto* objects = recycled.snapshot.objectWords().data();
-	const auto capacity = recycled.snapshot.capacityBytes();
-	require(recycled.snapshot.objectCount() > 130, "graph exceeds initial object-index capacity");
-	for (int pass = 0; pass < 4; ++pass) {
-		recycled = cpu.captureRuntimeState(std::move(recycled.snapshot));
-		require(recycled.snapshot.words().data() == words, "word storage is retained");
-		require(recycled.snapshot.objectWords().data() == objects, "object index storage is retained");
-		require(recycled.snapshot.capacityBytes() == capacity, "stable capture does not grow storage");
-		require(std::ranges::equal(recycled.snapshot.words(), retained.snapshot.words()), "word state matches an independent checkpoint");
-		require(std::ranges::equal(recycled.snapshot.objectWords(), retained.snapshot.objectWords()), "object index matches an independent checkpoint");
-	}
-	cpu.setGlobalByKey(key, bmsx::valueNil());
-	cpu.collectHeap(); // Uncollected allocations are now part of incremental-GC state.
-	recycled = cpu.captureRuntimeState(std::move(recycled.snapshot));
-	require(recycled.snapshot.words().data() == words, "shorter capture retains word storage");
-	require(recycled.snapshot.objectWords().data() == objects, "shorter capture retains object index storage");
-	require(recycled.snapshot.capacityBytes() == capacity, "shorter capture retains capacity");
-	require(recycled.snapshot.words().size() < retained.snapshot.words().size(), "unused words are not active state");
-	require(recycled.snapshot.objectCount() < retained.snapshot.objectCount(), "unused object records are not active state");
-	const auto fresh = cpu.captureRuntimeState();
-	require(std::ranges::equal(recycled.snapshot.words(), fresh.snapshot.words()), "recycled storage has no stale active words");
-	require(std::ranges::equal(recycled.snapshot.objectWords(), fresh.snapshot.objectWords()), "recycled index has no stale object records");
-	cpu.memory().restoreSaveState(savedRam);
-	cpu.restoreRuntimeState(retained);
-	auto* restored = bmsx::asTable(cpu.getGlobalByKey(key), cpu.gcHeap());
-	require(restored->getInteger(1) != restored->getInteger(2), "equal allocation ids do not merge snapshot identities");
-	require(bmsx::asTable(restored->getInteger(130), cpu.gcHeap())->getInteger(1) == bmsx::valueTable(cpu.gcHeap().reference(restored)), "cycle survives graph growth and restore");
-	const auto after = cpu.captureRuntimeState();
-	require(std::ranges::equal(after.snapshot.words(), retained.snapshot.words()), "the retained checkpoint remains intact");
-	require(std::ranges::equal(after.snapshot.objectWords(), retained.snapshot.objectWords()), "the retained object index remains intact");
+	const auto saved = bmsx::captureRuntimeSaveState(machine.runtime);
+	const auto bytes = bmsx::encodeRuntimeSaveState(saved);
+	require(bytes.size() == emptySize, "hundreds of additional guest objects add no serialized attachment bytes");
+	SnapshotMachine other(allocationImage());
+	bmsx::applyRuntimeSaveState(other.runtime, bmsx::decodeRuntimeSaveState(bytes, bmsx::PSX_MACHINE_SPEC.ramBytes, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes));
+	auto& restoredCpu = other.runtime.machine.cpu;
+	auto* restored = bmsx::asTable(restoredCpu.getGlobalByKey(key), restoredCpu.gcHeap());
+	require(restored->address() == root->address() && restored->getInteger(1) != restored->getInteger(2),
+		"different physical blocks keep separate identities in a fresh runtime");
+	require(bmsx::asTable(restored->getInteger(1024), restoredCpu.gcHeap())->getInteger(1) == rootValue,
+		"cycle survives via the restored guest bytes alone");
+	require(restoredCpu.captureRuntimeState() == saved.cpuState
+		&& restoredCpu.memory().captureSaveState().ram == saved.machineState.machine.memory.ram,
+		"rebuilding attachments does not mutate any saved CPU latch or RAM byte");
 }
 
 void preserveSnapshotValueBits() {
@@ -389,7 +384,7 @@ void preserveSnapshotValueBits() {
 	const auto* restored = bmsx::asTable(cpu.getGlobalByKey(key), cpu.gcHeap());
 	for (size_t index = 0; index < values.size(); ++index) require(restored->getInteger(index + 1) == values[index], "raw native value bits survive restore");
 	const auto after = cpu.captureRuntimeState();
-	require(std::ranges::equal(after.snapshot.words(), state.snapshot.words()), "all primitive tags and payload words survive restore");
+	require(after == state, "all primitive tags and payload words survive restore");
 }
 
 void preserveDeepGraph() {
@@ -412,8 +407,7 @@ void preserveDeepGraph() {
 	for (int index = 0; index < 4096; ++index) current = bmsx::asTable(current->getInteger(1), cpu.gcHeap());
 	require(current == restored, "deep cyclic graph restores every edge");
 	const auto after = cpu.captureRuntimeState();
-	require(std::ranges::equal(after.snapshot.words(), state.snapshot.words()), "deep graph preserves every word");
-	require(std::ranges::equal(after.snapshot.objectWords(), state.snapshot.objectWords()), "deep graph preserves ordinals");
+	require(after == state, "deep graph preserves every word");
 }
 
 void preserveDynamicGlobalRegisters() {
@@ -447,7 +441,7 @@ void preserveDynamicGlobalRegisters() {
 	require(bmsx::asTable(cpu.getGlobalByKey(key), cpu.gcHeap())->getInteger(1) == bmsx::valueInteger(42), "dynamic global is a heap root");
 	require(cpu.stringPool().toString(nilKey) == "nil-name", "nil-valued registers retain their names");
 	const auto after = cpu.captureRuntimeState();
-	require(std::ranges::equal(after.snapshot.words(), state.snapshot.words()), "dynamic roots retain exact snapshot words");
+	require(after == state, "dynamic roots retain exact snapshot words");
 }
 
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
@@ -503,14 +497,13 @@ int main() {
 	try {
 		replayAllocationIdentities();
 		preserveCallerPrefixAcrossOpenResultCall();
-		mirroredAllocationOrder();
+		capturesUsePhysicalRecords();
 		inspectOpenAndClosedClosure();
-		restoreAllocationWordWrap();
 		replayWeakCollectionSchedule();
 		restoreUnrootedCanonicalClosure();
 		capturePreservesGlobalRegisters();
 		restoreHardHalt();
-		reuseSnapshotStorage();
+		saveLayoutDoesNotScaleWithHeapObjects();
 		preserveSnapshotValueBits();
 		preserveDeepGraph();
 		preserveDynamicGlobalRegisters();

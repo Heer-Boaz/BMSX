@@ -42,6 +42,6 @@ export class SceneRegistrationProvenance implements InstructionObserverBinding {
 			const range = blua32SourceRangeAtPc(symbols, text, callPc);
 			if (range !== null) calls.push(range);
 		}
-		this.plans.set(plan.hashId, { planHashId: plan.hashId, calls });
+		this.plans.set(plan.address, { planHashId: plan.address, calls });
 	}
 }

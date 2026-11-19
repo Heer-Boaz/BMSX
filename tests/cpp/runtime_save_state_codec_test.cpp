@@ -66,7 +66,9 @@ int main() {
 	machine.memory.busFaultAddr = 0xffffffff;
 	state.machineState.schedulerNowCycles = (i64{1} << 40) + 17;
 	state.cpuState.pendingMemory = {PendingMemoryKind::WordStores, 0xfffffffcu, 0u, 0x12345678u, MemoryAccessKind::Word, 7, 9};
-	state.cpuState.snapshot = CpuSnapshot({0x12345678, 0xffffffff, 0, 0x80000000, 0x7ff81234}, {2});
+	state.cpuState.rootThreadAddress = 0x083fa000u;
+	state.cpuState.activeThreadAddress = 0x083fa040u;
+	state.cpuState.completionValues = {valueInteger(INT32_MIN), valueFloatBits(0xffc12345u), valueBuiltinFunction(BuiltinFunctionId::Next)};
 	const size_t beforeOwned = allocations;
 	const auto expected = encodeRuntimeSaveState(state);
 	require(allocations == beforeOwned + 1, "owned encoding allocates exactly its final byte buffer, not an object tree");

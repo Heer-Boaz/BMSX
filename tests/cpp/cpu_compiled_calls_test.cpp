@@ -183,8 +183,7 @@ void inactiveFrameMetadata() {
 	spare->nativeContinuationCells = {&page->nativeCode[word], &page->nativeCode[word]};
 #endif
 	const auto before = generated.cpu.captureRuntimeState(), reference = scalar.cpu.captureRuntimeState();
-	require(std::ranges::equal(before.snapshot.words(), reference.snapshot.words())
-		&& std::ranges::equal(before.snapshot.objectWords(), reference.snapshot.objectWords()),
+	require((before == reference && bmsx::test::sameLanguageRam(generated.cpu, scalar.cpu)),
 		"inactive activation bits are not part of the checkpoint value graph");
 	generated.cpu.collectHeap(); scalar.cpu.collectHeap();
 	require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes(),
@@ -369,7 +368,7 @@ void haltedReceivingFrame() {
 		cpu.runUntilDepth(0, 1); // Bind the closure.
 		if (returning) cpu.runUntilDepth(0, call + BASE_CYCLES[static_cast<u8>(OpCode::K1)]);
 		auto state = cpu.captureRuntimeState();
-		state.haltedUntilIrqThreadRef = state.activeThreadRef;
+		state.haltedUntilIrqThreadAddress = state.activeThreadAddress;
 		state.haltedUntilIrqFrameDepth = returning ? 1 : 2;
 		cpu.restoreRuntimeState(state);
 		cpu.activeThread()->reserveFrame(cpu.activeThread()->stackCapacity);
@@ -985,23 +984,25 @@ void weakCanonicalClosuresAndStaticEntry() {
 			machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
 			machine.cpu.runUntilDepth(0, 1);
 		}
-		auto countVersions = [&](const CpuRuntimeState& state) {
-			size_t count = 0;
-			for (u32 offset : state.snapshot.objectWords()) {
-				if (state.snapshot.word(offset) != static_cast<u32>(CpuSnapshotObjectKind::Closure)) continue;
-				const u32 address = state.snapshot.word(offset + SNAP_CLOSURE_RECORD);
-				if (machine.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS) == record
-					&& (machine.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) != 0u) ++count;
-			}
-			return count;
+		const auto countVersions = [&]() {
+			struct Probe { Memory& memory; u32 function; size_t count = 0; } probe{machine.memory, record};
+			machine.cpu.heapAllocator().visitObjectRecords(&probe, [](void* context, u32 address) -> i32 {
+				auto& probe = *static_cast<Probe*>(context);
+				if (probe.memory.readRamRecordByte(address) == static_cast<u8>(ValueTag::Closure)
+					&& probe.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS) == probe.function
+					&& (probe.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) != 0u)
+					++probe.count;
+				return 1;
+			});
+			return probe.count;
 		};
 		const auto before = machine.cpu.captureRuntimeState();
-		require(countVersions(before) == 64, "snapshot retains uncollected weak canonical entries");
+		require(countVersions() == 64, "snapshot retains uncollected weak canonical entries");
 		machine.cpu.restoreRuntimeState(before);
-		require(countVersions(machine.cpu.captureRuntimeState()) == 64, "restore retains the uncollected interning state");
+		require(countVersions() == 64, "restore retains the uncollected interning state");
 		const size_t bytesBefore = machine.cpu.luaHeap().usedBytes();
 		machine.cpu.collectHeap();
-		require(countVersions(machine.cpu.captureRuntimeState()) == 1 && machine.cpu.luaHeap().usedBytes() < bytesBefore,
+		require(countVersions() == 1 && machine.cpu.luaHeap().usedBytes() < bytesBefore,
 			"guest GC removes unreachable record versions from the weak index and heap");
 		const auto last = asClosure(machine.cpu.readFrameRegister(0, 0), machine.cpu.gcHeap());
 		require(last->prototype->maxStack == 64, "the live closure survives guest GC");
@@ -1219,38 +1220,18 @@ void crossPageCalls(bool open, u32 recordOffset) {
 			"snapshot restores both distinct canonical prototypes");
 		// A hot-resume relocation can bind two previously distinct closures to
 		// identical records. Their identities and hash keys must still survive.
-		auto relocatedSnapshot = snapshot;
-		u32 oldOffset = 0, newOffset = 0;
 		const u32 oldAddress = valuePayload(oldFunction), newAddress = valuePayload(newFunction);
-		for (const u32 offset : relocatedSnapshot.snapshot.objectWords()) {
-			if (relocatedSnapshot.snapshot.word(offset) != static_cast<u32>(CpuSnapshotObjectKind::Closure)) continue;
-			const u32 address = relocatedSnapshot.snapshot.word(offset + SNAP_CLOSURE_RECORD);
-			if (address == oldAddress) oldOffset = offset;
-			if (address == newAddress) newOffset = offset;
-		}
 		machine->memory.writeRamRecordWord(oldAddress + CLOSURE_PROTOTYPE_ADDRESS, secondRecord);
 		for (u32 field = 0; field < CLOSURE_LATCHED_PROTOTYPE_BYTES; field += sizeof(u32)) {
 			machine->memory.writeRamRecordWord(Closure::captureWordAddress(oldAddress, 0) + field,
 				machine->memory.readRamRecordWord(Closure::captureWordAddress(newAddress, 0) + field));
 		}
-		machine->cpu.restoreRuntimeState(relocatedSnapshot);
+		machine->cpu.restoreRuntimeState(snapshot);
 		const auto relocatedOld = asClosure(machine->cpu.readFrameRegister(0, 1), machine->cpu.gcHeap());
 		const auto relocatedNew = asClosure(machine->cpu.readFrameRegister(0, 0), machine->cpu.gcHeap());
 		require(relocatedOld != relocatedNew && relocatedOld->prototype == relocatedNew->prototype
-			&& relocatedOld->hashId != relocatedNew->hashId,
-			"restore preserves distinct canonical identities even when bound records coincide");
-		relocatedSnapshot.snapshot.setWord(oldOffset + SNAP_CLOSURE_HASH_ID,
-			relocatedSnapshot.snapshot.word(newOffset + SNAP_CLOSURE_HASH_ID));
-		machine->cpu.restoreRuntimeState(relocatedSnapshot);
-		const auto collidedOld = asClosure(machine->cpu.readFrameRegister(0, 1), machine->cpu.gcHeap());
-		const auto collidedNew = asClosure(machine->cpu.readFrameRegister(0, 0), machine->cpu.gcHeap());
-		require(collidedOld != collidedNew && collidedOld->prototype == collidedNew->prototype
-			&& collidedOld->hashId == collidedNew->hashId,
-			"canonical closure identity also survives object hash collisions");
-		const auto collidedSnapshot = machine->cpu.captureRuntimeState();
-		machine->cpu.restoreRuntimeState(collidedSnapshot);
-		require(machine->cpu.readFrameRegister(0, 1) != machine->cpu.readFrameRegister(0, 0),
-			"canonical closure collision remains distinct across a second snapshot");
+			&& relocatedOld->address != relocatedNew->address,
+			"restore preserves distinct physical identities even when bound records coincide");
 		machine->memory.restoreSaveState(ram);
 		machine->cpu.restoreRuntimeState(snapshot);
 		machine->memory.writeBytes(unalignedEntryRecord, machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);

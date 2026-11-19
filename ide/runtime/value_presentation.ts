@@ -1,4 +1,4 @@
-import { asTable, valueNil, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { asTable, valueNil, valuePayload, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { STORED_ENTRIES_PREVIEW_LIMIT, type SuspendedGuestSession, type SuspendedGuestValue } from './suspended_guest';
 
@@ -41,14 +41,14 @@ export class SuspendedValuePresentation {
 		} else this.capturePreview(value);
 		if (this.parts.length !== this.cursor) { this.parts.length = this.cursor; this.changed = true; this.observationChanged = true; }
 		if (this.changed) this.text = this.format === 'summary'
-			? valueTag(value) === ValueTag.Table ? `${this.referenceType} #${this.parts[0].scalar}` : this.guest.formatValue(value)
+			? valueTag(value) === ValueTag.Table ? `${this.referenceType} #${valuePayload(value)}` : this.guest.formatValue(value)
 			: this.format === 'entries' ? this.guest.formatStoredEntries(value) : this.guest.previewValue(value, 1, STORED_ENTRIES_PREVIEW_LIMIT);
 		this.valid = true;
 		return this.text;
 	}
 
 	private capture(value: SuspendedGuestValue): number {
-		const index = this.cursor++, tag = valueTag(value), scalar = this.guest.identityScalar(value, tag);
+		const index = this.cursor++, tag = valueTag(value), scalar = this.guest.observedIdentityScalar(value, tag);
 		const part = this.parts[index];
 		if (part === undefined) {
 			this.parts.push({ tag, scalar, entries: 0 });

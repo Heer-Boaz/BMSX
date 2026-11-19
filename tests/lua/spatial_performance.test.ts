@@ -1,8 +1,9 @@
+import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { asTable, asClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { CpuSnapshotObjectKind } from '../../machine/ts/machine/cpu/snapshot';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -143,14 +144,15 @@ probe = {
 `;
 
 function heapObjects(cpu: CPU) {
-	const snapshot = cpu.captureRuntimeState().snapshot;
+	const records = allocatedObjectRecords(cpu);
 	let tables = 0;
 	let closures = 0;
-	for (const offset of snapshot.objectWords) {
-		if (snapshot.word(offset) === CpuSnapshotObjectKind.Table) tables += 1;
-		if (snapshot.word(offset) === CpuSnapshotObjectKind.Closure) closures += 1;
+	for (const address of records) {
+		const kind = cpu.memory.readRamRecordByte(address);
+		if (kind === ValueTag.Table) ++tables;
+		if (kind === ValueTag.Closure) ++closures;
 	}
-	return { objects: snapshot.objectCount, tables, closures };
+	return { objects: records.length, tables, closures };
 }
 
 for (const optLevel of [0, 3] as const) {

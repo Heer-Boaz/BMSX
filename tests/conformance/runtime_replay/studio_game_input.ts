@@ -154,7 +154,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 		const y = numberToHost(guest.readStringMember(owner, 'y')) + numberToHost(guest.readStringMember(visual, 'offset_y'))
 			+ numberToHost(guest.readStringMember(visual, 'draw_offset_y')) + height / 2;
 		if (width === 0 || height === 0 || x < 0 || y < 0 || x >= test.presenter.offscreenCanvasSize.x || y >= test.presenter.offscreenCanvasSize.y) continue;
-		pickX = x; pickY = y; pickHashId = asTable(owner, guest.cpu.gc).hashId; break;
+		pickX = x; pickY = y; pickHashId = asTable(owner, guest.cpu.gc).address; break;
 	}
 	check(pickHashId !== 0, 'real title presentation contains a visible sprite to pick');
 	const point = { left: actor.previewBounds.left + pickX * (actor.previewBounds.right - actor.previewBounds.left) / test.presenter.offscreenCanvasSize.x,

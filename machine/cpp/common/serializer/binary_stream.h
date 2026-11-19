@@ -30,6 +30,7 @@ public:
 	void bytes(std::span<const bmsx::u8> value) { length += value.size(); }
 	void u32s(std::span<const bmsx::u32> value) { length += value.size_bytes(); }
 	void i32s(std::span<const bmsx::i32> value) { length += value.size_bytes(); }
+	void u64s(std::span<const bmsx::u64> value) { length += value.size_bytes(); }
 	void string(std::string_view value) { length += 4 + value.size(); }
 };
 
@@ -51,6 +52,7 @@ public:
 	}
 	void u32s(std::span<const bmsx::u32> value) { words(value); }
 	void i32s(std::span<const bmsx::i32> value) { words(value); }
+	void u64s(std::span<const bmsx::u64> value) { words(value); }
 	void string(std::string_view value) {
 		u32(static_cast<bmsx::u32>(value.size()));
 		bytes({reinterpret_cast<const bmsx::u8*>(value.data()), value.size()});
@@ -67,7 +69,10 @@ private:
 		if constexpr (std::endian::native == std::endian::little) {
 			bytes({reinterpret_cast<const bmsx::u8*>(value.data()), value.size_bytes()});
 		} else {
-			for (T word : value) u32(static_cast<bmsx::u32>(word));
+			for (T word : value) {
+				if constexpr (sizeof(T) == 8) u64(static_cast<bmsx::u64>(word));
+				else u32(static_cast<bmsx::u32>(word));
+			}
 		}
 	}
 	std::span<bmsx::u8> m_output;
@@ -93,6 +98,7 @@ public:
 	void i32s(std::span<bmsx::i32> output) { words(output); }
 	std::vector<bmsx::u32> u32s(size_t count) { return wordVector<bmsx::u32>(count); }
 	std::vector<bmsx::i32> i32s(size_t count) { return wordVector<bmsx::i32>(count); }
+	std::vector<bmsx::u64> u64s(size_t count) { return wordVector<bmsx::u64>(count); }
 	std::string string() {
 		const auto input = take(u32());
 		return {reinterpret_cast<const char*>(input.data()), input.size()};
@@ -112,8 +118,11 @@ private:
 		if constexpr (std::endian::native == std::endian::little) {
 			if (!input.empty()) std::memcpy(output.data(), input.data(), input.size());
 		} else {
-			for (size_t index = 0; index < output.size(); ++index)
-				output[index] = static_cast<T>(readLE32(input.data() + index * 4));
+			for (size_t index = 0; index < output.size(); ++index) {
+				const auto* word = input.data() + index * sizeof(T);
+				if constexpr (sizeof(T) == 8) output[index] = static_cast<T>(readLE64(word));
+				else output[index] = static_cast<T>(readLE32(word));
+			}
 		}
 	}
 	template<class T> void words(std::span<T> output) { copyWords(take(output.size(), sizeof(T)), output); }

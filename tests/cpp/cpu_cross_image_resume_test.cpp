@@ -139,8 +139,7 @@ struct Machine {
 
 void parity(Machine& generated, Machine& scalar) {
 	const auto a = generated.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
-		&& std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords())
+	require((a == b && bmsx::test::sameLanguageRam(generated.cpu, scalar.cpu))
 		&& a.programExecutionDomainId == b.programExecutionDomainId && a.executionCartridgeSlot == b.executionCartridgeSlot
 		&& a.statusWord == b.statusWord && a.causeWord == b.causeWord && a.epcWord == b.epcWord
 		&& a.lastExecutionDomainId == b.lastExecutionDomainId && a.lastPc == b.lastPc

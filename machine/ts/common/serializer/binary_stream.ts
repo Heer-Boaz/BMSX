@@ -121,6 +121,12 @@ export class BinaryReader {
 		for (let index = 0; index < count; ++index) values[index] = this.view.getUint32(offset + index * 4, true);
 		return values;
 	}
+	public u64s(count: number): number[] {
+		const offset = this.take(count * 8);
+		const values = new Array<number>(count);
+		for (let index = 0; index < count; ++index) values[index] = readLE64(this.input, offset + index * 8);
+		return values;
+	}
 	public i32s(count: number): number[] {
 		const offset = this.take(count * 4);
 		const values = new Array<number>(count);

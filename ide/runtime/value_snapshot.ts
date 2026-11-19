@@ -63,11 +63,11 @@ export class GuestValueSnapshot {
 				for (let offset = 0; offset < length; offset++) units[offset] = text.charCodeAt(offset);
 				return { kind: 'string', value: String.fromCharCode(...units), omitted: length < text.length };
 			}
-			case ValueTag.Closure: return { kind: 'function', id: values.getClosure(index, this.heap).hashId };
-			case ValueTag.Thread: return { kind: 'thread', id: values.getThread(index, this.heap).hashId };
+			case ValueTag.Closure: return { kind: 'function', id: values.getPayload(index) };
+			case ValueTag.Thread: return { kind: 'thread', id: values.getPayload(index) };
 			case ValueTag.BuiltinFunction: return { kind: 'builtin', id: values.getBuiltinFunctionId(index) };
 		}
-		const table = values.getTable(index, this.heap), id = table.hashId;
+		const table = values.getTable(index, this.heap), id = table.address;
 		if (this.visited.has(id)) return { kind: 'reference', id };
 		if (depth === VALUE_SNAPSHOT_DEPTH) return { kind: 'table', id, entries: NO_ENTRIES, omitted: true };
 		const entries: ValueSnapshotEntry[] = [], scratch = this.scratch[depth];

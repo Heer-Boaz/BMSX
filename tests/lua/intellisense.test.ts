@@ -190,7 +190,7 @@ end
 	const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
 	cpu.reset(); cpu.runUntilDepth(0, 100_000);
 	const target = guest.global('target'), component = guest.global('component');
-	const node: ActorNode = { kind: 'timeline', hashId: asTable(target, cpu.gc).hashId, keyIdentity: guest.identity(valueNil()), label: 'test', name: 'test', prefix: '', children: [],
+	const node: ActorNode = { kind: 'timeline', hashId: asTable(target, cpu.gc).address, keyIdentity: guest.identity(valueNil()), label: 'test', name: 'test', prefix: '', children: [],
 		value: target, receiver: component, component, key: valueNil(), active: false, stateKeys: [] };
 	const transport = new ActorTimelineTransport();
 	let call: RuntimeGuestCall | undefined, observer: ((completed: boolean) => void) | undefined;
@@ -200,7 +200,7 @@ end
 		transport.refresh(node, false, guest, true, call === undefined);
 		transport.executePending(node, !checkpointPending && call === undefined, (selected, time, program, current, finished) => {
 			assert.equal(call, undefined, 'one admitted evaluation, not an input queue');
-			assert.equal(current(), true); assert.equal(program, asTable(guest.readStringMember(target, 'program'), guest.cpu.gc).hashId);
+			assert.equal(current(), true); assert.equal(program, asTable(guest.readStringMember(target, 'program'), guest.cpu.gc).address);
 			call = { domain: -1, closure: asClosure(guest.readStringMember(selected.receiver, 'scrub_time'), cpu.gc),
 				args: () => [component, selected.key, valueInteger(time)] };
 			observer = finished;

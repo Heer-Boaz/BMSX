@@ -17,11 +17,11 @@ test('retained string identities and property indexes follow text, not recycled 
 	assert.equal(presentation.update(valueString(old)), 'retained-identity-before-gc');
 	cpu.collectTrackedHeapBytes();
 	assert.equal(pool.find('retained-identity-before-gc'), undefined, 'tool identities do not pin guest strings');
-	const replacement = pool.intern('replacement-after-gc');
+	const replacement = pool.intern('retained-identity-after-gc!');
 	assert.equal(replacement, old, 'regression requires actual slot reuse');
 	assert.equal(guest.matchesIdentity(valueString(replacement), identity), false);
 	assert.equal(index.find('entries', '', valueString(replacement), guest), undefined);
-	assert.equal(presentation.update(valueString(replacement)), 'replacement-after-gc');
+	assert.equal(presentation.update(valueString(replacement)), 'retained-identity-after-gc!');
 	assert.equal(presentation.observationChanged, true, 'changed text is observable without restore invalidation');
 	const recreated = pool.intern('retained-identity-before-gc');
 	assert.notEqual(recreated, old);
@@ -54,8 +54,8 @@ test('retained object identities do not alias a recycled compact heap reference'
 	presentation.update(first);
 	cpu.collectTrackedHeapBytes();
 	const replacement = cpu.createTable(), second = valueTable(cpu.gc.reference(replacement));
-	assert.equal(valuePayload(first), valuePayload(second), 'exercise real directory-slot reuse');
-	assert.notEqual(table.hashId, replacement.hashId);
+	assert.equal(valuePayload(first), valuePayload(second), 'exercise physical record reuse');
+	assert.notEqual(table, replacement, "the inspector observes a new allocation at the same address");
 	assert.equal(guest.matchesIdentity(second, identity), false);
 	presentation.update(second);
 	assert.equal(presentation.observationChanged, true);

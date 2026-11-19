@@ -48,9 +48,9 @@ last = scenes.instantiate('same')
 		const scene = asTable(cpu.getGlobalByKey(cpu.stringPool.find(name)!), cpu.gc);
 		return asTable(scene.records.getStringKey(scene.address, cpu.stringPool.find('definition')!), cpu.gc);
 	});
-	assert.equal(new Set(plans.map(plan => plan.hashId)).size, 4, 'plan identity survives repeated registry keys');
+	assert.equal(new Set(plans.map(plan => plan.address)).size, 4, 'plan identity survives repeated registry keys');
 	for (let index = 0; index < plans.length; index++) {
-		const record = provenance.plans.get(plans[index].hashId)!;
+		const record = provenance.plans.get(plans[index].address)!;
 		const call = record.calls.find(call => call.path === 'entry.lua')!;
 		assert.equal(readLuaSourceRange(new PieceTreeBuffer(source), call), index % 2 === 0
 			? "scenes.register('same', {objects={{member_id='first', definition_id='actor'}}})"

@@ -10,7 +10,6 @@ import {
 	ValueTag, canonicalTableKey, isNil, valueFromTag, valueInteger,
 	valueNil, valuePayload, valueString, valueTable, valueTag, type Value,
 } from './value';
-import { type CpuSnapshotWriter, CpuSnapshotObjectKind, CpuSnapshotTable } from './snapshot';
 import { ValueSlots, type ValueWriteTarget } from './value_slots';
 
 const TABLE_HASH_NEXT_END = -1;
@@ -506,11 +505,4 @@ export class Table extends GcObject {
 		return address === 0 ? null : this.heap.tableAt(address);
 	}
 	public set metatable(table: Table | null) { this.records.setMetatableAddress(this.address, table === null ? 0 : table.address); }
-	public captureSnapshot(snapshot: CpuSnapshotWriter): number {
-		const offset = snapshot.reserveWords(CpuSnapshotTable.Size);
-		snapshot.setWord(offset + CpuSnapshotTable.Kind, CpuSnapshotObjectKind.Table);
-		snapshot.setWord(offset + CpuSnapshotTable.HashId, this.hashId);
-		snapshot.setWord(offset + CpuSnapshotTable.Record, this.address);
-		return offset;
-	}
 }

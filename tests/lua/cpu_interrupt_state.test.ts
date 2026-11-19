@@ -638,7 +638,7 @@ coroutine.resume(worker)
 	for (let step = 0; step < 10 && result === RunResult.Yielded; step += 1) result = cpu.runUntilDepth(0, 100000);
 	assert.equal(result, RunResult.Halted);
 	const suspended = cpu.captureRuntimeState();
-	assert.notEqual(suspended.activeThreadRef, suspended.rootThreadRef);
+	assert.notEqual(suspended.activeThreadAddress, suspended.rootThreadAddress);
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 	irqController.raise(IRQ_VBLANK);

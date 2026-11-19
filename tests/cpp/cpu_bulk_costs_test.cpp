@@ -183,7 +183,7 @@ void hostGrantScratch(bool scalar) {
   throw std::runtime_error("host storage work must not advance machine time");
  const auto saved = cpu.captureRuntimeState();
  cpu.instructionBudgetRemaining = -99;
- if (!std::ranges::equal(cpu.captureRuntimeState().snapshot.words(), saved.snapshot.words()))
+ if (cpu.captureRuntimeState() != saved)
   throw std::runtime_error("grant scratch is not checkpoint state");
  cpu.restoreRuntimeState(saved);
  if (cpu.instructionBudgetRemaining != -99 || scheduler.currentNowCycles() != 73)

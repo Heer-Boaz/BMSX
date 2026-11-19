@@ -35,7 +35,6 @@
 #include "spec/blua32/opcode.h"
 #include "machine/cpu/table.h"
 #include "machine/cpu/value.h"
-#include "machine/cpu/snapshot.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/execution_domain.h"
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
@@ -103,6 +102,7 @@ struct ExecutionHookBinding {
 	ExecutionDomainMask preMaskableInterruptDomainMask;
 };
 
+// Main RAM owns language heap and stack records. Only CPU latches live here.
 struct CpuRuntimeState {
 	ExecutionDomainId executionCartridgeSlot = SYSTEM_EXECUTION_DOMAIN_ID;
 	ExecutionDomainId programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
@@ -110,19 +110,16 @@ struct CpuRuntimeState {
 	GlobalBankState globals;
 	ExecutionDomainMask executionResidencyMask = 0;
 	std::array<u32, EXECUTION_DOMAIN_COUNT> constantPoolBases{}, globalMapBases{};
-	u32 nextObjectHashId = 1;
 	bool hardHalted = false;
-	GcState gc;
-	u32 stringIndexTable = 0;
-	int rootThreadRef = -1;
-	int activeThreadRef = -1;
-	int completionThreadRef = -1;
-	std::vector<u32> completionValues;
-	CpuSnapshot snapshot;
+	Value stringIndexTable = valueNil();
+	u32 rootThreadAddress = 0;
+	u32 activeThreadAddress = 0;
+	u32 completionThreadAddress = 0;
+	std::vector<Value> completionValues;
 	ExecutionDomainId lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 lastPc = 0;
 	int haltedUntilIrqFrameDepth = -1;
-	int haltedUntilIrqThreadRef = -1;
+	u32 haltedUntilIrqThreadAddress = 0;
 	bool interruptEventPending = false;
 	bool memoryWriteBlocked = false;
 	uint32_t memoryWriteBlockedAddress = 0;
@@ -140,6 +137,7 @@ struct CpuRuntimeState {
 	u32 nmiReturnExceptionDomainWord = 0;
 	bool nonMaskableInterruptPending = false;
 	bool yieldRequested = false;
+	bool operator==(const CpuRuntimeState&) const = default;
 };
 
 enum class AcceptedInterruptKind : uint8_t {
@@ -210,7 +208,7 @@ public:
 		u32 functionAddress
 	);
 	// Move an evicted snapshot here to reuse its storage without copying it.
-	CpuRuntimeState captureRuntimeState(CpuSnapshot snapshot = {}) const;
+	CpuRuntimeState captureRuntimeState(std::vector<Value> completionStorage = {}) const;
 	void restoreRuntimeState(const CpuRuntimeState& state);
 	void requestYield();
 	void haltUntilIrq();

@@ -11,7 +11,6 @@
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
 #include "machine/memory/memory.h"
-#include "machine/cpu/snapshot.h"
 
 namespace bmsx {
 class GcHeap;
@@ -270,7 +269,6 @@ public:
 	Table& operator=(const Table&) = delete;
 	Table* metatable() const;
 	void setMetatable(Table* table) { setMetatableAddress(table ? table->address() : 0u); }
-	u32 captureSnapshot(CpuSnapshot& snapshot) const;
 };
 
 } // namespace bmsx

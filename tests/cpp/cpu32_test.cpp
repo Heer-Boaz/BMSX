@@ -638,7 +638,7 @@ void constantsGlobalsAndRestore() {
 	graph->setStringKey(childKey, valueTable(m.cpu.gcHeap().reference(child)));
 	child->setMetatable(graph);
 	m.cpu.setGlobalByKey(*m.cpu.stringPool().find("graph"), valueTable(m.cpu.gcHeap().reference(graph)));
-	const auto graphHash = graph->hashId, childHash = child->hashId;
+	const auto graphHash = graph->address(), childHash = child->address();
 	m.cpu.runUntilDepth(0, 1); // Stop after LOADK; retain the real active register graph.
 	require(m.cpu.readFrameRegister(0, 2) == valueFloatBits(0xffa12345), "Float constant preserves signaling NaN bits");
 	const auto state = m.cpu.captureRuntimeState();
@@ -656,7 +656,7 @@ void constantsGlobalsAndRestore() {
 		"system globals retain signed Integer identity");
 	auto* restored = asTable(m.cpu.getGlobalByKey(*m.cpu.stringPool().find("graph")), m.cpu.gcHeap());
 	auto* restoredChild = asTable(restored->getStringKey(childKey), m.cpu.gcHeap());
-	require(restored->hashId == graphHash && restoredChild->hashId == childHash,
+	require(restored->address() == graphHash && restoredChild->address() == childHash,
 		"heap restore preserves hash identities independently of payload ids");
 	require(asTable(restored->getStringKey(self), m.cpu.gcHeap()) == restored && restoredChild->metatable() == restored,
 		"restore remaps cyclic Table and metatable edges");

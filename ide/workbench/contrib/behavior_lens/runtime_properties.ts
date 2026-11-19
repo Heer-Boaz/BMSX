@@ -58,7 +58,7 @@ export class RuntimePropertyIndex<T> {
 		const field = this.scope(parent, false)?.sections.get(section)?.get(name);
 		if (key === undefined) return field?.value;
 		const tag = valueTag(key);
-		return field?.keys.get(tag)?.get(guest.identityScalar(key, tag));
+		return field?.keys.get(tag)?.get(guest.observedIdentityScalar(key, tag));
 	}
 	public set(identity: RuntimePropertyIdentity, value: T): void {
 		const owner = this.scope(identity.parent, true)!;

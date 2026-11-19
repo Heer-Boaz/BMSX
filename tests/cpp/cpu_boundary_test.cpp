@@ -1467,7 +1467,7 @@ void closureCallAndReturnRespectFrameBoundaries() {
 			if (edgeKind == 5) require(cpu.runUntilDepth(0, callAndValue) == RunResult::Yielded, "prepare RET at callee depth");
 			auto state = cpu.captureRuntimeState();
 			state.haltedUntilIrqFrameDepth = edgeKind == 4 ? 2 : 1;
-			state.haltedUntilIrqThreadRef = state.activeThreadRef;
+			state.haltedUntilIrqThreadAddress = state.activeThreadAddress;
 			cpu.restoreRuntimeState(state);
 			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(edgeKind == 4 ? OpCode::CALL : OpCode::RET)] + 1) == RunResult::Halted && cpu.instructionBudgetRemaining == (edgeKind == 5 ? 0 : 1), "frame transition activates the retained depth-sensitive HALT latch before another instruction");
 			require(cpu.readFrameRegister(0, 2) == valueInteger(99), "HALT retains the caller continuation");

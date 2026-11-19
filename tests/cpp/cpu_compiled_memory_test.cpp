@@ -644,7 +644,7 @@ void wordProducerBoundariesMatchCompleteScalarState() {
 			}
 			test::runCpuParity(native.cpu, scalar.cpu, grant);
 			const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-			require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()) && native.cpu.lastPc == scalar.cpu.lastPc
+			require((a == b && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu)) && native.cpu.lastPc == scalar.cpu.lastPc
 				&& std::memcmp(native.memory.ramData(), scalar.memory.ramData(), native.memory.ramByteCount()) == 0,
 				"constants, signed chains, full U32 loads, overwrites, diamond/backedges and arbitrary continuation entries match complete scalar state");
 		}

@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
 				if (cpu.readExceptionReturnFrameDepth() != -1) throw std::runtime_error("unhandled frame evaluation fault");
 				const auto state = cpu.captureRuntimeState();
 				cpu.restoreRuntimeState(state);
-				if (!std::ranges::equal(cpu.captureRuntimeState().snapshot.words(), state.snapshot.words())) {
+				if (cpu.captureRuntimeState() != state) {
 					throw std::runtime_error("frame scope snapshot did not round-trip");
 				}
 				if (result == bmsx::RunResult::Halted && cpu.isHaltedUntilIrq()) {
@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
 					const auto saved = bmsx::decodeRuntimeSaveState(bytes, bmsx::PSX_MACHINE_SPEC.ramBytes, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 					if (bmsx::encodeRuntimeSaveState(saved) != bytes) throw std::runtime_error("frame scope codec did not round-trip");
 					bmsx::applyRuntimeSaveState(runtime, saved);
-					if (!std::ranges::equal(cpu.captureRuntimeState().snapshot.words(), saved.cpuState.snapshot.words())) {
+					if (cpu.captureRuntimeState() != saved.cpuState) {
 						throw std::runtime_error("active frame scope did not survive the full codec");
 					}
 					std::ofstream output(std::string(argv[index]) + ".suspended-" + std::to_string(suspensions++) + ".state", std::ios::binary);

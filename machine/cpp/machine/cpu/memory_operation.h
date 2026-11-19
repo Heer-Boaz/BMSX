@@ -16,6 +16,7 @@ struct PendingMemoryOperation {
 	MemoryAccessKind accessKind = MemoryAccessKind::Word;
 	int registerIndex = 0;
 	int wordCount = 0;
+	bool operator==(const PendingMemoryOperation&) const = default;
 };
 
 } // namespace bmsx

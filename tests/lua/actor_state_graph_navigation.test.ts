@@ -42,10 +42,10 @@ function fixture(worldSource = WORLD) {
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree(), font = new Font({ variant: 'tiny' });
 	const world = runtimeWorld(sources, guest, -1)!;
 	const actors = asTable(guest.readStringMember(world, '_objects'), guest.cpu.gc);
-	const actorHashId = asTable(actors.records.getInteger(actors.address, 1), cpu.gc).hashId;
+	const actorHashId = asTable(actors.records.getInteger(actors.address, 1), cpu.gc).address;
 	tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, actorHashId));
 	const machine = tree.roots[0].children[0].children[0];
-	const target = captureActorTarget(-1, asTable(world, cpu.gc).hashId, tree.roots, machine);
+	const target = captureActorTarget(-1, asTable(world, cpu.gc).address, tree.roots, machine);
 	const graph = new ActorStateGraph(target, font);
 	const refresh = () => {
 		tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, actorHashId));

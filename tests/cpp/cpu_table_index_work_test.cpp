@@ -69,9 +69,7 @@ struct Machine {
 };
 
 void sameSnapshot(const CpuRuntimeState& a, const CpuRuntimeState& b) {
-	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
-		&& std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords())
-		&& a.nextObjectHashId == b.nextObjectHashId
+	require(a == b
 		&& a.epcWord == b.epcWord
 		&& a.luaFaultReasonWord == b.luaFaultReasonWord && a.lastPc == b.lastPc,
 		"complete guest graphs and instruction/fault boundaries match");
@@ -123,6 +121,7 @@ void grantsAndRestore() {
 				&& r.get(7) == (op == OpCode::SELF && completed >= 2 ? r.get(0) : valueNil()),
 				"aliased result, following marker and SELF receiver publish at their actual instruction boundaries");
 			sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
+			require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
 			require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes()
 				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 				"physical allocator and pacing words agree");
@@ -160,6 +159,7 @@ void faultsOnce() {
 		require(r.get(6) == r.get(0) && r.get(8) == valueInteger(57) && (op != OpCode::SELF || r.get(7) == r.get(0)),
 			"fault leaves destination and following marker intact but retains SELF receiver");
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
+		require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
 			require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes()
 				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 				"physical allocator and pacing words agree");
@@ -182,6 +182,7 @@ void stringReceiver() {
 			&& generated.cpu.readFrameRegister(0, 6) == valueInteger(73) && generated.cpu.readFrameRegister(0, 8) == valueInteger(57),
 			"String dispatch's first installed Table is covered by base; only two inherited targets add16");
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
+		require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
 			require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes()
 				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 				"physical allocator and pacing words agree");
@@ -194,6 +195,7 @@ void stringReceiver() {
 		require(generated.cpu.instructionBudgetRemaining == 3 - 2 - 24 && isNil(generated.cpu.readFrameRegister(0, 6)),
 			"live prototype replacement uses the new two-Table path and resolved nil has no fault");
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
+		require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
 			require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes()
 				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 				"physical allocator and pacing words agree");

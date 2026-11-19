@@ -1,5 +1,6 @@
+import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
-import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
+import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { asTable, valueNil, asClosure, valueInteger, valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -39,10 +40,10 @@ probe.drop_definition()
 	cpu.collectTrackedHeapBytes();
 	const displaced = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('displaced')!), cpu.gc);
 	for (let index = 1; index <= 3; index += 1) assert.equal(displaced.records.getInteger(displaced.address, index), valueNil());
-	const retained = cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
+	const retained = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength());
 	for (let replacement = 0; replacement < 32; replacement += 1) {
 		runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('check_replaced')!), cpu.gc), []);
-		assert.equal(cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES, retained, 're-registration must not grow retained observation history');
+		assert.equal(cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength()), retained, 're-registration must not grow retained observation history');
 	}
 	const anchor = captureCpuCheckpoint(cpu);
 
@@ -290,11 +291,11 @@ test('BT capture costs are cold; retained aliases are not a compiled definition 
 			runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('observe')!), cpu.gc), []);
 		}
 		const before = cpu.collectTrackedHeapBytes();
-		const beforeObjects = cpu.captureRuntimeState().snapshot.objectCount;
+		const beforeObjects = allocatedObjectRecords(cpu).length;
 		const compileCycles = runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('compile')!), cpu.gc), [valueInteger(32), valueBool(mode === 'retained')]);
 		const allocation = cpu.luaHeap.usedBytes() - before;
-		const retained = cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES - before;
-		const objects = cpu.captureRuntimeState().snapshot.objectCount - beforeObjects;
+		const retained = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength()) - before;
+		const objects = allocatedObjectRecords(cpu).length - beforeObjects;
 		const weak = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('weak_inputs')!), cpu.gc);
 		assert.equal(weak.records.getInteger(weak.address, 1) === valueNil(), mode !== 'retained');
 		const run = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('run')!), cpu.gc);

@@ -89,8 +89,6 @@ void GcHeap::track(GCObject* object) {
 	physicalSlot(address) = object;
 	object->gcRecord = memory.ramData() + (address & GC_RECORD_MASK);
 	object->gcMemory = &memory;
-	object->restored = false;
-	object->hashId = allocateHashId();
 	object->previous = nullptr;
 	object->next = m_objects;
 	if (m_objects) m_objects->previous = object;
@@ -558,28 +556,19 @@ size_t GcHeap::collect(Value root0, Value root1, Value root2, Thread* growingSta
 	do { work += step(root0, root1, root2, growingStack); } while (active());
 	return work;
 }
-void GcHeap::bindRestoredRecords(const GcState& state, const std::vector<GCObject*>& objects, u32 nextHashId) {
-	for (auto* object = m_objects; object;) {
+void GcHeap::discardAttachments(Thread* retainedRoot) {
+	// RAM has already been loaded. Destroy derived objects without freeing
+	// their guest storage or following any edge in the restored heap.
+	auto* object = std::exchange(m_objects, nullptr);
+	while (object) {
 		auto* next = object->next;
-		if (object->restored) object->restored = false;
-		else { unlink(object); destroyObject(object); }
+		physicalSlot(physicalAddress(object)) = nullptr;
+		if (object != retainedRoot) destroyObject(object);
 		object = next;
 	}
-	for (u32 index : state.allocations) {
-		auto* object = objects[index];
-		physicalSlot(physicalAddress(object)) = object;
+	if (retainedRoot) {
+		retainedRoot->detachFrameViews();
+		track(retainedRoot);
 	}
-	m_nextObjectHashId = nextHashId;
-}
-void GcHeap::restoreState(const GcState& state, const std::vector<GCObject*>& objects) {
-	m_objects = nullptr;
-	GCObject* previous = nullptr;
-	for (size_t i = 0; i < state.allocations.size(); ++i) {
-		auto* object = objects[state.allocations[i]];
-		object->previous = previous; object->next = nullptr;
-		if (previous) previous->next = object; else m_objects = object;
-		previous = object;
-	}
-
 }
 } // namespace bmsx

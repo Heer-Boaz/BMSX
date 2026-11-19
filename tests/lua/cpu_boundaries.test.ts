@@ -485,7 +485,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 			if (edgeKind === 5) assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CALL] + BASE_CYCLES[OpCode.K1]), RunResult.Yielded);
 			const state = cpu.captureRuntimeState();
 			state.haltedUntilIrqFrameDepth = edgeKind === 4 ? 2 : 1;
-			state.haltedUntilIrqThreadRef = state.activeThreadRef;
+			state.haltedUntilIrqThreadAddress = state.activeThreadAddress;
 			cpu.restoreRuntimeState(state);
 			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[edgeKind === 4 ? OpCode.CALL : OpCode.RET] + 1), RunResult.Halted);
 			assert.equal(cpu.instructionBudgetRemaining, edgeKind === 5 ? 0 : 1);

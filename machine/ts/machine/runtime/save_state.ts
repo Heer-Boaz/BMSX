@@ -15,7 +15,7 @@ export const enum RuntimeRestoreOrigin { ExternalLoad, HistorySeek }
 export function captureRuntimeSaveState(runtime: Runtime, storage?: RuntimeSaveState): RuntimeSaveState {
 	return {
 		machineState: captureRuntimeSaveMachineState(runtime, storage?.machineState),
-		cpuState: runtime.machine.cpu.captureRuntimeState(storage?.cpuState.snapshot),
+		cpuState: runtime.machine.cpu.captureRuntimeState(storage?.cpuState.completionValues),
 		pendingEntryCall: runtime.pendingCall === 'entry',
 	};
 }

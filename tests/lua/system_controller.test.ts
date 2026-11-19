@@ -517,9 +517,9 @@ test('an unexecuted second cartridge does not alter guest identity allocation', 
 	const singleStringId = single.machine.cpu.stringPool.intern('post-boot-probe');
 	assert.equal(dual.machine.cpu.stringPool.intern('post-boot-probe'), singleStringId);
 	assert.equal(revisedDual.machine.cpu.stringPool.intern('post-boot-probe'), singleStringId);
-	const singleTableId = single.machine.cpu.createTable(0, 0).hashId;
-	assert.equal(dual.machine.cpu.createTable(0, 0).hashId, singleTableId);
-	assert.equal(revisedDual.machine.cpu.createTable(0, 0).hashId, singleTableId);
+	const singleTableId = single.machine.cpu.createTable(0, 0).address;
+	assert.equal(dual.machine.cpu.createTable(0, 0).address, singleTableId);
+	assert.equal(revisedDual.machine.cpu.createTable(0, 0).address, singleTableId);
 
 	unusedSlotRom[decodeBlua32BootHeader(unusedSlotRom).imageOffset] ^= 0xff;
 	dual.rebootSystem();

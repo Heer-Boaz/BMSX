@@ -159,7 +159,7 @@ test(`${backend}: CPU snapshot rebuilds compact globals, raw Float registers and
 	table.records.setStringKey(table.address, self,v.valueTable(cpu.gc.reference(table)));table.records.setStringKey(table.address, childKey,v.valueTable(cpu.gc.reference(child)));
 	child.metatable=table;cpu.setGlobalByKey(graphKey,v.valueTable(cpu.gc.reference(table)));
 	cpu.runUntilDepth(0,1);assert.equal(cpu.readFrameRegister(0,2),v.valueFloatBits(0xffa12345));
-	const ram=memory.captureSaveState(), state=cpu.captureRuntimeState();const hash=table.hashId, childHash=child.hashId;
+	const ram=memory.captureSaveState(), state=cpu.captureRuntimeState();const hash=table.address, childHash=child.address;
 	cpu.activeThread.currentFrame!.registers.setInteger(2,8);cpu.setGlobalByKey(saved,v.valueInteger(7));
 	for(let i=0;i<10;++i)cpu.createTable();
 	memory.restoreSaveState(ram);
@@ -167,7 +167,7 @@ test(`${backend}: CPU snapshot rebuilds compact globals, raw Float registers and
 	assert.equal(cpu.readFrameRegister(0,2),v.valueFloatBits(0xffa12345));
 	assert.equal(cpu.getGlobalByKey(saved),v.valueFloatBits(0xffa54321));assert.equal(cpu.getSystemGlobalByKey(system),v.valueInteger(-2147483648));
 	const restored=v.asTable(cpu.getGlobalByKey(graphKey),cpu.gc),restoredChild=v.asTable(restored.records.getStringKey(restored.address, childKey),cpu.gc);
-	assert.equal(restored.hashId,hash);assert.equal(restoredChild.hashId,childHash);
+	assert.equal(restored.address,hash);assert.equal(restoredChild.address,childHash);
 	assert.equal(v.asTable(restored.records.getStringKey(restored.address, self),cpu.gc),restored);assert.equal(restoredChild.metatable,restored);
 	assert.deepEqual(cpu.captureRuntimeState(),state);
 	cpu.runUntilDepth(0,100);const result:v.Value[]=[];cpu.readCompletionValues(result);assert.equal(result[0],v.valueFloatBits(0xffa12345));

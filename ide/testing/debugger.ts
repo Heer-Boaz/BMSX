@@ -37,7 +37,7 @@ export class TestDebugger {
 		const cpu = this.runtime.machine.cpu;
 		return { target: this.id, role: 'live-test' as const, status: this.status, reason: this.reason, phase: this.phase, revision: this.revision,
 			cycles: this.runtime.machine.scheduler.nowCycles, videoTick: this.runtime.frameScheduler.lastTickSequence,
-			thread: (this.stopThread === undefined ? cpu.activeThread : this.stopThread).hashId,
+			thread: (this.stopThread === undefined ? cpu.activeThread : this.stopThread).address,
 			canContinue: this.canResume(RuntimeDebuggerResumeMode.Continue), canStep: this.canResume(RuntimeDebuggerResumeMode.StepInto), canStepOut: this.canResume(RuntimeDebuggerResumeMode.StepOut),
 			stop: this.source.stop !== undefined ? { domain: this.source.stop!.domain, pc: this.source.stop!.pc, inlineDepth: this.source.stop!.inlineDepth } : undefined };
 	}

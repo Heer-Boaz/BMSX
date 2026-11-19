@@ -113,9 +113,6 @@ async function main(): Promise<void> {
 		assert.deepEqual(capture(), expected, 'disk-codec replay must reproduce the same runtime state');
 		console.log(JSON.stringify({
 			host: 'ts', checkpointTick, captureMs, restoreMs, replayMs, bytes: bytes.byteLength,
-			objects: anchor.cpuState.snapshot.objectCount,
-			cpuSnapshotBytes: anchor.cpuState.snapshot.words.byteLength + anchor.cpuState.snapshot.objectWords.byteLength,
-			cpuSnapshotCapacityBytes: anchor.cpuState.snapshot.capacityBytes,
 		}));
 	}
 

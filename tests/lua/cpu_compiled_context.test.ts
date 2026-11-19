@@ -166,8 +166,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	for (const cpu of [js, ref]) {
 		const frame = cpu.rootThread.frameAtDepth(0);
 		const open = new Upvalue(cpu.memory, cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0)), closed = new Upvalue(cpu.memory, cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
-		open.hashId = 100; open.bind(frame.thread.address, frame.stackBase, 0);
-		closed.hashId = 101;
+		open.bind(frame.thread.address, frame.stackBase, 0);
 		cpu.gc.track(open); cpu.gc.track(closed);
 		const bound = frame.closure;
 		const replacement = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(2), bound.prototypeRecord, false);

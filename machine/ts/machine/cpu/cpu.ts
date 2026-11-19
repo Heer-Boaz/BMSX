@@ -1,5 +1,5 @@
 import { ValueMoveKind } from '../../spec/blua32/instruction_format';
-import { GcHeap, type GcState } from './gc_heap';
+import { GcHeap } from './gc_heap';
 import { GcKind } from './gc_object';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
@@ -123,7 +123,7 @@ import {
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table, TableRecords, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
-import { Closure, CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, Upvalue, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, sameFunctionPrototype } from './closure';
+import { Closure, CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, Upvalue, UPVALUE_RECORD_KIND, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, sameFunctionPrototype } from './closure';
 import { ValueSlots } from './value_slots';
 import { GlobalBank, type GlobalBankState } from './global_bank';
 import { BuiltinArgsView, BuiltinResults, BUILTIN_FUNCTIONS } from './builtin_values';
@@ -143,7 +143,7 @@ import {
 } from './execution_image';
 import { ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, type CallFrame } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
-import { Thread, ThreadStatus, THREAD_HEAP_BYTES, THREAD_INITIAL_BACKING_BYTES } from './thread';
+import { Thread, ThreadStatus, THREAD_RECORD_KIND, THREAD_HEAP_BYTES, THREAD_INITIAL_BACKING_BYTES } from './thread';
 import { ThreadField } from './thread_record';
 import { LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
@@ -155,14 +155,13 @@ import {
 } from './compiled_block';
 import { CompiledBlockPage, CompiledCodeCache, linkCompiledBlock } from './compiled_code_cache';
 import { compileJavaScriptRegion, type CompiledRegion, type CompiledRegionRunState } from './compiled_region';
-import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKind, CpuSnapshotClosure, CpuSnapshotTable, CpuSnapshotUpvalue, CpuSnapshotThread, CPU_SNAPSHOT_VALUE_WORDS, type CpuSnapshotObject, type CpuSnapshotValueWriter } from './snapshot';
 
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
 // start normalized-body-acceptable -- Specialized Lua VM accessors stay split so the fast paths avoid dispatch helpers.
 
 
 
-// These activation fields have not yet moved to the guest stack record.
+// Main RAM owns language heap and stack records; this state is CPU latches only.
 export type CpuRuntimeState = {
 	executionCartridgeSlot: ExecutionDomainId;
 	programExecutionDomainId: ExecutionDomainId;
@@ -171,19 +170,16 @@ export type CpuRuntimeState = {
 	executionResidencyMask: ExecutionDomainMask;
 	constantPoolBases: number[];
 	globalMapBases: number[];
-	nextObjectHashId: number;
 	hardHalted: boolean;
-	gc: GcState;
-	stringIndexTable: number;
-	rootThreadRef: number;
-	activeThreadRef: number;
-	completionThreadRef: number;
-	completionValues: number[];
-	snapshot: CpuSnapshot;
+	stringIndexTable: Value;
+	rootThreadAddress: number;
+	activeThreadAddress: number;
+	completionThreadAddress: number;
+	completionValues: Value[];
 	lastExecutionDomainId: ExecutionDomainId;
 	lastPc: number;
 	haltedUntilIrqFrameDepth: number;
-	haltedUntilIrqThreadRef: number;
+	haltedUntilIrqThreadAddress: number;
 	interruptEventPending: boolean;
 	memoryWriteBlocked: boolean;
 	memoryWriteBlockedAddress: number;
@@ -231,7 +227,7 @@ export class CPU implements MappedPageInvalidator {
 	/** Current runUntilDepth grant; consumed by the caller, not checkpoint state. */
 	public instructionBudgetRemaining: number = 0;
 	public lastPc: number = 0;
-	public readonly rootThread: Thread;
+	public rootThread: Thread;
 	public activeThread: Thread;
 	private completionThread: Thread;
 	public readonly memory: Memory;
@@ -336,7 +332,6 @@ export class CPU implements MappedPageInvalidator {
 	private readonly globalBank: GlobalBank;
 	private completionValueSlots = new ValueSlots(8);
 	private completionValueCount = 0;
-	private nextObjectHashId = 1;
 	private readonly luaFaultErrorStringIds: StringId[] = [];
 	private readonly errorInErrorHandlingStringId: StringId;
 
@@ -375,18 +370,11 @@ export class CPU implements MappedPageInvalidator {
 		this.memory.attachMappedPageInvalidator(this);
 	}
 
-	public allocateObjectHashId(): number {
-		const hashId = this.nextObjectHashId;
-		this.nextObjectHashId = (hashId + 1) >>> 0;
-		return hashId;
-	}
-
 	public createTable(arraySize: number = 0, hashSize: number = 0): Table {
 		const hashCapacity = TableRecords.hashCapacity(hashSize);
 		const address = this.luaHeap.allocateRecord(TableRecords.HEADER_BYTES, false, TableRecords.storageBytes(arraySize, hashCapacity), TableHeader.Storage);
 		const table = new Table(this.gc, address);
 		this.gc.tables.initialize(address, arraySize, hashCapacity);
-		table.hashId = this.allocateObjectHashId();
 		this.gc.track(table);
 		if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(this.gc.reference(table)));
 		return table;
@@ -843,14 +831,13 @@ export class CPU implements MappedPageInvalidator {
 			let match: Closure | null = null;
 			for (const closure of closures) {
 				if (sameFunctionPrototype(closure.prototypeRecord, record)
-					&& (match === null || closure.hashId < match.hashId)) match = closure;
+					&& (match === null || closure.address < match.address)) match = closure;
 			}
 			if (match !== null) return match;
 		}
 		const latched = !record.romBacked;
 		const closure = new Closure(this.memory, this.luaHeap.allocateClosureRecord(0, latched), record, true);
 		closure.initializeRecord(this.gc.white(), 0, latched);
-		closure.hashId = this.allocateObjectHashId();
 		this.gc.track(closure);
 		closures = this.staticClosuresByAddress.get(record.functionAddress);
 		if (closures === undefined) {
@@ -3064,7 +3051,6 @@ export class CPU implements MappedPageInvalidator {
 		const address = this.luaHeap.allocateClosureRecord(count, latched, this.captureAddresses, newUpvalueCount);
 		const closure = new Closure(this.memory, address, functionRecord, false);
 		closure.initializeRecord(this.gc.white(), count, latched);
-		closure.hashId = this.allocateObjectHashId();
 		this.gc.track(closure);
 		let nextCell = 0;
 		for (let index = 0; index < functionRecord.recordUpvalueCount; index += 1) {
@@ -3073,7 +3059,6 @@ export class CPU implements MappedPageInvalidator {
 				continue;
 			}
 			const upvalue = new Upvalue(this.memory, this.captureAddresses[nextCell++]);
-			upvalue.hashId = this.allocateObjectHashId();
 			this.gc.track(upvalue);
 			this.linkOpenUpvalue(frame, upvalue, (frame.stackBase + (upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK)) >>> 0);
 			closure.setCaptureAddress(index, upvalue.address);
@@ -3382,7 +3367,6 @@ export class CPU implements MappedPageInvalidator {
 			entry === null ? valueNil() : valueClosure(entry.address));
 		const thread = new Thread(this.gc, address);
 		thread.initializeRecord(entry);
-		thread.hashId = this.allocateObjectHashId();
 		this.gc.track(thread);
 		if (this.localRootScopeDepth > 0) this.localRoots.push(valueThread(this.gc.reference(thread)));
 		return thread;
@@ -3914,93 +3898,10 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	/** Reusing storage relinquishes the previous state backed by that snapshot. */
-	public captureRuntimeState(snapshot = new CpuSnapshot()): CpuRuntimeState {
-		const writer = new CpuSnapshotWriter(snapshot);
-		const objectOrdinals = new Map<CpuSnapshotObject, number>();
-		const pendingObjects: CpuSnapshotObject[] = [];
-		const pendingKinds: CpuSnapshotObjectKind[] = [];
-		const captureObject = (object: CpuSnapshotObject, kind: CpuSnapshotObjectKind): number => {
-			const found = objectOrdinals.get(object);
-			if (found !== undefined) return found;
-			const id = writer.addObject();
-			objectOrdinals.set(object, id);
-			pendingObjects.push(object);
-			pendingKinds.push(kind);
-			return id;
-		};
-		const writeValue: CpuSnapshotValueWriter = (offset, value): void => {
-			writer.setWord(offset, valueTag(value)); writer.setWord(offset + 1, valuePayload(value));
-		};
-		const captureStoredValueState = (value: Value): number => {
-			const offset = writer.reserveWords(CPU_SNAPSHOT_VALUE_WORDS); writeValue(offset, value); return offset;
-		};
-
-		const rootThreadRef = captureObject(this.rootThread, CpuSnapshotObjectKind.Thread);
-		const activeThreadRef = captureObject(this.activeThread, CpuSnapshotObjectKind.Thread);
-		const completionThreadRef = captureObject(this.completionThread, CpuSnapshotObjectKind.Thread);
-		const haltedUntilIrqThreadRef = this.haltedUntilIrqThread === null ? -1 : captureObject(this.haltedUntilIrqThread, CpuSnapshotObjectKind.Thread);
-
-		const completionValues = new Array<number>(this.completionValueCount);
-		for (let index = 0; index < this.completionValueCount; index += 1) {
-			completionValues[index] = captureStoredValueState(
-				this.completionValueSlots.get(index)
-			);
-		}
-
-		const stringIndexTable = captureStoredValueState(
-			this.stringIndexTable,
-		);
-
-		// Materialization order affects later object hashes even for an unrooted
-		// static closure. Preserve the entire cache, in physical-address order.
-		const canonicalClosures = Array.from(this.staticClosuresByAddress.values()).flat();
-		canonicalClosures.sort((a, b) => a.prototypeRecord.functionAddress - b.prototypeRecord.functionAddress
-			|| a.prototypeRecord.executionDomainId - b.prototypeRecord.executionDomainId || a.prototypeRecord.codeAddress - b.prototypeRecord.codeAddress
-			|| a.prototypeRecord.numParams - b.prototypeRecord.numParams || a.prototypeRecord.maxStack - b.prototypeRecord.maxStack || a.prototypeRecord.flags - b.prototypeRecord.flags
-			|| a.prototypeRecord.upvalueTableAddress - b.prototypeRecord.upvalueTableAddress || a.prototypeRecord.recordUpvalueCount - b.prototypeRecord.recordUpvalueCount
-			|| a.hashId - b.hashId);
-		for (const closure of canonicalClosures) {
-			captureObject(closure, CpuSnapshotObjectKind.Closure);
-		}
-		const gc = this.gc.captureState(object => captureObject(object as CpuSnapshotObject, object.gcKind as number));
-		// Reserve ordinals at each edge, then drain in ordinal order. Guest graph
-		// depth must not consume the host call stack.
-		for (let id = 0; id < pendingObjects.length; id += 1) {
-			const object = pendingObjects[id];
-			const kind = pendingKinds[id];
-			let offset: number;
-			switch (kind) {
-				case CpuSnapshotObjectKind.Thread: {
-					const thread = object as Thread;
-					offset = writer.reserveWords(CpuSnapshotThread.Size);
-					writer.setWord(offset + CpuSnapshotThread.Kind, kind);
-					writer.setWord(offset + CpuSnapshotThread.HashId, thread.hashId);
-
-					writer.setWord(offset + CpuSnapshotThread.Record, thread.address);
-					break;
-				}
-				case CpuSnapshotObjectKind.Table:
-					offset = (object as Table).captureSnapshot(writer);
-					break;
-				case CpuSnapshotObjectKind.Closure: {
-					const closure = object as Closure;
-					offset = writer.reserveWords(CpuSnapshotClosure.Size);
-					writer.setWord(offset + CpuSnapshotClosure.Kind, kind);
-					writer.setWord(offset + CpuSnapshotClosure.HashId, closure.hashId);
-					writer.setWord(offset + CpuSnapshotClosure.Record, closure.address);
-					break;
-				}
-				case CpuSnapshotObjectKind.Upvalue: {
-					const upvalue = object as Upvalue;
-					offset = writer.reserveWords(CpuSnapshotUpvalue.Size);
-					writer.setWord(offset + CpuSnapshotUpvalue.Kind, kind);
-					writer.setWord(offset + CpuSnapshotUpvalue.HashId, upvalue.hashId);
-					writer.setWord(offset + CpuSnapshotUpvalue.Address, upvalue.address);
-					break;
-				}
-			}
-			writer.setObjectWord(id, offset);
-		}
+	public captureRuntimeState(completionValues: Value[] = []): CpuRuntimeState {
+		completionValues.length = this.completionValueCount;
+		for (let i = 0; i < this.completionValueCount; ++i)
+			completionValues[i] = this.completionValueSlots.get(i);
 		let executionResidencyMask = 0;
 		const constantPoolBases = new Array<number>(EXECUTION_DOMAIN_COUNT).fill(0);
 		const globalMapBases = new Array<number>(EXECUTION_DOMAIN_COUNT).fill(0);
@@ -4012,7 +3913,6 @@ export class CPU implements MappedPageInvalidator {
 				globalMapBases[index] = image.globalMapBase;
 			}
 		}
-		writer.finish();
 		return {
 			executionCartridgeSlot: this.activeExecutionDomainId,
 			programExecutionDomainId: this.programExecutionDomainId,
@@ -4020,17 +3920,16 @@ export class CPU implements MappedPageInvalidator {
 			globals: this.globalBank.captureState(),
 			executionResidencyMask,
 			constantPoolBases, globalMapBases,
-			nextObjectHashId: this.nextObjectHashId,
 			hardHalted: this.hardHalted,
-			gc,
-			stringIndexTable,
-			rootThreadRef, activeThreadRef, completionThreadRef,
+			stringIndexTable: this.stringIndexTable,
+			rootThreadAddress: this.rootThread.address,
+			activeThreadAddress: this.activeThread.address,
+			completionThreadAddress: this.completionThread.address,
 			completionValues,
-			snapshot,
 			lastExecutionDomainId: this.lastExecutionDomainId,
 			lastPc: this.lastPc,
 			haltedUntilIrqFrameDepth: this.haltedUntilIrqFrameDepth,
-			haltedUntilIrqThreadRef,
+			haltedUntilIrqThreadAddress: this.haltedUntilIrqThread === null ? 0 : this.haltedUntilIrqThread.address,
 			interruptEventPending: this.interruptEventPending,
 			memoryWriteBlocked: this.memoryWriteBlocked,
 			memoryWriteBlockedAddress: this.memoryWriteBlockedAddress,
@@ -4053,74 +3952,39 @@ export class CPU implements MappedPageInvalidator {
 
 	public restoreRuntimeState(state: CpuRuntimeState): void {
 		this.compiledCodeCache.retireAll();
-		const snapshot = state.snapshot;
-		this.gc.forgetPhysicalRecords();
-		const restoredObjects = new Array<CpuSnapshotObject>(snapshot.objectCount);
 		this.clearCompletionValues();
-		// RAM has already been restored. Only detach the host activations
-		// on the reused root; the restored Thread edges are not attached yet.
-		this.rootThread.detachFrameViews();
-		const previousCanonical = new Map(this.staticClosuresByAddress);
 		this.staticClosuresByAddress.clear();
-		// Allocate every identity before resolving edges, including cycles and weak references.
-		for (let index = 0; index < snapshot.objectCount; index += 1) {
-			const offset = snapshot.objectWord(index);
-			switch (snapshot.word(offset)) {
-				case CpuSnapshotObjectKind.Thread: {
-					const thread = index === state.rootThreadRef ? this.rootThread : new Thread(this.gc, snapshot.word(offset + CpuSnapshotThread.Record));
-					if (index !== state.rootThreadRef) this.gc.track(thread);
-					thread.restored = true;
-					thread.hashId = snapshot.word(offset + CpuSnapshotThread.HashId);
-					thread.bindStack();
-					restoredObjects[index] = thread;
+		const retainedRoot = this.rootThread.address === state.rootThreadAddress ? this.rootThread : null;
+		this.gc.discardAttachments(retainedRoot);
+		this.memory.clearMappedPageWriteWatches();
+		// The allocator scan does not advance a saved in-flight sweep.
+		this.heapAllocator.visitObjectRecords(this, (cpu, address) => {
+			switch (cpu.memory.readRamRecordByte(address)) {
+				case THREAD_RECORD_KIND:
+					if (cpu.gc.threadAt(address) === null) cpu.gc.track(new Thread(cpu.gc, address));
 					break;
-				}
-				case CpuSnapshotObjectKind.Table: {
-					const table = new Table(this.gc, snapshot.word(offset + CpuSnapshotTable.Record));
-					this.gc.track(table); table.restored = true;
-					table.hashId = snapshot.word(offset + CpuSnapshotTable.HashId);
-					restoredObjects[index] = table;
+				case ValueTag.Table:
+					cpu.gc.track(new Table(cpu.gc, address));
 					break;
-				}
-				case CpuSnapshotObjectKind.Closure: {
-					const address = snapshot.word(offset + CpuSnapshotClosure.Record);
-					const binding = this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
-					const record = Closure.readBinding(this.memory, address, binding, this.executionReadView);
-					const { functionAddress } = record;
+				case ValueTag.Closure: {
+					const binding = cpu.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
+					const record = Closure.readBinding(cpu.memory, address, binding, cpu.executionReadView);
 					const canonical = (binding & CLOSURE_CANONICAL) !== 0;
-					const previous = canonical ? previousCanonical.get(functionAddress) : undefined;
-					const existingIndex = previous === undefined ? -1 : previous.findIndex(item =>
-						item.hashId === snapshot.word(offset + CpuSnapshotClosure.HashId) && item.address === address
-						&& sameFunctionPrototype(item.prototypeRecord, record));
-					const closure = existingIndex < 0 ? new Closure(this.memory, address, record, canonical) : previous!.splice(existingIndex, 1)[0];
-					if (existingIndex < 0) { this.gc.track(closure); }
-					closure.restored = true;
-					closure.hashId = snapshot.word(offset + CpuSnapshotClosure.HashId);
-					if (canonical) {
-						let versions = this.staticClosuresByAddress.get(functionAddress);
-						if (versions === undefined) {
-							versions = [];
-							this.staticClosuresByAddress.set(functionAddress, versions);
-						}
-						versions.push(closure);
+					const closure = new Closure(cpu.memory, address, record, canonical);
+					cpu.gc.track(closure);
+					if (canonical && !cpu.gc.sweepGarbage(closure)) {
+						const versions = cpu.staticClosuresByAddress.get(record.functionAddress);
+						if (versions === undefined) cpu.staticClosuresByAddress.set(record.functionAddress, [closure]);
+						else versions.push(closure);
 					}
-					restoredObjects[index] = closure;
 					break;
 				}
-				case CpuSnapshotObjectKind.Upvalue:
-					const upvalue = new Upvalue(this.memory, snapshot.word(offset + CpuSnapshotUpvalue.Address));
-					this.gc.track(upvalue); upvalue.restored = true;
-					upvalue.hashId = snapshot.word(offset + CpuSnapshotUpvalue.HashId);
-					restoredObjects[index] = upvalue;
+				case UPVALUE_RECORD_KIND:
+					cpu.gc.track(new Upvalue(cpu.memory, address));
 					break;
 			}
-		}
-		this.gc.bindRestoredRecords(state.gc, restoredObjects);
-		const reader = new CpuSnapshotReader(snapshot);
-		// Constant/string and global-slot caches must not retain entries first
-		// encountered in the discarded future. Rebuild from the same media.
-		this.memory.clearMappedPageWriteWatches();
-		this.gc.armThreadStackWatches();
+			return 1;
+		});
 		this.executionImagesByDomain.fill(null);
 		this.systemGlobalBank.bind(state.systemGlobals);
 		this.globalBank.bind(state.globals);
@@ -4134,34 +3998,30 @@ export class CPU implements MappedPageInvalidator {
 		const executionImage = this.executionImagesByDomain[state.executionCartridgeSlot + 1];
 		this.latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
-		this.gc.restoreState(state.gc, restoredObjects);
-		this.gc.visitThreads(thread => { if (!this.gc.sweepGarbage(thread)) this.bindPhysicalFrames(thread); });
-		this.activeThread = restoredObjects[state.activeThreadRef] as Thread;
-		if (this.activeThread.currentFrame !== null) this.activeThread.currentFrame.executionImage = this.activeExecutionImage;
-		this.completionThread = restoredObjects[state.completionThreadRef] as Thread;
-		this.threadSwitchRequested = false;
-		reader.readValue(state.stringIndexTable);
-		this.stringIndexTable = reader.value();
-		if (state.completionValues.length > this.completionValueSlots.capacity()) {
-			let capacity = this.completionValueSlots.capacity() * 2;
-			while (capacity < state.completionValues.length) {
-				capacity *= 2;
+		this.gc.visitThreads(thread => {
+			if (this.gc.sweepGarbage(thread)) thread.bindStack(); // Needed to charge the remaining sweep.
+			else {
+				this.bindPhysicalFrames(thread);
+				thread.armStackWatch();
 			}
-			this.completionValueSlots = new ValueSlots(capacity);
+		});
+		this.rootThread = this.gc.threadAt(state.rootThreadAddress)!;
+		this.activeThread = this.gc.threadAt(state.activeThreadAddress)!;
+		if (this.activeThread.currentFrame !== null) this.activeThread.currentFrame.executionImage = this.activeExecutionImage;
+		this.completionThread = this.gc.threadAt(state.completionThreadAddress)!;
+		this.threadSwitchRequested = false;
+		this.stringIndexTable = state.stringIndexTable;
+		if (state.completionValues.length > this.completionValueSlots.capacity()) {
+			this.completionValueSlots.resizeCapacity(state.completionValues.length);
 		}
-		for (let index = 0; index < state.completionValues.length; index += 1) {
-			reader.readValue(state.completionValues[index]);
-			this.completionValueSlots.setEncoded(
-				index,
-				reader.tag, reader.payload,
-			);
-		}
+		for (let index = 0; index < state.completionValues.length; ++index)
+			this.completionValueSlots.set(index, state.completionValues[index]);
 		this.completionValueCount = state.completionValues.length;
 		this.programExecutionDomainId = state.programExecutionDomainId;
 		this.lastExecutionDomainId = state.lastExecutionDomainId;
 		this.lastPc = state.lastPc;
 		this.haltedUntilIrqFrameDepth = state.haltedUntilIrqFrameDepth;
-		this.haltedUntilIrqThread = state.haltedUntilIrqThreadRef === -1 ? null : restoredObjects[state.haltedUntilIrqThreadRef] as Thread;
+		this.haltedUntilIrqThread = state.haltedUntilIrqThreadAddress === 0 ? null : this.gc.threadAt(state.haltedUntilIrqThreadAddress);
 		this.interruptEventPending = state.interruptEventPending;
 		this.memoryWriteBlocked = state.memoryWriteBlocked;
 		this.memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
@@ -4180,7 +4040,6 @@ export class CPU implements MappedPageInvalidator {
 		this.nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 		this.yieldRequested = state.yieldRequested;
 		this.hardHalted = state.hardHalted;
-		this.nextObjectHashId = state.nextObjectHashId;
 	}
 
 	private markHeapImage(image: Blua32ExecutionImage): void {

@@ -158,7 +158,7 @@ void cpuInvalidationAndLifecycle() {
 		for (int step = 0; step < 100; ++step) {
 			test::runCpuParity(generated.cpu, reference.cpu, 17);
 			const auto a = generated.cpu.captureRuntimeState(), b = reference.cpu.captureRuntimeState();
-			require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && a.lastPc == b.lastPc,
+			require((a == b && bmsx::test::sameLanguageRam(generated.cpu, reference.cpu)) && a.lastPc == b.lastPc,
 				"published background code preserves guest state after invalidation, restore, observer replacement and reset");
 		}
 		if (mutation == 2) require(observations[0] > 0 && observations[0] == observations[1],
@@ -205,7 +205,7 @@ void imageReplacementRetiresBorrowedConstants() {
 	for (int step = 0; step < 100; ++step) {
 		test::runCpuParity(generated.cpu, reference.cpu, 17);
 		const auto a = generated.cpu.captureRuntimeState(), b = reference.cpu.captureRuntimeState();
-		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && a.lastPc == b.lastPc,
+		require((a == b && bmsx::test::sameLanguageRam(generated.cpu, reference.cpu)) && a.lastPc == b.lastPc,
 			"replacement constant type is specialized only against the new image");
 	}
 	require(generated.cpu.activeThread()->currentFrame->registers.get(1) == valueBool(true),
@@ -259,7 +259,7 @@ void invalidatedPendingMergeDoesNotRetireDeadOwners() {
 	for (int step = 0; step < 100; ++step) {
 		test::runCpuParity(generated.cpu, reference.cpu, 17);
 		const auto a = generated.cpu.captureRuntimeState(), b = reference.cpu.captureRuntimeState();
-		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && a.lastPc == b.lastPc,
+		require((a == b && bmsx::test::sameLanguageRam(generated.cpu, reference.cpu)) && a.lastPc == b.lastPc,
 			"a pending merge cannot inspect freed region owners or revive their old instructions");
 	}
 	require(generated.cpu.activeThread()->currentFrame->registers.get(0) == valueInteger(7),

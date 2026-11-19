@@ -264,119 +264,28 @@ recorded-end stop, arbitrary-position takeover, pointer targets, pending backend
 work, and the software/WebGL2/WebGPU Studio workflow. Physical SNES Mini timing
 and worldtick stepping remain separate, unproved surfaces.
 
-## Prerequisite: exact CPU restore
+## CPU and language-heap checkpoint ownership
 
-The initial live-owner probe (`return {}`, restore the same checkpoint three
-times) produced object ids 5, 7, 9. Restoring a state also invoked guest GC,
-which can clear weak entries and change allocation-triggered collection time.
-Neither is an acceptable base for deterministic replay.
+The CPU checkpoint holds processor latches: active and suspended thread
+addresses, execution image selectors, global-bank descriptors, completion
+values, interrupts, faults and a pending memory operation. Objects, thread
+stacks, allocator metadata, collection cursors and interned RAM strings are
+already in main RAM. References are guest addresses; no allocation sequence
+number, object directory or host identity appears in the checkpoint.
 
-| Representation | TypeScript owner | C++ owner |
-| --- | --- | --- |
-| Next object hash id, raw u32 | `CPU.nextObjectHashId` | `GcHeap.m_nextObjectHashId` |
-| Hard-halt latch | `CPU.hardHalted` | `CPU.m_hardHalted` |
-| Tracked bytes and next collection bytes | `LuaHeap` | `LuaHeap` |
-| Globals storage, including table capacity/hash chains | CPU snapshot object reference to `globals` | Same |
-| System and ordinary global registerfiles | Ordered raw string-id keys and guest values | Same |
-| Materialized canonical closures | Physical function addresses in CPU snapshot objects | Same |
-| Resident execution domains | Existing `ExecutionDomainMask` | Same |
-| Strings | Existing `StringPoolState` | Same |
+Restore installs RAM first. The allocator walks its issued object records
+without advancing the collector, and the CPU rebuilds temporary frame views,
+weak canonical closure bindings and execution caches. In-flight collection,
+including still-allocated garbage after weak retirement, does not run or
+change its guest charge. Function metadata comes from immutable ROM or the
+bound record words already in RAM, never from repeating an I/O read during a
+host restore.
 
-Hot-path callsites before the prerequisite diff:
-
-- TS `CPU.allocateObjectHashId`, `createTable`, `staticClosureAtAddress`,
-  runtime closure/upvalue allocation, `LuaHeap.reserve`,
-  `CPU.collectTrackedHeapBytes`.
-- C++ `GcHeap.allocateHashId`, `allocate`, `allocateClosure`,
-  `CPU.createTable`, `staticClosureAtAddress`, `allocateTrackedClosure`,
-  `LuaHeap.reserve`, `CPU.collectHeap`, `GcHeap.collect`/`sweep`.
-- Cold state boundaries: mirrored `CPU.captureRuntimeState` /
-  `restoreRuntimeState`, `captureRuntimeSaveState` / `applyRuntimeSaveState`,
-  external save-state codecs and libretro envelope serialization.
-
-Restore rebuilds derived execution caches from the inserted media and preserves
-the saved allocation sequence and collection schedule. Native reclamation of
-the discarded host object graph is not a guest collection: snapshot weak
-entries remain intact. Actual guest GC recomputes live byte usage, including
-after a checkpoint that had accounted-for but unreachable allocations.
-
-The replay comparison also exposed existing TS/native producer differences:
-error-string interning order and closure/upvalue allocation order. These now
-match at creation. The snapshot traversal in that prerequisite slice matched:
-metatable, array, then hash storage; frame closure before its registers. The
-storage slice below replaces recursive traversal with deferred object records. Cross-core comparison
-does not remap object ids, reorder saved tables, or translate string ids.
-
-## CPU checkpoint storage: REWIND-CPU-STORAGE-01
-
-The storage refactor follows the producer/writer boundary in
-[DuckStation's state wrapper](https://github.com/stenzek/duckstation/blob/master/src/util/state_wrapper.h)
-and [MAME's save manager](https://github.com/mamedev/mame/blob/master/src/emu/save.cpp):
-write owner state directly to storage, rather than construct a second object
-model for a serializer. BMSX's dynamic Lua heap needs explicit graph identity;
-[V8's snapshot sink](https://github.com/v8/v8/blob/main/src/snapshot/snapshot-source-sink.h)
-and [serializer reference map](https://github.com/v8/v8/blob/main/src/snapshot/serializer.h)
-provide that reference, not a memcpy of host pointers. Compression/delta storage
-such as [openMSX DeltaBlock](https://github.com/openMSX/openMSX/blob/master/src/utils/DeltaBlock.cc)
-operates on completed raw blocks; adding it above our previous DTO graph would
-have left the capture allocations and duplicate table copies in place.
-
-Representation table, established before the mirrored edits:
-
-| Saved representation | TS | C++ |
-| --- | --- | --- |
-| Value record | Existing `ValueTag` plus two payload words | The same tags, converted at capture/restore from native NaN-boxed `Value` |
-| Numeric payload | Low/high f64 words, no numeric conversion | The same bits via `bit_cast` |
-| String/builtin payload | Existing u32 pool/primitive id | Same; restore resolves builtin ids against the CPU-owned singleton array |
-| Table/closure payload | Object ordinal | Same; never a host pointer or guest hash id |
-| Object index | Ordinal to u32 word offset | Same |
-| Root/frame/completion values | Offsets of value records | Same |
-| Capacity | Retained typed-array buffers; a capture writer publishes exact active views | Retained vector storage with logical word/object counts |
-
-Object headers and child records are defined in `machine/cpu/snapshot`:
-tables keep nine header words, three words per array slot, and seven per hash
-node (key, value, next). Closures keep five header words and their upvalue
-ordinals. Upvalues keep eight words, including open/frame/index state and the
-saved value. A 2,048-table chain exposed a host-stack overflow in the old
-recursive capture. Following [V8's deferred object serialization](https://github.com/v8/v8/blob/main/src/snapshot/serializer.cc),
-capture now reserves ordinals at references and drains a flat pending-object
-list, in ordinal order, after root capture. There is no recursive descent or
-depth limit. Entire records are reserved before their columns are written;
-references use ordinals, never pointers into a growable buffer. Both cores
-use the same root/record order; guest hash ids remain independent of this
-snapshot-local traversal order.
-
-The capture-only reference map reserves ordinals before following edges. It
-tracks identity, not value classification. Tables write their own array/hash
-columns directly, including unused slots, chains, tombstones, metatables and
-capacity. Restore allocates every object identity before resolving edges, and
-fills final table storage directly. There is no intermediate `TableRuntimeState`
-or per-value/per-object `CpuValueState`/`CpuObjectState` DTO graph.
-
-Changed callsites are the mirrored CPU/table capture and restore boundaries,
-`captureRuntimeSaveState`, `RuntimeHistory.captureCheckpoint`, and the external
-save-state codec. Normal instruction dispatch, table mutation, guest allocation,
-guest GC, ICU polling and replay execution gain no additional work. The existing
-scalar CPU/frame metadata remains separate from the word arena.
-
-Only a checkpoint slot being overwritten may supply storage for capture.
-Expired/future checkpoints leave the logical retained range but their physical
-slots keep storage until reuse or stop. A seek does not consume its checkpoint.
-Capture reuses the evicted slot's buffers, grows geometrically when needed, and
-publishes only the active prefix. Spare capacity is neither encoded nor compared
-as machine state. TS keeps writer cursors outside the returned snapshot; it does
-not introduce JavaScript-private/WeakMap access on the ES2020 browser build.
-
-Disk and libretro serialization encode the same active words as little-endian
-binary blocks through the common endian owner. No graph DTO is reconstructed
-for disk, and no legacy graph reader remains. The trusted history path does not
-invoke the external codec or its file-boundary validation.
-
-This is not a zero-allocation full-machine capture: reference-index scratch,
-pending-object/root/frame metadata, strings and other device snapshots still allocate, and
-restore still reconstructs the live Lua heap. Bounded slot count is not a fixed
-byte budget. Those costs need a host-specific budget before menu enablement;
-CPU-buffer reuse does not justify skipping guest work or collecting every frame.
+History reuses the evicted slot's storage for the active completion values;
+the active range, not capacity, is state. External saves and the libretro
+envelope encode the same CPU latches explicitly in little-endian order.
+History does not invoke the file codec. Neither format adds a second
+serialization of guest RAM contents.
 
 ## Bulk checkpoint storage: REWIND-MEMORY-STORAGE-01
 

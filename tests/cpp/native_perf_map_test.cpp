@@ -110,19 +110,18 @@ void publishedAllocationsAndGuestParity(const Images& images, u32 slot) {
 	auto* systemImage = cpu.rootThread()->currentFrame->executionImage;
 #endif
 	const auto before = cpu.captureRuntimeState();
+	const auto ramBefore = cpu.memory().captureSaveState();
 	const auto fault = generated.memory.readBusFaultSequence();
 	const int budget = cpu.instructionBudgetRemaining;
 	cpu.prepareSystemNativeCode();
 	const auto prepared = cpu.captureRuntimeState();
-	require(std::ranges::equal(before.snapshot.words(), prepared.snapshot.words())
-		&& std::ranges::equal(before.snapshot.objectWords(), prepared.snapshot.objectWords())
+	require(before == prepared && cpu.memory().captureSaveState().ram == ramBefore.ram
 		&& generated.memory.readBusFaultSequence() == fault && cpu.instructionBudgetRemaining == budget,
 		"symbol registration during preparation changes no guest state, bus fault or cycle budget");
 	for (const int grant : {0, 1, 2, 3, 7, 31, 32, 67, 257}) {
 		test::runCpuParity(cpu, scalar.cpu, grant);
 		const auto a = cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
-			&& std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords())
+		require(a == b && test::sameLanguageRam(cpu, scalar.cpu)
 			&& a.programExecutionDomainId == b.programExecutionDomainId && a.lastPc == b.lastPc,
 			"map publication retains interpreter guest graphs and exact instruction boundaries");
 		std::cout << "grant " << grant << ' ' << cpu.instructionBudgetRemaining << ' ' << cpu.readCurrentInstructionPc() << '\n';
@@ -130,11 +129,8 @@ void publishedAllocationsAndGuestParity(const Images& images, u32 slot) {
 	const auto profile = cpu.readNativeCompilationProfile();
 	std::cout << "code " << profile.codeBytes << ' ' << profile.emittedCodeBytes << ' ' << profile.regionsPublished << ' ' << profile.entriesPublished << '\n';
 	const auto state = cpu.captureRuntimeState();
-	std::cout << "snapshot";
-	for (const u32 word : state.snapshot.words()) std::cout << ' ' << word;
-	std::cout << "\nobjects";
-	for (const u32 word : state.snapshot.objectWords()) std::cout << ' ' << word;
-	std::cout << '\n';
+	std::cout << "cpu " << state.lastPc << ' ' << state.activeThreadAddress << ' ' << state.lastExecutionDomainId << '\n';
+
 #if defined(BMSX_NATIVE_PERF_MAP)
 	const auto ranges = readMap();
 	for (const auto [image, pc] : {std::pair{systemImage, images.system.textAddress},

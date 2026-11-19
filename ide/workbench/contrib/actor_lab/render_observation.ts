@@ -89,7 +89,7 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 	public observe(_domain: ResourceDomain, pc: number, registers: ValueSlots): void {
 		if (this.completions.has(pc)) { this.page!.ready = true; return; }
 		const pending = this.returns.get(this.cpu.getFrameDepth());
-		if (pending.kind !== undefined && pending.pc === pc && pending.thread === this.cpu.activeThread.hashId) {
+		if (pending.kind !== undefined && pending.pc === pc && pending.thread === this.cpu.activeThread.address) {
 			this.page!.geometry.capture(registers.get(pending.register), pending.kind, this.domain, this.guest);
 			pending.kind = undefined;
 		}
@@ -97,7 +97,7 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 		if (call !== undefined) {
 			if (this.page === undefined || registers.getTag(call.a) !== ValueTag.Closure) return;
 			pending.kind = this.visualKinds.get(registers.getClosure(call.a, this.cpu.gc).prototypeRecord.functionAddress);
-			pending.pc = call.pc + INSTRUCTION_BYTES; pending.thread = this.cpu.activeThread.hashId; pending.register = call.a + 1;
+			pending.pc = call.pc + INSTRUCTION_BYTES; pending.thread = this.cpu.activeThread.address; pending.register = call.a + 1;
 			return;
 		}
 		const store = this.stores.get(pc);

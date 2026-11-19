@@ -1,5 +1,6 @@
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import type { GcObject } from '../../machine/ts/machine/cpu/gc_object';
 import type { StringId, StringPool } from '../../machine/ts/machine/cpu/string_pool';
 import {
 	TABLE_INDEX_CHAIN_LIMIT,
@@ -78,6 +79,11 @@ export class SuspendedGuestSession {
 	private readonly entryScratch = new ScratchBuffer<ValueSlots>(() => new ValueSlots(2));
 	private readonly previewParts = new ScratchBuffer<string[]>(() => []);
 	private readonly previewVisited = new Set<number>();
+	// Observations can outlive an allocation. Give a lifetime token only to
+	// attachments that this inspector actually sees; the VM and its saves do
+	// not need an allocation serial for every guest object.
+	private readonly observedLifetimes = new WeakMap<GcObject, number>();
+	private nextObservedLifetime = 1;
 	private readonly storedParts: string[] = [];
 	private readonly formatStoredEntry = (key: Value, entry: Value): void => {
 		this.storedParts.push(`${this.formatValue(key)}: ${this.previewValue(entry, 1, STORED_ENTRIES_PREVIEW_LIMIT)}`);
@@ -129,12 +135,12 @@ export class SuspendedGuestSession {
 		const tag = valueTag(value);
 		return tag === ValueTag.String
 			? { tag, scalar: this.stringPool.bytes(asStringId(value)) }
-			: { tag, scalar: this.identityScalar(value, tag) };
+			: { tag, scalar: this.observedIdentityScalar(value, tag) };
 	}
 	public matchesIdentity(value: Value, identity: SuspendedValueIdentity): boolean {
-		return valueTag(value) === identity.tag && this.identityScalar(value, identity.tag) === identity.scalar;
+		return valueTag(value) === identity.tag && this.observedIdentityScalar(value, identity.tag) === identity.scalar;
 	}
-	/** Strings retain their bytes; reference selection uses a lifetime ordinal, not a guest hash or address. */
+	/** Strings retain their bytes; reference selection uses the physical address in its heap and history context. */
 	public identityScalar(value: Value, tag: Exclude<ValueTag, ValueTag.String>): number;
 	public identityScalar(value: Value, tag: ValueTag): number | string;
 	public identityScalar(value: Value, tag: ValueTag): number | string {
@@ -143,11 +149,27 @@ export class SuspendedGuestSession {
 			case ValueTag.Integer: return asInteger(value);
 			case ValueTag.Float: case ValueTag.BuiltinFunction: return valuePayload(value);
 			case ValueTag.String: return this.stringPool.bytes(asStringId(value));
-			case ValueTag.Table: return asTable(value, this.cpu.gc).hashId;
-			case ValueTag.Closure: return asClosure(value, this.cpu.gc).hashId;
-			case ValueTag.Thread: return this.cpu.gc.threadAt(valuePayload(value))!.hashId;
+			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return valuePayload(value);
 			default: throw new Error('Internal table metadata is not a language value.');
 		}
+	}
+
+	/** An observation is not a history address: recycling a slot ends the observed lifetime. */
+	public observedIdentityScalar(value: Value, tag: Exclude<ValueTag, ValueTag.String>): number;
+	public observedIdentityScalar(value: Value, tag: ValueTag): number | string;
+	public observedIdentityScalar(value: Value, tag: ValueTag): number | string {
+		let attachment: GcObject;
+		switch (tag) {
+			case ValueTag.Table: attachment = asTable(value, this.cpu.gc); break;
+			case ValueTag.Closure: attachment = asClosure(value, this.cpu.gc); break;
+			case ValueTag.Thread: attachment = this.cpu.gc.threadAt(valuePayload(value))!; break;
+			default: return this.identityScalar(value, tag);
+		}
+		const existing = this.observedLifetimes.get(attachment);
+		if (existing !== undefined) return existing;
+		const id = this.nextObservedLifetime++;
+		this.observedLifetimes.set(attachment, id);
+		return id;
 	}
 
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */
@@ -307,10 +329,10 @@ export class SuspendedGuestSession {
 			return valueToString(value, this.stringPool);
 		}
 		const table = asTable(value, this.cpu.gc);
-		if (depth >= maxDepth || this.previewVisited.has(table.hashId)) {
+		if (depth >= maxDepth || this.previewVisited.has(table.address)) {
 			return '{…}';
 		}
-		this.previewVisited.add(table.hashId);
+		this.previewVisited.add(table.address);
 		const parts = this.previewParts.get(depth);
 		const entry = this.entryScratch.get(depth);
 		parts.length = 0;
