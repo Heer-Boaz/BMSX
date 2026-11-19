@@ -289,10 +289,12 @@ return target.value, active_data.retained, blackboard_instance:get(ticks_key), b
 	machine.current_id == 'active', target.tags.new_active, target.tags.old_active
 `;
 
-// 10,000 real transitions under the current opcode/placement tariffs on the
-// pre-Integer/Float machine: 20,300,024 cycles detached; recording adds
-// 2,620,000. Keep both bounds independent of this implementation's results.
-const DETACHED_TRANSITION_CYCLES = 20_300_024;
+// 10,000 real transitions under the current opcode/placement tariffs: 20,320,024
+// cycles detached; recording adds 2,620,000. Keep both bounds independent of
+// this implementation's results. The detached figure belongs to the harness's
+// module set: it rose by 2 cycles per transition when the harness began to
+// compile only the cart modules the entry requires.
+const DETACHED_TRANSITION_CYCLES = 20_320_024;
 const RECORDER_TRANSITION_CYCLES = 2_620_000;
 const TRANSITION_CALL_GRANT = DETACHED_TRANSITION_CYCLES + RECORDER_TRANSITION_CYCLES + 1;
 

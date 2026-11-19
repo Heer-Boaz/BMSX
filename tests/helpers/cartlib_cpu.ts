@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileLuaChunkToProgram, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
 import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from './blua32';
@@ -127,22 +127,21 @@ const CART_STUB_MODULES = [
 	},
 ] as const;
 
-export function compileCartlibProgram(
-	cartEntrySource: string,
-	{ traceStatements = 'erase', preloadModules = [], optLevel = 3, modules = [] }: CartlibProgramOptions = {},
-) {
+const LITERAL_REQUIRE = /\brequire\s*\(?\s*['"]([^'"]+)['"]/g;
+
+// The firmware half depends only on fixed sources and the optimization level,
+// so one test process compiles it once per level and links that program into
+// every cart image.
+const systemPrograms = new Map<0 | 3, CompiledSystemProgram>();
+function compileCartlibSystem(optLevel: 0 | 3) {
+	let compiled = systemPrograms.get(optLevel);
+	if (compiled !== undefined) return compiled;
 	const systemSources = new Map<string, string>(SYSTEM_MODULE_FILES.map(([path, file]) => [path, readFileSync(file, 'utf8')]));
 	for (const module of BASE_FIRMWARE_MODULES) systemSources.set(module.path, module.source);
 	for (const module of SYSTEM_STUB_MODULES) systemSources.set(module.path, module.source);
 	for (const module of COROUTINE_FIRMWARE_MODULES) systemSources.set(module.path, module.source);
 	for (const path of ['math', 'math/trig', 'math/trig/reduce']) systemSources.set(path, readFileSync(`machine/bios/${path}.lua`, 'utf8'));
 	const systemModules = Array.from(systemSources, ([path, source]) => ({
-		path, source, chunk: parseLuaChunk(source, `${path}.lua`),
-	}));
-	const cartSources = new Map<string, string>(CART_MODULE_FILES.map(([path, file]) => [path, readFileSync(file, 'utf8')]));
-	for (const module of CART_STUB_MODULES) cartSources.set(module.path, module.source);
-	for (const module of modules) cartSources.set(module.path, module.source);
-	const cartModules = Array.from(cartSources, ([path, source]) => ({
 		path, source, chunk: parseLuaChunk(source, `${path}.lua`),
 	}));
 	const systemEntry = `
@@ -158,11 +157,38 @@ math = require('math')
 assert(setmetatable ~= nil)
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
-	const systemCompiled = compileLuaChunkToProgram(parseLuaChunk(systemEntry, 'boot.lua'), systemModules, {
+	compiled = compileLuaChunkToProgram(parseLuaChunk(systemEntry, 'boot.lua'), systemModules, {
 		entrySource: systemEntry,
 		optLevel,
 		programDomain: 'system',
 	});
+	systemPrograms.set(optLevel, compiled);
+	return compiled;
+}
+
+export function compileCartlibProgram(
+	cartEntrySource: string,
+	{ traceStatements = 'erase', preloadModules = [], optLevel = 3, modules = [] }: CartlibProgramOptions = {},
+) {
+	const cartSources = new Map<string, string>(CART_MODULE_FILES.map(([path, file]) => [path, readFileSync(file, 'utf8')]));
+	for (const module of CART_STUB_MODULES) cartSources.set(module.path, module.source);
+	for (const module of modules) cartSources.set(module.path, module.source);
+	// The compiler compiles every supplied module; cartlib has no dynamic
+	// require, so supply only the modules the entry reaches by literal
+	// require, in their usual order.
+	const reached = new Set<string>(), pending = [cartEntrySource];
+	const reach = (path: string) => {
+		const source = cartSources.get(path);
+		if (source === undefined || reached.has(path)) return;
+		reached.add(path);
+		pending.push(source);
+	};
+	for (const path of preloadModules) reach(path);
+	while (pending.length > 0) for (const match of pending.pop()!.matchAll(LITERAL_REQUIRE)) reach(match[1]);
+	const cartModules = Array.from(cartSources).filter(([path]) => reached.has(path)).map(([path, source]) => ({
+		path, source, chunk: parseLuaChunk(source, `${path}.lua`),
+	}));
+	const systemCompiled = compileCartlibSystem(optLevel);
 	const cartCompiled = compileLuaChunkToProgram(parseLuaChunk(cartEntrySource, 'entry.lua'), cartModules, {
 		entrySource: cartEntrySource,
 		optLevel,
