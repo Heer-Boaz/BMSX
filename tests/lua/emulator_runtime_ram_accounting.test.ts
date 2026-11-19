@@ -1,4 +1,4 @@
-import { ValueTag, valueBuiltinFunction, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBuiltinFunction, valueInteger, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
 import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

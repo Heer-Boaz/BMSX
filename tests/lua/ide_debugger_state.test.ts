@@ -759,8 +759,8 @@ test(`guest call admission roots prepare and recursive arguments across GC (O${o
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
 	const intern = cpu.stringPool.intern.bind(cpu.stringPool);
-	t.mock.method(cpu.stringPool, 'intern', (text: string, tracked = true) => {
-		const id = intern(text, tracked);
+	t.mock.method(cpu.stringPool, 'intern', (text: string) => {
+		const id = intern(text);
 		cpu.collectTrackedHeapBytes();
 		return id;
 	});

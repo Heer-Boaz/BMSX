@@ -8,7 +8,6 @@ import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block
 import { CpuSnapshotClosure, CpuSnapshotObjectKind } from '../../machine/ts/machine/cpu/snapshot';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
-	BLUA32_FUNCTION_ALIGNMENT,
 	BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
 	BLUA32_FUNCTION_FLAGS_OFFSET,
 	BLUA32_FUNCTION_MAX_STACK_OFFSET,

@@ -15,7 +15,6 @@ import { TestExecution, DEFAULT_TEST_BUDGETS } from '../../ide/testing/execution
 import { ScenarioResultService } from '../../ide/testing/scenario/result_service';
 import type { ScenarioTestItem } from '../../ide/testing/scenario/test_collection';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import {
 	IO_GX_GPU_GP0, IO_GEO_CMD, IO_GEO_COUNT, IO_GEO_SRC0, IO_GEO_SRC1, IO_GEO_SRC2,
 	IO_GEO_DST0, IO_GEO_DST1, IO_GEO_STRIDE0, IO_GEO_STRIDE1, IO_GEO_STRIDE2,
@@ -188,7 +187,11 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 				assert.ok(result.failures[0].stackTrace!.includes(testSource.path));
 				if (index === 1) {
 					assert.equal(result.logs.at(0).text, 'cleanup');
-					assert.ok(target.runtime.machine.cpu.captureRuntimeState().threads.some(thread => thread.status === ThreadStatus.Failed && thread.frames.length > 0));
+					const inspection = execution.inspect();
+					const failure = inspection.state.failures[0];
+					assert.equal(failure.origin, 'failed-thread');
+					assert.ok(inspection.readStack(failure.reference!, 0, 1).frames.length > 0);
+					inspection.dispose();
 				} else if (index === 2) assert.deepEqual(result.failures.map(failure => failure.phase), ['body', 'teardown']);
 				else if (index === 3 || index === 5) {
 					assert.match(result.failures[0].message, /cycle budget/);
