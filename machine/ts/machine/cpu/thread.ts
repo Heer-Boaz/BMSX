@@ -44,14 +44,14 @@ export class Thread extends GcObject {
 	private boundBackingBytes = 0;
 	private boundFrameCapacity = 0;
 	private boundProtectedCapacity = 0;
-	private readonly recordOffset: number;
+	private readonly recordWordOffset: number;
 	public constructor(private readonly heap: GcHeap, public readonly address: number) {
 		super(GcKind.Thread);
-		this.recordOffset = address & RAM_RECORD_WORD_MASK;
+		this.recordWordOffset = (address & RAM_RECORD_WORD_MASK) >>> 2;
 	}
 
 	public initializeRecord(entry: Closure | null): void {
-		const memory = this.heap.memory, offset = this.recordOffset;
+		const memory = this.heap.memory, offset = this.recordWordOffset * 4;
 		const ram = memory.ramData();
 		const block = this.read(ThreadField.StackBlock);
 		ram.fill(0, offset, offset + THREAD_HEAP_BYTES);
@@ -69,7 +69,7 @@ export class Thread extends GcObject {
 		this.armStackWatch();
 	}
 
-	private read(field: ThreadField): number { return this.heap.memory.ramView.getUint32(this.recordOffset + field, true); }
+	private read(field: ThreadField): number { return this.heap.memory.ramWords[this.recordWordOffset + (field >>> 2)]; }
 	private write(field: ThreadField, word: number): void { this.heap.memory.writeRamRecordWord(this.address + field, word); }
 
 	public get status(): ThreadStatus { return this.read(ThreadField.Status); }
@@ -213,7 +213,7 @@ export class Thread extends GcObject {
 	}
 
 	public armStackWatch(): void {
-		const offset = this.recordOffset;
+		const offset = this.recordWordOffset * 4;
 		const page = offset >>> MAPPED_PAGE_BYTE_SHIFT;
 		const word = ((offset & MAPPED_PAGE_BYTE_MASK) + ThreadField.StackBlock) >>> 2;
 		const watches = this.heap.memory.ramWriteWatches();

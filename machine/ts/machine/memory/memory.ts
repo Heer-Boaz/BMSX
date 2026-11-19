@@ -199,7 +199,8 @@ export class Memory {
 	private instructionEnd: number;
 	public readonly ramView: DataView;
 	// Little-endian word view of the same storage for runtime-owned RAM records.
-	private readonly ram32: Uint32Array;
+	// Same physical bytes through the aligned native word port.
+	public readonly ramWords: Uint32Array;
 	private readonly ramPageWriteWatches: MappedPageWriteWatches;
 	private mappedPageInvalidator: MappedPageInvalidator | null = null;
 	private readonly ioSlots: Uint32Array;
@@ -231,7 +232,7 @@ export class Memory {
 		this.ram = new Uint8Array(ramByteCount);
 		this.instructionEnd = RAM_BASE + ramByteCount;
 		this.ramView = new DataView(this.ram.buffer);
-		this.ram32 = new Uint32Array(this.ram.buffer, 0, ramByteCount >>> 2);
+		this.ramWords = new Uint32Array(this.ram.buffer, 0, ramByteCount >>> 2);
 		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount, true);
 		this.ioSlots = new Uint32Array(IO_SLOT_COUNT);
 		this.ioReadContexts = new Array<unknown>(IO_SLOT_COUNT);
@@ -263,20 +264,20 @@ export class Memory {
 
 	// The CPU record port addresses physical RAM, including bytes under MMIO.
 	public readRamRecordWord(address: number): number {
-		return this.ram32[(address & RAM_RECORD_WORD_MASK) >>> 2];
+		return this.ramWords[(address & RAM_RECORD_WORD_MASK) >>> 2];
 	}
 
 	public writeRamRecordWord(address: number, value: number): void {
 		const offset = address & RAM_RECORD_WORD_MASK;
-		this.ram32[offset >>> 2] = value;
+		this.ramWords[offset >>> 2] = value;
 		this.invalidateRamWrite(offset, 4);
 	}
 
 	public writeRamRecordPair(address: number, first: number, second: number): void {
 		const offset = address & (MAIN_RAM_SIZE - 8);
 		const word = offset >>> 2;
-		this.ram32[word] = first;
-		this.ram32[word + 1] = second;
+		this.ramWords[word] = first;
+		this.ramWords[word + 1] = second;
 		this.invalidateRamWrite(offset, 8);
 	}
 
