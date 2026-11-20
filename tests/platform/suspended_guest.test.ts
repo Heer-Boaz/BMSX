@@ -33,11 +33,18 @@ test('suspended member reads consume lookup results without executing or chargin
 		assert.throws(() => guest.readStringMember(loopValue, 'member'));
 		assert.equal(guest.readStringMember(parentValue, 'member'), v.valueInteger(41), 'a failed chain does not poison later scratch results');
 	}
+	const members = new Map<string, v.Value>();
+	guest.visitTableStringMembers(childValue, (name, value) => members.set(name, value));
+	assert.deepEqual(members, new Map([['member', v.valueInteger(41)]]));
+	assert.throws(() => guest.visitTableStringMembers(loopValue, () => {}), /Metatable __index loop/);
 	assert.equal(cpu.instructionBudgetRemaining, 123);
 	assert.equal(runtime.machine.scheduler.nowCycles, cycle);
 	assert.deepEqual(cpu.captureRuntimeState(), before, 'inspection preserves the guest graph, PC, seed and allocation state');
 	cpu.gc.tables.setStringKey(child, key, v.valueBool(false));
 	assert.equal(guest.readStringMember(childValue, 'member'), v.valueBool(false), 'an own false value still wins over inherited data');
+	members.clear();
+	guest.visitTableStringMembers(childValue, (name, value) => members.set(name, value));
+	assert.deepEqual(members, new Map([['member', v.valueBool(false)]]));
 });
 
 test('suspended classification and inspection distinguish machine numeric subtypes without executing', () => {

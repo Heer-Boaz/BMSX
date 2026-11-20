@@ -287,6 +287,12 @@ export class TableRecords {
 	public resolveStringIndex(record: number, indexKey: StringId, key: StringId, result: TableLookupResult): void {
 		this.resolveStringIndexCached(record, indexKey, key, -1, result);
 	}
+	// Also used when the debugger enumerates the chain rather than looking
+	// up one field. The metatable's __index is a direct read.
+	public metatableIndexValue(record: number, indexKey: StringId): Value {
+		const meta = this.metatableAddress(record);
+		return meta !== 0 ? this.getStringKey(meta, indexKey) : valueNil();
+	}
 	public resolveStringIndexCached(record: number, indexKey: StringId, key: StringId, predicted: number, result: TableLookupResult): void {
 		let current = record;
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
@@ -294,8 +300,7 @@ export class TableRecords {
 			if (result.slot >= 0) {
 				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
 			}
-			const meta = this.metatableAddress(current);
-			const next = meta !== 0 ? this.getStringKey(meta, indexKey) : valueNil();
+			const next = this.metatableIndexValue(current, indexKey);
 			if (valueTag(next) !== ValueTag.Table) {
 				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
 			}

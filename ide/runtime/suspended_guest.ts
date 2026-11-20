@@ -59,9 +59,8 @@ export class SuspendedGuestSession {
 	/** Borrowed Values are decoded only through this physical CPU's heap. */
 	public readonly cpu: CPU;
 	private readonly stringPool: StringPool;
-	private readonly scratch = new ValueSlots(1);
 	private readonly lookupResult: TableLookupResult = {
-		values: this.scratch, slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved,
+		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved,
 	};
 	private readonly entryScratch = new ScratchBuffer<ValueSlots>(() => new ValueSlots(2));
 	private readonly previewParts = new ScratchBuffer<string[]>(() => []);
@@ -227,9 +226,7 @@ export class SuspendedGuestSession {
 		if (this.lookupResult.status === TableLookupStatus.ChainExhausted) {
 			throw new Error(METATABLE_LOOP_MESSAGE);
 		}
-		const result = this.scratch.get(0);
-		this.scratch.setNil(0);
-		return result;
+		return this.lookupResult.value;
 	}
 
 	public readStringPath(
