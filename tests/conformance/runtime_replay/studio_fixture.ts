@@ -54,6 +54,7 @@ import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import type { EditorTabId } from '../../../ide/workbench/ui/tab/id';
 import { measureText } from '../../../ide/editor/common/text/layout';
+import { yieldBrowserTask } from './browser_task';
 
 export function check(condition: boolean, message: string): void {
 	if (!condition) throw new Error(message);
@@ -137,7 +138,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 				'Studio layout and presentation target must agree, including frames that restore machine state');
 		}
 		observations.hostFrames += 1;
-		await new Promise<void>(resolve => setTimeout(resolve, 0));
+		await yieldBrowserTask();
 		check(ide.fault.hostFrameFailure === undefined, 'workbench host frame failed');
 		check(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) <= observations.expectedFaultSequence, 'unexpected guest fault');
 	};
