@@ -14,8 +14,18 @@ export function romToolchainIdentity(access: FileAccess): string {
 	const hash = createHash('sha256');
 	hash.update(JSON.stringify([process.version, process.platform, process.arch]));
 	for (const path of collectSourceFiles(TOOLCHAIN_ROOTS, TOOLCHAIN_EXTENSIONS).sort()) {
-		hash.update(JSON.stringify(relative(process.cwd(), path).replace(/\\/g, '/')));
-		hash.update(createHash('sha256').update(readFileSync(resolveReadPath(access, path))).digest());
+		const name = relative(process.cwd(), path).replace(/\\/g, '/');
+		const bytes = readFileSync(resolveReadPath(access, path));
+		const content = createHash('sha256');
+		if (name === 'package.json') {
+			// npm commands select the invocation. The resolved options enter the
+			// ROM recipe directly; module resolution and the lockfile remain inputs.
+			const manifest: Record<string, unknown> = JSON.parse(bytes.toString('utf8'));
+			delete manifest.scripts;
+			content.update(JSON.stringify(manifest));
+		} else content.update(bytes);
+		hash.update(JSON.stringify(name));
+		hash.update(content.digest());
 	}
 	return hash.digest('hex');
 }
