@@ -58,7 +58,8 @@ private:
 	void emitTableSlotStore(int value);
 	void emitTableSlotOffset(sljit_s32 destination, bool word);
 	void emitTableSlotLoad(sljit_s32 destination, bool word);
-	void emitTableWriteWatch(NativeBlockExitSite&, bool arraySlot);
+	void emitTableWriteWatch(NativeBlockExitSite&, bool arraySlot, int value);
+	std::array<sljit_jump*, 2> emitSkipScalarBarrier(int value, sljit_s32 scratch);
 	void emitGrayChange(NativeBlockExitSite&, sljit_s32 offset, sljit_s32 record, u32 link);
 	void emitRamWordWriteWatch(NativeBlockExitSite&, sljit_s32 address, sljit_sw addressArg, sljit_s32 bits, sljit_s32 group, u32 wordMask = 1u);
 	void emitLength(const DecodedInstruction&, NativeBlockExitSite&);

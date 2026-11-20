@@ -343,7 +343,7 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 			const u32 head = cpu.gcHeap().changedHeadOffset();
 			const u32 weakLink = memory.readRamRecordWord(header + GC_RECORD_LINK) & ~GC_GRAY_INDEX_MASK;
 			require(weakLink != 0, "the table is also linked to a second weak table");
-			model.setInteger(1, valueInteger(303));
+			model.setInteger(1, valueTable(cpu.createTable().address()));
 			const u32 previousHead = memory.readRamRecordWord(head);
 			require(previousHead == ((model.address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT), "scalar Table write publishes the prior link");
 			for (const u32 watched : {header, header + GC_RECORD_LINK, head}) {
@@ -407,8 +407,11 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 	const u32 markWord = (mirror + GC_COLOR_OFFSET) & RAM_RECORD_WORD_MASK;
 	watches.armCodeRange(markWord, sizeof(u32));
 	registers.set(2, valueInteger(46)); state.remainingCycles = 100;
+	require(block->run(registers.view(), state) == &block->terminal && memory.readRamRecordWord(body) == 46
+		&& memory.readRamRecordByte(mirror + GC_COLOR_OFFSET) == 3u, "a scalar store does not touch the mirrored mark");
+	registers.set(2, valueTable(cpu.createTable().address())); state.remainingCycles = 100;
 	require(block->run(registers.view(), state)->exit == NativeBlockExit::WriteInteger
-		&& memory.readRamRecordWord(body) == 83
+		&& memory.readRamRecordWord(body) == 46
 		&& memory.readRamRecordByte(mirror + GC_COLOR_OFFSET) == 3u,
 		"the collector tests the raw mirrored mark byte, not the rounded table-header word address");
 	watches.clearCodeRange(markWord, sizeof(u32));

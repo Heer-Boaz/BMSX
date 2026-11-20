@@ -72,6 +72,9 @@ public:
 	void markString(StringId id) { m_stringPool.markReachable(id, m_minor); }
 	bool markValue(Value value);
 	bool markThread(u32 address);
+	void writeValueBarrier(u32 address, u32 link, ValueTag tag) {
+		if (valueTagHasGcEdge(tag)) writeBarrier(address, link);
+	}
 	void writeBarrier(u32 address, u32 link) {
 		u8 flags = memory.readRamRecordByte(address + GC_COLOR_OFFSET);
 		if ((flags & (GC_OLD | GC_REMEMBERED)) == GC_OLD) {

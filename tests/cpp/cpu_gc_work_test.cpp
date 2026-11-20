@@ -231,6 +231,40 @@ void temporaryRootsAndUnreachablePool() {
 		"dead Table incurs one block visit, not another mark pass; its String incurs one visit, not a scan of its bytes");
 }
 
+void referenceWritesPayOnlyForNewEdges() {
+	Machine machine(image()); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap();
+	auto& frame = *cpu.rootThread()->currentFrame;
+	auto strong = cpu.createTable(4096, 4), weak = cpu.createTable(0, 4), mode = cpu.createTable(0, 1);
+	const StringId field = cpu.stringPool().intern("counter");
+	mode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("k")));
+	weak.setMetatableAddress(mode.address());
+	int slot = strong.setStringKey(field, valueInteger(0));
+	strong.setInteger(1, valueBool(true));
+	frame.registers.set(0, valueTable(strong.address()));
+	frame.registers.set(1, valueTable(weak.address()));
+	frame.writeControl(bmsx::FrameField::Top, 2);
+	const auto minor = [&] { return gc.collectYoung(valueNil(), valueNil(), valueNil()); };
+	minor();
+	require(machine.memory.readRamRecordByte(strong.address() + GC_COLOR_OFFSET) & GC_OLD, "owner is actually old");
+	const auto quietWork = minor();
+	for (int counter = 1; counter <= 8; ++counter) {
+		strong.setStringKeyCached(field, valueInteger(counter), slot);
+		strong.setIntegerArrayKey(1, valueFloat(1.0f));
+	}
+	require((machine.memory.readRamRecordByte(strong.address() + GC_COLOR_OFFSET) & GC_REMEMBERED) == 0
+		&& minor() == quietWork, "scalar writes to old array and live hash slots do not add small-collection cycles");
+	const Value strongKey = valueTable(cpu.createTable().address()), weakKey = valueTable(cpu.createTable().address());
+	strong.set(strongKey, valueInteger(12));
+	weak.set(weakKey, valueInteger(15));
+	const StringId newField = cpu.stringPool().intern("young-key:new-name");
+	strong.setStringKey(newField, valueInteger(2));
+	require(minor() >= quietWork + 8 + 4096 + 8, "a new edge pays for the reserved-slot scan");
+	require(gc.tableRecordAddress(valuePayload(strongKey)) == valuePayload(strongKey)
+		&& gc.tableRecordAddress(valuePayload(weakKey)) == 0 && weak.get(weakKey) == valueNil()
+		&& cpu.stringPool().find("young-key:new-name") == newField && strong.getStringKey(newField) == valueInteger(2),
+		"tracked Table and String keys survive; a key that is only weak is removed");
+}
+
 void incrementalStateAndBarriers() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto roots = cpu.createTable(1024, 0);
@@ -248,6 +282,10 @@ void incrementalStateAndBarriers() {
 	require(cpu.stepHeap(valueNil(), valueNil(), valueNil()) >= GC_STEP_WORDS
 		&& cpu.gcHeap().phase() == GcPhase::Mark && (machine.memory.readRamRecordByte(target.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3,
 		"mutations target a black allocation while marking is incomplete");
+	target.setStringKey(field, valueInteger(1));
+	require((machine.memory.readRamRecordByte(target.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3
+		&& machine.memory.readRamRecordWord(cpu.gcHeap().changedHeadOffset()) == 0,
+		"scalar replacement does not enqueue a black table");
 	auto child = cpu.createTable();
 	target.setInteger(1, valueTable(child.address()));
 	target.setStringKey(field, valueTable(child.address()));
@@ -356,7 +394,10 @@ void consumesSelfLinkedGrayEdge() {
 void secondMarkPassAndCredit() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(cpu.createTable(4096, 0).address())); frame.writeControl(bmsx::FrameField::Top, 1);
+	frame.registers.set(0, valueTable(cpu.createTable(4096, 0).address()));
+	frame.registers.set(1, valueTable(cpu.createTable().address()));
+	frame.registers.set(2, valueTable(cpu.createTable().address()));
+	frame.writeControl(bmsx::FrameField::Top, 3);
 	const auto before = cpu.luaHeap().usedBytes();
 	cpu.luaHeap().setCollectionTarget(before); cpu.instructionBudgetRemaining = 0;
 	cpu.createTable();
@@ -366,7 +407,7 @@ void secondMarkPassAndCredit() {
 	u32 phases = 0;
 	for (int i = 0; i < 12; ++i) {
 		auto target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
-		target.setInteger(1, valueInteger(i));
+		target.setInteger(1, cpu.rootThread()->currentFrame->registers.get(1 + (i & 1)));
 		cpu.stepHeap(valueNil(), valueNil(), valueNil());
 		const auto state = cpu.captureRuntimeState(); phases |= 1u << static_cast<u32>(cpu.gcHeap().phase());
 		const auto ram = cpu.memory().captureSaveState();
@@ -542,7 +583,7 @@ int main(int argc, char** argv) {
 		}
 		canonicalPoolAndRootRanges(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
-		incrementalStateAndBarriers(); incrementalSharedWeakMode(); consumesSelfLinkedGrayEdge();
+		referenceWritesPayOnlyForNewEdges(); incrementalStateAndBarriers(); incrementalSharedWeakMode(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
 		return 0;

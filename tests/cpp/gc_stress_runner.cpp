@@ -75,6 +75,11 @@ void exerciseYoung(bmsx::CPU& cpu, bool compiled) {
 	require(!Upvalue::isOpen(memory, cell) && (memory.readRamRecordByte(cell + GC_COLOR_OFFSET) & GC_OLD) != 0u,
 		"the mutation targets an actual old closed cell");
 	cpu.clearHaltUntilIrq(); runYoungStage(cpu);
+	for (const u32 address : {valuePayload(global("scalar_owner")), valuePayload(global("scalar_array")),
+		ClosureRecord::captureAddress(memory, valuePayload(global("scalar_change")), 0u)}) {
+		require((memory.readRamRecordByte(address + GC_COLOR_OFFSET) & (GC_OLD | GC_REMEMBERED)) == GC_OLD,
+			"compiled or scalar immediate stores did not remember an old owner");
+	}
 	const auto childKey = *cpu.stringPool().find("child"), textKey = *cpu.stringPool().find("text");
 	const u32 owner = valuePayload(global("owner")), arrayOwner = valuePayload(global("array_owner"));
 	const Value child = TableRecord(cpu.gcHeap(), owner).getStringKey(childKey);

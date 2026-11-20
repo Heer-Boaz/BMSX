@@ -1299,8 +1299,10 @@ and the threshold are held in the runtime management area.
 For a full collection, the collector marks retained objects, incrementally
 remarks roots and modified objects in a second pass, resolves weak references
 in a final atomic remark, and then reclaims unmarked objects and Strings.
-Changing a previously scanned Table, its metatable or a closed captured-variable
-cell makes that allocation eligible for another scan. Register and global
+Adding or replacing a tracked reference in a previously scanned Table or
+closed captured-variable cell makes that allocation eligible for another scan.
+Writing the Table's metatable also makes it eligible, since that can change how
+its existing entries are traced. Register and global
 writes do not add a per-write collection charge: roots and retained Thread
 stacks are examined again before reclamation. Allocations created during
 reclamation survive that collection. An object found reachable earlier in the
@@ -1308,13 +1310,21 @@ cycle may therefore survive until a later collection even if its last
 reference has gone.
 
 A small collection examines roots, old Threads and old Tables or closed
-captured-variable cells modified since the last small collection. It follows
-edges through young records; unchanged old objects do not need tracing.
-An old weak key or value counts as retained until a full collection determines
-its reachability. The first modification of an old owner records it for the
-next small collection and adds no charge to the write. Small collections
-complete before the allocating instruction resumes; their work depends on
-the affected records and weak references, not just on the 128 KiB interval.
+captured-variable cells recorded since the last small collection. It follows
+edges through young records. An old weak key or value counts as retained
+until a full collection determines its reachability.
+
+A store records an old owner when it publishes a String, Table, closure or
+Thread as a value, as a newly live key, or when a capture closes on such a
+value. The rule does not test the age of the target. A metatable write also
+records the Table. Replacing a scalar with a scalar, deleting a field, or
+moving existing entries during a resize does not by itself record an owner.
+For example, changing the Integer in an existing String-keyed field does
+not record the Table, but inserting that field can record it for its key.
+
+Recording adds no charge to the write. Small collections complete before
+the allocating instruction resumes; their work depends on the affected
+records and weak references, not just on the 128 KiB interval.
 
 Collection work consumes cycles as follows:
 

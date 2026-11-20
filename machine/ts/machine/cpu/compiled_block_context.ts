@@ -47,15 +47,19 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 		}
 		case OpCode.SETUP: {
 			const tag = registers.tagOperand(a), word = registers.wordOperand(a);
+			const failure = registers.exit(exit);
 			return `{const m=h.memory,c=F.captureAddress(${b})&${UPVALUE_ADDRESS_MASK};
 				const watches=m.ramWriteWatches();
-				if((m.rb(c+${UPVALUE_FLAGS})&${UPVALUE_OPEN})||watches.anyWatched(c,8)) ${registers.exit(exit)}
-				const flags=m.rb(c+${GC_COLOR_OFFSET});
-				if((flags&${GC_COLOR_MASK})===3){
-					if(watches.anyWatched(c+${UPVALUE_NEXT},4)||watches.anyWatched(h.changedHeadOffset(),4)) ${registers.exit(exit)}
-					h.writeBarrier(c,${UPVALUE_NEXT});
-				}else if((flags&${GC_OLD | GC_REMEMBERED})===${GC_OLD}) h.writeBarrier(c,${UPVALUE_NEXT});
-				m.wd(c+${UPVALUE_VALUE_WORD},${word});m.wb(c+${UPVALUE_VALUE_TAG},${tag});}`;
+				if((m.rb(c+${UPVALUE_FLAGS})&${UPVALUE_OPEN})||watches.anyWatched(c,8)) ${failure}
+				const t=${tag};
+				if(t>=${ValueTag.String}&&t<=${ValueTag.Thread}&&t!==${ValueTag.BuiltinFunction}){
+					const flags=m.rb(c+${GC_COLOR_OFFSET});
+					if((flags&${GC_COLOR_MASK})===3){
+						if(watches.anyWatched(c+${UPVALUE_NEXT},4)||watches.anyWatched(h.changedHeadOffset(),4)) ${failure}
+						h.writeBarrier(c,${UPVALUE_NEXT});
+					}else if((flags&${GC_OLD | GC_REMEMBERED})===${GC_OLD}) h.writeBarrier(c,${UPVALUE_NEXT});
+				}
+				m.wd(c+${UPVALUE_VALUE_WORD},${word});m.wb(c+${UPVALUE_VALUE_TAG},t);}`;
 		}
 		case OpCode.VARARG: {
 			if (b === 1) return '';

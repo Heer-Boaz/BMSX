@@ -27,12 +27,14 @@ void TableRecord::initialize(size_t array, size_t hash) {
 }
 
 void TableRecord::setMetatableAddress(u32 address) {
-	writeBarrier();
+	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 	writeHeader(TableHeader::Metatable, address);
 }
 
-void TableRecord::writeBarrier() {
-	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+void TableRecord::setArraySlot(size_t slot, const Value& value) {
+	m_heap->writeValueBarrier(m_address, GC_RECORD_LINK, valueTag(value));
+	values().set(slot, value);
+	updateLengthHint(slot, !isNil(value));
 }
 
 u32 TableRecord::storageBytes(size_t arraySize, size_t hashSize) {
@@ -251,9 +253,8 @@ void TableRecord::freeRecord() {
 	m_heap->arena.free(m_address);
 }
 
-// Storage redistribution must not change the logical boundary hint.
+// Storage redistribution transfers existing edges and leaves the boundary hint alone.
 int TableRecord::rawSet(const Value& key, const Value& value) {
-	writeBarrier();
 	int index = 0;
 	if (getArrayIndex(key, index) && static_cast<size_t>(index) < arrayCapacity()) {
 		values().set(static_cast<size_t>(index), value);
@@ -359,7 +360,6 @@ void TableRecord::set(const Value& rawKey, const Value& value) {
 	if (isNil(key)) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 	}
-	writeBarrier();
 	int index = 0;
 	bool isArrayKey = getArrayIndex(key, index);
 	if (isArrayKey) {
@@ -378,14 +378,20 @@ void TableRecord::set(const Value& rawKey, const Value& value) {
 	int nodeIndex = findNodeIndex(key, true);
 	if (nodeIndex >= 0) {
 		const size_t slot = static_cast<size_t>(nodeIndex);
-		if (isNil(values().get(hashKeySlot(slot)))) {
-			values().set(hashKeySlot(slot), key);
+		const u32 keySlot = static_cast<u32>(hashKeySlot(slot)), valueSlot = static_cast<u32>(hashValueSlot(slot));
+		const auto slots = values();
+		const bool keyHasEdge = valueTagHasGcEdge(valueTag(key));
+		const bool deadKey = keyHasEdge && slots.tag(keySlot) == ValueTag::Nil;
+		if (deadKey) slots.set(keySlot, key);
+		if (valueTagHasGcEdge(valueTag(value)) || (keyHasEdge && (deadKey || slots.tag(valueSlot) == ValueTag::Nil))) {
+			m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 		}
-		values().set(hashValueSlot(slot), value);
+		slots.set(valueSlot, value);
 		if (isArrayKey) updateLengthHint(static_cast<size_t>(index), true);
 		return;
 	}
 	rawSet(key, value);
+	if (valueTagHasGcEdge(valueTag(key)) || valueTagHasGcEdge(valueTag(value))) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 	if (isArrayKey) updateLengthHint(static_cast<size_t>(index), true);
 }
 
@@ -396,7 +402,6 @@ Value TableRecord::getInteger(int indexValue) const {
 }
 
 void TableRecord::setInteger(int indexValue, const Value& value) {
-	writeBarrier();
 	const u32 index = static_cast<u32>(indexValue) - 1u;
 	if (index < arrayCapacity()) {
 		setArraySlot(static_cast<size_t>(index), value);
@@ -410,11 +415,13 @@ void TableRecord::setInteger(int indexValue, const Value& value) {
 	}
 	const int nodeIndex = findNodeIndex(key);
 	if (nodeIndex >= 0) {
+		m_heap->writeValueBarrier(m_address, GC_RECORD_LINK, valueTag(value));
 		values().set(hashValueSlot(static_cast<size_t>(nodeIndex)), value);
 		if (indexValue > 0) updateLengthHint(static_cast<size_t>(index), true);
 		return;
 	}
 	rawSet(key, value);
+	m_heap->writeValueBarrier(m_address, GC_RECORD_LINK, valueTag(value));
 	if (indexValue > 0) updateLengthHint(static_cast<size_t>(index), true);
 }
 
@@ -526,7 +533,9 @@ int TableRecord::setStringKey(StringId key, const Value& value) {
 	const Value keyValue = valueString(key);
 	const Value pendingValue = value;
 	rehash(keyValue, pendingValue);
-	return rawSet(keyValue, pendingValue);
+	const int slot = rawSet(keyValue, pendingValue);
+	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+	return slot;
 }
 
 int TableRecord::storeStringKeyInNative(GcHeap* heap, u32 address, StringId key, const Value& value) noexcept {
@@ -547,7 +556,6 @@ int TableRecord::storeStringKeyInNative(GcHeap* heap, u32 address, StringId key,
 }
 
 int TableRecord::storeStringKeyWithoutGrowth(TableRecord* table, StringId key, const Value& value) noexcept {
-	table->writeBarrier();
 	const Value keyValue = valueString(key);
 	if (isNil(value)) {
 		table->removeFromHash(keyValue);
@@ -558,15 +566,19 @@ int TableRecord::storeStringKeyWithoutGrowth(TableRecord* table, StringId key, c
 	const auto body = table->hashBody(count);
 	const int nodeIndex = body.findString(key);
 	if (nodeIndex >= 0) {
-		body.slots.set(body.array + count + static_cast<u32>(nodeIndex), value);
+		const u32 slot = body.array + count + static_cast<u32>(nodeIndex);
+		if (valueTagHasGcEdge(valueTag(value)) || body.slots.tag(slot) == ValueTag::Nil)
+			table->m_heap->writeBarrier(table->m_address, GC_RECORD_LINK);
+		body.slots.set(slot, value);
 		return nodeIndex;
 	}
 	const int inserted = table->insertHashWithoutGrowth(body, keyValue, value);
-	return inserted >= 0 ? inserted : TABLE_STORE_REQUIRES_GROWTH;
+	if (inserted < 0) return TABLE_STORE_REQUIRES_GROWTH;
+	table->m_heap->writeBarrier(table->m_address, GC_RECORD_LINK);
+	return inserted;
 }
 
 void TableRecord::setStringKeyCached(StringId key, const Value& value, int& predictedSlot) {
-	writeBarrier();
 	if (!isNil(value) && predictedSlot >= 0) {
 		const u32 count = hashSlots();
 		if (static_cast<u32>(predictedSlot) < count) {
@@ -574,6 +586,7 @@ void TableRecord::setStringKeyCached(StringId key, const Value& value, int& pred
 			const u32 keySlot = body.array + static_cast<u32>(predictedSlot), valueSlot = keySlot + count;
 			if (body.slots.tag(keySlot) == ValueTag::String && body.slots.word(keySlot) == key
 				&& body.slots.tag(valueSlot) != ValueTag::Nil) {
+				m_heap->writeValueBarrier(m_address, GC_RECORD_LINK, valueTag(value));
 				body.slots.set(valueSlot, value);
 				return;
 			}

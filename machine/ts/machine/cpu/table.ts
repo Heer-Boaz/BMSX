@@ -8,7 +8,7 @@ import type { GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
 import {
 	ValueTag, canonicalTableKey, isNil, valueFromTag, valueInteger,
-	valueNil, valuePayload, valueString, valueTable, valueTag, type Value,
+	valueNil, valuePayload, valueString, valueTable, valueTag, valueTagHasGcEdge, type Value,
 } from './value';
 import type { ValueWriteTarget } from './value_slots';
 
@@ -48,10 +48,9 @@ export class TableRecords {
 	private writeHeader(record: number, field: TableHeader, word: number): void { this.heap.memory.writeRamRecordWord(record + field, word); }
 	public metatableAddress(record: number): number { return this.readHeader(record, TableHeader.Metatable); }
 	public setMetatableAddress(record: number, address: number): void {
-		this.writeBarrier(record);
+		this.heap.writeBarrier(record, GC_RECORD_LINK);
 		this.writeHeader(record, TableHeader.Metatable, address);
 	}
-	private writeBarrier(record: number): void { this.heap.writeBarrier(record, GC_RECORD_LINK); }
 	public arrayCapacity(record: number): number { return this.readHeader(record, TableHeader.Array); }
 	public hashSize(record: number): number { return this.readHeader(record, TableHeader.Hash); }
 	private lengthHint(record: number): number { return this.readHeader(record, TableHeader.Length); }
@@ -187,7 +186,8 @@ export class TableRecords {
 	public storeIntegerArrayKey(record: number, index: number, tag: ValueTag, word: number): boolean {
 		const slot = (index >>> 0) - 1;
 		if (slot < 0 || slot >= this.arrayCapacity(record)) return false;
-		this.writeBarrier(record); this.setEncoded(record, slot, tag, word); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return true;
+		this.heap.writeValueBarrier(record, GC_RECORD_LINK, tag);
+		this.setEncoded(record, slot, tag, word); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return true;
 	}
 	public setInteger(record: number, index: number, value: Value): void { this.set(record, valueInteger(index), value); }
 	public storeInteger(record: number, index: number, tag: ValueTag, word: number): void { this.set(record, valueInteger(index), valueFromTag(tag, word)); }
@@ -312,20 +312,29 @@ export class TableRecords {
 	public set(record: number, rawKey: Value, value: Value): void {
 		const key = canonicalTableKey(rawKey);
 		if (isNil(key)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
-		this.writeBarrier(record);
+		const tag = valueTag(value);
 		const array = this.getArrayIndex(key);
 		if (array >= 0 && array < this.arrayCapacity(record)) {
-			this.setValue(record, array, value); this.updateLengthHint(record, array, !isNil(value)); return;
+			this.heap.writeValueBarrier(record, GC_RECORD_LINK, tag);
+			this.setEncoded(record, array, tag, valuePayload(value)); this.updateLengthHint(record, array, tag !== ValueTag.Nil); return;
 		}
-		if (isNil(value)) {
+		if (tag === ValueTag.Nil) {
 			this.removeFromHash(record, key); if (array >= 0) this.updateLengthHint(record, array, false); return;
 		}
 		const index = this.findNodeIndex(record, key, true);
 		if (index >= 0) {
-			const keySlot = this.hashKeySlot(record, index);
-			if (this.tagAt(record, keySlot) === ValueTag.Nil) this.setValue(record, keySlot, key);
-			this.setValue(record, this.hashValueSlot(record, index), value);
-		} else this.rawSet(record, key, value);
+			const keySlot = this.hashKeySlot(record, index), valueSlot = this.hashValueSlot(record, index);
+			const keyHasEdge = valueTagHasGcEdge(valueTag(key));
+			const deadKey = keyHasEdge && this.tagAt(record, keySlot) === ValueTag.Nil;
+			if (deadKey) this.setValue(record, keySlot, key);
+			if (valueTagHasGcEdge(tag) || (keyHasEdge && (deadKey || this.tagAt(record, valueSlot) === ValueTag.Nil))) {
+				this.heap.writeBarrier(record, GC_RECORD_LINK);
+			}
+			this.setEncoded(record, valueSlot, tag, valuePayload(value));
+		} else {
+			this.rawSet(record, key, value);
+			if (valueTagHasGcEdge(valueTag(key)) || valueTagHasGcEdge(tag)) this.heap.writeBarrier(record, GC_RECORD_LINK);
+		}
 		if (array >= 0) this.updateLengthHint(record, array, true);
 	}
 	public store(record: number, keyTag: ValueTag, keyWord: number, tag: ValueTag, word: number): void {
@@ -336,10 +345,12 @@ export class TableRecords {
 		const index = this.storeStringKeyWithoutGrowth(record, key, tag, word);
 		if (index !== TABLE_STORE_REQUIRES_GROWTH) return index;
 		const k = valueString(key), value = valueFromTag(tag, word);
-		this.rehash(record, k, value); return this.rawSet(record, k, value);
+		this.rehash(record, k, value);
+		const slot = this.rawSet(record, k, value);
+		this.heap.writeBarrier(record, GC_RECORD_LINK);
+		return slot;
 	}
 	public storeStringKeyWithoutGrowth(record: number, key: StringId, tag: ValueTag, word: number): number {
-		this.writeBarrier(record);
 		const k = valueString(key);
 		if (tag === ValueTag.Nil) { this.removeFromHash(record, k); return -1; }
 		const hash = this.hashSize(record);
@@ -348,14 +359,19 @@ export class TableRecords {
 		const tags = words + (array + 3 * hash) * 4;
 		const index = this.findStringNodeIndex(key, hash, array, words, tags);
 		if (index >= 0) {
-			this.writeSlot(words, tags, array + hash + index, tag, word);
+			const slot = array + hash + index;
+			if (valueTagHasGcEdge(tag) || this.heap.memory.readRamRecordByte(tags + slot) === ValueTag.Nil) {
+				this.heap.writeBarrier(record, GC_RECORD_LINK);
+			}
+			this.writeSlot(words, tags, slot, tag, word);
 			return index;
 		}
 		const inserted = this.insertHashWithoutGrowth(record, k, valueFromTag(tag, word), array, hash, words, tags);
-		return inserted >= 0 ? inserted : TABLE_STORE_REQUIRES_GROWTH;
+		if (inserted < 0) return TABLE_STORE_REQUIRES_GROWTH;
+		this.heap.writeBarrier(record, GC_RECORD_LINK);
+		return inserted;
 	}
 	public storePredictedStringKey(record: number, key: StringId, predicted: number, tag: ValueTag, word: number): boolean {
-		this.writeBarrier(record);
 		if (tag === ValueTag.Nil || predicted < 0) return false;
 		const hash = this.hashSize(record);
 		if (predicted >= hash) return false;
@@ -363,6 +379,7 @@ export class TableRecords {
 		const tags = words + (array + 3 * hash) * 4, keySlot = array + predicted, valueSlot = keySlot + hash;
 		if (memory.readRamRecordByte(tags + keySlot) !== ValueTag.String || memory.readRamRecordWord(words + keySlot * 4) !== key
 			|| memory.readRamRecordByte(tags + valueSlot) === ValueTag.Nil) return false;
+		this.heap.writeValueBarrier(record, GC_RECORD_LINK, tag);
 		this.writeSlot(words, tags, valueSlot, tag, word); return true;
 	}
 	public storeStringKeyCached(record: number, key: StringId, predicted: number, tag: ValueTag, word: number): number {
@@ -410,8 +427,8 @@ export class TableRecords {
 		memory.writeRamRecordWord(links + free * 4, memory.readRamRecordWord(links + main * 4));
 		memory.writeRamRecordWord(links + main * 4, free); return free;
 	}
+	// Storage relocation transfers existing edges, not new ones.
 	private rawSet(record: number, key: Value, value: Value): number {
-		this.writeBarrier(record);
 		const slot = this.getArrayIndex(key), array = this.arrayCapacity(record);
 		if (slot >= 0 && slot < array) { this.setValue(record, slot, value); return -1; }
 		const hash = this.hashSize(record);

@@ -6,7 +6,7 @@ import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
-import { GC_COLOR_OFFSET, GC_OLD } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET, GC_OLD, GC_REMEMBERED } from '../../machine/ts/machine/cpu/gc_object';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { MAPPED_BUS_MASTER_CPU } from '../../machine/ts/machine/memory/bus_signals';
 import { MAPPED_PAGE_BYTE_MASK, type MappedPageBinding } from '../../machine/ts/machine/memory/mapped_page';
@@ -19,6 +19,8 @@ nonce = 37
 pressure = false
 owner = { child = false, text = false, removed = false }
 array_owner = { false }
+scalar_owner = { child = false }
+scalar_array = { false }
 weak = setmetatable({}, { __mode = 'v' })
 entries = setmetatable({}, { __mode = 'k' })
 local make = function()
@@ -26,6 +28,7 @@ local make = function()
  return function(value) captured = value end, function() return captured end
 end
 change, read = make()
+scalar_change = make()
 assign = function(target, array, field_value, array_value)
  target.child = field_value
  array[1] = array_value
@@ -33,6 +36,8 @@ end
 for i = 1, 100 do assign(owner, array_owner, false, false); change(false) end
 old_text = 'old-live:' .. nonce
 halt_until_irq
+assign(scalar_owner, scalar_array, 8, 9)
+scalar_change(10)
 install = function()
  local young = { answer = 73 }
  assign(owner, array_owner, young, { answer = 74 })
@@ -104,6 +109,11 @@ export function exerciseYoungGc(cpu: CPU, compiled = false): void {
 	assert.equal(Upvalue.isOpen(cpu.memory, cell), false, 'the mutation targets an actual closed cell');
 	assert.notEqual(cpu.memory.readRamRecordByte(cell + GC_COLOR_OFFSET) & GC_OLD, 0);
 	cpu.clearHaltUntilIrq(); runYoungGcStage(cpu);
+	for (const address of [valuePayload(global('scalar_owner')), valuePayload(global('scalar_array')),
+		Closure.captureAddress(cpu.memory, valuePayload(global('scalar_change')), 0)]) {
+		assert.equal(cpu.memory.readRamRecordByte(address + GC_COLOR_OFFSET) & (GC_OLD | GC_REMEMBERED), GC_OLD,
+			'compiled or scalar immediate stores did not remember an old owner');
+	}
 	const childKey = cpu.stringPool.find('child')!, textKey = cpu.stringPool.find('text')!;
 	const owner = valuePayload(global('owner'));
 	const child = cpu.gc.tables.getStringKey(owner, childKey), text = cpu.gc.tables.getStringKey(owner, textKey);

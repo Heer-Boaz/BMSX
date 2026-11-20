@@ -138,7 +138,7 @@ public:
 	void setMetatableAddress(u32 address);
 
 private:
-	void writeBarrier();
+
 	bool getArraySlot(size_t slot, Value& value) const {
 		if (slot >= arrayCapacity()) return false;
 		const Value own = values().get(slot);
@@ -152,11 +152,7 @@ private:
 		if (present ? slot == hint : slot + 1 == hint)
 			writeHeader(TableHeader::Length, present ? hint + 1 : hint - 1);
 	}
-	void setArraySlot(size_t slot, const Value& value) {
-		writeBarrier();
-		values().set(slot, value);
-		updateLengthHint(slot, !isNil(value));
-	}
+	void setArraySlot(size_t slot, const Value& value);
 
 	size_t hashKeySlot(size_t index) const { return arrayCapacity() + index; }
 	size_t hashValueSlot(size_t index) const { return arrayCapacity() + hashSlots() + index; }

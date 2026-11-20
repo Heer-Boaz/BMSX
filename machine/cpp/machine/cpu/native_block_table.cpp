@@ -52,7 +52,7 @@ void NativeBlockCompiler::emitTableSlotLoad(sljit_s32 destination, bool word) {
 	sljit_emit_op1(m_compiler, word ? SLJIT_MOV32 : SLJIT_MOV_U8, destination, 0, SLJIT_MEM1(destination), 0);
 }
 
-void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool arraySlot) {
+void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool arraySlot, int value) {
 	if (arraySlot) {
 		for (bool word : {true, false}) {
 			const auto address = word ? wordOffset : tagOffset;
@@ -71,6 +71,9 @@ void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool ar
 		emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), tagOffset, SLJIT_R2, SLJIT_R3);
 	}
 
+	const int tag = knownTag(value);
+	if (tag >= 0 && !valueTagHasGcEdge(static_cast<ValueTag>(tag))) return;
+	const auto scalar = tag < 0 ? emitSkipScalarBarrier(value, SLJIT_R2) : std::array<sljit_jump*, 2>{};
 	// All potential exits precede the actual slot store. A backward barrier
 	// only enqueues work, so it may publish before the value reaches its lane.
 	auto* c = m_compiler;
@@ -85,7 +88,9 @@ void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool ar
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), receiver,
 		SLJIT_IMM, MAIN_RAM_SIZE - 1u);
 	emitGrayChange(exit, SLJIT_R2, SLJIT_R0, GC_RECORD_LINK);
-	sljit_set_label(notBlack, sljit_emit_label(c));
+	auto* ready = sljit_emit_label(c);
+	sljit_set_label(notBlack, ready);
+	for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
 }
 
 void NativeBlockCompiler::emitTableSlotStore(int value) {
@@ -114,7 +119,7 @@ std::array<sljit_jump*, 2> NativeBlockCompiler::emitArrayRead() {
 void NativeBlockCompiler::emitArrayStore(int value, NativeBlockExitSite& exit) {
 	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array)), exit, m_cache.state());
-	emitTableWriteWatch(exit, true);
+	emitTableWriteWatch(exit, true, value);
 	emitTableSlotStore(value);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), slot);
 	const int tag = knownTag(value);
@@ -255,7 +260,7 @@ sljit_jump* NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBloc
 			misses[n++] = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), wordOffset, SLJIT_R1, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), tagOffset, SLJIT_R3, 0);
-		emitTableWriteWatch(exit, false);
+		emitTableWriteWatch(exit, false, value);
 		emitTableSlotStore(value);
 	} else {
 		NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);

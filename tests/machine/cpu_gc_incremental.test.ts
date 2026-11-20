@@ -5,7 +5,7 @@ import { HEAP_PAGE_SIZE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
-import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET, GC_OLD, GC_REMEMBERED, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_BACKING_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { backingBytes, controlOffset, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
@@ -37,6 +37,9 @@ test('incremental marking preserves changed table edges, metatables and final re
 	assert.equal(cpu.gc.memory.readRamRecordByte(target + GC_COLOR_OFFSET), 3, 'the mutation really targets an already traced allocation');
 	assert.equal(cpu.memory.readRamRecordByte(target + GC_COLOR_OFFSET), 3);
 	assert.equal(cpu.memory.readRamRecordByte(cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET), GcPhase.Mark);
+	cpu.gc.tables.setStringKey(target, field, valueInteger(1));
+	assert.equal(cpu.memory.readRamRecordByte(target + GC_COLOR_OFFSET), 3);
+	assert.equal(cpu.memory.readRamRecordWord(cpu.gc.changedHeadOffset()), 0, 'scalar replacement does not enqueue a black table');
 	const arrayChild = cpu.createTable(), fieldChild = cpu.createTable(), metatable = cpu.createTable();
 	cpu.gc.tables.setInteger(target, 1, valueTable(arrayChild));
 	cpu.gc.tables.setStringKey(target, field, valueTable(fieldChild));
@@ -56,6 +59,41 @@ test('incremental marking preserves changed table edges, metatables and final re
 	frame.registers.clear(frame.stackCapacity); frame.top = 0;
 	cpu.collectTrackedHeapBytes();
 	for (const id of expectedIds) assert.ok(!allocatedObjectRecords(cpu).includes(id));
+});
+
+test('small collection skips scalar-only table writes, follows live keys and clears young weak keys', () => {
+	const cpu = machine(), { gc, memory, stringPool } = cpu;
+	const frame = cpu.rootThread.currentFrame!;
+	const strong = cpu.createTable(4096, 4), weak = cpu.createTable(0, 4);
+	const mode = cpu.createTable(0, 1), field = stringPool.intern('counter');
+	const tables = gc.tables;
+	tables.setStringKey(mode, stringPool.intern('__mode'), valueString(stringPool.intern('k')));
+	tables.setMetatableAddress(weak, mode);
+	tables.setStringKey(strong, field, valueInteger(0));
+	tables.setInteger(strong, 1, valueBool(true));
+	frame.registers.setTable(0, strong); frame.registers.setTable(1, weak); frame.top = 2;
+	const minor = () => gc.collectYoung(valueNil(), valueNil(), valueNil());
+	minor();
+	assert.ok(memory.readRamRecordByte(strong + GC_COLOR_OFFSET) & GC_OLD);
+	const quietWork = minor();
+	for (let counter = 1; counter <= 8; ++counter) {
+		tables.storeStringKeyCached(strong, field, 0, ValueTag.Integer, counter);
+		tables.storeIntegerArrayKey(strong, 1, ValueTag.Float, 0x3f800000);
+	}
+	assert.equal(memory.readRamRecordByte(strong + GC_COLOR_OFFSET) & GC_REMEMBERED, 0);
+	assert.equal(minor(), quietWork, 'an existing String key and immediate values do not add scan cycles');
+	const strongKey = valueTable(cpu.createTable()), weakKey = valueTable(cpu.createTable());
+	tables.set(strong, strongKey, valueInteger(12));
+	tables.set(weak, weakKey, valueInteger(15));
+	const newField = stringPool.intern('young-key:new-name');
+	tables.setStringKey(strong, newField, valueInteger(2));
+	assert.ok(memory.readRamRecordByte(strong + GC_COLOR_OFFSET) & GC_REMEMBERED);
+	assert.ok(minor() >= quietWork + 8 + 4096 + 8, 'a new reference pays for the actual reserved-slot scan');
+	assert.equal(gc.tableRecordAddress(valuePayload(strongKey)), valuePayload(strongKey));
+	assert.equal(gc.tableRecordAddress(valuePayload(weakKey)), 0);
+	assert.equal(tables.get(weak, weakKey), valueNil());
+	assert.equal(stringPool.find('young-key:new-name'), newField);
+	assert.equal(tables.getStringKey(strong, newField), valueInteger(2));
 });
 
 test('consuming a gray record also consumes a self-linked mark edge', () => {
@@ -179,11 +217,12 @@ test('final remark observes weak-to-strong changes through a shared metatable', 
 test('changed objects wait for a finite second pass and retain later writes across restore', () => {
 	const cpu = machine();
 	const frame = cpu.rootThread.currentFrame!;
-	frame.registers.setTable(0, cpu.createTable(4096, 0)); frame.top = 1;
+	frame.registers.setTable(0, cpu.createTable(4096, 0));
+	frame.registers.setTable(1, cpu.createTable()); frame.registers.setTable(2, cpu.createTable()); frame.top = 3;
 	const phases = new Set<GcPhase>();
 	for (let i = 0; i < 12; ++i) {
 		const target = cpu.rootThread.currentFrame!.registers.getPayload(0);
-		cpu.gc.tables.setInteger(target, 1, valueInteger(i));
+		cpu.gc.tables.setInteger(target, 1, cpu.rootThread.currentFrame!.registers.get(1 + (i & 1)));
 		cpu.gc.step();
 		const state = cpu.captureRuntimeState(); phases.add(cpu.gc.phase());
 		const ram = cpu.memory.captureSaveState();

@@ -37,16 +37,16 @@ export function bindOpen(memory: Memory, address: number, owner: number, slot: n
 
 export function close(heap: GcHeap, address: number): void {
 	const memory = heap.memory;
-	const captured = load(memory, address);
+	const captured = load(memory, address), tag = valueTag(captured);
 	const offset = address & UPVALUE_ADDRESS_MASK;
 	const ram = memory.ramData();
 	ram[offset + UPVALUE_FLAGS] &= ~UPVALUE_OPEN;
-	ram[offset + UPVALUE_VALUE_TAG] = valueTag(captured);
+	ram[offset + UPVALUE_VALUE_TAG] = tag;
 	writeLE32(ram, offset + UPVALUE_VALUE_WORD, valuePayload(captured));
 	writeLE32(ram, offset + UPVALUE_OWNER, 0);
 	writeLE32(ram, offset + UPVALUE_NEXT, 0);
 	memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
-	heap.writeBarrier(offset, UPVALUE_NEXT);
+	heap.writeValueBarrier(offset, UPVALUE_NEXT, tag);
 }
 
 export function load(memory: Memory, address: number): Value {
@@ -63,7 +63,7 @@ export function store(heap: GcHeap, address: number, tag: ValueTag, word: number
 	const memory = heap.memory;
 	const cell = address & UPVALUE_ADDRESS_MASK;
 	if (!isOpen(memory, cell)) {
-		heap.writeBarrier(cell, UPVALUE_NEXT);
+		heap.writeValueBarrier(cell, UPVALUE_NEXT, tag);
 		memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, word);
 		memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, tag);
 		return;

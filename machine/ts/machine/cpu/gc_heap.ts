@@ -10,7 +10,7 @@ import { TableRecords } from './table';
 import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND } from './thread_record';
 import { ThreadField, ThreadLayout, ThreadRecords } from './thread_record';
 import { FRAME_WINDOW_MASK, FrameField } from './call_state';
-import { ValueTag, valueTag, valuePayload, scalarValueHash, valueInteger, valueNil, valueFromTag, type Value } from './value';
+import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, scalarValueHash, valueInteger, valueNil, valueFromTag, type Value } from './value';
 import { ValueSlots } from './value_slots';
 import type { LuaHeap } from './lua_heap';
 import { ceilDiv4 } from '../common/numeric';
@@ -139,6 +139,9 @@ export class GcHeap {
 		this.memory.writeRamRecordWord(address + link, otherBits | previous);
 		this.setColor(address, 2);
 		this.memory.writeRamRecordWord(this.controlOffset + queue, (address & GC_RECORD_MASK) >>> GC_RECORD_SHIFT);
+	}
+	public writeValueBarrier(address: number, link: number, tag: ValueTag): void {
+		if (valueTagHasGcEdge(tag)) this.writeBarrier(address, link);
 	}
 	public writeBarrier(address: number, link: number): void {
 		let flags = this.memory.readRamRecordByte(address + GC_COLOR_OFFSET);

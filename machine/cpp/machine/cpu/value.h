@@ -44,6 +44,9 @@ inline constexpr Value valueThread(uint32_t reference) { return valueFromTag(Val
 inline constexpr Value valueBuiltinFunction(BuiltinFunctionId id) {
 	return valueFromTag(ValueTag::BuiltinFunction, static_cast<uint32_t>(id));
 }
+inline constexpr bool valueTagHasGcEdge(ValueTag tag) {
+	return tag >= ValueTag::String && tag <= ValueTag::Thread && tag != ValueTag::BuiltinFunction;
+}
 inline constexpr bool valueIsInteger(Value value) { return valueTag(value) == ValueTag::Integer; }
 inline constexpr bool valueIsFloat(Value value) { return valueTag(value) == ValueTag::Float; }
 inline constexpr bool valueIsNumber(Value value) { return valueIsInteger(value) || valueIsFloat(value); }
