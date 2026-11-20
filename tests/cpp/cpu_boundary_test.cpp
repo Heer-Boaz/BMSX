@@ -236,8 +236,8 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	require(read && write, "the table loop really uses native field read and write entries");
 	auto& nativeFrame = *native.cpu.activeThread()->frameAtDepth(0);
 	const auto& loop = nativeFrame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
-	require(loop && loop->sourceWords == 6,
-		"field hits and arithmetic are compiled together through the loop branch");
+	require(loop && loop->sourceWords == 6 && loop->terminal.currentPc == native.rom.textAddress + 4u * INSTRUCTION_BYTES,
+		"the warmed read and arithmetic have no internal transfer before the field write");
 	for (auto* machine : {&native, &scalar}) {
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		asTable(frame.registers.get(0), machine->cpu.gcHeap()).setStringKey(machine->cpu.stringPool().intern("field"), valueInteger(0));
@@ -262,6 +262,32 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 			&& native.cpu.lastPc == scalar.cpu.lastPc,
 			"native field exits retain exact guest cycle and WIDE prefix/body publication");
 		require(native.cpu.readFrameRegister(0, 4) == scalar.cpu.readFrameRegister(0, 4), "native field results agree with scalar dispatch");
+	}
+	const auto key = native.cpu.stringPool().intern("field");
+	for (const bool inherited : {false, true}) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
+			auto table = asTable(frame.registers.get(0), machine->cpu.gcHeap());
+			if (inherited) {
+				auto parent = machine->cpu.createTable(0, 1);
+				parent.setStringKey(key, valueInteger(40));
+				auto meta = machine->cpu.createTable(0, 1);
+				meta.setStringKey(machine->cpu.stringPool().intern("__index"), valueTable(parent.address()));
+				table.setMetatableAddress(meta.address());
+				table.setStringKey(key, valueNil());
+			} else table.setStringKey(key, valueFloat(40.25f));
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+		}
+		const auto beforeStore = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)]
+			+ (inherited ? TABLE_INDEX_VISIT_CYCLES : 0);
+		require(test::runCpuParity(native.cpu, scalar.cpu, beforeStore) == RunResult::Yielded,
+			"a mismatched tag or inherited read can end the grant at the original successor");
+		require(native.cpu.readFramePc(0) == native.rom.textAddress + 3u * INSTRUCTION_BYTES
+			&& native.cpu.readFramePc(0) == scalar.cpu.readFramePc(0),
+			"the read miss must not execute the arithmetic on an exhausted grant");
+		require(native.cpu.readFrameRegister(0, 4) == (inherited ? valueInteger(40) : valueFloat(40.25f))
+			&& native.cpu.readFrameRegister(0, 4) == scalar.cpu.readFrameRegister(0, 4),
+			"generic lookup supplies the actual tagged value to the original successor");
 	}
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu; auto& frame = *cpu.activeThread()->frameAtDepth(0);

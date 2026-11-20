@@ -15,6 +15,30 @@
 namespace bmsx {
 
 namespace {
+// Keep a warmed own-field update in one segment. The intervening global
+// load is the compiler's normal shape for a shared movement step.
+ValueTag fieldUpdateTag(std::span<const NativeBlockInstruction> instructions) {
+	const auto& read = *instructions.front().decoded;
+	if (instructions.size() < 3 || read.a == read.b) return ValueTag::Nil;
+	size_t arithmetic = 1;
+	const auto next = static_cast<OpCode>(instructions[arithmetic].decoded->op);
+	if (next == OpCode::GETGL || next == OpCode::GETSYS || next == OpCode::GETUP) {
+		if (instructions.size() < 4 || instructions[arithmetic].decoded->a == read.a
+			|| instructions[arithmetic].decoded->a == read.b) return ValueTag::Nil;
+		++arithmetic;
+	}
+	const auto& compute = *instructions[arithmetic].decoded;
+	const auto op = static_cast<OpCode>(compute.op);
+	if (op != OpCode::ADD && op != OpCode::SUB && op != OpCode::MUL) return ValueTag::Nil;
+	const auto& store = *instructions[arithmetic + 1].decoded;
+	if (store.op != static_cast<u8>(OpCode::SETFIELD) || store.a != read.b || store.b != read.c
+		|| store.c != compute.a || compute.a == read.b) return ValueTag::Nil;
+	const auto observed = compute.nativeNumericTypes();
+	if (observed.polymorphic) return ValueTag::Nil;
+	const auto tag = compute.b == read.a ? observed.left : compute.c == read.a ? observed.right : ValueTag::Nil;
+	return tag == ValueTag::Integer || tag == ValueTag::Float ? tag : ValueTag::Nil;
+}
+
 // Compilation may return early or raise while decoding/generating. This scope
 // measures the complete owning operation, including its unfinished phase.
 class NativeCompilationMeasurement {
@@ -206,7 +230,16 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 		for (size_t index = first; index < instructionCount; ++index) {
 			const bool final = index + 1u == instructionCount;
 			const auto& instruction = *instructions[index].decoded;
-			if (!final && !nativeBlockHasContinuation(instruction.op, instruction.b)) continue;
+			if (!final) {
+				if (!nativeBlockHasContinuation(instruction.op, instruction.b)) continue;
+				if (instruction.op == static_cast<u8>(OpCode::GETFIELD)) {
+					const auto tag = fieldUpdateTag(std::span(instructions.data() + index, instructionCount - index));
+					if (tag != ValueTag::Nil) {
+						instructions[index].fieldValueTag = tag;
+						continue;
+					}
+				}
+			}
 			sources.push_back({std::span(instructions.data() + segmentFirst, index + 1u - segmentFirst),
 				final ? skippedInstruction : nullptr, !final});
 			entries.push_back((instructions[segmentFirst].pc - pagePc) / INSTRUCTION_BYTES);

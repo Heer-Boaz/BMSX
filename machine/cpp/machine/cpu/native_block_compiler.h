@@ -49,11 +49,11 @@ private:
 	void emitConstantIndex(const DecodedInstruction&, NativeBlockExitSite&);
 	void emitUpvalue(const DecodedInstruction&, NativeBlockExitSite*);
 	void emitControl(const DecodedInstruction&, NativeBlockExitSite*);
-	void emitTableAccess(const DecodedInstruction&, NativeBlockExitSite&);
+	void emitTableAccess(const DecodedInstruction&, NativeBlockExitSite&, ValueTag fieldValueTag);
 	std::array<sljit_jump*, 2> emitArrayRead();
 	void emitArrayStore(int value, NativeBlockExitSite&);
 	void emitIndexRead(int key, NativeBlockExitSite&);
-	sljit_jump* emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<StringId> constantKey = std::nullopt);
+	sljit_jump* emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<StringId> constantKey = std::nullopt, ValueTag loadTag = ValueTag::Nil);
 	void emitTableReadLeaf(bool stringKey, NativeBlockExitSite&);
 	void emitTableSlotStore(int value);
 	void emitTableSlotOffset(sljit_s32 destination, bool word);

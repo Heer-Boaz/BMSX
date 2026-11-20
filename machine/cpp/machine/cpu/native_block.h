@@ -117,6 +117,8 @@ using NativeBlockExitHandlers = std::array<NativeBlockExitHandler, static_cast<s
 struct NativeBlockInstruction {
 	const DecodedInstruction* decoded;
 	u32 pc;
+	// Proven only on the own-field hit of a warmed native update.
+	ValueTag fieldValueTag = ValueTag::Nil;
 };
 
 struct NativeBlockSource {

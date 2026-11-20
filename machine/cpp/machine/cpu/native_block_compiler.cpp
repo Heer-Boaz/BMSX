@@ -320,7 +320,7 @@ void NativeBlockCompiler::emit(
 	case OpCode::SETI:
 	case OpCode::SETFIELD:
 	case OpCode::SELF:
-		emitTableAccess(instruction, *slow);
+		emitTableAccess(instruction, *slow, source.fieldValueTag);
 		break;
 	case OpCode::VARARG:
 		emitVararg(instruction, *slow);

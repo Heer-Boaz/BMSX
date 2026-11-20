@@ -209,7 +209,7 @@ void NativeBlockCompiler::emitIndexRead(int key, NativeBlockExitSite& exit) {
 }
 
 // Hash keys start after the array; hash values start after all hash keys.
-sljit_jump* NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBlockExitSite& exit, std::optional<StringId> constantKey) {
+sljit_jump* NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBlockExitSite& exit, std::optional<StringId> constantKey, ValueTag loadTag) {
 	if (!constantKey)
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
 	const sljit_s32 keySource = constantKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP);
@@ -242,7 +242,8 @@ sljit_jump* NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBloc
 	const sljit_s32 valueTagReg = load ? SLJIT_R3 : SLJIT_R2;
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, valueTagReg, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	misses[n++] =
-		sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, valueTagReg, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Nil));
+		sljit_emit_cmp(m_compiler, (loadTag == ValueTag::Nil ? SLJIT_EQUAL : SLJIT_NOT_EQUAL) | SLJIT_32,
+			valueTagReg, 0, SLJIT_IMM, static_cast<u8>(loadTag));
 	if (!load) {
 		// Deletion has to retain a dead key for next(), not just overwrite the tag.
 		const int tag = knownTag(value);
@@ -259,6 +260,12 @@ sljit_jump* NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBloc
 	} else {
 		NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	}
+	if (loadTag != ValueTag::Nil) {
+		// Guard failure completes the original GETFIELD in the semantic owner.
+		// No typed destination or additional successor cycles are visible yet.
+		for (size_t i = 0; i < n; ++i) fault(misses[i], exit, m_cache.state());
+		return nullptr;
 	}
 	auto* hit = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 	auto* miss = sljit_emit_label(m_compiler);
@@ -287,7 +294,8 @@ sljit_jump* NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBloc
 	return nullptr;
 }
 
-void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction, NativeBlockExitSite& exit) {
+void NativeBlockCompiler::emitTableAccess(
+	const DecodedInstruction& instruction, NativeBlockExitSite& exit, ValueTag fieldValueTag) {
 	const auto op = static_cast<OpCode>(instruction.op);
 	const bool load = op == OpCode::GETT || op == OpCode::GETI || op == OpCode::GETFIELD || op == OpCode::SELF;
 	const int base = load ? instruction.b : instruction.a;
@@ -338,7 +346,14 @@ void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction,
 			for (auto* miss : emitArrayRead()) fault(miss, exit, m_cache.state());
 		} else emitArrayStore(instruction.c, exit);
 	} else {
-		auto* hit = emitStringSlot(load, instruction.c, exit, m_constants.payload(key));
+		auto* hit = emitStringSlot(load, instruction.c, exit, m_constants.payload(key), fieldValueTag);
+		if (fieldValueTag != ValueTag::Nil) {
+			const auto target = m_cache.write(instruction.a, fieldValueTag);
+			if (fieldValueTag == ValueTag::Float)
+				sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, target.reg, SLJIT_R2);
+			else sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_R2, 0);
+			return;
+		}
 		if (load) {
 			emitTableReadLeaf(true, exit);
 			sljit_set_label(hit, sljit_emit_label(m_compiler));

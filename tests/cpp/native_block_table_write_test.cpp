@@ -37,8 +37,8 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 	ops[2].observeNativeNumericTypes(valueInteger(12), valueInteger(1));
 	ops[3].a = 6; ops[3].c = 8; ops[3].tableCacheSlot = 0;
 	ops[4].bx = 0x2000u;
-	const std::array sources{NativeBlockSource{std::span(instructions.data(), 1), nullptr, true},
-		NativeBlockSource{std::span(instructions.data() + 1, 3), nullptr, true},
+	instructions[0].fieldValueTag = ValueTag::Integer;
+	const std::array sources{NativeBlockSource{std::span(instructions.data(), 4), nullptr, true},
 		NativeBlockSource{std::span(instructions.data() + 4, 1)}};
 	auto blocks = NativeBlock::compileRegion(sources, constants.view(), NativeCodeBindings(memory, cpu.stringPool(), indexKey));
 	ValueSlots registers(11);
@@ -46,7 +46,7 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 	registers.set(1, valueInteger(1));
 	particle.setStringKey(x, valueInteger(std::numeric_limits<i32>::min()));
 	NativeBlockRunState run{.constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
-	require(blocks[0]->run(registers.view(), run) == &blocks[2]->terminal
+	require(blocks[0]->run(registers.view(), run) == &blocks[1]->terminal
 		&& particle.getStringKey(x) == valueInteger(std::numeric_limits<i32>::max()),
 		"the guarded Integer subtract wraps and reaches the field store within one native grant");
 	for (const Value right : {valueFloat(0.5f), valueBool(false)}) {
@@ -62,12 +62,21 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 			"a guard miss publishes only the executed prefix and leaves SUB and the store to the VM");
 	}
 
+	particle.setStringKey(x, valueFloat(3.25f));
+	registers.set(9, valueInteger(42));
+	run.remainingCycles = 100;
+	const auto* typeMiss = blocks[0]->run(registers.view(), run);
+	require(typeMiss->exit == NativeBlockExit::ReadField && run.remainingCycles == 100 - ops[0].baseCycles
+		&& registers.get(9) == valueInteger(42),
+		"the tag guard does not execute or publish a speculative field read");
+
+	instructions[0].fieldValueTag = ValueTag::Float;
 	ops[2].bx = 0;
 	ops[2].observeNativeNumericTypes(valueFloat(12.5f), valueFloat(0.25f));
 	auto floats = NativeBlock::compileRegion(sources, constants.view(), NativeCodeBindings(memory, cpu.stringPool(), indexKey));
 	particle.setStringKey(x, valueFloat(12.5f));
 	registers.set(1, valueFloat(0.25f)); run.remainingCycles = 100;
-	require(floats[0]->run(registers.view(), run) == &floats[2]->terminal
+	require(floats[0]->run(registers.view(), run) == &floats[1]->terminal
 		&& particle.getStringKey(x) == valueFloat(12.25f),
 		"an observed Float update does not detour through the scalar VM");
 }
