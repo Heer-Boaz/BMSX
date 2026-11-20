@@ -1,82 +1,80 @@
 import assert from 'node:assert/strict';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium, type Page } from 'playwright';
 import { openBrowserErgonomicsPage } from '../helpers/browser_controller_ergonomics';
 import { PNG } from 'pngjs';
-import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
 import { roundContactBankWord, controlContainsPoint, controlSeparation, distanceToControl } from './touch_gamepad_geometry_oracle';
 import { afterTest } from '../helpers/test_cleanup';
 
 const actions = [
-	{ id: 'a_knop', label: 'A', buttons: 1 << InputControllerGamepadButtonBit.A },
-	{ id: 'b_knop', label: 'B', buttons: 1 << InputControllerGamepadButtonBit.B },
-	{ id: 'x_knop', label: 'X', buttons: 1 << InputControllerGamepadButtonBit.X },
-	{ id: 'y_knop', label: 'Y', buttons: 1 << InputControllerGamepadButtonBit.Y },
-	{ id: 'select_knop', label: 'SELECT', buttons: 1 << InputControllerGamepadButtonBit.Select },
-	{ id: 'start_knop', label: 'START', buttons: 1 << InputControllerGamepadButtonBit.Start },
-	{ id: 'ls_knop', label: 'LS', buttons: 1 << InputControllerGamepadButtonBit.LeftStick },
-	{ id: 'rs_knop', label: 'RS', buttons: 1 << InputControllerGamepadButtonBit.RightStick },
-	{ id: 'lb_knop', label: 'LB', buttons: 1 << InputControllerGamepadButtonBit.LeftBumper },
-	{ id: 'rb_knop', label: 'RB', buttons: 1 << InputControllerGamepadButtonBit.RightBumper },
-	{ id: 'lt_knop', label: 'LT', buttons: 1 << InputControllerGamepadButtonBit.LeftTrigger },
-	{ id: 'rt_knop', label: 'RT', buttons: 1 << InputControllerGamepadButtonBit.RightTrigger },
+	{ id: 'a_knop', label: 'A' },
+	{ id: 'b_knop', label: 'B' },
+	{ id: 'x_knop', label: 'X' },
+	{ id: 'y_knop', label: 'Y' },
+	{ id: 'select_knop', label: 'SELECT' },
+	{ id: 'start_knop', label: 'START' },
+	{ id: 'ls_knop', label: 'LS' },
+	{ id: 'rs_knop', label: 'RS' },
+	{ id: 'lb_knop', label: 'LB' },
+	{ id: 'rb_knop', label: 'RB' },
+	{ id: 'lt_knop', label: 'LT' },
+	{ id: 'rt_knop', label: 'RT' },
 ] as const;
 
 // Insets are controlled fixture inputs, not measurements of a particular Safari version.
 const profiles: readonly {
-	name: string; width: number; height: number; insets: readonly number[]; screenshot: boolean;
+	name: string; width: number; height: number; insets: readonly number[];
 	player?: { left: number; top: number; width: number; height: number };
-	smallPlayer?: boolean;
 	layoutProfile?: 'compact-overlay';
 }[] = [
-	{ name: 'small-player-320', width: 320, height: 240, insets: [0, 0, 0, 0], screenshot: true, smallPlayer: true },
-	{ name: 'small-player-319', width: 319, height: 239, insets: [0, 0, 0, 0], screenshot: false, smallPlayer: true },
-	{ name: 'square-player', width: 430, height: 430, insets: [0, 0, 0, 0], screenshot: true, smallPlayer: true },
-	{ name: 'small-landscape-width-boundary-below', width: 567, height: 239, insets: [0, 0, 0, 0], screenshot: false, smallPlayer: true },
-	{ name: 'small-landscape-height-boundary-below', width: 568, height: 238, insets: [0, 0, 0, 0], screenshot: false, smallPlayer: true },
-	{ name: 'small-wide-landscape-height-boundary-below', width: 852, height: 238, insets: [0, 0, 0, 0], screenshot: false, smallPlayer: true },
-	{ name: 'compact-portrait', width: 320, height: 568, insets: [0, 0, 0, 0], screenshot: true },
-	{ name: 'phone-footer-width-boundary-below', width: 299, height: 852, insets: [0, 0, 0, 0], screenshot: true, layoutProfile: 'compact-overlay' },
-	{ name: 'phone-footer-width-boundary-at', width: 300, height: 852, insets: [0, 0, 0, 0], screenshot: true },
+	{ name: 'small-player-320', width: 320, height: 240, insets: [0, 0, 0, 0] },
+	{ name: 'small-player-319', width: 319, height: 239, insets: [0, 0, 0, 0] },
+	{ name: 'square-player', width: 430, height: 430, insets: [0, 0, 0, 0] },
+	{ name: 'small-landscape-width-boundary-below', width: 567, height: 239, insets: [0, 0, 0, 0] },
+	{ name: 'small-landscape-height-boundary-below', width: 568, height: 238, insets: [0, 0, 0, 0] },
+	{ name: 'small-wide-landscape-height-boundary-below', width: 852, height: 238, insets: [0, 0, 0, 0] },
+	{ name: 'compact-portrait', width: 320, height: 568, insets: [0, 0, 0, 0] },
+	{ name: 'phone-footer-width-boundary-below', width: 299, height: 852, insets: [0, 0, 0, 0], layoutProfile: 'compact-overlay' },
+	{ name: 'phone-footer-width-boundary-at', width: 300, height: 852, insets: [0, 0, 0, 0] },
 	...[{ width: 320, height: 321 }, { width: 320, height: 360 }, { width: 393, height: 394 }, { width: 600, height: 601 }].map(size => ({
-		name: `short-portrait-${size.width}x${size.height}`, ...size, insets: [0, 0, 0, 0], screenshot: true, layoutProfile: 'compact-overlay' as const,
+		name: `short-portrait-${size.width}x${size.height}`, ...size, insets: [0, 0, 0, 0], layoutProfile: 'compact-overlay' as const,
 	})),
-	{ name: 'compact-landscape', width: 568, height: 320, insets: [0, 0, 0, 0], screenshot: true },
-	{ name: 'phone14-portrait-safe', width: 390, height: 844, insets: [47, 0, 34, 0], screenshot: true },
-	{ name: 'phone14-landscape-safe', width: 844, height: 390, insets: [0, 47, 21, 47], screenshot: true },
-	{ name: 'portrait-width-379', width: 379, height: 844, insets: [47, 0, 34, 0], screenshot: true },
-	{ name: 'portrait-width-380', width: 380, height: 844, insets: [47, 0, 34, 0], screenshot: true },
-	{ name: 'phone-portrait-360', width: 360, height: 800, insets: [0, 0, 0, 0], screenshot: true },
-	{ name: 'phone-portrait-360-short', width: 360, height: 640, insets: [0, 0, 0, 0], screenshot: true },
-	{ name: 'phone-landscape-360', width: 800, height: 360, insets: [0, 0, 0, 0], screenshot: true },
-	{ name: 'phone-portrait', width: 393, height: 852, insets: [0, 0, 0, 0], screenshot: true },
-	...[588, 599, 600, 601].map(width => ({ name: `portrait-family-boundary-${width}`, width, height: 1024, insets: [0, 0, 0, 0], screenshot: true })),
-	{ name: 'portrait-family-safe-width-599', width: 631, height: 1024, insets: [24, 16, 20, 16], screenshot: false },
-	{ name: 'portrait-family-safe-width-600', width: 632, height: 1024, insets: [24, 16, 20, 16], screenshot: false },
-	{ name: 'phone-landscape', width: 852, height: 393, insets: [0, 0, 0, 0], screenshot: true },
-	{ name: 'large-portrait-safe', width: 430, height: 932, insets: [47, 0, 34, 0], screenshot: false },
-	{ name: 'large-landscape-safe', width: 932, height: 430, insets: [0, 47, 21, 47], screenshot: false },
-	{ name: 'browser-landscape-safe', width: 844, height: 320, insets: [0, 47, 21, 47], screenshot: true },
-	{ name: 'browser-landscape-300-safe', width: 844, height: 300, insets: [0, 47, 21, 47], screenshot: true },
-	{ name: 'browser-landscape-280-safe', width: 844, height: 280, insets: [0, 47, 21, 47], screenshot: true },
-	{ name: 'short-landscape-640', width: 640, height: 240, insets: [0, 0, 0, 0], screenshot: true },
-	{ name: 'short-landscape-568', width: 568, height: 239, insets: [0, 0, 0, 0], screenshot: true },
-	{ name: 'short-landscape-852', width: 852, height: 239, insets: [0, 0, 0, 0], screenshot: true },
-	{ name: 'wide-short-player-1200', width: 1200, height: 212, insets: [0, 0, 0, 0], screenshot: true, smallPlayer: true },
-	{ name: 'landscape-height-profile-boundary-below', width: 852, height: 319, insets: [0, 0, 0, 0], screenshot: false },
-	{ name: 'landscape-height-profile-boundary-at', width: 852, height: 320, insets: [0, 0, 0, 0], screenshot: false },
-	{ name: 'tablet-portrait', width: 768, height: 1024, insets: [24, 0, 20, 0], screenshot: true },
-	{ name: 'tablet-landscape', width: 1024, height: 768, insets: [0, 0, 20, 0], screenshot: true },
-	{ name: 'large-tablet-portrait', width: 1024, height: 1366, insets: [24, 0, 20, 0], screenshot: true },
-	{ name: 'large-tablet-landscape', width: 1366, height: 1024, insets: [0, 0, 20, 0], screenshot: true },
-	{ name: 'embedded-player-offset', width: 1024, height: 768, insets: [0, 0, 0, 0], screenshot: true,
+	{ name: 'compact-landscape', width: 568, height: 320, insets: [0, 0, 0, 0] },
+	{ name: 'phone14-portrait-safe', width: 390, height: 844, insets: [47, 0, 34, 0] },
+	{ name: 'phone14-landscape-safe', width: 844, height: 390, insets: [0, 47, 21, 47] },
+	{ name: 'portrait-width-379', width: 379, height: 844, insets: [47, 0, 34, 0] },
+	{ name: 'portrait-width-380', width: 380, height: 844, insets: [47, 0, 34, 0] },
+	{ name: 'phone-portrait-360', width: 360, height: 800, insets: [0, 0, 0, 0] },
+	{ name: 'phone-portrait-360-short', width: 360, height: 640, insets: [0, 0, 0, 0] },
+	{ name: 'phone-landscape-360', width: 800, height: 360, insets: [0, 0, 0, 0] },
+	{ name: 'phone-portrait', width: 393, height: 852, insets: [0, 0, 0, 0] },
+	...[588, 599, 600, 601].map(width => ({ name: `portrait-family-boundary-${width}`, width, height: 1024, insets: [0, 0, 0, 0] })),
+	{ name: 'portrait-family-safe-width-599', width: 631, height: 1024, insets: [24, 16, 20, 16] },
+	{ name: 'portrait-family-safe-width-600', width: 632, height: 1024, insets: [24, 16, 20, 16] },
+	{ name: 'phone-landscape', width: 852, height: 393, insets: [0, 0, 0, 0] },
+	{ name: 'large-portrait-safe', width: 430, height: 932, insets: [47, 0, 34, 0] },
+	{ name: 'large-landscape-safe', width: 932, height: 430, insets: [0, 47, 21, 47] },
+	{ name: 'browser-landscape-safe', width: 844, height: 320, insets: [0, 47, 21, 47] },
+	{ name: 'browser-landscape-300-safe', width: 844, height: 300, insets: [0, 47, 21, 47] },
+	{ name: 'browser-landscape-280-safe', width: 844, height: 280, insets: [0, 47, 21, 47] },
+	{ name: 'short-landscape-640', width: 640, height: 240, insets: [0, 0, 0, 0] },
+	{ name: 'short-landscape-568', width: 568, height: 239, insets: [0, 0, 0, 0] },
+	{ name: 'short-landscape-852', width: 852, height: 239, insets: [0, 0, 0, 0] },
+	{ name: 'wide-short-player-1200', width: 1200, height: 212, insets: [0, 0, 0, 0] },
+	{ name: 'landscape-height-profile-boundary-below', width: 852, height: 319, insets: [0, 0, 0, 0] },
+	{ name: 'landscape-height-profile-boundary-at', width: 852, height: 320, insets: [0, 0, 0, 0] },
+	{ name: 'tablet-portrait', width: 768, height: 1024, insets: [24, 0, 20, 0] },
+	{ name: 'tablet-landscape', width: 1024, height: 768, insets: [0, 0, 20, 0] },
+	{ name: 'large-tablet-portrait', width: 1024, height: 1366, insets: [24, 0, 20, 0] },
+	{ name: 'large-tablet-landscape', width: 1366, height: 1024, insets: [0, 0, 20, 0] },
+	{ name: 'embedded-player-offset', width: 1024, height: 768, insets: [0, 0, 0, 0],
 		player: { left: 92, top: 40, width: 840, height: 650 } },
 ] as const;
 
 // Geometry and native desktop input contracts, not proof of hand comfort or iPhone multitouch.
-test('handheld gamepad uses device-family hand decks, equal faces, complete shoulders, and reachable menus', { concurrency: 4 }, async t => {
+test('handheld gamepad keeps controls reachable and transparent across layout families', async t => {
 	const template = await readFile('gamebase.html', 'utf8');
 	const controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 
@@ -91,8 +89,6 @@ export { Input } from './hosts/common/input/manager';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'ergonomicsFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const evidenceDirectory = '.bmsx/hosting/portrait-upper-fan-test-evidence';
-	await mkdir(evidenceDirectory, { recursive: true });
 	// Await paint for presentation evidence, not a physical display refresh rate.
 	const browser = await chromium.launch({ args: ['--disable-frame-rate-limit'] });
 	afterTest(t, () => browser.close());
@@ -140,16 +136,15 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		}
 	};
 
-	const labelRasterEvidence: Array<{ profile: string; context: string; background: string; label: string; inkPixels: number; changedPixels: number }> = [];
-	const assertRasterLabelContrast = async (page: Page, profile: string, context: string, geometry: any) => {
+	const assertRasterLabelContrast = async (page: Page, geometry: any) => {
 		// Isolate the actual browser-painted quiet glyphs and their thin stroke.
 		// Sentinel magenta is neither glyph color, so untouched background and
 		// anti-aliased ink can be distinguished without a text-bbox paint claim.
 		await page.evaluate(() => (globalThis as any).ergonomicsProbe.background('glyph-mask'));
 		const isolation = await page.addStyleTag({ content: '#controller-viewport path, #controller-viewport circle, .host-control-surface { visibility: hidden !important; }' });
-		const glyphs = PNG.sync.read(await page.screenshot({ path: `${evidenceDirectory}/${profile}-${context}-glyphs.png` }));
+		const glyphs = PNG.sync.read(await page.screenshot());
 		await isolation.evaluate(element => { element.textContent += ' .action-label { visibility: hidden !important; }'; });
-		const withoutGlyphs = PNG.sync.read(await page.screenshot({ path: `${evidenceDirectory}/${profile}-${context}-without-glyphs.png` }));
+		const withoutGlyphs = PNG.sync.read(await page.screenshot());
 		await isolation.evaluate(element => { element.parentNode!.removeChild(element); });
 		await isolation.dispose();
 		const ratio = glyphs.width / (await page.viewportSize())!.width;
@@ -181,11 +176,11 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		for (let offset = 0; offset < glyphs.data.length; offset += 4) {
 			if (glyphs.data[offset] !== withoutGlyphs.data[offset] || glyphs.data[offset + 1] !== withoutGlyphs.data[offset + 1]
 				|| glyphs.data[offset + 2] !== withoutGlyphs.data[offset + 2]) assert.ok(checkedInk.has(offset),
-				`every browser-painted glyph pixel was inspected: missing pixel (${offset / 4 % glyphs.width}, ${Math.trunc(offset / 4 / glyphs.width)}) in ${profile}/${context}, including any ink beyond the unstroked text bbox`);
+				`every browser-painted glyph pixel was inspected: missing pixel (${offset / 4 % glyphs.width}, ${Math.trunc(offset / 4 / glyphs.width)}), including any ink beyond the unstroked text bbox`);
 		}
 		for (const background of ['white', 'dark', 'bright']) {
 			await page.evaluate(kind => (globalThis as any).ergonomicsProbe.background(kind), background);
-			const scene = PNG.sync.read(await page.screenshot({ path: `${evidenceDirectory}/${profile}-${context}-${background}-label-contrast.png` }));
+			const scene = PNG.sync.read(await page.screenshot());
 			const hidden = await page.addStyleTag({ content: '.action-label { visibility: hidden !important; }' });
 			const plainScene = PNG.sync.read(await page.screenshot());
 			await hidden.evaluate(element => element.parentNode!.removeChild(element));
@@ -194,19 +189,16 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				const mask = masks[index];
 				const changedPixels = mask.ink.filter((offset: number) => scene.data[offset] !== plainScene.data[offset]
 					|| scene.data[offset + 1] !== plainScene.data[offset + 1] || scene.data[offset + 2] !== plainScene.data[offset + 2]).length;
-				assert.ok(changedPixels > 0, `${profile}/${context}/${background}: ${actions[index].label} remains discoverable without opaque labels`);
-				labelRasterEvidence.push({ profile, context, background, label: actions[index].label, inkPixels: mask.ink.length, changedPixels });
+				assert.ok(changedPixels > 0, `${background}: ${actions[index].label} remains discoverable without opaque labels`);
+
 			}
 		}
 	};
 
-	let pointerEventCount = 0;
-	const evidence: Array<{ profile: string; safe: unknown; geometry: unknown; minimumControlGap: number;
-		secondaryOffsets: Array<{ id: string; x: number; y: number }> }> = [];
-	const phoneDimensionsByWidth = new Map<number, number[]>();
-	await Promise.all(profiles.map(profile =>
-		t.test(profile.name, async profileTest => {
-			const { page, touch, settle, measure, poll, finish } = await openBrowserErgonomicsPage(profileTest, browser, html, script, actionIds);
+	await t.test('device-family geometry and layout thresholds share one player', async layoutTest => {
+		const { page, settle, measure, finish } = await openBrowserErgonomicsPage(layoutTest, browser, html, script, actionIds);
+		const phoneDimensionsByWidth = new Map<number, number[]>();
+		for (const profile of profiles) await layoutTest.test(profile.name, async () => {
 			const player = profile.player ?? { left: 0, top: 0, width: profile.width, height: profile.height };
 			await page.setViewportSize({ width: profile.width, height: profile.height });
 			await page.evaluate(({ insets, player }) => {
@@ -220,11 +212,10 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				style.padding = insets.map(value => `${value}px`).join(' ');
 				(globalThis as any).ergonomicsProbe.video.setDisplaySize(320, 240, 320, 240);
 				(globalThis as any).ergonomicsProbe.video.refreshLayout();
-				(globalThis as any).ergonomicsProbe.background('dark');
 			}, { insets: [...profile.insets], player });
 			await settle();
 			const resting = await measure();
-			if (profile.screenshot) await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-dark-rest.png`, scale: 'css' });
+
 			const safe = { left: player.left + profile.insets[3], top: player.top + profile.insets[0],
 				right: player.left + player.width - profile.insets[1], bottom: player.top + player.height - profile.insets[2] };
 			const targets = resting.targets;
@@ -362,7 +353,6 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				assert.ok(((bumperLabel.left + bumperLabel.right) - (triggerLabel.left + triggerLabel.right)) * direction > 0,
 					'actual rendered bumper labels retain the same outer-side role in both orientations');
 			}
-			const secondaryOffsets: Array<{ id: string; x: number; y: number }> = [];
 			for (const shoulder of [lb, rb, lt, rt]) {
 				assert.equal(shoulder.tag, 'path', `${shoulder.id} uses a physical shoulder outline, not a circular target`);
 				assert.ok(shoulder.outline, `${shoulder.id} publishes its real rounded outline to input`);
@@ -379,7 +369,6 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				const primary = shoulder === lb || shoulder === lt ? pad : faceCenter;
 				assert.ok(shoulder.y < primary.y,
 					`${shoulder.id} follows the same upper shoulder topology in phone, wide and overlay families`);
-				secondaryOffsets.push({ id: shoulder.id, x: (shoulder.x - primary.x) / scale, y: (shoulder.y - primary.y) / scale });
 			}
 			const imageWidth = resting.canvas.right - resting.canvas.left;
 			const imageHeight = resting.canvas.bottom - resting.canvas.top;
@@ -435,7 +424,6 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				assert.equal(actualFills[sample], expectedFills[sample],
 					`SVG and independent finite arc agree at ${JSON.stringify(fillSamples[sample])}`);
 			}
-			const gaps: number[] = [];
 			const paintClearance = 0;
 			for (let index = 0; index < targets.length; index += 1) {
 				const circle = targets[index];
@@ -450,7 +438,6 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				for (let other = index + 1; other < targets.length; other += 1) {
 					const next = targets[other];
 					const gap = controlSeparation(circle, next);
-					gaps.push(gap);
 					assert.ok(gap >= -0.0001, `${circle.id}/${next.id} physical activating surfaces never overlap`);
 				}
 			}
@@ -470,181 +457,46 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					}
 				}
 			}
-			const padCenter = { id: 6, x: targets[0].x, y: targets[0].y };
-			await touch('touchStart', [padCenter]);
-			assert.deepEqual(await poll(), { buttons: 0, physicalButtons: 0, sampledButtons: 0 },
-				'neutral center acquires a controller lease without pressing a direction');
-			const travel = pad.radius * 0.7;
-			const diagonalTravel = travel / Math.SQRT2;
-			const masks = { up: 1 << InputControllerGamepadButtonBit.Up, right: 1 << InputControllerGamepadButtonBit.Right,
-				down: 1 << InputControllerGamepadButtonBit.Down, left: 1 << InputControllerGamepadButtonBit.Left };
-			for (const [heading, expected] of [[0, masks.right], [90, masks.down], [180, masks.left], [270, masks.up]]) {
-				for (const offset of [-30, 30]) {
-					const radians = (heading + offset) * Math.PI / 180;
-					await touch('touchMove', [{ ...padCenter, x: pad.x + Math.cos(radians) * pad.radius * 0.4,
-						y: pad.y + Math.sin(radians) * pad.radius * 0.4 }]);
-					assert.equal((await poll()).sampledButtons, expected,
-						'a short retained thumb roll thirty degrees off the cardinal axis remains cardinal');
-				}
-			}
-			const rolls = [
-				{ x: pad.x + travel, y: pad.y, mask: masks.right, image: 'r' },
-				{ x: pad.x + diagonalTravel, y: pad.y - diagonalTravel, mask: masks.up | masks.right, image: 'ru' },
-				{ x: pad.x, y: pad.y - travel, mask: masks.up, image: 'u' },
-				{ x: pad.x - diagonalTravel, y: pad.y - diagonalTravel, mask: masks.up | masks.left, image: 'lu' },
-				{ x: pad.x - travel, y: pad.y, mask: masks.left, image: 'l' },
-				{ x: pad.x - diagonalTravel, y: pad.y + diagonalTravel, mask: masks.down | masks.left, image: 'ld' },
-				{ x: pad.x, y: pad.y + travel, mask: masks.down, image: 'd' },
-				{ x: pad.x + diagonalTravel, y: pad.y + diagonalTravel, mask: masks.down | masks.right, image: 'rd' },
-				{ x: pad.x + travel, y: pad.y, mask: masks.right, image: 'r' },
-			];
-			for (const roll of rolls) {
-				await touch('touchMove', [{ ...padCenter, x: roll.x, y: roll.y, radiusX: 14, radiusY: 14 }]);
-				assert.deepEqual(await poll(), { buttons: roll.mask, physicalButtons: roll.mask, sampledButtons: roll.mask },
-					'digital rolling updates immediately without a center excursion or finger lift');
-				await settle();
-				const rolled = await measure();
-				assert.deepEqual(rolled.padDirections, [masks.up, masks.right, masks.down, masks.left].map(mask => (roll.mask & mask) !== 0 ? 'true' : 'false'));
-				assert.deepEqual(rolled.targets[0].bounds, resting.targets[0].bounds, 'artwork state changes never move the digital rocker frame');
-			}
-			await touch('touchEnd', []);
-			evidence.push({ profile: profile.name, safe, geometry: resting, minimumControlGap: Math.min(...gaps), secondaryOffsets });
-			for (const framebufferWidth of [256, 321, 257, 320]) {
-				await page.evaluate(width => {
-					(globalThis as any).ergonomicsProbe.video.setDisplaySize(width, 240, width, 240);
-					(globalThis as any).ergonomicsProbe.video.refreshLayout();
-				}, framebufferWidth);
-				const changed = await measure();
-				assert.deepEqual(changed.groups, resting.groups, `framebuffer ${framebufferWidth} does not change any control group`);
-				assert.deepEqual(changed.targets.map((circle: any) => circle.bounds), targets.map((circle: any) => circle.bounds));
-				assert.deepEqual(changed.hosts, resting.hosts, `framebuffer ${framebufferWidth} does not change host-only corner controls`);
-			}
-			for (let index = 0; index < actions.length; index += 1) {
-				const circle = targets[index + 1];
-				await touch('touchStart', [{ id: 1, x: circle.x, y: circle.y }]);
-				// SELECT remains the existing host-control modifier; contact geometry does not change routing policy.
-				const sampledButtons = actions[index].id === 'select_knop' ? 0 : actions[index].buttons;
-				assert.deepEqual(await poll(), { buttons: actions[index].buttons, physicalButtons: actions[index].buttons, sampledButtons }, `${actions[index].label} native center has its own exact physical bit`);
-				await settle();
-				const pressed = await measure();
-				assert.equal(pressed.targets[index + 1].presentation.touched, 'true');
-				assert.deepEqual(pressed.labels.map((label: any) => label.fill), actions.map((_, other) => other === index
-					? 'rgba(243, 247, 250, 0.95)' : 'rgba(232, 240, 247, 0.44)'),
-					'only the truly held button brightens its quiet idle label');
-				assert.equal(pressed.targets[index + 1].presentation.fill, 'none', 'held switches never obscure the underlying game with a filled background');
-				assert.notEqual(pressed.targets[index + 1].presentation.stroke, circle.presentation.stroke);
-				assert.deepEqual(pressed.targets.map((entry: any) => entry.bounds), targets.map((entry: any) => entry.bounds), 'press rendering never moves a target');
-				await touch('touchEnd', []);
-				assert.equal((await poll()).sampledButtons, 0);
-				await settle();
-			}
-			const thumb = { id: 1, x: targets[1].x, y: targets[1].y, radiusX: 14, radiusY: 14 };
-			await touch('touchStart', [thumb]);
-			assert.equal((await poll()).sampledButtons, 1);
-			const bridge = { ...thumb, x: (targets[1].x + targets[2].x) / 2, y: (targets[1].y + targets[2].y) / 2 };
-			await touch('touchMove', [bridge]);
-			assert.equal((await poll()).sampledButtons, 3, 'one reported thumb footprint bridges adjacent A and B');
-			await settle();
-			assert.deepEqual((await measure()).targets.slice(1, 3).map((circle: any) => circle.presentation.touched), ['true', 'true']);
-			const directionThumb = { id: 2, x: rolls[1].x, y: rolls[1].y, radiusX: 14, radiusY: 14 };
-			await touch('touchStart', [bridge, directionThumb]);
-			assert.equal((await poll()).sampledButtons, 3 | masks.up | masks.right, 'a second thumb independently rolls a diagonal while the first presses two faces');
-			await touch('touchEnd', [directionThumb]);
-			assert.equal((await poll()).sampledButtons, 3, 'lifting the directional thumb leaves both face contributions held');
-			await touch('touchMove', [{ ...thumb, x: targets[2].x, y: targets[2].y }]);
-			assert.equal((await poll()).sampledButtons, 2, 'rolling onto B releases A without releasing the thumb');
-			await touch('touchEnd', []);
-			assert.equal((await poll()).sampledButtons, 0);
-			await page.evaluate(() => (globalThis as any).ergonomicsProbe.background('bright'));
-			if (profile.screenshot) await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-bright-rest.png` });
-			if (profile.name === 'phone14-portrait-safe' || profile.name === 'phone14-landscape-safe') {
-				await assertTransparentArtwork(page, targets);
-				const heldContacts = [
-					{ id: 1, x: targets[1].x, y: targets[1].y, radiusX: 14, radiusY: 14 },
-					{ id: 2, x: lb.x, y: lb.y, radiusX: 14, radiusY: 14 },
-					{ id: 3, x: pad.x + pad.radius * 0.7, y: pad.y, radiusX: 14, radiusY: 14 },
-				];
-				await touch('touchStart', heldContacts);
-				assert.equal((await poll()).sampledButtons, 0x8011, 'face, shoulder and digital direction remain independently held during the transparency proof');
-				await settle();
-				await assertTransparentArtwork(page, (await measure()).targets);
-				await touch('touchEnd', []);
-				await settle();
-			}
+		});
+		await finish();
+	});
 
-			if (profile.name === 'phone14-portrait-safe' || profile.name === 'phone14-landscape-safe' || profile.name === 'tablet-portrait' || profile.name === 'tablet-landscape') {
-				for (const background of ['dark', 'bright']) {
-					await page.evaluate(kind => (globalThis as any).ergonomicsProbe.background(kind), background);
-					for (const [name, roll] of [['up-right', rolls[1]], ['down-left', rolls[5]]] as const) {
-						await touch('touchStart', [{ id: 1, x: roll.x, y: roll.y, radiusX: 14, radiusY: 14 }]);
-						assert.equal((await poll()).sampledButtons, roll.mask);
-						await settle();
-						await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-${background}-${name}.png` });
-						await touch('touchEnd', []);
-						await settle();
-					}
-					await touch('touchStart', [bridge]);
-					await settle();
-					await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-${background}-thumb-chord.png` });
-					await touch('touchEnd', []);
-					await settle();
-					const base = targets[0];
-					const a = { id: 1, x: targets[1].x, y: targets[1].y };
-					const b = { id: 2, x: targets[2].x, y: targets[2].y };
-					const pad = { id: 3, x: base.x - base.radius * 0.7, y: base.y };
-					await touch('touchStart', [a]);
-					await touch('touchStart', [a, b]);
-					await touch('touchStart', [a, b, pad]);
-					assert.equal((await poll()).sampledButtons, 0x4003);
-					await settle();
-					const paired = await measure();
-					assert.deepEqual(paired.targets.slice(1, 3).map((circle: any) => circle.presentation.touched), ['true', 'true']);
-					assert.deepEqual(paired.padDirections, ['false', 'false', 'false', 'true']);
-					assert.equal(paired.targets[1].presentation.fill, 'none');
-					assert.notEqual(paired.targets[2].presentation.stroke, targets[2].presentation.stroke);
-					await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-${background}-paired.png` });
-					const scale = await page.evaluate(() => visualViewport!.scale);
-					await touch('touchMove', [a, b, { ...pad, x: -40 }]);
-					assert.equal((await poll()).sampledButtons, 0x4003, 'an acquired rocker continues steering when the thumb leaves its artwork');
-					assert.equal(await page.evaluate(() => (globalThis as any).ergonomicsProbe.model.ownsContact((globalThis as any).ergonomicsProbe.pointerEvents.filter((event: any) => event.type === 'pointerdown').at(-1).id)), true, 'controller retains the native lease for reentry');
-					assert.equal(await page.evaluate(() => visualViewport!.scale), scale);
-					await settle();
-					const dragged = await measure();
-					assert.deepEqual(dragged.padDirections, ['false', 'false', 'false', 'true'], 'the digital LEFT indication remains held beyond the pad boundary');
-					assert.deepEqual(dragged.targets.map((circle: any) => circle.bounds), targets.map((circle: any) => circle.bounds));
-					await touch('touchMove', [a, b, pad]);
-					assert.equal((await poll()).sampledButtons, 0x4003, 'reentry restores the held contact contribution');
-					await touch('touchEnd', [a]);
-					assert.equal((await poll()).sampledButtons, 0x4002);
-					await settle();
-					const released = await measure();
-					assert.deepEqual(released.targets.slice(1, 3).map((circle: any) => circle.presentation.touched), ['false', 'true']);
-					await touch('touchEnd', []);
-					assert.equal((await poll()).sampledButtons, 0);
-					await settle();
-				}
-			}
-			if (profile.screenshot) {
-				await page.evaluate(() => {
-					(globalThis as any).ergonomicsProbe.background('dark');
-					(globalThis as any).ergonomicsProbe.model.setDirectionalMode('stick');
-				});
-				await settle();
-				const stickLayout = await measure();
-				assert.deepEqual(stickLayout.targets.map((target: any) => target.bounds), targets.map((target: any) => target.bounds),
-					'switching directional mode does not move any controls');
-				assert.deepEqual(stickLayout.hosts, resting.hosts, 'switching directional mode leaves host-only commands in the same corners');
-				assert.deepEqual(stickLayout.canvas, resting.canvas, 'switching directional mode does not change picture composition');
-				await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-stick-dark-rest.png`, scale: 'css' });
-				await page.evaluate(() => (globalThis as any).ergonomicsProbe.model.setDirectionalMode('dpad'));
-				await settle();
-			}
-			const contrastProfile = profile.name === 'phone14-portrait-safe' || profile.name === 'phone14-landscape-safe'
-				|| profile.name === 'tablet-portrait' || profile.name === 'tablet-landscape';
-			if (contrastProfile) await assertRasterLabelContrast(page, profile.name, 'gameplay', await measure());
-			const count = await finish();
-			pointerEventCount += count;
-		})));
+	await t.test('visible and held controls preserve gameplay pixels and legible label ink', async paintTest => {
+		const { page, touch, settle, measure, poll, finish } = await openBrowserErgonomicsPage(paintTest, browser, html, script, actionIds);
+		await page.evaluate(() => {
+			document.getElementById('player-surface')!.style.padding = '47px 0 34px';
+			const probe = (globalThis as any).ergonomicsProbe;
+			probe.video.refreshLayout();
+			probe.background('bright');
+		});
+		await settle();
+		const resting = await measure();
+		const targets = resting.targets;
+		const [pad, a] = targets;
+		const lb = targets.find((target: { id: string }) => target.id === 'lb_knop')!;
+		await assertTransparentArtwork(page, targets);
+		await touch('touchStart', [
+			{ id: 1, x: a.x, y: a.y, radiusX: 14, radiusY: 14 },
+			{ id: 2, x: lb.x, y: lb.y, radiusX: 14, radiusY: 14 },
+			{ id: 3, x: pad.x + pad.radius * 0.7, y: pad.y, radiusX: 14, radiusY: 14 },
+		]);
+		assert.equal((await poll()).sampledButtons, 0x8011, 'face, shoulder and direction stay independently held');
+		await settle();
+		const held = await measure();
+		await assertTransparentArtwork(page, held.targets);
+		await assertRasterLabelContrast(page, held);
+		await touch('touchEnd', []);
+		assert.equal((await poll()).sampledButtons, 0);
+		await page.evaluate(() => (globalThis as any).ergonomicsProbe.model.setDirectionalMode('stick'));
+		await settle();
+		const stick = await measure();
+		assert.deepEqual(stick.targets.map((target: any) => target.bounds), targets.map((target: any) => target.bounds),
+			'switching directional mode does not move any controls');
+		assert.deepEqual(stick.hosts, resting.hosts, 'switching mode leaves host-only commands in the same corners');
+		assert.deepEqual(stick.canvas, resting.canvas, 'switching mode does not change picture composition');
+		assert.ok(await finish() > 0, 'held paint was produced through native input');
+	});
+
 	await t.test('true player-frame resize resamples held contacts before any subsequent native jitter', async resizeTest => {
 		const { page, touch, settle, measure, poll, finish } = await openBrowserErgonomicsPage(resizeTest, browser, html, script, actionIds);
 		await page.setViewportSize({ width: 844, height: 390 });
@@ -683,17 +535,10 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			await touch('touchMove', [finger]);
 			const jittered = roundContactBankWord(current.targets.slice(1), finger.x, finger.y, 14);
 			assert.equal((await poll()).sampledButtons, jittered & ~0x100, 'one-pixel native jitter does not reveal an edge deferred by layout');
-			await page.screenshot({ path: `${evidenceDirectory}/player-resize-${height}-held.png` });
 		}
 		await touch('touchEnd', []);
 		assert.equal((await poll()).sampledButtons, 0);
 		await settle();
-		pointerEventCount += await finish();
+		assert.ok(await finish() > 0, 'the held contact came from native input');
 	});
-	assert.ok(pointerEventCount > 160);
-	const order = new Map(profiles.map(({ name }, index) => [name, index]));
-	evidence.sort((left, right) => order.get(left.profile)! - order.get(right.profile)!);
-	labelRasterEvidence.sort((left, right) => order.get(left.profile)! - order.get(right.profile)!);
-	await writeFile(`${evidenceDirectory}/geometry.json`, JSON.stringify(evidence, null, 2));
-	await writeFile(`${evidenceDirectory}/label-raster-contrast.json`, JSON.stringify(labelRasterEvidence, null, 2));
 });

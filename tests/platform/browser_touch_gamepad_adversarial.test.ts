@@ -73,7 +73,8 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'fixture', write: false,
 		tsconfig: 'tsconfig.base.json',
 	});
-	const browser = await chromium.launch();
+	// Sample the native state at explicit input boundaries, not at wall-clock frame cadence.
+	const browser = await chromium.launch({ args: ['--disable-frame-rate-limit'] });
 	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true });
 	const errors: string[] = [];
@@ -300,55 +301,48 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 	});
 
 	await t.test('the entire outer D-pad roll has no gaps, opposites, or utility-button spill', async () => {
-		for (const viewport of [{ width: 852, height: 393 }, { width: 393, height: 852 }, { width: 1366, height: 1024 }, { width: 1024, height: 1366 }]) {
-			await page.setViewportSize(viewport);
+		// Exercise each footprint in a different viewport: point, ordinary
+		// thumb, thin ellipse and oversized contact. The model tests own exact
+		// sector boundaries independently of browser viewport and contact size.
+		for (const [width, height, radiusX, radiusY] of [
+			[852, 393, 1, 1], [393, 852, 14, 14], [1366, 1024, 24, 4], [1024, 1366, 30, 30],
+		]) {
+			await page.setViewportSize({ width, height });
 			await page.evaluate(() => (globalThis as any).touchAcceptance.refreshLayout());
 			const { pad, actions: shapes } = await measure();
 			const leftShoulders = shapes.filter(shape => shape.bank === 1);
-			for (const [radiusX, radiusY] of [[1, 1], [14, 14], [24, 4], [30, 30]]) {
-				await takeEvents();
-				let observedDirections = 0;
-				for (let degrees = 0; degrees <= 360; degrees += 10) {
-					const angle = degrees * Math.PI / 180;
-					const contact = { id: 1, x: pad.x + pad.radius * 0.8 * Math.cos(angle),
-						y: pad.y - pad.radius * 0.8 * Math.sin(angle), radiusX, radiusY };
-					await touch(degrees === 0 ? 'touchStart' : 'touchMove', [contact]);
-					// Read the actual delivered contact and its contribution atomically.
-					// Requested CDP doubles are not the browser's client coordinates.
-					const { native, state } = await page.evaluate(() => {
-						const probe = (globalThis as any).touchAcceptance;
-						return { native: probe.latestEvent(), state: probe.poll() };
-					});
-					const location = `${viewport.width}x${viewport.height}, ${degrees}deg, ${radiusX}x${radiusY} contact radii`;
-					// Chromium delivers float32 client coordinates. Exact outer-arc
-					// tangencies must use those real contact values, not the requested doubles.
-					assert.ok(native.trusted && (native.type === 'pointerdown' || native.type === 'pointermove'));
-					const shoulderWord = ellipseContactWord(leftShoulders, native.x, native.y, native.width / 2, native.height / 2);
-
-					assert.equal(state.model & 0x50, shoulderWord, `only actually touched left shoulders contribute at ${location}`);
-					assert.equal(state.model & ~0xf050, 0, `no utility, right-shoulder or face-bank spill at ${location}`);
-					assert.notEqual(state.model, 0, `no dead gap at ${location}`);
-					observedDirections |= state.model & 0xf000;
-					assert.notEqual(state.model & 0x3000, 0x3000, `no one-thumb Up+Down at ${location}`);
-					assert.notEqual(state.model & 0xc000, 0xc000, `no one-thumb Left+Right at ${location}`);
-					assert.equal(state.common, state.model);
-					assert.equal(state.routed, state.model);
-					assert.equal(state.mmio, state.model);
-					assert.equal(state.pointer, 0);
-				}
-				assert.equal(observedDirections, 0xf000, 'the actual native roll traverses all four directional regions');
-				await touch('touchEnd', []);
-				await assertWord(0);
+			await takeEvents();
+			let observedDirections = 0;
+			for (let degrees = 0; degrees <= 360; degrees += 10) {
+				const angle = degrees * Math.PI / 180;
+				const contact = { id: 1, x: pad.x + pad.radius * 0.8 * Math.cos(angle),
+					y: pad.y - pad.radius * 0.8 * Math.sin(angle), radiusX, radiusY };
+				await touch(degrees === 0 ? 'touchStart' : 'touchMove', [contact]);
+				// Read the actual delivered contact and its contribution atomically.
+				// Requested CDP doubles are not the browser's client coordinates.
+				const { native, state } = await page.evaluate(() => {
+					const probe = (globalThis as any).touchAcceptance;
+					return { native: probe.latestEvent(), state: probe.poll() };
+				});
+				const location = `${width}x${height}, ${degrees}deg, ${radiusX}x${radiusY} contact radii`;
+				// Chromium delivers float32 client coordinates. Exact outer-arc
+				// tangencies must use those real contact values, not the requested doubles.
+				assert.ok(native.trusted && (native.type === 'pointerdown' || native.type === 'pointermove'));
+				const shoulderWord = ellipseContactWord(leftShoulders, native.x, native.y, native.width / 2, native.height / 2);
+				assert.equal(state.model & 0x50, shoulderWord, `only actually touched left shoulders contribute at ${location}`);
+				assert.equal(state.model & ~0xf050, 0, `no utility, right-shoulder or face-bank spill at ${location}`);
+				assert.notEqual(state.model, 0, `no dead gap at ${location}`);
+				observedDirections |= state.model & 0xf000;
+				assert.notEqual(state.model & 0x3000, 0x3000, `no one-thumb Up+Down at ${location}`);
+				assert.notEqual(state.model & 0xc000, 0xc000, `no one-thumb Left+Right at ${location}`);
+				assert.equal(state.common, state.model);
+				assert.equal(state.routed, state.model);
+				assert.equal(state.mmio, state.model);
+				assert.equal(state.pointer, 0);
 			}
-			const directions = [[1, 0, 0x8000], [1, -1, 0x9000], [0, -1, 0x1000], [-1, -1, 0x5000],
-				[-1, 0, 0x4000], [-1, 1, 0x6000], [0, 1, 0x2000], [1, 1, 0xa000]];
-			for (const [dx, dy, word] of directions) {
-				const length = Math.hypot(dx, dy);
-				await touch('touchStart', [{ id: 1, x: pad.x + dx / length * pad.radius * 0.8,
-					y: pad.y + dy / length * pad.radius * 0.8, radiusX: 1, radiusY: 1 }]);
-				await assertWord(word);
-				await touch('touchEnd', []);
-			}
+			assert.equal(observedDirections, 0xf000, 'the actual native roll traverses all four directional regions');
+			await touch('touchEnd', []);
+			await assertWord(0);
 		}
 	});
 

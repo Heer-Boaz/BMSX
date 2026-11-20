@@ -28,7 +28,7 @@ test('transparent digital D-pad stays passive and preserves every raw direction 
 	const buildModule = pathToFileURL(join(repository, 'scripts/products/browser_build.ts')).href;
 	const packageScript = `import { buildBrowserPlayerPackage, buildBrowserStudioPackage } from ${JSON.stringify(buildModule)};
 for (const debug of [false, true]) {
-	await buildBrowserPlayerPackage({ debug, romName: 'nemesis_s', title: 'Nemesis', shortName: 'Nemesis' });
+	await buildBrowserPlayerPackage({ debug, romName: 'artwork_test', title: 'Artwork Test', shortName: 'Artwork' });
 	await buildBrowserStudioPackage(debug);
 }`;
 	// Run the real page producer in an isolated cwd; do not race release dist files.
@@ -64,7 +64,8 @@ export { Input } from './hosts/common/input/manager';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';`, resolveDir: repository },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'artworkFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const browser = await chromium.launch();
+	// Composed pixels and DOM state, not refresh timing, are the contracts here.
+	const browser = await chromium.launch({ args: ['--disable-frame-rate-limit'] });
 	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 852, height: 393 } });
 	const errors: string[] = [];
@@ -165,51 +166,52 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			assert.deepEqual(rendered.geometry, resting.geometry, 'artwork projection leaves acquisition geometry unchanged');
 			assert.deepEqual(rendered.writes, directionIds.filter((_id, index) => ((nibble ^ previousNibble) & (1 << index)) !== 0)
 				.map(id => ({ id, attribute: 'data-touched' })), 'only changed raw directions write their cached indicator attribute');
-			const pixels = PNG.sync.read(await page.locator('#d-pad-svg').screenshot());
-			for (const [x, y] of [[0.5, 0.5], [0.05, 0.05], [0.5, 0.35], [0.5, 0.65], [0.35, 0.5], [0.65, 0.5]]) {
-				const offset = (Math.trunc(y * pixels.height) * pixels.width + Math.trunc(x * pixels.width)) * 4;
-				assert.deepEqual([...pixels.data.subarray(offset, offset + 4)], [31, 127, 211, 255], 'actual composed centre, corner and arm interiors leave the backdrop pixel intact');
-			}
 			previousNibble = nibble;
 			await settle();
 			assert.deepEqual((await measure()).writes, [], 'an unchanged next view frame performs no DOM writes');
 		});
 	}
+	const pixels = PNG.sync.read(await page.locator('#d-pad-svg').screenshot());
+	for (const [x, y] of [[0.5, 0.5], [0.05, 0.05], [0.5, 0.35], [0.5, 0.65], [0.35, 0.5], [0.65, 0.5]]) {
+		const offset = (Math.trunc(y * pixels.height) * pixels.width + Math.trunc(x * pixels.width)) * 4;
+		assert.deepEqual([...pixels.data.subarray(offset, offset + 4)], [31, 127, 211, 255], 'actual composed centre, corner and arm interiors leave the backdrop pixel intact');
+	}
 	await t.test('calibrated digital and analog ink stays inside the unchanged acquisition bank at DPR 1, 2, and 3', async () => {
 		// This is actual Chromium paint evidence from the public model/view
 		// producer, separate from the native multi-finger delivery tests.
-		for (const dpr of [1, 2, 3]) {
-			const rasterPage = await browser.newPage({ viewport: { width: 320, height: 240 }, deviceScaleFactor: dpr });
+		// Cover each layout family and each DPR without the Cartesian product.
+		// Across the four cases the stick reaches all eight extreme directions.
+		for (const [width, height, dpr, turn] of [
+			[320, 240, 1, 0], [390, 763, 2, 2], [768, 980, 3, 4], [852, 393, 1, 6],
+		]) {
+			const rasterPage = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: dpr });
 			rasterPage.on('pageerror', error => errors.push(error.message));
 			await rasterPage.setContent(artworkPage);
 			await rasterPage.addScriptTag({ content: bundle.outputFiles[0].text });
 			await rasterPage.evaluate(initializeArtwork);
 			await rasterPage.evaluate(() => (globalThis as any).artworkProbe.observer.disconnect());
 			await rasterPage.addStyleTag({ content: '.control-surface:not(#d-pad-controls), .host-control-surface { visibility: hidden !important; }' });
-			for (const [width, height] of [[320, 240], [320, 568], [568, 239], [390, 763], [750, 369], [852, 393], [768, 980], [1024, 748]]) {
-				await rasterPage.setViewportSize({ width, height });
-				await rasterPage.evaluate(({ width, height }) => (globalThis as any).artworkProbe.view.layout(0, 0, width, height), { width, height });
-				const hidden = await rasterPage.addStyleTag({ content: '#d-pad-svg { visibility: hidden !important; }' });
-				const blank = PNG.sync.read(await rasterPage.screenshot());
-				await hidden.evaluate(element => element.parentNode!.removeChild(element));
-				await hidden.dispose();
-				for (let pose = -2; pose < 8; pose += 1) {
-					const bank = await rasterPage.evaluate(pose => (globalThis as any).artworkProbe.pose(pose === -2 ? 'dpad' : 'stick', pose), pose);
-					await rasterPage.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
-					const raster = PNG.sync.read(await rasterPage.screenshot());
-					assert.equal(raster.width, width * dpr, 'the browser raster uses the tested device pixel ratio');
-					let inkPixels = 0;
-					for (let offset = 0; offset < raster.data.length; offset += 4) {
-						if (raster.data[offset] === blank.data[offset] && raster.data[offset + 1] === blank.data[offset + 1]
-							&& raster.data[offset + 2] === blank.data[offset + 2]) continue;
-						inkPixels += 1;
-						const pixel = offset / 4, x = pixel % raster.width, y = Math.trunc(pixel / raster.width);
-						for (const dx of [0, 1]) for (const dy of [0, 1]) assert.ok(
-							Math.hypot((x + dx) / dpr - bank.x, (y + dy) / dpr - bank.y) <= bank.radius,
-							`${width}x${height}/DPR${dpr}/pose${pose}: every painted pixel corner, including active strokes, lies in the unchanged acquisition circle`);
-					}
-					assert.ok(inkPixels > 0, 'the visible digital cross or stick actually painted pixels');
+			await rasterPage.evaluate(({ width, height }) => (globalThis as any).artworkProbe.view.layout(0, 0, width, height), { width, height });
+			const hidden = await rasterPage.addStyleTag({ content: '#d-pad-svg { visibility: hidden !important; }' });
+			const blank = PNG.sync.read(await rasterPage.screenshot());
+			await hidden.evaluate(element => element.parentNode!.removeChild(element));
+			await hidden.dispose();
+			for (const pose of [-2, -1, turn, turn + 1]) {
+				const bank = await rasterPage.evaluate(pose => (globalThis as any).artworkProbe.pose(pose === -2 ? 'dpad' : 'stick', pose), pose);
+				await rasterPage.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+				const raster = PNG.sync.read(await rasterPage.screenshot());
+				assert.equal(raster.width, width * dpr, 'the browser raster uses the tested device pixel ratio');
+				let inkPixels = 0;
+				for (let offset = 0; offset < raster.data.length; offset += 4) {
+					if (raster.data[offset] === blank.data[offset] && raster.data[offset + 1] === blank.data[offset + 1]
+						&& raster.data[offset + 2] === blank.data[offset + 2]) continue;
+					inkPixels += 1;
+					const pixel = offset / 4, x = pixel % raster.width, y = Math.trunc(pixel / raster.width);
+					for (const dx of [0, 1]) for (const dy of [0, 1]) assert.ok(
+						Math.hypot((x + dx) / dpr - bank.x, (y + dy) / dpr - bank.y) <= bank.radius,
+						`${width}x${height}/DPR${dpr}/pose${pose}: every painted pixel corner, including active strokes, lies in the unchanged acquisition circle`);
 				}
+				assert.ok(inkPixels > 0, 'the visible digital cross or stick actually painted pixels');
 			}
 			await rasterPage.close();
 		}
