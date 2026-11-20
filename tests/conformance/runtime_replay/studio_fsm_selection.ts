@@ -17,7 +17,7 @@ function selectedProof(view: BehaviorLensViewState) {
 
 /** Source Details and Source use the same evidence before and after hidden edits. */
 export async function testStudioFsmSelection(test: StudioFixture): Promise<void> {
-	const { ide, harness, click, frame, press, runPaletteCommand, cycles, clipboard } = test;
+	const { ide, harness, frame, press, runPaletteCommand, cycles, clipboard } = test;
 	console.info('STUDIO: FSM proof inspector, identical returns, hidden edits/Undo and source snapshot cancellation');
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
@@ -51,7 +51,10 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	for (let index = 0; index < 30; index += 1) await frame();
 	check(rows[0] === first && rows[1] === second, 'FSM proof: unchanged inspector frames retain measured content');
 	await press('ArrowDown');
-	await click(inspector.actionBar.items[0].bounds, 6);
+	test.setKey('Enter', true);
+	for (let index = 0; index < 6; index += 1) await frame();
+	check(inspector.visible, 'the selected inspector property is not activated until release');
+	test.setKey('Enter', false); await frame();
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === 4
 		&& sourcePane(test).code.view.cursorColumn === FSM_PROOF_SOURCE.split('\n')[4].indexOf('return') && !hasSelection(sourcePane(test).code),
 		'FSM proof: held picker acceptance opens the second return, not the binding, initializer or a dragged code selection');
@@ -65,7 +68,7 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	await test.clickTab(lens.id);
 	check(graph.viewport.model === selectedGeometry && graph.viewport.selection?.kind === 'edge',
 		'FSM proof: returning from source reveals that proof without relayout');
-	await click(graph.actionBar.items[0].bounds);
+	await runPaletteCommand('editor.source');
 	const oldDocument = view.document;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 shifted evidence\n' }]);
 	model.pushEditOperations([{ offset: model.buffer.getText().indexOf('\tif owner.again'), deleteLength: 0,
@@ -74,7 +77,8 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	check(view.document === oldDocument, 'FSM proof: hidden input maps evidence without rebuilding source');
 	await test.clickTab(lens.id);
 	check(selectedProof(view).outcome === selectedProof(view).transition.outcomes[2], 'FSM proof: correspondence follows the old return past a newly inserted identical return');
-	await click(graph.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(sourcePane(test).code.view.cursorRow === 6 && !hasSelection(sourcePane(test).code), 'FSM proof: Source consumes current parsed evidence after UTF-16 edits');
 	await press('ControlLeft', 'KeyZ');
 	await test.clickTab(lens.id);
@@ -87,7 +91,7 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	await frame();
 	model.undo();
 	await frame();
-	await click(graph.actionBar.items[0].bounds);
+	await runPaletteCommand('editor.source');
 	const span = luaSourceRangeToTextRange(model.buffer, selectedBehaviorLensSourceRange(view)!);
 	model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: '' }]);
 	model.undo();

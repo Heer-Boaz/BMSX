@@ -448,6 +448,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		const source = input.view.source, selected = source.nodesByRowKey.get(input.view.selectionState.selected.rowKey)!;
 		const lifetime = this.inspector.show({ title: selected.label,
 			items: buildBehaviorInspection(input.view),
+			focusReturn: target,
 			canOpenSource: item => item.source !== undefined,
 			openSource: item => this.controller.openInspectionSource(this.group, input, item),
 		}, false);
