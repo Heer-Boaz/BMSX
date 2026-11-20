@@ -15,6 +15,7 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -148,26 +149,26 @@ test('constant loads, compiled operands and checkpoints use the physical bank', 
 	writeInstruction(program.text, 0, OpCode.LOADK, 0, 0, 1);
 	writeInstruction(program.text, 1, OpCode.ADD, 1, 0, 0);
 	writeInstruction(program.text, 2, OpCode.JMP, 0, 63, 61, 255);
-	for (const backend of [CpuExecutionBackend.Interpreter]) {
-		const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(program), backend);
+	const image = linkRawTestSystemBlua32(program);
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const { cpu, memory } = createTestSystemCpu(image, backend);
 		const base = cpu.captureRuntimeState().constantPoolBases[SYSTEM_EXECUTION_DOMAIN_ID + 1], tag = base + 3 * 4 + 1;
 		assert.equal(memory.readRamRecordWord(base + 4), 12);
 		assert.equal(memory.readRamRecordByte(tag), ValueTag.Integer);
 		cpu.runUntilDepth(0, 4000);
 		assert.equal(cpu.readFrameRegister(0, 1), valueInteger(24));
 		if (backend === CpuExecutionBackend.JavaScript) assert.ok(cpu.rootThread.currentFrame!.decodedPage!.compiledBlocks);
-		memory.writeRamRecordWord(base + 4, 0x3fa00000);
-		memory.writeRamRecordByte(tag, ValueTag.Float);
-		cpu.runUntilDepth(0, 4000);
-		assert.equal(cpu.readFrameRegister(0, 1), valueFloatBits(0x40200000), 'pre-specialized code sees both changed lanes');
 		const ram = memory.captureSaveState(), state = cpu.captureRuntimeState(), occupied = cpu.heapAllocator.occupiedBytes();
-		memory.writeRamRecordWord(base + 4, 0x40000000);
-		cpu.runUntilDepth(0, 4000);
-		assert.equal(cpu.readFrameRegister(0, 1), valueFloatBits(0x40800000));
-		memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
-		cpu.runUntilDepth(0, 4000);
-		assert.equal(cpu.readFrameRegister(0, 1), valueFloatBits(0x40200000), 'restore reattaches RAM instead of decoding ROM');
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied, 'restore does not allocate another bank');
+		const bytes = new DataView(ram.ram.buffer);
+		// A checkpoint restores the private bank, not writes through the public bus.
+		ram.ram[tag - RAM_BASE] = ValueTag.Float;
+		for (const [payload, result] of [[0x3fa00000, 0x40200000], [0x40000000, 0x40800000], [0x3fa00000, 0x40200000]]) {
+			bytes.setUint32(base - RAM_BASE + 4, payload, true);
+			memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+			cpu.runUntilDepth(0, 4000);
+			assert.equal(cpu.readFrameRegister(0, 1), valueFloatBits(result), 'restore reattaches RAM instead of decoding ROM');
+			assert.equal(cpu.heapAllocator.occupiedBytes(), occupied, 'restore does not allocate another bank');
+		}
 		cpu.reset(); cpu.reset();
 		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied, 'reset does not leak the superseded bank');
 	}

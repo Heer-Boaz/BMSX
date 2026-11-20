@@ -1,3 +1,4 @@
+#include "common/endian.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/errors.h"
 #include "machine/cpu/thread_record.h"
@@ -157,22 +158,24 @@ void constantBankUsesGuestRam() {
 			require(page && page->nativeBlocks, "the bank's immediate has been specialized in a native block");
 		}
 #endif
-		// Change both the payload and the kind of the baked operand.
-		machine.memory.writeRamRecordWord(base + 4, 0x3fa00000u);
-		machine.memory.writeRamRecordByte(tag, static_cast<u8>(ValueTag::Float));
-		cpu.runUntilDepth(0, 1000);
-		require(cpu.readFrameRegister(0, 1) == valueFloatBits(0x40200000u), "a RAM write makes native code observe the new constant tag and payload");
-		const auto ram = machine.memory.captureSaveState();
+		auto ram = machine.memory.captureSaveState();
 		const auto state = cpu.captureRuntimeState();
 		const auto occupied = cpu.heapAllocator().occupiedBytes();
-		machine.memory.writeRamRecordWord(base + 4, 0x40000000u);
-		cpu.runUntilDepth(0, 1000);
-		require(cpu.readFrameRegister(0, 1) == valueFloatBits(0x40800000u), "a published bank can change twice");
-		machine.memory.restoreSaveState(ram);
-		cpu.restoreRuntimeState(state);
-		cpu.runUntilDepth(0, 1000);
-		require(cpu.readFrameRegister(0, 1) == valueFloatBits(0x40200000u) && cpu.heapAllocator().occupiedBytes() == occupied,
-			"restore attaches the saved bank, without decoding the ROM or charging another allocation");
+		// An activated bank is private and immutable. Checkpoint admission must
+		// attach the physical bytes, not keep the old specialization or decode ROM.
+		ram.ram[tag - RAM_BASE] = static_cast<u8>(ValueTag::Float);
+		for (const auto [payload, result] : {std::pair{0x3fa00000u, 0x40200000u}, std::pair{0x40000000u, 0x40800000u},
+				std::pair{0x3fa00000u, 0x40200000u}}) {
+			writeLE32(ram.ram.data() + base - RAM_BASE + 4, payload);
+			machine.memory.restoreSaveState(ram);
+			cpu.restoreRuntimeState(state);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (!scalar) cpu.prepareSystemNativeCode();
+#endif
+			cpu.runUntilDepth(0, 1000);
+			require(cpu.readFrameRegister(0, 1) == valueFloatBits(result) && cpu.heapAllocator().occupiedBytes() == occupied,
+				"each restored bank supplies both constant lanes without charging another allocation");
+		}
 		const auto startup = cpu.heapAllocator().occupiedBytes();
 		cpu.reset(); cpu.reset();
 		require(cpu.heapAllocator().occupiedBytes() == startup, "reset replaces rather than leaking the bank");
@@ -242,7 +245,8 @@ void incrementalStateAndBarriers() {
 	}
 	for (int i = 0; i < 4200; ++i) cpu.stringPool().intern("dead-" + std::to_string(i) + std::string(16, 'x'));
 	auto target = asTable(roots.getInteger(1000), cpu.gcHeap());
-	require(cpu.stepHeap(valueNil(), valueNil(), valueNil()) >= GC_STEP_WORDS && machine.memory.readRamRecordByte(target.address() + GC_COLOR_OFFSET) == 3,
+	require(cpu.stepHeap(valueNil(), valueNil(), valueNil()) >= GC_STEP_WORDS
+		&& cpu.gcHeap().phase() == GcPhase::Mark && (machine.memory.readRamRecordByte(target.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3,
 		"mutations target a black allocation while marking is incomplete");
 	auto child = cpu.createTable();
 	target.setInteger(1, valueTable(child.address()));
@@ -303,7 +307,8 @@ void incrementalSharedWeakMode() {
 	cpu.stepHeap(valueNil(), valueNil(), valueNil());
 	const auto index = [](u32 address) { return (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT; };
 	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
-	require(cpu.gcHeap().phase() == GcPhase::Mark && machine.memory.readRamRecordByte(weak.address() + GC_COLOR_OFFSET) == 3 && machine.memory.readRamRecordByte(child.address() + GC_COLOR_OFFSET) != 3
+	require(cpu.gcHeap().phase() == GcPhase::Mark && (machine.memory.readRamRecordByte(weak.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3
+		&& (machine.memory.readRamRecordByte(child.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == cpu.gcHeap().white()
 		&& machine.memory.readRamRecordWord(control + GC_WEAK_VISITS) == index(weak.address())
 		&& machine.memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_TAIL) == index(following.address())
 		&& machine.memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_COUNT) == 2,
@@ -341,7 +346,7 @@ void consumesSelfLinkedGrayEdge() {
 	machine.memory.writeRamRecordWord(rooted.address() + GC_RECORD_LINK, index);
 	machine.memory.writeRamRecordWord(gc.changedHeadOffset(), index);
 	gc.step(valueNil(), valueNil(), valueNil());
-	require(gc.phase() == GcPhase::Atomic && machine.memory.readRamRecordByte(rooted.address() + GC_COLOR_OFFSET) == 3
+	require(gc.phase() == GcPhase::Atomic && (machine.memory.readRamRecordByte(rooted.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3
 		&& machine.memory.readRamRecordWord(rooted.address() + GC_RECORD_LINK) == 0,
 		"consuming the mark and link terminates a circular physical queue");
 	while (gc.active()) gc.step(valueNil(), valueNil(), valueNil());
