@@ -2,6 +2,8 @@ import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { workspaceRecords } from '../../../ide/workspace/records';
 import { resolveWorkspacePath } from '../../../ide/workspace/path';
+import { WORKBENCH_TEXT_EDITOR_ID } from '../../../ide/workbench/contrib/code_editor/editor_input';
+import { blua32InstallationNeedsRebuild } from '../../../ide/runtime/lua_pipeline';
 import { check, type StudioFixture } from './studio_fixture';
 import { nemesisTitle, reachNemesisTitle } from './studio_nemesis_navigation';
 
@@ -56,7 +58,8 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 		const resource = ide.sources.catalog.resources.find(resource => resource.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && (kind === 'aem'
 			? resource.source.type === 'aem'
 			: resource.source.type === 'data' && resource.path.endsWith('nemesis_s_stage.yaml')))!;
-		await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), resource);
+		const destination = ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup);
+		await ide.editor.navigation.openResource(destination, resource, kind === 'yaml' ? { editorId: WORKBENCH_TEXT_EDITOR_ID } : undefined);
 		if (kind === 'aem') {
 			await frame();
 			const input = ide.editor.editorParts.activeGroup.model.activeTab;
@@ -74,6 +77,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 			check(input.workingCopy.buffer.getText() === original, 'source saves: audio event Undo restores every authored byte');
 			await test.runPaletteCommand('editor.source');
 		}
+		await until(() => ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor', `source saves: ${kind} text view opens`);
 		const document = harness.getActiveEditorDocument().model;
 		check(document.mode === kind, `source saves: actual ${kind} source is editable`);
 		const resourcePath = resolveWorkspacePath(resource.path, root);
@@ -101,7 +105,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 			await test.runPaletteCommand('aem.apply'); await press('Enter');
 			await until(() => !aem.applying && getTextFileRuntimeSourceStatus(ide.sources, document) === 'applied', 'source saves: explicit named attachment Apply succeeds');
 			check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('title_screen') === source
-				&& ide.sources.cartridgeBlua32MediaDirty[0] && getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending',
+				&& blua32InstallationNeedsRebuild(ide.sources, 0) && getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending',
 				'Explicit AEM Apply relinks installed Lua without installing separately saved code');
 			const validSource = document.buffer.getText(), installedMedia = ide.sources.currentBlua32Media;
 			const invalidSource = 'events: [';
