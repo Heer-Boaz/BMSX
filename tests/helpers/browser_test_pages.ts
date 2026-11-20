@@ -1,5 +1,5 @@
 import { after, type TestContext } from 'node:test';
-import { chromium, type Browser, type BrowserContextOptions } from 'playwright';
+import { chromium, type Browser, type BrowserContextOptions, type Page } from 'playwright';
 import { afterTest } from './test_cleanup';
 
 const profiles = {
@@ -26,4 +26,18 @@ export async function openBrowserTestPage(t: TestContext, options?: BrowserConte
 	const page = await (await pending).newPage(options);
 	afterTest(t, () => page.close());
 	return page;
+}
+
+export function waitForBrowserFrame(page: Page): Promise<void> {
+	return page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+}
+
+/** The Studio host polls input per frame. Hold each chord long enough for its
+ * modifiers to reach that owner, then wait for release before the next input. */
+export async function pressStudioChord(page: Page, keys: string): Promise<void> {
+	const chord = keys.split('+');
+	for (const key of chord) await page.keyboard.down(key);
+	await waitForBrowserFrame(page);
+	for (let index = chord.length - 1; index >= 0; index--) await page.keyboard.up(chord[index]);
+	await waitForBrowserFrame(page);
 }

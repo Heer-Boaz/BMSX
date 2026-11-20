@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
+import { pressStudioChord, waitForBrowserFrame } from '../helpers/browser_test_pages';
 import { afterTest } from '../helpers/test_cleanup';
 
 /** Only packaged assets, deliberately no BMSX APIs or HTML rewriting. */
@@ -168,23 +169,14 @@ test('standalone product: source creation, Save, reload and offline editing with
 	const { page, address, requests, errors } = await standalone(t);
 	page.setDefaultTimeout(8_000);
 	await page.clock.install();
-	const frame = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-	// Leave one Studio frame between native key-down and key-up. The
-	// polled host shortcuts must see held modifiers, not two collapsed edges.
-	const press = async (keys: string) => {
-		const chord = keys.split('+');
-		for (const key of chord) await page.keyboard.down(key);
-		await frame();
-		for (let index = chord.length - 1; index >= 0; index--) await page.keyboard.up(chord[index]);
-		await frame();
-	};
+	const press = (keys: string) => pressStudioChord(page, keys);
 	const command = async (title: string) => { await press('Control+Shift+p'); await page.keyboard.type(title); await press('Enter'); };
 	// BrowserTextInput exposes the focused control's bounded source context, not a second editor model.
 	const waitForNativeText = (text: string) => page.waitForFunction(text => {
 		const active = document.activeElement;
 		return active instanceof HTMLTextAreaElement && active.value === text;
 	}, text);
-	const boot = async () => { await page.waitForFunction(() => document.body.classList.contains('game-started')); await frame(); };
+	const boot = async () => { await page.waitForFunction(() => document.body.classList.contains('game-started')); await waitForBrowserFrame(page); };
 	await page.goto(`${address}/studio.debug.html?rom=hot_resume_test.debug.rom`); await boot();
 	await press('ControlRight+ShiftRight');
 	await command('New Lua File'); await press('Enter');
@@ -212,7 +204,7 @@ test('standalone product: source creation, Save, reload and offline editing with
 	await press('Enter'); await press('Escape');
 	// Cross the reconnect deadline without idling the runner for eleven seconds.
 	await page.clock.fastForward(11_000);
-	await frame();
+	await waitForBrowserFrame(page);
 	assert.deepEqual(requests, []); assert.deepEqual(errors, []);
 	await page.context().setOffline(false); await page.reload(); await boot(); await press('ControlRight+ShiftRight');
 	await press('Control+Home'); await waitForNativeText('local value = 6 * 7');

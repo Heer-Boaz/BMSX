@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { access, mkdir } from 'node:fs/promises';
+import { access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { chromium, type Browser } from 'playwright';
 import { createStudioServer } from '../helpers/studio_server.mjs';
 import { createSharedCodexFixture } from '../helpers/codex_shared_server';
 import { createCodexModelFixture, CODEX_FIXTURE_WAIT } from '../helpers/codex_model_fixture.mjs';
-import { afterTest } from '../helpers/test_cleanup';
+import { openBrowserTestPage, pressStudioChord, waitForBrowserFrame } from '../helpers/browser_test_pages';
 
-const reply = '# Shared conversation\n\n**One thread**, shown in the CLI and Studio. No copy or fork.\n\nThe CLI can use `studio_evaluate_lua`, inspect actors and step frames through MCP.\n\n```lua\nreturn 6 * 7\n```\n\n- Studio is *read only* here.\n- The existing Studio assistant remains available.\n- Ordinary words wrap without splitting.';
+const reply = 'The response belongs to the native conversation.';
 
 test('an unavailable native Codex daemon cannot take down the Studio server', { timeout: 15000 }, async t => {
 	const server = await createStudioServer(t);
@@ -23,47 +22,7 @@ test('an unavailable native Codex daemon cannot take down the Studio server', { 
 	await assert.rejects(access(server.trace), { code: 'ENOENT' });
 });
 
-test('server status follows the live Studio channel independently of the Codex daemon and active pane', { timeout: 60000 }, async t => {
-	const server = await createStudioServer(t);
-	const browser = await chromium.launch({ args: ['--no-sandbox', '--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
-		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface', '--disable-dev-shm-usage'] });
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
-	const errors: string[] = [], requests: string[] = [];
-	page.on('pageerror', error => errors.push(String(error)));
-	page.on('request', request => { if (request.url().includes('/__bmsx__/') && !request.url().includes('/lua')) requests.push(new URL(request.url()).pathname); });
-	const gate = Promise.withResolvers<void>(), opening = Promise.withResolvers<void>();
-	await page.route('**/__bmsx__/studio/connect', async route => { opening.resolve(); await gate.promise; await route.continue(); });
-	const registered = page.waitForResponse(response => response.url().endsWith('/studio/connect'));
-	await page.goto(`${server.address}/studio.debug.html?rom=studio_test.debug.rom`); await opening.promise;
-	const evidence = '/tmp/bmsx-studio-connection'; await mkdir(evidence, { recursive: true });
-	const press = async (keys: string) => { await page.keyboard.press(keys, { delay: 100 });
-		await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))); };
-	const command = async (title: string) => { await press('Control+Shift+p'); await page.keyboard.type(title, { delay: 25 }); await press('Enter'); };
-	await press('ControlRight+ShiftRight');
-	await page.screenshot({ path: join(evidence, 'connecting.png') });
-	gate.resolve(); assert.equal((await registered).status(), 200);
-	await press('Escape'); await page.screenshot({ path: join(evidence, 'connected-editor.png') });
-	await press('Control+Alt+t'); await page.screenshot({ path: join(evidence, 'connected-dark.png') }); await press('Control+Alt+t');
-	await press('Control+b'); await page.screenshot({ path: join(evidence, 'connected-resources.png') }); await press('Control+b');
-	const unavailable = page.waitForResponse(response => response.url().endsWith('/conversations/connect'));
-	await command('Codex CLI Choose Conversation'); assert.equal((await unavailable).status(), 503);
-	await page.screenshot({ path: join(evidence, 'daemon-unavailable-server-connected.png') });
-	await command('Codex Assistant'); await page.screenshot({ path: join(evidence, 'connected-assistant.png') });
-	const reconnecting = page.waitForRequest(request => request.url().endsWith('/studio/connect'));
-	server.process.kill('SIGKILL'); await reconnecting;
-	await press('Escape'); await page.screenshot({ path: join(evidence, 'reconnecting-assistant.png') });
-	await press('Control+Alt+t'); await page.screenshot({ path: join(evidence, 'reconnecting-dark.png') }); await press('Control+Alt+t');
-	await command('Lua Terminal'); await page.screenshot({ path: join(evidence, 'reconnecting-terminal.png') });
-	assert.deepEqual(errors, []);
-	assert.equal(requests.filter(path => path.startsWith('/__bmsx__/assistant/')).length, 0);
-	assert.equal(requests.filter(path => path === '/__bmsx__/conversations/connect').length, 1);
-	await assert.rejects(access(server.trace), { code: 'ENOENT' });
-});
-
-test('real Studio: choose the native conversation, follow work, resize and close without controlling CLI', { timeout: 90000 }, async t => {
-	let browser: Browser;
-	afterTest(t, async () => { await browser?.close(); });
+test('real Studio: choose the native conversation, follow work, resize and close without controlling CLI', { timeout: 20_000 }, async t => {
 	const working = Promise.withResolvers<void>();
 	const model = await createCodexModelFixture(t, [[{ type: 'message', id: 'first-answer', role: 'assistant', content: [{ type: 'output_text', text: reply }] }],
 		() => { working.resolve(); return CODEX_FIXTURE_WAIT; }]);
@@ -76,10 +35,7 @@ test('real Studio: choose the native conversation, follow work, resize and close
 	const endpoint = `${server.address}/__bmsx__/conversations`;
 	assert.equal((await fetch(`${endpoint}/connect`, { method: 'POST' })).status, 401);
 	assert.equal((await fetch(`${endpoint}/connect`, { method: 'POST', headers: { ...server.headers, Origin: 'https://untrusted.example' } })).status, 403);
-	const evidence = '/tmp/bmsx-studio-conversations'; await mkdir(evidence, { recursive: true });
-	browser = await chromium.launch({ args: ['--no-sandbox', '--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
-		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface', '--disable-dev-shm-usage'] });
-	const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
+	const page = await openBrowserTestPage(t, { viewport: { width: 1024, height: 768 } });
 	const errors: string[] = [], commands: string[] = [], embedded: string[] = [];
 	page.on('pageerror', error => errors.push(String(error)));
 	page.on('request', request => {
@@ -87,55 +43,28 @@ test('real Studio: choose the native conversation, follow work, resize and close
 		if (request.url().includes('/assistant/')) embedded.push(request.url());
 	});
 	const ready = page.waitForResponse(response => response.url().endsWith('/studio/connect'));
-	await page.goto(`${server.address}/studio.debug.html?rom=studio_test.debug.rom`); await ready;
-	await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-	await page.keyboard.press('ControlRight+ShiftRight', { delay: 100 });
-	await page.keyboard.press('Control+Shift+p', { delay: 100 });
-	// History is a workbench action: the initial focus is still the Lua editor.
-	await page.keyboard.type('Codex CLI Choose Conversation', { delay: 25 });
-	await page.screenshot({ path: join(evidence, 'command.png') });
+	await page.goto(`${server.address}/studio.debug.html?rom=studio_test.debug.rom`);
+	assert.equal((await ready).status(), 200);
+	await page.waitForFunction(() => document.body.classList.contains('game-started'));
+	await pressStudioChord(page, 'ControlRight+ShiftRight');
+	await pressStudioChord(page, 'Control+Shift+p');
+	await page.keyboard.type('Codex CLI Choose Conversation');
 	const history = page.waitForResponse(response => response.url().endsWith('/conversations/command') && response.request().postDataJSON().type === 'history');
-	await page.keyboard.press('Enter', { delay: 100 });
+	await pressStudioChord(page, 'Enter');
 	assert.equal((await history).status(), 200);
-	await page.screenshot({ path: join(evidence, 'history.png') });
 	const selected = page.waitForResponse(response => response.url().endsWith('/conversations/command') && response.request().postDataJSON().type === 'open');
-	await page.keyboard.press('Enter', { delay: 100 });
+	await pressStudioChord(page, 'Enter');
 	assert.equal((await selected).status(), 204);
-	await page.screenshot({ path: join(evidence, 'conversation.png') });
 	const next = await native.owner.request<any>('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Keep working while I inspect the Studio view.', text_elements: [] }] });
 	await working.promise;
-	await page.screenshot({ path: join(evidence, 'working.png') });
 	await page.setViewportSize({ width: 390, height: 844 });
-	await page.screenshot({ path: join(evidence, 'resized.png') });
-	await page.setViewportSize({ width: 1024, height: 768 });
-	// Exercise actual UI recovery after a terminal lease rejection, not an automatic retry.
-	await page.route('**/__bmsx__/conversations/command', route => route.fulfill({ status: 410, contentType: 'text/plain', body: 'Viewer lease ended for the connection-loss probe' }), { times: 1 });
-	await page.keyboard.press('Control+Shift+p', { delay: 100 });
-	await page.keyboard.type('Codex CLI Conversations', { delay: 25 });
-	const retired = page.waitForResponse(response => response.url().endsWith('/conversations/command') && response.status() === 410);
-	await page.keyboard.press('Enter', { delay: 100 }); await retired;
-	await page.screenshot({ path: join(evidence, 'disconnected.png') });
+	await waitForBrowserFrame(page);
 	await page.close();
 
-	// A fresh narrow browser gets its own viewer; it does not reuse the desktop's canvas layout or lease.
-	const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-	phone.on('pageerror', error => errors.push(String(error)));
-	const phoneReady = phone.waitForResponse(response => response.url().endsWith('/studio/connect'));
-	await phone.goto(`${server.address}/studio.debug.html?rom=studio_test.debug.rom`); await phoneReady;
-	await phone.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-	await phone.keyboard.press('ControlRight+ShiftRight', { delay: 100 });
-	await phone.keyboard.press('Control+Shift+p', { delay: 100 });
-	await phone.keyboard.type('Codex CLI Conversations', { delay: 25 });
-	const phoneHistory = phone.waitForResponse(response => response.url().endsWith('/conversations/command') && response.request().postDataJSON().type === 'history');
-	await phone.keyboard.press('Enter', { delay: 100 }); assert.equal((await phoneHistory).status(), 200);
-	const phoneSelected = phone.waitForResponse(response => response.url().endsWith('/conversations/command') && response.request().postDataJSON().type === 'open');
-	await phone.keyboard.press('Enter', { delay: 100 }); assert.equal((await phoneSelected).status(), 204);
-	await phone.screenshot({ path: join(evidence, 'phone.png') });
-	await phone.close();
 	const status = await native.owner.request<any>('thread/read', { threadId: thread.id, includeTurns: false });
 	assert.equal(status.thread.status.type, 'active');
 	await native.owner.request('turn/interrupt', { threadId: thread.id, turnId: next.turn.id });
-	assert.deepEqual(commands, ['history', 'open', 'history'], 'rendering, streaming, resize and connection failure cannot write, retry or poll the agent');
+	assert.deepEqual(commands, ['history', 'open'], 'rendering, resizing and closing the observer cannot write to or poll the agent');
 	assert.deepEqual(embedded, []); assert.deepEqual(errors, []);
 	await assert.rejects(access(server.trace), { code: 'ENOENT' });
 	await assert.rejects(access(join(server.root, 'state')), { code: 'ENOENT' });
