@@ -62,10 +62,15 @@ for (const scenario of [
 			await press('ControlLeft+ShiftLeft+KeyP'); await paste('Go to Line'); await press('Enter');
 			await paste(String(line)); await press('Enter');
 		};
+		const openSource = async () => {
+			await press('ControlLeft+KeyP'); await paste(scenario.file); await press('Enter');
+			await action({ execute: 'wait', frames: 3 });
+			// The picker opens the dedicated map editor. Ask that view for its source.
+			await press('ControlLeft+ShiftLeft+KeyP'); await paste('Editor: Open Source'); await press('Enter');
+		};
 		await action({ execute: 'wait', frames: 160 });
 		await press('ControlRight+ShiftRight');
-		await press('ControlLeft+Comma'); await paste(scenario.file); await press('Enter');
-		await action({ execute: 'wait', frames: 3 });
+		await openSource();
 		assert.equal(await text(), source, 'open exact authored YAML, not cooked JSON');
 		const offset = source.indexOf(scenario.before);
 		assert.ok(offset >= 0);
@@ -101,8 +106,7 @@ for (const scenario of [
 		const capture = (await action({ execute: 'capture' })).result;
 		t.diagnostic(`saved editor: ${capture.path}`);
 		await press('ControlLeft+KeyW');
-		await press('ControlLeft+Comma'); await paste(scenario.file); await press('Enter');
-		await action({ execute: 'wait', frames: 3 });
+		await openSource();
 		assert.equal(await text(), edited, 'reopening retains the saved YAML');
 		assert.equal(await fs.readFile(relative, 'utf8'), source, 'repository cart was not edited');
 	});
