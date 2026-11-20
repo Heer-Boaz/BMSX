@@ -12,12 +12,14 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileCoroutineTest } from '../../helpers/coroutine';
 import { gcStressVectors, installAllocationStress } from '../../helpers/gc_stress';
+import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const buildDirectory = process.argv[2] ?? 'build-native-cpu-default';
-for (const [command, args] of [
-	['cmake', ['-S', 'machine/cpp', '-B', buildDirectory, '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON', '-DBMSX_ENABLE_NATIVE_BLOCKS=ON']],
-	['cmake', ['--build', buildDirectory, '--target', 'bmsx_gc_stress_runner', '--parallel', '3']],
-] as const) assert.equal(spawnSync(command, args, { stdio: 'inherit' }).status, 0);
+const nativeRunner = nativeConformanceRunner('bmsx_gc_stress_runner', {
+	buildDirectory,
+	configure: ['-DBMSX_ENABLE_NATIVE_BLOCKS=ON'],
+	parallel: '3',
+});
 
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-gc-stress-'));
 try {
@@ -55,7 +57,7 @@ try {
 			assert.ok(counter.allocations > 32, label);
 			const expected = decodeRuntimeSaveState(encodeRuntimeSaveState(captureRuntimeSaveState(runtime)),
 				PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-			const native = spawnSync(`${buildDirectory}/bmsx_gc_stress_runner`,
+			const native = spawnSync(nativeRunner,
 				[path, compiled ? 'native' : 'scalar', restore ? 'restore' : 'plain'], { stdio: 'inherit' });
 			assert.equal(native.status, 0, `${label}: native signal ${native.signal}`);
 			const actual = decodeRuntimeSaveState(new Uint8Array(readFileSync(`${path}.state`)),

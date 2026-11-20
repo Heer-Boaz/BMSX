@@ -1,24 +1,16 @@
 import assert from 'node:assert/strict';
-import Module from 'node:module';
-import { readFileSync } from 'node:fs';
+import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
+import { parseSystemRomImage } from '../../../machine/ts/rompack/image';
+import { cartridgeMediaFromImages } from '../../../hosts/common/cartridge_media';
+import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend';
+import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE, IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../machine/ts/spec/bmsx/io';
+import type { InputControllerSnapshot } from '../../../machine/ts/machine/devices/input/contracts';
 
-const extensions = (Module as any)._extensions;
-for (const extension of ['.glsl', '.wgsl']) extensions[extension] = (module: any, filename: string) => {
-	module._compile(`module.exports = ${JSON.stringify(readFileSync(filename, 'utf8'))}`, filename);
-};
-
-async function main(): Promise<void> {
-	const { Runtime } = await import('../../../machine/ts/machine/runtime/runtime');
-	const { parseSystemRomImage } = await import('../../../machine/ts/rompack/image');
-	const { cartridgeMediaFromImages } = await import('../../../hosts/common/cartridge_media');
-	const { HeadlessGPUBackend } = await import('../../../machine/ts/render/headless/backend');
-	const { PSX_MACHINE_SPEC } = await import('../../../machine/ts/spec/bmsx/model');
-	const { IO_SYS_SUPERVISOR_FAULT_SEQUENCE, IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE } = await import('../../../machine/ts/spec/bmsx/io');
-	type Snapshot = import('../../../machine/ts/machine/devices/input/contracts').InputControllerSnapshot;
-	const [bios, cart, events] = process.argv.slice(2);
+export function runTerminalFixture(bios: Uint8Array, cart: Uint8Array, events: string): string {
 	let usage = 0, shifted = 0, supervisor = 0;
 	const input = {
-		sampleInputControllerSnapshot(snapshot: Snapshot) {
+		sampleInputControllerSnapshot(snapshot: InputControllerSnapshot) {
 			snapshot.keyWords.fill(0);
 			if (usage !== 0) snapshot.keyWords[usage >>> 5] = 1 << (usage & 31);
 			if (shifted !== 0) snapshot.keyWords[7] |= 1 << 1; // USB HID Left Shift, 225.
@@ -26,12 +18,12 @@ async function main(): Promise<void> {
 		supervisorRequestLineHigh: () => supervisor !== 0,
 		applyInputControllerVibrationEffect() {},
 	};
-	const runtime = new Runtime({ systemRomBytes: parseSystemRomImage(readFileSync(bios)).bytes,
-		cartridgeSlots: cartridgeMediaFromImages([readFileSync(cart), null]), machineModel: PSX_MACHINE_SPEC }, input);
+	const runtime = new Runtime({ systemRomBytes: parseSystemRomImage(bios).bytes,
+		cartridgeSlots: cartridgeMediaFromImages([cart, null]), machineModel: PSX_MACHINE_SPEC }, input);
 	const backend = new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes), gpu = runtime.machine.gxGpu;
 	runtime.boot();
 	let transcript = '';
-	for (const row of readFileSync(events, 'utf8').trim().split('\n')) {
+	for (const row of events.split('\n')) {
 		let frames: number;
 		[frames, usage, shifted, supervisor] = row.split(' ').map(Number);
 		for (let frame = 0; frame < frames; frame++) {
@@ -52,6 +44,5 @@ async function main(): Promise<void> {
 		}
 	}
 	assert.notEqual(runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE, 0, 'actual BIOS monitor retained');
-	process.stdout.write(transcript);
+	return transcript;
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });

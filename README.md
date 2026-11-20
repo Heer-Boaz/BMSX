@@ -253,6 +253,11 @@ The runtime replay test can also consume runners from a completed native
 Release build: `npm run test:runtime-replay -- --native-build-dir build-cpp-tests`.
 Build the replay targets first (the command without that flag does this) and
 rebuild them after native source changes.
+The cartridge, terminal, BIOS-float, frame-evaluation, GC stress, coroutine,
+table-iteration and symbol conformance commands also accept
+`BMSX_TEST_NATIVE_BUILD_DIR` to use an existing build without running CMake.
+For the compiled coroutine checks use a Debug build with native blocks on;
+the interpreter check requires its own build with native blocks off.
 
 All test scripts use `scripts/test.sh`: a shared cgroup v2 `memory.max` cap of
 **at most 8 GiB** for the test process and its ordinary subprocesses. Existing

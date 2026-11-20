@@ -1,20 +1,21 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
+import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { runTerminalFixture } from './ts_runner';
 
 function run(command: string, args: string[]): string {
 	const result = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 	assert.equal(result.error, undefined);
-	assert.equal(result.status, 0, `${command} ${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
+	assert.equal(result.status, 0, `${command} ${args.join(' ')} (${result.signal ?? result.status})\n${result.stdout}\n${result.stderr}`);
 	return result.stdout;
 }
-run('npm', ['run', 'build:toolchain:bios', '--', '--debug', '--force']);
-run('npm', ['run', 'build:toolchain:cart', '--', 'hot_resume_test', '--debug', '--force']);
-run('cmake', ['-S', 'machine/cpp', '-B', 'build-cpp-tests', '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON']);
-run('cmake', ['--build', 'build-cpp-tests', '--target', 'bmsx_terminal_conformance_runner', '--parallel', '2']);
+run('npm', ['run', 'build:toolchain:bios', '--', '--debug']);
+run('npm', ['run', 'build:toolchain:cart', '--', 'hot_resume_test', '--debug']);
+const nativeRunner = nativeConformanceRunner('bmsx_terminal_conformance_runner', { parallel: '2' });
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-terminal-parity-'));
 const events = ['200 0 0 0', '2 0 0 1', '20 0 0 0'];
 const commands = [
@@ -103,12 +104,15 @@ for (const command of commands) {
 	}
 	events.push(`2 ${hidKeyUsageForCode('Enter')} 0 0`, '20 0 0 0');
 }
-const input = join(directory, 'input.txt'); writeFileSync(input, events.join('\n'));
+const input = join(directory, 'input.txt');
+const inputText = events.join('\n');
+writeFileSync(input, inputText);
 try {
-	const args = ['dist/system/bmsx-bios.debug.rom', 'dist/hot_resume_test.debug.rom', input];
-	const ts = run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/terminal/ts_runner.ts', ...args]);
-	const cpp = run('build-cpp-tests/bmsx_terminal_conformance_runner', args);
-	writeFileSync(join(directory, 'typescript.txt'), ts); writeFileSync(join(directory, 'cpp.txt'), cpp);
+	const bios = 'dist/system/bmsx-bios.debug.rom', cart = 'dist/hot_resume_test.debug.rom';
+	const ts = runTerminalFixture(readFileSync(bios), readFileSync(cart), inputText);
+	writeFileSync(join(directory, 'typescript.txt'), ts);
+	const cpp = run(nativeRunner, [bios, cart, input]);
+	writeFileSync(join(directory, 'cpp.txt'), cpp);
 	assert.equal(cpp, ts, 'same physical HID input must produce byte-identical firmware Terminal output');
 	const result = ts.slice(ts.indexOf('TERMINAL-BEGIN\n'));
 	// A chunk that falls through without return has no results and prints nothing.

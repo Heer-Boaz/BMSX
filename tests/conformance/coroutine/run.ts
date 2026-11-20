@@ -13,19 +13,19 @@ import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheck
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const compiled = process.argv[2] === '--compiled';
 assert.deepEqual(process.argv.slice(2), compiled ? ['--compiled'] : [], 'Expected no arguments or --compiled');
 // The genuine native-OFF variant must not reconfigure the other conformance binaries.
 const buildDirectory = compiled ? 'build-native-cpu-blocks' : 'build-cpp-tests-interpreter';
-for (const [command, args] of [
-	['cmake', ['-S', 'machine/cpp', '-B', buildDirectory, '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON',
+const nativeRunner = nativeConformanceRunner('bmsx_coroutine_runner', {
+	buildDirectory,
+	configure: [
 		`-DCMAKE_BUILD_TYPE=${compiled ? 'Debug' : 'Release'}`, `-DBMSX_ENABLE_NATIVE_BLOCKS=${compiled ? 'ON' : 'OFF'}`,
-		...(compiled ? ['-DBMSX_ENABLE_GLES2=OFF', '-DBMSX_ENABLE_ZLIB=OFF'] : [])]],
-	['cmake', ['--build', buildDirectory, '--target', 'bmsx_coroutine_runner', '--parallel', '4']],
-] as const) {
-	assert.equal(spawnSync(command, args, { stdio: 'inherit' }).status, 0);
-}
+		...(compiled ? ['-DBMSX_ENABLE_GLES2=OFF', '-DBMSX_ENABLE_ZLIB=OFF'] : []),
+	],
+});
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-coroutines-'));
 try {
 	for (const level of [0, 3] as const) {
@@ -141,7 +141,7 @@ try {
 			assert.deepEqual(decodeRuntimeSaveState(encodeRuntimeSaveState(decoded), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes), decoded);
 			applyRuntimeSaveState(runtime, decoded);
 			assert.deepEqual(cpu.captureRuntimeState(), decoded.cpuState);
-			assert.equal(spawnSync(`${buildDirectory}/bmsx_coroutine_runner`, [path], { stdio: 'inherit' }).status, 0);
+			assert.equal(spawnSync(nativeRunner, [path], { stdio: 'inherit' }).status, 0);
 			assert.deepEqual(decodeRuntimeSaveState(new Uint8Array(readFileSync(`${path}.state`)), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes), decoded, `${name} O${level}: TS/C++ runtime snapshot parity`);
 		}
 	}

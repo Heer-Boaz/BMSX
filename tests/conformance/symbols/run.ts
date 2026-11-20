@@ -6,11 +6,9 @@ import { join } from 'node:path';
 import { decodeBlua32SymbolsImage, encodeBlua32SymbolsImage } from '../../../toolchain/ts/rompack/blua32_symbols';
 import { compileLuaSource } from '../../helpers/cpu_test_harness';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
-for (const args of [
-	['-S', 'machine/cpp', '-B', 'build-cpp-tests', '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON'],
-	['--build', 'build-cpp-tests', '--target', 'bmsx_symbols_conformance_runner', '--parallel', '4'],
-]) assert.equal(spawnSync('cmake', args, { stdio: 'inherit' }).status, 0);
+const nativeRunner = nativeConformanceRunner('bmsx_symbols_conformance_runner');
 
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-symbols-'));
 const source = `local seed = 3
@@ -31,7 +29,7 @@ for (let index = 0; index < images.length; index++) {
 	const expected = decodeBlua32SymbolsImage(encoded);
 	const input = join(directory, `${index}.symbols`), output = join(directory, `${index}.native.symbols`);
 	writeFileSync(input, encoded);
-	const native = spawnSync('build-cpp-tests/bmsx_symbols_conformance_runner', [input, output], { encoding: 'utf8' });
+	const native = spawnSync(nativeRunner, [input, output], { encoding: 'utf8' });
 	assert.equal(native.status, 0, native.stderr);
 	assert.deepEqual(decodeBlua32SymbolsImage(readFileSync(output)), expected, `image ${index}; evidence ${directory}`);
 }

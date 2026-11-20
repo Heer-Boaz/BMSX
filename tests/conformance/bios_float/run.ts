@@ -13,11 +13,9 @@ import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { buildPublicBiosFixture, PUBLIC_BIOS_PROBE_SOURCE } from '../../helpers/bios_linkage';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
+import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
-for (const [command, args] of [
-	['cmake', ['-S', 'machine/cpp', '-B', 'build-cpp-tests', '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON']],
-	['cmake', ['--build', 'build-cpp-tests', '--target', 'bmsx_frame_evaluation_runner', '--parallel', '2']],
-] as const) assert.equal(spawnSync(command, args, { stdio: 'inherit' }).status, 0);
+const nativeRunner = nativeConformanceRunner('bmsx_frame_evaluation_runner', { parallel: '2' });
 
 const modules = ['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/mapped', 'string/pack', 'string/float/encode', 'string/float/decode'].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
@@ -131,7 +129,7 @@ try {
 			for (let grant = 0; grant < 300 && result === RunResult.Yielded; grant++) result = runtime.machine.cpu.runUntilDepth(0, 100000);
 			assert.equal(result, RunResult.Halted);
 			assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueBool(true)]);
-			assert.equal(spawnSync('build-cpp-tests/bmsx_frame_evaluation_runner', [path, 'run'], { stdio: 'inherit' }).status, 0);
+			assert.equal(spawnSync(nativeRunner, [path, 'run'], { stdio: 'inherit' }).status, 0);
 			const native = decodeRuntimeSaveState(new Uint8Array(readFileSync(`${path}.state`)), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 			assert.deepEqual(native, captureRuntimeSaveState(runtime), `${name} O${optLevel}: complete TS/C++ state parity`);
 		}

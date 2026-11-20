@@ -10,13 +10,11 @@ import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/sav
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileTableIterationTest, tableIterationVectors } from '../../helpers/table_iteration';
+import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 // The ordinary ROM path in this existing runner executes bounded CPU grants,
 // snapshots every grant, and writes the complete final runtime state.
-for (const args of [
-	['-S', 'machine/cpp', '-B', 'build-cpp-tests', '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON', '-DCMAKE_BUILD_TYPE=Release'],
-	['--build', 'build-cpp-tests', '--target', 'bmsx_coroutine_runner', '--parallel', '4'],
-]) assert.equal(spawnSync('cmake', args, { stdio: 'inherit' }).status, 0);
+const nativeRunner = nativeConformanceRunner('bmsx_coroutine_runner', { configure: ['-DCMAKE_BUILD_TYPE=Release'] });
 
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-table-iteration-'));
 try {
@@ -39,7 +37,7 @@ try {
 		}
 		assert.equal(result, RunResult.Halted);
 		assert.deepEqual(runtime.readCompletionValues(), [valueBool(true)]);
-		assert.equal(spawnSync('build-cpp-tests/bmsx_coroutine_runner', [path], { stdio: 'inherit' }).status, 0);
+		assert.equal(spawnSync(nativeRunner, [path], { stdio: 'inherit' }).status, 0);
 		const native = readFileSync(`${path}.state`);
 		assert.equal(Buffer.compare(native, encodeRuntimeSaveState(captureRuntimeSaveState(runtime))), 0, `${name} O${optLevel}: complete TS/C++ table state parity`);
 	}

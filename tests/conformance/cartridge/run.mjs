@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const root = resolve(import.meta.dirname, '../../..');
 const workRoot = await mkdtemp(join(tmpdir(), 'bmsx-cartridge-conformance-'));
@@ -39,20 +40,10 @@ async function hash(path) {
 }
 
 try {
-	run('BIOS build', 'npm', ['run', 'build:toolchain:bios', '--', '--force']);
-	run('conformance cartridge build', 'npm', ['run', 'build:toolchain:cart', '--', 'cartridge_conformance', '--force']);
-	run('data cartridge build', 'npm', ['run', 'build:toolchain:cart', '--', 'cartridge_data_conformance', '--force']);
-	run('native test configure', 'cmake', [
-		'-S', 'machine/cpp',
-		'-B', 'build-cpp-tests',
-		'-G', 'Ninja',
-		'-DBMSX_BUILD_TESTS=ON',
-	]);
-	run('native conformance runner build', 'cmake', [
-		'--build', 'build-cpp-tests',
-		'--target', 'bmsx_cartridge_conformance_runner',
-		'--parallel', '2',
-	]);
+	run('BIOS build', 'npm', ['run', 'build:toolchain:bios']);
+	run('conformance cartridge build', 'npm', ['run', 'build:toolchain:cart', '--', 'cartridge_conformance']);
+	run('data cartridge build', 'npm', ['run', 'build:toolchain:cart', '--', 'cartridge_data_conformance']);
+	const nativeRunner = nativeConformanceRunner('bmsx_cartridge_conformance_runner', { parallel: '2' });
 
 	await Promise.all([
 		copyFile(join(root, 'dist', 'system', 'bmsx-bios.rom'), systemRom),
@@ -74,7 +65,7 @@ try {
 		dataRom,
 		bootableCartRom,
 	]);
-	const cppOutput = run('native C++ conformance', 'build-cpp-tests/bmsx_cartridge_conformance_runner', [
+	const cppOutput = run('native C++ conformance', nativeRunner, [
 		systemRom,
 		dataRom,
 		bootableCartRom,

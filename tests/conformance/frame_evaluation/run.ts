@@ -10,16 +10,14 @@ import { applyRuntimeSaveState, captureRuntimeSaveState, type RuntimeSaveState }
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileFrameEvaluationTest, frameEvaluationCases } from '../../helpers/frame_evaluation';
+import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const args = process.argv.slice(2);
 assert.ok(args.length === 0 || (args.length === 2 && args[0] === '--case'), 'Expected no arguments or --case <name>');
 const cases = Object.entries(frameEvaluationCases).filter(([name]) => args.length === 0 || name === args[1]);
 assert.ok(cases.length !== 0, 'The selected frame-evaluation case exists');
 
-for (const [command, args] of [
-	['cmake', ['-S', 'machine/cpp', '-B', 'build-cpp-tests', '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON']],
-	['cmake', ['--build', 'build-cpp-tests', '--target', 'bmsx_frame_evaluation_runner', '--parallel', '2']],
-] as const) assert.equal(spawnSync(command, args, { stdio: 'inherit' }).status, 0);
+const nativeRunner = nativeConformanceRunner('bmsx_frame_evaluation_runner', { parallel: '2' });
 
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-frame-evaluation-'));
 try {
@@ -62,7 +60,7 @@ try {
 		assert.equal(result, RunResult.Halted);
 		assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueBool(true)]);
 		assert.equal(suspended.length, name === 'completion_injection' ? 2 : name === 'coroutine' ? 1 : 0);
-		assert.equal(spawnSync('build-cpp-tests/bmsx_frame_evaluation_runner', [path, name === 'completion_injection' ? 'completion' : 'run'], { stdio: 'inherit' }).status, 0);
+		assert.equal(spawnSync(nativeRunner, [path, name === 'completion_injection' ? 'completion' : 'run'], { stdio: 'inherit' }).status, 0);
 		for (let index = 0; index < suspended.length; index++) {
 			const native = decodeRuntimeSaveState(new Uint8Array(readFileSync(`${path}.suspended-${index}.state`)), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 			assert.deepEqual(native, suspended[index], `${name} O${optLevel}: active scope full TS/C++ state parity`);
