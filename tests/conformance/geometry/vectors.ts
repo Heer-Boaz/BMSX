@@ -5,7 +5,7 @@ import * as io from '../../../machine/ts/spec/bmsx/io';
 import * as geo from '../../../machine/ts/machine/devices/geometry/contracts';
 
 // Mapped fixture RAM for the shared GEO operands and results.
-const GEO_BUFFERS = DYNAMIC_RAM_BASE + 0x10000;
+export const GEO_BUFFERS = DYNAMIC_RAM_BASE + 0x10000;
 export const GEO_VECTOR_RAM_END = GEO_BUFFERS + 0x2000;
 
 export type GeometryVector = { name: string; writes: [number, number][]; reads: number[]; pairCounterSeed: number; firstRecordPairs: number; clipCapacityBoundary: number };

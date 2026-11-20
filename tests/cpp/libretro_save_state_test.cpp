@@ -58,8 +58,10 @@ int16_t hostInputState(unsigned port, unsigned device, unsigned index, unsigned 
 
 void testLibretroStateEnvelopeRoundTrip() {
 	bmsx::LibretroInput input(readSupervisorRequestLine);
+	constexpr bmsx::u32 systemScratch = bmsx::DYNAMIC_RAM_BASE + 0x10000u;
 	const std::vector<bmsx::u8> system =
-		bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System);
+		bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System, {},
+			systemScratch + bmsx::IO_WORD_SIZE - bmsx::DYNAMIC_RAM_BASE);
 	bmsx::CartManifest cartridgeManifest;
 	cartridgeManifest.hardware.emplace_back(bmsx::CartridgeRomDeviceConfig{});
 	cartridgeManifest.hardware.emplace_back(bmsx::CartridgeRamDeviceConfig{16u});
@@ -105,7 +107,7 @@ void testLibretroStateEnvelopeRoundTrip() {
 
 	bmsx::Memory& memory = runtime.machine.memory;
 	const size_t stateSize = bmsx::libretroStateSize(runtime);
-	memory.writeMappedU32LE((bmsx::DYNAMIC_RAM_BASE + 0x10000u), 0x11223344u);
+	memory.writeMappedU32LE(systemScratch, 0x11223344u);
 	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0x89abcdefu);
 	const auto expected = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
 	std::vector<bmsx::u8> envelope(stateSize + 16u, 0xa5);
@@ -118,7 +120,7 @@ void testLibretroStateEnvelopeRoundTrip() {
 		[](auto byte) { return byte == 0; }), "frontend capacity contains deterministic zero padding");
 	require(std::all_of(envelope.begin() + stateSize, envelope.end(), [](auto byte) { return byte == 0xa5; }),
 		"serialization does not touch bytes outside its announced capacity");
-	memory.writeMappedU32LE((bmsx::DYNAMIC_RAM_BASE + 0x10000u), 0xaabbccddu);
+	memory.writeMappedU32LE(systemScratch, 0xaabbccddu);
 	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0u);
 	const bmsx::u32 currentFormat = bmsx::readLE32(envelope.data());
 	bmsx::writeLE32(envelope.data(), 0x31534d42u); // BMS1 did not serialize reference slots.
@@ -130,7 +132,7 @@ void testLibretroStateEnvelopeRoundTrip() {
 		bmsx::unserializeLibretroState(runtime, envelope),
 		"libretro envelope should decode its retained payload length");
 	require(
-		memory.readMappedU32LE((bmsx::DYNAMIC_RAM_BASE + 0x10000u)) == 0x11223344u,
+		memory.readMappedU32LE(systemScratch) == 0x11223344u,
 		"libretro envelope should restore system RAM");
 	require(
 		memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0x89abcdefu,

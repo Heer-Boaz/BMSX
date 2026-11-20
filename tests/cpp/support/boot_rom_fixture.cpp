@@ -42,7 +42,7 @@ std::vector<u8> makeMinimalBootRom(
 
 std::vector<u8> makeMinimalBootRom(
 	RomImageDomain domain,
-	const CartManifest& manifest) {
+	const CartManifest& manifest, u32 bssByteCount) {
 	Blua32TestImage image = makeMinimalImage();
 	if (domain == RomImageDomain::System) {
 		for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) {
@@ -52,7 +52,8 @@ std::vector<u8> makeMinimalBootRom(
 	return encodeBlua32TestRom(
 		domain,
 		image,
-		manifest
+		manifest,
+		bssByteCount
 	).bytes;
 }
 

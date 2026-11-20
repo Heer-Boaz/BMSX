@@ -38,6 +38,8 @@ void testController(u32 count, bool abort) {
 	IdleInput input;
 	Machine machine(memory, input, PSX_MACHINE_SPEC);
 	machine.resetDevices(); machine.scheduler.reset();
+	require(machine.cpu.heapAllocator().setFloor(bounds + 4u * IO_WORD_SIZE),
+		"GEO XFORM operands and bounds fit in public static RAM");
 	machine.geometryController.setTiming(PSX_CPU_FREQ_HZ, PSX_GEO_WORK_UNITS_PER_SEC, 0);
 	const auto job = prepare(memory, count);
 	for (const auto [address, word] : std::array<std::pair<u32, u32>, 9>{{

@@ -112,11 +112,13 @@ int main() {
 	}
 	for (bool abort : {false, true}) {
 		Memory memory({{}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
-		auto job = writeCase(memory);
 		IdleInput input;
 		Machine machine(memory, input, PSX_MACHINE_SPEC);
 		machine.resetDevices();
 		machine.scheduler.reset();
+		require(machine.cpu.heapAllocator().setFloor(summary + GEO_OVERLAP2D_SUMMARY_BYTES),
+			"GEO contact records and summary fit in public static RAM");
+		const auto job = writeCase(memory);
 		memory.writeMappedWord(IO_GEO_SRC0, job.src0);
 		memory.writeMappedWord(IO_GEO_DST0, job.dst0);
 		memory.writeMappedWord(IO_GEO_DST1, job.dst1);

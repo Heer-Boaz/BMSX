@@ -10,7 +10,7 @@ namespace bmsx::test {
 std::vector<u8> makeMinimalBootRom(RomImageDomain domain);
 std::vector<u8> makeMinimalBootRom(
 	RomImageDomain domain,
-	const CartManifest& manifest);
+	const CartManifest& manifest, u32 bssByteCount = 0u);
 std::vector<u8> makeMinimalDiagnosticBootRom(RomImageDomain domain);
 std::vector<u8> makeMinimalDataRom();
 std::vector<u8> makeMinimalDataRom(const CartManifest& manifest);

@@ -111,12 +111,12 @@ struct Script {
 		code.push_back(packInstructionWord(static_cast<u8>(OpCode::STORE_MEM), 0, 1, static_cast<u8>(MemoryAccessKind::U32LE)));
 	}
 	void gp0(std::initializer_list<u32> words) { for (u32 word : words) write(IO_GX_GPU_GP0, word); }
-	test::Blua32TestRom finish() {
+	test::Blua32TestRom finish(u32 bssByteCount) {
 		code.push_back(packInstructionWord(static_cast<u8>(OpCode::HALT), 0, 0, 0));
 		image.text.resize(code.size() * INSTRUCTION_BYTES);
 		for (size_t i = 0; i < code.size(); ++i) writeInstructionWord(image.text, i, code[i]);
 		image.functions.push_back({.firstWord = 0, .wordCount = static_cast<u32>(code.size()), .maxStack = 8});
-		return test::encodeBlua32TestRom(RomImageDomain::System, image);
+		return test::encodeBlua32TestRom(RomImageDomain::System, image, bssByteCount);
 	}
 };
 
@@ -207,7 +207,9 @@ test::Blua32TestRom makeStream(bool supervisor = false, bool reset = false, bool
 	// the selected Present packet, not an earlier 128-command drain, draws it.
 	script.gp0({0x600000ffu, 0x00400004u, 0x00010008u});
 	script.write(Finished, 1u);
-	return script.finish();
+	const u32 staticEnd = largeUpload ? UploadPacket + GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT * IO_WORD_SIZE
+		: ReadbackTail + IO_WORD_SIZE;
+	return script.finish(staticEnd - DYNAMIC_RAM_BASE);
 }
 
 class TestVideoOutput final : public VideoOutput {

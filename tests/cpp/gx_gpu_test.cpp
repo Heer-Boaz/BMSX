@@ -40,6 +40,12 @@
 
 namespace {
 
+void require(bool condition, const char* message) {
+	if (!condition) {
+		throw std::runtime_error(message);
+	}
+}
+
 struct GpuHarness {
 	std::array<uint8_t, 1> emptyRom{{0}};
 	bmsx::Memory memory;
@@ -60,6 +66,8 @@ struct GpuHarness {
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
 		, gpu(memory, cpu, irq, scheduler, dma, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes) {
+		require(cpu.heapAllocator().setFloor(bmsx::DYNAMIC_RAM_BASE + 0x6000u),
+			"GX-GPU DMA packets occupy public static RAM");
 		memory.cartridgeController().connect(memory, irq, dma);
 		dma.reset();
 		memory.cartridgeController().reset();
@@ -94,12 +102,6 @@ struct CommandBufferDmaHarness {
 };
 
 CommandBufferDmaHarness commandBufferDmaHarness;
-
-void require(bool condition, const char* message) {
-	if (!condition) {
-		throw std::runtime_error(message);
-	}
-}
 
 void completeGpuCommands(GpuHarness& harness) {
 	for (bmsx::i64 pending = harness.gpu.captureState().pendingCommandCycles; pending != 0;

@@ -29,6 +29,8 @@ void testController(bool abort) {
 	machine.resetDevices(); machine.scheduler.reset();
 	machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec, 0);
 	const u32 record = (DYNAMIC_RAM_BASE + 0x10000u), descriptors = record + 0x100u, vertices = record + 0x200u, result = record + 0x400u;
+	require(machine.cpu.heapAllocator().setFloor(result + GEO_SAT2_RESULT_BYTES),
+		"GEO SAT operands and result occupy public static RAM");
 	const std::array<u32, 5> pair = {0u, 0u, 0u, 1u, 0u};
 	const std::array<u32, 8> desc = {1u, 4u, 0u, 0u, 1u, 4u, 32u, 0u};
 	const std::array<u32, 16> coords = {0u, 0u, 0x40000u, 0u, 0x40000u, 0x40000u, 0u, 0x40000u,

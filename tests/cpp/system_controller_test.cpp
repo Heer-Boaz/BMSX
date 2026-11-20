@@ -260,21 +260,25 @@ struct SystemRuntimeFixture {
 	SystemResetInputSource input;
 	bmsx::Runtime runtime;
 
-	SystemRuntimeFixture()
+	explicit SystemRuntimeFixture(bmsx::u32 systemBssBytes = 0u)
 		: SystemRuntimeFixture(
 			makeRuntimeImage(bmsx::OpCode::HALT),
-			makeRuntimeImage(bmsx::OpCode::HALT)
+			makeRuntimeImage(bmsx::OpCode::HALT),
+			std::nullopt,
+			systemBssBytes
 		) {
 	}
 
 	SystemRuntimeFixture(
 		bmsx::test::Blua32TestImage systemImage,
 		bmsx::test::Blua32TestImage cartImage,
-		std::optional<bmsx::test::Blua32TestImage> cart1Image = std::nullopt
+		std::optional<bmsx::test::Blua32TestImage> cart1Image = std::nullopt,
+		bmsx::u32 systemBssBytes = 0u
 	)
 		: systemRom(bmsx::test::encodeBlua32TestRom(
 			bmsx::RomImageDomain::System,
-			systemImage
+			systemImage,
+			systemBssBytes
 		))
 		, cartRom(bmsx::test::encodeBlua32TestRom(
 			bmsx::RomImageDomain::Cartridge,
@@ -1178,12 +1182,13 @@ void testRuntimeCodecRestoresBlockedGp0StoreWakeup() {
 }
 
 void testGeoDmaSameCycleRuntimeRestore() {
-	SystemRuntimeFixture fixture;
+	constexpr bmsx::u32 records = bmsx::DYNAMIC_RAM_BASE + 0x1000u;
+	constexpr bmsx::u32 source = bmsx::DYNAMIC_RAM_BASE + 0x2000u;
+	constexpr bmsx::u32 transferWords = 23u;
+	SystemRuntimeFixture fixture(source + transferWords * bmsx::IO_WORD_SIZE - bmsx::DYNAMIC_RAM_BASE);
 	auto& runtime = fixture.runtime;
 	auto& machine = runtime.machine;
 	auto& memory = machine.memory;
-	const bmsx::u32 records = bmsx::DYNAMIC_RAM_BASE + 0x1000u;
-	const bmsx::u32 source = bmsx::DYNAMIC_RAM_BASE + 0x2000u;
 	for (bmsx::u32 i = 0; i < 10u; ++i) {
 		const bmsx::u32 record = records + i * bmsx::GEO_XFORM2_RECORD_BYTES;
 		for (bmsx::u32 offset = 0; offset < bmsx::GEO_XFORM2_RECORD_BYTES; offset += 4u) memory.writeU32(record + offset, 0);
@@ -1203,7 +1208,7 @@ void testGeoDmaSameCycleRuntimeRestore() {
 	memory.writeMappedWord(bmsx::IO_GEO_STRIDE2, bmsx::GEO_XFORM2_MATRIX_BYTES);
 	memory.writeMappedWord(bmsx::IO_DMA0_READ_ADDR, source);
 	memory.writeMappedWord(bmsx::IO_DMA0_WRITE_ADDR, records + 9u * bmsx::GEO_XFORM2_RECORD_BYTES);
-	memory.writeMappedWord(bmsx::IO_DMA0_TRANSFER_COUNT, 23u);
+	memory.writeMappedWord(bmsx::IO_DMA0_TRANSFER_COUNT, transferWords);
 	memory.writeMappedWord(bmsx::IO_DMA0_CONTROL, bmsx::DMA_ROUTE_COPY);
 	memory.writeMappedWord(bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_XFORM2_BATCH);
 	const auto advance = [&](bmsx::i64 target) {

@@ -20,6 +20,7 @@
 namespace {
 using namespace bmsx;
 void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+constexpr u32 Source=DYNAMIC_RAM_BASE+0x1000, Target=DYNAMIC_RAM_BASE+0x4000;
 struct Harness {
  std::array<u8,8> system{{4,3,2,1,8,7,6,5}}, cart{{0x44,0x33,0x22,0x11,0x88,0x77,0x66,0x55}};
  Memory memory;
@@ -32,6 +33,7 @@ struct Harness {
  Harness():memory(MemoryInit{{system.data(),system.size()},test::cartridgeSlots(cart)},PSX_MACHINE_SPEC.ramBytes),
   irq(memory),execution(memory),cpu(memory,irq,execution),scheduler(cpu),dma(memory,cpu,irq,scheduler),
   gpu(memory,cpu,irq,scheduler,dma,PSX_MACHINE_SPEC.gxGpuVramBytes) {
+  require(cpu.heapAllocator().setFloor(Target + HEAP_PAGE_SIZE), "DMA fixtures occupy public static RAM");
   memory.cartridgeController().connect(memory,irq,dma);
   dma.reset();memory.cartridgeController().reset();gpu.reset();irq.reset();
   dma.setTiming(PSX_MACHINE_SPEC.dmaRamCyclesPerWord,PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
@@ -64,7 +66,6 @@ void stepGpuWork(Harness& h) {
  h.scheduler.advanceTo(observation);
  h.gpu.readStatus();
 }
-constexpr u32 Source=DYNAMIC_RAM_BASE+0x1000, Target=DYNAMIC_RAM_BASE+0x4000;
 void characterizeRamCopy() {
  for(u32 words:{1u,2u,4u,16u,256u}) {
   Harness h;for(u32 i=0;i<words;++i)h.memory.writeU32(Source+4*i,0xcafe0000u+i);

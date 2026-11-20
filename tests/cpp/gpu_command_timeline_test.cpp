@@ -19,6 +19,7 @@
 namespace {
 using namespace bmsx;
 void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+constexpr u32 DmaPacket = DYNAMIC_RAM_BASE + 0x1000u;
 constexpr std::array<u32, 12> gouraudTexturedQuad{
 	0x3c0000ffu, 0u, 0u, 0x0000ff00u, 8u, 0x01000008u,
 	0x00ff0000u, 0x00080000u, 0x00080000u, 0x00ffffffu, 0x00080008u, 0x00080008u,
@@ -35,6 +36,7 @@ struct Harness {
 	Harness() : memory(MemoryInit{{system.data(), system.size()}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		irq(memory), execution(memory), cpu(memory, irq, execution), scheduler(cpu), dma(memory, cpu, irq, scheduler),
 		gpu(memory, cpu, irq, scheduler, dma, PSX_MACHINE_SPEC.gxGpuVramBytes) {
+		require(cpu.heapAllocator().setFloor(DmaPacket + HEAP_PAGE_SIZE), "GPU timeline DMA uses public static RAM");
 		memory.cartridgeController().connect(memory, irq, dma);
 		dma.reset(); memory.cartridgeController().reset(); gpu.reset(); irq.reset();
 		dma.setTiming(1, 40, 1, 1, 0, 0);
@@ -62,7 +64,7 @@ struct Harness {
 	void submitDmaCommands(const std::vector<u32>& words, bool setupDrawingArea = true) {
 		if (setupDrawingArea) gpu.writeGp0((GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT << 24u) | (255u << 10u) | 255u);
 		gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24u) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
-		constexpr u32 source = DYNAMIC_RAM_BASE + 0x1000u;
+		constexpr u32 source = DmaPacket;
 		for (u32 i = 0u; i < words.size(); ++i) memory.writeU32(source + 4u * i, words[i]);
 		memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
 		memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, static_cast<u32>(words.size()));
@@ -309,7 +311,7 @@ void testDmaWait() {
 	Harness h;
 	h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	for (u32 word : {0x020000ffu, 0u, 0x00640001u}) h.gpu.writeGp0(word);
-	constexpr u32 source = DYNAMIC_RAM_BASE + 0x1000u, count = GX_GPU_DMA_INGRESS_WORD_CAPACITY + 1u;
+	constexpr u32 source = DmaPacket, count = GX_GPU_DMA_INGRESS_WORD_CAPACITY + 1u;
 	for (u32 i = 0; i < count; ++i) h.memory.writeU32(source + 4u * i, 0xe1000000u);
 	h.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source); h.memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, count);
 	h.memory.writeMappedU32LE(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU); h.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
@@ -333,7 +335,7 @@ void testReadbackTimeline() {
 void testDmaQueuedIrq() {
 	Harness h;
 	h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
-	constexpr u32 source = DYNAMIC_RAM_BASE + 0x1000u, fills = 84u, count = fills * 3u + 1u;
+	constexpr u32 source = DmaPacket, fills = 84u, count = fills * 3u + 1u;
 	for (u32 i = 0; i < fills; ++i) {
 		h.memory.writeU32(source + 12u * i, 0x020000ffu);
 		h.memory.writeU32(source + 12u * i + 4u, 0u);

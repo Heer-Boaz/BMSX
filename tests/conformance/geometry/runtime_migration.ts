@@ -22,10 +22,7 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { GEO_OVERLAP2D_RESULT_BYTES, GEO_OVERLAP2D_SUMMARY_BYTES, GEO_STATUS_DONE, IO_CMD_GEO_XFORM2_BATCH } from '../../../machine/ts/machine/devices/geometry/contracts';
 import { linkRawTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { geometryVectors } from './vectors';
-
-// RAM outside any test image's static storage, for GEO operands and results.
-const GEO_BUFFERS = DYNAMIC_RAM_BASE + 0x10000;
+import { GEO_BUFFERS, GEO_VECTOR_RAM_END, geometryVectors } from './vectors';
 
 const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 writeInstruction(code, 0, OpCode.HALT, 0, 0, 0, 0);
@@ -37,7 +34,7 @@ const system = linkRawTestSystemBlua32({
 	startupFunctionIndex: 0,
 	irqFunctionIndex: 1,
 	exceptionFunctionIndex: 1,
-});
+}, GEO_VECTOR_RAM_END - DYNAMIC_RAM_BASE);
 
 function createRuntime(): Runtime {
 	const runtime = new Runtime({

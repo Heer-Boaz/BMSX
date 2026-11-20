@@ -65,7 +65,8 @@ void testOverrun(bool scalar, bool restore) {
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
 	image.functions.push_back({.firstWord = 0, .wordCount = 2});
 	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
-	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image,
+		summary + GEO_OVERLAP2D_SUMMARY_BYTES - DYNAMIC_RAM_BASE);
 	IdleInput input;
 	Runtime runtime({system.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
 	runtime.boot();

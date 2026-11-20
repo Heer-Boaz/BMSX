@@ -29,6 +29,12 @@
 
 namespace {
 
+void require(bool condition, const char* message) {
+	if (!condition) {
+		throw std::runtime_error(message);
+	}
+}
+
 struct AudioHarness {
 	std::array<bmsx::u8, 4> systemRom{{0xc0u, 0x80u, 0x80u, 0x80u}};
 	std::array<bmsx::u8, 4> cartRom{{0x40u, 0x80u, 0x80u, 0x80u}};
@@ -56,6 +62,8 @@ struct AudioHarness {
 		, output()
 		, dma(memory, cpu, irq, scheduler)
 		, audio(memory, output, dma, irq, scheduler) {
+		require(cpu.heapAllocator().setFloor(bmsx::DYNAMIC_RAM_BASE + bmsx::HEAP_PAGE_SIZE),
+			"APU DMA transfer buffers occupy the first static RAM page");
 		memory.cartridgeController().connect(memory, irq, dma);
 		irq.reset();
 		dma.reset();
@@ -99,12 +107,6 @@ struct AudioMachineHarness {
 		machine.audioController.setTiming(cpuHz, 0);
 	}
 };
-
-void require(bool condition, const char* message) {
-	if (!condition) {
-		throw std::runtime_error(message);
-	}
-}
 
 void testOutputRingExposesUnsignedHardwareWords() {
 	bmsx::ApuOutputRing ring;
