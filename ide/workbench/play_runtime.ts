@@ -78,8 +78,9 @@ export class PlayRuntimeSession implements PlaySession {
 		this.debuggerExecution = new RuntimeDebuggerExecution(runtime, this.debugger, this.execution, this.rewind,
 			this.tasks, this.fault, this.guest, this.navigation);
 		this.actorExecution = new ActorExecutionService(runtime, this, this.guest, this.debugger, this.fault, this.tasks, this.execution, this.rewind);
-		this.transport = new RuntimeTransport(runtime, this.execution, this.rewind, this.navigation, () => this.ready && this.tasks.ready
-			&& !this.execution.frameStepPending && this.debugger.source.stop === undefined && !this.debugger.plans.controlActive);
+		this.transport = new RuntimeTransport(runtime, this.execution, this.rewind, this.navigation, control => this.ready && this.tasks.ready
+			&& !this.execution.frameStepPending && (control === 'requested-pause' || this.debugger.source.stop === undefined)
+			&& !this.debugger.plans.controlActive);
 		this.evidence = new PlayEvidence(runtime, () => this.fixture.readContext());
 		this.fixture = new PlayFixture(target, target.input.fixture, program, this.evidence, budgets);
 		runtime.onStateRestored = origin => {

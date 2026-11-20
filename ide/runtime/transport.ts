@@ -9,14 +9,15 @@ export class RuntimeTransport {
 	private retirementListeners: Set<() => void> | undefined;
 	public constructor(public readonly runtime: Runtime, public readonly execution: HostExecutionControl,
 		public readonly rewind: HostRewind, public readonly navigation: RuntimeFrameNavigation,
-		private readonly canControl: () => boolean) {}
+		private readonly canControl: (control: 'requested-pause' | 'playback') => boolean) {}
 	public get state(): 'SEEKING' | 'PAUSED' | 'REPLAY' | 'LIVE' {
 		if (this.rewind.seeking) return 'SEEKING';
 		if (this.execution.paused || this.rewind.active && !this.rewind.playing) return 'PAUSED';
 		return this.rewind.active ? 'REPLAY' : 'LIVE';
 	}
 	public get available(): boolean { return !this.retired; }
-	public get playbackEnabled(): boolean { return !this.retired && this.canControl() && !this.rewind.seeking; }
+	public get requestedPauseEnabled(): boolean { return !this.retired && this.canControl('requested-pause') && !this.rewind.seeking; }
+	public get playbackEnabled(): boolean { return !this.retired && this.canControl('playback') && !this.rewind.seeking; }
 	public onDidRetire(listener: () => void): () => void {
 		const listeners = this.retirementListeners ??= new Set();
 		listeners.add(listener);

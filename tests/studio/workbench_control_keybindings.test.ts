@@ -38,6 +38,8 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createHostFrameFixture } from '../helpers/host_frame';
+import { HostPauseReason } from '../../hosts/common/execution_control';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { GameInputControl } from '../../ide/workbench/contrib/game_view/game_input';
 import { InputInteraction } from '../../ide/input/interaction';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
@@ -75,8 +77,34 @@ function menuFixture(t: TestContext) {
 		const event = new KeyInputEvent(code, modifiers, repeat, down); editor.dispatchKey(event); editor.update(0); return event;
 	};
 	afterTest(t, async () => { inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
-	return { editor, host, origin, model, view, source, key };
+	return { ide, editor, host, origin, model, view, source, key };
 }
+
+test('Run Pause changes only requested host pause at a source breakpoint', t => {
+	const { ide, editor, host, origin } = menuFixture(t);
+	const cpu = host.runtime.machine.cpu;
+	const pc = cpu.readFramePc(cpu.getFrameDepth() - 1);
+	const debuggerSource = ide.debugger.source;
+	debuggerSource.install(ide.sources.currentBlua32Media, [new Map([[pc, 0]]), new Map(), new Map()]);
+	assert.equal(debuggerSource.shouldStop(SYSTEM_EXECUTION_DOMAIN_ID, pc), true);
+	const stop = debuggerSource.stop, cycles = host.runtime.machine.scheduler.currentNowCycles();
+	const { execution } = host;
+	execution.setPauseReason(HostPauseReason.Fullscreen, true);
+	let executionRequests = 0;
+	afterTest(t, execution.onWillExecute(() => { executionRequests++; }));
+
+	assert.equal(editor.commands.isEnabled('pause', origin), true);
+	assert.equal(ide.transport.playbackEnabled, false, 'a source stop does not permit timeline playback');
+	editor.commands.execute('pause', origin);
+	assert.equal(execution.userPaused, true);
+	editor.commands.execute('pause', origin);
+	assert.equal(execution.userPaused, false);
+	assert.equal(execution.frameStepBlocked, true, 'releasing requested pause leaves the fullscreen hold intact');
+	assert.equal(executionRequests, 0, 'the pause toggle does not request source execution');
+	assert.equal(debuggerSource.stop, stop);
+	assert.equal(host.runtime.machine.scheduler.currentNowCycles(), cycles);
+	assert.equal(editor.isActive, true);
+});
 
 test('Files focus is idempotent and retains its selection and source working copy while Ctrl+B still toggles visibility', t => {
 	const { editor, host, origin, model, view, source, key } = menuFixture(t);

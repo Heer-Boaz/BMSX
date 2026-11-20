@@ -7,7 +7,7 @@ import { executeClipboardAction } from '../input/clipboard';
 import type { RuntimeTransport } from '../runtime/transport';
 import type { RunTargetSelection } from '../workbench/services/execution/run_target';
 import { navigationState } from '../navigation/navigation_history';
-import type { HostExecutionControl } from '../../hosts/common/execution_control';
+import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { BootService } from '../workbench/services/execution/boot';
 import type { HotResumeService } from '../workbench/services/execution/hot_resume';
 import type { HostClock } from '../../hosts/common/clock';
@@ -280,8 +280,13 @@ export class IdeCommandController {
 				return;
 			case 'editors.closeAll': void this.editor.editorParts.closeEditors({ kind: 'workspace' }, target); return;
 			case 'pause': {
-				if (selected === undefined) return;
+				if (selected?.transport.requestedPauseEnabled !== true) return;
 				const playback = selected.transport;
+				if (selected.debuggerExecution.state.source.stop !== undefined) {
+					// The source debugger still owns the stop. Only change the independent host hold.
+					playback.execution.setPauseReason(HostPauseReason.Requested, !playback.execution.userPaused);
+					return;
+				}
 				if (playback.execution.userPaused) {
 					playback.resumeHere();
 					if (playback === this.transport && selected.debuggerExecution.state.source.stop === undefined) {
@@ -513,7 +518,7 @@ export class IdeCommandController {
 			case 'editors.closeAll': return this.editor.editorParts.canCloseEditors({ kind: 'workspace' });
 			case 'openEditors': return true;
 			case 'pause':
-				return selected?.transport.playbackEnabled === true;
+				return selected?.transport.requestedPauseEnabled === true;
 			case 'stepFrame':
 			case 'stepFrameBack':
 				return transport?.available === true && transport.navigation.canStep(command === 'stepFrameBack' ? -1 : 1);

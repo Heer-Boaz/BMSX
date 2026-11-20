@@ -148,9 +148,10 @@ export class StudioWorkbench {
 		this.actorExecution = new ActorExecutionService(runtime, sources, this.guest, this.debugger, this.fault, runtimeTasks, execution, rewind);
 		this.frameNavigation = new RuntimeFrameNavigation(runtime, execution, rewind, runtimeTasks, this.debugger, this.fault, this.guest);
 		this.debuggerExecution = new RuntimeDebuggerExecution(runtime, this.debugger, execution, rewind, runtimeTasks, this.fault, this.guest, this.frameNavigation);
-		this.transport = new RuntimeTransport(runtime, execution, rewind, this.frameNavigation, () => runtimeTasks.ready
+		this.transport = new RuntimeTransport(runtime, execution, rewind, this.frameNavigation, control => runtimeTasks.ready
 			&& !execution.frameStepPending && this.fault.hostFrameFailure === undefined && this.fault.faultSnapshot === null
-			&& this.debugger.source.stop === undefined && !this.debugger.plans.controlActive && !this.scenarioRuns.active);
+			&& (control === 'requested-pause' || this.debugger.source.stop === undefined)
+			&& !this.debugger.plans.controlActive && !this.scenarioRuns.active);
 		this.runTargets = new RunTargetSelection(this);
 		audioOutput.device.select(audioOutput);
 		this.unbindRunTargetAudio = this.runTargets.onDidChange(target => audioOutput.device.select(target === undefined ? null : target.audio));
