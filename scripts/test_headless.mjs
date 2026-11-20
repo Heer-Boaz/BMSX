@@ -80,6 +80,7 @@ try {
 		replay.then(() => conformance([
 			['terminal-parity', [], release],
 			['cartridge-conformance', [], debug],
+			['gc-young', [], release],
 		])),
 	]);
 	const failures = stages.filter(stage => stage.status === 'rejected').map(stage => stage.reason);
