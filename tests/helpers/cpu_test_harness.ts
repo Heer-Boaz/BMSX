@@ -33,7 +33,6 @@ export function materializeCpuCompletionValues(cpu: CPU): Value[] {
 	return values;
 }
 
-/** Complete one actual guest call and report its machine-cycle charge. */
 /** Run to depth 0 and require a clean halt. A guest error also ends in
  * Halted, so the Lua fault reason has to stay clear as well. */
 export function runGuestToHalt(cpu: CPU, budget: number): void {
@@ -41,10 +40,9 @@ export function runGuestToHalt(cpu: CPU, budget: number): void {
 	assert.equal(cpu.readLuaFaultReasonWord(), 0, 'the guest halted without a Lua fault');
 }
 
+/** Complete one actual guest call and report its machine-cycle charge. */
 export function runCompletionClosure(cpu: CPU, closure: number, args: Value[], budget = 10_000_000): number {
 	cpu.beginCompletionCall(closure, args);
-	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
-	// A guest error also ends in Halted; only the fault reason tells them apart.
-	assert.equal(cpu.readLuaFaultReasonWord(), 0, 'the guest call completed without a Lua fault');
+	runGuestToHalt(cpu, budget);
 	return budget - cpu.instructionBudgetRemaining;
 }

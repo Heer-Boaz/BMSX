@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_FAULT_REASON_CALL_NON_FUNCTION } from '../../machine/ts/spec/blua32/cop0';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom, createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 
 const setup = `
@@ -178,15 +178,12 @@ assert(next(events._scoped_listeners) == nil)
 return true`,
 } as const;
 
-for (const optLevel of [3] as const) {
-	for (const [name, source] of Object.entries(recoveryVectors)) {
-		test(`event emission ${name} preserves listener lifecycle (O${optLevel})`, () => {
-			const { cpu } = createCartlibProgramHarness(setup + source, { optLevel });
-			assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-			assert.equal(cpu.readExceptionReturnFrameDepth(), -1, `${name} raised an unhandled assertion`);
-		});
-	}
+const recoveryRom = createCartlibCaseRom(setup);
+for (const [name, source] of Object.entries(recoveryVectors)) {
+	recoveryRom.test(`event emission ${name} preserves listener lifecycle (O3)`, source, 10_000_000);
+}
 
+for (const optLevel of [3] as const) {
 	test(`event dispatch can suspend and resume before its handled failure (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local failure<const>, peer<const> = {}, {}

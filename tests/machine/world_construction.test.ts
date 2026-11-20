@@ -1,13 +1,11 @@
-import { test } from 'node:test';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
-import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 // Real World, Scene, Registry, components and GPU dependencies, not a host-made
 // lifecycle model. These tests exercise guest construction, not rendering.
-for (const optLevel of [3] as const) {
-	test(`World prepares batch identities and poses before constructors, then publishes, wires and activates (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+const rom = createCartlibCaseRom(setup, { modules });
+
+rom.test(`World prepares batch identities and poses before constructors, then publishes, wires and activates (O3)`, `
 world:start()
 local order<const> = {}
 local base<const> = setmetatable({}, { __index = object_3d })
@@ -133,12 +131,9 @@ prefab.define({def_id='single.actor',
 local single<const> = world:spawn('single.actor',{transform={xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=0,oy=0,oz=0}})
 assert(single.active and single._bound, 'procedural spawn did not finish the common lifecycle')
 single:mark_for_disposal()
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	test(`World terminal requests stop later construction and lifecycle callbacks (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+rom.test(`World terminal requests stop later construction and lifecycle callbacks (O3)`, `
 world:start()
 local initialized = 0
 local constructed = 0
@@ -248,12 +243,9 @@ assert(factory_closing.closed and next(factory_closing.members) == nil and #fact
 	and factory_ctor == 0 and factory_despawn == 0, 'factory closure constructed or despawned a canceled shell')
 assert(factory_attached == 0 and factory_detached == 0,
 	'returned component after factory closure received late attachment or unpaired detachment')
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	test(`World drains reentrant spawns after the current ready batch and cancels pending Scenes (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+rom.test(`World drains reentrant spawns after the current ready batch and cancels pending Scenes (O3)`, `
 world:start()
 local order<const> = {}
 local actor<const> = {}
@@ -355,12 +347,9 @@ assert(unload_child.active and registry:get(unload_child.id) == unload_child and
 	'unload completion failed to drain its callback-requested admission')
 disposal_child:mark_for_disposal()
 unload_child:mark_for_disposal()
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	test(`Scenes retain exact prefab construction mappings and methods for staged member admission (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+rom.test(`Scenes retain exact prefab construction mappings and methods for staged member admission (O3)`, `
 world:start()
 local shared_state<const> = { lives = 3 }
 local defaults<const> = { revision = 'old', shared_state = shared_state }
@@ -442,12 +431,9 @@ existing:dispose()
 same_plan:dispose()
 selected:dispose()
 replacement:dispose()
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	test(`World admits a class used as its own base and owns each instance tag set (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+rom.test(`World admits a class used as its own base and owns each instance tag set (O3)`, `
 world:start()
 local declared_tags<const> = { ['fixture.shared'] = true }
 local class<const> = setmetatable({
@@ -483,12 +469,9 @@ third:mark_for_disposal()
 fourth:mark_for_disposal()
 assert(#registry:entries('fixture.shared') == 0 and #registry:entries('fixture.first') == 0
 	and #registry:entries('fixture.authored') == 0, 'tag ownership retained disposed Registry identities')
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	test(`Scene registration rejects unresolved prefabs and duplicate members before runtime construction (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+rom.test(`Scene registration rejects unresolved prefabs and duplicate members before runtime construction (O3)`, `
 world:start()
 local constructed = 0
 prefab.define({def_id='cold.actor',
@@ -508,11 +491,9 @@ local duplicate<const> = pcall(function()
 end)
 assert(not duplicate and scenes.definition('cold.duplicate') == nil and constructed == 0,
 	'duplicate member admission was deferred until runtime construction')
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
-	test(`FSM subscriptions bind with the batch before peer activation but dispatch only after startup (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+`);
+
+rom.test(`FSM subscriptions bind with the batch before peer activation but dispatch only after startup (O3)`, `
 world:start()
 local events<const> = require('cartlib/event_emitter')
 local library<const> = require('cartlib/fsm/library')
@@ -567,12 +548,9 @@ assert(machine:get_machine('binding.machine').current_id == 'active' and entered
 	'bound FSM did not dispatch a post-start event')
 scene:dispose()
 assert(events._subscriptions_by_subscriber[machine] == nil, 'FSM teardown retained its bound routes')
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	test(`Terminal teardown consumes custom-unbind resources and dynamic self-removing attachments (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+rom.test(`Terminal teardown consumes custom-unbind resources and dynamic self-removing attachments (O3)`, `
 world:start()
 local owner_unbound = 0
 local late_attached = 0
@@ -630,8 +608,4 @@ assert(not component._attached and #live_owner._components == 0 and live_owner:g
 	'on_attach self-removal retained owner storage, Registry identity or active membership')
 live_owner:mark_for_disposal()
 assert(detached == 1, 'owner teardown repeated the self-removed component detach callback')
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
-
-}
+`);

@@ -5,7 +5,7 @@ import test from 'node:test';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom, createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES } from '../helpers/world_cpu';
 
 function createSpatialCpu(source: string, optLevel: 0 | 3) {
@@ -517,12 +517,9 @@ assert2(c, 1,0,0,1, 35,46)
 	},
 ];
 
-for (const optLevel of [3] as const) {
-	for (const behavior of behaviors) {
-		test(`spatial O${optLevel}: ${behavior.name}`, () => {
-			createSpatialCpu(fixture + behavior.source, optLevel);
-		});
-	}
+const behaviorRom = createCartlibCaseRom(fixture, { modules: WORLD_CPU_MODULES });
+for (const behavior of behaviors) {
+	behaviorRom.test(`spatial O3: ${behavior.name}`, behavior.source, 10_000_000);
 }
 
 test('spatial: warmed 2D/3D writes and queries make zero guest heap reservations', t => {

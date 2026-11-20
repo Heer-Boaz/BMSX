@@ -4,14 +4,15 @@ import { test } from 'node:test';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
+import { collectLuaModuleDependencyClosure } from '../../toolchain/ts/lua/compiler/module_graph';
 import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from './blua32';
 import { BASE_FIRMWARE_MODULES, COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
-import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from './cpu_test_harness';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from './cpu_execution';
-import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
+import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { asClosure, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 
 /** Real cartlib/compiler/CPU and BIOS math; no host, ICU or world scheduler. */
 type CartlibProgramOptions = {
@@ -132,7 +133,7 @@ const CART_STUB_MODULES = [
 	},
 ] as const;
 
-const LITERAL_REQUIRE = /\brequire\s*\(?\s*['"]([^'"]+)['"]/g;
+let defaultCartSources: ReadonlyMap<string, string> | undefined;
 
 // The firmware half depends only on fixed sources and the optimization level,
 // so one test process compiles it once per level and links that program into
@@ -175,26 +176,32 @@ export function compileCartlibProgram(
 	cartEntrySource: string,
 	{ traceStatements = 'erase', preloadModules = [], optLevel = 3, modules = [] }: CartlibProgramOptions = {},
 ) {
-	const cartSources = new Map<string, string>(CART_MODULE_FILES.map(([path, file]) => [path, readFileSync(file, 'utf8')]));
+	const cartSources = new Map(defaultCartSources ??= new Map<string, string>(
+		CART_MODULE_FILES.map(([path, file]) => [path, readFileSync(file, 'utf8')]),
+	));
 	for (const module of CART_STUB_MODULES) cartSources.set(module.path, module.source);
 	for (const module of modules) cartSources.set(module.path, module.source);
-	// The compiler compiles every supplied module; cartlib has no dynamic
-	// require, so supply only the modules the entry reaches by literal
-	// require, in their usual order.
-	const reached = new Set<string>(), pending = [cartEntrySource];
-	const reach = (path: string) => {
-		const source = cartSources.get(path);
-		if (source === undefined || reached.has(path)) return;
-		reached.add(path);
-		pending.push(source);
+
+	const entry = parseLuaChunk(cartEntrySource, 'entry.lua');
+	const parsed = new Map<string, ReturnType<typeof parseLuaChunk>>();
+	const parseModule = (path: string) => {
+		let chunk = parsed.get(path);
+		if (chunk === undefined) {
+			chunk = parseLuaChunk(cartSources.get(path)!, `${path}.lua`);
+			parsed.set(path, chunk);
+		}
+		return chunk;
 	};
-	for (const path of preloadModules) reach(path);
-	while (pending.length > 0) for (const match of pending.pop()!.matchAll(LITERAL_REQUIRE)) reach(match[1]);
-	const cartModules = Array.from(cartSources).filter(([path]) => reached.has(path)).map(([path, source]) => ({
-		path, source, chunk: parseLuaChunk(source, `${path}.lua`),
-	}));
+	const preload = preloadModules.filter(path => cartSources.has(path));
+	collectLuaModuleDependencyClosure([entry, ...preload.map(parseModule)], new Set(cartSources.keys()), parseModule);
+	// Keep the regular ROM layout order. Only parsed, reachable sources are linked.
+	const cartModules = [];
+	for (const [path, source] of cartSources) {
+		const chunk = parsed.get(path);
+		if (chunk !== undefined) cartModules.push({ path, source, chunk });
+	}
 	const systemCompiled = compileCartlibSystem(optLevel);
-	const cartCompiled = compileLuaChunkToProgram(parseLuaChunk(cartEntrySource, 'entry.lua'), cartModules, {
+	const cartCompiled = compileLuaChunkToProgram(entry, cartModules, {
 		entrySource: cartEntrySource,
 		optLevel,
 		programDomain: 'cart',
@@ -226,7 +233,7 @@ export function createCartlibCaseRom(prelude: string, options: CartlibProgramOpt
 			assert.equal(booted, undefined, 'cases are added before the first case runs');
 			return bodies.push(body);
 		},
-		/** Register a guest case as a node test that halts within the budget. */
+		/** Register a guest case that must return to the runner within the budget. */
 		test(name: string, body: string, budget = 20_000_000): void {
 			const index = rom.add(body);
 			test(name, () => { rom.run(index, budget); });
@@ -238,13 +245,16 @@ export function createCartlibCaseRom(prelude: string, options: CartlibProgramOpt
 local test_cases<const> = {
 ${cases}
 }
-return function(index) test_cases[index]() end
+return function(index)
+ test_cases[index]()
+ return true
+end
 `, options);
-				assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
-				assert.equal(cpu.readLuaFaultReasonWord(), 0, 'the case ROM booted without a Lua fault');
+				runGuestToHalt(cpu, budget);
 				booted = { cpu, runner: asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc), checkpoint: captureCpuCheckpoint(cpu) };
 			} else restoreCpuCheckpoint(booted.cpu, booted.checkpoint);
 			runCompletionClosure(booted.cpu, booted.runner, [valueInteger(index)], budget);
+			assert.deepEqual(materializeCpuCompletionValues(booted.cpu), [valueBool(true)], 'the guest case returned to its runner');
 			return booted.cpu;
 		},
 	};
