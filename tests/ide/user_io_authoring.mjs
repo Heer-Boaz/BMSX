@@ -68,7 +68,7 @@ test('author, run and live-edit a cart through headless Studio user I/O', { time
 		assert.equal(await editorText(), text);
 	};
 	const openFile = async file => {
-		await press('ControlLeft+Comma');
+		await press('ControlLeft+KeyP');
 		await paste(file);
 		await wait(3);
 		await press('Enter');
@@ -124,6 +124,7 @@ end
 `;
 		await newFile('authoring/program.lua', program);
 		await palette('Run Current Lua File');
+		await press('Enter'); // The fixture has one admitted cartridge slot.
 		await wait(160);
 		await expectColor(1);
 		assert.equal(logs.filter(line => line.includes('authoring:started')).length, 1, 'new program must execute its entry');
