@@ -252,7 +252,10 @@ npm run test:exec -- ctest --test-dir build-cpp-tests-debug -R '^bmsx_geometry_s
 The runtime replay test can also consume runners from a completed native
 Release build: `npm run test:runtime-replay -- --native-build-dir build-cpp-tests`.
 Build the replay targets first (the command without that flag does this) and
-rebuild them after native source changes.
+rebuild them after native source changes. Replay uses a dedicated
+audio/video/input cartridge. It compares small observations after real restore,
+seek, playback, and branching, not encoded state blobs. The desktop and
+SNES Mini rewind retention policies are tested separately by CTest.
 The cartridge, terminal, BIOS-float, frame-evaluation, GC stress, coroutine,
 table-iteration and symbol conformance commands also accept
 `BMSX_TEST_NATIVE_BUILD_DIR` to use an existing build without running CMake.
@@ -269,7 +272,8 @@ npm run test:headless -- build-cpp-tests build-cpp-tests-debug build-cpp-tests-i
 Use three completed builds with `BMSX_BUILD_TESTS=ON`: Release with native
 blocks on, Debug with native blocks on, and Release with native blocks off,
 in that order. Build all test targets in the Debug tree. The Release tree
-needs the four replay/rewind runners, plus `bmsx_terminal_conformance_runner`,
+needs `bmsx_runtime_replay_conformance_runner`, `bmsx_host_rewind_conformance_runner`,
+and `bmsx_libretro_rewind_conformance_runner`, plus `bmsx_terminal_conformance_runner`,
 `bmsx_frame_evaluation_runner`, `bmsx_gc_stress_runner`, and
 `bmsx_coroutine_runner`, as well as `bmsx_numeric32_tests`, `bmsx_value32_tests`,
 and `bmsx_value_storage_tests` for the machine cases. The interpreter tree

@@ -9,14 +9,11 @@ import { NODE_TEST_BUNDLE_OPTIONS } from '../../../scripts/lib/node_test_bundle.
 
 const sources = import.meta.dirname;
 const root = resolve(import.meta.dirname, '../../..');
-const { values } = parseArgs({ options: { 'native-build-dir': { type: 'string' } } });
+const { values } = parseArgs({ options: { 'native-build-dir': { type: 'string' }, 'system-rom': { type: 'string' } } });
 const prebuilt = values['native-build-dir'];
 const nativeBuild = resolve(root, prebuilt ?? 'build-cpp-tests');
 const replayTarget = 'bmsx_runtime_replay_conformance_runner';
-const rewindTargets = [
-	'bmsx_host_rewind_conformance_runner',
-	'bmsx_snesmini_host_rewind_conformance_runner', 'bmsx_libretro_rewind_conformance_runner',
-];
+const rewindTargets = ['bmsx_host_rewind_conformance_runner', 'bmsx_libretro_rewind_conformance_runner'];
 function run(command, args) {
 	return new Promise((resolveRun, reject) => {
 		const child = spawn(command, args, { cwd: root, stdio: 'inherit' });
@@ -28,14 +25,16 @@ function run(command, args) {
 	});
 }
 
-await run('npm', ['run', 'build:toolchain:bios', '--', '--debug']);
+if (values['system-rom'] === undefined) {
+	await run(process.execPath, ['--import', 'tsx', 'scripts/rompacker/rompacker.ts', '--mode', 'bios', '--debug']);
+}
 if (prebuilt === undefined) {
 	await run('cmake', ['-S', 'machine/cpp', '-B', nativeBuild, '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON',
 		'-DCMAKE_BUILD_TYPE=Release', '-DBMSX_ENABLE_NATIVE_BLOCKS=ON']);
 	await run('cmake', ['--build', nativeBuild, '--target', replayTarget, ...rewindTargets, '--parallel', '4']);
 }
-const bios = 'dist/system/bmsx-bios.debug.rom';
-// Keep executables in Node's package scope and state dumps off the system
+const bios = resolve(root, values['system-rom'] ?? 'dist/system/bmsx-bios.debug.rom');
+// Keep executables in Node's package scope and test evidence off the system
 // temp directory (which may be tmpfs and share the test memory budget).
 const workspaceArtifacts = join(root, '.bmsx');
 mkdirSync(workspaceArtifacts, { recursive: true });

@@ -61,7 +61,7 @@ try {
 		}
 	});
 	const replay = bios.then(ready => {
-		if (ready) return conformance([['runtime-replay', ['--native-build-dir', release]]]);
+		if (ready) return conformance([['runtime-replay', ['--native-build-dir', release, '--system-rom', 'dist/system/bmsx-bios.debug.rom']]]);
 	});
 	const nativeWorkersReleased = Promise.all([ctest, replay]);
 	const presentations = 'scripts/test_headless_presentations.mjs';
