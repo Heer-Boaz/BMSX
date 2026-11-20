@@ -126,7 +126,7 @@ import type { FaultSnapshot, RuntimeErrorDetails, RuntimeFaultState } from './ru
 import type { ResourceIdentity } from './common/resource';
 import { type RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
-import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
+import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState, retireEditorFeedback } from './common/feedback_state';
 import { editorRuntimeState } from './editor/common/runtime_state';
 import { invalidateLuaCommentContextFromRow } from './common/text';
 import { measureText } from './editor/common/text/layout';
@@ -1080,6 +1080,7 @@ export class RuntimeCartEditor implements CartEditor {
 			editorTextModelService.clear();
 			this.sources.catalog.dispose();
 			this.resourcePanel.dispose();
+			retireEditorFeedback();
 		}
 	}
 

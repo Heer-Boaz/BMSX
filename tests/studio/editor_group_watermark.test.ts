@@ -12,62 +12,64 @@ import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submi
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { afterTest } from '../helpers/test_cleanup';
 
-configureFontVariant('tiny');
+test.describe('Editor group watermark', () => {
+	test.before(() => configureFontVariant('tiny'));
 
-function fixture(t: TestContext, variant: 'tiny' | 'msx', theme: string) {
-	const previous = { width: editorViewState.viewportWidth, height: editorViewState.viewportHeight,
-		variant: editorViewState.font.variant,
-		theme: colors.getActiveIdeThemeVariant() };
-	configureFontVariant(variant); colors.setIdeThemeVariant(theme);
-	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	const overlay = createHostOverlayFixture(384, 288);
-	afterTest(t, () => {
-		configureFontVariant(previous.variant); colors.setIdeThemeVariant(previous.theme);
-		editorViewState.viewportWidth = previous.width; editorViewState.viewportHeight = previous.height;
+	function fixture(t: TestContext, variant: 'tiny' | 'msx', theme: string) {
+		const previous = { width: editorViewState.viewportWidth, height: editorViewState.viewportHeight,
+			variant: editorViewState.font.variant,
+			theme: colors.getActiveIdeThemeVariant() };
+		configureFontVariant(variant); colors.setIdeThemeVariant(theme);
+		editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
+		const overlay = createHostOverlayFixture(384, 288);
+		afterTest(t, () => {
+			configureFontVariant(previous.variant); colors.setIdeThemeVariant(previous.theme);
+			editorViewState.viewportWidth = previous.width; editorViewState.viewportHeight = previous.height;
+		});
+		const draw = (left: number, width: number, height = 288) => {
+			const bounds = { left, top: topMargin(), right: left + width, bottom: height - bottomMargin() };
+			overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); drawEditorGroupWatermark(bounds); overlay.renderer.endFrame();
+			const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];
+			for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs)
+				glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);
+			for (const glyph of glyphs) {
+				assert.ok(glyph.x >= bounds.left + 4 && glyph.x + editorViewState.font.measure(glyph.items as string) <= bounds.right - 4,
+					`complete hint escaped ${width}px editor group: ${glyph.items}`);
+				assert.ok(glyph.y >= bounds.top + 4 && glyph.y + editorViewState.lineHeight <= bounds.bottom - 4);
+			}
+			return glyphs;
+		};
+		return { draw };
+	}
+
+	for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
+		test(`${variant}/${theme} empty-group hints keep whole command/shortcut pairs inside wide and narrow editor groups`, t => {
+			const f = fixture(t, variant, theme), wide = f.draw(0, 384);
+			assert.equal(wide.length, 8);
+			assert.equal(wide[0].color, resolveThemeTokenColor(colors.COLOR_DESCRIPTION_TEXT), 'descriptions use neutral editor-surface ink, not inactive tab ink');
+			assert.equal(wide[0].y, wide[1].y, 'wide groups retain aligned command and keybinding columns');
+			const narrow = f.draw(222, 162);
+			assert.equal(narrow.length, 8);
+			if (variant === 'msx') assert.equal(narrow[1].y, narrow[0].y + editorViewState.lineHeight);
+			const minimum = f.draw(24, variant === 'tiny' ? 78 : 118);
+			assert.equal(minimum.length, 8);
+			assert.equal(minimum[1].y, minimum[0].y + editorViewState.lineHeight);
+			assert.equal(f.draw(280, 32).length, 0, 'optional hints cannot paint partial keyboard chords');
+		});
+	}
+
+	test('a short empty group admits only complete command pairs, in discovery order', t => {
+		const f = fixture(t, 'msx', 'light');
+		const height = topMargin() + editorViewState.baseBottomMargin + editorViewState.lineHeight * 6 + 8;
+		const glyphs = f.draw(222, 162, height);
+		assert.equal(glyphs.length, 4); assert.equal(glyphs[0].items, 'COMMAND PALETTE');
 	});
-	const draw = (left: number, width: number, height = 288) => {
-		const bounds = { left, top: topMargin(), right: left + width, bottom: height - bottomMargin() };
-		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); drawEditorGroupWatermark(bounds); overlay.renderer.endFrame();
-		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];
-		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs)
-			glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);
-		for (const glyph of glyphs) {
-			assert.ok(glyph.x >= bounds.left + 4 && glyph.x + editorViewState.font.measure(glyph.items as string) <= bounds.right - 4,
-				`complete hint escaped ${width}px editor group: ${glyph.items}`);
-			assert.ok(glyph.y >= bounds.top + 4 && glyph.y + editorViewState.lineHeight <= bounds.bottom - 4);
-		}
-		return glyphs;
-	};
-	return { draw };
-}
 
-for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
-	test(`${variant}/${theme} empty-group hints keep whole command/shortcut pairs inside wide and narrow editor groups`, t => {
-		const f = fixture(t, variant, theme), wide = f.draw(0, 384);
-		assert.equal(wide.length, 8);
-		assert.equal(wide[0].color, resolveThemeTokenColor(colors.COLOR_DESCRIPTION_TEXT), 'descriptions use neutral editor-surface ink, not inactive tab ink');
-		assert.equal(wide[0].y, wide[1].y, 'wide groups retain aligned command and keybinding columns');
-		const narrow = f.draw(222, 162);
-		assert.equal(narrow.length, 8);
-		if (variant === 'msx') assert.equal(narrow[1].y, narrow[0].y + editorViewState.lineHeight);
-		const minimum = f.draw(24, variant === 'tiny' ? 78 : 118);
-		assert.equal(minimum.length, 8);
-		assert.equal(minimum[1].y, minimum[0].y + editorViewState.lineHeight);
-		assert.equal(f.draw(280, 32).length, 0, 'optional hints cannot paint partial keyboard chords');
+	test('idle empty-group paints reuse font measurements and retained hint strings', t => {
+		const f = fixture(t, 'tiny', 'dark'); f.draw(24, 78);
+		const font = editorViewState.font, measurement = t.mock.method(font, 'measure');
+		// The fixture's bounds assertions measure the eight submissions. The watermark itself does not.
+		for (let frame = 0; frame < 100; frame++) f.draw(24, 78);
+		assert.equal(measurement.mock.callCount(), 800);
 	});
-}
-
-test('a short empty group admits only complete command pairs, in discovery order', t => {
-	const f = fixture(t, 'msx', 'light');
-	const height = topMargin() + editorViewState.baseBottomMargin + editorViewState.lineHeight * 6 + 8;
-	const glyphs = f.draw(222, 162, height);
-	assert.equal(glyphs.length, 4); assert.equal(glyphs[0].items, 'COMMAND PALETTE');
-});
-
-test('idle empty-group paints reuse font measurements and retained hint strings', t => {
-	const f = fixture(t, 'tiny', 'dark'); f.draw(24, 78);
-	const font = editorViewState.font, measurement = t.mock.method(font, 'measure');
-	// The fixture's bounds assertions measure the eight submissions. The watermark itself does not.
-	for (let frame = 0; frame < 100; frame++) f.draw(24, 78);
-	assert.equal(measurement.mock.callCount(), 800);
 });

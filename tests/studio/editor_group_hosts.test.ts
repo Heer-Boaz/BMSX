@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { showEditorWarningBanner } from '../../ide/common/feedback_state';
 import { inputFocus } from '../../ide/input/focus';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
@@ -44,6 +45,18 @@ test('one workspace status projects the actual active group rather than a backgr
 	parts.main.focus();
 	const mainReads = background.mock.callCount(), retainedFloatingReads = foreground.mock.callCount(); f.paint();
 	assert.equal(background.mock.callCount(), mainReads + 1); assert.equal(foreground.mock.callCount(), retainedFloatingReads);
+});
+
+test('closing a Studio retires its pending warning before another Studio projects workspace status', async t => {
+	const closing = createActualSourcePanes(t);
+	showEditorWarningBanner('The closing workspace owns this warning');
+	await closing.editor.shutdown();
+
+	const next = createActualSourcePanes(t);
+	next.first.focus();
+	const status = t.mock.method(next.first, 'updateStatus');
+	next.paint();
+	assert.equal(status.mock.callCount(), 1, 'the new Source owns status immediately');
 });
 
 test('moving a retained Source into a sibling group changes control ownership without creating another document or floating host', t => {

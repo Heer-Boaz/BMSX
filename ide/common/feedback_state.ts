@@ -21,6 +21,16 @@ export function setEditorFeedbackActive(active: boolean): void {
 	editorFeedbackState.editorActive = active;
 }
 
+/** Shutdown ends feedback for this workspace, including banners deferred until activation. */
+export function retireEditorFeedback(): void {
+	const message = editorFeedbackState.message;
+	message.visible = false;
+	message.text = '';
+	message.kind = 'info';
+	message.timer = 0;
+	editorFeedbackState.deferredMessageDuration = null;
+}
+
 export function showEditorMessage(text: string, kind: EditorMessageKind, durationSeconds: number): void {
 	const message = editorFeedbackState.message;
 	message.text = text;
