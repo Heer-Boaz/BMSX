@@ -6,6 +6,8 @@ import { parseSystemRomImage } from '../../machine/ts/rompack/image';
 import { cartridgeMediaFromImages } from '../../hosts/common/cartridge_media';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
+import { executionDomainBit } from '../../machine/ts/spec/blua32/execution_domain';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { ActorRenderObservation } from '../../ide/workbench/contrib/actor_lab/render_observation';
@@ -14,6 +16,7 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
 import { captureInstalledLuaSources, createLuaSourceRegistry, registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { createBlua32SourceImage } from '../../ide/runtime/sources';
+import { bindFunctionInstructions } from '../../ide/runtime/instruction_probe';
 import { createLoadedTestRuntimeSourceState, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { ActorRuntimeTree, findRuntimeActor, runtimeWorld } from '../../ide/workbench/contrib/actor_lab/runtime';
@@ -148,7 +151,7 @@ test('actor32 observes actual cartlib draw returns and command publication with 
 	cpu.setInstructionObserver(observation);
 	afterTest(t, () => { cpu.setInstructionObserver(null); sources.catalog.dispose(); });
 	const backend = new HeadlessGPUBackend(256, 212, runtime.model.gxGpuVramBytes);
-	for (let tick = 0; tick < 180 && !observation.pages.some(page => page.ready && page.geometry.quads.length >= 5); tick++) {
+	const advanceFrame = () => {
 		let completed = false;
 		for (let attempt = 0; (!completed || gpu.backendServicePending()) && attempt < 32; attempt++) {
 			if (gpu.backendServicePending()) {
@@ -161,7 +164,8 @@ test('actor32 observes actual cartlib draw returns and command publication with 
 		backend.executeGxGpuCommandDrain(gpu); gpu.retirePresentedCommands();
 		runtime.machine.audioController.synchronizeOutput().clear();
 		assert.equal(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), 0);
-	}
+	};
+	for (let tick = 0; tick < 180 && !observation.pages.some(page => page.ready && page.geometry.quads.length >= 5); tick++) advanceFrame();
 	const page = observation.pages.find(page => page.ready && page.geometry.quads.length >= 5);
 	assert.ok(page, 'real World.render return must publish geometry from all initialized rectangle draws');
 	const quad = Array.from(page.geometry.quads).find(item => item.label.includes('runner'))!;
@@ -171,4 +175,24 @@ test('actor32 observes actual cartlib draw returns and command publication with 
 	const owned = new ActorRenderGeometry(); owned.copyFrom(page.geometry);
 	page.geometry.clear();
 	assert.ok(owned.quads.length >= 5);
+
+	const returns = bindFunctionInstructions(sources.currentBlua32Media.cartridgeSlots[0]!, 'cartlib/world/world',
+		'world_class._render_single_page', new Set([OpCode.RET]))!;
+	let stopped = false;
+	cpu.setExecutionHook((_domain, pc) => stopped = returns.has(pc), executionDomainBit(0), 0);
+	for (let attempt = 0; attempt < 64 && !stopped; attempt++) {
+		if (gpu.backendCommandDrainPending()) backend.executeGxGpuCommandDrain(gpu);
+		else if (gpu.backendServicePending()) backend.executeGxGpuReadback(gpu);
+		runtime.frameScheduler.runToNextLogicalTick();
+	}
+	assert.ok(stopped, 'stop the actual cartridge before a World.render return');
+	assert.ok(observation.pages.some(page => page.order > 0 && !page.ready), 'the suspended render has not published its geometry');
+	const frames = v.asInteger(guest.global('studio_test_rendered_frames'));
+	observation.reset();
+	cpu.setExecutionHook(null, 0, 0);
+	advanceFrame();
+	assert.equal(guest.global('studio_test_rendered_frames'), v.valueInteger(frames + 1), 'the in-flight guest render finishes normally');
+	assert.ok(observation.pages.every(page => !page.ready && page.order === 0), 'a return without its observed begin publishes no pickable geometry');
+	advanceFrame();
+	assert.ok(observation.pages.some(page => page.ready && page.geometry.quads.length >= 5), 'the next fully observed draw publishes again');
 });

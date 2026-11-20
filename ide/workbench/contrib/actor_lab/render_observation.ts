@@ -41,7 +41,7 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 	private readonly buildCallSites = new Set<number>();
 	private readonly visualKinds = new Map<number, ActorVisualKind>();
 	private readonly returns = new ScratchBuffer(() => ({ pc: 0, thread: 0, register: 0, kind: undefined as ActorVisualKind | undefined }));
-	private page: RenderPage | undefined;
+	private buildingPage: RenderPage | undefined;
 	public constructor(private readonly cpu: CPU, image: Blua32ToolingImage, private readonly domain: ResourceDomain,
 		private readonly guest: SuspendedGuestSession, private readonly order: { value: number }) {
 		this.calls = bindFunctionInstructions(image, 'cartlib/world/world', 'world_class._build_render_commands', CALLS) ?? new Map();
@@ -75,7 +75,7 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 		}
 	}
 	public reset(): void {
-		this.page = undefined;
+		this.buildingPage = undefined;
 		for (const page of this.pages) { page.ready = false; page.order = 0; page.geometry.world.invalidate(); page.geometry.clear(); }
 		for (let i = 0; i < this.returns.length; i++) this.returns.peek(i).kind = undefined;
 	}
@@ -88,18 +88,27 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 		return false;
 	}
 	public observe(_domain: ResourceDomain, pc: number, registers: ValueSlots): void {
-		if (this.completions.has(pc)) { this.page!.ready = true; return; }
-		const pending = this.returns.get(this.cpu.getFrameDepth());
-		if (pending.kind !== undefined && pending.pc === pc && pending.thread === this.cpu.activeThread.address) {
-			this.page!.geometry.capture(registers.get(pending.register), pending.kind, this.domain, this.guest);
-			pending.kind = undefined;
-		}
-		const call = this.calls.get(pc);
-		if (call !== undefined) {
-			if (this.page === undefined || registers.getTag(call.a) !== ValueTag.Closure) return;
-			pending.kind = this.visualKinds.get(this.cpu.memory.readRamRecordWord(registers.getClosure(call.a, this.cpu.gc) + CLOSURE_PROTOTYPE_ADDRESS));
-			pending.pc = call.pc + INSTRUCTION_BYTES; pending.thread = this.cpu.activeThread.address; pending.register = call.a + 1;
+		const building = this.buildingPage;
+		if (this.completions.has(pc)) {
+			// Restore or Hot Resume can reach this RET without having observed
+			// the command-list begin. Only publish pages observed from the start.
+			if (building !== undefined) building.ready = true;
+			this.buildingPage = undefined;
 			return;
+		}
+		if (building !== undefined) {
+			const pending = this.returns.get(this.cpu.getFrameDepth());
+			if (pending.kind !== undefined && pending.pc === pc && pending.thread === this.cpu.activeThread.address) {
+				building.geometry.capture(registers.get(pending.register), pending.kind, this.domain, this.guest);
+				pending.kind = undefined;
+			}
+			const call = this.calls.get(pc);
+			if (call !== undefined) {
+				if (registers.getTag(call.a) !== ValueTag.Closure) return;
+				pending.kind = this.visualKinds.get(this.cpu.memory.readRamRecordWord(registers.getClosure(call.a, this.cpu.gc) + CLOSURE_PROTOTYPE_ADDRESS));
+				pending.pc = call.pc + INSTRUCTION_BYTES; pending.thread = this.cpu.activeThread.address; pending.register = call.a + 1;
+				return;
+			}
 		}
 		const store = this.stores.get(pc);
 		if (store === undefined) return;
@@ -109,6 +118,6 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 		let page: RenderPage | undefined;
 		for (let i = 0; i < this.pages.length; i++) if (this.pages[i].x === x && this.pages[i].y === y) { page = this.pages[i]; break; }
 		if (page === undefined) { page = { x, y, order: 0, ready: false, geometry: new ActorRenderGeometry() }; this.pages.push(page); }
-		page.order = ++this.order.value; page.ready = false; page.geometry.clear(); this.page = page;
+		page.order = ++this.order.value; page.ready = false; page.geometry.clear(); this.buildingPage = page;
 	}
 }
