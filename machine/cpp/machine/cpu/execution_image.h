@@ -66,9 +66,14 @@ inline constexpr uint8_t decodedDispatchOp(uint8_t first, uint8_t second) {
 	}
 }
 
+struct NativeNumericTypes {
+	ValueTag left, right;
+	bool polymorphic;
+};
+
 struct DecodedInstruction {
 	// Each opcode consumes exactly one of these payloads. Decode initializes
-	// that member; field instructions may then update their cache prediction.
+	// that member; field instructions and arithmetic may update their hints.
 	union {
 		uint32_t bx = 0;
 		int32_t sbx;
@@ -84,6 +89,21 @@ struct DecodedInstruction {
 	uint8_t disp = 0;
 	uint8_t baseCycles = 0;
 	uint8_t dispatchCycles = 0;
+
+	// ADD/SUB/MUL do not encode a Bx operand. Their decoded word holds
+	// the type pair instead; it is initialized by decode before warm-up.
+	NativeNumericTypes nativeNumericTypes() const {
+		return {static_cast<ValueTag>(bx & 0xffu), static_cast<ValueTag>((bx >> 8u) & 0xffu),
+			(bx & NATIVE_NUMERIC_POLYMORPHIC) != 0};
+	}
+	void observeNativeNumericTypes(Value lhs, Value rhs) {
+		const u32 pair = static_cast<u32>(valueTag(lhs)) | (static_cast<u32>(valueTag(rhs)) << 8u);
+		if (bx == 0u) bx = pair;
+		else if (bx != pair) bx |= NATIVE_NUMERIC_POLYMORPHIC;
+	}
+
+private:
+	static constexpr u32 NATIVE_NUMERIC_POLYMORPHIC = 1u << 16u;
 };
 
 static_assert(MAX_EXT_REGISTER_BC <= INT16_MAX);

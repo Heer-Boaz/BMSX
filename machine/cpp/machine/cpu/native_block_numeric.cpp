@@ -112,8 +112,7 @@ void NativeBlockCompiler::emitNumericKernel(
 			sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_R0, 0);
 	}
 }
-void NativeBlockCompiler::emitFloatInput(int selector, sljit_s32 destination) {
-	const auto tag = static_cast<ValueTag>(knownTag(selector));
+void NativeBlockCompiler::emitFloatInput(int selector, ValueTag tag, sljit_s32 destination) {
 	const auto source = readTyped(selector, tag, SLJIT_R0, destination);
 	if (tag == ValueTag::Integer)
 		sljit_emit_fop1(m_compiler, SLJIT_CONV_F32_FROM_S32, destination, 0, source.reg, 0);
@@ -126,10 +125,10 @@ void NativeBlockCompiler::emitFloatCanonicalization(sljit_s32 reg) {
 	sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, reg, SLJIT_R0);
 	sljit_set_label(ordinary, sljit_emit_label(m_compiler));
 }
-void NativeBlockCompiler::emitNumeric(const DecodedInstruction& instruction, NativeBlockExitSite& invalid) {
+void NativeBlockCompiler::emitNumeric(const DecodedInstruction& instruction, NativeBlockExitSite& invalid, u32 pc) {
 	const auto op = static_cast<OpCode>(instruction.op);
 	const bool unary = op == OpCode::UNM || op == OpCode::BNOT;
-	const int left = knownTag(instruction.b), right = unary ? left : knownTag(instruction.c);
+	int left = knownTag(instruction.b), right = unary ? left : knownTag(instruction.c);
 	const int integer = static_cast<int>(ValueTag::Integer), floating = static_cast<int>(ValueTag::Float);
 	if ((left >= 0 && left != integer && left != floating) || (right >= 0 && right != integer && right != floating)) {
 		fault(sljit_emit_jump(m_compiler, SLJIT_JUMP), invalid, m_cache.state());
@@ -137,6 +136,25 @@ void NativeBlockCompiler::emitNumeric(const DecodedInstruction& instruction, Nat
 	}
 	const bool bits = op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR || op == OpCode::SHL ||
 					  op == OpCode::SHR || op == OpCode::BNOT;
+	// A field update can consume the arithmetic result without a Value ABI
+	// round-trip. Specialize only a numeric pair seen during scalar warm-up.
+	// A type miss retries this instruction, not the already executed prefix.
+	if ((left < 0 || right < 0) && (op == OpCode::ADD || op == OpCode::SUB || op == OpCode::MUL)) {
+		const auto instructions = m_sources[m_current].instructions;
+		const auto observed = instruction.nativeNumericTypes();
+		if (!observed.polymorphic && observed.left != ValueTag::Nil && m_instruction < instructions.size()) {
+			const auto& next = *instructions[m_instruction].decoded;
+			if (next.op == static_cast<u8>(OpCode::SETFIELD) && next.c == instruction.a) {
+				const auto guard = [&](int operand, ValueTag tag) {
+					deferColdExit(m_cache.guard(operand, tag, SLJIT_R0), nullptr, pc,
+						m_cache.state(), true, m_prefixCycles, m_prefixTop);
+					return static_cast<int>(tag);
+				};
+				if (left < 0) left = guard(instruction.b, observed.left);
+				if (right < 0) right = instruction.c == instruction.b ? left : guard(instruction.c, observed.right);
+			}
+		}
+	}
 	if (left < 0 || right < 0 || op == OpCode::MOD || op == OpCode::FLOORDIV || op == OpCode::POW ||
 		(bits && (left != integer || right != integer))) {
 		const int tag = bits																			  ? integer
@@ -153,8 +171,8 @@ void NativeBlockCompiler::emitNumeric(const DecodedInstruction& instruction, Nat
 			sljit_emit_fop1(m_compiler, SLJIT_NEG_F32, target.reg, 0, source.reg, 0);
 			return;
 		}
-		emitFloatInput(instruction.b, SLJIT_FR0);
-		emitFloatInput(instruction.c, SLJIT_FR1);
+		emitFloatInput(instruction.b, static_cast<ValueTag>(left), SLJIT_FR0);
+		emitFloatInput(instruction.c, static_cast<ValueTag>(right), SLJIT_FR1);
 		const auto target = m_cache.write(instruction.a, ValueTag::Float);
 		sljit_emit_fop2(m_compiler,
 			op == OpCode::ADD	? SLJIT_ADD_F32

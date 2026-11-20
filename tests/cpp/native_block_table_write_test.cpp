@@ -7,6 +7,7 @@
 
 #include <array>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -14,6 +15,61 @@ using namespace bmsx;
 
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
+}
+
+void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
+	const auto x = cpu.stringPool().intern("x");
+	const auto indexKey = cpu.stringPool().intern("__index");
+	auto particle = cpu.createTable(0, 1);
+	ValueSlots constants(1); constants.set(0, valueString(x));
+	std::array<DecodedInstruction, 5> ops{};
+	std::array<NativeBlockInstruction, 5> instructions{};
+	// The star update's register assignments; K1 makes the fallback publish
+	// a nonempty prefix inside the segment before rerunning SUB.
+	const std::array codes{OpCode::GETFIELD, OpCode::K1, OpCode::SUB, OpCode::SETFIELD, OpCode::JMP};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		ops[i].op = static_cast<u8>(codes[i]); ops[i].width = 1; ops[i].baseCycles = BASE_CYCLES[ops[i].op];
+		instructions[i] = {&ops[i], 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
+	}
+	ops[0].a = 9; ops[0].b = 6; ops[0].tableCacheSlot = 0;
+	ops[1].a = 10;
+	ops[2].a = 8; ops[2].b = 9; ops[2].c = 1;
+	ops[2].observeNativeNumericTypes(valueInteger(12), valueInteger(1));
+	ops[3].a = 6; ops[3].c = 8; ops[3].tableCacheSlot = 0;
+	ops[4].bx = 0x2000u;
+	const std::array sources{NativeBlockSource{std::span(instructions.data(), 1), nullptr, true},
+		NativeBlockSource{std::span(instructions.data() + 1, 3), nullptr, true},
+		NativeBlockSource{std::span(instructions.data() + 4, 1)}};
+	auto blocks = NativeBlock::compileRegion(sources, constants.view(), NativeCodeBindings(memory, cpu.stringPool(), indexKey));
+	ValueSlots registers(11);
+	registers.set(6, valueTable(particle.address()));
+	registers.set(1, valueInteger(1));
+	particle.setStringKey(x, valueInteger(std::numeric_limits<i32>::min()));
+	NativeBlockRunState run{.constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
+	require(blocks[0]->run(registers.view(), run) == &blocks[2]->terminal
+		&& particle.getStringKey(x) == valueInteger(std::numeric_limits<i32>::max()),
+		"the guarded Integer subtract wraps and reaches the field store within one native grant");
+	for (const Value right : {valueFloat(0.5f), valueBool(false)}) {
+		const auto before = valueInteger(73);
+		particle.setStringKey(x, before);
+		registers.set(1, right); registers.set(8, valueInteger(59)); registers.set(10, valueNil());
+		run.remainingCycles = 100; run.registerTop = 0;
+		const auto* exit = blocks[0]->run(registers.view(), run);
+		require(exit->exit == NativeBlockExit::ScalarBoundary && run.scalarPc == instructions[2].pc
+			&& run.remainingCycles == 100 - ops[0].baseCycles - ops[1].baseCycles && run.registerTop == 11
+			&& registers.get(9) == before && registers.get(10) == valueInteger(1)
+			&& registers.get(8) == valueInteger(59) && particle.getStringKey(x) == before,
+			"a guard miss publishes only the executed prefix and leaves SUB and the store to the VM");
+	}
+
+	ops[2].bx = 0;
+	ops[2].observeNativeNumericTypes(valueFloat(12.5f), valueFloat(0.25f));
+	auto floats = NativeBlock::compileRegion(sources, constants.view(), NativeCodeBindings(memory, cpu.stringPool(), indexKey));
+	particle.setStringKey(x, valueFloat(12.5f));
+	registers.set(1, valueFloat(0.25f)); run.remainingCycles = 100;
+	require(floats[0]->run(registers.view(), run) == &floats[2]->terminal
+		&& particle.getStringKey(x) == valueFloat(12.25f),
+		"an observed Float update does not detour through the scalar VM");
 }
 
 void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
@@ -662,6 +718,7 @@ int main() {
 		Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
 		readsRetainNativeFrame(cpu, memory);
+		numericFieldArithmeticKeepsNativeFrame(cpu, memory);
 		storesRetainNativeFrame(cpu, memory);
 		compactArraySlots(cpu, memory);
 		rawTablePayloadUsesRamWithoutAnObject(cpu, memory);

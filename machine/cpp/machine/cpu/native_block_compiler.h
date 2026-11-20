@@ -34,12 +34,13 @@ private:
 		int selector, ValueTag tag, sljit_s32 wordScratch = SLJIT_R0, sljit_s32 floatScratch = SLJIT_FR0);
 	int knownTag(int selector) const;
 	void fault(sljit_jump* jump, NativeBlockExitSite& exit, const State& state, bool charged = false);
-	void deferColdExit(sljit_jump* jump, NativeBlockExitSite* site, u32 scalarPc, const State& state, bool charged);
+	void deferColdExit(sljit_jump* jump, NativeBlockExitSite* site, u32 scalarPc, const State& state, bool charged,
+		int scalarCycles = 0, int scalarTop = 0);
 	void emitLeave(NativeBlockExitSite& exit, bool charged);
 	void emitWordMove(const DecodedInstruction& instruction, NativeBlockExitSite* invalid);
-	void emitNumeric(const DecodedInstruction& instruction, NativeBlockExitSite& invalid);
+	void emitNumeric(const DecodedInstruction& instruction, NativeBlockExitSite& invalid, u32 pc);
 	void emitNumericKernel(const DecodedInstruction& instruction, NativeBlockExitSite& invalid, int resultTag);
-	void emitFloatInput(int selector, sljit_s32 destination);
+	void emitFloatInput(int selector, ValueTag tag, sljit_s32 destination);
 	void emitFloatCanonicalization(sljit_s32 reg);
 	void emitVararg(const DecodedInstruction&, NativeBlockExitSite& growth);
 	void emitContext(const DecodedInstruction& instruction, NativeBlockExitSite* watched);
@@ -98,10 +99,11 @@ private:
 	};
 	std::vector<ExternalBranch> m_external;
 	struct ColdExit {
-		// A null site enters the scalar boundary at scalarPc, without charging
-		// a guest instruction. Other exits use their own stable descriptor.
+		// A null site publishes the completed prefix and executes scalarPc
+		// in the interpreter. The scalar instruction owns its own charge.
 		NativeBlockExitSite* site;
 		u32 scalarPc;
+		int scalarCycles, scalarTop;
 		State state;
 		bool charged;
 		sljit_label* label = nullptr;

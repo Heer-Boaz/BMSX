@@ -83,20 +83,21 @@ void NativeBlockCompiler::fault(sljit_jump* jump, NativeBlockExitSite& exit, con
 }
 
 void NativeBlockCompiler::deferColdExit(sljit_jump* jump, NativeBlockExitSite* site, u32 scalarPc,
-	const State& state, bool charged) {
+	const State& state, bool charged, int scalarCycles, int scalarTop) {
 	// Proven operands supply no branch. The remaining guards of each guest
 	// site are emitted together; only its publication variants can match.
 	if (!jump) return;
 	for (size_t i = m_coldExits.size(); i != 0;) {
 		const auto& exit = m_coldExits[--i];
 		if (exit.site != site || exit.scalarPc != scalarPc) break;
-		if (exit.charged == charged && m_cache.samePublication(exit.state, state)) {
+		if (exit.charged == charged && exit.scalarCycles == scalarCycles && exit.scalarTop == scalarTop
+			&& m_cache.samePublication(exit.state, state)) {
 			m_coldBranches.push_back({jump, i});
 			return;
 		}
 	}
 	m_coldBranches.push_back({jump, m_coldExits.size()});
-	m_coldExits.push_back({site, scalarPc, state, charged});
+	m_coldExits.push_back({site, scalarPc, scalarCycles, scalarTop, state, charged});
 }
 void NativeBlockCompiler::emitWordMove(const DecodedInstruction& instruction, NativeBlockExitSite* invalid) {
 	const auto mode = static_cast<ValueMoveKind>(instruction.c);
@@ -250,7 +251,7 @@ void NativeBlockCompiler::emit(
 	case OpCode::SHR:
 	case OpCode::BNOT:
 	case OpCode::UNM:
-		emitNumeric(instruction, *slow);
+		emitNumeric(instruction, *slow, source.pc);
 		break;
 	case OpCode::LOADKR:
 		emitConstantIndex(instruction, *slow);
@@ -352,7 +353,7 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 		exit.label = sljit_emit_label(m_compiler);
 		m_cache.setState(exit.state);
 		if (exit.site) emitLeave(*exit.site, exit.charged);
-		else emitScalarBoundary(exit.scalarPc, 0, 0);
+		else emitScalarBoundary(exit.scalarPc, exit.scalarCycles, exit.scalarTop);
 	}
 	for (const auto& branch : m_coldBranches)
 		sljit_set_label(branch.jump, m_coldExits[branch.target].label);

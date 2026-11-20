@@ -1864,8 +1864,10 @@ dispatch_instruction:
 					// The CPU thread owns code publication and source writes. With no
 					// intervening guest instruction, this is the same published entry;
 					// interrupt entry above cancels the retry before any handler runs.
-					if (forceScalarOnce || std::endian::native == std::endian::big || thread.stackRequiresScalar()) {
-						forceScalarOnce = false;
+					// An interior scalar continuation may already have run before
+					// reaching the next native entry. Only bypass its exact PC.
+					if ((std::exchange(forceScalarOnce, false) && pc == nativeState.state.scalarPc)
+						|| std::endian::native == std::endian::big || thread.stackRequiresScalar()) {
 						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;

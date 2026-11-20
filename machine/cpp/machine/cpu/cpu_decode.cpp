@@ -80,6 +80,11 @@ bool CPU::decodeInstructionWords(
 			? signExtend(rawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS))
 			: static_cast<int32_t>(rawC));
 		switch (static_cast<OpCode>(op)) {
+			case OpCode::ADD:
+			case OpCode::SUB:
+			case OpCode::MUL:
+				decoded.bx = 0;
+				break;
 			case OpCode::KSMI:
 				decoded.sbx = decodedSbx;
 				break;

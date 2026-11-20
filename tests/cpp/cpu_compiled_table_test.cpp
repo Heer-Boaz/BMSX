@@ -419,6 +419,61 @@ void wideAllocationFailure() {
 		&& native.cpu.readFrameRegister(0, 8) == valueInteger(73) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9,
 		"failed allocation retains the precise prefix, original destination and WIDE EPC after collection");
 }
+void observedArithmeticResumesAtItsOwnInstruction() {
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETFIELD), 9, 6, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 10, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::SUB), 8, 9, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::SETFIELD), 6, 0, 8);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+	writeInstruction(image.text, 16, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 11}, {.firstWord = 16, .wordCount = 1}};
+	image.constants = {std::string("x")}; image.exceptionFunctionIndex = 1;
+	CpuMachine native(image), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		auto table = cpu.createTable(0, 1);
+		table.setStringKey(*cpu.stringPool().find("x"), valueInteger(10));
+		frame.registers.set(6, valueTable(table.address())); frame.registers.set(1, valueInteger(0));
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 640);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 first = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, first + 1u);
+	const auto warm = page.words[first + 2u].nativeNumericTypes();
+	require(warm.left == ValueTag::Integer && warm.right == ValueTag::Integer && warm.polymorphic == 0u,
+		"native warm-up records the actual operands without widening decoded instructions");
+#endif
+	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::K1)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::SUB)] + BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
+	for (const Value step : {valueInteger(2), valueFloat(0.5f), valueBool(false)}) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+			auto& frame = *cpu.activeThread()->frameAtDepth(0);
+			asTable(frame.registers.get(6), cpu.gcHeap()).setStringKey(*cpu.stringPool().find("x"), valueInteger(10));
+			frame.registers.set(1, step); frame.registers.set(8, valueInteger(73)); frame.registers.set(10, valueNil());
+		}
+		test::runCpuParity(native.cpu, scalar.cpu, grant);
+		auto& cpu = native.cpu;
+		const auto table = asTable(cpu.readFrameRegister(0, 6), cpu.gcHeap());
+		const auto x = table.getStringKey(*cpu.stringPool().find("x"));
+		if (step == valueBool(false)) {
+			require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+				&& cpu.readEpcWord() == native.rom.textAddress + 2u * INSTRUCTION_BYTES
+				&& cpu.readFrameRegister(0, 8) == valueInteger(73) && x == valueInteger(10),
+				"a non-Number faults at SUB without changing its destination or the field");
+		} else {
+			const auto wanted = step == valueInteger(2) ? valueInteger(8) : valueFloat(9.5f);
+			require(x == wanted && scalar.cpu.readFrameRegister(0, 8) == wanted && cpu.readFrameRegister(0, 10) == valueInteger(1)
+				&& cpu.readFramePc(0) == native.rom.textAddress + 4u * INSTRUCTION_BYTES,
+				"the field update preserves scalar results and the exact next PC across a type change");
+		}
+	}
+}
+
 void stringStoreGrowthRoots(bool generic) {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 7, 9, 0);
@@ -473,6 +528,7 @@ void stringStoreGrowthRoots(bool generic) {
 int main() {
 	try {
 		stringReadChainBoundaries();
+		observedArithmeticResumesAtItsOwnInstruction();
 		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); wideAllocationFailure(); stringStoreGrowthRoots(false); stringStoreGrowthRoots(true);
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
