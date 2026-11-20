@@ -59,22 +59,12 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_emit_op1(compiler, SLJIT_MOV32_S16, SLJIT_R0, 0, SLJIT_MEM1(exit), offsetof(NativeBlockExitSite, exitB));
 	auto* openResults = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
-	auto* fixedResults = sljit_emit_jump(compiler, SLJIT_JUMP);
-	sljit_set_label(openResults, sljit_emit_label(compiler));
-	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop), SLJIT_R3, 0);
-	auto* positiveResults = sljit_emit_cmp(compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	auto* resultsReady = sljit_emit_label(compiler);
-	sljit_set_label(fixedResults, resultsReady);
-	sljit_set_label(positiveResults, resultsReady);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(leaving), offsetof(CallFrame, nativeControl));
 	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), static_cast<u32>(FrameField::ReturnCount), SLJIT_IMM, FRAME_WINDOW_MASK);
 	auto* openWanted = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
 	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 1);
-	auto* fixedWanted = sljit_emit_jump(compiler, SLJIT_JUMP);
-	sljit_set_label(openWanted, sljit_emit_label(compiler));
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R0, 0);
-	sljit_set_label(fixedWanted, sljit_emit_label(compiler));
+	auto* wantedReady = sljit_emit_label(compiler);
 	// Raw external entries require a positive grant. An exhausting RET completes
 	// through the semantic boundary instead of entering its receiving body.
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_R2, 0), coldDispatch);
@@ -123,17 +113,11 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R2), pointerShift);
 	auto* noCell = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0);
 	// An external write to the suspended activation may redirect its successor.
-	auto* cached = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0,
+	auto* differentPc = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
 		SLJIT_MEM1(caller), offsetof(CallFrame, nativeContinuationPc));
-	sljit_set_label(noCell, sljit_emit_label(compiler));
-	// Resolve the already loaded guest address if the cached cell does not
-	// belong to it or the caller was interpreted.
-	emitCodeLookup(compiler, coldDispatch);
-	auto* ready = sljit_emit_jump(compiler, SLJIT_JUMP);
-	sljit_set_label(cached, sljit_emit_label(compiler));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), 0);
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0), coldDispatch);
-	sljit_set_label(ready, sljit_emit_label(compiler));
+	auto* ready = sljit_emit_label(compiler);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, target, 0, SLJIT_R3, 0);
 
 	// All cold exits precede the placement charge: the helper owns its charge.
@@ -150,29 +134,15 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::tags, 0, SLJIT_MEM1(SLJIT_R3), thread.stackTags);
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), destinationSlot);
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), countSlot);
-	auto* padOnly = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), sourceSlot);
-	sljit_set_label(padOnly, sljit_emit_label(compiler));
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_SP), wantedSlot);
 	auto* multiple = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 1);
-	// One receiving slot copies the raw pair or supplies one canonical nil.
+	// A single result goes directly from the admitted source to destination.
 	auto* singleNil = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), sourceSlot);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM2(NativeBlockAbi::words, SLJIT_R1), 2, SLJIT_MEM2(NativeBlockAbi::words, SLJIT_R0), 2);
 	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM2(NativeBlockAbi::tags, SLJIT_R1), 0, SLJIT_MEM2(NativeBlockAbi::tags, SLJIT_R0), 0);
-	auto* copiedOne = sljit_emit_jump(compiler, SLJIT_JUMP);
-	sljit_set_label(singleNil, sljit_emit_label(compiler));
-	static_assert(valueNil() == 0);
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM2(NativeBlockAbi::words, SLJIT_R1), 2, SLJIT_IMM, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM2(NativeBlockAbi::tags, SLJIT_R1), 0, SLJIT_IMM, 0);
-	auto* paddedOne = sljit_emit_jump(compiler, SLJIT_JUMP);
-
-	sljit_set_label(multiple, sljit_emit_label(compiler));
-	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
-	NativeBlockAbi::emitFramePlacement(compiler, false, true);
 	auto* placed = sljit_emit_label(compiler);
 	sljit_set_label(discard, placed);
-	sljit_set_label(copiedOne, placed);
-	sljit_set_label(paddedOne, placed);
 
 	// Retire the exact same owner fields as Thread::leaveFrame. Active roots
 	// change only after all returned words have reached the caller's window.
@@ -196,6 +166,40 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	for (auto offset : {ValueSpan::wordsOffset(), ValueSpan::tagsOffset(), ValueSpan::sizeOffset(), ValueSpan::ramOffset()})
 		sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_MEM1(leaving), offsetof(CallFrame, registers) + offset, SLJIT_IMM, 0);
 	emitFrameEntry(compiler, caller, target);
+
+	// Open ranges, unpublished continuations and general placement are
+	// reached by forward branches from the fixed return datapath.
+	sljit_set_label(openResults, sljit_emit_label(compiler));
+	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop), SLJIT_R3, 0);
+	auto* positiveResults = sljit_emit_cmp(compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, 0);
+	sljit_set_label(positiveResults, resultsReady);
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), resultsReady);
+
+	sljit_set_label(openWanted, sljit_emit_label(compiler));
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R0, 0);
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), wantedReady);
+
+	auto* lookup = sljit_emit_label(compiler);
+	sljit_set_label(noCell, lookup);
+	sljit_set_label(differentPc, lookup);
+	// A rewritten or interpreted caller does not own a matching cell.
+	emitCodeLookup(compiler, coldDispatch);
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), ready);
+
+	sljit_set_label(singleNil, sljit_emit_label(compiler));
+	static_assert(valueNil() == 0);
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM2(NativeBlockAbi::words, SLJIT_R1), 2, SLJIT_IMM, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM2(NativeBlockAbi::tags, SLJIT_R1), 0, SLJIT_IMM, 0);
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), placed);
+
+	sljit_set_label(multiple, sljit_emit_label(compiler));
+	auto* padOnly = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), sourceSlot);
+	sljit_set_label(padOnly, sljit_emit_label(compiler));
+	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
+	NativeBlockAbi::emitFramePlacement(compiler, false, true);
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), placed);
 
 	return entry;
 }

@@ -66,39 +66,7 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, smallClosureStride >> HEAP_BUMP_SHIFT);
 	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), 8u, SLJIT_IMM, HEAP_PAGE_LINK_MASK);
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R3, 0, SLJIT_R2, 0), coldDispatch);
-	auto* smallSlot = sljit_emit_jump(compiler, SLJIT_JUMP);
-
-	sljit_set_label(otherClass, sljit_emit_label(compiler));
-	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R0, 0, SLJIT_IMM, 0xffu);
-	auto* objectRun = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, ObjectRun);
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, ObjectSlots), coldDispatch);
-	sljit_emit_op2(compiler, SLJIT_LSHR32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 8u);
-	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 0xffu);
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0,
-		SLJIT_IMM, HEAP_CLASS_BYTES.size()), coldDispatch);
-	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R1), 8u, SLJIT_IMM, HEAP_PAGE_LINK_MASK);
-	sljit_emit_op2(compiler, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, HEAP_BUMP_SHIFT);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(HEAP_CLASS_BYTES.data()));
-	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R0), 1);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(HEAP_CLASS_SLOT_RECIPROCALS.data()));
-	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R0), 1);
-	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R1, 0,
-		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, closureAddress), SLJIT_IMM, HEAP_PAGE_SIZE - 1u);
-	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_R3, 0), coldDispatch);
-	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
-	sljit_emit_op2(compiler, SLJIT_MUL32, SLJIT_R0, 0, SLJIT_R1, 0, SLJIT_R0, 0);
-	sljit_emit_op2(compiler, SLJIT_LSHR32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, HEAP_SLOT_RECIPROCAL_BITS);
-	sljit_emit_op2(compiler, SLJIT_MUL32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R2, 0);
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_R1, 0), coldDispatch);
-	auto* issuedSlot = sljit_emit_jump(compiler, SLJIT_JUMP);
-	sljit_set_label(objectRun, sljit_emit_label(compiler));
-	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R0, 0,
-		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, closureAddress), SLJIT_IMM, HEAP_PAGE_SIZE - 1u);
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), coldDispatch);
 	auto* issued = sljit_emit_label(compiler);
-	sljit_set_label(issuedSlot, issued);
-	sljit_set_label(smallSlot, issued);
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, closureAddress));
 	NativeBlockAbi::emitRamAddress(compiler, SLJIT_R3, SLJIT_R3);
 	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R3), 0);
@@ -106,9 +74,8 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 		SLJIT_IMM, static_cast<u8>(ValueTag::Closure)), coldDispatch);
 	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(exit), offsetof(NativeBlockExitSite, exitA));
 	sljit_emit_op1(compiler, SLJIT_MOV_S16, SLJIT_R1, 0, SLJIT_MEM1(exit), offsetof(NativeBlockExitSite, exitB));
-	auto* fixedArgs = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
-	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop), SLJIT_R2, 0);
-	sljit_set_label(fixedArgs, sljit_emit_label(compiler));
+	auto* openArgs = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
+	auto* argCountEncoded = sljit_emit_label(compiler);
 	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
 	auto* positiveArgs = sljit_emit_cmp(compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, 0);
@@ -143,79 +110,20 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op2(compiler, SLJIT_MUL, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, sizeof(NativeRomCallBinding));
 	sljit_emit_op2(compiler, SLJIT_ADD, target, 0, target, 0, SLJIT_R1, 0);
 	sljit_emit_op2(compiler, SLJIT_ADD, target, 0, target, 0, SLJIT_IMM, Blua32ExecutionImage::nativeRomCallBindingsOffset());
-	auto* cached = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0,
+	auto* cacheMiss = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
 		SLJIT_MEM1(target), offsetof(NativeRomCallBinding, functionAddress));
-
-	auto* system = sljit_emit_cmp(compiler, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, CART_ROM_BASE), coldDispatch);
-	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, CART_ROM_BASE);
-	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R2, 0,
-		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, flags), SLJIT_IMM, CLOSURE_BINDING_DOMAIN_MASK);
-	auto* firstSocket = sljit_emit_cmp(compiler, SLJIT_LESS | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 2);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state),
-		offsetof(NativeCpuRunState, cartridgeRoms) + sizeof(void*));
-	auto* socketReady = sljit_emit_jump(compiler, SLJIT_JUMP);
-	sljit_set_label(firstSocket, sljit_emit_label(compiler));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeCpuRunState, cartridgeRoms));
-	sljit_set_label(socketReady, sljit_emit_label(compiler));
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0), coldDispatch);
-	auto* romReady = sljit_emit_jump(compiler, SLJIT_JUMP);
-	sljit_set_label(system, sljit_emit_label(compiler));
-	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R0, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeCpuRunState, systemRom));
-	sljit_set_label(romReady, sljit_emit_label(compiler));
-	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R1, 0, SLJIT_IMM, BLUA32_FUNCTION_RECORD_SIZE);
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER, SLJIT_R0, 0,
-		SLJIT_MEM1(SLJIT_R2), offsetof(Span<const u8>, size_)), coldDispatch);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), offsetof(Span<const u8>, data_));
-	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R1, 0);
-	constexpr std::array romFields{
-		BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
-		BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_FLAGS_OFFSET};
 	constexpr std::array bindingFields{
 		offsetof(NativeRomCallBinding, codeAddress), offsetof(NativeRomCallBinding, numParams),
 		offsetof(NativeRomCallBinding, maxStack), offsetof(NativeRomCallBinding, flags)};
 	constexpr std::array scratchFields{
 		offsetof(NativeCallScratch, codeAddress), offsetof(NativeCallScratch, numParams),
 		offsetof(NativeCallScratch, maxStack), offsetof(NativeCallScratch, flags)};
-	for (size_t i = 0; i < romFields.size(); ++i) {
-		sljit_emit_mem(compiler, SLJIT_MOV32 | SLJIT_MEM_UNALIGNED, SLJIT_R0, SLJIT_MEM1(SLJIT_R3), romFields[i]);
-		sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(target), bindingFields[i], SLJIT_R0, 0);
-	}
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(target), offsetof(NativeRomCallBinding, functionAddress),
-		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, functionAddress));
-	for (size_t bank = 0; bank < CARTRIDGE_SLOT_COUNT; ++bank)
-		sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(target), offsetof(NativeRomCallBinding, entryCells) + bank * sizeof(void*), SLJIT_IMM, 0);
-	sljit_set_label(cached, sljit_emit_label(compiler));
+	auto* romBindingReady = sljit_emit_label(compiler);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, romBinding), target, 0);
 	for (size_t i = 0; i < bindingFields.size(); ++i) {
 		sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), scratchFields[i], SLJIT_MEM1(target), bindingFields[i]);
 	}
-	auto* bindingReady = sljit_emit_jump(compiler, SLJIT_JUMP);
-
-	sljit_set_label(latched, sljit_emit_label(compiler));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, romBinding), SLJIT_IMM, 0);
-	// Capture count shares +4 with the collector link; the tail starts after U refs.
-	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R3), CLOSURE_COUNT_HIGH_BYTE);
-	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 0x7f);
-	sljit_emit_op2(compiler, SLJIT_SHL32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, CLOSURE_COUNT_LOW_BITS);
-	sljit_emit_op2(compiler, SLJIT_LSHR32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), GC_RECORD_LINK, SLJIT_IMM, GC_GRAY_INDEX_BITS);
-	sljit_emit_op2(compiler, SLJIT_OR32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
-	sljit_emit_op2(compiler, SLJIT_SHL32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 2);
-	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0,
-		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, closureAddress));
-	for (const auto [field, scratch] : {
-		std::pair{0u, offsetof(NativeCallScratch, codeAddress)},
-		std::pair{4u, offsetof(NativeCallScratch, numParams)},
-		std::pair{8u, offsetof(NativeCallScratch, maxStack)},
-		std::pair{12u, offsetof(NativeCallScratch, flags)}}) {
-		sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, CLOSURE_CAPTURE_WORDS + field);
-		sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-		NativeBlockAbi::emitRamAddress(compiler, SLJIT_R2, SLJIT_R2);
-		sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), 0);
-		sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), scratch, SLJIT_R0, 0);
-	}
-	sljit_set_label(bindingReady, sljit_emit_label(compiler));
+	auto* layoutReady = sljit_emit_label(compiler);
 
 	// The argument area is the fixed callee's working frame. Vararg callees
 	// slide above all supplied arguments and retain extras in the lower area.
@@ -239,15 +147,8 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, varargBase), SLJIT_R2, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, 0);
 	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, flags), SLJIT_IMM, BLUA32_FUNCTION_VARARG);
-	auto* noVarargs = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
-	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0,
-		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, argCount));
-	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, argCount),
-		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, numParams));
-	auto* positiveVarargs = sljit_emit_cmp(compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, 0);
+	auto* varargs = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	auto* varargsReady = sljit_emit_label(compiler);
-	sljit_set_label(noVarargs, varargsReady); sljit_set_label(positiveVarargs, varargsReady);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, varargCount), SLJIT_R2, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, stackBase), SLJIT_R3, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(caller), offsetof(CallFrame, thread));
@@ -275,25 +176,12 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, romBinding));
 	auto* mutableRecord = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeCpuRunState, cartridgeSlot));
-	sljit_emit_op2(compiler, SLJIT_SHL, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, pointerShift);
-	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
 	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, offsetof(NativeRomCallBinding, entryCells));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R1), 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R2), pointerShift);
 	auto* unbound = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), 0);
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0), coldDispatch);
-	auto* bound = sljit_emit_jump(compiler, SLJIT_JUMP);
-
-	auto* lookup = sljit_emit_label(compiler);
-	sljit_set_label(mutableRecord, lookup);
-	sljit_set_label(unbound, lookup);
-	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, codeAddress));
-	emitCodeLookup(compiler, coldDispatch, true);
-	auto* doNotBind = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R1), 0, SLJIT_R2, 0);
 	auto* targetReady = sljit_emit_label(compiler);
-	sljit_set_label(bound, targetReady);
-	sljit_set_label(doNotBind, targetReady);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, target, 0, SLJIT_R3, 0);
 
 	// Charge only initialized formal slots. Supplied fixed arguments alias;
@@ -369,17 +257,9 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(callee), offsetof(CallFrame, controlMemory));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(callee), offsetof(CallFrame, registers) + ValueSpan::ramOffset(), SLJIT_R2, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM1(callee), offsetof(CallFrame, registers) + ValueSpan::mirroredOffset(), SLJIT_IMM, 0);
-	auto* supplied = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32,
+	auto* needsPlacement = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32,
 		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, flags), SLJIT_IMM, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, argumentBase));
-	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, argCount));
-	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, numParams));
-	auto* argsFit = sljit_emit_cmp(compiler, SLJIT_LESS_EQUAL, SLJIT_R2, 0, SLJIT_R3, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_R2, 0, SLJIT_R3, 0);
-	sljit_set_label(argsFit, sljit_emit_label(compiler));
-	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
-	NativeBlockAbi::emitFramePlacement(compiler, true, true);
-	sljit_set_label(supplied, sljit_emit_label(compiler));
+	auto* placed = sljit_emit_label(compiler);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(callee), offsetof(CallFrame, thread));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, stackTop));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R1), thread.record);
@@ -403,6 +283,136 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0), coldDispatch);
 	sljit_emit_op1(compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, remainingCycles));
 	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_R0, 0);
+
+	// Uncommon admission/placement paths return to the label that owns
+	// their state. Keep them outside the fall-through ROM closure path.
+	sljit_set_label(otherClass, sljit_emit_label(compiler));
+	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R0, 0, SLJIT_IMM, 0xffu);
+	auto* objectRun = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, ObjectRun);
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, ObjectSlots), coldDispatch);
+	sljit_emit_op2(compiler, SLJIT_LSHR32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 8u);
+	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 0xffu);
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0,
+		SLJIT_IMM, HEAP_CLASS_BYTES.size()), coldDispatch);
+	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R1), 8u, SLJIT_IMM, HEAP_PAGE_LINK_MASK);
+	sljit_emit_op2(compiler, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, HEAP_BUMP_SHIFT);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(HEAP_CLASS_BYTES.data()));
+	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R0), 1);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(HEAP_CLASS_SLOT_RECIPROCALS.data()));
+	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R0), 1);
+	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R1, 0,
+		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, closureAddress), SLJIT_IMM, HEAP_PAGE_SIZE - 1u);
+	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_R3, 0), coldDispatch);
+	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
+	sljit_emit_op2(compiler, SLJIT_MUL32, SLJIT_R0, 0, SLJIT_R1, 0, SLJIT_R0, 0);
+	sljit_emit_op2(compiler, SLJIT_LSHR32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, HEAP_SLOT_RECIPROCAL_BITS);
+	sljit_emit_op2(compiler, SLJIT_MUL32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R2, 0);
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_R1, 0), coldDispatch);
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), issued);
+	sljit_set_label(objectRun, sljit_emit_label(compiler));
+	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R0, 0,
+		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, closureAddress), SLJIT_IMM, HEAP_PAGE_SIZE - 1u);
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), coldDispatch);
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), issued);
+
+	sljit_set_label(openArgs, sljit_emit_label(compiler));
+	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop), SLJIT_R2, 0);
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), argCountEncoded);
+
+	sljit_set_label(cacheMiss, sljit_emit_label(compiler));
+	auto* system = sljit_emit_cmp(compiler, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, CART_ROM_BASE), coldDispatch);
+	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, CART_ROM_BASE);
+	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R2, 0,
+		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, flags), SLJIT_IMM, CLOSURE_BINDING_DOMAIN_MASK);
+	auto* firstSocket = sljit_emit_cmp(compiler, SLJIT_LESS | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 2);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state),
+		offsetof(NativeCpuRunState, cartridgeRoms) + sizeof(void*));
+	auto* socketReady = sljit_emit_jump(compiler, SLJIT_JUMP);
+	sljit_set_label(firstSocket, sljit_emit_label(compiler));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeCpuRunState, cartridgeRoms));
+	sljit_set_label(socketReady, sljit_emit_label(compiler));
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0), coldDispatch);
+	auto* romReady = sljit_emit_jump(compiler, SLJIT_JUMP);
+	sljit_set_label(system, sljit_emit_label(compiler));
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R0, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeCpuRunState, systemRom));
+	sljit_set_label(romReady, sljit_emit_label(compiler));
+	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R1, 0, SLJIT_IMM, BLUA32_FUNCTION_RECORD_SIZE);
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER, SLJIT_R0, 0,
+		SLJIT_MEM1(SLJIT_R2), offsetof(Span<const u8>, size_)), coldDispatch);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), offsetof(Span<const u8>, data_));
+	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R1, 0);
+	constexpr std::array romFields{
+		BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
+		BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_FLAGS_OFFSET};
+	for (size_t i = 0; i < romFields.size(); ++i) {
+		sljit_emit_mem(compiler, SLJIT_MOV32 | SLJIT_MEM_UNALIGNED, SLJIT_R0, SLJIT_MEM1(SLJIT_R3), romFields[i]);
+		sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(target), bindingFields[i], SLJIT_R0, 0);
+	}
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(target), offsetof(NativeRomCallBinding, functionAddress),
+		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, functionAddress));
+	for (size_t bank = 0; bank < CARTRIDGE_SLOT_COUNT; ++bank)
+		sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(target), offsetof(NativeRomCallBinding, entryCells) + bank * sizeof(void*), SLJIT_IMM, 0);
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), romBindingReady);
+
+	sljit_set_label(latched, sljit_emit_label(compiler));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, romBinding), SLJIT_IMM, 0);
+	// Capture count shares +4 with the collector link; the tail starts after U refs.
+	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R3), CLOSURE_COUNT_HIGH_BYTE);
+	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 0x7f);
+	sljit_emit_op2(compiler, SLJIT_SHL32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, CLOSURE_COUNT_LOW_BITS);
+	sljit_emit_op2(compiler, SLJIT_LSHR32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), GC_RECORD_LINK, SLJIT_IMM, GC_GRAY_INDEX_BITS);
+	sljit_emit_op2(compiler, SLJIT_OR32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
+	sljit_emit_op2(compiler, SLJIT_SHL32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 2);
+	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0,
+		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, closureAddress));
+	for (const auto [field, scratch] : {
+		std::pair{0u, offsetof(NativeCallScratch, codeAddress)},
+		std::pair{4u, offsetof(NativeCallScratch, numParams)},
+		std::pair{8u, offsetof(NativeCallScratch, maxStack)},
+		std::pair{12u, offsetof(NativeCallScratch, flags)}}) {
+		sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, CLOSURE_CAPTURE_WORDS + field);
+		sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+		NativeBlockAbi::emitRamAddress(compiler, SLJIT_R2, SLJIT_R2);
+		sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), 0);
+		sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), scratch, SLJIT_R0, 0);
+	}
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), layoutReady);
+
+	sljit_set_label(varargs, sljit_emit_label(compiler));
+	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0,
+		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, argCount));
+	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, argCount),
+		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, numParams));
+	auto* positiveVarargs = sljit_emit_cmp(compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, 0);
+	sljit_set_label(positiveVarargs, varargsReady);
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), varargsReady);
+
+	sljit_set_label(unbound, sljit_emit_label(compiler));
+	sljit_emit_op2(compiler, SLJIT_SHL, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, pointerShift);
+	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
+	sljit_set_label(mutableRecord, sljit_emit_label(compiler));
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, codeAddress));
+	emitCodeLookup(compiler, coldDispatch, true);
+	auto* doNotBind = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R1), 0, SLJIT_R2, 0);
+	sljit_set_label(doNotBind, targetReady);
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), targetReady);
+
+	sljit_set_label(needsPlacement, sljit_emit_label(compiler));
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, argumentBase));
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, argCount));
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, numParams));
+	auto* argsFit = sljit_emit_cmp(compiler, SLJIT_LESS_EQUAL, SLJIT_R2, 0, SLJIT_R3, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_R2, 0, SLJIT_R3, 0);
+	sljit_set_label(argsFit, sljit_emit_label(compiler));
+	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
+	NativeBlockAbi::emitFramePlacement(compiler, true, true);
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), placed);
+
 	return entry;
 }
 
