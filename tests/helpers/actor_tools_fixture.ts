@@ -28,6 +28,7 @@ local count<const> = blackboard.key('count', 10)
 trees.register('rover', { blackboard = { count, blackboard.key('vacant'), blackboard.key('ready', false) },
 	root = { type = 'sequence', children = {} } })
 local actor_class<const> = {
+ observed_frame = 0,
  set_vitals = function(self, health, energy) self.health, self.energy = health, energy end,
 }
 setmetatable(actor_class, { __index = object_2d })
@@ -36,6 +37,7 @@ prefab.define({ def_id = 'tool_actor', class = actor_class, components = {
 } })
 actor_tool_first = world:spawn('tool_actor', { id = 'first', health = 4, energy = 8, position = { x = 16, y = 24 } })
 actor_tool_second = world:spawn('tool_actor', { id = 'second', health = 40, energy = 80, position = { x = 80, y = 96 } })
+world:start()
 actor_tool_first.state_machines:get_machine('walker'):transition_to('/parked')
 actor_tool_first.state_machines:get_machine('walker').states.nest.data.revision = 111
 actor_tool_second.state_machines:get_machine('walker').states.nest.data.revision = 222
@@ -51,6 +53,7 @@ while true do
 	world:update()
 	vblank.wait()
 	world:render()
+	actor_tool_first.observed_frame = actor_tool_first.observed_frame + 1
 end
 `;
 

@@ -1,4 +1,4 @@
-import { valueBool, valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
+import { asInteger, valueBool, valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { ActorRuntimeInspection } from '../../../ide/workbench/contrib/actor_lab/runtime_inspection';
@@ -129,13 +129,14 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	// Actual execution/rewind retire the entire semantic borrow, not merely generic value handles.
 	await press('End'); await frame();
 	const selectedActor = lab.actorHashId, selectedNode = lab.outline.rows[lab.outline.selectionIndex].element.node;
-	const selectedHash = selectedNode.hashId, selectedValue = selectedNode.value;
+	const selectedHash = selectedNode.hashId;
 	await press('Enter'); await press('ArrowDown');
 	const details = lab.details, selectedProperty = inspector.model.rows[inspector.model.selectionIndex].element.label;
 	const stop = ide.inspection.open(), actors = stop.lifetime.add(new ActorRuntimeInspection(stop));
 	const first = actors.list(0, 1).actors![0], node = actors.tree(first.reference, 0, 1).nodes[0];
 	await runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined, 'actor tools: physical forward frame finishes');
+	const advancedFrame = asInteger(guest.readStringMember(lab.runtime.roots[0].value!, 'observed_frame'));
 	check(inspector.visible && lab.details === details
 		&& inspector.model.rows[inspector.model.selectionIndex].element.label === selectedProperty,
 		'forward frame refreshes the open Details without replacing its property selection');
@@ -154,8 +155,9 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	check(expired, 'heap restore retires tool references even when ordinary selection survives');
 	check(lab.actorHashId === selectedActor && lab.outline.rows[lab.outline.selectionIndex].element.node.hashId === selectedHash,
 		'history navigation retains the ordinary actor and child selection');
-	check(lab.outline.rows[lab.outline.selectionIndex].element.node.value !== selectedValue,
-		'ordinary selection borrows the restored heap, not the pre-rewind object');
+	const restoredFrame = guest.readStringMember(lab.runtime.roots[0].value!, 'observed_frame');
+	check(restoredFrame === guest.readStringMember(guest.global('actor_tool_first'), 'observed_frame') && asInteger(restoredFrame) < advancedFrame,
+		'ordinary selection reads the earlier guest frame from the restored heap');
 	await frame(); await renderer.capture!('historical-selection-properties');
 	await runPaletteCommand('Actor Lab: Inspect Instance'); await press('Escape');
 	const historical = ide.inspection.open(), historicalActors = historical.lifetime.add(new ActorRuntimeInspection(historical));
