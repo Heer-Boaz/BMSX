@@ -182,7 +182,7 @@ export class SceneOptionEditor {
 				parse: text => {
 					const field = this.fields[index], binding = field.binding, property = field.property;
 					const buffer = binding.view.authoring.workingCopy.buffer, locations = binding.subject.document.analysis.chunk.locations;
-					if (property.kind === 'string') return { value: { binding, text, edits: [createLuaStringValueEdit(buffer, locations, property.literal, text)] } };
+					if (property.kind === 'string') return { value: { binding, text, edits: [createLuaStringValueEdit(buffer, locations, property.literal, text, 'text')] } };
 					const result = parseLuaNumberInput(text);
 					if ('error' in result) return result;
 					const edits = createLuaTableFieldNumberEdits(buffer, locations, property.field, result.value)!;

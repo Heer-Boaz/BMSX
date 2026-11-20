@@ -21,7 +21,7 @@ import { indexStateMachineSource } from '../../ide/workbench/contrib/behavior_le
 import { createStateMachineInitialEdits } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
 import { FSM_RETARGET_EXECUTION_SOURCE, FSM_RETARGET_PATH_CASES, FSM_RETARGET_PATH_SOURCE } from '../helpers/fsm_retarget_fixture';
 import { StateMachineRetargetAnalysis } from '../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
-import { quoteLuaString } from '../../toolchain/ts/lua/syntax/string_literal';
+import { quoteLuaByteString, quoteLuaString } from '../../toolchain/ts/lua/syntax/string_literal';
 import { createLuaStringValueEdit } from '../../ide/language/lua/source_edits';
 
 const CART_ENTRY_SOURCE = `
@@ -764,7 +764,7 @@ test('retarget descriptors compile to the exact cartlib anchor and guarded/concu
 		assert(plan[${step * 2 + 1}] == ${quoteLuaString(key)}, 'key ${index}:${step}')
 		assert((not not plan[${step * 2 + 2}]) == ${concurrent}, 'lane ${index}:${step}')`).join('');
 		return `do
-		local plan<const> = fsm.bind_state_path(${luaOrigin}, ${quoteLuaString(check.text)})
+		local plan<const> = fsm.bind_state_path(${luaOrigin}, ${quoteLuaByteString(check.text)})
 		assert(plan.abs == ${entry.absolute}, 'absolute ${index}')
 		assert(plan.up == ${entry.up}, 'up ${index}')
 		assert(plan.count == ${entry.steps.length}, 'count ${index}')${steps}
@@ -790,7 +790,7 @@ test('a retargeted callback preserves live rebind identity, dispatch effects, gu
 	const check = new StateMachineRetargetAnalysis(document, transition, transition.outcomes[0])
 		.checkTarget(definition.scopes[0].children.get('other')!);
 	assert.ok(check.kind === 'available');
-	model.pushEditOperations([createLuaStringValueEdit(model.buffer, check.file.chunk.locations, check.literal, check.text)]);
+	model.pushEditOperations([createLuaStringValueEdit(model.buffer, check.file.chunk.locations, check.literal, check.text, 'bytes')]);
 	assert.equal(model.buffer.getText(), FSM_RETARGET_EXECUTION_SOURCE.replace("--[[chosen path]] 'active'", "--[[chosen path]] 'other'"));
 	const { cpu } = createCartlibProgramHarness(`
 local registry<const> = require('cartlib/registry')

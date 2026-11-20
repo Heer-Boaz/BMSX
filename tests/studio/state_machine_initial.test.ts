@@ -1,3 +1,4 @@
+import { textToByteString } from '../../machine/ts/common/byte_string';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import assert from 'node:assert/strict';
@@ -77,16 +78,24 @@ test('missing and scalar initial values are explicitly authored without inventin
 });
 
 test('initial uses exact arbitrary string keys rather than transition path syntax or key prefixes', t => {
-	for (const key of ['a/b', '.', '..', '_start', '#entry', '', "a'\\\"b\n\0" + '123', '雪']) {
-		const quote = (text: string) => '[====[' + text + ']====]';
-		const source = `local machines<const> = require('cartlib/fsm/library')\nmachines.register('keys',{initial='other',states={other={},[ ${quote(key)} ]={}}})`;
+	const keys = ['a/b', '.', '..', '_start', '#entry', '', "a'\\\"b\n\0" + '123', '雪'].map(key => ({
+		source: `[====[${key}]====]`,
+		bytes: textToByteString(key),
+		initial: "initial='other',",
+	}));
+	keys.push({ source: "'\\xff'", bytes: '\xff', initial: '' });
+	for (const key of keys) {
+		const source = `local machines<const> = require('cartlib/fsm/library')\nmachines.register('keys',{${key.initial}states={other={},[ ${key.source} ]={}}})`;
 		const f = fixture(t, source);
-		const target = [...f.index.initialTargets.values()].find(target => target.name === key)!;
-		assert.ok(target, JSON.stringify(key));
+		const target = [...f.index.initialTargets.values()].find(target => target.name === key.bytes)!;
+		assert.ok(target, key.source);
 		f.model.pushEditOperations(createStateMachineInitialEdits(f.model.buffer, target));
 		const result = buildBehaviorSourceDocument(f.model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(f.model.buffer.getText(), f.model.resource)], ['cartlib/fsm/library'])));
 		const definition = result.definitions[0];
 		assert.ok(definition.behaviorKind === 'state_machine' && definition.entries[0].target.kind === 'state');
+		const states = definition.body!.states!;
+		assert.ok(states.kind === 'resolved');
+		assert.equal(definition.entries[0].target.rowKey, states.entries.find(entry => entry.name === key.bytes)!.node.rowKey);
 		assert.equal(indexStateMachineSource(result).initialTargets.size, 1);
 		f.model.undo(); assert.equal(f.model.buffer.getText(), source);
 	}

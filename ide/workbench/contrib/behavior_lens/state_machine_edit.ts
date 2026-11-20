@@ -13,7 +13,7 @@ export function createStateMachineRetargetEdit(
 ): EditorModelEdit {
 	const before = captureBehaviorSourceBookmark(view, selection);
 	const after = copyBehaviorSourceBookmark(before);
-	const edit = createLuaStringValueEdit(model.buffer, target.file.chunk.locations, target.literal, target.text);
+	const edit = createLuaStringValueEdit(model.buffer, target.file.chunk.locations, target.literal, target.text, 'bytes');
 	const resource = model.identity, bindingStart = edit.offset, bindingEnd = edit.offset + edit.text.length;
 	const originIntent = view.selectionState.selectionRevision;
 	return { version: model.version, edits: [edit], beforeEditState: behaviorSourceEditState.of({ bookmark: before, originIntent }, view.editSource), computeAfterEditState: changes => {

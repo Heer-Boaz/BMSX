@@ -1,7 +1,7 @@
 import { LuaSyntaxKind, type LuaExpression, type LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField, staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import { formatLuaNumberExpression, readLuaEncodedNumber } from '../../../../toolchain/ts/lua/syntax/number_expression';
-import { quoteLuaString } from '../../../../toolchain/ts/lua/syntax/string_literal';
+import { quoteLuaByteString, quoteLuaString } from '../../../../toolchain/ts/lua/syntax/string_literal';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { createLuaStringValueEdit, createLuaTableFieldNumberEdits, createLuaTableFieldRemovalEdits,
@@ -58,11 +58,11 @@ export function scenePlacementEditable(member: SceneSourceObject, pose: Readonly
 }
 
 /** Rename the consuming expression, never its shared written provider. */
-export function createSceneNameEdit(buffer: TextBuffer, document: SceneSourceDocument, expression: LuaExpression, name: string): EditorTextEdit {
+export function createSceneNameEdit(buffer: TextBuffer, document: SceneSourceDocument, expression: LuaExpression, name: string, representation: 'text' | 'bytes'): EditorTextEdit {
 	const locations = document.analysis.chunk.locations;
-	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) return createLuaStringValueEdit(buffer, locations, expression, name);
+	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) return createLuaStringValueEdit(buffer, locations, expression, name, representation);
 	const range = luaSourceRangeToTextRange(buffer, locations.range(expression.span));
-	return { offset: range.start, deleteLength: range.end - range.start, text: quoteLuaString(name) };
+	return { offset: range.start, deleteLength: range.end - range.start, text: representation === 'bytes' ? quoteLuaByteString(name) : quoteLuaString(name) };
 }
 
 /** Translation edits semantic position at the consuming member, not its shared
@@ -113,8 +113,8 @@ export function createScenePlacementEdits(buffer: TextBuffer, document: SceneSou
 	const parentFields = table.fields.filter(field => staticLuaTableFieldName(field) === 'parent');
 	if (parentId === undefined) {
 		for (const field of parentFields) edits.push(...createLuaTableFieldRemovalEdits(buffer, chunk.locations, chunk.tokens, field));
-	} else if (parentFields.length > 0) edits.push(createSceneNameEdit(buffer, document, parentFields[parentFields.length - 1].value, parentId));
-	else inserted.push('parent = ' + quoteLuaString(parentId));
+	} else if (parentFields.length > 0) edits.push(createSceneNameEdit(buffer, document, parentFields[parentFields.length - 1].value, parentId, 'bytes'));
+	else inserted.push('parent = ' + quoteLuaByteString(parentId));
 	if (pose !== undefined) {
 		if (sameSceneBasis(pose, local)) edits.push(...createSceneTranslationEdits(buffer, document, member, pose, local!));
 		else {

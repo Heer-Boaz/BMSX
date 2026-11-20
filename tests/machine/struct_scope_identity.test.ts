@@ -207,7 +207,7 @@ return sizeof(record)`,
 local n<const> = #label + ((not nil and 2 >= 2 and 'a' < 'b') and 1 or 9)
 local bits<const> = ((~0 & 7) ~ 2) | 2
 return sizeof(word[n]), sizeof(word[bits]), sizeof(word[(false ~= nil and 3 == 3) and 2 or 7])`,
-		expected: [12, 28, 8],
+		expected: [16, 28, 8],
 	},
 ];
 

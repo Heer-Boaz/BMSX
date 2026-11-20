@@ -12,7 +12,7 @@ import {
 	type LuaExpression,
 } from '../../../toolchain/ts/lua/syntax/ast';
 import { findLuaTableFieldSeparator } from '../../../toolchain/ts/lua/syntax/table_fields';
-import { quoteLuaString } from '../../../toolchain/ts/lua/syntax/string_literal';
+import { quoteLuaByteString, quoteLuaString } from '../../../toolchain/ts/lua/syntax/string_literal';
 import { formatLuaNumberConstant, luaNumericLiteral, readLuaEncodedNumber, readLuaNumberLiteral } from '../../../toolchain/ts/lua/syntax/number_expression';
 import { LuaTokenType } from '../../../toolchain/ts/lua/syntax/token';
 import type { LuaTokenSequence } from '../../../toolchain/ts/lua/syntax/token_sequence';
@@ -78,12 +78,12 @@ export function readLuaSourceRange(buffer: TextBuffer, range: LuaSourceRange): s
 export type LuaScalarLiteral = LuaStringLiteralExpression | LuaNilLiteralExpression | LuaBooleanLiteralExpression | LuaNumericLiteralExpression;
 
 /** Replace one atomic value, not its grouping/trivia or a referenced initializer. */
-export function createLuaStringValueEdit(buffer: TextBuffer, locations: LuaSourceLocations, literal: LuaScalarLiteral, value: string): EditorTextEdit {
+export function createLuaStringValueEdit(buffer: TextBuffer, locations: LuaSourceLocations, literal: LuaScalarLiteral, value: string, representation: 'text' | 'bytes'): EditorTextEdit {
 	const start = buffer.offsetAt(locations.range(literal.span).start.line - 1, locations.range(literal.span).start.column - 1);
 	const end = buffer.offsetAt(locations.range(literal.span).end.line - 1, locations.range(literal.span).end.column);
 	// Retain short-string quote style; long strings become a properly quoted token.
 	const quote = buffer.charCodeAt(start) === 34 ? '"' : "'";
-	return { offset: start, deleteLength: end - start, text: quoteLuaString(value, quote) };
+	return { offset: start, deleteLength: end - start, text: representation === 'bytes' ? quoteLuaByteString(value, quote) : quoteLuaString(value, quote) };
 }
 
 /** Replace the authored boolean token without rewriting its enclosing expression or trivia. */

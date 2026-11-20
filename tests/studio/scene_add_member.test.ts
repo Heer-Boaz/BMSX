@@ -1,3 +1,4 @@
+import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
@@ -95,10 +96,11 @@ test('Add allocates the first fresh prefab-derived identity from all uniquely wr
 test('Add source quotes prefab and member identities through the shared Lua string owner', t => {
 	const id = "actor'\\\n☃";
 	const f = fixture(t, '{}', `local prefab=require('cartlib/world/prefab')\nprefab.define({def_id="actor'\\\\\\n☃",class=require('cartlib/world/object_2d')})`);
-	const request = f.context.captureAddMember('2d')!; assert.equal(request.choices[0].id, id);
+	const request = f.context.captureAddMember('2d')!; assert.equal(request.choices[0].id, textToByteString(id));
 	assert.equal(request.apply(request.choices[0], 7, 8, 0), true);
 	const selected = f.context.selection!; assert.ok(selected.kind === 'member' && selected.entry.kind === 'object');
-	assert.equal(stringLiteralValue(selected.entry.memberId), id); assert.equal(stringLiteralValue(selected.entry.definitionId), id);
+	assert.equal(stringLiteralValue(selected.entry.memberId), textToByteString(id));
+	assert.equal(stringLiteralValue(selected.entry.definitionId), textToByteString(id));
 });
 
 for (const objects of [

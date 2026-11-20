@@ -139,9 +139,9 @@ return sizeof(record), offsetof(record.rows), #records`);
 
 test('static scalar operators use BLua UTF-8, numeric formatting, and tagged symbol semantics', () => {
 	assert.deepEqual(evaluateStaticBinaryOperator(LuaBinaryOperator.Concat,
-		{ kind: 'string', value: 'é' }, { kind: 'number', value: parseNumberConstant('4294967296.0')! }), { kind: 'string', value: 'é4.294967e+09' });
-	assert.deepEqual(evaluateStaticUnaryOperator(LuaUnaryOperator.Length, { kind: 'string', value: 'é🪐' }),
-		{ kind: 'number', value: integerConstant(2) });
+		{ kind: 'string', value: '\xc3\xa9' }, { kind: 'number', value: parseNumberConstant('4294967296.0')! }), { kind: 'string', value: '\xc3\xa94.294967e+09' });
+	assert.deepEqual(evaluateStaticUnaryOperator(LuaUnaryOperator.Length, { kind: 'string', value: '\xc3\xa9\xf0\x9f\xaa\x90' }),
+		{ kind: 'number', value: integerConstant(6) });
 	assert.deepEqual(evaluateStaticBinaryOperator(LuaBinaryOperator.FloorDivide,
 		{ kind: 'number', value: integerConstant(-7) }, { kind: 'number', value: integerConstant(3) }), { kind: 'number', value: integerConstant(-3) });
 	const address = { kind: 'rodata_addr' as const, symbolHandle: 'owned-symbol' };

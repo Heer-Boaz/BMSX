@@ -282,12 +282,12 @@ export class SceneSpatialProjection {
 
 	public renameEdits(buffer: TextBuffer, document: SceneSourceDocument, _scene: SceneSourceDefinition, member: SceneSourceObject, plan: SceneRenamePlan, name: string): readonly EditorTextEdit[] {
 		if (name === plan.initialName) return [];
-		const edits = [createSceneNameEdit(buffer, document, member.memberId, name)];
+		const edits = [createSceneNameEdit(buffer, document, member.memberId, name, 'text')];
 		for (const child of plan.references) {
 			const table = child.field.value as LuaTableConstructorExpression;
 			for (const field of table.fields) if (staticLuaTableFieldName(field) === 'parent'
 				&& this.reader.stringValue(document.analysis, field.value) === plan.initialName)
-				edits.push(createSceneNameEdit(buffer, document, field.value, name));
+				edits.push(createSceneNameEdit(buffer, document, field.value, name, 'text'));
 		}
 		return finishSceneSpatialEdits(edits);
 	}
