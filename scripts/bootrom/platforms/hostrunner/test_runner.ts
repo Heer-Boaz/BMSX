@@ -12,10 +12,9 @@ import { PSX_MACHINE_SPEC } from '../../../../machine/ts/spec/bmsx/model';
 import { loadRomToolingMedia } from '../../../../toolchain/ts/rompack/media';
 import { encodeScreenshotPng } from '../../../../hosts/node/headless/screenshot';
 import { OffscreenMachine } from '../../../../hosts/common/offscreen_machine';
-import { deriveHeadlessCaptureOutputDir } from '../headless_capture';
 
 /** The CLI and Studio drive the same isolated run owner, not separate guest protocols. */
-export async function runGuestTests(systemRom: Uint8Array, cartridgeSlots: readonly [Uint8Array, Uint8Array | null], testPath: string, ttlMs: number, caseName?: string): Promise<void> {
+export async function runGuestTests(systemRom: Uint8Array, cartridgeSlots: readonly [Uint8Array, Uint8Array | null], testPath: string, outputDir: string, ttlMs: number, caseName?: string): Promise<void> {
 	const sourcePath = path.relative(process.cwd(), path.resolve(testPath)).split(path.sep).join('/');
 	const source = await readFile(testPath, 'utf8');
 	const media = await loadRomToolingMedia(systemRom, cartridgeSlots);
@@ -44,7 +43,6 @@ export async function runGuestTests(systemRom: Uint8Array, cartridgeSlots: reado
 	const result = results.beginRun(caseName === undefined ? module.id : selected[0].id, sources);
 	const writes: Promise<void>[] = [];
 	let captureIndex = 0;
-	const outputDir = deriveHeadlessCaptureOutputDir(testPath);
 	const run = new TestRun(result, { systemRom, cartridgeSlots,
 		sourceContexts: [systemContext.id, primaryContext.id, companionContext === null ? null : companionContext.id],
 		sourceSelection: { kind: 'packaged' },

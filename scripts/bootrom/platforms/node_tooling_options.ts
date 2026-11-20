@@ -5,12 +5,13 @@ import {
 	requiredNodeOptionValue,
 } from './node_option_values';
 
+type CaptureModePaths = { path: string; captureDirectory: string };
 export type NodeToolingMode =
 	| { kind: 'plain' }
-	| { kind: 'timeline'; path: string }
-	| { kind: 'host-test'; path: string; caseName?: string }
+	| ({ kind: 'timeline' } & CaptureModePaths)
+	| ({ kind: 'host-test'; caseName?: string } & CaptureModePaths)
 	| { kind: 'control'; port: number; workspaceRoot?: string }
-	| { kind: 'ide-test'; path: string };
+	| ({ kind: 'ide-test' } & CaptureModePaths);
 
 export interface NodeToolingOptions {
 	debug: boolean;
@@ -43,6 +44,7 @@ Options:
   --test <file>              Run a packaged Lua test suite.
   --case <name>              Select one named case from --test.
   --ide-test <file>          Run a host-side Studio test.
+  --capture-dir <dir>        Store timeline or test captures separately from the source.
   --control <port>           Live host control on loopback TCP (0 chooses a port).
   --studio-workspace <dir>   Run Studio with real workspace files; requires --control.
   --cpu-profile              Profile fantasy-CPU instructions.
@@ -65,6 +67,7 @@ export function parseNodeToolingOptions(
 	let help = false;
 	let caseName: string | undefined;
 	let workspaceRoot: string | undefined;
+	let captureDirectory: string | undefined;
 
 	let index = 0;
 	while (index < argv.length) {
@@ -84,6 +87,10 @@ export function parseNodeToolingOptions(
 			}
 			case '--studio-workspace':
 				workspaceRoot = path.resolve(requiredNodeOptionValue(argv, index, argument));
+				index += 2;
+				continue;
+			case '--capture-dir':
+				captureDirectory = path.resolve(requiredNodeOptionValue(argv, index, argument));
 				index += 2;
 				continue;
 			case '--rom':
@@ -123,35 +130,18 @@ export function parseNodeToolingOptions(
 				index += 2;
 				continue;
 			case '--input-timeline':
-				if (mode.kind !== 'plain') {
-					throw new Error('Only one tooling mode may be selected.');
-				}
-				mode = {
-					kind: 'timeline',
-					path: path.resolve(requiredNodeOptionValue(argv, index, argument)),
-				};
-				index += 2;
-				continue;
 			case '--test':
-				if (mode.kind !== 'plain') {
-					throw new Error('Only one tooling mode may be selected.');
-				}
+			case '--ide-test': {
+				if (mode.kind !== 'plain') throw new Error('Only one tooling mode may be selected.');
+				const source = path.resolve(requiredNodeOptionValue(argv, index, argument));
 				mode = {
-					kind: 'host-test',
-					path: path.resolve(requiredNodeOptionValue(argv, index, argument)),
+					kind: argument === '--input-timeline' ? 'timeline' : argument === '--test' ? 'host-test' : 'ide-test',
+					path: source,
+					captureDirectory: path.join(path.dirname(source), 'screenshots'),
 				};
 				index += 2;
 				continue;
-			case '--ide-test':
-				if (mode.kind !== 'plain') {
-					throw new Error('Only one tooling mode may be selected.');
-				}
-				mode = {
-					kind: 'ide-test',
-					path: path.resolve(requiredNodeOptionValue(argv, index, argument)),
-				};
-				index += 2;
-				continue;
+			}
 			case '--cpu-profile':
 				cpuProfile = true;
 				index += 1;
@@ -181,6 +171,10 @@ export function parseNodeToolingOptions(
 	if (workspaceRoot !== undefined) {
 		if (mode.kind !== 'control') throw new Error('--studio-workspace requires --control.');
 		mode.workspaceRoot = workspaceRoot;
+	}
+	if (captureDirectory !== undefined) {
+		if (!('path' in mode)) throw new Error('--capture-dir requires --input-timeline, --test or --ide-test.');
+		mode.captureDirectory = captureDirectory;
 	}
 	if (cpuProfile && (mode.kind === 'host-test' || mode.kind === 'ide-test' || mode.kind === 'control')) {
 		throw new Error('--cpu-profile cannot be combined with --test, --ide-test or --control.');

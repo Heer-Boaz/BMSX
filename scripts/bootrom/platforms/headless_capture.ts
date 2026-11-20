@@ -37,10 +37,6 @@ function sleep(ms: number): Promise<void> {
 	return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export function deriveHeadlessCaptureOutputDir(sourcePath: string): string {
-	return path.join(path.dirname(path.resolve(sourcePath)), 'screenshots');
-}
-
 export class HeadlessCaptureCoordinator {
 	private readonly pending: PendingHeadlessCapture[] = [];
 	private readonly pendingFrames: PendingHeadlessFrameCapture[] = [];

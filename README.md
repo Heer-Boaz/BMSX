@@ -259,8 +259,8 @@ table-iteration and symbol conformance commands also accept
 For the compiled coroutine checks use a Debug build with native blocks on;
 the interpreter check requires its own build with native blocks off.
 
-Run the Node areas, ROM packer, Debug CTest and headless conformance together
-in one memory budget with:
+Run the Node areas, ROM packer, Debug CTest, headless conformance and the four
+headless presentation scenarios together in one memory budget with:
 
 ```bash
 npm run test:headless -- build-cpp-tests build-cpp-tests-debug build-cpp-tests-interpreter
@@ -275,9 +275,9 @@ needs the four replay/rewind runners, plus `bmsx_terminal_conformance_runner`,
 and `bmsx_value_storage_tests` for the machine cases. The interpreter tree
 needs `bmsx_coroutine_runner`, `bmsx_firmware_fsm_runner` and `bmsx_cpu32_tests`.
 Rebuild these binaries after native changes.
-The headless command does not build C++; it refreshes the required ROMs
-through the normal artifact cache. Chromium, desktop/OS and hardware checks
-still have separate entrypoints.
+The headless command does not build C++; it refreshes the required ROMs and
+Node tooling through the normal artifact cache. Chromium, desktop/OS and
+hardware checks still have separate entrypoints.
 
 All test scripts use `scripts/test.sh`: a shared cgroup v2 `memory.max` cap of
 **at most 8 GiB** for the test process and its ordinary subprocesses. Existing
@@ -337,6 +337,7 @@ Important:
 - scenario tests are always explicit; `headless:game` does not auto-load assert modules
 - the ordinary player never scans `tests/` or auto-loads `<cart>_demo.json`
 - headless tooling timelines run unpaced, so the full scenario completes as fast as the emulator can simulate it
+- use `--capture-dir <dir>` with a headless timeline, guest test or IDE test to keep its images separate from the source directory; otherwise captures go in the source's sibling `screenshots/` directory
 - `headless:test` and `headless:forcebuildalltest` are the explicit scenario-test paths
 - Lua scenario tests run through the shared
   `ide/workbench/contrib/scenario_lab/execution_service.ts` owner; the headless

@@ -30,7 +30,6 @@ function run(command, args) {
 	});
 }
 
-await run('npm', ['run', 'build:toolchain:bios', '--', '--debug']);
 await run('npm', ['run', 'build:toolchain:cart', '--', cart, '--debug']);
 if (prebuilt === undefined) {
 	await run('cmake', ['-S', 'machine/cpp', '-B', nativeBuild, '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON',

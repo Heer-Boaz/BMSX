@@ -44,8 +44,12 @@ async function conformance(tests) {
 }
 
 try {
-	const units = (async () => {
-		if (await run('Debug BIOS and Studio ROMs', 'npm', ['run', 'build:toolchain:cart', '--', 'studio_test', '--debug'])) {
+	const ctest = run('Debug CTest', 'ctest', ['--test-dir', debug, '-j4', '--output-on-failure', '--no-tests=error']);
+	// The cart builders all consume this BIOS. On a miss, don't compile it
+	// independently in the Studio and replay lanes.
+	const bios = run('Debug BIOS', 'npm', ['run', 'build:toolchain:bios', '--', '--debug']);
+	const units = bios.then(async ready => {
+		if (ready && await run('Studio ROM', 'npm', ['run', 'build:toolchain:cart', '--', 'studio_test', '--debug'])) {
 			await run('Node test areas', 'bash', ['scripts/test_node_areas.sh', 'headless'], {
 				...process.env,
 				BMSX_CPU32_RUNNER: join(interpreter, 'bmsx_cpu32_tests'),
@@ -54,13 +58,24 @@ try {
 				BMSX_VALUE_STORAGE_RUNNER: join(release, 'bmsx_value_storage_tests'),
 			});
 		}
-	})();
-	const ctest = run('Debug CTest', 'ctest', ['--test-dir', debug, '-j4', '--output-on-failure', '--no-tests=error']);
-	const replay = conformance([['runtime-replay', ['--native-build-dir', release]]]);
+	});
+	const replay = bios.then(ready => {
+		if (ready) return conformance([['runtime-replay', ['--native-build-dir', release]]]);
+	});
 	const nativeWorkersReleased = Promise.all([ctest, replay]);
+	const presentations = 'scripts/test_headless_presentations.mjs';
+	const presentationInputs = replay.then(async () => {
+		if (await bios) return run('Headless presentation inputs', process.execPath, [presentations, 'prepare']);
+		return false;
+	});
 
 	const stages = await Promise.allSettled([
 		units,
+		// Published host and cart inputs can build alongside the assertions,
+		// but the machines for the scenarios need the Node workers' budget.
+		Promise.all([units, presentationInputs]).then(([, ready]) => {
+			if (ready) return run('Headless presentation scenarios', process.execPath, [presentations, 'run']);
+		}),
 		// Start the long compiler lane once CTest releases its workers.
 		ctest.then(() => conformance([
 			['frame-evaluation-parity', [], release],

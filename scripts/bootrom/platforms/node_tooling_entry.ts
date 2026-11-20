@@ -60,10 +60,7 @@ import { loadRomToolingMedia } from '../../../toolchain/ts/rompack/media';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { runCpuProfileHostFrame } from './cpu_profile_frame';
-import {
-	HeadlessCaptureCoordinator,
-	deriveHeadlessCaptureOutputDir,
-} from './headless_capture';
+import { HeadlessCaptureCoordinator } from './headless_capture';
 import { runIdeTest } from './hostrunner/ide_test_runner';
 import { InputTimeline } from './input_timeline';
 import {
@@ -108,7 +105,7 @@ async function main(): Promise<void> {
 
 	const slot0Rom: Uint8Array = originalSlot0Rom;
 	if (options.mode.kind === 'host-test') {
-		await runGuestTests(systemRom, [slot0Rom, slot1Rom], options.mode.path, options.ttlMs, options.mode.caseName);
+		await runGuestTests(systemRom, [slot0Rom, slot1Rom], options.mode.path, options.mode.captureDirectory, options.ttlMs, options.mode.caseName);
 		return;
 	}
 
@@ -322,7 +319,7 @@ async function main(): Promise<void> {
 					const storage = new MemoryStorage();
 					const capture = new HeadlessCaptureCoordinator(
 						videoBackend,
-						deriveHeadlessCaptureOutputDir(options.mode.path),
+						options.mode.captureDirectory,
 						() => clock.now(),
 					);
 					console.log(
@@ -432,7 +429,7 @@ async function main(): Promise<void> {
 			case 'timeline': {
 				const capture = new HeadlessCaptureCoordinator(
 					videoBackend,
-					deriveHeadlessCaptureOutputDir(options.mode.path),
+					options.mode.captureDirectory,
 					() => clock.now(),
 				);
 				console.log(

@@ -24,9 +24,20 @@ test('node tooling resolves artifact-owned ROM paths and mode defaults', () => {
 		mode: {
 			kind: 'timeline',
 			path: path.resolve('tests/carts/demo.json'),
+			captureDirectory: path.resolve('tests/carts/screenshots'),
 		},
 		cpuProfile: false,
 	});
+});
+
+test('node tooling capture paths are independent of timeline and packaged test paths', () => {
+	for (const mode of ['--input-timeline', '--test', '--ide-test']) {
+		const command = parseNodeToolingOptions(['--capture-dir', 'captures/a', mode, 'elsewhere/source', 'game'], true, 20);
+		assert(command.kind === 'run' && 'path' in command.options.mode);
+		assert.equal(command.options.mode.path, path.resolve('elsewhere/source'));
+		assert.equal(command.options.mode.captureDirectory, path.resolve('captures/a'));
+	}
+	assert.throws(() => parseNodeToolingOptions(['game', '--capture-dir', 'captures/a'], true, 20), /--capture-dir requires/);
 });
 
 test('node tooling explicit paths and TTL are authoritative', () => {
