@@ -4,6 +4,7 @@ import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_re
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
+import { valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { chooseBehavior } from './studio_behavior_picker';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
@@ -30,7 +31,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	await runPaletteCommand('Run: Reboot');
 	check(test.ide.editor.actionPrompt.visible, 'FSM drag: ordinary source Save/Reboot admission');
 	await press('Enter');
-	await until(() => tasks.ready && guest.global('fsm_drag_init_count') === 1 && !runtime.completionCallPending(), 'FSM drag: authored fixture boots normally');
+	await until(() => tasks.ready && guest.global('fsm_drag_init_count') === valueInteger(1) && !runtime.completionCallPending(), 'FSM drag: authored fixture boots normally');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
 	check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('cart') === cartSource, 'FSM drag: actual source/media installed');
 	const machine = guest.global('fsm_drag_machine');
@@ -149,7 +150,8 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	check(cycles() === position && ide.sources.currentBlua32Media === media, 'FSM drag: acceptance still does not install or run the guest');
 	await test.clickTab(lens.id); await ready();
 	check(viewport.selection?.kind === 'edge' && viewport.selection.link.target.source.label === 'other', 'FSM drag: new layout selects the exact changed proof');
-	await click(graph.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && model.version === version + 1 && !hasSelection(sourcePane(test).code), 'FSM drag: post-edit Source is read-only navigation');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source, 'FSM drag: one hidden code Undo restores source');
@@ -160,22 +162,22 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	await runPaletteCommand('Run: Hot Resume');
 	check(test.ide.editor.actionPrompt.visible, 'FSM drag: source edit uses ordinary Save/Hot Resume');
 	await press('Enter');
-	await until(() => tasks.ready && !runtime.completionCallPending() && guest.global('fsm_drag_init_count') === 2, 'FSM drag: Hot Resume installs authored revision');
+	await until(() => tasks.ready && !runtime.completionCallPending() && guest.global('fsm_drag_init_count') === valueInteger(2), 'FSM drag: Hot Resume installs authored revision');
 	check(model.lastSavedSource === changed && getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied', 'FSM drag: saved and installed source match');
 	check(guest.global('fsm_drag_machine') === machine && guest.global('fsm_drag_second') === second
 		&& guest.readStringMember(machine, 'current_state') === idle && guest.readStringMember(machine, 'data') === data
-		&& guest.readStringMember(data, 'retained') === 73, 'FSM drag: definition rebind preserves both live machines, current state and data');
+		&& guest.readStringMember(data, 'retained') === valueInteger(73), 'FSM drag: definition rebind preserves both live machines, current state and data');
 	const guestPress = async (key: string) => {
 		setKey(key, true); for (let index = 0; index < 4; index += 1) await frame();
 		setKey(key, false); for (let index = 0; index < 4; index += 1) await frame();
 	};
 	await guestPress('KeyX');
-	check(guest.readStringMember(actor, 'calls') === 2 && guest.readStringMember(actor, 'guards') === 2
-		&& guest.readStringMember(actor, 'exits') === 0 && guest.readStringMember(machine, 'current_state') === idle,
+	check(guest.readStringMember(actor, 'calls') === valueInteger(2) && guest.readStringMember(actor, 'guards') === valueInteger(2)
+		&& guest.readStringMember(actor, 'exits') === valueInteger(0) && guest.readStringMember(machine, 'current_state') === idle,
 		'FSM drag: guest ICU event reaches both changed callbacks and real guards reject entry');
 	await guestPress('KeyZ'); await guestPress('KeyX');
-	check(guest.readStringMember(actor, 'calls') === 4 && guest.readStringMember(actor, 'guards') === 4
-		&& guest.readStringMember(actor, 'exits') === 2 && guest.readStringMember(actor, 'entries') === 2,
+	check(guest.readStringMember(actor, 'calls') === valueInteger(4) && guest.readStringMember(actor, 'guards') === valueInteger(4)
+		&& guest.readStringMember(actor, 'exits') === valueInteger(2) && guest.readStringMember(actor, 'entries') === valueInteger(2),
 		'FSM drag: later ICU input admits both transitions with normal exit/entry effects');
 	check(guest.formatValue(guest.readStringMember(machine, 'current_id')) === 'other'
 		&& guest.formatValue(guest.readStringMember(second, 'current_id')) === 'other', 'FSM drag: both actual machines enter the newly authored target');

@@ -18,7 +18,9 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	const dirty = lens.workingCopy.dirty;
 	const cycles = test.cycles();
 	const originalZoom = viewport.zoom, scrollX = viewport.scrollX, scrollY = viewport.scrollY;
-	await runPaletteCommand('Graph: Reset Zoom (100%)');
+	if (originalZoom === 1 && viewport.cameraMode === 'manual') {
+		check(!ide.editor.commands.isEnabled('graph.resetZoom'), 'zoom: 1:1 is already the active manual scale');
+	} else await runPaletteCommand('Graph: Reset Zoom (100%)');
 	const centerX = (viewport.bounds.left + viewport.bounds.right) / 2, centerY = (viewport.bounds.top + viewport.bounds.bottom) / 2;
 	const anchorX = viewport.viewportToGraphX(centerX), anchorY = viewport.viewportToGraphY(centerY);
 	await runPaletteCommand('Graph: Zoom Out');
