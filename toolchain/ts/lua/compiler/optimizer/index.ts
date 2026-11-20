@@ -88,6 +88,11 @@ export type InstructionSet = {
 	ranges: Array<SourceRange | null>;
 	inlineLocalSlots?: LocalSlotDebug[];
 	inlineOuterBindings?: OuterBindingDebug[];
+	virtualFrame?: {
+		maxStack: number;
+		localSlots: ReadonlyArray<LocalSlotDebug>;
+		outerBindings: ReadonlyArray<OuterBindingDebug>;
+	};
 };
 
 type InstructionRegisterOperand = 'a' | 'b' | 'c';
@@ -1991,9 +1996,9 @@ const inlineFunctionCalls = (
 		}
 		const callee: InlineCallee = {
 			functionId: context.getProtoFunctionId(protoIndex),
-			localSlots: context.getProtoLocalSlots(protoIndex),
-			outerBindings: context.getProtoOuterBindings(protoIndex),
-			meta,
+			localSlots: instructionSet.virtualFrame?.localSlots ?? context.getProtoLocalSlots(protoIndex),
+			outerBindings: instructionSet.virtualFrame?.outerBindings ?? context.getProtoOuterBindings(protoIndex),
+			meta: instructionSet.virtualFrame === undefined ? meta : { ...meta, maxStack: instructionSet.virtualFrame.maxStack },
 			set: instructionSet,
 		};
 		calleeCache.set(protoIndex, callee);

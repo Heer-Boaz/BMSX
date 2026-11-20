@@ -85,13 +85,84 @@ return length, forwarded, other, escaped(), before, after, reads_from_capture(),
 			}
 			const pointIndex = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(':point_sum'));
 			const point = disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[pointIndex]]);
-			assert.match(point, /len=8 params=2/);
+			assert.match(point, /len=8 params=2 vararg=0 stack=3/);
 			assert.match(point, /ADD r\d+, r0, r1/);
 			const index = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(':escaped'));
 			assert.match(disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]), /\bNEWT\b/);
 		}
 		const expected = [...[3, 7, 4, 3, 8, 9, 13, 2].map(valueInteger), valueBool(false), valueInteger(24)];
 		const budget = 20_000;
+		let remaining = 0;
+		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+			const { cpu } = createTestSystemCpu(image, backend);
+			cpu.installBootPrimitives();
+			runGuestToHalt(cpu, budget);
+			assert.deepEqual(materializeCpuCompletionValues(cpu), expected, `O${opt}, backend ${backend}`);
+			if (backend === CpuExecutionBackend.Interpreter) remaining = cpu.instructionBudgetRemaining;
+			else assert.equal(cpu.instructionBudgetRemaining, remaining);
+		}
+		const nativeRunner = process.env.BMSX_CPU32_RUNNER;
+		if (nativeRunner) {
+			const output = execFileSync(nativeRunner, ['--execute-rom', '--boot-primitives', String(budget)],
+				{ input: image.romBytes, encoding: 'utf8' });
+			assert.equal(output, [`budget ${remaining} fault 0`,
+				...expected.map(value => `${valueTag(value).toString(16)} ${valuePayload(value).toString(16)}`), ''].join('\n'));
+		}
+	}
+});
+
+test('a call result can release its last table reference before the next collection', () => {
+	const boot = 'collect = __bmsx_collect_garbage; setmeta = __bmsx_setmetatable; protect = __bmsx_pcall';
+	const source = `
+require('boot')
+local function probe(make, churn)
+	local t = make()
+	local n = t.x
+	churn()
+	return n
+end
+local function captured(make, churn)
+	local t = make()
+	local function keep() return t.x end
+	local n = t.x
+	churn()
+	local _, value = protect(keep)
+	return n + value
+end
+local weak = setmeta({}, {__mode = 'v'})
+local function make()
+	local t = {x = 37}
+	weak[1] = t
+	return t
+end
+local ok, n = protect(probe, make, collect)
+local released = weak[1] == nil
+local captured_ok, doubled = protect(captured, make, collect)
+return ok, n, released, captured_ok, doubled, weak[1] ~= nil
+`;
+	for (const opt of [0, 3] as const) {
+		const compiled = compileLuaChunkToProgram(
+			parseLuaChunk(source, 'last-table-use.lua'),
+			[{ path: 'boot', source: boot, chunk: parseLuaChunk(boot, 'boot.lua') }],
+			{ entrySource: source, optLevel: opt, programDomain: 'system' },
+		);
+		const image = linkTestSystemBlua32(compiled);
+		if (opt === 3) {
+			const index = compiled.metadata.protoIds.findIndex(id => id.endsWith(':probe'));
+			const physical = image.symbols.metadata.functionIds.indexOf(compiled.metadata.protoIds[index]);
+			const listing = disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[physical]]);
+			assert.match(listing, /params=2 vararg=0 stack=4/);
+			assert.match(listing, /GETFIELD r2, r2, .*\n.*MOV r3, r1\n.*CALL r3/);
+			const slots = compiled.metadata.localSlotsByProto[index];
+			const t = slots.find(slot => slot.name === 't')!;
+			const n = slots.find(slot => slot.name === 'n')!;
+			assert.equal(t.registerIndex, n.registerIndex);
+			assert.ok(t.liveWordRanges.length > 0);
+			assert.ok(n.liveWordRanges.length > 0);
+			assert.ok(t.liveWordRanges.at(-1)!.end <= n.liveWordRanges[0].start);
+		}
+		const expected = [valueBool(true), valueInteger(37), valueBool(opt === 3), valueBool(true), valueInteger(74), valueBool(true)];
+		const budget = 80_000;
 		let remaining = 0;
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 			const { cpu } = createTestSystemCpu(image, backend);

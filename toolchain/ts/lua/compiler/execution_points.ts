@@ -12,6 +12,7 @@ import type { ProgramWordRange } from './word_range';
 import { resolveInlineLocalContextRange, ROOT_INLINE_CALL_SITES } from './inline_debug';
 import { sourcePositionInRange } from '../semantic/source_range';
 import type { Instruction } from './optimizer';
+import type { FrameSlotAllocation } from './optimizer/frame_slots';
 import {
 	collectInstructionDefs,
 	collectInstructionUses,
@@ -85,8 +86,9 @@ export function buildProgramDebugPoints(
 	maxStack: number,
 	resolveClosureUpvalues: ClosureUpvalueResolver,
 	outerBindings: ReadonlyArray<OuterBindingDebug>,
+	allocation?: FrameSlotAllocation,
 ): { resumePoints: ProgramResumePoint[]; localSlots: LocatedLocalSlotDebug[]; outerBindings: LocatedOuterBindingDebug[] } {
-	// Physical liveness supplies the intervals. When a slot has several
+	// Liveness before slot assignment supplies the intervals. When a slot has several
 	// lexical owners, intersect it with each owner's source/inline scope.
 	const rangesByRegister = new Map<number, ProgramWordRange[]>();
 	const ownersByRegister = new Map<number, LocalSlotDebug[]>();
@@ -186,14 +188,20 @@ export function buildProgramDebugPoints(
 		if (liveRegisters === null) {
 			continue;
 		}
+		const physical = allocation === undefined ? instruction : allocation.instructions[instructionIndex];
+		const physicalMaxRegister = allocation === undefined ? maxRegister : allocation.maxStack - 1;
+		if (allocation !== undefined) {
+			for (let index = 0; index < liveRegisters.length; index += 1) liveRegisters[index] = allocation.slots[liveRegisters[index]];
+			liveRegisters.sort((a, b) => a - b);
+		}
 		points.push({
 			resumeId: instruction.resumeId,
 			wordOffset: instructionWordOffsets[instructionIndex],
 			range,
 			op: instruction.op,
 			liveRegisters,
-			uses: collectInstructionUses(instruction, maxRegister, resolveClosureUpvalues),
-			defs: collectInstructionDefs(instruction, maxRegister),
+			uses: collectInstructionUses(physical, physicalMaxRegister, resolveClosureUpvalues),
+			defs: collectInstructionDefs(physical, physicalMaxRegister),
 			inlineCallSites,
 		});
 	}
@@ -203,11 +211,21 @@ export function buildProgramDebugPoints(
 	const noLocation: readonly ProgramWordRange[] = [];
 	return {
 		resumePoints: points,
-		localSlots: localSlots.map(slot => ({ ...slot, liveWordRanges: reusedRanges.get(slot) ?? rangesByRegister.get(slot.registerIndex)! })),
-		outerBindings: outerBindings.map(slot => ({
+		localSlots: localSlots.map(slot => ({
 			...slot,
-			liveWordRanges: slot.location === null ? noLocation
-				: slot.location.inStack ? rangesByRegister.get(slot.location.index)! : functionRange,
+			registerIndex: allocation !== undefined && slot.registerIndex < maxStack
+				? allocation.slots[slot.registerIndex] : slot.registerIndex,
+			liveWordRanges: reusedRanges.get(slot) ?? rangesByRegister.get(slot.registerIndex)!,
 		})),
+		outerBindings: outerBindings.map(slot => {
+			const location = slot.location;
+			return {
+				...slot,
+				location: allocation !== undefined && location !== null && location.inStack && location.index < maxStack
+					? { inStack: true, index: allocation.slots[location.index] } : location,
+				liveWordRanges: location === null ? noLocation
+					: location.inStack ? rangesByRegister.get(location.index)! : functionRange,
+			};
+		}),
 	};
 }

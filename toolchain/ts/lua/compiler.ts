@@ -74,6 +74,7 @@ import { ROOT_INLINE_CALL_SITES } from './compiler/inline_debug';
 import { OPCODE_NAMES } from './opcode_metadata';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './compiler/optimizer';
 import { computeMaxRegister } from './compiler/optimizer/instructions';
+import { allocateFrameSlots } from './compiler/optimizer/frame_slots';
 import { compactUnusedUpvalues } from './compiler/optimizer/upvalues';
 import {
 	buildModuleCompileContext,
@@ -1269,6 +1270,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private finalizedResumePoints: ProgramResumePoint[] | null = null;
 	private finalizedLocalSlots: LocatedLocalSlotDebug[] | null = null;
 	private finalizedOuterBindings: LocatedOuterBindingDebug[] | null = null;
+	private inlineFrame: InstructionSet['virtualFrame'];
 	private readonly localBindings = new Map<string, LocalBinding>();
 	// Nested closures, including IRQ handlers, alias their owner's open-upvalue registers.
 	private readonly closureWrittenRegisters = new Set<number>();
@@ -1762,6 +1764,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		return {
 			instructions: this.code,
 			ranges: this.ranges,
+			virtualFrame: this.inlineFrame,
 		};
 	}
 
@@ -1844,7 +1847,18 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			}
 			this.maxStack = reservation;
 		}
-		const instructions = this.code;
+		const virtualMaxStack = this.maxStack;
+		const resolveClosure = (protoIndex: number) => this.program.protos[protoIndex].upvalueDescs;
+		const allocation = this.program.optLevel === 3 && this.reuseScopedRegisters
+			? allocateFrameSlots(this.code, virtualMaxStack, this.nextArgumentIndex, resolveClosure)
+			: undefined;
+		if (allocation !== undefined) {
+			this.maxStack = allocation.maxStack;
+			// The inliner still sees one owner per original location. Allocating
+			// its caller's frame later can make a different sharing decision.
+			this.inlineFrame = { maxStack: virtualMaxStack, localSlots: this.localDebugSlots, outerBindings };
+		}
+		const instructions = allocation === undefined ? this.code : allocation.instructions;
 		const ranges = this.ranges;
 		const wideFlags: boolean[] = new Array(instructions.length);
 		const sbxValues: number[] = new Array(instructions.length).fill(0);
@@ -2089,14 +2103,15 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			instrStartIndex,
 		);
 		const debugPoints = buildProgramDebugPoints(
-			instructions,
+			this.code,
 			ranges,
 			instrStartIndex,
 			code.length / INSTRUCTION_BYTES,
 			this.localDebugSlots,
-			this.maxStack,
-			(protoIndex: number) => this.program.protos[protoIndex].upvalueDescs,
+			virtualMaxStack,
+			resolveClosure,
 			outerBindings,
+			allocation,
 		);
 		this.finalizedResumePoints = debugPoints.resumePoints;
 		this.finalizedLocalSlots = debugPoints.localSlots;
