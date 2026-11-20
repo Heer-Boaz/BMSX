@@ -169,18 +169,19 @@ private:
 		IoWriteHandler handler = nullptr;
 		IoWriteReadyHandler ready = nullptr;
 	};
-	std::array<IoWriteStorage, IO_SLOT_COUNT> m_ioWriteStorage{};
 	struct IoDmaPrefixBinding {
 		int slot;
 		IoDmaReadPrefixHandler read = nullptr;
 		IoDmaWritePrefixHandler write = nullptr;
 	};
-	Span<const u8> m_systemRom;
-	CartridgeController m_cartridgeController;
+	// Keep the physical RAM port within ARM's immediate load range. The
+	// MMIO slot table is too large to place before these fields.
 	std::vector<u8> m_ram;
 	u32 m_ramBusEnd;
 	MappedPageWriteWatches m_ramPageWriteWatches;
 	MappedPageInvalidator* m_mappedPageInvalidator = nullptr;
+	Span<const u8> m_systemRom;
+	CartridgeController m_cartridgeController;
 	mutable std::vector<u32> m_ioSlots;
 	std::vector<IoReadBinding> m_ioReadHandlers;
 	std::vector<IoWriteBinding> m_ioWriteHandlers;
@@ -190,6 +191,7 @@ private:
 	mutable uint32_t m_busFaultAddr = 0;
 	mutable uint32_t m_busFaultAccess = 0;
 	mutable uint32_t m_busFaultSequence = 0;
+	std::array<IoWriteStorage, IO_SLOT_COUNT> m_ioWriteStorage{};
 
 	bool isIoRegionRange(uint32_t addr, size_t length) const;
 	int ioAlignedSlot(uint32_t addr) const {

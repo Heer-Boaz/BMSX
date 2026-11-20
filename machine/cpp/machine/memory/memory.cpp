@@ -136,11 +136,11 @@ inline void readRomWindowBytes(const u8* data, size_t size, size_t offset, u8* o
 } // namespace
 
 Memory::Memory(const MemoryInit& init, u32 ramByteCount)
-	: m_systemRom(init.systemRom)
-	, m_cartridgeController(init.cartridgeSlots)
-	, m_ram(ramByteCount)
+	: m_ram(ramByteCount)
 	, m_ramBusEnd(RAM_BASE + ramByteCount)
 	, m_ramPageWriteWatches(ramByteCount)
+	, m_systemRom(init.systemRom)
+	, m_cartridgeController(init.cartridgeSlots)
 	, m_ioSlots(IO_SLOT_COUNT, 0u)
 	, m_ioReadHandlers(IO_SLOT_COUNT)
 	, m_ioWriteHandlers(IO_SLOT_COUNT) {
