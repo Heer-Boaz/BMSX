@@ -667,7 +667,8 @@ test('statement stepping follows optimized inline call frames', () => {
 		'\toutput[4] = result',
 		'\treturn result',
 		'end',
-		'return parent(41)',
+		'local answer = parent(41)',
+		'return answer, output',
 	].join('\n');
 	const stepOverHarness = createDebuggerHarness(source, 3);
 	startAtBreakpoint(stepOverHarness, 8);

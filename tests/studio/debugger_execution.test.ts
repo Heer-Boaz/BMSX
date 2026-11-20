@@ -36,9 +36,10 @@ local parent<const> = function(value)
 	output[3] = value
 	local result = child(value)
 	output[4] = result
-	return result
+	return output[4]
 end
-return parent(41)`;
+local answer = parent(41)
+return answer, output`;
 function fixture(t: TestContext, source = SOURCE, optLevel: 0 | 3 = 0, modules: readonly { path: string; source: string }[] = []) {
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'debugger_probe'),
 		modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) })),

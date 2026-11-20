@@ -28,7 +28,7 @@ import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, MAX_BASE_OPERAND_BC, readInstructionWord } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32SlotLiveAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
@@ -794,8 +794,10 @@ return buffer`;
 	});
 
 	test(`suspended inspection consumes final word locations across WIDE instructions at O${optLevel}`, () => {
-		const declarations = Array.from({ length: 260 }, (_, index) => `local unused_${index} = 0`);
-		const source = ['input_value = 42', ...declarations, 'local target = input_value', 'halt_until_irq', 'return target'].join('\n');
+		// The numeric table key requires a WIDE operand independently of
+		// register allocation. Keep target live across the extended access.
+		const key = MAX_BASE_OPERAND_BC + 1;
+		const source = `input_value = 42\noutput = {[${key}] = 1}\nlocal target = input_value\nlocal data = output\nhalt_until_irq\nreturn data[${key}], target`;
 		const { runtime, bridge, analysis, image } = createIntellisenseRuntime(source, optLevel);
 		const cpu = runtime.machine.cpu;
 		cpu.reset();
@@ -814,7 +816,7 @@ return buffer`;
 			assert.equal(blua32SlotLiveAtPc(slot.liveWordRanges, codeAddress, codeAddress + range.end * INSTRUCTION_BYTES), false, 'interval end is exclusive');
 		}
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
-			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target'], declarations.length + 4, 8);
+			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target'], 6, 8);
 		assert.equal(result.kind, 'value');
 		if (result.kind === 'value') assert.equal(result.value, valueInteger(42));
 	});
