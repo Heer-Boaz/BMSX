@@ -271,6 +271,38 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 	require(TableRecord(cpu.gcHeap(), mirror).getInteger(1) == valueInteger(83)
 		&& memory.readRamRecordWord(body) == 83 && memory.readRamRecordByte(body + 4) == static_cast<u8>(ValueTag::Integer),
 		"scalar and native use the same per-width aliases for header and backing");
+
+	const auto key = cpu.stringPool().intern("wrapped tag");
+	constexpr u32 hash = 2;
+	const u32 keySlot = cpu.gcHeap().hash(valueString(key)) & (hash - 1u), valueSlot = keySlot + hash;
+	const u32 tags = MAIN_RAM_SIZE - 1u - keySlot, hashBody = tags - 3u * hash * sizeof(u32);
+	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Storage), hashBody);
+	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Array), 0);
+	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Hash), hash);
+	memory.writeRamRecordWord(hashBody + keySlot * sizeof(u32), key);
+	memory.writeRamRecordByte(tags + keySlot, static_cast<u8>(ValueTag::String));
+	memory.writeRamRecordWord(hashBody + valueSlot * sizeof(u32), 19);
+	memory.writeRamRecordByte(tags + valueSlot, static_cast<u8>(ValueTag::Integer));
+	read.op = static_cast<u8>(OpCode::GETFIELD); read.c = 0; read.baseCycles = BASE_CYCLES[read.op];
+	write.op = static_cast<u8>(OpCode::SETFIELD); write.b = 0; write.baseCycles = BASE_CYCLES[write.op];
+	read.tableCacheSlot = write.tableCacheSlot = static_cast<int>(keySlot);
+	const std::array fields{NativeBlockInstruction{&read, 0x1000}, NativeBlockInstruction{&write, 0x1004}};
+	ValueSlots constants(1); constants.set(0, valueString(key));
+	auto fieldBlock = NativeBlock::compile(fields, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	registers.set(2, valueFromTag(ValueTag::False, 37));
+	auto& watches = memory.ramWriteWatches();
+	watches.armHistoryWrites();
+	watches.consumeHistoryWrites(hashBody, 1);
+	state.remainingCycles = 100;
+	const auto* stopped = fieldBlock->run(state);
+	require(stopped->exit == NativeBlockExit::WriteField && registers.get(3) == valueInteger(19)
+		&& memory.readRamRecordWord(hashBody + valueSlot * sizeof(u32)) == 19,
+		"the predicted read crosses the RAM seam and a clean destination tag page stops both store planes");
+	watches.disarmHistoryWrites();
+	state.remainingCycles = 100;
+	require(fieldBlock->run(state) == &fieldBlock->terminal
+		&& TableRecord(cpu.gcHeap(), mirror).getStringKey(key) == registers.get(2),
+		"the predicted write uses the same mirrored byte as the reader");
 }
 
 void watchedTableWordOrTagLeavesBeforeWriting(CPU& cpu, Memory& memory) {
