@@ -25,7 +25,7 @@ import {
 	GEO_VERTEX2_BYTES, GEO_XFORM2_RECORD_DST1_INDEX_OFFSET, GEO_INDEX_NONE,
 } from '../../machine/ts/machine/devices/geometry/contracts';
 import { GX_GPU_GP0_FILL_RECTANGLE } from '../../machine/ts/spec/gx/gp0';
-import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { readSupervisorFaultReport } from '../../ide/runtime/fault_state';
 
@@ -50,7 +50,10 @@ for (const optLevel of [3] as const) {
 for (const workload of ['GEO', 'GPU'] as const)
 test(`O${optLevel}: a fixture drains a held ${workload} fault boundary with bounded device/backend service before reporting the physical fault`, async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-fixture-fault-drain-'));
-	const resumed = DYNAMIC_RAM_BASE + 0x4000;
+	const resumed = DYNAMIC_RAM_BASE;
+	const jobBase = resumed + HEAP_PAGE_SIZE;
+	// One marker page, then separate GEO records, vertices, matrices and output.
+	const workspaceWords = workload === 'GEO' ? 5 * HEAP_PAGE_SIZE / IO_WORD_SIZE : 1;
 	try {
 		const source = `return { kind = 'integration', tests = {
  ready = function(t) t:log('ready'); mem[${resumed}] = 1 end,
@@ -70,11 +73,12 @@ cop0.exec = mem[0x10000028]`,
 				...COROUTINE_FIRMWARE_MODULES,
 			],
 			cartSource: `module<entry>
+bss fault_workspace: word[${workspaceWords}]
 ${workload === 'GEO' ? `mem[${IO_GEO_CMD}] = ${IO_CMD_GEO_XFORM2_BATCH}` : `mem[${IO_GX_GPU_GP0}] = ${GX_GPU_GP0_FILL_RECTANGLE << 24}
 mem[${IO_GX_GPU_GP0}] = 0
 mem[${IO_GX_GPU_GP0}] = ${(512 << 16) | 1024}`}
 local fault = mem[0x07000000]
-mem[${resumed}] = 2`,
+fault_workspace[0] = 2`,
 		});
 		const program = await buildFixtureProgram({ systemRom: fixture.systemRom, cartridgeSlots: [fixture.cartRom, null],
 			sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[0], null],
@@ -92,14 +96,13 @@ mem[${resumed}] = 2`,
 			assert.equal(result.logs.length, 1, 'fixture is suspended at a completed log yield');
 			const runtime = target.runtime, machine = runtime.machine, cpu = machine.cpu;
 			if (workload === 'GEO') {
-				const jobBase = DYNAMIC_RAM_BASE + 0x5000;
 				for (let record = 0; record < 64; record++) {
 					for (let offset = 0; offset < GEO_XFORM2_RECORD_BYTES; offset += 4)
 						machine.memory.writeMappedU32LE(jobBase + record * GEO_XFORM2_RECORD_BYTES + offset,
 							offset === GEO_XFORM2_RECORD_DST1_INDEX_OFFSET ? GEO_INDEX_NONE : 0);
 				}
-				for (const [address, value] of [[IO_GEO_SRC0, jobBase], [IO_GEO_SRC1, jobBase + 0x1000],
-					[IO_GEO_SRC2, jobBase + 0x2000], [IO_GEO_DST0, jobBase + 0x3000], [IO_GEO_DST1, 0],
+				for (const [address, value] of [[IO_GEO_SRC0, jobBase], [IO_GEO_SRC1, jobBase + HEAP_PAGE_SIZE],
+					[IO_GEO_SRC2, jobBase + 2 * HEAP_PAGE_SIZE], [IO_GEO_DST0, jobBase + 3 * HEAP_PAGE_SIZE], [IO_GEO_DST1, 0],
 					[IO_GEO_COUNT, 64], [IO_GEO_STRIDE0, GEO_XFORM2_RECORD_BYTES],
 					[IO_GEO_STRIDE1, GEO_VERTEX2_BYTES], [IO_GEO_STRIDE2, GEO_XFORM2_MATRIX_BYTES]])
 					machine.memory.writeMappedU32LE(address, value);

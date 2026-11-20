@@ -79,7 +79,6 @@ class SystemResetInputSource implements InputControllerInputSource {
 	}
 }
 
-const CART_RESET_MARKER_ADDRESS = DYNAMIC_RAM_BASE + 0x1000;
 const CART_CLOSURE_GLOBAL_NAME = 'selected_cart_closure';
 const CART_CLOSURE_RESULT_GLOBAL_NAME = 'selected_cart_closure_result';
 
@@ -448,16 +447,18 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 `;
 	const system = compileLuaChunkToProgram(parseLuaChunk(systemSource, 'system_reset_system.lua'), [], { entrySource: systemSource, programDomain: 'system' });
 	const cartSource = `
+bss marker: word
 function irq(flags)
 	mem[${IO_IRQ_ACK}] = flags
 end
-mem[${CART_RESET_MARKER_ADDRESS}] = 99
+*marker = 99
 halt_until_irq
 mem[${IO_SYS_CONTROL}] = ${SYS_CONTROL_RESET}
 return
 `;
 	const cart = compileLuaChunkToProgram(parseLuaChunk(cartSource, 'system_reset_cart.lua'), [], { entrySource: cartSource, programDomain: 'cart' });
 	const images = linkTestBlua32Pair(system, cart);
+	const cartMarkerAddress = images.cartImage.header.bssAddress;
 	const runtime = createSystemResetRuntime(images.systemRomBytes, images.cartRomBytes);
 	runtime.boot();
 
@@ -465,7 +466,7 @@ return
 	runGuestToHalt(runtime.machine.cpu, 1000);
 	assert.equal(runtime.machine.cpu.isCartridgeExecutionActive(), true);
 	assert.equal(runtime.machine.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 42);
-	assert.equal(runtime.machine.memory.readMappedU32LE(CART_RESET_MARKER_ADDRESS), 99);
+	assert.equal(runtime.machine.memory.readMappedU32LE(cartMarkerAddress), 99);
 
 	runtime.machine.irqController.raise(IRQ_VBLANK);
 	runtime.frameScheduler.run(runtime.timing.frameDurationMs);
@@ -478,7 +479,7 @@ return
 	runGuestToHalt(runtime.machine.cpu, 1000);
 	assert.equal(runtime.machine.cpu.isCartridgeExecutionActive(), true);
 	assert.equal(runtime.machine.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 42);
-	assert.equal(runtime.machine.memory.readMappedU32LE(CART_RESET_MARKER_ADDRESS), 99);
+	assert.equal(runtime.machine.memory.readMappedU32LE(cartMarkerAddress), 99);
 });
 
 test('an unexecuted second cartridge does not alter guest identity allocation', () => {

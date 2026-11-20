@@ -24,7 +24,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
 import { BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
-import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { asClosure, asInteger, asStringId, valueBool, valueInteger, valueNil, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { prepareLuaLiteral } from '../../ide/runtime/lua_literal';
 import { RuntimeGuestCallPlan, scheduleRuntimeGuestCall } from '../../ide/runtime/guest_call';
@@ -132,8 +132,8 @@ for (const admission of ['quiescent', 'at-stop'] as const) test(`a revoked ${adm
 
 for (const optLevel of [3] as const) for (const pauseInCall of [false, true]) {
 	test(`at-stop call retains the selected IRQ activation and source stop O${optLevel}, nested stop=${pauseInCall}`, async () => {
-		const irqTail = DYNAMIC_RAM_BASE, gameCount = irqTail + 4;
 		const source = `
+bss counters: word[2]
 function irq()
  mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK}
  local parked = function(value, ...)
@@ -142,18 +142,19 @@ function irq()
    evaluations = evaluations + 1 -- nested evaluation stop
    return value, nil, false
   end
-  mem[${irqTail}] = value -- selected IRQ local
+  counters[0] = value -- selected IRQ local
  end
  parked(40)
 end
 evaluations = 0
-mem[${irqTail}] = 0
-mem[${gameCount}] = 0
+counters[0] = 0
+counters[1] = 0
 mem[${IO_IRQ_MASK}] = ${IRQ_VBLANK}
 cop0.status = ${CPU_STATUS_CART_ENTRY}
-while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
+while true do counters[1] = counters[1] + 1 end
 `;
-		const { runtime, state } = createDebuggerHarness(source, optLevel);
+		const { image, runtime, state } = createDebuggerHarness(source, optLevel);
+		const irqTail = image.image.header.bssAddress, gameCount = irqTail + IO_WORD_SIZE;
 		const { cpu, memory, irqController } = runtime.machine;
 		const resource = { contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH };
 		state.breakpoints.toggle(resource, source.split('\n').findIndex(line => line.includes('selected IRQ local')) + 1);
@@ -281,23 +282,24 @@ return work -- caller stop
 });
 
 for (const optLevel of [3] as const) for (const cancel of [false, true]) test(`evaluation ${cancel ? 'cancels' : 'admits fresh arguments'} after the physical IRQ return (O${optLevel})`, async () => {
-	const irqCount = DYNAMIC_RAM_BASE, gameCount = irqCount + 4;
-	const { runtime, state } = createDebuggerHarness(`
+	const { image, runtime, state } = createDebuggerHarness(`
+bss counters: word[2]
 function irq()
 	mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK}
-	mem[${irqCount}] = mem[${irqCount}] + 1
+	counters[0] = counters[0] + 1
 end
 function exception() end
 operation = function(first)
-	while mem[${irqCount}] == first do halt_until_irq end
-	return first, mem[${irqCount}]
+	while counters[0] == first do halt_until_irq end
+	return first, counters[0]
 end
-mem[${irqCount}] = 0
-mem[${gameCount}] = 0
+counters[0] = 0
+counters[1] = 0
 mem[${IO_IRQ_MASK}] = ${IRQ_VBLANK}
 cop0.status = ${CPU_STATUS_CART_ENTRY}
-while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
+while true do counters[1] = counters[1] + 1 end
 `, optLevel);
+	const irqCount = image.image.header.bssAddress, gameCount = irqCount + IO_WORD_SIZE;
 	const { cpu, memory, irqController } = runtime.machine;
 	cpu.reset(); cpu.runUntilDepth(0, 1000);
 	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1), gameBefore = memory.readMappedU32LE(gameCount);
@@ -694,19 +696,20 @@ test('statement stepping follows optimized inline call frames', () => {
 });
 
 for (const optLevel of [3] as const) test(`completion-root identity survives a parked caller accepting IRQ (O${optLevel})`, () => {
-	const irqCount = DYNAMIC_RAM_BASE;
-	const { runtime, state } = createDebuggerHarness(`
+	const { image, runtime, state } = createDebuggerHarness(`
+bss irq_count: word
 function irq()
-	mem[${irqCount}] = mem[${irqCount}] + 1
+	*irq_count = *irq_count + 1
 	mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK}
 end
 function exception() end
 operation = function() return 42 end
-mem[${irqCount}] = 0
+*irq_count = 0
 mem[${IO_IRQ_MASK}] = ${IRQ_VBLANK}
 cop0.status = ${CPU_STATUS_CART_ENTRY}
 while true do halt_until_irq end
 `, optLevel);
+	const irqCount = image.image.header.bssAddress;
 	const { cpu, memory, irqController } = runtime.machine;
 	cpu.reset(); cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
 	const depth = cpu.getFrameDepth(), guest = new SuspendedGuestSession(runtime);
@@ -727,7 +730,7 @@ while true do halt_until_irq end
 });
 
 for (const level of [3] as const) for (const transition of ['source-install', 'hot-resume', 'reset'] as const) test(`O${level}: an evaluation cannot republish a source stop after ${transition}`, async () => {
-	const { runtime, state } = createDebuggerHarness(`operation = function() return 42 end\nlocal value = 17\nmem[${DYNAMIC_RAM_BASE}] = value\nreturn value`, level);
+	const { runtime, state } = createDebuggerHarness(`operation = function() return 42 end\nlocal value = 17\nresult = value\nreturn value`, level);
 	state.breakpoints.set({ contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH }, [3]);
 	const cpu = runtime.machine.cpu;
 	cpu.reset(); assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped);

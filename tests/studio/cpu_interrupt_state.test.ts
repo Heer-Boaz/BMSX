@@ -1082,14 +1082,13 @@ observed_sequence = sequence
 });
 
 test('linked system and cart handlers remain distinct across CPU save-state', () => {
-	const systemSeenAddress = DYNAMIC_RAM_BASE + 0x2100;
-	const cartSeenAddress = systemSeenAddress + 4;
 	const systemSource = `
+bss system_seen: word
 local irq_ack_addr<const> = 0x08000004
 local irq_mask_addr<const> = 0x08000008
 local irq_vblank<const> = 0x0004
 function irq(flags)
-	mem[${systemSeenAddress}] = flags
+	*system_seen = flags
 	mem[irq_ack_addr] = flags
 end
 function exception() end
@@ -1098,11 +1097,12 @@ halt_until_irq
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	const cartSource = `
+bss cart_seen: word
 local irq_ack_addr<const> = 0x08000004
 local irq_mask_addr<const> = 0x08000008
 local irq_vblank<const> = 0x0004
 function irq(flags)
-	mem[${cartSeenAddress}] = flags
+	*cart_seen = flags
 	mem[irq_ack_addr] = flags
 end
 function exception() end
@@ -1118,6 +1118,8 @@ halt_until_irq
 		programDomain: 'cart',
 	});
 	const linked = linkTestBlua32Pair(system, cart);
+	const systemSeenAddress = linked.systemImage.header.bssAddress;
+	const cartSeenAddress = linked.cartImage.header.bssAddress;
 	const memory = new Memory({ systemRom: linked.systemRomBytes, cartridgeSlots: cartridgeSlots(linked.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
 	const irqController = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
@@ -1204,24 +1206,26 @@ test('CPU save-state captured inside an interrupt frame restores and returns to 
 });
 
 test('manual NMI enters the exception root above a halted cart and RFE resumes at EPC', () => {
-	const exceptionCauseAddress = DYNAMIC_RAM_BASE + 0x2000;
-	const exceptionEpcAddress = exceptionCauseAddress + 4;
-	const exceptionStatusAddress = exceptionCauseAddress + 8;
-	const resumedAddress = exceptionCauseAddress + 12;
 	const systemSource = `
+bss observation: word[3]
 function irq() end
 function exception()
-	mem[${exceptionCauseAddress}] = cop0.cause
-	mem[${exceptionEpcAddress}] = cop0.epc
-	mem[${exceptionStatusAddress}] = cop0.status
+	observation[0] = cop0.cause
+	observation[1] = cop0.epc
+	observation[2] = cop0.status
 end
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	const cartSource = `
+bss resumed: word
 halt_until_irq
-mem[${resumedAddress}] = 1
+*resumed = 1
 `;
 	const { cpu, memory, images } = makeCompiledCartCpu(systemSource, cartSource);
+	const exceptionCauseAddress = images.systemImage.header.bssAddress;
+	const exceptionEpcAddress = exceptionCauseAddress + IO_WORD_SIZE;
+	const exceptionStatusAddress = exceptionCauseAddress + 2 * IO_WORD_SIZE;
+	const resumedAddress = images.cartImage.header.bssAddress;
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 
@@ -1462,13 +1466,12 @@ test('unmapped CLOSURE records hard-halt without entering host error handling', 
 });
 
 test('an uncaught Lua runtime error enters the exception root with CPU_CAUSE_CODE_TRAP instead of throwing to host', () => {
-	const exceptionCauseAddress = DYNAMIC_RAM_BASE + 0x2200;
-	const exceptionReasonAddress = exceptionCauseAddress + 4;
 	const systemSource = `
+bss observation: word[2]
 function irq() end
 function exception()
-	mem[${exceptionCauseAddress}] = cop0.cause
-	mem[${exceptionReasonAddress}] = cop0.lua_fault_reason
+	observation[0] = cop0.cause
+	observation[1] = cop0.lua_fault_reason
 	halt_until_irq
 end
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
@@ -1478,6 +1481,8 @@ local nothing = nil
 nothing()
 `;
 	const { cpu, memory, images } = makeCompiledCartCpu(systemSource, cartSource);
+	const exceptionCauseAddress = images.systemImage.header.bssAddress;
+	const exceptionReasonAddress = exceptionCauseAddress + IO_WORD_SIZE;
 	// Includes compiler startup/boot-slot retirement; this is not a cycle-count test.
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
@@ -1506,31 +1511,33 @@ test('RFE resumes the retained frame at any mapped instruction address', () => {
 });
 
 test('system NMI preempts a stalled cart IRQ root and RFE retries its unaccepted mapped store', () => {
-	const exceptionCountAddress = DYNAMIC_RAM_BASE + 0x2300;
-	const storeCompleteAddress = exceptionCountAddress + 4;
-	const cartResumedAddress = exceptionCountAddress + 8;
 	const systemSource = `
+bss exception_count: word
 function irq() end
 function exception()
-	mem[${exceptionCountAddress}] = mem[${exceptionCountAddress}] + 1
+	*exception_count = *exception_count + 1
 end
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	const cartSource = `
+bss progress: word[2]
 local irq_ack_addr<const> = ${IO_IRQ_ACK}
 local irq_mask_addr<const> = ${IO_IRQ_MASK}
 local irq_vblank<const> = ${IRQ_VBLANK}
 local data_port<const>: *word = ${IO_APU_TRANSFER_DATA}
 function irq(flags)
 	*data_port = 0x12345678
-	mem[${storeCompleteAddress}] = mem[${storeCompleteAddress}] + 1
+	progress[0] = progress[0] + 1
 	mem[irq_ack_addr] = flags
 end
 mem[irq_mask_addr] = irq_vblank
 halt_until_irq
-mem[${cartResumedAddress}] = 1
+progress[1] = 1
 `;
-	const { cpu, memory, irqController } = makeCompiledCartCpu(systemSource, cartSource);
+	const { cpu, memory, irqController, images } = makeCompiledCartCpu(systemSource, cartSource);
+	const exceptionCountAddress = images.systemImage.header.bssAddress;
+	const storeCompleteAddress = images.cartImage.header.bssAddress;
+	const cartResumedAddress = storeCompleteAddress + IO_WORD_SIZE;
 	const port = { ready: false, writes: 0 };
 	memory.mapIoWrite(IO_APU_TRANSFER_DATA, port, context => {
 		context.writes += 1;
@@ -1564,22 +1571,24 @@ mem[${cartResumedAddress}] = 1
 });
 
 test('user CP0 access vectors synchronously and a supervisor EPC write selects the resume instruction', () => {
-	const faultCauseAddress = DYNAMIC_RAM_BASE + 0x2400;
-	const continuedAddress = faultCauseAddress + 4;
 	const systemSource = `
+bss fault_cause: word
 function irq() end
 function exception()
-	mem[${faultCauseAddress}] = cop0.cause
+	*fault_cause = cop0.cause
 	cop0.epc = cop0.epc + 4
 end
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	const cartSource = `
+bss continued: word
 fault_value = cop0.status
-mem[${continuedAddress}] = 1
+*continued = 1
 `;
 	for (const optLevel of [3] as const) {
-		const { cpu, memory } = makeCompiledCartCpu(systemSource, cartSource, optLevel);
+		const { cpu, memory, images } = makeCompiledCartCpu(systemSource, cartSource, optLevel);
+		const faultCauseAddress = images.systemImage.header.bssAddress;
+		const continuedAddress = images.cartImage.header.bssAddress;
 		// Includes compiler startup/boot-slot retirement; this is not a cycle-count test.
 		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 

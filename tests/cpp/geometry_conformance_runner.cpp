@@ -19,6 +19,10 @@ int main(int argc, char** argv) {
 	bmsx::Memory memory({ {}, bmsx::test::cartridgeSlots() }, bmsx::PSX_MACHINE_SPEC.ramBytes);
 	IdleInput idle;
 	bmsx::Machine machine(memory, idle, bmsx::PSX_MACHINE_SPEC);
+	bmsx::u32 fixtureRamEnd;
+	input >> fixtureRamEnd;
+	if (!machine.cpu.heapAllocator().setFloor(fixtureRamEnd))
+		throw std::runtime_error("GEO vectors must own their mapped fixture RAM");
 	unsigned count;
 	while (input >> count) {
 		machine.scheduler.reset();

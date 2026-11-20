@@ -10,7 +10,7 @@ import { GEO_FAULT_CLIP_CAPACITY, GEO_STATUS_DONE, GEO_STATUS_ERROR } from '../.
 import { IO_GEO_STATUS, IRQ_GEO_ERROR } from '../../../machine/ts/spec/bmsx/io';
 import { IO_GEO_DST1, IO_GEO_PROCESSED } from '../../../machine/ts/spec/bmsx/io';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { geometryVectors } from './vectors';
+import { GEO_VECTOR_RAM_END, geometryVectors } from './vectors';
 
 const command = process.argv.slice(2);
 if (command.length === 0) {
@@ -23,13 +23,15 @@ if (command.length === 0) {
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-geometry-'));
 const vectors = geometryVectors();
 const path = join(directory, 'vectors.txt');
-writeFileSync(path, vectors.map(v => [v.writes.length, ...v.writes.flat(), v.firstRecordPairs, v.pairCounterSeed, v.reads.length, ...v.reads].join(' ')).join('\n'));
+writeFileSync(path, [GEO_VECTOR_RAM_END, ...vectors.map(v =>
+	[v.writes.length, ...v.writes.flat(), v.firstRecordPairs, v.pairCounterSeed, v.reads.length, ...v.reads].join(' '))].join('\n'));
 const native = spawnSync(command[0], [...command.slice(1), path], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
 assert.equal(native.status, 0, native.stderr);
 const rows = native.stdout.trim().split('\n').map(line => line.trim().split(/\s+/).map(Number));
 assert.equal(rows.length, vectors.length);
 const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 const machine = new Machine(memory, { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {} }, PSX_MACHINE_SPEC);
+assert.ok(machine.cpu.heapAllocator.setFloor(GEO_VECTOR_RAM_END), 'GEO vectors own their mapped fixture RAM');
 // Exercise the actual timer edges. A partial paid interval cannot commit a
 // record or a completion; the phase edge itself may publish them.
 function advanceGeometryEdge(): void {
