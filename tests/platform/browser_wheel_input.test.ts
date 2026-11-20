@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 import { KeyModifier } from '../../hosts/common/input/text';
-import { afterTest } from '../helpers/test_cleanup';
 
 test('browser wheel delivers ordered event-time context without changing sampled guest input', async t => {
 	const bundle = await build({
@@ -33,9 +32,8 @@ export function start() {
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'fixture', write: false,
 		tsconfig: 'tsconfig.base.json',
 	});
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+
+	const page = await openBrowserTestPage(t, { viewport: { width: 900, height: 700 } });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.setContent('<canvas width="320" height="240" style="position:absolute;left:100px;top:80px;width:640px;height:480px"></canvas>');

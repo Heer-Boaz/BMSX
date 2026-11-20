@@ -2,9 +2,8 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 import { CONTROL_GAP } from '../../hosts/browser/onscreen_gamepad_layout';
-import { afterTest } from '../helpers/test_cleanup';
 
 // The production SVG/CSS are the presentation producer, not numbers copied into
 // a synthetic view. These are Chromium owner/geometry checks, not iPhone proof.
@@ -19,15 +18,14 @@ export { BrowserVideoOutput } from './hosts/browser/video_output';
 export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'ownerFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
+
 	const evidence: unknown[] = [];
 	for (const profile of [
 		{ name: 'phone portrait', width: 393, height: 852, originX: 50, originY: 50, labelSize: 13, stroke: 3 },
 		{ name: 'landscape authored presentation', width: 852, height: 393, originX: 31, originY: 42, labelSize: 19, stroke: 9 },
 	]) await t.test(profile.name, async p => {
-		const page = await browser.newPage({ viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true });
-		p.after(() => page.close());
+		const page = await openBrowserTestPage(p, { viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true });
+
 		await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}
 .shoulder-label { font-size: calc(${profile.labelSize}px * var(--shoulder-label-scale)); }
 .shoulder-surface .control-bezel { stroke-width: ${profile.stroke}; }

@@ -2,10 +2,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
 import { controlContainsPoint, distanceToControl, roundContactBankWord } from './touch_gamepad_geometry_oracle';
-import { afterTest } from '../helpers/test_cleanup';
 
 const BUTTONS = [
 	{ id: 'a_knop', bit: InputControllerGamepadButtonBit.A },
@@ -50,15 +49,12 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'fixture', write: false,
 		tsconfig: 'tsconfig.base.json', loader: { '.rgba': 'binary' },
 	});
-	// These are gesture/ownership checks, not display timing measurements.
-	// Chromium normally paces each CDP input's visual-state acknowledgement.
-	const browser = await chromium.launch({ args: ['--disable-frame-rate-limit'] });
-	afterTest(t, () => browser.close());
+
 	// Exercise the native producer once on the portrait deck where the pad and
 	// shoulders neighbor each other. The layout and skin-only pickup suites
 	// cover whether controls remain separate and reachable in other layouts.
 	const viewport = { width: 393, height: 852 };
-	const page = await browser.newPage({ viewport, isMobile: true, hasTouch: true });
+	const page = await openBrowserTestPage(t, { viewport, isMobile: true, hasTouch: true }, 'unpaced');
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas></div>`);

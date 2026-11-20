@@ -2,9 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 import { expandBrowserKeyboardTemplate } from '../../scripts/products/browser_keyboard';
-import { afterTest } from '../helpers/test_cleanup';
 
 // Production precedent: Lemuroid gives its menu distinct artwork and an ID,
 // rather than requiring a shoulder chord. BMSX deliberately routes its icons
@@ -32,9 +31,8 @@ export { PSX_MACHINE_SPEC } from './machine/ts/spec/bmsx/model';
 export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_INP_POINTER_BUTTONS } from './machine/ts/spec/bmsx/io';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', target: 'es2022', format: 'iife', globalName: 'hostFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
+
+	const page = await openBrowserTestPage(t, { viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${await readFile('gamebase.css', 'utf8')}</style><body class="game-started"><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas><div id="capture-other"></div></div></body>`);

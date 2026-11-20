@@ -2,10 +2,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
 import { controlContainsPoint, distanceToControl, ellipseContactWord, outsideControlPoint, roundContactBankWord } from './touch_gamepad_geometry_oracle';
-import { afterTest } from '../helpers/test_cleanup';
 
 const actions = [
 	{ id: 'a_knop', buttons: 1 << InputControllerGamepadButtonBit.A },
@@ -73,10 +72,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'fixture', write: false,
 		tsconfig: 'tsconfig.base.json',
 	});
-	// Sample the native state at explicit input boundaries, not at wall-clock frame cadence.
-	const browser = await chromium.launch({ args: ['--disable-frame-rate-limit'] });
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage({ viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true });
+	const page = await openBrowserTestPage(t, { viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true }, 'unpaced');
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${await readFile('gamebase.css', 'utf8')}</style><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas></div>`);

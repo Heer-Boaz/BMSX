@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { glsl } from 'esbuild-plugin-glsl';
-import { chromium } from 'playwright';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 import { afterTest } from '../helpers/test_cleanup';
 
 test('isolated player reads relative and cross-origin ROM URLs without CORS preflights', async t => {
@@ -50,9 +50,8 @@ test('isolated player reads relative and cross-origin ROM URLs without CORS pref
 	}
 	const mediaOrigin = `http://127.0.0.1:${(media.address() as { port: number }).port}`;
 	const playerOrigin = `http://127.0.0.1:${(player.address() as { port: number }).port}`;
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage();
+
+	const page = await openBrowserTestPage(t);
 	const url = new URL('/games/test/', playerOrigin);
 	url.searchParams.set('rom', `${mediaOrigin}/release/cart.rom?version=1&variant=release`);
 	url.searchParams.set('slot1', `${mediaOrigin}/release/slot1.rom`);

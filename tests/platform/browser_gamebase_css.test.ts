@@ -2,10 +2,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 import { BROWSER_KEYBOARD_PAGES } from '../../hosts/browser/onscreen_keyboard_layout';
 import { expandBrowserKeyboardTemplate } from '../../scripts/products/browser_keyboard';
-import { afterTest } from '../helpers/test_cleanup';
 
 // Like noVNC's display tests, assert effective geometry and retained presentation
 // across owner transitions, not stylesheet order or selector implementation.
@@ -32,8 +31,7 @@ export { BrowserHostClock } from './hosts/browser/timing';
 export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'cssFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
+
 	const profiles: Array<{
 		name: string;
 		width: number;
@@ -51,8 +49,8 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 		{ name: 'embedded short player', width: 1024, height: 900, insets: [0, 0, 0, 0], keyHeight: 44, embedded: { width: 568, height: 239 } },
 	];
 	for (const profile of profiles) await t.test(profile.name, async p => {
-		const page = await browser.newPage({ viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true });
-		afterTest(p, () => page.close());
+		const page = await openBrowserTestPage(p, { viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true });
+
 		await page.setContent(template);
 		assert.equal(await page.locator('#msx').isVisible(), false);
 		assert.equal(await page.locator('#gamescreen').isVisible(), false);

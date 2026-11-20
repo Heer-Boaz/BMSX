@@ -51,24 +51,25 @@ start_lane() {
 	local slot=${#pids[@]}
 	labels+=("$1")
 	shift
-	node --enable-source-maps --test "$@" >"$reports/$slot.tap" 2>&1 &
+	node --enable-source-maps "$@" >"$reports/$slot.tap" 2>&1 &
 	pids+=("$!")
 }
 
 if [[ $1 == browser-platform ]]; then
 	export TSX_TSCONFIG_PATH="$PWD/tsconfig.base.json"
-	remaining=()
-	# Node sorts its file queue by path. Start the long CDP/paint
-	# cases immediately instead of putting them behind smaller fixtures.
+	accelerated=tests/platform/browser_gpu.test.ts
+	keyboard=tests/platform/browser_onscreen_keyboard.test.ts
+	shared=("$keyboard")
 	for file in "${files[@]}"; do
 		case $file in
-			*/browser_onscreen_gamepad_ergonomics.test.ts|*/browser_onscreen_gamepad_shoulders.test.ts|*/browser_onscreen_keyboard.test.ts)
-				start_lane "${file##*/}" "${source_loader[@]}" --test-concurrency=1 "$file"
-				;;
-			*) remaining+=("$file") ;;
+			"$accelerated"|"$keyboard") ;;
+			*) shared+=("$file") ;;
 		esac
 	done
-	start_lane 'Browser platform' "${source_loader[@]}" --test-concurrency=4 "${remaining[@]}"
+	# Keep SwiftShader tests serial on their own GPU process. Only input,
+	# layout and ordinary paint share a worker and browser processes.
+	start_lane 'Browser GPU' "${source_loader[@]}" --test --test-concurrency=1 "$accelerated"
+	start_lane 'Browser platform' "${source_loader[@]}" scripts/test_browser_platform.mjs "${shared[@]}"
 else
 	readonly compiled="$reports/js"
 	node scripts/build_node_tests.mjs "$compiled" "${files[@]}"
@@ -84,13 +85,13 @@ else
 			isolated+=("$compiled"/tests/rompacker/*.mjs)
 			label='Machine, toolchain, hosts and ROM packer'
 		fi
-		start_lane "$label" --test-concurrency=8 "${isolated[@]}"
+		start_lane "$label" --test --test-concurrency=8 "${isolated[@]}"
 	elif [[ $1 != studio ]]; then
-		start_lane "$1" --test-concurrency=16 "$compiled"/tests/"$1"/*.mjs
+		start_lane "$1" --test --test-concurrency=16 "$compiled"/tests/"$1"/*.mjs
 	fi
 	if [[ $1 == all || $1 == headless || $1 == studio ]]; then
 		for ((index = 1; index <= shards; index++)); do
-			start_lane "Studio $index/$shards" --max-old-space-size=768 --experimental-test-isolation=none \
+			start_lane "Studio $index/$shards" --test --max-old-space-size=768 --experimental-test-isolation=none \
 				"--test-shard=$index/$shards" "$compiled"/tests/studio/*.test.mjs
 		done
 	fi

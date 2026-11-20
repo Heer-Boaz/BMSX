@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { build } from 'esbuild';
-import { chromium, type Browser, type Page } from 'playwright';
+import type { Page } from 'playwright';
 import { PNG } from 'pngjs';
 import type { RectBounds } from '../../machine/ts/common/rect';
-import { afterTest } from '../helpers/test_cleanup';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 
 type Rect = { left: number; top: number; width: number; height: number };
 type Presentation = {
@@ -49,9 +49,9 @@ export { mapDisplayPointToViewport } from './machine/ts/render/video_output';`, 
 	return { controls, css: await readFile('gamebase.css', 'utf8'), script: bundle.outputFiles[0].text };
 })();
 
-async function openFixture(browser: Browser, dpr: number, viewport: { width: number; height: number }, controls: boolean, insets: number[], screenFit: 'fit' | 'overscan', observeResolution = false): Promise<Page> {
+async function openFixture(t: TestContext, dpr: number, viewport: { width: number; height: number }, controls: boolean, insets: number[], screenFit: 'fit' | 'overscan', observeResolution = false): Promise<Page> {
 	const resources = await fixture;
-	const page = await browser.newPage({ viewport, deviceScaleFactor: dpr, isMobile: true, hasTouch: true });
+	const page = await openBrowserTestPage(t, { viewport, deviceScaleFactor: dpr, isMobile: true, hasTouch: true });
 	await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${resources.css}</style><body class="game-started"><div id="player-surface" style="padding:${insets.map(inset => `${inset}px`).join(' ')}">${controls ? resources.controls : ''}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas></div></body>`);
 	await page.addScriptTag({ content: resources.script });
 	await page.evaluate(({ controls, screenFit, observeResolution }) => {
@@ -183,11 +183,9 @@ function assertVisibleViewport(presentation: Presentation, nativeWidth: number, 
 }
 
 test('browser video fitting uses physical half steps, bounded selected policy and independent controller geometry', async t => {
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
 	const errors: string[] = [];
-	for (const dpr of DPR_PROFILES) for (const orientation of ['portrait', 'landscape'] as const) await t.test(`${orientation} at native DPR ${dpr}`, async () => {
-		const page = await openFixture(browser, dpr, orientation === 'portrait' ? { width: 393, height: 852 } : { width: 852, height: 393 }, true,
+	for (const dpr of DPR_PROFILES) for (const orientation of ['portrait', 'landscape'] as const) await t.test(`${orientation} at native DPR ${dpr}`, async p => {
+		const page = await openFixture(p, dpr, orientation === 'portrait' ? { width: 393, height: 852 } : { width: 852, height: 393 }, true,
 			orientation === 'portrait' ? [47, 0, 34, 0] : [0, 47, 21, 43], 'fit');
 		page.on('pageerror', error => errors.push(error.message));
 		try {
@@ -230,17 +228,16 @@ test('browser video fitting uses physical half steps, bounded selected policy an
 				assert.deepEqual(restored.style, fitted.style, 'explicit Fit selection restores the full image');
 				assertVisibleViewport(restored, width, 239);
 			}
-		} finally { await page.evaluate(() => (globalThis as any).videoProbe.dispose()); await page.close(); }
+		} finally { await page.evaluate(() => (globalThis as any).videoProbe.dispose()); }
 	});
 	assert.deepEqual(errors, []);
 });
 
 test('short portrait players retain a full-frame quantized picture rather than an impossible reserved deck', async t => {
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
+
 	for (const viewport of [{ width: 320, height: 321 }, { width: 320, height: 360 }, { width: 393, height: 394 }, { width: 600, height: 601 }]) {
-		for (const dpr of [1, 2.625]) await t.test(`${viewport.width}x${viewport.height} at DPR ${dpr}`, async () => {
-			const page = await openFixture(browser, dpr, viewport, true, [0, 0, 0, 0], 'fit');
+		for (const dpr of [1, 2.625]) await t.test(`${viewport.width}x${viewport.height} at DPR ${dpr}`, async p => {
+			const page = await openFixture(p, dpr, viewport, true, [0, 0, 0, 0], 'fit');
 			try {
 				const initial = await measure(page);
 				assert.equal(await page.evaluate(() => (globalThis as any).videoProbe.view.layoutProfile), 'compact-overlay');
@@ -259,16 +256,15 @@ test('short portrait players retain a full-frame quantized picture rather than a
 					assert.deepEqual(current.controls, initial.controls, 'changing picture policy or odd scanout dimensions never rearranges controls');
 					assert.equal(current.revision, initial.revision);
 				}
-			} finally { await page.evaluate(() => (globalThis as any).videoProbe.dispose()); await page.close(); }
+			} finally { await page.evaluate(() => (globalThis as any).videoProbe.dispose()); }
 		});
 	}
 });
 
 test('explicit Overscan construction preserves the selected picture policy independently of viewport publication', async t => {
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
-	for (const orientation of ['portrait', 'landscape'] as const) await t.test(orientation, async () => {
-		const page = await openFixture(browser, 3, orientation === 'portrait' ? { width: 393, height: 852 } : { width: 852, height: 393 }, true,
+
+	for (const orientation of ['portrait', 'landscape'] as const) await t.test(orientation, async p => {
+		const page = await openFixture(p, 3, orientation === 'portrait' ? { width: 393, height: 852 } : { width: 852, height: 393 }, true,
 			orientation === 'portrait' ? [47, 0, 34, 0] : [19, 47, 21, 43], 'overscan');
 		try {
 			const initial = await measure(page);
@@ -316,14 +312,12 @@ test('explicit Overscan construction preserves the selected picture policy indep
 			assert.deepEqual(synchronousResize.css, { width: initial.style.width, height: initial.style.height }, 'logical clip publication precedes the queued CSS transform change');
 			await settle(page);
 			assertVisibleViewport(await measure(page), 257, 239);
-		} finally { await page.evaluate(() => (globalThis as any).videoProbe.dispose()); await page.close(); }
+		} finally { await page.evaluate(() => (globalThis as any).videoProbe.dispose()); }
 	});
 });
 
 test('portrait overscan uses spare vertical space without cropping source top or bottom HUD rows', async t => {
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
-	const page = await openFixture(browser, 3, { width: 393, height: 852 }, true, [47, 0, 34, 0], 'fit');
+	const page = await openFixture(t, 3, { width: 393, height: 852 }, true, [47, 0, 34, 0], 'fit');
 	const fitted = await measure(page);
 	assertPresentation(fitted, 320, false);
 	assertVisibleViewport(fitted, 320, 240);
@@ -373,9 +367,7 @@ test('portrait overscan uses spare vertical space without cropping source top or
 });
 
 test('resolution observer rearms after native DPR samples and explicitly test-generated media-query notifications', async t => {
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
-	const page = await openFixture(browser, 1, { width: 393, height: 852 }, true, [47, 0, 34, 0], 'fit', true);
+	const page = await openFixture(t, 1, { width: 393, height: 852 }, true, [47, 0, 34, 0], 'fit', true);
 	const cdp = await page.context().newCDPSession(page);
 	const initial = await measure(page);
 	assert.deepEqual(await page.evaluate(() => (globalThis as any).videoProbe.resolutionQueries()), [{ media: '(resolution: 1dppx)', matches: true }]);
@@ -409,9 +401,7 @@ test('resolution observer rearms after native DPR samples and explicitly test-ge
 });
 
 test('native clip hit testing excludes hidden pixels but preserves visible pointer mapping and captured source lifetime', async t => {
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
-	const page = await openFixture(browser, 3, { width: 852, height: 393 }, false, [19, 47, 21, 43], 'fit');
+	const page = await openFixture(t, 3, { width: 852, height: 393 }, false, [19, 47, 21, 43], 'fit');
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.evaluate(() => (globalThis as any).videoProbe.video.setScreenFit('overscan'));
@@ -458,66 +448,67 @@ test('native clip hit testing excludes hidden pixels but preserves visible point
 	assert.deepEqual(errors, []);
 });
 
-for (const viewport of [{ width: 1920, height: 1080, logicalWidth: 640 }, { width: 3840, height: 2160, logicalWidth: 1280 },
-	{ width: 390, height: 844, logicalWidth: 384 }])
-	test(`adaptive workspace uses the host area at ${viewport.width}x${viewport.height}, without changing game fitting`, async t => {
-		const browser = await chromium.launch(); afterTest(t, () => browser.close());
-		for (const dpr of [1, 3]) {
-			const page = await openFixture(browser, dpr, viewport, false, [0, 0, 0, 0], 'overscan');
-			try {
-				const game = await measure(page);
-				await page.evaluate(() => {
-					const { video } = (globalThis as any).videoProbe;
-					const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
-					const probe = (globalThis as any).videoProbe;
-					probe.coordinateScale = 1;
-					video.workspace.open(({ width: availableWidth, height: availableHeight, pixelWidth, pixelHeight }) => {
-						const scale = (globalThis as any).videoFixture.workbenchPixelsPerUnit(availableWidth) * probe.coordinateScale;
-						canvas.width = pixelWidth; canvas.height = pixelHeight;
-						video.setDisplaySize(pixelWidth, pixelHeight, Math.trunc(availableWidth / scale), Math.trunc(availableHeight / scale));
-					});
-					video.setPointerCursor('col-resize');
-				});
-				await settle(page);
-				const workspace = await measure(page);
-				assert.equal(workspace.clip, 'none', 'game overscan must not crop editor chrome');
-				assert.ok(Math.abs(workspace.style.width - viewport.width) < 3);
-				assert.ok(Math.abs(workspace.style.height - viewport.height) < 3);
-				assert.equal(workspace.logical[0], viewport.logicalWidth,
-					'DPR does not change logical UI size; larger desktop areas add working space');
-				assert.deepEqual(workspace.backing, [viewport.width * dpr, viewport.height * dpr], 'the raster fills the physical display');
-				const cursor = await page.evaluate(() => getComputedStyle(document.getElementById('gamescreen')!).cursor);
-				assert.equal(cursor, 'col-resize', 'the host publishes the shared input owner cursor');
-				await page.evaluate(() => { const probe = (globalThis as any).videoProbe; probe.coordinateScale = 1.25; probe.video.workspace.refresh(); });
-				await settle(page);
-				const scaled = await measure(page);
-				assert.ok(scaled.logical[0] < workspace.logical[0]);
-				assert.deepEqual(scaled.backing, workspace.backing, 'Logical client density does not resize the physical buffer');
-				assert.ok(Math.abs(scaled.style.width - viewport.width) < 4);
-				await page.setViewportSize({ width: viewport.width - 80, height: viewport.height - 60 });
-				await settle(page);
-				const resized = await measure(page);
-				assert.ok(Math.abs(resized.style.width - (viewport.width - 80)) < 4,
-					'the real resize observer updates workspace allocation and display transform');
-				await page.setViewportSize(viewport); await settle(page);
-				await page.evaluate(() => {
-					const { video } = (globalThis as any).videoProbe;
-					video.workspace.close(); video.setPointerCursor('default');
-					const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
-					canvas.width = 320; canvas.height = 240;
-					video.setDisplaySize(320, 240, 320, 240); video.refreshLayout();
-				});
-				const resumed = await measure(page);
-				assert.deepEqual(resumed.style, game.style, 'game aspect, fit policy and target return unchanged');
-				assert.deepEqual(resumed.visibleViewport, game.visibleViewport);
-			} finally { await page.evaluate(() => (globalThis as any).videoProbe.dispose()); await page.close(); }
-		}
-	});
-
+// Test actual desktop and handheld rasters, not an 11,520 × 6,480
+// backing store produced by crossing a 4K CSS viewport with phone DPR.
+for (const profile of [
+	{ width: 1920, height: 1080, logicalWidth: 640, dpr: 2 },
+	{ width: 3840, height: 2160, logicalWidth: 1280, dpr: 1 },
+	{ width: 390, height: 844, logicalWidth: 384, dpr: 3 },
+]) test(`adaptive workspace uses the host area at ${profile.width}x${profile.height}, without changing game fitting`, async t => {
+	const { width, height, logicalWidth, dpr } = profile;
+	const viewport = { width, height };
+	const page = await openFixture(t, dpr, viewport, false, [0, 0, 0, 0], 'overscan');
+	try {
+		const game = await measure(page);
+		await page.evaluate(() => {
+			const { video } = (globalThis as any).videoProbe;
+			const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
+			const probe = (globalThis as any).videoProbe;
+			probe.coordinateScale = 1;
+			video.workspace.open(({ width: availableWidth, height: availableHeight, pixelWidth, pixelHeight }) => {
+				const scale = (globalThis as any).videoFixture.workbenchPixelsPerUnit(availableWidth) * probe.coordinateScale;
+				canvas.width = pixelWidth; canvas.height = pixelHeight;
+				video.setDisplaySize(pixelWidth, pixelHeight, Math.trunc(availableWidth / scale), Math.trunc(availableHeight / scale));
+			});
+			video.setPointerCursor('col-resize');
+		});
+		await settle(page);
+		const workspace = await measure(page);
+		assert.equal(workspace.clip, 'none', 'game overscan must not crop editor chrome');
+		assert.ok(Math.abs(workspace.style.width - viewport.width) < 3);
+		assert.ok(Math.abs(workspace.style.height - viewport.height) < 3);
+		assert.equal(workspace.logical[0], logicalWidth,
+			'DPR does not change logical UI size; larger desktop areas add working space');
+		assert.deepEqual(workspace.backing, [viewport.width * dpr, viewport.height * dpr], 'the raster fills the physical display');
+		const cursor = await page.evaluate(() => getComputedStyle(document.getElementById('gamescreen')!).cursor);
+		assert.equal(cursor, 'col-resize', 'the host publishes the shared input owner cursor');
+		await page.evaluate(() => { const probe = (globalThis as any).videoProbe; probe.coordinateScale = 1.25; probe.video.workspace.refresh(); });
+		await settle(page);
+		const scaled = await measure(page);
+		assert.ok(scaled.logical[0] < workspace.logical[0]);
+		assert.deepEqual(scaled.backing, workspace.backing, 'Logical client density does not resize the physical buffer');
+		assert.ok(Math.abs(scaled.style.width - viewport.width) < 4);
+		await page.setViewportSize({ width: viewport.width - 80, height: viewport.height - 60 });
+		await settle(page);
+		const resized = await measure(page);
+		assert.ok(Math.abs(resized.style.width - (viewport.width - 80)) < 4,
+			'the real resize observer updates workspace allocation and display transform');
+		await page.setViewportSize(viewport); await settle(page);
+		await page.evaluate(() => {
+			const { video } = (globalThis as any).videoProbe;
+			video.workspace.close(); video.setPointerCursor('default');
+			const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
+			canvas.width = 320; canvas.height = 240;
+			video.setDisplaySize(320, 240, 320, 240); video.refreshLayout();
+		});
+		const resumed = await measure(page);
+		assert.deepEqual(resumed.style, game.style, 'game aspect, fit policy and target return unchanged');
+		assert.deepEqual(resumed.visibleViewport, game.visibleViewport);
+	} finally { await page.evaluate(() => (globalThis as any).videoProbe.dispose()); }
+});
 
 test('native text composition follows the published canvas transform even when logical workspace size does not change', async t => {
-	const browser = await chromium.launch(); afterTest(t, () => browser.close());
-	const page = await openFixture(browser, 2, { width: 800, height: 600 }, false, [0, 0, 0, 0], 'fit');
+	const page = await openFixture(t, 2, { width: 800, height: 600 }, false, [0, 0, 0, 0], 'fit');
 	await page.evaluate(() => {
 		const api = (globalThis as any).videoFixture, probe = (globalThis as any).videoProbe;
 		const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
@@ -600,5 +591,5 @@ test('native text composition follows the published canvas transform even when l
 		assert.deepEqual(translated.point, translated.midpoint);
 		for (let axis = 0; axis < 2; axis++) assert.ok(Math.abs(translated.anchor[axis] - translated.expected[axis]) < cssTolerance);
 		assert.equal(translated.focused, true); assert.deepEqual(translated.edits, ['日本']);
-	} finally { await page.evaluate(() => (globalThis as any).nativeTransform.dispose()); await page.close(); }
+	} finally { await page.evaluate(() => (globalThis as any).nativeTransform.dispose()); }
 });

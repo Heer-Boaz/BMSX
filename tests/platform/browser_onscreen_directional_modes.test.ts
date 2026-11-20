@@ -2,10 +2,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
 import { roundContactBankWord } from './touch_gamepad_geometry_oracle';
-import { afterTest } from '../helpers/test_cleanup';
 
 function expectedStickAxes(geometry: { padX: number; padY: number; stickTravelRadius: number; neutral: number }, pointer: { x: number; y: number }): [number, number] {
 	const dx = pointer.x - geometry.padX;
@@ -36,16 +35,15 @@ export { PSX_MACHINE_SPEC } from './machine/ts/spec/bmsx/model';
 export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_INP_PAD_LX_OFFSET, IO_INP_PAD_LY_OFFSET } from './machine/ts/spec/bmsx/io';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'fixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
+
 	for (const profile of [
 		{ name: 'phone landscape', width: 852, height: 393 },
 		{ name: 'phone portrait', width: 393, height: 852 },
 		{ name: 'tablet landscape', width: 1180, height: 820 },
 	]) {
 		await t.test(profile.name, async orientation => {
-			const page = await browser.newPage({ viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true });
-			orientation.after(() => page.close());
+			const page = await openBrowserTestPage(orientation, { viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true });
+
 			const errors: string[] = [];
 			page.on('pageerror', error => errors.push(error.message));
 			await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><body class="game-started"><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas></div></body>`);

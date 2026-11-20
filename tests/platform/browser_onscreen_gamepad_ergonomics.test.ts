@@ -2,11 +2,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { chromium, type Page } from 'playwright';
+import type { Page } from 'playwright';
 import { openBrowserErgonomicsPage } from '../helpers/browser_controller_ergonomics';
 import { PNG } from 'pngjs';
 import { roundContactBankWord, controlContainsPoint, controlSeparation, distanceToControl } from './touch_gamepad_geometry_oracle';
-import { afterTest } from '../helpers/test_cleanup';
 
 const actions = [
 	{ id: 'a_knop', label: 'A' },
@@ -89,9 +88,6 @@ export { Input } from './hosts/common/input/manager';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'ergonomicsFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	// Await paint for presentation evidence, not a physical display refresh rate.
-	const browser = await chromium.launch({ args: ['--disable-frame-rate-limit'] });
-	afterTest(t, () => browser.close());
 	const css = await readFile('gamebase.css', 'utf8');
 	const html = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><body class="game-started"><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas></div></body>`;
 	const script = bundle.outputFiles[0].text;
@@ -196,7 +192,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 	};
 
 	await t.test('device-family geometry and layout thresholds share one player', async layoutTest => {
-		const { page, settle, measure, finish } = await openBrowserErgonomicsPage(layoutTest, browser, html, script, actionIds);
+		const { page, settle, measure, finish } = await openBrowserErgonomicsPage(layoutTest, html, script, actionIds);
 		const phoneDimensionsByWidth = new Map<number, number[]>();
 		for (const profile of profiles) await layoutTest.test(profile.name, async () => {
 			const player = profile.player ?? { left: 0, top: 0, width: profile.width, height: profile.height };
@@ -462,7 +458,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 	});
 
 	await t.test('visible and held controls preserve gameplay pixels and legible label ink', async paintTest => {
-		const { page, touch, settle, measure, poll, finish } = await openBrowserErgonomicsPage(paintTest, browser, html, script, actionIds);
+		const { page, touch, settle, measure, poll, finish } = await openBrowserErgonomicsPage(paintTest, html, script, actionIds);
 		await page.evaluate(() => {
 			document.getElementById('player-surface')!.style.padding = '47px 0 34px';
 			const probe = (globalThis as any).ergonomicsProbe;
@@ -498,7 +494,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 	});
 
 	await t.test('true player-frame resize resamples held contacts before any subsequent native jitter', async resizeTest => {
-		const { page, touch, settle, measure, poll, finish } = await openBrowserErgonomicsPage(resizeTest, browser, html, script, actionIds);
+		const { page, touch, settle, measure, poll, finish } = await openBrowserErgonomicsPage(resizeTest, html, script, actionIds);
 		await page.setViewportSize({ width: 844, height: 390 });
 		await page.evaluate(() => {
 			const style = document.getElementById('player-surface')!.style;

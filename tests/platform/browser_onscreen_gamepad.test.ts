@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
-import { afterTest } from '../helpers/test_cleanup';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 
 const browserInputFixture = build({
 	stdin: {
@@ -28,9 +27,8 @@ test('native browser contacts reach the real common input and ICU without DOM-ta
 	const template = await readFile('gamebase.html', 'utf8');
 	const controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	const bundle = await browserInputFixture;
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage({ viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true });
+
+	const page = await openBrowserTestPage(t, { viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${await readFile('gamebase.css', 'utf8')}</style><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas><div id="capture-other"></div></div><button id="outside-player" style="position:fixed;z-index:10;left:420px;top:20px;width:30px;height:20px">Outside</button>`);
@@ -570,9 +568,8 @@ test('native browser contacts reach the real common input and ICU without DOM-ta
 
 test('standard browser gamepad face positions reach canonical independent player and ICU bits', async t => {
 	const bundle = await browserInputFixture;
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage();
+
+	const page = await openBrowserTestPage(t);
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.setContent('<div id="player-surface"><canvas id="gamescreen" width="320" height="240"></canvas></div>');

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 import { PNG } from 'pngjs';
 import { BROWSER_KEYBOARD_PAGES } from '../../hosts/browser/onscreen_keyboard_layout';
 import { ON_SCREEN_KEY_DEFINITIONS } from '../../hosts/common/input/on_screen_keyboard_keys';
@@ -141,9 +141,7 @@ await buildBrowserPlayerPackage({ debug: false, romName: '', title: 'BMSX', shor
 await buildBrowserStudioPackage(false);`], { cwd: folder });
 	const expanded = expandBrowserKeyboardTemplate(await readFile('gamebase.html', 'utf8'));
 	const markup = expanded.match(/<section id="bmsx-touch-keyboard"[\s\S]*?<\/section>/)![0];
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage();
+	const page = await openBrowserTestPage(t);
 	for (const file of ['index.html', 'player.template.html', 'player.input-trace.template.html', 'studio.html', 'studio.template.html']) {
 		const html = await readFile(join(folder, 'dist', file), 'utf8');
 		assert.ok(html.includes(markup), `${file} contains the exact shared-page producer output`);
@@ -192,9 +190,6 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 	});
 	const folder = '.bmsx/hosting/conventional-keyboard-evidence';
 	await mkdir(folder, { recursive: true });
-	// These profiles assert layout and input state, not compositor cadence.
-	const browser = await chromium.launch({ args: ['--disable-frame-rate-limit'] });
-	afterTest(t, () => browser.close());
 	const profileEvidence: unknown[] = [];
 	const profiles = [
 		{ name: 'phone-portrait', width: 393, height: 852, dpr: 3 },
@@ -205,10 +200,8 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 	];
 	await Promise.all(profiles.map((profile, profileIndex) =>
 		t.test(profile.name, { concurrency: 1 }, async p => {
-			const context = await browser.newContext({ viewport: { width: profile.width, height: profile.height }, isMobile: true,
-				hasTouch: true, deviceScaleFactor: profile.dpr });
-			afterTest(p, () => context.close());
-			const page = await context.newPage();
+			const page = await openBrowserTestPage(p, { viewport: { width: profile.width, height: profile.height }, isMobile: true,
+				hasTouch: true, deviceScaleFactor: profile.dpr }, 'unpaced');
 			const errors: string[] = [];
 			page.on('pageerror', error => errors.push(error.message));
 			await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>
@@ -284,7 +277,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			const poll = () => page.evaluate(() => (globalThis as any).keyboardProbe.poll());
 			const picture = () => page.evaluate(() => (globalThis as any).keyboardProbe.picture());
 			const measure = () => page.evaluate(() => (globalThis as any).keyboardProbe.measure());
-			const cdp = await context.newCDPSession(page);
+			const cdp = await page.context().newCDPSession(page);
 			const touch = async (type: 'touchStart' | 'touchMove' | 'touchEnd' | 'touchCancel', points: Array<{ id: number; x: number; y: number }>) => {
 				const before = type === 'touchCancel' ? await page.evaluate(() => (globalThis as any).keyboardProbe.native.length) : 0;
 				await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(point => ({ ...point, radiusX: 3, radiusY: 3 })) });

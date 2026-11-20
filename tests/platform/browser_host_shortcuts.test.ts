@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 import { HOST_MENU_HOLD_MS } from '../../hosts/common/input/shortcuts';
-import { afterTest } from '../helpers/test_cleanup';
 
 test('trusted browser keyboard chords use real host time and distinguish short, long and cancellation', async t => {
 	const bundle = await build({
@@ -19,9 +18,8 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'shortcutApi', write: false,
 		tsconfig: 'tsconfig.base.json',
 	});
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage();
+
+	const page = await openBrowserTestPage(t);
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.setContent('<!doctype html><div id="player-surface"><canvas id="gamescreen"></canvas></div>');

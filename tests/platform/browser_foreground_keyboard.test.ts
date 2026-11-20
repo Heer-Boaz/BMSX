@@ -2,9 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
-import { afterTest } from '../helpers/test_cleanup';
 
 const SELECT = 1 << 8;
 const LB = 1 << 4;
@@ -40,8 +39,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 		bundle: true, platform: 'browser', target: 'es2022', format: 'iife', globalName: 'fixture', write: false, tsconfig: 'tsconfig.base.json',
 		loader: { '.rgba': 'binary' },
 	});
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
+
 	for (const profile of [
 		{ name: 'phone landscape', width: 852, height: 393, sourceHeight: 212, fit: 'fit' },
 		{ name: 'phone portrait', width: 393, height: 852, sourceHeight: 212, fit: 'fit' },
@@ -50,8 +48,8 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 		{ name: 'compact landscape overscan 256x192', width: 640, height: 360, sourceHeight: 192, fit: 'overscan' },
 	]) {
 		await t.test(profile.name, async orientation => {
-			const page = await browser.newPage({ viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
-			afterTest(orientation, () => page.close());
+			const page = await openBrowserTestPage(orientation, { viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
+
 			const errors: string[] = [];
 			page.on('pageerror', error => errors.push(error.message));
 			await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><body class="game-started"><div id="player-surface">${controls}<canvas id="gamescreen" width="256" height="${profile.sourceHeight}" style="display:block"></canvas></div></body>`);

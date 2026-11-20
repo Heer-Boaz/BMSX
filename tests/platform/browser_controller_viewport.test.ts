@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
-import { afterTest } from '../helpers/test_cleanup';
+import { openBrowserTestPage } from '../helpers/browser_test_pages';
 
 // Real VisualViewport changes in desktop Chromium prove the browser-owner
 // boundary, not Safari toolbar animation or physical iPhone touch delivery.
@@ -23,9 +22,8 @@ export { Input } from './hosts/common/input/manager';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'viewportFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage({ viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true });
+
+	const page = await openBrowserTestPage(t, { viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${await readFile('gamebase.css', 'utf8')}</style><body class="game-started"><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas></div></body>`);

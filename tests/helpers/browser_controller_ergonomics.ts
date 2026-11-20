@@ -1,14 +1,12 @@
 import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
-import type { Browser } from 'playwright';
-import { afterTest } from './test_cleanup';
+import { openBrowserTestPage } from './browser_test_pages';
 
 /** One real page, gameplay input owner and native contact lifetime per profile. */
-export async function openBrowserErgonomicsPage(t: TestContext, browser: Browser, html: string, script: string, actionIds: string[]) {
-	const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+export async function openBrowserErgonomicsPage(t: TestContext, html: string, script: string, actionIds: string[]) {
+	const page = await openBrowserTestPage(t, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }, 'unpaced');
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
-	afterTest(t, () => page.close());
 	await page.setContent(html);
 	await page.addScriptTag({ content: script });
 	await page.evaluate(actionIds => {
