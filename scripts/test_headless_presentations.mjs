@@ -12,11 +12,13 @@ const cases = new Map([
 		analyzer: 'tests/carts/renderhwtest/analyze_quick_menu.mjs',
 	}],
 	['pietious-scanout-headless', {
+		diagnostic: true,
 		cart: 'pietious',
 		input: ['--test', 'tests/carts/pietious/pietious_scanout_assert.lua'],
 		analyzer: 'tests/carts/pietious/analyze_scanout.mjs',
 	}],
 	['bare-metal-frame-scan', {
+		diagnostic: true,
 		cart: 'bare_metal_cart',
 		input: ['--input-timeline', 'tests/carts/bare_metal_cart/bare_metal_cart_demo.json'],
 		analyzer: 'tests/carts/bare_metal_cart/analyze_frame_sequence.mjs',
@@ -28,7 +30,11 @@ if (unexpected.length !== 0 || !['prepare', 'run', 'all'].includes(phase) || (na
 	console.error(`Scenarios: ${[...cases.keys()].join(', ')}`);
 	process.exit(2);
 }
-const selected = name === undefined ? cases : new Map([[name, cases.get(name)]]);
+// The default lane owns host presentation, not the staged artwork and flow
+// of a game or the long bare-metal demo. Keep those as named diagnostics.
+const selected = name === undefined
+	? new Map([...cases].filter(([, scenario]) => !scenario.diagnostic))
+	: new Map([[name, cases.get(name)]]);
 
 function run(command, args) {
 	return new Promise((resolveRun, reject) => {

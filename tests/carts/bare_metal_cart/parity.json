@@ -1,0 +1,9 @@
+[
+	{
+		"description": "Consecutive raw GX offscreen and depth-mesh publications",
+		"frame": 121,
+		"capture": true,
+		"repeat": 2,
+		"repeatEveryFrames": 1
+	}
+]

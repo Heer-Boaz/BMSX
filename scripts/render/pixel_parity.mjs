@@ -9,12 +9,18 @@ import { PNG } from 'pngjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../..');
-const cartName = process.argv[2] || 'renderhwtest';
-const debug = process.argv.includes('--debug');
+const [cartName = 'renderhwtest', ...args] = process.argv.slice(2);
+const debug = args.includes('--debug');
+const timeline = args.indexOf('--timeline');
+if (timeline !== -1 && (args[timeline + 1] === undefined || args[timeline + 1].startsWith('--'))) {
+	throw new Error('--timeline requires an input timeline file');
+}
 const suffix = debug ? '.debug' : '';
 const systemRomPath = path.join(repoRoot, 'dist', 'system', `bmsx-bios${suffix}.rom`);
 const cartridgePath = path.join(repoRoot, 'dist', `${cartName}${suffix}.rom`);
-const sourceTimeline = path.join(repoRoot, 'tests/carts', cartName, `${cartName}_demo.json`);
+const sourceTimeline = timeline === -1
+	? path.join(repoRoot, 'tests/carts', cartName, `${cartName}_demo.json`)
+	: path.resolve(repoRoot, args[timeline + 1]);
 const workRoot = await fsp.mkdtemp(path.join(os.tmpdir(), `bmsx-${cartName}-pixel-parity-`));
 const systemDirectory = path.join(workRoot, 'system');
 const referenceRoot = path.join(workRoot, 'ts-software');

@@ -1,7 +1,6 @@
 import { spawn } from 'node:child_process';
 import { closeSync, createReadStream, mkdirSync, mkdtempSync, openSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { pipeline } from 'node:stream/promises';
 
 const root = resolve(import.meta.dirname, '..');
 const buildPaths = process.argv.slice(2);
@@ -10,8 +9,7 @@ if (buildPaths.length !== 3) {
 	process.exit(2);
 }
 const [release, debug, interpreter] = buildPaths.map(path => resolve(root, path));
-// Firmware conformance writes a full state per checkpoint. Keep its evidence
-// in the workspace artifact store, not in /tmp (often an unswappable tmpfs).
+// Share the workspace artifact directory between stage reports and inputs.
 const artifacts = join(root, '.bmsx');
 mkdirSync(artifacts, { recursive: true });
 const directory = mkdtempSync(join(artifacts, 'headless-tests-'));
@@ -113,7 +111,12 @@ try {
 	if (failures.length !== 0) throw new AggregateError(failures, 'Headless test runner failed');
 	for (const { name, filename, status, seconds, error } of reports) {
 		console.log(`\n=== ${name} (${seconds.toFixed(2)} s, status ${status}) ===`);
-		await pipeline(createReadStream(filename), process.stdout, { end: false });
+		for await (const chunk of createReadStream(filename)) {
+			await new Promise((resolveWrite, reject) => process.stdout.write(chunk, error => {
+				if (error) reject(error);
+				else resolveWrite();
+			}));
+		}
 		if (error !== undefined) console.error(error);
 		if (status !== 0) process.exitCode = 1;
 	}
