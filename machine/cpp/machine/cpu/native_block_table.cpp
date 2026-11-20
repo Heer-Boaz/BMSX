@@ -1,5 +1,6 @@
 #include "machine/cpu/native_block_compiler.h"
 #include "machine/cpu/native_value_emit.h"
+#include "machine/cpu/native_table_index.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/gc_object.h"
 #include "machine/cpu/table.h"
@@ -157,15 +158,18 @@ void NativeBlockCompiler::emitTableReadLeaf(bool fixedStringKey, NativeBlockExit
 	auto* c = m_compiler;
 	// The leaf only reads RAM. Charge additional visits after success; the
 	// dispatcher owns faults and charges their full semantic work there.
-	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+	if (fixedStringKey)
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, NativeBlockAbi::state, 0);
+	else sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), request + offsetof(TableReadRequest, indexKey),
 		SLJIT_IMM, m_bindings.indexKey);
 	sljit_get_local_base(c, SLJIT_R1, 0, request);
 	sljit_get_local_base(c, SLJIT_R2, 0, result);
 	m_cache.spillCall(false, 0);
-	const auto lookup = fixedStringKey ? &TableRecord::loadStringIndexInNative : &TableRecord::loadIndexInNative;
+	const auto lookup = fixedStringKey ? SLJIT_FUNC_ADDR(nativeFixedStringLookup())
+		: SLJIT_FUNC_ADDR(&TableRecord::loadIndexInNative);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&exit.tableReadCache));
-	sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4V(P, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(lookup));
+	sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4V(P, P, P, P), SLJIT_IMM, lookup);
 	m_cache.spillCall(true, 0);
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_SP),
 		result + offsetof(TableLookupResult, status), SLJIT_IMM, static_cast<u32>(TableLookupStatus::Resolved)),

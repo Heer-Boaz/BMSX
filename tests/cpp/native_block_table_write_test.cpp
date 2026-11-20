@@ -86,7 +86,8 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	const StringId indexKey = cpu.stringPool().intern("__index");
 	const StringId key = cpu.stringPool().intern("inherited method");
-	auto root = cpu.createTable(0, 1), middle = cpu.createTable(0, 1), holder = cpu.createTable(0, 4);
+	auto root = cpu.createTable(3, 4), middle = cpu.createTable(0, 1), holder = cpu.createTable(2, 4);
+	root.setInteger(1, valueInteger(123));
 	auto firstMeta = cpu.createTable(0, 1), secondMeta = cpu.createTable(0, 1);
 	const auto first = firstMeta.setStringKey(indexKey, valueTable(middle.address()));
 	const auto second = secondMeta.setStringKey(indexKey, valueTable(holder.address()));
@@ -112,8 +113,21 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 			&& grant.remainingCycles == 100 - decoded.baseCycles - hops * TABLE_INDEX_VISIT_CYCLES,
 			"the warmed read follows the current chain, preserves the raw result and bills every actual hop");
 	};
+	// Train the one-hop recipe against a holder with an array prefix.
+	firstMeta.setStringKey(indexKey, valueTable(holder.address()));
+	read(valueInteger(41), 1);
+	read(valueInteger(41), 1);
+	const auto neighbor = cpu.stringPool().intern("colliding receiver key");
+	require((scalarValueHash(valueString(neighbor)) & 3u) == (scalarValueHash(valueString(key)) & 3u),
+		"the receiver override must be displaced through a real hash link");
+	root.setStringKey(neighbor, valueInteger(99));
 	const auto ownSlot = root.setStringKey(key, valueBool(false));
+	block->sideExits[0].tableReadCache.receiverSlot = -1;
+	require(ownSlot != static_cast<int>(scalarValueHash(valueString(key)) & 3u),
+		"the receiver's method is not in its home slot");
 	read(valueBool(false), 0);
+	require(hint.receiverSlot == ownSlot, "following the live chain rediscovers the shadow");
+	firstMeta.setStringKey(indexKey, valueTable(middle.address()));
 	root.setStringKey(key, valueNil());
 	read(valueInteger(41), 2);
 	require(hint.receiverSlot == ownSlot && hint.holderDepth == 2 && hint.holderSlot == holderSlot
@@ -149,7 +163,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	secondMeta.setStringKey(indexKey, valueNil());
 	cpu.collectHeap(receiver, valueString(key));
 	require(cpu.gcHeap().tableRecordAddress(holder.address()) == 0, "the old holder really retired");
-	auto reused = cpu.createTable(0, 4);
+	auto reused = cpu.createTable(2, 4);
 	require(reused.address() == holder.address(), "the probe actually reuses the old owner's guest address");
 	reused.setStringKey(key, valueInteger(44));
 	read(valueNil(), 1);

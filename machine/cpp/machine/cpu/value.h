@@ -101,6 +101,7 @@ inline Value canonicalTableKey(Value value) {
 struct ValueEq {
 	bool operator()(Value left, Value right) const { return canonicalTableKey(left) == canonicalTableKey(right); }
 };
+inline constexpr u32 STRING_VALUE_HASH_MULTIPLIER = 2654435761u;
 inline uint32_t scalarValueHash(Value value) {
 	value = canonicalTableKey(value);
 	switch (valueTag(value)) {
@@ -113,7 +114,7 @@ inline uint32_t scalarValueHash(Value value) {
 		case ValueTag::Nil: return 0x27d4eb2du;
 		case ValueTag::False: return 0x85ebca6bu;
 		case ValueTag::True: return 0x9e3779b9u;
-		case ValueTag::String: return valuePayload(value) * 2654435761u;
+		case ValueTag::String: return valuePayload(value) * STRING_VALUE_HASH_MULTIPLIER;
 		case ValueTag::BuiltinFunction: return (valuePayload(value) + 1u) * 0x27d4eb2du;
 		default: BMSX_UNREACHABLE();
 	}
