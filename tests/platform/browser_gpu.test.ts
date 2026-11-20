@@ -1,12 +1,54 @@
 import assert from 'node:assert/strict';
-import test, { before } from 'node:test';
+import test, { after, before, type TestContext } from 'node:test';
 import { build } from 'esbuild';
 import { glsl } from 'esbuild-plugin-glsl';
-import { chromium } from 'playwright';
+import { chromium, type Browser } from 'playwright';
 import type { renderPcrtcBlendCases } from '../helpers/pcrtc_scanout_fixture';
 import { afterTest } from '../helpers/test_cleanup';
+import type { renderTexturedModelCase } from '../helpers/textured_model_gpu';
 
 let backendBundle: string;
+let acceleratedBrowser: Promise<Browser> | undefined;
+
+async function acceleratedPage(t: TestContext) {
+	acceleratedBrowser ??= chromium.launch({ args: [
+		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
+		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
+	] });
+	const context = await (await acceleratedBrowser).newContext();
+	afterTest(t, () => context.close());
+	return context.newPage();
+}
+
+after(async () => {
+	if (acceleratedBrowser !== undefined) await (await acceleratedBrowser).close();
+});
+
+type GxBrowserBackend = Parameters<typeof renderTexturedModelCase>[1];
+type TexturedModelEvidence = Awaited<ReturnType<typeof renderTexturedModelCase>>;
+const fullVramBytes = 2 * 1024 * 1024;
+const fullModelEvidence: Partial<Record<GxBrowserBackend, Promise<TexturedModelEvidence>>> = {};
+
+function texturedModelEvidence(t: TestContext, kind: GxBrowserBackend, vramBytes: number) {
+	const captured = vramBytes === fullVramBytes ? fullModelEvidence[kind] : undefined;
+	if (captured !== undefined) return captured;
+	const run = (async (): Promise<TexturedModelEvidence> => {
+		const page = await acceleratedPage(t), errors: string[] = [];
+		page.on('pageerror', error => errors.push(error.message));
+		await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
+			body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="256" height="256"></canvas></div>' }));
+		await page.goto('http://localhost/renderer-test/model/'); await page.addScriptTag({ content: backendBundle });
+		const result = await page.evaluate(async ({ kind, vramBytes }) => (globalThis as any).backendTest.renderTexturedModelCase(
+			document.getElementById('gamescreen'), kind, vramBytes), { kind, vramBytes });
+		assert.deepEqual(errors, []);
+		return result;
+	})();
+	// The model and layout assertions used to render this same packet stream
+	// separately. Only share the reported evidence, not the page or device.
+	if (vramBytes === fullVramBytes) fullModelEvidence[kind] = run;
+	return run;
+}
+
 before(async () => {
 	const bundle = await build({
 		stdin: { contents: `
@@ -27,12 +69,7 @@ before(async () => {
 });
 
 for (const kind of ['webgl2', 'webgpu']) test(`${kind} preserves bitmap fonts and scalable glyph coverage across layout and raster scales`, async t => {
-	const browser = await chromium.launch({ args: [
-		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
-		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
-	] });
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage(), errors: string[] = [];
+	const page = await acceleratedPage(t), errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><canvas></canvas>' }));
 	await page.goto('http://localhost/renderer-test/fonts/'); await page.addScriptTag({ content: backendBundle });
@@ -61,12 +98,7 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} preserves bitmap fonts an
 });
 
 for (const kind of ['webgl2', 'webgpu']) test(`${kind} retains the old workspace target until the next presentation`, async t => {
-	const browser = await chromium.launch({ args: [
-		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
-		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
-	] });
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage(), errors: string[] = [];
+	const page = await acceleratedPage(t), errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
 		body: '<!doctype html><style>body{margin:0}#player-surface{position:fixed;width:48px;height:36px}canvas{position:fixed}</style><div id="player-surface"><canvas width="16" height="12"></canvas></div>' }));
@@ -101,12 +133,7 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} retains the old workspace
 });
 
 for (const kind of ['webgl2', 'webgpu']) test(`${kind} CRT noise uses deterministic pixel and line grain across frame phases`, async t => {
-	const browser = await chromium.launch({ args: [
-		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
-		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
-	] });
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage(), errors: string[] = [];
+	const page = await acceleratedPage(t), errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
 		body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="320" height="240"></canvas></div>' }));
@@ -119,18 +146,8 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} CRT noise uses determinis
 	assert.ok(result.differences.every(value => value <= 1), 'grain, tint and glow agree within RGBA8 rounding');
 });
 
-for (const kind of ['webgl2', 'webgpu']) test(`${kind} and CPU render flat/raw textured model packets with affine point sampling`, async t => {
-	const browser = await chromium.launch({ args: [
-		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
-		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
-	] });
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage(), errors: string[] = [];
-	page.on('pageerror', error => errors.push(error.message));
-	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
-		body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="256" height="256"></canvas></div>' }));
-	await page.goto('http://localhost/renderer-test/model/'); await page.addScriptTag({ content: backendBundle });
-	const result = await page.evaluate(async kind => (globalThis as any).backendTest.renderTexturedModelCase(document.getElementById('gamescreen'), kind), kind);
+for (const kind of ['webgl2', 'webgpu'] as const) test(`${kind} and CPU render flat/raw textured model packets with affine point sampling`, async t => {
+	const result = await texturedModelEvidence(t, kind, fullVramBytes);
 	t.diagnostic(JSON.stringify(result));
 	assert.equal(result.kind, kind); assert.equal(result.difference, -1, 'whole-frame software/GPU parity');
 	assert.equal(result.commands, 3, 'upload and both projected faces completed');
@@ -147,23 +164,12 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} and CPU render flat/raw t
 		[255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0], [0, 0, 0, 0],
 		[255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0], [0, 0, 0, 0],
 	]);
-	assert.equal(result.validationError, undefined); assert.equal(result.glError, 0); assert.deepEqual(result.gpuErrors, []); assert.deepEqual(errors, []);
+	assert.equal(result.validationError, undefined); assert.equal(result.glError, 0); assert.deepEqual(result.gpuErrors, []);
 });
 
-for (const kind of ['webgl2', 'webgpu']) test(`${kind} consumes every raw draw layout`, async t => {
-	const browser = await chromium.launch({ args: [
-		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
-		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
-	] });
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage(), errors: string[] = [];
-	page.on('pageerror', error => errors.push(error.message));
-	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
-		body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="256" height="256"></canvas></div>' }));
-	for (const vramBytes of [2 * 1024 * 1024, 1024 * 1024]) {
-		await page.goto('http://localhost/renderer-test/draw-layouts/');
-		await page.addScriptTag({ content: backendBundle });
-		const result = await page.evaluate(async ({ kind, vramBytes }) => (globalThis as any).backendTest.renderTexturedModelCase(document.getElementById('gamescreen'), kind, vramBytes), { kind, vramBytes });
+for (const kind of ['webgl2', 'webgpu'] as const) test(`${kind} consumes every raw draw layout`, async t => {
+	for (const vramBytes of [fullVramBytes, 1024 * 1024]) {
+		const result = await texturedModelEvidence(t, kind, vramBytes);
 		assert.deepEqual(result.drawLayoutDifferences, Array(20).fill(-1), 'each layout matches software pixel-for-pixel');
 		assert.equal(result.drawLayoutPixels.length, 20);
 		assert.ok(result.drawLayoutPixels.every((count: number) => count > 0), 'each case drew visible pixels');
@@ -171,17 +177,12 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} consumes every raw draw l
 		assert.deepEqual(result.lineExtraWordDifferences, [-1, -1], 'extra line words match software');
 		assert.ok(result.lineExtraWordPixels.every(([line, extra]: number[]) => line !== 0 && extra === 0), 'extra raw words never create a third line vertex');
 		assert.equal(result.validationError, undefined); assert.equal(result.glError, 0);
-		assert.deepEqual(result.gpuErrors, []); assert.deepEqual(errors, []);
+		assert.deepEqual(result.gpuErrors, []);
 	}
 });
 
 for (const kind of ['webgl2', 'webgpu']) test(`${kind} solid batches publish only drawn cells, including aliased VRAM`, async t => {
-	const browser = await chromium.launch({ args: [
-		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
-		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
-	] });
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage(), errors: string[] = [];
+	const page = await acceleratedPage(t), errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
 		body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="256" height="256"></canvas></div>' }));
@@ -221,12 +222,7 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} solid batches publish onl
 });
 
 test('GX WebGPU pipelines specialize only the overrides used by each stage', async t => {
-	const browser = await chromium.launch({ args: [
-		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
-		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
-	] });
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage();
+	const page = await acceleratedPage(t);
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
@@ -280,12 +276,7 @@ test('GX WebGPU pipelines specialize only the overrides used by each stage', asy
 });
 
 test('WebGPU PCRTC constant RGB blend matches software for both AMOD settings and field modes', async t => {
-	const browser = await chromium.launch({ args: [
-		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
-		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
-	] });
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage();
+	const page = await acceleratedPage(t);
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
@@ -311,12 +302,7 @@ test('WebGPU PCRTC constant RGB blend matches software for both AMOD settings an
 });
 
 test('the browser selects WebGPU from its capabilities, not URL or page overrides', async t => {
-	const browser = await chromium.launch({ args: [
-		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
-		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
-	] });
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage();
+	const page = await acceleratedPage(t);
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
 		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen" data-renderer="webgl2"></canvas>',
 	}));
@@ -339,12 +325,7 @@ test('the browser selects WebGPU from its capabilities, not URL or page override
 });
 
 test('WebGPU initialization failure is reported without retrying another renderer', async t => {
-	const browser = await chromium.launch({ args: [
-		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
-		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
-	] });
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage();
+	const page = await acceleratedPage(t);
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
 		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen"></canvas>',
 	}));
