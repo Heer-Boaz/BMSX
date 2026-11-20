@@ -22,7 +22,7 @@ const BUTTONS = [
 	{ id: 'rs_knop', bit: InputControllerGamepadButtonBit.RightStick },
 ] as const;
 
-test('native touchscreen shoulders reach the existing gamepad ABI and host shortcut owners', async t => {
+test('native touchscreen shoulders reach the existing gamepad ABI and host shortcut owners', { concurrency: 7 }, async t => {
 	const template = await readFile('gamebase.html', 'utf8');
 	const controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	const css = await readFile('gamebase.css', 'utf8');
@@ -50,9 +50,11 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'fixture', write: false,
 		tsconfig: 'tsconfig.base.json', loader: { '.rgba': 'binary' },
 	});
-	const browser = await chromium.launch();
+	// These are gesture/ownership checks, not display timing measurements.
+	// Chromium normally paces each CDP input's visual-state acknowledgement.
+	const browser = await chromium.launch({ args: ['--disable-frame-rate-limit'] });
 	afterTest(t, () => browser.close());
-	for (const profile of [
+	const profiles = [
 		{ name: 'phone portrait', width: 393, height: 720, insets: [0, 0, 0, 0] },
 		{ name: 'phone portrait safe', width: 393, height: 852, insets: [47, 0, 34, 0] },
 		{ name: 'phone landscape', width: 852, height: 393, insets: [0, 0, 0, 0] },
@@ -60,8 +62,11 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		{ name: 'compact overlay', width: 320, height: 240, insets: [0, 0, 0, 0] },
 		{ name: 'tablet portrait', width: 768, height: 1024, insets: [0, 0, 0, 0] },
 		{ name: 'tablet landscape', width: 1024, height: 768, insets: [0, 0, 0, 0] },
-	]) {
-		await t.test(profile.name, async orientation => {
+	];
+	// Profiles have independent pages. Keep presses and releases ordered
+	// within each page while the browser services the other profiles.
+	await Promise.all(profiles.map(profile =>
+		t.test(profile.name, { concurrency: 1 }, async orientation => {
 			const page = await browser.newPage({ viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true });
 			afterTest(orientation, () => page.close());
 			const errors: string[] = [];
@@ -692,6 +697,5 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			}
 			assert.deepEqual(errors, []);
 			await page.evaluate(() => (globalThis as any).shoulderTest.finish());
-		});
-	}
+		})));
 });
