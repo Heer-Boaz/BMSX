@@ -179,13 +179,17 @@ export class RuntimeHistory {
 		if (this.mode === HistoryMode.Reviewing) return HistorySeekResult.Complete;
 		const runtime = this.runtime;
 		const before = runtime.machine.scheduler.currentNowCycles();
+		const budgetBefore = runtime.frameScheduler.remainingCycleBudget();
 		runtime.frameScheduler.runToNextLogicalTick(cycleGrant);
 		if (runtime.frameScheduler.lastTickSequence === this.targetTick) {
 			this.mode = HistoryMode.Reviewing;
 			return HistorySeekResult.Complete;
 		}
 		if (runtime.machine.gxGpu.backendServicePending() || runtime.machine.gxGpu.backendServiceBlocksMachine()) return HistorySeekResult.BackendPending;
-		return runtime.machine.scheduler.currentNowCycles() === before ? HistorySeekResult.Stopped : HistorySeekResult.Progressed;
+		// A grant can pay for an indivisible instruction already executed without advancing the clock.
+		if (runtime.machine.scheduler.currentNowCycles() !== before
+			|| (budgetBefore < 0 && runtime.frameScheduler.remainingCycleBudget() > budgetBefore)) return HistorySeekResult.Progressed;
+		return HistorySeekResult.Stopped;
 	}
 
 	public cancelSeek(): void { this.mode = HistoryMode.Reviewing; }

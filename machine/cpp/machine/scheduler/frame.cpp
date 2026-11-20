@@ -14,6 +14,11 @@ void FrameSchedulerState::accumulateHostTime(f64 deltaMs) {
 	}
 }
 
+i64 FrameSchedulerState::remainingCycleBudget(const Runtime& runtime) const {
+	const auto& loop = runtime.frameLoop;
+	return loop.frameActive ? loop.frameState.cycleBudgetRemaining : m_carriedCycleBudget;
+}
+
 bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 	if (runtime.history.executionPaused()) return false;
 	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {

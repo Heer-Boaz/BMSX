@@ -61,6 +61,12 @@ export class FrameSchedulerState {
 		}
 	}
 
+	/** A frame's signed grant balance follows it across the logical tick boundary. */
+	public remainingCycleBudget(): number {
+		const loop = this.runtime.frameLoop;
+		return loop.frameActive ? loop.frameState.cycleBudgetRemaining : this.carriedCycleBudget;
+	}
+
 	private canRunScheduledUpdate(): boolean {
 		const runtime = this.runtime;
 		if (runtime.history.executionPaused) return false;

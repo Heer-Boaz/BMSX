@@ -44,6 +44,8 @@ public:
 	bool refillFrameBudget(Runtime& runtime, FrameState& frameState);
 	bool startScheduledFrame(Runtime& runtime);
 	void run(Runtime& runtime, f64 hostDeltaMs);
+	// A frame's signed grant balance follows it across the logical tick boundary.
+	i64 remainingCycleBudget(const Runtime& runtime) const;
 	bool runToNextLogicalTick(Runtime& runtime);
 	bool runToNextLogicalTick(Runtime& runtime, i64 cycleGrant);
 	// Admit an exact cycle grant, then stop at the next tick or backend fence. Zero resumes retained work.

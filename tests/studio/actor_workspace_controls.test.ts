@@ -30,27 +30,34 @@ async function fixture(t: TestContext, presentation: 'viewless' | 'workbench' = 
 
 for (const route of ['command', 'button'] as const) test(`Continue from Here ${route} resumes the displayed Game runtime after timeline review`, async t => {
 	const f = await fixture(t, 'workbench');
+	const actor = f.input.worldOutliner.tree.rows.find(row => row.element.label === 'studio_test.first')!.element.hashId;
 	f.editor.commands.execute('runtime.playback', f.pane.commandTarget);
-	for (let i = 0; i < 20; i++) await f.frame();
+	await f.until(() => {
+		for (const quad of f.input.controller.viewportPicker.frame.quads) if (quad.hashId === actor) return true;
+		return false;
+	});
+	// Review a recorded frame that actually displayed this actor, not a fraction
+	// of history that depends on how long the cart took to boot.
+	const history = f.runtime.history, reviewedCycles = history.latestCycles;
+	await f.until(() => history.latestCycles > reviewedCycles);
 	f.editor.commands.execute('runtime.pause', f.pane.commandTarget);
-	const actor = f.input.worldOutliner.tree.rows.find(row => row.element.label === 'studio_test.first')!;
-	f.input.controller.inspectActor(f.input, f.input.domain, actor.element.hashId);
+	f.input.controller.inspectActor(f.input, f.input.domain, actor);
 	f.input.controller.projection.reveal(f.input.runtime.roots[0].children[0]); f.editor.update(0);
 	const selection = f.input.selectionPath;
-	const actions = createWorkbenchActionBar('runtime.title'), layout = new RuntimeTimelineLayout(), bounds = f.group.timelineBounds;
-	const range = new WorkbenchSlider();
-	layout.update(actions, range, editorViewState.font.renderFont(), bounds.left, bounds.top, bounds.right, 0, 0);
-	f.native.apply([{ type: 'pointer', x: range.bounds.right - (range.bounds.right - range.bounds.left) / 10, y: (range.bounds.top + range.bounds.bottom) / 2 },
-		{ type: 'button', button: 'primary', down: true }]);
-	await f.frame();
-	f.native.apply([{ type: 'button', button: 'primary', down: false }]); await f.frame();
-	await f.until(() => f.ide.frameNavigation.active === undefined);
+	assert.ok(selection !== undefined, 'select a component before entering review');
+	const review = f.ide.frameNavigation.seek(reviewedCycles);
+	await f.until(() => review.result !== undefined);
+	const result = review.result!;
+	assert.equal(result.status, 'completed', `review at ${reviewedCycles} stopped at ${result.after.cycles}: ${result.reason}`);
+	assert.equal(result.after.cycles, reviewedCycles);
 	assert.equal(f.ide.rewind.active, true);
 	assert.equal(f.input.actorPresent, true, 'the reviewed frame still contains the selected actor');
 	const cycles = f.runtime.machine.scheduler.currentNowCycles();
 	assert.equal(f.editor.commands.isEnabled('runtime.resume', f.pane.commandTarget), true);
 	if (route === 'command') f.editor.commands.execute('runtime.resume', f.pane.commandTarget);
 	else {
+		const actions = createWorkbenchActionBar('runtime.title'), layout = new RuntimeTimelineLayout(), bounds = f.group.timelineBounds;
+		layout.update(actions, new WorkbenchSlider(), editorViewState.font.renderFont(), bounds.left, bounds.top, bounds.right, 0, 0);
 		const button = actions.items.find(item => item.command === 'runtime.resume')!.bounds;
 		f.native.apply([{ type: 'pointer', x: (button.left + button.right) / 2, y: (button.top + button.bottom) / 2 },
 			{ type: 'button', button: 'primary', down: true }]);

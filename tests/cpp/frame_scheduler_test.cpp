@@ -1341,6 +1341,35 @@ void testCancelledHistoryTakeover() {
 	require(runtime.frameScheduler.runToNextLogicalTick(runtime) && runtime.frameScheduler.lastTickSequence == before + 1, "live scheduling no longer targets a discarded replay tick");
 }
 
+void testHistoryPaysRetainedCycleDebt() {
+	using namespace bmsx;
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& history = runtime.history;
+	history.start({2, 8, 0x100000000LL});
+	history.captureCheckpoint();
+	require(runtime.frameScheduler.runToNextLogicalTick(runtime), "record a real replay endpoint");
+	history.beginSeek(history.latestCycles());
+	constexpr i64 grant = 16384;
+	require(history.advanceSeek(grant) == HistorySeekResult::Progressed, "replay retains a partial frame");
+	require(runtime.frameLoop.frameActive, "the partial replay has an active grant");
+
+	// An atomic CPU operation may already have charged more than one replay grant.
+	// Seed its remaining debt without relying on an unrelated opcode's tariff.
+	auto& frame = runtime.frameLoop.frameState;
+	frame.cycleBudgetRemaining = -2 * grant;
+	const auto cycles = runtime.machine.scheduler.nowCycles();
+	const auto tick = runtime.frameScheduler.lastTickSequence;
+	for (const auto remaining : {-grant, i64{0}}) {
+		require(history.advanceSeek(grant) == HistorySeekResult::Progressed, "paying retained cycle debt is replay progress");
+		require(frame.cycleBudgetRemaining == remaining, "each grant pays its exact share of the debt");
+		require(runtime.machine.scheduler.nowCycles() == cycles && runtime.frameScheduler.lastTickSequence == tick,
+			"settling already charged cycles does not execute or advance time");
+	}
+	require(history.advanceSeek(grant) == HistorySeekResult::Progressed, "replay continues after the debt has been paid");
+	require(runtime.machine.scheduler.nowCycles() > cycles, "the following grant advances machine time");
+}
+
 void testHistoryAwaitingBackendCompletion() {
 	TickRuntimeFixture fixture;
 	auto& runtime = fixture.runtime;
@@ -1439,6 +1468,7 @@ int main() {
 	testHistoryUnarmedSupervisorEdge();
 	testPacedHistoryPlayback();
 	testCancelledHistoryTakeover();
+	testHistoryPaysRetainedCycleDebt();
 	testHistoryAwaitingBackendCompletion();
 	return 0;
 }
