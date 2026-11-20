@@ -46,7 +46,7 @@ async function fixture(t: TestContext, source: string, optLevel: 0 | 3, cartSour
 	const run = results.beginRun(item.id, [{ test: item, source, sourceRevision: 0 }]), result = results.startItem(run, 0, 0);
 	const execution = new TestExecution(target, program, results, result,
 		{ ...DEFAULT_TEST_BUDGETS, phaseCycles: 100_000, quantumCycles: 2048 }, undefined, 'debug');
-	afterTest(t, () => execution.dispose());
+	afterTest(t, () => { execution.dispose(); target.dispose(); });
 	const debug = execution.debugger!;
 	const advance = () => {
 		for (let grant = 0; execution.active && !debug.stopped && grant < 10000; grant++) execution.advance();
@@ -290,7 +290,7 @@ end } }`;
 	const results = new ScenarioResultService(), run = results.beginRun(f.result.test.id, [{ test: f.result.test, source, sourceRevision: 0 }]);
 	const normal = new TestExecution(target, f.program, results, results.startItem(run, 0, 0),
 		{ ...DEFAULT_TEST_BUDGETS, phaseCycles: 100_000, quantumCycles: 2048 });
-	afterTest(t, () => normal.dispose());
+	afterTest(t, () => { normal.dispose(); target.dispose(); });
 	assert.equal(normal.debugger, undefined);
 	for (let grant = 0; normal.active && grant < 10000; grant++) normal.advance();
 	assert.equal(normal.result.state, 'passed');

@@ -28,20 +28,25 @@ import { workspaceDirtyRecords } from '../../ide/workbench/workspace/state';
 import { buildWorkspaceDirtyEntryPath } from '../../ide/workspace/files';
 import { afterTest } from '../helpers/test_cleanup';
 
-test('Studio runs fresh targets and current sources without touching the authoring machine, sources or debugger', async t => {
+test('Studio reboots a suite target, retains a failed machine and leaves the authoring machine untouched', async t => {
 	afterTest(t, () => { workspaceDirtyRecords.clear(); editorTextModelService.clear(); });
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-isolation-'));
 	try {
 		const source = `local fixture = require('testlib/fixture')
+bss scratch: word[1]
 return { kind = 'unit', tests = {
- first = function() assert(fixture == 'edited helper'); isolated = 9 end,
- second = function() assert(isolated == nil); error('retained failure') end,
- third = function() assert(isolated == nil) end,
+ first = function() assert(fixture == 'edited helper'); isolated = 9; scratch[0] = 42 end,
+ second = function() assert(isolated == nil and scratch[0] == 0, 'reset did not reinitialize the program'); error('retained failure') end,
+ third = function() assert(isolated == nil); carried = 17 end,
 } }`;
-		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
+		const other = {
+			path: 'tests/carts/example/second_assert.lua',
+			source: "return { kind = 'unit', tests = { different_image = function() assert(getglobal('carried') == nil, 'previous suite leaked state') end } }",
+		};
+		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }, other], {
 			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
 			systemModules: [
-				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable` },
+				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable\ngetglobal = __bmsx_getglobal` },
 				...COROUTINE_FIRMWARE_MODULES,
 			],
 			cartSource: `module<entry>\nerror('do not run the game for unit cases')`,
@@ -81,7 +86,7 @@ return { kind = 'unit', tests = {
 		const originalState = captureRuntimeMachineState(authoring.runtime);
 		const originalMedia = sources.currentBlua32Media;
 		const originalSource = sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources.module2lua['testlib/fixture'].src;
-		const accepted = runs.start(module.id);
+		const accepted = runs.start(module.parentId);
 		let completed = false;
 		const completion = runs.wait(accepted).then(run => { completed = true; return run; });
 		suite.pushEditOperations([{ offset: 0, deleteLength: suite.buffer.length, text: 'end end -- later typing' }]);
@@ -95,16 +100,19 @@ return { kind = 'unit', tests = {
 		assert.equal(runs.active, false);
 		assert.equal(await completion, accepted);
 		assert.equal(completed, true);
-		assert.deepEqual(runs.results.runs[0].items.map(item => item.state), ['passed', 'failed', 'passed']);
+		assert.deepEqual(runs.results.runs[0].items.map(item => item.state), ['passed', 'failed', 'passed', 'passed'],
+			JSON.stringify(runs.results.runs[0].items.map(item => item.failures)));
+		assert.equal(runs.results.runs[0].items[3].test.caseName, 'different_image');
 		assert.equal(runs.results.runs[0].items[0].test.caseName, 'captured');
 		assert.equal(runs.results.runs[0].items[0].sourceRevision, capturedVersion);
 		const recorded = runs.results.runs[0].items[0];
 		assert.equal(recorded.source, capturedSource);
 		suite.undo(); helperModel.undo();
-		assert.equal(targets.length, 3, 'product construction runs once per case');
-		assert.equal(new Set(targets.map(target => target.input)).size, 3, 'each case supplies its own input');
-		assert.deepEqual([...disposed], [targets[0], targets[2]], 'only the failed machine remains retained');
+		assert.equal(targets.length, 2, 'cases reboot on the same machine, even with a new fixture ROM; only retention needs another machine');
+		assert.deepEqual([...disposed], [targets[1]], 'only the failed machine remains retained');
+		assert.equal(runs.session!.failedExecution!.target, targets[0]);
 		assert.equal(runs.session!.failedExecution!.result.test.caseName, 'second');
+		assert.equal(runs.session!.failedExecution!.result.failures[0].message, 'retained failure');
 		assert.notEqual(runs.session!.failedExecution!.target.runtime, authoring.runtime);
 		assert.deepEqual(captureRuntimeMachineState(authoring.runtime), originalState);
 		assert.equal(sources.currentBlua32Media, originalMedia);
@@ -117,7 +125,7 @@ return { kind = 'unit', tests = {
 		collection.refresh();
 		const addedModule = collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[0], added.source_path);
 		runs.start(addedModule.id);
-		assert.equal(disposed.has(targets[1]), true, 'a new run releases the previous failed machine');
+		assert.equal(disposed.has(targets[0]), true, 'a new run releases the previous failed machine');
 		for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
 		assert.equal(runs.active, false);
 		assert.equal(runs.results.runs[0].state, 'passed', JSON.stringify(runs.results.runs[0].items[0].failures));

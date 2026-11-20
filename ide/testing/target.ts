@@ -18,6 +18,7 @@ export interface FixtureTarget {
 /** An automatic case owns only scripted input. Play admits the same fixture with a separate input port. */
 export interface TestTarget extends FixtureTarget {
 	readonly input: TestInput;
+	reboot(): void;
 }
 
 /** Construction is outside testing; input injection and case policy remain here. */

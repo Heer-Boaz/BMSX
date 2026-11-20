@@ -6,13 +6,14 @@ import type { TestDebugger } from './debugger';
 import { TestInput } from './input';
 import { ScenarioResultService, type ScenarioRun, type ScenarioRunItemSource } from './scenario/result_service';
 
-/** A serial run owns at most its current machine and one retained failed machine. */
+/** A serial run owns a rebootable machine and at most one retained failed machine. */
 export class TestRun {
 	public active = true;
 	public execution: TestExecution | null = null;
 	public failedExecution: TestExecution | null = null;
 	private index = 0;
 	private cancelled = false;
+	private target: TestTarget | null = null;
 	private program: BuiltFixtureProgram | null = null;
 	private programSource: ScenarioRunItemSource | null = null;
 
@@ -32,14 +33,24 @@ export class TestRun {
 		const contextId = result.test.resource.contextId;
 		const companion = this.media.cartridgeSlots[1];
 		try {
-			if (this.programSource === null || this.programSource.test.resource.contextId !== contextId || this.programSource.test.assetId !== result.test.assetId
-				|| this.programSource.source !== result.source) {
-				this.program = await buildFixtureProgram(this.media, { sourcePath: result.test.resource.path, source: result.source });
-				this.programSource = result;
+			const source = this.programSource;
+			const program = source !== null && source.test.resource.contextId === contextId
+				&& source.test.assetId === result.test.assetId && source.source === result.source
+				? this.program!
+				: await buildFixtureProgram(this.media, { sourcePath: result.test.resource.path, source: result.source });
+			if (!this.active) return;
+			if (this.target === null) {
+				this.target = this.createTarget(this.media.systemRom, [program.layer.bytes, companion], this.media.machineModel, new TestInput());
+			} else {
+				// Every fixture image replaces only the ROM of the same installed card.
+				if (program !== this.program) this.target.runtime.machine.cartridgeController.installRom(0, program.layer.bytes);
+				// The previous case released all held input. Start a new ICU sample epoch.
+				this.target.input.samples = 0;
+				this.target.reboot();
 			}
-			if (!this.active) { this.program = null; return; }
-			const target = this.createTarget(this.media.systemRom, [this.program!.layer.bytes, companion], this.media.machineModel, new TestInput());
-			this.execution = new TestExecution(target, this.program!, this.results, result, this.budgets, this.captured, this.result.mode);
+			this.program = program;
+			this.programSource = result;
+			this.execution = new TestExecution(this.target, program, this.results, result, this.budgets, this.captured, this.result.mode);
 			const debug = this.execution.debugger;
 			if (debug !== undefined && this.debuggerChanged !== undefined) {
 				debug.onDidChange(() => this.debuggerChanged!(debug));
@@ -64,8 +75,9 @@ export class TestRun {
 			if (execution.active) execution.advance();
 		} catch (error) {
 			execution.failRunner(error);
-			this.failedExecution?.dispose();
+			this.releaseFailedTarget();
 			this.failedExecution = execution;
+			this.target = null;
 			this.execution = null;
 			this.results.failRun(this.result);
 			this.finish();
@@ -73,8 +85,9 @@ export class TestRun {
 		}
 		if (execution.active) return;
 		if (execution.result.state === 'failed') {
-			this.failedExecution?.dispose();
+			this.releaseFailedTarget();
 			this.failedExecution = execution;
+			this.target = null;
 		} else execution.dispose();
 		this.execution = null;
 		this.index += 1;
@@ -89,9 +102,19 @@ export class TestRun {
 
 	private finish(): void {
 		this.active = false;
+		this.target?.dispose();
+		this.target = null;
 		this.program = null;
 		this.programSource = null;
 		this.finished();
+	}
+
+	private releaseFailedTarget(): void {
+		const execution = this.failedExecution;
+		if (execution === null) return;
+		execution.dispose();
+		execution.target.dispose();
+		this.failedExecution = null;
 	}
 
 	public cancel(): void {
@@ -115,7 +138,6 @@ export class TestRun {
 			this.results.cancelRun(this.result);
 			this.finish();
 		}
-		this.failedExecution?.dispose();
-		this.failedExecution = null;
+		this.releaseFailedTarget();
 	}
 }

@@ -30,6 +30,13 @@ for (const optLevel of [3] as const) {
 		assert.equal(runtime.frameScheduler.lastTickSequence, 2, 'zero resumes only the next retained tick');
 		assert.equal(runtime.frameScheduler.lastTickBudgetGranted, carry);
 		assert.equal(runtime.frameScheduler.captureState().cycleGrantRemainder, 0);
+		target.reboot();
+		assert.equal(runtime.machine.scheduler.nowCycles, 0);
+		assert.equal(runtime.frameScheduler.lastTickSequence, 0);
+		assert.equal(runtime.frameScheduler.captureState().carriedCycleBudget, 0);
+		assert.equal(target.presentation.pending, false);
+		assert.equal(target.advanceGame(55), false);
+		assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 55);
 	});
 
 	test(`O${optLevel}: offscreen GPU readbacks resume the accepted grant before admitting the next one`, t => {

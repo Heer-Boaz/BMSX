@@ -206,7 +206,7 @@ export class TestExecution implements FixtureOutput {
 		this.debugger?.dispose();
 		if (this.inspections !== undefined) for (const inspection of this.inspections) inspection.dispose();
 		this.failures.length = 0;
-		this.target.dispose();
+		this.target.runtime.machine.cpu.setExecutionHook(null, 0, 0);
 	}
 
 	private complete(): void {

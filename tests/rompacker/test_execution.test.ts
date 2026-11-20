@@ -8,7 +8,6 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH } from '../helpers/scenario_media';
 import { buildFixtureProgram } from '../../ide/testing/fixture_media';
-import type { TestTarget } from '../../ide/testing/target';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { TestInput } from '../../ide/testing/input';
 import { TestExecution, DEFAULT_TEST_BUDGETS } from '../../ide/testing/execution';
@@ -28,6 +27,7 @@ import { GX_GPU_GP0_FILL_RECTANGLE } from '../../machine/ts/spec/gx/gp0';
 import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { readSupervisorFaultReport } from '../../ide/runtime/fault_state';
+import { afterTest } from '../helpers/test_cleanup';
 
 const source = `
 return {
@@ -144,11 +144,11 @@ fault_workspace[0] = 2`,
 			assert.equal(result.failures[0].message, readSupervisorFaultReport(runtime));
 			assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_DATA_BUS_ERROR);
 			assert.equal(machine.memory.readMappedU32LE(resumed), 0, 'neither the pending fixture nor the faulted game resumes');
-		} finally { execution.dispose(); }
+		} finally { execution.dispose(); target.dispose(); }
 	} finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained failures and bounded execution`, async () => {
+test(`O${optLevel}: named cases preserve fixture hooks, failure inspection and budgets across reboots`, async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-test-runner-'));
 	try {
 		const testSource = { path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source };
@@ -167,14 +167,14 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 			caseName: test.name, resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: testSource.path }, assetId: 'fixture', sourceTimestamp: 0, range: test.range,
 		}));
 		const run = results.beginRun('scenario-root:0', items.map(test => ({ test, source, sourceRevision: 0 })));
-		let previous: TestTarget | null = null;
+		const target = new OffscreenMachine(fixture.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
+		afterTest(t, () => target.dispose());
+		Object.defineProperties(target, {
+			backend: { get() { assert.fail('source-only unit cases must not initialize a renderer'); } },
+			presenter: { get() { assert.fail('source-only unit cases must not initialize a presenter'); } },
+		});
 		for (let index = 0; index < items.length; index += 1) {
-			const target = new OffscreenMachine(fixture.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
-			Object.defineProperties(target, {
-				backend: { get() { assert.fail('source-only unit cases must not initialize a renderer'); } },
-				presenter: { get() { assert.fail('source-only unit cases must not initialize a presenter'); } },
-			});
-			if (previous !== null) assert.notEqual(previous.runtime.machine.cpu, target.runtime.machine.cpu);
+			if (index !== 0) target.reboot();
 			const result = results.startItem(run, index, 0);
 			const execution = new TestExecution(target, program, results, result, { ...DEFAULT_TEST_BUDGETS, phaseCycles: 20000 });
 			for (let grant = 0; execution.active && grant < 10000; grant += 1) execution.advance();
@@ -209,7 +209,6 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 				}
 				else assert.match(result.failures[0].message, /requires an integration test/);
 			}
-			previous = target;
 			execution.dispose();
 		}
 		results.completeRun(run);
@@ -230,6 +229,7 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 		assert.equal(setupExecution.active, false);
 		assert.deepEqual(setupResult.failures.map(failure => [failure.phase, failure.message]),
 			[['setup', 'setup failed'], ['teardown', 'cleanup failed']]);
+		setupExecution.dispose();
 		setupTarget.dispose();
 	} finally { await rm(directory, { recursive: true, force: true }); }
 });
@@ -297,6 +297,7 @@ end`,
 		assert.equal(result.state, 'passed', JSON.stringify(result.failures));
 		assert.equal(captures, 1);
 		assert.ok(result.captures.at(0).presentedFrame! > 0);
+		execution.dispose();
 		target.dispose();
 	} finally { await rm(directory, { recursive: true, force: true }); }
 });
@@ -353,6 +354,7 @@ end`,
 				assert.equal(result.logs.at(1).text, 'cleanup');
 				assert.deepEqual(result.failures, []);
 			} else assert.match(result.failures[0].message, /Cleanup incomplete/);
+			execution.dispose();
 			target.dispose();
 		}
 	} finally { await rm(directory, { recursive: true, force: true }); }

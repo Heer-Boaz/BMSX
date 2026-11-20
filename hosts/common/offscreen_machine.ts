@@ -92,6 +92,13 @@ export class OffscreenMachine<TInput extends InputControllerInputSource> {
 		return presented;
 	}
 
+	/** Reset the installed console without reallocating its memory or video backend. */
+	public reboot(): void {
+		this.runtime.rebootSystem();
+		this.presentation.reset(this.videoPresenter, this.runtime);
+		this.frames?.dispose();
+	}
+
 	public dispose(): void {
 		this.runtime.machine.cpu.setExecutionHook(null, 0, 0);
 		this.frames?.dispose();

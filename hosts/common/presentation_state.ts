@@ -92,10 +92,13 @@ export class RenderPresentationState {
 		this.presentationIntent = PresentationIntent.None;
 	}
 
-	public reset(presenter: VideoPresenter, runtime: Runtime): void {
+	public reset(presenter: VideoPresenter | null, runtime: Runtime): void {
 		this.gameFrame.presentationSequence = undefined;
+		this.gameFrame.cycles = 0;
+		this.gameFrame.videoTick = 0;
 		this.clearPresentation();
 		this.pcrtcScanoutRevision = 0;
+		if (presenter === null) return; // An offscreen machine may not have produced a frame yet.
 		const output = runtime.machine.gxGpu.readDeviceOutput();
 		presenter.setScanoutSize(
 			gxGpuDisplayModeScreenWidth(output.displayModeWord),
