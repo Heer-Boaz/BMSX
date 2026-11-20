@@ -7,21 +7,23 @@ import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_t
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MAX_OP_BITS, packInstructionWord } from '../../machine/ts/spec/blua32/instruction_format';
-import { GEO_STATUS_BUSY, GEO_STATUS_DONE, GEO_OVERLAP2D_MODE_FULL_PASS, GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB, IO_CMD_GEO_OVERLAP2D_PASS } from '../../machine/ts/machine/devices/geometry/contracts';
+import { GEO_STATUS_BUSY, GEO_STATUS_DONE, GEO_PRIMITIVE_AABB, GEO_OVERLAP2D_AABB_DATA_COUNT, GEO_OVERLAP2D_SHAPE_DESC_BYTES, GEO_OVERLAP2D_MODE_FULL_PASS, GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB, IO_CMD_GEO_OVERLAP2D_PASS } from '../../machine/ts/machine/devices/geometry/contracts';
 import { IO_GEO_STATUS, IO_IRQ_FLAGS, IRQ_GEO_DONE, IO_GEO_SRC0, IO_GEO_DST0, IO_GEO_DST1, IO_GEO_COUNT, IO_GEO_CMD, IO_GEO_PARAM0, IO_GEO_PARAM1, IO_GEO_STRIDE0 } from '../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { compileCartlibProgram, createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { cartridgeSlots } from '../helpers/cartridge';
 
-const marker = 0x080d0000, shape = 0x080d0100;
 const opcodeMask = packInstructionWord((1 << MAX_OP_BITS) - 1, 0, 0, 0);
 const haltOpcode = packInstructionWord(OpCode.HALT, 0, 0, 0);
 const modules = ['cartlib/irq', 'cartlib/irq/source', 'cartlib/collision/collision_2d']
 	.map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') }));
+const shape = `data inert_shape: word[8] = {
+ ${GEO_PRIMITIVE_AABB}, ${GEO_OVERLAP2D_AABB_DATA_COUNT}, ${GEO_OVERLAP2D_SHAPE_DESC_BYTES}, ${GEO_OVERLAP2D_SHAPE_DESC_BYTES}, 0, 0, 0x3f800000, 0x3f800000
+}`;
 const collisionInputs = `
+${shape}
 local collision<const> = require('cartlib/collision/collision_2d')
-local shape<const> = ${shape}
-local function resolve_shape(_self) return shape end
+local function resolve_shape(_self) return inert_shape end
 local a<const> = { wox=0, woy=0, layer=1, mask=0, resolve_shape=resolve_shape }
 local b<const> = { wox=0, woy=0, layer=1, mask=0, resolve_shape=resolve_shape }
 local colliders<const> = { a, b }
@@ -29,15 +31,18 @@ local pairs<const> = { get = function() error('unexpected contact') end }
 bss workspace: word[64]
 `;
 const source = collisionInputs + `
+bss marker: word[2]
 collision.use_workspace(workspace, sizeof(word[64]))
-mem[${marker + 4}] = workspace
-mem[${marker}] = 1
+marker[1] = workspace
+marker[0] = 1
 local count<const> = collision.collect_overlaps(colliders, 2, pairs)
-mem[${marker}] = 2 + count
+marker[0] = 2 + count
 while true do halt_until_irq end
 `;
 for (const mode of [CpuExecutionBackend.Interpreter]) test(`real cartlib GEO wait, mode ${mode}`, () => {
 	const { images } = compileCartlibProgram(source, { modules, optLevel: 3 });
+	const marker = images.cartSymbols.metadata.staticScopes.declarations.find(declaration => declaration.name === 'marker')?.address;
+	assert.ok(marker !== undefined, 'linked guest marker');
 	const runtime = new Runtime({ systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: mode }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {},
 	});
@@ -85,33 +90,39 @@ return true
 });
 
 const conditionSource = `
+${shape}
 local irq<const> = require('cartlib/irq')
 local source<const> = require('cartlib/irq/source')
 bss done: word
+bss marker: word[2]
+bss instances: word[80]
+bss contacts: word[9]
+bss summary: word[4]
 irq.register(source.geo_done, function() *done = 1 end)
-local instances<const>: *word = 0x080d2000
 for i = 0, 15 do
- instances[i * 5] = ${shape}
+ instances[i * 5] = inert_shape
  instances[i * 5 + 1] = 0
  instances[i * 5 + 2] = 0
  instances[i * 5 + 3] = 1
  instances[i * 5 + 4] = 0
 end
-mem[${IO_GEO_SRC0}] = 0x080d2000
-mem[${IO_GEO_DST0}] = 0x080d4000
-mem[${IO_GEO_DST1}] = 0x080d4100
+mem[${IO_GEO_SRC0}] = instances
+mem[${IO_GEO_DST0}] = contacts
+mem[${IO_GEO_DST1}] = summary
 mem[${IO_GEO_COUNT}] = 16
 mem[${IO_GEO_PARAM0}] = ${GEO_OVERLAP2D_MODE_FULL_PASS | GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB}
 mem[${IO_GEO_PARAM1}] = 0
 mem[${IO_GEO_STRIDE0}] = 20
-mem[${marker}] = 1
+marker[0] = 1
 mem[${IO_GEO_CMD}] = ${IO_CMD_GEO_OVERLAP2D_PASS}
 while *done == 0 do halt_until_irq end
-mem[${marker}] = 2
+marker[0] = 2
 while true do halt_until_irq end
 `;
 for (const mode of [CpuExecutionBackend.Interpreter]) test(`predicate-to-HALT race uses the retained GEO event, mode ${mode}`, () => {
 	const { images } = compileCartlibProgram(conditionSource, { modules: modules.filter(module => module.path !== 'cartlib/collision/collision_2d'), optLevel: 3 });
+	const marker = images.cartSymbols.metadata.staticScopes.declarations.find(declaration => declaration.name === 'marker')?.address;
+	assert.ok(marker !== undefined, 'linked guest marker');
 	const runtime = new Runtime({ systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: mode }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {},
 	});

@@ -625,6 +625,8 @@ function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; dm
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const irq = new IrqController(memory);
 	const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
+	// DMA test packets use static RAM through the page at offset 0x5000.
+	assert.equal(cpu.heapAllocator.setFloor(DYNAMIC_RAM_BASE + 0x6000), true);
 	const scheduler = new DeviceScheduler(cpu);
 	const dma = new DmaController(memory, cpu, irq, scheduler);
 	const gpu = new GxGpu(memory, cpu, irq, scheduler, dma, PSX_MACHINE_SPEC.gxGpuVramBytes);

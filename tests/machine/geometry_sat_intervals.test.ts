@@ -11,7 +11,7 @@ import { DEVICE_SERVICE_GEO } from '../../machine/ts/machine/scheduler/device';
 import * as io from '../../machine/ts/spec/bmsx/io';
 import { cartridgeSlots } from '../helpers/cartridge';
 
-// RAM outside the test image's static storage, for GEO operands and results.
+// Public fixture RAM for GEO operands and results.
 const GEO_BUFFERS = DYNAMIC_RAM_BASE + 0x10000;
 
 function fixture() {
@@ -92,6 +92,7 @@ function controllerCase() {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {},
 	}, PSX_MACHINE_SPEC);
 	machine.resetDevices(); machine.scheduler.reset();
+	assert.ok(machine.cpu.heapAllocator.setFloor(GEO_BUFFERS + 0x1000));
 	machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec, 0);
 	for (const [address, word] of [
 		[io.IO_GEO_SRC0, f.job.src0], [io.IO_GEO_SRC1, f.job.src1], [io.IO_GEO_SRC2, f.job.src2],

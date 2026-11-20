@@ -2,7 +2,6 @@ import { asClosure, numberToHost, valueBool, valueInteger, valuePayload } from '
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
 import { packModelAsset } from '../../toolchain/ts/rompack/model_asset';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
@@ -150,14 +149,19 @@ for (const optLevel of [3] as const) test(`static model pass consumes World memb
 for (const optLevel of [3] as const) test(`replacement geometry at the same address belongs to a new model generation (O${optLevel})`, () => {
 	// A stable mapped allocation is republished as a new resource generation.
 	// Retaining the same address/count/pose must not retain the old projection.
-	const address = RAM_BASE + 0x00200000;
-	const ramDirectory = `local record = {addr=${address},len=${bytes.length}}
+	const ramDirectory = `rodata source_model: word[${words.length}] = {${words.join(',')}}
+bss published_model: word[${words.length}]
+local source<const>: *word = source_model
+local published<const>: *word = published_model
+for slot=0,${words.length - 1} do published[slot] = source[slot] end
+test_model_address = published_model
+local record = {addr=published_model,len=${bytes.length}}
 return {model=function(id) return record end,
- renew=function() record={addr=${address},len=${bytes.length}} end}`;
+ renew=function() record={addr=published_model,len=${bytes.length}} end}`;
 	const { cpu } = createCartlibProgramHarness(source, { optLevel,
 		modules: [...modules, { path: 'cartlib/rom_dir', source: ramDirectory }] });
-	cpu.memory.writeBytes(address, bytes);
 	runGuestToHalt(cpu, 10_000_000);
+	const address = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('test_model_address')));
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
 	const packet = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('packet')), cpu.gc);
 	runCompletionClosure(cpu, packet, []);

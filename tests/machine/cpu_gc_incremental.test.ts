@@ -340,15 +340,16 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 });
 
 
-test('high retained usage advances automatically without emergency full collections', () => {
+test('short-lived allocations above two MiB retained are served by young collections', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	const retained = cpu.createTable(419430, 0);
 	frame.registers.setTable(0, retained); frame.top = 1;
 	cpu.collectTrackedHeapBytes();
 	const diagnostics = cpu.gc.diagnostics = new GcDiagnostics();
-	for (let i = 0; i < 24000; ++i) cpu.createTable(8, 0);
+	for (let i = 0; i < 4000; ++i) cpu.createTable(8, 0);
+	assert.ok(diagnostics.minorCollections >= 2, 'repeated allocation bursts collect the young generation');
+	assert.equal(diagnostics.steps, diagnostics.minorCollections, 'no major step retraces the retained heap');
 	assert.equal(diagnostics.fullCollections, 0);
-	assert.ok(diagnostics.collections > 0 && diagnostics.steps > diagnostics.collections);
 	assert.ok(cpu.luaHeap.usedBytes() <= cpu.luaHeap.capacity());
 	assert.equal(frame.registers.getPayload(0), retained);
 });

@@ -197,7 +197,7 @@ test('const function export aliases stay compile-time call targets', () => {
 	const moduleSource = readFileSync('machine/bios/math/sin.lua', 'utf8');
 	const entrySource = `
 local sin_turn32<const> = require("${SIN_TURN32_PATH}")
-local angle<const>: *word = 0x08040000
+bss angle: word
 return sin_turn32(*angle)
 `;
 	const compiled = compileWithModule(entrySource, SIN_TURN32_PATH, moduleSource, 3);

@@ -43,7 +43,7 @@ test('booted runtime: equal-deadline GEO sampling precedes DMA across a snapshot
 	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.HALT, 0, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.RFE, 0, 0, 0, 0);
-	const system = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 1 }, { firstWord: 1, wordCount: 1 }], systemGlobalNames: LUA_BOOT_PRIMITIVES.map(p => p.name), startupFunctionIndex: 0, irqFunctionIndex: 1, exceptionFunctionIndex: 1 });
+	const system = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 1 }, { firstWord: 1, wordCount: 1 }], systemGlobalNames: LUA_BOOT_PRIMITIVES.map(p => p.name), startupFunctionIndex: 0, irqFunctionIndex: 1, exceptionFunctionIndex: 1 }, 0x3000);
 	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {} });
 	runtime.boot();
 	const machine = runtime.machine, memory = machine.memory;

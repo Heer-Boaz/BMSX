@@ -22,6 +22,8 @@ function fixture() {
   cartridgeSlots: cartridgeSlots(new Uint8Array([0x44,0x33,0x22,0x11,0x88,0x77,0x66,0x55]))}, spec.ramBytes);
  const irq = new IrqController(memory), execution = new ExecutionAddressSpace(memory);
  const cpu = new CPU(memory, irq, execution), scheduler = new DeviceScheduler(cpu);
+ // Public static RAM contains the source (+0x1000) and destination (+0x4000) pages.
+ assert.equal(cpu.heapAllocator.setFloor(map.DYNAMIC_RAM_BASE + 0x5000), true);
  const dma = new DmaController(memory, cpu, irq, scheduler), gpu = new GxGpu(memory, cpu, irq, scheduler, dma, spec.gxGpuVramBytes);
  memory.cartridgeController.connect(memory, irq, dma);
  dma.reset(); memory.cartridgeController.reset(); gpu.reset(); irq.reset();

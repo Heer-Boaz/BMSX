@@ -21,6 +21,8 @@ function fixture() {
 	const memory = new Memory({ systemRom: new Uint8Array(8), cartridgeSlots: cartridgeSlots(new Uint8Array(8)) }, spec.ramBytes);
 	const irq = new IrqController(memory), execution = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irq, execution), scheduler = new DeviceScheduler(cpu);
+	// The upload source (+0x1000) and competing copy destination (+0x4000) are static RAM.
+	assert.equal(cpu.heapAllocator.setFloor(map.DYNAMIC_RAM_BASE + 0x5000), true);
 	const dma = new DmaController(memory, cpu, irq, scheduler), gpu = new GxGpu(memory, cpu, irq, scheduler, dma, spec.gxGpuVramBytes);
 	memory.cartridgeController.connect(memory, irq, dma);
 	dma.reset(); memory.cartridgeController.reset(); gpu.reset(); irq.reset();

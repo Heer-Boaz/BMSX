@@ -167,18 +167,18 @@ test('table values come directly from the allocator-owned RAM block', () => {
 	cpu.gc.tables.setInteger(table, 1, valueInteger(71));
 	const base = cpu.gc.tables.storageAddress(table);
 	assert.equal(cpu.heapAllocator.occupiedBytes() - occupiedBefore, 56, 'the 32-byte header and 24-byte body are physical allocations');
-	assert.equal(memory.readMappedU32LE(base), 71);
-	assert.equal(memory.readMappedU32LE(base + 4 * 4), 0xffffffff, 'the hash-chain word follows the four payload words');
+	assert.equal(memory.readRamRecordWord(base), 71);
+	assert.equal(memory.readRamRecordWord(base + 4 * 4), 0xffffffff, 'the hash-chain word follows the four payload words');
 	const tags = base + 5 * 4;
-	assert.equal(memory.readMappedU8(tags), ValueTag.Integer);
+	assert.equal(memory.readRamRecordByte(tags), ValueTag.Integer);
 	const backing = table + TableHeader.Storage;
-	assert.equal(memory.readMappedU32LE(backing), base);
-	memory.writeMappedU32LE(backing, base + MAIN_RAM_SIZE);
-	memory.writeMappedU32LE(base, 94);
+	assert.equal(memory.readRamRecordWord(backing), base);
+	memory.writeRamRecordWord(backing, base + MAIN_RAM_SIZE);
+	memory.writeRamRecordWord(base, 94);
 	assert.equal(cpu.gc.tables.getInteger(table, 1), valueInteger(94));
-	memory.writeMappedU8(tags, ValueTag.Nil);
+	memory.writeRamRecordByte(tags, ValueTag.Nil);
 	assert.equal(valueTag(cpu.gc.tables.getInteger(table, 1)), ValueTag.Nil);
-	memory.writeMappedU32LE(backing, base);
+	memory.writeRamRecordWord(backing, base);
 	cpu.gc.tables.clear(table);
 	assert.equal(cpu.heapAllocator.occupiedBytes() - occupiedBefore, 32, 'clearing releases only the owned body');
 });
@@ -189,14 +189,15 @@ test('numeric hash mixing distributes negative integral keys and preserves canon
 	const table = cpu.createTable(0, 1024);
 	for (let key = -1; key >= -1024; key--) cpu.gc.tables.setInteger(table, key, valueInteger(key));
 	const links = cpu.gc.tables.storageAddress(table) + 1024 * 2 * 4;
-	let longest = 0;
 	for (let slot = 0; slot < 1024; slot++) {
 		let count = 0;
-		for (let next = slot; next !== -1; next = (memory.readMappedU32LE(links + next * 4) | 0)) count++;
-		longest = Math.max(longest, count);
+		for (let next = slot; next !== -1; next = (memory.readRamRecordWord(links + next * 4) | 0)) {
+			assert.ok(++count <= 8, `bucket ${slot} exceeded its chain depth bound`);
+		}
 		assert.equal(cpu.gc.tables.getInteger(table, -(slot + 1)), valueInteger(-(slot + 1)));
 	}
-	assert.ok(longest <= 8, `negative integers must not collapse into a single hash chain (${longest})`);
+	cpu.gc.tables.set(table, valueFloat(-0), valueBool(true)); assert.equal(cpu.gc.tables.getInteger(table, 0), valueBool(true));
+	cpu.gc.tables.setInteger(table, 0, valueBool(false)); assert.equal(cpu.gc.tables.get(table, valueFloat(-0)), valueBool(false));
 	// The same physical buckets are checked in the C++ table inspection suite.
 	const slots = new ValueSlots(2);
 	const vectors: ReadonlyArray<readonly [Value, number]> = [
@@ -209,8 +210,6 @@ test('numeric hash mixing distributes negative integral keys and preserves canon
 		assert.equal(cpu.gc.tables.loadStoredEntry(one, bucket, slots, 0), true);
 		assert.equal(slots.get(1), valueBool(false));
 	}
-	cpu.gc.tables.set(table, valueFloat(-0), valueBool(true)); assert.equal(cpu.gc.tables.getInteger(table, 0), valueBool(true));
-	cpu.gc.tables.setInteger(table, 0, valueBool(false)); assert.equal(cpu.gc.tables.get(table, valueFloat(-0)), valueBool(false));
 });
 
 test('Table hashes runtime object keys from value-owned identity', () => {

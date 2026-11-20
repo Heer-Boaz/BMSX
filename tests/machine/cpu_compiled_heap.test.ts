@@ -160,7 +160,7 @@ test('hot immediate CLOSURE retains the full Bx operand and canonical STATIC ide
 	writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255); writeInstruction(text, 16, OpCode.HALT, 0, 0, 0);
 	const target = DYNAMIC_RAM_BASE;
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 8 }, { firstWord: 16, wordCount: 1 }],
-		closureRelocations: [{ wordIndex: 2, functionAddress: target }, { wordIndex: 5, functionAddress: target }] });
+		closureRelocations: [{ wordIndex: 2, functionAddress: target }, { wordIndex: 5, functionAddress: target }] }, BLUA32_FUNCTION_RECORD_SIZE);
 	const left = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), right = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	const record = image.symbols.functionAddresses[1] - SYSTEM_ROM_BASE;
 	for (const { memory } of [left, right]) memory.writeBytes(target, image.romBytes.subarray(record, record + BLUA32_FUNCTION_RECORD_SIZE));

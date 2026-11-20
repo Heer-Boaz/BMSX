@@ -48,11 +48,12 @@ function loopImage() {
 }
 
 test('an unconfigured Runtime interprets while the selected JavaScript backend generates code at the same guest cost', () => {
-	const address = DYNAMIC_RAM_BASE + 0x1000;
 	const image = linkTestSystemBlua32(compileLuaSource(`
+bss observed: word
 local n = 0
-for i = 1, 256 do n = n + i; mem32le[${address}] = n end
+for i = 1, 256 do n = n + i; *observed = n end
 return n`, 'cpu-default.lua'));
+	const address = image.image.header.bssAddress;
 	const rom = new Uint8Array((image.romBytes.length + MAPPED_PAGE_BYTE_SIZE - 1) & -MAPPED_PAGE_BYTE_SIZE);
 	rom.set(image.romBytes);
 	const options = { systemRomBytes: rom, cartridgeSlots: [null, null] as [null, null], machineModel: PSX_MACHINE_SPEC };

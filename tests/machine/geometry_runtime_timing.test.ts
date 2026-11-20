@@ -27,7 +27,7 @@ function createRuntime(mode: CpuExecutionBackend): Runtime {
 		startupFunctionIndex: 0,
 		irqFunctionIndex: 1,
 		exceptionFunctionIndex: 1,
-	});
+	}, 0x11000); // BSS covers the overlap vector's mapped operands and results.
 	const runtime = new Runtime({
 		systemRomBytes: system.romBytes,
 		cartridgeSlots: cartridgeSlots(),

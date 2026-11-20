@@ -9,7 +9,7 @@ import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_pa
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { DYNAMIC_RAM_BASE, IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { observeRegisterStores } from '../helpers/cpu_execution';
 
@@ -65,10 +65,11 @@ test('output locals become observable only after their definition, including hel
 	writeInstruction(text, 2, OpCode.JMP, 0, 0, 0);
 	writeInstruction(text, 3, OpCode.MOV, 21, 20, 0);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 22 }] });
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 22 }] }, 4);
+	const address = image.image.header.bssAddress;
 	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0);
-	frame.registers.setInteger(1, DYNAMIC_RAM_BASE);
+	frame.registers.setInteger(1, address);
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[first]!;
@@ -76,10 +77,10 @@ test('output locals become observable only after their definition, including hel
 	for (const mapped of [false, true]) for (const grant of [1, 64]) {
 		const r = new ValueSlots(22);
 		r.setEncoded(0, ValueTag.False, 37);
-		r.setInteger(1, mapped ? DYNAMIC_RAM_BASE : IO_BASE);
+		r.setInteger(1, mapped ? address : IO_BASE);
 		r.setTable(2, source); r.setTable(20, old);
 		r.set(21, valueFloatBits(0x80000000));
-		memory.writeMappedWord(DYNAMIC_RAM_BASE, 71);
+		memory.writeMappedWord(address, 71);
 		const writes = new Uint32Array(22);
 		observeRegisterStores(r, register => { ++writes[register]; });
 		const state = { remainingCycles: grant, registerTop: 3, memoryAddress: 0, lengthWork: { probes: 0 } };

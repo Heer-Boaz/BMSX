@@ -6,22 +6,20 @@ import { test } from 'node:test';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import * as v from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { buildRomMetadataSection } from '../../toolchain/ts/rompack/metadata_encode';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
-const address = DYNAMIC_RAM_BASE + 0x28000;
-
 for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) test(`the cartlib BIN reader consumes production values and shared metadata at O${optLevel} (${backend})`, () => {
-	const entrySource = `require('bootstrap')
+	const entrySource = `bss fixture_bytes: u8[0x5000]
+require('bootstrap')
 local bin<const> = require('cartlib/bin')
 return function(addr) return bin.decode(addr, 'fixture') end,
 function(addr)
  local names<const>, count<const> = bin.read_metadata_prop_names(addr)
  return bin.decode_with_props(addr + count, names, 'metadata'), count
-end`;
+end, fixture_bytes`;
 	const modules = [
 		{ path: 'bootstrap', source: "require('base')\ntable = require('table')\nstring = require('string/base')" },
 		...['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/mapped', 'string/float/decode'].map(path => ({
@@ -35,7 +33,9 @@ end`;
 	const { cpu, memory } = createTestSystemCpu(linkTestSystemBlua32(program), backend);
 	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 1_000_000);
-	const [decode, decodeMetadata] = materializeCpuCompletionValues(cpu).map(value => v.asClosure(value, cpu.gc));
+	const [decodeValue, decodeMetadataValue, buffer] = materializeCpuCompletionValues(cpu);
+	const decode = v.asClosure(decodeValue, cpu.gc), decodeMetadata = v.asClosure(decodeMetadataValue, cpu.gc);
+	const address = v.valuePayload(buffer);
 	const read = (bytes: Uint8Array) => {
 		memory.writeBytes(address, bytes);
 		runCompletionClosure(cpu, decode, [v.valueInteger(address)]);
