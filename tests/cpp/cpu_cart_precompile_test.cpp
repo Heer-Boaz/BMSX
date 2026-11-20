@@ -1,6 +1,7 @@
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/execution_image.h"
+#include "machine/cpu/native_table_constructor.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/blua32/builtin.h"
@@ -245,6 +246,85 @@ void coldExecLetsNumericFieldChainsWarm() {
 	}
 }
 
+void recordConstructorPreservesGrantAndLayout() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 6}};
+	image.constants = {std::string("castle"), std::string("room"), std::string("player"),
+		std::string("room_number"), std::string("item_id")};
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::NEWT), 0, 0, 5);
+	for (u32 field = 0; field < 5; ++field)
+		writeInstruction(image.text, 1 + field, static_cast<u8>(OpCode::SETFIELD), 0, field, field + 1);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
+	const int allocateCycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 16;
+	const int fieldCycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
+	for (const bool shortGrant : {true, false}) {
+		Fixture prepared(rom), scalar(withoutHints(rom));
+		prepared.execute();
+		scalar.execute();
+		for (auto* machine : {&prepared, &scalar}) {
+			auto& frame = *machine->cpu().activeThread()->frameAtDepth(0);
+			frame.registers.set(1, valueBool(false));
+			frame.registers.set(2, valueNil());
+			frame.registers.set(3, valueTable(machine->cpu().createTable().address()));
+			frame.registers.set(4, valueFloatBits(0x80000000u));
+			frame.registers.set(5, valueInteger(11));
+			frame.setTop(6);
+		}
+		const u32 start = rom.textAddress;
+		auto* plan = entryAt(prepared.cpu(), start, 0)->terminal.recordConstructor;
+		require(plan && plan->count == 5 && plan->partialMask == 0, "EXEC prepares the exact fixed-key recipe");
+		// The final store can overdraw by its own charge. A shorter grant
+		// must still expose the original instruction frontier and table state.
+		const int grant = allocateCycles + (shortGrant ? 2 * fieldCycles : 4 * fieldCycles + 1);
+		const u32 expectedPc = start + (shortGrant ? 3u : 6u) * INSTRUCTION_BYTES;
+		for (auto* machine : {&prepared, &scalar}) {
+			require(machine->cpu().runUntilDepth(0, grant) == RunResult::Yielded
+				&& machine->cpu().readFramePc(0) == expectedPc
+				&& machine->cpu().instructionBudgetRemaining == (shortGrant ? 0 : 1 - fieldCycles),
+				"constructor publishes the same original PC and exact cycle frontier");
+		}
+		require(plan->partialMask == (shortGrant ? 0u : 29u),
+			"only the admitted full group executes the prepared nil-aware placement");
+		const auto table = [](Fixture& fixture) {
+			return asTable(fixture.cpu().activeThread()->frameAtDepth(0)->registers.get(0), fixture.cpu().gcHeap());
+		};
+		auto a = table(prepared), b = table(scalar);
+		require(a.hashFree() == b.hashFree(), "the prepared constructor preserves the physical free cursor");
+		for (u32 at = 0; at < TableRecord::storageBytes(0, 8); ++at)
+			require(prepared.runtime.machine.memory.readRamRecordByte(a.storageAddress() + at)
+				== scalar.runtime.machine.memory.readRamRecordByte(b.storageAddress() + at),
+				"prepared placement preserves the exact live keys, nils, raw values and hash links");
+		if (shortGrant) {
+			for (auto* machine : {&prepared, &scalar}) {
+				require(machine->cpu().runUntilDepth(0, 3 * fieldCycles) == RunResult::Yielded
+					&& machine->cpu().readFramePc(0) == start + 6 * INSTRUCTION_BYTES,
+					"the original stores resume at the short-grant frontier");
+			}
+		}
+		const auto id = prepared.cpu().stringPool().intern("item_id");
+		require(a.getStringKey(id) == valueInteger(11), "completed constructor publishes all admitted values");
+		a.setStringKey(id, valueInteger(29));
+		require(a.getStringKey(id) == valueInteger(29), "the prepared body remains an ordinary mutable table");
+	}
+
+	Fixture observed(rom);
+	int storesObserved = 0;
+	InstructionObserverBinding observer;
+	observer.points[1].insert(rom.textAddress + 3 * INSTRUCTION_BYTES);
+	observer.context = &storesObserved;
+	observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) {
+		++*static_cast<int*>(context);
+	};
+	observed.cpu().setInstructionObserver(std::move(observer));
+	observed.execute();
+	require(entryAt(observed.cpu(), rom.textAddress, 0)->terminal.recordConstructor == nullptr,
+		"constructor preparation cannot cross an observed guest instruction");
+	observed.cpu().runUntilDepth(0, allocateCycles + 5 * fieldCycles);
+	require(storesObserved == 1, "the observed original field store runs exactly once");
+}
+
 void repeatExecAndRestoreHaveDistinctPolicies() {
 	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridgeProgram("repeat")));
 	machine.cpu().prepareSystemNativeCode();
@@ -391,6 +471,7 @@ int main() {
 	try {
 		coldExecPreservesGuestStateAndBanks();
 		coldExecLetsNumericFieldChainsWarm();
+		recordConstructorPreservesGrantAndLayout();
 		repeatExecAndRestoreHaveDistinctPolicies();
 		observationsAndUnusedHintsStayAtExecution();
 		descriptiveTablesAndStaticAcceptanceRemainIndependent();

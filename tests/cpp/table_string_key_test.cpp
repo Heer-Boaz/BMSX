@@ -82,6 +82,29 @@ void collisionAndMutationParity(CPU& cpu) {
 	compare();
 }
 
+void preparedLayoutMatchesAllMasks(CPU& cpu, Memory& memory) {
+	// These opaque ROM addresses hash to five home-0 keys followed by
+	// a home-4 key. In the full record, the latter displaces a chain node.
+	constexpr std::array<StringId, 6> keys{CART_ROM_BASE, CART_ROM_BASE + 8, CART_ROM_BASE + 16,
+		CART_ROM_BASE + 24, CART_ROM_BASE + 32, CART_ROM_BASE + 4};
+	for (u32 mask = 0; mask < (1u << keys.size()); ++mask) {
+		auto scalar = cpu.createTable(0, keys.size());
+		auto prepared = cpu.createTable(0, keys.size());
+		std::array<Value, keys.size()> values{};
+		for (u32 i = 0; i < keys.size(); ++i) {
+			values[i] = (mask & (1u << i)) != 0u ? valueInteger(i) : valueNil();
+			scalar.setStringKey(keys[i], values[i]);
+		}
+		const auto layout = TableRecord::planStringRecord(keys, mask);
+		if (mask) prepared.fillStringRecord(layout, keys, values);
+		require(scalar.hashFree() == prepared.hashFree(), "the prepared placement preserves the free cursor");
+		for (u32 at = 0; at < TableRecord::storageBytes(0, 8); ++at)
+			require(memory.readRamRecordByte(scalar.storageAddress() + at)
+				== memory.readRamRecordByte(prepared.storageAddress() + at),
+				"prepared and scalar constructor layouts agree under collisions and absent values");
+	}
+}
+
 void rejectedGrowthRetainsExhaustedCursor(CPU& cpu) {
 	auto table = cpu.createTable(0, 1);
 	const auto present = cpu.stringPool().intern("full"), missing = cpu.stringPool().intern("new");
@@ -155,6 +178,7 @@ int main() {
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
 		collisionAndMutationParity(cpu);
+		preparedLayoutMatchesAllMasks(cpu, memory);
 		inheritedAndFullWordKeys(cpu, memory);
 	rejectedGrowthRetainsExhaustedCursor(cpu);
 		std::cout << "String-key table tests passed\n";

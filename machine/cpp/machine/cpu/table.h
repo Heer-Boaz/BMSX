@@ -5,10 +5,12 @@
 #include <limits>
 #include <memory>
 #include <new>
+#include <span>
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
 #include "machine/cpu/table_lookup.h"
+#include "machine/cpu/table_constructor_layout.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {
@@ -36,6 +38,11 @@ public:
 	i32 hashFree() const { return static_cast<i32>(readHeader(TableHeader::Free)); }
 	static size_t hashCapacity(int hashSize);
 	static size_t trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCapacity);
+	// Fixed string keys, selected by a presence mask in source order. The
+	// constructor owns the new empty table and its complete field set.
+	static TableConstructorLayout planStringRecord(std::span<const StringId> keys, u32 present) noexcept;
+	void fillStringRecord(const TableConstructorLayout& layout, std::span<const StringId> keys,
+		std::span<const Value> values) noexcept;
 
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value);

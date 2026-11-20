@@ -2,6 +2,7 @@
 #include "machine/cpu/native_block_abi.h"
 #include "machine/cpu/native_execution.h"
 #include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_table_constructor.h"
 #include "spec/blua32/cop0.h"
 
 #include <algorithm>
@@ -178,7 +179,10 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 		case OpCode::HALT: terminal.exit = NativeBlockExit::Halt; break;
 		case OpCode::CALL: terminal.exit = NativeBlockExit::Call; break;
 		case OpCode::RET: terminal.exit = NativeBlockExit::Return; break;
-		case OpCode::NEWT: terminal.exit = NativeBlockExit::AllocateTable; break;
+		case OpCode::NEWT:
+			terminal.exit = NativeBlockExit::AllocateTable;
+			terminal.recordConstructor = nullptr;
+			break;
 		case OpCode::CONCAT: terminal.exit = NativeBlockExit::Concat; break;
 		case OpCode::CONCATN: terminal.exit = NativeBlockExit::ConcatRange; break;
 		case OpCode::CLOSURE: terminal.exit = NativeBlockExit::CreateClosure; break;
@@ -219,7 +223,8 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 
 
 NativeBlock::~NativeBlock() {
-	terminal.link.disconnect();
+	if (terminal.exit == NativeBlockExit::Continue) terminal.link.disconnect();
+	else if (terminal.exit == NativeBlockExit::AllocateTable) delete terminal.recordConstructor;
 	for (auto& exit : sideExits)
 		if (exit.exit == NativeBlockExit::Continue) exit.link.disconnect();
 	while (m_incoming) m_incoming->disconnect();

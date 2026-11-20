@@ -75,6 +75,7 @@ import { OPCODE_NAMES } from './opcode_metadata';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './compiler/optimizer';
 import { computeMaxRegister } from './compiler/optimizer/instructions';
 import { allocateFrameSlots } from './compiler/optimizer/frame_slots';
+import { staticLuaTableFieldName } from './syntax/table_fields';
 import { compactUnusedUpvalues } from './compiler/optimizer/upvalues';
 import {
 	buildModuleCompileContext,
@@ -4826,7 +4827,52 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.emitABC(OpCode.GETT, target, baseReg, keyReg, RK_C);
 	}
 
+	// Snapshot each value in source order, then construct the unpublished
+	// record. Calls remain in the ordinary path: they can collect or inspect
+	// the heap while the constructor is in progress.
+	private preparedRecordKeys(expression: LuaTableConstructorExpression): string[] | undefined {
+		if (this.program.optLevel !== 3 || !this.reuseScopedRegisters
+			|| expression.fields.length < 2 || expression.fields.length > 8) return undefined;
+		const keys: string[] = [];
+		for (const field of expression.fields) {
+			const key = staticLuaTableFieldName(field);
+			if (key === null || keys.includes(key)) return undefined;
+			const value = field.value;
+			const leaf = value.kind === LuaSyntaxKind.MemberExpression ? value.base : value;
+			switch (leaf.kind) {
+				case LuaSyntaxKind.IdentifierExpression: {
+					const reference = getResolvedIdentifierReference(this.semantics, leaf);
+					if (reference.kind !== 'lexical' && reference.kind !== 'implicit_self') return undefined;
+					if (value.kind === LuaSyntaxKind.MemberExpression && this.resolveStructScalarAddress(value) !== undefined) return undefined;
+					break;
+				}
+				case LuaSyntaxKind.NumericLiteralExpression:
+				case LuaSyntaxKind.StringLiteralExpression:
+				case LuaSyntaxKind.BooleanLiteralExpression:
+				case LuaSyntaxKind.NilLiteralExpression:
+					if (leaf !== value) return undefined;
+					break;
+				default: return undefined;
+			}
+			keys.push(key);
+		}
+		return keys;
+	}
+
 	private compileTableConstructor(expression: LuaTableConstructorExpression, target: number): void {
+		const keys = this.preparedRecordKeys(expression);
+		if (keys !== undefined) {
+			const base = this.allocTempBlock(keys.length);
+			const afterValues = this.tempTop;
+			for (let i = 0; i < keys.length; i += 1) {
+				this.compileExpressionInto(expression.fields[i].value, base + i, 1);
+				this.tempTop = afterValues;
+			}
+			this.emitABC(OpCode.NEWT, target, 0, keys.length);
+			for (let i = 0; i < keys.length; i += 1) this.emitTableSetConst(target, this.program.constIndex(keys[i]), base + i);
+			this.tempTop = base;
+			return;
+		}
 		let arrayCount = 0;
 		let hashCount = 0;
 		for (let i = 0; i < expression.fields.length; i += 1) {

@@ -34,6 +34,7 @@ class NativeBlockGate;
 class NativeBlockCompiler;
 struct NativeCpuRunState;
 struct NativeBlockExitSite;
+struct NativeTableConstructor;
 
 struct NativeBlockLink {
 	void disconnect();
@@ -114,6 +115,7 @@ struct NativeBlockExitSite {
 		mutable NativeBlockLink link{};
 		mutable TableStringReadCache tableReadCache;
 		mutable i32 tableStoreSlot;
+		NativeTableConstructor* recordConstructor;
 	};
 	// Bound on CPU-side publication for CALL returns and same-frame helpers.
 	// Image-lifetime cells survive retirement of the source or target region.

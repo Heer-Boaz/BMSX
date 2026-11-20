@@ -1,6 +1,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/native_block_abi.h"
 #include "machine/cpu/native_execution.h"
+#include "machine/cpu/native_table_constructor.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
 
@@ -149,7 +150,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	}
 	// A helper may retire its source descriptor. The image owns this cell;
 	// reading it after the helper observes any target withdrawal/publication.
-	void* const* const continuation = exit->continuationCells[run->cartridgeSlot];
+	void* const* continuation = exit->continuationCells[run->cartridgeSlot];
 	try {
 		auto transition = NativeBlockTransition::NextInstruction;
 		switch (exit->exit) {
@@ -237,11 +238,39 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::AllocateTable: {
-			const int a = exit->exitA;
-			auto table = cpu.createTable(exit->exitB, exit->exitC);
+			const int a = exit->exitA, array = exit->exitB;
+			// A ROM recipe stays resident across allocation and watched RAM writes.
+			auto* record = exit->recordConstructor;
+			auto table = cpu.createTable(array, exit->exitC);
 			frame->registers.set(a, valueTable(table.address()));
-			cpu.instructionBudgetRemaining -= 2 * static_cast<int>(table.storedSlotCount()) - exit->exitB;
+			cpu.instructionBudgetRemaining -= 2 * static_cast<int>(table.storedSlotCount()) - array;
 			frame->extendTop(a + 1);
+			if (record) {
+				const int fieldCycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
+				const int fields = static_cast<int>(record->count);
+				// The final store may exhaust the grant, but every store must
+				// begin with positive budget. Otherwise use the original PCs.
+				if (cpu.instructionBudgetRemaining > (fields - 1) * fieldCycles
+					&& record->requiredSlots <= static_cast<u32>(frame->stackCapacity())) {
+					std::array<Value, TABLE_RECORD_FIELDS_MAX> values;
+					u32 present = 0;
+					for (int field = 0; field < fields; ++field) {
+						values[field] = readRK(*frame->executionImage, frame->registers, record->operands[field]);
+						present |= static_cast<u32>(!isNil(values[field])) << field;
+					}
+					if (present)
+						table.fillStringRecord(record->layoutFor(present), std::span(record->keys).first(fields),
+							std::span(values).first(fields));
+					cpu.instructionBudgetRemaining -= fields * fieldCycles;
+					cpu.m_currentInstructionPc = record->lastInstructionPc;
+					cpu.lastPc = record->lastWordPc;
+					frame->writeControl(FrameField::Pc, record->nextPc);
+					continuation = record->continuation[run->cartridgeSlot];
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+					state.diagnosticOpcodes.setfield += record->count;
+#endif
+				}
+			}
 			break;
 		}
 		default:

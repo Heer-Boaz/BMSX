@@ -111,6 +111,36 @@ return length, forwarded, other, escaped(), before, after, reads_from_capture(),
 	}
 });
 
+test('O3 emits a batch of fixed fields without sharing the resulting tables', () => {
+	const source = `
+local function record(input)
+	return {left = input.x, right = input.y, source = input, enabled = false, item_id = input.id}
+end
+local input = {x = 7, y = 13}
+local a, b = record(input), record(input)
+a.left = 90
+return a ~= b, b.source == input, a.left, b.left, b.right, b.enabled, b.item_id == nil
+`;
+	for (const opt of [0, 3] as const) {
+		const image = linkTestSystemBlua32(compileLuaSource(source, 'record-constructor.lua', opt));
+		if (opt === 3) {
+			const index = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(':record'));
+			const listing = disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]);
+			const body = listing.split('\n').map(line => line.replace(/^0x[\da-f]+: /i, ''));
+			const allocation = body.findIndex(line => line.startsWith('NEWT '));
+			assert.match(body[allocation], /NEWT r\d+, 0, 5/);
+			assert.deepEqual(body.slice(allocation + 1, allocation + 6).map(line => line.split('"')[1]),
+				['left', 'right', 'source', 'enabled', 'item_id']);
+			assert.ok(body.slice(allocation + 1, allocation + 6).every(line => line.startsWith('SETFIELD ')));
+		}
+		const { cpu } = createTestSystemCpu(image);
+		runGuestToHalt(cpu, 10_000);
+		assert.deepEqual(materializeCpuCompletionValues(cpu),
+			[valueBool(true), valueBool(true), valueInteger(90), valueInteger(7),
+				valueInteger(13), valueBool(false), valueBool(true)]);
+	}
+});
+
 test('a call result can release its last table reference before the next collection', () => {
 	const boot = 'collect = __bmsx_collect_garbage; setmeta = __bmsx_setmetatable; protect = __bmsx_pcall';
 	const source = `

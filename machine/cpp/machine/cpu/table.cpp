@@ -275,10 +275,15 @@ int TableRecord::insertHash(const Value& key, const Value& value) {
 	return rawSet(pendingKey, pendingValue);
 }
 
-int TableRecord::insertHashWithoutGrowth(const HashBody& body, const Value& key, const Value& value) noexcept {
+namespace {
+// Lua's chained hash insertion is shared by actual writes and by placing the
+// fixed keys of a future fresh table. Both get exactly the same relocation,
+// links and free cursor, including when two keys have the same home.
+template <typename Body, typename Hash, typename TakeFree>
+int insertAbsentHashKey(const Body& body, const Value& key, const Value& value, Hash hash, TakeFree takeFree) noexcept {
 	const auto& slots = body.slots;
 	const u32 count = body.count, mask = count - 1u;
-	const int mainIndex = static_cast<int>(hashValue(key) & mask);
+	const int mainIndex = static_cast<int>(hash(key) & mask);
 	const u32 mainSlot = static_cast<u32>(mainIndex);
 	const u32 keySlot = body.array + mainSlot, valueSlot = keySlot + count;
 	const auto tag = slots.tag(keySlot);
@@ -288,10 +293,10 @@ int TableRecord::insertHashWithoutGrowth(const HashBody& body, const Value& key,
 		return mainIndex;
 	}
 	const Value mainKey = valueFromTag(tag, slots.word(keySlot));
-	const int freeIndex = getFreeIndex(body);
+	const int freeIndex = takeFree();
 	if (freeIndex < 0) return -1;
 	const u32 freeSlot = static_cast<u32>(freeIndex), freeKey = body.array + freeSlot;
-	const int mainIndexOfOccupied = static_cast<int>(hashValue(mainKey) & mask);
+	const int mainIndexOfOccupied = static_cast<int>(hash(mainKey) & mask);
 	if (mainIndexOfOccupied != mainIndex) {
 		slots.set(freeKey, mainKey);
 		slots.set(freeKey + count, slots.get(valueSlot));
@@ -313,6 +318,68 @@ int TableRecord::insertHashWithoutGrowth(const HashBody& body, const Value& key,
 	body.setNext(freeSlot, body.next(mainSlot));
 	body.setNext(mainSlot, freeIndex);
 	return freeIndex;
+}
+
+struct ConstructorScratch {
+	struct Slots {
+		mutable std::array<Value, 2 * TABLE_RECORD_FIELDS_MAX> data{};
+		ValueTag tag(u32 index) const { return valueTag(data[index]); }
+		u32 word(u32 index) const { return valuePayload(data[index]); }
+		Value get(u32 index) const { return data[index]; }
+		void set(u32 index, Value value) const { data[index] = value; }
+	};
+	Slots slots;
+	const u32 array = 0;
+	u32 count;
+	TableConstructorLayout& layout;
+
+	i32 next(u32 index) const { return layout.nodes[index].next; }
+	void setNext(u32 index, i32 next) const { layout.nodes[index].next = static_cast<i8>(next); }
+};
+} // namespace
+
+int TableRecord::insertHashWithoutGrowth(const HashBody& body, const Value& key, const Value& value) noexcept {
+	return insertAbsentHashKey(body, key, value, [this](Value item) { return hashValue(item); },
+		[this, &body] { return getFreeIndex(body); });
+}
+
+TableConstructorLayout TableRecord::planStringRecord(std::span<const StringId> keys, u32 present) noexcept {
+	const u32 count = static_cast<u32>(hashCapacity(static_cast<int>(keys.size())));
+	TableConstructorLayout layout;
+	layout.free = static_cast<i8>(count - 1u);
+	const ConstructorScratch scratch{.slots = {}, .count = count, .layout = layout};
+	for (u32 field = 0; field < keys.size(); ++field) {
+		if ((present & (1u << field)) == 0u) continue;
+		insertAbsentHashKey(scratch, valueString(keys[field]), valueInteger(static_cast<i32>(field)),
+			[](Value key) { return scalarValueHash(key); }, [&] {
+				for (int free = layout.free; free >= 0; --free) {
+					if (scratch.slots.tag(static_cast<u32>(free)) != ValueTag::Nil) continue;
+					layout.free = static_cast<i8>(free - 1);
+					return free;
+				}
+				return -1;
+			});
+	}
+	for (u32 slot = 0; slot < count; ++slot) {
+		if (scratch.slots.tag(slot) != ValueTag::Nil)
+			layout.nodes[slot].field = static_cast<i8>(scratch.slots.word(count + slot));
+	}
+	return layout;
+}
+
+void TableRecord::fillStringRecord(const TableConstructorLayout& layout, std::span<const StringId> keys,
+	std::span<const Value> values) noexcept {
+	const auto body = hashBody(hashSlots());
+	for (u32 slot = 0; slot < body.count; ++slot) {
+		const auto& node = layout.nodes[slot];
+		if (node.field < 0) continue;
+		const auto field = static_cast<u32>(node.field);
+		body.slots.set(slot, valueString(keys[field]));
+		body.slots.set(slot + body.count, values[field]);
+		if (node.next >= 0) body.setNext(slot, node.next);
+	}
+	if (layout.free != static_cast<i8>(body.count - 1u)) writeHeader(TableHeader::Free, static_cast<u32>(layout.free));
+	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 }
 
 void TableRecord::removeFromHash(const Value& key) {

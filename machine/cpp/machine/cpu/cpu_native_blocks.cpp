@@ -7,6 +7,7 @@
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/native_block.h"
 #include "machine/cpu/native_compilation_source.h"
+#include "machine/cpu/native_table_constructor.h"
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 #include "machine/cpu/native_compiler_worker.h"
 #endif
@@ -344,6 +345,15 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 #endif
 	for (size_t index = 0; index < entries.size(); ++index) {
 		auto& exit = blocks[index]->terminal;
+		if (exit.exit == NativeBlockExit::AllocateTable
+			&& (pagePc < SYSTEM_ROM_SIZE || (pagePc >= CART_ROM_BASE && pagePc < CART_RAM_BASE))) {
+			auto recipe = NativeTableConstructor::prepare(exit, page, pagePc, image.constPool);
+			if (recipe) {
+				for (u32 bank = firstBank; bank < endBank; ++bank)
+					recipe->continuation[bank] = lookup->entrySlot(recipe->nextPc, bank);
+				exit.recordConstructor = recipe.release();
+			}
+		}
 		if (exit.exit == NativeBlockExit::Call || nativeBlockExitResumesFrame(exit.exit)) {
 			for (u32 bank = firstBank; bank < endBank; ++bank)
 				exit.continuationCells[bank] = lookup->entrySlot(exit.nextPc, bank);
