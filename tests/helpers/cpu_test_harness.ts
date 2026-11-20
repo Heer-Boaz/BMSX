@@ -33,10 +33,10 @@ export function materializeCpuCompletionValues(cpu: CPU): Value[] {
 	return values;
 }
 
-/** Run to depth 0 and require a clean halt. A guest error also ends in
+/** Run to the requested depth and require a clean halt. A guest error also ends in
  * Halted, so the Lua fault reason has to stay clear as well. */
-export function runGuestToHalt(cpu: CPU, budget: number): void {
-	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
+export function runGuestToHalt(cpu: CPU, budget: number, depth = 0): void {
+	assert.equal(cpu.runUntilDepth(depth, budget), RunResult.Halted);
 	assert.equal(cpu.readLuaFaultReasonWord(), 0, 'the guest halted without a Lua fault');
 }
 

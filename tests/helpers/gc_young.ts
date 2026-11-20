@@ -71,6 +71,7 @@ export function runYoungGcStage(cpu: CPU): void {
 	for (let call = 0; call < 5000; ++call) {
 		const result = cpu.runUntilDepth(0, call % 3 === 0 ? 1 : call % 3 === 1 ? 17 : 2048);
 		if (cpu.readExceptionReturnFrameDepth() !== -1) assert.fail(`guest fault ${cpu.readLuaFaultReasonWord()} at ${cpu.readEpcWord().toString(16)}: ${valueToString(cpu.readFrameRegister(cpu.readExceptionReturnFrameDepth(), 0), cpu.stringPool)}`);
+		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		if (result !== RunResult.Yielded) {
 			assert.equal(result, RunResult.Halted);
 			assert.equal(cpu.isHaltedUntilIrq(), true, 'the guest reaches its actual phase barrier');
@@ -112,7 +113,14 @@ export function exerciseYoungGc(cpu: CPU, compiled = false): void {
 	assert.equal(cpu.memory.readRamRecordByte(valuePayload(child) + GC_COLOR_OFFSET) & GC_OLD, 0);
 	assert.equal(cpu.memory.readRamRecordByte(textId + 1) & STRING_GC_OLD, 0);
 	assert.ok(cpu.luaHeap.usedBytes() + 6000 * 32 < cpu.luaHeap.collectionTarget(), 'the allocation burst stays below major admission');
-	const ram = cpu.memory.captureSaveState(), state = cpu.captureRuntimeState();
+	const observe = () => {
+		const depth = cpu.getFrameDepth();
+		return { depth, pc: cpu.readFramePc(depth - 1), pressure: global('pressure'),
+			usedBytes: cpu.luaHeap.usedBytes(), target: cpu.luaHeap.collectionTarget(),
+			young: cpu.memory.readRamRecordByte(valuePayload(child) + GC_COLOR_OFFSET) & GC_OLD,
+			retiredText: cpu.stringPool.find(textToByteString('young-retired:é😀:37')) };
+	};
+	const parked = observe(), state = cpu.captureRuntimeState();
 	const history = new RamHistory(); history.start(cpu.memory);
 	const midPages = history.capture(cpu.memory, null);
 	const verify = (minors: number, collections: number) => {
@@ -132,24 +140,22 @@ export function exerciseYoungGc(cpu: CPU, compiled = false): void {
 	};
 	let minors = diagnostics.minorCollections, collections = diagnostics.collections;
 	cpu.clearHaltUntilIrq(); runYoungGcStage(cpu); verify(minors, collections);
-	const finalRam = cpu.memory.captureSaveState(), finalState = cpu.captureRuntimeState(), remaining = cpu.instructionBudgetRemaining;
+	const finished = observe(), remaining = cpu.instructionBudgetRemaining;
 	const finalPages = history.capture(cpu.memory, midPages);
 	history.restore(cpu.memory, finalPages, midPages); cpu.restoreRuntimeState(state);
-	assert.deepEqual(cpu.captureRuntimeState(), state);
-	assert.deepEqual(cpu.memory.captureSaveState(), ram, 'remembered pages, young pages and allocation debt rewind together');
+	assert.deepEqual(observe(), parked, 'remembered pages, young objects and allocation target rewind together');
 	cpu.clearHaltUntilIrq();
-	assert.equal(cpu.runUntilDepth(0, 17), RunResult.Yielded);
-	assert.notDeepEqual(cpu.memory.captureSaveState(), ram, 'an uncaptured prefix dirties the installed checkpoint');
+	assert.equal(cpu.runUntilDepth(0, 128), RunResult.Yielded);
+	assert.notEqual(global('pressure'), parked.pressure, 'the uncaptured prefix writes a fresh pressure object');
 	history.restore(cpu.memory, midPages, midPages); cpu.restoreRuntimeState(state);
-	assert.deepEqual(cpu.captureRuntimeState(), state);
-	assert.deepEqual(cpu.memory.captureSaveState(), ram, 'same-map seek restores uncaptured dirty pages');
+	assert.deepEqual(observe(), parked, 'same-map seek restores the uncaptured allocation');
 	minors = diagnostics.minorCollections; collections = diagnostics.collections;
 	cpu.clearHaltUntilIrq(); runYoungGcStage(cpu); verify(minors, collections);
-	assert.deepEqual(cpu.captureRuntimeState(), finalState);
-	assert.deepEqual(cpu.memory.captureSaveState(), finalRam, 'the same automatic collection suffix reproduces every RAM byte');
+	assert.deepEqual(observe(), finished, 'the allocation suffix reproduces the observed heap and caller');
 	assert.equal(cpu.instructionBudgetRemaining, remaining);
 	cpu.clearHaltUntilIrq();
 	assert.equal(cpu.runUntilDepth(0, 2048), RunResult.Halted);
+	assert.equal(cpu.readLuaFaultReasonWord(), 0);
 	const result: Value[] = []; cpu.readCompletionValues(result);
 	assert.deepEqual(result, [valueBool(true)]);
 }

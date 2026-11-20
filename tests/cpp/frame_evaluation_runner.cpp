@@ -1,86 +1,88 @@
-#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
 #include <string_view>
+#include "machine/cpu/table.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/bmsx/model.h"
 
-class FrameEvaluationInput final : public bmsx::InputControllerInputSource {
+namespace {
+using namespace bmsx;
+
+class ProbeInput final : public InputControllerInputSource {
 public:
-	void sampleInputControllerSnapshot(bmsx::InputControllerSnapshot&, bmsx::InputControllerSampleContext) override {}
+	void sampleInputControllerSnapshot(InputControllerSnapshot&, InputControllerSampleContext) override {}
 	bool supervisorRequestLineHigh() const override { return false; }
-	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f64) override {}
+	void applyInputControllerVibrationEffect(i32, f64, f64) override {}
 };
+
+void require(bool condition, const char* message) {
+	if (!condition) throw std::runtime_error(message);
+}
+
+void restoreSuspended(Runtime& runtime, bool inspectFrame) {
+	auto& cpu = runtime.machine.cpu;
+	const auto depth = cpu.getFrameDepth();
+	const auto pc = cpu.readFramePc(depth - 1);
+	const auto bytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	runtime.rebootSystem();
+	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(bytes, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+	require(cpu.isHaltedUntilIrq() && cpu.getFrameDepth() == depth && cpu.readFramePc(depth - 1) == pc,
+		"restore must recover the original parked activation");
+	if (!inspectFrame) {
+		const auto table = cpu.getGlobalByKey(*cpu.stringPool().find("checkpoint_table"));
+		const auto key = cpu.getGlobalByKey(*cpu.stringPool().find("checkpoint_key"));
+		require(asTable(table, cpu.gcHeap()).get(key) == valueNil(), "restore must not revive a deleted mapping");
+		return;
+	}
+	if (cpu.getGlobalByKey(*cpu.stringPool().find("fixture_inject_completion")) != valueBool(true)) return;
+	const auto argument = valueInteger(depth - 1);
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(*cpu.stringPool().find("stopped_probe")), cpu.gcHeap()), {&argument, 1});
+	require(cpu.runUntilDepth(depth, 1000000) == RunResult::Halted && cpu.readLuaFaultReasonWord() == 0,
+		"the named completion call must finish without a fault");
+	const auto values = runtime.readCompletionValues();
+	require(values.size() == 4 && values.get(0) == valueBool(true) && values.get(1) == valueInteger(43)
+		&& values.get(2) == valueNil() && values.get(3) == valueBool(false), "completion returns the live scope values");
+	require(cpu.isHaltedUntilIrq() && cpu.getFrameDepth() == depth && cpu.readFramePc(depth - 1) == pc,
+		"completion must not advance the selected activation");
+}
+}
 
 int main(int argc, char** argv) {
 	try {
-		// The conformance producer supplies ROM/mode pairs.
-		for (int index = 1; index < argc; index += 2) {
-			const bool injectCompletion = std::string_view(argv[index + 1]) == "completion";
-			std::ifstream file(argv[index], std::ios::binary);
-			if (!file) throw std::runtime_error("cannot read firmware frame fixture");
-			std::vector<bmsx::u8> rom{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-			FrameEvaluationInput input;
-			bmsx::Runtime runtime({rom, {}, bmsx::PSX_MACHINE_SPEC}, input);
-			runtime.boot();
-			auto& cpu = runtime.machine.cpu;
-			auto result = bmsx::RunResult::Yielded;
-			int suspensions = 0;
-			for (int grant = 0; grant < 300 && result == bmsx::RunResult::Yielded; ++grant) {
-				result = cpu.runUntilDepth(0, 100000);
-				if (cpu.readExceptionReturnFrameDepth() != -1) throw std::runtime_error("unhandled frame evaluation fault");
-				const auto state = cpu.captureRuntimeState();
-				cpu.restoreRuntimeState(state);
-				if (cpu.captureRuntimeState() != state) {
-					throw std::runtime_error("frame scope snapshot did not round-trip");
-				}
-				if (result == bmsx::RunResult::Halted && cpu.isHaltedUntilIrq()) {
-					const auto bytes = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
-					const auto saved = bmsx::decodeRuntimeSaveState(bytes, bmsx::PSX_MACHINE_SPEC.ramBytes, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
-					if (bmsx::encodeRuntimeSaveState(saved) != bytes) throw std::runtime_error("frame scope codec did not round-trip");
-					bmsx::applyRuntimeSaveState(runtime, saved);
-					if (cpu.captureRuntimeState() != saved.cpuState) {
-						throw std::runtime_error("active frame scope did not survive the full codec");
-					}
-					std::ofstream output(std::string(argv[index]) + ".suspended-" + std::to_string(suspensions++) + ".state", std::ios::binary);
-					output.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-					if (injectCompletion) {
-						const auto depth = cpu.getFrameDepth();
-						const auto pc = cpu.readFramePc(depth - 1);
-						const auto argument = bmsx::valueInteger(depth - 1);
-						cpu.beginCompletionCall(
-							bmsx::asClosure(cpu.getGlobalByKey(*cpu.stringPool().find("stopped_probe")), cpu.gcHeap()), {&argument, 1});
-						const auto completion = cpu.runUntilDepth(depth, 30000000);
-						const auto values = runtime.readCompletionValues();
-						if (completion != bmsx::RunResult::Halted || values.size() != 4
-							|| values.get(0) != bmsx::valueBool(true) || values.get(1) != bmsx::valueInteger(43)
-							|| values.get(2) != bmsx::valueNil() || values.get(3) != bmsx::valueBool(false)
-							|| cpu.getFrameDepth() != depth || cpu.readFramePc(depth - 1) != pc || !cpu.isHaltedUntilIrq()) {
-							throw std::runtime_error("named completion evaluation advanced its retained caller");
-						}
-						const auto evaluated = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
-						std::ofstream evaluatedOutput(std::string(argv[index]) + ".suspended-" + std::to_string(suspensions++) + ".state", std::ios::binary);
-						evaluatedOutput.write(reinterpret_cast<const char*>(evaluated.data()), evaluated.size());
-					}
-					cpu.clearHaltUntilIrq();
-					result = bmsx::RunResult::Yielded;
-				}
+		require(argc == 3, "expected system case ROM and run/frame/table mode");
+		const std::string_view mode = argv[2];
+		require(mode == "run" || mode == "frame" || mode == "table", "invalid system case mode");
+		std::ifstream file(argv[1], std::ios::binary);
+		require(file.good(), "cannot open system case ROM");
+		const std::vector<bmsx::u8> rom{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+		ProbeInput input;
+		bmsx::Runtime runtime({rom, {}, bmsx::PSX_MACHINE_SPEC}, input);
+		runtime.boot();
+		auto& cpu = runtime.machine.cpu;
+		int suspensions = 0;
+		for (int grant = 0; grant < 32; ++grant) {
+			const auto result = cpu.runUntilDepth(0, 1000000);
+			require(cpu.readLuaFaultReasonWord() == 0 && cpu.readExceptionReturnFrameDepth() == -1,
+				"guest case faulted");
+			if (result == bmsx::RunResult::Yielded) continue;
+			require(result == bmsx::RunResult::Halted, "unexpected guest outcome");
+			if (!cpu.isHaltedUntilIrq()) {
+				const auto values = runtime.readCompletionValues();
+				require(values.size() == 2 && values.get(0) == bmsx::valueBool(true) && values.get(1) == bmsx::valueBool(true),
+					"system case ROM did not finish successfully");
+				std::cout << suspensions << '\n';
+				return 0;
 			}
-			const auto values = runtime.readCompletionValues();
-			if (result != bmsx::RunResult::Halted || values.size() != 2
-				|| values.get(0) != bmsx::valueBool(true) || values.get(1) != bmsx::valueBool(true)) {
-				throw std::runtime_error("firmware frame evaluation assertion failed");
-			}
-			const auto bytes = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
-			std::ofstream output(std::string(argv[index]) + ".state", std::ios::binary);
-			output.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-			std::cout << argv[index] << " passed\n";
+			require(mode != "run", "this ROM must not suspend");
+			restoreSuspended(runtime, mode == "frame");
+			++suspensions;
+			cpu.clearHaltUntilIrq();
 		}
-		return 0;
+		throw std::runtime_error("system case ROM exceeded its cycle grants");
 	} catch (const std::exception& error) {
 		std::cerr << error.what() << '\n';
 		return 1;

@@ -261,6 +261,9 @@ table-iteration and symbol conformance commands also accept
 `BMSX_TEST_NATIVE_BUILD_DIR` to use an existing build without running CMake.
 For the compiled coroutine checks use a Debug build with native blocks on;
 the interpreter check requires its own build with native blocks off.
+The firmware scope, table, coroutine and GC conformance runs batch ordinary
+guest cases into shared ROMs; the host steps in only at real suspension,
+interrupt, completion or collection boundaries.
 
 Run the Node areas, ROM packer, Debug CTest, headless conformance and the two
 headless host presentation scenarios together in one memory budget with:
@@ -274,8 +277,8 @@ blocks on, Debug with native blocks on, and Release with native blocks off,
 in that order. Build all test targets in the Debug tree. The Release tree
 needs `bmsx_runtime_replay_conformance_runner`, `bmsx_host_rewind_conformance_runner`,
 and `bmsx_libretro_rewind_conformance_runner`, plus `bmsx_terminal_conformance_runner`,
-`bmsx_frame_evaluation_runner`, `bmsx_gc_stress_runner`, and
-`bmsx_coroutine_runner`, as well as `bmsx_numeric32_tests`, `bmsx_value32_tests`,
+`bmsx_frame_evaluation_runner`, and `bmsx_gc_stress_runner`,
+as well as `bmsx_numeric32_tests`, `bmsx_value32_tests`,
 and `bmsx_value_storage_tests` for the machine cases. The interpreter tree
 needs `bmsx_coroutine_runner`, `bmsx_firmware_fsm_runner` and `bmsx_cpu32_tests`.
 Rebuild these binaries after native changes.

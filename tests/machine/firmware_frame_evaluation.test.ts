@@ -1,43 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { asClosure, valueBool, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { valueToString } from '../../machine/ts/machine/cpu/value';
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { createTestSystemCpu } from '../helpers/blua32';
-import { compileFrameEvaluationCaseRom, compileFrameEvaluationTest, frameEvaluationCases } from '../helpers/frame_evaluation';
+import { compileFrameEvaluationTest } from '../helpers/frame_evaluation';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
-
-const cases = Object.entries(frameEvaluationCases);
-let caseRom: ReturnType<typeof compileFrameEvaluationCaseRom> | undefined;
-const optLevel = 3;
-for (const [index, [name]] of cases.entries()) {
-	test(`firmware frame evaluation O${optLevel}: ${name}`, () => {
-		caseRom ??= compileFrameEvaluationCaseRom(cases.map(([, body]) => body), optLevel);
-		const { cpu } = createTestSystemCpu({ romBytes: caseRom(index) });
-		cpu.installBootPrimitives();
-		runGuestToHalt(cpu, 30_000_000);
-		if (name === 'coroutine' || name === 'completion_injection') {
-			assert.equal(cpu.isHaltedUntilIrq(), true, 'a live frame scope is suspended in the coroutine');
-			const saved = cpu.captureRuntimeState();
-			cpu.restoreRuntimeState(saved);
-			assert.deepEqual(cpu.captureRuntimeState(), saved);
-			if (name === 'completion_injection') {
-				const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
-				cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('stopped_probe')!), cpu.gc), [valueInteger(depth - 1)]);
-				assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
-				assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(43), valueNil(), valueBool(false)]);
-				assert.equal(cpu.getFrameDepth(), depth); assert.equal(cpu.readFramePc(depth - 1), pc);
-				assert.equal(cpu.isHaltedUntilIrq(), true, 'named evaluation does not consume the retained caller halt');
-			}
-			cpu.clearHaltUntilIrq();
-			runGuestToHalt(cpu, 30_000_000);
-		}
-		assert.equal(cpu.readExceptionReturnFrameDepth(), -1, 'no unhandled guest fault');
-		const values = materializeCpuCompletionValues(cpu);
-		assert.deepEqual(values, [valueBool(true), valueBool(true)], values.map(value => valueToString(value, cpu.stringPool)).join('\t'));
-	});
-}
 
 for (const optLevel of [3] as const) test(`retained frame accesses O${optLevel} allocate nothing after compilation`, () => {
 	const { cpu } = createTestSystemCpu(compileFrameEvaluationTest(`

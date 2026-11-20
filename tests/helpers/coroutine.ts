@@ -173,6 +173,7 @@ local main, ismain = coroutine.running()
 assert(ismain)
 local a, b, c
 local transfers, collections = 0, 0
+nested_progress = 0
 a = coroutine.create(function(token)
  local held = { owner = 'A', total = 0 }
  b = coroutine.create(function(token)
@@ -180,6 +181,7 @@ a = coroutine.create(function(token)
   c = coroutine.create(function(token)
    local held = { owner = 'C', total = 0 }
    for round = 1, 3 do
+    nested_progress = round
     local self, root = coroutine.running()
     assert(self == c and not root and token == round * 100 + 2)
     assert(coroutine.status(main) == 'normal' and coroutine.status(a) == 'normal' and coroutine.status(b) == 'normal')

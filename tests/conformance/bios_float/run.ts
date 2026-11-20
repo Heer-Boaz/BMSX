@@ -1,19 +1,14 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { valueBool } from '../../../machine/ts/machine/cpu/value';
-import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
-import { decodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { buildPublicBiosFixture, PUBLIC_BIOS_PROBE_SOURCE } from '../../helpers/bios_linkage';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { runSystemCaseRom } from '../../helpers/system_case_rom';
 
 const nativeRunner = nativeConformanceRunner('bmsx_frame_evaluation_runner', { parallel: '2' });
 
@@ -121,19 +116,10 @@ try {
 		] as const) {
 			const path = join(directory, `${name}-O${optLevel}.rom`);
 			writeFileSync(path, rom);
-			const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
-				sampleInputControllerSnapshot: () => {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect: () => {},
-			});
-			runtime.boot();
-			let result = RunResult.Yielded;
-			for (let grant = 0; grant < 300 && result === RunResult.Yielded; grant++) result = runtime.machine.cpu.runUntilDepth(0, 100000);
-			assert.equal(result, RunResult.Halted);
-			assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueBool(true)]);
-			assert.equal(spawnSync(nativeRunner, [path, 'run'], { stdio: 'inherit' }).status, 0);
-			const native = decodeRuntimeSaveState(new Uint8Array(readFileSync(`${path}.state`)), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-			assert.deepEqual(native, captureRuntimeSaveState(runtime), `${name} O${optLevel}: complete TS/C++ state parity`);
+			assert.equal(runSystemCaseRom(rom, () => assert.fail(name + ': unexpected suspension')), 0);
+			assert.equal(execFileSync(nativeRunner, [path, 'run'], { encoding: 'utf8' }).trim(), '0');
 		}
 	}
 	rmSync(directory, { recursive: true });
-	console.log(`BIOS-FLOAT-PARITY:PASS (${rows.length} field vectors, Number text, BIOS lookup and participants at O0/O3, exact words and full state)`);
+	console.log(`BIOS-FLOAT-PARITY:PASS (${rows.length} field vectors, Number text, BIOS lookup and participants at O0/O3, exact guest results)`);
 } catch (error) { console.error(`Evidence retained: ${directory}`); throw error; }

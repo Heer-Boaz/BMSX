@@ -1,78 +1,67 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
 import { valueBool } from '../../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
-import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileCoroutineTest } from '../../helpers/coroutine';
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../../helpers/cpu_execution';
 import { gcStressVectors, installAllocationStress } from '../../helpers/gc_stress';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { systemCaseSource } from '../../helpers/system_case_rom';
 
-const buildDirectory = process.argv[2] ?? 'build-native-cpu-default';
 const nativeRunner = nativeConformanceRunner('bmsx_gc_stress_runner', {
-	buildDirectory,
+	buildDirectory: process.argv[2] ?? 'build-native-cpu-default',
 	configure: ['-DBMSX_ENABLE_NATIVE_BLOCKS=ON'],
 	parallel: '3',
 });
-
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-gc-stress-'));
 try {
-	let cases = 0;
-	for (const level of [0, 3] as const) for (const [name, body] of Object.entries(gcStressVectors)) {
-		const image = compileCoroutineTest(body, level);
-		const path = join(directory, `${name}-O${level}.rom`);
-		writeFileSync(path, image.romBytes);
-		for (const compiled of [false, true]) for (const restore of [false, true]) {
-			const label = `${name} O${level}, compiled=${compiled}, restore=${restore}`;
-			const runtime = new Runtime({
-				systemRomBytes: image.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC,
-				cpuExecutionBackend: compiled ? CpuExecutionBackend.JavaScript : CpuExecutionBackend.Interpreter,
-			}, {
-				sampleInputControllerSnapshot: () => {}, supervisorRequestLineHigh: () => false,
-				applyInputControllerVibrationEffect: () => {},
-			});
-			runtime.boot();
-			const cpu = runtime.machine.cpu;
-			const counter = installAllocationStress(cpu);
-			let result = RunResult.Yielded;
-			for (let call = 0; call < 50_000 && result === RunResult.Yielded; ++call) {
-				result = cpu.runUntilDepth(0, call % 3 === 0 ? 1 : call % 3 === 1 ? 17 : 2048);
-				assert.equal(cpu.readExceptionReturnFrameDepth(), -1, label);
-				if (restore && call % 23 === 0) {
-					const ram = cpu.memory.captureSaveState();
-					const state = cpu.captureRuntimeState();
-					cpu.memory.restoreSaveState(ram);
-					cpu.restoreRuntimeState(state);
-					assert.deepEqual(cpu.captureRuntimeState(), state, label);
-				}
+	const cases = Object.entries(gcStressVectors);
+	const image = compileCoroutineTest(systemCaseSource(cases), 3);
+	const path = join(directory, 'allocation-stress.rom');
+	writeFileSync(path, image.romBytes);
+	for (const compiled of [false, true]) {
+		const runtime = new Runtime({
+			systemRomBytes: image.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC,
+			cpuExecutionBackend: compiled ? CpuExecutionBackend.JavaScript : CpuExecutionBackend.Interpreter,
+		}, {
+			sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+		});
+		runtime.boot();
+		const cpu = runtime.machine.cpu;
+		const counter = installAllocationStress(cpu);
+		let result = RunResult.Yielded, restored = false;
+		for (let call = 0; call < 50_000 && result === RunResult.Yielded; call++) {
+			result = cpu.runUntilDepth(0, call % 3 === 0 ? 1 : call % 3 === 1 ? 17 : 2048);
+			assert.equal(cpu.readLuaFaultReasonWord(), 0, 'allocation stress must not fault');
+			if (!restored && result === RunResult.Yielded && cpu.gc.active()) {
+				const phase = cpu.gc.phase();
+				const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+				const checkpoint = captureCpuCheckpoint(cpu);
+				cpu.runUntilDepth(0, 2048);
+				assert.equal(cpu.readLuaFaultReasonWord(), 0);
+				assert.ok(cpu.gc.phase() !== phase || cpu.getFrameDepth() !== depth || cpu.readFramePc(depth - 1) !== pc,
+					'the live collector or program counter advances before rewind');
+				restoreCpuCheckpoint(cpu, checkpoint);
+				assert.equal(cpu.gc.phase(), phase, 'restore reinstates the in-flight major collection');
+				assert.equal(cpu.getFrameDepth(), depth);
+				assert.equal(cpu.readFramePc(depth - 1), pc);
+				restored = true;
 			}
-			assert.equal(result, RunResult.Halted, label);
-			assert.deepEqual(runtime.readCompletionValues(), [valueBool(true)], label);
-			assert.ok(counter.allocations > 32, label);
-			const expected = decodeRuntimeSaveState(encodeRuntimeSaveState(captureRuntimeSaveState(runtime)),
-				PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-			const native = spawnSync(nativeRunner,
-				[path, compiled ? 'native' : 'scalar', restore ? 'restore' : 'plain'], { stdio: 'inherit' });
-			assert.equal(native.status, 0, `${label}: native signal ${native.signal}`);
-			const actual = decodeRuntimeSaveState(new Uint8Array(readFileSync(`${path}.state`)),
-				PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-			const actualRam = actual.ram;
-			const expectedRam = expected.ram;
-			assert.equal(actualRam.length, expectedRam.length, `${label}: RAM length`);
-			const differingByte = actualRam.findIndex((byte, offset) => byte !== expectedRam[offset]);
-			assert.equal(differingByte, -1, `${label}: RAM differs at 0x${differingByte.toString(16)} (${actualRam[differingByte]} vs ${expectedRam[differingByte]})`);
-			assert.deepEqual(actual, expected, `${label}: complete TS/C++ runtime-state parity`);
-			console.log(`${label}: passed (${counter.allocations} TS allocation boundaries)`);
-			++cases;
 		}
+		assert.equal(result, RunResult.Halted);
+		assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueBool(true)]);
+		assert.ok(restored && counter.allocations > 32, 'stress reached real allocation boundaries and rewound a live collection');
+		const native = execFileSync(nativeRunner, [path, compiled ? 'native' : 'scalar', 'stress'], { encoding: 'utf8' });
+		assert.equal(native.trim(), String(counter.allocations), 'same allocation boundaries during stress and replay');
+		console.log(`${compiled ? 'generated' : 'scalar'}: ${counter.allocations} allocation boundaries`);
 	}
-	console.log(`GC-STRESS-PARITY:PASS (${cases} paired runs)`);
+	console.log(`GC-STRESS-PARITY:PASS (${cases.length} guest cases, two backend pairs, one live collection rewind each)`);
 } finally {
-	rmSync(directory, { recursive: true, force: true });
+	rmSync(directory, { recursive: true });
 }

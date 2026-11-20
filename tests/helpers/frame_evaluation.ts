@@ -1,10 +1,9 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { writeLE32 } from '../../machine/ts/common/endian';
-import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { linkTestSystemBlua32 } from './blua32';
+import { systemCaseSource } from './system_case_rom';
 
 /** Actual firmware compiler/REPL and the production packed diagnostic directory. */
 function compileFrameEvaluationProgram(execution: string, optLevel: 0 | 3, includeDiagnostics = true) {
@@ -47,25 +46,11 @@ export function compileFrameEvaluationTest(body: string, optLevel: 0 | 3, includ
 	return compileFrameEvaluationProgram(`return pcall(function()\n${body}\nend)`, optLevel, includeDiagnostics);
 }
 
-/** Link the diagnostic firmware once. Each case boots a fresh machine with a
- * ROM whose input word selects its own protected body, with no extra guest frame. */
-export function compileFrameEvaluationCaseRom(bodies: readonly string[], optLevel: 0 | 3) {
-	const branches = bodies.map((body, index) =>
-		`${index === 0 ? 'if' : 'elseif'} case_index == ${index} then\nreturn pcall(function()\n${body}\nend)`);
-	const image = compileFrameEvaluationProgram(`
-rodata frame_test_case_index: word = 0
-local case_index<const> = mem[frame_test_case_index]
-${branches.join('\n')}
-end
-`, optLevel);
-	const { romBytes, symbols } = image;
-	const selector = symbols.metadata.staticScopes.declarations.find(declaration => declaration.name === 'frame_test_case_index')!;
-	const selectorOffset = selector.address! - SYSTEM_ROM_BASE;
-	return (index: number): Uint8Array => {
-		const selectedRom = romBytes.slice();
-		writeLE32(selectedRom, selectorOffset, index);
-		return selectedRom;
-	};
+/** Run the physical scopes and firmware compiler in one installed image. */
+export function compileFrameEvaluationCaseRom(cases: readonly [string, string][], optLevel: 0 | 3) {
+	return compileFrameEvaluationProgram(systemCaseSource(cases.map(([name, body]) => [name,
+		`fixture_inject_completion = ${name === 'completion_injection'}
+${body}`])), optLevel);
 }
 
 export const frameEvaluationCases = {

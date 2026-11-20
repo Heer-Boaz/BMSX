@@ -152,9 +152,7 @@ local count = 0
 for key, value in pairs(checkpoint_table) do
  checkpoint_table[key] = nil
  checkpoint_key = key
- local work = value
- for index = 1, 32 do work = work + index end
- assert(work == value + 528)
+ if count == 0 then halt_until_irq end
  checkpoint_key = nil
  count = count + 1
 end
