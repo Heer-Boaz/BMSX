@@ -1,7 +1,5 @@
-import { isNil, valueBool } from '../../machine/ts/machine/cpu/value';
+import { isNil } from '../../machine/ts/machine/cpu/value';
 import { GX_GPU_STATUS_GPU_IDLE } from '../../machine/ts/machine/devices/gx/gpu';
-import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
 import assert from 'node:assert/strict';
@@ -55,18 +53,22 @@ test('Actor picking retains the published game image, not later guest pose or a 
 });
 
 for (const pageCount of [1, 2]) test(`moving actors are picked in the completed ${pageCount}-page image through ordinary boot and rendering`, async t => {
-	const f = await createLiveStudioFixture(t), { editor, ide, sources } = f;
-	for (const [path, before, after] of [
-		['cart.lua', 'framebuffer_count = 1', `framebuffer_count = ${pageCount}`],
-		['scenes/live.lua', "initial = 'idle'", "initial = 'moving'"],
-	]) {
-		const model = resolveLuaTextFileModel(editorTextModelService, sources.catalog, sources.catalog.luaResources.find(resource => resource.path === path)!);
-		const text = model.buffer.getText(), offset = text.indexOf(before); assert.ok(offset >= 0);
-		model.pushEditOperations([{ offset, deleteLength: before.length, text: after }]);
-	}
-	assert.equal(ide.boots.start('workspace').result!.status, 'reset');
+	const f = await createLiveStudioFixture(t, {
+		edits: {
+			'cart.lua': cart => {
+				const before = 'framebuffer_count = 1', offset = cart.buffer.getText().indexOf(before);
+				assert.ok(offset >= 0);
+				cart.pushEditOperations([{ offset, deleteLength: before.length, text: `framebuffer_count = ${pageCount}` }]);
+			},
+			'scenes/live.lua': model => {
+				const before = "initial = 'idle'", offset = model.buffer.getText().indexOf(before);
+				assert.ok(offset >= 0);
+				model.pushEditOperations([{ offset, deleteLength: before.length, text: "initial = 'moving'" }]);
+			},
+		},
+	});
+	const { editor, ide, sources } = f;
 	editor.interaction.setActive(false); ide.transport.resumeHere();
-	await f.until(() => ide.guest.global('studio_test_ready') === valueBool(true));
 	const runner = readActorChoices(sources, ide.guest, 0).find(actor => actor.label === 'runner')!;
 	const controller = editor.actorLab, picker = controller.viewportPicker, presenter = controller.viewport.presenter;
 	const observed = () => {
@@ -106,21 +108,20 @@ for (const pageCount of [1, 2]) test(`moving actors are picked in the completed 
 
 
 test('ordinary cart initialization renders pickable dynamic text and sprite visuals without source-pattern projection', async t => {
-	const f = await createLiveStudioFixture(t), { editor, ide, sources } = f;
-	const cart = resolveLuaTextFileModel(editorTextModelService, sources.catalog, sources.catalog.luaResources.find(resource => resource.path === 'cart.lua')!);
-	const before = 'local scene<const> = scene_library.instantiate(root_scene.id)';
-	const offset = cart.buffer.getText().indexOf(before); assert.ok(offset >= 0);
-	cart.pushEditOperations([{ offset, deleteLength: before.length, text: `
+	const f = await createLiveStudioFixture(t, {
+		edits: { 'cart.lua': cart => {
+			const before = 'local scene<const> = scene_library.instantiate(root_scene.id)';
+			const offset = cart.buffer.getText().indexOf(before); assert.ok(offset >= 0);
+			cart.pushEditOperations([{ offset, deleteLength: before.length, text: `
 	local scene<const> = scene_library.instantiate('studio_test.initialized_text', { caption = { id = 'dynamic-text', content = 'studio' } })
 	scene_library.instantiate('studio_test.animated', {
 		actor = { id = 'sprite-actor' }, alternate = { id = 'sprite-alternate' }, sequence = { id = 'sprite-sequence' },
 	})` }]);
-	assert.equal(ide.boots.start('workspace').result!.status, 'reset');
-	editor.interaction.setActive(false); ide.transport.resumeHere();
-	await f.until(() => ide.guest.global('studio_test_ready') === valueBool(true));
+		} },
+		ready: ({ editor }) => editor.actorLab.viewportPicker.frame.quads.length >= 6,
+	});
+	const { editor, ide, sources } = f;
 	const choices = readActorChoices(sources, ide.guest, 0), picker = editor.actorLab.viewportPicker;
-	await f.until(() => picker.frame.quads.length >= 6);
-	ide.transport.pause(); editor.interaction.setActive(true);
 	for (const label of ['dynamic-text', 'sprite-actor', 'sprite-alternate', 'sprite-sequence']) {
 		const actor = choices.find(choice => choice.label === label)!; assert.ok(actor);
 		let quad;

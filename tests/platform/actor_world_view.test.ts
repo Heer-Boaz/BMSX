@@ -17,15 +17,19 @@ const CONTENT = `
 `;
 
 test('live world view retains unclipped initialized visuals, moving actors and textured models; camera input selects without running a second game', async t => {
-	const f = await createLiveStudioFixture(t), { editor, ide, sources } = f;
+	const f = await createLiveStudioFixture(t, {
+		edits: { 'cart.lua': cart => {
+			const at = cart.buffer.getText().indexOf('\nend\n\nnew_game()');
+			cart.pushEditOperations([{ offset: at, deleteLength: 0, text: CONTENT }]);
+		} },
+		ready: ({ editor }) => {
+			const world = editor.actorLab.renderFrames.displayed.world;
+			return world.models.length !== 0 && world.canvas.length > 4;
+		},
+	});
+	const { editor, ide, sources } = f;
 	const cart = resolveLuaTextFileModel(editorTextModelService, sources.catalog, sources.catalog.luaResources.find(resource => resource.path === 'cart.lua')!);
-	const text = cart.buffer.getText(), at = text.indexOf('\nend\n\nnew_game()');
-	cart.pushEditOperations([{ offset: at, deleteLength: 0, text: CONTENT }]);
-	assert.equal(ide.boots.start('workspace').result!.status, 'reset');
-	editor.interaction.setActive(false); ide.transport.resumeHere();
 	const frames = editor.actorLab.renderFrames;
-	await f.until(() => frames.displayed.world.models.length !== 0 && frames.displayed.world.canvas.length > 4);
-	ide.transport.pause(); editor.interaction.setActive(true);
 	const part = editor.editorParts.createDocument({ requestedBounds: { left: 0, top: 24, right: 800, bottom: 340 } });
 	editor.actorLab.open(part.activeGroup); const input = editor.actorLab.resolveInput(); editor.update(0);
 	assert.equal(input.worldView.mode, 'game'); assert.equal(input.actorHashId, 0, 'opening the viewer does not require a preselected actor');

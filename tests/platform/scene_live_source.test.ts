@@ -4,7 +4,7 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
 import { captureActorTarget } from '../../ide/workbench/contrib/actor_lab/target';
 import { findRuntimeActor } from '../../ide/workbench/contrib/actor_lab/runtime';
-import { numberToHost, valueBool, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { numberToHost, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
@@ -13,21 +13,25 @@ import { createLiveStudioFixture } from '../helpers/live_studio';
 import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
 import { afterTest } from '../helpers/test_cleanup';
 
-for (const pages of [1, 2]) test(`a visible initialized visual shares position history with its ${pages}-page runtime image`, async t => {
-	const f = await createLiveStudioFixture(t), { editor, ide, sources } = f;
+test('the live image, source edits and their history retain the same initialized visual', async t => {
+	const f = await createLiveStudioFixture(t, {
+		// Use the buffered path here. The frame suite independently exercises
+		// publication and picking with either one or two framebuffer pages.
+		edits: { 'cart.lua': cart => {
+			const before = 'local scene<const> = scene_library.instantiate(root_scene.id)';
+			const text = cart.buffer.getText(), framebuffer = 'framebuffer_count = 1';
+			cart.pushEditOperations([
+				{ offset: text.indexOf(before), deleteLength: before.length,
+					text: "local scene<const> = scene_library.instantiate('studio_test.initialized_text', { caption = { id = 'dynamic-caption', content = 'studio' } })" },
+				{ offset: text.indexOf(framebuffer), deleteLength: framebuffer.length, text: 'framebuffer_count = 2' },
+			]);
+		} },
+	});
+	const { editor, ide, sources } = f;
 	const cart = resolveLuaTextFileModel(editorTextModelService, sources.catalog, sources.catalog.luaResources.find(resource => resource.path === 'cart.lua')!);
-	const before = 'local scene<const> = scene_library.instantiate(root_scene.id)';
-	cart.pushEditOperations([{ offset: cart.buffer.getText().indexOf(before), deleteLength: before.length,
-		text: "local scene<const> = scene_library.instantiate('studio_test.initialized_text', { caption = { id = 'dynamic-caption', content = 'studio' } })" }]);
-	if (pages === 2) {
-		const offset = cart.buffer.getText().indexOf('framebuffer_count = 1');
-		cart.pushEditOperations([{ offset, deleteLength: 'framebuffer_count = 1'.length, text: 'framebuffer_count = 2' }]);
-	}
-	assert.equal(ide.boots.start('workspace').result!.status, 'reset');
-	editor.interaction.setActive(false); ide.transport.resumeHere();
-	await f.until(() => ide.guest.global('studio_test_ready') === valueBool(true));
 	const actor = readActorChoices(sources, ide.guest, 0).find(item => item.label === 'dynamic-caption')!;
 	const controller = editor.actorLab, frame = controller.viewportPicker.frame;
+	editor.interaction.setActive(false); ide.transport.resumeHere();
 	await f.until(() => Array.from(frame.quads).some(quad => quad.hashId === actor.hashId));
 	ide.transport.pause(); editor.interaction.setActive(true);
 	const part = editor.editorParts.createDocument({ requestedBounds: { left: 0, top: 24, right: 800, bottom: 340 } });
@@ -125,19 +129,19 @@ for (const pages of [1, 2]) test(`a visible initialized visual shares position h
 });
 
 test('runtime source correspondence survives duplicate registry IDs but not procedural membership or heap replacement', async t => {
-	const f = await createLiveStudioFixture(t), { editor, ide, sources } = f;
-	const cart = resolveLuaTextFileModel(editorTextModelService, sources.catalog, sources.catalog.luaResources.find(resource => resource.path === 'cart.lua')!);
-	const marker = 'scene_library.instantiate(live_scene.id)';
-	cart.pushEditOperations([{ offset: cart.buffer.getText().indexOf(marker) + marker.length, deleteLength: 0, text: `
+	const f = await createLiveStudioFixture(t, {
+		edits: { 'cart.lua': cart => {
+			const marker = 'scene_library.instantiate(live_scene.id)';
+			cart.pushEditOperations([{ offset: cart.buffer.getText().indexOf(marker) + marker.length, deleteLength: 0, text: `
 	scene_library.register(live_scene.id, { objects = {
 		{ member_id = 'runner', definition_id = 'studio_test.actor', position = { x = 80, y = 100 }, options = { id = 'replacement' } },
 	} })
 	scene_library.instantiate(live_scene.id)
 	scene:spawn('studio_test.actor', { id = 'procedural' })` }]);
-	assert.equal(ide.boots.start('workspace').result!.status, 'reset');
-	editor.interaction.setActive(false); ide.transport.resumeHere();
-	await f.until(() => ide.guest.global('studio_test_ready') === valueBool(true));
-	ide.transport.pause(); editor.interaction.setActive(true);
+		} },
+	});
+	const { ide, sources } = f;
+	const cart = resolveLuaTextFileModel(editorTextModelService, sources.catalog, sources.catalog.luaResources.find(resource => resource.path === 'cart.lua')!);
 	const actors = readActorChoices(sources, ide.guest, 0);
 	const runner = actors.find(item => item.label === 'runner')!, replacement = actors.find(item => item.label === 'replacement')!;
 	const first = ide.sceneLive.source(0, runner.hashId, ide.sceneSources)!, second = ide.sceneLive.source(0, replacement.hashId, ide.sceneSources)!;

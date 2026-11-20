@@ -9,11 +9,11 @@ import { afterTest } from '../helpers/test_cleanup';
 /** Real BIOS, cartlib World admission and the ordinary tool context. This is
  * an in-process headless wire test, not browser UI or an external MCP session. */
 test('Actor tool calls preserve int32/f32 payloads and advertise their distinct return tags', async t => {
-	const f = await createLiveStudioFixture(t), { ide, sources, runtime, editor } = f;
-	const cart = resolveLuaTextFileModel(editorTextModelService, sources.catalog, sources.catalog.luaResources.find(resource => resource.path === 'cart.lua')!);
-	const source = cart.buffer.getText(), offset = source.indexOf('world:start()');
-	assert.ok(offset >= 0);
-	cart.pushEditOperations([{ offset, deleteLength: 0, text: `
+	const f = await createLiveStudioFixture(t, {
+		edits: { 'cart.lua': cart => {
+			const source = cart.buffer.getText(), offset = source.indexOf('world:start()');
+			assert.ok(offset >= 0);
+			cart.pushEditOperations([{ offset, deleteLength: 0, text: `
 function studio_test_actor:typed_probe(big, rounded, word, minimum, integer, floating, negative_zero, positive_zero, fraction, flag, missing, text)
  self.tool_call_count = (self.tool_call_count or 0) + 1
  self.tool_arguments = {big, rounded, word, minimum, integer, floating, negative_zero, positive_zero, fraction, flag, missing, text}
@@ -21,10 +21,10 @@ function studio_test_actor:typed_probe(big, rounded, word, minimum, integer, flo
   self, self.typed_probe, coroutine.create(function() end)
 end
 ` }]);
-	assert.equal(ide.boots.start('workspace').result!.status, 'reset');
-	editor.interaction.setActive(false); ide.transport.resumeHere();
-	await f.until(() => ide.guest.global('studio_test_ready') === valueBool(true));
-	ide.transport.pause(); editor.interaction.setActive(true);
+		} },
+	});
+	const { ide, sources, runtime } = f;
+	const cart = resolveLuaTextFileModel(editorTextModelService, sources.catalog, sources.catalog.luaResources.find(resource => resource.path === 'cart.lua')!);
 	const version = cart.version, text = cart.buffer.getText();
 	const lifetime = new AbortController(), tools = ide.tools.open(lifetime.signal);
 	afterTest(t, () => lifetime.abort());

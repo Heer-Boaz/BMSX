@@ -13,7 +13,7 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { createInputControllerSnapshot, InputControllerSampleContext } from '../../machine/ts/machine/devices/input/contracts';
 
 async function fixture(t: TestContext, presentation: 'viewless' | 'workbench' = 'viewless') {
-	const f = await createLiveStudioFixture(t, presentation);
+	const f = await createLiveStudioFixture(t, { presentation });
 	const { editor } = f;
 	toggleEditor(editor, f.sources, f.ide.overlayRenderer, f.runtime);
 	f.ide.transport.resumeHere(); await f.frame(); await f.frame();

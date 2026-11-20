@@ -33,6 +33,8 @@ import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard
 import { HostKeyboardInteraction } from '../../hosts/common/input/host_keyboard_interaction';
 import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
 import { NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
+import type { EditorTextModel } from '../../ide/editor/model/text_model';
+import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
@@ -51,8 +53,16 @@ async function loadLiveStudioSourceSeed() {
 // Keep the packed media and installed source provenance, not a running Studio.
 let sourceSeed: ReturnType<typeof loadLiveStudioSourceSeed> | undefined;
 
+type LiveStudioOptions = {
+	presentation?: 'viewless' | 'workbench';
+	// Initial authored deltas go through the workspace boot owner; these tests
+	// do not need to execute an unrelated packed version and then reboot.
+	edits?: Readonly<Record<string, (model: EditorTextModel) => void>>;
+	ready?: (ide: RuntimeIdeState) => boolean;
+};
+
 /** Ordinary boot and the physical host phases of Studio, shared by live editor regressions. */
-export async function createLiveStudioFixture(t: TestContext, presentation: 'viewless' | 'workbench' = 'viewless') {
+export async function createLiveStudioFixture(t: TestContext, { presentation = 'viewless', edits, ready }: LiveStudioOptions = {}) {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const { system, cart, sources: packedSources } = await (sourceSeed ??= loadLiveStudioSourceSeed());
 	const sources = forkRuntimeSourceState(packedSources);
@@ -97,8 +107,13 @@ export async function createLiveStudioFixture(t: TestContext, presentation: 'vie
 		for (let i = 0; i < 500 && !condition(); i++) await frame();
 		assert.ok(condition(), 'operation completes through normal Studio frame progress');
 	};
-	assert.equal(ide.boots.start('installed').result!.status, 'reset');
-	await until(() => ide.guest.global('studio_test_ready') === valueBool(true));
+	if (edits !== undefined) for (const [path, edit] of Object.entries(edits)) {
+		const resource = sources.catalog.luaResources.find(resource => resource.path === path)!;
+		edit(resolveLuaTextFileModel(editorTextModelService, sources.catalog, resource));
+	}
+	const boot = ide.boots.start(edits === undefined ? 'installed' : 'workspace').result!;
+	assert.equal(boot.status, 'reset', 'Studio admitted its initial authored sources');
+	await until(() => ide.guest.global('studio_test_ready') === valueBool(true) && (ready === undefined || ready(ide)));
 	ide.transport.pause();
 	display.workspace.layout(2400, 1080, 1);
 	editor.activate();

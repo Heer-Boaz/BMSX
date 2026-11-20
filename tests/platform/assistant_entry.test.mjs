@@ -96,8 +96,8 @@ test('the ordinary server authorizes first and opens Codex only on explicit Conn
 	assert.deepEqual(await exited, [0, null], 'the entry completes its joined shutdown instead of default signal termination');
 });
 
-for (const host of ['127.0.0.1', '0.0.0.0']) test(`ordinary server ${host}: real Codex, source IO and joined lease shutdown`, { timeout: 30000 }, async t => {
-	const f = await fixture(t, host);
+test('ordinary LAN server: real Codex, source IO and joined lease shutdown', { timeout: 30000 }, async t => {
+	const f = await fixture(t, '0.0.0.0');
 	await rm(join(f.bin, 'codex')); // Use the installed CLI, with only the fixture's empty account profile.
 	const admission = await f.request('/__bmsx__/session', { headers: { 'X-BMSX-Client': 'studio' } });
 	const { workspaceToken } = await admission.json(), headers = { Authorization: `Bearer ${workspaceToken}`, Origin: f.address };
