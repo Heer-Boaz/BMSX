@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { valueInteger, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
-import { compileLuaSource, materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { valueBool, valueInteger, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
+import { compileLuaSource, materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { createTestSystemCpu, disassembleTestBlua32Functions, linkTestSystemBlua32 } from '../helpers/blua32';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 
 test('scoped locals reuse the frame window, and O3 returns an existing argument directly', () => {
 	const source = `local function probe(t)\n${'do local x = 1 end\n'.repeat(256)}return t\nend\nreturn probe`;
@@ -15,6 +16,98 @@ test('scoped locals reuse the frame window, and O3 returns an existing argument 
 		if (opt === 3) assert.match(listing, /len=4 params=1 vararg=0 stack=1 upvalues=0/);
 		else assert.match(listing, /params=1 vararg=0 stack=2 upvalues=0/);
 		assert.match(listing, /RET r0, 1/);
+	}
+});
+
+test('O3 replaces private tables without dropping effects, escapes, or old register values', () => {
+	const boot = 'protect = __bmsx_pcall';
+	const source = `
+require('boot')
+local function dense(churn)
+	local t = {1, 2, 3}
+	local length = #t
+	churn()
+	return length
+end
+local function forward(make)
+	local t = { field = make() }
+	local alias = t
+	alias.other = 4
+	return alias.field, t.other
+end
+local function point_sum(x, y)
+	local p = {x = x, y = y}
+	return p.x + p.y
+end
+local function use(t)
+	t[3] = 8
+end
+local function escaped()
+	local t = {1, 2}
+	use(t)
+	return #t
+end
+local function reused_parameter(p)
+	local t = { p }
+	p = p + 1
+	return t[1], p
+end
+local function reads_from_capture()
+	local data
+	local function read() return data.value end
+	data = {value = 13}
+	return read()
+end
+local function fault(x)
+	local t = {x + 1}
+	return 73
+end
+local calls = 0
+local function make() calls = calls + 1; return 7 end
+local length = dense(make)
+local forwarded, other = forward(make)
+local before, after = reused_parameter(8)
+local ok = protect(fault, false)
+return length, forwarded, other, escaped(), before, after, reads_from_capture(), calls, ok, point_sum(4, 20)
+`;
+	for (const opt of [0, 3] as const) {
+		const image = linkTestSystemBlua32(compileLuaChunkToProgram(
+			parseLuaChunk(source, 'scalar-tables.lua'),
+			[{ path: 'boot', source: boot, chunk: parseLuaChunk(boot, 'boot.lua') }],
+			{ entrySource: source, optLevel: opt, programDomain: 'system' },
+		));
+		if (opt === 3) {
+			for (const name of ['dense', 'forward']) {
+				const index = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(`:${name}`));
+				const disassembly = disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]);
+				assert.doesNotMatch(disassembly, /\b(?:NEWT|SETFIELD|SETI|GETFIELD|GETI|LEN)\b/);
+				assert.match(disassembly, /\bCALL\b/);
+			}
+			const pointIndex = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(':point_sum'));
+			const point = disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[pointIndex]]);
+			assert.match(point, /len=8 params=2/);
+			assert.match(point, /ADD r\d+, r0, r1/);
+			const index = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(':escaped'));
+			assert.match(disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]), /\bNEWT\b/);
+		}
+		const expected = [...[3, 7, 4, 3, 8, 9, 13, 2].map(valueInteger), valueBool(false), valueInteger(24)];
+		const budget = 20_000;
+		let remaining = 0;
+		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+			const { cpu } = createTestSystemCpu(image, backend);
+			cpu.installBootPrimitives();
+			runGuestToHalt(cpu, budget);
+			assert.deepEqual(materializeCpuCompletionValues(cpu), expected, `O${opt}, backend ${backend}`);
+			if (backend === CpuExecutionBackend.Interpreter) remaining = cpu.instructionBudgetRemaining;
+			else assert.equal(cpu.instructionBudgetRemaining, remaining);
+		}
+		const nativeRunner = process.env.BMSX_CPU32_RUNNER;
+		if (nativeRunner) {
+			const output = execFileSync(nativeRunner, ['--execute-rom', '--boot-primitives', String(budget)],
+				{ input: image.romBytes, encoding: 'utf8' });
+			assert.equal(output, [`budget ${remaining} fault 0`,
+				...expected.map(value => `${valueTag(value).toString(16)} ${valuePayload(value).toString(16)}`), ''].join('\n'));
+		}
 	}
 });
 

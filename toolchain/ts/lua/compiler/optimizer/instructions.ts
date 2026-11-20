@@ -203,6 +203,7 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 	return maxRegister;
 };
 
+// A dead result is not permission to remove an instruction that can raise a Lua fault.
 export const isPureInstruction = (instruction: Instruction): boolean => {
 	if (instruction.op === OpCode.MOV && instruction.c !== ValueMoveKind.Copy) return false;
 	switch (instruction.op) {
@@ -218,23 +219,7 @@ export const isPureInstruction = (instruction: Instruction): boolean => {
 		case OpCode.LOADKR:
 		case OpCode.LOADNIL:
 		case OpCode.NEWT:
-		case OpCode.ADD:
-		case OpCode.SUB:
-		case OpCode.MUL:
-		case OpCode.DIV:
-		case OpCode.MOD:
-		case OpCode.FLOORDIV:
-		case OpCode.POW:
-		case OpCode.BAND:
-		case OpCode.BOR:
-		case OpCode.BXOR:
-		case OpCode.SHL:
-		case OpCode.SHR:
-		case OpCode.CONCAT:
-		case OpCode.CONCATN:
-		case OpCode.UNM:
 		case OpCode.NOT:
-		case OpCode.BNOT:
 		case OpCode.CLOSURE:
 		case OpCode.GETUP:
 		case OpCode.VARARG:

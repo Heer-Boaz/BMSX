@@ -42,21 +42,22 @@ export const constPoolValueForOptimization = (context: OptimizationContext, cons
 export const loadKConstValueForOptimization = (instruction: Instruction, context: OptimizationContext): ConstValue | null =>
 	instruction.symbolicReloc === undefined ? constPoolValueForOptimization(context, instruction.b) : null;
 
-export const getImmediateConstValue = (instruction: Instruction, context: OptimizationContext): ConstValue | null => {
+export const readImmediateValue = (instruction: Instruction): ProgramConstant | undefined => {
 	switch (instruction.op) {
-		case OpCode.KNIL:
-			return constValueForOptimization(null, context.constIndex(null));
-		case OpCode.KFALSE:
-			return constValueForOptimization(false, context.constIndex(false));
-		case OpCode.KTRUE:
-			return constValueForOptimization(true, context.constIndex(true));
-		case OpCode.K0: case OpCode.K1: case OpCode.KM1: case OpCode.KSMI: {
-			const value = integerConstant(instruction.op === OpCode.K0 ? 0 : instruction.op === OpCode.K1 ? 1 : instruction.op === OpCode.KM1 ? -1 : instruction.b);
-			return constValueForOptimization(value, context.constIndex(value));
-		}
-		default:
-			return null;
+		case OpCode.KNIL: return null;
+		case OpCode.KFALSE: return false;
+		case OpCode.KTRUE: return true;
+		case OpCode.K0: return integerConstant(0);
+		case OpCode.K1: return integerConstant(1);
+		case OpCode.KM1: return integerConstant(-1);
+		case OpCode.KSMI: return integerConstant(instruction.b);
+		default: return undefined;
 	}
+};
+
+export const getImmediateConstValue = (instruction: Instruction, context: OptimizationContext): ConstValue | null => {
+	const value = readImmediateValue(instruction);
+	return value === undefined ? null : constValueForOptimization(value, context.constIndex(value));
 };
 // end normalized-body-acceptable
 

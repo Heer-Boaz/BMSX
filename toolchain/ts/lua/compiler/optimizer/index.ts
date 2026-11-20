@@ -26,6 +26,7 @@ import {
 	visitInstructionOpenUpvalueRegisters,
 } from './liveness';
 import { eliminateDeadStores } from './dead_stores';
+import { scalarReplacePrivateTables } from './table_scalar_replacement';
 import {
 	ConstValueKind,
 	constValueForOptimization,
@@ -2118,6 +2119,7 @@ export const optimizeInstructions = (
 		current = cleanupControlFlow(current);
 		current = applyGlobalOptimizations(current, context);
 		current = cleanupControlFlow(current);
+		current = scalarReplacePrivateTables(current, context);
 		current = runMidLevelOptimizations(current, context);
 		if (inlineLocalSlots !== undefined) {
 			current.inlineLocalSlots = inlineLocalSlots;

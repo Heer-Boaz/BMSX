@@ -46,7 +46,7 @@ export function visitInstructionOpenUpvalueRegisters<T>(
 	}
 }
 
-function visitInstructionUses<T>(
+export function visitInstructionUses<T>(
 	instruction: Instruction,
 	maxRegister: number,
 	resolveClosureUpvalues: ClosureUpvalueResolver,
@@ -169,7 +169,7 @@ function visitInstructionUses<T>(
 	}
 }
 
-function visitInstructionDefs<T>(
+export function visitInstructionDefs<T>(
 	instruction: Instruction,
 	maxRegister: number,
 	state: T,
