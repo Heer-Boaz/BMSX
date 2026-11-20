@@ -94,7 +94,10 @@ test('repeated live instances are chosen by runtime identity; edits dismiss the 
 		text: "scene_library.instantiate(live_scene.id, { runner = { id = 'second-runner' }, bystander = { id = 'second-bystander' } })\n\t" }]);
 	assert.equal(f.ide.boots.start('workspace').result!.status, 'reset');
 	f.editor.interaction.setActive(false); f.ide.transport.resumeHere();
-	await f.until(() => f.ide.guest.global('studio_test_ready') === valueBool(true)); f.ide.transport.pause(); f.editor.interaction.setActive(true);
+	// Ready can be visible during a BIOS interrupt. Capture the actor command
+	// from the cartridge execution bank, not from a suspended system frame.
+	await f.until(() => f.runtime.machine.cpu.activeCartridgeSlot() === 0 && f.ide.guest.global('studio_test_ready') === valueBool(true));
+	f.ide.transport.pause(); f.editor.interaction.setActive(true);
 	assert.equal(f.ide.sceneLive.isCurrent(old), false, 'a new heap cannot resurrect the old instance receipt');
 	const instances = f.ide.sceneLive.select(f.authoring);
 	assert.equal(instances.members.length, 2);

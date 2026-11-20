@@ -17,6 +17,7 @@ import { testStudioActionEffectSource } from './studio_actioneffect_source';
 import { testStudioActionEffectEdit } from './studio_actioneffect_edit';
 import { testStudioFsmSelection } from './studio_fsm_selection';
 import { testStudioFsmInitial } from './studio_fsm_initial';
+import { testScenePlacementIdentity } from './studio_scene_identity';
 
 const workflows = {
 	'actioneffect-edit': testStudioActionEffectEdit,
@@ -35,6 +36,7 @@ const workflows = {
 	'fsm-initial': testStudioFsmInitial,
 	'fsm-selection': testStudioFsmSelection,
 	'quick-input': testStudioQuickPick,
+	'scene-identity': testScenePlacementIdentity,
 	'source-navigation': testStudioNavigation,
 };
 
