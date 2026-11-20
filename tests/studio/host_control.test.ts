@@ -193,7 +193,7 @@ test('live control has no test TTL and Studio uses an explicit workspace', () =>
 	assert.equal(command.kind, 'run');
 	if (command.kind !== 'run') return;
 	assert.equal(command.options.ttlMs, 0);
-	assert.deepEqual(command.options.mode, { kind: 'control', port: 0, workspaceRoot: process.cwd() });
+	assert.deepEqual(command.options.mode, { kind: 'control', port: 0, stepped: false, workspaceRoot: process.cwd() });
 	assert.throws(() => parseNodeToolingOptions(['--studio-workspace', '.', 'game'], true, 20), /requires --control/);
 });
 

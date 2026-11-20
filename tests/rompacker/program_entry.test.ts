@@ -69,10 +69,10 @@ test('program entry selection is prepared without mutation, survives admission, 
 
 		sources.cartridgeBlua32MediaDirty[domain] = true;
 		const rebuild = prepareBlua32MediaBoot(sources, runtime, true);
-		assert.equal(rebuild!.rebuilt.cartridgeSlots[domain]!.entrySourcePath, 'entry.lua',
-			'a later workspace build uses the declared context entry, not the previous one-shot Run');
+		assert.equal(rebuild!.rebuilt.cartridgeSlots[domain]!.entrySourcePath, 'experiments/actor.lua',
+			'a later rebuild keeps the root of the installed generation, not the catalog boot default');
 		assert.equal(sources.currentBlua32Media.cartridgeSlots[domain]!.symbols!.metadata.compiledModulePaths[0], 'experiments/actor',
-			'preparing a default-entry build does not replace the selected installed generation');
+			'preparing the rebuild does not replace the installed generation');
 		const installedRom = cartridge.rom;
 		registry.path2lua['experiments/actor.lua'].src = '@';
 		assert.throws(() => prepareBlua32MediaBoot(sources, runtime, true));
