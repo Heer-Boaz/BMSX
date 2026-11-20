@@ -115,6 +115,39 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 		registers.set(0, valueString(key));
 		require(block->run(state) == exit, "string receivers retain the existing typed semantic path");
 	}
+
+	auto table = cpu.createTable(0, 1);
+	table.setStringKey(key, valueInteger(59));
+	constants.resize(2);
+	for (const auto receiver : {valueTable(table.address()), valueString(other)}) {
+		constants.set(1, receiver);
+		for (const auto op : {OpCode::GETFIELD, OpCode::SELF}) {
+			std::array<DecodedInstruction, 4> decoded{};
+			std::array<NativeBlockInstruction, 4> source{};
+			const std::array ops{OpCode::MOV, op, OpCode::K1, OpCode::JMP};
+			for (size_t i = 0; i < ops.size(); ++i) {
+				decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1;
+				decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+				source[i] = {&decoded[i], 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
+			}
+			decoded[0].b = -2; // Proved receiver in R0, also the read destination.
+			decoded[2].a = 2;
+			decoded[3].bx = 0x2000;
+			size_t bytes = 0;
+			auto block = NativeBlock::compile(source, constants.view(), bytes, memory, cpu.stringPool(), indexKey);
+			ValueSlots registers(3);
+			NativeBlockRunState state{.registers = registers.view(), .constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
+			const auto* exit = block->run(state);
+			const bool tableReceiver = valueIsTable(receiver);
+			require(exit == (tableReceiver ? &block->terminal : &block->sideExits.front())
+				&& registers.get(0) == (tableReceiver ? valueInteger(59) : receiver)
+				&& registers.get(2) == (tableReceiver ? valueInteger(1) : valueNil()),
+				"a proved receiver takes only its field path and a cold read keeps its destination and suffix");
+			if (op == OpCode::SELF)
+				require(registers.get(1) == receiver, "SELF publishes its aliased receiver before either read path");
+			require(state.remainingCycles == 100 - exit->cycles, "proved receivers retain the precise instruction charge");
+		}
+	}
 }
 
 void storesRetainNativeFrame(CPU& cpu, Memory& memory) {

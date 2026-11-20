@@ -155,6 +155,20 @@ void NativeRegisterCache::emitState(const State& state) const {
 	}
 }
 
+bool NativeRegisterCache::samePublication(const State& left, const State& right) const {
+	// Only dirty planes emit stores. Clean facts and allocation priorities
+	// cannot affect a handoff after control has left the native region.
+	const size_t count = m_integers.size() + m_floats.size();
+	for (size_t slot = 0; slot < count; ++slot) {
+		const auto& a = left[slot];
+		const auto& b = right[slot];
+		if (a.wordDirty != b.wordDirty || a.tagDirty != b.tagDirty) return false;
+		if ((a.wordDirty || a.tagDirty) && a.guest != b.guest) return false;
+		if (a.tagDirty && a.tag != b.tag) return false;
+	}
+	return true;
+}
+
 void NativeRegisterCache::setState(const State& state) {
 	m_state = state;
 	m_clock = 0;

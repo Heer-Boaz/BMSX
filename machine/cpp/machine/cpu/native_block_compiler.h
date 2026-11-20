@@ -34,6 +34,7 @@ private:
 		int selector, ValueTag tag, sljit_s32 wordScratch = SLJIT_R0, sljit_s32 floatScratch = SLJIT_FR0);
 	int knownTag(int selector) const;
 	void fault(sljit_jump* jump, NativeBlockExitSite& exit, const State& state, bool charged = false);
+	void deferColdExit(sljit_jump* jump, NativeBlockExitSite* site, u32 scalarPc, const State& state, bool charged);
 	void emitLeave(NativeBlockExitSite& exit, bool charged);
 	void emitWordMove(const DecodedInstruction& instruction, NativeBlockExitSite* invalid);
 	void emitNumeric(const DecodedInstruction& instruction, NativeBlockExitSite& invalid);
@@ -96,13 +97,17 @@ private:
 		NativeBlockLink* link;
 	};
 	std::vector<ExternalBranch> m_external;
-	struct SlowPath {
-		sljit_jump* jump;
-		NativeBlockExitSite* exit;
+	struct ColdExit {
+		// A null site enters the scalar boundary at scalarPc, without charging
+		// a guest instruction. Other exits use their own stable descriptor.
+		NativeBlockExitSite* site;
+		u32 scalarPc;
 		State state;
 		bool charged;
+		sljit_label* label = nullptr;
 	};
-	std::vector<SlowPath> m_slow;
+	std::vector<ColdExit> m_coldExits;
+	std::vector<Branch> m_coldBranches;
 	struct RomRead {
 		sljit_jump* ramMiss;
 		sljit_label* result;
@@ -111,12 +116,6 @@ private:
 		u32 width;
 	};
 	std::vector<RomRead> m_romReads;
-	struct Admission {
-		sljit_jump* jump;
-		u32 pc;
-		State state;
-	};
-	std::vector<Admission> m_admissions;
 	size_t m_current = 0, m_instruction = 0;
 	int m_prefixCycles = 0, m_prefixTop = 0;
 	bool m_terminal = false;

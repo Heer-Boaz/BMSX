@@ -18,11 +18,11 @@ NativeBlockCompiler::NativeBlockCompiler(ConstValueSpan constants, std::span<con
 		NativeBlockAbi::stackBytes);
 	m_branches.reserve(blocks.size() * 2);
 	m_external.reserve(blocks.size() * 2);
-	m_admissions.reserve(blocks.size());
 	size_t exits = 0;
 	for (const auto& block : blocks)
 		exits += block->sideExits.size();
-	m_slow.reserve(exits * 2);
+	m_coldExits.reserve(exits + blocks.size() * 2);
+	m_coldBranches.reserve(exits * 2 + blocks.size());
 	analyzeEntryLiveness();
 }
 NativeBlockCompiler::~NativeBlockCompiler() {
@@ -79,8 +79,24 @@ void NativeBlockCompiler::emitConstant(int guest, Value value) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_IMM, valuePayload(value));
 }
 void NativeBlockCompiler::fault(sljit_jump* jump, NativeBlockExitSite& exit, const State& state, bool charged) {
-	if (jump)
-		m_slow.push_back({jump, &exit, state, charged});
+	deferColdExit(jump, &exit, 0u, state, charged);
+}
+
+void NativeBlockCompiler::deferColdExit(sljit_jump* jump, NativeBlockExitSite* site, u32 scalarPc,
+	const State& state, bool charged) {
+	// Proven operands supply no branch. The remaining guards of each guest
+	// site are emitted together; only its publication variants can match.
+	if (!jump) return;
+	for (size_t i = m_coldExits.size(); i != 0;) {
+		const auto& exit = m_coldExits[--i];
+		if (exit.site != site || exit.scalarPc != scalarPc) break;
+		if (exit.charged == charged && m_cache.samePublication(exit.state, state)) {
+			m_coldBranches.push_back({jump, i});
+			return;
+		}
+	}
+	m_coldBranches.push_back({jump, m_coldExits.size()});
+	m_coldExits.push_back({site, scalarPc, state, charged});
 }
 void NativeBlockCompiler::emitWordMove(const DecodedInstruction& instruction, NativeBlockExitSite* invalid) {
 	const auto mode = static_cast<ValueMoveKind>(instruction.c);
@@ -332,16 +348,14 @@ void NativeBlockCompiler::endBlock() {
 }
 void* NativeBlockCompiler::finish(size_t& codeBytes) {
 	emitRomReads();
-	for (const auto& slow : m_slow) {
-		sljit_set_label(slow.jump, sljit_emit_label(m_compiler));
-		m_cache.setState(slow.state);
-		emitLeave(*slow.exit, slow.charged);
+	for (auto& exit : m_coldExits) {
+		exit.label = sljit_emit_label(m_compiler);
+		m_cache.setState(exit.state);
+		if (exit.site) emitLeave(*exit.site, exit.charged);
+		else emitScalarBoundary(exit.scalarPc, 0, 0);
 	}
-	for (const auto& admission : m_admissions) {
-		sljit_set_label(admission.jump, sljit_emit_label(m_compiler));
-		m_cache.setState(admission.state);
-		emitScalarBoundary(admission.pc, 0, 0);
-	}
+	for (const auto& branch : m_coldBranches)
+		sljit_set_label(branch.jump, m_coldExits[branch.target].label);
 	for (const auto& branch : m_branches)
 		sljit_set_label(branch.jump, m_entries[branch.target].proven);
 	for (const auto& branch : m_external)

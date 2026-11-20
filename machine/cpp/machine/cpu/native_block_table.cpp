@@ -277,12 +277,26 @@ void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction,
 	const bool load = op == OpCode::GETT || op == OpCode::GETI || op == OpCode::GETFIELD || op == OpCode::SELF;
 	const int base = load ? instruction.b : instruction.a;
 	const int key = load ? instruction.c : instruction.b;
-	emitRawLoad(base, SLJIT_R0, SLJIT_R1);
-	if (op == OpCode::SELF)
+	const int baseTag = knownTag(base);
+	constexpr int tableTag = static_cast<int>(ValueTag::Table);
+	if (op == OpCode::SELF) {
+		emitRawLoad(base, SLJIT_R0, SLJIT_R1);
 		emitRawStore(instruction.a + 1, SLJIT_R0, SLJIT_R1);
-	fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
-						 static_cast<u8>(ValueTag::Table)),
-		  exit, m_cache.state());
+	} else if (baseTag == tableTag) {
+		const auto word = readTyped(base, ValueTag::Table);
+		if (word.reg != SLJIT_R0)
+			sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, word.reg, 0);
+	} else if (baseTag < 0) {
+		emitRawLoad(base, SLJIT_R0, SLJIT_R1);
+	}
+	if (baseTag < 0) {
+		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, tableTag),
+			exit, m_cache.state());
+	} else if (baseTag != tableTag) {
+		fault(sljit_emit_jump(m_compiler, SLJIT_JUMP), exit, m_cache.state());
+		m_terminal = true;
+		return;
+	}
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), receiver, SLJIT_R0, 0);
 	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER, SLJIT_R0, 0, SLJIT_IMM,

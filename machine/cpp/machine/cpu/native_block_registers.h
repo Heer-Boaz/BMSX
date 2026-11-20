@@ -58,6 +58,7 @@ public:
 	}
 	void setState(const State& state);
 	void emitState(const State& state) const;
+	bool samePublication(const State& left, const State& right) const;
 	// Guards precede every parallel move. Returned branches retain the source
 	// map on failure; success establishes the target map without a guest-memory
 	// roundtrip for retained dirty payloads. Scratch belongs to neither bank.

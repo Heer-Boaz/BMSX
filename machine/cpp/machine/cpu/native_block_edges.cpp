@@ -21,13 +21,14 @@ void NativeBlockCompiler::beginBlock(size_t index) {
 	entry.guarded = sljit_emit_label(m_compiler);
 	// Public entry points admit their own type proofs before any register move.
 	// Internal edges have already established the exact same payload map.
+	const u32 pc = m_blocks[index]->firstPc;
+	const State memoryAuthoritative{};
 	for (auto* miss : m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2))
-		if (miss)
-			m_admissions.push_back({miss, m_blocks[index]->firstPc, {}});
+		deferColdExit(miss, nullptr, pc, memoryAuthoritative, true);
 	entry.proven = sljit_emit_label(m_compiler);
 	auto* shortGrant = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM,
 		m_blocks[index]->admissionCycles);
-	m_admissions.push_back({shortGrant, m_blocks[index]->firstPc, entry.registers});
+	deferColdExit(shortGrant, nullptr, pc, entry.registers, true);
 }
 
 void NativeBlockCompiler::emitTop(int extent) {
