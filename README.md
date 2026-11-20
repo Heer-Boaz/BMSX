@@ -279,6 +279,11 @@ The headless command does not build C++; it refreshes the required ROMs and
 Node tooling through the normal artifact cache. Chromium, desktop/OS and
 hardware checks still have separate entrypoints.
 
+Use `npm run test:browser-platform` for the browser-host fixtures, including
+real Chromium input, media and rendering. Install the matching browser with
+`npx playwright install chromium` if needed. This does not run Studio's
+end-to-end workflows or the desktop clipboard tests.
+
 All test scripts use `scripts/test.sh`: a shared cgroup v2 `memory.max` cap of
 **at most 8 GiB** for the test process and its ordinary subprocesses. Existing
 stricter caps stay untouched. Nested runners share that budget; Node suites
