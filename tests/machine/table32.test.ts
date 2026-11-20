@@ -43,7 +43,9 @@ test('Table keys normalize Integer/Float identity without changing stored value 
 	cpu.gc.tables.set(table, v.valueFloatBits(0x80000000), v.valueInteger(19));
 	assert.equal(cpu.gc.tables.get(table, v.valueInteger(0)), v.valueInteger(19));
 	cpu.gc.tables.set(table, v.valueFloatBits(0x7fa12345), v.valueInteger(20));
+	cpu.gc.tables.set(table, v.valueInteger(0x7fc00000), v.valueInteger(23));
 	assert.equal(cpu.gc.tables.get(table, v.valueFloatBits(0xffc54321)), v.valueInteger(20));
+	assert.equal(cpu.gc.tables.get(table, v.valueInteger(0x7fc00000)), v.valueInteger(23));
 	cpu.gc.tables.set(table, v.valueInteger(16777217), v.valueInteger(21));
 	cpu.gc.tables.set(table, v.valueFloat(16777216), v.valueInteger(22));
 	assert.equal(cpu.gc.tables.get(table, v.valueInteger(16777217)), v.valueInteger(21));

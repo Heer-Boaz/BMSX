@@ -125,6 +125,11 @@ void inheritedAndFullWordKeys(CPU& cpu, Memory& memory) {
 	require(result.status == TableLookupStatus::Resolved && result.value == valueFloatBits(0x80000000u), "reinsertion preserves negative zero");
 
 	auto raw = cpu.createTable(0, 8);
+	const Value integerKey = valueInteger(BLUA32_FLOAT_NAN);
+	raw.set(valueFloatBits(0xffc01234u), valueInteger(13));
+	raw.set(integerKey, valueInteger(14));
+	require(raw.get(valueFloatBits(0x7fa12345u)) == valueInteger(13) && raw.get(integerKey) == valueInteger(14),
+		"canonical NaN and Integer keys with the same stored word remain distinct in the same hash chain");
 	const Value highBitKey = valueFromTag(ValueTag::String, key ^ 0x80000000u);
 	raw.set(highBitKey, valueInteger(21));
 	require(isNil(raw.getStringKey(key)), "a known StringId does not match a different high payload bit during chain search");

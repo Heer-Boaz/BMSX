@@ -78,19 +78,22 @@ int TableRecord::findNodeIndex(const Value& key, bool matchDead) const {
 	const u32 hash = hashSlots();
 	if (hash == 0u) return -1;
 	const u32 array = arrayCapacity(), words = storageAddress();
-	const u32 links = words + (array + 2u * hash) * 4u;
-	const TableValues slots{m_memory, words, links + hash * 4u};
-	const bool collectableKey = matchDead && (valueIsTable(key) || valueIsClosure(key) || valueIsThread(key));
-	const u32 deadKeyHashId = collectableKey ? valuePayload(key) : 0u;
+	const u32 links = words + (array + 2u * hash) * 4u, tags = links + hash * 4u;
+	const auto tag = valueTag(key);
+	const u32 payload = valuePayload(key);
+	const bool collectableKey = matchDead && (tag == ValueTag::Table || tag == ValueTag::Closure || tag == ValueTag::Thread);
 	int index = static_cast<int>(hashValue(key) & (hash - 1u));
 	for (u32 remaining = hash; index >= 0 && remaining != 0u; --remaining) {
 		const u32 slot = static_cast<u32>(index);
-		const Value nodeKey = slots.get(array + slot);
-		if (!isNil(nodeKey)) {
-			if (ValueEq{}(nodeKey, key)) return index;
-		} else if (collectableKey && valuePayload(nodeKey) == valueHeader(key)) {
-			const Value dead = slots.get(array + hash + slot);
-			if (valueTag(dead) == ValueTag::DeadKey && valuePayload(dead) == deadKeyHashId) return index;
+		const u32 keySlot = array + slot;
+		const auto nodeTag = static_cast<ValueTag>(m_memory->readRamRecordByte(tags + keySlot));
+		if (nodeTag == tag) {
+			if (m_memory->readRamRecordWord(words + keySlot * 4u) == payload) return index;
+		} else if (collectableKey && nodeTag == ValueTag::Nil
+			&& m_memory->readRamRecordWord(words + keySlot * 4u) == valueTagHeader(tag)) {
+			const u32 valueSlot = keySlot + hash;
+			if (m_memory->readRamRecordByte(tags + valueSlot) == static_cast<u8>(ValueTag::DeadKey)
+				&& m_memory->readRamRecordWord(words + valueSlot * 4u) == payload) return index;
 		}
 		index = static_cast<i32>(m_memory->readRamRecordWord(links + slot * 4u));
 	}

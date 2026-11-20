@@ -108,19 +108,18 @@ export class TableRecords {
 		if (hash === 0) return -1;
 		const memory = this.heap.memory, array = this.arrayCapacity(record), words = this.storageAddress(record);
 		const links = words + (array + 2 * hash) * 4, tags = links + hash * 4;
-		const tag = valueTag(key);
+		const tag = valueTag(key), payload = valuePayload(key);
 		const collectable = matchDead && (tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread);
-		const hashId = collectable ? valuePayload(key) : 0;
 		let index = this.heap.hash(key) & (hash - 1);
 		for (let remaining = hash; index >= 0 && remaining !== 0; --remaining) {
 			const keySlot = array + index;
 			const nodeTag = memory.readRamRecordByte(tags + keySlot);
-			if (nodeTag !== ValueTag.Nil) {
-				if (valueFromTag(nodeTag, memory.readRamRecordWord(words + keySlot * 4)) === key) return index;
-			} else if (collectable && memory.readRamRecordWord(words + keySlot * 4) === tag) {
+			if (nodeTag === tag) {
+				if (memory.readRamRecordWord(words + keySlot * 4) === payload) return index;
+			} else if (collectable && nodeTag === ValueTag.Nil && memory.readRamRecordWord(words + keySlot * 4) === tag) {
 				const valueSlot = keySlot + hash;
 				if (memory.readRamRecordByte(tags + valueSlot) === ValueTag.DeadKey
-					&& memory.readRamRecordWord(words + valueSlot * 4) === hashId) return index;
+					&& memory.readRamRecordWord(words + valueSlot * 4) === payload) return index;
 			}
 			index = memory.readRamRecordWord(links + index * 4) | 0;
 		}
