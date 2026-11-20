@@ -50,17 +50,21 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	if (shared.kind !== 'node' || shared.branches[0].role !== 'children') throw new Error('source graph: shared subtree missing');
 	const selected = shared.branches[0].entries[0].node;
 	await revealLensOccurrence(test, view, selected.rowKey);
-	const card = viewport.model.nodesBySource.get(selected.rowKey)!;
-	const bounds = { left: card.bounds.left + viewport.bounds.left - viewport.scrollX,
-		right: card.bounds.right + viewport.bounds.left - viewport.scrollX,
-		top: card.bounds.top + viewport.bounds.top - viewport.scrollY,
-		bottom: card.bounds.bottom + viewport.bounds.top - viewport.scrollY };
+	const bounds = () => {
+		const card = viewport.model.nodesBySource.get(selected.rowKey)!;
+		const x = Math.round(viewport.graphToViewportX((card.bounds.left + card.bounds.right) / 2));
+		const y = Math.round(viewport.graphToViewportY(card.bounds.top + card.headerHeight / 2));
+		check(viewport.hitTest(x, y) === card, 'source graph: the exact card header is visible');
+		return { left: x, right: x + 1, top: y, bottom: y + 1 };
+	};
 	await click(bounds);
-	await click(graph.actionBar.items[0].bounds);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source');
 	await test.clickTab(lens.id);
 	await click(bounds);
 	check(ide.editor.editorParts.activeGroup.model.activeTab === lens, 'source graph: pane switching cancels the earlier click, not a double-click on return');
-	await click(graph.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	const sourceLines = BEHAVIOR_SOURCE_FIXTURE.split('\n');
 	const sourceRow = sourceLines.findIndex(line => line.includes('children = { leaf,'));
 	const sourceColumn = sourceLines[sourceRow].indexOf('leaf');
@@ -90,7 +94,8 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	for (let index = 0; index < 30; index += 1) await frame();
 	check(view.document === currentDocument && viewport.selection === retainedCard,
 		'source graph: idle frames neither reparse nor rebuild retained cards');
-	await click(graph.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(sourcePane(test).code.view.cursorRow === sourceRow + 1 && sourcePane(test).code.view.cursorColumn === sourceColumn
 		&& !hasSelection(sourcePane(test).code), 'source graph: Source uses the new generation, including the UTF-16 insertion');
 	const parsed = getOrCreateSemanticProject(editorTextModelService, model.resource.contextId).getFileData(model.resource)!.chunk;

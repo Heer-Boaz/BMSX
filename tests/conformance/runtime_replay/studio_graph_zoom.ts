@@ -47,7 +47,7 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	check(viewport.zoom < wheelStart && viewport.zoom > wheelStart / 2 && Math.abs(viewport.viewportToGraphX(pointer.viewportX) - pointerX) < 1e-7
 		&& Math.abs(viewport.viewportToGraphY(pointer.viewportY) - pointerY) < 1e-7, 'zoom: Ctrl-wheel uses the actual pointer, not the canvas center');
 	const zoom = viewport.zoom, x = viewport.scrollX, y = viewport.scrollY;
-	await runPaletteCommand('Behavior Lens: Open Source');
+	await runPaletteCommand('editor.source');
 	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && lens.workingCopy.version === version, 'zoom: Source switches to unscaled code chrome without editing');
 	await runPaletteCommand('Go: Back');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && viewport.zoom === zoom && viewport.scrollX === x && viewport.scrollY === y,
@@ -57,7 +57,7 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	await press('ShiftLeft', 'F10');
 	const menu = ide.editor.contextMenu;
 	check(menu.visible && menu.model.rows.some(row => row.command === 'editor.source' && row.enabled)
-		&& menu.model.rows.every(row => row.command === undefined || !row.command.startsWith('graph.')), 'zoom: selected-node menu contains target actions, not viewport zoom');
+		&& menu.model.rows.some(row => row.command === 'graph.fit' && row.enabled), 'zoom: the selected-node menu admits both the source subject and the diagram actions');
 	await press('Escape');
 	await runPaletteCommand('Graph: Reset Zoom (100%)');
 	check(!menu.visible && viewport.zoom === 1, 'zoom: dismissing the context menu restores the focused palette route');

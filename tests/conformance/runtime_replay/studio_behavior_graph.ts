@@ -1,7 +1,6 @@
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
-import { testStudioGraphNavigation } from './studio_graph_navigation';
+import { graphEdgePoint, testStudioGraphNavigation } from './studio_graph_navigation';
 
-import { editorViewState } from '../../../ide/editor/ui/view/state';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { BEHAVIOR_SOURCE_FIXTURE } from '../../helpers/behavior_source_fixture';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
@@ -13,8 +12,8 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	const graph = view.presentation;
 	const viewport = graph.viewport;
 	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
-	check(editorViewState.font.variant === 'tiny' && editorViewState.viewportWidth === 384 && editorViewState.viewportHeight === 288,
-		'BT controls: actual constrained tiny-font viewport');
+	check(viewport.horizontalScrollbar.getThumb() !== null && viewport.verticalScrollbar.getThumb() !== null,
+		'BT controls: the diagram actually overflows in both directions');
 	await press('Home');
 	await press('ArrowDown');
 	const sequence = viewport.selection;
@@ -74,11 +73,11 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	await pad('down'); check(inspector.model.selectionIndex === 1, 'BT controls: controller selects an inspected property');
 	await pad('b'); check(!inspector.visible && viewport.selection === second, 'BT controls: controller Back preserves the graph selection');
 	const edge = viewport.model.edgesBySource.get(second.source.rowKey)!;
-	const x = edge.points[edge.points.length - 2] + viewport.bounds.left - viewport.scrollX;
-	const y = edge.points[edge.points.length - 1] - 6 + viewport.bounds.top - viewport.scrollY;
-	await click({ left: x, right: x + 1, top: y, bottom: y + 1 });
+	viewport.reveal(edge); await frame();
+	await click(() => graphEdgePoint(viewport, edge));
 	check(viewport.selection === edge, 'BT controls: physical pointer selects the incoming connection');
-	await click(graph.actionBar.items[0].bounds, 6);
+	await click(() => graphEdgePoint(viewport, edge), 1, 'pointer_secondary');
+	await test.clickContextCommand('editor.source', 6);
 	check(sourcePane(test).code.view.cursorRow === edge.range.start.line - 1 && sourcePane(test).code.view.cursorColumn === edge.range.start.column - 1,
 		'BT controls: connection Source opens this occurrence, not the shared initializer');
 	await test.clickTab(lens.id);
