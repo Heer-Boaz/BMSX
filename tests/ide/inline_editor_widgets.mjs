@@ -11,9 +11,11 @@ import { test } from 'node:test';
 import { PNG } from 'pngjs';
 import { performHostControlAction } from '../../scripts/host_control/actions.mjs';
 
-// Run against completed debug products: node --test tests/ide/inline_editor_widgets.mjs
+import { playableStudioCartSkip } from '../helpers/playable_studio_carts.mjs';
+
+// Run against completed debug products: BMSX_TEST_PLAYABLE_STUDIO_CARTS=1 npm test -- tests/ide/inline_editor_widgets.mjs
 // Actual keys/clipboard/pointer and presentation pixels only; no model/provider/cycle API.
-test('inline source widgets share visible geometry and pointer ownership in both fonts and themes', { timeout: 240000 }, async t => {
+test('inline source widgets share visible geometry and pointer ownership in both fonts and themes', { skip: playableStudioCartSkip, timeout: 240000 }, async t => {
 	const root = fileURLToPath(new URL('../..', import.meta.url));
 	const artifacts = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-inline-editor-widgets-'));
 	const workspace = path.join(artifacts, 'workspace'); await fs.mkdir(workspace);

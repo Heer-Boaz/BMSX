@@ -12,12 +12,14 @@ import { PNG } from 'pngjs';
 import { performHostControlAction } from '../../scripts/host_control/actions.mjs';
 import { contrastRatio } from '../helpers/contrast.mjs';
 
-// Run against completed debug products: node --test tests/ide/editor_text_contrast.mjs
+import { playableStudioCartSkip } from '../helpers/playable_studio_carts.mjs';
+
+// Run against completed debug products: BMSX_TEST_PLAYABLE_STUDIO_CARTS=1 npm test -- tests/ide/editor_text_contrast.mjs
 // Source color states through public I/O, including isolated actual comment raster contrast.
 // Pair/raster units own the remaining syntax/decoration combinations.
 // Find captures exercise source markings, not the separate query-bar visibility/layout contract.
 // Ghost text is covered by the real completion_preview_ux workflow. This protocol has no cycle API.
-test('shipped editor text, selection and semantic markings in both fonts and themes through user I/O', { timeout: 120000 }, async t => {
+test('shipped editor text, selection and semantic markings in both fonts and themes through user I/O', { skip: playableStudioCartSkip, timeout: 120000 }, async t => {
 	const root = fileURLToPath(new URL('../..', import.meta.url));
 	const artifacts = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-editor-text-contrast-'));
 	const workspace = path.join(artifacts, 'workspace'); await fs.mkdir(workspace);

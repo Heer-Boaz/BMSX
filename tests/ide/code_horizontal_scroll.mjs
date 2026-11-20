@@ -12,7 +12,9 @@ import { setTimeout } from 'node:timers/promises';
 import { PNG } from 'pngjs';
 import { performHostControlAction } from '../../scripts/host_control/actions.mjs';
 
-// Run against completed debug products: node --test tests/ide/code_horizontal_scroll.mjs
+import { playableStudioCartSkip } from '../helpers/playable_studio_carts.mjs';
+
+// Run against completed debug products: BMSX_TEST_PLAYABLE_STUDIO_CARTS=1 npm test -- tests/ide/code_horizontal_scroll.mjs
 // Actual clipboard/keys/pointer only. The control protocol has no runtime-cycle observations.
 function paintedBounds(image, color, left, top, right, bottom) {
 	let minX = right, minY = bottom, maxX = left - 1, maxY = top - 1;
@@ -37,7 +39,7 @@ async function expectSavedSource(file, expected) {
 	assert.equal(actual, expected, 'ordinary Save did not publish the exact authored source');
 }
 
-test('code horizontal pixelscroll reaches Unicode line end through real Studio user I/O', { timeout: 120000 }, async t => {
+test('code horizontal pixelscroll reaches Unicode line end through real Studio user I/O', { skip: playableStudioCartSkip, timeout: 120000 }, async t => {
 	const root = fileURLToPath(new URL('../..', import.meta.url));
 	const artifacts = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-code-horizontal-'));
 	const workspace = path.join(artifacts, 'workspace'); await fs.mkdir(workspace);
