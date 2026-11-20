@@ -5,7 +5,7 @@
 
 namespace bmsx {
 
-void NativeBlockGate::emitCodeLookup(sljit_compiler* compiler, sljit_label* coldDispatch) {
+void NativeBlockGate::emitCodeLookup(sljit_compiler* compiler, sljit_label* coldDispatch, bool keepCell) {
 	constexpr sljit_sw pointerShift = std::countr_zero(sizeof(void*));
 	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R0, 0, SLJIT_IMM, INSTRUCTION_BYTES - 1u);
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0), coldDispatch);
@@ -20,7 +20,13 @@ void NativeBlockGate::emitCodeLookup(sljit_compiler* compiler, sljit_label* cold
 	static_assert(offsetof(NativeCodeLookup::DispatchPage, code) == 0);
 	sljit_emit_op2(compiler, SLJIT_AND, SLJIT_R2, 0, SLJIT_R0, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_MASK);
 	sljit_emit_op2(compiler, SLJIT_LSHR, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R2), pointerShift);
+	if (keepCell) {
+		sljit_emit_op2(compiler, SLJIT_SHL, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, pointerShift);
+		sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_R3, 0, SLJIT_R2, 0);
+		sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	} else {
+		sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R2), pointerShift);
+	}
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0), coldDispatch);
 }
 

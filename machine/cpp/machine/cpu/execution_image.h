@@ -141,7 +141,7 @@ inline constexpr u8 DECODED_REFRESH_FUSION = 2u;
 inline constexpr u32 DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3u;
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-// Decoded words of a ROM function record, never a closure or native entry.
+// ROM prototype words and image-owned dispatch cell addresses, never a closure or code pointer.
 struct NativeRomCallBinding {
 	static constexpr u32 slotCount = 64u;
 	u32 functionAddress = ~0u;
@@ -149,6 +149,7 @@ struct NativeRomCallBinding {
 	u32 numParams = 0u;
 	u32 maxStack = 0u;
 	u32 flags = 0u;
+	std::array<void* const*, CARTRIDGE_SLOT_COUNT> entryCells{};
 };
 
 struct NativeBlockPage {

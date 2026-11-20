@@ -1368,7 +1368,10 @@ int main(int argc, char** argv) {
 		nativeReturnRouting(6, 0, 0, false, true);
 		nativeReturnRouting(2, 4, 0, false, false);
 		nativeReturnRouting(6, 2, 0, false, false);
-		nativeReturnRouting(0, 0, 10, false, false);
+		const int retAndMarker = BASE_CYCLES[static_cast<u8>(OpCode::RET)] + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)] + 1;
+		nativeReturnRouting(0, 0, 10, false, false, retAndMarker); // empty, beyond reserved capacity
+		nativeReturnRouting(0, 1, 0, false, false, retAndMarker + 1); // one nil, no source
+		nativeReturnRouting(6, 1, 0, false, false, retAndMarker + 1); // one result, discard suffix
 		nativeReturnRouting(6, 0, 0, true, false);
 		nativeReturnRouting(6, 0, 6, false, false);
 		nativeReturnRouting(2, 4, 0, false, false, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 4 + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)] + 1);

@@ -12,6 +12,7 @@ struct NativeCallScratch {
 	int argumentBase;
 	u32 closureAddress, functionAddress, codeAddress, numParams, maxStack, flags, frameDepth;
 	int argCount, varargBase, varargCount, stackBase, stackTop;
+	void* romBinding;
 };
 
 // Word registers left for the value cache when `fixedSaved` saved registers are pinned.
@@ -89,8 +90,8 @@ public:
 private:
 	static sljit_label* emitCallGate(sljit_compiler*, sljit_label* cold);
 	static sljit_label* emitReturnGate(sljit_compiler*, sljit_label* cold);
-	// Input: R0 = PC. Output: R3 = live entry; R2 is scratch.
-	static void emitCodeLookup(sljit_compiler*, sljit_label* declined);
+	// Input: R0 = PC. Outputs: R3 = live entry; optionally R2 = its stable cell.
+	static void emitCodeLookup(sljit_compiler*, sljit_label* declined, bool keepCell = false);
 	static void emitPublishFrameTop(sljit_compiler*, sljit_s32 control, sljit_s32 top, sljit_s32 scratch);
 	static void emitFrameEntry(sljit_compiler*, sljit_s32 frame, sljit_s32 target);
 

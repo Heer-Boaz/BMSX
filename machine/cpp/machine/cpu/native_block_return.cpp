@@ -16,9 +16,9 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	constexpr auto caller = NativeBlockAbi::wordRegisters[2].reg;
 	constexpr auto target = NativeBlockAbi::wordRegisters[3].reg;
 	// The register-cache spill area is dead after shared materialization.
-	constexpr sljit_sw countSlot = 0, wantedSlot = countSlot + sizeof(u32),
-		baseSlot = wantedSlot + sizeof(u32), depthSlot = baseSlot + sizeof(u32);
-	static_assert(depthSlot + sizeof(u32) <= NativeBlockAbi::stackBytes);
+	constexpr sljit_sw countSlot = 0, wantedSlot = 4, depthSlot = 8, callerBaseSlot = 12,
+		destinationSlot = 16, sourceSlot = 20;
+	static_assert(sourceSlot + sizeof(u32) <= NativeBlockAbi::stackBytes);
 	auto* entry = sljit_emit_label(compiler);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, exit, 0, SLJIT_R0, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, leaving, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
@@ -80,31 +80,34 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_R2, 0), coldDispatch);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), wantedSlot, SLJIT_R2, 0);
 	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_S1, 0, SLJIT_MEM1(SLJIT_R3), static_cast<u32>(FrameField::ReturnBase), SLJIT_IMM, FRAME_WINDOW_MASK);
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), baseSlot, SLJIT_S1, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(caller), offsetof(CallFrame, nativeControl));
+	sljit_emit_op2(compiler, SLJIT_AND32, target, 0, SLJIT_MEM1(SLJIT_R1), static_cast<u32>(FrameField::StackBase), SLJIT_IMM, FRAME_WINDOW_MASK);
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), callerBaseSlot, target, 0);
+	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R1, 0, target, 0, SLJIT_S1, 0);
 	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_S1, 0, SLJIT_S1, 0, SLJIT_R2, 0);
-	// Determine the exact copy count once for both admission and placement.
+	auto* noResults = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_SIG_GREATER | SLJIT_32, SLJIT_S1, 0,
+		SLJIT_MEM1(caller), offsetof(CallFrame, registers) + ValueSpan::sizeOffset()), coldDispatch);
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), destinationSlot, SLJIT_R1, 0);
+	// Keep the admitted absolute indices through continuation lookup. Padding
+	// with no source values and a discard require no source address.
 	auto* countFits = sljit_emit_cmp(compiler, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_R2, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_R2, 0);
 	sljit_set_label(countFits, sljit_emit_label(compiler));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), countSlot, SLJIT_R0, 0);
 	auto* noCopy = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R3, 0, SLJIT_MEM1(exit), offsetof(NativeBlockExitSite, exitA));
-	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R3, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(exit), offsetof(NativeBlockExitSite, exitA));
+	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R2, 0);
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R0, 0,
 		SLJIT_MEM1(leaving), offsetof(CallFrame, registers) + ValueSpan::sizeOffset()), coldDispatch);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(leaving), offsetof(CallFrame, nativeControl));
-	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::StackBase), SLJIT_IMM, FRAME_WINDOW_MASK);
-	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R0, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(caller), offsetof(CallFrame, nativeControl));
-	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::StackBase), SLJIT_IMM, FRAME_WINDOW_MASK);
-	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), baseSlot);
+	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), static_cast<u32>(FrameField::StackBase), SLJIT_IMM, FRAME_WINDOW_MASK);
+	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R2, 0);
 	// An upward copy may overlap its input even at a cached return site.
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R0, 0, SLJIT_R3, 0), coldDispatch);
-	sljit_set_label(noCopy, sljit_emit_label(compiler));
-	auto* noResults = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_SIG_GREATER | SLJIT_32, SLJIT_S1, 0,
-		SLJIT_MEM1(caller), offsetof(CallFrame, registers) + ValueSpan::sizeOffset()), coldDispatch);
-	sljit_set_label(noResults, sljit_emit_label(compiler));
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_R0, 0), coldDispatch);
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), sourceSlot, SLJIT_R0, 0);
+	auto* rangesReady = sljit_emit_label(compiler);
+	sljit_set_label(noCopy, rangesReady);
+	sljit_set_label(noResults, rangesReady);
 
 	// Resolve the continuation before changing either activation. A missing
 	// translation returns through the ordinary semantic/fetch boundary once.
@@ -139,22 +142,37 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 		SLJIT_MEM1(SLJIT_SP), wantedSlot);
 
 	// Every remaining operation is a raw, allocation-free frame transition.
-	// No host observer runs until the next body's own publication boundary.
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(caller), offsetof(CallFrame, nativeControl));
 	emitPublishFrameTop(compiler, SLJIT_R0, SLJIT_S1, SLJIT_R2);
-	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::StackBase), SLJIT_IMM, FRAME_WINDOW_MASK);
-	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), baseSlot);
-	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R0, 0, SLJIT_MEM1(exit), offsetof(NativeBlockExitSite, exitA));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(leaving), offsetof(CallFrame, nativeControl));
-	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), static_cast<u32>(FrameField::StackBase), SLJIT_IMM, FRAME_WINDOW_MASK);
-	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R2, 0);
+	auto* discard = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_SP), wantedSlot, SLJIT_IMM, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(leaving), offsetof(CallFrame, thread));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::words, 0, SLJIT_MEM1(SLJIT_R3), thread.stackWords);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::tags, 0, SLJIT_MEM1(SLJIT_R3), thread.stackTags);
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), destinationSlot);
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), countSlot);
+	auto* padOnly = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), sourceSlot);
+	sljit_set_label(padOnly, sljit_emit_label(compiler));
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_SP), wantedSlot);
+	auto* multiple = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 1);
+	// One receiving slot copies the raw pair or supplies one canonical nil.
+	auto* singleNil = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM2(NativeBlockAbi::words, SLJIT_R1), 2, SLJIT_MEM2(NativeBlockAbi::words, SLJIT_R0), 2);
+	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM2(NativeBlockAbi::tags, SLJIT_R1), 0, SLJIT_MEM2(NativeBlockAbi::tags, SLJIT_R0), 0);
+	auto* copiedOne = sljit_emit_jump(compiler, SLJIT_JUMP);
+	sljit_set_label(singleNil, sljit_emit_label(compiler));
+	static_assert(valueNil() == 0);
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM2(NativeBlockAbi::words, SLJIT_R1), 2, SLJIT_IMM, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM2(NativeBlockAbi::tags, SLJIT_R1), 0, SLJIT_IMM, 0);
+	auto* paddedOne = sljit_emit_jump(compiler, SLJIT_JUMP);
+
+	sljit_set_label(multiple, sljit_emit_label(compiler));
 	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
 	NativeBlockAbi::emitFramePlacement(compiler, false, true);
+	auto* placed = sljit_emit_label(compiler);
+	sljit_set_label(discard, placed);
+	sljit_set_label(copiedOne, placed);
+	sljit_set_label(paddedOne, placed);
 
 	// Retire the exact same owner fields as Thread::leaveFrame. Active roots
 	// change only after all returned words have reached the caller's window.
@@ -166,9 +184,7 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop));
 	emitPublishFrameTop(compiler, SLJIT_R2, SLJIT_R3, SLJIT_R1);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(leaving), offsetof(CallFrame, thread));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(caller), offsetof(CallFrame, nativeControl));
-	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), static_cast<u32>(FrameField::StackBase), SLJIT_IMM, FRAME_WINDOW_MASK);
-	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0,
+	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_SP), callerBaseSlot,
 		SLJIT_MEM1(caller), offsetof(CallFrame, registers) + ValueSpan::sizeOffset());
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R1), thread.currentFrame, caller, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), thread.record);
