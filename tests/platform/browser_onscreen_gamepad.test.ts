@@ -343,12 +343,17 @@ test('native browser contacts reach the real common input and ICU without DOM-ta
 		await touch('touchStart', [points.a]);
 		await touch('touchStart', [points.a, points.b]);
 		await assertWord(3);
-		await page.evaluate(() => {
-			const id = (globalThis as any).touchTest.pointerEvents.find((event: any) => event.type === 'pointerdown').id;
-			window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: id, pointerType: 'touch' }));
+		const remaining = await page.evaluate(() => {
+			const [first, second] = (globalThis as any).touchTest.pointerEvents.filter((event: { type: string }) => event.type === 'pointerdown');
+			window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: first.id, pointerType: 'touch' }));
+			return second.id;
 		});
 		await assertWord(2);
 		await touch('touchCancel', []);
+		// Chromium can acknowledge CDP before dispatching the final DOM event.
+		await page.waitForFunction(id => (globalThis as any).touchTest.pointerEvents.some(
+			(event: { id: number; type: string; trusted: boolean }) => event.id === id && event.type === 'pointercancel' && event.trusted
+		), remaining);
 		await assertWord(0);
 	});
 

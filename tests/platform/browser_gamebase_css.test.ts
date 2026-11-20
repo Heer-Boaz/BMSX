@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
@@ -32,8 +32,6 @@ export { BrowserHostClock } from './hosts/browser/timing';
 export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'cssFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const evidence = '.bmsx/hosting/conventional-keyboard-evidence/embedded';
-	await mkdir(evidence, { recursive: true });
 	const browser = await chromium.launch();
 	afterTest(t, () => browser.close());
 	const profiles: Array<{
@@ -54,7 +52,7 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 	];
 	for (const profile of profiles) await t.test(profile.name, async p => {
 		const page = await browser.newPage({ viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true });
-		p.after(() => page.close());
+		afterTest(p, () => page.close());
 		await page.setContent(template);
 		assert.equal(await page.locator('#msx').isVisible(), false);
 		assert.equal(await page.locator('#gamescreen').isVisible(), false);
@@ -99,7 +97,7 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 			const keyboardView = new api.BrowserOnscreenKeyboard(document, keyboard, () => keyboard.close());
 			hub.setOnscreenKeyboard(keyboardView);
 			(globalThis as any).cssProbe = { pad, keyboard, video, input,
-				frame() { input.pollInput(); keyboard.updateFeedback(clock.now()); },
+				frame(feedbackTime: number) { input.pollInput(); keyboard.updateFeedback(feedbackTime); },
 				measure() { return [...document.querySelectorAll('#gamescreen, .control-surface, .host-control-surface')].map(element => {
 					const bounds = element.getBoundingClientRect();
 					return { id: element.id, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
@@ -162,6 +160,9 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 		assert.equal(await page.locator('.host-control-surface:visible').count(), 0, 'touch keyboard foreground hides both host-only corner icons with the gamepad');
 		assert.deepEqual(await page.evaluate(() => (globalThis as any).cssProbe.measure()), geometry, 'keyboard foreground does not rescale the underlying picture or controls');
 		for (let selectedPage = 0; selectedPage < BROWSER_KEYBOARD_PAGES.length; selectedPage++) {
+			// Sample feedback on the model's frame timeline, not wall time spent
+			// dispatching keyboard events or measuring the page in this process.
+			const feedbackTime = selectedPage * 1000;
 			await page.evaluate(index => (globalThis as any).cssProbe.keyboard.setPage(index), selectedPage);
 			await settle();
 			assert.equal(await page.locator('.bmsx-touch-keyboard-page:visible').count(), 1);
@@ -169,12 +170,11 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 			const panel = await page.locator('#bmsx-touch-keyboard').boundingBox();
 			assert.ok(panel!.y >= surfaceBounds.y && panel!.y + panel!.height <= surfaceBounds.y + surfaceBounds.height);
 			assert.ok(panel!.x >= surfaceBounds.x && panel!.x + panel!.width <= surfaceBounds.x + surfaceBounds.width);
-			if (profile.embedded) await page.screenshot({ path: `${evidence}/${profile.embedded.width}x${profile.embedded.height}-page${selectedPage}.png`, scale: 'css' });
 			const shortSurface = surfaceBounds.height === 239;
 			for (const shifted of [false, true]) {
 				if (shifted) {
 					await page.keyboard.down('Shift');
-					await page.evaluate(() => (globalThis as any).cssProbe.frame());
+					await page.evaluate(time => (globalThis as any).cssProbe.frame(time), feedbackTime);
 					await settle();
 				}
 				const keyGeometry = await page.locator('.bmsx-touch-keyboard-page:not([hidden]) button').evaluateAll(keys => keys.map(key => {
@@ -191,9 +191,8 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 						'character legends retain the specified 15/18/21px typography instead of shrinking arbitrarily to fit');
 				}
 				if (shifted) {
-					if (profile.embedded) await page.screenshot({ path: `${evidence}/${profile.embedded.width}x${profile.embedded.height}-page${selectedPage}-shifted.png`, scale: 'css' });
 					await page.keyboard.up('Shift');
-					await page.evaluate(() => (globalThis as any).cssProbe.frame());
+					await page.evaluate(time => (globalThis as any).cssProbe.frame(time), feedbackTime);
 					await settle();
 				}
 			}
@@ -229,7 +228,7 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 				outline: getComputedStyle(element).outlineStyle })),
 			{ background: heldKey.background, border: heldKey.border, color: heldKey.color, outline: heldKey.outline },
 			'forwarded-key acknowledgement retains the visible outline and glyph without covering the scene');
-			await page.evaluate(time => (globalThis as any).cssProbe.keyboard.updateFeedback(time), (selectedPage + 1) * 1000);
+			await page.evaluate(time => (globalThis as any).cssProbe.keyboard.updateFeedback(time), feedbackTime + 1000);
 			await settle();
 			assert.deepEqual(await selected.evaluate(element => ({ background: getComputedStyle(element).backgroundColor,
 				border: getComputedStyle(element).borderColor, color: getComputedStyle(element).color,
