@@ -38,46 +38,46 @@ if (prebuilt === undefined) {
 	await run('cmake', ['--build', nativeBuild, '--target', replayTarget, ...rewindTargets, '--parallel', '4']);
 }
 const media = ['dist/system/bmsx-bios.debug.rom', `dist/${cart}.debug.rom`];
-// Keep the temporary executables in the workspace's package scope so Node
-// resolves native dependencies (e.g. canvas) without copying or bundling them.
+// Keep executables in Node's package scope and state dumps off the system
+// temp directory (which may be tmpfs and share the test memory budget).
 const workspaceArtifacts = join(root, '.bmsx');
 mkdirSync(workspaceArtifacts, { recursive: true });
 // The source cart must remain outside the worktree: the packer's workspace
 // scan doesn't include git-ignored sources.
-const directory = mkdtempSync(join(tmpdir(), 'bmsx-runtime-replay-'));
-let bundleDirectory;
+const preloadDirectory = mkdtempSync(join(tmpdir(), 'bmsx-runtime-replay-'));
+let artifacts;
 try {
-	bundleDirectory = mkdtempSync(join(workspaceArtifacts, 'runtime-replay-'));
+	artifacts = mkdtempSync(join(workspaceArtifacts, 'runtime-replay-'));
 	// Like the shipped Node emulator, resolve core imports at build time;
 	// per-module CommonJS export getters are costly in interpreter and GX loops.
 	await build({
 		...NODE_TEST_BUNDLE_OPTIONS,
 		entryPoints: ['preload_cartridge', 'host_ts_runner', 'ts_runner', 'compare'].map(name => join(sources, `${name}.ts`)),
-		outdir: bundleDirectory,
+		outdir: artifacts,
 		outExtension: { '.js': '.cjs' },
 		format: 'cjs',
 	});
-	await run(process.execPath, ['--enable-source-maps', join(bundleDirectory, 'preload_cartridge.cjs'), directory, media[0]]);
-	copyFileSync(media[0], join(directory, 'bmsx-bios.rom'));
+	await run(process.execPath, ['--enable-source-maps', join(artifacts, 'preload_cartridge.cjs'), preloadDirectory, media[0]]);
+	copyFileSync(media[0], join(artifacts, 'bmsx-bios.rom'));
 	// These hosts consume the same installed bytes but do not write each other's evidence.
 	const jobs = [
-		run(process.execPath, ['--enable-source-maps', join(bundleDirectory, 'host_ts_runner.cjs'), ...media]),
-		...rewindTargets.map(target => run(join(nativeBuild, target), [directory, media[1]])),
+		run(process.execPath, ['--enable-source-maps', join(artifacts, 'host_ts_runner.cjs'), ...media]),
+		...rewindTargets.map(target => run(join(nativeBuild, target), [artifacts, media[1]])),
 	];
 	// The real cart also replays through the selectable JavaScript backend.
 	for (const [name, cartridge, assertions, backends] of [
 		[cart, media[1], ['--require-badp-playback'], ['default', 'javascript']],
-		['preload', join(directory, 'cart.rom'), ['--require-raw-byte-string'], ['default']],
+		['preload', join(preloadDirectory, 'cart.rom'), ['--require-raw-byte-string'], ['default']],
 	]) {
-		const cppPrefix = join(directory, `${name}-cpp`);
+		const cppPrefix = join(artifacts, `${name}-cpp`);
 		const cpp = run(join(nativeBuild, replayTarget), [media[0], cartridge, cppPrefix]);
 		jobs.push(cpp);
 		for (const backend of backends) {
-			const tsPrefix = join(directory, `${name}-ts-${backend}`);
-			const ts = run(process.execPath, ['--enable-source-maps', join(bundleDirectory, 'ts_runner.cjs'), media[0], cartridge, tsPrefix, backend]);
+			const tsPrefix = join(artifacts, `${name}-ts-${backend}`);
+			const ts = run(process.execPath, ['--enable-source-maps', join(artifacts, 'ts_runner.cjs'), media[0], cartridge, tsPrefix, backend]);
 			jobs.push(ts);
 			jobs.push(Promise.all([cpp, ts]).then(() => run(process.execPath, ['--enable-source-maps',
-				join(bundleDirectory, 'compare.cjs'), tsPrefix, cppPrefix, ...assertions])));
+				join(artifacts, 'compare.cjs'), tsPrefix, cppPrefix, ...assertions])));
 		}
 	}
 	// Join the producers as well as the comparisons. A failed input must not let
@@ -86,6 +86,6 @@ try {
 	for (const result of await Promise.allSettled(jobs)) if (result.status === 'rejected') failures.add(result.reason);
 	if (failures.size !== 0) throw new AggregateError(failures, 'Runtime replay conformance failed');
 } finally {
-	if (bundleDirectory !== undefined) rmSync(bundleDirectory, { recursive: true, force: true });
-	rmSync(directory, { recursive: true, force: true });
+	if (artifacts !== undefined) rmSync(artifacts, { recursive: true, force: true });
+	rmSync(preloadDirectory, { recursive: true, force: true });
 }

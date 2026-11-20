@@ -271,8 +271,10 @@ blocks on, Debug with native blocks on, and Release with native blocks off,
 in that order. Build all test targets in the Debug tree. The Release tree
 needs the four replay/rewind runners, plus `bmsx_terminal_conformance_runner`,
 `bmsx_frame_evaluation_runner`, `bmsx_gc_stress_runner`, and
-`bmsx_coroutine_runner`. The interpreter tree needs `bmsx_coroutine_runner`
-and `bmsx_firmware_fsm_runner`. Rebuild these binaries after native changes.
+`bmsx_coroutine_runner`, as well as `bmsx_numeric32_tests`, `bmsx_value32_tests`,
+and `bmsx_value_storage_tests` for the machine cases. The interpreter tree
+needs `bmsx_coroutine_runner`, `bmsx_firmware_fsm_runner` and `bmsx_cpu32_tests`.
+Rebuild these binaries after native changes.
 The headless command does not build C++; it refreshes the required ROMs
 through the normal artifact cache. Chromium, desktop/OS and hardware checks
 still have separate entrypoints.
