@@ -1,29 +1,21 @@
 import assert from 'node:assert/strict';
-import Module from 'node:module';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
-
-const extensions = (Module as any)._extensions;
-for (const extension of ['.glsl', '.wgsl']) {
-	extensions[extension] = (module: any, filename: string) => {
-		module._compile(`module.exports = ${JSON.stringify(readFileSync(filename, 'utf8'))}`, filename);
-	};
-}
+import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
+import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
+import { parseSystemRomImage, parseCartridgePackage } from '../../../machine/ts/rompack/image';
+import { cartridgeMediaFromPackage } from '../../../hosts/common/cartridge_media';
+import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend';
+import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
+import { captureRuntimeSaveState, applyRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
+import { encodeRuntimeSaveState, decodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
+import { HistoryMode, HistorySeekResult } from '../../../machine/ts/machine/runtime/history/history';
+import { type InputControllerSnapshot as Snapshot } from '../../../machine/ts/machine/devices/input/contracts';
 
 async function main(): Promise<void> {
 	const [systemPath, cartPath, outputPrefix, cpuBackend = 'default'] = process.argv.slice(2);
 	assert.ok(cpuBackend === 'default' || cpuBackend === 'interpreter' || cpuBackend === 'javascript', 'CPU backend must be default, interpreter or javascript');
-	const { CpuExecutionBackend } = await import('../../../machine/ts/machine/cpu/compiled_block');
-	const { Runtime } = await import('../../../machine/ts/machine/runtime/runtime');
-	const { parseSystemRomImage, parseCartridgePackage } = await import('../../../machine/ts/rompack/image');
-	const { cartridgeMediaFromPackage } = await import('../../../hosts/common/cartridge_media');
-	const { HeadlessGPUBackend } = await import('../../../machine/ts/render/headless/backend');
-	const { PSX_MACHINE_SPEC } = await import('../../../machine/ts/spec/bmsx/model');
-	const { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } = await import('../../../machine/ts/spec/bmsx/io');
-	const { captureRuntimeSaveState, applyRuntimeSaveState } = await import('../../../machine/ts/machine/runtime/save_state');
-	const { encodeRuntimeSaveState, decodeRuntimeSaveState } = await import('../../../machine/ts/machine/runtime/save_state/codec');
-	const { HistoryMode, HistorySeekResult } = await import('../../../machine/ts/machine/runtime/history/history');
-	type Snapshot = import('../../../machine/ts/machine/devices/input/contracts').InputControllerSnapshot;
 	let inputTick = 0;
 	let rejectLiveInput = false;
 	let historyCaptureMs = 0;

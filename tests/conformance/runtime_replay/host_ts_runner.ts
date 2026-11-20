@@ -1,42 +1,35 @@
-import { HostExecutionControl, HostPauseReason } from '../../../hosts/common/execution_control';
 import assert from 'node:assert/strict';
-import Module from 'node:module';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
 
-const extensions = (Module as any)._extensions;
-for (const extension of ['.glsl', '.wgsl']) {
-	extensions[extension] = (module: any, filename: string) => {
-		module._compile(`module.exports = ${JSON.stringify(readFileSync(filename, 'utf8'))}`, filename);
-	};
-}
+import { HostExecutionControl, HostPauseReason } from '../../../hosts/common/execution_control';
+import { initializeMachineRuntime, initializeMachineVideoPresenter } from '../../../hosts/common/machine_runtime';
+import { runHostFrame } from '../../../hosts/common/host_frame';
+import { HostFrameSession } from '../../../hosts/common/frame_session';
+import { HostOverlayMenu, HostMenuExecution } from '../../../hosts/common/host_overlay_menu';
+import { HostOnScreenKeyboard } from '../../../hosts/common/host_on_screen_keyboard';
+import { HostKeyboardInteraction } from '../../../hosts/common/input/host_keyboard_interaction';
+import { OnScreenKeyboard } from '../../../hosts/common/input/on_screen_keyboard';
+import { NATIVE_KEYBOARD_PAGES } from '../../../hosts/common/input/on_screen_keyboard_keys';
+import { HostRewind } from '../../../hosts/common/rewind';
+import { RuntimeTaskQueue } from '../../../hosts/common/runtime_task_queue';
+import { RenderPresentationState } from '../../../hosts/common/presentation_state';
+import { HostAudioOutput, type AudioOutputPuller as Puller } from '../../../hosts/common/audio_output';
+import { HostAudioDevice } from '../../../hosts/common/audio_device';
+import { SystemOutputLog } from '../../../hosts/common/system_output_log';
+import { Input } from '../../../hosts/common/input/manager';
+import { VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
+import { HeadlessInputHub } from '../../../hosts/node/headless/input';
+import { OffscreenVideoOutput } from '../../../hosts/common/offscreen_video_output';
+import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend';
+import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
+import { HistoryMode } from '../../../machine/ts/machine/runtime/history/history';
+import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
+import { Host2DKind } from '../../../machine/ts/render/host_overlay/commands';
 
 async function main(): Promise<void> {
 	const [systemPath, cartPath, outputDirectory] = process.argv.slice(2);
-	const { initializeMachineRuntime, initializeMachineVideoPresenter } = await import('../../../hosts/common/machine_runtime');
-	const { runHostFrame } = await import('../../../hosts/common/host_frame');
-	const { HostFrameSession } = await import('../../../hosts/common/frame_session');
-	const { HostOverlayMenu, HostMenuExecution } = await import('../../../hosts/common/host_overlay_menu');
-	const { HostOnScreenKeyboard } = await import('../../../hosts/common/host_on_screen_keyboard');
-	const { HostKeyboardInteraction } = await import('../../../hosts/common/input/host_keyboard_interaction');
-	const { OnScreenKeyboard } = await import('../../../hosts/common/input/on_screen_keyboard');
-	const { NATIVE_KEYBOARD_PAGES } = await import('../../../hosts/common/input/on_screen_keyboard_keys');
-	const { HostRewind } = await import('../../../hosts/common/rewind');
-	const { RuntimeTaskQueue } = await import('../../../hosts/common/runtime_task_queue');
-	const { RenderPresentationState } = await import('../../../hosts/common/presentation_state');
-	const { HostAudioOutput } = await import('../../../hosts/common/audio_output');
-	const { HostAudioDevice } = await import('../../../hosts/common/audio_device');
-	const { SystemOutputLog } = await import('../../../hosts/common/system_output_log');
-	const { Input } = await import('../../../hosts/common/input/manager');
-	const { VirtualHeadlessClock } = await import('../../../hosts/node/headless/clock');
-	const { HeadlessInputHub } = await import('../../../hosts/node/headless/input');
-	const { OffscreenVideoOutput } = await import('../../../hosts/common/offscreen_video_output');
-	const { HeadlessGPUBackend } = await import('../../../machine/ts/render/headless/backend');
-	const { PSX_MACHINE_SPEC } = await import('../../../machine/ts/spec/bmsx/model');
-	const { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } = await import('../../../machine/ts/spec/bmsx/io');
-	const { HistoryMode } = await import('../../../machine/ts/machine/runtime/history/history');
-	const { captureRuntimeSaveState } = await import('../../../machine/ts/machine/runtime/save_state');
-	type Puller = import('../../../hosts/common/audio_output').AudioOutputPuller;
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, new HeadlessInputHub(), -1);
 	input.connectInputDevice({ id: 'gamepad:0', kind: 'gamepad', gamepadIndex: 0, label: 'CONFORMANCE PAD', vibrationInitialization: null, supportsVibration: false, setVibration() {} });
@@ -81,7 +74,6 @@ async function main(): Promise<void> {
 	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution, keyboardInteraction);
 	const output = new SystemOutputLog();
 	const history = runtime.history;
-	const { Host2DKind } = await import('../../../machine/ts/render/host_overlay/commands');
 	let verifyRetention = true;
 	let retentionWarmed = false;
 	let retentionFrames = 0;

@@ -1,9 +1,11 @@
 import { spawn } from 'node:child_process';
-import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { build } from 'esbuild';
 
+const sources = import.meta.dirname;
 const root = resolve(import.meta.dirname, '../../..');
 const { values } = parseArgs({ options: { 'native-build-dir': { type: 'string' } } });
 const prebuilt = values['native-build-dir'];
@@ -35,13 +37,39 @@ if (prebuilt === undefined) {
 	await run('cmake', ['--build', nativeBuild, '--target', replayTarget, ...rewindTargets, '--parallel', '4']);
 }
 const media = ['dist/system/bmsx-bios.debug.rom', `dist/${cart}.debug.rom`];
+// Keep the temporary executables in the workspace's package scope so Node
+// resolves native dependencies (e.g. canvas) without copying or bundling them.
+const workspaceArtifacts = join(root, '.bmsx');
+mkdirSync(workspaceArtifacts, { recursive: true });
+// The source cart must remain outside the worktree: the packer's workspace
+// scan doesn't include git-ignored sources.
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-runtime-replay-'));
+let bundleDirectory;
 try {
-	await run('npx', ['tsx', 'tests/conformance/runtime_replay/preload_cartridge.ts', directory, media[0]]);
+	bundleDirectory = mkdtempSync(join(workspaceArtifacts, 'runtime-replay-'));
+	// Like the shipped Node emulator, resolve core imports at build time;
+	// per-module CommonJS export getters are costly in interpreter and GX loops.
+	await build({
+		absWorkingDir: root,
+		entryPoints: ['preload_cartridge', 'host_ts_runner', 'ts_runner', 'compare'].map(name => join(sources, `${name}.ts`)),
+		outdir: bundleDirectory,
+		outExtension: { '.js': '.cjs' },
+		bundle: true,
+		platform: 'node',
+		target: 'node22',
+		format: 'cjs',
+		packages: 'external',
+		conditions: ['bmsx-bundle'],
+		loader: { '.rgba': 'binary', '.glsl': 'text', '.wgsl': 'text' },
+		tsconfig: 'tsconfig.base.json',
+		sourcemap: 'linked',
+		sourcesContent: false,
+	});
+	await run(process.execPath, ['--enable-source-maps', join(bundleDirectory, 'preload_cartridge.cjs'), directory, media[0]]);
 	copyFileSync(media[0], join(directory, 'bmsx-bios.rom'));
 	// These hosts consume the same installed bytes but do not write each other's evidence.
 	const jobs = [
-		run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/host_ts_runner.ts', ...media]),
+		run(process.execPath, ['--enable-source-maps', join(bundleDirectory, 'host_ts_runner.cjs'), ...media]),
 		...rewindTargets.map(target => run(join(nativeBuild, target), [directory, media[1]])),
 	];
 	// The real cart also replays through the selectable JavaScript backend.
@@ -54,10 +82,10 @@ try {
 		jobs.push(cpp);
 		for (const backend of backends) {
 			const tsPrefix = join(directory, `${name}-ts-${backend}`);
-			const ts = run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/ts_runner.ts', media[0], cartridge, tsPrefix, backend]);
+			const ts = run(process.execPath, ['--enable-source-maps', join(bundleDirectory, 'ts_runner.cjs'), media[0], cartridge, tsPrefix, backend]);
 			jobs.push(ts);
-			jobs.push(Promise.all([cpp, ts]).then(() => run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json',
-				'tests/conformance/runtime_replay/compare.ts', tsPrefix, cppPrefix, ...assertions])));
+			jobs.push(Promise.all([cpp, ts]).then(() => run(process.execPath, ['--enable-source-maps',
+				join(bundleDirectory, 'compare.cjs'), tsPrefix, cppPrefix, ...assertions])));
 		}
 	}
 	// Join the producers as well as the comparisons. A failed input must not let
@@ -66,5 +94,6 @@ try {
 	for (const result of await Promise.allSettled(jobs)) if (result.status === 'rejected') failures.add(result.reason);
 	if (failures.size !== 0) throw new AggregateError(failures, 'Runtime replay conformance failed');
 } finally {
+	if (bundleDirectory !== undefined) rmSync(bundleDirectory, { recursive: true, force: true });
 	rmSync(directory, { recursive: true, force: true });
 }
