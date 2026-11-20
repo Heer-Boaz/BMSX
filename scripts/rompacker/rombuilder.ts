@@ -1,3 +1,11 @@
+import { createHash } from 'node:crypto';
+import { once } from 'node:events';
+import { createWriteStream } from 'node:fs';
+import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
+import { join, parse, relative, resolve, sep } from 'node:path';
+import { finished } from 'node:stream/promises';
+import { loadImage } from 'canvas';
+import { load as parseYaml } from 'js-yaml';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { assetIdFromSourceName, structuredTextAssetFromPath } from '../../toolchain/ts/rompack/assets';
 import { SCENARIO_TEST_SOURCE_SUFFIX } from '../../toolchain/ts/rompack/scenario_test';
@@ -10,6 +18,10 @@ import type {
 	TextureMeta,
 } from '../../toolchain/ts/rompack/assets';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
+import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
+import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
+import { collectLuaModuleDependencyClosure } from '../../toolchain/ts/lua/compiler/module_graph';
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import { packModelAsset } from '../../toolchain/ts/rompack/model_asset';
 import {
 	assertCartridgePackageFitsHardware,
@@ -93,34 +105,6 @@ import {
 	encodeCollisionShapeVariants,
 } from '../../toolchain/ts/rompack/collision_shape_codec';
 import { compileCollisionMap } from './collision_map_compiler';
-// @ts-ignore
-const { join, parse, relative, resolve, sep } = require('path');
-
-// @ts-ignore
-const { mkdir, mkdtemp, rename, rm } = require('fs/promises');
-// @ts-ignore
-const { createWriteStream } = require('fs');
-// @ts-ignore
-const { once } = require('events');
-// @ts-ignore
-const { finished } = require('stream/promises');
-// @ts-ignore
-const { LuaLexer } = require('../../toolchain/ts/lua/syntax/lexer');
-// @ts-ignore
-const { LuaParser } = require('../../toolchain/ts/lua/syntax/parser');
-// @ts-ignore
-const { collectLuaModuleDependencyClosure } = require('../../toolchain/ts/lua/compiler/module_graph');
-// @ts-ignore
-const {
-	toLuaModulePath,
-} = require('../../toolchain/ts/lua/module_path');
-// @ts-ignore
-const { loadImage } = require('canvas');
-// @ts-ignore
-const yaml = require('js-yaml');
-
-// @ts-ignore
-const { createHash } = require('crypto');
 
 const ROM_ZERO_FILL_CHUNK = Buffer.alloc(64 * 1024);
 const ADPCM_NO_LOOP = 0xffffffff;
@@ -834,7 +818,7 @@ export async function generateRomAssets(
 				const source = res.datatype === 'bin' ? undefined : res.buffer.toString('utf8');
 				switch (res.datatype) {
 					case 'yaml':
-						buffer = Buffer.from(encodeBinary(yaml.load(source)));
+						buffer = Buffer.from(encodeBinary(parseYaml(source)));
 						break;
 					case 'json':
 						buffer = Buffer.from(encodeBinary(JSON.parse(source)));
@@ -857,7 +841,7 @@ export async function generateRomAssets(
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
 			case 'collision_map': {
-				const layers = compileCollisionMap(yaml.load(buffer.toString('utf8')), sourcePath);
+				const layers = compileCollisionMap(parseYaml(buffer.toString('utf8')), sourcePath);
 				for (let layerIndex = 0; layerIndex < layers.length; layerIndex += 1) {
 					const layer = layers[layerIndex];
 					romAssets.push({

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import ELK, { type ElkLayoutArguments, type ElkNode } from 'elkjs/lib/elk.bundled';
+import ELK, { type ElkLayoutArguments, type ElkNode } from 'elkjs/lib/elk.bundled.js';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import { layoutWorkbenchCompoundGraph } from '../../ide/workbench/ui/graph/compound_layout';

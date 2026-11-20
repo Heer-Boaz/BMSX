@@ -1,6 +1,4 @@
-// @ts-ignore
-const { createCanvas } = require('canvas');
-import type { Image } from 'canvas';
+import { createCanvas, type Image } from 'canvas';
 import type { Polygon, RectBounds } from '../../machine/ts/common/rect';
 import type { vec2arr } from '../../machine/ts/common/vector';
 import type { ImageResource } from './rompacker.rompack';

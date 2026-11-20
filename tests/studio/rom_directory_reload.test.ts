@@ -110,7 +110,7 @@ end`;
 
 const nativeRunner = process.env.BMSX_CPU32_RUNNER;
 for (const optLevel of [3] as const) test(`packed system directory O${optLevel}: native resource lookup matches TS words and cycles`, { skip: !nativeRunner }, () => {
-	const source = readFileSync(new URL('../fixtures/compiler32/asset-lookup.lua', import.meta.url), 'utf8');
+	const source = readFileSync('tests/fixtures/compiler32/asset-lookup.lua', 'utf8');
 	const program = compileLuaChunkToProgram(parseLuaChunk(source, 'asset-lookup.lua'), modules,
 		{ entrySource: source, programDomain: 'system', optLevel });
 	const linked = linkTestSystemBlua32(program);

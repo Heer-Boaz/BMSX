@@ -40,8 +40,8 @@ import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { contrastRatio } from '../helpers/contrast.mjs';
 import { afterTest } from '../helpers/test_cleanup';
 
-const FIRST = `data:image/png;base64,${readFileSync(join(__dirname, '../../carts/nemesis_s/res/img/title_screen_1@atlas=title.png')).toString('base64')}`;
-const SECOND = `data:image/png;base64,${readFileSync(join(__dirname, '../../carts/nemesis_s/res/img/intro_konami@atlas=intro.png')).toString('base64')}`;
+const FIRST = `data:image/png;base64,${readFileSync('carts/nemesis_s/res/img/title_screen_1@atlas=title.png').toString('base64')}`;
+const SECOND = `data:image/png;base64,${readFileSync('carts/nemesis_s/res/img/intro_konami@atlas=intro.png').toString('base64')}`;
 const captureDirectory = process.env.BMSX_UI_CAPTURE_DIR;
 const captureRuntime = captureDirectory === undefined ? undefined : createTestRuntime(linkTestSystemBlua32(compileLuaSource('return nil', 'transcript_image', 0)).romBytes);
 if (captureDirectory !== undefined) mkdirSync(captureDirectory, { recursive: true });

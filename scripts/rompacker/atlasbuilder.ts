@@ -1,5 +1,5 @@
-import type { Canvas, CanvasRenderingContext2D } from 'canvas';
-import { resolve as resolvePath, sep as pathSep } from 'path';
+import { resolve as resolvePath, sep as pathSep } from 'node:path';
+import { createCanvas, type Canvas, type CanvasRenderingContext2D } from 'canvas';
 import type { GxTexturePageTile } from '../../toolchain/ts/rompack/assets';
 import type { ImageResource } from './rompacker.rompack';
 import {
@@ -7,9 +7,6 @@ import {
 	GX_TEXTURE_PAGE_PIXEL_SHIFT,
 	GX_TEXTURE_PAGE_PIXELS,
 } from './texture_atlas_contract';
-
-// @ts-ignore
-const { createCanvas } = require('canvas');
 
 export type TexturePackingBounds = {
 	maxPixelWidth: number;

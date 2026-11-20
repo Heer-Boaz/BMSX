@@ -19,7 +19,7 @@ function run(source:string,optLevel:0|3,backend:CpuExecutionBackend){
  return {image,cpu,results};
 }
 const prefix="require('base');local p<const>=require('string/pack');local s<const>=require('string/base');".replaceAll('<const>=','<const> =');
-const source=readFileSync(new URL('../fixtures/compiler32/packet.lua',import.meta.url),'utf8');
+const source=readFileSync('tests/fixtures/compiler32/packet.lua','utf8');
 for(const opt of [0,3] as const)for(const backend of [CpuExecutionBackend.Interpreter])test(`packet32 O${opt} ${backend}: formats use Integer words, Float payloads and exact f64 interchange`,()=>{
  const {cpu,results}=run(source,opt,backend);
  assert.deepEqual(results.slice(0,7),[v.valueInteger(-2147483648),v.valueInteger(-1),v.valueInteger(0x40000000),v.valueInteger(-1),v.valueInteger(-1),v.valueInteger(33),v.valueInteger(12)]);

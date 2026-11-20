@@ -29,7 +29,7 @@ function run(source: string, opt: 0 | 3, backend: CpuExecutionBackend) {
 	return { image, cpu, results };
 }
 const math = "local boot<const> = require('test/boot'); error=boot.error; select=boot.select; local math<const> = require('math')\n";
-const numericSource = readFileSync(new URL('../fixtures/compiler32/math.lua', import.meta.url), 'utf8');
+const numericSource = readFileSync('tests/fixtures/compiler32/math.lua', 'utf8');
 const numericExpected = [v.valueInteger(2147483647), v.valueInteger(-2147483648),
 'integer', 'float', 'float', 'float', v.valueNil(),
 v.valueInteger(2), v.valueInteger(-2147483648), v.valueNil(), v.valueNil(), v.valueNil(), v.valueNil(),
@@ -48,7 +48,7 @@ for (const opt of [3] as const) for (const backend of [CpuExecutionBackend.Inter
 		assert.deepEqual(results.map(value => v.valueIsString(value) ? cpu.stringPool.toString(v.asStringId(value)) : value), numericExpected);
 	});
 	test(`BIOS math O${opt} ${backend}: exact unsigned RNG mapping, whole interval and explicit nil return`, () => {
-		const source = readFileSync(new URL('../fixtures/compiler32/random.lua', import.meta.url), 'utf8');
+		const source = readFileSync('tests/fixtures/compiler32/random.lua', 'utf8');
 		const { results } = run(source, opt, backend);
 		const state = 1013904223n;
 		assert.deepEqual(results, [v.valueFloat(Number(state >> 8n) / 16777216), v.valueInteger(Number(state * 6n >> 32n) + 1),
@@ -89,7 +89,7 @@ return a,b,c,d,e,f,g,h,math.random(6)`, 3, backend);
 
 const native = process.env.BMSX_CPU32_RUNNER;
 for (const fixture of ['math', 'random']) for (const opt of [3] as const) test(`BIOS ${fixture} O${opt}: C++ runs the same guest BIOS and charges the same cycles`, { skip: !native }, () => {
-	const source = readFileSync(new URL(`../fixtures/compiler32/${fixture}.lua`, import.meta.url), 'utf8');
+	const source = readFileSync(`tests/fixtures/compiler32/${fixture}.lua`, 'utf8');
 	const { image, cpu, results } = run(source, opt, CpuExecutionBackend.Interpreter);
 	const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`, ...results.map(value => v.valueIsString(value)
 		? 'S ' + cpu.stringPool.toString(v.asStringId(value)) : `${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n') + '\n';

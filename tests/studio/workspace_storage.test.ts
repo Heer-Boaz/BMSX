@@ -8,7 +8,6 @@ import { CodeEditorInputSerializer, type SerializedCodeEditorInput } from '../..
 import { ResourceViewerInputSerializer } from '../../ide/workbench/contrib/resources/editor_serializer';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import type { EditorInputSerializers, SerializedEditorGroup, SerializedEditorInput } from '../../ide/workbench/services/editor/editor_serialization';
-import '../helpers/test_setup';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';

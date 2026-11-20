@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { build } from 'esbuild';
+import { NODE_TEST_BUNDLE_OPTIONS } from '../../../scripts/lib/node_test_bundle.mjs';
 
 const sources = import.meta.dirname;
 const root = resolve(import.meta.dirname, '../../..');
@@ -50,20 +51,11 @@ try {
 	// Like the shipped Node emulator, resolve core imports at build time;
 	// per-module CommonJS export getters are costly in interpreter and GX loops.
 	await build({
-		absWorkingDir: root,
+		...NODE_TEST_BUNDLE_OPTIONS,
 		entryPoints: ['preload_cartridge', 'host_ts_runner', 'ts_runner', 'compare'].map(name => join(sources, `${name}.ts`)),
 		outdir: bundleDirectory,
 		outExtension: { '.js': '.cjs' },
-		bundle: true,
-		platform: 'node',
-		target: 'node22',
 		format: 'cjs',
-		packages: 'external',
-		conditions: ['bmsx-bundle'],
-		loader: { '.rgba': 'binary', '.glsl': 'text', '.wgsl': 'text' },
-		tsconfig: 'tsconfig.base.json',
-		sourcemap: 'linked',
-		sourcesContent: false,
 	});
 	await run(process.execPath, ['--enable-source-maps', join(bundleDirectory, 'preload_cartridge.cjs'), directory, media[0]]);
 	copyFileSync(media[0], join(directory, 'bmsx-bios.rom'));

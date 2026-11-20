@@ -5,7 +5,6 @@ import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import { RuntimeBreakpoints } from '../../ide/runtime/breakpoints';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
-import '../helpers/test_setup';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';

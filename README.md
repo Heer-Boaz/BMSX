@@ -235,9 +235,13 @@ npm run build:toolchain:cart -- studio_test --debug
 
 Use `test:machine`, `test:toolchain`, `test:hosts`, or `test:studio` for a
 whole area. `test:lua` covers all four; `test:rompacker`, native CTest, and the
-conformance runners are separate. The area runners print one report per
-worker lane. For a native edit, configure once, rebuild the affected target,
-then select its test:
+conformance runners are separate. Area runs compile the TypeScript test files
+with shared Node ESM chunks, and print one report per worker lane. The Studio
+shards share a process within each lane; the other areas keep file isolation.
+Focused `npm test` runs load the selected source files directly.
+
+For a native edit, configure once, rebuild the affected target, then select its
+test:
 
 ```bash
 cmake -S machine/cpp -B build-cpp-tests-debug -G Ninja -DBMSX_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug

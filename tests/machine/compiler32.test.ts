@@ -72,7 +72,7 @@ test('decimal and hexadecimal literals round directly to binary32, including mid
 	}
 });
 
-const source = readFileSync(new URL('../fixtures/compiler32/numbers.lua', import.meta.url), 'utf8');
+const source = readFileSync('tests/fixtures/compiler32/numbers.lua', 'utf8');
 const expected = [v.valueInteger(2), v.valueFloat(2), v.valueInteger(0), v.valueFloatBits(0x80000000), v.valueInteger(-2147483648), v.valueFloatBits(0x4f000000), v.valueInteger(0),
 v.valueFloat(16777216), v.valueInteger(1), v.valueInteger(0), v.valueInteger(0), v.valueFloatBits(0x7f800000), v.valueFloatBits(0x7fc00000), v.valueFloatBits(0xffc00000),
 v.valueInteger(100000000), v.valueFloat(100000000), v.valueInteger(-2147483648), v.valueInteger(-2147483648), v.valueInteger(2), v.valueInteger(-2), v.valueBool(true), v.valueBool(false), v.valueBool(true),
@@ -88,7 +88,7 @@ for (const opt of [3] as const) for (const backend of [CpuExecutionBackend.Inter
 }
 
 const nativeRunner = process.env.BMSX_CPU32_RUNNER;
-const functions = readFileSync(new URL('../fixtures/compiler32/functions.lua', import.meta.url), 'utf8');
+const functions = readFileSync('tests/fixtures/compiler32/functions.lua', 'utf8');
 for (const [name, program] of [['numbers', source], ['functions', functions]] as const) for (const opt of [3] as const) test(`O${opt} ${name}: native scalar CPU executes the same frontend-produced image`, { skip: !nativeRunner }, () => {
 	const { image, cpu, results } = execute(program, opt, CpuExecutionBackend.Interpreter);
 	const expected = [`budget ${cpu.instructionBudgetRemaining} fault ${cpu.readLuaFaultReasonWord()}`, ...results.map(value => v.valueIsString(value) ? 'S ' + cpu.stringPool.toString(v.asStringId(value)) : `${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n') + '\n';

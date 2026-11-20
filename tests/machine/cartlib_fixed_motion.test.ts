@@ -9,7 +9,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { valueBool, type Value } from '../../machine/ts/machine/cpu/value';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 
-const source = readFileSync(new URL('../fixtures/compiler32/fixed-motion.lua', import.meta.url), 'utf8');
+const source = readFileSync('tests/fixtures/compiler32/fixed-motion.lua', 'utf8');
 const modules = [
 	...['base', 'number/parse', 'number/decimal'].map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') })),
 	...['clock', 'event_emitter', 'registry', 'util/dense_set', 'velocity', 'util/div_toward_zero', 'component/base_component',

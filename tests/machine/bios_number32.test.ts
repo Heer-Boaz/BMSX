@@ -30,7 +30,7 @@ function run(source: string, optLevel: 0 | 3, backend: CpuExecutionBackend) {
 	assert.equal(cpu.readLuaFaultReasonWord(), 0);
 	return { image, cpu, results };
 }
-const source = readFileSync(new URL('../fixtures/compiler32/parse.lua', import.meta.url),'utf8');
+const source = readFileSync('tests/fixtures/compiler32/parse.lua','utf8');
 const expected = [v.valueInteger(2147483647),v.valueInteger(-2147483648),v.valueFloat(2147483648),v.valueFloat(-2147483648),
 	v.valueInteger(-1),v.valueInteger(1),v.valueInteger(0),v.valueFloatBits(0x80000000),v.valueInteger(2),v.valueFloat(2),v.valueFloatBits(0x7f800000),
 	v.valueFloatBits(0x80000000),v.valueFloatBits(0x3f800001),v.valueFloatBits(0x3f800000),v.valueFloatBits(0x3f800002),
@@ -47,7 +47,7 @@ for (const opt of [3] as const) test(`BIOS Number32 O${opt}: C++ and TS execute 
 	assert.equal(execFileSync(native!,['--execute-rom','--boot-primitives',String(budget)],{ input:image.romBytes,encoding:'utf8' }),expected);
 });
 
-const loadSource = readFileSync(new URL('../fixtures/compiler32/load.lua', import.meta.url),'utf8');
+const loadSource = readFileSync('tests/fixtures/compiler32/load.lua','utf8');
 const loadExpected = [v.valueFloat(3),v.valueInteger(-2147483648),v.valueInteger(2),v.valueFloat(2),v.valueFloat(2),v.valueFloatBits(0x80000000),v.valueFloat(0),v.valueInteger(0),
 	v.valueInteger(-2147483648),v.valueFloat(2147483648),v.valueFloat(-2147483648),v.valueInteger(-1),v.valueFloat(6),v.valueFloat(0.25),
 	v.valueFloatBits(0x3f800001),v.valueFloatBits(0x3f800001),v.valueFloatBits(0x3f800000)];
@@ -95,7 +95,7 @@ return a==nil,b==nil,c==nil,d==nil`,3,backend);
 	assert.deepEqual(results,Array(4).fill(v.valueBool(true)));
 });
 
-const syntaxSource = readFileSync(new URL('../fixtures/compiler32/syntax.lua', import.meta.url),'utf8');
+const syntaxSource = readFileSync('tests/fixtures/compiler32/syntax.lua','utf8');
 for (const backend of [CpuExecutionBackend.Interpreter]) test(`BIOS compile_syntax ${backend}: constant-pool identity includes the complete Float word`, () => {
 	assert.deepEqual(run(syntaxSource,3,backend).results,[v.valueInteger(2),v.valueFloat(2),v.valueFloatBits(0x80000000),v.valueFloat(0),
 		v.valueFloatBits(0x7fa12345),v.valueFloatBits(0xffa12345),v.valueFloatBits(0x7fc00000)]);
@@ -141,7 +141,7 @@ return g()({float_bits=function(value) return value+1 end})`,3,backend);
  });
 }
 
-const wordMovesSource = readFileSync(new URL('../fixtures/compiler32/word-moves-load.lua', import.meta.url),'utf8');
+const wordMovesSource = readFileSync('tests/fixtures/compiler32/word-moves-load.lua','utf8');
 for (const opt of [3] as const) test(`BIOS word moves O${opt}: C++ executes runtime-compiled moves and namespace shadowing`, {skip: !native}, () => {
  const {image,cpu,results} = run(wordMovesSource,opt,CpuExecutionBackend.Interpreter);
  assert.deepEqual(results,[v.valueInteger(0xffa12345),v.valueInteger(5),v.valueFloatBits(0x80000000),v.valueInteger(0x40000000)]);

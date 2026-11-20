@@ -1,4 +1,3 @@
-import '../helpers/test_setup';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as fs from 'node:fs/promises';
