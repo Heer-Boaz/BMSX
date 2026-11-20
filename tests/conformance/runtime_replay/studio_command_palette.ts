@@ -64,21 +64,21 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	check(picker.visible && picker.model.list.selectionIndex === -1, 'palette: empty results have no synthetic command');
 	await press('Escape');
 	check(inputFocus.target === scenarioFocus, 'palette: cancellation restores the actual non-code control');
-	await runPaletteCommand('Scene Editor: Open');
+	await runPaletteCommand('sceneEditor');
 	check(picker.visible, 'palette: command-to-picker handoff begins a new source-choice session');
-	await clipboard.writeText('scenes/root.lua');
+	await clipboard.writeText('scenes/title.lua');
 	await press('ControlLeft', 'KeyV');
 	await press('Enter');
 	const scene = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (!(scene instanceof SceneEditorInput)) throw new Error('palette: chosen Scene Editor is missing');
 	const source = scene.workingCopy.buffer.getText();
-	await selectMember(test, scene, 2);
+	await selectMember(test, scene, 1);
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('palette: actual scene pane missing');
 	const primary = ide.editor.mainWorkspace.primary;
 	if (!(primary instanceof ScenePrimaryClient)) throw new Error('Scene document must admit its actual companion controls');
 	await click(scene.view.details.properties[0].bounds);
-	await press('Digit5');
+	await press('ControlLeft', 'KeyA'); await press('Digit5');
 	check(primary.details.control.controls[0].pending, 'palette: a real property draft exists');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	check(!primary.details.control.controls[0].pending && scene.view.details.properties[0].descriptor.value === 5,
@@ -97,9 +97,9 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	check(scene.workingCopy.buffer.getText() === source, 'palette: explicitly focusing the scene admits its document history');
 	await runPaletteCommand('File: Save');
 	await until(() => !scene.workingCopy.dirty, 'palette: restore the canonical fixture through ordinary Save');
-	await runPaletteCommand('Scene Editor: Open Source');
+	await runPaletteCommand('editor.source');
 	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && harness.getActiveEditorDocument().model === scene.workingCopy,
-		'palette: category-disambiguated Source executes the registered scene action');
+		'palette: Open Source resolves the plain-text view of the invoking Scene document');
 	check(cycles() === position, 'palette: source, view and history commands do not advance the paused machine');
 	await openSceneEditor(test);
 }
