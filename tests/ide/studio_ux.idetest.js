@@ -142,8 +142,8 @@ const scenarios = t.activeWorkbenchTab();
 t.assert(scenarios.kind === 'scenario_lab' && scenarios.view.testPane.rows.some(row => row.kind === 'test'),
 	'the packaged Scenario Lab test cases did not open');
 const scenarioModules = scenarios.view.testPane.rows.filter(row => row.kind === 'module');
-const encounterModule = scenarioModules.find(row => row.module.resource.path === 'tests/carts/nemesis_s/nemesis_s_bel_encounter_assert.lua');
-t.assert(encounterModule !== undefined && scenarioModules.some(row => row.module.resource.path === 'tests/carts/nemesis_s/nemesis_s_cinematic_flow_assert.lua'),
+const identityModule = scenarioModules.find(row => row.module.resource.path === 'tests/carts/nemesis_s/nemesis_s_scene_identity_assert.lua');
+t.assert(identityModule !== undefined && scenarioModules.some(row => row.module.resource.path === 'tests/carts/nemesis_s/nemesis_s_pause_assert.lua'),
 	'the actual authored scenario modules are absent from the current catalog');
 t.assert(scenarioModules.every(row => row.identity.includes(row.module.resource.path)
 	&& row.id === row.module.id && row.root.id === row.module.parentId), 'compact captions replaced full source membership');
@@ -169,14 +169,14 @@ await matrix('scenario-debug-files', scenarios, scenarios.view.layout);
 await press('ControlLeft', 'ShiftLeft', 'KeyT');
 // Full membership belongs to the retained row, available through normal focus and hover.
 const scenarioTests = scenarios.view.testPane;
-const disclosureModuleIndex = scenarioTests.rows.findIndex(row => row.kind === 'module' && row.id === encounterModule.id);
+const disclosureModuleIndex = scenarioTests.rows.findIndex(row => row.kind === 'module' && row.id === identityModule.id);
 t.assert(disclosureModuleIndex >= 0, 'the actual encounter module is no longer in the current catalog');
 await click(scenarioTests.rows[0].textLeft + 2, scenarioTests.layout.contentTop + scenarioTests.layout.rowHeight / 2);
 await press('Home');
 for (let row = 0; row < disclosureModuleIndex; row++) await press('ArrowDown');
 const scenarioModule = scenarioTests.rows[scenarioTests.selectionIndex];
-t.assert(scenarioModule.kind === 'module' && scenarioModule.id === encounterModule.module.id
-	&& scenarioModule.module === encounterModule.module, 'keyboard navigation lost the authored scenario module identity');
+t.assert(scenarioModule.kind === 'module' && scenarioModule.id === identityModule.module.id
+	&& scenarioModule.module === identityModule.module, 'keyboard navigation lost the authored scenario module identity');
 await capture('scenario-msx-module-full-identity-keyboard');
 await press('ArrowDown');
 const scenarioCase = scenarioTests.rows[scenarioTests.selectionIndex];

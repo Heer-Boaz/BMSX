@@ -330,7 +330,7 @@ process-scope tests) can run outside it; this is a guardrail, not a sandbox.
 Run an explicit scenario test:
 
 ```bash
-npm run headless:test -- pietious tests/carts/pietious/pietious_enter_world_assert.lua
+npm run headless:test -- pietious tests/carts/pietious/pietious_room_reload_assert.lua
 ```
 
 Important:
