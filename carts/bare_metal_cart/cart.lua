@@ -229,8 +229,12 @@ local gte_rgb_to_argb<const> = function(rgb)
 end
 
 local rotate_q12<const> = function(sin_q12, cos_q12, step_sin_q12, step_cos_q12)
-	return ((sin_q12 * step_cos_q12 + cos_q12 * step_sin_q12) >> 12),
-		((cos_q12 * step_cos_q12 - sin_q12 * step_sin_q12) >> 12)
+	local sin_q24<const> = sin_q12 * step_cos_q12 + cos_q12 * step_sin_q12
+	local cos_q24<const> = cos_q12 * step_cos_q12 - sin_q12 * step_sin_q12
+	-- SHR fills with zero. Bias before shifting and subtract the shifted
+	-- bias so the next rotation receives signed Q12, not an unsigned word.
+	return ((sin_q24 ~ 0x80000000) >> 12) - 0x00080000,
+		((cos_q24 ~ 0x80000000) >> 12) - 0x00080000
 end
 
 local build_angle_table<const> = function()
