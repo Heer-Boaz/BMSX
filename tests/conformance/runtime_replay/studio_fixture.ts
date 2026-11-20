@@ -49,6 +49,7 @@ import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import type { GPUBackend } from '../../../machine/ts/render/backend/backend';
 import type { EditorCommandId } from '../../../ide/common/commands';
+import type { CommandQuickPickItem } from '../../../ide/workbench/contrib/commands/quick_pick_provider';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import type { EditorTabId } from '../../../ide/workbench/ui/tab/id';
@@ -282,16 +283,16 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		await openMenu('run');
 		await clickContextCommand(command, heldFrames);
 	};
-	const runPaletteCommand = async (label: string): Promise<void> => {
+	const runPaletteCommand = async (query: string): Promise<void> => {
 		await press('ControlLeft', 'ShiftLeft', 'KeyP');
 		const picker = ide.editor.quickInput;
 		check(picker.visible, 'palette: the IDE shortcut opens the shared picker');
-		await clipboard.writeText(label);
+		await clipboard.writeText(query);
 		await press('ControlLeft', 'KeyV');
-		const commandIndex = picker.model.list.rows.findIndex(row => row.item.label === label);
-		check(commandIndex >= 0, `palette: ${label} is an enabled registered command`);
+		const commandIndex = picker.model.list.rows.findIndex(({ item }) => (item as CommandQuickPickItem).command === query || item.label === query);
+		check(commandIndex >= 0, `palette: ${query} is an enabled registered command`);
 		for (let index = 0; index < commandIndex; index += 1) await press('ArrowDown');
-		check(picker.model.list.selectionIndex === commandIndex, `palette: keyboard selects ${label}`);
+		check(picker.model.list.selectionIndex === commandIndex, `palette: keyboard selects ${query}`);
 		await press('Enter');
 	};
 	const clickContextCommand = async (command: EditorCommandId, heldFrames = 1) => {

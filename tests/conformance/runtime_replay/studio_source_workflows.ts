@@ -116,21 +116,40 @@ export async function testCapturedSourceApply(test: StudioFixture): Promise<void
 
 export async function testAemSourceApplication(test: StudioFixture): Promise<void> {
 	const { ide, harness, tasks, until, press, runPaletteCommand } = test;
-	const resource = ide.sources.catalog.resources.find(item => item.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && item.source.type === 'aem')!;
-	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), resource);
-	const aem = ide.editor.editorParts.activeGroup.model.activeTab;
+	const resource = ide.sources.catalog.resources.find(item => item.contextId === ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && item.source.type === 'aem')!;
+	const group = ide.editor.editorParts.activeGroup;
+	const destination = ide.editor.editorParts.editorDestination(group);
+	const picker = ide.editor.editorParts.partForGroup(group).quickInput;
+	await ide.editor.navigation.openResource(destination, resource);
+	const aem = group.model.activeTab;
 	if (aem.kind !== 'aem_editor') throw new Error('W04: an AEM resource opens its visual editor');
 	const model = aem.workingCopy;
-	await runPaletteCommand('Audio Events: Open Source');
-	await until(() => harness.getActiveEditorDocument().model === model, 'W04: AEM source view attaches the visual editor working copy');
 	const status = () => getTextFileRuntimeSourceStatus(ide.sources, model);
+	const openSource = async () => {
+		await runPaletteCommand('editor.source');
+		await until(() => group.model.activeTab.kind === 'code_editor', 'W04: AEM source view opens');
+		check(harness.getActiveEditorDocument().model === model, 'W04: source view shares the visual working copy');
+	};
+	const applyAttachment = async (expected: 'applied' | 'failed') => {
+		await ide.editor.navigation.openResource(destination, resource);
+		check(group.model.activeTab === aem, 'W04: Apply targets the same visual editor');
+		await runPaletteCommand('aem.apply');
+		check(picker.visible && picker.model.items.length === 1, 'W04: Apply offers the one installed attachment');
+		await press('Enter');
+		await until(() => !aem.applying && status() === expected, `W04: explicit attachment Apply is ${expected}`);
+		await openSource();
+	};
+	await openSource();
 	check(model.mode === 'aem' && model.buffer.getText() === resource.source.sourcemeta!.text && status() === 'applied',
 		'W04: packaged authored metadata identifies the initial installed AEM source');
 	const actor = nemesisTitle(test);
+	const initialMedia = ide.sources.currentBlua32Media;
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n# W04 actual asset source application\n' }]);
 	const applied = model.buffer.getText();
 	await press('ControlLeft', 'KeyS');
-	await until(() => tasks.ready && !model.dirty && status() === 'applied', 'W04: real AEM save installs cooked asset and records its authored source');
+	await until(() => !model.dirty, 'W04: AEM saves authored source');
+	check(status() === 'pending' && ide.sources.currentBlua32Media === initialMedia, 'W04: Save does not install the audio asset');
+	await applyAttachment('applied');
 	check(nemesisTitle(test) === actor, 'W04: AEM application does not replace the game world');
 	await press('ControlLeft', 'KeyZ');
 	check(status() === 'pending', 'W04: source undo does not undo the installed AEM asset');
@@ -139,13 +158,16 @@ export async function testAemSourceApplication(test: StudioFixture): Promise<voi
 	const media = ide.sources.currentBlua32Media;
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\nevents: [\n' }]);
 	await press('ControlLeft', 'KeyS');
-	await until(() => status() === 'failed', 'W04: invalid authored AEM reports apply failure');
-	check(tasks.ready, 'W04: an AEM source-build rejection cannot latch a machine execution failure');
-	check(!model.dirty && ide.sources.currentBlua32Media === media, 'W04: failed AEM build saves text without replacing media');
+	await until(() => !model.dirty, 'W04: invalid authored AEM can be saved without applying it');
+	check(status() === 'pending' && ide.sources.currentBlua32Media === media, 'W04: invalid saved AEM leaves the installed asset unchanged');
+	await applyAttachment('failed');
+	check(tasks.ready && tasks.failure === undefined, 'W04: an AEM source-build rejection cannot latch a machine execution failure');
+	check(ide.sources.currentBlua32Media === media, 'W04: a failed Apply leaves the installed media unchanged');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === applied && status() === 'failed', 'W04: undo does not hide a failed apply operation');
 	await press('ControlLeft', 'KeyS');
-	await until(() => tasks.ready && status() === 'applied', 'W04: corrected AEM applies through the same save owner');
+	await until(() => !model.dirty, 'W04: corrected AEM is saved');
+	await applyAttachment('applied');
 	harness.openLuaSource('title_screen.lua');
 }
 
@@ -170,7 +192,7 @@ export async function testCapturedSourceReboot(test: StudioFixture): Promise<voi
 	check(model.buffer.getText() === captured && getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied',
 		'W04: source undo reaches the actual reboot revision');
 	await until(() => !editorFeedbackState.message.visible, 'W04: installed-source status is visible after transient feedback');
-	await test.runPaletteCommand('Run: Reboot');
+	await test.runPaletteCommand('reboot');
 	check(test.ide.editor.actionPrompt.visible, 'palette: actual Reboot admits the ordinary dirty-source prompt');
 	await press('Enter');
 	await until(() => ide.runtimeTasks.ready && !ide.editor.isActive, 'palette: Save and Reboot completes the real command');

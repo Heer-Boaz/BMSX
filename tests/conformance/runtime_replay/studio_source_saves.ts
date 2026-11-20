@@ -72,7 +72,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 			await test.capture?.('aem-first-event-removed');
 			await press('ControlLeft', 'KeyZ');
 			check(input.workingCopy.buffer.getText() === original, 'source saves: audio event Undo restores every authored byte');
-			await test.runPaletteCommand('Audio Events: Open Source');
+			await test.runPaletteCommand('editor.source');
 		}
 		const document = harness.getActiveEditorDocument().model;
 		check(document.mode === kind, `source saves: actual ${kind} source is editable`);
@@ -98,7 +98,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 			await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), resource); await frame();
 			const aem = ide.editor.editorParts.activeGroup.model.activeTab;
 			if (aem.kind !== 'aem_editor') throw new Error('source saves: explicit Apply belongs to the actual AEM input');
-			await test.runPaletteCommand('Audio Events: Apply to Installed Attachment'); await press('Enter');
+			await test.runPaletteCommand('aem.apply'); await press('Enter');
 			await until(() => !aem.applying && getTextFileRuntimeSourceStatus(ide.sources, document) === 'applied', 'source saves: explicit named attachment Apply succeeds');
 			check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('title_screen') === source
 				&& ide.sources.cartridgeBlua32MediaDirty[0] && getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending',
@@ -113,7 +113,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 				'source saves: invalid text is acknowledged without an implicit runtime build');
 			check(!document.dirty && (await files.read(resourcePath))!.contents === invalidSource && ide.sources.currentBlua32Media === installedMedia,
 				'source saves: exact authored bytes persist while the installed image stays unchanged');
-			await test.runPaletteCommand('Audio Events: Apply to Installed Attachment'); await press('Enter');
+			await test.runPaletteCommand('aem.apply'); await press('Enter');
 			await until(() => !aem.applying && getTextFileRuntimeSourceStatus(ide.sources, document) === 'failed', 'source saves: explicit Apply rejects invalid AEM');
 			check(tasks.ready && tasks.failure === undefined && ide.sources.currentBlua32Media === installedMedia,
 				'source saves: rejected Apply leaves installed media and the runtime queue intact');
@@ -121,7 +121,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 			document.pushEditOperations([{ offset: 0, deleteLength: document.buffer.length, text: validSource }]);
 			await press('ControlLeft', 'KeyS');
 			await until(() => ide.textFileSaves.latestOperation(document)?.result?.status === 'saved', 'source saves: correction persists through the same source owner');
-			await test.runPaletteCommand('Audio Events: Apply to Installed Attachment'); await press('Enter');
+			await test.runPaletteCommand('aem.apply'); await press('Enter');
 			await until(() => !aem.applying && getTextFileRuntimeSourceStatus(ide.sources, document) === 'applied', 'source saves: corrected explicit Apply succeeds');
 			check(!document.dirty && tasks.ready, 'source saves: persistence and explicit application finish independently');
 		}
