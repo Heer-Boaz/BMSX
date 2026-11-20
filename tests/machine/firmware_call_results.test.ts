@@ -5,7 +5,7 @@ import { asClosure, valueBool, valueInteger, valueNil, type Value } from '../../
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom, createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const cases: { source: string; values: Value[] }[] = [
@@ -57,34 +57,33 @@ return true
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 });
 
-for (const optLevel of [3] as const) for (const { source, values } of cases) {
-	test(`firmware O${optLevel} call results: ${source}`, () => {
-		const { cpu } = createCartlibProgramHarness(`
+const callResultRom = createCartlibCaseRom(`
 tuple = function(...) return 7, nil, false, 9, nil end
 spread = function(...) return ... end
 receiver = { value = 40, spread = function(self, ...) return self.value, ... end }
 trace = 0
 mark = function(value, ...) trace = trace * 10 + value; return value, -value end
 wide = function(...) return ${Array.from({ length: 260 }, (_, index) => index).join(',')} end
-return pcall(assert(load(${JSON.stringify(source)})))
-`, { optLevel });
-		runGuestToHalt(cpu, 30_000_000);
+`, { optLevel: 3 });
+
+for (const { source, values } of cases) {
+	const index = callResultRom.add(`return pcall(assert(load(${JSON.stringify(source)})))`);
+	test(`firmware O3 call results: ${source}`, () => {
+		const cpu = callResultRom.run(index, 30_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), ...values]);
 	});
 }
 
-for (const optLevel of [3] as const) test(`firmware O${optLevel}: generated call syntax retains open results`, () => {
-	const { cpu } = createCartlibProgramHarness(`
-tuple = function(...) return 7, nil, false, 9, nil end
-spread = function(...) return ... end
+const generatedCall = callResultRom.add(`
 local f<const> = lua_compiler.syntax_factory
 local source<const> = f.chunk(f.block({ f.return_statement({
  f.number_literal(42),
  f.call_expression(f.identifier('spread'), { f.call_expression(f.identifier('tuple'), {}) }),
 }) }))
 return pcall(lua_compiler.compile_syntax(source, '=tuple-syntax'))
-`, { optLevel });
-	runGuestToHalt(cpu, 30_000_000);
+`);
+test('firmware O3: generated call syntax retains open results', () => {
+	const cpu = callResultRom.run(generatedCall, 30_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(42), valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()]);
 });
 
