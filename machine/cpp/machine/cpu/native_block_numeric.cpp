@@ -75,8 +75,8 @@ void NativeBlockCompiler::emitWordOperand(int selector,NativeBlockExitSite& inva
 	constexpr sljit_sw input=NativeBlockAbi::helperResultOffset, output=input+sizeof(Value);
 	emitValueTransportStore(m_compiler,SLJIT_SP,input,SLJIT_R0,SLJIT_R1);
 	const auto state=m_cache.state();m_cache.spillCall(false,0);
-	sljit_emit_op2(m_compiler,SLJIT_ADD,SLJIT_R0,0,SLJIT_SP,0,SLJIT_IMM,input);
-	sljit_emit_op2(m_compiler,SLJIT_ADD,SLJIT_R1,0,SLJIT_SP,0,SLJIT_IMM,output);
+	sljit_get_local_base(m_compiler, SLJIT_R0, 0, input);
+	sljit_get_local_base(m_compiler, SLJIT_R1, 0, output);
 	sljit_emit_icall(m_compiler,SLJIT_CALL,SLJIT_ARGS2(32,P,P),SLJIT_IMM,SLJIT_FUNC_ADDR(wordKernel));
 	m_cache.spillCall(true,0);
 	fault(sljit_emit_cmp(m_compiler,SLJIT_EQUAL|SLJIT_32,SLJIT_R0,0,SLJIT_IMM,0),invalid,state);

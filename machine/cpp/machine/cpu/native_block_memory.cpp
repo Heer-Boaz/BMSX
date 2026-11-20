@@ -271,10 +271,13 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 			sljit_emit_fop1(m_compiler, conversion, SLJIT_FR0, 0, SLJIT_R0, 0);
 			sljit_set_label(ready, sljit_emit_label(m_compiler));
 		}
-		if constexpr (std::endian::native == std::endian::little)
-			sljit_emit_fmem(m_compiler, (kind == MemoryAccessKind::F32LE ? SLJIT_MOV_F32 : SLJIT_MOV_F64) |
-				SLJIT_MEM_ALIGNED_32 | SLJIT_MEM_STORE, SLJIT_FR0, SLJIT_MEM1(SLJIT_R2), 0);
-		else if (kind == MemoryAccessKind::F32LE) {
+		if constexpr (std::endian::native == std::endian::little) {
+			// Four-byte alignment is natural for F32, but not for F64.
+			if (kind == MemoryAccessKind::F32LE)
+				sljit_emit_fop1(m_compiler, SLJIT_MOV_F32, SLJIT_MEM1(SLJIT_R2), 0, SLJIT_FR0, 0);
+			else
+				sljit_emit_fmem(m_compiler, SLJIT_MOV_F64 | SLJIT_MEM_ALIGNED_32 | SLJIT_MEM_STORE, SLJIT_FR0, SLJIT_MEM1(SLJIT_R2), 0);
+		} else if (kind == MemoryAccessKind::F32LE) {
 			sljit_emit_fcopy(m_compiler, SLJIT_COPY32_FROM_F32, SLJIT_FR0, SLJIT_R0);
 			sljit_emit_op1(m_compiler, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
 			sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), 0, SLJIT_R0, 0);
