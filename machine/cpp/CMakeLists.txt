@@ -746,10 +746,10 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_native_register_cache_tests PRIVATE bmsx_sljit)
 	add_test(NAME bmsx_native_register_cache_tests COMMAND bmsx_native_register_cache_tests)
 
-	set(BMSX_TEST_ROM_SOURCE
-		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
-	)
-	add_executable(bmsx_heap_floor_tests ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/heap_floor_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_library(bmsx_test_rom OBJECT ../../tests/cpp/support/blua32_test_rom.cpp)
+	target_link_libraries(bmsx_test_rom PRIVATE bmsx_core)
+	set(BMSX_TEST_ROM_OBJECTS $<TARGET_OBJECTS:bmsx_test_rom>)
+	add_executable(bmsx_heap_floor_tests ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/heap_floor_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_heap_floor_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_heap_floor_tests COMMAND bmsx_heap_floor_tests)
 
@@ -893,14 +893,14 @@ if(BMSX_BUILD_TESTS)
 	endif()
 	add_executable(bmsx_gx_gte_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gte_test.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 	)
 	target_link_libraries(bmsx_gx_gte_tests PRIVATE bmsx_core bmsx_rom_tooling)
 	add_test(NAME bmsx_gx_gte_tests COMMAND bmsx_gx_gte_tests)
 
 	add_executable(bmsx_gx_gpu_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_test.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 	)
 	target_link_libraries(bmsx_gx_gpu_tests PRIVATE bmsx_host_support bmsx_rom_tooling)
 	add_test(NAME bmsx_gx_gpu_tests COMMAND bmsx_gx_gpu_tests)
@@ -1002,7 +1002,7 @@ if(BMSX_BUILD_TESTS)
 		endif()
 		add_executable(bmsx_gles_frame_worker_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gles_frame_worker_test.cpp
-			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
+			${BMSX_TEST_ROM_OBJECTS}
 			${BMSX_LIBRETRO_DIR}/entry.cpp
 			${BMSX_LIBRETRO_CORE_SOURCES})
 		target_include_directories(bmsx_gles_frame_worker_tests PRIVATE ${BMSX_LIBRETRO_DIR})
@@ -1082,14 +1082,14 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_rompack_format_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/rompack_format_test.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
+		${BMSX_TEST_ROM_OBJECTS}
 	)
 	target_link_libraries(bmsx_rompack_format_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_rompack_format_tests COMMAND bmsx_rompack_format_tests)
 
 	add_executable(bmsx_blua32_media_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/blua32_media_test.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 		spec/blua32/instruction_format.cpp
 	)
 	target_link_libraries(bmsx_blua32_media_tests PRIVATE bmsx_blua32_tooling)
@@ -1125,7 +1125,7 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_cpu_supervisor_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_supervisor_test.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 	)
 	target_link_libraries(bmsx_cpu_supervisor_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_supervisor_tests COMMAND bmsx_cpu_supervisor_tests)
@@ -1164,13 +1164,13 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_small_block_pool_tests ../../tests/cpp/small_block_pool_test.cpp)
 	target_include_directories(bmsx_small_block_pool_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 	add_test(NAME bmsx_small_block_pool_tests COMMAND bmsx_small_block_pool_tests)
-	add_executable(bmsx_cpu32_tests ../../tests/cpp/cpu32_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu32_tests ../../tests/cpp/cpu32_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu32_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu32_tests COMMAND bmsx_cpu32_tests)
-	add_executable(bmsx_cpu32_context_tests ../../tests/cpp/cpu32_context_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu32_context_tests ../../tests/cpp/cpu32_context_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu32_context_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu32_context_tests COMMAND bmsx_cpu32_context_tests)
-	add_executable(bmsx_cpu32_memory_tests ../../tests/cpp/cpu32_memory_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu32_memory_tests ../../tests/cpp/cpu32_memory_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu32_memory_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu32_memory_tests COMMAND bmsx_cpu32_memory_tests)
 	add_executable(bmsx_value32_tests ../../tests/cpp/value32_test.cpp)
@@ -1182,7 +1182,7 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_value_storage_tests ../../tests/cpp/value_storage_test.cpp)
 	target_include_directories(bmsx_value_storage_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 	add_test(NAME bmsx_value_storage_tests COMMAND bmsx_value_storage_tests)
-	add_executable(bmsx_heap_reference_tests ../../tests/cpp/heap_reference_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_heap_reference_tests ../../tests/cpp/heap_reference_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_heap_reference_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_heap_reference_tests COMMAND bmsx_heap_reference_tests)
 	add_executable(bmsx_table_storage_pool_tests ../../tests/cpp/table_storage_pool_test.cpp)
@@ -1207,27 +1207,27 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_cpu_save_state_replay_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_save_state_replay_test.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 	)
 	target_link_libraries(bmsx_cpu_save_state_replay_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_save_state_replay_tests COMMAND bmsx_cpu_save_state_replay_tests)
 
 	add_executable(bmsx_cpu_boundary_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_boundary_test.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 	)
 	target_link_libraries(bmsx_cpu_boundary_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_boundary_tests COMMAND bmsx_cpu_boundary_tests)
-	add_executable(bmsx_cpu_compiled_compare_tests ../../tests/cpp/cpu_compiled_compare_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_compiled_compare_tests ../../tests/cpp/cpu_compiled_compare_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_compiled_compare_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_compiled_compare_tests COMMAND bmsx_cpu_compiled_compare_tests)
-	add_executable(bmsx_cpu_compiled_link_tests ../../tests/cpp/cpu_compiled_link_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_compiled_link_tests ../../tests/cpp/cpu_compiled_link_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_compiled_link_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_compiled_link_tests COMMAND bmsx_cpu_compiled_link_tests)
-	add_executable(bmsx_cpu_shared_stack_tests ../../tests/cpp/cpu_shared_stack_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_shared_stack_tests ../../tests/cpp/cpu_shared_stack_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_shared_stack_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_shared_stack_tests COMMAND bmsx_cpu_shared_stack_tests)
-	add_executable(bmsx_cpu_exact_grant_tests ../../tests/cpp/cpu_exact_grant_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_exact_grant_tests ../../tests/cpp/cpu_exact_grant_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_exact_grant_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_exact_grant_allocate COMMAND bmsx_cpu_exact_grant_tests allocate)
 	add_test(NAME bmsx_cpu_exact_grant_store COMMAND bmsx_cpu_exact_grant_tests store)
@@ -1239,13 +1239,13 @@ if(BMSX_BUILD_TESTS)
 	add_test(NAME bmsx_cpu_exact_grant_nmi_short COMMAND bmsx_cpu_exact_grant_tests nmi-short)
 	add_test(NAME bmsx_cpu_exact_grant_rewrite_short COMMAND bmsx_cpu_exact_grant_tests rewrite-short)
 
-	add_executable(bmsx_cpu_compiled_calls_tests ../../tests/cpp/cpu_compiled_calls_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_compiled_calls_tests ../../tests/cpp/cpu_compiled_calls_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_compiled_calls_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	if(BMSX_SNESMINI_TARGET)
 		target_link_options(bmsx_cpu_compiled_calls_tests PRIVATE -static-libstdc++ -static-libgcc)
 	endif()
 	add_test(NAME bmsx_cpu_compiled_calls_tests COMMAND bmsx_cpu_compiled_calls_tests)
-	add_executable(bmsx_cpu_native_builtin_leaf_tests ../../tests/cpp/cpu_native_builtin_leaf_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_native_builtin_leaf_tests ../../tests/cpp/cpu_native_builtin_leaf_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_native_builtin_leaf_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	if(BMSX_ENABLE_NATIVE_BLOCKS)
 		target_link_libraries(bmsx_cpu_native_builtin_leaf_tests PRIVATE bmsx_sljit)
@@ -1254,40 +1254,40 @@ if(BMSX_BUILD_TESTS)
 		target_link_options(bmsx_cpu_native_builtin_leaf_tests PRIVATE -static-libstdc++ -static-libgcc)
 	endif()
 	add_test(NAME bmsx_cpu_native_builtin_leaf_tests COMMAND bmsx_cpu_native_builtin_leaf_tests)
-	add_executable(bmsx_cpu_native_builtin_continuity_tests ../../tests/cpp/cpu_native_builtin_continuity_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_native_builtin_continuity_tests ../../tests/cpp/cpu_native_builtin_continuity_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_native_builtin_continuity_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	if(BMSX_ENABLE_NATIVE_BLOCKS)
 		target_link_libraries(bmsx_cpu_native_builtin_continuity_tests PRIVATE bmsx_sljit)
 	endif()
 	add_test(NAME bmsx_cpu_native_builtin_continuity_tests COMMAND bmsx_cpu_native_builtin_continuity_tests)
-	add_executable(bmsx_cpu_cross_image_resume_tests ../../tests/cpp/cpu_cross_image_resume_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_cross_image_resume_tests ../../tests/cpp/cpu_cross_image_resume_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_cross_image_resume_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	if(BMSX_ENABLE_NATIVE_BLOCKS)
 		target_link_libraries(bmsx_cpu_cross_image_resume_tests PRIVATE bmsx_sljit)
 	endif()
 	add_test(NAME bmsx_cpu_cross_image_resume_tests COMMAND bmsx_cpu_cross_image_resume_tests)
-	add_executable(bmsx_cpu_compiled_context_tests ../../tests/cpp/cpu_compiled_context_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_compiled_context_tests ../../tests/cpp/cpu_compiled_context_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_compiled_context_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_compiled_context_tests COMMAND bmsx_cpu_compiled_context_tests)
-	add_executable(bmsx_cpu_compiled_table_tests ../../tests/cpp/cpu_compiled_table_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_compiled_table_tests ../../tests/cpp/cpu_compiled_table_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_compiled_table_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_compiled_table_tests COMMAND bmsx_cpu_compiled_table_tests)
-	add_executable(bmsx_cpu_table_index_work_tests ../../tests/cpp/cpu_table_index_work_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_table_index_work_tests ../../tests/cpp/cpu_table_index_work_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_table_index_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_table_index_work_tests COMMAND bmsx_cpu_table_index_work_tests)
-	add_executable(bmsx_cpu_table_length_work_tests ../../tests/cpp/cpu_table_length_work_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_table_length_work_tests ../../tests/cpp/cpu_table_length_work_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_table_length_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_table_length_work_tests COMMAND bmsx_cpu_table_length_work_tests)
-	add_executable(bmsx_cpu_compiled_control_tests ../../tests/cpp/cpu_compiled_control_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_compiled_control_tests ../../tests/cpp/cpu_compiled_control_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_compiled_control_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_compiled_control_tests COMMAND bmsx_cpu_compiled_control_tests)
-	add_executable(bmsx_cpu_bulk_costs_tests ../../tests/cpp/cpu_bulk_costs_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_bulk_costs_tests ../../tests/cpp/cpu_bulk_costs_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_bulk_costs_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_bulk_costs_tests COMMAND bmsx_cpu_bulk_costs_tests)
-	add_executable(bmsx_cpu_nominal_costs_tests ../../tests/cpp/cpu_nominal_costs_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_nominal_costs_tests ../../tests/cpp/cpu_nominal_costs_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_nominal_costs_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_nominal_costs_tests COMMAND bmsx_cpu_nominal_costs_tests)
-	add_executable(bmsx_cpu_gc_work_tests ../../tests/cpp/cpu_gc_work_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_gc_work_tests ../../tests/cpp/cpu_gc_work_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_gc_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_gc_work_tests COMMAND bmsx_cpu_gc_work_tests)
 	# Link the instrumented allocator directly, instead of the archive's ordinary
@@ -1295,37 +1295,37 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_gc_stress_runner ../../tests/cpp/gc_stress_runner.cpp machine/cpu/lua_heap.cpp)
 	target_compile_definitions(bmsx_gc_stress_runner PRIVATE BMSX_GC_STRESS=1)
 	target_link_libraries(bmsx_gc_stress_runner PRIVATE bmsx_core)
-	add_executable(bmsx_cpu_string_work_tests ../../tests/cpp/cpu_string_work_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_string_work_tests ../../tests/cpp/cpu_string_work_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_string_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_string_work_tests COMMAND bmsx_cpu_string_work_tests)
 
-	add_executable(bmsx_cpu_backend_diagnostics_tests ../../tests/cpp/cpu_backend_diagnostics_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_backend_diagnostics_tests ../../tests/cpp/cpu_backend_diagnostics_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_backend_diagnostics_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_backend_diagnostics_tests COMMAND bmsx_cpu_backend_diagnostics_tests)
 
-	add_executable(bmsx_cpu_compiled_heap_tests ../../tests/cpp/cpu_compiled_heap_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_compiled_heap_tests ../../tests/cpp/cpu_compiled_heap_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_compiled_heap_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_compiled_heap_tests COMMAND bmsx_cpu_compiled_heap_tests)
-	add_executable(bmsx_cpu_compiled_words_tests ../../tests/cpp/cpu_compiled_words_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	add_executable(bmsx_cpu_compiled_words_tests ../../tests/cpp/cpu_compiled_words_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_compiled_words_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_compiled_words_tests COMMAND bmsx_cpu_compiled_words_tests)
 	if(BMSX_ENABLE_NATIVE_BLOCKS)
 		if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-			add_executable(bmsx_native_perf_map_tests ../../tests/cpp/native_perf_map_test.cpp ${BMSX_TEST_ROM_SOURCE})
+			add_executable(bmsx_native_perf_map_tests ../../tests/cpp/native_perf_map_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 			target_link_libraries(bmsx_native_perf_map_tests PRIVATE bmsx_core bmsx_blua32_tooling bmsx_sljit)
 			add_test(NAME bmsx_native_perf_map_tests COMMAND bmsx_native_perf_map_tests)
 		endif()
-		add_executable(bmsx_cpu_native_precompile_tests ../../tests/cpp/cpu_native_precompile_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		add_executable(bmsx_cpu_native_precompile_tests ../../tests/cpp/cpu_native_precompile_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 		target_link_libraries(bmsx_cpu_native_precompile_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 		add_test(NAME bmsx_cpu_native_precompile_tests COMMAND bmsx_cpu_native_precompile_tests)
-		add_executable(bmsx_cpu_cart_precompile_tests ../../tests/cpp/cpu_cart_precompile_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		add_executable(bmsx_cpu_cart_precompile_tests ../../tests/cpp/cpu_cart_precompile_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 		target_link_libraries(bmsx_cpu_cart_precompile_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 		add_test(NAME bmsx_cpu_cart_precompile_tests COMMAND bmsx_cpu_cart_precompile_tests)
-		add_executable(bmsx_native_continuation_tests ../../tests/cpp/native_continuation_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		add_executable(bmsx_native_continuation_tests ../../tests/cpp/native_continuation_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 		target_link_libraries(bmsx_native_continuation_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 		add_test(NAME bmsx_native_continuation_tests COMMAND bmsx_native_continuation_tests)
 		if(BMSX_NATIVE_COMPILER_WORKER)
-			add_executable(bmsx_native_compiler_worker_tests ../../tests/cpp/native_compiler_worker_test.cpp ${BMSX_TEST_ROM_SOURCE})
+			add_executable(bmsx_native_compiler_worker_tests ../../tests/cpp/native_compiler_worker_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 			target_link_libraries(bmsx_native_compiler_worker_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 			add_test(NAME bmsx_native_compiler_worker_tests COMMAND bmsx_native_compiler_worker_tests)
 		endif()
@@ -1335,21 +1335,21 @@ if(BMSX_BUILD_TESTS)
 		add_executable(bmsx_native_block_table_write_tests ../../tests/cpp/native_block_table_write_test.cpp)
 		target_link_libraries(bmsx_native_block_table_write_tests PRIVATE bmsx_core)
 		add_test(NAME bmsx_native_block_table_write_tests COMMAND bmsx_native_block_table_write_tests)
-		add_executable(bmsx_cpu_compiled_memory_tests ../../tests/cpp/cpu_compiled_memory_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		add_executable(bmsx_cpu_compiled_memory_tests ../../tests/cpp/cpu_compiled_memory_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 		target_link_libraries(bmsx_cpu_compiled_memory_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 		add_test(NAME bmsx_cpu_compiled_memory_tests COMMAND bmsx_cpu_compiled_memory_tests)
-		add_executable(bmsx_cpu_compiled_rom_tests ../../tests/cpp/cpu_compiled_rom_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		add_executable(bmsx_cpu_compiled_rom_tests ../../tests/cpp/cpu_compiled_rom_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 		target_link_libraries(bmsx_cpu_compiled_rom_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 		add_test(NAME bmsx_cpu_compiled_rom_tests COMMAND bmsx_cpu_compiled_rom_tests)
 	endif()
 	add_executable(bmsx_cpu_decoded_operand_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_decoded_operand_test.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 	)
 	target_link_libraries(bmsx_cpu_decoded_operand_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_decoded_operand_tests COMMAND bmsx_cpu_decoded_operand_tests)
 	add_executable(bmsx_cpu_native_gate_profile_tests
-		../../tests/cpp/cpu_native_gate_profile_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		../../tests/cpp/cpu_native_gate_profile_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_native_gate_profile_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	if(BMSX_ENABLE_NATIVE_BLOCKS)
 		target_link_libraries(bmsx_cpu_native_gate_profile_tests PRIVATE bmsx_sljit)
@@ -1358,7 +1358,7 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_cpu_throughput_benchmark
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_throughput_benchmark.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 	)
 	target_link_libraries(bmsx_cpu_throughput_benchmark PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_executable(bmsx_cpu_execution_benchmark ../../tests/cpp/cpu_execution_benchmark.cpp)
@@ -1406,7 +1406,7 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_string_pool_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/string_pool_test.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 	)
 	target_link_libraries(bmsx_string_pool_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_string_pool_tests COMMAND bmsx_string_pool_tests)
@@ -1425,7 +1425,7 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_system_controller_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/system_controller_test.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 	)
 	target_link_libraries(bmsx_system_controller_tests PRIVATE bmsx_core bmsx_rom_tooling)
 	add_test(NAME bmsx_system_controller_tests COMMAND bmsx_system_controller_tests)
@@ -1433,7 +1433,7 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_frame_scheduler_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/frame_scheduler_test.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 	)
 	target_link_libraries(bmsx_frame_scheduler_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	add_test(NAME bmsx_frame_scheduler_tests COMMAND bmsx_frame_scheduler_tests)
@@ -1448,14 +1448,14 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_geometry_runtime_timing_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_runtime_timing_test.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 	)
 	target_link_libraries(bmsx_geometry_runtime_timing_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	add_test(NAME bmsx_geometry_runtime_timing_tests COMMAND bmsx_geometry_runtime_timing_tests)
 
 	add_executable(bmsx_geometry_store_deadline_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_store_deadline_test.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 	)
 	target_link_libraries(bmsx_geometry_store_deadline_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	add_test(NAME bmsx_geometry_store_deadline_tests COMMAND bmsx_geometry_store_deadline_tests)
@@ -1467,7 +1467,7 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_libretro_save_state_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_save_state_test.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 		${BMSX_LIBRETRO_DIR}/input.cpp
 		${BMSX_LIBRETRO_DIR}/libretro_state.cpp
 		${BMSX_LIBRETRO_DIR}/host_shortcuts.c
@@ -1481,7 +1481,7 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_libretro_environment_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_environment_test.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
-		${BMSX_TEST_ROM_SOURCE}
+		${BMSX_TEST_ROM_OBJECTS}
 		${BMSX_LIBRETRO_DIR}/entry.cpp
 		${BMSX_LIBRETRO_CORE_SOURCES}
 	)
@@ -1494,7 +1494,7 @@ if(BMSX_BUILD_TESTS)
 		add_executable(bmsx_libretro_native_gate_profile_tests
 			../../tests/cpp/libretro_native_gate_profile_test.cpp
 			../../tests/cpp/support/boot_rom_fixture.cpp
-			${BMSX_TEST_ROM_SOURCE}
+			${BMSX_TEST_ROM_OBJECTS}
 			${BMSX_LIBRETRO_DIR}/entry.cpp
 			${BMSX_LIBRETRO_CORE_SOURCES})
 		target_link_libraries(bmsx_libretro_native_gate_profile_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
@@ -1638,7 +1638,7 @@ if(BMSX_BUILD_TESTS)
 		if(NOT runner STREQUAL "libretro_rewind")
 			target_sources(bmsx_${runner}_conformance_runner PRIVATE
 				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
-				${BMSX_TEST_ROM_SOURCE}
+				${BMSX_TEST_ROM_OBJECTS}
 			)
 		endif()
 		target_link_libraries(bmsx_${runner}_conformance_runner PRIVATE bmsx_host_support bmsx_blua32_tooling)

@@ -16,7 +16,8 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 
 const compiled = process.argv[2] === '--compiled';
 assert.deepEqual(process.argv.slice(2), compiled ? ['--compiled'] : [], 'Expected no arguments or --compiled');
-const buildDirectory = compiled ? 'build-native-cpu-blocks' : 'build-cpp-tests';
+// The genuine native-OFF variant must not reconfigure the other conformance binaries.
+const buildDirectory = compiled ? 'build-native-cpu-blocks' : 'build-cpp-tests-interpreter';
 for (const [command, args] of [
 	['cmake', ['-S', 'machine/cpp', '-B', buildDirectory, '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON',
 		`-DCMAKE_BUILD_TYPE=${compiled ? 'Debug' : 'Release'}`, `-DBMSX_ENABLE_NATIVE_BLOCKS=${compiled ? 'ON' : 'OFF'}`,
