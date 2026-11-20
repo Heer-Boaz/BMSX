@@ -63,16 +63,17 @@ test('compact hash growth, cached string access and inherited reads use real hea
 	const inherited = v.valueTable(parent);
 	cpu.gc.tables.setStringKey(meta, index, inherited); cpu.gc.tables.setMetatableAddress(table, meta);
 	cpu.gc.tables.setStringKey(parent, key, v.valueBool(false));
-	const result = { values: new ValueSlots(1), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved };
+	const result = { value: v.valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved };
 	cpu.gc.tables.resolveStringIndexCached(table, index, key, -1, result);
-	assert.equal(result.values.get(0), v.valueBool(false)); assert.equal(result.extraVisits, 1);
+	assert.equal(result.value, v.valueBool(false)); assert.equal(result.extraVisits, 1);
 	for (let i = 1; i <= 512; ++i) { cpu.gc.tables.setInteger(table, i, v.valueInteger(i * -3)); cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('key' + i), v.valueInteger(i)); }
 	for (let i = 1; i <= 512; ++i) { assert.equal(cpu.gc.tables.getInteger(table, i), v.valueInteger(i * -3)); assert.equal(cpu.gc.tables.getStringKey(table, cpu.stringPool.find('key' + i)!), v.valueInteger(i)); }
-	let predicted = cpu.gc.tables.loadStringKeyCached(table, cpu.stringPool.find('key123')!, -1, result.values, 0);
-	assert.equal(result.values.getInteger(0), 123);
-	predicted = cpu.gc.tables.storeStringKeyCached(table, cpu.stringPool.find('key123')!, predicted, v.ValueTag.Float, 0xffa12345);
-	cpu.gc.tables.loadStringKeyCached(table, cpu.stringPool.find('key123')!, predicted, result.values, 0);
-	assert.equal(result.values.get(0), v.valueFloatBits(0xffa12345));
+	const cachedKey = cpu.stringPool.find('key123')!;
+	cpu.gc.tables.getStringKeyCached(table, cachedKey, -1, result);
+	assert.equal(result.value, v.valueInteger(123));
+	const predicted = cpu.gc.tables.storeStringKeyCached(table, cachedKey, result.slot, v.ValueTag.Float, 0xffa12345);
+	cpu.gc.tables.getStringKeyCached(table, cachedKey, predicted, result);
+	assert.equal(result.value, v.valueFloatBits(0xffa12345));
 	const empty = cpu.createTable();
 	assert.equal(cpu.gc.tables.storeStringKeyWithoutGrowth(empty, key, v.ValueTag.Integer, 1), TABLE_STORE_REQUIRES_GROWTH);
 	assert.equal(cpu.gc.tables.getStringKey(empty, key), v.valueNil());

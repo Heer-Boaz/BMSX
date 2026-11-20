@@ -288,9 +288,8 @@ export class CPU implements MappedPageInvalidator {
 	private closureUpvalueWords = new Uint32Array(0);
 	private closureCellAddresses = new Uint32Array(0);
 	private captureAddresses = new Uint32Array(0);
-	private readonly tableScratch = new ValueSlots(2);
 	private readonly tableLookupResult: TableLookupResult = {
-		values: this.tableScratch, slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved,
+		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved,
 	};
 
 	private readonly executionImagesByDomain: Array<Blua32ExecutionImage | null> =
@@ -482,51 +481,35 @@ export class CPU implements MappedPageInvalidator {
 		else this.memory.writeRamRecordWord(previous + UPVALUE_NEXT, cell);
 	}
 
-	// TODO: Admit function-valued __index through VM call/return continuations in
-	// all indexed-read forms. Table-only resolution is an implementation limitation,
-	// not the intended BLua contract; raw Table storage must not execute guest code.
-	private loadTableIndex(base: Value, key: Value, target: ValueSlots, targetIndex: number): void {
-		let address: number;
+	private tableIndexAddress(base: Value): number {
 		switch (valueTag(base)) {
-			case ValueTag.Table: address = valuePayload(base); break;
-			case ValueTag.String: address = valuePayload(this.stringIndexTable); break;
+			case ValueTag.Table: return valuePayload(base);
+			case ValueTag.String: return valuePayload(this.stringIndexTable);
 			default: throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
-		if (this.gc.tables.metatableAddress(address) === 0) { this.gc.tables.load(address, valueTag(key), valuePayload(key), target, targetIndex); return; }
-		const result = this.tableLookupResult;
-		this.gc.tables.resolveIndex(address, this.indexKey, valueTag(key), valuePayload(key), result);
+	}
+	private chargeTableLookup(result: TableLookupResult): void {
 		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
 		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-		target.copySlotFrom(result.values, targetIndex, 0); result.values.setNil(0);
+	}
+	private loadTableIndex(base: Value, key: Value, target: ValueSlots, targetIndex: number): void {
+		const result = this.tableLookupResult;
+		this.gc.tables.resolveIndex(this.tableIndexAddress(base), this.indexKey, key, result);
+		this.chargeTableLookup(result);
+		target.set(targetIndex, result.value);
 	}
 	private loadTableIntegerIndex(base: Value, key: number, target: ValueSlots, targetIndex: number): void {
-		let address: number;
-		switch (valueTag(base)) {
-			case ValueTag.Table: address = valuePayload(base); break;
-			case ValueTag.String: address = valuePayload(this.stringIndexTable); break;
-			default: throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
-		}
-		if (this.gc.tables.metatableAddress(address) === 0) { this.gc.tables.loadInteger(address, key, target, targetIndex); return; }
 		const result = this.tableLookupResult;
-		this.gc.tables.resolveIntegerIndex(address, this.indexKey, key, result);
-		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
-		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-		target.copySlotFrom(result.values, targetIndex, 0); result.values.setNil(0);
+		this.gc.tables.resolveIntegerIndex(this.tableIndexAddress(base), this.indexKey, key, result);
+		this.chargeTableLookup(result);
+		target.set(targetIndex, result.value);
 	}
 	private loadTableFieldIndexCached(base: Value, page: DecodedInstructionPage, pageOffset: number, key: StringId, target: ValueSlots, targetIndex: number): void {
-		let address: number;
-		switch (valueTag(base)) {
-			case ValueTag.Table: address = valuePayload(base); break;
-			case ValueTag.String: address = valuePayload(this.stringIndexTable); break;
-			default: throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
-		}
-		if (this.gc.tables.metatableAddress(address) === 0) { page.tableCacheSlots[pageOffset] = this.gc.tables.loadStringKeyCached(address, key, page.tableCacheSlots[pageOffset], target, targetIndex); return; }
 		const result = this.tableLookupResult;
-		this.gc.tables.resolveStringIndexCached(address, this.indexKey, key, page.tableCacheSlots[pageOffset], result);
-		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
-		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+		this.gc.tables.resolveStringIndexCached(this.tableIndexAddress(base), this.indexKey, key, page.tableCacheSlots[pageOffset], result);
+		this.chargeTableLookup(result);
 		page.tableCacheSlots[pageOffset] = result.slot;
-		target.copySlotFrom(result.values, targetIndex, 0); result.values.setNil(0);
+		target.set(targetIndex, result.value);
 	}
 	private storeTableIndex(base: Value, key: Value, value: Value): void {
 		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);

@@ -57,11 +57,6 @@ bool TableRecord::getArrayIndex(const Value& key, int& outIndex) const {
 	return true;
 }
 
-Value TableRecord::metatableIndexValue(StringId indexKey) const {
-	const u32 meta = metatableAddress();
-	return meta ? TableRecord(*m_heap, meta).getStringKey(indexKey) : valueNil();
-}
-
 bool TableRecord::hasIntegerKey(u32 key) const {
 	if (key <= arrayCapacity()) {
 		return !isNil(values().get(static_cast<size_t>(key - 1)));
@@ -75,27 +70,27 @@ size_t TableRecord::hashValue(const Value& key) const {
 }
 
 int TableRecord::findNodeIndex(const Value& key, bool matchDead) const {
-	const u32 hash = hashSlots();
-	if (hash == 0u) return -1;
-	const u32 array = arrayCapacity(), words = storageAddress();
-	const u32 links = words + (array + 2u * hash) * 4u, tags = links + hash * 4u;
+	const u32 count = hashSlots();
+	return count != 0u ? findNodeIndex(hashBody(count), key, matchDead) : -1;
+}
+
+int TableRecord::findNodeIndex(const HashBody& body, const Value& key, bool matchDead) const {
+	const auto& slots = body.slots;
 	const auto tag = valueTag(key);
-	const u32 payload = valuePayload(key);
+	const u32 payload = valuePayload(key), count = body.count;
 	const bool collectableKey = matchDead && (tag == ValueTag::Table || tag == ValueTag::Closure || tag == ValueTag::Thread);
-	int index = static_cast<int>(hashValue(key) & (hash - 1u));
-	for (u32 remaining = hash; index >= 0 && remaining != 0u; --remaining) {
+	int index = static_cast<int>(hashValue(key) & (count - 1u));
+	for (u32 remaining = count; index >= 0 && remaining != 0u; --remaining) {
 		const u32 slot = static_cast<u32>(index);
-		const u32 keySlot = array + slot;
-		const auto nodeTag = static_cast<ValueTag>(m_memory->readRamRecordByte(tags + keySlot));
+		const u32 keySlot = body.array + slot;
+		const auto nodeTag = slots.tag(keySlot);
 		if (nodeTag == tag) {
-			if (m_memory->readRamRecordWord(words + keySlot * 4u) == payload) return index;
-		} else if (collectableKey && nodeTag == ValueTag::Nil
-			&& m_memory->readRamRecordWord(words + keySlot * 4u) == valueTagHeader(tag)) {
-			const u32 valueSlot = keySlot + hash;
-			if (m_memory->readRamRecordByte(tags + valueSlot) == static_cast<u8>(ValueTag::DeadKey)
-				&& m_memory->readRamRecordWord(words + valueSlot * 4u) == payload) return index;
+			if (slots.word(keySlot) == payload) return index;
+		} else if (collectableKey && nodeTag == ValueTag::Nil && slots.word(keySlot) == valueTagHeader(tag)) {
+			const u32 valueSlot = keySlot + count;
+			if (slots.tag(valueSlot) == ValueTag::DeadKey && slots.word(valueSlot) == payload) return index;
 		}
-		index = static_cast<i32>(m_memory->readRamRecordWord(links + slot * 4u));
+		index = body.next(slot);
 	}
 	return -1;
 }
@@ -340,21 +335,23 @@ void TableRecord::markHashNodeDead(size_t index) {
 
 Value TableRecord::get(const Value& rawKey) const {
 	const Value key = canonicalTableKey(rawKey);
-	if (isNil(key)) {
-		throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
-	}
-	int index = 0;
-	if (getArrayIndex(key, index)) {
-		if (index < static_cast<int>(arrayCapacity())) {
-			return values().get(static_cast<size_t>(index));
-		}
-	}
+	if (isNil(key)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
+	return getCanonical(key);
+}
 
-	int nodeIndex = findNodeIndex(key);
-	if (nodeIndex >= 0) {
-		return values().get(hashValueSlot(static_cast<size_t>(nodeIndex)));
-	}
-	return valueNil();
+Value TableRecord::getCanonical(const Value& key) const {
+	int index;
+	if (getArrayIndex(key, index) && index < static_cast<int>(arrayCapacity()))
+		return values().get(static_cast<size_t>(index));
+	return getHash(key);
+}
+
+Value TableRecord::getHash(const Value& key) const {
+	const u32 count = hashSlots();
+	if (count == 0u) return valueNil();
+	const auto body = hashBody(count);
+	const int index = findNodeIndex(body, key);
+	return index < 0 ? valueNil() : body.slots.get(body.array + count + static_cast<u32>(index));
 }
 
 void TableRecord::set(const Value& rawKey, const Value& value) {
@@ -394,14 +391,8 @@ void TableRecord::set(const Value& rawKey, const Value& value) {
 
 Value TableRecord::getInteger(int indexValue) const {
 	const u32 index = static_cast<u32>(indexValue) - 1u;
-	if (index < arrayCapacity()) {
-		return values().get(static_cast<size_t>(index));
-	}
-	const int nodeIndex = findNodeIndex(valueInteger(indexValue));
-	if (nodeIndex >= 0) {
-		return values().get(hashValueSlot(static_cast<size_t>(nodeIndex)));
-	}
-	return valueNil();
+	if (index < arrayCapacity()) return values().get(index);
+	return getHash(valueInteger(indexValue));
 }
 
 void TableRecord::setInteger(int indexValue, const Value& value) {
@@ -462,6 +453,51 @@ Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot) const {
 	return valueNil();
 }
 
+template <typename Lookup>
+void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup) const {
+	TableRecord current = *this;
+	for (u32 depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
+		const Value own = lookup(current, slot);
+		if (!isNil(own)) {
+			result = {own, slot, depth, TableLookupStatus::Resolved};
+			return;
+		}
+		const u32 metatable = current.metatableAddress();
+		if (metatable == 0u) {
+			result = {depth == 0u ? own : valueNil(), -1, depth, TableLookupStatus::Resolved};
+			return;
+		}
+		current.m_address = metatable;
+		const Value parent = current.getStringKey(indexKey);
+		if (!valueIsTable(parent)) {
+			result = {valueNil(), -1, depth, TableLookupStatus::Resolved};
+			return;
+		}
+		current.m_address = valuePayload(parent);
+		slot = -1;
+	}
+	result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1;
+	result.status = TableLookupStatus::ChainExhausted;
+}
+
+void TableRecord::resolveIndex(StringId indexKey, const Value& rawKey, TableLookupResult& result) const {
+	const Value key = canonicalTableKey(rawKey);
+	if (isNil(key)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
+	resolveIndexChain(indexKey, -1, result, [key](const TableRecord& table, int&) { return table.getCanonical(key); });
+}
+
+void TableRecord::resolveIntegerIndex(StringId indexKey, int key, TableLookupResult& result) const {
+	resolveIndexChain(indexKey, -1, result, [key](const TableRecord& table, int&) { return table.getInteger(key); });
+}
+
+void TableRecord::resolveStringIndex(StringId indexKey, StringId key, TableLookupResult& result) const {
+	resolveIndexChain(indexKey, -1, result, [key](const TableRecord& table, int&) { return table.getStringKey(key); });
+}
+
+void TableRecord::resolveStringIndexCached(StringId indexKey, StringId key, int predictedSlot, TableLookupResult& result) const {
+	resolveIndexChain(indexKey, predictedSlot, result, [key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); });
+}
+
 void TableRecord::loadStringIndex(const TableRecord* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept {
 	table->resolveStringIndexCached(indexKey, key, -1, result);
 }
@@ -476,12 +512,12 @@ void TableRecord::loadIndexInNative(GcHeap* heap, const TableReadRequest& reques
 		result.status = TableLookupStatus::NilKey;
 		return;
 	}
-	const Value key = valueFromTag(tag, request.keyWord);
 	const TableRecord table(*heap, request.address);
-	if (table.metatableAddress())
-		table.resolveIndex(request.indexKey, key, result);
-	else
-		result = {table.get(key), -1, 0u, TableLookupStatus::Resolved};
+	if (tag == ValueTag::String) {
+		table.resolveStringIndexCached(request.indexKey, request.keyWord, -1, result);
+	} else {
+		table.resolveIndex(request.indexKey, valueFromTag(tag, request.keyWord), result);
+	}
 }
 
 int TableRecord::setStringKey(StringId key, const Value& value) {

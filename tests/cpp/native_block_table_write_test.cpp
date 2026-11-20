@@ -65,7 +65,7 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 			require(cpu.luaHeap().usedBytes() == heap.first
 				&& cpu.luaHeap().collectionTarget() == heap.second,
 				"read resolution changes neither tracked allocation nor collection thresholds");
-			require(state.remainingCycles == 100 - block->terminal.cycles - 8, "one additional inherited target Table adds8 cycles independently of slot prediction");
+			require(state.remainingCycles == 100 - block->terminal.cycles - 8, "one additional inherited target Table adds 8 cycles independently of slot prediction");
 		}
 		for (int mutation = 0; mutation < 4; ++mutation) {
 			if (mutation == 0) table.setStringKey(key, values[0]);
@@ -86,6 +86,14 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 			meta.setStringKey(indexKey, valueTable(parent.address()));
 			parent.set(valueInteger(-17), values[0]);
 			parent.set(objectKey, values[0]);
+			ValueSlots stringRegisters(11);
+			stringRegisters.set(0, valueTable(table.address()));
+			stringRegisters.set(5, valueString(key));
+			NativeBlockRunState stringState{.heap = &cpu.gcHeap(), .remainingCycles = 100};
+			require(block->run(stringRegisters.view(), stringState) == &block->terminal
+				&& stringRegisters.get(destination) == valueInteger(91), "the mixed site resolves its inherited string key");
+			const int stringHint = block->sideExits[0].tableCacheSlot;
+			require(stringHint >= 0, "string resolution publishes a hint for this polymorphic GETT");
 			for (const auto key : {valueInteger(-17), valueFloat(-17.0f), objectKey}) {
 				ValueSlots registers(11);
 				registers.set(0, valueTable(table.address()));
@@ -95,6 +103,7 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 					&& state.remainingCycles == 100 - block->terminal.cycles - TABLE_INDEX_VISIT_CYCLES,
 					"sparse numeric and object keys resolve inherited raw values without a dispatch transition");
 			}
+			require(block->sideExits[0].tableCacheSlot == stringHint, "non-string misses keep the string hint at the mixed site");
 			ValueSlots registers(11);
 			registers.set(0, valueTable(table.address()));
 			registers.set(3, valueInteger(73));

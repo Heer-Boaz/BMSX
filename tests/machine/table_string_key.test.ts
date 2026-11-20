@@ -27,6 +27,7 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 	const values: Value[] = [valueBool(false), valueFloatBits(0x80000000), valueFloat(5.25), valueFloatBits(0xffc01234), valueFloat(Infinity), objectKey, valueString(keys[0]), valueNil()];
 	const slots = new ValueSlots(2);
 	let prediction = 0;
+	const cached = { slot: -1, value: valueNil() };
 	const compare = () => {
 		const bytes = cpu.gc.tables.getTrackedHeapBytes(strings);
 		for (const key of keys) {
@@ -34,8 +35,9 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 			assert.equal(cpu.gc.tables.getStringKey(strings, key), expected);
 			cpu.gc.tables.loadStringKey(strings, key, slots, 0);
 			assert.equal(slots.get(0), expected);
-			prediction = cpu.gc.tables.loadStringKeyCached(strings, key, prediction, slots, 0);
-			assert.equal(slots.get(0), expected);
+			cpu.gc.tables.getStringKeyCached(strings, key, prediction, cached);
+			prediction = cached.slot;
+			assert.equal(cached.value, expected);
 		}
 		assert.equal(cpu.gc.tables.getTrackedHeapBytes(strings), bytes, 'lookups reserve no guest storage');
 		// Physical iteration order is serialized state, not an incidental layout.
@@ -96,24 +98,29 @@ test('known string lookup follows changing inherited fields and preserves false 
 	const child = cpu.createTable();
 	cpu.gc.tables.setMetatableAddress(child, metatable);
 	const slots = new ValueSlots(1);
-	const result: TableLookupResult = { values: slots, slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved };
+	const result: TableLookupResult = { value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved };
 	cpu.gc.tables.resolveStringIndex(child, indexKey, key, result);
 	assert.equal(result.status, TableLookupStatus.Resolved);
-	assert.equal(slots.get(0), valueBool(false));
+	assert.equal(result.value, valueBool(false));
 	cpu.gc.tables.resolveStringIndexCached(child, indexKey, key, -1, result);
 	let prediction = result.slot;
 	assert.equal(result.extraVisits, 1);
 	assert.ok(prediction >= 0);
-	assert.equal(slots.get(0), valueBool(false));
+	assert.equal(result.value, valueBool(false));
 	cpu.gc.tables.storeStringKey(parent, key, ValueTag.Nil, 0);
 	cpu.gc.tables.resolveStringIndexCached(child, indexKey, key, prediction, result);
 	prediction = result.slot;
 	assert.equal(prediction, -1);
-	assert.equal(slots.get(0), valueNil());
+	assert.equal(result.value, valueNil());
 	cpu.gc.tables.storeStringKey(parent, key, ValueTag.Float, 0x80000000);
 	cpu.gc.tables.resolveStringIndex(child, indexKey, key, result);
 	assert.equal(result.status, TableLookupStatus.Resolved);
-	assert.equal(slots.get(0), valueFloatBits(0x80000000));
+	assert.equal(result.value, valueFloatBits(0x80000000));
+
+	cpu.gc.tables.setStringKey(child, key, valueBool(false));
+	cpu.gc.tables.resolveStringIndexCached(child, indexKey, key, result.slot, result);
+	assert.equal(result.value, valueBool(false));
+	assert.equal(result.extraVisits, 0, 'an own field stops traversal even when its value is false');
 
 	const raw = cpu.createTable(0, 8);
 	const highBitKey = valueString((key ^ 0x80000000) >>> 0);
@@ -122,8 +129,9 @@ test('known string lookup follows changing inherited fields and preserves false 
 	cpu.gc.tables.setStringKey(raw, key, valueInteger(42));
 	memory.writeRamRecordWord(raw + TableHeader.Storage, cpu.gc.tables.storageAddress(raw) + MAIN_RAM_SIZE);
 	assert.equal(cpu.gc.tables.get(raw, highBitKey), valueInteger(21));
-	prediction = cpu.gc.tables.loadStringKeyCached(raw, key, -1, slots, 0);
-	assert.equal(slots.get(0), valueInteger(42));
+	cpu.gc.tables.getStringKeyCached(raw, key, -1, result);
+	prediction = result.slot;
+	assert.equal(result.value, valueInteger(42));
 	assert.ok(prediction >= 0);
 	assert.equal(cpu.gc.tables.loadPredictedStringKey(raw, key, prediction, slots, 0), true);
 	assert.equal(slots.get(0), valueInteger(42));

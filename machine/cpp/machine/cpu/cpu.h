@@ -398,13 +398,11 @@ private:
 		}
 		return registers.get(static_cast<size_t>(rk));
 	}
-	Value resolveTableIndex(const TableRecord& table, const Value& key);
-	Value resolveTableIntegerIndex(const TableRecord& table, int index);
-	Value resolveTableFieldIndex(const TableRecord& table, StringId key);
+	u32 tableIndexAddress(Value base) const;
+	void chargeTableLookup(const TableLookupResult& result);
 	Value loadTableIndex(const Value& base, const Value& key);
 	Value loadTableIntegerIndex(const Value& base, int index);
 	Value loadTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key);
-	Value loadTableFieldIndex(const Value& base, StringId key);
 	void storeTableIndex(const Value& base, const Value& key, const Value& value);
 	void storeTableIntegerIndex(const Value& base, int index, const Value& value);
 	void storeTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key, const Value& value);

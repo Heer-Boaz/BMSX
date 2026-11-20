@@ -74,41 +74,10 @@ public:
 	static int storeStringKeyWithoutGrowth(TableRecord* table, StringId key, const Value& value) noexcept;
 	static int storeStringKeyInNative(GcHeap* heap, u32 address, StringId key, const Value& value) noexcept;
 	void setStringKeyCached(StringId key, const Value& value, int& predictedSlot);
-	Value metatableIndexValue(StringId indexKey) const;
-	void resolveIndex(StringId indexKey, const Value& key, TableLookupResult& result) const {
-		resolveIndexChain(indexKey, result, [&key](const TableRecord& table) {
-			return table.get(key);
-		});
-	}
-	void resolveIntegerIndex(StringId indexKey, int key, TableLookupResult& result) const {
-		resolveIndexChain(indexKey, result, [key](const TableRecord& table) {
-			return table.getInteger(key);
-		});
-	}
-	void resolveStringIndex(StringId indexKey, StringId key, TableLookupResult& result) const {
-		resolveIndexChain(indexKey, result, [key](const TableRecord& table) {
-			return table.getStringKey(key);
-		});
-	}
-	void resolveStringIndexCached(StringId indexKey, StringId key, int predictedSlot, TableLookupResult& result) const {
-		u32 address = m_address;
-		for (int depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
-			const TableRecord current(*m_heap, address);
-			const Value value = current.getStringKeyCached(key, predictedSlot);
-			if (!isNil(value)) {
-				result = {value, predictedSlot, static_cast<u32>(depth), TableLookupStatus::Resolved};
-				return;
-			}
-			const Value parent = current.metatableIndexValue(indexKey);
-			if (!valueIsTable(parent)) {
-				result = {valueNil(), -1, static_cast<u32>(depth), TableLookupStatus::Resolved};
-				return;
-			}
-			address = valuePayload(parent);
-		}
-		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1;
-		result.status = TableLookupStatus::ChainExhausted;
-	}
+	void resolveIndex(StringId indexKey, const Value& key, TableLookupResult& result) const;
+	void resolveIntegerIndex(StringId indexKey, int key, TableLookupResult& result) const;
+	void resolveStringIndex(StringId indexKey, StringId key, TableLookupResult& result) const;
+	void resolveStringIndexCached(StringId indexKey, StringId key, int predictedSlot, TableLookupResult& result) const;
 	// Generated-code leaf: no allocation, guest callback or architectural write.
 	// The caller commits result only when the returned chain status succeeds.
 	static void loadStringIndex(const TableRecord* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept;
@@ -241,26 +210,11 @@ private:
 	int insertHashWithoutGrowth(const HashBody& body, const Value& key, const Value& value) noexcept;
 	void removeFromHash(const Value& key);
 	void markHashNodeDead(size_t index);
+	Value getCanonical(const Value& key) const;
+	Value getHash(const Value& key) const;
+	int findNodeIndex(const HashBody& body, const Value& key, bool matchDead = false) const;
 	template <typename Lookup>
-	void resolveIndexChain(StringId indexKey, TableLookupResult& result, Lookup&& lookup) const {
-		u32 address = m_address;
-		for (int depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
-			const TableRecord current(*m_heap, address);
-			const Value value = lookup(current);
-			if (!isNil(value)) {
-				result = {value, -1, static_cast<u32>(depth), TableLookupStatus::Resolved};
-				return;
-			}
-			const Value parent = current.metatableIndexValue(indexKey);
-			if (!valueIsTable(parent)) {
-				result = {valueNil(), -1, static_cast<u32>(depth), TableLookupStatus::Resolved};
-				return;
-			}
-			address = valuePayload(parent);
-		}
-		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1;
-		result.status = TableLookupStatus::ChainExhausted;
-	}
+	void resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup) const;
 
 	TableValues values() const {
 		const u32 words = storageAddress();

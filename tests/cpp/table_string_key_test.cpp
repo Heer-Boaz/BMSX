@@ -124,6 +124,11 @@ void inheritedAndFullWordKeys(CPU& cpu, Memory& memory) {
 	child.resolveStringIndex(indexKey, key, result);
 	require(result.status == TableLookupStatus::Resolved && result.value == valueFloatBits(0x80000000u), "reinsertion preserves negative zero");
 
+	child.setStringKey(key, valueBool(false));
+	child.resolveStringIndexCached(indexKey, key, result.slot, result);
+	require(result.value == valueBool(false) && result.extraVisits == 0,
+		"an own field stops traversal even when its value is false");
+
 	auto raw = cpu.createTable(0, 8);
 	const Value integerKey = valueInteger(BLUA32_FLOAT_NAN);
 	raw.set(valueFloatBits(0xffc01234u), valueInteger(13));

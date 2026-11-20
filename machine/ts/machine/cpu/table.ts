@@ -10,7 +10,7 @@ import {
 	ValueTag, canonicalTableKey, isNil, valueFromTag, valueInteger,
 	valueNil, valuePayload, valueString, valueTable, valueTag, type Value,
 } from './value';
-import { ValueSlots, type ValueWriteTarget } from './value_slots';
+import type { ValueWriteTarget } from './value_slots';
 
 const TABLE_HASH_NEXT_END = -1;
 const TABLE_MAX_ARRAY_INDEX = 0x7fffffff;
@@ -18,7 +18,8 @@ export const TABLE_INDEX_CHAIN_LIMIT = 32;
 export const TABLE_STORE_REQUIRES_GROWTH = -2;
 export type TableLengthWork = { probes: number };
 export const enum TableLookupStatus { Resolved, ChainExhausted }
-export type TableLookupResult = { values: ValueSlots; slot: number; extraVisits: number; status: TableLookupStatus };
+type TableLookupSlot = { value: Value; slot: number };
+export type TableLookupResult = TableLookupSlot & { extraVisits: number; status: TableLookupStatus };
 type StoredEntryVisitor = (key: Value, value: Value) => void;
 type StoredValuePredicate = (value: Value) => boolean;
 
@@ -106,8 +107,11 @@ export class TableRecords {
 	private findNodeIndex(record: number, key: Value, matchDead = false): number {
 		const hash = this.hashSize(record);
 		if (hash === 0) return -1;
-		const memory = this.heap.memory, array = this.arrayCapacity(record), words = this.storageAddress(record);
-		const links = words + (array + 2 * hash) * 4, tags = links + hash * 4;
+		const array = this.arrayCapacity(record), words = this.storageAddress(record);
+		return this.probeHash(key, hash, array, words, words + (array + 3 * hash) * 4, matchDead);
+	}
+	private probeHash(key: Value, hash: number, array: number, words: number, tags: number, matchDead: boolean): number {
+		const memory = this.heap.memory, links = tags - hash * 4;
 		const tag = valueTag(key), payload = valuePayload(key);
 		const collectable = matchDead && (tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread);
 		let index = this.heap.hash(key) & (hash - 1);
@@ -140,20 +144,28 @@ export class TableRecords {
 	public get(record: number, rawKey: Value): Value {
 		const key = canonicalTableKey(rawKey);
 		if (isNil(key)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
-		const array = this.getArrayIndex(key);
-		if (array >= 0 && array < this.arrayCapacity(record)) return this.valueAt(record, array);
-		const index = this.findNodeIndex(record, key);
-		return index >= 0 ? this.valueAt(record, this.hashValueSlot(record, index)) : valueNil();
+		return this.getCanonical(record, key, this.getArrayIndex(key));
+	}
+	private getCanonical(record: number, key: Value, arrayIndex: number): Value {
+		const array = this.arrayCapacity(record), hash = this.hashSize(record);
+		const inArray = arrayIndex >= 0 && arrayIndex < array;
+		if (!inArray && hash === 0) return valueNil();
+		const words = this.storageAddress(record), tags = words + (array + 3 * hash) * 4;
+		let slot = arrayIndex;
+		if (!inArray) {
+			const index = this.probeHash(key, hash, array, words, tags, false);
+			if (index < 0) return valueNil();
+			slot = array + hash + index;
+		}
+		const memory = this.heap.memory;
+		return valueFromTag(memory.readRamRecordByte(tags + slot), memory.readRamRecordWord(words + slot * 4));
 	}
 	public load(record: number, keyTag: ValueTag, keyWord: number, target: ValueWriteTarget, destination: number): void {
 		const value = this.get(record, valueFromTag(keyTag, keyWord));
 		target.setEncoded(destination, valueTag(value), valuePayload(value));
 	}
 	public getInteger(record: number, index: number): Value {
-		const array = (index >>> 0) - 1;
-		if (array >= 0 && array < this.arrayCapacity(record)) return this.valueAt(record, array);
-		const slot = this.findNodeIndex(record, valueInteger(index));
-		return slot >= 0 ? this.valueAt(record, this.hashValueSlot(record, slot)) : valueNil();
+		return this.getCanonical(record, valueInteger(index), (index >>> 0) - 1);
 	}
 	public loadInteger(record: number, index: number, target: ValueWriteTarget, destination: number): void {
 		const array = (index >>> 0) - 1;
@@ -164,9 +176,13 @@ export class TableRecords {
 		target.setEncoded(destination, valueTag(value), valuePayload(value));
 	}
 	public loadIntegerArrayKey(record: number, index: number, target: ValueWriteTarget, destination: number): boolean {
-		const slot = (index >>> 0) - 1;
-		if (slot < 0 || slot >= this.arrayCapacity(record) || (this.readHeader(record, TableHeader.Metatable) !== 0 && this.tagAt(record, slot) === ValueTag.Nil)) return false;
-		target.setEncoded(destination, this.tagAt(record, slot), this.wordAt(record, slot)); return true;
+		const slot = (index >>> 0) - 1, array = this.arrayCapacity(record);
+		if (slot < 0 || slot >= array) return false;
+		const memory = this.heap.memory, words = this.storageAddress(record);
+		const tags = words + (array + 3 * this.hashSize(record)) * 4;
+		const tag = memory.readRamRecordByte(tags + slot);
+		if (tag === ValueTag.Nil && this.metatableAddress(record) !== 0) return false;
+		target.setEncoded(destination, tag, memory.readRamRecordWord(words + slot * 4)); return true;
 	}
 	public storeIntegerArrayKey(record: number, index: number, tag: ValueTag, word: number): boolean {
 		const slot = (index >>> 0) - 1;
@@ -199,68 +215,74 @@ export class TableRecords {
 		}
 		target.setNil(destination);
 	}
-	private readPredictedStringKey(key: StringId, keySlot: number, hash: number, words: number, tags: number,
-		target: ValueWriteTarget, destination: number): boolean {
+	private predictedStringValueSlot(key: StringId, keySlot: number, hash: number, words: number, tags: number): number {
 		const memory = this.heap.memory;
-		if (memory.readRamRecordByte(tags + keySlot) !== ValueTag.String
-			|| memory.readRamRecordWord(words + keySlot * 4) !== key) return false;
-		const valueSlot = keySlot + hash, tag = memory.readRamRecordByte(tags + valueSlot);
-		if (tag === ValueTag.Nil) return false;
-		target.setEncoded(destination, tag, memory.readRamRecordWord(words + valueSlot * 4));
-		return true;
+		return memory.readRamRecordByte(tags + keySlot) === ValueTag.String
+			&& memory.readRamRecordWord(words + keySlot * 4) === key ? keySlot + hash : -1;
 	}
 	public loadPredictedStringKey(record: number, key: StringId, predicted: number, target: ValueWriteTarget, destination: number): boolean {
 		const hash = this.hashSize(record);
 		if (predicted < 0 || predicted >= hash) return false;
 		const array = this.arrayCapacity(record), words = this.storageAddress(record);
 		const tags = words + (array + 3 * hash) * 4;
-		return this.readPredictedStringKey(key, array + predicted, hash, words, tags, target, destination);
+		const slot = this.predictedStringValueSlot(key, array + predicted, hash, words, tags);
+		if (slot < 0) return false;
+		const memory = this.heap.memory, tag = memory.readRamRecordByte(tags + slot);
+		if (tag === ValueTag.Nil) return false;
+		target.setEncoded(destination, tag, memory.readRamRecordWord(words + slot * 4));
+		return true;
 	}
 
-	public loadStringKeyCached(record: number, key: StringId, predicted: number, target: ValueWriteTarget, destination: number): number {
+	public getStringKeyCached(record: number, key: StringId, predicted: number, result: TableLookupSlot): void {
 		const hash = this.hashSize(record);
 		if (hash !== 0) {
 			const array = this.arrayCapacity(record), words = this.storageAddress(record);
-			const tags = words + (array + 3 * hash) * 4;
-			if (predicted >= 0 && predicted < hash
-				&& this.readPredictedStringKey(key, array + predicted, hash, words, tags, target, destination)) return predicted;
+			const tags = words + (array + 3 * hash) * 4, memory = this.heap.memory;
+			if (predicted >= 0 && predicted < hash) {
+				const slot = this.predictedStringValueSlot(key, array + predicted, hash, words, tags);
+				if (slot >= 0) {
+					const tag = memory.readRamRecordByte(tags + slot);
+					if (tag !== ValueTag.Nil) {
+						result.value = valueFromTag(tag, memory.readRamRecordWord(words + slot * 4)); result.slot = predicted; return;
+					}
+				}
+			}
 			const index = this.findStringNodeIndex(key, hash, array, words, tags);
 			if (index >= 0) {
-				const memory = this.heap.memory, slot = array + hash + index;
+				const slot = array + hash + index;
 				const tag = memory.readRamRecordByte(tags + slot);
-				if (tag !== ValueTag.Nil) { target.setEncoded(destination, tag, memory.readRamRecordWord(words + slot * 4)); return index; }
+				if (tag !== ValueTag.Nil) {
+					result.value = valueFromTag(tag, memory.readRamRecordWord(words + slot * 4)); result.slot = index; return;
+				}
 			}
 		}
-		target.setNil(destination); return -1;
+		result.value = valueNil(); result.slot = -1;
 	}
-	public metatableIndexValue(record: number, indexKey: StringId): Value {
-		const address = this.metatableAddress(record);
-		return address !== 0 ? this.getStringKey(address, indexKey) : valueNil();
-	}
-	public resolveIndex(record: number, indexKey: StringId, keyTag: ValueTag, keyWord: number, result: TableLookupResult): void {
-		const key = canonicalTableKey(valueFromTag(keyTag, keyWord));
+	public resolveIndex(record: number, indexKey: StringId, rawKey: Value, result: TableLookupResult): void {
+		const key = canonicalTableKey(rawKey);
 		if (isNil(key)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		const arrayIndex = this.getArrayIndex(key);
 		let current = record;
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
-			let slot = arrayIndex;
-			if (slot < 0 || slot >= this.arrayCapacity(current)) {
-				const index = this.findNodeIndex(current, key); slot = index >= 0 ? this.hashValueSlot(current, index) : -1;
+			const own = this.getCanonical(current, key, arrayIndex);
+			if (!isNil(own)) {
+				result.value = own; result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
 			}
-			if (slot >= 0 && this.tagAt(current, slot) !== ValueTag.Nil) {
-				result.values.setEncoded(0, this.tagAt(current, slot), this.wordAt(current, slot));
+			const meta = this.metatableAddress(current);
+			if (meta === 0) {
+				result.value = depth === 0 ? own : valueNil();
 				result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
 			}
-			const next = this.metatableIndexValue(current, indexKey);
+			const next = this.getStringKey(meta, indexKey);
 			if (valueTag(next) !== ValueTag.Table) {
-				result.values.setNil(0); result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
+				result.value = valueNil(); result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
 			}
 			current = valuePayload(next);
 		}
 		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
 	}
 	public resolveIntegerIndex(record: number, indexKey: StringId, key: number, result: TableLookupResult): void {
-		this.resolveIndex(record, indexKey, ValueTag.Integer, key >>> 0, result);
+		this.resolveIndex(record, indexKey, valueInteger(key), result);
 	}
 	public resolveStringIndex(record: number, indexKey: StringId, key: StringId, result: TableLookupResult): void {
 		this.resolveStringIndexCached(record, indexKey, key, -1, result);
@@ -268,15 +290,16 @@ export class TableRecords {
 	public resolveStringIndexCached(record: number, indexKey: StringId, key: StringId, predicted: number, result: TableLookupResult): void {
 		let current = record;
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
-			const index = this.loadStringKeyCached(current, key, predicted, result.values, 0);
-			if (result.values.getTag(0) !== ValueTag.Nil) {
-				result.slot = index; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
+			this.getStringKeyCached(current, key, predicted, result);
+			if (result.slot >= 0) {
+				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
+			}
+			const meta = this.metatableAddress(current);
+			const next = meta !== 0 ? this.getStringKey(meta, indexKey) : valueNil();
+			if (valueTag(next) !== ValueTag.Table) {
+				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
 			}
 			predicted = -1;
-			const next = this.metatableIndexValue(current, indexKey);
-			if (valueTag(next) !== ValueTag.Table) {
-				result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
-			}
 			current = valuePayload(next);
 		}
 		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
