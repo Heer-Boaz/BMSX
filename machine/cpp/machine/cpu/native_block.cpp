@@ -151,10 +151,11 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 			auto& exit = block->sideExits.emplace_back(terminal);
 			exit.exit = slow;
 			exit.handler = exitHandlers[static_cast<size_t>(exit.exit)];
-			if (slow == NativeBlockExit::ReadField || slow == NativeBlockExit::WriteField
-				|| slow == NativeBlockExit::ReadIndex || slow == NativeBlockExit::WriteIndex) {
-				exit.tableCacheSlot = instruction.tableCacheSlot;
-			}
+			if (slow == NativeBlockExit::ReadField || slow == NativeBlockExit::ReadIndex)
+				std::construct_at(&exit.tableReadCache, TableStringReadCache{
+					.receiverSlot = instruction.tableCacheSlot, .holderSlot = -1, .holderDepth = 0, .indexSlots = {-1, -1, -1}});
+			else if (slow == NativeBlockExit::WriteField || slow == NativeBlockExit::WriteIndex)
+				exit.tableStoreSlot = instruction.tableCacheSlot;
 		}
 		// The checked exit owns this instruction's preflight and surcharge.
 		// Later exits include the successful prefix, not a blocked attempt.
@@ -219,7 +220,8 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 
 NativeBlock::~NativeBlock() {
 	terminal.link.disconnect();
-	for (auto& exit : sideExits) exit.link.disconnect();
+	for (auto& exit : sideExits)
+		if (exit.exit == NativeBlockExit::Continue) exit.link.disconnect();
 	while (m_incoming) m_incoming->disconnect();
 
 }

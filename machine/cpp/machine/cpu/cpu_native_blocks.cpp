@@ -366,15 +366,23 @@ void CPU::clearNativeContinuationBindings() {
 	});
 }
 
+Value CPU::loadNativeTableField(TableStringReadCache& cache, const Value& base, StringId key) {
+	TableLookupResult result;
+	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexPath(
+		asStringId(m_indexKey), key, cache.receiverSlot, result, cache);
+	chargeTableLookup(result);
+	return result.value;
+}
+
 NativeBlockTransition CPU::compiledReadFieldExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	frame->registers.set(exit->exitA, owner->loadTableFieldIndexCached(exit->tableCacheSlot,
+	frame->registers.set(exit->exitA, owner->loadNativeTableField(exit->tableReadCache,
 		frame->registers.get(exit->exitB), asStringId(frame->executionImage->constPool.get(exit->exitC))));
 	frame->extendTop(static_cast<int>(exit->exitA) + 1);
 	return NativeBlockTransition::SameWindow;
 }
 
 NativeBlockTransition CPU::compiledWriteFieldExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	owner->storeTableFieldIndexCached(exit->tableCacheSlot, frame->registers.get(exit->exitA),
+	owner->storeTableFieldIndexCached(exit->tableStoreSlot, frame->registers.get(exit->exitA),
 		asStringId(frame->executionImage->constPool.get(exit->exitB)), owner->readRK(*frame->executionImage, frame->registers, exit->exitC));
 	return NativeBlockTransition::NextInstruction;
 }
@@ -383,7 +391,7 @@ NativeBlockTransition CPU::compiledReadIndexExit(CPU* owner, CallFrame* frame, c
 	const Value base = frame->registers.get(exit->exitB);
 	const Value key = owner->readRK(*frame->executionImage, frame->registers, exit->exitC);
 	frame->registers.set(exit->exitA, valueIsString(key)
-		? owner->loadTableFieldIndexCached(exit->tableCacheSlot, base, asStringId(key))
+		? owner->loadNativeTableField(exit->tableReadCache, base, asStringId(key))
 		: owner->loadTableIndex(base, key));
 	frame->extendTop(static_cast<int>(exit->exitA) + 1);
 	return NativeBlockTransition::SameWindow;
@@ -393,7 +401,7 @@ NativeBlockTransition CPU::compiledWriteIndexExit(CPU* owner, CallFrame* frame, 
 	const Value base = frame->registers.get(exit->exitA);
 	const Value key = owner->readRK(*frame->executionImage, frame->registers, exit->exitB);
 	const Value value = owner->readRK(*frame->executionImage, frame->registers, exit->exitC);
-	if (valueIsString(key)) owner->storeTableFieldIndexCached(exit->tableCacheSlot, base, asStringId(key), value);
+	if (valueIsString(key)) owner->storeTableFieldIndexCached(exit->tableStoreSlot, base, asStringId(key), value);
 	else owner->storeTableIndex(base, key, value);
 	return NativeBlockTransition::NextInstruction;
 }

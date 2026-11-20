@@ -403,6 +403,7 @@ private:
 	Value loadTableIndex(const Value& base, const Value& key);
 	Value loadTableIntegerIndex(const Value& base, int index);
 	Value loadTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key);
+	Value loadNativeTableField(TableStringReadCache& cache, const Value& base, StringId key);
 	void storeTableIndex(const Value& base, const Value& key, const Value& value);
 	void storeTableIntegerIndex(const Value& base, int index, const Value& value);
 	void storeTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key, const Value& value);

@@ -10,6 +10,7 @@
 #include "common/primitives.h"
 #include "machine/cpu/value_slots.h"
 #include "machine/cpu/native_block_exit.h"
+#include "machine/cpu/table_lookup.h"
 #include "spec/blua32/opcode.h"
 #include "spec/blua32/cop0.h"
 #if defined(BMSX_NATIVE_PERF_MAP)
@@ -43,6 +44,8 @@ struct NativeBlockLink {
 	NativeBlockLink* previous = nullptr;
 	NativeBlockLink* next = nullptr;
 };
+
+static_assert(sizeof(TableStringReadCache) <= sizeof(NativeBlockLink));
 
 struct NativeBlockRunState {
 	ConstValueSpan constants;
@@ -100,13 +103,18 @@ struct NativeBlockExitSite {
 	i16 exitB = 0;
 	i16 exitC = 0;
 	u32 exitBx = 0;
-	mutable int tableCacheSlot = -1;
 	int cycles = 0;
 	int registerTop = 0;
 	u32 nextPc = 0;
 	u32 currentPc = 0;
 	u32 lastPc = 0;
-	mutable NativeBlockLink link;
+	// Only Continue edges can link to another native entry. Table side
+	// exits instead use the same storage for their callsite prediction.
+	union {
+		mutable NativeBlockLink link{};
+		mutable TableStringReadCache tableReadCache;
+		mutable i32 tableStoreSlot;
+	};
 	// Bound on CPU-side publication for CALL returns and same-frame helpers.
 	// Image-lifetime cells survive retirement of the source or target region.
 	std::array<void* const*, 2> continuationCells{};

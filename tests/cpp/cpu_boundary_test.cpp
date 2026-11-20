@@ -165,15 +165,16 @@ void nativeFieldGuardsAndRawSlotAccess() {
 				&& registers.get(1) == valueFloatBits(0x80000000u), "a cached field result can replace its own table receiver");
 			registers.set(1, valueTable(table.address()));
 		}
+		auto& hint = store ? block->sideExits[0].tableStoreSlot : block->sideExits[0].tableReadCache.receiverSlot;
 		for (int prediction : {-1, otherSlot, 100000}) {
-			block->sideExits[0].tableCacheSlot = prediction;
+			hint = prediction;
 			const auto* exit = block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles});
 			require(exit->exit == NativeBlockExit::Continue
 				&& (store ? table.getStringKey(key) == constants.get(0) : registers.get(0) == table.getStringKey(key)),
 				"stale predictions complete actual read resolution and allocation-free stores in the native frame");
-			require(block->sideExits[0].tableCacheSlot == slot, "returning field operations repair their actual slot prediction");
+			require(hint == slot, "returning field operations repair their actual slot prediction");
 		}
-		block->sideExits[0].tableCacheSlot = slot;
+		hint = slot;
 		registers.set(store ? 0 : 1, valueBool(false));
 		require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->handler == &fieldSlowExitMarker,
 			"a non-table field receiver is rejected before any native pointer access");
@@ -184,7 +185,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 			&& (store ? table.getStringKey(key) == constants.get(0) : isNil(registers.get(0))),
 			"a deleted own slot is restored without growth or resolved to its actual missing read result");
 		slot = table.setStringKey(key, valueInteger(1));
-		block->sideExits[0].tableCacheSlot = slot;
+		hint = slot;
 		if (!store) {
 			table.setMetatableAddress(machine.cpu.createTable(0, 0).address());
 			require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue,

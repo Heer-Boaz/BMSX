@@ -8,6 +8,7 @@
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
+#include "machine/cpu/table_lookup.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {
@@ -15,22 +16,6 @@ class GcHeap;
 
 inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
 inline constexpr int TABLE_STORE_REQUIRES_GROWTH = -2;
-
-enum class TableLookupStatus : u32 { Resolved, ChainExhausted, NilKey };
-
-// Transient semantic result, not a guest allocation or a predicted-probe counter.
-struct TableLookupResult {
-	Value value;
-	i32 slot;
-	u32 extraVisits;
-	TableLookupStatus status;
-};
-
-struct TableReadRequest {
-	u32 address, keyWord;
-	StringId indexKey;
-	u32 keyTag;
-};
 
 enum class TableHeader : u32 {
 	Kind = 0, Gray = 4, Metatable = 8, Storage = 12, Array = 16, Hash = 20, Length = 24, Free = 28,
@@ -78,11 +63,13 @@ public:
 	void resolveIntegerIndex(StringId indexKey, int key, TableLookupResult& result) const;
 	void resolveStringIndex(StringId indexKey, StringId key, TableLookupResult& result) const;
 	void resolveStringIndexCached(StringId indexKey, StringId key, int predictedSlot, TableLookupResult& result) const;
+	void resolveStringIndexPath(StringId indexKey, StringId key, int receiverPrediction,
+		TableLookupResult& result, TableStringReadCache& cache) const;
 	// Generated-code leaf: no allocation, guest callback or architectural write.
 	// The caller commits result only when the returned chain status succeeds.
 	static void loadStringIndex(const TableRecord* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept;
-	static void loadStringIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result) noexcept;
-	static void loadIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result) noexcept;
+	static void loadStringIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result, TableStringReadCache& cache) noexcept;
+	static void loadIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result, TableStringReadCache& cache) noexcept;
 	// Pure boundary search; also the generated-code entry point.
 	static i32 length(const TableRecord* table, u32* probes = nullptr) noexcept;
 	void clear();
@@ -209,8 +196,9 @@ private:
 	Value getCanonical(const Value& key) const;
 	Value getHash(const Value& key) const;
 	int findNodeIndex(const HashBody& body, const Value& key, bool matchDead = false) const;
-	template <typename Lookup>
-	void resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup) const;
+	template <bool RememberPath = false, typename Lookup>
+	void resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup,
+		TableStringReadCache* cache = nullptr) const;
 
 	TableValues values() const {
 		const u32 words = storageAddress();

@@ -2614,7 +2614,7 @@ Value CPU::loadTableFieldIndexCached(int& predictedSlot, const Value& base, Stri
 	TableLookupResult result;
 	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexCached(asStringId(m_indexKey), key, predictedSlot, result);
 	chargeTableLookup(result);
-	predictedSlot = result.slot;
+	if (result.extraVisits == 0 && result.slot >= 0) predictedSlot = result.slot;
 	return result.value;
 }
 

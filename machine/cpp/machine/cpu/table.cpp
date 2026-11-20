@@ -460,12 +460,23 @@ Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot) const {
 	return valueNil();
 }
 
-template <typename Lookup>
-void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup) const {
+template <bool RememberPath, typename Lookup>
+void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup,
+	TableStringReadCache* cache) const {
 	TableRecord current = *this;
 	for (u32 depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
+		if constexpr (RememberPath) {
+			if (depth != 0 && depth == cache->holderDepth) slot = cache->holderSlot;
+		}
 		const Value own = lookup(current, slot);
 		if (!isNil(own)) {
+			if constexpr (RememberPath) {
+				if (depth == 0) cache->receiverSlot = slot;
+				else {
+					cache->holderDepth = depth;
+					cache->holderSlot = slot;
+				}
+			}
 			result = {own, slot, depth, TableLookupStatus::Resolved};
 			return;
 		}
@@ -475,7 +486,11 @@ void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResu
 			return;
 		}
 		current.m_address = metatable;
-		const Value parent = current.getStringKey(indexKey);
+		Value parent;
+		if constexpr (RememberPath) {
+			parent = depth < cache->indexSlots.size() ? current.getStringKeyCached(indexKey, cache->indexSlots[depth])
+				: current.getStringKey(indexKey);
+		} else parent = current.getStringKey(indexKey);
 		if (!valueIsTable(parent)) {
 			result = {valueNil(), -1, depth, TableLookupStatus::Resolved};
 			return;
@@ -505,25 +520,33 @@ void TableRecord::resolveStringIndexCached(StringId indexKey, StringId key, int 
 	resolveIndexChain(indexKey, predictedSlot, result, [key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); });
 }
 
+void TableRecord::resolveStringIndexPath(StringId indexKey, StringId key, int receiverPrediction,
+	TableLookupResult& result, TableStringReadCache& cache) const {
+	resolveIndexChain<true>(indexKey, receiverPrediction, result,
+		[key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); }, &cache);
+}
+
 void TableRecord::loadStringIndex(const TableRecord* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept {
 	table->resolveStringIndexCached(indexKey, key, -1, result);
 }
 
-void TableRecord::loadStringIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result) noexcept {
-	TableRecord(*heap, request.address).resolveStringIndexCached(request.indexKey, request.keyWord, -1, result);
+void TableRecord::loadStringIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result,
+	TableStringReadCache& cache) noexcept {
+	// The generated probe already ruled out the candidate receiver slot.
+	TableRecord(*heap, request.address).resolveStringIndexPath(request.indexKey, request.keyWord, -1, result, cache);
 }
 
-void TableRecord::loadIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result) noexcept {
+void TableRecord::loadIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result,
+	TableStringReadCache& cache) noexcept {
 	const auto tag = static_cast<ValueTag>(request.keyTag);
 	if (tag == ValueTag::Nil) {
 		result.status = TableLookupStatus::NilKey;
 		return;
 	}
-	const TableRecord table(*heap, request.address);
 	if (tag == ValueTag::String) {
-		table.resolveStringIndexCached(request.indexKey, request.keyWord, -1, result);
+		loadStringIndexInNative(heap, request, result, cache);
 	} else {
-		table.resolveIndex(request.indexKey, valueFromTag(tag, request.keyWord), result);
+		TableRecord(*heap, request.address).resolveIndex(request.indexKey, valueFromTag(tag, request.keyWord), result);
 	}
 }
 

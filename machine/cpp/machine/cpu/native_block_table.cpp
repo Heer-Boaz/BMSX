@@ -164,7 +164,8 @@ void NativeBlockCompiler::emitTableReadLeaf(bool fixedStringKey, NativeBlockExit
 	sljit_get_local_base(c, SLJIT_R2, 0, result);
 	m_cache.spillCall(false, 0);
 	const auto lookup = fixedStringKey ? &TableRecord::loadStringIndexInNative : &TableRecord::loadIndexInNative;
-	sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(lookup));
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&exit.tableReadCache));
+	sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4V(P, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(lookup));
 	m_cache.spillCall(true, 0);
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_SP),
 		result + offsetof(TableLookupResult, status), SLJIT_IMM, static_cast<u32>(TableLookupStatus::Resolved)),
@@ -172,15 +173,6 @@ void NativeBlockCompiler::emitTableReadLeaf(bool fixedStringKey, NativeBlockExit
 	sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP),
 		result + offsetof(TableLookupResult, extraVisits), SLJIT_IMM, TABLE_INDEX_VISIT_CYCLES);
 	sljit_emit_op2(c, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_R1, 0);
-	// Non-string reads at a polymorphic site leave its string hint intact.
-	sljit_jump* nonString = nullptr;
-	if (!fixedStringKey) {
-		nonString = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_SP), keyTag,
-			SLJIT_IMM, static_cast<u8>(ValueTag::String));
-	}
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&exit.tableCacheSlot),
-		SLJIT_MEM1(SLJIT_SP), result + offsetof(TableLookupResult, slot));
-	if (nonString) sljit_set_label(nonString, sljit_emit_label(c));
 	emitValueTransportLoad(c, SLJIT_SP, result + offsetof(TableLookupResult, value), SLJIT_R2, SLJIT_R3);
 }
 
@@ -219,7 +211,7 @@ sljit_jump* NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBloc
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
 	const sljit_s32 keySource = constantKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP);
 	const sljit_sw keyOperand = constantKey ? static_cast<sljit_sw>(*constantKey) : keyWord;
-	const sljit_sw prediction = reinterpret_cast<sljit_sw>(&exit.tableCacheSlot);
+	const sljit_sw prediction = reinterpret_cast<sljit_sw>(load ? &exit.tableReadCache.receiverSlot : &exit.tableStoreSlot);
 	std::array<sljit_jump*, 5> misses{};
 	size_t n = 0;
 	sljit_emit_op1(m_compiler, SLJIT_MOV_S32, SLJIT_R1, 0, SLJIT_MEM0(), prediction);

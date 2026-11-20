@@ -81,6 +81,80 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 		"an observed Float update does not detour through the scalar VM");
 }
 
+void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
+	const StringId indexKey = cpu.stringPool().intern("__index");
+	const StringId key = cpu.stringPool().intern("inherited method");
+	auto root = cpu.createTable(0, 1), middle = cpu.createTable(0, 1), holder = cpu.createTable(0, 4);
+	auto firstMeta = cpu.createTable(0, 1), secondMeta = cpu.createTable(0, 1);
+	const auto first = firstMeta.setStringKey(indexKey, valueTable(middle.address()));
+	const auto second = secondMeta.setStringKey(indexKey, valueTable(holder.address()));
+	root.setMetatableAddress(firstMeta.address());
+	middle.setMetatableAddress(secondMeta.address());
+	const auto holderSlot = holder.setStringKey(key, valueInteger(41));
+
+	DecodedInstruction decoded{};
+	decoded.op = static_cast<u8>(OpCode::GETFIELD); decoded.width = 1; decoded.b = 1;
+	decoded.baseCycles = BASE_CYCLES[decoded.op]; decoded.tableCacheSlot = -1;
+	const std::array instructions{NativeBlockInstruction{&decoded, 0x1000u}};
+	ValueSlots constants(1), registers(2);
+	const Value receiver = valueTable(root.address());
+	constants.set(0, valueString(key));
+	registers.set(1, receiver);
+	size_t bytes = 0;
+	auto block = NativeBlock::compile(instructions, constants.view(), bytes, memory, cpu.stringPool(), indexKey);
+	const auto& hint = block->sideExits[0].tableReadCache;
+	NativeBlockRunState grant{.constants = constants.view(), .heap = &cpu.gcHeap()};
+	const auto read = [&](Value want, int hops) {
+		grant.remainingCycles = 100;
+		require(block->run(registers.view(), grant) == &block->terminal && registers.get(0) == want
+			&& grant.remainingCycles == 100 - decoded.baseCycles - hops * TABLE_INDEX_VISIT_CYCLES,
+			"the warmed read follows the current chain, preserves the raw result and bills every actual hop");
+	};
+	const auto ownSlot = root.setStringKey(key, valueBool(false));
+	read(valueBool(false), 0);
+	root.setStringKey(key, valueNil());
+	read(valueInteger(41), 2);
+	require(hint.receiverSlot == ownSlot && hint.holderDepth == 2 && hint.holderSlot == holderSlot
+		&& hint.indexSlots[0] == first && hint.indexSlots[1] == second,
+		"the receiver guess survives an inherited hit and the cache learns the holder and actual path");
+	const auto ram = memory.captureSaveState();
+	const auto state = cpu.captureRuntimeState();
+
+	holder.setStringKey(key, valueInteger(42));
+	read(valueInteger(42), 2);
+	for (int i = 0; i < 32; ++i) {
+		holder.setStringKey(cpu.stringPool().intern("holder rehash " + std::to_string(i)), valueInteger(i));
+		secondMeta.setStringKey(cpu.stringPool().intern("meta rehash " + std::to_string(i)), valueInteger(i));
+		root.setStringKey(cpu.stringPool().intern("receiver rehash " + std::to_string(i)), valueInteger(i));
+	}
+	read(valueInteger(42), 2);
+	// A live value at an intermediate table overrides the cached holder.
+	middle.setStringKey(key, valueBool(false));
+	read(valueBool(false), 1);
+	middle.setStringKey(key, valueNil());
+	root.setStringKey(key, valueInteger(43));
+	read(valueInteger(43), 0);
+	root.setStringKey(key, valueNil());
+	holder.setStringKey(key, valueNil());
+	read(valueNil(), 2);
+	secondMeta.setStringKey(indexKey, valueBool(true));
+	read(valueNil(), 1);
+
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	read(valueInteger(41), 2);
+	// Reuse object pages after dropping the holder edge. A recycled record
+	// is not a valid holder unless the live __index member leads to it.
+	secondMeta.setStringKey(indexKey, valueNil());
+	cpu.collectHeap(receiver, valueString(key));
+	require(cpu.gcHeap().tableRecordAddress(holder.address()) == 0, "the old holder really retired");
+	auto reused = cpu.createTable(0, 4);
+	require(reused.address() == holder.address(), "the probe actually reuses the old owner's guest address");
+	reused.setStringKey(key, valueInteger(44));
+	read(valueNil(), 1);
+	secondMeta.setStringKey(indexKey, valueTable(reused.address()));
+	read(valueInteger(44), 2);
+}
+
 void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 	const auto key = cpu.stringPool().intern("native read field");
 	const auto indexKey = cpu.stringPool().intern("__index");
@@ -114,7 +188,7 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 		meta.setStringKey(indexKey, valueTable(parent.address())); table.setMetatableAddress(meta.address());
 		for (const Value value : values) for (const int prediction : {-1, 100000}) {
 			parent.setStringKey(key, value);
-			block->sideExits[0].tableCacheSlot = prediction;
+			block->sideExits[0].tableReadCache.receiverSlot = prediction;
 			ValueSlots registers(11); for (size_t i = 0; i < registers.capacity(); ++i) registers.set(i, valueInteger(73));
 			registers.set(0, valueTable(table.address())); registers.set(3, values[3]);
 			registers.set(4, values[0]); registers.set(5, valueString(key));
@@ -157,7 +231,7 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 			NativeBlockRunState stringState{.heap = &cpu.gcHeap(), .remainingCycles = 100};
 			require(block->run(stringRegisters.view(), stringState) == &block->terminal
 				&& stringRegisters.get(destination) == valueInteger(91), "the mixed site resolves its inherited string key");
-			const int stringHint = block->sideExits[0].tableCacheSlot;
+			const int stringHint = block->sideExits[0].tableReadCache.receiverSlot;
 			require(stringHint >= 0, "string resolution publishes a hint for this polymorphic GETT");
 			for (const auto key : {valueInteger(-17), valueFloat(-17.0f), objectKey}) {
 				ValueSlots registers(11);
@@ -168,7 +242,7 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 					&& state.remainingCycles == 100 - block->terminal.cycles - TABLE_INDEX_VISIT_CYCLES,
 					"sparse numeric and object keys resolve inherited raw values without a dispatch transition");
 			}
-			require(block->sideExits[0].tableCacheSlot == stringHint, "non-string misses keep the string hint at the mixed site");
+			require(block->sideExits[0].tableReadCache.receiverSlot == stringHint, "non-string misses keep the string hint at the mixed site");
 			ValueSlots registers(11);
 			registers.set(0, valueTable(table.address()));
 			registers.set(3, valueInteger(73));
@@ -729,6 +803,7 @@ int main() {
 	try {
 		Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
+		inheritedReadFollowsLiveOwners(cpu, memory);
 		readsRetainNativeFrame(cpu, memory);
 		numericFieldArithmeticKeepsNativeFrame(cpu, memory);
 		storesRetainNativeFrame(cpu, memory);

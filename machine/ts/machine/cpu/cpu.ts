@@ -508,7 +508,7 @@ export class CPU implements MappedPageInvalidator {
 		const result = this.tableLookupResult;
 		this.gc.tables.resolveStringIndexCached(this.tableIndexAddress(base), this.indexKey, key, page.tableCacheSlots[pageOffset], result);
 		this.chargeTableLookup(result);
-		page.tableCacheSlots[pageOffset] = result.slot;
+		if (result.extraVisits === 0 && result.slot >= 0) page.tableCacheSlots[pageOffset] = result.slot;
 		target.set(targetIndex, result.value);
 	}
 	private storeTableIndex(base: Value, key: Value, value: Value): void {
