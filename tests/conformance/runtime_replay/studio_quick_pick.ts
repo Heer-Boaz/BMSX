@@ -6,6 +6,7 @@ import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
+import type { ResourceQuickPickItem } from '../../../ide/workbench/contrib/resources/quick_access';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { testStudioQuickInputInteraction } from './studio_quick_input_interaction';
@@ -14,18 +15,26 @@ import { testStudioQuickInputInteraction } from './studio_quick_input_interactio
 export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	const { ide, harness, press, click, frame, until, clipboard, cycles, setPointerButton } = test;
 	console.info('STUDIO: workbench-owned quick input from real non-code panes');
-	harness.openLuaSource('scenes/root.lua');
+	// The title selector has an authored position; the root composition does not.
+	harness.openLuaSource('scenes/title.lua');
 	const model = harness.getActiveEditorDocument().model;
 	const original = model.buffer.getText();
 	const position = cycles();
 	const scene = await openSceneEditor(test);
-	await selectMember(test, scene, 2);
+	await selectMember(test, scene, 1);
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('quick pick: actual Scene Editor required');
 	const primary = ide.editor.mainWorkspace.primary;
 	if (!(primary instanceof ScenePrimaryClient)) throw new Error('Scene document must admit its actual companion controls');
 	const x = primary.details.control.controls[0];
 	const picker = ide.editor.quickInput;
+	const searchSceneFile = async () => {
+		await press('ControlLeft', 'KeyP');
+		await clipboard.writeText(model.resource.path);
+		await press('ControlLeft', 'KeyV');
+		check((picker.model.list.rows[0]?.item as ResourceQuickPickItem | undefined)?.resource === model.resource,
+			'quick pick: exact path selects the invoking Scene working copy');
+	};
 	await click(scene.view.details.properties[0].bounds);
 	const codeTop = editorViewState.editorAreaTop;
 	await press('ControlLeft', 'KeyP');
@@ -34,15 +43,16 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	check(editorViewState.editorAreaTop === codeTop && picker.layout.bounds.right === editorViewState.viewportWidth - 8,
 		'quick pick: overlay has its own viewport, not a code inline bar');
 	await testStudioQuickInputInteraction(test);
-	for (const code of ['KeyR', 'KeyO', 'KeyO', 'KeyT']) await press(code);
+	for (const code of ['KeyT', 'KeyI', 'KeyT', 'KeyL', 'KeyE']) await press(code);
 	await press('ControlLeft', 'KeyZ');
-	check(picker.field.text === 'roo' && model.buffer.getText() === original, 'quick pick: query Undo does not reach scene history');
+	check(picker.field.text === 'titl' && model.buffer.getText() === original, 'quick pick: query Undo does not reach scene history');
 	await press('ControlLeft', 'KeyY');
-	check(picker.field.text === 'root' && picker.model.list.rows[0].item.label === 'scenes/root.lua', 'quick pick: retained matches follow field Redo');
+	check(picker.field.text === 'title' && picker.model.list.rows.some(row => (row.item as ResourceQuickPickItem).resource === model.resource),
+		'quick pick: retained matches follow field Redo');
 	await press('Escape');
 	check(!picker.visible && inputFocus.target === x.field.focusTarget, 'quick pick: Escape restores the exact invoking property');
 
-	await press('Digit7');
+	await press('ControlLeft', 'KeyA'); await press('Digit7');
 	check(x.pending, 'quick pick: real property draft exists before navigation');
 	await press('ControlLeft', 'KeyP');
 	check(!x.pending && scene.view.details.properties[0].descriptor.value === 7, 'quick pick: the property owner commits valid blur, not the picker');
@@ -51,7 +61,7 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'quick pick: committed property remains one ordinary document Undo');
 	await click(scene.view.details.properties[0].bounds);
-	await press('Minus');
+	await press('ControlLeft', 'KeyA'); await press('Minus');
 	await press('ControlLeft', 'KeyP');
 	check(!x.pending && model.buffer.getText() === original, 'quick pick: invalid property blur follows its existing cancel policy');
 	await press('Escape');
@@ -83,9 +93,8 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	check(!picker.visible && test.ide.editor.menubar.activeMenu === undefined && inputFocus.target === x.field.focusTarget,
 		'quick pick: one outside held click cancels without clicking through into the View menu');
 
-	await test.openMenu('view');
-	const scenarioItem = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'scenarioLab')!;
-	await test.clickContextCommand(scenarioItem.command!);
+	await test.openMenu('tools');
+	await test.clickContextCommand('scenarioLab');
 	const scenario = ide.editor.editorParts.activeGroup.model.activeTab;
 	check(scenario.kind === 'scenario_lab', 'quick pick: actual Scenario Lab is active');
 	const scenarioFocus = inputFocus.target;
@@ -93,11 +102,10 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	check(picker.visible && ide.editor.editorParts.activeGroup.model.activeTab === scenario, 'quick pick: file search is visible without leaving Scenario Lab');
 	await press('Escape');
 	check(inputFocus.target === scenarioFocus, 'quick pick: Scenario Lab regains its own focus');
-	await press('ControlLeft', 'KeyP');
-	for (const code of ['KeyR', 'KeyO', 'KeyO', 'KeyT']) await press(code);
+	await searchSceneFile();
 	await press('Enter');
 	await until(() => ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model,
-		'quick pick: Scenario Lab selection opens the exact retained root document through normal navigation');
+		'quick pick: Scenario Lab selection opens the exact retained Scene source through normal navigation');
 
 	// A lower code widget must not consume the popup's Escape.
 	await press('ControlLeft', 'KeyF');
@@ -112,8 +120,7 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	check(!ide.editor.isActive && !picker.visible, 'quick pick: IDE deactivation closes the transient input through blur');
 	await press('ControlRight', 'ShiftRight');
 	check(ide.editor.isActive && ide.editor.editorParts.activeGroup.model.activeTab === scene && !picker.visible, 'quick pick: IDE reopen restores the scene, not an orphaned popup');
-	await press('ControlLeft', 'KeyP');
-	for (const code of ['KeyR', 'KeyO', 'KeyO', 'KeyT']) await press(code);
+	await searchSceneFile();
 	const bounds = picker.model.viewport.bounds;
 	await click({ left: bounds.left, right: bounds.right,
 		top: bounds.top, bottom: bounds.top + picker.model.rowHeight }, 8);

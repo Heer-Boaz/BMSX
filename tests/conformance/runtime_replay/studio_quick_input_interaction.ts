@@ -53,9 +53,14 @@ export async function testStudioQuickInputInteraction(test: StudioFixture): Prom
 	check(picker.field.text === '', 'A06: query Undo restores the initial catalog without touching source history');
 	const thumb = view.scrollbar.getThumb()!;
 	movePointer(thumb); await frame(); setPointerButton('pointer_primary', true); await frame();
-	ide.editor.preferences.fontVariant = 'msx'; await frame();
-	check(!pointerCapture.active && picker.visible, 'A06: publishing changed popup geometry cancels the old thumb gesture');
+	check(pointerCapture.active, 'A06: the old thumb is held before relayout');
+	const revision = view.revision, fontSize = ide.editor.preferences.fontSize;
+	// A family change can leave geometry identical now that size is specified in CSS pixels.
+	ide.editor.preferences.fontSize = fontSize + 6; await frame();
+	check(view.revision !== revision && !pointerCapture.active && picker.visible,
+		'A06: publishing changed popup geometry cancels the old thumb gesture');
 	setPointerButton('pointer_primary', false); await frame();
+	ide.editor.preferences.fontSize = fontSize;
 	ide.editor.preferences.fontVariant = font; await frame(); await frame();
 	console.info('STUDIO: quick input scope / scrollbar / release / query / font / boundary keys PASS');
 }
