@@ -6,6 +6,7 @@ import { createStudioServer } from '../helpers/studio_server.mjs';
 import { createSharedCodexFixture } from '../helpers/codex_shared_server';
 import { createCodexModelFixture, CODEX_FIXTURE_WAIT } from '../helpers/codex_model_fixture.mjs';
 import { openBrowserTestPage, pressStudioChord, waitForBrowserFrame } from '../helpers/browser_test_pages';
+import type { AssistantHistoryPage } from '../../hosts/common/assistant_protocol';
 
 const reply = 'The response belongs to the native conversation.';
 
@@ -54,14 +55,30 @@ test('real Studio: choose the native conversation, follow work, resize and close
 	awaiting = 'the conversation history command';
 	await pressStudioChord(page, 'ControlRight+ShiftRight');
 	await pressStudioChord(page, 'Control+Shift+p');
-	await page.keyboard.type('Codex CLI Choose Conversation');
+	const command = 'Codex CLI Choose Conversation';
+	await page.keyboard.type(command);
+	const palette = await page.waitForFunction(search => {
+		const focused = document.activeElement;
+		return focused instanceof HTMLTextAreaElement && !focused.readOnly && focused.value === search ? focused : null;
+	}, command);
 	const history = page.waitForResponse(response => response.url().endsWith('/conversations/command') && response.request().postDataJSON().type === 'history');
 	await pressStudioChord(page, 'Enter');
-	assert.equal((await history).status(), 200);
+	const listed = await history;
+	assert.equal(listed.status(), 200);
+	const historyPage: AssistantHistoryPage = await listed.json();
+	assert.ok(historyPage.threads.some(candidate => candidate.id === thread.id));
+	awaiting = 'the history picker to own browser text focus';
+	await page.waitForFunction(previous => {
+		const focused = document.activeElement;
+		return !previous.isConnected && focused instanceof HTMLTextAreaElement && !focused.readOnly && focused.value === '';
+	}, palette);
+	await palette.dispose();
 	awaiting = 'the conversation open command';
 	const selected = page.waitForResponse(response => response.url().endsWith('/conversations/command') && response.request().postDataJSON().type === 'open');
 	await pressStudioChord(page, 'Enter');
-	assert.equal((await selected).status(), 204);
+	const opened = await selected;
+	assert.equal(opened.status(), 204);
+	assert.equal(opened.request().postDataJSON().id, thread.id);
 	awaiting = 'the second offline Codex turn to start';
 	const next = await native.owner.request<any>('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Keep working while I inspect the Studio view.', text_elements: [] }] });
 	await working.promise;

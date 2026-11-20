@@ -1,4 +1,5 @@
 import { after, type TestContext } from 'node:test';
+import { addAbortListener } from 'node:events';
 import { chromium, type Browser, type BrowserContextOptions, type Page } from 'playwright';
 import { afterTest } from './test_cleanup';
 
@@ -24,7 +25,12 @@ export async function openBrowserTestPage(t: TestContext, options?: BrowserConte
 		browsers.set(profile, pending);
 	}
 	const page = await (await pending).newPage(options);
-	afterTest(t, () => page.close());
+	let closing: Promise<void> | undefined;
+	const close = () => closing ??= page.close();
+	const cancel = addAbortListener(t.signal, () => {
+		void close().catch(error => t.diagnostic(`Closing cancelled browser page: ${String(error)}`));
+	});
+	afterTest(t, () => { cancel[Symbol.dispose](); return close(); });
 	return page;
 }
 
