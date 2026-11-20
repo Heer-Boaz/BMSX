@@ -81,6 +81,27 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 			const auto expected = mutation < 2 ? values[0] : mutation == 2 ? valueInteger(91) : valueNil();
 			require(registers.get(destination) == expected, "predictions validate current raw keys and never retain a stale inherited Value");
 		}
+		if (op == OpCode::GETT) {
+			const auto objectKey = valueTable(table.address());
+			meta.setStringKey(indexKey, valueTable(parent.address()));
+			parent.set(valueInteger(-17), values[0]);
+			parent.set(objectKey, values[0]);
+			for (const auto key : {valueInteger(-17), valueFloat(-17.0f), objectKey}) {
+				ValueSlots registers(11);
+				registers.set(0, valueTable(table.address()));
+				registers.set(5, key);
+				NativeBlockRunState state{.registers = registers.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
+				require(block->run(state) == &block->terminal && registers.get(destination) == values[0]
+					&& state.remainingCycles == 100 - block->terminal.cycles - TABLE_INDEX_VISIT_CYCLES,
+					"sparse numeric and object keys resolve inherited raw values without a dispatch transition");
+			}
+			ValueSlots registers(11);
+			registers.set(0, valueTable(table.address()));
+			registers.set(3, valueInteger(73));
+			NativeBlockRunState state{.registers = registers.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
+			require(block->run(state)->exit == NativeBlockExit::ReadIndex && registers.get(9) == valueNil(),
+				"a nil key still takes the precise side exit without executing the suffix");
+		}
 		// A real bounded-chain error still takes the precise semantic side exit.
 		meta.setStringKey(indexKey, valueTable(table.address()));
 		ValueSlots registers(11); for (size_t i = 0; i < registers.capacity(); ++i) registers.set(i, valueInteger(73));

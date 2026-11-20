@@ -80,6 +80,14 @@ return n`,
 		tables: `local t = { x = 1, y = 2, 3, 4 }
 for i = 1, ${iterations} do t.x = t.x + 1; t[1] = t.x; t.y = t[1] + t[2] end
 return t.x, t.y`,
+		sparse_index: `local ref = {}
+local t = { [-3] = 5, [65537] = 7, [ref] = 11 }
+local n = 0
+for i = 1, ${iterations} do
+  local key = (i & 1) == 0 and -3 or 65537
+  n = n + t[key] + t[ref]
+end
+return n`,
 		calls: `local function step(x, y) return ((x << 1) ~ y) & 65535 end
 local n = 1
 for i = 1, ${iterations} do n = step(n, i) end

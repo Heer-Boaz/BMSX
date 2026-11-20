@@ -16,7 +16,7 @@ class GcHeap;
 inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
 inline constexpr int TABLE_STORE_REQUIRES_GROWTH = -2;
 
-enum class TableLookupStatus : u32 { Resolved, ChainExhausted };
+enum class TableLookupStatus : u32 { Resolved, ChainExhausted, NilKey };
 
 // Transient semantic result, not a guest allocation or a predicted-probe counter.
 struct TableLookupResult {
@@ -26,7 +26,11 @@ struct TableLookupResult {
 	TableLookupStatus status;
 };
 
-struct TableReadRequest { u32 address; StringId key, indexKey; };
+struct TableReadRequest {
+	u32 address, keyWord;
+	StringId indexKey;
+	u32 keyTag;
+};
 
 enum class TableHeader : u32 {
 	Kind = 0, Gray = 4, Metatable = 8, Storage = 12, Array = 16, Hash = 20, Length = 24, Free = 28,
@@ -109,6 +113,7 @@ public:
 	// The caller commits result only when the returned chain status succeeds.
 	static void loadStringIndex(const TableRecord* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept;
 	static void loadStringIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result) noexcept;
+	static void loadIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result) noexcept;
 	// Pure boundary search; also the generated-code entry point.
 	static i32 length(const TableRecord* table, u32* probes = nullptr) noexcept;
 	void clear();

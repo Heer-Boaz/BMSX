@@ -459,7 +459,21 @@ void TableRecord::loadStringIndex(const TableRecord* table, StringId indexKey, S
 }
 
 void TableRecord::loadStringIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result) noexcept {
-	TableRecord(*heap, request.address).resolveStringIndexCached(request.indexKey, request.key, -1, result);
+	TableRecord(*heap, request.address).resolveStringIndexCached(request.indexKey, request.keyWord, -1, result);
+}
+
+void TableRecord::loadIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result) noexcept {
+	const auto tag = static_cast<ValueTag>(request.keyTag);
+	if (tag == ValueTag::Nil) {
+		result.status = TableLookupStatus::NilKey;
+		return;
+	}
+	const Value key = valueFromTag(tag, request.keyWord);
+	const TableRecord table(*heap, request.address);
+	if (table.metatableAddress())
+		table.resolveIndex(request.indexKey, key, result);
+	else
+		result = {table.get(key), -1, 0u, TableLookupStatus::Resolved};
 }
 
 int TableRecord::setStringKey(StringId key, const Value& value) {

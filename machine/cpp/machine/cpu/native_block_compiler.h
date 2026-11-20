@@ -47,9 +47,12 @@ private:
 	void emitUpvalue(const DecodedInstruction&, NativeBlockExitSite*);
 	void emitControl(const DecodedInstruction&, NativeBlockExitSite*);
 	void emitTableAccess(const DecodedInstruction&, NativeBlockExitSite&);
-	void emitArraySlot(bool load, int value, NativeBlockExitSite&);
+	std::array<sljit_jump*, 2> emitArrayRead();
+	void emitArrayStore(int value, NativeBlockExitSite&);
+	void emitIndexRead(int key, NativeBlockExitSite&);
 	void emitStringSlot(bool load, int value, NativeBlockExitSite&);
-	void emitTableSlotTransfer(bool load, int value);
+	void emitTableReadLeaf(bool stringKey, NativeBlockExitSite&);
+	void emitTableSlotStore(int value);
 	void emitTableSlotOffset(sljit_s32 destination, bool word);
 	void emitTableSlotLoad(sljit_s32 destination, bool word);
 	void emitTableWriteWatch(NativeBlockExitSite&, bool arraySlot);
