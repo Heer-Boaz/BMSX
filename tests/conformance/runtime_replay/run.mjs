@@ -84,7 +84,10 @@ try {
 	const failures = new Set();
 	for (const result of await Promise.allSettled(jobs)) if (result.status === 'rejected') failures.add(result.reason);
 	if (failures.size !== 0) throw new AggregateError(failures, 'Runtime replay conformance failed');
+	rmSync(artifacts, { recursive: true, force: true });
+} catch (error) {
+	if (artifacts !== undefined) console.error(`Replay evidence retained at ${artifacts}`);
+	throw error;
 } finally {
-	if (artifacts !== undefined) rmSync(artifacts, { recursive: true, force: true });
 	rmSync(preloadDirectory, { recursive: true, force: true });
 }
