@@ -89,7 +89,7 @@ export type ProgramMetadata = ProgramRuntimeSymbols & {
 	staticScopes: ProgramStaticScopes;
 	traceStatements: TraceStatementSelection;
 	preloadModules: readonly string[];
-	/** Entry and canonical compilation inputs, including modules without runtime code. */
+	/** The actual entry module first, then canonical inputs including modules without runtime code. */
 	compiledModulePaths: readonly string[];
 	functionDefinitionsByProto: ReadonlyArray<SourceRange | null>;
 	protoDisplayNames: string[];

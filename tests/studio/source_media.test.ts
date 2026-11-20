@@ -28,7 +28,7 @@ test('new imports admit source-only library dependencies without parsing unrelat
 		...registry.records[0], resid: path, source_path: `${path}.lua`, normalized_source_path: `${path}.lua`,
 		module_path: path, src: source, base_src: source, program_module: installed, sourceKind,
 	});
-	const selected = collectProgramSources(registry, registry.entrySourcePath, []);
+	const selected = collectProgramSources(registry, 'entry', []);
 	assert.deepEqual(selected.modules.map(module => module.path), ['cartlib/world/world', 'cartlib/registry']);
 	assert.equal(selected.parsed.has('cartlib/unused'), false);
 	assert.equal(selected.parsed.has('example_assert'), false);
@@ -86,7 +86,7 @@ for (const included of [false, true]) {
 			buffer: encoder.encode(source), program_module: !included }]);
 		const installed = new Map([['entry', originalSource]]);
 		if (!included) installed.set(path, source);
-		const selected = collectProgramSources(registry, registry.entrySourcePath, []);
+		const selected = collectProgramSources(registry, 'entry', []);
 		const changes = buildLuaSourceAssetChanges(layer, registry, installed, selected.parsed, undefined);
 		const published = changes.assetReplacements!.get('lua')!.get(path)!;
 		assert.equal(published.program_module, included);
@@ -99,7 +99,7 @@ for (const includeLua of [true, false]) {
 	test(`${includeLua ? 'editing' : 'adding'} Lua preserves a texture with the same asset name`, () => {
 		const layer = sourceLayer(includeLua);
 		const registry = sourceRegistry();
-		const selected = collectProgramSources(registry, registry.entrySourcePath, []);
+		const selected = collectProgramSources(registry, 'entry', []);
 		const changes = buildLuaSourceAssetChanges(
 			layer, registry, new Map(includeLua ? [['entry', originalSource]] : []), selected.parsed, undefined,
 		);

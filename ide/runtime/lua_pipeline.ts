@@ -226,10 +226,11 @@ export function buildBlua32Media(
 	if (request.system !== null) {
 		const imageOffset = sources.systemRom.header.blua32ImageOffset;
 		const imageAddress = SYSTEM_ROM_BASE + imageOffset;
+		const metadata = installedSystem.symbols!.metadata;
 		const selected = request.system === 'workspace'
-			? collectProgramSources(systemRegistry, systemRegistry.entrySourcePath,
-				[...installedSystem.symbols!.metadata.preloadModules, ...BIOS_FUNCTION_EXPORTS.map(exported => exported.path)])
-			: collectInstalledProgramSources(installedSystem.sources, installedSystem.symbols!.metadata.compiledModulePaths);
+			? collectProgramSources(systemRegistry, metadata.compiledModulePaths[0],
+				[...metadata.preloadModules, ...BIOS_FUNCTION_EXPORTS.map(exported => exported.path)])
+			: collectInstalledProgramSources(installedSystem.sources, metadata.compiledModulePaths);
 		const assetChanges: Blua32PublicAssetChanges = request.system === 'workspace'
 			? buildLuaSourceAssetChanges(sources.systemRom, systemRegistry, sources.systemInstalledBlua32Sources, selected.parsed, assetEdits?.[0])
 			: { assetEdits: assetEdits?.[0] };
@@ -312,10 +313,17 @@ export function buildBlua32Media(
 		// A BIOS relink must not admit pending cart edits merely because its imports changed.
 		const sourceSelection = request.cartridgeSlots[slot] ?? 'installed';
 		const context = sources.catalog.getContext(cartridge.contextId);
-		const selected = sourceSelection === 'workspace'
-			? collectProgramSources(context.luaSources, entry?.domain === slot ? entry.sourcePath : context.luaSources.entrySourcePath,
-				installed.symbols!.metadata.preloadModules)
-			: collectInstalledProgramSources(installed.sources, installed.symbols!.metadata.compiledModulePaths);
+		const metadata = installed.symbols!.metadata;
+		let selected: ProgramSources;
+		if (sourceSelection === 'workspace') {
+			// Reboot and Hot Resume keep the installed program's root. Only an
+			// explicit boot entry selection changes it.
+			const registry = context.luaSources;
+			const entryModule = mode === 'boot' && entry?.domain === slot
+				? entry.sourcePath === undefined ? undefined : registry.path2lua[entry.sourcePath].module_path
+				: metadata.compiledModulePaths[0];
+			selected = collectProgramSources(registry, entryModule, metadata.preloadModules);
+		} else selected = collectInstalledProgramSources(installed.sources, metadata.compiledModulePaths);
 		const assetChanges: Blua32PublicAssetChanges = sourceSelection === 'workspace'
 			? buildLuaSourceAssetChanges(cartridge.rom, context.luaSources, cartridge.installedBlua32Sources, selected.parsed, assetEdits?.[slot + 1])
 			: { assetEdits: assetEdits?.[slot + 1] };

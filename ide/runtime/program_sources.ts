@@ -24,7 +24,7 @@ export type ProgramSources = {
 /** Workspace membership is not executable membership. Libraries are parsed only on demand. */
 export function collectProgramSources(
 	registry: LuaSourceRegistry,
-	entrySourcePath: string | undefined, moduleRoots: readonly string[],
+	entryModulePath: string | undefined, moduleRoots: readonly string[],
 ): ProgramSources {
 	const available = new Map(registry.records.filter(record => record.sourceKind !== 'source-only').map(record => [record.module_path, record]));
 	const parsed = new Map<string, ProgramSourceModule>();
@@ -42,8 +42,8 @@ export function collectProgramSources(
 	for (const record of available.values()) {
 		if (record.sourceKind === 'project') project.push(load(record.module_path));
 	}
-	const entry = entrySourcePath === undefined
-		? project[resolveLuaEntryModuleIndex(project)] : load(registry.path2lua[entrySourcePath].module_path);
+	const entry = entryModulePath === undefined
+		? project[resolveLuaEntryModuleIndex(project)] : load(entryModulePath);
 	const roots = [...moduleRoots];
 	for (const record of available.values()) if (record.generated) roots.push(record.module_path);
 	const included = new Set(collectLuaModuleDependencyClosure(

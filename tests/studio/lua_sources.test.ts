@@ -176,7 +176,7 @@ test('packed Scenario sources in the library tree keep their source-only role', 
 	});
 	const registry = buildLuaSources(source, source, makeIndex([entry, scenario]), 'cart', 'entry', []);
 	assert.equal(registry.path2lua[testPath].sourceKind, 'source-only');
-	const selected = collectProgramSources(registry, registry.entrySourcePath, []);
+	const selected = collectProgramSources(registry, 'entry', []);
 	assert.equal(selected.parsed.has('cartlib/example_assert'), false);
 });
 
