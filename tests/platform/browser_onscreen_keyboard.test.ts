@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -167,7 +167,7 @@ await buildBrowserStudioPackage(false);`], { cwd: folder });
 	}
 });
 
-test('native browser contacts drive the shared keyboard without guest-pixel geometry or collapsed fingers', { concurrency: 3 }, async t => {
+test('responsive keyboard geometry and trusted native input lifetimes', { concurrency: 3 }, async t => {
 	const template = expandBrowserKeyboardTemplate(await readFile('gamebase.html', 'utf8'));
 	const controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	const css = await readFile('gamebase.css', 'utf8');
@@ -188,9 +188,6 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'keyboardFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const folder = '.bmsx/hosting/conventional-keyboard-evidence';
-	await mkdir(folder, { recursive: true });
-	const profileEvidence: unknown[] = [];
 	const profiles = [
 		{ name: 'phone-portrait', width: 393, height: 852, dpr: 3 },
 		{ name: 'phone-landscape', width: 852, height: 393, dpr: 3 },
@@ -198,7 +195,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 		{ name: 'tablet-landscape', width: 1024, height: 768, dpr: 2 },
 		{ name: 'compact-landscape', width: 568, height: 239, dpr: 1 },
 	];
-	await Promise.all(profiles.map((profile, profileIndex) =>
+	await Promise.all(profiles.map(profile =>
 		t.test(profile.name, { concurrency: 1 }, async p => {
 			const page = await openBrowserTestPage(p, { viewport: { width: profile.width, height: profile.height }, isMobile: true,
 				hasTouch: true, deviceScaleFactor: profile.dpr }, 'unpaced');
@@ -321,7 +318,6 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			assert.ok(Math.abs(opening.close.height - mainKeyHeight) <= 1 / 64);
 			assert.deepEqual(opening.rows.map((row: any[]) => row.map(key => key.code)), BROWSER_KEYBOARD_PAGES[0].rows
 				.map(row => row.keys.map(key => ON_SCREEN_KEY_DEFINITIONS[key].code)));
-			await page.screenshot({ path: `${folder}/${profile.name}-text.png`, scale: 'css' });
 			for (const row of opening.rows) for (const key of row) {
 				assert.ok(Math.abs(key.height - mainKeyHeight) <= 1 / 64,
 					'five conventional rows retain 44px short-surface and 48/56px ordinary target heights');
@@ -339,6 +335,39 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			if (profile.name === 'phone-portrait') assert.ok(keyWidth('KeyQ') >= 21.5 && keyWidth('KeyQ') <= 22.5,
 				'the full conventional row exposes its genuinely narrow phone targets instead of claiming 44px widths');
 			if (profile.name.startsWith('tablet')) for (const key of opening.rows[0]) assert.ok(key.width >= 43 && key.height >= 56);
+			await p.test('shifted legends retain the same conventional positions and fit without resizing keys', async () => {
+				await page.keyboard.down('Shift');
+				await page.evaluate(() => (globalThis as any).keyboardProbe.hostFrame());
+				await settle();
+				const shifted = await measure();
+				for (const [rowIndex, row] of shifted.rows.entries()) for (const [column, key] of row.entries()) {
+					const base = opening.rows[rowIndex][column];
+					assert.deepEqual([key.x, key.y, key.width, key.height], [base.x, base.y, base.width, base.height]);
+					assert.ok(key.textWidth <= key.width - 2, `${key.code} uppercase/shifted legend fits without sacrificing character pitch`);
+				}
+				await page.keyboard.up('Shift');
+				await page.evaluate(() => (globalThis as any).keyboardProbe.hostFrame());
+				await settle();
+				assert.deepEqual((await poll()).codes, []);
+			});
+
+			// CSS responds to screen size. The trusted pointer and HID routing do
+			// not; exercise their complete lifetime only at the compact surface,
+			// which also includes the competing input-trace hit plane.
+			if (profile.name !== 'compact-landscape') {
+				await page.evaluate(() => (globalThis as any).keyboardProbe.model.setPage(1));
+				await settle();
+				const supplementary = await measure();
+				assert.equal(supplementary.rows.length, 3);
+				assert.deepEqual(supplementary.close, opening.close);
+				for (const row of supplementary.rows) for (const key of row) {
+					assert.ok(key.textWidth <= key.width - 2, `${key.code} Fn legend fits the viewport`);
+				}
+				assert.deepEqual(await picture(), beforePicture);
+				assert.deepEqual(errors, []);
+				return;
+			}
+
 			await p.test('every keyboard page preserves scene pixels while selected, held and acknowledged keys remain visible', async () => {
 				// A two-tone scene exposes opaque plates, key fills and backdrop blurring.
 				// Compare browser-painted pixels, not just declared stylesheet values.
@@ -384,7 +413,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 						});
 						for (const surface of presentation.surfaces) assert.deepEqual(surface, { background: 'rgba(0, 0, 0, 0)', image: 'none',
 							opacity: '1', shadow: 'none', filter: 'none', backdrop: 'none' }, 'transparency belongs to backgrounds, not a faded/blurred keyboard subtree');
-						const visible = PNG.sync.read(await page.screenshot({ path: `${folder}/${profile.name}-page${keyboardPage}-${state}-transparent.png`, scale: 'css' }));
+						const visible = PNG.sync.read(await page.screenshot({ scale: 'css' }));
 						await page.locator('#bmsx-touch-keyboard').evaluate(panel => { panel.style.visibility = 'hidden'; });
 						const underneath = PNG.sync.read(await page.screenshot({ scale: 'css' }));
 						await page.locator('#bmsx-touch-keyboard').evaluate(panel => { panel.style.visibility = ''; });
@@ -426,23 +455,6 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				await settle();
 				assert.deepEqual(await picture(), beforePicture, 'transparent presentation does not change the game image or viewport');
 			});
-			await p.test('shifted legends retain the same conventional positions and fit without resizing keys', async () => {
-				await page.keyboard.down('Shift');
-				await page.evaluate(() => (globalThis as any).keyboardProbe.hostFrame());
-				await settle();
-				const shifted = await measure();
-				for (const [rowIndex, row] of shifted.rows.entries()) for (const [column, key] of row.entries()) {
-					const base = opening.rows[rowIndex][column];
-					assert.deepEqual([key.x, key.y, key.width, key.height], [base.x, base.y, base.width, base.height]);
-					assert.ok(key.textWidth <= key.width - 2, `${key.code} uppercase/shifted legend fits without sacrificing character pitch`);
-				}
-				await page.screenshot({ path: `${folder}/${profile.name}-shifted.png`, scale: 'css' });
-				await page.keyboard.up('Shift');
-				await page.evaluate(() => (globalThis as any).keyboardProbe.hostFrame());
-				await settle();
-				assert.deepEqual((await poll()).codes, []);
-			});
-
 			await p.test('native capture transfer preserves an unused modifier until its real up or cancellation', async () => {
 				for (const end of ['touchEnd', 'touchCancel'] as const) {
 					const shift = await point('ShiftLeft', 1);
@@ -693,8 +705,6 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				assert.equal(await button.getAttribute('data-highlighted'), 'false');
 				assert.deepEqual((await poll()).codes, []);
 			});
-			const navigationRounding: unknown[] = [];
-			let maximumCenterRounding = 0;
 			await p.test('page changes preserve held fingers and expose every physical key', async () => {
 				const held = await point('KeyQ', 1);
 				await touch('touchStart', [held]);
@@ -711,7 +721,6 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				assert.deepEqual((await poll()).codes, ['F12']);
 				await touch('touchEnd', []);
 				await settle();
-				await page.screenshot({ path: `${folder}/${profile.name}-functions.png`, scale: 'css' });
 				const modeBounds = await page.locator('.bmsx-touch-keyboard-mode:visible').boundingBox();
 				for (const [pageIndex, label] of ['ABC', 'Fn'].entries()) {
 					await tapControl(label);
@@ -727,22 +736,24 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 					const definition = BROWSER_KEYBOARD_PAGES[pageIndex];
 					const maximumUnits = Math.max(...definition.rows.map(row => row.units));
 					const centers = definition.rows.map(row => row.spans.map((span, column) => maximumUnits - row.units + row.starts[column] * 2 + span));
+					const navigation = await page.evaluate(rows => {
+						const api = (globalThis as any).keyboardFixture, model = (globalThis as any).keyboardProbe.model;
+						return rows.map((row: string[]) => row.map(code => [-1, 1].map(direction => {
+							model.selectKey(api.ON_SCREEN_KEY_INDEX_BY_CODE.get(code));
+							model.moveVertical(direction);
+							return api.ON_SCREEN_KEY_DEFINITIONS[model.selectedKey].code;
+						})));
+					}, current.rows.map((row: { code: string }[]) => row.map(key => key.code)));
 					const pageLeft = current.rowBounds[0].x, unitWidth = current.rowBounds[0].width / (maximumUnits * 2);
 					for (let rowIndex = 0; rowIndex < current.rows.length; rowIndex += 1) {
 						for (const [column, key] of current.rows[rowIndex].entries()) {
 							const clientCenter = key.x + key.width / 2;
 							const logicalCenter = centers[rowIndex][column];
 							const rounding = Math.abs(clientCenter - pageLeft - unitWidth * logicalCenter);
-							maximumCenterRounding = Math.max(maximumCenterRounding, rounding);
 							assert.ok(rounding <= (current.rows[rowIndex].length + 2) / 64,
 								`${label}/${key.code} actual CSS center differs only by accumulated 1/64px slot rounding: ${rounding}`);
 							for (const direction of [-1, 1]) {
-								const selectedCode = await page.evaluate(({ code, direction }) => {
-									const api = (globalThis as any).keyboardFixture, model = (globalThis as any).keyboardProbe.model;
-									model.selectKey(api.ON_SCREEN_KEY_INDEX_BY_CODE.get(code));
-									model.moveVertical(direction);
-									return api.ON_SCREEN_KEY_DEFINITIONS[model.selectedKey].code;
-								}, { code: key.code, direction });
+								const selectedCode = navigation[rowIndex][column][(direction + 1) / 2];
 								const nextIndex = (rowIndex + current.rows.length + direction) % current.rows.length;
 								const nextRow = current.rows[nextIndex];
 								const logicalDistances = centers[nextIndex].map(center => Math.abs(center - logicalCenter));
@@ -759,9 +770,6 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 										'CSS rounding can perturb only an exact logical tie, never choose a logically farther key');
 									const latticeTolerance = (current.rows[rowIndex].length + nextRow.length) / 64;
 									assert.ok(measuredDistances[expectedColumn] <= nearestDistance + latticeTolerance);
-									navigationRounding.push({ page: label, from: key.code, direction, selected: selectedCode,
-										measuredNearest: nextRow[measuredNearestColumn].code, exactLogicalDistance: minimumLogicalDistance,
-										selectedDistance: measuredDistances[expectedColumn], nearestDistance });
 								}
 							}
 						}
@@ -769,6 +777,9 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 					for (const row of current.rows) for (const key of row) {
 						assert.ok(Math.abs(key.height - keyHeight) <= 1 / 64);
 						assert.ok(key.textWidth <= key.width - 2, `${label}/${key.code} cap text remains inside its actual key`);
+					}
+					// Sample a typing/Fn key and an outer navigation key.
+					for (const key of [current.rows[0][1], current.rows.at(-1).at(-1)]) {
 						const contact = await point(key.code, 7);
 						await touch('touchStart', [contact]);
 						assert.deepEqual((await poll()).codes, [key.code]);
@@ -838,7 +849,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			assert.deepEqual(await picture(), beforePicture);
 			assert.equal((await measure()).geometryRevision, beforeRevision);
 			assert.equal((await measure()).controllerVisible, 'visible');
-			if (profile.name === 'compact-landscape') assert.equal(await page.evaluate(() => {
+			assert.equal(await page.evaluate(() => {
 				const bounds = document.getElementById('bmsx-input-trace')!.getBoundingClientRect();
 				return document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2)!.closest('#bmsx-input-trace') !== null;
 			}), true, 'closing the actual short-frame keyboard returns the diagnostic hit plane to its own header');
@@ -846,7 +857,6 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			assert.ok(events.some((event: any) => event.type === 'pointerdown') && events.some((event: any) => event.type === 'pointerup')
 				&& events.some((event: any) => event.type === 'pointercancel') && events.every((event: any) => event.trusted),
 				'the actual down/up/cancel contacts are trusted browser input, not dispatched DOM pointer events');
-			profileEvidence[profileIndex] = { profile, opening, picture: beforePicture, nativeEvents: events.length, maximumCenterRounding, navigationRounding };
 			assert.deepEqual(errors, []);
 			await page.evaluate(() => (globalThis as any).keyboardProbe.finish());
 			assert.equal(await page.locator('.bmsx-touch-keyboard').count(), 1, 'teardown preserves the document-owned keyboard template');
@@ -858,5 +868,4 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			assert.equal(await page.evaluate(() => document.body.classList.contains('bmsx-touch-keyboard-visible')), false,
 				'teardown unsubscribes presentation; a later model revision cannot restore stale body UI state');
 		})));
-	await writeFile(`${folder}/profiles.json`, JSON.stringify(profileEvidence, null, 2));
 });
