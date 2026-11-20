@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { mkdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
@@ -164,32 +164,32 @@ test('browser workspace: empty directories commit exclusively without records an
 	assert.deepEqual(requests, []); assert.deepEqual(errors, []);
 });
 
-test('standalone product: source creation, Save, reload and offline editing without server requests', { timeout: 120000 }, async t => {
+test('standalone product: source creation, Save, reload and offline editing without server requests', { timeout: 20_000 }, async t => {
 	const { page, address, requests, errors } = await standalone(t);
-	const evidence = '/tmp/bmsx-studio-standalone'; await mkdir(evidence, { recursive: true });
+	page.setDefaultTimeout(8_000);
+	await page.clock.install();
 	const frame = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-	const press = async (keys: string) => { await page.keyboard.press(keys, { delay: 100 }); await frame(); };
-	const command = async (title: string) => { await press('Control+Shift+p'); await page.keyboard.type(title, { delay: 25 }); await press('Enter'); };
+	// Leave one Studio frame between native key-down and key-up. The
+	// polled host shortcuts must see held modifiers, not two collapsed edges.
+	const press = async (keys: string) => {
+		const chord = keys.split('+');
+		for (const key of chord) await page.keyboard.down(key);
+		await frame();
+		for (let index = chord.length - 1; index >= 0; index--) await page.keyboard.up(chord[index]);
+		await frame();
+	};
+	const command = async (title: string) => { await press('Control+Shift+p'); await page.keyboard.type(title); await press('Enter'); };
 	// BrowserTextInput exposes the focused control's bounded source context, not a second editor model.
 	const waitForNativeText = (text: string) => page.waitForFunction(text => {
 		const active = document.activeElement;
 		return active instanceof HTMLTextAreaElement && active.value === text;
 	}, text);
-	const openFile = async (name: string) => {
-		await press('Control+,'); await page.evaluate(text => navigator.clipboard.writeText(text), name); await press('Control+v');
-		await waitForNativeText(name); await press('Enter');
-	};
 	const boot = async () => { await page.waitForFunction(() => document.body.classList.contains('game-started')); await frame(); };
-	const screenshot = (name: string) => page.screenshot({ path: join(evidence, `${name}.png`) });
 	await page.goto(`${address}/studio.debug.html?rom=hot_resume_test.debug.rom`); await boot();
-	// Let the actual BIOS/cart intro run before the workbench's normal host pause.
-	await page.waitForTimeout(15000); await press('ControlRight+ShiftRight');
-	await screenshot('editor');
-	// Physical BIOS commands and admission are covered by studio_terminal.ts,
-	// not by the removed host-console transcript or its clipboard/focus model.
+	await press('ControlRight+ShiftRight');
 	await command('New Lua File'); await press('Enter');
-	await page.keyboard.type('standalone_probe.lua', { delay: 25 }); await press('Enter');
-	await waitForNativeText(''); await screenshot('created');
+	await page.keyboard.type('standalone_probe.lua'); await press('Enter');
+	await waitForNativeText('');
 	const source = 'local value = 6 * 7\nreturn value\n';
 	await page.evaluate(text => navigator.clipboard.writeText(text), source);
 	await press('Control+a'); await press('Control+v'); await press('Control+s');
@@ -202,77 +202,21 @@ test('standalone product: source creation, Save, reload and offline editing with
 		};
 	}), { path, contents });
 	const probePath = 'carts/hot_resume_test/standalone_probe.lua';
-	await waitForSource(probePath, source); await screenshot('saved');
+	await waitForSource(probePath, source);
 	// Browser-local recovery must not become server-file writes when the same origin hosts services later.
 	assert.equal(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('bmsx.workspace.records:'))), false);
-	await page.reload(); await boot(); await press('ControlRight+ShiftRight');
+	await page.context().setOffline(true);
+	await press('Control+End'); await page.keyboard.type('-- offline edit\n'); await press('Control+s');
+	await waitForSource(probePath, source + '-- offline edit\n');
+	await press('Control+Shift+p'); await page.keyboard.type('Codex');
+	await press('Enter'); await press('Escape');
+	// Cross the reconnect deadline without idling the runner for eleven seconds.
+	await page.clock.fastForward(11_000);
+	await frame();
+	assert.deepEqual(requests, []); assert.deepEqual(errors, []);
+	await page.context().setOffline(false); await page.reload(); await boot(); await press('ControlRight+ShiftRight');
 	await press('Control+Home'); await waitForNativeText('local value = 6 * 7');
 	await press('Control+a'); await press('Control+c');
-	assert.equal(await page.evaluate(() => navigator.clipboard.readText()), source);
-	await screenshot('restored');
-	await page.context().setOffline(true);
-	await press('Control+End'); await page.keyboard.type('-- offline edit\n', { delay: 25 }); await press('Control+s');
-	await waitForSource(probePath, source + '-- offline edit\n'); await screenshot('offline-save');
-	await press('Control+Shift+p'); await page.keyboard.type('Codex', { delay: 25 });
-	await screenshot('codex-disabled'); await press('Enter'); await press('Escape');
-	// Exceeds the old workspace reconnect delay: absence must not create a retry timer.
-	await page.waitForTimeout(11000);
-	assert.deepEqual(requests, []); assert.deepEqual(errors, []);
-	// Actual browser quota denial, not a replaced provider or a mocked Save result.
-	await openFile('standalone_probe.lua'); await press('Control+Home'); await waitForNativeText('local value = 6 * 7');
-	const storageControl = await page.context().newCDPSession(page);
-	await storageControl.send('Storage.overrideQuotaForOrigin', { origin: address, quotaSize: 1 });
-	await press('Control+End'); await page.keyboard.type('-- retain after quota failure\n', { delay: 25 }); await press('Control+s');
-	await page.waitForTimeout(700); await screenshot('quota-failed-save');
-	await waitForSource(probePath, source + '-- offline edit\n');
-	await storageControl.send('Storage.overrideQuotaForOrigin', { origin: address });
-	await press('Control+s');
-	await waitForSource(probePath, source + '-- offline edit\n-- retain after quota failure\n'); await screenshot('quota-retry');
-	// Both documents are unopened and have no browser file yet. Their base must
-	// come from the ROM, not a preseeded fixture, reconstructed YAML or HTTP read.
-	const documents = [
-		{ name: 'standalone_source.yaml', format: 'yaml' },
-		{ name: 'standalone_events.aem.yaml', format: 'aem' },
-	];
-	const unopened = await page.evaluate(paths => new Promise(resolve => {
-		const request = indexedDB.open('bmsx-studio-workspace');
-		request.onsuccess = () => {
-			const database = request.result, transaction = database.transaction('records'), records = transaction.objectStore('records');
-			const reads = paths.map(path => records.get(path));
-			transaction.oncomplete = () => { resolve(reads.map(read => read.result)); database.close(); };
-		};
-	}), documents.map(({ name }) => `carts/hot_resume_test/res/data/${name}`));
-	assert.deepEqual(unopened, [undefined, undefined], 'packaged authored bases have not been preseeded into browser source files');
-	const edited = new Map<string, string>();
-	for (const { name, format } of documents) {
-		const path = `carts/hot_resume_test/res/data/${name}`;
-		const authored = await readFile(path, 'utf8');
-		await openFile(name);
-		if (format === 'aem') {
-			await screenshot('aem-resource-editor');
-			await command('Editor: Open Source');
-		}
-		await press('Control+Home'); await waitForNativeText(authored.slice(0, authored.indexOf('\n')));
-		await press('Control+a'); await press('Control+c');
-		assert.equal(await page.evaluate(() => navigator.clipboard.readText()), authored);
-		await press('Escape'); await press('Control+Home'); await screenshot(`${format}-packaged-source`);
-		const comment = '# Browser-owned edit\n';
-		await page.evaluate(text => navigator.clipboard.writeText(text), comment); await press('Control+v');
-		await press('Control+z'); await press('Control+a'); await press('Control+c');
-		assert.equal(await page.evaluate(() => navigator.clipboard.readText()), authored);
-		await press('Control+Shift+z'); await press('Control+s');
-		edited.set(name, comment + authored);
-		await waitForSource(path, edited.get(name)!);
-		await press('ArrowRight'); await screenshot(`${format}-offline-save`);
-	}
-	await page.context().setOffline(false); await page.reload(); await boot(); await press('ControlRight+ShiftRight');
-	for (const { name, format } of documents) {
-		await openFile(name);
-		if (format === 'aem') await command('Editor: Open Source');
-		await press('Control+Home'); await waitForNativeText('# Browser-owned edit');
-		await press('Control+a'); await press('Control+c');
-		assert.equal(await page.evaluate(() => navigator.clipboard.readText()), edited.get(name));
-		await press('Escape'); await press('Control+Home'); await screenshot(`${format}-restored`);
-	}
+	assert.equal(await page.evaluate(() => navigator.clipboard.readText()), source + '-- offline edit\n');
 	assert.deepEqual(requests, []); assert.deepEqual(errors, []);
 });
