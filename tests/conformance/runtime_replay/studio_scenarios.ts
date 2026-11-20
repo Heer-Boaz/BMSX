@@ -23,6 +23,7 @@ import { runStudioFsmDragLive } from './studio_fsm_drag_live';
 import { runStudioFsmInitialLive } from './studio_fsm_initial_live';
 import { runStudioPointerNavigation, type NavigationCart } from './studio_pointer_navigation';
 import { runStudioWorkflows } from './studio_workflows';
+import { runStudioWorkflowCase } from './studio_workflow_case';
 import { presentBehaviorTreeGraph } from './studio_behavior_graph';
 import { testCapturedSourceReboot } from './studio_source_workflows';
 import { presentCommandPalette } from './studio_command_palette';
@@ -37,6 +38,7 @@ import type { StudioFixture } from './studio_fixture';
 export type StudioScenario = { kind: 'activity' | 'frame-recovery' | 'game-input' | 'actor-pins' | 'actor-changes' | 'actor-find' | 'event-navigation' | 'terminal' | 'workflows' | 'edit-review' | 'resource-context' | 'boot-operations' | 'source-saves' | 'execution-operations' | 'test-runner' | 'scene-viewport' | 'main-authoring' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
 	| { kind: 'cart-scenes'; cart: '2025' | 'pietious' }
 	| { kind: 'cart-maps'; cart: 'pietious' | 'nemesis_s'; restored?: CartMapExpectation }
+	| { kind: 'workflow-case'; name: string }
 	| { kind: 'navigation'; cart: NavigationCart };
 
 /** One scenario composition for every renderer project; backend checks remain in their project. */
@@ -62,6 +64,7 @@ export function runStudioScenario(test: StudioFixture, scenario: StudioScenario)
 		case 'cart-maps': return runStudioCartMaps(test, scenario.cart, scenario.restored);
 		case 'nemesis-scenes': return runStudioNemesisScenes(test);
 		case 'workflows': return runStudioWorkflows(test);
+		case 'workflow-case': return runStudioWorkflowCase(test, scenario.name);
 		case 'runtime-inspection': return runStudioRuntimeInspection(test);
 		case 'preload': return runStudioPreload(test);
 		case 'navigation': return runStudioPointerNavigation(test, scenario.cart);
