@@ -397,7 +397,9 @@ export function computeBlockOpenUpvaluesIn(
 				const predecessor = previousBlocks[predecessorIndex];
 				const predecessorIn = openIn[predecessor];
 				const predecessorOpens = blockOpens[predecessor];
-				for (let register = 0; register < registerCount; register += 1) {
+				const exit = instructions[blocks[predecessor].end - 1];
+				const limit = exit.op === OpCode.JMP && exit.a !== 0 ? Math.min(registerCount, exit.a - 1) : registerCount;
+				for (let register = 0; register < limit; register += 1) {
 					if (predecessorIn[register] !== 0 || predecessorOpens[register] !== 0) {
 						nextIn[register] = 1;
 					}

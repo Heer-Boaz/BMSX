@@ -1461,7 +1461,7 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 		const maxRegister = computeMaxRegister(instructions);
 		for (let index = 0; index < count; index += 1) {
 			const backJump = instructions[index];
-			if (backJump.op !== OpCode.JMP || backJump.target === null || backJump.target >= index) {
+			if (backJump.op !== OpCode.JMP || backJump.a !== 0 || backJump.target === null || backJump.target >= index) {
 				continue;
 			}
 			const loopStart = backJump.target;
@@ -1479,7 +1479,8 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 			if (lt0.op !== OpCode.LT || lt0.a !== 0) {
 				continue;
 			}
-			if (jumpToNeg.op !== OpCode.JMP || jumpToBody.op !== OpCode.JMP || jumpOutPos.op !== OpCode.JMP || jumpOutNeg.op !== OpCode.JMP) {
+			if (jumpToNeg.op !== OpCode.JMP || jumpToNeg.a !== 0 || jumpToBody.op !== OpCode.JMP || jumpToBody.a !== 0
+				|| jumpOutPos.op !== OpCode.JMP || jumpOutPos.a !== 0 || jumpOutNeg.op !== OpCode.JMP || jumpOutNeg.a !== 0) {
 				continue;
 			}
 			if (ltPos.op !== OpCode.LT || ltNeg.op !== OpCode.LT || ltPos.a !== 1 || ltNeg.a !== 1) {

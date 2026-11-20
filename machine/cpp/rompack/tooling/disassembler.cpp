@@ -319,7 +319,8 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::LE:
 			return std::string(OPCODE_NAMES[static_cast<size_t>(decoded.op)]) + " " + formatBoolLiteral(decoded.a) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::JMP:
-			return "JMP " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
+			return "JMP " + (decoded.a == 0 ? std::string{} : "close r" + std::to_string(decoded.a - 1) + ", ")
+				+ formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::JMPIF:
 			return "JMPIF r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::JMPIFNOT:
@@ -440,8 +441,11 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::LT:
 		case OpCode::LE:
 			return {plainOperand("expect", formatBoolLiteral(decoded.a)), rkOperand("left", image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), rkOperand("right", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
-		case OpCode::JMP:
-			return {plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};
+		case OpCode::JMP: {
+			auto jump = plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth));
+			if (decoded.a == 0) return {std::move(jump)};
+			return {registerOperand("close from", decoded.a - 1), std::move(jump)};
+		}
 		case OpCode::JMPIF:
 		case OpCode::JMPIFNOT:
 			return {registerOperand("cond", decoded.a), plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};

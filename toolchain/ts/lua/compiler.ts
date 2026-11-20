@@ -1,6 +1,8 @@
 import { ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
 // start repeated-sequence-acceptable -- Program codegen keeps opcode/slot emission direct; helper extraction would add dispatch in compile hot paths.
 // start normalized-body-acceptable -- Resolver/emitter specializations share shapes but preserve distinct compiler ownership.
+import type { FileSemanticData } from './semantic/model';
+import { FileRegisterLifetimes } from './compiler/register_lifetimes';
 import { LexicalDeclarationKind } from './compiler/declaration_kind';
 import {
 	LuaAssignmentOperator,
@@ -109,6 +111,7 @@ import { findLuaLexicalBindingAt } from './semantic/scope_query';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compiler/compile_value_flow';
 import { resolveCompileTimeNumberBinaryOperator } from './compiler/compile_time_number';
 import { PROGRAM_BOOT_GLOBAL_NAMES, SYSTEM_ROM_BOOT_PRIMITIVE_NAMES, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET, type ProgramCompileDomain } from './compiler/system_boot_symbols';
+import { getLuaJumpBindings } from './analysis/jumps';
 import { LuaSyntaxError } from './errors';
 import { stringLiteralValue } from './syntax/literals';
 import { buildLuaFileSemanticData, type Decl } from './semantic/model';
@@ -283,11 +286,21 @@ type CompileOptions =
 
 const EMPTY_PROGRAM_MODULES: ReadonlyArray<ProgramModule> = [];
 
+type ScopedJump = {
+	index: number;
+	scope: ScopeFrame;
+	top: number;
+};
+
 type LoopContext = {
-	breakJumps: number[];
+	breakJumps: ScopedJump[];
+	exitTop: number;
 };
 
 type ScopeFrame = {
+	parent: ScopeFrame | undefined;
+	localTop: number;
+	firstCapture: number;
 	locals: LocalBinding[];
 	range: SourceRange;
 };
@@ -302,6 +315,8 @@ type CompileTimeLinkValue = Extract<RelocatableConstExportValue, { kind: 'link_v
 type CompileTimeNumericValue = StaticNumericValue<CompileTimeLinkValue>;
 
 type LocalBinding = {
+	scope: ScopeFrame;
+	captured: boolean;
 	symbolHandle: string;
 	name: string;
 	reg: number;
@@ -484,6 +499,7 @@ class ProgramBuilder {
 	private rodataByteCount = 0;
 	private rodataBytes = new Uint8Array(0);
 	private readonly protoIndexById = new Map<string, number>();
+	private readonly registerLifetimesByFile = new WeakMap<FileSemanticData, FileRegisterLifetimes>();
 	private readonly protoSemantics = new Map<string, LuaSemanticFrontendFile>();
 	private readonly moduleProtoEntries: ProgramModuleProto[] = [];
 	private readonly moduleProtoEntrySlotByPath = new Map<string, number>();
@@ -515,6 +531,15 @@ class ProgramBuilder {
 		for (const name of this.systemGlobalNameSet) {
 			this.resolveSystemGlobalSlot(name);
 		}
+	}
+
+	public registerLifetimes(file: FileSemanticData): FileRegisterLifetimes {
+		let facts = this.registerLifetimesByFile.get(file);
+		if (facts === undefined) {
+			facts = new FileRegisterLifetimes(file);
+			this.registerLifetimesByFile.set(file, facts);
+		}
+		return facts;
 	}
 
 	public anonymousProtoId(parentId: string, range: SourceRange): string {
@@ -1256,13 +1281,16 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private readonly upvalueSlotBySymbolHandle = new Map<string, number>();
 	private readonly outerDeclarations = new Map<string, number>();
 	private readonly loopStack: LoopContext[] = [];
-	private readonly labelPositions = new Map<string, number>();
-	private readonly pendingLabelJumps = new Map<string, number[]>();
+	private readonly labelPositions = new Map<LuaLabelStatement, { index: number; top: number }>();
+	private readonly gotoJumps: Array<ScopedJump & { target: LuaLabelStatement }> = [];
+	private jumpBindings!: ReturnType<typeof getLuaJumpBindings>;
+	private registerLifetimes!: FileRegisterLifetimes;
 	private currentRange: SourceRange | null = null;
 	private currentStatementRange: SourceRange | undefined;
 	private localCount = 0;
+	private reuseScopedRegisters = true;
 	private tempTop = 0;
-	private maxStack = 0;
+	private maxStack = 1;
 	private localFunctionCounters = new Map<string, number>();
 	private flowAnalysis: ValueKindFlowAnalyzer | null = null;
 	private currentFlowState: SymbolFlowState = new Map();
@@ -1341,16 +1369,24 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 	}
 
+	private bindFunctionBody(body: LuaChunk['body'], expression?: LuaFunctionExpression): void {
+		const file = this.frontend.snapshot.getFileData(this.moduleId)!;
+		this.registerLifetimes = this.program.registerLifetimes(file);
+		this.reuseScopedRegisters = !this.registerLifetimes.hasRawWindow(expression);
+		this.jumpBindings = getLuaJumpBindings(body);
+		this.flowAnalysis = new ValueKindFlowAnalyzer(body, this.semantics, this.jumpBindings.targets.size !== 0);
+	}
+
 	public compileChunk(chunk: LuaChunk): void {
-		this.flowAnalysis = new ValueKindFlowAnalyzer(chunk.body, this.semantics);
+		this.bindFunctionBody(chunk.body);
 		this.pushScope(chunk.locations.range(chunk.span));
 		for (const cursor = chunk.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
 			this.compileStatement(cursor.statement);
 			this.resetTemps();
 		}
-		this.popScope();
+		this.popScope(false);
+		this.patchGotos();
 		this.withRange(chunk.locations.range(chunk.span), () => this.emitDefaultReturn());
-		this.finalizeLabels();
 	}
 
 	public compileStaticStorage(declarations: readonly StaticStorageDeclaration[]): void {
@@ -1484,7 +1520,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			}
 			this.outerDeclarations.set(IMPLICIT_SELF_SYMBOL_HANDLE, owner.debugDeclarationIndex(binding));
 		}
-		this.flowAnalysis = new ValueKindFlowAnalyzer(expression.body.body, this.semantics);
+		this.bindFunctionBody(expression.body.body, expression);
 		this.pushScope(this.semantics.locations.range(expression.body.span));
 		if (implicitSelf) {
 			this.declareLocal(IMPLICIT_SELF_SYMBOL_HANDLE, 'self', range, range.start, range, 'receiver');
@@ -1498,9 +1534,9 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.compileStatement(cursor.statement);
 			this.resetTemps();
 		}
-		this.popScope();
+		this.popScope(false);
+		this.patchGotos();
 		this.withRange(range, () => this.emitDefaultReturn());
-		this.finalizeLabels();
 	}
 
 	public compileSectionInit(range: LuaSourceRange): void {
@@ -1563,7 +1599,6 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			}
 			this.emitDefaultReturn();
 		});
-		this.finalizeLabels();
 	}
 
 	public compileStartup(
@@ -1594,7 +1629,6 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			entryReturn.resumeRange = { ...range };
 			entryReturn.resumeId = 'startup.entry.return';
 		});
-		this.finalizeLabels();
 	}
 
 	public compileInitVector(
@@ -1616,7 +1650,6 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.emitABC(OpCode.KNIL, callReg, 0, 0);
 			this.emitABC(OpCode.RET, callReg, encodeFixedValueCount(1), 0);
 		});
-		this.finalizeLabels();
 	}
 
 	/** Startup and reload share the guest-owned, dependency-ordered module loader. */
@@ -1660,7 +1693,6 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			// changed this generated vector's other instruction words.
 			this.code[this.code.length - 1].resumeRange = { path: range.path, start: range.end, end: range.end };
 		});
-		this.finalizeLabels();
 	}
 
 	public compileExceptionEntry(range: LuaSourceRange): void {
@@ -1676,7 +1708,6 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			// changed this generated vector's other instruction words.
 			this.code[this.code.length - 1].resumeRange = { path: range.path, start: range.end, end: range.end };
 		});
-		this.finalizeLabels();
 	}
 
 	private resolveStructFieldAddress(base: StructAddress, fieldName: string): StructAddress {
@@ -1799,7 +1830,19 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				(protoIndex: number) => this.program.protos[protoIndex].upvalueDescs,
 				this.retainedUpvalueCount,
 			);
-			this.maxStack = Math.max(this.maxStack, computeMaxRegister(this.code) + 1);
+			let reservation = Math.max(this.nextArgumentIndex, computeMaxRegister(this.code) + 1);
+			for (const instruction of this.code) {
+				if (instruction.op !== OpCode.CLOSURE) continue;
+				if (instruction.closureAddressRegister) {
+					// An indirect descriptor may name any register in the window.
+					reservation = Math.max(reservation, this.maxStack);
+					continue;
+				}
+				for (const capture of this.program.protos[instruction.b].upvalueDescs) {
+					if (capture.inStack) reservation = Math.max(reservation, capture.index + 1);
+				}
+			}
+			this.maxStack = reservation;
 		}
 		const instructions = this.code;
 		const ranges = this.ranges;
@@ -2047,6 +2090,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		);
 		const debugPoints = buildProgramDebugPoints(
 			instructions,
+			ranges,
 			instrStartIndex,
 			code.length / INSTRUCTION_BYTES,
 			this.localDebugSlots,
@@ -2083,28 +2127,51 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 
 	private pushScope(range: LuaSourceRange): void {
 		this.scopeStack.push({
+			parent: this.scopeStack[this.scopeStack.length - 1],
+			localTop: this.localCount,
+			firstCapture: Infinity,
 			locals: [],
 			range,
 		});
 	}
 
-	private popScope(): void {
+	private popScope(close = true): ScopeFrame {
 		const scope = this.scopeStack.pop()!;
+		if (close && scope.firstCapture !== Infinity) this.emitAsBx(OpCode.JMP, scope.firstCapture + 1, 0);
 		for (let i = scope.locals.length - 1; i >= 0; i -= 1) {
 			this.localBindings.delete(scope.locals[i].symbolHandle);
 		}
+		if (this.reuseScopedRegisters) this.localCount = scope.localTop;
+		this.resetTemps();
+		return scope;
 	}
 
 	private resetTemps(): void {
 		this.tempTop = this.localCount;
 	}
 
-	private finalizeLabels(): void {
-		if (this.pendingLabelJumps.size === 0) {
-			return;
+	private patchGotos(): void {
+		for (const jump of this.gotoJumps) {
+			const target = this.labelPositions.get(jump.target)!;
+			this.patchScopedJump(jump, target.index, target.top);
 		}
-		const labels = Array.from(this.pendingLabelJumps.keys()).sort();
-		throw new Error(`Missing label(s): ${labels.join(', ')}`);
+	}
+
+	private patchScopedJump(jump: ScopedJump, target: number, targetTop: number): void {
+		let cutoff = jump.top;
+		let firstCapture = Infinity;
+		for (let scope: ScopeFrame | undefined = jump.scope; scope !== undefined && cutoff > targetTop; scope = scope.parent) {
+			if (scope.firstCapture < cutoff) {
+				for (const local of scope.locals) {
+					if (local.captured && local.reg >= targetTop && local.reg < cutoff) {
+						firstCapture = Math.min(firstCapture, local.reg);
+					}
+				}
+			}
+			cutoff = scope.localTop;
+		}
+		if (firstCapture !== Infinity) this.code[jump.index].a = firstCapture + 1;
+		this.patchJump(jump.index, target);
 	}
 
 	private declareLocal(
@@ -2130,15 +2197,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (isReservedIntrinsicName(name)) {
 			throw new Error(`'${name}' is a reserved intrinsic name and cannot be used as a local or parameter.`);
 		}
-		const reg = this.localCount;
-		this.localCount += 1;
-		if (this.tempTop < this.localCount) {
-			this.tempTop = this.localCount;
-		}
-		if (this.tempTop > this.maxStack) {
-			this.maxStack = this.tempTop;
-		}
+		const reg = this.allocLocal();
+		const scope = this.scopeStack[this.scopeStack.length - 1];
 		const binding: LocalBinding = {
+			scope,
+			captured: false,
 			symbolHandle,
 			name,
 			reg,
@@ -2160,7 +2223,6 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (this.flowAnalysis?.isWrittenByNestedClosure(symbolHandle)) {
 			this.closureWrittenRegisters.add(reg);
 		}
-		const scope = this.scopeStack[this.scopeStack.length - 1];
 		scope.locals.push(binding);
 		const effectiveScopeRange = scopeRange ?? scope.range;
 		this.localDebugSlots.push({
@@ -2257,6 +2319,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		const parentLocal = this.parent.localBindings.get(symbolHandle);
 		if (parentLocal) {
+			parentLocal.captured = true;
+			parentLocal.scope.firstCapture = Math.min(parentLocal.scope.firstCapture, parentLocal.reg);
 			const index = this.upvalueDescs.length;
 			this.upvalueDescs.push({ inStack: true, index: parentLocal.reg });
 			this.upvalueBindings.push(this.parent.debugDeclarationIndex(parentLocal));
@@ -4257,9 +4321,18 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 
 	private compileReturn(expressions: ReadonlyArray<LuaExpression>): void {
 		if (expressions.length === 0) {
-			const reg = this.allocTemp();
-			this.emitABC(OpCode.RET, reg, encodeFixedValueCount(0), 0);
+			this.emitABC(OpCode.RET, 0, encodeFixedValueCount(0), 0);
 			return;
+		}
+		if (expressions.length === 1 && expressions[0].kind === LuaSyntaxKind.IdentifierExpression
+			&& expressions[0] !== this.moduleCompileInfo?.returnExpression) {
+			const reference = getResolvedIdentifierReference(this.semantics, expressions[0]);
+			const symbol = getResolvedReferenceSymbolHandle(reference);
+			const binding = symbol === null ? undefined : this.localBindings.get(symbol);
+			if (binding !== undefined && binding.moduleBinding === null) {
+				this.emitABC(OpCode.RET, binding.reg, encodeFixedValueCount(1), 0);
+				return;
+			}
 		}
 		const base = this.allocTemp();
 		const wantsMulti = expressions.length === 1 && this.isMultiReturnExpression(expressions[0]);
@@ -4329,27 +4402,27 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const loopStart = this.code.length;
 		const jumpsOut: number[] = [];
 		this.compileConditionJumps(statement.condition, false, jumpsOut);
-		const ctx: LoopContext = { breakJumps: [] };
+		const ctx: LoopContext = { breakJumps: [], exitTop: this.localCount };
 		this.loopStack.push(ctx);
 		this.pushScope(this.semantics.locations.range(statement.block.span));
 		for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
 			this.compileStatement(cursor.statement);
 			this.resetTemps();
 		}
-		this.popScope();
+		const body = this.popScope(false);
 		this.loopStack.pop();
-		this.emitAsBx(OpCode.JMP, 0, loopStart - (this.code.length + 1));
+		this.emitAsBx(OpCode.JMP, body.firstCapture === Infinity ? 0 : body.firstCapture + 1, loopStart - (this.code.length + 1));
 		for (let i = 0; i < jumpsOut.length; i += 1) {
 			this.patchJump(jumpsOut[i], this.code.length);
 		}
 		for (let i = 0; i < ctx.breakJumps.length; i += 1) {
-			this.patchJump(ctx.breakJumps[i], this.code.length);
+			this.patchScopedJump(ctx.breakJumps[i], this.code.length, ctx.exitTop);
 		}
 	}
 
 	private compileRepeat(statement: LuaRepeatStatement): void {
 		const loopStart = this.code.length;
-		const ctx: LoopContext = { breakJumps: [] };
+		const ctx: LoopContext = { breakJumps: [], exitTop: this.localCount };
 		this.loopStack.push(ctx);
 		this.pushScope(this.semantics.locations.range(statement.span));
 		for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
@@ -4358,20 +4431,30 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		const repeatJumps: number[] = [];
 		this.compileConditionJumps(statement.condition, false, repeatJumps);
-		this.popScope();
+		const scope = this.popScope();
 		this.loopStack.pop();
-		for (let i = 0; i < repeatJumps.length; i += 1) {
-			this.patchJump(repeatJumps[i], loopStart);
+		let repeatTarget = loopStart;
+		if (scope.firstCapture !== Infinity && repeatJumps.length !== 0) {
+			const done = this.emitJumpPlaceholder();
+			repeatTarget = this.code.length;
+			this.emitAsBx(OpCode.JMP, scope.firstCapture + 1, loopStart - (this.code.length + 1));
+			this.patchJump(done, this.code.length);
 		}
+		for (const jump of repeatJumps) this.patchJump(jump, repeatTarget);
 		for (let i = 0; i < ctx.breakJumps.length; i += 1) {
-			this.patchJump(ctx.breakJumps[i], this.code.length);
+			this.patchScopedJump(ctx.breakJumps[i], this.code.length, ctx.exitTop);
 		}
 	}
 
 	private compileForNumeric(statement: LuaForNumericStatement): void {
-		this.pushScope(this.semantics.locations.range(statement.block.span));
+		const exitTop = this.localCount;
+		const bodyRange = this.semantics.locations.range(statement.block.span);
+		this.pushScope(bodyRange);
 		const loopDecl = getResolvedDeclaration(this.semantics, statement.variable);
-		const indexReg = this.declareLocalFromDecl(loopDecl, this.semantics.locations.range(statement.variable.span));
+		const separateControl = this.program.captureLayout !== undefined
+			|| this.registerLifetimes.separateNumericControls.has(loopDecl.id);
+		const definition = this.semantics.locations.range(statement.variable.span);
+		const indexReg = separateControl ? this.allocLocal() : this.declareLocalFromDecl(loopDecl, definition);
 		this.compileExpressionInto(statement.start, indexReg, 1);
 		const limitReg = this.allocLocal();
 		this.compileExpressionInto(statement.limit, limitReg, 1);
@@ -4393,25 +4476,33 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.emitABC(OpCode.LT, 1, indexReg, limitReg, RK_B | RK_C);
 		const jumpOutNegative = this.emitJumpPlaceholder();
 		this.patchJump(jumpToBody, this.code.length);
-		const ctx: LoopContext = { breakJumps: [] };
+		const ctx: LoopContext = { breakJumps: [], exitTop };
 		this.loopStack.push(ctx);
+		this.pushScope(bodyRange);
+		if (separateControl) {
+			const visible = this.declareLocalFromDecl(loopDecl, definition);
+			this.emitABC(OpCode.MOV, visible, indexReg, 0);
+		}
 		for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
 			this.compileStatement(cursor.statement);
 			this.resetTemps();
 		}
+		this.popScope();
 		this.loopStack.pop();
 		this.emitABC(OpCode.ADD, indexReg, indexReg, stepReg, RK_B | RK_C);
 		this.emitAsBx(OpCode.JMP, 0, loopStart - (this.code.length + 1));
 		this.patchJump(jumpOutPositive, this.code.length);
 		this.patchJump(jumpOutNegative, this.code.length);
 		for (let i = 0; i < ctx.breakJumps.length; i += 1) {
-			this.patchJump(ctx.breakJumps[i], this.code.length);
+			this.patchScopedJump(ctx.breakJumps[i], this.code.length, ctx.exitTop);
 		}
-		this.popScope();
+		this.popScope(false);
 	}
 
 	private compileForGeneric(statement: LuaForGenericStatement): void {
-		this.pushScope(this.semantics.locations.range(statement.block.span));
+		const exitTop = this.localCount;
+		const bodyRange = this.semantics.locations.range(statement.block.span);
+		this.pushScope(bodyRange);
 		const valueTargets: Array<ReadonlyArray<string> | null> = new Array(statement.iterators.length).fill(null);
 		const iteratorValues = this.compileAssignmentValues(statement.iterators, 3, valueTargets);
 		const iteratorReg = this.allocLocal();
@@ -4428,6 +4519,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			}
 		}
 
+		this.resetTemps();
+		this.pushScope(bodyRange);
 		const loopVars: number[] = [];
 		for (let i = 0; i < statement.variables.length; i += 1) {
 			const variable = statement.variables[i];
@@ -4455,52 +4548,35 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		this.emitABC(OpCode.MOV, controlReg, loopVars[0], 0);
 
-		const ctx: LoopContext = { breakJumps: [] };
+		const ctx: LoopContext = { breakJumps: [], exitTop };
 		this.loopStack.push(ctx);
 		for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
 			this.compileStatement(cursor.statement);
 			this.resetTemps();
 		}
+		const body = this.popScope(false);
 		this.loopStack.pop();
-		this.emitAsBx(OpCode.JMP, 0, loopStart - (this.code.length + 1));
+		this.emitAsBx(OpCode.JMP, body.firstCapture === Infinity ? 0 : body.firstCapture + 1, loopStart - (this.code.length + 1));
 		this.patchJump(jumpOut, this.code.length);
 		for (let i = 0; i < ctx.breakJumps.length; i += 1) {
-			this.patchJump(ctx.breakJumps[i], this.code.length);
+			this.patchScopedJump(ctx.breakJumps[i], this.code.length, ctx.exitTop);
 		}
-		this.popScope();
+		this.popScope(false);
 	}
 
 	private compileGoto(statement: LuaGotoStatement): void {
-		const label = statement.label;
-		const target = this.labelPositions.get(label);
-		const jumpIndex = this.emitJumpPlaceholder();
-		if (target !== undefined) {
-			this.patchJump(jumpIndex, target);
-			return;
-		}
-		let jumps = this.pendingLabelJumps.get(label);
-		if (!jumps) {
-			jumps = [];
-			this.pendingLabelJumps.set(label, jumps);
-		}
-		jumps.push(jumpIndex);
+		this.gotoJumps.push({
+			index: this.emitJumpPlaceholder(),
+			scope: this.scopeStack[this.scopeStack.length - 1],
+			top: this.localCount,
+			target: this.jumpBindings.targets.get(statement)!,
+		});
 	}
 
 	private compileLabel(statement: LuaLabelStatement): void {
-		const label = statement.label;
-		if (this.labelPositions.has(label)) {
-			throw new Error(`Duplicate label '${label}'.`);
-		}
-		const target = this.code.length;
-		this.labelPositions.set(label, target);
-		const jumps = this.pendingLabelJumps.get(label);
-		if (!jumps) {
-			return;
-		}
-		for (let i = 0; i < jumps.length; i += 1) {
-			this.patchJump(jumps[i], target);
-		}
-		this.pendingLabelJumps.delete(label);
+		const scope = this.scopeStack[this.scopeStack.length - 1];
+		const top = this.jumpBindings.endLabels.has(statement) ? scope.localTop : this.localCount;
+		this.labelPositions.set(statement, { index: this.code.length, top });
 	}
 
 	private compileBreak(): void {
@@ -4508,7 +4584,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (!ctx) {
 			throw new Error('Break outside of loop.');
 		}
-		ctx.breakJumps.push(this.emitJumpPlaceholder());
+		ctx.breakJumps.push({
+			index: this.emitJumpPlaceholder(),
+			scope: this.scopeStack[this.scopeStack.length - 1],
+			top: this.localCount,
+		});
 	}
 
 	private compileLocalFunction(statement: LuaLocalFunctionStatement): void {
@@ -5700,8 +5780,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	}
 
 	private emitDefaultReturn(): void {
-		const reg = this.allocTemp();
-		this.emitABC(OpCode.RET, reg, encodeFixedValueCount(0), 0);
+		this.emitABC(OpCode.RET, 0, encodeFixedValueCount(0), 0);
 	}
 
 	private createLocalFunctionHint(name: string): string {

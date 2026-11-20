@@ -24,6 +24,7 @@ import {
 	type SymbolID,
 } from './model';
 import type { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
+import { getLuaJumpBindings } from '../analysis/jumps';
 import { parseLuaChunkWithRecovery } from '../analysis/parse';
 import { buildLuaKnownNameSet, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
 import {
@@ -124,6 +125,7 @@ export function getDefaultLuaBuiltinDescriptors(): readonly LuaBuiltinDescriptor
 
 export function computeLuaDiagnosticsFromAnalysis(options: LuaAnalysisDiagnosticOptions): LuaStaticDiagnostic[] {
 	const diagnostics: LuaStaticDiagnostic[] = [];
+	addJumpDiagnostics(diagnostics, options.analysis);
 	const globalKnownNames = buildLuaKnownNameSet(
 		options.globalSymbols,
 		options.builtinDescriptors,
@@ -136,6 +138,18 @@ export function computeLuaDiagnosticsFromAnalysis(options: LuaAnalysisDiagnostic
 	addCallDiagnosticsFromSemantic(diagnostics, options.analysis, builtinLookup, options.symbolResolver);
 	addReservedMemoryDiagnosticsFromSemantic(diagnostics, options.analysis, options.chunk);
 	return diagnostics;
+}
+
+function addJumpDiagnostics(diagnostics: LuaStaticDiagnostic[], file: FileSemanticData): void {
+	const addBody = (body: LuaStatementSequence): void => {
+		for (const problem of getLuaJumpBindings(body).problems) {
+			const span = problem.statement.span;
+			const start = file.chunk.locations.position(span.unit, span.start);
+			diagnostics.push(toSyntaxDiagnostic(problem.message, start.line, start.column));
+		}
+	};
+	addBody(file.chunk.body);
+	for (const fn of file.functionValueFlows) addBody(fn.expression.body.body);
 }
 
 export function computeLuaProjectDiagnostics(

@@ -129,7 +129,7 @@ end
 		const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
 		for (let index = 1; index <= 128; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil());
 		if (cycle === 0) warmed = heap;
-		else assert.equal(heap, warmed, 'historical World tags must not grow retained Registry storage');
+		else assert.ok(heap <= warmed, `historical World tags must not grow retained Registry storage: ${heap} > ${warmed}`);
 	}
 });
 

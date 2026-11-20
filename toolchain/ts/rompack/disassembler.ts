@@ -412,8 +412,10 @@ const buildInstructionOperands = (
 			return [registerOperand('a', 'src', a), plainOperand('b', 'cp0', `c${b}`)];
 		case OpCode.RFE:
 			return [];
-		case OpCode.JMP:
-			return [plainOperand('sbx', 'jump', formatJump(pc, sbx, pcWidth, options))];
+		case OpCode.JMP: {
+			const jump = plainOperand('sbx', 'jump', formatJump(pc, sbx, pcWidth, options));
+			return a === 0 ? [jump] : [registerOperand('a', 'close from', a - 1), jump];
+		}
 		case OpCode.JMPIF:
 		case OpCode.JMPIFNOT:
 			return [registerOperand('a', 'cond', a), plainOperand('sbx', 'jump', formatJump(pc, sbx, pcWidth, options))];
@@ -616,7 +618,7 @@ const formatInstruction = (
 		case OpCode.LE:
 			return `LE ${formatBool(a)}, ${formatSourceRK(source, b, decoded.rkBitsB, options)}, ${formatSourceRK(source, c, decoded.rkBitsC, options)}`;
 		case OpCode.JMP:
-			return `JMP ${formatJump(pc, sbx, pcWidth, options)}`;
+			return `JMP ${a === 0 ? '' : `close r${a - 1}, `}${formatJump(pc, sbx, pcWidth, options)}`;
 		case OpCode.JMPIF:
 			return `JMPIF r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
 		case OpCode.JMPIFNOT:

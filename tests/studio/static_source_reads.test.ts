@@ -236,7 +236,7 @@ return *unknown_pointer, *called_pointer, *changed_pointer, names[changed_index]
 	}
 });
 
-test('a goto that skips a function-local const view cannot prove an initialized typed read', () => {
+test('a goto into a function-local const view is rejected, including when querying the invalid source', () => {
 	const source = `rodata title: string = 'hi'
 local function register()
  goto skip
@@ -253,12 +253,8 @@ return register`;
 	assert.ok(read?.kind === 'typed');
 	assert.equal(read.byteOffset, undefined); assert.equal(read.value, undefined);
 	const runtimeSource = source + `().text == 'hi'`;
-	for (const optLevel of [3] as const) {
-		const program = compileLuaChunkToProgram(parseLuaChunk(runtimeSource, 'skipped-view').chunk, [],
-			{ entrySource: runtimeSource, programDomain: 'system', optLevel });
-		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
-		assert.notEqual(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	}
+	assert.throws(() => compileLuaChunkToProgram(parseLuaChunk(runtimeSource, 'skipped-view').chunk, [],
+		{ entrySource: runtimeSource, programDomain: 'system', optLevel: 3 }), /jumps into the scope of local 'p'/);
 });
 
 test('a reached function-local const view preserves an immutable source address', () => {
@@ -298,13 +294,14 @@ return register`;
 		assert.ok(read?.kind === 'typed');
 		assert.deepEqual(read.value, skipped ? undefined : { kind: 'string', value: 'hi' });
 		const runtimeSource = source + `().text == 'hi'`;
-		for (const optLevel of [3] as const) {
-			const program = compileLuaChunkToProgram(parseLuaChunk(runtimeSource, 'alias-view').chunk, [],
-				{ entrySource: runtimeSource, programDomain: 'system', optLevel });
-			const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
-			const result = cpu.runUntilDepth(0, 100000);
-			if (skipped) assert.notEqual(result, RunResult.Halted);
-			else { assert.equal(result, RunResult.Halted); assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]); }
+		const compile = () => compileLuaChunkToProgram(parseLuaChunk(runtimeSource, 'alias-view').chunk, [],
+			{ entrySource: runtimeSource, programDomain: 'system', optLevel: 3 });
+		if (skipped) {
+			assert.throws(compile, /jumps into the scope of local 'first'/);
+		} else {
+			const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compile()));
+			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 		}
 	}
 });

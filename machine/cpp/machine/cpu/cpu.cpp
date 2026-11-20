@@ -2440,17 +2440,20 @@ u32 CPU::createClosure(CallFrame& frame) {
 	return closure;
 }
 
-int CPU::closeUpvalues(CallFrame& frame) {
+int CPU::closeUpvalues(CallFrame& frame, u32 firstSlot) {
+	const u32 head = frame.readControl(FrameField::OpenHead);
+	u32 address = head;
 	int closed = 0;
-	u32 address = frame.readControl(FrameField::OpenHead);
-	if (address != 0) frame.writeControl(FrameField::OpenHead, 0);
 	while (address != 0 && closed < static_cast<int>(UPVALUE_CHAIN_LIMIT)) {
 		const u32 cell = m_heap.openCellAddress(address);
 		if (cell == 0u) break;
+		if (firstSlot != 0u && m_memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD) < firstSlot) break;
 		address = m_memory.readRamRecordWord(cell + UPVALUE_NEXT);
 		Upvalue::close(m_heap, cell);
 		++closed;
 	}
+	const u32 remaining = firstSlot == 0u ? 0u : address;
+	if (head != remaining) frame.writeControl(FrameField::OpenHead, remaining);
 	return closed;
 }
 

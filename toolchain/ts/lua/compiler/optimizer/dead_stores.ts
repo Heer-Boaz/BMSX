@@ -54,7 +54,7 @@ export const eliminateDeadStores = (
 		resolveClosureUpvalues,
 	);
 	// A CLOSURE makes every in-stack capture live at this instruction and leaves
-	// later writes externally observable through the open upvalue until frame return.
+	// later writes externally observable until a closing jump or frame return.
 	const pinned = new Uint8Array(count);
 	for (let index = 0; index + 1 < count; index += 1) {
 		if (isSkipInstruction(instructions[index])) {

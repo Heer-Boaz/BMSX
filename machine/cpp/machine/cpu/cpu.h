@@ -377,7 +377,7 @@ private:
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void executeConcat(CallFrame& frame, int destination, int left, int right);
 	void executeConcatRange(CallFrame& frame, int destination, int base, int count);
-	int closeUpvalues(CallFrame& frame);
+	int closeUpvalues(CallFrame& frame, u32 firstSlot = 0);
 	bool executeCall(CallFrame& frame, int a, int b, int c);
 	bool executeReturn(CallFrame& frame, int a, int b);
 	void executeVararg(CallFrame& frame, int a, int b);

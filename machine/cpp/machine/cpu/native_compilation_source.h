@@ -26,6 +26,7 @@ struct NativeCompilationSource {
 			|| ((rk & RK_OPERAND_C) != 0u && instruction.c < 0
 				&& static_cast<size_t>(-instruction.c - 1) >= image.constPool.size())) return false;
 		switch (static_cast<OpCode>(instruction.op)) {
+			case OpCode::JMP: return instruction.a == 0;
 			case OpCode::LOADK: return instruction.bx < image.constPool.size();
 			case OpCode::GETFIELD: case OpCode::SELF:
 				return static_cast<size_t>(instruction.c) < image.constPool.size();

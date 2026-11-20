@@ -36,8 +36,9 @@ function wordLoop(count: number, displaced = false, bssBytes = RAM_CODE_FIXTURE_
 }
 
 test('generated execution admits every executable BLua32 opcode; WIDE remains a decode prefix', () => {
-	assert.equal(compiledBlockSupports(OpCode.WIDE, 0), false);
-	for (let op = 1; op < OPCODE_COUNT; ++op) assert.equal(compiledBlockSupports(op, 0), true, `opcode ${op}`);
+	assert.equal(compiledBlockSupports(OpCode.WIDE, 0, 0), false);
+	assert.equal(compiledBlockSupports(OpCode.JMP, 1, 0), false);
+	for (let op = 1; op < OPCODE_COUNT; ++op) assert.equal(compiledBlockSupports(op, 0, 0), true, `opcode ${op}`);
 });
 
 for (const layout of ['last-word', 'wide-exact-end', 'wide-straddle'] as const) test(`a standalone ${layout} arithmetic entry compiles without fetching its successor`, () => {

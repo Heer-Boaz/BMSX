@@ -28,7 +28,9 @@ return first(), second()`;
 		assert.equal(slots.length, 2);
 		assert.notEqual(slots[0], slots[1]);
 		const descriptors = program.protos.flatMap(proto => proto.upvalueDescs);
-		assert.deepEqual(descriptors, [{ inStack: true, index: 2 }, { inStack: true, index: 3 }]);
+		assert.equal(descriptors.length, 2);
+		assert.equal(descriptors[0].inStack, true);
+		assert.deepEqual(descriptors[1], descriptors[0], 'distinct lexical cells can occupy the same frame slot');
 		assert.deepEqual(runCompiledLua(source, PATH, level), [valueInteger(10), valueInteger(20)]);
 	}
 });

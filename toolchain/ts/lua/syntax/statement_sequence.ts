@@ -1,4 +1,4 @@
-import type { LuaStatement } from './ast';
+import { LuaSyntaxKind, type LuaStatement } from './ast';
 import type { LuaSourceUnit } from './source_layout';
 
 export const LUA_STATEMENT_LEAF_CAPACITY = 32;
@@ -19,6 +19,7 @@ type Summary = {
 	readonly width: number;
 	readonly readWidth: number;
 	readonly hasRecovery: boolean;
+	readonly hasJumps: boolean;
 	readonly height: number;
 };
 type Leaf = Summary & { readonly kind: 'leaf'; readonly parts: readonly LuaStatementPart[] };
@@ -38,6 +39,7 @@ export class LuaStatementSequence implements Iterable<LuaStatement> {
 	public get width(): number { return this.root === null ? 0 : this.root.width; }
 	public get readWidth(): number { return this.root === null ? 0 : this.root.readWidth; }
 	public get hasRecovery(): boolean { return this.root !== null && this.root.hasRecovery; }
+	public get hasJumps(): boolean { return this.root !== null && this.root.hasJumps; }
 	public get height(): number { return this.root === null ? 0 : this.root.height; }
 
 	public get(index: number): LuaStatement {
@@ -262,20 +264,38 @@ export class LuaStatementCursor {
 	}
 }
 
+function containsBlockJump(statement: LuaStatement): boolean {
+	switch (statement.kind) {
+		case LuaSyntaxKind.GotoStatement: case LuaSyntaxKind.LabelStatement:
+			return true;
+		case LuaSyntaxKind.DoStatement: case LuaSyntaxKind.WhileStatement: case LuaSyntaxKind.RepeatStatement:
+		case LuaSyntaxKind.ForNumericStatement: case LuaSyntaxKind.ForGenericStatement:
+			return statement.block.body.hasJumps;
+		case LuaSyntaxKind.IfStatement:
+			for (const clause of statement.clauses) if (clause.block.body.hasJumps) return true;
+			return false;
+		default: return false;
+	}
+}
+
 function leaf(parts: readonly LuaStatementPart[]): Leaf {
-	let length = 0, width = 0, readWidth = 0, hasRecovery = false;
+	let length = 0, width = 0, readWidth = 0, hasRecovery = false, hasJumps = false;
 	for (const part of parts) {
-		if (part.statement !== null) length++;
+		const statement = part.statement;
+		if (statement !== null) {
+			length++;
+			hasJumps ||= containsBlockJump(statement);
+		}
 		readWidth = Math.max(readWidth, width + part.readWidth);
 		width += part.width;
 		hasRecovery ||= part.recovery;
 	}
-	return { kind: 'leaf', parts, length, partCount: parts.length, width, readWidth, hasRecovery, height: 1 };
+	return { kind: 'leaf', parts, length, partCount: parts.length, width, readWidth, hasRecovery, hasJumps, height: 1 };
 }
 function branch(left: Node, right: Node): Branch {
 	return { kind: 'branch', left, right, length: left.length + right.length, partCount: left.partCount + right.partCount,
 		width: left.width + right.width, readWidth: Math.max(left.readWidth, left.width + right.readWidth),
-		hasRecovery: left.hasRecovery || right.hasRecovery, height: Math.max(left.height, right.height) + 1 };
+		hasRecovery: left.hasRecovery || right.hasRecovery, hasJumps: left.hasJumps || right.hasJumps, height: Math.max(left.height, right.height) + 1 };
 }
 function build(parts: readonly LuaStatementPart[], from: number, to: number): Node | null {
 	if (from === to) return null;

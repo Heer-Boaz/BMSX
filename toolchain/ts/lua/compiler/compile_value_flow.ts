@@ -716,10 +716,13 @@ export class ValueKindFlowAnalyzer {
 	constructor(
 		body: LuaStatementSequence,
 		semantics: LuaSemanticFrontendFile,
+		usesGoto: boolean,
 	) {
 		this.semantics = semantics;
 		this.closureWrittenSymbols = computeClosureWrittenSymbols(body, semantics);
-		this.analyzeStatementList(body);
+		// The structured value analysis has no goto edges. Do not infer
+		// facts on paths it did not model; bytecode SSA uses the real CFG.
+		if (!usesGoto) this.analyzeStatementList(body);
 	}
 
 	getFlowStateAt(statement: LuaStatement): SymbolFlowState {

@@ -85,7 +85,7 @@ test('non-exiting bodies do not manufacture nil while unresolved jumps retain un
 	const source = [
 		'local function forever() ::again:: goto again end',
 		'local function incomplete() goto absent end',
-		'local function jumping() goto result; if false then ::result:: return 9 end end',
+		'local function jumping() do goto result end; ::result:: return 9 end',
 	].join('\n');
 	const file = buildLuaFileSemanticData(source, 'jumps.lua');
 	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
@@ -95,7 +95,7 @@ test('non-exiting bodies do not manufacture nil while unresolved jumps retain un
 	assert.equal(summaries.list()[2].source.completion, LuaCompletion.None);
 	assert.equal(summaries.list()[2].returns.length, 1);
 	for (const optimization of [3] as const) {
-		assert.deepEqual(runCompiledLua('local function jumping() goto result; if false then ::result:: return 9 end end; return jumping()', 'cross-block.lua', optimization), [valueInteger(9)]);
+		assert.deepEqual(runCompiledLua('local function jumping() do goto result end; ::result:: return 9 end; return jumping()', 'cross-block.lua', optimization), [valueInteger(9)]);
 	}
 });
 

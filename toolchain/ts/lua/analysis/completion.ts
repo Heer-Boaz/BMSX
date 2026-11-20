@@ -1,3 +1,4 @@
+import { getLuaJumpBindings } from './jumps';
 import type { LuaStatementSequence } from '../syntax/statement_sequence';
 import { walkLuaAst, type LuaAstNode } from '../syntax/ast/traversal';
 import {
@@ -5,6 +6,7 @@ import {
 	LuaSyntaxKind,
 	LuaUnaryOperator,
 	type LuaExpression,
+	type LuaLabelStatement,
 	type LuaStatement,
 } from '../syntax/ast';
 
@@ -31,29 +33,25 @@ export class LuaCompletionAnalysis {
 		const points = new Map<LuaAstNode, number>();
 		const analysis = new LuaCompletionAnalysis();
 		analysis.points = points;
-		const entry = analysis.buildBlock(body, END, undefined);
+		const entry = analysis.buildBody(body);
 		return new LuaSourceControlFlow(points, entry, analysis.left, analysis.right,
-			analysis.unboundLabels === 0 && analysis.completion === LuaCompletion.None);
+			analysis.completion === LuaCompletion.None);
 	}
 	private readonly left: number[] = [RETURN, END];
 	private readonly right: number[] = [RETURN, END];
 	private readonly seen: number[] = [];
 	private readonly work: number[] = [];
-	private readonly labels = new Map<string, number>();
-	private readonly definedLabels: boolean[] = [];
+	private readonly labels = new Map<LuaLabelStatement, number>();
+	private body!: LuaStatementSequence;
 	private nodeCount = 2;
 	private generation = 0;
-	private unboundLabels = 0;
 	private completion = LuaCompletion.None;
 
 	public analyze(body: LuaStatementSequence): LuaCompletion {
 		this.nodeCount = 2;
 		this.generation += 1;
-		this.unboundLabels = 0;
 		this.completion = LuaCompletion.None;
-		const entry = this.buildBlock(body, END, undefined);
-		if (this.labels.size !== 0) this.labels.clear();
-		if (this.unboundLabels !== 0) this.completion |= LuaCompletion.Unresolved;
+		const entry = this.buildBody(body);
 		if (entry === RETURN) return this.completion;
 		if (entry === END) return this.completion | LuaCompletion.Fallthrough;
 		this.work.length = 1;
@@ -70,6 +68,13 @@ export class LuaCompletionAnalysis {
 			if (this.right[node] !== this.left[node]) this.work.push(this.right[node]);
 		}
 		return this.completion;
+	}
+
+	private buildBody(body: LuaStatementSequence): number {
+		this.body = body;
+		const entry = this.buildBlock(body, END, undefined);
+		if (this.labels.size !== 0) this.labels.clear();
+		return entry;
 	}
 
 	private buildBlock(body: LuaStatementSequence, next: number, breakTarget: number | undefined): number {
@@ -132,17 +137,19 @@ export class LuaCompletionAnalysis {
 					entry = condition;
 					break;
 				}
-				case LuaSyntaxKind.GotoStatement:
-					entry = this.label(statement.label);
-					break;
-				case LuaSyntaxKind.LabelStatement: {
-					const label = this.label(statement.label);
-					if (this.definedLabels[label]) {
+				case LuaSyntaxKind.GotoStatement: {
+					const target = getLuaJumpBindings(this.body).targets.get(statement);
+					if (target === undefined) {
 						this.completion |= LuaCompletion.Unresolved;
+						entry = RETURN;
 					} else {
-						this.definedLabels[label] = true;
-						this.unboundLabels -= 1;
+						entry = this.label(target);
 					}
+					break;
+				}
+				case LuaSyntaxKind.LabelStatement: {
+					if (getLuaJumpBindings(this.body).problems.length !== 0) this.completion |= LuaCompletion.Unresolved;
+					const label = this.label(statement);
 					this.left[label] = entry;
 					this.right[label] = entry;
 					entry = label;
@@ -192,13 +199,11 @@ export class LuaCompletionAnalysis {
 		return node;
 	}
 
-	private label(name: string): number {
-		const retained = this.labels.get(name);
+	private label(statement: LuaLabelStatement): number {
+		const retained = this.labels.get(statement);
 		if (retained !== undefined) return retained;
 		const node = this.createNode();
-		this.labels.set(name, node);
-		this.definedLabels[node] = false;
-		this.unboundLabels += 1;
+		this.labels.set(statement, node);
 		return node;
 	}
 

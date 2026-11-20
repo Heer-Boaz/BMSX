@@ -145,8 +145,8 @@ emitters[OpCode.CONCATN] = emitters[OpCode.JMP];
 emitters[OpCode.CLOSURE] = emitters[OpCode.JMP];
 emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
-export function compiledBlockSupports(op: number, c: number): boolean {
-	if (op === OpCode.MOV && c > ValueMoveKind.FloatFromBits) return false;
+export function compiledBlockSupports(op: number, a: number, c: number): boolean {
+	if (op === OpCode.MOV && c > ValueMoveKind.FloatFromBits || op === OpCode.JMP && a !== 0) return false;
 	return emitters[op] !== undefined || compiledArithmeticSupports(op)
 		|| compiledContextSupports(op)
 		|| compiledTableSupports(op)
@@ -339,7 +339,7 @@ export function emitJavaScriptBlock(
 		exits.push({ ...terminal, exit: skippedInstructionWidth === 0 ? CompiledBlockExit.SkipInstruction : CompiledBlockExit.Continue,
 			nextPc: (terminal.nextPc + skippedInstructionWidth * INSTRUCTION_BYTES) >>> 0 });
 		sourceWords += skippedInstructionWidth;
-		if (skippedInstructionWidth !== 0 && page.ops[endWord] === OpCode.JMP
+		if (skippedInstructionWidth !== 0 && page.ops[endWord] === OpCode.JMP && page.a[endWord] === 0
 			&& page.dispatchOps[endWord] !== DecodedDispatchOp.Observe) {
 			// A comparison can exhaust its grant, including a string surcharge.
 			// Preserve the boundary before executing the fused JMP.

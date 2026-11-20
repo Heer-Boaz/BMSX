@@ -78,6 +78,7 @@ export function buildProgramStatementPoints(
 
 export function buildProgramDebugPoints(
 	instructions: Instruction[],
+	sourceRanges: ReadonlyArray<SourceRange | null>,
 	instructionWordOffsets: number[],
 	wordCount: number,
 	localSlots: ReadonlyArray<LocalSlotDebug>,
@@ -85,24 +86,38 @@ export function buildProgramDebugPoints(
 	resolveClosureUpvalues: ClosureUpvalueResolver,
 	outerBindings: ReadonlyArray<OuterBindingDebug>,
 ): { resumePoints: ProgramResumePoint[]; localSlots: LocatedLocalSlotDebug[]; outerBindings: LocatedOuterBindingDebug[] } {
-	// Named registers are not recycled within a function; inlining remaps its
-	// slots before this final pass. Dead/folded values have no readable location.
-	// Reuse the resume-point liveness pass, retaining intervals, not a bitmap
-	// for every instruction. Lexical/inline scope is a separate debugger gate.
+	// Physical liveness supplies the intervals. When a slot has several
+	// lexical owners, intersect it with each owner's source/inline scope.
 	const rangesByRegister = new Map<number, ProgramWordRange[]>();
-	for (const slot of localSlots) if (!rangesByRegister.has(slot.registerIndex)) rangesByRegister.set(slot.registerIndex, []);
+	const ownersByRegister = new Map<number, LocalSlotDebug[]>();
+	const reusedRanges = new Map<LocalSlotDebug, ProgramWordRange[]>();
+	for (const slot of localSlots) {
+		const owners = ownersByRegister.get(slot.registerIndex);
+		if (owners === undefined) {
+			ownersByRegister.set(slot.registerIndex, [slot]);
+			rangesByRegister.set(slot.registerIndex, []);
+		} else {
+			if (owners.length === 1) reusedRanges.set(owners[0], []);
+			owners.push(slot);
+			reusedRanges.set(slot, []);
+		}
+	}
 	for (const slot of outerBindings) {
 		const location = slot.location;
 		if (location !== null && location.inStack && !rangesByRegister.has(location.index)) rangesByRegister.set(location.index, []);
 	}
 	const registers: number[] = [];
 	const locations: ProgramWordRange[][] = [];
+	const sharedSlots: Array<ReadonlyArray<{ slot: LocalSlotDebug; ranges: ProgramWordRange[] }> | undefined> = [];
 	for (const [register, ranges] of rangesByRegister) {
 		// Folding after inlining can remove the high end of the remapped frame.
 		// Those declarations keep empty intervals, outside the physical window.
 		if (register < maxStack) {
 			registers.push(register);
 			locations.push(ranges);
+			const owners = ownersByRegister.get(register);
+			sharedSlots.push(owners !== undefined && owners.length > 1
+				? owners.map(slot => ({ slot, ranges: reusedRanges.get(slot)! })) : undefined);
 		}
 	}
 	const emittedRanges = new Set<SourceRange>();
@@ -118,6 +133,11 @@ export function buildProgramDebugPoints(
 		emittedRanges.add(range);
 		candidateIndices.push(index);
 	}
+	const record = (ranges: ProgramWordRange[], start: number, end: number): void => {
+		const previous = ranges[ranges.length - 1];
+		if (previous !== undefined && previous.start === end) previous.start = start;
+		else ranges.push({ start, end });
+	};
 	const maxRegister = maxStack - 1;
 	const liveByCandidate = computeInstructionLivenessAt(
 		instructions,
@@ -128,12 +148,21 @@ export function buildProgramDebugPoints(
 		registers.length === 0 ? undefined : (instructionIndex, live) => {
 			const start = instructionWordOffsets[instructionIndex];
 			const end = instructionIndex + 1 < instructions.length ? instructionWordOffsets[instructionIndex + 1] : wordCount;
+			const range = sourceRanges[instructionIndex];
+			const inline = instructions[instructionIndex].inlineCallSites ?? ROOT_INLINE_CALL_SITES;
 			for (let index = 0; index < registers.length; index += 1) {
-				if (live[registers[index]] === 0) continue;
-				const ranges = locations[index];
-				const previous = ranges[ranges.length - 1];
-				if (previous !== undefined && previous.start === end) previous.start = start;
-				else ranges.push({ start, end });
+				const register = registers[index];
+				if (live[register] === 0) continue;
+				record(locations[index], start, end);
+				const owners = sharedSlots[index];
+				if (range === null || owners === undefined) continue;
+				for (const { slot, ranges } of owners) {
+					const context = resolveInlineLocalContextRange(slot, range, inline);
+					if (context !== null && context.path === slot.scope.path
+						&& sourcePositionInRange(context.start.line, context.start.column, slot.scope)) {
+						record(ranges, start, end);
+					}
+				}
 			}
 		},
 	);
@@ -169,11 +198,12 @@ export function buildProgramDebugPoints(
 		});
 	}
 	for (const ranges of locations) ranges.reverse();
+	for (const ranges of reusedRanges.values()) ranges.reverse();
 	const functionRange = [{ start: 0, end: wordCount }];
 	const noLocation: readonly ProgramWordRange[] = [];
 	return {
 		resumePoints: points,
-		localSlots: localSlots.map(slot => ({ ...slot, liveWordRanges: rangesByRegister.get(slot.registerIndex)! })),
+		localSlots: localSlots.map(slot => ({ ...slot, liveWordRanges: reusedRanges.get(slot) ?? rangesByRegister.get(slot.registerIndex)! })),
 		outerBindings: outerBindings.map(slot => ({
 			...slot,
 			liveWordRanges: slot.location === null ? noLocation

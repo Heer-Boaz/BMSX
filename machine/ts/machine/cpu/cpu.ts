@@ -1162,7 +1162,7 @@ export class CPU implements MappedPageInvalidator {
 			return true;
 		}
 		if (instructionCacheable && this.executionBackend === CpuExecutionBackend.JavaScript
-			&& compiledBlockSupports(page.ops[pageOffset], page.c[pageOffset])) {
+			&& compiledBlockSupports(page.ops[pageOffset], page.a[pageOffset], page.c[pageOffset])) {
 			if (page.compiledBlocks === null) page.compiledBlocks = new CompiledBlockPage();
 			page.compiledBlocks.visits[pageOffset] = 0;
 			page.dispatchOps[pageOffset] = DecodedDispatchOp.CompiledWarm;
@@ -2337,7 +2337,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			const op = page.ops[cursor];
 			if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) !== 0
-				|| page.dispatchOps[cursor] === DecodedDispatchOp.Observe || !compiledBlockSupports(op, page.c[cursor])) continue;
+				|| page.dispatchOps[cursor] === DecodedDispatchOp.Observe || !compiledBlockSupports(op, page.a[cursor], page.c[cursor])) continue;
 			if (op >= OpCode.GETSYS && op <= OpCode.SETGL) {
 				const bank = op <= OpCode.SETSYS ? this.systemGlobalBank : this.globalBank;
 				if (page.bx[cursor] >= bank.slots.capacity()) continue;
@@ -2352,7 +2352,7 @@ export class CPU implements MappedPageInvalidator {
 					if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) === 0
 						&& successor + page.widths[successor] <= DECODED_PAGE_WORDS) {
 						enqueue((successorPc + page.widths[successor] * INSTRUCTION_BYTES) >>> 0, true);
-						if (page.ops[successor] === OpCode.JMP && page.dispatchOps[successor] !== DecodedDispatchOp.Observe) {
+						if (page.ops[successor] === OpCode.JMP && page.a[successor] === 0 && page.dispatchOps[successor] !== DecodedDispatchOp.Observe) {
 							// This edge executes the fused JMP, not a separate entry.
 							// An independent predecessor can still enqueue the JMP itself.
 							enqueue(page.bx[successor], true);
@@ -2866,6 +2866,7 @@ export class CPU implements MappedPageInvalidator {
 				}
 
 				case OpCode.JMP: {
+					if (a !== 0) this.charge(this.closeUpvalues(frame, frame.stackBase + a - 1));
 					frame.pc = page.bx[pageOffset];
 					return;
 				}
@@ -3067,17 +3068,20 @@ export class CPU implements MappedPageInvalidator {
 		return closure;
 	}
 
-	private closeUpvalues(frame: CallFrame): number {
+	private closeUpvalues(frame: CallFrame, firstSlot = 0): number {
+		const head = frame.openUpvalueHead;
+		let address = head;
 		let closed = 0;
-		let address = frame.openUpvalueHead;
-		if (address !== 0) frame.openUpvalueHead = 0;
 		while (address !== 0 && closed < UPVALUE_CHAIN_LIMIT) {
 			const cell = this.gc.openCellAddress(address);
 			if (cell === 0) break;
+			if (firstSlot !== 0 && this.memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD) < firstSlot) break;
 			address = this.memory.readRamRecordWord(cell + UPVALUE_NEXT);
 			Upvalue.close(this.gc, cell);
 			++closed;
 		}
+		const remaining = firstSlot === 0 ? 0 : address;
+		if (head !== remaining) frame.openUpvalueHead = remaining;
 		return closed;
 	}
 

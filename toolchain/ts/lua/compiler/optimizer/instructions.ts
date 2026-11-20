@@ -80,8 +80,6 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.LOADK:
 			case OpCode.GETSYS:
 			case OpCode.GETGL:
-			case OpCode.GETI:
-			case OpCode.GETFIELD:
 			case OpCode.NEWT:
 			case OpCode.CLOSURE:
 			case OpCode.GETUP:
@@ -125,6 +123,8 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 				updateMax(instruction.b);
 				break;
 			case OpCode.MOV:
+			case OpCode.GETI:
+			case OpCode.GETFIELD:
 			case OpCode.LOADKR:
 			case OpCode.UNM:
 			case OpCode.NOT:

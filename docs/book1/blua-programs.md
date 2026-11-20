@@ -1274,7 +1274,7 @@ Square brackets mark the optional step; they are not written in the source.
 The header evaluates `start`, then `limit`, then the explicit `step`, once
 before the first test on each ordinary entry into the statement. Each
 expression supplies one result, including a call expression. Omitting `step`
-supplies Number `1`; supplying `0` does not omit it. The start result initializes the loop variable. The limit
+supplies Number `1`; supplying `0` does not omit it. The start result initializes the control value. The limit
 and step results are retained for subsequent tests and updates: assigning to
 an outer variable used by a header expression does not reevaluate that
 expression or replace its retained result.
@@ -1286,7 +1286,7 @@ loop. A distinct local declared inside the body can shadow it in the usual
 lexical way.
 
 
-Before each body entry, let `i` denote the current loop variable, `limit` the
+Before each body entry, let `i` denote the hidden control value, `limit` the
 retained limit, and `step` the retained step. The selector and exit tests are:
 
 | Selector | Exit before the body when | Finite-Number reading |
@@ -1300,12 +1300,12 @@ The exit predicates are the strict comparisons shown, not universal
 establish termination for every Number value. For Number operands, the loop
 uses ordinary Number arithmetic rather than an integer-only counter.
 
-Ordinary fallthrough from the body adds the retained step to the loop
-variable's **current** value, then repeats the selector and test. Assignment to
-the unshadowed loop variable is permitted and changes that same control
-variable, not a hidden copy. It affects the tail addition and next test; it
-does not trigger a new range check halfway through the body. A `break` leaves
-the loop without performing the tail addition.
+Ordinary fallthrough from the body adds the retained step to the hidden
+control value, then repeats the selector and test. Each iteration has its own
+visible local, initialized from that control value. Assigning to the visible
+local does not change the tail addition or next test. A closure that captures
+it keeps that iteration's cell. A `break` leaves the loop without performing
+the tail addition.
 
 When both the current value and step are Integers, that addition wraps as
 Integer arithmetic. A positive-step loop whose limit is `2147483647` can
@@ -1317,8 +1317,7 @@ changing when the step is smaller than the spacing at the current magnitude.
 An explicit zero step is accepted, not replaced by one or rejected as a
 zero-step error. It takes the second test above. With finite Numbers, a start
 below the limit skips the body, while a start equal to or above the limit
-allows initial entry. If the body leaves the variable unchanged, adding zero
-makes no counter progress. Changing the loop variable can make the next test exit; `break` can leave
+allows initial entry. Adding zero makes no counter progress; `break` can leave
 immediately.
 
 The control path uses ordinary [Number addition and comparison](cpu.md#sec-cpu-values-and-numeric-instructions);
@@ -1366,7 +1365,7 @@ The call requests as many results as there are loop names. Extra results are dis
 
 Only `nil` stops iteration: a first result of `false` continues and becomes the next control value. A later result of `nil` does not stop the loop. See [values](cpu.md#sec-cpu-values-and-numeric-instructions).
 
-The visible loop variables are writable locals. Reassigning them in the body does not change the already saved hidden control; the next successful iteration replaces their values with new results. Their lexical scope is the loop body. The new locals are not in scope in the `in` expressions or after `end`; a loop name in its own initializer does not refer to the new local.
+The visible loop variables are writable locals. Reassigning them in the body does not change the already saved hidden control; each successful iteration creates fresh visible locals. Their lexical scope is the loop body. The new locals are not in scope in the `in` expressions or after `end`; a loop name in its own initializer does not refer to the new local.
 
 A reached `break` exits the nearest enclosing loop, skipping the remaining body and subsequent iterator calls.
 
@@ -1379,17 +1378,29 @@ See the [BIOS iteration routines](bios-base.md#sec-bios-base-traversal-argument-
 
 Labels use `::name::` and branches use `goto name`.
 
-Label names have **function-wide scope**, not block scope. A `goto` can name a label written before or after it, including a label in another lexical block of the same function. A nested function has its own label names: a label in another function cannot satisfy the jump. Each chunk also has its own label scope.
+A label is visible in its block and in enclosed blocks, but not inside a
+nested function. A jump can go forward or backward to a visible label, but
+cannot enter the scope of a local. A label followed only by labels or empty
+statements at the end of a block is outside the locals declared in that block.
+This exception does not apply before the `until` condition of a repeat loop,
+where the body locals remain visible. A label cannot redeclare an already
+visible label of the same name.
 
+For example, a jump to `done` can skip an entire block and its declarations:
 
-A second label with the same name in one function is rejected as `Duplicate label 'name'.`, even if the labels occupy different blocks. A target name not defined in that function is reported as `Missing label(s): ...`. A same-spelling label in a separate function is independent.
+```lua
+if skip then goto done end
+do
+    local cursor = make_cursor()
+    draw(cursor)
+end
+::done::
+```
 
-BLua does not reject a jump merely because it crosses a local declaration or enters or leaves a lexical block. The jump must still have a defined target and an encodable displacement. These are not checks on local scope or initialization.
-
-A forward jump can skip local initialization; a backward jump resumes at its
-earlier target with existing values. Jumps insert neither initialization nor
-capture-close operations at crossed block boundaries. Keep required
-initialization and state changes on the executed path.
+A jump that leaves a local’s scope closes any open capture of that local.
+A closure keeps the captured cell after the jump; re-entering the declaration
+creates a new local and cannot overwrite the old cell. The same rule applies
+to fallthrough, `break`, and the end of a loop iteration.
 
 ## Global names and source resolution {#sec-blua-programs-ordinary-globals-are-a-name-bank}
 

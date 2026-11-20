@@ -148,7 +148,8 @@ bool CPU::decodeInstructionWords(
 		return true;
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	if (instructionCacheable && nativeBlockSupports(decoded.op)) {
+	if (instructionCacheable && nativeBlockSupports(decoded.op)
+		&& (decoded.op != static_cast<u8>(OpCode::JMP) || decoded.a == 0)) {
 		decoded.dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
 		page.nativeVisits[pageOffset] = 0;
 		return true;

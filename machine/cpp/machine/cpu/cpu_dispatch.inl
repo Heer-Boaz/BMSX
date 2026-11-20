@@ -477,6 +477,7 @@ DISPATCH_LABEL(MTC0) {
 }
 
 DISPATCH_LABEL(JMP) {
+	if (decoded->a != 0) instructionBudgetRemaining -= closeUpvalues(FRAME, static_cast<u32>(FRAME.stackBase()) + decoded->a - 1u);
 	const uint32_t bx = decoded->bx;
 	FRAME.writeControl(FrameField::Pc, bx);
 	DISPATCH_NEXT();

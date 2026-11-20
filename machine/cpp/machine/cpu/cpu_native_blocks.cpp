@@ -126,7 +126,7 @@ void CPU::discoverNativeSource(NativeCompilationSource& source, std::vector<u32>
 					&& successor + page.words[successor].width <= DECODED_PAGE_WORDS) {
 					enqueue(successorPc + static_cast<u32>(page.words[successor].width) * INSTRUCTION_BYTES, true);
 					const auto& skipped = page.words[successor];
-					if (skipped.op == static_cast<u8>(OpCode::JMP)
+					if (skipped.op == static_cast<u8>(OpCode::JMP) && skipped.a == 0
 						&& skipped.dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe)) {
 						// This edge executes the fused JMP, not a separate entry.
 						// An independent predecessor can still enqueue the JMP itself.

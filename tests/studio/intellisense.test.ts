@@ -820,7 +820,7 @@ return buffer`;
 	});
 
 	test(`suspended inspection does not invent a location for a folded local at O${optLevel}`, () => {
-		const source = 'local value = 11\nhalt_until_irq\nreturn value';
+		const source = 'local value = 11\nhalt_until_irq\nreturn value + 1';
 		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
 		runtime.machine.cpu.reset();
 		runGuestToHalt(runtime.machine.cpu, 10_000);

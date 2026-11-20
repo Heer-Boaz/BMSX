@@ -1749,12 +1749,16 @@ The signed `BX` displacement is measured in four-byte instruction words. A branc
 
 The full instruction width includes a `WIDE` prefix when present. Thus the displacement is relative to the byte immediately after the complete branch instruction, not its first word. `BX` is signed 20-bit without `WIDE` and signed 26-bit with it. A conditional branch that is not taken continues at the already selected sequential PC.
 
+A closing `JMP` charges one additional cycle per upvalue closed. The closed cell
+keeps the value held in the register at the time of the branch. A zero
+displacement closes the selected cells and continues at the next instruction.
+
 
 The branch itself performs no target-memory read or target-alignment check. Fetching at the resulting PC is a separate step governed by the instruction-fetch rules.
 
 | Opcode | Instruction and operands | Effect | Nominal cost |
 |---|---|---|---:|
-| `28H` | `JMP BX` | Assign the branch target to PC; `A` is ignored | 2 |
+| `28H` | `JMP A, BX` | If `A` is nonzero, close the current frame’s open upvalues from `R(A-1)` upward; then assign the target to PC | 2 |
 | `29H` | `JMPIF A, BX` | Assign the target to PC if `R[A]` is true; otherwise continue sequentially | 2 |
 | `2AH` | `JMPIFNOT A, BX` | Assign the target to PC if `R[A]` is false; otherwise continue sequentially | 2 |
 

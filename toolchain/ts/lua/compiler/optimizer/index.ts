@@ -145,7 +145,7 @@ const removeNoOps = (set: InstructionSet): InstructionSet => {
 			removed += 1;
 			continue;
 		}
-		if (instruction.op === OpCode.JMP && getJumpTarget(instruction) === i + 1) {
+		if (instruction.op === OpCode.JMP && instruction.a === 0 && getJumpTarget(instruction) === i + 1) {
 			keep[i] = false;
 			removed += 1;
 		}
@@ -165,7 +165,7 @@ const resolveJumpTarget = (target: number, instructions: Instruction[]): number 
 		}
 		visited.add(current);
 		const instruction = instructions[current];
-		if (instruction.op !== OpCode.JMP) {
+		if (instruction.op !== OpCode.JMP || instruction.a !== 0) {
 			break;
 		}
 		const nextTarget = getJumpTarget(instruction);
@@ -300,7 +300,7 @@ const simplifyCompareBool = (set: InstructionSet): InstructionSet => {
 		if (compare.format !== 'ABC') {
 			continue;
 		}
-		if (jump.op !== OpCode.JMP || jump.format !== 'AsBx') {
+		if (jump.op !== OpCode.JMP || jump.a !== 0 || jump.format !== 'AsBx') {
 			continue;
 		}
 		if (getJumpTarget(jump) !== i + 4) {
@@ -1310,9 +1310,23 @@ const mergeInitializedClosurePredecessors = (
 const applyClosureTransferForInlining = (
 	closures: Map<number, number>,
 	instruction: Instruction,
-	closureWrittenRegisters: ReadonlySet<number>,
+	context: OptimizationContext,
 ): void => {
+	const { closureWrittenRegisters, getClosureUpvalues } = context;
 	switch (instruction.op) {
+		case OpCode.JMP:
+			if (instruction.a !== 0) {
+				for (const [register, proto] of closures) {
+					for (const capture of getClosureUpvalues(proto)) {
+						if (capture.inStack && capture.index >= instruction.a - 1) {
+							// The closure still exists, but its cell no longer aliases a frame register.
+							closures.delete(register);
+							break;
+						}
+					}
+				}
+			}
+			return;
 		case OpCode.MOV: {
 			if (instruction.c !== ValueMoveKind.Copy || closureWrittenRegisters.has(instruction.a)
 				|| closureWrittenRegisters.has(instruction.b)) {
@@ -1468,7 +1482,7 @@ const computeClosureInForInlining = (
 			const closures = new Map(inMaps[blockIndex]);
 			const block = blocks[blockIndex];
 			for (let i = block.start; i < block.end; i += 1) {
-				applyClosureTransferForInlining(closures, instructions[i], context.closureWrittenRegisters);
+				applyClosureTransferForInlining(closures, instructions[i], context);
 			}
 			if (outInitialized[blockIndex] === 0 || !equalClosureMaps(closures, outMaps[blockIndex])) {
 				outMaps[blockIndex] = closures;
@@ -1748,6 +1762,7 @@ const buildInlineExpansion = (
 				mapped.b = mapRegister(mapped.b);
 				break;
 			case OpCode.JMP:
+				if (mapped.a !== 0) return null;
 				break;
 			case OpCode.GETUP: {
 				const desc = callee.meta.upvalueDescs[mapped.b];
@@ -2044,7 +2059,7 @@ const inlineFunctionCalls = (
 					openUpvalues,
 					markOpenUpvalueRegister,
 				);
-				applyClosureTransferForInlining(closures, instruction, context.closureWrittenRegisters);
+				applyClosureTransferForInlining(closures, instruction, context);
 			}
 			if (inlined) {
 				break;
