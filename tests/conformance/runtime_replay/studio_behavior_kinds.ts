@@ -28,7 +28,7 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	if (period.element.kind !== 'property') throw new Error('behavior kinds: period must retain its authored field');
 	const node = period.element.source;
 	await revealLensOccurrence(test, lens.view, node.rowKey);
-	await runPaletteCommand('Behavior Lens: Open Source');
+	await runPaletteCommand('editor.source');
 	const document = harness.getActiveEditorDocument();
 	check(document.model === model && document.view.cursorRow === node.authoredRange.start.line - 1
 		&& document.view.cursorColumn === node.authoredRange.start.column - 1,
@@ -41,7 +41,7 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	await chooseBehavior(test, 'EFFECT fire_salvo');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === lens,
 		'behavior kinds: the same ActionEffect lens reflects dirty canonical Lua without a new document or runtime edit');
-	await runPaletteCommand('Behavior Lens: Open Source');
+	await runPaletteCommand('editor.source');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'behavior kinds: ordinary source Undo restores the effect definition');
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');

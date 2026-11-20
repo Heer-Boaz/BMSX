@@ -125,7 +125,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	check(lens.workingCopy === model,
 		'behavior picker: selects the second registration, not the first definition or the current code cursor');
 	const secondKey = lens.view.source.nodesByRowKey.get(lens.view.selectionState.selected!.rowKey)!.rowKey;
-	await click(lens.view.presentation.actionBar.items[0].bounds);
+	await runPaletteCommand('editor.source');
 	check(harness.getActiveEditorDocument().model === model && harness.getActiveEditorDocument().view.cursorRow === secondLine
 		&& harness.getActiveEditorDocument().view.cursorColumn === lines[secondLine].indexOf('picker_shared'),
 		'behavior picker: Source opens the chosen registration reference, not the shared initializer');
@@ -159,7 +159,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	check(inputFocus.target === focus && ide.editor.editorParts.activeGroup.model.activeTab === duplicate
 		&& duplicate.view.source.nodesByRowKey.get(duplicate.view.selectionState.selected!.rowKey)! === selected,
 		'behavior picker: cancellation preserves invoking focus and selection');
-	await click(duplicate.view.presentation.actionBar.items[0].bounds);
+	await runPaletteCommand('editor.source');
 	check(harness.getActiveEditorDocument().view.cursorRow === lastLine, 'behavior picker: duplicate Source goes to its own call');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'behavior picker: ordinary source Undo removes the temporary authored definitions');
