@@ -82,7 +82,7 @@ export async function createLiveStudioFixture(t: TestContext, presentation: 'vie
 	afterTest(t, async () => {
 		inputFocus.setTarget(null); pointerCapture.interrupt(false); editor.editorParts.clear();
 		await editor.shutdown(); clearBackgroundTasks(); editorTextModelService.clear(); sources.catalog.dispose();
-		presenter.dispose(); audio.dispose(); input.dispose(); closeWorkspaceRecords();
+		presenter.dispose(); audio.dispose(); input.dispose(); await closeWorkspaceRecords();
 	});
 	const frame = async () => {
 		clock.advance(1000 / 60);
