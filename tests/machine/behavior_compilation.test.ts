@@ -1,11 +1,11 @@
-import { allocatedObjectRecords } from '../helpers/cpu_execution';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueNil, asClosure, valueInteger, valueBool, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { compileCartlibProgram, createCartlibCaseRom, createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createTestBlua32PairCpu } from '../helpers/blua32';
 import { BT_COMPILATION_PROBE_SOURCE } from '../helpers/behavior_compilation_fixture';
 import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -15,6 +15,9 @@ const recorderModule = {
 };
 
 const observationChannels = ['bt.compile.begin', 'bt.compile.node', 'bt.compile.end', 'bt.bind.complete'];
+const modules = [recorderModule];
+const emitted = createCartlibCaseRom('', { traceStatements: 'emit', modules });
+const observed = createCartlibCaseRom('', { traceStatements: observationChannels, modules });
 
 for (const optLevel of [3] as const) test(`BT compilation observes occurrences, not evaluator or actor identity (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(BT_COMPILATION_PROBE_SOURCE + `
@@ -59,8 +62,7 @@ probe.drop_definition()
 	}
 });
 
-test('compilation identity survives equal callbacks, and failure publishes no completed capture', () => {
-	const { cpu } = createCartlibProgramHarness(`
+emitted.test('compilation identity survives equal callbacks, and failure publishes no completed capture', `
 local compiler<const> = require('cartlib/behaviour_tree/program')
 local recorder<const> = require('testlib/behaviour_tree/compile_recorder').new()
 local result<const> = require('cartlib/behaviour_tree/result')
@@ -80,13 +82,9 @@ assert(not accepted and recorder.programs[first] == first_capture and recorder.p
 recorder:dispose()
 local unobserved<const> = compiler.compile('unobserved', { root = shared })
 assert(recorder.programs[unobserved] == nil)
-`, { traceStatements: 'emit', modules: [recorderModule] });
-	runGuestToHalt(cpu, 10_000_000);
-});
+`, 10_000_000);
 
-test('BT observation retains the effective node kind from the supported table-prototype lookup', () => {
-	for (const tracing of [false, true]) {
-		const { cpu } = createCartlibProgramHarness(`
+const effectiveKind = `
 local compiler<const> = require('cartlib/behaviour_tree/program')
 local recorder<const> = require('testlib/behaviour_tree/compile_recorder').new()
 local result<const> = require('cartlib/behaviour_tree/result')
@@ -96,14 +94,15 @@ local node<const> = setmetatable({}, { __index = prototype })
 local compiled<const> = compiler.compile('computed', { root = node })
 prototype.type = 'wait'
 assert(calls == 0)
-${tracing ? "assert(recorder.programs[compiled].nodes.type[1] == 'task')" : ''}
-`, { traceStatements: tracing ? 'emit' : 'erase', modules: [recorderModule] });
-		runGuestToHalt(cpu, 10_000_000);
-	}
+`;
+const effectiveKindCase = emitted.add(effectiveKind + "assert(recorder.programs[compiled].nodes.type[1] == 'task')");
+test('BT observation retains the effective node kind from the supported table-prototype lookup', () => {
+	const { cpu } = createCartlibProgramHarness(effectiveKind, { traceStatements: 'erase', modules });
+	runGuestToHalt(cpu, 10_000_000);
+	emitted.run(effectiveKindCase, 10_000_000);
 });
 
-for (const optLevel of [3] as const) test(`BT columns preserve sparse values and broad/deep occurrence indices (O${optLevel})`, () => {
-	const { cpu } = createCartlibProgramHarness(`
+observed.test('BT columns preserve sparse values and broad/deep occurrence indices (O3)', `
 local compiler<const> = require('cartlib/behaviour_tree/program')
 local recorder<const> = require('testlib/behaviour_tree/compile_recorder').new()
 local result<const> = require('cartlib/behaviour_tree/result')
@@ -160,9 +159,7 @@ for _, depth in ipairs({ 1, 32, 129 }) do
 		assert(nodes.first_slot[occurrence] == 1 and nodes.last_slot[occurrence] == 0)
 	end
 end
-`, { optLevel, traceStatements: observationChannels, modules: [recorderModule] });
-	runGuestToHalt(cpu, 10_000_000);
-});
+`, 10_000_000);
 
 for (const optLevel of [3] as const) test(`BT records follow program/actor reachability, including ephemeron cycles (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(`
@@ -228,8 +225,7 @@ function probe.drop_first() probe.first = nil end
 	for (let index = 1; index <= 3; index += 1) assert.equal(cpu.gc.tables.getInteger(old, index), valueNil());
 });
 
-test('BT completion records distinguish nested, failed and detached rebinds from current field state', () => {
-	const { cpu } = createCartlibProgramHarness(`
+observed.test('BT completion records distinguish nested, failed and detached rebinds from current field state', `
 local compiler<const> = require('cartlib/behaviour_tree/program')
 local component<const> = require('cartlib/behaviour_tree/bt_component')
 local recorder<const> = require('testlib/behaviour_tree/compile_recorder').new()
@@ -271,38 +267,41 @@ recorder:dispose()
 actor:rebind_program(inner)
 assert(actor.evaluate == inner.evaluate and actor.operand == inner.operand)
 assert(recorder.completed_bindings[actor] == outer)
-`, { traceStatements: observationChannels, modules: [recorderModule] });
-	runGuestToHalt(cpu, 10_000_000);
-});
+`, 10_000_000);
 
 test('BT capture costs are cold; retained aliases are not a compiled definition snapshot', t => {
 	const measurements: { mode: string; code: number; setup: number; allocation: number; retained: number; objects: number; compileCycles: number; tickCycles: number }[] = [];
-	for (const mode of ['erased', 'retained', 'unselected', 'captured', 'cold-only'] as const) {
-		const { cpu, images } = createCartlibProgramHarness(BT_COMPILATION_PROBE_SOURCE, {
-			traceStatements: mode === 'cold-only' ? observationChannels
-				: mode === 'erased' || mode === 'retained' ? 'erase' : 'emit',
-			modules: [recorderModule],
-		});
-		runGuestToHalt(cpu, 10_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		const ready = cpu.collectTrackedHeapBytes();
-		if (mode === 'captured' || mode === 'cold-only') {
-			runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('observe')!), cpu.gc), []);
+	// Share installed bytes within a trace mode, not the runtime being measured.
+	for (const [traceStatements, modes] of [
+		['erase', ['erased', 'retained']],
+		['emit', ['unselected', 'captured']],
+		[observationChannels, ['cold-only']],
+	] as const) {
+		const { images } = compileCartlibProgram(BT_COMPILATION_PROBE_SOURCE, { traceStatements, modules });
+		for (const mode of modes) {
+			const { cpu } = createTestBlua32PairCpu(images);
+			cpu.installBootPrimitives();
+			runGuestToHalt(cpu, 10_000_000);
+			const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+			const ready = cpu.collectTrackedHeapBytes();
+			if (mode === 'captured' || mode === 'cold-only') {
+				runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('observe')!), cpu.gc), []);
+			}
+			const before = cpu.collectTrackedHeapBytes();
+			const beforeObjects = allocatedObjectRecords(cpu).length;
+			const compileCycles = runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('compile')!), cpu.gc), [valueInteger(32), valueBool(mode === 'retained')]);
+			const allocation = cpu.luaHeap.usedBytes() - before;
+			const retained = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength()) - before;
+			const objects = allocatedObjectRecords(cpu).length - beforeObjects;
+			const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak_inputs')!));
+			assert.equal(cpu.gc.tables.getInteger(weak, 1) === valueNil(), mode !== 'retained');
+			const run = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('run')!), cpu.gc);
+			runCompletionClosure(cpu, run, [valueInteger(384)]);
+			const warmBytes = cpu.luaHeap.usedBytes();
+			const tickCycles = runCompletionClosure(cpu, run, [valueInteger(9984)], 50_000_000);
+			assert.equal(cpu.luaHeap.usedBytes(), warmBytes, `${mode}: evaluator must not allocate per tick`);
+			measurements.push({ mode, code: images.cartImage.textBytes.byteLength, setup: before - ready, allocation, retained, objects, compileCycles, tickCycles });
 		}
-		const before = cpu.collectTrackedHeapBytes();
-		const beforeObjects = allocatedObjectRecords(cpu).length;
-		const compileCycles = runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('compile')!), cpu.gc), [valueInteger(32), valueBool(mode === 'retained')]);
-		const allocation = cpu.luaHeap.usedBytes() - before;
-		const retained = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength()) - before;
-		const objects = allocatedObjectRecords(cpu).length - beforeObjects;
-		const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak_inputs')!));
-		assert.equal(cpu.gc.tables.getInteger(weak, 1) === valueNil(), mode !== 'retained');
-		const run = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('run')!), cpu.gc);
-		runCompletionClosure(cpu, run, [valueInteger(384)]);
-		const warmBytes = cpu.luaHeap.usedBytes();
-		const tickCycles = runCompletionClosure(cpu, run, [valueInteger(9984)], 50_000_000);
-		assert.equal(cpu.luaHeap.usedBytes(), warmBytes, `${mode}: evaluator must not allocate per tick`);
-		measurements.push({ mode, code: images.cartImage.textBytes.byteLength, setup: before - ready, allocation, retained, objects, compileCycles, tickCycles });
 	}
 	for (const row of measurements) {
 		assert.equal(row.tickCycles, measurements[0].tickCycles, `${row.mode}: tracing must not change the execution path`);

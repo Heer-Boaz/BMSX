@@ -2,14 +2,13 @@ import { asClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
-import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
-	test(`World and Scene accept omitted construction options without replacing explicit inputs (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+	const rom = createCartlibCaseRom(setup, { optLevel, modules });
+	rom.test(`World and Scene accept omitted construction options without replacing explicit inputs (O${optLevel})`, `
 world:start()
 
 local shared<const> = { score = 12 }
@@ -57,12 +56,9 @@ world:_commit_mutation_barrier()
 assert(registry:get(pending.id) == pending and pending.active)
 assert(pending._construction_options == nil)
 world:clear()
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	test(`Omitted spawn options have the same guest allocation cost as reused explicit input (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+	const omittedCase = rom.add(`
 world:start()
 
 prefab.define({def_id='inputs.group',
@@ -77,8 +73,9 @@ probe = {
   for index = 1, count do world:spawn('inputs.group', input):mark_for_disposal() end
  end,
 }
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
+`);
+	test(`Omitted spawn options have the same guest allocation cost as reused explicit input (O${optLevel})`, () => {
+		const cpu = rom.run(omittedCase);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const omitted = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('omitted')!), cpu.gc);
 		const state = captureCpuCheckpoint(cpu);
@@ -93,8 +90,7 @@ probe = {
 		assert.equal(implicitProfile.reservedBytes, explicitProfile.reservedBytes);
 	});
 
-	test(`Construction hooks do not allocate an owner-forwarding context (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+	const hooksCase = rom.add(`
 world:start()
 
 local input<const> = {}
@@ -119,8 +115,9 @@ probe = {
   for index = 1, count do world:spawn('inputs.hooks', input):mark_for_disposal() end
  end,
 }
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
+`);
+	test(`Construction hooks do not allocate an owner-forwarding context (O${optLevel})`, () => {
+		const cpu = rom.run(hooksCase);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const plain = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('plain')!), cpu.gc);
 		const state = captureCpuCheckpoint(cpu);

@@ -1,11 +1,10 @@
-import { valueNil, asClosure, asStringId, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
-import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const modules = [
 	...WORLD_CPU_MODULES,
@@ -23,10 +22,6 @@ const modules = [
 const setup = WORLD_CPU_SETUP + `
 world:start()
 
-local failed
-local assert<const> = function(condition,message)
- if not condition and failed == nil then failed=message end
-end
 local commands<const> = require('cartlib/gx/command_list')
 local text_component<const> = require('cartlib/text/text_component')
 local text_object<const> = require('cartlib/text/text_object')
@@ -98,7 +93,6 @@ end,affine=function(count)
   text:draw_visual(draw)
  end
 end}
-return failed
 `;
 
 const rich = `
@@ -150,27 +144,21 @@ probe={run=function(count)
   text:draw_visual(draw)
  end
 end}
-return failed
 `;
 
-for (const optLevel of [3] as const) {
-	for (const [name, fixture] of [['plain', plain], ['rich', rich]] as const) {
-		test(`Text ${name} retains local layout and transforms its complete geometry (O${optLevel})`, t => {
-			const { cpu } = createCartlibProgramHarness(setup + fixture, { optLevel, modules });
-			runGuestToHalt(cpu, 30_000_000);
-			const [failure] = materializeCpuCompletionValues(cpu);
-			assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
-			if (optLevel === 3) {
-				const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-				for (const lane of name === 'plain' ? ['run', 'affine'] : ['run']) {
-					const kernel = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(lane)!), cpu.gc);
-					const profile = profileWarmGuestKernel(cpu, kernel, 256);
-					assert.equal(profile.reservations, 0);
-					assert.equal(profile.reservedBytes, 0);
-					assert.equal(profile.retainedAfter, profile.retainedBefore);
-					t.diagnostic(`${name}/${lane}: ${JSON.stringify(profile)}`);
-				}
-			}
-		});
-	}
+const rom = createCartlibCaseRom(setup, { optLevel: 3, modules });
+for (const [name, fixture] of [['plain', plain], ['rich', rich]] as const) {
+	const id = rom.add(fixture);
+	test(`Text ${name} retains local layout and transforms its complete geometry (O3)`, t => {
+		const cpu = rom.run(id, 30_000_000);
+		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		for (const lane of name === 'plain' ? ['run', 'affine'] : ['run']) {
+			const kernel = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(lane)!), cpu.gc);
+			const profile = profileWarmGuestKernel(cpu, kernel, 256);
+			assert.equal(profile.reservations, 0);
+			assert.equal(profile.reservedBytes, 0);
+			assert.equal(profile.retainedAfter, profile.retainedBefore);
+			t.diagnostic(`${name}/${lane}: ${JSON.stringify(profile)}`);
+		}
+	});
 }
