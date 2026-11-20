@@ -58,10 +58,10 @@ NativeBlockGate::NativeBlockGate() {
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
 	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, offsetof(CallFrame, registers));
 	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), bindWindow);
-	// CALL and RET save their descriptor in the same scratch slot before
-	// reusing R0. Declined transitions still own the original, unplaced grant.
+	// Restore the original CALL/RET descriptor before semantic dispatch.
+	// Declined transitions still own the original, unplaced grant.
 	auto* declined = sljit_emit_label(compiler);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, exit));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, NativeBlockAbi::transitionExit, 0);
 	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), cold);
 	auto* callEntry = emitCallGate(compiler, declined);
 	sljit_set_label(call, callEntry);

@@ -404,7 +404,9 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 16u},
 		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 1, .numParams = static_cast<u32>(params),
-			.maxStack = params == 0 ? 0u : static_cast<u32>(maxStack), .isVararg = vararg}};
+			.maxStack = params == 0 ? 0u : static_cast<u32>(maxStack), .isVararg = vararg},
+		{.firstWord = 2, .wordCount = 3, .maxStack = 16u},
+		{.firstWord = 2 * DECODED_PAGE_WORDS, .wordCount = 2, .maxStack = 16u}};
 	image.globalNames = {"nativeCallMarker"};
 	const u32 record = DYNAMIC_RAM_BASE + 0x1ff0u;
 	image.closureRelocations = {{1, ramRecord ? record : test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
@@ -414,20 +416,11 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 7);
 	}
 	const u32 markerPc = machine.rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE;
-	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], markerPc);
-	machine.cpu.runUntilDepth(0, 4096);
-	test::waitForNativeEntry(machine.cpu, *machine.cpu.activeThread()->currentFrame->decodedPage,
-		(markerPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
-	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
-	machine.cpu.runUntilDepth(0, 12000);
-	test::waitForNativeEntry(machine.cpu, *machine.cpu.activeThread()->frameAtDepth(0)->decodedPage,
-		((machine.rom.textAddress + 2u * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
-#if defined(BMSX_NATIVE_COMPILER_WORKER)
-	machine.cpu.runUntilDepth(0, 12000);
-#endif
+	// The immutable caller suffix, callee, and marker have real ROM entry
+	// records. Prepare them before execution; this is not a worker race test.
+	machine.cpu.prepareSystemNativeCode();
 	const u32 calleePc = machine.rom.textAddress + MAPPED_PAGE_BYTE_SIZE;
-	const auto& decodedCallee = machine.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(calleePc & ~MAPPED_PAGE_BYTE_MASK);
-	test::waitForNativeEntry(machine.cpu, decodedCallee, (calleePc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+	machine.cpu.runUntilDepth(0, 256); // Make and retire the first real callee.
 	machine.cpu.runUntilDepth(1, 100);
 	auto* thread = machine.cpu.activeThread();
 	auto* caller = thread->currentFrame;
@@ -526,38 +519,21 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
 		{.firstWord = 16, .wordCount = 6, .maxStack = 16},
-		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 1, .maxStack = 8}};
+		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 1, .maxStack = 8},
+		{.firstWord = 20, .wordCount = 2, .maxStack = 16},
+		{.firstWord = 2 * DECODED_PAGE_WORDS, .wordCount = 2, .maxStack = 16}};
 	image.systemGlobalNames = {"pcall"}; image.globalNames = {"nativeReturnMarker"};
 	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
 		{17, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	CpuMachine machine(image, false);
-	// The raw RET proof requires the callee itself, not just its caller and
-	// alternate continuation, to have a published generated body.
+	// Publish all three real translations without running unrelated guest
+	// loops to make the compiler worker discover the test entry points.
 	machine.cpu.prepareSystemNativeCode();
 	machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
-#if defined(BMSX_NATIVE_COMPILER_WORKER)
-	machine.cpu.setNativeCompilationProfiling(true);
-#endif
 	const u32 markerPc = machine.rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE;
-	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], markerPc);
-	machine.cpu.runUntilDepth(0, 4096);
-	test::waitForNativeEntry(machine.cpu, *machine.cpu.activeThread()->currentFrame->decodedPage,
-		(markerPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
-	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
-	machine.cpu.runUntilDepth(0, 4096);
-	auto& decoded = *machine.cpu.activeThread()->frameAtDepth(0)->decodedPage;
-	test::waitForNativeEntry(machine.cpu, decoded, (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
-#if defined(BMSX_NATIVE_COMPILER_WORKER)
-	machine.cpu.runUntilDepth(0, 4096);
-	test::waitForFixtureWorkerRequests(machine.cpu);
-	const u32 continuationWord = ((machine.rom.textAddress + 20u * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-	for (int pass = 0; pass < 4 && (!decoded.nativeBlocks || !decoded.nativeBlocks->entries[continuationWord]); ++pass) {
-		machine.cpu.runUntilDepth(0, 4096);
-		test::waitForFixtureWorkerRequests(machine.cpu);
-	}
-#endif
-	test::waitForNativeEntry(machine.cpu, decoded, ((machine.rom.textAddress + 20u * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
-	while (machine.cpu.getFrameDepth() != 3) machine.cpu.runUntilDepth(0, 1);
+	for (u32 step = 0; step < image.functions[0].wordCount + image.functions[1].wordCount && machine.cpu.getFrameDepth() != 3; ++step)
+		machine.cpu.runUntilDepth(0, 1);
+	require(machine.cpu.getFrameDepth() == 3, "the two real CALLs reach the suspended return fixture within their instruction prefix");
 	auto* thread = machine.cpu.activeThread();
 	auto* callee = thread->currentFrame;
 	auto* caller = callee->previous;
@@ -1018,7 +994,7 @@ void weakCanonicalClosuresAndStaticEntry() {
 // The caller executes from writable RAM; its callee and function record stay in ROM.
 void rewriteActiveReturnAddress() {
 	const u32 callerPc = DYNAMIC_RAM_BASE + 2 * MAPPED_PAGE_BYTE_SIZE;
-	test::Blua32TestImage image; image.text.resize(8 * INSTRUCTION_BYTES);
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
@@ -1034,20 +1010,35 @@ void rewriteActiveReturnAddress() {
 	// Precompile the immutable callee. The single warm-up job under test is
 	// the writable caller and its continuation; do not race two submissions.
 	native.cpu.prepareSystemNativeCode();
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	native.cpu.setNativeCompilationProfiling(true);
+#endif
 #endif
 	for (auto* m : {&native, &scalar}) {
 		m->memory.writeBytes(callerPc, m->rom.bytes.data() + m->rom.textAddress, 6 * INSTRUCTION_BYTES);
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], callerPc);
 	}
-	test::runCpuParity(native.cpu, scalar.cpu, 20000);
+	test::runCpuParity(native.cpu, scalar.cpu, 4096);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& pages = native.cpu.activeThread()->firstFrame->executionImage->decodedPages;
 	const auto& ramPage = pages.at(callerPc);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	// Publish each submitted job before expecting the next hot RAM entry.
+	// A zero-grant publication poll alone cannot submit a deferred suffix.
+	test::waitForFixtureWorkerRequests(native.cpu);
+	for (u32 pass = 0; pass < image.functions[0].wordCount
+		&& (!ramPage.nativeBlocks || !ramPage.nativeBlocks->entries[2] || !ramPage.nativeBlocks->entries[4]); ++pass) {
+		test::runCpuParity(native.cpu, scalar.cpu, 4096);
+		test::waitForFixtureWorkerRequests(native.cpu);
+	}
+#endif
+	require(ramPage.nativeBlocks && ramPage.nativeBlocks->entries[2] && ramPage.nativeBlocks->entries[4],
+		"the writable caller and continuation both have translations before suspending the caller");
 	const u32 calleePc = native.rom.textAddress + 6 * INSTRUCTION_BYTES;
 	const auto& romPage = pages.at(calleePc & ~MAPPED_PAGE_BYTE_MASK);
-	test::waitForNativeEntry(native.cpu, ramPage, 4);
-	test::waitForNativeEntry(native.cpu, romPage, (calleePc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
-	require(romPage.nativeBlocks->entries[(calleePc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]->terminal.exit == NativeBlockExit::Return,
+	require(romPage.nativeBlocks != nullptr, "the full backed ROM page publishes the planned callee");
+	const auto& calleeEntry = romPage.nativeBlocks->entries[(calleePc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	require(calleeEntry && calleeEntry->terminal.exit == NativeBlockExit::Return,
 		"callee has a generated return while the original RAM continuation is still live");
 #endif
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);

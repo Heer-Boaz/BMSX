@@ -57,7 +57,15 @@ void NativeBlockCompiler::emitScalarBoundary(u32 pc, int cycles, int top) {
 void NativeBlockCompiler::emitLeave(NativeBlockExitSite& exit, bool charged) {
 	m_cache.publish();
 	const auto& gate = nativeBlockGate();
-	void* target = charged || (exit.cycles == 0 && exit.registerTop == 0) ? gate.leaveSegment : gate.publishSegment;
+	const bool frameTransfer = exit.exit == NativeBlockExit::Call || exit.exit == NativeBlockExit::Return;
+	// The common CALL/RET edges enter another body without calling C++.
+	// Keep their literal charge/top inline; share the true cold publication.
+	if (!charged && frameTransfer) {
+		emitTop(exit.registerTop);
+		sljit_emit_op2(m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0,
+			NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
+	}
+	void* target = charged || frameTransfer || (exit.cycles == 0 && exit.registerTop == 0) ? gate.leaveSegment : gate.publishSegment;
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&exit));
 	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM, reinterpret_cast<sljit_sw>(target));
 	m_terminal = true;

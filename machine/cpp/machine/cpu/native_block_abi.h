@@ -9,10 +9,6 @@
 namespace bmsx {
 
 struct NativeCallScratch {
-	const NativeBlockExitSite* exit;
-	CallFrame* caller;
-	CallFrame* callee;
-	void* target;
 	int argumentBase;
 	u32 closureAddress, functionAddress, codeAddress, numParams, maxStack, flags, frameDepth;
 	int argCount, varargBase, varargCount, stackBase, stackTop;
@@ -63,6 +59,11 @@ struct NativeBlockAbi {
 			result[i] = {i < savedWords ? SLJIT_S(fixedSaved + i) : SLJIT_R(4 + i - savedWords), i < savedWords};
 		return result;
 	}();
+	// All cached values have been materialized before CALL/RET enter the
+	// stable gate. Its four word registers are free until the next body.
+	static_assert(wordCount == 4);
+	static_assert(wordRegisters[0].calleeSaved);
+	static constexpr sljit_s32 transitionExit = wordRegisters[0].reg;
 	static constexpr auto floatRegisters = [] {
 		std::array<NativeRegisterHost, floatCount> result{};
 		for (int i = 0; i < floatCount; ++i)
@@ -91,7 +92,7 @@ private:
 	// Input: R0 = PC. Output: R3 = live entry; R2 is scratch.
 	static void emitCodeLookup(sljit_compiler*, sljit_label* declined);
 	static void emitPublishFrameTop(sljit_compiler*, sljit_s32 control, sljit_s32 top, sljit_s32 scratch);
-	static void emitFrameEntry(sljit_compiler*, sljit_sw targetSlot);
+	static void emitFrameEntry(sljit_compiler*, sljit_s32 frame, sljit_s32 target);
 
 };
 const NativeBlockGate& nativeBlockGate();

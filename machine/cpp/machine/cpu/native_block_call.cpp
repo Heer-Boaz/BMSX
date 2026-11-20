@@ -13,8 +13,12 @@ namespace bmsx {
 sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label* coldDispatch) {
 	const auto thread = Thread::nativeOffsets();
 	constexpr sljit_sw pointerShift = std::countr_zero(sizeof(void*));
+	constexpr auto exit = NativeBlockAbi::transitionExit;
+	constexpr auto caller = NativeBlockAbi::wordRegisters[1].reg;
+	constexpr auto callee = NativeBlockAbi::wordRegisters[2].reg;
+	constexpr auto target = NativeBlockAbi::wordRegisters[3].reg;
 	auto* entry = sljit_emit_label(compiler);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, exit), SLJIT_R0, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, exit, 0, SLJIT_R0, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, exitA));
 	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM2(NativeBlockAbi::tags, SLJIT_R2), 0);
 	auto* builtin = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R1, 0,
@@ -22,12 +26,10 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0,
 		SLJIT_IMM, valueTagHeader(ValueTag::Closure)), coldDispatch);
 	// Builtins need no child frame. Only the closure path admits a spare node.
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, caller), SLJIT_R1, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, next));
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, 0), coldDispatch);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, callee), SLJIT_R1, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, thread));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, caller, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, callee, 0, SLJIT_MEM1(caller), offsetof(CallFrame, next));
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, callee, 0, SLJIT_IMM, 0), coldDispatch);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(caller), offsetof(CallFrame, thread));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R1), thread.record);
 	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), static_cast<u32>(ThreadField::FrameDepth), SLJIT_IMM, THREAD_CONTROL_COUNT_MASK);
 	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
@@ -90,9 +92,8 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R3), 0);
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::Closure)), coldDispatch);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, exit));
-	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, exitA));
-	sljit_emit_op1(compiler, SLJIT_MOV_S16, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, exitB));
+	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(exit), offsetof(NativeBlockExitSite, exitA));
+	sljit_emit_op1(compiler, SLJIT_MOV_S16, SLJIT_R1, 0, SLJIT_MEM1(exit), offsetof(NativeBlockExitSite, exitB));
 	auto* fixedArgs = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
 	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop), SLJIT_R2, 0);
 	sljit_set_label(fixedArgs, sljit_emit_label(compiler));
@@ -112,8 +113,7 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, 2);
 	sljit_set_label(firstBank, sljit_emit_label(compiler));
 	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, caller));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, executionImage));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(caller), offsetof(CallFrame, executionImage));
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), Blua32ExecutionImage::nativeExecutionDomainOffset()), coldDispatch);
 	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, closureAddress),
@@ -194,11 +194,9 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_IMM, 1);
 	sljit_set_label(nonemptyStack, sljit_emit_label(compiler));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, maxStack), SLJIT_R0, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, caller));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, nativeControl));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(caller), offsetof(CallFrame, nativeControl));
 	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), static_cast<u32>(FrameField::StackBase), SLJIT_IMM, FRAME_WINDOW_MASK);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, exit));
-	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(NativeBlockExitSite, exitA));
+	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(exit), offsetof(NativeBlockExitSite, exitA));
 	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
 	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, argumentBase), SLJIT_R3, 0);
@@ -218,7 +216,7 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_set_label(noVarargs, varargsReady); sljit_set_label(positiveVarargs, varargsReady);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, varargCount), SLJIT_R2, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, stackBase), SLJIT_R3, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, thread));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(caller), offsetof(CallFrame, thread));
 	// CALL can enter the depth of a retained IRQ wait just as RET can.
 	// Decline before placement: the semantic CALL commits the new frame and
 	// stops at its entry with the unused part of the grant intact.
@@ -229,10 +227,9 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, frameDepth));
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), cpu.haltedDepth), coldDispatch);
 	sljit_set_label(differentThread, sljit_emit_label(compiler));
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER, SLJIT_R3, 0,
-		SLJIT_MEM1(SLJIT_R1), thread.stackCapacity), coldDispatch);
-	sljit_emit_op2(compiler, SLJIT_SUB, SLJIT_R2, 0,
-		SLJIT_MEM1(SLJIT_R1), thread.stackCapacity, SLJIT_R3, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), thread.stackCapacity);
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER, SLJIT_R3, 0, SLJIT_R2, 0), coldDispatch);
+	sljit_emit_op2(compiler, SLJIT_SUB, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_R3, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0,
 		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, maxStack));
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER, SLJIT_R0, 0, SLJIT_R2, 0), coldDispatch);
@@ -242,7 +239,7 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	// Resolve the bound record's code address through the live publication table.
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, codeAddress));
 	emitCodeLookup(compiler, coldDispatch);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, target), SLJIT_R3, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, target, 0, SLJIT_R3, 0);
 
 	// Charge only initialized formal slots. Supplied fixed arguments alias;
 	// vararg formals move above the original argument range.
@@ -260,24 +257,20 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op2(compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_R0, 0);
 
 	// No observer or allocation occurs beyond admission.
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, caller));
-	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, compilationEntry), SLJIT_IMM, 1);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, exit));
+	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM1(caller), offsetof(CallFrame, compilationEntry), SLJIT_IMM, 1);
 	for (size_t bank = 0; bank < CARTRIDGE_SLOT_COUNT; ++bank) {
-		sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1),
+		sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(exit),
 			offsetof(NativeBlockExitSite, continuationCells) + bank * sizeof(void*));
-		sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R0),
+		sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(caller),
 			offsetof(CallFrame, nativeContinuationCells) + bank * sizeof(void*), SLJIT_R2, 0);
 	}
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, nativeControl));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(caller), offsetof(CallFrame, nativeControl));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop));
 	emitPublishFrameTop(compiler, SLJIT_R3, SLJIT_R2, SLJIT_R0);
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(NativeBlockExitSite, nextPc));
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(exit), offsetof(NativeBlockExitSite, nextPc));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R3), static_cast<u32>(FrameField::Pc), SLJIT_R2, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, caller));
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, nativeContinuationPc), SLJIT_R2, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, callee));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), offsetof(CallFrame, nativeControl));
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(caller), offsetof(CallFrame, nativeContinuationPc), SLJIT_R2, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(callee), offsetof(CallFrame, nativeControl));
 	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::CallSite), SLJIT_R2, 0, SLJIT_IMM, INSTRUCTION_BYTES);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::OpenHead), SLJIT_IMM, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::Protected), SLJIT_IMM, -1);
@@ -287,9 +280,9 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::Function), SLJIT_R2, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, codeAddress));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::Pc), SLJIT_R2, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(NativeBlockExitSite, exitA));
+	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(exit), offsetof(NativeBlockExitSite, exitA));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::ReturnBase), SLJIT_R2, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_S16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(NativeBlockExitSite, exitC));
+	sljit_emit_op1(compiler, SLJIT_MOV_S16, SLJIT_R2, 0, SLJIT_MEM1(exit), offsetof(NativeBlockExitSite, exitC));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::ReturnCount), SLJIT_R2, 0);
 	for (const auto [scratchOffset, field] : {
 		std::pair{offsetof(NativeCallScratch, varargBase), FrameField::VarargBase},
@@ -302,23 +295,22 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	}
 	sljit_emit_op2(compiler, SLJIT_OR32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::Closure),
 		SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, closureAddress), SLJIT_IMM, RAM_BASE);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, caller));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, executionImage));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R3), offsetof(CallFrame, executionImage), SLJIT_R1, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, thread));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(caller), offsetof(CallFrame, executionImage));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(callee), offsetof(CallFrame, executionImage), SLJIT_R1, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(caller), offsetof(CallFrame, thread));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::words, 0, SLJIT_MEM1(SLJIT_R0), thread.stackWords);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::tags, 0, SLJIT_MEM1(SLJIT_R0), thread.stackTags);
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, stackBase));
-	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_MEM1(SLJIT_R3), offsetof(CallFrame, registers) + ValueSpan::tagsOffset(),
+	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_MEM1(callee), offsetof(CallFrame, registers) + ValueSpan::tagsOffset(),
 		NativeBlockAbi::tags, 0, SLJIT_R1, 0);
 	sljit_emit_op2(compiler, SLJIT_SHL, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, 2);
-	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_MEM1(SLJIT_R3), offsetof(CallFrame, registers) + ValueSpan::wordsOffset(),
+	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_MEM1(callee), offsetof(CallFrame, registers) + ValueSpan::wordsOffset(),
 		NativeBlockAbi::words, 0, SLJIT_R2, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, maxStack));
-	sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_MEM1(SLJIT_R3), offsetof(CallFrame, registers) + ValueSpan::sizeOffset(), SLJIT_R0, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), offsetof(CallFrame, controlMemory));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R3), offsetof(CallFrame, registers) + ValueSpan::ramOffset(), SLJIT_R2, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R3), offsetof(CallFrame, registers) + ValueSpan::mirroredOffset(), SLJIT_IMM, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_MEM1(callee), offsetof(CallFrame, registers) + ValueSpan::sizeOffset(), SLJIT_R0, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(callee), offsetof(CallFrame, controlMemory));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(callee), offsetof(CallFrame, registers) + ValueSpan::ramOffset(), SLJIT_R2, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM1(callee), offsetof(CallFrame, registers) + ValueSpan::mirroredOffset(), SLJIT_IMM, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, argumentBase));
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, argCount));
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, numParams));
@@ -327,15 +319,14 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_set_label(argsFit, sljit_emit_label(compiler));
 	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
 	NativeBlockAbi::emitFramePlacement(compiler, true, true);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, callee));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, thread));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(callee), offsetof(CallFrame, thread));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, stackTop));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R1), thread.record);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R3), static_cast<u32>(ThreadField::StackTop), SLJIT_R0, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, frameDepth));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R3), static_cast<u32>(ThreadField::FrameDepth), SLJIT_R0, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R1), thread.currentFrame, SLJIT_R2, 0);
-	emitFrameEntry(compiler, offsetof(NativeCallScratch, target));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R1), thread.currentFrame, callee, 0);
+	emitFrameEntry(compiler, callee, target);
 
 	// The stable gate has already published CALL's exact prefix. A completed
 	// leaf owns its receiving range even when that prefix exhausted the grant.
@@ -343,7 +334,7 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM2(NativeBlockAbi::words, SLJIT_R2), 2);
 	sljit_set_label(NativeBlockAbi::emitNonleafBuiltinJump(compiler, SLJIT_R2), coldDispatch);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, NativeBlockAbi::state, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, exit));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, exit, 0);
 	sljit_emit_icall(compiler, SLJIT_CALL, SLJIT_ARGS3(P, P, P, 32),
 		SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::tryRunNativeBuiltinLeaf));
 	// Null still owns the original CALL; otherwise the leaf selected either
