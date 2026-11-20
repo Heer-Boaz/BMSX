@@ -254,6 +254,7 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
 	test::waitForFixtureWorkerRequests(native.cpu);
 #endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& lookup = *native.cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup;
 	auto* firstPage = lookup.find(DYNAMIC_RAM_BASE, 0);
 	auto* secondPage = lookup.find(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE, 0);
@@ -263,6 +264,7 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 		&& secondPage->nativeCode && secondPage->nativeCode[0], "compiled pages publish their native dispatch words");
 	require(root && target && root->terminal.link.target == target && target->terminal.link.target == root,
 		"both cross-page edges enter the real successor body without the CPU dispatcher");
+#endif
 	for (int grant = 1; grant <= 128; ++grant) {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
@@ -274,10 +276,12 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 	writeInstruction(replacement, 0, static_cast<u8>(OpCode::SUB), 4, 0, 8);
 	for (auto* machine : {&native, &scalar}) machine->memory.writeBytes(
 		DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE + 3 * INSTRUCTION_BYTES, replacement.data(), replacement.size());
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(firstPage->nativeBlocks->entries[0].get() == root && !root->terminal.link.target,
 		"retiring a cross-page target disconnects its incoming edge without discarding the independent source");
 	require(firstPage->nativeCode[0] && secondPage->nativeCode && secondPage->nativeCode[0] == nullptr,
 		"retirement withdraws the native dispatch bank before releasing the last target region");
+#endif
 	for (auto* machine : {&native, &scalar}) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
@@ -292,8 +296,10 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 	test::waitForNativeEntry(native.cpu, targetDecoded, 0);
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
 #endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(root->terminal.link.target == secondPage->nativeBlocks->entries[0].get(), "a rewritten target regenerates and links again");
 	require(secondPage->nativeCode && secondPage->nativeCode[0], "a regenerated target republishes its native dispatch word");
+#endif
 	test::runCpuParity(native.cpu, scalar.cpu, 600002);
 	requireParity(native, scalar);
 	native.cpu.reset();
@@ -306,7 +312,9 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 	writeInstruction(image.text, 32, static_cast<u8>(OpCode::JMP), 0, 63, 35, 255); // enter word 4
 	image.functions = {{.firstWord = 0, .wordCount = 33, .maxStack = 12}};
 	CpuMachine native(image, false), scalar(image, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	native.cpu.setNativeCompilationProfiling(true);
+#endif
 	const u32 start = inRam ? DYNAMIC_RAM_BASE : native.rom.textAddress;
 	for (auto* machine : {&native, &scalar}) {
 		if (inRam) machine->memory.writeBytes(start, image.text.data(), image.text.size());
@@ -315,6 +323,7 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 4096);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const auto entry = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	test::waitForNativeEntry(native.cpu, page, entry);
@@ -346,6 +355,7 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 		&& initialProfile.maxPrepareCartridgeSlot == 0u && initialProfile.maxPrepareRootPc == start
 		&& initialProfile.maxPreparePagePc == (start & ~MAPPED_PAGE_BYTE_MASK),
 		"the worst prepare reports its raw guest identity rather than source or debugger metadata");
+#endif
 	for (int run = 0; run < 512; ++run) {
 		test::runCpuParity(native.cpu, scalar.cpu, 1);
 		requireParity(native, scalar);
@@ -354,17 +364,20 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		requireParity(native, scalar);
 	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(page.nativeBlocks->count == 1 && !page.nativeBlocks->entries[entry + 4],
 		"arbitrary sequential grant resumptions do not create overlapping suffix translations");
 	const auto warmProfile = native.cpu.readNativeCompilationProfile();
 	require(warmProfile.prepareRequests == initialProfile.prepareRequests
 		&& warmProfile.prepareNanoseconds == initialProfile.prepareNanoseconds,
 		"warm execution does not enter compilation profiling or accumulate compilation time");
+#endif
 	for (auto* machine : {&native, &scalar}) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start + 32 * INSTRUCTION_BYTES);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 128);
 	requireParity(native, scalar);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::waitForNativeEntry(native.cpu, page, entry + 4);
 	require(static_cast<bool>(page.nativeBlocks->entries[entry + 4]),
 		"an actual branch into the same interior position remains eligible for native execution");
@@ -376,8 +389,10 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 		&& incrementalProfile.capacityFlushes == 0 && incrementalProfile.capacityRetiredCodeBytes == 0
 		&& incrementalProfile.maxPrepareNanoseconds >= initialProfile.maxPrepareNanoseconds,
 		"an interior entry adds an independent owner without replacing the original");
+#endif
 }
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void compilationProfilingIsOptInAndSurvivesReset() {
 	test::Blua32TestImage image; image.text.resize(2 * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 0, 1, 0);
@@ -418,6 +433,8 @@ void compilationProfilingIsOptInAndSurvivesReset() {
 		&& restored.peakCodeBytes == second.peakCodeBytes && restored.codeBytes == 0,
 		"save-state restore retires code without restoring or rewinding compilation measurements");
 }
+#endif
+
 void entriesIntoWideBodiesRetainIndependentOwners() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
@@ -505,7 +522,9 @@ int main() {
 	try {
 		grantsAndTargetRetirement(false); grantsAndTargetRetirement(true); entriesIntoWideBodiesRetainIndependentOwners(); crossPageLinksRetireTheirTargetsAndKeepBoundedStack();
 		shortGrantsDoNotPromoteSequentialPositions(false); shortGrantsDoNotPromoteSequentialPositions(true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		compilationProfilingIsOptInAndSurvivesReset();
+#endif
 		std::cout << "Compiled block link tests passed\n"; return 0;
 	}
 	catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
