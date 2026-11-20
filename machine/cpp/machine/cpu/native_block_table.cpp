@@ -53,21 +53,22 @@ void NativeBlockCompiler::emitTableSlotLoad(sljit_s32 destination, bool word) {
 }
 
 void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool arraySlot) {
-	for (bool word : {true, false}) {
-		const auto address = word ? wordOffset : tagOffset;
-		// A string hit has already latched the value tag's physical offset.
-		if (word || arraySlot) {
+	if (arraySlot) {
+		for (bool word : {true, false}) {
+			const auto address = word ? wordOffset : tagOffset;
 			emitTableSlotOffset(SLJIT_R2, word);
 			sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), address, SLJIT_R2, 0);
+			emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), address, SLJIT_R2, SLJIT_R3);
 		}
-		emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), address, SLJIT_R2, SLJIT_R3);
-	}
-	if (arraySlot) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R1, 0);
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver,
 			SLJIT_IMM, static_cast<u32>(TableHeader::Length));
 		sljit_emit_op2(m_compiler, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 		emitRamWordWriteWatch(exit, SLJIT_R1, 0, SLJIT_R2, SLJIT_R3);
+	} else {
+		// The string probe left the mirrored payload offset live in R1.
+		emitRamWordWriteWatch(exit, SLJIT_R1, 0, SLJIT_R2, SLJIT_R3);
+		emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), tagOffset, SLJIT_R2, SLJIT_R3);
 	}
 
 	// All potential exits precede the actual slot store. A backward barrier
@@ -224,14 +225,19 @@ sljit_jump* NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBloc
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	misses[n++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM,
 								 static_cast<u8>(ValueTag::String));
-	emitTableSlotLoad(SLJIT_R2, true);
+	emitTableSlotOffset(SLJIT_R1, true);
+	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	misses[n++] =
 		sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, keySource, keyOperand);
-	// The value tag is one hash plane after the key tag, even at the RAM seam.
+	// Keep the key's two physical offsets. The value is one hash plane
+	// later, in bytes for the tag and words for the payload. Each can wrap.
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash));
-	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
 	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
 	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
+	sljit_emit_op2(m_compiler, SLJIT_SHL32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
+	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
+	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R3);
 	const sljit_s32 valueTagReg = load ? SLJIT_R3 : SLJIT_R2;
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, valueTagReg, 0, SLJIT_MEM1(SLJIT_R2), 0);
@@ -246,12 +252,13 @@ sljit_jump* NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBloc
 										 static_cast<u8>(ValueTag::Nil));
 		} else if (tag == static_cast<int>(ValueTag::Nil))
 			misses[n++] = sljit_emit_jump(m_compiler, SLJIT_JUMP);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), wordOffset, SLJIT_R1, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), tagOffset, SLJIT_R3, 0);
 		emitTableWriteWatch(exit, false);
 		emitTableSlotStore(value);
-
 	} else {
-		emitTableSlotLoad(SLJIT_R2, true);
+		NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	}
 	auto* hit = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 	auto* miss = sljit_emit_label(m_compiler);

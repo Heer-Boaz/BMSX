@@ -379,6 +379,24 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 	require(fieldBlock->run(registers.view(), state) == &fieldBlock->terminal
 		&& TableRecord(cpu.gcHeap(), mirror).getStringKey(key) == registers.get(2),
 		"the predicted write uses the same mirrored byte as the reader");
+
+	// Move the word plane itself across the seam. A nonzero low address
+	// offset still belongs to the tags, not the aligned payload words.
+	const u32 wrappedWords = MAIN_RAM_SIZE - (keySlot + 1u) * sizeof(u32) + 1u;
+	const u32 wrappedTags = wrappedWords + 3u * hash * sizeof(u32);
+	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Storage), wrappedWords);
+	memory.writeRamRecordWord(wrappedWords + keySlot * sizeof(u32), key);
+	memory.writeRamRecordByte(wrappedTags + keySlot, static_cast<u8>(ValueTag::String));
+	memory.writeRamRecordWord(wrappedWords + valueSlot * sizeof(u32), 0xffa12345u);
+	memory.writeRamRecordByte(wrappedTags + valueSlot, static_cast<u8>(ValueTag::Float));
+	registers.set(2, valueFromTag(ValueTag::True, 33));
+	state.remainingCycles = 100;
+	require(fieldBlock->run(registers.view(), state) == &fieldBlock->terminal
+		&& registers.get(3) == valueFloatBits(0xffa12345u)
+		&& memory.readRamRecordWord(MAIN_RAM_SIZE + sizeof(u32)) == 33u
+		&& memory.readRamRecordWord(MAIN_RAM_SIZE - sizeof(u32)) == key
+		&& TableRecord(cpu.gcHeap(), mirror).getStringKey(key) == registers.get(2),
+		"native field hits advance and mirror both physical offsets independently");
 }
 
 void watchedTableWordOrTagLeavesBeforeWriting(CPU& cpu, Memory& memory) {
