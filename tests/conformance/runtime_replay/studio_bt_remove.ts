@@ -1,3 +1,4 @@
+import { graphEdgePoint } from './studio_graph_navigation';
 
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
@@ -25,7 +26,6 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	let viewport = graph.viewport;
 	const children = () => viewport.model.nodes[0].children[0].children;
 	const remove = 'behaviorLens.removeChild';
-	const sourceButton = graph.actionBar.items.find(item => item.command === 'editor.source')!;
 	let version = model.version;
 	check(!ide.editor.commands.isEnabled(remove), 'BT removal: registration is not a list member');
 	await press('Delete');
@@ -36,11 +36,15 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	check(viewport.selection === children()[1] && ide.editor.commands.isEnabled(remove), 'BT removal: keyboard selects the actual source member');
 	const selected = children()[1];
 	const graphContext = inputFocus.admittedTarget!;
-	movePointer(sourceButton.bounds); await frame();
+	await press('ShiftLeft', 'F10');
+	movePointer(await test.revealContextCommand('editor.source')); await frame();
 	setPointerButton('pointer_primary', true); await frame();
 	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && model.version === version, 'A01: Source does not navigate on mouse down');
-	movePointer(viewport.bounds); setPointerButton('pointer_primary', false); await frame();
+	const menuBounds = ide.editor.contextMenu.model.bounds;
+	movePointer({ left: menuBounds.left - 4, right: menuBounds.left - 4, top: menuBounds.top, bottom: menuBounds.bottom });
+	setPointerButton('pointer_primary', false); await frame();
 	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && model.version === version, 'A01: releasing Source outside cancels navigation');
+	if (ide.editor.contextMenu.visible) await press('Escape');
 	await press('Tab');
 	check(graph.actionBar.hasFocus && inputFocus.admittedTarget!.commandContext === graphContext,
 		'A01: toolbar actions retain their explicit graph command context');
@@ -48,10 +52,13 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 		'A01: secondary graph actions are not inherited as toolbar keyboard capabilities');
 	await press('Delete');
 	check(model.version === version && viewport.selection === selected, 'A01: toolbar Delete does not remove a graph member');
-	await press('Home');
+	await press('ShiftLeft', 'Tab');
+	await press('ShiftLeft', 'F10');
+	const menu = ide.editor.contextMenu.model;
+	check(menu.rows[menu.selectedIndex].command === 'editor.source', 'A01: the exact selected node offers Source');
 	setKey('Enter', true);
 	for (let index = 0; index < 6; index += 1) await frame();
-	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && model.version === version, 'A01: held toolbar Enter does not navigate or edit');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && model.version === version, 'A01: held menu Enter does not navigate or edit');
 	setKey('Enter', false); await frame();
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && model.version === version && !hasSelection(sourcePane(test).code)
 		&& sourcePane(test).code.view.cursorRow === selected.source.occurrenceRange.start.line - 1
@@ -74,11 +81,9 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	version = model.version;
 	console.info('STUDIO: BT removal action ready for visual inspection');
 	for (const cancel of ['outside', 'escape', 'tab']) {
-		await click(graph.actionBar.overflow!.button.bounds);
+		await press('ShiftLeft', 'F10');
 		const menu = ide.editor.contextMenu.model;
-		const row = menu.rows.find(row => row.command === remove)!;
-		movePointer({ left: menu.viewport.bounds.left, right: menu.viewport.bounds.right,
-			top: menu.viewport.offsetTop + row.top, bottom: menu.viewport.offsetTop + row.bottom });
+		movePointer(await test.revealContextCommand(remove));
 		await frame(); setPointerButton('pointer_primary', true); await frame();
 		check(model.version === version, 'A01: Remove is only armed while held');
 		if (cancel === 'outside') {
@@ -99,8 +104,8 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	await press('Escape');
 	check(graph.actionBar.hasFocus, 'A01: palette dismissal returns to the toolbar');
-	await press('Escape');
-	await click(graph.actionBar.overflow!.button.bounds);
+	await press('ShiftLeft', 'Tab');
+	await press('ShiftLeft', 'F10');
 	await test.clickContextCommand(remove, 6);
 	const removed = BT_ORDER_SOURCE.replace('\tnested; -- nested inline', '\t -- nested inline');
 	check(model.version === version + 1 && model.buffer.getText() === removed && children().length === 2
@@ -109,7 +114,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	check(lens.view.selectionState.definitionRowKey === lens.view.document.definitions[0].rowKey,
 		'BT removal: the chosen registration survives without selecting another definition');
 	console.info('STUDIO: BT removed child ready for visual inspection');
-	await click(sourceButton.bounds);
+	await runPaletteCommand('editor.source');
 	const definitionRange = lens.view.document.definitions[0].occurrenceRange;
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && model.version === version + 1 && !hasSelection(sourcePane(test).code)
 		&& sourcePane(test).code.view.cursorRow === definitionRange.start.line - 1,
@@ -143,9 +148,8 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	await press('ArrowRight');
 	const child = children()[1];
 	const edge = viewport.model.edges.find(edge => edge.child === child)!;
-	const x = edge.points[edge.points.length - 2] + viewport.bounds.left - viewport.scrollX;
-	const y = edge.points[edge.points.length - 1] - 6 + viewport.bounds.top - viewport.scrollY;
-	await click({ left: x, right: x, top: y, bottom: y });
+	viewport.reveal(edge); await frame();
+	await click(() => graphEdgePoint(viewport, edge));
 	check(viewport.selection === edge && readLuaSourceRange(model.buffer, edge.range) === '{ weight = 9, child = nested }',
 		'BT removal: a selected weighted connection owns the complete wrapper');
 	version = model.version;
@@ -178,10 +182,9 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	const cardPoint = (index: number) => {
 		const node = children()[index];
 		// Use the after-member sector; the middle now means inside a parent.
-		const x = node.bounds.left + (node.bounds.right - node.bounds.left) * 0.8;
-		const y = node.bounds.top + node.headerHeight / 2;
-		return { left: x + viewport.bounds.left - viewport.scrollX, right: x + viewport.bounds.left - viewport.scrollX,
-			top: y + viewport.bounds.top - viewport.scrollY, bottom: y + viewport.bounds.top - viewport.scrollY };
+		const x = viewport.graphToViewportX(node.bounds.left + (node.bounds.right - node.bounds.left) * 0.8);
+		const y = viewport.graphToViewportY(node.bounds.top + node.headerHeight / 2);
+		return { left: x, right: x, top: y, bottom: y };
 	};
 	for (const removeWhileHeld of [false, true]) {
 		movePointer(cardPoint(0)); await frame();

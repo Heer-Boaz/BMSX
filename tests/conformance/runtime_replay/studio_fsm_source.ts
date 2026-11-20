@@ -14,7 +14,7 @@ function definition(view: BehaviorLensViewState): StateMachineSourceDefinition {
 
 /** Independent authored Lua in the actual Studio text model, never a substitute cart/runtime. */
 export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
-	const { ide, harness, click, frame, press, runPaletteCommand, cycles } = test;
+	const { ide, harness, frame, press, runPaletteCommand, cycles } = test;
 	console.info('STUDIO: FSM scope/return facts follow hidden source edits, Source gestures and Undo');
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
@@ -28,11 +28,11 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('FSM source: expected the real Behavior Lens input');
 	const view = lens.view;
-	const outline = view.presentation;
 	const first = definition(view);
 	const update = first.transitions.find(transition => transition.slot.kind === 'update')!;
 	await revealLensOccurrence(test, view, update.slot.source.rowKey);
-	await click(outline.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	const lines = FSM_BEHAVIOR_SOURCE.split('\n');
 	const row = lines.findIndex(line => line.includes('update = step'));
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === row && !hasSelection(sourcePane(test).code),
@@ -54,7 +54,8 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	for (let index = 0; index < 30; index += 1) await frame();
 	check(view.document === retained && definition(view).transitions === current.transitions,
 		'FSM source: unchanged frames reuse source structure and transition evidence');
-	await click(outline.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(sourcePane(test).code.view.cursorRow === row + 1 && !hasSelection(sourcePane(test).code), 'FSM source: Source follows the new UTF-16 source coordinates');
 	await press('ControlLeft', 'KeyZ');
 	await test.clickTab(lens.id);
@@ -62,7 +63,7 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	const restored = undone.outcomes[0].target;
 	check(restored.kind === 'path' && restored.target !== undone.origin.rowKey && restored.text === '../active',
 		'FSM source: ordinary text Undo restores the original scoped target, without graph-owned state');
-	await click(outline.actionBar.items[0].bounds);
+	await runPaletteCommand('editor.source');
 	await press('ControlLeft', 'KeyZ');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'FSM source: source Undo removes the independent fixture');

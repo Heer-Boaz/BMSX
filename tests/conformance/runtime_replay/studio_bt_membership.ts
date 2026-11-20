@@ -1,3 +1,4 @@
+import { graphEdgePoint } from './studio_graph_navigation';
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
@@ -33,7 +34,8 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	if (opaque?.kind !== 'node') throw new Error('BT membership: opaque child not selected');
 	check(opaque.member?.index === 1 && opaque.source.kind === 'dynamic' && opaque.children.length === 0,
 		'BT membership: physical navigation enters the opaque slot without inventing its result');
-	await click(graph.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === opaque.source.occurrenceRange.start.line - 1
 		&& sourcePane(test).code.view.cursorColumn === opaque.source.occurrenceRange.start.column - 1 && !hasSelection(sourcePane(test).code),
 		'BT membership: held Source opens the builder use, not its function or a code drag');
@@ -42,7 +44,7 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	const nested = viewport.selection;
 	if (nested?.kind !== 'node') throw new Error('BT membership: nested sibling not selected');
 	check(nested.member?.index === 2, 'BT membership: later known child remains independently reachable');
-	await click(graph.actionBar.items[0].bounds);
+	await runPaletteCommand('editor.source');
 	const oldDocument = view.document;
 	const span = luaSourceRangeToTextRange(model.buffer, opaque.source.occurrenceRange);
 	model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: 'leaf' }]);
@@ -57,7 +59,8 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	const membership = viewport.selection;
 	if (membership?.kind !== 'node') throw new Error('BT membership: nested list card not selected');
 	const membershipSource = membership.source;
-	await click(graph.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(sourcePane(test).code.view.cursorRow === membershipSource.occurrenceRange.start.line - 1
 		&& sourcePane(test).code.view.cursorColumn === membershipSource.occurrenceRange.start.column - 1
 		&& readLuaSourceRange(model.buffer, membershipSource.occurrenceRange) === 'make_children()' && !hasSelection(sourcePane(test).code),
@@ -84,12 +87,12 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	if (choice?.kind !== 'node') throw new Error('BT membership: weighted child missing');
 	check(choice.source.kind === 'dynamic', 'BT membership: known weight and unknown child are separate evidence');
 	const edge = viewport.model.edges.find(edge => edge.child === choice)!;
-	const x = edge.points[edge.points.length - 2] + viewport.bounds.left - viewport.scrollX;
-	const y = edge.points[edge.points.length - 1] - 6 + viewport.bounds.top - viewport.scrollY;
-	await click({ left: x, right: x + 1, top: y, bottom: y + 1 });
+	viewport.reveal(edge); await frame();
+	await click(() => graphEdgePoint(viewport, edge));
 	check(viewport.selection === edge, 'BT membership: pointer selects the authored weighted connection');
 	console.info('STUDIO: BT partial choices ready for visual inspection');
-	await click(graph.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(sourcePane(test).code.view.cursorRow === edge.range.start.line - 1 && sourcePane(test).code.view.cursorColumn === edge.range.start.column - 1
 		&& readLuaSourceRange(model.buffer, edge.range) === '{ weight = 4, child = make_node() }' && !hasSelection(sourcePane(test).code),
 		'BT membership: choice Source uses the full choice occurrence, not its opaque child');

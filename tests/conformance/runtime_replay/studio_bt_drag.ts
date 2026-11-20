@@ -1,14 +1,17 @@
 
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
+import { editorFeedbackState } from '../../../ide/common/feedback_state';
+import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import type { BehaviorGraphNode } from '../../../ide/workbench/contrib/behavior_lens/graph_model';
 import { BT_ORDER_SOURCE } from '../../helpers/behavior_order_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
+import { graphEdgePoint } from './studio_graph_navigation';
 
 /** Physical capture/drop/source/history on the actual Studio, using independent authored Lua. */
 export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
-	const { ide, harness, frame, press, click, movePointer, setPointerButton, runPaletteCommand, cycles, until } = test;
+	const { ide, harness, frame, press, movePointer, setPointerButton, runPaletteCommand, cycles, until } = test;
 	console.info('STUDIO: BT drag / insertion / cancellation');
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
@@ -54,7 +57,8 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 		&& readLuaSourceRange(model.buffer, children()[2].source.occurrenceRange) === 'leaf', 'BT drag: nonadjacent drop moves the selected authored occurrence once');
 	const moved = model.buffer.getText();
 	const selected = children()[2];
-	await click(graph.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === selected.source.occurrenceRange.start.line - 1
 		&& sourcePane(test).code.view.cursorColumn === selected.source.occurrenceRange.start.column - 1 && !hasSelection(sourcePane(test).code)
 		&& model.buffer.getText() === moved, 'BT drag: Source navigates to the moved occurrence without a leaked pointer or extra edit');
@@ -117,8 +121,8 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 	viewport = graph.viewport;
 	const child = children()[2];
 	const edge = viewport.model.edges.find(edge => edge.child === child)!;
-	movePointer(point(edge.points[edge.points.length - 2] + viewport.bounds.left - viewport.scrollX,
-		edge.points[edge.points.length - 1] - 6 + viewport.bounds.top - viewport.scrollY));
+	viewport.reveal(edge); await frame();
+	movePointer(graphEdgePoint(viewport, edge));
 	await frame();
 	setPointerButton('pointer_primary', true);
 	await frame();
@@ -144,19 +148,31 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 	lens = nextDefinition3;
 	graph = nextDefinition3.view.presentation;
 	viewport = graph.viewport;
+	// Fit can show the whole wide list; select a real reading scale first.
+	await runPaletteCommand('Graph: Reset Zoom (100%)');
 	await press('ArrowDown');
 	await press('ArrowDown');
 	check(viewport.selection === children()[0], 'BT drag: ordinary graph navigation reveals the first wide-list child');
-	movePointer(cardPoint(children()[0], true));
+	await until(() => !editorFeedbackState.message.visible, 'BT drag: prior authoring feedback retires before a fixed-canvas gesture');
+	const origin = cardPoint(children()[0], true);
+	const destination = children()[11];
+	check(viewport.hitTest(origin.left, origin.top) === children()[0]
+		&& viewport.graphToViewportX(destination.bounds.right) > viewport.bounds.right,
+		'BT drag: the source is hit-testable while the far sibling starts offscreen');
+	movePointer(origin);
 	await frame();
 	setPointerButton('pointer_primary', true);
 	await frame();
-	movePointer(point(viewport.bounds.right - 1, children()[0].bounds.top + children()[0].headerHeight / 2 + viewport.bounds.top - viewport.scrollY));
+	movePointer(point(viewport.bounds.right - 1, origin.top));
 	await frame();
 	const wideGeometry = viewport.model;
-	await until(() => children()[11].bounds.right + viewport.bounds.left - viewport.scrollX < viewport.bounds.right - 14, 'BT drag edge-scroll reveals an offscreen sibling');
+	await until(() => viewport.graphToViewportX(destination.bounds.right) < viewport.bounds.right - 14,
+		'BT drag edge-scroll reveals an offscreen sibling');
 	check(viewport.model === wideGeometry && model.buffer.getText() === wide, 'BT drag: captured edge scrolling changes no source or layout generation');
-	movePointer(cardPoint(children()[11], false));
+	const end = cardPoint(destination, false);
+	check(pointerCapture.active && viewport.hitTest(end.left, end.top) === destination,
+		'BT drag: the same pointer capture reaches the revealed sibling insertion sector');
+	movePointer(end);
 	await frame();
 	console.info('STUDIO: BT offscreen sibling insertion ready for visual inspection');
 	await release();

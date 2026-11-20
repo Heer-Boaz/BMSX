@@ -1,3 +1,4 @@
+import { graphEdgePoint } from './studio_graph_navigation';
 
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
@@ -48,7 +49,8 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	check(model.buffer.getText() === moved, 'BT moves: palette Redo routes back to the originating graph focus');
 	const source = viewport.selection!;
 	if (source.kind !== 'node') throw new Error('BT moves: redo lost node selection');
-	await click(graph.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === source.source.occurrenceRange.start.line - 1
 		&& sourcePane(test).code.view.cursorColumn === source.source.occurrenceRange.start.column - 1 && !hasSelection(sourcePane(test).code),
 		'BT moves: Source opens the new exact location without transferring held input');
@@ -91,9 +93,8 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	const child = viewport.selection;
 	if (child?.kind !== 'node') throw new Error('BT moves: weighted child missing');
 	const edge = viewport.model.edges.find(edge => edge.child === child)!;
-	const x = edge.points[edge.points.length - 2] + viewport.bounds.left - viewport.scrollX;
-	const y = edge.points[edge.points.length - 1] - 6 + viewport.bounds.top - viewport.scrollY;
-	await click({ left: x, right: x + 1, top: y, bottom: y + 1 });
+	viewport.reveal(edge); await frame();
+	await click(() => graphEdgePoint(viewport, edge));
 	check(viewport.selection === edge, 'BT moves: pointer selects the actual weighted connection');
 	await runPaletteCommand('Behavior Lens: Move BT Child Earlier');
 	check(viewport.selection?.kind === 'edge'

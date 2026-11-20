@@ -296,7 +296,9 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		check(picker.model.list.selectionIndex === commandIndex, `palette: keyboard selects ${query}`);
 		await press('Enter');
 	};
-	const clickContextCommand = async (command: EditorCommandId, heldFrames = 1) => {
+	// Some workflows arm a menu gesture and then cancel it by moving out of
+	// the menu. They need the same revealed row as a completed pointer click.
+	const revealContextCommand = async (command: EditorCommandId) => {
 		const menu = ide.editor.contextMenu;
 		const row = menu.model.rows.find(row => row.command === command)!;
 		check(menu.visible && row !== undefined && row.enabled, `menu command must be available: ${command}`);
@@ -309,7 +311,10 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 			top = viewport.offsetTop + row.top; bottom = viewport.offsetTop + row.bottom;
 		}
 		check(top >= viewport.bounds.top && bottom <= viewport.bounds.bottom, `menu command must be visible: ${command}`);
-		await click({ left: viewport.bounds.left, right: viewport.bounds.right, top, bottom }, heldFrames);
+		return { left: viewport.bounds.left, right: viewport.bounds.right, top, bottom };
+	};
+	const clickContextCommand = async (command: EditorCommandId, heldFrames = 1) => {
+		await click(await revealContextCommand(command), heldFrames);
 	};
 	const settle = () => until(() => tasks.ready && !rewind.seeking, 'seek/queue must settle');
 	const guest = ide.guest;
@@ -324,7 +329,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	};
 	audio.device.select(audio);
 	return { runtime, presenter, ide, execution, rewind, tasks, history, harness, guest, clock, input, remote, clipboard, observations,
-		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, visiblePreviewPoint, click, clickTab, openMenu, runMenuCommand, runPaletteCommand, clickContextCommand, settle, cycles, waitForTestFrame, capture: captureCheckpoint };
+		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, visiblePreviewPoint, click, clickTab, openMenu, runMenuCommand, runPaletteCommand, revealContextCommand, clickContextCommand, settle, cycles, waitForTestFrame, capture: captureCheckpoint };
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;

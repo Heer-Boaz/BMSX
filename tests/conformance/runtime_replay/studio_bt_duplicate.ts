@@ -1,3 +1,4 @@
+import { graphEdgePoint } from './studio_graph_navigation';
 
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
@@ -24,7 +25,6 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	let viewport = graph.viewport;
 	const children = () => viewport.model.nodes[0].children[0].children;
 	const duplicate = 'behaviorLens.duplicateChild';
-	const sourceButton = graph.actionBar.items.find(item => item.command === 'editor.source')!;
 	let version = model.version;
 	check(!ide.editor.commands.isEnabled(duplicate), 'BT duplicate: a registration is not a list member');
 	await press('ControlLeft', 'KeyD');
@@ -36,7 +36,7 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	check(viewport.selection === children()[1] && children()[1].children.length === 2 && ide.editor.commands.isEnabled(duplicate),
 		'BT duplicate: expanded source member is selected through physical navigation');
 	console.info('STUDIO: BT duplicate action ready for visual inspection');
-	await click(graph.actionBar.overflow!.button.bounds);
+	await press('ShiftLeft', 'F10');
 	await test.clickContextCommand(duplicate, 6);
 	const duplicated = BT_ORDER_SOURCE.replace('\t-- nested documentation', '\tnested;\n\t-- nested documentation');
 	check(model.version === version + 1 && model.buffer.getText() === duplicated && children().length === 4
@@ -46,7 +46,8 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 		'BT duplicate: the chosen registration remains selected');
 	console.info('STUDIO: BT duplicated child ready for visual inspection');
 	const range = children()[2].source.occurrenceRange;
-	await click(sourceButton.bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && model.version === version + 1 && !hasSelection(sourcePane(test).code)
 		&& sourcePane(test).code.view.cursorRow === range.start.line - 1 && sourcePane(test).code.view.cursorColumn === range.start.column - 1,
 		'BT duplicate: held Source navigates to the second occurrence without another source edit');
@@ -85,9 +86,8 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	await press('ArrowDown');
 	await press('ArrowRight');
 	const edge = viewport.model.edges.find(edge => edge.child === children()[1])!;
-	const x = edge.points[edge.points.length - 2] + viewport.bounds.left - viewport.scrollX;
-	const y = edge.points[edge.points.length - 1] - 6 + viewport.bounds.top - viewport.scrollY;
-	await click({ left: x, right: x, top: y, bottom: y });
+	viewport.reveal(edge); await frame();
+	await click(() => graphEdgePoint(viewport, edge));
 	check(viewport.selection === edge, 'BT duplicate: pointer selects the weighted wrapper connection');
 	version = model.version;
 	await press('ControlLeft', 'ShiftLeft', 'KeyD');
@@ -117,8 +117,8 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	const cardPoint = (index: number) => {
 		const node = children()[index];
 		// The middle is the new into-parent sector; this test exercises sibling reorder cancellation.
-		const x = node.bounds.left + (node.bounds.right - node.bounds.left) * 0.8 + viewport.bounds.left - viewport.scrollX;
-		const y = node.bounds.top + node.headerHeight / 2 + viewport.bounds.top - viewport.scrollY;
+		const x = viewport.graphToViewportX(node.bounds.left + (node.bounds.right - node.bounds.left) * 0.8);
+		const y = viewport.graphToViewportY(node.bounds.top + node.headerHeight / 2);
 		return { left: x, right: x, top: y, bottom: y };
 	};
 	for (const duplicateWhileHeld of [false, true]) {
