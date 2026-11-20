@@ -27,10 +27,11 @@ after(async () => {
 type GxBrowserBackend = Parameters<typeof renderTexturedModelCase>[1];
 type TexturedModelEvidence = Awaited<ReturnType<typeof renderTexturedModelCase>>;
 const fullVramBytes = 2 * 1024 * 1024;
-const fullModelEvidence: Partial<Record<GxBrowserBackend, Promise<TexturedModelEvidence>>> = {};
+const modelEvidence = new Map<string, Promise<TexturedModelEvidence>>();
 
 function texturedModelEvidence(t: TestContext, kind: GxBrowserBackend, vramBytes: number) {
-	const captured = vramBytes === fullVramBytes ? fullModelEvidence[kind] : undefined;
+	const key = `${kind}:${vramBytes}`;
+	const captured = modelEvidence.get(key);
 	if (captured !== undefined) return captured;
 	const run = (async (): Promise<TexturedModelEvidence> => {
 		const page = await acceleratedPage(t), errors: string[] = [];
@@ -43,9 +44,9 @@ function texturedModelEvidence(t: TestContext, kind: GxBrowserBackend, vramBytes
 		assert.deepEqual(errors, []);
 		return result;
 	})();
-	// The model and layout assertions used to render this same packet stream
-	// separately. Only share the reported evidence, not the page or device.
-	if (vramBytes === fullVramBytes) fullModelEvidence[kind] = run;
+	// Each physical configuration owns one packet stream. The separate tests
+	// keep their assertions, but share only the completed browser evidence.
+	modelEvidence.set(key, run);
 	return run;
 }
 
@@ -53,9 +54,6 @@ before(async () => {
 	const bundle = await build({
 		stdin: { contents: `
 			export { createBrowserBackend } from './hosts/browser/backend';
-			export { BrowserVideoOutput } from './hosts/browser/video_output';
-			export { VideoPresenter } from './machine/ts/render/video_presenter';
-			export { RenderPassLibrary } from './machine/ts/render/backend/pass/library';
 			export { renderPcrtcBlendCases } from './tests/helpers/pcrtc_scanout_fixture';
 			export { renderTexturedModelCase } from './tests/helpers/textured_model_gpu';
 			export { renderCrtNoiseCases } from './tests/helpers/crt_gpu';
@@ -148,19 +146,21 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} CRT noise uses determinis
 
 for (const kind of ['webgl2', 'webgpu'] as const) test(`${kind} and CPU render flat/raw textured model packets with affine point sampling`, async t => {
 	const result = await texturedModelEvidence(t, kind, fullVramBytes);
-	t.diagnostic(JSON.stringify(result));
-	assert.equal(result.kind, kind); assert.equal(result.difference, -1, 'whole-frame software/GPU parity');
-	assert.equal(result.commands, 3, 'upload and both projected faces completed');
-	assert.deepEqual(result.snapshotDifferences, [-1, -1, -1], 'complete VRAM bytes survive disjoint dirty captures and external replacement');
-	assert.equal(result.transfers.length, 2, 'unchanged checkpoints and imported VRAM perform no readback');
-	assert.deepEqual(result.snapshotWords, [0, 0x03e0], 'the high-row write actually changes the captured machine word');
-	assert.deepEqual(result.transfers[1], [197, 901, 3, 2], 'the small high-row write reads its exclusive rectangle bounds, including WebGPU row padding');
-	assert.deepEqual(result.adjacentDifferences, [-1, -1, -1], 'adjacent texture draws retain whole-frame software parity');
-	assert.deepEqual(result.adjacentCopies, [1, 0, 1], 'an adjacent framebuffer does not dirty its texture page, but an actual write does');
-	assert.deepEqual(result.wrappedDifferences, [-1, -1], 'both UV-wrap directions sample late uploads with whole-frame software parity');
-	assert.deepEqual(result.rectangleDifferences, [-1, -1, -1, -1], 'non-power-of-two sprite flips retain whole-frame software parity');
-	assert.deepEqual(result.flatColorDifferences, [-1, -1], 'all flat color/gain bytes retain whole-frame software parity');
-	assert.deepEqual(result.samples.map(sample => sample.software), [
+	const { projection, sampling } = result;
+	assert.ok(projection && sampling, 'full VRAM reports the projected model and texture sampling evidence');
+	t.diagnostic(JSON.stringify({ projection, sampling }));
+	assert.equal(result.kind, kind); assert.equal(projection.difference, -1, 'whole-frame software/GPU parity');
+	assert.equal(projection.commands, 3, 'upload and both projected faces completed');
+	assert.deepEqual(projection.snapshotDifferences, [-1, -1, -1], 'complete VRAM bytes survive disjoint dirty captures and external replacement');
+	assert.equal(projection.transfers.length, 2, 'unchanged checkpoints and imported VRAM perform no readback');
+	assert.deepEqual(projection.snapshotWords, [0, 0x03e0], 'the high-row write actually changes the captured machine word');
+	assert.deepEqual(projection.transfers[1], [197, 901, 3, 2], 'the small high-row write reads its exclusive rectangle bounds, including WebGPU row padding');
+	assert.deepEqual(result.adjacentDifferences.slice(0, 3), [-1, -1, -1], 'adjacent texture draws retain whole-frame software parity');
+	assert.deepEqual(result.adjacentCopies.slice(0, 3), [1, 0, 1], 'an adjacent framebuffer does not dirty its texture page, but an actual write does');
+	assert.deepEqual(sampling.wrappedDifferences, [-1, -1], 'both UV-wrap directions sample late uploads with whole-frame software parity');
+	assert.deepEqual(sampling.rectangleDifferences, [-1, -1, -1, -1], 'non-power-of-two sprite flips retain whole-frame software parity');
+	assert.deepEqual(sampling.flatColorDifferences, [-1, -1], 'all flat color/gain bytes retain whole-frame software parity');
+	assert.deepEqual(projection.samples.map(sample => sample.software), [
 		[255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0], [0, 0, 0, 0],
 		[255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0], [0, 0, 0, 0],
 	]);
@@ -181,15 +181,9 @@ for (const kind of ['webgl2', 'webgpu'] as const) test(`${kind} consumes every r
 	}
 });
 
-for (const kind of ['webgl2', 'webgpu']) test(`${kind} solid batches publish only drawn cells, including aliased VRAM`, async t => {
-	const page = await acceleratedPage(t), errors: string[] = [];
-	page.on('pageerror', error => errors.push(error.message));
-	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
-		body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="256" height="256"></canvas></div>' }));
-	for (const vramBytes of [2 * 1024 * 1024, 1024 * 1024]) {
-		await page.goto('http://localhost/renderer-test/primitive-damage/');
-		await page.addScriptTag({ content: backendBundle });
-		const result = await page.evaluate(async ({ bytes, kind }) => (globalThis as any).backendTest.renderTexturedModelCase(document.getElementById('gamescreen'), kind, bytes, true), { bytes: vramBytes, kind });
+for (const kind of ['webgl2', 'webgpu'] as const) test(`${kind} solid batches publish only drawn cells, including aliased VRAM`, async t => {
+	for (const vramBytes of [fullVramBytes, 1024 * 1024]) {
+		const result = await texturedModelEvidence(t, kind, vramBytes);
 		assert.deepEqual(result.maskedRectangleWords, [0x7c00, 0x801f, 0x7c00, 0x8000, 0x7c00, 0x801f, 0x7c00, 0x8000], 'masked rectangles retain all six vertices across primitive-kind batch changes');
 		assert.equal(result.orderedReadbackPending, true, 'guest C0 requests a backend readback before rendering');
 		assert.deepEqual(result.orderedReadbackWords, [vramBytes === 1024 * 1024 ? 0x03e003e0 : 0x001f03e0], 'guest GPUREAD observes both dependent draws at the C0 fence');
@@ -209,6 +203,7 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} solid batches publish onl
 			assert.deepEqual(result.adjacentPixel[4], [57, 189, 0, 0], 'the second logical band blends over the first');
 		} else {
 			assert.deepEqual(result.adjacentPixel[4], [123, 123, 0, 0], 'separate physical bands do not alias');
+			assert.ok(result.capacityResult, 'full VRAM reports the command-buffer capacity limit');
 			assert.equal(result.capacityResult.commands, 4096);
 			assert.equal(result.capacityResult.difference, -1, 'the full command buffer matches software');
 			assert.deepEqual(result.capacityResult.pixel, [0, 255, 0, 0], 'the final fill reaches the sampled cell');
@@ -218,42 +213,11 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} solid batches publish onl
 		assert.equal(result.validationError, undefined);
 		assert.deepEqual(result.gpuErrors, []);
 	}
-	assert.deepEqual(errors, []);
 });
 
 test('GX WebGPU pipelines specialize only the overrides used by each stage', async t => {
-	const page = await acceleratedPage(t);
-	const errors: string[] = [];
-	page.on('pageerror', error => errors.push(error.message));
-	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
-		contentType: 'text/html', body: '<!doctype html><style>#player-surface{position:fixed;inset:0}</style><div id="player-surface"><canvas id="gamescreen" width="320" height="240"></canvas></div>',
-	}));
-	for (const vramBytes of [2 * 1024 * 1024, 1024 * 1024]) {
-		await page.goto('http://localhost/renderer-test/webgpu/');
-		await page.addScriptTag({ content: backendBundle });
-		assert.deepEqual(errors, []);
-		const result = await page.evaluate(async vramBytes => {
-			const { createBrowserBackend, BrowserVideoOutput, VideoPresenter, RenderPassLibrary } = (globalThis as any).backendTest;
-			const canvas = document.getElementById('gamescreen');
-			const backend = await createBrowserBackend(canvas, vramBytes);
-			const device: GPUDevice = backend.device;
-			const pipelines: { label: string; vertex: Record<string, GPUPipelineConstantValue>; fragment: Record<string, GPUPipelineConstantValue> }[] = [];
-			const gpuErrors: string[] = [];
-			device.addEventListener('uncapturederror', event => gpuErrors.push(event.error.message));
-			const createRenderPipeline = device.createRenderPipeline;
-			device.createRenderPipeline = function (descriptor) {
-				pipelines.push({ label: descriptor.label, vertex: descriptor.vertex.constants, fragment: descriptor.fragment?.constants });
-				return createRenderPipeline.call(this, descriptor);
-			};
-			device.pushErrorScope('validation');
-			const presenter = new VideoPresenter(new BrowserVideoOutput(canvas, null, 'fit'), backend, 320, 240);
-			const library = new RenderPassLibrary(backend, presenter);
-			await device.queue.onSubmittedWorkDone();
-			const validationError = await device.popErrorScope();
-			library.dispose();
-			device.destroy();
-			return { pipelines, validationError: validationError?.message, gpuErrors };
-		}, vramBytes);
+	for (const vramBytes of [fullVramBytes, 1024 * 1024]) {
+		const result = await texturedModelEvidence(t, 'webgpu', vramBytes);
 		assert.equal(result.validationError, undefined, 'native GX and presentation pipelines compile successfully');
 		assert.deepEqual(result.gpuErrors, []);
 		for (const label of [
@@ -272,7 +236,6 @@ test('GX WebGPU pipelines specialize only the overrides used by each stage', asy
 			}, `${label} fragment stage has no vertex-only overrides`);
 		}
 	}
-	assert.deepEqual(errors, []);
 });
 
 test('WebGPU PCRTC constant RGB blend matches software for both AMOD settings and field modes', async t => {
@@ -349,9 +312,7 @@ test('WebGPU initialization failure is reported without retrying another rendere
 });
 
 test('browsers without a WebGPU API or adapter select WebGL2 before initialization', async t => {
-	const browser = await chromium.launch();
-	afterTest(t, () => browser.close());
-	const page = await browser.newPage();
+	const page = await acceleratedPage(t);
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
 		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen"></canvas>',
 	}));
