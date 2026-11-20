@@ -16,11 +16,12 @@ import type { StudioBuildJob } from '../../hosts/common/studio_builds';
 import { RomArtifactStore } from '../../scripts/rompacker/artifacts';
 import { withArtifactStoreLock } from '../../scripts/rompacker/artifact_lock';
 import { publishArtifact } from '../helpers/rom_artifact';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('offline collection cannot bypass the live workspace server ownership', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-collection-')), store = new RomArtifactStore(root);
 	const ledger = await BuildLedger.open(root);
-	t.after(async () => { ledger.close(); await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { ledger.close(); await rm(root, { recursive: true, force: true }); });
 	const artifact = await publishArtifact(store, 1);
 	await assert.rejects(collectOfflineBuilds(store, true), BuildStoreLockedError);
 	assert.equal((await store.read(artifact.id)).id, artifact.id);
@@ -28,7 +29,7 @@ test('offline collection cannot bypass the live workspace server ownership', asy
 
 test('offline collection retains current/publication outputs, not recent job media, and preserves collected request receipts', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-references-')), store = new RomArtifactStore(root);
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const artifacts = [];
 	for (let version = 1; version <= 55; version++) artifacts.push(await publishArtifact(store, version));
 	const requestId = randomUUID(), ledger = await BuildLedger.open(root);
@@ -64,7 +65,7 @@ test('startup adopts the last selected result even when its cached files are old
 		acceptedAt: 1, updatedAt: 1, version: { generation: 1, sequence: 1 }, artifact: old.id }); ledger.close();
 	const projects = new WorkspaceProjects(process.cwd(), join(root, 'workspace'));
 	const jobs = await StudioBuildJobs.open(process.cwd(), root, projects);
-	t.after(async () => { await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true }); });
 	assert.deepEqual([...(await store.currentArtifacts()).values()], [old.id]);
 	assert.equal(jobs.get(requestId)!.artifactAvailable, true);
 	await assert.rejects(access(join(root, 'refs/jobs', requestId)), { code: 'ENOENT' });
@@ -73,7 +74,7 @@ test('startup adopts the last selected result even when its cached files are old
 
 test('a collected latest receipt does not promote an older published result into the current configuration', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-no-promotion-')), store = new RomArtifactStore(root);
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const old = await publishArtifact(store, 1), latest = await publishArtifact(store, 2);
 	await store.withSharedAccess(() => store.retain('publications/site', old.id));
 	await store.collect({ apply: true });
@@ -94,7 +95,7 @@ test('a build waiting for collection remains queued and can be cancelled without
 	const jobs = await StudioBuildJobs.open(process.cwd(), root, projects);
 	const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
 	const collection = withArtifactStoreLock(root, 'exclusive', async () => { entered.resolve(); await release.promise; });
-	t.after(async () => { release.resolve(); await collection; await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { release.resolve(); await collection; await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true }); });
 	await entered.promise;
 	const request = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 0 as const };
 	const states: string[] = [], stop = jobs.subscribe(({ job }) => states.push(job.state));
@@ -116,7 +117,7 @@ test('automatic collection publishes output availability changes without losing 
 	const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>(), retired = Promise.withResolvers<StudioBuildJob>();
 	const collection = withArtifactStoreLock(root, 'exclusive', async () => { entered.resolve(); await release.promise; });
 	const stop = jobs.subscribe(({ job }) => { if (job.request.requestId === previousId && !job.artifactAvailable) retired.resolve(job); });
-	t.after(async () => { release.resolve(); await collection; stop(); await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { release.resolve(); await collection; stop(); await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true }); });
 	await entered.promise;
 	const queued = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 0 as const };
 	await jobs.admit(queued); await jobs.cancel(queued.requestId);
@@ -141,7 +142,7 @@ test('a connected build-backed browser retains its media independently of recent
 		response.once('close', disconnected.resolve);
 		await sessions.handle(request, response, '/__bmsx__/studio/connect');
 	});
-	t.after(async () => {
+	afterTest(t, async () => {
 		await sessions.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
 		await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true });
 	});

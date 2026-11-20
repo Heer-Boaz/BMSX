@@ -12,6 +12,7 @@ import { CODEX_ACCOUNT_FIXTURE, createCodexAccountProxy } from '../helpers/codex
 import { STUDIO_SOURCE_TOOLS } from '../../ide/workbench/services/assistant/source_tool_protocol';
 import { STUDIO_TEST_TOOLS } from '../../ide/workbench/services/assistant/test_tool_protocol';
 import { STUDIO_RUNTIME_TOOLS } from '../../ide/workbench/services/assistant/runtime_tool_protocol';
+import { afterTest } from '../helpers/test_cleanup';
 
 const backends = ['software', 'webgl2', 'webgpu'] as const;
 for (const backend of backends) test(`Studio ${backend}: Codex reads the ordinary isolated test evidence, not current-source success`, { timeout: 180000 }, async t => {
@@ -114,7 +115,7 @@ for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP le
 for (const backend of backends) test(`Studio ${backend}: visible account controls with real device polling, cancel, failure and process retirement`, { timeout: 180000 }, async t => {
 	const issuer = await createCodexAccountFixture(t, { attempts: ['pending', 'failure', 'held-start', 'pending', 'pending'] });
 	const f = await createAssistantStudioFixture(t, `account-${backend}`, { executable: issuer.executable });
-	t.after(() => rm(issuer.root, { recursive: true }));
+	afterTest(t, () => rm(issuer.root, { recursive: true }));
 	const { page } = f;
 	let popup!: Promise<Page>, destinations = 0;
 	await page.context().route(/^https:\/\//, async route => {

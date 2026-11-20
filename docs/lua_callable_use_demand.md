@@ -123,7 +123,7 @@ faster comparison. The existing module-closure profiler also keeps its 4 frames
 and 6 call evaluations as unrelated creators grow.
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/lua_source/profile_callable_uses.ts
 ```
 

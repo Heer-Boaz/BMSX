@@ -19,6 +19,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('real Codex tool exchange reads unsaved models and hands off a shared review, never a filesystem patch', { timeout: 15000 }, async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-codex-workbench-'));
@@ -49,7 +50,7 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 		CODEX_FIXTURE_DONE,
 	]);
 	let session: CodexSession | undefined;
-	t.after(async () => {
+	afterTest(t, async () => {
 		connection.abort();
 		if (session) { const exit = await session.closed; assert.equal(exit.forced, false); assert.equal(exit.code, 0); }
 		for (const proposal of proposals) proposal.dispose();
@@ -69,7 +70,7 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 	await session.startTurn('Read both files and propose replacing old with new.', []);
 	await done;
 	assert.equal(proposals.length, 1);
-	const review = new WorkspaceEditReviewInput(proposals[0]); t.after(() => review.dispose());
+	const review = new WorkspaceEditReviewInput(proposals[0]); afterTest(t, () => review.dispose());
 	assert.equal(review.proposal.state, 'pending');
 	assert.equal(main.buffer.getText(), before);
 	assert.equal(models.get({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'helper.lua' })!.dirty, false);

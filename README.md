@@ -218,8 +218,8 @@ npm run test:render-parity
 Run selected Node tests (TypeScript is supported):
 
 ```bash
-npm test -- tests/lua/actor_runtime_tools.test.ts
-npm test -- --test-name-pattern='Visual placement composes physical' tests/lua/affine_visuals.test.ts
+npm test -- tests/studio/actor_runtime_tools.test.ts
+npm test -- --test-name-pattern='Visual placement composes physical' tests/machine/affine_visuals.test.ts
 ```
 
 All test scripts use `scripts/test.sh`: a shared cgroup v2 `memory.max` cap of

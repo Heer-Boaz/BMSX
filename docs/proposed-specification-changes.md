@@ -2179,7 +2179,7 @@ Waar de garantie vandaan kwam:
 | Runtime en JIT | Closures van dezelfde functiedefinitie delen één stabiel prototype. De JIT mag prototypegegevens per aanroepplek inbouwen; voor een prototype in RAM vervalt die code via de schrijfwatches |
 | Toolchain en BIOS-`load` | Het bestaande functierecord is het prototype. Er is geen nieuw ROM-formaat of nieuwe instructie nodig. De BIOS-linker vult het RAM-blok vóór de eerste closure wordt gemaakt, en een levende closure houdt dat blok al in leven. Een nieuwe functiedefinitie krijgt een nieuw prototype |
 | Studio en Hot Resume | Studio herschrijft nu afzonderlijke functievelden in levende ROM-closures. Voortaan koppelt de expliciete revisieovergang de betrokken closures aan het nieuwe prototype, met behoud van hun identiteit en captures. Actieve frames gaan via de bestaande relocatie |
-| Tests en snapshots | De assertions die een uitkomst eisen na het overschrijven van een levend record (`tests/lua/cpu_compiled_calls.test.ts`) worden vervangen. Dekking voor `CALL`/`RET`, stackgroei, gedeelde captures, `load` en Hot Resume blijft. Snapshot en restore herstellen gedeelde prototypes en cellen als gedeelde objecten |
+| Tests en snapshots | De assertions die een uitkomst eisen na het overschrijven van een levend record (`tests/machine/cpu_compiled_calls.test.ts`) worden vervangen. Dekking voor `CALL`/`RET`, stackgroei, gedeelde captures, `load` en Hot Resume blijft. Snapshot en restore herstellen gedeelde prototypes en cellen als gedeelde objecten |
 
 In §11 verandert de rij "Gebonden `CALL` en `RET`" mee: CALL leest de gegevens
 van het gedeelde prototype. Het tarief van `CLOSURE` wordt in de fase van

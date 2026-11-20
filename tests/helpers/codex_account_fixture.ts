@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { afterTest } from './test_cleanup';
 
 /** Offline issuer for the installed CLI. It never authorizes an account or produces credentials. */
 export async function createCodexAccountFixture(t: TestContext, options: { relayMode?: string; authUrl?: string; attempts?: ('pending' | 'failure' | 'held-start')[] } = {}) {
@@ -30,7 +31,7 @@ export async function createCodexAccountFixture(t: TestContext, options: { relay
 		} else { response.writeHead(500).end(); assert.fail(`Unexpected account request: ${request.url}`); }
 	});
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
-	t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	afterTest(t, async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
 	const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 	const executable = join(root, 'relay'), trace = join(root, 'trace');
 	await writeFile(executable, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(resolve('tests/helpers/codex_account_relay.mjs'))} ${JSON.stringify(url)} ${JSON.stringify(options.relayMode ?? 'normal')} ${JSON.stringify(trace)} ${JSON.stringify(options.authUrl ?? '')} "$@"\n`, { mode: 0o700 });

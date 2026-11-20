@@ -36,6 +36,7 @@ import { buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocatio
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext, init = '') {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-hot-resume-'));
@@ -62,7 +63,7 @@ async function fixture(t: TestContext, init = '') {
 	const model = models.retain({ contextLabel: 'fixture-source', sourceFilePath: 'entry.lua', location: { kind: 'workspace' as const, path: 'entry.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
 	// Same resource/version in a different document owner must not enter this build.
 	editorTextModelService.retain(model.resource, 'lua', 'end end -- foreign workspace');
-	t.after(async () => {
+	afterTest(t, async () => {
 		await service.shutdown();
 		discardRuntimeDebuggerPlans(debuggerState);
 		models.clear(); editorTextModelService.clear();

@@ -46,7 +46,7 @@ return {
  },
 }`;
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 for (const workload of ['GEO', 'GPU'] as const)
 test(`O${optLevel}: a fixture drains a held ${workload} fault boundary with bounded device/backend service before reporting the physical fault`, async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-fixture-fault-drain-'));

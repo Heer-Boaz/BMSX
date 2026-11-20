@@ -7,6 +7,7 @@ import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixtur
 import type { ActorRuntimeInspection } from '../../ide/workbench/contrib/actor_lab/runtime_inspection';
 import type { RuntimeInspection } from '../../ide/runtime/inspection';
 import { ACTOR_TOOLS_SOURCE } from '../helpers/actor_tools_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: Codex and Actor Lab inspect the same living behaviors`, { timeout: 180000 }, async t => {
 	type Body = { input: { type: string; call_id: string; output: string }[] };
@@ -34,7 +35,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 		CODEX_FIXTURE_DONE,
 	]);
 	const f = await createAssistantStudioFixture(t, `actors-${backend}`, { provider: { name: 'Offline actor inspection fixture', model: 'mock-model', baseUrl: `${model.url}/v1` } });
-	t.after(() => writeFile(join(f.evidence, `actors-${backend}-requests.json`), JSON.stringify(model.requests)));
+	afterTest(t, () => writeFile(join(f.evidence, `actors-${backend}-requests.json`), JSON.stringify(model.requests)));
 	const result = await f.page.evaluate(async backend => {
 		const entry = '/test.js', module = await import(entry);
 		return module.runAssistantActors(backend, document.querySelector('canvas'), globalThis.capture);

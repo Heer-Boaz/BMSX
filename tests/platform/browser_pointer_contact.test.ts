@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('native pointer contact geometry reaches common input and armed ICU at the browser boundary', async t => {
 	const bundle = await build({
@@ -21,7 +22,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 600, height: 280 }, isMobile: true, hasTouch: true });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));

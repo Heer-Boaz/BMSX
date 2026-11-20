@@ -5,6 +5,7 @@ import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
 import { controlContainsPoint, distanceToControl, roundContactBankWord } from './touch_gamepad_geometry_oracle';
+import { afterTest } from '../helpers/test_cleanup';
 
 const BUTTONS = [
 	{ id: 'a_knop', bit: InputControllerGamepadButtonBit.A },
@@ -50,7 +51,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	for (const profile of [
 		{ name: 'phone portrait', width: 393, height: 720, insets: [0, 0, 0, 0] },
 		{ name: 'phone portrait safe', width: 393, height: 852, insets: [47, 0, 34, 0] },

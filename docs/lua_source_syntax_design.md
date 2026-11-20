@@ -288,7 +288,7 @@ The reproducible corpus gate is
 unit suite:
 
 ```sh
-node --import tsx --import ./tests/lua/test_setup.ts tests/conformance/lua_source/insertion.ts
+node --import tsx --import ./tests/helpers/test_setup.ts tests/conformance/lua_source/insertion.ts
 ```
 
 All **312 tracked Lua sources**, 2,147,679 bytes and **5,272 tables** participate,

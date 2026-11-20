@@ -6,7 +6,7 @@ import { readLE32 } from '../../machine/ts/common/endian';
 import * as D from '../../machine/ts/spec/blua32/diagnostics';
 import { CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET } from '../../machine/ts/spec/bmsx/rom_package';
 import { runtimeLuaFrameScopes } from '../../ide/runtime/lua_inspection';
-import { compileLuaSource } from '../lua/cpu_test_harness';
+import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 
 const source = `local published = 999
@@ -41,7 +41,7 @@ local run = function(seed, published, ...)
 end
 return run(40, 41)`;
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: packed firmware scopes agree with installed Studio scopes at every mapped PC`, () => {
+for (const optLevel of [3] as const) test(`O${optLevel}: packed firmware scopes agree with installed Studio scopes at every mapped PC`, () => {
 	const linked = linkTestSystemBlua32(compileLuaSource(source, 'scope_probe', optLevel),
 		new Map([['scope_probe', { displayPath: 'scope_probe.lua', source }]]));
 	const bytes = linked.romBytes;

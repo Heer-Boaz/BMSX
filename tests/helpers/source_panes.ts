@@ -20,7 +20,7 @@ import { RuntimeIdeState } from '../../ide/workbench/state';
 import type { GraphLayoutEngineFactory } from '../../ide/workbench/services/graph_layout/engine';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { parseLuaChunk } from '../lua/cpu_test_harness';
+import { parseLuaChunk } from './cpu_test_harness';
 import { linkTestSystemBlua32 } from './blua32';
 import { createHostFrameFixture } from './host_frame';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from './runtime_sources';

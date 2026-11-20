@@ -1,0 +1,138 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { resourceIdentityKey } from '../../ide/common/resource';
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { EditorTextModelService, type ResolvedTextModelSource } from '../../ide/editor/model/model_service';
+import { getOrCreateSemanticProject, resetSemanticProject, resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
+import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
+import { afterTest } from '../helpers/test_cleanup';
+
+test('project identity includes the working-copy owner and unchanged queries reuse each exact snapshot', t => {
+	const first = new EditorTextModelService(), second = new EditorTextModelService();
+	afterTest(t, () => { first.clear(); second.clear(); });
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'same.lua', location: { kind: 'workspace' as const, path: 'same.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'same.lua', source: { type: 'lua' as const, resid: 'same' } };
+	const a = first.retain(resource, 'lua', 'return 1'), b = second.retain(resource, 'lua', 'return 2');
+	const projectA = getOrCreateSemanticProject(first, TEST_CARTRIDGE_CONTEXT_IDS[0]), projectB = getOrCreateSemanticProject(second, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	assert.notEqual(projectA, projectB);
+	const snapshotA = projectA.getSnapshot(), snapshotB = projectB.getSnapshot();
+	assert.equal(snapshotA.getFileData(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'same.lua' }))!.source, 'return 1');
+	assert.equal(snapshotB.getFileData(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'same.lua' }))!.source, 'return 2');
+	const parser = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
+	for (let query = 0; query < 1000; query++) {
+		assert.equal(getOrCreateSemanticProject(first, TEST_CARTRIDGE_CONTEXT_IDS[0]).getSnapshot(), snapshotA);
+		assert.equal(getOrCreateSemanticProject(second, TEST_CARTRIDGE_CONTEXT_IDS[0]).getSnapshot(), snapshotB);
+	}
+	assert.equal(parser.mock.callCount(), 0);
+	a.pushEditOperations([{ offset: 7, deleteLength: 1, text: '3' }]);
+	assert.equal(projectA.getSnapshot().getFileData(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'same.lua' }))!.source, 'return 3');
+	assert.equal(projectB.getSnapshot(), snapshotB);
+	assert.equal(b.version, 1);
+	assert.equal(snapshotA.getFileData(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'same.lua' }))!.source, 'return 1', 'retained generations stay immutable');
+});
+
+test('model teardown retires only its projects and a reopened matching source cannot revive them', t => {
+	const first = new EditorTextModelService(), second = new EditorTextModelService();
+	afterTest(t, () => { first.clear(); second.clear(); });
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'same.lua', location: { kind: 'workspace' as const, path: 'same.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'same.lua', source: { type: 'lua' as const, resid: 'same' } };
+	first.retain(resource, 'lua', 'return 1'); second.retain(resource, 'lua', 'return 2');
+	const project = getOrCreateSemanticProject(first, TEST_CARTRIDGE_CONTEXT_IDS[0]), foreign = getOrCreateSemanticProject(second, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	const old = project.getSnapshot(), other = foreign.getSnapshot();
+	const dispose = t.mock.method(project, 'dispose'), foreignDispose = t.mock.method(foreign, 'dispose');
+	first.clear();
+	assert.equal(dispose.mock.callCount(), 1); assert.equal(foreignDispose.mock.callCount(), 0);
+	const reopened = first.retain(resource, 'lua', 'return 3');
+	assert.equal(reopened.version, 1);
+	const replacement = getOrCreateSemanticProject(first, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	assert.notEqual(replacement, project);
+	assert.equal(replacement.getSnapshot().getFileData(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'same.lua' }))!.source, 'return 3');
+	assert.equal(old.getFileData(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'same.lua' }))!.source, 'return 1');
+	assert.equal(getOrCreateSemanticProject(second, TEST_CARTRIDGE_CONTEXT_IDS[0]).getSnapshot(), other);
+});
+
+test('domain reset and collection reset are owner-scoped with one model-lifetime subscription', t => {
+	const first = new EditorTextModelService(), second = new EditorTextModelService();
+	afterTest(t, () => { first.clear(); second.clear(); });
+	const subscribe = t.mock.method(first, 'onWillClear');
+	const cartridge = getOrCreateSemanticProject(first, TEST_CARTRIDGE_CONTEXT_IDS[0]), system = getOrCreateSemanticProject(first, TEST_SYSTEM_CONTEXT_ID);
+	const foreign = getOrCreateSemanticProject(second, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	assert.notEqual(resetSemanticProject(first, TEST_CARTRIDGE_CONTEXT_IDS[0]), cartridge);
+	assert.equal(getOrCreateSemanticProject(first, TEST_SYSTEM_CONTEXT_ID), system);
+	for (let reset = 0; reset < 100; reset++) {
+		resetSemanticProjects(first); getOrCreateSemanticProject(first, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	}
+	assert.notEqual(getOrCreateSemanticProject(first, TEST_SYSTEM_CONTEXT_ID), system);
+	assert.equal(getOrCreateSemanticProject(second, TEST_CARTRIDGE_CONTEXT_IDS[0]), foreign);
+	assert.equal(subscribe.mock.callCount(), 1, 'repeated explicit resets do not accumulate teardown observers');
+});
+
+test('semantic project retirement publishes its lifetime without scheduling source invalidation work', t => {
+	const models = new EditorTextModelService();
+	afterTest(t, () => models.clear());
+	const project = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	let retired = 0, sourceInvalidations = 0;
+	project.onDidInvalidate(() => { sourceInvalidations++; });
+	project.onWillDispose(() => { retired++; });
+	const unsubscribe = project.onWillDispose(() => assert.fail('released lifetime observer cannot run'));
+	unsubscribe();
+	const generation = project.generation;
+	resetSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	assert.equal(retired, 1);
+	assert.equal(sourceInvalidations, 0, 'teardown must not request semantic recomputation on the retiring project');
+	assert.equal(project.generation, generation);
+	resetSemanticProjects(models);
+	assert.equal(retired, 1, 'the released project no longer participates in collection retirement');
+});
+
+test('semantic collection retirement detaches its projects before callbacks admit matching successors', t => {
+	const models = new EditorTextModelService();
+	afterTest(t, () => models.clear());
+	const old = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	let current: typeof old | undefined, currentDisposals = 0;
+	old.onWillDispose(() => {
+		current = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+		current.onWillDispose(() => { currentDisposals++; });
+	});
+	resetSemanticProjects(models);
+	assert.notEqual(current, old);
+	assert.ok(getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]) === current);
+	assert.equal(currentDisposals, 0);
+});
+
+test('single-context semantic retirement preserves a successor admitted by the old project disposal', t => {
+	const models = new EditorTextModelService();
+	afterTest(t, () => models.clear());
+	const old = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	let current: typeof old | undefined;
+	old.onWillDispose(() => { current = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]); });
+	const reset = resetSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	assert.notEqual(current, old);
+	assert.ok(reset === current && getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]) === current);
+});
+
+test('model departure gives old project disposal a fresh pending source and semantic owner', async t => {
+	const models = new EditorTextModelService();
+	afterTest(t, () => models.clear());
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'same.lua', location: { kind: 'workspace' as const, path: 'same.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'same.lua', source: { type: 'lua' as const, resid: 'same' } };
+	const oldSource = Promise.withResolvers<ResolvedTextModelSource>(), currentSource = Promise.withResolvers<ResolvedTextModelSource>();
+	const pending = models.resolve(resource, 'lua', () => oldSource.promise);
+	const old = getOrCreateSemanticProject(models, resource.contextId);
+	let current: typeof old | undefined, currentPending: typeof pending | undefined;
+	old.onWillDispose(() => {
+		currentPending = models.resolve(resource, 'lua', () => currentSource.promise);
+		current = getOrCreateSemanticProject(models, resource.contextId);
+	});
+	models.clear();
+	oldSource.resolve({ source: 'return "old"', persistedBaseline: 'return "old"' });
+	currentSource.resolve({ source: 'return "new"', persistedBaseline: 'return "new"' });
+	const [oldResult, currentResult] = await Promise.allSettled([pending, currentPending!]);
+	assert.equal(oldResult.status, 'rejected');
+	assert.equal(currentResult.status, 'fulfilled');
+	assert.notEqual(currentPending, pending);
+	assert.notEqual(current, old);
+	assert.ok(getOrCreateSemanticProject(models, resource.contextId) === current);
+	if (currentResult.status === 'fulfilled') {
+		assert.ok(models.get(resource) === currentResult.value);
+		assert.equal(current!.getSnapshot().getFileData(resourceIdentityKey(resource))!.source, 'return "new"');
+	}
+});

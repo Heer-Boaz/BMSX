@@ -22,10 +22,11 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import { TestTargetInspectionModel } from '../../ide/workbench/contrib/scenario_lab/target_inspection_model';
 import { decodeTestToolRequest } from '../../ide/workbench/services/assistant/test_tool_protocol';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const slot of [0, 1] as const) test(`socket ${slot}: post-mortem tools read the failed phase threads, accepted sources and after-cleanup heap`, async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-test-inspection-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const source = `local shared = { answer = 10 }
 shared.self = shared
 local function fail(value, ...)
@@ -57,7 +58,7 @@ return { kind = 'unit',
 	const initial = captureRuntimeMachineState(authoring.runtime), installed = sources.currentBlua32Media;
 	const service = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC, (bios, carts, model, input) => new OffscreenMachine(bios, carts, model, input));
 	const connection = new AbortController(), tools = new WorkspaceTestTools(service, connection.signal);
-	t.after(() => { tools.dispose(); service.dispose(); models.clear(); authoring.dispose(); });
+	afterTest(t, () => { tools.dispose(); service.dispose(); models.clear(); authoring.dispose(); });
 	async function finish() {
 		for (let grant = 0; service.active && grant < 10000; grant++) { service.advance(); await setImmediate(); }
 		assert.equal(service.active, false);

@@ -11,7 +11,7 @@ import { walkLuaAst } from '../../../toolchain/ts/lua/syntax/ast/traversal';
 
 // Run separately from the fast unit suite: a field batch at every boundary in every
 // tracked cartlib/BIOS/cart Lua table, with a complete AST oracle for each edit.
-// node --import tsx --import ./tests/lua/test_setup.ts tests/conformance/lua_source/insertion.ts
+// node --import tsx --import ./tests/helpers/test_setup.ts tests/conformance/lua_source/insertion.ts
 const paths = execFileSync('git', ['ls-files', 'cartlib', 'machine/bios', 'carts'], { encoding: 'utf8' })
 	.trim().split('\n').filter(path => path.endsWith('.lua'));
 const fieldSources = ['__bmsx_insert_probe = 7', '__bmsx_insert_second_probe = {8}'];

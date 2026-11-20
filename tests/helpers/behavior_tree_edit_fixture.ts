@@ -14,13 +14,14 @@ import { mapBehaviorLensSourceRanges } from '../../ide/workbench/contrib/behavio
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { BT_ORDER_SOURCE } from './behavior_order_fixture';
+import { afterTest } from './test_cleanup';
 
 const API_MODULES = ['cartlib/behaviour_tree/library'];
 
 export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_SOURCE, definition = 0) {
 	const previous = { font: editorViewState.font, viewportWidth: editorViewState.viewportWidth, viewportHeight: editorViewState.viewportHeight,
 		lineHeight: editorViewState.lineHeight, editorAreaTop: editorViewState.editorAreaTop, editorAreaBottom: editorViewState.editorAreaBottom };
-	t.after(() => Object.assign(editorViewState, previous));
+	afterTest(t, () => Object.assign(editorViewState, previous));
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, editorAreaTop: 24, editorAreaBottom: 276 });
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'order.lua' }, contextLabel: 'Fixture project', sourceFilePath: 'order.lua', contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'order.lua', source: { type: 'lua', resid: 'order' } }, 'lua', source);
 	let analysis: ResourceLuaSemanticFixtureFile;
@@ -52,6 +53,6 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 		model.pushEditOperations(createBehaviorTreeChildMoveEdits(model.buffer, member, member.index + direction));
 		refresh();
 	};
-	t.after(() => { input.dispose(); model.dispose(); });
+	afterTest(t, () => { input.dispose(); model.dispose(); });
 	return { model, input, view, graph, viewport, refresh, select, move, get analysis() { return analysis; } };
 }

@@ -11,6 +11,7 @@ import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
 import { collectCartSourceFiles } from '../../scripts/rompacker/cart_source_files';
 import { DiskWorkspaceRecordProvider } from '../../ide/node/workspace_records';
 import { discoverWorkspaceSourceFiles } from '../../ide/workspace/source_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext) {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-workspace-publication-'));
@@ -20,7 +21,7 @@ async function fixture(t: TestContext) {
 		});
 	});
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
-	t.after(async () => {
+	afterTest(t, async () => {
 		server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
 		await rm(root, { recursive: true, force: true });
 	});
@@ -65,7 +66,7 @@ test('native and HTTP directory creation share final-name admission and preserve
 test('HTTP directory creation retains rooted path and symbolic-link admission', async t => {
 	const { root, createDirectory } = await fixture(t);
 	const outside = await mkdtemp(join(tmpdir(), 'bmsx-workspace-outside-'));
-	t.after(() => rm(outside, { recursive: true, force: true }));
+	afterTest(t, () => rm(outside, { recursive: true, force: true }));
 	await symlink(outside, join(root, 'external'), 'dir');
 	for (const [path, status] of [['../escape', 403], ['/absolute', 400], ['invalid\0path', 400], ['external/empty', 403], ['external', 403]] as const) {
 		assert.equal((await createDirectory(path)).status, status);
@@ -79,7 +80,7 @@ test('build capture during Save sees the previous complete file, then the newly 
 	const path = join(root, 'map.yaml'), previous = 'rooms: [old]\n', next = 'rooms: [new]\n';
 	await writeFile(path, previous); await utimes(path, 100, 100); await chmod(path, 0o751);
 	const reader = await open(path, 'r');
-	t.after(() => reader.close());
+	afterTest(t, () => reader.close());
 	const prototype = Object.getPrototypeOf(reader), write = prototype.writeFile;
 	const writing = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
 	t.mock.method(prototype, 'writeFile', async function (this: FileHandle, ...args: unknown[]) {
@@ -153,7 +154,7 @@ test('atomic replacement does not bypass a read-only destination', async t => {
 
 test('direct disk saves publish bytes and timestamps together through the same owner', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-disk-publication-'));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const provider = new DiskWorkspaceRecordProvider(root);
 	const path = join(root, 'entry.lua');
 	await writeFile(path, 'return 1'); await utimes(path, 100, 100);

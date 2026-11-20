@@ -11,7 +11,7 @@ Workspace registration admission and binding can be measured independently of
 layout/rendering with the shared warmup/median harness:
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile_registrations.ts cartlib carts/nemesis_s
 ```
 
@@ -19,11 +19,11 @@ The output includes every discovered registration for before/after comparison.
 These are source-query measurements, not total frame or guest performance.
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/behavior_source_graph.test.ts tests/lua/behavior_tree_graph_view.test.ts tests/lua/behavior_tree_membership.test.ts \
-  tests/lua/behavior_tree_edit.test.ts tests/lua/lua_table_moves.test.ts \
-  tests/lua/workbench_tree_layout.test.ts tests/lua/workbench_graph.test.ts \
-  tests/lua/editor_focus.test.ts
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/behavior_source_graph.test.ts tests/studio/behavior_tree_graph_view.test.ts tests/studio/behavior_tree_membership.test.ts \
+  tests/studio/behavior_tree_edit.test.ts tests/studio/lua_table_moves.test.ts \
+  tests/studio/workbench_tree_layout.test.ts tests/studio/workbench_graph.test.ts \
+  tests/studio/editor_focus.test.ts
 ```
 
 The shared `tests/helpers/behavior_source_fixture.ts` is authored Lua, not a
@@ -123,7 +123,7 @@ npm run ide:test -- nemesis_s tests/ide/behavior_lens.idetest.js
 ## Separate cost boundaries
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile.ts
 ```
 
@@ -143,10 +143,10 @@ a JavaScript zero-allocation proof or a speed guarantee for another host.
 ### Initial-state authoring and actual live installation
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/lua_string_edits.test.ts tests/lua/state_machine_initial.test.ts \
-  tests/lua/state_graph_view.test.ts tests/lua/fsm_hot_resume.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/lua_string_edits.test.ts tests/studio/state_machine_initial.test.ts \
+  tests/studio/state_graph_view.test.ts tests/studio/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile_initial.ts
 node tests/conformance/runtime_replay/browser.mjs --studio-fsm-initial \
   dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-bt-graph/initial.png
@@ -180,10 +180,10 @@ definition installation and entering/resetting a living state machine.
 an exposed command or endpoint-drag gesture:
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/state_machine_retarget.test.ts tests/lua/state_machine_source.test.ts \
-  tests/lua/state_machine_selection.test.ts tests/lua/fsm_hot_resume.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/state_machine_retarget.test.ts tests/studio/state_machine_source.test.ts \
+  tests/studio/state_machine_selection.test.ts tests/studio/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile_retarget.ts
 ```
 
@@ -206,10 +206,10 @@ the integration gates for the changed typed source facts and source links.
 ### Retarget edit / exact proof history
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/state_machine_edit.test.ts tests/lua/state_graph_view.test.ts \
-  tests/lua/state_machine_selection.test.ts tests/lua/behavior_source_bookmark.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/state_machine_edit.test.ts tests/studio/state_graph_view.test.ts \
+  tests/studio/state_machine_selection.test.ts tests/studio/behavior_source_bookmark.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile_fsm_bookmarks.ts
 ```
 
@@ -233,9 +233,9 @@ model-event delivery, parsing, graph layout and complete edit/frame/heap/GC cost
 are excluded; these are not idle-frame operations.
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/state_machine_source.test.ts tests/lua/fsm_hot_resume.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/state_machine_source.test.ts tests/studio/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile_fsm.ts
 ```
 
@@ -286,10 +286,10 @@ opening. Neither phase belongs to the lens draw/hover/pan loop.
 ## Concrete FSM graph and native transport
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/state_graph_view.test.ts tests/lua/state_machine_selection.test.ts \
-  tests/lua/graph_layout_node.test.ts tests/lua/graph_layout_lifetime.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/state_graph_view.test.ts tests/studio/state_machine_selection.test.ts \
+  tests/studio/graph_layout_node.test.ts tests/studio/graph_layout_lifetime.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile_state_graph.ts
 ```
 
@@ -325,9 +325,9 @@ performance; the script is not a JavaScript allocation profiler.
 ## ActionEffect source prerequisite
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/actioneffect_source.test.ts tests/lua/actioneffect_trace.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/actioneffect_source.test.ts tests/machine/actioneffect_trace.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile_actioneffect.ts
 ```
 
@@ -366,10 +366,10 @@ they exclude parsing, drawing, runtime execution and total Studio frame time.
 ## ActionEffect property inspector
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/workbench_property_tree.test.ts tests/lua/actioneffect_properties.test.ts \
-  tests/lua/workbench_tree.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/workbench_property_tree.test.ts tests/studio/actioneffect_properties.test.ts \
+  tests/studio/workbench_tree.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile_actioneffect_properties.ts
 ```
 
@@ -405,10 +405,10 @@ frame time or physical GPU performance. Run measurements without other tests.
 ## BT drag-to-reorder
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/pointer_capture.test.ts tests/lua/workbench_graph.test.ts \
-  tests/lua/behavior_tree_edit.test.ts tests/lua/behavior_tree_drag.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/pointer_capture.test.ts tests/studio/workbench_graph.test.ts \
+  tests/studio/behavior_tree_edit.test.ts tests/studio/behavior_tree_drag.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile_drag.ts
 ```
 
@@ -438,10 +438,10 @@ GPU raster/upload timing, full-frame timing or target-hardware certification.
 ## BT source removal
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/behavior_tree_removal.test.ts tests/lua/lua_table_removal.test.ts \
-  tests/lua/editor_focus.test.ts tests/lua/fsm_hot_resume.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/behavior_tree_removal.test.ts tests/studio/lua_table_removal.test.ts \
+  tests/studio/editor_focus.test.ts tests/studio/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile_edit.ts
 ```
 
@@ -466,11 +466,11 @@ heap-allocation, GPU or Hot Resume benchmark. Run measurements without other tes
 ## BT source duplication
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/behavior_tree_duplicate.test.ts tests/lua/lua_table_insertion.test.ts \
-  tests/lua/behavior_tree_removal.test.ts tests/lua/editor_focus.test.ts \
-  tests/lua/fsm_hot_resume.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/behavior_tree_duplicate.test.ts tests/studio/lua_table_insertion.test.ts \
+  tests/studio/behavior_tree_removal.test.ts tests/studio/editor_focus.test.ts \
+  tests/studio/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile_edit.ts
 ```
 
@@ -498,9 +498,9 @@ semantic reprojection, graph layout/render, autosave and Hot Resume are not.
 ## BT cross-parent transfer admission
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/behavior_tree_transfer.test.ts tests/lua/fsm_hot_resume.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/behavior_tree_transfer.test.ts tests/studio/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile_transfer_admission.ts
 ```
 
@@ -529,8 +529,8 @@ and remaining command/fold/live-install gates are in
 ## FSM endpoint authoring and impact review
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/state_machine_drag.test.ts tests/lua/workspace_edit_review_pane.test.ts
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/state_machine_drag.test.ts tests/studio/workspace_edit_review_pane.test.ts
 node tests/conformance/runtime_replay/browser.mjs --studio-fsm-retarget \
   dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-fsm-drag/review.png
 npx tsx --tsconfig tsconfig.base.json tests/conformance/behavior_graph/profile_fsm_drag.ts

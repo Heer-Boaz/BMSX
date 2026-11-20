@@ -5,6 +5,7 @@ import { ActorWorldView } from '../../ide/workbench/contrib/actor_lab/world_view
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createHeadlessHostMeshTarget, renderHeadlessHostMeshScene } from '../../machine/ts/render/host_overlay/headless/mesh';
 import { createLiveStudioFixture } from '../helpers/live_studio';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const mode of ['2d', '3d'] as const) test(`${mode} world view owns the identities and poses of its presented geometry across game-frame publication`, async t => {
 	const f = await createLiveStudioFixture(t), { editor, ide, sources } = f;
@@ -21,7 +22,7 @@ for (const mode of ['2d', '3d'] as const) test(`${mode} world view owns the iden
 	await f.until(() => frames.displayed.world.canvas.length >= 5);
 	ide.transport.pause();
 	const view = new ActorWorldView(sources, frames);
-	t.after(() => view.dispose());
+	afterTest(t, () => view.dispose());
 	view.setMode(mode);
 	const bounds = { left: 0, top: 0, right: 320, bottom: 240 };
 	view.refresh(bounds, 0, 0);
@@ -92,7 +93,7 @@ for (const pageCount of [1, 2]) test(`${pageCount}-page streamed models publish 
 	ide.transport.pause();
 	const identity = { ...frames.displayed.world.models.peek(0).entry };
 	const view = new ActorWorldView(sources, frames);
-	t.after(() => view.dispose());
+	afterTest(t, () => view.dispose());
 	view.setMode('3d');
 	const bounds = { left: 0, top: 0, right: 320, bottom: 240 };
 	view.refresh(bounds, identity.domain, identity.hashId); view.frameAll(true); view.refresh(bounds, identity.domain, identity.hashId);

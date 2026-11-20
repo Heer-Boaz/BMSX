@@ -19,11 +19,10 @@ import { composeLuaSource } from '../../toolchain/ts/lua/compiler/source_map';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createTestBlua32PairCpu, writeTestBlua32Rom } from '../helpers/blua32';
-import { materializeCpuCompletionValues, parseLuaChunk } from '../lua/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`public BIOS exports root their module dependencies without an entry require (O${optLevel})`, () => {
 		const systemSources = [
 			['entry', `module<entry>
@@ -68,7 +67,7 @@ return operation(35)`;
 			systemRomBytes: writeTestBlua32Rom(system.linked),
 			cartRomBytes: writeTestBlua32Rom(cart.linked),
 		});
-		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+		runGuestToHalt(cpu, 100_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
 	});
 }

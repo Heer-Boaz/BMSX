@@ -23,6 +23,7 @@ import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { TestInput } from '../../ide/testing/input';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { setImmediate } from 'node:timers/promises';
+import { afterTest } from '../helpers/test_cleanup';
 
 const NEMESIS_SCENARIO_PATH = 'tests/carts/nemesis_s/nemesis_s_pause_assert.lua';
 
@@ -45,7 +46,7 @@ test('debug scenario discovery packages each authored assertion as one source-on
 
 test('a debug cart with no packed tests can execute its first workspace-created suite; rebuild preserves source-only membership', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-first-scenario-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const resources = join(directory, 'res'), output = join(directory, 'output');
 	await mkdir(resources);
 	await writeFile(join(resources, 'manifest.rommanifest'), 'title: First scenario\nhardware:\n  - type: rom\n');
@@ -67,7 +68,7 @@ test('a debug cart with no packed tests can execute its first workspace-created 
 	const authoring = new OffscreenMachine(system, [cartridge, null], PSX_MACHINE_SPEC, new TestInput());
 	const models = new EditorTextModelService();
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
-	t.after(async () => { models.clear(); authoring.dispose(); await closeWorkspaceRecords(); });
+	afterTest(t, async () => { models.clear(); authoring.dispose(); await closeWorkspaceRecords(); });
 	const source = "return { kind = 'unit', tests = { first = function() assert(2 + 2 == 4) end } }";
 	const resource = await createTextResource(new VirtualHeadlessClock(), sources.catalog, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], relativePath: 'first_assert.lua', contents: source });
 	models.retain(sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua' })!, 'lua',
@@ -78,7 +79,7 @@ test('a debug cart with no packed tests can execute its first workspace-created 
 		published = slots[0]!;
 		return new OffscreenMachine(system, slots, model, input);
 	});
-	t.after(() => runs.dispose());
+	afterTest(t, () => runs.dispose());
 	const run = runs.start(runs.collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[0], 'first_assert.lua').id);
 	for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
 	assert.equal(run.state, 'passed', JSON.stringify(run.items[0].failures));

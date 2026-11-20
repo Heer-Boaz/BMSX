@@ -13,6 +13,7 @@ import { api } from '../../ide/runtime/overlay_api';
 import { ProblemsPanelController } from '../../ide/workbench/contrib/problems/panel/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createTestEditorParts } from './editor_panes';
+import { afterTest } from './test_cleanup';
 
 /** A real native content attachment; its external host owns these supplied bounds and its lifetime. */
 export function createProblemsPanelFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny',
@@ -40,7 +41,7 @@ export function createProblemsPanelFixture(t: TestContext, variant: 'tiny' | 'ms
 		controller.layout(allocation, headerBounds);
 	};
 	arrange(); controller.attach(bounds, headerBounds);
-	t.after(() => { controller.dispose(); inputFocus.setTarget(null); pointerHover.clear(); pointerCapture.cancel(); surfaces.dispose(); });
+	afterTest(t, () => { controller.dispose(); inputFocus.setTarget(null); pointerHover.clear(); pointerCapture.cancel(); surfaces.dispose(); });
 	const wheel = (deltaY: number) => controller.handleWheel({ valid: true, insideViewport: true, viewportX: bounds.left + 1,
 		viewportY: bounds.top + 1, modifiers: KeyModifier.none, deltaX: 0, deltaY });
 	return { controller, surfaces, owner, headerFeedback, feedback, parts, group: parts.main.activeGroup, bounds, headerBounds, area, wheel, arrange };

@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
 import { roundContactBankWord, controlContainsPoint, controlSeparation, distanceToControl } from './touch_gamepad_geometry_oracle';
+import { afterTest } from '../helpers/test_cleanup';
 
 const actions = [
 	{ id: 'a_knop', label: 'A', buttons: 1 << InputControllerGamepadButtonBit.A },
@@ -92,7 +93,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 	const evidenceDirectory = '.bmsx/hosting/portrait-upper-fan-test-evidence';
 	await mkdir(evidenceDirectory, { recursive: true });
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));

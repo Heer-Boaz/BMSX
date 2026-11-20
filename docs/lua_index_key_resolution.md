@@ -49,7 +49,7 @@ coverage distinguishes two FSMs and identically named states in one document.
 
 ## Validation
 
-- The reciprocal-map regression in `tests/lua/semantic_value_graph.test.ts`
+- The reciprocal-map regression in `tests/studio/semantic_value_graph.test.ts`
   fails with `RangeError: Maximum call stack size exceeded` before the owner
   fix. Afterwards it resolves both direct and indirect keys and rejects
   members belonging to the other key; termination alone is not the assertion.

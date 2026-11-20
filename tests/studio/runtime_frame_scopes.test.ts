@@ -1,0 +1,50 @@
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { asThread, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { retireRuntimeFrameScopes } from '../../ide/runtime/frame_scopes';
+import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
+import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
+import { compileFrameEvaluationTest } from '../helpers/frame_evaluation';
+import { createTestRuntime } from '../helpers/runtime_sources';
+import { createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
+
+for (const mode of ['source-install', 'completion-unwind'] as const) test(`IDE retires real firmware borrows before ${mode}`, () => {
+	const image = compileFrameEvaluationTest(`
+reader = false
+keeper = coroutine.create(function(value, ...)
+ local index<const> = frame_count(running_thread()) - 1
+ local ok, message = repl.evaluate_frame('reader = function() return value end; coroutine.yield(42); return value', '=retirement', index, 0)
+ assert(ok, message)
+ return value, message
+end)
+assert(coroutine.resume(keeper, 17))
+verify = function() return pcall(reader) end
+return true`, 0);
+	const runtime = createTestRuntime(image.romBytes), cpu = runtime.machine.cpu;
+	const sources = createScenarioTestSourceState([]);
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
+	const guest = new SuspendedGuestSession(runtime);
+	cpu.reset(); cpu.installBootPrimitives();
+	// A pre-initialization source installation has no scope registry yet.
+	retireRuntimeFrameScopes(runtime, sources, guest);
+	runGuestToHalt(cpu, 30_000_000);
+	const initialized = materializeCpuCompletionValues(cpu);
+	assert.deepEqual(initialized, [valueBool(true), valueBool(true)], initialized.map(value => guest.formatValue(value)).join('\t'));
+	const keeper = asThread(guest.global('keeper'), cpu.gc);
+	const pcs = Array.from({ length: cpu.readThreadFrameDepth(keeper) }, (_, index) => cpu.readThreadFrameWord(keeper, index, FrameField.Pc));
+	const reader = guest.global('reader');
+	assert.deepEqual(guest.callClosure(reader), [valueInteger(17)]);
+	if (mode === 'completion-unwind') {
+		retireRuntimeFrameScopes(runtime, sources, guest, cpu.activeThread.address, 0);
+		retireRuntimeFrameScopes(runtime, sources, guest, keeper, cpu.readThreadFrameDepth(keeper));
+		assert.deepEqual(guest.callClosure(reader), [valueInteger(17)], 'other threads and lower scopes retain their borrow');
+	}
+	retireRuntimeFrameScopes(runtime, sources, guest, mode === 'completion-unwind' ? keeper : undefined);
+	assert.deepEqual(Array.from({ length: cpu.readThreadFrameDepth(keeper) }, (_, index) => cpu.readThreadFrameWord(keeper, index, FrameField.Pc)), pcs, 'retirement neither runs Lua nor unwinds/rewrites the physical stack');
+	assert.deepEqual(guest.callClosure(guest.global('verify')).map(value => guest.formatValue(value)),
+		['false', 'Selected frame evaluation has ended.']);
+});

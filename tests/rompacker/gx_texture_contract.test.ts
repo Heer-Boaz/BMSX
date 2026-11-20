@@ -9,9 +9,9 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { createCanvas } from 'canvas';
-import { materializeCpuCompletionValues } from '../lua/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
-import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -418,7 +418,7 @@ return imgdec
 		const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 		cpu.reset();
 		cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		const textureDestination = gxGpuPair16(320, 0);
 		const clutDestination = gxGpuPair16(320, 16);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [

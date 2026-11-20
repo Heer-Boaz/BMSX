@@ -6,6 +6,7 @@ import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/s
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from './scenario_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from './runtime_sources';
+import { afterTest } from './test_cleanup';
 
 /** Real canonical models and source authority for Scene domain/control fixtures. */
 export function createSceneSourceFixture(t: TestContext, source: string, path = 'scene.lua',
@@ -23,6 +24,6 @@ export function createSceneSourceFixture(t: TestContext, source: string, path = 
 	const models = new EditorTextModelService(), documents = new SceneSourceDocuments(models, sources.catalog);
 	const resource = sources.catalog.resolveResource({ contextId, path })!;
 	const model = resolveLuaTextFileModel(models, sources.catalog, resource);
-	t.after(() => { models.clear(); resetSemanticProjects(models); sources.catalog.dispose(); });
+	afterTest(t, () => { models.clear(); resetSemanticProjects(models); sources.catalog.dispose(); });
 	return { sources, models, documents, resource, model };
 }

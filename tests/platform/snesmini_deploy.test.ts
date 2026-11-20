@@ -14,6 +14,7 @@ import { prepareMiniPackage, type MiniProfile, type MiniFile } from '../../scrip
 import { updateHakchiCollection } from '../../scripts/snesmini/hakchi';
 import { planMiniDeployment } from '../../scripts/snesmini/device';
 import { quotePosixArgument } from '../../scripts/lib/cli_arguments';
+import { afterTest } from '../helpers/test_cleanup';
 
 const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
@@ -26,7 +27,7 @@ test('remote shell arguments survive spaces, apostrophes and shell operators wit
 
 test('installing only the host executables does not restart Clover', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-mini-installer-'));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const stage = join(root, 'stage'), bin = join(root, 'bin'), calls = join(root, 'calls');
 	await mkdir(stage); await mkdir(bin);
 	await writeFile(join(stage, 'files.list'), 'root/bmsx_libretro_host\nroot/bmsx_snesmini_input\n');
@@ -46,7 +47,7 @@ test('installing only the host executables does not restart Clover', async t => 
 
 async function fixture(t: TestContext) {
 	const root = await mkdtemp(join(tmpdir(), "bmsx-hakchi's collection-"));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const hakchiDirectory = join(root, 'Hakchi PC'), directory = join(root, 'package');
 	const coreDirectory = join(root, 'core'), hostDirectory = join(root, 'host');
 	for (const path of [join(hakchiDirectory, 'config'), directory, coreDirectory, hostDirectory]) await mkdir(path, { recursive: true });

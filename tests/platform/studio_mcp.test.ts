@@ -10,11 +10,12 @@ import { chromium, type Browser } from 'playwright';
 import { createStudioServer } from '../helpers/studio_server.mjs';
 import { createCodexContractFixture } from '../helpers/codex_app_server.mjs';
 import { createCodexModelFixture } from '../helpers/codex_model_fixture.mjs';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('CLI MCP uses a real Studio window without its chat: runtime, Lua, frames, images and scoped source review', { timeout: 120000 }, async t => {
 	const clients: Client[] = [], transports: StreamableHTTPClientTransport[] = [];
 	let browser: Browser;
-	t.after(async () => { for (const transport of transports) await transport.terminateSession(); for (const client of clients) await client.close(); await browser?.close(); });
+	afterTest(t, async () => { for (const transport of transports) await transport.terminateSession(); for (const client of clients) await client.close(); await browser?.close(); });
 	const f = await createStudioServer(t), endpoint = `${f.address}/__bmsx__/mcp`;
 	assert.equal((await fetch(endpoint, { method: 'POST' })).status, 401);
 	assert.equal((await fetch(endpoint, { method: 'POST', headers: { ...f.headers, Origin: 'https://untrusted.example' } })).status, 403);

@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('browser workspace sessions retain reload recovery but isolate cloned and published documents for their lifetimes', { timeout: 30000 }, async t => {
 	const bundle = await build({ stdin: { resolveDir: process.cwd(), contents: `
@@ -22,7 +23,7 @@ test('browser workspace sessions retain reload recovery but isolate cloned and p
 	});
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
 	const browser = await chromium.launch({ args: ['--no-sandbox'] });
-	t.after(async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	afterTest(t, async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
 	const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 	const requestId = '00000000-0000-4000-8000-000000000001';
 	const url = `${origin}/studio.debug.html?build=${requestId}`;

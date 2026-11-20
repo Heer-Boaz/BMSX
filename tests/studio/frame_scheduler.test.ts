@@ -1,0 +1,1241 @@
+import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
+import { test } from 'node:test';
+
+import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
+import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
+import { AcceptedInterruptKind } from '../../machine/ts/machine/cpu/cpu';
+import type {
+	InputControllerInputSource,
+	InputControllerSnapshot,
+} from '../../machine/ts/machine/devices/input/contracts';
+import { runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
+import { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { captureRuntimeSaveState, applyRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
+import { encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
+import type { CartridgeSocketMediaPair } from '../../machine/ts/machine/devices/cartridge/contracts';
+import { readLE32 } from '../../machine/ts/common/endian';
+import { APU_SAMPLE_RAM_BYTES, APU_TRANSFER_MODE_MANUAL_WRITE } from '../../machine/ts/spec/audio/apu';
+import { HistoryMode, HistorySeekResult } from '../../machine/ts/machine/runtime/history/history';
+import {
+	INP_CTRL_ARM,
+	IO_APU_TRANSFER_ADDRESS,
+	IO_APU_TRANSFER_CONTROL,
+	IO_APU_TRANSFER_DATA,
+	IO_CART_SELECT,
+	IO_DMA0_READ_ADDR,
+	IO_DMA0_CONTROL,
+	IO_DMA0_TRANSFER_COUNT,
+	IO_DMA0_TRIGGER,
+	IO_GX_GPU_GP0,
+	IO_GX_GPU_GP1,
+	IO_INP_CTRL,
+	IO_INP_KEYS,
+	IO_INP_STATUS,
+	IO_IRQ_FLAGS,
+	IO_IRQ_MASK,
+	IO_SYS_CONTROL,
+	IRQ_VBLANK,
+	SYS_CONTROL_RESET,
+	SYS_CONTROL_SUPERVISOR_FAULT,
+	SYS_CONTROL_SUPERVISOR_LEAVE,
+} from '../../machine/ts/spec/bmsx/io';
+import { CART_RAM_BASE, IO_WORD_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import {
+	PSX_CPU_FREQ_HZ,
+	PSX_MACHINE_SPEC,
+} from '../../machine/ts/spec/bmsx/model';
+import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { GX_GPU_READBACK_IDLE, GX_GPU_READBACK_PENDING, GX_GPU_READBACK_READY } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/spec/gx/gp0';
+import {
+	GX_GPU_PCRTC_SMODE1_HIGH,
+	GX_GPU_PCRTC_SMODE1_LOW,
+	GX_GPU_PCRTC_SMODE1_SINT,
+	GX_GPU_PCRTC_SMODE2_LOW,
+	GX_GPU_PCRTC_SYNCH1_HIGH,
+	GX_GPU_PCRTC_SYNCH1_LOW,
+	GX_GPU_PCRTC_SYNCH2_HIGH,
+	GX_GPU_PCRTC_SYNCH2_LOW,
+	GX_GPU_PCRTC_SYNCV_HIGH,
+	GX_GPU_PCRTC_SYNCV_LOW,
+	gxGpuPcrtcRegisterAddress,
+} from '../../machine/ts/spec/gx/pcrtc';
+import {
+	GX_GPU_DISPLAY_PRESET_640X480I_NTSC_WORDS,
+	GX_GPU_DISPLAY_PRESET_640X512I_PAL_WORDS,
+	GX_GPU_DISPLAY_PRESET_PCRTC_SMODE2_LOW_WORD,
+	GX_GPU_DISPLAY_PRESET_PCRTC_SYNCV_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_NTSC_WORDS,
+	GX_GPU_DISPLAY_TIMING_PAL_WORDS,
+	GX_GPU_DISPLAY_TIMING_SMODE1_HIGH_WORD,
+	GX_GPU_DISPLAY_TIMING_SMODE1_RUN_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_SMODE1_SETUP_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCH1_HIGH_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCH1_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCH2_HIGH_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCH2_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCV_HIGH_WORD,
+} from '../../machine/ts/spec/gx/display_presets';
+import { afterTest } from '../helpers/test_cleanup';
+import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { cartridgeSlots } from '../helpers/cartridge';
+import { createHostFrameFixture } from '../helpers/host_frame';
+import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
+
+const TEST_KEY_USAGE = 59;
+
+class TickInputSource implements InputControllerInputSource {
+	public sampleCount = 0;
+	public keyDown = false;
+	public supervisorHigh = false;
+	public rejectLiveInput = false;
+
+	public sampleInputControllerSnapshot(snapshot: InputControllerSnapshot): void {
+		assert.equal(this.rejectLiveInput, false);
+		this.sampleCount += 1;
+		if (this.keyDown) {
+			snapshot.keyWords[TEST_KEY_USAGE >>> 5] |= 1 << (TEST_KEY_USAGE & 31);
+		}
+	}
+
+	public supervisorRequestLineHigh(): boolean {
+		assert.equal(this.rejectLiveInput, false);
+		return this.supervisorHigh;
+	}
+
+	public applyInputControllerVibrationEffect(): void {
+	}
+}
+
+function createTickRuntime(input = new TickInputSource(), slots: CartridgeSocketMediaPair = cartridgeSlots()): {
+	input: TickInputSource;
+	runtime: Runtime;
+} {
+	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.HALT, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.RFE, 0, 0, 0, 0);
+	const system = linkRawTestSystemBlua32({
+		text: code,
+		functions: [
+			{ firstWord: 0, wordCount: 1 },
+			{ firstWord: 1, wordCount: 1 },
+		],
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		startupFunctionIndex: 0,
+		irqFunctionIndex: 1,
+		exceptionFunctionIndex: 1,
+	});
+	const runtime = new Runtime({
+		systemRomBytes: system.romBytes,
+		cartridgeSlots: slots,
+		machineModel: PSX_MACHINE_SPEC,
+	}, input);
+	runtime.boot();
+	return { input, runtime };
+}
+
+test('device settlement reaches real VBlank without executing the stopped CPU or pending IRQ entry', () => {
+	const { runtime, input } = createTickRuntime();
+	const { cpu, memory } = runtime.machine, scheduler = runtime.frameScheduler;
+	memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK);
+	memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
+	const thread = cpu.activeThread, depth = thread.frameDepth, pc = thread.currentFrame!.pc, stackTop = thread.stackTop;
+	assert.equal(scheduler.runDevicesToNextLogicalTick(19), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, 19);
+	assert.equal(scheduler.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(input.sampleCount, 1);
+	assert.notEqual(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, 0, 'the real device edge raises its IRQ');
+	assert.equal(cpu.activeThread, thread); assert.equal(thread.frameDepth, depth); assert.equal(thread.currentFrame!.pc, pc);
+	assert.equal(thread.stackTop, stackTop);
+	assert.equal(scheduler.lastTickCpuUsedCycles, 0);
+	assert.equal(scheduler.lastTickBudgetGranted - scheduler.lastTickBudgetRemaining, runtime.machine.scheduler.nowCycles);
+});
+
+test('device settlement retains split grants at a backend fence and resumes without regranting', () => {
+	const { runtime } = createTickRuntime(), scheduler = runtime.frameScheduler, gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24); gpu.writeGp0(0); gpu.writeGp0(0x00010001);
+	assert.equal(scheduler.runDevicesToNextLogicalTick(55), false);
+	const output = gpu.readDeviceOutput(), readback = output.readbackPort;
+	assert.equal(readback.claimReadback(output.commandBuffer.executedCommandCount), true);
+	const blockedAt = runtime.machine.scheduler.nowCycles;
+	assert.equal(scheduler.runDevicesToNextLogicalTick(149), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, blockedAt);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 204);
+	readback.completeReadback(readback.token);
+	assert.equal(scheduler.runDevicesToNextLogicalTick(0), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, 204);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 0);
+	assert.equal(runtime.frameLoop.frameState.activeCpuUsedCycles, 0);
+});
+
+test('supervisor GPU service drains completed subcapacity work after device and admitted DMA deadlines', () => {
+	for (const dmaUpload of [false, true]) {
+		const { runtime } = createTickRuntime();
+		const { gxGpu: gpu, memory, systemController: system, dmaController: dma } = runtime.machine;
+		const scheduler = runtime.frameScheduler;
+		const backend = new HeadlessGPUBackend(16, 2, PSX_MACHINE_SPEC.gxGpuVramBytes);
+		const words = [0x020000ff, 0, 0x00020010];
+		if (dmaUpload) {
+			const source = RAM_BASE + 0x20000;
+			memory.writeMappedU32LE(IO_GX_GPU_GP1, 0x04000002);
+			words.forEach((word, index) => memory.writeMappedU32LE(source + index * 4, word));
+			memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
+			memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, words.length);
+			memory.writeMappedU32LE(IO_DMA0_CONTROL, 1); // RAM -> GP0
+			memory.writeMappedU32LE(IO_DMA0_TRIGGER, 1);
+		} else for (const word of words) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+		memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT);
+		if (dmaUpload) {
+			const burst = dma.captureState().scheduledBlockCycles;
+			assert.equal(burst, 7, 'three RAM reads and GP0 writes retain their serial bus charge');
+			scheduler.runDevicesToNextLogicalTick(burst - 1);
+			assert.equal(dma.hasAdmittedWriteBlock(IO_GX_GPU_GP0), true);
+			assert.equal(gpu.captureState().supervisorIngressQuiesceRequested, false);
+			assert.equal(gpu.backendServicePending(), false);
+			assert.equal(gpu.readDeviceOutput().commandBuffer.commandCount, 0);
+			scheduler.runDevicesToNextLogicalTick(1);
+			assert.equal(dma.hasAdmittedWriteBlock(IO_GX_GPU_GP0), false);
+		}
+		const completion = gpu.captureState().pendingCommandCycles;
+		assert.ok(completion > 1);
+		scheduler.runDevicesToNextLogicalTick(completion - 1);
+		assert.equal(gpu.backendServicePending(), false, 'accepted drawing does not complete early at quiescence');
+		assert.equal(system.cpuHeld(), true);
+		scheduler.runDevicesToNextLogicalTick(1);
+		const completedAt = runtime.machine.scheduler.nowCycles;
+		assert.equal(gpu.readDeviceOutput().commandBuffer.commandCount, 1);
+		assert.equal(gpu.backendCommandDrainPending(), true, 'one completed command is sufficient at the GPU boundary');
+		scheduler.runDevicesToNextLogicalTick(19);
+		assert.equal(runtime.machine.scheduler.nowCycles, completedAt, 'backend latency does not spend guest cycles');
+		let drains = 0;
+		while (gpu.backendServicePending()) {
+			assert.equal(gpu.backendCommandDrainPending(), true);
+			backend.executeGxGpuCommandDrain(gpu);
+			++drains;
+		}
+		assert.equal(drains, 1);
+		scheduler.synchronizeBackendService();
+		scheduler.runDevicesToNextLogicalTick(0);
+		assert.equal(system.cpuHeld(), false);
+		assert.equal(system.supervisorContextActive(), true);
+		assert.equal(runtime.machine.scheduler.nowCycles, completedAt + 19);
+		assert.equal(scheduler.lastTickSequence, 0, 'supervisor entry does not wait for presentation');
+		backend.captureGxGpuVramSnapshot(gpu);
+		assert.equal(gpu.readVramSnapshotBytes()[0], 31, 'the actual backend executes the completed fill before takeover');
+
+		// LEAVE has the same GPU boundary for supervisor work.
+		for (const word of [0x0200ff00, 0, 0x00020010]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+		memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_LEAVE);
+		const leaveCycles = gpu.captureState().pendingCommandCycles;
+		scheduler.runDevicesToNextLogicalTick(leaveCycles + 1);
+		assert.equal(gpu.backendCommandDrainPending(), true);
+		assert.equal(system.cpuHeld(), true);
+		while (gpu.backendServicePending()) backend.executeGxGpuCommandDrain(gpu);
+		scheduler.synchronizeBackendService();
+		scheduler.runDevicesToNextLogicalTick(0);
+		assert.equal(system.supervisorContextActive(), false);
+		backend.captureGxGpuVramSnapshot(gpu);
+		assert.equal(readLE32(gpu.readVramSnapshotBytes(), 0), 0x03e003e0);
+	}
+});
+
+test('supervisor service completes and banks unread GPUREAD through the ordinary backend loop', () => {
+	const { runtime } = createTickRuntime();
+	const { gxGpu: gpu, memory, systemController: system } = runtime.machine;
+	const scheduler = runtime.frameScheduler;
+	const backend = new HeadlessGPUBackend(16, 2, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	const bytes = new Uint8Array(PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bytes.set([0x11, 0x11, 0x22, 0x22, 0x33, 0x33, 0x44, 0x44, 0x55, 0x55]);
+	gpu.replaceVramSnapshotBytes(bytes);
+	for (const word of [0xc0000000, 0, 0x00010005]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+	const completion = gpu.captureState().pendingCommandCycles;
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT);
+	scheduler.runDevicesToNextLogicalTick(completion + 9);
+	const readback = gpu.readDeviceOutput().readbackPort;
+	assert.equal(readback.phase, GX_GPU_READBACK_PENDING);
+	assert.equal(gpu.backendCommandDrainPending(), false, 'readback must produce its bytes before retirement');
+	let readbacks = 0, drains = 0;
+	while (gpu.backendServicePending()) {
+		if (gpu.backendCommandDrainPending()) {
+			assert.equal(readback.phase, GX_GPU_READBACK_READY);
+			assert.equal(readback.pixelCursor, 0, 'retirement must not consume guest pixels');
+			backend.executeGxGpuCommandDrain(gpu);
+			++drains;
+		} else {
+			backend.executeGxGpuReadback(gpu);
+			++readbacks;
+		}
+	}
+	assert.equal(readbacks, 1);
+	assert.equal(drains, 1);
+	scheduler.synchronizeBackendService();
+	scheduler.runDevicesToNextLogicalTick(0);
+	assert.equal(system.cpuHeld(), false);
+	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
+	assert.equal(gpu.captureState().userIngressContext.readbackPhase, GX_GPU_READBACK_READY);
+	assert.equal(gpu.captureState().userIngressContext.readbackPixelCursor, 0);
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_LEAVE);
+	scheduler.runDevicesToNextLogicalTick(1);
+	assert.equal(system.supervisorContextActive(), false);
+	assert.equal(readback.phase, GX_GPU_READBACK_READY);
+	assert.equal(memory.readMappedU32LE(IO_GX_GPU_GP0), 0x22221111);
+	assert.equal(memory.readMappedU32LE(IO_GX_GPU_GP0), 0x44443333);
+	assert.equal(memory.readMappedU32LE(IO_GX_GPU_GP0), 0x5555);
+	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
+	assert.equal(scheduler.lastTickSequence, 0);
+});
+
+test('busy CPU execution publishes consumed cycles before VBlank carries the remaining grant', () => {
+	const code = new Uint8Array(INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.JMP, 0, 63, 63, 255);
+	const system = linkRawTestSystemBlua32({
+		text: code, functions: [{ firstWord: 0, wordCount: 1 }],
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0,
+	});
+	const runtime = new Runtime({
+		systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
+	}, new TickInputSource());
+	runtime.boot();
+	const scheduler = runtime.frameScheduler;
+	assert.equal(scheduler.runToNextLogicalTick(), true);
+	assert.equal(scheduler.lastTickBudgetGranted - scheduler.lastTickCpuUsedCycles, scheduler.lastTickBudgetRemaining);
+	assert.equal(scheduler.lastTickCpuUsedCycles, runtime.machine.scheduler.nowCycles);
+	assert.equal(scheduler.captureState().carriedCycleBudget, scheduler.lastTickBudgetRemaining);
+
+	const before = runtime.machine.scheduler.nowCycles;
+	const carry = scheduler.lastTickBudgetRemaining;
+	scheduler.run(40);
+	assert.equal(runtime.machine.scheduler.nowCycles - before, carry + 40 * runtime.timing.cpuCyclesPerMillisecond);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 0);
+	const pausedAt = runtime.machine.scheduler.nowCycles;
+	scheduler.run(0);
+	assert.equal(runtime.machine.scheduler.nowCycles, pausedAt, 'a busy loop cannot invent a new host grant');
+
+	scheduler.stepInstruction(1);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted - runtime.frameLoop.frameState.activeCpuUsedCycles,
+		runtime.frameLoop.frameState.cycleBudgetRemaining, 'instruction stepping updates the same budget owner');
+});
+
+test('shared-bus DMA stops instruction execution until serial read/write completion', () => {
+	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.JMP, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.HALT, 0, 0, 0, 0);
+	const system = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 2 }],
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0 });
+	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, new TickInputSource());
+	runtime.boot();
+	const { memory, cpu, dmaController } = runtime.machine;
+	const source = RAM_BASE + 0x20000, target = RAM_BASE + 0x21000;
+	memory.writeMappedU32LE(source, 0x12345678);
+	memory.writeMappedU32LE(0x0800000c, source);
+	memory.writeMappedU32LE(0x08000010, target);
+	memory.writeMappedU32LE(0x08000014, 256);
+	memory.writeMappedU32LE(0x08000018, 0x00000000);
+	memory.writeMappedU32LE(0x08000020, 1);
+	const frame = cpu.activeThread.frameAtDepth(cpu.activeThread.frameDepth - 1);
+	const pc = frame.pc;
+	assert.equal(dmaController.captureState().scheduledBlockCycles, 514);
+	runtime.frameScheduler.runCyclesToNextLogicalTick(513);
+	assert.equal(frame.pc, pc, 'no instruction or interrupt entry runs while DMA owns the bus');
+	assert.equal(memory.readMappedU32LE(target), 0);
+	assert.equal(dmaController.cpuBusHeld(), true);
+	runtime.frameScheduler.runCyclesToNextLogicalTick(1);
+	assert.equal(memory.readMappedU32LE(target), 0x12345678);
+	assert.equal(dmaController.cpuBusHeld(), false);
+	assert.equal(frame.pc, pc);
+	runtime.frameScheduler.runCyclesToNextLogicalTick(1);
+	assert.notEqual(frame.pc, pc, 'instruction execution resumes after bus release');
+});
+
+test('warmed generated MMIO starts DMA, yields the bus, and resumes only after real burst completion', () => {
+	const code = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	for (let word = 0; word < 5; ++word) {
+		writeInstruction(code, word, OpCode.STORE_MEM_D, word, 5, MemoryAccessKind.U32LE, word === 4 ? 5 : word);
+	}
+	writeInstruction(code, 5, OpCode.LOAD_MEM, 7, 1, MemoryAccessKind.U32LE);
+	writeInstruction(code, 6, OpCode.ADD, 6, 6, 4);
+	writeInstruction(code, 7, OpCode.JMP, 0, 63, 56, 255); // -8 words
+	const system = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 8, maxStack: 8 }],
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0 });
+	const runtimes = [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter].map(cpuExecutionBackend => {
+		const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(),
+			machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend }, new TickInputSource());
+		runtime.boot();
+		return runtime;
+	});
+	const source = RAM_BASE + 0x20000, target = RAM_BASE + 0x21000;
+	const entry = system.image.functions[0].codeAddress;
+	for (const runtime of runtimes) {
+		const registers = runtime.machine.cpu.activeThread.frameAtDepth(0).registers;
+		[source, target, 256, 0, 1, IO_DMA0_READ_ADDR, 0, 0].forEach((value, index) => registers.setInteger(index, value));
+		for (let word = 0; word < 256; ++word) runtime.machine.memory.writeMappedU32LE(source + word * 4, 0x12340000 + word);
+		// Five MMIO stores, 514 bus cycles, then load/add/backedge.
+		const loopCycles = 5 * BASE_CYCLES[OpCode.STORE_MEM_D] + 514
+			+ BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP];
+		runtime.frameScheduler.runCyclesToNextLogicalTick(16 * loopCycles);
+		assert.equal(runtime.machine.cpu.activeThread.frameAtDepth(0).pc, entry);
+		assert.equal(registers.getInteger(6), 16);
+	}
+	const generatedPage = runtimes[0].machine.cpu.activeThread.frameAtDepth(0).decodedPage!;
+	const triggerWord = ((entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2) + 4;
+	const trigger = generatedPage.compiledBlocks!.entries[triggerWord]!;
+	assert.ok(trigger, 'the DMA trigger has a warmed generated entry before the exclusion probes');
+	assert.ok(trigger.exits.some(exit => exit.exit === CompiledBlockExit.WriteMemory && exit.currentPc === entry + 16),
+		'the generated trigger retains the actual MMIO owner exit');
+	assert.equal(runtimes[1].machine.cpu.activeThread.frameAtDepth(0).decodedPage!.compiledBlocks, null);
+	const run = (grant: number): void => {
+		for (const runtime of runtimes) runtime.frameScheduler.runCyclesToNextLogicalTick(grant);
+		assert.deepEqual(captureRuntimeSaveState(runtimes[0]), captureRuntimeSaveState(runtimes[1]),
+			`generated and scalar machines agree at the DMA boundary after grant ${grant}`);
+	};
+	for (let iteration = 0; iteration < 2; ++iteration) {
+		for (const runtime of runtimes) {
+			for (let word = 0; word < 256; ++word) {
+				runtime.machine.memory.writeMappedU32LE(source + word * 4, 0x43210000 + iteration * 256 + word);
+				runtime.machine.memory.writeMappedU32LE(target + word * 4, 0);
+			}
+		}
+		run(5 * BASE_CYCLES[OpCode.STORE_MEM_D] + 1); // Leave budget after TRIGGER: its MMIO exit must yield, not execute the load.
+		const { cpu, memory, dmaController } = runtimes[0].machine;
+		const frame = cpu.activeThread.frameAtDepth(0);
+		assert.equal(frame.pc, entry + 20);
+		assert.equal(frame.registers.getInteger(6), 16 + iteration);
+		assert.equal(dmaController.cpuBusHeld(), true);
+		assert.equal(dmaController.captureState().scheduledBlockCycles, 513);
+		run(512);
+		assert.equal(frame.pc, entry + 20);
+		assert.equal(dmaController.cpuBusHeld(), true);
+		for (let word = 0; word < 256; ++word) assert.equal(memory.readMappedU32LE(target + word * 4), 0);
+		run(1);
+		assert.equal(frame.pc, entry + 20, 'the final DMA cycle cannot also execute the continuation');
+		assert.equal(dmaController.cpuBusHeld(), false);
+		for (let word = 0; word < 256; ++word) assert.equal(memory.readMappedU32LE(target + word * 4), 0x43210000 + iteration * 256 + word);
+		run(BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP]);
+		assert.equal(frame.pc, entry);
+		assert.equal(frame.registers.getInteger(6), 17 + iteration);
+		assert.equal(frame.registers.getInteger(7), 0x43210000 + iteration * 256, 'the resumed load observes DMA output');
+	}
+});
+
+test('runtime checkpoint storage reuses owner buffers without consuming independent snapshots', () => {
+	const { runtime } = createTickRuntime(new TickInputSource(), [
+		{ rom: null, ramByteCount: 12, mailboxPresent: true },
+		{ rom: null, ramByteCount: 20, mailboxPresent: true },
+	]);
+	const { memory, gxGpu } = runtime.machine;
+	const anchor = captureRuntimeSaveState(runtime);
+	const anchorBytes = encodeRuntimeSaveState(anchor);
+	let storage = captureRuntimeSaveState(runtime);
+	const regions = [storage.ram, storage.machineState.machine.gxGpu.vramBytes,
+		storage.machineState.machine.audio.sampleRam, storage.machineState.machine.cartridge.slots[0]!.ram!,
+		storage.machineState.machine.cartridge.slots[1]!.ram!];
+	const vram = new Uint8Array(PSX_MACHINE_SPEC.gxGpuVramBytes);
+	for (let pass = 1; pass <= 4; pass += 1) {
+		const word = (0xfedcba00 | pass) >>> 0;
+		memory.writeRamRecordWord(PSX_MACHINE_SPEC.ramBytes - 4, word);
+		for (let slot = 0; slot < 2; slot += 1) {
+			memory.writeMappedU32LE(IO_CART_SELECT, (0x80000000 | slot) >>> 0);
+			memory.writeMappedU32LE(CART_RAM_BASE + regions[3 + slot].byteLength - 4, word ^ slot);
+		}
+		memory.writeMappedU32LE(IO_APU_TRANSFER_ADDRESS, APU_SAMPLE_RAM_BYTES - 4);
+		memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_MANUAL_WRITE);
+		memory.writeMappedU32LE(IO_APU_TRANSFER_DATA, word);
+		assert.equal(runtime.frameScheduler.runToNextLogicalTick(), true);
+		vram.fill(pass);
+		gxGpu.replaceVramSnapshotBytes(vram);
+		const expected = captureRuntimeSaveState(runtime);
+		storage = captureRuntimeSaveState(runtime, storage);
+		const machine = storage.machineState.machine;
+		assert.equal(storage.ram, regions[0]);
+		assert.equal(machine.gxGpu.vramBytes, regions[1]);
+		assert.equal(machine.audio.sampleRam, regions[2]);
+		assert.equal(readLE32(machine.audio.sampleRam, APU_SAMPLE_RAM_BYTES - 4), word);
+		for (let slot = 0; slot < 2; slot += 1) {
+			const ram = machine.cartridge.slots[slot]!.ram!;
+			assert.equal(ram, regions[3 + slot]);
+			assert.equal(readLE32(ram, ram.byteLength - 4), (word ^ slot) >>> 0);
+		}
+		assert.deepEqual(storage, expected);
+		assert.deepEqual(encodeRuntimeSaveState(anchor), anchorBytes);
+	}
+	applyRuntimeSaveState(runtime, anchor);
+	const saved = captureRuntimeSaveState(runtime);
+	const restored = saved.machineState.machine;
+	assert.deepEqual(saved.ram, anchor.ram);
+	assert.deepEqual(restored.memory, anchor.machineState.machine.memory);
+	assert.deepEqual(restored.cartridge, anchor.machineState.machine.cartridge);
+	assert.deepEqual(restored.audio, anchor.machineState.machine.audio);
+	assert.deepEqual(restored.gxGpu.vramBytes, anchor.machineState.machine.gxGpu.vramBytes);
+	assert.equal(restored.gxGpu.vramPresentationPending, true, 'restore requests host redraw');
+});
+
+test('history checkpoint pressure suspends machine time before required input can be overwritten', () => {
+	const { runtime } = createTickRuntime();
+	const history = runtime.history;
+	history.start({ checkpointCapacity: 2, inputCapacity: 2, checkpointIntervalCycles: 0x100000000 });
+	assert.equal(runtime.frameScheduler.runToNextLogicalTick(), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, 0);
+	history.captureCheckpoint();
+	assert.equal(runtime.frameScheduler.runToNextLogicalTick(), true);
+	const firstCycles = runtime.machine.scheduler.nowCycles;
+	assert.equal(runtime.frameScheduler.runToNextLogicalTick(), true);
+	assert.equal(history.checkpointPending, true);
+	const secondCycles = runtime.machine.scheduler.nowCycles;
+	runtime.frameScheduler.run(80);
+	assert.equal(runtime.machine.scheduler.nowCycles, secondCycles);
+	assert.equal(history.inputJournal.endSequence, 2);
+	history.captureCheckpoint();
+	assert.equal(runtime.frameScheduler.runToNextLogicalTick(), true);
+	assert.equal(history.checkpointCount, 1, 'only checkpoints with retained input remain');
+	assert.equal(history.earliestCycles, secondCycles);
+	history.beginSeek(firstCycles);
+	assert.equal(history.targetCycles, secondCycles, 'user seek is bounded by the retained range');
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	runtime.frameScheduler.run(80);
+	assert.equal(runtime.machine.scheduler.nowCycles, secondCycles);
+	assert.equal(history.advanceSeek(100), HistorySeekResult.Complete);
+	history.resumeRecording();
+	assert.equal(history.checkpointPending, true);
+	assert.equal(history.inputJournal.endSequence, 2, 'live takeover truncates future input');
+	history.captureCheckpoint();
+	runtime.rebootSystem();
+	assert.equal(history.mode, HistoryMode.Disabled);
+	assert.equal(history.checkpointCount, 0);
+	assert.equal(history.inputJournal.storageBytes, 0);
+});
+
+test('ending history review notifies before stop, reset or external load without reporting recording admission', () => {
+	for (const replaying of [false, true]) for (const operation of ['stop', 'reset', 'load'] as const) {
+		const { runtime } = createTickRuntime();
+		const history = runtime.history;
+		let ended = 0, resumed = 0;
+		history.onWillResumeRecording = () => resumed++;
+		history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 0x100000000 });
+		history.captureCheckpoint();
+		for (let tick = 0; tick < 3; tick++) runtime.frameScheduler.runToNextLogicalTick();
+		const replacement = captureRuntimeSaveState(runtime);
+		history.beginSeek(replaying ? history.latestCycles : history.earliestCycles);
+		const reviewedMode = replaying ? HistoryMode.Replaying : HistoryMode.Reviewing;
+		assert.equal(history.mode, reviewedMode);
+		const cycles = runtime.machine.scheduler.nowCycles;
+		history.onWillEndReview = () => {
+			ended++;
+			assert.equal(history.mode, reviewedMode);
+			assert.equal(runtime.machine.scheduler.nowCycles, cycles);
+			assert.equal(history.checkpointCount, 1);
+			assert.equal(history.inputJournal.endSequence, 3, 'reviewers reconcile before retained history is discarded');
+		};
+		if (operation === 'stop') history.stop();
+		else if (operation === 'reset') runtime.rebootSystem();
+		else applyRuntimeSaveState(runtime, replacement);
+		assert.equal(ended, 1, `${operation} ends ${replaying ? 'replay' : 'review'} once`);
+		assert.equal(resumed, 0, 'discard is not recording admission');
+		assert.equal(history.mode, HistoryMode.Disabled);
+		history.stop();
+		history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 0x100000000 });
+		history.captureCheckpoint();
+		history.stop();
+		assert.equal(ended, 1, 'disabled and ordinary recording stops do not end a review');
+	}
+});
+
+test('history rejoining the recorded end preserves checkpoints and pending capture pressure', () => {
+	for (const [inputCapacity, intervalCycles, pending] of [[8, 0x100000000, false], [2, 0x100000000, true], [8, 1, true]] as const) {
+		const { runtime } = createTickRuntime();
+		const history = runtime.history;
+		history.start({ checkpointCapacity: 2, inputCapacity, checkpointIntervalCycles: intervalCycles });
+		history.captureCheckpoint();
+		runtime.frameScheduler.runToNextLogicalTick();
+		if (!history.checkpointPending) runtime.frameScheduler.runToNextLogicalTick();
+		const end = history.latestCycles;
+		const sequence = history.inputJournal.endSequence;
+		history.beginSeek(end);
+		for (let step = 0; history.mode === HistoryMode.Replaying && step < 1000; step += 1) {
+			assert.notEqual(history.advanceSeek(16384), HistorySeekResult.Stopped);
+		}
+		assert.equal(history.mode, HistoryMode.Reviewing);
+		let resumed = false;
+		let reviewEnded = false;
+		history.onWillEndReview = () => { assert.equal(history.mode, HistoryMode.Reviewing); reviewEnded = true; };
+		history.onWillResumeRecording = branched => { assert.equal(reviewEnded, true); assert.equal(branched, false); resumed = true; };
+		history.resumeRecording();
+		assert.equal(resumed, true);
+		assert.equal(history.checkpointPending, pending, 'rejoin preserves interval and input-pressure capture requests');
+		assert.equal(history.checkpointCount, 1, 'looking at history must not evict a checkpoint');
+		assert.equal(history.earliestCycles, 0);
+		assert.equal(history.latestCycles, end);
+		assert.equal(history.inputJournal.endSequence, sequence);
+	}
+});
+
+test('history observation provenance follows retained checkpoints across review, branches and reset', () => {
+	const { runtime } = createTickRuntime(), history = runtime.history;
+	assert.equal(history.recordingCheckpoint, -1);
+	assert.equal(history.canSeekFrom(-1, 0), false);
+	history.start({ checkpointCapacity: 4, inputCapacity: 16, checkpointIntervalCycles: 0x100000000 });
+	assert.equal(history.recordingCheckpoint, -1, 'the initial capture has not completed');
+	history.captureCheckpoint();
+	const original = history.recordingCheckpoint;
+	for (let tick = 0; tick < 4; tick++) assert.equal(runtime.frameScheduler.runToNextLogicalTick(), true);
+	const first = history.inputJournal.cycleAt(0), second = history.inputJournal.cycleAt(1), third = history.inputJournal.cycleAt(2);
+	const end = history.latestCycles;
+	assert.equal(history.canSeekFrom(original, first + 1), true);
+	assert.equal(history.canSeekFrom(original, end + 1), false, 'an unfinished live frame is outside physical history');
+	history.beginSeek(end);
+	assert.equal(history.recordingCheckpoint, -1, 'replay cannot originate a live observation');
+	for (let step = 0; !history.executionPaused && step < 1000; step++) history.advanceSeek(16384);
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	assert.equal(history.canSeekFrom(original, end), true, 'review retains evidence reachability');
+	history.resumeRecording();
+	assert.equal(history.recordingCheckpoint, original, 'rejoin preserves the checkpoint identity');
+	assert.equal(history.canSeekFrom(original, end), true);
+
+	history.beginSeek(second);
+	for (let step = 0; !history.executionPaused && step < 1000; step++) history.advanceSeek(16384);
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	history.resumeRecording();
+	history.captureCheckpoint();
+	const branch = history.recordingCheckpoint;
+	assert.ok(branch > original);
+	assert.equal(history.canSeekFrom(original, second - 1), true, 'the shared past remains reachable');
+	assert.equal(history.canSeekFrom(original, second), false, 'an admission at the branch cycle belongs to the discarded future');
+	for (let tick = 0; tick < 2; tick++) runtime.frameScheduler.runToNextLogicalTick();
+	assert.equal(history.latestCycles, end);
+	assert.equal(history.canSeekFrom(original, second + 1), false, 'overlapping new cycles cannot revive discarded evidence');
+	assert.equal(history.canSeekFrom(branch, second + 1), true);
+	history.beginSeek(third);
+	for (let step = 0; !history.executionPaused && step < 1000; step++) history.advanceSeek(16384);
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	history.resumeRecording();
+	history.captureCheckpoint();
+	const laterBranch = history.recordingCheckpoint;
+	assert.equal(history.canSeekFrom(original, second), false, 'a later branch cannot reopen an earlier cutoff');
+	assert.equal(history.canSeekFrom(branch, third - 1), true);
+	assert.equal(history.canSeekFrom(branch, third), false);
+
+	history.beginSeek(first);
+	for (let step = 0; !history.executionPaused && step < 1000; step++) history.advanceSeek(16384);
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	history.resumeRecording();
+	history.captureCheckpoint();
+	assert.ok(history.recordingCheckpoint > laterBranch);
+	for (let tick = 0; tick < 3; tick++) runtime.frameScheduler.runToNextLogicalTick();
+	assert.equal(history.canSeekFrom(original, first - 1), true);
+	assert.equal(history.canSeekFrom(original, first), false);
+	assert.equal(history.canSeekFrom(branch, second + 1), false, 'discarded checkpoint storage is not a retained anchor');
+	assert.equal(history.canSeekFrom(laterBranch, third + 1), false);
+	const beforeReset = history.recordingCheckpoint;
+	runtime.rebootSystem();
+	assert.equal(history.recordingCheckpoint, -1);
+	history.start({ checkpointCapacity: 4, inputCapacity: 16, checkpointIntervalCycles: 0x100000000 });
+	history.captureCheckpoint();
+	assert.ok(history.recordingCheckpoint > beforeReset, 'checkpoint identities never restart with machine cycles');
+	assert.equal(history.canSeekFrom(original, 0), false);
+	assert.equal(history.canSeekFrom(history.recordingCheckpoint, 0), true);
+});
+
+test('history observation anchors expire with checkpoint ring and input retention', () => {
+	const { runtime } = createTickRuntime(), history = runtime.history;
+	history.start({ checkpointCapacity: 2, inputCapacity: 4, checkpointIntervalCycles: 0x100000000 });
+	history.captureCheckpoint();
+	const initial = history.recordingCheckpoint;
+	runtime.frameScheduler.runToNextLogicalTick();
+	const first = history.latestCycles;
+	history.captureCheckpoint();
+	const retained = history.recordingCheckpoint;
+	runtime.frameScheduler.runToNextLogicalTick();
+	history.captureCheckpoint();
+	const newest = history.recordingCheckpoint;
+	assert.equal(history.canSeekFrom(initial, first), false, 'reused ring slots have new identities');
+	assert.equal(history.canSeekFrom(retained, first), true);
+	for (let tick = 0; tick < 4; tick++) runtime.frameScheduler.runToNextLogicalTick();
+	assert.equal(history.canSeekFrom(retained, first), false, 'input pressure removes the old anchor');
+	assert.equal(history.canSeekFrom(newest, history.latestCycles), true);
+	history.stop();
+	assert.equal(history.canSeekFrom(newest, history.latestCycles), false);
+});
+
+test('history replays an unarmed supervisor edge through the actual ICU without reading live input', () => {
+	const { runtime, input } = createTickRuntime();
+	const gpu = runtime.machine.gxGpu;
+	const backend = new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	const serviceBackend = (): void => {
+		while (gpu.backendServicePending()) {
+			if (gpu.backendCommandDrainPending()) backend.executeGxGpuCommandDrain(gpu);
+			else backend.executeGxGpuReadback(gpu);
+		}
+		backend.executeGxGpuCommandDrain(gpu);
+		gpu.retirePresentedCommands();
+	};
+	const history = runtime.history;
+	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 0x100000000 });
+	backend.captureGxGpuVramSnapshot(gpu);
+	history.captureCheckpoint();
+	// This minimal ROM has no monitor firmware. Compare at the request edge,
+	// before supervisor firmware would reprogram the quiesced PCRTC.
+	for (let tick = 0; tick < 2; tick += 1) {
+		input.supervisorHigh = tick === 1;
+		let completed = runtime.frameScheduler.runToNextLogicalTick();
+		for (let attempt = 0; !completed && attempt < 32; attempt += 1) {
+			serviceBackend();
+			completed = runtime.frameScheduler.runToNextLogicalTick();
+		}
+		assert.equal(completed, true);
+		serviceBackend();
+	}
+	assert.equal(input.sampleCount, 0, 'the ICU was never armed');
+	assert.equal(history.inputJournal.flagsAt(1), 4, 'the unarmed NMI line is still recorded');
+	const expectedCycles = runtime.machine.scheduler.nowCycles;
+	const expectedInput = runtime.machine.inputController.captureState();
+	const expectedSystem = runtime.machine.systemController.captureState();
+	const expectedIrq = runtime.machine.irqController.captureState();
+	input.rejectLiveInput = true;
+	history.beginSeek(expectedCycles);
+	let steps = 0;
+	while (history.mode === HistoryMode.Replaying && steps++ < 1000) {
+		assert.notEqual(history.advanceSeek(16384), HistorySeekResult.Stopped);
+		serviceBackend();
+	}
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	assert.equal(runtime.machine.scheduler.nowCycles, expectedCycles);
+	assert.deepEqual(runtime.machine.inputController.captureState(), expectedInput);
+	assert.deepEqual(runtime.machine.systemController.captureState(), expectedSystem);
+	assert.deepEqual(runtime.machine.irqController.captureState(), expectedIrq);
+});
+
+test('paced history playback resumes the same machine and journal at 50/60/144 Hz', () => {
+	for (const rate of [50, 60, 144]) {
+		const { runtime, input } = createTickRuntime();
+		const history = runtime.history;
+		input.keyDown = true;
+		runtime.machine.memory.writeIoU32(IO_INP_CTRL, INP_CTRL_ARM);
+		history.start({ checkpointCapacity: 2, inputCapacity: 64, checkpointIntervalCycles: 0x100000000 });
+		history.captureCheckpoint();
+		for (let tick = 0; tick < 20; tick += 1) runtime.frameScheduler.runToNextLogicalTick();
+		const expected = captureRuntimeSaveState(runtime);
+		const end = history.latestCycles;
+		const sequence = history.inputJournal.endSequence;
+		const sampleCount = input.sampleCount;
+		input.keyDown = false;
+		input.rejectLiveInput = true;
+		let restores = 0;
+		runtime.onStateRestored = () => { restores += 1; };
+		history.beginSeek(history.earliestCycles);
+		history.beginPlayback();
+		history.advancePlayback(5.123);
+		const pausedAt = runtime.machine.scheduler.nowCycles;
+		assert.ok(pausedAt > 0 && pausedAt < runtime.timing.cycleBudgetPerFrame, 'playback uses a fractional host-time grant');
+		history.cancelSeek();
+		history.advancePlayback(600_000);
+		assert.equal(runtime.machine.scheduler.nowCycles, pausedAt, 'pause holds a position between input boundaries');
+		history.beginPlayback();
+		history.advancePlayback(0);
+		assert.equal(runtime.machine.scheduler.nowCycles, pausedAt, 'resume consumes no paused time or old grant');
+		let frames = 0;
+		for (; history.mode === HistoryMode.Replaying && frames < 200; frames += 1) history.advancePlayback(1000 / rate);
+		assert.equal(history.mode, HistoryMode.Reviewing, 'playback stops at its recorded end');
+		assert.equal(runtime.machine.scheduler.nowCycles, end);
+		assert.ok(Math.abs(frames * 1000 / rate - (end - pausedAt) / runtime.timing.cpuCyclesPerMillisecond) <= 1000 / rate);
+		assert.equal(restores, 1, 'Play/Pause must not restore a checkpoint each frame or each toggle');
+		assert.equal(history.latestCycles, end);
+		assert.equal(history.inputJournal.endSequence, sequence);
+		assert.equal(history.inputJournal.replaySequence, sequence);
+		assert.equal(history.checkpointCount, 1);
+		assert.equal(input.sampleCount, sampleCount, 'live input is not consumed');
+		const actual = captureRuntimeSaveState(runtime);
+		actual.machineState.frameScheduler = expected.machineState.frameScheduler;
+		actual.machineState.frameLoop = expected.machineState.frameLoop;
+		assert.equal(actual.machineState.machine.gxGpu.vramPresentationPending, true, 'restore requests a host redraw');
+		actual.machineState.machine.gxGpu.vramPresentationPending = expected.machineState.machine.gxGpu.vramPresentationPending;
+		assert.ok(isDeepStrictEqual(encodeRuntimeSaveState(actual), encodeRuntimeSaveState(expected)), 'all guest state is identical; only host scheduling/delivery metadata differs');
+	}
+});
+
+test('cancelled replay preserves future until takeover and discards its partial scheduling grant on takeover', () => {
+	const { runtime } = createTickRuntime();
+	const history = runtime.history;
+	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 0x100000000 });
+	history.captureCheckpoint();
+	for (let tick = 0; tick < 3; tick += 1) runtime.frameScheduler.runToNextLogicalTick();
+	const end = history.latestCycles;
+	history.beginSeek(end);
+	assert.equal(history.advanceSeek(256), HistorySeekResult.Progressed);
+	assert.equal(runtime.frameScheduler.captureState().logicalTickRunPending, true);
+	history.cancelSeek();
+	const cancelledCycles = runtime.machine.scheduler.nowCycles;
+	runtime.frameScheduler.run(80);
+	assert.equal(runtime.machine.scheduler.nowCycles, cancelledCycles);
+	assert.equal(history.latestCycles, end);
+	assert.equal(history.inputJournal.endSequence, 3);
+	let resumed = false;
+	history.onWillResumeRecording = branched => {
+		assert.equal(branched, true);
+		assert.equal(history.mode, HistoryMode.Reviewing);
+		assert.equal(runtime.machine.scheduler.nowCycles, cancelledCycles);
+		assert.equal(history.inputJournal.endSequence, 3, 'bookmarks reconcile before future truncation');
+		resumed = true;
+	};
+	history.resumeRecording();
+	assert.equal(resumed, true);
+	assert.equal(history.inputJournal.endSequence, 0);
+	assert.equal(runtime.frameScheduler.captureState().logicalTickRunPending, false);
+	history.captureCheckpoint();
+	runtime.frameScheduler.run(runtime.timing.frameDurationMs * 2);
+	const before = runtime.frameScheduler.lastTickSequence;
+	assert.equal(runtime.frameScheduler.runToNextLogicalTick(), true);
+	assert.equal(runtime.frameScheduler.lastTickSequence, before + 1, 'no replay target remains in the live scheduler');
+});
+
+test('history seek yields while a submitted backend readback is awaiting completion', () => {
+	const { runtime } = createTickRuntime();
+	const gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1 << 16) | 1);
+	const history = runtime.history;
+	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 0x100000000 });
+	history.captureCheckpoint();
+	assert.equal(runtime.frameScheduler.runToNextLogicalTick(), false);
+	const output = gpu.readDeviceOutput();
+	assert.equal(output.readbackPort.claimReadback(output.commandBuffer.executedCommandCount), true);
+	output.readbackPort.completeReadback(output.readbackPort.token);
+	assert.equal(runtime.frameScheduler.runToNextLogicalTick(), true);
+	history.beginSeek(history.latestCycles);
+	assert.equal(history.advanceSeek(16384), HistorySeekResult.BackendPending);
+	assert.equal(output.readbackPort.claimReadback(output.commandBuffer.executedCommandCount), true);
+	const cycles = runtime.machine.scheduler.nowCycles;
+	const grant = runtime.frameLoop.frameState.cycleBudgetGranted;
+	assert.equal(gpu.backendServicePending(), false, 'the request has already been submitted');
+	assert.equal(history.advanceSeek(16384), HistorySeekResult.BackendPending);
+	assert.equal(runtime.machine.scheduler.nowCycles, cycles);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, grant);
+	output.readbackPort.completeReadback(output.readbackPort.token);
+	for (let step = 0; history.mode === HistoryMode.Replaying && step < 100; step += 1) {
+		assert.notEqual(history.advanceSeek(16384), HistorySeekResult.Stopped);
+	}
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	// Paced replay uses the same fence owner, including its host-time reset.
+	history.beginSeek(history.earliestCycles);
+	history.beginPlayback();
+	history.advancePlayback(runtime.timing.frameDurationMs);
+	assert.equal(output.readbackPort.claimReadback(output.commandBuffer.executedCommandCount), true);
+	const playbackBlocked = runtime.machine.scheduler.nowCycles;
+	const playbackGrant = runtime.frameLoop.frameState.cycleBudgetGranted;
+	history.advancePlayback(600_000);
+	assert.equal(runtime.machine.scheduler.nowCycles, playbackBlocked);
+	output.readbackPort.completeReadback(output.readbackPort.token);
+	history.advancePlayback(600_000);
+	assert.equal(runtime.frameScheduler.lastTickBudgetGranted, playbackGrant, 'completion consumes only the already accepted grant, not backend latency');
+	assert.ok(runtime.machine.scheduler.nowCycles - playbackBlocked <= playbackGrant);
+	for (let step = 0; step < 10; step += 1) history.advancePlayback(runtime.timing.frameDurationMs);
+	assert.equal(history.mode, HistoryMode.Reviewing);
+});
+
+test('bounded logical-tick execution advances one VBlank sequence and retains cycle carry', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	const partialDeltaMs = runtime.timing.frameDurationMs / 4;
+
+	scheduler.run(partialDeltaMs);
+	assert.equal(scheduler.lastTickSequence, 0);
+	assert.equal(runtime.frameLoop.frameActive, true);
+	const partialBudget = runtime.frameLoop.frameState.cycleBudgetGranted;
+	const grantRemainder = scheduler.captureState().cycleGrantRemainder;
+	const firstTickBudget = runtime.timing.cycleBudgetPerFrame;
+
+	assert.equal(scheduler.runToNextLogicalTick(), true);
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(scheduler.lastTickBudgetGranted, partialBudget + firstTickBudget);
+	assert.equal(scheduler.captureState().cycleGrantRemainder, grantRemainder);
+	assert.equal(
+		scheduler.captureState().carriedCycleBudget,
+		scheduler.lastTickBudgetRemaining,
+	);
+	const carriedBudget = scheduler.lastTickBudgetRemaining;
+
+	assert.equal(scheduler.runToNextLogicalTick(), true);
+	assert.equal(scheduler.lastTickSequence, 2);
+	assert.equal(scheduler.lastTickBudgetGranted, carriedBudget + firstTickBudget);
+	assert.equal(runtime.frameLoop.frameState.cycleCarryGranted, carriedBudget);
+	assert.equal(scheduler.lastTickBudgetRemaining, carriedBudget);
+	assert.equal(scheduler.captureState().cycleGrantRemainder, grantRemainder);
+});
+
+test('bounded logical-tick execution resumes a backend fence without granting another period', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	const gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1 << 16) | 1);
+
+	assert.equal(scheduler.runToNextLogicalTick(), false);
+	assert.equal(gpu.backendServiceBlocksMachine(), true);
+	assert.equal(scheduler.lastTickSequence, 0);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, runtime.timing.cycleBudgetPerFrame);
+	const suspendedState = scheduler.captureState();
+	assert.equal(suspendedState.logicalTickRunPending, true);
+	assert.equal(suspendedState.logicalTickRunTargetSequence, 1);
+
+	const output = gpu.readDeviceOutput();
+	const readback = output.readbackPort;
+	assert.equal(readback.claimReadback(output.commandBuffer.executedCommandCount), true);
+	readback.completeReadback(readback.token);
+	assert.equal(scheduler.runToNextLogicalTick(), true);
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(scheduler.lastTickBudgetGranted, runtime.timing.cycleBudgetPerFrame);
+	assert.equal(scheduler.captureState().logicalTickRunPending, false);
+	assert.equal(scheduler.captureState().logicalTickRunTargetSequence, 0);
+});
+
+test('raw cycle grants stay exact across split admission and paced fractional carry', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	assert.equal(scheduler.runCyclesToNextLogicalTick(0), false);
+	assert.equal(runtime.frameLoop.frameActive, false, 'zero without retained work opens no frame');
+	for (const [grant, total] of [[55, 55], [149, 204], [220, 424]]) {
+		assert.equal(scheduler.runCyclesToNextLogicalTick(grant), false);
+		assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, total);
+		assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 0);
+		assert.equal(scheduler.captureState().cycleGrantRemainder, 0, 'raw cycles never enter fractional pacing');
+	}
+	scheduler.run(0.5 / runtime.timing.cpuCyclesPerMillisecond);
+	const remainder = scheduler.captureState().cycleGrantRemainder;
+	assert.equal(remainder, 0.5);
+	assert.equal(scheduler.runCyclesToNextLogicalTick(55), false);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 479);
+	assert.equal(scheduler.captureState().cycleGrantRemainder, remainder);
+	scheduler.run(0.5 / runtime.timing.cpuCyclesPerMillisecond);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 480, 'paced execution retains its own fractional carry');
+});
+
+test('raw cycle grants exceed paced catch-up limits and expose every retained tick with zero-grant resumes', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	const grant = PSX_CPU_FREQ_HZ;
+	assert.equal(scheduler.runCyclesToNextLogicalTick(grant), true);
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(scheduler.lastTickBudgetGranted, grant);
+	assert.equal(scheduler.captureState().carriedCycleBudget, grant - runtime.machine.scheduler.nowCycles);
+	let completed = true;
+	for (let step = 0; completed && step < 100; step++) {
+		const before = scheduler.lastTickSequence;
+		const carry = scheduler.captureState().carriedCycleBudget;
+		completed = scheduler.runCyclesToNextLogicalTick(0);
+		assert.equal(scheduler.lastTickSequence, before + (completed ? 1 : 0));
+		assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, carry, 'resumption admits no extra cycles');
+	}
+	assert.equal(completed, false, 'the original grant is exhausted');
+	assert.equal(runtime.machine.scheduler.nowCycles, grant);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 0);
+	assert.equal(scheduler.captureState().carriedCycleBudget, 0);
+	assert.equal(scheduler.captureState().cycleGrantRemainder, 0);
+});
+
+test('raw cycle admission retains split grants during a submitted readback and resumes without regranting', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	const gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0(0x00010001);
+	assert.equal(scheduler.runCyclesToNextLogicalTick(55), false);
+	const output = gpu.readDeviceOutput();
+	const readback = output.readbackPort;
+	assert.equal(readback.claimReadback(output.commandBuffer.executedCommandCount), true);
+	const blockedAt = runtime.machine.scheduler.nowCycles;
+	assert.equal(scheduler.runCyclesToNextLogicalTick(149), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, blockedAt, 'admission does not advance blocked hardware');
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 204);
+	assert.equal(scheduler.runCyclesToNextLogicalTick(0), false);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 204);
+	readback.completeReadback(readback.token);
+	assert.equal(scheduler.runCyclesToNextLogicalTick(0), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, 204);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 204);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 0);
+	assert.equal(scheduler.captureState().cycleGrantRemainder, 0);
+});
+
+test('raw cycle admission does not queue grants while history holds execution', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	runtime.history.mode = HistoryMode.Reviewing;
+	assert.equal(scheduler.runCyclesToNextLogicalTick(55), false);
+	assert.equal(runtime.frameLoop.frameActive, false);
+	runtime.history.mode = HistoryMode.Disabled;
+	assert.equal(scheduler.runCyclesToNextLogicalTick(55), false);
+	runtime.history.checkpointPending = true;
+	assert.equal(scheduler.runCyclesToNextLogicalTick(149), false);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 55);
+	assert.equal(runtime.machine.scheduler.nowCycles, 55);
+});
+
+test('scheduled bounded execution waits for host time and retains partial machine progress', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	const halfFrameMs = runtime.timing.frameDurationMs / 2;
+
+	assert.equal(scheduler.runScheduledToNextLogicalTick(0), false);
+	assert.equal(runtime.frameLoop.frameActive, false);
+	assert.equal(scheduler.runScheduledToNextLogicalTick(halfFrameMs), false);
+	assert.equal(scheduler.lastTickSequence, 0);
+	assert.equal(runtime.frameLoop.frameActive, true);
+	assert.equal(scheduler.runScheduledToNextLogicalTick(halfFrameMs), true);
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(
+		scheduler.lastTickBudgetGranted,
+		Math.trunc(runtime.timing.frameDurationMs * runtime.timing.cpuCyclesPerMillisecond),
+	);
+});
+
+test('scheduled bounded execution exposes every catch-up tick without adding host time', () => {
+	const { input, runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	const hostDeltaMs = runtime.timing.frameDurationMs * 4;
+
+	for (let expectedSequence = 1; expectedSequence <= 4; expectedSequence += 1) {
+		input.keyDown = (expectedSequence & 1) !== 0;
+		runtime.machine.memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
+		assert.equal(
+			scheduler.runScheduledToNextLogicalTick(expectedSequence === 1 ? hostDeltaMs : 0),
+			true,
+		);
+		assert.equal(scheduler.lastTickSequence, expectedSequence);
+	}
+	assert.equal(input.sampleCount, 4);
+	assert.equal(scheduler.runScheduledToNextLogicalTick(0), false);
+});
+
+test('scheduled bounded execution resumes a backend fence with the accepted host grant', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	const gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1 << 16) | 1);
+
+	assert.equal(
+		scheduler.runScheduledToNextLogicalTick(runtime.timing.frameDurationMs),
+		false,
+	);
+	assert.equal(gpu.backendServiceBlocksMachine(), true);
+	const grantedBudget = runtime.frameLoop.frameState.cycleBudgetGranted;
+	const output = gpu.readDeviceOutput();
+	const readback = output.readbackPort;
+	assert.equal(readback.claimReadback(output.commandBuffer.executedCommandCount), true);
+	readback.completeReadback(readback.token);
+	assert.equal(scheduler.runScheduledToNextLogicalTick(0), true);
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(scheduler.lastTickBudgetGranted, grantedBudget);
+});
+
+test('backend completion at VBlank clears suspension without executing another bounded tick', () => {
+	const { runtime: baseline } = createTickRuntime();
+	assert.equal(baseline.frameScheduler.runToNextLogicalTick(), true);
+	const edge = baseline.machine.scheduler.nowCycles;
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	assert.equal(scheduler.runScheduledToNextLogicalTick((edge - 1) / runtime.timing.cpuCyclesPerMillisecond), false);
+	const gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0(0x00010001);
+	assert.equal(gpu.captureState().pendingCommandCycles, 1);
+	assert.equal(scheduler.runScheduledToNextLogicalTick(1 / runtime.timing.cpuCyclesPerMillisecond), true);
+	const readback = gpu.readDeviceOutput().readbackPort;
+	assert.equal(readback.claimReadback(gpu.readDeviceOutput().commandBuffer.executedCommandCount), true);
+	scheduler.synchronizeBackendService();
+	assert.equal(scheduler.runScheduledToNextLogicalTick(1000 / runtime.timing.cpuCyclesPerMillisecond), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, edge, 'submitted backend work remains suspended');
+	readback.completeReadback(readback.token);
+	scheduler.synchronizeBackendService();
+	assert.equal(runtime.machine.scheduler.nowCycles, edge, 'completion acknowledgment executes nothing');
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(scheduler.runScheduledToNextLogicalTick(1000 / runtime.timing.cpuCyclesPerMillisecond), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, edge + 1000, 'a new grant is independent of the completed fence');
+});
+
+test('scheduled bounded execution produces the same machine second at common host rates', () => {
+	const rates = [60, 120, 144] as const;
+	let expectedTickSequence = -1;
+	let expectedMachineCycles = -1;
+	for (const rate of rates) {
+		const { runtime } = createTickRuntime();
+		const scheduler = runtime.frameScheduler;
+		for (let hostFrame = 0; hostFrame < rate; hostFrame += 1) {
+			let completed = scheduler.runScheduledToNextLogicalTick(1000 / rate);
+			while (completed) {
+				completed = scheduler.runScheduledToNextLogicalTick(0);
+			}
+		}
+		if (expectedTickSequence < 0) {
+			expectedTickSequence = scheduler.lastTickSequence;
+			expectedMachineCycles = runtime.machine.scheduler.nowCycles;
+		} else {
+			assert.equal(scheduler.lastTickSequence, expectedTickSequence);
+			assert.equal(runtime.machine.scheduler.nowCycles, expectedMachineCycles);
+		}
+	}
+	assert.equal(expectedTickSequence, 49);
+	assert.equal(expectedMachineCycles, PSX_CPU_FREQ_HZ);
+});
+
+test('bounded logical-tick execution extends an exhausted retained grant', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	runtime.frameLoop.beginFrameState(0, 0);
+	const pendingState = scheduler.captureState();
+	pendingState.logicalTickRunPending = true;
+	pendingState.logicalTickRunTargetSequence = 1;
+	scheduler.restoreState(pendingState);
+
+	assert.equal(scheduler.runToNextLogicalTick(), true);
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(scheduler.lastTickBudgetGranted, runtime.timing.cycleBudgetPerFrame);
+	assert.equal(scheduler.captureState().logicalTickRunPending, false);
+});
+
+test('bounded logical-tick execution does not report a reset as its target edge', () => {
+	const { runtime } = createTickRuntime();
+	runtime.machine.memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_RESET);
+
+	assert.equal(runtime.frameScheduler.runToNextLogicalTick(), false);
+	assert.equal(runtime.frameScheduler.lastTickSequence, 0);
+	assert.equal(runtime.frameScheduler.captureState().logicalTickRunPending, false);
+});
+
+test('logical-tick boundary publishes ICU state and enters a waiting CPU interrupt', () => {
+	const input = new TickInputSource();
+	input.keyDown = true;
+	const { runtime } = createTickRuntime(input);
+	const memory = runtime.machine.memory;
+	const frameDepth = runtime.machine.cpu.getFrameDepth();
+	memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
+	memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK);
+
+	assert.equal(runtime.frameScheduler.runToNextLogicalTick(), true);
+
+	assert.equal(input.sampleCount, 1);
+	assert.equal(memory.readMappedU32LE(IO_INP_STATUS), 1);
+	const keyWordAddress = IO_INP_KEYS + (TEST_KEY_USAGE >>> 5) * IO_WORD_SIZE;
+	assert.notEqual(memory.readMappedU32LE(keyWordAddress) & (1 << (TEST_KEY_USAGE & 31)), 0);
+	assert.notEqual(memory.readMappedU32LE(IO_IRQ_FLAGS) & IRQ_VBLANK, 0);
+	assert.equal(runtime.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
+	assert.equal(runtime.machine.cpu.getFrameDepth(), frameDepth + 1);
+});
+
+test('logical-tick execution is bounded when PCRTC has no VBlank deadline', () => {
+	const { runtime } = createTickRuntime();
+	const smode1Address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
+	const smode1 = runtime.machine.memory.readMappedU32LE(smode1Address);
+	runtime.machine.memory.writeMappedU32LE(
+		smode1Address,
+		smode1 | GX_GPU_PCRTC_SMODE1_SINT,
+	);
+	runDueRuntimeTimers(runtime);
+	const cycle = runtime.machine.scheduler.nowCycles;
+
+	assert.equal(runtime.timing.cycleBudgetPerFrame, 0);
+	assert.equal(runtime.frameScheduler.runToNextLogicalTick(), false);
+	assert.equal(runtime.frameScheduler.lastTickSequence, 0);
+	assert.equal(runtime.machine.scheduler.nowCycles, cycle);
+});
+
+test('normal host execution still consumes one delta through the existing scheduler path', () => {
+	const { runtime } = createTickRuntime();
+	const exactHostGrant = runtime.timing.frameDurationMs
+		* runtime.timing.cpuCyclesPerMillisecond;
+	const wholeHostGrant = Math.trunc(exactHostGrant);
+
+	runtime.frameScheduler.run(runtime.timing.frameDurationMs);
+
+	assert.equal(runtime.frameScheduler.lastTickSequence, 1);
+	assert.equal(runtime.machine.scheduler.nowCycles, wholeHostGrant);
+	assert.equal(
+		runtime.frameScheduler.captureState().cycleGrantRemainder,
+		exactHostGrant - wholeHostGrant,
+	);
+});
+
+
+test('runtime reset notifies host inspectors after replacing execution state', () => {
+	const { runtime } = createTickRuntime();
+	let resets = 0;
+	runtime.onStateReset = () => {
+		resets += 1;
+		assert.equal(runtime.machine.cpu.getFrameDepth(), 1);
+	};
+	runtime.rebootSystem();
+	assert.equal(resets, 1);
+	runtime.boot();
+	assert.equal(resets, 2);
+});
+
+for (const { standard, preset, timing, refreshUfpsScaled } of [
+	{ standard: 'PAL', preset: GX_GPU_DISPLAY_PRESET_640X512I_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, refreshUfpsScaled: 50_000_000 },
+	{ standard: 'NTSC', preset: GX_GPU_DISPLAY_PRESET_640X480I_NTSC_WORDS, timing: GX_GPU_DISPLAY_TIMING_NTSC_WORDS, refreshUfpsScaled: 59_940_059 },
+]) {
+	test(`default host rewind retains thirty seconds at every ${standard} eviction across a minute`, async t => {
+		const host = createHostFrameFixture();
+		const { runtime, rewind, tasks } = host;
+		afterTest(t, () => {
+			rewind.service(false);
+			host.audio.dispose();
+			host.input.dispose();
+		});
+		for (const [register, word] of [
+			[GX_GPU_PCRTC_SMODE1_LOW, timing[GX_GPU_DISPLAY_TIMING_SMODE1_SETUP_LOW_WORD]],
+			[GX_GPU_PCRTC_SMODE1_HIGH, timing[GX_GPU_DISPLAY_TIMING_SMODE1_HIGH_WORD]],
+			[GX_GPU_PCRTC_SYNCH1_LOW, timing[GX_GPU_DISPLAY_TIMING_SYNCH1_LOW_WORD]],
+			[GX_GPU_PCRTC_SYNCH1_HIGH, timing[GX_GPU_DISPLAY_TIMING_SYNCH1_HIGH_WORD]],
+			[GX_GPU_PCRTC_SYNCH2_LOW, timing[GX_GPU_DISPLAY_TIMING_SYNCH2_LOW_WORD]],
+			[GX_GPU_PCRTC_SYNCH2_HIGH, timing[GX_GPU_DISPLAY_TIMING_SYNCH2_HIGH_WORD]],
+			[GX_GPU_PCRTC_SYNCV_HIGH, timing[GX_GPU_DISPLAY_TIMING_SYNCV_HIGH_WORD]],
+			[GX_GPU_PCRTC_SYNCV_LOW, preset[GX_GPU_DISPLAY_PRESET_PCRTC_SYNCV_LOW_WORD]],
+			[GX_GPU_PCRTC_SMODE2_LOW, preset[GX_GPU_DISPLAY_PRESET_PCRTC_SMODE2_LOW_WORD]],
+			[GX_GPU_PCRTC_SMODE1_LOW, timing[GX_GPU_DISPLAY_TIMING_SMODE1_RUN_LOW_WORD]],
+		]) runtime.machine.memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(register), word);
+		runDueRuntimeTimers(runtime);
+		assert.equal(runtime.timing.ufpsScaled, refreshUfpsScaled, 'the real PCRTC owns the selected video timing');
+
+		rewind.service(true);
+		await tasks.join();
+		assert.deepEqual(host.errors, []);
+		const history = runtime.history;
+		assert.equal(history.mode, HistoryMode.Recording, 'the host service starts its actual default policy');
+		const start = history.earliestCycles;
+		const requiredCycles = runtime.timing.cpuHz * 30;
+		const end = start + runtime.timing.cpuHz * 60;
+		let oldest = start;
+		let evictions = 0;
+		while (history.latestCycles < end) {
+			assert.equal(runtime.frameScheduler.runToNextLogicalTick(), true);
+			runtime.machine.audioController.synchronizeOutput().clear();
+			if (history.checkpointPending) {
+				rewind.service(true);
+				await tasks.join();
+				assert.deepEqual(host.errors, []);
+			}
+			if (history.earliestCycles !== oldest) {
+				oldest = history.earliestCycles;
+				evictions += 1;
+				assert.ok(history.latestCycles - oldest >= requiredCycles,
+					'checkpoint eviction cannot shorten continuous recording below thirty emulated seconds');
+			}
+			if (history.latestCycles - start >= requiredCycles) {
+				assert.ok(history.latestCycles - history.earliestCycles >= requiredCycles,
+					'every filled tick retains at least thirty seconds, not only selected points between evictions');
+			}
+		}
+		assert.ok(evictions >= 4, 'the test reaches repeated default-policy wraparound rather than only initial filling');
+	});
+}

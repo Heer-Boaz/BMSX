@@ -3,6 +3,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { HOST_MENU_HOLD_MS } from '../../hosts/common/input/shortcuts';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('trusted browser keyboard chords use real host time and distinguish short, long and cancellation', async t => {
 	const bundle = await build({
@@ -19,7 +20,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage();
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));

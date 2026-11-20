@@ -921,7 +921,7 @@ Validation:
   zero issues; core parity and `git diff --check` pass. Repository indentation
   check still reports five byte-identical-to-HEAD files outside this slice
   (`ide/runtime/sources.ts`, `tests/helpers/coroutine.ts`,
-  `tests/lua/semantic_keyed_shapes.test.ts`, and `third_party/cjson/cJSON.{c,h}`).
+  `tests/studio/semantic_keyed_shapes.test.ts`, and `third_party/cjson/cJSON.{c,h}`).
 - Nine alternating warmed before/after samples (4,000 warmup and 20,000 measured
   frames each) compare this chrome owner with `c6e707c90`. Median microseconds per
   layout/overlay-command-emission frame are 0.578/0.319 with four tabs and no menu,

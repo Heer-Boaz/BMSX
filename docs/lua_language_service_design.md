@@ -156,7 +156,7 @@ which call hierarchy uses. Interactive APIs never reach it.
 
 ## Verification
 
-- `tests/lua` cases per rule of the `typeOf` table, per `membersOf` source and
+- `tests/studio` cases per rule of the `typeOf` table, per `membersOf` source and
   for prototype summaries, including two-file cases for scoping.
 - Every IDE feature above gets a test that it does not construct the query
   store (`getSemanticQueryMetrics` must not be reached; a construction counter

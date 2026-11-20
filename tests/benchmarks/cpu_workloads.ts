@@ -7,7 +7,7 @@ import { IO_IRQ_MASK } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import { linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource } from '../lua/cpu_test_harness';
+import { compileLuaSource } from '../helpers/cpu_test_harness';
 
 export const WORD_SPAN_ADDRESS = DYNAMIC_RAM_BASE + 0x10000;
 

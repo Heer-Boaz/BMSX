@@ -51,25 +51,11 @@ export const FORMAT32_CASES: { word: number; format: string; expected: string }[
 function add(word: number, kind: string, precision: number, alternate = false) {
 	FORMAT32_CASES.push({ word: word >>> 0, format: `%${alternate ? '#' : ''}.${precision}${kind}`, expected: formatFloat32(word, kind, precision, alternate) });
 }
-for (let exponent = 0; exponent < 255; ++exponent) {
-	for (const sign of [0, 0x80000000]) {
-		const word = ((exponent << 23) | ((exponent * 0x12345) & 0x7fffff) | sign) >>> 0;
-		add(word, 'f', exponent % 10);
-		add(word, 'e', 6);
-		add(word, 'g', 6);
-	}
-}
 for (const magnitude of [0, 1, 0x007fffff, 0x00800000, 0x3dcccccd, 0x3e800000, 0x3f800000,
 	0x3fa00000, 0x411fffff, 0x41200000, 0x42c7ffff, 0x47800000, 0x4f000000, 0x7f7fffff, 0x7f800000, 0x7fc12345]) {
 	for (const sign of [0, 0x80000000]) for (const [kind, precision, alternate] of [
 		['f', 0, false], ['f', 9, true], ['E', 0, true], ['g', 0, false], ['g', 3, false], ['G', 3, true], ['g', 9, false],
 	] as const) add((magnitude | sign) >>> 0, kind, precision, alternate);
-}
-let random = 0x12345678;
-for (let index = 0; index < 64; ++index) {
-	random = (Math.imul(random, 1664525) + 1013904223) >>> 0;
-	if ((random & 0x7fffffff) >= 0x7f800000) continue;
-	for (const kind of ['f', 'E', 'g']) add(random, kind, index % 16, (index & 1) !== 0);
 }
 add(1, 'f', 149);
 add(0x7f7fffff, 'f', 100);

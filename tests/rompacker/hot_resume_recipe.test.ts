@@ -14,12 +14,13 @@ import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { buildBlua32Media, layoutBlua32MediaInstallation } from '../../ide/runtime/lua_pipeline';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const [system, first, second] of [[2, 0, 3], [1, 3, 0]] as const) {
 	test(`source rebuild retains each image recipe: BIOS O${system}, cart0 O${first}, cart1 O${second}`, async t => {
 		const root = await mkdtemp(join(tmpdir(), 'bmsx-image-recipe-'));
 		openWorkspaceRecords(new MemoryWorkspaceFiles());
-		t.after(async () => { closeWorkspaceRecords(); await rm(root, { recursive: true, force: true }); });
+		afterTest(t, async () => { closeWorkspaceRecords(); await rm(root, { recursive: true, force: true }); });
 		const options = {
 			systemOptLevel: system,
 			systemSource: 'module<entry>\nreturn 1',
@@ -44,7 +45,7 @@ for (const [system, first, second] of [[2, 0, 3], [1, 3, 0]] as const) {
 test('BIOS-only relinking consumes each installed generation when one context is installed twice', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-installed-generation-'));
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
-	t.after(async () => { await closeWorkspaceRecords(); await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); await rm(root, { recursive: true, force: true }); });
 	const system = { systemSource: 'module<entry>\nreturn 1', systemModules: [] };
 	const sourceA = "module<entry>\nlocal dependency<const> = require('generation_a')\nreturn dependency";
 	const sourceB = "module<entry>\nlocal dependency<const> = require('generation_b')\nreturn dependency";

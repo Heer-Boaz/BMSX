@@ -16,15 +16,16 @@ import { installBlua32Media, prepareBlua32MediaBoot } from '../../ide/runtime/lu
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { readBlua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import { buildScenarioMediaFixture } from '../helpers/scenario_media';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('program entry selection is prepared without mutation, survives admission, and stays local to its socket', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-program-entry-'));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const fixture = await buildScenarioMediaFixture(root, []);
 	const media = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, fixture.cartRom]);
 	const sources = createLoadedTestRuntimeSourceState(media.system, media.cartridgeSlots);
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	const runtime = initializeMachineRuntime(fixture.systemRom, [fixture.cartRom, fixture.cartRom], PSX_MACHINE_SPEC, input);
 
 	for (const domain of [0, 1] as const) {

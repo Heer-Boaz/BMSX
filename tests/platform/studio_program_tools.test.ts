@@ -6,6 +6,7 @@ import { PNG } from 'pngjs';
 import { createCodexModelFixture, CODEX_FIXTURE_DONE } from '../helpers/codex_model_fixture.mjs';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
 import { TEST_STUDIO_CARTRIDGE_CONTEXT_ID } from '../helpers/studio_source_contexts';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: reviewed source fix is saved, installed, executed and independently retested`, { timeout: 180000 }, async t => {
 	type Body = { input: { type: string; call_id: string; output: string | { type: string; image_url?: string; text?: string }[] }[] };
@@ -81,8 +82,8 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	await f.page.exposeFunction('armProgramRead', () => { armed = true; });
 	await f.page.exposeFunction('waitForProgramRead', () => held.promise);
 	await f.page.exposeFunction('releaseProgramRead', () => release.resolve());
-	t.after(() => release.resolve());
-	t.after(() => writeFile(join(f.evidence, `program-${backend}-requests.json`), JSON.stringify(model.requests)));
+	afterTest(t, () => release.resolve());
+	afterTest(t, () => writeFile(join(f.evidence, `program-${backend}-requests.json`), JSON.stringify(model.requests)));
 	const result = await f.page.evaluate(async backend => {
 		const entry = '/test.js', module = await import(entry);
 		return module.runAssistantProgram(backend, document.querySelector('canvas'), globalThis.capture, globalThis.armProgramRead, globalThis.waitForProgramRead, globalThis.releaseProgramRead);

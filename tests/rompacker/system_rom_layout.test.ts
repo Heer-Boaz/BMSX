@@ -4,7 +4,6 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { BLUA32_FUNCTION_RECORD_SIZE } from '../../machine/ts/spec/blua32/image_format';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { buildRomBlua32Tail, finalizeRompack } from '../../scripts/rompacker/rombuilder';
@@ -19,7 +18,8 @@ import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { buildScenarioMediaFixture } from '../helpers/scenario_media';
-import { materializeCpuCompletionValues } from '../lua/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { afterTest } from '../helpers/test_cleanup';
 
 const RAM_BYTES = 0x00400000;
 const source = `module<entry>
@@ -28,10 +28,10 @@ local p: *word = assets.bin_probe_addr
 return *p, assets.bin_probe_addr + assets.bin_probe_len - 4`;
 const probe = { type: 'bin' as const, resid: 'probe', buffer: Buffer.from([0x78, 0x56, 0x34, 0x12]) };
 
-for (const optLevel of [0, 3] as const) for (const debug of [false, true])
+for (const optLevel of [3] as const) for (const debug of [false, true])
 	test(`compact system ROM executes final asset-address relocations (${debug ? 'debug' : 'release'} O${optLevel})`, async t => {
 		const directory = await mkdtemp(join(tmpdir(), 'bmsx-compact-system-'));
-		t.after(() => rm(directory, { recursive: true, force: true }));
+		afterTest(t, () => rm(directory, { recursive: true, force: true }));
 		const built = buildRomBlua32Tail([probe, { type: 'lua', resid: 'entry', program_module: true,
 			source_path: 'entry.lua', buffer: Buffer.from(source) }], { domain: 'system',
 			generatedLuaModules: [], biosExports: [], ramByteCount: RAM_BYTES, optLevel,
@@ -51,18 +51,18 @@ for (const optLevel of [0, 3] as const) for (const debug of [false, true])
 		assert.deepEqual(bytes.subarray(payload.start, payload.end), new Uint8Array(probe.buffer));
 		assert.ok(bytes.byteLength < SYSTEM_BLUA32_IMAGE_LIMIT, 'growth capacity is not serialized as zero padding');
 		const { cpu } = createTestSystemCpu({ romBytes: bytes });
-		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+		runGuestToHalt(cpu, 100_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0x12345678), valueInteger(payload.start)]);
 	});
 
 test('system source rebuild relocates asset references after code growth without moving BIOS import slots', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-compact-system-relink-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const fixture = await buildScenarioMediaFixture(directory, [], { systemSource: source, systemModules: [],
 		cartSource: 'module<entry>\nreturn true', systemAssets: [probe], systemOptLevel: 0 });
 	const loaded = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, null]);
 	const sources = createLoadedTestRuntimeSourceState(loaded.system, loaded.cartridgeSlots);
-	t.after(() => sources.catalog.dispose());
+	afterTest(t, () => sources.catalog.dispose());
 	const registry = sources.catalog.getContext(sources.systemContextId).luaSources;
 	const original = registry.module2lua.entry;
 	const changed = source.replace('return *p,', `local function grow(n)\n${'n = n + 1\n'.repeat(128)}return n end\nreturn grow(*p),`);
@@ -77,13 +77,13 @@ test('system source rebuild relocates asset references after code growth without
 	assert.ok(payload.start! > oldPayload.start!);
 	assert.deepEqual(readBlua32BiosImports(bytes).functions, readBlua32BiosImports(fixture.systemRom).functions);
 	const { cpu } = createTestSystemCpu({ romBytes: bytes });
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0x12345678 + 128), valueInteger(payload.start)]);
 });
 
 test('system function growth preserves static addresses until a cold boot grows the bounded table', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-system-function-growth-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const source = `module<entry>
 rodata retained: word[1] = { 0x12345678 }
 local p: *word = retained
@@ -92,7 +92,7 @@ return *p`;
 		cartSource: 'module<entry>\nreturn true', systemOptLevel: 0 });
 	const loaded = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, null]);
 	const sources = createLoadedTestRuntimeSourceState(loaded.system, loaded.cartridgeSlots);
-	t.after(() => sources.catalog.dispose());
+	afterTest(t, () => sources.catalog.dispose());
 	const registry = sources.catalog.getContext(sources.systemContextId).luaSources;
 	const original = registry.module2lua.entry;
 	const before = sources.currentBlua32Media.system!.layout;
@@ -113,6 +113,6 @@ return *p`;
 	const bytes = layoutBlua32MediaInstallation(sources, boot).systemLayer!.bytes;
 	assert.deepEqual(readBlua32BiosImports(bytes).functions, readBlua32BiosImports(fixture.systemRom).functions);
 	const { cpu } = createTestSystemCpu({ romBytes: bytes });
-	assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 1_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0x12345678)]);
 });

@@ -5,10 +5,11 @@ import { CodexObserver } from '../../hosts/node/codex/observer';
 import { createSharedCodexFixture } from '../helpers/codex_shared_server';
 import { createCodexModelFixture, CODEX_FIXTURE_DONE, CODEX_FIXTURE_WAIT } from '../helpers/codex_model_fixture.mjs';
 import { ObservedConversation } from '../../ide/workbench/services/assistant/observed_conversation';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('native shared conversation: paged history, live updates, no fork/config/turn writes, independent disconnect', { timeout: 60000 }, async t => {
 	let observer: CodexObserver;
-	t.after(async () => { await observer?.close(); });
+	afterTest(t, async () => { await observer?.close(); });
 	const model = await createCodexModelFixture(t, [
 		...Array.from({ length: 23 }, (_, index) => [{ type: 'message', id: `reply-${index}`, role: 'assistant', content: [{ type: 'output_text', text: `Native answer ${index}` }] }]),
 		CODEX_FIXTURE_WAIT,
@@ -93,7 +94,7 @@ for (const join of ['before-message', 'mid-message']) test(`real native streamin
 		native = await CodexObserver.open(f.home, signal, receive);
 		return { signal: native.signal, send: command => native.command(command), close: () => { void native.close(); } };
 	});
-	t.after(async () => { continueStream.resolve(); finish.resolve(); view.dispose(); await native?.closed; });
+	afterTest(t, async () => { continueStream.resolve(); finish.resolve(); view.dispose(); await native?.closed; });
 	if (join === 'before-message') await view.select(thread.id);
 	await f.owner.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Stream a reply', text_elements: [] }] });
 	await started.promise;
@@ -126,7 +127,7 @@ test('native tool requests remain with the interactive owner while Studio observ
 	await f.owner.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'First reply', text_elements: [] }] });
 	await f.wait(message => message.method === 'turn/completed');
 	const observer = await CodexObserver.open(f.home, t.signal, () => {});
-	t.after(() => observer.close());
+	afterTest(t, () => observer.close());
 	await observer.command({ type: 'open', id: thread.id });
 	const { turn } = await f.owner.request<any>('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Call the owner tool', text_elements: [] }] });
 	const request = await f.wait(message => message.method === 'item/tool/call');

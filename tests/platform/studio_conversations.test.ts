@@ -6,6 +6,7 @@ import { chromium, type Browser } from 'playwright';
 import { createStudioServer } from '../helpers/studio_server.mjs';
 import { createSharedCodexFixture } from '../helpers/codex_shared_server';
 import { createCodexModelFixture, CODEX_FIXTURE_WAIT } from '../helpers/codex_model_fixture.mjs';
+import { afterTest } from '../helpers/test_cleanup';
 
 const reply = '# Shared conversation\n\n**One thread**, shown in the CLI and Studio. No copy or fork.\n\nThe CLI can use `studio_evaluate_lua`, inspect actors and step frames through MCP.\n\n```lua\nreturn 6 * 7\n```\n\n- Studio is *read only* here.\n- The existing Studio assistant remains available.\n- Ordinary words wrap without splitting.';
 
@@ -26,7 +27,7 @@ test('server status follows the live Studio channel independently of the Codex d
 	const server = await createStudioServer(t);
 	const browser = await chromium.launch({ args: ['--no-sandbox', '--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
 		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface', '--disable-dev-shm-usage'] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
 	const errors: string[] = [], requests: string[] = [];
 	page.on('pageerror', error => errors.push(String(error)));
@@ -62,7 +63,7 @@ test('server status follows the live Studio channel independently of the Codex d
 
 test('real Studio: choose the native conversation, follow work, resize and close without controlling CLI', { timeout: 90000 }, async t => {
 	let browser: Browser;
-	t.after(async () => { await browser?.close(); });
+	afterTest(t, async () => { await browser?.close(); });
 	const working = Promise.withResolvers<void>();
 	const model = await createCodexModelFixture(t, [[{ type: 'message', id: 'first-answer', role: 'assistant', content: [{ type: 'output_text', text: reply }] }],
 		() => { working.resolve(); return CODEX_FIXTURE_WAIT; }]);

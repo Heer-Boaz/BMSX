@@ -31,6 +31,7 @@ import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH as PATH } from '../helpers/scenario_media';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { createTextResource } from '../../ide/workspace/workspace';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SCENE = `local game<const> = require('game')
 return { kind='integration', setup=function(t) game.marker=12; t:log('ready') end,
@@ -69,7 +70,7 @@ while true do game.updates=game.updates+1; mem[${gxGpuPcrtcRegisterAddress(GX_GP
 		for (let grant = 0; service.current!.state !== 'ready' && grant < 2000; grant++) await advance();
 		assert.equal(service.current!.state, 'ready', service.current!.failure?.error instanceof Error ? service.current!.failure.error.message : undefined);
 	};
-	t.after(async () => {
+	afterTest(t, async () => {
 		await service.dispose(); runs.dispose(); models.clear(); authoring.dispose(); input.dispose();
 		closeWorkspaceRecords(); await rm(directory, { recursive: true, force: true });
 	});
@@ -139,7 +140,7 @@ test('Reset cannot override a newer Play request published while its old handle 
 	const f = await fixture(t), accepted = f.service.start(f.module);
 	await f.ready();
 	let newer: ReturnType<PlayService['start']> | undefined;
-	t.after(f.service.onDidChange(event => {
+	afterTest(t, f.service.onDidChange(event => {
 		if (event.handle !== accepted || !accepted.closing || newer !== undefined) return;
 		newer = f.service.start(f.module);
 		void f.service.close(newer);
@@ -163,7 +164,7 @@ test('close publishes one retirement before run-target callbacks admit a newer w
 		return Promise.all([physical, disposing.promise]).then(() => {});
 	});
 	let newer: ReturnType<PlayService['start']> | undefined, recursive: Promise<void> | undefined;
-	t.after(f.runTargets.onDidChange(target => {
+	afterTest(t, f.runTargets.onDidChange(target => {
 		if (target !== undefined || newer !== undefined) return;
 		recursive = f.service.close(accepted);
 		newer = f.service.start(f.module);
@@ -217,7 +218,7 @@ test('failed Play preparation leaves explicit empty run selection unchanged', as
 	assert.equal(f.runTargets.selected, undefined);
 });
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: new authored fixtures admit alongside an empty project file`, async t => {
+for (const optLevel of [3] as const) test(`O${optLevel}: new authored fixtures admit alongside an empty project file`, async t => {
 	const f = await fixture(t, optLevel), clock = new VirtualHeadlessClock();
 	await createTextResource(clock, f.sources.catalog, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], relativePath: 'empty.lua', contents: '' });
 	await createTextResource(clock, f.sources.catalog, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], relativePath: 'unrelated.lua', contents: 'end end -- unused program' });

@@ -214,7 +214,7 @@ These references establish ownership patterns, not BMSX performance guarantees.
   selection at O0/O3: erased argument side effects/constants, return values,
   executable size, cycles and guest heap. At a fixed link address, symbol inclusion
   also compares the entire executable payload byte-for-byte.
-- `tests/lua/event_history.test.ts`, `function_probe.test.ts` and
+- `tests/studio/event_history.test.ts`, `function_probe.test.ts` and
   `cpu_superinstructions.test.ts` cover actual cartlib snapshots, complete CPU
   equivalence, inline source bindings/unavailable arguments, source-stop ordering,
   warm-cache observer installation/removal and fusion boundaries. Native CPU

@@ -5,6 +5,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { glsl } from 'esbuild-plugin-glsl';
 import { chromium } from 'playwright';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('isolated player reads relative and cross-origin ROM URLs without CORS preflights', async t => {
 	const bundle = await build({
@@ -42,7 +43,7 @@ test('isolated player reads relative and cross-origin ROM URLs without CORS pref
 	for (const server of [media, player]) {
 		server.listen(0, '127.0.0.1');
 		await once(server, 'listening');
-		t.after(async () => {
+		afterTest(t, async () => {
 			server.closeAllConnections();
 			await new Promise<void>(resolve => server.close(() => resolve()));
 		});
@@ -50,7 +51,7 @@ test('isolated player reads relative and cross-origin ROM URLs without CORS pref
 	const mediaOrigin = `http://127.0.0.1:${(media.address() as { port: number }).port}`;
 	const playerOrigin = `http://127.0.0.1:${(player.address() as { port: number }).port}`;
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage();
 	const url = new URL('/games/test/', playerOrigin);
 	url.searchParams.set('rom', `${mediaOrigin}/release/cart.rom?version=1&variant=release`);

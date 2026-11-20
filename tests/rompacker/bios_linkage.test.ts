@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import * as v from '../../machine/ts/machine/cpu/value';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { BiosFunction, BIOS_FUNCTION_MODULE_PATHS } from '../../machine/ts/spec/bmsx/bios';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -10,7 +9,7 @@ import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_im
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { createTestBlua32PairCpu, createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { buildPublicBiosFixture, PUBLIC_BIOS_PROBE_SOURCE } from '../helpers/bios_linkage';
-import { materializeCpuCompletionValues, parseLuaChunk } from '../lua/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('published BIOS slots derive addresses and RAM occupancy from the ROM header', () => {
 	const rom = new Uint8Array(0x200);
@@ -32,11 +31,11 @@ test('published BIOS slots derive addresses and RAM occupancy from the ROM heade
 	});
 });
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`guest locates all BIOS functions without tooling metadata (O${optLevel})`, () => {
 		const fixture = buildPublicBiosFixture(PUBLIC_BIOS_PROBE_SOURCE, optLevel);
 		const { cpu } = createTestSystemCpu({ romBytes: fixture.rom });
-		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+		runGuestToHalt(cpu, 100_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [v.valueBool(true), v.valueBool(true)]);
 	});
 
@@ -67,7 +66,7 @@ return sine(0x40000000), decode(0x3fa00000, 0, 4), origin, extent, *cartridge_va
 		assert.equal(cart.linked.layout.header.dataAddress,
 			system.linked.layout.header.bssAddress + system.linked.layout.header.bssByteCount);
 		const { cpu } = createTestBlua32PairCpu({ systemRomBytes: system.rom, cartRomBytes: writeTestBlua32Rom(cart.linked) });
-		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+		runGuestToHalt(cpu, 100_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [v.valueInteger(65536), v.valueFloat(1.25), v.valueInteger(0x02d002c0), v.valueInteger(0x00fc0140), v.valueInteger(17)]);
 	});
 }

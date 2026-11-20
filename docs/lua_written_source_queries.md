@@ -144,8 +144,8 @@ Final validation:
   `sparse-read-index` are intermediate measurements, not the landed code.
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/semantic_written_sources.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/semantic_written_sources.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/lua_source/profile_written_sources.ts
 ```

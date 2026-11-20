@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { decodeBlua32SymbolsImage, encodeBlua32SymbolsImage } from '../../../toolchain/ts/rompack/blua32_symbols';
-import { compileLuaSource } from '../../lua/cpu_test_harness';
+import { compileLuaSource } from '../../helpers/cpu_test_harness';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 
 for (const args of [

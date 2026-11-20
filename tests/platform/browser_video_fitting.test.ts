@@ -5,6 +5,7 @@ import { build } from 'esbuild';
 import { chromium, type Browser, type Page } from 'playwright';
 import { PNG } from 'pngjs';
 import type { RectBounds } from '../../machine/ts/common/rect';
+import { afterTest } from '../helpers/test_cleanup';
 
 type Rect = { left: number; top: number; width: number; height: number };
 type Presentation = {
@@ -183,7 +184,7 @@ function assertVisibleViewport(presentation: Presentation, nativeWidth: number, 
 
 test('browser video fitting uses physical half steps, bounded selected policy and independent controller geometry', async t => {
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const errors: string[] = [];
 	for (const dpr of DPR_PROFILES) for (const orientation of ['portrait', 'landscape'] as const) await t.test(`${orientation} at native DPR ${dpr}`, async () => {
 		const page = await openFixture(browser, dpr, orientation === 'portrait' ? { width: 393, height: 852 } : { width: 852, height: 393 }, true,
@@ -236,7 +237,7 @@ test('browser video fitting uses physical half steps, bounded selected policy an
 
 test('short portrait players retain a full-frame quantized picture rather than an impossible reserved deck', async t => {
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	for (const viewport of [{ width: 320, height: 321 }, { width: 320, height: 360 }, { width: 393, height: 394 }, { width: 600, height: 601 }]) {
 		for (const dpr of [1, 2.625]) await t.test(`${viewport.width}x${viewport.height} at DPR ${dpr}`, async () => {
 			const page = await openFixture(browser, dpr, viewport, true, [0, 0, 0, 0], 'fit');
@@ -265,7 +266,7 @@ test('short portrait players retain a full-frame quantized picture rather than a
 
 test('explicit Overscan construction preserves the selected picture policy independently of viewport publication', async t => {
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	for (const orientation of ['portrait', 'landscape'] as const) await t.test(orientation, async () => {
 		const page = await openFixture(browser, 3, orientation === 'portrait' ? { width: 393, height: 852 } : { width: 852, height: 393 }, true,
 			orientation === 'portrait' ? [47, 0, 34, 0] : [19, 47, 21, 43], 'overscan');
@@ -321,7 +322,7 @@ test('explicit Overscan construction preserves the selected picture policy indep
 
 test('portrait overscan uses spare vertical space without cropping source top or bottom HUD rows', async t => {
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await openFixture(browser, 3, { width: 393, height: 852 }, true, [47, 0, 34, 0], 'fit');
 	const fitted = await measure(page);
 	assertPresentation(fitted, 320, false);
@@ -373,7 +374,7 @@ test('portrait overscan uses spare vertical space without cropping source top or
 
 test('resolution observer rearms after native DPR samples and explicitly test-generated media-query notifications', async t => {
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await openFixture(browser, 1, { width: 393, height: 852 }, true, [47, 0, 34, 0], 'fit', true);
 	const cdp = await page.context().newCDPSession(page);
 	const initial = await measure(page);
@@ -409,7 +410,7 @@ test('resolution observer rearms after native DPR samples and explicitly test-ge
 
 test('native clip hit testing excludes hidden pixels but preserves visible pointer mapping and captured source lifetime', async t => {
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await openFixture(browser, 3, { width: 852, height: 393 }, false, [19, 47, 21, 43], 'fit');
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
@@ -460,7 +461,7 @@ test('native clip hit testing excludes hidden pixels but preserves visible point
 for (const viewport of [{ width: 1920, height: 1080, logicalWidth: 640 }, { width: 3840, height: 2160, logicalWidth: 1280 },
 	{ width: 390, height: 844, logicalWidth: 384 }])
 	test(`adaptive workspace uses the host area at ${viewport.width}x${viewport.height}, without changing game fitting`, async t => {
-		const browser = await chromium.launch(); t.after(() => browser.close());
+		const browser = await chromium.launch(); afterTest(t, () => browser.close());
 		for (const dpr of [1, 3]) {
 			const page = await openFixture(browser, dpr, viewport, false, [0, 0, 0, 0], 'overscan');
 			try {
@@ -515,7 +516,7 @@ for (const viewport of [{ width: 1920, height: 1080, logicalWidth: 640 }, { widt
 
 
 test('native text composition follows the published canvas transform even when logical workspace size does not change', async t => {
-	const browser = await chromium.launch(); t.after(() => browser.close());
+	const browser = await chromium.launch(); afterTest(t, () => browser.close());
 	const page = await openFixture(browser, 2, { width: 800, height: 600 }, false, [0, 0, 0, 0], 'fit');
 	await page.evaluate(() => {
 		const api = (globalThis as any).videoFixture, probe = (globalThis as any).videoProbe;

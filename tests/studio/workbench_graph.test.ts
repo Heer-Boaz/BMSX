@@ -1,0 +1,877 @@
+import { PointerHoverService } from '../../ide/input/pointer/hover';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { KeyModifier } from '../../hosts/common/input/text';
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { Font } from '../../machine/ts/render/shared/bmsx_font';
+import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
+import { beginHeadlessHost2D, renderHeadlessHost2DEntry } from '../../machine/ts/render/headless/host_2d';
+import { RectRenderKind, type PolyRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import * as colors from '../../ide/common/constants';
+import { InputFocusService } from '../../ide/input/focus';
+import { PointerCaptureService } from '../../ide/input/pointer/capture';
+import type { PointerInputSnapshot } from '../../ide/common/models';
+import { api } from '../../ide/runtime/overlay_api';
+import { drawWorkbenchGraph } from '../../ide/workbench/render/graph';
+import { createWorkbenchGraphDisc, createWorkbenchGraphEdge, createWorkbenchGraphLabel, createWorkbenchGraphModel, createWorkbenchGraphNode, GRAPH_NODE_PADDING, type WorkbenchGraphModel } from '../../ide/workbench/ui/graph/model';
+import { GRAPH_ZOOM_MAX, GRAPH_ZOOM_MIN, WorkbenchGraphViewport } from '../../ide/workbench/ui/graph/viewport';
+import type { HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
+import { WorkbenchGraphControl, WorkbenchGraphPointerResult as Result } from '../../ide/workbench/ui/graph/control';
+import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
+
+const font = new Font({ variant: 'tiny' });
+function fixture() {
+	const a = createWorkbenchGraphNode(font, 'FIRST\nDETAIL', -10, -4);
+	const b = createWorkbenchGraphNode(font, 'SECOND', 100, 70);
+	const edge = createWorkbenchGraphEdge([-20, 45, 140, 45, 140, 75]);
+	const model: WorkbenchGraphModel = createWorkbenchGraphModel(font, [a, b], [edge]);
+	const view = new WorkbenchGraphViewport(model);
+	view.layout(20, 20, 120, 100);
+	view.setZoom(1); view.scrollX = 0; view.scrollY = 0;
+	return { view, a, b, edge, model };
+}
+function pointer(x: number, y: number, pressed = false): PointerInputSnapshot {
+	return { modifiers: KeyModifier.none, spaceDown: false, viewportX: x, viewportY: y, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0, valid: true, insideViewport: true };
+}
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary, PointerButton.Auxiliary])
+	test(`graph button ${button} cannot initialize a gesture over an input replaced during capture handoff`, t => {
+		const old = fixture(), next = fixture(), focus = new InputFocusService(), capture = new PointerCaptureService();
+		const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
+		let starts = 0;
+		control.setInput(old.view, { begin: () => { starts++; return undefined; } });
+		control.focusTarget.focus(); next.view.selection = next.b; afterTest(t, () => control.dispose());
+		capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { control.setInput(next.view); } });
+		const snapshot = { ...pointer(22, 22), pressedButtons: button, justPressedButtons: button };
+		assert.equal(control.handlePointer(snapshot, 0), Result.Rejected);
+		assert.equal(capture.active, false); assert.ok(next.view.selection === next.b);
+		assert.equal(capture.dispatch({ ...snapshot, viewportX: 45, justPressedButtons: 0 }, false, 10), false);
+		assert.equal(starts, 0); assert.equal(control.dragFeedback, undefined);
+	});
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (const change of ['model', 'input'] as const) test(`graph button ${button} rejects focus publication replacing its captured ${change}`, t => {
+	const { view, a, b } = fixture(), focus = new InputFocusService(), capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
+	control.setInput(view); view.selection = b;
+	afterTest(t, () => control.dispose());
+	const otherModel = createWorkbenchGraphModel(font, [a, b], []);
+	afterTest(t, control.focusTarget.onDidFocus(() => {
+		if (change === 'model') view.setModel(otherModel, b);
+		else control.setInput(view);
+	}));
+	const snapshot = { ...pointer(22, 22, true), pressedButtons: button, justPressedButtons: button };
+	assert.ok(view.hitTest(snapshot.viewportX, snapshot.viewportY) === a);
+	assert.equal(control.handlePointer(snapshot, 0), Result.Rejected);
+	assert.ok(view.selection === b); assert.equal(capture.active, false);
+});
+
+for (const gesture of [
+	{ name: 'node press', button: PointerButton.Primary, pan: false },
+	{ name: 'context press', button: PointerButton.Secondary, pan: false },
+	{ name: 'middle pan', button: PointerButton.Auxiliary, pan: false },
+	{ name: 'Space-primary pan', button: PointerButton.Primary, pan: true },
+] as const) test(`graph ${gesture.name} rejects a superseded focus request even when its exact live target returns`, t => {
+	const { view, a, b, model } = fixture(), focus = new InputFocusService(), capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService()), departing = focus.createTarget(), away = focus.createTarget();
+	let starts = 0, callbacks = 0;
+	control.setInput(view, { begin: () => { starts++; return undefined; } }); view.selection = b;
+	afterTest(t, () => control.dispose());
+	departing.focus();
+	const target = control.focusTarget, context = target.scope.contextGeneration;
+	const unbind = departing.onDidBlur(() => {
+		unbind(); callbacks++; away.focus(); assert.ok(focus.admittedTarget === away);
+		target.focus(); assert.ok(focus.admittedTarget === target);
+	}); afterTest(t, unbind);
+	const snapshot = { ...pointer(22, 22), pressedButtons: gesture.button, justPressedButtons: gesture.button };
+	assert.ok(view.hitTest(snapshot.viewportX, snapshot.viewportY) === a);
+	assert.equal(control.handlePointer(snapshot, 0, gesture.pan), Result.Rejected);
+	assert.equal(callbacks, 1); assert.ok(focus.admittedTarget === target);
+	assert.equal(target.scope.contextGeneration, context); assert.ok(view.model === model && view.selection === b);
+	assert.equal(capture.active, false); assert.equal(starts, 0);
+	assert.equal(capture.dispatch({ ...snapshot, viewportX: 40, justPressedButtons: 0 }, false, 20), false);
+});
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`graph button ${button} admits its exact node when blur only rebinds an unrelated sibling graph`, t => {
+	const current = fixture(), sibling = fixture(), replacement = fixture();
+	const focus = new InputFocusService(), capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
+	const other = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
+	control.setInput(current.view); current.view.selection = current.b;
+	other.setInput(sibling.view); other.focusTarget.focus();
+	afterTest(t, () => { control.dispose(); other.dispose(); });
+	const unbind = other.focusTarget.onDidBlur(() => { unbind(); other.setInput(replacement.view); }); afterTest(t, unbind);
+	assert.equal(control.handlePointer({ ...pointer(22, 22), pressedButtons: button === PointerButton.Secondary ? 0 : button, justPressedButtons: button, justReleasedButtons: button === PointerButton.Secondary ? button : 0 }, 0),
+		button === PointerButton.Secondary ? Result.Handled : Result.Selection);
+	assert.ok(focus.admittedTarget === control.focusTarget && current.view.selection === current.a);
+	assert.ok(current.view.model === current.model && replacement.view.selection === null);
+	assert.equal(capture.active, false);
+});
+
+test('clearing a graph attachment cannot erase the new view admitted by its blur callback', t => {
+	const original = fixture(), replacement = fixture(), focus = new InputFocusService(), capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
+	control.setInput(original.view); original.view.selection = original.b; replacement.view.selection = replacement.b;
+	control.focusTarget.focus(); afterTest(t, () => control.dispose());
+	let rebound = false;
+	const unbind = control.focusTarget.onDidBlur(() => {
+		unbind(); rebound = true; control.setInput(replacement.view); control.focusTarget.focus();
+	}); afterTest(t, unbind);
+	control.clearInput();
+	assert.equal(rebound, true); assert.ok(focus.admittedTarget === control.focusTarget);
+	const snapshot = { ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary };
+	assert.equal(control.handlePointer(snapshot, 0), Result.Selection);
+	assert.ok(replacement.view.selection === replacement.a && original.view.selection === original.b);
+});
+
+test('disc symbols retain their actual pixel silhouette instead of routing to padded text bounds', () => {
+	const disc = createWorkbenchGraphDisc(11, 20, 20);
+	assert.ok(disc.appearance === 'disc');
+	assert.equal(disc.headerHeight, 11);
+	assert.deepEqual(disc.bounds, { left: 20, top: 20, right: 31, bottom: 31 });
+	assert.deepEqual(disc.lines, []);
+	assert.equal(disc.insets[5], 0, 'the route endpoint meets the disc at its horizontal diameter');
+	assert.ok(disc.insets[0] > 0, 'the disc has curved corners, not a square or font replacement glyph');
+	assert.deepEqual(disc.insets, [...disc.insets].reverse());
+	const view = new WorkbenchGraphViewport(createWorkbenchGraphModel(font, [disc], []));
+	view.layout(0, 0, 100, 100);
+	const { renderer, queue } = createHostOverlayFixture(100, 100);
+	const insets = disc.insets;
+	for (let index = 0; index < 2; index += 1) {
+		renderer.beginFrame(); api.beginFrame(renderer);
+		drawWorkbenchGraph(view, null, false); renderer.endFrame();
+		const frame = queue.consumeOverlayFrame();
+		assert.ok(!frame.commandKinds.slice(0, frame.commandCount).includes(Host2DKind.Glyphs));
+		assert.equal(disc.insets, insets, 'paint consumes retained geometry without a new raster');
+	}
+});
+
+for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as const) {
+	test(`${theme}/${variant} graph disc selection and hover augment its retained filled symbol`, t => {
+		const originalTheme = colors.getActiveIdeThemeVariant();
+		afterTest(t, () => colors.setIdeThemeVariant(originalTheme)); colors.setIdeThemeVariant(theme);
+		const symbolFont = new Font({ variant });
+		const disc = createWorkbenchGraphDisc(symbolFont.lineHeight + GRAPH_NODE_PADDING, 20, 20);
+		const model = createWorkbenchGraphModel(symbolFont, [disc], []);
+		const view = new WorkbenchGraphViewport(model); view.layout(0, 0, 100, 100);
+		view.setZoom(1); view.scrollX = 0; view.scrollY = 0;
+		const control = new WorkbenchGraphControl(new InputFocusService(), new PointerCaptureService(), new PointerHoverService());
+		control.setInput(view); afterTest(t, () => control.dispose());
+		const { renderer, queue, backend } = createHostOverlayFixture(100, 100);
+		const target = backend.framebufferPixels;
+		let normal: Uint8Array;
+		for (const state of ['normal', 'selected', 'hover'] as const) {
+			view.selection = null;
+			const x = (disc.bounds.left + disc.bounds.right) / 2;
+			const y = (disc.bounds.top + disc.bounds.bottom) / 2;
+			if (state !== 'normal') control.handlePointer({ ...pointer(x, y),
+				justPressedButtons: state === 'selected' ? PointerButton.Primary : 0 }, 0);
+			assert.equal(view.hitTest(x, y), disc, 'decoration retains the pointer hit identity');
+			if (state === 'selected') assert.equal(view.selection, disc);
+			renderer.beginFrame(); api.beginFrame(renderer);
+			drawWorkbenchGraph(view, control.hover, false); renderer.endFrame();
+			const frame = queue.consumeOverlayFrame();
+			beginHeadlessHost2D(backend.hostOverlayContext, target, 100, 100, 100, 100);
+			for (let index = 0; index < frame.commandCount; index++)
+				renderHeadlessHost2DEntry(backend.hostOverlayContext, frame.commandKinds[index], frame.commandRefs[index]);
+			if (state === 'normal') { normal = target.slice(); continue; }
+			// Focused renderer contract: decoration is outside the semantic silhouette.
+			// Compare the actual disc raster, not incidental pane geometry or a UI snapshot.
+			const center = (Math.trunc(y) * 100 + Math.trunc(x)) * 4;
+			assert.deepEqual(target.subarray(center, center + 4), normal!.subarray(center, center + 4),
+				`${state} preserves the semantic body ink, not the selection surface's foreground`);
+			for (let row = disc.bounds.top; row < disc.bounds.bottom; row++) {
+				const start = (row * 100 + disc.bounds.left) * 4;
+				const end = (row * 100 + disc.bounds.right) * 4;
+				assert.deepEqual(target.subarray(start, end), normal!.subarray(start, end),
+					`${state} preserves the filled semantic disc instead of replacing its ink or surface`);
+			}
+			assert.notDeepEqual(target, normal!, 'hover and selection still have visible additive decoration');
+			assert.equal(view.model, model);
+		}
+	});
+}
+
+test('disc selection decoration remains paintable when only its screen-pixel outside frame intersects the viewport', () => {
+	const disc = createWorkbenchGraphDisc(10, 20, 20);
+	const view = new WorkbenchGraphViewport(createWorkbenchGraphModel(font, [disc], []));
+	view.layout(0, 0, 100, 100); view.selection = disc;
+	const { renderer, queue } = createHostOverlayFixture(100, 100);
+	for (const zoom of [0.5, 1, 2]) for (const side of ['left', 'top', 'right', 'bottom']) {
+		view.setZoom(zoom); view.scrollX = 0; view.scrollY = 0;
+		switch (side) {
+			case 'left': view.scrollX = disc.bounds.right * zoom; break;
+			case 'top': view.scrollY = disc.bounds.bottom * zoom; break;
+			case 'right': view.scrollX = disc.bounds.left * zoom - view.bounds.right; break;
+			case 'bottom': view.scrollY = disc.bounds.top * zoom - view.bounds.bottom; break;
+		}
+		renderer.beginFrame(); api.beginFrame(renderer);
+		drawWorkbenchGraph(view, null, false); renderer.endFrame();
+		const frame = queue.consumeOverlayFrame();
+		assert.ok(frame.commandRefs.slice(0, frame.commandCount).some((command, index) =>
+			frame.commandKinds[index] === Host2DKind.Rect && (command as RectRenderSubmission).kind === RectRenderKind.Rect),
+			`${side}/${zoom}x: culling includes the semantic symbol's outside decoration`);
+	}
+});
+
+test('graph layout uses the rendering font and retains route bounds independent of viewport movement', () => {
+	const { view, a, b, edge, model } = fixture();
+	assert.equal(a.bounds.right - a.bounds.left, font.measure('DETAIL') + 8);
+	assert.equal(a.bounds.bottom - a.bounds.top, font.lineHeight * 2 + 8);
+	assert.deepEqual(edge.bounds, { left: -20, top: 45, right: 140, bottom: 75 });
+	const geometry = JSON.stringify(model);
+	view.pan(70, 50);
+	view.layout(0, 0, 384, 288);
+	view.selection = b;
+	view.reveal(b);
+	assert.equal(view.model, model);
+	assert.equal(JSON.stringify(model), geometry);
+});
+
+test('graph hit testing clips all four viewport edges and uses reverse node paint order', () => {
+	const { view, a, edge } = fixture();
+	assert.equal(view.hitTest(20, 20), a, 'partially visible node is selectable');
+	assert.equal(view.hitTest(19, 20), null);
+	assert.equal(view.hitTest(20, 19), null);
+	assert.equal(view.hitTest(120, 65), null);
+	assert.equal(view.hitTest(20, 100), null);
+	assert.equal(view.hitTest(21, 65), edge);
+	assert.equal(view.hitTest(21, 68), edge, 'inclusive line hit radius');
+	assert.equal(view.hitTest(21, 69), null);
+	const top = createWorkbenchGraphNode(font, 'ON TOP', -10, -4);
+	view.setModel(createWorkbenchGraphModel(font, [a, top], [edge]), null);
+	assert.equal(view.hitTest(20, 20), top);
+});
+
+test('edge hit testing chooses the nearest retained segment, including zero-length routes', () => {
+	const { view } = fixture();
+	const first = createWorkbenchGraphEdge([0, 0, 80, 80]);
+	const nearest = createWorkbenchGraphEdge([0, 3, 80, 83]);
+	const point = createWorkbenchGraphEdge([50, 10, 50, 10]);
+	view.setModel(createWorkbenchGraphModel(font, [], [first, nearest, point]), null);
+	assert.equal(view.hitTest(60, 61), first);
+	assert.equal(view.hitTest(60, 63), nearest);
+	assert.equal(view.hitTest(70, 30), point);
+	const top = createWorkbenchGraphEdge(first.points);
+	view.setModel(createWorkbenchGraphModel(font, [], [first, top]), null);
+	assert.equal(view.hitTest(60, 60), top, 'ties respect reverse paint order');
+});
+
+test('retained arrow geometry participates in bounds and hit testing in every direction', () => {
+	for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1]]) {
+		const edge = createWorkbenchGraphEdge([50, 50, 50 + dx * 20, 50 + dy * 20, 50 + dx * 20, 50 + dy * 20], [], true);
+		const view = new WorkbenchGraphViewport(createWorkbenchGraphModel(font, [], [edge]));
+		view.layout(0, 0, 100, 100);
+		view.setZoom(1); view.scrollX = 0; view.scrollY = 0;
+		assert.equal(edge.arrow.length, 6);
+		assert.deepEqual(edge.arrow.slice(2, 4), edge.points.slice(-2), 'arrow ends at the actual directed endpoint');
+		assert.equal(view.hitTest(edge.arrow[0], edge.arrow[1]), edge, 'arrow wing outside the shaft hit radius is selectable');
+		for (let index = 0; index < edge.arrow.length; index += 2) {
+			assert.ok(edge.arrow[index] >= edge.bounds.left && edge.arrow[index] <= edge.bounds.right);
+			assert.ok(edge.arrow[index + 1] >= edge.bounds.top && edge.arrow[index + 1] <= edge.bounds.bottom);
+		}
+	}
+	const point = createWorkbenchGraphEdge([50, 50, 50, 50], [], true);
+	assert.deepEqual(point.arrow, [], 'a point has no direction, not a fabricated arrow');
+});
+
+test('label hit order matches paint order; opaque headers take precedence over labels and routes', () => {
+	const label = createWorkbenchGraphLabel(font, 'SAME\nLABEL');
+	const first = createWorkbenchGraphEdge([0, 60, 100, 60], [label], true);
+	const last = createWorkbenchGraphEdge([0, 70, 100, 70], [createWorkbenchGraphLabel(font, 'SAME\nLABEL')], true);
+	const view = new WorkbenchGraphViewport<WorkbenchGraphModel>(createWorkbenchGraphModel(font, [], [first, last]));
+	view.layout(0, 0, 100, 100);
+	view.setZoom(1); view.scrollX = 0; view.scrollY = 0;
+	assert.equal(view.hitTest(1, 1), last);
+	assert.equal(last.bounds.top, 0, 'label contributes to the culling/reveal extent');
+	const node = createWorkbenchGraphNode(font, 'TITLE', 0, 0);
+	node.bounds.bottom = 100;
+	view.setModel(createWorkbenchGraphModel(font, [node], [first, last]), null);
+	assert.equal(view.hitTest(1, 1), node);
+	assert.equal(view.hitTest(1, 60), first, 'the container body is not a node hit');
+	assert.equal(view.hitTest(1, 80), null);
+});
+
+test('a visible compound body does not emit its offscreen header glyphs', () => {
+	const node = createWorkbenchGraphNode(font, 'OFFSCREEN TITLE', 0, 0);
+	node.bounds.bottom = 200;
+	const view = new WorkbenchGraphViewport(createWorkbenchGraphModel(font, [node], []));
+	view.layout(0, 0, 100, 100);
+	view.setZoom(1); view.scrollX = 0;
+	view.scrollY = 60;
+	const { renderer, queue } = createHostOverlayFixture(100, 100);
+	renderer.beginFrame();
+	api.beginFrame(renderer);
+	drawWorkbenchGraph(view, null, false);
+	renderer.endFrame();
+	const frame = queue.consumeOverlayFrame();
+	assert.ok(frame.commandCount > 0, 'body and viewport still draw');
+	assert.ok(!frame.commandKinds.slice(0, frame.commandCount).includes(Host2DKind.Glyphs));
+});
+
+test('model publication indexes only actual containers and labelled edges without copying geometry', () => {
+	const group = createWorkbenchGraphNode(font, 'GROUP', 0, 0);
+	group.bounds.bottom = 200;
+	const leaf = createWorkbenchGraphNode(font, 'LEAF', 10, 50);
+	const labelled = createWorkbenchGraphEdge([0, 20, 50, 20], [createWorkbenchGraphLabel(font, 'PATH')], true);
+	const plain = createWorkbenchGraphEdge([0, 30, 50, 30]);
+	const nodes = [group, leaf];
+	const edges = [plain, labelled];
+	const model = createWorkbenchGraphModel(font, nodes, edges);
+	assert.equal(model.nodes, nodes);
+	assert.equal(model.edges, edges);
+	assert.deepEqual(model.containers, [group]);
+	assert.deepEqual(model.labelledEdges, [labelled]);
+	assert.equal(model.labelledEdges[0].labels[0], labelled.labels[0]);
+	const next = createWorkbenchGraphModel(font, [leaf], [plain]);
+	assert.deepEqual(next.containers, []);
+	assert.deepEqual(next.labelledEdges, []);
+});
+
+test('reveal minimally scrolls into view and aligns oversized subjects instead of shrinking the font', () => {
+	const { view, b, edge } = fixture();
+	view.reveal(b);
+	assert.equal(view.scrollX, b.bounds.right - (view.bounds.right - view.bounds.left) + 6);
+	assert.equal(view.scrollY, b.bounds.bottom - (view.bounds.bottom - view.bounds.top) + 6);
+	const x = view.scrollX;
+	const y = view.scrollY;
+	view.reveal(b);
+	assert.equal(view.scrollX, x);
+	assert.equal(view.scrollY, y);
+	view.reveal(edge);
+	assert.equal(view.scrollX, -26);
+});
+
+test('roving graph selection visits retained nodes and edges in both directions, including edge-only and empty models', () => {
+	const { view, a, b, edge, model } = fixture();
+	for (const expected of [a, b, edge, edge]) {
+		view.selectRelative(1);
+		assert.equal(view.selection, expected);
+	}
+	for (const expected of [b, a, a]) {
+		view.selectRelative(-1);
+		assert.equal(view.selection, expected);
+	}
+	view.selection = null;
+	view.selectRelative(-1);
+	assert.equal(view.selection, edge);
+	assert.equal(view.model, model, 'traversal does not rebuild geometry');
+	view.setModel(createWorkbenchGraphModel(font, [], [edge]), null);
+	view.selectRelative(1);
+	assert.equal(view.selection, edge);
+	view.setModel(createWorkbenchGraphModel(font, [], []), null);
+	view.selectRelative(-1);
+	view.selectRelative(1);
+	assert.equal(view.selection, null);
+});
+
+test('only a physical press begins a pan; capture can leave the control but cannot cross blur or attachment', () => {
+	const { view } = fixture();
+	const focus = new InputFocusService();
+	const capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
+	control.setInput(view);
+	control.handlePointer({ ...pointer(80, 95, true), justPressedButtons: 0 }, 0);
+	control.handlePointer({ ...pointer(90, 95, true), justPressedButtons: 0 }, 1);
+	assert.equal(view.scrollX, 0, 'held pointer entering a pane is not a press');
+	control.handlePointer({ ...pointer(80, 95, true), justPressedButtons: PointerButton.Primary }, 2);
+	assert.equal(focus.target, control.focusTarget);
+	assert.equal(capture.dispatch(pointer(140, 110, true), false, 3), true);
+	assert.deepEqual([view.scrollX, view.scrollY], [-60, -15]);
+	focus.setTarget(null);
+	control.handlePointer({ ...pointer(90, 90, true), justPressedButtons: 0 }, 4);
+	assert.equal(view.scrollX, -60, 'blur cancels capture');
+	control.clearInput();
+	control.setInput(view);
+	control.handlePointer({ ...pointer(80, 95, true), justPressedButtons: 0 }, 5);
+	control.handlePointer({ ...pointer(90, 90, true), justPressedButtons: 0 }, 6);
+	assert.equal(view.scrollX, -60, 'reattaching retains viewport, not gesture');
+	control.dispose();
+});
+
+test('selection and activation use retained item identity, never coordinates reused by a new model', () => {
+	const { view, a, model } = fixture();
+	const capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(new InputFocusService(), capture, new PointerHoverService());
+	control.setInput(view);
+	assert.equal(control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 0), Result.Selection);
+	assert.equal(view.selection, a);
+	control.handlePointer({ ...pointer(22, 22), justPressedButtons: 0 }, 1);
+	assert.equal(control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 50), Result.Activate);
+	control.handlePointer({ ...pointer(22, 22), justPressedButtons: 0 }, 51);
+	control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 100);
+	const replacement = createWorkbenchGraphNode(font, 'FIRST\nDETAIL', -10, -4);
+	view.setModel(createWorkbenchGraphModel(model.font, [replacement], model.edges), null);
+	control.handlePointer({ ...pointer(22, 22), justPressedButtons: 0 }, 101);
+	assert.equal(control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 150), Result.Selection);
+	assert.equal(view.selection, replacement);
+	control.dispose();
+});
+
+test('model replacement cancels a pan; empty-space clicks and wheel are bounded to the control', () => {
+	const { view, a, model } = fixture();
+	const capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(new InputFocusService(), capture, new PointerHoverService());
+	control.setInput(view);
+	view.selection = a;
+	assert.equal(control.handlePointer({ ...pointer(10, 10, true), justPressedButtons: PointerButton.Primary }, 0), Result.Outside);
+	assert.equal(view.selection, a);
+	control.handlePointer({ ...pointer(80, 95, true), justPressedButtons: PointerButton.Primary }, 1);
+	assert.equal(view.selection, null);
+	view.setModel({ ...model }, null);
+	assert.equal(capture.dispatch(pointer(100, 95, true), false, 2), true);
+	assert.equal(view.scrollX, 0);
+	assert.equal(control.handleWheel({ viewportX: 120, viewportY: 30, valid: true, insideViewport: true, deltaX: 0, deltaY: 10 / 16, modifiers: KeyModifier.none }), false);
+	assert.equal(control.handleWheel({ viewportX: 60, viewportY: 60, valid: true, insideViewport: true, deltaX: 0, deltaY: 10 / 16, modifiers: KeyModifier.none }), true);
+	assert.equal(view.scrollY, 10);
+	control.dispose();
+});
+
+test('idle graph drawing retains geometry, glyph strings, clip storage and translated route buffers', () => {
+	const { view, edge, model } = fixture();
+	const { renderer, queue } = createHostOverlayFixture(160, 120);
+	const sourcePoints = edge.points.slice();
+	const draw = () => {
+		renderer.beginFrame();
+		api.beginFrame(renderer);
+		drawWorkbenchGraph(view, null, false);
+		renderer.endFrame();
+		return queue.consumeOverlayFrame();
+	};
+	const first = draw();
+	const refs = first.commandRefs.slice(0, first.commandCount);
+	const poly = refs[first.commandKinds.indexOf(Host2DKind.Poly)] as PolyRenderSubmission;
+	const points = poly.points;
+	draw(); // second publication buffer
+	for (let frame = 0; frame < 50; frame += 1) {
+		const current = draw();
+		for (let index = 0; index < refs.length; index += 1) assert.equal(current.commandRefs[index], refs[index]);
+		assert.equal(poly.points, points);
+		draw();
+	}
+	assert.equal(view.model, model);
+	assert.deepEqual(edge.points, sourcePoints);
+	assert.notEqual(points, edge.points, 'published translated points do not alias retained model geometry');
+	assert.deepEqual(points, sourcePoints, 'layout coordinates stay local to their published transform');
+	const transform = refs[first.commandKinds.indexOf(Host2DKind.Transform)] as HostOverlayTransform;
+	assert.deepEqual(transform, { scale: 1, offsetX: 20, offsetY: 20 });
+});
+
+test('zoom preserves the inverse pointer anchor, selection and layout while scaling scroll extents and reveal', () => {
+	const { view, model, b } = fixture();
+	view.selection = b;
+	const geometry = JSON.stringify(model);
+	const x = view.viewportToGraphX(71), y = view.viewportToGraphY(53);
+	view.setZoom(2, 71, 53);
+	assert.equal(view.viewportToGraphX(71), x);
+	assert.equal(view.viewportToGraphY(53), y);
+	assert.equal(view.graphToViewportX(x), 71);
+	assert.equal(view.graphToViewportY(y), 53);
+	assert.equal(view.scrollBounds.left, model.bounds.left * 2 - (view.bounds.right - view.bounds.left));
+	assert.equal(view.scrollBounds.bottom, model.bounds.bottom * 2);
+	view.reveal(b);
+	assert.ok(view.hitTest(view.graphToViewportX(b.bounds.left) + 8, view.graphToViewportY(b.bounds.top) + 8) === b);
+	assert.equal(view.selection, b);
+	assert.equal(view.model, model);
+	assert.equal(JSON.stringify(model), geometry);
+	const transform = view.transform;
+	view.pan(2, 3);
+	assert.equal(view.transform, transform, 'draw transforms are retained, including scrollbar-driven pan');
+	assert.equal(transform.offsetX, view.bounds.left - view.scrollX);
+	assert.equal(transform.offsetY, view.bounds.top - view.scrollY);
+	view.setZoom(100);
+	assert.equal(view.zoom, GRAPH_ZOOM_MAX);
+	view.setZoom(0.001);
+	assert.equal(view.zoom, GRAPH_ZOOM_MIN);
+});
+
+test('zoomed route hits keep a three-screen-pixel tolerance and four-sided canvas clipping', () => {
+	for (const zoom of [0.25, 0.5, 1.2, 1.5, 2]) {
+		const { view, edge } = fixture();
+		view.setZoom(zoom);
+		view.reveal(edge);
+		const x = view.graphToViewportX(-20) + 12;
+		const y = view.graphToViewportY(45);
+		assert.equal(view.hitTest(x, y + 2.9), edge, `hit tolerance at ${zoom}x`);
+		assert.equal(view.hitTest(x, y + 3.1), null, `outside tolerance at ${zoom}x`);
+		assert.equal(view.hitTest(view.bounds.left - 1, y), null);
+		assert.equal(view.hitTest(view.bounds.right, y), null);
+	}
+});
+
+test('zoom commands belong to graph focus; wheel zoom is pointer anchored and revokes pending capture', () => {
+	const f = dragFixture();
+	const x = f.view.viewportToGraphX(60), y = f.view.viewportToGraphY(60);
+	assert.equal(f.control.handleWheel({ viewportX: 60, viewportY: 60, valid: true, insideViewport: true, deltaX: 0, deltaY: -1, modifiers: KeyModifier.ctrl }), true);
+	assert.equal(f.view.zoom, 1.2);
+	assert.equal(f.view.viewportToGraphX(60), x);
+	assert.equal(f.view.viewportToGraphY(60), y);
+	assert.equal(f.capture.dispatch(pointer(70, 60, true), false, 20), false, 'zoom revokes the press, even before its drag threshold');
+	assert.equal(f.counts.starts, 0);
+	assert.equal(f.control.handleWheel({ viewportX: 121, viewportY: 60, valid: true, insideViewport: true, deltaX: 0, deltaY: -1, modifiers: KeyModifier.ctrl }), false);
+	f.focus.executeCommand('graph.resetZoom');
+	assert.equal(f.view.zoom, 1);
+	assert.equal(f.focus.getCommand('graph.resetZoom')!.isEnabled(), false);
+	f.control.clearInput();
+	assert.equal(f.control.focusTarget.getCommand('graph.zoomIn')!.isEnabled(), false);
+	f.control.dispose();
+});
+
+test('zoom commands traverse identical reading levels in both directions, including 100% after either limit', () => {
+	const f = dragFixture();
+	const levels = [0.1, 0.125, 0.15, 0.175, 0.2, 0.225, 0.25, 0.375, 0.5, 0.675, 0.75, 0.875, 1, 1.25, 1.375, 1.5, 1.675, 1.75, 1.875, 2];
+	f.view.setZoom(GRAPH_ZOOM_MIN);
+	for (let index = 1; index < levels.length; index += 1) {
+		f.focus.executeCommand('graph.zoomIn');
+		assert.equal(f.view.zoom, levels[index]);
+	}
+	assert.equal(f.focus.getCommand('graph.zoomIn')!.isEnabled(), false);
+	f.view.zoomBySteps(50);
+	assert.equal(f.view.zoom, GRAPH_ZOOM_MAX);
+	for (let index = levels.length - 2; index >= 0; index -= 1) {
+		f.focus.executeCommand('graph.zoomOut');
+		assert.equal(f.view.zoom, levels[index]);
+	}
+	assert.equal(f.focus.getCommand('graph.zoomOut')!.isEnabled(), false);
+	f.view.zoomBySteps(-50);
+	assert.equal(f.view.zoom, GRAPH_ZOOM_MIN);
+	for (const level of levels.slice(1, -1)) {
+		f.view.setZoom(level);
+		for (let repeat = 0; repeat < 20; repeat += 1) {
+			f.focus.executeCommand('graph.zoomIn'); f.focus.executeCommand('graph.zoomOut');
+			assert.equal(f.view.zoom, level, 'opposite steps do not accumulate drift');
+		}
+	}
+	f.control.dispose();
+});
+
+test('reading steps consume arbitrary view scales directionally and multi-notch wheel input keeps its inverse anchor', () => {
+	const f = dragFixture();
+	for (const [start, lower, higher] of [[0.28, 0.25, 0.375], [0.8, 0.75, 0.875], [1.2, 1, 1.25], [1.9, 1.875, 2]]) {
+		f.view.setZoom(start); f.view.zoomBySteps(0);
+		assert.equal(f.view.zoom, start, 'a zero step does not quantize restored view state');
+		f.view.zoomBySteps(-1); assert.equal(f.view.zoom, lower);
+		f.view.setZoom(start); f.view.zoomBySteps(1); assert.equal(f.view.zoom, higher);
+	}
+	f.view.setZoom(1);
+	const x = f.view.viewportToGraphX(60), y = f.view.viewportToGraphY(60);
+	f.control.handleWheel({ viewportX: 60, viewportY: 60, valid: true, insideViewport: true, deltaX: 0, deltaY: -3, modifiers: KeyModifier.ctrl });
+	assert.ok(Math.abs(f.view.zoom - 1.2 ** 3) < 1e-10);
+	f.control.handleWheel({ viewportX: 60, viewportY: 60, valid: true, insideViewport: true, deltaX: 0, deltaY: 3, modifiers: KeyModifier.ctrl });
+	assert.ok(Math.abs(f.view.zoom - 1) < 1e-10);
+	assert.equal(f.view.viewportToGraphX(60), x);
+	assert.equal(f.view.viewportToGraphY(60), y);
+	f.control.dispose();
+});
+
+test('graph wheel keeps fractional two-axis motion and continuous anchored zoom separate from command presets', () => {
+	const { view } = fixture();
+	const control = new WorkbenchGraphControl(new InputFocusService(), new PointerCaptureService(), new PointerHoverService());
+	control.setInput(view);
+	const wheel = { viewportX: 60, viewportY: 60, valid: true, insideViewport: true, deltaX: 0.125, deltaY: -0.25, modifiers: KeyModifier.none };
+	control.handleWheel(wheel);
+	assert.deepEqual([view.scrollX, view.scrollY], [2, -4]);
+	control.handleWheel({ ...wheel, deltaX: 0, modifiers: KeyModifier.shift });
+	assert.deepEqual([view.scrollX, view.scrollY], [-2, -4]);
+	control.handleWheel({ ...wheel, modifiers: KeyModifier.shift });
+	assert.deepEqual([view.scrollX, view.scrollY], [0, -8], 'native horizontal input retains both axes rather than receiving another Shift remap');
+	const x = view.viewportToGraphX(60), y = view.viewportToGraphY(60);
+	for (const modifier of [KeyModifier.ctrl, KeyModifier.meta]) {
+		control.handleWheel({ ...wheel, deltaX: 0, deltaY: -0.5, modifiers: modifier });
+		assert.ok(Math.abs(view.zoom - Math.sqrt(1.2)) < 1e-10);
+		assert.ok(Math.abs(view.viewportToGraphX(60) - x) < 1e-10);
+		assert.ok(Math.abs(view.viewportToGraphY(60) - y) < 1e-10);
+		control.handleWheel({ ...wheel, deltaX: 0, deltaY: 0.5, modifiers: modifier });
+		assert.ok(Math.abs(view.zoom - 1) < 1e-10);
+	}
+	view.setZoom(1.25); view.zoomBySteps(1);
+	assert.equal(view.zoom, 1.375);
+	control.dispose();
+});
+
+test('zoom changes cancel an accepted drag without mutating source; a new drag uses inverse-scaled offsets', () => {
+	const f = dragFixture();
+	f.capture.dispatch(pointer(60, 60, true), false, 20);
+	assert.equal(f.feedback.accepted, true);
+	f.view.setZoom(2, 22, 22);
+	f.control.update();
+	assert.equal(f.control.dragFeedback, undefined);
+	f.control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 40);
+	f.capture.dispatch(pointer(62, 62, true), false, 60);
+	assert.equal(f.feedback.offsetX, 20);
+	assert.equal(f.feedback.offsetY, 20);
+	assert.equal(f.counts.drops, 0);
+	f.control.dispose();
+});
+
+test('stationary pointer polling reuses the hit result until geometry, viewport or pointer changes', () => {
+	class MeasuredViewport extends WorkbenchGraphViewport {
+		public hitTests = 0;
+		public override hitTest(x: number, y: number) {
+			this.hitTests += 1;
+			return super.hitTest(x, y);
+		}
+	}
+	const { model } = fixture();
+	const view = new MeasuredViewport(model);
+	view.layout(20, 20, 120, 100);
+	const capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(new InputFocusService(), capture, new PointerHoverService());
+	control.setInput(view);
+	const position = pointer(22, 22);
+	for (let frame = 0; frame < 100; frame += 1) control.handlePointer({ ...position, justPressedButtons: 0 }, frame);
+	assert.equal(view.hitTests, 1);
+	view.pan(2, 0);
+	control.handlePointer({ ...position, justPressedButtons: 0 }, 101);
+	assert.equal(view.hitTests, 2);
+	view.layout(21, 20, 121, 100);
+	control.handlePointer({ ...position, justPressedButtons: 0 }, 102);
+	assert.equal(view.hitTests, 3);
+	view.setModel({ ...model }, null);
+	control.handlePointer({ ...position, justPressedButtons: 0 }, 103);
+	assert.equal(view.hitTests, 4);
+	control.dispose();
+});
+
+/** A domain consumer, independent of Lua, tests the shared gesture lifecycle. */
+function dragFixture() {
+	const f = fixture();
+	const focus = new InputFocusService();
+	const capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
+	const counts = { starts: 0, overs: 0, drops: 0, current: true };
+	const feedback = { kind: 'node-insertion' as const, source: f.a, marker: { left: 40, top: 10, right: 42, bottom: 30 }, placement: 'between' as const, offsetX: 0, offsetY: 0, accepted: false };
+	control.setInput(f.view, { begin: () => {
+		counts.starts += 1;
+		return {
+			feedback,
+			isCurrent: () => counts.current,
+			dragOver: (x: number) => { counts.overs += 1; feedback.accepted = x >= 60; },
+			drop: () => {
+				assert.equal(control.dragFeedback, undefined, 'gesture detaches before the domain edits or navigates');
+				counts.drops += 1;
+			},
+		};
+	} });
+	control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 0);
+	return { ...f, control, capture, focus, feedback, counts };
+}
+
+test('a click allocates no drag session and still double-clicks; threshold begins a preview without a drop', () => {
+	const f = dragFixture();
+	f.capture.dispatch(pointer(24, 24, true), false, 20);
+	assert.equal(f.counts.starts, 0);
+	f.capture.dispatch({ ...pointer(24, 24), justReleasedButtons: PointerButton.Primary }, false, 40);
+	assert.equal(f.control.dragFeedback, undefined);
+	assert.equal(f.counts.drops, 0);
+	assert.equal(f.control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 60), Result.Activate);
+	assert.equal(f.counts.starts, 0);
+	f.control.dispose();
+});
+
+test('drag movement retains geometry and feedback; release commits once at the actual release target', t => {
+	const f = dragFixture();
+	const pan = t.mock.method(f.view, 'pan');
+	const geometry = JSON.stringify(f.model);
+	f.capture.dispatch(pointer(60, 60, true), false, 20);
+	assert.equal(f.control.dragFeedback, f.feedback);
+	assert.equal(f.counts.drops, 0);
+	for (let frame = 2; frame < 102; frame += 1) f.capture.dispatch(pointer(60, 60, true), false, frame * 20);
+	assert.equal(f.counts.starts, 1);
+	assert.equal(f.counts.overs, 1, 'stationary warm polling performs no repeated domain hit work');
+	for (let frame = 102; frame < 1102; frame++) f.control.advanceDrag(frame * 20);
+	assert.equal(f.counts.overs, 1, 'stationary frame advancement outside scroll margins performs no repeated domain hit work');
+	assert.equal(pan.mock.callCount(), 0, 'center drags do not publish no-op scroll writes');
+	assert.equal(JSON.stringify(f.model), geometry, 'preview does not move retained model nodes');
+	f.capture.dispatch({ ...pointer(70, 60), justReleasedButtons: PointerButton.Primary }, false, 22040);
+	assert.equal(f.counts.drops, 1);
+	assert.equal(f.counts.overs, 2, 'release position supersedes previous hover');
+	f.capture.dispatch({ ...pointer(70, 60), justReleasedButtons: PointerButton.Primary }, false, 22060);
+	assert.equal(f.counts.drops, 1);
+	f.control.dispose();
+});
+
+test('release over invalid space, outside the graph, or consumed input cannot commit a previously accepted target', () => {
+	for (const [x, y, released] of [[50, 60, true], [121, 60, true], [60, 60, false]] as const) {
+		const f = dragFixture();
+		f.capture.dispatch(pointer(60, 60, true), false, 20);
+		assert.equal(f.feedback.accepted, true);
+		f.capture.dispatch({ ...pointer(x, y), justReleasedButtons: released ? PointerButton.Primary : 0 }, false, 40);
+		assert.equal(f.counts.drops, 0);
+		assert.equal(f.control.dragFeedback, undefined);
+		f.control.dispose();
+	}
+});
+
+test('coalesced press/move/release uses the same threshold and a single drop', () => {
+	const f = dragFixture();
+	f.capture.dispatch({ ...pointer(60, 60), justReleasedButtons: PointerButton.Primary }, false, 20);
+	assert.equal(f.counts.starts, 1);
+	assert.equal(f.counts.overs, 1);
+	assert.equal(f.counts.drops, 1);
+	f.control.dispose();
+});
+
+test('blur, detachment, capture loss, zoom, model generation and domain invalidation stop temporal drag work', () => {
+	for (const interrupt of ['blur', 'detach', 'capture', 'lost', 'zoom', 'model', 'domain', 'selection'] as const) {
+		const f = dragFixture();
+		f.capture.dispatch(pointer(f.view.bounds.right - 1, 60, true), false, 20);
+		f.control.advanceDrag(520);
+		if (interrupt === 'blur') f.focus.setTarget(null);
+		else if (interrupt === 'detach') { f.control.clearInput(); f.control.setInput(f.view); }
+		else if (interrupt === 'capture') f.capture.cancel();
+		else if (interrupt === 'lost') f.capture.dispatch(pointer(f.view.bounds.right - 1, 60), false, 540);
+		else if (interrupt === 'zoom') f.view.setZoom(0.5);
+		else if (interrupt === 'model') f.view.setModel({ ...f.model }, null);
+		else if (interrupt === 'selection') f.view.selection = f.b;
+		else f.counts.current = false;
+		f.control.update();
+		assert.equal(f.control.dragFeedback, undefined);
+		const scroll = f.view.scrollX, overs = f.counts.overs;
+		f.control.advanceDrag(10000);
+		assert.equal(f.view.scrollX, scroll); assert.equal(f.counts.overs, overs);
+		assert.equal(f.capture.dispatch({ ...pointer(70, 60), justReleasedButtons: PointerButton.Primary }, false, 10020), false);
+		assert.equal(f.counts.drops, 0);
+		f.control.dispose();
+	}
+});
+
+test('a pending drag cannot adopt a selection chosen after the physical press', () => {
+	const f = dragFixture();
+	f.view.selection = f.b;
+	f.capture.dispatch(pointer(60, 60, true), false, 20);
+	assert.equal(f.counts.starts, 0);
+	f.capture.dispatch({ ...pointer(60, 60), justReleasedButtons: PointerButton.Primary }, false, 40);
+	assert.equal(f.counts.drops, 0);
+	f.control.dispose();
+});
+
+test('edge scrolling is host-time based and keeps the payload, not frame-paced or a new source projection', () => {
+	const results: number[] = [];
+	for (const fps of [50, 60, 120]) {
+		const f = dragFixture();
+		f.capture.dispatch(pointer(f.view.bounds.right - 1, 60, true), false, 20);
+		for (let frame = 1; frame <= fps; frame += 1) f.control.advanceDrag(20 + frame * 1000 / fps);
+		results.push(f.view.scrollX);
+		assert.equal(f.counts.starts, 1);
+		assert.equal(f.view.model, f.model);
+		f.control.dispose();
+	}
+	for (const x of results) assert.ok(Math.abs(x - 110) < 1e-9);
+});
+
+test('motion integrates time at the previous real pointer position instead of charging a newly entered edge', () => {
+	const f = dragFixture();
+	f.capture.dispatch(pointer(60, 60, true), false, 20);
+	f.control.advanceDrag(1020);
+	assert.equal(f.view.scrollX, 0);
+	f.capture.dispatch(pointer(f.view.bounds.right - 1, 60, true), false, 2020);
+	assert.equal(f.view.scrollX, 0, 'time spent in the center is not charged to the new edge');
+	f.control.advanceDrag(2520);
+	assert.ok(Math.abs(f.view.scrollX - 55) < 1e-9);
+	const overs = f.counts.overs;
+	f.capture.dispatch(pointer(f.view.bounds.left + 1, 60, true), false, 3020);
+	assert.ok(Math.abs(f.view.scrollX - 110) < 1e-9, 'the final interval belongs to the previous right edge');
+	assert.equal(f.counts.overs, overs + 1, 'motion refreshes the final target once, not the departed point too');
+	f.control.advanceDrag(3520);
+	assert.ok(Math.abs(f.view.scrollX - 55) < 1e-9);
+	f.control.dispose();
+});
+
+test('leaving the graph stops stationary edge scrolling without ending the captured drag', () => {
+	const f = dragFixture();
+	f.capture.dispatch(pointer(f.view.bounds.right - 1, 60, true), false, 20);
+	f.control.advanceDrag(520);
+	f.capture.dispatch(pointer(f.view.bounds.right + 1, 60, true), false, 520);
+	const scroll = f.view.scrollX, overs = f.counts.overs;
+	f.control.advanceDrag(10020);
+	assert.equal(f.view.scrollX, scroll); assert.equal(f.counts.overs, overs);
+	assert.equal(f.capture.active, true); assert.equal(f.feedback.accepted, false);
+	f.capture.dispatch(pointer(60, 60, true), false, 10020); f.control.advanceDrag(11020);
+	assert.equal(f.view.scrollX, scroll, 'time outside is not charged when returning to the graph');
+	f.control.dispose();
+});
+
+test('release neither charges a final scroll interval nor leaves temporal work after the synchronous drop', t => {
+	const f = dragFixture();
+	const pan = t.mock.method(f.view, 'pan');
+	f.capture.dispatch(pointer(f.view.bounds.right - 1, 60, true), false, 20);
+	f.control.advanceDrag(520);
+	const scroll = f.view.scrollX;
+	const pans = pan.mock.callCount(), overs = f.counts.overs;
+	for (let duplicate = 0; duplicate < 100; duplicate++) f.control.advanceDrag(520);
+	assert.equal(pan.mock.callCount(), pans); assert.equal(f.counts.overs, overs);
+	f.capture.dispatch({ ...pointer(f.view.bounds.right - 1, 60), justReleasedButtons: PointerButton.Primary }, false, 1020);
+	assert.equal(f.view.scrollX, scroll); assert.equal(f.counts.drops, 1); assert.equal(f.capture.active, false);
+	f.control.advanceDrag(2020);
+	assert.equal(f.view.scrollX, scroll); assert.equal(f.counts.drops, 1);
+	f.control.dispose();
+});
+
+test('drag preview reuses clipped overlay command and glyph storage without changing the graph', () => {
+	const f = dragFixture();
+	f.capture.dispatch(pointer(60, 60, true), false, 20);
+	const geometry = JSON.stringify(f.model);
+	const { renderer, queue } = createHostOverlayFixture(160, 120);
+	const draw = () => {
+		renderer.beginFrame();
+		api.beginFrame(renderer);
+		drawWorkbenchGraph(f.view, f.control.hover, true, f.control.dragFeedback);
+		renderer.endFrame();
+		return queue.consumeOverlayFrame();
+	};
+	const first = draw();
+	const refs = first.commandRefs.slice(0, first.commandCount);
+	draw();
+	for (let frame = 0; frame < 50; frame += 1) {
+		const current = draw();
+		assert.equal(current.commandCount, refs.length);
+		for (let index = 0; index < refs.length; index += 1) assert.equal(current.commandRefs[index], refs[index]);
+		draw();
+	}
+	assert.equal(JSON.stringify(f.model), geometry);
+	assert.equal(f.counts.starts, 1);
+	assert.equal(f.counts.overs, 1);
+	assert.equal(f.control.dragFeedback, f.feedback);
+	f.control.dispose();
+});
+
+test('wheel scrolling during a drag refreshes insertion feedback without replacing its source or committing', () => {
+	const f = dragFixture();
+	const position = pointer(60, 60, true);
+	f.capture.dispatch(position, false, 20);
+	assert.equal(f.control.handleWheel({ viewportX: position.viewportX, viewportY: position.viewportY, valid: true, insideViewport: true, deltaX: 10 / 16, deltaY: 4 / 16, modifiers: KeyModifier.none }), true);
+	assert.deepEqual([f.view.scrollX, f.view.scrollY], [10, 4]);
+	assert.equal(f.control.dragFeedback, f.feedback);
+	assert.equal(f.counts.overs, 2);
+	assert.equal(f.counts.starts, 1);
+	assert.equal(f.counts.drops, 0);
+	f.capture.dispatch({ ...pointer(60, 60), justReleasedButtons: PointerButton.Primary }, false, 40);
+	assert.equal(f.counts.drops, 1);
+	assert.equal(f.counts.overs, 2, 'release at the same world position reuses the wheel-refreshed target');
+	f.control.dispose();
+});
+
+test('secondary clicks select the exact node, edge or empty canvas on release without a source drag', () => {
+	const { view, a, edge } = fixture();
+	const focus = new InputFocusService();
+	const capture = new PointerCaptureService();
+	let dragCalls = 0;
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
+	control.setInput(view, { begin() { dragCalls += 1; return undefined; } });
+	for (const [x, y, target] of [[21, 21, a], [21, 65, edge], [100, 95, null]] as const) {
+		const event = pointer(x, y);
+		event.pressedButtons = PointerButton.Secondary;
+		event.justPressedButtons = PointerButton.Secondary;
+		const before = view.selection;
+		assert.equal(control.handlePointer(event, 0), Result.Handled);
+		assert.equal(view.selection, before);
+		assert.equal(capture.active, true);
+		capture.dispatch({ ...event, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PointerButton.Secondary }, false, 20);
+		assert.equal(view.selection, target);
+		assert.equal(focus.target, control.focusTarget);
+		assert.equal(capture.active, false);
+	}
+	assert.equal(dragCalls, 0);
+	control.dispose();
+});

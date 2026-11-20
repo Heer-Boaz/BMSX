@@ -10,11 +10,12 @@ import { DatabaseSync } from 'node:sqlite';
 import test, { type TestContext } from 'node:test';
 import { WorkspaceProjects } from '../../hosts/node/workspace/projects';
 import type { StudioProjectAdmission } from '../../hosts/common/studio_projects';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-project-admission-'));
 	const owners = new Set<WorkspaceProjects>();
-	t.after(async () => {
+	afterTest(t, async () => {
 		await Promise.all([...owners].map(owner => owner.close()));
 		await rm(directory, { recursive: true, force: true });
 	});
@@ -186,7 +187,7 @@ test('separate processes synchronize first admission to the same committed ident
 			execArgv: ['--import', createRequire(import.meta.url).resolve('tsx')], stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
 		});
 		const exited = once(child, 'exit');
-		t.after(async () => { child.kill(); await exited; });
+		afterTest(t, async () => { child.kill(); await exited; });
 		let stderr = '';
 		child.stderr!.on('data', bytes => { stderr += bytes; });
 		const ready = Promise.withResolvers<void>(), admitted = Promise.withResolvers<StudioProjectAdmission>();

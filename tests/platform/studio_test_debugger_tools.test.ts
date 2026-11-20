@@ -4,6 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createCodexModelFixture, CODEX_FIXTURE_WAIT } from '../helpers/codex_model_fixture.mjs';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: live test debugging through real Codex tools and ordinary Scenario Lab`, { timeout: 180000 }, async t => {
 	const call = (id: string, name: string, args: unknown) => [{ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) }];
@@ -11,7 +12,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	const value = (body: Body, id: string) => JSON.parse(body.input.find(item => item.type === 'function_call_output' && item.call_id === id)!.output);
 	const run = (body: Body) => value(body, 'start').run;
 	const source = (body: Body) => value(body, 'sources').sources.find(source => source.path === value(body, 'start').cases[0].test.resource.path).source;
-	const ordinaryInspected = Promise.withResolvers<void>(); t.after(() => ordinaryInspected.resolve());
+	const ordinaryInspected = Promise.withResolvers<void>(); afterTest(t, () => ordinaryInspected.resolve());
 	const model = await createCodexModelFixture(t, [
 		call('discover', 'studio_list_tests', {}),
 		body => call('start', 'studio_debug_test', { scope: value(body, 'discover').roots.flatMap(root => root.modules).flatMap(module => module.cases).find(item => item.name === 'codex_probe').scope }),
@@ -39,7 +40,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	]);
 	const f = await createAssistantStudioFixture(t, `test-debugger-${backend}`, {
 		provider: { name: 'Offline live test debugger fixture', model: 'mock-model', baseUrl: `${model.url}/v1` } });
-	t.after(() => writeFile(join(f.evidence, `test-debugger-${backend}-requests.json`), JSON.stringify(model.requests)));
+	afterTest(t, () => writeFile(join(f.evidence, `test-debugger-${backend}-requests.json`), JSON.stringify(model.requests)));
 	await f.page.exposeFunction('releaseTestDebugModel', () => ordinaryInspected.resolve());
 	const result = await f.page.evaluate(async backend => {
 		const entry = '/test.js', module = await import(entry);

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('browser frames allocate before drawing and publish target fitting before the browser paints', async t => {
 	const bundle = await build({ stdin: { contents: `
@@ -9,7 +10,7 @@ export { BrowserVideoOutput } from './hosts/browser/video_output';
 export { BrowserFrameLoop } from './hosts/browser/frame_loop';
 export { workbenchPixelsPerUnit } from './ide/workbench/common/display_scale';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'frameApi', write: false, tsconfig: 'tsconfig.base.json' });
-	const browser = await chromium.launch(); t.after(() => browser.close());
+	const browser = await chromium.launch(); afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
 	await page.setContent('<style>body{margin:0}#player-surface{position:fixed;inset:0}canvas{position:fixed}</style><div id="player-surface"><canvas width="320" height="240"></canvas></div>');
 	await page.addScriptTag({ content: bundle.outputFiles[0].text });

@@ -10,6 +10,7 @@ import type { createHostBitmapTest } from '../conformance/runtime_replay/host_bi
 import type { HostBitmapRenderSubmission } from '../../machine/ts/render/host_overlay/bitmap';
 import type { HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 import type { HostOverlayClipRect } from '../../machine/ts/render/host_overlay/clip';
+import { afterTest } from '../helpers/test_cleanup';
 
 const colors: Record<string, number[]> = {
 	'.': [32, 64, 96, 255], R: [255, 0, 0, 255], G: [0, 255, 0, 255], B: [0, 0, 255, 255], Y: [255, 255, 0, 255],
@@ -92,11 +93,11 @@ test('actual software/WebGL2/WebGPU bitmap pixels, first upload, revision update
 		else response.writeHead(404).end();
 	});
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
-	t.after(() => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }));
+	afterTest(t, () => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }));
 	const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--enable-unsafe-webgpu',
 		'--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader',
 		'--disable-vulkan-surface', '--disable-dev-shm-usage'] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	for (const kind of ['software', 'webgl2', 'webgpu'] as const) {
 		const page = await browser.newPage({ viewport: { width: 16, height: 8 } }), errors: Error[] = [];
 		page.on('pageerror', error => errors.push(error));

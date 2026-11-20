@@ -1,0 +1,135 @@
+import { asClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { profileWarmGuestKernel } from '../helpers/guest_kernel';
+import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
+
+for (const optLevel of [3] as const) {
+	test(`World and Scene accept omitted construction options without replacing explicit inputs (O${optLevel})`, () => {
+		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
+local shared<const> = { score = 12 }
+local actor<const> = {}
+function actor:ctor(options)
+ assert(self.world == world and self.definition_id == 'inputs.actor')
+ self.received_options = options
+ assert(self.health ~= nil and self.team == 'player')
+end
+prefab.define({def_id='inputs.actor',
+ class=setmetatable(actor, {__index=world_object}),
+ defaults={ health = 10, team = 'player', shared = shared }})
+
+local first<const> = world:spawn('inputs.actor')
+local second<const> = world:spawn('inputs.actor', nil)
+assert(first.received_options == second.received_options and next(first.received_options) == nil)
+assert(first.health == 10 and first.visible and first.shared == shared)
+assert(registry:get(first.id) == first and registry:get(second.id) == second)
+assert(first._construction_options == nil and second._construction_options == nil)
+
+local input<const> = { health = 0, visible = false, shared = shared }
+local explicit<const> = world:spawn('inputs.actor', input)
+assert(explicit.received_options == input and explicit.health == 0 and not explicit.visible)
+assert(input.team == nil and explicit.shared == shared)
+input.health = 7
+local reused<const> = world:spawn('inputs.actor', input)
+assert(reused.received_options == input and reused.health == 7 and explicit.health == 0)
+shared.score = 23
+assert(explicit.shared.score == 23 and reused.shared.score == 23)
+
+scenes.register('inputs.scene', { objects = {} })
+local scene<const> = scenes.create('inputs.scene')
+local member<const> = scene:spawn('inputs.actor')
+assert(member.scene == scene and member.health == 10 and member.shared == shared)
+assert(member.received_options == first.received_options and #scene.objects.items == 1)
+assert(registry:get(member.id) == member)
+scene:dispose()
+assert(member.world == nil and #scene.objects.items == 0)
+
+world:_open_mutation_barrier()
+local pending<const> = world:spawn('inputs.actor')
+assert(pending.health == 10 and pending.received_options == first.received_options)
+assert(registry:get(pending.id) == nil and not pending.active)
+world:_commit_mutation_barrier()
+assert(registry:get(pending.id) == pending and pending.active)
+assert(pending._construction_options == nil)
+world:clear()
+`, { optLevel, modules });
+		runGuestToHalt(cpu, 20_000_000);
+	});
+
+	test(`Omitted spawn options have the same guest allocation cost as reused explicit input (O${optLevel})`, () => {
+		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
+prefab.define({def_id='inputs.group',
+ class=world_object,
+ defaults={ id = 'inputs.reused' }})
+local input<const> = {}
+probe = {
+ omitted = function(count)
+  for index = 1, count do world:spawn('inputs.group'):mark_for_disposal() end
+ end,
+ explicit = function(count)
+  for index = 1, count do world:spawn('inputs.group', input):mark_for_disposal() end
+ end,
+}
+`, { optLevel, modules });
+		runGuestToHalt(cpu, 20_000_000);
+		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		const omitted = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('omitted')!), cpu.gc);
+		const state = captureCpuCheckpoint(cpu);
+		const implicitProfile = profileWarmGuestKernel(cpu, omitted, 32);
+		restoreCpuCheckpoint(cpu, state);
+		const restored = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		const explicit = asClosure(cpu.gc.tables.getStringKey(restored, cpu.stringPool.find('explicit')!), cpu.gc);
+		const explicitProfile = profileWarmGuestKernel(cpu, explicit, 32);
+		// Fixed identity and immediate retirement isolate input admission from
+		// ID-string growth; the control reuses one real caller-owned input.
+		assert.equal(implicitProfile.reservations, explicitProfile.reservations);
+		assert.equal(implicitProfile.reservedBytes, explicitProfile.reservedBytes);
+	});
+
+	test(`Construction hooks do not allocate an owner-forwarding context (O${optLevel})`, () => {
+		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
+local input<const> = {}
+local actor<const> = {}
+function actor:initialize(options)
+ assert(self.world == world and options == input)
+end
+function actor:ctor(options)
+ assert(self.world == world and options == input)
+end
+prefab.define({def_id='inputs.plain',
+ class=world_object,
+ defaults={ id = 'inputs.reused' }})
+prefab.define({def_id='inputs.hooks',
+ class=setmetatable(actor, {__index=world_object}),
+ defaults={ id = 'inputs.reused' }})
+probe = {
+ plain = function(count)
+  for index = 1, count do world:spawn('inputs.plain', input):mark_for_disposal() end
+ end,
+ hooks = function(count)
+  for index = 1, count do world:spawn('inputs.hooks', input):mark_for_disposal() end
+ end,
+}
+`, { optLevel, modules });
+		runGuestToHalt(cpu, 20_000_000);
+		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		const plain = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('plain')!), cpu.gc);
+		const state = captureCpuCheckpoint(cpu);
+		const plainProfile = profileWarmGuestKernel(cpu, plain, 32);
+		restoreCpuCheckpoint(cpu, state);
+		const restored = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		const hooks = asClosure(cpu.gc.tables.getStringKey(restored, cpu.stringPool.find('hooks')!), cpu.gc);
+		const hookProfile = profileWarmGuestKernel(cpu, hooks, 32);
+		assert.equal(hookProfile.reservations, plainProfile.reservations);
+		assert.equal(hookProfile.reservedBytes, plainProfile.reservedBytes);
+	});
+}

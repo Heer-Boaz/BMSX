@@ -7,6 +7,7 @@ import { finalizeRompack, generateRomAssets, getResMetaByFilename } from '../../
 import { structuredTextAssetFromPath, type StructuredTextAsset } from '../../toolchain/ts/rompack/assets';
 import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('workspace and packer classify the same authored filenames and asset ids', () => {
 	const filenames: readonly [string, StructuredTextAsset][] = [
@@ -36,7 +37,7 @@ test('workspace and packer classify the same authored filenames and asset ids', 
 
 test('debug packages retain exact authored text independently of cooked bytes; release packages omit it', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-authored-source-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const yaml = '# Keep accents, comments, anchors and CRLF: café 🐉\r\nbase: &base "01"\r\nvalue: *base\r\n';
 	const json = '{\r\n  "value": "01"\r\n}\r\n';
 	const aem = '# Authored event layout\r\nevents: {}\r\n';

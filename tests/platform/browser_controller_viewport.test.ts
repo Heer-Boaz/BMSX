@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
+import { afterTest } from '../helpers/test_cleanup';
 
 // Real VisualViewport changes in desktop Chromium prove the browser-owner
 // boundary, not Safari toolbar animation or physical iPhone touch delivery.
@@ -23,7 +24,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'viewportFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));

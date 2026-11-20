@@ -15,6 +15,7 @@ import { StudioSessions } from '../../hosts/node/studio/sessions';
 import type { StudioBuildJobs } from '../../hosts/node/builds/jobs';
 import { PNG } from 'pngjs';
 import { WORKSPACE_STATE_FILE } from '../../ide/workspace/records';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('an archived artifact without source admission cannot open an authoring Studio or read media', async t => {
 	let reads = 0;
@@ -24,7 +25,7 @@ test('an archived artifact without source admission cannot open an authoring Stu
 		artifacts: { withSharedAccess: (operation: () => Promise<unknown>) => operation(),
 			async read() { reads++; throw new Error('Media must not be read before source admission'); } },
 	} as unknown as StudioBuildJobs);
-	t.after(() => sessions.close());
+	afterTest(t, () => sessions.close());
 	await assert.rejects(sessions.startHeadless({ requestId: randomUUID(), buildRequestId: randomUUID(), sourceAccess: 'review' }));
 	assert.equal(reads, 0);
 	assert.equal(sessions.list().length, 0);
@@ -38,7 +39,7 @@ test('a collected build receipt cannot start headless Studio or attempt to read 
 		artifacts: { withSharedAccess: (operation: () => Promise<unknown>) => operation(),
 			async read() { reads++; throw new Error('Collected media must not be read'); } },
 	} as unknown as StudioBuildJobs);
-	t.after(() => sessions.close());
+	afterTest(t, () => sessions.close());
 	await assert.rejects(sessions.startHeadless({ requestId: randomUUID(), buildRequestId: randomUUID(), sourceAccess: 'review' }));
 	assert.equal(reads, 0); assert.equal(sessions.list().length, 0);
 });
@@ -46,7 +47,7 @@ test('a collected build receipt cannot start headless Studio or attempt to read 
 test('headless Studio owns runtime, source history, persistence and session lifetime without a browser', { timeout: 180000 }, async t => {
 	type Connection = { client: Client; transport: StreamableHTTPClientTransport };
 	const connections = new Set<Connection>();
-	t.after(async () => {
+	afterTest(t, async () => {
 		for (const { client, transport } of connections) { await transport.terminateSession(); await client.close(); }
 	});
 	const f = await createStudioServer(t);

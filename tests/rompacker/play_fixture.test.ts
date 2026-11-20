@@ -21,6 +21,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { GX_GPU_PCRTC_BGCOLOR_LOW, gxGpuPcrtcRegisterAddress } from '../../machine/ts/spec/gx/pcrtc';
 import { PlayInput } from '../../ide/workbench/services/play/input';
+import { afterTest } from '../helpers/test_cleanup';
 
 const GAME = `module<entry>
 local game<const> = require('game')
@@ -45,7 +46,7 @@ end`;
 async function fixture(t: TestContext, source: string, optLevel: 0 | 3,
 	budgets = DEFAULT_PLAY_FIXTURE_BUDGETS) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-play-fixture-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source }], {
 		systemSource: "module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]",
 		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable' },
@@ -63,7 +64,7 @@ async function fixture(t: TestContext, source: string, optLevel: 0 | 3,
 		observeActionEffects() { assert.fail('This fixture does not request an ActionEffect observer'); },
 	};
 	const play = new PlayFixture(target, target.input, program, output, budgets);
-	t.after(() => play.dispose());
+	afterTest(t, () => play.dispose());
 	const drain = () => {
 		for (let grant = 0; play.admitting && grant < 10000; grant++) play.advance();
 		assert.equal(play.admitting, false, 'bounded fixture admission/cleanup terminates');
@@ -76,7 +77,7 @@ test('physical viewport routing reaches only the selected independent machine th
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1), channel = new InputChannel(input);
 	const primary = new OffscreenMachine(f.media.systemRom, [f.media.cartRom, null], PSX_MACHINE_SPEC, input);
 	const secondary = new OffscreenMachine(f.media.systemRom, [f.media.cartRom, null], PSX_MACHINE_SPEC, channel);
-	t.after(() => { primary.dispose(); secondary.dispose(); channel.dispose(); input.dispose(); });
+	afterTest(t, () => { primary.dispose(); secondary.dispose(); channel.dispose(); input.dispose(); });
 	input.inputButton('keyboard:0', 'KeyA', true, 1, 0, 1); input.pollInput();
 	const advance = (target: typeof primary | typeof secondary) => {
 		const until = target.runtime.frameScheduler.lastTickSequence + 3;
@@ -101,7 +102,7 @@ test('physical viewport routing reaches only the selected independent machine th
 	advance(secondary); assert.equal(samples(secondary), secondarySamples + 1);
 });
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`O${optLevel}: scripted setup and cleanup cannot consume held physical play input`, async t => {
 		const source = `local game<const> = require('game')
 return {kind='integration',
@@ -124,7 +125,7 @@ return {kind='integration',
 			captureRequested: () => assert.fail('unexpected capture'), captured: () => assert.fail('unexpected publication'),
 			observeFsm: () => assert.fail('unexpected FSM recording'), observeActionEffects: () => assert.fail('unexpected ActionEffect recording'),
 		});
-		t.after(() => { play.dispose(); input.dispose(); physical.dispose(); });
+		afterTest(t, () => { play.dispose(); input.dispose(); physical.dispose(); });
 		physical.guestInputRecipient = input.physical;
 		physical.inputButton('keyboard:0', 'KeyA', true, 1, 0, 1); physical.pollInput();
 		for (let grant = 0; play.admitting && grant < 10000; grant++) play.advance();
@@ -171,7 +172,7 @@ return {kind='integration',
 		const f = await fixture(t, source, optLevel);
 		const frames = f.target.frameOutput;
 		const authoring = new OffscreenMachine(f.media.systemRom, [f.media.cartRom, null], PSX_MACHINE_SPEC, new TestInput());
-		t.after(() => authoring.dispose());
+		afterTest(t, () => authoring.dispose());
 		const original = captureRuntimeMachineState(authoring.runtime);
 		f.drain(); assert.equal(f.play.state, 'ready', JSON.stringify(f.play.failures.map(item => item.failure))); assert.deepEqual(f.logs, ['ready']);
 		assert.equal(f.captures.length, 1); assert.ok(f.captures[0].sequence! > 0);

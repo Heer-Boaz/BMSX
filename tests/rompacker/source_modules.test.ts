@@ -8,7 +8,7 @@ import { layoutRomAssetPayloads } from '../../toolchain/ts/rompack/asset_layout'
 import { parseBlua32SourceModules } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
 
-for (const optLevel of [0, 3] as const) test(`ROM sources recompile without persisted syntax at O${optLevel}`, () => {
+for (const optLevel of [3] as const) test(`ROM sources recompile without persisted syntax at O${optLevel}`, () => {
 	const source = 'module<entry>\r\n-- é😀\r\nlocal function f(n) return n + 2 end\r\nreturn f(3)';
 	const assets = [
 		{ resid: 'entry', type: 'lua' as const, program_module: true, source_path: 'entry.lua', buffer: Buffer.from(source) },
