@@ -22,7 +22,13 @@ export async function startAssistantImageTest(kind: StudioRendererKind, canvas: 
 		async composer() { await test.click(view.composerBounds); },
 		async key(...keys: string[]) { await test.press(...keys); },
 		async paste() { test.ide.editor.commands.execute('paste'); await test.frame(); },
-		async submit() { await test.press('ControlLeft', 'Enter'); await test.until(() => view.conversation.state === 'ready', 'images: model completed'); },
+		async submit() {
+			await test.press('ControlLeft', 'Enter');
+			// The turn stream can finish before the HTTP submission receipt
+			// returns ownership of the accepted images from the draft.
+			await test.until(() => view.conversation.state === 'ready' && view.attachments.urls.length === 0,
+				'images: model completed and the accepted draft cleared');
+		},
 		async history() {
 			const thread = view.conversation.thread!.id;
 			await view.conversation.newConversation(); await test.frame();

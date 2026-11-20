@@ -47,6 +47,7 @@ import { IO_INP_KEYS, IO_INP_STATUS, IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '..
 import { IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { WebGPUBackend } from '../../../machine/ts/render/backend/webgpu/backend';
 import type { GPUBackend } from '../../../machine/ts/render/backend/backend';
 import type { EditorCommandId } from '../../../ide/common/commands';
 import type { CommandQuickPickItem } from '../../../ide/workbench/contrib/commands/quick_pick_provider';
@@ -55,6 +56,8 @@ import { editorViewState } from '../../../ide/editor/ui/view/state';
 import type { EditorTabId } from '../../../ide/workbench/ui/tab/id';
 import { measureText } from '../../../ide/editor/common/text/layout';
 import { yieldBrowserTask } from './browser_task';
+
+const WEBGPU_HOST_FRAMES_IN_FLIGHT = 8;
 
 export function check(condition: boolean, message: string): void {
 	if (!condition) throw new Error(message);
@@ -138,6 +141,11 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 				'Studio layout and presentation target must agree, including frames that restore machine state');
 		}
 		observations.hostFrames += 1;
+		// Virtual time can submit far ahead of the real browser GPU. Keep a
+		// bounded batch without dropping any host frame or emulating readback.
+		if (backend instanceof WebGPUBackend && observations.hostFrames % WEBGPU_HOST_FRAMES_IN_FLIGHT === 0) {
+			await backend.device.queue.onSubmittedWorkDone();
+		}
 		await yieldBrowserTask();
 		check(ide.fault.hostFrameFailure === undefined, 'workbench host frame failed');
 		check(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) <= observations.expectedFaultSequence, 'unexpected guest fault');
