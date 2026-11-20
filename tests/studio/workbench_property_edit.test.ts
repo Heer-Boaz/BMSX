@@ -36,7 +36,12 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
 		parse: text => text === '-' ? { error: 'Incomplete expression' } : { value: text },
 		apply: text => { applied++; sourceModel.pushEditOperations([{ offset: 7, deleteLength: sourceModel.buffer.length - 7, text }]); },
 	}, '17');
-	afterTest(t, () => { edit.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); surfaces.dispose(); model.dispose(); });
+	afterTest(t, () => {
+		edit.dispose(); inputFocus.setTarget(null);
+		// The synthetic pointer producer goes away too; no later case will send its button-up.
+		pointerCapture.interrupt(false);
+		surfaces.dispose(); model.dispose();
+	});
 	const press = (code: string) => { inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, true)); inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, false)); };
 	return { edit, model, tree, row, root, pane, surfaces, owner, guest, parent, open, press, applied: () => applied };
 }

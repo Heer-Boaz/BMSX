@@ -80,6 +80,10 @@
 
 ## Test execution safety
 
+- For a local change, start with the contract's owning test file and any
+  affected integration or parity tests. Use the full suites for integration
+  validation, not automatically after every edit. Record which scope actually
+  ran; a focused pass does not certify the other suites.
 - Run Node tests through `npm test -- [node test options] <test files>`, or the
   existing `npm run test:*` commands. For another harness/native executable use
   `npm run test:exec -- <command> [arguments...]`.
@@ -88,10 +92,10 @@
   ancestor cap is accepted without changing its swap or OOM settings, including
   a read-only container namespace root; stricter existing limits stay untouched.
   Newly installed test cgroups use 8 GiB, zero swap and group-wide OOM termination.
-  Nested invocations share the existing budget. The unit suites (`npm test`,
-  `test:lua`, the area scripts and `test:rompacker`) run sixteen files at a time;
-  a test file that needs much memory is a defect to fix, not a reason to run
-  sequentially. Suites that share servers, ports or browsers stay sequential.
+  Nested invocations share the existing budget. Focused Node tests run one
+  file at a time by default; the area suites have explicit worker layouts.
+  Studio runs sequential files within each of its shared workers. Suites
+  that share servers, ports or browsers stay sequential.
 - Do not bypass this runner with direct `node --test`, `tsx --test`, or unbounded
   harness commands; do not raise/remove limits without explicit user approval.
   A memory-limit failure is a failing test run, not permission to retry without
