@@ -10,8 +10,8 @@ import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { describeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createTestBlua32PairCpu, createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { compileCartlibProgram } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
 import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
@@ -156,8 +156,16 @@ function heapObjects(cpu: CPU) {
 }
 
 for (const optLevel of [3] as const) {
+	let worldImages: ReturnType<typeof compileCartlibProgram>['images'] | undefined;
+	const newWorldCpu = () => {
+		// Both measurements use the same linked code, but boot fresh RAM and CPU state.
+		const images = worldImages ??= compileCartlibProgram(worldFixture, { optLevel, modules: WORLD_CPU_MODULES }).images;
+		const { cpu } = createTestBlua32PairCpu(images);
+		cpu.installBootPrimitives();
+		return { cpu, images };
+	};
 	test(`spatial CPU: unrelated World size does not tax a changed leaf or dirty branch (O${optLevel})`, t => {
-		const { cpu, images } = createCartlibProgramHarness(worldFixture, { optLevel, modules: WORLD_CPU_MODULES });
+		const { cpu, images } = newWorldCpu();
 		const initialHeap = cpu.luaHeap.usedBytes();
 		runGuestToHalt(cpu, 20_000_000);
 		const bootCycles = 20_000_000 - cpu.instructionBudgetRemaining;
@@ -213,7 +221,7 @@ for (const optLevel of [3] as const) {
 	});
 
 	test(`spatial CPU: World churn retires identities and reuses bounded retained storage (O${optLevel})`, t => {
-		const { cpu, images } = createCartlibProgramHarness(worldFixture, { optLevel, modules: WORLD_CPU_MODULES });
+		const { cpu, images } = newWorldCpu();
 		runGuestToHalt(cpu, 20_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('admit')!), cpu.gc), []);
