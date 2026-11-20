@@ -44,6 +44,7 @@ public:
 	u32 openCellAddress(u32 address) const;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	static size_t nativeControlOffset();
+	static u32 tryQueueChangedInNative(GcHeap* heap, u32 offset, u32 link) noexcept;
 #endif
 	uint32_t hash(Value value) const {
 		switch (valueTag(value)) {
@@ -94,6 +95,7 @@ private:
 	size_t traceTable(u32 address);
 	bool valueIsAlive(Value value) const;
 	u32 indexWord(u32 queue) const { return memory.readRamRecordWord(m_controlOffset + queue) & GC_GRAY_INDEX_MASK; }
+	template<bool WritesAdmitted = false>
 	void enqueue(u32 address, u32 link, u32 queue);
 	void appendVisit(u32 list, u32 address);
 	void setVisitLink(u32 address, u8 meta, u32 index);

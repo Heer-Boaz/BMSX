@@ -28,45 +28,21 @@ void NativeBlockCompiler::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit
 	sljit_set_label(clear, sljit_emit_label(c));
 }
 
-// The caller proved the raw mark is black. The trace link and the head are
-// little-endian RAM words; all watch exits precede both queue and Value writes.
-void NativeBlockCompiler::emitGrayChange(NativeBlockExitSite& exit, sljit_s32 offset, sljit_sw offsetArg,
-	sljit_s32 record, sljit_s32 scratch, sljit_s32 link, u32 linkOffset, u32 watchedWords) {
+// The caller proved the raw mark is black. This leaf reserves no memory
+// and changes the queue only after admitting all its physical writes.
+void NativeBlockCompiler::emitGrayChange(NativeBlockExitSite& exit, sljit_s32 offset, sljit_s32 record, u32 link) {
 	auto* c = m_compiler;
-	emitRamWordWriteWatch(exit, offset, offsetArg, scratch, link, watchedWords);
-	sljit_emit_op1(c, SLJIT_MOV_P, scratch, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-	sljit_emit_op2(c, SLJIT_ADD32, record, 0, SLJIT_MEM1(scratch), GcHeap::nativeControlOffset(), SLJIT_IMM, GC_CHANGED_HEAD);
-	emitRamWordWriteWatch(exit, record, 0, scratch, link);
-	NativeBlockAbi::emitRamAddress(c, scratch, record);
-	sljit_emit_op1(c, SLJIT_MOV_U32, record, 0, offset, offsetArg);
-	NativeBlockAbi::emitRamAddress(c, record, record);
-
-	sljit_emit_op1(c, SLJIT_MOV32, link, 0, SLJIT_MEM1(scratch), 0);
-	if constexpr (std::endian::native == std::endian::big)
-		sljit_emit_op1(c, SLJIT_REV32, link, 0, link, 0);
-	sljit_emit_op2(c, SLJIT_AND32, link, 0, link, 0, SLJIT_IMM, GC_GRAY_INDEX_MASK);
-	if (linkOffset == GC_RECORD_LINK) {
-		// Merge the low gray index without disturbing the visit-list link
-		// in the high bits. Rebuild the head port after reusing scratch.
-		sljit_emit_op1(c, SLJIT_MOV32, scratch, 0, SLJIT_MEM1(record), linkOffset);
-		if constexpr (std::endian::native == std::endian::big)
-			sljit_emit_op1(c, SLJIT_REV32, scratch, 0, scratch, 0);
-		sljit_emit_op2(c, SLJIT_AND32, scratch, 0, scratch, 0, SLJIT_IMM, ~GC_GRAY_INDEX_MASK);
-		sljit_emit_op2(c, SLJIT_OR32, link, 0, link, 0, scratch, 0);
-		sljit_emit_op1(c, SLJIT_MOV_P, scratch, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-		sljit_emit_op2(c, SLJIT_ADD32, scratch, 0, SLJIT_MEM1(scratch), GcHeap::nativeControlOffset(), SLJIT_IMM, GC_CHANGED_HEAD);
-		NativeBlockAbi::emitRamAddress(c, scratch, scratch);
-	}
-	if constexpr (std::endian::native == std::endian::big)
-		sljit_emit_op1(c, SLJIT_REV32, link, 0, link, 0);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(record), linkOffset, link, 0);
-	sljit_emit_op1(c, SLJIT_MOV_U8, link, 0, SLJIT_MEM1(record), GC_COLOR_OFFSET);
-	sljit_emit_op2(c, SLJIT_AND32, link, 0, link, 0, SLJIT_IMM, ~1u); // Black to gray; retain generation bits.
-	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(record), GC_COLOR_OFFSET, link, 0);
-	sljit_emit_op2(c, SLJIT_LSHR32, link, 0, offset, offsetArg, SLJIT_IMM, GC_RECORD_SHIFT);
-	if constexpr (std::endian::native == std::endian::big)
-		sljit_emit_op1(c, SLJIT_REV32, link, 0, link, 0);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(scratch), 0, link, 0);
+	// This leaf uses the last word of the helper area, not the cache spill slots.
+	constexpr auto savedRecord = NativeBlockAbi::stackBytes - sizeof(void*);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), savedRecord, record, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, offset, 0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, link);
+	m_cache.spillCall(false, 0);
+	sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3(32, P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&GcHeap::tryQueueChangedInNative));
+	m_cache.spillCall(true, 0);
+	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), exit, m_cache.state());
+	sljit_emit_op1(c, SLJIT_MOV_P, record, 0, SLJIT_MEM1(SLJIT_SP), savedRecord);
 }
 
 void NativeBlockCompiler::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {

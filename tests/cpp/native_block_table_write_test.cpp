@@ -326,6 +326,20 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 		&& memory.readRamRecordWord(body) == 83 && memory.readRamRecordByte(body + 4) == static_cast<u8>(ValueTag::Integer),
 		"scalar and native use the same per-width aliases for header and backing");
 
+	auto& watches = memory.ramWriteWatches();
+	// Give the raw byte port a black mark without changing the aligned header's
+	// mark lane. A write watch on that word must precede the slot mutation.
+	memory.writeRamRecordByte(mirror + GC_COLOR_OFFSET, 3u);
+	const u32 markWord = (mirror + GC_COLOR_OFFSET) & RAM_RECORD_WORD_MASK;
+	watches.armCodeRange(markWord, sizeof(u32));
+	registers.set(2, valueInteger(46)); state.remainingCycles = 100;
+	require(block->run(state)->exit == NativeBlockExit::WriteInteger
+		&& memory.readRamRecordWord(body) == 83
+		&& memory.readRamRecordByte(mirror + GC_COLOR_OFFSET) == 3u,
+		"the collector tests the raw mirrored mark byte, not the rounded table-header word address");
+	watches.clearCodeRange(markWord, sizeof(u32));
+	memory.writeRamRecordByte(mirror + GC_COLOR_OFFSET, 0u);
+
 	const u32 key = cpu.stringPool().intern("wrapped tag") | 0x80000000u;
 	constexpr u32 hash = 2;
 	const u32 keySlot = cpu.gcHeap().hash(valueString(key)) & (hash - 1u), valueSlot = keySlot + hash;
@@ -344,7 +358,6 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 	ValueSlots constants(1); constants.set(0, valueString(key));
 	auto fieldBlock = NativeBlock::compile(fields, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	registers.set(2, valueFromTag(ValueTag::False, 37));
-	auto& watches = memory.ramWriteWatches();
 	watches.armHistoryWrites();
 	watches.consumeHistoryWrites(hashBody, 1);
 	state.remainingCycles = 100;

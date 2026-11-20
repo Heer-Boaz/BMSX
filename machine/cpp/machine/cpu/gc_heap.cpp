@@ -90,13 +90,39 @@ size_t GcHeap::nativeControlOffset() { return offsetof(GcHeap, m_controlOffset);
 #pragma GCC diagnostic pop
 #endif
 #endif
+
+template<bool WritesAdmitted>
 void GcHeap::enqueue(u32 address, u32 link, u32 queue) {
 	const u32 previous = indexWord(queue);
 	const u32 otherBits = link == GC_RECORD_LINK ? memory.readRamRecordWord(address + link) & ~GC_GRAY_INDEX_MASK : 0u;
-	memory.writeRamRecordWord(address + link, otherBits | previous);
-	color(address, 2);
-	memory.writeRamRecordWord(m_controlOffset + queue, (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT);
+	const u32 head = (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT;
+	if constexpr (WritesAdmitted) {
+		// Native admission covered these lanes before the first write.
+		auto* ram = memory.ramData();
+		writeLE32(ram + ((address + link) & RAM_RECORD_WORD_MASK), otherBits | previous);
+		auto& mark = ram[(address + GC_COLOR_OFFSET) & (MAIN_RAM_SIZE - 1u)];
+		mark = (mark & ~GC_COLOR_MASK) | 2u;
+		writeLE32(ram + m_controlOffset + queue, head);
+	} else {
+		memory.writeRamRecordWord(address + link, otherBits | previous);
+		color(address, 2);
+		memory.writeRamRecordWord(m_controlOffset + queue, head);
+	}
 }
+template void GcHeap::enqueue<false>(u32, u32, u32);
+
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+u32 GcHeap::tryQueueChangedInNative(GcHeap* heap, u32 offset, u32 link) noexcept {
+	const auto& watches = heap->memory.ramWriteWatches();
+	// Closed-cell stores already admitted the color byte with the value tag.
+	if (watches.nativeWritePending((offset + link) & RAM_RECORD_WORD_MASK)
+		|| (link == GC_RECORD_LINK && watches.nativeWritePending((offset + GC_COLOR_OFFSET) & (MAIN_RAM_SIZE - 1u)))
+		|| watches.nativeWritePending(heap->changedHeadOffset()))
+		return 0u;
+	heap->enqueue<true>(offset, link, GC_CHANGED_HEAD);
+	return 1u;
+}
+#endif
 
 // The regular gray index occupies the low bits of +4. Tables and Threads
 // also wire an independent visit link through its high bits and byte 3.

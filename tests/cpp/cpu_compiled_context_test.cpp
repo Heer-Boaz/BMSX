@@ -393,6 +393,16 @@ void rawContextValues(CpuMachine& machine) {
 	captureRegisters.set(12, valueInteger(23));
 	const u32 head = heap.changedHeadOffset();
 	const u32 previousHead = machine.memory.readRamRecordWord(head);
+	auto& watches = machine.memory.ramWriteWatches();
+	const u32 cellLink = (closed + UPVALUE_NEXT) & RAM_RECORD_WORD_MASK;
+	watches.armCodeRange(cellLink, sizeof(u32));
+	closedStore.remainingCycles = 100;
+	require(outerRead.block->run(closedStore)->exit == NativeBlockExit::WriteUpvalue
+		&& Upvalue::load(machine.memory, closed) == valueFloatBits(0xffa54321u)
+		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 3u)
+		&& machine.memory.readRamRecordWord(head) == previousHead,
+		"a watched closed-cell queue link defers both the barrier and the value write");
+	watches.clearCodeRange(cellLink, sizeof(u32));
 	closedStore.remainingCycles = 100;
 	require(outerRead.block->run(closedStore) == &outerRead.block->terminal && Upvalue::load(machine.memory, closed) == valueInteger(23)
 		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 2u)

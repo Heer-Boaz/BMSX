@@ -91,7 +91,7 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, Nat
 		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, GC_OLD), *openWrite, m_cache.state());
 		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, GC_COLOR_MASK);
 		auto* notBlack = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 3);
-		emitGrayChange(*openWrite, SLJIT_R3, 0, SLJIT_R2, SLJIT_R0, SLJIT_R1, UPVALUE_NEXT, 8u);
+		emitGrayChange(*openWrite, SLJIT_R3, SLJIT_R2, UPVALUE_NEXT);
 		sljit_set_label(notBlack, sljit_emit_label(c));
 		emitRawLoad(instruction.a, SLJIT_R0, SLJIT_R1);
 		if constexpr (std::endian::native == std::endian::big)

@@ -63,30 +63,31 @@ void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool ar
 		emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), address, SLJIT_R2, SLJIT_R3);
 	}
 	if (arraySlot) {
-		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), receiver,
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R1, 0);
+		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver,
 			SLJIT_IMM, static_cast<u32>(TableHeader::Length));
-		sljit_emit_op2(m_compiler, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R2, 0);
-		emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R2, SLJIT_R3);
+		sljit_emit_op2(m_compiler, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+		emitRamWordWriteWatch(exit, SLJIT_R1, 0, SLJIT_R2, SLJIT_R3);
 	}
 
 	// All potential exits precede the actual slot store. A backward barrier
 	// only enqueues work, so it may publish before the value reaches its lane.
 	auto* c = m_compiler;
-	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), GC_COLOR_OFFSET);
+	// The header words discard the low address bits, but the mark is a byte.
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), receiver, SLJIT_IMM, sizeof(u32) - 1u);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, GC_COLOR_OFFSET);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM2(SLJIT_R0, SLJIT_R2), 0);
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_IMM, GC_OLD | GC_REMEMBERED);
 	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, GC_OLD), exit, m_cache.state());
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, GC_COLOR_MASK);
 	auto* notBlack = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 3);
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), receiver,
-		SLJIT_IMM, MAIN_RAM_SIZE - TableRecord::HEADER_BYTES);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R2, 0);
-	emitGrayChange(exit, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R0, SLJIT_R2, SLJIT_R3, GC_RECORD_LINK, 3u);
+		SLJIT_IMM, MAIN_RAM_SIZE - 1u);
+	emitGrayChange(exit, SLJIT_R2, SLJIT_R0, GC_RECORD_LINK);
 	sljit_set_label(notBlack, sljit_emit_label(c));
 }
 
 void NativeBlockCompiler::emitTableSlotStore(int value) {
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R1, 0);
 	emitRawLoad(value, SLJIT_R2, SLJIT_R3);
 	for (bool word : {true, false}) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), word ? wordOffset : tagOffset);
@@ -94,7 +95,6 @@ void NativeBlockCompiler::emitTableSlotStore(int value) {
 		sljit_emit_op1(m_compiler, word ? SLJIT_MOV32 : SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R1), 0,
 			word ? SLJIT_R2 : SLJIT_R3, 0);
 	}
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), slot);
 }
 
 std::array<sljit_jump*, 2> NativeBlockCompiler::emitArrayRead() {
@@ -115,6 +115,7 @@ void NativeBlockCompiler::emitArrayStore(int value, NativeBlockExitSite& exit) {
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array)), exit, m_cache.state());
 	emitTableWriteWatch(exit, true);
 	emitTableSlotStore(value);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), slot);
 	const int tag = knownTag(value);
 	sljit_jump* nil = nullptr;
 	if (tag < 0) {

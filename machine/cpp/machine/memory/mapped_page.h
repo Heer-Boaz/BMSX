@@ -98,6 +98,12 @@ public:
 	}
 	const u32* groupData() const { return m_groups.get(); }
 	const u32* codeWordMasks() const { return m_words.get(); }
+	// A returning native leaf may neither retire decoded words nor bypass rewind.
+	bool nativeWritePending(u32 offset) const {
+		const u32 flags = m_groups[offset >> MAPPED_PAGE_BYTE_SHIFT];
+		return (flags & MAPPED_WATCH_HISTORY_CLEAN) != 0u
+			|| (flags != 0u && (m_words[offset >> MAPPED_WATCH_GROUP_BYTE_SHIFT] & (1u << ((offset >> 2u) & 31u))) != 0u);
+	}
 
 	explicit MappedPageWriteWatches(size_t byteLength) {
 		m_pageCount = (byteLength + MAPPED_PAGE_BYTE_SIZE - 1u) >> MAPPED_PAGE_BYTE_SHIFT;
