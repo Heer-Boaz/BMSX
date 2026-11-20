@@ -34,7 +34,8 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 	ops[0].a = 9; ops[0].b = 6; ops[0].tableCacheSlot = 0;
 	ops[1].a = 10;
 	ops[2].a = 8; ops[2].b = 9; ops[2].c = 1;
-	ops[2].observeNativeNumericTypes(valueInteger(12), valueInteger(1));
+	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
+		ops[2].observeNativeNumericTypes(valueInteger(12), valueInteger(1));
 	ops[3].a = 6; ops[3].c = 8; ops[3].tableCacheSlot = 0;
 	ops[4].bx = 0x2000u;
 	instructions[0].fieldValueTag = ValueTag::Integer;
@@ -72,7 +73,8 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 
 	instructions[0].fieldValueTag = ValueTag::Float;
 	ops[2].bx = 0;
-	ops[2].observeNativeNumericTypes(valueFloat(12.5f), valueFloat(0.25f));
+	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
+		ops[2].observeNativeNumericTypes(valueFloat(12.5f), valueFloat(0.25f));
 	auto floats = NativeBlock::compileRegion(sources, constants.view(), NativeCodeBindings(memory, cpu.stringPool(), indexKey));
 	particle.setStringKey(x, valueFloat(12.5f));
 	registers.set(1, valueFloat(0.25f)); run.remainingCycles = 100;

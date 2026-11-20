@@ -247,7 +247,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 					if (compute) {
 						const auto observed = compute->nativeNumericTypes();
 						const auto tag = compute->b == instruction.a ? observed.left : observed.right;
-						if (!observed.polymorphic && tag != ValueTag::Nil) {
+						if (observed.stable && tag != ValueTag::Nil) {
 							instructions[index].fieldValueTag = tag;
 							continue;
 						}

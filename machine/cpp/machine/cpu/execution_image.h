@@ -68,7 +68,7 @@ inline constexpr uint8_t decodedDispatchOp(uint8_t first, uint8_t second) {
 
 struct NativeNumericTypes {
 	ValueTag left, right;
-	bool polymorphic;
+	bool stable;
 };
 
 struct DecodedInstruction {
@@ -94,16 +94,25 @@ struct DecodedInstruction {
 	// the type pair instead; it is initialized by decode before warm-up.
 	NativeNumericTypes nativeNumericTypes() const {
 		return {static_cast<ValueTag>(bx & 0xffu), static_cast<ValueTag>((bx >> 8u) & 0xffu),
-			(bx & NATIVE_NUMERIC_POLYMORPHIC) != 0};
+			(bx >> 16u) >= NUMERIC_STABLE_SCORE};
 	}
 	void observeNativeNumericTypes(Value lhs, Value rhs) {
 		const u32 pair = static_cast<u32>(valueTag(lhs)) | (static_cast<u32>(valueTag(rhs)) << 8u);
-		if (bx == 0u) bx = pair;
-		else if (bx != pair) bx |= NATIVE_NUMERIC_POLYMORPHIC;
+		const u32 score = bx >> 16u;
+		if ((bx & 0xffffu) == pair) {
+			if (score < NUMERIC_SCORE_LIMIT) bx += 1u << 16u;
+		} else if (score > 2u) {
+			// Contradictory samples age the candidate. A short startup type
+			// change can recover; an alternating pair never becomes stable.
+			bx = (bx & 0xffffu) | ((score >> 1u) << 16u);
+		} else {
+			bx = pair | (1u << 16u);
+		}
 	}
 
 private:
-	static constexpr u32 NATIVE_NUMERIC_POLYMORPHIC = 1u << 16u;
+	static constexpr u32 NUMERIC_STABLE_SCORE = 4u;
+	static constexpr u32 NUMERIC_SCORE_LIMIT = 16u;
 };
 
 static_assert(MAX_EXT_REGISTER_BC <= INT16_MAX);

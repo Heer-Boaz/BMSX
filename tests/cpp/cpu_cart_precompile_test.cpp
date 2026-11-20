@@ -200,6 +200,15 @@ void coldExecLetsNumericFieldChainsWarm() {
 		holder.setStringKey(key, valueFloat(4.0f));
 		frame.registers.set(0, valueTable(receiver.address()));
 		frame.registers.set(1, valueFloat(0.5f));
+		if (!inherited) {
+			// The original ROM star positions first contain integers, then
+			// ordinary movement settles on Float. Exercise the same startup
+			// type change through real bytecode, not seeded compiler hints.
+			holder.setStringKey(key, valueInteger(4));
+			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::K1)] + 8 * loopCycles) == RunResult::Yielded,
+				"the cold Float step first consumes an Integer field");
+			holder.setStringKey(key, valueFloat(4.0f));
+		}
 		require(cpu.runUntilDepth(0, (loopCycles + BASE_CYCLES[static_cast<u8>(OpCode::K1)]
 			+ (inherited ? TABLE_INDEX_VISIT_CYCLES : 0)) * (NATIVE_BLOCK_COMPILATION_THRESHOLD + 12)) == RunResult::Yielded,
 			"the real EXEC path visits and warms its deferred field entry");

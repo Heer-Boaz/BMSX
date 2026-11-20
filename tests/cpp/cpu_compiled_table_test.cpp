@@ -443,7 +443,7 @@ void observedArithmeticResumesAtItsOwnInstruction() {
 	const u32 first = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	test::waitForNativeEntry(native.cpu, page, first + 1u);
 	const auto warm = page.words[first + 2u].nativeNumericTypes();
-	require(warm.left == ValueTag::Integer && warm.right == ValueTag::Integer && warm.polymorphic == 0u,
+	require(warm.left == ValueTag::Integer && warm.right == ValueTag::Integer && warm.stable,
 		"native warm-up records the actual operands without widening decoded instructions");
 #endif
 	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::K1)]

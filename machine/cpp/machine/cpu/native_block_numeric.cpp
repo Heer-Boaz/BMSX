@@ -142,7 +142,7 @@ void NativeBlockCompiler::emitNumeric(const DecodedInstruction& instruction, Nat
 	// A type miss retries this instruction, not the already executed prefix.
 	if ((left < 0 || right < 0) && (op == OpCode::ADD || op == OpCode::SUB || op == OpCode::MUL)) {
 		const auto observed = instruction.nativeNumericTypes();
-		if (!observed.polymorphic && observed.left != ValueTag::Nil) {
+		if (observed.stable && observed.left != ValueTag::Nil) {
 			const auto instructions = m_sources[m_current].instructions;
 			const bool feedsStore = m_instruction < instructions.size()
 				&& instructions[m_instruction].decoded->op == static_cast<u8>(OpCode::SETFIELD)
