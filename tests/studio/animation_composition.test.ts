@@ -19,7 +19,7 @@ import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { parseLuaFieldValueEdit } from '../../ide/language/lua/field_value_edit';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom, createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { ANIMATION_TRACK_TEMPLATES } from '../../ide/workbench/contrib/animation/track_templates';
 import { inputFocus } from '../../ide/input/focus';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -226,6 +226,7 @@ test('multi-field curve and clip edits preserve independently authored field ord
 });
 
 test('a multiline clip trim inserts missing transport fields as one syntax batch', t => {
+	const parents: { path: string; source: string }[] = [];
 	for (const separator of [',', ';']) for (const trailing of ['', separator]) for (const newline of ['\n', '\r\n']) {
 		const source = ['-- parent', 'return {subsequences={{', `\tduration_ms=100${separator}`,
 			`\tsequence=require('child')${trailing} -- child stays here`, '}}}'].join(newline);
@@ -243,17 +244,18 @@ test('a multiline clip trim inserts missing transport fields as one syntax batch
 		assert.equal(document.clips[0].clipIn!.value, 25);
 		assert.equal(changes, 1);
 		assert.ok(changed.includes('-- child stays here'));
-		for (const optLevel of [3] as const) {
-			const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component')
-				local owner={x=-1}; local timeline=component.new(owner,{clock_mode='manual'})
-				timeline:define('clip',require('parent')); timeline:play('clip')
-				timeline:seek_time('clip',50); assert(owner.x==50)
-			`, { optLevel, modules: [{ path: 'parent', source: changed }, { path: 'child', source: child }] });
-			runGuestToHalt(cpu, 20_000_000);
-		}
+		parents.push({ path: `parent_${parents.length}`, source: changed });
 		model.undo(); assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null);
 		model.redo(); assert.equal(model.buffer.getText(), changed);
 	}
+	const rom = createCartlibCaseRom("local component=require('cartlib/timeline/timeline_component')",
+		{ optLevel: 3, modules: [...parents, { path: 'child', source: child }] });
+	const cases = parents.map(({ path }) => rom.add(`
+local owner={x=-1}; local timeline=component.new(owner,{clock_mode='manual'})
+timeline:define('clip',require('${path}')); timeline:play('clip')
+timeline:seek_time('clip',50); assert(owner.x==50)
+`));
+	for (const index of cases) rom.run(index);
 });
 
 test('sprite frame definitions are admitted by their imported factory and retain named/source array order', () => {
