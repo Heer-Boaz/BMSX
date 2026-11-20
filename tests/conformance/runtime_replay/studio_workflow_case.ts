@@ -4,11 +4,15 @@ import { testStudioBehaviorNavigation } from './studio_behavior_navigation';
 import { testStudioBehaviorPicker } from './studio_behavior_picker';
 import { testStudioBehaviorKinds } from './studio_behavior_kinds';
 import { testStudioBehaviorSourceGraph } from './studio_behavior_source';
+import { testStudioBehaviorImports } from './studio_behavior_imports';
+import { testStudioBehaviorInspector } from './studio_behavior_inspector';
 import { testStudioCommandPalette } from './studio_command_palette';
 import { testStudioNavigation } from './studio_navigation';
 import { testStudioQuickPick } from './studio_quick_pick';
 
 const workflows = {
+	'behavior-imports': testStudioBehaviorImports,
+	'behavior-inspector': testStudioBehaviorInspector,
 	'behavior-kinds': testStudioBehaviorKinds,
 	'behavior-navigation': testStudioBehaviorNavigation,
 	'behavior-picker': testStudioBehaviorPicker,

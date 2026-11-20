@@ -17,7 +17,7 @@ ${Array.from({ length: 70 }, (_, n) => `\towner.finished_${n} = ${n}`).join('\n'
 
 /** Read the real constrained inspector, not a picker/layout mock or live cart-specific definition. */
 export async function testStudioBehaviorInspector(test: StudioFixture): Promise<void> {
-	const { ide, harness, press, click, frame, runPaletteCommand, cycles } = test;
+	const { ide, harness, press, frame, runPaletteCommand, cycles, setKey } = test;
 	harness.openLuaSource('cart.lua');
 	const model = sourcePane(test).code.model, original = model.buffer.getText(), position = cycles();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: SOURCE }]);
@@ -31,10 +31,13 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	if (selected?.kind !== 'node') throw new Error('inspection: authored task selection required');
 	const hadProblems = ide.editor.mainWorkspace.regionLayout.activityVisible;
 	if (!hadProblems) await runPaletteCommand('View: Problems Panel');
+	// Opening Problems focuses its activity. Return to the graph through its tab
+	// before invoking the graph's source-details command.
+	await test.clickTab(lens.id);
 	const version = model.version, dirty = model.dirty, geometry = viewport.model, x = viewport.scrollX, y = viewport.scrollY;
 	const sourceSelection = lens.view.selectionState.selected;
-	ide.editor.commands.execute('behaviorLens.details');
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane;
+	ide.editor.commands.execute('behaviorLens.details', pane.commandTarget);
 	pane.update();
 	const inspector = pane.inspector;
 	check(inspector.model.rowAt(inspector.model.viewport.bounds.top + 1) === 0,
@@ -46,8 +49,9 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	const property = inspector.model.rows[targetIndex];
 	check(property.value.some(line => line.includes('OWNER.FINISHED_69')) && property.bottom - property.top > inspector.model.viewport.height,
 		'inspection: complete multiline callback is retained past the viewport');
-	check(inspector.model.viewport.bounds.right === 381 && inspector.model.viewport.bounds.bottom <= 240,
-		'inspection: readable full width at 384x288 with Problems visible');
+	const main = ide.editor.mainWorkspace.regionLayout;
+	check(main.activityPresented && inspector.model.viewport.bounds.bottom <= main.activityBounds.top,
+		'inspection: docked Problems leaves an independent reader above it');
 	for (let n = 0; n < 3; n += 1) await press('PageDown');
 	check(inspector.model.viewport.scrollTop > property.top, 'inspection: page scrolling reaches the long value without changing property selection');
 	for (let n = 0; n < 30; n += 1) await frame();
@@ -59,12 +63,18 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 		&& viewport.scrollX === x && viewport.scrollY === y, 'inspection: Back retains the exact graph selection and pan');
 	await runPaletteCommand('Behavior Lens: Open Source Details');
 	for (let n = 0; n < targetIndex; n += 1) await press('ArrowDown');
-	await click(inspector.actionBar.items[0].bounds, 30);
+	// The row, not the inspector's Close chrome, owns Source activation.
+	setKey('Enter', true);
+	for (let index = 0; index < 30; index += 1) await frame();
+	check(inspector.visible && ide.editor.editorParts.activeGroup.model.activeTab === lens,
+		'inspection: holding Enter does not activate the property until release');
+	setKey('Enter', false);
+	await frame();
 	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.view.cursorRow === property.element.source!.range.start.line - 1
 		&& model.version === version && cycles() === position, 'inspection: held Source opens the property, never inserts text or runs the guest');
 	await press('AltLeft', 'ArrowLeft');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && viewport.model === geometry, 'inspection: ordinary navigation Back restores the retained diagram');
-	if (!hadProblems) await runPaletteCommand('View: Problems Panel');
+	if (!hadProblems) await runPaletteCommand('Workspace: Hide Activity Area');
 	model.undo(); await frame();
 	check(model.buffer.getText() === original, 'inspection: one ordinary Undo removes only the independent fixture');
 }
