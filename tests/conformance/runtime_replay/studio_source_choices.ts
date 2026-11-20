@@ -95,7 +95,7 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 	await press('AltLeft', 'Comma');
 	definitions.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- source generation\n' }]);
 	check(!picker.visible && inputFocus.target === sourcePane(test).code.focusTarget, 'A06: an edited imported/source candidate retires stale locations');
-	await press('ControlLeft', 'Comma'); // New file chooser must survive the expired source listener.
+	await press('ControlLeft', 'KeyP'); // New file chooser must survive the expired source listener.
 	const files = ide.editor.quickInput;
 	check(files.visible && inputFocus.target === files.field.focusTarget, 'A06: Go to File admits its actual workbench picker');
 	definitions.undo();

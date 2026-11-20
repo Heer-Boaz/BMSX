@@ -28,7 +28,7 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	const picker = ide.editor.quickInput;
 	await click(scene.view.details.properties[0].bounds);
 	const codeTop = editorViewState.editorAreaTop;
-	await press('ControlLeft', 'Comma');
+	await press('ControlLeft', 'KeyP');
 	check(picker.visible && picker.field.focusTarget.hasFocus && ide.editor.editorParts.activeGroup.model.activeTab === scene,
 		'quick pick: workbench search does not activate a hidden code editor');
 	check(editorViewState.editorAreaTop === codeTop && picker.layout.bounds.right === editorViewState.viewportWidth - 8,
@@ -44,7 +44,7 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 
 	await press('Digit7');
 	check(x.pending, 'quick pick: real property draft exists before navigation');
-	await press('ControlLeft', 'Comma');
+	await press('ControlLeft', 'KeyP');
 	check(!x.pending && scene.view.details.properties[0].descriptor.value === 7, 'quick pick: the property owner commits valid blur, not the picker');
 	await press('Escape');
 	await press('Enter');
@@ -52,12 +52,12 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	check(model.buffer.getText() === original, 'quick pick: committed property remains one ordinary document Undo');
 	await click(scene.view.details.properties[0].bounds);
 	await press('Minus');
-	await press('ControlLeft', 'Comma');
+	await press('ControlLeft', 'KeyP');
 	check(!x.pending && model.buffer.getText() === original, 'quick pick: invalid property blur follows its existing cancel policy');
 	await press('Escape');
 	check(inputFocus.target === x.field.focusTarget, 'quick pick: cancelled draft still has a concrete return control');
 
-	await press('ControlLeft', 'Comma');
+	await press('ControlLeft', 'KeyP');
 	await clipboard.writeText('long_query_'.repeat(100) + '\r\n\tend');
 	await press('ControlLeft', 'KeyV');
 	check(picker.field.text === 'long_query_'.repeat(100) + 'end' && picker.field.lines.length === 1,
@@ -89,11 +89,11 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	const scenario = ide.editor.editorParts.activeGroup.model.activeTab;
 	check(scenario.kind === 'scenario_lab', 'quick pick: actual Scenario Lab is active');
 	const scenarioFocus = inputFocus.target;
-	await press('ControlLeft', 'Comma');
+	await press('ControlLeft', 'KeyP');
 	check(picker.visible && ide.editor.editorParts.activeGroup.model.activeTab === scenario, 'quick pick: file search is visible without leaving Scenario Lab');
 	await press('Escape');
 	check(inputFocus.target === scenarioFocus, 'quick pick: Scenario Lab regains its own focus');
-	await press('ControlLeft', 'Comma');
+	await press('ControlLeft', 'KeyP');
 	for (const code of ['KeyR', 'KeyO', 'KeyO', 'KeyT']) await press(code);
 	await press('Enter');
 	await until(() => ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model,
@@ -102,17 +102,17 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	// A lower code widget must not consume the popup's Escape.
 	await press('ControlLeft', 'KeyF');
 	const findTarget = inputFocus.target;
-	await press('ControlLeft', 'Comma');
+	await press('ControlLeft', 'KeyP');
 	await press('Escape');
 	check(sourcePane(test).find.state.visible && inputFocus.target === findTarget, 'quick pick: Escape dismisses the topmost input, not Find behind it');
 	await press('Escape');
 	await openSceneEditor(test);
-	await press('ControlLeft', 'Comma');
+	await press('ControlLeft', 'KeyP');
 	await press('ControlRight', 'ShiftRight');
 	check(!ide.editor.isActive && !picker.visible, 'quick pick: IDE deactivation closes the transient input through blur');
 	await press('ControlRight', 'ShiftRight');
 	check(ide.editor.isActive && ide.editor.editorParts.activeGroup.model.activeTab === scene && !picker.visible, 'quick pick: IDE reopen restores the scene, not an orphaned popup');
-	await press('ControlLeft', 'Comma');
+	await press('ControlLeft', 'KeyP');
 	for (const code of ['KeyR', 'KeyO', 'KeyO', 'KeyT']) await press(code);
 	const bounds = picker.model.viewport.bounds;
 	await click({ left: bounds.left, right: bounds.right,
@@ -129,7 +129,7 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	setPointerButton('pointer_primary', true);
 	await frame();
 	check(pointerCapture.active, 'quick pick: real scrollbar drag is active before opening');
-	await press('ControlLeft', 'Comma');
+	await press('ControlLeft', 'KeyP');
 	check(picker.visible && !pointerCapture.active, 'quick pick: exclusive input ends the lower pointer capture');
 	const scroll = sourcePane(test).code.view.scrollRow;
 	setPointerButton('pointer_primary', false);
@@ -141,7 +141,7 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 
 /** Final backend screenshot: actual workbench picker above the already-proven scene view. */
 export async function presentWorkbenchQuickPick(test: StudioFixture): Promise<void> {
-	await test.press('ControlLeft', 'Comma');
+	await test.press('ControlLeft', 'KeyP');
 	for (const code of ['KeyS', 'KeyC', 'KeyE', 'KeyN', 'KeyE']) await test.press(code);
 	check(test.ide.editor.quickInput.visible && test.ide.editor.editorParts.activeGroup.model.activeTab.kind === 'scene_editor', 'quick pick: final overlay remains independent of the visual pane');
 	await test.frame();

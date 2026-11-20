@@ -5,6 +5,7 @@ import { inputFocus } from '../../../ide/input/focus';
 import { KeyInputEvent } from '../../../hosts/common/input/text';
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT } from '../../../machine/ts/machine/devices/input/contracts';
+import { SettingsPane } from '../../../ide/workbench/contrib/settings/editor_pane';
 
 
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
@@ -100,7 +101,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	for (const prompt of [
 		{ keys: ['ControlLeft', 'KeyL'], field: sourcePane(test).lineJump.state.field, value: () => sourcePane(test).lineJump.state.value },
 		{ keys: ['ControlLeft', 'ShiftLeft', 'KeyO'], field: sourcePane(test).part.quickInput.field, value: () => sourcePane(test).part.quickInput.field.text },
-		{ keys: ['ControlLeft', 'Comma'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
+		{ keys: ['ControlLeft', 'ShiftLeft', 'KeyP'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
 		{ keys: ['ControlLeft', 'KeyN'], field: sourcePane(test).part.quickInput.field, value: () => sourcePane(test).part.quickInput.field.text },
 	]) {
 		await press(...prompt.keys);
@@ -115,6 +116,24 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 		await press('Escape');
 		check(sourcePane(test).code.focusTarget.hasFocus, 'focus: quick-input dismissal restores the concrete code target');
 	}
+
+	const parts = ide.editor.editorParts;
+	const sourceGroup = parts.activeGroup;
+	await press('ControlLeft', 'Comma');
+	const settingsPart = parts.activePart;
+	const settings = settingsPart.activeGroup.panes.activePane;
+	if (!(settings instanceof SettingsPane)) throw new Error('focus: Ctrl+Comma opens the Settings editor');
+	check(settings.search.field.focusTarget.hasFocus, 'focus: the Settings search owns text input');
+	await press('Digit1');
+	await press('Digit2');
+	await press('ControlLeft', 'KeyZ');
+	check(settings.search.field.text === '1' && settings.input.model.query === '1' && model.buffer.getText() === original,
+		'focus: Settings search Undo updates its filter without editing source');
+	// Settings is a document window, not a dismissible prompt. Retire it
+	// through the window owner before continuing the source workflow.
+	check(await parts.close(settingsPart), 'focus: Settings window closes');
+	check(parts.revealEditor(titleTab, sourceGroup), 'focus: the original source editor is still available');
+	await frame();
 
 	// Open the existing Rename command through the actual source context menu.
 	await press('ControlLeft', 'Home');

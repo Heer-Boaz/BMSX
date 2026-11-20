@@ -19,7 +19,7 @@ export type CartMapExpectation = {
 };
 
 async function openMap(test: StudioFixture, name: string): Promise<CartMapInput> {
-	await test.press('ControlLeft', 'Comma');
+	await test.press('ControlLeft', 'KeyP');
 	await test.press('ControlLeft', 'KeyA');
 	await typeSourceText(test, name);
 	await test.press('Enter');

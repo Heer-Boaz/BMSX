@@ -10,7 +10,7 @@ export async function testStudioFileChoices(test: StudioFixture): Promise<void> 
 	const before = cycles(), media = ide.sources.currentBlua32Media;
 	const target = ide.sources.catalog.resolveResource({ contextId: origin.resource.contextId, path: 'title_screen.lua' })!;
 	const picker = ide.editor.quickInput;
-	await press('ControlLeft', 'Comma');
+	await press('ControlLeft', 'KeyP');
 	for (const code of ['KeyT', 'KeyS', 'KeyC', 'KeyR']) await press(code);
 	check(picker.model.list.rows.length !== 0 && picker.model.list.rows[0].item.label === target.path,
 		'A06: a file abbreviation ranks the real basename, not a literal-only empty list');
@@ -20,7 +20,7 @@ export async function testStudioFileChoices(test: StudioFixture): Promise<void> 
 	check(!picker.visible, 'A06: accepting a file ends the query lifetime');
 	await press('AltLeft', 'ArrowLeft');
 	check(sourcePane(test).code.model === origin, 'A06: file navigation Back restores the original working copy');
-	await press('ControlLeft', 'Comma');
+	await press('ControlLeft', 'KeyP');
 	await test.clipboard.writeText('TITLE_SCREEN.LUA'); await press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows[0].item.label === target.path, 'A06: case-folded path identity preserves the original resource spelling');
 	await press('ControlLeft', 'KeyZ');

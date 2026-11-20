@@ -19,7 +19,7 @@ export async function typeSourceText(test: StudioFixture, text: string): Promise
 /** Navigate and edit through visible controls. Guest access below is read-only:
  * no model edits, clipboard injection, runtime calls or alternative cart. */
 export async function openScene(test: StudioFixture, name: string, memberCount = 3) {
-	await test.press('ControlLeft', 'Comma');
+	await test.press('ControlLeft', 'KeyP');
 	await test.press('ControlLeft', 'KeyA');
 	await test.press('Backspace');
 	await typeSourceText(test, `scenes/${name}`);

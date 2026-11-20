@@ -54,7 +54,7 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	const scenario = ide.editor.editorParts.activeGroup.model.activeTab;
 	check(scenario.kind === 'scenario_lab', 'palette: Scenario Lab is an ordinary registered command');
 	const scenarioFocus = inputFocus.target;
-	await press('ControlLeft', 'Comma');
+	await press('ControlLeft', 'KeyP');
 	await press('KeyQ');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	check(!picker.model.items.some(row => row.label === 'Edit: Undo' || row.label === 'Go: Go to Symbol'),
