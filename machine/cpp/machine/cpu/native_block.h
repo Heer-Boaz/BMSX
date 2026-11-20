@@ -66,8 +66,10 @@ struct NativeBlockRunState {
 enum class NativeBlockTransition : u32 {
 	Redispatch,
 	RebindFrame,
-	// The same frame/image remains active; its register storage may have grown.
+	// The same frame/image remains active; its register storage may have changed.
 	NextInstruction,
+	// Read-only lookup plus a result write in the already-admitted window.
+	SameWindow,
 };
 
 using NativeBlockExitHandler = NativeBlockTransition (*)(CPU*, CallFrame*, const NativeBlockExitSite*);

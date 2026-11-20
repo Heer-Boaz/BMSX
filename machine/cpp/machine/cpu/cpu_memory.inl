@@ -22,7 +22,7 @@ inline void CPU::executeMemoryLoad(CallFrame& frame, int destination, MemoryAcce
 		return;
 	}
 	frame.registers.set(destination, value);
-	frame.setTop(std::max(frame.readWindow(FrameField::Top), destination + 1));
+	frame.extendTop(destination + 1);
 }
 
 inline bool CPU::executeMemoryStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address) {

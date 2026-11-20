@@ -1813,10 +1813,7 @@ dispatch_decode:
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
 	registers.set(static_cast<size_t>(index), (valueExpr)); \
-	const int nextTop = (index) + 1; \
-	if (nextTop > FRAME.readWindow(FrameField::Top)) { \
-		FRAME.setTop(nextTop); \
-	} \
+	FRAME.extendTop((index) + 1); \
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
 	skipNextInstruction(FRAME); \

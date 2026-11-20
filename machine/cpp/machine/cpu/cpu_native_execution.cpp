@@ -121,11 +121,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		auto* page = NativeCodeLookup::findInRoot(run->codeRoot, exit->nextPc);
 		if (page && page->nativeBlocks) {
 			auto* target = page->nativeBlocks->entries[(exit->nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
-			auto& thread = *cpu.m_activeThread;
-			const int depth = static_cast<int>(thread.frameDepth());
-			if (target && depth > run->targetDepth
-				&& (cpu.m_haltedUntilIrqThreadAddress != thread.address || cpu.m_haltedUntilIrqFrameDepth != depth)
-				&& !thread.stackRequiresScalar()) {
+			// Like the already-linked edge, this cannot change the admitted
+			// frame, stack geometry, halt latch or write-watch epoch.
+			if (target) {
 				// Shared system code entering a selectable cartridge bank must
 				// resolve that bank on each traversal instead of patching the edge.
 				if (exit->link.patchAddress != 0 && !exit->link.target
@@ -243,7 +241,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			auto table = cpu.createTable(exit->exitB, exit->exitC);
 			frame->registers.set(a, valueTable(table.address()));
 			cpu.instructionBudgetRemaining -= 2 * static_cast<int>(table.storedSlotCount()) - exit->exitB;
-			frame->setTop(std::max(frame->readWindow(FrameField::Top), a + 1));
+			frame->extendTop(a + 1);
 			break;
 		}
 		default:
@@ -260,35 +258,41 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 #endif
 			return nullptr;
 		}
-		auto& thread = *cpu.m_activeThread;
-		if (static_cast<int>(thread.frameDepth()) <= run->targetDepth || cpu.instructionBudgetRemaining <= 0
-			|| (cpu.m_haltedUntilIrqThreadAddress == cpu.m_activeThread->address
-				&& cpu.m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth()))) {
+		if (cpu.instructionBudgetRemaining <= 0) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 			++gateProfile.returns;
 #endif
 			return nullptr;
 		}
-		if (thread.stackRequiresScalar()) {
+		const bool sameWindow = transition == NativeBlockTransition::SameWindow;
+		if (!sameWindow) {
+			auto& thread = *cpu.m_activeThread;
+			const auto depth = static_cast<int>(thread.frameDepth());
+			if (depth <= run->targetDepth
+				|| (cpu.m_haltedUntilIrqThreadAddress == thread.address && cpu.m_haltedUntilIrqFrameDepth == depth)
+				|| thread.stackRequiresScalar()) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-			++gateProfile.returns;
+				++gateProfile.returns;
 #endif
-			return nullptr;
+				return nullptr;
+			}
+			thread.recordNativeWrites(cpu.m_memory.ramWriteWatches());
+			frame = thread.currentFrame;
 		}
-		thread.recordNativeWrites(cpu.m_memory.ramWriteWatches());
-		frame = thread.currentFrame;
-		if (transition == NativeBlockTransition::NextInstruction && continuation) {
-			// These helpers neither change frames nor operate a device. Keep the
-			// latched image/bank and avoid resolving their fixed successor again.
-			state.globalValues = cpu.m_globalBank.values();
-			state.systemGlobalValues = cpu.m_systemGlobalBank.values();
-			state.remainingCycles = cpu.instructionBudgetRemaining;
-			state.registerTop = frame->readWindow(FrameField::Top);
+		// Read-only helpers preserve the admitted window. Other same-frame
+		// helpers can relocate it but leave the image, bank and globals bound.
+		const bool sameFrame = sameWindow || transition == NativeBlockTransition::NextInstruction;
+		if (sameFrame && continuation) {
+			void* target = *continuation;
+			if (target) {
+				state.remainingCycles = cpu.instructionBudgetRemaining;
+				state.registerTop = frame->readWindow(FrameField::Top);
+			}
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-			if (*continuation) ++gateProfile.resumes;
+			if (target) ++gateProfile.resumes;
 			else ++gateProfile.returns;
 #endif
-			return *continuation;
+			return target;
 		}
 		// CALL/RET have already committed the real activation. Rebind its image
 		// and instruction chip-select before looking up a warm receiving body.
@@ -337,7 +341,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		run->cartridgeRom = cpu.m_memory.cartridgeController().romStorage(slot);
 		state.globalValues = cpu.m_globalBank.values();
 		state.systemGlobalValues = cpu.m_systemGlobalBank.values();
-		if (transition != NativeBlockTransition::NextInstruction) {
+		if (!sameFrame) {
 			state.constants = frame->executionImage->constPool;
 			state.frame = frame;
 			state.cop0Words = cpu.m_cop0Words.data();

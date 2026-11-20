@@ -67,7 +67,19 @@ NativeBlockGate::NativeBlockGate() {
 	sljit_set_label(call, callEntry);
 	auto* retEntry = emitReturnGate(compiler, declined);
 	sljit_set_label(ret, retEntry);
+	// Ordinary exits carry the exact outstanding charge and top floor in
+	// their descriptor. Linked edges and scalar boundaries already applied them.
+	auto* publish = sljit_emit_label(compiler);
+	sljit_emit_op2(compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0,
+		SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, cycles));
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, registerTop));
+	auto* noTop = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
+	auto* retained = sljit_emit_cmp(compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_R1, 0,
+		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop));
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop), SLJIT_R1, 0);
 	auto* leave = sljit_emit_label(compiler);
+	sljit_set_label(noTop, leave);
+	sljit_set_label(retained, leave);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, remainingCycles), NativeBlockAbi::budget, 0);
 	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, exitCode));
@@ -80,6 +92,7 @@ NativeBlockGate::NativeBlockGate() {
 #endif
 	exit = reinterpret_cast<void*>(sljit_get_label_addr(returned));
 	dispatch = reinterpret_cast<void*>(sljit_get_label_addr(dispatched));
+	publishSegment = reinterpret_cast<void*>(sljit_get_label_addr(publish));
 	leaveSegment = reinterpret_cast<void*>(sljit_get_label_addr(leave));
 #if defined(BMSX_NATIVE_PERF_MAP)
 	auto start = static_cast<sljit_uw>(SLJIT_FUNC_ADDR(entry));
@@ -89,12 +102,13 @@ NativeBlockGate::NativeBlockGate() {
 	const std::array boundaries{
 		start, sljit_get_label_abs_addr(returned), sljit_get_label_abs_addr(dispatched),
 		sljit_get_label_abs_addr(cold), sljit_get_label_abs_addr(declined), sljit_get_label_abs_addr(callEntry),
-		sljit_get_label_abs_addr(retEntry), sljit_get_label_abs_addr(leave), start + sljit_get_generated_code_size(compiler)
+		sljit_get_label_abs_addr(retEntry), sljit_get_label_abs_addr(publish), sljit_get_label_abs_addr(leave),
+		start + sljit_get_generated_code_size(compiler)
 	};
 	constexpr std::array names{
 		"bmsx_native_gate_entry", "bmsx_native_gate_return_to_cpp", "bmsx_native_gate_dispatch",
 		"bmsx_native_gate_cold_dispatch", "bmsx_native_gate_declined", "bmsx_native_gate_call",
-		"bmsx_native_gate_ret", "bmsx_native_gate_leave"
+		"bmsx_native_gate_ret", "bmsx_native_gate_publish", "bmsx_native_gate_leave"
 	};
 	static_assert(boundaries.size() == names.size() + 1);
 	std::array<NativePerfMapRange, names.size()> ranges;

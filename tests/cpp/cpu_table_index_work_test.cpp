@@ -190,10 +190,15 @@ void stringReceiver() {
 			auto installed = asTable(m->cpu.readFrameRegister(0, 21), m->cpu.gcHeap());
 			TableRecord(m->cpu.gcHeap(), installed.metatableAddress()).setStringKey(m->cpu.stringPool().intern("__index"), valueTable(m->cpu.createTable().address()));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + program.starts[0] * INSTRUCTION_BYTES);
+			m->cpu.activeThread()->currentFrame->writeControl(FrameField::Top, 0x49000001u);
 		}
-		test::runCpuParity(generated.cpu, scalar.cpu, 3);
-		require(generated.cpu.instructionBudgetRemaining == 3 - 2 - 24 && isNil(generated.cpu.readFrameRegister(0, 6)),
-			"live prototype replacement uses the new two-Table path and resolved nil has no fault");
+		// Grant exactly the prefix, the live two-table lookup, and its
+		// receiving MOV. The earlier run exhausted its grant in the helper.
+		test::runCpuParity(generated.cpu, scalar.cpu, 2 + 24 + 2);
+		require(generated.cpu.instructionBudgetRemaining == 0
+			&& isNil(generated.cpu.readFrameRegister(0, 6)) && isNil(generated.cpu.readFrameRegister(0, 8))
+			&& generated.cpu.activeThread()->currentFrame->readControl(FrameField::Top) == 0x49000009u,
+			"the updated String lookup resumes its receiving window, publishes its extent, and charges the marker once");
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 		require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
 			require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes()

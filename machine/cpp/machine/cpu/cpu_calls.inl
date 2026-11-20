@@ -11,7 +11,7 @@ inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, 
 	const u32 closure = createClosure(frame);
 	if (!closure) return;
 	frame.registers.set(destination, valueClosure(closure));
-	frame.setTop(std::max(frame.readWindow(FrameField::Top), destination + 1));
+	frame.extendTop(destination + 1);
 }
 
 inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
@@ -82,5 +82,5 @@ inline void CPU::executeVararg(CallFrame& frame, int a, int b) {
 	}
 	instructionBudgetRemaining -= count;
 	if (b == 0) frame.setTop(a + count);
-	else if (count != 0) frame.setTop(std::max(frame.readWindow(FrameField::Top), a + count));
+	else if (count != 0) frame.extendTop(a + count);
 }

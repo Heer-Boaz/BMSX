@@ -83,6 +83,7 @@ public:
 	void* entry;
 	void* exit;
 	void* dispatch;
+	void* publishSegment;
 	void* leaveSegment;
 private:
 	static sljit_label* emitCallGate(sljit_compiler*, sljit_label* cold);
