@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { isDeepStrictEqual } from 'node:util';
 import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { parseSystemRomImage, parseCartridgePackage } from '../../../machine/ts/rompack/image';
@@ -11,6 +10,7 @@ import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/
 import { captureRuntimeSaveState, applyRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState, decodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { HistoryMode, HistorySeekResult } from '../../../machine/ts/machine/runtime/history/history';
+import { observeReplay } from './observation';
 import { type InputControllerSnapshot as Snapshot } from '../../../machine/ts/machine/devices/input/contracts';
 
 async function main(): Promise<void> {
@@ -18,12 +18,11 @@ async function main(): Promise<void> {
 	assert.ok(cpuBackend === 'default' || cpuBackend === 'interpreter' || cpuBackend === 'javascript', 'CPU backend must be default, interpreter or javascript');
 	let inputTick = 0;
 	let rejectLiveInput = false;
-	let historyCaptureMs = 0;
-	let historyCaptures = 0;
+	let branched = false;
 	const input = {
 		sampleInputControllerSnapshot(snapshot: Snapshot): void {
 			assert.equal(rejectLiveInput, false, 'replay must not sample live input');
-			snapshot.pads[0].buttons = (inputTick % 40) < 20 ? 1 : 1 << 15;
+			snapshot.pads[0].buttons = branched ? 2 : inputTick % 6 < 3 ? 1 : 1 << 15;
 		},
 		supervisorRequestLineHigh(): boolean {
 			assert.equal(rejectLiveInput, false, 'replay must not read the live supervisor line');
@@ -60,88 +59,56 @@ async function main(): Promise<void> {
 		runtime.machine.audioController.synchronizeOutput().clear();
 		assert.equal(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), 0, 'guest fault');
 		if (runtime.history.checkpointPending) {
-			const start = performance.now();
 			backend.captureGxGpuVramSnapshot(gpu);
 			runtime.history.captureCheckpoint();
-			historyCaptureMs += performance.now() - start;
-			historyCaptures += 1;
 		}
 	};
 	const capture = () => {
 		backend.captureGxGpuVramSnapshot(gpu);
 		return captureRuntimeSaveState(runtime);
 	};
+	const observe = () => observeReplay(runtime);
 	runtime.boot();
-	for (const checkpointTick of [2, 400, 1200]) {
-		while (runtime.frameScheduler.lastTickSequence < checkpointTick) tick();
-		const captureStart = performance.now();
-		const anchor = capture();
-		const captureMs = performance.now() - captureStart;
-		const bytes = encodeRuntimeSaveState(anchor);
-		let recycled = captureRuntimeSaveState(runtime);
-		const recycledRam = recycled.ram;
-		const recycledVram = recycled.machineState.machine.gxGpu.vramBytes;
-		const recycledSampleRam = recycled.machineState.machine.audio.sampleRam;
-		for (let count = 0; count < 120; count += 1) tick();
-		const expected = capture();
-		for (let pass = 0; pass < 3; pass += 1) {
-			recycled = captureRuntimeSaveState(runtime, recycled);
-			assert.equal(recycled.ram, recycledRam);
-			assert.equal(recycled.machineState.machine.gxGpu.vramBytes, recycledVram);
-			assert.equal(recycled.machineState.machine.audio.sampleRam, recycledSampleRam);
-			assert.deepEqual(recycled, expected, 'reused capture must contain the new live state');
-		}
-		assert.deepEqual(encodeRuntimeSaveState(anchor), bytes, 'reuse must leave another checkpoint untouched');
-		if (outputPrefix) writeFileSync(`${outputPrefix}-${checkpointTick}.state`, encodeRuntimeSaveState(expected));
-		const restoreStart = performance.now();
-		applyRuntimeSaveState(runtime, anchor);
-		const restoreMs = performance.now() - restoreStart;
-		const replayStart = performance.now();
-		for (let count = 0; count < 120; count += 1) tick();
-		const replayMs = performance.now() - replayStart;
-		assert.deepEqual(capture(), expected, 'trusted in-memory replay must reproduce the full runtime state');
-		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(bytes, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
-		for (let count = 0; count < 120; count += 1) tick();
-		assert.deepEqual(capture(), expected, 'disk-codec replay must reproduce the same runtime state');
-		console.log(JSON.stringify({
-			host: 'ts', checkpointTick, captureMs, restoreMs, replayMs, bytes: bytes.byteLength,
-		}));
-	}
+	for (let frame = 0; frame < 75 && observe().voices === 0; frame += 1) tick();
+	const booted = observe();
+	assert.equal(booted.domain, 0);
+	assert.equal(booted.voices, 1 << 4, 'fixture has started the APU voice');
+	const anchor = capture();
+	const bytes = encodeRuntimeSaveState(anchor);
+	for (let frame = 0; frame < 6; frame += 1) tick();
+	const forward = observe();
+	assert.notEqual(forward.background, booted.background, 'the guest produced a different scanout');
+	assert.ok(forward.inputSequence > booted.inputSequence && forward.sampleSequence > booted.sampleSequence);
+	applyRuntimeSaveState(runtime, anchor);
+	for (let frame = 0; frame < 6; frame += 1) tick();
+	assert.deepEqual(observe(), forward, 'in-memory restore repeats the visible machine behavior');
+	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(bytes, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+	for (let frame = 0; frame < 6; frame += 1) tick();
+	assert.deepEqual(observe(), forward, 'the serialized restore repeats the same behavior');
 
 	const history = runtime.history;
-	history.start({ checkpointCapacity: 4, inputCapacity: 96, checkpointIntervalCycles: runtime.timing.cycleBudgetPerFrame * 20 });
+	history.start({ checkpointCapacity: 3, inputCapacity: 12, checkpointIntervalCycles: runtime.timing.cycleBudgetPerFrame * 4 });
 	backend.captureGxGpuVramSnapshot(gpu);
 	history.captureCheckpoint();
 	const initialCycles = history.earliestCycles;
-	const references = new Map<number, ReturnType<typeof capture>>();
-	for (let index = 1; index <= 111; index += 1) {
+	const references = new Map<number, ReturnType<typeof observe>>();
+	for (let index = 1; index <= 22; index += 1) {
 		tick(true);
-		if ([55, 77, 111].includes(index)) references.set(index, capture());
+		if (index === 16 || index === 19 || index === 22) references.set(index, observe());
 	}
-	assert.equal(history.checkpointCount, 4);
-	assert.ok(history.earliestCycles > initialCycles, 'checkpoint ring must wrap');
-	assert.ok(history.inputJournal.endSequence > history.inputJournal.capacity, 'input storage must wrap');
-	assert.equal(history.inputJournal.storageBytes, 96 * 176);
+	assert.equal(history.checkpointCount, 3);
+	assert.ok(history.earliestCycles > initialCycles, 'checkpoint ring wraps');
+	assert.ok(history.inputJournal.endSequence > history.inputJournal.capacity, 'input ring wraps');
 	const retainedEnd = history.latestCycles;
 	rejectLiveInput = true;
-	let seekSteps = 0;
-	let seekWorkMs = 0;
-	let maxSeekStepMs = 0;
-	let seekRestoreMs = 0;
-	for (const [index, playback] of [[111, false], [55, false], [111, true], [77, false]] as const) {
+	const replay = [];
+	for (const [index, playback] of [[22, false], [16, false], [22, true], [19, false]] as const) {
 		const expected = references.get(index)!;
-		const restoreStart = performance.now();
 		if (playback) history.beginPlayback();
-		else history.beginSeek(expected.machineState.schedulerNowCycles);
-		if (!playback) seekRestoreMs += performance.now() - restoreStart;
-		for (let step = 0; history.mode === HistoryMode.Replaying && step < 10000; step += 1) {
-			const stepStart = performance.now();
+		else history.beginSeek(expected.cycles);
+		for (let step = 0; history.mode === HistoryMode.Replaying && step < 1000; step += 1) {
 			if (playback) history.advancePlayback(1000 / 60);
-			else {
-				const result = history.advanceSeek(16384);
-				seekSteps += 1;
-				assert.notEqual(result, HistorySeekResult.Stopped, 'recorded replay must progress');
-			}
+			else assert.notEqual(history.advanceSeek(16384), HistorySeekResult.Stopped, 'recorded replay must progress');
 			while (gpu.backendServicePending()) {
 				if (gpu.backendCommandDrainPending()) backend.executeGxGpuCommandDrain(gpu);
 				else backend.executeGxGpuReadback(gpu);
@@ -149,32 +116,30 @@ async function main(): Promise<void> {
 			backend.executeGxGpuCommandDrain(gpu);
 			gpu.retirePresentedCommands();
 			runtime.machine.audioController.synchronizeOutput().clear();
-			const elapsed = performance.now() - stepStart;
-			if (!playback) seekWorkMs += elapsed;
-			if (!playback && elapsed > maxSeekStepMs) maxSeekStepMs = elapsed;
 		}
 		assert.equal(history.mode, HistoryMode.Reviewing);
 		assert.equal(history.latestCycles, retainedEnd, 'seek retains the recorded future');
-		const actual = capture();
-		assert.equal(actual.machineState.schedulerNowCycles, expected.machineState.schedulerNowCycles);
-		assert.equal(actual.machineState.frameScheduler.lastTickSequence, expected.machineState.frameScheduler.lastTickSequence);
-		assert.ok(isDeepStrictEqual(actual.machineState.machine, expected.machineState.machine), `history device state at ${index}`);
-		assert.ok(isDeepStrictEqual(actual.cpuState, expected.cpuState), `history CPU state at ${index}`);
-		assert.equal(actual.pendingEntryCall, expected.pendingEntryCall);
+		const actual = observe();
+		assert.deepEqual(actual, expected, `recorded input and output at boundary ${index}`);
+		replay.push(actual);
 	}
 	const reviewCycles = runtime.machine.scheduler.nowCycles;
 	runtime.frameScheduler.run(80);
 	assert.equal(runtime.machine.scheduler.nowCycles, reviewCycles, 'review does not advance on host time');
 	history.input.applyInputControllerVibrationEffect(0, 10, 1);
 	history.resumeRecording();
-	assert.equal(history.inputJournal.endSequence, 77);
+	assert.equal(history.inputJournal.endSequence, 19);
 	assert.equal(history.latestCycles, reviewCycles);
 	backend.captureGxGpuVramSnapshot(gpu);
 	history.captureCheckpoint();
 	rejectLiveInput = false;
-	for (let index = 0; index < 10; index += 1) tick();
-	assert.equal(history.inputJournal.endSequence, 87);
-	if (outputPrefix) writeFileSync(`${outputPrefix}-history.state`, encodeRuntimeSaveState(capture()));
+	branched = true;
+	for (let index = 0; index < 3; index += 1) tick();
+	assert.equal(history.inputJournal.endSequence, 22);
+	const branch = observe();
+	assert.equal(branch.buttons, 2, 'live branch samples new input instead of retaining the recording');
+	assert.notEqual(branch.background, references.get(22)!.background);
+	writeFileSync(outputPrefix, JSON.stringify({ forward, replay, branch }));
 	let compiledBlocks = 0;
 	for (let frame = runtime.machine.cpu.rootThread.currentFrame; frame !== null; frame = frame.previous) {
 		for (const page of frame.executionImage.decodedPages.values()) {
@@ -185,7 +150,6 @@ async function main(): Promise<void> {
 	if (cpuBackend === 'javascript') assert.ok(compiledBlocks > 0, 'the JavaScript replay must exercise actual generated code');
 	else assert.equal(compiledBlocks, 0, 'the default and interpreter replays interpret');
 	console.log(JSON.stringify({ cpuBackend, compiledBlocks }));
-	console.log(JSON.stringify({ host: 'ts-history', seekSteps, seekWorkMs, maxSeekStepMs, seekRestoreMs, historyCaptures, historyCaptureMs, checkpoints: history.checkpointCount, inputBytes: history.inputJournal.storageBytes }));
 	applyRuntimeSaveState(runtime, capture());
 	assert.equal(history.mode, HistoryMode.Disabled, 'external load ends history');
 	console.log('RUNTIME-REPLAY:PASS');

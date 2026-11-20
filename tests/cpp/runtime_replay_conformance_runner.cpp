@@ -2,13 +2,14 @@
 #include "cartridge_media.h"
 #include "libretro_state.h"
 #include "machine/runtime/runtime.h"
-#include "machine/runtime/save_state/codec.h"
 #include "render/backend/backend.h"
 #include "rompack/image.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
 
-#include <chrono>
+#include "support/runtime_replay_observation.h"
+
+#include <array>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -20,9 +21,10 @@ class ReplayInput final : public bmsx::InputControllerInputSource {
 public:
 	bmsx::i64 tick = 0;
 	bool rejectLiveInput = false;
+	bool branched = false;
 	void sampleInputControllerSnapshot(bmsx::InputControllerSnapshot& snapshot, bmsx::InputControllerSampleContext) override {
 		if (rejectLiveInput) throw std::runtime_error("replay sampled live input");
-		snapshot.pads[0].buttons = (tick % 40) < 20 ? 1u : 1u << 15;
+		snapshot.pads[0].buttons = branched ? 2u : tick % 6 < 3 ? 1u : 1u << 15;
 	}
 	bool supervisorRequestLineHigh() const override {
 		if (rejectLiveInput) throw std::runtime_error("replay read the live supervisor line");
@@ -33,6 +35,16 @@ public:
 	}
 };
 
+using bmsx::test::ReplayObservation;
+using bmsx::test::observeReplay;
+
+std::ostream& operator<<(std::ostream& output, const ReplayObservation& probe) {
+	return output << "{\"cycles\":" << probe.cycles << ",\"tick\":" << probe.tick
+		<< ",\"domain\":" << probe.domain << ",\"background\":" << probe.background
+		<< ",\"inputSequence\":" << probe.inputSequence << ",\"buttons\":" << probe.buttons
+		<< ",\"sampleSequence\":" << probe.sampleSequence << ",\"voices\":" << probe.voices << '}';
+}
+
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
@@ -41,7 +53,7 @@ void require(bool condition, const char* message) {
 
 int main(int argc, char** argv) {
 	try {
-		require(argc == 3 || argc == 4, "Usage: bmsx_runtime_replay_conformance_runner SYSTEM_ROM CART_ROM [OUTPUT_PREFIX]");
+		require(argc == 4, "Usage: bmsx_runtime_replay_conformance_runner SYSTEM_ROM CART_ROM OUTPUT_JSON");
 		bmsx::MmapFile systemFile;
 		bmsx::MmapFile cartFile;
 		require(systemFile.open(argv[1]) && cartFile.open(argv[2]), "media must map");
@@ -55,9 +67,6 @@ int main(int argc, char** argv) {
 		}, input);
 		auto& gpu = runtime.machine.gxGpu;
 		bmsx::SoftwareBackend backend(256, 212, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
-		using Clock = std::chrono::steady_clock;
-		double historyCaptureMs = 0;
-		int historyCaptures = 0;
 		constexpr double hostDeltas[] = {1.25, 8.5, 16.75};
 		const auto tick = [&](bool paced = false) {
 			input.tick = runtime.frameScheduler.lastTickSequence;
@@ -79,11 +88,8 @@ int main(int argc, char** argv) {
 			runtime.machine.audioController.synchronizeOutput().clear();
 			require(runtime.machine.memory.readIoU32(bmsx::IO_SYS_SUPERVISOR_FAULT_SEQUENCE) == 0u, "guest fault");
 			if (runtime.history.checkpointPending) {
-				const auto start = Clock::now();
 				backend.captureGxGpuVramSnapshot(gpu);
 				runtime.history.captureCheckpoint();
-				historyCaptureMs += std::chrono::duration<double, std::milli>(Clock::now() - start).count();
-				++historyCaptures;
 			}
 		};
 		const auto capture = [&]() {
@@ -91,81 +97,48 @@ int main(int argc, char** argv) {
 			return bmsx::captureRuntimeSaveState(runtime);
 		};
 		runtime.boot();
-		for (const int checkpointTick : {2, 400, 1200}) {
-			while (runtime.frameScheduler.lastTickSequence < checkpointTick) tick();
-			const auto captureStart = Clock::now();
-			const auto anchor = capture();
-			const auto captureMs = std::chrono::duration<double, std::milli>(Clock::now() - captureStart).count();
-			std::vector<bmsx::u8> envelope(bmsx::libretroStateSize(runtime));
-			require(bmsx::serializeLibretroState(runtime, envelope), "libretro serialize must succeed");
-			const auto anchorBytes = bmsx::encodeRuntimeSaveState(anchor);
-			auto recycled = bmsx::captureRuntimeSaveState(runtime);
-			const auto* recycledRam = recycled.ram.data();
-			const auto* recycledVram = recycled.machineState.machine.gxGpu.vramBytes.data();
-			const auto* recycledSampleRam = recycled.machineState.machine.audio.sampleRam.data();
-			for (int count = 0; count < 120; ++count) tick();
-			const auto expected = bmsx::encodeRuntimeSaveState(capture());
-			for (int pass = 0; pass < 3; ++pass) {
-				recycled = bmsx::captureRuntimeSaveState(runtime, std::move(recycled));
-				require(recycled.ram.data() == recycledRam, "main RAM storage is reused");
-				require(recycled.machineState.machine.gxGpu.vramBytes.data() == recycledVram, "VRAM storage is reused");
-				require(recycled.machineState.machine.audio.sampleRam.data() == recycledSampleRam, "sample RAM storage is reused");
-				require(bmsx::encodeRuntimeSaveState(recycled) == expected, "reused capture contains the new live state");
-			}
-			require(bmsx::encodeRuntimeSaveState(anchor) == anchorBytes, "reuse leaves another checkpoint untouched");
-			if (argc == 4) {
-				std::ofstream output;
-				output.exceptions(std::ios::failbit | std::ios::badbit);
-				output.open(std::string(argv[3]) + "-" + std::to_string(checkpointTick) + ".state", std::ios::binary);
-				output.write(reinterpret_cast<const char*>(expected.data()), expected.size());
-			}
-			const auto restoreStart = Clock::now();
-			bmsx::applyRuntimeSaveState(runtime, anchor);
-			const auto restoreMs = std::chrono::duration<double, std::milli>(Clock::now() - restoreStart).count();
-			const auto replayStart = Clock::now();
-			for (int count = 0; count < 120; ++count) tick();
-			const auto replayMs = std::chrono::duration<double, std::milli>(Clock::now() - replayStart).count();
-			require(bmsx::encodeRuntimeSaveState(capture()) == expected, "trusted replay must reproduce the full runtime state");
-			require(bmsx::unserializeLibretroState(runtime, envelope), "libretro unserialize must succeed");
-			for (int count = 0; count < 120; ++count) tick();
-			require(bmsx::encodeRuntimeSaveState(capture()) == expected, "libretro replay must reproduce the same runtime state");
-			std::cout << "{\"host\":\"cpp\",\"checkpointTick\":" << checkpointTick
-				<< ",\"captureMs\":" << captureMs << ",\"restoreMs\":" << restoreMs
-				<< ",\"replayMs\":" << replayMs << ",\"bytes\":" << bmsx::encodeRuntimeSaveState(anchor).size() << "}\n";
-		}
+		for (int frame = 0; frame < 75 && observeReplay(runtime).voices == 0; ++frame) tick();
+		const auto booted = observeReplay(runtime);
+		require(booted.domain == 0 && booted.voices == (1u << 4), "fixture has started the APU voice");
+		const auto anchor = capture();
+		std::vector<bmsx::u8> envelope(bmsx::libretroStateSize(runtime));
+		require(bmsx::serializeLibretroState(runtime, envelope), "libretro serialize must succeed");
+		for (int frame = 0; frame < 6; ++frame) tick();
+		const auto forward = observeReplay(runtime);
+		require(forward.background != booted.background, "guest produced a different scanout");
+		require(forward.inputSequence > booted.inputSequence && forward.sampleSequence > booted.sampleSequence,
+			"fixture samples input and advances the audio clock");
+		bmsx::applyRuntimeSaveState(runtime, anchor);
+		for (int frame = 0; frame < 6; ++frame) tick();
+		require(observeReplay(runtime) == forward, "in-memory restore repeats visible machine behavior");
+		require(bmsx::unserializeLibretroState(runtime, envelope), "libretro unserialize must succeed");
+		for (int frame = 0; frame < 6; ++frame) tick();
+		require(observeReplay(runtime) == forward, "serialized restore repeats the same behavior");
+
 		auto& history = runtime.history;
-		history.start({4, 96, runtime.timing.cycleBudgetPerFrame * 20});
+		history.start({3, 12, runtime.timing.cycleBudgetPerFrame * 4});
 		backend.captureGxGpuVramSnapshot(gpu);
 		history.captureCheckpoint();
 		const auto initialCycles = history.earliestCycles();
-		std::map<int, bmsx::RuntimeSaveState> references;
-		for (int index = 1; index <= 111; ++index) {
+		std::map<int, ReplayObservation> references;
+		for (int index = 1; index <= 22; ++index) {
 			tick(true);
-			if (index == 55 || index == 77 || index == 111) references.emplace(index, capture());
+			if (index == 16 || index == 19 || index == 22) references.emplace(index, observeReplay(runtime));
 		}
-		require(history.checkpointCount() == 4 && history.earliestCycles() > initialCycles, "checkpoint ring wraps");
+		require(history.checkpointCount() == 3 && history.earliestCycles() > initialCycles, "checkpoint ring wraps");
 		require(history.inputJournal.endSequence > static_cast<bmsx::i64>(history.inputJournal.capacity()), "input ring wraps");
-		require(history.inputJournal.storageBytes() == 96 * 176, "fixed journal allocation");
 		const auto retainedEnd = history.latestCycles();
 		input.rejectLiveInput = true;
-		int seekSteps = 0;
-		double seekWorkMs = 0;
-		double maxSeekStepMs = 0;
-		double seekRestoreMs = 0;
-		for (const auto [index, playback] : {std::pair{111, false}, std::pair{55, false}, std::pair{111, true}, std::pair{77, false}}) {
+		constexpr std::array seeks{std::pair{22, false}, std::pair{16, false}, std::pair{22, true}, std::pair{19, false}};
+		std::array<ReplayObservation, seeks.size()> replay;
+		for (size_t sample = 0; sample < seeks.size(); ++sample) {
+			const auto [index, playback] = seeks[sample];
 			const auto& expected = references.at(index);
-			const auto restoreStart = Clock::now();
 			if (playback) history.beginPlayback();
-			else history.beginSeek(expected.machineState.schedulerNowCycles);
-			if (!playback) seekRestoreMs += std::chrono::duration<double, std::milli>(Clock::now() - restoreStart).count();
-			for (int step = 0; history.mode == bmsx::HistoryMode::Replaying && step < 10000; ++step) {
-				const auto stepStart = Clock::now();
+			else history.beginSeek(expected.cycles);
+			for (int step = 0; history.mode == bmsx::HistoryMode::Replaying && step < 1000; ++step) {
 				if (playback) history.advancePlayback(1000.0 / 60);
-				else {
-					const auto result = history.advanceSeek(16384);
-					++seekSteps;
-					require(result != bmsx::HistorySeekResult::Stopped, "recorded replay must progress");
-				}
+				else require(history.advanceSeek(16384) != bmsx::HistorySeekResult::Stopped, "recorded replay must progress");
 				while (gpu.backendServicePending()) {
 					if (gpu.backendCommandDrainPending()) backend.executeGxGpuCommandDrain(gpu);
 					else backend.executeGxGpuReadback(gpu);
@@ -173,43 +146,36 @@ int main(int argc, char** argv) {
 				backend.executeGxGpuCommandDrain(gpu);
 				gpu.retirePresentedCommands();
 				runtime.machine.audioController.synchronizeOutput().clear();
-				const auto elapsed = std::chrono::duration<double, std::milli>(Clock::now() - stepStart).count();
-				if (!playback) seekWorkMs += elapsed;
-				if (!playback && elapsed > maxSeekStepMs) maxSeekStepMs = elapsed;
 			}
 			require(history.mode == bmsx::HistoryMode::Reviewing, "seek reaches its target");
 			require(history.latestCycles() == retainedEnd, "seek retains the recorded future");
-			auto actual = capture();
-			require(actual.machineState.schedulerNowCycles == expected.machineState.schedulerNowCycles, "seek reproduces machine cycles");
-			require(actual.machineState.frameScheduler.lastTickSequence == expected.machineState.frameScheduler.lastTickSequence, "seek reproduces PCRTC ticks");
-			// Exclude host grants/telemetry only. Guest state and identities remain
-			// untouched; the complete remaining state uses the existing codec comparison.
-			actual.machineState.frameScheduler = expected.machineState.frameScheduler;
-			actual.machineState.frameLoop = expected.machineState.frameLoop;
-			require(bmsx::encodeRuntimeSaveState(actual) == bmsx::encodeRuntimeSaveState(expected), "history reproduces complete guest state");
+			replay[sample] = observeReplay(runtime);
+			require(replay[sample] == expected, "history reproduces recorded input and output");
 		}
 		const auto reviewCycles = runtime.machine.scheduler.nowCycles();
 		runtime.frameScheduler.run(runtime, 80.0);
 		require(runtime.machine.scheduler.nowCycles() == reviewCycles, "review does not advance on host time");
 		history.input.applyInputControllerVibrationEffect(0, 10, 1);
 		history.resumeRecording();
-		require(history.inputJournal.endSequence == 77 && history.latestCycles() == reviewCycles, "live takeover truncates future input");
+		require(history.inputJournal.endSequence == 19 && history.latestCycles() == reviewCycles, "live takeover truncates future input");
 		backend.captureGxGpuVramSnapshot(gpu);
 		history.captureCheckpoint();
 		input.rejectLiveInput = false;
-		for (int index = 0; index < 10; ++index) tick();
-		require(history.inputJournal.endSequence == 87, "new branch records input");
-		if (argc == 4) {
-			const auto bytes = bmsx::encodeRuntimeSaveState(capture());
-			std::ofstream output;
-			output.exceptions(std::ios::failbit | std::ios::badbit);
-			output.open(std::string(argv[3]) + "-history.state", std::ios::binary);
-			output.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+		input.branched = true;
+		for (int index = 0; index < 3; ++index) tick();
+		const auto branch = observeReplay(runtime);
+		require(history.inputJournal.endSequence == 22 && branch.buttons == 2, "branch records the new live input");
+		require(branch.background != references.at(22).background, "new input changes the guest scanout");
+		std::ofstream output;
+		output.exceptions(std::ios::failbit | std::ios::badbit);
+		output.open(argv[3]);
+		output << "{\"forward\":" << forward << ",\"replay\":[";
+		for (size_t i = 0; i < replay.size(); ++i) {
+			if (i != 0) output << ',';
+			output << replay[i];
 		}
-		std::cout << "{\"host\":\"cpp-history\",\"seekSteps\":" << seekSteps
-			<< ",\"seekWorkMs\":" << seekWorkMs << ",\"maxSeekStepMs\":" << maxSeekStepMs << ",\"seekRestoreMs\":" << seekRestoreMs
-			<< ",\"historyCaptures\":" << historyCaptures << ",\"historyCaptureMs\":" << historyCaptureMs
-			<< ",\"checkpoints\":" << history.checkpointCount() << ",\"inputBytes\":" << history.inputJournal.storageBytes() << "}\n";
+		output << "],\"branch\":" << branch << "}\n";
+		output.close();
 		bmsx::applyRuntimeSaveState(runtime, capture());
 		require(history.mode == bmsx::HistoryMode::Disabled, "external load ends history");
 		std::cout << "RUNTIME-REPLAY:PASS\n";

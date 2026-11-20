@@ -9,6 +9,8 @@ require('cartlib/apu') -- Provides the command register layout.
 local pmode<const>: *word = 0x08010354
 local background<const>: *word = 0x0801037c
 local command<const>: *word = 0x08000120
+local input_control<const>: *word = 0x08000064
+local pad_buttons<const>: *word = 0x0800009c
 
 rodata tone: apu_command_registers = {
 	source_addr = 0, source_bytes = 0, sample_rate_hz = 440,
@@ -28,7 +30,8 @@ display.reset_256x192()
 *pmode = 0
 local frame = 0
 while true do
-	*background = 0x00403800 | (frame & 0xff)
+	*background = 0x00400000 | ((*pad_buttons & 0x7f) << 8) | (frame & 0xff)
+	*input_control = 1
 	vblank.wait()
 	frame = frame + 1
 end

@@ -6,14 +6,16 @@ import { PRELOAD_SOURCE_MODULES, PRELOAD_TRACE_CHANNELS } from '../../helpers/pr
 async function main() {
 	const [directory, bios, hostRewindSource] = process.argv.slice(2);
 	const system = new Uint8Array(await readFile(bios));
-	const cartridge = await buildSourceCartridgeFixture(directory, 'carts/preload_fixture',
-		system, PRELOAD_SOURCE_MODULES,
-		{ traceStatements: PRELOAD_TRACE_CHANNELS, preloadModules: ['observation'] });
-	await writeFile(join(directory, 'cart.rom'), cartridge);
-	if (hostRewindSource !== undefined) {
-		await buildSourceCartridgeFixture(join(directory, 'host-rewind'), 'carts/rewind_fixture', system,
+	if (hostRewindSource === undefined) {
+		const cartridge = await buildSourceCartridgeFixture(directory, 'carts/preload_fixture',
+			system, PRELOAD_SOURCE_MODULES,
+			{ traceStatements: PRELOAD_TRACE_CHANNELS, preloadModules: ['observation'] });
+		await writeFile(join(directory, 'cart.rom'), cartridge);
+	} else {
+		const cartridge = await buildSourceCartridgeFixture(directory, 'carts/rewind_fixture', system,
 			[{ path: 'entry', source: await readFile(hostRewindSource, 'utf8') }],
 			{ traceStatements: 'erase', preloadModules: [] });
+		await writeFile(join(directory, 'cart.rom'), cartridge);
 	}
 }
 void main();
