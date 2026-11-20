@@ -215,12 +215,40 @@ Run render parity through the TypeScript and C++ headless runtimes:
 npm run test:render-parity
 ```
 
-Run selected Node tests (TypeScript is supported):
+Use the affected test file for the local edit/test loop. Add the Node
+test-loader used by the area suites for tests that import Studio or rendering
+modules:
 
 ```bash
-npm test -- tests/studio/actor_runtime_tools.test.ts
+npm test -- --import ./tests/helpers/test_setup.ts tests/studio/actor_runtime_tools.test.ts
 npm test -- --test-name-pattern='Visual placement composes physical' tests/machine/affine_visuals.test.ts
 ```
+
+Live Studio fixtures use the installed debug BIOS and `studio_test` cartridge.
+Prepare these before a focused run on a fresh worktree, or when their build
+inputs change:
+
+```bash
+npm run build:toolchain:bios -- --debug
+npm run build:toolchain:cart -- studio_test --debug
+```
+
+Use `test:machine`, `test:toolchain`, `test:hosts`, or `test:studio` for a
+whole area. `test:lua` covers all four; `test:rompacker`, native CTest, and the
+conformance runners are separate. The area runners print one report per
+worker lane. For a native edit, configure once, rebuild the affected target,
+then select its test:
+
+```bash
+cmake -S machine/cpp -B build-cpp-tests-debug -G Ninja -DBMSX_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-cpp-tests-debug --target bmsx_geometry_steps_tests
+npm run test:exec -- ctest --test-dir build-cpp-tests-debug -R '^bmsx_geometry_steps_tests$' --output-on-failure
+```
+
+The runtime replay test can also consume runners from a completed native
+Release build: `npm run test:runtime-replay -- --native-build-dir build-cpp-tests`.
+Build the replay targets first (the command without that flag does this) and
+rebuild them after native source changes.
 
 All test scripts use `scripts/test.sh`: a shared cgroup v2 `memory.max` cap of
 **at most 8 GiB** for the test process and its ordinary subprocesses. Existing
