@@ -9,15 +9,11 @@ From the repository root with the existing development prerequisites:
 ```sh
 npm run build:product:node-headless-tooling -- --debug
 npm run validate:toolchain:cart -- iterators_manual --debug
-npm run headless:test -- iterators_manual tests/carts/iterators_manual/iterators_manual_assert.lua
 ```
 
-Expect `[test] generic_iteration_control: passed`. Ten assertions inspect the
-retained observations after completion. This is a fresh derived integration
-image, not byte-identical ordinary playback. Linked addresses may differ; the
-builder selects the matching BIOS.
+Automated BIOS library checks run in the shared [BIOS suite](../../docs/guest_testing.md#running-the-suites).
 
-For separate ordinary playback:
+For ordinary playback:
 
 ```sh
 npm run headless:tooling -- --debug --input-timeline tests/carts/iterators_manual/ordinary_timeline.json iterators_manual

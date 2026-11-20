@@ -51,8 +51,14 @@ integer literal. It applies independently to each setup, body and teardown phase
 of that case. Yielding to a test operation does not reset the phase allowance.
 Module initialization, cleanup, total case cycles and tick limits remain separate.
 
-Each case gets a **fresh physical Runtime, CPU, heap, devices and input**.
-Setup and body share a fresh fixture table. Teardown runs after successful or
+Consecutive cases in a run share a physical machine. After a pass the next
+case uses the ordinary console reboot with released input and a new fixture
+table. If its compiled suite changed, the host installs the new ROM on the
+same card before rebooting. This is not a power-on: for
+example, cartridge RAM survives a console reset. Do not depend on another
+case's writes or assume reset clears persistent storage. When a failure is
+retained for inspection, the next case gets a separate machine. Setup and body
+share a fixture table. Teardown runs after successful or
 failed setup/body; failed setup skips the body. Separate retained coroutines
 preserve both body and teardown failures. Unit targets initialize the BIOS and
 required modules, then run the selected case without entering the game loop.
@@ -195,71 +201,30 @@ Defaults are explicit in `DEFAULT_TEST_BUDGETS`:
 | Case completed logical ticks | 3,000 |
 | CLI process/run watchdog | 60 seconds by default |
 
-Unit targets do not skip the physical BIOS boot screen via a test flag. The
-cold boot cost is therefore real and measured separately from the case body.
-`tests/conformance/guest_testing/profile.ts` runs 24 fresh empty-cart cases,
-including six intentional failures, with a 512 MiB peak-process-RSS gate.
-On this checkout/machine (2026-09-22): compilation 162 ms; whole run 6.05 s;
-median cold case 240 ms; boot 35,091,168 emulated cycles; trivial body/run work
-about 123 additional cycles; peak Node+compiler+targets RSS 233.5 MiB. This is a
-host/process measurement, not a claim that the guest heap needs 233 MiB or a
-universal timing guarantee. A separate bundled O0 CPU microbenchmark (one
-million CALL/RET + table updates, eight samples, separate Node processes)
-measured median 435 ms at `08aff1472` and 434 ms with retained threads. That
-workload shows no material dispatch regression; it is not full-game saturation
-or a native-core performance claim. It is not a substitute for long-run leak profiling.
+Unit targets run the physical BIOS startup, including its boot screen. Group
+checks of independent APIs in one case when neither needs another startup.
+Use separate cases for independent game lifecycles and explicit reset
+regressions, not individual scalar assertions.
 
-## Migration and proof
+## Running the suites
 
-The original 89 assertion files became 80 suite modules (9 unit, 71
-integration). This is not an 89-file compatibility adapter:
-
-- Five empty-cart BIOS assertions became five named unit cases, with physical
-  clock advancement kept as a separate integration case.
-- Four 2025 timeline files became four named unit cases. Intro first-frame and
-  skip behavior share a two-case integration suite.
-- Progression session/rebind coverage shares a two-case unit suite.
-- The Nemesis stage-boot file only waited; actual stage assertions now live in
-  the game-start fixture consumers. Projectile datapaths and held-fire cadence,
-  and Zakfoe motion and projectile lifetime, remain distinct named cases.
-- Nemesis/Pietious fixtures own actual game admission. Input sequences, room
-  transitions, pause timing, audio completion and scanout run as sequential Lua
-  instead of hand-maintained test phase machines. Expectations involving the
-  gameplay clock are computed after the game configures it.
-
-A fresh headless sweep of all 80 migrated modules passed all 91 named cases.
-The current source/build preparation IDE test also passed all ten assertions.
-The unrelated full Studio workflow currently stops earlier in its existing
-Behavior Graph fixture (`LuaCallExpression.range`); the dedicated testing
-workflow bypasses that unrelated fixture and passes on WebGL2 and WebGPU. The tests-wide TypeScript
-project has pre-existing errors: comparison against `08aff1472` found no newly
-introduced diagnostics; the machine/toolchain/IDE project builds are clean.
-
-A context-free independent final review reproduced six defects in coroutine/
-HALT/weak-key semantics and test media/source ownership. All were corrected
-with regressions; the reviewer reported no demonstrated blockers remaining.
-Its independent reruns covered focused tests, core parity and representative
-CLI cases, not the entire sweep or performance measurements above.
-
-Validation commands:
+The BIOS library suite checks builtins directly on one physical BIOS boot, not
+by running a demonstration cartridge per library. It advances actual console
+ticks before comparing the BIOS clock to the machine timer.
 
 ```sh
-npm run test:lua
-npm run test:rompacker
-npm run test:coroutines
-npm run test:runtime-replay
-npm run audit:core-parity
-ctest --test-dir build-cpp-tests --output-on-failure
+npm run build:product:node-headless-tooling -- --debug
+npm run build:toolchain:cart -- emptycart --debug
 npm run headless:test -- emptycart tests/carts/emptycart/bios_runtime_assert.lua
-npm run headless:test -- nemesis_s tests/carts/nemesis_s/nemesis_s_msx_weapons_assert.lua --case held_fire_cadence
-npx tsx --tsconfig tsconfig.base.json tests/conformance/guest_testing/profile.ts
-BMSX_TEST_BACKEND=webgl2 node tests/conformance/runtime_replay/browser.mjs \
-  --studio-test-runner dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/test-runner.png
 ```
 
-The browser workflow verifies real named results, cleanup, separate failed
-targets and current-source rerun while authoring CPU cycles/media stay fixed.
-It is automated Studio evidence, not a manual/UI-only authoring claim.
+The same BIOS suite runs as part of `npm run test:headless`. Named cartridge
+scenarios still run through the same host owner, with `--case` for a specific
+test. For example:
+
+```sh
+npm run headless:test -- nemesis_s tests/carts/nemesis_s/nemesis_s_pause_assert.lua --case input_pause_retains_simulation_and_music
+```
 
 References studied: [Lua coroutines](https://github.com/lua/lua/blob/v5.4.8/lcorolib.c),
 [LuaUnit](https://github.com/bluebird75/luaunit/blob/main/luaunit.lua),

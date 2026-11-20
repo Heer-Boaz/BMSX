@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { asClosure, valueBool, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { createCartlibCaseRom, createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const cases: { source: string; values: Value[] }[] = [
 	{ source: 'return', values: [] },
@@ -34,28 +31,6 @@ const cases: { source: string; values: Value[] }[] = [
 	{ source: 'local t = table.pack(mark(1), spread(mark(2), mark(3))); return trace, t.n, t[1], t[2], t[3], t[4]', values: [valueInteger(123), valueInteger(4), valueInteger(1), valueInteger(2), valueInteger(3), valueInteger(-3)] },
 	{ source: 'return 999, wide()', values: [valueInteger(999), ...Array.from({ length: 260 }, (_, index) => valueInteger(index))] },
 ];
-
-for (const optLevel of [3] as const) test(`firmware O${optLevel}: grouped modf makes format c emit one codepoint`, () => {
-	const modules = ['base', 'number/parse', 'number/decimal', 'number/format', 'table', 'math', 'math/trig', 'math/trig/reduce', 'string/base', 'string/mapped', 'string/format'].map(path => ({
-		path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
-	}));
-	modules.push({ path: 'format_char_assert', source: readFileSync('tests/carts/bios_format_manual/format_char_assert.lua', 'utf8') });
-	modules.push({ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' });
-	const entrySource = `require('base')
-math = require('math')
-string = require('string/base')
-string.format = require('string/format').format
-require('format_char_assert').tests.format_char_call_results()
-return true
-`;
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'format_char'),
-		modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) })),
-		{ entrySource, optLevel, programDomain: 'system' });
-	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
-	cpu.installBootPrimitives();
-	runGuestToHalt(cpu, 30_000_000);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
-});
 
 const callResultRom = createCartlibCaseRom(`
 tuple = function(...) return 7, nil, false, 9, nil end

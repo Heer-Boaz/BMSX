@@ -191,16 +191,9 @@ and BIOS contracts, not these projects' retained-result conventions.
 | Sample-RAM download | `apu_download_manual` | `apu_download_manual_assert.lua` |
 | Module linkage | `modules_manual` | `modules_manual_assert.lua` |
 | Numeric loops | `loops_manual` | `loops_manual_assert.lua` |
-| Generic iteration | `iterators_manual` | `iterators_manual_assert.lua` |
-| Base BIOS | `bios_base_manual` | `bios_base_manual_assert.lua` |
-| Math BIOS | `bios_math_manual` | `bios_math_manual_assert.lua` |
-| Time/calendar BIOS | `bios_os_manual` | `bios_os_manual_assert.lua` |
-| String formatting | `bios_format_manual` | `bios_format_manual_assert.lua` |
-| String patterns | `bios_pattern_manual` | `bios_pattern_manual_assert.lua` |
-| Binary records | `bios_pack_manual` | `bios_pack_manual_assert.lua` |
-| Runtime compilation | `bios_loader_manual` | `bios_loader_manual_assert.lua` |
-| Table BIOS | `bios_table_manual` | `bios_table_manual_assert.lua` |
-| Coroutines | `coroutines_manual` | `coroutines_manual_assert.lua` |
+
+The BIOS library demo cartridges are not separate test targets. Their API checks
+share the [BIOS suite](../guest_testing.md#running-the-suites).
 
 The two-card project additionally needs `cartridge_manual_data` installed in
 socket 1. Build both projects, then use the existing `--slot1` argument:

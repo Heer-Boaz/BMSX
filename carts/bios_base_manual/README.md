@@ -44,17 +44,9 @@ artifacts available:
 
 ```sh
 npm run validate:toolchain:cart -- bios_base_manual --debug
-npm run headless:test -- bios_base_manual tests/carts/bios_base_manual/bios_base_manual_assert.lua
 ```
 
-Expect `[test] base_service_observations: passed`. After its completion wait,
-the case checks 37 retained observations. The test is a derived integration
-image; it is not the ordinary cartridge playback below and is not native
-execution or exhaustive runtime-parity evidence.
-
-The two files under `tests/carts/bios_base_manual/` are supplied observation
-inputs, not cartridge modules. The source listings above are sufficient to
-build the ordinary image without those test inputs.
+Automated BIOS library checks run in the shared [BIOS suite](../../docs/guest_testing.md#running-the-suites).
 
 ## Observe the ordinary image
 

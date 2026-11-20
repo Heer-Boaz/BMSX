@@ -12,7 +12,6 @@ carts/bios_loader_manual/
   results.lua
   res/manifest/manifest.rommanifest
 tests/carts/bios_loader_manual/
-  bios_loader_manual_assert.lua
   ordinary_timeline.json
 ```
 
@@ -38,15 +37,11 @@ From the repository root after the prerequisites in
 ```sh
 npm run build:product:node-headless-tooling -- --debug
 npm run validate:toolchain:cart -- bios_loader_manual --debug
-npm run headless:test -- bios_loader_manual tests/carts/bios_loader_manual/bios_loader_manual_assert.lua
 ```
 
-Expect `[test] runtime_compilation: passed`. The single case waits for completion
-and makes 38 retained assertions. It uses a fresh derived TS integration image,
-not byte-identical ordinary playback; linked addresses can differ. Normal
-compiler and quality checks remain enabled, and the builder selects its BIOS.
+Automated BIOS library checks run in the shared [BIOS suite](../../docs/guest_testing.md#running-the-suites).
 
-For separate ordinary execution:
+For ordinary execution:
 
 ```sh
 npm run headless:tooling -- --debug --input-timeline tests/carts/bios_loader_manual/ordinary_timeline.json bios_loader_manual

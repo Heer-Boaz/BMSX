@@ -48,6 +48,7 @@ try {
 	// The cart builders all consume this BIOS. On a miss, don't compile it
 	// independently in the Studio and replay lanes.
 	const bios = run('Debug BIOS', 'npm', ['run', 'build:toolchain:bios', '--', '--debug']);
+	const builtinRom = bios.then(ready => ready && run('BIOS builtins test ROM', 'npm', ['run', 'build:toolchain:cart', '--', 'emptycart', '--debug']));
 	const units = bios.then(async ready => {
 		if (ready && await run('Studio ROM', 'npm', ['run', 'build:toolchain:cart', '--', 'studio_test', '--debug'])) {
 			await run('Node test areas', 'bash', ['scripts/test_node_areas.sh', 'headless'], {
@@ -75,6 +76,10 @@ try {
 		// but the machines for the scenarios need the Node workers' budget.
 		Promise.all([units, presentationInputs]).then(([, ready]) => {
 			if (ready) return run('Headless presentation scenarios', process.execPath, [presentations, 'run']);
+		}),
+		Promise.all([units, presentationInputs, builtinRom]).then(([, toolingReady, romReady]) => {
+			if (toolingReady && romReady) return run('BIOS Lua builtins', 'npm', ['run', 'headless:test', '--',
+				'emptycart', 'tests/carts/emptycart/bios_runtime_assert.lua']);
 		}),
 		// Start the long compiler lane once CTest releases its workers.
 		ctest.then(() => conformance([

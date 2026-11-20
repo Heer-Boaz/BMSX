@@ -44,14 +44,9 @@ From the repository root in a working repository development environment:
 npm run build:product:node-headless-tooling -- --debug
 npm run build:toolchain:bios -- --debug
 npm run validate:toolchain:cart -- bios_string_manual --debug
-npm run headless:test -- bios_string_manual tests/carts/bios_string_manual/bios_string_manual_assert.lua
 ```
 
-Expect `[test] string_operations: passed`. After waiting for completion, the
-case checks 32 scalar observations. This is an existing derived integration
-image, not ordinary cartridge playback or native execution. The observation
-input files under `tests/carts/bios_string_manual/` are not cartridge modules;
-the two source listings and manifest suffice to build the ordinary cartridge.
+Automated BIOS library checks run in the shared [BIOS suite](../../docs/guest_testing.md#running-the-suites).
 
 ## Observe the ordinary cartridge
 

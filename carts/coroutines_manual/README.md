@@ -27,9 +27,7 @@ hardware:
     - type: rom
 ```
 
-The retained-result test and ordinary observation timeline used below are
-provided separately under `tests/carts/coroutines_manual/`; they are not
-cartridge modules or firmware imports.
+The observation timeline below is not a cartridge module or firmware import.
 
 ## Build and check retained results
 
@@ -37,13 +35,9 @@ From the repository root:
 
 ```sh
 npm run validate:toolchain:cart -- coroutines_manual --debug
-npm run headless:test -- coroutines_manual tests/carts/coroutines_manual/coroutines_manual_assert.lua
 ```
 
-Expect `[test] protected_calls_and_thread_lifecycle: passed`. After completion,
-the case checks40 retained observations. This is a derived integration image,
-not native execution of this ordinary cartridge or proof of all exception,
-allocation or scheduling cases.
+Automated BIOS library checks run in the shared [BIOS suite](../../docs/guest_testing.md#running-the-suites).
 
 ## Observe the ordinary image
 

@@ -48,17 +48,9 @@ then validate the cartridge and run the retained-result check:
 npm run build:product:node-headless-tooling -- --debug
 npm run build:toolchain:bios -- --debug
 npm run validate:toolchain:cart -- bios_table_manual --debug
-npm run headless:test -- bios_table_manual tests/carts/bios_table_manual/bios_table_manual_assert.lua
 ```
 
-Expect `[test] table_library_observations: passed`. After the completion wait,
-the case checks 30 retained scalar observations. This test uses a derived
-integration image. It is not ordinary cartridge playback, native execution or
-exhaustive runtime-parity evidence.
-
-The two files supplied under `tests/carts/bios_table_manual/` are observation
-inputs, not cartridge source modules. The source listings and manifest above
-are enough to build the ordinary image without those inputs.
+Automated BIOS library checks run in the shared [BIOS suite](../../docs/guest_testing.md#running-the-suites).
 
 ## Observe the ordinary image
 
