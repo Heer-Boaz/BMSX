@@ -43,7 +43,6 @@ public:
 	u32 threadRecordAddress(u32 address) const;
 	u32 openCellAddress(u32 address) const;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	static size_t nativeControlOffset();
 	static u32 tryQueueChangedInNative(GcHeap* heap, u32 offset, u32 link) noexcept;
 #endif
 	uint32_t hash(Value value) const {

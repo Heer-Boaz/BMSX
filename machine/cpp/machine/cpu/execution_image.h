@@ -141,6 +141,16 @@ inline constexpr u8 DECODED_REFRESH_FUSION = 2u;
 inline constexpr u32 DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3u;
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+// Decoded words of a ROM function record, never a closure or native entry.
+struct NativeRomCallBinding {
+	static constexpr u32 slotCount = 64u;
+	u32 functionAddress = ~0u;
+	u32 codeAddress = 0u;
+	u32 numParams = 0u;
+	u32 maxStack = 0u;
+	u32 flags = 0u;
+};
+
 struct NativeBlockPage {
 	std::array<std::unique_ptr<NativeBlock>, DECODED_PAGE_WORDS> entries{};
 	u32 count = 0;
@@ -203,6 +213,7 @@ struct DecodedInstructionPage {
 struct Blua32ExecutionImage {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	static size_t nativeExecutionDomainOffset();
+	static size_t nativeRomCallBindingsOffset();
 #endif
 	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
@@ -221,6 +232,7 @@ struct Blua32ExecutionImage {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// Dispatch storage outlives the decoded descriptors which borrow its cells.
 	std::unique_ptr<NativeCodeLookup> nativeCodeLookup;
+	std::array<NativeRomCallBinding, NativeRomCallBinding::slotCount> nativeRomCallBindings{};
 #endif
 	std::unordered_map<u64, DecodedInstructionPage> decodedPages;
 };

@@ -634,6 +634,15 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 		if (!image) {
 			continue;
 		}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		// The key's low word is the mapped address, even for a socket-specific
+		// ROM install. Any execution image may have used system ROM records.
+		const u32 address = static_cast<u32>(firstKey);
+		if (address < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE
+			|| (address >= CART_ROM_BASE && address < CART_ROM_END)) {
+			image->nativeRomCallBindings.fill({});
+		}
+#endif
 		for (auto& [key, page] : image->decodedPages) {
 			if (key >= invalidationStart && key < endKey) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -1680,6 +1689,8 @@ RunResult CPU::runLoop(
 	NativeCpuRunState nativeState{.state = {}, .cpu = this, .targetDepth = targetDepth,
 		.systemRom = &m_memory.systemRomStorage(),
 		.cartridgeRoms = {m_memory.cartridgeController().romStorage(0), m_memory.cartridgeController().romStorage(1)},
+		.heapPageEntries = m_memory.ramData() + m_heapAllocator.managementOffset() + HEAP_PAGE_ENTRIES,
+		.heapPageLimit = m_heapAllocator.pageLimit(),
 		.error = {}};
 #endif
 	for (;;) {

@@ -63,6 +63,7 @@ public:
 	explicit HeapAllocator(Memory& memory);
 
 	u32 managementOffset() const { return m_management; }
+	u32 pageLimit() const { return m_pageLimit; }
 	void reset(u32 floorAddress);
 	// Raising the floor is refused while an allocated page lies below it.
 	bool setFloor(u32 floorAddress);

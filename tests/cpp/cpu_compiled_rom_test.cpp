@@ -13,6 +13,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 
+#include <algorithm>
 #include <array>
 #include <iostream>
 #include <stdexcept>
@@ -599,6 +600,49 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
 	for (auto* machine : {&native, &scalar}) require(machine->cpu.rootThread()->frameAtDepth(0)->registers.get(0) == valueInteger(ramRecord ? 11 : 22),
 		"the result uses the closure-bound constants, not the data-selected socket");
+
+	if (ramRecord) return;
+	// Keep the same live closure and a generated RAM caller while replacing
+	// the ROM words of its function record. The bank on the closure still
+	// wins over ordinary SELECT, which points at the other cartridge.
+	const u32 ramCaller = DYNAMIC_RAM_BASE;
+	for (auto* machine : {&native, &scalar}) {
+		machine->memory.writeBytes(ramCaller, source.text.data() + 2u * INSTRUCTION_BYTES, 4u * INSTRUCTION_BYTES);
+		machine->cpu.writeFrameExecution(0, 0, card0.functionAddresses[0], ramCaller);
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, 4000);
+	auto& caller = *native.cpu.rootThread()->firstFrame;
+	auto& ramPage = *caller.decodedPage;
+	test::waitForNativeEntry(native.cpu, ramPage, 0);
+	test::runCpuParity(native.cpu, scalar.cpu, 100);
+	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
+	const auto* ramBlock = ramPage.nativeBlocks->entries[0].get();
+	const auto& bindings = caller.executionImage->nativeRomCallBindings;
+	const u32 prototype = card0.functionAddresses[1];
+	const auto compiledBinding = [&] {
+		return std::find_if(bindings.begin(), bindings.end(), [&](const auto& binding) {
+			return binding.functionAddress == prototype;
+		});
+	};
+	require(compiledBinding() != bindings.end() && compiledBinding()->maxStack == 8u,
+		"the native ROM CALL caches the old frame layout");
+	const u32 encodedTarget = card0.functionAddresses[1] - CART_ROM_BASE;
+	auto replacement = card0.bytes;
+	writeLE32(replacement.data() + encodedTarget + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, card0.textAddress + 8u * INSTRUCTION_BYTES);
+	writeLE32(replacement.data() + encodedTarget + BLUA32_FUNCTION_MAX_STACK_OFFSET, 10u);
+	for (auto* machine : {&native, &scalar}) machine->memory.cartridgeController().installRom(0, replacement);
+	require(ramPage.nativeBlocks->entries[0].get() == ramBlock && compiledBinding() == bindings.end(),
+		"reinstall invalidates the prototype decode, not the generated RAM caller");
+	for (auto* machine : {&native, &scalar}) machine->cpu.writeFrameExecution(0, 0, card0.functionAddresses[0], ramCaller);
+	test::runCpuParity(native.cpu, scalar.cpu, 4000);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	test::waitForFixtureWorkerRequests(native.cpu);
+#endif
+	test::runCpuParity(native.cpu, scalar.cpu, 100);
+	for (auto* machine : {&native, &scalar}) require(machine->cpu.readFrameRegister(0, 3) == valueInteger(44),
+		"the same closure enters the code named by the newly fitted ROM record");
+	require(compiledBinding() != bindings.end() && compiledBinding()->maxStack == 10u,
+		"warm native CALL decodes the replacement frame layout");
 }
 
 } // namespace

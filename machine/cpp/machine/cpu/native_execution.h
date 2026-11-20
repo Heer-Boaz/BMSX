@@ -27,6 +27,8 @@ struct NativeCpuRunState {
 	const Span<const u8>* systemRom = nullptr;
 	const Span<const u8>* cartridgeRom = nullptr;
 	std::array<const Span<const u8>*, CARTRIDGE_SLOT_COUNT> cartridgeRoms{};
+	const u8* heapPageEntries = nullptr;
+	u32 heapPageLimit = 0;
 	u32 cartridgeSlot = 0;
 	u32 frameBank = 0;
 	std::exception_ptr error;

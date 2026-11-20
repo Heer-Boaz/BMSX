@@ -80,17 +80,6 @@ bool GcHeap::markValue(Value v) {
 	}
 }
 
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Winvalid-offsetof"
-#endif
-size_t GcHeap::nativeControlOffset() { return offsetof(GcHeap, m_controlOffset); }
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-#endif
-
 template<bool WritesAdmitted>
 void GcHeap::enqueue(u32 address, u32 link, u32 queue) {
 	const u32 previous = indexWord(queue);

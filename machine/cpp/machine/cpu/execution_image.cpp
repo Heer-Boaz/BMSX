@@ -12,6 +12,10 @@ namespace bmsx {
 size_t Blua32ExecutionImage::nativeExecutionDomainOffset() {
 	return offsetof(Blua32ExecutionImage, executionDomainId);
 }
+
+size_t Blua32ExecutionImage::nativeRomCallBindingsOffset() {
+	return offsetof(Blua32ExecutionImage, nativeRomCallBindings);
+}
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
