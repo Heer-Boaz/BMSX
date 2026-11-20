@@ -76,7 +76,7 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32Execut
 		discoverNativeSource(source, &outgoing);
 		for (const u32 pc : outgoing) enqueue(pc);
 	}
-	for (auto& [key, source] : pages) prepareNativeSource(source, true, false);
+	for (auto& [key, source] : pages) prepareNativeSource(source, true);
 }
 
 } // namespace bmsx

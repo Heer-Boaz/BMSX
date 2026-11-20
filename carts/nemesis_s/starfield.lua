@@ -77,11 +77,12 @@ local blink_sequence<const> = {
 	},
 }
 
+-- Horizontal motion stays Float throughout initialization, scrolling and wrap.
 local create_particles<const> = function(points)
 	local particles<const> = {}
 	for i = 1, #points do
 		local point<const> = points[i]
-		particles[i] = { x = point.x, y = point.y }
+		particles[i] = { x = point.x + 0.0, y = point.y }
 	end
 	return particles
 end
@@ -90,6 +91,7 @@ function starfield:ctor()
 	self.yellow_stars = create_particles(self.yellow_points)
 	self.blue_stars = create_particles(self.blue_points)
 	self.scroll_step = velocity.pixels_per_second_to_pixels_per_tick(stage_star_scroll_speed_px_per_second)
+	self.wrap_width = self.wrap_width + 0.0
 end
 
 -- disable-next-line single_line_method_pattern -- World dispatches this construction-readiness override; it is not a forwarding API.
@@ -105,10 +107,11 @@ end
 local scroll_particles<const> = function(particles, step, width)
 	for i = 1, #particles do
 		local particle<const> = particles[i]
-		particle.x = particle.x - step
-		if particle.x < 0 then
-			particle.x = width
+		local x = particle.x - step
+		if x < 0.0 then
+			x = width
 		end
+		particle.x = x
 	end
 end
 

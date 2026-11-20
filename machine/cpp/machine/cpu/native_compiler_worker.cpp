@@ -32,7 +32,9 @@ void NativeCompilerWorker::submit(std::span<const NativeBlockSource> sources, Co
 		const size_t first = instruction;
 		for (const auto& item : source.instructions) {
 			m_decoded[decoded] = *item.decoded;
-			m_instructions[instruction++] = {&m_decoded[decoded++], item.pc};
+			auto& copy = m_instructions[instruction++];
+			copy = item;
+			copy.decoded = &m_decoded[decoded++];
 		}
 		const DecodedInstruction* skipped = nullptr;
 		if (source.skippedInstruction) {

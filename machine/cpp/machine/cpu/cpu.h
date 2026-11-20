@@ -426,7 +426,7 @@ private:
 	void prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pc, MappedBusSignals busSignals);
 	void prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32ExecutionBoot& boot);
 	void discoverNativeSource(NativeCompilationSource& source, std::vector<u32>* outgoing);
-	void prepareNativeSource(NativeCompilationSource& source, bool immediate, bool discover);
+	void prepareNativeSource(NativeCompilationSource& source, bool coldImage);
 	void installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pagePc, u32 slot,
 		std::span<const u32> entries, std::vector<std::unique_ptr<NativeBlock>> blocks, u32 instructionCount);
 	static NativeBlockTransition compiledReadFieldExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);

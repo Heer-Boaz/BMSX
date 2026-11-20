@@ -15,28 +15,24 @@
 namespace bmsx {
 
 namespace {
-// Keep a warmed own-field update in one segment. The intervening global
-// load is the compiler's normal shape for a shared movement step.
-ValueTag fieldUpdateTag(std::span<const NativeBlockInstruction> instructions) {
+// Identify a straight-line numeric use of a field without relying on feedback
+// here: cold image preparation needs the same candidate before it can observe
+// a receiver slot or a pair of numeric tags.
+const DecodedInstruction* numericFieldConsumer(std::span<const NativeBlockInstruction> instructions) {
 	const auto& read = *instructions.front().decoded;
-	if (instructions.size() < 3 || read.a == read.b) return ValueTag::Nil;
+	if (read.op != static_cast<u8>(OpCode::GETFIELD) || instructions.size() < 2) return nullptr;
 	size_t arithmetic = 1;
-	const auto next = static_cast<OpCode>(instructions[arithmetic].decoded->op);
+	const auto& successor = *instructions[arithmetic].decoded;
+	const auto next = static_cast<OpCode>(successor.op);
+	// Shared movement steps are commonly loaded from a global or capture.
 	if (next == OpCode::GETGL || next == OpCode::GETSYS || next == OpCode::GETUP) {
-		if (instructions.size() < 4 || instructions[arithmetic].decoded->a == read.a
-			|| instructions[arithmetic].decoded->a == read.b) return ValueTag::Nil;
+		if (instructions.size() < 3 || successor.a == read.a) return nullptr;
 		++arithmetic;
 	}
 	const auto& compute = *instructions[arithmetic].decoded;
 	const auto op = static_cast<OpCode>(compute.op);
-	if (op != OpCode::ADD && op != OpCode::SUB && op != OpCode::MUL) return ValueTag::Nil;
-	const auto& store = *instructions[arithmetic + 1].decoded;
-	if (store.op != static_cast<u8>(OpCode::SETFIELD) || store.a != read.b || store.b != read.c
-		|| store.c != compute.a || compute.a == read.b) return ValueTag::Nil;
-	const auto observed = compute.nativeNumericTypes();
-	if (observed.polymorphic) return ValueTag::Nil;
-	const auto tag = compute.b == read.a ? observed.left : compute.c == read.a ? observed.right : ValueTag::Nil;
-	return tag == ValueTag::Integer || tag == ValueTag::Float ? tag : ValueTag::Nil;
+	if (op != OpCode::ADD && op != OpCode::SUB && op != OpCode::MUL) return nullptr;
+	return compute.b == read.a || compute.c == read.a ? &compute : nullptr;
 }
 
 // Compilation may return early or raise while decoding/generating. This scope
@@ -108,7 +104,7 @@ void CPU::prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage
 	NativeCompilationSource source(image, page, binding, pagePc, busSignals,
 		m_memory.cartridgeController().selectedSlot(busSignals));
 	source.enqueue(pc, true, nullptr, true);
-	prepareNativeSource(source, false, true);
+	prepareNativeSource(source, false);
 }
 
 void CPU::discoverNativeSource(NativeCompilationSource& source, std::vector<u32>* outgoing) {
@@ -168,7 +164,7 @@ void CPU::discoverNativeSource(NativeCompilationSource& source, std::vector<u32>
 	}
 }
 
-void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, bool discover) {
+void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 	auto& image = source.image;
 	auto& page = source.page;
 	const auto& binding = source.binding;
@@ -192,7 +188,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 		}
 		measurement.phase(&NativeCompilationProfile::discoveryNanoseconds);
 	}
-	if (discover) discoverNativeSource(source, nullptr);
+	if (!coldImage) discoverNativeSource(source, nullptr);
 	for (u32 word = 0; word < DECODED_PAGE_WORDS; ++word) {
 		if (source.roots[word] && !available[word]
 			&& page.words[word].dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm))
@@ -218,6 +214,20 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 			if (instructionCount - first == NATIVE_BLOCK_MAX_INSTRUCTIONS) { leaders[successor] = 1; break; }
 			cursor = successor;
 		}
+		if (coldImage) {
+			// Leave a field/arithmetic suffix in the ordinary warm tier. Its
+			// first execution can observe the real operands, while a compiled
+			// prefix exits to the field PC as an ordinary entry boundary.
+			for (size_t index = first; index < instructionCount; ++index) {
+				const auto* compute = numericFieldConsumer(std::span(instructions.data() + index, instructionCount - index));
+				if (compute && compute->nativeNumericTypes().left == ValueTag::Nil) {
+					instructionCount = index;
+					break;
+				}
+			}
+			if (instructionCount == first) continue;
+			cursor = (instructions[instructionCount - 1u].pc - pagePc) / INSTRUCTION_BYTES;
+		}
 		const DecodedInstruction* skippedInstruction = nullptr;
 		if (binding.readBytes && nativeBlockComparison(page.words[cursor].op)) {
 			const u32 successor = cursor + page.words[cursor].width;
@@ -232,11 +242,15 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 			const auto& instruction = *instructions[index].decoded;
 			if (!final) {
 				if (!nativeBlockHasContinuation(instruction.op, instruction.b)) continue;
-				if (instruction.op == static_cast<u8>(OpCode::GETFIELD)) {
-					const auto tag = fieldUpdateTag(std::span(instructions.data() + index, instructionCount - index));
-					if (tag != ValueTag::Nil) {
-						instructions[index].fieldValueTag = tag;
-						continue;
+				if (instruction.op == static_cast<u8>(OpCode::GETFIELD) && instruction.tableCacheSlot >= 0) {
+					const auto* compute = numericFieldConsumer(std::span(instructions.data() + index, instructionCount - index));
+					if (compute) {
+						const auto observed = compute->nativeNumericTypes();
+						const auto tag = compute->b == instruction.a ? observed.left : observed.right;
+						if (!observed.polymorphic && tag != ValueTag::Nil) {
+							instructions[index].fieldValueTag = tag;
+							continue;
+						}
 					}
 				}
 			}
@@ -246,6 +260,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 			segmentFirst = index + 1u;
 		}
 	}
+	if (sources.empty()) return;
 	NativeBlockExitHandlers handlers{};
 	handlers[static_cast<size_t>(NativeBlockExit::ReadField)] = &CPU::compiledReadFieldExit;
 	handlers[static_cast<size_t>(NativeBlockExit::WriteField)] = &CPU::compiledWriteFieldExit;
@@ -254,7 +269,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 	handlers[static_cast<size_t>(NativeBlockExit::ReadInteger)] = &CPU::compiledReadIntegerExit;
 	handlers[static_cast<size_t>(NativeBlockExit::WriteInteger)] = &CPU::compiledWriteIntegerExit;
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
-	if (!immediate) {
+	if (!coldImage) {
 		auto& pendingJob = m_pendingNativeCompilation;
 		pendingJob.image = &image;
 		pendingJob.page = &page;
@@ -274,7 +289,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 		return;
 	}
 #else
-	(void)immediate;
+	(void)coldImage;
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
 	auto blocks = NativeBlock::compileRegion(sources, image.constPool,

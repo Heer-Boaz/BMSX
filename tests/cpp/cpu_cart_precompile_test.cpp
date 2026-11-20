@@ -163,6 +163,79 @@ void coldExecPreservesGuestStateAndBanks() {
 	}
 }
 
+void coldExecLetsNumericFieldChainsWarm() {
+	test::Blua32TestImage image;
+	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 5}, {.firstWord = 64, .wordCount = 1}};
+	image.constants = {std::string("x"), Blua32FloatConstant{0u}};
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 4, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETFIELD), 2, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::SUB), 3, 2, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::LT), 0, 3, 62, 7); // RK(C) = K[1].
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
+	writeInstruction(image.text, 64, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+
+	const int readCycles = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)];
+	const int compareGrant = readCycles + BASE_CYCLES[static_cast<u8>(OpCode::SUB)] + BASE_CYCLES[static_cast<u8>(OpCode::LT)];
+	const int loopCycles = compareGrant + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+	for (const bool inherited : {false, true}) {
+		Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, image));
+		machine.execute();
+		auto& cpu = machine.cpu();
+		const u32 pc = machine.cart.textAddress + INSTRUCTION_BYTES;
+		require(entryAt(cpu, machine.cart.textAddress, 0) && !entryAt(cpu, pc, 0)
+			&& entryAt(cpu, machine.cart.textAddress + 64u * INSTRUCTION_BYTES, 0),
+			"EXEC compiles the prefix and unrelated function but not the unobserved field/arithmetic chain");
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		auto receiver = cpu.createTable(0, 1);
+		auto holder = receiver;
+		if (inherited) {
+			holder = cpu.createTable(0, 1);
+			auto meta = cpu.createTable(0, 1);
+			meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(holder.address()));
+			receiver.setMetatableAddress(meta.address());
+		}
+		const auto key = cpu.stringPool().intern("x");
+		holder.setStringKey(key, valueFloat(4.0f));
+		frame.registers.set(0, valueTable(receiver.address()));
+		frame.registers.set(1, valueFloat(0.5f));
+		require(cpu.runUntilDepth(0, (loopCycles + BASE_CYCLES[static_cast<u8>(OpCode::K1)]
+			+ (inherited ? TABLE_INDEX_VISIT_CYCLES : 0)) * (NATIVE_BLOCK_COMPILATION_THRESHOLD + 12)) == RunResult::Yielded,
+			"the real EXEC path visits and warms its deferred field entry");
+		const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		test::waitForNativeEntry(cpu, *frame.decodedPage, word);
+		const auto* entry = entryAt(cpu, pc, 0);
+		if (inherited) {
+			require(entry->terminal.currentPc == pc,
+				"a consistently inherited numeric field does not speculate on an unobserved own slot");
+			continue;
+		}
+		require(entry->hasFusedJump && entry->terminal.currentPc == pc + 3 * INSTRUCTION_BYTES,
+			"an observed own numeric read keeps subtraction and comparison in the same native body without a following store");
+		NativeBlockRunState grant{.constants = frame.executionImage->constPool, .heap = &cpu.gcHeap(), .remainingCycles = loopCycles};
+		const auto* exit = entry->run(frame.registers, grant);
+		require(exit->nextPc == machine.cart.textAddress && grant.remainingCycles == 0 && frame.registers.get(3) == valueFloat(3.5f),
+			"the warmed Float path executes through the comparison and fused jump at the exact guest cost");
+
+		holder.setStringKey(key, valueFloat(0.25f));
+		grant.remainingCycles = compareGrant;
+		exit = entry->run(frame.registers, grant);
+		require(exit->nextPc == pc + 4 * INSTRUCTION_BYTES && grant.remainingCycles == 0
+			&& frame.registers.get(3) == valueFloat(-0.25f),
+			"negative motion branches to the wrap continuation even when no grant remains for a jump");
+
+		frame.registers.set(1, valueInteger(1));
+		frame.registers.set(3, valueInteger(99));
+		grant.remainingCycles = compareGrant;
+		exit = entry->run(frame.registers, grant);
+		require(exit->exit == NativeBlockExit::ScalarBoundary && grant.scalarPc == pc + INSTRUCTION_BYTES
+			&& grant.remainingCycles == compareGrant - readCycles && frame.registers.get(2) == valueFloat(0.25f)
+			&& frame.registers.get(3) == valueInteger(99),
+			"a change in the step's tag publishes the read but leaves the arithmetic at its original guest PC");
+	}
+}
+
 void repeatExecAndRestoreHaveDistinctPolicies() {
 	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridgeProgram("repeat")));
 	machine.cpu().prepareSystemNativeCode();
@@ -308,6 +381,7 @@ void observationsAndUnusedHintsStayAtExecution() {
 int main() {
 	try {
 		coldExecPreservesGuestStateAndBanks();
+		coldExecLetsNumericFieldChainsWarm();
 		repeatExecAndRestoreHaveDistinctPolicies();
 		observationsAndUnusedHintsStayAtExecution();
 		descriptiveTablesAndStaticAcceptanceRemainIndependent();

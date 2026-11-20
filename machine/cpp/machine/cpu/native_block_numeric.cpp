@@ -136,15 +136,18 @@ void NativeBlockCompiler::emitNumeric(const DecodedInstruction& instruction, Nat
 	}
 	const bool bits = op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR || op == OpCode::SHL ||
 					  op == OpCode::SHR || op == OpCode::BNOT;
-	// A field update can consume the arithmetic result without a Value ABI
-	// round-trip. Specialize only a numeric pair seen during scalar warm-up.
+	// Keep a warm numeric value on the host side of the register cache.
+	// Once one operand is typed, a single remaining guard is enough even
+	// when a comparison or another computation, rather than a store, uses it.
 	// A type miss retries this instruction, not the already executed prefix.
 	if ((left < 0 || right < 0) && (op == OpCode::ADD || op == OpCode::SUB || op == OpCode::MUL)) {
-		const auto instructions = m_sources[m_current].instructions;
 		const auto observed = instruction.nativeNumericTypes();
-		if (!observed.polymorphic && observed.left != ValueTag::Nil && m_instruction < instructions.size()) {
-			const auto& next = *instructions[m_instruction].decoded;
-			if (next.op == static_cast<u8>(OpCode::SETFIELD) && next.c == instruction.a) {
+		if (!observed.polymorphic && observed.left != ValueTag::Nil) {
+			const auto instructions = m_sources[m_current].instructions;
+			const bool feedsStore = m_instruction < instructions.size()
+				&& instructions[m_instruction].decoded->op == static_cast<u8>(OpCode::SETFIELD)
+				&& instructions[m_instruction].decoded->c == instruction.a;
+			if (left >= 0 || right >= 0 || feedsStore) {
 				const auto guard = [&](int operand, ValueTag tag) {
 					deferColdExit(m_cache.guard(operand, tag, SLJIT_R0), nullptr, pc,
 						m_cache.state(), true, m_prefixCycles, m_prefixTop);

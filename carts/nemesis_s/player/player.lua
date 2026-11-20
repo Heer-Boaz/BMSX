@@ -889,16 +889,17 @@ function player:despawn_missile(missile, reason)
 end
 
 function player:update_bullet(bullet)
-	bullet.x = bullet.x + player_bullet_movement_speed
-	if bullet.x >= playfield_width then
+	local x<const> = bullet.x + player_bullet_movement_speed
+	bullet.x = x
+	if x >= playfield_width then
 		self:despawn_slot_projectile(bullet, 'screen_edge')
 		return
 	end
 	local stage<const> = self.stage
-	local sample_x = bullet.x - player_bullet_collision_backtrack
+	local sample_x = x - player_bullet_collision_backtrack
 	local collision_offset = stage:first_solid_tile_offset(sample_x, bullet.y, 2)
 	if collision_offset == 2 then
-		sample_x = bullet.x
+		sample_x = x
 		collision_offset = stage:first_solid_tile_offset(sample_x, bullet.y, 2)
 	end
 	if collision_offset < 2 then
