@@ -12,7 +12,7 @@ import { BASE_FIRMWARE_MODULES, COROUTINE_FIRMWARE_MODULES } from './firmware_mo
 import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from './cpu_test_harness';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from './cpu_execution';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { asClosure, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
 
 /** Real cartlib/compiler/CPU and BIOS math; no host, ICU or world scheduler. */
 type CartlibProgramOptions = {
@@ -245,16 +245,13 @@ export function createCartlibCaseRom(prelude: string, options: CartlibProgramOpt
 local test_cases<const> = {
 ${cases}
 }
-return function(index)
- test_cases[index]()
- return true
-end
+return function(index) return test_cases[index]() end
 `, options);
 				runGuestToHalt(cpu, budget);
 				booted = { cpu, runner: asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc), checkpoint: captureCpuCheckpoint(cpu) };
 			} else restoreCpuCheckpoint(booted.cpu, booted.checkpoint);
 			runCompletionClosure(booted.cpu, booted.runner, [valueInteger(index)], budget);
-			assert.deepEqual(materializeCpuCompletionValues(booted.cpu), [valueBool(true)], 'the guest case returned to its runner');
+			assert.equal(booted.cpu.completionCallPending(), false, 'the guest case returned to its runner');
 			return booted.cpu;
 		},
 	};
