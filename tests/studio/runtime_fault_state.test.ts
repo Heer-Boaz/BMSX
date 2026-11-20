@@ -30,9 +30,8 @@ import {
 	writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, encodeFixedValueCount } from '../../machine/ts/spec/blua32/opcode';
-import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { blua32TestFunctionAddress, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, blua32TestFunctionAddress, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { readBlua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import {
 	createTestRuntime,
@@ -67,17 +66,18 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 		startupFunctionIndex: 0,
 		irqFunctionIndex: 2,
 		exceptionFunctionIndex: 2,
-	});
+	}, RAM_CODE_FIXTURE_BYTES);
 	const runtime = createTestRuntime(image.romBytes);
 	const cpu = runtime.machine.cpu;
 	cpu.reset();
 	cpu.abortCompletionCall(0);
 
-	const functionAddress = DYNAMIC_RAM_BASE + 0x1000;
+	const functionAddress = image.image.header.bssAddress;
 	const codeAddress = functionAddress + 0x100;
 	const codeByteCountAddress = functionAddress + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET;
 	const numParamsAddress = functionAddress + BLUA32_FUNCTION_NUM_PARAMS_OFFSET;
 	const memory = runtime.machine.memory;
+	assert.ok(codeAddress + 5 * INSTRUCTION_BYTES <= memory.ramBusEnd(), 'the linked fixture reserves public instruction RAM');
 	memory.writeMappedU32LE(functionAddress + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, codeAddress);
 	memory.writeMappedU32LE(codeByteCountAddress, INSTRUCTION_BYTES);
 	memory.writeMappedU32LE(numParamsAddress, 0);

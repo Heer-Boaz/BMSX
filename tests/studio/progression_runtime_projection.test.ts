@@ -9,6 +9,7 @@ import { captureRuntimeMachineState, applyRuntimeMachineState } from '../../mach
 import { asClosure, valueFloat, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
+import { SuspendedValuePresentation } from '../../ide/runtime/value_presentation';
 import { createBlua32SourceImage, createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { RuntimeTransport } from '../../ide/runtime/transport';
@@ -218,9 +219,14 @@ progression.mount(context_b, program)
 `);
 	const choices = f.choices.filter(item => item.identity.tag === ValueTag.Table);
 	assert.equal(choices.length, 2);
-	assert.deepEqual(choices.map(item => item.label), choices.map(item => `Table #${item.identity.scalar}`));
+	const contexts = [f.guest.global('context_a'), f.guest.global('context_b')];
+	const summary = new SuspendedValuePresentation(f.guest, 'summary');
+	for (const context of contexts) {
+		const choice = choices.find(item => f.guest.matchesIdentity(context, item.identity));
+		assert.ok(choice, 'each mounted context can be selected by its runtime identity');
+		assert.equal(choice.label, summary.update(context), 'choice uses the shared typed summary, not the bookmark token');
+	}
 	assert.notEqual(choices[0].label, choices[1].label);
-	assert.ok(choices.every(item => item.description === 'Mounted table context' && item.detail === 'Revision 0'));
 	const visit = f.guest.visitTableEntries.bind(f.guest);
 	t.mock.method(f.guest, 'visitTableEntries', (...args: Parameters<typeof visit>) => {
 		assert.ok(choices.every(choice => !f.guest.matchesIdentity(args[0], choice.identity)), 'context labels enumerated object contents');

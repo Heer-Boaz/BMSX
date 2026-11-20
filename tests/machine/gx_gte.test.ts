@@ -1,4 +1,5 @@
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -743,7 +744,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 
 	first.scheduler.advanceTo(2);
 	const gteState = first.gte.captureState();
-	const cpuState = first.cpu.captureRuntimeState();
+	const checkpoint = captureCpuCheckpoint(first.cpu);
 	assert.equal(gteState.plusPendingCycles, 3);
 	assert.equal(gteState.plusInterlockArmed, true);
 
@@ -751,7 +752,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 	installGtePlusBurstProgram(restored.cpu, burstWords);
 	restored.scheduler.setNowCycles(100);
 	restored.gte.restoreState(gteState);
-	restored.cpu.restoreRuntimeState(cpuState);
+	restoreCpuCheckpoint(restored.cpu, checkpoint);
 	assert.equal(restored.scheduler.nextDeadline(), 103);
 	restored.scheduler.advanceTo(102);
 	runGuestToHalt(restored.cpu, 100);

@@ -1,5 +1,6 @@
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { cartridgeSlots } from '../helpers/cartridge';
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readLE16 } from '../../machine/ts/common/endian';
@@ -1814,14 +1815,14 @@ test('blocked CPU GP0 store resumes after completion across device restore', () 
 	assert.equal(original.cpu.stalledMemoryWriteAddress(), IO_GX_GPU_GP0);
 	original.scheduler.advanceTo(20 - original.cpu.instructionBudgetRemaining);
 	const gpuState = original.gpu.captureState();
-	const cpuState = original.cpu.captureRuntimeState();
+	const checkpoint = captureCpuCheckpoint(original.cpu);
 	const restored = createGpu();
 	restored.memory.installSystemRom(image.romBytes);
 	restored.cpu.reset();
 	stopPcrtc(restored.memory, restored.gpu, restored.scheduler);
 	restored.scheduler.advanceTo(original.scheduler.nowCycles);
 	restored.gpu.restoreState(gpuState);
-	restored.cpu.restoreRuntimeState(cpuState);
+	restoreCpuCheckpoint(restored.cpu, checkpoint);
 	for (const target of [original, restored]) {
 		target.scheduler.advanceTo(28);
 		assert.equal(target.cpu.isMemoryWriteBlocked(), true);
@@ -1837,6 +1838,7 @@ test('blocked CPU GP0 store resumes after completion across device restore', () 
 		assert.equal(target.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, 'blocked store has not yet retired');
 		for (let attempt = 0; attempt < 4 && target.cpu.getFrameDepth() > 0; ++attempt) target.scheduler.runCpuSlice(0, 20);
 		assert.equal(target.cpu.getFrameDepth(), 0, 'the blocked store and return retire');
+		assert.equal(target.cpu.readLuaFaultReasonWord(), 0, 'the retried store and return complete without a Lua fault');
 		assert.equal(target.cpu.isMemoryWriteBlocked(), false);
 		while (target.scheduler.nextDeadline() < 45) {
 			const deadline = target.scheduler.nextDeadline();
