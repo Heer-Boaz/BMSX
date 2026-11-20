@@ -1,4 +1,4 @@
-#include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_lowering.h"
 
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/native_execution.h"
@@ -16,15 +16,15 @@ sljit_jump* NativeBlockAbi::emitNonleafBuiltinJump(sljit_compiler* compiler, slj
 	return sljit_emit_jump(compiler, SLJIT_ZERO);
 }
 
-void NativeBlockCompiler::emitBuiltinCall(const DecodedInstruction& instruction) {
+void NativeLowering::emitBuiltinCall(const NativeOperands& instruction) {
 	auto& block = *m_blocks[m_current];
 	auto& call = block.terminal;
+	const auto& ir = m_ir[m_current];
 	const int base = instruction.a;
 	const int tag = knownTag(base);
-	if (!m_bindings.cpu || instruction.b < 1 || instruction.b > 3 || static_cast<u32>(instruction.c) > 2
-		|| (tag >= 0 && tag != static_cast<int>(ValueTag::BuiltinFunction))
-		|| regionEntryIndex(call.nextPc) == m_blocks.size()) {
-		emitExit(call);
+	if (!ir.completedCall || ir.successors[0] == m_ir.size()
+		|| (tag >= 0 && tag != static_cast<int>(ValueTag::BuiltinFunction))) {
+		emitLeave(call, Charge::Pending);
 		return;
 	}
 
@@ -49,12 +49,10 @@ void NativeBlockCompiler::emitBuiltinCall(const DecodedInstruction& instruction)
 	if (instruction.c != 1) m_cache.discardRange(base, base + 1);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, remainingCycles));
-	auto& completed = block.sideExits.emplace_back(call);
-	completed.exit = NativeBlockExit::CompletedCall;
-	completed.cycles = completed.registerTop = 0;
+	auto& completed = *ir.completedCall;
 	fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM,
-		static_cast<u32>(NativeBuiltinCallOutcome::CompletedStop)), completed, m_cache.state(), true);
-	emitExit(completed);
+		static_cast<u32>(NativeBuiltinCallOutcome::CompletedStop)), completed, m_cache.state(), Charge::Paid);
+	emitExit(completed, ir.successors[0]);
 }
 
 } // namespace bmsx

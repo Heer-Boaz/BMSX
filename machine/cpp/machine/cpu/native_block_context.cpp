@@ -1,4 +1,4 @@
-#include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_lowering.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/native_value_emit.h"
 #include "machine/cpu/call_state.h"
@@ -8,13 +8,13 @@
 #include <bit>
 
 namespace bmsx {
-void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction, NativeBlockExitSite* watched) {
+void NativeLowering::emitContext(const NativeOperands& instruction, NativeBlockExitSite* watched) {
 	auto* c = m_compiler;
-	const auto op = static_cast<OpCode>(instruction.op);
+	const auto op = instruction.op;
 	const auto bank = op == OpCode::GETSYS || op == OpCode::SETSYS ? offsetof(NativeBlockRunState, systemGlobalValues)
 		: offsetof(NativeBlockRunState, globalValues);
 	const sljit_sw words = bank + ValueSpan::wordsOffset(), tags = bank + ValueSpan::tagsOffset();
-	const sljit_sw wordOffset = instruction.bx * sizeof(u32), tagOffset = instruction.bx;
+	const sljit_sw wordOffset = instruction.immediate * sizeof(u32), tagOffset = instruction.immediate;
 	if (watched) {
 		// Neither lane can be written until both have passed admission:
 		// either one can invalidate the executing region.
@@ -45,7 +45,7 @@ void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction, Nat
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), tagOffset);
 	emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
 }
-void NativeBlockCompiler::emitConstantIndex(const DecodedInstruction& instruction, NativeBlockExitSite& invalid) {
+void NativeLowering::emitConstantIndex(const NativeOperands& instruction, NativeBlockExitSite& invalid) {
 	emitWordOperand(instruction.b, invalid);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, m_constants.size()),
 		invalid, m_cache.state());
@@ -65,7 +65,7 @@ void NativeBlockCompiler::emitConstantIndex(const DecodedInstruction& instructio
 	emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
 }
 
-void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, NativeBlockExitSite* openWrite) {
+void NativeLowering::emitUpvalue(const NativeOperands& instruction, NativeBlockExitSite* openWrite) {
 	sljit_emit_op1(
 		m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, nativeControl));
@@ -82,7 +82,7 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, Nat
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_FLAGS);
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, UPVALUE_OPEN);
 	auto* open = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
-	if (instruction.op == static_cast<u8>(OpCode::SETUP)) {
+	if (instruction.op == OpCode::SETUP) {
 		fault(open, *openWrite, m_cache.state());
 		// Both value lanes are in the aligned cell's write-watch group.
 		emitRamWordWriteWatch(*openWrite, SLJIT_R3, 0, SLJIT_R0, SLJIT_R1, 3u);
@@ -150,7 +150,7 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, Nat
 	emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
 }
 
-void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, NativeBlockExitSite& growth) {
+void NativeLowering::emitVararg(const NativeOperands& instruction, NativeBlockExitSite& growth) {
 	const bool open = instruction.b == 0;
 	const int first = instruction.a, fixed = instruction.b - 1;
 	if (fixed == 0) return;
@@ -198,7 +198,7 @@ void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, Nati
 	NativeBlockAbi::emitFramePlacement(c, false, !open);
 }
 
-void NativeBlockCompiler::emitNilRange(int first, int count) {
+void NativeLowering::emitNilRange(int first, int count) {
 	if (count == 0)
 		return;
 	m_cache.discardRange(first, first + count);

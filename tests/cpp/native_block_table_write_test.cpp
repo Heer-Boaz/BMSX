@@ -38,7 +38,6 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 		ops[2].observeNativeNumericTypes(valueInteger(12), valueInteger(1));
 	ops[3].a = 6; ops[3].c = 8; ops[3].tableCacheSlot = 0;
 	ops[4].bx = 0x2000u;
-	instructions[0].fieldValueTag = ValueTag::Integer;
 	const std::array sources{NativeBlockSource{std::span(instructions.data(), 4), nullptr, true},
 		NativeBlockSource{std::span(instructions.data() + 4, 1)}};
 	auto blocks = NativeBlock::compileRegion(sources, constants.view(), NativeCodeBindings(memory, cpu.stringPool(), indexKey));
@@ -71,7 +70,6 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 		&& registers.get(9) == valueInteger(42),
 		"the tag guard does not execute or publish a speculative field read");
 
-	instructions[0].fieldValueTag = ValueTag::Float;
 	ops[2].bx = 0;
 	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
 		ops[2].observeNativeNumericTypes(valueFloat(12.5f), valueFloat(0.25f));

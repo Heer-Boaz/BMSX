@@ -1,4 +1,4 @@
-#include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_lowering.h"
 
 namespace bmsx {
 namespace {
@@ -9,14 +9,22 @@ const NativeBlockExitSite scalarBoundary = [] {
 }();
 } // namespace
 
-void NativeBlockCompiler::beginBlock(size_t index) {
+void NativeLowering::beginBlock(size_t index) {
 	m_current = index;
 	m_instruction = 0;
-	m_prefixCycles = m_prefixTop = 0;
+	m_uses.beginBlock(m_ir[index].instructions);
 	m_terminal = false;
-	m_controlPrivilegeGuarded = false;
 	auto& entry = m_entries[index];
 	entry.planned = true;
+	const auto& ir = m_ir[index];
+	if (ir.numericPrefix != 0) {
+		std::array<NativeSlotType, NativeRegisterCache::capacity> entryTypes;
+		size_t typeCount = 0;
+		for (const auto& binding : entry.registers)
+			if (binding.guest >= 0)
+				entryTypes[typeCount++] = {static_cast<u16>(binding.guest), binding.tag};
+		m_types.specialize(ir.instructions.first(ir.numericPrefix), m_constants, std::span(entryTypes).first(typeCount));
+	}
 	m_cache.setState({});
 	entry.guarded = sljit_emit_label(m_compiler);
 	// Public entry points admit their own type proofs before any register move.
@@ -24,14 +32,14 @@ void NativeBlockCompiler::beginBlock(size_t index) {
 	const u32 pc = m_blocks[index]->firstPc;
 	const State memoryAuthoritative{};
 	for (auto* miss : m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2))
-		deferColdExit(miss, nullptr, pc, memoryAuthoritative, true);
+		deferColdExit(miss, NativeResumePoint{pc, 0, 0}, memoryAuthoritative);
 	entry.proven = sljit_emit_label(m_compiler);
 	auto* shortGrant = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM,
 		m_blocks[index]->admissionCycles);
-	deferColdExit(shortGrant, nullptr, pc, entry.registers, true);
+	deferColdExit(shortGrant, NativeResumePoint{pc, 0, 0}, entry.registers);
 }
 
-void NativeBlockCompiler::emitTop(int extent) {
+void NativeLowering::emitTop(int extent) {
 	if (extent == 0)
 		return;
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state),
@@ -41,7 +49,8 @@ void NativeBlockCompiler::emitTop(int extent) {
 		offsetof(NativeBlockRunState, registerTop), SLJIT_IMM, extent);
 	sljit_set_label(retained, sljit_emit_label(m_compiler));
 }
-void NativeBlockCompiler::emitScalarBoundary(u32 pc, int cycles, int top) {
+void NativeLowering::emitScalarBoundary(NativeResumePoint point) {
+	const auto [pc, cycles, top] = point;
 	m_cache.publish();
 	emitTop(top);
 	if (cycles)
@@ -54,7 +63,8 @@ void NativeBlockCompiler::emitScalarBoundary(u32 pc, int cycles, int top) {
 	m_terminal = true;
 }
 
-void NativeBlockCompiler::emitLeave(NativeBlockExitSite& exit, bool charged) {
+void NativeLowering::emitLeave(NativeBlockExitSite& exit, Charge charge) {
+	const bool charged = charge == Charge::Paid;
 	m_cache.publish();
 	const auto& gate = nativeBlockGate();
 	const bool frameTransfer = exit.exit == NativeBlockExit::Call || exit.exit == NativeBlockExit::Return;
@@ -71,40 +81,39 @@ void NativeBlockCompiler::emitLeave(NativeBlockExitSite& exit, bool charged) {
 	m_terminal = true;
 }
 
-void NativeBlockCompiler::emitExit(NativeBlockExitSite& exit) {
+void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t target) {
 	const bool completed = exit.exit == NativeBlockExit::CompletedCall;
-	const size_t target = (completed || exit.exit == NativeBlockExit::Continue) ? regionEntryIndex(exit.nextPc) : m_blocks.size();
-	if (target != m_blocks.size()) {
+	if (target != m_blocks.size() && (completed || exit.exit == NativeBlockExit::Continue)) {
 		const auto source = m_cache.state();
 		if (!completed) {
 			emitTop(exit.registerTop);
 			sljit_emit_op2(
 				m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
 			fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM, 0),
-				exit, source, true);
+				exit, source, Charge::Paid);
 		}
 		auto& entry = m_entries[target];
-		if (!entry.planned) {
+		if (!entry.planned && !m_uses.hasForwardMerge(target)) {
 			entry.planned = true;
 			entry.registers = source;
 			// This map can receive a dirty backedge after a clean public entry.
 			// Treat retained payloads as deferred until an actual publication.
 			for (auto& binding : entry.registers)
 				if (binding.guest >= 0) {
-					if (entryReads(target, binding.guest))
+					if (m_uses.entryReads(target, binding.guest))
 						binding.wordDirty = binding.tagDirty = true;
 					else
 						binding = {};
 				}
 		}
 		for (auto* miss : m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2))
-			fault(miss, exit, source, true);
+			fault(miss, exit, source, Charge::Paid);
 		m_branches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), target});
 		m_terminal = true;
 		return;
 	}
 	if (exit.exit != NativeBlockExit::Continue) {
-		emitLeave(exit, false);
+		emitLeave(exit, Charge::Pending);
 		return;
 	}
 	// Separately published regions have independent maps. Publish only here;

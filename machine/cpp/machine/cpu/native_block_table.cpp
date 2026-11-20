@@ -1,4 +1,4 @@
-#include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_lowering.h"
 #include "machine/cpu/native_value_emit.h"
 #include "machine/cpu/native_table_index.h"
 #include "machine/cpu/execution_image.h"
@@ -30,7 +30,7 @@ static_assert(scratch + sizeof(TableScratch) <= NativeBlockAbi::stackBytes);
 
 // R0 addresses the aligned table header; R1 is the slot. The stored backing
 // address and capacities are guest words: mirror each derived access.
-void NativeBlockCompiler::emitTableSlotOffset(sljit_s32 destination, bool word) {
+void NativeLowering::emitTableSlotOffset(sljit_s32 destination, bool word) {
 	if (word) {
 		sljit_emit_op2(m_compiler, SLJIT_SHL32, destination, 0, SLJIT_R1, 0, SLJIT_IMM, 2);
 	} else {
@@ -47,13 +47,13 @@ void NativeBlockCompiler::emitTableSlotOffset(sljit_s32 destination, bool word) 
 		word ? RAM_RECORD_WORD_MASK : MAIN_RAM_SIZE - 1u);
 }
 
-void NativeBlockCompiler::emitTableSlotLoad(sljit_s32 destination, bool word) {
+void NativeLowering::emitTableSlotLoad(sljit_s32 destination, bool word) {
 	emitTableSlotOffset(destination, word);
 	NativeBlockAbi::emitRamAddress(m_compiler, destination, destination);
 	sljit_emit_op1(m_compiler, word ? SLJIT_MOV32 : SLJIT_MOV_U8, destination, 0, SLJIT_MEM1(destination), 0);
 }
 
-void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool arraySlot, int value) {
+void NativeLowering::emitTableWriteWatch(NativeBlockExitSite& exit, bool arraySlot, int value) {
 	if (arraySlot) {
 		for (bool word : {true, false}) {
 			const auto address = word ? wordOffset : tagOffset;
@@ -94,7 +94,7 @@ void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool ar
 	for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
 }
 
-void NativeBlockCompiler::emitTableSlotStore(int value) {
+void NativeLowering::emitTableSlotStore(int value) {
 	emitRawLoad(value, SLJIT_R2, SLJIT_R3);
 	for (bool word : {true, false}) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), word ? wordOffset : tagOffset);
@@ -104,7 +104,7 @@ void NativeBlockCompiler::emitTableSlotStore(int value) {
 	}
 }
 
-std::array<sljit_jump*, 2> NativeBlockCompiler::emitArrayRead() {
+std::array<sljit_jump*, 2> NativeLowering::emitArrayRead() {
 	auto* outside = sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array));
 	emitTableSlotLoad(SLJIT_R2, true);
@@ -117,7 +117,7 @@ std::array<sljit_jump*, 2> NativeBlockCompiler::emitArrayRead() {
 	return {outside, inherited};
 }
 
-void NativeBlockCompiler::emitArrayStore(int value, NativeBlockExitSite& exit) {
+void NativeLowering::emitArrayStore(int value, NativeBlockExitSite& exit) {
 	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array)), exit, m_cache.state());
 	emitTableWriteWatch(exit, true, value);
@@ -154,7 +154,7 @@ void NativeBlockCompiler::emitArrayStore(int value, NativeBlockExitSite& exit) {
 
 }
 
-void NativeBlockCompiler::emitTableReadLeaf(bool fixedStringKey, NativeBlockExitSite& exit) {
+void NativeLowering::emitTableReadLeaf(bool fixedStringKey, NativeBlockExitSite& exit) {
 	auto* c = m_compiler;
 	// The leaf only reads RAM. Charge additional visits after success; the
 	// dispatcher owns faults and charges their full semantic work there.
@@ -180,7 +180,7 @@ void NativeBlockCompiler::emitTableReadLeaf(bool fixedStringKey, NativeBlockExit
 	emitValueTransportLoad(c, SLJIT_SP, result + offsetof(TableLookupResult, value), SLJIT_R2, SLJIT_R3);
 }
 
-void NativeBlockCompiler::emitIndexRead(int key, NativeBlockExitSite& exit) {
+void NativeLowering::emitIndexRead(int key, NativeBlockExitSite& exit) {
 	auto* c = m_compiler;
 	emitRawLoad(key, SLJIT_R3, SLJIT_R2);
 	auto* string = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
@@ -210,7 +210,7 @@ void NativeBlockCompiler::emitIndexRead(int key, NativeBlockExitSite& exit) {
 }
 
 // Hash keys start after the array; hash values start after all hash keys.
-sljit_jump* NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBlockExitSite& exit, std::optional<StringId> constantKey, ValueTag loadTag) {
+sljit_jump* NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& exit, std::optional<StringId> constantKey, ValueTag loadTag) {
 	if (!constantKey)
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
 	const sljit_s32 keySource = constantKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP);
@@ -295,9 +295,9 @@ sljit_jump* NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBloc
 	return nullptr;
 }
 
-void NativeBlockCompiler::emitTableAccess(
-	const DecodedInstruction& instruction, NativeBlockExitSite& exit, ValueTag fieldValueTag) {
-	const auto op = static_cast<OpCode>(instruction.op);
+void NativeLowering::emitTableAccess(
+	const NativeOperands& instruction, NativeBlockExitSite& exit, ValueTag fieldValueTag) {
+	const auto op = instruction.op;
 	const bool load = op == OpCode::GETT || op == OpCode::GETI || op == OpCode::GETFIELD || op == OpCode::SELF;
 	const int base = load ? instruction.b : instruction.a;
 	const int key = load ? instruction.c : instruction.b;

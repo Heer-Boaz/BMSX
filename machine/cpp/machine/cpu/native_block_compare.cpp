@@ -1,4 +1,4 @@
-#include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_lowering.h"
 #include "machine/cpu/native_value_emit.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/string_pool.h"
@@ -20,8 +20,8 @@ template <OpCode op> u32 compareKernel(const Value* args, const StringPool* stri
 	return 0;
 }
 } // namespace
-void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, NativeBlockExitSite& taken) {
-	const auto op = static_cast<OpCode>(instruction.op);
+void NativeLowering::emitComparison(const NativeOperands& instruction, NativeBlockExitSite& taken) {
+	const auto op = instruction.op;
 	const int a = knownTag(instruction.b), b = knownTag(instruction.c);
 	sljit_jump* matched;
 	if (a == static_cast<int>(ValueTag::Integer) && b == a) {
@@ -65,18 +65,20 @@ void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, 
 		matched = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	}
 	const auto state = m_cache.state();
-	const auto outcome = [&](NativeBlockExitSite& exit) {
-		if (m_blocks[m_current]->hasFusedJump && &exit == &m_blocks[m_current]->terminal) {
-			auto& deferred = m_blocks[m_current]->sideExits[m_blocks[m_current]->sideExits.size() - 2];
+	const auto& ir = m_ir[m_current];
+	auto& terminal = m_blocks[m_current]->terminal;
+	const auto outcome = [&](bool skip) {
+		if (!skip && ir.beforeFusedJump) {
+			auto& deferred = *ir.beforeFusedJump;
 			fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM,
 					  deferred.cycles),
 				deferred, m_cache.state());
 		}
-		emitExit(exit);
+		emitExit(skip ? taken : terminal, ir.successors[skip ? 1 : 0]);
 	};
-	outcome(instruction.a != 0 ? taken : m_blocks[m_current]->terminal);
+	outcome(instruction.a != 0);
 	sljit_set_label(matched, sljit_emit_label(m_compiler));
 	m_cache.setState(state);
-	outcome(instruction.a != 0 ? m_blocks[m_current]->terminal : taken);
+	outcome(instruction.a == 0);
 }
 } // namespace bmsx

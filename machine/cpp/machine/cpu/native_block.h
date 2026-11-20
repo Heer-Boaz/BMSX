@@ -31,7 +31,8 @@ class StringPool;
 class GcHeap;
 class NativeBlock;
 class NativeBlockGate;
-class NativeBlockCompiler;
+class NativeLowering;
+class NativeIrRegion;
 struct NativeCpuRunState;
 struct NativeBlockExitSite;
 struct NativeTableConstructor;
@@ -127,8 +128,6 @@ using NativeBlockExitHandlers = std::array<NativeBlockExitHandler, static_cast<s
 struct NativeBlockInstruction {
 	const DecodedInstruction* decoded;
 	u32 pc;
-	// Proven only on the own-field hit of a warmed native update.
-	ValueTag fieldValueTag = ValueTag::Nil;
 };
 
 struct NativeBlockSource {
@@ -359,9 +358,9 @@ public:
 private:
 	friend struct NativeBlockLink;
 	friend class CPU;
-	friend class NativeBlockCompiler;
+	friend class NativeLowering;
 	void execute(NativeCpuRunState& state) const;
-	static std::unique_ptr<NativeBlock> prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers);
+	friend class NativeIrRegion;
 	NativeBlock() = default;
 	void* m_body = nullptr;
 	void* m_linkEntry = nullptr;

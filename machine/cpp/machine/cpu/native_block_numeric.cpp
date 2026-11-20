@@ -1,4 +1,4 @@
-#include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_lowering.h"
 #include "machine/cpu/native_value_emit.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/value_arithmetic.h"
@@ -63,7 +63,7 @@ Kernel kernelFor(OpCode op) {
 }
 } // namespace
 
-void NativeBlockCompiler::emitWordOperand(int selector,NativeBlockExitSite& invalid) {
+void NativeLowering::emitWordOperand(int selector,NativeBlockExitSite& invalid) {
 	if(knownTag(selector)==static_cast<int>(ValueTag::Integer)) {
 		const auto source=readTyped(selector,ValueTag::Integer);
 		if(source.reg!=SLJIT_R0)sljit_emit_op1(m_compiler,SLJIT_MOV32,SLJIT_R0,0,source.reg,0);
@@ -84,10 +84,10 @@ void NativeBlockCompiler::emitWordOperand(int selector,NativeBlockExitSite& inva
 	if(integer)sljit_set_label(integer,sljit_emit_label(m_compiler));
 }
 
-void NativeBlockCompiler::emitNumericKernel(
-	const DecodedInstruction& instruction, NativeBlockExitSite& invalid, int resultTag) {
+void NativeLowering::emitNumericKernel(
+	const NativeOperands& instruction, NativeBlockExitSite& invalid, std::optional<ValueTag> resultTag) {
 	constexpr sljit_sw args = NativeBlockAbi::helperResultOffset, result = args + 2 * sizeof(Value);
-	const auto op = static_cast<OpCode>(instruction.op);
+	const auto op = instruction.op;
 	emitRawLoad(instruction.b, SLJIT_R0, SLJIT_R1);
 	emitValueTransportStore(m_compiler, SLJIT_SP, args, SLJIT_R0, SLJIT_R1);
 	if (op != OpCode::UNM && op != OpCode::BNOT) {
@@ -102,80 +102,58 @@ void NativeBlockCompiler::emitNumericKernel(
 	m_cache.spillCall(true, 0);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), invalid, prefix);
 	emitValueTransportLoad(m_compiler, SLJIT_SP, result, SLJIT_R0, SLJIT_R1);
-	if (resultTag < 0)
+	if (!resultTag)
 		emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
 	else {
-		const auto target = m_cache.write(instruction.a, static_cast<ValueTag>(resultTag));
+		const auto target = m_cache.write(instruction.a, *resultTag);
 		if (target.tag == ValueTag::Float)
 			sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, target.reg, SLJIT_R0);
 		else
 			sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_R0, 0);
 	}
 }
-void NativeBlockCompiler::emitFloatInput(int selector, ValueTag tag, sljit_s32 destination) {
+void NativeLowering::emitFloatInput(int selector, ValueTag tag, sljit_s32 destination) {
 	const auto source = readTyped(selector, tag, SLJIT_R0, destination);
 	if (tag == ValueTag::Integer)
 		sljit_emit_fop1(m_compiler, SLJIT_CONV_F32_FROM_S32, destination, 0, source.reg, 0);
 	else if (source.reg != destination)
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F32, destination, 0, source.reg, 0);
 }
-void NativeBlockCompiler::emitFloatCanonicalization(sljit_s32 reg) {
+void NativeLowering::emitFloatCanonicalization(sljit_s32 reg) {
 	auto* ordinary = sljit_emit_fcmp(m_compiler, SLJIT_ORDERED | SLJIT_32, reg, 0, reg, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, BLUA32_FLOAT_NAN);
 	sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, reg, SLJIT_R0);
 	sljit_set_label(ordinary, sljit_emit_label(m_compiler));
 }
-void NativeBlockCompiler::emitNumeric(const DecodedInstruction& instruction, NativeBlockExitSite& invalid, u32 pc) {
-	const auto op = static_cast<OpCode>(instruction.op);
+void NativeLowering::emitNumeric(const NativeInstruction& source) {
+	const auto& instruction = source.operands;
+	auto& invalid = *source.slow;
+	const auto op = instruction.op;
 	const bool unary = op == OpCode::UNM || op == OpCode::BNOT;
-	int left = knownTag(instruction.b), right = unary ? left : knownTag(instruction.c);
-	const int integer = static_cast<int>(ValueTag::Integer), floating = static_cast<int>(ValueTag::Float);
-	if ((left >= 0 && left != integer && left != floating) || (right >= 0 && right != integer && right != floating)) {
+	const auto& plan = std::get<NativeNumericPlan>(source.specialization);
+	const auto guard = [&](i16 operand, ValueTag tag) {
+		deferColdExit(m_cache.guard(operand, tag, SLJIT_R0), source.before, m_cache.state());
+	};
+	if (plan.guardLeft) guard(instruction.b, *plan.left);
+	if (plan.guardRight) guard(instruction.c, *plan.right);
+	switch (plan.action) {
+	case NativeNumericAction::Fault:
 		fault(sljit_emit_jump(m_compiler, SLJIT_JUMP), invalid, m_cache.state());
 		return;
-	}
-	const bool bits = op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR || op == OpCode::SHL ||
-					  op == OpCode::SHR || op == OpCode::BNOT;
-	// Keep a warm numeric value on the host side of the register cache.
-	// Once one operand is typed, a single remaining guard is enough even
-	// when a comparison or another computation, rather than a store, uses it.
-	// A type miss retries this instruction, not the already executed prefix.
-	if ((left < 0 || right < 0) && (op == OpCode::ADD || op == OpCode::SUB || op == OpCode::MUL)) {
-		const auto observed = instruction.nativeNumericTypes();
-		if (observed.stable && observed.left != ValueTag::Nil) {
-			const auto instructions = m_sources[m_current].instructions;
-			const bool feedsStore = m_instruction < instructions.size()
-				&& instructions[m_instruction].decoded->op == static_cast<u8>(OpCode::SETFIELD)
-				&& instructions[m_instruction].decoded->c == instruction.a;
-			if (left >= 0 || right >= 0 || feedsStore) {
-				const auto guard = [&](int operand, ValueTag tag) {
-					deferColdExit(m_cache.guard(operand, tag, SLJIT_R0), nullptr, pc,
-						m_cache.state(), true, m_prefixCycles, m_prefixTop);
-					return static_cast<int>(tag);
-				};
-				if (left < 0) left = guard(instruction.b, observed.left);
-				if (right < 0) right = instruction.c == instruction.b ? left : guard(instruction.c, observed.right);
-			}
-		}
-	}
-	if (left < 0 || right < 0 || op == OpCode::MOD || op == OpCode::FLOORDIV || op == OpCode::POW ||
-		(bits && (left != integer || right != integer))) {
-		const int tag = bits																			  ? integer
-						: op == OpCode::DIV || op == OpCode::POW || left == floating || right == floating ? floating
-						: left == integer && right == integer											  ? integer
-																										  : -1;
-		emitNumericKernel(instruction, invalid, tag);
+	case NativeNumericAction::Kernel:
+		emitNumericKernel(instruction, invalid, plan.result);
 		return;
-	}
-	if (op == OpCode::DIV || (!bits && (left == floating || right == floating))) {
+	case NativeNumericAction::Word:
+		break;
+	case NativeNumericAction::Float:
 		if (op == OpCode::UNM) {
 			const auto source = readTyped(instruction.b, ValueTag::Float);
 			const auto target = m_cache.write(instruction.a, ValueTag::Float);
 			sljit_emit_fop1(m_compiler, SLJIT_NEG_F32, target.reg, 0, source.reg, 0);
 			return;
 		}
-		emitFloatInput(instruction.b, static_cast<ValueTag>(left), SLJIT_FR0);
-		emitFloatInput(instruction.c, static_cast<ValueTag>(right), SLJIT_FR1);
+		emitFloatInput(instruction.b, *plan.left, SLJIT_FR0);
+		emitFloatInput(instruction.c, *plan.right, SLJIT_FR1);
 		const auto target = m_cache.write(instruction.a, ValueTag::Float);
 		sljit_emit_fop2(m_compiler,
 			op == OpCode::ADD	? SLJIT_ADD_F32

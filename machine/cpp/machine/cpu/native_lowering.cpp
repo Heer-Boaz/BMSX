@@ -1,4 +1,4 @@
-#include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_lowering.h"
 
 #include <algorithm>
 #include <new>
@@ -7,11 +7,11 @@
 
 namespace bmsx {
 
-NativeBlockCompiler::NativeBlockCompiler(ConstValueSpan constants, std::span<const std::unique_ptr<NativeBlock>> blocks,
-	const NativeCodeBindings& bindings, std::span<const NativeBlockSource> sources)
+NativeLowering::NativeLowering(ConstValueSpan constants, std::span<const std::unique_ptr<NativeBlock>> blocks,
+	const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir)
 	: m_compiler(sljit_create_compiler(nullptr)), m_cache(m_compiler, NativeBlockAbi::words, NativeBlockAbi::tags,
 													  NativeBlockAbi::wordRegisters, NativeBlockAbi::floatRegisters),
-	  m_constants(constants), m_blocks(blocks), m_bindings(bindings), m_sources(sources), m_entries(blocks.size()) {
+	  m_constants(constants), m_blocks(blocks), m_bindings(bindings), m_ir(ir), m_entries(blocks.size()) {
 	if (!m_compiler)
 		throw std::bad_alloc();
 	sljit_set_context(m_compiler, 0, NativeBlockAbi::signature, NativeBlockAbi::scratches, NativeBlockAbi::saveds,
@@ -23,24 +23,18 @@ NativeBlockCompiler::NativeBlockCompiler(ConstValueSpan constants, std::span<con
 		exits += block->sideExits.size();
 	m_coldExits.reserve(exits + blocks.size() * 2);
 	m_coldBranches.reserve(exits * 2 + blocks.size());
-	analyzeEntryLiveness();
+	m_uses.analyze(ir);
 }
-NativeBlockCompiler::~NativeBlockCompiler() {
+NativeLowering::~NativeLowering() {
 	sljit_free_compiler(m_compiler);
 }
-size_t NativeBlockCompiler::regionEntryIndex(u32 pc) const {
-	for (size_t index = 0; index < m_blocks.size(); ++index)
-		if (m_blocks[index]->firstPc == pc)
-			return index;
-	return m_blocks.size();
-}
-int NativeBlockCompiler::knownTag(int selector) const {
+int NativeLowering::knownTag(int selector) const {
 	if (selector < 0)
 		return static_cast<int>(m_constants.tag(-selector - 1));
 	const auto* binding = m_cache.binding(selector);
 	return binding ? static_cast<int>(binding->tag) : -1;
 }
-std::array<sljit_jump*, 2> NativeBlockCompiler::emitSkipScalarBarrier(int value, sljit_s32 scratch) {
+std::array<sljit_jump*, 2> NativeLowering::emitSkipScalarBarrier(int value, sljit_s32 scratch) {
 	// The unsigned range check rejects both ends of the tag range.
 	// Builtin is the one immediate tag between String and Thread.
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, scratch, 0, SLJIT_MEM1(NativeBlockAbi::tags), value);
@@ -52,7 +46,7 @@ std::array<sljit_jump*, 2> NativeBlockCompiler::emitSkipScalarBarrier(int value,
 			static_cast<u8>(ValueTag::BuiltinFunction) - static_cast<u8>(ValueTag::String))
 	};
 }
-NativeRegisterCache::Operand NativeBlockCompiler::readTyped(
+NativeRegisterCache::Operand NativeLowering::readTyped(
 	int selector, ValueTag tag, sljit_s32 wordScratch, sljit_s32 floatScratch) {
 	if (selector >= 0)
 		return m_cache.read(selector, tag);
@@ -63,7 +57,7 @@ NativeRegisterCache::Operand NativeBlockCompiler::readTyped(
 	sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, floatScratch, wordScratch);
 	return {floatScratch, tag, -1};
 }
-void NativeBlockCompiler::emitRawLoad(int selector, sljit_s32 word, sljit_s32 tag) {
+void NativeLowering::emitRawLoad(int selector, sljit_s32 word, sljit_s32 tag) {
 	const int kind = knownTag(selector);
 	if (kind >= 0) {
 		const auto value = readTyped(selector, static_cast<ValueTag>(kind), word, SLJIT_FR0);
@@ -77,12 +71,12 @@ void NativeBlockCompiler::emitRawLoad(int selector, sljit_s32 word, sljit_s32 ta
 		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, tag, 0, SLJIT_MEM1(NativeBlockAbi::tags), selector);
 	}
 }
-void NativeBlockCompiler::emitRawStore(int guest, sljit_s32 word, sljit_s32 tag) {
+void NativeLowering::emitRawStore(int guest, sljit_s32 word, sljit_s32 tag) {
 	m_cache.discardRange(guest, guest + 1);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::words), guest * sizeof(u32), word, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_MEM1(NativeBlockAbi::tags), guest, tag, 0);
 }
-void NativeBlockCompiler::emitConstant(int guest, Value value) {
+void NativeLowering::emitConstant(int guest, Value value) {
 	const auto target = m_cache.write(guest, valueTag(value));
 	if (target.tag == ValueTag::Float) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, valuePayload(value));
@@ -90,28 +84,25 @@ void NativeBlockCompiler::emitConstant(int guest, Value value) {
 	} else
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_IMM, valuePayload(value));
 }
-void NativeBlockCompiler::fault(sljit_jump* jump, NativeBlockExitSite& exit, const State& state, bool charged) {
-	deferColdExit(jump, &exit, 0u, state, charged);
+void NativeLowering::fault(sljit_jump* jump, NativeBlockExitSite& site, const State& state, Charge charge) {
+	deferColdExit(jump, SemanticExit{&site, charge}, state);
 }
 
-void NativeBlockCompiler::deferColdExit(sljit_jump* jump, NativeBlockExitSite* site, u32 scalarPc,
-	const State& state, bool charged, int scalarCycles, int scalarTop) {
-	// Proven operands supply no branch. The remaining guards of each guest
-	// site are emitted together; only its publication variants can match.
+void NativeLowering::deferColdExit(sljit_jump* jump, ExitTarget target, const State& state) {
+	// Several guards of one guest operation can publish the same state.
 	if (!jump) return;
 	for (size_t i = m_coldExits.size(); i != 0;) {
 		const auto& exit = m_coldExits[--i];
-		if (exit.site != site || exit.scalarPc != scalarPc) break;
-		if (exit.charged == charged && exit.scalarCycles == scalarCycles && exit.scalarTop == scalarTop
-			&& m_cache.samePublication(exit.state, state)) {
+		if (exit.target != target) break;
+		if (m_cache.samePublication(exit.state, state)) {
 			m_coldBranches.push_back({jump, i});
 			return;
 		}
 	}
 	m_coldBranches.push_back({jump, m_coldExits.size()});
-	m_coldExits.push_back({site, scalarPc, scalarCycles, scalarTop, state, charged});
+	m_coldExits.push_back({target, state});
 }
-void NativeBlockCompiler::emitWordMove(const DecodedInstruction& instruction, NativeBlockExitSite* invalid) {
+void NativeLowering::emitWordMove(const NativeOperands& instruction, NativeBlockExitSite* invalid) {
 	const auto mode = static_cast<ValueMoveKind>(instruction.c);
 	int tag = knownTag(instruction.b);
 	if (mode == ValueMoveKind::Copy) {
@@ -141,38 +132,20 @@ void NativeBlockCompiler::emitWordMove(const DecodedInstruction& instruction, Na
 	sljit_emit_fcopy(m_compiler, required == ValueTag::Float ? SLJIT_COPY32_FROM_F32 : SLJIT_COPY32_TO_F32,
 		required == ValueTag::Float ? source.reg : target.reg, required == ValueTag::Float ? target.reg : source.reg);
 }
-void NativeBlockCompiler::emit(
-	const DecodedInstruction& instruction, NativeBlockExitSite* slow, NativeBlockExitSite* taken) {
-	const auto& source = m_sources[m_current].instructions[m_instruction++];
+void NativeLowering::lower(const NativeInstruction& source) {
+	++m_instruction;
 	if (m_terminal)
 		return;
 	m_cache.beginInstruction();
-	// The next access includes an overwrite: retaining that binding avoids
-	// publishing its old dirty payload solely to overwrite it immediately.
 	for (const auto& binding : m_cache.state())
-		if (binding.guest >= 0) {
-			int next = std::numeric_limits<int>::max();
-			const auto remaining = m_sources[m_current].instructions.subspan(m_instruction);
-			for (size_t distance = 0; distance < remaining.size(); ++distance) {
-				const auto& item = *remaining[distance].decoded;
-				const u8 reads = OPCODE_SCALAR_REGISTER_READS[item.op];
-				const auto kind = static_cast<OpCode>(item.op);
-				const bool scalar = ((reads & REGISTER_OPERAND_A) && binding.guest == item.a) ||
-									((reads & REGISTER_OPERAND_B) && binding.guest == item.b) ||
-									((reads & REGISTER_OPERAND_C) && binding.guest == item.c);
-				const bool overwrite = OPCODE_WRITES_REGISTER_A[item.op] && binding.guest == item.a;
-				const bool range =
-					(kind == OpCode::LOADNIL && binding.guest >= item.a && binding.guest < item.a + item.b) ||
-					((kind == OpCode::STORE_MEM_WORDS || kind == OpCode::STORE_MEM_WORDS_D) &&
-						binding.guest >= item.a && binding.guest < item.a + item.c);
-				if (scalar || overwrite || range) {
-					next = static_cast<int>(distance);
-					break;
-				}
-			}
-			m_cache.nextUse(binding.guest, next);
-		}
-	const auto op = static_cast<OpCode>(instruction.op);
+		if (binding.guest >= 0)
+			m_cache.nextUse(binding.guest, m_uses.nextUse(m_instruction, binding.guest));
+
+	const auto& instruction = source.operands;
+	const auto op = instruction.op;
+	auto* slow = source.slow;
+	const auto& block = m_ir[m_current];
+	auto* taken = block.taken;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	// Admission has succeeded. Count only instruction attempts that actually
 	// execute here, not a preparation, cold exit or scalar redispatch.
@@ -229,7 +202,7 @@ void NativeBlockCompiler::emit(
 		break;
 	}
 	case OpCode::LOADK:
-		emitConstant(instruction.a, m_constants.get(instruction.bx));
+		emitConstant(instruction.a, m_constants.get(instruction.immediate));
 		break;
 	case OpCode::KNIL:
 		emitConstant(instruction.a, valueNil());
@@ -247,7 +220,7 @@ void NativeBlockCompiler::emit(
 		emitConstant(instruction.a, valueInteger(op == OpCode::K0	 ? 0
 												 : op == OpCode::K1	 ? 1
 												 : op == OpCode::KM1 ? -1
-																	 : instruction.sbx));
+																	 : static_cast<i32>(instruction.immediate)));
 		break;
 	case OpCode::ADD:
 	case OpCode::SUB:
@@ -263,7 +236,7 @@ void NativeBlockCompiler::emit(
 	case OpCode::SHR:
 	case OpCode::BNOT:
 	case OpCode::UNM:
-		emitNumeric(instruction, *slow, source.pc);
+		emitNumeric(source);
 		break;
 	case OpCode::LOADKR:
 		emitConstantIndex(instruction, *slow);
@@ -274,7 +247,7 @@ void NativeBlockCompiler::emit(
 		break;
 	case OpCode::MFC0:
 	case OpCode::MTC0:
-		emitControl(instruction, slow);
+		emitControl(instruction, slow, std::get<NativeControlAccess>(source.specialization));
 		break;
 	case OpCode::LEN:
 		emitLength(instruction, *slow);
@@ -294,7 +267,7 @@ void NativeBlockCompiler::emit(
 		emitContext(instruction, slow);
 		break;
 	case OpCode::JMP:
-		emitExit(m_blocks[m_current]->terminal);
+		emitExit(m_blocks[m_current]->terminal, m_ir[m_current].successors[0]);
 		break;
 	case OpCode::JMPIF:
 	case OpCode::JMPIFNOT: {
@@ -302,10 +275,12 @@ void NativeBlockCompiler::emit(
 		auto* falsey = sljit_emit_cmp(
 			m_compiler, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, static_cast<u8>(ValueTag::False));
 		const auto state = m_cache.state();
-		emitExit(op == OpCode::JMPIF ? *taken : m_blocks[m_current]->terminal);
+		if (op == OpCode::JMPIF) emitExit(*taken, block.successors[1]);
+		else emitExit(m_blocks[m_current]->terminal, block.successors[0]);
 		sljit_set_label(falsey, sljit_emit_label(m_compiler));
 		m_cache.setState(state);
-		emitExit(op == OpCode::JMPIF ? m_blocks[m_current]->terminal : *taken);
+		if (op == OpCode::JMPIF) emitExit(m_blocks[m_current]->terminal, block.successors[0]);
+		else emitExit(*taken, block.successors[1]);
 		break;
 	}
 	case OpCode::EQ:
@@ -323,49 +298,40 @@ void NativeBlockCompiler::emit(
 	case OpCode::CONCATN:
 	case OpCode::CLOSURE:
 	case OpCode::RFE:
-		emitExit(m_blocks[m_current]->terminal);
+		emitExit(m_blocks[m_current]->terminal, m_ir[m_current].successors[0]);
 		break;
 	case OpCode::GETT:
 	case OpCode::GETI:
-	case OpCode::GETFIELD:
 	case OpCode::SETT:
 	case OpCode::SETI:
 	case OpCode::SETFIELD:
 	case OpCode::SELF:
-		emitTableAccess(instruction, *slow, source.fieldValueTag);
+		emitTableAccess(instruction, *slow, ValueTag::Nil);
+		break;
+	case OpCode::GETFIELD: {
+		const auto* specialized = std::get_if<NativeFieldRead>(&source.specialization);
+		emitTableAccess(instruction, *slow, specialized ? specialized->result : ValueTag::Nil);
+	}
 		break;
 	case OpCode::VARARG:
 		emitVararg(instruction, *slow);
 		break;
 	default:
-		emitScalarBoundary(source.pc, m_prefixCycles, m_prefixTop);
+		emitScalarBoundary(source.before);
 		return;
 	}
-	m_prefixCycles += instruction.baseCycles + (op == OpCode::LOADNIL ? instruction.b : 0);
-	if (op == OpCode::STORE_MEM_WORDS || op == OpCode::STORE_MEM_WORDS_D) m_prefixCycles += instruction.c;
-	if (op == OpCode::VARARG) {
-		if (instruction.b == 0) m_prefixTop = 0;
-		else if (instruction.b > 1) {
-			m_prefixCycles += instruction.b - 1;
-			m_prefixTop = std::max(m_prefixTop, instruction.a + instruction.b - 1);
-		}
-	} else if (op == OpCode::LOADNIL) {
-		if (instruction.b != 0)
-			m_prefixTop = std::max(m_prefixTop, static_cast<int>(instruction.a) + instruction.b);
-	} else if (OPCODE_WRITES_REGISTER_A[instruction.op])
-		m_prefixTop = std::max(m_prefixTop, static_cast<int>(instruction.a) + 1);
 }
-void NativeBlockCompiler::endBlock() {
+void NativeLowering::endBlock() {
 	if (!m_terminal)
-		emitExit(m_blocks[m_current]->terminal);
+		emitExit(m_blocks[m_current]->terminal, m_ir[m_current].successors[0]);
 }
-void* NativeBlockCompiler::finish(size_t& codeBytes) {
+void* NativeLowering::finish(size_t& codeBytes) {
 	emitRomReads();
 	for (auto& exit : m_coldExits) {
 		exit.label = sljit_emit_label(m_compiler);
 		m_cache.setState(exit.state);
-		if (exit.site) emitLeave(*exit.site, exit.charged);
-		else emitScalarBoundary(exit.scalarPc, exit.scalarCycles, exit.scalarTop);
+		if (const auto* semantic = std::get_if<SemanticExit>(&exit.target)) emitLeave(*semantic->site, semantic->charge);
+		else emitScalarBoundary(std::get<NativeResumePoint>(exit.target));
 	}
 	for (const auto& branch : m_coldBranches)
 		sljit_set_label(branch.jump, m_coldExits[branch.target].label);

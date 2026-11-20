@@ -6,6 +6,7 @@
 
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/native_block.h"
+#include "machine/cpu/native_ir.h"
 #include "machine/cpu/native_compilation_source.h"
 #include "machine/cpu/native_table_constructor.h"
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -16,26 +17,6 @@
 namespace bmsx {
 
 namespace {
-// Identify a straight-line numeric use of a field without relying on feedback
-// here: cold image preparation needs the same candidate before it can observe
-// a receiver slot or a pair of numeric tags.
-const DecodedInstruction* numericFieldConsumer(std::span<const NativeBlockInstruction> instructions) {
-	const auto& read = *instructions.front().decoded;
-	if (read.op != static_cast<u8>(OpCode::GETFIELD) || instructions.size() < 2) return nullptr;
-	size_t arithmetic = 1;
-	const auto& successor = *instructions[arithmetic].decoded;
-	const auto next = static_cast<OpCode>(successor.op);
-	// Shared movement steps are commonly loaded from a global or capture.
-	if (next == OpCode::GETGL || next == OpCode::GETSYS || next == OpCode::GETUP) {
-		if (instructions.size() < 3 || successor.a == read.a) return nullptr;
-		++arithmetic;
-	}
-	const auto& compute = *instructions[arithmetic].decoded;
-	const auto op = static_cast<OpCode>(compute.op);
-	if (op != OpCode::ADD && op != OpCode::SUB && op != OpCode::MUL) return nullptr;
-	return compute.b == read.a || compute.c == read.a ? &compute : nullptr;
-}
-
 // Compilation may return early or raise while decoding/generating. This scope
 // measures the complete owning operation, including its unfinished phase.
 class NativeCompilationMeasurement {
@@ -220,7 +201,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 			// first execution can observe the real operands, while a compiled
 			// prefix exits to the field PC as an ordinary entry boundary.
 			for (size_t index = first; index < instructionCount; ++index) {
-				const auto* compute = numericFieldConsumer(std::span(instructions.data() + index, instructionCount - index));
+				const auto* compute = nativeNumericFieldConsumer(std::span(instructions.data() + index, instructionCount - index));
 				if (compute && compute->nativeNumericTypes().left == ValueTag::Nil) {
 					instructionCount = index;
 					break;
@@ -243,17 +224,8 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 			const auto& instruction = *instructions[index].decoded;
 			if (!final) {
 				if (!nativeBlockHasContinuation(instruction.op, instruction.b)) continue;
-				if (instruction.op == static_cast<u8>(OpCode::GETFIELD) && instruction.tableCacheSlot >= 0) {
-					const auto* compute = numericFieldConsumer(std::span(instructions.data() + index, instructionCount - index));
-					if (compute) {
-						const auto observed = compute->nativeNumericTypes();
-						const auto tag = compute->b == instruction.a ? observed.left : observed.right;
-						if (observed.stable && tag != ValueTag::Nil) {
-							instructions[index].fieldValueTag = tag;
-							continue;
-						}
-					}
-				}
+				if (nativeGuardedFieldResult(std::span(instructions.data() + index, instructionCount - index)))
+					continue;
 			}
 			sources.push_back({std::span(instructions.data() + segmentFirst, index + 1u - segmentFirst),
 				final ? skippedInstruction : nullptr, !final});

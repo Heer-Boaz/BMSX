@@ -441,7 +441,7 @@ void observedArithmeticResumesAtItsOwnInstruction() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const u32 first = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-	test::waitForNativeEntry(native.cpu, page, first + 1u);
+	test::waitForNativeEntry(native.cpu, page, first);
 	const auto warm = page.words[first + 2u].nativeNumericTypes();
 	require(warm.left == ValueTag::Integer && warm.right == ValueTag::Integer && warm.stable,
 		"native warm-up records the actual operands without widening decoded instructions");

@@ -1,4 +1,4 @@
-#include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_lowering.h"
 #include "machine/cpu/native_value_emit.h"
 #include "machine/cpu/table.h"
 #include "machine/cpu/execution_image.h"
@@ -21,7 +21,7 @@ u32 lengthKernel(NativeBlockRunState* state, const StringPool* strings, GcHeap* 
 	return 0;
 }
 } // namespace
-void NativeBlockCompiler::emitLength(const DecodedInstruction& instruction, NativeBlockExitSite& invalid) {
+void NativeLowering::emitLength(const NativeOperands& instruction, NativeBlockExitSite& invalid) {
 	constexpr auto value = NativeBlockAbi::helperResultOffset;
 	emitRawLoad(instruction.b, SLJIT_R0, SLJIT_R1);
 	emitValueTransportStore(m_compiler, SLJIT_SP, value, SLJIT_R0, SLJIT_R1);

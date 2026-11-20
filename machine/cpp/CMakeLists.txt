@@ -388,10 +388,10 @@ if(BMSX_ENABLE_NATIVE_BLOCKS OR BMSX_BUILD_TESTS)
 endif()
 
 if(BMSX_ENABLE_NATIVE_BLOCKS)
-	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_block_compiler.cpp machine/cpu/native_block_abi.cpp
+	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_lowering.cpp machine/cpu/native_block_abi.cpp
 		machine/cpu/native_block_builtin.cpp machine/cpu/native_block_call.cpp machine/cpu/native_block_return.cpp machine/cpu/native_block_frames.cpp
 		machine/cpu/native_block_registers.cpp machine/cpu/native_block_numeric.cpp machine/cpu/native_block_compare.cpp
-		machine/cpu/native_block_context.cpp machine/cpu/native_block_control.cpp machine/cpu/native_block_length.cpp machine/cpu/native_block_table.cpp machine/cpu/native_table_index.cpp machine/cpu/native_table_constructor.cpp machine/cpu/native_block_memory.cpp machine/cpu/native_block_edges.cpp machine/cpu/native_block_liveness.cpp
+		machine/cpu/native_block_context.cpp machine/cpu/native_block_control.cpp machine/cpu/native_block_length.cpp machine/cpu/native_block_table.cpp machine/cpu/native_table_index.cpp machine/cpu/native_table_constructor.cpp machine/cpu/native_block_memory.cpp machine/cpu/native_block_edges.cpp machine/cpu/native_ir.cpp machine/cpu/native_ir_numeric.cpp machine/cpu/native_ir_liveness.cpp machine/cpu/native_ir_optimize.cpp
 		machine/cpu/cpu_native_blocks.cpp machine/cpu/cpu_native_execution.cpp machine/cpu/cpu_native_prepare.cpp)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_ENABLE_NATIVE_BLOCKS=1)
 	target_link_libraries(bmsx_core PRIVATE bmsx_sljit)
@@ -1336,6 +1336,9 @@ if(BMSX_BUILD_TESTS)
 			target_link_libraries(bmsx_native_compiler_worker_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 			add_test(NAME bmsx_native_compiler_worker_tests COMMAND bmsx_native_compiler_worker_tests)
 		endif()
+		add_executable(bmsx_native_ir_tests ../../tests/cpp/native_ir_test.cpp)
+		target_link_libraries(bmsx_native_ir_tests PRIVATE bmsx_core)
+		add_test(NAME bmsx_native_ir_tests COMMAND bmsx_native_ir_tests)
 		add_executable(bmsx_native_block_tests ../../tests/cpp/native_block_test.cpp)
 		target_link_libraries(bmsx_native_block_tests PRIVATE bmsx_core)
 		add_test(NAME bmsx_native_block_tests COMMAND bmsx_native_block_tests)

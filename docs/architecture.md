@@ -109,6 +109,15 @@ symbols or editor revisions. The memory and execution owners invalidate those
 caches. Checkpoints contain guest state, never generated functions, executable
 pointers or cache-link topology.
 
+In the native tier, the CPU discovers bounded regions and captures compilation
+inputs. The region translator turns those inputs into slot-based IR with
+explicit successors, semantic exits and interpreter resume points. Register-use
+analysis and type specialization work on logical guest slots; specialization
+can use the proved types at a block entry. SLJIT lowering owns physical
+registers, spills, executable labels and link fixups. The execution gate and
+CPU own state publication and runtime transitions. The IR is transient, not a
+second representation of machine state.
+
 Both engines consume the same guest values, frames, heap and control state.
 Generated execution retains intermediate values in locals or native registers
 where possible and publishes required state at semantic exits. Allocation,

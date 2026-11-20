@@ -1,4 +1,4 @@
-#include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_lowering.h"
 
 #include <bit>
 #include "machine/cpu/execution_image.h"
@@ -9,7 +9,7 @@
 #include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
-void NativeBlockCompiler::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 address, sljit_sw addressArg, sljit_s32 bits, sljit_s32 group, u32 wordMask) {
+void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 address, sljit_sw addressArg, sljit_s32 bits, sljit_s32 group, u32 wordMask) {
 	auto* c = m_compiler;
 	sljit_emit_op2(c, SLJIT_LSHR32, bits, 0, address, addressArg, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT - 2u);
 	sljit_emit_op2(c, SLJIT_AND32, bits, 0, bits, 0, SLJIT_IMM, -4);
@@ -30,7 +30,7 @@ void NativeBlockCompiler::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit
 
 // The caller proved the raw mark is black. This leaf reserves no memory
 // and changes the queue only after admitting all its physical writes.
-void NativeBlockCompiler::emitGrayChange(NativeBlockExitSite& exit, sljit_s32 offset, sljit_s32 record, u32 link) {
+void NativeLowering::emitGrayChange(NativeBlockExitSite& exit, sljit_s32 offset, sljit_s32 record, u32 link) {
 	auto* c = m_compiler;
 	// This leaf uses the last word of the helper area, not the cache spill slots.
 	constexpr auto savedRecord = NativeBlockAbi::stackBytes - sizeof(void*);
@@ -45,7 +45,7 @@ void NativeBlockCompiler::emitGrayChange(NativeBlockExitSite& exit, sljit_s32 of
 	sljit_emit_op1(c, SLJIT_MOV_P, record, 0, SLJIT_MEM1(SLJIT_SP), savedRecord);
 }
 
-void NativeBlockCompiler::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {
+void NativeLowering::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {
 	const auto move = kind == MemoryAccessKind::U8 ? SLJIT_MOV32_U8 : kind == MemoryAccessKind::U16LE ? SLJIT_MOV32_U16 : SLJIT_MOV32;
 	if (kind != MemoryAccessKind::F64LE) {
 		if (unaligned && kind != MemoryAccessKind::U8)
@@ -78,7 +78,7 @@ void NativeBlockCompiler::emitBackingLoad(MemoryAccessKind kind, bool unaligned)
 	}
 }
 
-void NativeBlockCompiler::emitRomReads() {
+void NativeLowering::emitRomReads() {
 	for (const auto& read : m_romReads) {
 		const auto kind = static_cast<MemoryAccessKind>(read.bus->exitC);
 		sljit_set_label(read.ramMiss, sljit_emit_label(m_compiler));
@@ -118,11 +118,11 @@ void NativeBlockCompiler::emitRomReads() {
 		sljit_set_label(other, bus);
 		sljit_set_label(tail, bus);
 		m_cache.setState(read.registers);
-		emitLeave(*read.bus, false);
+		emitLeave(*read.bus, Charge::Pending);
 	}
 }
 
-void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, NativeBlockExitSite& slow) {
+void NativeLowering::emitMemory(const NativeOperands& instruction, NativeBlockExitSite& slow) {
 	const bool words = slow.exit == NativeBlockExit::WriteWords;
 	const auto kind = words ? MemoryAccessKind::Word : static_cast<MemoryAccessKind>(instruction.c);
 	const bool load = slow.exit == NativeBlockExit::ReadMemory;
@@ -140,10 +140,10 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
 			static_cast<u8>(ValueTag::Integer)), slow, m_cache.state());
 	}
-	if (instruction.op == static_cast<u8>(OpCode::LOAD_MEM_D) || instruction.op == static_cast<u8>(OpCode::STORE_MEM_D)
-		|| instruction.op == static_cast<u8>(OpCode::STORE_MEM_WORDS_D))
+	if (instruction.op == OpCode::LOAD_MEM_D || instruction.op == OpCode::STORE_MEM_D
+		|| instruction.op == OpCode::STORE_MEM_WORDS_D)
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM,
-			static_cast<u32>(instruction.disp) << 2u);
+			instruction.immediate);
 	const auto alignment = MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(kind)];
 	if (alignment) {
 		sljit_emit_op2(m_compiler, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, alignment);
@@ -151,7 +151,7 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 	}
 	if (width == 0) return; // Zero-count stores still require an aligned address.
 	if (width > m_bindings.ramBytes) {
-		emitExit(slow);
+		emitLeave(slow, Charge::Pending);
 		return;
 	}
 	// Keep ordinary RAM on the fall-through path. MMIO always goes to the bus.

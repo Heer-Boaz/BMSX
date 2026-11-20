@@ -6,50 +6,59 @@
 #include "machine/cpu/native_block.h"
 #include "machine/cpu/native_block_abi.h"
 #include "machine/cpu/native_block_registers.h"
+#include "machine/cpu/native_ir.h"
+#include "machine/cpu/native_ir_liveness.h"
+#include "machine/cpu/native_ir_optimize.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "sljitLir.h"
 
 namespace bmsx {
 
-class NativeBlockCompiler {
+class NativeLowering {
 public:
-	NativeBlockCompiler(ConstValueSpan constants, std::span<const std::unique_ptr<NativeBlock>> blocks,
-		const NativeCodeBindings& bindings, std::span<const NativeBlockSource> sources);
-	~NativeBlockCompiler();
+	NativeLowering(ConstValueSpan constants, std::span<const std::unique_ptr<NativeBlock>> blocks,
+		const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir);
+	~NativeLowering();
 	void beginBlock(size_t index);
-	void emit(const DecodedInstruction& instruction, NativeBlockExitSite* slow, NativeBlockExitSite* taken);
+	void lower(const NativeInstruction& instruction);
 	void endBlock();
 	void* finish(size_t& codeBytes);
 
 private:
 	using State = NativeRegisterCache::State;
-	void emitExit(NativeBlockExitSite& exit);
-	void emitScalarBoundary(u32 pc, int cycles, int top);
+	void emitExit(NativeBlockExitSite& exit, size_t target);
+	void emitScalarBoundary(NativeResumePoint point);
 	void emitTop(int extent);
-	void emitBuiltinCall(const DecodedInstruction& instruction);
+	void emitBuiltinCall(const NativeOperands& instruction);
 	void emitConstant(int guest, Value value);
 	void emitRawLoad(int selector, sljit_s32 word, sljit_s32 tag);
 	void emitRawStore(int guest, sljit_s32 word, sljit_s32 tag);
 	NativeRegisterCache::Operand readTyped(
 		int selector, ValueTag tag, sljit_s32 wordScratch = SLJIT_R0, sljit_s32 floatScratch = SLJIT_FR0);
 	int knownTag(int selector) const;
-	void fault(sljit_jump* jump, NativeBlockExitSite& exit, const State& state, bool charged = false);
-	void deferColdExit(sljit_jump* jump, NativeBlockExitSite* site, u32 scalarPc, const State& state, bool charged,
-		int scalarCycles = 0, int scalarTop = 0);
-	void emitLeave(NativeBlockExitSite& exit, bool charged);
-	void emitWordMove(const DecodedInstruction& instruction, NativeBlockExitSite* invalid);
-	void emitNumeric(const DecodedInstruction& instruction, NativeBlockExitSite& invalid, u32 pc);
-	void emitNumericKernel(const DecodedInstruction& instruction, NativeBlockExitSite& invalid, int resultTag);
+	enum class Charge : u8 { Pending, Paid };
+	struct SemanticExit {
+		NativeBlockExitSite* site;
+		Charge charge;
+		bool operator==(const SemanticExit&) const = default;
+	};
+	using ExitTarget = std::variant<NativeResumePoint, SemanticExit>;
+	void fault(sljit_jump* jump, NativeBlockExitSite& site, const State& state, Charge charge = Charge::Pending);
+	void deferColdExit(sljit_jump* jump, ExitTarget target, const State& state);
+	void emitLeave(NativeBlockExitSite& exit, Charge charge);
+	void emitWordMove(const NativeOperands& instruction, NativeBlockExitSite* invalid);
+	void emitNumeric(const NativeInstruction& instruction);
+	void emitNumericKernel(const NativeOperands& instruction, NativeBlockExitSite& invalid, std::optional<ValueTag> resultTag);
 	void emitFloatInput(int selector, ValueTag tag, sljit_s32 destination);
 	void emitFloatCanonicalization(sljit_s32 reg);
-	void emitVararg(const DecodedInstruction&, NativeBlockExitSite& growth);
-	void emitContext(const DecodedInstruction& instruction, NativeBlockExitSite* watched);
+	void emitVararg(const NativeOperands&, NativeBlockExitSite& growth);
+	void emitContext(const NativeOperands& instruction, NativeBlockExitSite* watched);
 	void emitNilRange(int first, int count);
 	void emitWordOperand(int selector, NativeBlockExitSite& invalid);
-	void emitConstantIndex(const DecodedInstruction&, NativeBlockExitSite&);
-	void emitUpvalue(const DecodedInstruction&, NativeBlockExitSite*);
-	void emitControl(const DecodedInstruction&, NativeBlockExitSite*);
-	void emitTableAccess(const DecodedInstruction&, NativeBlockExitSite&, ValueTag fieldValueTag);
+	void emitConstantIndex(const NativeOperands&, NativeBlockExitSite&);
+	void emitUpvalue(const NativeOperands&, NativeBlockExitSite*);
+	void emitControl(const NativeOperands&, NativeBlockExitSite*, NativeControlAccess);
+	void emitTableAccess(const NativeOperands&, NativeBlockExitSite&, ValueTag fieldValueTag);
 	std::array<sljit_jump*, 2> emitArrayRead();
 	void emitArrayStore(int value, NativeBlockExitSite&);
 	void emitIndexRead(int key, NativeBlockExitSite&);
@@ -62,32 +71,28 @@ private:
 	std::array<sljit_jump*, 2> emitSkipScalarBarrier(int value, sljit_s32 scratch);
 	void emitGrayChange(NativeBlockExitSite&, sljit_s32 offset, sljit_s32 record, u32 link);
 	void emitRamWordWriteWatch(NativeBlockExitSite&, sljit_s32 address, sljit_sw addressArg, sljit_s32 bits, sljit_s32 group, u32 wordMask = 1u);
-	void emitLength(const DecodedInstruction&, NativeBlockExitSite&);
+	void emitLength(const NativeOperands&, NativeBlockExitSite&);
 	// R2 is the host address; result is a word in R0 or external binary64 in FR0.
 	void emitBackingLoad(MemoryAccessKind kind, bool unaligned);
 	void emitRomReads();
-	void emitMemory(const DecodedInstruction&, NativeBlockExitSite&);
-	void emitComparison(const DecodedInstruction& instruction, NativeBlockExitSite& taken);
-	size_t regionEntryIndex(u32 pc) const;
-	void analyzeEntryLiveness();
-	bool entryReads(size_t entry, int guest) const;
+	void emitMemory(const NativeOperands&, NativeBlockExitSite&);
+	void emitComparison(const NativeOperands& instruction, NativeBlockExitSite& taken);
 
 	sljit_compiler* m_compiler;
 	NativeRegisterCache m_cache;
 	ConstValueSpan m_constants;
 	std::span<const std::unique_ptr<NativeBlock>> m_blocks;
 	const NativeCodeBindings& m_bindings;
-	std::span<const NativeBlockSource> m_sources;
+	std::span<const NativeIrBlock> m_ir;
+	NativeRegisterUses m_uses;
+	NativeTypePropagation m_types;
 	struct Entry {
 		State registers{};
 		sljit_label* guarded = nullptr;
 		sljit_label* proven = nullptr;
 		bool planned = false;
-		bool hasForwardPredecessor = false;
 	};
 	std::vector<Entry> m_entries;
-	size_t m_liveWordCount = 0;
-	std::vector<u64> m_entryLive;
 	struct Branch {
 		sljit_jump* jump;
 		size_t target;
@@ -100,13 +105,8 @@ private:
 	};
 	std::vector<ExternalBranch> m_external;
 	struct ColdExit {
-		// A null site publishes the completed prefix and executes scalarPc
-		// in the interpreter. The scalar instruction owns its own charge.
-		NativeBlockExitSite* site;
-		u32 scalarPc;
-		int scalarCycles, scalarTop;
+		ExitTarget target;
 		State state;
-		bool charged;
 		sljit_label* label = nullptr;
 	};
 	std::vector<ColdExit> m_coldExits;
@@ -120,9 +120,7 @@ private:
 	};
 	std::vector<RomRead> m_romReads;
 	size_t m_current = 0, m_instruction = 0;
-	int m_prefixCycles = 0, m_prefixTop = 0;
 	bool m_terminal = false;
-	bool m_controlPrivilegeGuarded = false;
 };
 
 } // namespace bmsx

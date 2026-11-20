@@ -419,7 +419,7 @@ private:
 	friend class NativeBlockGate;
 	struct NativeFrameOffsets { size_t haltedThreadAddress, haltedDepth; };
 	static NativeFrameOffsets nativeFrameOffsets();
-	friend class NativeBlockCompiler;
+	friend class NativeLowering;
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
 	static NativeBuiltinCallOutcome runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	static void* tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
