@@ -197,27 +197,20 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		throw new Error('The embedded preview has no unobscured pointer target');
 	};
 	const click = async (target: Readonly<RectBounds> | (() => Readonly<RectBounds>), heldFrames = 1, button: 'pointer_primary' | 'pointer_secondary' | 'pointer_aux' = 'pointer_primary') => {
-		// Like Playwright's stable-position actionability check, resolve pointer
-		// coordinates after browser layout, not just our accelerated machine tick.
-		// BrowserVideoOutput can still have a canvas resize queued on rAF.
-		let previous = { ...display.measureDisplay() };
-		for (;;) {
-			await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-			const current = display.measureDisplay();
-			if (current.left === previous.left && current.top === previous.top && current.width === previous.width && current.height === previous.height) break;
-			console.info(`STUDIO: pointer waits for canvas layout ${previous.left},${previous.top} ${previous.width}x${previous.height} -> ${current.left},${current.top} ${current.width}x${current.height}`);
-			previous = { ...current };
-		}
-		// A stable canvas is not a stable canvas-rendered target. For example,
-		// expiry of the status message moves a pane's action bar by one row.
-		// Follow the actual target through hover layout before pressing it.
+		// Host frames publish both the pending browser resize and workbench
+		// hover layout. A browser rAF alone publishes neither of these.
 		for (let stableFrames = 0; stableFrames < 2;) {
 			const bounds = typeof target === 'function' ? target() : target;
 			const { left, top, right, bottom } = bounds;
+			const { left: displayLeft, top: displayTop, width, height } = display.measureDisplay();
+			const { width: logicalWidth, height: logicalHeight } = ide.overlayRenderer.viewportSize;
 			movePointer(bounds);
 			await frame();
 			const current = typeof target === 'function' ? target() : target;
-			if (current.left === left && current.top === top && current.right === right && current.bottom === bottom) stableFrames++;
+			const client = display.measureDisplay(), logical = ide.overlayRenderer.viewportSize;
+			if (client.left === displayLeft && client.top === displayTop && client.width === width && client.height === height
+				&& logical.width === logicalWidth && logical.height === logicalHeight
+				&& current.left === left && current.top === top && current.right === right && current.bottom === bottom) stableFrames++;
 			else { stableFrames = 0; console.info('STUDIO: pointer waits for workbench target layout'); }
 		}
 		setPointerButton(button, true);

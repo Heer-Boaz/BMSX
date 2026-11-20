@@ -1,7 +1,7 @@
-import type { TestContext } from 'node:test';
+import { after, type TestContext } from 'node:test';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { copyFile, cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'esbuild';
@@ -15,31 +15,66 @@ import { WorkspaceHttpSession, HttpError } from '../../scripts/dev/http_security
 import { handleWorkspaceRequest } from '../../scripts/dev/workspace_api.mjs';
 import { afterTest } from './test_cleanup';
 
-// Renderer projects change their workspace and provider, not the browser entry.
-let assistantBundle: Promise<Uint8Array> | undefined;
+async function loadAssistantAssets() {
+	const [{ outputFiles: [entry] }, bios, cart, worker] = await Promise.all([
+		build({ entryPoints: ['tests/conformance/runtime_replay/studio_assistant.ts'], bundle: true,
+			platform: 'browser', format: 'esm', target: 'es2020', write: false, tsconfig: 'tsconfig.base.json',
+			loader: { '.rgba': 'binary', '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' } }),
+		readFile('dist/system/bmsx-bios.debug.rom'),
+		readFile('dist/studio_test.debug.rom'),
+		readFile('dist/graph-layout.worker.js'),
+	]);
+	const html = '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}#player-surface{position:fixed;inset:0}canvas{position:absolute;image-rendering:pixelated}</style><div id="player-surface"><canvas width="256" height="212"></canvas></div>';
+	return new Map<string, { type: string; body: string | Uint8Array }>([
+		['/', { type: 'text/html', body: html }],
+		['/index.html', { type: 'text/html', body: html }],
+		['/test.js', { type: 'text/javascript', body: entry.contents }],
+		['/graph-layout.worker.js', { type: 'text/javascript', body: worker }],
+		['/bios.rom', { type: 'application/octet-stream', body: bios }],
+		['/cart.rom', { type: 'application/octet-stream', body: cart }],
+	]);
+}
+
+async function launchAssistantBrowser(headless: boolean): Promise<Browser> {
+	const { chromium } = await import(process.env.BMSX_PLAYWRIGHT_MODULE || 'playwright');
+	return chromium.launch({ headless, ignoreDefaultArgs: ['--disable-popup-blocking'], args: ['--no-sandbox', '--enable-unsafe-webgpu',
+		'--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
+		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface', '--disable-dev-shm-usage'] });
+}
+
+// A worker owns the browser and immutable media. Every test owns its context,
+// origin, editable sources, server, provider and native Codex profile.
+let workerBrowser: Promise<Browser> | undefined;
+let assistantAssets: ReturnType<typeof loadAssistantAssets> | undefined;
+after(async () => { if (workerBrowser !== undefined) await (await workerBrowser).close(); });
 
 /** Isolated authored workspace, real HTTP owners and browser; no product test endpoints or provider knobs. */
 export async function createAssistantStudioFixture(t: TestContext, evidenceName: string, options: Pick<CodexSessionOptions, 'executable' | 'provider'>,
-	browserOptions: Pick<LaunchOptions, 'headless'> & Pick<BrowserContextOptions, 'permissions'> = {}) {
+	browserOptions: Pick<LaunchOptions, 'headless'> & Pick<BrowserContextOptions, 'permissions'> & { nativeClipboard?: boolean } = {}) {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-studio-assistant-'));
-	let browser: Browser | undefined;
+	let closeBrowserContext: (() => Promise<void>) | undefined;
 	let closeServer: (() => Promise<void>) | undefined;
 	// An enabled plugin feature clones into the profile's .tmp while the process winds down,
 	// so removal races a writer it does not own. Retry rather than fail the finished test.
-	afterTest(t, async () => { await browser?.close(); await closeServer?.();
-		await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); });
-	const bundle = await (assistantBundle ??= build({ entryPoints: ['tests/conformance/runtime_replay/studio_assistant.ts'], bundle: true,
-		platform: 'browser', format: 'esm', target: 'es2020', write: false, tsconfig: 'tsconfig.base.json',
-		loader: { '.rgba': 'binary', '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' },
-	}).then(({ outputFiles: [entry] }) => entry.contents));
-	await writeFile(join(root, 'test.js'), bundle);
-	await writeFile(join(root, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}#player-surface{position:fixed;inset:0}canvas{position:absolute;image-rendering:pixelated}</style><div id="player-surface"><canvas width="256" height="212"></canvas></div>');
-	await copyFile('dist/system/bmsx-bios.debug.rom', join(root, 'bios.rom')); await copyFile('dist/studio_test.debug.rom', join(root, 'cart.rom'));
-	await copyFile('dist/graph-layout.worker.js', join(root, 'graph-layout.worker.js'));
-	for (const path of ['carts/studio_test', 'cartlib', 'machine/bios', 'testlib', 'tests/carts/studio_test']) await cp(path, join(root, path), { recursive: true,
-		filter: async path => (await stat(path)).isDirectory() || /\.(lua|yaml|yml)$/.test(path) });
+	afterTest(t, async () => {
+		try { await closeBrowserContext?.(); }
+		finally {
+			try { await closeServer?.(); }
+			finally { await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); }
+		}
+	});
+	const assets = await (assistantAssets ??= loadAssistantAssets());
+	const headless = browserOptions.headless ?? true;
+	// Chromium's native clipboard is process-wide even across private contexts.
+	const privateBrowser = !headless || browserOptions.nativeClipboard;
+	const browser = await (privateBrowser ? launchAssistantBrowser(headless) : (workerBrowser ??= launchAssistantBrowser(true)));
+	if (privateBrowser) closeBrowserContext = () => browser.close();
+	for (const path of ['carts/studio_test', 'cartlib', 'machine/bios', 'testlib', 'tests/carts/studio_test']) {
+		await cp(path, join(root, path), { recursive: true,
+			filter: async path => (await stat(path)).isDirectory() || /\.(lua|yaml|yml)$/.test(path) });
+	}
 	const profileDirectory = join(root, 'profile');
-	// No real browser is launched from a test; the request is recorded and asserted instead.
+	// Account tools record the requested external login URL instead of opening it.
 	const opened: string[] = [];
 	const api = new CodexHttpApi({ ...options, profileDirectory, workspaceRoot: root, openLoginPage: url => { opened.push(url); },
 		tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS, ...STUDIO_RUNTIME_TOOLS] });
@@ -54,9 +89,9 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 				if (url.pathname === '/__bmsx__/lua') await handleWorkspaceRequest(root, request, response, url);
 				else { if (url.pathname.endsWith('/connect')) observations.connects++; await api.handle(request, response, url.pathname); }
 			} else {
-				const path = url.pathname === '/' ? '/index.html' : url.pathname;
-				response.writeHead(200, { 'Content-Type': path.endsWith('.js') ? 'text/javascript' : path.endsWith('.html') ? 'text/html' : 'application/octet-stream' })
-					.end(await readFile(join(root, path)));
+				const asset = assets.get(url.pathname);
+				if (asset === undefined) response.writeHead(404).end();
+				else response.writeHead(200, { 'Content-Type': asset.type }).end(asset.body);
 			}
 		} catch (error) {
 			if (response.headersSent) response.destroy(error as Error);
@@ -65,11 +100,9 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	});
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
 	closeServer = async () => { await api.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); };
-	const { chromium } = await import(process.env.BMSX_PLAYWRIGHT_MODULE || 'playwright');
-	browser = await chromium.launch({ headless: browserOptions.headless ?? true, ignoreDefaultArgs: ['--disable-popup-blocking'], args: ['--no-sandbox', '--enable-unsafe-webgpu',
-		'--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
-		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface', '--disable-dev-shm-usage'] });
-	const page = await browser.newPage({ viewport: { width: 768, height: 576 }, permissions: browserOptions.permissions ?? ['clipboard-read', 'clipboard-write'] });
+	const context = await browser.newContext({ viewport: { width: 768, height: 576 }, permissions: browserOptions.permissions ?? ['clipboard-read', 'clipboard-write'] });
+	if (!privateBrowser) closeBrowserContext = () => context.close();
+	const page = await context.newPage();
 	page.on('pageerror', error => observations.errors.push(error));
 	page.on('request', request => { if (request.url().endsWith('/command')) observations.commands.push(request.postDataJSON().type); });
 	page.on('console', message => console.log(`[${evidenceName}:${message.type()}] ${message.text()}`));

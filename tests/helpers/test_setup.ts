@@ -1,6 +1,5 @@
 import Module from 'node:module';
 import { readFileSync } from 'node:fs';
-import path from 'node:path';
 
 const extensions = (Module as any)._extensions as Record<string, (module: any, filename: string) => void>;
 

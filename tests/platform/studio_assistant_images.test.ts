@@ -6,7 +6,9 @@ import { CODEX_FIXTURE_DONE, createCodexModelFixture } from '../helpers/codex_mo
 
 for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: native screenshot paste reaches Codex and reopens with its preview`, { timeout: 180000 }, async t => {
 	const model = await createCodexModelFixture(t, [CODEX_FIXTURE_DONE]);
-	const f = await createAssistantStudioFixture(t, `images-${backend}`, { provider: { name: 'Offline images fixture', model: 'mock-model', baseUrl: `${model.url}/v1` } });
+	const f = await createAssistantStudioFixture(t, `images-${backend}`, {
+		provider: { name: 'Offline images fixture', model: 'mock-model', baseUrl: `${model.url}/v1` },
+	}, { nativeClipboard: true });
 	const original = await f.page.evaluate(async () => {
 		const canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 180;
 		const context = canvas.getContext('2d')!;
