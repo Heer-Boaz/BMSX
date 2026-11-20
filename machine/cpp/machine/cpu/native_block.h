@@ -45,7 +45,6 @@ struct NativeBlockLink {
 };
 
 struct NativeBlockRunState {
-	ValueSpan registers;
 	ConstValueSpan constants;
 	CallFrame* frame = nullptr;
 	GcHeap* heap = nullptr;
@@ -331,7 +330,7 @@ public:
 	NativeBlock(const NativeBlock&) = delete;
 	NativeBlock& operator=(const NativeBlock&) = delete;
 
-	const NativeBlockExitSite* run(NativeBlockRunState& state) const;
+	const NativeBlockExitSite* run(const ValueSpan& registers, NativeBlockRunState& state) const;
 	void linkFrom(const NativeBlockExitSite& source);
 
 	std::shared_ptr<NativeCodeRegion> region;

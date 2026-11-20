@@ -81,7 +81,7 @@ void ramScalarDatapathsAndGuards() {
 			ValueSlots registers(3); registers.set(0, value); registers.set(1, valueInteger(target - static_cast<u32>(store.disp) * 4u)); registers.set(2, valueNil());
 			const auto offset = target - RAM_BASE;
 			std::memset(memory.ramData() + offset, 0xb6, width);
-			const auto* exit = block->run(nativeRunState = {.registers = registers.view(), .remainingCycles = 20});
+			const auto* exit = block->run(registers.view(), nativeRunState = {.remainingCycles = 20});
 			if (!valueIsInteger(value) && !(format >= 4 && valueIsFloat(value))) {
 				require(exit->exit == NativeBlockExit::WriteMemory && isNil(registers.get(2))
 					&& std::all_of(memory.ramData() + offset, memory.ramData() + offset + width,
@@ -111,7 +111,7 @@ void ramScalarDatapathsAndGuards() {
 			const bool direct = address >= RAM_BASE + IO_SLOT_COUNT * IO_WORD_SIZE
 				&& address <= memory.ramBusEnd() - width
 				&& (address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[format]) == 0u;
-			const auto* exit = block->run(nativeRunState = {.registers = registers.view(), .remainingCycles = block->terminal.cycles});
+			const auto* exit = block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles});
 			require((exit == &block->terminal) == direct, "IO, faults and alignment leave before accessing raw RAM");
 			if (!direct) require(exit->exit == NativeBlockExit::WriteMemory && registers.get(2) == valueInteger(99),
 				"a rejected transfer never executes its following load");
@@ -120,7 +120,7 @@ void ramScalarDatapathsAndGuards() {
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
 		auto alias = NativeBlock::compile(aliasSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		ValueSlots registers(2); registers.set(0, valueNil()); registers.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x204u - store.disp * 4u));
-		require(alias->run(nativeRunState = {.registers = registers.view(), .remainingCycles = alias->terminal.cycles}) == &alias->terminal && valueIsNumber(registers.get(1)),
+		require(alias->run(registers.view(), nativeRunState = {.remainingCycles = alias->terminal.cycles}) == &alias->terminal && valueIsNumber(registers.get(1)),
 			"a memory load can replace its own address register");
 	}
 	// A four-byte-aligned double can cross into the next watched page.
@@ -134,7 +134,7 @@ void ramScalarDatapathsAndGuards() {
 	page.writeWatch.armWord(0);
 	ValueSlots registers(2); registers.set(0, valueInteger(1)); registers.set(1, valueInteger(target));
 	const auto before = readLE64(memory.ramData() + target - RAM_BASE);
-	const auto* exit = block->run(nativeRunState = {.registers = registers.view(), .remainingCycles = block->terminal.cycles});
+	const auto* exit = block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles});
 	require(exit->exit == NativeBlockExit::WriteMemory && registers.get(1) == valueInteger(target)
 		&& readLE64(memory.ramData() + target - RAM_BASE) == before,
 		"the high half's code watch exits before either half of a direct F64 store");
@@ -146,11 +146,11 @@ void ramScalarDatapathsAndGuards() {
 	const u32 publicEnd = memory.ramBusEnd();
 	registers.set(1, valueInteger(target));
 	memory.setRamBusEnd(target + 4u);
-	require(block->run(nativeRunState = {.registers = registers.view(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::WriteMemory
+	require(block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::WriteMemory
 		&& readLE64(memory.ramData() + target - RAM_BASE) == before,
 		"a published F64 block uses the new live aperture and exits before its bus continuation");
 	memory.setRamBusEnd(publicEnd);
-	require(block->run(nativeRunState = {.registers = registers.view(), .remainingCycles = block->terminal.cycles}) == &block->terminal,
+	require(block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles}) == &block->terminal,
 		"the same published block readmits its destination after the aperture grows");
 
 	// F64LE is a conversion. F32LE above instead preserves the exact input bits.
@@ -158,7 +158,7 @@ void ramScalarDatapathsAndGuards() {
 		const auto value = valueFloatBits((high << 16) | 0x9abcu);
 		ValueSlots registers(3); registers.set(0, value); registers.set(1, valueInteger(target));
 		reference.writeMappedF64LE(target, static_cast<double>(asFloat(value)));
-		require(numeric->run(nativeRunState = {.registers = registers.view(), .remainingCycles = 20}) == &numeric->terminal
+		require(numeric->run(registers.view(), nativeRunState = {.remainingCycles = 20}) == &numeric->terminal
 			&& registers.get(2) == valueFloat(static_cast<float>(reference.readMappedF64LE(target))),
 			"widening and narrowing follow the Float rules across both signs and every exponent");
 		if ((valuePayload(value) & 0x7fffffffu) <= 0x7f800000u)
@@ -170,7 +170,7 @@ void ramScalarDatapathsAndGuards() {
 	ValueSlots constants(1); constants.set(0, valueInteger(target));
 	auto constant = NativeBlock::compile(constantSource, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	ValueSlots constantRegisters(3); constantRegisters.set(0, valueNil()); constantRegisters.set(1, valueNil()); constantRegisters.set(2, valueNil());
-	require(constant->run(nativeRunState = {.registers = constantRegisters.view(), .constants = constants.view(), .remainingCycles = constant->terminal.cycles}) == &constant->terminal
+	require(constant->run(constantRegisters.view(), nativeRunState = {.constants = constants.view(), .remainingCycles = constant->terminal.cycles}) == &constant->terminal
 		&& constant->sideExits[0].exitB == -1, "a constant memory address retains its signed RK selector");
 }
 
@@ -192,7 +192,7 @@ void generatedMemoryBoundaries() {
 		const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
 		require(block && block->sourceWords == 5 && block->sideExits.size() == 1,
 			"RAM accesses compile with their dependent instructions and branch");
-		require(block->run(nativeRunState = {.registers = frame.registers, .constants = frame.executionImage->constPool, .remainingCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(op)]
+		require(block->run(frame.registers, nativeRunState = {.constants = frame.executionImage->constPool, .remainingCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(op)]
 				+ BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)] + 2})->nextPc == native.rom.textAddress,
 			"the complete memory loop reaches its final native exit without a bus-owner side exit");
 		for (int grant = 1; grant <= 32; ++grant) {
@@ -240,8 +240,8 @@ void coldExitsPreserveAddressOperands() {
 			size_t bytes = 0;
 			auto block = NativeBlock::compile(source, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 			ValueSlots registers(2); registers.set(0, valueInteger(17)); registers.set(1, constant ? valueInteger(DYNAMIC_RAM_BASE) : base);
-			NativeBlockRunState state{.registers = registers.view(), .constants = constants.view(), .remainingCycles = 100};
-			const auto* exit = block->run(state);
+			NativeBlockRunState state{.constants = constants.view(), .remainingCycles = 100};
+			const auto* exit = block->run(registers.view(), state);
 			require(exit->exit == (op == OpCode::LOAD_MEM || op == OpCode::LOAD_MEM_D
 				? NativeBlockExit::ReadMemory : NativeBlockExit::WriteMemory)
 				&& exit->exitB == instruction.b && exit->exitBx == static_cast<u32>(instruction.disp) * 4u && registers.get(0) == valueInteger(17),
@@ -266,8 +266,8 @@ void coldExitsPreserveAddressOperands() {
 			size_t bytes = 0;
 			auto block = NativeBlock::compile(source, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 			ValueSlots registers(4); registers.set(0, valueNil()); registers.set(1, constant ? valueInteger(DYNAMIC_RAM_BASE) : base); registers.set(2, valueInteger(11)); registers.set(3, valueInteger(12));
-			NativeBlockRunState state{.registers = registers.view(), .constants = constants.view(), .remainingCycles = 100};
-			const auto* exit = block->run(state);
+			NativeBlockRunState state{.constants = constants.view(), .remainingCycles = 100};
+			const auto* exit = block->run(registers.view(), state);
 			require(exit->exit == NativeBlockExit::WriteWords && exit->exitB == instruction.b && exit->exitBx == static_cast<u32>(instruction.disp) * 4u,
 				"counted stores preserve address operands across bounds, alignment and watched-page exits");
 		}
@@ -587,7 +587,7 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 		OpCode::STORE_MEM, OpCode::K1, OpCode::ADD, OpCode::MOV, OpCode::MOV, OpCode::GETFIELD, OpCode::MOV, OpCode::JMP})
 		loopCycles += BASE_CYCLES[static_cast<u8>(op)];
 	require(block && block->sourceWords == 13, "cached values occupy one native block");
-	const auto* outcome = block->run(nativeRunState = {.registers = frame.registers, .constants = frame.executionImage->constPool, .frame = &frame, .heap = &native.cpu.gcHeap(), .remainingCycles = loopCycles});
+	const auto* outcome = block->run(frame.registers, nativeRunState = {.constants = frame.executionImage->constPool, .frame = &frame, .heap = &native.cpu.gcHeap(), .remainingCycles = loopCycles});
 	require(outcome->nextPc == native.rom.textAddress,
 		"cached table references, numbers and memory writes all reach the final native exit");
 	scalar.cpu.runUntilDepth(0, loopCycles);

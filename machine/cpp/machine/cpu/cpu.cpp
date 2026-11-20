@@ -2001,7 +2001,7 @@ dispatch_native_block: {
 				nativeState.cartridgeSlot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
 				nativeState.cartridgeRom = m_memory.cartridgeController().romStorage(nativeState.cartridgeSlot);
 				nativeState.codeRoot = IMAGE.nativeCodeLookup->root(nativeState.cartridgeSlot);
-				nativeState.state = {.registers = registers, .constants = IMAGE.constPool, .frame = frame, .heap = &m_heap,
+				nativeState.state = {.constants = IMAGE.constPool, .frame = frame, .heap = &m_heap,
 					.globalValues = m_globalBank.values(), .systemGlobalValues = m_systemGlobalBank.values(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.size()),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.readWindow(FrameField::Top),

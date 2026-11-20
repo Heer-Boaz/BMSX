@@ -10,6 +10,7 @@
 #include "machine/cpu/native_perf_map.h"
 #endif
 
+#include "machine/cpu/call_state.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/memory/memory.h"
 
@@ -223,17 +224,15 @@ NativeBlock::~NativeBlock() {
 
 }
 
-const NativeBlockExitSite* NativeBlock::run(NativeBlockRunState& state) const {
-	using Entry = const NativeBlockExitSite* (SLJIT_FUNC *)(NativeBlockRunState*, void*);
+const NativeBlockExitSite* NativeBlock::run(const ValueSpan& registers, NativeBlockRunState& state) const {
 	state.exitCode = m_gate->exit;
 	state.ram = region->ram;
-	return reinterpret_cast<Entry>(m_gate->entry)(&state, m_body);
+	return reinterpret_cast<NativeBlockGate::Entry>(m_gate->entry)(&state, m_body, &registers);
 }
 
 void NativeBlock::execute(NativeCpuRunState& state) const {
-	using Entry = void (SLJIT_FUNC *)(NativeCpuRunState*, void*);
 	state.state.exitCode = m_gate->dispatch;
-	reinterpret_cast<Entry>(m_gate->entry)(&state, m_body);
+	reinterpret_cast<NativeBlockGate::Entry>(m_gate->entry)(&state.state, m_body, &state.state.frame->registers);
 }
 
 void NativeBlockLink::disconnect() {

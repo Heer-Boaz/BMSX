@@ -237,7 +237,7 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 	decoyCp0[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 	const int grant = exhausted ? BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1 : 100;
 	const auto& gate = nativeBlockGate();
-	NativeCpuRunState run{.state={.registers=frame->registers, .constants=sourceImage->constPool, .frame=frame, .heap=&m.cpu.gcHeap(),
+	NativeCpuRunState run{.state={.constants=sourceImage->constPool, .frame=frame, .heap=&m.cpu.gcHeap(),
 		.globalValues=decoyGlobals.view(), .systemGlobalValues=decoyGlobals.view(), .cop0Words=decoyCp0.data(),
 		.constantCount=static_cast<u32>(sourceImage->constPool.size()), .remainingCycles=grant, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)),
 		.exitCode=gate.dispatch, .ram=m.memory.ramData(),
@@ -249,8 +249,7 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 		.cartridgeSlot=sourceSlot, .frameBank=frameBankWord(sourceImage->executionDomainId), .error={}};
 	// No CPU run loop surrounds this call. Only a same-stable-gate resume can
 	// execute the genuine guest marker instructions before the gate returns.
-	using Entry = void (SLJIT_FUNC *)(NativeCpuRunState*, void*);
-	reinterpret_cast<Entry>(gate.entry)(&run, body);
+	reinterpret_cast<NativeBlockGate::Entry>(gate.entry)(&run.state, body, &frame->registers);
 	if (run.error) std::rethrow_exception(run.error);
 	if (cold || exhausted || targetDepth == 1) {
 		require(m.global("cartMarker") == valueNil() && m.cpu.getFrameDepth() == (returning ? 1 : 2),
@@ -264,8 +263,7 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 	}
 	require(m.cpu.isHaltedUntilIrq(), "one stable native gate reaches the cartridge's real HALT");
 	m.completedMarkers();
-	require(run.state.frame == m.cpu.activeThread()->currentFrame && run.state.registers.words() == run.state.frame->registers.words()
-		&& run.state.registers.tags() == run.state.frame->registers.tags()
+	require(run.state.frame == m.cpu.activeThread()->currentFrame
 		&& run.state.constants.words() == run.state.frame->executionImage->constPool.words()
 		&& run.state.constants.tags() == run.state.frame->executionImage->constPool.tags()
 		&& run.state.constantCount == run.state.frame->executionImage->constPool.size()

@@ -330,8 +330,8 @@ void rawContextValues(CpuMachine& machine) {
 	ValueSpan ordinary(machine.memory, 0x1000u, 0x1008u, 2), system(machine.memory, 0x1040u, 0x1048u, 2);
 	for (const auto value : values) {
 		registers.clear(0, registers.capacity()); ordinary.clear(0, ordinary.size()); system.clear(0, system.size()); registers.set(12, value);
-		NativeBlockRunState state{.registers = registers.view(), .globalValues = ordinary, .systemGlobalValues = system, .remainingCycles = 100};
-		require(globals.block->run(state) == &globals.block->terminal && registers.get(0) == value && registers.get(1) == value
+		NativeBlockRunState state{.globalValues = ordinary, .systemGlobalValues = system, .remainingCycles = 100};
+		require(globals.block->run(registers.view(), state) == &globals.block->terminal && registers.get(0) == value && registers.get(1) == value
 			&& ordinary.get(1) == value && system.get(1) == value && ordinary.get(0) == valueInteger(1) && system.get(0) == valueNil()
 			&& state.registerTop == 3, "raw global banks preserve every kind, cached definitions and namespace without a source-top write");
 	}
@@ -340,8 +340,8 @@ void rawContextValues(CpuMachine& machine) {
 	registers.set(12, valueFloatBits(0xffa12345));
 	ordinary.set(1, valueInteger(99));
 	machine.memory.ramWriteWatches().armCodeRange(0x1008u, 4u);
-	NativeBlockRunState watchedGlobal{.registers = registers.view(), .globalValues = ordinary, .systemGlobalValues = system, .remainingCycles = 100};
-	const auto* globalExit = globals.block->run(watchedGlobal);
+	NativeBlockRunState watchedGlobal{.globalValues = ordinary, .systemGlobalValues = system, .remainingCycles = 100};
+	const auto* globalExit = globals.block->run(registers.view(), watchedGlobal);
 	require(globalExit->exit == NativeBlockExit::WriteGlobal && watchedGlobal.remainingCycles == 100 - BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]
 		&& ordinary.get(1) == valueInteger(99), "native watched global store leaves before changing either lane");
 	auto* owner = cpu.activeThread();
@@ -363,8 +363,8 @@ void rawContextValues(CpuMachine& machine) {
 	ContextBlock captures(machine, {{OpCode::K1, 0}, {OpCode::GETUP, 1}, {OpCode::KSMI, 2, 0, 0, 9},
 		{OpCode::SETUP, 2}, {OpCode::ADD, 3, 0, 1}, {OpCode::GETUP, 4}, {OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	captureRegisters.clear(0, captureRegisters.size());
-	NativeBlockRunState alias{.registers = captureRegisters, .frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
-	require(captures.block->run(alias) == &captures.block->sideExits[0] && alias.registerTop == 3
+	NativeBlockRunState alias{.frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
+	require(captures.block->run(captureRegisters, alias) == &captures.block->sideExits[0] && alias.registerTop == 3
 		&& captureRegisters.get(0) == valueInteger(1) && captureRegisters.get(1) == valueInteger(1) && captureRegisters.get(2) == valueInteger(9)
 		&& captureRegisters.get(3) == valueNil(), "the self-alias guard publishes the exact prefix before writing a captured register");
 	Upvalue::bindOpen(machine.memory, open, owner->address, 16, 0);
@@ -372,8 +372,8 @@ void rawContextValues(CpuMachine& machine) {
 		{OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	for (const auto value : values) {
 		captureRegisters.clear(0, captureRegisters.size()); captureRegisters.set(12, value); outerRegisters.set(0, valueInteger(1));
-		NativeBlockRunState state{.registers = captureRegisters, .frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
-		require(outerRead.block->run(state) == &outerRead.block->terminal && captureRegisters.get(0) == valueInteger(1)
+		NativeBlockRunState state{.frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
+		require(outerRead.block->run(captureRegisters, state) == &outerRead.block->terminal && captureRegisters.get(0) == valueInteger(1)
 			&& captureRegisters.get(1) == valueInteger(1) && captureRegisters.get(3) == valueInteger(2)
 			&& captureRegisters.get(6) == value && Upvalue::load(machine.memory, closed) == value && state.registerTop == 7,
 			"native outer and closed cells preserve raw values without invalidating unrelated register definitions");
@@ -381,9 +381,9 @@ void rawContextValues(CpuMachine& machine) {
 	const auto previous = Upvalue::load(machine.memory, closed);
 	machine.memory.writeRamRecordByte(closed + GC_COLOR_OFFSET, GC_OLD | heap.white());
 	captureRegisters.set(12, valueFloatBits(0xffa54321u));
-	NativeBlockRunState closedStore{.registers = captureRegisters, .frame = &frame, .heap = &heap,
+	NativeBlockRunState closedStore{.frame = &frame, .heap = &heap,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
-	require(outerRead.block->run(closedStore)->exit == NativeBlockExit::WriteUpvalue
+	require(outerRead.block->run(captureRegisters, closedStore)->exit == NativeBlockExit::WriteUpvalue
 		&& Upvalue::load(machine.memory, closed) == previous, "first native write to an old closed cell leaves before either lane changes");
 	Upvalue::store(heap, closed, captureRegisters.get(12));
 	require(machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | heap.white())
@@ -397,14 +397,14 @@ void rawContextValues(CpuMachine& machine) {
 	const u32 cellLink = (closed + UPVALUE_NEXT) & RAM_RECORD_WORD_MASK;
 	watches.armCodeRange(cellLink, sizeof(u32));
 	closedStore.remainingCycles = 100;
-	require(outerRead.block->run(closedStore)->exit == NativeBlockExit::WriteUpvalue
+	require(outerRead.block->run(captureRegisters, closedStore)->exit == NativeBlockExit::WriteUpvalue
 		&& Upvalue::load(machine.memory, closed) == valueFloatBits(0xffa54321u)
 		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 3u)
 		&& machine.memory.readRamRecordWord(head) == previousHead,
 		"a watched closed-cell queue link defers both the barrier and the value write");
 	watches.clearCodeRange(cellLink, sizeof(u32));
 	closedStore.remainingCycles = 100;
-	require(outerRead.block->run(closedStore) == &outerRead.block->terminal && Upvalue::load(machine.memory, closed) == valueInteger(23)
+	require(outerRead.block->run(captureRegisters, closedStore) == &outerRead.block->terminal && Upvalue::load(machine.memory, closed) == valueInteger(23)
 		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 2u)
 		&& machine.memory.readRamRecordWord(closed + UPVALUE_NEXT) == previousHead
 		&& machine.memory.readRamRecordWord(head) == ((closed & GC_RECORD_MASK) >> GC_RECORD_SHIFT),
@@ -414,9 +414,9 @@ void rawContextValues(CpuMachine& machine) {
 	require(heap.cellRecordAddress(rawCell) == 0u, "an unallocated header is not a GC cell");
 	machine.memory.writeRamRecordWord(boundClosure + CLOSURE_CAPTURE_WORDS + sizeof(u32), rawCell | 0x80000000u);
 	captureRegisters.set(12, valueFloatBits(0x80000000u));
-	NativeBlockRunState addressed{.registers = captureRegisters, .frame = &frame, .heap = &heap,
+	NativeBlockRunState addressed{.frame = &frame, .heap = &heap,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
-	require(outerRead.block->run(addressed) == &outerRead.block->terminal
+	require(outerRead.block->run(captureRegisters, addressed) == &outerRead.block->terminal
 		&& captureRegisters.get(6) == valueFloatBits(0x80000000u)
 		&& machine.memory.readRamRecordWord(rawCell + UPVALUE_VALUE_WORD) == 0x80000000u
 		&& Upvalue::load(machine.memory, closed) == valueInteger(23),
@@ -429,9 +429,9 @@ void rawContextValues(CpuMachine& machine) {
 	machine.memory.writeRamRecordWord(rawClosure + CLOSURE_CAPTURE_WORDS, rawCell | 0x80000000u);
 	machine.memory.writeRamRecordWord(frame.controlOffset + static_cast<u32>(FrameField::Closure), rawClosure | 0x80000000u);
 	ContextBlock rawOpen(machine, {{OpCode::GETUP, 1}, {OpCode::JMP}});
-	NativeBlockRunState rawAlias{.registers = captureRegisters, .frame = &frame, .heap = &heap,
+	NativeBlockRunState rawAlias{.frame = &frame, .heap = &heap,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
-	require(rawOpen.block->run(rawAlias) == &rawOpen.block->terminal
+	require(rawOpen.block->run(captureRegisters, rawAlias) == &rawOpen.block->terminal
 		&& captureRegisters.get(1) == valueFloatBits(0xffa12345u),
 		"generated GETUP resolves a raw frame closure and an open capture without host attachments");
 	const std::array literals{valueNil(), valueBool(false), valueBool(true), values[6], valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(11)};
@@ -444,8 +444,8 @@ void rawContextValues(CpuMachine& machine) {
 			{valueInteger(0), 0}, {valueFloat(1.9f), 1}, {valueFloat(2.9f), 2}, {valueInteger(3), 3},
 			{valueFloat(4.f), 4}, {valueInteger(5), 5}, {valueInteger(6), 6}, {valueFloat(0x1p32f), 0}, {valueFloat(-0.f), 0}}}) {
 			registers.clear(0, 16); registers.set(2, index);
-			NativeBlockRunState state{.registers = registers.view(), .constants = constants.view(), .remainingCycles = 100};
-			require(pool.block->run(state) == &pool.block->terminal && registers.get(3) == constants.get(expected)
+			NativeBlockRunState state{.constants = constants.view(), .remainingCycles = 100};
+			require(pool.block->run(registers.view(), state) == &pool.block->terminal && registers.get(3) == constants.get(expected)
 				&& registers.get(8) == valueNil() && registers.get(9) == valueNil() && state.registerTop == 10,
 				"nil fill discards dirty definitions and pool loads retain raw kinds across U32 conversion and aliases");
 		}
@@ -462,8 +462,8 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 	ContextBlock empty(machine, {{OpCode::VARARG, 31, 0}, {OpCode::JMP}});
 	frame.writeControl(bmsx::FrameField::VarargCount, 0); frame.writeControl(bmsx::FrameField::StackCapacity, 16);
 	for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));
-	NativeBlockRunState zero{.registers = frame.registers, .frame = &frame, .remainingCycles = 100, .registerTop = 48};
-	require(empty.block->run(zero) == &empty.block->terminal && zero.registerTop == 31,
+	NativeBlockRunState zero{.frame = &frame, .remainingCycles = 100, .registerTop = 48};
+	require(empty.block->run(frame.registers, zero) == &empty.block->terminal && zero.registerTop == 31,
 		"an empty open VARARG resets top without touching or growing the destination range");
 	for (size_t i = 0; i < stack.capacity(); ++i) require(stack.get(i) == valueInteger(73), "empty window leaves both planes unchanged");
 	// The fixed form charges requested slots (also nil padding), never available slots.
@@ -473,8 +473,8 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 	for (const int count : {0, 1, 5}) {
 		const u16 first = count ? 6 : 31;
 		ContextBlock fixed(machine, {{OpCode::VARARG, first, static_cast<i16>(count + 1)}});
-		NativeBlockRunState state{.registers = frame.registers, .frame = &frame, .remainingCycles = 100, .registerTop = 3};
-		require(fixed.block->run(state) == &fixed.block->terminal && state.registerTop == (count ? first + count : 3)
+		NativeBlockRunState state{.frame = &frame, .remainingCycles = 100, .registerTop = 3};
+		require(fixed.block->run(frame.registers, state) == &fixed.block->terminal && state.registerTop == (count ? first + count : 3)
 			&& state.remainingCycles == 100 - BASE_CYCLES[static_cast<u8>(OpCode::VARARG)] - count,
 			"native fixed VARARG completes without a dispatch and charges the requested slots once");
 		for (int i = 0; i < count; ++i)
@@ -491,8 +491,8 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 			frame.writeControl(bmsx::FrameField::VarargBase, frame.stackBase() - count);
 			for (int i = 0; i < count; ++i) stack.set(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::VarargBase)) + i, values[i]);
 			frame.registers.set(14, valueInteger(1));
-			NativeBlockRunState state{.registers = frame.registers, .frame = &frame, .remainingCycles = 100, .registerTop = 16};
-			require(first.block->run(state) == &second.block->sideExits[1] && state.registerTop == count,
+			NativeBlockRunState state{.frame = &frame, .remainingCycles = 100, .registerTop = 16};
+			require(first.block->run(frame.registers, state) == &second.block->sideExits[1] && state.registerTop == count,
 				"an invalid pool load after a linked open VARARG publishes its exact lowered top, not an earlier block maximum");
 			for (int i = 0; i < count; ++i) require(frame.registers.get(i) == values[i], "varargs preserve every raw value bit");
 			require(frame.registers.get(15) == valueInteger(fixed == 0 && count == 8 ? -1 : -2),
@@ -504,8 +504,8 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 		for (int i = 0; i < 8; ++i) stack.set(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::VarargBase)) + i, values[i]);
 		// Only the open first copy exceeds this capacity.
 		if (fixed == 0) {
-			NativeBlockRunState state{.registers = frame.registers, .frame = &frame, .remainingCycles = 100};
-			require(first.block->run(state) == &first.block->sideExits[0] && state.registerTop == 8
+			NativeBlockRunState state{.frame = &frame, .remainingCycles = 100};
+			require(first.block->run(frame.registers, state) == &first.block->sideExits[0] && state.registerTop == 8
 				&& frame.registers.get(1) == valueInteger(1) && frame.registers.get(7) == valueInteger(1) && frame.registers.get(2) == valueInteger(73),
 				"a capacity exit materializes only the prefix, before any copy or top reset");
 		}

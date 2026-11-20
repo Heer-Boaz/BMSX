@@ -56,7 +56,7 @@ struct NativeBlockAbi {
 	static constexpr int helperResultOffset = registerCacheCapacity * sizeof(u32);
 	static constexpr int stackBytes = helperResultOffset + 64;
 	static_assert(sizeof(NativeCallScratch) <= stackBytes);
-	static constexpr int signature = SLJIT_ARGS2(P, P, P);
+	static constexpr int signature = SLJIT_ARGS3(P, P, P, P);
 	static constexpr auto wordRegisters = [] {
 		std::array<NativeRegisterHost, wordCount> result{};
 		for (int i = 0; i < wordCount; ++i)
@@ -75,6 +75,7 @@ struct NativeBlockAbi {
 // retire the region it came from; no return address points into that region.
 class NativeBlockGate {
 public:
+	using Entry = const NativeBlockExitSite* (SLJIT_FUNC *)(NativeBlockRunState*, void*, const ValueSpan*);
 	NativeBlockGate();
 	~NativeBlockGate();
 	NativeBlockGate(const NativeBlockGate&) = delete;
@@ -84,7 +85,7 @@ public:
 	void* dispatch;
 	void* leaveSegment;
 private:
-	static sljit_label* emitCallGate(sljit_compiler*, sljit_label* cold, sljit_label* returned);
+	static sljit_label* emitCallGate(sljit_compiler*, sljit_label* cold);
 	static sljit_label* emitReturnGate(sljit_compiler*, sljit_label* cold);
 	// Input: R0 = PC. Output: R3 = live entry; R2 is scratch.
 	static void emitCodeLookup(sljit_compiler*, sljit_label* declined);

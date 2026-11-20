@@ -1,6 +1,7 @@
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/upvalue.h"
+#include "machine/cpu/native_block_abi.h"
 #include "machine/cpu/native_execution.h"
+#include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
 
 #include <algorithm>
@@ -28,21 +29,22 @@ CPU::NativeFrameOffsets CPU::nativeFrameOffsets() {
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
 
-NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit) noexcept {
+NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept {
 	const int base = exit->exitA;
 	const int receiving = exit->exitC == 1 ? 0 : 1;
 	if (static_cast<u32>(exit->exitC) > 2u || (receiving && base >= state->frame->stackCapacity()))
 		return NativeBuiltinCallOutcome::Declined;
 	const int count = decodeValueCount(exit->exitB, std::max(state->registerTop - base - 1, 0));
-	const BuiltinArgsView args(state->registers.subspan(base + 1, static_cast<size_t>(count)));
-	const auto& function = cpu->m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(state->registers.get(base)))];
+	auto& registers = state->frame->registers;
+	const BuiltinArgsView args(registers.subspan(base + 1, static_cast<size_t>(count)));
+	const auto& function = cpu->m_builtinFunctions[static_cast<size_t>(static_cast<BuiltinFunctionId>(builtinWord))];
 	Value result;
 	if (function.id == BuiltinFunctionId::SetMetatable && count != 0 && valueIsTable(args[0])) {
 		const u32 word = (valuePayload(args[0]) + static_cast<u32>(TableHeader::Metatable)) & RAM_RECORD_WORD_MASK;
 		if (cpu->m_memory.ramWriteWatches().anyWatched(word, 4u)) return NativeBuiltinCallOutcome::Declined;
 	}
 	if (!cpu->executeBuiltinLeaf(function.id, args, result)) return NativeBuiltinCallOutcome::Declined;
-	if (receiving) state->registers.set(base, result);
+	if (receiving) registers.set(base, result);
 	state->registerTop = base + receiving;
 	state->remainingCycles -= static_cast<int>(function.cycleBase) + receiving;
 	if (state->remainingCycles <= 0 || cpu->m_hardHalted || cpu->m_yieldRequested || cpu->m_threadSwitchRequested
@@ -53,37 +55,41 @@ NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState
 	return NativeBuiltinCallOutcome::CompletedResume;
 }
 
-NativeBuiltinCallOutcome CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
+void* CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 builtinWord) noexcept {
 	auto& cpu = *run->cpu;
 	auto& state = run->state;
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	++cpu.m_nativeGateProfile.builtinAttempts;
 #endif
-	auto completion = runNativeBuiltinLeaf(&cpu, &state, exit);
+	const auto completion = runNativeBuiltinLeaf(&cpu, &state, exit, builtinWord);
 	if (completion == NativeBuiltinCallOutcome::Declined) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		++cpu.m_nativeGateProfile.builtinDeclines;
 #endif
-		return completion;
+		return nullptr;
 	}
 	CallFrame& frame = *state.frame;
-	frame.setTop(state.registerTop);
-	frame.writeControl(FrameField::Pc, exit->nextPc);
 	frame.compilationEntry = true;
 	cpu.m_currentInstructionPc = exit->currentPc;
 	cpu.m_lastExecutionDomainId = frame.executionImage->executionDomainId;
 	cpu.lastPc = exit->lastPc;
-	cpu.instructionBudgetRemaining = state.remainingCycles;
-	if (completion == NativeBuiltinCallOutcome::CompletedResume) {
-		void* const* continuation = exit->continuationCells[run->cartridgeSlot];
-		if (!continuation || !*continuation || static_cast<int>(cpu.m_activeThread->frameDepth()) <= run->targetDepth)
-			completion = NativeBuiltinCallOutcome::CompletedStop;
-	}
+	if (completion == NativeBuiltinCallOutcome::CompletedResume && static_cast<int>(cpu.m_activeThread->frameDepth()) > run->targetDepth) {
+		void* const* const cell = exit->continuationCells[run->cartridgeSlot];
+		if (void* target = cell ? *cell : nullptr) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	if (completion == NativeBuiltinCallOutcome::CompletedResume) ++cpu.m_nativeGateProfile.builtinResumes;
-	else ++cpu.m_nativeGateProfile.builtinStops;
+			++cpu.m_nativeGateProfile.builtinResumes;
 #endif
-	return completion;
+			return target;
+		}
+	}
+	// Completion only needs a RAM frontier when it leaves the native grant.
+	frame.setTop(state.registerTop);
+	frame.writeControl(FrameField::Pc, exit->nextPc);
+	cpu.instructionBudgetRemaining = state.remainingCycles;
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	++cpu.m_nativeGateProfile.builtinStops;
+#endif
+	return nativeBlockGate().exit;
 }
 
 void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
@@ -274,7 +280,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		if (transition == NativeBlockTransition::NextInstruction && continuation) {
 			// These helpers neither change frames nor operate a device. Keep the
 			// latched image/bank and avoid resolving their fixed successor again.
-			state.registers = frame->registers;
 			state.globalValues = cpu.m_globalBank.values();
 			state.systemGlobalValues = cpu.m_systemGlobalBank.values();
 			state.remainingCycles = cpu.instructionBudgetRemaining;
@@ -330,7 +335,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		run->cartridgeSlot = slot;
 		run->frameBank = frameBankWord(frame->executionImage->executionDomainId);
 		run->cartridgeRom = cpu.m_memory.cartridgeController().romStorage(slot);
-		state.registers = frame->registers;
 		state.globalValues = cpu.m_globalBank.values();
 		state.systemGlobalValues = cpu.m_systemGlobalBank.values();
 		if (transition != NativeBlockTransition::NextInstruction) {

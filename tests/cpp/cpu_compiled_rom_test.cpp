@@ -119,9 +119,8 @@ void directRomLoadsUseCurrentOwners() {
 				ValueSlots registers(2);
 				registers.set(1, valueInteger(address - static_cast<u32>(load.disp) * 4u));
 				NativeBlockRunState run{};
-				run.registers = registers.view();
 				run.remainingCycles = block->terminal.cycles + (kind == MemoryAccessKind::F64LE ? 2 : 0);
-				require(block->run(run) == &block->terminal && run.remainingCycles == 0
+				require(block->run(registers.view(), run) == &block->terminal && run.remainingCycles == 0
 					&& registers.get(0) == scalarLoad(memory, kind, address), "backed system and cartridge ROM reads stay in the native block");
 			}
 		}
@@ -132,9 +131,8 @@ void directRomLoadsUseCurrentOwners() {
 			const bool backed = address >= CART_ROM_BASE && address < CART_ROM_END
 				&& address - CART_ROM_BASE + width <= slot0.size();
 			NativeBlockRunState run{};
-			run.registers = registers.view();
 			run.remainingCycles = block->terminal.cycles + (kind == MemoryAccessKind::F64LE ? 2 : 0);
-			const auto* exit = block->run(run);
+			const auto* exit = block->run(registers.view(), run);
 			require((exit == &block->terminal) == backed, "short tails and logical boundary crossings use the ordered bus owner");
 			if (!backed) require(registers.get(0) == valueInteger(73) && exit->exit == NativeBlockExit::ReadMemory
 				&& registers.get(1) == valueInteger(address - static_cast<u32>(load.disp) * 4u),
@@ -146,9 +144,8 @@ void directRomLoadsUseCurrentOwners() {
 		ValueSlots registers(2);
 		registers.set(1, valueInteger(CART_ROM_BASE + 4u - load.disp * 4u));
 		NativeBlockRunState run{};
-		run.registers = registers.view();
 		run.remainingCycles = alias->terminal.cycles + (kind == MemoryAccessKind::F64LE ? 2 : 0);
-		require(alias->run(run) == &alias->terminal
+		require(alias->run(registers.view(), run) == &alias->terminal
 			&& registers.get(1) == scalarLoad(memory, kind, CART_ROM_BASE + 4u), "ROM loads can replace the address register");
 	}
 }

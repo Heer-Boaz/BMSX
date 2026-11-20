@@ -52,7 +52,7 @@ void multipleRegisterDefinitionsSurviveCallAndExit() {
 		ValueSlots registers(5);
 		const Value result = op == OpCode::POW ? valueFloat(luaPow(66, 72)) : valueInteger(op == OpCode::MOD ? 66 : 0);
 		const std::array expected{valueInteger(83), valueInteger(11), result, valueInteger(66), valueInteger(72)};
-		require(block->run(nativeRunState = {.registers = registers.view(), .remainingCycles = block->terminal.cycles}) == &block->terminal && test::matchesValues(registers.view(), expected),
+		require(block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles}) == &block->terminal && test::matchesValues(registers.view(), expected),
 			"multiple live native values survive ABI calls, register pressure, alias copies and an actual exit");
 	}
 	require(bytes == 0, "register-allocated blocks retire their executable storage");
@@ -83,9 +83,9 @@ void independentEntriesBindTheirOwnValueBanks() {
 		auto registersA = test::valueBank(std::array{valueInteger(1), valueNil(), valueNil(), valueNil(), valueBool(true)});
 		auto registersB = test::valueBank(std::array{valueInteger(2), valueNil(), valueNil(), valueNil(), valueBool(false)});
 		for (int iteration = 0; iteration < 256; ++iteration) {
-			NativeBlockRunState a{.registers = registersA.view(), .constants = constantsABank.view(), .remainingCycles = 97, .registerTop = 1};
-			NativeBlockRunState b{.registers = registersB.view(), .constants = constantsBBank.view(), .remainingCycles = 53, .registerTop = 5};
-			require(helper->run(a) == &helper->terminal && leaf->run(b) == &leaf->terminal,
+			NativeBlockRunState a{.constants = constantsABank.view(), .remainingCycles = 97, .registerTop = 1};
+			NativeBlockRunState b{.constants = constantsBBank.view(), .remainingCycles = 53, .registerTop = 5};
+			require(helper->run(registersA.view(), a) == &helper->terminal && leaf->run(registersB.view(), b) == &leaf->terminal,
 				"independent helper and leaf bodies return through the native entry ABI");
 			require(a.remainingCycles == 93 && b.remainingCycles == 49 && a.registerTop == 4 && b.registerTop == 5,
 				"alternating entries preserve each caller's cycle grant and register top");
@@ -131,8 +131,8 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 			memory.writeMappedWord(target, 17u);
 			int charge = 0;
 			for (size_t i = entry * 2; i < decoded.size(); ++i) charge += decoded[i].baseCycles;
-			NativeBlockRunState state{.registers = registers.view(), .remainingCycles = charge};
-			const auto* observed = blocks[entry]->run(state);
+			NativeBlockRunState state{.remainingCycles = charge};
+			const auto* observed = blocks[entry]->run(registers.view(), state);
 			require(observed == &blocks[2]->terminal && state.remainingCycles == 0,
 				"a fully funded suffix reaches its terminal without a mid-span host exit");
 			if (entry == 0) require(registers.get(0) == valueInteger(17) && registers.get(4) == valueInteger(1)
@@ -162,8 +162,8 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 				ValueSlots registers(9);
 				registers.set(0, payload); registers.set(1, valueInteger(target)); registers.set(2, incoming);
 				memory.writeMappedWord(target, 17u);
-				NativeBlockRunState state{.registers = registers.view(), .remainingCycles = grant};
-				const auto* exit = predecessor->run(state);
+				NativeBlockRunState state{.remainingCycles = grant};
+				const auto* exit = predecessor->run(registers.view(), state);
 				if (grant <= predecessorCycles) {
 					const bool beforeJump = grant <= prefix[0].baseCycles;
 					require((beforeJump ? exit->exit == NativeBlockExit::ScalarBoundary : exit == &predecessor->terminal)
@@ -222,8 +222,8 @@ void residentValuesCrossInternalComparisonBranches() {
 			registers.set(0, op == OpCode::EQ || predicate ? alpha : omega);
 			registers.set(1, op == OpCode::EQ ? (predicate ? alpha : omega) : (predicate ? omega : alpha));
 			registers.set(3, valueInteger(73)); registers.set(4, valueInteger(0)); registers.set(8, value);
-			NativeBlockRunState run{.registers = registers.view(), .constants = constantsBank.view(), .remainingCycles = grant};
-			const auto* observedExit = blocks[0]->run(run);
+			NativeBlockRunState run{.constants = constantsBank.view(), .remainingCycles = grant};
+			const auto* observedExit = blocks[0]->run(registers.view(), run);
 			if (grant <= throughCompare) {
 				const bool beforeCompare = grant <= decoded[0].baseCycles;
 				const int charged = beforeCompare ? 0 : throughCompare + (op == OpCode::EQ ? 0 : 5);
@@ -283,8 +283,8 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 		blocks.front()->region->publish(bytes);
 		for (int grant : {1, 6, 7, 12, 100}) {
 			ValueSlots registers(10);
-			NativeBlockRunState run{.registers = registers.view(), .constants = constantsBank.view(), .remainingCycles = grant};
-			const auto* exit = blocks[0]->run(run);
+			NativeBlockRunState run{.constants = constantsBank.view(), .remainingCycles = grant};
+			const auto* exit = blocks[0]->run(registers.view(), run);
 			const auto* expectedExit = grant == 6 ? &blocks[0]->terminal : grant >= 12 ? &blocks[1]->terminal : nullptr;
 			const int charged = grant < 6 ? 0 : grant < 12 ? 6 : 12;
 			require((expectedExit ? exit == expectedExit : exit->exit == NativeBlockExit::ScalarBoundary) && run.remainingCycles == grant - charged,
@@ -305,13 +305,13 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 			valueFloat(6.25f), valueString(cpu.stringPool().intern("cold entry"))};
 		ValueSlots registers(10);
 		for (int i = 0; i < 4; ++i) registers.set(i, incoming[i]);
-		NativeBlockRunState run{.registers = registers.view(), .constants = constantsBank.view(), .remainingCycles = 6};
-		require(blocks[1]->run(run) == &blocks[1]->terminal, "matching public-entry facts admit a cold segment");
+		NativeBlockRunState run{.constants = constantsBank.view(), .remainingCycles = 6};
+		require(blocks[1]->run(registers.view(), run) == &blocks[1]->terminal, "matching public-entry facts admit a cold segment");
 		for (int i = 0; i < 4; ++i) require(registers.get(i + 4) == incoming[permutation[i]],
 			"external entry reloads the current payload of each permuted register");
 		for (int i = 0; i < 4; ++i) registers.set(i, constants[3 - i]);
 		run.remainingCycles = 6;
-		const auto* miss = blocks[1]->run(run);
+		const auto* miss = blocks[1]->run(registers.view(), run);
 		require(miss->exit == NativeBlockExit::ScalarBoundary && run.scalarPc == blocks[1]->firstPc && run.remainingCycles == 6,
 			"incompatible public-entry facts leave the unexecuted suffix to scalar dispatch");
 
@@ -353,8 +353,8 @@ void sparseRegionSuccessorsPreserveExactPcIdentity() {
 				"only the exact entry PC is internal, not another page, an unaligned PC or an interior body word");
 			for (const auto value : values) for (const bool taken : {false, true}) for (const int grant : {1, 2, 3, 4, 100}) {
 				auto registers = test::valueBank(std::array{valueBool(taken), value, valueInteger(19), valueInteger(29)});
-				NativeBlockRunState run{.registers = registers.view(), .remainingCycles = grant};
-				const auto* exit = blocks[0]->run(run);
+				NativeBlockRunState run{.remainingCycles = grant};
+				const auto* exit = blocks[0]->run(registers.view(), run);
 				const bool started = grant > 1;
 				const bool middle = started && taken && grant > 2;
 				const bool last = middle && target == page && grant > 4;
@@ -462,8 +462,8 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 				for (segment = 0; segment < plans.size(); ++segment) if (plans[segment].instructions.front().pc == nextPc) break;
 				if (segment == plans.size()) break;
 			}
-			NativeBlockRunState run{.registers = actual.view(), .constants = constantsBank.view(), .remainingCycles = grant, .registerTop = -5};
-			const auto* exit = blocks[entry]->run(run);
+			NativeBlockRunState run{.constants = constantsBank.view(), .remainingCycles = grant, .registerTop = -5};
+			const auto* exit = blocks[entry]->run(actual.view(), run);
 			if (!test::matchesValues(actual.view(), expected) || (expectedExit ? exit != expectedExit : exit->exit != NativeBlockExit::ScalarBoundary) || run.remainingCycles != remaining || run.registerTop != top) {
 				std::cerr << "register graph helper=" << helper << " bypass=" << bypassHelper << " entry=" << entry << " arm=" << arm
 					<< " loop=" << loop << " grant=" << grant << '\n';
@@ -516,13 +516,13 @@ void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 			inFirst = !inFirst;
 			if (remaining <= 0) break;
 		}
-		const auto result = first->run(nativeRunState = {.registers = registers.view(), .constants = constantsBank.view(), .remainingCycles = budget});
+		const auto result = first->run(registers.view(), nativeRunState = {.constants = constantsBank.view(), .remainingCycles = budget});
 		require((expectedExit ? result == expectedExit : result->exit == NativeBlockExit::ScalarBoundary) && nativeRunState.remainingCycles == remaining && nativeRunState.registerTop == 8 && test::matchesValues(registers.view(), expected),
 			"linked leaf/calling bodies share one frame, bounded stack, complete segment charges and the maximum live-register extent");
 	}
 	second->linkFrom(first->terminal);
 	ValueSlots registers(8); registers.set(0, valueInteger(1)); registers.set(2, valueBool(false));
-	require(first->run(nativeRunState = {.registers = registers.view(), .constants = constantsBank.view(), .remainingCycles = 5}) == &second->terminal && registers.get(0) == valueInteger(4),
+	require(first->run(registers.view(), nativeRunState = {.constants = constantsBank.view(), .remainingCycles = 5}) == &second->terminal && registers.get(0) == valueInteger(4),
 		"both conditional exits can link independently to the same target");
 	first->terminal.link.disconnect();
 	require(first->sideExits.back().link.target == second.get(), "unlinking one incoming edge preserves the other");
@@ -530,7 +530,7 @@ void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 	require(!first->sideExits.back().link.target,
 		"retiring a target disconnects each surviving source before executable storage is freed");
 	registers.set(2, valueBool(true));
-	require(first->run(nativeRunState = {.registers = registers.view(), .constants = constantsBank.view(), .remainingCycles = 1000}) == &first->sideExits.back(),
+	require(first->run(registers.view(), nativeRunState = {.constants = constantsBank.view(), .remainingCycles = 1000}) == &first->sideExits.back(),
 		"an unlinked predecessor returns normally instead of entering retired native code");
 	first->linkFrom(first->sideExits.back());
 	first.reset();
@@ -565,8 +565,8 @@ void linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor() {
 		ValueSlots registers(13);
 		registers.set(0, valueInteger(target)); registers.set(7, valueInteger(99));
 		for (u32 i = 0; i < 5; ++i) { registers.set(8 + i, valueInteger(73u + i)); memory.writeMappedWord(target + i * 4u, 0); }
-		NativeBlockRunState state{.registers = registers.view(), .remainingCycles = budget};
-		const auto* exit = first->run(state);
+		NativeBlockRunState state{.remainingCycles = budget};
+		const auto* exit = first->run(registers.view(), state);
 		const bool prefixOnly = budget == prefixCycles;
 		const bool successorRuns = budget > prefixCycles + spanCycles;
 		const auto* expected = prefixOnly ? &first->terminal : successorRuns ? &third->terminal : &second->terminal;
@@ -600,7 +600,7 @@ void linkedSlowExitPublishesTheWholeExecutedChain() {
 	second->linkFrom(first->terminal);
 	ValueSlots registers(8);
 	registers.set(1, valueInteger(IO_SYS_BUS_FAULT_CODE)); registers.set(6, valueInteger(73));
-	const auto result = first->run(nativeRunState = {.registers = registers.view(), .remainingCycles = 100});
+	const auto result = first->run(registers.view(), nativeRunState = {.remainingCycles = 100});
 	require(result->exit == NativeBlockExit::ReadMemory
 		&& result->currentPc == 0x1084 && result->nextPc == 0x1088 && nativeRunState.remainingCycles == 95
 		&& nativeRunState.registerTop == 8 && registers.get(5) == valueInteger(2) && registers.get(6) == valueInteger(73) && registers.get(4) == valueNil(),
@@ -651,7 +651,7 @@ void comparisonDatapathsRespectEveryValueKind() {
 			const auto poolBank = test::valueBank(pool);
 			auto registers = test::valueBank(pool);
 			auto block = NativeBlock::compile(source, poolBank.view(), bytes, memory, strings, strings.intern("__index"));
-			const auto* exit = block->run(nativeRunState = {.registers = registers.view(), .constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
+			const auto* exit = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 			require((exit->exit == NativeBlockExit::SkipInstruction) == (predicate != expected)
 				&& test::matchesValues(registers.view(), pool) && exit->registerTop == 0 && exit->cycles == 1
 				&& exit->nextPc == 0x1008 && exit->currentPc == 0x1000 && exit->lastPc == 0x1004,
@@ -720,7 +720,7 @@ void arithmeticAndWordDatapaths() {
 				auto registers = test::valueBank(std::array{left, right, valueNil(), valueNil()});
 				{
 					auto block = NativeBlock::compile(instructions, poolBank.view(), cacheBytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
-					const auto* exit = block->run(nativeRunState = {.registers = registers.view(), .constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
+					const auto* exit = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 					try {
 						const Value expected = evaluate(op, left, right);
 						require(exit == &block->terminal && nativeRunState.remainingCycles == 0
@@ -797,8 +797,8 @@ void wordProducerFactsPreserveRawValuesAndOverwrites() {
 				if (kind == OpCode::LOADNIL) top = std::max(top, static_cast<int>(op.a + op.b));
 				else if (kind != OpCode::JMP) top = std::max(top, static_cast<int>(op.a) + 1);
 			}
-			NativeBlockRunState state{.registers = actual.view(), .constants = constantsBank.view(), .remainingCycles = grant};
-			const auto* exit = block->run(state);
+			NativeBlockRunState state{.constants = constantsBank.view(), .remainingCycles = grant};
+			const auto* exit = block->run(actual.view(), state);
 			require((faultPc ? exit->exit == NativeBlockExit::InvalidOperand && exit->currentPc == faultPc
 				: expectedExit ? exit == expectedExit : exit->exit == NativeBlockExit::ScalarBoundary) && test::matchesValues(actual.view(), expected) && state.registerTop == top
 				&& state.remainingCycles == remaining,
@@ -826,7 +826,7 @@ void movesAndLiteralsPreserveRawValues() {
 		const std::array instructions{NativeBlockInstruction{&load, 0x1000}, NativeBlockInstruction{&move, 0x1004}};
 		auto block = NativeBlock::compile(instructions, poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		auto registers = test::valueBank(std::array{Value{0}, Value{0}});
-		block->run(nativeRunState = {.registers = registers.view(), .constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
+		block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 		require(registers.get(0) == pool[index] && registers.get(1) == pool[index], "moves preserve every raw tagged and number bit");
 	}
 	for (const auto op : {OpCode::KNIL, OpCode::KFALSE, OpCode::KTRUE, OpCode::K0, OpCode::K1, OpCode::KM1, OpCode::KSMI}) {
@@ -838,7 +838,7 @@ void movesAndLiteralsPreserveRawValues() {
 		const std::array instructions{NativeBlockInstruction{&load, 0x1000}};
 		auto block = NativeBlock::compile(instructions, poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		ValueSlots reg(1);
-		block->run(nativeRunState = {.registers = reg.view(), .constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
+		block->run(reg.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 		const Value expected = op == OpCode::KNIL ? valueNil() : op == OpCode::KFALSE ? valueBool(false)
 			: op == OpCode::KTRUE ? valueBool(true) : op == OpCode::K0 ? valueInteger(0)
 			: op == OpCode::K1 ? valueInteger(1) : op == OpCode::KM1 ? valueInteger(-1) : valueInteger(-33554432);
@@ -886,8 +886,8 @@ void pinnedOperandsSurviveColdReadsAndDestinationReuse() {
 					source[i] = {&decoded[i], 0x1000u + i * INSTRUCTION_BYTES};
 				}
 				auto block = NativeBlock::compile(source, poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
-				NativeBlockRunState state{.registers = registers.view(), .constants = poolBank.view(), .remainingCycles = block->terminal.cycles};
-				const auto* exit = block->run(state);
+				NativeBlockRunState state{.constants = poolBank.view(), .remainingCycles = block->terminal.cycles};
+				const auto* exit = block->run(registers.view(), state);
 				require((invalid ? exit->exit == NativeBlockExit::InvalidOperand && exit->currentPc == source[4].pc
 					&& state.registerTop == 4 && state.remainingCycles == decoded[5].baseCycles + decoded[6].baseCycles
 					: exit == &block->terminal && state.remainingCycles == 0) && test::matchesValues(registers.view(), expected),
@@ -959,17 +959,17 @@ void nextAccessPressurePreservesEveryRawGuestSlot() {
 				auto block = NativeBlock::compile(std::span(source).first(prefix), constantsBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 				for (const int grant : {cycles, cycles + 7}) {
 					auto actual = test::valueBank(initial);
-					NativeBlockRunState state{.registers = actual.view(), .constants = constantsBank.view(),
+					NativeBlockRunState state{.constants = constantsBank.view(),
 						.remainingCycles = grant, .registerTop = -7};
-					require(block->run(state) == &block->terminal && test::matchesValues(actual.view(), expected)
+					require(block->run(actual.view(), state) == &block->terminal && test::matchesValues(actual.view(), expected)
 						&& state.remainingCycles == grant - cycles && state.registerTop == top,
 						"next-access eviction preserves every raw WIDE register, alias, empty/ranged write and helper prefix");
 				}
 				if (prefix > 1) {
 					auto actual = test::valueBank(initial);
-					NativeBlockRunState state{.registers = actual.view(), .constants = constantsBank.view(),
+					NativeBlockRunState state{.constants = constantsBank.view(),
 						.remainingCycles = 1, .registerTop = -7};
-					const auto* exit = block->run(state);
+					const auto* exit = block->run(actual.view(), state);
 					require(exit->exit == NativeBlockExit::ScalarBoundary && test::matchesValues(actual.view(), initial)
 						&& state.remainingCycles == 1 && state.registerTop == -7,
 						"a short pressure grant exits before its first definition for scalar admission");
@@ -1044,7 +1044,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			previous = instruction.a;
 			auto block = NativeBlock::compile(std::span(source).first(index + 1), poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 			auto registers = test::valueBank(initial);
-			const auto* exit = block->run(nativeRunState = {.registers = registers.view(), .constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
+			const auto* exit = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 			require((invalid ? exit->exit == NativeBlockExit::InvalidOperand && exit->currentPc == source[index].pc
 				: exit == &block->terminal) && nativeRunState.remainingCycles == 0 && test::matchesValues(registers.view(), expected), "dependent native instructions preserve every live raw register at each prefix exit");
 			if (invalid) {
@@ -1063,7 +1063,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			source.back() = {&terminal, source[31].pc + decoded[31].width * INSTRUCTION_BYTES};
 			auto block = NativeBlock::compile(source, poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 			auto registers = test::valueBank(initial);
-			const auto pc = block->run(nativeRunState = {.registers = registers.view(), .constants = poolBank.view(), .remainingCycles = block->terminal.cycles})->nextPc;
+			const auto pc = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles})->nextPc;
 			const bool taken = op == OpCode::JMP || (op == OpCode::JMPIF && isTruthy(expected[previous]))
 				|| (op == OpCode::JMPIFNOT && !isTruthy(expected[previous]));
 			require(test::matchesValues(registers.view(), expected) && pc == (taken ? terminal.bx : source.back().pc + 2 * INSTRUCTION_BYTES),
@@ -1091,7 +1091,7 @@ void truthinessAndConditionalExits() {
 		for (u32 header = 0; header != 256u; ++header) {
 			const Value input = valueFromTag(static_cast<ValueTag>(header), 0x89abcdefu);
 			auto registers = test::valueBank(std::array{valueNil(), input});
-			const u32 nextPc = block->run(nativeRunState = {.registers = registers.view(), .remainingCycles = block->terminal.cycles})->nextPc;
+			const u32 nextPc = block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles})->nextPc;
 			if (op == OpCode::NOT) {
 				require(registers.get(0) == valueBool(!isTruthy(input)) && nextPc == 0x1008u,
 					"native NOT preserves every representable Value header and boxed Boolean");
@@ -1111,7 +1111,7 @@ void truthinessAndConditionalExits() {
 	halt.baseCycles = 1;
 	const std::array source{NativeBlockInstruction{&halt, 0xfffffff8u}};
 	auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
-	require(block->run(nativeRunState = {.registers = {}, .remainingCycles = block->terminal.cycles})->nextPc == 0u && block->terminal.exit == NativeBlockExit::Halt
+	require(block->run({}, nativeRunState = {.remainingCycles = block->terminal.cycles})->nextPc == 0u && block->terminal.exit == NativeBlockExit::Halt
 		&& block->terminal.registerTop == 0 && block->terminal.cycles == 1 && block->terminal.lastPc == 0xfffffffcu,
 		"a standalone native WIDE HALT has an exact wrapped continuation and explicit exit");
 }
@@ -1153,7 +1153,7 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 		NativeBlockExitHandlers handlers{};
 		handlers[static_cast<size_t>(NativeBlockExit::Call)] = &exitResult;
 		auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"), handlers);
-		const auto* exit = block->run(nativeRunState = {.registers = registers.view(), .remainingCycles = block->terminal.cycles});
+		const auto* exit = block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles});
 		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::RebindFrame,
 			"the generated side exit returns its typed frame transition");
 		require(block->terminal.registerTop == 2 && block->terminal.cycles == 4 && block->terminal.lastPc == 0x100cu,
@@ -1164,7 +1164,7 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 		handlers[static_cast<size_t>(NativeBlockExit::Call)] = &exitThrow;
 		auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"), handlers);
 		bool caught = false;
-		try { const auto* exit = block->run(nativeRunState = {.registers = registers.view(), .remainingCycles = block->terminal.cycles}); exit->handler(nullptr, &frame, exit); }
+		try { const auto* exit = block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles}); exit->handler(nullptr, &frame, exit); }
 		catch (const TailFault& error) { caught = error.value == 73; }
 		require(caught, "C++ exceptions unwind ordinary registered frames, never generated code");
 	}
@@ -1173,7 +1173,7 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 		handlers[static_cast<size_t>(NativeBlockExit::Call)] = &exitRetire;
 		auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"), handlers);
 		retiringBlock = &block;
-		const auto* exit = block->run(nativeRunState = {.registers = registers.view(), .remainingCycles = block->terminal.cycles});
+		const auto* exit = block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles});
 		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::Redispatch && !block,
 			"a side-exit handler may retire its own code before returning");
 		retiringBlock = nullptr;
@@ -1215,8 +1215,8 @@ void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 			}
 			auto block = NativeBlock::compile(std::span(source).first(count), constantsBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 			const int grant = block->terminal.cycles;
-			NativeBlockRunState state{.registers = registers.view(), .constants = constantsBank.view(), .remainingCycles = grant, .registerTop = -3};
-			const auto* exit = block->run(state);
+			NativeBlockRunState state{.constants = constantsBank.view(), .remainingCycles = grant, .registerTop = -3};
+			const auto* exit = block->run(registers.view(), state);
 			require(exit->exit == (terminal == OpCode::JMP ? NativeBlockExit::Continue
 				: terminal == OpCode::GETFIELD ? NativeBlockExit::ReadField : NativeBlockExit::ReadMemory),
 				"normal, typed-table and bus exits reach the shared gate with the actual descriptor");

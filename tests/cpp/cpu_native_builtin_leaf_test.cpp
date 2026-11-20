@@ -116,7 +116,7 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	void* marker = cold ? nullptr : markerPage->nativeCode[markerWord];
 	caller->terminal.continuationCells[0] = &marker;
 	const auto& gate = nativeBlockGate();
-	NativeCpuRunState run{.state={.registers=frame->registers, .constants=owner->constPool, .frame=frame, .heap=&machine.cpu.gcHeap(),
+	NativeCpuRunState run{.state={.constants=owner->constPool, .frame=frame, .heap=&machine.cpu.gcHeap(),
 		.constantCount=static_cast<u32>(owner->constPool.size()), .remainingCycles=grant, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)), .exitCode=gate.dispatch,
 		.ram=machine.memory.ramData(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
@@ -127,8 +127,7 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 		.cartridgeSlot=0, .error={}};
 	// The typed gate models an already admitted segment, not outer-loop IRQ admission.
 	if (interrupt) machine.cpu.requestNonMaskableInterrupt();
-	using Entry = void (SLJIT_FUNC *)(NativeCpuRunState*, void*);
-	reinterpret_cast<Entry>(gate.entry)(&run, page->nativeCode[word]);
+	reinterpret_cast<NativeBlockGate::Entry>(gate.entry)(&run.state, page->nativeCode[word], &frame->registers);
 	if (run.error) std::rethrow_exception(run.error);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	require(run.state.diagnosticOpcodes.call == 1, "the admitted native CALL is counted once");
@@ -145,7 +144,9 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 		require(machine.marker() == 0 && frame->readControl(bmsx::FrameField::Pc) == rom.textAddress + 2 * INSTRUCTION_BYTES,
 			"cold or exhausted completion commits the successor without executing it");
 		require(run.state.remainingCycles == grant - 2 - 32 - 2 - receiving
-			&& machine.cpu.instructionBudgetRemaining == run.state.remainingCycles, "both budget owners retain the complete exhausted CALL debit");
+			&& machine.cpu.instructionBudgetRemaining == run.state.remainingCycles, "both budget owners retain the complete CALL debit");
+		require(static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)) == receiving
+			&& (!receiving || frame->registers.get(0) == machine.expected), "a cold/debt/interrupt exit exposes the completed result before any resume");
 		if (interrupt) require(machine.cpu.captureRuntimeState().nonMaskableInterruptPending, "post-CALL stop retains the pending interrupt for its real owner");
 		else machine.cpu.runUntilDepth(0, 1);
 		if (!interrupt) require(machine.cpu.readCauseWord() == 0 && machine.cpu.isHaltedUntilIrq()

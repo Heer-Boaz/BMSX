@@ -68,11 +68,8 @@ void NativeBlockGate::emitPublishFrameTop(sljit_compiler* compiler, sljit_s32 co
 void NativeBlockGate::emitFrameEntry(sljit_compiler* compiler, sljit_sw targetSlot) {
 	constexpr auto state = NativeBlockAbi::state;
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(state), offsetof(NativeBlockRunState, frame), SLJIT_R2, 0);
-	for (auto [offset, reg] : {std::pair{ValueSpan::wordsOffset(), NativeBlockAbi::words},
-			 std::pair{ValueSpan::tagsOffset(), NativeBlockAbi::tags}, std::pair{ValueSpan::sizeOffset(), SLJIT_R0}}) {
-		sljit_emit_op1(compiler, SLJIT_MOV, reg, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, registers) + offset);
-		sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_MEM1(state), offsetof(NativeBlockRunState, registers) + offset, reg, 0);
-	}
+	sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::words, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, registers) + ValueSpan::wordsOffset());
+	sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::tags, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, registers) + ValueSpan::tagsOffset());
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, nativeControl));
 	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, registerTop),
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::Top), SLJIT_IMM, FRAME_WINDOW_MASK);

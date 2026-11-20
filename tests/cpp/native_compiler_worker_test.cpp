@@ -55,8 +55,8 @@ void copiedSourceAndDeferredPublication() {
 		require(bytes == blocks.front()->region->codeBytes && blocks[1]->region == blocks[0]->region,
 			"one region is accounted once when the owner publishes all its entries");
 		ValueSlots registers(3); registers.set(0, valueInteger(7));
-		NativeBlockRunState state{.registers = registers.view(), .remainingCycles = 100};
-		require(blocks.front()->run(state)->nextPc == 0x1800u && registers.get(2) == valueInteger(iteration + 7),
+		NativeBlockRunState state{.remainingCycles = 100};
+		require(blocks.front()->run(registers.view(), state)->nextPc == 0x1800u && registers.get(2) == valueInteger(iteration + 7),
 			"the worker compiles captured instructions and the original internal edge");
 		blocks.clear();
 		require(bytes == 0, "published code leaves its owner accounting on retirement");

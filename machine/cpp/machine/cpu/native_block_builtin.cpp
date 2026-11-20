@@ -31,7 +31,7 @@ void NativeBlockCompiler::emitBuiltinCall(const DecodedInstruction& instruction)
 	fault(m_cache.guard(base, ValueTag::BuiltinFunction, SLJIT_R0), call, m_cache.state());
 	const auto id = readTyped(base, ValueTag::BuiltinFunction);
 	fault(NativeBlockAbi::emitNonleafBuiltinJump(m_compiler, id.reg), call, m_cache.state());
-	// The nonallocating leaf reads only its callee and arguments. Keep all
+	// The already loaded builtin word crosses the ABI directly. Keep
 	// unrelated guest payloads in the same registers across the host call.
 	m_cache.publishRange(base, base + instruction.b);
 	m_cache.spillCall(false, 0);
@@ -40,7 +40,8 @@ void NativeBlockCompiler::emitBuiltinCall(const DecodedInstruction& instruction)
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.cpu));
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, NativeBlockAbi::state, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&call));
-	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::runNativeBuiltinLeaf));
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R3, 0, id.reg, 0);
+	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS4(32, P, P, P, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::runNativeBuiltinLeaf));
 	m_cache.spillCall(true, 0);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM,
 		static_cast<u32>(NativeBuiltinCallOutcome::Declined)), call, m_cache.state());

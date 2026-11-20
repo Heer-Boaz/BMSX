@@ -169,8 +169,8 @@ void rawNativeControlWrites() {
 			std::array<u32, COP0_EXEC + 1u> cp{};
 			cp[COP0_CAUSE] = 0xdeadbeef;
 			registers.set(0, value);
-			NativeBlockRunState run{}; run.registers = registers.view(); run.cop0Words = cp.data(); run.remainingCycles = 9;
-			require(block->run(run) == &block->terminal, "an admitted word write reaches the native terminal without semantic redispatch");
+			NativeBlockRunState run{}; run.cop0Words = cp.data(); run.remainingCycles = 9;
+			require(block->run(registers.view(), run) == &block->terminal, "an admitted word write reaches the native terminal without semantic redispatch");
 			require(cp[field] == (field == COP0_CAUSE ? 0xdeadbeefu : word) && registers.get(0) == value
 				&& run.registerTop == 0 && run.remainingCycles == 9 - BASE_CYCLES[op],
 				"CP0 writes convert both numeric tags and leave the raw source and its extent unchanged");

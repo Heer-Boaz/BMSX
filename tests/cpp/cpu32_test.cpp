@@ -552,9 +552,8 @@ void polymorphicForwardJoin() {
 		ValueSlots registers(2);
 		registers.set(0, valueBool(true));
 		NativeBlockRunState state{};
-		state.registers = registers.view();
 		state.remainingCycles = 100;
-		require(blocks[i]->run(state) == &blocks.back()->terminal,
+		require(blocks[i]->run(registers.view(), state) == &blocks.back()->terminal,
 			"neither predecessor nor a public entry may deopt at a polymorphic forward join");
 		require(registers.get(0) == expected[i] && registers.get(1) == expected[i],
 			"a forward join transports both tag and payload, including raw Float NaNs");

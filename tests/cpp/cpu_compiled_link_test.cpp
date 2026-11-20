@@ -160,9 +160,9 @@ void grantsAndTargetRetirement(bool inRam) {
 			remaining -= BASE_CYCLES[static_cast<u8>(OpCode::ADD)];
 			if (remaining <= 0) break;
 		}
-		NativeBlockRunState run{.registers = slots.view(), .constants = native.cpu.activeThread()->frameAtDepth(0)->executionImage->constPool,
+		NativeBlockRunState run{.constants = native.cpu.activeThread()->frameAtDepth(0)->executionImage->constPool,
 			.remainingCycles = grant};
-		const auto* exit = page.nativeBlocks->entries[base + start]->run(run);
+		const auto* exit = page.nativeBlocks->entries[base + start]->run(slots.view(), run);
 		require((expectedExit ? exit == expectedExit : exit->exit == NativeBlockExit::ScalarBoundary) && run.remainingCycles == remaining && run.registerTop == top,
 			"one native entry traverses both branches, a WIDE merge and a backedge without a CPU dispatcher or intermediate frame");
 		require(test::matchesValues(slots.view(), expected), "raw linked execution preserves every word and tag");
