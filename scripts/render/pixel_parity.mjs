@@ -5,22 +5,26 @@ import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import { PNG } from 'pngjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../..');
-const [cartName = 'renderhwtest', ...args] = process.argv.slice(2);
-const debug = args.includes('--debug');
-const timeline = args.indexOf('--timeline');
-if (timeline !== -1 && (args[timeline + 1] === undefined || args[timeline + 1].startsWith('--'))) {
-	throw new Error('--timeline requires an input timeline file');
-}
+const { values: { debug, timeline, host, core }, positionals: [cartName = 'renderhwtest'] } = parseArgs({
+	allowPositionals: true,
+	options: {
+		debug: { type: 'boolean' },
+		timeline: { type: 'string' },
+		host: { type: 'string', default: './build-libretro-host-wsl/bmsx_libretro_host' },
+		core: { type: 'string', default: './dist/libretro_bmsx.so' },
+	},
+});
 const suffix = debug ? '.debug' : '';
 const systemRomPath = path.join(repoRoot, 'dist', 'system', `bmsx-bios${suffix}.rom`);
 const cartridgePath = path.join(repoRoot, 'dist', `${cartName}${suffix}.rom`);
-const sourceTimeline = timeline === -1
+const sourceTimeline = timeline === undefined
 	? path.join(repoRoot, 'tests/carts', cartName, `${cartName}_demo.json`)
-	: path.resolve(repoRoot, args[timeline + 1]);
+	: path.resolve(repoRoot, timeline);
 const workRoot = await fsp.mkdtemp(path.join(os.tmpdir(), `bmsx-${cartName}-pixel-parity-`));
 const systemDirectory = path.join(workRoot, 'system');
 const referenceRoot = path.join(workRoot, 'ts-software');
@@ -129,8 +133,8 @@ try {
 			'--input-timeline', referenceTimeline,
 			cartName,
 		], {}, path.join(workRoot, 'ts-software.log')),
-		runCapture('C++ software', './build-libretro-host-wsl/bmsx_libretro_host', [
-			'--core', './dist/libretro_bmsx.so',
+		runCapture('C++ software', path.resolve(repoRoot, host), [
+			'--core', path.resolve(repoRoot, core),
 			cartridgePath,
 			'--video', 'sdl',
 			'--backend', 'software',
@@ -140,8 +144,8 @@ try {
 			'--crt-postprocessing', 'off',
 			'--crt-noise', 'off',
 		], { SDL_VIDEODRIVER: 'dummy', SDL_AUDIODRIVER: 'dummy' }, path.join(workRoot, 'cpp-software.log')),
-		runCapture('C++ GLES2', './build-libretro-host-wsl/bmsx_libretro_host', [
-			'--core', './dist/libretro_bmsx.so',
+		runCapture('C++ GLES2', path.resolve(repoRoot, host), [
+			'--core', path.resolve(repoRoot, core),
 			cartridgePath,
 			'--video', 'sdl',
 			'--backend', 'gles2',

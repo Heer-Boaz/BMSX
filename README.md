@@ -294,12 +294,14 @@ npm run test:suite -- build-cpp-tests build-cpp-tests-debug build-cpp-tests-inte
 
 Enable `BMSX_BUILD_LIBRETRO_HOST=ON` and `BMSX_BUILD_EGL_TESTS=ON` in the Debug
 tree and build it first, so CTest also exercises SDL host and offscreen EGL.
+Build the Release libretro core with GLES2 enabled. The packaged host checks
+reuse that core and the Debug SDL host without running a second C++ build.
 Install Chromium with `npx playwright install chromium` and have the `codex`
 CLI on PATH for the local Studio transport checks. The suite runs the headless
 groups, the platform tests (including Studio, Chromium and SNES Mini tooling),
 the headless authoring and Hot Resume workflows, and native renderer parity.
-The renderer parity entrypoint prepares its own Release host/core artifacts
-incrementally. This is not a physical SNES Mini, a Windows Job Object, an
+The standalone renderer parity entrypoint still prepares its own products.
+This is not a physical SNES Mini, a Windows Job Object, an
 external desktop clipboard (`test:studio-clipboard:os`), or a run of the manually
 selected cart and IDE scenarios. The long bare-metal demo and Pietious
 gameplay scanout are explicit diagnostics (`test:bare-metal-frame-scan` and

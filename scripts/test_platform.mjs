@@ -22,7 +22,7 @@ if (mode === 'assistant') {
 	const tests = run({ isolation: 'none', concurrency: 6, files: assistantFiles.map(file => `${platform}/${file}`) });
 	tests.on('test:fail', () => { process.exitCode = 1; });
 	tests.compose(tap).pipe(process.stdout);
-} else if (mode === undefined) {
+} else if (mode === undefined || mode === 'suite') {
 	const env = { ...process.env, TSX_TSCONFIG_PATH: resolve(root, 'tsconfig.base.json') };
 	async function execute(command, ...args) {
 		const [status, signal] = await once(spawn(command, args, { cwd: root, env, stdio: 'inherit' }), 'close');
@@ -56,9 +56,14 @@ if (mode === 'assistant') {
 		execute('bash', 'scripts/test_node_areas.sh', 'browser-platform'),
 		execute('python3', '-m', 'unittest', 'discover', '-s', platform, '-p', 'snesmini_*_test.py'),
 	]);
-	const assistantPassed = await execute(node, ...loader, import.meta.filename, 'assistant');
-	if (!assistantPassed || platformResults.includes(false)) process.exitCode = 1;
+	const final = [execute(node, ...loader, import.meta.filename, 'assistant')];
+	if (mode === 'suite') {
+		// The ordinary platform pool (including the browser GPU tests) has
+		// released its fixtures. Only now admit the separate packaged hosts.
+		final.push(execute('bash', 'scripts/test_packaged_hosts.sh', ...process.argv.slice(3)));
+	}
+	if ([...platformResults, ...await Promise.all(final)].includes(false)) process.exitCode = 1;
 } else {
-	console.error('Usage: test_platform.mjs [assistant]');
+	console.error('Usage: test_platform.mjs [assistant|suite <release-build> <debug-build>]');
 	process.exitCode = 2;
 }
