@@ -9,15 +9,31 @@ import { testStudioBehaviorInspector } from './studio_behavior_inspector';
 import { testStudioCommandPalette } from './studio_command_palette';
 import { testStudioNavigation } from './studio_navigation';
 import { testStudioQuickPick } from './studio_quick_pick';
+import { testStudioBtDrag } from './studio_bt_drag';
+import { testStudioBtReparent } from './studio_bt_reparent';
+import { testStudioSourceBookmarks } from './studio_source_bookmarks';
+import { testStudioFsmBookmarks } from './studio_fsm_bookmarks';
+import { testStudioActionEffectSource } from './studio_actioneffect_source';
+import { testStudioActionEffectEdit } from './studio_actioneffect_edit';
+import { testStudioFsmSelection } from './studio_fsm_selection';
+import { testStudioFsmInitial } from './studio_fsm_initial';
 
 const workflows = {
+	'actioneffect-edit': testStudioActionEffectEdit,
+	'actioneffect-source': testStudioActionEffectSource,
 	'behavior-imports': testStudioBehaviorImports,
 	'behavior-inspector': testStudioBehaviorInspector,
 	'behavior-kinds': testStudioBehaviorKinds,
 	'behavior-navigation': testStudioBehaviorNavigation,
 	'behavior-picker': testStudioBehaviorPicker,
 	'behavior-source': testStudioBehaviorSourceGraph,
+	'bt-drag': testStudioBtDrag,
+	'bt-reparent': testStudioBtReparent,
+	'bt-bookmarks': testStudioSourceBookmarks,
 	'command-palette': testStudioCommandPalette,
+	'fsm-bookmarks': testStudioFsmBookmarks,
+	'fsm-initial': testStudioFsmInitial,
+	'fsm-selection': testStudioFsmSelection,
 	'quick-input': testStudioQuickPick,
 	'source-navigation': testStudioNavigation,
 };

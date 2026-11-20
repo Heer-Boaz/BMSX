@@ -33,17 +33,21 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	}
 	const blocked = second.body!.fields.find(field => field.kind === 'list' && field.name === 'blocked_tags')!;
 	if (blocked.kind !== 'list') throw new Error('ActionEffect source: authored blocked-tag list required');
-	const tag = blocked.entries[0].node;
+	const tagEntry = blocked.entries[0];
+	const tag = tagEntry.node;
 	const tagRow = properties.nodesBySource.get(tag.rowKey)!;
-	check(tagRow.element.value === "'blocked'"
-		&& tagRow.element.displayValueLeft < properties.tree.layout.valueLeft, 'ActionEffect: one full-width tag value, no duplicate constructor or ordinal label');
+	check(tagEntry.stringValue !== undefined && tagRow.element.value === tagEntry.stringValue && tagRow.element.label === '',
+		'ActionEffect: a requirement leaf exposes its actual value without a synthetic field label');
 	await revealLensOccurrence(test, view, tag.rowKey);
 	const version = model.version;
 	await runPaletteCommand('Behavior Lens: Open Source Details');
 	const inspector = (ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
-	check(inspector.visible && inspector.model.rows[0].element.value === "'blocked'",
+	check(inspector.visible && inspector.model.rows[0].element.source?.range === tag.authoredRange,
 		'ActionEffect: full requirement inspection retains its field role and exact value');
-	await click(inspector.actionBar.items[0].bounds, 6);
+	test.setKey('Enter', true);
+	for (let index = 0; index < 6; index += 1) await frame();
+	check(inspector.visible, 'the selected inspector property is not activated until release');
+	test.setKey('Enter', false); await frame();
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === tag.authoredRange.start.line - 1 && model.version === version,
 		'ActionEffect: held inspector Source opens the individual tag without editing');
 	await press('AltLeft', 'ArrowLeft');
@@ -104,7 +108,8 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === row && !hasSelection(sourcePane(test).code),
 		'ActionEffect controls: held property double-click opens its exact source without a code drag');
 	await test.clickTab(lens.id);
-	await click(properties.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === row && !hasSelection(sourcePane(test).code),
 		'ActionEffect source: held Source click opens the selected field without dragging code');
 	await test.clickTab(lens.id);
@@ -126,11 +131,12 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	for (let index = 0; index < 30; index += 1) await frame();
 	check(view.document === retained && properties.tree.rows === rows && lens.graphLayout.state.kind === 'idle',
 		'ActionEffect source: idle frames reuse source and property storage and never request a graph layout');
-	await click(properties.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(sourcePane(test).code.view.cursorRow === row + 1 && !hasSelection(sourcePane(test).code), 'ActionEffect source: navigation follows UTF-16 source edits');
 	await press('ControlLeft', 'KeyZ');
 	await test.clickTab(lens.id);
-	await click(properties.actionBar.items[0].bounds);
+	await runPaletteCommand('editor.source');
 	await press('ControlLeft', 'KeyZ');
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fixture.first');
@@ -140,7 +146,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	lens = chosen2; view = lens.view; properties = chosen2.view.presentation; tree = properties.tree;
 	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && view.selectionState.definitionRowKey === view.document.definitions[0].rowKey,
 		'ActionEffect source: both registrations remain independently selectable with their own retained inputs');
-	await click(properties.actionBar.items[0].bounds);
+	await runPaletteCommand('editor.source');
 	check(sourcePane(test).code.view.cursorRow === ACTIONEFFECT_SOURCE.split('\n').findIndex(line => line.startsWith("effects.register_effect('fixture.first'")),
 		'ActionEffect source: definition Source opens its registration use, not the shared constructor');
 	model.pushEditOperations([{ offset: model.buffer.getText().indexOf("{ 'ready' }"), deleteLength: "{ 'ready' }".length,
@@ -148,7 +154,8 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	await test.clickTab(lens.id);
 	await press('Home');
 	check(tree.rows.length > tree.layout.visibleRowCount, 'ActionEffect controls: authored requirements exceed the actual property viewport');
-	test.movePointer({ left: 200, right: 202, top: tree.layout.contentTop + 4, bottom: tree.layout.contentTop + 6 });
+	test.movePointer({ left: tree.layout.contentLeft, right: tree.layout.contentRight,
+		top: tree.layout.contentTop, bottom: tree.layout.contentTop + tree.layout.rowHeight });
 	await frame();
 	test.remote.apply([{ type: 'wheel', deltaY: 2 }]);
 	await frame();
@@ -158,7 +165,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 		'ActionEffect controls: End reveals the final source property at native font size');
 	await press('Home');
 	check(tree.scroll === 0, 'ActionEffect controls: Home reveals the first group');
-	await click(properties.actionBar.items[0].bounds);
+	await runPaletteCommand('editor.source');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === ACTIONEFFECT_SOURCE, 'ActionEffect controls: ordinary source Undo removes the scroll fixture');
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: ACTIONEFFECT_PARTIAL_SOURCE }]);
@@ -174,14 +181,16 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	check(unknown.kind === 'unknown' && unknown.source.resolution === 'unresolved', 'ActionEffect source: computed field remains an explicit source occurrence');
 	await revealLensOccurrence(test, view, unknown.source.rowKey);
 	console.info('STUDIO: ActionEffect partial source ready for visual inspection');
-	await click(properties.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(sourcePane(test).code.view.cursorRow === 4 && sourcePane(test).code.view.cursorColumn === 1 && !hasSelection(sourcePane(test).code),
 		'ActionEffect source: unknown-field Source navigates to its computed Lua key');
 	await test.clickTab(lens.id);
 	const required = partial.body!.fields[2];
 	if (required.kind !== 'list') throw new Error('ActionEffect source: expected authored requirement list');
 	await revealLensOccurrence(test, view, required.entries[1].node.rowKey);
-	await click(properties.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(sourcePane(test).code.view.cursorRow === 1 && sourcePane(test).code.view.cursorColumn === ACTIONEFFECT_PARTIAL_SOURCE.split('\n')[1].indexOf("'fourth'") && !hasSelection(sourcePane(test).code),
 		'ActionEffect source: requirement entry opens its initializer expression, not the effect field or a guessed dense index');
 	await press('ControlLeft', 'KeyZ');

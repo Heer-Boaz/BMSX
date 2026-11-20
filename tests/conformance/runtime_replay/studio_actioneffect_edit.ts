@@ -4,12 +4,11 @@ import { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_
 import { ACTIONEFFECT_SOURCE } from '../../helpers/actioneffect_source_fixture';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
-import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { inputFocus } from '../../../ide/input/focus';
 
 /** Independent source, real commands, value focus/draft history and workspace Save. */
 export async function testStudioActionEffectEdit(test: StudioFixture): Promise<void> {
-	const { ide, harness, frame, press, click, runPaletteCommand, clipboard, cycles, until } = test;
+	const { ide, harness, frame, press, runPaletteCommand, clipboard, cycles, until } = test;
 	console.info('STUDIO: ActionEffect authored value / draft / Save / Undo');
 	harness.openLuaSource('cart.lua');
 	const model = sourcePane(test).code.model;
@@ -30,7 +29,7 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 		return field;
 	};
 	const open = async () => {
-		await click(properties.actionBar.overflow!.button.bounds);
+		await press('ShiftLeft', 'F10');
 		await test.clickContextCommand('behaviorLens.editProperty', 6);
 		check(editor.active && editor.control.field.focusTarget.hasFocus, 'effect: held Edit opens one real focused cell');
 	};
@@ -40,15 +39,16 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	await select('period_ms');
 	ide.editor.commands.execute('behaviorLens.editProperty');
 	pane.update();
-	check(editor.handlePointer({ valid: true, insideViewport: true,
-		viewportX: (editor.fieldBounds.left + editor.fieldBounds.right) / 2, viewportY: (editor.fieldBounds.top + editor.fieldBounds.bottom) / 2,
-		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 }),
-		'effect: update prepares the editable value hit target without painting it');
+	const fieldFocus = editor.control.field.focusTarget;
+	const hit = ide.editor.surfaces.hitTest((editor.fieldBounds.left + editor.fieldBounds.right) / 2, (editor.fieldBounds.top + editor.fieldBounds.bottom) / 2);
+	check(hit?.captureScope === fieldFocus.scope.surfaceScope && inputFocus.admittedTarget === fieldFocus,
+		'effect: update publishes the focused editable value hit target without painting it');
 	const draftScroll = properties.tree.scroll, draftEnd = editor.control.viewport.end;
 	ide.editor.surfaces.draw(api);
 	check(properties.tree.scroll === draftScroll && editor.control.viewport.end === draftEnd,
 		'effect: paint consumes the prepared draft without scrolling or relaying out its input');
 	await press('Escape');
+	check(!editor.active && pane.commandTarget.hasFocus, 'effect: Escape closes the initial draft and returns to the property pane');
 	const propertiesFocus = inputFocus.target;
 	await open(); await paste('20 + 1');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');

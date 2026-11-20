@@ -45,17 +45,18 @@ async function runInitial(test: StudioFixture, imported: boolean): Promise<void>
 	if (imported) main.refreshResource({ ...mainResource, source: { ...mainResource.source, generated: true } });
 	check(ide.editor.commands.isEnabled('behaviorLens.setInitialState'), 'initial: an actual state enables its command even with a read-only registration');
 	const version = model.version;
-	await click(graph.actionBar.overflow!.button.bounds);
+	await press('ShiftLeft', 'F10');
 	await test.clickContextCommand('behaviorLens.setInitialState', 8);
 	await lens.graphLayout.settled; await frame();
 	const changed = source.replace("'idle'),", "'active'),");
-	check(model.version === version + 1 && model.buffer.getText() === changed && (!imported || main.version === mainVersion), 'initial: held action-bar press is exactly one token edit');
+	check(model.version === version + 1 && model.buffer.getText() === changed && (!imported || main.version === mainVersion), 'initial: held state-menu press is exactly one token edit');
 	check(lens.view.selectionState.selected?.rowKey === node.source.rowKey && !ide.editor.commands.isEnabled('behaviorLens.setInitialState'),
 		'initial: selected card survives and now-explicit initial cannot create empty history');
 	check(graph.viewport.model.edges.some(edge => edge.link.reference.kind === 'state-entry' && edge.link.target.source.label === 'active'),
 		'initial: real worker reroutes the entry to the new state');
 	console.info('STUDIO: FSM initial edit ready for visual inspection');
-	await click(graph.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && model.buffer.getText() === changed && !hasSelection(sourcePane(test).code), 'initial: held Source action is navigation only');
 	check(inputFocus.getCommand('behaviorLens.setInitialState') === undefined, 'initial: code focus has no graph-authoring command');
 	await press('ControlLeft', 'KeyZ');
