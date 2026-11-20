@@ -15,13 +15,14 @@ export class BrowserClipboard implements Clipboard {
 			const target = resolveTarget();
 			if (target?.copy === undefined) return;
 			const action = event.type as 'copy' | 'cut';
-			// Read-only controls never copy or remove text for Cut.
+			// The Studio target owns the gesture even if it makes no edit.
+			// Do not let the browser write from its native input mirror.
+			event.preventDefault();
 			if (action === 'cut' && (target.cut === undefined || target.readOnly)) return;
 			const text = target.copy();
 			if (text === null) return;
 			try { event.clipboardData.setData('text/plain', text); }
 			catch (cause) { reportFailure(new ClipboardAccessError(action, { cause })); return; }
-			event.preventDefault();
 			if (action === 'cut') target.cut!();
 		};
 		const paste = (event: ClipboardEvent) => {

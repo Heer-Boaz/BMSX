@@ -5,10 +5,9 @@ import { TextField } from '../../../ide/editor/ui/inline/text_field_model';
 import { inputFocus } from '../../../ide/input/focus';
 
 
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { sourcePane, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer } from './studio_renderer';
-import { selectMember } from './studio_scene_source';
+import { openSceneFixture, selectMember } from './studio_scene_source';
 
 /** Setup and observations only: the test drives editing with actual browser gestures. */
 export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>) {
@@ -22,9 +21,9 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 	return {
 		frame: test.frame,
 		menu() {
-			const menu = test.ide.editor.contextMenu.model, viewport = menu.viewport;
-			return { header: editorChromeState.menuEntryBounds.edit, items: menu.rows.map(row => ({ command: row.command,
-				bounds: { left: viewport.bounds.left, right: viewport.bounds.right, top: viewport.offsetTop + row.top, bottom: viewport.offsetTop + row.bottom } })) };
+			const menu = test.ide.editor.contextMenu.model;
+			return { active: test.ide.editor.menubar.activeMenu, selected: menu.rows[menu.selectedIndex]?.command,
+				enabled: menu.rows.filter(row => row.enabled).map(row => row.command) };
 		},
 		async capture(name: string) { await test.frame(); await renderer.capture!(name); },
 		async command(command: 'copy' | 'cut' | 'paste' | 'findLocal' | 'lineJump' | 'commandPalette' | 'rename' | 'assistant') {
@@ -55,11 +54,9 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 			catch { return false; }
 		},
 		async property() {
-			test.harness.openLuaSource('scenes/root.lua'); await test.frame();
-			test.ide.editor.commands.execute('sceneEditor'); await test.frame();
-			const view = test.ide.editor.editorParts.activeGroup.model.activeTab; if (!(view instanceof SceneEditorInput)) throw new Error('Scene Editor expected');
-			await selectMember(test, view, 2);
-			await test.click(view.view.details.properties[0].bounds);
+			const { scene } = await openSceneFixture(test, 'clipboard');
+			await selectMember(test, scene, 2);
+			await test.click(scene.view.details.properties[0].bounds);
 		},
 		async transcript() {
 			test.ide.editor.commands.execute('assistant'); await test.frame();

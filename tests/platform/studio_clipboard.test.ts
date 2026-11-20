@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
 
 test('Studio clipboard: native actions, actual denied writes, focused controls and Undo', { timeout: 120000 }, async t => {
-	const f = await createAssistantStudioFixture(t, 'clipboard', {});
+	const f = await createAssistantStudioFixture(t, 'clipboard', {}, { nativeClipboard: true });
 	const page = f.page;
 	await page.evaluate(async () => {
 		const entry = '/test.js', module = await import(entry);
@@ -61,24 +61,29 @@ test('Studio clipboard: native actions, actual denied writes, focused controls a
 	await press('Control', 'z');
 	assert.equal((await snapshot()).source, source);
 	// The visible Edit menu uses the same synchronous action, not async copy + delete.
-	const click = async (bounds: { left: number; top: number; right: number; bottom: number }) => {
-		const canvas = await page.evaluate(() => {
-			const element = document.querySelector('canvas')!, rect = element.getBoundingClientRect();
-			return { x: rect.x, y: rect.y, sx: rect.width / element.width, sy: rect.height / element.height };
-		});
-		await page.mouse.move(canvas.x + (bounds.left + bounds.right) * 0.5 * canvas.sx, canvas.y + (bounds.top + bounds.bottom) * 0.5 * canvas.sy);
-		await frame(); await page.mouse.down(); await frame(); await page.mouse.up(); await frame();
+	const runEditCommand = async (action: 'cut' | 'paste') => {
+		// A collapsed menubar has no Edit header to click. Use the native
+		// keyboard route to open and address the visible Edit popup.
+		await press('F10'); await press('ArrowRight');
+		const readMenu = () => page.evaluate(() => (globalThis as any).clipboardUI.menu());
+		let menu = await readMenu();
+		assert.equal(menu.active, 'edit');
+		assert.ok(menu.enabled.includes(action), `Edit menu offers ${action} to the focused source`);
+		for (let i = 0; menu.selected !== action && i < menu.enabled.length; i++) {
+			await press('ArrowDown');
+			menu = await readMenu();
+		}
+		assert.equal(menu.selected, action);
+		if (action === 'cut') await page.evaluate(() => (globalThis as any).clipboardUI.capture('edit-menu'));
+		await press('Enter');
 	};
-	await click((await page.evaluate(() => (globalThis as any).clipboardUI.menu())).header);
-	await page.evaluate(() => (globalThis as any).clipboardUI.capture('edit-menu'));
-	await click((await page.evaluate(() => (globalThis as any).clipboardUI.menu())).items.find(item => item.command === 'cut').bounds);
+	await runEditCommand('cut');
 	assert.equal((await snapshot()).source, 'return clipboard_probe');
 	await press('Control', 'z'); assert.equal((await snapshot()).source, source);
 
 	// Programmatic Paste uses a real permission-controlled read, not execCommand('paste').
 	await press('Control', 'a'); await put('return 42');
-	await click((await page.evaluate(() => (globalThis as any).clipboardUI.menu())).header);
-	await click((await page.evaluate(() => (globalThis as any).clipboardUI.menu())).items.find(item => item.command === 'paste').bounds);
+	await runEditCommand('paste');
 	await page.waitForFunction(() => (globalThis as any).clipboardUI.snapshot().source === 'return 42');
 	await press('Control', 'z'); assert.equal((await snapshot()).source, source);
 	// Reject the read through Chromium's actual permission owner, not a mocked API.
@@ -141,9 +146,9 @@ test('Studio clipboard: native actions, actual denied writes, focused controls a
 
 	await page.evaluate(() => (globalThis as any).clipboardUI.property());
 	const property = await snapshot();
-	await put('1\n2'); await press('Control', 'v');
+	await press('Control', 'a'); await put('1\n2'); await press('Control', 'v');
 	assert.equal((await snapshot()).text, property.text, 'multiline paste cannot silently rewrite a scalar');
-	await put('17'); await press('Control', 'v');
+	await press('Control', 'a'); await put('17'); await press('Control', 'v');
 	assert.equal((await snapshot()).text, '17');
 	assert.equal((await snapshot()).propertySource, property.propertySource, 'property paste is a draft, not an implicit source commit');
 	await press('Control', 'a'); await press('Control', 'x');
