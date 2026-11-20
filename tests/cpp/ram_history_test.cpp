@@ -94,4 +94,14 @@ int main() {
 		"private payload bits do not cause code invalidations");
 	require(dirty(boundary) && !dirty(boundary + page) && dirty(boundary + 2u * page),
 		"both private planes dirty their exact pages");
+
+	watches.armHistoryWrites();
+	constexpr u32 privateWord = boundary + 3u * page;
+	// The tag aliases one byte of the adjacent watched public instruction.
+	ValueSpan tagAlias(memory, privateWord, publicWord + 5u, slots);
+	tagAlias.copyFrom(privateValues, 0, 0, 1);
+	require(tagAlias.get(0) == valueFloatBits(0x80000000u) && counter.code == 4 && !watches.anyWatched(publicWord + 4u, 4u),
+		"a one-slot copy preserves raw float bits and consumes the tag's public word watch");
+	require(dirty(privateWord) && dirty(publicWord) && !dirty(boundary + 2u * page),
+		"copying consumes only the destination history pages");
 }

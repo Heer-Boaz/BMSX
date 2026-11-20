@@ -33,7 +33,14 @@ public:
 	size_t size() const { return m_size; }
 	Word* words() const { return m_words; }
 	Tag* tags() const { return m_tags; }
-	Value get(size_t index) const { return valueFromTag(tag(index), payload(index)); }
+	Value get(size_t index) const {
+		if (m_mirrored) {
+			const u32 word = wordAddress() + static_cast<u32>(index) * sizeof(u32);
+			const u32 byte = tagAddress() + static_cast<u32>(index);
+			return valueFromTag(static_cast<ValueTag>(m_ram->readRamRecordByte(byte)), m_ram->readRamRecordWord(word));
+		}
+		return valueFromTag(static_cast<ValueTag>(m_tags[index]), linearPayload(index));
+	}
 	void set(size_t index, Value value) requires (!Constant) {
 		if (m_mirrored) {
 			const u32 word = wordAddress() + static_cast<u32>(index) * sizeof(u32), byte = tagAddress() + static_cast<u32>(index);
@@ -41,21 +48,21 @@ public:
 			m_ram->writeRamRecordByte(byte, static_cast<u8>(valueTag(value)));
 			return;
 		}
+		auto* const word = m_words + index;
+		auto* const byte = m_tags + index;
 		if constexpr (std::endian::native == std::endian::big) {
-			if (m_ram) writeLE32(reinterpret_cast<u8*>(m_words + index), valuePayload(value));
-			else m_words[index] = valuePayload(value);
-		} else m_words[index] = valuePayload(value);
-		m_tags[index] = static_cast<uint8_t>(valueTag(value));
-		reportWrite(index, 1);
+			if (m_ram) writeLE32(reinterpret_cast<u8*>(word), valuePayload(value));
+			else *word = valuePayload(value);
+		} else *word = valuePayload(value);
+		*byte = static_cast<u8>(valueTag(value));
+		if (m_ram) m_ram->invalidateRamValueSlot(word, byte);
 	}
 	ValueTag tag(size_t index) const {
 		return static_cast<ValueTag>(m_mirrored ? m_ram->readRamRecordByte(tagAddress() + static_cast<u32>(index)) : m_tags[index]);
 	}
 	uint32_t payload(size_t index) const {
 		if (m_mirrored) return m_ram->readRamRecordWord(wordAddress() + static_cast<u32>(index) * sizeof(u32));
-		if constexpr (std::endian::native == std::endian::big)
-			if (m_ram) return readLE32(reinterpret_cast<const u8*>(m_words + index));
-		return m_words[index];
+		return linearPayload(index);
 	}
 	BasicValueSpan subspan(size_t first, size_t count) const {
 		if (m_ram) return BasicValueSpan(*m_ram, wordAddress() + static_cast<u32>(first) * sizeof(u32),
@@ -105,11 +112,24 @@ public:
 				return;
 			}
 		}
+		if (count == 1) {
+			auto* const word = m_words + destination;
+			auto* const byte = m_tags + destination;
+			*word = source.words()[first];
+			*byte = source.tags()[first];
+			if (m_ram) m_ram->invalidateRamValueSlot(word, byte);
+			return;
+		}
 		std::memmove(m_words + destination, source.words() + first, count * sizeof(uint32_t));
 		std::memmove(m_tags + destination, source.tags() + first, count);
 		reportWrite(destination, count);
 	}
 private:
+	u32 linearPayload(size_t index) const {
+		if constexpr (std::endian::native == std::endian::big)
+			if (m_ram) return readLE32(reinterpret_cast<const u8*>(m_words + index));
+		return m_words[index];
+	}
 	void reportWrite(size_t first, size_t count) {
 		if (!m_ram) return; // Runtime scratch and constants have no RAM address.
 		const auto word = wordAddress() + first * sizeof(u32), byte = tagAddress() + first;
@@ -136,7 +156,10 @@ public:
 	void reserveCapacity(size_t capacity) { if (capacity > m_storage.capacity()) m_storage.resize(std::max({capacity, m_storage.capacity() * 2, size_t{8}})); }
 	void resize(size_t capacity) { m_storage.resize(capacity); }
 	Value get(size_t index) const { return valueFromTag(static_cast<ValueTag>(m_storage.tags()[index]), m_storage.words()[index]); }
-	void set(size_t index, Value value) { view().set(index, value); }
+	void set(size_t index, Value value) {
+		m_storage.words()[index] = valuePayload(value);
+		m_storage.tags()[index] = static_cast<u8>(valueTag(value));
+	}
 	ConstValueSpan view() const { return {m_storage.words(), m_storage.tags(), m_storage.capacity()}; }
 	ValueSpan view() { return {m_storage.words(), m_storage.tags(), m_storage.capacity()}; }
 	void clear(size_t first, size_t count) { m_storage.clear(first, count); }

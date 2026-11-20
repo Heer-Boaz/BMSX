@@ -64,19 +64,22 @@ public:
 	void writeRamRecordWord(u32 address, u32 value) {
 		const u32 offset = address & RAM_RECORD_WORD_MASK;
 		writeLE32(m_ram.data() + offset, value);
-		invalidateRamWrite(offset, sizeof(u32));
+		if (m_ramPageWriteWatches.groupData()[offset >> MAPPED_PAGE_BYTE_SHIFT] != 0u)
+			invalidateWatchedRamRecordWrite(offset, sizeof(u32));
 	}
 	void writeRamRecordPair(u32 address, u32 first, u32 second) {
 		const u32 offset = address & (MAIN_RAM_SIZE - 2 * sizeof(u32));
 		writeLE32(m_ram.data() + offset, first);
 		writeLE32(m_ram.data() + offset + sizeof(u32), second);
-		invalidateRamWrite(offset, 2 * sizeof(u32));
+		if (m_ramPageWriteWatches.groupData()[offset >> MAPPED_PAGE_BYTE_SHIFT] != 0u)
+			invalidateWatchedRamRecordWrite(offset, 2 * sizeof(u32));
 	}
 	u8 readRamRecordByte(u32 address) const { return m_ram[address & (MAIN_RAM_SIZE - 1u)]; }
 	void writeRamRecordByte(u32 address, u8 value) {
 		const u32 offset = address & (MAIN_RAM_SIZE - 1u);
 		m_ram[offset] = value;
-		invalidateRamWrite(offset, 1u);
+		if (m_ramPageWriteWatches.groupData()[offset >> MAPPED_PAGE_BYTE_SHIFT] != 0u)
+			invalidateWatchedRamRecordWrite(offset, 1u);
 	}
 	// The record port can mirror into public RAM. Those physical writes still
 	// retire decoded code. Private writes are visible only to rewind.
@@ -85,6 +88,16 @@ public:
 			m_ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, m_mappedPageInvalidator);
 		else if (m_ramPageWriteWatches.historyEpoch() & 1u)
 			m_ramPageWriteWatches.consumeHistoryWrites(offset, byteLength);
+	}
+	// A linear value slot writes one aligned payload word and one tag byte.
+	// Only marked pages need the exact port/aperture and word-watch handling.
+	void invalidateRamValueSlot(const u32* payload, const u8* tag) {
+		const auto* base = m_ram.data();
+		const auto word = static_cast<u32>(reinterpret_cast<const u8*>(payload) - base);
+		const auto byte = static_cast<u32>(tag - base);
+		const auto* groups = m_ramPageWriteWatches.groupData();
+		if ((groups[word >> MAPPED_PAGE_BYTE_SHIFT] | groups[byte >> MAPPED_PAGE_BYTE_SHIFT]) != 0u)
+			invalidateWatchedRamValueSlot(word, byte);
 	}
 	const Span<const u8>& systemRomStorage() const { return m_systemRom; }
 	void installSystemRom(std::span<const u8> rom);
@@ -187,6 +200,10 @@ private:
 	std::vector<IoWriteBinding> m_ioWriteHandlers;
 	std::vector<IoDmaPrefixBinding> m_ioDmaPrefixes;
 	IoDmaPrefixBinding* findIoDmaPrefix(int slot);
+	// Keep aperture dispatch and code/history handling out of unmarked stores
+	// even in the LTO ARM core.
+	BMSX_NOINLINE void invalidateWatchedRamRecordWrite(u32 offset, u32 bytes);
+	BMSX_NOINLINE void invalidateWatchedRamValueSlot(u32 word, u32 byte);
 	mutable uint32_t m_busFaultCode = BUS_FAULT_NONE;
 	mutable uint32_t m_busFaultAddr = 0;
 	mutable uint32_t m_busFaultAccess = 0;

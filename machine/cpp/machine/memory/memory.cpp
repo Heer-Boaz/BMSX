@@ -174,6 +174,15 @@ void Memory::clearMappedPageWriteWatches() {
 	m_cartridgeController.clearMappedPageWriteWatches();
 }
 
+void Memory::invalidateWatchedRamRecordWrite(u32 offset, u32 bytes) {
+	invalidateRamWrite(offset, bytes);
+}
+
+void Memory::invalidateWatchedRamValueSlot(u32 word, u32 byte) {
+	invalidateRamWrite(word, sizeof(u32));
+	invalidateRamWrite(byte, 1u);
+}
+
 void Memory::setRamBusEnd(u32 end) {
 	const u32 old = m_ramBusEnd;
 	m_ramBusEnd = end;
