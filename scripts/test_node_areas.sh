@@ -55,6 +55,15 @@ start_lane() {
 	pids+=("$!")
 }
 
+start_shards() {
+	local label=$1 count=$2 index
+	shift 2
+	for ((index = 1; index <= count; index++)); do
+		start_lane "$label $index/$count" --test --max-old-space-size=768 --experimental-test-isolation=none \
+			"--test-shard=$index/$count" "$@"
+	done
+}
+
 if [[ $1 == browser-platform ]]; then
 	export TSX_TSCONFIG_PATH="$PWD/tsconfig.base.json"
 	accelerated=tests/platform/browser_gpu.test.ts
@@ -74,26 +83,30 @@ else
 	readonly compiled="$reports/js"
 	node scripts/build_node_tests.mjs "$compiled" "${files[@]}"
 
-	if [[ $1 == all || $1 == headless ]]; then
-		# The machine/toolchain tests keep file isolation; they do not retain their
-		# program and media graphs in the Studio worker processes.
-		isolated=("$compiled"/tests/{machine,toolchain,hosts}/*.test.mjs)
-		label='Machine, toolchain and hosts'
-		if [[ $1 == headless ]]; then
-			# Share the file-isolated pool with ROM packer, rather than admitting a
-			# second pool while the Studio workers still hold their runtimes.
-			isolated+=("$compiled"/tests/rompacker/*.mjs)
-			label='Machine, toolchain, hosts and ROM packer'
-		fi
-		start_lane "$label" --test --test-concurrency=8 "${isolated[@]}"
-	elif [[ $1 != studio ]]; then
-		start_lane "$1" --test --test-concurrency=16 "$compiled"/tests/"$1"/*.mjs
-	fi
+	case $1 in
+		all|headless)
+			# Each shared worker loads its common compiler and runtime modules
+			# once. Keep independent process lifetimes for host and packer
+			# integration, within the existing eight non-Studio worker slots.
+			isolated=("$compiled"/tests/hosts/*.test.mjs)
+			label='Hosts'
+			if [[ $1 == headless ]]; then
+				isolated+=("$compiled"/tests/rompacker/*.mjs)
+				label='Hosts and ROM packer'
+			fi
+			start_lane "$label" --test --test-concurrency=2 "${isolated[@]}"
+			start_shards 'Machine and toolchain' 6 "$compiled"/tests/{machine,toolchain}/*.test.mjs
+			;;
+		machine|toolchain)
+			start_shards "$1" "$shards" "$compiled"/tests/"$1"/*.test.mjs
+			;;
+		studio) ;;
+		*)
+			start_lane "$1" --test --test-concurrency=16 "$compiled"/tests/"$1"/*.mjs
+			;;
+	esac
 	if [[ $1 == all || $1 == headless || $1 == studio ]]; then
-		for ((index = 1; index <= shards; index++)); do
-			start_lane "Studio $index/$shards" --test --max-old-space-size=768 --experimental-test-isolation=none \
-				"--test-shard=$index/$shards" "$compiled"/tests/studio/*.test.mjs
-		done
+		start_shards 'Studio' "$shards" "$compiled"/tests/studio/*.test.mjs
 	fi
 fi
 
