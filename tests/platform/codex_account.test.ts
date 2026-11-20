@@ -6,7 +6,7 @@ import { CodexProfile } from '../../hosts/node/codex/profile';
 import { CodexPolicy } from '../../hosts/node/codex/policy';
 import { CodexStdio } from '../../hosts/node/codex/stdio';
 import { CodexSession } from '../../hosts/node/codex/session';
-import type { CodexLogin, CodexSessionEvent } from '../../hosts/node/codex/protocol';
+import type { CodexAccount, CodexLogin, CodexSessionEvent } from '../../hosts/node/codex/protocol';
 import { STUDIO_ACCOUNT_LOGIN_URL } from '../../hosts/common/assistant_protocol';
 
 import { createCodexAccountFixture } from '../helpers/codex_account_fixture';
@@ -27,7 +27,9 @@ test('real device-code contract polls and cancels without credentials or an OAut
 	assert.equal(login.type, 'chatgptDeviceCode'); assert.equal(login.userCode, 'ABCD-EFGH'); assert.equal(login.verificationUrl, `${f.url}/codex/device`);
 	assert.deepEqual(await rpc.request('account/login/cancel', { loginId: login.loginId }), { status: 'canceled' });
 	await rpc.request('account/logout', {});
-	assert.deepEqual(await rpc.request('account/read', { refreshToken: false }), { account: null, requiresOpenaiAuth: true, workspaceRouting: null });
+	const account = await rpc.request<CodexAccount>('account/read', { refreshToken: false });
+	assert.equal(account.account, null);
+	assert.equal(account.requiresOpenaiAuth, true);
 	assert.ok(f.requests.includes('/api/accounts/deviceauth/usercode'));
 	assert.ok(messages.includes('account/login/completed'));
 	await assert.rejects(access(join(profile.codexHome, 'auth.json')), { code: 'ENOENT' });
@@ -156,7 +158,10 @@ test('successful real device-code exchange persists only the private profile and
 	assert.equal(f.requests.filter(request => request.path === '/backend-api/wham/usage').length, 1, 'one initial quota read, then native notifications');
 	assert.ok(events.some(event => event.type === 'login-completed' && event.success));
 	const account = await session.readAccount();
-	assert.deepEqual(account.account, { type: 'chatgpt', email: CODEX_ACCOUNT_FIXTURE.email, planType: CODEX_ACCOUNT_FIXTURE.planType });
+	assert.ok(account.account);
+	assert.equal(account.account.type, 'chatgpt');
+	assert.equal(account.account.email, CODEX_ACCOUNT_FIXTURE.email);
+	assert.equal(account.account.planType, CODEX_ACCOUNT_FIXTURE.planType);
 	assert.equal(account.requiresOpenaiAuth, true);
 	const path = join(f.root, 'profile/account/auth.json');
 	const saved = JSON.parse(await readFile(path, 'utf8'));

@@ -38,7 +38,7 @@ required = true` : ''}
 	const mcpServers = mcp === undefined ? '{}' : `{bmsx={url=${JSON.stringify(mcp.url)},http_headers_helper=${JSON.stringify(mcp.headersHelper)},required=true}}`;
 	const args = ['app-server', '--stdio', '-c', `mcp_servers=${mcpServers}`, '-c', 'notify=[]'];
 	for (const feature of ['shell_tool', 'unified_exec', 'code_mode_host', 'plugins', 'apps', 'browser_use', 'computer_use',
-		'multi_agent', 'memories', 'hooks', 'workspace_dependencies', 'image_generation', 'goals',
+		'multi_agent', 'memories', 'hooks', 'workspace_dependencies', 'image_generation', 'view_image', 'goals',
 		'shell_snapshot', 'skill_mcp_dependency_install', 'enable_request_compression']) args.push('--disable', feature);
 	const child = spawn('codex', args, { cwd: workspace, stdio: ['pipe', 'pipe', 'pipe'],
 		env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, TMPDIR: root, SHELL: '/bin/bash' } });
