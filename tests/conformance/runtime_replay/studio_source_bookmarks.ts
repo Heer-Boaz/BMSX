@@ -8,7 +8,7 @@ import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Language-command result/history integration; this does not pretend a reconnect gesture exists. */
 export async function testStudioSourceBookmarks(test: StudioFixture): Promise<void> {
-	const { ide, harness, frame, press, click, cycles, runPaletteCommand } = test;
+	const { ide, harness, frame, press, cycles, runPaletteCommand } = test;
 	console.info('STUDIO: edit-associated source bookmarks across parents and hidden document history');
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
@@ -58,33 +58,39 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	const range = after.source.occurrenceRange;
 	const transferred = model.buffer.getText();
 	version = model.version;
-	await click(graph.actionBar.items[0].bounds, 6);
+	await press('ShiftLeft', 'F10');
+	await test.clickContextCommand('editor.source', 6);
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && model.version === version && !hasSelection(sourcePane(test).code)
 		&& sourcePane(test).code.view.cursorRow === range.start.line - 1 && sourcePane(test).code.view.cursorColumn === range.start.column - 1,
 		'bookmark: held Source click is navigation, not a document edit or drag into the source editor');
 	await press('ArrowRight');
 	check(sourcePane(test).code.view.cursorColumn === range.start.column && model.version === version, 'bookmark: source editor remains responsive');
 	await press('Home');
-	const typingRow = sourcePane(test).code.view.cursorRow;
 	const typingColumn = sourcePane(test).code.view.cursorColumn;
 	await press('Space');
 	check(sourcePane(test).code.view.cursorColumn === typingColumn + 1, 'bookmark: physical typing produces code-owned edit state');
+	const typed = model.buffer.getText();
+	await press('ArrowDown'); await press('Home');
+	const { cursorRow, cursorColumn } = sourcePane(test).code.view;
 	await test.clickTab(lens.id);
 	await runPaletteCommand('Edit: Undo');
-	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && code.context.view.cursorRow === typingRow && code.context.view.cursorColumn === typingColumn,
-		'bookmark: graph Undo restores the hidden code input through the document event, without a code Undo caller');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && model.buffer.getText() === transferred
+		&& code.context.view.cursorRow === cursorRow && code.context.view.cursorColumn === cursorColumn,
+		'bookmark: graph Undo updates the document without restoring an old code caret to the hidden sibling');
 	await runPaletteCommand('Edit: Redo');
-	check(code.context.view.cursorColumn === typingColumn + 1, 'bookmark: graph Redo restores the hidden code result too');
+	check(model.buffer.getText() === typed && code.context.view.cursorRow === cursorRow && code.context.view.cursorColumn === cursorColumn,
+		'bookmark: graph Redo restores the code edit but not its old caret');
 	await runPaletteCommand('Edit: Undo');
 	await test.clickTab(code.id);
-	check(sourcePane(test).code.view.cursorRow === typingRow && sourcePane(test).code.view.cursorColumn === typingColumn
-		&& model.buffer.getText() === transferred, 'bookmark: reattaching the code widget consumes the retained restored cursor');
+	check(sourcePane(test).code.view.cursorRow === cursorRow && sourcePane(test).code.view.cursorColumn === cursorColumn
+		&& model.buffer.getText() === transferred, 'bookmark: reattaching the code widget uses its own retained cursor');
 	const hiddenDocument = view.document;
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === BT_TRANSFER_SOURCE && view.document === hiddenDocument, 'bookmark: code Undo delivers selection without rebuilding a hidden lens');
+	check(model.buffer.getText() === BT_TRANSFER_SOURCE && view.document === hiddenDocument && view.selectionState.pendingBookmark === undefined,
+		'bookmark: code Undo replays the edit without delivering selection to the hidden lens');
 	await test.clickTab(lens.id);
-	check(viewport.selection?.kind === 'node' && viewport.selection.parent!.member!.index === 0
-		&& view.selectionState.definitionRowKey === view.document.definitions[1].rowKey, 'bookmark: source projection resolves the recorded original parent when reopened');
+	check(viewport.selection === null && view.selectionState.definitionRowKey === view.document.definitions[1].rowKey,
+		'bookmark: code Undo leaves the removed destination unselected in the retained registration');
 	await runPaletteCommand('Edit: Redo');
 	check(model.buffer.getText() === transferred && viewport.selection?.kind === 'node' && viewport.selection.parent!.member!.index === 2,
 		'bookmark: palette Redo restores the recorded result, without another selection history');
@@ -94,6 +100,8 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	check(view.document === retained && viewport.model === geometry && view.selectionState.pendingBookmark === undefined,
 		'bookmark: stable frames retain the same source and geometry; no pending bookmark is replayed');
 	await runPaletteCommand('Edit: Undo');
+	check(viewport.selection?.kind === 'node' && viewport.selection.parent!.member!.index === 0,
+		'bookmark: Undo from the graph selects its recorded original parent');
 	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,

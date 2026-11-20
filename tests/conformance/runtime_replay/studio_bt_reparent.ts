@@ -82,11 +82,12 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source, 'reparent: one code Undo restores all source bytes');
 	await test.clickTab(lens.id);
-	check(viewport.selection === root().children[0], 'reparent: hidden Undo restores the old graph occurrence');
+	check(viewport.selection === null, 'reparent: code Undo does not assign a selection to the sibling graph');
 	await press('ControlLeft', 'ShiftLeft', 'KeyZ');
 	check(model.buffer.getText() === changed && viewport.selection === root().children[1].children[0],
 		'reparent: graph Redo restores both destination and selection');
 	await press('ControlLeft', 'KeyZ');
+	check(viewport.selection === root().children[0], 'reparent: graph Undo restores the old occurrence to the invoking graph');
 	await drop(root().children[1].children[0].children[0], root().children[2], 0.8);
 	await runPaletteCommand('Review: Apply Workspace Edit');
 	await test.clickTab(lens.id);

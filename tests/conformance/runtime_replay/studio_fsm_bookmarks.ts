@@ -20,7 +20,7 @@ export async function testStudioFsmBookmarks(test: StudioFixture): Promise<void>
 }
 
 async function runBookmarks(test: StudioFixture, imported: boolean): Promise<void> {
-	const { ide, harness, press, click, frame, until, runPaletteCommand, cycles } = test;
+	const { ide, harness, press, frame, until, runPaletteCommand, cycles } = test;
 	console.info(`STUDIO: FSM ${imported ? 'imported' : 'local'} retarget source bookmarks, physical edge selection, Source and hidden document history`);
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
@@ -77,7 +77,8 @@ async function runBookmarks(test: StudioFixture, imported: boolean): Promise<voi
 			'FSM bookmark: the new geometry highlights the retargeted evidence');
 		const range = selectedBehaviorLensSourceRange(view)!;
 		version = model.version;
-		await click(graph.actionBar.items[0].bounds, 6);
+		await press('ShiftLeft', 'F10');
+		await test.clickContextCommand('editor.source', 6);
 		check(ide.editor.editorParts.activeGroup.model.activeTab === code && model.version === version && !hasSelection(sourcePane(test).code)
 			&& sourcePane(test).code.view.cursorRow === range.start.line - 1 && sourcePane(test).code.view.cursorColumn === range.start.column - 1,
 			'FSM bookmark: held Source activation navigates without dirtying or selecting code');
@@ -90,22 +91,19 @@ async function runBookmarks(test: StudioFixture, imported: boolean): Promise<voi
 		await ready();
 		check(selectedBehaviorLensSourceRange(view)?.start.line === range.start.line + 1,
 			'FSM bookmark: an edit after Back maps active selection once, independently of navigation history');
-		await click(graph.actionBar.items[0].bounds);
+		await runPaletteCommand('editor.source');
 		check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === range.start.line && !hasSelection(sourcePane(test).code),
 			'FSM bookmark: the restored and edited proof still opens the exact source line');
 		await press('ControlLeft', 'KeyZ');
 		await test.clickTab(lens.id); await ready();
 		check(model.buffer.getText() === changed && selectedBehaviorLensSourceRange(view)!.start.line === range.start.line,
 			'FSM bookmark: Undo after Back preserves the proof without sharing history markers');
-		await click(graph.actionBar.items[0].bounds);
+		await runPaletteCommand('editor.source');
 		const hidden = view.document;
 		await press('ControlLeft', 'KeyZ');
-		check(model.buffer.getText() === source && view.document === hidden,
-			'FSM bookmark: code Undo restores text and leaves one pending selection, without parsing a hidden Lens');
+		check(model.buffer.getText() === source && view.document === hidden && view.selectionState.pendingBookmark === undefined,
+			'FSM bookmark: code Undo restores text without delivering selection or parsing a hidden Lens');
 		await test.clickTab(lens.id); await ready();
-		const before = selectedOutcome(view);
-		check(before.outcome.target.kind === 'path' && before.outcome.target.text === '../active'
-			&& before.outcome === before.transition.outcomes[outcomeIndex], 'FSM bookmark: reopening resolves the recorded original proof');
 		await runPaletteCommand('Edit: Redo'); await ready();
 		check(model.buffer.getText() === changed && graph.viewport.selection?.kind === 'edge'
 			&& graph.viewport.selection.link.target.source.label === 'other', 'FSM bookmark: graph palette Redo restores result text and selection together');
@@ -113,6 +111,9 @@ async function runBookmarks(test: StudioFixture, imported: boolean): Promise<voi
 		for (let index = 0; index < 20; index += 1) await frame();
 		check(graph.viewport.model === retained && view.selectionState.pendingBookmark === undefined, 'FSM bookmark: stable frames never replay history');
 		await runPaletteCommand('Edit: Undo'); await ready();
+		const before = selectedOutcome(view);
+		check(before.outcome.target.kind === 'path' && before.outcome.target.text === '../active'
+			&& before.outcome === before.transition.outcomes[outcomeIndex], 'FSM bookmark: graph Undo resolves the recorded original proof');
 	}
 	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
