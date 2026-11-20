@@ -43,7 +43,7 @@ const workspaceArtifacts = join(root, '.bmsx');
 mkdirSync(workspaceArtifacts, { recursive: true });
 // The source cart must remain outside the worktree: the packer's workspace
 // scan doesn't include git-ignored sources.
-const preloadDirectory = mkdtempSync(join(tmpdir(), 'bmsx-runtime-replay-'));
+const cartridges = mkdtempSync(join(tmpdir(), 'bmsx-runtime-replay-'));
 let artifacts;
 try {
 	artifacts = mkdtempSync(join(workspaceArtifacts, 'runtime-replay-'));
@@ -51,22 +51,25 @@ try {
 	// per-module CommonJS export getters are costly in interpreter and GX loops.
 	await build({
 		...NODE_TEST_BUNDLE_OPTIONS,
-		entryPoints: ['preload_cartridge', 'host_ts_runner', 'ts_runner', 'compare'].map(name => join(sources, `${name}.ts`)),
+		entryPoints: ['build_cartridges', 'host_ts_runner', 'ts_runner', 'compare'].map(name => join(sources, `${name}.ts`)),
 		outdir: artifacts,
 		outExtension: { '.js': '.cjs' },
 		format: 'cjs',
 	});
-	await run(process.execPath, ['--enable-source-maps', join(artifacts, 'preload_cartridge.cjs'), preloadDirectory, media[0]]);
+	await run(process.execPath, ['--enable-source-maps', join(artifacts, 'build_cartridges.cjs'),
+		cartridges, media[0], join(sources, 'host_rewind.lua')]);
+	const rewindCart = join(cartridges, 'host-rewind', 'fixture.debug.rom');
 	copyFileSync(media[0], join(artifacts, 'bmsx-bios.rom'));
 	// These hosts consume the same installed bytes but do not write each other's evidence.
 	const jobs = [
-		run(process.execPath, ['--enable-source-maps', join(artifacts, 'host_ts_runner.cjs'), ...media]),
-		...rewindTargets.map(target => run(join(nativeBuild, target), [artifacts, media[1]])),
+		run(process.execPath, ['--enable-source-maps', join(artifacts, 'host_ts_runner.cjs'), media[0], rewindCart]),
+		...rewindTargets.map(target => run(join(nativeBuild, target), [artifacts, rewindCart])),
 	];
-	// The real cart also replays through the selectable JavaScript backend.
+	// Cover real-cart BADP on the normal core and compiled-block replay on
+	// the small source fixture, which still executes changing guest state.
 	for (const [name, cartridge, assertions, backends] of [
-		[cart, media[1], ['--require-badp-playback'], ['default', 'javascript']],
-		['preload', join(preloadDirectory, 'cart.rom'), ['--require-raw-byte-string'], ['default']],
+		[cart, media[1], ['--require-badp-playback'], ['default']],
+		['preload', join(cartridges, 'cart.rom'), ['--require-raw-byte-string'], ['default', 'javascript']],
 	]) {
 		const cppPrefix = join(artifacts, `${name}-cpp`);
 		const cpp = run(join(nativeBuild, replayTarget), [media[0], cartridge, cppPrefix]);
@@ -89,5 +92,5 @@ try {
 	if (artifacts !== undefined) console.error(`Replay evidence retained at ${artifacts}`);
 	throw error;
 } finally {
-	rmSync(preloadDirectory, { recursive: true, force: true });
+	rmSync(cartridges, { recursive: true, force: true });
 }

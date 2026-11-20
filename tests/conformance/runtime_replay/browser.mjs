@@ -76,7 +76,7 @@ async function runBrowserProject(backend) {
 		await writeFile(join(directory, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}#player-surface{position:fixed;inset:0}canvas{position:absolute;image-rendering:pixelated}</style><div id="player-surface"><canvas width="256" height="212"></canvas></div>');
 		await copyFile(bios, join(directory, 'bios.rom'));
 		if (preload) {
-			const built = spawnSync('npx', ['tsx', resolve(import.meta.dirname, 'preload_cartridge.ts'), directory, resolve(bios)], { stdio: 'inherit' });
+			const built = spawnSync('npx', ['tsx', resolve(import.meta.dirname, 'build_cartridges.ts'), directory, resolve(bios)], { stdio: 'inherit' });
 			if (built.error) throw built.error;
 			assert.equal(built.status, 0, 'preload fixture uses the production ROM builder');
 		} else {
