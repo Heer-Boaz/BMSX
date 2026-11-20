@@ -97,10 +97,10 @@ test('warm RAM code is retired when the floor shrinks and WIDE obeys both fetche
 
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(saved);
-	assert.equal(cpu.heapAllocator.setFloor(pc), true);
 	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.K1, 0, 0, 0);
 	memory.writeBytes(pc - INSTRUCTION_BYTES, code);
+	assert.equal(cpu.heapAllocator.setFloor(pc), true);
 	select(pc - INSTRUCTION_BYTES);
 	cpu.runUntilDepth(0, 1);
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR);

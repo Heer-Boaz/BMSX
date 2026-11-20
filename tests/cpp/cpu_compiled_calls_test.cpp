@@ -567,10 +567,9 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	const std::array<Value, 6> payloads{valueNil(), valueBool(false), valueFloatBits(0x80000000),
 		valueString(machine.cpu.stringPool().intern("native-return-payload")), caller->registers.get(4), valueFloatBits(0xffa12345)};
 	for (int index = 0; index < produced; ++index) callee->registers.set(1 + index, payloads[index]);
-	const u32 control = RAM_BASE + callee->controlOffset;
-	machine.memory.writeMappedU32LE(control + static_cast<u32>(FrameField::Top), 0xab000000u | static_cast<u32>(1 + produced));
-	machine.memory.writeMappedU32LE(control + static_cast<u32>(FrameField::ReturnBase), 0xc0000000u | static_cast<u32>(base));
-	machine.memory.writeMappedU32LE(control + static_cast<u32>(FrameField::ReturnCount), 0xd0000000u | static_cast<u32>(wanted == 0 ? 0 : wanted + 1));
+	callee->writeControl(FrameField::Top, 0xab000000u | static_cast<u32>(1 + produced));
+	callee->writeControl(FrameField::ReturnBase, 0xc0000000u | static_cast<u32>(base));
+	callee->writeControl(FrameField::ReturnCount, 0xd0000000u | static_cast<u32>(wanted == 0 ? 0 : wanted + 1));
 	if (exceptionFrame) callee->addControlFlags(FRAME_EXCEPTION | FRAME_NMI);
 	caller->registers.set(6, valueInteger(-7));
 	caller->registers.set(7, valueInteger(99));
@@ -1286,9 +1285,9 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 			const u32 tail = ClosureRecord::captureWordAddress(closure, 0);
 			require(machine->memory.readRamRecordWord(tail) == machine->rom.textAddress + MAPPED_PAGE_BYTE_SIZE,
 				"a RAM prototype is sampled once by CLOSURE, independently of later source stores");
-			machine->memory.writeMappedU32LE(tail, machine->rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE);
+			machine->memory.writeRamRecordWord(tail, machine->rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE);
 		} else {
-			machine->memory.writeMappedU32LE(closure + CLOSURE_PROTOTYPE_ADDRESS, machine->rom.functionAddresses[2]);
+			machine->memory.writeRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS, machine->rom.functionAddresses[2]);
 		}
 		frame->registers.set(12, valueInteger(73));
 	}

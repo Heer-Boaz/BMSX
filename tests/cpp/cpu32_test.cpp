@@ -351,7 +351,7 @@ void memoryWords() {
 		{MemoryAccessKind::Word, MemoryAccessKind::U32LE, MemoryAccessKind::F32LE, MemoryAccessKind::F64LE}) {
 		auto image = operation(OpCode::LOAD_MEM);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOAD_MEM), 2, 0, static_cast<u8>(kind));
-		Number32Machine m(image);
+		Number32Machine m(image, true, MAPPED_PAGE_BYTE_SIZE);
 		const u32 address = DYNAMIC_RAM_BASE + 0x200;
 		m.memory.writeMappedU32LE(address, kind == MemoryAccessKind::F32LE ? 0xffa12345u : 0xffffffffu);
 		if (kind == MemoryAccessKind::F64LE)
@@ -370,7 +370,7 @@ void memoryWords() {
 	for (auto kind : {MemoryAccessKind::Word, MemoryAccessKind::F32LE, MemoryAccessKind::F64LE}) {
 		auto image = operation(OpCode::STORE_MEM);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::STORE_MEM), 2, 0, static_cast<u8>(kind));
-		Number32Machine m(image);
+		Number32Machine m(image, true, MAPPED_PAGE_BYTE_SIZE);
 		const u32 address = DYNAMIC_RAM_BASE + 0x300;
 		auto regs = m.cpu.activeThread()->currentFrame->registers;
 		regs.set(0, valueInteger(address));
@@ -385,7 +385,7 @@ void memoryWords() {
 	for (auto op : {OpCode::LOAD_MEM, OpCode::STORE_MEM}) {
 		auto image = operation(op);
 		writeInstruction(image.text, 0, static_cast<u8>(op), 2, 0, static_cast<u8>(MemoryAccessKind::F64LE));
-		Number32Machine m(image);
+		Number32Machine m(image, true, MAPPED_PAGE_BYTE_SIZE);
 		m.cpu.activeThread()->currentFrame->registers.set(0, valueInteger(DYNAMIC_RAM_BASE + 1));
 		m.cpu.runUntilDepth(0, 1);
 		require(m.cpu.instructionBudgetRemaining == -4, "even alignment faults retain the started F64 format charge");
@@ -466,7 +466,7 @@ test::Blua32TestImage regionImage(const std::string& name) {
 }
 void scalarRegions() {
 	for (const char* name : {"chain", "memory", "table", "words", "control", "loop"}) {
-		Number32Machine m(regionImage(name));
+		Number32Machine m(regionImage(name), true, MAPPED_PAGE_BYTE_SIZE);
 		auto r = m.cpu.activeThread()->currentFrame->registers;
 		r.set(0, valueInteger(3));
 		r.set(1, valueInteger(2));
@@ -715,7 +715,7 @@ int main(int argc, char** argv) {
 		return 0;
 	}
 	if (argc == 3 && std::string(argv[1]) == "--rom-region") {
-		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, regionImage(argv[2]));
+		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, regionImage(argv[2]), MAPPED_PAGE_BYTE_SIZE);
 		std::cout.write(reinterpret_cast<const char*>(rom.bytes.data()), rom.bytes.size());
 		return 0;
 	}

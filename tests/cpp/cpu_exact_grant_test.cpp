@@ -30,8 +30,8 @@ struct Machine {
 	IrqController irq;
 	ExecutionAddressSpace addresses;
 	CPU cpu;
-	Machine(const test::Blua32TestImage& image, bool scalar)
-		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES)),
+	Machine(const test::Blua32TestImage& image, bool scalar, u32 bssByteCount = test::RAM_CODE_FIXTURE_BYTES)
+		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, bssByteCount)),
 		  memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		  irq(memory), addresses(memory), cpu(memory, irq, addresses) {
 		cpu.reset();
@@ -65,6 +65,7 @@ void waitForNativeEntries(Machine& machine, u32 base, std::initializer_list<u32>
 
 void exactGrant(bool store) {
 	constexpr u32 address = DYNAMIC_RAM_BASE + 0x20000u;
+	constexpr u32 bssByteCount = address - DYNAMIC_RAM_BASE + sizeof(u32);
 	for (int grant : {2, 4, 6, 8}) {
 		test::Blua32TestImage image;
 		image.text.resize(6u * INSTRUCTION_BYTES);
@@ -79,7 +80,7 @@ void exactGrant(bool store) {
 		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 6},
 			{.firstWord = 5, .wordCount = 1, .maxStack = 1}};
 		image.irqFunctionIndex = 1;
-		Machine native(image, false), scalar(image, true);
+		Machine native(image, false, bssByteCount), scalar(image, true, bssByteCount);
 		for (auto* machine : {&native, &scalar}) {
 			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
 			frame->registers.set(4, valueInteger(address));
@@ -207,6 +208,7 @@ void divisionBudget(bool skip) {
 // cost exhausts that budget: parity concerns the *next* instruction boundary.
 void exactGrantSweep(bool scalarControl) {
 	constexpr u32 address = DYNAMIC_RAM_BASE + 0x20000u;
+	constexpr u32 bssByteCount = address - DYNAMIC_RAM_BASE + sizeof(u32);
 	test::Blua32TestImage image;
 	image.text.resize(7u * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
@@ -222,7 +224,7 @@ void exactGrantSweep(bool scalarControl) {
 	image.irqFunctionIndex = 1;
 	unsigned mismatchCount = 0;
 	for (int grant = 1; grant <= 64; ++grant) {
-		Machine native(image, scalarControl), scalar(image, true);
+		Machine native(image, scalarControl, bssByteCount), scalar(image, true, bssByteCount);
 		for (auto* machine : {&native, &scalar}) {
 			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
 			frame->registers.set(4, valueInteger(address));

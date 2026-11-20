@@ -310,7 +310,7 @@ void physicalCallerBankDeclinesOldContinuation() {
 	require(parent->nativeContinuationCells[0] == &previous->nativeCode[word] && marker->nativeCode[markerWord],
 		"the caller has a real warm continuation to withdraw from this RET");
 	previous->nativeCode[word] = marker->nativeCode[markerWord];
-	machine.memory.writeMappedU32LE(RAM_BASE + parent->controlOffset + static_cast<u32>(FrameField::Flags), frameBankWord(1));
+	parent->writeControl(FrameField::Flags, frameBankWord(1));
 	machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]);
 	require(machine.cpu.getGlobalByKey(machine.cpu.stringPool().intern("continuationResult")) == valueNil()
 		&& (machine.cpu.readCauseWord() & CPU_CAUSE_CODE_MASK) == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR
@@ -324,7 +324,7 @@ void physicalCallerPcRedirectsNativeReturn() {
 	auto* parent = machine.cpu.rootThread()->firstFrame;
 	const auto oldCell = parent->nativeContinuationCells[0];
 	require(oldCell && *oldCell, "the returning child has a linked caller continuation");
-	machine.memory.writeMappedU32LE(RAM_BASE + parent->controlOffset + static_cast<u32>(bmsx::FrameField::Pc), machine.markerPc());
+	parent->writeControl(FrameField::Pc, machine.markerPc());
 	require(parent->nativeContinuationCells[0] == oldCell, "a raw frame write does not withdraw its old code cell");
 	machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]);
 	require(machine.cpu.getGlobalByKey(machine.cpu.stringPool().intern("continuationResult")) == callerMarker,

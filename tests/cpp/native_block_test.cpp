@@ -1233,6 +1233,7 @@ void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 
 int main() {
 	try {
+		require(cpu.heapAllocator().setFloor(DYNAMIC_RAM_BASE + 0x85000u), "native datapath buffers occupy public static RAM");
 		multipleRegisterDefinitionsSurviveCallAndExit();
 		sharedExitMapsPublishRawValuesFromEitherRegisterBank();
 		independentEntriesBindTheirOwnValueBanks();

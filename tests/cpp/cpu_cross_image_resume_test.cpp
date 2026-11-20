@@ -178,9 +178,8 @@ void returnUsesSavedBank(const Images& images, bool scalar) {
 	Machine machine(images, 0, scalar);
 	machine.stopBeforeReturn();
 	auto* caller = machine.cpu.rootThread()->firstFrame;
-	const u32 flagsAddress = RAM_BASE + caller->controlOffset + static_cast<u32>(FrameField::Flags);
-	const u32 flags = machine.memory.readMappedWord(flagsAddress);
-	machine.memory.writeMappedU32LE(flagsAddress, (flags & ~FRAME_BANK_MASK) | frameBankWord(1));
+	const u32 flags = caller->readControl(FrameField::Flags);
+	caller->writeControl(FrameField::Flags, (flags & ~FRAME_BANK_MASK) | frameBankWord(1));
 	machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
 	const auto stack = machine.memory.captureSaveState();
 	const auto state = machine.cpu.captureRuntimeState();

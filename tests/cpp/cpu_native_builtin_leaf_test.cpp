@@ -18,6 +18,7 @@
 namespace {
 using namespace bmsx;
 void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
+constexpr u32 MARKER_ADDRESS = DYNAMIC_RAM_BASE + 0x4000u;
 
 test::Blua32TestRom image(int results, int args, bool wide = false) {
 	test::Blua32TestImage source; source.text.resize(3 * MAPPED_PAGE_BYTE_SIZE);
@@ -35,7 +36,7 @@ test::Blua32TestRom image(int results, int args, bool wide = false) {
 		{.firstWord=2 * DECODED_PAGE_WORDS, .wordCount=1, .maxStack=16}};
 	source.exceptionFunctionIndex = source.irqFunctionIndex = 3;
 	source.globalNames = {"rawLeafMarker", "target"};
-	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, source);
+	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, source, MARKER_ADDRESS - DYNAMIC_RAM_BASE + sizeof(u32));
 	rom.bytes.resize((rom.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~size_t{MAPPED_PAGE_BYTE_MASK});
 	return rom;
 }
@@ -69,7 +70,7 @@ struct Machine {
 		auto* frame = cpu.rootThread()->currentFrame; auto r = frame->registers;
 		r.set(0, cpu.createBuiltinFunction(id));
 		require(asBuiltinFunctionId(r.get(0)) == id, "the actual runtime callee carries its raw builtin ID");
-		r.set(12, valueFloat(99.75f)); r.set(11, valueInteger(DYNAMIC_RAM_BASE + 0x4000)); frame->writeControl(bmsx::FrameField::Top, 3);
+		r.set(12, valueFloat(99.75f)); r.set(11, valueInteger(MARKER_ADDRESS)); frame->writeControl(bmsx::FrameField::Top, 3);
 		if (id == BuiltinFunctionId::StringByte) {
 			r.set(1, mode == 2 ? valueInteger(17) : valueString(cpu.stringPool().intern(std::string("A\xc3\xa9\xf0\x9f\x98\x80\0Z", 9))));
 			r.set(2, mode == 1 ? valueNil() : mode == 3 ? valueBool(false) : valueFloat(position));
@@ -84,7 +85,7 @@ struct Machine {
 			expected = id == BuiltinFunctionId::GetMetatable ? valueTable(meta->address()) : valueTable(target->address());
 		}
 	}
-	u32 marker() { return memory.readMappedU32LE(DYNAMIC_RAM_BASE + 0x4000); }
+	u32 marker() { return memory.readMappedU32LE(MARKER_ADDRESS); }
 };
 
 void parity(Machine& a, Machine& b) {

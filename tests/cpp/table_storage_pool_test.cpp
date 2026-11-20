@@ -27,8 +27,8 @@ int main() {
 
 		const u32 bodyAddress = first.storageAddress();
 		first.setInteger(3, valueInteger(99));
-		require(memory.readMappedU32LE(bodyAddress + 2 * 4u) == 99u, "array payload lives in guest RAM");
-		memory.writeMappedU32LE(bodyAddress + 2 * 4u, 11u);
+		require(memory.readRamRecordWord(bodyAddress + 2 * 4u) == 99u, "array payload lives in guest RAM");
+		memory.writeRamRecordWord(bodyAddress + 2 * 4u, 11u);
 		require(first.getInteger(3) == valueInteger(11), "table reads consume the physical bytes");
 		require(cpu.heapAllocator().occupiedBytes() == physicalBefore + 112u, "the header and body are separate physical allocations");
 		first.setStringKey(key, valueBool(false));

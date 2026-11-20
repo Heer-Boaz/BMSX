@@ -7,6 +7,7 @@
 #include "spec/blua32/image_format.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
+#include "spec/bmsx/io.h"
 #include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
@@ -103,8 +104,8 @@ void instructionFetchFollowsTheLiveFloor() {
 	std::array<u8, 2 * INSTRUCTION_BYTES> text{};
 	writeInstruction(text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
 	writeInstruction(text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
-	memory.writeBytes(pc, text.data(), text.size());
 	require(cpu.heapAllocator().setFloor(pc + HEAP_PAGE_SIZE), "the test code occupies reserved static storage");
+	memory.writeBytes(pc, text.data(), text.size());
 	selectPc(pc);
 	const int loop = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
 	cpu.runUntilDepth(0, 300 * loop);
@@ -120,7 +121,9 @@ void instructionFetchFollowsTheLiveFloor() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(!page.nativeBlocks, "the floor change retires cached code immediately");
 #endif
-	require(memory.readMappedU32LE(pc) == readLE32(text.data()), "ordinary reads still see the bytes");
+	require(memory.readRamRecordWord(pc) == readLE32(text.data()), "the dormant code bytes still exist in physical RAM");
+	require(memory.readMappedU32LE(pc) == 0 && memory.readMappedU32LE(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED,
+		"the retired page is no longer mapped on the system bus");
 	cpu.runUntilDepth(0, 1);
 	require(cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR && cpu.readEpcWord() == pc, "the next warm entry faults on fetch, not execution");
 
@@ -133,10 +136,10 @@ void instructionFetchFollowsTheLiveFloor() {
 
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(saved);
-	require(cpu.heapAllocator().setFloor(pc), "prepare the WIDE boundary");
 	writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(text, 1, static_cast<u8>(OpCode::K1), 0, 0, 0);
 	memory.writeBytes(pc - INSTRUCTION_BYTES, text.data(), text.size());
+	require(cpu.heapAllocator().setFloor(pc), "prepare the WIDE boundary after writing both instruction words");
 	selectPc(pc - INSTRUCTION_BYTES);
 	cpu.runUntilDepth(0, 1);
 	require(cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR && cpu.readEpcWord() == pc - INSTRUCTION_BYTES,

@@ -1,4 +1,3 @@
-#include "common/endian.h"
 #include "machine/cpu/value_arithmetic.h"
 #include "support/number32_cpu_fixture.h"
 #include "support/cpu_execution_parity.h"
@@ -10,6 +9,8 @@
 namespace {
 using namespace bmsx;
 using test::Number32Machine;
+constexpr u32 MEMORY_BSS_BYTES = 2 * MAPPED_PAGE_BYTE_SIZE;
+constexpr u32 LAST_STATIC_WORD = DYNAMIC_RAM_BASE + MEMORY_BSS_BYTES - sizeof(u32);
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
@@ -54,13 +55,13 @@ void requireNative(CPU& cpu) {
 void setup(Number32Machine& m, Value address, Value value) {
 	auto r = m.cpu.activeThread()->currentFrame->registers;
 	r.set(0, address); r.set(2, value); r.set(3, valueInteger(-1)); r.set(4, valueBool(true));
-	writeLE32(m.memory.ramData() + DYNAMIC_RAM_BASE - RAM_BASE + 0x400, 0x7fa12345);
-	writeLE32(m.memory.ramData() + DYNAMIC_RAM_BASE - RAM_BASE + 0x404, 0xffa12345);
-	writeLE32(m.memory.ramData() + m.memory.ramByteCount() - 4, 0x3ff00000);
+	m.memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x400, 0x7fa12345);
+	m.memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x404, 0xffa12345);
+	m.memory.writeMappedWord(LAST_STATIC_WORD, 0x3ff00000);
 }
 void scalarFormats() {
 	const Value addresses[] = {valueInteger(DYNAMIC_RAM_BASE+0x400), valueInteger(DYNAMIC_RAM_BASE+0x401),
-		valueInteger(DYNAMIC_RAM_BASE+0x402), valueInteger(RAM_BASE+PSX_MACHINE_SPEC.ramBytes-4),
+		valueInteger(DYNAMIC_RAM_BASE+0x402), valueInteger(LAST_STATIC_WORD),
 		valueInteger(IO_SYS_TIME_MS), valueInteger(0xfffffffcu), valueInteger(0), valueFloat(DYNAMIC_RAM_BASE+0x400),
 		valueFloatBits(0x7fc00000), valueBool(true)};
 	for (auto op : {OpCode::LOAD_MEM, OpCode::LOAD_MEM_D, OpCode::STORE_MEM, OpCode::STORE_MEM_D})
@@ -68,7 +69,7 @@ void scalarFormats() {
 			for (Value address : addresses)
 				for (int grant : {1,2,5,6,7,8,9,10,11,12,32}) {
 					const auto image = program(op, kind);
-					Number32Machine native(image), scalar(image, false);
+					Number32Machine native(image, true, MEMORY_BSS_BYTES), scalar(image, false, MEMORY_BSS_BYTES);
 					setup(native,address,valueFloatBits(0xffa12345));setup(scalar,address,valueFloatBits(0xffa12345));
 					test::runCpuParity(native.cpu,scalar.cpu,grant);
 					parity(native,scalar);
@@ -81,7 +82,7 @@ void directValuesAndAliases() {
 			for (Value value : {valueInteger(16777217),valueInteger(INT32_MIN),valueFloatBits(0x80000000),
 				valueFloatBits(0xffa12345),valueFloat(-2.75f),valueBool(true)}) {
 				const auto image=program(op,kind,known,alias);
-				Number32Machine native(image),scalar(image,false);
+				Number32Machine native(image, true, MEMORY_BSS_BYTES), scalar(image, false, MEMORY_BSS_BYTES);
 				setup(native,valueInteger(DYNAMIC_RAM_BASE+0x400),value);setup(scalar,valueInteger(DYNAMIC_RAM_BASE+0x400),value);
 				test::runCpuParity(native.cpu,scalar.cpu,32);parity(native,scalar);requireNative(native.cpu);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -100,7 +101,7 @@ void watchedAndCounted() {
 		const auto op=words?(displaced?OpCode::STORE_MEM_WORDS_D:OpCode::STORE_MEM_WORDS)
 			:(displaced?OpCode::STORE_MEM_D:OpCode::STORE_MEM);
 		const auto image=program(op,words?3:5);
-		Number32Machine native(image),scalar(image,false);
+		Number32Machine native(image, true, MEMORY_BSS_BYTES), scalar(image, false, MEMORY_BSS_BYTES);
 		const u32 address=DYNAMIC_RAM_BASE+MAPPED_PAGE_BYTE_SIZE-4;
 		for (auto* m : {&native,&scalar}) {
 			setup(*m,valueInteger(address-(displaced?1020u:0)),valueInteger(16777217));
@@ -128,7 +129,7 @@ void retainedWrites() {
 	constexpr u32 port=IO_BASE+0x5000;
 	for (bool bad : {false,true}) {
 		const auto image=program(OpCode::STORE_MEM,5);
-		Number32Machine native(image),scalar(image,false);
+		Number32Machine native(image, true, MEMORY_BSS_BYTES), scalar(image, false, MEMORY_BSS_BYTES);
 		Device devices[2];
 		for (int i=0;i<2;++i) {
 			auto& m=i==0?native:scalar;

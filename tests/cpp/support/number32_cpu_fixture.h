@@ -16,9 +16,9 @@ struct Number32Machine {
 	IrqController irq;
 	ExecutionAddressSpace addresses;
 	CPU cpu;
-	Number32Machine(const Blua32TestImage& image, bool native = true)
+	Number32Machine(const Blua32TestImage& image, bool native = true, u32 bssByteCount = 0)
 		: rom([&] {
-			  auto encoded = encodeBlua32TestRom(RomImageDomain::System, image);
+			  auto encoded = encodeBlua32TestRom(RomImageDomain::System, image, bssByteCount);
 			  encoded.bytes.resize((encoded.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~size_t{MAPPED_PAGE_BYTE_MASK});
 			  return encoded;
 		  }()),
