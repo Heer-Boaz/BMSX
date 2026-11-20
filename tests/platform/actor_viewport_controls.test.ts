@@ -123,7 +123,10 @@ test('flight capture is cancelled by focus loss, popups and input interruption, 
 	}
 	action('actorLab.viewOptions'); choose('actorLab.gameView');
 	const p = f.point(); f.click(p.x, p.y);
-	assert.ok(inputFocus.target?.guestInput, 'Game mode still focuses the existing guest-input recipient');
+	assert.equal(inputFocus.target?.guestInput, undefined, 'clicking the game image preserves inspection input');
+	assert.equal(editor.commands.isEnabled('actorLab.controlGame', pane.commandTarget), true);
+	editor.commands.execute('actorLab.controlGame', pane.commandTarget);
+	assert.equal(editor.guestInputRecipient, input.controller.viewport.recipient, 'Control Game focuses the existing guest-input recipient');
 	for (const code of ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyF']) {
 		assert.equal(key(code, true), false, `${code} belongs to gameplay, not camera commands`); key(code, false);
 	}

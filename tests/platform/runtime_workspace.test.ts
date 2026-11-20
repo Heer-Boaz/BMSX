@@ -179,7 +179,7 @@ test('FSM graph selection and camera survive world navigation and navigation-his
 });
 
 test('Space toggles the inspected runtime without repeating or stealing captured game keys', async t => {
-	const f = await fixture(t), { input, pane, key, group } = f;
+	const f = await fixture(t), { input, pane, key, group, editor } = f;
 	pane.focus(); assert.equal(f.execution.paused, true);
 	assert.equal(key('Space'), true); key('Space', false);
 	assert.equal(f.execution.paused, false); const start = f.runtime.machine.scheduler.currentNowCycles();
@@ -190,7 +190,10 @@ test('Space toggles the inspected runtime without repeating or stealing captured
 	key('Space'); key('Space', false); assert.equal(f.execution.paused, false);
 	const bounds = input.previewBounds;
 	f.click((bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2);
-	assert.ok(inputFocus.target?.guestInput);
+	assert.equal(inputFocus.target?.guestInput, undefined, 'the game image still belongs to inspection');
+	assert.equal(editor.commands.isEnabled('actorLab.controlGame', pane.commandTarget), true);
+	editor.commands.execute('actorLab.controlGame', pane.commandTarget);
+	assert.equal(editor.guestInputRecipient, input.controller.viewport.recipient);
 	assert.equal(key('Space'), false); key('Space', false);
 	assert.equal(f.execution.paused, false, 'guest Space stays owned by the game');
 });
