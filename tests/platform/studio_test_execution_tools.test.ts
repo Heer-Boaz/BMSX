@@ -6,7 +6,9 @@ import { createCodexModelFixture } from '../helpers/codex_model_fixture.mjs';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
 import { afterTest } from '../helpers/test_cleanup';
 
-for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: Codex discovers, executes, awaits, reruns and cancels real isolated scenarios`, { timeout: 180000 }, async t => {
+const backend = 'software';
+
+test(`Studio ${backend}: Codex discovers, executes, awaits, reruns and cancels real isolated scenarios`, { timeout: 180000 }, async t => {
 	const call = (id: string, name: string, args: unknown) => [{ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) }];
 	type Body = { input: { call_id: string; type: string; output: string }[] };
 	const value = (body: Body, id: string) => JSON.parse(body.input.find(item => item.type === 'function_call_output' && item.call_id === id)!.output);

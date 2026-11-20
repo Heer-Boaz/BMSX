@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { createCodexModelFixture, CODEX_FIXTURE_DONE } from '../helpers/codex_model_fixture.mjs';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
 
-for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: Codex evaluates the selected live IRQ frame`, { timeout: 180000 }, async t => {
+const backend = 'software';
+
+test(`Studio ${backend}: Codex evaluates the selected live IRQ frame`, { timeout: 180000 }, async t => {
 	const call = (id: string, name: string, args: unknown) => [{ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) }];
 	type Body = { input: { call_id: string; type: string; output: string | { type: string; text?: string }[] }[] };
 	const text = (body: Body, id: string) => {

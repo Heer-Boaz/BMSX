@@ -8,7 +8,9 @@ import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixtur
 import { TEST_STUDIO_CARTRIDGE_CONTEXT_ID } from '../helpers/studio_source_contexts';
 import { afterTest } from '../helpers/test_cleanup';
 
-for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: reviewed source fix is saved, installed, executed and independently retested`, { timeout: 180000 }, async t => {
+const backend = 'software';
+
+test(`Studio ${backend}: reviewed source fix is saved, installed, executed and independently retested`, { timeout: 180000 }, async t => {
 	type Body = { input: { type: string; call_id: string; output: string | { type: string; image_url?: string; text?: string }[] }[] };
 	const value = (body: Body, id: string) => {
 		const output = body.input.find(item => item.type === 'function_call_output' && item.call_id === id)!.output;

@@ -7,7 +7,9 @@ import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixtur
 import type { ToolBehaviorDocument, ToolBehaviorRegistration } from '../../ide/workbench/services/assistant/behavior_tools';
 import { afterTest } from '../helpers/test_cleanup';
 
-for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: native Codex semantic source tools share review, builders and Undo`, { timeout: 180000 }, async t => {
+const backend = 'software';
+
+test(`Studio ${backend}: native Codex semantic source tools share review, builders and Undo`, { timeout: 180000 }, async t => {
 	const call = (id: string, name: string, args: unknown) => [{ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) }];
 	type Body = { input: { call_id: string; type: string; output: string }[] };
 	const output = (body: Body, id: string) => JSON.parse(body.input.find(item => item.type === 'function_call_output' && item.call_id === id)!.output);

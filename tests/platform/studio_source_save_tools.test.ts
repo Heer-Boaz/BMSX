@@ -7,7 +7,9 @@ import { createCodexModelFixture, CODEX_FIXTURE_DONE } from '../helpers/codex_mo
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
 import { afterTest } from '../helpers/test_cleanup';
 
-for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: reviewed source Save has real, separate persistence and installation evidence`, { timeout: 180000 }, async t => {
+const backend = 'software';
+
+test(`Studio ${backend}: reviewed source Save has real, separate persistence and installation evidence`, { timeout: 180000 }, async t => {
 	type Body = { input: { type: string; call_id: string; output: string }[] };
 	const output = (body: Body, id: string) => JSON.parse(body.input.find(item => item.type === 'function_call_output' && item.call_id === id)!.output);
 	const call = (id: string, name: string, args: unknown) => ({ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) });

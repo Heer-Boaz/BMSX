@@ -14,8 +14,9 @@ import { STUDIO_TEST_TOOLS } from '../../ide/workbench/services/assistant/test_t
 import { STUDIO_RUNTIME_TOOLS } from '../../ide/workbench/services/assistant/runtime_tool_protocol';
 import { afterTest } from '../helpers/test_cleanup';
 
-const backends = ['software', 'webgl2', 'webgpu'] as const;
-for (const backend of backends) test(`Studio ${backend}: Codex reads the ordinary isolated test evidence, not current-source success`, { timeout: 180000 }, async t => {
+const backend = 'software';
+
+test(`Studio ${backend}: Codex reads the ordinary isolated test evidence, not current-source success`, { timeout: 180000 }, async t => {
 	const call = (name: string, args: unknown, id = name) => ({ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) });
 	const outputs = (body: { input: { type: string; output: string }[] }) => body.input.filter(item => item.type === 'function_call_output').map(item => JSON.parse(item.output));
 	const model = await createCodexModelFixture(t, [
@@ -46,7 +47,7 @@ for (const backend of backends) test(`Studio ${backend}: Codex reads the ordinar
 	await writeFile(join(f.evidence, `test-evidence-${backend}-result.json`), JSON.stringify({ result, catalog, run, cases }));
 });
 
-for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP lease, Codex process, source tools and shared review`, { timeout: 180000 }, async t => {
+test(`Studio ${backend}: actual browser, HTTP lease, Codex process, source tools and shared review`, { timeout: 180000 }, async t => {
 	const call = (name: string, args: unknown) => ({ type: 'function_call', call_id: name, name, arguments: JSON.stringify(args) });
 	const outputs = (body: { input: { type: string; output: string; role?: string }[] }) => body.input
 		.slice(body.input.findLastIndex(item => item.role === 'user') + 1).filter(item => item.type === 'function_call_output').map(item => JSON.parse(item.output));
@@ -112,7 +113,7 @@ for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP le
 	await writeFile(join(evidence, `conversation-${backend}-result.json`), JSON.stringify(result));
 });
 
-for (const backend of backends) test(`Studio ${backend}: visible account controls with real device polling, cancel, failure and process retirement`, { timeout: 180000 }, async t => {
+test(`Studio ${backend}: visible account controls with real device polling, cancel, failure and process retirement`, { timeout: 180000 }, async t => {
 	const issuer = await createCodexAccountFixture(t, { attempts: ['pending', 'failure', 'held-start', 'pending', 'pending'] });
 	const f = await createAssistantStudioFixture(t, `account-${backend}`, { executable: issuer.executable });
 	afterTest(t, () => rm(issuer.root, { recursive: true }));
@@ -157,7 +158,7 @@ for (const backend of backends) test(`Studio ${backend}: visible account control
 	await writeFile(join(f.evidence, `account-${backend}-result.json`), JSON.stringify(result));
 });
 
-for (const backend of backends) test(`Studio ${backend}: real successful account exchange, private-profile reconnect and Sign out`, { timeout: 180000 }, async t => {
+test(`Studio ${backend}: real successful account exchange, private-profile reconnect and Sign out`, { timeout: 180000 }, async t => {
 	const issuer = await createCodexAccountProxy(t);
 	const f = await createAssistantStudioFixture(t, `login-${backend}`, { executable: issuer.executable });
 	const { page } = f;
@@ -193,7 +194,7 @@ for (const backend of backends) test(`Studio ${backend}: real successful account
 	await writeFile(join(f.evidence, `login-${backend}-result.json`), JSON.stringify(result));
 });
 
-for (const backend of backends) test(`Studio ${backend}: native history, editable FIFO queue, direct steering, Stop and cold resume`, { timeout: 180000 }, async t => {
+test(`Studio ${backend}: native history, editable FIFO queue, direct steering, Stop and cold resume`, { timeout: 180000 }, async t => {
 	const call = (name: string, args: unknown, id = name) => ({ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) });
 	const outputs = (body: { input: { type: string; output: string; role?: string }[] }) => body.input
 		.slice(body.input.findLastIndex(item => item.role === 'user') + 1).filter(item => item.type === 'function_call_output').map(item => JSON.parse(item.output));

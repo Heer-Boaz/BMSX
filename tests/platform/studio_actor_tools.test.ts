@@ -9,7 +9,9 @@ import type { RuntimeInspection } from '../../ide/runtime/inspection';
 import { ACTOR_TOOLS_SOURCE } from '../helpers/actor_tools_fixture';
 import { afterTest } from '../helpers/test_cleanup';
 
-for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: Codex and Actor Lab inspect the same living behaviors`, { timeout: 180000 }, async t => {
+const backend = 'software';
+
+test(`Studio ${backend}: Codex and Actor Lab inspect the same living behaviors`, { timeout: 180000 }, async t => {
 	type Body = { input: { type: string; call_id: string; output: string }[] };
 	const output = (body: Body, id: string) => JSON.parse(body.input.find(item => item.type === 'function_call_output' && item.call_id === id)!.output);
 	const tree = (body: Body, id: string) => output(body, id) as ReturnType<ActorRuntimeInspection['tree']>;

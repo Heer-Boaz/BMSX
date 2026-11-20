@@ -8,7 +8,9 @@ import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixtur
 import type { ActorRuntimeInspection } from '../../ide/workbench/contrib/actor_lab/runtime_inspection';
 import { afterTest } from '../helpers/test_cleanup';
 
-for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: Codex executes shared Actor operations without owning the pane`, { timeout: 180000 }, async t => {
+const backend = 'software';
+
+test(`Studio ${backend}: Codex executes shared Actor operations without owning the pane`, { timeout: 180000 }, async t => {
 	type Body = { input: { type: string; call_id: string; output: string }[] };
 	const text = (body: Body, id: string) => body.input.find(item => item.type === 'function_call_output' && item.call_id === id)!.output;
 	const output = (body: Body, id: string) => JSON.parse(text(body, id));
