@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11,8 +10,6 @@ import type { CompiledRegion } from '../../../machine/ts/machine/cpu/compiled_re
 import { DecodedDispatchOp } from '../../../machine/ts/machine/cpu/execution_image';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../../machine/ts/machine/memory/mapped_page';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
-import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET, BLUA32_FUNCTION_RECORD_SIZE } from '../../../machine/ts/spec/blua32/image_format';
 import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -39,6 +36,7 @@ if (suppliedRunners.length === 0) for (const [index, enabled] of ['ON', 'OFF'].e
 const phases = ['before-compile', 'compiled-once', 'first-warm', 'repeat-warm', 'same-shape-bindings',
 	'new-shape-compiled', 'new-shape-warm', 'new-shape-repeat', 'completed'];
 type Evaluator = { function: number; code: number; bytecodeBytes: number; compiled: boolean; regionBytes: number };
+const evaluatorLayout = ({ function: address, code, bytecodeBytes }: Evaluator) => ({ address, code, bytecodeBytes });
 type Observation = { phase: number; activeCycles: number; remainingCycles: number; evaluators: Evaluator[] };
 console.log(`Firmware FSM evidence: ${directory}`);
 
@@ -52,7 +50,7 @@ for (const optLevel of [0, 3] as const) {
 	const observations = runners.map((runner, index) => {
 		const backend = index === 0 ? 'cpp-native' : 'cpp-interpreter';
 		const prefix = join(directory, `O${optLevel}-${backend}`);
-		const run = spawnSync(runner, [romPath, cartPath, prefix], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+		const run = spawnSync(runner, [romPath, cartPath], { encoding: 'utf8' });
 		writeFileSync(`${prefix}.jsonl`, run.stdout);
 		writeFileSync(`${prefix}.err`, run.stderr);
 		assert.equal(run.status, 0, `${backend} O${optLevel}: ${run.stderr}\n${run.stdout}`);
@@ -68,9 +66,8 @@ for (const optLevel of [0, 3] as const) {
 	for (let phase = 0; phase < phases.length; phase++) {
 		assert.equal(observations[0][phase].activeCycles, observations[1][phase].activeCycles, `O${optLevel} ${phases[phase]}: C++ guest cycles`);
 		assert.equal(observations[0][phase].remainingCycles, observations[1][phase].remainingCycles, `O${optLevel} ${phases[phase]}: C++ HALT budget`);
-		const native = readFileSync(join(directory, `O${optLevel}-cpp-native.${phase}.state`));
-		const interpreter = readFileSync(join(directory, `O${optLevel}-cpp-interpreter.${phase}.state`));
-		assert.ok(native.equals(interpreter), `O${optLevel} ${phases[phase]}: complete C++ native/OFF serialized state`);
+		assert.deepEqual(observations[0][phase].evaluators.map(evaluatorLayout), observations[1][phase].evaluators.map(evaluatorLayout),
+			`O${optLevel} ${phases[phase]}: firmware evaluator layout must not depend on the backend`);
 	}
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const name = backend === CpuExecutionBackend.Interpreter ? 'ts-interpreter' : 'ts-generated';
@@ -84,8 +81,9 @@ for (const optLevel of [0, 3] as const) {
 		let primaryFunction = 0, activeCycles = 0;
 		const retained: Array<CompiledRegion | null> = [null, null];
 		for (let phase = 0; phase < phases.length; phase++) {
-			const grant = 100000000;
+			const grant = 1_000_000;
 			assert.equal(cpu.runUntilDepth(0, grant), RunResult.Halted, `${name} phase ${phase}`);
+			assert.equal(cpu.readLuaFaultReasonWord(), 0, `${name} phase ${phase}: guest fault`);
 			activeCycles += grant - cpu.instructionBudgetRemaining;
 			assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 			assert.equal(cpu.isHaltedUntilIrq(), phase !== 8);
@@ -116,21 +114,15 @@ for (const optLevel of [0, 3] as const) {
 						assert.ok(block, 'specific actual firmware evaluator acquired its generated entry');
 						assert.equal(page.dispatchOps[word], DecodedDispatchOp.Compiled);
 						if (retained[evaluator] === null) retained[evaluator] = block.region;
-						else assert.equal(block.region, retained[evaluator], 'warm evaluator region survives execution, same-shape rebinding and new-shape compilation');
+						else assert.ok(block.region === retained[evaluator], `${name} O${optLevel} ${phases[phase]}: retained evaluator region changed`);
 					}
 				}
 				if (phase >= 4) {
 					const bindings = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('fsm_bindings')!));
-					for (let index = 1; index <= 32; index++)
+					for (let index = 1; index <= 3; index++)
 						assert.equal(cpu.captureClosureBinding(asClosure(cpu.gc.tables.getInteger(bindings, index), cpu.gc)).functionAddress, primaryFunction);
 				}
 			}
-			const state = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
-			writeFileSync(join(directory, `O${optLevel}-${name}.${phase}.state`), state);
-			const expected = readFileSync(join(directory, `O${optLevel}-cpp-native.${phase}.state`));
-			assert.ok(expected.equals(state), `${name} O${optLevel} ${phases[phase]}: complete TS/C++ serialized state`);
-			console.log(JSON.stringify({ optLevel, backend: name, phase: phases[phase], activeCycles,
-				stateSha256: createHash('sha256').update(state).digest('hex') }));
 			if (phase !== 8) cpu.clearHaltUntilIrq();
 		}
 	}

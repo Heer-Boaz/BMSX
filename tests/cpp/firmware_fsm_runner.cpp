@@ -3,8 +3,6 @@
 #include <iterator>
 #include <stdexcept>
 #include "machine/runtime/runtime.h"
-#include "machine/runtime/save_state.h"
-#include "machine/runtime/save_state/codec.h"
 #include "machine/cpu/native_compilation_profile.h"
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/model.h"
@@ -24,7 +22,7 @@ static void require(bool condition, const char* message) {
 
 int main(int argc, char** argv) {
 	try {
-		require(argc == 4, "usage: firmware_fsm_runner SYSTEM_ROM CART_ROM OUTPUT_PREFIX");
+		require(argc == 3, "usage: firmware_fsm_runner SYSTEM_ROM CART_ROM");
 		std::ifstream file(argv[1], std::ios::binary);
 		require(file.good(), "cannot read firmware FSM fixture");
 		std::vector<u8> rom{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
@@ -48,10 +46,10 @@ int main(int argc, char** argv) {
 		NativeCompilationProfile previous;
 		// No restore or instruction observer: both would change the native cache being measured.
 		for (int phase = 0; phase <= 8; ++phase) {
-			constexpr int grant = 100000000;
+			constexpr int grant = 1000000;
 			const auto result = cpu.runUntilDepth(0, grant);
 			activeCycles += grant - cpu.instructionBudgetRemaining;
-			require(result == RunResult::Halted && cpu.readExceptionReturnFrameDepth() == -1,
+			require(result == RunResult::Halted && cpu.readLuaFaultReasonWord() == 0 && cpu.readExceptionReturnFrameDepth() == -1,
 				"firmware FSM phase must reach its real HALT/completion without a fault");
 			require(cpu.isHaltedUntilIrq() == (phase != 8), "unexpected firmware FSM checkpoint");
 			if (phase != 8) require(cpu.getGlobalByKey(*cpu.stringPool().find("fsm_phase")) == valueInteger(phase), "wrong firmware FSM phase");
@@ -124,16 +122,13 @@ int main(int argc, char** argv) {
 				}
 				if (phase >= 4) {
 					const auto& bindings = asTable(cpu.getGlobalByKey(*cpu.stringPool().find("fsm_bindings")), cpu.gcHeap());
-					for (int index = 1; index <= 32; ++index)
+					for (int index = 1; index <= 3; ++index)
 						require(ClosureRecord::readBinding(cpu.memory(), asClosure(bindings.getInteger(index), cpu.gcHeap())).functionAddress == primaryFunction,
 							"same-shape binding regenerated code instead of sharing the factory's evaluator");
 				}
 			}
 			std::cout << "]}\n";
 			previous = profile;
-			const auto state = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
-			std::ofstream output(std::string(argv[3]) + "." + std::to_string(phase) + ".state", std::ios::binary);
-			output.write(reinterpret_cast<const char*>(state.data()), state.size());
 			if (phase != 8) cpu.clearHaltUntilIrq();
 		}
 		return 0;

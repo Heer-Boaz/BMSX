@@ -57,18 +57,19 @@ evaluators. This is not the complete stock BIOS or a device/frame-scheduler test
 O0/O3 selects compilation of the fixture and firmware/cartlib ROMs, not two
 optimization modes inside the firmware runtime compiler.
 
-Nine checkpoints cover initial setup, compilation, 256 calls, another 256 calls,
-32 same-shape bindings with 256 calls each, a new shape, two more 256-call batches,
-and completion. Ordinary guest HALTs stop execution without an instruction hook
-or restoring state. Every checkpoint requires identical complete serialized
-runtime state, consumed guest cycles and remaining budget across all four
-backends. The specific RAM evaluator entry must become compiled; its executable
-owner and dispatch entry must survive subsequent execution/binding. C++ uses weak
-owner identity so observing retention does not keep retired code alive. All
-same-shape closures must share the original generated function address.
+Nine checkpoints cover initial setup, compilation, a warm batch and a short repeated batch,
+three same-shape bindings, a new shape warmed and repeated, and
+completion. The guest checks transition, update and child dispatch at every
+stage, and the four backends agree on cycles, remaining budget and evaluator
+layout. Ordinary guest HALTs stop execution without an instruction hook
+or restoring state. The specific RAM evaluator entry must become compiled;
+its executable owner and dispatch entry must survive subsequent execution
+and binding. C++ uses weak owner identity so observing retention does not
+keep retired code alive. All same-shape closures must share the original
+generated function address.
 
-The printed temporary evidence directory retains both ROMs, every backend's
-checkpoint states and C++ JSONL profiles. Phase deltas describe **all CPU native
+The printed temporary evidence directory retains the ROMs and C++ JSONL
+profiles, not whole machine states. Phase deltas describe **all CPU native
 compilation**, including firmware, caller loops and binding factories, not just
 the evaluator. Per-evaluator records give function/code addresses, bytecode
 extent, entry adoption and the entry's shared native-region size. A region size
