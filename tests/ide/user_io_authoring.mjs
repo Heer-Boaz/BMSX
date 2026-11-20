@@ -14,7 +14,7 @@ test('author, run and live-edit a cart through headless Studio user I/O', { time
 	const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-authoring-'));
 	const host = spawn(process.execPath, [
 		'dist/host_headless_tooling.debug.js', '--system-rom', 'dist/system/bmsx-bios.debug.rom',
-		'--control', '0', '--studio-workspace', workspace, 'hot_resume_test',
+		'--control', '0', '--stepped-control', '--studio-workspace', workspace, 'hot_resume_test',
 	], { stdio: ['ignore', 'pipe', 'pipe'] });
 	const logs = [];
 	const hostClosed = once(host, 'close');

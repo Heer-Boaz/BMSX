@@ -28,6 +28,7 @@ import {
 	HEADLESS_DEFAULT_FRAME_INTERVAL_MS,
 	UnpacedHeadlessFrameLoop,
 	RealtimeHeadlessFrameLoop,
+	SteppedHeadlessFrameLoop,
 } from '../../../hosts/node/headless/frame_loop';
 import { HeadlessClipboard } from '../../../hosts/node/headless/clipboard';
 import { HeadlessInputHub } from '../../../hosts/node/headless/input';
@@ -111,13 +112,17 @@ async function main(): Promise<void> {
 
 	let clock: HostClock;
 	let frames: FrameLoop;
-	if (options.mode.kind === 'control') {
+	let steppedFrames: SteppedHeadlessFrameLoop | undefined;
+	if (options.mode.kind === 'control' && !options.mode.stepped) {
 		clock = new RealtimeHeadlessClock();
 		frames = new RealtimeHeadlessFrameLoop(clock, options.frameIntervalMs);
 	} else {
 		const virtualClock = new VirtualHeadlessClock();
 		clock = virtualClock;
-		frames = new UnpacedHeadlessFrameLoop(virtualClock, options.frameIntervalMs);
+		if (options.mode.kind === 'control') {
+			steppedFrames = new SteppedHeadlessFrameLoop(virtualClock, options.frameIntervalMs);
+			frames = steppedFrames;
+		} else frames = new UnpacedHeadlessFrameLoop(virtualClock, options.frameIntervalMs);
 	}
 	const inputHub = new HeadlessInputHub();
 	const input = new Input(
@@ -258,9 +263,12 @@ async function main(): Promise<void> {
 				ide ? event => ide.editor.dispatchPointer(event) : undefined,
 				ide ? event => ide.editor.dispatchWheel(event) : undefined), videoBackend, captureDirectory, ide ? clipboard : undefined);
 			const finished = Promise.withResolvers<void>();
-			const server = new HostControlServer(request => control.execute(request), () => control.disconnect(), finished.resolve);
+			const server = new HostControlServer(request => {
+				const response = control.execute(request);
+				if (steppedFrames !== undefined && control.waitingForFrame) steppedFrames.requestFrame();
+				return response;
+			}, () => control.disconnect(), finished.resolve);
 			const port = await server.listen(options.mode.port);
-			console.log(JSON.stringify({ hostControl: { port, studio: !!ide, captureDirectory } }));
 			process.once('SIGINT', finished.resolve);
 			process.once('SIGTERM', finished.resolve);
 			const timer = options.ttlMs > 0 ? clock.scheduleOnce(options.ttlMs, () => finished.resolve()) : undefined;
@@ -272,10 +280,12 @@ async function main(): Promise<void> {
 						: runHostFrame(frameSession, runtime, presenter, input, audioOutput, systemOutput, logOutput, presentation, hostOverlayMenu, currentTime);
 					control.afterFrame();
 					if (result === HostFrameRunResult.ExitRequested) finished.resolve();
+					else if (steppedFrames !== undefined && control.waitingForFrame) steppedFrames.requestFrame();
 				} catch (error) {
 					finished.reject(error);
 				}
 			});
+			console.log(JSON.stringify({ hostControl: { port, studio: !!ide, captureDirectory } }));
 			try {
 				await finished.promise;
 			} finally {

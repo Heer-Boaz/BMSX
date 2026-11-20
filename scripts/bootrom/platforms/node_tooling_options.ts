@@ -10,7 +10,7 @@ export type NodeToolingMode =
 	| { kind: 'plain' }
 	| ({ kind: 'timeline' } & CaptureModePaths)
 	| ({ kind: 'host-test'; caseName?: string } & CaptureModePaths)
-	| { kind: 'control'; port: number; workspaceRoot?: string }
+	| { kind: 'control'; port: number; stepped: boolean; workspaceRoot?: string }
 	| ({ kind: 'ide-test' } & CaptureModePaths);
 
 export interface NodeToolingOptions {
@@ -46,6 +46,7 @@ Options:
   --ide-test <file>          Run a host-side Studio test.
   --capture-dir <dir>        Store timeline or test captures separately from the source.
   --control <port>           Live host control on loopback TCP (0 chooses a port).
+  --stepped-control          Advance the virtual host clock only for frame requests from --control.
   --studio-workspace <dir>   Run Studio with real workspace files; requires --control.
   --cpu-profile              Profile fantasy-CPU instructions.
   --help, -h                 Show this help.`;
@@ -64,6 +65,7 @@ export function parseNodeToolingOptions(
 	let frameIntervalMs = defaultFrameIntervalMs;
 	let mode: NodeToolingMode = { kind: 'plain' };
 	let cpuProfile = false;
+	let steppedControl = false;
 	let help = false;
 	let caseName: string | undefined;
 	let workspaceRoot: string | undefined;
@@ -81,10 +83,14 @@ export function parseNodeToolingOptions(
 				if (mode.kind !== 'plain') throw new Error('Only one tooling mode may be selected.');
 				const port = Number(requiredNodeOptionValue(argv, index, argument));
 				if (!(port >= 0 && port <= 65535 && port % 1 === 0)) throw new Error('Invalid TCP port.');
-				mode = { kind: 'control', port };
+				mode = { kind: 'control', port, stepped: false };
 				index += 2;
 				continue;
 			}
+			case '--stepped-control':
+				steppedControl = true;
+				index += 1;
+				continue;
 			case '--studio-workspace':
 				workspaceRoot = path.resolve(requiredNodeOptionValue(argv, index, argument));
 				index += 2;
@@ -171,6 +177,10 @@ export function parseNodeToolingOptions(
 	if (workspaceRoot !== undefined) {
 		if (mode.kind !== 'control') throw new Error('--studio-workspace requires --control.');
 		mode.workspaceRoot = workspaceRoot;
+	}
+	if (steppedControl) {
+		if (mode.kind !== 'control') throw new Error('--stepped-control requires --control.');
+		mode.stepped = true;
 	}
 	if (captureDirectory !== undefined) {
 		if (!('path' in mode)) throw new Error('--capture-dir requires --input-timeline, --test or --ide-test.');

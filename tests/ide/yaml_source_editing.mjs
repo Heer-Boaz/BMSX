@@ -22,7 +22,7 @@ for (const scenario of [
 		await fs.mkdir(path.dirname(target), { recursive: true });
 		await fs.writeFile(target, source);
 		const host = spawn(process.execPath, ['dist/host_headless_tooling.debug.js', '--system-rom', 'dist/system/bmsx-bios.debug.rom',
-			'--control', '0', '--studio-workspace', workspace, scenario.cart], { stdio: ['ignore', 'pipe', 'pipe'] });
+			'--control', '0', '--stepped-control', '--studio-workspace', workspace, scenario.cart], { stdio: ['ignore', 'pipe', 'pipe'] });
 		const closed = once(host, 'close');
 		const logs = [];
 		host.stderr.on('data', data => logs.push(String(data)));

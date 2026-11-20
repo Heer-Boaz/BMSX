@@ -21,6 +21,8 @@ export class HostControlSession {
 		backend.addPresentedFrameListener(this.onPresented);
 	}
 
+	public get waitingForFrame(): boolean { return this.frameWait !== undefined || this.captureWait !== undefined; }
+
 	public async execute(request: HostControlRequest): Promise<unknown> {
 		switch (request.execute) {
 			case 'input':

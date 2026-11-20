@@ -60,3 +60,31 @@ export class UnpacedHeadlessFrameLoop implements FrameLoop {
 		};
 	}
 }
+
+/** Advance on controller demand, not in the gaps between input edges. */
+export class SteppedHeadlessFrameLoop implements FrameLoop {
+	private tick: ((t: MonoTime) => void) | undefined;
+	private pending: NodeJS.Immediate | undefined;
+
+	public constructor(private readonly clock: VirtualHeadlessClock, private readonly stepMs: number) {}
+
+	public start(tick: (t: MonoTime) => void): { stop(): void } {
+		this.tick = tick;
+		return { stop: () => {
+			this.tick = undefined;
+			if (this.pending !== undefined) clearImmediate(this.pending);
+			this.pending = undefined;
+		} };
+	}
+
+	public requestFrame(): void {
+		if (this.tick === undefined || this.pending !== undefined) return;
+		this.pending = setImmediate(this.advance);
+	}
+
+	private readonly advance = (): void => {
+		this.pending = undefined;
+		this.clock.advance(this.stepMs);
+		this.tick?.(this.clock.now());
+	};
+}
