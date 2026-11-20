@@ -422,6 +422,8 @@ private:
 	friend class NativeLowering;
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
 	static NativeBuiltinCallOutcome runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
+	static NativeRomCallBinding* fillNativeRomCallBinding(const CPU* cpu, NativeRomCallBinding* binding,
+		u32 functionAddress, u32 closureBindingFlags) noexcept;
 	static void* tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	void prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pc, MappedBusSignals busSignals);
 	void prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32ExecutionBoot& boot);

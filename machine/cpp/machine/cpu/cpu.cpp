@@ -1687,8 +1687,6 @@ RunResult CPU::runLoop(
 	int nativeFirstDispatchCycles = 0;
 	bool forceScalarOnce = false;
 	NativeCpuRunState nativeState{.state = {}, .cpu = this, .targetDepth = targetDepth,
-		.systemRom = &m_memory.systemRomStorage(),
-		.cartridgeRoms = {m_memory.cartridgeController().romStorage(0), m_memory.cartridgeController().romStorage(1)},
 		.heapPageEntries = m_memory.ramData() + m_heapAllocator.managementOffset() + HEAP_PAGE_ENTRIES,
 		.heapPageLimit = m_heapAllocator.pageLimit(),
 		.error = {}};

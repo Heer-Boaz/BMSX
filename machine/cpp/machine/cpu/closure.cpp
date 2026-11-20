@@ -1,7 +1,5 @@
 #include "machine/cpu/closure.h"
-#include "common/endian.h"
 #include "machine/memory/memory.h"
-#include "spec/blua32/image_format.h"
 
 namespace bmsx::ClosureRecord {
 void initialize(Memory& memory, u32 address, const FunctionPrototype& prototype, u8 white, u32 count, bool canonical, bool latched) {
@@ -39,15 +37,8 @@ FunctionPrototype readBinding(const Memory& memory, u32 address) {
 	} else {
 		Span<const u8> view;
 		// The ROM port does not clock the bus. An undriven binding has zero data lanes.
-		if (memory.bindRomByteView(record.functionAddress, BLUA32_FUNCTION_RECORD_SIZE, bank >= 2u, view)) {
-			const auto* bytes = view.data();
-			record.codeAddress = readLE32(bytes + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
-			record.numParams = readLE32(bytes + BLUA32_FUNCTION_NUM_PARAMS_OFFSET);
-			record.maxStack = readLE32(bytes + BLUA32_FUNCTION_MAX_STACK_OFFSET);
-			record.flags = readLE32(bytes + BLUA32_FUNCTION_FLAGS_OFFSET);
-			record.upvalueTableAddress = readLE32(bytes + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET);
-			record.recordUpvalueCount = readLE32(bytes + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET);
-		}
+		if (memory.bindRomByteView(record.functionAddress, BLUA32_FUNCTION_RECORD_SIZE, bank >= 2u, view))
+			record.readRecordWords(view.data());
 	}
 	return record;
 }

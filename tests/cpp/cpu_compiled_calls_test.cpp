@@ -1231,6 +1231,12 @@ void crossPageCalls(bool open, u32 recordOffset) {
 
 void rawClosureCallBinding(bool ramRecord, bool marker) {
 	const u32 sourceRecord = DYNAMIC_RAM_BASE + 0x1800u;
+	// Both immutable records must replace the same native prototype cache
+	// slot. The earlier record's entry cell stays published throughout.
+	constexpr size_t replacement = 65;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	static_assert(replacement - 1 == NativeRomCallBinding::slotCount);
+#endif
 	test::Blua32TestImage image;
 	image.text.resize(4 * MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
@@ -1248,6 +1254,11 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 		{.firstWord=DECODED_PAGE_WORDS, .wordCount=2, .maxStack=8, .staticClosure=false},
 		{.firstWord=2 * DECODED_PAGE_WORDS, .wordCount=2, .maxStack=8, .staticClosure=false},
 		{.firstWord=3 * DECODED_PAGE_WORDS, .wordCount=2, .maxStack=8}};
+	if (!ramRecord) {
+		const auto prior = image.functions[1], next = image.functions[2];
+		image.functions.resize(replacement, prior);
+		image.functions.push_back(next);
+	}
 	image.closureRelocations = {{1, ramRecord ? sourceRecord : test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	image.globalNames = {"rawBindingMarker"};
 	CpuMachine generated(image, false), scalar(image, true);
@@ -1263,6 +1274,24 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 		machine->cpu.runUntilDepth(0, 100);
 		require(machine->cpu.isHaltedUntilIrq() && machine->cpu.readFrameRegister(0, 4) == valueInteger(11),
 			"one real call/return admits the spare frame before testing the native gate");
+		if (!ramRecord) {
+			machine->cpu.clearHaltUntilIrq();
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0],
+				machine->rom.textAddress + 2 * INSTRUCTION_BYTES);
+			machine->cpu.runUntilDepth(0, 100);
+			require(machine->cpu.isHaltedUntilIrq() && machine->cpu.readFrameRegister(0, 4) == valueInteger(11),
+				"the call with an admitted spare frame can bind the incumbent ROM prototype");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (machine == &generated) {
+				const auto* owner = machine->cpu.activeThread()->currentFrame->executionImage;
+				const auto address = machine->rom.functionAddresses[1];
+				const auto& incumbent = owner->nativeRomCallBindings[
+					(address / BLUA32_FUNCTION_RECORD_SIZE) % NativeRomCallBinding::slotCount];
+				require(incumbent.functionAddress == address && incumbent.entryCells[0] && *incumbent.entryCells[0],
+					"the incumbent cache entry has a live native target before replacement");
+			}
+#endif
+		}
 		machine->cpu.clearHaltUntilIrq();
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0],
 			machine->rom.textAddress + 2 * INSTRUCTION_BYTES);
@@ -1278,7 +1307,7 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 				"a RAM prototype is sampled once by CLOSURE, independently of later source stores");
 			machine->memory.writeRamRecordWord(tail, machine->rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE);
 		} else {
-			machine->memory.writeRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS, machine->rom.functionAddresses[2]);
+			machine->memory.writeRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS, machine->rom.functionAddresses[replacement]);
 		}
 		frame->registers.set(12, valueInteger(73));
 	}

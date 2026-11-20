@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <exception>
 #include <type_traits>
 
@@ -24,9 +23,7 @@ struct NativeCpuRunState {
 	CPU* cpu;
 	int targetDepth;
 	NativeCodeLookup::Group* const* codeRoot = nullptr;
-	const Span<const u8>* systemRom = nullptr;
 	const Span<const u8>* cartridgeRom = nullptr;
-	std::array<const Span<const u8>*, CARTRIDGE_SLOT_COUNT> cartridgeRoms{};
 	const u8* heapPageEntries = nullptr;
 	u32 heapPageLimit = 0;
 	u32 cartridgeSlot = 0;

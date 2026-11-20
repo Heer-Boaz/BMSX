@@ -123,7 +123,7 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 		.diagnosticOpcodes={},
 #endif
 		}, .cpu=&machine.cpu, .targetDepth=0, .codeRoot=owner->nativeCodeLookup->root(0),
-		.systemRom=&machine.memory.systemRomStorage(), .cartridgeRom=machine.memory.cartridgeController().romStorage(0),
+		.cartridgeRom=machine.memory.cartridgeController().romStorage(0),
 		.cartridgeSlot=0, .error={}};
 	// The typed gate models an already admitted segment, not outer-loop IRQ admission.
 	if (interrupt) machine.cpu.requestNonMaskableInterrupt();

@@ -245,7 +245,7 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 		.diagnosticOpcodes={},
 #endif
 		}, .cpu=&m.cpu, .targetDepth=targetDepth, .codeRoot=sourceImage->nativeCodeLookup->root(sourceSlot),
-		.systemRom=&m.memory.systemRomStorage(), .cartridgeRom=m.memory.cartridgeController().romStorage(sourceSlot),
+		.cartridgeRom=m.memory.cartridgeController().romStorage(sourceSlot),
 		.cartridgeSlot=sourceSlot, .frameBank=frameBankWord(sourceImage->executionDomainId), .error={}};
 	// No CPU run loop surrounds this call. Only a same-stable-gate resume can
 	// execute the genuine guest marker instructions before the gate returns.

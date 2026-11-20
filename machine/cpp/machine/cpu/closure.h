@@ -4,8 +4,10 @@
 
 #include <cstddef>
 
+#include "common/endian.h"
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
+#include "spec/blua32/image_format.h"
 #include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
@@ -21,6 +23,16 @@ struct FunctionPrototype {
 	u32 upvalueTableAddress = 0;
 	u32 recordUpvalueCount = 0;
 	i32 executionDomainId = 0;
+	// The memory port has admitted a complete record. Address and domain
+	// belong to the caller's binding, not to these six record words.
+	void readRecordWords(const u8* bytes) {
+		codeAddress = readLE32(bytes + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
+		numParams = readLE32(bytes + BLUA32_FUNCTION_NUM_PARAMS_OFFSET);
+		maxStack = readLE32(bytes + BLUA32_FUNCTION_MAX_STACK_OFFSET);
+		flags = readLE32(bytes + BLUA32_FUNCTION_FLAGS_OFFSET);
+		upvalueTableAddress = readLE32(bytes + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET);
+		recordUpvalueCount = readLE32(bytes + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET);
+	}
 	bool operator==(const FunctionPrototype&) const = default;
 };
 

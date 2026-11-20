@@ -30,6 +30,20 @@ CPU::NativeFrameOffsets CPU::nativeFrameOffsets() {
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
 
+NativeRomCallBinding* CPU::fillNativeRomCallBinding(const CPU* cpu, NativeRomCallBinding* binding,
+	u32 functionAddress, u32 closureBindingFlags) noexcept {
+	const u32 cartridgeSlot = (closureBindingFlags & CLOSURE_BINDING_DOMAIN_MASK) >= 2u;
+	Span<const u8> view;
+	if (!cpu->m_memory.bindRomByteView(functionAddress, BLUA32_FUNCTION_RECORD_SIZE, cartridgeSlot, view)) return nullptr;
+	FunctionPrototype record;
+	record.readRecordWords(view.data());
+	// Cells belonged to the old prototype. The gate binds a live entry for
+	// this record and bank before it commits any guest frame writes.
+	*binding = {.functionAddress = functionAddress, .codeAddress = record.codeAddress, .numParams = record.numParams,
+		.maxStack = record.maxStack, .flags = record.flags};
+	return binding;
+}
+
 NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept {
 	const int base = exit->exitA;
 	const int receiving = exit->exitC == 1 ? 0 : 1;

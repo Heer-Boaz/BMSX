@@ -10,7 +10,14 @@ namespace bmsx {
 
 struct NativeCallScratch {
 	int argumentBase;
-	u32 closureAddress, functionAddress, codeAddress, numParams, maxStack, flags, frameDepth;
+	u32 closureAddress, functionAddress, codeAddress, numParams, maxStack;
+	// These phases are disjoint. The ABI slot is overwritten at each handoff.
+	union {
+		u32 closureBindingFlags;
+		u32 prototypeFlags;
+		i32 placementCycles;
+	};
+	u32 frameDepth;
 	int argCount, varargBase, varargCount, stackBase, stackTop;
 	void* romBinding;
 };
