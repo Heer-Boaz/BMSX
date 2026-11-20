@@ -4,8 +4,9 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test } from 'node:test';
-import type { RomArtifact } from '../../toolchain/ts/rompack/build_manifest';
+import { after, before, test } from 'node:test';
+import { RomArtifactStore } from '../../scripts/rompacker/artifacts';
+import { afterTest } from '../helpers/test_cleanup';
 
 import { parseCartHeader, type CartRomHeader } from '../../machine/ts/rompack/format';
 import {
@@ -26,7 +27,6 @@ import {
 } from '../../scripts/rompacker/rombuilder';
 
 const ROOT = join(process.cwd(), 'tmp', 'data-only-cartridge-test');
-const CLI_ROOT = join(process.cwd(), 'tmp', 'data-only-cartridge-cli-test');
 const EXECUTABLE_ROOT = join(process.cwd(), 'tmp', 'executable-without-rom-test');
 const MANIFEST: CartManifest = {
 	title: 'Data cartridge',
@@ -55,6 +55,12 @@ const EMPTY_HEADER: CartRomHeader = {
 	metadataLength: 0,
 };
 
+// Each invocation builds its own cart and exports to an empty directory.
+// Only the immutable BIOS build is reused between cases with the same recipe.
+let cliStore: RomArtifactStore;
+before(async () => { cliStore = new RomArtifactStore(await mkdtemp(join(tmpdir(), 'bmsx-cart-cli-store-'))); });
+after(() => rm(cliStore.root, { recursive: true, force: true }));
+
 test('cartridge package bounds and executable metadata follow declared hardware', () => {
 	assert.doesNotThrow(() => assertCartridgePackageFitsHardware(
 		CART_ROM_SIZE + 1,
@@ -78,47 +84,40 @@ test('cartridge package bounds and executable metadata follow declared hardware'
 	), /requires an installed ROM device/);
 });
 
-for (const name of ['cartridge_data_conformance', 'system', 'bmsx-bios']) test(`cart production: ${name} stays a cartridge, independently of BIOS selection`, async () => {
-	await rm(CLI_ROOT, { recursive: true, force: true });
-	try {
-		const result = spawnSync(process.execPath, [
-			'--import',
-			'tsx',
-			'scripts/rompacker/rompacker.ts',
-			'--mode',
-			'rompack',
-			'--skiptypecheck',
-			'-romname',
-			name,
-			'-respath',
-			'carts/cartridge_data_conformance/res',
-			'--output-dir',
-			CLI_ROOT,
-			'--store-dir',
-			join(CLI_ROOT, 'store'),
-			'--force',
-		], {
-			cwd: process.cwd(),
-			encoding: 'utf8',
-		});
-		assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-		const packageBytes = await readFile(join(
-			CLI_ROOT,
-			`${name}.rom`,
-		));
-		const packageImage = parseCartridgePackage(packageBytes);
-		assert.deepEqual(packageImage.manifest.hardware, MANIFEST.hardware);
-		assert.equal(packageImage.header.blua32ImageByteCount, 0);
-		const artifacts = join(CLI_ROOT, 'store', 'artifacts');
-		const [id] = await readdir(artifacts);
-		const artifact: RomArtifact = JSON.parse(await readFile(join(artifacts, id, 'artifact.json'), 'utf8'));
-		for (const unit of [artifact.system, artifact.cart!]) for (const output of unit.outputs) {
-			const published = await readFile(join(artifacts, id, output.file));
-			assert.equal(createHash('sha256').update(published).digest('hex'), output.digest);
-			assert.deepEqual(await readFile(join(CLI_ROOT, output.file)), published);
-		}
-	} finally {
-		await rm(CLI_ROOT, { recursive: true, force: true });
+for (const name of ['cartridge_data_conformance', 'system', 'bmsx-bios']) test(`cart production: ${name} stays a cartridge, independently of BIOS selection`, async t => {
+	const outputRoot = await mkdtemp(join(tmpdir(), 'bmsx-cart-cli-export-'));
+	afterTest(t, () => rm(outputRoot, { recursive: true, force: true }));
+	const result = spawnSync(process.execPath, [
+		'--import',
+		'tsx',
+		'scripts/rompacker/rompacker.ts',
+		'--mode',
+		'rompack',
+		'--skiptypecheck',
+		'-romname',
+		name,
+		'-respath',
+		'carts/cartridge_data_conformance/res',
+		'--output-dir',
+		outputRoot,
+		'--store-dir',
+		cliStore.root,
+		...(name === 'cartridge_data_conformance' ? ['--force'] : []),
+	], {
+		cwd: process.cwd(),
+		encoding: 'utf8',
+	});
+	assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+	const packageBytes = await readFile(join(outputRoot, `${name}.rom`));
+	const packageImage = parseCartridgePackage(packageBytes);
+	assert.deepEqual(packageImage.manifest.hardware, MANIFEST.hardware);
+	assert.equal(packageImage.header.blua32ImageByteCount, 0);
+	const artifact = (await cliStore.list()).find(artifact => artifact.target === name);
+	assert.ok(artifact?.cart);
+	for (const unit of [artifact.system, artifact.cart]) for (const output of unit.outputs) {
+		const published = await readFile(join(cliStore.directory(artifact.id), output.file));
+		assert.equal(createHash('sha256').update(published).digest('hex'), output.digest);
+		assert.deepEqual(await readFile(join(outputRoot, output.file)), published);
 	}
 });
 
@@ -146,8 +145,9 @@ for (const debug of [false, true]) test(`${debug ? 'debug' : 'ordinary'} cart pr
 			resourceRoot,
 			'--output-dir',
 			outputRoot,
+			'--store-dir',
+			cliStore.root,
 			...(debug ? ['--debug'] : []),
-			'--force',
 		], {
 			cwd: process.cwd(),
 			encoding: 'utf8',
@@ -190,7 +190,8 @@ test('normal cart production keeps external source-free resources cartridge-owne
 			resourceRoot,
 			'--output-dir',
 			outputRoot,
-			'--force',
+			'--store-dir',
+			cliStore.root,
 		], {
 			cwd: process.cwd(),
 			encoding: 'utf8',
