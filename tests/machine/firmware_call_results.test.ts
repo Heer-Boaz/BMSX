@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { asClosure, valueBool, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
-import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
-import { createCartlibCaseRom, createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { createCartlibCaseRom } from '../helpers/cartlib_cpu';
+import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { profileWarmGuestKernel } from '../helpers/guest_kernel';
+
+// A ceiling for the small test-ROM boot or guest call, not an execution target.
+const firmwareCycleLimit = 500_000;
 
 const cases: { source: string; values: Value[] }[] = [
 	{ source: 'return', values: [] },
@@ -44,7 +47,7 @@ wide = function(...) return ${Array.from({ length: 260 }, (_, index) => index).j
 for (const { source, values } of cases) {
 	const index = callResultRom.add(`return pcall(assert(load(${JSON.stringify(source)})))`);
 	test(`firmware O3 call results: ${source}`, () => {
-		const cpu = callResultRom.run(index, 30_000_000);
+		const cpu = callResultRom.run(index, firmwareCycleLimit);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), ...values]);
 	});
 }
@@ -58,29 +61,21 @@ local source<const> = f.chunk(f.block({ f.return_statement({
 return pcall(lua_compiler.compile_syntax(source, '=tuple-syntax'))
 `);
 test('firmware O3: generated call syntax retains open results', () => {
-	const cpu = callResultRom.run(generatedCall, 30_000_000);
+	const cpu = callResultRom.run(generatedCall, firmwareCycleLimit);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(42), valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()]);
 });
 
-for (const optLevel of [3] as const) test(`firmware O${optLevel}: retained tuple forwarding allocates no guest wrappers`, () => {
-	const { cpu } = createCartlibProgramHarness(`
-tuple = function(...) return 7, nil, false, 9, nil end
-forward = function(...) return ... end
-advance = assert(load('for i = 1, 1000 do forward(tuple()) end; return forward(tuple())'))
-`, { optLevel });
-	runGuestToHalt(cpu, 30_000_000);
+const retainedForward = callResultRom.add(`
+local factory<const> = assert(load('return function(count) for i = 1, count do spread(tuple()) end; return spread(tuple()) end'))
+advance = factory()
+`);
+test('firmware O3: retained tuple forwarding allocates no guest wrappers', () => {
+	const cpu = callResultRom.run(retainedForward, firmwareCycleLimit);
+	// The warmed probe collects the guest heap between calls.
 	const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('advance')!), cpu.gc);
-	runCompletionClosure(cpu, closure, []);
-	let heap = cpu.collectTrackedHeapBytes();
 	const globals = cpu.globalSlotCount;
-	for (let iteration = 0; iteration < 2; iteration++) {
-		runCompletionClosure(cpu, closure, []);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()]);
-		assert.equal(cpu.luaHeap.usedBytes(), heap, 'no transient guest allocation before collection');
-		const stackBytes = heapAllocationBytes(cpu.activeThread.backingByteLength());
-		const collected = cpu.collectTrackedHeapBytes();
-		assert.equal(collected, heap - (stackBytes - heapAllocationBytes(cpu.activeThread.backingByteLength())));
-		heap = collected;
-		assert.equal(cpu.globalSlotCount, globals);
-	}
+	const profile = profileWarmGuestKernel(cpu, closure, 8, firmwareCycleLimit);
+	assert.equal(profile.reservations, 0, 'forwarding an open tuple must not reserve guest heap storage');
+	assert.equal(cpu.globalSlotCount, globals);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()]);
 });
