@@ -270,15 +270,17 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		}, heldFrames);
 		check(ide.editor.editorParts.activeGroup === group && group.model.activeTab.id === id, `tab ${id} opens through its owning visible strip`);
 	};
-	const runMenuCommand = async (command: EditorCommandId) => {
-		check(ide.editor.isActive, 'Run-menu commands require editor focus');
+	const openMenu = async (menu: keyof typeof editorChromeState.menuEntryBounds) => {
+		check(ide.editor.isActive, 'menu commands require editor focus');
 		if (!ide.editor.menubar.expanded) await click(editorChromeState.menuButtonBounds);
-		movePointer(editorChromeState.menuEntryBounds.run);
+		// Hover changes the category of an expanded menu; pressing it afterward closes it.
+		movePointer(editorChromeState.menuEntryBounds[menu]);
 		await frame();
-		check(ide.editor.menubar.activeMenu === 'run', 'Run menu opens through its visible pointer target');
-		const item = ide.editor.contextMenu.model.rows.find(row => row.command === command)!;
-		check(item.enabled, `Run-menu command must be enabled: ${command}`);
-		await clickContextCommand(item.command!);
+		check(ide.editor.menubar.activeMenu === menu, `${menu} opens through its visible pointer target`);
+	};
+	const runMenuCommand = async (command: EditorCommandId, heldFrames = 1) => {
+		await openMenu('run');
+		await clickContextCommand(command, heldFrames);
 	};
 	const runPaletteCommand = async (label: string): Promise<void> => {
 		await press('ControlLeft', 'ShiftLeft', 'KeyP');
@@ -320,7 +322,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	};
 	audio.device.select(audio);
 	return { runtime, presenter, ide, execution, rewind, tasks, history, harness, guest, clock, input, remote, clipboard, observations,
-		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, visiblePreviewPoint, click, clickTab, runMenuCommand, runPaletteCommand, clickContextCommand, settle, cycles, waitForTestFrame, capture: captureCheckpoint };
+		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, visiblePreviewPoint, click, clickTab, openMenu, runMenuCommand, runPaletteCommand, clickContextCommand, settle, cycles, waitForTestFrame, capture: captureCheckpoint };
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;

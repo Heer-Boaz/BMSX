@@ -79,11 +79,11 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	check(picker.model.viewport.scrollTop > 0 && scene.view.hierarchy.outline.scroll === outlineScroll, 'quick pick: wheel scrolls only the popup list');
 	await press('PageDown');
 	check(picker.model.list.selectionIndex >= picker.model.firstVisibleIndex, 'quick pick: keyboard selection is revealed after wheel scrolling');
-	await click(editorChromeState.menuEntryBounds.view, 8);
+	await click(editorChromeState.menuButtonBounds, 8);
 	check(!picker.visible && test.ide.editor.menubar.activeMenu === undefined && inputFocus.target === x.field.focusTarget,
 		'quick pick: one outside held click cancels without clicking through into the View menu');
 
-	await click(editorChromeState.menuEntryBounds.view);
+	await test.openMenu('view');
 	const scenarioItem = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'scenarioLab')!;
 	await test.clickContextCommand(scenarioItem.command!);
 	const scenario = ide.editor.editorParts.activeGroup.model.activeTab;

@@ -13,13 +13,8 @@ import { GX_REGISTER_SOURCE_PATH } from '../../../toolchain/ts/rompack/generated
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 async function historyMenu(test: StudioFixture, command: 'undo' | 'redo'): Promise<void> {
-	if (!test.ide.editor.menubar.expanded) await test.click(editorChromeState.menuButtonBounds);
-	test.movePointer(editorChromeState.menuEntryBounds.edit);
-	await test.frame();
-	check(test.ide.editor.menubar.activeMenu === 'edit', 'focus: real Edit menu opens');
-	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === command)!;
-	check(item.enabled, `focus: ${command} menu reflects the focused control's history`);
-	await test.clickContextCommand(item.command!);
+	await test.openMenu('edit');
+	await test.clickContextCommand(command);
 }
 
 /** Real source controls and pointer/key dispatch; the held-repeat phase models OS editing events explicitly. */

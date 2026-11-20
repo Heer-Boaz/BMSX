@@ -1,7 +1,6 @@
 
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
 import type { EditorCommandId } from '../../../ide/common/commands';
 import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
@@ -11,7 +10,7 @@ import { sourcePane, check, type StudioFixture } from './studio_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
 
 async function openView(test: StudioFixture, command: EditorCommandId): Promise<void> {
-	await test.click(editorChromeState.menuEntryBounds.view);
+	await test.openMenu('view');
 	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === command)!;
 	check(item.enabled, `navigation: ${command} is enabled from ${test.ide.editor.editorParts.activeGroup.model.activeTab.kind}`);
 	await test.clickContextCommand(item.command!);

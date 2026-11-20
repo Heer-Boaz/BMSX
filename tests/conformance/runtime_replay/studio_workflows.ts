@@ -126,7 +126,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === firstInstalledSource && sourcePane(test).find.state.field.text === pendingQuery,
 		'focus: modal keyboard scope blocks both document and field history');
-	await click(editorChromeState.menuEntryBounds.edit);
+	await click(editorChromeState.menuButtonBounds);
 	check(test.ide.editor.menubar.activeMenu === undefined && test.ide.editor.actionPrompt.visible,
 		'focus: modal pointer scope blocks underlying editor commands');
 	await press('Enter');
@@ -234,16 +234,30 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	check(cycles() === steppedAt, 'no ordinary cycles after step');
 
 	// Rewind replaces the debugger stop, not its breakpoints or source documents.
+	const steppedInspection = ide.inspection.open();
+	const oldActor = steppedInspection.values.describe(nemesisTitle(test));
+	check(oldActor.kind === 'table' && oldActor.reference !== undefined, 'inspection lends a handle to the stopped actor');
 	await press('ControlRight', 'ShiftRight');
 	await press('ControlRight', 'AltRight');
 	for (let index = 0; index < 3; index += 1) await press('ArrowUp');
 	await press('Enter');
-	const oldActor = nemesisTitle(test);
 	rewind.seekTo(history.earliestCycles);
 	await settle();
 	check(ide.debugger.source.stop === undefined && !ide.debugger.stopPresentationPending, 'restore invalidates the old stop');
 	check(sourcePane(test).code.hoverTooltip === null, 'restore invalidates cached inspection');
-	check(nemesisTitle(test) !== oldActor, 'inspection reacquires objects from restored heap');
+	let expired = false;
+	try { steppedInspection.read(oldActor.reference!, 0, 1); } catch (error) { expired = String(error).includes('expired'); }
+	check(expired, 'restore retires the old borrow even if the guest table keeps its RAM address');
+	const restoredInspection = ide.inspection.open();
+	try {
+		const restoredActor = restoredInspection.values.describe(nemesisTitle(test));
+		check(restoredActor.kind === 'table' && restoredActor.reference !== undefined && restoredActor.reference !== oldActor.reference,
+			'inspection borrows the actor again from the restored heap');
+		const { entries } = restoredInspection.read(restoredActor.reference!, 0, 1);
+		check(entries.length === 1, 'the restored actor handle reads real table contents');
+	} finally {
+		restoredInspection.dispose();
+	}
 	check(execution.userPaused, 'explicit rewind is allowed without lifting user pause');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
@@ -308,7 +322,9 @@ export async function runStudioWorkflows(test: StudioFixture) {
 		&& ide.fault.lastLuaCallStack.length !== 0, 'guest init fault exposes actual stack');
 	check(runtime.completionCallPending() && history.mode === HistoryMode.Disabled, 'failed init retains completion ownership');
 	const faultActor = nemesisTitle(test);
-	harness.openLuaSource('title_screen.lua');
+	// The supervisor is executing the BIOS now; repair the authored cartridge source.
+	harness.openLuaSource(model.resource.path, model.resource.contextId);
+	check(harness.getActiveEditorDocument().model === model, 'fault repair uses the original cartridge working copy');
 	harness.replaceActiveCodeSource(source.replace(originalRule, "pattern = 'up[jp]'"));
 	await harness.performHotResume().admission;
 	await until(() => tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive
@@ -322,19 +338,17 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	}
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
-	await click(editorChromeState.menuEntryBounds.run);
-	check(test.ide.editor.menubar.activeMenu === 'run', 'Run menu opens through its visible pointer hit target');
-	const pauseItem = test.ide.editor.contextMenu.model.rows[0];
-	const continueItem = test.ide.editor.contextMenu.model.rows[1];
-	check(pauseItem.active && pauseItem.enabled, 'checked Pause remains enabled as a toggle');
-	check(!continueItem.enabled, 'debugger Continue is not a second host-pause button');
+	await test.openMenu('run');
+	const rows = test.ide.editor.contextMenu.model.rows;
+	const pauseItem = rows.find(row => row.command === 'pause');
+	const continueItem = rows.find(row => row.command === 'debugContinue');
+	check(pauseItem?.active === true && pauseItem.enabled, 'checked Pause remains enabled as a toggle');
+	check(continueItem?.enabled === false, 'debugger Continue is not a second host-pause button');
 	await test.clickContextCommand('pause', 8);
 	check(!execution.userPaused && !ide.editor.isActive, 'one held pointer press resumes without repeatedly toggling');
 	await press('ControlRight', 'ShiftRight');
-	await click(editorChromeState.menuEntryBounds.run);
-	await test.clickContextCommand('pause', 8);
+	await runMenuCommand('pause', 8);
 	check(execution.userPaused && ide.editor.isActive, 'pointer Pause does not close or replace the IDE');
-	await click(editorChromeState.menuEntryBounds.run);
 	await testCapturedSourceApply(test);
 	await testAemSourceApplication(test);
 	await testSourceFormatting(test);

@@ -1,6 +1,5 @@
 import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
 import { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { inputFocus } from '../../../ide/input/focus';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import { check, type StudioFixture } from './studio_fixture';
@@ -106,7 +105,7 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 }
 
 export async function presentCommandPalette(test: StudioFixture): Promise<void> {
-	await test.click(editorChromeState.menuEntryBounds.view);
+	await test.openMenu('view');
 	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'commandPalette')!;
 	await test.clickContextCommand(item.command!);
 	check(test.ide.editor.quickInput.visible, 'palette: the actual View menu also exposes Command Palette');
