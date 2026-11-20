@@ -8,6 +8,7 @@ import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavio
 import { collectBehaviorRegistrations } from '../../ide/workbench/contrib/behavior_lens/registrations';
 import type { BehaviorSourceNode } from '../../ide/workbench/contrib/behavior_lens/model';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { playableStudioCartSkip } from '../helpers/playable_studio_carts.mjs';
 
 const API_MODULES = ['cartlib/fsm/library','cartlib/behaviour_tree/library','cartlib/actioneffects'];
 
@@ -56,7 +57,7 @@ tree:register('colon', {})`, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: '
 	assert.ok(flatten(document.definitions).some(node => node.kind === 'state' && node.label === 'idle'));
 });
 
-test('behavior lens gives reused Moon behavior-tree initializers distinct view occurrences', () => {
+test('behavior lens gives reused Moon behavior-tree initializers distinct view occurrences', { skip: playableStudioCartSkip }, () => {
 	const path = 'carts/nemesis_s/enemies/moon_tree.lua';
 	const document = buildDocument(path, readFileSync(path, 'utf8'));
 	assert.equal(document.definitions.length, 1);
@@ -191,7 +192,7 @@ local function hidden(register_tree) register_tree('not_an_api', {}) end
 	assert.deepEqual(document.definitions.map(definition => definition.occurrenceRange.start.line), [3, 6, 8]);
 });
 
-test('behavior registration correspondence resolves literal and immutable const ids', () => {
+test('behavior registration correspondence resolves literal and immutable const ids in the two games', { skip: playableStudioCartSkip }, () => {
 	const nemesisPath = 'carts/nemesis_s/player/actioneffects.lua';
 	const nemesis = collectBehaviorRegistrations(
 		{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: nemesisPath },

@@ -9,9 +9,7 @@ import { buildPietiousSource, createPietiousPositionEdit } from '../../ide/workb
 import { buildNemesisSource, createNemesisMarkerMoveEdit } from '../../ide/workbench/contrib/cart_maps/nemesis_source';
 import { parseStructuredTextDocument } from '../../toolchain/ts/rompack/aem';
 import { afterTest } from '../helpers/test_cleanup';
-
-const castleSource = readFileSync('carts/pietious/res/data/castle_map.yaml', 'utf8');
-const stageSource = readFileSync('carts/nemesis_s/res/data/nemesis_s_stage.yaml', 'utf8');
+import { playableStudioCartSkip } from '../helpers/playable_studio_carts.mjs';
 
 function apply(source: string, edits: readonly EditorTextEdit[]): string {
 	for (let index = edits.length - 1; index >= 0; index -= 1) {
@@ -21,7 +19,8 @@ function apply(source: string, edits: readonly EditorTextEdit[]): string {
 	return source;
 }
 
-test('real Pietious room edits only the existing coordinate tokens, retaining every other byte', () => {
+test('real Pietious room edits only the existing coordinate tokens, retaining every other byte', { skip: playableStudioCartSkip }, () => {
+	const castleSource = readFileSync('carts/pietious/res/data/castle_map.yaml', 'utf8');
 	const document = buildPietiousSource(castleSource, 3);
 	assert.equal(document.diagnostic, null);
 	const room = document.rooms.find(room => room.id === '2')!;
@@ -90,7 +89,8 @@ test('Pietious unsupported and incomplete authoring is explicitly source-only, i
 	}
 });
 
-test('the generated Stadsburg stage is not editable as an authored glyph map', () => {
+test('the generated Stadsburg stage is not editable as an authored glyph map', { skip: playableStudioCartSkip }, () => {
+	const stageSource = readFileSync('carts/nemesis_s/res/data/nemesis_s_stage.yaml', 'utf8');
 	const document = buildNemesisSource(stageSource, 5);
 	assert.ok(document.diagnostic);
 	assert.deepEqual(document.markers, []);
@@ -157,7 +157,10 @@ test('Nemesis source forms preserve quote style and refuse occupied or unsupport
 test('source and map edits share one history, and stale projections cannot write intervening text', t => {
 	const service = new EditorTextModelService();
 	afterTest(t, () => service.clear());
-	for (const [path, source] of [['castle_map.yaml', castleSource], ['glyph_stage.yaml', 'map_rows: ["m "] # retained\n']]) {
+	for (const [path, source] of [
+		['castle_map.yaml', '2: {map: ["..."], objects: [{type: rock, x: 1, y: 2}]} # retained\n'],
+		['glyph_stage.yaml', 'map_rows: ["m "] # retained\n'],
+	]) {
 		const model = service.retain({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'data', resid: path } }, 'yaml', source);
 		let operation: EditorModelEdit;
 		if (path === 'castle_map.yaml') {

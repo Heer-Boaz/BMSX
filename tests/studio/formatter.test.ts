@@ -87,7 +87,7 @@ test('BLua struct declarations indent their fields without reserving ordinary id
 });
 
 test('formatting real source is idempotent and preserves non-whitespace lexemes and values', () => {
-	for (const path of ['cartlib/world/world.lua', 'machine/bios/gpu/gpu.lua', 'carts/nemesis_s/scenes/root.lua', 'carts/studio_test/cart.lua']) {
+	for (const path of ['cartlib/world/world.lua', 'machine/bios/gpu/gpu.lua', 'carts/studio_test/scenes/root.lua', 'carts/studio_test/cart.lua']) {
 		const source = readFileSync(path, 'utf8');
 		const formatted = formatLuaDocument(source, source.split('\n'));
 		assert.equal(formatLuaDocument(formatted, formatted.split('\n')), formatted, path);

@@ -8,13 +8,14 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { performHostControlAction } from '../../scripts/host_control/actions.mjs';
+import { playableStudioCartSkip } from '../helpers/playable_studio_carts.mjs';
 
 // Existing cart files are fixtures, never test write targets. No model/IDE-command access.
 for (const scenario of [
 	{ cart: 'pietious', file: 'castle_map.yaml', before: '    x: 14', after: '    x: 15' },
 	{ cart: 'nemesis_s', file: 'nemesis_s_stage.yaml', before: 'stage_number: 0', after: 'stage_number: 1' },
 ]) {
-	test(`YAML source edit/save through Studio user I/O: ${scenario.cart}`, { timeout: 90000 }, async t => {
+	test(`YAML source edit/save through Studio user I/O: ${scenario.cart}`, { timeout: 90000, skip: playableStudioCartSkip }, async t => {
 		const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-yaml-edit-'));
 		const relative = `carts/${scenario.cart}/res/data/${scenario.file}`;
 		const source = await fs.readFile(relative, 'utf8');

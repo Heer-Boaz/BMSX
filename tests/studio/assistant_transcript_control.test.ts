@@ -1,6 +1,6 @@
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -40,8 +40,8 @@ import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { contrastRatio } from '../helpers/contrast.mjs';
 import { afterTest } from '../helpers/test_cleanup';
 
-const FIRST = `data:image/png;base64,${readFileSync('carts/nemesis_s/res/img/title_screen_1@atlas=title.png').toString('base64')}`;
-const SECOND = `data:image/png;base64,${readFileSync('carts/nemesis_s/res/img/intro_konami@atlas=intro.png').toString('base64')}`;
+const FIRST = `data:image/png;base64,${encodeScreenshotPng(256, 192, new Uint8Array(256 * 192 * 4).fill(32)).toString('base64')}`;
+const SECOND = `data:image/png;base64,${encodeScreenshotPng(96, 48, new Uint8Array(96 * 48 * 4).fill(192)).toString('base64')}`;
 const captureDirectory = process.env.BMSX_UI_CAPTURE_DIR;
 const captureRuntime = captureDirectory === undefined ? undefined : createTestRuntime(linkTestSystemBlua32(compileLuaSource('return nil', 'transcript_image', 0)).romBytes);
 if (captureDirectory !== undefined) mkdirSync(captureDirectory, { recursive: true });

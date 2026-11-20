@@ -284,6 +284,12 @@ real Chromium input, media and rendering. Install the matching browser with
 `npx playwright install chromium` if needed. This does not run Studio's
 end-to-end workflows or the desktop clipboard tests.
 
+Studio tests that depend on the live content of a playable cart are temporarily
+skipped by default. The generic Studio fixtures and the separate cart/hardware
+smokes stay enabled. To reproduce a parked suite deliberately, run
+`BMSX_TEST_PLAYABLE_STUDIO_CARTS=1 npm run test:studio-workflows` or
+`BMSX_TEST_PLAYABLE_STUDIO_CARTS=1 npm run test:ide-yaml`.
+
 All test scripts use `scripts/test.sh`: a shared cgroup v2 `memory.max` cap of
 **at most 8 GiB** for the test process and its ordinary subprocesses. Existing
 stricter caps stay untouched. Nested runners share that budget; Node suites

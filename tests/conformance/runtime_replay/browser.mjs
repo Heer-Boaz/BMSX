@@ -5,9 +5,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { copyFile, cp, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, parse, resolve } from 'node:path';
+import { playableStudioCartSkip } from '../../helpers/playable_studio_carts.mjs';
 
-// Playwright is a host test tool, not part of the product bundle.
-const { chromium } = await import(process.env.BMSX_PLAYWRIGHT_MODULE || 'playwright');
 const workflowCase = process.argv[2] === '--studio-case' ? process.argv[3] : null;
 const navigation = process.argv[2] === '--studio-navigation' ? process.argv[3] : null;
 const fsm = process.argv[2] === '--studio-fsm-retarget-imported' ? 'retarget-imported' : process.argv[2] === '--studio-fsm-retarget' ? 'retarget' : process.argv[2] === '--studio-fsm-initial' ? 'initial' : null;
@@ -41,6 +40,14 @@ const studioLabel = workflowCase !== null ? `STUDIO-CASE:${workflowCase}` : buil
 const [bios, cart, screenshot] = process.argv.slice(workflowCase !== null || navigation !== null || sceneCart !== null || mapCart !== null ? 4 : studio ? 3 : 2);
 if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio-case NAME | --studio-build-output | --studio-actor-changes | --studio-actor-find | --studio-event-navigation | --studio-actor-pins | --studio-game-input | --studio-frame-recovery | --studio-terminal | --studio-edit-review | --studio-resource-context | --studio-boot-operations | --studio-source-saves | --studio-cart-scenes CART_FOLDER | --studio-cart-maps CART_FOLDER | --studio-execution-operations | --studio-test-runner | --studio-scene-viewport | --studio-main-authoring | --studio-activity | --studio | --studio-nemesis-scenes | --studio-preload | --studio-runtime-inspection | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-fsm-retarget-imported | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
 let inspectionPixels;
+const fixtureCart = mainAuthoring || activity || buildOutput || session ? 'hot_resume_test' : mapCart ?? sceneCart ?? navigation ?? 'nemesis_s';
+if (studio && !preload && ['nemesis_s', 'pietious', '2024', '2025'].includes(fixtureCart) && playableStudioCartSkip) {
+	console.log(`${studioLabel}:SKIP (${fixtureCart}): ${playableStudioCartSkip}`);
+	process.exit(0);
+}
+
+// Playwright is a host test tool, not part of the product bundle.
+const { chromium } = await import(process.env.BMSX_PLAYWRIGHT_MODULE || 'playwright');
 const backends = buildOutput ? ['software', 'webgl2'] : studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu'];
 const requestedBackend = process.env.BMSX_TEST_BACKEND;
 if (requestedBackend !== undefined) assert.ok(backends.includes(requestedBackend), `Unsupported test backend: ${requestedBackend}`);
@@ -77,10 +84,9 @@ async function runBrowserProject(backend) {
 		}
 		if (studio) {
 			await copyFile('dist/graph-layout.worker.js', join(directory, 'graph-layout.worker.js'));
-			const cartFolder = mapCart !== null ? mapCart : sceneCart !== null ? sceneCart : navigation === null ? 'nemesis_s' : navigation;
 			const sourceRoots = mainAuthoring || activity || buildOutput || session ? ['carts/hot_resume_test', 'cartlib', 'testlib', 'machine/bios']
 				: preload ? ['cartlib', 'testlib', 'machine/bios']
-				: [`carts/${cartFolder}`, `tests/carts/${cartFolder}`, 'cartlib', 'testlib', 'machine/bios'];
+				: [`carts/${fixtureCart}`, `tests/carts/${fixtureCart}`, 'cartlib', 'testlib', 'machine/bios'];
 			for (const root of sourceRoots) {
 				await cp(root, join(directory, root), { recursive: true,
 					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') || /\.ya?ml$/.test(path) });

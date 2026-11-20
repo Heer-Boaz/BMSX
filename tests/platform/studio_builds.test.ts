@@ -69,7 +69,7 @@ test('real worker builds, idempotent admission, cancellation and restart reconci
 	const cartridge = parseCartridgePackage(await readFile(join(jobs.artifacts.directory(artifact.id), artifact.cart!.outputs[0].file)));
 	assert.deepEqual(cartridge.manifest, { title: 'CPU Soak', hardware: [{ type: 'rom' }] });
 	assert.equal((await jobs.admit(reordered)).artifact, result.artifact);
-	const interrupted = { ...request, requestId: randomUUID(), target: 'nemesis_s' };
+	const interrupted = { ...request, requestId: randomUUID(), target: 'studio_test' };
 	await jobs.admit(interrupted);
 	assert.equal((await jobs.cancel(interrupted.requestId)).state, 'cancelled');
 	await jobs.close(); await projects.close();

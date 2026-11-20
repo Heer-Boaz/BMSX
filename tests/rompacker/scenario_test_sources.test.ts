@@ -25,23 +25,23 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { setImmediate } from 'node:timers/promises';
 import { afterTest } from '../helpers/test_cleanup';
 
-const NEMESIS_SCENARIO_PATH = 'tests/carts/nemesis_s/nemesis_s_pause_assert.lua';
+const STUDIO_SCENARIO_PATH = 'tests/carts/studio_test/studio_assert.lua';
 
 test('debug scenario discovery packages each authored assertion as one source-only Lua asset', async () => {
-	const sourceFiles = collectScenarioTestSourceFiles('carts/nemesis_s');
+	const sourceFiles = collectScenarioTestSourceFiles('carts/studio_test');
 	const inputs = await prepareRomInputs([], sourceFiles, { kind: 'filesystem' });
 	const collected = { sourceFiles, assets: buildScenarioTestSourceAssets(sourceFiles.map(file => inputs.files.get(file)!)) };
 	const sourceIndex = collected.assets.findIndex(
-		asset => asset.source_path === NEMESIS_SCENARIO_PATH,
+		asset => asset.source_path === STUDIO_SCENARIO_PATH,
 	);
 	assert.notEqual(sourceIndex, -1);
 	const asset = collected.assets[sourceIndex];
-	assert.equal(collected.sourceFiles[sourceIndex].endsWith(NEMESIS_SCENARIO_PATH), true);
-	assert.equal(asset.resid, scenarioTestAssetId(NEMESIS_SCENARIO_PATH));
+	assert.equal(collected.sourceFiles[sourceIndex].endsWith(STUDIO_SCENARIO_PATH), true);
+	assert.equal(asset.resid, scenarioTestAssetId(STUDIO_SCENARIO_PATH));
 	assert.equal(asset.type, 'lua');
-	assert.equal(asset.normalized_source_path, NEMESIS_SCENARIO_PATH);
+	assert.equal(asset.normalized_source_path, STUDIO_SCENARIO_PATH);
 	assert.equal(asset.program_module, false);
-	assert.match(Buffer.from(asset.buffer!).toString('utf8'), /input_pause_retains_simulation_and_music = function\(t\)/);
+	assert.match(Buffer.from(asset.buffer!).toString('utf8'), /\bboot = function\(t\)/);
 });
 
 test('a debug cart with no packed tests can execute its first workspace-created suite; rebuild preserves source-only membership', async t => {
