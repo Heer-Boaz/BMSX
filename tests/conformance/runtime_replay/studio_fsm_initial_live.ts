@@ -1,3 +1,4 @@
+import { valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { FSM_INITIAL_CART_SOURCE } from '../../helpers/fsm_initial_fixture';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
@@ -5,7 +6,7 @@ import { check, type StudioFixture } from './studio_fixture';
 
 /** One actual author/edit/install loop on each renderer, using an independent authored FSM. */
 export async function runStudioFsmInitialLive(test: StudioFixture) {
-	const { runtime, ide, execution, tasks, harness, guest, press, click, until, frame, cycles, runMenuCommand, runPaletteCommand } = test;
+	const { runtime, ide, execution, tasks, harness, guest, press, until, frame, cycles, runMenuCommand, runPaletteCommand } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'initial live: normal cart boot');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
@@ -26,7 +27,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	await press('Enter');
 	await until(() => tasks.ready && ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('cart') === source,
 		'initial live: compiler and media owner install the authored source');
-	await until(() => guest.global('fsm_initial_init_count') === 1 && !runtime.completionCallPending(), 'initial live: cold fixture executes its explicit registration');
+	await until(() => guest.global('fsm_initial_init_count') === valueInteger(1) && !runtime.completionCallPending(), 'initial live: cold fixture executes its explicit registration');
 	await press('ControlRight', 'ShiftRight');
 	check(!execution.userPaused, 'initial live: explicit Reboot requested fresh execution');
 	await runMenuCommand('pause');
@@ -34,7 +35,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	const idle = guest.readStringMember(machine, 'current_state');
 	const data = guest.readStringMember(idle, 'data');
 	check(guest.formatValue(guest.readStringMember(machine, 'current_id')) === 'idle', 'initial live: cold default is idle');
-	check(guest.readStringMember(data, 'retained') === 73, 'initial live: actual mutable FSM data exists');
+	check(guest.readStringMember(data, 'retained') === valueInteger(73), 'initial live: actual mutable FSM data exists');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.initial');
 	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
@@ -45,7 +46,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	await revealLensOccurrence(test, lens.view, active.source.rowKey);
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
-	await click(graph.actionBar.overflow!.button.bounds);
+	await press('ShiftLeft', 'F10');
 	await test.clickContextCommand('behaviorLens.setInitialState', 6);
 	await lens.graphLayout.settled; await frame();
 	const changed = source.replace("'idle'),", "'active'),");
@@ -56,11 +57,11 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	await runPaletteCommand('Run: Hot Resume');
 	check(test.ide.editor.actionPrompt.visible, 'initial live: graph edit enters the normal dirty-source prompt');
 	await press('Enter');
-	await until(() => tasks.ready && !runtime.completionCallPending() && guest.global('fsm_initial_init_count') === 2,
+	await until(() => tasks.ready && !runtime.completionCallPending() && guest.global('fsm_initial_init_count') === valueInteger(2),
 		'initial live: actual Hot Resume installs the edited initializer and executes it');
 	check(model.lastSavedSource === changed && getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied', 'initial live: saved and installed source agree');
 	check(guest.global('fsm_initial_machine') === machine && guest.readStringMember(machine, 'current_state') === idle
-		&& guest.readStringMember(idle, 'data') === data && guest.readStringMember(data, 'retained') === 73,
+		&& guest.readStringMember(idle, 'data') === data && guest.readStringMember(data, 'retained') === valueInteger(73),
 		'initial live: Hot Resume preserves the actual machine, active state and data');
 	check(guest.formatValue(guest.readStringMember(guest.readStringMember(machine, 'definition'), 'initial')) === 'active',
 		'initial live: the retained machine is bound to the edited definition, not its old initial value');
@@ -71,11 +72,11 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	await runPaletteCommand('Run: Hot Resume');
 	check(test.ide.editor.actionPrompt.visible, 'initial live: undone source has the same installation gate');
 	await press('Enter');
-	await until(() => tasks.ready && !runtime.completionCallPending() && guest.global('fsm_initial_init_count') === 3, 'initial live: Undo revision is installed');
+	await until(() => tasks.ready && !runtime.completionCallPending() && guest.global('fsm_initial_init_count') === valueInteger(3), 'initial live: Undo revision is installed');
 	check(guest.global('fsm_initial_machine') === machine
 		&& guest.formatValue(guest.readStringMember(guest.readStringMember(machine, 'definition'), 'initial')) === 'idle', 'initial live: Undo rebind retains identity');
 	check(guest.readStringMember(machine, 'current_state') === idle && guest.readStringMember(idle, 'data') === data
-		&& guest.readStringMember(data, 'retained') === 73, 'initial live: Undo installation preserves the current state and data');
+		&& guest.readStringMember(data, 'retained') === valueInteger(73), 'initial live: Undo installation preserves the current state and data');
 	check(model.lastSavedSource === source && getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied',
 		'initial live: undone source is both saved and installed');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
@@ -85,16 +86,16 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	await runPaletteCommand('Run: Hot Resume');
 	check(test.ide.editor.actionPrompt.visible, 'initial live: Redo revision enters the ordinary prompt');
 	await press('Enter');
-	await until(() => tasks.ready && !runtime.completionCallPending() && guest.global('fsm_initial_init_count') === 4, 'initial live: Redo revision is installed');
+	await until(() => tasks.ready && !runtime.completionCallPending() && guest.global('fsm_initial_init_count') === valueInteger(4), 'initial live: Redo revision is installed');
 	check(guest.global('fsm_initial_machine') === machine && guest.readStringMember(machine, 'current_state') === idle, 'initial live: three installs do not restart the FSM');
 	check(guest.formatValue(guest.readStringMember(guest.readStringMember(machine, 'definition'), 'initial')) === 'active'
-		&& guest.readStringMember(idle, 'data') === data && guest.readStringMember(data, 'retained') === 73,
+		&& guest.readStringMember(idle, 'data') === data && guest.readStringMember(data, 'retained') === valueInteger(73),
 		'initial live: Redo installs the changed definition without replacing or resetting data');
 	check(model.lastSavedSource === changed && getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied',
 		'initial live: redone source is both saved and installed');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
 	await runPaletteCommand('Run: Reboot');
-	await until(() => tasks.ready && guest.global('fsm_initial_init_count') === 1, 'initial live: explicit cold reboot executes edited source');
+	await until(() => tasks.ready && guest.global('fsm_initial_init_count') === valueInteger(1), 'initial live: explicit cold reboot executes edited source');
 	await until(() => guest.global('fsm_initial_machine') !== machine, 'initial live: cold startup instantiates a new machine');
 	check(guest.formatValue(guest.readStringMember(guest.global('fsm_initial_machine'), 'current_id')) === 'active', 'initial live: new instance starts in the authored initial state');
 	await press('ControlRight', 'ShiftRight');

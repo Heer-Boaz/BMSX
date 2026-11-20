@@ -1,3 +1,4 @@
+import { valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { BT_REPARENT_LIVE_SOURCE } from '../../helpers/behavior_reparent_live_fixture';
 import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
 import type { BehaviorGraphNode } from '../../../ide/workbench/contrib/behavior_lens/graph_model';
@@ -18,17 +19,17 @@ export async function runStudioBtReparentLive(test: StudioFixture) {
 	await runPaletteCommand('Run: Reboot');
 	check(test.ide.editor.actionPrompt.visible, 'BT live: fixture uses ordinary Save/Reboot admission');
 	await press('Enter');
-	await until(() => tasks.ready && guest.global('bt_live_init_count') === 1 && !runtime.completionCallPending(), 'BT live: authored fixture boots');
+	await until(() => tasks.ready && guest.global('bt_live_init_count') === valueInteger(1) && !runtime.completionCallPending(), 'BT live: authored fixture boots');
 	const actor = guest.global('bt_live_target'), tree = guest.global('bt_live_tree');
 	const blackboard = guest.readStringMember(tree, 'blackboard');
 	let executions = 0;
 	const execute = async (order: number) => {
 		setKey('KeyX', true); for (let index = 0; index < 4; index += 1) await frame();
 		setKey('KeyX', false); for (let index = 0; index < 4; index += 1) await frame();
-		check(guest.readStringMember(actor, 'executions') === ++executions && guest.readStringMember(actor, 'order') === order,
+		check(guest.readStringMember(actor, 'executions') === valueInteger(++executions) && guest.readStringMember(actor, 'order') === valueInteger(order),
 			`BT live: real ICU edge executes the authored task order ${order} exactly once`);
 		check(guest.global('bt_live_target') === actor && guest.global('bt_live_tree') === tree
-			&& guest.readStringMember(tree, 'blackboard') === blackboard && guest.readStringMember(actor, 'retained') === 73,
+			&& guest.readStringMember(tree, 'blackboard') === blackboard && guest.readStringMember(actor, 'retained') === valueInteger(73),
 			'BT live: actor, component and blackboard identities and semantic value survive');
 	};
 	await execute(123);
@@ -73,7 +74,7 @@ export async function runStudioBtReparentLive(test: StudioFixture) {
 	check(model.lastSavedSource === changed && cycles() === position && ide.sources.currentBlua32Media === media
 		&& getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending', 'BT live: Save changes source, not the paused installed program');
 	await runPaletteCommand('Run: Hot Resume');
-	await until(() => tasks.ready && guest.global('bt_live_init_count') === 2 && !runtime.completionCallPending(), 'BT live: changed source installed through Hot Resume');
+	await until(() => tasks.ready && guest.global('bt_live_init_count') === valueInteger(2) && !runtime.completionCallPending(), 'BT live: changed source installed through Hot Resume');
 	check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('cart') === changed
 		&& getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied', 'BT live: the actual installed revision matches saved source');
 	await execute(213);
@@ -84,7 +85,7 @@ export async function runStudioBtReparentLive(test: StudioFixture) {
 		'BT live: one Undo after installation restores original source and graph selection');
 	await press('ControlLeft', 'KeyS'); await until(() => !model.dirty, 'BT live: undone source saved');
 	await runPaletteCommand('Run: Hot Resume');
-	await until(() => tasks.ready && guest.global('bt_live_init_count') === 3 && !runtime.completionCallPending(), 'BT live: undo revision installed through Hot Resume');
+	await until(() => tasks.ready && guest.global('bt_live_init_count') === valueInteger(3) && !runtime.completionCallPending(), 'BT live: undo revision installed through Hot Resume');
 	check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('cart') === BT_REPARENT_LIVE_SOURCE,
 		'BT live: restored source is installed, not just projected');
 	await execute(123);
