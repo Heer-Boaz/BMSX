@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <cstring>
 #include <span>
+#include <stdexcept>
 #include <vector>
 
 namespace bmsx {
@@ -380,6 +381,11 @@ void initializeGxGpuTexture(OpenGLES2GxGpuState& gx, GLES2Texture& texture, i32 
 } // namespace
 
 void initGxGpu(OpenGLES2Backend& backend) {
+	GLint viewportLimits[2];
+	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewportLimits);
+	if (std::min(viewportLimits[0], viewportLimits[1]) < GxGpuDrawTargets::kViewportExtent) {
+		throw std::runtime_error("GLES2 GX hardware drawing requires a viewport of at least 3072 x 3072");
+	}
 	backend.m_gx_gpu.reset(new OpenGLES2GxGpuState);
 	OpenGLES2GxGpuState& gx = *backend.m_gx_gpu;
 	gx.backend = &backend;
@@ -419,7 +425,11 @@ void initGxGpu(OpenGLES2Backend& backend) {
 		backend.gxGpuDrawTargetMode() != GxGpuDrawTargetMode::FullVram ? "#define GX_GPU_CACHED_TARGETS 1\n" : "",
 		(backend.gxGpuDrawTargetMode() == GxGpuDrawTargetMode::SmallRgb5 || backend.gxGpuDrawTargetMode() == GxGpuDrawTargetMode::SmallRgb5Mali) ? "#define GX_GPU_TARGET_RGB5_A1 1\n" : "");
 	char rasterShaderDefines[640]{};
-	std::snprintf(rasterShaderDefines, sizeof(rasterShaderDefines), "%s%s", vramShaderDefines, framebufferFetchShaderDefine);
+	std::snprintf(rasterShaderDefines, sizeof(rasterShaderDefines), "%s%s"
+		"#define GX_GPU_RASTER_VIEWPORT_CENTER %d\n#define GX_GPU_RASTER_VIEWPORT_EXTENT %d\n",
+		vramShaderDefines, framebufferFetchShaderDefine,
+		GxGpuDrawTargets::kViewportMin + GxGpuDrawTargets::kViewportExtent / 2,
+		GxGpuDrawTargets::kViewportExtent);
 	char fixedColorShaderDefines[704]{};
 	std::snprintf(fixedColorShaderDefines, sizeof(fixedColorShaderDefines), "%s%s", kGxGpuFixedColorPlaneShaderDefine, rasterShaderDefines);
 	char cpuUploadShaderDefines[640]{};
@@ -1954,11 +1964,15 @@ void drawGxGpuLogicalVramArea(OpenGLES2GxGpuState& gx,
 		}
 		gx.drawTargets.select(physical, gx.sampleDirtyRegions);
 		if (gx.drawTargets.enabled() && samplesDestination) gx.drawTargets.synchronizeDestination(physical);
+		gx.drawTargets.bind(bandBase);
+		gx.backend->drawState.disable(GLES2Capability::DepthTest);
+		gx.backend->drawState.depthMask(GL_FALSE);
+		gx.backend->drawState.disable(GLES2Capability::CullFace);
+		gx.backend->drawState.disable(GLES2Capability::Blend);
 		bindDrawState();
 		const auto& target = gx.drawTargets.bounds();
 		gx.backend->drawState.enable(GLES2Capability::ScissorTest);
 		if (gx.vramTextureRows != kGxGpuVramYAddressPeriod) {
-			gx.backend->drawState.viewport(-target.left, -target.top - bandBase, kGxGpuVramXAddressPeriod, kGxGpuVramYAddressPeriod);
 			glUniform1i(logicalYBaseUniform, bandBase);
 		}
 		gx.backend->drawState.scissor(physical.left - target.left, physical.top - target.top,
@@ -2271,14 +2285,6 @@ size_t appendSolidCommandVertices(OpenGLES2GxGpuState& gx, const GxGpuCommandSto
 	}
 }
 
-void beginGxGpuVramRenderTarget(OpenGLES2GxGpuState& gx) {
-	gx.drawTargets.bind();
-	gx.backend->drawState.disable(GLES2Capability::DepthTest);
-	gx.backend->drawState.depthMask(GL_FALSE);
-	gx.backend->drawState.disable(GLES2Capability::CullFace);
-	gx.backend->drawState.disable(GLES2Capability::Blend);
-}
-
 void renderNewLineCommands(OpenGLES2GxGpuState& gx,
 	size_t vertexFloatCount,
 	GLintptr vertexBufferOffset,
@@ -2296,7 +2302,6 @@ void renderNewLineCommands(OpenGLES2GxGpuState& gx,
 		&& (blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord));
 	const uintptr_t vertexBufferAddress = static_cast<uintptr_t>(vertexBufferOffset);
 	const auto bindDrawState = [&] {
-		beginGxGpuVramRenderTarget(gx);
 		gx.backend->drawState.useProgram(program.id);
 		const auto& targetBounds = gx.drawTargets.bounds();
 		program.target.write(targetBounds.left, targetBounds.top, targetBounds.right - targetBounds.left, targetBounds.bottom - targetBounds.top);
@@ -2985,7 +2990,6 @@ void renderNewSolidCommands(OpenGLES2GxGpuState& gx, bool fixedColor, size_t ver
 	const size_t vertexFloatStride = fixedColor ? kGxGpuFixedSolidVertexFloats : kGxGpuSolidVertexFloats;
 	const uintptr_t vertexBufferAddress = static_cast<uintptr_t>(vertexBufferOffset);
 	const auto bindDrawState = [&] {
-		beginGxGpuVramRenderTarget(gx);
 		gx.backend->drawState.useProgram(program.id);
 		const auto& targetBounds = gx.drawTargets.bounds();
 		program.target.write(targetBounds.left, targetBounds.top, targetBounds.right - targetBounds.left, targetBounds.bottom - targetBounds.top);
@@ -3239,7 +3243,6 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 	submitGxGpuPrimitiveBatches(gx);
 	const uintptr_t vertexBufferAddress = generationFloatStart * sizeof(f32);
 	const auto bindDrawState = [&] {
-		beginGxGpuVramRenderTarget(gx);
 		gx.backend->drawState.useProgram(program.id);
 		const auto& targetBounds = gx.drawTargets.bounds();
 		program.target.write(targetBounds.left, targetBounds.top, targetBounds.right - targetBounds.left, targetBounds.bottom - targetBounds.top);

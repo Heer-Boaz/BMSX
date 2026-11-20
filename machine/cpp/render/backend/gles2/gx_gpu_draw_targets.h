@@ -3,6 +3,7 @@
 #include "render/backend/gles2/backend.h"
 #include "render/backend/gles2/gx_gpu_vram_rect.h"
 #include "render/backend/gx_gpu_dirty_regions.h"
+#include "render/backend/gx_gpu_render_rules.h"
 
 namespace bmsx {
 
@@ -10,6 +11,11 @@ namespace bmsx {
 // dirty regions retain newer words until a base-texture consumer observes them.
 class GxGpuDrawTargets {
 public:
+	// Placed vertices range from -1024 to 2046, independent of VRAM size.
+	// Keep them inside the clip volume without changing the pixel grid.
+	static constexpr i32 kViewportMin = -GX_GPU_VERTEX_COORD_PERIOD / 2;
+	static constexpr i32 kViewportExtent = GX_GPU_VERTEX_COORD_PERIOD - kViewportMin;
+
 	void initialize(OpenGLES2Backend& backend, GxGpuDrawTargetMode mode,
 		GLES2Texture& base, GLuint baseFramebuffer, GLES2Texture& baseSample);
 	void shutdown();
@@ -25,7 +31,7 @@ public:
 		GxGpuDirtyRegions& globalDirty, bool invalidate);
 	void resolveAll(GxGpuDirtyRegions& globalDirty);
 	void replace();
-	void bind();
+	void bind(i32 logicalYBase);
 	const GxGpuVramCopyRect& bounds() const;
 	GLES2Texture& destinationSample();
 	GLES2Texture& color();

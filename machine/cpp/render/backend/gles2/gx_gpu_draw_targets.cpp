@@ -1,6 +1,5 @@
 #include "render/backend/gles2/gx_gpu_draw_targets.h"
 #include "render/backend/gles2/shaders/gx_gpu_shaders.h"
-#include "render/backend/gx_gpu_render_rules.h"
 #include <cstdio>
 
 namespace bmsx {
@@ -167,11 +166,11 @@ void GxGpuDrawTargets::replace() {
 const GxGpuVramCopyRect& GxGpuDrawTargets::bounds() const { return enabled() ? m_entries[m_current].bounds : m_baseBounds; }
 GLES2Texture& GxGpuDrawTargets::destinationSample() { return enabled() ? m_entries[m_current].sample : *m_baseSample; }
 GLES2Texture& GxGpuDrawTargets::color() { return enabled() ? m_entries[m_current].color : *m_base; }
-void GxGpuDrawTargets::bind() {
-	if (!enabled()) { m_backend->setRenderTarget(m_baseFramebuffer, m_base->width, m_base->height); return; }
-	auto& entry = m_entries[m_current];
-	m_backend->drawState.bindFramebuffer(entry.framebuffer);
-	m_backend->drawState.viewport(-entry.bounds.left, -entry.bounds.top, GX_GPU_VRAM_X_ADDRESS_PERIOD, GX_GPU_VRAM_Y_ADDRESS_PERIOD);
+void GxGpuDrawTargets::bind(i32 logicalYBase) {
+	const auto& target = bounds();
+	m_backend->drawState.bindFramebuffer(enabled() ? m_entries[m_current].framebuffer : m_baseFramebuffer);
+	m_backend->drawState.viewport(kViewportMin - target.left, kViewportMin - target.top - logicalYBase,
+		kViewportExtent, kViewportExtent);
 }
 
 void GxGpuDrawTargets::bindHardwareBlend(u32 mode) {

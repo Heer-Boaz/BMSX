@@ -151,7 +151,7 @@ static void testDrawTargetDirtyReads() {
 	targets.initialize(backend, GxGpuDrawTargetMode::SmallNibbles, textures[0], framebuffer, textures[1]);
 	targets.select({0, 0, 128, 64}, baseDirty);
 	targets.synchronizeDestination({0, 0, 128, 64});
-	targets.bind();
+	targets.bind(0);
 	backend.drawState.enable(GLES2Capability::ScissorTest);
 	glClearColor(1, 1, 1, 1);
 	for (const i32 x : {0, 64}) {
@@ -574,7 +574,7 @@ static SolidDamageResult renderSolidCapacity(bool useGles, GxGpuDrawTargetMode m
 	return result;
 }
 
-static std::vector<u8> renderDrawLayoutMatrix(bool useGles) {
+static std::vector<u8> renderDrawLayoutMatrix(bool useGles, GxGpuDrawTargetMode mode, u32 vramBytes) {
 	std::array<u8, 1> rom{};
 	Memory memory{MemoryInit{{rom.data(), 0u}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes};
 	IrqController irq{memory};
@@ -582,12 +582,12 @@ static std::vector<u8> renderDrawLayoutMatrix(bool useGles) {
 	CPU cpu{memory, irq, addressSpace};
 	DeviceScheduler scheduler{cpu};
 	DmaController dma{memory, cpu, irq, scheduler};
-	GxGpu gpu{memory, cpu, irq, scheduler, dma, PSX_MACHINE_SPEC.gxGpuVramBytes};
+	GxGpu gpu{memory, cpu, irq, scheduler, dma, vramBytes};
 	gpu.reset();
 	auto rawState = gpu.captureState();
 	rawState.vramYAddressExtensionWord = 0x100u;
 	gpu.restoreState(rawState);
-	std::vector<u8> clear(PSX_MACHINE_SPEC.gxGpuVramBytes, 0u);
+	std::vector<u8> clear(vramBytes, 0u);
 	for (size_t index = 0u; index < clear.size(); index += 2u) {
 		clear[index] = 0xffu;
 		clear[index + 1u] = 0x7fu;
@@ -616,24 +616,44 @@ static std::vector<u8> renderDrawLayoutMatrix(bool useGles) {
 		0x500000ffu, (205u << 16u) | 30u, 0x0000ff00u, (209u << 16u) | 40u,
 		0x580000ffu, (205u << 16u) | 50u, 0x0000ff00u, (209u << 16u) | 60u,
 		0x00ff0000u, (205u << 16u) | 70u, 0x50005000u,
+		// The edge from (-7,149) to (43,109) excludes samples
+		// exactly on it even though the first vertex is outside VRAM.
+		0x200000ffu, (149u << 16u) | 0x07f9u, (109u << 16u) | 43u, (85u << 16u) | 50u,
+		// Reflect across X for an included tie at the right edge. The
+		// drawing offset places the supplied X=966 vertex at 1030.
+		0xe5000040u,
+		0x3000ff00u, (149u << 16u) | 966u, 0x0000b000u, (109u << 16u) | 916u,
+		0x00006000u, (85u << 16u) | 909u,
+		// Transpose the crossing, using a blue direct-color texel at (512,256).
+		0xe5000000u, 0xa0000000u, (256u << 16u) | 512u, 0x00010001u, 0x00007c00u,
+		0x25808080u, (0x07f9u << 16u) | 149u, 0u, (43u << 16u) | 109u, 0x01180000u, (50u << 16u) | 85u, 0u,
+		// Cross the bottom of logical VRAM. In the 1 MiB model these writes
+		// use the second logical band but address the first physical band.
+		0xe5020000u, 0x200000ffu, (966u << 16u) | 149u, (916u << 16u) | 109u, (909u << 16u) | 85u,
+		0xe5000000u,
 		0x600000ffu, (900u << 16u) | 400u, (8u << 16u) | 8u}) submit(word);
 	const auto& retained = gpu.readDeviceOutput().commandBuffer;
-	require(retained.drawCount == 13u && retained.commandVramYAddressExtensionWord[retained.commandCount - 1u] == 0x100u,
+	require(retained.drawCount == 17u && retained.commandVramYAddressExtensionWord[retained.commandCount - 1u] == 0x100u,
 		"all layout matrix commands and the raw extension word reached the renderer");
 	gpu.presentReadyFrameOnVblankEdge();
 	std::unique_ptr<GPUBackend> backend;
 	if (useGles) {
-		auto gles = std::make_unique<OpenGLES2Backend>(256, 256, false, PSX_MACHINE_SPEC.gxGpuVramBytes, GxGpuDrawTargetMode::FullVram);
+		auto gles = std::make_unique<OpenGLES2Backend>(256, 256, false, vramBytes, mode);
 		gles->setContextCallbacks([]() -> uintptr_t { return 0; }, eglGetProcAddress);
 		gles->onContextReset();
 		backend = std::move(gles);
-	} else backend = std::make_unique<SoftwareBackend>(256, 256, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	} else backend = std::make_unique<SoftwareBackend>(256, 256, vramBytes);
 	TestVideoOutput video(256, 256);
 	VideoPresenter presenter(video, std::move(backend), 256, 256);
 	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&presenter.backend(), &presenter));
 	presenter.backend().executeGxGpuPresentation(gpu.readDeviceOutput());
 	presenter.backend().captureGxGpuVramSnapshot(gpu);
 	const auto bytes = gpu.readVramSnapshotBytes();
+	if (useGles) {
+		presenter.releaseRenderPipeline();
+		presenter.clearTextures();
+		static_cast<OpenGLES2Backend&>(presenter.backend()).onContextDestroy();
+	}
 	return {bytes.begin(), bytes.end()};
 }
 
@@ -1581,16 +1601,34 @@ int main(int argc, char** argv) {
 			}
 		}
 		testDrawTargetDirtyReads();
-		const auto layoutSoftware = renderDrawLayoutMatrix(false);
-		const auto layoutGles = renderDrawLayoutMatrix(true);
-		require(layoutSoftware[(222u * 1024u + 10u) * 2u] == 0x1fu
-			&& layoutSoftware[(222u * 1024u + 30u) * 2u] == 0x1fu
-			&& layoutSoftware[(205u * 1024u + 10u) * 2u] == 0x1fu
-			&& layoutSoftware[(205u * 1024u + 30u) * 2u] == 0x1fu
-			&& layoutSoftware[(205u * 1024u + 50u) * 2u] == 0x1fu
-			&& layoutSoftware[(902u * 1024u + 402u) * 2u] == 0x1fu,
-			"flat and textured polygons, line modes and the raw extension produce actual VRAM pixels");
-		require(layoutGles == layoutSoftware, "all draw layouts and the raw extension match software VRAM on GLES2");
+		for (const u32 vramBytes : {2u * 1024u * 1024u, 1024u * 1024u}) {
+			const auto layoutSoftware = renderDrawLayoutMatrix(false, GxGpuDrawTargetMode::FullVram, vramBytes);
+			const u32 rowMask = (vramBytes / (2u * 1024u)) - 1u;
+			require(layoutSoftware[(222u * 1024u + 10u) * 2u] == 0x1fu
+				&& layoutSoftware[(222u * 1024u + 30u) * 2u] == 0x1fu
+				&& layoutSoftware[(205u * 1024u + 10u) * 2u] == 0x1fu
+				&& layoutSoftware[(205u * 1024u + 30u) * 2u] == 0x1fu
+				&& layoutSoftware[(205u * 1024u + 50u) * 2u] == 0x1fu
+				&& layoutSoftware[((902u & rowMask) * 1024u + 402u) * 2u] == 0x1fu,
+				"flat and textured polygons, line modes and the raw extension produce actual VRAM pixels");
+			require(layoutSoftware[(129u * 1024u + 18u) * 2u + 1u] == 0x7fu
+				&& layoutSoftware[(128u * 1024u + 18u) * 2u + 1u] == 0u,
+				"left crossing excludes the exact tie but draws the adjacent interior sample");
+			require(layoutSoftware[(129u * 1024u + 1005u) * 2u + 1u] < 4u
+				&& layoutSoftware[(130u * 1024u + 1005u) * 2u + 1u] == 0x7fu,
+				"right crossing includes the exact tie but excludes the adjacent exterior sample");
+			require(layoutSoftware[(18u * 1024u + 129u) * 2u + 1u] == 0x7fu
+				&& layoutSoftware[(18u * 1024u + 128u) * 2u + 1u] == 0x7cu,
+				"top crossing preserves the textured interior and excludes the exact tie");
+			require(layoutSoftware[((1005u & rowMask) * 1024u + 129u) * 2u + 1u] == 0x7fu
+				&& layoutSoftware[((1005u & rowMask) * 1024u + 128u) * 2u + 1u] == 0u,
+				"bottom crossing sees the same edge and interior in the addressed row band");
+			for (const auto mode : {GxGpuDrawTargetMode::FullVram, GxGpuDrawTargetMode::SmallNibbles, GxGpuDrawTargetMode::SmallRgb5}) {
+				const auto layoutGles = renderDrawLayoutMatrix(true, mode, vramBytes);
+				require(layoutGles == layoutSoftware,
+					"GLES2 matches exact off-VRAM triangle coverage, line and rectangle draws in both row layouts");
+			}
+		}
 		TexturedModelFixture referenceFixture;
 		auto software = std::make_unique<SoftwareBackend>(256, 256, PSX_MACHINE_SPEC.gxGpuVramBytes);
 		const auto expected = render(std::move(software), referenceFixture);

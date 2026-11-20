@@ -1,6 +1,8 @@
 precision highp float;
 precision highp int;
 
+#include "gx_gpu_raster_position.glsl"
+
 attribute vec2 a_position;
 attribute vec2 a_lineStart;
 attribute vec2 a_lineEnd;
@@ -20,11 +22,7 @@ int signedUnit(int value) {
 }
 
 void main() {
-	vec2 clip = vec2(
-		a_position.x * 2.0 / float(GX_GPU_VRAM_X_ADDRESS_PERIOD) - 1.0,
-		a_position.y * 2.0 / float(GX_GPU_VRAM_Y_ADDRESS_PERIOD) - 1.0
-	);
-	gl_Position = vec4(clip, 0.0, 1.0);
+	gl_Position = gxRasterPosition(a_position);
 	ivec2 lineStart = ivec2(a_lineStart);
 	ivec2 lineEnd = ivec2(a_lineEnd);
 	ivec3 color0 = ivec3(a_color0);

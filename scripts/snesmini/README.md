@@ -132,7 +132,8 @@ script's `--build` route builds the selected carts and BIOS together with the co
 
 In hardware-drawing builds (`BMSX_GLES2_SOFTWARE_GX=OFF`), the libretro core reads
 `BMSX_GLES2_TARGETS` once when creating its GLES2 backend. This setting has no
-effect on the hybrid renderer:
+effect on the hybrid renderer. Hardware GX drawing requires a GLES2 viewport
+limit of at least 3072 × 3072; this is not a framebuffer allocation:
 
 | Value | Drawing storage | Destination blending |
 | --- | --- | --- |

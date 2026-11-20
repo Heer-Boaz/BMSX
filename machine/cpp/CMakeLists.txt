@@ -132,9 +132,12 @@ configure_file(
 	@ONLY
 )
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_words.glsl")
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_words.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_raster_position.glsl")
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_words.glsl"
 	BMSX_GX_GPU_WORD_FUNCTIONS)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_raster_position.glsl"
+	BMSX_GX_GPU_RASTER_POSITION)
 file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_fill.vert.glsl"
 	BMSX_GX_GPU_FILL_VERTEX_SHADER
@@ -194,6 +197,8 @@ foreach(shader IN ITEMS
 	BMSX_GX_GPU_CACHE_COPY_FRAGMENT_SHADER
 )
 	string(REPLACE "#include \"gx_gpu_words.glsl\"" "${BMSX_GX_GPU_WORD_FUNCTIONS}"
+		${shader} "${${shader}}")
+	string(REPLACE "#include \"gx_gpu_raster_position.glsl\"" "${BMSX_GX_GPU_RASTER_POSITION}"
 		${shader} "${${shader}}")
 endforeach()
 configure_file(
