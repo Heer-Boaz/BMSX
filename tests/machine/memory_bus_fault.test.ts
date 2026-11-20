@@ -431,6 +431,13 @@ test('CPU record words mirror and align each access without using the bus', () =
 	assert.equal(ioWrites, 0);
 	assert.equal(memory.readBusFaultSequence(), sequence);
 	assert.deepEqual(invalidations, [[page, last, last + 1]]);
+	binding.writeWatches!.armWord(binding.writeWatchIndex, last - 1);
+	binding.writeWatches!.armWord(binding.writeWatchIndex, last);
+	memory.writeRamRecordPair(0xffffffff, 0xa1b2c3d4, 0x11223344);
+	assert.equal(memory.readRamRecordWord(end - 8), 0xa1b2c3d4);
+	assert.equal(memory.readRamRecordWord(end - 4), 0x11223344);
+	assert.equal(memory.readRamRecordWord(RAM_BASE), 0x40302010, 'the aligned pair does not split across the RAM seam');
+	assert.deepEqual(invalidations, [[page, last, last + 1], [page, last - 1, last + 1]]);
 	memory.readMappedU32LE(end);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
 });

@@ -76,6 +76,9 @@ void testMappedReadViewsRespectPhysicalBoundaries() {
 	require(view.data() == system.data() + 35u && view.size() == 32u, "ROM view contains precisely the admitted bytes");
 	memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 3u, 0x12345678u);
 	require(memory.bindMappedReadView(DYNAMIC_RAM_BASE + 3u, 32u, MAPPED_BUS_MASTER_CPU, view), "ordinary unaligned RAM spans are directly readable");
+	require(view.data()[0] == 0x78u && view.data()[1] == 0x56u
+		&& view.data()[2] == 0x34u && view.data()[3] == 0x12u,
+		"unaligned word stores publish the four little-endian bytes in address order");
 	require(readLE32(view.data()) == 0x12345678u, "RAM view keeps raw little-endian word bytes");
 	memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 3u, 0x87654321u);
 	require(readLE32(view.data()) == 0x87654321u, "a RAM view is live backing, not a captured copy");
@@ -462,6 +465,15 @@ void testCpuRecordWordsMirrorWithoutUsingTheBus() {
 	require(ioWrites == 0u && memory.readBusFaultSequence() == sequence, "record accesses bypass registers and bus faults");
 	const std::vector<std::array<u64, 3>> expected{{page, last, last + 1u}};
 	require(trace.words == expected, "record stores notify the watch at the physical destination");
+	binding.writeWatch.armWord(last - 1u);
+	binding.writeWatch.armWord(last);
+	memory.writeRamRecordPair(0xffffffffu, 0xa1b2c3d4u, 0x11223344u);
+	require(memory.readRamRecordWord(end - 8u) == 0xa1b2c3d4u
+		&& memory.readRamRecordWord(end - 4u) == 0x11223344u
+		&& memory.readRamRecordWord(RAM_BASE) == 0x40302010u,
+		"the last mirrored pair stays in its aligned eight-byte extent");
+	require(trace.words.size() == 2u && trace.words.back() == (std::array<u64, 3>{page, last - 1u, last + 1u}),
+		"a physical pair retires the exact two written words");
 	memory.readMappedU32LE(end);
 	require(memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED, "only the record port mirrors RAM");
 }

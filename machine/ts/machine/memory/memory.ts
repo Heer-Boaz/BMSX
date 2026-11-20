@@ -81,6 +81,7 @@ import {
 	type MappedBusSignals,
 } from './bus_signals';
 import {
+	MAPPED_PAGE_BYTE_SHIFT,
 	MAPPED_PAGE_BYTE_SIZE,
 	type MappedPageBinding,
 	type MappedPageInvalidator,
@@ -272,7 +273,9 @@ export class Memory {
 	public writeRamRecordWord(address: number, value: number): void {
 		const offset = address & RAM_RECORD_WORD_MASK;
 		this.ramWords[offset >>> 2] = value;
-		this.invalidateRamWrite(offset, 4);
+		if (this.ramPageWriteWatches.groupData()[offset >>> MAPPED_PAGE_BYTE_SHIFT] !== 0) {
+			this.invalidateRamWrite(offset, 4);
+		}
 	}
 
 	public writeRamRecordPair(address: number, first: number, second: number): void {
@@ -280,7 +283,9 @@ export class Memory {
 		const word = offset >>> 2;
 		this.ramWords[word] = first;
 		this.ramWords[word + 1] = second;
-		this.invalidateRamWrite(offset, 8);
+		if (this.ramPageWriteWatches.groupData()[offset >>> MAPPED_PAGE_BYTE_SHIFT] !== 0) {
+			this.invalidateRamWrite(offset, 8);
+		}
 	}
 
 	public readRamRecordByte(address: number): number {
@@ -289,7 +294,9 @@ export class Memory {
 	public writeRamRecordByte(address: number, value: number): void {
 		const offset = address & (MAIN_RAM_SIZE - 1);
 		this.ram[offset] = value;
-		this.invalidateRamWrite(offset, 1);
+		if (this.ramPageWriteWatches.groupData()[offset >>> MAPPED_PAGE_BYTE_SHIFT] !== 0) {
+			this.invalidateRamWrite(offset, 1);
+		}
 	}
 
 	// Private heap writes need only rewind tracking. Physical aliases below the

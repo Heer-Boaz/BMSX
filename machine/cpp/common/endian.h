@@ -2,6 +2,7 @@
 
 #include "common/primitives.h"
 
+#include <bit>
 #include <cstring>
 #include <span>
 
@@ -15,11 +16,19 @@ inline auto readI16LE(const u8* data) -> i16 {
 	return static_cast<i16>(readLE16(data));
 }
 
+// Use a fixed-size copy rather than side-stepping alignment and aliasing
+// rules with a cast: these bytes can also come from an unaligned ROM field.
 inline auto readLE32(const u8* data) -> u32 {
-	return static_cast<u32>(data[0])
-		| (static_cast<u32>(data[1]) << 8)
-		| (static_cast<u32>(data[2]) << 16)
-		| (static_cast<u32>(data[3]) << 24);
+	if constexpr (std::endian::native == std::endian::little) {
+		u32 value;
+		std::memcpy(&value, data, sizeof(value));
+		return value;
+	} else {
+		return static_cast<u32>(data[0])
+			| (static_cast<u32>(data[1]) << 8)
+			| (static_cast<u32>(data[2]) << 16)
+			| (static_cast<u32>(data[3]) << 24);
+	}
 }
 
 inline auto readLE64(const u8* data) -> u64 {
@@ -48,8 +57,12 @@ inline void writeLE16(u8* data, u32 value) {
 }
 
 inline void writeLE32(u8* data, u32 value) {
-	for (u32 byte = 0; byte < 4U; ++byte) {
-		data[byte] = static_cast<u8>((value >> (byte * 8U)) & 0xffU);
+	if constexpr (std::endian::native == std::endian::little) {
+		std::memcpy(data, &value, sizeof(value));
+	} else {
+		for (u32 byte = 0; byte < 4U; ++byte) {
+			data[byte] = static_cast<u8>((value >> (byte * 8U)) & 0xffU);
+		}
 	}
 }
 
