@@ -11,10 +11,13 @@ case "${1-}" in
 		TSX_TSCONFIG_PATH=tsconfig.base.json exec node --import tsx --import ./tests/helpers/test_setup.ts \
 			--test --test-concurrency=1 "$@"
 		;;
-	all) files=(tests/{machine,toolchain,hosts,studio}/*.test.ts) ;;
+	all|headless)
+		files=(tests/{machine,toolchain,hosts,studio}/*.test.ts)
+		if [[ $1 == headless ]]; then files+=(tests/rompacker/*.ts); fi
+		;;
 	rompacker) files=(tests/rompacker/*.ts) ;;
 	machine|toolchain|hosts|studio) files=(tests/"$1"/*.test.ts) ;;
-	*) echo 'Expected a Node test area: all, machine, toolchain, hosts, studio or rompacker' >&2; exit 2 ;;
+	*) echo 'Expected a Node test area: all, headless, machine, toolchain, hosts, studio or rompacker' >&2; exit 2 ;;
 esac
 if [[ $# != 1 ]]; then
 	echo 'For selected files or test-name patterns, use npm test -- <node options> <test files>.' >&2
@@ -51,14 +54,22 @@ start_lane() {
 readonly compiled="$reports/js"
 node scripts/build_node_tests.mjs "$compiled" "${files[@]}"
 
-if [[ $1 == all ]]; then
+if [[ $1 == all || $1 == headless ]]; then
 	# The machine/toolchain tests keep file isolation; they do not retain their
 	# program and media graphs in the Studio worker processes.
-	start_lane 'Machine, toolchain and hosts' --test-concurrency=8 "$compiled"/tests/{machine,toolchain,hosts}/*.test.mjs
+	isolated=("$compiled"/tests/{machine,toolchain,hosts}/*.test.mjs)
+	label='Machine, toolchain and hosts'
+	if [[ $1 == headless ]]; then
+		# Share the file-isolated pool with ROM packer, rather than admitting a
+		# second pool while the Studio workers still hold their runtimes.
+		isolated+=("$compiled"/tests/rompacker/*.mjs)
+		label='Machine, toolchain, hosts and ROM packer'
+	fi
+	start_lane "$label" --test-concurrency=8 "${isolated[@]}"
 elif [[ $1 != studio ]]; then
 	start_lane "$1" --test-concurrency=16 "$compiled"/tests/"$1"/*.mjs
 fi
-if [[ $1 == all || $1 == studio ]]; then
+if [[ $1 == all || $1 == headless || $1 == studio ]]; then
 	for ((index = 1; index <= shards; index++)); do
 		start_lane "Studio $index/$shards" --max-old-space-size=768 --experimental-test-isolation=none \
 			"--test-shard=$index/$shards" "$compiled"/tests/studio/*.test.mjs

@@ -259,6 +259,24 @@ table-iteration and symbol conformance commands also accept
 For the compiled coroutine checks use a Debug build with native blocks on;
 the interpreter check requires its own build with native blocks off.
 
+Run the Node areas, ROM packer, Debug CTest and headless conformance together
+in one memory budget with:
+
+```bash
+npm run test:headless -- build-cpp-tests build-cpp-tests-debug build-cpp-tests-interpreter
+```
+
+Use three completed builds with `BMSX_BUILD_TESTS=ON`: Release with native
+blocks on, Debug with native blocks on, and Release with native blocks off,
+in that order. Build all test targets in the Debug tree. The Release tree
+needs the four replay/rewind runners, plus `bmsx_terminal_conformance_runner`,
+`bmsx_frame_evaluation_runner`, `bmsx_gc_stress_runner`, and
+`bmsx_coroutine_runner`. The interpreter tree needs `bmsx_coroutine_runner`
+and `bmsx_firmware_fsm_runner`. Rebuild these binaries after native changes.
+The headless command does not build C++; it refreshes the required ROMs
+through the normal artifact cache. Chromium, desktop/OS and hardware checks
+still have separate entrypoints.
+
 All test scripts use `scripts/test.sh`: a shared cgroup v2 `memory.max` cap of
 **at most 8 GiB** for the test process and its ordinary subprocesses. Existing
 stricter caps stay untouched. Nested runners share that budget; Node suites

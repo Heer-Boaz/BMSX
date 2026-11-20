@@ -47,6 +47,7 @@
 	"scripts": {
 		"test": "bash scripts/test.sh bash scripts/test_node_areas.sh selected",
 		"test:exec": "bash scripts/test.sh",
+		"test:headless": "bash scripts/test.sh node scripts/test_headless.mjs",
 		"test:runner": "bash scripts/test.sh node --test --test-concurrency=1 tests/platform/test_runner.test.mjs",
 		"codex:studio": "node scripts/dev/studio-codex.mjs",
 		"manual:build": "npm run manual:pdf && npm run manual:html && node -e \"const fs = require('node:fs'); fs.rmSync('dist/manual', { recursive: true, force: true }); fs.cpSync('docs/_html', 'dist/manual', { recursive: true });\"",
