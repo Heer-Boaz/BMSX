@@ -169,7 +169,7 @@ await buildBrowserStudioPackage(false);`], { cwd: folder });
 	}
 });
 
-test('native browser contacts drive the shared keyboard without guest-pixel geometry or collapsed fingers', async t => {
+test('native browser contacts drive the shared keyboard without guest-pixel geometry or collapsed fingers', { concurrency: 3 }, async t => {
 	const template = expandBrowserKeyboardTemplate(await readFile('gamebase.html', 'utf8'));
 	const controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	const css = await readFile('gamebase.css', 'utf8');
@@ -192,20 +192,22 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 	});
 	const folder = '.bmsx/hosting/conventional-keyboard-evidence';
 	await mkdir(folder, { recursive: true });
-	const browser = await chromium.launch();
+	// These profiles assert layout and input state, not compositor cadence.
+	const browser = await chromium.launch({ args: ['--disable-frame-rate-limit'] });
 	afterTest(t, () => browser.close());
 	const profileEvidence: unknown[] = [];
-	for (const profile of [
+	const profiles = [
 		{ name: 'phone-portrait', width: 393, height: 852, dpr: 3 },
 		{ name: 'phone-landscape', width: 852, height: 393, dpr: 3 },
 		{ name: 'tablet-portrait', width: 768, height: 1024, dpr: 2 },
 		{ name: 'tablet-landscape', width: 1024, height: 768, dpr: 2 },
 		{ name: 'compact-landscape', width: 568, height: 239, dpr: 1 },
-	]) {
-		await t.test(profile.name, async p => {
+	];
+	await Promise.all(profiles.map((profile, profileIndex) =>
+		t.test(profile.name, { concurrency: 1 }, async p => {
 			const context = await browser.newContext({ viewport: { width: profile.width, height: profile.height }, isMobile: true,
 				hasTouch: true, deviceScaleFactor: profile.dpr });
-			p.after(() => context.close());
+			afterTest(p, () => context.close());
 			const page = await context.newPage();
 			const errors: string[] = [];
 			page.on('pageerror', error => errors.push(error.message));
@@ -851,7 +853,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			assert.ok(events.some((event: any) => event.type === 'pointerdown') && events.some((event: any) => event.type === 'pointerup')
 				&& events.some((event: any) => event.type === 'pointercancel') && events.every((event: any) => event.trusted),
 				'the actual down/up/cancel contacts are trusted browser input, not dispatched DOM pointer events');
-			profileEvidence.push({ profile, opening, picture: beforePicture, nativeEvents: events.length, maximumCenterRounding, navigationRounding });
+			profileEvidence[profileIndex] = { profile, opening, picture: beforePicture, nativeEvents: events.length, maximumCenterRounding, navigationRounding };
 			assert.deepEqual(errors, []);
 			await page.evaluate(() => (globalThis as any).keyboardProbe.finish());
 			assert.equal(await page.locator('.bmsx-touch-keyboard').count(), 1, 'teardown preserves the document-owned keyboard template');
@@ -862,7 +864,6 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			await settle();
 			assert.equal(await page.evaluate(() => document.body.classList.contains('bmsx-touch-keyboard-visible')), false,
 				'teardown unsubscribes presentation; a later model revision cannot restore stale body UI state');
-		});
-	}
+		})));
 	await writeFile(`${folder}/profiles.json`, JSON.stringify(profileEvidence, null, 2));
 });
