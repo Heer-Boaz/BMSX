@@ -6,6 +6,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
+import { setTimeout as waitForIO } from 'node:timers/promises';
 import { PNG } from 'pngjs';
 
 // The only control surface is the shipped input/clipboard/screenshot client.
@@ -73,6 +74,18 @@ test('author, run and live-edit a cart through headless Studio user I/O', { time
 		await wait(3);
 		await press('Enter');
 	};
+	const saveFile = async (file, text) => {
+		await press('ControlLeft+KeyS');
+		// Advancing guest frames does not complete the host workspace write.
+		const target = path.join(workspace, 'carts/hot_resume_test', file);
+		const deadline = performance.now() + 5000;
+		let saved = await fs.readFile(target, 'utf8');
+		while (saved !== text && performance.now() < deadline) {
+			await waitForIO(20);
+			saved = await fs.readFile(target, 'utf8');
+		}
+		assert.equal(saved, text, `${file} must contain the revision saved through Studio`);
+	};
 	const newFile = async (file, text) => {
 		await press('ControlLeft+KeyN');
 		await press('ControlLeft+KeyA');
@@ -80,9 +93,7 @@ test('author, run and live-edit a cart through headless Studio user I/O', { time
 		await press('Enter');
 		await wait(3);
 		await replaceText(text);
-		await press('ControlLeft+KeyS');
-		await wait(3);
-		assert.equal(await fs.readFile(path.join(workspace, 'carts/hot_resume_test', file), 'utf8'), text);
+		await saveFile(file, text);
 	};
 	const expectColor = async channel => {
 		const frame = await capture();
@@ -161,8 +172,7 @@ end
 		await press('ControlRight+ShiftRight');
 		await openFile('authoring/paint.lua');
 		await replaceText(importedPaint + '\nend end\n');
-		await press('ControlLeft+KeyS');
-		await wait(3);
+		await saveFile('authoring/paint.lua', importedPaint + '\nend end\n');
 		await palette('Hot Resume');
 		await wait(10);
 		await capture();
@@ -202,8 +212,7 @@ end
 		await openFile('authoring/program.lua');
 		await press('ControlLeft+KeyZ');
 		assert.equal(await editorText(), program);
-		await press('ControlLeft+KeyS');
-		await wait(3);
+		await saveFile('authoring/program.lua', program);
 		await palette('Run: Reboot');
 		await wait(160);
 		await expectColor(2);

@@ -5,11 +5,20 @@ import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixtur
 test('Studio clipboard: native actions, actual denied writes, focused controls and Undo', { timeout: 120000 }, async t => {
 	const f = await createAssistantStudioFixture(t, 'clipboard', {}, { nativeClipboard: true });
 	const page = f.page;
-	await page.evaluate(async () => {
-		const entry = '/test.js', module = await import(entry);
-		(globalThis as any).clipboardUI = await module.startClipboardTest(document.querySelector('canvas'), (globalThis as any).capture);
-		await navigator.clipboard.writeText('previous OS clipboard');
+	const cdp = await page.context().newCDPSession(page);
+	// Playwright's evaluate supplies a user gesture. Bootstrap this document
+	// directly through Chromium so the denial starts without activation.
+	const startup = await cdp.send('Runtime.evaluate', {
+		expression: `(async () => {
+			const { startClipboardTest } = await import('/test.js');
+			globalThis.clipboardUI = await startClipboardTest(document.querySelector('canvas'), globalThis.capture);
+			await navigator.clipboard.writeText('previous OS clipboard');
+			return globalThis.clipboardUI.snapshot();
+		})()`,
+		userGesture: false, awaitPromise: true, returnByValue: true,
 	});
+	assert.equal(startup.exceptionDetails, undefined);
+	const initial = startup.result.value;
 	const snapshot = () => page.evaluate(() => (globalThis as any).clipboardUI.snapshot());
 	const command = (name: string) => page.evaluate(name => (globalThis as any).clipboardUI.command(name), name);
 	const frame = () => page.evaluate(() => (globalThis as any).clipboardUI.frame());
@@ -21,17 +30,20 @@ test('Studio clipboard: native actions, actual denied writes, focused controls a
 	};
 	const put = (text: string) => page.evaluate(text => navigator.clipboard.writeText(text), text);
 	const read = () => page.evaluate(() => navigator.clipboard.readText());
-	const initial = await snapshot();
 	assert.ok(initial.selection.length > 0);
 	// No trusted user gesture has occurred. This is a real browser rejection, not a mock.
 	await page.context().clearPermissions();
-	assert.equal(await page.evaluate(() => (globalThis as any).clipboardUI.write('not copied')), false);
-	// Playwright evaluations themselves can grant transient activation. Let it expire
-	// inside the page before running the command, rather than mocking execCommand.
-	assert.equal(await page.evaluate(() => new Promise(resolve => setTimeout(async () => {
-		const active = navigator.userActivation.isActive;
-		await (globalThis as any).clipboardUI.command('cut'); resolve(active);
-	}, 6000))), false);
+	const denial = await cdp.send('Runtime.evaluate', {
+		expression: `(async () => {
+			const active = navigator.userActivation.isActive;
+			const wrote = await globalThis.clipboardUI.write('not copied');
+			await globalThis.clipboardUI.command('cut');
+			return { active, wrote };
+		})()`,
+		userGesture: false, awaitPromise: true, returnByValue: true,
+	});
+	assert.equal(denial.exceptionDetails, undefined);
+	assert.deepEqual(denial.result.value, { active: false, wrote: false });
 	const denied = await snapshot();
 	assert.equal(denied.source, initial.source);
 	assert.equal(denied.version, initial.version);
@@ -87,7 +99,6 @@ test('Studio clipboard: native actions, actual denied writes, focused controls a
 	await page.waitForFunction(() => (globalThis as any).clipboardUI.snapshot().source === 'return 42');
 	await press('Control', 'z'); assert.equal((await snapshot()).source, source);
 	// Reject the read through Chromium's actual permission owner, not a mocked API.
-	const cdp = await page.context().newCDPSession(page);
 	const { targetInfo } = await cdp.send('Target.getTargetInfo');
 	await cdp.send('Browser.setPermission', { permission: { name: 'clipboard-read' }, setting: 'denied', origin: new URL(page.url()).origin,
 		browserContextId: targetInfo.browserContextId });
