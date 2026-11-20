@@ -33,7 +33,7 @@ void GlobalBank::writeBucket(u32 bucket, u32 slot) {
 u32 GlobalBank::bucketFor(StringId key) const {
 	const u32 buckets = 2u * m_state.capacity;
 	const u32 mask = buckets - 1u;
-	const u32 start = scalarValueHash(valueInteger(static_cast<i32>(key))) & mask;
+	const u32 start = hashCanonicalTableKey(valueInteger(static_cast<i32>(key))) & mask;
 	u32 bucket = start;
 	do {
 		const u32 slot = readBucket(bucket);

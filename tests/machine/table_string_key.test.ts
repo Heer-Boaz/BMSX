@@ -84,6 +84,17 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 	cpu.gc.tables.clear(generic);
 	cpu.gc.tables.clear(strings);
 	compare();
+
+	const tables = cpu.gc.tables, chain = cpu.createTable(0, 2);
+	const head = tables.storeStringKey(chain, keys[0], ValueTag.Integer, 11);
+	const tail = tables.storeStringKey(chain, keys[1], ValueTag.Integer, 22);
+	tables.setStringKey(chain, keys[0], valueNil());
+	assert.notEqual(head, tail);
+	assert.equal(tables.storeStringKeyWithoutGrowth(chain, keys[1], ValueTag.Integer, 33), tail,
+		'a tombstoned home must not hide a live colliding key');
+	assert.equal(tables.storeStringKeyWithoutGrowth(chain, keys[2], ValueTag.Integer, 44), head);
+	assert.equal(tables.getStringKey(chain, keys[1]), valueInteger(33), 'reusing the home keeps its live link');
+	assert.equal(tables.getStringKey(chain, keys[0]), valueNil());
 });
 
 test('known string lookup follows changing inherited fields and preserves false and signed zero', () => {

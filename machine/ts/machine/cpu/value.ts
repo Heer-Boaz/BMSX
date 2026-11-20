@@ -81,10 +81,11 @@ export function canonicalTableKey(value: Value): Value {
 	return (valuePayload(value) & 0x7fffffff) > 0x7f800000 ? valueFloatBits(BLUA32_FLOAT_NAN) : value;
 }
 export function tableKeysEqual(left: Value, right: Value): boolean { return canonicalTableKey(left) === canonicalTableKey(right); }
-export function scalarValueHash(value: Value): number {
-	value = canonicalTableKey(value);
+// A table operation normalizes its key before selecting the array or hash.
+export function hashCanonicalTableKey(value: Value): number {
 	switch (valueTag(value)) {
-		case ValueTag.Integer: case ValueTag.Float: {
+		case ValueTag.Integer: case ValueTag.Float:
+		case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: {
 			let bits = valuePayload(value);
 			bits = Math.imul(bits ^ ((bits << 14) | (bits >>> 18)), 0x85ebca6b) >>> 0;
 			return (bits ^ (bits >>> 13)) >>> 0;
@@ -94,7 +95,7 @@ export function scalarValueHash(value: Value): number {
 		case ValueTag.True: return 0x9e3779b9;
 		case ValueTag.String: return Math.imul(valuePayload(value), 2654435761) >>> 0;
 		case ValueTag.BuiltinFunction: return Math.imul(valuePayload(value) + 1, 0x27d4eb2d) >>> 0;
-		default: throw new Error('Reference hashing requires its owning heap.');
+		default: throw new Error('Internal table metadata is not a table key.');
 	}
 }
 export function valueTypeNameForLuaTag(tag: ValueTag): string {

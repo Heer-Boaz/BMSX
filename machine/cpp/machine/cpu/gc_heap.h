@@ -45,13 +45,6 @@ public:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	static u32 tryQueueChangedInNative(GcHeap* heap, u32 offset, u32 link) noexcept;
 #endif
-	uint32_t hash(Value value) const {
-		switch (valueTag(value)) {
-			case ValueTag::Table: case ValueTag::Closure: case ValueTag::Thread:
-				return scalarValueHash(valueInteger(static_cast<i32>(valuePayload(value))));
-			default: return scalarValueHash(value);
-		}
-	}
 	GcPhase phase() const {
 		// Two unconnected selector inputs do not clock the collector.
 		constexpr std::array phases{GcPhase::Pause, GcPhase::Mark, GcPhase::MarkAgain, GcPhase::Atomic,

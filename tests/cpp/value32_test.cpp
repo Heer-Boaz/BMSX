@@ -57,7 +57,9 @@ void valuesAndText() {
 	require(!valuesEqual(valueFloatBits(BLUA32_FLOAT_NAN), valueFloatBits(BLUA32_FLOAT_NAN)), "NaN is not equal to itself");
 	require(ValueEq{}(valueFloatBits(0xffa12345), valueFloatBits(BLUA32_FLOAT_NAN)), "table NaN key canonicalization");
 	require(ValueEq{}(valueInteger(0), valueFloatBits(0x80000000)), "zero keys canonicalize");
-	require(scalarValueHash(valueInteger(2)) == scalarValueHash(valueFloat(2.0f)), "equal numeric keys share hash");
+	require(hashCanonicalTableKey(valueInteger(2)) == hashCanonicalTableKey(canonicalTableKey(valueFloat(2.0f))), "equal numeric keys share hash");
+	require(hashCanonicalTableKey(valueTable(0x81234564u)) == hashCanonicalTableKey(valueInteger(0x81234564u)),
+		"record identity still hashes its full raw address word");
 	require(formatInteger(-2147483647 - 1) == "-2147483648", "signed Integer text");
 	require(formatFloat(2.0f) == "2.0" && formatFloat(10000000.0f) == "1e+07", "Float notation");
 	require(formatFloat(f32BitsToNumber(1)) == "1.401298e-45", "subnormal Float text");
@@ -69,7 +71,7 @@ void vectors() {
 		if (operation == 'V') {
 			const Value value = valueFromTag(static_cast<ValueTag>(first), second);
 			std::cout << std::hex << value << ' ' << canonicalTableKey(value) << '\n';
-		} else if (operation == 'H') std::cout << std::hex << scalarValueHash(valueFromTag(static_cast<ValueTag>(first), second)) << '\n';
+		} else if (operation == 'H') std::cout << std::hex << hashCanonicalTableKey(canonicalTableKey(valueFromTag(static_cast<ValueTag>(first), second))) << '\n';
 		else if (operation == 'F') std::cout << formatFloat(f32BitsToNumber(first)) << '\n';
 		else if (operation == 'I') std::cout << formatInteger(static_cast<int32_t>(first)) << '\n';
 		else throw std::runtime_error("unknown Value test operation");

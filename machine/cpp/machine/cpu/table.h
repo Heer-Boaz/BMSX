@@ -152,7 +152,6 @@ private:
 	size_t hashValueSlot(size_t index) const { return arrayCapacity() + hashSlots() + index; }
 	bool getArrayIndex(const Value& key, int& outIndex) const;
 	bool hasIntegerKey(u32 key) const;
-	size_t hashValue(const Value& key) const;
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
 	int findNextLiveHashIndex(size_t start) const;
 	void rehash(const Value& key, const Value& value);
@@ -181,7 +180,8 @@ private:
 	struct HashBody {
 		TableValues slots;
 		u32 array, count, links;
-		int findString(StringId key) const;
+		int findNode(const Value& key, u32 home, bool matchDead = false) const;
+		int findString(StringId key, u32 home) const;
 		i32 next(u32 index) const {
 			return static_cast<i32>(slots.memory->readRamRecordWord(links + index * 4u));
 		}
@@ -189,20 +189,19 @@ private:
 			slots.memory->writeRamRecordWord(links + index * 4u, static_cast<u32>(next));
 		}
 	};
-	HashBody hashBody(u32 count) const {
-		const u32 array = arrayCapacity(), words = storageAddress();
+	HashBody hashBody(u32 count, u32 array) const {
+		const u32 words = storageAddress();
 		const u32 links = words + (array + 2u * count) * 4u;
 		return {{m_memory, words, links + count * 4u}, array, count, links};
 	}
 	int getFreeIndex(const HashBody& body);
 	int rawSet(const Value& key, const Value& value);
-	int insertHash(const Value& key, const Value& value);
-	int insertHashWithoutGrowth(const HashBody& body, const Value& key, const Value& value) noexcept;
+	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept;
+	void setHash(u32 array, Value key, Value value);
 	void removeFromHash(const Value& key);
 	void markHashNodeDead(size_t index);
 	Value getCanonical(const Value& key) const;
 	Value getHash(const Value& key) const;
-	int findNodeIndex(const HashBody& body, const Value& key, bool matchDead = false) const;
 	template <bool RememberPath = false, typename Lookup>
 	void resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup,
 		TableStringReadCache* cache = nullptr) const;

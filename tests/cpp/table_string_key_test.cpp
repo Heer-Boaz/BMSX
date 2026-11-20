@@ -22,7 +22,7 @@ void collisionAndMutationParity(CPU& cpu) {
 	size_t count = 0;
 	for (size_t n = 0; count < keys.size(); ++n) {
 		const auto key = cpu.stringPool().intern("collision_" + std::to_string(n));
-		if ((scalarValueHash(valueString(key)) & 31u) == 0u) keys[count++] = key;
+		if ((hashCanonicalTableKey(valueString(key)) & 31u) == 0u) keys[count++] = key;
 	}
 	auto generic = cpu.createTable(0, 4);
 	auto strings = cpu.createTable(0, 4);
@@ -80,6 +80,18 @@ void collisionAndMutationParity(CPU& cpu) {
 	generic.clear();
 	strings.clear();
 	compare();
+
+	// All three names have the same home. The deleted head is reusable,
+	// but the live tail must still be found before inserting into the head.
+	auto chain = cpu.createTable(0, 2);
+	const int head = chain.setStringKey(keys[0], valueInteger(11));
+	const int tail = chain.setStringKey(keys[1], valueInteger(22));
+	chain.setStringKey(keys[0], valueNil());
+	require(head != tail && TableRecord::storeStringKeyWithoutGrowth(&chain, keys[1], valueInteger(33)) == tail,
+		"a tombstoned home must not hide a live colliding key");
+	require(TableRecord::storeStringKeyWithoutGrowth(&chain, keys[2], valueInteger(44)) == head
+		&& chain.getStringKey(keys[1]) == valueInteger(33) && isNil(chain.getStringKey(keys[0])),
+		"a real miss can reuse the home without breaking its live link");
 }
 
 void preparedLayoutMatchesAllMasks(CPU& cpu, Memory& memory) {

@@ -3,7 +3,7 @@ import type { Memory } from '../memory/memory';
 import type { HeapAllocator } from './heap_allocator';
 import type { LuaHeap } from './lua_heap';
 import type { StringId } from './string_pool';
-import { scalarValueHash, valueFromTag, valueInteger, valueNil, valuePayload, valueString, valueTag, type Value } from './value';
+import { hashCanonicalTableKey, valueFromTag, valueInteger, valueNil, valuePayload, valueString, valueTag, type Value } from './value';
 import { ValueSlots } from './value_slots';
 
 export type GlobalBankState = { base: number; capacity: number; count: number };
@@ -46,7 +46,7 @@ export class GlobalBank {
 
 	private bucketFor(key: StringId): number {
 		const mask = 2 * this.capacity - 1;
-		const start = scalarValueHash(valueInteger(key)) & mask;
+		const start = hashCanonicalTableKey(valueInteger(key)) & mask;
 		let bucket = start;
 		do {
 			const slot = this.readBucket(bucket);

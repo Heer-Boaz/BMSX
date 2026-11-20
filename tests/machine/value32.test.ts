@@ -61,7 +61,7 @@ test('Value identity is tag/word, not JS object shape, NaN space or numeric inte
 	assert.ok(!v.valuesEqual(v.valueInteger(16777217), v.valueFloat(16777216)));
 	assert.ok(!v.valuesEqual(v.valueFloatBits(0x7fc00000), v.valueFloatBits(0x7fc00000)));
 	assert.ok(v.tableKeysEqual(v.valueFloatBits(0xffa12345), v.valueFloatBits(0x7fc00000)));
-	assert.equal(v.scalarValueHash(v.valueInteger(2)), v.scalarValueHash(v.valueFloat(2)));
+	assert.equal(v.hashCanonicalTableKey(v.valueInteger(2)), v.hashCanonicalTableKey(v.canonicalTableKey(v.valueFloat(2))));
 	assert.ok(v.tableKeysEqual(v.valueInteger(0), v.valueFloatBits(0x80000000)));
 	assert.ok(v.valuesEqual(v.valueFromTag(v.ValueTag.True, 1), v.valueFromTag(v.ValueTag.True, 2)));
 	assert.ok(v.tableKeysEqual(v.valueFromTag(v.ValueTag.True, 1), v.valueBool(true)));
@@ -107,10 +107,10 @@ test('native Value fields, key hashes and Float text match TypeScript word for w
 	for (const word of words()) {
 		input.push(`F ${word.toString(16)} 0`); expected.push(formatFloat(f32BitsToNumber(word)));
 		input.push(`I ${word.toString(16)} 0`); expected.push(formatInteger(word | 0));
-		for (const tag of [v.ValueTag.Integer, v.ValueTag.Float, v.ValueTag.String, v.ValueTag.BuiltinFunction, v.ValueTag.Table]) {
+		for (const tag of [v.ValueTag.Integer, v.ValueTag.Float, v.ValueTag.String, v.ValueTag.BuiltinFunction, v.ValueTag.Table, v.ValueTag.Closure, v.ValueTag.Thread]) {
 			const value = v.valueFromTag(tag, word);
 			input.push(`V ${tag.toString(16)} ${word.toString(16)}`); expected.push(`${value.toString(16)} ${v.canonicalTableKey(value).toString(16)}`);
-			if (tag !== v.ValueTag.Table) { input.push(`H ${tag.toString(16)} ${word.toString(16)}`); expected.push(v.scalarValueHash(value).toString(16)); }
+			input.push(`H ${tag.toString(16)} ${word.toString(16)}`); expected.push(v.hashCanonicalTableKey(v.canonicalTableKey(value)).toString(16));
 		}
 	}
 	const actual = execFileSync(runner!, ['--vectors'], { input: input.join('\n') + '\n', encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trim().split('\n');

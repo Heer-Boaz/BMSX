@@ -118,12 +118,12 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	read(valueInteger(41), 1);
 	read(valueInteger(41), 1);
 	const auto neighbor = cpu.stringPool().intern("colliding receiver key");
-	require((scalarValueHash(valueString(neighbor)) & 3u) == (scalarValueHash(valueString(key)) & 3u),
+	require((hashCanonicalTableKey(valueString(neighbor)) & 3u) == (hashCanonicalTableKey(valueString(key)) & 3u),
 		"the receiver override must be displaced through a real hash link");
 	root.setStringKey(neighbor, valueInteger(99));
 	const auto ownSlot = root.setStringKey(key, valueBool(false));
 	block->sideExits[0].tableReadCache.receiverSlot = -1;
-	require(ownSlot != static_cast<int>(scalarValueHash(valueString(key)) & 3u),
+	require(ownSlot != static_cast<int>(hashCanonicalTableKey(valueString(key)) & 3u),
 		"the receiver's method is not in its home slot");
 	read(valueBool(false), 0);
 	require(hint.receiverSlot == ownSlot, "following the live chain rediscovers the shadow");
@@ -509,7 +509,7 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 
 	const u32 key = cpu.stringPool().intern("wrapped tag") | 0x80000000u;
 	constexpr u32 hash = 2;
-	const u32 keySlot = cpu.gcHeap().hash(valueString(key)) & (hash - 1u), valueSlot = keySlot + hash;
+	const u32 keySlot = hashCanonicalTableKey(valueString(key)) & (hash - 1u), valueSlot = keySlot + hash;
 	const u32 tags = MAIN_RAM_SIZE - 1u - keySlot, hashBody = tags - 3u * hash * sizeof(u32);
 	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Storage), hashBody);
 	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Array), 0);

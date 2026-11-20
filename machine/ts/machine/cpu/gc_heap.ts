@@ -10,7 +10,7 @@ import { TableRecords } from './table';
 import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND } from './thread_record';
 import { ThreadField, ThreadLayout, ThreadRecords } from './thread_record';
 import { FRAME_WINDOW_MASK, FrameField } from './call_state';
-import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, scalarValueHash, valueInteger, valueNil, valueFromTag, type Value } from './value';
+import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from './value';
 import { ValueSlots } from './value_slots';
 import type { LuaHeap } from './lua_heap';
 import { ceilDiv4 } from '../common/numeric';
@@ -112,12 +112,6 @@ export class GcHeap {
 		const offset = address & GC_RECORD_MASK;
 		return (offset & (THREAD_HEAP_BYTES - 1)) === 0 && this.arena.issuedObjectSlotClass(offset) === THREAD_SIZE_CLASS
 			&& this.memory.readRamRecordByte(offset) === THREAD_RECORD_KIND ? RAM_BASE + offset : 0;
-	}
-	public hash(value: Value): number {
-		switch (valueTag(value)) {
-			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return scalarValueHash(valueInteger(valuePayload(value)));
-			default: return scalarValueHash(value);
-		}
 	}
 	public active(): boolean { return this.phase() !== GcPhase.Pause; }
 	public isAlive(address: number): boolean { return address !== 0 && !this.unmarked(this.memory.readRamRecordByte(address + GC_COLOR_OFFSET)); }

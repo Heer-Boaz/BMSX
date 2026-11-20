@@ -35,7 +35,7 @@ struct Fixture {
 		size_t count = 0;
 		for (size_t n = 0; count < KeyCount * 2; ++n) {
 			const auto key = cpu.stringPool().intern("field_" + std::to_string(n));
-			if ((cpu.gcHeap().hash(valueString(key)) & 63u) != 0u) continue;
+			if ((hashCanonicalTableKey(valueString(key)) & 63u) != 0u) continue;
 			(count < KeyCount ? keys[count] : missing[count - KeyCount]) = key;
 			++count;
 		}

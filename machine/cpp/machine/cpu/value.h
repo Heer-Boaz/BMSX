@@ -102,11 +102,12 @@ struct ValueEq {
 	bool operator()(Value left, Value right) const { return canonicalTableKey(left) == canonicalTableKey(right); }
 };
 inline constexpr u32 STRING_VALUE_HASH_MULTIPLIER = 2654435761u;
-inline uint32_t scalarValueHash(Value value) {
-	value = canonicalTableKey(value);
+// A table operation normalizes its key before selecting the array or hash.
+inline uint32_t hashCanonicalTableKey(Value value) {
 	switch (valueTag(value)) {
 		case ValueTag::Integer:
-		case ValueTag::Float: {
+		case ValueTag::Float:
+		case ValueTag::Table: case ValueTag::Closure: case ValueTag::Thread: {
 			uint32_t bits = valuePayload(value);
 			bits ^= std::rotl(bits, 14); bits *= 0x85ebca6bu; bits ^= bits >> 13;
 			return bits;

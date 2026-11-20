@@ -7,7 +7,7 @@ import { LuaExecutionError } from './errors';
 import type { GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
 import {
-	ValueTag, canonicalTableKey, isNil, valueFromTag, valueInteger,
+	ValueTag, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
 	valueNil, valuePayload, valueString, valueTable, valueTag, valueTagHasGcEdge, type Value,
 } from './value';
 import type { ValueWriteTarget } from './value_slots';
@@ -107,13 +107,14 @@ export class TableRecords {
 		const hash = this.hashSize(record);
 		if (hash === 0) return -1;
 		const array = this.arrayCapacity(record), words = this.storageAddress(record);
-		return this.probeHash(key, hash, array, words, words + (array + 3 * hash) * 4, matchDead);
+		const home = hashCanonicalTableKey(key) & (hash - 1);
+		return this.probeHash(key, home, hash, array, words, words + (array + 3 * hash) * 4, matchDead);
 	}
-	private probeHash(key: Value, hash: number, array: number, words: number, tags: number, matchDead: boolean): number {
+	private probeHash(key: Value, home: number, hash: number, array: number, words: number, tags: number, matchDead: boolean): number {
 		const memory = this.heap.memory, links = tags - hash * 4;
 		const tag = valueTag(key), payload = valuePayload(key);
 		const collectable = matchDead && (tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread);
-		let index = this.heap.hash(key) & (hash - 1);
+		let index = home;
 		for (let remaining = hash; index >= 0 && remaining !== 0; --remaining) {
 			const keySlot = array + index;
 			const nodeTag = memory.readRamRecordByte(tags + keySlot);
@@ -128,9 +129,9 @@ export class TableRecords {
 		}
 		return -1;
 	}
-	private findStringNodeIndex(key: StringId, hash: number, array: number, words: number, tags: number): number {
+	private findStringNodeIndex(key: StringId, home: number, hash: number, array: number, words: number, tags: number): number {
 		const memory = this.heap.memory, links = tags - hash * 4;
-		let index = this.heap.hash(valueString(key)) & (hash - 1);
+		let index = home;
 		for (let remaining = hash; index >= 0 && remaining !== 0; --remaining) {
 			const slot = array + index;
 			if (memory.readRamRecordByte(tags + slot) === ValueTag.String
@@ -152,7 +153,8 @@ export class TableRecords {
 		const words = this.storageAddress(record), tags = words + (array + 3 * hash) * 4;
 		let slot = arrayIndex;
 		if (!inArray) {
-			const index = this.probeHash(key, hash, array, words, tags, false);
+			const home = hashCanonicalTableKey(key) & (hash - 1);
+			const index = this.probeHash(key, home, hash, array, words, tags, false);
 			if (index < 0) return valueNil();
 			slot = array + hash + index;
 		}
@@ -196,7 +198,7 @@ export class TableRecords {
 		if (hash === 0) return valueNil();
 		const array = this.arrayCapacity(record), words = this.storageAddress(record);
 		const tags = words + (array + 3 * hash) * 4;
-		const index = this.findStringNodeIndex(key, hash, array, words, tags);
+		const index = this.findStringNodeIndex(key, hashCanonicalTableKey(valueString(key)) & (hash - 1), hash, array, words, tags);
 		if (index < 0) return valueNil();
 		const memory = this.heap.memory, slot = array + hash + index;
 		return valueFromTag(memory.readRamRecordByte(tags + slot), memory.readRamRecordWord(words + slot * 4));
@@ -206,7 +208,7 @@ export class TableRecords {
 		if (hash !== 0) {
 			const array = this.arrayCapacity(record), words = this.storageAddress(record);
 			const tags = words + (array + 3 * hash) * 4;
-			const index = this.findStringNodeIndex(key, hash, array, words, tags);
+			const index = this.findStringNodeIndex(key, hashCanonicalTableKey(valueString(key)) & (hash - 1), hash, array, words, tags);
 			if (index >= 0) {
 				const memory = this.heap.memory, slot = array + hash + index;
 				target.setEncoded(destination, memory.readRamRecordByte(tags + slot), memory.readRamRecordWord(words + slot * 4));
@@ -247,7 +249,7 @@ export class TableRecords {
 					}
 				}
 			}
-			const index = this.findStringNodeIndex(key, hash, array, words, tags);
+			const index = this.findStringNodeIndex(key, hashCanonicalTableKey(valueString(key)) & (hash - 1), hash, array, words, tags);
 			if (index >= 0) {
 				const slot = array + hash + index;
 				const tag = memory.readRamRecordByte(tags + slot);
@@ -313,29 +315,42 @@ export class TableRecords {
 		const key = canonicalTableKey(rawKey);
 		if (isNil(key)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		const tag = valueTag(value);
-		const array = this.getArrayIndex(key);
-		if (array >= 0 && array < this.arrayCapacity(record)) {
+		const slot = this.getArrayIndex(key), array = this.arrayCapacity(record);
+		if (slot >= 0 && slot < array) {
 			this.heap.writeValueBarrier(record, GC_RECORD_LINK, tag);
-			this.setEncoded(record, array, tag, valuePayload(value)); this.updateLengthHint(record, array, tag !== ValueTag.Nil); return;
+			this.setEncoded(record, slot, tag, valuePayload(value)); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return;
 		}
 		if (tag === ValueTag.Nil) {
-			this.removeFromHash(record, key); if (array >= 0) this.updateLengthHint(record, array, false); return;
+			this.removeFromHash(record, key); if (slot >= 0) this.updateLengthHint(record, slot, false); return;
 		}
-		const index = this.findNodeIndex(record, key, true);
-		if (index >= 0) {
-			const keySlot = this.hashKeySlot(record, index), valueSlot = this.hashValueSlot(record, index);
-			const keyHasEdge = valueTagHasGcEdge(valueTag(key));
-			const deadKey = keyHasEdge && this.tagAt(record, keySlot) === ValueTag.Nil;
-			if (deadKey) this.setValue(record, keySlot, key);
-			if (valueTagHasGcEdge(tag) || (keyHasEdge && (deadKey || this.tagAt(record, valueSlot) === ValueTag.Nil))) {
-				this.heap.writeBarrier(record, GC_RECORD_LINK);
+		const keyHasEdge = valueTagHasGcEdge(valueTag(key));
+		const valueHasEdge = valueTagHasGcEdge(tag);
+		const hash = this.hashSize(record);
+		let needsGrowth = true;
+		if (hash !== 0) {
+			const words = this.storageAddress(record), tags = words + (array + 3 * hash) * 4;
+			const home = hashCanonicalTableKey(key) & (hash - 1);
+			const index = this.probeHash(key, home, hash, array, words, tags, true);
+			if (index >= 0) {
+				const memory = this.heap.memory, keySlot = array + index, valueSlot = keySlot + hash;
+				const deadKey = keyHasEdge && memory.readRamRecordByte(tags + keySlot) === ValueTag.Nil;
+				if (deadKey) this.writeSlot(words, tags, keySlot, valueTag(key), valuePayload(key));
+				if (valueHasEdge || (keyHasEdge && (deadKey || memory.readRamRecordByte(tags + valueSlot) === ValueTag.Nil))) {
+					this.heap.writeBarrier(record, GC_RECORD_LINK);
+				}
+				this.writeSlot(words, tags, valueSlot, tag, valuePayload(value));
+				if (slot >= 0) this.updateLengthHint(record, slot, true);
+				return;
 			}
-			this.setEncoded(record, valueSlot, tag, valuePayload(value));
-		} else {
-			this.rawSet(record, key, value);
-			if (valueTagHasGcEdge(valueTag(key)) || valueTagHasGcEdge(tag)) this.heap.writeBarrier(record, GC_RECORD_LINK);
+			needsGrowth = this.insertHashWithoutGrowth(record, home, key, value, array, hash, words, tags) < 0;
 		}
-		if (array >= 0) this.updateLengthHint(record, array, true);
+		if (needsGrowth) {
+			// Growth invalidates the home and can move the key to the array.
+			this.rehash(record, key, value);
+			this.rawSet(record, key, value);
+		}
+		if (keyHasEdge || valueHasEdge) this.heap.writeBarrier(record, GC_RECORD_LINK);
+		if (slot >= 0) this.updateLengthHint(record, slot, true);
 	}
 	public store(record: number, keyTag: ValueTag, keyWord: number, tag: ValueTag, word: number): void {
 		this.set(record, valueFromTag(keyTag, keyWord), valueFromTag(tag, word));
@@ -357,7 +372,8 @@ export class TableRecords {
 		if (hash === 0) return TABLE_STORE_REQUIRES_GROWTH;
 		const array = this.arrayCapacity(record), words = this.storageAddress(record);
 		const tags = words + (array + 3 * hash) * 4;
-		const index = this.findStringNodeIndex(key, hash, array, words, tags);
+		const home = hashCanonicalTableKey(k) & (hash - 1);
+		const index = this.findStringNodeIndex(key, home, hash, array, words, tags);
 		if (index >= 0) {
 			const slot = array + hash + index;
 			if (valueTagHasGcEdge(tag) || this.heap.memory.readRamRecordByte(tags + slot) === ValueTag.Nil) {
@@ -366,7 +382,7 @@ export class TableRecords {
 			this.writeSlot(words, tags, slot, tag, word);
 			return index;
 		}
-		const inserted = this.insertHashWithoutGrowth(record, k, valueFromTag(tag, word), array, hash, words, tags);
+		const inserted = this.insertHashWithoutGrowth(record, home, k, valueFromTag(tag, word), array, hash, words, tags);
 		if (inserted < 0) return TABLE_STORE_REQUIRES_GROWTH;
 		this.heap.writeBarrier(record, GC_RECORD_LINK);
 		return inserted;
@@ -395,9 +411,8 @@ export class TableRecords {
 		}
 		this.writeHeader(record, TableHeader.Free, -1); return -1;
 	}
-	private insertHashWithoutGrowth(record: number, key: Value, value: Value, array: number, hash: number, words: number, tags: number): number {
+	private insertHashWithoutGrowth(record: number, main: number, key: Value, value: Value, array: number, hash: number, words: number, tags: number): number {
 		const memory = this.heap.memory, links = tags - hash * 4;
-		const mask = hash - 1, main = this.heap.hash(key) & mask;
 		const keySlot = array + main, valueSlot = keySlot + hash;
 		const keyTag = memory.readRamRecordByte(tags + keySlot);
 		const tag = valueTag(key), word = valuePayload(key), nextTag = valueTag(value), nextWord = valuePayload(value);
@@ -408,7 +423,7 @@ export class TableRecords {
 		const free = this.getFreeIndex(record, array, hash, tags);
 		if (free < 0) return -1;
 		const freeKey = array + free, freeValue = freeKey + hash;
-		const occupiedMain = this.heap.hash(valueFromTag(keyTag, mainWord)) & mask;
+		const occupiedMain = hashCanonicalTableKey(canonicalTableKey(valueFromTag(keyTag, mainWord))) & (hash - 1);
 		if (occupiedMain !== main) {
 			this.writeSlot(words, tags, freeKey, keyTag, mainWord);
 			this.writeSlot(words, tags, freeValue, memory.readRamRecordByte(tags + valueSlot), memory.readRamRecordWord(words + valueSlot * 4));
@@ -434,7 +449,8 @@ export class TableRecords {
 		const hash = this.hashSize(record);
 		if (hash !== 0) {
 			const words = this.storageAddress(record), tags = words + (array + 3 * hash) * 4;
-			const index = this.insertHashWithoutGrowth(record, key, value, array, hash, words, tags);
+			const home = hashCanonicalTableKey(canonicalTableKey(key)) & (hash - 1);
+			const index = this.insertHashWithoutGrowth(record, home, key, value, array, hash, words, tags);
 			if (index >= 0) return index;
 		}
 		this.rehash(record, key, value); return this.rawSet(record, key, value);
