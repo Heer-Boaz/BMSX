@@ -25,6 +25,7 @@ import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { forkRuntimeSourceState } from '../../ide/runtime/sources';
 import { runStudioHostFrame } from '../../ide/workbench/frame';
 import { runWorkbenchHostFrame } from '../../ide/workbench/host_frame';
 import { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
@@ -41,13 +42,20 @@ import { createLoadedTestRuntimeSourceState } from './runtime_sources';
 import { MemoryWorkspaceFiles } from './workspace_files';
 import { afterTest } from './test_cleanup';
 
+async function loadLiveStudioSourceSeed() {
+	const [system, cart] = await Promise.all([readFile('dist/system/bmsx-bios.debug.rom'), readFile('dist/studio_test.debug.rom')]);
+	const media = await loadRomToolingMedia(system, [cart, null]);
+	return { system, cart, sources: createLoadedTestRuntimeSourceState(media.system, media.cartridgeSlots) };
+}
+
+// Keep the packed media and installed source provenance, not a running Studio.
+let sourceSeed: ReturnType<typeof loadLiveStudioSourceSeed> | undefined;
 
 /** Ordinary boot and the physical host phases of Studio, shared by live editor regressions. */
 export async function createLiveStudioFixture(t: TestContext, presentation: 'viewless' | 'workbench' = 'viewless') {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
-	const [system, cart] = await Promise.all([readFile('dist/system/bmsx-bios.debug.rom'), readFile('dist/studio_test.debug.rom')]);
-	const media = await loadRomToolingMedia(system, [cart, null]);
-	const sources = createLoadedTestRuntimeSourceState(media.system, media.cartridgeSlots);
+	const { system, cart, sources: packedSources } = await (sourceSeed ??= loadLiveStudioSourceSeed());
+	const sources = forkRuntimeSourceState(packedSources);
 	const clock = new VirtualHeadlessClock(), input = new Input(clock, new HeadlessInputHub(), -1);
 	const runtime = initializeMachineRuntime(system, [cart, null], PSX_MACHINE_SPEC, input);
 	const backend = new HeadlessGPUBackend(256, 212, runtime.model.gxGpuVramBytes);
