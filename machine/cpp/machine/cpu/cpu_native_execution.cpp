@@ -104,25 +104,51 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 #endif
 		return nullptr;
 	}
-	// Publish the complete native prefix before allocating, touching a device,
-	// changing frames or retiring generated code. The descriptor can die there.
-	cpu.instructionBudgetRemaining = state.remainingCycles;
-	frame->writeControl(FrameField::Pc, exit->nextPc);
+	const bool continuing = exit->exit == NativeBlockExit::Continue;
 	frame->compilationEntry = true;
-	frame->setTop(state.registerTop);
 	cpu.m_currentInstructionPc = exit->currentPc;
 	cpu.m_lastExecutionDomainId = frame->executionImage->executionDomainId;
 	cpu.lastPc = exit->lastPc;
+	if (continuing && state.remainingCycles > 0 && (exit->nextPc & (INSTRUCTION_BYTES - 1u)) == 0u) {
+		// A pure edge cannot rebind the activation or bank. Keep the native
+		// grant and top live unless we actually leave compiled execution.
+		auto* page = NativeCodeLookup::findInRoot(run->codeRoot, exit->nextPc);
+		if (page && page->nativeBlocks) {
+			auto* target = page->nativeBlocks->entries[(exit->nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+			auto& thread = *cpu.m_activeThread;
+			const int depth = static_cast<int>(thread.frameDepth());
+			if (target && depth > run->targetDepth
+				&& (cpu.m_haltedUntilIrqThreadAddress != thread.address || cpu.m_haltedUntilIrqFrameDepth != depth)
+				&& !thread.stackRequiresScalar()) {
+				// Shared system code entering a selectable cartridge bank must
+				// resolve that bank on each traversal instead of patching the edge.
+				if (exit->link.patchAddress != 0 && !exit->link.target
+					&& (frame->executionImage->executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID
+						|| exit->nextPc < CART_ROM_BASE || exit->currentPc >= CART_ROM_BASE)) target->linkFrom(*exit);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+				++gateProfile.resumes;
+#endif
+				return target->m_body;
+			}
+		}
+	}
+	// Publish the complete native prefix before leaving the grant, allocating,
+	// touching a device or changing frames. A semantic helper can retire the descriptor.
+	cpu.instructionBudgetRemaining = state.remainingCycles;
+	frame->writeControl(FrameField::Pc, exit->nextPc);
+	frame->setTop(state.registerTop);
+	if (continuing) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		++gateProfile.returns;
+#endif
+		return nullptr;
+	}
 	// A helper may retire its source descriptor. The image owns this cell;
 	// reading it after the helper observes any target withdrawal/publication.
 	void* const* const continuation = exit->continuationCells[run->cartridgeSlot];
 	try {
-		const bool continuing = exit->exit == NativeBlockExit::Continue;
 		auto transition = NativeBlockTransition::NextInstruction;
 		switch (exit->exit) {
-		case NativeBlockExit::Continue:
-			transition = NativeBlockTransition::NextInstruction;
-			break;
 		case NativeBlockExit::CompletedCall:
 			transition = NativeBlockTransition::Redispatch;
 			break;
@@ -304,15 +330,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		run->cartridgeSlot = slot;
 		run->frameBank = frameBankWord(frame->executionImage->executionDomainId);
 		run->cartridgeRom = cpu.m_memory.cartridgeController().romStorage(slot);
-		// A pure continuation still owns its descriptor. Cross-page links are
-		// stable except a system-image edge from shared memory into the selectable
-		// cartridge window. Cartridge source pages already have physical identity;
-		// cartridge execution domains additionally pin every instruction fetch.
-		// An internal typed-edge admission miss has no rewritable branch.
-		// Only emitted external continuations participate in cross-region linking.
-		if (continuing && exit->link.patchAddress != 0 && !exit->link.target
-			&& (frame->executionImage->executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID
-				|| pc < CART_ROM_BASE || exit->currentPc >= CART_ROM_BASE)) target->linkFrom(*exit);
 		state.registers = frame->registers;
 		state.globalValues = cpu.m_globalBank.values();
 		state.systemGlobalValues = cpu.m_systemGlobalBank.values();

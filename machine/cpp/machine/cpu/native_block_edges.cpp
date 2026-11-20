@@ -105,13 +105,15 @@ void NativeBlockCompiler::emitExit(NativeBlockExitSite& exit) {
 	// the receiving public entry will admit its own guarded representation.
 	m_cache.publish();
 	emitTop(exit.registerTop);
-	sljit_emit_op2(
-		m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
+	sljit_emit_op2(m_compiler, SLJIT_SUB32 | SLJIT_SET_SIG_GREATER, NativeBlockAbi::budget, 0,
+		NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
+	// Positive grants can take the patched edge without loading the exit
+	// descriptor. An expired grant or withdrawn target enters the same stub.
+	auto* jump = sljit_emit_jump(m_compiler, SLJIT_SIG_GREATER | SLJIT_REWRITABLE_JUMP);
+	auto* coldEntry = sljit_emit_label(m_compiler);
+	sljit_set_label(jump, coldEntry);
+	m_external.push_back({jump, coldEntry, &exit.link});
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&exit));
-	auto* expired =
-		sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM, 0);
-	m_external.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP | SLJIT_REWRITABLE_JUMP), &exit.link});
-	sljit_set_label(expired, sljit_emit_label(m_compiler));
 	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM, reinterpret_cast<sljit_sw>(nativeBlockGate().leaveSegment));
 	m_terminal = true;
 }

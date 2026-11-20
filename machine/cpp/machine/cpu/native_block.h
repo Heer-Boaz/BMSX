@@ -37,6 +37,7 @@ struct NativeBlockExitSite;
 struct NativeBlockLink {
 	void disconnect();
 	std::uintptr_t patchAddress = 0;
+	std::uintptr_t coldEntry = 0;
 	std::intptr_t executableOffset = 0;
 	NativeBlock* target = nullptr;
 	NativeBlockLink* previous = nullptr;

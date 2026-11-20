@@ -43,7 +43,11 @@ public:
 	const Root& root(u32 slot) const { return m_groups[slot]; }
 
 	DecodedInstructionPage* find(u32 pc, u32 slot) const {
-		const auto* group = m_groups[slot][pc >> ROOT_SHIFT];
+		return findInRoot(m_groups[slot], pc);
+	}
+
+	static DecodedInstructionPage* findInRoot(Group* const* root, u32 pc) {
+		const auto* group = root[pc >> ROOT_SHIFT];
 		const auto* page = group ? group->pages[(pc >> MAPPED_PAGE_BYTE_SHIFT) & (GROUP_PAGES - 1u)] : nullptr;
 		return page ? page->decoded : nullptr;
 	}

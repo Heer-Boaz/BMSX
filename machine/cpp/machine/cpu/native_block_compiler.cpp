@@ -358,8 +358,6 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 		sljit_set_label(branch.jump, m_coldExits[branch.target].label);
 	for (const auto& branch : m_branches)
 		sljit_set_label(branch.jump, m_entries[branch.target].proven);
-	for (const auto& branch : m_external)
-		sljit_set_target(branch.jump, reinterpret_cast<sljit_uw>(nativeBlockGate().leaveSegment));
 	void* code = sljit_generate_code(m_compiler, 0, nullptr);
 	if (!code)
 		throw std::bad_alloc();
@@ -370,6 +368,7 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 	}
 	for (const auto& branch : m_external) {
 		branch.link->patchAddress = sljit_get_jump_addr(branch.jump);
+		branch.link->coldEntry = sljit_get_label_addr(branch.coldEntry);
 		branch.link->executableOffset = sljit_get_executable_offset(m_compiler);
 	}
 	return code;

@@ -264,6 +264,7 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 		&& secondPage->nativeCode && secondPage->nativeCode[0], "compiled pages publish their native dispatch words");
 	require(root && target && root->terminal.link.target == target && target->terminal.link.target == root,
 		"both cross-page edges enter the real successor body without the CPU dispatcher");
+	root->terminal.link.disconnect();
 #endif
 	for (int grant = 1; grant <= 128; ++grant) {
 		for (auto* machine : {&native, &scalar}) {
@@ -271,6 +272,13 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		requireParity(native, scalar);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		if (grant == root->terminal.cycles)
+			require(!root->terminal.link.target, "an expired source grant leaves even a warm target untouched");
+		if (grant == root->terminal.cycles + 1)
+			require(root->terminal.link.target == target,
+				"a positive grant links the warm target, preserving parity when its guarded entry needs scalar execution");
+#endif
 	}
 	std::array<u8, INSTRUCTION_BYTES> replacement{};
 	writeInstruction(replacement, 0, static_cast<u8>(OpCode::SUB), 4, 0, 8);

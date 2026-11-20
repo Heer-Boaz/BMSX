@@ -94,6 +94,7 @@ private:
 	std::vector<Branch> m_branches;
 	struct ExternalBranch {
 		sljit_jump* jump;
+		sljit_label* coldEntry;
 		NativeBlockLink* link;
 	};
 	std::vector<ExternalBranch> m_external;
