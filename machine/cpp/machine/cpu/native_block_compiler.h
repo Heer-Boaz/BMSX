@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 #include <vector>
 #include "machine/cpu/native_block.h"
 #include "machine/cpu/native_block_abi.h"
@@ -50,7 +51,7 @@ private:
 	std::array<sljit_jump*, 2> emitArrayRead();
 	void emitArrayStore(int value, NativeBlockExitSite&);
 	void emitIndexRead(int key, NativeBlockExitSite&);
-	void emitStringSlot(bool load, int value, NativeBlockExitSite&);
+	void emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<StringId> constantKey = std::nullopt);
 	void emitTableReadLeaf(bool stringKey, NativeBlockExitSite&);
 	void emitTableSlotStore(int value);
 	void emitTableSlotOffset(sljit_s32 destination, bool word);

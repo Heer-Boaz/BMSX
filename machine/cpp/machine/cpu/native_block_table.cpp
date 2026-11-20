@@ -200,8 +200,11 @@ void NativeBlockCompiler::emitIndexRead(int key, NativeBlockExitSite& exit) {
 }
 
 // Hash keys start after the array; hash values start after all hash keys.
-void NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBlockExitSite& exit) {
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
+void NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBlockExitSite& exit, std::optional<StringId> constantKey) {
+	if (!constantKey)
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
+	const sljit_s32 keySource = constantKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP);
+	const sljit_sw keyOperand = constantKey ? static_cast<sljit_sw>(*constantKey) : keyWord;
 	const sljit_sw prediction = reinterpret_cast<sljit_sw>(&exit.tableCacheSlot);
 	std::array<sljit_jump*, 5> misses{};
 	size_t n = 0;
@@ -215,16 +218,17 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBlockExitSi
 								 static_cast<u8>(ValueTag::String));
 	emitTableSlotLoad(SLJIT_R2, true);
 	misses[n++] =
-		sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), keyWord);
+		sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, keySource, keyOperand);
 	// The value tag is one hash plane after the key tag, even at the RAM seam.
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash));
 	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
 	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
 	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
 	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R3);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	const sljit_s32 valueTagReg = load ? SLJIT_R3 : SLJIT_R2;
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, valueTagReg, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	misses[n++] =
-		sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Nil));
+		sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, valueTagReg, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Nil));
 	if (!load) {
 		// Deletion has to retain a dead key for next(), not just overwrite the tag.
 		const int tag = knownTag(value);
@@ -239,7 +243,6 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBlockExitSi
 		emitTableSlotStore(value);
 
 	} else {
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_R2, 0);
 		emitTableSlotLoad(SLJIT_R2, true);
 	}
 	auto* hit = sljit_emit_jump(m_compiler, SLJIT_JUMP);
@@ -248,13 +251,15 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBlockExitSi
 		sljit_set_label(misses[i], miss);
 
 	if (load) {
+		if (constantKey)
+			sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, keySource, keyOperand);
 		emitTableReadLeaf(true, exit);
 	} else {
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
 		emitRawLoad(value, SLJIT_R1, SLJIT_R2);
 		emitValueTransportStore(m_compiler, SLJIT_SP, transport, SLJIT_R1, SLJIT_R2);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), keyWord);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, keySource, keyOperand);
 		sljit_get_local_base(m_compiler, SLJIT_R3, 0, transport);
 		m_cache.spillCall(false, 0);
 		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS4(32, P, 32, 32, P), SLJIT_IMM,
@@ -304,8 +309,7 @@ void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction,
 			for (auto* miss : emitArrayRead()) fault(miss, exit, m_cache.state());
 		} else emitArrayStore(instruction.c, exit);
 	} else {
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_IMM, m_constants.payload(key));
-		emitStringSlot(load, instruction.c, exit);
+		emitStringSlot(load, instruction.c, exit, m_constants.payload(key));
 	}
 	if (load)
 		emitRawStore(instruction.a, SLJIT_R2, SLJIT_R3);

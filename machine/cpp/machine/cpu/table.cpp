@@ -109,25 +109,21 @@ int TableRecord::findNextLiveHashIndex(size_t start) const {
 	return -1;
 }
 
-int TableRecord::findStringNodeIndex(StringId key) const {
-	const u32 hash = hashSlots();
-	if (hash == 0u) return -1;
-	const u32 array = arrayCapacity(), words = storageAddress();
-	const u32 links = words + (array + 2u * hash) * 4u, tags = links + hash * 4u;
-	int index = static_cast<int>(hashValue(valueString(key)) & (hash - 1u));
-	for (u32 remaining = hash; index >= 0 && remaining != 0u; --remaining) {
+inline int TableRecord::HashBody::findString(StringId key) const {
+	int index = static_cast<int>(scalarValueHash(valueString(key)) & (count - 1u));
+	for (u32 remaining = count; index >= 0 && remaining != 0u; --remaining) {
 		const u32 slot = static_cast<u32>(index);
-		if (m_memory->readRamRecordByte(tags + array + slot) == static_cast<u8>(ValueTag::String)
-			&& m_memory->readRamRecordWord(words + (array + slot) * 4u) == key) return index;
-		index = static_cast<i32>(m_memory->readRamRecordWord(links + slot * 4u));
+		const u32 keySlot = array + slot;
+		if (slots.tag(keySlot) == ValueTag::String && slots.word(keySlot) == key) return index;
+		index = next(slot);
 	}
 	return -1;
 }
 
-int TableRecord::getFreeIndex() {
+int TableRecord::getFreeIndex(const HashBody& body) {
 	for (int i = hashFree(); i >= 0; --i) {
-		if (isNil(values().get(hashKeySlot(static_cast<size_t>(i))))
-			&& isNil(values().get(hashValueSlot(static_cast<size_t>(i))))) {
+		const u32 keySlot = body.array + static_cast<u32>(i);
+		if (body.slots.tag(keySlot) == ValueTag::Nil && body.slots.tag(keySlot + body.count) == ValueTag::Nil) {
 			writeHeader(TableHeader::Free, static_cast<u32>(i - 1));
 			return i;
 		}
@@ -137,6 +133,8 @@ int TableRecord::getFreeIndex() {
 }
 
 void TableRecord::rehash(const Value& key, const Value& value) {
+	const auto body = hashBody(hashSlots());
+	const auto& slots = body.slots;
 	size_t totalKeys = 0;
 	std::array<u32, 32> counts{};
 	size_t countBins = 0;
@@ -150,18 +148,20 @@ void TableRecord::rehash(const Value& key, const Value& value) {
 		counts[log] += 1;
 	};
 
-	for (size_t i = 0; i < arrayCapacity(); ++i) {
-		if (!isNil(values().get(i))) {
+	for (u32 i = 0; i < body.array; ++i) {
+		if (slots.tag(i) != ValueTag::Nil) {
 			totalKeys += 1;
 			countIntegerKey(i + 1);
 		}
 	}
-	for (size_t i = 0; i < hashSlots(); ++i) {
-		const Value key = values().get(hashKeySlot(i));
-		if (!isNil(key) && !isNil(values().get(hashValueSlot(i)))) {
+	for (u32 i = 0; i < body.count; ++i) {
+		const u32 slot = body.array + i;
+		const auto tag = slots.tag(slot);
+		if (tag != ValueTag::Nil && slots.tag(slot + body.count) != ValueTag::Nil) {
 			totalKeys += 1;
 			int index = 0;
-			if (getArrayIndex(key, index)) {
+			if ((tag == ValueTag::Integer || tag == ValueTag::Float)
+				&& getArrayIndex(valueFromTag(tag, slots.word(slot)), index)) {
 				countIntegerKey(static_cast<size_t>(index) + 1);
 			}
 		}
@@ -189,7 +189,7 @@ void TableRecord::rehash(const Value& key, const Value& value) {
 
 	size_t hashKeys = totalKeys - arrayKeys;
 	size_t hashSize = hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0;
-	m_heap->budget.accountTableStorageWork(arrayCapacity() + 2 * hashSlots());
+	m_heap->budget.accountTableStorageWork(body.array + 2u * body.count);
 	resize(arraySize, hashSize, key, value);
 }
 
@@ -268,53 +268,54 @@ int TableRecord::rawSet(const Value& key, const Value& value) {
 }
 
 int TableRecord::insertHash(const Value& key, const Value& value) {
-	const int nodeIndex = insertHashWithoutGrowth(key, value);
-	if (nodeIndex >= 0) return nodeIndex;
+	const u32 count = hashSlots();
+	if (count != 0u) {
+		const int nodeIndex = insertHashWithoutGrowth(hashBody(count), key, value);
+		if (nodeIndex >= 0) return nodeIndex;
+	}
 	// Growth may collect and relocate a source Thread's register storage.
 	const Value pendingKey = key, pendingValue = value;
 	rehash(pendingKey, pendingValue);
 	return rawSet(pendingKey, pendingValue);
 }
 
-int TableRecord::insertHashWithoutGrowth(const Value& key, const Value& value) noexcept {
-	if (hashSlots() == 0) {
-		return -1;
-	}
-	size_t mask = hashSlots() - 1;
-	int mainIndex = static_cast<int>(hashValue(key) & mask);
-	const size_t mainSlot = static_cast<size_t>(mainIndex);
-	const Value mainKey = values().get(hashKeySlot(mainSlot));
-	if (isNil(mainKey) || isNil(values().get(hashValueSlot(mainSlot)))) {
-		values().set(hashKeySlot(mainSlot), key);
-		values().set(hashValueSlot(mainSlot), value);
+int TableRecord::insertHashWithoutGrowth(const HashBody& body, const Value& key, const Value& value) noexcept {
+	const auto& slots = body.slots;
+	const u32 count = body.count, mask = count - 1u;
+	const int mainIndex = static_cast<int>(hashValue(key) & mask);
+	const u32 mainSlot = static_cast<u32>(mainIndex);
+	const u32 keySlot = body.array + mainSlot, valueSlot = keySlot + count;
+	const auto tag = slots.tag(keySlot);
+	if (tag == ValueTag::Nil || slots.tag(valueSlot) == ValueTag::Nil) {
+		slots.set(keySlot, key);
+		slots.set(valueSlot, value);
 		return mainIndex;
 	}
-	int freeIndex = getFreeIndex();
-	if (freeIndex < 0) {
-		return -1;
-	}
-	const size_t freeSlot = static_cast<size_t>(freeIndex);
-	int mainIndexOfOccupied = static_cast<int>(hashValue(mainKey) & mask);
+	const Value mainKey = valueFromTag(tag, slots.word(keySlot));
+	const int freeIndex = getFreeIndex(body);
+	if (freeIndex < 0) return -1;
+	const u32 freeSlot = static_cast<u32>(freeIndex), freeKey = body.array + freeSlot;
+	const int mainIndexOfOccupied = static_cast<int>(hashValue(mainKey) & mask);
 	if (mainIndexOfOccupied != mainIndex) {
-		values().set(hashKeySlot(freeSlot), mainKey);
-		values().set(hashValueSlot(freeSlot), values().get(hashValueSlot(mainSlot)));
-		setHashNext(freeSlot, hashNext(mainSlot));
+		slots.set(freeKey, mainKey);
+		slots.set(freeKey + count, slots.get(valueSlot));
+		body.setNext(freeSlot, body.next(mainSlot));
 		int prev = mainIndexOfOccupied;
-		for (size_t remaining = hashSlots(); remaining != 0; --remaining) {
-			const int next = hashNext(static_cast<size_t>(prev));
+		for (u32 remaining = count; remaining != 0u; --remaining) {
+			const int next = body.next(static_cast<u32>(prev));
 			if (next == mainIndex || next < 0) break;
 			prev = next;
 		}
-		setHashNext(static_cast<size_t>(prev), freeIndex);
-		values().set(hashKeySlot(mainSlot), key);
-		values().set(hashValueSlot(mainSlot), value);
-		setHashNext(mainSlot, kTableHashNextEnd);
+		body.setNext(static_cast<u32>(prev), freeIndex);
+		slots.set(keySlot, key);
+		slots.set(valueSlot, value);
+		body.setNext(mainSlot, kTableHashNextEnd);
 		return mainIndex;
 	}
-	values().set(hashKeySlot(freeSlot), key);
-	values().set(hashValueSlot(freeSlot), value);
-	setHashNext(freeSlot, hashNext(mainSlot));
-	setHashNext(mainSlot, freeIndex);
+	slots.set(freeKey, key);
+	slots.set(freeKey + count, value);
+	body.setNext(freeSlot, body.next(mainSlot));
+	body.setNext(mainSlot, freeIndex);
 	return freeIndex;
 }
 
@@ -427,30 +428,34 @@ void TableRecord::setInteger(int indexValue, const Value& value) {
 }
 
 Value TableRecord::getStringKey(StringId key) const {
-	const int nodeIndex = findStringNodeIndex(key);
-	if (nodeIndex >= 0) {
-		return values().get(hashValueSlot(static_cast<size_t>(nodeIndex)));
-	}
-	return valueNil();
+	const u32 count = hashSlots();
+	if (count == 0u) return valueNil();
+	const auto body = hashBody(count);
+	const int nodeIndex = body.findString(key);
+	return nodeIndex < 0 ? valueNil() : body.slots.get(body.array + count + static_cast<u32>(nodeIndex));
 }
 
 Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot) const {
-	const u32 hash = hashSlots();
-	if (predictedSlot >= 0 && static_cast<u32>(predictedSlot) < hash) {
-		const u32 array = arrayCapacity(), words = storageAddress();
-		const TableValues slots{m_memory, words, words + (array + 3u * hash) * 4u};
-		const u32 keySlot = array + static_cast<u32>(predictedSlot);
-		if (slots.get(keySlot) == valueString(key)) {
-			const Value value = slots.get(keySlot + hash);
-			if (!isNil(value)) return value;
+	const u32 count = hashSlots();
+	if (count != 0u) {
+		const auto body = hashBody(count);
+		const auto& slots = body.slots;
+		if (predictedSlot >= 0 && static_cast<u32>(predictedSlot) < count) {
+			const u32 keySlot = body.array + static_cast<u32>(predictedSlot);
+			if (slots.tag(keySlot) == ValueTag::String && slots.word(keySlot) == key) {
+				const u32 valueSlot = keySlot + count;
+				const auto tag = slots.tag(valueSlot);
+				if (tag != ValueTag::Nil) return valueFromTag(tag, slots.word(valueSlot));
+			}
 		}
-	}
-	const int nodeIndex = findStringNodeIndex(key);
-	if (nodeIndex >= 0) {
-		const Value value = values().get(hashValueSlot(static_cast<size_t>(nodeIndex)));
-		if (!isNil(value)) {
-			predictedSlot = nodeIndex;
-			return value;
+		const int nodeIndex = body.findString(key);
+		if (nodeIndex >= 0) {
+			const u32 valueSlot = body.array + count + static_cast<u32>(nodeIndex);
+			const auto tag = slots.tag(valueSlot);
+			if (tag != ValueTag::Nil) {
+				predictedSlot = nodeIndex;
+				return valueFromTag(tag, slots.word(valueSlot));
+			}
 		}
 	}
 	predictedSlot = -1;
@@ -512,26 +517,30 @@ int TableRecord::storeStringKeyWithoutGrowth(TableRecord* table, StringId key, c
 		table->removeFromHash(keyValue);
 		return -1;
 	}
-	const int nodeIndex = table->findStringNodeIndex(key);
+	const u32 count = table->hashSlots();
+	if (count == 0u) return TABLE_STORE_REQUIRES_GROWTH;
+	const auto body = table->hashBody(count);
+	const int nodeIndex = body.findString(key);
 	if (nodeIndex >= 0) {
-		table->values().set(table->hashValueSlot(static_cast<size_t>(nodeIndex)), value);
+		body.slots.set(body.array + count + static_cast<u32>(nodeIndex), value);
 		return nodeIndex;
 	}
-	const int inserted = table->insertHashWithoutGrowth(keyValue, value);
+	const int inserted = table->insertHashWithoutGrowth(body, keyValue, value);
 	return inserted >= 0 ? inserted : TABLE_STORE_REQUIRES_GROWTH;
 }
 
 void TableRecord::setStringKeyCached(StringId key, const Value& value, int& predictedSlot) {
 	writeBarrier();
-	if (!isNil(value)
-		&& predictedSlot >= 0
-		&& static_cast<size_t>(predictedSlot) < hashSlots()) {
-		const size_t slot = static_cast<size_t>(predictedSlot);
-		if (valueIsString(values().get(hashKeySlot(slot)))
-			&& asStringId(values().get(hashKeySlot(slot))) == key
-			&& !isNil(values().get(hashValueSlot(slot)))) {
-			values().set(hashValueSlot(slot), value);
-			return;
+	if (!isNil(value) && predictedSlot >= 0) {
+		const u32 count = hashSlots();
+		if (static_cast<u32>(predictedSlot) < count) {
+			const auto body = hashBody(count);
+			const u32 keySlot = body.array + static_cast<u32>(predictedSlot), valueSlot = keySlot + count;
+			if (body.slots.tag(keySlot) == ValueTag::String && body.slots.word(keySlot) == key
+				&& body.slots.tag(valueSlot) != ValueTag::Nil) {
+				body.slots.set(valueSlot, value);
+				return;
+			}
 		}
 	}
 	predictedSlot = setStringKey(key, value);

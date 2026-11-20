@@ -33,10 +33,10 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 	if (op === OpCode.GETI || op === OpCode.SETI) {
 		access = `if(!tb.${load ? 'li' : 'si'}(A,${key},${target})) ${failure}`;
 	} else if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF) {
-		access = `if(!tb.${load ? 'lp' : 'sp'}(A,k[${key}],ts[${word}],${target})) ${load
-			? failure
-			: `{const slot=tb.sg(A,k[${key}],${target});
-				if(slot===${TABLE_STORE_REQUIRES_GROWTH}) ${failure} ts[${word}]=slot;}`}`;
+		access = load ? `if(!tb.lp(A,k[${key}],ts[${word}],${target})) ${failure}`
+			: `const key=k[${key}];
+				if(!tb.sp(A,key,ts[${word}],${target})){const slot=tb.sg(A,key,${target});
+					if(slot===${TABLE_STORE_REQUIRES_GROWTH}) ${failure} ts[${word}]=slot;}`;
 	} else {
 		access = `const tag=${r.tagOperand(key)},key=${r.wordOperand(key)};
 			if(tag===${ValueTag.Integer}||tag===${ValueTag.Float}){const i=tag===${ValueTag.Integer}?key|0:fi(key);if(i===null||!tb.${load ? 'li' : 'si'}(A,i,${target})) ${failure}}

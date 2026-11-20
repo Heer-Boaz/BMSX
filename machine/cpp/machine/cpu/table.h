@@ -195,9 +195,7 @@ private:
 	bool hasIntegerKey(u32 key) const;
 	size_t hashValue(const Value& key) const;
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
-	int findStringNodeIndex(StringId key) const;
 	int findNextLiveHashIndex(size_t start) const;
-	int getFreeIndex();
 	void rehash(const Value& key, const Value& value);
 	void resize(size_t newArraySize, size_t newHashSize, const Value& key, const Value& value);
 	void bindStorage(size_t arraySize, size_t hashSize, u32 address);
@@ -205,28 +203,42 @@ private:
 	void freeStorage();
 	u32 readHeader(TableHeader field) const { return m_memory->readRamRecordWord(m_address + static_cast<u32>(field)); }
 	void writeHeader(TableHeader field, u32 word) { m_memory->writeRamRecordWord(m_address + static_cast<u32>(field), word); }
-	u32 linksAddress() const { return storageAddress() + (arrayCapacity() + 2u * hashSlots()) * 4u; }
 	struct TableValues {
 		Memory* memory;
 		u32 words, tags;
+		ValueTag tag(u32 index) const {
+			return static_cast<ValueTag>(memory->readRamRecordByte(tags + index));
+		}
+		u32 word(u32 index) const { return memory->readRamRecordWord(words + index * 4u); }
 		Value get(size_t index) const {
-			return valueFromTag(static_cast<ValueTag>(memory->readRamRecordByte(tags + static_cast<u32>(index))),
-				memory->readRamRecordWord(words + static_cast<u32>(index) * 4u));
+			const auto slot = static_cast<u32>(index);
+			return valueFromTag(tag(slot), word(slot));
 		}
 		void set(size_t index, Value value) const {
 			memory->writeRamRecordWord(words + static_cast<u32>(index) * 4u, valuePayload(value));
 			memory->writeRamRecordByte(tags + static_cast<u32>(index), static_cast<u8>(valueTag(value)));
 		}
 	};
-	i32 hashNext(size_t index) const {
-		return static_cast<i32>(m_memory->readRamRecordWord(linksAddress() + static_cast<u32>(index) * 4u));
+	struct HashBody {
+		TableValues slots;
+		u32 array, count, links;
+		int findString(StringId key) const;
+		i32 next(u32 index) const {
+			return static_cast<i32>(slots.memory->readRamRecordWord(links + index * 4u));
+		}
+		void setNext(u32 index, i32 next) const {
+			slots.memory->writeRamRecordWord(links + index * 4u, static_cast<u32>(next));
+		}
+	};
+	HashBody hashBody(u32 count) const {
+		const u32 array = arrayCapacity(), words = storageAddress();
+		const u32 links = words + (array + 2u * count) * 4u;
+		return {{m_memory, words, links + count * 4u}, array, count, links};
 	}
-	void setHashNext(size_t index, i32 next) {
-		m_memory->writeRamRecordWord(linksAddress() + static_cast<u32>(index) * 4u, static_cast<u32>(next));
-	}
+	int getFreeIndex(const HashBody& body);
 	int rawSet(const Value& key, const Value& value);
 	int insertHash(const Value& key, const Value& value);
-	int insertHashWithoutGrowth(const Value& key, const Value& value) noexcept;
+	int insertHashWithoutGrowth(const HashBody& body, const Value& key, const Value& value) noexcept;
 	void removeFromHash(const Value& key);
 	void markHashNodeDead(size_t index);
 	template <typename Lookup>

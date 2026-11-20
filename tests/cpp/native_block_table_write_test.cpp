@@ -293,7 +293,7 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 		&& memory.readRamRecordWord(body) == 83 && memory.readRamRecordByte(body + 4) == static_cast<u8>(ValueTag::Integer),
 		"scalar and native use the same per-width aliases for header and backing");
 
-	const auto key = cpu.stringPool().intern("wrapped tag");
+	const u32 key = cpu.stringPool().intern("wrapped tag") | 0x80000000u;
 	constexpr u32 hash = 2;
 	const u32 keySlot = cpu.gcHeap().hash(valueString(key)) & (hash - 1u), valueSlot = keySlot + hash;
 	const u32 tags = MAIN_RAM_SIZE - 1u - keySlot, hashBody = tags - 3u * hash * sizeof(u32);
@@ -318,7 +318,7 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 	const auto* stopped = fieldBlock->run(state);
 	require(stopped->exit == NativeBlockExit::WriteField && registers.get(3) == valueInteger(19)
 		&& memory.readRamRecordWord(hashBody + valueSlot * sizeof(u32)) == 19,
-		"the predicted read crosses the RAM seam and a clean destination tag page stops both store planes");
+		"the predicted read matches all 32 key bits across the RAM seam, and a clean tag page stops both store planes");
 	watches.disarmHistoryWrites();
 	state.remainingCycles = 100;
 	require(fieldBlock->run(state) == &fieldBlock->terminal
