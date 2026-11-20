@@ -8,7 +8,8 @@ case "${1-}" in
 			echo 'Usage: npm test -- [node test options] <test files>; use npm run test:lua for all four areas.' >&2
 			exit 2
 		fi
-		TSX_TSCONFIG_PATH=tsconfig.base.json exec node --import tsx --import ./tests/helpers/test_setup.ts \
+		# Build workers inherit the loader config but operate in their workspace.
+		TSX_TSCONFIG_PATH="$PWD/tsconfig.base.json" exec node --import tsx --import ./tests/helpers/test_setup.ts \
 			--test --test-concurrency=1 "$@"
 		;;
 	all|headless)
