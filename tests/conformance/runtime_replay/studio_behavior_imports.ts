@@ -98,7 +98,8 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 	await test.clickTab(providerTab.id);
 	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText('return {'); await press('ControlLeft', 'KeyV');
 	await test.clickTab(effectLens.id);
-	check(effectLens.isDirty() && provider.buffer.getText() === 'return {', 'imports: incomplete provider still belongs to the Lens editing scope');
+	check(effectLens.view.source.isCurrent && effectLens.isDirty() && provider.buffer.getText() === 'return {',
+		'imports: reactivating the Lens projects the incomplete provider and still owns its edit scope');
 	await press('ControlLeft', 'KeyZ');
 	check(provider.buffer.getText() === effectSource && main.version === registrationVersion,
 		'imports: Lens Undo recovers a provider even when its graph could not be projected');

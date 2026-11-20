@@ -287,14 +287,18 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 	public override layout(bounds: Readonly<RectBounds>): void {
 		super.layout(bounds);
 		if (!this.hasInput) return;
-		prepareBehaviorLensLayout(this.input.view, bounds);
-		this.input.updatePresentation(editorViewState.font.renderFont());
-		const presentation = this.input.view.presentation;
-		if (presentation.kind === 'properties') this.properties.setInput(presentation.tree, this.input.view.selectionState.definitionRowKey);
+		const input = this.input;
+		// Tab activation and resize can lay out the pane before its next update.
+		// Project property ranges against the same source generation as their buffers.
+		if (!input.view.source.isCurrent) this.controller.updateView(input);
+		prepareBehaviorLensLayout(input.view, bounds);
+		input.updatePresentation(editorViewState.font.renderFont());
+		const presentation = input.view.presentation;
+		if (presentation.kind === 'properties') this.properties.setInput(presentation.tree, input.view.selectionState.definitionRowKey);
 		else this.properties.clear();
-		if (this.presentedSource !== this.input.view.source) {
-			this.presentedSource = this.input.view.source;
-			finishBehaviorLensNavigation(this.input.view);
+		if (this.presentedSource !== input.view.source) {
+			this.presentedSource = input.view.source;
+			finishBehaviorLensNavigation(input.view);
 		}
 	}
 
