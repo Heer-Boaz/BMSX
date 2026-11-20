@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { IO_APU_SAMPLE_SEQUENCE, IO_SYS_TIME_MS } from '../../machine/ts/spec/bmsx/io';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
-import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
 
 const modules = [...WORLD_CPU_MODULES, ...['cartlib/apu', 'cartlib/world/base_system', 'cartlib/timeline/timeline_system'].map(path => ({
 	path, source: readFileSync(`${path}.lua`, 'utf8'),
@@ -29,9 +29,11 @@ prefab.define({def_id='timeline.pose3',
  position={x=3,y=7,z=11}})
 `;
 
-for (const optLevel of [3] as const) {
-	test(`FSM state-created timeline receivers are admitted after entry and replaced on reentry (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+const optLevel = 3;
+const manualRom = createCartlibCaseRom(setup, { optLevel, modules });
+const scheduledRom = createCartlibCaseRom(WORLD_CPU_SETUP, { optLevel, modules });
+
+const stateReceivers = manualRom.add(`
 local fsm<const> = require('cartlib/fsm/fsm_component')
 local library<const> = require('cartlib/fsm/library')
 return pcall(function()
@@ -70,15 +72,15 @@ assert(second.value==12 and first.value==7,'new playback wrote the previous stat
 world:clear()
 return true
 end)
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		const result = materializeCpuCompletionValues(cpu);
-		assert.equal(result[0], valueBool(true), result[0] === valueBool(true) ? undefined : cpu.stringPool.toString(asStringId(result[1])));
-		assert.equal(result[1], valueBool(true));
-	});
+`);
+test(`FSM state-created timeline receivers are admitted after entry and replaced on reentry (O${optLevel})`, () => {
+	const cpu = manualRom.run(stateReceivers);
+	const result = materializeCpuCompletionValues(cpu);
+	assert.equal(result[0], valueBool(true), result[0] === valueBool(true) ? undefined : cpu.stringPool.toString(asStringId(result[1])));
+	assert.equal(result[1], valueBool(true));
+});
 
-	test(`FSM timeline admission uses the constructor-published component before autoplay (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+const constructorReceivers = manualRom.add(`
 local fsm<const> = require('cartlib/fsm/fsm_component')
 local library<const> = require('cartlib/fsm/library')
 return pcall(function()
@@ -113,15 +115,15 @@ assert(visual.presentation_ox==8 and visual.presentation_oy==7
 world:clear()
 return true
 end)
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		const result = materializeCpuCompletionValues(cpu);
-		assert.equal(result[0], valueBool(true), result[0] === valueBool(true) ? undefined : cpu.stringPool.toString(asStringId(result[1])));
-		assert.equal(result[1], valueBool(true));
-	});
+`);
+test(`FSM timeline admission uses the constructor-published component before autoplay (O${optLevel})`, () => {
+	const cpu = manualRom.run(constructorReceivers);
+	const result = materializeCpuCompletionValues(cpu);
+	assert.equal(result[0], valueBool(true), result[0] === valueBool(true) ? undefined : cpu.stringPool.toString(asStringId(result[1])));
+	assert.equal(result[1], valueBool(true));
+});
 
-	test(`grouped spatial sampling preserves real identities, interpolation and query boundaries (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+manualRom.test(`grouped spatial sampling preserves real identities, interpolation and query boundaries (O${optLevel})`, `
 local owner<const> = world:spawn('timeline.pose2',{})
 local pose<const> = owner
 local seen = 0
@@ -164,12 +166,9 @@ owner.timelines:seek_time('bound',50)
 assert(pose.ox==0 and second.ox==10, 'explicit play binding override was not admitted')
 owner.timelines:play('bound')
 assert(pose.ox==0 and second.ox==10, 'explicit play override replaced the retained definition receivers')
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	test(`nested mixed-domain groups retain unsampled frame coefficients while time channels advance (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+const mixedClockGroups = manualRom.add(`
 local range<const> = require('cartlib/timeline/timeline').range
 local owner<const> = world:spawn('timeline.pose2',{})
 local pose<const> = owner
@@ -192,15 +191,15 @@ pose:set_position(17,pose.oy)
 owner.timelines:tick_gameplay(5)
 observed[5]=pose.ox
 observed[6]=pose.oy
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		const observed = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('observed')!));
-		assert.deepEqual(Array.from({ length: 6 }, (_, index) => numberToHost(cpu.gc.tables.getInteger(observed, index + 1))),
-			[7, 1.25, 10, 2.5, 17, 3.75]);
-	});
+`);
+test(`nested mixed-domain groups retain unsampled frame coefficients while time channels advance (O${optLevel})`, () => {
+	const cpu = manualRom.run(mixedClockGroups);
+	const observed = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('observed')!));
+	assert.deepEqual(Array.from({ length: 6 }, (_, index) => numberToHost(cpu.gc.tables.getInteger(observed, index + 1))),
+		[7, 1.25, 10, 2.5, 17, 3.75]);
+});
 
-	test(`cold writer admission protects every generic lowering and retains exact leaf receivers (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+manualRom.test(`cold writer admission protects every generic lowering and retains exact leaf receivers (O${optLevel})`, `
 local owner<const> = world:spawn('timeline.pose2',{})
 local pose<const> = owner
 local bad<const> = {
@@ -237,12 +236,9 @@ owner.timelines:seek_time('leaf',50)
 assert(leaf.ox==10 and pose.ox==3, 'mutable intermediate path redirected an admitted raw writer')
 local rebound<const> = pcall(function() owner.timelines:play('leaf') end)
 assert(not rebound, 'explicit rebind admitted a newly protected receiver')
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	test(`visual groups and scalar property channels invoke their owning invalidation writers (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+manualRom.test(`visual groups and scalar property channels invoke their owning invalidation writers (O${optLevel})`, `
 local owner<const> = world:spawn('timeline.pose2',{})
 local visual<const> = visual2.new(owner,nil,'sprite')
 visual:set_draw_function(function() end)
@@ -265,12 +261,9 @@ local denied<const> = pcall(function()
 	owner.timelines:define('rawvisual',{target=visual,tracks={{kind='value',interpolation='linear',path={'order'},keys={{time_ms=0,value=99}}}}})
 end)
 assert(not denied and visual.order==2, 'raw visual order write bypassed its owner')
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	test(`whole-program phase scheduling precedes physics and delays cross-phase reentrant playback (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+scheduledRom.test(`whole-program phase scheduling precedes physics and delays cross-phase reentrant playback (O${optLevel})`, `
 world:start()
 
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
@@ -307,11 +300,9 @@ local mixed<const> = pcall(function()
 		sequence={phase='physical',duration_ms=20}}}})
 end)
 assert(not mixed, 'nested sequence acquired a second incompatible execution phase')
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
-	test(`manual clock transport remains exclusive when attached to an updating World (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+`);
+
+const manualClock = manualRom.add(`
 local timeline_system<const> = require('cartlib/timeline/timeline_system')
 prefab.define({def_id='timeline.world',
  class=world_object,
@@ -343,15 +334,16 @@ observed[9]=automatic.presentation
 manual.timelines:tick_gameplay(20)
 observed[10]=manual.physical
 observed[11]=manual.presentation
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		const observed = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('observed')!));
-		assert.deepEqual(Array.from({ length: 11 }, (_, index) => numberToHost(cpu.gc.tables.getInteger(observed, index + 1))),
-			[20, 20, 20, 20, 0, 0, 0, 40, 40, 20, 20],
-			'manual playback must retain its explicit driver without joining World clock views');
-	});
-	test(`external-clock phases retain unconsumed elapsed time across a schedule abort and freeze inactive Spaces (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+`);
+test(`manual clock transport remains exclusive when attached to an updating World (O${optLevel})`, () => {
+	const cpu = manualRom.run(manualClock);
+	const observed = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('observed')!));
+	assert.deepEqual(Array.from({ length: 11 }, (_, index) => numberToHost(cpu.gc.tables.getInteger(observed, index + 1))),
+		[20, 20, 20, 20, 0, 0, 0, 40, 40, 20, 20],
+		'manual playback must retain its explicit driver without joining World clock views');
+});
+
+const externalClock = scheduledRom.add(`
 world:start()
 
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
@@ -403,47 +395,46 @@ probe={
 		actor.timelines:play('trigger',nil,function(owner) owner.timelines:play('fresh',{snap_to_start=false}) end)
 	end,
 }
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		const step = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('step')!), cpu.gc);
-		const space = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('space')!), cpu.gc);
-		const restart = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('restart')!), cpu.gc);
-		// This CPU fixture drives the published clock words directly; it tests
-		// timeline consumption, not peripheral service timing or audio playback.
-		const advance = (milliseconds: number, samples: number, abort: boolean, expected: readonly number[]) => {
-			cpu.memory.writeIoU32(IO_SYS_TIME_MS, milliseconds);
-			cpu.memory.writeIoU32(IO_APU_SAMPLE_SEQUENCE, samples);
-			runCompletionClosure(cpu, step, [valueBool(abort)]);
-			const actual = materializeCpuCompletionValues(cpu).map(numberToHost);
-			assert.deepEqual(actual.slice(0, expected.length), expected);
-		};
-		advance(0, 0, false, [0, 0, 0, 0]);
-		advance(20, 882, true, [20, 0, 20, 0]);
-		advance(40, 1764, false, [40, 40, 40, 40]);
-		runCompletionClosure(cpu, space, [valueString(cpu.stringPool.intern('other'))]);
-		advance(1000, 44100, false, [40, 40, 40, 40]);
-		runCompletionClosure(cpu, space, [valueString(cpu.stringPool.intern('main'))]);
-		advance(1010, 44541, false, [40, 40, 40, 40]);
-		advance(1020, 44982, false, [50, 50, 50, 50]);
-		runCompletionClosure(cpu, restart, []);
-		advance(2000, 88200, false, [50, 50, 50, 50, 0]);
-		advance(2010, 88641, false, [50, 50, 50, 50, 0]);
-		advance(2020, 89082, false, [50, 50, 50, 50, 10]);
-	});
+`);
+test(`external-clock phases retain unconsumed elapsed time across a schedule abort and freeze inactive Spaces (O${optLevel})`, () => {
+	const cpu = scheduledRom.run(externalClock);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	const step = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('step')!), cpu.gc);
+	const space = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('space')!), cpu.gc);
+	const restart = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('restart')!), cpu.gc);
+	// This CPU fixture drives the published clock words directly; it tests
+	// timeline consumption, not peripheral service timing or audio playback.
+	const advance = (milliseconds: number, samples: number, abort: boolean, expected: readonly number[]) => {
+		cpu.memory.writeIoU32(IO_SYS_TIME_MS, milliseconds);
+		cpu.memory.writeIoU32(IO_APU_SAMPLE_SEQUENCE, samples);
+		runCompletionClosure(cpu, step, [valueBool(abort)]);
+		const actual = materializeCpuCompletionValues(cpu).map(numberToHost);
+		assert.deepEqual(actual.slice(0, expected.length), expected);
+	};
+	advance(0, 0, false, [0, 0, 0, 0]);
+	advance(20, 882, true, [20, 0, 20, 0]);
+	advance(40, 1764, false, [40, 40, 40, 40]);
+	runCompletionClosure(cpu, space, [valueString(cpu.stringPool.intern('other'))]);
+	advance(1000, 44100, false, [40, 40, 40, 40]);
+	runCompletionClosure(cpu, space, [valueString(cpu.stringPool.intern('main'))]);
+	advance(1010, 44541, false, [40, 40, 40, 40]);
+	advance(1020, 44982, false, [50, 50, 50, 50]);
+	runCompletionClosure(cpu, restart, []);
+	advance(2000, 88200, false, [50, 50, 50, 50, 0]);
+	advance(2010, 88641, false, [50, 50, 50, 50, 0]);
+	advance(2020, 89082, false, [50, 50, 50, 50, 10]);
+});
 
-}
-
-test('warmed grouped curve sampling makes no guest heap reservations', t => {
-	const { cpu } = createCartlibProgramHarness(setup + `
+const warmSampling = manualRom.add(`
 local owner<const> = world:spawn('timeline.pose2',{})
 owner.timelines:define('loop',{phase='physical',duration_ms=1000,playback_mode='loop',bindings={'pose'},tracks={{kind='spatial',
 	binding='pose',operation='position2',channels={x={interpolation='linear',keys={
 		{time_ms=0,value=0},{time_ms=250,value=10},{time_ms=500,value=20},{time_ms=1000,value=40}}},y=7}}}}, {pose=owner})
 owner.timelines:play('loop')
 probe={run=function(count) for index=1,count do owner.timelines:tick_gameplay(1) end end}
-`, { optLevel: 3, modules });
-	runGuestToHalt(cpu, 20_000_000);
+`);
+test('warmed grouped curve sampling makes no guest heap reservations', t => {
+	const cpu = manualRom.run(warmSampling);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	const run = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('run')!), cpu.gc);
 	runCompletionClosure(cpu, run, [valueInteger(64)]);

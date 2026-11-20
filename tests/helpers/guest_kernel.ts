@@ -1,20 +1,18 @@
-import assert from 'node:assert/strict';
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { closureRecordBytes } from '../../machine/ts/machine/cpu/closure';
 import { UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/upvalue';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { runCompletionClosure } from './cpu_test_harness';
 
 /** Count successful heap reservations, including allocate-then-collect churn. */
 export function profileWarmGuestKernel(cpu: CPU, kernel: number, iterations: number, budget = 10_000_000) {
-	cpu.beginCompletionCall(kernel, [valueInteger(64)]);
-	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
+	runCompletionClosure(cpu, kernel, [valueInteger(64)], budget);
 	const heap = cpu.luaHeap;
 	cpu.collectTrackedHeapBytes();
 	// Collection can shrink the stack below this kernel's peak. Warm its
 	// call depth again before attributing any reservation to steady-state work.
-	cpu.beginCompletionCall(kernel, [valueInteger(64)]);
-	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
+	runCompletionClosure(cpu, kernel, [valueInteger(64)], budget);
 	const retainedBefore = heap.usedBytes();
 	const stackCapacityBefore = cpu.activeThread.stackRegisters.capacity();
 	const allocateRecord = heap.allocateRecord, allocateClosureRecord = heap.allocateClosureRecord, allocateStack = heap.allocateStack;
@@ -40,9 +38,7 @@ export function profileWarmGuestKernel(cpu: CPU, kernel: number, iterations: num
 	};
 	let cycles: number;
 	try {
-		cpu.beginCompletionCall(kernel, [valueInteger(iterations)]);
-		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
-		cycles = budget - cpu.instructionBudgetRemaining;
+		cycles = runCompletionClosure(cpu, kernel, [valueInteger(iterations)], budget);
 	} finally {
 		heap.allocateRecord = allocateRecord; heap.allocateClosureRecord = allocateClosureRecord; heap.allocateStack = allocateStack;
 	}

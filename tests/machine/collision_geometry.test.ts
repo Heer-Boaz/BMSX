@@ -2,8 +2,7 @@ import { valueBool, asClosure } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
@@ -35,9 +34,10 @@ return {rectangle=rectangle,compound=compound,reflected=reflected,image=function
  return {resolve=function(id) return images[id] end}`},
 ];
 
-for (const optLevel of [3] as const) {
- test(`Packed source admission shares image bindings and reserves reflected variant capacity (O${optLevel})`, t => {
-  const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+const optLevel = 3;
+const rom = createCartlibCaseRom('', { optLevel, modules: collisionModules });
+
+const reflectedSource = rom.add(WORLD_CPU_SETUP+`
 world:start()
 
 local shapes<const> = require('cartlib/collision/collision_shape')
@@ -78,19 +78,19 @@ kernel=function(count)
  end
 end
 return true
-`,{optLevel,modules:collisionModules});
-  assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
-  const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
-  const profile = profileWarmGuestKernel(cpu,kernel,256);
-  assert.equal(profile.reservations,0);
-  assert.equal(profile.reservedBytes,0);
-  assert.equal(profile.retainedAfter,profile.retainedBefore);
-  t.diagnostic(JSON.stringify({optLevel,...profile}));
- });
+`);
+test(`Packed source admission shares image bindings and reserves reflected variant capacity (O${optLevel})`, t => {
+	const cpu = rom.run(reflectedSource);
+	assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
+	const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
+	const profile = profileWarmGuestKernel(cpu,kernel,256);
+	assert.equal(profile.reservations,0);
+	assert.equal(profile.reservedBytes,0);
+	assert.equal(profile.retainedAfter,profile.retainedBefore);
+	t.diagnostic(JSON.stringify({optLevel,...profile}));
+});
 
- test(`Repeated area publication retains translation-only geometry (O${optLevel})`, t => {
-  const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+const areaPublication = rom.add(WORLD_CPU_SETUP+`
 world:start()
 
 local pool<const> = require('cartlib/collision/geometry_pool')
@@ -114,19 +114,19 @@ kernel=function(count)
   'unchanged local area invalidated the retained geometry on every position update')
 end
 return true
-`,{optLevel,modules:collisionModules});
-  assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
-  const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
-  const profile = profileWarmGuestKernel(cpu,kernel,256);
-  assert.equal(profile.reservations,0);
-  assert.equal(profile.reservedBytes,0);
-  assert.equal(profile.retainedAfter,profile.retainedBefore);
-  t.diagnostic(JSON.stringify({optLevel,...profile}));
- });
+`);
+test(`Repeated area publication retains translation-only geometry (O${optLevel})`, t => {
+	const cpu = rom.run(areaPublication);
+	assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
+	const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
+	const profile = profileWarmGuestKernel(cpu,kernel,256);
+	assert.equal(profile.reservations,0);
+	assert.equal(profile.reservedBytes,0);
+	assert.equal(profile.retainedAfter,profile.retainedBefore);
+	t.diagnostic(JSON.stringify({optLevel,...profile}));
+});
 
- test(`Collision basis encoding preserves exact F32 bounds, reflection and disjoint pieces (O${optLevel})`, () => {
-  const {cpu} = createCartlibProgramHarness(`
+const collisionBasis = rom.add(`
 local geometry<const> = require('cartlib/collision/shape_geometry')
 local pool<const> = require('cartlib/collision/geometry_pool')
 local assets<const> = require('fixture_shapes')
@@ -165,13 +165,13 @@ assert(not ok,'fixed geometry pool silently grew past its cart-owned capacity')
 pool.release(storage,a)
 assert(pool.acquire(storage)==a,'retired geometry slot did not reuse its intrusive free link')
 return true
-`,{optLevel,modules:collisionModules});
-  assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
- });
+`);
+test(`Collision basis encoding preserves exact F32 bounds, reflection and disjoint pieces (O${optLevel})`, () => {
+	const cpu = rom.run(collisionBasis);
+	assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
+});
 
- test(`Collider source admission reserves animation bounds and separates physical geometry from presentation (O${optLevel})`, t => {
-  const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+const animationBounds = rom.add(WORLD_CPU_SETUP+`
 world:start()
 
 local pool<const> = require('cartlib/collision/geometry_pool')
@@ -219,19 +219,19 @@ kernel=function(count)
  end
 end
 return true
-`,{optLevel,modules:collisionModules});
-  assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
-  const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
-  const profile = profileWarmGuestKernel(cpu,kernel,256);
-  assert.equal(profile.reservations,0);
-  assert.equal(profile.reservedBytes,0);
-  assert.equal(profile.retainedAfter,profile.retainedBefore);
-  t.diagnostic(JSON.stringify({optLevel,storageBytes:512,...profile}));
- });
+`);
+test(`Collider source admission reserves animation bounds and separates physical geometry from presentation (O${optLevel})`, t => {
+	const cpu = rom.run(animationBounds);
+	assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
+	const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
+	const profile = profileWarmGuestKernel(cpu,kernel,256);
+	assert.equal(profile.reservations,0);
+	assert.equal(profile.reservedBytes,0);
+	assert.equal(profile.retainedAfter,profile.retainedBefore);
+	t.diagnostic(JSON.stringify({optLevel,storageBytes:512,...profile}));
+});
 
- test(`Canceled collider factory releases constructor-owned geometry without an attach callback (O${optLevel})`, () => {
-  const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+const canceledCollider = rom.add(WORLD_CPU_SETUP+`
 world:start()
 
 local pool<const> = require('cartlib/collision/geometry_pool')
@@ -254,13 +254,13 @@ assert(scene.closed and #scene.objects.items==0 and not returned_component._atta
  'canceled factory did not retire its constructed geometry binding')
 assert(pool.acquire(storage)==canceled_storage,'unattached canceled collider leaked its only geometry slot')
 return true
-`,{optLevel,modules:collisionModules});
-  assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
- });
+`);
+test(`Canceled collider factory releases constructor-owned geometry without an attach callback (O${optLevel})`, () => {
+	const cpu = rom.run(canceledCollider);
+	assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
+});
 
- test(`Tile-strip source admission precedes publication and empty geometry stays absent (O${optLevel})`, t => {
-  const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+const stripAdmission = rom.add(WORLD_CPU_SETUP+`
 world:start()
 
 local pool<const> = require('cartlib/collision/geometry_pool')
@@ -311,19 +311,19 @@ kernel=function(count)
  end
 end
 return true
-`,{optLevel,modules:collisionModules});
-  assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
-  const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
-  const profile = profileWarmGuestKernel(cpu,kernel,128);
-  assert.equal(profile.reservations,0);
-  assert.equal(profile.reservedBytes,0);
-  assert.equal(profile.retainedAfter,profile.retainedBefore);
-  t.diagnostic(JSON.stringify({optLevel,sourceMutations:384,...profile}));
- });
+`);
+test(`Tile-strip source admission precedes publication and empty geometry stays absent (O${optLevel})`, t => {
+	const cpu = rom.run(stripAdmission);
+	assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
+	const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
+	const profile = profileWarmGuestKernel(cpu,kernel,128);
+	assert.equal(profile.reservations,0);
+	assert.equal(profile.reservedBytes,0);
+	assert.equal(profile.retainedAfter,profile.retainedBefore);
+	t.diagnostic(JSON.stringify({optLevel,sourceMutations:384,...profile}));
+});
 
- test(`Tile-strip candidate step and area overflow leave the admitted source unchanged (O${optLevel})`, () => {
-  const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+const stripCandidate = rom.add(WORLD_CPU_SETUP+`
 world:start()
 
 local pool<const> = require('cartlib/collision/geometry_pool')
@@ -359,13 +359,13 @@ world:clear()
 assert(strip._collider==nil and pool.acquire(storage)==strip_geometry,
  'retired source binding did not release its cart-owned slot')
 return true
-`,{optLevel,modules:collisionModules});
-  assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
- });
+`);
+test(`Tile-strip candidate step and area overflow leave the admitted source unchanged (O${optLevel})`, () => {
+	const cpu = rom.run(stripCandidate);
+	assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
+});
 
- test(`Canceled strip collider factory releases its concrete source binding (O${optLevel})`, () => {
-  const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+const canceledStrip = rom.add(WORLD_CPU_SETUP+`
 world:start()
 
 local pool<const> = require('cartlib/collision/geometry_pool')
@@ -391,8 +391,8 @@ assert(scene.closed and returned_strip._collider==nil and returned_collider._geo
  and not returned_collider._attach_notified and pool.acquire(storage)==strip_geometry,
  'pre-attachment cancellation retained a concrete source binding or its geometry slot')
 return true
-`,{optLevel,modules:collisionModules});
-  assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
- });
-}
+`);
+test(`Canceled strip collider factory releases its concrete source binding (O${optLevel})`, () => {
+	const cpu = rom.run(canceledStrip);
+	assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
+});

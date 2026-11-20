@@ -3,13 +3,14 @@ import { asClosure, valueBool, valuePayload } from '../../machine/ts/machine/cpu
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { IO_SYS_FRAME_MS_Q16 } from '../../machine/ts/spec/bmsx/io';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom, createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
 import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [3] as const) {
-	test(`World starts only after separately constructed initial batches are addressable and bound (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+const optLevel = 3;
+const rom = createCartlibCaseRom(setup, { optLevel, modules });
+
+const initialBatches = rom.add(`
 local constructed = 0
 local bound = 0
 local activated = 0
@@ -55,14 +56,14 @@ assert(peers_prepared and activated == 3 and delivered == 3 and #view.objects ==
 world:start()
 assert(activated == 3 and delivered == 3, 'repeated start duplicated component activation')
 return true
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)],
-			'construction must not activate or schedule objects before the complete initial World is addressable and bound');
-	});
+`);
+test(`World starts only after separately constructed initial batches are addressable and bound (O${optLevel})`, () => {
+	const cpu = rom.run(initialBatches);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)],
+		'construction must not activate or schedule objects before the complete initial World is addressable and bound');
+});
 
-	test(`World start owns initial FSM entry and timeline autoplay, not construction (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+rom.test(`World start owns initial FSM entry and timeline autoplay, not construction (O${optLevel})`, `
 local library<const> = require('cartlib/fsm/library')
 local fsm<const> = require('cartlib/fsm/fsm_component')
 local timeline<const> = require('cartlib/timeline/timeline_component')
@@ -103,12 +104,9 @@ world:start()
 assert(entered == 1 and sampled == 1, 'repeated World start restarted FSM entry or autoplay')
 owner.events:emit('wake')
 assert(transitioned == 1, 'a begun FSM failed to handle its live event')
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	test(`World start drains reentrant admissions and disposal, while clear preserves the World lifetime (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+rom.test(`World start drains reentrant admissions and disposal, while clear preserves the World lifetime (O${optLevel})`, `
 local activated = 0
 local retired = 0
 local initial_pass_finished = false
@@ -151,12 +149,9 @@ assert(replacement.active and activated==4, 'new_game-style replacement reset an
 world:start()
 assert(activated==4, 'new_game-style replacement acquired a duplicate start')
 replacement:mark_for_disposal()
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	test(`Object activation follows its components and never runs after component cancellation (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+rom.test(`Object activation follows its components and never runs after component cancellation (O${optLevel})`, `
 local begun=0
 local detached=0
 local component<const> = setmetatable({}, {__index=base_component})
@@ -184,12 +179,10 @@ local later<const> = world:spawn('activation.owner',{})
 assert(later.active and later.completed==2 and begun==2, 'runtime admission bypassed the common object activation order')
 world:start()
 assert(begun==2, 'repeated World start duplicated object gameplay startup')
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	test(`World publishes its paused schedule only after activation, and repeated starts allocate no guest objects (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(`
+test(`World publishes its paused schedule only after activation, and repeated starts allocate no guest objects (O${optLevel})`, () => {
+	const { cpu } = createCartlibProgramHarness(`
 local world<const> = require('cartlib/world/world')
 local world_object<const> = require('cartlib/world/world_object')
 local prefab<const> = require('cartlib/world/prefab')
@@ -234,15 +227,14 @@ function probe.repeat_start()
  assert(gameplay==1 and frames==2, 'repeated start executed scheduled work')
 end
 `, { optLevel, modules });
-		cpu.memory.writeIoU32(IO_SYS_FRAME_MS_Q16, 20 * 0x10000);
-		runGuestToHalt(cpu, 25_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		const repeat = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('repeat_start')!), cpu.gc);
-		runCompletionClosure(cpu, repeat, []);
-		const before = allocatedObjectRecords(cpu).length;
-		const bytes = cpu.luaHeap.usedBytes();
-		runCompletionClosure(cpu, repeat, []);
-		assert.equal(allocatedObjectRecords(cpu).length, before, 'repeated start allocated guest objects');
-		assert.equal(cpu.luaHeap.usedBytes(), bytes, 'repeated start allocated transient guest storage');
-	});
-}
+	cpu.memory.writeIoU32(IO_SYS_FRAME_MS_Q16, 20 * 0x10000);
+	runGuestToHalt(cpu, 25_000_000);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	const repeat = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('repeat_start')!), cpu.gc);
+	runCompletionClosure(cpu, repeat, []);
+	const before = allocatedObjectRecords(cpu).length;
+	const bytes = cpu.luaHeap.usedBytes();
+	runCompletionClosure(cpu, repeat, []);
+	assert.equal(allocatedObjectRecords(cpu).length, before, 'repeated start allocated guest objects');
+	assert.equal(cpu.luaHeap.usedBytes(), bytes, 'repeated start allocated transient guest storage');
+});

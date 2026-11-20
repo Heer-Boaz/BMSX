@@ -1,8 +1,8 @@
 import { asClosure, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { createCartlibCaseRom } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
 
@@ -109,24 +109,24 @@ assert(not object_3d._compile_pose(unavailable,nil,{transform={xx=0,xy=0,xz=0,yx
 	},
 ] as const;
 
-for (const optLevel of [3] as const) for (const behavior of cases) {
-	test(`intrinsic Object O${optLevel}: ${behavior.name}`, () => {
-		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+const optLevel = 3;
+const rom = createCartlibCaseRom(WORLD_CPU_SETUP + `
 world:start()
+`, { optLevel, modules: WORLD_CPU_MODULES });
+
+for (const behavior of cases) {
+	const pose = rom.add(`
 local assertion_index=0
 local first_failure=0
 local assert<const> = function(value) assertion_index=assertion_index+1; if not value and first_failure==0 then first_failure=assertion_index end end
-` + behavior.source + '\nreturn first_failure',
-			{ optLevel, modules: WORLD_CPU_MODULES });
-		runGuestToHalt(cpu, 30_000_000);
+` + behavior.source + '\nreturn first_failure');
+	test(`intrinsic Object O${optLevel}: ${behavior.name}`, () => {
+		const cpu = rom.run(pose, 30_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu),[0].map(valueInteger),behavior.name);
 	});
 }
 
-test('intrinsic native semantic edits and tuple queries reserve no guest heap storage warm', t => {
-	const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
-world:start()
-
+const warmQueries = rom.add(`
 prefab.define({def_id='warm2',class=object_2d})
 prefab.define({def_id='warm3',class=object_3d})
 local two<const>,three<const> = world:spawn('warm2'),world:spawn('warm3')
@@ -143,8 +143,9 @@ probe={run=function(count)
   three:get_rotation();three:get_scale()
  end
 end}
-`, { optLevel: 3, modules: WORLD_CPU_MODULES });
-	runGuestToHalt(cpu, 30_000_000);
+`);
+test('intrinsic native semantic edits and tuple queries reserve no guest heap storage warm', t => {
+	const cpu = rom.run(warmQueries, 30_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	const measured = profileWarmGuestKernel(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('run')!), cpu.gc), 256);
 	assert.equal(measured.reservations, 0); assert.equal(measured.reservedBytes, 0);

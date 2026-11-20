@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom, createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -37,9 +37,10 @@ return { image=function(id) return images[id] end }`,
 	},
 ];
 
-for (const optLevel of [3] as const) {
-	test(`Primary Sprite keeps owner visibility, static profiles and animation selection at their real owners (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+const optLevel = 3;
+const rom = createCartlibCaseRom('', { optLevel, modules });
+
+const spriteDefaults = rom.add(WORLD_CPU_SETUP + `
 world:start()
 
 local sprite<const> = require('cartlib/component/sprite_component')
@@ -85,13 +86,13 @@ local named<const> = world:spawn('primary.named',{animation='active',imgid='tile
 assert(named.animation=='active' and named.imgid=='other',
  'ordinary named-animation selection did not use the admitted animation owner')
 return true
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
-	});
+`);
+test(`Primary Sprite keeps owner visibility, static profiles and animation selection at their real owners (O${optLevel})`, () => {
+	const cpu = rom.run(spriteDefaults);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
+});
 
-	test(`Scene members inherit prefab placement and visual defaults unless explicitly overridden (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+const sceneVisualDefaults = rom.add(WORLD_CPU_SETUP + `
 world:start()
 
 local sprite<const> = require('cartlib/component/sprite_component')
@@ -126,13 +127,13 @@ local second<const> = scenes.instantiate('visual.defaults')
 assert(second.members.inherited.ox==9 and second.members.inherited.oy==12,
  'instance writes mutated the shared prefab placement')
 return true
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
-	});
+`);
+test(`Scene members inherit prefab placement and visual defaults unless explicitly overridden (O${optLevel})`, () => {
+	const cpu = rom.run(sceneVisualDefaults);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
+});
 
-	test(`Sprite source changes preserve the concrete composite draw producer (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+const compositeDraw = rom.add(WORLD_CPU_SETUP + `
 world:start()
 
 local sprite<const> = require('cartlib/component/sprite_component')
@@ -170,13 +171,13 @@ assert(part.draw==sprite.draw_region_visual)
 part:clear_region()
 assert(part.draw==layered.draw_visual,'clearing a region discarded the concrete producer')
 return true
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
-	});
+`);
+test(`Sprite source changes preserve the concrete composite draw producer (O${optLevel})`, () => {
+	const cpu = rom.run(compositeDraw);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
+});
 
-	test(`Rectangle geometry owns its dimensions and composes the retained visual affine (O${optLevel})`, t => {
-		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+const rectangleAffine = rom.add(WORLD_CPU_SETUP + `
 world:start()
 
 local rectangle<const> = require('cartlib/component/rectangle_component')
@@ -216,19 +217,19 @@ kernel=function(count)
  end
 end
 return true
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
-		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
-		const profile = profileWarmGuestKernel(cpu, kernel, 256);
-		assert.equal(profile.reservations, 0);
-		assert.equal(profile.reservedBytes, 0);
-		assert.equal(profile.retainedAfter, profile.retainedBefore);
-		t.diagnostic(JSON.stringify({ optLevel, ...profile }));
-	});
+`);
+test(`Rectangle geometry owns its dimensions and composes the retained visual affine (O${optLevel})`, t => {
+	const cpu = rom.run(rectangleAffine);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
+	const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
+	const profile = profileWarmGuestKernel(cpu, kernel, 256);
+	assert.equal(profile.reservations, 0);
+	assert.equal(profile.reservedBytes, 0);
+	assert.equal(profile.retainedAfter, profile.retainedBefore);
+	t.diagnostic(JSON.stringify({ optLevel, ...profile }));
+});
 
-	test(`Visual placement composes physical, attachment and presentation without moving the object (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(checks + WORLD_CPU_SETUP + `
+const visualPlacement = rom.add(checks + WORLD_CPU_SETUP + `
 world:start()
 
 local sprite<const> = require('cartlib/component/sprite_component')
@@ -271,17 +272,14 @@ local nonspatial<const> = world:spawn('visual.nonspatial', {})
 assert(nonspatial._hierarchy==nil and nonspatial:get_component(visual)~=nil,
  'generic custom geometry fabricated a spatial capability')
 return assertion_failed
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		const [failure] = materializeCpuCompletionValues(cpu);
-		assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
-	});
+`);
+test(`Visual placement composes physical, attachment and presentation without moving the object (O${optLevel})`, () => {
+	const cpu = rom.run(visualPlacement);
+	const [failure] = materializeCpuCompletionValues(cpu);
+	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
+});
 
-	// These coordinates/words are the subject of the GX affine producer contract,
-	// not incidental Workbench layout. Every source keeps its admitted UV/CLUT
-	// representation while a whole batch transforms its retained local geometry.
-	test(`GX affine batches preserve source records and dense native packets (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(checks + `
+const gxBatch = rom.add(checks + `
 local commands<const> = require('cartlib/gx/command_list')
 local batch<const> = require('cartlib/gx/affine_batch')
 local image<const> = require('cartlib/gx/image')
@@ -342,12 +340,12 @@ batch.semitransparent_rect(draw,1,2,3,4,1,0,0,1,5,6,0xff102030)
 assert(draw.word_count==4 and output[1]==0x62302010 and output[2]==0x00080006 and output[3]==0x00020002,
  'ordinary highlights stopped using the native rectangle packet')
 return assertion_failed
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		const [failure] = materializeCpuCompletionValues(cpu);
-		assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
-	});
-}
+`);
+test(`GX affine batches preserve source records and dense native packets (O${optLevel})`, () => {
+	const cpu = rom.run(gxBatch);
+	const [failure] = materializeCpuCompletionValues(cpu);
+	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
+});
 
 test('A large image catalog keeps compact source records and both native format draw contracts', () => {
 	const { cpu } = createCartlibProgramHarness(checks + `

@@ -2,10 +2,10 @@ import { asClosure, valueNil, valuePayload } from '../../machine/ts/machine/cpu/
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
-import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { runCompletionClosure } from '../helpers/cpu_test_harness';
 
 const modules = [
 	...WORLD_CPU_MODULES,
@@ -75,9 +75,10 @@ local overlap<const> = overlap_system.new(world)
 probe = { overlap = overlap }
 `;
 
-for (const optLevel of [3] as const) {
-	test(`Overlap retires every history row and preserves begin/stay/end across empty passes and clear (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+const optLevel = 3;
+const rom = createCartlibCaseRom(setup, { optLevel, modules });
+
+rom.test(`Overlap retires every history row and preserves begin/stay/end across empty passes and clear (O${optLevel})`, `
 local actors<const> = {}
 for index = 1, 32 do actors[index] = world:spawn('overlap.actor') end
 collision.pair_count = 16
@@ -108,13 +109,10 @@ for index = 1, 32 do assert(actors[index].ends == 1, 'clear replayed retired end
 collision.pair_count = 16
 overlap:update()
 for index = 1, 32 do assert(actors[index].begins == 3, 'clear preserved a stale stay pair') end
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-	});
+`);
 
-	for (const retire of ['empty', 'clear'] as const) {
-		test(`Overlap releases disposed actors, colliders and their stage after ${retire} retirement (O${optLevel})`, () => {
-			const { cpu } = createCartlibProgramHarness(setup + `
+for (const retire of ['empty', 'clear'] as const) {
+	const retirement = rom.add(`
 function probe.retire()
  local weak<const> = setmetatable({}, { __mode = 'v' })
  local stage<const> = world:spawn('overlap.stage')
@@ -137,20 +135,20 @@ function probe.retire()
   'retirement did not release World and overlap membership')
  probe.weak = weak
 end
-`, { optLevel, modules });
-			runGuestToHalt(cpu, 20_000_000);
-			const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-			runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('retire')!), cpu.gc), []);
-			cpu.collectTrackedHeapBytes();
-			const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
-			for (let index = 1; index <= 65; index += 1) {
-				assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil(), `retired object/geometry owner ${index} remained reachable`);
-			}
-		});
-	}
+`);
+	test(`Overlap releases disposed actors, colliders and their stage after ${retire} retirement (O${optLevel})`, () => {
+		const cpu = rom.run(retirement, 20_000_000);
+		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('retire')!), cpu.gc), []);
+		cpu.collectTrackedHeapBytes();
+		const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
+		for (let index = 1; index <= 65; index += 1) {
+			assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil(), `retired object/geometry owner ${index} remained reachable`);
+		}
+	});
+}
 
-	test(`Warm overlap history and scalar contacts allocate nothing while pairs enter and leave (O${optLevel})`, t => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+const warmHistory = rom.add(`
 for index = 1, 32 do world:spawn('overlap.actor') end
 kernel = function(count)
  for index = 1, count do
@@ -160,13 +158,13 @@ kernel = function(count)
   overlap:update()
  end
 end
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
-		const profile = profileWarmGuestKernel(cpu, kernel, 128, 50_000_000);
-		assert.equal(profile.reservations, 0);
-		assert.equal(profile.reservedBytes, 0);
-		assert.equal(profile.retainedAfter, profile.retainedBefore);
-		t.diagnostic(JSON.stringify({ optLevel, ...profile }));
-	});
-}
+`);
+test(`Warm overlap history and scalar contacts allocate nothing while pairs enter and leave (O${optLevel})`, t => {
+	const cpu = rom.run(warmHistory, 20_000_000);
+	const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
+	const profile = profileWarmGuestKernel(cpu, kernel, 128, 50_000_000);
+	assert.equal(profile.reservations, 0);
+	assert.equal(profile.reservedBytes, 0);
+	assert.equal(profile.retainedAfter, profile.retainedBefore);
+	t.diagnostic(JSON.stringify({ optLevel, ...profile }));
+});
