@@ -1,4 +1,5 @@
 #include "common/endian.h"
+#include "machine/cpu/value_slots.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/history/ram_history.h"
 #include "spec/bmsx/model.h"
@@ -69,4 +70,28 @@ int main() {
 	require(memory.readRamRecordWord(code) == 4, "the recycled slot is independently restorable");
 	watches.disarmHistoryWrites();
 	require(watches.groupData()[code >> MAPPED_PAGE_BYTE_SHIFT] == 0, "stopping rewind removes the write admission");
+
+	constexpr u32 page = MAPPED_PAGE_BYTE_SIZE;
+	constexpr u32 boundary = MAIN_RAM_SIZE - 8u * page, slots = 2u * page / sizeof(u32);
+	constexpr u32 publicWord = boundary - page;
+	const auto dirty = [&](u32 offset) {
+		const auto index = offset >> MAPPED_PAGE_BYTE_SHIFT;
+		return watches.historyPageDirty(index, index + 1u);
+	};
+	memory.setRamBusEnd(RAM_BASE + boundary);
+	watches.armCodeRange(publicWord, 8);
+	watches.armHistoryWrites();
+	ValueSpan mixed(memory, publicWord, boundary + page, slots);
+	mixed.set(0, valueInteger(73));
+	require(counter.code == 3 && !watches.anyWatched(publicWord, 4) && watches.anyWatched(publicWord + 4u, 4),
+		"the public plane retires exactly its watched word");
+	require(dirty(publicWord) && dirty(boundary + page) && !dirty(boundary),
+		"mixed planes dirty their own history pages, not the gap");
+	watches.armHistoryWrites();
+	ValueSpan privateValues(memory, boundary, boundary + 2u * page, slots);
+	privateValues.set(0, valueFloatBits(0x80000000u));
+	require(memory.readRamRecordWord(boundary) == 0x80000000u && counter.code == 3,
+		"private payload bits do not cause code invalidations");
+	require(dirty(boundary) && !dirty(boundary + page) && dirty(boundary + 2u * page),
+		"both private planes dirty their exact pages");
 }

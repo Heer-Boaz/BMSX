@@ -302,6 +302,22 @@ export class Memory {
 		this.ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, this.mappedPageInvalidator!);
 	}
 
+	// The register planes have separate physical extents but share one
+	// private-history admission. Public aliases must still retire exact words.
+	public invalidateRamWritePair(first: number, firstBytes: number, second: number, secondBytes: number): void {
+		const privateStart = this.busEnd - RAM_BASE;
+		if (first < privateStart || second < privateStart) {
+			this.invalidateRamWrite(first, firstBytes);
+			this.invalidateRamWrite(second, secondBytes);
+		} else {
+			const watches = this.ramPageWriteWatches;
+			if (watches.historyEpoch() & 1) {
+				watches.consumeHistoryWrites(first, firstBytes);
+				watches.consumeHistoryWrites(second, secondBytes);
+			}
+		}
+	}
+
 	public systemRomStorage(): RomStorage { return this.systemRom; }
 
 	public installSystemRom(rom: Uint8Array): void {

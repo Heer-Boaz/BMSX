@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
-import { MAPPED_PAGE_BYTE_SHIFT } from '../../machine/ts/machine/memory/mapped_page';
+import { MAPPED_PAGE_BYTE_SHIFT, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -57,4 +58,37 @@ test('rewind shares clean pages, tracks DMA and mirrors, and branches from the i
 	assert.equal(memory.readRamRecordWord(code), 4);
 	watches.disarmHistoryWrites();
 	assert.equal(watches.groupData()[code >>> MAPPED_PAGE_BYTE_SHIFT], 0);
+});
+
+test('a split register write dirties only its two planes and retires exact public aliases', () => {
+	const memory = new Memory({ systemRom: Uint8Array.of(1, 2, 3, 4), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const invalidated: number[] = [];
+	memory.attachMappedPageInvalidator({
+		invalidateMappedWords: (key, first) => { invalidated.push(key + first * 4); },
+		invalidateMappedRange: () => {},
+	});
+	const page = MAPPED_PAGE_BYTE_SIZE, boundary = MAIN_RAM_SIZE - 8 * page, slots = 2 * page / 4;
+	memory.setRamBusEnd(RAM_BASE + boundary);
+	const watches = memory.ramWriteWatches();
+	const dirty = (offset: number) => watches.historyPageDirty(offset >>> MAPPED_PAGE_BYTE_SHIFT, (offset >>> MAPPED_PAGE_BYTE_SHIFT) + 1);
+	const registers = new ValueSlots(0);
+	const publicWord = boundary - page;
+	watches.armCodeRange(publicWord, 8);
+	watches.armHistoryWrites();
+	registers.bindRam(memory, publicWord, slots);
+	registers.setInteger(0, 73);
+	assert.deepEqual(invalidated, [RAM_BASE + publicWord]);
+	assert.equal(watches.anyWatched(publicWord + 4, 4), true, 'the neighboring code word stays watched');
+	assert.equal(dirty(publicWord), true);
+	assert.equal(dirty(boundary + page), true, 'the private tag plane is also tracked');
+	assert.equal(dirty(boundary), false, 'the gap between the planes stays clean');
+
+	watches.armHistoryWrites();
+	registers.bindRam(memory, boundary, slots);
+	registers.setFloatBits(0, 0x80000000);
+	assert.equal(memory.readRamRecordWord(boundary), 0x80000000);
+	assert.equal(dirty(boundary), true);
+	assert.equal(dirty(boundary + page), false, 'the private fast path must not publish a covering span');
+	assert.equal(dirty(boundary + 2 * page), true);
+	assert.deepEqual(invalidated, [RAM_BASE + publicWord], 'private values do not invalidate decoded code');
 });

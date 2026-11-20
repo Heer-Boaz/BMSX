@@ -57,8 +57,7 @@ export class ValueSlots implements ValueWriteTarget {
 	}
 	private reportWrite(first: number, count: number): void {
 		if (this.ram === null) return;
-		this.ram.invalidateRamWrite((this.wordBase + first) * 4, count * 4);
-		this.ram.invalidateRamWrite(this.tagBase + first, count);
+		this.ram.invalidateRamWritePair((this.wordBase + first) * 4, count * 4, this.tagBase + first, count);
 	}
 	public rebind(source: ValueSlots, base: number, size: number): void {
 		this.storage = null; this.ram = source.ram;
