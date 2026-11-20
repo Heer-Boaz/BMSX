@@ -5,12 +5,18 @@
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
+#include <utility>
 
 namespace {
 using namespace bmsx;
 using test::Number32Machine;
 constexpr u32 MEMORY_BSS_BYTES = 2 * MAPPED_PAGE_BYTE_SIZE;
 constexpr u32 LAST_STATIC_WORD = DYNAMIC_RAM_BASE + MEMORY_BSS_BYTES - sizeof(u32);
+constexpr std::pair<std::string_view, OpCode> FORMAT_CASES[] = {
+	{"load", OpCode::LOAD_MEM}, {"load_displaced", OpCode::LOAD_MEM_D},
+	{"store", OpCode::STORE_MEM}, {"store_displaced", OpCode::STORE_MEM_D},
+};
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
@@ -59,22 +65,21 @@ void setup(Number32Machine& m, Value address, Value value) {
 	m.memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x404, 0xffa12345);
 	m.memory.writeMappedWord(LAST_STATIC_WORD, 0x3ff00000);
 }
-void scalarFormats() {
+void scalarFormats(OpCode op) {
 	const Value addresses[] = {valueInteger(DYNAMIC_RAM_BASE+0x400), valueInteger(DYNAMIC_RAM_BASE+0x401),
 		valueInteger(DYNAMIC_RAM_BASE+0x402), valueInteger(LAST_STATIC_WORD),
 		valueInteger(IO_SYS_TIME_MS), valueInteger(0xfffffffcu), valueInteger(0), valueFloat(DYNAMIC_RAM_BASE+0x400),
 		valueFloatBits(0x7fc00000), valueBool(true)};
-	for (auto op : {OpCode::LOAD_MEM, OpCode::LOAD_MEM_D, OpCode::STORE_MEM, OpCode::STORE_MEM_D})
-		for (u8 kind=0; kind<=5; ++kind)
-			for (Value address : addresses)
-				for (int grant : {1,2,5,6,7,8,9,10,11,12,32}) {
-					const auto image = program(op, kind);
-					Number32Machine native(image, true, MEMORY_BSS_BYTES), scalar(image, false, MEMORY_BSS_BYTES);
-					setup(native,address,valueFloatBits(0xffa12345));setup(scalar,address,valueFloatBits(0xffa12345));
-					test::runCpuParity(native.cpu,scalar.cpu,grant);
-					parity(native,scalar);
-					if (grant == 32) requireNative(native.cpu);
-				}
+	for (u8 kind=0; kind<=5; ++kind)
+		for (Value address : addresses)
+			for (int grant : {1,2,5,6,7,8,9,10,11,12,32}) {
+				const auto image = program(op, kind);
+				Number32Machine native(image, true, MEMORY_BSS_BYTES), scalar(image, false, MEMORY_BSS_BYTES);
+				setup(native,address,valueFloatBits(0xffa12345));setup(scalar,address,valueFloatBits(0xffa12345));
+				test::runCpuParity(native.cpu,scalar.cpu,grant);
+				parity(native,scalar);
+				if (grant == 32) requireNative(native.cpu);
+			}
 }
 void directValuesAndAliases() {
 	for (auto op : {OpCode::LOAD_MEM, OpCode::STORE_MEM}) for (u8 kind=0; kind<=5; ++kind)
@@ -169,12 +174,23 @@ void retainedWrites() {
 	}
 }
 } // namespace
-int main() {
+int main(int argc, char** argv) {
 	try {
-		std::cerr << "scalar formats\n";scalarFormats();
-		std::cerr << "direct values\n";directValuesAndAliases();
-		std::cerr << "watches and counted stores\n";watchedAndCounted();
-		std::cerr << "retained writes\n";retainedWrites();
+		const bool all = argc == 1;
+		const std::string_view selected = argc == 2 ? argv[1] : "";
+		bool ran = false;
+		for (const auto [name, op] : FORMAT_CASES) if (all || selected == name) {
+			std::cerr << name << " formats\n";
+			scalarFormats(op);
+			ran = true;
+		}
+		if (all || selected == "contexts") {
+			std::cerr << "direct values\n";directValuesAndAliases();
+			std::cerr << "watches and counted stores\n";watchedAndCounted();
+			std::cerr << "retained writes\n";retainedWrites();
+			ran = true;
+		}
+		require(ran, "Select load, load_displaced, store, store_displaced or contexts");
 		std::cout << "Native compact memory formats, faults, raw Float words, watches and partial spans passed\n";
 		return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n';return 1; }
