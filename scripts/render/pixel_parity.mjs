@@ -2,7 +2,8 @@ import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 
@@ -34,28 +35,23 @@ await fsp.copyFile(sourceTimeline, referenceTimeline);
 await fsp.copyFile(sourceTimeline, cppSoftwareTimeline);
 await fsp.copyFile(sourceTimeline, cppGles2Timeline);
 
-function writeRunLog(filePath, result) {
-	const out = [];
-	out.push(result.stdout);
-	out.push(result.stderr);
-	fs.writeFileSync(filePath, out.join(''));
-}
-
-function runCapture(label, command, args, env, logPath) {
+async function runCapture(label, command, args, env, logPath) {
 	console.log(`[pixel-parity] ${label}: ${command} ${args.join(' ')}`);
-	const result = spawnSync(command, args, {
-		cwd: repoRoot,
-		env: { ...process.env, ...env },
-		encoding: 'utf8',
-		maxBuffer: 64 * 1024 * 1024,
-		timeout: runTimeoutMs,
-	});
-	writeRunLog(logPath, result);
-	if (result.error) {
-		throw new Error(`[pixel-parity] ${label} failed before exit. Log: ${logPath}. Output root: ${workRoot}. ${result.error.message}`);
-	}
-	if (result.status !== 0) {
-		throw new Error(`[pixel-parity] ${label} exited with ${result.status}. Log: ${logPath}. Output root: ${workRoot}.`);
+	const log = await fsp.open(logPath, 'w');
+	try {
+		const child = spawn(command, args, {
+			cwd: repoRoot,
+			env: { ...process.env, ...env },
+			stdio: ['ignore', log.fd, log.fd],
+			timeout: runTimeoutMs,
+			killSignal: 'SIGKILL',
+		});
+		const [status, signal] = await once(child, 'close');
+		if (status !== 0) throw new Error(`Capture exited with ${signal ?? status}`);
+	} catch (error) {
+		throw new Error(`[pixel-parity] ${label} failed. Log: ${logPath}. Output root: ${workRoot}.`, { cause: error });
+	} finally {
+		await log.close();
 	}
 }
 
@@ -91,6 +87,7 @@ function assertSamePixels(name, referencePng, candidatePng, candidateLabel) {
 	if (referencePng.data.byteLength !== candidatePng.data.byteLength) {
 		throw new Error(`[pixel-parity] ${name} byte length differs: TS software=${referencePng.data.byteLength}, ${candidateLabel}=${candidatePng.data.byteLength}. Output root: ${workRoot}.`);
 	}
+	if (referencePng.data.equals(candidatePng.data)) return;
 	let firstByte = -1;
 	let mismatchedBytes = 0;
 	let mismatchedPixels = 0;
@@ -119,35 +116,39 @@ function assertSamePixels(name, referencePng, candidatePng, candidateLabel) {
 
 try {
 	console.log(`[pixel-parity] media: ${debug ? 'debug' : 'release'}`);
-	runCapture('TS software', 'node', [
-		`dist/host_headless_tooling${suffix}.js`,
-		'--system-rom', systemRomPath,
-		'--input-timeline', referenceTimeline,
-		cartName,
-	], {}, path.join(workRoot, 'ts-software.log'));
-	runCapture('C++ software', './build-libretro-host-wsl/bmsx_libretro_host', [
-		'--core', './dist/libretro_bmsx.so',
-		cartridgePath,
-		'--video', 'sdl',
-		'--backend', 'software',
-		'--system-dir', systemDirectory,
-		'--no-audio',
-		'--input-timeline', cppSoftwareTimeline,
-		'--crt-postprocessing', 'off',
-		'--crt-noise', 'off',
-	], { SDL_VIDEODRIVER: 'dummy', SDL_AUDIODRIVER: 'dummy' }, path.join(workRoot, 'cpp-software.log'));
-	runCapture('C++ GLES2', './build-libretro-host-wsl/bmsx_libretro_host', [
-		'--core', './dist/libretro_bmsx.so',
-		cartridgePath,
-		'--video', 'sdl',
-		'--backend', 'gles2',
-		'--hidden-window',
-		'--system-dir', systemDirectory,
-		'--no-audio',
-		'--input-timeline', cppGles2Timeline,
-		'--crt-postprocessing', 'off',
-		'--crt-noise', 'off',
-	], { SDL_VIDEODRIVER: 'offscreen', SDL_AUDIODRIVER: 'dummy' }, path.join(workRoot, 'cpp-gles2.log'));
+	const captures = await Promise.allSettled([
+		runCapture('TS software', process.execPath, [
+			`dist/host_headless_tooling${suffix}.js`,
+			'--system-rom', systemRomPath,
+			'--input-timeline', referenceTimeline,
+			cartName,
+		], {}, path.join(workRoot, 'ts-software.log')),
+		runCapture('C++ software', './build-libretro-host-wsl/bmsx_libretro_host', [
+			'--core', './dist/libretro_bmsx.so',
+			cartridgePath,
+			'--video', 'sdl',
+			'--backend', 'software',
+			'--system-dir', systemDirectory,
+			'--no-audio',
+			'--input-timeline', cppSoftwareTimeline,
+			'--crt-postprocessing', 'off',
+			'--crt-noise', 'off',
+		], { SDL_VIDEODRIVER: 'dummy', SDL_AUDIODRIVER: 'dummy' }, path.join(workRoot, 'cpp-software.log')),
+		runCapture('C++ GLES2', './build-libretro-host-wsl/bmsx_libretro_host', [
+			'--core', './dist/libretro_bmsx.so',
+			cartridgePath,
+			'--video', 'sdl',
+			'--backend', 'gles2',
+			'--hidden-window',
+			'--system-dir', systemDirectory,
+			'--no-audio',
+			'--input-timeline', cppGles2Timeline,
+			'--crt-postprocessing', 'off',
+			'--crt-noise', 'off',
+		], { SDL_VIDEODRIVER: 'offscreen', SDL_AUDIODRIVER: 'dummy' }, path.join(workRoot, 'cpp-gles2.log')),
+	]);
+	const failures = captures.filter(result => result.status === 'rejected').map(result => result.reason);
+	if (failures.length !== 0) throw new AggregateError(failures, '[pixel-parity] Could not capture all backends');
 
 	const referenceScreenshotDir = path.join(referenceRoot, 'screenshots');
 	const cppSoftwareScreenshotDir = path.join(cppSoftwareRoot, 'screenshots');

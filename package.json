@@ -99,7 +99,7 @@
 		"test:hosts": "bash scripts/test.sh bash scripts/test_node_areas.sh hosts",
 		"test:studio": "npm run build:toolchain:bios -- --debug && npm run build:toolchain:cart -- studio_test --debug && bash scripts/test.sh bash scripts/test_node_areas.sh studio",
 		"test:rompacker": "bash scripts/test.sh bash scripts/test_node_areas.sh rompacker",
-		"test:render-parity": "npm run build:product:node-headless-tooling -- --force && npm run build:product:libretro-wsl -- --force && npm run build:libretro-host && npm run build:toolchain:bios -- --force && npm run build:toolchain:cart -- renderhwtest --force && npm run build:toolchain:cart -- bare_metal_cart --force && bash scripts/test.sh node scripts/render/pixel_parity.mjs renderhwtest && bash scripts/test.sh node scripts/render/pixel_parity.mjs bare_metal_cart",
+		"test:render-parity": "npm run build:product:node-headless-tooling && npm run build:product:libretro-wsl && npm run build:libretro-host && npm run build:toolchain:cart -- renderhwtest && npm run build:toolchain:cart -- bare_metal_cart && bash scripts/test.sh node scripts/render/pixel_parity.mjs renderhwtest && bash scripts/test.sh node scripts/render/pixel_parity.mjs bare_metal_cart",
 		"test:cartridge-conformance": "bash scripts/test.sh node tests/conformance/cartridge/run.mjs",
 		"test:coroutines": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/coroutine/run.ts",
 		"test:gc-stress": "bash scripts/test.sh node scripts/run_node_conformance.mjs tests/conformance/gc_stress/run.ts",

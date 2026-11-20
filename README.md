@@ -331,7 +331,7 @@ npm run headless:test -- pietious tests/carts/pietious/pietious_enter_world_asse
 Important:
 
 - `headless:forcebuildallrun` and `headless:game` take the cart folder name
-- `test:render-parity` force-builds and compares the render test carts through TS headless and the C++ libretro host
+- `test:render-parity` incrementally builds the render test carts and compares exact pixels from TS headless software, C++ libretro software and offscreen GLES2
 - headless runs `dist/host_headless.debug.js` with `dist/system/bmsx-bios.debug.rom`; it does not dynamically load `dist/libbmsx.debug.js`
 - `headless:tooling` runs the separate `dist/host_headless_tooling.debug.js` validation product
 - scenario tests are always explicit; `headless:game` does not auto-load assert modules
