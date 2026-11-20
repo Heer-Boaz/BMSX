@@ -1334,7 +1334,9 @@ void sourceAndFusionDependenciesRemainSeparate() {
 		cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueInteger(2));
 		cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueInteger(3));
 		cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueInteger(1));
-		const std::array<OpCode, 3> successors{OpCode::MOV, OpCode::SHL, OpCode::BXOR};
+		// Keep B and C as register selectors so only the opcode byte changes.
+		// BOR preserves 5 | 1; MOV with C=2 would reinterpret 5 as float bits.
+		const std::array<OpCode, 3> successors{OpCode::BOR, OpCode::SHL, OpCode::BXOR};
 		const std::array<int, 3> results{5, 10, 4};
 		for (size_t phase = 0; phase < successors.size(); ++phase) {
 			writeInstruction(code, bodyWord, static_cast<u8>(successors[phase]), 4, 3, 2);
@@ -1345,7 +1347,7 @@ void sourceAndFusionDependenciesRemainSeparate() {
 				const auto& page = cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
 				require(page.refreshState[DECODED_PAGE_WORDS - headWords] == DECODED_REFRESH_FUSION, "successor writes dirty fusion eligibility, not the unchanged head's source decode");
 			}
-			require(cpu.runUntilDepth(0, 6) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "WIDE and narrow pairs retain their three-cycle loop budget");
+			require(cpu.runUntilDepth(0, 6) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "WIDE and narrow pairs retain their six-cycle loop budget");
 			require(cpu.readFramePc(0) == pc && cpu.readFrameRegister(0, 4) == valueInteger(results[phase]), "negative and positive fusion decisions observe the rewritten successor");
 			if (!instrumented) {
 				const auto& page = cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
