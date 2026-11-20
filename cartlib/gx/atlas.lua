@@ -3,7 +3,7 @@ local imgdec<const> = require('cartlib/gx/imgdec')
 local rom_dir<const> = require('cartlib/rom_dir')
 local vram<const> = require('cartlib/gx/vram')
 
-local atlas<const> = {}
+local atlas<const> = { placement_revision = 0 }
 local atlas_by_id<const> = {}
 local oldest_resident
 local newest_resident
@@ -171,14 +171,17 @@ end
 
 local load_texture<const> = function(texture, allocation)
 	local destination<const> = allocation.x | (allocation.y << 16)
-	texture.x = destination & 0x0000ffff
-	texture.y = destination >> 16
+	local moved = texture.x ~= allocation.x or texture.y ~= allocation.y
+	texture.x = allocation.x
+	texture.y = allocation.y
 	local clut = 0
 	local refresh_source = refresh_direct16_source
 	if texture.mode == gp0.texture_mode_palette4 then
 		local clut_destination<const> = allocation.x | ((allocation.y + texture.height) << 16)
-		texture.clut_x = clut_destination & 0x0000ffff
-		texture.clut_y = clut_destination >> 16
+		local clut_y<const> = clut_destination >> 16
+		moved = moved or texture.clut_y ~= clut_y
+		texture.clut_x = allocation.x
+		texture.clut_y = clut_y
 		clut = clut_destination
 		refresh_source = refresh_palette4_source
 	end
@@ -189,6 +192,9 @@ local load_texture<const> = function(texture, allocation)
 	local span_bindings<const> = texture._draw_mode_span_bindings
 	for binding_index = 1, #span_bindings do
 		refresh_draw_mode_span_binding(span_bindings[binding_index])
+	end
+	if moved and texture._source_count ~= 0 then
+		atlas.placement_revision = atlas.placement_revision + 1
 	end
 	imgdec.upload(
 		texture.source_addr,

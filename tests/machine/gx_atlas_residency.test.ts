@@ -17,8 +17,8 @@ return {
 		active_count = active_count + 1
 		destination = destination + 0x100
 		return {
-			x = destination,
-			y = 0,
+			x = destination % 1024,
+			y = (destination // 1024) * 256,
 		}
 	end,
 	replace = function()
@@ -29,15 +29,9 @@ return {
 	end,
 }`) {
 	const moduleSources = [
-		{
-			path: 'cartlib/gx/gp0',
-			source: `return {
-	texture_mode_palette4 = 0,
-	texture_mode_direct16 = 2,
-	texture_page_span = 256,
-	draw_mode_blend_half = 1,
-}`,
-		},
+		...['cartlib/gx/gp0', 'cartlib/component/tile_layer_row'].map(path => ({
+			path, source: readFileSync(`${path}.lua`, 'utf8'),
+		})),
 		{
 			path: 'cartlib/gx/imgdec',
 			source: `local count = 0
@@ -63,6 +57,9 @@ local textures<const> = {
 	first = { addr = 0x1000, len = 16, texturemeta = texture_meta },
 	second = { addr = 0x2000, len = 16, texturemeta = texture_meta },
 	third = { addr = 0x3000, len = 16, texturemeta = texture_meta },
+	second_pal = { addr = 0x2000, len = 16, texturemeta = {
+		mode = 0, word_width = 2, height = 8, texture_word_count = 16, clut_word_count = 16,
+	} },
 }
 return {
 	texture = function(id)
@@ -91,33 +88,48 @@ return {
 	return materializeCpuCompletionValues(runCompiledTestSystem(compiled, 1_000_000));
 }
 
-test('GX atlas admission retains one allocation per atlas and evicts by load recency', () => {
+test('GX atlas recency evicts placements and refreshes mirrored row packets on readmission', () => {
 	const result = runAtlasResidency(`
 local atlas<const> = require('cartlib/gx/atlas')
 local imgdec<const> = require('cartlib/gx/imgdec')
 local first<const> = atlas.resolve('first')
-local second<const> = atlas.resolve('second')
+local second<const> = atlas.resolve('second_pal')
 local third<const> = atlas.resolve('third')
 
+local row_api<const> = require('cartlib/component/tile_layer_row')
+local row<const> = row_api.new()
+row_api.configure(row,1,0x00080008,2)
+row.first_visible_source, row.last_visible_source, row.source_count = 2, 2, 1
+local rows<const> = {row, placement_revision=atlas.placement_revision}
+local source<const> = {source_x=8,source_y=0,width=8,height=8,_size_word=0x00080008}
+atlas.bind_source(second,source)
+row_api.set_source(row,2,source)
+
 atlas.load('first')
-atlas.load('second')
+atlas.load('second_pal')
+row_api.refresh_packets(rows,1)
+local initial_mode<const>, initial_uv<const> = row.draw_modes[2], row.uv_words[2]
 atlas.load('first')
 atlas.load('third')
 local first_after_third<const> = first._allocation ~= nil and 1 or 0
 local second_after_third<const> = second._allocation ~= nil and 1 or 0
 local third_after_third<const> = third._allocation ~= nil and 1 or 0
 
-atlas.load('second')
+atlas.load('second_pal')
+row_api.refresh_packets(rows,1)
+local moved_mode<const>, moved_uv<const> = row.draw_modes[4], row.uv_words[4]
 return first_after_third,
 	second_after_third,
 	third_after_third,
 	first._allocation ~= nil and 1 or 0,
 	second._allocation ~= nil and 1 or 0,
 	third._allocation ~= nil and 1 or 0,
-	imgdec.upload_count()
+	imgdec.upload_count(),
+	initial_mode, initial_uv, moved_mode, moved_uv,
+	row.draw_mode_counts[moved_mode], row.draw_modes[2], row.uv_words[2]
 `);
 
-	assert.deepEqual(result, [1, 0, 1, 0, 1, 1, 4].map(valueInteger));
+	assert.deepEqual(result, [1, 0, 1, 0, 1, 1, 4, 8, 0x02200008, 16, 0x42000008, 1, 16, 0x42000008].map(valueInteger));
 });
 
 test('GX atlas admission replaces a fitting cache allocation before evicting unrelated residency', () => {

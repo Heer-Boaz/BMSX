@@ -40,7 +40,7 @@ local write_slot<const> = function(self, row, slot, column, source)
         (row.row_index - 1) * self._tile_size)
     row.columns[slot], row.columns[copy] = column, column
     row.coordinate_domains[slot], row.coordinate_domains[copy] = domain, domain
-    row.sources[slot], row.sources[copy] = source, source
+    tile_layer_row.set_source(row, slot, source)
     row.position_words[slot], row.position_words[copy] = position, position
 end
 
@@ -48,7 +48,7 @@ local clear_slot<const> = function(self, row, slot)
     local copy<const> = slot + self._window_capacity
     row.columns[slot], row.columns[copy] = nil, nil
     row.coordinate_domains[slot], row.coordinate_domains[copy] = nil, nil
-    row.sources[slot], row.sources[copy] = nil, nil
+    tile_layer_row.set_source(row, slot, nil)
     row.position_words[slot], row.position_words[copy] = nil, nil
 end
 
@@ -83,7 +83,7 @@ end
 function stage_tiles.new(owner, configuration, id_local)
     local self<const> = visual_2d_component.new(owner, configuration or owner, id_local or 'tile_layer')
     setmetatable(self, stage_tiles)
-    self._rows = {}
+    self._rows = { placement_revision = 0 }
     self.tile_count = 0
     return self
 end
@@ -94,13 +94,14 @@ function stage_tiles:configure(columns, row_count, tile_size, art)
     self.tile_count = columns * row_count
     self._row_count = row_count
     self._tile_size = tile_size
+    self._cell_size_word = gp0.pair16(tile_size, tile_size)
     self._coordinate_domain_columns = gp0.signed_coordinate_extent // tile_size
     self._first_visible_column = 0
     self._last_visible_column = 0
     self._window_capacity = 0
     for y = 1, row_count do
         local row<const> = tile_layer_row.new()
-        row.row_index = y
+        tile_layer_row.configure(row, y, self._cell_size_word, 0)
         row.overrides = {}
         self._rows[y] = row
     end
@@ -113,6 +114,14 @@ function stage_tiles:set_tile_source(x, y, source)
     local row<const> = self._rows[y]
     row.overrides[x] = source
     if x < self._first_visible_column or x > self._last_visible_column then return end
+    if source == nil then
+        -- A removed override reveals the tape cell, or removes a sparse slot.
+        source = self:source_at(x, y)
+        if source == nil then
+            rebuild_row(self, row, self._first_visible_column, self._last_visible_column)
+            return
+        end
+    end
     local first, last = row.first_visible_source, row.last_visible_source
     while first <= last do
         local middle<const> = (first + last) >> 1
@@ -122,7 +131,7 @@ function stage_tiles:set_tile_source(x, y, source)
         else
             local slot = middle
             if slot > self._window_capacity then slot = slot - self._window_capacity end
-            row.sources[slot], row.sources[slot + self._window_capacity] = source, source
+            tile_layer_row.set_source(row, slot, source)
             return
         end
     end
@@ -139,11 +148,7 @@ function stage_tiles:set_visible_columns(first, count)
         -- A changed viewport size gives every row a new ring representation.
         for y = 1, self._row_count do
             local row<const> = self._rows[y]
-            for slot = 1, old_capacity * 2 do
-                row.columns[slot], row.coordinate_domains[slot] = nil, nil
-                row.sources[slot], row.position_words[slot] = nil, nil
-            end
-            row.source_count, row.first_visible_source, row.last_visible_source = 0, 1, 0
+            tile_layer_row.configure(row, y, self._cell_size_word, count)
         end
         self._window_capacity = count
     end
@@ -196,7 +201,9 @@ end
 
 function stage_tiles:draw_visual(draw)
     self:resolve_pose()
-    command_list.tile_layer(draw, self._rows, self._row_count,
+    local rows<const> = self._rows
+    tile_layer_row.refresh_packets(rows, self._row_count)
+    command_list.tile_layer(draw, rows, self._row_count,
         self._first_visible_column, self._last_visible_column,
         self._coordinate_domain_columns, self._tile_size, self.wox, self.woy)
 end

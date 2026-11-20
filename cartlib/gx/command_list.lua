@@ -73,6 +73,11 @@ local textured_rectangle_packet_size<const> = sizeof(gp0_textured_rectangle_pack
 local fixed_textured_rectangle_packet_size<const> = sizeof(gp0_fixed_textured_rectangle_packet)
 local rectangle_packet_size<const> = sizeof(gp0_rectangle_packet)
 local neutral_texture_color<const> = 0x00808080
+local fixed_blit_commands<const> = {
+	[gp0.rectangle_size_1x1] = gp0.draw_raw_textured_rectangle_1x1 | neutral_texture_color,
+	[gp0.rectangle_size_8x8] = gp0.draw_raw_textured_rectangle_8x8 | neutral_texture_color,
+	[gp0.rectangle_size_16x16] = gp0.draw_raw_textured_rectangle_16x16 | neutral_texture_color,
+}
 
 function command_list.submit(draw)
 	if draw.word_count == 0 then
@@ -375,19 +380,9 @@ end
 -- rendering therefore writes the hardware's three-word fixed-size sprite
 -- packets without rechecking image dimensions at every draw.
 function command_list.bind_blit(source)
-	local size_word<const> = source._size_word
-	local writer = command_list.blit
-	if size_word == gp0.rectangle_size_1x1 then
-		source._blit_command = gp0.draw_raw_textured_rectangle_1x1 | neutral_texture_color
-		writer = blit_fixed
-	elseif size_word == gp0.rectangle_size_8x8 then
-		source._blit_command = gp0.draw_raw_textured_rectangle_8x8 | neutral_texture_color
-		writer = blit_fixed
-	elseif size_word == gp0.rectangle_size_16x16 then
-		source._blit_command = gp0.draw_raw_textured_rectangle_16x16 | neutral_texture_color
-		writer = blit_fixed
-	end
-	source.blit = writer
+	local command<const> = fixed_blit_commands[source._size_word]
+	source._blit_command = command
+	source.blit = command == nil and command_list.blit or blit_fixed
 end
 
 -- Producer-split surfaces retain one ordered source list with integral offsets.
@@ -628,28 +623,51 @@ local emit_single_domain_tile_rows<const> = function(
 	target,
 	rows,
 	row_count,
-	draw_mode
+	draw_mode,
+	fixed_command
 )
 	local cursor: *word = target
-	local command<const> = gp0.draw_raw_textured_rectangle | 0x00808080
+	local raw_command<const> = gp0.draw_raw_textured_rectangle | neutral_texture_color
 	for row_index = 1, row_count do
 		local row<const> = rows[row_index]
-		local sources<const> = row.sources
-		local position_words<const> = row.position_words
-		for source_index = row.first_visible_source, row.last_visible_source do
-			local source<const> = sources[source_index]
-			local next_draw_mode<const> = source._blit_draw_mode
-			if next_draw_mode ~= draw_mode then
-				*cursor = gp0.draw_mode | next_draw_mode
-				cursor = cursor + sizeof(word)
-				draw_mode = next_draw_mode
+		local first<const>, last<const> = row.first_visible_source, row.last_visible_source
+		if first <= last then
+			local modes<const> = row.draw_modes
+			local position_words<const> = row.position_words
+			local uv_words<const> = row.uv_words
+			local row_mode<const> = modes[first]
+			if fixed_command ~= nil and row.foreign_size_count == 0
+				and row.draw_mode_counts[row_mode] == row.source_count
+			then
+				if row_mode ~= draw_mode then
+					*cursor = gp0.draw_mode | row_mode
+					cursor = cursor + sizeof(word)
+					draw_mode = row_mode
+				end
+				for source_index = first, last do
+					local packet<const>: *gp0_fixed_textured_rectangle_packet = cursor
+					packet.command = fixed_command
+					packet.position = position_words[source_index]
+					packet.uv = uv_words[source_index]
+					cursor = cursor + fixed_textured_rectangle_packet_size
+				end
+			else
+				local size_words<const> = row.size_words
+				for source_index = first, last do
+					local next_draw_mode<const> = modes[source_index]
+					if next_draw_mode ~= draw_mode then
+						*cursor = gp0.draw_mode | next_draw_mode
+						cursor = cursor + sizeof(word)
+						draw_mode = next_draw_mode
+					end
+					local packet<const>: *gp0_textured_rectangle_packet = cursor
+					packet.command = raw_command
+					packet.position = position_words[source_index]
+					packet.uv = uv_words[source_index]
+					packet.size = size_words[source_index]
+					cursor = cursor + textured_rectangle_packet_size
+				end
 			end
-			local packet<const>: *gp0_textured_rectangle_packet = cursor
-			packet.command = command
-			packet.position = position_words[source_index]
-			packet.uv = source._blit_uv_word
-			packet.size = source._size_word
-			cursor = cursor + textured_rectangle_packet_size
 		end
 	end
 	return cursor, draw_mode
@@ -668,12 +686,14 @@ local emit_multi_domain_tile_rows<const> = function(
 	draw_mode
 )
 	local cursor: *word = target
-	local command<const> = gp0.draw_raw_textured_rectangle | 0x00808080
+	local command<const> = gp0.draw_raw_textured_rectangle | neutral_texture_color
 	local coordinate_domain = 0
 	for row_index = 1, row_count do
 		local row<const> = rows[row_index]
 		local coordinate_domains<const> = row.coordinate_domains
-		local sources<const> = row.sources
+		local modes<const> = row.draw_modes
+		local size_words<const> = row.size_words
+		local uv_words<const> = row.uv_words
 		local position_words<const> = row.position_words
 		for source_index = row.first_visible_source, row.last_visible_source do
 			local next_coordinate_domain<const> = coordinate_domains[source_index]
@@ -689,8 +709,7 @@ local emit_multi_domain_tile_rows<const> = function(
 					drawing_offset = next_drawing_offset
 				end
 			end
-			local source<const> = sources[source_index]
-			local next_draw_mode<const> = source._blit_draw_mode
+			local next_draw_mode<const> = modes[source_index]
 			if next_draw_mode ~= draw_mode then
 				*cursor = gp0.draw_mode | next_draw_mode
 				cursor = cursor + sizeof(word)
@@ -699,8 +718,8 @@ local emit_multi_domain_tile_rows<const> = function(
 			local packet<const>: *gp0_textured_rectangle_packet = cursor
 			packet.command = command
 			packet.position = position_words[source_index]
-			packet.uv = source._blit_uv_word
-			packet.size = source._size_word
+			packet.uv = uv_words[source_index]
+			packet.size = size_words[source_index]
 			cursor = cursor + textured_rectangle_packet_size
 		end
 	end
@@ -735,11 +754,13 @@ function command_list.tile_layer(
 			target = target + sizeof(word)
 			drawing_offset = next_drawing_offset
 		end
+		local fixed_command<const> = fixed_blit_commands[gp0.pair16(tile_size, tile_size)]
 		target, draw_mode = emit_single_domain_tile_rows(
 			target,
 			rows,
 			row_count,
-			draw_mode
+			draw_mode,
+			fixed_command
 		)
 	else
 		target, drawing_offset, draw_mode = emit_multi_domain_tile_rows(

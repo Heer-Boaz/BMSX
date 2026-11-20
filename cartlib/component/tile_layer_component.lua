@@ -27,6 +27,7 @@ local configure_rows<const> = function(self, previous_tile_count)
 	local row_count<const> = (self.tile_count + self.columns - 1) // self.columns
 	local rows<const> = self._rows
 	local previous_row_count<const> = self._row_count
+	local cell_size_word<const> = gp0.pair16(self._tile_size, self._tile_size)
 	local dirty_rows<const> = self._dirty_rows
 	for dirty_index = 1, self._dirty_row_count do
 		dirty_rows[dirty_index] = nil
@@ -37,11 +38,11 @@ local configure_rows<const> = function(self, previous_tile_count)
 			row = tile_layer_row.new()
 			rows[row_index] = row
 		end
-		tile_layer_row.configure(row, row_index)
+		tile_layer_row.configure(row, row_index, cell_size_word, 0)
 		dirty_rows[row_index] = row
 	end
 	for row_index = row_count + 1, previous_row_count do
-		tile_layer_row.configure(rows[row_index], row_index)
+		tile_layer_row.configure(rows[row_index], row_index, cell_size_word, 0)
 	end
 	self._row_count = row_count
 	self._dirty_row_count = row_count
@@ -58,7 +59,7 @@ function tile_layer_component.new(owner, configuration, id_local)
 	-- independently of IMGDEC or DMA completion.
 	self._sources_by_imgid = {}
 	self._slots_by_tile_index = {}
-	self._rows = {}
+	self._rows = { placement_revision = 0 }
 	self._row_count = 0
 	self._dirty_rows = {}
 	self._dirty_row_count = 0
@@ -97,7 +98,7 @@ function tile_layer_component:set_tile(index, imgid)
 		return
 	end
 	if previous ~= nil and source ~= nil then
-		row.sources[self._slots_by_tile_index[index]] = source
+		tile_layer_row.set_source(row, self._slots_by_tile_index[index], source)
 		return
 	end
 	row.dirty = true
@@ -172,7 +173,7 @@ function tile_layer_component:replace_indexed_tiles(indices, index_count, imgid)
 		sources[tile_index] = source
 		local row<const> = rows[((tile_index - 1) // columns) + 1]
 		if not row.dirty then
-			row.sources[slots_by_tile_index[tile_index]] = source
+			tile_layer_row.set_source(row, slots_by_tile_index[tile_index], source)
 		end
 	end
 end
@@ -217,6 +218,7 @@ function tile_layer_component:draw_visual(draw)
 			self.wxx, self.wxy, self.wyx, self.wyy, self.wox, self.woy)
 		return
 	end
+	tile_layer_row.refresh_packets(rows, self._row_count)
 	command_list.tile_layer(
 		draw,
 		rows,

@@ -25,11 +25,15 @@ const modules = [
 		'cartlib/component/tile_layer_component', 'cartlib/component/tile_layer_row',
 		'cartlib/gx/image', 'cartlib/gx/atlas', 'cartlib/gx/imgdec', 'cartlib/gx/affine_batch',
 	].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })),
+	{ path: 'stage_tiles_component', source: readFileSync('carts/nemesis_s/stage_tiles_component.lua', 'utf8') },
 	{
 		path: 'cartlib/rom_dir',
 		source: `local images<const> = {
  tile={imgmeta={width=2,height=3,gx_source_x=64,gx_source_y=32}},
  other={imgmeta={width=3,height=2,gx_source_x=68,gx_source_y=32}},
+ tile_a={imgmeta={width=8,height=8,gx_source_x=64,gx_source_y=32}},
+ tile_b={imgmeta={width=8,height=8,gx_source_x=72,gx_source_y=32}},
+ tile_c={imgmeta={width=8,height=8,gx_source_x=256,gx_source_y=32}},
  surface={imgmeta={width=4,height=3,gx_source_x=64,gx_source_y=32,
   gx_page_tiles={{u=64,v=32,w=2,h=3,x=0,y=0},{u=66,v=32,w=2,h=3,x=2,y=0}}}},
 }
@@ -343,6 +347,86 @@ return assertion_failed
 `);
 test(`GX affine batches preserve source records and dense native packets (O${optLevel})`, () => {
 	const cpu = rom.run(gxBatch);
+	const [failure] = materializeCpuCompletionValues(cpu);
+	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
+});
+
+const tilePackets = rom.add(WORLD_CPU_SETUP + checks + `
+bss words: word[64]
+rodata tape: u16[8] = {1,1,2,2,3,1,4,2}
+local commands<const> = require('cartlib/gx/command_list')
+local gp0<const> = require('cartlib/gx/gp0')
+local image<const> = require('cartlib/gx/image')
+local tile_layer<const> = require('cartlib/component/tile_layer_component')
+local stage_tiles<const> = require('stage_tiles_component')
+local output<const>: *word = words
+local draw<const> = commands.new(words,64)
+world:start()
+prefab.define({def_id='tiles',class=object_2d})
+local owner<const> = world:spawn('tiles',{})
+local tile_a<const>, tile_b<const>, tile_c<const> = image.resolve('tile_a'), image.resolve('tile_b'), image.resolve('tile_c')
+local raw<const> = 0x65808080
+local fixed<const> = 0x75808080
+local base_offset<const> = gp0.drawing_offset_word(0,0)
+local layer<const> = tile_layer.new(owner,{columns=129,tile_size=8})
+layer:resize(129,129)
+layer:set_tile(127,'tile_a')
+layer:set_tile(129,'tile_b')
+layer:set_visible_columns(127,3)
+commands.begin(draw,tile_a._blit_draw_mode,0)
+layer:draw_visual(draw)
+assert(draw.word_count==12 and output[1]==gp0.drawing_offset_word(-1008,0)
+ and output[2]==raw and output[3]==1008 and output[4]==0x2040 and output[5]==0x00080008
+ and output[6]==gp0.drawing_offset_word(16,0)
+ and output[7]==raw and output[8]==0 and output[9]==0x2048 and output[11]==base_offset,
+ 'sparse rows must preserve local positions and offsets across signed coordinate domains')
+
+layer:replace_indexed_tiles({127},1,'other')
+layer:set_tile(129,nil)
+layer:set_visible_columns(127,1)
+commands.begin(draw,tile_a._blit_draw_mode,0)
+layer:draw_visual(draw)
+assert(draw.word_count==7 and output[2]==raw and output[4]==0x2044 and output[5]==0x00020003,
+ 'animation and topology edits must retain an actual non-cell-sized source')
+layer:set_tile(127,'tile_b')
+commands.begin(draw,tile_a._blit_draw_mode,0)
+layer:draw_visual(draw)
+assert(draw.word_count==6 and output[2]==fixed and output[4]==0x2048,
+ 'replacing the last variable-size source must recover fixed GP0 packets')
+
+-- A synthetic tape, not a game cart. Two retained slots wrap during scroll.
+local stage<const> = stage_tiles.new(owner,{},'tape')
+local art<const> = { resolve=function(_,index) if index==1 then return tile_a end return tile_b end }
+stage:configure(5,1,8,art)
+stage._rows[1].tape_address = tape
+stage._rows[1].tape_count = 4
+stage:set_visible_columns(1,2)
+stage:set_visible_columns(2,2)
+commands.begin(draw,tile_a._blit_draw_mode,0)
+stage:draw_visual(draw)
+assert(draw.word_count==9 and output[1]==gp0.drawing_offset_word(-8,0)
+ and output[2]==fixed and output[3]==8 and output[4]==0x2048
+ and output[5]==fixed and output[6]==16 and output[7]==0x2040 and output[8]==base_offset,
+ 'incremental scrolling must preserve the dense packet order over the ring wrap')
+stage:set_tile_source(3,1,tile_c)
+commands.begin(draw,tile_a._blit_draw_mode,0)
+stage:draw_visual(draw)
+assert(draw.word_count==12 and output[2]==raw and output[4]==0x2048
+ and output[6]==(gp0.draw_mode | tile_c._blit_draw_mode)
+ and output[7]==raw and output[9]==0x2000 and output[11]==base_offset,
+ 'an override must change the page and UV in the mirrored slot without reordering the row')
+stage:set_tile_source(3,1,nil)
+stage:set_visible_columns(1,2)
+stage:set_visible_columns(3,3)
+commands.begin(draw,tile_a._blit_draw_mode,0)
+stage:draw_visual(draw)
+assert(draw.word_count==9 and output[2]==fixed and output[3]==16 and output[4]==0x2040
+ and output[5]==fixed and output[6]==24 and output[7]==0x2048,
+ 'reverse scrolling and resizing the ring must not keep an old source or a ghost sparse slot')
+return assertion_failed
+`);
+test('GX tile packets track sparse and wrapped rows without changing visible order or drawing state', () => {
+	const cpu = rom.run(tilePackets, 1_000_000);
 	const [failure] = materializeCpuCompletionValues(cpu);
 	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 });
