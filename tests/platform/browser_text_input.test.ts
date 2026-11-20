@@ -137,7 +137,7 @@ export { SingleLineFieldViewport } from './ide/editor/ui/inline/single_line_view
 export { EditorFont } from './ide/editor/ui/view/font';
 export { setFieldText } from './ide/editor/ui/inline/text_field';` + fixture, loader: 'ts', resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'nativeInputApi', write: false,
-		tsconfig: 'tsconfig.base.json',
+		tsconfig: 'tsconfig.base.json', loader: { '.rgba': 'binary' },
 	});
 	const browser = await chromium.launch();
 	afterTest(t, () => browser.close());

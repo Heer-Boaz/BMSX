@@ -67,7 +67,8 @@ export function start() {
 	};
 }`;
 	const bundle = await build({ stdin: { contents: fixture, resolveDir: process.cwd(), loader: 'ts' }, bundle: true,
-		platform: 'browser', format: 'iife', globalName: 'fixture', write: false, tsconfig: 'tsconfig.base.json' });
+		platform: 'browser', format: 'iife', globalName: 'fixture', write: false, tsconfig: 'tsconfig.base.json',
+		loader: { '.rgba': 'binary' } });
 	const browser = await chromium.launch();
 	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 400, height: 200 }, hasTouch: true, isMobile: true });

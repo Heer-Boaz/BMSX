@@ -48,7 +48,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			resolveDir: process.cwd(),
 		},
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'fixture', write: false,
-		tsconfig: 'tsconfig.base.json',
+		tsconfig: 'tsconfig.base.json', loader: { '.rgba': 'binary' },
 	});
 	const browser = await chromium.launch();
 	afterTest(t, () => browser.close());
@@ -63,7 +63,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 	]) {
 		await t.test(profile.name, async orientation => {
 			const page = await browser.newPage({ viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true });
-			orientation.after(() => page.close());
+			afterTest(orientation, () => page.close());
 			const errors: string[] = [];
 			page.on('pageerror', error => errors.push(error.message));
 			await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas></div>`);

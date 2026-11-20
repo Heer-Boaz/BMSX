@@ -38,6 +38,7 @@ export { PSX_MACHINE_SPEC } from './machine/ts/spec/bmsx/model';
 export { IO_INP_CTRL, INP_CTRL_ARM, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_INP_KEYS } from './machine/ts/spec/bmsx/io';
 export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', target: 'es2022', format: 'iife', globalName: 'fixture', write: false, tsconfig: 'tsconfig.base.json',
+		loader: { '.rgba': 'binary' },
 	});
 	const browser = await chromium.launch();
 	afterTest(t, () => browser.close());
@@ -50,7 +51,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 	]) {
 		await t.test(profile.name, async orientation => {
 			const page = await browser.newPage({ viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
-			orientation.after(() => page.close());
+			afterTest(orientation, () => page.close());
 			const errors: string[] = [];
 			page.on('pageerror', error => errors.push(error.message));
 			await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><body class="game-started"><div id="player-surface">${controls}<canvas id="gamescreen" width="256" height="${profile.sourceHeight}" style="display:block"></canvas></div></body>`);

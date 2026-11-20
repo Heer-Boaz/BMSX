@@ -57,6 +57,9 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		(globalThis as any).viewportProbe = {
 			model, video, input, native,
 			measure() {
+				// VisualViewport events invalidate layout; the host consumes them
+				// at its next frame boundary, before the picture and input sample.
+				video.prepareFrame();
 				input.pollInput();
 				input.sampleInputControllerSnapshot(snapshot, 0);
 				return {
