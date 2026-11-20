@@ -710,7 +710,7 @@ int main(int argc, char** argv) {
 	}
 	if ((argc == 3 || argc == 4) && std::string(argv[1]) == "--rom") {
 		auto image = operation(static_cast<OpCode>(std::stoul(argv[2])), argc == 4 ? std::stoul(argv[3]) : 1);
-		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, MAPPED_PAGE_BYTE_SIZE);
 		std::cout.write(reinterpret_cast<const char*>(rom.bytes.data()), rom.bytes.size());
 		return 0;
 	}

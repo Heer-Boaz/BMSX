@@ -46,7 +46,13 @@ async function conformance(tests) {
 try {
 	const units = (async () => {
 		if (await run('Debug BIOS and Studio ROMs', 'npm', ['run', 'build:toolchain:cart', '--', 'studio_test', '--debug'])) {
-			await run('Node test areas', 'bash', ['scripts/test_node_areas.sh', 'headless']);
+			await run('Node test areas', 'bash', ['scripts/test_node_areas.sh', 'headless'], {
+				...process.env,
+				BMSX_CPU32_RUNNER: join(interpreter, 'bmsx_cpu32_tests'),
+				BMSX_NUMERIC32_RUNNER: join(release, 'bmsx_numeric32_tests'),
+				BMSX_VALUE32_RUNNER: join(release, 'bmsx_value32_tests'),
+				BMSX_VALUE_STORAGE_RUNNER: join(release, 'bmsx_value_storage_tests'),
+			});
 		}
 	})();
 	const ctest = run('Debug CTest', 'ctest', ['--test-dir', debug, '-j4', '--output-on-failure', '--no-tests=error']);
