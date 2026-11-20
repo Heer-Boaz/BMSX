@@ -1,3 +1,4 @@
+import { valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { showEditorMessage } from '../../../ide/common/feedback_state';
@@ -29,8 +30,8 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	ide.debugger.breakpoints.toggle(repl, line);
 	await until(() => conversation.state === 'ready', 'terminal tools: model receives pause, continues and finishes');
 	const guest = ide.guest;
-	check(guest.global('terminal_probe') === 43 && guest.global('counter') === 105
-		&& guest.readStringMember(guest.global('cartlib__world__world'), 'terminal_probe') === 89,
+	check(guest.global('terminal_probe') === valueInteger(43) && guest.global('counter') === valueInteger(105)
+		&& guest.readStringMember(guest.global('cartlib__world__world'), 'terminal_probe') === valueInteger(89),
 		'conversation Lua writes the real global register and the existing cart world object');
 	check(source.version === version && ide.sources.currentBlua32Media === media && test.execution.userPaused,
 		'Terminal neither saves nor installs source, and retains independent pause');
