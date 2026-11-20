@@ -23,7 +23,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 		body => read(outputs(body)[2].scopes.find(scope => scope.domain === 0).reference),
 		body => read(outputs(body)[3].entries.find(entry => entry.key.display === buildModuleExportSlotName('cartlib/world/world', [])).value.reference),
 		body => read(outputs(body)[4].entries.find(entry => entry.key.display === '_objects').value.reference),
-		body => read(outputs(body)[5].entries.find(entry => entry.key.kind === 'number' && entry.key.display === '1').value.reference),
+		body => read(outputs(body)[5].entries.find(entry => entry.key.kind === 'integer' && entry.key.display === '1').value.reference),
 		body => [call('studio_capture_game', { target: outputs(body)[0].target })],
 		CODEX_FIXTURE_DONE,
 	]);
