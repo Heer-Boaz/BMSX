@@ -15,6 +15,9 @@ import { WorkspaceHttpSession, HttpError } from '../../scripts/dev/http_security
 import { handleWorkspaceRequest } from '../../scripts/dev/workspace_api.mjs';
 import { afterTest } from './test_cleanup';
 
+// Renderer projects change their workspace and provider, not the browser entry.
+let assistantBundle: Promise<Uint8Array> | undefined;
+
 /** Isolated authored workspace, real HTTP owners and browser; no product test endpoints or provider knobs. */
 export async function createAssistantStudioFixture(t: TestContext, evidenceName: string, options: Pick<CodexSessionOptions, 'executable' | 'provider'>,
 	browserOptions: Pick<LaunchOptions, 'headless'> & Pick<BrowserContextOptions, 'permissions'> = {}) {
@@ -25,8 +28,11 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	// so removal races a writer it does not own. Retry rather than fail the finished test.
 	afterTest(t, async () => { await browser?.close(); await closeServer?.();
 		await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); });
-	await build({ entryPoints: ['tests/conformance/runtime_replay/studio_assistant.ts'], bundle: true, platform: 'browser', format: 'esm', target: 'es2020',
-		outfile: join(root, 'test.js'), tsconfig: 'tsconfig.base.json', loader: { '.rgba': 'binary', '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' } });
+	const bundle = await (assistantBundle ??= build({ entryPoints: ['tests/conformance/runtime_replay/studio_assistant.ts'], bundle: true,
+		platform: 'browser', format: 'esm', target: 'es2020', write: false, tsconfig: 'tsconfig.base.json',
+		loader: { '.rgba': 'binary', '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' },
+	}).then(({ outputFiles: [entry] }) => entry.contents));
+	await writeFile(join(root, 'test.js'), bundle);
 	await writeFile(join(root, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}#player-surface{position:fixed;inset:0}canvas{position:absolute;image-rendering:pixelated}</style><div id="player-surface"><canvas width="256" height="212"></canvas></div>');
 	await copyFile('dist/system/bmsx-bios.debug.rom', join(root, 'bios.rom')); await copyFile('dist/studio_test.debug.rom', join(root, 'cart.rom'));
 	await copyFile('dist/graph-layout.worker.js', join(root, 'graph-layout.worker.js'));
