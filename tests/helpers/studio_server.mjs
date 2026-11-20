@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { once } from 'node:events';
+import { addAbortListener, once } from 'node:events';
 import { cp, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -18,7 +18,15 @@ export async function createStudioServer(t, { codexHome } = {}) {
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
 	const exited = once(child, 'exit');
-	t.after(async () => { child.kill(); await exited; await rm(root, { recursive: true }); });
+	// A timed-out test can stop running hooks after an earlier hook fails.
+	// Tie the server's lifetime to the test cancellation as well as normal exit.
+	const cancel = addAbortListener(t.signal, () => child.kill());
+	t.after(async () => {
+		cancel[Symbol.dispose]();
+		if (!t.signal.aborted) child.kill();
+		await exited;
+		await rm(root, { recursive: true });
+	});
 	let output = '';
 	const address = await new Promise((resolveAddress, reject) => {
 		child.on('error', reject);

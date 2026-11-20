@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { once } from 'node:events';
+import { addAbortListener, once } from 'node:events';
 import { watch } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -25,14 +25,15 @@ export async function createSharedCodexFixture(t: TestContext, providerUrl: stri
 	child.once('error', error => listening.reject(error));
 	child.once('exit', () => listening.reject(new Error(stderr)));
 	const exited = once(child, 'exit');
-	const kill = () => child.kill('SIGKILL'); t.signal.addEventListener('abort', kill, { once: true });
+	let killedOnAbort = false;
+	const cancel = addAbortListener(t.signal, () => { killedOnAbort = child.kill('SIGKILL'); });
 	let owner: CodexSocket;
 	afterTest(t, async () => {
 		await owner?.stop(); watcher.close(); child.kill('SIGTERM');
 		const [code, signal] = await exited;
-		t.signal.removeEventListener('abort', kill);
+		cancel[Symbol.dispose]();
 		await rm(home, { recursive: true });
-		assert.ok(code === 0 || signal === 'SIGTERM', stderr);
+		assert.ok(code === 0 || signal === 'SIGTERM' || (killedOnAbort && signal === 'SIGKILL'), stderr);
 	});
 	await listening.promise;
 	const backlog: RpcMessage[] = [], waits: { test: (message: RpcMessage) => boolean; resolve: (message: RpcMessage) => void }[] = [];
