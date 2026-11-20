@@ -158,8 +158,10 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	check(ide.editor.editorParts.activeGroup.model.activeTab === scenario && scenario.view.testPane.selection.nodeId === testId && scenario.view.focus === 'tests',
 		'A03: Scenario source returns to its exact test selection');
 	check(test.cycles() === cycles && ide.sources.currentBlua32Media === media, 'A03: all history routes preserve the paused machine and installed media');
-	for (const group of ide.editor.editorParts.groups) for (const input of [...group.model.tabs])
-		if (!initialTabs.has(input) && input.kind === 'behavior_lens') await group.close(input.id);
+	// Closing the temporary Scene also releases its split allocation when empty.
+	for (const group of [...ide.editor.editorParts.groups]) for (const input of [...group.model.tabs])
+		if (!initialTabs.has(input) && (input.kind === 'behavior_lens' || input === scene))
+			check(await group.close(input.id), 'A03: fixture-owned inputs close after restoring their source');
 	harness.openLuaSource('cart.lua'); await frame();
 	console.info('STUDIO A03: shared history routes passed');
 }

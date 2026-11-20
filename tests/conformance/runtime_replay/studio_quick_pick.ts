@@ -17,6 +17,8 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	console.info('STUDIO: workbench-owned quick input from real non-code panes');
 	// The title selector has an authored position; the root composition does not.
 	harness.openLuaSource('scenes/title.lua');
+	const parts = ide.editor.editorParts;
+	const existingTabs = new Set(parts.groups.flatMap(group => group.model.tabs));
 	const model = harness.getActiveEditorDocument().model;
 	const original = model.buffer.getText();
 	const position = cycles();
@@ -144,6 +146,8 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	await press('Escape');
 	check(!pointerCapture.active && sourcePane(test).code.view.scrollRow === scroll,
 		'quick pick: release and dismissal do not revive a stale drag');
+	if (!existingTabs.has(scene))
+		check(await parts.findGroup(scene)!.close(scene.id), 'quick pick: the fixture-owned Scene releases its editor allocation');
 }
 
 /** Final backend screenshot: actual workbench picker above the already-proven scene view. */

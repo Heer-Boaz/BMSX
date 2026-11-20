@@ -28,6 +28,8 @@ async function chooseSource(test: StudioFixture, path: string): Promise<void> {
 
 export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	const { ide, harness, press, click, frame, cycles } = test;
+	const parts = ide.editor.editorParts;
+	const existingTabs = new Set(parts.groups.flatMap(group => group.model.tabs));
 	const position = cycles();
 	console.info('STUDIO: globals and source-backed views through actual workbench input');
 	const bios = ide.sources.catalog.luaResources.find(resource => resource.contextId === test.ide.sources.currentBlua32Media.system!.sourceContextId && resource.path === 'main.lua')!;
@@ -87,7 +89,8 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	await openTool(test, 'sceneEditor');
 	await chooseSource(test, 'scenes/root.lua');
 	const reopened = ide.editor.mainWorkspace.primary;
-	check(reopened instanceof ScenePrimaryClient && reopened.authoring.workingCopy === scene.authoring.workingCopy
+	if (!(reopened instanceof ScenePrimaryClient)) throw new Error('navigation: reopened Scene missing');
+	check(reopened.authoring.workingCopy === scene.authoring.workingCopy
 		&& reopened.authoring.subject === reopened.authoring.document!.scenes[0], 'navigation: Scene authoring reuses canonical source outside document groups');
 	await openTool(test, 'scenarioLab');
 	await openTool(test, 'behaviorLens.stateMachines');
@@ -95,4 +98,8 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	check(ide.editor.editorParts.activeGroup.model.activeTab === lens, 'navigation: Scenario Lab opens the retained lens without a code-tab requirement');
 	check(cycles() === position, 'navigation: choosing sources does not mutate or run the paused machine');
 	harness.openLuaSource('scenes/root.lua');
+	for (const input of new Set([scene.input, reopened.input])) {
+		if (!existingTabs.has(input))
+			check(await parts.findGroup(input)!.close(input.id), 'navigation: the fixture-owned Scene releases its editor allocation');
+	}
 }
