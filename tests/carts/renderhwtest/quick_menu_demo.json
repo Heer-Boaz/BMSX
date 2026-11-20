@@ -43,11 +43,6 @@
 		}
 	},
 	{
-		"description": "quick menu frame",
-		"frame": 125,
-		"capture": true
-	},
-	{
 		"description": "quick menu start up",
 		"frame": 127,
 		"event": {
@@ -84,5 +79,10 @@
 				"meta": false
 			}
 		}
+	},
+	{
+		"description": "options frame after releasing the short Select+Start chord",
+		"frame": 129,
+		"capture": true
 	}
 ]

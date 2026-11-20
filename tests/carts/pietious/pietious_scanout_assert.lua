@@ -10,8 +10,10 @@ return {
 				and registry:get('intro') ~= nil
 				and registry:get('narrative') ~= nil
 				and registry:get('title_screen') ~= nil end, 120)
+			t:at_boundary(world:request_mutation_boundary(), 120)
 			local test<const> = {}
 			local director<const> = registry:get('d')
+			local castle<const> = registry:get('c')
 			local narrative<const> = registry:get('narrative')
 			local title_screen<const> = registry:get('title_screen')
 			test.intro_state = director.state_machines:bind_state_path('/intro')
@@ -23,6 +25,7 @@ return {
 			test.title_screen = title_screen
 			assert(director.state_machines:matches_state(test.intro_state), 'Pietious did not boot into the intro')
 			assert(world.active_space_id == 'intro', 'intro did not own the presentation space')
+			assert(castle.room_enter_pending, 'intro entered the prepared room before the player started the game')
 			t:press('AltRight', confirm_hold_frames)
 			t:wait_until('intro skip reaches story', function() return director.state_machines:matches_state(test.story_state) end, 120)
 			assert(world.active_space_id == 'narrative', 'story did not own narrative space')
@@ -32,9 +35,11 @@ return {
 			assert(world.active_space_id == 'title', 'title did not own presentation space')
 			t:wait_until('title input ready', function() return title_screen.state_machines:matches_state(test.title_idle_state) end, 120)
 			t:press('AltRight', confirm_hold_frames)
-			t:wait_until('title admits new game', function()
-				return registry:get('d') ~= director and world.active_space_id == 'main' and registry:get('c').current_room_number == 1
+			t:wait_until('title admits the prepared room', function()
+				return world.active_space_id == 'main' and not castle.room_enter_pending
 			end, 240)
+			assert(registry:get('d') == director and registry:get('c') == castle and castle.current_room_number == 1,
+				'first title start did not admit the retained room-one session')
 			t:capture('gameplay-after-start-input')
 
 		end,

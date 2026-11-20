@@ -24,7 +24,7 @@ function countPixels(png, left, top, right, bottom, predicate) {
 }
 
 const game = frame(120);
-const menu = frame(125);
+const menu = frame(129);
 assert.equal(game.width, 320);
 assert.equal(game.height, 240);
 assert.equal(menu.width, game.width);

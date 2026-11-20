@@ -8,18 +8,17 @@ import { PNG } from 'pngjs';
 const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bmsx-system-print-'));
 const timelinePath = path.join(outputRoot, 'timeline.json');
 const captureFrame = 48;
-const modifiers = { ctrl: false, shift: false, alt: false, meta: false };
 fs.writeFileSync(timelinePath, `${JSON.stringify([
 	{ frame: 38, description: 'cart frame before BIOS monitor entry', capture: true },
 	{
 		frame: 40,
-		description: 'enter BIOS monitor',
-		event: { type: 'button', deviceId: 'keyboard:0', code: 'F2', down: true, value: 1, timestamp: 800, pressId: 1, modifiers },
+		description: 'assert the host supervisor request line',
+		event: { type: 'supervisor-request', down: true, timestamp: 800 },
 	},
 	{
 		frame: 42,
-		description: 'release BIOS monitor key',
-		event: { type: 'button', deviceId: 'keyboard:0', code: 'F2', down: false, value: 0, timestamp: 840, pressId: 1, modifiers },
+		description: 'release the host supervisor request line',
+		event: { type: 'supervisor-request', down: false, timestamp: 840 },
 	},
 	{ frame: captureFrame, description: 'captured print history', capture: true },
 ])}\n`);
