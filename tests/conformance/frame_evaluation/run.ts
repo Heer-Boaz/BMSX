@@ -9,7 +9,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { compileFrameEvaluationTest, frameEvaluationCases } from '../../helpers/frame_evaluation';
+import { compileFrameEvaluationCaseRom, frameEvaluationCases } from '../../helpers/frame_evaluation';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const args = process.argv.slice(2);
@@ -27,55 +27,58 @@ function assertNativeSnapshot(path: string, expected: Uint8Array, label: string)
 
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-frame-evaluation-'));
 try {
-	for (const optLevel of [0, 3] as const) for (const [name, body] of cases) {
-		const label = `${name} O${optLevel}`;
-		const caseDirectory = join(directory, `${name}-O${optLevel}`);
-		mkdirSync(caseDirectory);
-		const image = compileFrameEvaluationTest(body, optLevel), path = join(caseDirectory, 'program.rom');
-		writeFileSync(path, image.romBytes);
-		const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
-			sampleInputControllerSnapshot: () => {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect: () => {},
-		});
-		runtime.boot();
-		const cpu = runtime.machine.cpu;
-		let result = RunResult.Yielded;
-		const suspended: Uint8Array[] = [];
-		for (let grant = 0; grant < 300 && result === RunResult.Yielded; grant++) {
-			result = cpu.runUntilDepth(0, 100000);
-			assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
-			const saved = cpu.captureRuntimeState();
-			cpu.restoreRuntimeState(saved);
-			assert.deepEqual(cpu.captureRuntimeState(), saved);
-			if (result === RunResult.Halted && cpu.isHaltedUntilIrq()) {
-				const bytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
-				const state = decodeRuntimeSaveState(bytes, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-				assert.deepEqual(decodeRuntimeSaveState(encodeRuntimeSaveState(state), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes), state);
-				applyRuntimeSaveState(runtime, state);
-				assert.deepEqual(cpu.captureRuntimeState(), state.cpuState);
-				suspended.push(bytes);
-				if (name === 'completion_injection') {
-					const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
-					cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('stopped_probe')!), cpu.gc), [valueInteger(depth - 1)]);
-					assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
-					assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueInteger(43), valueNil(), valueBool(false)]);
-					assert.equal(cpu.getFrameDepth(), depth); assert.equal(cpu.readFramePc(depth - 1), pc);
-					assert.equal(cpu.isHaltedUntilIrq(), true);
-					suspended.push(encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+	for (const optLevel of [0, 3] as const) {
+		const romForCase = compileFrameEvaluationCaseRom(cases.map(([, body]) => body), optLevel);
+		for (const [caseIndex, [name]] of cases.entries()) {
+			const label = `${name} O${optLevel}`;
+			const caseDirectory = join(directory, `${name}-O${optLevel}`);
+			mkdirSync(caseDirectory);
+			const rom = romForCase(caseIndex), path = join(caseDirectory, 'program.rom');
+			writeFileSync(path, rom);
+			const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
+				sampleInputControllerSnapshot: () => {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect: () => {},
+			});
+			runtime.boot();
+			const cpu = runtime.machine.cpu;
+			let result = RunResult.Yielded;
+			const suspended: Uint8Array[] = [];
+			for (let grant = 0; grant < 300 && result === RunResult.Yielded; grant++) {
+				result = cpu.runUntilDepth(0, 100000);
+				assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
+				const saved = cpu.captureRuntimeState();
+				cpu.restoreRuntimeState(saved);
+				assert.deepEqual(cpu.captureRuntimeState(), saved);
+				if (result === RunResult.Halted && cpu.isHaltedUntilIrq()) {
+					const bytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+					const state = decodeRuntimeSaveState(bytes, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+					assert.deepEqual(decodeRuntimeSaveState(encodeRuntimeSaveState(state), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes), state);
+					applyRuntimeSaveState(runtime, state);
+					assert.deepEqual(cpu.captureRuntimeState(), state.cpuState);
+					suspended.push(bytes);
+					if (name === 'completion_injection') {
+						const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+						cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('stopped_probe')!), cpu.gc), [valueInteger(depth - 1)]);
+						assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
+						assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueInteger(43), valueNil(), valueBool(false)]);
+						assert.equal(cpu.getFrameDepth(), depth); assert.equal(cpu.readFramePc(depth - 1), pc);
+						assert.equal(cpu.isHaltedUntilIrq(), true);
+						suspended.push(encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+					}
+					cpu.clearHaltUntilIrq();
+					result = RunResult.Yielded;
 				}
-				cpu.clearHaltUntilIrq();
-				result = RunResult.Yielded;
 			}
+			assert.equal(result, RunResult.Halted);
+			assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueBool(true)]);
+			assert.equal(suspended.length, name === 'completion_injection' ? 2 : name === 'coroutine' ? 1 : 0);
+			assert.equal(spawnSync(nativeRunner, [path, name === 'completion_injection' ? 'completion' : 'run'], { stdio: 'inherit' }).status, 0);
+			for (let index = 0; index < suspended.length; index++)
+				assertNativeSnapshot(`${path}.suspended-${index}.state`, suspended[index], `${label}, suspended ${index}`);
+			assertNativeSnapshot(`${path}.state`, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)), label);
+			// Only a failing case needs to retain its snapshots. Pass each checkpoint
+			// through the codec and comparison before releasing its files.
+			rmSync(caseDirectory, { recursive: true });
 		}
-		assert.equal(result, RunResult.Halted);
-		assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueBool(true)]);
-		assert.equal(suspended.length, name === 'completion_injection' ? 2 : name === 'coroutine' ? 1 : 0);
-		assert.equal(spawnSync(nativeRunner, [path, name === 'completion_injection' ? 'completion' : 'run'], { stdio: 'inherit' }).status, 0);
-		for (let index = 0; index < suspended.length; index++)
-			assertNativeSnapshot(`${path}.suspended-${index}.state`, suspended[index], `${label}, suspended ${index}`);
-		assertNativeSnapshot(`${path}.state`, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)), label);
-		// Only a failing case needs to retain its snapshots. Pass each checkpoint
-		// through the codec and comparison before releasing its files.
-		rmSync(caseDirectory, { recursive: true });
 	}
 	rmSync(directory, { recursive: true });
 	console.log(`FRAME-EVALUATION-PARITY:PASS (${cases.length} cases at O0/O3; firmware, physical slots, scope lifetime and full snapshots)`);

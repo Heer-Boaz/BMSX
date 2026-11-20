@@ -5,12 +5,16 @@ import { asClosure, valueBool, valueInteger, valueNil } from '../../machine/ts/m
 import { valueToString } from '../../machine/ts/machine/cpu/value';
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { createTestSystemCpu } from '../helpers/blua32';
-import { compileFrameEvaluationTest, frameEvaluationCases } from '../helpers/frame_evaluation';
+import { compileFrameEvaluationCaseRom, compileFrameEvaluationTest, frameEvaluationCases } from '../helpers/frame_evaluation';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [3] as const) for (const [name, body] of Object.entries(frameEvaluationCases)) {
+const cases = Object.entries(frameEvaluationCases);
+let caseRom: ReturnType<typeof compileFrameEvaluationCaseRom> | undefined;
+const optLevel = 3;
+for (const [index, [name]] of cases.entries()) {
 	test(`firmware frame evaluation O${optLevel}: ${name}`, () => {
-		const { cpu } = createTestSystemCpu(compileFrameEvaluationTest(body, optLevel));
+		caseRom ??= compileFrameEvaluationCaseRom(cases.map(([, body]) => body), optLevel);
+		const { cpu } = createTestSystemCpu({ romBytes: caseRom(index) });
 		cpu.installBootPrimitives();
 		runGuestToHalt(cpu, 30_000_000);
 		if (name === 'coroutine' || name === 'completion_injection') {

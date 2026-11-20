@@ -1,11 +1,13 @@
 import { readFileSync, readdirSync } from 'node:fs';
+import { writeLE32 } from '../../machine/ts/common/endian';
+import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { linkTestSystemBlua32 } from './blua32';
 
 /** Actual firmware compiler/REPL and the production packed diagnostic directory. */
-export function compileFrameEvaluationTest(body: string, optLevel: 0 | 3, includeDiagnostics = true) {
+function compileFrameEvaluationProgram(execution: string, optLevel: 0 | 3, includeDiagnostics = true) {
 	const modules = [
 		...['base', 'number/parse', 'number/decimal', 'table', 'coroutine', 'string/base', 'string/mapped', 'string/pattern', 'debug/scopes', 'debug/frame_scopes', 'debug/frame', 'shell/repl'],
 		...readdirSync('machine/bios/compiler').filter(name => name.endsWith('.lua')).sort().map(name => `compiler/${name.slice(0, -4)}`),
@@ -34,13 +36,36 @@ frame_bindings = require('debug/frame')
 require('frame_test/primitives')
 escaped = false
 optimization_level = ${optLevel}
-return pcall(function()
-${body}
-end)`;
+${execution}`;
 	return linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, 'frame_test').chunk!,
 		modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk! })),
 		{ entrySource: source, optLevel, programDomain: 'system' }),
 		includeDiagnostics ? new Map([{ path: 'frame_test', source }, ...modules].map(module => [module.path, { displayPath: `${module.path}.lua`, source: module.source }])) : null);
+}
+
+export function compileFrameEvaluationTest(body: string, optLevel: 0 | 3, includeDiagnostics = true) {
+	return compileFrameEvaluationProgram(`return pcall(function()\n${body}\nend)`, optLevel, includeDiagnostics);
+}
+
+/** Link the diagnostic firmware once. Each case boots a fresh machine with a
+ * ROM whose input word selects its own protected body, with no extra guest frame. */
+export function compileFrameEvaluationCaseRom(bodies: readonly string[], optLevel: 0 | 3) {
+	const branches = bodies.map((body, index) =>
+		`${index === 0 ? 'if' : 'elseif'} case_index == ${index} then\nreturn pcall(function()\n${body}\nend)`);
+	const image = compileFrameEvaluationProgram(`
+rodata frame_test_case_index: word = 0
+local case_index<const> = mem[frame_test_case_index]
+${branches.join('\n')}
+end
+`, optLevel);
+	const { romBytes, symbols } = image;
+	const selector = symbols.metadata.staticScopes.declarations.find(declaration => declaration.name === 'frame_test_case_index')!;
+	const selectorOffset = selector.address! - SYSTEM_ROM_BASE;
+	return (index: number): Uint8Array => {
+		const selectedRom = romBytes.slice();
+		writeLE32(selectedRom, selectorOffset, index);
+		return selectedRom;
+	};
 }
 
 export const frameEvaluationCases = {
