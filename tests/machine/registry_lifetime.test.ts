@@ -4,7 +4,7 @@ import { valueNil, asClosure, valueInteger, valuePayload } from '../../machine/t
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom, createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
 import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
@@ -20,9 +20,10 @@ local registry<const> = require('cartlib/registry')
 probe = { registry = registry }
 `;
 
-for (const optLevel of [3] as const) {
-	test(`Registry retires last-member keys through reconciliation and deregistration without disturbing live members (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+const optLevel = 3;
+const registryRom = createCartlibCaseRom(setup, { optLevel });
+
+const membership = registryRom.add(`
 local key<const> = {}
 local other<const> = {}
 local first<const> = { id = registry:next_id() }
@@ -44,16 +45,17 @@ probe.after_reconcile = registry._entries_by_key[key]
 assert(#registry:entries(key) == 0 and #registry:entries(other) == 1)
 registry:deregister(first)
 probe.remaining = registry._entries_by_key
-`, { optLevel });
-		runGuestToHalt(cpu, 20_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		assert.equal(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('after_deregister')!), valueNil(), 'last deregistered member must retire its key');
-		assert.equal(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('after_reconcile')!), valueNil(), 'last reconciled member must retire its key');
-		assert.equal(entryCount(cpu.gc.tables, valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('remaining')!))), 0);
-	});
+`);
+test(`Registry retires last-member keys through reconciliation and deregistration without disturbing live members (O${optLevel})`, () => {
+	const cpu = registryRom.run(membership);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	assert.equal(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('after_deregister')!), valueNil(), 'last deregistered member must retire its key');
+	assert.equal(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('after_reconcile')!), valueNil(), 'last reconciled member must retire its key');
+	assert.equal(entryCount(cpu.gc.tables, valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('remaining')!))), 0);
+});
 
-	for (const keyKind of ['table', 'string'] as const) test(`Registry releases retired ${keyKind} keys and entries and plateaus across distinct-key lifetimes (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+for (const keyKind of ['table', 'string'] as const) {
+	const churnCase = registryRom.add(`
 probe.next_key = 1000
 function probe.churn(count)
  local weak<const> = setmetatable({}, { __mode = 'v' })
@@ -69,8 +71,9 @@ function probe.churn(count)
  probe.next_key = probe.next_key + count
  probe.weak = weak
 end
-`, { optLevel });
-		runGuestToHalt(cpu, 20_000_000);
+`);
+	test(`Registry releases retired ${keyKind} keys and entries and plateaus across distinct-key lifetimes (O${optLevel})`, () => {
+		const cpu = registryRom.run(churnCase);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const churn = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('churn')!), cpu.gc);
 		const registry = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('registry')!));
@@ -87,9 +90,10 @@ end
 			else assert.equal(heap, warmed, 'distinct historical keys must not grow retained Registry storage');
 		}
 	});
+}
 
-	test(`World tag reconciliation and disposal retire historical Registry keys and actor graphs (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+test(`World tag reconciliation and disposal retire historical Registry keys and actor graphs (O${optLevel})`, () => {
+	const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
 world:start()
 
 prefab.define({ def_id = 'registry.actor', class = world_object })
@@ -115,22 +119,21 @@ function probe.churn(count)
  assert(#world._objects == 0 and next(registry._entries_by_key) == nil)
 end
 `, { optLevel, modules: WORLD_CPU_MODULES });
-		runGuestToHalt(cpu, 20_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		const churn = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('churn')!), cpu.gc);
-		let warmed = 0;
-		for (let cycle = 0; cycle < 3; cycle++) {
-			runCompletionClosure(cpu, churn, [valueInteger(128)]);
-			const heap = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength());
-			const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
-			for (let index = 1; index <= 128; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil());
-			if (cycle === 0) warmed = heap;
-			else assert.equal(heap, warmed, 'historical World tags must not grow retained Registry storage');
-		}
-	});
+	runGuestToHalt(cpu, 20_000_000);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	const churn = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('churn')!), cpu.gc);
+	let warmed = 0;
+	for (let cycle = 0; cycle < 3; cycle++) {
+		runCompletionClosure(cpu, churn, [valueInteger(128)]);
+		const heap = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength());
+		const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
+		for (let index = 1; index <= 128; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil());
+		if (cycle === 0) warmed = heap;
+		else assert.equal(heap, warmed, 'historical World tags must not grow retained Registry storage');
+	}
+});
 
-	test(`Warm fixed-key Registry reconciliation reuses empty membership storage without allocating (O${optLevel})`, t => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+const reuseKernel = registryRom.add(`
 local entries<const> = {}
 local keys<const> = {}
 for index = 1, 32 do
@@ -145,13 +148,13 @@ kernel = function(count)
   for index = 1, 32 do registry:reconcile_index(entries[index], keys[index], false) end
  end
 end
-`, { optLevel });
-		runGuestToHalt(cpu, 20_000_000);
-		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
-		const profile = profileWarmGuestKernel(cpu, kernel, 128);
-		assert.equal(profile.reservations, 0);
-		assert.equal(profile.reservedBytes, 0);
-		assert.equal(profile.retainedAfter, profile.retainedBefore);
-		t.diagnostic(JSON.stringify({ optLevel, ...profile }));
-	});
-}
+`);
+test(`Warm fixed-key Registry reconciliation reuses empty membership storage without allocating (O${optLevel})`, t => {
+	const cpu = registryRom.run(reuseKernel);
+	const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
+	const profile = profileWarmGuestKernel(cpu, kernel, 128);
+	assert.equal(profile.reservations, 0);
+	assert.equal(profile.reservedBytes, 0);
+	assert.equal(profile.retainedAfter, profile.retainedBefore);
+	t.diagnostic(JSON.stringify({ optLevel, ...profile }));
+});

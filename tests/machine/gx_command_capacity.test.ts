@@ -1,21 +1,9 @@
-import { valueNil, asStringId } from '../../machine/ts/machine/cpu/value';
-import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { test } from 'node:test';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { createCartlibCaseRom } from '../helpers/cartlib_cpu';
 
 // Real command writer/compiler/guest CPU, with the DMA consumer replaced at
 // its source-lifetime boundary. Read source words only when wait0 releases the
 // transfer, so early reuse corrupts the recorded stream rather than passing.
-const checks = `local failed
-local check_index=0
-local assert<const> = function(condition,message)
- check_index=check_index+1
- if not condition and failed==nil then failed=message or ('GX assertion '..check_index) end
-end
-`;
-
 const modules = [
 	...['cartlib/gx/command_list', 'cartlib/gx/gp0'].map(path => ({
 		path, source: readFileSync(`${path}.lua`, 'utf8'),
@@ -52,15 +40,19 @@ end
 return dma` },
 ];
 
-for (const optLevel of [3] as const) for (const capacity of [16, 32])
-test(`GX textured triangles preserve UV/page words without transport padding in ${capacity} words (O${optLevel})`, () => {
-	const { cpu } = createCartlibProgramHarness(checks + `
+const optLevel = 3;
+const rom = createCartlibCaseRom(`
 local commands<const> = require('cartlib/gx/command_list')
+local gp0<const> = require('cartlib/gx/gp0')
 local dma<const> = require('cartlib/dma')
-bss storage: word[${capacity + 2}]
+bss storage: word[34]
 local guard<const>: *word = storage
-guard[0],guard[${capacity + 1}]=0x13579bdf,0x2468ace0
 local words<const>: *word = storage+sizeof(word)
+`, { optLevel, modules });
+
+for (const capacity of [16, 32]) {
+	rom.test(`GX textured triangles preserve UV/page words without transport padding in ${capacity} words (O${optLevel})`, `
+guard[0],guard[${capacity + 1}]=0x13579bdf,0x2468ace0
 local draw<const> = commands.new(words,${capacity})
 commands.begin(draw,0,0)
 for index=0,${capacity - 1} do words[index]=0 end
@@ -97,24 +89,12 @@ draw:mode(0x114)
 assert(draw.word_count==0,'polygon texpage publication invalidated the draw-mode cache')
 commands.submit_fenced(draw)
 assert(dma.transfers[#dma.transfers].count==1 and require('cartlib/gx/gpu').acknowledgements==1)
-return failed
-`, { optLevel, modules });
-	runGuestToHalt(cpu, 20_000_000);
-	const [failure] = materializeCpuCompletionValues(cpu);
-	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
-});
+`);
+}
 
-for (const optLevel of [3] as const) {
-	for (const capacity of [16, 32] as const) {
-		test(`GX bulk triangles stream ordered packets through ${capacity}-word storage (O${optLevel})`, () => {
-			const { cpu } = createCartlibProgramHarness(checks + `
-local commands<const> = require('cartlib/gx/command_list')
-local gp0<const> = require('cartlib/gx/gp0')
-local dma<const> = require('cartlib/dma')
-bss storage: word[${capacity + 2}]
-local guard<const>: *word = storage
+for (const capacity of [16, 32]) {
+	rom.test(`GX bulk triangles stream ordered packets through ${capacity}-word storage (O${optLevel})`, `
 guard[0],guard[${capacity + 1}]=0x13579bdf,0x2468ace0
-local words<const>: *word = storage+sizeof(word)
 local draw<const> = commands.new(words,${capacity})
 commands.begin(draw,0x123,0x00010002)
 draw:rect(1,2,3,4,0xff123456)
@@ -167,23 +147,11 @@ commands.submit_fenced(draw)
 local tail<const> = transfers[#transfers]
 assert(#transfers==transfer_count+1 and tail.count==4 and tail.words[4]==gp0.irq_request)
 assert(require('cartlib/gx/gpu').acknowledgements==1 and draw.word_count==0)
-return failed
-`, { optLevel, modules });
-			runGuestToHalt(cpu, 20_000_000);
-			const [failure] = materializeCpuCompletionValues(cpu);
-			assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
-		});
-	}
+`);
+}
 
-	test(`GX exact-capacity fence tail and empty batches preserve the stream (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(checks + `
-local commands<const> = require('cartlib/gx/command_list')
-local gp0<const> = require('cartlib/gx/gp0')
-local dma<const> = require('cartlib/dma')
-bss storage: word[18]
-local guard<const>: *word = storage
+rom.test(`GX exact-capacity fence tail and empty batches preserve the stream (O${optLevel})`, `
 guard[0],guard[17]=0x13579bdf,0x2468ace0
-local words<const>: *word = storage+sizeof(word)
 local draw<const> = commands.new(words,16)
 commands.begin(draw,0x100,0)
 local initial_mode_word<const> = words[0]
@@ -212,10 +180,4 @@ assert(#dma.transfers==4 and dma.transfers[4].count==1
  and dma.transfers[4].words[1]==gp0.irq_request)
 assert(require('cartlib/gx/gpu').acknowledgements==2
  and guard[0]==0x13579bdf and guard[17]==0x2468ace0)
-return failed
-`, { optLevel, modules });
-		runGuestToHalt(cpu, 20_000_000);
-		const [failure] = materializeCpuCompletionValues(cpu);
-		assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
-	});
-}
+`);
