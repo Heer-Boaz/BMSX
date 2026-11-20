@@ -6,7 +6,8 @@ import { test } from 'node:test';
 import { buildScenarioTestSourceAssets, collectScenarioTestSourceFiles } from '../../scripts/rompacker/scenario_test_sources';
 import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
-import { spawnSync } from 'node:child_process';
+import { prepareMediaBuild } from '../../scripts/rompacker/build';
+import { RomArtifactStore } from '../../scripts/rompacker/artifacts';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -47,19 +48,23 @@ test('debug scenario discovery packages each authored assertion as one source-on
 test('a debug cart with no packed tests can execute its first workspace-created suite; rebuild preserves source-only membership', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-first-scenario-'));
 	afterTest(t, () => rm(directory, { recursive: true, force: true }));
-	const resources = join(directory, 'res'), output = join(directory, 'output');
+	const resources = join(directory, 'res');
+	const store = new RomArtifactStore(join(directory, 'store'));
 	await mkdir(resources);
 	await writeFile(join(resources, 'manifest.rommanifest'), 'title: First scenario\nhardware:\n  - type: rom\n');
 	await writeFile(join(directory, 'entry.lua'), 'module<entry>\nwhile true do halt_until_irq end');
-	const compile = (debug: boolean) => {
-		const result = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/rompacker/rompacker.ts',
-			'--mode', 'rompack', '--skiptypecheck', '-romname', 'fresh', '-respath', resources, '--output-dir', output,
-			'--store-dir', join(directory, 'store'), '-O0', ...(debug ? ['--debug'] : [])], { encoding: 'utf8' });
-		assert.equal(result.status, 0, result.stdout + result.stderr);
-	};
-	compile(true);
-	const system = await readFile(join(output, 'system/bmsx-bios.debug.rom'));
-	const cartridge = await readFile(join(output, 'fresh.debug.rom'));
+	let build = 0;
+	const compile = (debug: boolean) => store.withSharedAccess(async () => {
+		const stage = store.staging(`scenario-${build++}`);
+		const { artifact, reused } = await prepareMediaBuild({
+			domain: 'cart', target: 'fresh', debug, optLevel: 0, force: false, respath: resources, inputAccess: { kind: 'filesystem' },
+		}, store, stage, () => {});
+		if (!reused) await store.publish(stage, artifact);
+		return store.directory(artifact.id);
+	});
+	const first = await compile(true);
+	const system = await readFile(join(first, 'system/bmsx-bios.debug.rom'));
+	const cartridge = await readFile(join(first, 'fresh.debug.rom'));
 	const index = await parseCartridgeIndex(cartridge);
 	assert.equal(index.entries.some(entry => entry.source_path?.endsWith('_assert.lua')), false);
 	assert.equal(index.entries.find(entry => entry.source_path === 'testlib/execution.lua')!.program_module, false);
@@ -96,7 +101,7 @@ test('a debug cart with no packed tests can execute its first workspace-created 
 	// res/ is also a resource-scan root: assertions there must not become gameplay code.
 	await writeFile(join(resources, 'second_assert.lua'), source);
 	for (const debug of [true, false]) {
-		compile(debug);
+		const output = await compile(debug);
 		const rebuilt = await parseCartridgeIndex(await readFile(join(output, debug ? 'fresh.debug.rom' : 'fresh.rom')));
 		for (const path of ['first_assert.lua', 'res/second_assert.lua']) {
 			const suite = rebuilt.entries.find(entry => entry.source_path === path);

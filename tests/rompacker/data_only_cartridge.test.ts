@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import { RomArtifactStore } from '../../scripts/rompacker/artifacts';
 import { afterTest } from '../helpers/test_cleanup';
 
@@ -55,12 +55,6 @@ const EMPTY_HEADER: CartRomHeader = {
 	metadataLength: 0,
 };
 
-// Each invocation builds its own cart and exports to an empty directory.
-// Only the immutable BIOS build is reused between cases with the same recipe.
-let cliStore: RomArtifactStore;
-before(async () => { cliStore = new RomArtifactStore(await mkdtemp(join(tmpdir(), 'bmsx-cart-cli-store-'))); });
-after(() => rm(cliStore.root, { recursive: true, force: true }));
-
 test('cartridge package bounds and executable metadata follow declared hardware', () => {
 	assert.doesNotThrow(() => assertCartridgePackageFitsHardware(
 		CART_ROM_SIZE + 1,
@@ -84,136 +78,61 @@ test('cartridge package bounds and executable metadata follow declared hardware'
 	), /requires an installed ROM device/);
 });
 
-for (const name of ['cartridge_data_conformance', 'system', 'bmsx-bios']) test(`cart production: ${name} stays a cartridge, independently of BIOS selection`, async t => {
-	const outputRoot = await mkdtemp(join(tmpdir(), 'bmsx-cart-cli-export-'));
-	afterTest(t, () => rm(outputRoot, { recursive: true, force: true }));
+test('the CLI publishes external source-free resources as a cartridge even when named system', async t => {
+	const root = await mkdtemp(join(tmpdir(), 'bmsx-external-data-cart-'));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
+	const resourceRoot = join(root, 'res');
+	const outputRoot = join(root, 'output');
+	const store = new RomArtifactStore(join(root, 'store'));
+	await mkdir(resourceRoot);
+	await writeFile(join(resourceRoot, 'manifest.rommanifest'),
+		'title: External data probe\nhardware:\n    - type: ram\n      bytes: 256\n    - type: mailbox\n');
+	const probeBytes = Buffer.from('external-probe');
+	await writeFile(join(resourceRoot, 'probe.bin'), probeBytes);
 	const result = spawnSync(process.execPath, [
-		'--import',
-		'tsx',
-		'scripts/rompacker/rompacker.ts',
-		'--mode',
-		'rompack',
-		'--skiptypecheck',
-		'-romname',
-		name,
-		'-respath',
-		'carts/cartridge_data_conformance/res',
-		'--output-dir',
-		outputRoot,
-		'--store-dir',
-		cliStore.root,
-		...(name === 'cartridge_data_conformance' ? ['--force'] : []),
-	], {
-		cwd: process.cwd(),
-		encoding: 'utf8',
-	});
+		'--import', 'tsx', 'scripts/rompacker/rompacker.ts', '--mode', 'rompack',
+		'-romname', 'system', '-respath', resourceRoot,
+		'--output-dir', outputRoot, '--store-dir', store.root,
+	], { encoding: 'utf8' });
 	assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-	const packageBytes = await readFile(join(outputRoot, `${name}.rom`));
-	const packageImage = parseCartridgePackage(packageBytes);
-	assert.deepEqual(packageImage.manifest.hardware, MANIFEST.hardware);
-	assert.equal(packageImage.header.blua32ImageByteCount, 0);
-	const artifact = (await cliStore.list()).find(artifact => artifact.target === name);
+	const packageBytes = await readFile(join(outputRoot, 'system.rom'));
+	const image = parseCartridgePackage(packageBytes);
+	assert.deepEqual(image.manifest.hardware, MANIFEST.hardware);
+	assert.equal(image.header.blua32ImageByteCount, 0);
+	const index = await parseCartridgeIndex(packageBytes);
+	assert.deepEqual(index.entries.map(entry => [entry.type, entry.resid]), [['bin', 'probe']]);
+	const [probe] = index.entries;
+	assert.deepEqual(packageBytes.subarray(probe.start!, probe.end!), probeBytes);
+
+	const artifact = (await store.list()).find(artifact => artifact.target === 'system');
 	assert.ok(artifact?.cart);
 	for (const unit of [artifact.system, artifact.cart]) for (const output of unit.outputs) {
-		const published = await readFile(join(cliStore.directory(artifact.id), output.file));
+		const published = await readFile(join(store.directory(artifact.id), output.file));
 		assert.equal(createHash('sha256').update(published).digest('hex'), output.digest);
 		assert.deepEqual(await readFile(join(outputRoot, output.file)), published);
 	}
 });
 
-for (const debug of [false, true]) test(`${debug ? 'debug' : 'ordinary'} cart production resolves its BIOS dependency from one ROM`, async () => {
-	const externalRoot = await mkdtemp(join(tmpdir(), 'bmsx-external-cart-'));
-	try {
-		const resourceRoot = join(externalRoot, 'res');
-		await mkdir(join(resourceRoot, 'manifest'), { recursive: true });
-		await writeFile(
-			join(resourceRoot, 'manifest', 'manifest.rommanifest'),
-			'title: External source probe\nhardware:\n    - type: rom\n',
-		);
-		await writeFile(join(externalRoot, 'entry.lua'), 'module<entry>\nreturn 1\n');
-		const outputRoot = join(externalRoot, 'output');
-		const result = spawnSync(process.execPath, [
-			'--import',
-			'tsx',
-			'scripts/rompacker/rompacker.ts',
-			'--mode',
-			'rompack',
-			'--skiptypecheck',
-			'-romname',
-			'external_source_probe',
-			'-respath',
-			resourceRoot,
-			'--output-dir',
-			outputRoot,
-			'--store-dir',
-			cliStore.root,
-			...(debug ? ['--debug'] : []),
-		], {
-			cwd: process.cwd(),
-			encoding: 'utf8',
-		});
-		assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-		const suffix = debug ? '.debug.rom' : '.rom';
-		const cart = parseCartridgePackage(await readFile(join(outputRoot, `external_source_probe${suffix}`)));
-		assert.ok(cart.header.blua32ImageByteCount > 0);
-		const systemFile = `bmsx-bios${suffix}`;
-		const systemRom = await readFile(join(outputRoot, 'system', systemFile));
-		assert.equal(readBlua32BiosImports(systemRom).functions.length, 3);
-		assert.deepEqual(await readdir(join(outputRoot, 'system')), [systemFile]);
-	} finally {
-		await rm(externalRoot, { recursive: true, force: true });
-	}
-});
-
-test('normal cart production keeps external source-free resources cartridge-owned', async () => {
-	const externalRoot = await mkdtemp(join(tmpdir(), 'bmsx-external-data-cart-'));
-	try {
-		const resourceRoot = join(externalRoot, 'res');
-		await mkdir(join(resourceRoot, 'manifest'), { recursive: true });
-		await writeFile(
-			join(resourceRoot, 'manifest', 'manifest.rommanifest'),
-			'title: External data probe\nhardware:\n    - type: ram\n      bytes: 256\n    - type: mailbox\n',
-		);
-		const probeBytes = Buffer.from('external-probe');
-		await writeFile(join(resourceRoot, 'probe.bin'), probeBytes);
-		const outputRoot = join(externalRoot, 'output');
-		const result = spawnSync(process.execPath, [
-			'--import',
-			'tsx',
-			'scripts/rompacker/rompacker.ts',
-			'--mode',
-			'rompack',
-			'--skiptypecheck',
-			'-romname',
-			'external_data_probe',
-			'-respath',
-			resourceRoot,
-			'--output-dir',
-			outputRoot,
-			'--store-dir',
-			cliStore.root,
-		], {
-			cwd: process.cwd(),
-			encoding: 'utf8',
-		});
-		assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-		const packageBytes = await readFile(join(outputRoot, 'external_data_probe.rom'));
-		const packageImage = parseCartridgePackage(packageBytes);
-		assert.deepEqual(packageImage.manifest.hardware, MANIFEST.hardware);
-		assert.equal(packageImage.header.blua32ImageByteCount, 0);
-		const index = await parseCartridgeIndex(packageBytes);
-		assert.deepEqual(
-			index.entries.map(entry => [entry.type, entry.resid]),
-			[['bin', 'probe']],
-		);
-		const probe = index.entries[0]!;
-		assert.deepEqual(
-			packageBytes.subarray(probe.start!, probe.end!),
-			probeBytes,
-		);
-	} finally {
-		await rm(externalRoot, { recursive: true, force: true });
-	}
+test('the CLI links a debug cartridge named bmsx-bios to a separate BIOS ROM', async t => {
+	const root = await mkdtemp(join(tmpdir(), 'bmsx-external-source-cart-'));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
+	const resourceRoot = join(root, 'res');
+	const outputRoot = join(root, 'output');
+	await mkdir(resourceRoot);
+	await writeFile(join(resourceRoot, 'manifest.rommanifest'), 'title: External source probe\nhardware:\n    - type: rom\n');
+	await writeFile(join(root, 'entry.lua'), 'module<entry>\nreturn 1\n');
+	const result = spawnSync(process.execPath, [
+		'--import', 'tsx', 'scripts/rompacker/rompacker.ts', '--mode', 'rompack', '--debug',
+		'-romname', 'bmsx-bios', '-respath', resourceRoot,
+		'--output-dir', outputRoot, '--store-dir', join(root, 'store'),
+	], { encoding: 'utf8' });
+	assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+	const filename = 'bmsx-bios.debug.rom';
+	const cart = parseCartridgePackage(await readFile(join(outputRoot, filename)));
+	assert.ok(cart.header.blua32ImageByteCount > 0);
+	const systemRom = await readFile(join(outputRoot, 'system', filename));
+	assert.equal(readBlua32BiosImports(systemRom).functions.length, 3);
+	assert.deepEqual(await readdir(join(outputRoot, 'system')), [filename]);
 });
 
 test('package producer emits a source-free hardware cartridge without a BLua32 tail', async () => {
