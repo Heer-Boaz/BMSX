@@ -44,14 +44,28 @@ let inspectionPixels;
 const backends = buildOutput ? ['software', 'webgl2'] : studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu'];
 const requestedBackend = process.env.BMSX_TEST_BACKEND;
 if (requestedBackend !== undefined) assert.ok(backends.includes(requestedBackend), `Unsupported test backend: ${requestedBackend}`);
-for (const backend of requestedBackend === undefined ? backends : [requestedBackend]) {
+
+// All projects execute the same bundle, but each owns a browser context and
+// an isolated writable workspace. Keep the browser, not any editor or page.
+const { outputFiles: [bundle] } = await build({
+	entryPoints: [resolve(import.meta.dirname, session ? 'browser_studio_session.ts' : studio ? 'browser_studio.ts' : 'browser_runner.ts')],
+	bundle: true, platform: 'browser', format: 'esm', target: 'es2020', write: false,
+	tsconfig: 'tsconfig.base.json', loader: { '.rgba': 'binary', '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' },
+});
+const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--enable-unsafe-webgpu',
+	'--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
+	'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface', '--disable-dev-shm-usage'] });
+try {
+	for (const backend of requestedBackend === undefined ? backends : [requestedBackend]) await runBrowserProject(backend);
+} finally { await browser.close(); }
+if (studio) console.log(`${studioLabel}:PASS`);
+
+async function runBrowserProject(backend) {
 	const directory = await mkdtemp(join(tmpdir(), `bmsx-${backend}-rewind-`));
-	let browser;
+	let context;
 	let server;
 	try {
-		await build({ entryPoints: [resolve(import.meta.dirname, session ? 'browser_studio_session.ts' : studio ? 'browser_studio.ts' : 'browser_runner.ts')], bundle: true,
-			platform: 'browser', format: 'esm', target: 'es2020', outfile: join(directory, 'test.js'),
-			tsconfig: 'tsconfig.base.json', loader: { '.rgba': 'binary', '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' } });
+		await writeFile(join(directory, 'test.js'), bundle.contents);
 		await writeFile(join(directory, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}#player-surface{position:fixed;inset:0}canvas{position:absolute;image-rendering:pixelated}</style><div id="player-surface"><canvas width="256" height="212"></canvas></div>');
 		await copyFile(bios, join(directory, 'bios.rom'));
 		if (preload) {
@@ -92,10 +106,8 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 				if (match) resolve(match[0].replace('localhost', '127.0.0.1'));
 			});
 		});
-		browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--enable-unsafe-webgpu',
-			'--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
-			'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface', '--disable-dev-shm-usage'] });
-		const page = await browser.newPage({ viewport: { width: 768, height: 576 } });
+		context = await browser.newContext({ viewport: { width: 768, height: 576 } });
+		const page = await context.newPage();
 		if (sourceSaves) {
 			let failWrites = false;
 			await page.exposeFunction('setStudioWorkspaceWriteFailure', failed => { failWrites = failed; });
@@ -199,7 +211,7 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 		console.log(JSON.stringify({ backend, ...summary }));
 		console.log(studio ? `${studioLabel}:${backend}:PASS` : 'RUNTIME-WEBGPU-REWIND:PASS');
 	} finally {
-		if (browser) await browser.close();
+		if (context) await context.close();
 		if (server && server.exitCode === null && server.signalCode === null) {
 			const exited = new Promise(resolve => server.once('exit', resolve));
 			server.kill();
@@ -208,4 +220,3 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 		await rm(directory, { recursive: true, force: true });
 	}
 }
-if (studio) console.log(`${studioLabel}:PASS`);
