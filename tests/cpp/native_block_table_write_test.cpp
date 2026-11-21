@@ -26,6 +26,56 @@ int instructionCharge(std::span<const DecodedInstruction> instructions) {
 		[](int cycles, const DecodedInstruction& inst) { return cycles + inst.baseCycles; });
 }
 
+void retainedFieldAddressesKeepIndependentLifetimes(CPU& cpu, Memory& memory) {
+	const std::array keys{cpu.stringPool().intern("left"), cpu.stringPool().intern("right"), cpu.stringPool().intern("last")};
+	std::array values{valueInteger(19), valueInteger(43), valueInteger(91)};
+	ValueSlots constants(keys.size());
+	auto table = cpu.createTable(0, 4);
+	for (size_t i = 0; i < keys.size(); ++i) {
+		constants.set(i, valueString(keys[i]));
+		table.setStringKey(keys[i], values[i]);
+	}
+	std::array<int, keys.size()> predictions;
+	predictions.fill(-1);
+	for (size_t i = 0; i < keys.size(); ++i)
+		require(table.getStringKeyCached(keys[i], predictions[i]) == values[i], "each own key has a live prediction");
+
+	constexpr std::array selectors{0u, 1u, 0u, 1u, 2u, 2u};
+	std::array<DecodedInstruction, selectors.size() + 1u> decoded{};
+	std::array<NativeBlockInstruction, decoded.size()> source;
+	for (size_t row = 0; row < selectors.size(); ++row) {
+		const u32 key = selectors[row];
+		decoded[row] = {.payload = DecodedInstruction::Payload::tableSlot(predictions[key]),
+			.a = static_cast<u16>(row + 1u), .c = static_cast<i16>(key), .op = static_cast<u8>(OpCode::GETFIELD)};
+	}
+	decoded.back().op = static_cast<u8>(OpCode::JMP);
+	decoded.back().setBx(0x2000u);
+	for (size_t row = 0; row < decoded.size(); ++row) {
+		decoded[row].width = 1;
+		decoded[row].baseCycles = BASE_CYCLES[decoded[row].op];
+		source[row] = {&decoded[row], 0x1000u + static_cast<u32>(row) * INSTRUCTION_BYTES};
+	}
+	size_t bytes = 0;
+	auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
+	require(block->terminal.nextPc == 0x2000u && block->sideExits.size() == selectors.size(),
+		"the two overlapping and one subsequent address lifetimes share a complete generated segment");
+	ValueSlots registers(decoded.size());
+	registers.set(0, valueTable(table.address()));
+	NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(),
+		.globalValues = {}, .systemGlobalValues = {}};
+	const auto check = [&] {
+		state.remainingCycles = instructionCharge(decoded);
+		const auto* exit = block->run(registers.view(), state);
+		require(exit == &block->terminal && state.remainingCycles == 0, "all reads and the jump consume the exact grant");
+		for (size_t row = 0; row < selectors.size(); ++row)
+			require(registers.get(row + 1u) == values[selectors[row]], "each retained address supplies its current value lanes");
+	};
+	check();
+	values[1] = valueBool(false);
+	table.setStringKey(keys[1], values[1]);
+	check();
+}
+
 void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 	const auto x = cpu.stringPool().intern("x");
 	auto particle = cpu.createTable(0, 1);
@@ -1089,6 +1139,7 @@ int main() {
 		inheritedReadFollowsLiveOwners(cpu, memory);
 		readsWithoutAProvedPathUseTheSemanticOwner(cpu, memory);
 		oneHopStringReadsProveTheCurrentPath(cpu, memory);
+		retainedFieldAddressesKeepIndependentLifetimes(cpu, memory);
 		numericFieldArithmeticKeepsNativeFrame(cpu, memory);
 		storesRequireAPredictedOverwrite(cpu, memory);
 		compactArraySlots(cpu, memory);
