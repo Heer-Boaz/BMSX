@@ -19,7 +19,6 @@ static_assert(HEAP_GC_PAGE_BITMAP_BYTES * 8u == MAIN_RAM_SIZE / HEAP_PAGE_SIZE);
 
 // Management-area layout, as byte offsets from its base. Every field is a
 // little-endian word in guest RAM; partial-list links store page + 1.
-constexpr u32 OCCUPIED = 0x004u;
 constexpr u32 SWEEP_PAGE = 0x008u;
 constexpr u32 PARTIAL_HEADS = 0x040u;
 constexpr u32 AVAILABLE_PAGES = 0x200u;
@@ -80,7 +79,20 @@ u32 HeapAllocator::capacityBytes() const {
 }
 
 u32 HeapAllocator::occupiedBytes() const {
-	return m_memory.readRamRecordWord(m_management + OCCUPIED);
+	u32 bytes = 0;
+	for (u32 page = floorPage(); page < m_pageLimit; ++page) {
+		const u32 descriptor = entry(page);
+		const u32 info = m_memory.readRamRecordWord(descriptor);
+		const u32 kind = info & 0xffu;
+		if (kind == ObjectSlots || kind == OwnedSlots) {
+			bytes += (info >> 16) * HEAP_CLASS_BYTES[(info >> 8) & 0xffu];
+		} else if (kind == ObjectRun || kind == OwnedRun) {
+			const u32 pages = m_memory.readRamRecordWord(descriptor + 4u);
+			bytes += pages << PAGE_SHIFT;
+			page += pages - 1u;
+		}
+	}
+	return bytes;
 }
 
 u32 HeapAllocator::issuedObjectSlotClass(u32 offset) const {
@@ -261,7 +273,6 @@ u32 HeapAllocator::allocate(u32 byteCount, bool owned) {
 	m_memory.writeRamRecordWord(pageEntry + 4u, nextFree);
 	m_memory.writeRamRecordWord(pageEntry + 8u, (bump >> HEAP_BUMP_SHIFT) | (full ? 0u : word2 & ~HEAP_PAGE_LINK_MASK));
 	if (full) unlinkPartial(head, word2);
-	m_memory.writeRamRecordWord(m_management + OCCUPIED, occupiedBytes() + size);
 	if (!owned) trackGcPage(HeapGcPages::Young, RAM_BASE + slot);
 	return RAM_BASE + slot;
 }
@@ -277,7 +288,6 @@ void HeapAllocator::free(u32 address) {
 		const u32 pages = m_memory.readRamRecordWord(pageEntry + 4u);
 		if ((offset & PAGE_MASK) != 0u || pages == 0u || pages > m_pageLimit - page) return;
 		releasePages(page, page + pages);
-		m_memory.writeRamRecordWord(m_management + OCCUPIED, occupiedBytes() - (pages << PAGE_SHIFT));
 		return;
 	}
 	const u32 classIndex = (word0 >> 8) & 0xffu;
@@ -293,7 +303,6 @@ void HeapAllocator::free(u32 address) {
 	const u32 head = partialHead(kind == OwnedSlots, classIndex);
 	m_memory.writeRamRecordWord(offset, 0u);
 	m_memory.writeRamRecordWord(offset + 4u, freeHead);
-	m_memory.writeRamRecordWord(m_management + OCCUPIED, occupiedBytes() - size);
 	if (live == 1u) {
 		if (!wasFull) unlinkPartial(head, word2);
 		releasePages(page, page + 1u);
@@ -325,7 +334,6 @@ u32 HeapAllocator::allocateRun(u32 byteCount, bool owned) {
 		m_memory.writeRamRecordWord(tail + 4u, first);
 		m_memory.writeRamRecordWord(tail + 8u, 0u);
 	}
-	m_memory.writeRamRecordWord(m_management + OCCUPIED, occupiedBytes() + (pages << PAGE_SHIFT));
 	if (!owned) trackGcPage(HeapGcPages::Young, RAM_BASE + (first << PAGE_SHIFT));
 	return RAM_BASE + (first << PAGE_SHIFT);
 }

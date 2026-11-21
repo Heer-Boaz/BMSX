@@ -16,7 +16,8 @@ void stressHeapAllocation(LuaHeap& heap);
 
 LuaHeap::LuaHeap(CPU& cpu)
 	: m_cpu(cpu), m_targetAddress(cpu.heapAllocator().managementOffset() + HEAP_COLLECTION_TARGET_OFFSET),
-	  m_youngDebtAddress(cpu.heapAllocator().managementOffset() + HEAP_YOUNG_DEBT_OFFSET) {
+	  m_youngDebtAddress(cpu.heapAllocator().managementOffset() + HEAP_YOUNG_DEBT_OFFSET),
+	  m_occupiedAddress(cpu.heapAllocator().managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET) {
 	setCollectionTarget(MIN_COLLECTION_BYTES);
 }
 
@@ -29,7 +30,7 @@ void LuaHeap::setCollectionTarget(u32 bytes) {
 }
 
 size_t LuaHeap::usedBytes() const {
-	return m_cpu.heapAllocator().occupiedBytes();
+	return m_cpu.memory().readRamRecordWord(m_occupiedAddress);
 }
 
 bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {
@@ -61,7 +62,7 @@ bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, u32
 
 u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField,
 	Value root0, Value root1, Value root2) {
-	const size_t charged = heapAllocationBytes(bytes) + (backingBytes ? heapAllocationBytes(backingBytes) : 0u);
+	const u32 charged = bytes + backingBytes;
 	const bool collected = admit(charged, root0, root1, root2, 0u);
 	auto& arena = m_cpu.heapAllocator();
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
@@ -81,11 +82,10 @@ u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backing
 }
 
 u32 LuaHeap::allocateStack(u32 bytes, u32 threadAddress, Value root) {
-	const auto charge = heapAllocationBytes(bytes);
-	const bool collected = admit(charge, root, valueNil(), valueNil(), threadAddress);
+	const bool collected = admit(bytes, root, valueNil(), valueNil(), threadAddress);
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
 		if (const u32 block = m_cpu.heapAllocator().allocate(bytes, true)) {
-			accountAllocation(charge);
+			addYoungDebt(bytes);
 			return block;
 		}
 		if (attempt == 0) collectRuntime(root, valueNil(), valueNil(), threadAddress);
@@ -96,7 +96,7 @@ u32 LuaHeap::allocateStack(u32 bytes, u32 threadAddress, Value root) {
 u32 LuaHeap::allocateThreadRecord(u32 entry) {
 	constexpr u32 valueBytes = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES;
 	constexpr u32 frameBytes = THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
-	const auto charged = THREAD_HEAP_BYTES + heapAllocationBytes(valueBytes) + heapAllocationBytes(frameBytes);
+	const u32 charged = THREAD_HEAP_BYTES + valueBytes + frameBytes;
 	const Value root = entry != 0u ? valueClosure(entry) : valueNil();
 	const bool collected = admit(charged, root);
 	auto& arena = m_cpu.heapAllocator();
@@ -120,7 +120,7 @@ u32 LuaHeap::allocateThreadRecord(u32 entry) {
 void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 frameCapacity, Value root) {
 	const u32 valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
 	const u32 frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
-	const auto charged = heapAllocationBytes(valueBytes) + heapAllocationBytes(frameBytes);
+	const u32 charged = valueBytes + frameBytes;
 	const bool collected = admit(charged, root, valueNil(), valueNil(), address);
 	auto& arena = m_cpu.heapAllocator();
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
@@ -130,7 +130,7 @@ void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 fram
 			if (frameBytes == 0u || frames != 0u) {
 				if (values != 0u) ThreadRecord::replaceStack(m_cpu.gcHeap(), address, values, valueCapacity);
 				if (frames != 0u) ThreadRecord::replaceControls(m_cpu.gcHeap(), address, ThreadField::FrameBlock, frames, frameCapacity);
-				accountAllocation(charged);
+				addYoungDebt(charged);
 				return;
 			}
 			if (values != 0u) arena.free(values);
@@ -142,7 +142,7 @@ void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 fram
 
 u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> cells) {
 	const u32 bytes = closureRecordBytes(captures, latched);
-	const size_t charged = heapAllocationBytes(bytes) + cells.size() * UPVALUE_HEAP_BYTES;
+	const u32 charged = bytes + static_cast<u32>(cells.size()) * UPVALUE_HEAP_BYTES;
 	const bool collected = admit(charged, valueNil(), valueNil(), valueNil(), 0u);
 	auto& arena = m_cpu.heapAllocator();
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
@@ -179,9 +179,27 @@ bool LuaHeap::stepRuntime() {
 	return !m_cpu.collecting();
 }
 
-void LuaHeap::accountAllocation(size_t bytes) {
+void LuaHeap::accountAllocation(u32 bytes) {
 	auto& memory = m_cpu.memory();
-	memory.writeRamRecordWord(m_youngDebtAddress, memory.readRamRecordWord(m_youngDebtAddress) + static_cast<u32>(bytes));
+	memory.writeRamRecordWord(m_occupiedAddress, memory.readRamRecordWord(m_occupiedAddress) + bytes);
+	addYoungDebt(bytes);
+}
+
+void LuaHeap::addYoungDebt(u32 bytes) {
+	auto& memory = m_cpu.memory();
+	memory.writeRamRecordWord(m_youngDebtAddress, memory.readRamRecordWord(m_youngDebtAddress) + bytes);
+}
+
+void LuaHeap::releaseRecord(u32 address, u32 bytes) {
+	m_cpu.heapAllocator().free(address);
+	auto& memory = m_cpu.memory();
+	memory.writeRamRecordWord(m_occupiedAddress, memory.readRamRecordWord(m_occupiedAddress) - bytes);
+}
+
+void LuaHeap::replaceRecord(u32 oldAddress, u32 oldBytes, u32 newBytes) {
+	if (oldAddress != 0u) m_cpu.heapAllocator().free(oldAddress);
+	auto& memory = m_cpu.memory();
+	memory.writeRamRecordWord(m_occupiedAddress, memory.readRamRecordWord(m_occupiedAddress) - oldBytes + newBytes);
 }
 
 void LuaHeap::creditStep(size_t work) {

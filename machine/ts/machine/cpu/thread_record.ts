@@ -9,6 +9,7 @@ import { BuiltinFunctionId } from '../../spec/blua32/builtin';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../spec/blua32/cop0';
 import type { BuiltinArgsView, BuiltinResults } from './builtin_values';
 import type { GcHeap } from './gc_heap';
+import type { LuaHeap } from './lua_heap';
 import * as Closure from './closure';
 import * as Upvalue from './upvalue';
 import { LuaExecutionError } from './errors';
@@ -55,7 +56,7 @@ export class ThreadLayout {
 export class ThreadRecords {
 	private readonly layout = new ThreadLayout();
 	private readonly values = new ValueSlots(0);
-	public constructor(private readonly memory: Memory, private readonly arena: HeapAllocator) {}
+	public constructor(private readonly memory: Memory, private readonly arena: HeapAllocator, private readonly budget: LuaHeap) {}
 	public invokeDiagnostic(heap: GcHeap, id: BuiltinFunctionId, args: BuiltinArgsView, out: BuiltinResults): void {
 		const { registers, base, length } = args, memory = this.memory;
 		if (length === 0 || registers.getTag(base) !== ValueTag.Thread)
@@ -173,7 +174,7 @@ export class ThreadRecords {
 		ram.fill(0, tags + kept, tags + capacity);
 		memory.invalidateRamWrite(start, capacity * THREAD_STACK_SLOT_BYTES);
 		memory.writeRamRecordPair(address + ThreadField.StackBlock, block, capacity);
-		this.arena.free(oldBlock);
+		this.budget.replaceRecord(oldBlock, oldCapacity * THREAD_STACK_SLOT_BYTES, capacity * THREAD_STACK_SLOT_BYTES);
 	}
 	public replaceControls(address: number, field: ThreadField.FrameBlock | ThreadField.ProtectedBlock, block: number, capacity: number): void {
 		const memory = this.memory, ram = memory.ramData(), offset = block & RAM_RECORD_WORD_MASK;
@@ -183,13 +184,14 @@ export class ThreadRecords {
 		const depthField = frames ? ThreadField.FrameDepth : ThreadField.ProtectedDepth;
 		const oldBlock = memory.readRamRecordWord(address + field);
 		const old = oldBlock & RAM_RECORD_WORD_MASK;
+		const oldCapacity = memory.readRamRecordWord(address + capacityField) & THREAD_CONTROL_COUNT_MASK;
 		const occupied = (memory.readRamRecordWord(address + depthField) & THREAD_CONTROL_COUNT_MASK) * stride;
 		ram.copyWithin(offset, old, old + occupied);
 		ram.fill(0, offset + occupied, offset + capacity * stride);
 		memory.invalidateRamWrite(offset, capacity * stride);
 		memory.writeRamRecordWord(address + field, block);
 		memory.writeRamRecordWord(address + capacityField, capacity);
-		if (oldBlock !== 0) this.arena.free(oldBlock);
+		this.budget.replaceRecord(oldBlock, oldCapacity * stride, capacity * stride);
 	}
 	public shrinkStack(address: number, layout: ThreadLayout): number {
 		let used = layout.top;

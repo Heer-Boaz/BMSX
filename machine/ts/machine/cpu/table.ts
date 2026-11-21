@@ -77,11 +77,11 @@ export class TableRecords {
 	}
 	private freeStorage(record: number): void {
 		const storage = this.storageAddress(record);
-		if (storage !== 0) this.heap.arena.free(storage);
+		if (storage !== 0) this.heap.budget.releaseRecord(storage, TableRecords.storageBytes(this.arrayCapacity(record), this.hashSize(record)));
 	}
 	public freeRecord(record: number): void {
 		this.freeStorage(record);
-		this.heap.arena.free(record);
+		this.heap.budget.releaseRecord(record, TableRecords.HEADER_BYTES);
 	}
 	private wordAt(record: number, slot: number): number { return this.heap.memory.readRamRecordWord(this.storageAddress(record) + slot * 4); }
 	private tagAt(record: number, slot: number): ValueTag { return this.heap.memory.readRamRecordByte(this.tags(record) + slot); }
@@ -574,7 +574,7 @@ export class TableRecords {
 					valueFromTag(valueTag, memory.readRamRecordWord(oldWords + oldValue * 4)));
 			}
 		}
-		if (oldWords !== 0) this.heap.arena.free(oldWords);
+		if (oldWords !== 0) this.heap.budget.releaseRecord(oldWords, TableRecords.storageBytes(oldArray, oldHash));
 
 	}
 	private updateLengthHint(record: number, slot: number, present: boolean): void {

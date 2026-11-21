@@ -362,8 +362,8 @@ export class CPU implements MappedPageInvalidator {
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
 		this.luaHeap = new LuaHeap(this);
-		this.systemGlobalBank = new GlobalBank(memory, this.heapAllocator, this.luaHeap);
-		this.globalBank = new GlobalBank(memory, this.heapAllocator, this.luaHeap);
+		this.systemGlobalBank = new GlobalBank(memory, this.luaHeap);
+		this.globalBank = new GlobalBank(memory, this.luaHeap);
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
 		this.indexKey = this.stringPool.intern('__index');
 		this.newIndexKey = this.stringPool.intern('__newindex');
@@ -774,10 +774,11 @@ export class CPU implements MappedPageInvalidator {
 		const names = image.globalMapBase, constants = image.constantBase;
 		if (names !== 0) {
 			image.globalMapBase = 0;
-			this.heapAllocator.free(names);
+			this.luaHeap.releaseRecord(names, 4 * (image.globalNameCount + image.systemNameCount));
 		}
 		if (constants !== 0) {
-			this.heapAllocator.free(constants);
+			image.constantBase = 0;
+			this.luaHeap.releaseRecord(constants, 5 * image.constTags.length);
 		}
 	}
 

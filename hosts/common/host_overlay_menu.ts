@@ -735,7 +735,7 @@ export class HostOverlayMenu {
 			this.queueUsageBar(0, runtime.cpuUsageCyclesUsed(), runtime.cpuUsageCyclesGranted(), font);
 			this.queueUsageBar(
 				1,
-				runtime.machine.cpu.heapAllocator.floorAddress() - RAM_BASE + RUNTIME_MANAGEMENT_SIZE + runtime.machine.cpu.luaHeap.usedBytes(),
+				runtime.machine.cpu.heapAllocator.floorAddress() - RAM_BASE + RUNTIME_MANAGEMENT_SIZE + runtime.machine.cpu.heapAllocator.occupiedBytes(),
 				runtime.machine.memory.ramByteCount(),
 				font,
 			);

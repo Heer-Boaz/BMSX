@@ -15,6 +15,7 @@ inline constexpr u32 HEAP_STRING_METADATA_OFFSET = 0x300u;
 inline constexpr u32 HEAP_COLLECTION_TARGET_OFFSET = 0x340u;
 inline constexpr u32 HEAP_GC_CONTROL_OFFSET = 0x344u;
 inline constexpr u32 HEAP_YOUNG_DEBT_OFFSET = 0x370u;
+inline constexpr u32 HEAP_LOGICAL_OCCUPIED_OFFSET = 0x3f0u;
 inline constexpr u32 HEAP_GC_PAGES_OFFSET = 0x400u;
 inline constexpr u32 HEAP_GC_PAGE_BITMAP_BYTES = 128u;
 inline constexpr u32 HEAP_PAGE_ENTRIES = 0x1000u;
@@ -69,6 +70,7 @@ public:
 	bool setFloor(u32 floorAddress);
 	u32 floorAddress() const;
 	u32 capacityBytes() const;
+	// Physical class extents, for diagnostics only.
 	u32 occupiedBytes() const;
 	// Decode the page class and issued range. The record port selects alignment.
 	u32 issuedObjectSlotClass(u32 offset) const;

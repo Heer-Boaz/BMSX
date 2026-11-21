@@ -53,7 +53,7 @@ export class StringPool {
 	private readonly romView: MemoryByteView;
 	private markWork = 0;
 
-	public constructor(private readonly heap: LuaHeap, private readonly memory: Memory, private readonly arena: HeapAllocator) {
+	public constructor(private readonly heap: LuaHeap, private readonly memory: Memory, arena: HeapAllocator) {
 		this.metadataOffset = arena.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 		this.romView = { bytes: memory.systemRomStorage().bytes, byteOffset: 0, byteLength: 0 };
 	}
@@ -263,7 +263,7 @@ export class StringPool {
 		}
 		this.writeMetadata(BUCKETS, newBase);
 		this.writeMetadata(CAPACITY, count);
-		if (oldCount !== 0) this.arena.free(oldBase);
+		if (oldCount !== 0) this.heap.releaseRecord(oldBase, 4 * oldCount);
 	}
 	public intern(value: string): StringId {
 		const hash = hashText(value);
@@ -336,7 +336,7 @@ export class StringPool {
 				if ((memory.readRamRecordByte(record + 1) & STRING_GC_EPOCH_MASK) !== epoch) {
 					memory.writeRamRecordWord(link, next);
 					memory.writeRamRecordByte(record, 0);
-					this.arena.free(record);
+					this.heap.releaseRecord(record, BLUA32_STRING_RECORD_HEADER_SIZE + this.byteLength(record));
 					--used;
 				} else link = record + BLUA32_STRING_NEXT_OFFSET;
 				record = next;
@@ -368,7 +368,7 @@ export class StringPool {
 			} else {
 				memory.writeRamRecordWord(link, next);
 				memory.writeRamRecordByte(record, 0);
-				this.arena.free(record);
+				this.heap.releaseRecord(record, BLUA32_STRING_RECORD_HEADER_SIZE + this.byteLength(record));
 				--used;
 			}
 			record = next;

@@ -33,7 +33,7 @@ constexpr u32 romStringId(u32 address, u32 cartridgeSlot) {
 }
 
 StringPool::StringPool(LuaHeap& heap, Memory& memory, HeapAllocator& arena)
-	: m_heap(heap), m_memory(memory), m_arena(arena), m_metadata(arena.managementOffset() + HEAP_STRING_METADATA_OFFSET) {}
+	: m_heap(heap), m_memory(memory), m_metadata(arena.managementOffset() + HEAP_STRING_METADATA_OFFSET) {}
 
 u32 StringPool::metadata(u32 field) const { return m_memory.readRamRecordWord(m_metadata + field); }
 u32 StringPool::ramBucketCount() const { return metadata(CAPACITY) & RAM_BUCKET_EXTENT_MASK; }
@@ -243,7 +243,7 @@ void StringPool::grow(u32 count) {
 	}
 	writeMetadata(BUCKETS, newBase);
 	writeMetadata(CAPACITY, count);
-	if (oldCount != 0u) m_arena.free(oldBase);
+	if (oldCount != 0u) m_heap.releaseRecord(oldBase, 4u * oldCount);
 }
 
 StringId StringPool::intern(std::string_view value) {
@@ -318,7 +318,7 @@ size_t StringPool::sweepStep(size_t allowance) {
 				m_memory.writeRamRecordWord(link, next);
 				// A repeated link cannot clock a freed String, including a whole page run.
 				m_memory.writeRamRecordByte(record, 0u);
-				m_arena.free(record);
+				m_heap.releaseRecord(record, BLUA32_STRING_RECORD_HEADER_SIZE + byteLength(record));
 				--used;
 			} else link = record + BLUA32_STRING_NEXT_OFFSET;
 			record = next;
@@ -351,7 +351,7 @@ size_t StringPool::sweepYoungBucket(StringId id) {
 		} else {
 			m_memory.writeRamRecordWord(link, next);
 			m_memory.writeRamRecordByte(record, 0u);
-			m_arena.free(record);
+			m_heap.releaseRecord(record, BLUA32_STRING_RECORD_HEADER_SIZE + byteLength(record));
 			--used;
 		}
 		record = next;

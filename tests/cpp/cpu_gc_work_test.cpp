@@ -53,12 +53,30 @@ struct Machine {
 };
 
 // Thread232 (80-byte header, 40 Value bytes and two 56-byte frame records)
-// + Closure16, a 16-byte constant bank (three slots), 17 machine Strings occupying 744 bytes
-// and their 32 four-byte intern buckets, two 160-byte global banks and a 16-byte image map. Each live String marks once,
+// + Closure12, a 15-byte constant bank (three slots), 17 machine Strings charged 697 bytes
+// and their 32 four-byte intern buckets, two 136-byte global banks and a 16-byte image map. Each live String marks once,
 // and every issued object block and intern bucket is visited once.
-constexpr int bootBytes = 232 + 16 + 16 + 744 + 128 + 16 + 2 * 160;
+constexpr int bootBytes = 232 + 12 + 15 + 697 + 128 + 16 + 2 * 136;
 constexpr int bootMarkWork = 2 * 58 + 3 + 2 * 12 + 17;
 constexpr int bootCollectionWork = 4 * 58 + 3 + 1 + 3 * 12 + 2 * 17 + 32;
+
+void allocationAdmissionUsesLogicalBytes() {
+	Machine machine(image()); auto& cpu = machine.cpu;
+	const size_t logical = cpu.luaHeap().usedBytes();
+	const u32 physical = cpu.heapAllocator().occupiedBytes();
+	constexpr u32 logicalCharge = (32 + 2 * 5 + 4 * 14) + (32 + 512 * 5);
+	cpu.luaHeap().setCollectionTarget(static_cast<u32>(logical) + logicalCharge);
+	cpu.instructionBudgetRemaining = 23;
+	cpu.createTable(2, 3);
+	cpu.createTable(512, 0);
+	require(cpu.instructionBudgetRemaining == 23, "the allocations fit at the exact logical threshold");
+	require(cpu.luaHeap().usedBytes() == logical + logicalCharge, "size-class slack is not charged to the language budget");
+	require(cpu.heapAllocator().occupiedBytes() == physical + 112 + 32 + HEAP_PAGE_SIZE,
+		"physical diagnostics include both size classes and whole pages");
+	cpu.collectHeap();
+	require(cpu.luaHeap().usedBytes() == logical && cpu.heapAllocator().occupiedBytes() == physical,
+		"reclamation returns the corresponding charges to both measurements");
+}
 
 void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;
@@ -68,13 +86,13 @@ void canonicalPoolAndRootRanges() {
 	require(cpu.instructionBudgetRemaining == 7 - bootCollectionWork, "runtime collection charges object passes, three root passes and String work");
 	require(cpu.luaHeap().usedBytes() == bootBytes, "readonly ROM String bytes are not charged as allocated text");
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(cpu.createTable(2, 3).address())); //32+S(10+56)=112.
+	frame.registers.set(0, valueTable(cpu.createTable(2, 3).address())); //32+10+56=98 logical bytes.
 	frame.registers.set(1, valueString(cpu.stringPool().intern("é😀"))); //6 UTF8 bytes.
 	frame.writeControl(bmsx::FrameField::Top, 2);
-	require(cpu.luaHeap().usedBytes() == bootBytes + 112 + 24, "canonical reserved table capacity and UTF8 text bytes agree");
+	require(cpu.luaHeap().usedBytes() == bootBytes + 98 + 22, "canonical reserved table capacity and UTF8 text bytes agree");
 	cpu.instructionBudgetRemaining = 7;
 	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == 7 - bootCollectionWork - (8 + 2 + 8 + 1) - 2 && cpu.luaHeap().usedBytes() == bootBytes + 112 + 24,
+	require(cpu.instructionBudgetRemaining == 7 - bootCollectionWork - (8 + 2 + 8 + 1) - 2 && cpu.luaHeap().usedBytes() == bootBytes + 98 + 22,
 		"table scans reserved slots; the String is marked and visited without reading its bytes");
 	const auto threshold = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 	require(threshold.second == 1048576, "the existing minimum collection threshold is unchanged");
@@ -83,7 +101,7 @@ void canonicalPoolAndRootRanges() {
 	require(cpu.instructionBudgetRemaining == 123, "host/reset raw collection does not bill guest work");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes + 112 + 24,
+	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes + 98 + 22,
 		"snapshot capture/restore does not collect or bill runtime work and preserves canonical accounting");
 	cpu.reset();
 	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes,
@@ -201,7 +219,7 @@ void allActivatedImagesAndUniqueGlobals() {
 	cpu.writeFrameExecution(0, 1, card1.functionAddresses[0], card1.textAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], system.textAddress);
 	cpu.collectHeap();
-	require(cpu.luaHeap().usedBytes() == bootBytes + (24 + 24) + (8 + 16), "each card allocates one constant bank and one name-slot map");
+	require(cpu.luaHeap().usedBytes() == bootBytes + (20 + 20) + (5 + 16), "each card allocates one constant bank and one name-slot map");
 	cpu.instructionBudgetRemaining = 5;
 	cpu.luaHeap().collectRuntime();
 	// C=3+4+1, S=1, G=3; all activated images remain roots. The two
@@ -220,12 +238,12 @@ void temporaryRootsAndUnreachablePool() {
 	TableRecord table = cpu.createTable(); //32; retained only by the reserve temporary root.
 	const auto id = cpu.stringPool().intern("é😀"); //6; another temporary root.
 	const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
-	require(before.first == bootBytes + 32 + 24, "precollection includes currently unreachable allocations");
+	require(before.first == bootBytes + 32 + 22, "precollection includes currently unreachable allocations");
 	cpu.luaHeap().setCollectionTarget(0);
 	cpu.instructionBudgetRemaining = 1;
 	cpu.luaHeap().admit(0, valueTable(table.address()), valueString(id));
 	// First marking + live Table8 + String1; atomic and reclamation remain.
-	require(cpu.instructionBudgetRemaining == 1 - bootMarkWork - 8 - 1 && cpu.luaHeap().usedBytes() == bootBytes + 32 + 24
+	require(cpu.instructionBudgetRemaining == 1 - bootMarkWork - 8 - 1 && cpu.luaHeap().usedBytes() == bootBytes + 32 + 22
 		&& cpu.stringPool().toString(id) == "é😀", "all reserve temporary roots survive the first incremental pass");
 	while (cpu.collecting()) cpu.stepHeap(valueTable(table.address()), valueString(id), valueNil());
 	cpu.instructionBudgetRemaining = 1;
@@ -854,8 +872,8 @@ void stackShrinkAndAdmission() {
 		"incremental collection reclaims objects without relocating a surviving stack");
 	const size_t before = cpu.luaHeap().usedBytes();
 	cpu.collectHeap();
-	require(thread->stackCapacity == 512 && cpu.luaHeap().usedBytes() == before - HEAP_PAGE_SIZE,
-		"sweep halves the cold stack and releases exactly one physical page");
+	require(thread->stackCapacity == 512 && cpu.luaHeap().usedBytes() == before - 512 * THREAD_STACK_SLOT_BYTES,
+		"sweep halves the cold stack and releases 512 logical Value slots");
 	frame.registers.set(0, valueInteger(456));
 	require(thread->stack.get(frame.stackBase()) == valueInteger(456), "frame register view is rebound by the Thread owner");
 	frame.writeControl(bmsx::FrameField::StackCapacity, 200);
@@ -906,7 +924,8 @@ int main(int argc, char** argv) {
 			std::cout << "raw Thread GC work test passed\n";
 			return 0;
 		}
-		canonicalPoolAndRootRanges(); explicitCollectionAndNoReplay();
+		canonicalPoolAndRootRanges();
+		allocationAdmissionUsesLogicalBytes(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		referenceWritesPayOnlyForNewEdges(); incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();

@@ -93,8 +93,8 @@ CPU::CPU(
 	, m_rootView(m_heap)
 	, m_transferViews{Thread{m_heap}, Thread{m_heap}}
 	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling")))
-	, m_systemGlobalBank(memory, m_heapAllocator, m_luaHeap)
-	, m_globalBank(memory, m_heapAllocator, m_luaHeap) {
+	, m_systemGlobalBank(memory, m_luaHeap)
+	, m_globalBank(memory, m_luaHeap) {
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 	m_luaFaultErrorValues.fill(valueNil());
 	m_luaFaultErrorValues[LUA_FAULT_REASON_UNKNOWN] = valueString(m_stringPool.intern("Attempted to get length of an unsupported value."));
@@ -271,10 +271,10 @@ void CPU::decodeConstantPool(ExecutionDomainId executionDomainId, u32 tableAddre
 
 void CPU::releaseImageData(Blua32ExecutionImage& image) {
 	if (const u32 base = std::exchange(image.globalMapBase, 0u)) {
-		m_heapAllocator.free(base);
+		m_luaHeap.releaseRecord(base, image.globalMapBytes());
 	}
 	if (const u32 base = std::exchange(image.constantBase, 0u)) {
-		m_heapAllocator.free(base);
+		m_luaHeap.releaseRecord(base, static_cast<u32>(image.constPool.size()) * (sizeof(u32) + sizeof(u8)));
 	}
 }
 

@@ -212,7 +212,7 @@ void TableRecord::resize(
 			rawSet(key, oldValues.get(oldArraySize + oldHashSize + i));
 		}
 	}
-	if (oldValues.words != 0) m_heap->arena.free(oldValues.words);
+	if (oldValues.words != 0) m_heap->budget.releaseRecord(oldValues.words, storageBytes(oldArraySize, oldHashSize));
 
 }
 
@@ -238,12 +238,12 @@ void TableRecord::initializeStorage() {
 
 void TableRecord::freeStorage() {
 	const u32 storage = storageAddress();
-	if (storage != 0) m_heap->arena.free(storage);
+	if (storage != 0) m_heap->budget.releaseRecord(storage, storageBytes(arrayCapacity(), hashSlots()));
 }
 
 void TableRecord::freeRecord() {
 	freeStorage();
-	m_heap->arena.free(m_address);
+	m_heap->budget.releaseRecord(m_address, HEADER_BYTES);
 }
 
 // Storage redistribution transfers existing edges and leaves the boundary hint alone.

@@ -6,6 +6,7 @@ export const HEAP_STRING_METADATA_OFFSET = 0x300;
 export const HEAP_COLLECTION_TARGET_OFFSET = 0x340;
 export const HEAP_GC_CONTROL_OFFSET = 0x344;
 export const HEAP_YOUNG_DEBT_OFFSET = 0x370;
+export const HEAP_LOGICAL_OCCUPIED_OFFSET = 0x3f0;
 export const HEAP_GC_PAGES_OFFSET = 0x400;
 export const HEAP_GC_PAGE_BITMAP_BYTES = 128;
 export const enum HeapGcPages { Young, Remembered, Threads }
@@ -27,7 +28,6 @@ const MAX_PAGES = (MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE) >>> PAGE_SHIFT;
 
 // Management-area layout, as byte offsets from its base. Every field is a
 // little-endian word in guest RAM; partial-list links store page + 1.
-const OCCUPIED = 0x004;
 const SWEEP_PAGE = 0x008;
 const PARTIAL_HEADS = 0x040;
 const AVAILABLE_PAGES = 0x200;
@@ -150,8 +150,22 @@ export class HeapAllocator {
 		return (this.pageLimit - this.floorPage()) << PAGE_SHIFT;
 	}
 
+	/** Physical class extents, for diagnostics only. */
 	public occupiedBytes(): number {
-		return this.memory.readRamRecordWord(this.management + OCCUPIED);
+		let bytes = 0;
+		for (let page = this.floorPage(); page < this.pageLimit; ++page) {
+			const entry = this.entry(page);
+			const info = this.memory.readRamRecordWord(entry);
+			const kind = info & 0xff;
+			if (kind === PageKind.ObjectSlots || kind === PageKind.OwnedSlots) {
+				bytes += (info >>> 16) * HEAP_CLASS_BYTES[(info >>> 8) & 0xff];
+			} else if (kind === PageKind.ObjectRun || kind === PageKind.OwnedRun) {
+				const pages = this.memory.readRamRecordWord(entry + 4);
+				bytes += pages << PAGE_SHIFT;
+				page += pages - 1;
+			}
+		}
+		return bytes;
 	}
 
 	public beginObjectSweep(): void {
@@ -313,7 +327,6 @@ export class HeapAllocator {
 		this.memory.writeRamRecordWord(entry + 4, nextFree);
 		this.memory.writeRamRecordWord(entry + 8, (bump >>> BUMP_SHIFT) | (full ? 0 : word2 & ~LINK_MASK));
 		if (full) this.unlinkPartial(head, word2);
-		this.memory.writeRamRecordWord(this.management + OCCUPIED, this.occupiedBytes() + size);
 		if (!owned) this.trackGcPage(HeapGcPages.Young, RAM_BASE + slot);
 		return RAM_BASE + slot;
 	}
@@ -333,7 +346,6 @@ export class HeapAllocator {
 				return;
 			}
 			this.releasePages(page, page + pages);
-			this.memory.writeRamRecordWord(this.management + OCCUPIED, this.occupiedBytes() - (pages << PAGE_SHIFT));
 			return;
 		}
 		const classIndex = (word0 >>> 8) & 0xff;
@@ -353,7 +365,6 @@ export class HeapAllocator {
 		const head = this.partialHead(kind === PageKind.OwnedSlots, classIndex);
 		this.memory.writeRamRecordWord(offset, 0);
 		this.memory.writeRamRecordWord(offset + 4, freeHead);
-		this.memory.writeRamRecordWord(this.management + OCCUPIED, this.occupiedBytes() - size);
 		if (live === 1) {
 			if (!wasFull) {
 				this.unlinkPartial(head, word2);
@@ -390,7 +401,6 @@ export class HeapAllocator {
 			this.memory.writeRamRecordWord(entry + 4, first);
 			this.memory.writeRamRecordWord(entry + 8, 0);
 		}
-		this.memory.writeRamRecordWord(this.management + OCCUPIED, this.occupiedBytes() + (pages << PAGE_SHIFT));
 		if (!owned) this.trackGcPage(HeapGcPages.Young, RAM_BASE + (first << PAGE_SHIFT));
 		return RAM_BASE + (first << PAGE_SHIFT);
 	}

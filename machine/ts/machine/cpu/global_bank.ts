@@ -1,6 +1,5 @@
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import type { Memory } from '../memory/memory';
-import type { HeapAllocator } from './heap_allocator';
 import type { LuaHeap } from './lua_heap';
 import type { StringId } from './string_pool';
 import { hashCanonicalTableKey, valueFromTag, valueInteger, valueNil, valuePayload, valueString, valueTag, type Value } from './value';
@@ -16,7 +15,7 @@ export class GlobalBank {
 	public count = 0;
 	public readonly slots = new ValueSlots(0);
 
-	public constructor(private readonly memory: Memory, private readonly allocator: HeapAllocator, private readonly heap: LuaHeap) {}
+	public constructor(private readonly memory: Memory, private readonly heap: LuaHeap) {}
 	public readSlot(slot: number): Value {
 		const word = this.memory.readRamRecordWord(this.base + 12 * this.capacity + 4 * slot);
 		const tag = this.memory.readRamRecordByte(this.base + 16 * this.capacity + slot);
@@ -36,7 +35,7 @@ export class GlobalBank {
 	}
 
 	public clear(): void {
-		if (this.base !== 0) this.allocator.free(this.base);
+		if (this.base !== 0) this.heap.releaseRecord(this.base, 17 * this.capacity);
 		this.base = 0; this.capacity = 0; this.count = 0;
 		this.slots.unbind();
 	}
@@ -66,7 +65,7 @@ export class GlobalBank {
 	private grow(key: StringId, pending: Value): void {
 		const capacity = this.capacity === 0 ? 8 : 2 * this.capacity;
 		const base = this.heap.allocateRecord(17 * capacity, true, 0, 0, valueString(key), pending);
-		const oldBase = this.base;
+		const oldBase = this.base, oldCapacity = this.capacity;
 		const offset = base & RAM_RECORD_WORD_MASK, source = oldBase & RAM_RECORD_WORD_MASK;
 		const ram = this.memory.ramData();
 		ram.fill(0, offset, offset + 12 * capacity);
@@ -75,7 +74,7 @@ export class GlobalBank {
 		this.base = base; this.capacity = capacity;
 		this.slots.bindRam(this.memory, offset + 12 * capacity, capacity, true);
 		for (let slot = 0; slot < this.count; ++slot) this.writeBucket(this.bucketFor(this.name(slot)), slot);
-		if (oldBase !== 0) this.allocator.free(oldBase);
+		if (oldBase !== 0) this.heap.releaseRecord(oldBase, 17 * oldCapacity);
 	}
 
 	public registerName(key: StringId, pending: Value = valueNil()): number {

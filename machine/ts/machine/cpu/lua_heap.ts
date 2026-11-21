@@ -1,6 +1,6 @@
 import { closureRecordBytes } from './closure';
 import { UPVALUE_HEAP_BYTES, initialize as initializeCell } from './upvalue';
-import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_YOUNG_DEBT_OFFSET, heapAllocationBytes } from './heap_allocator';
+import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_YOUNG_DEBT_OFFSET } from './heap_allocator';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
 import { GC_ASSIST_BYTES } from './gc_heap';
@@ -16,11 +16,13 @@ const YOUNG_INTERVAL_BYTES = 128 * 1024;
 export class LuaHeap {
 	private readonly targetAddress: number;
 	private readonly youngDebtAddress: number;
+	private readonly occupiedAddress: number;
 
 	public constructor(private readonly cpu: CPU) {
 		const management = cpu.heapAllocator.managementOffset();
 		this.targetAddress = management + HEAP_COLLECTION_TARGET_OFFSET;
 		this.youngDebtAddress = management + HEAP_YOUNG_DEBT_OFFSET;
+		this.occupiedAddress = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 		this.setCollectionTarget(MIN_COLLECTION_BYTES);
 	}
 
@@ -59,7 +61,7 @@ export class LuaHeap {
 
 	public allocateRecord(bytes: number, owned: boolean, backingBytes: number, backingField: number,
 		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil()): number {
-		const charged = heapAllocationBytes(bytes) + (backingBytes === 0 ? 0 : heapAllocationBytes(backingBytes));
+		const charged = bytes + backingBytes;
 		const collected = this.admit(charged, root0, root1, root2, 0);
 		const arena = this.cpu.heapAllocator;
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
@@ -78,13 +80,13 @@ export class LuaHeap {
 		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}
 
+	/** A thread reserves its replacement backing, then its owner publishes it. */
 	public allocateStack(bytes: number, thread: number, root: Value): number {
-		const charge = heapAllocationBytes(bytes);
-		const collected = this.admit(charge, root, valueNil(), valueNil(), thread);
+		const collected = this.admit(bytes, root, valueNil(), valueNil(), thread);
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
 			const block = this.cpu.heapAllocator.allocate(bytes, true);
 			if (block !== 0) {
-				this.accountAllocation(charge);
+				this.addYoungDebt(bytes);
 				return block;
 			}
 			if (attempt === 0) this.collectRuntime(root, valueNil(), valueNil(), thread);
@@ -95,7 +97,7 @@ export class LuaHeap {
 	public allocateThreadRecord(entry: number): number {
 		const valueBytes = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES;
 		const frameBytes = THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
-		const charged = THREAD_HEAP_BYTES + heapAllocationBytes(valueBytes) + heapAllocationBytes(frameBytes);
+		const charged = THREAD_HEAP_BYTES + valueBytes + frameBytes;
 		const root = entry === 0 ? valueNil() : valueClosure(entry);
 		const collected = this.admit(charged, root);
 		const arena = this.cpu.heapAllocator;
@@ -123,7 +125,7 @@ export class LuaHeap {
 	public reserveThreadFrameStorage(address: number, valueCapacity: number, frameCapacity: number, root: Value): void {
 		const valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
 		const frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
-		const charged = heapAllocationBytes(valueBytes) + heapAllocationBytes(frameBytes);
+		const charged = valueBytes + frameBytes;
 		const collected = this.admit(charged, root, valueNil(), valueNil(), address);
 		const arena = this.cpu.heapAllocator;
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
@@ -134,7 +136,7 @@ export class LuaHeap {
 					const threads = this.cpu.gc.threads;
 					if (values !== 0) threads.replaceStack(address, values, valueCapacity);
 					if (frames !== 0) threads.replaceControls(address, ThreadField.FrameBlock, frames, frameCapacity);
-					this.accountAllocation(charged);
+					this.addYoungDebt(charged);
 					return;
 				}
 				if (values !== 0) arena.free(values);
@@ -147,7 +149,7 @@ export class LuaHeap {
 	/** Admit the closure and its new cells before publishing any frame link. */
 	public allocateClosureRecord(captures: number, latched = false, cells: Uint32Array = NO_NEW_CELLS, newCount = 0): number {
 		const bytes = closureRecordBytes(captures, latched);
-		const charged = heapAllocationBytes(bytes) + newCount * UPVALUE_HEAP_BYTES;
+		const charged = bytes + newCount * UPVALUE_HEAP_BYTES;
 		const collected = this.admit(charged, valueNil(), valueNil(), valueNil(), 0);
 		const arena = this.cpu.heapAllocator;
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
@@ -193,7 +195,25 @@ export class LuaHeap {
 
 	private accountAllocation(bytes: number): void {
 		const memory = this.cpu.memory;
+		memory.writeRamRecordWord(this.occupiedAddress, memory.readRamRecordWord(this.occupiedAddress) + bytes);
+		this.addYoungDebt(bytes);
+	}
+
+	private addYoungDebt(bytes: number): void {
+		const memory = this.cpu.memory;
 		memory.writeRamRecordWord(this.youngDebtAddress, memory.readRamRecordWord(this.youngDebtAddress) + bytes);
+	}
+
+	public releaseRecord(address: number, bytes: number): void {
+		this.cpu.heapAllocator.free(address);
+		const memory = this.cpu.memory;
+		memory.writeRamRecordWord(this.occupiedAddress, memory.readRamRecordWord(this.occupiedAddress) - bytes);
+	}
+
+	public replaceRecord(oldAddress: number, oldBytes: number, newBytes: number): void {
+		if (oldAddress !== 0) this.cpu.heapAllocator.free(oldAddress);
+		const memory = this.cpu.memory;
+		memory.writeRamRecordWord(this.occupiedAddress, memory.readRamRecordWord(this.occupiedAddress) - oldBytes + newBytes);
 	}
 
 	private creditStep(work: number): void {
@@ -213,7 +233,7 @@ export class LuaHeap {
 	}
 
 	public usedBytes(): number {
-		return this.cpu.heapAllocator.occupiedBytes();
+		return this.cpu.memory.readRamRecordWord(this.occupiedAddress);
 	}
 	public capacity(): number { return this.cpu.heapAllocator.capacityBytes(); }
 

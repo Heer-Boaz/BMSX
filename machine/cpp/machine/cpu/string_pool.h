@@ -76,7 +76,6 @@ private:
 
 	LuaHeap& m_heap;
 	Memory& m_memory;
-	HeapAllocator& m_arena;
 	const u32 m_metadata;
 	std::vector<StringId> m_localRoots;
 	std::vector<size_t> m_localRootBases;

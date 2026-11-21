@@ -2,7 +2,6 @@
 
 #include <cstring>
 
-#include "machine/cpu/heap_allocator.h"
 #include "machine/cpu/lua_heap.h"
 
 namespace bmsx {
@@ -18,7 +17,7 @@ void GlobalBank::bind(GlobalBankState state) {
 }
 
 void GlobalBank::clear() {
-	if (m_state.base != 0u) m_allocator.free(m_state.base);
+	if (m_state.base != 0u) m_heap.releaseRecord(m_state.base, 17u * m_state.capacity);
 	bind({});
 }
 
@@ -66,7 +65,7 @@ void GlobalBank::grow(StringId key, Value pending) {
 	m_values.copyFrom(prior, 0, 0, old.count);
 	m_values.clear(old.count, capacity - old.count);
 	for (u32 slot = 0; slot < old.count; ++slot) writeBucket(bucketFor(name(slot)), slot);
-	if (old.base != 0u) m_allocator.free(old.base);
+	if (old.base != 0u) m_heap.releaseRecord(old.base, 17u * old.capacity);
 }
 
 u32 GlobalBank::registerName(StringId key, Value pending) {

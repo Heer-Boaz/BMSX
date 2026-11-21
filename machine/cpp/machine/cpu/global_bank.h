@@ -6,7 +6,6 @@
 
 namespace bmsx {
 
-class HeapAllocator;
 class LuaHeap;
 
 struct GlobalBankState {
@@ -20,8 +19,7 @@ struct GlobalBankState {
 // Guest bytes are name words, two hash buckets per slot, payloads, then tags.
 class GlobalBank {
 public:
-	GlobalBank(Memory& memory, HeapAllocator& allocator, LuaHeap& heap)
-		: m_memory(memory), m_allocator(allocator), m_heap(heap) {}
+	GlobalBank(Memory& memory, LuaHeap& heap) : m_memory(memory), m_heap(heap) {}
 
 	Value readSlot(u32 slot) const {
 		const u32 word = m_memory.readRamRecordWord(m_state.base + 12u * m_state.capacity + 4u * slot);
@@ -50,7 +48,6 @@ private:
 	void grow(StringId key, Value pending);
 
 	Memory& m_memory;
-	HeapAllocator& m_allocator;
 	LuaHeap& m_heap;
 	GlobalBankState m_state;
 	ValueSpan m_values;

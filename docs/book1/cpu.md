@@ -1160,7 +1160,8 @@ the start of the runtime management area. Reset uses the system image's floor;
 EXEC uses the target image's floor. See
 [Reserved and cartridge storage in main RAM](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram).
 Larger DATA or BSS leaves less capacity. Installed library values and active
-execution state already consume some of it at cartridge entry.
+execution state already consume some of it at cartridge entry. Charges use
+logical byte counts, independent of padding and the placement of blocks in RAM.
 
 The budget covers Table storage, closures and captured-variable cells,
 Threads and their reserved value-slot capacity, RAM Strings and their intern
@@ -1204,8 +1205,7 @@ An automatic full collection advances incrementally while allocations cross
 the full-collection assist threshold. When no full collection is in progress
 and the next request fits at or below that threshold, a nonempty
 admission interval whose count plus the request exceeds 128 KiB ends with a small
-collection before that request. The interval counts completed reservations,
-including rounded backing storage. Finishing either kind of collection starts
+collection before that request. The interval counts completed reservations in logical bytes. Finishing either kind of collection starts
 a new interval. This is not a fixed-size nursery or a reservation against the
 heap budget. A single request may exceed the interval. An explicit collection
 and an emergency collection before an otherwise over-capacity request remain
@@ -1215,13 +1215,15 @@ The occupied-byte counts used for admission are:
 
 | Allocation | Occupied budget bytes |
 | --- | --- |
-| Table with array capacity `A` and hash capacity `H` | `32 + S(5A + 14H)` |
-| Closure with `U` captured-variable references, function record backed by contiguous ROM | `S(12 + 4U)` |
-| Closure with `U` captured-variable references, other mapped function record | `S(36 + 4U)` |
+| Table with array capacity `A` and hash capacity `H` | `32 + 5A + 14H` |
+| Closure with `U` captured-variable references, function record backed by contiguous ROM | `12 + 4U` |
+| Closure with `U` captured-variable references, other mapped function record | `36 + 4U` |
 | Captured-variable cell | `16` |
-| Thread with `V` reserved Value slots, `F` reserved frame-control records and `P` reserved protected continuations | `80 + S(5V) + S(56F) + S(20P)` |
-| RAM String containing `n` bytes | `S(16 + n)` |
-| RAM String index with `B` buckets | `S(4B)` |
+| Thread with `V` reserved Value slots, `F` reserved frame-control records and `P` reserved protected continuations | `80 + 5V + 56F + 20P` |
+| RAM String containing `n` bytes | `16 + n` |
+| RAM String index with `B` buckets | `4B` |
+| One global namespace with room for `N` names and Values | `17N` |
+| Activated image with `C` constants and `G` names across both global namespaces | `5C + 4G` |
 
 A Table's slots and links occupy one block in the language heap. A Thread
 keeps its Value slots, frame controls and protected continuations in separate
@@ -1258,13 +1260,10 @@ read the bus for those words again. A RAM String occupies one block containing
 its 16-byte header and its bytes. Its byte count is 22 bits. The String
 port selects main RAM for the record and uses the 22-bit physical byte
 address for its header and bytes; reaching the end of RAM wraps to its start.
-`S(0) = 0`;
-there is no block for an empty layout. Up to 64 bytes, round up to a multiple
-of 8. From 65 through 2048 bytes, use four size classes per doubling
-(80, 96, 112, 128, 160, and so on). Larger blocks round up to a multiple of
-4096 bytes. When the layout grows, both blocks are in use until the entries
-have been moved; `count` below capacity does not by itself guarantee space
-for the new block.
+An empty backing layout has no charge. A request to grow a reservation must
+fit alongside the previous reservation; the previous charge ends when that
+reservation is released. The reported count can be below capacity even when
+there is no suitable free RAM block to satisfy a request.
 
 A reserved Value slot occupies four payload bytes and one kind byte, regardless
 of its current value. A hash node holds a key slot, a value slot and a four-byte
@@ -1273,14 +1272,10 @@ fixed sizes apply to Integer and Float Numbers as well as reference values.
 They are capacity charges: replacing one kind with another does not allocate
 another slot or change its occupied-byte charge.
 
-Each activated image's decoded constant bank occupies the same five bytes
-per reserved Value slot before allocation rounding. The original constants
-and String bytes remain in the image.
-
-The processor maintains one occupied-byte count for the allocated blocks. The
-collector compares this count plus a new request with its current assist
-threshold; both the count
-and the threshold are held in the runtime management area.
+The original constants and String bytes remain in the image. The language pool
+charges the active image's decoded values and name mapping, not the ROM
+records. The collector compares the occupied logical budget plus the new
+request with its current assist threshold.
 
 For a full collection, the collector marks retained objects, incrementally
 remarks roots and modified objects in a second pass, resolves weak references

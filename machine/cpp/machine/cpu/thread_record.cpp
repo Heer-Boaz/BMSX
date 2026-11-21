@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "machine/cpu/gc_heap.h"
+#include "machine/cpu/lua_heap.h"
 #include "machine/cpu/builtin_values.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
@@ -111,7 +112,7 @@ void replaceStack(GcHeap& heap, u32 address, u32 block, u32 capacity) {
 	std::memset(tags + retained, 0, capacity - retained);
 	memory.invalidateRamWrite(offset, capacity * THREAD_STACK_SLOT_BYTES);
 	memory.writeRamRecordPair(address + static_cast<u32>(ThreadField::StackBlock), block, capacity);
-	heap.arena.free(oldBlock);
+	heap.budget.replaceRecord(oldBlock, previous * THREAD_STACK_SLOT_BYTES, capacity * THREAD_STACK_SLOT_BYTES);
 }
 
 void replaceControls(GcHeap& heap, u32 address, ThreadField field, u32 block, u32 capacity) {
@@ -120,6 +121,7 @@ void replaceControls(GcHeap& heap, u32 address, ThreadField field, u32 block, u3
 	const u32 stride = frames ? FRAME_CONTROL_BYTES : PROTECTED_CALL_BYTES;
 	const auto capacityField = frames ? ThreadField::FrameCapacity : ThreadField::ProtectedCapacity;
 	const auto depthField = frames ? ThreadField::FrameDepth : ThreadField::ProtectedDepth;
+	const u32 previous = count(memory, address, capacityField);
 	const u32 oldBlock = read(memory, address, field);
 	const u32 offset = block & RAM_RECORD_WORD_MASK;
 	auto* destination = memory.ramData() + offset;
@@ -129,7 +131,7 @@ void replaceControls(GcHeap& heap, u32 address, ThreadField field, u32 block, u3
 	memory.invalidateRamWrite(offset, capacity * stride);
 	memory.writeRamRecordWord(address + static_cast<u32>(field), block);
 	memory.writeRamRecordWord(address + static_cast<u32>(capacityField), capacity);
-	if (oldBlock != 0u) heap.arena.free(oldBlock);
+	heap.budget.replaceRecord(oldBlock, previous * stride, capacity * stride);
 }
 
 u32 shrinkStack(GcHeap& heap, u32 address, const ThreadStorageLayout& layout) {

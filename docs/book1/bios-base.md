@@ -89,8 +89,8 @@ collection continues without these calls.
 | `'step'` | Perform one incremental step, starting a cycle if idle. Return true if that step finishes the cycle, false otherwise. |
 
 One KiB is 1,024 bytes; fractional KiB are retained. Counts use the canonical
-allocation sizes in the [CPU reference](cpu.md#sec-cpu-collection-work-charge),
-not the size or number of user fields alone. Reading a count does not collect.
+logical allocation charges in the [CPU reference](cpu.md#sec-cpu-collection-work-charge).
+They include reserved slots but not padding or free fragments of RAM. Reading a count does not collect.
 An unlisted option raises an error. The service captures its collection and
 error primitives when installed; replacing public bindings does not alter them.
 

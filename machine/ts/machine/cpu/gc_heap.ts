@@ -95,7 +95,7 @@ export class GcHeap {
 	};
 	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, public readonly memory: Memory, public readonly arena: HeapAllocator, private readonly modeKey: number) {
 		this.controlOffset = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
-		this.threads = new ThreadRecords(memory, arena);
+		this.threads = new ThreadRecords(memory, arena, budget);
 	}
 	public readonly tables = new TableRecords(this);
 	public readonly threads: ThreadRecords;
@@ -613,7 +613,10 @@ export class GcHeap {
 					this.onRecordRetirement?.(address);
 				} else {
 					if (this.minor && kind === ValueTag.Closure) this.cpu.retireStaticClosure(address);
-					this.arena.free(address);
+					const bytes = kind === UPVALUE_RECORD_KIND ? UPVALUE_HEAP_BYTES
+						: Closure.closureRecordBytes(Closure.captureCount(this.memory, address),
+							(header & (Closure.CLOSURE_LATCHED_PROTOTYPE << (8 * Closure.CLOSURE_BINDING_FLAGS))) !== 0);
+					this.budget.releaseRecord(address, bytes);
 					if (kind === ValueTag.Closure) this.onRecordRetirement?.(address);
 				}
 				return -1;
@@ -633,10 +636,10 @@ export class GcHeap {
 			return work + 2 * ceilDiv4(copied);
 		}
 		this.cpu.retireThreadView(address);
-		this.arena.free(layout.block);
-		this.arena.free(layout.frameBlock);
-		if (layout.protectedBlock !== 0) this.arena.free(layout.protectedBlock);
-		this.arena.free(address);
+		this.budget.releaseRecord(layout.block, layout.capacity * THREAD_STACK_SLOT_BYTES);
+		this.budget.releaseRecord(layout.frameBlock, layout.frames * FRAME_CONTROL_BYTES);
+		if (layout.protectedBlock !== 0) this.budget.releaseRecord(layout.protectedBlock, layout.continuations * PROTECTED_CALL_BYTES);
+		this.budget.releaseRecord(address, THREAD_HEAP_BYTES);
 		this.onRecordRetirement?.(address);
 		return -work;
 	};

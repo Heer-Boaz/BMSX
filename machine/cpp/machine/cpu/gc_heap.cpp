@@ -699,7 +699,10 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 			if (kind == tableRecordKind) TableRecord(heap, address).freeRecord();
 			else {
 				if (heap.m_minor && kind == static_cast<u8>(ValueTag::Closure)) heap.m_cpu.retireStaticClosure(address);
-				heap.arena.free(address);
+				const u32 bytes = kind == UPVALUE_RECORD_KIND ? UPVALUE_HEAP_BYTES
+					: closureRecordBytes(ClosureRecord::captureCount(heap.memory, address),
+						(header & (CLOSURE_LATCHED_PROTOTYPE << (8u * CLOSURE_BINDING_FLAGS))) != 0u);
+				heap.budget.releaseRecord(address, bytes);
 			}
 			return -1;
 		}
@@ -720,10 +723,10 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 	// Clear any selected execution view before its old record or backing can
 	// be reused. View residency does not contribute a root or collector work.
 	heap.m_cpu.retireThreadView(address);
-	heap.arena.free(layout.block);
-	heap.arena.free(layout.frameBlock);
-	if (layout.protectedBlock != 0u) heap.arena.free(layout.protectedBlock);
-	heap.arena.free(address);
+	heap.budget.releaseRecord(layout.block, layout.valueBytes());
+	heap.budget.releaseRecord(layout.frameBlock, layout.frameBytes());
+	if (layout.protectedBlock != 0u) heap.budget.releaseRecord(layout.protectedBlock, layout.protectedBytes());
+	heap.budget.releaseRecord(address, THREAD_HEAP_BYTES);
 	return -work;
 }
 
