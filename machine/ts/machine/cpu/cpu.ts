@@ -4288,7 +4288,7 @@ export class CPU implements MappedPageInvalidator {
 		this.hardHalted = state.hardHalted;
 	}
 
-	public visitReachableClosures(visitor: (closure: number) => void): void {
+	public visitReachableExecutionRecords(visitor: (closure: number) => void, visitThread?: (thread: number, frameDepth: number) => void): void {
 		const objects: number[] = [];
 		const upvalues: number[] = [];
 		const seen = new Set<number>();
@@ -4362,6 +4362,7 @@ export class CPU implements MappedPageInvalidator {
 					add(this.readThreadError(address));
 					const layout = this.inspectionThreadLayout;
 					this.gc.threads.readLayout(address, layout);
+					visitThread?.(address, layout.depth);
 					this.inspectionThreadValues.bindRam(this.memory, layout.offset, layout.capacity, false, true);
 					addSlots(this.inspectionThreadValues, layout.top);
 					for (let index = layout.depth - 1; index >= 0; --index) {

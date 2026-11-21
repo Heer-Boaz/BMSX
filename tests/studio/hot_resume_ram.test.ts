@@ -2,6 +2,8 @@ import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { asThread } from '../../machine/ts/machine/cpu/value';
+import { ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
@@ -64,4 +66,26 @@ test('Hot Resume preserves a direct-entry record count independently of captured
 	assert.equal(cpu.activeThread.currentFrame!.closure, closure);
 	assert.equal(cpu.captureClosureBinding(closure).recordUpvalueCount, 1);
 	assert.equal(ClosureRecord.captureCount(cpu.memory, closure), 0);
+});
+
+test('Hot Resume rejects a replaced ROM body retained by an inactive coroutine before mounting', () => {
+	const image = compileFrameEvaluationTest(`
+worker = coroutine.create(function() coroutine.yield(42) end)
+local ok, result = coroutine.resume(worker)
+assert(ok and result == 42)
+halt_until_irq
+`, 3);
+	const { cpu } = createTestSystemCpu(image);
+	cpu.installBootPrimitives();
+	let result = RunResult.Yielded;
+	for (let step = 0; step < 10 && result === RunResult.Yielded; ++step) result = cpu.runUntilDepth(0, 1_000_000);
+	assert.equal(result, RunResult.Halted);
+	assert.equal(cpu.activeThread, cpu.rootThread);
+	const worker = asThread(cpu.getGlobalByKey(cpu.stringPool.intern('worker')), cpu.gc);
+	assert.notEqual(worker, 0);
+	assert.equal(cpu.readThreadStatus(worker), ThreadStatus.Suspended);
+	assert.ok(cpu.readThreadFrameDepth(worker) > 0);
+	const before = cpu.captureRuntimeState();
+	assert.throws(() => buildHotResumeRelocation(cpu, [identityHotResumeRevision(image.image), null, null], cpu.getFrameDepth()), /inactive thread .* frame 0/);
+	assert.deepEqual(cpu.captureRuntimeState(), before);
 });

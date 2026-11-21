@@ -1,4 +1,5 @@
 import { writeBinding, type FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import {
 	blua32FunctionIndexAtAddress,
 	type Blua32ImageLayout,
@@ -47,7 +48,7 @@ export function buildHotResumeRelocation(
 	const relocation = new Uint32Array(latchBase + LATCH_WORDS);
 	const unmappedWords: string[] = [];
 	let binding: FunctionPrototype | undefined;
-	cpu.visitReachableClosures(closure => {
+	cpu.visitReachableExecutionRecords(closure => {
 		binding = cpu.captureClosureBinding(closure, binding);
 		const target = revisions[binding.executionDomainId + 1];
 		if (target === null) return;
@@ -61,6 +62,13 @@ export function buildHotResumeRelocation(
 		const newIndex = blua32FunctionIndexAtAddress(target.nextImage, address);
 		if (target.nextImage.functions[newIndex].upvalues.length !== binding.recordUpvalueCount) {
 			unmappedWords.push(`closure 0x${binding.functionAddress.toString(16)} captures`);
+		}
+	}, (thread, depth) => {
+		if (thread === cpu.activeThread.address) return;
+		for (let index = 0; index < depth; ++index) {
+			const target = revisions[cpu.readThreadFrameExecutionDomain(thread, index) + 1];
+			if (target !== null && blua32FunctionIndexAtAddress(target.previousImage, cpu.readThreadFrameWord(thread, index, FrameField.Function)) !== -1)
+				unmappedWords.push(`inactive thread 0x${thread.toString(16)} frame ${index}`);
 		}
 	});
 
@@ -169,7 +177,7 @@ export function buildHotResumeRelocation(
 /** Apply source correspondence to live ROM closures, retaining their object identity and captures. */
 export function applyHotResumeClosureRevision(cpu: CPU, revisions: HotResumeRevisions): void {
 	let binding: FunctionPrototype | undefined;
-	cpu.visitReachableClosures(closure => {
+	cpu.visitReachableExecutionRecords(closure => {
 		binding = cpu.captureClosureBinding(closure, binding);
 		const target = revisions[binding.executionDomainId + 1];
 		if (target === null) return;
