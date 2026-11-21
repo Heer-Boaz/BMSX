@@ -68,7 +68,7 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 	CpuExecutionResult result = CpuExecutionResult::Yielded;
 	auto& cpu = runtime.machine.cpu;
 	bool running = true;
-	while (running) {
+	while (running && !cpu.gcHeap().finalMarkPending()) {
 		switch (runSlice(runtime, frameState, MAX_CPU_SLICE_CYCLES)) {
 			case CpuSliceResult::Advanced:
 				continue;
@@ -126,6 +126,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	auto& scheduler = machine.scheduler;
 	if (targetThread == 0u) targetThread = cpu.activeThread()->address;
 	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
+	cpu.gcHeap().finishFinalMark();
 	runDueRuntimeTimers(runtime);
 	while (static_cast<int>(ThreadRecord::count(machine.memory, targetThread, ThreadField::FrameDepth)) > targetDepth) {
 		if (scheduler.nowCycles() >= endCycle) return CpuSuspendedRunResult::Yielded;
@@ -171,6 +172,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				return CpuSuspendedRunResult::Halted;
 			}
 		}
+		cpu.gcHeap().finishFinalMark();
 		if (static_cast<int>(ThreadRecord::count(machine.memory, targetThread, ThreadField::FrameDepth)) <= targetDepth) {
 			return CpuSuspendedRunResult::Completed;
 		}

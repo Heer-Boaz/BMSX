@@ -31,6 +31,8 @@ struct FrameSchedulerStateSnapshot {
 	i64 lastTickConsumedSequence = 0;
 };
 
+enum class LogicalTickResult { Incomplete, Completed, Maintenance };
+
 class FrameSchedulerState {
 public:
 	void clearQueuedTime();
@@ -47,7 +49,7 @@ public:
 	// A frame's signed grant balance follows it across the logical tick boundary.
 	i64 remainingCycleBudget(const Runtime& runtime) const;
 	bool runToNextLogicalTick(Runtime& runtime);
-	bool runToNextLogicalTick(Runtime& runtime, i64 cycleGrant);
+	LogicalTickResult advanceLogicalTick(Runtime& runtime, i64 cycleGrant);
 	// Admit an exact cycle grant, then stop at the next tick or backend fence. Zero resumes retained work.
 	bool runCyclesToNextLogicalTick(Runtime& runtime, i64 cycleGrant);
 	// Debugger device settlement. CPU and pending interrupt entry remain stopped.
@@ -67,7 +69,8 @@ public:
 	i64 lastTickConsumedSequence = 0;
 
 private:
-	bool beginScheduledExecution(Runtime& runtime, f64 hostDeltaMs);
+	enum class Pulse { Ready, Blocked, Maintenance };
+	Pulse beginScheduledExecution(Runtime& runtime, f64 hostDeltaMs);
 	void beginScheduledFrame(Runtime& runtime, i64 budget, i64 carry);
 	void accumulateHostTime(f64 deltaMs);
 	bool canRunScheduledUpdate(const Runtime& runtime) const;
@@ -79,6 +82,7 @@ private:
 	bool m_tickCompletionPending = false;
 	bool m_tickCompletionVisualCommitted = false;
 	bool m_backendServiceSuspended = false;
+	bool m_collectionSuspended = false;
 	bool m_logicalTickRunPending = false;
 	i64 m_logicalTickRunTargetSequence = 0;
 };

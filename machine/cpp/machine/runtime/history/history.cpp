@@ -113,12 +113,13 @@ HistorySeekResult RuntimeHistory::advanceSeek(i64 cycleGrant) {
 	if (mode == HistoryMode::Reviewing) return HistorySeekResult::Complete;
 	const i64 before = runtime.machine.scheduler.currentNowCycles();
 	const i64 budgetBefore = runtime.frameScheduler.remainingCycleBudget(runtime);
-	runtime.frameScheduler.runToNextLogicalTick(runtime, cycleGrant);
+	const auto result = runtime.frameScheduler.advanceLogicalTick(runtime, cycleGrant);
 	if (runtime.frameScheduler.lastTickSequence == targetTick) {
 		mode = HistoryMode::Reviewing;
 		return HistorySeekResult::Complete;
 	}
 	if (runtime.machine.gxGpu.backendServicePending() || runtime.machine.gxGpu.backendServiceBlocksMachine()) return HistorySeekResult::BackendPending;
+	if (result == LogicalTickResult::Maintenance) return HistorySeekResult::Progressed;
 	// A grant can pay for an indivisible instruction already executed without advancing the clock.
 	if (runtime.machine.scheduler.currentNowCycles() != before
 		|| (budgetBefore < 0 && runtime.frameScheduler.remainingCycleBudget(runtime) > budgetBefore)) return HistorySeekResult::Progressed;

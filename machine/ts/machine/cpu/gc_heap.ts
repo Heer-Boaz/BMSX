@@ -130,6 +130,7 @@ export class GcHeap {
 			&& this.memory.readRamRecordByte(offset) === THREAD_RECORD_KIND ? RAM_BASE + offset : 0;
 	}
 	public active(): boolean { return this.phase() !== GcPhase.Pause; }
+	public finalMarkPending(): boolean { return this.phase() === GcPhase.Atomic; }
 	public isAlive(address: number): boolean { return address !== 0 && !this.unmarked(this.memory.readRamRecordByte(address + GC_COLOR_OFFSET)); }
 	private markColor(address: number): number { return this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK; }
 	private unmarked(flags: number): boolean { return (flags & (GC_COLOR_MASK | (this.minor ? GC_OLD : 0))) === this.white(); }
@@ -601,6 +602,12 @@ export class GcHeap {
 		return work;
 	}
 	/** Only the stopped mutator may advance the final pass. */
+	public finishFinalMark(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil()): number {
+		let work = 0;
+		while (this.finalMarkPending()) work += this.stepFinalMark(t0, t1, t2);
+		return work;
+	}
+
 	public stepFinalMark(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil()): number {
 		this.diagnostics?.beginAtomic();
 		let limit = GC_STEP_WORDS, work = 0;
@@ -812,8 +819,7 @@ export class GcHeap {
 					break;
 				case GcPhase.Atomic:
 					// Explicit and space-exhausted collection stay synchronous.
-					do { work += this.stepFinalMark(t0, t1, t2); } while (this.phase() === GcPhase.Atomic);
-					return work;
+					return work + this.finishFinalMark(t0, t1, t2);
 				case GcPhase.Sweep:
 					this.diagnostics?.phase('sweepNanoseconds');
 					work += this.arena.sweepObjects(GC_STEP_WORDS - work, growingThread,

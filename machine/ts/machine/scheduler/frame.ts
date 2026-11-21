@@ -32,6 +32,9 @@ type BudgetFrameState = {
 	cycleBudgetGranted: number;
 };
 
+export const enum LogicalTickResult { Incomplete, Completed, Maintenance }
+const enum Pulse { Ready, Blocked, Maintenance }
+
 const MAX_CATCH_UP_MS = 1000 / 12;
 export class FrameSchedulerState {
 	public lastTickSequence = 0;
@@ -48,6 +51,7 @@ export class FrameSchedulerState {
 	private tickCompletionPending = false;
 	private tickCompletionVisualCommitted = false;
 	private backendServiceSuspended = false;
+	private collectionSuspended = false;
 	private logicalTickRunPending = false;
 	private logicalTickRunTargetSequence = 0;
 
@@ -69,7 +73,7 @@ export class FrameSchedulerState {
 
 	private canRunScheduledUpdate(): boolean {
 		const runtime = this.runtime;
-		if (runtime.history.executionPaused) return false;
+		if (runtime.history.executionPaused || runtime.machine.cpu.gc.finalMarkPending()) return false;
 		if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 			return false;
 		}
@@ -88,20 +92,26 @@ export class FrameSchedulerState {
 		return budget;
 	}
 
-	private beginScheduledExecution(hostDeltaMs: number): boolean {
+	private beginScheduledExecution(hostDeltaMs: number): Pulse {
 		const runtime = this.runtime;
-		if (runtime.history.executionPaused) return false;
+		if (runtime.history.executionPaused) return Pulse.Blocked;
+		const heap = runtime.machine.cpu.gc;
+		if (heap.finalMarkPending()) {
+			heap.stepFinalMark();
+			this.collectionSuspended = true;
+			return Pulse.Maintenance;
+		}
 		if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 			this.backendServiceSuspended = true;
-			return false;
+			return Pulse.Blocked;
 		}
-		if (this.backendServiceSuspended) {
-			// Backend submission/mapping latency is host time, not machine time.
-			this.backendServiceSuspended = false;
+		if (this.backendServiceSuspended || this.collectionSuspended) {
+			// Host service latency never accumulates machine time.
+			this.backendServiceSuspended = this.collectionSuspended = false;
 			hostDeltaMs = 0;
 		}
 		this.accumulateHostTime(hostDeltaMs);
-		return true;
+		return Pulse.Ready;
 	}
 
 	/** Reconcile backend suspension without executing or admitting another tick. */
@@ -130,7 +140,7 @@ export class FrameSchedulerState {
 		this.clearQueuedTime();
 		this.cycleGrantRemainder = 0;
 		this.clearPendingTickCompletion();
-		this.backendServiceSuspended = false;
+		this.backendServiceSuspended = this.collectionSuspended = false;
 		this.logicalTickRunPending = false;
 		this.logicalTickRunTargetSequence = 0;
 	}
@@ -182,13 +192,13 @@ export class FrameSchedulerState {
 		this.tickCompletionVisualCommitted = state.tickCompletionVisualCommitted;
 		this.logicalTickRunPending = state.logicalTickRunPending;
 		this.logicalTickRunTargetSequence = state.logicalTickRunTargetSequence;
-		this.backendServiceSuspended = false;
+		this.backendServiceSuspended = this.collectionSuspended = false;
 	}
 
 	public run(hostDeltaMs: number): void {
 		if (this.runtime.history.mode === HistoryMode.Replaying) return;
 		const runtime = this.runtime;
-		if (!this.beginScheduledExecution(hostDeltaMs)) {
+		if (this.beginScheduledExecution(hostDeltaMs) !== Pulse.Ready) {
 			return;
 		}
 		while (this.canRunScheduledUpdate()) {
@@ -200,12 +210,15 @@ export class FrameSchedulerState {
 		this.synchronizeBackendService();
 	}
 
-	public runToNextLogicalTick(cycleGrant: number = this.runtime.timing.cycleBudgetPerFrame): boolean {
+	public runToNextLogicalTick(): boolean {
+		return this.advanceLogicalTick(this.runtime.timing.cycleBudgetPerFrame) === LogicalTickResult.Completed;
+	}
+
+	public advanceLogicalTick(tickBudget: number): LogicalTickResult {
 		const runtime = this.runtime;
-		const tickBudget = cycleGrant;
-		if (tickBudget === 0 || !this.beginScheduledExecution(0)) {
-			return false;
-		}
+		const admission = this.beginScheduledExecution(0);
+		if (admission === Pulse.Maintenance) return LogicalTickResult.Maintenance;
+		if (tickBudget === 0 || admission === Pulse.Blocked) return LogicalTickResult.Incomplete;
 		if (!this.logicalTickRunPending) {
 			this.logicalTickRunPending = true;
 			this.logicalTickRunTargetSequence = this.lastTickSequence + 1;
@@ -235,12 +248,10 @@ export class FrameSchedulerState {
 			}
 		}
 		this.synchronizeBackendService();
-		if (this.lastTickSequence !== targetSequence) {
-			return false;
-		}
+		if (this.lastTickSequence !== targetSequence) return LogicalTickResult.Incomplete;
 		this.logicalTickRunPending = false;
 		this.logicalTickRunTargetSequence = 0;
-		return true;
+		return LogicalTickResult.Completed;
 	}
 
 	/** Admit an exact cycle grant, then stop at the next tick or backend fence. Zero resumes retained work. */
@@ -274,7 +285,7 @@ export class FrameSchedulerState {
 			if (carry === 0 && cycleGrant === 0) return false;
 			this.beginScheduledFrame(carry + cycleGrant, carry);
 		}
-		if (!this.beginScheduledExecution(0)) return false;
+		if (this.beginScheduledExecution(0) !== Pulse.Ready) return false;
 		const previous = this.lastTickSequence, state = runtime.frameLoop.frameState, scheduler = runtime.machine.scheduler;
 		runDueRuntimeTimers(runtime);
 		while (this.lastTickSequence === previous && state.cycleBudgetRemaining > 0 && !runtime.machine.gxGpu.backendServiceBlocksMachine()) {
@@ -293,7 +304,7 @@ export class FrameSchedulerState {
 	public runScheduledToNextLogicalTick(hostDeltaMs: number): boolean {
 		const runtime = this.runtime;
 		const targetSequence = this.lastTickSequence + 1;
-		if (!this.beginScheduledExecution(hostDeltaMs)) {
+		if (this.beginScheduledExecution(hostDeltaMs) !== Pulse.Ready) {
 			return false;
 		}
 		while (this.lastTickSequence !== targetSequence && this.canRunScheduledUpdate()) {
@@ -308,7 +319,7 @@ export class FrameSchedulerState {
 
 	public stepInstruction(hostDeltaMs: number): InstructionStepResult {
 		if (this.runtime.history.mode === HistoryMode.Replaying) return InstructionStepResult.Blocked;
-		if (!this.beginScheduledExecution(hostDeltaMs)) {
+		if (this.beginScheduledExecution(hostDeltaMs) !== Pulse.Ready) {
 			return InstructionStepResult.Blocked;
 		}
 		const result = this.canRunScheduledUpdate()

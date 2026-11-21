@@ -66,6 +66,7 @@ public:
 	}
 	u8 white() const { return memory.readRamRecordByte(m_controlOffset + 1u) & 1u; }
 	bool active() const { return phase() != GcPhase::Pause; }
+	bool finalMarkPending() const { return phase() == GcPhase::Atomic; }
 	bool sweepGarbage(u32 address) const {
 		return phase() == GcPhase::Sweep && markColor(address) == (white() ^ 1u);
 	}
@@ -74,6 +75,7 @@ public:
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false);
 	// Only the stopped mutator may advance the final pass.
 	size_t stepFinalMark(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
+	size_t finishFinalMark(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
 	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	size_t collectYoung(Value root0, Value root1, Value root2);
 	void markString(StringId id) { m_stringPool.markReachable(id, m_minor); }

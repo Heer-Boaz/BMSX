@@ -86,6 +86,56 @@ struct TickRuntimeFixture {
 	}
 };
 
+void testFinalCollectionRetainsTheMachineGrant() {
+	using namespace bmsx;
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& cpu = runtime.machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& scheduler = runtime.frameScheduler;
+	constexpr int slots = 8192;
+	auto weak = cpu.createTable(slots, 0);
+	auto meta = cpu.createTable(0, 1);
+	meta.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+	weak.setMetatableAddress(meta.address());
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(weak.address()));
+	frame.setTop(1);
+	weak.setInteger(slots, valueTable(cpu.createTable().address()));
+	for (int step = 0; !heap.finalMarkPending() && step < 40; ++step)
+		heap.step(valueNil(), valueNil(), valueNil());
+	require(heap.finalMarkPending(), "the automatic final phase is ready to enter at the host boundary");
+	runtime.frameLoop.beginFrameState(runtime, 127, 0);
+	const i64 clock = runtime.machine.scheduler.nowCycles();
+	const i64 deadline = runtime.machine.scheduler.nextDeadline();
+	const auto pc = cpu.readFramePc(0);
+	const int cpuBudget = cpu.instructionBudgetRemaining;
+	require(scheduler.advanceLogicalTick(runtime, 400) == LogicalTickResult::Maintenance
+		&& heap.finalMarkPending(), "a logical tick offer performs one final quantum, not the entire pass");
+	const auto checkpoint = captureRuntimeSaveState(runtime);
+	const auto finish = [&] {
+		require(!scheduler.runCyclesToNextLogicalTick(runtime, 0) && heap.finalMarkPending(),
+			"resuming an exact CPU-clock grant does not advance the clock during the pause");
+		require(!scheduler.runDevicesToNextLogicalTick(runtime, 0),
+			"device-only ticks do not advance the paused machine");
+		for (int step = 0; heap.finalMarkPending() && step < 40; ++step) {
+			require(scheduler.advanceLogicalTick(runtime, 500) == LogicalTickResult::Maintenance,
+				"even the last collector quantum has its own outcome, not a guest tick");
+		}
+		require(!heap.finalMarkPending() && isNil(weak.getInteger(slots)), "the final pass cleared the unreachable value");
+		require(runtime.machine.scheduler.nowCycles() == clock && runtime.machine.scheduler.nextDeadline() == deadline
+			&& cpu.readFramePc(0) == pc && cpu.instructionBudgetRemaining == cpuBudget
+			&& runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetGranted == 127
+			&& runtime.frameLoop.frameState.cycleBudgetRemaining == 127 && scheduler.lastTickSequence == 0,
+			"collection does not execute the CPU, deliver a device deadline or accept another grant");
+		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	};
+	applyRuntimeSaveState(runtime, checkpoint);
+	const auto expected = finish();
+	applyRuntimeSaveState(runtime, checkpoint);
+	require(finish() == expected, "the suspended collector resumes identically after a full save/load");
+}
+
 void testRuntimeRestoreRearmsCpuGp0Wait() {
 	using namespace bmsx;
 	test::Blua32TestImage image;
@@ -1430,6 +1480,7 @@ void testRuntimeResetNotification() {
 }
 
 int main() {
+	testFinalCollectionRetainsTheMachineGrant();
 	testRuntimeRestoreRearmsCpuGp0Wait();
 	testGpuRawExtensionWordCodec();
 	testSupervisorGpuServiceAtDeviceBoundaries();

@@ -20,7 +20,7 @@ i64 FrameSchedulerState::remainingCycleBudget(const Runtime& runtime) const {
 }
 
 bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
-	if (runtime.history.executionPaused()) return false;
+	if (runtime.history.executionPaused() || runtime.machine.cpu.gcHeap().finalMarkPending()) return false;
 	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 		return false;
 	}
@@ -39,19 +39,25 @@ i64 FrameSchedulerState::takeScheduledCycleBudget(const Runtime& runtime) {
 	return budget;
 }
 
-bool FrameSchedulerState::beginScheduledExecution(Runtime& runtime, f64 hostDeltaMs) {
-	if (runtime.history.executionPaused()) return false;
+FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime& runtime, f64 hostDeltaMs) {
+	if (runtime.history.executionPaused()) return Pulse::Blocked;
+	auto& heap = runtime.machine.cpu.gcHeap();
+	if (heap.finalMarkPending()) {
+		heap.stepFinalMark();
+		m_collectionSuspended = true;
+		return Pulse::Maintenance;
+	}
 	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 		m_backendServiceSuspended = true;
-		return false;
+		return Pulse::Blocked;
 	}
-	if (m_backendServiceSuspended) {
-		// Backend submission/mapping latency is host time, not machine time.
-		m_backendServiceSuspended = false;
+	if (m_backendServiceSuspended || m_collectionSuspended) {
+		// Host service latency never accumulates machine time.
+		m_backendServiceSuspended = m_collectionSuspended = false;
 		hostDeltaMs = 0.0;
 	}
 	accumulateHostTime(hostDeltaMs);
-	return true;
+	return Pulse::Ready;
 }
 
 void FrameSchedulerState::synchronizeBackendService(Runtime& runtime) {
@@ -73,7 +79,7 @@ void FrameSchedulerState::reset() {
 	clearQueuedTime();
 	m_cycleGrantRemainder = 0.0;
 	clearPendingTickCompletion();
-	m_backendServiceSuspended = false;
+	m_backendServiceSuspended = m_collectionSuspended = false;
 	m_logicalTickRunPending = false;
 	m_logicalTickRunTargetSequence = 0;
 }
@@ -125,7 +131,7 @@ void FrameSchedulerState::restoreState(const FrameSchedulerStateSnapshot& state)
 	lastTickVisualFrameCommitted = state.lastTickVisualFrameCommitted;
 	lastTickCompleted = state.lastTickCompleted;
 	lastTickConsumedSequence = state.lastTickConsumedSequence;
-	m_backendServiceSuspended = false;
+	m_backendServiceSuspended = m_collectionSuspended = false;
 }
 
 void FrameSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& frameState) {
@@ -185,7 +191,7 @@ void FrameSchedulerState::beginScheduledFrame(Runtime& runtime, i64 budget, i64 
 
 void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
 	if (runtime.history.mode == HistoryMode::Replaying) return;
-	if (!beginScheduledExecution(runtime, hostDeltaMs)) {
+	if (beginScheduledExecution(runtime, hostDeltaMs) != Pulse::Ready) {
 		return;
 	}
 	while (canRunScheduledUpdate(runtime)) {
@@ -198,14 +204,13 @@ void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
 }
 
 bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime) {
-	return runToNextLogicalTick(runtime, runtime.timing.cycleBudgetPerFrame);
+	return advanceLogicalTick(runtime, runtime.timing.cycleBudgetPerFrame) == LogicalTickResult::Completed;
 }
 
-bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime, i64 cycleGrant) {
-	const i64 tickBudget = cycleGrant;
-	if (tickBudget == 0 || !beginScheduledExecution(runtime, 0.0)) {
-		return false;
-	}
+LogicalTickResult FrameSchedulerState::advanceLogicalTick(Runtime& runtime, i64 tickBudget) {
+	const auto admission = beginScheduledExecution(runtime, 0.0);
+	if (admission == Pulse::Maintenance) return LogicalTickResult::Maintenance;
+	if (tickBudget == 0 || admission == Pulse::Blocked) return LogicalTickResult::Incomplete;
 	if (!m_logicalTickRunPending) {
 		m_logicalTickRunPending = true;
 		m_logicalTickRunTargetSequence = lastTickSequence + 1;
@@ -235,12 +240,10 @@ bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime, i64 cycleGrant)
 		}
 	}
 	synchronizeBackendService(runtime);
-	if (lastTickSequence != targetSequence) {
-		return false;
-	}
+	if (lastTickSequence != targetSequence) return LogicalTickResult::Incomplete;
 	m_logicalTickRunPending = false;
 	m_logicalTickRunTargetSequence = 0;
-	return true;
+	return LogicalTickResult::Completed;
 }
 
 bool FrameSchedulerState::runCyclesToNextLogicalTick(Runtime& runtime, i64 cycleGrant) {
@@ -266,10 +269,9 @@ bool FrameSchedulerState::runDevicesToNextLogicalTick(Runtime& runtime, i64 cycl
 		state.cycleBudgetGranted += cycleGrant;
 	} else {
 		const i64 carry = m_carriedCycleBudget;
-		if (carry == 0 && cycleGrant == 0) return false;
-		beginScheduledFrame(runtime, carry + cycleGrant, carry);
+		if (carry != 0 || cycleGrant != 0) beginScheduledFrame(runtime, carry + cycleGrant, carry);
 	}
-	if (!beginScheduledExecution(runtime, 0.0)) return false;
+	if (beginScheduledExecution(runtime, 0.0) != Pulse::Ready || !runtime.frameLoop.frameActive) return false;
 	const i64 previous = lastTickSequence;
 	FrameState& state = runtime.frameLoop.frameState;
 	auto& scheduler = runtime.machine.scheduler;
@@ -289,7 +291,7 @@ bool FrameSchedulerState::runDevicesToNextLogicalTick(Runtime& runtime, i64 cycl
 
 bool FrameSchedulerState::runScheduledToNextLogicalTick(Runtime& runtime, f64 hostDeltaMs) {
 	const i64 targetSequence = lastTickSequence + 1;
-	if (!beginScheduledExecution(runtime, hostDeltaMs)) {
+	if (beginScheduledExecution(runtime, hostDeltaMs) != Pulse::Ready) {
 		return false;
 	}
 	while (lastTickSequence != targetSequence && canRunScheduledUpdate(runtime)) {
@@ -304,7 +306,7 @@ bool FrameSchedulerState::runScheduledToNextLogicalTick(Runtime& runtime, f64 ho
 
 InstructionStepResult FrameSchedulerState::stepInstruction(Runtime& runtime, f64 hostDeltaMs) {
 	if (runtime.history.mode == HistoryMode::Replaying) return InstructionStepResult::Blocked;
-	if (!beginScheduledExecution(runtime, hostDeltaMs)) {
+	if (beginScheduledExecution(runtime, hostDeltaMs) != Pulse::Ready) {
 		return InstructionStepResult::Blocked;
 	}
 	const InstructionStepResult result = canRunScheduledUpdate(runtime)

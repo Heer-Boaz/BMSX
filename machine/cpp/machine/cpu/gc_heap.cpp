@@ -633,6 +633,12 @@ size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t allowan
 	return work;
 }
 
+size_t GcHeap::finishFinalMark(Value root0, Value root1, Value root2) {
+	size_t work = 0;
+	while (finalMarkPending()) work += stepFinalMark(root0, root1, root2);
+	return work;
+}
+
 size_t GcHeap::stepFinalMark(Value root0, Value root1, Value root2) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
@@ -901,8 +907,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 			}
 			case GcPhase::Atomic:
 				// The explicit and space-exhausted collection paths stay synchronous.
-				do { work += stepFinalMark(root0, root1, root2); } while (phase() == GcPhase::Atomic);
-				return work;
+				return work + finishFinalMark(root0, root1, root2);
 			case GcPhase::Sweep: {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 				GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);

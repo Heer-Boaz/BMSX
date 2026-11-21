@@ -92,7 +92,7 @@ export class CpuExecutionState {
 		let result = CpuExecutionResult.Yielded;
 		const cpu = this.runtime.machine.cpu;
 		let running = true;
-		while (running) {
+		while (running && !cpu.gc.finalMarkPending()) {
 			switch (this.runSlice(state, MAX_CPU_SLICE_CYCLES)) {
 				case CpuSliceResult.Advanced:
 					continue;
@@ -144,6 +144,7 @@ export class CpuExecutionState {
 		const cpu = machine.cpu;
 		const scheduler = machine.scheduler;
 		const endCycle = scheduler.nowCycles + cycleBudget;
+		cpu.gc.finishFinalMark();
 		runDueRuntimeTimers(runtime);
 		while (cpu.readThreadFrameDepth(targetThread) > targetDepth) {
 			if (scheduler.nowCycles >= endCycle) return CpuSuspendedRunResult.Yielded;
@@ -187,6 +188,7 @@ export class CpuExecutionState {
 					return CpuSuspendedRunResult.Halted;
 				}
 			}
+			cpu.gc.finishFinalMark();
 			if (cpu.readThreadFrameDepth(targetThread) <= targetDepth) {
 				return CpuSuspendedRunResult.Completed;
 			}

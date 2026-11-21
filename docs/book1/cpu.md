@@ -1356,11 +1356,11 @@ in these allowances, not charged by a separate frame-record size.
 A full-collection step normally stops after **4,096 work cycles**. During
 incremental marking, the scan of a Table, a Thread, or a closure's capture
 list can resume in a later step. When a closure or a Thread first reaches a captured-variable cell, its four-cycle scan is
-included in the step that reaches it. The final root remark, remaining
-changed-object scans and weak-entry clearing can
-exceed the step target: it is not a maximum instruction latency. The final
-atomic remark starts in a separate step, rather than extending the last
-incremental marking step. Reclamation of
+included in the step that reaches it. The final root remark, remaining changed-object scans and weak-entry
+clearing begin between execution grants. An automatic final pass can resume
+from the next root slot, object position or weak entry without starting the
+pass over. No CPU instruction, interrupt or device deadline is taken during
+the pause, and final-pass work does not use the active guest grant. Reclamation of
 objects and Strings resumes from its previous position on the next step. An
 object page already being examined is completed before the sweep advances.
 
@@ -1401,7 +1401,8 @@ $$
 
 The headroom term starts collection before a heavily retained pool fills.
 It does not reserve extra capacity or guarantee that new allocations will fit.
-Without further allocation, an unfinished automatic cycle need not advance.
+Without further allocation, an unfinished automatic cycle outside the final
+pass need not advance.
 The BIOS [collection service](bios-base.md#sec-bios-base-collectgarbage)
 can advance it explicitly and report occupied budget and total capacity.
 
@@ -1411,10 +1412,11 @@ does the same; the fresh cycle removes garbage retained only by an earlier scan
 of the interrupted cycle. If the request still does not fit, it raises the
 out-of-memory error without admitting its bytes.
 
-The requesting instruction pays for the work actually completed before it
-continues. The step or explicit collection finishes before the next instruction
-or pending interrupt is accepted, including when it exceeds the current cycle
-grant. Its charge is retained on an allocation failure. Existing instruction,
+The requesting instruction pays for collection work performed within that
+instruction. The assist or explicit collection finishes before the next
+instruction or pending interrupt is accepted, including when it exceeds the
+current cycle grant. This charge is retained on an allocation failure. A
+scheduled final pass is separate from this charge. Existing instruction,
 primitive, table-storage and result-placement charges remain additional;
 collection does not repeat them. Ordinary allocator management and write-barrier
 bookkeeping add no separate charge.

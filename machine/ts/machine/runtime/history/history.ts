@@ -5,6 +5,7 @@ import { applyRuntimeCheckpointState, captureRuntimeCheckpointState, RuntimeRest
 import { InputJournal } from './input_journal';
 import { HistoryInputSource } from './input_source';
 import { RamHistory } from './ram_history';
+import { LogicalTickResult } from '../../scheduler/frame';
 
 export const enum HistoryMode { Disabled, Recording, Replaying, Reviewing }
 export const enum HistorySeekResult { Progressed, BackendPending, Complete, Stopped }
@@ -180,12 +181,13 @@ export class RuntimeHistory {
 		const runtime = this.runtime;
 		const before = runtime.machine.scheduler.currentNowCycles();
 		const budgetBefore = runtime.frameScheduler.remainingCycleBudget();
-		runtime.frameScheduler.runToNextLogicalTick(cycleGrant);
+		const result = runtime.frameScheduler.advanceLogicalTick(cycleGrant);
 		if (runtime.frameScheduler.lastTickSequence === this.targetTick) {
 			this.mode = HistoryMode.Reviewing;
 			return HistorySeekResult.Complete;
 		}
 		if (runtime.machine.gxGpu.backendServicePending() || runtime.machine.gxGpu.backendServiceBlocksMachine()) return HistorySeekResult.BackendPending;
+		if (result === LogicalTickResult.Maintenance) return HistorySeekResult.Progressed;
 		// A grant can pay for an indivisible instruction already executed without advancing the clock.
 		if (runtime.machine.scheduler.currentNowCycles() !== before
 			|| (budgetBefore < 0 && runtime.frameScheduler.remainingCycleBudget() > budgetBefore)) return HistorySeekResult.Progressed;

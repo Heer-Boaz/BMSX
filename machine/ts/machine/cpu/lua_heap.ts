@@ -49,7 +49,7 @@ export class LuaHeap {
 		}
 		if (exhausted) {
 			this.collectRuntime(root0, root1, root2, growingThread);
-		} else {
+		} else if (!this.cpu.gc.finalMarkPending()) {
 			const work = this.cpu.gc.step(
 				root0, root1, root2, growingThread);
 			this.cpu.instructionBudgetRemaining -= work;
@@ -187,6 +187,7 @@ export class LuaHeap {
 
 	/** Explicit work earns the same allocation credit as an automatic assist. */
 	public stepRuntime(): boolean {
+		if (this.cpu.gc.finalMarkPending()) return false;
 		const work = this.cpu.gc.step();
 		this.cpu.instructionBudgetRemaining -= work;
 		this.creditStep(work);
