@@ -141,7 +141,8 @@ private:
 	void* m_code = nullptr;
 	std::vector<NativeBlockExitSite> m_replaySites;
 	NativeCodeCache* m_cache = nullptr;
-	DecodedInstructionPage* m_page = nullptr;
+	std::array<DecodedInstructionPage*, NATIVE_VERSION_REGION_MAX_PAGES> m_pages{};
+	u8 m_pageCount = 0;
 	NativeCodeRegion* m_older = nullptr;
 	NativeCodeRegion* m_newer = nullptr;
 };

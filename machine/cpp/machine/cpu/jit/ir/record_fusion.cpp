@@ -43,10 +43,11 @@ bool collectRecordFields(std::span<const u16> successors, std::span<const Native
 
 } // namespace
 
-void NativeIrRegion::planRecordConstructors(std::span<const u16> byAddress, u32 immutablePagePc) {
+void NativeIrRegion::planRecordConstructors(std::span<const u16> byAddress) {
 	for (size_t index = 0; index < byAddress.size(); ++index) {
 		auto& entry = m_blocks[byAddress[index]];
 		auto* allocation = std::get_if<NativeTableAllocation>(&entry.instructions.back().operation);
+		const u32 immutablePagePc = entry.firstPc & ~MAPPED_PAGE_BYTE_MASK;
 		if (!allocation || allocation->arraySize != 0 || entry.terminal.lastPc - immutablePagePc >= MAPPED_PAGE_BYTE_SIZE)
 			continue;
 		const auto count = static_cast<u32>(allocation->hashSize);

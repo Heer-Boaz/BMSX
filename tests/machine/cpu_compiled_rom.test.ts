@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { valueFloat, valueInteger, type Value } from '../../machine/ts/machine/cpu/value';
-import { runCpuParity } from '../helpers/cpu_execution';
+import { ValueTag, valueFloat, valueInteger, type Value } from '../../machine/ts/machine/cpu/value';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runCpuParity } from '../helpers/cpu_execution';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { CompiledCodeLookup } from '../../machine/ts/machine/cpu/compiled_code_lookup';
 import { createDecodedInstructionPage } from '../../machine/ts/machine/cpu/execution_image';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
@@ -21,7 +21,7 @@ import { COP0_EXEC } from '../../machine/ts/spec/blua32/cop0';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_RECORD_SIZE } from '../../machine/ts/spec/blua32/image_format';
 import { BASE_BX_BITS, INSTRUCTION_BYTES, MAX_EXT_BX, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { IO_CART_SELECT } from '../../machine/ts/spec/bmsx/io';
 import { CART_RAM_BASE, CART_ROM_BASE, CART_ROM_END, DYNAMIC_RAM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -71,6 +71,92 @@ test('the sparse code index preserves page identity, socket banks and unsigned a
 			assert.equal(lookup.find(address, 1), second);
 		}
 	}
+});
+
+test('one ROM function translates through a physical page boundary with its WIDE body and field feedback', () => {
+	const text = new Uint8Array(2 * MAPPED_PAGE_BYTE_SIZE);
+	const source = { text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 3 }], constants: ['field'] };
+	const layout = linkRawTestSystemBlua32(source, RAM_CODE_FIXTURE_BYTES);
+	const textAddress = layout.image.header.textAddress;
+	const boundary = (textAddress + MAPPED_PAGE_BYTE_SIZE) & -MAPPED_PAGE_BYTE_SIZE;
+	const start = (boundary - textAddress) / INSTRUCTION_BYTES - 2;
+	source.functions[0].firstWord = start;
+	writeInstruction(text, start, OpCode.K1, 1, 0, 0);
+	writeInstruction(text, start + 1, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, start + 2, OpCode.GETFIELD, 2, 0, 0);
+	writeInstruction(text, start + 3, OpCode.ADD, 2, 2, 1);
+	writeInstruction(text, start + 4, OpCode.MOV, 2, 2, 0);
+	writeInstruction(text, start + 5, OpCode.SETFIELD, 0, 0, 2);
+	writeInstruction(text, start + 6, OpCode.JMP, 0, 63, 57, 255);
+	const image = linkRawTestSystemBlua32(source, RAM_CODE_FIXTURE_BYTES);
+	const pc = image.image.functions[0].codeAddress;
+	assert.equal(pc + 2 * INSTRUCTION_BYTES, boundary, 'the prefix and body are in different physical pages');
+	const compiled = machine(image.romBytes, [null, null], CpuExecutionBackend.JavaScript);
+	const scalar = machine(image.romBytes, [null, null], CpuExecutionBackend.Interpreter);
+	const js = compiled.cpu, ref = scalar.cpu;
+	for (const cpu of [js, ref]) {
+		const table = cpu.createTable(0, 1);
+		cpu.gc.tables.storeStringKey(table, cpu.stringPool.intern('field'), ValueTag.Integer, 0);
+		cpu.rootThread.frameAtDepth(0).registers.setTable(0, table);
+	}
+	const frame = js.rootThread.frameAtDepth(0);
+	runCpuParity(js, ref, 1000);
+	const lookup = frame.executionImage.compiledCodeLookup!;
+	const first = lookup.find(pc, 0)!, second = lookup.find(boundary, 0)!;
+	const rootWord = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const head = first.compiledBlocks!.entries[rootWord]!, tail = second.compiledBlocks!.entries[1]!;
+	assert.equal(head.region, tail.region, 'both external entries belong to one generated function');
+	assert.equal(first.compiledBlocks!.sourceUnits, head.region.sourceUnits);
+	assert.equal(second.compiledBlocks!.sourceUnits, 0, 'its second entry group is not a second source charge');
+	assert.ok(first.tableCacheSlots[rootWord + 1] >= 0 && second.tableCacheSlots[3] >= 0,
+		'both physical field sites trained their own prediction');
+	const cycles = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.GETFIELD] + BASE_CYCLES[OpCode.ADD]
+		+ BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SETFIELD] + BASE_CYCLES[OpCode.JMP];
+	const probe = new ValueSlots(frame.stackCapacity);
+	probe.setTable(0, frame.registers.getPayload(0));
+	const table = probe.getPayload(0), key = js.stringPool.intern('field');
+	const run = { remainingCycles: cycles, registerTop: frame.top, memoryAddress: 0 };
+	const exit = head.region.exits[head.region.execute(probe, frame.executionImage.constWords, first, frame, head.entry, run)];
+	assert.equal(exit.exit, CompiledBlockExit.Continue);
+	assert.equal(exit.nextPc, pc, 'one generated entry executes the complete loop without a CPU/page handoff');
+	assert.equal(run.remainingCycles, 0);
+	// Direct generated calls leave frame publication to the caller. Restore the
+	// table mutation before comparing the two ordinary CPU paths.
+	js.gc.tables.storeStringKey(table, key, ValueTag.Integer, probe.getPayload(2) - 1);
+	for (const grant of [1, 2, 3, 4, 7, 19, 57, 120]) {
+		runCpuParity(js, ref, grant);
+		assert.deepEqual(compiled.memory.captureSaveState(), scalar.memory.captureSaveState());
+		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+	}
+	// Word three is past the invalidation predecessor window: only the
+	// second decoded page identifies this owner, but both entries disappear.
+	js.invalidateMappedWords(boundary, 3, 4);
+	assert.equal(first.compiledBlocks!.entries[rootWord], null);
+	assert.equal(second.compiledBlocks!.entries[1], null);
+	assert.equal(first.compiledBlocks!.sourceUnits, 0);
+	runCpuParity(js, ref, 1000);
+	assert.ok(first.compiledBlocks!.entries[rootWord]);
+	const generatedCheckpoint = captureCpuCheckpoint(js), scalarCheckpoint = captureCpuCheckpoint(ref);
+	runCpuParity(js, ref, 123);
+	restoreCpuCheckpoint(js, generatedCheckpoint);
+	restoreCpuCheckpoint(ref, scalarCheckpoint);
+	assert.equal(first.compiledBlocks!.entries[rootWord], null);
+	assert.equal(second.compiledBlocks!.entries[1], null);
+	assert.equal(js.rootThread.frameAtDepth(0).executionImage.compiledCodeLookup, null);
+	runCpuParity(js, ref, 1000);
+	assert.deepEqual(captureCpuCheckpoint(js), captureCpuCheckpoint(ref));
+	const reloadedLookup = js.rootThread.frameAtDepth(0).executionImage.compiledCodeLookup!;
+	const reloadedFirst = reloadedLookup.find(pc, 0)!, reloadedSecond = reloadedLookup.find(boundary, 0)!;
+	assert.notEqual(reloadedFirst, first);
+	const observed = [0, 0], point = boundary + 3 * INSTRUCTION_BYTES;
+	for (const [index, cpu] of [js, ref].entries()) {
+		cpu.setInstructionObserver({ points: [new Set([point]), new Set(), new Set()], observe() { ++observed[index]; } });
+	}
+	assert.equal(reloadedFirst.compiledBlocks!.entries[rootWord], null);
+	assert.equal(reloadedSecond.compiledBlocks!.entries[1], null);
+	runCpuParity(js, ref, 1000);
+	assert.ok(observed[1] > 0);
+	assert.equal(observed[0], observed[1], 'a sparse observer on the second page is not bypassed by the first');
 });
 
 for (let format = 0; format <= 5; ++format) for (const displaced of [false, true]) {

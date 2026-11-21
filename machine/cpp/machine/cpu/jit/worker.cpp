@@ -29,6 +29,13 @@ void NativeCompilerWorker::submit(std::span<const NativeBlockSource> sources,
 	std::vector<NativeRejectedFieldProof> rejectedFieldProofs, std::vector<NativeImageConstant> imageConstants) {
 	assert(idle());
 	m_sources.clear();
+	size_t instructionCount = 0, decodedCount = 0;
+	for (const auto& source : sources) {
+		instructionCount += source.instructions.size();
+		decodedCount += source.instructions.size() + (source.skippedInstruction != nullptr);
+	}
+	if (m_decoded.size() < decodedCount) m_decoded.resize(decodedCount);
+	if (m_instructions.size() < instructionCount) m_instructions.resize(instructionCount);
 	size_t decoded = 0, instruction = 0;
 	for (const auto& source : sources) {
 		const size_t first = instruction;
@@ -47,7 +54,9 @@ void NativeCompilerWorker::submit(std::span<const NativeBlockSource> sources,
 	}
 	m_rejectedFieldProofs = std::move(rejectedFieldProofs);
 	m_imageConstants = std::move(imageConstants);
+	m_sourcePages.assign(bindings.sourcePages.begin(), bindings.sourcePages.end());
 	m_bindings = bindings;
+	m_bindings.sourcePages = m_sourcePages;
 	m_options = options;
 	m_profile = profile;
 	m_error = nullptr;

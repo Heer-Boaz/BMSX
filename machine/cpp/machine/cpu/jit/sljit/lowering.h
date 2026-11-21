@@ -112,6 +112,7 @@ private:
 	NativeRegisterCache m_cache;
 	std::span<const std::unique_ptr<NativeBlock>> m_blocks;
 	const NativeCodeBindings& m_bindings;
+	DecodedInstruction* m_decodedPage = nullptr;
 	std::span<const NativeIrBlock> m_ir;
 	std::span<NativeBlockExitSite> m_admissionReplays;
 	NativeRegisterUses& m_uses;

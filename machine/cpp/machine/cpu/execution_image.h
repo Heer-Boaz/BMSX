@@ -26,6 +26,19 @@
 namespace bmsx {
 
 struct Blua32ExecutionImage;
+class Memory;
+
+// The directory is scoped to one mounted execution image. A version names a
+// checked ROM span, not a latched copy of physical RAM or MMIO code.
+struct Blua32RomFunctionVersion {
+	u32 firstPc, endPc;
+	bool contains(u32 pc) const { return pc >= firstPc && pc < endPc; }
+};
+
+struct Blua32RomFunctionDirectory {
+	u32 tableAddress, count, textAddress, textBytes;
+	std::optional<Blua32RomFunctionVersion> find(const Memory&, ExecutionDomainId, u32 record) const;
+};
 
 struct Blua32FunctionRecordLatch {
 	Blua32ExecutionImage* image = nullptr;
@@ -43,6 +56,13 @@ struct Blua32FunctionRecordLatch {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 class NativeBlock;
 class NativeCodeRegion;
+struct DecodedInstructionPage;
+
+struct NativeCodeSourcePage {
+	u32 pc;
+	DecodedInstructionPage* page;
+	u64 key;
+};
 
 // ROM prototype words and image-owned dispatch cell addresses, never a closure or code pointer.
 struct NativeRomCallBinding {
@@ -61,7 +81,6 @@ struct NativeBlockPage {
 // Resident source hints and one-shot cartridge scheduling, never guest or
 // saved state. Explicit system preparation does not consume the schedule.
 struct NativeImageWarmup {
-	u32 functionTable = 0, functionCount = 0;
 	std::optional<u32> entryPc;
 	bool consumed = false;
 };
@@ -105,6 +124,7 @@ struct Blua32ExecutionImage {
 	ConstValueSpan constPool;
 	u32 globalMapBase = 0;
 	u32 globalNameCount = 0, systemNameCount = 0;
+	Blua32RomFunctionDirectory romFunctions{};
 	u32 globalMapBytes() const { return 4u * (globalNameCount + systemNameCount); }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	NativeImageWarmup nativeWarmup;

@@ -148,7 +148,7 @@ std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExi
 	std::optional<StringId> fixedKey, std::optional<u8> temporary) {
 	auto* c = m_compiler;
 	auto& slot = load ? exit.tableRead.own : exit.tableStore;
-	const sljit_sw prediction = reinterpret_cast<sljit_sw>(m_bindings.decodedPage ? slot.decoded : &slot.standalone);
+	const sljit_sw prediction = reinterpret_cast<sljit_sw>(m_decodedPage ? slot.decoded : &slot.standalone);
 	sljit_sw saved = 0;
 	std::array<sljit_jump*, 3> checks;
 	sljit_emit_op1(c, SLJIT_MOV_S32, SLJIT_R1, 0, SLJIT_MEM0(), prediction);
@@ -201,7 +201,7 @@ void NativeLowering::emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBl
 	// Each callsite can change its own prediction independently. Check
 	// identity before allowing the consumer to use a different site's proof.
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
-		SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_bindings.decodedPage ? exit.tableRead.own.decoded : &exit.tableRead.own.standalone),
+		SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_decodedPage ? exit.tableRead.own.decoded : &exit.tableRead.own.standalone),
 		SLJIT_MEM1(SLJIT_SP), saved + 2 * sizeof(u32)), exit, m_cache.state());
 	if (!nativeImageConstant(m_constants, keyIndex)) {
 		emitPoolWord(keyIndex, SLJIT_R0);
@@ -231,12 +231,12 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	if (!fixedKey) sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
 	const auto address = emitStringValueAddress(exit, load, fixedKey, temporary);
 	auto* valueFailure = emitStringValueTag(load, resultTag);
-	if (const auto peer = exit.operands.table.reusePeerWord; peer && m_bindings.decodedPage) {
+	if (const auto peer = exit.operands.table.reusePeerWord; peer && m_decodedPage) {
 		// A worker can publish this baseline after scalar execution has
 		// already learned both slots. Confirm the actual own hit before
 		// using the semantic continuation to reproject the source.
 		auto* prediction = exit.tableRead.own.decoded;
-		const auto peerSlot = &m_bindings.decodedPage[*peer].tableCacheSlot();
+		const auto peerSlot = &m_decodedPage[*peer].tableCacheSlot();
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(prediction));
 		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 			SLJIT_MEM0(), reinterpret_cast<sljit_sw>(peerSlot)), exit, m_cache.state());

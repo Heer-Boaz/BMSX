@@ -140,7 +140,7 @@ void recordPlanIsReadyBeforePublication() {
 	const std::array sources{NativeBlockSource{std::span(instructions).first<1>()},
 		NativeBlockSource{std::span(instructions).last<2>()}};
 	NativeCompilerWorker worker;
-	worker.submit(sources, NativeCodeBindings(memory, cpu.stringPool(), &cpu), {.immutablePagePc = page});
+	worker.submit(sources, NativeCodeBindings(memory, cpu.stringPool(), &cpu), {.immutableSource = true});
 	decoded.fill({});
 	worker.wait();
 	auto blocks = worker.take();

@@ -100,7 +100,7 @@ NativeCompilationProfile CPU::readNativeCompilationProfile() const {
 	return profile;
 }
 
-void CPU::prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage& page,
+void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page,
 	u32 pc, MappedBusSignals busSignals) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	publishNativeCompilation();
@@ -109,94 +109,115 @@ void CPU::prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage
 	if (!m_nativeCompilerWorker) m_nativeCompilerWorker = std::make_unique<NativeCompilerWorker>();
 	if (!m_nativeCompilerWorker->idle()) return;
 #endif
+	auto& image = *frame.executionImage;
+	const auto version = image.romFunctions.find(m_memory, image.executionDomainId, frame.readControl(FrameField::Function));
+	if (version && version->contains(pc)
+		&& prepareNativeFunction(image, *version, pc, busSignals, NATIVE_VERSION_REGION_MAX_PAGES, false)) return;
 	const u32 pagePc = pc & ~MAPPED_PAGE_BYTE_MASK;
 	MappedPageBinding binding;
 	m_memory.bindMappedPage(pagePc, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 	NativeCompilationSource source(page, binding, pagePc, busSignals,
 		m_memory.cartridgeController().selectedSlot(busSignals));
 	source.enqueue(pc, true, nullptr, true);
-	prepareNativeSource(image, source, false);
+	NativeCompilationSource* pages[] = {&source};
+	prepareNativeSources(image, pages, false);
 }
 
-void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, bool coldImage) {
+void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeCompilationSource* const> pages, bool coldImage) {
 	if (coldImage && m_nativeCode.full()) return;
-	auto& page = source.page;
-	const auto& binding = source.binding;
-	const u32 pagePc = source.pagePc;
-	auto& available = source.available;
-	auto& leaders = source.leaders;
+	const auto& first = *pages.front();
+	const auto firstRoot = std::find(first.roots.begin(), first.roots.end(), u8{1});
+	const u32 rootPc = first.pagePc + static_cast<u32>(firstRoot - first.roots.begin()) * INSTRUCTION_BYTES;
 	auto* profile = m_nativeCompilationProfiling ? &m_nativeCompilationProfile : nullptr;
-	const auto firstRoot = std::find(source.roots.begin(), source.roots.end(), u8{1});
-	const u32 rootPc = pagePc + static_cast<u32>(firstRoot - source.roots.begin()) * INSTRUCTION_BYTES;
-	NativeCompilationMeasurement measurement(profile, image.executionDomainId, source.slot, rootPc);
-	if (!coldImage) discoverNativeSource(image, source, nullptr);
-	const bool immutable = binding.readBytes && !binding.writeWatch.groups;
-	if (immutable) {
-		leaders |= page.nativeSourceLeaders;
-		page.nativeSourceLeaders = leaders;
-	}
-	for (u32 word = 0; word < DECODED_PAGE_WORDS; ++word) {
-		if (source.roots[word] && !available[word]
-			&& page.words[word].dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm))
-			page.words[word].dispatchOp = page.words[word].op;
-	}
-	if (std::none_of(available.begin(), available.end(), [](u8 value) { return value != 0; })) return;
-	std::array<NativeBlockInstruction, DECODED_PAGE_WORDS> instructions;
+	NativeCompilationMeasurement measurement(profile, image.executionDomainId, first.slot, rootPc);
+	if (!coldImage) discoverNativeSource(image, *pages.front(), nullptr);
+
+	std::array<NativeBlockInstruction, DECODED_PAGE_WORDS> singlePage;
+	std::vector<NativeBlockInstruction> functionInstructions;
+	if (pages.size() > 1u) functionInstructions.resize(pages.size() * DECODED_PAGE_WORDS);
+	const auto instructions = pages.size() == 1u ? std::span<NativeBlockInstruction>(singlePage)
+		: std::span<NativeBlockInstruction>(functionInstructions);
 	std::vector<NativeBlockSource> sources;
-	sources.reserve(source.pendingCount);
-	size_t instructionCount = 0;
-	for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
-		if (!leaders[entry] || !available[entry]) continue;
-		const size_t first = instructionCount;
-		u32 cursor = entry;
-		for (;;) {
-			const auto& instruction = page.words[cursor];
-			instructions[instructionCount++] = {&instruction, pagePc + cursor * INSTRUCTION_BYTES};
-			const u32 successor = cursor + instruction.width;
-			if (nativeBlockEndsBlock(instruction.op, instruction.b) || successor >= DECODED_PAGE_WORDS
-				|| !available[successor] || leaders[successor]) break;
-			if (instructionCount - first == NATIVE_BLOCK_MAX_INSTRUCTIONS) { leaders.set(successor); break; }
-			cursor = successor;
+	size_t pendingCount = 0;
+	for (auto* source : pages) pendingCount += source->pendingCount;
+	sources.reserve(pendingCount);
+	std::array<NativeCodeSourcePage, NATIVE_VERSION_REGION_MAX_PAGES> codePages;
+	size_t codePageCount = 0, instructionCount = 0;
+	bool immutableSource = true;
+	std::vector<NativeRejectedFieldProof> rejectedFieldProofs;
+	for (auto* source : pages) {
+		auto& page = source->page;
+		const auto& binding = source->binding;
+		const u32 pagePc = source->pagePc;
+		const auto& available = source->available;
+		auto& leaders = source->leaders;
+		const bool immutable = binding.readBytes && !binding.writeWatch.groups;
+		if (immutable) {
+			leaders |= page.nativeSourceLeaders;
+			page.nativeSourceLeaders = leaders;
 		}
-		const DecodedInstruction* skippedInstruction = nullptr;
-		if (binding.readBytes && nativeBlockComparison(page.words[cursor].op)) {
-			const u32 successor = cursor + page.words[cursor].width;
-			if (successor < DECODED_PAGE_WORDS && (page.refreshState[successor] & DECODED_REFRESH_DECODE) == 0u
-				&& successor + page.words[successor].width <= DECODED_PAGE_WORDS) skippedInstruction = &page.words[successor];
+		for (u32 word = 0; word < DECODED_PAGE_WORDS; ++word) {
+			if (source->roots[word] && !available[word]
+				&& page.words[word].dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm))
+				page.words[word].dispatchOp = page.words[word].op;
 		}
-		sources.push_back({std::span(instructions.data() + first, instructionCount - first), skippedInstruction});
+		const auto firstInstruction = instructionCount;
+		for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
+			if (!leaders[entry] || !available[entry]) continue;
+			const size_t start = instructionCount;
+			u32 cursor = entry;
+			for (;;) {
+				const auto& instruction = page.words[cursor];
+				instructions[instructionCount++] = {&instruction, pagePc + cursor * INSTRUCTION_BYTES};
+				const u32 successor = cursor + instruction.width;
+				if (nativeBlockEndsBlock(instruction.op, instruction.b) || successor >= DECODED_PAGE_WORDS
+					|| !available[successor] || leaders[successor]) break;
+				if (instructionCount - start == NATIVE_BLOCK_MAX_INSTRUCTIONS) { leaders.set(successor); break; }
+				cursor = successor;
+			}
+			const DecodedInstruction* skippedInstruction = nullptr;
+			if (binding.readBytes && nativeBlockComparison(page.words[cursor].op)) {
+				const u32 successor = cursor + page.words[cursor].width;
+				if (successor < DECODED_PAGE_WORDS && (page.refreshState[successor] & DECODED_REFRESH_DECODE) == 0u
+					&& successor + page.words[successor].width <= DECODED_PAGE_WORDS
+					&& pagePc + (successor + page.words[successor].width - 1u) * INSTRUCTION_BYTES <= source->lastPc)
+					skippedInstruction = &page.words[successor];
+			}
+			sources.push_back({instructions.subspan(start, instructionCount - start), skippedInstruction});
+		}
+		if (instructionCount != firstInstruction) {
+			codePages[codePageCount++] = {pagePc, &page, binding.key};
+			immutableSource &= immutable;
+			auto rejected = page.fieldProofFeedback.snapshot(pagePc);
+			if (rejectedFieldProofs.empty()) rejectedFieldProofs = std::move(rejected);
+			else rejectedFieldProofs.insert(rejectedFieldProofs.end(), rejected.begin(), rejected.end());
+		}
 	}
 	if (sources.empty()) return;
-	const NativeCompilationOptions options{
-		.observesArithmetic = true,
-		.immutablePagePc = immutable ? std::optional{pagePc} : std::nullopt,
-	};
-	auto rejectedFieldProofs = page.fieldProofFeedback.snapshot(pagePc);
-	// Capture on the CPU thread. A save-state restore can overwrite RAM before
-	// the pending worker job is drained; it never modifies this job's inputs.
-	auto constants = captureImageConstants(std::span(instructions).first(instructionCount), image.constPool);
+	const NativeCompilationOptions options{.observesArithmetic = true, .immutableSource = immutableSource};
+	// Capture on the CPU thread. Save-state restore does not modify job inputs.
+	auto constants = captureImageConstants(instructions.first(instructionCount), image.constPool);
+	const auto bindingsPages = std::span(codePages).first(codePageCount);
+	const NativeCodeBindings bindings(m_memory, m_stringPool, this, bindingsPages);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (!coldImage) {
 		auto& pendingJob = m_pendingNativeCompilation;
 		pendingJob.image = &image;
-		pendingJob.page = &page;
-		pendingJob.key = binding.key;
-		pendingJob.pagePc = pagePc;
-		pendingJob.slot = source.slot;
+		std::ranges::copy(bindingsPages, pendingJob.pages.begin());
+		pendingJob.pageCount = static_cast<u32>(codePageCount);
+		pendingJob.slot = first.slot;
 		pendingJob.invalidated = false;
-		m_nativeCompilerWorker->submit(sources,
-			NativeCodeBindings(m_memory, m_stringPool, this, page.words.data()), options, profile != nullptr,
+		m_nativeCompilerWorker->submit(sources, bindings, options, profile != nullptr,
 			std::move(rejectedFieldProofs), std::move(constants));
 		return;
 	}
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
-	auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(m_memory, m_stringPool, this, page.words.data()), options,
+	auto blocks = NativeCompiler::compile(sources, bindings, options,
 		{.rejectedFieldProofs = rejectedFieldProofs, .imageConstants = constants});
 	if (blocks.empty()) return;
-	// Publication owns any capacity retirement and profiles it separately.
 	measurement.finish();
-	installNativeRegion(image, page, pagePc, source.slot, std::move(blocks),
+	installNativeRegion(image, bindingsPages, first.slot, std::move(blocks),
 		coldImage ? NativeCodeAdmission::Warmup : NativeCodeAdmission::Adaptive);
 }
 

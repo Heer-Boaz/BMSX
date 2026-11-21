@@ -7,6 +7,7 @@
 #include <thread>
 
 #include "machine/cpu/decoded_instruction.h"
+#include "machine/cpu/execution_image.h"
 #include "machine/cpu/jit/compiler.h"
 
 namespace bmsx {
@@ -38,13 +39,14 @@ private:
 	std::mutex m_mutex;
 	std::condition_variable m_changed;
 	bool m_stop = false;
-	// A decoded page supplies at most one primary instruction per word and
-	// one skipped instruction per segment. Reuse this storage across requests.
-	std::array<DecodedInstruction, DECODED_PAGE_WORDS * 2u> m_decoded;
-	std::array<NativeBlockInstruction, DECODED_PAGE_WORDS> m_instructions;
+	// A run supplies its instructions and may also consume one skipped
+	// instruction. Reuse the largest previously needed snapshot.
+	std::vector<DecodedInstruction> m_decoded;
+	std::vector<NativeBlockInstruction> m_instructions;
 	std::vector<NativeBlockSource> m_sources;
 	std::vector<NativeRejectedFieldProof> m_rejectedFieldProofs;
 	std::vector<NativeImageConstant> m_imageConstants;
+	std::vector<NativeCodeSourcePage> m_sourcePages;
 	NativeCodeBindings m_bindings;
 	NativeCompilationOptions m_options;
 	std::vector<std::unique_ptr<NativeBlock>> m_blocks;

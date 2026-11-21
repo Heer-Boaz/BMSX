@@ -10,7 +10,7 @@ export function compiledTableSupports(op: number): op is TableOpCode {
 		|| op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF || op === OpCode.LEN;
 }
 
-export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage, word: number,
+export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage, word: number, tableCache: string,
 	r: JavaScriptRegisterCache, exit: number): string {
 	const a = page.a[word], b = page.b[word], c = page.c[word];
 	if (op === OpCode.LEN) {
@@ -37,12 +37,12 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 	if (op === OpCode.GETI || op === OpCode.SETI) {
 		access = `if(!tb.${arrayOperation}(A,${key},${arrayTarget})) ${failure}`;
 	} else if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF) {
-		access = `if(!tb.${stringOperation}(A,k[${key}],ts[${word}],${target})) ${failure}`;
+		access = `if(!tb.${stringOperation}(A,k[${key}],${tableCache}[${word}],${target})) ${failure}`;
 	} else {
 		access = `const tag=${r.tagOperand(key)},key=${r.wordOperand(key)};
 			if(tag===${ValueTag.Integer}||tag===${ValueTag.Float}){const i=tag===${ValueTag.Integer}?key|0:fi(key);if(i===null||!tb.${arrayOperation}(A,i,${arrayTarget})) ${failure}}
 			else if(tag!==${ValueTag.String}) ${failure}
-			else if(!tb.${stringOperation}(A,key,ts[${word}],${target})) ${failure}`;
+			else if(!tb.${stringOperation}(A,key,${tableCache}[${word}],${target})) ${failure}`;
 	}
 	const source = `${receiver}if(${r.tagOperand(base)}!==${ValueTag.Table}) ${failure}{const A=${r.wordOperand(base)};${access}}`;
 	if (load) {

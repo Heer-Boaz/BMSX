@@ -1,5 +1,6 @@
 #include "machine/cpu/jit/runtime/code_cache.h"
 
+#include <algorithm>
 #include <chrono>
 
 #include "machine/cpu/execution_image.h"
@@ -8,7 +9,7 @@
 
 namespace bmsx {
 
-bool NativeCodeCache::tryInstall(NativeCodeRegion& region, DecodedInstructionPage& page,
+bool NativeCodeCache::tryInstall(NativeCodeRegion& region, std::span<DecodedInstructionPage* const> pages,
 	NativeCodeAdmission admission, NativeCompilationProfile* profile) {
 	if (region.codeBytes > m_capacity) return false;
 	if (region.codeBytes > m_capacity - m_codeBytes) {
@@ -18,7 +19,7 @@ bool NativeCodeCache::tryInstall(NativeCodeRegion& region, DecodedInstructionPag
 		const size_t before = m_codeBytes;
 		do {
 			auto* victim = m_oldest;
-			victim->m_page->retireNativeRegion(victim, DecodedInstructionPage::Retirement::Capacity);
+			victim->m_pages.front()->retireNativeRegion(victim, DecodedInstructionPage::Retirement::Capacity);
 			if (profile) ++profile->capacityEvictedRegions;
 		} while (region.codeBytes > m_capacity - m_codeBytes);
 		if (profile) {
@@ -31,7 +32,8 @@ bool NativeCodeCache::tryInstall(NativeCodeRegion& region, DecodedInstructionPag
 	}
 	region.synchronizeInstructionStream();
 	region.m_cache = this;
-	region.m_page = &page;
+	std::ranges::copy(pages, region.m_pages.begin());
+	region.m_pageCount = static_cast<u8>(pages.size());
 	region.m_older = m_newest;
 	if (m_newest) m_newest->m_newer = &region;
 	else m_oldest = &region;
@@ -47,7 +49,7 @@ void NativeCodeCache::withdraw(NativeCodeRegion& region) {
 	else m_newest = region.m_older;
 	m_codeBytes -= region.codeBytes;
 	region.m_cache = nullptr;
-	region.m_page = nullptr;
+	region.m_pageCount = 0;
 	region.m_older = nullptr;
 	region.m_newer = nullptr;
 }

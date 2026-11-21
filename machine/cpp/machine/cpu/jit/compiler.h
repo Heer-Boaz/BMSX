@@ -8,12 +8,16 @@ namespace bmsx {
 class Memory;
 class StringPool;
 
+struct NativeCodeSourcePage;
+
 // Captured on the CPU owner thread. Code emission consumes these bindings,
 // not mutable Memory/controller state. The pointed-to owners are used only by
 // the generated code after it has been published on the CPU thread.
 struct NativeCodeBindings {
 	NativeCodeBindings() = default;
-	NativeCodeBindings(Memory& memory, StringPool& strings, CPU* cpu = nullptr, DecodedInstruction* decodedPage = nullptr);
+	NativeCodeBindings(Memory& memory, StringPool& strings, CPU* cpu = nullptr,
+		std::span<const NativeCodeSourcePage> sourcePages = {});
+	DecodedInstruction* decodedPageFor(u32 pc) const;
 	u32 ramBytes = 0;
 	u8* ram = nullptr;
 	const u32* ramBusEnd = nullptr;
@@ -26,12 +30,12 @@ struct NativeCodeBindings {
 	CPU* cpu = nullptr;
 	// The worker may embed addresses of source-owned sites but never reads
 	// their live data. Compilation decisions use the copied source rows.
-	DecodedInstruction* decodedPage = nullptr;
+	std::span<const NativeCodeSourcePage> sourcePages;
 };
 
 class NativeCompiler {
 public:
-	// Source runs contain at most one decoded page's worth of instructions.
+	// Each source run is bounded by a decoded page; region edges may cross them.
 	static std::vector<std::unique_ptr<NativeBlock>> compile(
 		std::span<const NativeBlockSource> sources,
 		const NativeCodeBindings& bindings, NativeCompilationOptions options = {}, NativeCompileSpecializations specializations = {});

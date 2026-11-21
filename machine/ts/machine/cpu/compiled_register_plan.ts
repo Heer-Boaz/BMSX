@@ -3,7 +3,7 @@ import { COP0_EXEC, COP0_STATUS, cop0FieldImplemented } from '../../spec/blua32/
 import { OpCode, OPCODE_SCALAR_REGISTER_READS, OPCODE_WRITES_REGISTER_A,
 	REGISTER_OPERAND_A, REGISTER_OPERAND_B, REGISTER_OPERAND_C } from '../../spec/blua32/opcode';
 import { compiledBlockEndsBlock, type CompiledBlockSource } from './compiled_block';
-import { DecodedDispatchOp, type DecodedInstructionPage } from './execution_image';
+import { DECODED_PAGE_WORDS, DecodedDispatchOp } from './execution_image';
 
 /** Logical live-in Values, not a simulation of the JavaScript engine's registers. */
 export type JavaScriptRegisterPlan = {
@@ -30,12 +30,12 @@ function fixedRegisterWrites(op: OpCode, b: number): number {
 	}
 }
 
-export function planRegionRegisters(page: DecodedInstructionPage, plans: readonly CompiledBlockSource[]):
+export function planRegionRegisters(plans: readonly CompiledBlockSource[]):
 	{ requiredSlots: number; requiredCaptures: number; blocks: JavaScriptRegisterPlan[] } {
 	const candidates = new Set<number>();
 	let requiredSlots = 0;
 	let requiredCaptures = 0;
-	for (const plan of plans) for (let word = plan.firstWord; word < plan.endWord; word += page.widths[word]) {
+	for (const { page, firstWord, endWord } of plans) for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		const op = page.ops[word], a = page.a[word], b = page.b[word], c = page.c[word];
 		const flags = generatedRegisterReads(op, b);
 		if (flags & REGISTER_OPERAND_A) candidates.add(a);
@@ -57,6 +57,7 @@ export function planRegionRegisters(page: DecodedInstructionPage, plans: readonl
 	const successors = plans.map(() => new Set<number>());
 	for (let index = 0; index < plans.length; ++index) {
 		const plan = plans[index], use = uses[index], def = defs[index];
+		const page = plan.page;
 		const read = (register: number) => { if (register >= 0 && !def.has(register)) use.add(register); };
 		const define = (register: number) => { if (candidates.has(register)) def.add(register); };
 		let finalWord = plan.firstWord;
@@ -93,7 +94,8 @@ export function planRegionRegisters(page: DecodedInstructionPage, plans: readonl
 			case OpCode.EQ: case OpCode.LT: case OpCode.LE:
 				if (plan.skippedInstructionWidth !== 0) {
 					addSuccessor((nextPc + plan.skippedInstructionWidth * INSTRUCTION_BYTES) >>> 0);
-					if (page.ops[plan.endWord] === OpCode.JMP && page.dispatchOps[plan.endWord] !== DecodedDispatchOp.Observe) {
+					if (plan.endWord < DECODED_PAGE_WORDS && page.ops[plan.endWord] === OpCode.JMP && page.a[plan.endWord] === 0
+						&& page.dispatchOps[plan.endWord] !== DecodedDispatchOp.Observe) {
 						addSuccessor(page.bx[plan.endWord]); break;
 					}
 				}

@@ -13,6 +13,7 @@ void NativeLowering::beginBlock(size_t index) {
 	auto& entry = m_entries[index];
 	entry.planned = true;
 	const auto& ir = m_ir[index];
+	m_decodedPage = m_bindings.decodedPageFor(ir.firstPc);
 	if (!ir.ownFieldAddresses.empty())
 		assignFieldAddressSpills(ir.ownFieldAddresses);
 	m_cache.setState({});

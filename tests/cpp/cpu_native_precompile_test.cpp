@@ -271,10 +271,12 @@ void crossPageWideDependenciesRemainOwned() {
 	const auto initial = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	const u32 word = ((initial.textAddress + MAPPED_PAGE_BYTE_SIZE - 1u) & ~MAPPED_PAGE_BYTE_MASK)
 		/ INSTRUCTION_BYTES - initial.textAddress / INSTRUCTION_BYTES - 1u;
-	image.functions[4] = {.firstWord=word, .wordCount=3};
+	image.functions[4] = {.firstWord=word, .wordCount=7};
 	writeInstruction(image.text, word, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, word + 1u, static_cast<u8>(OpCode::KSMI), 0, 0, 11);
-	writeInstruction(image.text, word + 2u, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	for (u32 next = 2; next < 6; ++next)
+		writeInstruction(image.text, word + next, static_cast<u8>(OpCode::MOV), 0, 0, 0);
+	writeInstruction(image.text, word + 6u, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::System, image));
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto before = encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime));
@@ -282,9 +284,29 @@ void crossPageWideDependenciesRemainOwned() {
 	const u32 pc = machine.rom.textAddress + word * INSTRUCTION_BYTES;
 	require(encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == before && entryAt(cpu, pc) && entryAt(cpu, pc)->sourceWords >= 2u,
 		"a backed WIDE body across the physical ROM page remains a cold native source dependency");
+	const auto* second = entryAt(cpu, pc + 2u * INSTRUCTION_BYTES);
+	require(second && second->region == entryAt(cpu, pc)->region, "one native region contains both physical pages of the ROM function");
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[4]);
 	require(cpu.runUntilDepth(1, 32) == RunResult::Halted && cpu.readCompletionValues().get(0) == valueInteger(11),
 		"the prepared cross-page function executes its complete raw WIDE operand");
+	const u32 nextPage = (pc + INSTRUCTION_BYTES) & ~MAPPED_PAGE_BYTE_MASK;
+	cpu.invalidateMappedWords(nextPage, 5, 6);
+	require(!entryAt(cpu, pc) && !entryAt(cpu, pc + 2u * INSTRUCTION_BYTES),
+		"retiring a word deep in the second page withdraws every entry into the region");
+
+	Fixture adaptive(test::encodeBlua32TestRom(RomImageDomain::System, image));
+	auto& warmed = adaptive.runtime.machine.cpu;
+	for (u32 visit = 0; visit <= NATIVE_BLOCK_COMPILATION_THRESHOLD; ++visit) {
+		warmed.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, adaptive.rom.functionAddresses[4]);
+		require(warmed.runUntilDepth(1, 32) == RunResult::Halted && warmed.readCompletionValues().get(0) == valueInteger(11),
+			"adaptive executions keep the same WIDE and return result");
+	}
+	warmed.runUntilDepth(0, 0);
+	const auto& page = warmed.rootThread()->frameAtDepth(0)->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
+	test::waitForNativeEntry(warmed, page, (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+	const auto* continuation = entryAt(warmed, pc + 2u * INSTRUCTION_BYTES);
+	require(continuation && continuation->region == entryAt(warmed, pc)->region,
+		"the adaptive compilation worker also publishes both pages in one region");
 }
 
 void descriptiveHintsAreBudgetedBeforeDiscovery() {

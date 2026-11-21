@@ -40,17 +40,24 @@ export class CompiledRegion {
 		public readonly sourceUnits: number, public readonly requiredSlots: number, public readonly requiredCaptures: number) {}
 }
 
-export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: readonly CompiledBlockSource[],
+export function compileJavaScriptRegion(plans: readonly CompiledBlockSource[],
 	image: Blua32ExecutionImage, memory: Memory, strings: StringPool, globalSlots: ValueSlots,
 	systemGlobalSlots: ValueSlots, cop0Words: Uint32Array, heap: GcHeap, newIndexKey: StringId): CompiledRegion {
 	const exits: CompiledBlockExitSite[] = [];
-	const { requiredSlots, requiredCaptures, blocks: registers } = planRegionRegisters(page, plans), residents = registers.map(plan => plan.entry);
+	const { requiredSlots, requiredCaptures, blocks: registers } = planRegionRegisters(plans), residents = registers.map(plan => plan.entry);
+	const tableCaches = new Map<DecodedInstructionPage, string>();
 	const blocks: ReturnType<typeof emitJavaScriptBlock>[] = [];
 	const writeBacks = new CompiledExitWriteBacks();
 	for (let index = 0; index < plans.length; ++index) {
 		// Helper-success spans inherit all actual definitions and no new admission.
 		if (index !== 0 && plans[index - 1].fallthrough) residents[index] = blocks[index - 1].registers.residents;
-		blocks.push(emitJavaScriptBlock(page, plans[index], memory, exits, residents[index], registers[index].outputs, writeBacks));
+		const plan = plans[index];
+		let tableCache = tableCaches.get(plan.page);
+		if (tableCache === undefined) {
+			tableCache = tableCaches.size === 0 ? 'ts' : `ts${tableCaches.size}`;
+			tableCaches.set(plan.page, tableCache);
+		}
+		blocks.push(emitJavaScriptBlock(plan, tableCache, memory, exits, residents[index], registers[index].outputs, writeBacks));
 	}
 	for (let index = blocks.length - 1; index >= 0; --index) {
 		if (plans[index].fallthrough) {
@@ -113,7 +120,7 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 			const frontier = block.formatCycles !== 0
 				? `if(B-${exit.cycles}<=${required}){${block.registers.leaveResidents(block.terminalIndex)}}` : '';
 			source.push(`case ${index}:{${block.body}\n${frontier}B-=${exit.cycles};${top}}`);
-		} else source.push(`case ${index}:{${block.body}\n${finishJavaScriptBlock(page, block, index => transfer(block, index))}}`);
+		} else source.push(`case ${index}:{${block.body}\n${finishJavaScriptBlock(plans[index].page, block, index => transfer(block, index))}}`);
 	}
 	source.push('}}', writeBacks.epilogue(), 'const e=x[X];S.remainingCycles=B-e.cycles;',
 		'S.registerTop=Math.max(e.resetsRegisterTop?F.top:T,e.registerTop);return X;}');
@@ -122,16 +129,17 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 	const functionSource = source.join('\n').replace(/\n\s+/g, '\n');
 	const cartridges = memory.cartridgeController;
 	const execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'q', 'kt', 'gl', 'sy',
-		'bf', 'fb', 'fr', 'fi', 'fw', 'imod', 'idiv', 'fmod', 'fdiv', 'shl', 'shr', 'pow', 'cp', 'h', 'x', 'tb', 'ts', 'nk', functionSource)(
+		'bf', 'fb', 'fr', 'fi', 'fw', 'imod', 'idiv', 'fmod', 'fdiv', 'shl', 'shr', 'pow', 'cp', 'h', 'x', 'tb', 'nk', ...tableCaches.values(), functionSource)(
 		memory.ramView, memory.ramWriteWatches().groupData(), memory.systemRomStorage(), cartridges,
 		cartridges.romStorage(0), cartridges.romStorage(1), strings, image.constTags, globalSlots, systemGlobalSlots,
 		f32BitsToNumber, numberToF32Bits, luaFloatResultBits, luaFloatToInteger, luaFloatToWord,
 		luaIntegerModulo, luaIntegerFloorDivide, luaFloatModuloBits, luaFloatFloorDivideBits,
-		luaShiftLeft, luaShiftRight, luaPow, cop0Words, heap, exits, heap.tables, page.tableCacheSlots, newIndexKey) as RegionBody;
+		luaShiftLeft, luaShiftRight, luaPow, cop0Words, heap, exits, heap.tables, newIndexKey,
+		...[...tableCaches.keys()].map(page => page.tableCacheSlots)) as RegionBody;
 	const region = new CompiledRegion(execute, exits, functionSource.length, requiredSlots, requiredCaptures);
 	for (let entry = 0; entry < blocks.length; ++entry) {
 		const block = blocks[entry];
-		region.entries.push({ region, entry, page, firstWord: block.firstWord,
+		region.entries.push({ region, entry, page: plans[entry].page, firstWord: block.firstWord,
 			terminal: block.terminal, exits: block.exits, admissionCycles: admissionCycles[entry],
 			admissionVarargs: admissionVarargs[entry], sourceWords: block.sourceWords, incoming: null });
 	}

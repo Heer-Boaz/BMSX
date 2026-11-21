@@ -1,11 +1,16 @@
 import type { FunctionPrototype } from './closure';
-import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
+import { readLE32 } from '../../common/endian';
+import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
+import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../spec/blua32/execution_domain';
+import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
+	BLUA32_FUNCTION_RECORD_SIZE } from '../../spec/blua32/image_format';
 import {
 	BASE_CYCLES, OPCODE_COUNT, OPCODE_SCALAR_REGISTER_READS, OPCODE_WRITES_REGISTER_A,
 	REGISTER_OPERAND_A, REGISTER_OPERAND_B, REGISTER_OPERAND_C, OpCode,
 } from '../../spec/blua32/opcode';
 import { cop0FieldImplemented } from '../../spec/blua32/cop0';
-import { ValueMoveKind } from '../../spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, ValueMoveKind } from '../../spec/blua32/instruction_format';
+import type { Memory, MemoryByteView } from '../memory/memory';
 import type { MappedBusSignals } from '../memory/bus_signals';
 import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageWriteWatches } from '../memory/mapped_page';
 import type { CompiledBlockPage } from './compiled_code_cache';
@@ -17,6 +22,35 @@ export const DECODED_REFRESH_DECODE = 1;
 export const DECODED_REFRESH_FUSION = 2;
 // A fused dispatch can inspect two instructions, each with one WIDE prefix.
 export const DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3;
+export const COMPILED_VERSION_MAX_PAGES = 4;
+
+export type Blua32RomFunctionDirectory = {
+	readonly tableAddress: number;
+	readonly count: number;
+	readonly textAddress: number;
+	readonly textBytes: number;
+};
+
+/** A checked compiler source extent; the frame's opcode fetch rules do not depend on it. */
+export function findRomFunctionVersion(memory: Memory, domain: ExecutionDomainId, directory: Blua32RomFunctionDirectory,
+	record: number, view: MemoryByteView): { firstPc: number; endPc: number } | null {
+	const recordOffset = record - directory.tableAddress;
+	if (recordOffset < 0 || recordOffset % BLUA32_FUNCTION_RECORD_SIZE !== 0
+		|| recordOffset / BLUA32_FUNCTION_RECORD_SIZE >= directory.count) return null;
+	const system = domain === SYSTEM_EXECUTION_DOMAIN_ID;
+	const base = system ? SYSTEM_ROM_BASE : CART_ROM_BASE;
+	const extent = system ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
+	const slot = system ? 0 : domain;
+	if (record < base || record - base > extent - BLUA32_FUNCTION_RECORD_SIZE
+		|| !memory.bindRomByteView(record, BLUA32_FUNCTION_RECORD_SIZE, slot, view)) return null;
+	const firstPc = readLE32(view.bytes, view.byteOffset + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
+	const size = readLE32(view.bytes, view.byteOffset + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
+	const offset = firstPc - directory.textAddress, romOffset = firstPc - base;
+	if (size === 0 || ((firstPc | size) & (INSTRUCTION_BYTES - 1)) !== 0
+		|| offset < 0 || size > directory.textBytes - offset
+		|| romOffset < 0 || size > extent - romOffset || !memory.bindRomByteView(firstPc, size, slot, view)) return null;
+	return { firstPc, endPc: firstPc + size };
+}
 
 export const enum DecodedDispatchOp {
 	FusedShlBxor = OPCODE_COUNT,
@@ -115,6 +149,7 @@ export type Blua32ExecutionImage = {
 	globalMapBase: number;
 	globalNameCount: number;
 	systemNameCount: number;
+	romFunctions: Blua32RomFunctionDirectory;
 	decodedPages: Map<number, DecodedInstructionPage>;
 	compiledCodeLookup: CompiledCodeLookup | null;
 };

@@ -849,7 +849,7 @@ void recordPlanUsesTypedEntriesAndFullRomWords() {
 		NativeRegisterUses uses;
 		NativeIrRegion writable(sources, uses, true);
 		require(writable.recordPlans().empty(), "writable code never owns a record recipe");
-		NativeIrRegion readonly(sources, uses, true, {.immutablePagePc = page});
+		NativeIrRegion readonly(sources, uses, true, {.immutableSource = true});
 		const auto& entry = readonly.blocks().back();
 		const auto& allocation = std::get<NativeTableAllocation>(entry.instructions.back().operation);
 		const auto* recipe = allocation.record ? &readonly.recordPlans()[*allocation.record] : nullptr;

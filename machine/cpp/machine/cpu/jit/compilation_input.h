@@ -40,8 +40,8 @@ inline std::optional<Value> nativeImageConstant(std::span<const NativeImageConst
 
 struct NativeCompilationOptions {
 	bool observesArithmetic = false;
-	// Set only for a complete, directly backed read-only instruction page.
-	std::optional<u32> immutablePagePc = std::nullopt;
+	// All admitted source pages have directly backed read-only instructions.
+	bool immutableSource = false;
 };
 
 // A contiguous source run between guest entries or control-flow boundaries.

@@ -1,6 +1,6 @@
 import { ValueMoveKind, INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
-import { DecodedDispatchOp, type DecodedInstructionPage } from './execution_image';
+import { DECODED_PAGE_WORDS, DecodedDispatchOp, type DecodedInstructionPage } from './execution_image';
 import { ValueTag } from './value';
 import type { Memory } from '../memory/memory';
 import { compiledArithmeticSupports, emitArithmetic } from './compiled_block_arithmetic';
@@ -93,6 +93,7 @@ export type CompiledBlockExitSite = {
 	readonly exitC: number;
 	readonly exitBx: number;
 	readonly exitWord: number;
+	readonly page: DecodedInstructionPage;
 	readonly cycles: number;
 	readonly registerTop: number;
 	readonly resetsRegisterTop: boolean;
@@ -192,6 +193,7 @@ export function compiledBlockComparison(op: number): boolean {
 }
 
 export type CompiledBlockSource = {
+	readonly page: DecodedInstructionPage;
 	readonly firstWord: number;
 	readonly endWord: number;
 	readonly pc: number;
@@ -218,11 +220,11 @@ export type EmittedJavaScriptBlock = {
 
 /** Emit a segment and its precise side exits; the region owns control flow. */
 export function emitJavaScriptBlock(
-	page: DecodedInstructionPage, plan: CompiledBlockSource,
+	plan: CompiledBlockSource, tableCache: string,
 	memory: Memory, exits: CompiledBlockExitSite[], residents: ReadonlyMap<number, boolean>, outputs: ReadonlySet<number>,
 	writeBacks: CompiledExitWriteBacks,
 ): EmittedJavaScriptBlock {
-	const { firstWord, endWord, skippedInstructionWidth } = plan;
+	const { page, firstWord, endWord, skippedInstructionWidth } = plan;
 	let pc = plan.pc;
 	const firstExit = exits.length;
 	const source: string[] = [];
@@ -261,7 +263,7 @@ export function emitJavaScriptBlock(
 		const sideExit = control && controlAccess && cop0FieldImplemented(page.b[word]) ? undefined : sideExitKinds[op];
 		if (sideExit !== undefined) {
 			exits.push({ exit: sideExit, resumesFrame: compiledBlockExitResumesFrame(sideExit),
-				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitBx: page.bx[word], exitWord: word,
+				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitBx: page.bx[word], exitWord: word, page,
 				cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
 		}
@@ -272,7 +274,7 @@ export function emitJavaScriptBlock(
 		if (needsOperandFault) {
 			const faultIndex = exits.length;
 			exits.push({ exit: CompiledBlockExit.InvalidOperand, resumesFrame: false,
-				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitBx: page.bx[word], exitWord: word,
+				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitBx: page.bx[word], exitWord: word, page,
 				cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
 			numericFault = registers.exit(faultIndex);
@@ -288,7 +290,7 @@ export function emitJavaScriptBlock(
 		} else if (compiledContextSupports(op)) {
 			source.push(emitContext(op, page, word, registers, exitIndex));
 		} else if (compiledTableSupports(op)) {
-			source.push(emitTableOperation(op, page, word, registers, exitIndex));
+			source.push(emitTableOperation(op, page, word, tableCache, registers, exitIndex));
 		} else if (load || store || words) {
 			if (!words && page.c[word] === MemoryAccessKind.F64LE) source.push('B-=2;');
 			const selector = page.b[word], tag = registers.tagOperand(selector), payload = registers.wordOperand(selector);
@@ -335,7 +337,7 @@ export function emitJavaScriptBlock(
 	const terminal: CompiledBlockExitSite = {
 		exit: terminalExit,
 		resumesFrame: compiledBlockExitResumesFrame(terminalExit),
-		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord], exitBx: page.bx[finalWord], exitWord: finalWord,
+		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord], exitBx: page.bx[finalWord], exitWord: finalWord, page,
 		cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 		linkedBlock: null, previousIncoming: null, nextIncoming: null,
 	};
@@ -348,7 +350,7 @@ export function emitJavaScriptBlock(
 		exits.push({ ...terminal, exit: skippedInstructionWidth === 0 ? CompiledBlockExit.SkipInstruction : CompiledBlockExit.Continue,
 			nextPc: (terminal.nextPc + skippedInstructionWidth * INSTRUCTION_BYTES) >>> 0 });
 		sourceWords += skippedInstructionWidth;
-		if (skippedInstructionWidth !== 0 && page.ops[endWord] === OpCode.JMP && page.a[endWord] === 0
+		if (skippedInstructionWidth !== 0 && endWord < DECODED_PAGE_WORDS && page.ops[endWord] === OpCode.JMP && page.a[endWord] === 0
 			&& page.dispatchOps[endWord] !== DecodedDispatchOp.Observe) {
 			// A comparison can exhaust its grant, including a string surcharge.
 			// Preserve the boundary before executing the fused JMP.

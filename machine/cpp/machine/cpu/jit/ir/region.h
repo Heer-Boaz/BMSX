@@ -122,7 +122,7 @@ private:
 	void planAdmissionReplays();
 	void bindOwnFieldAddresses(NativeIrBlock& block, std::span<const NativeFieldAddressUse> uses, size_t firstRow);
 	void truncateOwnFieldAddresses(NativeIrBlock& block);
-	void planRecordConstructors(std::span<const u16> byAddress, u32 immutablePagePc);
+	void planRecordConstructors(std::span<const u16> byAddress);
 };
 
 NativeOperation translateNativeOperation(const DecodedInstruction& source);

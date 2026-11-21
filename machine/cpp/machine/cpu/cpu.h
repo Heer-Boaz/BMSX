@@ -62,6 +62,7 @@ struct NativeBlockRunState;
 struct NativeCpuRunState;
 #endif
 struct NativeCompilationSource;
+struct NativeCodeSourcePage;
 class GcHeap;
 class IrqController;
 class Memory;
@@ -454,14 +455,16 @@ private:
 	static NativeBuiltinCallOutcome runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	NativeRomCallBinding* bindNativeRomFunction(Blua32ExecutionImage& image, u32 functionAddress) const noexcept;
 	static void* tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
-	void prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pc, MappedBusSignals busSignals);
+	void prepareNativeBlock(CallFrame&, DecodedInstructionPage&, u32 pc, MappedBusSignals);
+	u32 prepareNativeFunction(Blua32ExecutionImage&, const Blua32RomFunctionVersion&, u32 rootPc,
+		MappedBusSignals, size_t pageBudget, bool coldImage);
 	void observeNativeArithmeticReplay(DecodedInstructionPage&, u32 word, NativeArithmeticFeedback assumption, Value left, Value right);
 	void retireNativeInstructionUsers(DecodedInstructionPage&, u32 word);
 	void recompileNativeSource(CallFrame&, DecodedInstructionPage&, u32 changedWord, u32 sourcePc);
 	void prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32> entryPc);
 	void discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing);
-	void prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, bool coldImage);
-	void installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pagePc, u32 slot,
+	void prepareNativeSources(Blua32ExecutionImage&, std::span<NativeCompilationSource* const>, bool coldImage);
+	void installNativeRegion(Blua32ExecutionImage& image, std::span<const NativeCodeSourcePage>, u32 slot,
 		std::vector<std::unique_ptr<NativeBlock>> blocks, NativeCodeAdmission);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	void publishNativeCompilation();
@@ -469,10 +472,10 @@ private:
 	std::unique_ptr<NativeCompilerWorker> m_nativeCompilerWorker;
 	struct PendingNativeCompilation {
 		Blua32ExecutionImage* image = nullptr;
-		DecodedInstructionPage* page = nullptr;
-		u64 key = 0;
-		u32 pagePc = 0, slot = 0;
+		std::array<NativeCodeSourcePage, NATIVE_VERSION_REGION_MAX_PAGES> pages;
+		u32 pageCount = 0, slot = 0;
 		bool invalidated = false;
+		std::span<const NativeCodeSourcePage> sources() const { return std::span(pages).first(pageCount); }
 	} m_pendingNativeCompilation;
 #endif
 	NativeCodeCache m_nativeCode;

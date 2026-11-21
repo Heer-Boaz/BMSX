@@ -1,6 +1,7 @@
 #include "machine/cpu/jit/compiler.h"
 
 #include "machine/cpu/decoded_instruction.h"
+#include "machine/cpu/execution_image.h"
 #if defined(BMSX_NATIVE_IR_TRACE)
 #include "machine/cpu/jit/ir/dump.h"
 #endif
@@ -11,6 +12,13 @@
 #include "machine/cpu/jit/runtime/record_constructor.h"
 
 namespace bmsx {
+
+DecodedInstruction* NativeCodeBindings::decodedPageFor(u32 pc) const {
+	if (sourcePages.empty()) return nullptr; // Standalone compilation.
+	const u32 pagePc = pc & ~MAPPED_PAGE_BYTE_MASK;
+	return std::ranges::lower_bound(sourcePages, pagePc, {}, &NativeCodeSourcePage::pc)->page->words.data();
+}
+
 namespace {
 
 NativeBlockExitSite materializeExit(const NativeIrExit& exit, const NativeCodeBindings& bindings) {
@@ -22,8 +30,9 @@ NativeBlockExitSite materializeExit(const NativeIrExit& exit, const NativeCodeBi
 	};
 	const auto tableSlot = [&] {
 		const u32 word = (exit.currentPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-		return bindings.decodedPage
-			? NativeTableSlotBinding{.decoded = &bindings.decodedPage[word].tableCacheSlot()}
+		auto* decodedPage = bindings.decodedPageFor(exit.currentPc);
+		return decodedPage
+			? NativeTableSlotBinding{.decoded = &decodedPage[word].tableCacheSlot()}
 			: NativeTableSlotBinding{.standalone = exit.tableSlotSeed};
 	};
 	switch (exit.exit) {

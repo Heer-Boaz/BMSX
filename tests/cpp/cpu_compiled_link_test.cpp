@@ -583,9 +583,9 @@ void codeCapacityRetiresOldestCompleteRegion() {
 			++page.nativeBlocks->count;
 		}
 	};
-	require(cache.tryInstall(*first[0]->region, oldest, NativeCodeAdmission::Warmup, &profile), "first region fits");
+	require(cache.tryInstall(*first[0]->region, std::array{&oldest}, NativeCodeAdmission::Warmup, &profile), "first region fits");
 	install(oldest, first);
-	require(cache.tryInstall(*second[0]->region, survivor, NativeCodeAdmission::Adaptive, &profile), "second region fits exactly");
+	require(cache.tryInstall(*second[0]->region, std::array{&survivor}, NativeCodeAdmission::Adaptive, &profile), "second region fits exactly");
 	install(survivor, second);
 	auto& predecessor = *survivor.nativeBlocks->entries[0];
 	oldest.nativeBlocks->entries[0]->linkFrom(predecessor.terminal);
@@ -593,17 +593,17 @@ void codeCapacityRetiresOldestCompleteRegion() {
 	oldest.nativeSourceLeaders.set(0);
 
 	require(cache.full() && cache.codeBytes() == limit, "published bytes hit the exact cap");
-	require(!cache.tryInstall(*third[0]->region, incoming, NativeCodeAdmission::Warmup, &profile)
+	require(!cache.tryInstall(*third[0]->region, std::array{&incoming}, NativeCodeAdmission::Warmup, &profile)
 		&& cache.codeBytes() == limit && profile.capacityEvictedRegions == 0
 		&& predecessor.terminal.link.target == oldest.nativeBlocks->entries[0].get(),
 		"warm-up cannot evict or disturb resident code");
 	auto oversized = compileJumps(thirdPc, secondPc, 2);
 	NativeCodeCache tooSmall(firstBytes - 1);
-	require(!tooSmall.tryInstall(*oversized[0]->region, incoming, NativeCodeAdmission::Adaptive, &profile)
+	require(!tooSmall.tryInstall(*oversized[0]->region, std::array{&incoming}, NativeCodeAdmission::Adaptive, &profile)
 		&& tooSmall.codeBytes() == 0 && profile.capacityEvictedRegions == 0,
 		"an individually oversized result is not published");
 
-	require(cache.tryInstall(*third[0]->region, incoming, NativeCodeAdmission::Adaptive, &profile),
+	require(cache.tryInstall(*third[0]->region, std::array{&incoming}, NativeCodeAdmission::Adaptive, &profile),
 		"adaptive publication can evict the oldest complete region");
 	install(incoming, third);
 	require(cache.full() && cache.codeBytes() == limit

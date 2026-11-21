@@ -22,6 +22,7 @@ struct NativeCompilationSource {
 		: page(page), binding(binding), pagePc(pagePc), busSignals(busSignals), slot(slot) {}
 
 	void enqueue(u32 pc, bool leader, std::vector<u32>* outgoing = nullptr, bool root = false) {
+		if (pc < firstPc || pc > lastPc) return;
 		const u32 offset = pc - pagePc;
 		if (offset >= MAPPED_PAGE_BYTE_SIZE) {
 			if (outgoing) outgoing->push_back(pc);
@@ -38,6 +39,7 @@ struct NativeCompilationSource {
 	u32 pagePc;
 	MappedBusSignals busSignals;
 	u32 slot;
+	u32 firstPc = 0u, lastPc = ~0u;
 	std::array<u8, DECODED_PAGE_WORDS> roots{}, queued{}, available{};
 	std::bitset<DECODED_PAGE_WORDS> leaders;
 	std::array<u32, DECODED_PAGE_WORDS> pending{};

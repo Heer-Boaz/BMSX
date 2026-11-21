@@ -113,7 +113,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 
 	// Emission order can differ from guest address order. Only a published
 	// entry at the exact PC is a local successor.
-	std::array<u16, DECODED_PAGE_WORDS> byAddress;
+	std::array<u16, DECODED_PAGE_WORDS * NATIVE_VERSION_REGION_MAX_PAGES> byAddress;
 	const auto directory = std::span(byAddress).first(m_blocks.size());
 	std::iota(directory.begin(), directory.end(), u16{0});
 	std::ranges::sort(directory, {}, [&](u16 index) { return m_blocks[index].firstPc; });
@@ -180,7 +180,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 		}
 	} while (changed);
 	planAdmissionReplays();
-	if (options.immutablePagePc) planRecordConstructors(directory, *options.immutablePagePc);
+	if (options.immutableSource) planRecordConstructors(directory);
 }
 
 } // namespace bmsx

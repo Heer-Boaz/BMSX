@@ -337,10 +337,12 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
 	image->globalNameCount = globalNameCount;
 	image->systemNameCount = systemGlobalNameCount;
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	image->nativeWarmup.functionTable = readLE32(header + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET);
-	image->nativeWarmup.functionCount = readLE32(header + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET);
-#endif
+	image->romFunctions = {
+		readLE32(header + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET),
+		readLE32(header + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET),
+		readLE32(header + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET),
+		readLE32(header + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET),
+	};
 	if (const u32 bytes = image->globalMapBytes()) {
 		image->globalMapBase = restoring ? (*restoredBases)[1] : m_luaHeap.allocateRecord(bytes, true, 0, 0);
 		const u32 base = image->globalMapBase;
@@ -544,7 +546,9 @@ DecodedInstructionPage& CPU::decodedPageForAddress(
 
 void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
-	if (m_nativeCompilerWorker && !m_nativeCompilerWorker->idle() && m_pendingNativeCompilation.key == key)
+	if (m_nativeCompilerWorker && !m_nativeCompilerWorker->idle()
+		&& std::ranges::find(m_pendingNativeCompilation.sources(), key, &NativeCodeSourcePage::key)
+			!= m_pendingNativeCompilation.sources().end())
 		m_pendingNativeCompilation.invalidated = true;
 #endif
 	const u32 firstPredecessor = firstWord >= DECODED_DEPENDENCY_PREDECESSOR_WORDS
@@ -634,15 +638,16 @@ void CPU::invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) {
 }
 
 void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
-#if defined(BMSX_NATIVE_COMPILER_WORKER)
-	if (m_nativeCompilerWorker && !m_nativeCompilerWorker->idle()
-		&& m_pendingNativeCompilation.key >= (firstKey >= MAPPED_PAGE_BYTE_SIZE ? firstKey - MAPPED_PAGE_BYTE_SIZE : 0u)
-		&& m_pendingNativeCompilation.key < endKey)
-		m_pendingNativeCompilation.invalidated = true;
-#endif
 	const u64 invalidationStart = firstKey >= MAPPED_PAGE_BYTE_SIZE
 		? firstKey - MAPPED_PAGE_BYTE_SIZE
 		: 0u;
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	if (m_nativeCompilerWorker && !m_nativeCompilerWorker->idle()
+		&& std::ranges::any_of(m_pendingNativeCompilation.sources(), [&](const NativeCodeSourcePage& source) {
+			return source.key >= invalidationStart && source.key < endKey;
+		}))
+		m_pendingNativeCompilation.invalidated = true;
+#endif
 	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImagesByDomain) {
 		if (!image) {
 			continue;
@@ -1953,7 +1958,7 @@ dispatch_instruction:
 					if (visits < NATIVE_BLOCK_COMPILATION_THRESHOLD) ++visits;
 					if (FRAME.compilationEntry && visits == NATIVE_BLOCK_COMPILATION_THRESHOLD
 						&& !(nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic)) {
-						prepareNativeBlock(IMAGE, *decodedPage, pc, m_executionBusSignals);
+						prepareNativeBlock(FRAME, *decodedPage, pc, m_executionBusSignals);
 					}
 					FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
 					dispatchOp = decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock)

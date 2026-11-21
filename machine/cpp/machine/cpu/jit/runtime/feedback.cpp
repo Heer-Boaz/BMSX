@@ -20,7 +20,7 @@ void CPU::observeNativeArithmeticReplay(DecodedInstructionPage& page, u32 word,
 
 void CPU::recompileNativeSource(CallFrame& frame, DecodedInstructionPage& page, u32 changedWord, u32 sourcePc) {
 	retireNativeInstructionUsers(page, changedWord);
-	prepareNativeBlock(*frame.executionImage, page, sourcePc, executionBusSignalsForDomain(frame.executionImage->executionDomainId));
+	prepareNativeBlock(frame, page, sourcePc, executionBusSignalsForDomain(frame.executionImage->executionDomainId));
 }
 
 bool NativeFieldProofFeedback::contradict(u32 word, ValueTag tag) {

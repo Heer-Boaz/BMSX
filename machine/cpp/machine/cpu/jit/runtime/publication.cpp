@@ -14,11 +14,12 @@
 
 namespace bmsx {
 
-NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, CPU* cpu, DecodedInstruction* decodedPage)
+NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, CPU* cpu,
+	std::span<const NativeCodeSourcePage> sourcePages)
 	: ramBytes(memory.ramByteCount()), ram(memory.ramData()), ramBusEnd(memory.ramBusEndAddress()),
 	  ramWriteGroups(memory.ramWriteWatches().groupData()),
 	  ramCodeWatchWords(memory.ramWriteWatches().codeWordMasks()),
-	  memory(&memory), strings(&pool), cpu(cpu), decodedPage(decodedPage) {}
+	  memory(&memory), strings(&pool), cpu(cpu), sourcePages(sourcePages) {}
 
 NativeBlockPage::~NativeBlockPage() {
 	// Images can disappear without individual source invalidation. The
@@ -29,21 +30,20 @@ NativeBlockPage::~NativeBlockPage() {
 
 void DecodedInstructionPage::retireNativeRegion(const NativeCodeRegion* region, Retirement reason) {
 	std::shared_ptr<NativeCodeRegion> retiring;
-	for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
-		auto& block = nativeBlocks->entries[entry];
-		if (!block || block->region.get() != region) continue;
-		if (!retiring) retiring = block->region;
-		nativeCode[entry] = nullptr;
-		block.reset();
-		--nativeBlocks->count;
-		auto& instruction = words[entry];
-		instruction.dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
-		nativeVisits[entry] = reason == Retirement::Feedback ? NATIVE_BLOCK_COMPILATION_THRESHOLD : 0u;
+	for (auto* page : std::span(region->m_pages).first(region->m_pageCount)) {
+		for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
+			auto& block = page->nativeBlocks->entries[entry];
+			if (!block || block->region.get() != region) continue;
+			if (!retiring) retiring = block->region;
+			page->nativeCode[entry] = nullptr;
+			block.reset();
+			--page->nativeBlocks->count;
+			page->words[entry].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
+			page->nativeVisits[entry] = reason == Retirement::Feedback ? NATIVE_BLOCK_COMPILATION_THRESHOLD : 0u;
+		}
+		if (page->nativeBlocks->count == 0u) page->nativeBlocks.reset();
 	}
 	retiring->withdrawFromCache();
-	if (nativeBlocks->count == 0u) {
-		nativeBlocks.reset();
-	}
 }
 
 void DecodedInstructionPage::retireNativeBlocks(u32 firstWord, u32 endWord, Retirement reason) {
@@ -65,7 +65,9 @@ void CPU::retireNativeInstructionUsers(DecodedInstructionPage& page, u32 word) {
 	// feedback for the next compilation.
 	page.retireNativeBlocks(word, word + 1u, DecodedInstructionPage::Retirement::Feedback);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
-	if (m_pendingNativeCompilation.page == &page) m_pendingNativeCompilation.invalidated = true;
+	const auto sourcePages = m_pendingNativeCompilation.sources();
+	if (std::ranges::find(sourcePages, &page, &NativeCodeSourcePage::page) != sourcePages.end())
+		m_pendingNativeCompilation.invalidated = true;
 #endif
 }
 
@@ -79,9 +81,9 @@ void CPU::publishNativeCompilation() {
 		m_nativeCompilationProfile.backgroundNanoseconds += m_nativeCompilerWorker->compilationNanoseconds();
 		m_nativeCompilationProfile.backgroundCancelled += job.invalidated;
 	}
-	if (job.invalidated) return;
-	auto& page = *job.page;
-	installNativeRegion(*job.image, page, job.pagePc, job.slot, std::move(blocks), NativeCodeAdmission::Adaptive);
+	if (!job.invalidated && !blocks.empty())
+		installNativeRegion(*job.image, job.sources(), job.slot, std::move(blocks), NativeCodeAdmission::Adaptive);
+	job.pageCount = 0u;
 }
 
 void CPU::discardNativeCompilation() {
@@ -89,6 +91,7 @@ void CPU::discardNativeCompilation() {
 	m_nativeCompilerWorker->wait();
 	// Retire unpublished code and surface compiler errors on the owning thread.
 	m_nativeCompilerWorker->take();
+	m_pendingNativeCompilation.pageCount = 0u;
 	if (m_nativeCompilationProfiling) {
 		++m_nativeCompilationProfile.backgroundCompleted;
 		++m_nativeCompilationProfile.backgroundCancelled;
@@ -97,16 +100,22 @@ void CPU::discardNativeCompilation() {
 }
 #endif
 
-void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pagePc, u32 slot,
+void CPU::installNativeRegion(Blua32ExecutionImage& image, std::span<const NativeCodeSourcePage> sources, u32 slot,
 	std::vector<std::unique_ptr<NativeBlock>> blocks, NativeCodeAdmission admission) {
 	// This is the only publication boundary for either compilation policy.
 	// All source retirement and emitted-code ownership transfers run on the CPU.
 	auto& region = *blocks.front()->region;
-	if (!m_nativeCode.tryInstall(region, page, admission, m_nativeCompilationProfiling ? &m_nativeCompilationProfile : nullptr)) return;
-	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
+	std::array<DecodedInstructionPage*, NATIVE_VERSION_REGION_MAX_PAGES> pages;
+	std::ranges::transform(sources, pages.begin(), &NativeCodeSourcePage::page);
+	if (!m_nativeCode.tryInstall(region, std::span(pages).first(sources.size()), admission,
+		m_nativeCompilationProfiling ? &m_nativeCompilationProfile : nullptr)) return;
 	auto& lookup = image.nativeCodeLookup;
 	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
-	page.nativeCode = lookup->install(pagePc, slot, page);
+	for (const auto& source : sources) {
+		auto& page = *source.page;
+		if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
+		page.nativeCode = lookup->install(source.pc, slot, page);
+	}
 	// Cartridge execution images pin instruction fetch to their physical bank.
 	// Only system code needs cells for both selectable cartridge mappings.
 	const u32 firstBank = image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID ? 0u : slot;
@@ -115,6 +124,8 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 	blocks.front()->region->recordPerfMap(image.executionDomainId, slot, blocks.front()->firstPc);
 #endif
 	for (auto& block : blocks) {
+		const u32 pagePc = block->firstPc & ~MAPPED_PAGE_BYTE_MASK;
+		auto& page = *std::ranges::lower_bound(sources, pagePc, {}, &NativeCodeSourcePage::pc)->page;
 		const u32 entry = (block->firstPc - pagePc) / INSTRUCTION_BYTES;
 		auto& exit = block->terminal;
 		if (exit.exit == NativeBlockExit::AllocateTable && exit.recordConstructor) {

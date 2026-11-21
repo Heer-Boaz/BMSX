@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include "machine/cpu/jit/limits.h"
 
 namespace bmsx {
@@ -19,7 +20,7 @@ public:
 	NativeCodeCache& operator=(const NativeCodeCache&) = delete;
 	size_t codeBytes() const { return m_codeBytes; }
 	bool full() const { return m_codeBytes == m_capacity; }
-	bool tryInstall(NativeCodeRegion&, DecodedInstructionPage&, NativeCodeAdmission, NativeCompilationProfile*);
+	bool tryInstall(NativeCodeRegion&, std::span<DecodedInstructionPage* const>, NativeCodeAdmission, NativeCompilationProfile*);
 private:
 	friend class NativeCodeRegion;
 	void withdraw(NativeCodeRegion&);

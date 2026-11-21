@@ -26,6 +26,8 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u
 			|| instruction.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
 			|| !nativeSourceCanEmit(instruction)) continue;
+		const u32 finalWordPc = pc + (static_cast<u32>(instruction.width) - 1u) * INSTRUCTION_BYTES;
+		if (finalWordPc > source.lastPc) continue;
 		if (instruction.op >= static_cast<u8>(OpCode::GETSYS) && instruction.op <= static_cast<u8>(OpCode::SETGL)) {
 			const auto& bank = instruction.op <= static_cast<u8>(OpCode::SETSYS) ? m_systemGlobalBank : m_globalBank;
 			if (instruction.bx() >= bank.capacity()) continue; // The general mirror port is scalar.
@@ -37,7 +39,7 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 		const u32 successor = cursor + instruction.width;
 		const u32 successorPc = pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
 		if (nativeBlockComparison(instruction.op)) {
-			if (binding.readBytes && successor < DECODED_PAGE_WORDS) {
+			if (binding.readBytes && successor < DECODED_PAGE_WORDS && successorPc <= source.lastPc) {
 				if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) != 0u && successor < DECODED_PAGE_WORDS - 1u
 					&& !decodeBackedInstruction(image, page, successor, successorPc, source.busSignals)) continue;
 				if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) == 0u

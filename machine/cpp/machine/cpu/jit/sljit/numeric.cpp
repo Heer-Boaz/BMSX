@@ -49,7 +49,7 @@ void NativeLowering::emitNumericKernel(
 	if (feedback) {
 		const u32 word = (instruction.pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM,
-			reinterpret_cast<sljit_sw>(&m_bindings.decodedPage[word]));
+			reinterpret_cast<sljit_sw>(&m_decodedPage[word]));
 		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(nativeSamplingKernel(op)));
 	} else
 		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(32, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(nativeNumericKernel(op)));
