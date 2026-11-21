@@ -163,10 +163,11 @@ Options:
   including teardown.
 - `--profile-native-compilation`: requires `--timing-report` and a native-enabled
   core. Adds compilation deltas to the existing slow-frame records and prints
-  cumulative measured-window totals at shutdown. Discovery includes decoding
-  and region planning; retirement covers capacity evictions and interior-entry
-  merges; compilation covers foreground compile and publication work. Native
-  profile V2 separately reports collected background jobs
+  cumulative measured-window totals at shutdown. In profile V2, discovery
+  includes decoding and source preparation. Retirement measures capacity
+  eviction, not every withdrawal. Compilation measures foreground code
+  generation and stops before publication. V2 separately reports collected
+  background jobs
   (`background_completed`, including `background_cancelled`) and their elapsed
   generation time (`background_ns`). A job is charged when its result is
   collected, not divided across the calls it overlapped; this duration is not
