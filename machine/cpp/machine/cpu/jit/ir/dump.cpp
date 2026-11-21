@@ -3,6 +3,15 @@
 #include <array>
 #include <ostream>
 
+#if defined(BMSX_NATIVE_IR_TRACE)
+#include <algorithm>
+#include <charconv>
+#include <cstdio>
+#include <cstdlib>
+#include <sstream>
+#include <string_view>
+#endif
+
 #include "machine/cpu/jit/ir/region.h"
 
 namespace bmsx {
@@ -51,7 +60,8 @@ void writeRecord(std::ostream& out, const NativeRecordPlan& record) {
 		out << 'K' << record.keySelectors[field] << '=';
 		writeValue(out, record.operands[field]);
 	}
-	out << "} -> pc=" << record.nextPc;
+	out << "} required-slots=" << record.requiredSlots << " last-pc=" << record.lastInstructionPc
+		<< " last-word=" << record.lastWordPc << " -> pc=" << record.nextPc;
 }
 
 void writeNumericPlan(std::ostream& out, const NativeArithmetic& arithmetic) {
@@ -63,6 +73,9 @@ void writeNumericPlan(std::ostream& out, const NativeArithmetic& arithmetic) {
 	case NativeNumericAction::Word: out << " word"; break;
 	case NativeNumericAction::Float: out << " float"; break;
 	}
+	if (plan.left) out << " left-tag=" << unsigned(*plan.left);
+	if (plan.right && !arithmetic.unary()) out << " right-tag=" << unsigned(*plan.right);
+	if (plan.result) out << " result-tag=" << unsigned(*plan.result);
 	if (plan.guardLeft) out << " guard-left=" << unsigned(*plan.left);
 	if (plan.guardRight) out << " guard-right=" << unsigned(*plan.right);
 }
@@ -152,11 +165,16 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 			<< " admit-cycles=" << block.admissionCycles << " replay=r" << block.entryReplay << '\n';
 		for (auto type : block.entryTypes)
 			out << "  admit R" << type.slot << " tag=" << unsigned(type.tag) << '\n';
+		const auto* branch = std::get_if<NativeTruthBranch>(&block.instructions.back().operation);
 		for (size_t edge = 0; edge < block.successors.size(); ++edge) {
 			const auto target = block.successors[edge];
 			if (target == blocks.size() || (edge != 0 && target == block.successors[0]
-				&& block.edgeReplay[edge] == block.edgeReplay[0])) continue;
+				&& block.edgeReplay[edge] == block.edgeReplay[0] && !(branch && branch->sourceTruthy))) continue;
 			out << "  edge b" << target;
+			if (branch && branch->sourceTruthy && size_t(*branch->sourceTruthy == branch->takeOnTruthy) != edge) {
+				out << " eliminated\n";
+				continue;
+			}
 			if (!blocks[target].entryTypes.empty()) out << (block.provesEntryTo(target) ? " proven" : " checked");
 			if (const auto replay = block.edgeReplay[edge]) out << " replay=r" << *replay;
 			out << '\n';
@@ -220,5 +238,29 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 		out << '\n';
 	}
 }
+
+#if defined(BMSX_NATIVE_IR_TRACE)
+void traceNativeIr(const NativeIrRegion& region) {
+	const char* selection = std::getenv("BMSX_NATIVE_IR");
+	if (!selection) return;
+	std::string_view filter(selection);
+	const auto blocks = region.blocks();
+	if (filter != "all") {
+		if (filter.starts_with("0x")) filter.remove_prefix(2);
+		u32 pc;
+		const auto end = filter.data() + filter.size();
+		const auto parsed = std::from_chars(filter.data(), end, pc, 16);
+		if (parsed.ec != std::errc{} || parsed.ptr != end || !std::ranges::any_of(blocks, [&](const auto& block) {
+			return std::ranges::any_of(block.instructions, [&](const auto& row) { return row.pc == pc; });
+		})) return;
+	}
+	std::ostringstream output;
+	output << "native-ir pc=" << blocks.front().firstPc << '\n';
+	dumpNativeIr(output, region);
+	const auto text = std::move(output).str();
+	// Write one whole region, including when the compiler runs on the worker.
+	std::fwrite(text.data(), 1, text.size(), stderr);
+}
+#endif
 
 } // namespace bmsx

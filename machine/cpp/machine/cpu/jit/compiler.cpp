@@ -1,6 +1,9 @@
 #include "machine/cpu/jit/compiler.h"
 
 #include "machine/cpu/decoded_instruction.h"
+#if defined(BMSX_NATIVE_IR_TRACE)
+#include "machine/cpu/jit/ir/dump.h"
+#endif
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/ir/region.h"
 #include "machine/cpu/jit/ir/liveness.h"
@@ -51,6 +54,9 @@ std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 	NativeIrRegion ir(sources, uses, bindings.cpu != nullptr, options, specializations);
 	const auto plans = ir.blocks();
 	if (plans.empty()) return {};
+#if defined(BMSX_NATIVE_IR_TRACE)
+	traceNativeIr(ir);
+#endif
 
 	auto region = std::make_shared<NativeCodeRegion>();
 	region->ram = bindings.ram;

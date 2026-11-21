@@ -723,6 +723,30 @@ void rejectedReceiverDoesNotAdvertiseAFieldDatapath() {
 		"an operation that always leaves has no emitted checked address");
 }
 
+void dumpDistinguishesFoldedEdgesFromPublicEntries() {
+	constexpr u32 pc = 0x5500, fallthrough = pc + 8, taken = pc + 16;
+	std::array decoded{
+		DecodedInstruction{.op = static_cast<u8>(OpCode::KTRUE)},
+		DecodedInstruction{.op = static_cast<u8>(OpCode::JMPIF)},
+		DecodedInstruction{.op = static_cast<u8>(OpCode::HALT)},
+		DecodedInstruction{.op = static_cast<u8>(OpCode::HALT)},
+	};
+	for (auto& row : decoded) { row.width = 1; row.baseCycles = BASE_CYCLES[row.op]; }
+	decoded[1].setBx(taken);
+	const std::array entry{NativeBlockInstruction{&decoded[0], pc}, NativeBlockInstruction{&decoded[1], pc + 4}};
+	const std::array left{NativeBlockInstruction{&decoded[2], fallthrough}};
+	const std::array right{NativeBlockInstruction{&decoded[3], taken}};
+	const std::array sources{NativeBlockSource{entry}, NativeBlockSource{left}, NativeBlockSource{right}};
+	NativeRegisterUses uses;
+	NativeIrRegion region(sources, uses);
+	std::ostringstream report;
+	dumpNativeIr(report, region);
+	const auto text = report.str();
+	require(text.find("edge b1 eliminated") != std::string::npos && text.find("edge b2\n") != std::string::npos
+		&& text.find("block b1 pc=") != std::string::npos,
+		"folding an edge neither advertises it as emitted nor deletes the independent entry");
+}
+
 void recordPlanUsesTypedEntriesAndFullRomWords() {
 	DecodedInstruction allocation{.c = 2, .op = static_cast<u8>(OpCode::NEWT)};
 	DecodedInstruction first{.payload = DecodedInstruction::Payload::tableSlot(-1), .c = -1, .op = static_cast<u8>(OpCode::SETFIELD)};
@@ -826,6 +850,7 @@ int main() {
 		nativeTableGuardProvesTheFollowingReceiver();
 		dataflowPlansTableAndMemoryInputs();
 		rejectedReceiverDoesNotAdvertiseAFieldDatapath();
+		dumpDistinguishesFoldedEdgesFromPublicEntries();
 		recordPlanUsesTypedEntriesAndFullRomWords();
 		registerUses();
 		return 0;

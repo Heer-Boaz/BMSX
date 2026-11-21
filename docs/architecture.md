@@ -145,6 +145,11 @@ constant selectors and ordered operands; CPU execution binds the actual
 keys and publishes the allocated record. The IR is transient, not a second
 representation of machine state.
 
+Diagnostic builds with `BMSX_NATIVE_IR_TRACE=ON` can print the finalized
+production IR before lowering. Set `BMSX_NATIVE_IR` to a hexadecimal guest
+instruction PC to select matching compilations, or to `all` for every region.
+Output goes to stderr and is separate from timing or code-cache profiling.
+
 Frame entry and value placement belong to the CPU, thread and slot owners,
 not to generated opcode bodies. The native runtime admits a transfer before
 changing either frame and borrows the live continuation only for that
