@@ -101,6 +101,7 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 	const u32 rootPc = pagePc + static_cast<u32>(firstRoot - source.roots.begin()) * INSTRUCTION_BYTES;
 	NativeCompilationMeasurement measurement(profile, image.executionDomainId, source.slot, rootPc);
 	if (m_nativeCodeBytes >= NATIVE_CODE_CACHE_MAX_BYTES) {
+		if (coldImage) return; // Optional boot work does not evict resident code.
 		measurement.phase(&NativeCompilationProfile::retirementNanoseconds);
 		const auto before = m_nativeCodeBytes;
 		for (auto& installed : m_executionImagesByDomain) {
@@ -173,7 +174,9 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
 	auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(m_memory, m_stringPool, this, page.words.data()), options,
 		{.rejectedFieldProofs = rejectedFieldProofs});
-	if (!blocks.empty()) installNativeRegion(image, page, pagePc, source.slot, std::move(blocks));
+	if (blocks.empty()) return;
+	if (coldImage && blocks.front()->region->codeBytes > NATIVE_CODE_CACHE_MAX_BYTES - m_nativeCodeBytes) return;
+	installNativeRegion(image, page, pagePc, source.slot, std::move(blocks));
 }
 
 } // namespace bmsx

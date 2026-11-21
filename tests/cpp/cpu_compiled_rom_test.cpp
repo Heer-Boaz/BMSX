@@ -403,7 +403,10 @@ void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
 	const auto domain = cartridgeBound ? 0 : SYSTEM_EXECUTION_DOMAIN_ID;
 	const u32 function = cartridgeBound ? card0.functionAddresses[0] : system.functionAddresses[0];
 	for (auto* machine : {&native, &scalar}) {
-		if (cartridgeBound) machine->cpu.runUntilDepth(0, 7);
+		if (cartridgeBound) {
+			machine->cpu.runUntilDepth(0, 7);
+			machine->cpu.runUntilDepth(0, 0); // Service startup before profiling hot worker requests.
+		}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 		if (machine == &native) machine->cpu.setNativeCompilationProfiling(true);
 #endif
@@ -519,6 +522,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 		machine->memory.writeBytes(code, launcher.text.data() + 9u * INSTRUCTION_BYTES, 2u * INSTRUCTION_BYTES);
 		require(machine->cpu.runUntilDepth(0, 7) == RunResult::Yielded && machine->cpu.readFrameExecutionDomain(0) == 0,
 			"EXEC establishes socket 0 before SELECT changes");
+		machine->cpu.runUntilDepth(0, 0);
 		machine->memory.writeMappedWord(IO_CART_SELECT, 1);
 		require(machine->memory.readMappedU32LE(card0.functionAddresses[1]) == card1.textAddress + 8u * INSTRUCTION_BYTES,
 			"ordinary data reads see the different record fitted to socket 1");

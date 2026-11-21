@@ -110,8 +110,10 @@ caches. Checkpoints contain guest state, never generated functions, executable
 pointers or cache-link topology.
 
 In the native tier, the CPU decoder owns instruction words and the source
-graph admits bounded runs for compilation. The compiler entry point in
-`machine/cpp/machine/cpu/jit/` accepts those runs and a snapshot of speculation
+graph admits bounded runs for compilation. Cold image warm-up is advisory;
+the native grant boundary consumes a queued cartridge entry in a bounded
+batch, while other code uses execution-time admission. The compiler entry point
+in `machine/cpp/machine/cpu/jit/` accepts those runs and a snapshot of speculation
 feedback, not an installed execution image or a copy of its value bank.
 The `ir/` translation selects typed operations and continuation boundaries,
 records semantic exits and scalar resume points, and runs optimization on

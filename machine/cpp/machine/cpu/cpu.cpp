@@ -333,8 +333,8 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	image->globalNameCount = globalNameCount;
 	image->systemNameCount = systemGlobalNameCount;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	image->nativeFunctionTable = readLE32(header + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET);
-	image->nativeFunctionCount = readLE32(header + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET);
+	image->nativeWarmup.functionTable = readLE32(header + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET);
+	image->nativeWarmup.functionCount = readLE32(header + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET);
 #endif
 	if (const u32 bytes = image->globalMapBytes()) {
 		image->globalMapBase = restoring ? (*restoredBases)[1] : m_luaHeap.allocateRecord(bytes, true, 0, 0);
@@ -798,11 +798,6 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 		hardHalt();
 		return;
 	}
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	// Ordinary EXEC selection has established the image's constant/name banks.
-	// Preparation changes only host code caches, before any target instruction.
-	if (m_functionRecordLatch.image->executionDomainId >= 0) prepareNativeImageCode(*m_functionRecordLatch.image);
-#endif
 	clearCallStack();
 	latchActiveExecutionImage(m_functionRecordLatch.image->executionDomainId, m_functionRecordLatch.image);
 	m_programExecutionDomainId = m_functionRecordLatch.image->executionDomainId;
@@ -819,6 +814,12 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_yieldRequested = false;
 	u32 closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
 	pushFrame(closure, {}, {});
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	// A later native grant may warm this entry. EXEC only commits the machine
+	// activation and never waits for or runs the compiler itself.
+	auto& warmup = m_activeExecutionImage->nativeWarmup;
+	if (m_activeExecutionDomainId >= 0 && !warmup.prepared) warmup.entryPc = m_functionRecordLatch.codeAddress;
+#endif
 }
 
 void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
@@ -2175,6 +2176,10 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target)
 RunResult CPU::runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBudget) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	cpu.publishNativeCompilation();
+#endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	if (auto* image = cpu.m_activeExecutionImage; image && image->nativeWarmup.entryPc)
+		cpu.prepareNativeImageCode(*image);
 #endif
 	if (targetDepth == 0) {
 		return cpu.runLoop<true, false>(targetDepth, instructionBudget);

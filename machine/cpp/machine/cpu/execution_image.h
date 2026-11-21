@@ -57,6 +57,13 @@ struct NativeBlockPage {
 	std::array<std::unique_ptr<NativeBlock>, DECODED_PAGE_WORDS> entries{};
 	u32 count = 0;
 };
+
+// Advisory boot policy for this resident image, never guest or saved state.
+struct NativeImageWarmup {
+	u32 functionTable = 0, functionCount = 0;
+	std::optional<u32> entryPc;
+	bool prepared = false;
+};
 #endif
 
 struct DecodedInstructionPage {
@@ -99,7 +106,7 @@ struct Blua32ExecutionImage {
 	u32 globalNameCount = 0, systemNameCount = 0;
 	u32 globalMapBytes() const { return 4u * (globalNameCount + systemNameCount); }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	u32 nativeFunctionTable = 0, nativeFunctionCount = 0;
+	NativeImageWarmup nativeWarmup;
 	// Dispatch storage outlives the decoded descriptors which borrow its cells.
 	std::unique_ptr<NativeCodeLookup> nativeCodeLookup;
 	std::array<NativeRomCallBinding, NativeRomCallBinding::slotCount> nativeRomCallBindings{};

@@ -98,9 +98,18 @@ struct Fixture {
 	void execute() {
 		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::LOADK)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::MTC0)];
+		const auto requests = cpu().readNativeCompilationProfile().prepareRequests;
 		require(cpu().runUntilDepth(0, grant) == RunResult::Yielded && cpu().instructionBudgetRemaining == 0
 			&& cpu().isCartridgeExecutionActive() && cpu().readFramePc(0) == cart.textAddress,
 			"EXEC completes its own exact grant before the first cartridge instruction");
+		require(cpu().readNativeCompilationProfile().prepareRequests == requests,
+			"EXEC commits without running native preparation inside the guest instruction");
+	}
+
+	void prepareAtGrantBoundary() {
+		require(cpu().runUntilDepth(0, 0) == RunResult::Yielded && cpu().instructionBudgetRemaining == 0
+			&& cpu().readFramePc(0) == cart.textAddress,
+			"a normal grant boundary can prepare the image without executing its first instruction");
 	}
 };
 
@@ -113,17 +122,22 @@ const NativeBlock* entryAt(CPU& cpu, u32 pc, u32 slot) {
 }
 
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
-void cartridgePreparationDrainsTheExistingWorker() {
+void cartridgePreparationFollowsWorkerPublication() {
 	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridgeProgram("worker")), 0, true);
 	require(machine.cpu().runUntilDepth(0, 2 * NATIVE_BLOCK_COMPILATION_THRESHOLD) == RunResult::Yielded
 		&& machine.cpu().readNativeCompilationProfile().prepareRequests == 1,
 		"the real BIOS warm loop submits one ordinary compiler-worker job");
+	const auto* systemPage = machine.cpu().rootThread()->currentFrame->decodedPage;
+	const auto systemWord = (machine.cpu().readFramePc(0) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	machine.cpu().beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, machine.system.functionAddresses[0]);
 	machine.execute();
+	require(!entryAt(machine.cpu(), machine.cart.textAddress, 0), "the exact EXEC grant does not install cartridge code");
+	test::waitForNativeEntry(machine.cpu(), *systemPage, systemWord);
+	machine.prepareAtGrantBoundary();
 	const auto profile = machine.cpu().readNativeCompilationProfile();
 	require(profile.backgroundCompleted == 1 && profile.backgroundCancelled == 0
 		&& entryAt(machine.cpu(), machine.cart.textAddress, 0),
-		"cartridge cold compilation waits for and publishes the existing worker through its normal owner");
+		"cartridge preparation follows ordinary worker publication at the grant boundary");
 }
 #endif
 
@@ -142,13 +156,16 @@ void coldExecPreservesGuestStateAndBanks() {
 		ordinary.cpu().prepareSystemNativeCode();
 		prepared.execute();
 		ordinary.execute();
+		require(!entryAt(prepared.cpu(), rom.textAddress, slot), "exact EXEC does not prepare its target");
+		prepared.prepareAtGrantBoundary();
+		ordinary.prepareAtGrantBoundary();
 		require(encodeRuntimeSaveState(captureRuntimeSaveState(prepared.runtime))
 			== encodeRuntimeSaveState(captureRuntimeSaveState(ordinary.runtime))
 			&& prepared.reads == 0 && ordinary.reads == 0,
 			"cold compilation adds no guest heap/names/registers, clock, MMIO, fault or scheduler changes to ordinary EXEC");
 		for (const u32 word : {0u, 4u, 64u, static_cast<u32>(DECODED_PAGE_WORDS)}) {
 			require(entryAt(prepared.cpu(), rom.textAddress + word * INSTRUCTION_BYTES, slot),
-				"EXEC prepares cold cartridge roots and helper continuations in their physical slot");
+					"native preparation publishes cartridge roots and continuations in their physical slot");
 		}
 		require(!entryAt(ordinary.cpu(), rom.textAddress, slot), "the no-hint control remains ordinary cold execution");
 		if (slot == 1u) {
@@ -180,6 +197,8 @@ void preparedCodeReadsTheLiveConstantBank() {
 	Fixture prepared(rom), scalar(withoutHints(rom));
 	prepared.execute();
 	scalar.execute();
+	prepared.prepareAtGrantBoundary();
+	scalar.prepareAtGrantBoundary();
 	const auto* compiled = entryAt(prepared.cpu(), rom.textAddress, 0);
 	require(compiled && !entryAt(scalar.cpu(), rom.textAddress, 0), "only the prepared CPU has installed this entry");
 	const auto initialize = [](Fixture& machine) {
@@ -234,12 +253,13 @@ void coldExecLetsNumericFieldChainsWarm() {
 	for (const bool inherited : {false, true}) {
 		Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, image));
 		machine.execute();
+		machine.prepareAtGrantBoundary();
 		auto& cpu = machine.cpu();
 		const u32 root = machine.cart.textAddress, pc = root + INSTRUCTION_BYTES;
 		const auto* cold = entryAt(cpu, root, 0);
 		require(cold && cold->terminal.currentPc == pc && entryAt(cpu, pc + INSTRUCTION_BYTES, 0)
 			&& entryAt(cpu, root + 64u * INSTRUCTION_BYTES, 0),
-			"EXEC compiles the whole source, using a generic continuation until the types stabilize");
+				"prepared code uses a generic continuation until the types stabilize");
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		auto receiver = cpu.createTable(0, 1);
 		auto holder = receiver;
@@ -325,6 +345,8 @@ void recordConstructorPreservesGrantAndLayout() {
 		Fixture prepared(rom), scalar(withoutHints(rom));
 		prepared.execute();
 		scalar.execute();
+		prepared.prepareAtGrantBoundary();
+		scalar.prepareAtGrantBoundary();
 		for (auto* machine : {&prepared, &scalar}) {
 			auto& frame = *machine->cpu().activeThread()->frameAtDepth(0);
 			frame.registers.set(1, valueBool(false));
@@ -336,7 +358,7 @@ void recordConstructorPreservesGrantAndLayout() {
 		}
 		const u32 start = rom.textAddress;
 		auto* plan = entryAt(prepared.cpu(), start, 0)->terminal.recordConstructor;
-		require(plan && plan->count == 5 && plan->partialMask == 0, "EXEC prepares the exact fixed-key recipe");
+		require(plan && plan->count == 5 && plan->partialMask == 0, "native preparation plans the exact fixed-key recipe");
 		// The final store can overdraw by its own charge. A shorter grant
 		// must still expose the original instruction frontier and table state.
 		const int grant = allocateCycles + (shortGrant ? 2 * fieldCycles : 4 * fieldCycles + 1);
@@ -375,6 +397,8 @@ void recordConstructorPreservesGrantAndLayout() {
 		Fixture prepared(rom), scalar(withoutHints(rom));
 		prepared.execute();
 		scalar.execute();
+		prepared.prepareAtGrantBoundary();
+		scalar.prepareAtGrantBoundary();
 		const auto* recipe = entryAt(prepared.cpu(), rom.textAddress, 0)->terminal.recordConstructor;
 		require(recipe && recipe->continuation[0] && *recipe->continuation[0],
 			"publication binds the completed recipe to its warm successor");
@@ -390,6 +414,7 @@ void recordConstructorPreservesGrantAndLayout() {
 	{
 		Fixture prepared(rom);
 		prepared.execute();
+		prepared.prepareAtGrantBoundary();
 		const u32 firstFieldPc = rom.textAddress + INSTRUCTION_BYTES;
 		auto& cpu = prepared.cpu();
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
@@ -408,6 +433,7 @@ void recordConstructorPreservesGrantAndLayout() {
 		Fixture observed(rom);
 		if (lateObserver) {
 			observed.execute();
+			observed.prepareAtGrantBoundary();
 			require(entryAt(observed.cpu(), rom.textAddress, 0)->terminal.recordConstructor,
 				"the recipe is installed before replacing the observer");
 		}
@@ -423,6 +449,7 @@ void recordConstructorPreservesGrantAndLayout() {
 			require(!entryAt(observed.cpu(), rom.textAddress, 0), "a late observer retires the prepared recipe");
 		else {
 			observed.execute();
+			observed.prepareAtGrantBoundary();
 			require(!entryAt(observed.cpu(), rom.textAddress, 0)->terminal.recordConstructor,
 				"constructor preparation cannot cross an observed guest instruction");
 		}
@@ -438,6 +465,8 @@ void recordConstructorUsesLiveKeys() {
 	Fixture prepared(rom), scalar(withoutHints(rom));
 	prepared.execute();
 	scalar.execute();
+	prepared.prepareAtGrantBoundary();
+	scalar.prepareAtGrantBoundary();
 	const u32 pc = rom.textAddress;
 	const auto* entry = entryAt(prepared.cpu(), pc, 0);
 	const int grant = allocateCycles + 5 * fieldCycles;
@@ -473,10 +502,12 @@ void repeatExecAndRestoreHaveDistinctPolicies() {
 	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridgeProgram("repeat")));
 	machine.cpu().prepareSystemNativeCode();
 	machine.execute();
+	machine.prepareAtGrantBoundary();
 	const auto first = machine.cpu().readNativeCompilationProfile();
 	machine.cpu().requestNonMaskableInterrupt();
 	require(machine.cpu().enterPendingInterrupt(), "NMI enters the system EXEC handler");
 	machine.execute();
+	machine.prepareAtGrantBoundary();
 	const auto repeated = machine.cpu().readNativeCompilationProfile();
 	require(first.codeBytes == repeated.codeBytes && first.prepareRequests == repeated.prepareRequests,
 		"repeated EXEC reuses installed cartridge entries without accumulating duplicate native code");
@@ -492,6 +523,19 @@ void repeatExecAndRestoreHaveDistinctPolicies() {
 	require(encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == restored
 		&& machine.cpu().readNativeCompilationProfile().prepareRequests == repeated.prepareRequests,
 		"repeated restore preserves the ordinary restored state without cold compilation");
+}
+
+void instrumentedGrantsDoNotPrepareNativeCode() {
+	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridgeProgram("instrumented")));
+	auto& cpu = machine.cpu();
+	cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
+	machine.execute();
+	machine.prepareAtGrantBoundary();
+	require(cpu.readNativeCompilationProfile().prepareRequests == 0 && !entryAt(cpu, machine.cart.textAddress, 0),
+		"the instrumented interpreter does not service native startup work");
+	cpu.setExecutionHook({});
+	machine.prepareAtGrantBoundary();
+	require(entryAt(cpu, machine.cart.textAddress, 0), "the normal grant boundary owns queued native startup work");
 }
 
 void residentExecDoesNotReopenTheBootHeader() {
@@ -510,6 +554,9 @@ void residentExecDoesNotReopenTheBootHeader() {
 	machine.execute();
 	require(machine.cpu().rootThread()->currentFrame->executionImage == image,
 		"EXEC uses the resident image rather than requiring another boot header");
+	machine.prepareAtGrantBoundary();
+	require(entryAt(machine.cpu(), machine.cart.textAddress, 0),
+		"resident hints select native source from the newly installed physical ROM");
 	require(machine.cpu().runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::K1)]) == RunResult::Yielded
 		&& machine.cpu().readFrameRegister(0, 0) == valueInteger(1),
 		"the resident image fetches the installed replacement instruction");
@@ -522,6 +569,7 @@ void descriptiveTablesAndStaticAcceptanceRemainIndependent() {
 		Fixture machine(std::move(rom));
 		const auto fault = machine.runtime.machine.memory.readBusFaultSequence();
 		machine.execute();
+		machine.prepareAtGrantBoundary();
 		require(machine.cpu().readNativeCompilationProfile().codeBytes == 0 && machine.reads == 0
 			&& machine.runtime.machine.memory.readBusFaultSequence() == fault,
 			"unbacked descriptive tables cannot become new EXEC admission or MMIO/fault requirements");
@@ -542,6 +590,7 @@ void hintsDoNotBoundReachableCode() {
 	image.functions[0].wordCount = 1;
 	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, image));
 	machine.execute();
+	machine.prepareAtGrantBoundary();
 	require(entryAt(machine.cpu(), machine.cart.textAddress + MAPPED_PAGE_BYTE_SIZE, 0),
 		"cold discovery follows backed cross-page branches beyond descriptive function extents");
 	require(machine.cpu().runUntilDepth(0, 1) == RunResult::Yielded
@@ -560,6 +609,7 @@ void crossPageWideSourceUsesItsPhysicalSlot() {
 	writeInstruction(image.text, word + 2u, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, image), 1u);
 	machine.execute();
+	machine.prepareAtGrantBoundary();
 	const auto* block = entryAt(machine.cpu(), machine.cart.textAddress + word * INSTRUCTION_BYTES, 1u);
 	require(block && block->sourceWords >= 2u,
 		"cold cartridge discovery owns a WIDE body's dependency across its physical ROM page");
@@ -570,34 +620,47 @@ void crossPageWideSourceUsesItsPhysicalSlot() {
 		"the prepared cross-page function and operands stay pinned to slot one after socket selection changes");
 }
 
-void capacityRetirementInsideNativeExecKeepsTheGateAlive() {
-	auto image = cartridgeProgram("capacity");
-	constexpr u32 fillerCount = 8192u;
-	image.text.resize((fillerCount + 3u) * MAPPED_PAGE_BYTE_SIZE);
-	for (u32 index = 0; index < fillerCount; ++index) {
-		const u32 first = (index + 3u) * DECODED_PAGE_WORDS;
-		for (u32 word = 0; word < DECODED_PAGE_WORDS - 1u; ++word)
-			writeInstruction(image.text, first + word, static_cast<u8>(OpCode::GETFIELD), 0, 0, 0);
-		writeInstruction(image.text, first + DECODED_PAGE_WORDS - 1u, static_cast<u8>(OpCode::RET), 0, 1, 0);
-		image.functions.push_back({.firstWord=first, .wordCount=DECODED_PAGE_WORDS});
+void boundedWarmupLeavesDistantBranchesToHotCompilation() {
+	test::Blua32TestImage image;
+	constexpr u32 pages = NATIVE_IMAGE_WARMUP_MAX_PAGES + 7u;
+	image.text.resize(pages * MAPPED_PAGE_BYTE_SIZE);
+	image.functions = {{.firstWord = 0, .wordCount = 1}};
+	for (u32 page = 0; page < pages; ++page) {
+		const u32 displacement = page + 1u == pages ? 0x000fffffu : DECODED_PAGE_WORDS - 1u;
+		writeInstruction(image.text, page * DECODED_PAGE_WORDS, static_cast<u8>(OpCode::JMP), 0,
+			(displacement >> 6u) & 63u, displacement & 63u, displacement >> 12u);
 	}
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
 	Fixture prepared(rom), ordinary(withoutHints(rom));
 	prepared.cpu().prepareSystemNativeCode();
 	ordinary.cpu().prepareSystemNativeCode();
-	require(entryAt(prepared.cpu(), prepared.system.textAddress, 0), "EXEC is entered through actual prepared system code");
+	const auto* biosEntry = entryAt(prepared.cpu(), prepared.system.textAddress, 0);
+	require(biosEntry, "EXEC is entered through actual prepared system code");
 	prepared.execute();
 	ordinary.execute();
+	require(prepared.cpu().rootThread()->currentFrame->executionImage->decodedPages.empty(),
+		"EXEC does not decode the target graph");
+	prepared.prepareAtGrantBoundary();
+	ordinary.prepareAtGrantBoundary();
 	const auto profile = prepared.cpu().readNativeCompilationProfile();
-	require(profile.capacityFlushes > 0 && profile.capacityRetiredCodeBytes >= NATIVE_CODE_CACHE_MAX_BYTES,
-		"cartridge preparation crosses the real shared cache limit and retires its executing BIOS source");
+	const u32 distant = rom.textAddress + (pages - 1u) * MAPPED_PAGE_BYTE_SIZE;
+	require(prepared.cpu().rootThread()->currentFrame->executionImage->decodedPages.size() == NATIVE_IMAGE_WARMUP_MAX_PAGES
+		&& entryAt(prepared.cpu(), rom.textAddress, 0) && !entryAt(prepared.cpu(), distant, 0)
+		&& profile.capacityFlushes == 0u,
+		"startup work is bounded in decoded pages as well as emitted code");
 	require(encodeRuntimeSaveState(captureRuntimeSaveState(prepared.runtime))
 		== encodeRuntimeSaveState(captureRuntimeSaveState(ordinary.runtime)) && prepared.reads == 0,
-		"retirement inside native EXEC returns through the stable gate without stale descriptors or guest effects");
-	test::runCpuParity(prepared.cpu(), ordinary.cpu(), 3);
+		"bounded warmup adds no architectural effects to native EXEC");
+	const int jumpCycles = BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+	test::runCpuParity(prepared.cpu(), ordinary.cpu(), (pages - 1u) * jumpCycles);
+	require(prepared.cpu().readFramePc(0) == distant && !entryAt(prepared.cpu(), distant, 0),
+		"native and ordinary execution reach a target outside the startup batch at the same frontier");
+	test::runCpuParity(prepared.cpu(), ordinary.cpu(), NATIVE_BLOCK_COMPILATION_THRESHOLD * jumpCycles);
+	const auto& frame = *prepared.cpu().rootThread()->currentFrame;
+	test::waitForNativeEntry(prepared.cpu(), *frame.decodedPage, (distant & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	require(encodeRuntimeSaveState(captureRuntimeSaveState(prepared.runtime))
-		== encodeRuntimeSaveState(captureRuntimeSaveState(ordinary.runtime)),
-		"the first cartridge instructions remain exact after capacity retirement");
+		== encodeRuntimeSaveState(captureRuntimeSaveState(ordinary.runtime)) && entryAt(prepared.cpu(), distant, 0),
+		"ordinary hot compilation installs the later entry without changing guest state");
 }
 
 void observationsAndUnusedHintsStayAtExecution() {
@@ -622,6 +685,7 @@ void observationsAndUnusedHintsStayAtExecution() {
 	machine.cpu().setInstructionObserver(std::move(observer));
 	const auto fault = machine.runtime.machine.memory.readBusFaultSequence();
 	machine.execute();
+	machine.prepareAtGrantBoundary();
 	require(observations == 0 && machine.reads == 0 && machine.runtime.machine.memory.readBusFaultSequence() == fault
 		&& !entryAt(machine.cpu(), machine.cart.textAddress, 0)
 		&& entryAt(machine.cpu(), machine.cart.textAddress + 64u * INSTRUCTION_BYTES, 0),
@@ -640,14 +704,15 @@ int main() {
 		recordConstructorPreservesGrantAndLayout();
 		recordConstructorUsesLiveKeys();
 		repeatExecAndRestoreHaveDistinctPolicies();
+		instrumentedGrantsDoNotPrepareNativeCode();
 		residentExecDoesNotReopenTheBootHeader();
 		observationsAndUnusedHintsStayAtExecution();
 		descriptiveTablesAndStaticAcceptanceRemainIndependent();
 		hintsDoNotBoundReachableCode();
 		crossPageWideSourceUsesItsPhysicalSlot();
-		capacityRetirementInsideNativeExecKeepsTheGateAlive();
+		boundedWarmupLeavesDistantBranchesToHotCompilation();
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
-		cartridgePreparationDrainsTheExistingWorker();
+		cartridgePreparationFollowsWorkerPublication();
 #endif
 		std::cout << "CART-PRECOMPILE:PASS\n";
 		return 0;
