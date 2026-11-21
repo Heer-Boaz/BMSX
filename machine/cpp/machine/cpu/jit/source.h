@@ -18,8 +18,8 @@ struct DecodedInstructionPage;
 // preparation pass retains one per page until all incoming roots are discovered.
 struct NativeCompilationSource {
 	NativeCompilationSource(DecodedInstructionPage& page,
-		MappedPageBinding binding, u32 pagePc, MappedBusSignals busSignals, u32 slot)
-		: page(page), binding(binding), pagePc(pagePc), busSignals(busSignals), slot(slot) {}
+		MappedPageBinding binding, u32 pagePc, MappedBusSignals busSignals, u32 slot, bool verifiedRom = false)
+		: page(page), binding(binding), pagePc(pagePc), busSignals(busSignals), slot(slot), verifiedRom(verifiedRom) {}
 
 	void enqueue(u32 pc, bool leader, std::vector<u32>* outgoing = nullptr, bool root = false) {
 		if (pc < firstPc || pc > lastPc) return;
@@ -39,6 +39,7 @@ struct NativeCompilationSource {
 	u32 pagePc;
 	MappedBusSignals busSignals;
 	u32 slot;
+	bool verifiedRom;
 	u32 firstPc = 0u, lastPc = ~0u;
 	std::array<u8, DECODED_PAGE_WORDS> roots{}, queued{}, available{};
 	std::bitset<DECODED_PAGE_WORDS> leaders;

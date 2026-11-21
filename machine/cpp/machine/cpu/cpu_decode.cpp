@@ -301,18 +301,35 @@ bool CPU::decodeBackedInstruction(
 ) {
 	MappedPageBinding binding;
 	m_memory.bindMappedPage(pc & ~MAPPED_PAGE_BYTE_MASK, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
-	if (!binding.cacheable || !binding.readBytes) return false;
-	const u32 sourceWord = readLE32(binding.readBytes + pageOffset * INSTRUCTION_BYTES);
+	if (!binding.cacheable) return false;
+	const auto readPublishedWord = [&](u32 address, u32& word) {
+		// The verified publication can end in a partially backed physical
+		// page. Only a verified head and its body may use the exact ROM view.
+		const auto& functions = image.romFunctions;
+		const u32 slot = m_memory.cartridgeController().selectedSlot(busSignals);
+		if (!functions.instructionHead(pc)
+			|| (image.executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID && static_cast<u32>(image.executionDomainId) != slot))
+			return false;
+		Span<const u8> view;
+		if (!m_memory.bindRomByteView(address, INSTRUCTION_BYTES, slot, view)) return false;
+		word = readLE32(view.data());
+		return true;
+	};
+	u32 sourceWord;
+	if (binding.readBytes) sourceWord = readLE32(binding.readBytes + pageOffset * INSTRUCTION_BYTES);
+	else if (!readPublishedWord(pc, sourceWord)) return false;
 	u32 bodyWord = sourceWord;
 	DecodedInstructionPage* bodyPage = nullptr;
 	if (instructionOpcode(sourceWord) == static_cast<u8>(OpCode::WIDE)) {
 		if (pageOffset == DECODED_PAGE_WORDS - 1u) {
 			MappedPageBinding bodyBinding;
 			m_memory.bindMappedPage(pc + INSTRUCTION_BYTES, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, bodyBinding);
-			if (!bodyBinding.cacheable || !bodyBinding.readBytes) return false;
+			if (!bodyBinding.cacheable) return false;
+			if (bodyBinding.readBytes) bodyWord = readLE32(bodyBinding.readBytes);
+			else if (!readPublishedWord(pc + INSTRUCTION_BYTES, bodyWord)) return false;
 			bodyPage = &decodedPageForAddress(image, bodyBinding);
-			bodyWord = readLE32(bodyBinding.readBytes);
-		} else bodyWord = readLE32(binding.readBytes + (pageOffset + 1u) * INSTRUCTION_BYTES);
+		} else if (binding.readBytes) bodyWord = readLE32(binding.readBytes + (pageOffset + 1u) * INSTRUCTION_BYTES);
+		else if (!readPublishedWord(pc + INSTRUCTION_BYTES, bodyWord)) return false;
 	}
 	decodeInstructionWords(image, page, pageOffset, pc, sourceWord, bodyWord, true, bodyPage);
 	return true;

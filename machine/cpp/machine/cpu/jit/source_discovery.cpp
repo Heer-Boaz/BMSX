@@ -39,7 +39,7 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 		const u32 successor = cursor + instruction.width;
 		const u32 successorPc = pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
 		if (nativeBlockComparison(instruction.op)) {
-			if (binding.readBytes && successor < DECODED_PAGE_WORDS && successorPc <= source.lastPc) {
+			if ((source.verifiedRom || binding.readBytes) && successor < DECODED_PAGE_WORDS && successorPc <= source.lastPc) {
 				if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) != 0u && successor < DECODED_PAGE_WORDS - 1u
 					&& !decodeBackedInstruction(image, page, successor, successorPc, source.busSignals)) continue;
 				if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) == 0u

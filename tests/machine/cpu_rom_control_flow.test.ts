@@ -11,7 +11,7 @@ import {
 	BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
 	BLUA32_IMAGE_FLAGS_OFFSET, BLUA32_IMAGE_FUNCTION_COUNT_OFFSET, BLUA32_IMAGE_MAPPED_CODE_FLAG,
 } from '../../machine/ts/spec/blua32/image_format';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { BASE_BX_BITS, INSTRUCTION_BYTES, MAX_LOW_OPERAND, MAX_OPERAND_BITS, MAX_BX_BITS, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -167,6 +167,32 @@ test('a WIDE relative branch uses the sign and origin of the two-word form', () 
 	writeInstruction(romBytes, head, OpCode.WIDE, 0, 63, 0);
 	writeInstruction(romBytes, head + 1, OpCode.JMP, 0, 63, 62, 255); // -2 words, back to the prefix.
 	assert.doesNotThrow(() => createTestSystemCpu({ romBytes }));
+});
+
+test('generated code links bounded windows around a WIDE split in a large published function', () => {
+	const text = new Uint8Array(5 * MAPPED_PAGE_BYTE_SIZE);
+	const source = { verifiedControlFlow: true, text, functions: [{ firstWord: 0, wordCount: text.length / INSTRUCTION_BYTES }] };
+	const { textAddress } = linkRawTestSystemBlua32(source).image.header;
+	const windowEnd = (textAddress & ~MAPPED_PAGE_BYTE_MASK) + 4 * MAPPED_PAGE_BYTE_SIZE;
+	const prefix = (windowEnd - textAddress) / INSTRUCTION_BYTES - 1;
+	for (let i = 0; i < source.functions[0].wordCount; ++i) writeInstruction(text, i, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, prefix, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, prefix + 1, OpCode.KSMI, 0, 0, 41);
+	for (const [from, to] of [[0, prefix], [prefix + 2, 0]]) {
+		const bx = (to - from - 1) & ((1 << BASE_BX_BITS) - 1);
+		writeInstruction(text, from, OpCode.JMP, 0,
+			(bx >>> MAX_OPERAND_BITS) & MAX_LOW_OPERAND, bx & MAX_LOW_OPERAND, bx >>> MAX_BX_BITS);
+	}
+	const linked = linkRawTestSystemBlua32(source);
+	const { cpu } = createTestSystemCpu(linked, CpuExecutionBackend.JavaScript);
+	assert.equal(cpu.runUntilDepth(0, 2_000), RunResult.Yielded);
+	assert.equal(cpu.readFrameRegister(0, 0), valueInteger(41));
+	const lookup = cpu.rootThread.currentFrame!.executionImage.compiledCodeLookup!;
+	const first = lookup.find(textAddress, 0)!.compiledBlocks!.entries[(textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const across = lookup.find(windowEnd - INSTRUCTION_BYTES, 0)!.compiledBlocks!.entries[MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES - 1];
+	assert.ok(first && across);
+	assert.notEqual(first.region, across.region);
+	assert.ok(lookup.find(windowEnd, 0)!.compiledBlocks!.entries[0] === null, 'the body word is not an entry');
 });
 
 test('the same executable extent may be named by multiple record addresses', () => {

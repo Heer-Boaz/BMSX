@@ -408,6 +408,96 @@ void crossPageWideDependenciesRemainOwned() {
 		"the adaptive compilation worker also publishes both pages in one region");
 }
 
+void verifiedSinglePagePreparationSharesTheColdBatch() {
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	image.text.resize(4u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K0), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord=0, .wordCount=2}, {.firstWord=2, .wordCount=2}};
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	Fixture cold(rom), adaptive(rom);
+	const u32 root = rom.textAddress, sibling = root + 2u * INSTRUCTION_BYTES;
+	auto& prepared = cold.runtime.machine.cpu;
+	prepared.prepareSystemNativeCode();
+	const auto* first = entryAt(prepared, root);
+	const auto* second = entryAt(prepared, sibling);
+	require(first && second && first->region == second->region,
+		"same-page verified functions compile in one cold batch, even on a partially backed page");
+	auto& warmed = adaptive.runtime.machine.cpu;
+	for (u32 visit = 0; visit <= NATIVE_BLOCK_COMPILATION_THRESHOLD; ++visit) {
+		warmed.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], root);
+		require(warmed.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::K0)]) == RunResult::Yielded,
+			"the first instruction keeps its exact grant while becoming warm");
+	}
+	const auto& page = warmed.rootThread()->currentFrame->executionImage->decodedPages.at(root & ~MAPPED_PAGE_BYTE_MASK);
+	test::waitForNativeEntry(warmed, page, (root & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+	require(!entryAt(warmed, sibling), "adaptive preparation does not absorb the neighboring function");
+}
+
+void wideFunctionUsesDemandedBoundedRegions() {
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	image.text.resize(5u * MAPPED_PAGE_BYTE_SIZE);
+	image.functions = {{.firstWord=0, .wordCount=2}};
+	const auto initial = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	const u32 boundary = (initial.textAddress & ~MAPPED_PAGE_BYTE_MASK) + NATIVE_VERSION_REGION_MAX_PAGES * MAPPED_PAGE_BYTE_SIZE;
+	const u32 prefix = (boundary - initial.textAddress) / INSTRUCTION_BYTES - 1u;
+	image.functions[0].wordCount = prefix + 3u;
+	image.text.resize((prefix + 3u) * INSTRUCTION_BYTES);
+	for (u32 word = 1; word < prefix; ++word) writeInstruction(image.text, word, static_cast<u8>(OpCode::K0), 0, 0, 0);
+	const u32 forward = prefix - 1u;
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMP), 0,
+		(forward >> 6u) & 63u, forward & 63u, forward >> 12u);
+	writeInstruction(image.text, prefix, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, prefix + 1u, static_cast<u8>(OpCode::KSMI), 0, 1, 13);
+	const u32 backward = (0u - (prefix + 3u)) & MAX_BASE_BX;
+	writeInstruction(image.text, prefix + 2u, static_cast<u8>(OpCode::JMP), 0,
+		(backward >> 6u) & 63u, backward & 63u, backward >> 12u);
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	require(rom.textAddress == initial.textAddress, "the WIDE prefix belongs at the selected window edge");
+	Fixture machine(rom), scalar(rom);
+	auto& cpu = machine.runtime.machine.cpu;
+	auto& reference = scalar.runtime.machine.cpu;
+	reference.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
+	const u32 root = rom.textAddress, wide = boundary - INSTRUCTION_BYTES, tail = boundary + INSTRUCTION_BYTES;
+	MappedPageBinding binding;
+	machine.runtime.machine.memory.bindMappedPage(boundary, MAPPED_BUS_INSTRUCTION_FETCH, binding);
+	require(binding.cacheable && !binding.readBytes, "the code tail does not physically back the whole final page");
+	const auto warm = [&](u32 pc, OpCode op, u32 next) {
+		for (u32 visit = 0; visit <= NATIVE_BLOCK_COMPILATION_THRESHOLD; ++visit) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], pc);
+			reference.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], pc);
+			test::runCpuParity(cpu, reference, BASE_CYCLES[static_cast<u8>(op)]);
+			require(cpu.readFramePc(0) == next, "external edges and WIDE retire at their precise PC and grant");
+		}
+		const auto& page = cpu.rootThread()->currentFrame->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
+		test::waitForNativeEntry(cpu, page, (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+	};
+	warm(root, OpCode::JMP, wide);
+	const auto* start = entryAt(cpu, root);
+	require(start && !entryAt(cpu, wide) && !entryAt(cpu, boundary),
+		"the first demand window cannot absorb a WIDE prefix with its body outside the window");
+	const auto& decoded = cpu.rootThread()->currentFrame->executionImage->decodedPages;
+	require(!decoded.contains((root & ~MAPPED_PAGE_BYTE_MASK) + MAPPED_PAGE_BYTE_SIZE),
+		"a page wholly bypassed by the root jump acquires no decoded workspace");
+
+	warm(wide, OpCode::KSMI, tail);
+	require(entryAt(cpu, root) == start, "a new demand window leaves the original region resident");
+	const auto* prefixEntry = entryAt(cpu, wide);
+	const auto* continuation = entryAt(cpu, tail);
+	require(prefixEntry && prefixEntry->sourceWords >= 2u && !entryAt(cpu, boundary)
+		&& continuation && continuation->region == prefixEntry->region && prefixEntry->region != start->region,
+		"demand at the prefix owns both words and the next head on the partial fifth page");
+	require(cpu.readFrameRegister(0, 0) == valueInteger(77), "the complete WIDE operand reached the result register");
+	test::runCpuParity(cpu, reference, BASE_CYCLES[static_cast<u8>(OpCode::JMP)]);
+	require(cpu.readFramePc(0) == root, "the separately prepared tail links backward by exact PC");
+}
+
 void descriptiveHintsAreBudgetedBeforeDiscovery() {
 	test::Blua32TestImage image;
 	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
@@ -445,6 +535,8 @@ int main() {
 		preparationPreservesConfiguredObservation();
 		preparationLeavesFetchFaultsAtExecution();
 		crossPageWideDependenciesRemainOwned();
+		verifiedSinglePagePreparationSharesTheColdBatch();
+		wideFunctionUsesDemandedBoundedRegions();
 		descriptiveHintsAreBudgetedBeforeDiscovery();
 		std::cout << "NATIVE-PRECOMPILE:PASS\n";
 		return 0;

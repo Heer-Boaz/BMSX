@@ -110,14 +110,28 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page,
 	if (!m_nativeCompilerWorker->idle()) return;
 #endif
 	auto& image = *frame.executionImage;
-	const auto version = image.romFunctions.find(frame.readControl(FrameField::Function));
-	if (version && version->contains(pc)
-		&& prepareNativeFunction(image, *version, pc, busSignals, NATIVE_VERSION_REGION_MAX_PAGES, false)) return;
+	const auto* version = image.romFunctions.find(frame.readControl(FrameField::Function));
+	const bool verified = version && !image.romFunctions.mappedCode;
 	const u32 pagePc = pc & ~MAPPED_PAGE_BYTE_MASK;
+	if (version) {
+		if (verified && !version->contains(pc)) return;
+		const bool singlePage = verified && version->entry.codeAddress >= pagePc
+			&& version->endPc - pagePc <= MAPPED_PAGE_BYTE_SIZE;
+		if (!singlePage) {
+			if (version->contains(pc) && prepareNativeFunction(image, *version, pc, busSignals,
+				NATIVE_VERSION_REGION_MAX_PAGES, false)) return;
+			// A verified prototype never supplies an unbounded page source.
+			if (verified) return;
+		}
+	}
 	MappedPageBinding binding;
 	m_memory.bindMappedPage(pagePc, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 	NativeCompilationSource source(page, binding, pagePc, busSignals,
-		m_memory.cartridgeController().selectedSlot(busSignals));
+		m_memory.cartridgeController().selectedSlot(busSignals), verified);
+	if (verified) {
+		source.firstPc = version->entry.codeAddress;
+		source.lastPc = version->endPc - INSTRUCTION_BYTES;
+	}
 	source.enqueue(pc, true, nullptr, true);
 	NativeCompilationSource* pages[] = {&source};
 	prepareNativeSources(image, pages, false);
@@ -152,7 +166,7 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 		const u32 pagePc = source->pagePc;
 		const auto& available = source->available;
 		auto& leaders = source->leaders;
-		const bool immutable = binding.readBytes && !binding.writeWatch.groups;
+		const bool immutable = source->verifiedRom || (binding.readBytes && !binding.writeWatch.groups);
 		if (immutable) {
 			leaders |= page.nativeSourceLeaders;
 			page.nativeSourceLeaders = leaders;
@@ -187,7 +201,7 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 				cursor = successor;
 			}
 			const DecodedInstruction* skippedInstruction = nullptr;
-			if (binding.readBytes && nativeBlockComparison(page.words[cursor].op)) {
+			if ((source->verifiedRom || binding.readBytes) && nativeBlockComparison(page.words[cursor].op)) {
 				const u32 successor = cursor + page.words[cursor].width;
 				if (successor < DECODED_PAGE_WORDS && (page.refreshState[successor] & DECODED_REFRESH_DECODE) == 0u
 					&& successor + page.words[successor].width <= DECODED_PAGE_WORDS

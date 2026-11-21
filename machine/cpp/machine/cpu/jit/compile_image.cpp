@@ -23,49 +23,81 @@ u32 CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunct
 	using Clock = std::chrono::steady_clock;
 	const u32 slot = m_memory.cartridgeController().selectedSlot(busSignals);
 	if (image.executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID && static_cast<u32>(image.executionDomainId) != slot) return 0u;
-	const u32 first = version.entry.codeAddress & ~MAPPED_PAGE_BYTE_MASK;
-	const u32 last = (version.endPc - 1u) & ~MAPPED_PAGE_BYTE_MASK;
-	const u32 count = (last - first) / MAPPED_PAGE_BYTE_SIZE + 1u;
-	if (count <= 1u || count > NATIVE_VERSION_REGION_MAX_PAGES || count > pageBudget || (coldImage && m_nativeCode.full())) return 0;
+	const auto& functions = image.romFunctions;
+	const bool verified = !functions.mappedCode;
+	const u32 bodyFirst = version.entry.codeAddress & ~MAPPED_PAGE_BYTE_MASK;
+	const u32 bodyLast = (version.endPc - 1u) & ~MAPPED_PAGE_BYTE_MASK;
+	const u32 bodyPages = (bodyLast - bodyFirst) / MAPPED_PAGE_BYTE_SIZE + 1u;
+	const size_t limit = std::min<size_t>(pageBudget, NATIVE_VERSION_REGION_MAX_PAGES);
+	if (limit == 0u || (coldImage && m_nativeCode.full())) return 0u;
+	// Keep the amortized per-page cold batch for small functions and cold
+	// demand for long bodies. The adaptive compiler alone can request a
+	// clipped window when the whole verified function exceeds the limit.
+	if ((!verified || coldImage) && (bodyPages <= 1u || bodyPages > limit)) return 0u;
+	const u32 first = bodyPages <= limit ? bodyFirst : rootPc & ~MAPPED_PAGE_BYTE_MASK;
+	const u32 count = std::min(static_cast<u32>(limit), (bodyLast - first) / MAPPED_PAGE_BYTE_SIZE + 1u);
+	const u32 firstPc = std::max(first, version.entry.codeAddress);
+	u32 endPc = std::min(version.endPc, first + count * MAPPED_PAGE_BYTE_SIZE);
+	// The body word of a WIDE is not a new entry. Stop before the prefix
+	// when the cap splits its encoding; a later request at the prefix
+	// starts a window in which both words fit.
+	if (endPc < version.endPc && !functions.instructionHead(endPc)) endPc -= INSTRUCTION_BYTES;
 	const u32 rootPage = (rootPc - first) / MAPPED_PAGE_BYTE_SIZE;
 	const auto discoveryStart = m_nativeCompilationProfiling ? Clock::now() : Clock::time_point{};
 	std::array<std::optional<NativeCompilationSource>, NATIVE_VERSION_REGION_MAX_PAGES> sources;
 	std::array<NativeCompilationSource*, NATIVE_VERSION_REGION_MAX_PAGES> region;
-	for (u32 index = 0; index < count; ++index) {
-		const u32 address = first + index * MAPPED_PAGE_BYTE_SIZE;
-		MappedPageBinding binding;
-		m_memory.bindMappedPage(address, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
-		if (!binding.readBytes || binding.writeWatch.groups) return 0;
-		auto& page = decodedPageForAddress(image, binding);
-		if (index == rootPage && page.nativeBlocks && page.nativeBlocks->entries[(rootPc - address) / INSTRUCTION_BYTES]) return 0u;
-		auto& source = sources[index].emplace(page, binding, address, busSignals, slot);
-		source.firstPc = version.entry.codeAddress;
-		source.lastPc = version.endPc - INSTRUCTION_BYTES;
-		region[index] = &source;
+	const auto bindSource = [&](u32 index) -> NativeCompilationSource* {
+		auto& source = sources[index];
+		if (!source) {
+			const u32 address = first + index * MAPPED_PAGE_BYTE_SIZE;
+			MappedPageBinding binding;
+			m_memory.bindMappedPage(address, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
+			if (!binding.cacheable || binding.writeWatch.groups || (!verified && !binding.readBytes)) return nullptr;
+			auto& page = decodedPageForAddress(image, binding);
+			source.emplace(page, binding, address, busSignals, slot, verified);
+			source->firstPc = firstPc;
+			source->lastPc = endPc - INSTRUCTION_BYTES;
+		}
+		return &*source;
+	};
+	// Mapped ROM hints still require a fully backed immutable span.
+	if (!verified) for (u32 index = 0; index < count; ++index)
+		if (!bindSource(index)) return 0u;
+	auto* root = bindSource(rootPage);
+	if (!root || (root->page.nativeBlocks
+		&& root->page.nativeBlocks->entries[(rootPc - root->pagePc) / INSTRUCTION_BYTES])) return 0u;
+	root->enqueue(rootPc, true, nullptr, true);
+	u32 ready = 1u << rootPage;
+	if (version.entry.codeAddress >= firstPc) {
+		if (auto* entry = bindSource(0)) {
+			entry->enqueue(version.entry.codeAddress, true, nullptr, true);
+			ready |= 1u;
+		}
 	}
-	region.front()->enqueue(version.entry.codeAddress, true, nullptr, true);
-	region[rootPage]->enqueue(rootPc, true, nullptr, true);
 	std::vector<u32> outgoing;
-	u32 ready = 1u | (1u << rootPage);
 	while (ready) {
 		const u32 index = static_cast<u32>(std::countr_zero(ready));
 		ready &= ready - 1u;
 		outgoing.clear();
-		discoverNativeSource(image, *region[index], &outgoing);
+		discoverNativeSource(image, *sources[index], &outgoing);
 		for (const u32 pc : outgoing) {
 			const u32 target = (pc - first) / MAPPED_PAGE_BYTE_SIZE;
-			auto& source = *region[target];
-			source.enqueue(pc, true);
-			if (source.discoveredCount < source.pendingCount) ready |= 1u << target;
+			if (auto* source = bindSource(target)) {
+				source->enqueue(pc, true);
+				if (source->discoveredCount < source->pendingCount) ready |= 1u << target;
+			}
 		}
 	}
+	size_t sourceCount = 0;
+	for (u32 index = 0; index < count; ++index)
+		if (sources[index]) region[sourceCount++] = &*sources[index];
 	if (m_nativeCompilationProfiling) {
 		const auto elapsed = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
 			Clock::now() - discoveryStart).count());
 		m_nativeCompilationProfile.discoveryNanoseconds += elapsed;
 		m_nativeCompilationProfile.prepareNanoseconds += elapsed;
 	}
-	prepareNativeSources(image, std::span(region).first(count), coldImage);
+	prepareNativeSources(image, std::span(region).first(sourceCount), coldImage);
 	return count;
 }
 
@@ -102,19 +134,20 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 		pageBudget -= prepareNativeFunction(image, version, version.entry.codeAddress, busSignals, pageBudget, true);
 	const auto discoveryStart = m_nativeCompilationProfiling ? Clock::now() : Clock::time_point{};
 	const auto enqueue = [&](u32 pc) -> NativeCompilationSource* {
-		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) return nullptr;
+		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u
+			|| (!functions.mappedCode && !functions.instructionHead(pc))) return nullptr;
 		if (system ? m_memory.mappedRegion(pc) != MemoryRegionKind::SystemRom
 			: pc < CART_ROM_BASE || pc >= CART_RAM_BASE) return nullptr;
 		const u32 pagePc = pc & ~MAPPED_PAGE_BYTE_MASK;
 		MappedPageBinding binding;
 		m_memory.bindMappedPage(pagePc, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
-		if (!binding.cacheable || !binding.readBytes) return nullptr;
+		if (!binding.cacheable || (functions.mappedCode && !binding.readBytes)) return nullptr;
 		if (pages.size() == pageBudget && !pages.contains(binding.key)) return nullptr;
 		auto& decoded = decodedPageForAddress(image, binding);
 		const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		if (decoded.nativeBlocks && decoded.nativeBlocks->entries[word]) return nullptr;
 		auto& source = pages.try_emplace(binding.key,
-			decoded, binding, pagePc, busSignals, slot).first->second;
+			decoded, binding, pagePc, busSignals, slot, !functions.mappedCode).first->second;
 		source.enqueue(pc, true, nullptr, true);
 		if (!source.discoveryQueued && source.discoveredCount < source.pendingCount) {
 			source.discoveryQueued = true;

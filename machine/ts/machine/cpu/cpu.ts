@@ -146,6 +146,7 @@ import {
 	decodedDispatchOp,
 	decodedInstructionBaseCycles,
 	admitsFunctionPc,
+	isRomInstructionHead,
 	readPublishedPrototype,
 	romFunctionVersionLane,
 	RomFunctionLane,
@@ -2506,25 +2507,30 @@ export class CPU implements MappedPageInvalidator {
 		const slot = this.memory.cartridgeController.selectedSlot(this.executionBusSignals);
 		const romView = this.executionReadView, domain = image.executionDomainId;
 		const directory = image.romFunctions;
-		const version = domain === SYSTEM_EXECUTION_DOMAIN_ID || domain === slot
-			? romFunctionVersionLane(directory, frame.functionAddress) : -1;
+		const version = romFunctionVersionLane(directory, frame.functionAddress);
+		const selectedImage = domain === SYSTEM_EXECUTION_DOMAIN_ID || domain === slot;
+		const verified = version >= 0 && !directory.mappedCode;
 		const pages = [page];
 		let basePc = pagePc, firstWord = 0, endWord = DECODED_PAGE_WORDS;
-		let spanning = false, finalWordStartsInstruction = false;
-		const versionStart = directory.versions[version + RomFunctionLane.FirstPc];
-		const versionEnd = directory.versions[version + RomFunctionLane.EndPc];
-		if (version >= 0 && pc >= versionStart && pc < versionEnd) {
-			const firstPage = (versionStart & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
-			const lastPage = ((versionEnd - 1) & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
-			const pageCount = (lastPage - firstPage) / MAPPED_PAGE_BYTE_SIZE + 1;
-			if (pageCount > 1 && pageCount <= COMPILED_VERSION_MAX_PAGES
-				&& this.memory.bindRomByteView(versionEnd - INSTRUCTION_BYTES, INSTRUCTION_BYTES, slot, romView)) {
-				spanning = true;
-				finalWordStartsInstruction = instructionOpcode(readLE32(romView.bytes, romView.byteOffset)) !== OpCode.WIDE;
-				basePc = firstPage;
-				firstWord = (versionStart - basePc) / INSTRUCTION_BYTES;
-				endWord = (versionEnd - basePc) / INSTRUCTION_BYTES;
-				for (let address = firstPage, index = 0; address <= lastPage; address += MAPPED_PAGE_BYTE_SIZE, ++index) {
+		let bounded = false, finalWordStartsInstruction = false;
+		if (version >= 0 && selectedImage) {
+			const start = directory.versions[version + RomFunctionLane.FirstPc];
+			const end = directory.versions[version + RomFunctionLane.EndPc];
+			const firstPage = (start & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
+			const bodyPages = ((((end - 1) & ~MAPPED_PAGE_BYTE_MASK) >>> 0) - firstPage) / MAPPED_PAGE_BYTE_SIZE + 1;
+			if (verified && (pc < start || pc >= end || !isRomInstructionHead(directory, pc))) return;
+			if (verified || (pc >= start && pc < end && bodyPages > 1 && bodyPages <= COMPILED_VERSION_MAX_PAGES
+				&& this.memory.bindRomByteView(end - INSTRUCTION_BYTES, INSTRUCTION_BYTES, slot, romView))) {
+				bounded = true;
+				basePc = bodyPages <= COMPILED_VERSION_MAX_PAGES ? firstPage : pagePc;
+				let endPc = Math.min(end, basePc + COMPILED_VERSION_MAX_PAGES * MAPPED_PAGE_BYTE_SIZE);
+				// Cut before the prefix when a bounded window would cut a WIDE in half.
+				if (endPc < end && !isRomInstructionHead(directory, endPc)) endPc -= INSTRUCTION_BYTES;
+				finalWordStartsInstruction = verified ? isRomInstructionHead(directory, endPc - INSTRUCTION_BYTES)
+					: instructionOpcode(readLE32(romView.bytes, romView.byteOffset)) !== OpCode.WIDE;
+				firstWord = (Math.max(start, basePc) - basePc) / INSTRUCTION_BYTES;
+				endWord = (endPc - basePc) / INSTRUCTION_BYTES;
+				for (let address = basePc, index = 0; address < endPc; address += MAPPED_PAGE_BYTE_SIZE, ++index) {
 					if (address === pagePc) pages[index] = page;
 					else {
 						this.memory.bindMappedPage(address, fetchSignals, binding);
@@ -2533,8 +2539,9 @@ export class CPU implements MappedPageInvalidator {
 				}
 			}
 		}
+		if (verified && !bounded) return;
 		this.memory.bindMappedPage(pagePc, fetchSignals, binding);
-		const mayLookAhead = spanning || binding.readBytes !== null;
+		const mayLookAhead = bounded || binding.readBytes !== null;
 		const watchesWrites = binding.writeWatches !== null;
 		const pcAt = (index: number) => (basePc + index * INSTRUCTION_BYTES) >>> 0;
 		const pageAt = (index: number) => pages[index >>> DECODED_PAGE_SHIFT];
@@ -2544,7 +2551,8 @@ export class CPU implements MappedPageInvalidator {
 		const roots = new Uint8Array(endWord), queued = new Uint8Array(endWord);
 		const available = new Uint8Array(endWord), leaders = new Uint8Array(endWord), skipWidths = new Uint8Array(endWord);
 		const pending: number[] = [];
-		const owners = new Array<CompiledRegion | null>(endWord).fill(null), merged = new Set<CompiledRegion>();
+		const owners = verified ? null : new Array<CompiledRegion | null>(endWord).fill(null);
+		const merged = new Set<CompiledRegion>();
 		const enqueue = (nextPc: number, leader: boolean): void => {
 			const index = (nextPc - basePc) / INSTRUCTION_BYTES;
 			if (!contains(index)) return;
@@ -2555,7 +2563,7 @@ export class CPU implements MappedPageInvalidator {
 		};
 		const entryIndex = (pc - basePc) / INSTRUCTION_BYTES;
 		roots[entryIndex] = 1; enqueue(pc, true);
-		for (let index = 0; index < pages.length; ++index) {
+		for (let index = 0; owners !== null && index < pages.length; ++index) {
 			const cache = pages[index].compiledBlocks;
 			if (cache === null) continue;
 			const base = index * DECODED_PAGE_WORDS, end = Math.min(endWord, base + DECODED_PAGE_WORDS);
@@ -2566,7 +2574,10 @@ export class CPU implements MappedPageInvalidator {
 		}
 		for (let next = 0; next < pending.length; ++next) {
 			const cursor = pending[next], start = pcAt(cursor), sourcePage = pageAt(cursor), sourceWord = wordAt(cursor);
-			const owner = owners[cursor];
+			// Immutable windows may link to another published entry without
+			// replacing the other window and its continuation roots.
+			if (verified && sourcePage.compiledBlocks?.entries[sourceWord]) continue;
+			const owner = owners === null ? null : owners[cursor];
 			if (owner !== null && !merged.has(owner)) {
 				merged.add(owner); leaders[cursor] = 1;
 				for (const block of owner.entries) {
@@ -2592,7 +2603,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			if (roots[cursor] === 0 && watchesWrites && sourcePage.compiledBlocks!.visits[sourceWord] + 1 < COMPILED_BLOCK_THRESHOLD) continue;
 			const width = sourcePage.widths[sourceWord], successor = cursor + width, successorPc = pcAt(successor);
-			if (spanning && successor > endWord) continue;
+			if (bounded && successor > endWord) continue;
 			available[cursor] = 1;
 			if (compiledBlockComparison(op)) {
 				if (mayLookAhead && contains(successor)) {
@@ -2629,7 +2640,7 @@ export class CPU implements MappedPageInvalidator {
 				++count;
 				const successor = cursor + sourcePage.widths[cursor];
 				if (compiledBlockEndsBlock(sourcePage.ops[cursor], sourcePage.b[cursor]) || successor >= DECODED_PAGE_WORDS
-					|| available[base + successor] === 0 || leaders[base + successor] !== 0) break;
+					|| base + successor >= endWord || available[base + successor] === 0 || leaders[base + successor] !== 0) break;
 				if (count === COMPILED_BLOCK_MAX_INSTRUCTIONS) { leaders[base + successor] = 1; break; }
 				cursor = successor;
 			}
