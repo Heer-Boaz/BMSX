@@ -16,6 +16,8 @@
 #include "spec/blua32/execution_domain.h"
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include <bitset>
+
 #include "machine/cpu/closure.h"
 #include "machine/cpu/jit/runtime/code_lookup.h"
 #include "machine/cpu/jit/runtime/field_feedback.h"
@@ -72,6 +74,8 @@ struct DecodedInstructionPage {
 	MappedPageWriteWatch writeWatch;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	std::array<u8, DECODED_PAGE_WORDS> nativeVisits{};
+	// Structural entry points on immutable code outlive a compiled region.
+	std::bitset<DECODED_PAGE_WORDS> nativeSourceLeaders;
 	NativeFieldProofFeedback fieldProofFeedback;
 	// Borrowed image-lifetime dispatch cells. Retiring regions zeros entries,
 	// but leaves the cells available to suspended native continuations.

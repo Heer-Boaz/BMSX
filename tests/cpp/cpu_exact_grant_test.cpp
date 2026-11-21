@@ -46,7 +46,7 @@ void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
 
-void generatedArithmeticTrainsTheCompiler() {
+void generatedArithmeticTrainsTheCompiler(bool liveFeedbackIsAlreadyStable) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -71,6 +71,13 @@ void generatedArithmeticTrainsTheCompiler() {
 		return std::ranges::any_of(entry.sideExits, [](const auto& exit) { return exit.exit == NativeBlockExit::ProfileReady; });
 	};
 	require(hasPromotion(*page.nativeBlocks->entries[entryWord]), "cold arithmetic starts in a sampling native entry");
+	if (liveFeedbackIsAlreadyStable) {
+		// The compiler snapshots this opcode while it is still generic. By
+		// the time that image executes, scalar samples may have caught up.
+		auto& decoded = page.words[entryWord + 1u];
+		for (int sample = 0; sample < 16; ++sample)
+			decoded.observeNativeNumericTypes(valueInteger(12), valueFloat(1.5f));
+	}
 	for (int attempt = 0; attempt < 12; ++attempt) {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
@@ -95,6 +102,9 @@ void generatedArithmeticTrainsTheCompiler() {
 	require(!hasPromotion(trained) && trained.sideExits.size() == 1
 		&& trained.sideExits.front().operands.replay.arithmetic == NativeArithmeticFeedback{ValueTag::Integer, ValueTag::Float},
 		"completed native operations train an inline specialization without a manually prepared replacement");
+	const auto& successor = page.nativeBlocks->entries[entryWord + 3u];
+	require(trained.terminal.currentPc == wide && successor && successor->firstPc == wide + 2u * INSTRUCTION_BYTES,
+		"the replacement preserves independent entries from the original source graph");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& gate = cpu.nativeGateProfile();
 	require(gate.exits[static_cast<size_t>(NativeBlockExit::ProfileReady)].entries == 1,
@@ -102,6 +112,8 @@ void generatedArithmeticTrainsTheCompiler() {
 	require(gate.exits[static_cast<size_t>(NativeBlockExit::ScalarBoundary)].entries == 0,
 		"training never replays the already completed opcode");
 #endif
+#else
+	(void)liveFeedbackIsAlreadyStable;
 #endif
 }
 
@@ -702,7 +714,10 @@ int main(int argc, char** argv) {
 		else if (scenario == "nmi-short") nmiAfterShortGrant();
 		else if (scenario == "rewrite-short") rewriteAndObserveAfterShortGrant();
 		else if (scenario == "adaptive-arithmetic") adaptiveArithmeticReplay();
-		else if (scenario == "native-arithmetic-profile") generatedArithmeticTrainsTheCompiler();
+		else if (scenario == "native-arithmetic-profile") {
+			generatedArithmeticTrainsTheCompiler(false);
+			generatedArithmeticTrainsTheCompiler(true);
+		}
 		else throw std::runtime_error("unknown scenario");
 		return 0;
 	} catch (const std::exception& error) {

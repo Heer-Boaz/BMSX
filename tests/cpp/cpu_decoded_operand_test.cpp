@@ -58,14 +58,14 @@ void arithmeticFeedbackTransitions() {
 	require(!initial.observed() && !initial.stable(), "a decoded arithmetic site starts unseen");
 
 	for (int i = 0; i < 3; ++i)
-		require(!instruction.observeNativeNumericTypes(squared, one), "an immature pair never requests a rebuild");
+		require(!instruction.observeNativeNumericTypes(squared, one), "an immature pair is not stable feedback");
 	const auto candidate = instruction.nativeNumericTypes();
 	require(candidate.observed() && !candidate.stable()
 		&& candidate.left == ValueTag::Integer && candidate.right == ValueTag::Integer,
 		"an unstable site still retains its observed operand tags");
-	require(instruction.observeNativeNumericTypes(squared, one), "a repeated pair requests a rebuild when it first stabilizes");
+	require(instruction.observeNativeNumericTypes(squared, one), "a repeated pair stabilizes at the confidence threshold");
 	for (int i = 0; i < 32; ++i)
-		require(!instruction.observeNativeNumericTypes(squared, one), "an already stable pair does not repeatedly request rebuilds");
+		require(instruction.observeNativeNumericTypes(squared, one), "matching samples continue to confirm stable feedback");
 
 	auto copy = instruction;
 	for (int i = 0; i < 2; ++i) {

@@ -114,6 +114,11 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 		measurement.phase(&NativeCompilationProfile::discoveryNanoseconds);
 	}
 	if (!coldImage) discoverNativeSource(image, source, nullptr);
+	const bool immutable = binding.readBytes && !binding.writeWatch.groups;
+	if (immutable) {
+		leaders |= page.nativeSourceLeaders;
+		page.nativeSourceLeaders = leaders;
+	}
 	for (u32 word = 0; word < DECODED_PAGE_WORDS; ++word) {
 		if (source.roots[word] && !available[word]
 			&& page.words[word].dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm))
@@ -134,7 +139,7 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 			const u32 successor = cursor + instruction.width;
 			if (nativeBlockEndsBlock(instruction.op, instruction.b) || successor >= DECODED_PAGE_WORDS
 				|| !available[successor] || leaders[successor]) break;
-			if (instructionCount - first == NATIVE_BLOCK_MAX_INSTRUCTIONS) { leaders[successor] = 1; break; }
+			if (instructionCount - first == NATIVE_BLOCK_MAX_INSTRUCTIONS) { leaders.set(successor); break; }
 			cursor = successor;
 		}
 		const DecodedInstruction* skippedInstruction = nullptr;
@@ -148,7 +153,7 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 	if (sources.empty()) return;
 	const NativeCompilationOptions options{
 		.observesArithmetic = true,
-		.immutablePagePc = binding.readBytes && !binding.writeWatch.groups ? std::optional{pagePc} : std::nullopt,
+		.immutablePagePc = immutable ? std::optional{pagePc} : std::nullopt,
 	};
 	auto rejectedFieldProofs = page.fieldProofFeedback.snapshot(pagePc);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)

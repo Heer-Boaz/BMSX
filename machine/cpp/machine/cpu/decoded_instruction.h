@@ -120,7 +120,8 @@ struct DecodedInstruction {
 	}
 
 	// Only a completed arithmetic instruction contributes a sample.
-	// Return true once when its candidate gains stable confidence.
+	// Report whether this sample confirms the stable candidate, including
+	// when the executing code was compiled before the site became stable.
 	bool observeNativeNumericTypes(Value lhs, Value rhs) {
 		const u32 bits = std::bit_cast<u32>(payload.m_word);
 		const u32 pair = bits & NUMERIC_PAIR_MASK;
@@ -129,7 +130,7 @@ struct DecodedInstruction {
 		if (pair == sample) {
 			if (confidence < NativeNumericTypes::MAX_CONFIDENCE)
 				payload.m_word = std::bit_cast<i32>(bits + (1u << NUMERIC_CONFIDENCE_SHIFT));
-			return confidence + 1u == NativeNumericTypes::STABLE_CONFIDENCE;
+			return confidence + 1u >= NativeNumericTypes::STABLE_CONFIDENCE;
 		}
 		// Contradictory samples age the candidate. A short startup type
 		// change can recover; an alternating pair never becomes stable.

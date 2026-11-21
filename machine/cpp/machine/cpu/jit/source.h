@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <bitset>
 #include <vector>
 
 #include "machine/cpu/decoded_instruction.h"
@@ -28,7 +29,7 @@ struct NativeCompilationSource {
 		}
 		const u32 word = offset / INSTRUCTION_BYTES;
 		if (root) roots[word] = 1;
-		if (leader || queued[word]) leaders[word] = 1;
+		if (leader || queued[word]) leaders.set(word);
 		if (!queued[word]) { queued[word] = 1; pending[pendingCount++] = word; }
 	}
 
@@ -37,7 +38,8 @@ struct NativeCompilationSource {
 	u32 pagePc;
 	MappedBusSignals busSignals;
 	u32 slot;
-	std::array<u8, DECODED_PAGE_WORDS> roots{}, queued{}, available{}, leaders{};
+	std::array<u8, DECODED_PAGE_WORDS> roots{}, queued{}, available{};
+	std::bitset<DECODED_PAGE_WORDS> leaders;
 	std::array<u32, DECODED_PAGE_WORDS> pending{};
 	size_t pendingCount = 0, discoveredCount = 0;
 	bool discoveryQueued = false;
