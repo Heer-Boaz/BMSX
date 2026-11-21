@@ -260,7 +260,7 @@ test::Blua32TestImage externalCallImage() {
 	return image;
 }
 
-void admitExternalArgumentsAcrossStackGrowth() {
+void admitExternalArgumentsAcrossStackGrowth(bool finalPending) {
 		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, externalCallImage());
 		Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory);
@@ -274,9 +274,15 @@ void admitExternalArgumentsAcrossStackGrowth() {
 		const std::string text(4096, 'a');
 		const auto id = cpu.stringPool().intern(text);
 		const std::array args{valueString(id)};
+		if (finalPending) {
+			auto& heap = cpu.gcHeap();
+			for (int step = 0; !heap.finalMarkPending() && step < 30; ++step) cpu.stepHeap(valueNil(), valueNil(), valueNil());
+			require(heap.finalMarkPending(), "a final pass is pending when the host can enter an explicit call");
+		}
 		cpu.luaHeap().setCollectionTarget(0);
 		cpu.beginCompletionCall(closure, BuiltinArgsView(args.data(), args.size()));
-		require(cpu.stringPool().find(text) == id, "stack growth cannot collect incoming host arguments");
+		require((!finalPending || !cpu.gcHeap().finalMarkPending()) && cpu.stringPool().find(text) == id,
+			"call entry roots its incoming argument before final marking and stack growth");
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the admitted callee returns normally");
 		const auto result = cpu.readCompletionValues();
 		require(result.size() == 1 && valueIsString(result.get(0)) && asStringId(result.get(0)) == id, "the real call preserves the original string ID");
@@ -300,7 +306,8 @@ int main() {
 		retainNestedMaterializationRoots();
 		replaySparseAllocationOrder();
 		reuseDeletedStringKeyId();
-		admitExternalArgumentsAcrossStackGrowth();
+		admitExternalArgumentsAcrossStackGrowth(false);
+		admitExternalArgumentsAcrossStackGrowth(true);
 		std::cout << "String pool lifetime tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

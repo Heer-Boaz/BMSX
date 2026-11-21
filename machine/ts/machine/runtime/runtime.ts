@@ -97,7 +97,6 @@ export class Runtime {
 			throw new Error('External Lua closure execution requires a suspended CPU.');
 		}
 		this.history.stop();
-		cpu.gc.finishFinalMark();
 		const depth = cpu.getFrameDepth();
 		this.completionValues.length = 0;
 		cpu.beginCompletionCall(fn, args);

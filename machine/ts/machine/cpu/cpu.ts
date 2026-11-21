@@ -1483,13 +1483,14 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
-		// Call injection takes over the physical instruction stream. The suspended
-		// frame retains its PC; an unaccepted endpoint access must not follow it.
-		this.abortStalledMemoryWrite();
 		const roots = this.acquireLocalRoots();
 		this.localRoots.push(valueClosure(closure));
 		for (const arg of args) this.localRoots.push(arg);
 		try {
+			this.gc.finishFinalMark();
+			// Call injection takes over the physical instruction stream. The suspended
+			// frame retains its PC; an unaccepted endpoint access must not follow it.
+			this.abortStalledMemoryWrite();
 			this.clearCompletionValues();
 			this.completionThread = this.activeThread.address;
 			this.yieldRequested = false;
@@ -1503,6 +1504,7 @@ export class CPU implements MappedPageInvalidator {
 		executionDomainId: ExecutionDomainId,
 		functionAddress: number,
 	): void {
+		this.gc.finishFinalMark();
 		if (!this.readFunctionRecord(this.executionImageForDomain(executionDomainId)!, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId))) {
 			this.hardHalt();
 			return;

@@ -821,12 +821,13 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 }
 
 void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
-	// Call injection takes over the physical instruction stream. The suspended
-	// frame retains its PC; an unaccepted endpoint access must not follow it.
-	abortStalledMemoryWrite();
 	auto roots = acquireLocalRoots();
 	trackLocalRoot(valueClosure(closure));
 	for (size_t index = 0; index < args.size(); ++index) trackLocalRoot(args[index]);
+	m_heap.finishFinalMark();
+	// Call injection takes over the physical instruction stream. The suspended
+	// frame retains its PC; an unaccepted endpoint access must not follow it.
+	abortStalledMemoryWrite();
 	// The input span may borrow the completion latch being cleared below.
 	args = BuiltinArgsView(m_localRoots.data() + m_localRoots.size() - args.size(), args.size());
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
@@ -839,6 +840,7 @@ void CPU::beginCompletionCallInExecutionDomain(
 	ExecutionDomainId executionDomainId,
 	u32 functionAddress
 ) {
+	m_heap.finishFinalMark();
 	if (!readFunctionRecord(*executionImageForDomain(executionDomainId), functionAddress, executionBusSignalsForDomain(executionDomainId))) {
 		hardHalt();
 		return;
