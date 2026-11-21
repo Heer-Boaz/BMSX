@@ -9,10 +9,11 @@
 namespace bmsx {
 
 NativeLowering::NativeLowering(std::span<const std::unique_ptr<NativeBlock>> blocks,
-	const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir, NativeRegisterUses& uses)
+	const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir,
+	std::span<NativeBlockExitSite> replays, NativeRegisterUses& uses)
 	: m_compiler(sljit_create_compiler(nullptr)), m_cache(m_compiler, NativeBlockAbi::words, NativeBlockAbi::tags,
 													  NativeBlockAbi::wordRegisters, NativeBlockAbi::floatRegisters),
-	  m_blocks(blocks), m_bindings(bindings), m_ir(ir), m_uses(uses), m_entries(blocks.size()) {
+	  m_blocks(blocks), m_bindings(bindings), m_ir(ir), m_admissionReplays(replays), m_uses(uses), m_entries(blocks.size()) {
 	if (!m_compiler)
 		throw std::bad_alloc();
 	sljit_set_context(m_compiler, 0, NativeBlockAbi::signature, NativeBlockAbi::scratches, NativeBlockAbi::saveds,
@@ -103,12 +104,9 @@ void NativeLowering::emitConstant(int guest, Value value) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_IMM, valuePayload(value));
 }
 void NativeLowering::fault(sljit_jump* jump, NativeBlockExitSite& site, const State& state, Charge charge) {
-	deferColdExit(jump, SemanticExit{&site, charge}, state);
-}
-
-void NativeLowering::deferColdExit(sljit_jump* jump, ExitTarget target, const State& state) {
 	// Several guards of one guest operation can publish the same state.
 	if (!jump) return;
+	const SemanticExit target{&site, charge};
 	for (size_t i = m_coldExits.size(); i != 0;) {
 		const auto& exit = m_coldExits[--i];
 		if (exit.target != target) break;
@@ -174,7 +172,7 @@ void NativeLowering::lowerOperation(const NativeReplay&, const NativeInstruction
 }
 
 void NativeLowering::lowerOperation(const NativeJump&, const NativeInstruction&) {
-	emitExit(m_blocks[m_current]->terminal, m_ir[m_current].successors[0]);
+	emitExit(m_blocks[m_current]->terminal);
 }
 
 void NativeLowering::lowerOperation(const NativeLiteral& literal, const NativeInstruction&) {
@@ -186,17 +184,17 @@ void NativeLowering::lowerOperation(const NativeTruthBranch& branch, const Nativ
 	auto& terminal = m_blocks[m_current]->terminal;
 	if (branch.sourceTruthy) {
 		const bool taken = *branch.sourceTruthy == branch.takeOnTruthy;
-		emitExit(taken ? *sideExit(block.taken) : terminal, block.successors[taken]);
+		emitExit(taken ? *sideExit(block.taken) : terminal, taken);
 		return;
 	}
 	emitTag(branch.condition, SLJIT_R1);
 	auto* falsey = sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::False));
 	const auto state = m_cache.state();
-	emitExit(branch.takeOnTruthy ? *sideExit(block.taken) : terminal, block.successors[branch.takeOnTruthy]);
+	emitExit(branch.takeOnTruthy ? *sideExit(block.taken) : terminal, branch.takeOnTruthy);
 	sljit_set_label(falsey, sljit_emit_label(m_compiler));
 	m_cache.setState(state);
-	emitExit(branch.takeOnTruthy ? terminal : *sideExit(block.taken), block.successors[!branch.takeOnTruthy]);
+	emitExit(branch.takeOnTruthy ? terminal : *sideExit(block.taken), !branch.takeOnTruthy);
 }
 
 void NativeLowering::lower(const NativeInstruction& source) {
@@ -228,34 +226,15 @@ void NativeLowering::lower(const NativeInstruction& source) {
 
 void NativeLowering::endBlock() {
 	if (!m_terminal)
-		emitExit(m_blocks[m_current]->terminal, m_ir[m_current].successors[0]);
+		emitExit(m_blocks[m_current]->terminal);
 }
-void* NativeLowering::finish(size_t& codeBytes, std::vector<NativeBlockExitSite>& replaySites) {
+void* NativeLowering::finish(size_t& codeBytes) {
 	emitRomReads();
 	emitSingleStringReads();
-	replaySites.reserve(std::count_if(m_coldExits.begin(), m_coldExits.end(), [](const ColdExit& exit) {
-		return std::holds_alternative<NativeResumePoint>(exit.target);
-	}));
 	for (auto& exit : m_coldExits) {
 		exit.label = sljit_emit_label(m_compiler);
 		m_cache.setState(exit.state);
-		if (const auto* semantic = std::get_if<SemanticExit>(&exit.target)) emitLeave(*semantic->site, semantic->charge);
-		else {
-			const auto& point = std::get<NativeResumePoint>(exit.target);
-			auto& site = replaySites.emplace_back(NativeBlockExitSite{
-				.exit = NativeBlockExit::ScalarBoundary,
-				.operands = {.replay = {point.completed.has_value()}},
-				.cycles = point.cycles,
-				.registerTop = point.top,
-				.nextPc = point.pc,
-				.link = {},
-			});
-			if (point.completed) {
-				site.currentPc = point.completed->pc;
-				site.lastPc = point.completed->lastWord;
-			}
-			emitLeave(site, Charge::Pending);
-		}
+		emitLeave(*exit.target.site, exit.target.charge);
 	}
 	for (const auto& branch : m_coldBranches)
 		sljit_set_label(branch.jump, m_coldExits[branch.target].label);

@@ -44,7 +44,7 @@ void NativeLowering::lowerOperation(const NativeCallSite& site, const NativeInst
 		auto& completed = *sideExit(ir.completedCall);
 		fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM,
 			static_cast<u32>(NativeBuiltinCallOutcome::CompletedStop)), completed, m_cache.state(), Charge::Paid);
-		emitExit(completed, ir.successors[0]);
+		emitExit(completed);
 	};
 	const auto& prefix = m_cache.state();
 	if (!std::ranges::any_of(prefix, [](const auto& slot) { return slot.wordDirty || slot.tagDirty; })) {

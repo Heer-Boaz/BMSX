@@ -512,8 +512,42 @@ void successorsImportLogicalTypesBeforeLowering() {
 		"the successor has an explicit Integer entry proof independently of host allocation");
 	const auto& plan = std::get<NativeNumericPlan>(std::get<NativeArithmetic>(entry.instructions[0].operation).strategy);
 	require(plan.action == NativeNumericAction::Word && !plan.guardLeft && !plan.guardRight
-		&& region.sideExits(entry).empty(),
+		&& region.sideExits(entry).empty() && !region.blocks()[0].edgeReplay[0],
 		"the sum consumes its block's admission proof without a redundant semantic or replay exit");
+}
+
+void admissionReplaysPreserveTheExactFusedPredecessor() {
+	constexpr u32 pc = 0x4000, successorPc = pc + 12;
+	DecodedInstruction compare{}, jump{}, prefix{}, tail{};
+	compare.op = static_cast<u8>(OpCode::EQ); compare.width = 1;
+	jump.op = static_cast<u8>(OpCode::JMP); jump.width = 2; jump.setBx(successorPc);
+	prefix.op = static_cast<u8>(OpCode::K1); prefix.width = 1;
+	tail.op = static_cast<u8>(OpCode::HALT); tail.width = 1;
+	for (auto* inst : {&compare, &jump, &prefix, &tail}) inst->baseCycles = BASE_CYCLES[inst->op];
+	const std::array before{NativeBlockInstruction{&compare, pc}};
+	const std::array after{NativeBlockInstruction{&prefix, successorPc},
+		NativeBlockInstruction{&tail, successorPc + 4}};
+	const std::array sources{NativeBlockSource{before, &jump}, NativeBlockSource{after}};
+	NativeRegisterUses uses;
+	NativeIrRegion region(sources, uses);
+	const auto& source = region.blocks()[0];
+	const auto& target = region.blocks()[1];
+	const auto replays = region.admissionReplays();
+	require(target.admissionCycles == prefix.baseCycles && source.successors == std::array<size_t, 2>{1, 1}
+		&& source.edgeReplay[0] && source.edgeReplay[1] && source.edgeReplay[0] != source.edgeReplay[1],
+		"two fused outcomes leading to the same admission preserve different completed instructions");
+	for (const auto id : {target.entryReplay, *source.edgeReplay[0], *source.edgeReplay[1]}) {
+		const auto& replay = replays[id];
+		require(replay.exit == NativeBlockExit::ScalarBoundary && replay.nextPc == successorPc
+			&& replay.cycles == 0 && replay.registerTop == 0 && !replay.operands.replay.arithmetic,
+			"admission never charges the denied target or republishes the predecessor's top floor");
+	}
+	const auto& withJump = replays[*source.edgeReplay[0]];
+	const auto& withoutJump = replays[*source.edgeReplay[1]];
+	require(!replays[target.entryReplay].operands.replay.hasCompletedInstruction
+		&& withJump.operands.replay.hasCompletedInstruction && withJump.currentPc == pc + 4 && withJump.lastPc == pc + 8
+		&& withoutJump.operands.replay.hasCompletedInstruction && withoutJump.currentPc == pc && withoutJump.lastPc == pc,
+		"public, fused-jump and skipped-jump admission each identify the actual completed guest prefix");
 }
 
 void onlyConsumedEntryProofsSurviveCopies() {
@@ -723,6 +757,7 @@ int main() {
 		decodedFieldsBecomeOperationsAndEffects();
 		undefinedMoveKindDoesNotBecomeANumericWordMove();
 		successorsImportLogicalTypesBeforeLowering();
+		admissionReplaysPreserveTheExactFusedPredecessor();
 		onlyConsumedEntryProofsSurviveCopies();
 		forwardJoinMeetsTagsNotValues();
 		dataflowPlansTableAndMemoryInputs();

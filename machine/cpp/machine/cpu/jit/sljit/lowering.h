@@ -18,12 +18,12 @@ namespace bmsx {
 class NativeLowering {
 public:
 	NativeLowering(std::span<const std::unique_ptr<NativeBlock>> blocks,
-		const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir, NativeRegisterUses& uses);
+		const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir, std::span<NativeBlockExitSite> replays, NativeRegisterUses& uses);
 	~NativeLowering();
 	void beginBlock(size_t index);
 	void lower(const NativeInstruction& instruction);
 	void endBlock();
-	void* finish(size_t& codeBytes, std::vector<NativeBlockExitSite>& replaySites);
+	void* finish(size_t& codeBytes);
 
 private:
 	using State = NativeRegisterCache::State;
@@ -35,7 +35,7 @@ private:
 	void lowerOperation(const auto& op, const NativeInstruction&)
 		requires requires { op.terminalExit; }
 	{
-		emitExit(m_blocks[m_current]->terminal, m_ir[m_current].successors[0]);
+		emitExit(m_blocks[m_current]->terminal);
 	}
 	void lowerOperation(const NativeLiteral&, const NativeInstruction&);
 	void lowerOperation(const NativeConstantLoad&, const NativeInstruction&);
@@ -55,7 +55,7 @@ private:
 	void lowerOperation(const NativeTableAccess&, const NativeInstruction&);
 	void lowerOperation(const NativeVararg&, const NativeInstruction&);
 
-	void emitExit(NativeBlockExitSite& exit, size_t target);
+	void emitExit(NativeBlockExitSite& exit, size_t edge = 0);
 	void emitTop(int extent);
 	void emitConstant(int guest, Value value);
 	void emitPoolWord(u32 index, sljit_s32 word);
@@ -73,9 +73,7 @@ private:
 		Charge charge;
 		bool operator==(const SemanticExit&) const = default;
 	};
-	using ExitTarget = std::variant<NativeResumePoint, SemanticExit>;
 	void fault(sljit_jump* jump, NativeBlockExitSite& site, const State& state, Charge charge = Charge::Pending);
-	void deferColdExit(sljit_jump* jump, ExitTarget target, const State& state);
 	void emitLeave(NativeBlockExitSite& exit, Charge charge);
 	void emitNumericKernel(const NativeArithmetic&, const NativeInstruction&, std::optional<ValueTag> resultTag);
 	void emitFloatInput(int selector, ValueTag tag, sljit_s32 destination);
@@ -110,6 +108,7 @@ private:
 	std::span<const std::unique_ptr<NativeBlock>> m_blocks;
 	const NativeCodeBindings& m_bindings;
 	std::span<const NativeIrBlock> m_ir;
+	std::span<NativeBlockExitSite> m_admissionReplays;
 	NativeRegisterUses& m_uses;
 	struct Entry {
 		State registers{};
@@ -130,7 +129,7 @@ private:
 	};
 	std::vector<ExternalBranch> m_external;
 	struct ColdExit {
-		ExitTarget target;
+		SemanticExit target;
 		State state;
 		sljit_label* label = nullptr;
 	};

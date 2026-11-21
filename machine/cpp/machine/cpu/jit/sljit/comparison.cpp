@@ -68,7 +68,7 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 					  deferred.cycles),
 				deferred, m_cache.state());
 		}
-		emitExit(skip ? taken : terminal, ir.successors[skip ? 1 : 0]);
+		emitExit(skip ? taken : terminal, skip);
 	};
 	outcome(!comparison.skipOnMatch);
 	sljit_set_label(matched, sljit_emit_label(m_compiler));

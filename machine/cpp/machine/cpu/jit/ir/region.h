@@ -12,19 +12,6 @@ namespace bmsx {
 class NativeRegisterUses;
 class NativeSlotValues;
 
-// The observable prefix before a guest instruction. The charge and top
-// describe only the instructions that already completed.
-struct NativeResumePoint {
-	struct CompletedInstruction {
-		u32 pc, lastWord;
-		bool operator==(const CompletedInstruction&) const = default;
-	};
-	u32 pc;
-	int cycles, top;
-	std::optional<CompletedInstruction> completed{};
-	bool operator==(const NativeResumePoint&) const = default;
-};
-
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 enum class NativeAttempt : u8 { None, NewTable, Call, AssignField, Concat, ConcatRange };
 #endif
@@ -46,6 +33,8 @@ struct NativeIrExit {
 // side exits belong to the block terminator.
 using NativeIrSideExit = std::optional<u8>;
 static_assert(3u * NATIVE_BLOCK_MAX_INSTRUCTIONS + 3u < std::numeric_limits<u8>::max());
+
+using NativeIrReplayId = u16;
 
 struct NativeInstruction {
 	NativeOperation operation;
@@ -73,6 +62,10 @@ struct NativeIrBlock {
 	NativeIrSideExit taken{};
 	// Primary and alternate successors within this region; size() is external.
 	std::array<size_t, 2> successors{};
+	// Admission at an installed entry has no completed predecessor. A
+	// linked admission keeps the predecessor that already paid its charge.
+	NativeIrReplayId entryReplay{};
+	std::array<std::optional<NativeIrReplayId>, 2> edgeReplay{};
 	NativeIrSideExit beforeFusedJump{};
 	NativeIrSideExit completedCall{};
 	bool nativeSuccessor = true;
@@ -109,6 +102,7 @@ public:
 	std::span<const NativeIrExit> sideExits(const NativeIrBlock& block) const {
 		return std::span(m_sideExits).subspan(block.firstSideExit, block.sideExitCount);
 	}
+	std::span<const NativeIrExit> admissionReplays() const { return m_admissionReplays; }
 	std::span<const NativeRecordPlan> recordPlans() const { return m_records; }
 	size_t instructionCount() const { return m_instructions.size(); }
 
@@ -117,10 +111,12 @@ private:
 	std::vector<NativeSlotType> m_entryTypes;
 	std::vector<NativeIrBlock> m_blocks;
 	std::vector<NativeIrExit> m_sideExits;
+	std::vector<NativeIrExit> m_admissionReplays;
 	std::vector<NativeRecordPlan> m_records;
 	std::vector<NativeOwnFieldAddress> m_ownFieldAddresses;
 	void buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations, bool cpuOwned);
 	void finalizeBlockExits(NativeIrBlock& block, bool observesArithmetic);
+	void planAdmissionReplays();
 	void bindOwnFieldAddresses(NativeIrBlock& block, std::span<const NativeFieldAddressUse> uses, size_t firstRow);
 	void planRecordConstructors(std::span<const u16> byAddress, u32 immutablePagePc);
 };

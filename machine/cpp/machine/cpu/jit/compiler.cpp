@@ -75,14 +75,18 @@ std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 			block->terminal.recordConstructor = new NativeTableConstructor(ir.recordPlans()[*allocation->record]);
 		entries.push_back(std::move(block));
 	}
-	NativeLowering compiler(entries, bindings, plans, uses);
+	const auto replays = ir.admissionReplays();
+	region->m_replaySites.reserve(replays.size());
+	for (const auto& replay : replays)
+		region->m_replaySites.push_back(materializeExit(replay, bindings));
+	NativeLowering compiler(entries, bindings, plans, region->m_replaySites, uses);
 	for (size_t index = 0; index < plans.size(); ++index) {
 		compiler.beginBlock(index);
 		for (const auto& instruction : plans[index].instructions)
 			compiler.lower(instruction);
 		compiler.endBlock();
 	}
-	region->m_code = compiler.finish(region->codeBytes, region->m_replaySites);
+	region->m_code = compiler.finish(region->codeBytes);
 	return entries;
 }
 

@@ -16,14 +16,12 @@ void NativeLowering::beginBlock(size_t index) {
 	entry.guarded = sljit_emit_label(m_compiler);
 	// Public entry points admit their own type proofs before any register move.
 	// Internal edges have already established the exact same payload map.
-	const u32 pc = m_blocks[index]->firstPc;
-	const State memoryAuthoritative{};
-	const NativeResumePoint replay{pc, 0, 0};
+	auto& replay = m_admissionReplays[ir.entryReplay];
 	auto* shortGrant = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM,
-		m_blocks[index]->admissionCycles);
-	deferColdExit(shortGrant, replay, memoryAuthoritative);
+		ir.admissionCycles);
+	fault(shortGrant, replay, m_cache.state());
 	for (const auto type : ir.entryTypes)
-		deferColdExit(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, memoryAuthoritative);
+		fault(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, m_cache.state());
 	m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2);
 	entry.proven = sljit_emit_label(m_compiler);
 }
@@ -58,7 +56,9 @@ void NativeLowering::emitLeave(NativeBlockExitSite& exit, Charge charge) {
 	m_terminal = true;
 }
 
-void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t target) {
+void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge) {
+	const auto& block = m_ir[m_current];
+	const auto target = block.successors[edge];
 	const bool completed = exit.exit == NativeBlockExit::CompletedCall;
 	if (target != m_blocks.size() && (completed || exit.exit == NativeBlockExit::Continue)) {
 		const auto source = m_cache.state();
@@ -71,11 +71,15 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t target) {
 		}
 		auto& entry = m_entries[target];
 		const auto& successor = m_ir[target];
-		const NativeResumePoint replay{exit.nextPc, 0, 0,
-			NativeResumePoint::CompletedInstruction{exit.currentPc, exit.lastPc}};
-		if (const int minimum = m_blocks[target]->admissionCycles; minimum != 0)
-			deferColdExit(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
-				NativeBlockAbi::budget, 0, SLJIT_IMM, minimum), replay, source);
+		if (const auto replayId = block.edgeReplay[edge]) {
+			auto& replay = m_admissionReplays[*replayId];
+			if (successor.admissionCycles != 0)
+				fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
+					NativeBlockAbi::budget, 0, SLJIT_IMM, successor.admissionCycles), replay, source);
+			if (!block.provesEntryTo(target))
+				for (const auto type : successor.entryTypes)
+					fault(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, source);
+		}
 		if (!entry.planned && !m_uses.hasForwardMerge(target)) {
 			entry.planned = true;
 			entry.registers = source;
@@ -94,9 +98,6 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t target) {
 				binding.tagDirty = binding.tag.has_value();
 			}
 		}
-		if (!m_ir[m_current].provesEntryTo(target))
-			for (const auto type : successor.entryTypes)
-				deferColdExit(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, source);
 		m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2);
 		m_branches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), target});
 		m_terminal = true;

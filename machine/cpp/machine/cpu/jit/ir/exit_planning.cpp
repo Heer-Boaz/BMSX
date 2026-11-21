@@ -105,6 +105,17 @@ struct NativeTerminalExit {
 	}
 };
 
+// The observable prefix before a guest instruction. The charge and top
+// describe only the instructions that already completed.
+struct NativeResumePoint {
+	struct CompletedInstruction {
+		u32 pc, lastWord;
+	};
+	u32 pc;
+	int cycles, top;
+	std::optional<CompletedInstruction> completed{};
+};
+
 NativeIrExit scalarReplay(const NativeResumePoint& before, std::optional<NativeArithmeticFeedback> arithmetic = {}) {
 	NativeIrExit exit{
 		.exit = NativeBlockExit::ScalarBoundary,
@@ -271,6 +282,36 @@ void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block, bool observesArith
 	block.terminal.registerTop = state.registerTop;
 	block.terminal.currentPc = state.currentPc;
 	block.terminal.lastPc = state.lastPc;
+}
+
+void NativeIrRegion::planAdmissionReplays() {
+	static_assert(3u * DECODED_PAGE_WORDS <= std::numeric_limits<NativeIrReplayId>::max());
+	m_admissionReplays.reserve(m_blocks.size());
+	const auto appendReplay = [&](const NativeResumePoint& point) {
+		const auto id = static_cast<NativeIrReplayId>(m_admissionReplays.size());
+		m_admissionReplays.push_back(scalarReplay(point));
+		return id;
+	};
+	for (auto& block : m_blocks) {
+		block.entryReplay = appendReplay({block.firstPc, 0, 0});
+		const auto exits = sideExits(block);
+		const auto& primary = block.completedCall ? exits[*block.completedCall] : block.terminal;
+		for (size_t edge = 0; edge < block.successors.size(); ++edge) {
+			const auto target = block.successors[edge];
+			if (target == m_blocks.size()) continue;
+			const auto& successor = m_blocks[target];
+			if (successor.admissionCycles == 0 && (successor.entryTypes.empty() || block.provesEntryTo(target)))
+				continue;
+			const auto& completed = edge == 0 ? primary : exits[*block.taken];
+			if (edge == 1 && target == block.successors[0]
+				&& completed.currentPc == primary.currentPc && completed.lastPc == primary.lastPc) {
+				block.edgeReplay[edge] = block.edgeReplay[0];
+				continue;
+			}
+			block.edgeReplay[edge] = appendReplay({successor.firstPc, 0, 0,
+				NativeResumePoint::CompletedInstruction{completed.currentPc, completed.lastPc}});
+		}
+	}
 }
 
 } // namespace bmsx

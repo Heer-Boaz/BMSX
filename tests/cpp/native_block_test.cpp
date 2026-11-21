@@ -321,6 +321,55 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 	require(bytes == 0, "per-segment register plans do not retain executable storage");
 }
 
+void admissionReplayPublishesOnlyThePaidPrefix() {
+	constexpr u32 firstPc = 0x1100, targetPc = 0x1200, backPc = 0x1300;
+	std::array<DecodedInstruction, 5> decoded{};
+	const std::array ops{OpCode::K1, OpCode::JMP, OpCode::K1, OpCode::ADD, OpCode::KFALSE};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		decoded[i].op = static_cast<u8>(ops[i]);
+		decoded[i].width = 1;
+		decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+	}
+	decoded[0].a = decoded[4].a = 2;
+	decoded[1].width = 2;
+	decoded[1].setBx(targetPc);
+	decoded[2].a = 3;
+	decoded[3].a = 4; decoded[3].b = decoded[3].c = 2;
+	const std::array first{NativeBlockInstruction{&decoded[0], firstPc}, NativeBlockInstruction{&decoded[1], firstPc + 4}};
+	const std::array target{NativeBlockInstruction{&decoded[2], targetPc}, NativeBlockInstruction{&decoded[3], targetPc + 4}};
+	const std::array back{NativeBlockInstruction{&decoded[4], backPc}, NativeBlockInstruction{&decoded[1], backPc + 4}};
+	const std::array sources{NativeBlockSource{first}, NativeBlockSource{target}, NativeBlockSource{back}};
+	const auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(memory, cpu.stringPool()));
+	const int predecessorCharge = decoded[0].baseCycles + decoded[1].baseCycles;
+	const int targetPrefix = decoded[2].baseCycles;
+	const auto stop = [&](size_t entry, int grant, int charge, u32 predecessorPc) {
+		auto registers = test::valueBank(std::array{valueNil(), valueNil(), valueFloat(-0.0f), valueInteger(71), valueInteger(72)});
+		NativeBlockRunState run{.remainingCycles = grant, .registerTop = 2};
+		const auto* replay = blocks[entry]->run(registers.view(), run);
+		const auto expectedInput = entry == 0 ? valueInteger(1) : entry == 2 ? valueBool(false) : valueFloat(-0.0f);
+		require(replay->exit == NativeBlockExit::ScalarBoundary && replay->nextPc == targetPc
+			&& replay->cycles == 0 && replay->registerTop == 0 && replay->operands.replay.hasCompletedInstruction == (entry != 1)
+			&& replay->currentPc == (entry == 1 ? 0u : predecessorPc + 4)
+			&& replay->lastPc == (entry == 1 ? 0u : predecessorPc + 8),
+			"admission resumes the target and attributes only the paid WIDE predecessor, if any");
+		require(run.remainingCycles == grant - charge && run.registerTop == (entry == 1 ? 2 : 3)
+			&& registers.get(2) == expectedInput && registers.get(3) == valueInteger(71) && registers.get(4) == valueInteger(72),
+			"grant and type misses retain the current target inputs and exactly the completed register/top changes");
+	};
+	stop(0, predecessorCharge + targetPrefix, predecessorCharge, firstPc);
+	stop(1, targetPrefix, 0, 0);
+	stop(1, targetPrefix + 1, 0, 0);
+	stop(2, decoded[4].baseCycles + decoded[1].baseCycles + targetPrefix + 1,
+		decoded[4].baseCycles + decoded[1].baseCycles, backPc);
+
+	ValueSlots registers(5);
+	NativeBlockRunState run{.remainingCycles = predecessorCharge + targetPrefix + 1};
+	require(blocks[0]->run(registers.view(), run) == &blocks[1]->terminal
+		&& registers.get(3) == valueInteger(1) && registers.get(4) == valueInteger(2)
+		&& run.remainingCycles == 1 - decoded[3].baseCycles && run.registerTop == 5,
+		"one cycle beyond the admission threshold lets the final instruction exhaust a running grant");
+}
+
 void sparseRegionSuccessorsPreserveExactPcIdentity() {
 	const std::array values{valueFloat(-0.0), valueFromTag(ValueTag::False, 73), valueTable(cpu.createTable().address())};
 	for (const u32 page : {0x1000u, 0xfffffc00u}) {
@@ -1320,6 +1369,7 @@ int main() {
 		helperContinuationsReloadTheCurrentRegisterMap();
 		residentValuesCrossInternalComparisonBranches();
 		segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions();
+		admissionReplayPublishesOnlyThePaidPrefix();
 		sparseRegionSuccessorsPreserveExactPcIdentity();
 		diamondBackedgesPreserveFullStateFromEveryEntry();
 		linkedBodiesShareOneFrameAndRetireTheirEdges();

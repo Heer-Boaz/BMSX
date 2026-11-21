@@ -113,6 +113,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 	uses.analyze(m_blocks);
 	NativeTypePropagation{}.specializeRegion(m_blocks, uses, values, m_entryTypes);
 	for (auto& block : m_blocks) finalizeBlockExits(block, options.observesArithmetic);
+	planAdmissionReplays();
 	if (options.immutablePagePc) planRecordConstructors(directory, *options.immutablePagePc);
 }
 

@@ -73,14 +73,17 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 	const auto blocks = region.blocks();
 	for (size_t index = 0; index < blocks.size(); ++index) {
 		const auto& block = blocks[index];
-		out << "block b" << index << " pc=" << block.firstPc << '\n';
+		out << "block b" << index << " pc=" << block.firstPc
+			<< " admit-cycles=" << block.admissionCycles << " replay=r" << block.entryReplay << '\n';
 		for (auto type : block.entryTypes)
 			out << "  admit R" << type.slot << " tag=" << unsigned(type.tag) << '\n';
 		for (size_t edge = 0; edge < block.successors.size(); ++edge) {
 			const auto target = block.successors[edge];
-			if (target == blocks.size() || (edge != 0 && target == block.successors[0])) continue;
+			if (target == blocks.size() || (edge != 0 && target == block.successors[0]
+				&& block.edgeReplay[edge] == block.edgeReplay[0])) continue;
 			out << "  edge b" << target;
-			if (!blocks[target].entryTypes.empty()) out << (block.provesSuccessorTypes[edge] ? " proven" : " checked");
+			if (!blocks[target].entryTypes.empty()) out << (block.provesEntryTo(target) ? " proven" : " checked");
+			if (const auto replay = block.edgeReplay[edge]) out << " replay=r" << *replay;
 			out << '\n';
 		}
 		for (size_t row = 0; row < block.instructions.size(); ++row) {
@@ -139,6 +142,14 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 			}
 			out << '\n';
 		}
+	}
+	const auto replays = region.admissionReplays();
+	for (size_t id = 0; id < replays.size(); ++id) {
+		const auto& replay = replays[id];
+		out << "r" << id << " replay next=" << replay.nextPc;
+		if (replay.operands.replay.hasCompletedInstruction)
+			out << " completed=" << replay.currentPc << " last-word=" << replay.lastPc;
+		out << '\n';
 	}
 }
 
