@@ -607,7 +607,8 @@ void codeCapacityRetiresOldestCompleteRegion() {
 		"adaptive publication can evict the oldest complete region");
 	install(incoming, third);
 	require(cache.full() && cache.codeBytes() == limit
-		&& profile.capacityEvictedRegions == 1 && profile.capacityRetiredCodeBytes == firstBytes,
+		&& profile.capacityEvictedRegions == 1 && profile.capacityRetiredCodeBytes == firstBytes
+		&& profile.prepareNanoseconds == profile.retirementNanoseconds,
 		"capacity accounting counts resident bytes even if a retired region is borrowed");
 	require(!oldest.nativeBlocks && oldestCells[0] == nullptr && oldestCells[1] == nullptr
 		&& oldest.nativeSourceLeaders[0] && survivorCells[0] && incomingCells[0]

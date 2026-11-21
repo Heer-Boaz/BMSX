@@ -29,10 +29,11 @@ public:
 			m_start = m_phaseStart = Clock::now();
 		}
 	}
-	~NativeCompilationMeasurement() {
+	~NativeCompilationMeasurement() { finish(); }
+	void finish() {
 		if (!m_profile) return;
 		const auto now = Clock::now();
-		if (m_phase) m_profile->*m_phase += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_phaseStart).count());
+		m_profile->*m_phase += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_phaseStart).count());
 		const u64 elapsed = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_start).count());
 		m_profile->prepareNanoseconds += elapsed;
 		if (elapsed > m_profile->maxPrepareNanoseconds) {
@@ -42,11 +43,12 @@ public:
 			m_profile->maxPrepareRootPc = m_rootPc;
 			m_profile->maxPreparePagePc = m_rootPc & ~MAPPED_PAGE_BYTE_MASK;
 		}
+		m_profile = nullptr;
 	}
 	void phase(u64 NativeCompilationProfile::* next) {
 		if (!m_profile) return;
 		const auto now = Clock::now();
-		if (m_phase) m_profile->*m_phase += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_phaseStart).count());
+		m_profile->*m_phase += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_phaseStart).count());
 		m_phaseStart = now;
 		m_phase = next;
 	}
@@ -163,7 +165,7 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 		{.rejectedFieldProofs = rejectedFieldProofs});
 	if (blocks.empty()) return;
 	// Publication owns any capacity retirement and profiles it separately.
-	measurement.phase(nullptr);
+	measurement.finish();
 	installNativeRegion(image, page, pagePc, source.slot, std::move(blocks),
 		coldImage ? NativeCodeAdmission::Warmup : NativeCodeAdmission::Adaptive);
 }

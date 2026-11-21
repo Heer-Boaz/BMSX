@@ -15,7 +15,8 @@ struct NativeCompilationProfile {
 	u64 emittedCodeBytes = 0;
 	u64 codeBytes = 0;
 	u64 peakCodeBytes = 0;
-	// Total preparation includes image discovery; the maximum is one source request.
+	// CPU preparation includes image discovery and capacity retirement. The
+	// maximum covers one source request, before publication.
 	u64 prepareNanoseconds = 0;
 	u64 maxPrepareNanoseconds = 0;
 	u64 discoveryNanoseconds = 0;

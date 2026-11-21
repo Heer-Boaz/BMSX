@@ -23,8 +23,10 @@ bool NativeCodeCache::tryInstall(NativeCodeRegion& region, DecodedInstructionPag
 		} while (region.codeBytes > m_capacity - m_codeBytes);
 		if (profile) {
 			profile->capacityRetiredCodeBytes += before - m_codeBytes;
-			profile->retirementNanoseconds += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+			const u64 elapsed = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
 				Clock::now() - start).count());
+			profile->retirementNanoseconds += elapsed;
+			profile->prepareNanoseconds += elapsed;
 		}
 	}
 	region.m_cache = this;

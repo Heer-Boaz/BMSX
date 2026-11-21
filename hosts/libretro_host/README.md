@@ -150,7 +150,7 @@ Options:
 - `--profile-native-compilation`: requires `--timing-report` and a native-enabled
   core. Adds compilation deltas to the existing slow-frame records and prints
   cumulative measured-window totals at shutdown. Discovery includes decoding
-  and region planning; retirement covers capacity flushes and interior-entry
+  and region planning; retirement covers capacity evictions and interior-entry
   merges; compilation includes descriptor allocation, register analysis, SLJIT
   generation and publication. Timers run only at those cold owner boundaries,
   not for guest instructions or warm native entries. Profile runs are separate
