@@ -115,6 +115,47 @@ void stringReadChainBoundaries() {
 	}
 }
 
+void lengthSeesMaterializedRegisterTags() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 2, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::LEN), 3, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}};
+	CpuMachine native(image), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		const auto table = cpu.createTable(1);
+		frame.registers.set(0, valueTable(table.address()));
+		frame.setTop(4);
+		// With one array slot and no hash, the first value tag follows
+		// its payload word. Alias just that tag to the pending R2 write.
+		const u32 backing = frame.registers.tagAddress() + 2u - sizeof(u32);
+		machine->memory.writeRamRecordWord(table.address() + static_cast<u32>(TableHeader::Storage), backing);
+	}
+	const u32 pc = native.rom.textAddress;
+	const auto prefixCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+	const auto& installedImage = *native.cpu.activeThread()->frameAtDepth(0)->executionImage;
+	const auto* page = installedImage.nativeCodeLookup->find(pc, 0);
+	const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const auto* entry = page->nativeBlocks->entries[word].get();
+	require(entry && entry->terminal.currentPc == pc + INSTRUCTION_BYTES && entry->admissionCycles == prefixCycles,
+		"the installed segment can admit the prefix and WIDE LEN in a single grant");
+#endif
+	const int grant = prefixCycles + 1;
+	require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded,
+		"the two actual presence probes exhaust the grant before JMP");
+	requireParity(native, scalar);
+	require(native.cpu.readFrameRegister(0, 3) == valueInteger(1) && native.cpu.lastPc == pc + 2u * INSTRUCTION_BYTES
+		&& native.cpu.readFramePc(0) == pc + 3u * INSTRUCTION_BYTES
+		&& native.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::LEN)] - 2 * TABLE_LENGTH_PROBE_CYCLES,
+		"LEN observes the newly written tag and charges the original WIDE frontier exactly");
+}
+
 void genericArraysAndHashKeys() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 9, 0, 0);
@@ -705,6 +746,7 @@ int main() {
 	try {
 		stringReadChainBoundaries();
 		observedArithmeticResumesAtItsOwnInstruction();
+		lengthSeesMaterializedRegisterTags();
 		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); wideAllocationFailure();
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 		stringStoreCanRetireItsOwnSource();
