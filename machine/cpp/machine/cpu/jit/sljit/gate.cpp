@@ -84,14 +84,6 @@ NativeBlockGate::NativeBlockGate() {
 	sljit_set_label(call, callEntry);
 	auto* retEntry = emitTransfer(&CPU::tryReturnNativeFrame);
 	sljit_set_label(ret, retEntry);
-	auto* observeEntry = sljit_emit_label(compiler);
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, remainingCycles),
-		NativeBlockAbi::budget, 0);
-	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), cold);
-	auto* fixedEntry = sljit_emit_label(compiler);
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, remainingCycles),
-		NativeBlockAbi::budget, 0);
-	emitTransfer(&CPU::tryCallNativeFixedFrame);
 	// Ordinary exits carry the exact outstanding charge and top floor in
 	// their descriptor. Linked edges and scalar boundaries already applied them.
 	auto* publish = sljit_emit_label(compiler);
@@ -120,8 +112,6 @@ NativeBlockGate::NativeBlockGate() {
 	dispatch = reinterpret_cast<void*>(sljit_get_label_addr(dispatched));
 	publishSegment = reinterpret_cast<void*>(sljit_get_label_addr(publish));
 	leaveSegment = reinterpret_cast<void*>(sljit_get_label_addr(leave));
-	observeCall = reinterpret_cast<void*>(sljit_get_label_addr(observeEntry));
-	fixedCall = reinterpret_cast<void*>(sljit_get_label_addr(fixedEntry));
 	oneHopStringRead = reinterpret_cast<void*>(sljit_get_label_addr(oneHop));
 #if defined(BMSX_NATIVE_PERF_MAP)
 	auto start = static_cast<sljit_uw>(SLJIT_FUNC_ADDR(entry));
@@ -131,7 +121,7 @@ NativeBlockGate::NativeBlockGate() {
 	const std::array boundaries{
 		start, sljit_get_label_abs_addr(returned), sljit_get_label_abs_addr(dispatched),
 		sljit_get_label_abs_addr(cold), sljit_get_label_abs_addr(declined), sljit_get_label_abs_addr(callEntry),
-		sljit_get_label_abs_addr(retEntry), sljit_get_label_abs_addr(observeEntry), sljit_get_label_abs_addr(fixedEntry),
+		sljit_get_label_abs_addr(retEntry),
 		sljit_get_label_abs_addr(publish), sljit_get_label_abs_addr(leave),
 		sljit_get_label_abs_addr(oneHop),
 		start + sljit_get_generated_code_size(compiler)
@@ -139,7 +129,7 @@ NativeBlockGate::NativeBlockGate() {
 	constexpr std::array names{
 		"bmsx_native_gate_entry", "bmsx_native_gate_return_to_cpp", "bmsx_native_gate_dispatch",
 		"bmsx_native_gate_cold_dispatch", "bmsx_native_gate_declined", "bmsx_native_gate_call",
-		"bmsx_native_gate_ret", "bmsx_native_gate_observe_call", "bmsx_native_gate_fixed_call",
+		"bmsx_native_gate_ret",
 		"bmsx_native_gate_publish", "bmsx_native_gate_leave", "bmsx_native_one_hop_string_read"
 	};
 	static_assert(boundaries.size() == names.size() + 1);

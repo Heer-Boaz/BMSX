@@ -4,6 +4,7 @@
 #include <optional>
 #include <type_traits>
 
+#include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/cpu/jit/runtime/code_lookup.h"
 
@@ -43,7 +44,7 @@ struct NativeCpuRunState {
 	u32 frameBank = 0;
 	std::exception_ptr error;
 	std::optional<Replay> replay{};
-	bool fixedCallMismatch = false;
+	u32 callTargetFeedback = DecodedInstruction::CALL_TARGET_UNSEEN;
 };
 
 static_assert(std::is_standard_layout_v<NativeCpuRunState>);

@@ -210,14 +210,11 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		}
 		case NativeBlockExit::Call: {
 			const auto call = exit->operands.call; // Feedback can withdraw the descriptor.
-			if (call.strategy == NativeCallStrategy::Observe) {
-				auto& page = *NativeCodeLookup::findInRoot(run->codeRoot, exit->currentPc);
-				cpu.observeNativeCallTarget(*frame, page, exit->currentPc);
-			} else if (run->fixedCallMismatch) {
-				run->fixedCallMismatch = false;
+			const u32 feedback = std::exchange(run->callTargetFeedback, DecodedInstruction::CALL_TARGET_UNSEEN);
+			if (feedback != DecodedInstruction::CALL_TARGET_UNSEEN) {
 				auto& page = *NativeCodeLookup::findInRoot(run->codeRoot, exit->currentPc);
 				const u32 word = (exit->currentPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-				page.words[word].setNativeCallTarget(DecodedInstruction::CALL_TARGET_DISABLED);
+				page.words[word].setNativeCallTarget(feedback);
 				cpu.retireNativeInstructionUsers(page, word);
 			}
 			transition = cpu.executeCall(*frame, call.callee, call.supplied, call.requested)
