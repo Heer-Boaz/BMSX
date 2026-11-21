@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <array>
 
@@ -8,6 +9,7 @@
 #include "machine/cpu/value_slots.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/execution_domain.h"
+#include "spec/blua32/opcode.h"
 
 namespace bmsx {
 
@@ -25,6 +27,7 @@ enum class ProtectedField : u32 { Flags = 0, Caller = 4, Base = 8, Wanted = 12, 
 constexpr u32 PROTECTED_CALL_BYTES = 20;
 constexpr u32 PROTECTED_CALL_KIND_MASK = 0xffu;
 constexpr u32 PROTECTED_CALL_PARENT = 1u << 8;
+constexpr u32 PROTECTED_CALL_HANDLER_BUILTIN = 1u << 9;
 
 enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 };
 constexpr u32 FRAME_CONTROL_BYTES = 56;
@@ -36,6 +39,7 @@ constexpr u32 FRAME_NMI = 4u;
 constexpr u32 FRAME_BANK_CART = 1u << 3;
 constexpr u32 FRAME_BANK_SECOND = 1u << 4;
 constexpr u32 FRAME_BANK_MASK = FRAME_BANK_CART | FRAME_BANK_SECOND;
+constexpr u32 FRAME_EXTEND_RESULT_TOP = 1u << 5;
 constexpr u32 frameBankWord(ExecutionDomainId domain) {
 	return domain == SYSTEM_EXECUTION_DOMAIN_ID ? 0u : FRAME_BANK_CART | (static_cast<u32>(domain) << 4);
 }
@@ -44,11 +48,38 @@ constexpr ExecutionDomainId frameExecutionBank(u32 flags) {
 	return (flags & FRAME_BANK_CART) != 0u ? static_cast<ExecutionDomainId>((flags & FRAME_BANK_SECOND) >> 4u) : SYSTEM_EXECUTION_DOMAIN_ID;
 }
 
+// The low word still carries CALL's open/fixed result count. An implicit
+// invocation writes its receiving slot without truncating the caller's top.
+struct CallResultPlacement {
+	i32 base;
+	u32 word;
+	static constexpr u32 extendTopBit = 1u << 31;
+
+	static constexpr CallResultPlacement call(i32 base, i32 requested) {
+		return {base, requested < 0 ? 0u : static_cast<u32>(encodeFixedValueCount(requested))};
+	}
+	static constexpr CallResultPlacement single(i32 base) {
+		return {base, static_cast<u32>(encodeFixedValueCount(1)) | extendTopBit};
+	}
+	static constexpr CallResultPlacement frame(i32 base, i32 count, u32 flags) {
+		return {base, static_cast<u32>(count) | ((flags & FRAME_EXTEND_RESULT_TOP) != 0u ? extendTopBit : 0u)};
+	}
+	constexpr u32 countWord() const { return word & ~extendTopBit; }
+	constexpr int selected(int available) const { return decodeValueCount(countWord(), available); }
+	constexpr int limit() const { return selected(-1); }
+	constexpr bool extendsTop() const { return (word & extendTopBit) != 0u; }
+	constexpr i32 topAfter(i32 before, int count) const {
+		return extendsTop() ? std::max(before, base + count) : base + count;
+	}
+};
+
 // Architectural words for a new activation. The same record is published
 // through the RAM port or into a backing already admitted by a native grant.
 struct FrameEntryControl {
 	u32 function, pc, callSite, flags;
-	i32 varargBase, varargCount, returnBase, returnCount, top;
+	i32 varargBase, varargCount;
+	CallResultPlacement result;
+	i32 top;
 	u32 closure;
 	i32 stackBase, capacity;
 
@@ -57,12 +88,12 @@ struct FrameEntryControl {
 		write(FrameField::CallSite, callSite);
 		write(FrameField::OpenHead, 0u);
 		write(FrameField::Protected, static_cast<u32>(-1));
-		write(FrameField::Flags, flags);
+		write(FrameField::Flags, flags | (result.extendsTop() ? FRAME_EXTEND_RESULT_TOP : 0u));
 		write(FrameField::Pc, pc);
 		write(FrameField::VarargBase, static_cast<u32>(varargBase));
 		write(FrameField::VarargCount, static_cast<u32>(varargCount));
-		write(FrameField::ReturnBase, static_cast<u32>(returnBase));
-		write(FrameField::ReturnCount, static_cast<u32>(returnCount));
+		write(FrameField::ReturnBase, static_cast<u32>(result.base));
+		write(FrameField::ReturnCount, result.countWord());
 		write(FrameField::Top, static_cast<u32>(top));
 		write(FrameField::Closure, closure);
 		write(FrameField::StackBase, static_cast<u32>(stackBase));
@@ -95,6 +126,10 @@ struct CallFrame {
 		if (extent > static_cast<i32>(top & FRAME_WINDOW_MASK))
 			writeControl(FrameField::Top, (top & ~FRAME_WINDOW_MASK) | static_cast<u32>(extent));
 	}
+	void placeResultTop(CallResultPlacement result, int count) {
+		if (result.extendsTop()) extendTop(result.base + count);
+		else setTop(result.base + count);
+	}
 	u32 closureAddress() const { return readControl(FrameField::Closure); }
 	u32 captureAddress(u32 index) const {
 		return controlMemory->readRamRecordWord(ClosureRecord::captureWordAddress(readControl(FrameField::Closure), index));
@@ -124,6 +159,12 @@ struct CallFrame {
 	void setAdmittedTop(i32 top) {
 		writeAdmittedControl(FrameField::Top,
 			(readAdmittedControl(FrameField::Top) & ~FRAME_WINDOW_MASK) | static_cast<u32>(top));
+	}
+	i32 placeAdmittedResultTop(CallResultPlacement result, int count) {
+		const u32 packed = readAdmittedControl(FrameField::Top);
+		const i32 top = result.topAfter(static_cast<i32>(packed & FRAME_WINDOW_MASK), count);
+		writeAdmittedControl(FrameField::Top, (packed & ~FRAME_WINDOW_MASK) | static_cast<u32>(top));
+		return top;
 	}
 	void initializeAdmittedControl(const FrameEntryControl& entry, ValueSpan stack) {
 		entry.writeWords([&](FrameField field, u32 word) { writeAdmittedControl(field, word); });

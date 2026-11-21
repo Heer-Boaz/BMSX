@@ -32,12 +32,11 @@ enum class NativeBlockTransition : u8 {
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
 
-Value CPU::loadNativeTableField(TableStringReadCache& cache, const Value& base, StringId key) {
+bool CPU::loadNativeTableField(CallFrame& frame, int destination, TableStringReadCache& cache, Value base, StringId key) {
 	TableLookupResult result;
 	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexPath(
 		asStringId(m_indexKey), key, cache.receiverSlot, result, cache);
-	chargeTableLookup(result);
-	return result.value;
+	return finishTableRead(frame, destination, base, valueString(key), result);
 }
 
 u32 CPU::readNativeLength(NativeBlockRunState* state, const StringPool* strings, Value* operand) noexcept {
@@ -249,28 +248,25 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
 		case NativeBlockExit::ReadField: {
 			const auto access = exit->operands.table;
-			frame->registers.set(access.value, cpu.loadNativeTableField(exit->tableReadCache,
-				frame->registers.get(access.receiver), asStringId(frame->executionImage->constPool.get(access.key))));
-			frame->extendTop(access.value + 1);
-			transition = NativeBlockTransition::SameWindow;
+			const bool invoked = cpu.loadNativeTableField(*frame, access.value, exit->tableReadCache,
+				frame->registers.get(access.receiver), asStringId(frame->executionImage->constPool.get(access.key)));
+			transition = invoked ? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
 			break;
 		}
 		case NativeBlockExit::ReadIndex: {
 			const auto access = exit->operands.table;
 			const Value base = frame->registers.get(access.receiver);
 			const Value key = readRK(*frame->executionImage, frame->registers, access.key);
-			frame->registers.set(access.value, valueIsString(key)
-				? cpu.loadNativeTableField(exit->tableReadCache, base, asStringId(key))
-				: cpu.loadTableIndex(base, key));
-			frame->extendTop(access.value + 1);
-			transition = NativeBlockTransition::SameWindow;
+			const bool invoked = valueIsString(key)
+				? cpu.loadNativeTableField(*frame, access.value, exit->tableReadCache, base, asStringId(key))
+				: cpu.loadTableIndex(*frame, access.value, base, key);
+			transition = invoked ? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
 			break;
 		}
 		case NativeBlockExit::ReadInteger: {
 			const auto access = exit->operands.table;
-			frame->registers.set(access.value, cpu.loadTableIntegerIndex(frame->registers.get(access.receiver), access.key));
-			frame->extendTop(access.value + 1);
-			transition = NativeBlockTransition::SameWindow;
+			const bool invoked = cpu.loadTableIntegerIndex(*frame, access.value, frame->registers.get(access.receiver), access.key);
+			transition = invoked ? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
 			break;
 		}
 		case NativeBlockExit::WriteField:

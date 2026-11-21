@@ -1,8 +1,8 @@
 import { ThreadField, ThreadStatus, THREAD_INITIAL_FRAMES, THREAD_CONTROL_COUNT_MASK, controlOffset, backingBytes } from './thread_record';
 export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_BACKING_BYTES, THREAD_RECORD_KIND } from './thread_record';
-import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, ProtectedField, type ProtectedCallKind } from './call_state';
+import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, PROTECTED_CALL_HANDLER_BUILTIN, ProtectedField, type ProtectedCallKind } from './call_state';
 import type { GcHeap } from './gc_heap';
-import { valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
+import { ValueTag, valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
 import { writeLE32 } from '../../common/endian';
 import { MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueSlots } from './value_slots';
@@ -42,7 +42,7 @@ export class Thread {
 	public get entry(): number { return this.read(ThreadField.Entry); }
 	public set entry(closure: number) { this.write(ThreadField.Entry, closure); }
 	public get callBase(): number { return this.read(ThreadField.CallBase) | 0; }
-	public get returnCount(): number { return this.read(ThreadField.ReturnCount) | 0; }
+	public get returnCount(): number { return this.read(ThreadField.ReturnCount); }
 	public setReturnWindow(base: number, count: number): void {
 		this.heap.memory.writeRamRecordPair(this.address + ThreadField.CallBase, base, count);
 	}
@@ -79,7 +79,12 @@ export class Thread {
 		for (let at = this.frameDepth - 1; at > depth; --at) frame = frame.previous!;
 		return frame;
 	}
-	public pushProtectedCall(kind: ProtectedCallKind, parent: boolean, base: number, wanted: number, handler: number): number {
+	public protectedHandler(index: number): Value {
+		const flags = this.protectedWord(index, ProtectedField.Flags);
+		const tag = (flags & PROTECTED_CALL_HANDLER_BUILTIN) !== 0 ? ValueTag.BuiltinFunction : ValueTag.Closure;
+		return valueFromTag(tag, this.protectedWord(index, ProtectedField.Handler));
+	}
+	public pushProtectedCall(kind: ProtectedCallKind, parent: boolean, base: number, wanted: number, handler: Value): number {
 		const index = this.protectedDepth;
 		const reserved = this.protectedCapacity;
 		if (index === reserved) {
@@ -91,11 +96,12 @@ export class Thread {
 		}
 		const address = this.protectedAddress(index) & RAM_RECORD_WORD_MASK;
 		const memory = this.heap.memory, ram = memory.ramData();
-		writeLE32(ram, (address + ProtectedField.Flags) & RAM_RECORD_WORD_MASK, kind | (parent ? PROTECTED_CALL_PARENT : 0));
+		const handlerFlag = valueTag(handler) === ValueTag.BuiltinFunction ? PROTECTED_CALL_HANDLER_BUILTIN : 0;
+		writeLE32(ram, (address + ProtectedField.Flags) & RAM_RECORD_WORD_MASK, kind | (parent ? PROTECTED_CALL_PARENT : 0) | handlerFlag);
 		writeLE32(ram, (address + ProtectedField.Caller) & RAM_RECORD_WORD_MASK, this.frameDepth - 1);
 		writeLE32(ram, (address + ProtectedField.Base) & RAM_RECORD_WORD_MASK, base);
 		writeLE32(ram, (address + ProtectedField.Wanted) & RAM_RECORD_WORD_MASK, wanted);
-		writeLE32(ram, (address + ProtectedField.Handler) & RAM_RECORD_WORD_MASK, handler);
+		writeLE32(ram, (address + ProtectedField.Handler) & RAM_RECORD_WORD_MASK, valuePayload(handler));
 		const first = Math.min(PROTECTED_CALL_BYTES, MAIN_RAM_SIZE - address);
 		memory.invalidateRamWrite(address, first);
 		if (first !== PROTECTED_CALL_BYTES) memory.invalidateRamWrite(0, PROTECTED_CALL_BYTES - first);

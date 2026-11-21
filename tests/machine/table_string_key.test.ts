@@ -109,7 +109,7 @@ test('known string lookup follows changing inherited fields and preserves false 
 	const child = cpu.createTable();
 	cpu.gc.tables.setMetatableAddress(child, metatable);
 	const slots = new ValueSlots(1);
-	const result: TableLookupResult = { value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved };
+	const result: TableLookupResult = { value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, invokeReceiver: 0 };
 	cpu.gc.tables.resolveStringIndex(child, indexKey, key, result);
 	assert.equal(result.status, TableLookupStatus.Resolved);
 	assert.equal(result.value, valueBool(false));

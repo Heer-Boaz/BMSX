@@ -210,7 +210,7 @@ void CPU::reset() {
 		return;
 	}
 	u32 systemResetClosure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
-	pushFrame(systemResetClosure, {}, 0, 0, false);
+	pushFrame(systemResetClosure, {}, {});
 	collectHeap();
 }
 
@@ -813,7 +813,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_hardHalted = false;
 	m_yieldRequested = false;
 	u32 closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
-	pushFrame(closure, {}, 0, 0, false);
+	pushFrame(closure, {}, {});
 }
 
 void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
@@ -828,7 +828,7 @@ void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	m_completionThreadAddress = m_activeThread->address;
 	m_yieldRequested = false;
-	pushFrame(closure, args, 0, 0, true);
+	pushFrame(closure, args, {}, FRAME_COMPLETION);
 }
 
 void CPU::beginCompletionCallInExecutionDomain(
@@ -1128,7 +1128,7 @@ bool CPU::coroutineYieldable(u32 address) const {
 	return true;
 }
 
-void CPU::returnToResumer(int sourceBase, int sourceCount, bool succeeded) {
+void CPU::returnToResumer(BuiltinArgsView values, bool succeeded) {
 	Thread* thread = m_activeThread;
 	auto roots = acquireLocalRoots();
 	trackLocalRoot(valueThread(thread->address));
@@ -1137,34 +1137,36 @@ void CPU::returnToResumer(int sourceBase, int sourceCount, bool succeeded) {
 	resumeFrameBank();
 	resumer->setStatus(ThreadStatus::Running);
 	CallFrame& caller = *resumer->currentFrame;
-	const int callBase = resumer->callBase();
-	const int count = decodeValueCount(resumer->returnCount(), sourceCount + 1);
+	const auto result = resumer->transferResult();
+	const int count = result.selected(static_cast<int>(values.size()) + 1);
 	if (count > 0) {
-		ensureRegisterCapacity(caller, callBase + count - 1);
-		caller.registers.set(callBase, valueBool(succeeded));
-		const int copied = std::min(sourceCount, count - 1);
+		ensureRegisterCapacity(caller, result.base + count - 1);
+		caller.registers.set(result.base, valueBool(succeeded));
+		const int copied = std::min(static_cast<int>(values.size()), count - 1);
 		for (int i = 0; i < copied; ++i)
-			caller.registers.set(callBase + i + 1, succeeded ? thread->stack.get(sourceBase + i) : thread->error());
-		for (int i = copied + 1; i < count; ++i) caller.registers.set(callBase + i, valueNil());
+			caller.registers.set(result.base + i + 1, values[i]);
+		for (int i = copied + 1; i < count; ++i) caller.registers.set(result.base + i, valueNil());
 	}
-	caller.setTop(callBase + count);
+	caller.placeResultTop(result, count);
 	thread->setResumer(0u);
 	m_threadSwitchRequested = true;
 	m_yieldRequested = true;
 	instructionBudgetRemaining -= count;
 }
 
-void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base, int count, int argc) {
+void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResultPlacement result, const CallArguments& arguments) {
 	Thread* thread = m_activeThread;
+	const auto args = arguments.values();
 	if (id == BuiltinFunctionId::CoroutineYield) {
 		if (!coroutineYieldable(thread->address)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		thread->setReturnWindow(base, count);
+		thread->setTransferResult(result);
 		thread->setStatus(ThreadStatus::Suspended);
-		returnToResumer(caller.stackBase() + base + 1, argc, true);
+		returnToResumer(args, true);
 		return;
 	}
-	if (argc == 0 || !valueIsThread(caller.registers.get(base + 1))) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	const u32 targetAddress = asThread(caller.registers.get(base + 1), m_heap);
+	const Value targetValue = args[0];
+	if (!valueIsThread(targetValue)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	const u32 targetAddress = asThread(targetValue, m_heap);
 	if (targetAddress == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	const auto status = static_cast<ThreadStatus>(ThreadRecord::read(m_memory, targetAddress, ThreadField::Status));
 	const bool exceptionActive = readExceptionReturnFrameDepth() != -1;
@@ -1173,23 +1175,27 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 		BuiltinResults& out = scratch.get();
 		out.push_back(valueBool(false));
 		out.push_back(valueString(m_stringPool.intern(exceptionActive ? "cannot resume coroutine across a hardware exception" : "cannot resume non-suspended coroutine")));
-		writeReturnValuesFromBuiltinResults(caller, base, count, out);
+		writeReturnValues(caller, result, BuiltinArgsView(out.data(), out.size()));
 		return;
 	}
 	const bool fresh = status == ThreadStatus::New;
 	Thread* target = &bindThread(targetAddress);
-	thread->setReturnWindow(base, count);
+	thread->setTransferResult(result);
 	thread->setStatus(ThreadStatus::Normal);
 	target->setResumer(thread->address);
 	target->setStatus(ThreadStatus::Running);
 	m_activeThread = target;
+	const auto supplied = arguments.tail(1);
 	if (fresh) {
-		pushFrame(caller, m_heap.closureRecordAddress(target->entry()), base + 2, argc - 1, 0, 0, false, 0);
+		const auto closure = m_heap.closureRecordAddress(target->entry());
+		if (supplied.frame) pushFrame(*supplied.frame, closure, supplied.base, supplied.count, {}, 0u);
+		else pushFrame(closure, supplied.values(), {}, 0u, 0u);
 		target->setEntry(0u);
 	} else {
 		resumeFrameBank();
 		CallFrame& frame = *target->currentFrame;
-		writeReturnValuesFromRegisters(frame, target->callBase(), target->returnCount(), caller, base + 2, argc - 1);
+		if (supplied.frame) writeReturnValuesFromRegisters(frame, target->transferResult(), *supplied.frame, supplied.base, supplied.count);
+		else writeReturnValues(frame, target->transferResult(), supplied.values());
 	}
 	m_threadSwitchRequested = true;
 	m_yieldRequested = true;
@@ -1203,7 +1209,7 @@ bool CPU::handleThreadError(Value error) {
 		if (frame->hasControlFlag(FRAME_EXCEPTION | FRAME_COMPLETION)) return false;
 	thread->setStatus(ThreadStatus::Failed);
 	thread->setError(error);
-	returnToResumer(0, 1, false);
+	returnToResumer(BuiltinArgsView(&error, 1), false);
 	return true;
 }
 
@@ -1221,54 +1227,48 @@ void CPU::closeThread(Thread& thread) {
 	thread.setStatus(ThreadStatus::Dead);
 }
 
-void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount) {
+void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement result, const CallArguments& arguments) {
 	instructionBudgetRemaining -= static_cast<int>(fn.cycleBase);
 	if (fn.id == BuiltinFunctionId::PCall || fn.id == BuiltinFunctionId::XPCall) {
-		startProtectedCall(fn.id, frame, callBase, returnCount, callBase + 1, argCount, false);
+		startProtectedCall(fn.id, result, arguments, false);
+		return;
+	}
+	if (fn.id == BuiltinFunctionId::CoroutineResume || fn.id == BuiltinFunctionId::CoroutineYield) {
+		runCoroutineTransfer(fn.id, frame, result, arguments);
 		return;
 	}
 	auto outScratch = acquireBuiltinResultScratch();
 	BuiltinResults& out = outScratch.get();
-	if (fn.id == BuiltinFunctionId::CoroutineResume || fn.id == BuiltinFunctionId::CoroutineYield) {
-		runCoroutineTransfer(fn.id, frame, callBase, returnCount, argCount);
-		return;
-	}
-	const BuiltinArgsView args(frame.registers.subspan(callBase + 1, argCount));
-	callBuiltinFunction(fn, args, out, returnCount == 0 ? -1 : returnCount - 1);
+	callBuiltinFunction(fn, arguments.values(), out, result.limit());
 	if (m_activeThread->frameDepth() != 0 && m_activeThread->currentFrame == &frame) {
-		writeReturnValuesFromBuiltinResults(frame, callBase, returnCount, out);
+		writeReturnValues(frame, result, BuiltinArgsView(out.data(), out.size()));
 	}
 }
 
-void CPU::startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBase, int returnCount,
-	int argumentBase, int argumentCount, bool returnsToProtectedParent) {
+void CPU::startProtectedCall(BuiltinFunctionId id, CallResultPlacement result,
+	const CallArguments& arguments, bool returnsToProtectedParent) {
+	Value handler = valueNil();
 	if (id == BuiltinFunctionId::XPCall) {
-		const Value handler = argumentCount > 1
-			? caller.registers.get(static_cast<size_t>(argumentBase + 1))
-			: valueNil();
+		handler = arguments.values()[1];
 		if (!valueIsClosure(handler) && !valueIsBuiltinFunction(handler)) {
 			throw LuaExecutionError(LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
 		}
 	}
 	const auto kind = id == BuiltinFunctionId::PCall ? ProtectedCallKind::PCall : ProtectedCallKind::XPCallBody;
-	const u32 continuationIndex = m_activeThread->pushProtectedCall(kind, returnsToProtectedParent, callBase,
-		returnCount, id == BuiltinFunctionId::XPCall ? argumentBase + 1 : -1);
+	const u32 continuationIndex = m_activeThread->pushProtectedCall(kind, returnsToProtectedParent, result, handler);
 
 	const int targetArgumentOffset = id == BuiltinFunctionId::PCall ? 1 : 2;
-	invokeProtectedTarget(
-		continuationIndex,
-		argumentCount > 0 ? caller.registers.get(static_cast<size_t>(argumentBase)) : valueNil(),
-		argumentBase + targetArgumentOffset,
-		std::max(argumentCount - targetArgumentOffset, 0)
-	);
+	invokeProtectedTarget(continuationIndex, arguments.values()[0], arguments.tail(targetArgumentOffset));
 }
 
-void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, int argumentBase, int argumentCount) {
+void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, const CallArguments& arguments) {
 	CallFrame& caller = protectedCaller(continuationIndex);
 	if (valueIsClosure(target)) {
 		u32 closure = asClosure(target, m_heap);
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-		auto* frame = pushFrame(caller, closure, argumentBase, argumentCount, 0, 0, false, caller.readControl(FrameField::Pc) - INSTRUCTION_BYTES);
+		auto* frame = arguments.frame
+			? pushFrame(*arguments.frame, closure, arguments.base, arguments.count, {}, caller.readControl(FrameField::Pc) - INSTRUCTION_BYTES)
+			: pushFrame(closure, arguments.values(), {}, 0u, m_currentInstructionPc);
 		if (frame) frame->writeControl(FrameField::Protected, continuationIndex);
 		return;
 	}
@@ -1276,17 +1276,16 @@ void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, int argumen
 		BuiltinFunction& builtin = m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(target))];
 		instructionBudgetRemaining -= static_cast<int>(builtin.cycleBase);
 		if (builtin.id == BuiltinFunctionId::PCall || builtin.id == BuiltinFunctionId::XPCall) {
-			startProtectedCall(builtin.id, caller, m_activeThread->protectedWord(continuationIndex, ProtectedField::Base),
-				0, argumentBase, argumentCount, true);
+			const auto parent = m_activeThread->protectedResult(continuationIndex);
+			// An implicit xpcall only observes its handler's first result.
+			// Do not stage the nested tuple across live caller registers.
+			startProtectedCall(builtin.id, parent.extendsTop() ? CallResultPlacement::single(parent.base)
+				: CallResultPlacement::call(parent.base, -1), arguments, true);
 			return;
 		}
 		auto resultsScratch = acquireBuiltinResultScratch();
 		BuiltinResults& results = resultsScratch.get();
-		callBuiltinFunction(
-			builtin,
-			BuiltinArgsView(caller.registers.subspan(argumentBase, argumentCount)),
-			results, -1
-		);
+		callBuiltinFunction(builtin, arguments.values(), results, -1);
 		finishProtectedCall(continuationIndex, results.data(), static_cast<int>(results.size()));
 		return;
 	}
@@ -1320,9 +1319,9 @@ void CPU::finishProtectedCall(u32 continuationIndex, CallFrame& source, int sour
 
 void CPU::finishProtectedCallWithError(u32 continuationIndex, Value errorValue) {
 	CallFrame& caller = protectedCaller(continuationIndex);
-	const i32 callBase = static_cast<i32>(m_activeThread->protectedWord(continuationIndex, ProtectedField::Base));
-	const i32 returnCount = static_cast<i32>(m_activeThread->protectedWord(continuationIndex, ProtectedField::Wanted));
-	const int resultCount = decodeValueCount(returnCount, 2);
+	const auto result = m_activeThread->protectedResult(continuationIndex);
+	const i32 callBase = result.base;
+	const int resultCount = result.selected(2);
 	if (resultCount > 0) {
 		ValueSpan registers = ensureRegisterCapacity(caller, callBase + resultCount - 1);
 		registers.set(static_cast<size_t>(callBase), valueBool(false));
@@ -1333,16 +1332,16 @@ void CPU::finishProtectedCallWithError(u32 continuationIndex, Value errorValue) 
 			}
 		}
 	}
-	caller.setTop(callBase + resultCount);
+	caller.placeResultTop(result, resultCount);
 	instructionBudgetRemaining -= resultCount;
 	finishProtectedContinuation(continuationIndex, resultCount);
 }
 
 int CPU::writeProtectedResults(u32 continuationIndex, bool prefix, const Value* values, int valueCount) {
 	CallFrame& caller = protectedCaller(continuationIndex);
-	const i32 callBase = static_cast<i32>(m_activeThread->protectedWord(continuationIndex, ProtectedField::Base));
-	const i32 returnCount = static_cast<i32>(m_activeThread->protectedWord(continuationIndex, ProtectedField::Wanted));
-	const int resultCount = decodeValueCount(returnCount, valueCount + 1);
+	const auto result = m_activeThread->protectedResult(continuationIndex);
+	const i32 callBase = result.base;
+	const int resultCount = result.selected(valueCount + 1);
 	if (resultCount > 0) {
 		ValueSpan registers = ensureRegisterCapacity(caller, callBase + resultCount - 1);
 		registers.set(static_cast<size_t>(callBase), valueBool(prefix));
@@ -1354,15 +1353,15 @@ int CPU::writeProtectedResults(u32 continuationIndex, bool prefix, const Value* 
 			registers.set(static_cast<size_t>(callBase + index), valueNil());
 		}
 	}
-	caller.setTop(callBase + resultCount);
+	caller.placeResultTop(result, resultCount);
 	return resultCount;
 }
 
 int CPU::writeProtectedResults(u32 continuationIndex, bool prefix, CallFrame& source, int sourceBase, int sourceCount) {
 	CallFrame& caller = protectedCaller(continuationIndex);
-	const i32 callBase = static_cast<i32>(m_activeThread->protectedWord(continuationIndex, ProtectedField::Base));
-	const i32 returnCount = static_cast<i32>(m_activeThread->protectedWord(continuationIndex, ProtectedField::Wanted));
-	const int resultCount = decodeValueCount(returnCount, sourceCount + 1);
+	const auto result = m_activeThread->protectedResult(continuationIndex);
+	const i32 callBase = result.base;
+	const int resultCount = result.selected(sourceCount + 1);
 	if (resultCount > 0) {
 		ValueSpan registers = ensureRegisterCapacity(caller, callBase + resultCount - 1);
 		const int copiedCount = std::min(sourceCount, resultCount - 1);
@@ -1374,7 +1373,7 @@ int CPU::writeProtectedResults(u32 continuationIndex, bool prefix, CallFrame& so
 			registers.set(static_cast<size_t>(callBase + index), valueNil());
 		}
 	}
-	caller.setTop(callBase + resultCount);
+	caller.placeResultTop(result, resultCount);
 	return resultCount;
 }
 
@@ -1414,13 +1413,18 @@ bool CPU::handleProtectedCallError(Value errorValue) {
 		}
 
 		m_activeThread->setProtectedKind(continuationIndex, ProtectedCallKind::XPCallHandler);
-		const i32 handlerRegister = static_cast<i32>(m_activeThread->protectedWord(continuationIndex, ProtectedField::Handler));
-		const i32 callBase = static_cast<i32>(m_activeThread->protectedWord(continuationIndex, ProtectedField::Base));
-		const Value handler = frame->registers.get(static_cast<size_t>(handlerRegister));
-		setRegister(*frame, callBase, errorValue);
+		const auto result = m_activeThread->protectedResult(continuationIndex);
+		const Value handler = m_activeThread->protectedHandler(continuationIndex);
 		--instructionBudgetRemaining;
 		try {
-			invokeProtectedTarget(continuationIndex, handler, callBase, 1);
+			if (result.extendsTop()) {
+				auto roots = acquireLocalRoots();
+				trackLocalRoot(errorValue);
+				invokeProtectedTarget(continuationIndex, handler, {nullptr, &errorValue, 0, 1});
+			} else {
+				setRegister(*frame, result.base, errorValue);
+				invokeProtectedTarget(continuationIndex, handler, {frame, nullptr, result.base, 1});
+			}
 			return true;
 		} catch (const LuaThrownValueError& handlerError) {
 			errorValue = handlerError.value;
@@ -1634,10 +1638,7 @@ CallFrame* CPU::enterException(
 	}
 	try {
 		u32 closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
-		CallFrame* frame = pushFrame(closure, {}, 0, 0, false, true);
-		frame->writeControl(FrameField::CallSite, epcWord);
-		frame->addControlFlags(FRAME_EXCEPTION | (causeWord == CPU_CAUSE_NMI ? FRAME_NMI : 0));
-		return frame;
+		return pushFrame(closure, {}, {}, FRAME_EXCEPTION | (causeWord == CPU_CAUSE_NMI ? FRAME_NMI : 0), epcWord);
 	} catch (const LuaOutOfMemorySignal&) {
 		// Failure to admit an exception vector cannot recursively trap.
 		hardHalt();
@@ -2470,7 +2471,7 @@ int CPU::closeUpvalues(CallFrame& frame, u32 firstSlot) {
 }
 
 CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
-	int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc) {
+	CallResultPlacement result, u32 callSitePc) {
 	const FunctionPrototype functionRecord = ClosureRecord::readBinding(m_memory, closure);
 	const int callerArgBase = caller.stackBase() + argBase;
 	const bool sharedStack = caller.thread == m_activeThread;
@@ -2481,8 +2482,8 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
 	frame->initializeControl({
 		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc,
-		frameBankWord(functionRecord.executionDomainId) | (returnToCompletionLatch ? FRAME_COMPLETION : 0u),
-		placement.varargBase, placement.varargCount, returnBase, returnCount, placement.top(),
+		frameBankWord(functionRecord.executionDomainId),
+		placement.varargBase, placement.varargCount, result, placement.top(),
 		closure, placement.stackBase, static_cast<int>(placement.capacity),
 	});
 	const auto [copied, padded] = placement.formals;
@@ -2503,19 +2504,19 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 }
 
 CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
-	int returnBase, int returnCount, bool returnToCompletionLatch, bool exception) {
+	CallResultPlacement result, u32 flags, std::optional<u32> callSitePc) {
 	const FunctionPrototype functionRecord = ClosureRecord::readBinding(m_memory, closure);
 	const size_t argCount = args.size();
 	auto* frame = m_activeThread->acquireFrame();
 	const int argumentBase = m_activeThread->stackTop();
 	const ArgumentPlacement placement(argumentBase, static_cast<int>(argCount), functionRecord.entry.numParams, functionRecord.entry.maxStack,
 		functionRecord.entry.flags);
-	ensureStackSize(placement.stackEnd(), valueClosure(closure), true, exception);
+	ensureStackSize(placement.stackEnd(), valueClosure(closure), true, (flags & FRAME_EXCEPTION) != 0u);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
 	frame->initializeControl({
-		functionRecord.functionAddress, functionRecord.entry.codeAddress, functionRecord.entry.codeAddress,
-		frameBankWord(functionRecord.executionDomainId) | (returnToCompletionLatch ? FRAME_COMPLETION : 0u),
-		placement.varargBase, placement.varargCount, returnBase, returnCount, placement.top(),
+		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc.value_or(functionRecord.entry.codeAddress),
+		frameBankWord(functionRecord.executionDomainId) | flags,
+		placement.varargBase, placement.varargCount, result, placement.top(),
 		closure, placement.stackBase, static_cast<int>(placement.capacity),
 	});
 	const auto [copied, padded] = placement.formals;
@@ -2523,27 +2524,30 @@ CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 	frame->registers.clear(copied, padded);
 	for (int i = 0; i < placement.varargCount; ++i)
 		m_activeThread->stack.set(placement.varargBase + i, args[placement.top() + i]);
+	if (callSitePc && (flags & FRAME_EXCEPTION) == 0u) instructionBudgetRemaining -= placement.cycles(false);
 	m_activeThread->setStackTop(static_cast<int>(placement.stackEnd()));
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(functionRecord.executionDomainId, frame->executionImage);
 	return frame;
 }
 
-void CPU::writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount) {
-	const auto placement = ValuePlacement::fit(sourceCount, decodeValueCount(count, sourceCount));
+void CPU::writeReturnValuesFromRegisters(CallFrame& frame, CallResultPlacement result, const CallFrame& source, int sourceBase, int sourceCount) {
+	const int base = result.base;
+	const auto placement = ValuePlacement::fit(sourceCount, result.selected(sourceCount));
 	if (placement.count() > 0) {
 		ValueSpan registers = ensureRegisterCapacity(frame, base + placement.count() - 1);
 		// Backing growth can relocate both views; their stack offsets stay fixed.
 		registers.copyFrom(source.registers, base, sourceBase, placement.copied);
 		registers.clear(base + placement.copied, placement.padded);
 	}
-	frame.setTop(base + placement.count());
+	frame.placeResultTop(result, placement.count());
 	instructionBudgetRemaining -= placement.count();
 }
 
-void CPU::writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int count, const BuiltinResults& values) {
+void CPU::writeReturnValues(CallFrame& frame, CallResultPlacement result, BuiltinArgsView values) {
+	const int base = result.base;
 	const int valueCount = static_cast<int>(values.size());
-	const int targetCount = decodeValueCount(count, valueCount);
+	const int targetCount = result.selected(valueCount);
 	if (targetCount > 0) {
 		ValueSpan registers = ensureRegisterCapacity(frame, base + targetCount - 1);
 		const int copiedCount = std::min(valueCount, targetCount);
@@ -2554,7 +2558,7 @@ void CPU::writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int co
 			registers.set(base + i, valueNil());
 		}
 	}
-	frame.setTop(base + targetCount);
+	frame.placeResultTop(result, targetCount);
 	instructionBudgetRemaining -= targetCount;
 }
 
@@ -2581,8 +2585,6 @@ ValueSpan CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 	return frame.registers;
 }
 
-// TODO: Function-valued __index needs a VM call/return continuation. Keep
-// guest invocation out of raw Table storage and native read leaves.
 u32 CPU::tableIndexAddress(Value base) const {
 	switch (valueTag(base)) {
 		case ValueTag::Table: return valuePayload(base);
@@ -2591,31 +2593,50 @@ u32 CPU::tableIndexAddress(Value base) const {
 	}
 }
 
-void CPU::chargeTableLookup(const TableLookupResult& result) {
+bool CPU::finishTableRead(CallFrame& frame, int destination, Value base, Value key, const TableLookupResult& result) {
 	instructionBudgetRemaining -= static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
 	if (result.status == TableLookupStatus::ChainExhausted) throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	if (result.status == TableLookupStatus::Resolved) {
+		frame.registers.set(destination, result.value);
+		frame.extendTop(destination + 1);
+		return false;
+	}
+
+	// The forwarding Table, not the initial operand, is the receiver when
+	// its own lookup found this method. Preserve the original (uncanonicalized) key.
+	const std::array args{result.extraVisits == 0u ? base : valueTable(result.invokeReceiver), key};
+	auto roots = acquireLocalRoots();
+	trackLocalRoot(result.value);
+	for (const auto& arg : args) trackLocalRoot(arg);
+	const auto placement = CallResultPlacement::single(destination);
+	if (valueIsClosure(result.value)) {
+		const u32 closure = asClosure(result.value, m_heap);
+		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
+		pushFrame(closure, BuiltinArgsView(args.data(), args.size()), placement, 0u, m_currentInstructionPc);
+	} else {
+		runBuiltinFunction(m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(result.value))],
+			frame, placement, {nullptr, args.data(), 0, static_cast<int>(args.size())});
+	}
+	return true;
 }
 
-Value CPU::loadTableIndex(const Value& base, const Value& key) {
+bool CPU::loadTableIndex(CallFrame& frame, int destination, Value base, Value key) {
 	TableLookupResult result;
 	TableRecord(m_heap, tableIndexAddress(base)).resolveIndex(asStringId(m_indexKey), key, result);
-	chargeTableLookup(result);
-	return result.value;
+	return finishTableRead(frame, destination, base, key, result);
 }
 
-Value CPU::loadTableIntegerIndex(const Value& base, int index) {
+bool CPU::loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index) {
 	TableLookupResult result;
 	TableRecord(m_heap, tableIndexAddress(base)).resolveIntegerIndex(asStringId(m_indexKey), index, result);
-	chargeTableLookup(result);
-	return result.value;
+	return finishTableRead(frame, destination, base, valueInteger(index), result);
 }
 
-Value CPU::loadTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key) {
+bool CPU::loadTableFieldIndexCached(CallFrame& frame, int destination, int& predictedSlot, Value base, StringId key) {
 	TableLookupResult result;
 	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexCached(asStringId(m_indexKey), key, predictedSlot, result);
-	chargeTableLookup(result);
 	if (result.extraVisits == 0 && result.slot >= 0) predictedSlot = result.slot;
-	return result.value;
+	return finishTableRead(frame, destination, base, valueString(key), result);
 }
 
 void CPU::storeTableIndex(const Value& base, const Value& key, const Value& value) {

@@ -66,7 +66,9 @@ struct Thread {
 	u32 protectedWord(u32 index, ProtectedField field) const;
 	void setProtectedKind(u32 index, ProtectedCallKind kind);
 	CallFrame* protectedCaller(u32 index) const;
-	u32 pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int wanted, int handler);
+	CallResultPlacement protectedResult(u32 index) const;
+	Value protectedHandler(u32 index) const;
+	u32 pushProtectedCall(ProtectedCallKind kind, bool parent, CallResultPlacement result, Value handler);
 
 	u32 address;
 	ThreadStatus status() const;
@@ -75,9 +77,8 @@ struct Thread {
 	void setResumer(u32 thread);
 	u32 entry() const { return read(ThreadField::Entry); }
 	void setEntry(u32 closure) { write(ThreadField::Entry, closure); }
-	i32 callBase() const;
-	i32 returnCount() const;
-	void setReturnWindow(i32 base, i32 count);
+	CallResultPlacement transferResult() const;
+	void setTransferResult(CallResultPlacement);
 	Value error() const;
 	void setError(Value value);
 	// Retained nodes are this CPU view bank's translation cache. Physical RAM

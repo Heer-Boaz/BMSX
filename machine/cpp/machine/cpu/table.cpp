@@ -531,6 +531,7 @@ void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResu
 			result = {own, slot, depth, TableLookupStatus::Resolved};
 			return;
 		}
+		const u32 receiver = current.address();
 		const u32 metatable = current.metatableAddress();
 		if (metatable == 0u) {
 			result = {depth == 0u ? own : valueNil(), -1, depth, TableLookupStatus::Resolved};
@@ -543,14 +544,15 @@ void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResu
 				: current.getStringKey(indexKey);
 		} else parent = current.getStringKey(indexKey);
 		if (!valueIsTable(parent)) {
-			result = {valueNil(), -1, depth, TableLookupStatus::Resolved};
+			if (valueIsClosure(parent) || valueIsBuiltinFunction(parent))
+				result = {parent, -1, depth, TableLookupStatus::Invoke, receiver};
+			else result = {valueNil(), -1, depth, TableLookupStatus::Resolved};
 			return;
 		}
 		current.m_address = valuePayload(parent);
 		slot = -1;
 	}
-	result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1;
-	result.status = TableLookupStatus::ChainExhausted;
+	result = {valueNil(), -1, TABLE_INDEX_CHAIN_LIMIT - 1, TableLookupStatus::ChainExhausted};
 }
 
 void TableRecord::resolveIndex(StringId indexKey, const Value& rawKey, TableLookupResult& result) const {

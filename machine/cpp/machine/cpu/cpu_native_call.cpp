@@ -93,8 +93,7 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 	callee->executionImage = &image;
 	callee->initializeAdmittedControl({
 		functionAddress, function->codeAddress, exit->lastPc, run->frameBank,
-		placement.varargBase, placement.varargCount, base,
-		call.requested < 0 ? 0 : encodeFixedValueCount(call.requested), placement.top(),
+		placement.varargBase, placement.varargCount, CallResultPlacement::call(base, call.requested), placement.top(),
 		closure, placement.stackBase, static_cast<i32>(placement.capacity)
 	}, thread.stack);
 	if (placement.relocatesFormals) {

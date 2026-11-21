@@ -306,7 +306,21 @@ private:
 		int targetDepth,
 		int instructionBudget
 	);
-	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
+	// Ordinary CALL arguments borrow frame slots by index so backing growth can
+	// rebind them. Detached implicit calls carry complete Values until admission.
+	struct CallArguments {
+		CallFrame* frame;
+		const Value* detached;
+		int base, count;
+		BuiltinArgsView values() const {
+			return frame ? BuiltinArgsView(frame->registers.subspan(base, count)) : BuiltinArgsView(detached, count);
+		}
+		CallArguments tail(int skip) const {
+			return frame ? CallArguments{frame, nullptr, base + skip, std::max(count - skip, 0)}
+				: CallArguments{nullptr, detached + std::min(skip, count), 0, std::max(count - skip, 0)};
+		}
+	};
+	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement, const CallArguments&);
 	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out, int resultLimit);
 	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
 	bool executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept;
@@ -315,9 +329,8 @@ private:
 	void runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit);
 	void runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinError(BuiltinArgsView args);
-	void startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBase, int returnCount,
-		int argumentBase, int argumentCount, bool returnsToProtectedParent);
-	void invokeProtectedTarget(u32 continuationIndex, Value target, int argumentBase, int argumentCount);
+	void startProtectedCall(BuiltinFunctionId id, CallResultPlacement, const CallArguments&, bool returnsToProtectedParent);
+	void invokeProtectedTarget(u32 continuationIndex, Value target, const CallArguments&);
 	void finishProtectedCall(u32 continuationIndex, const Value* values, int valueCount);
 	void finishProtectedCall(u32 continuationIndex, CallFrame& source, int sourceBase, int sourceCount);
 	void finishProtectedCallWithError(u32 continuationIndex, Value errorValue);
@@ -372,9 +385,9 @@ private:
 		return m_haltedUntilIrqThreadAddress == thread.address && m_haltedUntilIrqFrameDepth == depth;
 	}
 	CallFrame* pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
-		int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc);
+		CallResultPlacement result, u32 callSitePc);
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
-		int returnBase, int returnCount, bool returnToCompletionLatch, bool exception = false);
+		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {});
 	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical, std::span<u32> cells = {});
 	u32 createClosure(CallFrame& frame);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
@@ -386,8 +399,8 @@ private:
 	void executeVararg(CallFrame& frame, int first, int requested);
 	u32 findOpenUpvalue(const CallFrame& frame, int index) const;
 	void linkOpenUpvalue(CallFrame& frame, u32 cell, u32 slot);
-	void writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount);
-	void writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int count, const BuiltinResults& values);
+	void writeReturnValuesFromRegisters(CallFrame& frame, CallResultPlacement, const CallFrame& source, int sourceBase, int sourceCount);
+	void writeReturnValues(CallFrame& frame, CallResultPlacement, BuiltinArgsView values);
 	void setRegister(CallFrame& frame, int index, Value value);
 	ValueSpan ensureRegisterCapacity(CallFrame& frame, int index);
 	bool executeWordStores(CallFrame& frame, u32 address, int source, int count);
@@ -402,11 +415,11 @@ private:
 		return registers.get(static_cast<size_t>(rk));
 	}
 	u32 tableIndexAddress(Value base) const;
-	void chargeTableLookup(const TableLookupResult& result);
-	Value loadTableIndex(const Value& base, const Value& key);
-	Value loadTableIntegerIndex(const Value& base, int index);
-	Value loadTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key);
-	Value loadNativeTableField(TableStringReadCache& cache, const Value& base, StringId key);
+	bool finishTableRead(CallFrame& frame, int destination, Value base, Value key, const TableLookupResult& result);
+	bool loadTableIndex(CallFrame& frame, int destination, Value base, Value key);
+	bool loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index);
+	bool loadTableFieldIndexCached(CallFrame& frame, int destination, int& predictedSlot, Value base, StringId key);
+	bool loadNativeTableField(CallFrame& frame, int destination, TableStringReadCache& cache, Value base, StringId key);
 	void storeTableIndex(const Value& base, const Value& key, const Value& value);
 	void storeTableIntegerIndex(const Value& base, int index, const Value& value);
 	void storeTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key, const Value& value);
@@ -506,8 +519,8 @@ private:
 		for (auto& view : m_transferViews) if (view.address != 0u) visitor(view);
 	}
 	bool coroutineYieldable(u32 address) const;
-	void returnToResumer(int sourceBase, int count, bool succeeded);
-	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base, int count, int argc);
+	void returnToResumer(BuiltinArgsView values, bool succeeded);
+	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResultPlacement, const CallArguments&);
 	bool handleThreadError(Value error);
 	void closeThread(Thread& thread);
 

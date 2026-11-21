@@ -16,17 +16,17 @@ inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, 
 
 inline bool CPU::executeCall(CallFrame& frame, int a, int supplied, int requested) {
 	const int argCount = supplied < 0 ? std::max(frame.readWindow(FrameField::Top) - a - 1, 0) : supplied;
-	const int resultWord = requested < 0 ? 0 : encodeFixedValueCount(requested);
+	const auto result = CallResultPlacement::call(a, requested);
 	const Value callee = frame.registers.get(a);
 	if (valueIsClosure(callee)) {
 		const u32 closure = asClosure(callee, m_heap);
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-		CallFrame* pushed = pushFrame(frame, closure, a + 1, argCount, a, resultWord, false,
+		CallFrame* pushed = pushFrame(frame, closure, a + 1, argCount, result,
 			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES);
 		return pushed != nullptr;
 	}
 	if (valueIsBuiltinFunction(callee)) {
-		runBuiltinFunction(m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(callee))], frame, a, resultWord, argCount);
+		runBuiltinFunction(m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(callee))], frame, result, {&frame, nullptr, a + 1, argCount});
 		return false;
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
@@ -54,7 +54,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
 	if (m_activeThread->frameDepth() == 1 && m_activeThread->resumer() != 0u) {
 		Thread* thread = m_activeThread;
 		thread->setStatus(ThreadStatus::Dead);
-		returnToResumer(frame.stackBase() + a, count, true);
+		returnToResumer(BuiltinArgsView(frame.registers.subspan(a, count)), true);
 		thread->setStackTop(0);
 		thread->leaveFrame();
 		return false;
@@ -66,7 +66,9 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
 		instructionBudgetRemaining -= count;
 	} else {
 		CallFrame& caller = *frame.previous;
-		writeReturnValuesFromRegisters(caller, frame.readWindow(FrameField::ReturnBase), frame.readWindow(FrameField::ReturnCount), frame, a, count);
+		const auto result = CallResultPlacement::frame(frame.readWindow(FrameField::ReturnBase),
+			frame.readWindow(FrameField::ReturnCount), frame.readControl(FrameField::Flags));
+		writeReturnValuesFromRegisters(caller, result, frame, a, count);
 	}
 	m_activeThread->leaveFrame();
 	resumeFrameBank();

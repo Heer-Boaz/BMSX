@@ -55,6 +55,7 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 const EMPTY_VALUE_SLOTS = new ValueSlots(0);
 export class BuiltinArgsView {
 	private readonly aperture = new ValueSlots(0);
+	private detached: ValueSlots | null = null;
 	public registers = EMPTY_VALUE_SLOTS;
 	public base = 0;
 	public length = 0;
@@ -70,6 +71,14 @@ export class BuiltinArgsView {
 	public clear(): void {
 		if (this.registers === this.aperture) this.aperture.unbind();
 		this.registers = EMPTY_VALUE_SLOTS; this.base = 0; this.length = 0;
+	}
+	public bindDetached(first: Value, second?: Value): void {
+		const slots = this.detached ??= new ValueSlots(2);
+		slots.set(0, first);
+		if (second !== undefined) slots.set(1, second);
+		this.registers = slots;
+		this.base = 0;
+		this.length = second === undefined ? 1 : 2;
 	}
 }
 export class BuiltinResults {

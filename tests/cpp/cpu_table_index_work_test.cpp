@@ -51,8 +51,8 @@ struct Machine {
 	IrqController irq;
 	ExecutionAddressSpace addresses;
 	CPU cpu;
-	Machine(const Program& program, bool scalar)
-		: rom(test::encodeBlua32TestRom(RomImageDomain::System, program.image)),
+	Machine(const test::Blua32TestImage& image, bool scalar)
+		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image)),
 		  memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		  irq(memory), addresses(memory), cpu(memory, irq, addresses) {
 		cpu.reset();
@@ -94,7 +94,7 @@ void cycle(CPU& cpu, TableRecord root) {
 
 void grantsAndRestore() {
 	for (bool wide : {false, true}) for (const auto [op, kind] : forms) for (int depth : {1, 2, 5, 32}) {
-		Program program(op, wide); Machine generated(program, false), scalar(program, true);
+		Program program(op, wide); Machine generated(program.image, false), scalar(program.image, true);
 		const std::array charges{2, (op == OpCode::SELF ? 17 : op == OpCode::GETI ? 8 : 16) + 8 * (depth - 1), 2, 2};
 		const int total = charges[0] + charges[1] + charges[2] + charges[3];
 		for (auto* m : {&generated, &scalar}) {
@@ -143,7 +143,7 @@ void grantsAndRestore() {
 
 void faultsOnce() {
 	for (bool wide : {false, true}) for (const auto [op, kind] : forms) for (bool cyclic : {false, true}) {
-		Program program(op, wide); Machine generated(program, false), scalar(program, true);
+		Program program(op, wide); Machine generated(program.image, false), scalar(program.image, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto root = m->cpu.createTable(2, 2); const auto key = keyFor(m->cpu, kind);
 			if (cyclic) cycle(m->cpu, root); else makeChain(m->cpu, root, 33, key, valueInteger(73));
@@ -168,7 +168,7 @@ void faultsOnce() {
 
 void warmedOneHopUsesLiveMappings() {
 	for (bool wide : {false, true}) for (const auto op : {OpCode::GETFIELD, OpCode::SELF, OpCode::GETT}) {
-		Program program(op, wide); Machine generated(program, false), scalar(program, true);
+		Program program(op, wide); Machine generated(program.image, false), scalar(program.image, true);
 		const std::array machines{&generated, &scalar};
 		for (auto* m : machines) {
 			auto& cpu = m->cpu;
@@ -241,9 +241,198 @@ void warmedOneHopUsesLiveMappings() {
 	}
 }
 
+void callableIndexUsesARealDetachedActivation() {
+	constexpr u32 handlerWord = 72;
+	for (bool wide : {false, true}) for (const auto op : {OpCode::GETFIELD, OpCode::GETI, OpCode::GETT, OpCode::SELF}) {
+		Program program(op, wide);
+		writeInstruction(program.image.text, handlerWord, static_cast<u8>(OpCode::RET), 0, 3, 0);
+		program.image.functions.push_back({.firstWord=handlerWord, .wordCount=1, .numParams=2, .maxStack=8});
+		Machine generated(program.image, false), scalar(program.image, true);
+		const std::array machines{&generated, &scalar};
+		for (auto* m : machines) {
+			auto& cpu = m->cpu;
+			const Value key = op == OpCode::GETI ? valueInteger(1) : op == OpCode::GETT ? valueFloat(1.0f) : keyFor(cpu, KeyKind::String);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[2], m->rom.textAddress + handlerWord * INSTRUCTION_BYTES);
+			auto* frame = cpu.activeThread()->currentFrame;
+			frame->registers.set(3, valueClosure(frame->closureAddress()));
+			frame->writeControl(FrameField::Top, 0x4900000bu);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+			auto root = cpu.createTable(0, 2);
+			frame->registers.set(0, valueTable(root.address())); frame->registers.set(1, key);
+			auto receiver = makeChain(cpu, root, 2, key, valueNil());
+			frame->registers.set(2, valueTable(receiver.address()));
+			auto meta = cpu.createTable(0, 1);
+			meta.setStringKey(cpu.stringPool().intern("__index"), frame->registers.get(3));
+			receiver.setMetatableAddress(meta.address());
+			frame->registers.set(8, valueInteger(57)); frame->registers.set(9, valueInteger(99));
+		}
+		const int baseCycles = BASE_CYCLES[static_cast<u8>(op)];
+		const int callCycles = 2 + baseCycles + TABLE_INDEX_VISIT_CYCLES + 2;
+		const int grant = wide ? 3 : callCycles;
+		require(test::runCpuParity(generated.cpu, scalar.cpu, grant) == RunResult::Yielded,
+			"a short grant suspends after entering the metamethod, before its first instruction");
+		const auto* caller = generated.cpu.activeThread()->firstFrame;
+		const auto* handler = generated.cpu.activeThread()->currentFrame;
+		const auto readPc = generated.rom.textAddress + program.starts[1] * INSTRUCTION_BYTES;
+		const auto nextPc = generated.rom.textAddress + program.starts[2] * INSTRUCTION_BYTES;
+		require(generated.cpu.instructionBudgetRemaining == grant - callCycles
+			&& handler->previous == caller && handler->stackBase() >= caller->stackBase() + caller->stackCapacity()
+			&& handler->readControl(FrameField::CallSite) == readPc && caller->readControl(FrameField::Pc) == nextPc,
+			"the indexed read charges one traversal and admits a non-overlapping frame at the original opcode PC");
+		require(handler->registers.get(0) == caller->registers.get(2) && handler->registers.get(1) == caller->registers.get(1)
+			&& caller->registers.get(6) == caller->registers.get(0)
+			&& (op != OpCode::SELF || caller->registers.get(7) == caller->registers.get(0)),
+			"the current forwarded receiver and original key reach the handler, while SELF keeps its initial receiver");
+		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
+		require(test::sameLanguageRam(generated.cpu, scalar.cpu), "pending method call has the same guest frame and arguments");
+		const std::array ram{generated.memory.captureSaveState(), scalar.memory.captureSaveState()};
+		const std::array cpu{generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState()};
+		const std::array successorGrants{0, 0, 2};
+		for (size_t pass = 0; pass < successorGrants.size(); ++pass) {
+			if (pass != 0) for (size_t i = 0; i < machines.size(); ++i) {
+				machines[i]->memory.restoreSaveState(ram[i]);
+				machines[i]->cpu.restoreRuntimeState(cpu[i]);
+			}
+			const int successorCycles = successorGrants[pass];
+			const int returnCycles = BASE_CYCLES[static_cast<u8>(OpCode::RET)];
+			test::runCpuParity(generated.cpu, scalar.cpu, returnCycles + 1 + successorCycles);
+			const auto* frame = generated.cpu.activeThread()->currentFrame;
+			const u32 frontier = generated.rom.textAddress + program.starts[successorCycles != 0 ? 3 : 2] * INSTRUCTION_BYTES;
+			require(generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.getFrameDepth() == 1
+				&& frame->readControl(FrameField::Pc) == frontier && frame->readControl(FrameField::Top) == 0x4900000bu
+				&& frame->registers.get(6) == frame->registers.get(2)
+				&& frame->registers.get(8) == (successorCycles != 0 ? frame->registers.get(2) : valueInteger(57))
+				&& frame->registers.get(9) == valueInteger(99),
+				"RET places only the first result, preserves caller top, and executes only the admitted successor");
+			sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
+			require(test::sameLanguageRam(generated.cpu, scalar.cpu), "restored method return has identical guest state");
+			if (successorCycles == 0) test::runCpuParity(generated.cpu, scalar.cpu, 2);
+			require(generated.cpu.readFrameRegister(0, 8) == generated.cpu.readFrameRegister(0, 2),
+				"the successor consumes the placed result without re-running the index");
+		}
+	}
+}
+
+void builtinIndexPreservesResultAndFaultBoundaries() {
+	for (bool wide : {false, true}) for (bool fault : {false, true}) {
+		Program program(OpCode::SELF, wide); Machine generated(program.image, false), scalar(program.image, true);
+		for (auto* m : {&generated, &scalar}) {
+			auto root = m->cpu.createTable(0, 1), meta = m->cpu.createTable(0, 1);
+			meta.setStringKey(m->cpu.stringPool().intern("__index"), m->cpu.createBuiltinFunction(fault ? BuiltinFunctionId::Error : BuiltinFunctionId::Type));
+			root.setMetatableAddress(meta.address());
+			auto* frame = m->cpu.activeThread()->currentFrame;
+			frame->registers.set(0, valueTable(root.address())); frame->registers.set(8, valueInteger(57));
+			frame->writeControl(FrameField::Top, 0x4900000bu);
+		}
+		test::runCpuParity(generated.cpu, scalar.cpu, 3);
+		const auto* frame = generated.cpu.activeThread()->firstFrame;
+		require(frame->registers.get(7) == frame->registers.get(0) && frame->registers.get(8) == valueInteger(57)
+			&& frame->readControl(FrameField::Top) == 0x4900000bu,
+			"method lookup preserves SELF's receiver and the original caller top even when invocation faults");
+		if (fault) {
+			require(generated.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_EXPLICIT_ERROR
+				&& generated.cpu.readEpcWord() == generated.rom.textAddress + program.starts[1] * INSTRUCTION_BYTES
+				&& frame->registers.get(6) == frame->registers.get(0),
+				"faulting builtin indexer blames the original narrow/WIDE SELF and leaves its result untouched");
+		} else {
+			const Value result = frame->registers.get(6);
+			require(valueIsString(result) && generated.cpu.stringPool().toString(asStringId(result)) == "table"
+				&& generated.cpu.instructionBudgetRemaining == 3 - 2 - 17 - 1 - 1,
+				"the builtin sees the receiver Table and returns one result at its ordinary primitive price");
+		}
+		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
+		require(test::sameLanguageRam(generated.cpu, scalar.cpu), "builtin method effects agree across CPU backends");
+	}
+}
+
+void protectedBuiltinIndexDoesNotUseLiveSlotsForTemporaries() {
+	Program program(OpCode::GETT, true); Machine generated(program.image, false), scalar(program.image, true);
+	for (auto* m : {&generated, &scalar}) {
+		auto& cpu = m->cpu;
+		auto root = cpu.createTable(0, 1), meta = cpu.createTable(0, 1);
+		meta.setStringKey(cpu.stringPool().intern("__index"), cpu.createBuiltinFunction(BuiltinFunctionId::XPCall));
+		root.setMetatableAddress(meta.address());
+		auto* frame = cpu.activeThread()->currentFrame;
+		frame->registers.set(0, valueTable(root.address()));
+		frame->registers.set(1, cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
+		frame->registers.set(7, valueInteger(44)); frame->registers.set(8, valueInteger(57));
+		frame->writeControl(FrameField::Top, 0x4900000bu);
+	}
+	test::runCpuParity(generated.cpu, scalar.cpu, 3);
+	const auto* frame = generated.cpu.activeThread()->currentFrame;
+	require(generated.cpu.readCauseWord() == 0 && generated.cpu.activeThread()->protectedDepth() == 0
+		&& frame->registers.get(6) == valueBool(false) && frame->registers.get(7) == valueInteger(44)
+		&& frame->registers.get(8) == valueInteger(57) && frame->readControl(FrameField::Top) == 0x4900000bu,
+		"the nested protected result is adjusted to one without clobbering adjacent slots or leaving a continuation");
+	sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
+	require(test::sameLanguageRam(generated.cpu, scalar.cpu), "nested protection is entirely guest state");
+}
+
+void yieldingBuiltinIndexRestoresItsPlacement() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	const auto put = [&](u32 word, OpCode op, int a, int b, int c) {
+		writeInstruction(image.text, word, static_cast<u8>(op), a, b, c);
+	};
+	put(0, OpCode::CALL, 0, 2, 2); // create
+	put(1, OpCode::MOV, 3, 12, 0); put(2, OpCode::MOV, 4, 0, 0); put(3, OpCode::MOV, 5, 13, 0);
+	put(4, OpCode::CALL, 3, 3, 4); // resume(receiver) takes status, receiver, key
+	put(5, OpCode::MOV, 3, 12, 0); put(6, OpCode::MOV, 4, 0, 0); put(7, OpCode::K1, 5, 0, 0);
+	put(8, OpCode::CALL, 3, 3, 3); // resume(1) supplies the result of the in-flight index
+	put(9, OpCode::HALT, 0, 0, 0);
+	put(64, OpCode::K1, 10, 0, 0);
+	put(65, OpCode::WIDE, 0, 0, 0); put(66, OpCode::GETFIELD, 0, 0, 0);
+	put(67, OpCode::RET, 0, 2, 0);
+	image.constants = {std::string("field")};
+	image.functions = {{.firstWord=0, .wordCount=10, .maxStack=16}, {.firstWord=64, .wordCount=4, .numParams=1, .maxStack=12}};
+	Machine generated(image, false), scalar(image, true);
+	const std::array machines{&generated, &scalar};
+	for (auto* m : machines) {
+		auto& cpu = m->cpu;
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[1], m->rom.textAddress + 64 * INSTRUCTION_BYTES);
+		auto* frame = cpu.activeThread()->currentFrame;
+		frame->registers.set(1, valueClosure(frame->closureAddress()));
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+		auto root = cpu.createTable(0, 1), meta = cpu.createTable(0, 1);
+		meta.setStringKey(cpu.stringPool().intern("__index"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineYield));
+		root.setMetatableAddress(meta.address());
+		frame->registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineCreate));
+		frame->registers.set(12, cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
+		frame->registers.set(13, valueTable(root.address()));
+		frame->extendTop(14);
+	}
+	for (int i = 0; i < 7; ++i) test::runCpuParity(generated.cpu, scalar.cpu, 1);
+	const u32 rootThread = generated.cpu.rootThread()->address;
+	require(generated.cpu.activeThread()->address == rootThread
+		&& generated.cpu.readFrameRegister(0, 3) == valueBool(true)
+		&& generated.cpu.readFrameRegister(0, 4) == generated.cpu.readFrameRegister(0, 13)
+		&& generated.cpu.readFrameRegister(0, 5) == keyFor(generated.cpu, KeyKind::String),
+		"direct coroutine.yield as __index yields the original receiver and key through ordinary resume");
+	const std::array ram{generated.memory.captureSaveState(), scalar.memory.captureSaveState()};
+	const std::array cpu{generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState()};
+	for (bool replay : {false, true}) {
+		if (replay) for (size_t i = 0; i < machines.size(); ++i) {
+			machines[i]->memory.restoreSaveState(ram[i]); machines[i]->cpu.restoreRuntimeState(cpu[i]);
+		}
+		for (int i = 0; i < 4; ++i) test::runCpuParity(generated.cpu, scalar.cpu, 1);
+		const auto* resumed = generated.cpu.activeThread()->currentFrame;
+		require(generated.cpu.activeThread()->address != rootThread
+			&& resumed->readControl(FrameField::Pc) == generated.rom.textAddress + 67 * INSTRUCTION_BYTES
+			&& resumed->readWindow(FrameField::Top) == 11 && resumed->registers.get(0) == valueInteger(1)
+			&& resumed->registers.get(10) == valueInteger(1),
+			"resume fills only the suspended index result without truncating its live guest window");
+		test::runCpuParity(generated.cpu, scalar.cpu, 1);
+		require(generated.cpu.activeThread()->address == rootThread
+			&& generated.cpu.readFrameRegister(0, 3) == valueBool(true) && generated.cpu.readFrameRegister(0, 4) == valueInteger(1),
+			"the coroutine completes the ordinary read using the value supplied by resume");
+		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
+		require(test::sameLanguageRam(generated.cpu, scalar.cpu), "suspended and restored transfer has identical guest state");
+	}
+}
+
 void stringReceiver() {
 	for (bool wide : {false, true}) {
-		Program program(OpCode::GETFIELD, wide, true); Machine generated(program, false), scalar(program, true);
+		Program program(OpCode::GETFIELD, wide, true); Machine generated(program.image, false), scalar(program.image, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu; auto installed = cpu.createTable(0, 2); const auto key = keyFor(cpu, KeyKind::String);
 			makeChain(cpu, installed, 3, key, valueInteger(73));
@@ -283,7 +472,11 @@ void stringReceiver() {
 }
 } // namespace
 int main() {
-	try { grantsAndRestore(); faultsOnce(); warmedOneHopUsesLiveMappings(); stringReceiver(); }
+	try {
+		grantsAndRestore(); faultsOnce(); warmedOneHopUsesLiveMappings();
+		callableIndexUsesARealDetachedActivation(); builtinIndexPreservesResultAndFaultBoundaries();
+		protectedBuiltinIndexDoesNotUseLiveSlotsForTemporaries(); yieldingBuiltinIndexRestoresItsPlacement(); stringReceiver();
+	}
 	catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 	return 0;
 }

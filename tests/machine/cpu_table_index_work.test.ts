@@ -4,17 +4,138 @@ import { isDeepStrictEqual } from 'node:util';
 import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 
-import { valueBuiltinFunction, valueBool, valueInteger, valueNil, valueTable, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueBuiltinFunction, valueBool, valueFloat, valueInteger, valueNil, valueTable, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE, MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { LUA_FAULT_REASON_METATABLE_LOOP } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { compileCoroutineTest } from '../helpers/coroutine';
+import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
 const forms = [[OpCode.GETFIELD, 'string'], [OpCode.SELF, 'string'], [OpCode.GETT, 'string'],
 	[OpCode.GETI, 'number'], [OpCode.GETT, 'number'], [OpCode.GETT, 'boolean']] as const;
+
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	test(`function __index calls retain the WIDE frontier, detached arguments and one-result placement (${backend})`, () => {
+		for (const op of [OpCode.GETT, OpCode.GETI, OpCode.GETFIELD, OpCode.SELF]) {
+			const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+			writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+			writeInstruction(text, 1, OpCode.CLOSURE, 10, 0, 0);
+			writeInstruction(text, 2, OpCode.MOV, 6, 0, 0);
+			writeInstruction(text, 3, OpCode.WIDE, 0, 0, 0);
+			writeInstruction(text, 4, op, 6, 6, op === OpCode.GETT || op === OpCode.GETI ? 1 : 0);
+			writeInstruction(text, 5, OpCode.MOV, 8, 6, 0);
+			writeInstruction(text, 6, OpCode.JMP, 0, 63, 59, 255);
+			writeInstruction(text, 7, OpCode.RET, 1, 2, 0);
+			const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [
+				{ firstWord: 0, wordCount: 7, maxStack: 16 },
+				{ firstWord: 7, wordCount: 1, numParams: 2, maxStack: 8 },
+			], closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] });
+			const { cpu } = createTestSystemCpu(image, backend);
+			let frame = cpu.rootThread.currentFrame!;
+			const base = frame.pc, loop = base + 2 * INSTRUCTION_BYTES, read = base + 3 * INSTRUCTION_BYTES;
+			const indexKey = cpu.stringPool.intern('__index');
+			const key = op === OpCode.GETT ? valueFloat(1) : op === OpCode.GETI ? valueInteger(1) : valueString(cpu.stringPool.intern('field'));
+			const table = cpu.createTable(), forwarded = cpu.createTable();
+			const meta = cpu.createTable(0, 1), forwardedMeta = cpu.createTable(0, 1);
+			cpu.gc.tables.set(table, key, valueBool(false));
+			frame.registers.setTable(0, table); frame.registers.set(1, key);
+			frame.registers.setInteger(12, 91); frame.top = 13;
+			const readCycles = BASE_CYCLES[op];
+			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE]);
+			cpu.runUntilDepth(0, (readCycles + 6) * 68);
+			if (backend === CpuExecutionBackend.JavaScript)
+				assert.ok(frame.decodedPage!.compiledBlocks!.entries[(loop & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
+			cpu.gc.tables.setStringKey(meta, indexKey, valueTable(forwarded));
+			cpu.gc.tables.setStringKey(forwardedMeta, indexKey, frame.registers.get(10));
+			cpu.gc.tables.setMetatableAddress(table, meta); cpu.gc.tables.setMetatableAddress(forwarded, forwardedMeta);
+			cpu.gc.tables.set(table, key, valueNil());
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], loop);
+			frame.registers.setInteger(8, 57);
+			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+			assert.equal(3 - cpu.instructionBudgetRemaining, 2 + readCycles + 8 + 2);
+			const callback = cpu.rootThread.currentFrame!;
+			assert.equal(cpu.rootThread.frameDepth, 2);
+			assert.equal(callback.callSitePc, read);
+			assert.equal(callback.registers.get(0), valueTable(forwarded));
+			assert.equal(callback.registers.get(1), key, 'callback gets the original key, not the normalized table key');
+			assert.equal(frame.registers.get(6), valueTable(table), 'aliased destination has not received its result yet');
+			assert.equal(frame.registers.getInteger(8), 57);
+			if (op === OpCode.SELF) assert.equal(frame.registers.get(7), valueTable(table));
+			const checkpoint = captureCpuCheckpoint(cpu);
+			for (let replay = 0; replay < 2; ++replay) {
+				assert.equal(cpu.runUntilDepth(1, 1), RunResult.Halted);
+				assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.RET] + 1);
+				frame = cpu.rootThread.currentFrame!;
+				assert.equal(frame.registers.get(6), key);
+				assert.equal(frame.registers.getInteger(12), 91);
+				assert.equal(frame.top, 13);
+				assert.equal(frame.pc, base + 5 * INSTRUCTION_BYTES);
+				if (replay === 0) restoreCpuCheckpoint(cpu, checkpoint);
+			}
+		}
+	});
+
+	test(`a directly yielding __index builtin survives coroutine checkpoint and preserves outer results (${backend})`, () => {
+		const image = compileCoroutineTest(`
+local receiver = setmetatable({}, {})
+lookup_target = receiver
+local task = coroutine.create(function(a, b)
+  local result = receiver.name
+  return result, a, b
+end)
+local ok, actual_receiver, key = coroutine.resume(task, 41, 42)
+assert(ok, actual_receiver)
+assert(actual_receiver == receiver, 'wrong receiver')
+assert(key == 'name', 'wrong key')
+waiting_to_resume = true
+local completed, result, a, b = coroutine.resume(task, 73, 99)
+assert(completed and result == 73 and a == 41 and b == 42)
+local nested = setmetatable({}, { __index = xpcall })
+local handler = pcall
+local function read(case, held)
+  local v = case[handler]
+  return v, held
+end
+local v, held = read(nested, 91)
+assert(v == false and held == 91)
+return true`, 0);
+		const { cpu } = createTestSystemCpu(image, backend);
+		cpu.installBootPrimitives();
+		const targetKey = cpu.stringPool.intern('lookup_target');
+		for (let attempts = 0; attempts < 2048 && cpu.getGlobalByKey(targetKey) === valueNil(); ++attempts) {
+			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			assert.equal(cpu.readLuaFaultReasonWord(), 0);
+		}
+		const target = cpu.getGlobalByKey(targetKey);
+		assert.notEqual(target, valueNil());
+		cpu.gc.tables.setStringKey(cpu.gc.tables.metatableAddress(valuePayload(target)), cpu.stringPool.intern('__index'),
+			valueBuiltinFunction(BuiltinFunctionId.CoroutineYield));
+		const waitKey = cpu.stringPool.intern('waiting_to_resume');
+		for (let attempts = 0; attempts < 2048 && cpu.getGlobalByKey(waitKey) !== valueBool(true); ++attempts) {
+			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			assert.equal(cpu.readLuaFaultReasonWord(), 0);
+		}
+		assert.equal(cpu.getGlobalByKey(waitKey), valueBool(true));
+		const saved = captureCpuCheckpoint(cpu);
+		let expected: ReturnType<typeof captureCpuCheckpoint>;
+		for (let replay = 0; replay < 2; ++replay) {
+			assert.equal(cpu.runUntilDepth(0, 20000), RunResult.Halted);
+			assert.equal(cpu.readLuaFaultReasonWord(), 0);
+			assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
+			const completed = captureCpuCheckpoint(cpu);
+			if (replay === 0) {
+				expected = completed;
+				restoreCpuCheckpoint(cpu, saved);
+			} else assert.deepEqual(completed, expected!);
+		}
+	});
+}
 
 function readProgram(op: OpCode, wide: boolean, stringReceiver = false) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE), starts: number[] = [];

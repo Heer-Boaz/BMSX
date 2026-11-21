@@ -17,9 +17,9 @@ const TABLE_MAX_ARRAY_INDEX = 0x7fffffff;
 export const TABLE_INDEX_CHAIN_LIMIT = 32;
 export const TABLE_STORE_REQUIRES_GROWTH = -2;
 export type TableLengthWork = { probes: number };
-export const enum TableLookupStatus { Resolved, ChainExhausted }
+export const enum TableLookupStatus { Resolved, ChainExhausted, Invoke }
 type TableLookupSlot = { value: Value; slot: number };
-export type TableLookupResult = TableLookupSlot & { extraVisits: number; status: TableLookupStatus };
+export type TableLookupResult = TableLookupSlot & { extraVisits: number; status: TableLookupStatus; invokeReceiver: number };
 type StoredEntryVisitor = (key: Value, value: Value) => void;
 type StoredValuePredicate = (value: Value) => boolean;
 
@@ -277,7 +277,12 @@ export class TableRecords {
 				result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
 			}
 			const next = this.getStringKey(meta, indexKey);
-			if (valueTag(next) !== ValueTag.Table) {
+			const tag = valueTag(next);
+			if (tag !== ValueTag.Table) {
+				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction) {
+					result.value = next; result.slot = -1; result.extraVisits = depth;
+					result.invokeReceiver = current; result.status = TableLookupStatus.Invoke; return;
+				}
 				result.value = valueNil(); result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
 			}
 			current = valuePayload(next);
@@ -304,8 +309,13 @@ export class TableRecords {
 				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
 			}
 			const next = this.metatableIndexValue(current, indexKey);
-			if (valueTag(next) !== ValueTag.Table) {
-				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
+			const tag = valueTag(next);
+			if (tag !== ValueTag.Table) {
+				result.extraVisits = depth;
+				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction) {
+					result.value = next; result.invokeReceiver = current; result.status = TableLookupStatus.Invoke;
+				} else result.status = TableLookupStatus.Resolved;
+				return;
 			}
 			predicted = -1;
 			current = valuePayload(next);

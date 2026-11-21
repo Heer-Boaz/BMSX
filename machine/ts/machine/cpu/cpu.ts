@@ -143,7 +143,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, type CallFrame } from './call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, selectedCallResultCount, type CallFrame } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND, THREAD_HEAP_BYTES, THREAD_INITIAL_BACKING_BYTES } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, controlOffset } from './thread_record';
@@ -289,7 +289,7 @@ export class CPU implements MappedPageInvalidator {
 	private closureCellAddresses = new Uint32Array(0);
 	private captureAddresses = new Uint32Array(0);
 	private readonly tableLookupResult: TableLookupResult = {
-		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved,
+		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, invokeReceiver: 0,
 	};
 
 	private readonly executionImagesByDomain: Array<Blua32ExecutionImage | null> =
@@ -488,28 +488,46 @@ export class CPU implements MappedPageInvalidator {
 			default: throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
 	}
-	private chargeTableLookup(result: TableLookupResult): void {
+	private finishTableRead(frame: CallFrame, destination: number, base: Value, key: Value, result: TableLookupResult): boolean {
 		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
 		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+		if (result.status === TableLookupStatus.Resolved) {
+			frame.registers.set(destination, result.value);
+			this.bumpRegisterTop(frame, destination);
+			return false;
+		}
+		// A forwarded lookup passes the reached table. The String-index table
+		// is an implementation of the initial String receiver, not its value.
+		const receiver = result.extraVisits === 0 ? base : valueTable(result.invokeReceiver);
+		const method = result.value;
+		const args = this.acquireRegisterBuiltinArgs();
+		const rootBase = this.localRoots.length;
+		this.localRoots.push(method, receiver, key);
+		args.bindDetached(receiver, key);
+		try {
+			if (valueTag(method) === ValueTag.Closure) {
+				const closure = this.gc.closureRecordAddress(valuePayload(method));
+				if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
+				this.pushFrame(closure, args.registers, destination, SINGLE_CALL_RESULT, false, false, this.currentInstructionPc, 0, 2);
+			} else {
+				this.runBuiltinFunction(valuePayload(method), frame, destination, SINGLE_CALL_RESULT, 2, args.registers, 0);
+			}
+		} finally {
+			this.localRoots.length = rootBase;
+			this.releaseRegisterBuiltinArgs(args);
+		}
+		return true;
 	}
-	private loadTableIndex(base: Value, key: Value, target: ValueSlots, targetIndex: number): void {
+	private loadTableIndex(base: Value, key: Value, frame: CallFrame, targetIndex: number): boolean {
 		const result = this.tableLookupResult;
 		this.gc.tables.resolveIndex(this.tableIndexAddress(base), this.indexKey, key, result);
-		this.chargeTableLookup(result);
-		target.set(targetIndex, result.value);
+		return this.finishTableRead(frame, targetIndex, base, key, result);
 	}
-	private loadTableIntegerIndex(base: Value, key: number, target: ValueSlots, targetIndex: number): void {
-		const result = this.tableLookupResult;
-		this.gc.tables.resolveIntegerIndex(this.tableIndexAddress(base), this.indexKey, key, result);
-		this.chargeTableLookup(result);
-		target.set(targetIndex, result.value);
-	}
-	private loadTableFieldIndexCached(base: Value, page: DecodedInstructionPage, pageOffset: number, key: StringId, target: ValueSlots, targetIndex: number): void {
+	private loadTableFieldIndexCached(base: Value, page: DecodedInstructionPage, pageOffset: number, key: StringId, frame: CallFrame, targetIndex: number): boolean {
 		const result = this.tableLookupResult;
 		this.gc.tables.resolveStringIndexCached(this.tableIndexAddress(base), this.indexKey, key, page.tableCacheSlots[pageOffset], result);
-		this.chargeTableLookup(result);
 		if (result.extraVisits === 0 && result.slot >= 0) page.tableCacheSlots[pageOffset] = result.slot;
-		target.set(targetIndex, result.value);
+		return this.finishTableRead(frame, targetIndex, base, valueString(key), result);
 	}
 	private storeTableIndex(base: Value, key: Value, value: Value): void {
 		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
@@ -2518,14 +2536,11 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.ReadInteger:
 				case CompiledBlockExit.ReadIndex: {
 					const base = registers.get(exit.exitB);
-					if (exit.exit === CompiledBlockExit.ReadField) {
-						this.loadTableFieldIndexCached(base, page, exit.exitWord, image.constWords[exit.exitC], registers, exit.exitA);
-					} else if (exit.exit === CompiledBlockExit.ReadInteger) {
-						this.loadTableIntegerIndex(base, exit.exitC, registers, exit.exitA);
-					} else {
-						this.loadTableIndex(base, this.readRKValue(frame, exit.exitC), registers, exit.exitA);
-					}
-					this.bumpRegisterTop(frame, exit.exitA);
+					const invoked = exit.exit === CompiledBlockExit.ReadField
+						? this.loadTableFieldIndexCached(base, page, exit.exitWord, image.constWords[exit.exitC], frame, exit.exitA)
+						: this.loadTableIndex(base, exit.exit === CompiledBlockExit.ReadInteger
+							? valueInteger(exit.exitC) : this.readRKValue(frame, exit.exitC), frame, exit.exitA);
+					if (invoked) return;
 					break;
 				}
 				case CompiledBlockExit.WriteField:
@@ -2680,8 +2695,9 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.GETI: {
 					const base = registers.get(page.b[pageOffset]), index = page.c[pageOffset];
 					if (valueTag(base) !== ValueTag.Table || !this.gc.tables.loadIntegerArrayKey(valuePayload(base), index, registers, a))
-						this.loadTableIntegerIndex(base, index, registers, a);
-					this.bumpRegisterTop(frame, a); return;
+						this.loadTableIndex(base, valueInteger(index), frame, a);
+					else this.bumpRegisterTop(frame, a);
+					return;
 				}
 				case OpCode.SETI: {
 					const base = registers.get(a), index = page.b[pageOffset], value = this.readRKValue(frame, page.c[pageOffset]);
@@ -2690,19 +2706,17 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.GETFIELD:
-					this.loadTableFieldIndexCached(registers.get(page.b[pageOffset]), page, pageOffset, image.constWords[page.c[pageOffset]], registers, a);
-					this.bumpRegisterTop(frame, a); return;
+					this.loadTableFieldIndexCached(registers.get(page.b[pageOffset]), page, pageOffset, image.constWords[page.c[pageOffset]], frame, a); return;
 				case OpCode.SETFIELD:
 					this.storeTableFieldIndexCached(registers.get(a), page, pageOffset, image.constWords[page.b[pageOffset]], this.readRKValue(frame, page.c[pageOffset])); return;
 				case OpCode.SELF: {
 					const b = page.b[pageOffset], base = registers.get(b), key = image.constWords[page.c[pageOffset]];
 					registers.copySlot(a + 1, b); this.bumpRegisterTop(frame, a + 1);
-					this.loadTableFieldIndexCached(base, page, pageOffset, key, registers, a); this.bumpRegisterTop(frame, a); return;
+					this.loadTableFieldIndexCached(base, page, pageOffset, key, frame, a); return;
 				}
 				case OpCode.HALT: this.haltUntilIrq(); return;
 				case OpCode.GETT:
-					this.loadTableIndex(registers.get(page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]), registers, a);
-					this.bumpRegisterTop(frame, a); return;
+					this.loadTableIndex(registers.get(page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]), frame, a); return;
 				case OpCode.SETT:
 					this.storeTableIndex(registers.get(a), this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset])); return;
 				case OpCode.NEWT: {
@@ -2932,41 +2946,45 @@ export class CPU implements MappedPageInvalidator {
 
 	private pushFrame(
 		closure: number,
-		args: ReadonlyArray<Value>,
+		args: ReadonlyArray<Value> | ValueSlots,
 		returnBase: number,
 		returnCount: number,
 		returnToCompletionLatch: boolean,
 		exception = false,
+		callSitePc?: number,
+		argBase = 0,
+		detachedCount = 0,
 	): CallFrame {
 		const functionRecord = this.functionRecordLatch;
 		Closure.readBinding(this.memory, closure, this.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS), this.executionReadView, functionRecord);
 		const frame = this.activeThread.acquireFrame();
 		const argumentBase = this.activeThread.stackTop;
+		const argCount = args instanceof ValueSlots ? detachedCount : args.length;
 		const vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) !== 0;
-		const varargCount = vararg ? Math.max(args.length - functionRecord.numParams, 0) : 0;
-		const stackBase = vararg ? argumentBase + args.length : argumentBase;
+		const varargCount = vararg ? Math.max(argCount - functionRecord.numParams, 0) : 0;
+		const stackBase = vararg ? argumentBase + argCount : argumentBase;
 		const capacity = Math.max(functionRecord.maxStack, functionRecord.numParams, 1);
 		this.ensureStackCapacity(stackBase + capacity, valueClosure(closure), true, exception);
 		frame.executionImage = this.executionImageForDomain(functionRecord.executionDomainId)!;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
-		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress, returnToCompletionLatch, functionRecord.executionDomainId,
+		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc ?? functionRecord.codeAddress, returnToCompletionLatch, functionRecord.executionDomainId,
 			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams, closure, stackBase, capacity);
 		const registers = frame.registers;
 		this.activeThread.stackTop = stackBase + capacity;
 
-		const copiedCount = Math.min(functionRecord.numParams, args.length);
-		for (let index = 0; index < copiedCount; index += 1) {
-			registers.set(index, args[index]);
+		const copiedCount = Math.min(functionRecord.numParams, argCount);
+		const varargBase = argumentBase + functionRecord.numParams;
+		if (args instanceof ValueSlots) {
+			registers.copyRangeFrom(args, 0, argBase, copiedCount);
+			this.activeThread.stackRegisters.copyRangeFrom(args, varargBase, argBase + functionRecord.numParams, varargCount);
+			this.charge(functionRecord.numParams + varargCount);
+		} else {
+			for (let index = 0; index < copiedCount; ++index) registers.set(index, args[index]);
+			for (let index = 0; index < varargCount; ++index)
+				this.activeThread.stackRegisters.set(varargBase + index, args[functionRecord.numParams + index]);
 		}
-		for (let index = copiedCount; index < functionRecord.numParams; index += 1) {
-			registers.setNil(index);
-		}
-		if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) !== 0) {
-			for (let index = 0; index < varargCount; index += 1) {
-				this.activeThread.stackRegisters.set(argumentBase + functionRecord.numParams + index, args[functionRecord.numParams + index]);
-			}
-		}
+		registers.clear(functionRecord.numParams - copiedCount, copiedCount);
 		this.activeThread.enterFrame(frame);
 		this.latchActiveExecutionImage(functionRecord.executionDomainId, frame.executionImage);
 		return frame;
@@ -3095,7 +3113,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
-		const targetCount = decodeValueCount(count, sourceCount);
+		const targetCount = selectedCallResultCount(count, sourceCount);
 		if (targetCount > 0) {
 			const registers = this.ensureRegisterCapacity(frame, base + targetCount - 1);
 			const copiedCount = Math.min(sourceCount, targetCount);
@@ -3106,7 +3124,7 @@ export class CPU implements MappedPageInvalidator {
 				registers.setNil(base + index);
 			}
 		}
-		frame.top = base + targetCount;
+		frame.setCallResultTop(base + targetCount, count);
 		this.charge(targetCount);
 	}
 
@@ -3116,7 +3134,7 @@ export class CPU implements MappedPageInvalidator {
 		count: number,
 		values: BuiltinResults,
 	): void {
-		const targetCount = decodeValueCount(count, values.length);
+		const targetCount = selectedCallResultCount(count, values.length);
 		if (targetCount > 0) {
 			const registers = this.ensureRegisterCapacity(frame, base + targetCount - 1);
 			const copiedCount = Math.min(values.length, targetCount);
@@ -3127,7 +3145,7 @@ export class CPU implements MappedPageInvalidator {
 				registers.setNil(base + index);
 			}
 		}
-		frame.top = base + targetCount;
+		frame.setCallResultTop(base + targetCount, count);
 		this.charge(targetCount);
 	}
 
@@ -3367,7 +3385,8 @@ export class CPU implements MappedPageInvalidator {
 			resumer.status = ThreadStatus.Running;
 			const caller = resumer.currentFrame!;
 			const callBase = resumer.callBase;
-			const count = decodeValueCount(resumer.returnCount, sourceCount + 1);
+			const returnCount = resumer.returnCount;
+			const count = selectedCallResultCount(returnCount, sourceCount + 1);
 			if (count > 0) {
 				const registers = this.ensureRegisterCapacity(caller, callBase + count - 1);
 				registers.setBoolean(callBase, source !== null);
@@ -3376,7 +3395,7 @@ export class CPU implements MappedPageInvalidator {
 				else if (copied !== 0) registers.set(callBase + 1, thread.error);
 				for (let index = copied + 1; index < count; index += 1) registers.setNil(callBase + index);
 			}
-			caller.top = callBase + count;
+			caller.setCallResultTop(callBase + count, returnCount);
 			thread.resumer = 0;
 			this.threadSwitchRequested = true;
 			this.yieldRequested = true;
@@ -3384,19 +3403,21 @@ export class CPU implements MappedPageInvalidator {
 		} finally { this.localRoots.length = rootBase; }
 	}
 
-	private runCoroutineTransfer(id: BuiltinFunctionId, caller: CallFrame, callBase: number, returnCount: number, argCount: number): void {
+	private runCoroutineTransfer(id: BuiltinFunctionId, caller: CallFrame, callBase: number, returnCount: number,
+		argumentBase: number, argCount: number, detached?: ValueSlots): void {
 		const thread = this.activeThread;
+		const source = detached ?? caller.registers;
 		if (id === BuiltinFunctionId.CoroutineYield) {
 			if (!this.coroutineYieldable(thread.address)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			thread.setReturnWindow(callBase, returnCount);
 			thread.status = ThreadStatus.Suspended;
-			this.returnToResumer(caller.registers, callBase + 1, argCount);
+			this.returnToResumer(source, argumentBase, argCount);
 			return;
 		}
-		if (argCount === 0 || caller.registers.getTag(callBase + 1) !== ValueTag.Thread) {
+		if (argCount === 0 || source.getTag(argumentBase) !== ValueTag.Thread) {
 			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		}
-		const targetAddress = caller.registers.getThread(callBase + 1, this.gc);
+		const targetAddress = source.getThread(argumentBase, this.gc);
 		if (targetAddress === 0) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		const status = this.readThreadStatus(targetAddress);
 		const exceptionActive = this.readExceptionReturnFrameDepth() !== -1;
@@ -3417,12 +3438,14 @@ export class CPU implements MappedPageInvalidator {
 		target.status = ThreadStatus.Running;
 		this.activeThread = target;
 		if (fresh) {
-			this.pushFrameFromCaller(caller, this.gc.closureRecordAddress(target.entry), callBase + 2, argCount - 1, 0, 0, false, 0);
+			const closure = this.gc.closureRecordAddress(target.entry);
+			if (detached === undefined) this.pushFrameFromCaller(caller, closure, argumentBase + 1, argCount - 1, 0, 0, false, 0);
+			else this.pushFrame(closure, detached, 0, 0, false, false, 0, argumentBase + 1, argCount - 1);
 			target.entry = 0;
 		} else {
 			this.resumeFrameBank();
 			const frame = target.currentFrame!;
-			this.writeReturnValuesFromRegisters(frame, target.callBase, target.returnCount, caller.registers, callBase + 2, argCount - 1);
+			this.writeReturnValuesFromRegisters(frame, target.callBase, target.returnCount, source, argumentBase + 1, argCount - 1);
 		}
 		this.threadSwitchRequested = true;
 		this.yieldRequested = true;
@@ -3457,21 +3480,22 @@ export class CPU implements MappedPageInvalidator {
 		thread.status = ThreadStatus.Dead;
 	}
 
-	private runBuiltinFunction(id: BuiltinFunctionId, frame: CallFrame, callBase: number, returnCount: number, argCount: number): void {
+	private runBuiltinFunction(id: BuiltinFunctionId, frame: CallFrame, callBase: number, returnCount: number, argCount: number,
+		detached?: ValueSlots, argumentBase = callBase + 1): void {
 		this.charge(BUILTIN_FUNCTIONS[id].cost.base);
 		if (id === BuiltinFunctionId.PCall || id === BuiltinFunctionId.XPCall) {
-			this.startProtectedCall(id, frame, callBase, returnCount, callBase + 1, argCount, false);
+			this.startProtectedCall(id, frame, callBase, returnCount, argumentBase, argCount, false, detached);
 			return;
 		}
 		if (id === BuiltinFunctionId.CoroutineResume || id === BuiltinFunctionId.CoroutineYield) {
-			this.runCoroutineTransfer(id, frame, callBase, returnCount, argCount);
+			this.runCoroutineTransfer(id, frame, callBase, returnCount, argumentBase, argCount, detached);
 			return;
 		}
 		const builtinArgs = this.acquireRegisterBuiltinArgs();
 		const results = this.acquireBuiltinResults();
 		try {
-			builtinArgs.bind(frame.registers, callBase + 1, argCount);
-			this.callBuiltinFunction(id, builtinArgs, results, returnCount === 0 ? -1 : returnCount - 1);
+			builtinArgs.bind(detached ?? frame.registers, argumentBase, argCount);
+			this.callBuiltinFunction(id, builtinArgs, results, selectedCallResultCount(returnCount, -1));
 			if (this.activeThread.frameDepth > 0 && this.activeThread.currentFrame! === frame) {
 				this.writeReturnValuesFromBuiltinResults(frame, callBase, returnCount, results);
 			}
@@ -3489,11 +3513,12 @@ export class CPU implements MappedPageInvalidator {
 		argumentBase: number,
 		argumentCount: number,
 		returnsToProtectedParent: boolean,
+		detached?: ValueSlots,
 	): void {
+		let handler = valueNil();
 		if (id === BuiltinFunctionId.XPCall) {
-			const handlerTag = argumentCount > 1
-				? caller.registers.getTag(argumentBase + 1)
-				: ValueTag.Nil;
+			if (argumentCount > 1) handler = (detached ?? caller.registers).get(argumentBase + 1);
+			const handlerTag = valueTag(handler);
 			if (handlerTag !== ValueTag.Closure
 				&& handlerTag !== ValueTag.BuiltinFunction) {
 				throw new LuaExecutionError(LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
@@ -3501,60 +3526,49 @@ export class CPU implements MappedPageInvalidator {
 		}
 		const kind = id === BuiltinFunctionId.PCall ? ProtectedCallKind.PCall : ProtectedCallKind.XPCallBody;
 		const continuationIndex = this.activeThread.pushProtectedCall(kind, returnsToProtectedParent, callBase,
-			returnCount, id === BuiltinFunctionId.XPCall ? argumentBase + 1 : -1);
+			returnCount, handler);
 
 		const targetArgumentOffset = id === BuiltinFunctionId.PCall ? 1 : 2;
 		this.invokeProtectedTarget(
 			continuationIndex,
-			caller.registers,
-			argumentBase,
-			argumentCount > 0,
+			argumentCount > 0 ? (detached ?? caller.registers).get(argumentBase) : valueNil(),
 			argumentBase + targetArgumentOffset,
 			Math.max(argumentCount - targetArgumentOffset, 0),
+			detached,
 		);
 	}
 
 	private invokeProtectedTarget(
 		continuationIndex: number,
-		targetRegisters: ValueSlots,
-		targetRegister: number,
-		targetPresent: boolean,
+		target: Value,
 		argumentBase: number,
 		argumentCount: number,
+		detached?: ValueSlots,
 	): void {
 		const caller = this.protectedCaller(continuationIndex);
-		const targetTag = targetPresent
-			? targetRegisters.getTag(targetRegister)
-			: ValueTag.Nil;
-		switch (targetTag) {
+		switch (valueTag(target)) {
 			case ValueTag.Closure: {
-				const closure = this.gc.closureRecordAddress(targetRegisters.getPayload(targetRegister));
+				const closure = this.gc.closureRecordAddress(valuePayload(target));
 				if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-				const frame = this.pushFrameFromCaller(
-					caller,
-					closure,
-					argumentBase,
-					argumentCount,
-					0,
-					0,
-					false,
-					caller.pc - INSTRUCTION_BYTES,
-				);
+				const frame = detached === undefined
+					? this.pushFrameFromCaller(caller, closure, argumentBase, argumentCount, 0, 0, false, caller.pc - INSTRUCTION_BYTES)
+					: this.pushFrame(closure, detached, 0, 0, false, false, this.currentInstructionPc, argumentBase, argumentCount);
 				if (frame !== null) frame.protectedContinuationIndex = continuationIndex;
 				return;
 			}
 			case ValueTag.BuiltinFunction: {
-				const builtinId = targetRegisters.getBuiltinFunctionId(targetRegister);
+				const builtinId = valuePayload(target);
 				this.charge(BUILTIN_FUNCTIONS[builtinId].cost.base);
 				if (builtinId === BuiltinFunctionId.PCall || builtinId === BuiltinFunctionId.XPCall) {
+					const word = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted);
 					this.startProtectedCall(builtinId, caller, this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0,
-						0, argumentBase, argumentCount, true);
+						(word & CALL_RESULT_EXTEND_TOP) !== 0 ? SINGLE_CALL_RESULT : 0, argumentBase, argumentCount, true, detached);
 					return;
 				}
 				const builtinArgs = this.acquireRegisterBuiltinArgs();
 				const results = this.acquireBuiltinResults();
 				try {
-					builtinArgs.bind(caller.registers, argumentBase, argumentCount);
+					builtinArgs.bind(detached ?? caller.registers, argumentBase, argumentCount);
 					this.callBuiltinFunction(builtinId, builtinArgs, results, -1);
 					this.finishProtectedCallFromBuiltinResults(continuationIndex, results);
 				} finally {
@@ -3615,7 +3629,7 @@ export class CPU implements MappedPageInvalidator {
 		const caller = this.protectedCaller(continuationIndex);
 		const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
 		const returnCount = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted) | 0;
-		const resultCount = decodeValueCount(returnCount, 2);
+		const resultCount = selectedCallResultCount(returnCount, 2);
 		if (resultCount > 0) {
 			const registers = this.ensureRegisterCapacity(caller, callBase + resultCount - 1);
 			registers.setBoolean(callBase, false);
@@ -3626,7 +3640,7 @@ export class CPU implements MappedPageInvalidator {
 				}
 			}
 		}
-		caller.top = callBase + resultCount;
+		caller.setCallResultTop(callBase + resultCount, returnCount);
 		this.charge(resultCount);
 		this.finishProtectedContinuation(continuationIndex, resultCount);
 	}
@@ -3639,7 +3653,7 @@ export class CPU implements MappedPageInvalidator {
 		const caller = this.protectedCaller(continuationIndex);
 		const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
 		const returnCount = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted) | 0;
-		const resultCount = decodeValueCount(returnCount, values.length + 1);
+		const resultCount = selectedCallResultCount(returnCount, values.length + 1);
 		if (resultCount > 0) {
 			const registers = this.ensureRegisterCapacity(caller, callBase + resultCount - 1);
 			registers.setBoolean(callBase, prefix);
@@ -3651,7 +3665,7 @@ export class CPU implements MappedPageInvalidator {
 				registers.setNil(callBase + index);
 			}
 		}
-		caller.top = callBase + resultCount;
+		caller.setCallResultTop(callBase + resultCount, returnCount);
 		return resultCount;
 	}
 
@@ -3665,7 +3679,7 @@ export class CPU implements MappedPageInvalidator {
 		const caller = this.protectedCaller(continuationIndex);
 		const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
 		const returnCount = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted) | 0;
-		const resultCount = decodeValueCount(returnCount, sourceCount + 1);
+		const resultCount = selectedCallResultCount(returnCount, sourceCount + 1);
 		if (resultCount > 0) {
 			const registers = this.ensureRegisterCapacity(caller, callBase + resultCount - 1);
 			const copiedCount = Math.min(sourceCount, resultCount - 1);
@@ -3681,7 +3695,7 @@ export class CPU implements MappedPageInvalidator {
 				registers.setNil(callBase + index);
 			}
 		}
-		caller.top = callBase + resultCount;
+		caller.setCallResultTop(callBase + resultCount, returnCount);
 		return resultCount;
 	}
 
@@ -3724,21 +3738,25 @@ export class CPU implements MappedPageInvalidator {
 			}
 
 			this.activeThread.setProtectedKind(continuationIndex, ProtectedCallKind.XPCallHandler);
-			const handlerRegister = this.activeThread.protectedWord(continuationIndex, ProtectedField.Handler) | 0;
+			const handler = this.activeThread.protectedHandler(continuationIndex);
 			const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
-			const registers = this.ensureRegisterCapacity(caller, callBase);
-			registers.set(callBase, error);
-			this.bumpRegisterTop(caller, callBase);
+			const resultWord = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted);
 			this.charge(1);
+			const rootBase = this.localRoots.length;
 			try {
-				this.invokeProtectedTarget(
-					continuationIndex,
-					caller.registers,
-					handlerRegister,
-					true,
-					callBase,
-					1,
-				);
+				if ((resultWord & CALL_RESULT_EXTEND_TOP) !== 0) {
+					this.localRoots.push(error);
+					const args = this.acquireRegisterBuiltinArgs();
+					try {
+						args.bindDetached(error);
+						this.invokeProtectedTarget(continuationIndex, handler, 0, 1, args.registers);
+					} finally { this.releaseRegisterBuiltinArgs(args); }
+				} else {
+					const registers = this.ensureRegisterCapacity(caller, callBase);
+					registers.set(callBase, error);
+					this.bumpRegisterTop(caller, callBase);
+					this.invokeProtectedTarget(continuationIndex, handler, callBase, 1);
+				}
 				return true;
 			} catch (handlerError) {
 				if (handlerError instanceof LuaThrownValueError) {
@@ -3750,7 +3768,7 @@ export class CPU implements MappedPageInvalidator {
 					continue;
 				}
 				throw handlerError;
-			}
+			} finally { this.localRoots.length = rootBase; }
 		}
 	}
 

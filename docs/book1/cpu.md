@@ -1133,18 +1133,9 @@ execution state.
 
 #### Metatables and indexed reads {#sec-cpu-metatables-and-indexed-reads}
 
-::: {.callout-warning title="Pending correction: function-valued __index"}
+A Table may have a metatable. An ordinary indexed read first checks the queried Table's own mapping. A non-nil value wins immediately, including `false`. If the entry is missing, the read obtains the direct `"__index"` member of that Table's metatable. A Table-valued `__index` continues the lookup on that Table with the original key. Each subsequent Table is processed in the same way.
 
-The table-only restriction below is a known implementation limitation, not
-the intended BLua language contract. A function-valued `__index` must be
-invoked as in Lua. That support is still pending; the following paragraphs
-describe the currently available behavior.
-
-:::
-
-A Table may have a metatable. An ordinary indexed read first checks the queried Table's own mapping. A non-nil value wins immediately, including `false`. If the entry is missing, the read obtains the direct `"__index"` member of that Table's metatable. Only a Table-valued `__index` continues the lookup, using the original key on that next Table. Each subsequent Table is processed in the same way.
-
-An absent or non-Table `__index` terminates the read with nil. Function-valued indexers are not called. The `__index` member itself is read directly; its retrieval does not start another inherited lookup. One chained read permits 32 visited Tables. Exhausting that bound raises `METATABLE_LOOP` (5); an actual cyclic reference is not required to exhaust the bound.
+A function-valued `__index` is called with the receiver at that step and the original key. The read uses its first result, or nil if it returns none. A missing `__index` terminates the read with nil. Retrieving the metatable member itself does not start another inherited lookup. One chained read permits 32 visited Tables. Exhausting that bound raises `METATABLE_LOOP` (5); an actual cyclic reference is not required to exhaust the bound.
 
 For Table-valued `__index` traversal, the indexed-read base charge covers the
 first visited Table. Each additional visited Table adds **8 cycles**, whether
@@ -1622,8 +1613,8 @@ Here infinity and NaN denote Number operands, not additional source keywords.
 
 The second group produces `42`, `9`, then `42`. The inherited read does not
 create an own mapping. Assigning `nil` removes the own mapping and exposes the
-parent again. `rawget(child, 'answer')` is then `nil`. Function-valued
-`__index` support remains pending; see the marked correction in
+parent again. `rawget(child, 'answer')` is then `nil`. An `__index` function
+can compute a missing value instead; see
 [Metatables and indexed reads](#sec-cpu-metatables-and-indexed-reads).
 
 ## Memory transfers {#sec-cpu-memory-transfers}

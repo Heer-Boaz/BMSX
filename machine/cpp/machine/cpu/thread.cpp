@@ -48,10 +48,11 @@ u32 Thread::resumer() const {
 }
 void Thread::setResumer(u32 thread) { write(ThreadField::Resumer, thread); }
 
-i32 Thread::callBase() const { return static_cast<i32>(read(ThreadField::CallBase)); }
-i32 Thread::returnCount() const { return static_cast<i32>(read(ThreadField::ReturnCount)); }
-void Thread::setReturnWindow(i32 base, i32 count) {
-	heap.memory.writeRamRecordPair(address + static_cast<u32>(ThreadField::CallBase), static_cast<u32>(base), static_cast<u32>(count));
+CallResultPlacement Thread::transferResult() const {
+	return {static_cast<i32>(read(ThreadField::CallBase)), read(ThreadField::ReturnCount)};
+}
+void Thread::setTransferResult(CallResultPlacement result) {
+	heap.memory.writeRamRecordPair(address + static_cast<u32>(ThreadField::CallBase), static_cast<u32>(result.base), result.word);
 }
 Value Thread::error() const { return ThreadRecord::error(heap.memory, address); }
 void Thread::setError(Value value) {
@@ -94,7 +95,15 @@ CallFrame* Thread::protectedCaller(u32 index) const {
 	for (size_t at = frameDepth() - 1; at > depth; --at) frame = frame->previous;
 	return frame;
 }
-u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int wanted, int handler) {
+CallResultPlacement Thread::protectedResult(u32 index) const {
+	return {static_cast<i32>(protectedWord(index, ProtectedField::Base)), protectedWord(index, ProtectedField::Wanted)};
+}
+Value Thread::protectedHandler(u32 index) const {
+	const u32 payload = protectedWord(index, ProtectedField::Handler);
+	return (protectedWord(index, ProtectedField::Flags) & PROTECTED_CALL_HANDLER_BUILTIN) != 0u
+		? valueBuiltinFunction(static_cast<BuiltinFunctionId>(payload)) : valueClosure(payload);
+}
+u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, CallResultPlacement result, Value handler) {
 	const u32 index = protectedDepth();
 	const u32 reserved = protectedCapacity();
 	if (index == reserved) {
@@ -108,11 +117,12 @@ u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int
 	auto& memory = heap.memory;
 	auto* ram = memory.ramData();
 	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Flags)) & RAM_RECORD_WORD_MASK),
-		static_cast<u32>(kind) | (parent ? PROTECTED_CALL_PARENT : 0));
+		static_cast<u32>(kind) | (parent ? PROTECTED_CALL_PARENT : 0u)
+		| (valueIsBuiltinFunction(handler) ? PROTECTED_CALL_HANDLER_BUILTIN : 0u));
 	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Caller)) & RAM_RECORD_WORD_MASK), static_cast<u32>(frameDepth() - 1));
-	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Base)) & RAM_RECORD_WORD_MASK), static_cast<u32>(base));
-	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Wanted)) & RAM_RECORD_WORD_MASK), static_cast<u32>(wanted));
-	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Handler)) & RAM_RECORD_WORD_MASK), static_cast<u32>(handler));
+	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Base)) & RAM_RECORD_WORD_MASK), static_cast<u32>(result.base));
+	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Wanted)) & RAM_RECORD_WORD_MASK), result.word);
+	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Handler)) & RAM_RECORD_WORD_MASK), valuePayload(handler));
 	const u32 first = std::min(PROTECTED_CALL_BYTES, MAIN_RAM_SIZE - addr);
 	memory.invalidateRamWrite(addr, first);
 	if (first != PROTECTED_CALL_BYTES) memory.invalidateRamWrite(0, PROTECTED_CALL_BYTES - first);

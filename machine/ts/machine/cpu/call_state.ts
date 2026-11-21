@@ -9,6 +9,7 @@ import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map'
 import type { Memory } from '../memory/memory';
 import type { GcHeap } from './gc_heap';
 import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../spec/blua32/execution_domain';
+import { decodeValueCount, encodeFixedValueCount } from '../../spec/blua32/opcode';
 
 export const enum ProtectedCallKind {
 	PCall,
@@ -19,12 +20,18 @@ export const enum ProtectedCallKind {
 export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 }
 export const FRAME_CONTROL_BYTES = 56;
 export const FRAME_WINDOW_MASK = (MAIN_RAM_SIZE >>> 2) - 1;
+export const CALL_RESULT_EXTEND_TOP = 0x80000000;
+export const SINGLE_CALL_RESULT = CALL_RESULT_EXTEND_TOP | encodeFixedValueCount(1);
+export function selectedCallResultCount(word: number, available: number): number {
+	return decodeValueCount(word & ~CALL_RESULT_EXTEND_TOP, available);
+}
 export const FRAME_COMPLETION = 1;
 export const FRAME_EXCEPTION = 2;
 export const FRAME_NMI = 4;
 const FRAME_BANK_CART = 1 << 3;
 const FRAME_BANK_SECOND = 1 << 4;
 const FRAME_BANK_MASK = FRAME_BANK_CART | FRAME_BANK_SECOND;
+const FRAME_EXTEND_RESULT_TOP = 1 << 5;
 
 export function frameExecutionBank(flags: number): ExecutionDomainId {
 	return (flags & FRAME_BANK_CART) === 0 ? SYSTEM_EXECUTION_DOMAIN_ID : ((flags & FRAME_BANK_SECOND) >>> 4) as ExecutionDomainId;
@@ -70,12 +77,13 @@ export class CallFrame {
 		writeLE32(ram, (offset + FrameField.OpenHead) & RAM_RECORD_WORD_MASK, 0);
 		writeLE32(ram, (offset + FrameField.Protected) & RAM_RECORD_WORD_MASK, -1);
 		const bank = frameBankWord(domain);
-		writeLE32(ram, (offset + FrameField.Flags) & RAM_RECORD_WORD_MASK, bank | (completion ? FRAME_COMPLETION : 0));
+		const placement = (returnCount & CALL_RESULT_EXTEND_TOP) !== 0 ? FRAME_EXTEND_RESULT_TOP : 0;
+		writeLE32(ram, (offset + FrameField.Flags) & RAM_RECORD_WORD_MASK, bank | placement | (completion ? FRAME_COMPLETION : 0));
 		writeLE32(ram, (offset + FrameField.Pc) & RAM_RECORD_WORD_MASK, pc);
 		writeLE32(ram, (offset + FrameField.VarargBase) & RAM_RECORD_WORD_MASK, varargBase);
 		writeLE32(ram, (offset + FrameField.VarargCount) & RAM_RECORD_WORD_MASK, varargCount);
 		writeLE32(ram, (offset + FrameField.ReturnBase) & RAM_RECORD_WORD_MASK, returnBase);
-		writeLE32(ram, (offset + FrameField.ReturnCount) & RAM_RECORD_WORD_MASK, returnCount);
+		writeLE32(ram, (offset + FrameField.ReturnCount) & RAM_RECORD_WORD_MASK, returnCount & ~CALL_RESULT_EXTEND_TOP);
 		writeLE32(ram, (offset + FrameField.Top) & RAM_RECORD_WORD_MASK, top);
 		writeLE32(ram, (offset + FrameField.Closure) & RAM_RECORD_WORD_MASK, closureAddress);
 		writeLE32(ram, (offset + FrameField.StackBase) & RAM_RECORD_WORD_MASK, base);
@@ -103,7 +111,14 @@ export class CallFrame {
 	public get varargBase(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.VarargBase) & FRAME_WINDOW_MASK; }
 	public get varargCount(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.VarargCount) & FRAME_WINDOW_MASK; }
 	public get returnBase(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.ReturnBase) & FRAME_WINDOW_MASK; }
-	public get returnCount(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.ReturnCount) & FRAME_WINDOW_MASK; }
+	public get returnCount(): number {
+		const count = this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.ReturnCount) & FRAME_WINDOW_MASK;
+		const flags = this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Flags);
+		return (flags & FRAME_EXTEND_RESULT_TOP) !== 0 ? count | CALL_RESULT_EXTEND_TOP : count;
+	}
+	public setCallResultTop(end: number, word: number): void {
+		if ((word & CALL_RESULT_EXTEND_TOP) === 0 || end > this.top) this.top = end;
+	}
 	public get top(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Top) & FRAME_WINDOW_MASK; }
 	public set top(word: number) {
 		const address = this.controlOffset + FrameField.Top;
@@ -138,3 +153,4 @@ export const enum ProtectedField { Flags = 0, Caller = 4, Base = 8, Wanted = 12,
 export const PROTECTED_CALL_BYTES = 20;
 export const PROTECTED_CALL_KIND_MASK = 0xff;
 export const PROTECTED_CALL_PARENT = 1 << 8;
+export const PROTECTED_CALL_HANDLER_BUILTIN = 1 << 9;

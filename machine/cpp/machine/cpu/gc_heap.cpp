@@ -325,6 +325,15 @@ size_t GcHeap::trace(bool atomic) {
 			open = memory.readRamRecordWord(cell + UPVALUE_NEXT);
 		}
 	}
+	const u32 protectedDepth = ThreadRecord::count(memory, address, ThreadField::ProtectedDepth);
+	for (u32 index = 0; index < protectedDepth; ++index) {
+		const u32 continuation = layout.protectedAddress(index);
+		const u32 flags = memory.readRamRecordWord(continuation + static_cast<u32>(ProtectedField::Flags));
+		if ((flags & PROTECTED_CALL_KIND_MASK) != static_cast<u32>(ProtectedCallKind::PCall)
+			&& (flags & PROTECTED_CALL_HANDLER_BUILTIN) == 0u) {
+			markClosure(memory.readRamRecordWord(continuation + static_cast<u32>(ProtectedField::Handler)));
+		}
+	}
 	auto slots = layout.slots(memory, liveTop > layout.valueCapacity);
 	for (u32 index = 0; index < liveTop; ++index) markValue(slots.get(index));
 	if (liveTop < layout.valueCapacity) slots.clear(liveTop, layout.valueCapacity - liveTop);

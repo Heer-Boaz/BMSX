@@ -125,7 +125,7 @@ DISPATCH_LABEL(GETI) {
 			DISPATCH_NEXT();
 		}
 	}
-	SET_REGISTER_FAST(a, loadTableIntegerIndex(tableValue, c));
+	if (loadTableIntegerIndex(FRAME, a, tableValue, c)) DISPATCH_CONTINUE();
 	DISPATCH_NEXT();
 }
 
@@ -148,11 +148,11 @@ DISPATCH_LABEL(GETFIELD) {
 	const int a = decoded->a;
 	const int b = decoded->b;
 	const int c = decoded->c;
-	SET_REGISTER_FAST(a, loadTableFieldIndexCached(
+	if (loadTableFieldIndexCached(FRAME, a,
 		TABLE_CACHE_SLOT(),
 		REG(b),
 		asStringId(IMAGE.constPool.get(static_cast<size_t>(c)))
-	));
+	)) DISPATCH_CONTINUE();
 	DISPATCH_NEXT();
 }
 
@@ -180,7 +180,7 @@ DISPATCH_LABEL(SELF) {
 	const Value base = REG(b);
 	const StringId key = asStringId(IMAGE.constPool.get(static_cast<size_t>(c)));
 	SET_REGISTER_FAST(a + 1, base);
-	SET_REGISTER_FAST(a, loadTableFieldIndexCached(TABLE_CACHE_SLOT(), base, key));
+	if (loadTableFieldIndexCached(FRAME, a, TABLE_CACHE_SLOT(), base, key)) DISPATCH_CONTINUE();
 	DISPATCH_NEXT();
 }
 
@@ -203,7 +203,7 @@ DISPATCH_LABEL(GETT) {
 			DISPATCH_NEXT();
 		}
 	}
-	SET_REGISTER_FAST(a, loadTableIndex(tableValue, key));
+	if (loadTableIndex(FRAME, a, tableValue, key)) DISPATCH_CONTINUE();
 	DISPATCH_NEXT();
 }
 

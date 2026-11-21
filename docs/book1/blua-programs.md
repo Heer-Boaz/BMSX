@@ -1157,14 +1157,6 @@ This section specifies BLua source conventions, bindings, expression results
 and control flow. Runtime values, arithmetic and instruction costs are
 specified by the [CPU reference](cpu.md#sec-cpu).
 
-::: {.callout-warning title="Pending language correction"}
-
-Function-valued `__index` support is still pending. The current table-only
-restriction is an implementation limitation, not an intended BLua language
-difference; see [Metatables and indexed reads](cpu.md#sec-cpu-metatables-and-indexed-reads).
-
-:::
-
 ### Number spellings {#sec-blua-programs-number-spellings}
 
 Decimal literals begin with a digit, or with `.` followed by a digit. A fractional dot after integer digits is part of the number only when another digit follows it. An exponent uses `e` or `E`, an optional sign, and one or more decimal digits.

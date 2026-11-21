@@ -11,10 +11,11 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 	auto& state = run->state;
 	auto& leaving = *state.frame;
 	auto* caller = leaving.previous;
+	const u32 flags = leaving.readAdmittedControl(FrameField::Flags);
 	if (!caller || caller->executionImage != leaving.executionImage
 		|| (caller->readAdmittedControl(FrameField::Flags) & FRAME_BANK_MASK) != run->frameBank
 		|| static_cast<i32>(leaving.readAdmittedControl(FrameField::Protected)) >= 0
-		|| (leaving.readAdmittedControl(FrameField::Flags) & FRAME_COMPLETION) != 0
+		|| (flags & FRAME_COMPLETION) != 0
 		|| leaving.readAdmittedControl(FrameField::OpenHead) != 0)
 		return nullptr;
 
@@ -26,13 +27,13 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 	const auto& returned = exit->operands.returned;
 	const int source = returned.first;
 	const int produced = returned.produced < 0 ? std::max(state.registerTop - source, 0) : returned.produced;
-	const int destination = leaving.readAdmittedWindow(FrameField::ReturnBase);
-	const int encodedCount = leaving.readAdmittedWindow(FrameField::ReturnCount);
-	const auto placement = ValuePlacement::fit(produced, decodeValueCount(encodedCount, produced));
+	const auto result = CallResultPlacement::frame(leaving.readAdmittedWindow(FrameField::ReturnBase),
+		leaving.readAdmittedWindow(FrameField::ReturnCount), flags);
+	const auto placement = ValuePlacement::fit(produced, result.selected(produced));
 	const int count = placement.count();
-	const int nextTop = destination + count;
+	const int extent = result.base + count;
 	if (state.remainingCycles <= count
-		|| (count != 0 && static_cast<size_t>(nextTop) > caller->registers.size())
+		|| (count != 0 && static_cast<size_t>(extent) > caller->registers.size())
 		|| (placement.copied != 0 && static_cast<size_t>(source + placement.copied) > leaving.registers.size()))
 		return nullptr;
 
@@ -48,8 +49,8 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 	// the admitted stack needs no growth, bus access or code invalidation.
 	leaving.writeAdmittedControl(FrameField::Pc, exit->nextPc);
 	leaving.setAdmittedTop(state.registerTop);
-	caller->registers.placeAdmitted(destination, leaving.registers, source, placement.copied, placement.padded);
-	caller->setAdmittedTop(nextTop);
+	caller->registers.placeAdmitted(result.base, leaving.registers, source, placement.copied, placement.padded);
+	const int nextTop = caller->placeAdmittedResultTop(result, count);
 	thread.retireAdmittedFrame(leaving, *caller, receivingDepth);
 	state.frame = caller;
 	state.registerTop = nextTop;

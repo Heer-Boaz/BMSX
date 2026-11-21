@@ -9,7 +9,7 @@ import * as Upvalue from './upvalue';
 import { TableRecords } from './table';
 import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND } from './thread_record';
 import { ThreadField, ThreadLayout, ThreadRecords } from './thread_record';
-import { FRAME_WINDOW_MASK, FrameField } from './call_state';
+import { FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
 import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from './value';
 import { ValueSlots } from './value_slots';
 import type { LuaHeap } from './lua_heap';
@@ -332,6 +332,13 @@ export class GcHeap {
 				if (slot < layout.capacity) liveTop = Math.max(liveTop, slot + 1);
 				cellAddress = this.memory.readRamRecordWord(cell + UPVALUE_NEXT);
 			}
+		}
+		const protectedBase = this.threads.frameAddress(layout, layout.frames);
+		for (let index = 0; index < layout.protectedDepth; ++index) {
+			const continuation = protectedBase + index * PROTECTED_CALL_BYTES;
+			const flags = this.memory.readRamRecordWord(continuation + ProtectedField.Flags);
+			if ((flags & PROTECTED_CALL_KIND_MASK) !== ProtectedCallKind.PCall && (flags & PROTECTED_CALL_HANDLER_BUILTIN) === 0)
+				this.markClosure(this.memory.readRamRecordWord(continuation + ProtectedField.Handler));
 		}
 		const tags = layout.offset + layout.capacity * 4;
 		for (let slot = 0; slot < liveTop; ++slot)

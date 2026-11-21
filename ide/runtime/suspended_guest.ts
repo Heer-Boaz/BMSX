@@ -60,7 +60,7 @@ export class SuspendedGuestSession {
 	public readonly cpu: CPU;
 	private readonly stringPool: StringPool;
 	private readonly lookupResult: TableLookupResult = {
-		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved,
+		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, invokeReceiver: 0,
 	};
 	private readonly entryScratch = new ScratchBuffer<ValueSlots>(() => new ValueSlots(2));
 	private readonly previewParts = new ScratchBuffer<string[]>(() => []);
@@ -226,7 +226,7 @@ export class SuspendedGuestSession {
 		if (this.lookupResult.status === TableLookupStatus.ChainExhausted) {
 			throw new Error(METATABLE_LOOP_MESSAGE);
 		}
-		return this.lookupResult.value;
+		return this.lookupResult.status === TableLookupStatus.Invoke ? valueNil() : this.lookupResult.value;
 	}
 
 	public readStringPath(
