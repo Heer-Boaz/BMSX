@@ -34,9 +34,10 @@ void emitTableSlotOffset(sljit_compiler*, sljit_s32 destination, bool word);
 // (tag) to the corresponding value, clobbering R2.
 void emitHashValueOffsets(sljit_compiler*);
 
-// In-frame leaf: R0 = aligned receiver header, R1 = live path prediction,
-// SP[keyWord] = StringId. Clobbers R0..R3, returns payload/tag in R2/R3.
-// Nil signals decline; no guest slots, budget, or feedback are modified.
-sljit_label* emitOneHopStringRead(sljit_compiler*);
+// In-frame leaf: R0 = receiver header, R1 = inherited path or null for
+// an own probe, SP[keyWord] = StringId. Clobbers R0..R3. On success,
+// R2/R3 hold the value and R1 is the own hash slot or -1 for inheritance.
+// A nil tag declines. The caller owns the visit charge and slot feedback.
+sljit_label* emitStringReadProbe(sljit_compiler*);
 
 } // namespace bmsx

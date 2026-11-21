@@ -61,11 +61,11 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 	case OpCode::GETFIELD:
 		return NativeTableAccess{.value = static_cast<i16>(a), .receiver = b, .key = c, .mode = NativeTableMode::Read,
 			.keyKind = NativeTableKey::Field, .resultTag = {}, .predictedSlot = instruction.tableCacheSlot(),
-			.readPlan = NativeTableReadPlan::OneHopIndex};
+			.readPlan = NativeTableReadPlan::ProbeOwnOrOneHop};
 	case OpCode::SELF:
 		return NativeTableAccess{.value = static_cast<i16>(a), .receiver = b, .key = c, .mode = NativeTableMode::ReadMethod,
 			.keyKind = NativeTableKey::Field, .resultTag = {}, .predictedSlot = instruction.tableCacheSlot(),
-			.readPlan = NativeTableReadPlan::OneHopIndex};
+			.readPlan = NativeTableReadPlan::ProbeOwnOrOneHop};
 	case OpCode::SETT:
 		return NativeTableAccess{c, static_cast<i16>(a), b, NativeTableMode::Write, NativeTableKey::Value, {}, instruction.tableCacheSlot()};
 	case OpCode::SETI:

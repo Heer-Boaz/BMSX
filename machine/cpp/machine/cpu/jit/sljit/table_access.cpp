@@ -47,7 +47,7 @@ void readTableSlot(sljit_compiler* c, sljit_s32 result, bool word) {
 
 // An own prediction miss is not an absence proof. Follow the live chain,
 // with the same signed cursor and visit bound as HashBody::findString.
-sljit_jump* emitReceiverAbsence(sljit_compiler* c) {
+sljit_jump* emitReceiverStringSearch(sljit_compiler* c) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	auto* empty = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0);
 	sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::keyWord,
@@ -65,7 +65,7 @@ sljit_jump* emitReceiverAbsence(sljit_compiler* c) {
 		SLJIT_MEM1(SLJIT_SP), NativeTableScratch::keyWord);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	readTableSlot(c, SLJIT_R2, false);
-	auto* shadowed = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, nilTag);
+	auto* found = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, nilTag);
 	auto* nilMatch = sljit_emit_jump(c, SLJIT_JUMP);
 
 	auto* different = sljit_emit_label(c);
@@ -80,16 +80,15 @@ sljit_jump* emitReceiverAbsence(sljit_compiler* c) {
 
 	auto* absent = sljit_emit_label(c);
 	for (auto* edge : {empty, negativeHome, nilMatch, last}) sljit_set_label(edge, absent);
-	return shadowed;
+	return found;
 }
 
 // R0 is the address of an owned table descriptor. Probe the hinted slot
-// against the live key and value, not a pinned table.
+// against the live key and value, not a pinned table. R1 holds the path.
 std::array<sljit_jump*, 5> emitPredictedString(sljit_compiler* c, sljit_sw slot,
 	sljit_s32 keyBase, sljit_sw keyOffset, ValueTag tag) {
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
-	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::path);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), slot);
 	auto* untrained = sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
 	auto* outside = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), hash);
@@ -114,21 +113,38 @@ std::array<sljit_jump*, 5> emitPredictedString(sljit_compiler* c, sljit_sw slot,
 
 } // namespace
 
-sljit_label* emitOneHopStringRead(sljit_compiler* c) {
+sljit_label* emitStringReadProbe(sljit_compiler* c) {
 	auto* entry = sljit_emit_label(c);
 	sljit_emit_op_dst(c, SLJIT_FAST_ENTER, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::path, SLJIT_R1, 0);
-	auto* shadowed = emitReceiverAbsence(c);
+	auto* ownFound = emitReceiverStringSearch(c);
+	// A null path asks the shared receiver walk for an own value only.
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::path);
+	auto* ownOnlyAbsent = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), meta);
 	auto* noMeta = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	const auto indexMisses = emitPredictedString(c, offsetof(TableStringPathCache, indexSlots),
 		NativeBlockAbi::state, offsetof(NativeBlockRunState, tableIndexKey), ValueTag::Table);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_R2, 0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::path);
 	const auto holderMisses = emitPredictedString(c, offsetof(TableStringPathCache, holderSlot),
 		SLJIT_SP, NativeTableScratch::keyWord, ValueTag::Nil);
+	// Return a negative slot for an inherited value.
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, -1);
+	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
+
+	sljit_set_label(ownFound, sljit_emit_label(c));
+	// A trained inherited read still declines on an unexpected own value.
+	auto* shadowed = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::path, SLJIT_IMM, 0);
+	// R1 is the logical value slot; return the receiver's hash index.
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_R2, 0);
+	readTableSlot(c, SLJIT_R2, true);
+	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), hash);
+	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), array);
 	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 
 	auto* decline = sljit_emit_label(c);
+	sljit_set_label(ownOnlyAbsent, decline);
 	sljit_set_label(noMeta, decline);
 	sljit_set_label(shadowed, decline);
 	for (auto* edge : indexMisses) sljit_set_label(edge, decline);

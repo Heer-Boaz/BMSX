@@ -737,6 +737,106 @@ void nativeFieldOperationsLearnTheDecodedSite() {
 #endif
 }
 
+void nativeFieldCacheMissReturnsOwnValueAndTrainsTheSameSite() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETFIELD), 9, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 10, 9, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 11}};
+	image.constants = {std::string("changing own slot"), std::string("colliding field")};
+
+	CpuMachine native(image), scalar(image, true);
+	const Value linkedValue = valueFloatBits(0x7fc01234u), singletonValue = valueFromTag(ValueTag::False, 37);
+	int linkedSlot = -1;
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		const auto key = *cpu.stringPool().find("changing own slot"), collider = *cpu.stringPool().find("colliding field");
+		auto linked = cpu.createTable(3, 4), singleton = cpu.createTable(2, 1), missing = cpu.createTable(0, 1);
+		const auto home = linked.beginStringProbe(key).node;
+		require(linked.beginStringProbe(collider).node == home && linked.setStringKey(collider, valueInteger(19)) == home,
+			"the two persistent keys share the current receiver home");
+		const int slot = linked.setStringKey(key, linkedValue);
+		require(slot > 0 && slot != home && singleton.setStringKey(key, singletonValue) == 0,
+			"real table writes place the same key in a chained slot and in singleton slot zero");
+		if (machine == &native) linkedSlot = slot;
+		else require(slot == linkedSlot, "both guest heaps have the same placement fixture");
+		auto& frame = *cpu.activeThread()->currentFrame;
+		frame.registers.set(5, valueTable(linked.address()));
+		frame.registers.set(6, valueTable(singleton.address()));
+		frame.registers.set(7, valueTable(missing.address()));
+		frame.setTop(8);
+		cpu.stringPool().intern("table");
+	}
+
+	auto& cpu = native.cpu;
+	const u32 pc = native.rom.textAddress, word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const auto& activeImage = *cpu.activeThread()->currentFrame->executionImage;
+	cpu.prepareSystemNativeCode();
+	auto& page = *activeImage.nativeCodeLookup->find(pc, 0);
+	const auto* installed = page.nativeBlocks->entries[word].get();
+	require(installed != nullptr, "the fixed-key checkpoint is ready before observing a receiver");
+	const auto region = installed->region;
+	const auto fieldExit = std::ranges::find(installed->sideExits, NativeBlockExit::ReadField, &NativeBlockExitSite::exit);
+	require(fieldExit != installed->sideExits.end() && fieldExit->currentPc == pc && fieldExit->tableRead.path.holderDepth == 0
+		&& !fieldExit->operands.table.resultProof && !fieldExit->operands.table.reusePeerWord
+		&& fieldExit->tableRead.own.decoded == &page.words[word].tableCacheSlot() && page.words[word].tableCacheSlot() == -1,
+		"the untyped own lookup starts untrained and borrows its one decoded slot");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& fieldExits = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::ReadField)].entries;
+	const u64 initialExits = fieldExits;
+#endif
+	const int fieldCharge = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)];
+	const auto read = [&](int receiver, Value expected, int extraCharge, int prediction) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& owner = machine->cpu;
+			owner.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+			auto& frame = *owner.activeThread()->currentFrame;
+			frame.registers.set(0, frame.registers.get(receiver));
+			frame.registers.set(9, valueInteger(57));
+			frame.registers.set(10, valueInteger(73));
+			frame.setTop(8);
+		}
+		require(test::runCpuParity(cpu, scalar.cpu, fieldCharge + extraCharge) == RunResult::Yielded
+			&& cpu.instructionBudgetRemaining == 0 && cpu.readFrameRegister(0, 9) == expected
+			&& cpu.readFrameRegister(0, 10) == valueInteger(73) && cpu.readFramePc(0) == pc + 2 * INSTRUCTION_BYTES
+			&& cpu.activeThread()->currentFrame->readWindow(FrameField::Top) == 10,
+			"the fixed read commits the live raw Value and its exact frontier without admitting the suffix");
+		require(page.nativeBlocks->entries[word].get() == installed && installed->region == region
+			&& page.words[word].tableCacheSlot() == prediction && fieldExit->tableRead.path.holderDepth == 0,
+			"the same installed checkpoint keeps only the live own prediction");
+		requireParity(native, scalar);
+	};
+	read(5, linkedValue, 0, linkedSlot);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(fieldExits == initialExits + 1, "the initial receiver teaches its own slot via the ordinary semantic exit");
+#endif
+	for (int iteration = 0; iteration < 3; ++iteration) {
+		read(6, singletonValue, 0, 0);
+		read(5, linkedValue, 0, linkedSlot);
+	}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(fieldExits == initialExits + 1, "a trained own miss handles out-of-range and wrong-key slots without a ReadField exit");
+#endif
+	read(7, valueNil(), 0, linkedSlot);
+	for (auto* machine : {&native, &scalar}) {
+		auto& owner = machine->cpu;
+		auto receiver = asTable(owner.readFrameRegister(0, 7), owner.gcHeap());
+		auto meta = owner.createTable(0, 1);
+		meta.setStringKey(owner.stringPool().intern("__index"), owner.createBuiltinFunction(BuiltinFunctionId::Type));
+		receiver.setMetatableAddress(meta.address());
+	}
+	read(7, valueString(*cpu.stringPool().find("table")), 2, linkedSlot);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(fieldExits == initialExits + 3, "nil and callable __index still use the semantic owner");
+#endif
+#endif
+}
+
 void coldRepeatedFieldsRecompileTheirSource() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::Blua32TestImage image;
@@ -1239,6 +1339,7 @@ int main() {
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 
 		nativeFieldOperationsLearnTheDecodedSite();
+		nativeFieldCacheMissReturnsOwnValueAndTrainsTheSameSite();
 		coldRepeatedFieldsRecompileTheirSource();
 
 		warmInheritedFieldReadsKeepTheirFrame();

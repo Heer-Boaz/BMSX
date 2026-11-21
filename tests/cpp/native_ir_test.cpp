@@ -133,6 +133,9 @@ void fieldSelectionPreservesColdCodeAndContinuation() {
 		NativeIrRegion region(runs, uses, false, {.observesArithmetic = true});
 		require(region.instructionCount() == decoded.size() && region.blocks().size() == 2,
 			"unknown types select generic arithmetic without removing its field load or unrelated instructions");
+		require(std::get<NativeTableAccess>(region.blocks().front().instructions[1].operation).readPlan
+			== NativeTableReadPlan::ProbeOwnOrOneHop,
+			"a checkpointed untyped field read can recover its own slot");
 		const auto& block = region.blocks().back();
 		const auto& sum = block.instructions.back();
 		const auto& plan = std::get<NativeNumericPlan>(std::get<NativeArithmetic>(sum.operation).strategy);
@@ -398,9 +401,14 @@ void fieldAddressesStopAtDefinitionsAndEffects() {
 				&& last.readPlan == NativeTableReadPlan::OwnSlot && !first.resultTag && !last.resultTag,
 				"repeated untyped loads share the checked address across operations without conflicting effects");
 		} else {
-			require(!definition.lastUseRow && first.readPlan == NativeTableReadPlan::OneHopIndex
-				&& last.readPlan == NativeTableReadPlan::OneHopIndex,
+			require(!definition.lastUseRow && first.readPlan == NativeTableReadPlan::ProbeOwnOrOneHop
+				&& last.readPlan == NativeTableReadPlan::ProbeOwnOrOneHop,
 				"different receivers, keys, seeds or intervening effects do not retain checked addresses");
+			if (boundary == Boundary::UncheckedField) {
+				const auto& peer = std::get<NativeTableAccess>(region.blocks()[1].instructions.front().operation);
+				require(peer.reusePeerWord && peer.readPlan == NativeTableReadPlan::OneHopIndex,
+					"an own-slot miss that can reproject a peer still goes to its semantic owner");
+			}
 		}
 	}
 }

@@ -150,6 +150,7 @@ struct OperationPlan {
 				out << " array-hint=" << hintEffects[unsigned(op.store.arrayLength)];
 			}
 		} else if (op.readPlan == NativeTableReadPlan::OneHopIndex) out << " check-one-hop";
+		else if (op.readPlan == NativeTableReadPlan::ProbeOwnOrOneHop) out << " probe-own-or-one-hop";
 		else if (op.readPlan == NativeTableReadPlan::OwnSlot) out << " own-only";
 	}
 	void operator()(const NativeMemoryAccess& op) const {

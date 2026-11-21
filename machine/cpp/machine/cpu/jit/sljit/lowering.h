@@ -163,6 +163,7 @@ private:
 		State registers;
 		NativeBlockExitSite* exit;
 		sljit_label* result;
+		i32* ownPrediction;
 	};
 	std::vector<SingleStringRead> m_singleStringReads;
 	std::array<u8, NATIVE_BLOCK_MAX_INSTRUCTIONS> m_fieldAddressSpills;

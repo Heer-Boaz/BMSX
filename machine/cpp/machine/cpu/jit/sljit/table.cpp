@@ -243,10 +243,13 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	}
 	// An own-only read can be inside a fixed-cost segment. Only
 	// checkpointed reads can complete a returning variable-cost lookup.
-	if (readPlan == NativeTableReadPlan::OneHopIndex) {
+	if (readPlan == NativeTableReadPlan::OneHopIndex || readPlan == NativeTableReadPlan::ProbeOwnOrOneHop) {
+		// Standalone blocks do not own decoder feedback.
+		auto* ownPrediction = readPlan == NativeTableReadPlan::ProbeOwnOrOneHop && m_bindings.cpu
+			? exit.tableRead.own.decoded : nullptr;
 		emitStringPayload();
 		m_singleStringReads.push_back({{address[0], address[1], address[2], valueFailure}, fixedKey,
-			m_cache.state(), &exit, sljit_emit_label(c)});
+			m_cache.state(), &exit, sljit_emit_label(c), ownPrediction});
 		return;
 	}
 	for (auto* guard : address) fault(guard, exit, m_cache.state());
@@ -277,19 +280,41 @@ void NativeLowering::emitSingleStringReads() {
 		for (auto* miss : read.ownMisses) sljit_set_label(miss, entry);
 		m_cache.setState(read.registers);
 		const auto& slots = read.exit->tableRead.path;
-		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
-			SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&slots.holderDepth), SLJIT_IMM, 1), *read.exit, read.registers);
+		const bool searchOwn = read.ownPrediction != nullptr;
+		const auto prediction = reinterpret_cast<sljit_sw>(read.ownPrediction);
+		const auto depth = reinterpret_cast<sljit_sw>(&slots.holderDepth);
+		auto* notInherited = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM0(), depth, SLJIT_IMM, 1);
+		if (!searchOwn) fault(notInherited, *read.exit, read.registers);
+		else sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&slots));
+		auto* invoke = sljit_emit_label(c);
 		if (read.fixedKey)
 			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_IMM, *read.fixedKey);
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&slots));
+		if (!searchOwn) sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&slots));
 		// Each own miss leaves the aligned receiver header in R0. The leaf
 		// preserves the guest register cache and returns the live value lanes.
+		// For a nonnil result, R1 is the own slot or -1 for inheritance.
 		sljit_emit_ijump(c, SLJIT_FAST_CALL, SLJIT_IMM,
-			reinterpret_cast<sljit_sw>(nativeBlockGate().oneHopStringRead));
+			reinterpret_cast<sljit_sw>(nativeBlockGate().stringReadProbe));
 		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0,
 			SLJIT_IMM, static_cast<u8>(ValueTag::Nil)), *read.exit, m_cache.state());
+		if (searchOwn) {
+			auto* inherited = sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
+			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM0(), prediction, SLJIT_R1, 0);
+			sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), read.result);
+			sljit_set_label(inherited, sljit_emit_label(c));
+		}
 		sljit_emit_op2(c, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, TABLE_INDEX_VISIT_CYCLES);
 		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), read.result);
+		if (searchOwn) {
+			// Probe only an already-trained own slot at an untrained inherited depth.
+			sljit_set_label(notInherited, sljit_emit_label(c));
+			fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM0(), depth, SLJIT_IMM, 0),
+				*read.exit, read.registers);
+			fault(sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_MEM0(), prediction, SLJIT_IMM, 0),
+				*read.exit, read.registers);
+			sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, 0);
+			sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), invoke);
+		}
 	}
 }
 
