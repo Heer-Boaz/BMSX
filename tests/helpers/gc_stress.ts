@@ -1,15 +1,15 @@
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 
-/** Exercise the real allocation admission path, including its supplied roots
- * and cycle charge. The disposable test CPU owns this instrumentation. */
+/** Apply allocation pressure before the shared admission decision, including
+ * table membership that grows without reserving another backing block. */
 export function installAllocationStress(cpu: CPU): { allocations: number } {
 	const counter = { allocations: 0 };
 	const heap = cpu.luaHeap;
-	const admit = heap.admit;
-	heap.admit = (...args: Parameters<typeof admit>): boolean => {
+	const prepareAllocation = heap.prepareAllocation;
+	heap.prepareAllocation = (...args: Parameters<typeof prepareAllocation>): ReturnType<typeof prepareAllocation> => {
 		heap.setCollectionTarget(0);
 		++counter.allocations;
-		return admit.apply(heap, args);
+		return prepareAllocation.apply(heap, args);
 	};
 	return counter;
 }

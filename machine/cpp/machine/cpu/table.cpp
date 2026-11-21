@@ -236,9 +236,6 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u32 reserve, u3
 	u32 requested = allocationCharge(plan.array, std::max(reserve, plan.members));
 	const auto assist = requested > previous ? budget.prepareAllocation(requested - previous, owner, key, value) : LuaAllocationAssist::None;
 	bool replan = assist == LuaAllocationAssist::Full;
-#if defined(BMSX_GC_STRESS)
-	replan = assist != LuaAllocationAssist::None;
-#endif
 	for (int attempt = assist == LuaAllocationAssist::Full ? 1 : 0; attempt != 2; ++attempt) {
 		if (replan) {
 			members = hashMembers();

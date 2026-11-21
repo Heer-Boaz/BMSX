@@ -48,11 +48,7 @@ LuaAllocationAssist LuaHeap::prepareAllocation(size_t byteCount, Value root0, Va
 		creditStep();
 		return LuaAllocationAssist::Step;
 	}
-#if defined(BMSX_GC_STRESS)
-	return LuaAllocationAssist::Step;
-#else
 	return LuaAllocationAssist::None;
-#endif
 }
 
 bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {

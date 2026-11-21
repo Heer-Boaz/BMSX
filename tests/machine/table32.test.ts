@@ -11,6 +11,7 @@ import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL } from '../../ma
 import { cartridgeSlots } from '../helpers/cartridge';
 import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { installAllocationStress } from '../helpers/gc_stress';
 import * as v from '../../machine/ts/machine/cpu/value';
 
 function machine(): CPU {
@@ -98,6 +99,20 @@ test('hash deletion and replay do not reopen the remembered array repartition fr
 			assert.equal(cpu.luaHeap.usedBytes(), used);
 		}
 	}
+});
+
+test('allocation stress reaches in-capacity hash quota growth, not ordinary writes', () => {
+	const cpu = machine(), tables = cpu.gc.tables, table = cpu.createTable(0, 3);
+	const backing = tables.storageAddress(table), stress = installAllocationStress(cpu);
+	for (let i = 1; i <= 3; ++i) tables.setInteger(table, -i, v.valueInteger(i));
+	assert.equal(stress.allocations, 0, 'the three prepaid mappings need no admission');
+	tables.setInteger(table, -4, v.valueInteger(4));
+	assert.equal(tables.storageAddress(table), backing, 'there is no physical allocation at this boundary');
+	assert.equal(stress.allocations, 1, 'the uncovered fourth live mapping is admitted directly');
+	assert.ok(cpu.gc.active(), 'the hook actually advanced the collector');
+	tables.setInteger(table, -4, v.valueInteger(5));
+	tables.setInteger(table, -4, v.valueNil());
+	assert.equal(stress.allocations, 1, 'neither replacement nor removal admits new bytes');
 });
 
 test('Table keys normalize Integer/Float identity without changing stored value bits', () => {
