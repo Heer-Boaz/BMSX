@@ -408,8 +408,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				return nullptr;
 			}
 			thread.recordNativeWrites(cpu.m_memory.ramWriteWatches());
-			state.bindThread(thread);
 			frame = thread.currentFrame;
+			state.bindWindow(*frame);
 		}
 		// Read-only helpers preserve the admitted window. Other same-frame
 		// helpers can relocate it but leave the image, bank and globals bound.

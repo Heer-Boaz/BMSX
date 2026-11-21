@@ -44,7 +44,7 @@ struct NativeBlockLink {
 };
 
 struct NativeBlockRunState {
-	void bindThread(const Thread&);
+	void bindWindow(CallFrame&);
 	void bindFrame(CallFrame&);
 	ConstValueSpan constants;
 	CallFrame* frame = nullptr;
