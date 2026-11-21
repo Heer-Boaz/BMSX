@@ -698,6 +698,84 @@ void observationsAndUnusedOperandsStayAtExecution() {
 		"the observed cartridge instruction runs exactly once on its own grant");
 }
 
+void warmupAdmitsTheEntryBeforeCompetingFunctionSpans() {
+	constexpr u32 twoPageFunctions = NATIVE_IMAGE_WARMUP_MAX_PAGES / 2u + 2u;
+	constexpr u32 admittedSparse = NATIVE_IMAGE_WARMUP_MAX_PAGES - twoPageFunctions - 2u;
+	constexpr u32 sparseFunctions = admittedSparse + 2u;
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.functions.resize(2u + twoPageFunctions + sparseFunctions);
+	image.text.resize((twoPageFunctions + sparseFunctions * NATIVE_VERSION_REGION_MAX_PAGES + 4u) * MAPPED_PAGE_BYTE_SIZE);
+	const auto layout = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
+	const u32 firstBoundary = (layout.textAddress + MAPPED_PAGE_BYTE_MASK) & ~MAPPED_PAGE_BYTE_MASK;
+	const u32 firstPage = (firstBoundary - layout.textAddress) / INSTRUCTION_BYTES;
+	const auto put = [&](u32 word, OpCode op) {
+		writeInstruction(image.text, word, static_cast<u8>(op), 0, 1, 0);
+	};
+	for (u32 index = 0; index < twoPageFunctions; ++index) {
+		const u32 word = firstPage + index * DECODED_PAGE_WORDS - 2u;
+		if (index + 1u == twoPageFunctions) {
+			image.functions[2u + index] = {.firstWord = word, .wordCount = 3};
+			put(word, OpCode::K0);
+			writeInstruction(image.text, word + 1u, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+			put(word + 2u, OpCode::RET);
+			continue;
+		}
+		image.functions[2u + index] = {.firstWord = word, .wordCount = 4};
+		for (u32 local = 0; local < 3u; ++local) put(word + local, OpCode::K0);
+		put(word + 3u, OpCode::RET);
+	}
+	for (u32 index = 0; index < sparseFunctions; ++index) {
+		const u32 word = firstPage + (twoPageFunctions + index * NATIVE_VERSION_REGION_MAX_PAGES) * DECODED_PAGE_WORDS;
+		const u32 words = NATIVE_VERSION_REGION_MAX_PAGES * DECODED_PAGE_WORDS;
+		image.functions[2u + twoPageFunctions + index] = {.firstWord = word, .wordCount = words};
+		put(word, OpCode::RET);
+		for (u32 local = 1; local + 1u < words; ++local) put(word + local, OpCode::K0);
+		put(word + words - 1u, OpCode::RET);
+	}
+	const u32 bootWord = firstPage + (twoPageFunctions + sparseFunctions * NATIVE_VERSION_REGION_MAX_PAGES) * DECODED_PAGE_WORDS;
+	image.functions[0] = {.firstWord = bootWord, .wordCount = 2};
+	image.functions[1] = {.firstWord = bootWord + 2u, .wordCount = 1};
+	put(bootWord, OpCode::K0);
+	put(bootWord + 1u, OpCode::RET);
+	put(bootWord + 2u, OpCode::RET);
+	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, image));
+	const u32 entry = machine.cart.textAddress + bootWord * INSTRUCTION_BYTES;
+	const auto grant = BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::MTC0)];
+	auto& cpu = machine.cpu();
+	require(cpu.runUntilDepth(0, grant) == RunResult::Yielded && cpu.readFramePc(0) == entry && !entryAt(cpu, entry, 0),
+		"the exact EXEC grant admits the cartridge entry without preparing it");
+	const auto state = encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime));
+	require(cpu.runUntilDepth(0, 0) == RunResult::Yielded
+		&& encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == state,
+		"physical page admission runs at the grant boundary without guest effects");
+	const auto* boot = entryAt(cpu, entry, 0);
+	const auto* sibling = entryAt(cpu, entry + 2u * INSTRUCTION_BYTES, 0);
+	require(boot && sibling && boot->region == sibling->region,
+		"geometric function spans cannot starve the explicit cartridge entry and its same-page batch");
+	const auto& decoded = cpu.rootThread()->currentFrame->executionImage->decodedPages;
+	for (u32 index = 0; index < twoPageFunctions; ++index) {
+		const auto pc = machine.cart.textAddress + image.functions[2u + index].firstWord * INSTRUCTION_BYTES;
+		const auto* first = entryAt(cpu, pc, 0);
+		const auto* second = entryAt(cpu, pc + 2u * INSTRUCTION_BYTES, 0);
+		if (index + 1u == twoPageFunctions)
+			require(first && first->sourceWords == 3u && !second,
+				"a crossing WIDE encoding can require a second page without publishing an entry there");
+		else require(first && second && first->region == second->region,
+				"neighboring functions sharing physical pages do not spend the page allowance twice");
+	}
+	for (u32 index = 0; index < sparseFunctions; ++index) {
+		const auto pc = machine.cart.textAddress + image.functions[2u + twoPageFunctions + index].firstWord * INSTRUCTION_BYTES;
+		if (index < admittedSparse)
+			require(entryAt(cpu, pc, 0) && !decoded.contains(pc + MAPPED_PAGE_BYTE_SIZE),
+				"unreachable function body pages neither create decoded source nor consume warmup allowance");
+		else require(!entryAt(cpu, pc, 0) && !decoded.contains(pc),
+				"the WIDE body page still belongs to the dependency allowance when no entry was published in it");
+	}
+	require(decoded.size() == NATIVE_IMAGE_WARMUP_MAX_PAGES && cpu.readNativeCompilationProfile().capacityEvictedRegions == 0,
+		"prepared code stays within the unchanged physical page allowance");
+}
+
 } // namespace
 
 int main() {
@@ -715,6 +793,7 @@ int main() {
 		hintsDoNotBoundReachableCode();
 		crossPageWideSourceUsesItsPhysicalSlot();
 		boundedWarmupLeavesDistantBranchesToHotCompilation();
+		warmupAdmitsTheEntryBeforeCompetingFunctionSpans();
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 		cartridgePreparationFollowsWorkerPublication();
 #endif

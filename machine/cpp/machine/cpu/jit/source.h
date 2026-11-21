@@ -1,16 +1,35 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <bitset>
+#include <span>
 #include <vector>
 
 #include "machine/cpu/decoded_instruction.h"
+#include "machine/cpu/jit/limits.h"
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/mapped_page.h"
 
 namespace bmsx {
 
 struct DecodedInstructionPage;
+
+// One immutable image owns one physical page namespace. Take a copy while
+// discovering or compiling a candidate; only its published dependencies spend
+// the shared allowance.
+struct NativeWarmupPages {
+	bool include(u32 pagePc) {
+		const auto admitted = std::span(pages).first(count);
+		if (std::ranges::find(admitted, pagePc) != admitted.end()) return true;
+		if (count == pages.size()) return false;
+		pages[count++] = pagePc;
+		return true;
+	}
+
+	std::array<u32, NATIVE_IMAGE_WARMUP_MAX_PAGES> pages{};
+	size_t count = 0;
+};
 
 // A physical instruction page and its compilation graph. No running frame,
 // register file, CPU PC latch or device access is needed to discover its source.

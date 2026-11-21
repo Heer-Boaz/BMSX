@@ -16,26 +16,32 @@
 
 namespace bmsx {
 
-u32 CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunctionVersion& version,
-	u32 rootPc, MappedBusSignals busSignals, size_t pageBudget, bool coldImage) {
+namespace {
+u32 functionPageCount(const Blua32RomFunctionVersion& version) {
+	return ((version.endPc - 1u) >> MAPPED_PAGE_BYTE_SHIFT) - (version.entry.codeAddress >> MAPPED_PAGE_BYTE_SHIFT) + 1u;
+}
+} // namespace
+
+bool CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunctionVersion& version,
+	u32 rootPc, MappedBusSignals busSignals, NativeWarmupPages* warmup) {
 	// Only a bound function in immutable ROM may unite physical pages.
 	// Page indexes are entry directories and dependencies, not IR boundaries.
 	using Clock = std::chrono::steady_clock;
 	const u32 slot = m_memory.cartridgeController().selectedSlot(busSignals);
-	if (image.executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID && static_cast<u32>(image.executionDomainId) != slot) return 0u;
+	if (image.executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID && static_cast<u32>(image.executionDomainId) != slot) return false;
 	const auto& functions = image.romFunctions;
 	const bool verified = !functions.mappedCode;
 	const u32 bodyFirst = version.entry.codeAddress & ~MAPPED_PAGE_BYTE_MASK;
 	const u32 bodyLast = (version.endPc - 1u) & ~MAPPED_PAGE_BYTE_MASK;
-	const u32 bodyPages = (bodyLast - bodyFirst) / MAPPED_PAGE_BYTE_SIZE + 1u;
-	const size_t limit = std::min<size_t>(pageBudget, NATIVE_VERSION_REGION_MAX_PAGES);
-	if (limit == 0u || (coldImage && m_nativeCode.full())) return 0u;
+	const u32 bodyPages = functionPageCount(version);
+	constexpr u32 limit = NATIVE_VERSION_REGION_MAX_PAGES;
+	if (warmup && m_nativeCode.full()) return false;
 	// Keep the amortized per-page cold batch for small functions and cold
 	// demand for long bodies. The adaptive compiler alone can request a
 	// clipped window when the whole verified function exceeds the limit.
-	if ((!verified || coldImage) && (bodyPages <= 1u || bodyPages > limit)) return 0u;
+	if ((!verified || warmup) && (bodyPages <= 1u || bodyPages > limit)) return false;
 	const u32 first = bodyPages <= limit ? bodyFirst : rootPc & ~MAPPED_PAGE_BYTE_MASK;
-	const u32 count = std::min(static_cast<u32>(limit), (bodyLast - first) / MAPPED_PAGE_BYTE_SIZE + 1u);
+	const u32 count = std::min(limit, (bodyLast - first) / MAPPED_PAGE_BYTE_SIZE + 1u);
 	const u32 firstPc = std::max(first, version.entry.codeAddress);
 	u32 endPc = std::min(version.endPc, first + count * MAPPED_PAGE_BYTE_SIZE);
 	// The body word of a WIDE is not a new entry. Stop before the prefix
@@ -46,6 +52,8 @@ u32 CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunct
 	const auto discoveryStart = m_nativeCompilationProfiling ? Clock::now() : Clock::time_point{};
 	std::array<std::optional<NativeCompilationSource>, NATIVE_VERSION_REGION_MAX_PAGES> sources;
 	std::array<NativeCompilationSource*, NATIVE_VERSION_REGION_MAX_PAGES> region;
+	std::optional<NativeWarmupPages> requested;
+	if (warmup) requested.emplace(*warmup);
 	const auto bindSource = [&](u32 index) -> NativeCompilationSource* {
 		auto& source = sources[index];
 		if (!source) {
@@ -53,6 +61,7 @@ u32 CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunct
 			MappedPageBinding binding;
 			m_memory.bindMappedPage(address, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 			if (!binding.cacheable || binding.writeWatch.groups || (!verified && !binding.readBytes)) return nullptr;
+			if (requested && !requested->include(address)) return nullptr;
 			auto& page = decodedPageForAddress(image, binding);
 			source.emplace(page, binding, address, busSignals, slot, verified);
 			source->firstPc = firstPc;
@@ -62,10 +71,10 @@ u32 CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunct
 	};
 	// Mapped ROM hints still require a fully backed immutable span.
 	if (!verified) for (u32 index = 0; index < count; ++index)
-		if (!bindSource(index)) return 0u;
+		if (!bindSource(index)) return false;
 	auto* root = bindSource(rootPage);
 	if (!root || (root->page.nativeBlocks
-		&& root->page.nativeBlocks->entries[(rootPc - root->pagePc) / INSTRUCTION_BYTES])) return 0u;
+		&& root->page.nativeBlocks->entries[(rootPc - root->pagePc) / INSTRUCTION_BYTES])) return false;
 	root->enqueue(rootPc, true, nullptr, true);
 	u32 ready = 1u << rootPage;
 	if (version.entry.codeAddress >= firstPc) {
@@ -97,8 +106,8 @@ u32 CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunct
 		m_nativeCompilationProfile.discoveryNanoseconds += elapsed;
 		m_nativeCompilationProfile.prepareNanoseconds += elapsed;
 	}
-	prepareNativeSources(image, std::span(region).first(sourceCount), coldImage);
-	return count;
+	prepareNativeSources(image, std::span(region).first(sourceCount), warmup);
+	return true;
 }
 
 void CPU::prepareSystemNativeCode() {
@@ -112,7 +121,8 @@ void CPU::prepareSystemNativeCode() {
 		publishNativeCompilation();
 	}
 #endif
-	prepareNativeImageCode(*m_systemImage, std::nullopt);
+	const auto* startup = m_systemImage->romFunctions.find(m_executionAddressSpace.resolveSystemDomain().startupFunctionAddress);
+	prepareNativeImageCode(*m_systemImage, startup ? std::optional{startup->entry.codeAddress} : std::nullopt);
 }
 
 void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32> entryPc) {
@@ -129,9 +139,14 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 	std::map<u64, NativeCompilationSource> pages;
 	std::vector<NativeCompilationSource*> pending;
 	std::vector<u32> outgoing;
-	size_t pageBudget = NATIVE_IMAGE_WARMUP_MAX_PAGES;
-	for (const auto& version : versions)
-		pageBudget -= prepareNativeFunction(image, version, version.entry.codeAddress, busSignals, pageBudget, true);
+	NativeWarmupPages budget;
+	// A real activation outranks every descriptive root. Its bounded body can
+	// use one cross-page region; short roots keep the shared page batch below.
+	if (entryPc) {
+		if (const auto* entry = functions.atPc(*entryPc))
+			prepareNativeFunction(image, *entry, *entryPc, busSignals, &budget);
+	}
+	auto requested = budget;
 	const auto discoveryStart = m_nativeCompilationProfiling ? Clock::now() : Clock::time_point{};
 	const auto enqueue = [&](u32 pc) -> NativeCompilationSource* {
 		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u
@@ -142,7 +157,7 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 		MappedPageBinding binding;
 		m_memory.bindMappedPage(pagePc, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 		if (!binding.cacheable || (functions.mappedCode && !binding.readBytes)) return nullptr;
-		if (pages.size() == pageBudget && !pages.contains(binding.key)) return nullptr;
+		if (!requested.include(pagePc)) return nullptr;
 		auto& decoded = decodedPageForAddress(image, binding);
 		const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		if (decoded.nativeBlocks && decoded.nativeBlocks->entries[word]) return nullptr;
@@ -156,7 +171,10 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 		return &source;
 	};
 	auto* entrySource = entryPc ? enqueue(*entryPc) : nullptr;
-	for (const auto& version : versions) enqueue(version.entry.codeAddress);
+	for (const auto& version : versions) {
+		const u32 count = functionPageCount(version);
+		if (count == 1u || count > NATIVE_VERSION_REGION_MAX_PAGES) enqueue(version.entry.codeAddress);
+	}
 
 	// Discover before emitting so all incoming function and cross-page roots
 	// split one shared physical-page graph instead of compiling duplicate suffixes.
@@ -172,12 +190,14 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 		m_nativeCompilationProfile.discoveryNanoseconds += elapsed;
 		m_nativeCompilationProfile.prepareNanoseconds += elapsed;
 	}
-	if (entrySource) prepareNativeSources(image, std::span(&entrySource, 1), true);
+	if (entrySource) prepareNativeSources(image, std::span(&entrySource, 1), &budget);
 	for (auto& [key, source] : pages)
 		if (&source != entrySource) {
 			NativeCompilationSource* page = &source;
-			prepareNativeSources(image, std::span(&page, 1), true);
+			prepareNativeSources(image, std::span(&page, 1), &budget);
 		}
+	for (const auto& version : versions)
+		prepareNativeFunction(image, version, version.entry.codeAddress, busSignals, &budget);
 }
 
 } // namespace bmsx

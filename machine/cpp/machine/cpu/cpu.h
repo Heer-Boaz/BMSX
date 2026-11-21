@@ -63,6 +63,7 @@ struct NativeCpuRunState;
 #endif
 struct NativeCompilationSource;
 struct NativeCodeSourcePage;
+struct NativeWarmupPages;
 class GcHeap;
 class IrqController;
 class Memory;
@@ -462,15 +463,15 @@ private:
 	NativeRomCallBinding* bindNativeRomFunction(Blua32ExecutionImage& image, u32 functionAddress) const noexcept;
 	static void* tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	void prepareNativeBlock(CallFrame&, DecodedInstructionPage&, u32 pc, MappedBusSignals);
-	u32 prepareNativeFunction(Blua32ExecutionImage&, const Blua32RomFunctionVersion&, u32 rootPc,
-		MappedBusSignals, size_t pageBudget, bool coldImage);
+	bool prepareNativeFunction(Blua32ExecutionImage&, const Blua32RomFunctionVersion&, u32 rootPc,
+		MappedBusSignals, NativeWarmupPages* = nullptr);
 	void observeNativeArithmeticReplay(DecodedInstructionPage&, u32 word, NativeArithmeticFeedback assumption, Value left, Value right);
 	void retireNativeInstructionUsers(DecodedInstructionPage&, u32 word);
 	void recompileNativeSource(CallFrame&, DecodedInstructionPage&, u32 changedWord, u32 sourcePc);
 	void prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32> entryPc);
 	void discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing);
-	void prepareNativeSources(Blua32ExecutionImage&, std::span<NativeCompilationSource* const>, bool coldImage);
-	void installNativeRegion(Blua32ExecutionImage& image, std::span<const NativeCodeSourcePage>, u32 slot,
+	void prepareNativeSources(Blua32ExecutionImage&, std::span<NativeCompilationSource* const>, NativeWarmupPages* = nullptr);
+	bool installNativeRegion(Blua32ExecutionImage& image, std::span<const NativeCodeSourcePage>, u32 slot,
 		std::vector<std::unique_ptr<NativeBlock>> blocks, NativeCodeAdmission);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	void publishNativeCompilation();

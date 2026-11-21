@@ -118,8 +118,7 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page,
 		const bool singlePage = verified && version->entry.codeAddress >= pagePc
 			&& version->endPc - pagePc <= MAPPED_PAGE_BYTE_SIZE;
 		if (!singlePage) {
-			if (version->contains(pc) && prepareNativeFunction(image, *version, pc, busSignals,
-				NATIVE_VERSION_REGION_MAX_PAGES, false)) return;
+			if (version->contains(pc) && prepareNativeFunction(image, *version, pc, busSignals)) return;
 			// A verified prototype never supplies an unbounded page source.
 			if (verified) return;
 		}
@@ -134,10 +133,11 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page,
 	}
 	source.enqueue(pc, true, nullptr, true);
 	NativeCompilationSource* pages[] = {&source};
-	prepareNativeSources(image, pages, false);
+	prepareNativeSources(image, pages);
 }
 
-void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeCompilationSource* const> pages, bool coldImage) {
+void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeCompilationSource* const> pages, NativeWarmupPages* warmup) {
+	const bool coldImage = warmup != nullptr;
 	if (coldImage && m_nativeCode.full()) return;
 	const auto& first = *pages.front();
 	const auto firstRoot = std::find(first.roots.begin(), first.roots.end(), u8{1});
@@ -244,8 +244,19 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 		{.rejectedFieldProofs = rejectedFieldProofs, .imageConstants = constants, .calls = calls});
 	if (blocks.empty()) return;
 	measurement.finish();
-	installNativeRegion(image, bindingsPages, first.slot, std::move(blocks),
-		coldImage ? NativeCodeAdmission::Warmup : NativeCodeAdmission::Adaptive);
+	if (!warmup) {
+		installNativeRegion(image, bindingsPages, first.slot, std::move(blocks), NativeCodeAdmission::Adaptive);
+		return;
+	}
+	// Charge the finalized source spans, including a crossing WIDE body even
+	// when no entry was emitted on its second physical page.
+	auto admitted = *warmup;
+	for (const auto& block : blocks) {
+		const u32 end = (block->firstPc + (block->sourceWords - 1u) * INSTRUCTION_BYTES) & ~MAPPED_PAGE_BYTE_MASK;
+		for (u32 pagePc = block->firstPc & ~MAPPED_PAGE_BYTE_MASK; pagePc <= end; pagePc += MAPPED_PAGE_BYTE_SIZE)
+			if (!admitted.include(pagePc)) return;
+	}
+	if (installNativeRegion(image, bindingsPages, first.slot, std::move(blocks), NativeCodeAdmission::Warmup)) *warmup = admitted;
 }
 
 } // namespace bmsx

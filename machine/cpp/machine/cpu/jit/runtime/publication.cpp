@@ -100,7 +100,7 @@ void CPU::discardNativeCompilation() {
 }
 #endif
 
-void CPU::installNativeRegion(Blua32ExecutionImage& image, std::span<const NativeCodeSourcePage> sources, u32 slot,
+bool CPU::installNativeRegion(Blua32ExecutionImage& image, std::span<const NativeCodeSourcePage> sources, u32 slot,
 	std::vector<std::unique_ptr<NativeBlock>> blocks, NativeCodeAdmission admission) {
 	// This is the only publication boundary for either compilation policy.
 	// All source retirement and emitted-code ownership transfers run on the CPU.
@@ -108,7 +108,7 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, std::span<const Nativ
 	std::array<DecodedInstructionPage*, NATIVE_VERSION_REGION_MAX_PAGES> pages;
 	std::ranges::transform(sources, pages.begin(), &NativeCodeSourcePage::page);
 	if (!m_nativeCode.tryInstall(region, std::span(pages).first(sources.size()), admission,
-		m_nativeCompilationProfiling ? &m_nativeCompilationProfile : nullptr)) return;
+		m_nativeCompilationProfiling ? &m_nativeCompilationProfile : nullptr)) return false;
 	auto& lookup = image.nativeCodeLookup;
 	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
 	for (const auto& source : sources) {
@@ -161,6 +161,7 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, std::span<const Nativ
 		profile.emittedCodeBytes += region.codeBytes;
 		profile.peakCodeBytes = std::max(profile.peakCodeBytes, static_cast<u64>(m_nativeCode.codeBytes()));
 	}
+	return true;
 }
 
 void CPU::clearNativeContinuationBindings() {
