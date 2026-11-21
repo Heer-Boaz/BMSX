@@ -26,11 +26,7 @@ void NativeLowering::beginBlock(size_t index) {
 			offsetof(NativeBlockRunState, registerCapacity), SLJIT_IMM, ir.requiredSlots), replay, m_cache.state());
 	if (ir.requiredCaptures != 0) {
 		auto* c = m_compiler;
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, nativeControl));
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), static_cast<u32>(FrameField::Closure));
-		if constexpr (std::endian::native == std::endian::big)
-			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R2, 0, SLJIT_R2, 0);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, closure));
 		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 		NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), GC_RECORD_LINK);

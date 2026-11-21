@@ -15,6 +15,7 @@ namespace bmsx {
 
 struct Blua32ExecutionImage;
 struct DecodedInstructionPage;
+struct NativeBlockExitSite;
 struct Thread;
 
 enum class ProtectedCallKind : uint8_t {
@@ -180,6 +181,13 @@ struct CallFrame {
 	// Host translation admission for the next PC; not architectural state.
 	bool compilationEntry = true;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	// A fixed call can run entirely inside a grant. The call site's metadata
+	// owns the unmaterialized activation until return or publication before
+	// an observer. Code retirement is possible only after that publication.
+	const NativeBlockExitSite* pendingNativeCall = nullptr;
+	u32 pendingNativeClosure;
+	i32 pendingNativeStackBase;
+	i32 pendingNativeCallerTop;
 	// Host translation binding for the suspended caller. Not guest/saved state.
 	std::array<void* const*, 2> nativeContinuationCells{};
 	u32 nativeContinuationPc = 0;

@@ -1241,6 +1241,8 @@ transfers use the main RAM address aperture. The Thread record holds the
 active frame count and the next free Value slot for a new, separate window.
 One count selects the active prefix of the frame area; the other is a
 20-bit slot index in the Value area.
+Only the active prefix defines frame state. Bytes in the unused frame slots
+are reserved scratch; they do not describe suspended activations.
 The protected-continuation allocation records a suspended protected call's
 caller and result window so it can finish when the Thread resumes. A new
 Thread reserves eight Value slots and two frame controls. An ordinary entry leaves

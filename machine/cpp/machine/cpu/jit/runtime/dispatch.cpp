@@ -68,7 +68,7 @@ NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState
 	const auto& call = exit->operands.call;
 	const int base = call.callee;
 	const int receiving = call.requested == 0 ? 0 : 1;
-	if (call.requested > 1 || (receiving && base >= state->frame->stackCapacity()))
+	if (call.requested > 1 || (receiving && static_cast<size_t>(base) >= state->frame->registers.size()))
 		return NativeBuiltinCallOutcome::Declined;
 	const int count = call.supplied < 0 ? std::max(state->registerTop - base - 1, 0) : call.supplied;
 	auto& frame = *state->frame;
@@ -77,7 +77,7 @@ NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState
 	if (registers.containsRange(base + 1, count)) {
 		args = BuiltinArgsView(registers.subspan(base + 1, count));
 	} else {
-		const int first = frame.readAdmittedWindow(FrameField::StackBase) + base + 1;
+		const int first = state->stackBase + base + 1;
 		if (!frame.thread->stack.containsRange(first, count)) return NativeBuiltinCallOutcome::Declined;
 		args = BuiltinArgsView(frame.thread->stack.subspan(first, count));
 	}
@@ -90,7 +90,8 @@ NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState
 	if (state->remainingCycles <= 0 || cpu->m_hardHalted || cpu->m_yieldRequested || cpu->m_threadSwitchRequested
 		|| cpu->m_memoryWriteBlocked || cpu->m_nonMaskableInterruptPending
 		|| ((cpu->m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
-			&& cpu->m_irqController.hasAssertedMaskableInterruptLine()) || cpu->isHaltedUntilIrq())
+			&& cpu->m_irqController.hasAssertedMaskableInterruptLine())
+		|| cpu->retargetsHaltedFrame(*frame.thread, static_cast<int>(state->frameDepth)))
 		return NativeBuiltinCallOutcome::CompletedStop;
 	return NativeBuiltinCallOutcome::CompletedResume;
 }
@@ -113,7 +114,7 @@ void* CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExit
 	cpu.m_currentInstructionPc = exit->currentPc;
 	cpu.m_lastExecutionDomainId = frame.executionImage->executionDomainId;
 	cpu.lastPc = exit->lastPc;
-	if (completion == NativeBuiltinCallOutcome::CompletedResume && static_cast<int>(cpu.m_activeThread->frameDepth()) > run->targetDepth) {
+	if (completion == NativeBuiltinCallOutcome::CompletedResume && static_cast<int>(state.frameDepth) > run->targetDepth) {
 		void* const* const cell = exit->continuationCells[run->cartridgeSlot];
 		if (void* target = cell ? *cell : nullptr) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -123,8 +124,7 @@ void* CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExit
 		}
 	}
 	// Completion only needs a RAM frontier when it leaves the native grant.
-	frame.setTop(state.registerTop);
-	frame.writeControl(FrameField::Pc, exit->nextPc);
+	run->publishActivation(exit->nextPc);
 	cpu.instructionBudgetRemaining = state.remainingCycles;
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	++cpu.m_nativeGateProfile.builtinStops;
@@ -147,8 +147,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			cpu.lastPc = exit->lastPc;
 		}
 		cpu.instructionBudgetRemaining = state.remainingCycles;
-		frame->writeControl(FrameField::Pc, exit->nextPc);
-		frame->setTop(state.registerTop);
+		run->publishActivation(exit->nextPc);
 		run->replay = NativeCpuRunState::Replay{exit->nextPc, exit->operands.replay.arithmetic};
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		++gateProfile.returns;
@@ -184,8 +183,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	// Publish the complete native prefix before leaving the grant, allocating,
 	// touching a device or changing frames. A semantic helper can retire the descriptor.
 	cpu.instructionBudgetRemaining = state.remainingCycles;
-	frame->writeControl(FrameField::Pc, exit->nextPc);
-	frame->setTop(state.registerTop);
+	run->publishActivation(exit->nextPc);
 	if (continuing) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		++gateProfile.returns;
@@ -431,6 +429,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			thread.recordNativeWrites(cpu.m_memory.ramWriteWatches());
 			frame = thread.currentFrame;
 			state.frame = frame;
+			state.frameDepth = depth;
 		}
 		// Read-only helpers preserve the admitted window. Other same-frame
 		// helpers can relocate it but leave the image, bank and globals bound.
@@ -498,6 +497,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		if (!sameFrame) {
 			state.constants = frame->executionImage->constPool;
 			state.cop0Words = cpu.m_cop0Words.data();
+			state.closure = frame->closureAddress();
+			state.stackBase = frame->stackBase();
 		}
 		state.remainingCycles = cpu.instructionBudgetRemaining;
 		state.registerTop = frame->readWindow(FrameField::Top);

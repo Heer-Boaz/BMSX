@@ -54,6 +54,10 @@ NativeBlock::~NativeBlock() {
 const NativeBlockExitSite* NativeBlock::run(const ValueSpan& registers, NativeBlockRunState& state) const {
 	state.exitCode = m_gate->exit;
 	state.ram = region->ram;
+	if (state.frame) {
+		state.closure = state.frame->closureAddress();
+		state.stackBase = state.frame->stackBase();
+	}
 	return reinterpret_cast<NativeBlockGate::Entry>(m_gate->entry)(&state, m_body, &registers);
 }
 

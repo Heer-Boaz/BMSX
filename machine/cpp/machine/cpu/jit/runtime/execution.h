@@ -42,6 +42,10 @@ struct NativeCpuRunState {
 	NativeCodeLookup::Group* const* codeRoot = nullptr;
 	u32 cartridgeSlot = 0;
 	u32 frameBank = 0;
+	CallFrame* firstPendingFrame = nullptr;
+	// MMIO, semantic calls, resumable faults and the end of the grant all
+	// observe real RAM records. Pure compiled transfers do not.
+	void publishActivation(u32 pc) noexcept;
 	std::exception_ptr error;
 	std::optional<Replay> replay{};
 	u32 callTargetFeedback = DecodedInstruction::CALL_TARGET_UNSEEN;

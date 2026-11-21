@@ -34,11 +34,8 @@ struct Thread {
 	u32 stackByteLength() const { return static_cast<u32>(stack.size()) * THREAD_STACK_SLOT_BYTES; }
 	bool stackRequiresScalar() const;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	u32 admittedFrameDepth() const {
-		return readLE32(nativeRecord + static_cast<u32>(ThreadField::FrameDepth)) & THREAD_CONTROL_COUNT_MASK;
-	}
-	CallFrame* retainedFrameForEntry(u32 nextDepth) const {
-		return nextDepth < boundFrameCapacity ? currentFrame->next : nullptr;
+	CallFrame* retainedFrameForEntry(const CallFrame& caller, u32 nextDepth) const {
+		return nextDepth < boundFrameCapacity ? caller.next : nullptr;
 	}
 	void publishAdmittedFrame(CallFrame& frame, u32 depth, i32 top) {
 		currentFrame = &frame;
@@ -48,6 +45,10 @@ struct Thread {
 	void retireAdmittedFrame(CallFrame& leaving, CallFrame& caller, u32 depth) {
 		const auto base = caller.readAdmittedWindow(FrameField::StackBase);
 		publishAdmittedFrame(caller, depth, base + caller.readAdmittedWindow(FrameField::StackCapacity));
+		releaseFrameView(leaving);
+	}
+	void discardPendingFrame(CallFrame& leaving) {
+		leaving.pendingNativeCall = nullptr;
 		releaseFrameView(leaving);
 	}
 	void recordNativeWrites(MappedPageWriteWatches& watches) {

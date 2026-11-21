@@ -2201,6 +2201,8 @@ dispatch_native_block: {
 					.cop0Words = m_cop0Words.data(),
 					.tableIndexKey = asStringId(m_indexKey),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.readWindow(FrameField::Top),
+					.closure = FRAME.closureAddress(), .stackBase = FRAME.stackBase(),
+					.frameDepth = static_cast<u32>(thread.frameDepth()),
 					.ram = m_memory.ramData(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 					.diagnosticOpcodes = {},

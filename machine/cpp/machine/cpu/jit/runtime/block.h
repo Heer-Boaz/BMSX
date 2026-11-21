@@ -56,6 +56,9 @@ struct NativeBlockRunState {
 	StringId tableIndexKey = 0;
 	int remainingCycles = 0;
 	int registerTop = 0;
+	u32 closure = 0;
+	i32 stackBase = 0;
+	u32 frameDepth = 0;
 	void* exitCode = nullptr;
 	// Host base of guest main RAM; the gate pins it for the whole native frame.
 	u8* ram = nullptr;

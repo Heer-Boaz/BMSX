@@ -1,10 +1,12 @@
 #pragma once
 
 #include "machine/cpu/upvalue.h"
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/execution_image.h"
@@ -51,6 +53,38 @@ inline bool sameLanguageRam(CPU& left, CPU& right) {
 	const size_t offset = floor - RAM_BASE;
 	return std::memcmp(left.memory().ramData() + offset, right.memory().ramData() + offset,
 		left.memory().ramByteCount() - offset) == 0;
+}
+
+// An activation that returns entirely within a native grant never needs a
+// physical frame record. Compare every other byte, including the active
+// frame prefix, layout/allocator metadata and both Value lanes.
+inline bool sameActiveLanguageRam(CPU& left, CPU& right) {
+	if (sameLanguageRam(left, right)) return true;
+	const u32 floor = left.heapAllocator().floorAddress();
+	if (floor != right.heapAllocator().floorAddress()) return false;
+	struct InactiveFrames {
+		Memory& memory;
+		std::vector<std::pair<u32, u32>> spans;
+	} inactive{left.memory(), {}};
+	left.heapAllocator().visitObjectRecords(&inactive, [](void* context, u32 address) -> i32 {
+		auto& [memory, spans] = *static_cast<InactiveFrames*>(context);
+		if (memory.readRamRecordByte(address) == THREAD_RECORD_KIND) {
+			const auto layout = ThreadRecord::storageLayout(memory, address);
+			const auto depth = ThreadRecord::count(memory, address, ThreadField::FrameDepth);
+			if (depth != layout.frameCapacity)
+				spans.emplace_back(layout.frameAddress(depth), layout.frameAddress(layout.frameCapacity));
+		}
+		return 1;
+	});
+	std::sort(inactive.spans.begin(), inactive.spans.end());
+	const auto* a = left.memory().ramData();
+	const auto* b = right.memory().ramData();
+	size_t next = floor - RAM_BASE;
+	for (const auto& [start, end] : inactive.spans) {
+		if (std::memcmp(a + next, b + next, start - next) != 0) return false;
+		next = end;
+	}
+	return std::memcmp(a + next, b + next, left.memory().ramByteCount() - next) == 0;
 }
 
 inline u32 allocatedObjectRecords(CPU& cpu) {
