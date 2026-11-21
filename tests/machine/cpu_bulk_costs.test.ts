@@ -270,9 +270,9 @@ return true`, 3);
     capacity = 1024;
    }
    let gcCycles = 0;
-   if (scenario === 'weak-collection' || scenario === 'failed-growth') {
+   if (scenario === 'failed-growth') {
     const before = captureCpuCheckpoint(cpu);
-    gcCycles = scenario === 'weak-collection' ? cpu.gc.step() : cpu.gc.collect();
+    gcCycles = cpu.gc.collect();
     restoreCpuCheckpoint(cpu, before);
     frame = cpu.rootThread.currentFrame!; r = frame.registers; table = r.getPayload(0);
    }
@@ -289,7 +289,14 @@ return true`, 3);
    } else {
     assert.equal(cpu.gc.tables.get(table, key), valueInteger(73));
     if (scenario === 'weak-collection') {
-     assert.equal(cpu.gc.tables.get(table, field), valueNil()); assert.equal(cpu.gc.tables.get(table, other), valueNil());
+     assert.equal(cpu.gc.finalMarkPending(), true, 'the store does not enter the pending final collection');
+     assert.notEqual(cpu.gc.tables.get(table, field), valueNil());
+     assert.notEqual(cpu.gc.tables.get(table, other), valueNil());
+     cpu.gc.finishFinalMark();
+     assert.equal(cpu.instructionBudgetRemaining, 0, 'final work uses no guest grant');
+     assert.equal(cpu.gc.tables.get(table, field), valueNil());
+     assert.equal(cpu.gc.tables.get(table, other), valueNil());
+     assert.equal(cpu.gc.tables.get(table, key), valueInteger(73));
     }
    }
   });

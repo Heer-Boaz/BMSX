@@ -138,11 +138,10 @@ void rebuildWork(bool scalar) {
    capacity = 1024;
   }
   int gcCycles = 0;
-  if (scenario == "weak-collection" || scenario == "failed-growth") {
+  if (scenario == "failed-growth") {
    const auto before = cpu.captureRuntimeState();
    const auto ram = cpu.memory().captureSaveState();
-   gcCycles = static_cast<int>(scenario == "weak-collection"
-    ? cpu.stepHeap(valueNil(), valueNil(), valueNil()) : cpu.collectHeap());
+   gcCycles = static_cast<int>(cpu.collectHeap());
    cpu.memory().restoreSaveState(ram);
    cpu.restoreRuntimeState(before);
    frame = cpu.rootThread()->currentFrame;
@@ -159,8 +158,13 @@ void rebuildWork(bool scalar) {
     throw std::runtime_error("failed replacement does not mutate mappings");
   } else {
    if (table.get(key) != valueInteger(73)) throw std::runtime_error("rebuild lost its inserted mapping");
-   if (scenario == "weak-collection" && (!isNil(table.get(field)) || !isNil(table.get(other))))
-    throw std::runtime_error("migration must not revive weak entries removed by collection");
+   if (scenario == "weak-collection") {
+    if (!cpu.gcHeap().finalMarkPending() || isNil(table.get(field)) || isNil(table.get(other)))
+     throw std::runtime_error("rebuild does not enter a pending final collection inside the store");
+    cpu.gcHeap().finishFinalMark();
+    if (cpu.instructionBudgetRemaining != 0 || !isNil(table.get(field)) || !isNil(table.get(other)) || table.get(key) != valueInteger(73))
+     throw std::runtime_error("final collection sees the migrated weak entries and charges no guest grant");
+   }
   }
  }
 }
