@@ -70,10 +70,11 @@ static size_t g_test_capture_event_count = 0;
 static size_t g_test_capture_event_capacity = 0;
 static size_t g_test_capture_event_next = 0;
 static uint64_t g_timeline_last_frame = 0;
-static uint64_t g_cartridge_run_frame_count = 0;
+static uint64_t g_cartridge_elapsed_frames = 0;
 static bmsx_read_execution_domain_id_t g_read_execution_domain_id = NULL;
 static bool g_timeline_active = false;
 static bool g_cartridge_timeline_started = false;
+static bool g_guest_tick_timeline = false;
 
 static uint64_t ms_to_frame_index(uint64_t milliseconds, uint64_t frame_usec) {
 	if (frame_usec == 0) {
@@ -693,7 +694,9 @@ static bool parse_timeline_entry(JsonCursor* cursor, uint64_t frame_usec, uint64
 	}
 	for (uint64_t step = 0; step < repeats; ++step) {
 		const uint64_t scheduled_ms = base_ms + (step * interval_ms);
-		const uint64_t frame_index = ms_to_frame_index(scheduled_ms, frame_usec);
+		const uint64_t frame_index = g_guest_tick_timeline && has_frame && !has_ms && !has_repeat_every_ms
+			? frame + step * repeat_every_frames
+			: ms_to_frame_index(scheduled_ms, frame_usec);
 		if (event_entry.code[0]) {
 			add_test_input_event(frame_index, event_key, event_entry.down);
 		}
@@ -725,7 +728,7 @@ static void parse_input_timeline_file(const char* timeline_path, uint64_t frame_
 	g_test_capture_events = NULL;
 	g_test_capture_event_capacity = 0;
 	g_timeline_last_frame = 0;
-	g_cartridge_run_frame_count = 0;
+	g_cartridge_elapsed_frames = 0;
 	g_timeline_active = false;
 	g_cartridge_timeline_started = false;
 
@@ -846,11 +849,13 @@ void input_timeline_configure(
 		const char* rom_folder,
 		const char* game_path,
 		uint64_t frame_usec,
-		bmsx_read_execution_domain_id_t read_execution_domain_id) {
+		bmsx_read_execution_domain_id_t read_execution_domain_id,
+		uint64_t guest_tick_limit) {
 	char timeline_path[kInputTimelinePathBuffer];
 	const char* selected_path = NULL;
 	char game_rom_folder[kJsonKeyBuffer];
 	g_read_execution_domain_id = read_execution_domain_id;
+	g_guest_tick_timeline = guest_tick_limit != 0u;
 
 	if (explicit_timeline_path && explicit_timeline_path[0]) {
 		if (!file_exists(explicit_timeline_path)) {
@@ -889,6 +894,13 @@ void input_timeline_configure(
 		}
 		screenshot_set_output_dir(screenshot_dir);
 		parse_input_timeline_file(selected_path, frame_usec);
+		if (g_guest_tick_timeline) {
+			if (g_test_capture_event_count != 0 || g_timeline_last_frame >= guest_tick_limit) {
+				timeline_logf("Guest-tick timing requires no captures and every input frame below the final guest tick.");
+				exit(1);
+			}
+			g_timeline_active = true;
+		}
 	}
 }
 
@@ -898,24 +910,37 @@ void input_timeline_dispatch_before_run(void) {
 	}
 	while (g_test_input_event_next < g_test_input_event_count &&
 			g_test_input_events[g_test_input_event_next].frame <=
-					g_cartridge_run_frame_count) {
+					g_cartridge_elapsed_frames) {
 		const TestInputEvent* event = &g_test_input_events[g_test_input_event_next];
 		keyboard_input_post(KEYBOARD_INPUT_SOURCE_TIMELINE, event->key, event->down);
 		++g_test_input_event_next;
 	}
 }
 
-void input_timeline_finish_run(void) {
+bool input_timeline_finish_run(int64_t guest_ticks_completed) {
 	if (!g_timeline_active) {
-		return;
+		return true;
+	}
+	if (g_guest_tick_timeline) {
+		if (guest_ticks_completed == 0) return true;
+		if (guest_ticks_completed != 1) return false;
+		if (!g_cartridge_timeline_started) {
+			g_cartridge_timeline_started = g_read_execution_domain_id() >= 0;
+			return true;
+		}
 	}
 	if (!g_cartridge_timeline_started) {
 		if (g_read_execution_domain_id() < 0) {
-			return;
+			return true;
 		}
 		g_cartridge_timeline_started = true;
 	}
-	++g_cartridge_run_frame_count;
+	++g_cartridge_elapsed_frames;
+	return true;
+}
+
+uint64_t input_timeline_elapsed_frames(void) {
+	return g_cartridge_elapsed_frames;
 }
 
 bool input_timeline_consume_presented_capture(uint64_t* out_frame) {
@@ -928,7 +953,7 @@ bool input_timeline_consume_presented_capture(uint64_t* out_frame) {
 	bool should_capture = false;
 	while (g_test_capture_event_next < g_test_capture_event_count &&
 			g_test_capture_events[g_test_capture_event_next].frame <=
-					g_cartridge_run_frame_count) {
+					g_cartridge_elapsed_frames) {
 		*out_frame = g_test_capture_events[g_test_capture_event_next].frame;
 		should_capture = true;
 		++g_test_capture_event_next;
@@ -950,7 +975,7 @@ bool input_timeline_should_auto_quit(uint64_t trailing_frames) {
 	if (g_test_capture_event_next < g_test_capture_event_count) {
 		return false;
 	}
-	return g_cartridge_run_frame_count >
+	return g_cartridge_elapsed_frames >
 			(g_timeline_last_frame + trailing_frames);
 }
 
@@ -967,7 +992,7 @@ void input_timeline_shutdown(void) {
 	g_test_capture_event_capacity = 0;
 	g_test_capture_event_next = 0;
 	g_timeline_last_frame = 0;
-	g_cartridge_run_frame_count = 0;
+	g_cartridge_elapsed_frames = 0;
 	g_timeline_active = false;
 	g_cartridge_timeline_started = false;
 }

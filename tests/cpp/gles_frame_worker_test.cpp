@@ -283,7 +283,7 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 			}
 			value.ready.notify_one();
 		}, &observed});
-		worker = std::make_unique<GlesFrameWorker>(runtime, presenter, input, presentation, menu);
+		worker = std::make_unique<GlesFrameWorker>(runtime, presenter, input, presentation, menu, false);
 		for (unsigned frame = 0; frame < frames; ++frame) {
 			presentation.beginHostFrame();
 			worker->run(static_cast<f64>(frame + 1u) / 60.0, 1.0 / 60.0);
@@ -435,7 +435,7 @@ void testSubmissionFailure(const test::Blua32TestRom& rom, FailedSubmissionOwner
 		if (value.throwOnEmission && count == value.overlapCommandCount) throw ProducerFailure{};
 	}, &observed});
 	{
-		GlesFrameWorker worker(runtime, presenter, input, presentation, menu);
+		GlesFrameWorker worker(runtime, presenter, input, presentation, menu, false);
 		if (failedOwner == FailedSubmissionOwner::PresentationConsumer) {
 			observed.throwOnDraw = false;
 			worker.run(1.0 / 60.0, 1.0 / 60.0);
@@ -497,6 +497,7 @@ retro_hw_render_callback frontendHardware{};
 std::thread::id frontendThread;
 unsigned frontendFrames = 0;
 bool frontendShutdown = false;
+BmsxGuestProgressInterfaceV1 frontendGuestProgress{};
 retro_game_geometry frontendGeometry{};
 GLuint frontendFramebuffer = 0u, frontendTexture = 0u;
 unsigned frontendTargetWidth = 0u, frontendTargetHeight = 0u;
@@ -526,6 +527,12 @@ uintptr_t frontendGetFramebuffer() {
 bool frontendEnvironment(unsigned command, void* data) {
 	require(std::this_thread::get_id() == frontendThread, "libretro environment callbacks remain on the frontend thread");
 	switch (command) {
+	case BMSX_ENVIRONMENT_SET_GUEST_PROGRESS_INTERFACE_V1:
+		frontendGuestProgress = *static_cast<BmsxGuestProgressInterfaceV1*>(data);
+		return true;
+	case BMSX_ENVIRONMENT_GET_SINGLE_GUEST_TICK_V1:
+		*static_cast<bool*>(data) = true;
+		return true;
 	case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT:
 		return *static_cast<retro_pixel_format*>(data) == RETRO_PIXEL_FORMAT_XRGB8888;
 	case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
@@ -581,6 +588,7 @@ void testLibretroEntry(const test::Blua32TestRom& rom, bool threaded) {
 	glGenFramebuffers(1, &frontendFramebuffer);
 	glGenTextures(1, &frontendTexture);
 	retro_set_environment(frontendEnvironment);
+	require(frontendGuestProgress.read_progress != nullptr, "the core exposes guest progress without diagnostics");
 	retro_set_video_refresh([](const void* data, unsigned width, unsigned height, size_t) {
 		require(std::this_thread::get_id() == frontendThread, "video callback remains on frontend thread");
 		require(data == nullptr || data == RETRO_HW_FRAME_BUFFER_VALID, "GLES publishes hardware frames");
@@ -677,6 +685,7 @@ void testLibretroEntry(const test::Blua32TestRom& rom, bool threaded) {
 	// Restore a saved raw scanout into a fresh core whose frontend still owns
 	// its reset 320x240 geometry. No guest draw is needed to repair this frame.
 	auto scene = state;
+	scene.machineState.frameScheduler.accumulatedHostTimeMs = 80.0;
 	auto& gpu = scene.machineState.machine.gxGpu;
 	for (auto* words : {&gpu.pcrtc.registerWords, &gpu.pcrtc.presentWords})
 		(*words)[GX_GPU_PCRTC_DISPLAY1_HIGH] = 1023u | (191u << 12u);
@@ -702,9 +711,16 @@ void testLibretroEntry(const test::Blua32TestRom& rom, bool threaded) {
 		frontendSequence = frontendGeometrySequence = frontendFramebufferSequence = 0u;
 		require(retro_unserialize(envelope.data(), envelope.size()), "a fresh core restores the saved 256x192 scene");
 		require(frontendSequence == 0u, "restore neither acquires a frontend target nor publishes video parameters");
+		BmsxGuestProgressV1 before, after;
+		frontendGuestProgress.read_progress(&before);
+		require(before.tick_sequence == scene.machineState.frameScheduler.lastTickSequence,
+			"progress reports the restored machine tick rather than a host call count");
 		frontendCapture = frontendInsideRun = true;
 		mutateFrontendGlState();
 		retro_run();
+		frontendGuestProgress.read_progress(&after);
+		require(after.tick_sequence == before.tick_sequence + 1 && after.scheduler_cycles > before.scheduler_cycles,
+			"one-tick pacing leaves retained guest time pending after the first tick");
 		frontendCapture = frontendInsideRun = false;
 		require(frontendGeometrySequence != 0u && frontendGeometrySequence < frontendFramebufferSequence,
 			"restored geometry reaches the frontend before its first framebuffer acquisition");

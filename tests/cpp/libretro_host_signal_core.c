@@ -9,6 +9,17 @@
 static retro_environment_t environment;
 static uint64_t frames;
 static bool run_timestamps;
+static const char* guest_timing;
+static BmsxGuestProgressV1 guest_progress;
+
+static void RETRO_CALLCONV read_guest_progress(BmsxGuestProgressV1* output) { *output = guest_progress; }
+static int32_t RETRO_CALLCONV read_execution_domain(void) { return frames >= 2u ? 0 : -1; }
+static void RETRO_CALLCONV guest_key_event(bool down, unsigned key, uint32_t character, uint16_t modifiers) {
+	(void)character;
+	(void)modifiers;
+	fprintf(stderr, "[signal-core][guest-input] before_run=%llu key=%u down=%u\n",
+		(unsigned long long)(frames + 1u), key, (unsigned)down);
+}
 
 static void RETRO_CALLCONV read_stale_profile(void* output) {
 	(void)output;
@@ -44,6 +55,19 @@ void retro_set_input_poll(retro_input_poll_t callback) { (void)callback; }
 void retro_set_input_state(retro_input_state_t callback) { (void)callback; }
 void retro_init(void) {
 	run_timestamps = getenv("BMSX_TEST_RUN_TIMESTAMPS") != NULL;
+	guest_timing = getenv("BMSX_TEST_GUEST_TIMING");
+	if (guest_timing != NULL) {
+		BmsxExecutionDomainInterfaceV1 domain = {read_execution_domain};
+		BmsxGuestProgressInterfaceV1 progress = {read_guest_progress};
+		struct retro_keyboard_callback keyboard = {guest_key_event};
+		environment(BMSX_ENVIRONMENT_SET_EXECUTION_DOMAIN_INTERFACE_V1, &domain);
+		environment(BMSX_ENVIRONMENT_SET_GUEST_PROGRESS_INTERFACE_V1, &progress);
+		environment(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &keyboard);
+		if (strcmp(guest_timing, "unbound") != 0) {
+			bool single_guest_tick = false;
+			if (!environment(BMSX_ENVIRONMENT_GET_SINGLE_GUEST_TICK_V1, &single_guest_tick) || !single_guest_tick) _exit(98);
+		}
+	}
 	const char* profile = getenv("BMSX_TEST_EXECUTION_PROFILE");
 	if (profile && strcmp(profile, "stale") == 0) {
 		const unsigned stale_command = RETRO_ENVIRONMENT_PRIVATE | 0x42c1u;
@@ -75,6 +99,24 @@ void retro_run(void) {
 	struct timespec start, end;
 	if (run_timestamps && clock_gettime(CLOCK_MONOTONIC, &start) != 0) _exit(2);
 	++frames;
+	if (guest_timing != NULL) {
+		switch (frames) {
+			case 3: break; // Before the warmup tick.
+			case 5: { // A measured maintenance-only host call.
+				struct timespec delay = {0, 16000000};
+				nanosleep(&delay, NULL);
+				break;
+			}
+			case 6: guest_progress.scheduler_cycles += 10; break; // Partial guest tick.
+			case 7:
+				if (strcmp(guest_timing, "multiple") == 0) ++guest_progress.tick_sequence;
+				/* fall through */
+			default:
+				++guest_progress.tick_sequence;
+				guest_progress.scheduler_cycles = guest_progress.tick_sequence * 100;
+				break;
+		}
+	}
 	static bool ready;
 	if (!ready) {
 		if (write(STDOUT_FILENO, "R", 1) != 1) _exit(1);

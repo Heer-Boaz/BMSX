@@ -912,6 +912,9 @@ if(BMSX_BUILD_TESTS)
 			add_test(NAME bmsx_libretro_host_execution_profile_tests
 				COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/platform/libretro_host_execution_profile_test.py
 					$<TARGET_FILE:bmsx_libretro_host> $<TARGET_FILE:bmsx_libretro_host_signal_test_core>)
+			add_test(NAME bmsx_libretro_host_guest_timing_tests
+				COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/platform/libretro_host_guest_timing_test.py
+					$<TARGET_FILE:bmsx_libretro_host> $<TARGET_FILE:bmsx_libretro_host_signal_test_core>)
 			add_library(bmsx_libretro_host_clover_test_core SHARED
 				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_clover_core.c)
 			target_include_directories(bmsx_libretro_host_clover_test_core PRIVATE ${BMSX_LIBRETRO_DIR})

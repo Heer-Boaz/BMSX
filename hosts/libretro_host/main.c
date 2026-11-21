@@ -92,6 +92,7 @@ static void usage(const char* argv0) {
 			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--profile-native-compilation] [--profile-execution] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
 			argv0, argv0);
 	fprintf(stderr, "  --core-option KEY VALUE: set a core option (repeatable; dedicated host flags take precedence)\n");
+	fprintf(stderr, "  --guest-ticks N: time a fixed guest workload (requires --input-timeline, --timing-report and --max-frames)\n");
 	exit(2);
 }
 
@@ -141,6 +142,7 @@ int main(int argc, char** argv) {
 	bool clover_launch = false;
 	BmsxClover clover = {0};
 	uint64_t maximum_run_frames = 0;
+	uint64_t guest_tick_limit = 0;
 	uint64_t run_frame_count = 0;
 	unsigned alsa_underruns_at_timing_start = 0u;
 	BmsxFrameTimingState frame_timing = {
@@ -204,6 +206,10 @@ int main(int argc, char** argv) {
 			maximum_run_frames = parse_positive_u64_arg(
 					required_arg(argc, argv, &i),
 					"--max-frames");
+			continue;
+		}
+		if (strcmp(argv[i], "--guest-ticks") == 0) {
+			guest_tick_limit = parse_positive_u64_arg(required_arg(argc, argv, &i), "--guest-ticks");
 			continue;
 		}
 		if (strcmp(argv[i], "--profile-native-compilation") == 0) {
@@ -314,6 +320,12 @@ int main(int argc, char** argv) {
 		host_fatal("--profile-native-compilation requires --timing-report");
 	if (profile_execution && !frame_timing.enabled)
 		host_fatal("--profile-execution requires --timing-report");
+	if (guest_tick_limit != 0u) {
+		if (!use_input_timeline || !input_timeline[0] || !frame_timing.enabled || maximum_run_frames == 0u || no_game || clover_launch)
+			host_fatal("--guest-ticks requires a cartridge, --input-timeline, --timing-report and --max-frames");
+		if (guest_tick_limit <= frame_timing.warmup_frames || guest_tick_limit >= maximum_run_frames)
+			host_fatal("--guest-ticks must exceed --timing-warmup and be below --max-frames");
+	}
 	if (frame_timing.enabled && maximum_run_frames > frame_timing.warmup_frames) {
 		const uint64_t measured_frames = maximum_run_frames - frame_timing.warmup_frames;
 		if (measured_frames > SIZE_MAX / sizeof(BmsxFrameTimingOutlier))
@@ -352,6 +364,7 @@ int main(int argc, char** argv) {
 	session.accept_gx_upload_profile_interface = profile_gx_upload;
 	session.accept_native_compilation_profile_interface = profile_native_compilation;
 	session.accept_execution_profile_interface = profile_execution;
+	session.single_guest_tick = guest_tick_limit != 0u;
 	bmsx_core_options_override(
 			&session.options,
 			"bmsx_render_backend",
@@ -403,6 +416,10 @@ int main(int argc, char** argv) {
 			!session.execution_domain_interface_set) {
 		host_fatal("Input timeline requires execution domain interface v1");
 	}
+	if (session.single_guest_tick && (!session.single_guest_tick_bound || session.guest_progress.read_progress == NULL
+			|| session.execution_domain.read_active_domain_id == NULL)) {
+		host_fatal("--guest-ticks requires guest progress, single-tick pacing and execution domain interfaces");
+	}
 	fprintf(stderr, "[libretro-host] core=%s v%s api=%u\n",
 			session.system_info.library_name,
 			session.system_info.library_version,
@@ -439,7 +456,8 @@ int main(int argc, char** argv) {
 				rom_folder,
 				game_path,
 				session.frame_period_usec,
-				session.execution_domain.read_active_domain_id);
+				session.execution_domain.read_active_domain_id,
+				guest_tick_limit);
 	}
 	const bool unpaced_timeline = input_timeline_is_active() && !paced_timeline;
 	if (use_control) host_control_open(control_port);
@@ -465,14 +483,12 @@ int main(int argc, char** argv) {
 		}
 		now_ns = monotonic_ns();
 		const BmsxFramePacerDecision pacing = bmsx_frame_pacer_begin(&frame_pacer, now_ns);
-		/* Missed deadlines are caught up by subsequent host-loop iterations.
-		 * Drop their presentation and advance exactly one machine frame per call. */
+		/* Drop the presentation of host calls catching up missed deadlines. */
 		const bool drop_video =
 				!unpaced_timeline && pacing.drop_presentation;
-		frame_timing.record_frame =
-				frame_timing.enabled &&
-				run_frame_count >= frame_timing.warmup_frames;
-		if (frame_timing.record_frame && run_frame_count == frame_timing.warmup_frames) {
+		const uint64_t warmup_clock = session.single_guest_tick ? input_timeline_elapsed_frames() : run_frame_count;
+		frame_timing.record_frame = frame_timing.enabled && warmup_clock >= frame_timing.warmup_frames;
+		if (frame_timing.record_frame && frame_timing.report.retro_run.count == 0u) {
 			alsa_underruns_at_timing_start = audio_output_alsa_underruns();
 		}
 		if (session.frame_time.callback) {
@@ -490,6 +506,8 @@ int main(int argc, char** argv) {
 		BmsxExecutionProfile execution_before;
 		if (profile_execution && frame_timing.record_frame)
 			session.execution_profile.read_profile(&execution_before);
+		BmsxGuestProgressInterval guest;
+		if (session.single_guest_tick) session.guest_progress.read_progress(&guest.before);
 		// CPU clocks sample the same run/presentation boundary. Read them outside
 		// the existing wall interval so their syscalls do not inflate run_ms.
 		const uint64_t main_cpu_start_ns = frame_timing.record_frame
@@ -498,13 +516,26 @@ int main(int argc, char** argv) {
 			? cpu_clock_ns(CLOCK_PROCESS_CPUTIME_ID) : 0u;
 		const uint64_t run_start_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		core->retro_run();
-		input_timeline_finish_run();
+		if (!session.single_guest_tick) input_timeline_finish_run(0);
 		const bool presented_frame = video_presenter_end_frame();
 		if (use_control) host_control_after_frame(presented_frame);
 		const uint64_t run_end_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
+		const uint64_t process_cpu_ns = frame_timing.record_frame
+			? cpu_clock_ns(CLOCK_PROCESS_CPUTIME_ID) - process_cpu_start_ns : 0u;
+		const uint64_t main_cpu_ns = frame_timing.record_frame
+			? cpu_clock_ns(CLOCK_THREAD_CPUTIME_ID) - main_cpu_start_ns : 0u;
+		if (session.single_guest_tick) {
+			session.guest_progress.read_progress(&guest.after);
+			const int64_t ticks = guest.after.tick_sequence - guest.before.tick_sequence;
+			if (guest.after.scheduler_cycles < guest.before.scheduler_cycles || !input_timeline_finish_run(ticks)) {
+				fprintf(stderr, "[libretro-host] Invalid guest progress on host run %llu: ticks %lld -> %lld, cycles %lld -> %lld\n",
+						(unsigned long long)run_frame_count,
+						(long long)guest.before.tick_sequence, (long long)guest.after.tick_sequence,
+						(long long)guest.before.scheduler_cycles, (long long)guest.after.scheduler_cycles);
+				runloop_quit_requested = true;
+			}
+		}
 		if (frame_timing.record_frame) {
-			const uint64_t process_cpu_ns = cpu_clock_ns(CLOCK_PROCESS_CPUTIME_ID) - process_cpu_start_ns;
-			const uint64_t main_cpu_ns = cpu_clock_ns(CLOCK_THREAD_CPUTIME_ID) - main_cpu_start_ns;
 			BmsxGxUploadProfileFrameV1 gx_upload_frame;
 			const BmsxGxUploadProfileFrameV1* current_gx_upload = NULL;
 			if (profile_gx_upload) {
@@ -547,9 +578,15 @@ int main(int argc, char** argv) {
 					drop_video && frame_timing.current_video_frame_received,
 					!drop_video && presented_frame,
 					current_gx_upload, current_native, current_execution,
-					main_cpu_ns, process_cpu_ns);
+					main_cpu_ns, process_cpu_ns,
+					session.single_guest_tick ? &guest : NULL);
 		}
 		++run_frame_count;
+		if (session.single_guest_tick && input_timeline_elapsed_frames() == guest_tick_limit) {
+			fprintf(stderr, "[libretro-host] guest ticks reached (%llu), exiting\n",
+					(unsigned long long)guest_tick_limit);
+			runloop_quit_requested = true;
+		}
 		if (maximum_run_frames == 0 &&
 				input_timeline_should_auto_quit(
 					kInputTimelineAutoQuitGraceFrames)) {
@@ -568,7 +605,12 @@ int main(int argc, char** argv) {
 				!unpaced_timeline,
 				session.frame_period_ns);
 	}
-	if (frame_timing.enabled) {
+	const uint64_t guest_ticks_completed = input_timeline_elapsed_frames();
+	const bool workload_complete = !session.single_guest_tick || guest_ticks_completed == guest_tick_limit;
+	if (!workload_complete) {
+		fprintf(stderr, "[libretro-host] Incomplete guest workload: %llu/%llu ticks; no timing summary\n",
+				(unsigned long long)guest_ticks_completed, (unsigned long long)guest_tick_limit);
+	} else if (frame_timing.enabled) {
 		const unsigned alsa_underruns_at_timing_end = audio_output_alsa_underruns();
 		bmsx_frame_timing_print(
 				&frame_timing.report,
@@ -582,7 +624,7 @@ int main(int argc, char** argv) {
 	}
 	free(frame_timing.report.outliers);
 
-	int exit_status = 0;
+	int exit_status = workload_complete ? 0 : 1;
 	if (clover_launch && !(session.shutdown_requested &&
 			session.shutdown_reason == BMSX_SHUTDOWN_REASON_EXIT_GAME &&
 			!g_signal_quit_requested)) {

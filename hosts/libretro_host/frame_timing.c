@@ -74,7 +74,8 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		const BmsxNativeCompilationProfile* native_compilation,
 		const BmsxExecutionProfileInterval* execution,
 		uint64_t host_main_thread_cpu_ns,
-		uint64_t host_process_cpu_ns) {
+		uint64_t host_process_cpu_ns,
+		const BmsxGuestProgressInterval* guest) {
 	if (native_compilation != NULL) {
 		++report->native_profiled_frames;
 		bmsx_native_compilation_profile_accumulate(&report->native_compilation, native_compilation);
@@ -82,12 +83,25 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 	record_histogram(&report->retro_run, retro_run_ns);
 	const uint64_t core_without_present_ns = retro_run_ns - final_blit_ns - swap_ns;
 	record_histogram(&report->core_without_present, core_without_present_ns);
+	if (guest != NULL) {
+		if (report->guest_progress_runs++ == 0u) {
+			report->guest.before = guest->before;
+			report->guest_first_run_start_ns = host_run_start_monotonic_ns;
+		}
+		report->guest.after = guest->after;
+		report->guest_last_run_end_ns = host_run_start_monotonic_ns + retro_run_ns;
+		report->guest_process_cpu_ns += host_process_cpu_ns;
+		report->zero_guest_tick_runs += guest->before.tick_sequence == guest->after.tick_sequence;
+		report->zero_guest_cycle_runs += guest->before.scheduler_cycles == guest->after.scheduler_cycles;
+	}
 	if (report->outliers != NULL && retro_run_ns > BMSX_FRAME_TIMING_OUTLIER_NS) {
-		report->outliers[report->outlier_count++] = (BmsxFrameTimingOutlier){
+		BmsxFrameTimingOutlier* sample = &report->outliers[report->outlier_count++];
+		*sample = (BmsxFrameTimingOutlier){
 			.host_frame = host_frame,
 			.run_ns = retro_run_ns,
 			.core_without_present_ns = core_without_present_ns,
 		};
+		if (guest != NULL) sample->guest = *guest;
 	}
 	if (final_blit_ran) {
 		record_histogram(&report->final_blit, final_blit_ns);
@@ -157,17 +171,35 @@ void bmsx_frame_timing_print(
 	print_histogram("final_blit", &report->final_blit);
 	print_histogram("swap", &report->swap);
 	fprintf(stderr,
-			"[libretro-host][timing] presented=%llu dropped=%llu warmup_frames=%llu\n",
+			"[libretro-host][timing] presented=%llu dropped=%llu %s=%llu\n",
 			(unsigned long long)report->presented_frames,
 			(unsigned long long)report->dropped_presentations,
+			report->guest_progress_runs != 0u ? "warmup_guest_ticks" : "warmup_frames",
 			(unsigned long long)warmup_frames);
+	if (report->guest_progress_runs != 0u) {
+		const BmsxGuestProgressInterval* guest = &report->guest;
+		fprintf(stderr, "[libretro-host][guest-progress] tick_before=%lld tick_after=%lld cycle_before=%lld cycle_after=%lld"
+				" host_runs=%llu zero_tick_runs=%llu zero_cycle_runs=%llu run_ns=%llu elapsed_wall_ns=%llu process_cpu_ns=%llu\n",
+				(long long)guest->before.tick_sequence, (long long)guest->after.tick_sequence,
+				(long long)guest->before.scheduler_cycles, (long long)guest->after.scheduler_cycles,
+				(unsigned long long)report->guest_progress_runs, (unsigned long long)report->zero_guest_tick_runs,
+				(unsigned long long)report->zero_guest_cycle_runs, (unsigned long long)report->retro_run.total_ns,
+				(unsigned long long)(report->guest_last_run_end_ns - report->guest_first_run_start_ns),
+				(unsigned long long)report->guest_process_cpu_ns);
+	}
 	if (report->outliers != NULL) {
 		fprintf(stderr, "[libretro-host][timing] over_15ms=%zu\n", report->outlier_count);
 		for (size_t index = 0; index < report->outlier_count; ++index) {
 			const BmsxFrameTimingOutlier* sample = &report->outliers[index];
-			fprintf(stderr, "[libretro-host][over-15ms] host_frame=%llu run_ns=%llu core_without_present_ns=%llu\n",
+			fprintf(stderr, "[libretro-host][over-15ms] host_frame=%llu run_ns=%llu core_without_present_ns=%llu",
 				(unsigned long long)sample->host_frame, (unsigned long long)sample->run_ns,
 				(unsigned long long)sample->core_without_present_ns);
+			if (report->guest_progress_runs != 0u) {
+				fprintf(stderr, " tick_before=%lld tick_after=%lld cycle_before=%lld cycle_after=%lld",
+					(long long)sample->guest.before.tick_sequence, (long long)sample->guest.after.tick_sequence,
+					(long long)sample->guest.before.scheduler_cycles, (long long)sample->guest.after.scheduler_cycles);
+			}
+			fputc('\n', stderr);
 		}
 	}
 	for (unsigned index = 0u; index < report->slow_frame_count; ++index) {

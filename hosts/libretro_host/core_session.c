@@ -204,6 +204,13 @@ bool core_session_environment(unsigned command, void* data) {
 					*(const BmsxExecutionDomainInterfaceV1*)data;
 			session->execution_domain_interface_set = true;
 			return true;
+		case BMSX_ENVIRONMENT_SET_GUEST_PROGRESS_INTERFACE_V1:
+			session->guest_progress = *(const BmsxGuestProgressInterfaceV1*)data;
+			return true;
+		case BMSX_ENVIRONMENT_GET_SINGLE_GUEST_TICK_V1:
+			*(bool*)data = session->single_guest_tick;
+			session->single_guest_tick_bound = true;
+			return true;
 		case BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V1:
 			if (!session->accept_gx_upload_profile_interface) {
 				return false;

@@ -11,10 +11,16 @@ enum { BMSX_FRAME_TIMING_BUCKET_COUNT = 4097 };
 enum { BMSX_FRAME_TIMING_SLOW_FRAME_COUNT = 32 };
 enum { BMSX_FRAME_TIMING_OUTLIER_NS = 15000000 };
 
+typedef struct BmsxGuestProgressInterval {
+	BmsxGuestProgressV1 before;
+	BmsxGuestProgressV1 after;
+} BmsxGuestProgressInterval;
+
 typedef struct BmsxFrameTimingOutlier {
 	uint64_t host_frame;
 	uint64_t run_ns;
 	uint64_t core_without_present_ns;
+	BmsxGuestProgressInterval guest;
 } BmsxFrameTimingOutlier;
 
 typedef struct BmsxSlowFrameSample {
@@ -49,6 +55,13 @@ typedef struct BmsxFrameTimingReport {
 	BmsxFrameTimingHistogram swap;
 	uint64_t presented_frames;
 	uint64_t dropped_presentations;
+	BmsxGuestProgressInterval guest;
+	uint64_t guest_progress_runs;
+	uint64_t zero_guest_tick_runs;
+	uint64_t zero_guest_cycle_runs;
+	uint64_t guest_first_run_start_ns;
+	uint64_t guest_last_run_end_ns;
+	uint64_t guest_process_cpu_ns;
 	uint64_t gx_profiled_frames;
 	uint64_t native_profiled_frames;
 	BmsxNativeCompilationProfile native_compilation;
@@ -92,7 +105,8 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		const BmsxNativeCompilationProfile* native_compilation,
 		const BmsxExecutionProfileInterval* execution,
 		uint64_t host_main_thread_cpu_ns,
-		uint64_t host_process_cpu_ns);
+		uint64_t host_process_cpu_ns,
+		const BmsxGuestProgressInterval* guest);
 void bmsx_frame_timing_record_gx_upload(
 	BmsxFrameTimingReport* report,
 	const BmsxGxUploadProfileFrameV1* frame);

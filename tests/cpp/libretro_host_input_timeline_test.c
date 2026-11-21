@@ -48,7 +48,7 @@ bool bmsx_video_context_enable_gles2(void) { return false; }
 void* bmsx_video_context_get_gl_proc(const char* name) { (void)name; return NULL; }
 void bmsx_video_context_swap_buffers(void) { require(false, "software test never swaps a hardware context"); }
 
-static void configure(const char* json) {
+static void configure(const char* json, uint64_t guest_ticks) {
 	char path[] = "/tmp/bmsx-input-timeline-test-XXXXXX";
 	const int fd = mkstemp(path);
 	require(fd >= 0, "create temporary timeline");
@@ -59,7 +59,7 @@ static void configure(const char* json) {
 	current_run = 0;
 	input_count = 0;
 	captures = 0;
-	input_timeline_configure(path, NULL, NULL, 10000, read_active_domain);
+	input_timeline_configure(path, NULL, NULL, 10000, read_active_domain, guest_ticks);
 	require(unlink(path) == 0, "timeline owns parsed input rather than the fixture file");
 }
 
@@ -80,7 +80,7 @@ static void complete_run(bool drop, bool null_video, bool callback) {
 	video_presenter_begin_frame(drop);
 	if (callback) video_presenter_refresh(null_video ? NULL : pixels, 2, 1, sizeof(pixels));
 	require(video_presenter_end_frame() == (callback && !drop && !null_video), "shipping presenter drops and null callbacks do not present");
-	input_timeline_finish_run();
+	require(input_timeline_finish_run(0), "legacy completion does not consult guest ticks");
 }
 
 static void input_clock(unsigned video_mode) {
@@ -90,7 +90,7 @@ static void input_clock(unsigned video_mode) {
 		"{\"frame\":0,\"event\":{\"type\":\"button\",\"code\":\"KeyB\",\"down\":true}},"
 		"{\"frame\":1,\"event\":{\"type\":\"button\",\"code\":\"KeyB\",\"down\":false}},"
 		"{\"frame\":2,\"repeat\":2,\"repeatEveryFrames\":2,\"event\":{\"type\":\"button\",\"code\":\"KeyA\",\"down\":true}},"
-		"{\"frame\":3,\"repeat\":2,\"repeatEveryFrames\":2,\"event\":{\"type\":\"button\",\"code\":\"KeyA\",\"down\":false}}]");
+		"{\"frame\":3,\"repeat\":2,\"repeatEveryFrames\":2,\"event\":{\"type\":\"button\",\"code\":\"KeyA\",\"down\":false}}]", 0);
 	open_presenter();
 	for (unsigned bios = 0; bios < 12; ++bios) {
 		complete_run(bios % 2 != 0, bios % 3 != 0, callback);
@@ -102,7 +102,7 @@ static void input_clock(unsigned video_mode) {
 	video_presenter_begin_frame(drop_every_frame);
 	if (callback) video_presenter_refresh(pixels, 2, 1, sizeof(pixels));
 	require(input_count == 0, "first cartridge frame retains its original no-input startup ordering");
-	input_timeline_finish_run();
+	require(input_timeline_finish_run(0), "legacy activation charges the first cartridge host call");
 	for (current_run = 1; current_run <= 9; ++current_run) {
 		// Once started, system execution within the cartridge session does not
 		// reset its timeline or pause time (e.g. BIOS calls).
@@ -123,7 +123,7 @@ static void input_clock(unsigned video_mode) {
 
 static void capture_observation(void) {
 	configure("[{\"frame\":0,\"capture\":true},{\"frame\":2,\"capture\":true},"
-		"{\"frame\":3,\"capture\":true},{\"frame\":7,\"capture\":true}]");
+		"{\"frame\":3,\"capture\":true},{\"frame\":7,\"capture\":true}]", 0);
 	open_presenter();
 	uint64_t frame = 99;
 	for (unsigned poll = 0; poll < 20; ++poll)
@@ -140,7 +140,7 @@ static void capture_observation(void) {
 		require(!input_timeline_consume_presented_capture(&frame), "repeated capture polls do not advance to a future capture");
 	}
 	require(captures == 1, "repeated video callbacks consume a frame's capture only once");
-	input_timeline_finish_run();
+	require(input_timeline_finish_run(0), "legacy presentation does not own the clock");
 	complete_run(true, false, true);  // run 1
 	complete_run(false, true, true);  // run 2: due capture remains pending
 	complete_run(true, false, true);  // run 3: second pending capture
@@ -159,11 +159,45 @@ static void capture_observation(void) {
 	video_presenter_close();
 }
 
+static void guest_tick_clock(void) {
+	configure("["
+		"{\"frame\":0,\"event\":{\"type\":\"button\",\"code\":\"KeyA\",\"down\":true}},"
+		"{\"frame\":1,\"event\":{\"type\":\"button\",\"code\":\"KeyA\",\"down\":false}}]", 3);
+	for (current_run = 0; current_run != 3; ++current_run) {
+		input_timeline_dispatch_before_run();
+		require(input_timeline_finish_run(1) && input_count == 0
+			&& input_timeline_elapsed_frames() == 0, "completed BIOS ticks do not start cartridge playback");
+	}
+	active_domain = 0;
+	require(input_timeline_finish_run(0), "a partial call can enter the cartridge without completing a tick");
+	input_timeline_dispatch_before_run();
+	require(input_count == 0 && input_timeline_finish_run(1) && input_timeline_elapsed_frames() == 0,
+		"the first completed cartridge tick anchors the script but executes no scripted input");
+	for (current_run = 4; current_run != 8; ++current_run) {
+		input_timeline_dispatch_before_run();
+		require(input_count == 1 && inputs[0].run == 4 && inputs[0].key == RETROK_a && inputs[0].down,
+			"frame zero is sent once and remains held on retries");
+		require(input_timeline_finish_run(0) && input_timeline_elapsed_frames() == 0,
+			"maintenance and partial calls do not consume the script or its warmup clock");
+	}
+	require(!input_timeline_finish_run(2) && !input_timeline_finish_run(-1)
+		&& input_timeline_elapsed_frames() == 0, "strict input cannot attribute skipped or rewound ticks");
+	active_domain = -1;
+	require(input_timeline_finish_run(1) && input_timeline_elapsed_frames() == 1,
+		"the cartridge clock includes its BIOS work and does not require presentation");
+	input_timeline_dispatch_before_run();
+	require(input_count == 2 && inputs[1].run == 8 && inputs[1].key == RETROK_a && !inputs[1].down,
+		"frame one follows the actual completion of frame zero");
+	require(input_timeline_finish_run(1) && input_timeline_elapsed_frames() == 2, "the guest clock progresses exactly one tick");
+	input_timeline_shutdown();
+}
+
 int main(void) {
 	input_clock(0);
 	input_clock(1);
 	input_clock(2);
 	capture_observation();
+	guest_tick_clock();
 	puts("Libretro input timeline clock tests passed");
 	return 0;
 }

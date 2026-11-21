@@ -57,6 +57,7 @@ typedef struct BmsxCoreSession {
 	BmsxNativeCompilationProfileInterface native_compilation_profile;
 	BmsxExecutionProfileInterface execution_profile;
 	BmsxExecutionDomainInterfaceV1 execution_domain;
+	BmsxGuestProgressInterfaceV1 guest_progress;
 	BmsxShutdownReasonV1 shutdown_reason;
 	bool accept_gx_upload_profile_interface;
 	bool gx_upload_profile_interface_set;
@@ -65,6 +66,8 @@ typedef struct BmsxCoreSession {
 	bool accept_execution_profile_interface;
 	bool execution_profile_interface_set;
 	bool execution_domain_interface_set;
+	bool single_guest_tick;
+	bool single_guest_tick_bound;
 	bool shutdown_requested;
 } BmsxCoreSession;
 

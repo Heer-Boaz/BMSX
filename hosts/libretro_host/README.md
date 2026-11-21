@@ -140,6 +140,13 @@ Options:
 - `--input-timeline <path>`: replays an explicit input timeline
 - `--paced-timeline`: keeps an active timeline on the normal host deadline instead of running it as fast as possible
 - `--max-frames <count>`: owns run lifetime explicitly, including when the timeline has ended
+- `--guest-ticks <count>`: run a fixed guest workload with an explicit
+  `--input-timeline`, `--timing-report`, and a larger `--max-frames` safety
+  limit. The core must support guest progress and single-tick pacing. A call
+  that doesn't finish the current guest tick leaves the scripted input held.
+  After the initial cartridge tick, exactly the requested number of guest
+  ticks must complete; an incomplete run, rewind, or multi-tick call fails
+  without a benchmark summary.
 - `--timing-report`: prints fixed-size `retro_run`, core-without-presentation, final-blit and swap histograms at shutdown; the GLES2 backend additionally reports GX CPU-to-VRAM command/call/byte/time totals
   It retains the 32 slowest measured calls with their host-frame numbers,
   presentation times and matching GX upload counters. Samples use fixed
@@ -170,9 +177,10 @@ Options:
   bytes exclude metadata and allocator reservation. A merge is not a capacity
   eviction, and repeated publications alone do not prove cache churn.
 - `--timing-warmup <count>`: excludes the first `<count>` host runs from timing
-  reports (default: 500; must be positive). Use `1` to exclude only the first
-  run. Histogram counts and timed ALSA underruns cover the remaining measurement
-  window, not the entire session.
+  reports (default: 500; must be positive). With `--guest-ticks`, the count
+  excludes that many scripted guest ticks, in addition to boot. Histograms
+  retain all subsequent measured host calls, including calls with no guest
+  progress. Timed ALSA underruns cover that same window.
 - `--profile-execution`: requires `--timing-report` and a core built with
   `BMSX_DIAGNOSTIC_CPU_SLICES=ON`; a core without this private diagnostic
   interface is rejected instead of silently omitting attribution. Works with
@@ -235,6 +243,32 @@ historical image. Capture polling does not advance input time.
 Without `--max-frames`, the host exits after all timeline inputs and requested
 captures have been consumed and the completed-run count has passed the final
 marker. `--max-frames` instead limits total host runs, including BIOS startup.
+
+### Equal-work timing runs
+
+With `--guest-ticks N`, the first completed tick whose post-call execution
+domain is a cartridge anchors playback. Timeline frame 0 is the *next* guest
+tick, not the anchor. Subsequent frame numbers refer to guest ticks; any host
+calls that only do maintenance or advance part of a tick leave that frame's
+input in place. When comparing cores, use the same input-only timeline with
+frame numbers below `N`. Capture entries are rejected in this mode: screenshot
+cost and the availability of a new presentation are separate from guest work.
+Do not feed other input during the timed run.
+
+The `guest-progress` line gives the absolute tick and CPU-clock positions at
+the ends of the measurement window, the numbers of host calls without a
+completed tick or without any guest clock progress, summed measured run time,
+wall time including pacing between calls, and process CPU time. Every retained
+`over-15ms` sample includes the guest positions for that particular host call.
+Compare only successful runs with the same guest interval, timeline and
+cartridge/BIOS bytes, build settings, and presentation/audio configuration.
+A shorter host-call histogram by itself does not show higher guest throughput.
+For a baseline predating the private interfaces, apply only the core-side
+benchmark adapter commit `579dce456` in its own worktree, rebuild its Release
+core, and run it with the same timing host as the candidate. The adapter selects
+the existing single-tick scheduler path only on request and needs no CPU
+diagnostics. Leave the execution/native compilation profiling options off for
+a throughput comparison; use those in separate attribution runs.
 
 Native host builds require SDL2 and provide the SDL video, audio, and input path. Cross-compiled SNES Mini host builds use fbdev and evdev without SDL.
 

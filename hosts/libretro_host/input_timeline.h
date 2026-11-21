@@ -10,9 +10,11 @@ void input_timeline_configure(
 		const char* rom_folder,
 		const char* game_path,
 		uint64_t frame_usec,
-		bmsx_read_execution_domain_id_t read_execution_domain_id);
+		bmsx_read_execution_domain_id_t read_execution_domain_id,
+		uint64_t guest_tick_limit);
 void input_timeline_dispatch_before_run(void);
-void input_timeline_finish_run(void);
+bool input_timeline_finish_run(int64_t guest_ticks_completed);
+uint64_t input_timeline_elapsed_frames(void);
 bool input_timeline_consume_presented_capture(uint64_t* out_frame);
 bool input_timeline_is_active(void);
 bool input_timeline_should_auto_quit(uint64_t trailing_frames);
