@@ -1431,9 +1431,9 @@ base charge but not this reservation term.
 An insertion may reserve more storage. Its charge does not depend on
 whether the current storage can hold the mapping, or on how entries are
 arranged or moved. Storage growth counts against the language-allocation
-budget. If it triggers collection or invokes a metamethod, the applicable
-collection or call charge is separate. An insertion that fails to reserve
-storage leaves the requested mapping unmodified.
+budget. A metamethod invocation pays its ordinary call charge separately.
+Collection does not add to the instruction's cycle charge. An insertion that
+fails to reserve storage leaves the requested mapping unmodified.
 
 ### Builtin call charges {#sec-cpu-builtin-call-charges}
 
