@@ -435,12 +435,6 @@ private:
 	void prepareNativeSource(NativeCompilationSource& source, bool coldImage);
 	void installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pagePc, u32 slot,
 		std::vector<std::unique_ptr<NativeBlock>> blocks);
-	static NativeBlockTransition compiledReadFieldExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
-	static NativeBlockTransition compiledWriteFieldExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
-	static NativeBlockTransition compiledReadIndexExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
-	static NativeBlockTransition compiledWriteIndexExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
-	static NativeBlockTransition compiledReadIntegerExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
-	static NativeBlockTransition compiledWriteIntegerExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	void publishNativeCompilation();
 	void discardNativeCompilation();

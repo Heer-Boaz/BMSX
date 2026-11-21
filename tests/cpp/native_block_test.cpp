@@ -1115,27 +1115,7 @@ void truthinessAndConditionalExits() {
 		"a standalone native WIDE HALT has an exact wrapped continuation and explicit exit");
 }
 
-struct TailFault { int value; };
-std::shared_ptr<NativeBlock>* retiringBlock = nullptr;
-
-NativeBlockTransition exitResult(CPU*, CallFrame* frame, const NativeBlockExitSite* exit) {
-	require(frame->registers.get(1) == valueInteger(2), "side-exit handlers see committed word conversions");
-	require(exit->exit == NativeBlockExit::Call && exit->operands.call.callee == 3 && exit->operands.call.supplied == 0 && exit->operands.call.requested == 1,
-		"a generated exit retains decoded call operands");
-	return NativeBlockTransition::RebindFrame;
-}
-
-NativeBlockTransition exitThrow(CPU*, CallFrame*, const NativeBlockExitSite*) {
-	throw TailFault{73};
-}
-
-NativeBlockTransition exitRetire(CPU*, CallFrame*, const NativeBlockExitSite*) {
-	retiringBlock->reset();
-	return NativeBlockTransition::Redispatch;
-}
-
-void sideExitHandlersRunAfterGeneratedFrameReturns() {
-	NativeBlockRunState nativeRunState;
+void typedCallExitPublishesPrefix() {
 	DecodedInstruction one, shift, call;
 	one.op = static_cast<u8>(OpCode::K1); one.width = one.baseCycles = 1;
 	shift.op = static_cast<u8>(OpCode::SHL); shift.width = shift.baseCycles = 1;
@@ -1145,39 +1125,17 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 	const std::array source{NativeBlockInstruction{&one, 0x1000u}, NativeBlockInstruction{&shift, 0x1004u},
 		NativeBlockInstruction{&call, 0x1008u}};
 	size_t bytes = 0;
-	auto registers = test::valueBank(std::array{valueNil(), valueNil()});
-	CallFrame frame;
-	frame.registers = registers.view();
-	{
-		NativeBlockExitHandlers handlers{};
-		handlers[static_cast<size_t>(NativeBlockExit::Call)] = &exitResult;
-		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"), handlers);
-		const auto* exit = block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles});
-		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::RebindFrame,
-			"the generated side exit returns its typed frame transition");
-		require(block->terminal.registerTop == 2 && block->terminal.cycles == 4 && block->terminal.lastPc == 0x100cu,
-			"CALL reads do not extend top and retain the terminal WIDE/cycle extent");
-	}
-	{
-		NativeBlockExitHandlers handlers{};
-		handlers[static_cast<size_t>(NativeBlockExit::Call)] = &exitThrow;
-		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"), handlers);
-		bool caught = false;
-		try { const auto* exit = block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles}); exit->handler(nullptr, &frame, exit); }
-		catch (const TailFault& error) { caught = error.value == 73; }
-		require(caught, "C++ exceptions unwind ordinary registered frames, never generated code");
-	}
-	{
-		NativeBlockExitHandlers handlers{};
-		handlers[static_cast<size_t>(NativeBlockExit::Call)] = &exitRetire;
-		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"), handlers);
-		retiringBlock = &block;
-		const auto* exit = block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles});
-		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::Redispatch && !block,
-			"a side-exit handler may retire its own code before returning");
-		retiringBlock = nullptr;
-	}
-	require(bytes == 0, "retired side-exit code leaves no executable cache allocation");
+	ValueSlots registers(4);
+	auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	NativeBlockRunState state{.remainingCycles = 4};
+	const auto* exit = block->run(registers.view(), state);
+	require(exit->exit == NativeBlockExit::Call && exit->operands.call.callee == 3
+		&& exit->operands.call.supplied == 0 && exit->operands.call.requested == 1,
+		"a generated CALL gives the CPU its typed arguments and result count");
+	require(registers.get(0) == valueInteger(1) && registers.get(1) == valueInteger(2)
+		&& state.registerTop == 2 && state.remainingCycles == 0
+		&& exit->currentPc == 0x1008u && exit->lastPc == 0x100cu && exit->nextPc == 0x1010u,
+		"CALL publishes the completed prefix but does not extend top, and preserves both WIDE PCs");
 }
 
 void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
@@ -1252,7 +1210,7 @@ int main() {
 		nextAccessPressurePreservesEveryRawGuestSlot();
 		dependentInstructionsWriteBackEveryLiveRegister();
 		truthinessAndConditionalExits();
-		sideExitHandlersRunAfterGeneratedFrameReturns();
+		typedCallExitPublishesPrefix();
 		std::cout << "Native block datapath tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

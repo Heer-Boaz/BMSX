@@ -742,7 +742,7 @@ void tableFactsAreValidatedAtIndependentRegionEntries(CPU& cpu, Memory& memory) 
 	const std::array sources{NativeBlockSource{std::span(instructions).first<5>()}, NativeBlockSource{std::span(instructions.data() + 5, 2)},
 		NativeBlockSource{std::span(instructions.data() + 7, 2)}};
 	size_t bytes = 0;
-	auto blocks = NativeBlock::compileRegion(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
+	auto blocks = NativeBlock::compileRegion(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")));
 	blocks.front()->region->publish(bytes);
 	constexpr std::array entryIndices{0u, 2u, 5u, 7u};
 	std::array<const NativeBlock*, entryIndices.size()> entries;
@@ -805,7 +805,7 @@ void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
 		auto unusedInstructions = instructions;
 		unusedInstructions[4].decoded = &unusedDecoded[4];
 		const std::array unusedSources{NativeBlockSource{std::span(unusedInstructions).first<5>()}};
-		auto blocks = NativeBlock::compileRegion(unusedSources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
+		auto blocks = NativeBlock::compileRegion(unusedSources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")));
 		blocks.front()->region->publish(bytes);
 		ValueSlots registers(6);
 		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
@@ -817,7 +817,7 @@ void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
 		const std::array usedSources{NativeBlockSource{std::span(instructions.data(), 2)},
 			NativeBlockSource{std::span(instructions.data() + 2, 2)},
 			NativeBlockSource{std::span(instructions.data() + 4, 2)}};
-		auto blocks = NativeBlock::compileRegion(usedSources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
+		auto blocks = NativeBlock::compileRegion(usedSources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")));
 		blocks.front()->region->publish(bytes);
 		ValueSlots registers(6);
 		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
@@ -854,7 +854,7 @@ void overwrittenAndEvictedFactsDoNotGuardEntries(CPU& cpu, Memory& memory) {
 		decoded[10].bx = decoded[11].bx = 0x8000u;
 		const std::array sources{NativeBlockSource{std::span(instructions).first<11>()}};
 		size_t bytes = 0;
-		auto blocks = NativeBlock::compileRegion(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
+		auto blocks = NativeBlock::compileRegion(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")));
 		blocks.front()->region->publish(bytes);
 		ValueSlots registers(11);
 		for (int operand : {4, 5, 6, 7}) registers.set(operand, valueInteger(0));

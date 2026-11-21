@@ -28,7 +28,7 @@ inline constexpr auto NATIVE_GATE_EXIT_NAMES = std::to_array<const char*>({
 	"ReadField", "WriteField", "ReadMemory", "WriteMemory", "SkipInstruction",
 	"WriteUpvalue", "Vararg", "InvalidConstant", "InvalidOperand", "ReadIndex", "WriteIndex",
 	"ReadInteger", "WriteInteger", "InvalidLength", "AllocateTable", "ControlFault",
-	"ControlBoundary", "ExecuteFunction", "ExceptionReturn", "Concat", "ConcatRange",
+	"ControlBoundary", "ExceptionReturn", "Concat", "ConcatRange",
 	"CreateClosure", "WriteWords", "WriteControl", "WriteGlobal", "WriteSystemGlobal",
 });
 static_assert(NATIVE_GATE_EXIT_NAMES.size() == static_cast<size_t>(NativeBlockExit::Count));

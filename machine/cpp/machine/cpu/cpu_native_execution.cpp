@@ -16,10 +16,29 @@
 
 namespace bmsx {
 
+namespace {
+enum class NativeBlockTransition : u8 {
+	Redispatch,
+	RebindFrame,
+	// The same frame/image remains active; its register storage may have changed.
+	NextInstruction,
+	// Read-only lookup plus a result write in the already-admitted window.
+	SameWindow,
+};
+} // namespace
+
 #include "machine/cpu/cpu_calls.inl"
 #include "machine/cpu/cpu_memory.inl"
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
+
+Value CPU::loadNativeTableField(TableStringReadCache& cache, const Value& base, StringId key) {
+	TableLookupResult result;
+	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexPath(
+		asStringId(m_indexKey), key, cache.receiverSlot, result, cache);
+	chargeTableLookup(result);
+	return result.value;
+}
 
 u32 CPU::readNativeLength(NativeBlockRunState* state, const StringPool* strings, Value* operand) noexcept {
 	const auto length = measureValueLength(*operand, *strings, state->heap);
@@ -232,6 +251,53 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		case NativeBlockExit::InvalidLength:
 			throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
+		case NativeBlockExit::ReadField: {
+			const auto& access = exit->operands.table;
+			frame->registers.set(access.value, cpu.loadNativeTableField(exit->tableReadCache,
+				frame->registers.get(access.receiver), asStringId(frame->executionImage->constPool.get(access.key))));
+			frame->extendTop(access.value + 1);
+			transition = NativeBlockTransition::SameWindow;
+			break;
+		}
+		case NativeBlockExit::ReadIndex: {
+			const auto& access = exit->operands.table;
+			const Value base = frame->registers.get(access.receiver);
+			const Value key = readRK(*frame->executionImage, frame->registers, access.key);
+			frame->registers.set(access.value, valueIsString(key)
+				? cpu.loadNativeTableField(exit->tableReadCache, base, asStringId(key))
+				: cpu.loadTableIndex(base, key));
+			frame->extendTop(access.value + 1);
+			transition = NativeBlockTransition::SameWindow;
+			break;
+		}
+		case NativeBlockExit::ReadInteger: {
+			const auto& access = exit->operands.table;
+			frame->registers.set(access.value, cpu.loadTableIntegerIndex(frame->registers.get(access.receiver), access.key));
+			frame->extendTop(access.value + 1);
+			transition = NativeBlockTransition::SameWindow;
+			break;
+		}
+		case NativeBlockExit::WriteField: {
+			const auto& access = exit->operands.table;
+			cpu.storeTableFieldIndexCached(exit->tableStoreSlot, frame->registers.get(access.receiver),
+				asStringId(frame->executionImage->constPool.get(access.key)), readRK(*frame->executionImage, frame->registers, access.value));
+			break;
+		}
+		case NativeBlockExit::WriteIndex: {
+			const auto& access = exit->operands.table;
+			const Value base = frame->registers.get(access.receiver);
+			const Value key = readRK(*frame->executionImage, frame->registers, access.key);
+			const Value value = readRK(*frame->executionImage, frame->registers, access.value);
+			if (valueIsString(key)) cpu.storeTableFieldIndexCached(exit->tableStoreSlot, base, asStringId(key), value);
+			else cpu.storeTableIndex(base, key, value);
+			break;
+		}
+		case NativeBlockExit::WriteInteger: {
+			const auto& access = exit->operands.table;
+			cpu.storeTableIntegerIndex(frame->registers.get(access.receiver), access.key,
+				readRK(*frame->executionImage, frame->registers, access.value));
+			break;
+		}
 		case NativeBlockExit::ReadMemory:
 		case NativeBlockExit::WriteMemory:
 		case NativeBlockExit::WriteWords: {
@@ -283,9 +349,10 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			}
 			break;
 		}
-		default:
-			transition = exit->handler(&cpu, frame, exit);
-			break;
+		case NativeBlockExit::Continue:
+		case NativeBlockExit::ScalarBoundary:
+		case NativeBlockExit::Count:
+			BMSX_UNREACHABLE();
 		}
 		if (transition == NativeBlockTransition::Redispatch
 			&& (cpu.m_hardHalted || cpu.m_yieldRequested || cpu.m_threadSwitchRequested || cpu.m_memoryWriteBlocked

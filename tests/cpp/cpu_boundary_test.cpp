@@ -119,10 +119,6 @@ void equalityUsesValueKindsInsteadOfUnusedPayloads() {
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-NativeBlockTransition fieldSlowExitMarker(CPU*, CallFrame*, const NativeBlockExitSite*) {
-	return NativeBlockTransition::Redispatch;
-}
-
 void nativeFieldGuardsAndRawSlotAccess() {
 	NativeBlockRunState nativeRunState;
 	CpuMachine machine(returnImage());
@@ -140,10 +136,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		field.a = 0; field.b = 1; field.c = store ? -1 : 1;
 		field.width = 2; field.baseCycles = BASE_CYCLES[field.op]; field.tableCacheSlot = slot;
 		const std::array source{NativeBlockInstruction{&field, 0x1000u}};
-		NativeBlockExitHandlers handlers{};
-		handlers[static_cast<size_t>(NativeBlockExit::ReadField)] = &fieldSlowExitMarker;
-		handlers[static_cast<size_t>(NativeBlockExit::WriteField)] = &fieldSlowExitMarker;
-		auto block = test::compileNative(source, constants.view(), bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"), handlers);
+		auto block = test::compileNative(source, constants.view(), bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"));
 		ValueSlots registers(2);
 		registers.set(0, valueTable(table.address())); registers.set(1, valueTable(table.address()));
 		if (store) {
@@ -177,8 +170,14 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		}
 		hint = slot;
 		registers.set(store ? 0 : 1, valueBool(false));
-		require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->handler == &fieldSlowExitMarker,
-			"a non-table field receiver is rejected before any native pointer access");
+		const Value destination = registers.get(0), previous = table.getStringKey(key);
+		const auto* badReceiver = block->run(registers.view(), nativeRunState = {.constants = constants.view(),
+			.heap = &machine.cpu.gcHeap(), .remainingCycles = field.baseCycles});
+		require(badReceiver->exit == (store ? NativeBlockExit::WriteField : NativeBlockExit::ReadField)
+			&& badReceiver->currentPc == source[0].pc && badReceiver->lastPc == source[0].pc + INSTRUCTION_BYTES
+			&& badReceiver->nextPc == source[0].pc + 2u * INSTRUCTION_BYTES && nativeRunState.remainingCycles == 0
+			&& registers.get(0) == destination && table.getStringKey(key) == previous,
+			"a non-table field receiver leaves the precisely charged WIDE operation for CPU semantics before any mutation");
 		registers.set(0, valueTable(table.address())); registers.set(1, valueTable(table.address()));
 		table.setStringKey(key, valueNil());
 		const auto* deletedExit = block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles});

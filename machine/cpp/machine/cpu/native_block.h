@@ -67,17 +67,6 @@ struct NativeBlockRunState {
 #endif
 };
 
-enum class NativeBlockTransition : u32 {
-	Redispatch,
-	RebindFrame,
-	// The same frame/image remains active; its register storage may have changed.
-	NextInstruction,
-	// Read-only lookup plus a result write in the already-admitted window.
-	SameWindow,
-};
-
-using NativeBlockExitHandler = NativeBlockTransition (*)(CPU*, CallFrame*, const NativeBlockExitSite*);
-
 inline constexpr u8 NATIVE_BLOCK_COMPILATION_THRESHOLD = 64u;
 inline constexpr u32 NATIVE_BLOCK_MAX_INSTRUCTIONS = 64u;
 inline constexpr size_t NATIVE_CODE_CACHE_MAX_BYTES = 32u * 1024u * 1024u;
@@ -99,7 +88,6 @@ inline constexpr bool nativeBlockExitResumesFrame(NativeBlockExit exit) {
 
 struct NativeBlockExitSite {
 	NativeBlockExit exit = NativeBlockExit::Continue;
-	NativeBlockExitHandler handler = nullptr;
 	NativeExitOperands operands{};
 	int cycles = 0;
 	int registerTop = 0;
@@ -118,8 +106,6 @@ struct NativeBlockExitSite {
 	// Image-lifetime cells survive retirement of the source or target region.
 	std::array<void* const*, 2> continuationCells{};
 };
-
-using NativeBlockExitHandlers = std::array<NativeBlockExitHandler, static_cast<size_t>(NativeBlockExit::Count)>;
 
 struct NativeBlockInstruction {
 	const DecodedInstruction* decoded;
@@ -290,8 +276,7 @@ public:
 	// Source runs contain at most one decoded page's worth of instructions.
 	static std::vector<std::unique_ptr<NativeBlock>> compileRegion(
 		std::span<const NativeBlockSource> sources, ConstValueSpan constants,
-		const NativeCodeBindings& bindings, const NativeBlockExitHandlers& exitHandlers = {},
-		NativeCompilationTier tier = NativeCompilationTier::OnDemand
+		const NativeCodeBindings& bindings, NativeCompilationTier tier = NativeCompilationTier::OnDemand
 	);
 	~NativeBlock();
 	NativeBlock(const NativeBlock&) = delete;

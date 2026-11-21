@@ -82,7 +82,7 @@ void fieldChainHasAnExplicitResumePoint() {
 	const std::array input{NativeBlockInstruction{&decoded[0], pc},
 		NativeBlockInstruction{&decoded[1], pc + 4}, NativeBlockInstruction{&decoded[2], pc + 12}};
 	const std::array sources{NativeBlockSource{input}};
-	NativeIrRegion region(sources, {});
+	NativeIrRegion region(sources);
 	const auto ops = region.blocks()[0].instructions;
 	NativeRegisterUses uses;
 	region.optimize({}, uses);
@@ -123,7 +123,7 @@ void fieldSelectionOwnsColdCutAndContinuation() {
 	decoded[4].c = 7;
 	const std::array runs{NativeBlockSource{source}};
 	{
-		NativeIrRegion region(runs, {}, {}, false, NativeCompilationTier::ColdImage);
+		NativeIrRegion region(runs, {}, false, NativeCompilationTier::ColdImage);
 		require(region.instructionCount() == 1 && region.entries.front()->terminal.nextPc == pc + INSTRUCTION_BYTES,
 			"unobserved numeric field use defers only its suffix, even across independent assignments");
 	}
@@ -131,14 +131,14 @@ void fieldSelectionOwnsColdCutAndContinuation() {
 	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
 		decoded[4].observeNativeNumericTypes(valueFloat(1.5f), valueInteger(1));
 	{
-		NativeIrRegion region(runs, {});
+		NativeIrRegion region(runs);
 		const auto& field = std::get<NativeTableAccess>(region.blocks().front().instructions[1].operation);
 		require(region.blocks().size() == 1 && field.resultTag == ValueTag::Float,
 			"an own-slot hit has a known type without a continuation checkpoint");
 	}
 	decoded[3].a = 6;
 	{
-		NativeIrRegion region(runs, {});
+		NativeIrRegion region(runs);
 		const auto& field = std::get<NativeTableAccess>(region.blocks().front().instructions[1].operation);
 		require(region.blocks().size() == 2 && !field.resultTag
 			&& region.entries[1]->firstPc == pc + 2 * INSTRUCTION_BYTES,
@@ -161,7 +161,7 @@ void decodedFieldsBecomeOperationsAndEffects() {
 	rk.b = -1; rk.width = 1;
 	const std::array third{NativeBlockInstruction{&rk, 0x4010}};
 	const std::array source{NativeBlockSource{first}, NativeBlockSource{second}, NativeBlockSource{third}};
-	NativeIrRegion region(source, {});
+	NativeIrRegion region(source);
 	const auto& write = region.blocks()[0].instructions.front();
 	const auto& transfer = region.blocks()[1].instructions.front();
 	const auto& store = std::get<NativeMemoryAccess>(write.operation);
@@ -187,7 +187,7 @@ void undefinedMoveKindDoesNotBecomeANumericWordMove() {
 	move.baseCycles = BASE_CYCLES[move.op];
 	const std::array instructions{NativeBlockInstruction{&move, 0x4100}};
 	const std::array sources{NativeBlockSource{instructions}};
-	NativeIrRegion region(sources, {});
+	NativeIrRegion region(sources);
 	const auto& row = region.blocks()[0].instructions[0];
 	require(std::holds_alternative<NativeReplay>(row.operation) && row.before.pc == 0x4100 && row.before.cycles == 0
 		&& region.entries[0]->sideExits.empty(),
@@ -204,7 +204,7 @@ void successorsImportLogicalTypesBeforeLowering() {
 	const std::array before{NativeBlockInstruction{&load, producerPc}, NativeBlockInstruction{&jump, producerPc + 4}};
 	const std::array after{NativeBlockInstruction{&arithmetic, consumerPc}};
 	const std::array sources{NativeBlockSource{before}, NativeBlockSource{after}};
-	NativeIrRegion region(sources, {});
+	NativeIrRegion region(sources);
 	NativeRegisterUses uses;
 	region.optimize({}, uses);
 	const auto& entry = region.blocks()[1];
@@ -240,7 +240,7 @@ void onlyConsumedEntryProofsSurviveCopies() {
 		NativeBlockInstruction{&decoded[4], copyPc + 4}, NativeBlockInstruction{&decoded[5], copyPc + 8}};
 	const std::array consumer{NativeBlockInstruction{&decoded[6], consumerPc}};
 	const std::array sources{NativeBlockSource{producer}, NativeBlockSource{copy}, NativeBlockSource{consumer}};
-	NativeIrRegion region(sources, {});
+	NativeIrRegion region(sources);
 	NativeRegisterUses uses;
 	region.optimize({}, uses);
 	const auto blocks = region.blocks();

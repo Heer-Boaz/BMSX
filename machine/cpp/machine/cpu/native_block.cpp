@@ -53,9 +53,9 @@ void NativeCodeRegion::recordPerfMap(ExecutionDomainId domain, u32 slot, u32 fir
 
 std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 	std::span<const NativeBlockSource> sources, ConstValueSpan constants,
-	const NativeCodeBindings& bindings, const NativeBlockExitHandlers& exitHandlers, NativeCompilationTier tier
+	const NativeCodeBindings& bindings, NativeCompilationTier tier
 ) {
-	NativeIrRegion ir(sources, exitHandlers, constants, bindings.cpu != nullptr, tier);
+	NativeIrRegion ir(sources, constants, bindings.cpu != nullptr, tier);
 	if (ir.entries.empty()) return {};
 	auto region = std::make_shared<NativeCodeRegion>();
 	region->ram = bindings.ram;

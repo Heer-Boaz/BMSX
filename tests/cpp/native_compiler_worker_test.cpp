@@ -44,7 +44,7 @@ void copiedSourceAndDeferredPublication() {
 			NativeBlockSource{std::span(instructions.data(), 1)},
 			NativeBlockSource{std::span(instructions.data() + 1, 2)},
 		};
-		worker.submit(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
+		worker.submit(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")));
 		decoded.fill({}); // No live decoded-page references may escape capture.
 		instructions.fill({});
 		worker.wait();
@@ -76,7 +76,7 @@ void unpublishedCodeCanBeDiscarded() {
 	const std::array sources{NativeBlockSource{instructions}};
 	for (int iteration = 0; iteration < 32; ++iteration) {
 		NativeCompilerWorker worker;
-		worker.submit(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
+		worker.submit(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")));
 		if ((iteration & 1) == 0) {
 			worker.wait();
 			worker.take().clear();

@@ -202,13 +202,6 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 		sources.push_back({std::span(instructions.data() + first, instructionCount - first), skippedInstruction});
 	}
 	if (sources.empty()) return;
-	NativeBlockExitHandlers handlers{};
-	handlers[static_cast<size_t>(NativeBlockExit::ReadField)] = &CPU::compiledReadFieldExit;
-	handlers[static_cast<size_t>(NativeBlockExit::WriteField)] = &CPU::compiledWriteFieldExit;
-	handlers[static_cast<size_t>(NativeBlockExit::ReadIndex)] = &CPU::compiledReadIndexExit;
-	handlers[static_cast<size_t>(NativeBlockExit::WriteIndex)] = &CPU::compiledWriteIndexExit;
-	handlers[static_cast<size_t>(NativeBlockExit::ReadInteger)] = &CPU::compiledReadIntegerExit;
-	handlers[static_cast<size_t>(NativeBlockExit::WriteInteger)] = &CPU::compiledWriteIntegerExit;
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (!coldImage) {
 		auto& pendingJob = m_pendingNativeCompilation;
@@ -224,13 +217,14 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 			image.workerConstants.view().copyFrom(image.constPool, 0, 0, count);
 			image.workerConstantsCurrent = true;
 		}
-		m_nativeCompilerWorker->submit(sources, image.workerConstants.view(), NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this), handlers, profile != nullptr);
+		m_nativeCompilerWorker->submit(sources, image.workerConstants.view(),
+			NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this), profile != nullptr);
 		return;
 	}
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
 	auto blocks = NativeBlock::compileRegion(sources, image.constPool,
-		NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this), handlers,
+		NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this),
 		coldImage ? NativeCompilationTier::ColdImage : NativeCompilationTier::OnDemand);
 	if (!blocks.empty()) installNativeRegion(image, page, pagePc, source.slot, std::move(blocks));
 }
@@ -326,64 +320,6 @@ void CPU::clearNativeContinuationBindings() {
 		for (auto* frame = thread.firstFrame; frame; frame = frame->next)
 			frame->nativeContinuationCells = {};
 	});
-}
-
-Value CPU::loadNativeTableField(TableStringReadCache& cache, const Value& base, StringId key) {
-	TableLookupResult result;
-	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexPath(
-		asStringId(m_indexKey), key, cache.receiverSlot, result, cache);
-	chargeTableLookup(result);
-	return result.value;
-}
-
-NativeBlockTransition CPU::compiledReadFieldExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const auto& access = exit->operands.table;
-	frame->registers.set(access.value, owner->loadNativeTableField(exit->tableReadCache,
-		frame->registers.get(access.receiver), asStringId(frame->executionImage->constPool.get(access.key))));
-	frame->extendTop(static_cast<int>(access.value) + 1);
-	return NativeBlockTransition::SameWindow;
-}
-
-NativeBlockTransition CPU::compiledWriteFieldExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const auto& access = exit->operands.table;
-	owner->storeTableFieldIndexCached(exit->tableStoreSlot, frame->registers.get(access.receiver),
-		asStringId(frame->executionImage->constPool.get(access.key)), owner->readRK(*frame->executionImage, frame->registers, access.value));
-	return NativeBlockTransition::NextInstruction;
-}
-
-NativeBlockTransition CPU::compiledReadIndexExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const auto& access = exit->operands.table;
-	const Value base = frame->registers.get(access.receiver);
-	const Value key = owner->readRK(*frame->executionImage, frame->registers, access.key);
-	frame->registers.set(access.value, valueIsString(key)
-		? owner->loadNativeTableField(exit->tableReadCache, base, asStringId(key))
-		: owner->loadTableIndex(base, key));
-	frame->extendTop(static_cast<int>(access.value) + 1);
-	return NativeBlockTransition::SameWindow;
-}
-
-NativeBlockTransition CPU::compiledWriteIndexExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const auto& access = exit->operands.table;
-	const Value base = frame->registers.get(access.receiver);
-	const Value key = owner->readRK(*frame->executionImage, frame->registers, access.key);
-	const Value value = owner->readRK(*frame->executionImage, frame->registers, access.value);
-	if (valueIsString(key)) owner->storeTableFieldIndexCached(exit->tableStoreSlot, base, asStringId(key), value);
-	else owner->storeTableIndex(base, key, value);
-	return NativeBlockTransition::NextInstruction;
-}
-
-NativeBlockTransition CPU::compiledReadIntegerExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const auto& access = exit->operands.table;
-	frame->registers.set(access.value, owner->loadTableIntegerIndex(frame->registers.get(access.receiver), access.key));
-	frame->extendTop(static_cast<int>(access.value) + 1);
-	return NativeBlockTransition::SameWindow;
-}
-
-NativeBlockTransition CPU::compiledWriteIntegerExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const auto& access = exit->operands.table;
-	owner->storeTableIntegerIndex(frame->registers.get(access.receiver), access.key,
-		owner->readRK(*frame->executionImage, frame->registers, access.value));
-	return NativeBlockTransition::NextInstruction;
 }
 
 } // namespace bmsx

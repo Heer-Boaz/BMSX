@@ -55,8 +55,8 @@ struct NativeIrBlock {
 
 class NativeIrRegion {
 public:
-	NativeIrRegion(std::span<const NativeBlockSource> source, const NativeBlockExitHandlers& handlers,
-		ConstValueSpan constants = {}, bool cpuOwned = false, NativeCompilationTier tier = NativeCompilationTier::OnDemand);
+	explicit NativeIrRegion(std::span<const NativeBlockSource> source, ConstValueSpan constants = {},
+		bool cpuOwned = false, NativeCompilationTier tier = NativeCompilationTier::OnDemand);
 	void optimize(ConstValueSpan constants, NativeRegisterUses& uses);
 	std::span<const NativeIrBlock> blocks() const { return m_blocks; }
 	size_t instructionCount() const { return m_instructions.size(); }
@@ -66,8 +66,7 @@ private:
 	std::vector<NativeInstruction> m_instructions;
 	std::vector<NativeSlotType> m_entryTypes;
 	std::vector<NativeIrBlock> m_blocks;
-	void buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations,
-		const NativeBlockExitHandlers& handlers, bool cpuOwned);
+	void buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations, bool cpuOwned);
 };
 
 NativeOperation translateNativeOperation(const DecodedInstruction& source, ConstValueSpan constants);

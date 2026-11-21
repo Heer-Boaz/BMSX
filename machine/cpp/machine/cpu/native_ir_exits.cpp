@@ -98,7 +98,7 @@ struct NativeTerminalExit {
 } // namespace
 
 void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations,
-	const NativeBlockExitHandlers& exitHandlers, bool cpuOwned) {
+	bool cpuOwned) {
 	const auto instructions = source.instructions;
 	const auto* skippedInstruction = source.skippedInstruction;
 	const u8 skippedInstructionWidth = skippedInstruction ? skippedInstruction->width : 0;
@@ -169,7 +169,6 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 			ir.slow = &exit;
 			exit.exit = slow;
 			exit.operands = operands;
-			exit.handler = exitHandlers[static_cast<size_t>(slow)];
 			if (slow == NativeBlockExit::ReadField || slow == NativeBlockExit::ReadIndex)
 				std::construct_at(&exit.tableReadCache, TableStringReadCache{
 					.receiverSlot = table->predictedSlot, .holderSlot = -1, .holderDepth = 0, .indexSlots = {-1, -1, -1}});
@@ -200,7 +199,6 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 	terminal.operands = operands;
 	if (kind == NativeBlockExit::AllocateTable)
 		terminal.recordConstructor = nullptr;
-	terminal.handler = exitHandlers[static_cast<size_t>(terminal.exit)];
 	NativeBlockExitSite* taken = nullptr;
 	NativeBlockExitSite* beforeFusedJump = nullptr;
 	NativeBlockExitSite* completedCall = nullptr;
@@ -221,7 +219,6 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 			exit.exit = skippedInstructionWidth == 0 ? NativeBlockExit::SkipInstruction : NativeBlockExit::Continue;
 			exit.nextPc += static_cast<u32>(skippedInstructionWidth) * INSTRUCTION_BYTES;
 			block->sourceWords += skippedInstructionWidth;
-			exit.handler = exitHandlers[static_cast<size_t>(exit.exit)];
 			if (block->hasFusedJump) {
 				terminal.cycles += skippedInstruction->baseCycles;
 				terminal.currentPc = terminal.nextPc;

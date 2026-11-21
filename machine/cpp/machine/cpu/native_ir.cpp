@@ -43,8 +43,8 @@ NativeOperationFlow nativeOperationFlow(const NativeOperation& operation) {
 	return std::visit(OperationFlow{}, operation);
 }
 
-NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, const NativeBlockExitHandlers& handlers,
-	ConstValueSpan constants, bool cpuOwned, NativeCompilationTier tier) {
+NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, ConstValueSpan constants,
+	bool cpuOwned, NativeCompilationTier tier) {
 	size_t instructionCount = 0;
 	for (const auto& source : sources) instructionCount += source.instructions.size();
 	m_instructions.reserve(instructionCount);
@@ -68,7 +68,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, const
 			const size_t length = index - segment + 1;
 			const NativeBlockSource slice{source.instructions.subspan(segment, length),
 				last && completeRun ? source.skippedInstruction : nullptr};
-			buildBlock(slice, operations.subspan(segment, length), handlers, cpuOwned);
+			buildBlock(slice, operations.subspan(segment, length), cpuOwned);
 			segment = index + 1;
 		}
 		u16 coveredWords = 0;
