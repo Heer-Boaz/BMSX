@@ -15,6 +15,9 @@ void CPU::observeNativeArithmeticReplay(DecodedInstructionPage& page, u32 word,
 	const auto observed = decoded.nativeNumericTypes();
 	if (observed.stable() && observed.left == assumption.left && observed.right == assumption.right) return;
 
+	// A proven mixed site widens once for this decoded image. The generic
+	// native operation remains usable through later runs of either pair.
+	decoded.widenNativeNumericFeedback();
 	retireNativeInstructionUsers(page, word);
 }
 

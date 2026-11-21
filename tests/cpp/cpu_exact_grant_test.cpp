@@ -199,29 +199,32 @@ void adaptiveArithmeticReplay() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(installed(), "a single contradictory success does not retire a stable specialization");
 	for (int i = 0; i < 8 && installed(); ++i) subtract(valueFloat(0.5f), valueFloat(11.5f), complete);
-	require(!installed() && !page.words[entry + 1u].nativeNumericTypes().stable(),
-		"repeated successful contradictions withdraw native users and lose the stale type assumption");
+	require(!installed() && page.words[entry + 1u].nativeNumericTypes().polymorphic(),
+		"repeated successful contradictions withdraw the old users and widen the site");
 	native.cpu.prepareSystemNativeCode();
 	require(installed(), "the code owner can republish the source with the updated feedback");
 	const auto& generic = page.nativeBlocks->entries[entry]->sideExits;
-	require(generic.size() == 2 && generic.front().exit == NativeBlockExit::InvalidOperand
+	require(generic.size() == 1 && generic.front().exit == NativeBlockExit::InvalidOperand
 		&& generic.front().currentPc == wide && generic.front().lastPc == wide + INSTRUCTION_BYTES
 		&& generic.front().nextPc == suffix && generic.front().cycles == complete && generic.front().registerTop == 3,
-		"generic WIDE arithmetic owns its semantic fault with the instruction charged and its destination uncommitted");
-	require(generic.back().exit == NativeBlockExit::ProfileReady && generic.back().nextPc == suffix
-		&& generic.back().cycles == complete && generic.back().registerTop == 5,
-		"the completed feedback exit instead includes the committed destination");
+		"the widened site retains the exact WIDE fault, but cannot request another type promotion");
+	const auto published = page.nativeBlocks->entries[entry]->region;
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto boundary = static_cast<size_t>(NativeBlockExit::ScalarBoundary);
 	const auto exitsBefore = native.cpu.nativeGateProfile().exits[boundary].entries;
 #endif
 #endif
 	for (int i = 0; i < 8; ++i) {
-		subtract(valueInteger(2), valueInteger(10), complete);
-		subtract(valueFloat(0.5f), valueFloat(11.5f), prefixCycles + 1);
+		// Each phase alone was long enough to retrain the old monomorphic
+		// policy. The mixed site must now keep executing the same code.
+		for (int j = 0; j < 8; ++j) subtract(valueInteger(2), valueInteger(10), complete);
+		for (int j = 0; j < 8; ++j) subtract(valueFloat(0.5f), valueFloat(11.5f), prefixCycles + 1);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		require(installed() && page.nativeBlocks->entries[entry]->region == published,
+			"bursts of either representation keep the published numeric region");
+#endif
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	require(installed(), "the rebuilt generic arithmetic does not retire on alternating subtypes");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(native.cpu.nativeGateProfile().exits[boundary].entries == exitsBefore,
 		"the rebuilt native body does not repeatedly deoptimize on valid alternating numeric subtypes");

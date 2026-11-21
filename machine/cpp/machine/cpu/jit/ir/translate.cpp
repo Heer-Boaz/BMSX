@@ -75,6 +75,7 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 	case OpCode::ADD: case OpCode::SUB: case OpCode::MUL: {
 		const auto observed = instruction.nativeNumericTypes();
 		NativeArithmeticHint hint;
+		hint.sampleOperands = !observed.polymorphic();
 		if (observed.stable())
 			hint.feedback = NativeArithmeticFeedback{observed.left, observed.right};
 		return NativeArithmetic{a, b, c, op, hint};

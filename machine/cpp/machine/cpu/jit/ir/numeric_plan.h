@@ -17,6 +17,7 @@ struct NativeNumericPlan {
 	bool resultDependsOnInputs = false;
 	// Consumed by IR exit planning, never used by the emitter.
 	std::optional<NativeArithmeticFeedback> feedbackAssumption{};
+	bool sampleOperands = false;
 };
 
 // Missing tags are unknown, not BLua Nil. Guarded tags only hold on the

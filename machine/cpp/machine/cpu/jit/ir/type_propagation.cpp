@@ -132,6 +132,7 @@ struct NativeTypePropagation::Transfer {
 		plan.guardLeft &= needsLeft;
 		plan.guardRight &= needsRight;
 		if (plan.guardLeft || plan.guardRight) plan.feedbackAssumption = hint.feedback;
+		plan.sampleOperands = hint.sampleOperands && plan.action == NativeNumericAction::Kernel;
 		if (plan.guardLeft) facts.define(values.inputs[0], *plan.left);
 		if (plan.guardRight) facts.define(values.inputs[1], *plan.right);
 		if (plan.result) result(*plan.result);

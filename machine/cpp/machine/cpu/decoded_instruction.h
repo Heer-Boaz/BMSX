@@ -66,14 +66,16 @@ struct NativeNumericTypes {
 	ValueTag left, right;
 	u16 confidence;
 
-	constexpr bool observed() const { return confidence != 0; }
-	constexpr bool stable() const { return confidence >= STABLE_CONFIDENCE; }
+	constexpr bool polymorphic() const { return confidence == POLYMORPHIC; }
+	constexpr bool observed() const { return confidence != 0 && !polymorphic(); }
+	constexpr bool stable() const { return !polymorphic() && confidence >= STABLE_CONFIDENCE; }
 	bool operator==(const NativeNumericTypes&) const = default;
 
 private:
 	friend struct DecodedInstruction;
 	static constexpr u16 STABLE_CONFIDENCE = 4u;
 	static constexpr u16 MAX_CONFIDENCE = 16u;
+	static constexpr u16 POLYMORPHIC = 1u << 15u;
 };
 
 struct DecodedInstruction {
@@ -125,14 +127,19 @@ struct DecodedInstruction {
 			static_cast<u16>(bits >> NUMERIC_CONFIDENCE_SHIFT)};
 	}
 
+	void widenNativeNumericFeedback() {
+		payload.m_word = toSignedWord(static_cast<u32>(NativeNumericTypes::POLYMORPHIC) << NUMERIC_CONFIDENCE_SHIFT);
+	}
+
 	// Only a completed arithmetic instruction contributes a sample.
 	// Report whether this sample confirms the stable candidate, including
 	// when the executing code was compiled before the site became stable.
 	bool observeNativeNumericTypes(Value lhs, Value rhs) {
 		const u32 bits = static_cast<u32>(payload.m_word);
+		const u32 confidence = bits >> NUMERIC_CONFIDENCE_SHIFT;
+		if (confidence == NativeNumericTypes::POLYMORPHIC) return false;
 		const u32 pair = bits & NUMERIC_PAIR_MASK;
 		const u32 sample = static_cast<u32>(valueTag(lhs)) | (static_cast<u32>(valueTag(rhs)) << NUMERIC_RIGHT_TAG_SHIFT);
-		const u32 confidence = bits >> NUMERIC_CONFIDENCE_SHIFT;
 		if (pair == sample) {
 			if (confidence < NativeNumericTypes::MAX_CONFIDENCE)
 				payload.m_word = toSignedWord(bits + (1u << NUMERIC_CONFIDENCE_SHIFT));

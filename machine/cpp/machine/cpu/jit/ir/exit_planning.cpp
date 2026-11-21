@@ -247,8 +247,7 @@ void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block, bool observesArith
 		const bool placesResults = &instruction != &block.instructions.back() || block.terminal.exit == NativeBlockExit::Continue;
 		if (placesResults && writes.count != 0 && !writes.open)
 			state.registerTop = std::max(state.registerTop, writes.end());
-		if (observesArithmetic && numeric && numeric->action == NativeNumericAction::Kernel
-			&& (arithmetic->operation == OpCode::ADD || arithmetic->operation == OpCode::SUB || arithmetic->operation == OpCode::MUL)) {
+		if (observesArithmetic && numeric && numeric->sampleOperands) {
 			auto& completed = appendExit(state, instruction.feedback);
 			completed.exit = NativeBlockExit::ProfileReady;
 			completed.operands.feedback = {block.sourcePc};
