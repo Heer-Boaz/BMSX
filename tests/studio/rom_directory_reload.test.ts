@@ -66,7 +66,7 @@ end`;
 		return { type: 'image', resid, start: 0x200 + index * 4, end: 0x204 + index * 4 };
 	});
 	assert.equal(tokenSigns.size, 4, 'both token words exercise positive and negative Integer carriers');
-	const { cpu, memory } = createTestBlua32PairCpu({
+	const { cpu, memory, executionAddressSpace } = createTestBlua32PairCpu({
 		systemRomBytes: directory(linked.romBytes, systemOffset, [{ type: 'image', resid: 'system', start: 0x80, end: 0x84 }]),
 		cartRomBytes: directory(cartBase, 0x400, [
 			{ type: 'image', resid: 'warm', start: 0x100, end: 0x104 },
@@ -98,6 +98,9 @@ end`;
 	memory.installSystemRom(directory(linked.romBytes, systemOffset + 512, [
 		{ type: 'image', resid: 'system', start: 0x90, end: 0x98 },
 	]));
+	// The BIOS stayed resident; the cartridge in this fixture is only a
+	// resource source. Publish the replacement BIOS before re-running init.
+	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, linked.vectors.initFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	assert.equal(asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('preparations'))), 2, 'preparation retains the live program');
