@@ -615,6 +615,50 @@ test('changed objects wait for a finite second pass and retain later writes acro
 	assert.ok(allocatedObjectRecords(cpu).includes(late));
 });
 
+test('allocation assists defer transient Value and String ranges until final ownership is known', () => {
+	const cpu = machine(), { gc, memory, stringPool } = cpu;
+	const frame = cpu.rootThread.currentFrame!;
+	const scope = cpu.acquireLocalRoots();
+	let released = false;
+	try {
+		let published = 0, temporary = 0;
+		let publishedText = 0, temporaryText = 0;
+		for (let index = 0; index < GC_STEP_WORDS + 64; ++index) {
+			temporary = published;
+			temporaryText = publishedText;
+			published = cpu.createTable();
+			publishedText = stringPool.intern(`scoped-root-${index}`);
+		}
+		const oldEpoch = memory.readRamRecordByte(publishedText + 1);
+		const assist = () => {
+			cpu.luaHeap.setCollectionTarget(0);
+			cpu.luaHeap.admit(0);
+			assert.equal(gc.phase(), GcPhase.Atomic, 'the otherwise small graph reaches the safepoint in one assist');
+			assert.equal(gc.isAlive(published), false, 'the assist did not walk the host Value scope');
+		};
+		assist();
+		assert.equal(memory.readRamRecordByte(publishedText + 1), oldEpoch, 'the assist did not walk the String scope');
+		cpu.luaHeap.collectRuntime();
+		assert.equal(gc.tableRecordAddress(temporary), temporary, 'synchronous collection does traverse the active scope');
+		assert.equal(stringPool.find(stringPool.toString(temporaryText)), temporaryText);
+
+		assist();
+		frame.registers.setTable(0, published); frame.registers.setString(1, publishedText); frame.top = 2;
+		const deadName = stringPool.toString(temporaryText);
+		cpu.releaseLocalRoots(scope);
+		released = true;
+		for (let step = 0; gc.finalMarkPending() && step < 20; ++step) gc.stepFinalMark();
+		for (let step = 0; gc.active() && step < 20; ++step) gc.step();
+		assert.equal(gc.active(), false);
+		assert.equal(gc.tableRecordAddress(published), published, 'final guest roots include the late publication');
+		assert.equal(stringPool.find(stringPool.toString(publishedText)), publishedText);
+		assert.equal(gc.tableRecordAddress(temporary), 0);
+		assert.equal(stringPool.find(deadName), undefined, 'released host roots are not kept by the preliminary assist');
+	} finally {
+		if (!released) cpu.releaseLocalRoots(scope);
+	}
+});
+
 test('a partial Table scan earns the fixed logical allocation credit per assist', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, cpu.createTable(8192, 0)); frame.top = 1;

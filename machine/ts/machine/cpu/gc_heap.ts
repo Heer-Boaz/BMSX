@@ -571,7 +571,6 @@ export class GcHeap {
 	private remarkRoots(t0: Value, t1: Value, t2: Value, limit: number, work: number, final: boolean): number {
 		this.diagnostics?.phase('rootsNanoseconds');
 		this.markValue(t0); this.markValue(t1); this.markValue(t2);
-		this.cpu.stringPool.markLocalRoots();
 		this.completionRootWork = 0;
 		work += this.cpu.stringPool.takeMarkWork();
 		if (work < limit) work = this.traceRootBanks(limit, work);
@@ -588,26 +587,40 @@ export class GcHeap {
 		this.diagnostics?.beginAtomic();
 		try {
 			let work = 0;
-			do { work += this.finalMarkWork(t0, t1, t2); } while (this.finalMarkPending());
+			let scopedRoots = true;
+			do {
+				work += this.finalMarkWork(t0, t1, t2, scopedRoots);
+				scopedRoots = this.remarkStage() <= RemarkStage.Weak;
+			} while (this.finalMarkPending());
 			return work;
 		} finally { this.diagnostics?.endStep(); }
 	}
 
-	public stepFinalMark(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil()): number {
+	public stepFinalMark(): number {
 		this.diagnostics?.beginStep();
 		this.diagnostics?.beginAtomic();
-		try { return this.finalMarkWork(t0, t1, t2); }
+		try { return this.finalMarkWork(valueNil(), valueNil(), valueNil(), false); }
 		finally { this.diagnostics?.endStep(); }
 	}
-	private finalMarkWork(t0: Value, t1: Value, t2: Value): number {
+	private finalMarkWork(t0: Value, t1: Value, t2: Value, scopedRoots: boolean): number {
 		let limit = GC_STEP_WORDS, work = 0;
 		if (this.remarkStage() === RemarkStage.None) this.setRemarkStage(RemarkStage.Threads);
 		if (this.remarkStage() <= RemarkStage.Weak) {
 			limit -= this.remarkVisits(limit);
 			if (this.remarkStage() !== RemarkStage.Roots) return 0;
 		}
+		// Only a synchronous final pass can run inside a temporary host scope.
+		// Earlier marking cannot reclaim this epoch, so no scoped cursor or
+		// repeated visit is needed before the mutator stops.
+		if (scopedRoots && this.remarkStage() < RemarkStage.ClearWeak) {
+			this.cpu.markScopedRoots(this);
+			this.cpu.stringPool.markLocalRoots();
+			this.markValue(t0); this.markValue(t1); this.markValue(t2);
+			work += this.cpu.stringPool.takeMarkWork();
+		}
+		if (work >= limit) return work;
 		if (this.remarkStage() === RemarkStage.Roots) {
-			work = this.remarkRoots(t0, t1, t2, limit, work, true);
+			work = this.remarkRoots(valueNil(), valueNil(), valueNil(), limit, work, true);
 			limit -= this.completionRootWork;
 			if (this.remarkStage() === RemarkStage.Roots || work >= limit) return work;
 		}
@@ -741,7 +754,6 @@ export class GcHeap {
 				}
 			}
 			this.markValue(t0); this.markValue(t1); this.markValue(t2);
-			this.cpu.stringPool.markLocalRoots();
 			work += this.cpu.stringPool.takeMarkWork();
 		}
 		while (work < limit && this.active()) {

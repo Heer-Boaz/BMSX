@@ -2792,6 +2792,9 @@ void CPU::markRootHead(GcHeap& heap) {
 	heap.markValue(m_errorInErrorHandlingValue);
 	for (const Value value : m_luaFaultErrorValues) heap.markValue(value);
 	heap.markValue(m_stringIndexTable);
+}
+
+void CPU::markScopedRoots(GcHeap& heap) {
 	for (size_t scratchIndex = 0; scratchIndex < m_builtinResultScratchIndex; ++scratchIndex) {
 		BuiltinResults& scratch = m_builtinResultScratch.get(scratchIndex);
 		for (size_t valueIndex = 0; valueIndex < scratch.size(); ++valueIndex) {

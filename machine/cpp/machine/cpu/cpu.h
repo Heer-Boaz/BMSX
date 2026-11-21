@@ -495,6 +495,7 @@ private:
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void resumePendingMemoryOperation();
 	void markRootHead(GcHeap& heap);
+	void markScopedRoots(GcHeap& heap);
 	void markRootThreads(GcHeap& heap);
 	size_t rootBankSlots(GcRootBank bank) const;
 	void markRootBank(GcHeap& heap, GcRootBank bank, size_t first, size_t end);

@@ -74,7 +74,7 @@ public:
 	size_t allocationBytes(u32 threadAddress) const;
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false);
 	// Only the stopped mutator may advance the final pass.
-	size_t stepFinalMark(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
+	size_t stepFinalMark();
 	size_t finishFinalMark(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
 	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	void markString(StringId id) { m_stringPool.markReachable(id); }
@@ -124,7 +124,7 @@ private:
 	size_t traceQuantum(bool atomic, size_t& limit, size_t work);
 	size_t remarkVisits(size_t allowance);
 	size_t remarkRoots(Value root0, Value root1, Value root2, size_t& limit, size_t work, bool final);
-	size_t finalMarkWork(Value root0, Value root1, Value root2);
+	size_t finalMarkWork(Value root0, Value root1, Value root2, bool scopedRoots);
 	RemarkStage remarkStage() const {
 		return static_cast<RemarkStage>(memory.readRamRecordWord(m_controlOffset + GC_REMARK_VISIT_STATE) >> GC_GRAY_INDEX_BITS);
 	}

@@ -898,6 +898,51 @@ void secondMarkPassAndCredit() {
 	require(target.getInteger(2) == valueTable(late.address()), "final remark retains writes after the second pass");
 }
 
+void automaticAssistDefersScopedRoots() {
+	Machine machine(image()); auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& memory = machine.memory;
+	auto& strings = cpu.stringPool();
+	auto& frame = *cpu.rootThread()->currentFrame;
+	u32 published = 0u, temporary = 0u;
+	StringId publishedText = 0u, temporaryText = 0u;
+	std::string deadName;
+	{
+		auto scope = cpu.acquireLocalRoots();
+		for (u32 index = 0; index < GC_STEP_WORDS + 64u; ++index) {
+			temporary = published;
+			temporaryText = publishedText;
+			published = cpu.createTable().address();
+			publishedText = strings.intern("scoped-root-" + std::to_string(index));
+		}
+		const u8 oldEpoch = memory.readRamRecordByte(publishedText + 1u);
+		const auto assist = [&] {
+			cpu.luaHeap().setCollectionTarget(0);
+			cpu.luaHeap().admit(0);
+			require(heap.finalMarkPending() && !heap.isAlive(published),
+				"one assist reaches the safepoint without traversing the host Value scope");
+		};
+		assist();
+		require(memory.readRamRecordByte(publishedText + 1u) == oldEpoch, "the assist did not traverse the String scope");
+		cpu.luaHeap().collectRuntime();
+		deadName = strings.toString(temporaryText);
+		require(heap.tableRecordAddress(temporary) == temporary && strings.find(deadName) == temporaryText,
+			"a synchronous collection visits the active host scope");
+
+		assist();
+		frame.registers.set(0, valueTable(published));
+		frame.registers.set(1, valueString(publishedText));
+		frame.setTop(2);
+	}
+	for (int step = 0; heap.finalMarkPending() && step < 20; ++step) heap.stepFinalMark();
+	for (int step = 0; heap.active() && step < 20; ++step) cpu.stepHeap(valueNil(), valueNil(), valueNil());
+	require(!heap.active() && heap.tableRecordAddress(published) == published
+		&& strings.find(strings.toString(publishedText)) == publishedText,
+		"final guest roots include the late publication");
+	require(heap.tableRecordAddress(temporary) == 0u && !strings.find(deadName),
+		"a preliminary assist does not keep released host roots alive");
+}
+
 void explicitAtomicCreditIgnoresPhysicalWork() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& heap = cpu.gcHeap();
@@ -1096,7 +1141,7 @@ int main(int argc, char** argv) {
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
 		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues(); incrementalSharedWeakMode();
 		resumesFinalWeakCleanup(); resumesMetatableModeProbe(); resumesWeakTableRemark(); consumesSelfLinkedGrayEdge();
-		secondMarkPassAndCredit(); explicitAtomicCreditIgnoresPhysicalWork();
+		secondMarkPassAndCredit(); automaticAssistDefersScopedRoots(); explicitAtomicCreditIgnoresPhysicalWork();
 		collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
 		return 0;

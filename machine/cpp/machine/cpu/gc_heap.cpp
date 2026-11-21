@@ -612,7 +612,6 @@ size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t& limit,
 	GcPhaseMeasurement measurement(m_cpu.m_diagnosticGcProfile.rootsNanoseconds);
 #endif
 	markValue(root0); markValue(root1); markValue(root2);
-	m_stringPool.markLocalRoots();
 	work += m_stringPool.takeMarkWork();
 	if (work < limit) work = traceRootBanks(limit, work);
 	if (memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR) == 0u) {
@@ -630,20 +629,24 @@ size_t GcHeap::finishFinalMark(Value root0, Value root1, Value root2) {
 	GcPhaseMeasurement atomicTime(profile.atomicNanoseconds);
 #endif
 	size_t work = 0;
-	do { work += finalMarkWork(root0, root1, root2); } while (finalMarkPending());
+	bool scopedRoots = true;
+	do {
+		work += finalMarkWork(root0, root1, root2, scopedRoots);
+		scopedRoots = remarkStage() <= RemarkStage::Weak;
+	} while (finalMarkPending());
 	return work;
 }
 
-size_t GcHeap::stepFinalMark(Value root0, Value root1, Value root2) {
+size_t GcHeap::stepFinalMark() {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcStepMeasurement total(profile);
 	GcPhaseMeasurement atomicTime(profile.atomicNanoseconds);
 #endif
-	return finalMarkWork(root0, root1, root2);
+	return finalMarkWork(valueNil(), valueNil(), valueNil(), false);
 }
 
-size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2) {
+size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2, bool scopedRoots) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 #endif
@@ -653,8 +656,18 @@ size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2) {
 		limit -= remarkVisits(limit);
 		if (remarkStage() != RemarkStage::Roots) return 0u;
 	}
+	// Only a synchronous final pass can run inside a temporary host scope.
+	// Before final tracing these values need neither marking nor a cursor:
+	// the collector cannot reclaim this epoch until the mutator stops.
+	if (scopedRoots && remarkStage() < RemarkStage::ClearWeak) {
+		m_cpu.markScopedRoots(*this);
+		m_stringPool.markLocalRoots();
+		markValue(root0); markValue(root1); markValue(root2);
+		work += m_stringPool.takeMarkWork();
+	}
+	if (work >= limit) return work;
 	if (remarkStage() == RemarkStage::Roots) {
-		work = remarkRoots(root0, root1, root2, limit, work, true);
+		work = remarkRoots(valueNil(), valueNil(), valueNil(), limit, work, true);
 		if (remarkStage() == RemarkStage::Roots || work >= limit) return work;
 	}
 	if (remarkStage() == RemarkStage::Trace) {
@@ -802,7 +815,6 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 			if (work < limit) work = traceRootBanks(limit, work);
 		}
 		markValue(root0); markValue(root1); markValue(root2);
-		m_stringPool.markLocalRoots();
 		work += m_stringPool.takeMarkWork();
 	}
 	while (work < limit && active()) {

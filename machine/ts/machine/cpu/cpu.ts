@@ -4362,6 +4362,9 @@ export class CPU implements MappedPageInvalidator {
 		for (let i = 0; i < this.luaFaultErrorStringIds.length; ++i)
 			if (i !== LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(this.luaFaultErrorStringIds[i]);
 		heap.markValue(this.stringIndexTable);
+	}
+
+	public markScopedRoots(heap: GcHeap): void {
 		for (let i = 0; i < this.builtinResultsScratchIndex; ++i) {
 			const slots = this.builtinResultsScratch.peek(i);
 			for (let j = 0; j < slots.length; ++j) heap.markValue(slots.get(j));
