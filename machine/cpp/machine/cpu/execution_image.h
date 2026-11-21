@@ -14,6 +14,7 @@
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/mapped_page.h"
 #include "spec/blua32/execution_domain.h"
+#include "spec/bmsx/memory_map.h"
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include <bitset>
@@ -37,6 +38,10 @@ struct Blua32RomFunctionVersion {
 
 struct Blua32RomFunctionDirectory {
 	u32 tableAddress, count, textAddress, textBytes;
+	static constexpr bool ownsAddress(ExecutionDomainId domain, u32 address) {
+		return domain == SYSTEM_EXECUTION_DOMAIN_ID
+			? address - SYSTEM_ROM_BASE < SYSTEM_ROM_SIZE : address - CART_ROM_BASE < CART_ROM_SIZE;
+	}
 	std::optional<Blua32RomFunctionVersion> find(const Memory&, ExecutionDomainId, u32 record) const;
 };
 

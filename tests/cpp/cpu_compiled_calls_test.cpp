@@ -424,6 +424,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	const u32 calleePc = machine.rom.textAddress + MAPPED_PAGE_BYTE_SIZE;
 	machine.cpu.runUntilDepth(0, 256); // Make and retire the first real callee.
 	machine.cpu.runUntilDepth(1, 100);
+	machine.cpu.prepareSystemNativeCode(); // Publish the target observed by that call.
 	auto* thread = machine.cpu.activeThread();
 	auto* caller = thread->currentFrame;
 	auto* spare = caller->next;
@@ -524,6 +525,7 @@ void wideNativeClosureCallResumesAfterItsBody() {
 	native.cpu.prepareSystemNativeCode();
 	require(test::runCpuParity(native.cpu, scalar.cpu, 1000) == RunResult::Halted,
 		"a complete guest call leaves a retained frame and sufficient stack backing");
+	native.cpu.prepareSystemNativeCode();
 	const u32 prefixPc = native.rom.textAddress + prefix * INSTRUCTION_BYTES;
 	const u32 bodyPc = native.rom.textAddress + body * INSTRUCTION_BYTES;
 	const u32 continuationPc = native.rom.textAddress + continuation * INSTRUCTION_BYTES;
@@ -571,6 +573,98 @@ void wideNativeClosureCallResumesAfterItsBody() {
 		&& native.cpu.readFrameRegister(0, 1) == valueInteger(1), "resume executes the instruction after the WIDE body");
 }
 
+void nativeCallProfileKeepsCapturesAndDropsContradictedTarget() {
+	test::Blua32TestImage image;
+	image.text.resize(4 * MAPPED_PAGE_BYTE_SIZE);
+	const auto instruction = [&](u32 word, OpCode op, int a = 0, int b = 0, int c = 0) {
+		writeInstruction(image.text, word, static_cast<u8>(op), a, b, c);
+	};
+	instruction(0, OpCode::KSMI, 0, 0, 11);
+	instruction(1, OpCode::WIDE);
+	instruction(2, OpCode::CLOSURE, 1);
+	instruction(3, OpCode::JMP, 1); // Close R0 before taking the second capture.
+	instruction(4, OpCode::KSMI, 0, 0, 27);
+	instruction(5, OpCode::WIDE);
+	instruction(6, OpCode::CLOSURE, 2);
+	instruction(7, OpCode::JMP, 1);
+	instruction(8, OpCode::WIDE);
+	instruction(9, OpCode::CLOSURE, 3);
+	instruction(10, OpCode::HALT);
+	instruction(DECODED_PAGE_WORDS, OpCode::GETUP, 0);
+	instruction(DECODED_PAGE_WORDS + 1, OpCode::RET, 0, 2);
+	instruction(2 * DECODED_PAGE_WORDS, OpCode::KSMI, 0, 0, 39);
+	instruction(2 * DECODED_PAGE_WORDS + 1, OpCode::RET, 0, 2);
+	constexpr auto callWord = 3 * DECODED_PAGE_WORDS;
+	instruction(callWord, OpCode::CALL, 4, 2, 2);
+	instruction(callWord + 1, OpCode::HALT);
+	image.functions = {{.firstWord = 0, .wordCount = 11, .maxStack = 16},
+		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 2, .numParams = 2, .maxStack = 3,
+			.staticClosure = false, .upvalues = {{true, 0}}},
+		{.firstWord = 2 * DECODED_PAGE_WORDS, .wordCount = 2, .numParams = 2, .maxStack = 3},
+		{.firstWord = callWord, .wordCount = 2, .maxStack = 16}};
+	const auto prototype = test::blua32TestFunctionAddress(RomImageDomain::System, 1);
+	image.closureRelocations = {{2, prototype}, {6, prototype},
+		{9, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
+	CpuMachine generated(image, false), scalar(image, true);
+	generated.cpu.prepareSystemNativeCode();
+	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted, "ROM constructs both actual closures");
+	const u32 pc = generated.rom.textAddress + callWord * INSTRUCTION_BYTES;
+	const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const auto* owner = generated.cpu.activeThread()->currentFrame->executionImage;
+	const auto* page = owner->nativeCodeLookup->find(pc, 0);
+	require(page && page->nativeBlocks && page->nativeBlocks->entries[word]
+		&& page->nativeBlocks->entries[word]->terminal.operands.call.strategy == NativeCallStrategy::Observe,
+		"cold generated CALL has no invented target identity");
+	const auto restart = [&](int selected) {
+		for (auto* machine : {&generated, &scalar}) {
+			machine->cpu.clearHaltUntilIrq();
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[3], pc);
+			auto& registers = machine->cpu.activeThread()->currentFrame->registers;
+			registers.set(4, registers.get(selected));
+			registers.set(5, valueInteger(90));
+			registers.set(6, valueInteger(91)); // Missing argument must nil-pad this slot.
+		}
+	};
+	restart(1);
+	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted, "training executes ordinary CALL exactly once");
+	require(page->words[word].nativeCallTarget() == prototype, "compiled execution records the installed prototype, not the closure");
+	generated.cpu.prepareSystemNativeCode();
+	require(page->nativeBlocks && page->nativeBlocks->entries[word], "trained source was republished");
+	const auto& fixed = page->nativeBlocks->entries[word]->terminal;
+	require(fixed.operands.call.strategy == NativeCallStrategy::Fixed && fixed.fixedCall.plan.prototype == prototype
+		&& fixed.fixedCall.plan.copied == 1 && fixed.fixedCall.plan.padded == 1
+		&& fixed.fixedCall.entryCells[0] && *fixed.fixedCall.entryCells[0],
+		"fixed frame layout and a live image-owned entry cell are published");
+	for (const int grant : {1, BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 1,
+		BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 1 + BASE_CYCLES[static_cast<u8>(OpCode::GETUP)]}) {
+		restart(2);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto& coldCalls = generated.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::Call)].entries;
+		const u64 before = coldCalls;
+#endif
+		require(test::runCpuParity(generated.cpu, scalar.cpu, grant) == RunResult::Yielded, "precise native CALL prefix stops on budget");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		require(coldCalls == before + static_cast<u64>(grant <= BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 1),
+			"the known prototype only takes semantic CALL when the grant cannot enter its body");
+#endif
+		requireParity(generated, scalar);
+		const auto& callee = *generated.cpu.activeThread()->currentFrame;
+		require(callee.registers.get(1) == valueNil(), "known fixed arity preserves missing-argument nil");
+		require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted
+			&& generated.cpu.readFrameRegister(0, 4) == valueInteger(27),
+			"a different closure with the same prototype keeps its own captured value");
+	}
+	restart(3);
+	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted
+		&& generated.cpu.readFrameRegister(0, 4) == valueInteger(39), "a new prototype calls the actual semantic target");
+	require(page->words[word].nativeCallTarget() == DecodedInstruction::CALL_TARGET_DISABLED,
+		"the first contradicted target disables that site's speculation");
+	generated.cpu.prepareSystemNativeCode();
+	require(page->nativeBlocks && page->nativeBlocks->entries[word]
+		&& page->nativeBlocks->entries[word]->terminal.operands.call.strategy == NativeCallStrategy::Generic,
+		"the contradicted call resumes without a recurring profile or guard");
+}
+
 void nativeReturnPublishesCallerTopAtMappedObserver() {
 	constexpr u32 continuation = 5u;
 	test::Blua32TestImage image;
@@ -606,6 +700,7 @@ void nativeReturnPublishesCallerTopAtMappedObserver() {
 			require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "a short grant executes one caller instruction");
 		require(cpu.getFrameDepth() == 2 && cpu.getFrameRegisterCount(0) == 8
 			&& cpu.readFramePc(1) == machine.rom.textAddress + MAPPED_PAGE_BYTE_SIZE, "the real call suspends a wider logical caller range");
+		cpu.prepareSystemNativeCode(); // Keep the receiving body warm after CALL's first observation.
 
 		constexpr int placed = 1;
 		const int resultCycles = BASE_CYCLES[static_cast<u8>(OpCode::RET)] + placed;
@@ -666,6 +761,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	for (u32 step = 0; step < image.functions[0].wordCount + image.functions[1].wordCount && machine.cpu.getFrameDepth() != 3; ++step)
 		machine.cpu.runUntilDepth(0, 1);
 	require(machine.cpu.getFrameDepth() == 3, "the two real CALLs reach the suspended return fixture within their instruction prefix");
+	machine.cpu.prepareSystemNativeCode(); // The observed CALLs can withdraw their caller region.
 	auto* thread = machine.cpu.activeThread();
 	auto* callee = thread->currentFrame;
 	auto* caller = callee->previous;
@@ -1384,7 +1480,9 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 4, 1, 2);
+	// Keep this a generic native CALL: MOV sets top to R4 + 1 and the
+	// open argument suffix is empty, independently of prototype feedback.
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 4, 0, 2);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	for (u32 page = 1; page <= 2; ++page) {
 		writeInstruction(image.text, page * DECODED_PAGE_WORDS, static_cast<u8>(OpCode::KSMI), 0, 0, page == 1 ? 11 : 27);
@@ -1537,6 +1635,7 @@ int main(int argc, char** argv) {
 		nativeCallRouting(6, 4, false, false, false, false, false, 2);
 		nativeCallRouting(3, 1, false, false, false, false, false, 0);
 		wideNativeClosureCallResumesAfterItsBody();
+		nativeCallProfileKeepsCapturesAndDropsContradictedTarget();
 		nativeReturnPublishesCallerTopAtMappedObserver();
 		nativeReturnRouting(6, 0, 0, false, true);
 		nativeReturnRouting(2, 4, 0, false, false);

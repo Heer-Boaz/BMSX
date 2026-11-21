@@ -145,6 +145,7 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 	size_t codePageCount = 0, instructionCount = 0;
 	bool immutableSource = true;
 	std::vector<NativeRejectedFieldProof> rejectedFieldProofs;
+	std::vector<NativeCallProfile> calls;
 	for (auto* source : pages) {
 		auto& page = source->page;
 		const auto& binding = source->binding;
@@ -168,7 +169,17 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 			u32 cursor = entry;
 			for (;;) {
 				const auto& instruction = page.words[cursor];
-				instructions[instructionCount++] = {&instruction, pagePc + cursor * INSTRUCTION_BYTES};
+				const u32 pc = pagePc + cursor * INSTRUCTION_BYTES;
+				instructions[instructionCount++] = {&instruction, pc};
+				if (immutable && instruction.op == static_cast<u8>(OpCode::CALL)
+					&& instruction.b != 0 && Blua32RomFunctionDirectory::ownsAddress(image.executionDomainId, pc)) {
+					const auto prototype = instruction.nativeCallTarget();
+					if (prototype == DecodedInstruction::CALL_TARGET_UNSEEN) calls.push_back({pc, std::nullopt});
+					else if (prototype != DecodedInstruction::CALL_TARGET_DISABLED) {
+						if (const auto plan = captureNativeFixedCall(image, prototype, decodeValueCount(instruction.b, -1)))
+							calls.push_back({pc, plan});
+					}
+				}
 				const u32 successor = cursor + instruction.width;
 				if (nativeBlockEndsBlock(instruction.op, instruction.b) || successor >= DECODED_PAGE_WORDS
 					|| !available[successor] || leaders[successor]) break;
@@ -197,6 +208,8 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 	const NativeCompilationOptions options{.observesArithmetic = true, .immutableSource = immutableSource};
 	// Capture on the CPU thread. Save-state restore does not modify job inputs.
 	auto constants = captureImageConstants(instructions.first(instructionCount), image.constPool);
+	std::ranges::sort(calls, {}, &NativeCallProfile::pc);
+	calls.erase(std::ranges::unique(calls, {}, &NativeCallProfile::pc).begin(), calls.end());
 	const auto bindingsPages = std::span(codePages).first(codePageCount);
 	const NativeCodeBindings bindings(m_memory, m_stringPool, this, bindingsPages);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -208,13 +221,13 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 		pendingJob.slot = first.slot;
 		pendingJob.invalidated = false;
 		m_nativeCompilerWorker->submit(sources, bindings, options, profile != nullptr,
-			std::move(rejectedFieldProofs), std::move(constants));
+			std::move(rejectedFieldProofs), std::move(constants), std::move(calls));
 		return;
 	}
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
 	auto blocks = NativeCompiler::compile(sources, bindings, options,
-		{.rejectedFieldProofs = rejectedFieldProofs, .imageConstants = constants});
+		{.rejectedFieldProofs = rejectedFieldProofs, .imageConstants = constants, .calls = calls});
 	if (blocks.empty()) return;
 	measurement.finish();
 	installNativeRegion(image, bindingsPages, first.slot, std::move(blocks),

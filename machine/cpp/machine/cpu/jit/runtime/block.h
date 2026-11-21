@@ -12,6 +12,7 @@
 #include "machine/cpu/jit/exit_contract.h"
 #include "machine/cpu/jit/limits.h"
 #include "machine/cpu/table_lookup.h"
+#include "spec/bmsx/cartridge.h"
 #if defined(BMSX_NATIVE_PERF_MAP)
 #include "spec/blua32/execution_domain.h"
 #endif
@@ -92,6 +93,11 @@ struct NativeTableReadPrediction {
 	TableStringPathCache path;
 };
 
+struct NativeFixedCallBinding {
+	NativeFixedCallPlan plan;
+	std::array<void* const*, CARTRIDGE_SLOT_COUNT> entryCells;
+};
+
 static_assert(sizeof(NativeTableReadPrediction) <= sizeof(NativeBlockLink));
 
 struct NativeBlockExitSite {
@@ -109,6 +115,7 @@ struct NativeBlockExitSite {
 		mutable NativeTableReadPrediction tableRead;
 		mutable NativeTableSlotBinding tableStore;
 		NativeTableConstructor* recordConstructor;
+		NativeFixedCallBinding fixedCall;
 	};
 	// Bound on CPU-side publication for CALL returns and same-frame helpers.
 	// Image-lifetime cells survive retirement of the source or target region.

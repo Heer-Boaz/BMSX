@@ -165,7 +165,8 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 	const auto& final = last.operation;
 	const bool reachesEnd = nativeOperationFlow(final) != NativeOperationFlow::LeavesNative;
 	const auto* call = std::get_if<NativeCallSite>(&final);
-	block.inlineBuiltin = reachesEnd && cpuOwned && call && static_cast<unsigned>(call->supplied) <= 2u && call->requested <= 1;
+	block.inlineBuiltin = reachesEnd && cpuOwned && call && call->strategy != NativeCallStrategy::Fixed
+		&& static_cast<unsigned>(call->supplied) <= 2u && call->requested <= 1;
 	if (std::holds_alternative<NativeComparison>(final) && skipped) {
 		block.skippedWidth = skipped->width;
 		block.sourceWords += skipped->width;

@@ -23,6 +23,8 @@ public:
 	void* dispatch;
 	void* publishSegment;
 	void* leaveSegment;
+	void* observeCall;
+	void* fixedCall;
 	void* oneHopStringRead;
 };
 const NativeBlockGate& nativeBlockGate();

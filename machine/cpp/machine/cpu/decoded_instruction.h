@@ -109,6 +109,13 @@ struct DecodedInstruction {
 	constexpr i32 tableCacheSlot() const { return payload.m_word; }
 	constexpr i32& tableCacheSlot() { return payload.m_word; }
 
+	// CALL has no immediate payload. Record one installed ROM prototype, not
+	// a heap closure. A contradicted site need not allocate or relink again.
+	static constexpr u32 CALL_TARGET_UNSEEN = 0u;
+	static constexpr u32 CALL_TARGET_DISABLED = ~0u;
+	constexpr u32 nativeCallTarget() const { return bx(); }
+	constexpr void setNativeCallTarget(u32 prototype) { setBx(prototype); }
+
 	// ADD/SUB/MUL do not encode a Bx operand. A fresh decode leaves their
 	// type pair unseen (zero confidence), independently of either tag.
 	NativeNumericTypes nativeNumericTypes() const {

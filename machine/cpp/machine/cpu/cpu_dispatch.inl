@@ -507,6 +507,14 @@ DISPATCH_LABEL(CALL) {
 	++m_diagnosticExecutionProfile.interpreterOpcodes.call;
 #endif
 	PUBLISH_SCALAR_FRONTIER();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	if constexpr (!Instrumented) {
+		if (decoded->b != 0 && decoded->nativeCallTarget() == DecodedInstruction::CALL_TARGET_UNSEEN
+			&& decodedPage->cacheable && !decodedPage->writeWatch.groups
+			&& Blua32RomFunctionDirectory::ownsAddress(FRAME.executionImage->executionDomainId, pc))
+			observeNativeCallTarget(FRAME, *decodedPage, pc);
+	}
+#endif
 	if (executeCall(FRAME, decoded->a, decodeValueCount(decoded->b, -1), decodeValueCount(decoded->c, -1))) {
 		DISPATCH_REBIND_FRAME();
 	}

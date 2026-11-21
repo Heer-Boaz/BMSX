@@ -5,6 +5,7 @@
 #include <span>
 
 #include "machine/cpu/jit/limits.h"
+#include "machine/cpu/jit/exit_contract.h"
 #include "machine/cpu/value.h"
 
 namespace bmsx {
@@ -26,10 +27,16 @@ struct NativeImageConstant {
 	Value value;
 };
 
+struct NativeCallProfile {
+	u32 pc;
+	std::optional<NativeFixedCallPlan> fixed;
+};
+
 // Frozen image and profile inputs, separate from compilation topology.
 struct NativeCompileSpecializations {
 	std::span<const NativeRejectedFieldProof> rejectedFieldProofs{}; // sorted by PC
 	std::span<const NativeImageConstant> imageConstants{}; // sorted by index
+	std::span<const NativeCallProfile> calls{}; // sorted by PC; no fixed plan means observe
 };
 
 inline std::optional<Value> nativeImageConstant(std::span<const NativeImageConstant> constants, u32 index) {

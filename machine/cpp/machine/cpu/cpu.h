@@ -446,6 +446,9 @@ private:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	friend class NativeBlockGate;
 	static void* tryCallNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
+	static void* tryCallNativeFixedFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
+	std::optional<NativeFixedCallPlan> captureNativeFixedCall(Blua32ExecutionImage&, u32 prototype, int supplied) const;
+	void observeNativeCallTarget(CallFrame&, DecodedInstructionPage&, u32 pc);
 	static void* tryReturnNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
 	static u32 readNativeLength(GcHeap*, const StringPool*, Value* operand) noexcept;
 	static int placeNativeVarargs(NativeBlockRunState*, int first, int requested) noexcept;

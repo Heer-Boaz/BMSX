@@ -73,6 +73,13 @@ void NativeLowering::emitLeave(NativeBlockExitSite& exit, Charge charge) {
 			emitTop(exit.registerTop);
 			sljit_emit_op2(m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0,
 				NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
+			if (exit.exit == NativeBlockExit::Call) {
+				switch (exit.operands.call.strategy) {
+				case NativeCallStrategy::Observe: target = gate.observeCall; break;
+				case NativeCallStrategy::Fixed: target = gate.fixedCall; break;
+				case NativeCallStrategy::Generic: break;
+				}
+			}
 		} else if (exit.cycles != 0 || exit.registerTop != 0) {
 			target = gate.publishSegment;
 		}

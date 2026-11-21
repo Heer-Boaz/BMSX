@@ -173,6 +173,10 @@ struct OperationPlan {
 	}
 	void operator()(const NativeCallSite& op) const {
 		out << " supplied=" << op.supplied << " results=" << op.requested;
+		if (op.fixed)
+			out << " fixed-prototype=" << op.fixed->prototype << " entry=" << op.fixed->entryPc
+				<< " capacity=" << op.fixed->capacity << " copied=" << op.fixed->copied << " padded=" << op.fixed->padded;
+		else if (op.strategy == NativeCallStrategy::Observe) out << " observe-callee";
 	}
 	void operator()(const NativeVararg& op) const {
 		if (op.requested == 0) out << " no-results";

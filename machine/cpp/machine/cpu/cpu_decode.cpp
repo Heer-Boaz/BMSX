@@ -146,6 +146,7 @@ void CPU::decodeInstructionWords(
 			case OpCode::ADD:
 			case OpCode::SUB:
 			case OpCode::MUL:
+			case OpCode::CALL:
 				break;
 			case OpCode::KSMI:
 				decoded.setSbx(decodedSbx);

@@ -26,7 +26,8 @@ NativeCompilerWorker::~NativeCompilerWorker() {
 
 void NativeCompilerWorker::submit(std::span<const NativeBlockSource> sources,
 	const NativeCodeBindings& bindings, NativeCompilationOptions options, bool profile,
-	std::vector<NativeRejectedFieldProof> rejectedFieldProofs, std::vector<NativeImageConstant> imageConstants) {
+	std::vector<NativeRejectedFieldProof> rejectedFieldProofs, std::vector<NativeImageConstant> imageConstants,
+	std::vector<NativeCallProfile> calls) {
 	assert(idle());
 	m_sources.clear();
 	size_t instructionCount = 0, decodedCount = 0;
@@ -54,6 +55,7 @@ void NativeCompilerWorker::submit(std::span<const NativeBlockSource> sources,
 	}
 	m_rejectedFieldProofs = std::move(rejectedFieldProofs);
 	m_imageConstants = std::move(imageConstants);
+	m_calls = std::move(calls);
 	m_sourcePages.assign(bindings.sourcePages.begin(), bindings.sourcePages.end());
 	m_bindings = bindings;
 	m_bindings.sourcePages = m_sourcePages;
@@ -76,7 +78,7 @@ void NativeCompilerWorker::run() {
 		const auto start = m_profile ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 		try {
 			m_blocks = NativeCompiler::compile(m_sources, m_bindings, m_options,
-				{.rejectedFieldProofs = m_rejectedFieldProofs, .imageConstants = m_imageConstants});
+				{.rejectedFieldProofs = m_rejectedFieldProofs, .imageConstants = m_imageConstants, .calls = m_calls});
 		} catch (...) {
 			// The worker cannot unwind into the CPU. Deliver the original error
 			// when the owner consumes this request; do not silently fall back.

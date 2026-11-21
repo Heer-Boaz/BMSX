@@ -88,6 +88,8 @@ std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 		if (const auto* allocation = std::get_if<NativeTableAllocation>(&plan.instructions.back().operation);
 			allocation && allocation->record)
 			block->terminal.recordConstructor = new NativeTableConstructor(ir.recordPlans()[*allocation->record]);
+		if (const auto* call = std::get_if<NativeCallSite>(&plan.instructions.back().operation); call && call->fixed)
+			block->terminal.fixedCall = {*call->fixed, {}};
 		entries.push_back(std::move(block));
 	}
 	const auto replays = ir.admissionReplays();

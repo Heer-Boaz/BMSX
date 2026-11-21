@@ -43,6 +43,7 @@ struct NativeCpuRunState {
 	u32 frameBank = 0;
 	std::exception_ptr error;
 	std::optional<Replay> replay{};
+	bool fixedCallMismatch = false;
 };
 
 static_assert(std::is_standard_layout_v<NativeCpuRunState>);

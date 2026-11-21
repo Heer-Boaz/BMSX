@@ -137,6 +137,10 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, std::span<const Nativ
 			for (u32 bank = firstBank; bank < endBank; ++bank)
 				exit.continuationCells[bank] = lookup->entrySlot(exit.nextPc, bank);
 		}
+		if (exit.exit == NativeBlockExit::Call && exit.operands.call.strategy == NativeCallStrategy::Fixed) {
+			for (u32 bank = firstBank; bank < endBank; ++bank)
+				exit.fixedCall.entryCells[bank] = lookup->entrySlot(exit.fixedCall.plan.entryPc, bank);
+		}
 		for (auto& side : block->sideExits) {
 			if (side.exit == NativeBlockExit::Call || nativeBlockExitResumesFrame(side.exit)) {
 				for (u32 bank = firstBank; bank < endBank; ++bank)
