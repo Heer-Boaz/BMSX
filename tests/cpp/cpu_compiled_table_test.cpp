@@ -854,6 +854,112 @@ void warmInheritedFieldReadsKeepTheirFrame() {
 #endif
 }
 
+void warmInheritedFieldReadsProveCollisionChainAbsence() {
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETFIELD), 3, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 4, 3, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.constants = {std::string("inherited collision field")};
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 5}};
+
+	CpuMachine native(image), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		const auto key = *cpu.stringPool().find("inherited collision field");
+		const auto index = cpu.stringPool().intern("__index");
+		auto receiver = cpu.createTable(2, 4), meta = cpu.createTable(0, 1);
+		auto holder = cpu.createTable(0, 1), newHolder = cpu.createTable(0, 1);
+		holder.setStringKey(key, valueInteger(41));
+		newHolder.setStringKey(key, valueInteger(67));
+		meta.setStringKey(index, valueTable(holder.address()));
+		receiver.setMetatableAddress(meta.address());
+		const auto home = receiver.beginStringProbe(key).node;
+		std::array<StringId, 2> colliders;
+		size_t found = 0;
+		for (unsigned n = 0; n < 64 && found < colliders.size(); ++n) {
+			const auto candidate = cpu.stringPool().intern("receiver collider " + std::to_string(n));
+			if (receiver.beginStringProbe(candidate).node == home) colliders[found++] = candidate;
+		}
+		require(found == colliders.size(), "distinct interned keys have the same current receiver home as the field");
+		require(receiver.setStringKey(colliders[0], valueInteger(13)) == home
+			&& receiver.setStringKey(colliders[1], valueInteger(17)) != home && receiver.hashSlots() == 4,
+			"ordinary insertions place an unrelated key at home and link another collision");
+		auto probe = receiver.beginStringProbe(key);
+		require(receiver.advanceStringProbe(key, probe, 1) == 1 && probe.node >= 0 && probe.node != home,
+			"the actual receiver home contains a nonterminal collision link");
+		require(receiver.advanceStringProbe(key, probe, 4) == 1 && probe.node < 0 && isNil(probe.value),
+			"the requested field is absent after the actual chain is searched");
+		auto& frame = *cpu.activeThread()->currentFrame;
+		frame.registers.set(0, valueTable(receiver.address()));
+		frame.registers.set(1, valueTable(newHolder.address()));
+		frame.setTop(2);
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+#endif
+	const u32 pc = native.rom.textAddress;
+	const int field = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)];
+	const int inherited = field + TABLE_INDEX_VISIT_CYCLES;
+	const auto read = [&](Value expected, int cycles) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+			cpu.activeThread()->currentFrame->registers.set(4, valueInteger(73));
+		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, cycles) == RunResult::Yielded
+			&& native.cpu.instructionBudgetRemaining == 0, "only the field and any actual inherited visit consume the grant");
+		require(native.cpu.readCurrentInstructionPc() == pc && native.cpu.lastPc == pc + INSTRUCTION_BYTES
+			&& native.cpu.readFramePc(0) == pc + 2 * INSTRUCTION_BYTES
+			&& native.cpu.readFrameRegister(0, 3) == expected && native.cpu.readFrameRegister(0, 4) == valueInteger(73),
+			"the WIDE read returns the live value and leaves the following MOV unexecuted");
+		requireParity(native, scalar);
+	};
+	read(valueInteger(41), inherited);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& readExits = native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::ReadField)];
+	const u64 trained = readExits.entries;
+	require(trained > 0, "the first execution trained the live inherited path through its semantic exit");
+#endif
+	read(valueInteger(41), inherited);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(readExits.entries == trained, "the trained inherited read proves absence in the actual receiver collision chain");
+#endif
+
+	for (const Value own : {valueInteger(97), valueNil()}) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			const auto key = *cpu.stringPool().find("inherited collision field");
+			const auto registers = cpu.activeThread()->currentFrame->registers;
+			auto receiver = asTable(registers.get(0), cpu.gcHeap());
+			const auto storage = receiver.storageAddress();
+			auto liveProbe = receiver.beginStringProbe(key);
+			const auto priorVisits = receiver.advanceStringProbe(key, liveProbe, liveProbe.remaining);
+			const auto node = receiver.setStringKey(key, own);
+			if (!isNil(own)) require(node >= 0 && node != receiver.beginStringProbe(key).node,
+				"the inserted shadow occupies a chained slot rather than home");
+			else {
+				auto probe = receiver.beginStringProbe(key);
+				require(priorVisits > 1 && liveProbe.value == valueInteger(97)
+					&& receiver.advanceStringProbe(key, probe, probe.remaining) == priorVisits && isNil(probe.value),
+					"deletion leaves the matched non-home key with a nil value in the chain");
+				TableRecord(cpu.gcHeap(), receiver.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), registers.get(1));
+			}
+			require(receiver.storageAddress() == storage && receiver.hashSlots() == 4, "shadow updates keep the same receiver storage");
+		}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const u64 before = readExits.entries;
+#endif
+		read(isNil(own) ? valueInteger(67) : own, isNil(own) ? inherited : field);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		if (isNil(own)) require(readExits.entries == before, "a chained tombstone restores the warm path and sees the live prototype");
+#endif
+	}
+}
+
 void resolvedFieldKeepsPendingFixedCallsUntilAnObserver() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::Blua32TestImage image;
@@ -1136,6 +1242,7 @@ int main() {
 		coldRepeatedFieldsRecompileTheirSource();
 
 		warmInheritedFieldReadsKeepTheirFrame();
+		warmInheritedFieldReadsProveCollisionChainAbsence();
 		resolvedFieldKeepsPendingFixedCallsUntilAnObserver();
 
 		warmTableStoresCompleteTheirEffects();

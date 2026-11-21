@@ -45,9 +45,9 @@ void readTableSlot(sljit_compiler* c, sljit_s32 result, bool word) {
 	sljit_emit_op1(c, word ? SLJIT_MOV32 : SLJIT_MOV_U8, result, 0, SLJIT_MEM1(SLJIT_R2), 0);
 }
 
-// After the own prediction failed, only the actual home can prove absence.
-// A different key with a remaining link needs the full chain search.
-std::array<sljit_jump*, 2> emitReceiverAbsence(sljit_compiler* c) {
+// An own prediction miss is not an absence proof. Follow the live chain,
+// with the same signed cursor and visit bound as HashBody::findString.
+sljit_jump* emitReceiverAbsence(sljit_compiler* c) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	auto* empty = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0);
 	sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::keyWord,
@@ -56,30 +56,31 @@ std::array<sljit_jump*, 2> emitReceiverAbsence(sljit_compiler* c) {
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
 	// The owner's signed chain cursor does not enter a negative home.
 	auto* negativeHome = sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
+	auto* node = sljit_emit_label(c);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), array);
 	readTableSlot(c, SLJIT_R2, false);
 	auto* otherTag = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, stringTag);
 	readTableSlot(c, SLJIT_R2, true);
 	auto* otherKey = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 		SLJIT_MEM1(SLJIT_SP), NativeTableScratch::keyWord);
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R3, 0);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	readTableSlot(c, SLJIT_R2, false);
 	auto* shadowed = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, nilTag);
-	auto* nilHome = sljit_emit_jump(c, SLJIT_JUMP);
+	auto* nilMatch = sljit_emit_jump(c, SLJIT_JUMP);
 
 	auto* different = sljit_emit_label(c);
 	sljit_set_label(otherTag, different);
 	sljit_set_label(otherKey, different);
-	// TableRecord searches at most hash slots, regardless of the link word.
-	auto* onlySlot = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 1);
-	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R3, 0);
-	readTableSlot(c, SLJIT_R2, true);
-	auto* linked = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
+	sljit_emit_op2(c, SLJIT_SUB32 | SLJIT_SET_Z, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
+	auto* last = sljit_emit_jump(c, SLJIT_EQUAL);
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), hash, SLJIT_IMM, 1);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
+	readTableSlot(c, SLJIT_R1, true);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0), node);
 
 	auto* absent = sljit_emit_label(c);
-	for (auto* edge : {empty, negativeHome, nilHome, onlySlot}) sljit_set_label(edge, absent);
-	return {shadowed, linked};
+	for (auto* edge : {empty, negativeHome, nilMatch, last}) sljit_set_label(edge, absent);
+	return shadowed;
 }
 
 // R0 is the address of an owned table descriptor. Probe the hinted slot
@@ -117,7 +118,7 @@ sljit_label* emitOneHopStringRead(sljit_compiler* c) {
 	auto* entry = sljit_emit_label(c);
 	sljit_emit_op_dst(c, SLJIT_FAST_ENTER, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::path, SLJIT_R1, 0);
-	const auto shadows = emitReceiverAbsence(c);
+	auto* shadowed = emitReceiverAbsence(c);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), meta);
 	auto* noMeta = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	const auto indexMisses = emitPredictedString(c, offsetof(TableStringPathCache, indexSlots),
@@ -129,7 +130,7 @@ sljit_label* emitOneHopStringRead(sljit_compiler* c) {
 
 	auto* decline = sljit_emit_label(c);
 	sljit_set_label(noMeta, decline);
-	for (auto* edge : shadows) sljit_set_label(edge, decline);
+	sljit_set_label(shadowed, decline);
 	for (auto* edge : indexMisses) sljit_set_label(edge, decline);
 	for (auto* edge : holderMisses) sljit_set_label(edge, decline);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_IMM, nilTag);
