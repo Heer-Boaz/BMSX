@@ -11,13 +11,13 @@ import type { JavaScriptRegisterCache } from './compiled_block_registers';
 const viewMethods = ['Uint32', 'Uint8', 'Uint16', 'Uint32', 'Uint32', 'Float64'] as const;
 const widths = [4, 1, 2, 4, 4, 8] as const;
 
-/** The entire counted span must be plain, unwatched RAM before any write. */
+/** The entire counted span must be plain, unwatched RAM disjoint from the active backing. */
 export function emitWordStores(page: DecodedInstructionPage, word: number, address: string, exit: string,
 	numericFault: string, registers: JavaScriptRegisterCache): string {
 	const count = page.c[word], source = page.a[word];
 	if (count === 0) return `{const a=${address}; if((a&3)!==0) ${exit}}`;
 	return `{const a=${address},o=(a-${RAM_BASE})>>>0;
-if((a&3)!==0||o<${IO_SLOT_COUNT * IO_WORD_SIZE}||o+${count * 4}>h.memory.ramBusEnd()-${RAM_BASE}) ${exit}
+if((a&3)!==0||o<${IO_SLOT_COUNT * IO_WORD_SIZE}||o+${count * 4}>h.memory.ramBusEnd()-${RAM_BASE}||F.thread.overlapsRam(o,${count * 4})) ${exit}
 const end=(o+${count * 4 - 4})>>>${MAPPED_PAGE_BYTE_SHIFT};
 for(let p=o>>>${MAPPED_PAGE_BYTE_SHIFT};p<=end;++p) if(g[p]!==0) ${exit}
 ${registers.publishRange(source, source + count)}
@@ -39,6 +39,8 @@ export function emitMemoryAccess(page: DecodedInstructionPage, word: number, add
 	const endian = width === 1 ? '' : ',true';
 	const alignment = MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind];
 	if (load) {
+		// A load can observe unpublished Value writes or the deferred PC/top.
+		const observer = registers.hasPendingWrites() ? 'F.thread' : 'F';
 		const read = `v=${kind === MemoryAccessKind.F64LE ? 'fr(' : ''}d.get${viewMethods[kind]}(o${endian})${kind === MemoryAccessKind.F64LE ? ')' : ''};`;
 		const slot0 = memory.cartridgeController.romStorage(0) === null ? 'v=0;' : emitRomStorageRead('c0', read, width, exit);
 		const slot1 = memory.cartridgeController.romStorage(1) === null ? 'v=0;' : emitRomStorageRead('c1', read, width, exit);
@@ -47,6 +49,7 @@ export function emitMemoryAccess(page: DecodedInstructionPage, word: number, add
 		return `{const a=${address}; let o=(a-${RAM_BASE})>>>0,v;
 ${alignment === 0 ? '' : `if((a&${alignment})!==0) ${exit}`}
 if(o>=${IO_SLOT_COUNT * IO_WORD_SIZE}&&o+${width}<=h.memory.ramBusEnd()-${RAM_BASE}){
+if(${observer}.overlapsRam(o,${width})) ${exit}
 const d=m; ${read}}
 else if(a<=${SYSTEM_ROM_SIZE - width}){o=a; ${emitRomStorageRead('s', read, width, exit)}}
 else {o=(a-${CART_ROM_BASE})>>>0; if(o>${CART_ROM_SIZE - width}) ${exit}
@@ -55,7 +58,7 @@ if(c.selectedSlot()===0){${slot0}}else{${slot1}}}${result}}`;
 	const watches = `||g[o>>>${MAPPED_PAGE_BYTE_SHIFT}]!==0`
 		+ (width === 8 ? `||g[(o+4)>>>${MAPPED_PAGE_BYTE_SHIFT}]!==0` : '');
 	const guard = `{const a=${address}; const o=(a-${RAM_BASE})>>>0;
-if(${alignment === 0 ? '' : `(a&${alignment})!==0||`}o<${IO_SLOT_COUNT * IO_WORD_SIZE}||o+${width}>h.memory.ramBusEnd()-${RAM_BASE}${watches}) ${exit}`;
+if(${alignment === 0 ? '' : `(a&${alignment})!==0||`}o<${IO_SLOT_COUNT * IO_WORD_SIZE}||o+${width}>h.memory.ramBusEnd()-${RAM_BASE}||F.thread.overlapsRam(o,${width})${watches}) ${exit}`;
 	const tag = registers.tagOperand(a), value = registers.wordOperand(a);
 	let conversion: string;
 	if (kind === MemoryAccessKind.F32LE) conversion = `const mt=${tag},mw=${value};if(mt!==${ValueTag.Integer}&&mt!==${ValueTag.Float}) ${numericFault}const v=mt===${ValueTag.Integer}?fb(mw|0):mw;`;

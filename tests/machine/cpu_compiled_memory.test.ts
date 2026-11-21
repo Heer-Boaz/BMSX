@@ -5,6 +5,8 @@ import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readLE32 } from '../../machine/ts/common/endian';
 import { COMPILED_BLOCK_THRESHOLD, CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { valueBool, valueNil, valueInteger, valueFloat, valueFloatBits, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
@@ -56,6 +58,64 @@ test('compiled memory exits retain the computed raw guest address', () => {
 		}
 	}
 });
+
+for (const footprint of ['load-value', 'load-pc', 'store-value', 'store-pc', 'store-span'] as const) {
+	test(`compiled public RAM transfer observes a rebound frame (${footprint})`, () => {
+		const load = footprint === 'load-value' || footprint === 'load-pc';
+		const span = footprint === 'store-span', redirected = footprint === 'store-pc';
+		const op = load ? OpCode.LOAD_MEM_D : span ? OpCode.STORE_MEM_WORDS_D : OpCode.STORE_MEM_D;
+		const prefix = footprint === 'load-pc' ? OpCode.LOADNIL : OpCode.K1;
+		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+		writeInstruction(text, 0, prefix, span ? 0 : 4, prefix === OpCode.LOADNIL ? 1 : 0, 0);
+		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 2, op, span ? 2 : 0, 1, span ? 2 : MemoryAccessKind.U32LE, 1);
+		writeInstruction(text, 3, OpCode.MOV, 6, span ? 0 : 4, 0);
+		writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
+		writeInstruction(text, 5, OpCode.HALT, 0, 0, 0);
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 8 }] }, RAM_CODE_FIXTURE_BYTES);
+		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+		const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+		const start = image.image.functions[0].codeAddress, sequential = start + 3 * INSTRUCTION_BYTES;
+		const branch = start + 5 * INSTRUCTION_BYTES;
+		const entry = (start & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+		const beforeMov = BASE_CYCLES[prefix] + BASE_CYCLES[op] + (span ? 2 : prefix === OpCode.LOADNIL ? 1 : 0);
+		const loopCycles = beforeMov + BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP];
+		const publicBacking = DYNAMIC_RAM_BASE + 0x1000;
+		for (const cpu of [js, ref]) {
+			const frame = cpu.rootThread.frameAtDepth(0);
+			frame.registers.setInteger(0, 29);
+			frame.registers.setInteger(1, publicBacking - 0x104);
+			frame.registers.setInteger(2, 13);
+			frame.registers.setInteger(3, 29);
+			assert.equal(cpu.runUntilDepth(0, (COMPILED_BLOCK_THRESHOLD + 2) * loopCycles), RunResult.Yielded);
+			if (cpu === js) assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry], 'the prefix and access have a generated entry');
+			const thread = frame.thread, memory = cpu.memory, offset = publicBacking - RAM_BASE;
+			// Rebind the Thread's still-linear physical backing, not the public bus limit.
+			const bytes = thread.backingByteLength(), ram = memory.ramData();
+			assert.ok(publicBacking + bytes <= memory.ramBusEnd());
+			ram.copyWithin(offset, thread.stackOffset(), thread.stackOffset() + bytes);
+			memory.writeRamRecordWord(thread.address + ThreadField.StackBlock, publicBacking);
+			thread.bindStack();
+			assert.equal(thread.stackRequiresScalar(), false, 'unwatched linear backing is admissible');
+			const target = footprint === 'load-pc' || redirected ? RAM_BASE + frame.controlOffset + FrameField.Pc
+				: span ? publicBacking - 4 : RAM_BASE + frame.registers.ramOffset() + 4 * 4;
+			frame.registers.setInteger(0, redirected ? branch : 29);
+			frame.registers.setInteger(1, target - 4);
+			frame.registers.setInteger(4, 17);
+			frame.registers.setInteger(6, 99);
+			frame.top = 0;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
+		}
+		const frame = js.rootThread.frameAtDepth(0);
+		assert.equal(runCpuParity(js, ref, loopCycles), redirected ? RunResult.Halted : RunResult.Yielded);
+		assert.equal(frame.pc, redirected ? branch + INSTRUCTION_BYTES : start);
+		if (load) assert.equal(frame.registers.get(0), valueInteger(footprint === 'load-pc' ? sequential : 1), 'the load sees the published frame prefix');
+		else if (redirected) assert.equal(frame.registers.get(6), valueInteger(99), 'the written PC bypasses the original MOV');
+		else assert.equal(frame.registers.get(6), valueInteger(29), 'the next instruction observes the physical write rather than a cached value');
+		assert.equal(Buffer.compare(js.memory.ramData(), ref.memory.ramData()), 0, 'all physical RAM agrees');
+		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+	});
+}
 
 test('cached values reach field, memory and fault owners without stale tags or noncanonical numeric bits', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);

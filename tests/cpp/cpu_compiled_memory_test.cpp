@@ -4,6 +4,7 @@
 #include "machine/cpu/jit/runtime/block.h"
 #include "support/native_region_fixture.h"
 #include "machine/cpu/table.h"
+#include "machine/cpu/thread_record.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
@@ -233,6 +234,80 @@ void generatedMemoryBoundaries() {
 		}
 	}
 
+}
+
+void publicRamFootprintsOnReboundFrames() {
+	enum class Footprint { LoadValue, LoadPc, StoreValue, StorePc, StoreSpan };
+	const auto charge = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
+	for (const auto footprint : {Footprint::LoadValue, Footprint::LoadPc, Footprint::StoreValue, Footprint::StorePc, Footprint::StoreSpan}) {
+		const bool load = footprint == Footprint::LoadValue || footprint == Footprint::LoadPc;
+		const bool span = footprint == Footprint::StoreSpan, redirected = footprint == Footprint::StorePc;
+		const OpCode op = load ? OpCode::LOAD_MEM_D : span ? OpCode::STORE_MEM_WORDS_D : OpCode::STORE_MEM_D;
+		const OpCode prefix = footprint == Footprint::LoadPc ? OpCode::LOADNIL : OpCode::K1;
+		test::Blua32TestImage image;
+		image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+		writeInstruction(image.text, 0, static_cast<u8>(prefix), span ? 0 : 4, prefix == OpCode::LOADNIL ? 1 : 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(op), span ? 2 : 0, 1,
+			span ? 2 : static_cast<u8>(MemoryAccessKind::U32LE), 1);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::MOV), 6, span ? 0 : 4, 0);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8}};
+		CpuMachine native(image), scalar(image, true);
+		const u32 start = native.rom.textAddress, sequential = start + 3 * INSTRUCTION_BYTES;
+		const u32 branch = start + 5 * INSTRUCTION_BYTES;
+		const u32 entry = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		const int loopCycles = charge(prefix) + charge(op) + (span ? 2 : prefix == OpCode::LOADNIL ? 1 : 0)
+			+ charge(OpCode::MOV) + charge(OpCode::JMP);
+		constexpr u32 publicBacking = DYNAMIC_RAM_BASE + 0x1000u;
+		for (auto* machine : {&native, &scalar}) {
+			auto& thread = *machine->cpu.activeThread();
+			auto& frame = *thread.frameAtDepth(0);
+			frame.registers.set(0, valueInteger(29));
+			frame.registers.set(1, valueInteger(publicBacking - 0x104u));
+			frame.registers.set(2, valueInteger(13));
+			frame.registers.set(3, valueInteger(29));
+			require(machine->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * (NATIVE_BLOCK_COMPILATION_THRESHOLD + 2) * loopCycles) == RunResult::Yielded,
+				"ordinary transfers warm the loop before rebinding the Thread");
+			if (machine == &native) test::waitForNativeEntry(native.cpu, *frame.decodedPage, entry);
+			// Rebind the Thread's still-linear physical backing, not the public bus limit.
+			const u32 bytes = thread.backingByteLength();
+			auto& memory = machine->memory;
+			require(publicBacking + bytes <= memory.ramBusEnd(), "the rebound backing occupies public RAM");
+			std::memcpy(memory.ramData() + (publicBacking - RAM_BASE), memory.ramData() + thread.stackOffset(), bytes);
+			memory.writeRamRecordWord(thread.address + static_cast<u32>(ThreadField::StackBlock), publicBacking);
+			thread.bindStack();
+			require(!thread.stackRequiresScalar(), "unwatched linear backing is admissible");
+			const u32 target = footprint == Footprint::LoadPc || redirected ? RAM_BASE + frame.controlOffset + static_cast<u32>(FrameField::Pc)
+				: span ? publicBacking - 4u : RAM_BASE + frame.registers.wordAddress() + 4u * sizeof(u32);
+			frame.registers.set(0, valueInteger(redirected ? branch : 29u));
+			frame.registers.set(1, valueInteger(target - 4u));
+			frame.registers.set(4, valueInteger(17));
+			frame.registers.set(6, valueInteger(99));
+			frame.setTop(0);
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+		}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto kind = load ? NativeBlockExit::ReadMemory : span ? NativeBlockExit::WriteWords : NativeBlockExit::WriteMemory;
+		const auto& exits = native.cpu.nativeGateProfile().exits[static_cast<size_t>(kind)].entries;
+		const auto before = exits;
+#endif
+		require(test::runCpuParity(native.cpu, scalar.cpu, loopCycles) == (redirected ? RunResult::Halted : RunResult::Yielded),
+			"the same grant reaches the physical continuation");
+		const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
+		require(frame.readControl(FrameField::Pc) == (redirected ? branch + INSTRUCTION_BYTES : start),
+			"the advanced PC comes from the physical continuation");
+		if (load) require(frame.registers.get(0) == valueInteger(footprint == Footprint::LoadPc ? sequential : 1u),
+			"the public load sees the published frame prefix");
+		else if (redirected) require(frame.registers.get(6) == valueInteger(99), "the written PC bypasses the original MOV");
+		else require(frame.registers.get(6) == valueInteger(29), "the next instruction observes the physical write rather than a cached value");
+		require(std::memcmp(native.memory.ramData(), scalar.memory.ramData(), native.memory.ramByteCount()) == 0,
+			"all physical RAM agrees after the transfer");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		require(exits == before + 1, "the admitted native prefix reaches its matching semantic transfer");
+#endif
+	}
 }
 
 void coldExitsPreserveAddressOperands() {
@@ -702,6 +777,7 @@ int main() {
 		ramScalarDatapathsAndGuards();
 		coldExitsPreserveAddressOperands();
 		generatedMemoryBoundaries();
+		publicRamFootprintsOnReboundFrames();
 		generatedBusOrdering();
 		resumedStoreRetainsDecodedOperation();
 		externalTakeoverFlushesOnlyTheUnacceptedStore();

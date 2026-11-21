@@ -1,5 +1,6 @@
 #include "machine/cpu/jit/sljit/lowering.h"
 
+#include <algorithm>
 #include <bit>
 #include "machine/cpu/gc_object.h"
 #include "machine/memory/mapped_page.h"
@@ -162,6 +163,13 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 		reinterpret_cast<sljit_sw>(m_bindings.ramBusEnd), SLJIT_IMM, RAM_BASE + width);
 	auto* ramMiss = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_R2, 0);
 	if (!load) fault(ramMiss, slow, m_cache.state());
+	// The public mapping can admit a rebound linear stack. A load can
+	// observe deferred PC/top or unpublished Value lanes; a write can
+	// invalidate even clean bindings or change the continuation.
+	if (!load || std::ranges::any_of(m_cache.state(),
+		[](const auto& binding) { return binding.wordDirty || binding.tagDirty; }))
+		emitGuardOutsideStack(SLJIT_R1, width, slow);
+	else fault(NativeBlockAbi::emitFrameControlOverlap(m_compiler, SLJIT_R1, width, SLJIT_R2), slow, m_cache.state());
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R1, 0);
 	if (words) {
 		// A watch anywhere in the sequence hands the untouched instruction to the bus.
