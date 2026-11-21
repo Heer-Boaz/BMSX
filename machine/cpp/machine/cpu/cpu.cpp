@@ -1860,7 +1860,7 @@ dispatch_decode:
 #define SKIP_NEXT_INSTRUCTION() do { \
 	skipNextInstruction(FRAME); \
 } while (0)
-#define TABLE_CACHE_SLOT() (decoded->tableCacheSlot)
+#define TABLE_CACHE_SLOT() (decoded->tableCacheSlot())
 #define DISPATCH_LABEL(name) case static_cast<uint8_t>(OpCode::name):
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 #define DISPATCH_NEXT() do { \

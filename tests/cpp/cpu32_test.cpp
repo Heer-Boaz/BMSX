@@ -538,9 +538,9 @@ void polymorphicForwardJoin() {
 		d.baseCycles = BASE_CYCLES[d.op];
 		instructions[i] = {&d, 0x3000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
 	}
-	decoded[1].bx = decoded[3].bx = instructions[4].pc;
+	decoded[1].setBx(instructions[4].pc); decoded[3].setBx(instructions[4].pc);
 	decoded[4].a = 1;
-	decoded[5].bx = 0x4000u;
+	decoded[5].setBx(0x4000u);
 	const auto code = std::span(instructions);
 	const std::array sources{NativeBlockSource{code.first(2)}, NativeBlockSource{code.subspan(2, 2)},
 		NativeBlockSource{code.last(2)}};

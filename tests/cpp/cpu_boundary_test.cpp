@@ -135,7 +135,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		DecodedInstruction field;
 		field.op = static_cast<u8>(store ? OpCode::SETFIELD : OpCode::GETFIELD);
 		field.a = 0; field.b = 1; field.c = store ? -1 : 1;
-		field.width = 2; field.baseCycles = BASE_CYCLES[field.op]; field.tableCacheSlot = slot;
+		field.width = 2; field.baseCycles = BASE_CYCLES[field.op]; field.tableCacheSlot() = slot;
 		const std::array source{NativeBlockInstruction{&field, 0x1000u}};
 		auto block = test::compileNative(source, bytes, machine.memory, machine.cpu.stringPool());
 		ValueSlots registers(2);

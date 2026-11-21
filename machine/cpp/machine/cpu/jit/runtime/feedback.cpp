@@ -14,7 +14,7 @@ void CPU::observeNativeArithmeticReplay(DecodedInstructionPage& page, u32 word,
 	auto& decoded = page.words[word];
 	decoded.observeNativeNumericTypes(left, right);
 	const auto observed = decoded.nativeNumericTypes();
-	if (observed.stable && observed.left == assumption.left && observed.right == assumption.right) return;
+	if (observed.stable() && observed.left == assumption.left && observed.right == assumption.right) return;
 
 	retireNativeInstructionUsers(page, word);
 }

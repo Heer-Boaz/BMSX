@@ -42,8 +42,8 @@ void multipleRegisterDefinitionsSurviveCallAndExit() {
 		auto& instruction = decoded[i];
 		instruction.op = static_cast<u8>(ops[i]); instruction.width = 1; instruction.baseCycles = BASE_CYCLES[instruction.op];
 		instruction.a = operands[i][0]; instruction.b = operands[i][1]; instruction.c = operands[i][2];
-		if (ops[i] == OpCode::KSMI) instruction.sbx = 5;
-		if (ops[i] == OpCode::JMP) instruction.bx = 0x12345678;
+		if (ops[i] == OpCode::KSMI) instruction.setSbx(5);
+		if (ops[i] == OpCode::JMP) instruction.setBx(0x12345678);
 		source[i] = {&instruction, 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
 	}
 	size_t bytes = 0;
@@ -68,10 +68,10 @@ void independentEntriesBindTheirOwnValueBanks() {
 		decoded[i].width = decoded[i].baseCycles = 1;
 		source[i] = {&decoded[i], 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
 	}
-	decoded[0].a = 1; decoded[0].bx = 0;
+	decoded[0].a = 1; decoded[0].setBx(0);
 	decoded[1].a = 2; decoded[1].b = 0; decoded[1].c = -2;
 	decoded[2].a = 3; decoded[2].b = 2; decoded[2].c = 1;
-	decoded[3].bx = 0x1800u;
+	decoded[3].setBx(0x1800u);
 	const std::array constantsA{valueFloat(3.5), valueInteger(1)};
 	const auto constantsABank = test::valueBank(constantsA);
 	const std::array constantsB{valueInteger(10), valueInteger(2)};
@@ -111,7 +111,7 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 	decoded[2].a = 4; decoded[2].b = 8;
 	decoded[3].a = 4; decoded[3].b = 1; decoded[3].c = static_cast<i16>(MemoryAccessKind::U32LE);
 	decoded[4].a = 5; decoded[4].b = 0;
-	decoded[5].bx = 0x1800u;
+	decoded[5].setBx(0x1800u);
 	const std::span instructions(source);
 	const std::array plans{NativeBlockSource{instructions}};
 	constexpr u32 target = DYNAMIC_RAM_BASE + 0x84000u;
@@ -147,7 +147,7 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 		for (size_t entry = 0; entry < blocks.size(); ++entry) {
 			std::array<DecodedInstruction, 2> prefix{};
 			prefix[0].op = static_cast<u8>(OpCode::MOV); prefix[0].a = 8; prefix[0].b = 2;
-			prefix[1].op = static_cast<u8>(OpCode::JMP); prefix[1].bx = blocks[entry]->firstPc;
+			prefix[1].op = static_cast<u8>(OpCode::JMP); prefix[1].setBx(blocks[entry]->firstPc);
 			for (auto& op : prefix) { op.width = 1; op.baseCycles = BASE_CYCLES[op.op]; }
 			const std::array prefixSource{NativeBlockInstruction{&prefix[0], 0x2000}, NativeBlockInstruction{&prefix[1], 0x2004}};
 			auto predecessor = test::compileNative(prefixSource, bytes, memory, cpu.stringPool());
@@ -194,14 +194,14 @@ void residentValuesCrossInternalComparisonBranches() {
 	}
 	decoded[0].a = 7; decoded[0].b = 8;
 	decoded[1].a = 0; decoded[1].b = 0; decoded[1].c = 1;
-	decoded[2].bx = 0x1014u;
+	decoded[2].setBx(0x1014u);
 	decoded[3].a = 3; decoded[3].b = 7;
 	decoded[4].a = 9; decoded[4].b = 8;
 	decoded[5].a = 6; decoded[5].b = 7;
 	decoded[6].a = 10; decoded[6].b = 8;
 	decoded[7].a = 4; decoded[7].b = 4; decoded[7].c = -1;
 	decoded[8].a = 5; decoded[8].b = 4;
-	decoded[9].bx = 0x1000u;
+	decoded[9].setBx(0x1000u);
 	const std::span instructions(source);
 	const std::array plans{NativeBlockSource{instructions.subspan(0, 2), &decoded[2]},
 		NativeBlockSource{instructions.subspan(2, 1)}, NativeBlockSource{instructions.subspan(3, 2)},
@@ -261,14 +261,14 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 		instructions[index] = {&decoded[index], 0x1000u + static_cast<u32>(index) * INSTRUCTION_BYTES};
 	}
 	// r8 has no future use but must still be observable at a short grant.
-	decoded[0].a = 8; decoded[0].bx = 4;
+	decoded[0].a = 8; decoded[0].setBx(4);
 	for (int index = 0; index < 4; ++index) {
-		decoded[index + 1].a = index; decoded[index + 1].bx = index;
+		decoded[index + 1].a = index; decoded[index + 1].setBx(index);
 		decoded[index + 6].a = index + 4;
 	}
-	decoded[5].bx = 0x1018u;
+	decoded[5].setBx(0x1018u);
 	decoded[10].a = 9; decoded[10].b = -6; decoded[10].c = -7;
-	decoded[11].bx = 0x2000u;
+	decoded[11].setBx(0x2000u);
 	const std::span source(instructions);
 	const std::array plans{NativeBlockSource{source.first(6)}, NativeBlockSource{source.subspan(6)}};
 	const std::array constants{valueFromTag(ValueTag::False, 37), valueTable(cpu.createTable().address()),
@@ -331,9 +331,9 @@ void sparseRegionSuccessorsPreserveExactPcIdentity() {
 			decoded[index].width = decoded[index].baseCycles = 1;
 		}
 		decoded[0].a = 2; decoded[0].b = 1;
-		decoded[1].a = 0; decoded[1].bx = page + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
+		decoded[1].a = 0; decoded[1].setBx(page + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES);
 		decoded[3].a = 3; decoded[3].b = 2;
-		decoded[4].bx = 0x87654320u;
+		decoded[4].setBx(0x87654320u);
 		// Source order is deliberately not address order. The first and last
 		// page words are entries; the word after the low entry is only its body.
 		const std::array instructions{NativeBlockInstruction{&decoded[0], page + 512u},
@@ -346,7 +346,7 @@ void sparseRegionSuccessorsPreserveExactPcIdentity() {
 		size_t bytes = 0;
 		for (const u32 target : {page, page + MAPPED_PAGE_BYTE_SIZE, page - MAPPED_PAGE_BYTE_SIZE,
 			page + 1u, page + INSTRUCTION_BYTES}) {
-			decoded[2].bx = target;
+			decoded[2].setBx(target);
 			auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
 			blocks.front()->region->publish(bytes);
 			require(blocks[0]->terminal.link.patchAddress != 0 && blocks[0]->sideExits.back().link.patchAddress == 0,
@@ -400,11 +400,11 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 		instruction.a = operands[index][0]; instruction.b = operands[index][1]; instruction.c = operands[index][2];
 		instructions[index] = {&instruction, 0x1000u + static_cast<u32>(index) * INSTRUCTION_BYTES};
 	}
-	decoded[4].bx = instructions[10].pc;
-	decoded[7].bx = 2; decoded[12].bx = 3; decoded[22].bx = 4;
-	decoded[9].bx = decoded[14].bx = instructions[15].pc;
-	decoded[21].bx = instructions[0].pc;
-	decoded[24].bx = 0x2000u;
+	decoded[4].setBx(instructions[10].pc);
+	decoded[7].setBx(2); decoded[12].setBx(3); decoded[22].setBx(4);
+	decoded[9].setBx(instructions[15].pc); decoded[14].setBx(instructions[15].pc);
+	decoded[21].setBx(instructions[0].pc);
+	decoded[24].setBx(0x2000u);
 	const std::span source(instructions);
 	const std::array plans{NativeBlockSource{source.first(5)}, NativeBlockSource{source.subspan(5, 5)},
 		NativeBlockSource{source.subspan(10, 5)}, NativeBlockSource{source.subspan(15, 3)},
@@ -417,7 +417,7 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 		decoded[17].op = static_cast<u8>(helper ? OpCode::POW : OpCode::ADD);
 		// A forward branch directly into the inherited continuation cannot
 		// borrow the values or dirty state of its linear helper predecessor.
-		decoded[9].bx = instructions[bypassHelper ? 18 : 15].pc;
+		decoded[9].setBx(instructions[bypassHelper ? 18 : 15].pc);
 		auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
 		blocks.front()->region->publish(bytes);
 		for (size_t entry = 0; entry < plans.size(); ++entry) for (const bool arm : {false, true})
@@ -445,14 +445,14 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 					remaining -= op.baseCycles;
 					switch (static_cast<OpCode>(op.op)) {
 						case OpCode::MOV: expected[op.a] = operand(op.b); break;
-						case OpCode::LOADK: expected[op.a] = constants[op.bx]; break;
+						case OpCode::LOADK: expected[op.a] = constants[op.bx()]; break;
 						case OpCode::ADD: expected[op.a] = valueAdd(operand(op.b), operand(op.c)); break;
 						case OpCode::POW: expected[op.a] = valuePower(operand(op.b), operand(op.c)); break;
 						case OpCode::NOT: expected[op.a] = valueBool(!isTruthy(operand(op.b))); break;
-						case OpCode::JMP: nextPc = op.bx; continue;
+						case OpCode::JMP: nextPc = op.bx(); continue;
 						case OpCode::JMPIF:
 							taken = isTruthy(expected[op.a]);
-							if (taken) nextPc = op.bx;
+							if (taken) nextPc = op.bx();
 							continue;
 						default: throw std::runtime_error("unexpected scalar register-graph instruction");
 					}
@@ -483,10 +483,10 @@ void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 		decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1; decoded[i].baseCycles = 1;
 	}
 	decoded[0].a = 7; decoded[0].b = 0; decoded[0].c = -1;
-	decoded[1].a = 2; decoded[1].bx = 0x1080;
+	decoded[1].a = 2; decoded[1].setBx(0x1080);
 	decoded[2].a = 0; decoded[2].b = 7; decoded[2].c = -1;
 	decoded[3].a = 3; decoded[3].b = 0; decoded[3].c = 7;
-	decoded[4].bx = 0x1000;
+	decoded[4].setBx(0x1000);
 	const std::array firstSource{NativeBlockInstruction{&decoded[0], 0x1000}, NativeBlockInstruction{&decoded[1], 0x1004}};
 	const std::array secondSource{NativeBlockInstruction{&decoded[2], 0x1080}, NativeBlockInstruction{&decoded[3], 0x1084},
 		NativeBlockInstruction{&decoded[4], 0x1088}};
@@ -544,7 +544,7 @@ void linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor() {
 	for (size_t i = 0; i < ops.size(); ++i) {
 		decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1; decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
 	}
-	decoded[0].a = 6; decoded[1].bx = 0x1080;
+	decoded[0].a = 6; decoded[1].setBx(0x1080);
 	decoded[2].width = 2; decoded[2].a = 8; decoded[2].b = 0; decoded[2].c = 5;
 	decoded[3].a = 7;
 	const std::array prefix{NativeBlockInstruction{&decoded[0], 0x1000}, NativeBlockInstruction{&decoded[1], 0x1004}};
@@ -588,7 +588,7 @@ void linkedSlowExitPublishesTheWholeExecutedChain() {
 	for (size_t i = 0; i < ops.size(); ++i) {
 		decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1; decoded[i].baseCycles = 1;
 	}
-	decoded[0].a = 7; decoded[1].bx = 0x1080;
+	decoded[0].a = 7; decoded[1].setBx(0x1080);
 	decoded[2].a = 5; decoded[2].b = 7; decoded[2].c = 7;
 	decoded[3].a = 4; decoded[3].b = 1; decoded[3].c = static_cast<i16>(MemoryAccessKind::U32LE); decoded[3].baseCycles = 2;
 	decoded[4].a = 6; decoded[4].b = 4; decoded[4].c = 0;
@@ -766,7 +766,7 @@ void wordProducerFactsPreserveRawValuesAndOverwrites() {
 		op.a = operands[i][0]; op.b = operands[i][1]; op.c = operands[i][2];
 		source[i] = {&op, 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
 	}
-	decoded.back().bx = 0x2000;
+	decoded.back().setBx(0x2000);
 	size_t bytes = 0;
 	for (const auto constant : inputs) {
 		const std::array constants{constant, valueInteger(-1), valueInteger(7), valueInteger(31)};
@@ -784,7 +784,7 @@ void wordProducerFactsPreserveRawValuesAndOverwrites() {
 				const auto operand = [&](int selector) { return selector < 0 ? constants[-selector - 1] : expected[selector]; };
 				const auto kind = static_cast<OpCode>(op.op);
 				remaining -= op.baseCycles;
-				if (kind == OpCode::LOADK) expected[op.a] = constants[op.bx];
+				if (kind == OpCode::LOADK) expected[op.a] = constants[op.bx()];
 				else if (kind == OpCode::MOV) expected[op.a] = operand(op.b);
 				else if (kind == OpCode::LOADNIL) { std::fill_n(expected.begin() + op.a, op.b, valueNil()); remaining -= op.b; }
 				else if (kind != OpCode::JMP) {
@@ -819,7 +819,7 @@ void movesAndLiteralsPreserveRawValues() {
 		DecodedInstruction load;
 		load.op = static_cast<u8>(OpCode::LOADK);
 		load.width = load.baseCycles = 1;
-		load.bx = index;
+		load.setBx(index);
 		DecodedInstruction move;
 		move.op = static_cast<u8>(OpCode::MOV);
 		move.width = move.baseCycles = 1;
@@ -835,7 +835,7 @@ void movesAndLiteralsPreserveRawValues() {
 		load.op = static_cast<u8>(op);
 		load.width = 2;
 		load.baseCycles = 1;
-		load.sbx = -33554432;
+		load.setSbx(-33554432);
 		const std::array instructions{NativeBlockInstruction{&load, 0x1000}};
 		auto block = test::compileNative(instructions, bytes, memory, cpu.stringPool());
 		ValueSlots reg(1);
@@ -864,7 +864,7 @@ void pinnedOperandsSurviveColdReadsAndDestinationReuse() {
 				std::array<DecodedInstruction, 7> decoded{};
 				std::array<NativeBlockInstruction, 7> source{};
 				for (u16 i = 0; i < 4; ++i) {
-					decoded[i].op = static_cast<u8>(OpCode::LOADK); decoded[i].a = i; decoded[i].bx = i;
+					decoded[i].op = static_cast<u8>(OpCode::LOADK); decoded[i].a = i; decoded[i].setBx(i);
 					expected[i] = pool[i];
 				}
 				auto& operation = decoded[4]; operation.op = static_cast<u8>(op); operation.a = destination;
@@ -909,7 +909,7 @@ void nextAccessPressurePreservesEveryRawGuestSlot() {
 		std::array<NativeBlockInstruction, 28> source{};
 		for (int index = 0; index < 5; ++index) {
 			decoded[index].op = static_cast<u8>(OpCode::LOADK);
-			decoded[index].a = base + index; decoded[index].bx = index;
+			decoded[index].a = base + index; decoded[index].setBx(index);
 		}
 		// The oldest definitions are repeatedly needed sooner than recent ones.
 		// Destinations remain observable even when they have no later reader.
@@ -925,7 +925,7 @@ void nextAccessPressurePreservesEveryRawGuestSlot() {
 		decoded[25].op = static_cast<u8>(helper ? OpCode::MOD : OpCode::ADD);
 		decoded[25].a = base + 12; decoded[25].b = -6; decoded[25].c = -7;
 		decoded[26].op = static_cast<u8>(OpCode::MOV); decoded[26].a = base + 13; decoded[26].b = base;
-		decoded[27].op = static_cast<u8>(OpCode::JMP); decoded[27].bx = 0x1800u;
+		decoded[27].op = static_cast<u8>(OpCode::JMP); decoded[27].setBx(0x1800u);
 		for (size_t index = 0; index < decoded.size(); ++index) {
 			decoded[index].width = base == 0 ? 1 : 2;
 			decoded[index].baseCycles = BASE_CYCLES[decoded[index].op];
@@ -944,7 +944,7 @@ void nextAccessPressurePreservesEveryRawGuestSlot() {
 				const auto& op = decoded[prefix - 1]; cycles += op.baseCycles;
 				if (op.op == static_cast<u8>(OpCode::LOADNIL)) cycles += op.b;
 				switch (static_cast<OpCode>(op.op)) {
-					case OpCode::LOADK: expected[op.a] = constants[op.bx]; break;
+					case OpCode::LOADK: expected[op.a] = constants[op.bx()]; break;
 					case OpCode::MOV: expected[op.a] = expected[op.b]; break;
 					case OpCode::LOADNIL:
 						for (int index = op.a; index < op.a + op.b; ++index) expected[index] = valueNil();
@@ -1015,8 +1015,8 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			instruction.b = index % 3 == 0 ? previous : next() & 7u;
 			instruction.c = index % 3 == 1 ? previous : next() & 7u;
 			if (op == OpCode::MOV) instruction.c = 0;
-			if (op == OpCode::LOADK) instruction.bx = next() % pool.size();
-			if (op == OpCode::KSMI) instruction.sbx = static_cast<i32>(next() & 0x3ffffffu) - 0x2000000;
+			if (op == OpCode::LOADK) instruction.setBx(next() % pool.size());
+			if (op == OpCode::KSMI) instruction.setSbx(static_cast<i32>(next() & 0x3ffffffu) - 0x2000000);
 			const bool binary = op >= OpCode::ADD && op <= OpCode::SHR;
 			if (binary && (next() & 3u) == 0) instruction.b = -static_cast<i16>(1 + next() % pool.size());
 			if (binary && (next() & 3u) == 0) instruction.c = -static_cast<i16>(1 + next() % pool.size());
@@ -1024,14 +1024,14 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			bool invalid = false;
 			switch (op) {
 				case OpCode::MOV: expected[instruction.a] = expected[instruction.b]; break;
-				case OpCode::LOADK: expected[instruction.a] = pool[instruction.bx]; break;
+				case OpCode::LOADK: expected[instruction.a] = pool[instruction.bx()]; break;
 				case OpCode::KNIL: expected[instruction.a] = valueNil(); break;
 				case OpCode::KFALSE: expected[instruction.a] = valueBool(false); break;
 				case OpCode::KTRUE: expected[instruction.a] = valueBool(true); break;
 				case OpCode::K0: expected[instruction.a] = valueInteger(0); break;
 				case OpCode::K1: expected[instruction.a] = valueInteger(1); break;
 				case OpCode::KM1: expected[instruction.a] = valueInteger(-1); break;
-				case OpCode::KSMI: expected[instruction.a] = valueInteger(instruction.sbx); break;
+				case OpCode::KSMI: expected[instruction.a] = valueInteger(instruction.sbx()); break;
 				case OpCode::NOT: expected[instruction.a] = valueBool(!isTruthy(expected[instruction.b])); break;
 				default:
 					try { expected[instruction.a] = evaluate(op, operand(instruction.b), operand(instruction.c)); }
@@ -1053,21 +1053,21 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 				// prefix a reachable continuation and a fresh Integer producer.
 				instruction.op = static_cast<u8>(OpCode::KSMI);
 				instruction.baseCycles = BASE_CYCLES[instruction.op];
-				instruction.sbx = static_cast<i32>(index) - 17;
-				expected[instruction.a] = valueInteger(instruction.sbx);
+				instruction.setSbx(static_cast<i32>(index) - 17);
+				expected[instruction.a] = valueInteger(instruction.sbx());
 			}
 		}
 		for (const auto op : {OpCode::HALT, OpCode::JMP, OpCode::JMPIF, OpCode::JMPIFNOT}) {
 			auto& terminal = decoded.back();
 			terminal.op = static_cast<u8>(op); terminal.width = 2; terminal.baseCycles = BASE_CYCLES[terminal.op];
-			terminal.a = previous; terminal.bx = 0x2000u;
+			terminal.a = previous; terminal.setBx(0x2000u);
 			source.back() = {&terminal, source[31].pc + decoded[31].width * INSTRUCTION_BYTES};
 			auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
 			auto registers = test::valueBank(initial);
 			const auto pc = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles})->nextPc;
 			const bool taken = op == OpCode::JMP || (op == OpCode::JMPIF && isTruthy(expected[previous]))
 				|| (op == OpCode::JMPIFNOT && !isTruthy(expected[previous]));
-			require(test::matchesValues(registers.view(), expected) && pc == (taken ? terminal.bx : source.back().pc + 2 * INSTRUCTION_BYTES),
+			require(test::matchesValues(registers.view(), expected) && pc == (taken ? terminal.bx() : source.back().pc + 2 * INSTRUCTION_BYTES),
 				"all native control exits consume and publish the final pending result");
 		}
 	}
@@ -1084,7 +1084,7 @@ void truthinessAndConditionalExits() {
 		instruction.b = 1;
 		instruction.width = 2;
 		instruction.baseCycles = 1;
-		instruction.bx = 0xfffffffcu;
+		instruction.setBx(0xfffffffcu);
 		const std::array source{NativeBlockInstruction{&instruction, 0x1000u}};
 		auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
 		// Exhaust the entire raw Value-header domain, with nonzero payloads:
@@ -1162,12 +1162,12 @@ void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 			}
 			for (int index = 0; index < definitions; ++index) {
 				auto& op = decoded[count++]; op.op = static_cast<u8>(OpCode::LOADK);
-				op.a = index; op.bx = index; expected[index] = constants[index];
+				op.a = index; op.setBx(index); expected[index] = constants[index];
 			}
 			auto& last = decoded[count++]; last.op = static_cast<u8>(terminal);
 			last.a = 8; last.b = 12;
 			last.c = terminal == OpCode::GETFIELD ? 4 : static_cast<i16>(MemoryAccessKind::U32LE);
-			last.bx = 0x8000;
+			last.setBx(0x8000);
 			for (size_t index = 0; index < count; ++index) {
 				decoded[index].width = 1; decoded[index].baseCycles = BASE_CYCLES[decoded[index].op];
 				source[index] = {&decoded[index], 0x1000u + static_cast<u32>(index) * INSTRUCTION_BYTES};
@@ -1197,10 +1197,10 @@ void twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead() {
 	table.getStringKeyCached(x, xSlot);
 	const auto constants = test::valueBank(std::array{valueString(x), valueString(y)});
 	std::array decoded{
-		DecodedInstruction{.tableCacheSlot = xSlot, .a = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
-		DecodedInstruction{.bx = 0, .a = 2, .b = 1, .op = static_cast<u8>(OpCode::MOV)},
-		DecodedInstruction{.tableCacheSlot = ySlot, .a = 1, .c = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
-		DecodedInstruction{.bx = 0, .a = 3, .b = 2, .c = 1, .op = static_cast<u8>(OpCode::ADD)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(xSlot), .a = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.a = 2, .b = 1, .op = static_cast<u8>(OpCode::MOV)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(ySlot), .a = 1, .c = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.a = 3, .b = 2, .c = 1, .op = static_cast<u8>(OpCode::ADD)},
 	};
 	std::array<NativeBlockInstruction, decoded.size()> source;
 	for (size_t index = 0; index < decoded.size(); ++index) {
@@ -1255,10 +1255,10 @@ void reusedFieldAddressHonorsEachSiteAndPhysicalStackAliases() {
 	table.getStringKeyCached(key, slot);
 	const auto constants = test::valueBank(std::array{valueString(key)});
 	std::array decoded{
-		DecodedInstruction{.tableCacheSlot = slot, .a = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
-		DecodedInstruction{.bx = 0, .a = 4, .op = static_cast<u8>(OpCode::MOV)},
-		DecodedInstruction{.tableCacheSlot = slot, .a = 2, .b = 4, .op = static_cast<u8>(OpCode::GETFIELD)},
-		DecodedInstruction{.bx = 0, .a = 3, .b = 1, .c = 2, .op = static_cast<u8>(OpCode::ADD)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(slot), .a = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.a = 4, .op = static_cast<u8>(OpCode::MOV)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(slot), .a = 2, .b = 4, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.a = 3, .b = 1, .c = 2, .op = static_cast<u8>(OpCode::ADD)},
 	};
 	std::array<NativeBlockInstruction, decoded.size()> source;
 	u32 pc = 0xa000u;

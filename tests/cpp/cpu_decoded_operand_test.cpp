@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/decoded_instruction.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
@@ -47,6 +48,45 @@ void opcodeOperandInterpretations() {
 	require(OPCODE_RK_OPERANDS == expected, "every opcode selects the specified RK or raw operand interpretation");
 }
 
+
+void arithmeticFeedbackTransitions() {
+	DecodedInstruction instruction{.op = static_cast<u8>(OpCode::SUB)};
+	const auto one = valueInteger(1);
+	const auto fraction = valueFloat(0.5f);
+	const auto squared = valueInteger(4);
+	const auto initial = instruction.nativeNumericTypes();
+	require(!initial.observed() && !initial.stable(), "a decoded arithmetic site starts unseen");
+
+	for (int i = 0; i < 3; ++i)
+		require(!instruction.observeNativeNumericTypes(squared, one), "an immature pair never requests a rebuild");
+	const auto candidate = instruction.nativeNumericTypes();
+	require(candidate.observed() && !candidate.stable()
+		&& candidate.left == ValueTag::Integer && candidate.right == ValueTag::Integer,
+		"an unstable site still retains its observed operand tags");
+	require(instruction.observeNativeNumericTypes(squared, one), "a repeated pair requests a rebuild when it first stabilizes");
+	for (int i = 0; i < 32; ++i)
+		require(!instruction.observeNativeNumericTypes(squared, one), "an already stable pair does not repeatedly request rebuilds");
+
+	auto copy = instruction;
+	for (int i = 0; i < 2; ++i) {
+		require(!instruction.observeNativeNumericTypes(fraction, one) && instruction.nativeNumericTypes().stable(),
+			"a mature pair survives short contradictions");
+	}
+	require(!instruction.observeNativeNumericTypes(fraction, one) && !instruction.nativeNumericTypes().stable(),
+		"contradictions can age a candidate out of stability without promoting");
+	for (int i = 0; i < 3; ++i)
+		require(!instruction.observeNativeNumericTypes(fraction, one), "a replacement pair must establish its own confidence");
+	require(instruction.observeNativeNumericTypes(fraction, one)
+		&& instruction.nativeNumericTypes().left == ValueTag::Float && copy.nativeNumericTypes().left == ValueTag::Integer,
+		"a new pair can stabilize without changing a previously copied compilation snapshot");
+
+	DecodedInstruction alternating{.op = static_cast<u8>(OpCode::ADD)};
+	for (int i = 0; i < 32; ++i) {
+		require(!alternating.observeNativeNumericTypes(squared, one)
+			&& !alternating.observeNativeNumericTypes(squared, fraction) && !alternating.nativeNumericTypes().stable(),
+			"alternating observations never stabilize a numeric site");
+	}
+}
 
 void signedRkBoundaries() {
 	for (const bool instrumented : {false, true}) for (const bool wide : {false, true}) {
@@ -185,7 +225,7 @@ void wideDisplacedStoreCountRemainsUnsigned() {
 
 int main() {
 	try {
-		opcodeOperandInterpretations(); signedRkBoundaries(); rawFieldsAndInlineCaches(); rewrittenPayloadVariants();
+		opcodeOperandInterpretations(); arithmeticFeedbackTransitions(); signedRkBoundaries(); rawFieldsAndInlineCaches(); rewrittenPayloadVariants();
 		wideDisplacementsKeepTheirOwnOperandLanes(); wideDisplacedStoreCountRemainsUnsigned();
 		std::cout << "CPU decoded operand tests passed\n";
 		return 0;

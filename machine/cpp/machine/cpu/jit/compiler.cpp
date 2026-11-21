@@ -20,7 +20,7 @@ NativeBlockExitSite materializeExit(const NativeIrExit& exit, const NativeCodeBi
 	const auto tableSlot = [&] {
 		const u32 word = (exit.currentPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		return bindings.decodedPage
-			? NativeTableSlotBinding{.decoded = &bindings.decodedPage[word].tableCacheSlot}
+			? NativeTableSlotBinding{.decoded = &bindings.decodedPage[word].tableCacheSlot()}
 			: NativeTableSlotBinding{.standalone = exit.tableSlotSeed};
 	};
 	switch (exit.exit) {

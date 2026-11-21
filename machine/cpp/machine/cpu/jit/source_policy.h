@@ -125,7 +125,7 @@ inline bool nativeSourceCanEmit(const DecodedInstruction& instruction, size_t co
 			&& static_cast<size_t>(-instruction.c - 1) >= constantCount)) return false;
 	switch (static_cast<OpCode>(instruction.op)) {
 		case OpCode::JMP: return instruction.a == 0;
-		case OpCode::LOADK: return instruction.bx < constantCount;
+		case OpCode::LOADK: return instruction.bx() < constantCount;
 		case OpCode::GETFIELD: case OpCode::SELF:
 			return static_cast<size_t>(instruction.c) < constantCount;
 		case OpCode::SETFIELD:

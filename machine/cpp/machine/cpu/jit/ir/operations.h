@@ -223,7 +223,6 @@ struct NativeTableAccess {
 
 struct NativeArithmeticHint {
 	std::optional<NativeArithmeticFeedback> feedback;
-	bool observed = false;
 };
 struct NativeArithmetic {
 	NativeSlot result;

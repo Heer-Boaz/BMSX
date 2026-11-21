@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 
@@ -63,17 +64,34 @@ inline constexpr uint8_t decodedDispatchOp(uint8_t first, uint8_t second) {
 
 struct NativeNumericTypes {
 	ValueTag left, right;
-	bool stable;
+	u16 confidence;
+
+	constexpr bool observed() const { return confidence != 0; }
+	constexpr bool stable() const { return confidence >= STABLE_CONFIDENCE; }
+	bool operator==(const NativeNumericTypes&) const = default;
+
+private:
+	friend struct DecodedInstruction;
+	static constexpr u16 STABLE_CONFIDENCE = 4u;
+	static constexpr u16 MAX_CONFIDENCE = 16u;
 };
 
 struct DecodedInstruction {
-	// Each opcode consumes exactly one of these payloads. Decode initializes
-	// that member; field instructions and arithmetic may update their hints.
-	union {
-		uint32_t bx = 0;
-		int32_t sbx;
-		int32_t tableCacheSlot;
+	// One active word for every opcode. Its signed storage also lends an
+	// address to the mutable table-slot hint; Bx and feedback use its bits.
+	class Payload {
+	public:
+		constexpr Payload() = default;
+		static constexpr Payload bx(u32 value) { return Payload(std::bit_cast<i32>(value)); }
+		static constexpr Payload sbx(i32 value) { return Payload(value); }
+		static constexpr Payload tableSlot(i32 slot) { return Payload(slot); }
+
+	private:
+		friend struct DecodedInstruction;
+		constexpr explicit Payload(i32 word) : m_word(word) {}
+		i32 m_word = 0;
 	};
+	Payload payload{};
 	uint16_t a = 0;
 	// Raw fields are nonnegative; RK consumers receive sign-extended selectors.
 	int16_t b = 0;
@@ -85,29 +103,47 @@ struct DecodedInstruction {
 	uint8_t baseCycles = 0;
 	uint8_t dispatchCycles = 0;
 
-	// ADD/SUB/MUL do not encode a Bx operand. Their decoded word holds
-	// the type pair instead; it is initialized by decode before warm-up.
+	constexpr u32 bx() const { return std::bit_cast<u32>(payload.m_word); }
+	constexpr void setBx(u32 value) { payload = Payload::bx(value); }
+	constexpr i32 sbx() const { return payload.m_word; }
+	constexpr void setSbx(i32 value) { payload = Payload::sbx(value); }
+	constexpr i32 tableCacheSlot() const { return payload.m_word; }
+	constexpr i32& tableCacheSlot() { return payload.m_word; }
+
+	// ADD/SUB/MUL do not encode a Bx operand. A fresh decode leaves their
+	// type pair unseen (zero confidence), independently of either tag.
 	NativeNumericTypes nativeNumericTypes() const {
-		return {static_cast<ValueTag>(bx & 0xffu), static_cast<ValueTag>((bx >> 8u) & 0xffu),
-			(bx >> 16u) >= NUMERIC_STABLE_SCORE};
+		const u32 bits = std::bit_cast<u32>(payload.m_word);
+		return {static_cast<ValueTag>(bits & NUMERIC_TAG_MASK),
+			static_cast<ValueTag>((bits >> NUMERIC_RIGHT_TAG_SHIFT) & NUMERIC_TAG_MASK),
+			static_cast<u16>(bits >> NUMERIC_CONFIDENCE_SHIFT)};
 	}
-	void observeNativeNumericTypes(Value lhs, Value rhs) {
-		const u32 pair = static_cast<u32>(valueTag(lhs)) | (static_cast<u32>(valueTag(rhs)) << 8u);
-		const u32 score = bx >> 16u;
-		if ((bx & 0xffffu) == pair) {
-			if (score < NUMERIC_SCORE_LIMIT) bx += 1u << 16u;
-		} else if (score > 2u) {
-			// Contradictory samples age the candidate. A short startup type
-			// change can recover; an alternating pair never becomes stable.
-			bx = (bx & 0xffffu) | ((score >> 1u) << 16u);
-		} else {
-			bx = pair | (1u << 16u);
+
+	// Only a completed arithmetic instruction contributes a sample.
+	// Return true once when its candidate gains stable confidence.
+	bool observeNativeNumericTypes(Value lhs, Value rhs) {
+		const u32 bits = std::bit_cast<u32>(payload.m_word);
+		const u32 pair = bits & NUMERIC_PAIR_MASK;
+		const u32 sample = static_cast<u32>(valueTag(lhs)) | (static_cast<u32>(valueTag(rhs)) << NUMERIC_RIGHT_TAG_SHIFT);
+		const u32 confidence = bits >> NUMERIC_CONFIDENCE_SHIFT;
+		if (pair == sample) {
+			if (confidence < NativeNumericTypes::MAX_CONFIDENCE)
+				payload.m_word = std::bit_cast<i32>(bits + (1u << NUMERIC_CONFIDENCE_SHIFT));
+			return confidence + 1u == NativeNumericTypes::STABLE_CONFIDENCE;
 		}
+		// Contradictory samples age the candidate. A short startup type
+		// change can recover; an alternating pair never becomes stable.
+		const u32 next = confidence > 2u ? pair | ((confidence >> 1u) << NUMERIC_CONFIDENCE_SHIFT)
+			: sample | (1u << NUMERIC_CONFIDENCE_SHIFT);
+		payload.m_word = std::bit_cast<i32>(next);
+		return false;
 	}
 
 private:
-	static constexpr u32 NUMERIC_STABLE_SCORE = 4u;
-	static constexpr u32 NUMERIC_SCORE_LIMIT = 16u;
+	static constexpr u32 NUMERIC_TAG_MASK = 0xffu;
+	static constexpr u32 NUMERIC_RIGHT_TAG_SHIFT = 8u;
+	static constexpr u32 NUMERIC_CONFIDENCE_SHIFT = 16u;
+	static constexpr u32 NUMERIC_PAIR_MASK = 0xffffu;
 };
 
 static_assert(MAX_EXT_REGISTER_BC <= INT16_MAX);

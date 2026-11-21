@@ -51,9 +51,7 @@ template <OpCode op>
 NativeNumericCompletion sample(const Value* args, Value* out, DecodedInstruction* source) noexcept {
 	const auto completion = numericKernel<op>(args, out);
 	if (completion != NativeNumericCompletion::Completed) return completion;
-	const bool stable = source->nativeNumericTypes().stable;
-	source->observeNativeNumericTypes(args[0], args[1]);
-	return !stable && source->nativeNumericTypes().stable ? NativeNumericCompletion::ProfileReady : completion;
+	return source->observeNativeNumericTypes(args[0], args[1]) ? NativeNumericCompletion::ProfileReady : completion;
 }
 } // namespace
 

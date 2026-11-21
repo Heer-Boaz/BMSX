@@ -157,7 +157,7 @@ void adaptiveArithmeticReplay() {
 	const u32 entry = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	const auto installed = [&] { return page.nativeBlocks && page.nativeBlocks->entries[entry]; };
 	require(installed() && page.nativeBlocks->entries[entry]->admissionCycles == prefixCycles
-		&& page.nativeBlocks->entries[entry]->terminal.currentPc == wide && page.words[entry + 1u].nativeNumericTypes().stable,
+		&& page.nativeBlocks->entries[entry]->terminal.currentPc == wide && page.words[entry + 1u].nativeNumericTypes().stable(),
 		"successful scalar observations specialize a published region containing WIDE SUB");
 	const auto& exits = page.nativeBlocks->entries[entry]->sideExits;
 	require(exits.size() == 1 && exits.front().exit == NativeBlockExit::ScalarBoundary
@@ -166,7 +166,7 @@ void adaptiveArithmeticReplay() {
 		&& exits.front().operands.replay.hasCompletedInstruction
 		&& exits.front().operands.replay.arithmetic == NativeArithmeticFeedback{ValueTag::Integer, ValueTag::Integer},
 		"published WIDE arithmetic keeps its exact scalar replay, not a dead semantic fault site");
-	const auto feedback = page.words[entry + 1u].bx;
+	const auto feedback = page.words[entry + 1u].nativeNumericTypes();
 #endif
 	input(valueBool(false));
 	test::runCpuParity(native.cpu, scalar.cpu, prefixCycles + 1);
@@ -176,7 +176,7 @@ void adaptiveArithmeticReplay() {
 			&& cpu.readFrameRegister(0, 4) == valueInteger(73), "a failed arithmetic replay faults before committing its result");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	require(installed() && page.words[entry + 1u].bx == feedback, "a faulting arithmetic execution cannot train or retire its specialization");
+	require(installed() && page.words[entry + 1u].nativeNumericTypes() == feedback, "a faulting arithmetic execution cannot train or retire its specialization");
 #endif
 	for (auto* machine : {&native, &scalar}) {
 		require(machine->cpu.runUntilDepth(1, BASE_CYCLES[static_cast<u8>(OpCode::RFE)]) == RunResult::Halted,
@@ -187,7 +187,7 @@ void adaptiveArithmeticReplay() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(installed(), "a single contradictory success does not retire a stable specialization");
 	for (int i = 0; i < 8 && installed(); ++i) subtract(valueFloat(0.5f), valueFloat(11.5f), complete);
-	require(!installed() && !page.words[entry + 1u].nativeNumericTypes().stable,
+	require(!installed() && !page.words[entry + 1u].nativeNumericTypes().stable(),
 		"repeated successful contradictions withdraw native users and lose the stale type assumption");
 	native.cpu.prepareSystemNativeCode();
 	require(installed(), "the code owner can republish the source with the updated feedback");

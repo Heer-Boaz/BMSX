@@ -28,7 +28,7 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 			|| !nativeSourceCanEmit(instruction, image.constPool.size())) continue;
 		if (instruction.op >= static_cast<u8>(OpCode::GETSYS) && instruction.op <= static_cast<u8>(OpCode::SETGL)) {
 			const auto& bank = instruction.op <= static_cast<u8>(OpCode::SETSYS) ? m_systemGlobalBank : m_globalBank;
-			if (instruction.bx >= bank.capacity()) continue; // The general mirror port is scalar.
+			if (instruction.bx() >= bank.capacity()) continue; // The general mirror port is scalar.
 		}
 		if (!roots[cursor] && binding.writeWatch.groups
 			&& page.nativeVisits[cursor] + 1u < NATIVE_BLOCK_COMPILATION_THRESHOLD) continue;
@@ -48,14 +48,14 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 						&& skipped.dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe)) {
 						// This edge executes the fused JMP, not a separate entry.
 						// An independent predecessor can still enqueue the JMP itself.
-						enqueue(skipped.bx, true);
+						enqueue(skipped.bx(), true);
 						continue;
 					}
 				}
 			}
 			enqueue(successorPc, true);
 		} else if (op == OpCode::JMP || op == OpCode::JMPIF || op == OpCode::JMPIFNOT) {
-			enqueue(instruction.bx, true);
+			enqueue(instruction.bx(), true);
 			if (op != OpCode::JMP) enqueue(successorPc, true);
 		} else if (!nativeBlockEndsBlock(instruction.op, instruction.b)) enqueue(successorPc, false);
 		else if (nativeBlockHasTerminalContinuation(instruction.op, instruction.b)) enqueue(successorPc, true);

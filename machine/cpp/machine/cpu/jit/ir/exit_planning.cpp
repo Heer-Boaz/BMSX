@@ -164,7 +164,7 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 	const auto [kind, operands] = std::visit(NativeTerminalExit{}, final);
 	const auto* jump = std::get_if<NativeJump>(&final);
 	block.terminal = {.exit = kind, .operands = operands,
-		.nextPc = jump ? jump->target : block.hasFusedJump ? skipped->bx : last.pc + u32{last.width} * INSTRUCTION_BYTES};
+		.nextPc = jump ? jump->target : block.hasFusedJump ? skipped->bx() : last.pc + u32{last.width} * INSTRUCTION_BYTES};
 	block.nativeSuccessor = reachesEnd && kind == NativeBlockExit::Continue;
 }
 

@@ -344,7 +344,8 @@ void hotUpvalueAlias() {
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 struct ContextBlock {
-	struct Instruction { OpCode op; u16 a = 0; i16 b = 0; i16 c = 0; u32 bx = 0; };
+	using Payload = DecodedInstruction::Payload;
+	struct Instruction { OpCode op; u16 a = 0; i16 b = 0; i16 c = 0; Payload payload{}; };
 	size_t bytes = 0;
 	std::vector<DecodedInstruction> decoded;
 	std::vector<NativeBlockInstruction> source;
@@ -354,7 +355,7 @@ struct ContextBlock {
 		size_t i = 0;
 		for (const auto& instruction : code) {
 			auto& d = decoded[i]; d.op = static_cast<u8>(instruction.op); d.a = instruction.a;
-			d.b = instruction.b; d.c = instruction.c; d.bx = instruction.bx; d.width = 1; d.baseCycles = BASE_CYCLES[d.op];
+			d.b = instruction.b; d.c = instruction.c; d.payload = instruction.payload; d.width = 1; d.baseCycles = BASE_CYCLES[d.op];
 			source[i] = {&d, pc + static_cast<u32>(i) * INSTRUCTION_BYTES}; ++i;
 		}
 		const std::array runs{NativeBlockSource{source}};
@@ -370,8 +371,8 @@ void rawContextValues(CpuMachine& machine) {
 		valueFloat(-0.f), valueFloatBits(0xffa12345), valueFloat(std::numeric_limits<float>::infinity()),
 		valueString(cpu.stringPool().intern("context")), valueTable(cpu.createTable().address()), valueClosure(cpu.activeThread()->frameAtDepth(0)->closureAddress()),
 		valueThread(cpu.activeThread()->address)};
-	ContextBlock globals(machine, {{OpCode::SETGL, 12, 0, 0, 1}, {OpCode::GETGL, 0, 0, 0, 1},
-		{OpCode::SETSYS, 0, 0, 0, 1}, {OpCode::GETSYS, 1, 0, 0, 1}, {OpCode::K1, 2},
+	ContextBlock globals(machine, {{OpCode::SETGL, 12, 0, 0, ContextBlock::Payload::bx(1)}, {OpCode::GETGL, 0, 0, 0, ContextBlock::Payload::bx(1)},
+		{OpCode::SETSYS, 0, 0, 0, ContextBlock::Payload::bx(1)}, {OpCode::GETSYS, 1, 0, 0, ContextBlock::Payload::bx(1)}, {OpCode::K1, 2},
 		{OpCode::SETGL, 2}, {OpCode::LOADNIL, 15, 0}, {OpCode::JMP}});
 	ValueSlots registers(16);
 	ValueSpan ordinary(machine.memory, 0x1000u, 0x1008u, 2), system(machine.memory, 0x1040u, 0x1048u, 2);
@@ -410,7 +411,7 @@ void rawContextValues(CpuMachine& machine) {
 	frame.writeControl(bmsx::FrameField::Closure, boundClosure);
 	ClosureRecord::setCaptureAddress(heap.memory, boundClosure, 0, open);
 	ClosureRecord::setCaptureAddress(heap.memory, boundClosure, 1, closed);
-	ContextBlock captures(machine, {{OpCode::K1, 0}, {OpCode::GETUP, 1}, {OpCode::KSMI, 2, 0, 0, 9},
+	ContextBlock captures(machine, {{OpCode::K1, 0}, {OpCode::GETUP, 1}, {OpCode::KSMI, 2, 0, 0, ContextBlock::Payload::sbx(9)},
 		{OpCode::SETUP, 2}, {OpCode::ADD, 3, 0, 1}, {OpCode::GETUP, 4}, {OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	captureRegisters.clear(0, captureRegisters.size());
 	NativeBlockRunState alias{.frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
@@ -580,7 +581,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 	for (const int fixed : {0, 5}) {
 		constexpr u32 receivingPc = 0x2000u;
 		ContextBlock first(machine, {{OpCode::K1, 1}, {OpCode::K1, 7}, {OpCode::VARARG, 2, static_cast<i16>(fixed == 0 ? 0 : fixed + 1)},
-			{OpCode::MOV, 0, 7}, {OpCode::MOV, 1, 2}, {OpCode::BNOT, 15, 7}, {OpCode::JMP, 0, 0, 0, receivingPc}});
+			{OpCode::MOV, 0, 7}, {OpCode::MOV, 1, 2}, {OpCode::BNOT, 15, 7}, {OpCode::JMP, 0, 0, 0, ContextBlock::Payload::bx(receivingPc)}});
 		ContextBlock second(machine, {{OpCode::VARARG, 0, 0}, {OpCode::LOADKR, 15, 14}}, receivingPc);
 		second.blocks.front()->linkFrom(first.blocks.back()->terminal);
 		for (const int count : {0, 2, 8}) {

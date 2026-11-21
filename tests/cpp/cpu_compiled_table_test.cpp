@@ -484,7 +484,7 @@ void observedArithmeticResumesAtItsOwnInstruction() {
 	const u32 first = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	test::waitForNativeEntry(native.cpu, page, first);
 	const auto warm = page.words[first + 2u].nativeNumericTypes();
-	require(warm.left == ValueTag::Integer && warm.right == ValueTag::Integer && warm.stable,
+	require(warm.left == ValueTag::Integer && warm.right == ValueTag::Integer && warm.stable(),
 		"native warm-up records the actual operands without widening decoded instructions");
 #endif
 	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::K1)]
@@ -593,7 +593,7 @@ void contradictoryOwnFieldProofRetiresItsSource() {
 		test::runCpuParity(native.cpu, scalar.cpu, arithmeticCharge);
 	}
 	const auto types = page.words[entry + 2u].nativeNumericTypes();
-	require(types.stable && types.left == ValueTag::Integer, "the real arithmetic profile still prefers integers");
+	require(types.stable() && types.left == ValueTag::Integer, "the real arithmetic profile still prefers integers");
 	native.cpu.prepareSystemNativeCode();
 	require(installed(), "updated field policy does not prevent native compilation");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -744,7 +744,7 @@ void nativeFieldOperationsLearnTheDecodedSite() {
 	auto& page = *activeImage.nativeCodeLookup->find(pc, 0);
 	require(page.nativeBlocks->entries[word] && page.nativeBlocks->entries[word + 1],
 		"both cold operations have independent generated entries");
-	require(page.words[word].tableCacheSlot == -1 && page.words[word + 1].tableCacheSlot == -1,
+	require(page.words[word].tableCacheSlot() == -1 && page.words[word + 1].tableCacheSlot() == -1,
 		"preparation observes no table layout");
 	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
 	require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded, "the two indexed operations complete exactly");
@@ -754,14 +754,14 @@ void nativeFieldOperationsLearnTheDecodedSite() {
 	require(table.getStringKeyCached(*cpu.stringPool().find("read"), readSlot) == valueInteger(73)
 		&& table.getStringKeyCached(*cpu.stringPool().find("write"), writeSlot) == valueInteger(41)
 		&& readSlot >= 0 && writeSlot >= 0, "the actual own record contains both live values");
-	require(page.words[word].tableCacheSlot == readSlot && page.words[word + 1].tableCacheSlot == writeSlot,
+	require(page.words[word].tableCacheSlot() == readSlot && page.words[word + 1].tableCacheSlot() == writeSlot,
 		"successful native lookups train the same source slots used by scalar execution and compilation");
 	page.retireNativeBlocks();
 	cpu.prepareSystemNativeCode();
 	const auto& read = page.nativeBlocks->entries[word]->sideExits.front().tableRead;
 	const auto& write = page.nativeBlocks->entries[word + 1]->sideExits.front().tableStore;
-	require(read.own.decoded == &page.words[word].tableCacheSlot
-		&& write.decoded == &page.words[word + 1].tableCacheSlot,
+	require(read.own.decoded == &page.words[word].tableCacheSlot()
+		&& write.decoded == &page.words[word + 1].tableCacheSlot(),
 		"recompilation borrows the learned sites instead of creating independent writable seeds");
 #endif
 }
@@ -950,7 +950,7 @@ void tableWriteObservesCleanRegisterAlias(bool field) {
 	const u32 word = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	const auto& entry = page.nativeBlocks->entries[word];
 	require(entry && entry->admissionCycles == prefix && entry->terminal.currentPc == write
-		&& page.nativeBlocks->entries[word + 4u] && page.words[word].nativeNumericTypes().stable,
+		&& page.nativeBlocks->entries[word + 4u] && page.words[word].nativeNumericTypes().stable(),
 		"the real installed body caches a profiled read before the WIDE store and can link to its consumer");
 #endif
 	for (auto* machine : {&native, &scalar}) {

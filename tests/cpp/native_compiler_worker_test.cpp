@@ -37,9 +37,9 @@ void copiedSourceAndDeferredPublication() {
 			decoded[i].width = decoded[i].baseCycles = 1;
 			instructions[i] = {&decoded[i], 0x1000u + static_cast<u32>(i) * 4u};
 		}
-		decoded[0].a = 1; decoded[0].sbx = iteration;
+		decoded[0].a = 1; decoded[0].setSbx(iteration);
 		decoded[1].a = 2; decoded[1].b = 0; decoded[1].c = 1;
-		decoded[2].bx = 0x1800u;
+		decoded[2].setBx(0x1800u);
 		// Two entries share one executable allocation and an internal edge.
 		const std::array sources{
 			NativeBlockSource{std::span(instructions.data(), 1)},
@@ -72,7 +72,7 @@ void unpublishedCodeCanBeDiscarded() {
 	std::array<DecodedInstruction, 2> decoded{};
 	decoded[0].op = static_cast<u8>(OpCode::K1); decoded[0].width = decoded[0].baseCycles = 1;
 	decoded[1].op = static_cast<u8>(OpCode::JMP); decoded[1].width = decoded[1].baseCycles = 1;
-	decoded[1].bx = 0x1800;
+	decoded[1].setBx(0x1800);
 	const std::array instructions{NativeBlockInstruction{&decoded[0], 0x1000}, NativeBlockInstruction{&decoded[1], 0x1004}};
 	const std::array sources{NativeBlockSource{instructions}};
 	for (int iteration = 0; iteration < 32; ++iteration) {
@@ -93,8 +93,8 @@ void rejectedFieldProofIsFrozenForWorker() {
 	CPU cpu(memory, irq, addresses);
 	constexpr u32 pc = 0x1000u;
 	std::array decoded{
-		DecodedInstruction{.tableCacheSlot = 0, .a = 2, .b = 0, .c = 0, .op = static_cast<u8>(OpCode::GETFIELD)},
-		DecodedInstruction{.bx = 0, .a = 3, .b = 2, .c = 1, .op = static_cast<u8>(OpCode::SUB)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(0), .a = 2, .b = 0, .c = 0, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.a = 3, .b = 2, .c = 1, .op = static_cast<u8>(OpCode::SUB)},
 	};
 	for (auto& row : decoded) {
 		row.width = 1;
@@ -125,9 +125,9 @@ void recordPlanIsReadyBeforePublication() {
 	constants.set(1, valueString(cpu.stringPool().intern("last")));
 	constexpr u32 page = CART_ROM_BASE;
 	std::array decoded{
-		DecodedInstruction{.bx = 0, .c = 2, .op = static_cast<u8>(OpCode::NEWT)},
-		DecodedInstruction{.tableCacheSlot = -1, .c = 1, .op = static_cast<u8>(OpCode::SETFIELD)},
-		DecodedInstruction{.tableCacheSlot = -1, .b = 1, .c = 2, .op = static_cast<u8>(OpCode::SETFIELD)},
+		DecodedInstruction{.c = 2, .op = static_cast<u8>(OpCode::NEWT)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(-1), .c = 1, .op = static_cast<u8>(OpCode::SETFIELD)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(-1), .b = 1, .c = 2, .op = static_cast<u8>(OpCode::SETFIELD)},
 	};
 	std::array<NativeBlockInstruction, decoded.size()> instructions;
 	for (u32 i = 0; i < decoded.size(); ++i) {

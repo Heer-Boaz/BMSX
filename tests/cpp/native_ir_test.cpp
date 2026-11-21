@@ -68,11 +68,11 @@ void fieldChainHasAnExplicitResumePoint() {
 	constexpr u32 pc = 0x4000u;
 	std::array<DecodedInstruction, 3> decoded{};
 	decoded[0].op = static_cast<u8>(OpCode::GETFIELD);
-	decoded[0].a = 9; decoded[0].b = 6; decoded[0].tableCacheSlot = 0;
+	decoded[0].a = 9; decoded[0].b = 6; decoded[0].tableCacheSlot() = 0;
 	decoded[1].op = static_cast<u8>(OpCode::ADD);
 	decoded[1].a = 8; decoded[1].b = 9; decoded[1].c = 1;
 	decoded[2].op = static_cast<u8>(OpCode::SETFIELD);
-	decoded[2].a = 6; decoded[2].c = 8; decoded[2].tableCacheSlot = 0;
+	decoded[2].a = 6; decoded[2].c = 8; decoded[2].tableCacheSlot() = 0;
 	for (auto& instruction : decoded) {
 		instruction.width = 1;
 		instruction.baseCycles = BASE_CYCLES[instruction.op];
@@ -120,7 +120,7 @@ void fieldSelectionPreservesColdCodeAndContinuation() {
 	}
 	decoded[1].a = 6;
 	decoded[1].b = 3;
-	decoded[1].tableCacheSlot = 0;
+	decoded[1].tableCacheSlot() = 0;
 	decoded[2].a = 9;
 	decoded[2].b = 8;
 	decoded[3].a = 7;
@@ -176,11 +176,11 @@ void distinctFieldValuesSurviveCopiesAndSlotReuse() {
 	}
 	decoded[1].a = decoded[3].a = 6;
 	decoded[1].b = decoded[3].b = 3;
-	decoded[1].tableCacheSlot = decoded[3].tableCacheSlot = 0;
+	decoded[1].tableCacheSlot() = decoded[3].tableCacheSlot() = 0;
 	decoded[3].c = 1;
 	decoded[2].a = 9; decoded[2].b = 6;
 	decoded[4].a = 5; decoded[4].b = 9; decoded[4].c = 6;
-	decoded[5].bx = pc + 0x100;
+	decoded[5].setBx(pc + 0x100);
 	const std::array runs{NativeBlockSource{source}};
 	NativeRegisterUses uses;
 	NativeIrRegion cold(runs, uses, false, {.observesArithmetic = true});
@@ -207,12 +207,12 @@ void distinctFieldValuesSurviveCopiesAndSlotReuse() {
 void nestedFieldsShareOnlyTheCheckedAddress() {
 	constexpr u32 pc = 0x5300u;
 	std::array decoded{
-		DecodedInstruction{.tableCacheSlot = 7, .a = 1, .b = 0, .c = 0, .op = static_cast<u8>(OpCode::GETFIELD)},
-		DecodedInstruction{.tableCacheSlot = 1, .a = 3, .b = 1, .c = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
-		DecodedInstruction{.bx = 0, .a = 4, .b = 0, .op = static_cast<u8>(OpCode::MOV)},
-		DecodedInstruction{.tableCacheSlot = 7, .a = 2, .b = 4, .c = 0, .op = static_cast<u8>(OpCode::GETFIELD)},
-		DecodedInstruction{.tableCacheSlot = 2, .a = 5, .b = 2, .c = 2, .op = static_cast<u8>(OpCode::GETFIELD)},
-		DecodedInstruction{.bx = 0, .a = 6, .b = 3, .c = 5, .op = static_cast<u8>(OpCode::ADD)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(7), .a = 1, .b = 0, .c = 0, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(1), .a = 3, .b = 1, .c = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.a = 4, .b = 0, .op = static_cast<u8>(OpCode::MOV)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(7), .a = 2, .b = 4, .c = 0, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(2), .a = 5, .b = 2, .c = 2, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.a = 6, .b = 3, .c = 5, .op = static_cast<u8>(OpCode::ADD)},
 	};
 	std::array<NativeBlockInstruction, decoded.size()> source;
 	for (size_t row = 0; row < decoded.size(); ++row) {
@@ -274,9 +274,9 @@ void fieldAddressesStopAtDefinitionsAndEffects() {
 	for (const auto boundary : {Boundary::Copy, Boundary::Redefinition, Boundary::Store, Boundary::Upvalue,
 		Boundary::Global, Boundary::Call, Boundary::UncheckedField, Boundary::FieldKey, Boundary::Prediction}) {
 		std::array decoded{
-			DecodedInstruction{.tableCacheSlot = 4, .a = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
-			DecodedInstruction{.bx = 0, .a = 4, .op = static_cast<u8>(OpCode::MOV)},
-			DecodedInstruction{.tableCacheSlot = 4, .a = 2, .b = 4, .op = static_cast<u8>(OpCode::GETFIELD)},
+			DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(4), .a = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
+			DecodedInstruction{.a = 4, .op = static_cast<u8>(OpCode::MOV)},
+			DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(4), .a = 2, .b = 4, .op = static_cast<u8>(OpCode::GETFIELD)},
 		};
 		auto& between = decoded[1];
 		auto& after = decoded[2];
@@ -285,7 +285,7 @@ void fieldAddressesStopAtDefinitionsAndEffects() {
 			case Boundary::Redefinition: between.b = 3; break;
 			case Boundary::UncheckedField:
 				between.op = static_cast<u8>(OpCode::GETFIELD);
-				between.tableCacheSlot = -1;
+				between.tableCacheSlot() = -1;
 				after.b = 0;
 				break;
 			case Boundary::Store: between.op = static_cast<u8>(OpCode::SETI); after.b = 0; break;
@@ -293,7 +293,7 @@ void fieldAddressesStopAtDefinitionsAndEffects() {
 			case Boundary::Global: between.op = static_cast<u8>(OpCode::SETGL); after.b = 0; break;
 			case Boundary::Call: between.op = static_cast<u8>(OpCode::CALL); after.b = 0; break;
 			case Boundary::FieldKey: after.c = 1; break;
-			case Boundary::Prediction: after.tableCacheSlot = 5; break;
+			case Boundary::Prediction: after.tableCacheSlot() = 5; break;
 		}
 		std::array<NativeBlockInstruction, decoded.size()> source;
 		for (size_t row = 0; row < decoded.size(); ++row) {
@@ -329,7 +329,7 @@ void fieldAddressTemporariesAreBoundedByLifetime() {
 	std::array<NativeBlockInstruction, decoded.size()> source;
 	for (size_t row = 0; row < decoded.size(); ++row) {
 		const auto key = static_cast<u16>(row % keyCount);
-		decoded[row] = {.tableCacheSlot = key, .a = static_cast<u16>(row + 1), .c = static_cast<i16>(key),
+		decoded[row] = {.payload = DecodedInstruction::Payload::tableSlot(key), .a = static_cast<u16>(row + 1), .c = static_cast<i16>(key),
 			.op = static_cast<u8>(OpCode::GETFIELD), .width = 1, .baseCycles = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)]};
 		source[row] = {&decoded[row], 0x5500u + static_cast<u32>(row) * INSTRUCTION_BYTES};
 	}
@@ -353,8 +353,8 @@ void fieldAddressTemporariesAreBoundedByLifetime() {
 }
 
 void feedbackDoesNotDependOnStoreAdjacency() {
-	DecodedInstruction sum{.bx = 0, .a = 3, .b = 1, .c = 2, .op = static_cast<u8>(OpCode::ADD)};
-	DecodedInstruction store{.tableCacheSlot = -1, .c = 3, .op = static_cast<u8>(OpCode::SETFIELD)};
+	DecodedInstruction sum{.a = 3, .b = 1, .c = 2, .op = static_cast<u8>(OpCode::ADD)};
+	DecodedInstruction store{.payload = DecodedInstruction::Payload::tableSlot(-1), .c = 3, .op = static_cast<u8>(OpCode::SETFIELD)};
 	for (auto* instruction : {&sum, &store}) {
 		instruction->width = 1;
 		instruction->baseCycles = BASE_CYCLES[instruction->op];
@@ -430,7 +430,7 @@ void successorsImportLogicalTypesBeforeLowering() {
 	constexpr u32 producerPc = 0x4000, consumerPc = 0x4200;
 	DecodedInstruction load, jump, arithmetic;
 	load.op = static_cast<u8>(OpCode::K1); load.a = 7; load.width = load.baseCycles = 1;
-	jump.op = static_cast<u8>(OpCode::JMP); jump.bx = consumerPc; jump.width = jump.baseCycles = 1;
+	jump.op = static_cast<u8>(OpCode::JMP); jump.setBx(consumerPc); jump.width = jump.baseCycles = 1;
 	arithmetic.op = static_cast<u8>(OpCode::ADD); arithmetic.a = 1; arithmetic.b = arithmetic.c = 7;
 	arithmetic.width = 1; arithmetic.baseCycles = BASE_CYCLES[arithmetic.op];
 	const std::array before{NativeBlockInstruction{&load, producerPc}, NativeBlockInstruction{&jump, producerPc + 4}};
@@ -459,11 +459,11 @@ void onlyConsumedEntryProofsSurviveCopies() {
 	}
 	decoded[0].a = 7;
 	decoded[1].a = 8;
-	decoded[2].bx = copyPc;
+	decoded[2].setBx(copyPc);
 	decoded[3].a = 10;
 	decoded[3].b = 7;
 	decoded[4].a = 8;
-	decoded[5].bx = consumerPc;
+	decoded[5].setBx(consumerPc);
 	decoded[6].a = 1;
 	decoded[6].b = decoded[6].c = 10;
 	const std::array producer{NativeBlockInstruction{&decoded[0], firstPc},
@@ -499,8 +499,8 @@ void dataflowPlansTableAndMemoryInputs() {
 	decoded[1].a = 8;
 	decoded[2].a = 9;
 	decoded[3].a = 10;
-	decoded[3].bx = 1;
-	decoded[4].bx = source[5].pc;
+	decoded[3].setBx(1);
+	decoded[4].setBx(source[5].pc);
 	decoded[5].a = 7;
 	decoded[5].b = 2;
 	decoded[5].c = 8;
@@ -524,9 +524,9 @@ void dataflowPlansTableAndMemoryInputs() {
 }
 
 void recordPlanUsesTypedEntriesAndFullRomWords() {
-	DecodedInstruction allocation{.bx = 0, .c = 2, .op = static_cast<u8>(OpCode::NEWT)};
-	DecodedInstruction first{.tableCacheSlot = -1, .c = -1, .op = static_cast<u8>(OpCode::SETFIELD)};
-	DecodedInstruction last{.tableCacheSlot = -1, .b = 1, .c = 70, .op = static_cast<u8>(OpCode::SETFIELD)};
+	DecodedInstruction allocation{.c = 2, .op = static_cast<u8>(OpCode::NEWT)};
+	DecodedInstruction first{.payload = DecodedInstruction::Payload::tableSlot(-1), .c = -1, .op = static_cast<u8>(OpCode::SETFIELD)};
+	DecodedInstruction last{.payload = DecodedInstruction::Payload::tableSlot(-1), .b = 1, .c = 70, .op = static_cast<u8>(OpCode::SETFIELD)};
 	allocation.width = first.width = 1;
 	last.width = 2;
 	for (auto* instruction : {&allocation, &first, &last}) instruction->baseCycles = BASE_CYCLES[instruction->op];

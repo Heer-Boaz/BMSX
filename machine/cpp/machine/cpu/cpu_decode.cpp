@@ -90,27 +90,26 @@ bool CPU::decodeInstructionWords(
 			case OpCode::ADD:
 			case OpCode::SUB:
 			case OpCode::MUL:
-				decoded.bx = 0;
 				break;
 			case OpCode::KSMI:
-				decoded.sbx = decodedSbx;
+				decoded.setSbx(decodedSbx);
 				break;
 			case OpCode::GETFIELD:
 			case OpCode::SETFIELD:
 			case OpCode::SELF:
 			case OpCode::GETT:
 			case OpCode::SETT:
-				decoded.tableCacheSlot = -1;
+				decoded.tableCacheSlot() = -1;
 				break;
 			case OpCode::JMP:
 			case OpCode::JMPIF:
 			case OpCode::JMPIFNOT:
-				decoded.bx = pc
+				decoded.setBx(pc
 					+ static_cast<u32>(width * INSTRUCTION_BYTES)
-					+ static_cast<u32>(decodedSbx * INSTRUCTION_BYTES);
+					+ static_cast<u32>(decodedSbx * INSTRUCTION_BYTES));
 				break;
 			default:
-				decoded.bx = decodedBx;
+				decoded.setBx(decodedBx);
 				break;
 		}
 		decoded.disp = ext;
@@ -135,7 +134,7 @@ bool CPU::decodeInstructionWords(
 		instructionCacheable &= index < count;
 		if (compilation && !instructionCacheable) return false;
 		const u32 base = image.globalMapBase + (system ? 4u * image.globalNameCount : 0u);
-		decoded.bx = m_memory.readRamRecordWord(base + 4u * index);
+		decoded.setBx(m_memory.readRamRecordWord(base + 4u * index));
 	}
 	decoded.dispatchOp = decoded.op;
 	decoded.baseCycles = DECODED_DISPATCH_BASE_CYCLES[decoded.op];

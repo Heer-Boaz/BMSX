@@ -22,7 +22,7 @@ DISPATCH_LABEL(MOV) {
 
 DISPATCH_LABEL(LOADK) {
 	const int a = decoded->a;
-	const uint32_t bx = decoded->bx;
+	const uint32_t bx = decoded->bx();
 	SET_REGISTER_FAST(a, IMAGE.constPool.get(static_cast<size_t>(bx)));
 	DISPATCH_NEXT();
 }
@@ -79,35 +79,35 @@ DISPATCH_LABEL(KM1) {
 
 DISPATCH_LABEL(KSMI) {
 	const int a = decoded->a;
-	const int sbx = decoded->sbx;
+	const int sbx = decoded->sbx();
 	SET_REGISTER_FAST(a, valueInteger(sbx));
 	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(GETSYS) {
 	const int a = decoded->a;
-	const uint32_t bx = decoded->bx;
+	const uint32_t bx = decoded->bx();
 	SET_REGISTER_FAST(a, m_systemGlobalBank.readSlot(bx));
 	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SETSYS) {
 	const int a = decoded->a;
-	const uint32_t bx = decoded->bx;
+	const uint32_t bx = decoded->bx();
 	m_systemGlobalBank.writeSlot(bx, REG(a));
 	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(GETGL) {
 	const int a = decoded->a;
-	const uint32_t bx = decoded->bx;
+	const uint32_t bx = decoded->bx();
 	SET_REGISTER_FAST(a, m_globalBank.readSlot(bx));
 	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SETGL) {
 	const int a = decoded->a;
-	const uint32_t bx = decoded->bx;
+	const uint32_t bx = decoded->bx();
 	m_globalBank.writeSlot(bx, REG(a));
 	DISPATCH_NEXT();
 }
@@ -454,14 +454,14 @@ DISPATCH_LABEL(MTC0) {
 
 DISPATCH_LABEL(JMP) {
 	if (decoded->a != 0) instructionBudgetRemaining -= closeUpvalues(FRAME, static_cast<u32>(FRAME.stackBase()) + decoded->a - 1u);
-	const uint32_t bx = decoded->bx;
+	const uint32_t bx = decoded->bx();
 	FRAME.writeControl(FrameField::Pc, bx);
 	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(JMPIF) {
 	const int a = decoded->a;
-	const uint32_t bx = decoded->bx;
+	const uint32_t bx = decoded->bx();
 	if (isTruthy(REG(a))) {
 		FRAME.writeControl(FrameField::Pc, bx);
 	}
@@ -470,7 +470,7 @@ DISPATCH_LABEL(JMPIF) {
 
 DISPATCH_LABEL(JMPIFNOT) {
 	const int a = decoded->a;
-	const uint32_t bx = decoded->bx;
+	const uint32_t bx = decoded->bx();
 	if (!isTruthy(REG(a))) {
 		FRAME.writeControl(FrameField::Pc, bx);
 	}
@@ -478,7 +478,7 @@ DISPATCH_LABEL(JMPIFNOT) {
 }
 
 DISPATCH_LABEL(CLOSURE) {
-	executeClosure(FRAME, decoded->a, decoded->bx, decoded->c);
+	executeClosure(FRAME, decoded->a, decoded->bx(), decoded->c);
 	DISPATCH_CONTINUE();
 }
 
