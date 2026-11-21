@@ -75,10 +75,9 @@ void writeRoutes(bool scalar) {
   prepare(1); machine.warm(scalar);
   auto table = prepare(0); machine.restart();
   const int base = BASE_CYCLES[static_cast<u8>(op)] + (op == OpCode::CALL ? 1 : 0);
-  const int initialization = integer ? 1 : 2;
-  if (cpu.runUntilDepth(0, base + 1) != RunResult::Yielded || cpu.instructionBudgetRemaining != 1 - initialization
+  if (cpu.runUntilDepth(0, base) != RunResult::Yielded || cpu.instructionBudgetRemaining != 0
    || frame->readControl(bmsx::FrameField::Pc) != machine.rom.textAddress + INSTRUCTION_BYTES || table.get(key) != valueInteger(73))
-   throw std::runtime_error("every table-write route charges growth and stops at its successor");
+   throw std::runtime_error("every table-write route completes growth at its ordinary charge");
  }
 }
 
@@ -102,23 +101,22 @@ void rebuildWork(bool scalar) {
   const int hash = scenario == "hash-to-array" || scenario == "mixed" || scenario == "same-capacity" || scenario == "weak-collection" ? 2 : scenario == "failed-growth" ? 1024 : 0;
   auto table = cpu.createTable(array, hash);
   r.set(0, valueTable(table.address())); r.set(2, valueInteger(73)); frame->writeControl(bmsx::FrameField::Top, 5);
-  int surcharge = 0;
   size_t capacity = 0;
   if (scenario == "array-growth") {
    table.setInteger(1, valueInteger(11)); table.setInteger(2, valueInteger(22)); r.set(1, valueInteger(3));
-   surcharge = 10; capacity = 4;
+   capacity = 4;
   } else if (scenario == "hash-to-array") {
    table.setInteger(1, valueInteger(11)); table.setInteger(3, valueInteger(33)); r.set(1, valueInteger(2));
-   surcharge = 14; capacity = 4;
+   capacity = 4;
   } else if (scenario == "array-to-hash") {
    table.setInteger(8, valueInteger(88)); r.set(1, field);
-   surcharge = 22; capacity = 2;
+   capacity = 2;
   } else if (scenario == "mixed") {
    table.setInteger(1, valueInteger(11)); table.setInteger(4, valueInteger(44)); table.set(field, valueInteger(55)); table.set(other, valueInteger(66));
-   r.set(1, valueString(cpu.stringPool().intern("third"))); surcharge = 32; capacity = 5;
+   r.set(1, valueString(cpu.stringPool().intern("third"))); capacity = 5;
   } else if (scenario == "same-capacity") {
    table.set(field, valueInteger(55)); table.set(other, valueInteger(66)); table.set(other, valueNil());
-   r.set(1, valueString(cpu.stringPool().intern("third"))); surcharge = 14; capacity = 2;
+   r.set(1, valueString(cpu.stringPool().intern("third"))); capacity = 2;
   } else if (scenario == "weak-collection") {
    auto mode = cpu.createTable(0, 1);
    mode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v"))); table.setMetatableAddress(mode.address());
@@ -127,7 +125,7 @@ void rebuildWork(bool scalar) {
    while (cpu.gcHeap().phase() != GcPhase::Atomic) cpu.stepHeap(valueNil(), valueNil(), valueNil());
    const auto bytes = cpu.luaHeap().usedBytes();
    cpu.luaHeap().setCollectionTarget(bytes);
-   surcharge = 16; capacity = 4;
+   capacity = 4;
   } else {
    for (int i = 0; i < 1024; ++i) table.set(valueFloat(i + 0.5f), valueInteger(i));
    r.set(1, valueFloat(1024.5f));
@@ -137,7 +135,7 @@ void rebuildWork(bool scalar) {
    cpu.luaHeap().setCollectionTarget(cpu.luaHeap().capacity());
    // No contiguous replacement backing even after collection.
    while (cpu.heapAllocator().allocate(HEAP_PAGE_SIZE, true) != 0) { /* fixture-owned RAM */ }
-   surcharge = 2048; capacity = 1024;
+   capacity = 1024;
   }
   int gcCycles = 0;
   if (scenario == "weak-collection" || scenario == "failed-growth") {
@@ -152,17 +150,17 @@ void rebuildWork(bool scalar) {
    table = asTable(r.get(0), cpu.gcHeap());
   }
   const Value key = r.get(1); machine.restart();
-  if (cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + 1) != RunResult::Yielded
-   || cpu.instructionBudgetRemaining != 1 - surcharge - gcCycles || table.storedSlotCount() != capacity
+  if (cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SETT)]) != RunResult::Yielded
+   || cpu.instructionBudgetRemaining != -gcCycles || table.storedSlotCount() != capacity
    || frame->readControl(bmsx::FrameField::Pc) != machine.rom.textAddress + (scenario == "failed-growth" ? 0u : INSTRUCTION_BYTES))
-   throw std::runtime_error("table rebuild must charge exactly its completed storage work: " + scenario);
+   throw std::runtime_error("table rebuild only charges collection in addition to the opcode: " + scenario);
   if (scenario == "failed-growth") {
    if (cpu.readLuaFaultReasonWord() != LUA_FAULT_REASON_OUT_OF_MEMORY || !isNil(table.get(key)) || table.get(valueFloat(0.5f)) != valueInteger(0))
-    throw std::runtime_error("failed replacement charges its sizing scan without mutating mappings");
+    throw std::runtime_error("failed replacement does not mutate mappings");
   } else {
    if (table.get(key) != valueInteger(73)) throw std::runtime_error("rebuild lost its inserted mapping");
    if (scenario == "weak-collection" && (!isNil(table.get(field)) || !isNil(table.get(other))))
-    throw std::runtime_error("migration must not charge weak entries removed by allocation-triggered collection");
+    throw std::runtime_error("migration must not revive weak entries removed by collection");
   }
  }
 }
@@ -179,7 +177,7 @@ void hostGrantScratch(bool scalar) {
  const Value key = valueString(cpu.stringPool().intern("field"));
  frame->registers.set(0, valueTable(table.address())); frame->registers.set(1, key); frame->registers.set(2, valueInteger(91)); frame->writeControl(bmsx::FrameField::Top, 3);
  cpu.instructionBudgetRemaining = 29; table.set(key, valueInteger(37));
- if (cpu.instructionBudgetRemaining != 27 || scheduler.currentNowCycles() != 73)
+ if (cpu.instructionBudgetRemaining != 29 || scheduler.currentNowCycles() != 73)
   throw std::runtime_error("host storage work must not advance machine time");
  const auto saved = cpu.captureRuntimeState();
  cpu.instructionBudgetRemaining = -99;
@@ -343,13 +341,11 @@ int main() {
      size_t expectedCapacity = 1;
      while (expectedCapacity <= i) expectedCapacity *= 2;
      if (initialCapacity) expectedCapacity = static_cast<size_t>(initialCapacity);
-     const int surcharge = expectedCapacity == previousCapacity ? 0
-      : static_cast<int>(4 * previousCapacity + 2 * expectedCapacity + 2 * i);
      const int grant = BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + 1;
      if (cpu.runUntilDepth(0, grant) != RunResult::Yielded
-      || cpu.instructionBudgetRemaining != (surcharge ? 1 - surcharge : 1 - BASE_CYCLES[static_cast<u8>(OpCode::JMP)]))
-      throw std::runtime_error("table store charges scans, initialization and relocation only when rebuilding");
-     if (frame->readControl(bmsx::FrameField::Pc) != rom.textAddress + (surcharge ? INSTRUCTION_BYTES : 0u))
+      || cpu.instructionBudgetRemaining != 1 - BASE_CYCLES[static_cast<u8>(OpCode::JMP)])
+      throw std::runtime_error("growth and overwrite pay the same instruction charge");
+     if (frame->readControl(bmsx::FrameField::Pc) != rom.textAddress)
       throw std::runtime_error("growth finishes atomically before the following instruction");
      if (table.getStringKey(keys[i]) != valueInteger(73)) throw std::runtime_error("table store lost a field");
      const size_t capacity = table.storedSlotCount();

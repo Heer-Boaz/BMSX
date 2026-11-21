@@ -10,10 +10,11 @@ namespace bmsx {
 
 NativeLowering::NativeLowering(std::span<const std::unique_ptr<NativeBlock>> blocks,
 	const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir,
-	std::span<NativeBlockExitSite> replays, NativeRegisterUses& uses)
+	std::span<NativeBlockExitSite> replays, NativeRegisterUses& uses, std::span<const NativeImageConstant> constants)
 	: m_compiler(sljit_create_compiler(nullptr)), m_cache(m_compiler, NativeBlockAbi::words, NativeBlockAbi::tags,
 													  NativeBlockAbi::wordRegisters, NativeBlockAbi::floatRegisters),
-	  m_blocks(blocks), m_bindings(bindings), m_ir(ir), m_admissionReplays(replays), m_uses(uses), m_entries(blocks.size()) {
+	  m_blocks(blocks), m_bindings(bindings), m_ir(ir), m_admissionReplays(replays), m_uses(uses),
+	  m_constants(constants), m_entries(blocks.size()) {
 	if (!m_compiler)
 		throw std::bad_alloc();
 	sljit_set_context(m_compiler, 0, NativeBlockAbi::signature, NativeBlockAbi::scratches, NativeBlockAbi::saveds,
@@ -41,6 +42,10 @@ NativeRegisterCache::Operand NativeLowering::readTyped(
 }
 void NativeLowering::emitPoolWord(u32 index, sljit_s32 word) {
 	auto* c = m_compiler;
+	if (const auto constant = nativeImageConstant(m_constants, index)) {
+		sljit_emit_op1(c, SLJIT_MOV32, word, 0, SLJIT_IMM, valuePayload(*constant));
+		return;
+	}
 	constexpr auto base = offsetof(NativeBlockRunState, constants);
 	sljit_emit_op1(c, SLJIT_MOV_P, word, 0, SLJIT_MEM1(NativeBlockAbi::state), base + ConstValueSpan::wordsOffset());
 	sljit_emit_op1(c, SLJIT_MOV32, word, 0, SLJIT_MEM1(word), index * sizeof(u32));
@@ -54,6 +59,10 @@ void NativeLowering::emitPoolWord(u32 index, sljit_s32 word) {
 
 void NativeLowering::emitPoolTag(u32 index, sljit_s32 tag) {
 	auto* c = m_compiler;
+	if (const auto constant = nativeImageConstant(m_constants, index)) {
+		sljit_emit_op1(c, SLJIT_MOV32, tag, 0, SLJIT_IMM, static_cast<u8>(valueTag(*constant)));
+		return;
+	}
 	sljit_emit_op1(c, SLJIT_MOV_P, tag, 0, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, constants) + ConstValueSpan::tagsOffset());
 	sljit_emit_op1(c, SLJIT_MOV_U8, tag, 0, SLJIT_MEM1(tag), index);
@@ -220,6 +229,7 @@ void NativeLowering::endBlock() {
 }
 void* NativeLowering::finish(size_t& codeBytes) {
 	emitRomReads();
+	emitTableStoreBarriers();
 	emitSingleStringReads();
 	for (auto& exit : m_coldExits) {
 		exit.label = sljit_emit_label(m_compiler);

@@ -156,12 +156,10 @@ return true`, 3);
    for (let index = 0; index < keys.length; index += 1) {
     frame.registers.setString(1, keys[index]);
     cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
-    const capacityExpected = initialCapacity || (1 << (32 - Math.clz32(index)));
-    const surcharge = capacityExpected === previousCapacity ? 0 : 4 * previousCapacity + 2 * capacityExpected + 2 * index;
     const grant = BASE_CYCLES[OpCode.SETT] + 1;
     assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
-    assert.equal(cpu.instructionBudgetRemaining, surcharge ? 1 - surcharge : 1 - BASE_CYCLES[OpCode.JMP]);
-    assert.equal(frame.pc, surcharge ? entry + INSTRUCTION_BYTES : entry,
+    assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.JMP]);
+    assert.equal(frame.pc, entry,
      'growth finishes atomically and stops before the following instruction');
     assert.equal(cpu.gc.tables.getStringKey(table, keys[index]), valueInteger(73));
     const capacity = cpu.gc.tables.storedSlotCount(table);
@@ -175,7 +173,7 @@ return true`, 3);
  });
 
  for (const op of [OpCode.SETT, OpCode.SETI, OpCode.SETFIELD, OpCode.CALL]) {
-  test(`every table-write route charges growth at its owning boundary (${backend}, ${op})`, () => {
+  test(`every table-write route grows at the ordinary instruction charge (${backend}, ${op})`, () => {
    const text = new Uint8Array(2 * INSTRUCTION_BYTES);
    writeInstruction(text, 0, op, 0, op === OpCode.SETFIELD ? 0 : op === OpCode.CALL ? 4 : 1, op === OpCode.CALL ? 1 : 2);
    writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
@@ -203,16 +201,15 @@ return true`, 3);
    const table = prepare(0);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
    const base = BASE_CYCLES[op] + (op === OpCode.CALL ? 1 : 0);
-   assert.equal(cpu.runUntilDepth(0, base + 1), RunResult.Yielded);
-   const initialization = integer ? 1 : 2;
-   assert.equal(cpu.instructionBudgetRemaining, 1 - initialization);
+   assert.equal(cpu.runUntilDepth(0, base), RunResult.Yielded);
+   assert.equal(cpu.instructionBudgetRemaining, 0);
    assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
    assert.equal(cpu.gc.tables.get(table, key), valueInteger(73));
   });
  }
 
  for (const scenario of ['array-growth', 'hash-to-array', 'array-to-hash', 'mixed', 'same-capacity', 'weak-collection', 'failed-growth'] as const) {
-  test(`table rebuild accounts actual completed storage work: ${scenario} (${backend})`, () => {
+  test(`table rebuild adds no storage surcharge: ${scenario} (${backend})`, () => {
    const text = new Uint8Array(33 * INSTRUCTION_BYTES);
    writeInstruction(text, 0, OpCode.SETT, 0, 1, 2);
    writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
@@ -233,24 +230,24 @@ return true`, 3);
    const hash = scenario === 'hash-to-array' || scenario === 'mixed' || scenario === 'same-capacity' || scenario === 'weak-collection' ? 2 : scenario === 'failed-growth' ? 1024 : 0;
    let table = cpu.createTable(array, hash);
    r.setTable(0, table); r.setInteger(2, 73); frame.top = 5;
-   let surcharge: number, capacity: number;
+   let capacity: number;
    if (scenario === 'array-growth') {
     cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setInteger(table, 2, valueInteger(22)); r.setInteger(1, 3);
-    surcharge = 10; capacity = 4;
+    capacity = 4;
    } else if (scenario === 'hash-to-array') {
     cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setInteger(table, 3, valueInteger(33)); r.setInteger(1, 2);
-    surcharge = 14; capacity = 4;
+    capacity = 4;
    } else if (scenario === 'array-to-hash') {
     cpu.gc.tables.setInteger(table, 8, valueInteger(88)); r.set(1, field);
-    surcharge = 22; capacity = 2;
+    capacity = 2;
    } else if (scenario === 'mixed') {
     cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setInteger(table, 4, valueInteger(44)); cpu.gc.tables.set(table, field, valueInteger(55)); cpu.gc.tables.set(table, other, valueInteger(66));
     r.set(1, valueString(cpu.stringPool.intern('third')));
-    surcharge = 32; capacity = 5;
+    capacity = 5;
    } else if (scenario === 'same-capacity') {
     cpu.gc.tables.set(table, field, valueInteger(55)); cpu.gc.tables.set(table, other, valueInteger(66)); cpu.gc.tables.set(table, other, valueNil());
     r.set(1, valueString(cpu.stringPool.intern('third')));
-    surcharge = 14; capacity = 2;
+    capacity = 2;
    } else if (scenario === 'weak-collection') {
     const mode = cpu.createTable(0, 1);
     cpu.gc.tables.setStringKey(mode, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v'))); cpu.gc.tables.setMetatableAddress(table, mode);
@@ -259,7 +256,7 @@ return true`, 3);
     while (cpu.gc.phase() !== GcPhase.Atomic) cpu.gc.step();
     const trackedBytes = cpu.luaHeap.usedBytes();
     cpu.luaHeap.setCollectionTarget(trackedBytes);
-    surcharge = 16; capacity = 4;
+    capacity = 4;
    } else {
     for (let i = 0; i < 1024; ++i) cpu.gc.tables.set(table, valueFloat(i + 0.5), valueInteger(i));
     r.setFloat(1, 1024.5);
@@ -270,7 +267,7 @@ return true`, 3);
     // Claim all remaining page runs so the live table has no contiguous
     // replacement backing even after the emergency collection.
     while (cpu.heapAllocator.allocate(HEAP_PAGE_SIZE, true) !== 0) { /* fixture-owned RAM */ }
-    surcharge = 2048; capacity = 1024;
+    capacity = 1024;
    }
    let gcCycles = 0;
    if (scenario === 'weak-collection' || scenario === 'failed-growth') {
@@ -281,8 +278,8 @@ return true`, 3);
    }
    const key = r.get(1);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
-   assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.SETT] + 1), RunResult.Yielded);
-   assert.equal(cpu.instructionBudgetRemaining, 1 - surcharge - gcCycles);
+   assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.SETT]), RunResult.Yielded);
+   assert.equal(cpu.instructionBudgetRemaining, 0 - gcCycles);
    assert.equal(frame.pc, scenario === 'failed-growth' ? entry : entry + INSTRUCTION_BYTES);
    assert.equal(cpu.gc.tables.storedSlotCount(table), capacity);
    if (scenario === 'failed-growth') {
@@ -310,7 +307,7 @@ return true`, 3);
   r.setTable(0, table); r.set(1, key); r.setInteger(2, 91); cpu.rootThread.currentFrame!.top = 3;
   cpu.instructionBudgetRemaining = 29;
   cpu.gc.tables.set(table, key, valueInteger(37));
-  assert.equal(cpu.instructionBudgetRemaining, 27);
+  assert.equal(cpu.instructionBudgetRemaining, 29);
   assert.equal(scheduler.currentNowCycles(), 73, 'host storage work does not advance machine time');
   const saved = cpu.captureRuntimeState();
   cpu.instructionBudgetRemaining = -99;

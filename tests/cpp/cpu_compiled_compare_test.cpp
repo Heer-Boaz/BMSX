@@ -1,4 +1,3 @@
-#include "common/hash_fnv.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/runtime/block.h"
@@ -99,7 +98,7 @@ void genericPredicatesAndStringChargeAgree() {
 	}
 }
 
-void stringOrderingReadsPendingRegisterWords() {
+void stringOrderingKeepsResidentValuesAndExactFrontiers() {
 	for (const auto op : {OpCode::LT, OpCode::LE}) for (const bool expected : {true, false}) {
 		test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOADK), 3, 0, 0);
@@ -112,7 +111,7 @@ void stringOrderingReadsPendingRegisterWords() {
 		writeInstruction(image.text, 7, static_cast<u8>(OpCode::MOV), 8, 4, 0);
 		writeInstruction(image.text, 8, static_cast<u8>(OpCode::JMP), 0, 63, 55, 255);
 		image.functions = {{.firstWord = 0, .wordCount = 9, .maxStack = 9}};
-		image.constants = {toSignedWord(fnv1a32("mz"))};
+		image.constants = {i32{9}};
 		CpuMachine native(image, false), scalar(image, true);
 		const u32 pc = native.rom.textAddress;
 		const int prefix = BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::KSMI)];
@@ -128,15 +127,7 @@ void stringOrderingReadsPendingRegisterWords() {
 #endif
 		for (auto* machine : {&native, &scalar}) {
 			auto& registers = machine->cpu.activeThread()->frameAtDepth(0)->registers;
-			const u32 record = RAM_BASE + registers.wordAddress() + 2u * INSTRUCTION_BYTES;
-			// Register words R2:R6 back a complete RAM String. The prefix changes "m" to "mz"
-			// by publishing its hash and length, while both successors keep R4 live.
-			machine->memory.writeRamRecordWord(record, BLUA32_STRING_RECORD_KIND);
-			machine->memory.writeRamRecordWord(record + BLUA32_STRING_HASH_OFFSET, fnv1a32("m"));
-			machine->memory.writeRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET, 1u);
-			machine->memory.writeRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET, 0u);
-			machine->memory.writeRamRecordWord(record + BLUA32_STRING_RECORD_HEADER_SIZE, 0x7a6du);
-			registers.set(0, valueString(record));
+			registers.set(0, valueString(machine->cpu.stringPool().intern("mz")));
 			registers.set(1, valueString(machine->cpu.stringPool().intern("my")));
 		}
 		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded,
@@ -146,13 +137,13 @@ void stringOrderingReadsPendingRegisterWords() {
 			require(cpu.readFramePc(0) == pc + (expected ? 5u : 4u) * INSTRUCTION_BYTES
 				&& cpu.readCurrentInstructionPc() == pc + 2u * INSTRUCTION_BYTES
 				&& cpu.lastPc == pc + 3u * INSTRUCTION_BYTES && cpu.instructionBudgetRemaining == -2,
-				"the ordering reads the new length, retaining the exact WIDE and fused JMP frontier");
+				"ordering charges string work at the exact WIDE and fused JMP frontier");
 		}
 		require(native.cpu.captureRuntimeState() == scalar.cpu.captureRuntimeState()
 			&& test::sameLanguageRam(native.cpu, scalar.cpu), "ordering publishes the same architectural state");
 		for (auto* machine : {&native, &scalar}) {
 			auto& registers = machine->cpu.activeThread()->frameAtDepth(0)->registers;
-			registers.set(3, valueInteger(toSignedWord(fnv1a32("m"))));
+			registers.set(3, valueInteger(0));
 			registers.set(4, valueInteger(1));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
 		}
@@ -162,29 +153,9 @@ void stringOrderingReadsPendingRegisterWords() {
 			&& native.cpu.readFramePc(0) == pc + (linkedWord + 1u) * INSTRUCTION_BYTES
 			&& native.cpu.lastPc == pc + linkedWord * INSTRUCTION_BYTES && native.cpu.instructionBudgetRemaining == 0
 			&& native.cpu.readFrameRegister(0, expected ? 7 : 8) == valueInteger(2),
-			"the linked successor sees the retained length binding with its exact known charge");
+			"the linked successor sees the retained value with its exact known charge");
 		require(native.cpu.captureRuntimeState() == scalar.cpu.captureRuntimeState()
 			&& test::sameLanguageRam(native.cpu, scalar.cpu), "the linked successor publishes the same architectural state");
-		const u32 nextPc = pc + 4u * INSTRUCTION_BYTES;
-		for (const auto field : {FrameField::Pc, FrameField::Top}) {
-			for (auto* machine : {&native, &scalar}) {
-				auto& cpu = machine->cpu;
-				auto& frame = *cpu.activeThread()->currentFrame;
-				const u32 record = RAM_BASE + frame.controlOffset + static_cast<u32>(field) - BLUA32_STRING_LENGTH_OFFSET;
-				// Comparing the same String charges its byte length without
-				// requiring unrelated frame-control words to name real bytes.
-				frame.registers.set(0, valueString(record));
-				frame.registers.set(1, valueString(record));
-				frame.setTop(2);
-				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
-			}
-			const bool skips = (op == OpCode::LE) != expected;
-			const int length = field == FrameField::Pc ? static_cast<int>(nextPc & (MAIN_RAM_SIZE - 1u)) : 5;
-			require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded
-				&& native.cpu.readFramePc(0) == nextPc + (skips ? INSTRUCTION_BYTES : 0u)
-				&& native.cpu.instructionBudgetRemaining == -length,
-				"String ordering charges the visible sequential WIDE PC or updated prefix top, before the fused JMP");
-		}
 	}
 }
 
@@ -802,7 +773,7 @@ void skipFetchBoundaries() {
 int main() {
 	try {
 		genericPredicatesAndStringChargeAgree();
-		stringOrderingReadsPendingRegisterWords();
+		stringOrderingKeepsResidentValuesAndExactFrontiers();
 		numericRkComparisonsBelongToTheirExecutionImage();
 		changingSkippedBytesRetireResolvedEdges(); maximumLengthSkipDependencyRetires(); resolvedComparisonLinksBothPaths();
 		pairedWideJumpsRetainBoundariesAndMutableTargets(); pairedJumpLinksAcrossPages(); pairedJumpFaultsOnlyOnTheNextGrant(); skipFetchBoundaries();

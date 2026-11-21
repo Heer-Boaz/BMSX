@@ -386,109 +386,6 @@ void hotUpvalueAlias() {
 	}
 }
 
-void physicalUpvalueFootprints() {
-	test::Blua32TestImage image;
-	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 7, 0, 5);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 5, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::GETUP), 2, 0, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::SETUP), 0, 1, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::KSMI), 3, 0, 33);
-	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
-	writeInstruction(image.text, 6, static_cast<u8>(OpCode::KSMI), 3, 0, 60);
-	writeInstruction(image.text, 7, static_cast<u8>(OpCode::JMP), 0, 63, 56, 255);
-	image.functions = {{.firstWord = 0, .wordCount = 8, .maxStack = 16}};
-	CpuMachine native(image), scalar(image, true);
-	const auto charge = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
-	const auto prefix = charge(OpCode::JMPIF) + charge(OpCode::K1) + charge(OpCode::GETUP) + charge(OpCode::SETUP);
-	const auto tail = charge(OpCode::KSMI) + charge(OpCode::JMP);
-	const u32 start = native.rom.textAddress;
-	const u32 alternate = start + 6u * INSTRUCTION_BYTES;
-	std::array<CpuMachine*, 2> machines{&native, &scalar};
-	std::array<std::array<u32, 2>, 2> cells;
-	for (size_t index = 0; index < machines.size(); ++index) {
-		auto& machine = *machines[index];
-		auto& frame = *machine.cpu.activeThread()->currentFrame;
-		auto& heap = machine.cpu.gcHeap();
-		const auto prototype = ClosureRecord::readBinding(machine.memory, frame.closureAddress());
-		const u32 closure = heap.budget.allocateClosureRecord(2, false, cells[index]);
-		ClosureRecord::initialize(machine.memory, closure, prototype, heap.white(), 2, false, false);
-		for (u32 capture = 0; capture < cells[index].size(); ++capture)
-			ClosureRecord::setCaptureAddress(machine.memory, closure, capture, cells[index][capture]);
-		frame.writeControl(FrameField::Closure, closure);
-		// Warm the regular returning SETUP edge while the pointer names a
-		// valid open capture, and the alternate destination independently.
-		Upvalue::bindOpen(machine.memory, cells[index][1], frame.thread->address, frame.stackBase() + 8u, 0);
-		frame.registers.set(7, valueBool(true));
-		machine.cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 30 * (charge(OpCode::JMPIF) + tail));
-		frame.registers.set(7, valueBool(false));
-		machine.cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 30 * (prefix + tail));
-	}
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	native.cpu.prepareSystemNativeCode();
-	const auto& page = *native.cpu.activeThread()->currentFrame->decodedPage;
-	const u32 entry = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-	for (const auto expected : {entry + 1, entry + 4, entry + 6})
-		test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->currentFrame->decodedPage, expected);
-	require(page.nativeBlocks->entries[entry + 1] != nullptr, "the observed operations enter a generated body");
-#endif
-	// Deliberately address private RAM through the record port; the public
-	// CPU bus cannot forge these captures.
-	enum class Port { ClosedRead, ClosedWrite, ReadPc, ReadTop, WritePc };
-	for (const auto port : {Port::ClosedRead, Port::ClosedWrite, Port::ReadPc, Port::ReadTop, Port::WritePc}) {
-		for (size_t index = 0; index < machines.size(); ++index) {
-			auto& machine = *machines[index];
-			auto& frame = *machine.cpu.activeThread()->currentFrame;
-			auto& memory = machine.memory;
-			auto& [readCell, writeCell] = cells[index];
-			frame.writeControl(FrameField::Pc, start);
-			frame.compilationEntry = true;
-			frame.setTop(0);
-			frame.registers.set(0, valueInteger(port == Port::WritePc ? alternate : 9));
-			frame.registers.set(2, valueNil());
-			frame.registers.set(3, valueNil());
-			frame.registers.set(4, valueInteger(0));
-			frame.registers.set(5, valueInteger(9));
-			for (u32 capture = 0; capture < 2; ++capture) {
-				const u32 cell = cells[index][capture];
-				memory.writeRamRecordByte(cell + UPVALUE_FLAGS, 0);
-				ClosureRecord::setCaptureAddress(memory, frame.closureAddress(), capture, cell);
-			}
-			if (port == Port::ClosedRead || port == Port::ClosedWrite) {
-				const u32 word = frame.registers.wordAddress() + 5u * sizeof(u32);
-				const u32 cell = word - UPVALUE_VALUE_WORD;
-				require((cell & UPVALUE_ADDRESS_MASK) == cell, "closed alias sits at an aligned physical slot");
-				memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, static_cast<u8>(ValueTag::Integer));
-				ClosureRecord::setCaptureAddress(memory, frame.closureAddress(), port == Port::ClosedRead ? 0 : 1, cell);
-			} else {
-				constexpr u32 owner = DYNAMIC_RAM_BASE - RAM_BASE + 0x200u, tag = owner + 0x100u;
-				const u32 word = frame.controlOffset + static_cast<u32>(port == Port::ReadTop ? FrameField::Top : FrameField::Pc);
-				memory.writeRamRecordWord(owner + static_cast<u32>(ThreadField::StackBlock), word);
-				memory.writeRamRecordWord(owner + static_cast<u32>(ThreadField::StackCapacity), ((tag - word) & RAM_RECORD_WORD_MASK) / 4u);
-				memory.writeRamRecordByte(tag, static_cast<u8>(ValueTag::Integer));
-				Upvalue::bindOpen(memory, port == Port::WritePc ? writeCell : readCell, owner, 0, 0);
-			}
-		}
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-		const bool reads = port == Port::ClosedRead || port == Port::ReadPc || port == Port::ReadTop;
-		const auto expectedExit = reads ? NativeBlockExit::ReadUpvalue : NativeBlockExit::WriteUpvalue;
-		const auto& entries = native.cpu.nativeGateProfile().exits[static_cast<size_t>(expectedExit)].entries;
-		const auto before = entries;
-#endif
-		test::runCpuParity(native.cpu, scalar.cpu, prefix + tail);
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-		require(entries == before + 1, "the native body reaches the exact semantic capture boundary");
-#endif
-		requireParity(native, scalar);
-		const auto& frame = *native.cpu.activeThread()->currentFrame;
-		if (port == Port::ClosedRead) require(frame.registers.get(2) == valueInteger(1), "closed GETUP sees the current dirty register word");
-		if (port == Port::ClosedWrite) require(frame.registers.get(5) == valueInteger(9), "closed SETUP is not overwritten by a stale cached register");
-		if (port == Port::ReadPc) require(frame.registers.get(2) == valueInteger(start + 3u * INSTRUCTION_BYTES), "open GETUP sees its advanced PC");
-		if (port == Port::ReadTop) require(frame.registers.get(2) == valueInteger(6), "open GETUP sees the prefix's register top");
-		if (port == Port::WritePc) require(frame.registers.get(3) == valueInteger(60), "SETUP takes the written PC, not its warmed fallthrough");
-	}
-}
-
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 struct ContextBlock {
 	using Payload = DecodedInstruction::Payload;
@@ -638,34 +535,6 @@ void rawContextValues(CpuMachine& machine) {
 		&& machine.memory.readRamRecordWord(closed + UPVALUE_NEXT) == previousHead
 		&& machine.memory.readRamRecordWord(head) == ((closed & GC_RECORD_MASK) >> GC_RECORD_SHIFT),
 		"the semantic store publishes both the reference and the closed cell's raw changed-queue link");
-	const u32 rawCell = DYNAMIC_RAM_BASE + 0x600u;
-	machine.memory.writeRamRecordByte(rawCell, UPVALUE_RECORD_KIND);
-	require(heap.cellRecordAddress(rawCell) == 0u, "an unallocated header is not a GC cell");
-	machine.memory.writeRamRecordWord(boundClosure + CLOSURE_CAPTURE_WORDS + sizeof(u32), rawCell | 0x80000000u);
-	captureRegisters.set(12, valueFloatBits(0x80000000u));
-	NativeBlockRunState addressed{.frame = &frame, .heap = &heap,
-		.remainingCycles = 100, .ram = machine.memory.ramData()};
-	const auto& addressedExit = *outerRead.blocks.front()->run(captureRegisters, addressed);
-	require(addressedExit.exit == NativeBlockExit::Continue && addressedExit.currentPc == outerRead.source.back().pc && addressedExit.nextPc == 0
-		&& captureRegisters.get(6) == valueFloatBits(0x80000000u)
-		&& machine.memory.readRamRecordWord(rawCell + UPVALUE_VALUE_WORD) == 0x80000000u
-		&& Upvalue::load(machine.memory, closed) == child,
-		"generated GETUP and SETUP use masked cell bytes rather than an unrelated host slot");
-	machine.memory.writeRamRecordByte(rawCell + UPVALUE_FLAGS, UPVALUE_OPEN);
-	machine.memory.writeRamRecordWord(rawCell + UPVALUE_VALUE_WORD, 16);
-	machine.memory.writeRamRecordWord(rawCell + UPVALUE_OWNER, owner->address | 0x80000000u);
-	outerRegisters.set(0, valueFloatBits(0xffa12345u));
-	const u32 rawClosure = DYNAMIC_RAM_BASE + 0x700u;
-	ClosureRecord::initialize(machine.memory, rawClosure, {}, heap.white(), 1u, false, false);
-	machine.memory.writeRamRecordWord(rawClosure + CLOSURE_CAPTURE_WORDS, rawCell | 0x80000000u);
-	machine.memory.writeRamRecordWord(frame.controlOffset + static_cast<u32>(FrameField::Closure), rawClosure | 0x80000000u);
-	ContextBlock rawOpen(machine, {{OpCode::GETUP, 1}, {OpCode::JMP}});
-	NativeBlockRunState rawAlias{.frame = &frame, .heap = &heap,
-		.remainingCycles = 100, .ram = machine.memory.ramData()};
-	const auto& rawAliasExit = *rawOpen.blocks.front()->run(captureRegisters, rawAlias);
-	require(rawAliasExit.exit == NativeBlockExit::Continue && rawAliasExit.currentPc == rawOpen.source.back().pc && rawAliasExit.nextPc == 0
-		&& captureRegisters.get(1) == valueFloatBits(0xffa12345u),
-		"generated GETUP resolves a raw frame closure and an open capture without host attachments");
 	const std::array literals{valueNil(), valueBool(false), valueBool(true), values[6], valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(11)};
 	ValueSlots constants(literals.size());
 	for (size_t i = 0; i < literals.size(); ++i) constants.set(i, literals[i]);
@@ -766,7 +635,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 int main() {
 	try {
 		physicalVarargWindow(); hotVarargFrames(0); hotVarargFrames(5); hotEmptyVararg(); freshVarargActivationGrowsBeforeWarmContinuation();
-		hotConstantTrap(); hotUpvalueAlias(); physicalUpvalueFootprints(); hotGlobalBanks();
+		hotConstantTrap(); hotUpvalueAlias(); hotGlobalBanks();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		test::Blua32TestImage image; image.text.resize(INSTRUCTION_BYTES);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0); image.functions = {{.firstWord = 0, .wordCount = 1}};

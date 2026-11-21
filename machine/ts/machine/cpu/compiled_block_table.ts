@@ -1,4 +1,4 @@
-import { OpCode, TABLE_LENGTH_PROBE_CYCLES } from '../../spec/blua32/opcode';
+import { OpCode } from '../../spec/blua32/opcode';
 import { ValueTag } from './value';
 import type { DecodedInstructionPage } from './execution_image';
 import type { JavaScriptRegisterCache } from './compiled_block_registers';
@@ -11,17 +11,14 @@ export function compiledTableSupports(op: number): op is TableOpCode {
 }
 
 export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage, word: number,
-	r: JavaScriptRegisterCache, exit: number, frameControl: string): string {
+	r: JavaScriptRegisterCache, exit: number): string {
 	const a = page.a[word], b = page.b[word], c = page.c[word];
 	if (op === OpCode.LEN) {
-		// The record traversal can observe any physical lane reached by the
-		// table or String. Publish the prefix but retain cached bindings.
-		const publish = r.publishRange(0, Infinity);
 		const tag = `l${word}`, value = `v${word}`, failure = r.exit(exit);
-		return `${publish}${frameControl}const ${tag}=${r.tagOperand(b)},A=${r.wordOperand(b)};
+		return `const ${tag}=${r.tagOperand(b)},A=${r.wordOperand(b)};
 			let ${value};if(${tag}===${ValueTag.Table}){
 			if(tb.metatableAddress(A)!==0) ${failure}
-			${value}=tb.length(A,S.lengthWork);B-=S.lengthWork.probes*${TABLE_LENGTH_PROBE_CYCLES};}
+			${value}=tb.length(A);}
 			else if(${tag}===${ValueTag.String}){${value}=q.byteLength(A);}
 			else ${failure}
 			${r.writeInteger(a, value)}`;
@@ -34,19 +31,18 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 	const value = load ? '' : `${r.tagOperand(c)},${r.wordOperand(c)}`;
 	const target = load ? `r,${a}` : value;
 	const arrayTarget = load ? target : `${target},nk`;
-	const stack = !load || r.hasPendingWrites() ? ',F.thread' : ',F';
 	const stringOperation = load ? 'lp' : 'sp';
 	const arrayOperation = load ? 'li' : 'si';
 	let access: string;
 	if (op === OpCode.GETI || op === OpCode.SETI) {
-		access = `if(!tb.${arrayOperation}(A,${key},${arrayTarget}${stack})) ${failure}`;
+		access = `if(!tb.${arrayOperation}(A,${key},${arrayTarget})) ${failure}`;
 	} else if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF) {
-		access = `if(!tb.${stringOperation}(A,k[${key}],ts[${word}],${target}${stack})) ${failure}`;
+		access = `if(!tb.${stringOperation}(A,k[${key}],ts[${word}],${target})) ${failure}`;
 	} else {
 		access = `const tag=${r.tagOperand(key)},key=${r.wordOperand(key)};
-			if(tag===${ValueTag.Integer}||tag===${ValueTag.Float}){const i=tag===${ValueTag.Integer}?key|0:fi(key);if(i===null||!tb.${arrayOperation}(A,i,${arrayTarget}${stack})) ${failure}}
+			if(tag===${ValueTag.Integer}||tag===${ValueTag.Float}){const i=tag===${ValueTag.Integer}?key|0:fi(key);if(i===null||!tb.${arrayOperation}(A,i,${arrayTarget})) ${failure}}
 			else if(tag!==${ValueTag.String}) ${failure}
-			else if(!tb.${stringOperation}(A,key,ts[${word}],${target}${stack})) ${failure}`;
+			else if(!tb.${stringOperation}(A,key,ts[${word}],${target})) ${failure}`;
 	}
 	const source = `${receiver}if(${r.tagOperand(base)}!==${ValueTag.Table}) ${failure}{const A=${r.wordOperand(base)};${access}}`;
 	if (load) {

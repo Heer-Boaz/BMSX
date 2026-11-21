@@ -46,8 +46,6 @@ struct NativeBlockLink {
 };
 
 struct NativeBlockRunState {
-	void bindWindow(CallFrame&);
-	void bindFrame(CallFrame&);
 	ConstValueSpan constants;
 	CallFrame* frame = nullptr;
 	GcHeap* heap = nullptr;
@@ -60,11 +58,6 @@ struct NativeBlockRunState {
 	void* exitCode = nullptr;
 	// Host base of guest main RAM; the gate pins it for the whole native frame.
 	u8* ram = nullptr;
-	// The admitted nonwrapping physical extent, including frame-control words.
-	u32 stackBegin = 0;
-	u32 stackEnd = 0;
-	// Standalone execution has no guest frame control in its RAM window.
-	u32 frameControl = 2u * MAIN_RAM_SIZE;
 	size_t registerCapacity = 0;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	DiagnosticNativeOpcodeCounts diagnosticOpcodes;

@@ -1,6 +1,6 @@
 import { CLOSURE_CAPTURE_WORDS } from './closure';
 import { GC_COLOR_OFFSET, GC_COLOR_MASK, GC_OLD, GC_REMEMBERED } from './gc_object';
-import { UPVALUE_ADDRESS_MASK, UPVALUE_FLAGS, UPVALUE_HEAP_BYTES, UPVALUE_OPEN, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from './upvalue';
+import { UPVALUE_ADDRESS_MASK, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from './upvalue';
 import { ThreadField } from './thread_record';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueTag } from './value';
@@ -38,14 +38,8 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 		case OpCode.SETUP: {
 			const load = op === OpCode.GETUP;
 			const failure = registers.exit(exit);
-			// The capture selector, cell and owner can each address active RAM.
-			// Admit metadata before dereferencing it, then admit the final data
-			// ports before a store or before observing deferred frame control.
-			const observer = load && !registers.hasPendingWrites() ? 'F.overlapsRam' : 'F.thread.overlapsRam';
 			const base = `const m=h.memory,cap=(F.closureAddress+${CLOSURE_CAPTURE_WORDS + b * 4})&${RAM_RECORD_WORD_MASK};
-				if(${observer}(cap,4)) ${failure}
-				const c=m.rd(cap)&${UPVALUE_ADDRESS_MASK};
-				if(${observer}(c,${UPVALUE_HEAP_BYTES})) ${failure}`;
+				const c=m.rd(cap)&${UPVALUE_ADDRESS_MASK};`;
 			if (load) {
 				const published = registers.writeBack(true);
 				registers.discard(a);
@@ -54,10 +48,8 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 						const owner=m.rd(c+${UPVALUE_OWNER}),slot=m.rd(c+${UPVALUE_VALUE_WORD});
 						const blockPort=(owner+${ThreadField.StackBlock})&${RAM_RECORD_WORD_MASK};
 						const capPort=(owner+${ThreadField.StackCapacity})&${RAM_RECORD_WORD_MASK};
-						if(${observer}(blockPort,4)||${observer}(capPort,4)) ${failure}
 						const block=m.rd(blockPort)&${RAM_RECORD_WORD_MASK},capacity=m.rd(capPort);
 						const tag=(block+capacity*4+slot)&${MAIN_RAM_SIZE - 1},value=(block+slot*4)&${RAM_RECORD_WORD_MASK};
-						if(F.overlapsRam(tag,1)||F.overlapsRam(value,4)) ${failure}
 						${published}
 						r.s(${a},m.rb(tag),m.rd(value));
 					}else r.s(${a},m.rb(c+${UPVALUE_VALUE_TAG}),m.rd(c+${UPVALUE_VALUE_WORD}));}${registers.reloadRange(a, a + 1)}`;

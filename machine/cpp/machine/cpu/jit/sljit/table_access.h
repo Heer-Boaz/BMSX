@@ -9,7 +9,9 @@ namespace bmsx {
 struct NativeTableScratch {
 private:
 	struct Layout {
-		u32 receiver, keyWord, wordOffset, tagOffset;
+		u32 receiver;
+		union { u32 keyWord, arrayLength; };
+		u32 wordOffset, tagOffset;
 		sljit_sw path, returnAddress;
 	};
 	static constexpr auto begin = (NativeBlockAbi::helperResultOffset + alignof(Layout) - 1)
@@ -18,6 +20,7 @@ private:
 public:
 	static constexpr auto receiver = begin + offsetof(Layout, receiver);
 	static constexpr auto keyWord = begin + offsetof(Layout, keyWord);
+	static constexpr auto arrayLength = begin + offsetof(Layout, arrayLength);
 	static constexpr auto wordOffset = begin + offsetof(Layout, wordOffset);
 	static constexpr auto tagOffset = begin + offsetof(Layout, tagOffset);
 	static constexpr auto path = begin + offsetof(Layout, path);

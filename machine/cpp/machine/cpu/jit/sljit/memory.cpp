@@ -1,7 +1,7 @@
 #include "machine/cpu/jit/sljit/lowering.h"
 
-#include <algorithm>
 #include <bit>
+#include <limits>
 #include "machine/cpu/gc_object.h"
 #include "machine/memory/mapped_page.h"
 #include "machine/memory/memory.h"
@@ -10,61 +10,58 @@
 #include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
-void NativeLowering::emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBlockExitSite& exit, sljit_s32 scratch) {
-	auto* c = m_compiler;
-	sljit_emit_op2(c, SLJIT_ADD32, scratch, 0, offset, 0, SLJIT_IMM, bytes);
-	auto* before = sljit_emit_cmp(c, SLJIT_LESS_EQUAL | SLJIT_32, scratch, 0,
-		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, stackBegin));
-	fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, offset, 0,
-		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, stackEnd)), exit, m_cache.state());
-	sljit_set_label(before, sljit_emit_label(c));
-}
-
-void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 address, sljit_sw addressArg, sljit_s32 bits, sljit_s32 group, u32 wordMask) {
+void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 address, sljit_sw addressArg,
+	sljit_s32 bits, sljit_s32 group, std::optional<u32> codeWords) {
 	auto* c = m_compiler;
 	sljit_emit_op2(c, SLJIT_LSHR32, bits, 0, address, addressArg, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT - 2u);
 	sljit_emit_op2(c, SLJIT_AND32, bits, 0, bits, 0, SLJIT_IMM, -4);
 	sljit_emit_op1(c, SLJIT_MOV_U32, bits, 0, SLJIT_MEM1(bits), reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
-	auto* clear = sljit_emit_cmp(c, SLJIT_EQUAL, bits, 0, SLJIT_IMM, 0);
+	auto* clear = codeWords ? sljit_emit_cmp(c, SLJIT_EQUAL, bits, 0, SLJIT_IMM, 0) : nullptr;
 	sljit_emit_op2(c, SLJIT_AND32, group, 0, bits, 0, SLJIT_IMM, MAPPED_WATCH_HISTORY_CLEAN);
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, group, 0, SLJIT_IMM, 0), slow, m_cache.state());
+	if (!codeWords) return;
 	// Retire decoded words only if the write overlaps their exact mask.
 	sljit_emit_op2(c, SLJIT_LSHR32, group, 0, address, addressArg, SLJIT_IMM, MAPPED_WATCH_GROUP_BYTE_SHIFT - 2u);
 	sljit_emit_op2(c, SLJIT_AND32, group, 0, group, 0, SLJIT_IMM, -4);
 	sljit_emit_op1(c, SLJIT_MOV32, bits, 0, SLJIT_MEM1(group), reinterpret_cast<sljit_sw>(m_bindings.ramCodeWatchWords));
 	sljit_emit_op2(c, SLJIT_LSHR32, group, 0, address, addressArg, SLJIT_IMM, 2);
 	sljit_emit_op2(c, SLJIT_MLSHR32, bits, 0, bits, 0, group, 0);
-	sljit_emit_op2(c, SLJIT_AND32, bits, 0, bits, 0, SLJIT_IMM, wordMask);
+	sljit_emit_op2(c, SLJIT_AND32, bits, 0, bits, 0, SLJIT_IMM, *codeWords);
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, bits, 0, SLJIT_IMM, 0), slow, m_cache.state());
 	sljit_set_label(clear, sljit_emit_label(c));
 }
 
-void NativeLowering::emitGuardNoGcMutation(NativeBlockExitSite& exit, sljit_s32 mark, sljit_sw markArg,
-	int source, NativeGcBarrier barrier, sljit_s32 scratch, sljit_s32 test) {
-	if (barrier == NativeGcBarrier::None) return;
+std::array<sljit_jump*, 2> NativeLowering::emitGcMutationBranches(sljit_s32 mark, sljit_sw markArg,
+	int source, NativeGcBarrier barrier, sljit_s32 flags, sljit_s32 test) {
 	auto* c = m_compiler;
 	std::array<sljit_jump*, 2> scalar{};
 	if (barrier == NativeGcBarrier::Dynamic) {
 		// Match valueTagHasGcEdge: BuiltinFunction is not a heap edge.
 		constexpr auto first = static_cast<u8>(ValueTag::String);
-		emitTag(source, scratch);
-		sljit_emit_op2(c, SLJIT_SUB32, scratch, 0, scratch, 0, SLJIT_IMM, first);
+		emitTag(source, flags);
+		sljit_emit_op2(c, SLJIT_SUB32, flags, 0, flags, 0, SLJIT_IMM, first);
 		scalar = {
-			sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, scratch, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Thread) - first),
-			sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, scratch, 0, SLJIT_IMM, static_cast<u8>(ValueTag::BuiltinFunction) - first),
+			sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, flags, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Thread) - first),
+			sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, flags, 0, SLJIT_IMM, static_cast<u8>(ValueTag::BuiltinFunction) - first),
 		};
 	}
-	// Leave before either value plane changes when the collector must
-	// remember an old owner or enqueue a black one. The CPU store owns both.
-	sljit_emit_op1(c, SLJIT_MOV_U8, scratch, 0, mark, markArg);
-	sljit_emit_op2(c, SLJIT_AND32, test, 0, scratch, 0, SLJIT_IMM, GC_OLD | GC_REMEMBERED);
-	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, test, 0, SLJIT_IMM, GC_OLD), exit, m_cache.state());
-	sljit_emit_op2(c, SLJIT_AND32, scratch, 0, scratch, 0, SLJIT_IMM, GC_COLOR_MASK);
-	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, scratch, 0, SLJIT_IMM, 3), exit, m_cache.state());
+	sljit_emit_op1(c, SLJIT_MOV_U8, flags, 0, mark, markArg);
+	sljit_emit_op2(c, SLJIT_AND32, test, 0, flags, 0, SLJIT_IMM, GC_OLD | GC_REMEMBERED);
+	auto* remember = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, test, 0, SLJIT_IMM, GC_OLD);
+	sljit_emit_op2(c, SLJIT_AND32, test, 0, flags, 0, SLJIT_IMM, GC_COLOR_MASK);
+	auto* revisit = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, test, 0, SLJIT_IMM, 3);
 	if (barrier == NativeGcBarrier::Dynamic) {
 		auto* ready = sljit_emit_label(c);
 		for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
 	}
+	return {remember, revisit};
+}
+
+void NativeLowering::emitGuardNoGcMutation(NativeBlockExitSite& exit, sljit_s32 mark, sljit_sw markArg,
+	int source, NativeGcBarrier barrier, sljit_s32 flags, sljit_s32 test) {
+	if (barrier == NativeGcBarrier::None) return;
+	for (auto* mutation : emitGcMutationBranches(mark, markArg, source, barrier, flags, test))
+		fault(mutation, exit, m_cache.state());
 }
 
 void NativeLowering::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {
@@ -158,18 +155,15 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 	fault(sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
 		IO_SLOT_COUNT * IO_WORD_SIZE), slow, m_cache.state());
 	// The public bus stops at the live heap floor, not at physical RAM's end.
-	// Keep the owner's address stable so a published block sees later changes.
+	// The allocator never publishes a floor below DYNAMIC_RAM_BASE, and even
+	// the full word-count lane cannot borrow when subtracted from that floor.
+	static_assert(std::numeric_limits<u16>::max() * sizeof(u32) < MIN_RAM_SIZE);
 	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_MEM0(),
 		reinterpret_cast<sljit_sw>(m_bindings.ramBusEnd), SLJIT_IMM, RAM_BASE + width);
 	auto* ramMiss = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_R2, 0);
 	if (!load) fault(ramMiss, slow, m_cache.state());
-	// The public mapping can admit a rebound linear stack. A load can
-	// observe deferred PC/top or unpublished Value lanes; a write can
-	// invalidate even clean bindings or change the continuation.
-	if (!load || std::ranges::any_of(m_cache.state(),
-		[](const auto& binding) { return binding.wordDirty || binding.tagDirty; }))
-		emitGuardOutsideStack(SLJIT_R1, width, slow);
-	else fault(NativeBlockAbi::emitFrameControlOverlap(m_compiler, SLJIT_R1, width, SLJIT_R2), slow, m_cache.state());
+	// Value windows and frame latches are above the aperture; admitted
+	// public transfers do not observe or overwrite either.
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R1, 0);
 	if (words) {
 		// A watch anywhere in the sequence hands the untouched instruction to the bus.

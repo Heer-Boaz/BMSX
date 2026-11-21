@@ -125,16 +125,16 @@ test('compact Tables participate in incremental tracing, weak clearing and refer
 	assert.equal(cpu.gc.tables.getInteger(weak, 1), v.valueNil());
 });
 
-test('length candidates are bounded signed-32 keys and keep their guest probe count', () => {
-	const cpu = machine(), table = cpu.createTable(), work = { probes: 0 };
-	assert.equal(cpu.gc.tables.length(table, work), 0); assert.equal(work.probes, 1);
+test('length candidates are bounded to signed-32 keys', () => {
+	const cpu = machine(), table = cpu.createTable();
+	assert.equal(cpu.gc.tables.length(table), 0);
 	for (let i = 4096; i >= 1; --i) cpu.gc.tables.setInteger(table, i, v.valueBool(true));
-	assert.equal(cpu.gc.tables.length(table, work), 4096); assert.equal(work.probes, 26);
+	assert.equal(cpu.gc.tables.length(table), 4096);
 	cpu.gc.tables.setInteger(table, -2147483648, v.valueInteger(7));
 	cpu.gc.tables.setInteger(table, 2147483647, v.valueInteger(8));
 	assert.equal(cpu.gc.tables.getInteger(table, -2147483648), v.valueInteger(7));
 	assert.equal(cpu.gc.tables.getInteger(table, 2147483647), v.valueInteger(8));
-	assert.equal(cpu.gc.tables.length(table, work), 4096);
+	assert.equal(cpu.gc.tables.length(table), 4096);
 });
 
 test('Table mutation streams preserve raw words through collisions, growth and deletions', () => {

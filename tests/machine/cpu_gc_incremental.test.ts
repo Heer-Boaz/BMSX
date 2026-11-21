@@ -350,6 +350,10 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 	const cpu = machine(), thread = cpu.rootThread, frame = thread.currentFrame!;
 	thread.resizeStack(1024);
 	frame.registers.setInteger(0, 123); frame.top = 1;
+	const values = thread.stackRegisters.ramOffset();
+	do { cpu.gc.step(); } while (cpu.gc.active());
+	assert.equal(thread.stackRegisters.capacity(), 1024);
+	assert.equal(thread.stackRegisters.ramOffset(), values, 'incremental collection keeps surviving storage in place');
 	const before = cpu.luaHeap.usedBytes();
 	cpu.collectTrackedHeapBytes();
 	assert.equal(thread.stackRegisters.capacity(), 512);

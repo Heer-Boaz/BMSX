@@ -75,26 +75,16 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 	auto& slow = *sideExit(instruction.slow);
 	auto* c = m_compiler;
 	const bool writes = access.access == NativeAccess::Write;
-	const bool observesUnpublished = std::ranges::any_of(m_cache.state(),
-		[](const auto& binding) { return binding.wordDirty || binding.tagDirty; });
-	// Metadata can mirror into value slots or into the current frame record.
-	// A fast store must additionally preserve clean resident slots/edge proofs.
-	const auto admitMetadata = [&](sljit_s32 offset, u32 bytes, sljit_s32 scratch) {
-		if (writes || observesUnpublished) emitGuardOutsideStack(offset, bytes, slow, scratch);
-		else fault(NativeBlockAbi::emitFrameControlOverlap(c, offset, bytes, scratch), slow, m_cache.state());
-	};
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, nativeControl));
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), static_cast<u32>(FrameField::Closure),
 		SLJIT_IMM, ClosureRecord::captureWordAddress(0u, access.capture));
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	admitMetadata(SLJIT_R2, sizeof(u32), SLJIT_R0);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	if constexpr (std::endian::native == std::endian::big)
 		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R2, 0, SLJIT_R2, 0);
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_IMM, UPVALUE_ADDRESS_MASK);
-	admitMetadata(SLJIT_R3, UPVALUE_HEAP_BYTES, SLJIT_R0);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_FLAGS);
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, UPVALUE_OPEN);
@@ -126,7 +116,6 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 	}
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R2, 0, SLJIT_IMM, static_cast<u32>(ThreadField::StackBlock));
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	admitMetadata(SLJIT_R0, sizeof(u32), SLJIT_R1);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), 0);
 	if constexpr (std::endian::native == std::endian::big)
@@ -134,7 +123,6 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, static_cast<u32>(ThreadField::StackCapacity));
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	admitMetadata(SLJIT_R2, sizeof(u32), SLJIT_R1);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	if constexpr (std::endian::native == std::endian::big)
@@ -146,10 +134,7 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 2);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R3, 0);
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	// Ordinary open captures can observe the current Thread's value slots.
-	// Publish their lanes, but leave through the owner to observe PC/Top.
-	fault(NativeBlockAbi::emitFrameControlOverlap(c, SLJIT_R0, sizeof(u32), SLJIT_R2), slow, m_cache.state());
-	fault(NativeBlockAbi::emitFrameControlOverlap(c, SLJIT_R1, 1, SLJIT_R2), slow, m_cache.state());
+	// An open cell can observe the current Thread's cached Value slots.
 	m_cache.emitState(m_cache.state());
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R1, SLJIT_R1);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), 0);

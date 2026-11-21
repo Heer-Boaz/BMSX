@@ -1351,7 +1351,7 @@ void twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead() {
 	}
 }
 
-void reusedFieldAddressHonorsEachSiteAndPhysicalStackAliases() {
+void reusedFieldAddressHonorsEachSite() {
 	const auto key = cpu.stringPool().intern("reused field");
 	const auto alternate = cpu.stringPool().intern("alternate field");
 	auto table = cpu.createTable(0, 2);
@@ -1385,10 +1385,7 @@ void reusedFieldAddressHonorsEachSiteAndPhysicalStackAliases() {
 	NativeBlockRunState state{.constants = constants.view(), .remainingCycles = grant};
 	require(block->run(registers.view(), state) == &block->terminal && registers.get(3) == valueInteger(26),
 		"both VM reads consume the checked address and produce their own results");
-	// Distinct callsites can accept distinct matching raw hash nodes. The
-	// optimized read must not silently substitute the first prediction.
-	const u32 words = table.storageAddress();
-	memory.writeRamRecordWord(words + static_cast<u32>(alternateSlot) * sizeof(u32), key);
+	// The consuming callsite still owns its prediction.
 	block->sideExits[1].tableRead.own.standalone = alternateSlot;
 	registers.set(2, valueInteger(-3));
 	state.remainingCycles = grant;
@@ -1397,20 +1394,7 @@ void reusedFieldAddressHonorsEachSiteAndPhysicalStackAliases() {
 		&& mismatch->lastPc == source[2].pc + INSTRUCTION_BYTES && state.remainingCycles == grant - mismatch->cycles
 		&& registers.get(1) == valueInteger(13) && registers.get(2) == valueInteger(-3),
 		"a live prediction split takes the consuming instruction's exact WIDE exit");
-	memory.writeRamRecordWord(words + static_cast<u32>(alternateSlot) * sizeof(u32), alternate);
-	block->sideExits[1].tableRead.own.standalone = slot;
 
-	// An admitted host-owned fixture has no guest alias; a RAM-backed view
-	// can physically overlap a field value even when the guest slots differ.
-	const u32 valueWord = words + (table.hashSlots() + static_cast<u32>(slot)) * sizeof(u32);
-	const u32 tags = DYNAMIC_RAM_BASE + 0x70000u;
-	ValueSpan aliased(memory, valueWord, tags, registers.capacity());
-	aliased.set(0, valueTable(table.address()));
-	state.remainingCycles = grant;
-	const auto* overlap = block->run(aliased, state);
-	require(overlap == &block->sideExits[0] && state.remainingCycles == grant - overlap->cycles,
-		"a checked address cannot be retained across physical writes to its backing through the register window");
-	table.setStringKey(key, valueInteger(13));
 }
 
 } // namespace
@@ -1442,7 +1426,7 @@ int main() {
 		truthinessAndConditionalExits();
 		typedCallExitPublishesPrefix();
 		twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead();
-		reusedFieldAddressHonorsEachSiteAndPhysicalStackAliases();
+		reusedFieldAddressHonorsEachSite();
 		std::cout << "Native block datapath tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

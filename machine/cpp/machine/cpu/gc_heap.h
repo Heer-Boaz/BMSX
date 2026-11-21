@@ -55,7 +55,7 @@ public:
 	}
 	bool isAlive(u32 address) const { return !unmarked(memory.readRamRecordByte(address + GC_COLOR_OFFSET)); }
 	size_t allocationBytes(u32 threadAddress) const;
-	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u);
+	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false);
 	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	size_t collectYoung(Value root0, Value root1, Value root2);
 	void markString(StringId id) { m_stringPool.markReachable(id, m_minor); }
@@ -65,7 +65,10 @@ public:
 		if (valueTagHasGcEdge(tag)) writeBarrier(address, link);
 	}
 	void writeBarrier(u32 address, u32 link) {
-		u8 flags = memory.readRamRecordByte(address + GC_COLOR_OFFSET);
+		writeBarrier(address, link, memory.readRamRecordByte(address + GC_COLOR_OFFSET));
+	}
+	// Native writes may already have latched the collector flags.
+	void writeBarrier(u32 address, u32 link, u8 flags) {
 		if ((flags & (GC_OLD | GC_REMEMBERED)) == GC_OLD) {
 			arena.trackGcPage(HeapGcPages::Remembered, address);
 			flags |= GC_REMEMBERED;
@@ -99,7 +102,7 @@ private:
 	size_t resolveWeak();
 	static i32 seedRemembered(void*, u32 address);
 	static i32 seedThread(void*, u32 address);
-	struct SweepContext { GcHeap& heap; u32 growingThread; u8 white; };
+	struct SweepContext { GcHeap& heap; u32 growingThread; u8 white; bool compactThreads = false; };
 	static i32 sweepRecord(void* context, u32 address);
 	CPU& m_cpu;
 	void setPhase(GcPhase phase) { memory.writeRamRecordByte(m_controlOffset, static_cast<u8>(phase)); }

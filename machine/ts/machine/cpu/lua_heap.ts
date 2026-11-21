@@ -202,9 +202,6 @@ export class LuaHeap {
 
 
 	/** Completed table-storage work consumes the current run's transient grant. */
-	public accountTableStorageWork(valueSlots: number): void {
-		this.cpu.instructionBudgetRemaining -= valueSlots;
-	}
 
 
 	public finishCollection(): void {

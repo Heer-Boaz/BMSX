@@ -113,6 +113,9 @@ port, not through the system bus. To ordinary loads and stores, instruction
 fetches, DMA, and other devices, addresses in these ranges are unmapped.
 The normal bus-fault rules apply. DATA and BSS below the floor remain
 accessible on the system bus and may contain executable code.
+Language references identify objects, not bus addresses. Neither an
+object's storage nor the processor's active register or frame storage
+can be reassigned by ordinary memory writes.
 
 The heap floor is the end of the active image's static storage, the larger
 of its DATA run end and its BSS end, rounded up to a multiple of 4 KiB. It is

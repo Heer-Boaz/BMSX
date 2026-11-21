@@ -353,7 +353,9 @@ compare equal but have different subtypes.
 Constant indices select records in table order. Tags 0–2 encode their value
 without a payload. The word at `08H` is unused in Integer and Floating
 records. String records use all three words. A record with another tag is
-invalid and prevents program activation. Arithmetic and the comparison of the
+invalid and prevents program activation. An activated image's constant values
+and kinds do not change while that image is resident. A replacement image
+establishes its own constants. Arithmetic and the comparison of the
 two Number subtypes are defined by the
 [[CPU reference](cpu.md#sec-cpu-values-and-numeric-instructions)]{.content-visible when-format="html"}[CPU reference, Book II, Chapter 1]{.content-visible when-format="pdf"}.
 

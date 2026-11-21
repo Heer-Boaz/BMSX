@@ -61,16 +61,6 @@ void NativeLowering::emitTop(int extent) {
 		offsetof(NativeBlockRunState, registerTop), SLJIT_IMM, extent);
 	sljit_set_label(retained, sljit_emit_label(m_compiler));
 }
-void NativeLowering::emitPublishRecordObserver(u32 nextPc, int prefixTop) {
-	// The observer may read both the register planes and the control record.
-	// It changes neither, so only their pending stores need to be published.
-	m_cache.publish();
-	if (m_bindings.cpu) {
-		emitTop(prefixTop);
-		NativeBlockAbi::emitPublishFrameControl(m_compiler, nextPc);
-	}
-}
-
 void NativeLowering::emitLeave(NativeBlockExitSite& exit, Charge charge) {
 	m_cache.publish();
 	const auto& gate = nativeBlockGate();

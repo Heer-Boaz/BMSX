@@ -471,8 +471,6 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 		other.setMetatableAddress(meta.address());
 		run(other, 100, firstResult);
 		meta.setStringKey(indexKey, valueTable(nextHolder.address()));
-		memory.writeRamRecordWord(nextHolder.address() + static_cast<u32>(TableHeader::Storage),
-			nextHolder.storageAddress() + MAIN_RAM_SIZE);
 		run(other, 100, secondResult);
 		nextHolder.setStringKey(key, valueNil());
 		auto nextMeta = cpu.createTable(0, 1);
@@ -597,9 +595,6 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 	auto table = cpu.createTable(4, 2);
 	auto model = cpu.createTable(4, 2);
 	const Value ref = valueTable(table.address());
-	const u32 storage = table.storageAddress();
-	const u32 backing = table.address() + static_cast<u32>(TableHeader::Storage);
-	memory.writeRamRecordWord(backing, storage + MAIN_RAM_SIZE);
 	for (const bool generic : {false, true}) {
 		DecodedInstruction write{}, read{};
 		write.op = static_cast<u8>(generic ? OpCode::SETT : OpCode::SETI);
@@ -622,27 +617,15 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 				registers.set(1, valueInteger(slot));
 				registers.set(2, v);
 				state.remainingCycles = 100;
-				const u32 hint = table.lengthHint();
-				const Value previous = table.getInteger(slot);
-				const bool changesHint = static_cast<u32>(slot - !isNil(v)) == hint;
 				model.setInteger(slot, v);
 				const auto* exit = block->run(registers.view(), state);
-				if (changesHint) {
-					require(exit->exit == (generic ? NativeBlockExit::WriteIndex : NativeBlockExit::WriteInteger)
-						&& exit->currentPc == source[0].pc && exit->nextPc == source[1].pc
-						&& registers.get(1) == valueInteger(slot) && table.getInteger(slot) == previous && table.lengthHint() == hint,
-						"an array write that changes the hint leaves both planes and the length word untouched");
-					table.setInteger(slot, v);
-				} else {
-					require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source[1].pc
-						&& exit->nextPc == source[1].pc + INSTRUCTION_BYTES && registers.get(1) == v && table.getInteger(slot) == v,
-						"no-hint array writes and aliased loads transfer both raw planes");
-				}
-				u32 probes, expectedProbes;
-				require(TableRecord::length(&table, &probes) == TableRecord::length(&model, &expectedProbes) && probes == expectedProbes,
-					"the owner settles hint changes before later length probes");
-				require(state.remainingCycles == 100 - write.baseCycles - (changesHint ? 0 : read.baseCycles),
-					"only the direct path completes the following read");
+				require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source[1].pc
+					&& exit->nextPc == source[1].pc + INSTRUCTION_BYTES && registers.get(1) == v && table.getInteger(slot) == v,
+					"array writes and aliased loads transfer both raw planes without a table exit");
+				require(table.lengthHint() == model.lengthHint() && TableRecord::length(&table) == TableRecord::length(&model),
+					"native append and deletion apply the same length effect as the scalar owner");
+				require(state.remainingCycles == 100 - write.baseCycles - read.baseCycles,
+					"array hint effects add no guest charge");
 			}
 		}
 		if (generic) {
@@ -658,7 +641,6 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 			require(memory.readRamRecordByte(table.address() + GC_COLOR_OFFSET) == 3, "array receiver was actually scanned before inserting the new edge");
 			registers.set(1, valueInteger(1));
 			registers.set(2, valueTable(child.address()));
-			const Value previous = table.getInteger(1);
 			const u32 header = table.address();
 			const u32 head = cpu.gcHeap().changedHeadOffset();
 			const u32 previousLink = memory.readRamRecordWord(header + GC_RECORD_LINK);
@@ -667,31 +649,16 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 			model.setInteger(1, valueTable(cpu.createTable().address()));
 			const u32 previousHead = memory.readRamRecordWord(head);
 			require(previousHead == ((model.address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT), "scalar Table write publishes the prior link");
-			for (const u32 watched : {header, header + GC_RECORD_LINK, head}) {
-				const u32 word = (watched & MAPPED_PAGE_BYTE_MASK) / sizeof(u32);
-				MappedPageBinding binding{};
-				memory.bindMappedPage(watched | RAM_BASE, MAPPED_BUS_MASTER_CPU, binding);
-				binding.writeWatch.armWord(word);
-				state.remainingCycles = 100;
-				const auto* miss = block->run(registers.view(), state);
-				require(miss->exit == NativeBlockExit::WriteIndex && miss->nextPc == source[1].pc
-					&& table.getInteger(1) == previous && memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 3
-					&& memory.readRamRecordWord(header + GC_RECORD_LINK) == previousLink
-					&& memory.readRamRecordWord(head) == previousHead,
-					"a watched barrier word stops the store before either the value or the queue changes");
-				require(binding.writeWatch.consume(word, word + 1), "the declined operation left the watch armed");
-			}
 			state.remainingCycles = 100;
 			const auto* exit = block->run(registers.view(), state);
-			require(exit->exit == NativeBlockExit::WriteIndex && exit->currentPc == source[0].pc && exit->nextPc == source[1].pc
-				&& table.getInteger(1) == previous && memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 3
-				&& memory.readRamRecordWord(header + GC_RECORD_LINK) == previousLink
-				&& memory.readRamRecordWord(head) == previousHead, "barrier work leaves through the same untouched gate even without watches");
-			table.setInteger(1, valueTable(child.address()));
-			require(table.getInteger(1) == valueTable(child.address()) && memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 2
+			require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source[1].pc
+				&& state.remainingCycles == 100 - write.baseCycles - read.baseCycles,
+				"the scanned table's barrier completes in-frame before the following read at the same grant");
+			require(table.getInteger(1) == valueTable(child.address()) && registers.get(1) == valueTable(child.address())
+				&& memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 2
 				&& memory.readRamRecordWord(header + GC_RECORD_LINK) == (weakLink | previousHead)
 				&& memory.readRamRecordWord(head) == ((header & GC_RECORD_MASK) >> GC_RECORD_SHIFT),
-				"the owner writes the edge and links the scanned Table onto the physical changed queue");
+				"the narrow barrier links the scanned Table without losing its independent weak link");
 		}
 		if (generic) for (Value k : {valueInteger(0), valueInteger(-1), valueInteger(5), valueFloat(1), valueBool(true)}) {
 			registers.set(1, k);
@@ -700,119 +667,16 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 				"non-array key leaves at its precise store for full table semantics");
 		}
 	}
-	memory.writeRamRecordWord(backing, storage);
 }
 
-void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
-	const u32 record = RAM_BASE + 0x20000u;
-	const u32 body = record + TableRecord::HEADER_BYTES;
-	// Supply a header and backing through RAM, without constructing a Table.
-	memory.writeRamRecordByte(record, static_cast<u8>(ValueTag::Table));
-	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Storage), body + MAIN_RAM_SIZE);
-	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Array), 1);
-	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Length), 1);
-	const u32 mirror = record + MAIN_RAM_SIZE + 1u; // word accesses also discard the low two bits
-	require(cpu.gcHeap().tableRecordAddress(record) == 0u, "the raw datapath does not require a collector header");
-
-	DecodedInstruction write{}, read{};
-	write.op = static_cast<u8>(OpCode::SETI); read.op = static_cast<u8>(OpCode::GETI);
-	write.a = read.b = 0; write.b = read.c = 1; write.c = 2; read.a = 3;
-	write.width = read.width = 1;
-	write.baseCycles = BASE_CYCLES[write.op]; read.baseCycles = BASE_CYCLES[read.op];
-	const std::array source{NativeBlockInstruction{&write, 0x1000}, NativeBlockInstruction{&read, 0x1004}};
-	auto block = test::compileNative(source, memory, cpu.stringPool());
-	ValueSlots registers(4); registers.set(0, valueTable(mirror)); registers.set(2, valueInteger(83));
-	NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
-	const auto* arrayHit = block->run(registers.view(), state);
-	require(arrayHit->exit == NativeBlockExit::Continue && arrayHit->currentPc == source[1].pc && registers.get(3) == valueInteger(83),
-		"both array operations execute in native code without a host object");
-	require(TableRecord(cpu.gcHeap(), mirror).getInteger(1) == valueInteger(83)
-		&& memory.readRamRecordWord(body) == 83 && memory.readRamRecordByte(body + 4) == static_cast<u8>(ValueTag::Integer),
-		"scalar and native use the same per-width aliases for header and backing");
-
-	auto& watches = memory.ramWriteWatches();
-	// Give the raw byte port a black mark without changing the aligned header's
-	// mark lane. A write watch on that word must precede the slot mutation.
-	memory.writeRamRecordByte(mirror + GC_COLOR_OFFSET, 3u);
-	const u32 markWord = (mirror + GC_COLOR_OFFSET) & RAM_RECORD_WORD_MASK;
-	watches.armCodeRange(markWord, sizeof(u32));
-	registers.set(2, valueInteger(46)); state.remainingCycles = 100;
-	const auto* scalarStore = block->run(registers.view(), state);
-	require(scalarStore->exit == NativeBlockExit::Continue && scalarStore->currentPc == source[1].pc
-		&& memory.readRamRecordWord(body) == 46
-		&& memory.readRamRecordByte(mirror + GC_COLOR_OFFSET) == 3u, "a scalar store does not touch the mirrored mark");
-	registers.set(2, valueTable(cpu.createTable().address())); state.remainingCycles = 100;
-	require(block->run(registers.view(), state)->exit == NativeBlockExit::WriteInteger
-		&& memory.readRamRecordWord(body) == 46
-		&& memory.readRamRecordByte(mirror + GC_COLOR_OFFSET) == 3u,
-		"the collector tests the raw mirrored mark byte, not the rounded table-header word address");
-	watches.clearCodeRange(markWord, sizeof(u32));
-	memory.writeRamRecordByte(mirror + GC_COLOR_OFFSET, 0u);
-
-	const u32 key = cpu.stringPool().intern("wrapped tag") | 0x80000000u;
-	constexpr u32 hash = 2;
-	const u32 keySlot = hashCanonicalTableKey(valueString(key)) & (hash - 1u), valueSlot = keySlot + hash;
-	const u32 tags = MAIN_RAM_SIZE - 1u - keySlot, hashBody = tags - 3u * hash * sizeof(u32);
-	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Storage), hashBody);
-	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Array), 0);
-	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Hash), hash);
-	memory.writeRamRecordWord(hashBody + keySlot * sizeof(u32), key);
-	memory.writeRamRecordByte(tags + keySlot, static_cast<u8>(ValueTag::String));
-	memory.writeRamRecordWord(hashBody + valueSlot * sizeof(u32), 19);
-	memory.writeRamRecordByte(tags + valueSlot, static_cast<u8>(ValueTag::Integer));
-	read.op = static_cast<u8>(OpCode::GETFIELD); read.c = 0; read.baseCycles = BASE_CYCLES[read.op];
-	write.op = static_cast<u8>(OpCode::SETFIELD); write.b = 0; write.baseCycles = BASE_CYCLES[write.op];
-	read.tableCacheSlot() = write.tableCacheSlot() = static_cast<int>(keySlot);
-	const std::array fields{NativeBlockInstruction{&read, 0x1000}, NativeBlockInstruction{&write, 0x1004}};
-	ValueSlots constants(1); constants.set(0, valueString(key));
-	auto fieldBlock = test::compileNative(fields, memory, cpu.stringPool());
-	state.constants = constants.view();
-	registers.set(2, valueFromTag(ValueTag::False, 37));
-	watches.armHistoryWrites();
-	watches.consumeHistoryWrites(hashBody, 1);
-	state.remainingCycles = 100;
-	const auto* stopped = fieldBlock->run(registers.view(), state);
-	require(stopped->exit == NativeBlockExit::WriteField && registers.get(3) == valueInteger(19)
-		&& memory.readRamRecordWord(hashBody + valueSlot * sizeof(u32)) == 19,
-		"the predicted read matches all 32 key bits across the RAM seam, and a clean tag page stops both store planes");
-	watches.disarmHistoryWrites();
-	state.remainingCycles = 100;
-	const auto* fieldHit = fieldBlock->run(registers.view(), state);
-	require(fieldHit->exit == NativeBlockExit::Continue && fieldHit->currentPc == fields[1].pc
-		&& TableRecord(cpu.gcHeap(), mirror).getStringKey(key) == registers.get(2),
-		"the predicted write uses the same mirrored byte as the reader");
-
-	// Move the word plane itself across the seam. A nonzero low address
-	// offset still belongs to the tags, not the aligned payload words.
-	const u32 wrappedWords = MAIN_RAM_SIZE - (keySlot + 1u) * sizeof(u32) + 1u;
-	const u32 wrappedTags = wrappedWords + 3u * hash * sizeof(u32);
-	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Storage), wrappedWords);
-	memory.writeRamRecordWord(wrappedWords + keySlot * sizeof(u32), key);
-	memory.writeRamRecordByte(wrappedTags + keySlot, static_cast<u8>(ValueTag::String));
-	memory.writeRamRecordWord(wrappedWords + valueSlot * sizeof(u32), 0xffa12345u);
-	memory.writeRamRecordByte(wrappedTags + valueSlot, static_cast<u8>(ValueTag::Float));
-	registers.set(2, valueFromTag(ValueTag::True, 33));
-	state.remainingCycles = 100;
-	const auto* wrappedHit = fieldBlock->run(registers.view(), state);
-	require(wrappedHit->exit == NativeBlockExit::Continue && wrappedHit->currentPc == fields[1].pc
-		&& registers.get(3) == valueFloatBits(0xffa12345u)
-		&& memory.readRamRecordWord(MAIN_RAM_SIZE + sizeof(u32)) == 33u
-		&& memory.readRamRecordWord(MAIN_RAM_SIZE - sizeof(u32)) == key
-		&& TableRecord(cpu.gcHeap(), mirror).getStringKey(key) == registers.get(2),
-		"native field hits advance and mirror both physical offsets independently");
-}
-
-void watchedTableWordOrTagLeavesBeforeWriting(CPU& cpu, Memory& memory) {
-	// Instruction watches belong to public RAM. Keep the forensic raw Table
-	// alias and its backing in reserved static workspace, not in the private heap.
-	require(cpu.heapAllocator().setFloor(DYNAMIC_RAM_BASE + 0x10000u), "reserve the public static alias workspace before watching it");
-	const auto sourceHeader = cpu.createTable(4096, 0);
-	const u32 record = DYNAMIC_RAM_BASE + 0x6000u, words = DYNAMIC_RAM_BASE;
-	for (u32 offset = 0; offset < TableRecord::HEADER_BYTES; offset += sizeof(u32))
-		memory.writeRamRecordWord(record + offset, memory.readRamRecordWord(sourceHeader.address() + offset));
-	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Storage), words);
-	TableRecord table(cpu.gcHeap(), record);
-	const u32 tags = words + 4096u * 4u;
+void firstPrivateArrayWriteMarksAllHistoryPages(CPU& cpu, Memory& memory) {
+	auto table = cpu.createTable(4096, 0);
+	const u32 words = table.storageAddress(), tags = words + table.arrayCapacity() * sizeof(u32);
+	const u32 hint = table.address() + static_cast<u32>(TableHeader::Length);
+	const std::array pages{(words & RAM_RECORD_WORD_MASK) >> MAPPED_PAGE_BYTE_SHIFT,
+		(tags & RAM_RECORD_WORD_MASK) >> MAPPED_PAGE_BYTE_SHIFT, (hint & RAM_RECORD_WORD_MASK) >> MAPPED_PAGE_BYTE_SHIFT};
+	require(pages[0] != pages[1] && pages[0] != pages[2] && pages[1] != pages[2],
+		"payload, tag and descriptor are in distinct tracked pages");
 	DecodedInstruction store{};
 	store.op = static_cast<u8>(OpCode::SETI);
 	store.a = 0; store.b = 1; store.c = 2; store.width = 1;
@@ -821,54 +685,23 @@ void watchedTableWordOrTagLeavesBeforeWriting(CPU& cpu, Memory& memory) {
 	auto block = test::compileNative(source, memory, cpu.stringPool());
 	ValueSlots registers(3);
 	registers.set(0, valueTable(table.address()));
-	registers.set(2, valueFloatBits(0x80000000u));
-	NativeBlockRunState state{.heap = &cpu.gcHeap()};
-	const u32 hint = table.address() + static_cast<u32>(TableHeader::Length);
-	for (const u32 address : {words, tags}) {
-		table.setInteger(1, valueInteger(101));
-		require(table.lengthHint() == 1u, "the watched overwrite cannot change the hint");
-		MappedPageBinding binding;
-		memory.bindMappedPage(address, MAPPED_BUS_MASTER_CPU, binding);
-		require(binding.readBytes != nullptr && address < memory.ramBusEnd(), "every watched alias is on the public RAM bus");
-		const u32 slot = (address & MAPPED_PAGE_BYTE_MASK) >> 2;
-		binding.writeWatch.armWord(slot);
-		state.remainingCycles = 100;
-		require(block->run(registers.view(), state)->exit == NativeBlockExit::WriteInteger && table.getInteger(1) == valueInteger(101),
-			"watching either destination plane leaves both lanes untouched");
-		table.setInteger(1, registers.get(2));
-		require(!binding.writeWatch.consume(slot, slot + 1u) && table.getInteger(1) == registers.get(2),
-			"the record write invalidates the physical code watch");
-	}
-	const auto unrelated = (words + sizeof(u32)) & RAM_RECORD_WORD_MASK;
+	registers.set(2, valueInteger(101));
+	NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
 	auto& watches = memory.ramWriteWatches();
-	watches.armCodeRange(unrelated, sizeof(u32));
-	state.remainingCycles = 100;
-	require(block->run(registers.view(), state)->exit == NativeBlockExit::Continue && watches.anyWatched(unrelated, sizeof(u32)),
-		"an unrelated watch on the destination page does not route an overwrite through the gate");
-	watches.clearCodeRange(unrelated, sizeof(u32));
-
-	memory.writeRamRecordWord(hint, 0u);
-	const auto hintOffset = hint & RAM_RECORD_WORD_MASK;
-	watches.armCodeRange(hintOffset, sizeof(u32));
-	state.remainingCycles = 100;
-	require(block->run(registers.view(), state)->exit == NativeBlockExit::WriteInteger && table.lengthHint() == 0u
-		&& watches.anyWatched(hintOffset, sizeof(u32)), "an effectful hint update belongs to the semantic owner");
+	watches.armHistoryWrites();
+	require(block->run(registers.view(), state)->exit == NativeBlockExit::WriteInteger
+		&& isNil(table.getInteger(1)) && table.lengthHint() == 0,
+		"the first watched array write leaves the complete operation to the history-aware record port");
+	for (const u32 page : pages)
+		require(!watches.historyPageDirty(page, page + 1), "the declined write did not touch any lane");
 	table.setInteger(1, registers.get(2));
-	require(table.lengthHint() == 1u && !watches.anyWatched(hintOffset, sizeof(u32)), "only the owner consumes the hint watch");
-
-	// The raw payload aliases the hint. The owner sees a zero after writing
-	// the input word, then advances it to one despite the pre-write hint.
-	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Storage), hint);
-	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Array), 1u);
-	registers.set(2, valueInteger(0));
-	const auto freeWord = memory.readRamRecordWord(record + static_cast<u32>(TableHeader::Free));
+	for (const u32 page : pages)
+		require(watches.historyPageDirty(page, page + 1), "the record port accounts for all three pages, including the hint");
+	registers.set(2, valueInteger(102));
 	state.remainingCycles = 100;
-	require(block->run(registers.view(), state)->exit == NativeBlockExit::WriteInteger && table.lengthHint() == 1u
-		&& memory.readRamRecordWord(record + static_cast<u32>(TableHeader::Free)) == freeWord,
-		"a physical lane alias cannot invalidate a pre-write hint proof");
-	table.setInteger(1, registers.get(2));
-	require(table.lengthHint() == 1u && table.getInteger(1) == valueInteger(1),
-		"the owner updates the post-write aliased hint using the ordinary record order");
+	require(block->run(registers.view(), state)->exit == NativeBlockExit::Continue && table.getInteger(1) == valueInteger(102),
+		"an already tracked overwrite can complete directly");
+	watches.disarmHistoryWrites();
 }
 
 void boundaryLengthRetainsNativeFrame(CPU& cpu, Memory& memory) {
@@ -885,26 +718,25 @@ void boundaryLengthRetainsNativeFrame(CPU& cpu, Memory& memory) {
 	decoded[2].a = 5; decoded[2].b = 6;
 	decoded[3].setBx(0x2000);
 	auto block = test::compileNative(source, memory, cpu.stringPool());
-	auto table = cpu.createTable(0, 128);
-	for (int bit = 30; bit >= 0; --bit) table.set(valueInteger(i32{1} << bit), valueBool(false));
 	const Value root = valueTable(cpu.createTable().address());
 	const int cycles = instructionCharge(decoded);
 	const int prefixCycles = instructionCharge(std::span(decoded).first<2>());
 	for (const i32 expected : {1 << 30, INT32_MAX}) {
+		auto table = cpu.createTable(0, 128);
+		for (int bit = 30; bit >= 0; --bit) table.set(valueInteger(i32{1} << bit), valueBool(false));
 		if (expected == INT32_MAX) table.set(valueInteger(expected), valueBool(false));
 		ValueSlots registers(7);
 		registers.set(0, valueTable(table.address())); registers.set(1, root);
-		const int probeCycles = TABLE_LENGTH_PROBE_CYCLES * (expected == INT32_MAX ? 32 : 61);
-		const int grant = cycles + probeCycles + 1;
+		const int grant = cycles + 1;
 		NativeBlockRunState state{.constants = {}, .heap = &cpu.gcHeap(), .remainingCycles = grant};
 		const auto* exit = block->run(registers.view(), state);
 		require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source[3].pc && exit->nextPc == decoded[3].bx(),
 			"table LEN and its suffix stay in one native invocation");
 		require(registers.get(0) == valueInteger(expected), "native LEN returns a full signed Integer boundary and supports source aliasing");
 		require(registers.get(5) == root && registers.get(6) == root, "live raw references survive the nonallocating length call");
-		require(state.remainingCycles == 1, "length search charges its literal logical presence work once");
+		require(state.remainingCycles == 1, "length charges only its fixed instruction cost");
 
-		for (const int shortGrant : {static_cast<int>(decoded[0].baseCycles) + 1, prefixCycles + probeCycles}) {
+		for (const int shortGrant : {static_cast<int>(decoded[0].baseCycles) + 1, prefixCycles}) {
 			registers.set(0, valueTable(table.address()));
 			registers.set(5, valueNil());
 			registers.set(6, valueNil());
@@ -912,7 +744,7 @@ void boundaryLengthRetainsNativeFrame(CPU& cpu, Memory& memory) {
 			state.registerTop = 0;
 			const auto* boundary = block->run(registers.view(), state);
 			require(boundary->exit == NativeBlockExit::Continue && boundary->currentPc == source[1].pc
-				&& boundary->nextPc == source[2].pc && state.remainingCycles == shortGrant - prefixCycles - probeCycles,
+				&& boundary->nextPc == source[2].pc && state.remainingCycles == shortGrant - prefixCycles,
 				"LEN may exhaust its grant, but its continuation cannot begin");
 			require(registers.get(0) == valueInteger(expected) && registers.get(6) == root && isNil(registers.get(5))
 				&& state.registerTop == 7, "an exhausted LEN publishes its result and prefix, not the following MOV");
@@ -1124,8 +956,8 @@ int main() {
 		numericFieldArithmeticKeepsNativeFrame(cpu, memory);
 		storesRequireAPredictedOverwrite(cpu, memory);
 		compactArraySlots(cpu, memory);
-		rawTablePayloadUsesRamWithoutAnObject(cpu, memory);
-		watchedTableWordOrTagLeavesBeforeWriting(cpu, memory);
+
+		firstPrivateArrayWriteMarksAllHistoryPages(cpu, memory);
 		boundaryLengthRetainsNativeFrame(cpu, memory);
 		guardedTableFactsFollowRegisterDefinitions(cpu, memory);
 		tableFactsAreValidatedAtIndependentRegionEntries(cpu, memory);

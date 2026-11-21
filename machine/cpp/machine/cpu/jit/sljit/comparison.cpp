@@ -4,7 +4,7 @@
 #include "spec/blua32/instruction_format.h"
 
 namespace bmsx {
-void NativeLowering::lowerOperation(const NativeComparison& comparison, const NativeInstruction& instruction) {
+void NativeLowering::lowerOperation(const NativeComparison& comparison, const NativeInstruction&) {
 	const auto& ir = m_ir[m_current];
 	auto& taken = *sideExit(ir.taken);
 	auto& terminal = m_blocks[m_current]->terminal;
@@ -29,14 +29,21 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 	sljit_jump* matched;
 	switch (comparison.strategy) {
 	case NativeComparisonStrategy::Word: {
-		const auto left = readTyped(comparison.left, ValueTag::Integer, SLJIT_R0),
-				   right = readTyped(comparison.right, ValueTag::Integer, SLJIT_R1);
+		const auto word = [&](int selector, sljit_s32 scratch) -> std::pair<sljit_s32, sljit_sw> {
+			if (selector < 0) {
+				if (const auto constant = nativeImageConstant(m_constants, -1 - selector))
+					return {SLJIT_IMM, static_cast<i32>(valuePayload(*constant))};
+			}
+			return {readTyped(selector, ValueTag::Integer, scratch).reg, 0};
+		};
+		const auto [lhs, lhsArg] = word(comparison.left, SLJIT_R0);
+		const auto [rhs, rhsArg] = word(comparison.right, SLJIT_R1);
 		matched = sljit_emit_cmp(m_compiler,
 			(op == OpCode::EQ	   ? SLJIT_EQUAL
 				: op == OpCode::LT ? SLJIT_SIG_LESS
 								   : SLJIT_SIG_LESS_EQUAL) |
 				SLJIT_32,
-			left.reg, 0, right.reg, 0);
+			lhs, lhsArg, rhs, rhsArg);
 		break;
 	}
 	case NativeComparisonStrategy::Float: {
@@ -56,38 +63,20 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 		emitValueTransportStore(m_compiler, SLJIT_SP, args, SLJIT_R0, SLJIT_R1);
 		emitRawLoad(comparison.right, SLJIT_R0, SLJIT_R1);
 		emitValueTransportStore(m_compiler, SLJIT_SP, args + sizeof(Value), SLJIT_R0, SLJIT_R1);
-		const auto emitKernel = [&] {
-			m_cache.spillCall(false, 0);
-			sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),
-				offsetof(NativeBlockRunState, remainingCycles), NativeBlockAbi::budget, 0);
-			sljit_get_local_base(m_compiler, SLJIT_R0, 0, args);
-			sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.strings));
-			sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, NativeBlockAbi::state, 0, SLJIT_IMM,
-				offsetof(NativeBlockRunState, remainingCycles));
-			const auto kernel = op == OpCode::EQ   ? &testValueComparison<OpCode::EQ>
-								: op == OpCode::LT ? &testValueComparison<OpCode::LT>
-												   : &testValueComparison<OpCode::LE>;
-			sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(kernel));
-			m_cache.spillCall(true, 0);
-			sljit_emit_op1(m_compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state),
-				offsetof(NativeBlockRunState, remainingCycles));
-			return sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
-		};
-		if (op != OpCode::EQ) {
-			// Only the String arm inspects records; keep its publication
-			// distinct from the operand-only arm all the way to the edges.
-			const auto prefix = m_cache.state();
-			auto* leftNotString = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32,
-				SLJIT_MEM1(SLJIT_SP), args + VALUE_HEADER_BYTE_OFFSET, SLJIT_IMM, static_cast<u8>(ValueTag::String));
-			auto* bothStrings = sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32,
-				SLJIT_R1, 0, SLJIT_IMM, static_cast<u8>(ValueTag::String));
-			sljit_set_label(leftNotString, sljit_emit_label(m_compiler));
-			emitOutcomes(emitKernel());
-			sljit_set_label(bothStrings, sljit_emit_label(m_compiler));
-			m_cache.setState(prefix);
-			emitPublishRecordObserver(instruction.pc + u32{instruction.width} * INSTRUCTION_BYTES, taken.registerTop);
-		}
-		matched = emitKernel();
+		m_cache.spillCall(false, 0);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),
+			offsetof(NativeBlockRunState, remainingCycles), NativeBlockAbi::budget, 0);
+		sljit_get_local_base(m_compiler, SLJIT_R0, 0, args);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.strings));
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, NativeBlockAbi::state, 0, SLJIT_IMM,
+			offsetof(NativeBlockRunState, remainingCycles));
+		const auto kernel = op == OpCode::EQ ? &testValueComparison<OpCode::EQ>
+			: op == OpCode::LT ? &testValueComparison<OpCode::LT> : &testValueComparison<OpCode::LE>;
+		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(kernel));
+		m_cache.spillCall(true, 0);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state),
+			offsetof(NativeBlockRunState, remainingCycles));
+		matched = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 		break;
 	}
 	default: BMSX_UNREACHABLE();

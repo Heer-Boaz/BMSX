@@ -93,7 +93,7 @@ for (let format = 0; format <= 5; ++format) for (const displaced of [false, true
 		const probe = new ValueSlots(frame.stackCapacity);
 		probe.setInteger(1, 4 - (displaced ? 1020 : 0));
 		probe.setInteger(2, 1);
-		const run = { remainingCycles: block.admissionCycles + 1, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } };
+		const run = { remainingCycles: block.admissionCycles + 1, registerTop: frame.top, memoryAddress: 0 };
 		const exit = block.region.execute(probe, frame.executionImage.constWords, page, frame, block.entry, run);
 		assert.equal(block.region.exits[exit].nextPc, image.image.functions[0].codeAddress,
 			'a backed system-ROM load and dependent arithmetic do not return through the bus owner');

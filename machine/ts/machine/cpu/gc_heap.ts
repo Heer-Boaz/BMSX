@@ -419,7 +419,7 @@ export class GcHeap {
 		this.diagnostics?.endStep();
 		return work;
 	}
-	private readonly sweepRecord = (growingThread: number, address: number): number => {
+	private readonly sweepRecord = (growingThread: number, address: number, compactThreads = false): number => {
 		const white = this.white();
 		const header = this.memory.readRamRecordWord(address), kind = header & 0xff, flags = (header >>> 8) & 0xff;
 		if (this.minor && kind === BLUA32_STRING_RECORD_KIND) return 1 + this.cpu.stringPool.sweepYoungBucket(address);
@@ -447,7 +447,7 @@ export class GcHeap {
 		const work = ceilDiv4(THREAD_HEAP_BYTES + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations));
 		if (!garbage) {
 			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, survivor);
-			const copied = this.minor || address === growingThread ? 0 : this.threads.shrinkStack(address, layout);
+			const copied = compactThreads && address !== growingThread ? this.threads.shrinkStack(address, layout) : 0;
 			// Existing execution views follow raw relocation; they are never GC roots here.
 			if (copied !== 0) this.cpu.rebindRelocatedThread(address);
 			return work + 2 * ceilDiv4(copied);
@@ -460,12 +460,13 @@ export class GcHeap {
 		this.onRecordRetirement?.(address);
 		return -work;
 	};
-	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0): number {
+	private readonly sweepAndCompact = (growingThread: number, address: number): number => this.sweepRecord(growingThread, address, true);
+	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false): number {
 		this.diagnostics?.beginStep();
-		try { return this.stepWork(t0, t1, t2, growingThread); }
+		try { return this.stepWork(t0, t1, t2, growingThread, compactThreads); }
 		finally { this.diagnostics?.endStep(); }
 	}
-	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number): number {
+	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number, compactThreads: boolean): number {
 		let work = 0;
 		if (this.phase() === GcPhase.Pause) {
 			if (this.diagnostics !== null) ++this.diagnostics.collections;
@@ -499,7 +500,8 @@ export class GcHeap {
 					return this.atomic(t0, t1, t2);
 				case GcPhase.Sweep:
 					this.diagnostics?.phase('sweepNanoseconds');
-					work += this.arena.sweepObjects(GC_STEP_WORDS - work, growingThread, this.sweepRecord);
+					work += this.arena.sweepObjects(GC_STEP_WORDS - work, growingThread,
+						compactThreads ? this.sweepAndCompact : this.sweepRecord);
 					if (work < GC_STEP_WORDS && !this.arena.objectSweepActive()) { this.memory.writeRamRecordWord(this.changedHeadOffset(), 0); this.setPhase(GcPhase.Strings); this.cpu.stringPool.beginSweep(); }
 					break;
 				case GcPhase.Strings:
@@ -516,8 +518,8 @@ export class GcHeap {
 	public collect(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0): number {
 		if (this.diagnostics !== null) ++this.diagnostics.fullCollections;
 		let work = 0;
-		while (this.active()) work += this.step(t0, t1, t2, growingThread);
-		do { work += this.step(t0, t1, t2, growingThread); } while (this.active());
+		while (this.active()) work += this.step(t0, t1, t2, growingThread, true);
+		do { work += this.step(t0, t1, t2, growingThread, true); } while (this.active());
 		return work;
 	}
 }

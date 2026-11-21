@@ -446,7 +446,7 @@ private:
 	friend class NativeBlockGate;
 	static void* tryCallNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
 	static void* tryReturnNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
-	static u32 readNativeLength(NativeBlockRunState*, const StringPool*, Value* operand) noexcept;
+	static u32 readNativeLength(GcHeap*, const StringPool*, Value* operand) noexcept;
 	static int placeNativeVarargs(NativeBlockRunState*, int first, int requested) noexcept;
 	friend class NativeLowering;
 	bool loadNativeTableField(CallFrame&, const NativeCpuRunState&, const NativeBlockExitSite&, Value base, StringId key);

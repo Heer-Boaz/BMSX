@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <optional>
 #include <span>
 
@@ -20,10 +21,22 @@ struct NativeRejectedFieldProof {
 	ValueTag tag;
 };
 
-// Frozen profile inputs, separate from bytecode and compilation topology.
+struct NativeImageConstant {
+	u32 index;
+	Value value;
+};
+
+// Frozen image and profile inputs, separate from compilation topology.
 struct NativeCompileSpecializations {
 	std::span<const NativeRejectedFieldProof> rejectedFieldProofs{}; // sorted by PC
+	std::span<const NativeImageConstant> imageConstants{}; // sorted by index
 };
+
+inline std::optional<Value> nativeImageConstant(std::span<const NativeImageConstant> constants, u32 index) {
+	const auto found = std::ranges::lower_bound(constants, index, {}, &NativeImageConstant::index);
+	if (found == constants.end() || found->index != index) return std::nullopt;
+	return found->value;
+}
 
 struct NativeCompilationOptions {
 	bool observesArithmetic = false;

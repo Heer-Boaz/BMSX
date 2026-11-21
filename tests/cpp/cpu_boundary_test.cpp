@@ -939,11 +939,12 @@ void loadKrIndices() {
 	}
 }
 
-void missingImageOperandsTrapAtExecution() {
+void invalidImageOperandsTrapAtExecution() {
 	struct OperandCase {
 		OpCode op;
 		u8 b, c, ext;
 		bool wide;
+		bool wrongFieldKind = false;
 	};
 	const OperandCase cases[]{
 		{OpCode::GETGL, 0, 1, 0, false}, {OpCode::SETGL, 0, 1, 0, false},
@@ -953,9 +954,11 @@ void missingImageOperandsTrapAtExecution() {
 		{OpCode::SUB, 1, 61, 7, false}, // RK C = -3
 		{OpCode::GETFIELD, 1, 2, 0, false}, {OpCode::SELF, 1, 2, 0, false},
 		{OpCode::SETFIELD, 2, 1, 0, false}, {OpCode::SETFIELD, 0, 61, 7, false},
+		{OpCode::GETFIELD, 1, 0, 0, false, true}, {OpCode::SELF, 1, 0, 0, true, true},
+		{OpCode::SETFIELD, 0, 1, 0, true, true},
 	};
 	enum class Dispatch { Ordinary, Instrumented, Observed };
-	for (const auto [op, b, c, ext, wide] : cases) for (const auto dispatch : {
+	for (const auto [op, b, c, ext, wide, wrongFieldKind] : cases) for (const auto dispatch : {
 		Dispatch::Ordinary, Dispatch::Instrumented, Dispatch::Observed}) {
 		auto image = returnImage();
 		const u32 width = wide ? 2u : 1u;
@@ -964,7 +967,7 @@ void missingImageOperandsTrapAtExecution() {
 		writeInstruction(image.text, width - 1u, static_cast<u8>(op), 0, b, c, ext);
 		image.functions[0].wordCount = width;
 		image.functions[0].maxStack = 2;
-		image.constants[0] = std::string("field");
+		image.constants[0] = wrongFieldKind ? Blua32EncodedConstant{i32{97}} : Blua32EncodedConstant{std::string("field")};
 		image.globalNames = {"ordinary"};
 		image.systemGlobalNames = {"system"};
 		CpuMachine machine(image);
@@ -984,7 +987,7 @@ void missingImageOperandsTrapAtExecution() {
 		}
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "the failed operation consumes the short grant");
 		require(cpu.readCauseWord() == CPU_CAUSE_CODE_TRAP && cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
-			&& cpu.readEpcWord() == pc, "missing image operands trap at the logical instruction head");
+			&& cpu.readEpcWord() == pc, "invalid image operands trap at the logical instruction head");
 		require(frame.registers.get(0) == valueInteger(97), "operand admission precedes the operation");
 		require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(op)]
 			&& frame.readControl(FrameField::Pc) == pc
@@ -1994,7 +1997,7 @@ int main() {
 		nativeCallsAndReturnsPublishFaultBoundaries();
 		nativeCallUsesItsClosureBoundFunctionRecord();
 #endif
-		stringBytePositions(); loadKrIndices(); missingImageOperandsTrapAtExecution(); skippedImageOperandRemainsUnobserved();
+		stringBytePositions(); loadKrIndices(); invalidImageOperandsTrapAtExecution(); skippedImageOperandRemainsUnobserved();
 		fusionRequiresBothImageOperandsAdmitted(); fixedWindowAndCaptureOperandsTrapBeforeEffects(); closureDescriptorAdmissionPrecedesAllocation();
 		functionReservationIsAdmittedBeforeActivation();
 		zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();

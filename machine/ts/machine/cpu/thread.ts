@@ -52,14 +52,6 @@ export class Thread {
 	}
 
 	public stackOffset(): number { return this.stackRegisters.ramOffset(); }
-	/** Checked execution footprints use physical offsets, after RAM-port mirroring. */
-	public overlapsRam(first: number, bytes: number): boolean {
-		const begin = this.stackOffset(), end = first + bytes;
-		return (end > begin && first < begin + this.stackRegisters.byteLength())
-			|| (end > this.boundFrameOffset && first < this.boundFrameOffset + this.boundFrameCapacity * FRAME_CONTROL_BYTES)
-			|| (this.boundProtectedCapacity !== 0 && end > this.boundProtectedOffset
-				&& first < this.boundProtectedOffset + this.boundProtectedCapacity * PROTECTED_CALL_BYTES);
-	}
 	private get frameCapacity(): number { return this.read(ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK; }
 	private get protectedCapacity(): number { return this.read(ThreadField.ProtectedCapacity) & THREAD_CONTROL_COUNT_MASK; }
 	public get protectedDepth(): number { return this.read(ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK; }

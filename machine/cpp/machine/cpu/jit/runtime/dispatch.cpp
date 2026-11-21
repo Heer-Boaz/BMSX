@@ -56,12 +56,11 @@ bool CPU::loadNativeTableField(CallFrame& frame, const NativeCpuRunState& run, c
 	return invoked;
 }
 
-u32 CPU::readNativeLength(NativeBlockRunState* state, const StringPool* strings, Value* operand) noexcept {
-	if (valueIsTable(*operand) && TableRecord(*state->heap, valuePayload(*operand)).metatableAddress() != 0u) return 0;
-	const auto length = measureValueLength(*operand, *strings, state->heap);
+u32 CPU::readNativeLength(GcHeap* heap, const StringPool* strings, Value* operand) noexcept {
+	if (valueIsTable(*operand) && TableRecord(*heap, valuePayload(*operand)).metatableAddress() != 0u) return 0;
+	const auto length = measureValueLength(*operand, *strings, heap);
 	if (!length) return 0;
-	state->remainingCycles -= length->extraCycles;
-	*operand = valueInteger(length->count);
+	*operand = valueInteger(*length);
 	return 1;
 }
 
@@ -103,11 +102,6 @@ void* CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExit
 	++cpu.m_nativeGateProfile.builtinAttempts;
 #endif
 	CallFrame& frame = *state.frame;
-	// The CALL exit has already published its slots and applied its top floor.
-	if ((NATIVE_BUILTIN_RECORD_OBSERVER_IDS & (1u << builtinWord)) != 0) {
-		frame.writeAdmittedControl(FrameField::Pc, exit->nextPc);
-		frame.setAdmittedTop(state.registerTop);
-	}
 	const auto completion = runNativeBuiltinLeaf(&cpu, &state, exit, builtinWord);
 	if (completion == NativeBuiltinCallOutcome::Declined) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -429,7 +423,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			}
 			thread.recordNativeWrites(cpu.m_memory.ramWriteWatches());
 			frame = thread.currentFrame;
-			state.bindWindow(*frame);
+			state.frame = frame;
 		}
 		// Read-only helpers preserve the admitted window. Other same-frame
 		// helpers can relocate it but leave the image, bank and globals bound.

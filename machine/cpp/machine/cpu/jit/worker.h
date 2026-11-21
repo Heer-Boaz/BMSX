@@ -25,7 +25,7 @@ public:
 	bool ready() const { return m_state.load(std::memory_order_acquire) == State::Ready; }
 	void submit(std::span<const NativeBlockSource> sources,
 		const NativeCodeBindings& bindings, NativeCompilationOptions options = {}, bool profile = false,
-		std::vector<NativeRejectedFieldProof> rejectedFieldProofs = {});
+		std::vector<NativeRejectedFieldProof> rejectedFieldProofs = {}, std::vector<NativeImageConstant> imageConstants = {});
 	void wait();
 	std::vector<std::unique_ptr<NativeBlock>> take();
 	u64 compilationNanoseconds() const { return m_compilationNanoseconds; }
@@ -44,6 +44,7 @@ private:
 	std::array<NativeBlockInstruction, DECODED_PAGE_WORDS> m_instructions;
 	std::vector<NativeBlockSource> m_sources;
 	std::vector<NativeRejectedFieldProof> m_rejectedFieldProofs;
+	std::vector<NativeImageConstant> m_imageConstants;
 	NativeCodeBindings m_bindings;
 	NativeCompilationOptions m_options;
 	std::vector<std::unique_ptr<NativeBlock>> m_blocks;

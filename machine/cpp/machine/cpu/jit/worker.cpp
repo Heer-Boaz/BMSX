@@ -26,7 +26,7 @@ NativeCompilerWorker::~NativeCompilerWorker() {
 
 void NativeCompilerWorker::submit(std::span<const NativeBlockSource> sources,
 	const NativeCodeBindings& bindings, NativeCompilationOptions options, bool profile,
-	std::vector<NativeRejectedFieldProof> rejectedFieldProofs) {
+	std::vector<NativeRejectedFieldProof> rejectedFieldProofs, std::vector<NativeImageConstant> imageConstants) {
 	assert(idle());
 	m_sources.clear();
 	size_t decoded = 0, instruction = 0;
@@ -46,6 +46,7 @@ void NativeCompilerWorker::submit(std::span<const NativeBlockSource> sources,
 		m_sources.push_back({std::span(m_instructions.data() + first, instruction - first), skipped});
 	}
 	m_rejectedFieldProofs = std::move(rejectedFieldProofs);
+	m_imageConstants = std::move(imageConstants);
 	m_bindings = bindings;
 	m_options = options;
 	m_profile = profile;
@@ -66,7 +67,7 @@ void NativeCompilerWorker::run() {
 		const auto start = m_profile ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 		try {
 			m_blocks = NativeCompiler::compile(m_sources, m_bindings, m_options,
-				{.rejectedFieldProofs = m_rejectedFieldProofs});
+				{.rejectedFieldProofs = m_rejectedFieldProofs, .imageConstants = m_imageConstants});
 		} catch (...) {
 			// The worker cannot unwind into the CPU. Deliver the original error
 			// when the owner consumes this request; do not silently fall back.

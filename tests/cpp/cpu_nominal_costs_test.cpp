@@ -52,8 +52,6 @@ void exactTable() {
 		3, 4, 8, 8, 16, 16, 17, 2,
 	};
 	require(BASE_CYCLES == expected, "all64 literal nominal work-class prices match the adopted table");
-	for (size_t op = 0; op != expected.size(); ++op)
-		require(DECODED_DISPATCH_BASE_CYCLES[op] == expected[op], "decoded ordinary entries consume the exact raw opcode price");
 }
 
 void expensiveInstructionDebtAndSkip() {

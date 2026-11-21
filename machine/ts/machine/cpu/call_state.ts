@@ -70,10 +70,6 @@ export class CallFrame {
 	}
 
 	public bindControl(offset: number): void { this.controlOffset = offset & RAM_RECORD_WORD_MASK; }
-	/** The physical control record can lag behind generated PC and top. */
-	public overlapsRam(first: number, bytes: number): boolean {
-		return first + bytes > this.controlOffset && first < this.controlOffset + FRAME_CONTROL_BYTES;
-	}
 	public initializeControl(fn: number, pc: number, callSite: number, completion: boolean, domain: ExecutionDomainId,
 		varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number, base: number, capacity: number): void {
 		const memory = this.controlMemory, ram = memory.ramData(), offset = this.controlOffset;

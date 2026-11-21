@@ -329,7 +329,8 @@ K0–K16383. A raw count/key field instead keeps its unsigned encoded value.
 An instruction's encoding range does not allocate its referenced registers or
 constants. A fixed constant selector, whether encoded as RK, LOADK, or a
 string-field key, must name an entry in the active execution image's constant
-pool. Executing a selector outside that pool raises `INVALID_ARGUMENT` (10)
+pool. A field-key selector must name a String constant. A missing constant or
+a field key of another kind raises `INVALID_ARGUMENT` (10)
 after the nominal instruction charge and before any operand read or result
 write. If a comparison skips the instruction, its encoded width is still used,
 but the operand fault is not raised.
@@ -1101,56 +1102,18 @@ A **sequence** has exactly the keys 1 through `n` in this range, with no holes;
 its length is `n`. The empty sequence has length zero regardless of its initial
 capacity. Length does not count all mappings or find the largest numeric key.
 
-A Table with holes can have several valid boundaries; the search below selects
-one using the Table's saved search seed. For example, with keys 1, 3, 4 and 5 present, both 1 and 5 are valid.
-Deleting key 2 from a sequence of length 5 therefore does not promise length
-1. Restoring key 2 restores the unique boundary 5. Programs that retain holes
-must keep an explicit count or explicit iteration bounds when a particular
-range is required. Repeated length reads without a mutation return the same
-boundary and do not mutate the Table.
+A Table with holes can have several valid boundaries. For example, with keys
+1, 3, 4 and 5 present, both 1 and 5 are valid. Deleting key 2 from a
+sequence of length 5 does not promise length 1. Restoring key 2 restores
+the unique boundary 5. Keep an explicit count or iteration bound when the
+Table can have holes and the choice of boundary matters. Repeated length
+reads without a mutation return the same boundary and do not change the
+Table's mappings.
 
-The search seed starts at zero on construction or complete storage clearing.
-An ordinary write to an own integer key `k` from `1` through `2147483647`
-updates the seed by at most one: a non-nil write at `seed + 1` increments it;
-a nil write at `seed` decrements it. These updates also apply when an eligible
-integer key is held in hash storage. Other writes leave it unchanged. Storage
-redistribution retains the seed. Weak-entry collection can remove an entry without repairing the seed.
-The seed is therefore a search starting point, not a cached length.
-
-The length search uses these steps, with terminal boundary `M = 2^31 - 1`.
-The mathematical calculations of candidate bounds in this procedure do not
-wrap as Integer instructions; they are limited to `M` before a key is tested.
-
-1. Set `low` to the saved seed. If `low` is nonzero, test its own presence.
-   If it is absent, set `high = low`, set `low = 0`, and continue at step 4.
-   If `low = M` and is present, return `M`.
-2. Test the own presence of `low + 1`. If absent, return `low`. Otherwise
-   increment `low` by one. If it is `M`, return it; otherwise set
-   `high = min(2 × low, M)`.
-3. Test the own presence of `high`. While present, assign `low = high`;
-   if `low = M`, return it. Otherwise set `high = min(2 × low, M)` and repeat
-   this step. When `high` is absent, continue at step 4.
-4. While `high - low > 1`, set `middle = low + trunc((high - low) / 2)` and
-   test its own presence. If present, assign `low = middle`; otherwise assign
-   `high = middle`. Return `low` when the interval is adjacent.
-
-Each evaluated own-presence test above counts once, including an absent
-result. Let that count be `P`. A Table `LEN` costs **`3 + 6 × P` cycles**.
-The six-cycle test work does not fetch another instruction and does not
-count hash probes, inherited entries or earlier cache accesses. A String
-`LEN` remains 3 cycles using its stored byte count. Examples:
-
-| Table state | `P` | Table `LEN` cost |
-| --- | ---: | ---: |
-| Empty, seed zero | 1 | 9 |
-| Sequence `1…n`, seed `n > 0` | 2 | 15 |
-| Sequence `1…4096` written in descending order, seed 1 | 26 | 159 |
-| All entries weak-cleared while seed remains 1 | 1 | 9 |
-
-The search may cross a display-frame boundary, but completes and publishes
-its result before the next instruction or pending interrupt is accepted.
-Repeated `LEN` does not update the seed. The seed is part of the Table's
-execution state.
+A Table or String `LEN` costs **3 cycles**. The Table's reserved capacity,
+insertion order and number of entries do not change this instruction
+charge. A String length is its byte count. An invoked `__len` method is
+charged separately.
 
 #### Metatables and indexed reads {#sec-cpu-metatables-and-indexed-reads}
 
@@ -1409,7 +1372,8 @@ immediately restarting their first scan. The second pass drains the queue as
 it stood at its start; later writes wait for the final remark. Repeated writes
 to an already queued object do not add another queue entry.
 
-When reclamation examines a surviving Thread, it can halve its reserved Value
+Incremental collection does not relocate a surviving Thread's storage.
+A synchronous full collection can halve a surviving Thread's reserved Value
 storage. This happens when `V > 16` and three times the required extent is less
 than `V`. The required extent includes the Thread's current stack top and every
 active frame's complete reserved register window, not only its live values.
@@ -1549,44 +1513,12 @@ initializes a key and a value. The empty request adds zero. This initialization
 completes before the next instruction begins or the CPU accepts a pending interrupt. A failed
 construction incurs the base charge but not this completed-initialization term.
 
-An insertion that cannot fit in the current storage rebuilds the table. This
-adds one cycle per Value slot inspected, initialized or relocated. Replacement
-sizing includes the incoming mapping. Integer keys from `1` through
-`2147483647` are array candidates. The array capacity becomes the largest
-power-of-two prefix with more than half its positions occupied, or zero when
-there is no such prefix. Remaining mappings use hash
-storage, rounded to the smallest power of two that fits them, or zero when
-none remain. Deleted mappings do not count toward occupancy.
-
-The rebuild charges these phases:
-
-- The sizing scan inspects the old array slots and both Value slots of every
-  old hash entry, including vacant and deleted entries.
-- The replacement storage initializes every new array slot and both Value
-  slots of every new hash entry, not merely the increase in capacity.
-- The migration scan inspects the old storage again with the same slot count.
-  Each retained entry then places one Value in an array destination or two
-  Values, key and value, in a hash destination.
-
-For old capacities `Aold`, `Hold`, replacement capacities `Anew`, `Hnew` and
-`M` relocated Value slots, a completed rebuild adds
-`2 × (Aold + 2 × Hold) + Anew + 2 × Hnew + M` cycles. The inserted entry's
-ordinary placement is included in the instruction or primitive base charge;
-it is not a relocated entry. Rebuilds that retain or reduce capacity use the
-same rule. Updates, deletions and insertions that fit existing storage add no
-rebuild charge. This applies equally to table stores and `rawset`.
-
-Each completed phase is charged even if a later phase fails. In particular,
-failure to admit replacement storage retains the sizing-scan charge but adds
-no replacement initialization or migration charge. Allocator
-management adds no further charge; collection adds the
-[collection work charge](#sec-cpu-collection-work-charge). Sizing precedes any allocation-triggered
-collection; migration counts only entries that remain afterward, without
-recomputing the selected capacities. A rebuild completes before the next
-instruction or pending interrupt is accepted.
-
-
-
+An insertion may reserve more storage. Its charge does not depend on
+whether the current storage can hold the mapping, or on how entries are
+arranged or moved. Storage growth counts against the language-allocation
+budget. If it triggers collection or invokes a metamethod, the applicable
+collection or call charge is separate. An insertion that fails to reserve
+storage leaves the requested mapping unmodified.
 
 ### Builtin call charges {#sec-cpu-builtin-call-charges}
 
@@ -1807,8 +1739,8 @@ hits, misses or refill intervals. A base charge is fixed for its opcode: prior
 accesses, aliases, module origin and arithmetic special cases do not select a
 different price. Only the additional work and readiness waits specified here
 are added. Ordinary Table lookup has no per-hash-probe surcharge; Table-valued
-`__index` traversal adds the visited-Table work specified above. Table LEN adds the logical
-own-presence-test work specified in its length procedure.
+`__index` traversal adds the visited-Table work specified above. Table and String LEN have
+no surcharge for finding the length.
 When an instruction starts, PC advances over its complete width
 and its base charge is incurred. Privilege, address alignment and write-ready
 handling occur after that base charge. A blocked store retains that charge;

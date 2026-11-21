@@ -1,5 +1,6 @@
 #include "machine/cpu/jit/sljit/lowering.h"
 #include "machine/cpu/decoded_instruction.h"
+#include "machine/cpu/gc_heap.h"
 #include "machine/cpu/gc_object.h"
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/table_access.h"
@@ -13,22 +14,22 @@ namespace bmsx {
 namespace {
 constexpr auto receiver = NativeTableScratch::receiver;
 constexpr auto keyWord = NativeTableScratch::keyWord;
+constexpr auto arrayLength = NativeTableScratch::arrayLength;
 constexpr auto wordOffset = NativeTableScratch::wordOffset;
 constexpr auto tagOffset = NativeTableScratch::tagOffset;
+
+void SLJIT_FUNC writeTableBarrier(GcHeap* heap, u32 receiver, u32 flags) {
+	heap->writeBarrier(receiver, GC_RECORD_LINK, static_cast<u8>(flags));
+}
 } // namespace
 
-void NativeLowering::emitTableOverwrite(NativeBlockExitSite& exit, int value, NativeGcBarrier barrier) {
-	auto* c = m_compiler;
+void NativeLowering::admitTableValueWrite(NativeBlockExitSite& exit) {
 	for (const auto address : {wordOffset, tagOffset})
-		emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), address, SLJIT_R2, SLJIT_R3);
+		emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), address, SLJIT_R2, SLJIT_R3, std::nullopt);
+}
 
-	if (barrier != NativeGcBarrier::None) {
-		// The header words discard low address bits, but the mark is a byte.
-		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_SP), receiver, SLJIT_IMM, sizeof(u32) - 1u);
-		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, GC_COLOR_OFFSET);
-		emitGuardNoGcMutation(exit, SLJIT_MEM2(SLJIT_R0, SLJIT_R3), 0, value, barrier, SLJIT_R2, SLJIT_R3);
-	}
-
+void NativeLowering::emitTableValueWrite(int value) {
+	auto* c = m_compiler;
 	emitRawLoad(value, SLJIT_R2, SLJIT_R3);
 	for (bool word : {true, false}) {
 		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), word ? wordOffset : tagOffset);
@@ -38,14 +39,12 @@ void NativeLowering::emitTableOverwrite(NativeBlockExitSite& exit, int value, Na
 	}
 }
 
-void NativeLowering::emitArrayRead(NativeBlockExitSite& exit, bool guardStack) {
+void NativeLowering::emitArrayRead(NativeBlockExitSite& exit) {
 	auto* c = m_compiler;
 	fault(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array)), exit, m_cache.state());
 	emitTableSlotOffset(c, SLJIT_R2, true);
 	emitTableSlotOffset(c, SLJIT_R3, false);
-	admitTableFootprint(SLJIT_R2, sizeof(u32), guardStack, exit, SLJIT_R1);
-	admitTableFootprint(SLJIT_R3, 1, guardStack, exit, SLJIT_R1);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R3, SLJIT_R3);
@@ -57,35 +56,13 @@ void NativeLowering::emitArrayRead(NativeBlockExitSite& exit, bool guardStack) {
 	sljit_set_label(own, sljit_emit_label(c));
 }
 
-void NativeLowering::emitArrayStore(int value, NativeStorePlan plan, NativeBlockExitSite& exit, bool guardStack) {
+void NativeLowering::emitArrayStore(int value, NativeStorePlan plan, NativeBlockExitSite& exit) {
 	auto* c = m_compiler;
 	fault(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array)), exit, m_cache.state());
 
-	// The owner advances the hint at slot == hint for a present value, or
-	// retreats it at slot + 1 == hint for nil. Neither effect belongs here.
-	sljit_s32 boundary = SLJIT_R1;
-	if (plan.nilValue != NativeNilValue::Present) {
-		sljit_jump* present = nullptr;
-		if (plan.nilValue == NativeNilValue::Dynamic) {
-			emitTag(value, SLJIT_R2);
-			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_R1, 0);
-			present = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
-				SLJIT_IMM, static_cast<u8>(ValueTag::Nil));
-		}
-		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
-		if (present) sljit_set_label(present, sljit_emit_label(c));
-		boundary = SLJIT_R3;
-	}
-	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, boundary, 0,
-		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Length)), exit, m_cache.state());
-
-	// TableRecord observes the hint after writing both lanes. A physical
-	// mirror can put either lane in that word even when the pre-write hint
-	// did not select an update.
 	for (bool word : {true, false}) {
 		emitTableSlotOffset(c, SLJIT_R3, word);
-		admitTableFootprint(SLJIT_R3, word ? sizeof(u32) : 1, guardStack, exit);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), word ? wordOffset : tagOffset, SLJIT_R3, 0);
 	}
 	// An empty array slot is not an own entry. Only the CPU may select an
@@ -97,27 +74,78 @@ void NativeLowering::emitArrayStore(int value, NativeStorePlan plan, NativeBlock
 	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::Nil)), exit, m_cache.state());
 	sljit_set_label(noMetatable, sljit_emit_label(c));
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), receiver,
+
+	// Table storage and its descriptor are independent allocations. The
+	// value write cannot change which post-store length effect applies.
+	admitTableValueWrite(exit);
+
+	// R3 becomes the expected old hint, R1 the replacement. A valid slot
+	// selected by SETI or a positive Integer key cannot produce UINT32_MAX.
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_R1, 0);
+	switch (plan.arrayLength) {
+	case NativeArrayLengthEffect::ByValue: {
+		emitTag(value, SLJIT_R2);
+		auto* present = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+			SLJIT_IMM, static_cast<u8>(ValueTag::Nil));
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
+		auto* retreat = sljit_emit_jump(c, SLJIT_JUMP);
+		sljit_set_label(present, sljit_emit_label(c));
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
+		sljit_set_label(retreat, sljit_emit_label(c));
+		break;
+	}
+	case NativeArrayLengthEffect::AdvanceAtBoundary:
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
+		break;
+	case NativeArrayLengthEffect::RetreatAtBoundary:
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
+		break;
+	}
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), arrayLength, SLJIT_IMM, -1);
+	auto* unchanged = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0,
+		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Length));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), arrayLength, SLJIT_R1, 0);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver,
 		SLJIT_IMM, static_cast<u32>(TableHeader::Length));
-	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_R2, 0), exit, m_cache.state());
-	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_SP), wordOffset, SLJIT_R2, 0), exit, m_cache.state());
-	emitTableOverwrite(exit, value, plan.barrier);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	emitRamWordWriteWatch(exit, SLJIT_R1, 0, SLJIT_R2, SLJIT_R3, std::nullopt);
+	sljit_set_label(unchanged, sljit_emit_label(c));
+
+	emitTableStoreBarrier(value, plan.barrier);
+	emitTableValueWrite(value);
+	auto* keep = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_SP), arrayLength, SLJIT_IMM, -1);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Length),
+		SLJIT_MEM1(SLJIT_SP), arrayLength);
+	sljit_set_label(keep, sljit_emit_label(c));
 }
 
-void NativeLowering::admitTableFootprint(sljit_s32 offset, u32 bytes, bool wholeStack,
-	NativeBlockExitSite& exit, sljit_s32 scratch) {
-	if (wholeStack)
-		emitGuardOutsideStack(offset, bytes, exit, scratch);
-	else if (m_bindings.cpu)
-		fault(NativeBlockAbi::emitFrameControlOverlap(m_compiler, offset, bytes, scratch), exit, m_cache.state());
+void NativeLowering::emitTableStoreBarrier(int value, NativeGcBarrier barrier) {
+	if (barrier == NativeGcBarrier::None) return;
+	const auto mutations = emitGcMutationBranches(SLJIT_MEM1(SLJIT_R0), GC_COLOR_OFFSET, value, barrier, SLJIT_R2, SLJIT_R3);
+	m_tableStoreBarriers.push_back({mutations, m_cache.state(), sljit_emit_label(m_compiler)});
+}
+
+void NativeLowering::emitTableStoreBarriers() {
+	auto* c = m_compiler;
+	for (const auto& barrier : m_tableStoreBarriers) {
+		auto* entry = sljit_emit_label(c);
+		for (auto* branch : barrier.mutations) sljit_set_label(branch, entry);
+		m_cache.setState(barrier.registers);
+		m_cache.spillCall(false, 0);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver);
+		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&writeTableBarrier));
+		m_cache.spillCall(true, 0);
+		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), receiver, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+		NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
+		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), barrier.resumeStore);
+	}
 }
 
 // Hash keys start after the array; hash values start after all hash keys.
 // The checked result is the pair of physical offsets in R1 and R3.
 std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExitSite& exit, bool load,
-	TableStackAdmission stack, std::optional<u8> temporary) {
+	std::optional<StringId> fixedKey, std::optional<u8> temporary) {
 	auto* c = m_compiler;
 	auto& slot = load ? exit.tableRead.own : exit.tableStore;
 	const sljit_sw prediction = reinterpret_cast<sljit_sw>(m_bindings.decodedPage ? slot.decoded : &slot.standalone);
@@ -129,27 +157,23 @@ std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExi
 	if (temporary) {
 		saved = NativeBlockAbi::fieldAddressOffset + *temporary * NativeBlockAbi::fieldAddressBytes;
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), saved + 2 * sizeof(u32), SLJIT_R1, 0);
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), saved + 3 * sizeof(u32), SLJIT_MEM1(SLJIT_SP), keyWord);
+		if (!fixedKey)
+			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), saved + 3 * sizeof(u32), SLJIT_MEM1(SLJIT_SP), keyWord);
 	}
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array));
 	emitTableSlotOffset(c, SLJIT_R3, false);
-	admitTableFootprint(SLJIT_R3, 1, stack.reads, exit);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	checks[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::String));
 	emitTableSlotOffset(c, SLJIT_R1, true);
-	admitTableFootprint(SLJIT_R1, sizeof(u32), stack.reads, exit);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R1);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
-	checks[2] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), keyWord);
+	checks[2] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+		fixedKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP), fixedKey ? static_cast<sljit_sw>(*fixedKey) : keyWord);
 
 	emitHashValueOffsets(c);
-	// The two lanes can alias independently. Reads need the published
-	// values; writes must also preserve the admitted resident bindings.
-	admitTableFootprint(SLJIT_R1, sizeof(u32), stack.reads || stack.overwrites, exit);
-	admitTableFootprint(SLJIT_R3, 1, stack.reads || stack.overwrites, exit);
 	if (temporary) {
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), saved, SLJIT_R1, 0);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), saved + sizeof(u32), SLJIT_R3, 0);
@@ -179,9 +203,11 @@ void NativeLowering::emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBl
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
 		SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_bindings.decodedPage ? exit.tableRead.own.decoded : &exit.tableRead.own.standalone),
 		SLJIT_MEM1(SLJIT_SP), saved + 2 * sizeof(u32)), exit, m_cache.state());
-	emitPoolWord(keyIndex, SLJIT_R0);
-	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
-		SLJIT_MEM1(SLJIT_SP), saved + 3 * sizeof(u32)), exit, m_cache.state());
+	if (!nativeImageConstant(m_constants, keyIndex)) {
+		emitPoolWord(keyIndex, SLJIT_R0);
+		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
+			SLJIT_MEM1(SLJIT_SP), saved + 3 * sizeof(u32)), exit, m_cache.state());
+	}
 	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), saved);
 	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_SP), saved + sizeof(u32));
 	fault(emitStringValueTag(true, resultTag), exit, m_cache.state());
@@ -190,16 +216,20 @@ void NativeLowering::emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBl
 
 void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& exit,
 	std::optional<u16> keyIndex, std::optional<ValueTag> resultTag, NativeStorePlan plan,
-	TableStackAdmission stack, NativeTableReadPlan readPlan, std::optional<u8> temporary) {
+	NativeTableReadPlan readPlan, std::optional<u8> temporary) {
 	auto* c = m_compiler;
 	if (!load && plan.nilValue == NativeNilValue::Nil) {
 		fault(sljit_emit_jump(c, SLJIT_JUMP), exit, m_cache.state());
 		return;
 	}
 
-	if (keyIndex) emitPoolWord(*keyIndex, SLJIT_R3);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
-	const auto address = emitStringValueAddress(exit, load, stack, temporary);
+	std::optional<StringId> fixedKey;
+	if (keyIndex) {
+		if (const auto constant = nativeImageConstant(m_constants, *keyIndex)) fixedKey = asStringId(*constant);
+		else emitPoolWord(*keyIndex, SLJIT_R3);
+	}
+	if (!fixedKey) sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
+	const auto address = emitStringValueAddress(exit, load, fixedKey, temporary);
 	auto* valueFailure = emitStringValueTag(load, resultTag);
 	if (const auto peer = exit.operands.table.reusePeerWord; peer && m_bindings.decodedPage) {
 		// A worker can publish this baseline after scalar execution has
@@ -215,7 +245,7 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	// checkpointed reads can complete a returning variable-cost lookup.
 	if (readPlan == NativeTableReadPlan::OneHopIndex) {
 		emitStringPayload();
-		m_singleStringReads.push_back({{address[0], address[1], address[2], valueFailure},
+		m_singleStringReads.push_back({{address[0], address[1], address[2], valueFailure}, fixedKey,
 			m_cache.state(), &exit, sljit_emit_label(c)});
 		return;
 	}
@@ -235,7 +265,9 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	}
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), wordOffset, SLJIT_R1, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), tagOffset, SLJIT_R3, 0);
-	emitTableOverwrite(exit, value, plan.barrier);
+	admitTableValueWrite(exit);
+	emitTableStoreBarrier(value, plan.barrier);
+	emitTableValueWrite(value);
 }
 
 void NativeLowering::emitSingleStringReads() {
@@ -245,12 +277,11 @@ void NativeLowering::emitSingleStringReads() {
 		for (auto* miss : read.ownMisses) sljit_set_label(miss, entry);
 		m_cache.setState(read.registers);
 		const auto& slots = read.exit->tableRead.path;
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&slots));
 		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
-			SLJIT_MEM1(SLJIT_R1), offsetof(TableStringPathCache, holderDepth), SLJIT_IMM, 1), *read.exit, read.registers);
-		emitPublishRecordObserver(read.exit->nextPc, read.exit->registerTop);
-		if (m_bindings.cpu)
-			sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&slots));
+			SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&slots.holderDepth), SLJIT_IMM, 1), *read.exit, read.registers);
+		if (read.fixedKey)
+			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_IMM, *read.fixedKey);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&slots));
 		// Each own miss leaves the aligned receiver header in R0. The leaf
 		// preserves the guest register cache and returns the live value lanes.
 		sljit_emit_ijump(c, SLJIT_FAST_CALL, SLJIT_IMM,
@@ -290,17 +321,6 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		emitFieldResult(value, access.resultTag);
 		return;
 	}
-	const bool readStack = spill.has_value() || std::ranges::any_of(m_cache.state(), [](const auto& binding) {
-		return binding.wordDirty || binding.tagDirty;
-	});
-	const auto& block = m_ir[m_current];
-	const auto successor = block.successors[0];
-	// Even if an input was evicted, a direct edge can continue using its
-	// type proof without re-admission. Clean resident payloads are live too.
-	const bool carriesTypes = block.provesSuccessorTypes[0]
-		&& !m_ir[successor].entryTypes.empty();
-	const TableStackAdmission stack{readStack, !load && (carriesTypes || std::ranges::any_of(m_cache.state(),
-		[](const auto& binding) { return binding.guest >= 0; }))};
 	if (access.mode == NativeTableMode::ReadMethod) {
 		emitRawLoad(base, SLJIT_R0, SLJIT_R1);
 		emitRawStore(value + 1, SLJIT_R0, SLJIT_R1);
@@ -319,9 +339,6 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 	if (!load)
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), receiver, SLJIT_R0, 0);
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	fault(sljit_emit_cmp(c, SLJIT_GREATER, SLJIT_R0, 0, SLJIT_IMM,
-		MAIN_RAM_SIZE - TableRecord::HEADER_BYTES), exit, m_cache.state());
-	admitTableFootprint(SLJIT_R0, TableRecord::HEADER_BYTES, stack.reads, exit);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
 	switch (access.keyKind) {
 	case NativeTableKey::Value: {
@@ -332,22 +349,22 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 			static_cast<u8>(ValueTag::Integer)), exit, m_cache.state());
 		fault(sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0), exit, m_cache.state());
 		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
-		if (load) emitArrayRead(exit, stack.reads);
-		else emitArrayStore(value, access.store, exit, stack.reads || stack.overwrites);
+		if (load) emitArrayRead(exit);
+		else emitArrayStore(value, access.store, exit);
 		auto* joined = sljit_emit_jump(c, SLJIT_JUMP);
 		sljit_set_label(string, sljit_emit_label(c));
-		emitStringSlot(load, value, exit, std::nullopt, std::nullopt, access.store, stack, access.readPlan);
+		emitStringSlot(load, value, exit, std::nullopt, std::nullopt, access.store, access.readPlan);
 		sljit_set_label(joined, sljit_emit_label(c));
 		break;
 	}
 	case NativeTableKey::Integer:
 		sljit_emit_op1(c, SLJIT_MOV, SLJIT_R1, 0, SLJIT_IMM, key - 1);
-		if (load) emitArrayRead(exit, stack.reads);
-		else emitArrayStore(value, access.store, exit, stack.reads || stack.overwrites);
+		if (load) emitArrayRead(exit);
+		else emitArrayStore(value, access.store, exit);
 		break;
 	case NativeTableKey::Field:
 		emitStringSlot(load, value, exit, static_cast<u16>(key), access.resultTag, access.store,
-			stack, access.readPlan, spill);
+			access.readPlan, spill);
 		if (load) {
 			emitFieldResult(value, access.resultTag);
 			return;

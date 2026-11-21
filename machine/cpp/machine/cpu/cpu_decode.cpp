@@ -148,11 +148,11 @@ void CPU::decodeInstructionWords(
 				break;
 			case OpCode::GETFIELD:
 			case OpCode::SELF:
-				invalidImageOperand |= rawC >= constantCount;
+				invalidImageOperand |= rawC >= constantCount || image.constPool.tag(rawC) != ValueTag::String;
 				decoded.tableCacheSlot() = -1;
 				break;
 			case OpCode::SETFIELD:
-				invalidImageOperand |= rawB >= constantCount;
+				invalidImageOperand |= rawB >= constantCount || image.constPool.tag(rawB) != ValueTag::String;
 				decoded.tableCacheSlot() = -1;
 				break;
 			case OpCode::GETT:

@@ -70,9 +70,16 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 	for (const auto& source : sources) instructionCount += source.instructions.size();
 	m_instructions.reserve(instructionCount);
 	m_blocks.reserve(sources.size());
-	for (const auto& source : sources)
-		for (const auto& inst : source.instructions)
-			m_instructions.emplace_back(translateNativeOperation(*inst.decoded));
+	for (const auto& source : sources) {
+		for (const auto& inst : source.instructions) {
+			auto operation = translateNativeOperation(*inst.decoded);
+			if (const auto* load = std::get_if<NativeConstantLoad>(&operation)) {
+				if (const auto constant = nativeImageConstant(specializations.imageConstants, load->index))
+					operation = NativeLiteral{load->result, *constant};
+			}
+			m_instructions.emplace_back(std::move(operation));
+		}
+	}
 	NativeSlotValues values(m_instructions);
 	std::array<NativeFieldAddressUse, NATIVE_BLOCK_MAX_INSTRUCTIONS> addressUses;
 	size_t first = 0;
@@ -130,7 +137,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 		block.inlineBuiltin &= block.successors[0] != m_blocks.size();
 	}
 	uses.analyze(m_blocks);
-	NativeTypePropagation{}.specializeRegion(m_blocks, uses, values, m_entryTypes);
+	NativeTypePropagation{specializations.imageConstants}.specializeRegion(m_blocks, uses, values, m_entryTypes);
 	for (auto& block : m_blocks) {
 		auto& final = block.instructions.back();
 		if (const auto* branch = std::get_if<NativeTruthBranch>(&final.operation);

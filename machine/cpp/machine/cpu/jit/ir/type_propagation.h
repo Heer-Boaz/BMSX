@@ -3,6 +3,7 @@
 #include <optional>
 #include <span>
 #include <vector>
+#include "machine/cpu/jit/compilation_input.h"
 #include "machine/cpu/jit/ir/value_flow.h"
 
 namespace bmsx {
@@ -15,6 +16,7 @@ class NativeRegisterUses;
 // slot assignment and spills. Entry facts require an explicit admission proof.
 class NativeTypePropagation {
 public:
+	explicit NativeTypePropagation(std::span<const NativeImageConstant> constants) : m_constants(constants) {}
 	void specializeRegion(std::span<NativeIrBlock> blocks,
 		const NativeRegisterUses& uses, NativeSlotValues& values, std::vector<NativeSlotType>& imports);
 private:
@@ -37,6 +39,7 @@ private:
 	void require(Type type);
 	void specialize(NativeIrBlock&, NativeSlotValues& values, size_t noSuccessor, size_t first = 0, size_t count = 0);
 
+	std::span<const NativeImageConstant> m_constants;
 	std::vector<Type> m_facts;
 	std::vector<Assumption> m_assumptions;
 };

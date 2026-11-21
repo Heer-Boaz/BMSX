@@ -34,8 +34,6 @@ public:
 	u32 allocateClosureRecord(u32 captures, bool latched = false, std::span<u32> cells = {});
 	void collectRuntime(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	bool stepRuntime();
-	// Completed table-storage work consumes the current run's transient grant.
-	void accountTableStorageWork(size_t valueSlots);
 	void finishCollection();
 	size_t usedBytes() const;
 	u32 collectionTarget() const;

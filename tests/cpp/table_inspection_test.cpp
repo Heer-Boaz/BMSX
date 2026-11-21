@@ -98,23 +98,24 @@ void boundarySearchAndHashMix(bmsx::CPU& cpu) {
 	auto table = cpu.createTable(4096, 8);
 	for (int key = 4096; key >= 1; --key) table.setInteger(key, valueBool(false));
 	require(table.lengthHint() == 1, "descending writes do not scan the retained suffix");
-	require(TableRecord::length(&table) == 4096, "pure search finds the unique sequence boundary");
+	require(TableRecord::length(&table) == 4096, "search finds the unique sequence boundary");
 	for (int repeat = 0; repeat < 8; ++repeat) {
 		table.setInteger(2048, valueNil()); table.setInteger(2048, valueBool(false));
 	}
-	require(table.lengthHint() == 1, "reads and distant hole refills retain the raw hint");
+	require(table.lengthHint() == 4096, "a second read can reuse the boundary after a distant hole refills");
 	table.clearWeakEntries(false, true, [](Value) { return false; });
-	require(TableRecord::length(&table) == 0, "a stale nonzero hint is only a search seed");
-	require(table.lengthHint() == 1, "weak clearing need not rebuild the hint");
+	require(table.lengthHint() == 4096, "weak clearing need not rebuild the hint");
+	require(TableRecord::length(&table) == 0 && table.lengthHint() == 0, "reading length repairs a weak-cleared boundary");
 
 	auto sparse = cpu.createTable(0, 128);
 	for (int bit = 30; bit >= 0; --bit) sparse.setInteger(1 << bit, valueBool(false));
-	require(TableRecord::length(&sparse) == (1 << 30), "sparse Integer keys extend the hash boundary");
-	sparse.setInteger(INT32_MAX, valueBool(false));
+		sparse.setInteger(INT32_MAX, valueBool(false));
 	sparse.set(valueFloat(2147483648.0f), valueBool(true));
 	require(TableRecord::length(&sparse) == INT32_MAX, "a larger Float key cannot extend the terminal Integer boundary");
 	sparse.setInteger(INT32_MAX, valueNil());
-	require(TableRecord::length(&sparse) == (1 << 30), "terminal deletion finds another valid boundary");
+	const auto boundary = TableRecord::length(&sparse);
+	require(boundary < INT32_MAX && (boundary == 0 || !isNil(sparse.getInteger(boundary)))
+		&& isNil(sparse.getInteger(boundary + 1)), "terminal deletion finds another valid boundary");
 
 	std::array<unsigned, 1024> occupancy{};
 	for (int key = -1; key >= -1024; --key) ++occupancy[hashCanonicalTableKey(valueInteger(key)) & 1023];

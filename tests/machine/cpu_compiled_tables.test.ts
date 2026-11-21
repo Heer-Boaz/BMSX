@@ -1,152 +1,61 @@
-import { FrameField } from '../../machine/ts/machine/cpu/call_state';
-import { BLUA32_STRING_LENGTH_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { textToByteString } from '../../machine/ts/common/byte_string';
-import { TableHeader } from '../../machine/ts/machine/cpu/table';
-import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { ValueTag, valueBool, valueFloat, valueFloatBits, valueFromTag, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_METATABLE_LOOP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { BASE_CYCLES, OpCode, TABLE_LENGTH_PROBE_CYCLES } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32, RAM_CODE_FIXTURE_BYTES } from '../helpers/blua32';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { integerConstant } from '../../toolchain/ts/lua/number';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
-test('an installed region reads the current LOADK, LOADKR and RK tags and words', () => {
+test('compiled LOADK, LOADKR and RK stores preserve the owning image literal', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.LOADKR, 1, 2, 0);
 	writeInstruction(text, 2, OpCode.SETI, 3, 1, 63, 7); // RK(C) = K[0].
 	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
-	const image = linkRawTestSystemBlua32({ text, constants: [13], functions: [{ firstWord: 0, wordCount: 4, maxStack: 4 }] });
-	const pc = image.image.functions[0].codeAddress;
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const grant = BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.LOADKR] + BASE_CYCLES[OpCode.SETI] + BASE_CYCLES[OpCode.JMP];
-	const frames = [js.rootThread.frameAtDepth(0), scalar.rootThread.frameAtDepth(0)];
-	const tables = [js, scalar].map((cpu, i) => {
-		const table = cpu.createTable(1);
-		cpu.gc.tables.setInteger(table, 1, valueInteger(0));
-		frames[i].registers.setInteger(2, 0);
-		frames[i].registers.setTable(3, table);
-		return table;
-	});
-	runCpuParity(js, scalar, grant * 64);
-	const word = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	const compiled = frames[0].decodedPage!.compiledBlocks!.entries[word];
-	assert.ok(compiled);
-	for (const [tag, payload] of [[ValueTag.Integer, 13], [ValueTag.Float, 0xffa12345], [ValueTag.False, 37]] as const) {
-		for (const frame of frames) {
-			frame.executionImage.constTags[0] = tag;
-			frame.executionImage.constWords[0] = payload;
-		}
+	for (const [literal, value] of [
+		[integerConstant(13), valueInteger(13)], [{ kind: 'float', word: 0xffa12345 }, valueFloatBits(0xffa12345)], [false, valueBool(false)],
+	] as const) {
+		const image = linkRawTestSystemBlua32({ text, constants: [literal], functions: [{ firstWord: 0, wordCount: 4, maxStack: 4 }] });
+		const pc = image.image.functions[0].codeAddress;
+		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+		const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+		const frames = [js.rootThread.frameAtDepth(0), scalar.rootThread.frameAtDepth(0)];
+		const tables = [js, scalar].map((cpu, i) => {
+			const table = cpu.createTable(1);
+			cpu.gc.tables.setInteger(table, 1, valueInteger(0));
+			frames[i].registers.setInteger(2, 0);
+			frames[i].registers.setTable(3, table);
+			return table;
+		});
+		runCpuParity(js, scalar, grant * 64);
+		assert.ok(frames[0].decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
 		runCpuParity(js, scalar, grant);
-		const value = valueFromTag(tag, payload);
 		for (const [i, cpu] of [js, scalar].entries()) {
 			assert.equal(frames[i].pc, pc);
 			assert.equal(frames[i].registers.get(0), value);
 			assert.equal(frames[i].registers.get(1), value);
 			assert.equal(cpu.gc.tables.getInteger(tables[i], 1), value);
 		}
-		assert.equal(frames[0].decodedPage!.compiledBlocks!.entries[word], compiled);
 	}
 });
 
-for (const [op, name] of [[OpCode.GETFIELD, 'GETFIELD'], [OpCode.LEN, 'LEN']] as const) test(`compiled WIDE ${name} observes a dirty physical register word or tag`, () => {
-	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(text, 0, OpCode.K1, 2, 0, 0);
-	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 2, op, 3, 0, 0);
-	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
-	const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [{ firstWord: 0, wordCount: 4, maxStack: 8 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
-	const entry = image.image.functions[0].codeAddress;
-	for (const { cpu, memory } of [js, ref]) {
-		const frame = cpu.rootThread.currentFrame!, r = frame.registers;
-		const table = cpu.createTable(op === OpCode.LEN ? 1 : 0, op === OpCode.LEN ? 0 : 1), key = cpu.stringPool.intern('field');
-		r.setTable(0, table);
-		if (op === OpCode.LEN) cpu.gc.tables.setInteger(table, 1, valueInteger(41));
-		else cpu.gc.tables.setStringKey(table, key, valueInteger(41));
-		cpu.runUntilDepth(0, 2048);
-		const stack = frame.thread.stackRegisters;
-		const tagBase = stack.ramOffset() + 4 * stack.capacity() + frame.stackBase;
-		const storage = op === OpCode.LEN ? tagBase + 2 - 4 : r.ramOffset() + 4;
-		// The single array tag or hash value word lands on register 2.
-		// The raw backing uses the physical RAM mirror.
-		memory.writeRamRecordWord(table + TableHeader.Storage, storage + MAIN_RAM_SIZE);
-		if (op === OpCode.GETFIELD) {
-			memory.writeRamRecordWord(storage, key);
-			memory.writeRamRecordByte(storage + 12, ValueTag.String);
-			memory.writeRamRecordByte(storage + 13, ValueTag.Integer);
-		}
-	}
-	const frame = js.cpu.rootThread.currentFrame!;
-	const block = frame.decodedPage!.compiledBlocks!.entries[(entry & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]!;
-	const fixed = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[op];
-	const grant = fixed + 1;
-	assert.ok(block && block.admissionCycles < grant, 'the alias is checked in an admitted generated body');
-	for (const { cpu } of [js, ref]) {
-		const registers = cpu.rootThread.currentFrame!.registers;
-		registers.set(2, op === OpCode.LEN ? valueNil() : valueInteger(73)); registers.setInteger(3, -1);
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
-	}
-	runCpuParity(js.cpu, ref.cpu, grant);
-	assert.ok(isDeepStrictEqual(js.cpu.captureRuntimeState(), ref.cpu.captureRuntimeState()));
-	assert.equal(frame.registers.getInteger(2), 1);
-	assert.equal(frame.registers.getInteger(3), 1, 'the read sees K1, not the stale physical lane at block entry');
-	assert.equal(js.cpu.lastPc, entry + (op === OpCode.LEN ? 2 : 3) * INSTRUCTION_BYTES);
-	assert.equal(frame.pc, op === OpCode.LEN ? entry + 3 * INSTRUCTION_BYTES : entry);
-	assert.equal(js.cpu.instructionBudgetRemaining, 1 - (op === OpCode.LEN ? 2 * TABLE_LENGTH_PROBE_CYCLES : BASE_CYCLES[OpCode.JMP]));
-});
-
-test('compiled WIDE LEN observes the sequential PC and the top before result placement', () => {
-	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(text, 0, OpCode.K1, 6, 0, 0);
-	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 2, OpCode.LEN, 7, 0, 0);
-	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 8 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	const pc = image.image.functions[0].codeAddress, nextPc = pc + 3 * INSTRUCTION_BYTES;
-	const frame = js.rootThread.frameAtDepth(0);
-	for (const cpu of [js, scalar]) {
-		cpu.rootThread.frameAtDepth(0).registers.setString(0, cpu.stringPool.intern('seed'));
-	}
-	runCpuParity(js, scalar, 256);
-	const entry = frame.decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]!;
-	const grant = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.LEN] + 1;
-	assert.equal(entry.admissionCycles, grant - 1);
-	for (const field of [FrameField.Pc, FrameField.Top]) {
-		for (const cpu of [js, scalar]) {
-			const current = cpu.rootThread.frameAtDepth(0);
-			current.registers.setString(0, RAM_BASE + current.controlOffset + field - BLUA32_STRING_LENGTH_OFFSET);
-			current.top = 1;
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		}
-		runCpuParity(js, scalar, grant);
-		assert.equal(frame.pc, pc);
-		assert.equal(js.lastPc, nextPc);
-		assert.equal(frame.top, 8);
-		assert.equal(frame.registers.getInteger(7), field === FrameField.Pc ? nextPc & (MAIN_RAM_SIZE - 1) : 7);
-	}
-});
-
-test('only positive integer keys enter the array even with a raw high-bit capacity', () => {
+test('negative integer keys use hash storage without disturbing the array', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.GETT, 3, 0, 1);
 	writeInstruction(text, 1, OpCode.SETT, 0, 1, 2);
 	writeInstruction(text, 2, OpCode.GETT, 4, 0, 1);
 	writeInstruction(text, 3, OpCode.GETT, 6, 5, 7);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] }, RAM_CODE_FIXTURE_BYTES);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] });
 	const pc = image.image.functions[0].codeAddress, key = -0x7ffffffe;
-	const capacity = 0x80000010, invalidSlot = 0x80000001;
-	const words = DYNAMIC_RAM_BASE + 0x3000, tags = words + (capacity + 3) * 4;
 	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
 		const { cpu } = createTestSystemCpu(image, backend);
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
@@ -158,25 +67,16 @@ test('only positive integer keys enter the array even with a raw high-bit capaci
 		cpu.runUntilDepth(0, 1024);
 		if (backend === CpuExecutionBackend.JavaScript)
 			assert.ok(frame.decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]);
-		const memory = cpu.memory;
-		memory.writeRamRecordWord(table + TableHeader.Storage, words);
-		memory.writeRamRecordWord(table + TableHeader.Array, capacity);
-		memory.writeRamRecordWord(words, 61);
-		memory.writeRamRecordByte(tags, ValueTag.Integer);
-		memory.writeRamRecordWord(words + capacity * 4, key);
-		memory.writeRamRecordByte(tags + capacity, ValueTag.Integer);
-		memory.writeRamRecordWord(words + (capacity + 1) * 4, 73);
-		memory.writeRamRecordByte(tags + capacity + 1, ValueTag.Integer);
-		memory.writeRamRecordWord(words + invalidSlot * 4, 47);
-		memory.writeRamRecordByte(tags + invalidSlot, ValueTag.Integer);
+		cpu.gc.tables.setInteger(table, 1, valueInteger(61));
+		cpu.gc.tables.setInteger(table, key, valueInteger(73));
 		r.setInteger(1, key);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		cpu.runUntilDepth(0, 3 * BASE_CYCLES[OpCode.GETT] + BASE_CYCLES[OpCode.SETT]);
 		assert.equal(r.getInteger(3), 73);
 		assert.equal(r.getInteger(4), 89);
 		assert.equal(cpu.gc.tables.getInteger(table, key), valueInteger(89));
-		assert.equal(memory.readRamRecordWord(words + invalidSlot * 4), 47, 'the invalid array lane remains untouched');
-		assert.equal(r.getInteger(6), 61, 'the inherited positive array value uses the unsigned capacity');
+		assert.equal(cpu.gc.tables.getInteger(table, 1), valueInteger(61), 'the array lane remains untouched');
+		assert.equal(r.getInteger(6), 61, 'inheritance still sees the live positive array value');
 		assert.equal(frame.pc, pc + 4 * INSTRUCTION_BYTES);
 	}
 });
@@ -423,40 +323,4 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
 	assert.equal(frame.registers.getInteger(8), 73); assert.equal(frame.top, 9);
-});
-
-test('compiled and scalar table instructions address the same raw RAM without a host object', () => {
-	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(text, 0, OpCode.SETI, 0, 1, 2);
-	writeInstruction(text, 1, OpCode.GETI, 3, 0, 1);
-	writeInstruction(text, 2, OpCode.LEN, 4, 0, 0);
-	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 5 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	for (const record of [RAM_BASE + 0x20000, RAM_BASE + MAIN_RAM_SIZE - 4]) {
-		const body = RAM_BASE + 0x21000;
-		for (const cpu of [js, scalar]) {
-			cpu.memory.writeRamRecordByte(record, ValueTag.Table);
-			assert.equal(cpu.gc.tableRecordAddress(record), 0, 'a header outside an issued slot is not a collector record');
-			cpu.memory.writeRamRecordWord(record + TableHeader.Metatable, 0);
-			cpu.memory.writeRamRecordWord(record + TableHeader.Storage, body + MAIN_RAM_SIZE);
-			cpu.memory.writeRamRecordWord(record + TableHeader.Array, 1);
-			cpu.memory.writeRamRecordWord(record + TableHeader.Hash, 0);
-			cpu.memory.writeRamRecordWord(record + TableHeader.Length, 0);
-			const registers = cpu.rootThread.currentFrame!.registers;
-			registers.setTable(0, record + MAIN_RAM_SIZE + 1); registers.setInteger(2, 83);
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
-		}
-		runCpuParity(js, scalar, 1000);
-		for (const cpu of [js, scalar]) {
-			assert.equal(cpu.rootThread.currentFrame!.registers.get(3), valueInteger(83));
-			assert.equal(cpu.rootThread.currentFrame!.registers.get(4), valueInteger(1));
-			assert.equal(cpu.memory.readRamRecordWord(body), 83);
-			assert.equal(cpu.memory.readRamRecordByte(body + 4), ValueTag.Integer);
-		}
-	}
-	const frame = js.rootThread.currentFrame!;
-	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry], 'the raw record path ran in a warmed block');
 });

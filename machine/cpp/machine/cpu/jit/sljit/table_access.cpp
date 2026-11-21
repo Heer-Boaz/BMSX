@@ -82,13 +82,11 @@ std::array<sljit_jump*, 2> emitReceiverAbsence(sljit_compiler* c) {
 	return {shadowed, linked};
 }
 
-// R0 starts as a guest record word. Admit a contiguous header and probe
-// the hinted slot against the live key and value, not a pinned table.
-std::array<sljit_jump*, 6> emitPredictedString(sljit_compiler* c, sljit_sw slot,
+// R0 is the address of an owned table descriptor. Probe the hinted slot
+// against the live key and value, not a pinned table.
+std::array<sljit_jump*, 5> emitPredictedString(sljit_compiler* c, sljit_sw slot,
 	sljit_s32 keyBase, sljit_sw keyOffset, ValueTag tag) {
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	auto* wrapped = sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM,
-		MAIN_RAM_SIZE - TableRecord::HEADER_BYTES);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::path);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), slot);
@@ -110,7 +108,7 @@ std::array<sljit_jump*, 6> emitPredictedString(sljit_compiler* c, sljit_sw slot,
 		SLJIT_R3, 0, SLJIT_IMM, static_cast<u8>(tag));
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R1);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
-	return {wrapped, untrained, outside, otherTag, otherKey, otherValue};
+	return {untrained, outside, otherTag, otherKey, otherValue};
 }
 
 } // namespace

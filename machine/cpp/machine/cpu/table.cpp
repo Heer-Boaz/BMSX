@@ -184,7 +184,6 @@ void TableRecord::rehash(const Value& key, const Value& value) {
 
 	size_t hashKeys = totalKeys - arrayKeys;
 	size_t hashSize = hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0;
-	m_heap->budget.accountTableStorageWork(body.array + 2u * body.count);
 	resize(arraySize, hashSize, key, value);
 }
 
@@ -200,23 +199,18 @@ void TableRecord::resize(
 	const size_t oldArraySize = arrayCapacity(), oldHashSize = hashSlots();
 	bindStorage(newArraySize, newHashSize, storage);
 	initializeStorage();
-	m_heap->budget.accountTableStorageWork(newArraySize + 2 * newHashSize);
 
-	size_t relocatedSlots = 0;
 	for (size_t i = 0; i < oldArraySize; ++i) {
 		if (!isNil(oldValues.get(i))) {
-			const int destination = rawSet(valueInteger(static_cast<i32>(i + 1)), oldValues.get(i));
-			relocatedSlots += destination < 0 ? 1u : 2u;
+			rawSet(valueInteger(static_cast<i32>(i + 1)), oldValues.get(i));
 		}
 	}
 	for (size_t i = 0; i < oldHashSize; ++i) {
 		const Value key = oldValues.get(oldArraySize + i);
 		if (!isNil(key) && !isNil(oldValues.get(oldArraySize + oldHashSize + i))) {
-			const int destination = rawSet(key, oldValues.get(oldArraySize + oldHashSize + i));
-			relocatedSlots += destination < 0 ? 1u : 2u;
+			rawSet(key, oldValues.get(oldArraySize + oldHashSize + i));
 		}
 	}
-	m_heap->budget.accountTableStorageWork(oldArraySize + 2 * oldHashSize + relocatedSlots);
 	if (oldValues.words != 0) m_heap->arena.free(oldValues.words);
 
 }
@@ -669,46 +663,31 @@ void TableRecord::setStringKeyCached(StringId key, const Value& value, int& pred
 	predictedSlot = setStringKey(key, value);
 }
 
-i32 TableRecord::length(const TableRecord* table, u32* work) noexcept {
+i32 TableRecord::length(TableRecord* table) noexcept {
 	constexpr u32 maxBoundary = 0x7fffffffu;
 	u32 low = table->lengthHint(), high;
-	u32 probes = low == 0 ? 0 : 1;
 	if (low != 0 && !table->hasIntegerKey(low)) {
 		high = low;
 		low = 0;
 	} else if (low == maxBoundary) {
-		if (work) *work = probes;
 		return static_cast<i32>(low);
 	} else {
-		++probes;
 		if (!table->hasIntegerKey(low + 1)) {
-			if (work) *work = probes;
 			return static_cast<i32>(low);
 		}
 		++low;
-		if (low == maxBoundary) {
-			if (work) *work = probes;
-			return static_cast<i32>(low);
-		}
 		high = std::min(low * 2, maxBoundary);
-		for (;;) {
-			++probes;
-			if (!table->hasIntegerKey(high)) break;
+		while (low != maxBoundary && table->hasIntegerKey(high)) {
 			low = high;
-			if (low == maxBoundary) {
-				if (work) *work = probes;
-				return static_cast<i32>(low);
-			}
 			high = std::min(low * 2, maxBoundary);
 		}
 	}
 	while (high - low > 1) {
 		const u32 middle = low + ((high - low) >> 1);
-		++probes;
 		if (table->hasIntegerKey(middle)) low = middle;
 		else high = middle;
 	}
-	if (work) *work = probes;
+	table->writeHeader(TableHeader::Length, low);
 	return static_cast<i32>(low);
 }
 

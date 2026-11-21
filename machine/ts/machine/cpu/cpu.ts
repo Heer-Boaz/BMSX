@@ -20,7 +20,7 @@ import {
 } from '../memory/bus_signals';
 import { readLE32 } from '../../common/endian';
 import type { IrqController } from '../devices/irq/controller';
-import { BASE_CYCLES, TABLE_INDEX_VISIT_CYCLES, TABLE_LENGTH_PROBE_CYCLES, OPCODE_COUNT, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
+import { BASE_CYCLES, TABLE_INDEX_VISIT_CYCLES, OPCODE_COUNT, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
 import {
 	cop0FieldImplemented,
 	COP0_BAD_ADDRESS,
@@ -122,7 +122,7 @@ import {
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { TableRecords, TableHeader, TABLE_INDEX_CHAIN_LIMIT, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
+import { TableRecords, TableHeader, TABLE_INDEX_CHAIN_LIMIT, TableLookupStatus, type TableLookupResult } from './table';
 import * as Closure from './closure';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, sameFunctionPrototype, type FunctionPrototype } from './closure';
 import { UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, UPVALUE_VALUE_WORD, UPVALUE_OWNER } from './upvalue';
@@ -273,9 +273,8 @@ export class CPU implements MappedPageInvalidator {
 	private preMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
 	private runUntilDepthEntry = this.runUntilDepthNormal;
 	private readonly compiledCodeCache = new CompiledCodeCache();
-	private readonly tableLengthWork: TableLengthWork = { probes: 0 };
 	private readonly compiledRunState: CompiledRegionRunState = {
-		remainingCycles: 0, registerTop: 0, memoryAddress: 0, lengthWork: this.tableLengthWork,
+		remainingCycles: 0, registerTop: 0, memoryAddress: 0,
 	};
 	private readonly registerBuiltinArgsScratch = new ScratchBuffer<BuiltinArgsView>(
 		() => new BuiltinArgsView(),
@@ -609,8 +608,7 @@ export class CPU implements MappedPageInvalidator {
 					this.invokeTableMetamethod(frame, method, destination, SINGLE_CALL_RESULT, operand, operand);
 					return true;
 				}
-				const boundary = this.gc.tables.length(record, this.tableLengthWork);
-				this.charge(this.tableLengthWork.probes * TABLE_LENGTH_PROBE_CYCLES);
+				const boundary = this.gc.tables.length(record);
 				this.setRegisterIntegerFast(frame, registers, destination, boundary);
 				return false;
 			}
@@ -1235,8 +1233,9 @@ export class CPU implements MappedPageInvalidator {
 				} else {
 					const constantCount = image.constWords.length;
 					if (-page.b[pageOffset] > constantCount || -page.c[pageOffset] > constantCount
-						|| ((op === OpCode.GETFIELD || op === OpCode.SELF) && rawC >= constantCount)
-						|| (op === OpCode.SETFIELD && rawB >= constantCount)) {
+						|| ((op === OpCode.GETFIELD || op === OpCode.SELF)
+							&& (rawC >= constantCount || image.constTags[rawC] !== ValueTag.String))
+						|| (op === OpCode.SETFIELD && (rawB >= constantCount || image.constTags[rawB] !== ValueTag.String))) {
 						page.ops[pageOffset] = DecodedDispatchOp.InvalidImageOperand;
 					}
 				}

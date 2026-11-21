@@ -514,7 +514,8 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 	const i32 work = ceilDiv4(static_cast<int>(layout.allocationBytes()));
 	if (!garbage) {
 		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, survivor);
-		const u32 relocated = !heap.m_minor && address != sweep.growingThread ? ThreadRecord::shrinkStack(heap, address, layout) : 0u;
+		const u32 relocated = sweep.compactThreads && address != sweep.growingThread
+			? ThreadRecord::shrinkStack(heap, address, layout) : 0u;
 		if (relocated != 0u) heap.m_cpu.rebindRelocatedThread(address);
 		return work + 2 * ceilDiv4(relocated);
 	}
@@ -529,7 +530,7 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 	return -work;
 }
 
-size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread) {
+size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcStepMeasurement total(profile);
@@ -582,7 +583,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 				GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);
 #endif
-				SweepContext sweep{*this, growingThread, white()};
+				SweepContext sweep{*this, growingThread, white(), compactThreads};
 				work += arena.sweepObjects(GC_STEP_WORDS - work, &sweep, &GcHeap::sweepRecord);
 				if (work < GC_STEP_WORDS && !arena.objectSweepActive()) {
 					memory.writeRamRecordWord(m_controlOffset + GC_CHANGED_HEAD, 0u);
@@ -613,8 +614,8 @@ size_t GcHeap::collect(Value root0, Value root1, Value root2, u32 growingThread)
 #endif
 	size_t work = 0;
 	// An explicit/full collection also removes floating garbage from an active cycle.
-	while (active()) work += step(root0, root1, root2, growingThread);
-	do { work += step(root0, root1, root2, growingThread); } while (active());
+	while (active()) work += step(root0, root1, root2, growingThread, true);
+	do { work += step(root0, root1, root2, growingThread, true); } while (active());
 	return work;
 }
 } // namespace bmsx

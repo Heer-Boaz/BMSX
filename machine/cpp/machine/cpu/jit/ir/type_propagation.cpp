@@ -232,7 +232,8 @@ struct NativeTypePropagation::Transfer {
 			if (const auto type = input(2)) {
 				facts.require(type);
 				op.store = {valueTagHasGcEdge(type->tag) ? NativeGcBarrier::Reference : NativeGcBarrier::None,
-					type->tag == ValueTag::Nil ? NativeNilValue::Nil : NativeNilValue::Present};
+					type->tag == ValueTag::Nil ? NativeNilValue::Nil : NativeNilValue::Present,
+					type->tag == ValueTag::Nil ? NativeArrayLengthEffect::RetreatAtBoundary : NativeArrayLengthEffect::AdvanceAtBoundary};
 			}
 			return;
 		}
@@ -272,6 +273,13 @@ void NativeTypePropagation::specialize(NativeIrBlock& block, NativeSlotValues& v
 	for (u16 row = 0; row < block.instructions.size(); ++row) {
 		auto& instruction = block.instructions[row];
 		const auto rowValues = values.advance(instruction, row);
+		for (size_t operand = 0; operand < instruction.slots.reads.size(); ++operand) {
+			const int selector = instruction.slots.reads[operand];
+			if (selector < 0 && selector != NATIVE_NO_OPERAND) {
+				if (const auto constant = nativeImageConstant(m_constants, -1 - selector))
+					define(rowValues.inputs[operand], valueTag(*constant));
+			}
+		}
 		Transfer transfer{*this, rowValues, block.inlineBuiltin};
 		std::visit(transfer, instruction.operation);
 		if (!transfer.invalidOperand) continue;

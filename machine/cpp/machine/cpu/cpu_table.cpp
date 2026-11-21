@@ -131,8 +131,7 @@ bool CPU::executeLength(CallFrame& frame, int destination, Value operand) {
 	}
 	const auto length = measureValueLength(operand, m_stringPool, &m_heap);
 	if (!length) throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
-	instructionBudgetRemaining -= length->extraCycles;
-	frame.registers.set(destination, valueInteger(length->count));
+	frame.registers.set(destination, valueInteger(*length));
 	frame.extendTop(destination + 1);
 	return false;
 }

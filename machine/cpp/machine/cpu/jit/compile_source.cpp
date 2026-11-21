@@ -14,10 +14,36 @@
 #include "machine/cpu/jit/worker.h"
 #endif
 #include "machine/memory/memory.h"
+#include "spec/blua32/instruction_format.h"
 
 namespace bmsx {
 
 namespace {
+std::vector<NativeImageConstant> captureImageConstants(
+	std::span<const NativeBlockInstruction> instructions, ConstValueSpan pool) {
+	std::vector<NativeImageConstant> constants;
+	const auto add = [&](u32 index) {
+		if (constants.empty()) constants.reserve(instructions.size());
+		constants.push_back({index, {}});
+	};
+	for (const auto& instruction : instructions) {
+		const auto& decoded = *instruction.decoded;
+		const u8 rk = OPCODE_RK_OPERANDS[decoded.op];
+		if ((rk & RK_OPERAND_B) && decoded.b < 0) add(-1 - decoded.b);
+		if ((rk & RK_OPERAND_C) && decoded.c < 0) add(-1 - decoded.c);
+		switch (static_cast<OpCode>(decoded.op)) {
+		case OpCode::LOADK: add(decoded.bx()); break;
+		case OpCode::GETFIELD: case OpCode::SELF: add(decoded.c); break;
+		case OpCode::SETFIELD: add(decoded.b); break;
+		default: break;
+		}
+	}
+	std::ranges::sort(constants, {}, &NativeImageConstant::index);
+	constants.erase(std::ranges::unique(constants, {}, &NativeImageConstant::index).begin(), constants.end());
+	for (auto& constant : constants) constant.value = pool.get(constant.index);
+	return constants;
+}
+
 // Compilation may return early or raise while decoding/generating. This scope
 // measures the complete owning operation, including its unfinished phase.
 class NativeCompilationMeasurement {
@@ -146,6 +172,9 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 		.immutablePagePc = immutable ? std::optional{pagePc} : std::nullopt,
 	};
 	auto rejectedFieldProofs = page.fieldProofFeedback.snapshot(pagePc);
+	// Capture on the CPU thread. A save-state restore can overwrite RAM before
+	// the pending worker job is drained; it never modifies this job's inputs.
+	auto constants = captureImageConstants(std::span(instructions).first(instructionCount), image.constPool);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (!coldImage) {
 		auto& pendingJob = m_pendingNativeCompilation;
@@ -156,13 +185,14 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 		pendingJob.slot = source.slot;
 		pendingJob.invalidated = false;
 		m_nativeCompilerWorker->submit(sources,
-			NativeCodeBindings(m_memory, m_stringPool, this, page.words.data()), options, profile != nullptr, std::move(rejectedFieldProofs));
+			NativeCodeBindings(m_memory, m_stringPool, this, page.words.data()), options, profile != nullptr,
+			std::move(rejectedFieldProofs), std::move(constants));
 		return;
 	}
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
 	auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(m_memory, m_stringPool, this, page.words.data()), options,
-		{.rejectedFieldProofs = rejectedFieldProofs});
+		{.rejectedFieldProofs = rejectedFieldProofs, .imageConstants = constants});
 	if (blocks.empty()) return;
 	// Publication owns any capacity retirement and profiles it separately.
 	measurement.finish();

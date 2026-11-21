@@ -18,7 +18,8 @@ namespace bmsx {
 class NativeLowering {
 public:
 	NativeLowering(std::span<const std::unique_ptr<NativeBlock>> blocks,
-		const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir, std::span<NativeBlockExitSite> replays, NativeRegisterUses& uses);
+		const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir, std::span<NativeBlockExitSite> replays,
+		NativeRegisterUses& uses, std::span<const NativeImageConstant> constants);
 	~NativeLowering();
 	void beginBlock(size_t index);
 	void lower(const NativeInstruction& instruction);
@@ -57,7 +58,6 @@ private:
 
 	void emitExit(NativeBlockExitSite& exit, size_t edge = 0, sljit_label** sharedExternal = nullptr);
 	void emitTop(int extent);
-	void emitPublishRecordObserver(u32 nextPc, int prefixTop);
 	void emitConstant(int guest, Value value);
 	void emitPoolWord(u32 index, sljit_s32 word);
 	void emitPoolTag(u32 index, sljit_s32 tag);
@@ -80,27 +80,30 @@ private:
 	void emitFloatInput(int selector, ValueTag tag, sljit_s32 destination);
 	void emitFloatCanonicalization(sljit_s32 reg);
 	void emitWordOperand(int selector, NativeWordSource source, NativeBlockExitSite& invalid);
-	void emitArrayRead(NativeBlockExitSite&, bool guardStack);
-	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&, bool guardStack);
+	void emitArrayRead(NativeBlockExitSite&);
+	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&);
+	void emitTableStoreBarrier(int value, NativeGcBarrier);
+	void emitTableStoreBarriers();
 	void assignFieldAddressSpills(std::span<const NativeOwnFieldAddress>);
-	void emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBlockExitSite&, sljit_s32 scratch = SLJIT_R2);
-	void admitTableFootprint(sljit_s32 offset, u32 bytes, bool wholeStack, NativeBlockExitSite&, sljit_s32 scratch = SLJIT_R2);
-	struct TableStackAdmission { bool reads, overwrites; };
 	std::array<sljit_jump*, 3> emitStringValueAddress(NativeBlockExitSite&, bool load,
-		TableStackAdmission, std::optional<u8> temporary);
+		std::optional<StringId> fixedKey, std::optional<u8> temporary);
 	sljit_jump* emitStringValueTag(bool load, std::optional<ValueTag> resultTag);
 	void emitStringPayload();
 	void emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<u16> keyIndex,
-		std::optional<ValueTag> resultTag, NativeStorePlan store, TableStackAdmission, NativeTableReadPlan,
+		std::optional<ValueTag> resultTag, NativeStorePlan store, NativeTableReadPlan,
 		std::optional<u8> temporary = {});
 	void emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBlockExitSite&, std::optional<ValueTag> resultTag);
 	void emitFieldResult(int slot, std::optional<ValueTag> resultTag);
 	void emitSingleStringReads();
-	void emitTableOverwrite(NativeBlockExitSite&, int value, NativeGcBarrier);
-	// scratch cannot address the mark byte; test is first clobbered after the load.
+	void admitTableValueWrite(NativeBlockExitSite&);
+	void emitTableValueWrite(int value);
+	// flags cannot address the mark byte; test is first clobbered after the load.
+	std::array<sljit_jump*, 2> emitGcMutationBranches(sljit_s32 mark, sljit_sw markArg,
+		int source, NativeGcBarrier, sljit_s32 flags, sljit_s32 test);
 	void emitGuardNoGcMutation(NativeBlockExitSite&, sljit_s32 mark, sljit_sw markArg,
 		int source, NativeGcBarrier barrier, sljit_s32 scratch, sljit_s32 test);
-	void emitRamWordWriteWatch(NativeBlockExitSite&, sljit_s32 address, sljit_sw addressArg, sljit_s32 bits, sljit_s32 group, u32 wordMask = 1u);
+	void emitRamWordWriteWatch(NativeBlockExitSite&, sljit_s32 address, sljit_sw addressArg,
+		sljit_s32 bits, sljit_s32 group, std::optional<u32> codeWords = 1u);
 	// R2 is the host address; result is a word in R0 or external binary64 in FR0.
 	void emitBackingLoad(MemoryAccessKind kind, bool unaligned);
 	void emitRomReads();
@@ -112,6 +115,7 @@ private:
 	std::span<const NativeIrBlock> m_ir;
 	std::span<NativeBlockExitSite> m_admissionReplays;
 	NativeRegisterUses& m_uses;
+	std::span<const NativeImageConstant> m_constants;
 	struct Entry {
 		State registers{};
 		sljit_label* guarded = nullptr;
@@ -146,8 +150,15 @@ private:
 		MemoryAccessKind format;
 	};
 	std::vector<RomRead> m_romReads;
+	struct TableStoreBarrier {
+		std::array<sljit_jump*, 2> mutations;
+		State registers;
+		sljit_label* resumeStore;
+	};
+	std::vector<TableStoreBarrier> m_tableStoreBarriers;
 	struct SingleStringRead {
 		std::array<sljit_jump*, 4> ownMisses;
+		std::optional<StringId> fixedKey;
 		State registers;
 		NativeBlockExitSite* exit;
 		sljit_label* result;

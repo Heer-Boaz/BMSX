@@ -188,10 +188,6 @@ void LuaHeap::creditStep(size_t work) {
 	if (m_cpu.collecting()) setCollectionTarget(static_cast<u32>(usedBytes() + std::max(GC_ASSIST_BYTES, work / 16)));
 }
 
-void LuaHeap::accountTableStorageWork(size_t valueSlots) {
-	m_cpu.instructionBudgetRemaining -= static_cast<int>(valueSlots);
-}
-
 size_t LuaHeap::capacity() const {
 	return m_cpu.heapAllocator().capacityBytes();
 }

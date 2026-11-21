@@ -49,10 +49,13 @@ enum class NativeTagCheck : u8 { Dynamic, Proved, Rejected };
 enum class NativeWordSource : u8 { Dynamic, Integer, Float, Invalid };
 enum class NativeGcBarrier : u8 { Dynamic, None, Reference };
 enum class NativeNilValue : u8 { Dynamic, Nil, Present };
+enum class NativeArrayLengthEffect : u8 { ByValue, AdvanceAtBoundary, RetreatAtBoundary };
 
 struct NativeStorePlan {
 	NativeGcBarrier barrier = NativeGcBarrier::Dynamic;
 	NativeNilValue nilValue = NativeNilValue::Dynamic;
+	// Applies only on an admitted in-capacity integer-key route.
+	NativeArrayLengthEffect arrayLength = NativeArrayLengthEffect::ByValue;
 };
 
 struct NativeReplay {

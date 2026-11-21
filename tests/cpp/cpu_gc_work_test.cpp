@@ -526,6 +526,10 @@ void stackShrinkAndAdmission() {
 	auto* thread = cpu.rootThread(); auto& frame = *thread->currentFrame;
 	thread->resizeStack(1024);
 	frame.registers.set(0, valueInteger(123)); frame.writeControl(bmsx::FrameField::Top, 1);
+	const u32 values = thread->stackOffset();
+	do { cpu.stepHeap(valueNil(), valueNil(), valueNil()); } while (cpu.collecting());
+	require(thread->stackCapacity == 1024 && thread->stackOffset() == values,
+		"incremental collection reclaims objects without relocating a surviving stack");
 	const size_t before = cpu.luaHeap().usedBytes();
 	cpu.collectHeap();
 	require(thread->stackCapacity == 512 && cpu.luaHeap().usedBytes() == before - HEAP_PAGE_SIZE,

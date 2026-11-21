@@ -71,7 +71,6 @@ export const OPCODE_COUNT = 64;
 // This semantic traversal stage does not fetch another instruction.
 export const TABLE_INDEX_VISIT_CYCLES = 8;
 // One logical own-integer presence test; no instruction-supply allowance.
-export const TABLE_LENGTH_PROBE_CYCLES = 6;
 
 export const encodeFixedValueCount = (count: number): number => count + 1;
 

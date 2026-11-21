@@ -184,53 +184,46 @@ void coldExecPreservesGuestStateAndBanks() {
 	}
 }
 
-void preparedCodeReadsTheLiveConstantBank() {
+void preparedCodeUsesItsImageConstants() {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}};
-	image.constants = {i32{13}};
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::LOADKR), 1, 2, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::SETI), 3, 1, 63, 7); // RK(C) = K[0].
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
-	const auto rom = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
-	Fixture prepared(rom), scalar(withoutHints(rom));
-	prepared.execute();
-	scalar.execute();
-	prepared.prepareAtGrantBoundary();
-	scalar.prepareAtGrantBoundary();
-	const auto* compiled = entryAt(prepared.cpu(), rom.textAddress, 0);
-	require(compiled && !entryAt(scalar.cpu(), rom.textAddress, 0), "only the prepared CPU has installed this entry");
-	const auto initialize = [](Fixture& machine) {
-		auto& frame = *machine.cpu().activeThread()->frameAtDepth(0);
-		auto table = machine.cpu().createTable(1);
-		table.setInteger(1, valueInteger(0));
-		frame.registers.set(2, valueInteger(0));
-		frame.registers.set(3, valueTable(table.address()));
-		return table;
-	};
-	const auto generatedTable = initialize(prepared);
-	const auto referenceTable = initialize(scalar);
 	int grant = 0;
 	for (const auto op : {OpCode::LOADK, OpCode::LOADKR, OpCode::SETI, OpCode::JMP})
 		grant += BASE_CYCLES[static_cast<u8>(op)];
-	for (const Value value : {valueInteger(13), valueFloatBits(0xffa12345u), valueFromTag(ValueTag::False, 37)}) {
+	for (const auto& [literal, value] : {
+		std::pair<Blua32EncodedConstant, Value>{i32{13}, valueInteger(13)},
+		std::pair<Blua32EncodedConstant, Value>{Blua32FloatConstant{0xffa12345u}, valueFloatBits(0xffa12345u)},
+		std::pair<Blua32EncodedConstant, Value>{false, valueBool(false)},
+	}) {
+		image.constants = {literal};
+		const auto rom = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
+		Fixture prepared(rom), scalar(withoutHints(rom));
+		prepared.execute();
+		scalar.execute();
+		prepared.prepareAtGrantBoundary();
+		scalar.prepareAtGrantBoundary();
+		require(entryAt(prepared.cpu(), rom.textAddress, 0) && !entryAt(scalar.cpu(), rom.textAddress, 0),
+			"only the prepared CPU has installed this entry");
 		for (auto* machine : {&prepared, &scalar}) {
 			auto& frame = *machine->cpu().activeThread()->frameAtDepth(0);
-			const auto pool = frame.executionImage->constPool;
-			ValueSpan bank(machine->runtime.machine.memory, pool.wordAddress(), pool.tagAddress(), pool.size());
-			bank.set(0, value);
+			auto table = machine->cpu().createTable(1);
+			table.setInteger(1, valueInteger(0));
+			frame.registers.set(2, valueInteger(0));
+			frame.registers.set(3, valueTable(table.address()));
 		}
 		test::runCpuParity(prepared.cpu(), scalar.cpu(), grant);
 		for (auto* machine : {&prepared, &scalar}) {
 			const auto& frame = *machine->cpu().activeThread()->frameAtDepth(0);
-			require(frame.registers.get(0) == value && frame.registers.get(1) == value
+			const auto table = asTable(frame.registers.get(3), machine->cpu().gcHeap());
+			require(frame.registers.get(0) == value && frame.registers.get(1) == value && table.getInteger(1) == value
 				&& machine->cpu().readFramePc(0) == rom.textAddress && machine->cpu().instructionBudgetRemaining == 0,
-				"LOADK and LOADKR read both current raw lanes at the exact same frontier");
+				"LOADK, LOADKR and an RK store preserve the same image value and exact frontier");
 		}
-		require(generatedTable.getInteger(1) == value && referenceTable.getInteger(1) == value
-			&& entryAt(prepared.cpu(), rom.textAddress, 0) == compiled,
-			"RK stores the same live value without replacing the installed entry");
 	}
 }
 
@@ -324,11 +317,11 @@ void coldExecLetsNumericFieldChainsWarm() {
 	}
 }
 
-test::Blua32TestRom recordConstructorProgram() {
+test::Blua32TestRom recordConstructorProgram(std::string firstKey = "castle") {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 6}};
-	image.constants = {std::string("castle"), std::string("room"), std::string("player"),
+	image.constants = {std::move(firstKey), std::string("room"), std::string("player"),
 		std::string("room_number"), std::string("item_id")};
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::NEWT), 0, 0, 5);
 	for (u32 field = 0; field < 5; ++field)
@@ -458,28 +451,21 @@ void recordConstructorPreservesGrantAndLayout() {
 	}
 }
 
-void recordConstructorUsesLiveKeys() {
-	const auto rom = recordConstructorProgram();
+void recordConstructorUsesItsImageKeys() {
 	const int allocateCycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 16;
 	const int fieldCycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
-	Fixture prepared(rom), scalar(withoutHints(rom));
-	prepared.execute();
-	scalar.execute();
-	prepared.prepareAtGrantBoundary();
-	scalar.prepareAtGrantBoundary();
-	const u32 pc = rom.textAddress;
-	const auto* entry = entryAt(prepared.cpu(), pc, 0);
 	const int grant = allocateCycles + 5 * fieldCycles;
 	for (const char* key : {"castle", "observatory", "room"}) {
+		const auto rom = recordConstructorProgram(key);
+		Fixture prepared(rom), scalar(withoutHints(rom));
+		prepared.execute();
+		scalar.execute();
+		prepared.prepareAtGrantBoundary();
+		scalar.prepareAtGrantBoundary();
 		for (auto* machine : {&prepared, &scalar}) {
-			auto& cpu = machine->cpu();
-			auto& frame = *cpu.activeThread()->frameAtDepth(0);
-			const auto pool = frame.executionImage->constPool;
-			ValueSpan bank(machine->runtime.machine.memory, pool.wordAddress(), pool.tagAddress(), pool.size());
-			bank.set(0, valueString(cpu.stringPool().intern(key)));
+			auto& frame = *machine->cpu().activeThread()->frameAtDepth(0);
 			for (int field = 1; field <= 5; ++field) frame.registers.set(field, valueInteger(field));
 			frame.setTop(6);
-			frame.writeControl(FrameField::Pc, pc);
 		}
 		test::runCpuParity(prepared.cpu(), scalar.cpu(), grant);
 		const auto table = [](Fixture& machine) {
@@ -489,12 +475,12 @@ void recordConstructorUsesLiveKeys() {
 		const auto a = table(prepared), b = table(scalar);
 		const bool duplicate = std::string_view(key) == "room";
 		require(a.getStringKey(prepared.cpu().stringPool().intern(key)) == valueInteger(duplicate ? 2 : 1)
-			&& a.hashFree() == b.hashFree() && entryAt(prepared.cpu(), pc, 0) == entry,
-			"the same recipe binds a changed key and leaves duplicate selectors to the ordered writes");
+			&& a.hashFree() == b.hashFree(),
+			"the image's keys drive the recipe and duplicate keys retain ordered writes");
 		for (u32 at = 0; at < TableRecord::storageBytes(0, 8); ++at)
 			require(prepared.runtime.machine.memory.readRamRecordByte(a.storageAddress() + at)
 				== scalar.runtime.machine.memory.readRamRecordByte(b.storageAddress() + at),
-				"rebinding a recipe preserves physical record placement");
+				"the recipe preserves field placement for the image's key set");
 	}
 }
 
@@ -699,10 +685,10 @@ void observationsAndUnusedHintsStayAtExecution() {
 int main() {
 	try {
 		coldExecPreservesGuestStateAndBanks();
-		preparedCodeReadsTheLiveConstantBank();
+		preparedCodeUsesItsImageConstants();
 		coldExecLetsNumericFieldChainsWarm();
 		recordConstructorPreservesGrantAndLayout();
-		recordConstructorUsesLiveKeys();
+		recordConstructorUsesItsImageKeys();
 		repeatExecAndRestoreHaveDistinctPolicies();
 		instrumentedGrantsDoNotPrepareNativeCode();
 		residentExecDoesNotReopenTheBootHeader();

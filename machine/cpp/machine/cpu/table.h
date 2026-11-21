@@ -79,7 +79,7 @@ public:
 	void resolveIntegerAssignment(StringId newIndexKey, int key, TableLookupResult& result) const;
 	void resolveStringAssignment(StringId newIndexKey, StringId key, int predictedSlot, TableLookupResult& result) const;
 	// Pure boundary search; also the generated-code entry point.
-	static i32 length(const TableRecord* table, u32* probes = nullptr) noexcept;
+	static i32 length(TableRecord* table) noexcept;
 	void clear();
 	// Physical array positions followed by hash nodes, including vacant/dead slots.
 	size_t storedSlotCount() const { return arrayCapacity() + hashSlots(); }

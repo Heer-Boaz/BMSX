@@ -970,6 +970,35 @@ void knownFaultEndsTheFieldAddressLifetime() {
 		"a checked address remains shared only through the last reachable consumer");
 }
 
+void imageLiteralsProveNativeComparisonTypes() {
+	std::array<DecodedInstruction, 2> decoded{};
+	decoded[0].op = static_cast<u8>(OpCode::LOADK);
+	decoded[0].setBx(23);
+	decoded[1].op = static_cast<u8>(OpCode::LT);
+	decoded[1].c = -1;
+	for (auto& instruction : decoded) {
+		instruction.width = 1;
+		instruction.baseCycles = BASE_CYCLES[instruction.op];
+	}
+	const std::array rows{NativeBlockInstruction{&decoded[0], 0x1000}, NativeBlockInstruction{&decoded[1], 0x1004}};
+	const std::array sources{NativeBlockSource{rows}};
+	const auto verify = [&](std::span<const NativeImageConstant> constants, NativeComparisonStrategy expected) {
+		NativeRegisterUses uses;
+		const NativeIrRegion region(sources, uses, false, {}, {.imageConstants = constants});
+		const auto instructions = region.blocks().front().instructions;
+		require(std::get<NativeComparison>(instructions[1].operation).strategy == expected,
+			"only the owning image's literal tags establish a direct native comparison");
+		if (!constants.empty())
+			require(std::get<NativeLiteral>(instructions[0].operation).value == constants[1].value,
+				"a fixed LOADK becomes a literal before lowering");
+	};
+	verify({}, NativeComparisonStrategy::Kernel);
+	const std::array words{NativeImageConstant{0, valueInteger(-9)}, NativeImageConstant{23, valueInteger(-12)}};
+	verify(words, NativeComparisonStrategy::Word);
+	const std::array floats{NativeImageConstant{0, valueFloat(0.5f)}, NativeImageConstant{23, valueFloat(1.5f)}};
+	verify(floats, NativeComparisonStrategy::Float);
+}
+
 void fixedWindowCountsOnlyAdmittedAccesses() {
 	struct Case { OpCode op; u16 a; i16 b, c; bool cpuOwned; u32 slots; };
 	const std::array cases{
@@ -1029,6 +1058,7 @@ int main() {
 		registerUses();
 		knownFaultEndsOnlyTheNativePath();
 		knownFaultEndsTheFieldAddressLifetime();
+		imageLiteralsProveNativeComparisonTypes();
 		fixedWindowCountsOnlyAdmittedAccesses();
 		return 0;
 	} catch (const std::exception& error) {

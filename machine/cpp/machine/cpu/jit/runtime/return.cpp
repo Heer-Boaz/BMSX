@@ -52,7 +52,7 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 	caller->registers.placeAdmitted(result.base, leaving.registers, source, placement.copied, placement.padded);
 	const int nextTop = caller->placeAdmittedResultTop(result, count);
 	thread.retireAdmittedFrame(leaving, *caller, receivingDepth);
-	state.bindFrame(*caller);
+	state.frame = caller;
 	state.registerTop = nextTop;
 	state.remainingCycles -= count;
 	return target;

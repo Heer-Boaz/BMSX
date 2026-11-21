@@ -72,7 +72,7 @@ NativeRowValues NativeSlotValues::advance(const NativeInstruction& instruction, 
 			values.inputs[input] = slot(static_cast<NativeSlot>(selector));
 		} else {
 			// One operation observes a given pool selector once logically.
-			// Across operations the RAM-backed pool is not an immutable value.
+			// A separate image proof can give that read a compile-time tag.
 			const auto previous = std::span(access.reads).first(input);
 			const auto same = std::ranges::find(previous, selector);
 			values.inputs[input] = same == previous.end() ? create(row, selector) : values.inputs[same - previous.begin()];
