@@ -331,21 +331,25 @@ void HeapAllocator::setPreviousPartial(u32 pageLink, u32 previous) {
 }
 
 void HeapAllocator::releasePages(u32 first, u32 end) {
-	for (u32 page = first; page < end; ++page) {
-		const u32 released = entry(page);
-		m_memory.writeRamRecordWord(released, 0u);
-		m_memory.writeRamRecordWord(released + 4u, 0u);
-		m_memory.writeRamRecordWord(released + 8u, 0u);
-	}
+	const u32 offset = entry(first);
+	const u32 bytes = (end - first) * HEAP_PAGE_ENTRY_BYTES;
+	std::memset(m_memory.ramData() + offset, 0, bytes);
+	m_memory.invalidateRamWrite(offset, bytes);
 	setAvailable(first, end, true);
 }
 
 void HeapAllocator::setAvailable(u32 first, u32 end, bool available) {
-	for (u32 page = first; page < end; ++page) {
-		const u32 offset = m_management + AVAILABLE_PAGES + (page >> 5) * 4u;
-		const u32 bit = 1u << (page & 31u);
-		const u32 stored = m_memory.readRamRecordWord(offset);
-		m_memory.writeRamRecordWord(offset, available ? stored | bit : stored & ~bit);
+	while (first < end) {
+		const u32 word = first >> 5;
+		const u32 wordEnd = (word + 1u) << 5;
+		const u32 mask = (~0u << (first & 31u)) & (~0u >> (wordEnd - std::min(end, wordEnd)));
+		const u32 offset = m_management + AVAILABLE_PAGES + word * 4u;
+		if (mask == ~0u) m_memory.writeRamRecordWord(offset, available ? ~0u : 0u);
+		else {
+			const u32 stored = m_memory.readRamRecordWord(offset);
+			m_memory.writeRamRecordWord(offset, available ? stored | mask : stored & ~mask);
+		}
+		first = wordEnd;
 	}
 }
 

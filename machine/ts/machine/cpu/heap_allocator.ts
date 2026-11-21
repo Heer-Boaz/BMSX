@@ -395,21 +395,25 @@ export class HeapAllocator {
 	}
 
 	private releasePages(first: number, end: number): void {
-		for (let page = first; page < end; page += 1) {
-			const entry = this.entry(page);
-			this.memory.writeRamRecordWord(entry, 0);
-			this.memory.writeRamRecordWord(entry + 4, 0);
-			this.memory.writeRamRecordWord(entry + 8, 0);
-		}
+		const offset = this.entry(first);
+		const bytes = (end - first) * PAGE_ENTRY_BYTES;
+		this.memory.ramData().fill(0, offset, offset + bytes);
+		this.memory.invalidateRamWrite(offset, bytes);
 		this.setAvailable(first, end, true);
 	}
 
 	private setAvailable(first: number, end: number, available: boolean): void {
-		for (let page = first; page < end; page += 1) {
-			const offset = this.management + AVAILABLE_PAGES + (page >>> 5) * 4;
-			const bit = 1 << (page & 31);
-			const stored = this.memory.readRamRecordWord(offset);
-			this.memory.writeRamRecordWord(offset, available ? stored | bit : stored & ~bit);
+		while (first < end) {
+			const word = first >>> 5;
+			const wordEnd = (word + 1) << 5;
+			const mask = (-1 << (first & 31)) & (-1 >>> (wordEnd - Math.min(end, wordEnd)));
+			const offset = this.management + AVAILABLE_PAGES + word * 4;
+			if (mask === -1) this.memory.writeRamRecordWord(offset, available ? -1 : 0);
+			else {
+				const stored = this.memory.readRamRecordWord(offset);
+				this.memory.writeRamRecordWord(offset, available ? stored | mask : stored & ~mask);
+			}
+			first = wordEnd;
 		}
 	}
 

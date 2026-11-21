@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { HEAP_CLASS_BYTES, HeapAllocator, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -79,6 +80,34 @@ test('the floor cannot rise over an allocated page and never drops below the sta
 	assert.equal(heap.setFloor(low + HEAP_PAGE_SIZE), true);
 	assert.equal(heap.setFloor(RAM_BASE), true);
 	assert.equal(heap.floorAddress(), DYNAMIC_RAM_BASE, 'the heap never extends into the reserved region');
+});
+
+test('reclaiming a large run preserves neighboring pages and rewinds the entire range', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const heap = new HeapAllocator(memory);
+	const bytes = 400 * HEAP_PAGE_SIZE;
+	const high = heap.allocate(2 * HEAP_PAGE_SIZE, true);
+	const run = heap.allocate(bytes, false);
+	const low = heap.allocate(HEAP_PAGE_SIZE, true);
+	assert.equal(run + bytes, high);
+	assert.equal(low + HEAP_PAGE_SIZE, run);
+	assert.equal(heap.setFloor(low), true);
+
+	const archive = new RamHistory();
+	archive.start(memory);
+	const allocated = archive.capture(memory, null);
+	heap.free(run);
+	const releasedRam = memory.captureSaveState().ram;
+	const freed = archive.capture(memory, allocated);
+	archive.restore(memory, freed, allocated);
+	assert.equal(heap.occupiedBytes(), bytes + 3 * HEAP_PAGE_SIZE);
+	assert.equal(heap.allocate(HEAP_PAGE_SIZE, true), 0, 'rewind restores the run and both neighboring allocations');
+
+	archive.restore(memory, allocated, freed);
+	assert.deepEqual(memory.ramData(), releasedRam, 'forward history publishes every released descriptor, not just the head');
+	assert.equal(heap.occupiedBytes(), 3 * HEAP_PAGE_SIZE);
+	assert.equal(heap.allocate(bytes + HEAP_PAGE_SIZE, true), 0, 'reclamation preserves the neighbors in both partial bitmap words');
+	assert.equal(heap.allocate(bytes, false), run, 'the same entire run is available again');
 });
 
 test('object sweep resumes from RAM, visits vacant issued slots and skips owned pages', () => {

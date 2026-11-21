@@ -4,6 +4,7 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
+#include "machine/runtime/history/ram_history.h"
 #include "spec/blua32/image_format.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
@@ -162,6 +163,33 @@ void execRefusesLivePagesBelowTheFloor() {
 	require(readLE32(machine.memory.ramData() + marker) == 0x5eed5eedu, "cartridge BSS stays untouched");
 }
 
+void reclaimRunAcrossBitmapAndHistoryPages() {
+	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	HeapAllocator heap(memory);
+	constexpr u32 bytes = 400u * HEAP_PAGE_SIZE;
+	const u32 high = heap.allocate(2u * HEAP_PAGE_SIZE, true);
+	const u32 run = heap.allocate(bytes, false);
+	const u32 low = heap.allocate(HEAP_PAGE_SIZE, true);
+	require(run + bytes == high && low + HEAP_PAGE_SIZE == run && heap.setFloor(low),
+		"the live heap consists of the run and its two neighbors");
+
+	RamHistory archive;
+	RamHistory::PageMap allocated, freed;
+	archive.capture(memory, nullptr, allocated);
+	heap.free(run);
+	const auto releasedRam = memory.captureSaveState().ram;
+	archive.capture(memory, &allocated, freed);
+	archive.restore(memory, freed, allocated);
+	require(heap.occupiedBytes() == bytes + 3u * HEAP_PAGE_SIZE && heap.allocate(HEAP_PAGE_SIZE, true) == 0u,
+		"rewind restores the run and both neighboring allocations");
+
+	archive.restore(memory, allocated, freed);
+	require(memory.captureSaveState().ram == releasedRam, "forward history publishes every released descriptor, not just the head");
+	require(heap.occupiedBytes() == 3u * HEAP_PAGE_SIZE && heap.allocate(bytes + HEAP_PAGE_SIZE, true) == 0u,
+		"reclamation preserves the neighbors in both partial bitmap words");
+	require(heap.allocate(bytes, false) == run, "the same entire run is available again");
+}
+
 void objectSweepResumesFromRam() {
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 	HeapAllocator heap(memory);
@@ -200,6 +228,7 @@ int main() {
 		capacityFollowsTheFloorAcrossResetExecAndRestore();
 		instructionFetchFollowsTheLiveFloor();
 		execRefusesLivePagesBelowTheFloor();
+		reclaimRunAcrossBitmapAndHistoryPages();
 		objectSweepResumesFromRam();
 	} catch (const std::exception& error) {
 		std::cerr << error.what() << '\n';
