@@ -2,6 +2,7 @@
 #include "machine/cpu/cpu.h"
 #include "common/compiler.h"
 #include "machine/cpu/native_block.h"
+#include "support/native_region_fixture.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
@@ -113,14 +114,15 @@ void directRomLoadsUseCurrentOwners() {
 		load.op = static_cast<u8>(displaced ? OpCode::LOAD_MEM_D : OpCode::LOAD_MEM);
 		load.a = 0; load.b = 1; load.c = format; load.disp = displaced ? 255 : 0; load.width = 2; load.baseCycles = BASE_CYCLES[load.op];
 		const std::array source{NativeBlockInstruction{&load, 0x1000}};
-		auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		const int charge = BASE_CYCLES[load.op] + (kind == MemoryAccessKind::F64LE ? 2 : 0);
+		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		for (const u32 select : {0xfffffffdu, 0x80000000u}) {
 			memory.writeMappedWord(IO_CART_SELECT, select);
 			for (const u32 address : {0u, 4u, 16u, CART_ROM_BASE, CART_ROM_BASE + 4u, CART_ROM_BASE + 24u}) {
 				ValueSlots registers(2);
 				registers.set(1, valueInteger(address - static_cast<u32>(load.disp) * 4u));
 				NativeBlockRunState run{};
-				run.remainingCycles = block->terminal.cycles + (kind == MemoryAccessKind::F64LE ? 2 : 0);
+				run.remainingCycles = charge;
 				require(block->run(registers.view(), run) == &block->terminal && run.remainingCycles == 0
 					&& registers.get(0) == scalarLoad(memory, kind, address), "backed system and cartridge ROM reads stay in the native block");
 			}
@@ -132,7 +134,7 @@ void directRomLoadsUseCurrentOwners() {
 			const bool backed = address >= CART_ROM_BASE && address < CART_ROM_END
 				&& address - CART_ROM_BASE + width <= slot0.size();
 			NativeBlockRunState run{};
-			run.remainingCycles = block->terminal.cycles + (kind == MemoryAccessKind::F64LE ? 2 : 0);
+			run.remainingCycles = charge;
 			const auto* exit = block->run(registers.view(), run);
 			require((exit == &block->terminal) == backed, "short tails and logical boundary crossings use the ordered bus owner");
 			if (!backed) require(registers.get(0) == valueInteger(73) && exit->exit == NativeBlockExit::ReadMemory
@@ -141,11 +143,11 @@ void directRomLoadsUseCurrentOwners() {
 		}
 		load.a = load.b;
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
-		auto alias = NativeBlock::compile(aliasSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto alias = test::compileNative(aliasSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		ValueSlots registers(2);
 		registers.set(1, valueInteger(CART_ROM_BASE + 4u - load.disp * 4u));
 		NativeBlockRunState run{};
-		run.remainingCycles = alias->terminal.cycles + (kind == MemoryAccessKind::F64LE ? 2 : 0);
+		run.remainingCycles = charge;
 		require(alias->run(registers.view(), run) == &alias->terminal
 			&& registers.get(1) == scalarLoad(memory, kind, CART_ROM_BASE + 4u), "ROM loads can replace the address register");
 	}

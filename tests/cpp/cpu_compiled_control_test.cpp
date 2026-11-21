@@ -1,5 +1,6 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/native_block.h"
+#include "support/native_region_fixture.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/io.h"
@@ -161,7 +162,7 @@ void rawNativeControlWrites() {
 		const DecodedInstruction decoded{.b = field, .op = op, .width = 1, .baseCycles = BASE_CYCLES[op]};
 		const std::array source{NativeBlockInstruction{&decoded, machine.rom.textAddress}};
 		size_t bytes = 0;
-		auto block = NativeBlock::compile(source, {}, bytes, machine.memory, machine.cpu.stringPool(),
+		auto block = test::compileNative(source, {}, bytes, machine.memory, machine.cpu.stringPool(),
 			machine.cpu.stringPool().intern("__index"));
 		for (const auto& [value, word] : std::array<std::pair<Value,u32>, 5>{{
 			{valueInteger(-1), 0xffffffffu}, {valueInteger(INT32_MIN), 0x80000000u},

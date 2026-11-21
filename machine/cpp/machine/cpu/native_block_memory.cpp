@@ -129,10 +129,6 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 	const bool load = access.mode == NativeMemoryMode::Load;
 	const u32 width = words ? static_cast<u32>(access.wordCount) * sizeof(u32)
 		: kind == MemoryAccessKind::U8 ? 1u : kind == MemoryAccessKind::U16LE ? 2u : kind == MemoryAccessKind::F64LE ? 8u : 4u;
-	// The instruction has started. Even invalid address operands retain this
-	// charge; ordinary bus exits and retained retries must not charge it again.
-	if (kind == MemoryAccessKind::F64LE)
-		sljit_emit_op2(m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, 2);
 	if (knownTag(access.address) == static_cast<int>(ValueTag::Integer)) {
 		const auto address = readTyped(access.address, ValueTag::Integer);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, address.reg, 0);

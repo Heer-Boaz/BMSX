@@ -206,7 +206,10 @@ void hotConstantTrap() {
 		const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
 		test::waitForNativeEntry(native.cpu, *frame.decodedPage, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-		require(block && block->sideExits[0].exit == NativeBlockExit::InvalidConstant, "the trapping instruction is lowered, not skipped");
+		require(block && std::any_of(block->sideExits.begin(), block->sideExits.end(), [&](const auto& exit) {
+			return exit.exit == NativeBlockExit::InvalidConstant && exit.currentPc == native.rom.textAddress + INSTRUCTION_BYTES
+				&& exit.nextPc == native.rom.textAddress + 3 * INSTRUCTION_BYTES;
+		}), "the compiled WIDE constant load has its own trapped instruction boundary");
 #endif
 		test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
 		require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
@@ -281,8 +284,10 @@ void hotUpvalueAlias() {
 	const auto& first = *native.cpu.activeThread()->frameAtDepth(0);
 	test::waitForNativeEntry(native.cpu, *first.decodedPage, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto& compiled = first.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-	require(compiled && compiled->sideExits[0].exit == NativeBlockExit::WriteUpvalue,
-		"the VM exercises a real compiled self-alias exit before resuming the remaining operations");
+	require(compiled && std::any_of(compiled->sideExits.begin(), compiled->sideExits.end(), [&](const auto& exit) {
+		return exit.exit == NativeBlockExit::WriteUpvalue && exit.currentPc == native.rom.textAddress + 3 * INSTRUCTION_BYTES
+			&& exit.nextPc == native.rom.textAddress + 4 * INSTRUCTION_BYTES;
+	}), "the compiled self-alias exit resumes after the captured write");
 #endif
 	int loopCycles = 0;
 	for (const auto op : ops) loopCycles += BASE_CYCLES[static_cast<u8>(op)];
@@ -304,16 +309,19 @@ struct ContextBlock {
 	size_t bytes = 0;
 	std::vector<DecodedInstruction> decoded;
 	std::vector<NativeBlockInstruction> source;
-	std::unique_ptr<NativeBlock> block;
-	ContextBlock(CpuMachine& machine, std::initializer_list<Instruction> code, ConstValueSpan constants = {}) {
+	std::vector<std::unique_ptr<NativeBlock>> blocks;
+	ContextBlock(CpuMachine& machine, std::initializer_list<Instruction> code, ConstValueSpan constants = {}, u32 pc = 0x1000u) {
 		decoded.resize(code.size()); source.resize(code.size());
 		size_t i = 0;
 		for (const auto& instruction : code) {
 			auto& d = decoded[i]; d.op = static_cast<u8>(instruction.op); d.a = instruction.a;
 			d.b = instruction.b; d.c = instruction.c; d.bx = instruction.bx; d.width = 1; d.baseCycles = BASE_CYCLES[d.op];
-			source[i] = {&d, 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES}; ++i;
+			source[i] = {&d, pc + static_cast<u32>(i) * INSTRUCTION_BYTES}; ++i;
 		}
-		block = NativeBlock::compile(source, constants, bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"));
+		const std::array runs{NativeBlockSource{source}};
+		auto& strings = machine.cpu.stringPool();
+		blocks = NativeBlock::compileRegion(runs, constants, NativeCodeBindings(machine.memory, strings, strings.intern("__index")));
+		blocks.front()->region->publish(bytes);
 	}
 };
 
@@ -331,7 +339,9 @@ void rawContextValues(CpuMachine& machine) {
 	for (const auto value : values) {
 		registers.clear(0, registers.capacity()); ordinary.clear(0, ordinary.size()); system.clear(0, system.size()); registers.set(12, value);
 		NativeBlockRunState state{.globalValues = ordinary, .systemGlobalValues = system, .remainingCycles = 100};
-		require(globals.block->run(registers.view(), state) == &globals.block->terminal && registers.get(0) == value && registers.get(1) == value
+		const auto& exit = *globals.blocks.front()->run(registers.view(), state);
+		require(exit.exit == NativeBlockExit::Continue && exit.currentPc == globals.source.back().pc && exit.nextPc == 0
+			&& registers.get(0) == value && registers.get(1) == value
 			&& ordinary.get(1) == value && system.get(1) == value && ordinary.get(0) == valueInteger(1) && system.get(0) == valueNil()
 			&& state.registerTop == 3, "raw global banks preserve every kind, cached definitions and namespace without a source-top write");
 	}
@@ -341,8 +351,9 @@ void rawContextValues(CpuMachine& machine) {
 	ordinary.set(1, valueInteger(99));
 	machine.memory.ramWriteWatches().armCodeRange(0x1008u, 4u);
 	NativeBlockRunState watchedGlobal{.globalValues = ordinary, .systemGlobalValues = system, .remainingCycles = 100};
-	const auto* globalExit = globals.block->run(registers.view(), watchedGlobal);
-	require(globalExit->exit == NativeBlockExit::WriteGlobal && watchedGlobal.remainingCycles == 100 - BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]
+	const auto& globalExit = *globals.blocks.front()->run(registers.view(), watchedGlobal);
+	require(globalExit.exit == NativeBlockExit::WriteGlobal && globalExit.currentPc == globals.source[0].pc
+		&& globalExit.nextPc == globals.source[1].pc && watchedGlobal.remainingCycles == 100 - BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]
 		&& ordinary.get(1) == valueInteger(99), "native watched global store leaves before changing either lane");
 	auto* owner = cpu.activeThread();
 	owner->resizeStack(32);
@@ -364,7 +375,9 @@ void rawContextValues(CpuMachine& machine) {
 		{OpCode::SETUP, 2}, {OpCode::ADD, 3, 0, 1}, {OpCode::GETUP, 4}, {OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	captureRegisters.clear(0, captureRegisters.size());
 	NativeBlockRunState alias{.frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
-	require(captures.block->run(captureRegisters, alias) == &captures.block->sideExits[0] && alias.registerTop == 3
+	const auto& aliasExit = *captures.blocks.front()->run(captureRegisters, alias);
+	require(aliasExit.exit == NativeBlockExit::WriteUpvalue && aliasExit.currentPc == captures.source[3].pc
+		&& aliasExit.nextPc == captures.source[4].pc && alias.registerTop == 3
 		&& captureRegisters.get(0) == valueInteger(1) && captureRegisters.get(1) == valueInteger(1) && captureRegisters.get(2) == valueInteger(9)
 		&& captureRegisters.get(3) == valueNil(), "the self-alias guard publishes the exact prefix before writing a captured register");
 	Upvalue::bindOpen(machine.memory, open, owner->address, 16, 0);
@@ -373,7 +386,9 @@ void rawContextValues(CpuMachine& machine) {
 	for (const auto value : values) {
 		captureRegisters.clear(0, captureRegisters.size()); captureRegisters.set(12, value); outerRegisters.set(0, valueInteger(1));
 		NativeBlockRunState state{.frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
-		require(outerRead.block->run(captureRegisters, state) == &outerRead.block->terminal && captureRegisters.get(0) == valueInteger(1)
+		const auto& exit = *outerRead.blocks.front()->run(captureRegisters, state);
+		require(exit.exit == NativeBlockExit::Continue && exit.currentPc == outerRead.source.back().pc && exit.nextPc == 0
+			&& captureRegisters.get(0) == valueInteger(1)
 			&& captureRegisters.get(1) == valueInteger(1) && captureRegisters.get(3) == valueInteger(2)
 			&& captureRegisters.get(6) == value && Upvalue::load(machine.memory, closed) == value && state.registerTop == 7,
 			"native outer and closed cells preserve raw values without invalidating unrelated register definitions");
@@ -383,14 +398,17 @@ void rawContextValues(CpuMachine& machine) {
 	captureRegisters.set(12, scalar);
 	NativeBlockRunState closedStore{.frame = &frame, .heap = &heap,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
-	require(outerRead.block->run(captureRegisters, closedStore) == &outerRead.block->terminal
+	const auto& scalarExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
+	require(scalarExit.exit == NativeBlockExit::Continue && scalarExit.currentPc == outerRead.source.back().pc && scalarExit.nextPc == 0
 		&& Upvalue::load(machine.memory, closed) == scalar
 		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | heap.white()),
 		"native scalar writes do not remember old closed cells");
 	const Value child = valueTable(cpu.createTable().address());
 	captureRegisters.set(12, child);
 	closedStore.remainingCycles = 100;
-	require(outerRead.block->run(captureRegisters, closedStore)->exit == NativeBlockExit::WriteUpvalue
+	const auto& rememberedExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
+	require(rememberedExit.exit == NativeBlockExit::WriteUpvalue && rememberedExit.currentPc == outerRead.source[3].pc
+		&& rememberedExit.nextPc == outerRead.source[4].pc
 		&& Upvalue::load(machine.memory, closed) == scalar, "the first reference write to an old cell leaves before changing either lane");
 	Upvalue::store(heap, closed, child);
 	require(machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | heap.white())
@@ -405,21 +423,27 @@ void rawContextValues(CpuMachine& machine) {
 	watches.armCodeRange(cellLink, sizeof(u32));
 	captureRegisters.set(12, valueInteger(23));
 	closedStore.remainingCycles = 100;
-	require(outerRead.block->run(captureRegisters, closedStore) == &outerRead.block->terminal
+	const auto& blackScalarExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
+	require(blackScalarExit.exit == NativeBlockExit::Continue && blackScalarExit.currentPc == outerRead.source.back().pc
+		&& blackScalarExit.nextPc == 0
 		&& Upvalue::load(machine.memory, closed) == valueInteger(23)
 		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 3u)
 		&& machine.memory.readRamRecordWord(head) == previousHead,
 		"a scalar write to a black cell does not touch its watched queue link");
 	captureRegisters.set(12, child);
 	closedStore.remainingCycles = 100;
-	require(outerRead.block->run(captureRegisters, closedStore)->exit == NativeBlockExit::WriteUpvalue
+	const auto& watchedLinkExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
+	require(watchedLinkExit.exit == NativeBlockExit::WriteUpvalue && watchedLinkExit.currentPc == outerRead.source[3].pc
+		&& watchedLinkExit.nextPc == outerRead.source[4].pc
 		&& Upvalue::load(machine.memory, closed) == valueInteger(23)
 		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 3u)
 		&& machine.memory.readRamRecordWord(head) == previousHead,
 		"a watched queue link defers the reference barrier and its value write");
 	watches.clearCodeRange(cellLink, sizeof(u32));
 	closedStore.remainingCycles = 100;
-	require(outerRead.block->run(captureRegisters, closedStore) == &outerRead.block->terminal && Upvalue::load(machine.memory, closed) == child
+	const auto& blackReferenceExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
+	require(blackReferenceExit.exit == NativeBlockExit::Continue && blackReferenceExit.currentPc == outerRead.source.back().pc
+		&& blackReferenceExit.nextPc == 0 && Upvalue::load(machine.memory, closed) == child
 		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 2u)
 		&& machine.memory.readRamRecordWord(closed + UPVALUE_NEXT) == previousHead
 		&& machine.memory.readRamRecordWord(head) == ((closed & GC_RECORD_MASK) >> GC_RECORD_SHIFT),
@@ -431,7 +455,8 @@ void rawContextValues(CpuMachine& machine) {
 	captureRegisters.set(12, valueFloatBits(0x80000000u));
 	NativeBlockRunState addressed{.frame = &frame, .heap = &heap,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
-	require(outerRead.block->run(captureRegisters, addressed) == &outerRead.block->terminal
+	const auto& addressedExit = *outerRead.blocks.front()->run(captureRegisters, addressed);
+	require(addressedExit.exit == NativeBlockExit::Continue && addressedExit.currentPc == outerRead.source.back().pc && addressedExit.nextPc == 0
 		&& captureRegisters.get(6) == valueFloatBits(0x80000000u)
 		&& machine.memory.readRamRecordWord(rawCell + UPVALUE_VALUE_WORD) == 0x80000000u
 		&& Upvalue::load(machine.memory, closed) == child,
@@ -446,7 +471,8 @@ void rawContextValues(CpuMachine& machine) {
 	ContextBlock rawOpen(machine, {{OpCode::GETUP, 1}, {OpCode::JMP}});
 	NativeBlockRunState rawAlias{.frame = &frame, .heap = &heap,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
-	require(rawOpen.block->run(captureRegisters, rawAlias) == &rawOpen.block->terminal
+	const auto& rawAliasExit = *rawOpen.blocks.front()->run(captureRegisters, rawAlias);
+	require(rawAliasExit.exit == NativeBlockExit::Continue && rawAliasExit.currentPc == rawOpen.source.back().pc && rawAliasExit.nextPc == 0
 		&& captureRegisters.get(1) == valueFloatBits(0xffa12345u),
 		"generated GETUP resolves a raw frame closure and an open capture without host attachments");
 	const std::array literals{valueNil(), valueBool(false), valueBool(true), values[6], valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(11)};
@@ -460,7 +486,9 @@ void rawContextValues(CpuMachine& machine) {
 			{valueFloat(4.f), 4}, {valueInteger(5), 5}, {valueInteger(6), 6}, {valueFloat(0x1p32f), 0}, {valueFloat(-0.f), 0}}}) {
 			registers.clear(0, 16); registers.set(2, index);
 			NativeBlockRunState state{.constants = constants.view(), .remainingCycles = 100};
-			require(pool.block->run(registers.view(), state) == &pool.block->terminal && registers.get(3) == constants.get(expected)
+			const auto& exit = *pool.blocks.front()->run(registers.view(), state);
+			require(exit.exit == NativeBlockExit::Continue && exit.currentPc == pool.source.back().pc && exit.nextPc == 0
+				&& registers.get(3) == constants.get(expected)
 				&& registers.get(8) == valueNil() && registers.get(9) == valueNil() && state.registerTop == 10,
 				"nil fill discards dirty definitions and pool loads retain raw kinds across U32 conversion and aliases");
 		}
@@ -483,7 +511,9 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 	frame.writeControl(bmsx::FrameField::VarargCount, 0); frame.writeControl(bmsx::FrameField::StackCapacity, 16);
 	for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));
 	NativeBlockRunState zero{.frame = &frame, .remainingCycles = 100, .registerTop = 48};
-	require(empty.block->run(frame.registers, zero) == &empty.block->terminal && zero.registerTop == 31,
+	const auto& emptyExit = *empty.blocks.front()->run(frame.registers, zero);
+	require(emptyExit.exit == NativeBlockExit::Continue && emptyExit.currentPc == empty.source.back().pc && emptyExit.nextPc == 0
+		&& zero.registerTop == 31,
 		"an empty open VARARG resets top without touching or growing the destination range");
 	for (size_t i = 0; i < stack.capacity(); ++i) require(stack.get(i) == valueInteger(73), "empty window leaves both planes unchanged");
 	// The fixed form charges requested slots (also nil padding), never available slots.
@@ -494,17 +524,20 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 		const u16 first = count ? 6 : 31;
 		ContextBlock fixed(machine, {{OpCode::VARARG, first, static_cast<i16>(count + 1)}});
 		NativeBlockRunState state{.frame = &frame, .remainingCycles = 100, .registerTop = 3};
-		require(fixed.block->run(frame.registers, state) == &fixed.block->terminal && state.registerTop == (count ? first + count : 3)
+		const auto& exit = *fixed.blocks.front()->run(frame.registers, state);
+		require(exit.exit == NativeBlockExit::Continue && exit.currentPc == fixed.source.front().pc
+			&& exit.nextPc == fixed.source.front().pc + INSTRUCTION_BYTES && state.registerTop == (count ? first + count : 3)
 			&& state.remainingCycles == 100 - BASE_CYCLES[static_cast<u8>(OpCode::VARARG)] - count,
 			"native fixed VARARG completes without a dispatch and charges the requested slots once");
 		for (int i = 0; i < count; ++i)
 			require(frame.registers.get(first + i) == (i < 2 ? stack.get(14 + i) : valueNil()), "fixed arguments truncate or nil-pad both planes");
 	}
 	for (const int fixed : {0, 5}) {
+		constexpr u32 receivingPc = 0x2000u;
 		ContextBlock first(machine, {{OpCode::K1, 1}, {OpCode::K1, 7}, {OpCode::VARARG, 2, static_cast<i16>(fixed == 0 ? 0 : fixed + 1)},
-			{OpCode::MOV, 0, 7}, {OpCode::MOV, 1, 2}, {OpCode::BNOT, 15, 7}, {OpCode::JMP}});
-		ContextBlock second(machine, {{OpCode::VARARG, 0, 0}, {OpCode::LOADKR, 15, 14}});
-		second.block->linkFrom(first.block->terminal);
+			{OpCode::MOV, 0, 7}, {OpCode::MOV, 1, 2}, {OpCode::BNOT, 15, 7}, {OpCode::JMP, 0, 0, 0, receivingPc}});
+		ContextBlock second(machine, {{OpCode::VARARG, 0, 0}, {OpCode::LOADKR, 15, 14}}, {}, receivingPc);
+		second.blocks.front()->linkFrom(first.blocks.back()->terminal);
 		for (const int count : {0, 2, 8}) {
 			for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));
 			frame.writeControl(bmsx::FrameField::VarargCount, count); frame.writeControl(bmsx::FrameField::StackCapacity, 16);
@@ -512,7 +545,9 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 			for (int i = 0; i < count; ++i) stack.set(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::VarargBase)) + i, values[i]);
 			frame.registers.set(14, valueInteger(1));
 			NativeBlockRunState state{.frame = &frame, .remainingCycles = 100, .registerTop = 16};
-			require(first.block->run(frame.registers, state) == &second.block->sideExits[1] && state.registerTop == count,
+			const auto& exit = *first.blocks.front()->run(frame.registers, state);
+			require(exit.exit == NativeBlockExit::InvalidConstant && exit.currentPc == second.source[1].pc
+				&& exit.nextPc == second.source[1].pc + INSTRUCTION_BYTES && state.registerTop == count,
 				"an invalid pool load after a linked open VARARG publishes its exact lowered top, not an earlier block maximum");
 			for (int i = 0; i < count; ++i) require(frame.registers.get(i) == values[i], "varargs preserve every raw value bit");
 			require(frame.registers.get(15) == valueInteger(fixed == 0 && count == 8 ? -1 : -2),
@@ -525,7 +560,9 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 		// Only the open first copy exceeds this capacity.
 		if (fixed == 0) {
 			NativeBlockRunState state{.frame = &frame, .remainingCycles = 100};
-			require(first.block->run(frame.registers, state) == &first.block->sideExits[0] && state.registerTop == 8
+			const auto& exit = *first.blocks.front()->run(frame.registers, state);
+			require(exit.exit == NativeBlockExit::Vararg && exit.currentPc == first.source[2].pc
+				&& exit.nextPc == first.source[3].pc && state.registerTop == 8
 				&& frame.registers.get(1) == valueInteger(1) && frame.registers.get(7) == valueInteger(1) && frame.registers.get(2) == valueInteger(73),
 				"a capacity exit materializes only the prefix, before any copy or top reset");
 		}

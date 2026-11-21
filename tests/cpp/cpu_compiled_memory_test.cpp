@@ -1,6 +1,7 @@
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/native_block.h"
+#include "support/native_region_fixture.h"
 #include "machine/cpu/table.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
@@ -74,8 +75,10 @@ void ramScalarDatapathsAndGuards() {
 		store.a = 0; store.b = 1; store.c = format; store.disp = displaced ? 255 : 0;
 		store.width = 2; store.baseCycles = BASE_CYCLES[store.op];
 		load = store; load.op = static_cast<u8>(displaced ? OpCode::LOAD_MEM_D : OpCode::LOAD_MEM); load.a = 2;
+		load.baseCycles = BASE_CYCLES[load.op];
+		const int charge = BASE_CYCLES[store.op] + BASE_CYCLES[load.op] + (kind == MemoryAccessKind::F64LE ? 4 : 0);
 		const std::array source{NativeBlockInstruction{&store, 0x1000}, NativeBlockInstruction{&load, 0x1008}};
-		auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		for (const u32 target : {DYNAMIC_RAM_BASE + 0x204u, DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4u,
 			memory.ramBusEnd() - width}) for (const Value value : values) {
 			ValueSlots registers(3); registers.set(0, value); registers.set(1, valueInteger(target - static_cast<u32>(store.disp) * 4u)); registers.set(2, valueNil());
@@ -88,7 +91,8 @@ void ramScalarDatapathsAndGuards() {
 						[](u8 v) { return v == 0xb6; }), "non-native conversions leave before any store or subsequent load");
 				continue;
 			}
-			require(exit == &block->terminal, "ordinary RAM transfers reach the normal block exit");
+			require(exit->exit == NativeBlockExit::Continue && exit->nextPc == 0x1010
+				&& nativeRunState.remainingCycles == 20 - charge, "ordinary RAM transfers complete both operations and their full charge");
 			Value expected;
 			switch (kind) {
 				case MemoryAccessKind::Word: reference.writeMappedWord(target, valuePayload(value)); expected = valueInteger(reference.readMappedWord(target)); break;
@@ -118,7 +122,7 @@ void ramScalarDatapathsAndGuards() {
 		}
 		load.a = load.b;
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
-		auto alias = NativeBlock::compile(aliasSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto alias = test::compileNative(aliasSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		ValueSlots registers(2); registers.set(0, valueNil()); registers.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x204u - store.disp * 4u));
 		require(alias->run(registers.view(), nativeRunState = {.remainingCycles = alias->terminal.cycles}) == &alias->terminal && valueIsNumber(registers.get(1)),
 			"a memory load can replace its own address register");
@@ -127,7 +131,7 @@ void ramScalarDatapathsAndGuards() {
 	DecodedInstruction store;
 	store.op = static_cast<u8>(OpCode::STORE_MEM); store.a = 0; store.b = 1; store.c = 5; store.width = 2; store.baseCycles = BASE_CYCLES[store.op];
 	const std::array source{NativeBlockInstruction{&store, 0x1000}};
-	auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	const u32 target = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4u;
 	MappedPageBinding page;
 	memory.bindMappedPage(target + 4u, MAPPED_BUS_MASTER_CPU, page);
@@ -142,7 +146,7 @@ void ramScalarDatapathsAndGuards() {
 	DecodedInstruction load = store;
 	load.op = static_cast<u8>(OpCode::LOAD_MEM); load.a = 2;
 	const std::array numericSource{NativeBlockInstruction{&store, 0x1000}, NativeBlockInstruction{&load, 0x1008}};
-	auto numeric = NativeBlock::compile(numericSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto numeric = test::compileNative(numericSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	const u32 publicEnd = memory.ramBusEnd();
 	registers.set(1, valueInteger(target));
 	memory.setRamBusEnd(target + 4u);
@@ -153,12 +157,24 @@ void ramScalarDatapathsAndGuards() {
 	require(block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles}) == &block->terminal,
 		"the same published block readmits its destination after the aperture grows");
 
+	ValueSlots shortRegisters(3);
+	shortRegisters.set(0, valueFloat(4.25f));
+	shortRegisters.set(1, valueInteger(target));
+	shortRegisters.set(2, valueInteger(73));
+	NativeBlockRunState shortGrant{.remainingCycles = BASE_CYCLES[store.op] + 1};
+	const auto* deadline = numeric->run(shortRegisters.view(), shortGrant);
+	require(deadline->exit == NativeBlockExit::Continue && deadline->currentPc == 0x1000
+		&& deadline->lastPc == 0x1004 && deadline->nextPc == 0x1008 && shortGrant.remainingCycles == -1
+		&& memory.readMappedF64LE(target) == 4.25 && shortRegisters.get(2) == valueInteger(73),
+		"the full F64 store charge exhausts the grant before its following load starts");
+
 	// F64LE is a conversion. F32LE above instead preserves the exact input bits.
 	for (u32 high = 0; high <= 0xffffu; ++high) {
 		const auto value = valueFloatBits((high << 16) | 0x9abcu);
 		ValueSlots registers(3); registers.set(0, value); registers.set(1, valueInteger(target));
 		reference.writeMappedF64LE(target, static_cast<double>(asFloat(value)));
-		require(numeric->run(registers.view(), nativeRunState = {.remainingCycles = 20}) == &numeric->terminal
+		const auto* completed = numeric->run(registers.view(), nativeRunState = {.remainingCycles = 20});
+		require(completed->exit == NativeBlockExit::Continue && completed->nextPc == 0x1010
 			&& registers.get(2) == valueFloat(static_cast<float>(reference.readMappedF64LE(target))),
 			"widening and narrowing follow the Float rules across both signs and every exponent");
 		if ((valuePayload(value) & 0x7fffffffu) <= 0x7f800000u)
@@ -168,7 +184,7 @@ void ramScalarDatapathsAndGuards() {
 	load.b = -1;
 	const std::array constantSource{NativeBlockInstruction{&load, 0x1000}};
 	ValueSlots constants(1); constants.set(0, valueInteger(target));
-	auto constant = NativeBlock::compile(constantSource, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto constant = test::compileNative(constantSource, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	ValueSlots constantRegisters(3); constantRegisters.set(0, valueNil()); constantRegisters.set(1, valueNil()); constantRegisters.set(2, valueNil());
 	require(constant->run(constantRegisters.view(), nativeRunState = {.constants = constants.view(), .remainingCycles = constant->terminal.cycles}) == &constant->terminal
 		&& constant->sideExits[0].operands.memory.address == -1, "a constant memory address retains its signed RK selector");
@@ -238,7 +254,7 @@ void coldExitsPreserveAddressOperands() {
 			const Value base = valueInteger(address - static_cast<u32>(instruction.disp) * 4u);
 			ValueSlots constants(1); constants.set(0, constant ? base : valueInteger(DYNAMIC_RAM_BASE));
 			size_t bytes = 0;
-			auto block = NativeBlock::compile(source, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+			auto block = test::compileNative(source, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 			ValueSlots registers(2); registers.set(0, valueInteger(17)); registers.set(1, constant ? valueInteger(DYNAMIC_RAM_BASE) : base);
 			NativeBlockRunState state{.constants = constants.view(), .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
@@ -264,7 +280,7 @@ void coldExitsPreserveAddressOperands() {
 			const Value base = valueInteger(address - static_cast<u32>(instruction.disp) * 4u);
 			ValueSlots constants(1); constants.set(0, constant ? base : valueInteger(DYNAMIC_RAM_BASE));
 			size_t bytes = 0;
-			auto block = NativeBlock::compile(source, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+			auto block = test::compileNative(source, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 			ValueSlots registers(4); registers.set(0, valueNil()); registers.set(1, constant ? valueInteger(DYNAMIC_RAM_BASE) : base); registers.set(2, valueInteger(11)); registers.set(3, valueInteger(12));
 			NativeBlockRunState state{.constants = constants.view(), .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);

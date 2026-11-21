@@ -41,7 +41,7 @@ void NativeCompilerWorker::submit(std::span<const NativeBlockSource> sources, Co
 			m_decoded[decoded] = *source.skippedInstruction;
 			skipped = &m_decoded[decoded++];
 		}
-		m_sources.push_back({std::span(m_instructions.data() + first, instruction - first), skipped, source.fallthrough});
+		m_sources.push_back({std::span(m_instructions.data() + first, instruction - first), skipped});
 	}
 	m_constants = constants;
 	m_bindings = bindings;

@@ -6,7 +6,6 @@
 
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/native_block.h"
-#include "machine/cpu/native_ir.h"
 #include "machine/cpu/native_compilation_source.h"
 #include "machine/cpu/native_table_constructor.h"
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -142,7 +141,7 @@ void CPU::discoverNativeSource(NativeCompilationSource& source, std::vector<u32>
 			enqueue(instruction.bx, true);
 			if (op != OpCode::JMP) enqueue(successorPc, true);
 		} else if (!nativeBlockEndsBlock(instruction.op, instruction.b)) enqueue(successorPc, false);
-		else if (nativeBlockHasContinuation(instruction.op, instruction.b)) enqueue(successorPc, true);
+		else if (nativeBlockHasTerminalContinuation(instruction.op, instruction.b)) enqueue(successorPc, true);
 	}
 }
 
@@ -179,9 +178,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 	if (std::none_of(available.begin(), available.end(), [](u8 value) { return value != 0; })) return;
 	std::array<NativeBlockInstruction, DECODED_PAGE_WORDS> instructions;
 	std::vector<NativeBlockSource> sources;
-	std::vector<u32> entries;
 	sources.reserve(source.pendingCount);
-	entries.reserve(source.pendingCount);
 	size_t instructionCount = 0;
 	for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
 		if (!leaders[entry] || !available[entry]) continue;
@@ -196,42 +193,13 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 			if (instructionCount - first == NATIVE_BLOCK_MAX_INSTRUCTIONS) { leaders[successor] = 1; break; }
 			cursor = successor;
 		}
-		if (coldImage) {
-			// Leave a field/arithmetic suffix in the ordinary warm tier. Its
-			// first execution can observe the real operands, while a compiled
-			// prefix exits to the field PC as an ordinary entry boundary.
-			for (size_t index = first; index < instructionCount; ++index) {
-				const auto* compute = nativeNumericFieldConsumer(std::span(instructions.data() + index, instructionCount - index));
-				if (compute && compute->nativeNumericTypes().left == ValueTag::Nil) {
-					instructionCount = index;
-					break;
-				}
-			}
-			if (instructionCount == first) continue;
-			cursor = (instructions[instructionCount - 1u].pc - pagePc) / INSTRUCTION_BYTES;
-		}
 		const DecodedInstruction* skippedInstruction = nullptr;
 		if (binding.readBytes && nativeBlockComparison(page.words[cursor].op)) {
 			const u32 successor = cursor + page.words[cursor].width;
 			if (successor < DECODED_PAGE_WORDS && (page.refreshState[successor] & DECODED_REFRESH_DECODE) == 0u
 				&& successor + page.words[successor].width <= DECODED_PAGE_WORDS) skippedInstruction = &page.words[successor];
 		}
-		// Keep the bounded linear span (plus a fused following JMP), while
-		// exposing each returning helper's successor as an entry.
-		size_t segmentFirst = first;
-		for (size_t index = first; index < instructionCount; ++index) {
-			const bool final = index + 1u == instructionCount;
-			const auto& instruction = *instructions[index].decoded;
-			if (!final) {
-				if (!nativeBlockHasContinuation(instruction.op, instruction.b)) continue;
-				if (nativeGuardedFieldResult(std::span(instructions.data() + index, instructionCount - index)))
-					continue;
-			}
-			sources.push_back({std::span(instructions.data() + segmentFirst, index + 1u - segmentFirst),
-				final ? skippedInstruction : nullptr, !final});
-			entries.push_back((instructions[segmentFirst].pc - pagePc) / INSTRUCTION_BYTES);
-			segmentFirst = index + 1u;
-		}
+		sources.push_back({std::span(instructions.data() + first, instructionCount - first), skippedInstruction});
 	}
 	if (sources.empty()) return;
 	NativeBlockExitHandlers handlers{};
@@ -249,9 +217,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 		pendingJob.key = binding.key;
 		pendingJob.pagePc = pagePc;
 		pendingJob.slot = source.slot;
-		pendingJob.instructionCount = static_cast<u32>(instructionCount);
 		pendingJob.invalidated = false;
-		pendingJob.entries.assign(entries.begin(), entries.end());
 		if (!image.workerConstantsCurrent) {
 			const size_t count = image.constPool.size();
 			if (image.workerConstants.capacity() != count) image.workerConstants.resize(count);
@@ -261,13 +227,12 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 		m_nativeCompilerWorker->submit(sources, image.workerConstants.view(), NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this), handlers, profile != nullptr);
 		return;
 	}
-#else
-	(void)coldImage;
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
 	auto blocks = NativeBlock::compileRegion(sources, image.constPool,
-		NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this), handlers);
-	installNativeRegion(image, page, pagePc, source.slot, entries, std::move(blocks), static_cast<u32>(instructionCount));
+		NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this), handlers,
+		coldImage ? NativeCompilationTier::ColdImage : NativeCompilationTier::OnDemand);
+	if (!blocks.empty()) installNativeRegion(image, page, pagePc, source.slot, std::move(blocks));
 }
 
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -282,7 +247,7 @@ void CPU::publishNativeCompilation() {
 	}
 	if (job.invalidated) return;
 	auto& page = *job.page;
-	installNativeRegion(*job.image, page, job.pagePc, job.slot, job.entries, std::move(blocks), job.instructionCount);
+	installNativeRegion(*job.image, page, job.pagePc, job.slot, std::move(blocks));
 }
 
 void CPU::discardNativeCompilation() {
@@ -299,7 +264,7 @@ void CPU::discardNativeCompilation() {
 #endif
 
 void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pagePc, u32 slot,
-	std::span<const u32> entries, std::vector<std::unique_ptr<NativeBlock>> blocks, u32 instructionCount) {
+	std::vector<std::unique_ptr<NativeBlock>> blocks) {
 	// This is the only publication boundary for either compilation policy.
 	// All source retirement and emitted-code ownership transfers run on the CPU.
 	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
@@ -310,13 +275,13 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 	// Only system code needs cells for both selectable cartridge mappings.
 	const u32 firstBank = image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID ? 0u : slot;
 	const u32 endBank = image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID ? CARTRIDGE_SLOT_COUNT : slot + 1u;
-	const auto codeBytes = blocks.front()->region->codeBytes;
+	const auto& region = *blocks.front()->region;
 	blocks.front()->region->publish(m_nativeCodeBytes);
 #if defined(BMSX_NATIVE_PERF_MAP)
 	blocks.front()->region->recordPerfMap(image.executionDomainId, slot, blocks.front()->firstPc);
 #endif
-	for (size_t index = 0; index < entries.size(); ++index) {
-		auto& exit = blocks[index]->terminal;
+	for (auto& block : blocks) {
+		auto& exit = block->terminal;
 		if (exit.exit == NativeBlockExit::AllocateTable
 			&& (pagePc < SYSTEM_ROM_SIZE || (pagePc >= CART_ROM_BASE && pagePc < CART_RAM_BASE))) {
 			auto recipe = NativeTableConstructor::prepare(exit, page, pagePc, image.constPool);
@@ -330,14 +295,14 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 			for (u32 bank = firstBank; bank < endBank; ++bank)
 				exit.continuationCells[bank] = lookup->entrySlot(exit.nextPc, bank);
 		}
-		for (auto& side : blocks[index]->sideExits) {
+		for (auto& side : block->sideExits) {
 			if (side.exit == NativeBlockExit::Call || nativeBlockExitResumesFrame(side.exit)) {
 				for (u32 bank = firstBank; bank < endBank; ++bank)
 					side.continuationCells[bank] = lookup->entrySlot(side.nextPc, bank);
 			}
 		}
-		const u32 entry = entries[index];
-		page.nativeBlocks->entries[entry] = std::move(blocks[index]);
+		const u32 entry = (block->firstPc - pagePc) / INSTRUCTION_BYTES;
+		page.nativeBlocks->entries[entry] = std::move(block);
 		page.nativeCode[entry] = page.nativeBlocks->entries[entry]->m_body;
 		++page.nativeBlocks->count;
 		page.words[entry].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
@@ -347,9 +312,9 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 	if (m_nativeCompilationProfiling) {
 		auto& profile = m_nativeCompilationProfile;
 		++profile.regionsPublished;
-		profile.entriesPublished += entries.size();
-		profile.sourceInstructions += instructionCount;
-		profile.emittedCodeBytes += codeBytes;
+		profile.entriesPublished += blocks.size();
+		profile.sourceInstructions += region.sourceInstructions;
+		profile.emittedCodeBytes += region.codeBytes;
 		profile.peakCodeBytes = std::max(profile.peakCodeBytes, static_cast<u64>(m_nativeCodeBytes));
 	}
 }

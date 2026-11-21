@@ -41,7 +41,7 @@ void copiedSourceAndDeferredPublication() {
 		decoded[2].bx = 0x1800u;
 		// Two entries share one executable allocation and an internal edge.
 		const std::array sources{
-			NativeBlockSource{std::span(instructions.data(), 1), nullptr, true},
+			NativeBlockSource{std::span(instructions.data(), 1)},
 			NativeBlockSource{std::span(instructions.data() + 1, 2)},
 		};
 		worker.submit(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});

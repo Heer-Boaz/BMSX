@@ -126,10 +126,13 @@ struct NativeBlockInstruction {
 	u32 pc;
 };
 
+enum class NativeCompilationTier : u8 { OnDemand, ColdImage };
+
+// A contiguous source run between guest entries or control-flow boundaries.
+// The compiler can create more entries inside it for precise timing and exits.
 struct NativeBlockSource {
 	std::span<const NativeBlockInstruction> instructions;
 	const DecodedInstruction* skippedInstruction = nullptr;
-	bool fallthrough = false;
 };
 
 // Captured on the CPU owner thread. Code emission consumes these bindings,
@@ -166,6 +169,7 @@ public:
 	NativeCodeRegion(const NativeCodeRegion&) = delete;
 	NativeCodeRegion& operator=(const NativeCodeRegion&) = delete;
 	size_t codeBytes = 0;
+	u32 sourceInstructions = 0;
 	// The main RAM the generated code addresses through the pinned RAM base.
 	u8* ram = nullptr;
 private:
@@ -248,21 +252,15 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 	}
 }
 
-// These instructions can complete through a semantic helper at their next PC.
-// Publish that entry before code generation rather than discovering it by
-// repeatedly translating an already compiled interior.
-inline constexpr bool nativeBlockHasContinuation(u8 op, int field) {
+// Source discovery already ends the run at these instructions. Feed their
+// successor if the ordinary CPU can return there.
+inline constexpr bool nativeBlockHasTerminalContinuation(u8 op, int field) {
 	switch (static_cast<OpCode>(op)) {
-		case OpCode::GETFIELD: case OpCode::SETFIELD: case OpCode::SELF:
-		case OpCode::GETT: case OpCode::SETT: case OpCode::GETI: case OpCode::SETI:
-		case OpCode::SETUP: case OpCode::VARARG:
-		case OpCode::LOAD_MEM: case OpCode::LOAD_MEM_D:
-		case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
 		case OpCode::STORE_MEM_WORDS: case OpCode::STORE_MEM_WORDS_D:
 		case OpCode::NEWT: case OpCode::CONCAT: case OpCode::CONCATN:
-		case OpCode::CLOSURE: case OpCode::CALL: case OpCode::LEN:
+		case OpCode::CLOSURE: case OpCode::CALL:
 			return true;
-		case OpCode::MTC0: return cop0FieldImplemented(field) && field != COP0_EXEC;
+		case OpCode::MTC0: return field == COP0_STATUS;
 		default: return false;
 	}
 }
@@ -289,20 +287,11 @@ inline constexpr bool nativeBlockEndsBlock(u8 op, int field) {
 
 class NativeBlock {
 public:
-	static std::unique_ptr<NativeBlock> compile(
-		std::span<const NativeBlockInstruction> instructions,
-		ConstValueSpan constants,
-		size_t& cacheBytes,
-		Memory& memory,
-		StringPool& strings,
-		StringId indexKey,
-		const NativeBlockExitHandlers& exitHandlers = {},
-		const DecodedInstruction* skippedInstruction = nullptr
-	);
+	// Source runs contain at most one decoded page's worth of instructions.
 	static std::vector<std::unique_ptr<NativeBlock>> compileRegion(
 		std::span<const NativeBlockSource> sources, ConstValueSpan constants,
-		const NativeCodeBindings& bindings,
-		const NativeBlockExitHandlers& exitHandlers = {}
+		const NativeCodeBindings& bindings, const NativeBlockExitHandlers& exitHandlers = {},
+		NativeCompilationTier tier = NativeCompilationTier::OnDemand
 	);
 	~NativeBlock();
 	NativeBlock(const NativeBlock&) = delete;

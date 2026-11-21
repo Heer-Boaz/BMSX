@@ -1,13 +1,17 @@
-#include "machine/cpu/native_block.h"
 #include "machine/cpu/cpu.h"
-#include "machine/devices/irq/controller.h"
 #include "machine/cpu/execution_image.h"
+#include "machine/cpu/native_block.h"
+#include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
+#include "support/native_region_fixture.h"
 
+#include <algorithm>
 #include <array>
 #include <iostream>
 #include <limits>
+#include <numeric>
+#include <span>
 #include <stdexcept>
 
 namespace {
@@ -15,6 +19,11 @@ using namespace bmsx;
 
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
+}
+
+int instructionCharge(std::span<const DecodedInstruction> instructions) {
+	return std::accumulate(instructions.begin(), instructions.end(), 0,
+		[](int cycles, const DecodedInstruction& inst) { return cycles + inst.baseCycles; });
 }
 
 void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
@@ -38,15 +47,15 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 		ops[2].observeNativeNumericTypes(valueInteger(12), valueInteger(1));
 	ops[3].a = 6; ops[3].c = 8; ops[3].tableCacheSlot = 0;
 	ops[4].bx = 0x2000u;
-	const std::array sources{NativeBlockSource{std::span(instructions.data(), 4), nullptr, true},
-		NativeBlockSource{std::span(instructions.data() + 4, 1)}};
-	auto blocks = NativeBlock::compileRegion(sources, constants.view(), NativeCodeBindings(memory, cpu.stringPool(), indexKey));
+	size_t bytes = 0;
+	auto block = test::compileNative(instructions, constants.view(), bytes, memory, cpu.stringPool(), indexKey);
 	ValueSlots registers(11);
 	registers.set(6, valueTable(particle.address()));
 	registers.set(1, valueInteger(1));
 	particle.setStringKey(x, valueInteger(std::numeric_limits<i32>::min()));
 	NativeBlockRunState run{.constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
-	require(blocks[0]->run(registers.view(), run) == &blocks[1]->terminal
+	const auto* wrapped = block->run(registers.view(), run);
+	require(wrapped->exit == NativeBlockExit::Continue && wrapped->nextPc == ops[4].bx
 		&& particle.getStringKey(x) == valueInteger(std::numeric_limits<i32>::max()),
 		"the guarded Integer subtract wraps and reaches the field store within one native grant");
 	for (const Value right : {valueFloat(0.5f), valueBool(false)}) {
@@ -54,7 +63,7 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 		particle.setStringKey(x, before);
 		registers.set(1, right); registers.set(8, valueInteger(59)); registers.set(10, valueNil());
 		run.remainingCycles = 100; run.registerTop = 0;
-		const auto* exit = blocks[0]->run(registers.view(), run);
+		const auto* exit = block->run(registers.view(), run);
 		require(exit->exit == NativeBlockExit::ScalarBoundary && exit->nextPc == instructions[2].pc
 			&& run.remainingCycles == 100 - ops[0].baseCycles - ops[1].baseCycles && run.registerTop == 11
 			&& registers.get(9) == before && registers.get(10) == valueInteger(1)
@@ -65,7 +74,7 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 	particle.setStringKey(x, valueFloat(3.25f));
 	registers.set(9, valueInteger(42));
 	run.remainingCycles = 100;
-	const auto* typeMiss = blocks[0]->run(registers.view(), run);
+	const auto* typeMiss = block->run(registers.view(), run);
 	require(typeMiss->exit == NativeBlockExit::ReadField && run.remainingCycles == 100 - ops[0].baseCycles
 		&& registers.get(9) == valueInteger(42),
 		"the tag guard does not execute or publish a speculative field read");
@@ -73,10 +82,11 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 	ops[2].bx = 0;
 	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
 		ops[2].observeNativeNumericTypes(valueFloat(12.5f), valueFloat(0.25f));
-	auto floats = NativeBlock::compileRegion(sources, constants.view(), NativeCodeBindings(memory, cpu.stringPool(), indexKey));
+	auto floats = test::compileNative(instructions, constants.view(), bytes, memory, cpu.stringPool(), indexKey);
 	particle.setStringKey(x, valueFloat(12.5f));
 	registers.set(1, valueFloat(0.25f)); run.remainingCycles = 100;
-	require(floats[0]->run(registers.view(), run) == &floats[1]->terminal
+	const auto* floatHit = floats->run(registers.view(), run);
+	require(floatHit->exit == NativeBlockExit::Continue && floatHit->nextPc == ops[4].bx
 		&& particle.getStringKey(x) == valueFloat(12.25f),
 		"an observed Float update does not detour through the scalar VM");
 }
@@ -102,7 +112,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	constants.set(0, valueString(key));
 	registers.set(1, receiver);
 	size_t bytes = 0;
-	auto block = NativeBlock::compile(instructions, constants.view(), bytes, memory, cpu.stringPool(), indexKey);
+	auto block = test::compileNative(instructions, constants.view(), bytes, memory, cpu.stringPool(), indexKey);
 	const auto& hint = block->sideExits[0].tableReadCache;
 	NativeBlockRunState grant{.constants = constants.view(), .heap = &cpu.gcHeap()};
 	const auto read = [&](Value want, int hops) {
@@ -194,8 +204,9 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 		decoded[4].a = 9; decoded[4].b = 8;
 		decoded[5].a = 10; decoded[5].b = 2;
 		decoded[6].bx = 0x2000u;
+		const int cycles = instructionCharge(decoded);
 		size_t bytes = 0;
-		auto block = NativeBlock::compile(source, constants.view(), bytes, memory, cpu.stringPool(), indexKey);
+		auto block = test::compileNative(source, constants.view(), bytes, memory, cpu.stringPool(), indexKey);
 		auto table = cpu.createTable(0, 8);
 		auto parent = cpu.createTable(0, 1);
 		auto meta = cpu.createTable(0, 1);
@@ -209,7 +220,7 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 			const auto heap = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
-			require(exit == &block->terminal && exit->exit == NativeBlockExit::Continue,
+			require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source[6].pc && exit->nextPc == decoded[6].bx,
 				"inherited and missing string reads execute their suffix within one stable native gate invocation");
 			require(registers.get(destination) == value && registers.get(8) == values[3] && registers.get(9) == values[3]
 				&& registers.get(2) == values[0] && registers.get(10) == values[0],
@@ -218,7 +229,8 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 			require(cpu.luaHeap().usedBytes() == heap.first
 				&& cpu.luaHeap().collectionTarget() == heap.second,
 				"read resolution changes neither tracked allocation nor collection thresholds");
-			require(state.remainingCycles == 100 - block->terminal.cycles - 8, "one additional inherited target Table adds 8 cycles independently of slot prediction");
+			require(state.remainingCycles == 100 - cycles - TABLE_INDEX_VISIT_CYCLES,
+				"one additional inherited target Table adds 8 cycles independently of slot prediction");
 		}
 		for (int mutation = 0; mutation < 4; ++mutation) {
 			if (mutation == 0) table.setStringKey(key, values[0]);
@@ -230,7 +242,9 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 			ValueSlots registers(11);
 			registers.set(0, valueTable(table.address())); registers.set(5, valueString(key));
 			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
-			require(block->run(registers.view(), state) == &block->terminal, "rehash, deletion and live metatable changes retain the native continuation");
+			const auto* exit = block->run(registers.view(), state);
+			require(exit->exit == NativeBlockExit::Continue && exit->nextPc == decoded[6].bx,
+				"rehash, deletion and live metatable changes retain the native continuation");
 			const auto expected = mutation < 2 ? values[0] : mutation == 2 ? valueInteger(91) : valueNil();
 			require(registers.get(destination) == expected, "predictions validate current raw keys and never retain a stale inherited Value");
 		}
@@ -243,7 +257,8 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 			stringRegisters.set(0, valueTable(table.address()));
 			stringRegisters.set(5, valueString(key));
 			NativeBlockRunState stringState{.heap = &cpu.gcHeap(), .remainingCycles = 100};
-			require(block->run(stringRegisters.view(), stringState) == &block->terminal
+			const auto* stringExit = block->run(stringRegisters.view(), stringState);
+			require(stringExit->exit == NativeBlockExit::Continue && stringExit->nextPc == decoded[6].bx
 				&& stringRegisters.get(destination) == valueInteger(91), "the mixed site resolves its inherited string key");
 			const int stringHint = block->sideExits[0].tableReadCache.receiverSlot;
 			require(stringHint >= 0, "string resolution publishes a hint for this polymorphic GETT");
@@ -252,8 +267,9 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 				registers.set(0, valueTable(table.address()));
 				registers.set(5, key);
 				NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
-				require(block->run(registers.view(), state) == &block->terminal && registers.get(destination) == values[0]
-					&& state.remainingCycles == 100 - block->terminal.cycles - TABLE_INDEX_VISIT_CYCLES,
+				const auto* exit = block->run(registers.view(), state);
+				require(exit->exit == NativeBlockExit::Continue && exit->nextPc == decoded[6].bx
+					&& registers.get(destination) == values[0] && state.remainingCycles == 100 - cycles - TABLE_INDEX_VISIT_CYCLES,
 					"sparse numeric and object keys resolve inherited raw values without a dispatch transition");
 			}
 			require(block->sideExits[0].tableReadCache.receiverSlot == stringHint, "non-string misses keep the string hint at the mixed site");
@@ -296,18 +312,20 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 			decoded[2].a = 2;
 			decoded[3].bx = 0x2000;
 			size_t bytes = 0;
-			auto block = NativeBlock::compile(source, constants.view(), bytes, memory, cpu.stringPool(), indexKey);
+			auto block = test::compileNative(source, constants.view(), bytes, memory, cpu.stringPool(), indexKey);
 			ValueSlots registers(3);
 			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
 			const bool tableReceiver = valueIsTable(receiver);
-			require(exit == (tableReceiver ? &block->terminal : &block->sideExits.front())
+			require((tableReceiver ? exit->exit == NativeBlockExit::Continue && exit->nextPc == decoded[3].bx
+				: exit == &block->sideExits.front() && exit->currentPc == source[1].pc)
 				&& registers.get(0) == (tableReceiver ? valueInteger(59) : receiver)
 				&& registers.get(2) == (tableReceiver ? valueInteger(1) : valueNil()),
 				"a proved receiver takes only its field path and a cold read keeps its destination and suffix");
 			if (op == OpCode::SELF)
 				require(registers.get(1) == receiver, "SELF publishes its aliased receiver before either read path");
-			require(state.remainingCycles == 100 - exit->cycles, "proved receivers retain the precise instruction charge");
+			const int cycles = instructionCharge(std::span(decoded).first(tableReceiver ? decoded.size() : 2));
+			require(state.remainingCycles == 100 - cycles, "proved receivers retain the precise instruction charge");
 		}
 	}
 }
@@ -334,8 +352,9 @@ void storesRetainNativeFrame(CPU& cpu, Memory& memory) {
 		decoded[3].tableCacheSlot = -1;
 		decoded[4].a = 9; decoded[4].b = 8;
 		decoded[5].bx = 0x2000;
+		const int cycles = instructionCharge(decoded);
 		size_t bytes = 0;
-		auto block = NativeBlock::compile(source, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto block = test::compileNative(source, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		std::cout << "string-store-code generic=" << generic << " constant=" << constant << " bytes=" << bytes << '\n';
 		auto parent = cpu.createTable(0, 1); parent.setStringKey(key, valueInteger(71));
 		auto meta = cpu.createTable(0, 1); meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(parent.address()));
@@ -350,7 +369,7 @@ void storesRetainNativeFrame(CPU& cpu, Memory& memory) {
 				const auto before = table.trackedHeapBytes();
 				NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
 				const auto* exit = block->run(registers.view(), state);
-				require(exit == &block->terminal && exit->exit == NativeBlockExit::Continue,
+				require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source[5].pc && exit->nextPc == decoded[5].bx,
 					"first insert, deletion, resurrection and polymorphic updates complete in one native invocation");
 				const Value expected = constant ? constants.get(1) : value;
 				require(table.getStringKey(key) == expected, "returning stores preserve raw values");
@@ -358,7 +377,7 @@ void storesRetainNativeFrame(CPU& cpu, Memory& memory) {
 				require(registers.get(8) == values[n] && registers.get(9) == values[n] && registers.get(2) == value,
 					"unpublished raw references and numeric payloads survive the returning call");
 				require(parent.getStringKey(key) == valueInteger(71), "writes do not redirect through inherited fields");
-				require(state.remainingCycles == 100 - block->terminal.cycles, "returning stores charge one instruction");
+				require(state.remainingCycles == 100 - cycles, "returning stores charge one instruction");
 			}
 		}
 		// Growth is the only table-store case which can allocate. It must still
@@ -396,7 +415,7 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 		read.baseCycles = BASE_CYCLES[read.op];
 		const std::array source{NativeBlockInstruction{&write, 0x1000}, NativeBlockInstruction{&read, 0x1004}};
 		size_t bytes = 0;
-		auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), key);
+		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), key);
 		ValueSlots registers(3);
 		registers.set(0, ref);
 		NativeBlockRunState state{.heap = &cpu.gcHeap()};
@@ -408,12 +427,13 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 				state.remainingCycles = 100;
 				model.setInteger(slot, v);
 				const auto* exit = block->run(registers.view(), state);
-				require(exit == &block->terminal && registers.get(1) == v && table.getInteger(slot) == v,
+				require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source[1].pc
+					&& exit->nextPc == source[1].pc + INSTRUCTION_BYTES && registers.get(1) == v && table.getInteger(slot) == v,
 					"in-capacity array stores and aliased loads transfer both raw planes without a semantic exit");
 				u32 probes, expectedProbes;
 				require(TableRecord::length(&table, &probes) == TableRecord::length(&model, &expectedProbes) && probes == expectedProbes,
 					"native insertion and deletion maintain the same boundary hint and length work");
-				require(state.remainingCycles == 100 - block->terminal.cycles, "array hit charges once");
+				require(state.remainingCycles == 100 - write.baseCycles - read.baseCycles, "array hit charges once");
 			}
 		}
 		if (generic) {
@@ -447,7 +467,9 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 				require(binding.writeWatch.consume(word, word + 1), "the declined operation left the watch armed");
 			}
 			state.remainingCycles = 100;
-			require(block->run(registers.view(), state) == &block->terminal && memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 2
+			const auto* exit = block->run(registers.view(), state);
+			require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source[1].pc
+				&& memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 2
 				&& memory.readRamRecordWord(header + GC_RECORD_LINK) == (weakLink | previousHead)
 				&& memory.readRamRecordWord(head) == ((header & GC_RECORD_MASK) >> GC_RECORD_SHIFT),
 				"a native array hit links the scanned Table onto the physical changed queue");
@@ -479,10 +501,11 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 	write.baseCycles = BASE_CYCLES[write.op]; read.baseCycles = BASE_CYCLES[read.op];
 	const std::array source{NativeBlockInstruction{&write, 0x1000}, NativeBlockInstruction{&read, 0x1004}};
 	size_t bytes = 0;
-	auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	ValueSlots registers(4); registers.set(0, valueTable(mirror)); registers.set(2, valueInteger(83));
 	NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
-	require(block->run(registers.view(), state) == &block->terminal && registers.get(3) == valueInteger(83),
+	const auto* arrayHit = block->run(registers.view(), state);
+	require(arrayHit->exit == NativeBlockExit::Continue && arrayHit->currentPc == source[1].pc && registers.get(3) == valueInteger(83),
 		"both array operations execute in native code without a host object");
 	require(TableRecord(cpu.gcHeap(), mirror).getInteger(1) == valueInteger(83)
 		&& memory.readRamRecordWord(body) == 83 && memory.readRamRecordByte(body + 4) == static_cast<u8>(ValueTag::Integer),
@@ -495,7 +518,9 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 	const u32 markWord = (mirror + GC_COLOR_OFFSET) & RAM_RECORD_WORD_MASK;
 	watches.armCodeRange(markWord, sizeof(u32));
 	registers.set(2, valueInteger(46)); state.remainingCycles = 100;
-	require(block->run(registers.view(), state) == &block->terminal && memory.readRamRecordWord(body) == 46
+	const auto* scalarStore = block->run(registers.view(), state);
+	require(scalarStore->exit == NativeBlockExit::Continue && scalarStore->currentPc == source[1].pc
+		&& memory.readRamRecordWord(body) == 46
 		&& memory.readRamRecordByte(mirror + GC_COLOR_OFFSET) == 3u, "a scalar store does not touch the mirrored mark");
 	registers.set(2, valueTable(cpu.createTable().address())); state.remainingCycles = 100;
 	require(block->run(registers.view(), state)->exit == NativeBlockExit::WriteInteger
@@ -521,7 +546,7 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 	read.tableCacheSlot = write.tableCacheSlot = static_cast<int>(keySlot);
 	const std::array fields{NativeBlockInstruction{&read, 0x1000}, NativeBlockInstruction{&write, 0x1004}};
 	ValueSlots constants(1); constants.set(0, valueString(key));
-	auto fieldBlock = NativeBlock::compile(fields, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto fieldBlock = test::compileNative(fields, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	registers.set(2, valueFromTag(ValueTag::False, 37));
 	watches.armHistoryWrites();
 	watches.consumeHistoryWrites(hashBody, 1);
@@ -532,7 +557,8 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 		"the predicted read matches all 32 key bits across the RAM seam, and a clean tag page stops both store planes");
 	watches.disarmHistoryWrites();
 	state.remainingCycles = 100;
-	require(fieldBlock->run(registers.view(), state) == &fieldBlock->terminal
+	const auto* fieldHit = fieldBlock->run(registers.view(), state);
+	require(fieldHit->exit == NativeBlockExit::Continue && fieldHit->currentPc == fields[1].pc
 		&& TableRecord(cpu.gcHeap(), mirror).getStringKey(key) == registers.get(2),
 		"the predicted write uses the same mirrored byte as the reader");
 
@@ -547,7 +573,8 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 	memory.writeRamRecordByte(wrappedTags + valueSlot, static_cast<u8>(ValueTag::Float));
 	registers.set(2, valueFromTag(ValueTag::True, 33));
 	state.remainingCycles = 100;
-	require(fieldBlock->run(registers.view(), state) == &fieldBlock->terminal
+	const auto* wrappedHit = fieldBlock->run(registers.view(), state);
+	require(wrappedHit->exit == NativeBlockExit::Continue && wrappedHit->currentPc == fields[1].pc
 		&& registers.get(3) == valueFloatBits(0xffa12345u)
 		&& memory.readRamRecordWord(MAIN_RAM_SIZE + sizeof(u32)) == 33u
 		&& memory.readRamRecordWord(MAIN_RAM_SIZE - sizeof(u32)) == key
@@ -572,7 +599,7 @@ void watchedTableWordOrTagLeavesBeforeWriting(CPU& cpu, Memory& memory) {
 	store.baseCycles = BASE_CYCLES[store.op];
 	const std::array source{NativeBlockInstruction{&store, 0x1000u}};
 	size_t bytes = 0;
-	auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	ValueSlots registers(3);
 	registers.set(0, valueTable(table.address()));
 	registers.set(2, valueFloatBits(0x80000000u));
@@ -611,22 +638,39 @@ void boundaryLengthRetainsNativeFrame(CPU& cpu, Memory& memory) {
 	decoded[2].a = 5; decoded[2].b = 6;
 	decoded[3].bx = 0x2000;
 	size_t bytes = 0;
-	auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	auto table = cpu.createTable(0, 128);
 	for (int bit = 30; bit >= 0; --bit) table.set(valueInteger(i32{1} << bit), valueBool(false));
 	const Value root = valueTable(cpu.createTable().address());
+	const int cycles = instructionCharge(decoded);
+	const int prefixCycles = instructionCharge(std::span(decoded).first<2>());
 	for (const i32 expected : {1 << 30, INT32_MAX}) {
 		if (expected == INT32_MAX) table.set(valueInteger(expected), valueBool(false));
 		ValueSlots registers(7);
 		registers.set(0, valueTable(table.address())); registers.set(1, root);
-		const int probeCycles = 6 * (expected == INT32_MAX ? 32 : 61);
-		const int grant = block->terminal.cycles + probeCycles + 1;
+		const int probeCycles = TABLE_LENGTH_PROBE_CYCLES * (expected == INT32_MAX ? 32 : 61);
+		const int grant = cycles + probeCycles + 1;
 		NativeBlockRunState state{.constants = {}, .heap = &cpu.gcHeap(), .remainingCycles = grant};
 		const auto* exit = block->run(registers.view(), state);
-		require(exit == &block->terminal, "table LEN and its suffix stay in one native invocation");
+		require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source[3].pc && exit->nextPc == decoded[3].bx,
+			"table LEN and its suffix stay in one native invocation");
 		require(registers.get(0) == valueInteger(expected), "native LEN returns a full signed Integer boundary and supports source aliasing");
 		require(registers.get(5) == root && registers.get(6) == root, "live raw references survive the nonallocating length call");
 		require(state.remainingCycles == 1, "length search charges its literal logical presence work once");
+
+		for (const int shortGrant : {static_cast<int>(decoded[0].baseCycles) + 1, prefixCycles + probeCycles}) {
+			registers.set(0, valueTable(table.address()));
+			registers.set(5, valueNil());
+			registers.set(6, valueNil());
+			state.remainingCycles = shortGrant;
+			state.registerTop = 0;
+			const auto* boundary = block->run(registers.view(), state);
+			require(boundary->exit == NativeBlockExit::Continue && boundary->currentPc == source[1].pc
+				&& boundary->nextPc == source[2].pc && state.remainingCycles == shortGrant - prefixCycles - probeCycles,
+				"LEN may exhaust its grant, but its continuation cannot begin");
+			require(registers.get(0) == valueInteger(expected) && registers.get(6) == root && isNil(registers.get(5))
+				&& state.registerTop == 7, "an exhausted LEN publishes its result and prefix, not the following MOV");
+		}
 	}
 }
 
@@ -648,7 +692,7 @@ void guardedTableFactsFollowRegisterDefinitions(CPU& cpu, Memory& memory) {
 		decoded[4].a = 5; decoded[4].b = 0; decoded[4].c = 1;
 		decoded[5].bx = 0x4000u;
 		size_t bytes = 0;
-		auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		auto table = cpu.createTable(2);
 		table.setInteger(1, valueInteger(23));
 		for (const Value first : {valueTable(table.address()), valueNil()}) for (const Value next : {valueTable(table.address()), valueNil()}) {
@@ -668,7 +712,7 @@ void guardedTableFactsFollowRegisterDefinitions(CPU& cpu, Memory& memory) {
 				require(registers.get(2) == valueInteger(23) && registers.get(3) == valueInteger(23),
 					"both preceding accesses retained their values before the later fault");
 			} else {
-				require(exit == &block->terminal && registers.get(2) == valueInteger(23)
+				require(exit->exit == NativeBlockExit::Continue && exit->nextPc == decoded[5].bx && registers.get(2) == valueInteger(23)
 					&& registers.get(3) == valueInteger(23) && registers.get(5) == valueInteger(23),
 					"repeated guarded accesses preserve values without leaving the native body");
 			}
@@ -695,22 +739,31 @@ void tableFactsAreValidatedAtIndependentRegionEntries(CPU& cpu, Memory& memory) 
 	decoded[6].bx = 0x3008u;
 	decoded[7].a = 0; decoded[7].b = 6;
 	decoded[8].bx = 0x3008u;
-	const std::array sources{NativeBlockSource{std::span(instructions.data(), 2), nullptr, true},
-		NativeBlockSource{std::span(instructions.data() + 2, 3)}, NativeBlockSource{std::span(instructions.data() + 5, 2)},
+	const std::array sources{NativeBlockSource{std::span(instructions).first<5>()}, NativeBlockSource{std::span(instructions.data() + 5, 2)},
 		NativeBlockSource{std::span(instructions.data() + 7, 2)}};
 	size_t bytes = 0;
 	auto blocks = NativeBlock::compileRegion(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
 	blocks.front()->region->publish(bytes);
+	constexpr std::array entryIndices{0u, 2u, 5u, 7u};
+	std::array<const NativeBlock*, entryIndices.size()> entries;
+	for (size_t i = 0; i < entries.size(); ++i) {
+		const auto block = std::find_if(blocks.begin(), blocks.end(), [&](const auto& block) {
+			return block->firstPc == instructions[entryIndices[i]].pc;
+		});
+		require(block != blocks.end(), "each independent entry is published at its guest PC");
+		entries[i] = block->get();
+	}
 	auto table = cpu.createTable(2); table.setInteger(1, valueInteger(23));
-	for (const size_t entry : {0u, 1u, 2u, 3u}) for (const bool valid : {false, true}) {
+	for (const auto* entry : entries) for (const bool valid : {false, true}) {
 		ValueSlots registers(7);
 		for (int guest : {0, 1, 4, 6}) registers.set(guest, valid ? valueTable(table.address()) : valueNil());
 		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
-		const auto* exit = blocks[entry]->run(registers.view(), state);
+		const auto* exit = entry->run(registers.view(), state);
 		if (valid) {
-			require(exit == &blocks[1]->terminal && registers.get(3) == valueInteger(23) && registers.get(5) == valueInteger(1),
+			require(exit->exit == NativeBlockExit::Continue && exit->nextPc == decoded[4].bx
+				&& registers.get(3) == valueInteger(23) && registers.get(5) == valueInteger(1),
 				"successful fallthrough and both independent entries retain their table receiver");
-		} else if (entry == 0) {
+		} else if (entry == entries.front()) {
 			require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x3004u,
 				"the first receiver guard still takes its semantic exit");
 		} else {
@@ -722,10 +775,11 @@ void tableFactsAreValidatedAtIndependentRegionEntries(CPU& cpu, Memory& memory) 
 	ValueSlots registers(7);
 	registers.set(6, valueTable(table.address()));
 	NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
-	require(blocks[2]->run(registers.view(), state)->exit == NativeBlockExit::ReadInteger && registers.get(0) == valueNil(),
+	require(entries[2]->run(registers.view(), state)->exit == NativeBlockExit::ReadInteger && registers.get(0) == valueNil(),
 		"the first internal predecessor cannot reuse the second predecessor's table fact");
 	state.remainingCycles = 100;
-	require(blocks[3]->run(registers.view(), state) == &blocks[1]->terminal && registers.get(3) == valueInteger(23),
+	const auto* exit = entries[3]->run(registers.view(), state);
+	require(exit->exit == NativeBlockExit::Continue && exit->nextPc == decoded[4].bx && registers.get(3) == valueInteger(23),
 		"another internal predecessor transfers its own table receiver");
 }
 
@@ -750,18 +804,18 @@ void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
 		unusedDecoded[4] = decoded[5];
 		auto unusedInstructions = instructions;
 		unusedInstructions[4].decoded = &unusedDecoded[4];
-		const std::array unusedSources{NativeBlockSource{std::span(instructions.data(), 2), nullptr, true},
-			NativeBlockSource{std::span(unusedInstructions.data() + 2, 3)}};
+		const std::array unusedSources{NativeBlockSource{std::span(unusedInstructions).first<5>()}};
 		auto blocks = NativeBlock::compileRegion(unusedSources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
 		blocks.front()->region->publish(bytes);
 		ValueSlots registers(6);
 		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
-		require(blocks[1]->run(registers.view(), state) == &blocks[1]->terminal && registers.get(5) == valueInteger(1),
+		const auto* exit = blocks[1]->run(registers.view(), state);
+		require(exit->exit == NativeBlockExit::Continue && exit->nextPc == unusedDecoded[4].bx && registers.get(5) == valueInteger(1),
 			"an inherited but unused table fact does not reject an independent entry");
 	}
 	{
-		const std::array usedSources{NativeBlockSource{std::span(instructions.data(), 2), nullptr, true},
-			NativeBlockSource{std::span(instructions.data() + 2, 2), nullptr, true},
+		const std::array usedSources{NativeBlockSource{std::span(instructions.data(), 2)},
+			NativeBlockSource{std::span(instructions.data() + 2, 2)},
 			NativeBlockSource{std::span(instructions.data() + 4, 2)}};
 		auto blocks = NativeBlock::compileRegion(usedSources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
 		blocks.front()->region->publish(bytes);
@@ -773,7 +827,8 @@ void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
 			"a copied receiver is checked at the field access after fallthrough");
 		auto table = cpu.createTable(2); table.setInteger(1, valueInteger(23));
 		registers.set(0, valueTable(table.address())); state.remainingCycles = 100;
-		require(blocks[1]->run(registers.view(), state) == &blocks[2]->terminal && registers.get(3) == valueInteger(23),
+		const auto* hit = blocks[1]->run(registers.view(), state);
+		require(hit->exit == NativeBlockExit::Continue && hit->nextPc == decoded[5].bx && registers.get(3) == valueInteger(23),
 			"the guarded copied fact reaches its later use when the receiver is a table");
 	}
 }
@@ -797,8 +852,7 @@ void overwrittenAndEvictedFactsDoNotGuardEntries(CPU& cpu, Memory& memory) {
 		decoded[8].a = 10; decoded[8].b = 8; decoded[8].c = 9;
 		decoded[9].a = 3; decoded[9].b = 0; decoded[9].c = 1;
 		decoded[10].bx = decoded[11].bx = 0x8000u;
-		const std::array sources{NativeBlockSource{std::span(instructions.data(), 2), nullptr, true},
-			NativeBlockSource{std::span(instructions.data() + 2, 9)}};
+		const std::array sources{NativeBlockSource{std::span(instructions).first<11>()}};
 		size_t bytes = 0;
 		auto blocks = NativeBlock::compileRegion(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
 		blocks.front()->region->publish(bytes);

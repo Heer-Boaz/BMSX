@@ -51,24 +51,15 @@ void NativeCodeRegion::recordPerfMap(ExecutionDomainId domain, u32 slot, u32 fir
 }
 #endif
 
-std::unique_ptr<NativeBlock> NativeBlock::compile(
-	std::span<const NativeBlockInstruction> instructions, ConstValueSpan constants,
-	size_t& cacheBytes, Memory& memory, StringPool& strings, StringId indexKey,
-	const NativeBlockExitHandlers& exitHandlers, const DecodedInstruction* skippedInstruction
-) {
-	const std::array sources{NativeBlockSource{instructions, skippedInstruction}};
-	auto blocks = compileRegion(sources, constants, NativeCodeBindings(memory, strings, indexKey), exitHandlers);
-	blocks.front()->region->publish(cacheBytes);
-	return std::move(blocks.front());
-}
-
 std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 	std::span<const NativeBlockSource> sources, ConstValueSpan constants,
-	const NativeCodeBindings& bindings, const NativeBlockExitHandlers& exitHandlers
+	const NativeCodeBindings& bindings, const NativeBlockExitHandlers& exitHandlers, NativeCompilationTier tier
 ) {
-	NativeIrRegion ir(sources, exitHandlers, constants, bindings.cpu != nullptr);
+	NativeIrRegion ir(sources, exitHandlers, constants, bindings.cpu != nullptr, tier);
+	if (ir.entries.empty()) return {};
 	auto region = std::make_shared<NativeCodeRegion>();
 	region->ram = bindings.ram;
+	region->sourceInstructions = static_cast<u32>(ir.instructionCount());
 	const auto& gate = nativeBlockGate();
 	for (auto& block : ir.entries) {
 		block->region = region;

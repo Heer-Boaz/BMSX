@@ -535,14 +535,14 @@ DISPATCH_LABEL(RET) {
 }
 
 DISPATCH_LABEL(LOAD_MEM_D) {
-	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= 2;
+	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= F64_ACCESS_EXTRA_CYCLES;
 	const u32 address = wordOperand(REG(decoded->b)) + (static_cast<u32>(decoded->disp) << 2u);
 	executeMemoryLoad(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address);
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(STORE_MEM_D) {
-	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= 2;
+	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= F64_ACCESS_EXTRA_CYCLES;
 	const u32 address = wordOperand(REG(decoded->b)) + (static_cast<u32>(decoded->disp) << 2u);
 	if (!executeMemoryStore(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address)) DISPATCH_BLOCKED();
 	DISPATCH_CONTINUE();
@@ -555,14 +555,14 @@ DISPATCH_LABEL(STORE_MEM_WORDS_D) {
 }
 
 DISPATCH_LABEL(LOAD_MEM) {
-	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= 2;
+	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= F64_ACCESS_EXTRA_CYCLES;
 	const u32 address = wordOperand(readRK(IMAGE, registers, decoded->b));
 	executeMemoryLoad(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address);
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(STORE_MEM) {
-	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= 2;
+	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= F64_ACCESS_EXTRA_CYCLES;
 	const u32 address = wordOperand(readRK(IMAGE, registers, decoded->b));
 	if (!executeMemoryStore(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address)) DISPATCH_BLOCKED();
 	DISPATCH_CONTINUE();

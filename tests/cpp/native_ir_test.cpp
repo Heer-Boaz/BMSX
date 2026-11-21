@@ -101,6 +101,51 @@ void fieldChainHasAnExplicitResumePoint() {
 		"a type miss retires only GETFIELD before replaying the WIDE sum");
 }
 
+void fieldSelectionOwnsColdCutAndContinuation() {
+	constexpr u32 pc = 0x5100;
+	std::array<DecodedInstruction, 5> decoded{};
+	std::array<NativeBlockInstruction, 5> source;
+	const std::array opcodes{OpCode::K1, OpCode::GETFIELD, OpCode::MOV, OpCode::K1, OpCode::ADD};
+	for (size_t i = 0; i < decoded.size(); ++i) {
+		decoded[i].op = static_cast<u8>(opcodes[i]);
+		decoded[i].width = 1;
+		decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+		source[i] = {&decoded[i], pc + static_cast<u32>(i) * INSTRUCTION_BYTES};
+	}
+	decoded[1].a = 6;
+	decoded[1].b = 3;
+	decoded[1].tableCacheSlot = 0;
+	decoded[2].a = 9;
+	decoded[2].b = 8;
+	decoded[3].a = 7;
+	decoded[4].a = 5;
+	decoded[4].b = 6;
+	decoded[4].c = 7;
+	const std::array runs{NativeBlockSource{source}};
+	{
+		NativeIrRegion region(runs, {}, {}, false, NativeCompilationTier::ColdImage);
+		require(region.instructionCount() == 1 && region.entries.front()->terminal.nextPc == pc + INSTRUCTION_BYTES,
+			"unobserved numeric field use defers only its suffix, even across independent assignments");
+	}
+
+	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
+		decoded[4].observeNativeNumericTypes(valueFloat(1.5f), valueInteger(1));
+	{
+		NativeIrRegion region(runs, {});
+		const auto& field = std::get<NativeTableAccess>(region.blocks().front().instructions[1].operation);
+		require(region.blocks().size() == 1 && field.resultTag == ValueTag::Float,
+			"an own-slot hit has a known type without a continuation checkpoint");
+	}
+	decoded[3].a = 6;
+	{
+		NativeIrRegion region(runs, {});
+		const auto& field = std::get<NativeTableAccess>(region.blocks().front().instructions[1].operation);
+		require(region.blocks().size() == 2 && !field.resultTag
+			&& region.entries[1]->firstPc == pc + 2 * INSTRUCTION_BYTES,
+			"an overwritten field does not donate a type and its real lookup can charge variable work");
+	}
+}
+
 void decodedFieldsBecomeOperationsAndEffects() {
 	DecodedInstruction memory, call, rk;
 	memory.op = static_cast<u8>(OpCode::STORE_MEM_WORDS_D);
@@ -254,6 +299,7 @@ int main() {
 	try {
 		numericPlans();
 		fieldChainHasAnExplicitResumePoint();
+		fieldSelectionOwnsColdCutAndContinuation();
 		decodedFieldsBecomeOperationsAndEffects();
 		undefinedMoveKindDoesNotBecomeANumericWordMove();
 		successorsImportLogicalTypesBeforeLowering();

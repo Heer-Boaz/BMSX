@@ -1,4 +1,5 @@
 #include "machine/cpu/native_block.h"
+#include "support/native_region_fixture.h"
 #include "common/compiler.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
@@ -48,7 +49,7 @@ void multipleRegisterDefinitionsSurviveCallAndExit() {
 	size_t bytes = 0;
 	for (const auto op : {OpCode::SHR, OpCode::MOD, OpCode::FLOORDIV, OpCode::POW}) {
 		decoded[8].op = static_cast<u8>(op);
-		auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		ValueSlots registers(5);
 		const Value result = op == OpCode::POW ? valueFloat(luaPow(66, 72)) : valueInteger(op == OpCode::MOD ? 66 : 0);
 		const std::array expected{valueInteger(83), valueInteger(11), result, valueInteger(66), valueInteger(72)};
@@ -77,9 +78,9 @@ void independentEntriesBindTheirOwnValueBanks() {
 	const auto constantsBBank = test::valueBank(constantsB);
 	size_t bytes = 0;
 	{
-		auto helper = NativeBlock::compile(source, constantsABank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto helper = test::compileNative(source, constantsABank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		decoded[1].op = static_cast<u8>(OpCode::MUL);
-		auto leaf = NativeBlock::compile(source, constantsBBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto leaf = test::compileNative(source, constantsBBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		auto registersA = test::valueBank(std::array{valueInteger(1), valueNil(), valueNil(), valueNil(), valueBool(true)});
 		auto registersB = test::valueBank(std::array{valueInteger(2), valueNil(), valueNil(), valueNil(), valueBool(false)});
 		for (int iteration = 0; iteration < 256; ++iteration) {
@@ -112,8 +113,7 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 	decoded[4].a = 5; decoded[4].b = 0;
 	decoded[5].bx = 0x1800u;
 	const std::span instructions(source);
-	const std::array plans{NativeBlockSource{instructions.subspan(0, 2), nullptr, true},
-		NativeBlockSource{instructions.subspan(2, 2), nullptr, true}, NativeBlockSource{instructions.subspan(4, 2)}};
+	const std::array plans{NativeBlockSource{instructions}};
 	constexpr u32 target = DYNAMIC_RAM_BASE + 0x84000u;
 	const Value payload = valueInteger(0x13574201);
 	size_t bytes = 0;
@@ -150,7 +150,7 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 			prefix[1].op = static_cast<u8>(OpCode::JMP); prefix[1].bx = blocks[entry]->firstPc;
 			for (auto& op : prefix) { op.width = 1; op.baseCycles = BASE_CYCLES[op.op]; }
 			const std::array prefixSource{NativeBlockInstruction{&prefix[0], 0x2000}, NativeBlockInstruction{&prefix[1], 0x2004}};
-			auto predecessor = NativeBlock::compile(prefixSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+			auto predecessor = test::compileNative(prefixSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 			require(predecessor->terminal.link.patchAddress != 0,
 				"an external continuation owns a patchable generated-code edge");
 			blocks[entry]->linkFrom(predecessor->terminal);
@@ -405,7 +405,7 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 	decoded[24].bx = 0x2000u;
 	const std::span source(instructions);
 	const std::array plans{NativeBlockSource{source.first(5)}, NativeBlockSource{source.subspan(5, 5)},
-		NativeBlockSource{source.subspan(10, 5)}, NativeBlockSource{source.subspan(15, 3), nullptr, true},
+		NativeBlockSource{source.subspan(10, 5)}, NativeBlockSource{source.subspan(15, 3)},
 		NativeBlockSource{source.subspan(18, 4)}, NativeBlockSource{source.subspan(22)}};
 	const std::array constants{valueInteger(2), valueInteger(3), valueFromTag(ValueTag::False, 57),
 		valueTable(cpu.createTable().address()), valueFloat(-0.0), valueString(cpu.stringPool().intern("diamond register"))};
@@ -458,7 +458,6 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 				}
 				expectedExit = taken ? &blocks[segment]->sideExits.back() : &blocks[segment]->terminal;
 				if (remaining <= 0) break;
-				if (plans[segment].fallthrough) { ++segment; continue; }
 				for (segment = 0; segment < plans.size(); ++segment) if (plans[segment].instructions.front().pc == nextPc) break;
 				if (segment == plans.size()) break;
 			}
@@ -492,8 +491,8 @@ void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 	const std::array constants{valueInteger(1)};
 	const auto constantsBank = test::valueBank(constants);
 	size_t bytes = 0;
-	auto first = NativeBlock::compile(firstSource, constantsBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
-	auto second = NativeBlock::compile(secondSource, constantsBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto first = test::compileNative(firstSource, constantsBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto second = test::compileNative(secondSource, constantsBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	second->linkFrom(first->sideExits.back()); first->linkFrom(second->terminal);
 	for (const int budget : {2, 3, 4, 5, 6, 7, 11, 127, 500002}) {
 		std::array<Value, 8> initial{}; initial.fill(valueNil());
@@ -550,9 +549,9 @@ void linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor() {
 	const std::array span{NativeBlockInstruction{&decoded[2], 0x1080}};
 	const std::array successor{NativeBlockInstruction{&decoded[3], 0x1088}};
 	size_t bytes = 0;
-	auto first = NativeBlock::compile(prefix, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
-	auto second = NativeBlock::compile(span, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
-	auto third = NativeBlock::compile(successor, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto first = test::compileNative(prefix, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto second = test::compileNative(span, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto third = test::compileNative(successor, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	require(first->terminal.link.patchAddress && second->terminal.link.patchAddress,
 		"plain spans have a native completion edge for the following segment");
 	second->linkFrom(first->terminal); third->linkFrom(second->terminal);
@@ -595,8 +594,8 @@ void linkedSlowExitPublishesTheWholeExecutedChain() {
 	const std::array secondSource{NativeBlockInstruction{&decoded[2], 0x1080}, NativeBlockInstruction{&decoded[3], 0x1084},
 		NativeBlockInstruction{&decoded[4], 0x1088}};
 	size_t bytes = 0;
-	auto first = NativeBlock::compile(firstSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
-	auto second = NativeBlock::compile(secondSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto first = test::compileNative(firstSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto second = test::compileNative(secondSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	second->linkFrom(first->terminal);
 	ValueSlots registers(8);
 	registers.set(1, valueInteger(IO_SYS_BUS_FAULT_CODE)); registers.set(6, valueInteger(73));
@@ -650,7 +649,7 @@ void comparisonDatapathsRespectEveryValueKind() {
 			const std::array pool{left, right};
 			const auto poolBank = test::valueBank(pool);
 			auto registers = test::valueBank(pool);
-			auto block = NativeBlock::compile(source, poolBank.view(), bytes, memory, strings, strings.intern("__index"));
+			auto block = test::compileNative(source, poolBank.view(), bytes, memory, strings, strings.intern("__index"));
 			const auto* exit = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 			require((exit->exit == NativeBlockExit::SkipInstruction) == (predicate != expected)
 				&& test::matchesValues(registers.view(), pool) && exit->registerTop == 0 && exit->cycles == 1
@@ -719,7 +718,7 @@ void arithmeticAndWordDatapaths() {
 				const auto poolBank = test::valueBank(pool);
 				auto registers = test::valueBank(std::array{left, right, valueNil(), valueNil()});
 				{
-					auto block = NativeBlock::compile(instructions, poolBank.view(), cacheBytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+					auto block = test::compileNative(instructions, poolBank.view(), cacheBytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 					const auto* exit = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 					try {
 						const Value expected = evaluate(op, left, right);
@@ -770,7 +769,7 @@ void wordProducerFactsPreserveRawValuesAndOverwrites() {
 	for (const auto constant : inputs) {
 		const std::array constants{constant, valueInteger(-1), valueInteger(7), valueInteger(31)};
 		const auto constantsBank = test::valueBank(constants);
-		auto block = NativeBlock::compile(source, constantsBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto block = test::compileNative(source, constantsBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		for (const auto incoming : inputs) for (const int grant : {1, 15, 100}) {
 			std::array<Value, 16> initial; initial.fill(valueFromTag(ValueTag::True, 53)); initial[13] = incoming;
 			auto expected = initial;
@@ -824,7 +823,7 @@ void movesAndLiteralsPreserveRawValues() {
 		move.width = move.baseCycles = 1;
 		move.a = 1;
 		const std::array instructions{NativeBlockInstruction{&load, 0x1000}, NativeBlockInstruction{&move, 0x1004}};
-		auto block = NativeBlock::compile(instructions, poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto block = test::compileNative(instructions, poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		auto registers = test::valueBank(std::array{Value{0}, Value{0}});
 		block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 		require(registers.get(0) == pool[index] && registers.get(1) == pool[index], "moves preserve every raw tagged and number bit");
@@ -836,7 +835,7 @@ void movesAndLiteralsPreserveRawValues() {
 		load.baseCycles = 1;
 		load.sbx = -33554432;
 		const std::array instructions{NativeBlockInstruction{&load, 0x1000}};
-		auto block = NativeBlock::compile(instructions, poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto block = test::compileNative(instructions, poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		ValueSlots reg(1);
 		block->run(reg.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 		const Value expected = op == OpCode::KNIL ? valueNil() : op == OpCode::KFALSE ? valueBool(false)
@@ -885,7 +884,7 @@ void pinnedOperandsSurviveColdReadsAndDestinationReuse() {
 					decoded[i].width = 1; decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
 					source[i] = {&decoded[i], 0x1000u + i * INSTRUCTION_BYTES};
 				}
-				auto block = NativeBlock::compile(source, poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+				auto block = test::compileNative(source, poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 				NativeBlockRunState state{.constants = poolBank.view(), .remainingCycles = block->terminal.cycles};
 				const auto* exit = block->run(registers.view(), state);
 				require((invalid ? exit->exit == NativeBlockExit::InvalidOperand && exit->currentPc == source[4].pc
@@ -956,7 +955,7 @@ void nextAccessPressurePreservesEveryRawGuestSlot() {
 				if (op.op == static_cast<u8>(OpCode::LOADNIL)) {
 					if (op.b != 0) top = std::max(top, static_cast<int>(op.a) + op.b);
 				} else if (op.op != static_cast<u8>(OpCode::JMP)) top = std::max(top, static_cast<int>(op.a) + 1);
-				auto block = NativeBlock::compile(std::span(source).first(prefix), constantsBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+				auto block = test::compileNative(std::span(source).first(prefix), constantsBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 				for (const int grant : {cycles, cycles + 7}) {
 					auto actual = test::valueBank(initial);
 					NativeBlockRunState state{.constants = constantsBank.view(),
@@ -1042,7 +1041,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			}
 			source[index] = {&instruction, index == 0 ? 0x1000u : source[index - 1].pc + decoded[index - 1].width * INSTRUCTION_BYTES};
 			previous = instruction.a;
-			auto block = NativeBlock::compile(std::span(source).first(index + 1), poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+			auto block = test::compileNative(std::span(source).first(index + 1), poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 			auto registers = test::valueBank(initial);
 			const auto* exit = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 			require((invalid ? exit->exit == NativeBlockExit::InvalidOperand && exit->currentPc == source[index].pc
@@ -1061,7 +1060,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			terminal.op = static_cast<u8>(op); terminal.width = 2; terminal.baseCycles = BASE_CYCLES[terminal.op];
 			terminal.a = previous; terminal.bx = 0x2000u;
 			source.back() = {&terminal, source[31].pc + decoded[31].width * INSTRUCTION_BYTES};
-			auto block = NativeBlock::compile(source, poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+			auto block = test::compileNative(source, poolBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 			auto registers = test::valueBank(initial);
 			const auto pc = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles})->nextPc;
 			const bool taken = op == OpCode::JMP || (op == OpCode::JMPIF && isTruthy(expected[previous]))
@@ -1085,7 +1084,7 @@ void truthinessAndConditionalExits() {
 		instruction.baseCycles = 1;
 		instruction.bx = 0xfffffffcu;
 		const std::array source{NativeBlockInstruction{&instruction, 0x1000u}};
-		auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		// Exhaust the entire raw Value-header domain, with nonzero payloads:
 		// falsey tags are not compared as floating-point NaNs or whole values.
 		for (u32 header = 0; header != 256u; ++header) {
@@ -1110,14 +1109,14 @@ void truthinessAndConditionalExits() {
 	halt.width = 2;
 	halt.baseCycles = 1;
 	const std::array source{NativeBlockInstruction{&halt, 0xfffffff8u}};
-	auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	require(block->run({}, nativeRunState = {.remainingCycles = block->terminal.cycles})->nextPc == 0u && block->terminal.exit == NativeBlockExit::Halt
 		&& block->terminal.registerTop == 0 && block->terminal.cycles == 1 && block->terminal.lastPc == 0xfffffffcu,
 		"a standalone native WIDE HALT has an exact wrapped continuation and explicit exit");
 }
 
 struct TailFault { int value; };
-std::unique_ptr<NativeBlock>* retiringBlock = nullptr;
+std::shared_ptr<NativeBlock>* retiringBlock = nullptr;
 
 NativeBlockTransition exitResult(CPU*, CallFrame* frame, const NativeBlockExitSite* exit) {
 	require(frame->registers.get(1) == valueInteger(2), "side-exit handlers see committed word conversions");
@@ -1152,7 +1151,7 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 	{
 		NativeBlockExitHandlers handlers{};
 		handlers[static_cast<size_t>(NativeBlockExit::Call)] = &exitResult;
-		auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"), handlers);
+		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"), handlers);
 		const auto* exit = block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles});
 		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::RebindFrame,
 			"the generated side exit returns its typed frame transition");
@@ -1162,7 +1161,7 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 	{
 		NativeBlockExitHandlers handlers{};
 		handlers[static_cast<size_t>(NativeBlockExit::Call)] = &exitThrow;
-		auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"), handlers);
+		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"), handlers);
 		bool caught = false;
 		try { const auto* exit = block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles}); exit->handler(nullptr, &frame, exit); }
 		catch (const TailFault& error) { caught = error.value == 73; }
@@ -1171,7 +1170,7 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 	{
 		NativeBlockExitHandlers handlers{};
 		handlers[static_cast<size_t>(NativeBlockExit::Call)] = &exitRetire;
-		auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"), handlers);
+		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"), handlers);
 		retiringBlock = &block;
 		const auto* exit = block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles});
 		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::Redispatch && !block,
@@ -1213,7 +1212,7 @@ void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 				decoded[index].width = 1; decoded[index].baseCycles = BASE_CYCLES[decoded[index].op];
 				source[index] = {&decoded[index], 0x1000u + static_cast<u32>(index) * INSTRUCTION_BYTES};
 			}
-			auto block = NativeBlock::compile(std::span(source).first(count), constantsBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+			auto block = test::compileNative(std::span(source).first(count), constantsBank.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 			const int grant = block->terminal.cycles;
 			NativeBlockRunState state{.constants = constantsBank.view(), .remainingCycles = grant, .registerTop = -3};
 			const auto* exit = block->run(registers.view(), state);

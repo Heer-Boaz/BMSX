@@ -434,7 +434,7 @@ private:
 	void discoverNativeSource(NativeCompilationSource& source, std::vector<u32>* outgoing);
 	void prepareNativeSource(NativeCompilationSource& source, bool coldImage);
 	void installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pagePc, u32 slot,
-		std::span<const u32> entries, std::vector<std::unique_ptr<NativeBlock>> blocks, u32 instructionCount);
+		std::vector<std::unique_ptr<NativeBlock>> blocks);
 	static NativeBlockTransition compiledReadFieldExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledWriteFieldExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledReadIndexExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
@@ -450,9 +450,7 @@ private:
 		DecodedInstructionPage* page = nullptr;
 		u64 key = 0;
 		u32 pagePc = 0, slot = 0;
-		u32 instructionCount = 0;
 		bool invalidated = false;
-		std::vector<u32> entries;
 	} m_pendingNativeCompilation;
 #endif
 	size_t m_nativeCodeBytes = 0;

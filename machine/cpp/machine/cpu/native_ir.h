@@ -55,24 +55,24 @@ struct NativeIrBlock {
 
 class NativeIrRegion {
 public:
-	NativeIrRegion(std::span<const NativeBlockSource> source, const NativeBlockExitHandlers& handlers, ConstValueSpan constants = {}, bool cpuOwned = false);
+	NativeIrRegion(std::span<const NativeBlockSource> source, const NativeBlockExitHandlers& handlers,
+		ConstValueSpan constants = {}, bool cpuOwned = false, NativeCompilationTier tier = NativeCompilationTier::OnDemand);
 	void optimize(ConstValueSpan constants, NativeRegisterUses& uses);
 	std::span<const NativeIrBlock> blocks() const { return m_blocks; }
+	size_t instructionCount() const { return m_instructions.size(); }
 	std::vector<std::unique_ptr<NativeBlock>> entries;
 
 private:
 	std::vector<NativeInstruction> m_instructions;
 	std::vector<NativeSlotType> m_entryTypes;
 	std::vector<NativeIrBlock> m_blocks;
-	void translate(const NativeBlockSource& source, const NativeBlockExitHandlers& handlers, ConstValueSpan constants, bool cpuOwned);
+	void buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations,
+		const NativeBlockExitHandlers& handlers, bool cpuOwned);
 };
 
-NativeOperation translateNativeOperation(std::span<const NativeBlockInstruction> source, ConstValueSpan constants,
-	bool controlGuarded);
-
-// Region discovery uses the same selection as translation, so it can keep a
-// guarded read and its consumer in one admitted block.
-const DecodedInstruction* nativeNumericFieldConsumer(std::span<const NativeBlockInstruction> instructions);
-std::optional<ValueTag> nativeGuardedFieldResult(std::span<const NativeBlockInstruction> instructions);
+NativeOperation translateNativeOperation(const DecodedInstruction& source, ConstValueSpan constants);
+enum class NativeOperationFlow : u8 { Linear, Checkpoint, Terminal, LeavesNative };
+NativeOperationFlow nativeOperationFlow(const NativeOperation& operation);
+size_t selectNativeFieldPaths(std::span<NativeInstruction> instructions, NativeCompilationTier tier);
 
 } // namespace bmsx

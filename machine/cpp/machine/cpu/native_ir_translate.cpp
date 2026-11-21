@@ -4,41 +4,7 @@
 
 namespace bmsx {
 
-// Identify a straight-line numeric use of a field without relying on feedback
-// here: cold image preparation needs the same candidate before it can observe
-// a receiver slot or a pair of numeric tags.
-const DecodedInstruction* nativeNumericFieldConsumer(std::span<const NativeBlockInstruction> instructions) {
-	const auto& read = *instructions.front().decoded;
-	if (read.op != static_cast<u8>(OpCode::GETFIELD) || instructions.size() < 2) return nullptr;
-	size_t arithmetic = 1;
-	const auto& successor = *instructions[arithmetic].decoded;
-	const auto next = static_cast<OpCode>(successor.op);
-	// An independent operand load can separate the field and arithmetic.
-	if (next == OpCode::GETGL || next == OpCode::GETSYS || next == OpCode::GETUP
-		|| next == OpCode::K0 || next == OpCode::K1 || next == OpCode::KM1 || next == OpCode::KSMI || next == OpCode::LOADK) {
-		if (instructions.size() < 3 || successor.a == read.a) return nullptr;
-		++arithmetic;
-	}
-	const auto& compute = *instructions[arithmetic].decoded;
-	const auto op = static_cast<OpCode>(compute.op);
-	if (op != OpCode::ADD && op != OpCode::SUB && op != OpCode::MUL) return nullptr;
-	return compute.b == read.a || compute.c == read.a ? &compute : nullptr;
-}
-
-std::optional<ValueTag> nativeGuardedFieldResult(std::span<const NativeBlockInstruction> instructions) {
-	const auto& read = *instructions.front().decoded;
-	if (read.op != static_cast<u8>(OpCode::GETFIELD) || read.tableCacheSlot < 0) return std::nullopt;
-	const auto* compute = nativeNumericFieldConsumer(instructions);
-	if (!compute) return std::nullopt;
-	const auto observed = compute->nativeNumericTypes();
-	const auto tag = compute->b == read.a ? observed.left : observed.right;
-	if (observed.stable && tag != ValueTag::Nil) return tag;
-	return std::nullopt;
-}
-
-NativeOperation translateNativeOperation(std::span<const NativeBlockInstruction> source, ConstValueSpan constants,
-	bool controlGuarded) {
-	const auto& instruction = *source.front().decoded;
+NativeOperation translateNativeOperation(const DecodedInstruction& instruction, ConstValueSpan constants) {
 	const auto op = static_cast<OpCode>(instruction.op);
 	const auto a = instruction.a;
 	const auto b = instruction.b, c = instruction.c;
@@ -74,7 +40,7 @@ NativeOperation translateNativeOperation(std::span<const NativeBlockInstruction>
 			? !implemented ? NativeControlMode::ReadFault : b == COP0_EXEC ? NativeControlMode::ReadZero : NativeControlMode::ReadWord
 			: !implemented || b == COP0_EXEC ? NativeControlMode::WriteSemantic
 			: b == COP0_STATUS || b == COP0_EPC ? NativeControlMode::WriteWord : NativeControlMode::ConsumeWord;
-		return NativeControlAccess{a, static_cast<u16>(b), mode, !controlGuarded};
+		return NativeControlAccess{a, static_cast<u16>(b), mode, true};
 	}
 	case OpCode::LOAD_MEM: case OpCode::LOAD_MEM_D:
 		return NativeMemoryAccess{a, b, op == OpCode::LOAD_MEM_D ? u32{instruction.disp} * 4u : 0u,
@@ -86,24 +52,22 @@ NativeOperation translateNativeOperation(std::span<const NativeBlockInstruction>
 		return NativeMemoryAccess{a, b, op == OpCode::STORE_MEM_WORDS_D ? u32{instruction.disp} * 4u : 0u,
 			MemoryAccessKind::Word, NativeMemoryMode::StoreWords, static_cast<u16>(c)};
 	case OpCode::GETT:
-		return NativeTableAccess{static_cast<i16>(a), b, c, NativeTableMode::Read, NativeTableKey::Value, {}};
+		return NativeTableAccess{static_cast<i16>(a), b, c, NativeTableMode::Read, NativeTableKey::Value, {}, instruction.tableCacheSlot};
 	case OpCode::GETI:
 		return NativeTableAccess{static_cast<i16>(a), b, c, NativeTableMode::Read, NativeTableKey::Integer, {}};
 	case OpCode::GETFIELD:
-		return NativeTableAccess{static_cast<i16>(a), b, c, NativeTableMode::Read, NativeTableKey::Field, nativeGuardedFieldResult(source)};
+		return NativeTableAccess{static_cast<i16>(a), b, c, NativeTableMode::Read, NativeTableKey::Field, {}, instruction.tableCacheSlot};
 	case OpCode::SELF:
-		return NativeTableAccess{static_cast<i16>(a), b, c, NativeTableMode::ReadMethod, NativeTableKey::Field, {}};
+		return NativeTableAccess{static_cast<i16>(a), b, c, NativeTableMode::ReadMethod, NativeTableKey::Field, {}, instruction.tableCacheSlot};
 	case OpCode::SETT:
-		return NativeTableAccess{c, static_cast<i16>(a), b, NativeTableMode::Write, NativeTableKey::Value, {}};
+		return NativeTableAccess{c, static_cast<i16>(a), b, NativeTableMode::Write, NativeTableKey::Value, {}, instruction.tableCacheSlot};
 	case OpCode::SETI:
 		return NativeTableAccess{c, static_cast<i16>(a), b, NativeTableMode::Write, NativeTableKey::Integer, {}};
 	case OpCode::SETFIELD:
-		return NativeTableAccess{c, static_cast<i16>(a), b, NativeTableMode::Write, NativeTableKey::Field, {}};
+		return NativeTableAccess{c, static_cast<i16>(a), b, NativeTableMode::Write, NativeTableKey::Field, {}, instruction.tableCacheSlot};
 	case OpCode::ADD: case OpCode::SUB: case OpCode::MUL: {
 		const auto observed = instruction.nativeNumericTypes();
-		const auto* next = source.size() > 1 ? source[1].decoded : nullptr;
-		const bool feedsField = next && next->op == static_cast<u8>(OpCode::SETFIELD) && next->c == a;
-		NativeArithmeticHint hint{std::nullopt, feedsField};
+		NativeArithmeticHint hint{.feedback = {}, .observed = observed.left != ValueTag::Nil};
 		if (observed.stable && observed.left != ValueTag::Nil)
 			hint.feedback = NativeArithmeticFeedback{observed.left, observed.right};
 		return NativeArithmetic{a, b, c, op, hint};

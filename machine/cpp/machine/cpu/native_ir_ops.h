@@ -179,6 +179,7 @@ struct NativeTableAccess {
 	NativeTableMode mode;
 	NativeTableKey keyKind;
 	std::optional<ValueTag> resultTag;
+	i32 predictedSlot = -1;
 
 	constexpr NativeSlotAccess slots() const {
 		const i16 keySlot = keyKind == NativeTableKey::Value ? key : -1;
@@ -191,7 +192,8 @@ struct NativeTableAccess {
 
 struct NativeArithmeticHint {
 	std::optional<NativeArithmeticFeedback> feedback;
-	bool resultFeedsStore;
+	bool resultFeedsStore = false;
+	bool observed = false;
 };
 struct NativeArithmetic {
 	NativeSlot result;

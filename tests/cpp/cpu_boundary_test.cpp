@@ -1,6 +1,7 @@
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/native_block.h"
+#include "support/native_region_fixture.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/dma/controller.h"
@@ -142,7 +143,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		NativeBlockExitHandlers handlers{};
 		handlers[static_cast<size_t>(NativeBlockExit::ReadField)] = &fieldSlowExitMarker;
 		handlers[static_cast<size_t>(NativeBlockExit::WriteField)] = &fieldSlowExitMarker;
-		auto block = NativeBlock::compile(source, constants.view(), bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"), handlers);
+		auto block = test::compileNative(source, constants.view(), bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"), handlers);
 		ValueSlots registers(2);
 		registers.set(0, valueTable(table.address())); registers.set(1, valueTable(table.address()));
 		if (store) {
@@ -159,7 +160,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 			DecodedInstruction alias = field;
 			alias.a = alias.b;
 			const std::array aliasSource{NativeBlockInstruction{&alias, 0x1000u}};
-			auto aliasBlock = NativeBlock::compile(aliasSource, constants.view(), bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"));
+			auto aliasBlock = test::compileNative(aliasSource, constants.view(), bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"));
 			table.setStringKey(key, valueFloatBits(0x80000000u));
 			require(aliasBlock->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = aliasBlock->terminal.cycles})->exit == NativeBlockExit::Continue
 				&& registers.get(1) == valueFloatBits(0x80000000u), "a cached field result can replace its own table receiver");

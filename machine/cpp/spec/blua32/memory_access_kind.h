@@ -14,6 +14,8 @@ enum class MemoryAccessKind : uint8_t {
 	F64LE = 5,
 };
 
+inline constexpr int F64_ACCESS_EXTRA_CYCLES = 2;
+
 inline constexpr std::array<uint32_t, 6> MEMORY_ACCESS_KIND_ALIGNMENT_MASKS{
 	3u,
 	0u,
