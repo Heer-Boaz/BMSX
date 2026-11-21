@@ -272,6 +272,18 @@ export type Blua32ExecutionImage = {
 	compiledCodeLookup: CompiledCodeLookup | null;
 };
 
+export function admitsFunctionPc(image: Blua32ExecutionImage, record: number, pc: number): boolean {
+	const directory = image.romFunctions;
+	if (directory.mappedCode) return true;
+	const offset = record - directory.tableAddress;
+	if (offset >= 0 && offset % BLUA32_FUNCTION_RECORD_SIZE === 0) {
+		const index = (offset / BLUA32_FUNCTION_RECORD_SIZE) * 2;
+		if (index < directory.ranges.length)
+			return pc >= directory.ranges[index] && pc < directory.ranges[index + 1] && isRomInstructionHead(directory, pc);
+	}
+	return ((pc - SYSTEM_ROM_BASE) >>> 0) >= SYSTEM_ROM_SIZE && ((pc - CART_ROM_BASE) >>> 0) >= CART_ROM_SIZE;
+}
+
 export type Blua32FunctionRecordLatch = FunctionPrototype & {
 	image: Blua32ExecutionImage;
 	busSignals: MappedBusSignals;

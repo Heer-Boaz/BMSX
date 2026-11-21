@@ -11,7 +11,9 @@ import {
 	BLUA32_IMAGE_FLAGS_OFFSET, BLUA32_IMAGE_FUNCTION_COUNT_OFFSET, BLUA32_IMAGE_MAPPED_CODE_FLAG,
 } from '../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 function validImage() {
@@ -56,6 +58,40 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const result: Value[] = [];
 		cpu.readCompletionValues(result);
 		assert.deepEqual(result, [valueInteger(0)]);
+	});
+}
+
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	test(`verified dynamic entries reject WIDE bodies and require fresh ROM publication (${backend})`, () => {
+		const { image, prefix, textAddress } = validImage();
+		const { cpu, memory, executionAddressSpace } = createTestSystemCpu(image, backend);
+		const body = textAddress + (prefix + 1) * INSTRUCTION_BYTES;
+		const fn = image.symbols.functionAddresses[0];
+		assert.throws(() => cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, fn, body), /instruction of its published function/);
+		assert.equal(cpu.readFramePc(0), textAddress);
+
+		const replacement = image.romBytes.slice();
+		writeInstruction(replacement, textAddress / INSTRUCTION_BYTES + prefix - 1, OpCode.EQ, 0, 0, 1);
+		memory.installSystemRom(replacement);
+		assert.throws(() => cpu.runUntilDepth(0, 4000), /ROM must be published/);
+		assert.equal(cpu.readFramePc(0), textAddress);
+		cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+		assert.equal(cpu.runUntilDepth(0, 4000), RunResult.Halted);
+		const result: Value[] = [];
+		cpu.readCompletionValues(result);
+		assert.deepEqual(result, [valueInteger(17)]);
+
+		const irq = image.romBytes.slice();
+		writeInstruction(irq, textAddress / INSTRUCTION_BYTES, OpCode.RFE, 0, 0, 0);
+		const nmi = createTestSystemCpu({ romBytes: irq }, backend);
+		nmi.cpu.requestNonMaskableInterrupt();
+		assert.equal(nmi.cpu.enterPendingInterrupt(), true);
+		nmi.cpu.writeEpcWord(body);
+		const faults = nmi.memory.readBusFaultSequence();
+		assert.equal(nmi.cpu.runUntilDepth(0, BASE_CYCLES[OpCode.RFE] + 1), RunResult.Yielded);
+		assert.equal(nmi.cpu.readCauseWord(), CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR);
+		assert.equal(nmi.cpu.readEpcWord(), body);
+		assert.equal(nmi.memory.readBusFaultSequence(), faults);
 	});
 }
 

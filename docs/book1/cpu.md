@@ -1812,7 +1812,12 @@ defines installed memory-fault service.
 
 In supervisor mode, `RFE` requires the current frame to be an exception frame; otherwise it hard-halts. It samples the active EPC, closes the exception frame's open upvalues, and removes that frame together with its register and saved variable-argument slots.
 
-`RFE` replaces Status bits 0–3 with the former bits 2–5, retaining the higher bits. If a caller remains, its PC is assigned the sampled EPC. In particular, writing EPC before `RFE` changes this return target; `RFE` does not impose a separate alignment check on it.
+`RFE` replaces Status bits 0–3 with the former bits 2–5, retaining the higher bits. If a caller remains, its PC is assigned the sampled EPC. Writing EPC before `RFE` changes this return target. For mapped code the
+next instruction fetch checks it in the ordinary way. For a published
+function, the return target must be an instruction start in the caller's
+body. A misaligned target produces an instruction-address exception;
+another target outside that set produces an instruction-bus exception.
+This rejection costs the failed-fetch cycle and does not issue a bus read.
 
 Returning from an NMI-marked exception frame also restores the retained pre-NMI Cause, EPC, BadAddress, LuaFaultReason, and exception-domain words. The return PC still comes from the active EPC sampled before that restoration. The retained pre-NMI Status word is not restored wholesale.
 

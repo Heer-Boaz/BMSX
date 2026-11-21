@@ -34,6 +34,7 @@ import {
 	type CartridgeSocketMediaPair,
 } from './contracts';
 import { CartridgeCard } from './card';
+import { mappedPageDomainKey } from '../../memory/mapped_page';
 import type { RomStorage } from '../../memory/rom_storage';
 import {
 	CARTRIDGE_CARD_DREQ_READ,
@@ -42,8 +43,8 @@ import {
 	CARTRIDGE_CARD_EFFECT_IRQ_EDGE,
 } from './signals';
 
-const CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET = 0x100000000;
-const CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET = 0x200000000;
+const CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET = mappedPageDomainKey(1);
+const CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET = mappedPageDomainKey(2);
 
 export class CartridgeController {
 	private readonly cards: [CartridgeCard | null, CartridgeCard | null];

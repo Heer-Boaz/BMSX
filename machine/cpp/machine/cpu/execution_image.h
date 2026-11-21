@@ -139,6 +139,7 @@ struct Blua32ExecutionImage {
 	u32 globalNameCount = 0, systemNameCount = 0;
 	Blua32RomFunctionDirectory romFunctions{};
 	u32 globalMapBytes() const { return 4u * (globalNameCount + systemNameCount); }
+	bool admitsFunctionPc(u32 record, u32 pc) const;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	NativeImageWarmup nativeWarmup;
 	// Dispatch storage outlives the decoded descriptors which borrow its cells.

@@ -14,6 +14,10 @@ constexpr u32 MAPPED_PAGE_BYTE_SHIFT = 10u;
 constexpr u32 MAPPED_PAGE_BYTE_SIZE = 1u << MAPPED_PAGE_BYTE_SHIFT;
 constexpr u32 MAPPED_PAGE_BYTE_MASK = MAPPED_PAGE_BYTE_SIZE - 1u;
 
+// The high lane identifies the mapped ROM aperture (system, cartridge 0, cartridge 1).
+constexpr u64 mappedPageDomainKey(u32 imageIndex) { return u64{imageIndex} << 32u; }
+constexpr u32 mappedPageDomainIndex(u64 key) { return static_cast<u32>(key >> 32u); }
+
 class MappedPageInvalidator {
 public:
 	virtual ~MappedPageInvalidator() = default;

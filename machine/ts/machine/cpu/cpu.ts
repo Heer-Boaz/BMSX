@@ -3,7 +3,7 @@ import { GcHeap, GcRootBank } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { CART_ROM_BASE, CART_ROM_END, MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_END, MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -113,6 +113,7 @@ import { luaShiftLeft, luaShiftRight, NumericOrder } from '../../spec/blua32/num
 import {
 	MAPPED_PAGE_BYTE_MASK,
 	MAPPED_PAGE_BYTE_SIZE,
+	mappedPageDomainIndex,
 } from '../memory/mapped_page';
 import { BuiltinFunctionId, GarbageCollectionOperation, LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
 import {
@@ -144,6 +145,7 @@ import {
 	decodedDispatchCanFuse,
 	decodedDispatchOp,
 	decodedInstructionBaseCycles,
+	admitsFunctionPc,
 	findRomFunctionVersion,
 	readRomFunctionDirectory,
 	fixedRegisterExtent,
@@ -240,6 +242,7 @@ export class CPU implements MappedPageInvalidator {
 	public lastPc: number = 0;
 	public readonly rootThread: Thread;
 	public activeThread: Thread;
+	private unpublishedRomMask: ExecutionDomainMask = 0;
 	private readonly threadBanks: readonly Thread[];
 	private completionThread = 0;
 	private readonly inspectionThreadLayout = new ThreadLayout();
@@ -681,6 +684,7 @@ export class CPU implements MappedPageInvalidator {
 		if (!this.setProgramHeapFloor(systemBoot.staticEnd)) { this.hardHalt(); return; }
 		for (const image of this.executionImagesByDomain) if (image !== null) this.releaseImageData(image);
 		this.executionImagesByDomain.fill(null);
+		this.unpublishedRomMask = 0;
 		this.stringPool.clearRomTables();
 		this.systemImage = this.activateExecutionImage(systemBoot);
 		this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1] = this.systemImage;
@@ -984,6 +988,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			const image = this.materializeExecutionImage(boot, headers[i]);
 			this.executionImagesByDomain[imageIndex] = image;
+			this.unpublishedRomMask &= ~executionDomainBit(domain);
 			if (domain === SYSTEM_EXECUTION_DOMAIN_ID) {
 				this.systemImage = image;
 				this.systemExceptionFunctionAddress = boot.exceptionFunctionAddress;
@@ -1111,6 +1116,13 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public invalidateMappedRange(firstKey: number, endKey: number): void {
+		const address = firstKey >>> 0, end = endKey >>> 0;
+		if ((address === SYSTEM_ROM_BASE && end === SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)
+			|| (address === CART_ROM_BASE && end === CART_ROM_END)) {
+			const resident = this.executionImagesByDomain[mappedPageDomainIndex(firstKey)];
+			if (resident !== null && !resident.romFunctions.mappedCode)
+				this.unpublishedRomMask |= executionDomainBit(resident.executionDomainId);
+		}
 		const invalidationStart = firstKey >= MAPPED_PAGE_BYTE_SIZE
 			? firstKey - MAPPED_PAGE_BYTE_SIZE
 			: 0;
@@ -1385,7 +1397,7 @@ export class CPU implements MappedPageInvalidator {
 				bytes,
 				recordByteOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 			);
-			return true;
+			return admitsFunctionPc(image, address, latch.codeAddress);
 		}
 		const faultSequence = this.memory.readBusFaultSequence();
 		latch.codeAddress = this.memory.readMappedBusU32LE(
@@ -1412,7 +1424,7 @@ export class CPU implements MappedPageInvalidator {
 			(address + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET) >>> 0,
 			busSignals,
 		);
-		return this.memory.readBusFaultSequence() === faultSequence;
+		return this.memory.readBusFaultSequence() === faultSequence && admitsFunctionPc(image, address, latch.codeAddress);
 	}
 
 	private readFunctionRecordOnBus(
@@ -1717,6 +1729,12 @@ export class CPU implements MappedPageInvalidator {
 			this.cop0Words[COP0_LUA_FAULT_REASON] = this.nmiReturnLuaFaultReasonWord;
 			this.exceptionDomainWord = this.nmiReturnExceptionDomainWord;
 		}
+		if (caller && caller.executionImage && !admitsFunctionPc(caller.executionImage, caller.functionAddress, returnPc)) {
+			this.cop0Words[COP0_BAD_ADDRESS] = returnPc;
+			const cause = (returnPc & (INSTRUCTION_BYTES - 1)) !== 0
+				? CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD : CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR;
+			this.enterInstructionFetchException(caller, cause, returnPc);
+		}
 	}
 
 	private enterException(
@@ -1759,6 +1777,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address): RunResult {
+		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		for (;;) {
 			const result = this.runUntilDepthEntry(this.activeThread.address === target ? targetDepth : 0, instructionBudget);
 			if (!this.threadSwitchRequested) return result;
@@ -2093,9 +2112,11 @@ export class CPU implements MappedPageInvalidator {
 		pc: number,
 	): void {
 		const image = this.executionImageForDomain(executionDomainId)!;
+		if (!admitsFunctionPc(image, functionAddress, pc)
+			|| !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId)))
+			throw new Error('Frame execution must enter an instruction of its published function.');
 		const frame = this.activeThread.frameAtDepth(frameIndex);
 		if (frame === this.activeThread.currentFrame) this.abortStalledMemoryWrite();
-		this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId));
 		const registerCount = Math.max(this.functionRecordLatch.maxStack, this.functionRecordLatch.numParams);
 		if (registerCount > MAX_THREAD_VALUE_SLOTS) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		if (registerCount > frame.stackCapacity) {

@@ -119,8 +119,44 @@ void verifiedFunctionControlFlowIsAdmittedBeforeExecution() {
 	require(directory.atPc(boundary) == directory.find(valid->rom.functionAddresses[0])
 		&& directory.atPc(boundary + 2u * INSTRUCTION_BYTES) == directory.find(valid->rom.functionAddresses[1]),
 		"the code ranges remain independent from the physical page index");
-	require(cpu.runUntilDepth(0, 30) == RunResult::Halted && cpu.readCompletionValues().get(0) == valueInteger(7),
-		"a verified cross-page WIDE program executes the expected body");
+	const auto rejectedPc = boundary;
+	const auto firstRecord = valid->rom.functionAddresses[0];
+	bool rejectedSuffix = false;
+	try {
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, firstRecord, rejectedPc);
+	} catch (const std::runtime_error& error) {
+		rejectedSuffix = std::string_view(error.what()) == "Frame execution must enter an instruction of its published function.";
+	}
+	require(rejectedSuffix && cpu.readFramePc(0) == directory.find(firstRecord)->firstPc,
+		"explicit placement rejects a WIDE body without changing the active PC");
+
+	auto replacement = valid->rom.bytes;
+	writeInstruction(replacement, boundary / INSTRUCTION_BYTES, static_cast<u8>(OpCode::KSMI), 0, 0, 9);
+	auto& machine = valid->runtime.machine;
+	machine.memory.installSystemRom(replacement);
+	bool unpublished = false;
+	try {
+		cpu.runUntilDepth(0, 30);
+	} catch (const std::runtime_error& error) {
+		unpublished = std::string_view(error.what()) == "Installed ROM must be published before CPU execution.";
+	}
+	require(unpublished, "physical ROM installation withdraws the old execution proof");
+	cpu.replaceExecutionImage(machine.executionAddressSpace.resolveSystemDomain());
+	cpu.prepareSystemNativeCode();
+	require(cpu.runUntilDepth(0, 30) == RunResult::Halted && cpu.readCompletionValues().get(0) == valueInteger(9),
+		"a published replacement supplies the new verified cross-page WIDE body");
+
+	auto interrupted = std::make_unique<Fixture>(test::encodeBlua32TestRom(RomImageDomain::System, image));
+	auto& target = interrupted->runtime.machine.cpu;
+	target.prepareSystemNativeCode();
+	target.requestNonMaskableInterrupt();
+	require(target.enterPendingInterrupt(), "NMI creates the real exception frame");
+	target.writeEpcWord(rejectedPc);
+	const auto faultSequence = interrupted->runtime.machine.memory.readBusFaultSequence();
+	require(target.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RFE)] + 1) == RunResult::Yielded
+		&& target.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR && target.readEpcWord() == rejectedPc
+		&& interrupted->runtime.machine.memory.readBusFaultSequence() == faultSequence,
+		"RFE faults on an invalid verified continuation without issuing an instruction-bus read");
 
 	const auto rejects = [](test::Blua32TestImage source, std::string_view message) {
 		try {

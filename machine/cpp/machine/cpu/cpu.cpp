@@ -201,6 +201,7 @@ void CPU::reset() {
 		if (image) releaseImageData(*image);
 		image.reset();
 	}
+	m_unpublishedRomMask = 0u;
 	m_stringPool.clearRomTables();
 	std::unique_ptr<Blua32ExecutionImage> activatedSystemImage =
 		activateExecutionImage(systemBoot);
@@ -423,6 +424,7 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 	auto previousImage = std::move(imageEntry);
 	Blua32ExecutionImage* activatedImage = image.get();
 	imageEntry = std::move(image);
+	m_unpublishedRomMask &= ~executionDomainBit(activatedImage->executionDomainId);
 	if (activatedImage->executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID) {
 		m_systemImage = activatedImage;
 		m_systemExceptionFunctionAddress = executionBoot.exceptionFunctionAddress;
@@ -626,6 +628,15 @@ void CPU::invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) {
 }
 
 void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
+	const u32 address = static_cast<u32>(firstKey);
+	const u32 end = static_cast<u32>(endKey);
+	if ((address == SYSTEM_ROM_BASE && end == SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)
+		|| (address == CART_ROM_BASE && end == CART_ROM_END)) {
+		const u32 index = mappedPageDomainIndex(firstKey);
+		const auto& resident = m_executionImagesByDomain[index];
+		if (resident && !resident->romFunctions.mappedCode)
+			m_unpublishedRomMask |= executionDomainBit(resident->executionDomainId);
+	}
 	const u64 invalidationStart = firstKey >= MAPPED_PAGE_BYTE_SIZE
 		? firstKey - MAPPED_PAGE_BYTE_SIZE
 		: 0u;
@@ -643,7 +654,6 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		// The key's low word is the mapped address, even for a socket-specific
 		// ROM install. Any execution image may have used system ROM records.
-		const u32 address = static_cast<u32>(firstKey);
 		if (address < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE
 			|| (address >= CART_ROM_BASE && address < CART_ROM_END)) {
 			image->nativeRomCallBindings.fill({});
@@ -724,7 +734,7 @@ bool CPU::readFunctionRecord(
 		m_functionRecordLatch.upvalueCount = readLE32(
 			record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET
 		);
-		return true;
+		return image.admitsFunctionPc(address, m_functionRecordLatch.codeAddress);
 	}
 	const u32 faultSequence = m_memory.readBusFaultSequence();
 	m_functionRecordLatch.codeAddress = m_memory.readMappedBusU32LE(
@@ -751,7 +761,8 @@ bool CPU::readFunctionRecord(
 		address + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 		busSignals
 	);
-	return m_memory.readBusFaultSequence() == faultSequence;
+	return m_memory.readBusFaultSequence() == faultSequence
+		&& image.admitsFunctionPc(address, m_functionRecordLatch.codeAddress);
 }
 
 bool CPU::readFunctionRecordOnBus(
@@ -1635,6 +1646,13 @@ void CPU::returnFromException(CallFrame& frame) {
 		m_cop0Words[COP0_LUA_FAULT_REASON] = m_nmiReturnLuaFaultReasonWord;
 		m_exceptionDomainWord = m_nmiReturnExceptionDomainWord;
 	}
+	if (auto* caller = m_activeThread->currentFrame; caller && caller->executionImage
+		&& !caller->executionImage->admitsFunctionPc(caller->readControl(FrameField::Function), returnPc)) {
+		m_cop0Words[COP0_BAD_ADDRESS] = returnPc;
+		const auto cause = (returnPc & (INSTRUCTION_BYTES - 1u)) != 0u
+			? CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD : CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR;
+		enterInstructionFetchException(*caller, cause, returnPc);
+	}
 }
 
 CallFrame* CPU::enterException(
@@ -2236,6 +2254,8 @@ dispatch_continue:
 #undef OBSERVE_SCALAR_ARITHMETIC
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target) {
+	if (m_unpublishedRomMask != 0u)
+		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
 	if (target == 0u) target = m_rootView.address;
 	for (;;) {
 		const RunResult result = m_runUntilDepthEntry(*this, m_activeThread->address == target ? targetDepth : 0, instructionBudget);
@@ -2451,11 +2471,9 @@ void CPU::writeFrameExecution(
 	u32 pc
 ) {
 	Blua32ExecutionImage& image = *executionImageForDomain(executionDomainId);
-	readFunctionRecord(
-		image,
-		functionAddress,
-		executionBusSignalsForDomain(executionDomainId)
-	);
+	if (!image.admitsFunctionPc(functionAddress, pc)
+		|| !readFunctionRecord(image, functionAddress, executionBusSignalsForDomain(executionDomainId)))
+		throw BMSX_RUNTIME_ERROR("Frame execution must enter an instruction of its published function.");
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 	const auto prototype = decodePrototype(functionRecord);
 	const u32 registerCount = prototype.entry.registerCapacity();

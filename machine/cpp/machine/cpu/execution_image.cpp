@@ -137,4 +137,13 @@ bool Blua32RomFunctionDirectory::instructionHead(u32 pc) const {
 	return (word >> 5u) < instructionHeads.size() && (instructionHeads[word >> 5u] & (u32{1} << (word & 31u))) != 0u;
 }
 
+bool Blua32ExecutionImage::admitsFunctionPc(u32 record, u32 pc) const {
+	if (romFunctions.mappedCode) return true;
+	if (const auto* version = romFunctions.find(record))
+		return version->contains(pc) && romFunctions.instructionHead(pc);
+	// A mapped prototype can address mapped code. It cannot claim addresses
+	// in the installed image for which it has no published function body.
+	return pc - SYSTEM_ROM_BASE >= SYSTEM_ROM_SIZE && pc - CART_ROM_BASE >= CART_ROM_SIZE;
+}
+
 } // namespace bmsx

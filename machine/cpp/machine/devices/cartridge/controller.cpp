@@ -12,8 +12,8 @@
 namespace bmsx {
 namespace {
 
-constexpr u64 CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET = 1ull << 32u;
-constexpr u64 CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET = 2ull << 32u;
+constexpr u64 CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET = mappedPageDomainKey(1u);
+constexpr u64 CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET = mappedPageDomainKey(2u);
 
 } // namespace
 

@@ -1,6 +1,11 @@
 export const MAPPED_PAGE_BYTE_SHIFT = 10;
 export const MAPPED_PAGE_BYTE_SIZE = 1 << MAPPED_PAGE_BYTE_SHIFT;
 export const MAPPED_PAGE_BYTE_MASK = MAPPED_PAGE_BYTE_SIZE - 1;
+
+// The high lane identifies the mapped ROM aperture (system, cartridge 0, cartridge 1).
+const MAPPED_PAGE_DOMAIN_KEY_STRIDE = 0x100000000;
+export function mappedPageDomainKey(imageIndex: number): number { return imageIndex * MAPPED_PAGE_DOMAIN_KEY_STRIDE; }
+export function mappedPageDomainIndex(key: number): number { return (key / MAPPED_PAGE_DOMAIN_KEY_STRIDE) >>> 0; }
 const MAPPED_PAGE_WATCH_GROUP_COUNT = MAPPED_PAGE_BYTE_SIZE / (4 * 32);
 // Match the native page word: code groups followed by history clean.
 const CODE_GROUPS = (1 << MAPPED_PAGE_WATCH_GROUP_COUNT) - 1;

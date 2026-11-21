@@ -504,6 +504,7 @@ private:
 		std::unique_ptr<Blua32ExecutionImage>,
 		EXECUTION_DOMAIN_COUNT
 	> m_executionImagesByDomain;
+	ExecutionDomainMask m_unpublishedRomMask = 0u;
 	Blua32ExecutionImage* m_systemImage = nullptr;
 	Blua32ExecutionImage* m_activeExecutionImage = nullptr;
 	ExecutionDomainId m_activeExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
