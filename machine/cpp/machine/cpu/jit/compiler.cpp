@@ -85,7 +85,7 @@ std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 	region->m_replaySites.reserve(replays.size());
 	for (const auto& replay : replays)
 		region->m_replaySites.push_back(materializeExit(replay, bindings));
-	NativeLowering compiler(entries, bindings, ir, region->m_replaySites, uses);
+	NativeLowering compiler(entries, bindings, plans, region->m_replaySites, uses);
 	for (size_t index = 0; index < plans.size(); ++index) {
 		compiler.beginBlock(index);
 		for (const auto& instruction : plans[index].instructions)

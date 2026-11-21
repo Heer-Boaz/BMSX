@@ -144,13 +144,27 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 		}
 		finalizeBlockExits(block, options.observesArithmetic);
 		for (const auto& type : block.entryTypes)
-			m_requiredSlots = std::max(m_requiredSlots, u32{type.slot} + 1u);
+			block.requiredSlots = std::max(block.requiredSlots, u32{type.slot} + 1u);
 		for (const auto& instruction : block.instructions)
-			m_requiredSlots = std::max(m_requiredSlots,
+			block.requiredSlots = std::max(block.requiredSlots,
 				std::visit(NativeWindowExtent{instruction.slots, cpuOwned}, instruction.operation));
 		if (block.completedCall)
-			m_requiredSlots = std::max(m_requiredSlots, block.instructions.back().slots.fixedExtent());
+			block.requiredSlots = std::max(block.requiredSlots, block.instructions.back().slots.fixedExtent());
 	}
+	// Only local edges inherit a window. Unrelated functions can share an
+	// executable allocation, and semantic continuations bind a fresh window.
+	bool changed;
+	do {
+		changed = false;
+		for (size_t index = m_blocks.size(); index-- > 0;) {
+			auto& block = m_blocks[index];
+			for (const auto target : block.successors)
+				if (target != m_blocks.size() && m_blocks[target].requiredSlots > block.requiredSlots) {
+					block.requiredSlots = m_blocks[target].requiredSlots;
+					changed = true;
+				}
+		}
+	} while (changed);
 	planAdmissionReplays();
 	if (options.immutablePagePc) planRecordConstructors(directory, *options.immutablePagePc);
 }

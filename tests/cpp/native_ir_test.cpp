@@ -997,7 +997,7 @@ void fixedWindowCountsOnlyAdmittedAccesses() {
 		const std::array sources{NativeBlockSource{rows}};
 		NativeRegisterUses uses;
 		const NativeIrRegion region(sources, uses, cpuOwned);
-		require(region.requiredSlots() == slots, "the region admits generated fixed operands, not semantic placement ranges");
+		require(region.blocks().front().requiredSlots == slots, "the entry admits generated fixed operands, not semantic placement ranges");
 	}
 }
 } // namespace

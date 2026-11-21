@@ -9,12 +9,11 @@
 namespace bmsx {
 
 NativeLowering::NativeLowering(std::span<const std::unique_ptr<NativeBlock>> blocks,
-	const NativeCodeBindings& bindings, const NativeIrRegion& ir,
+	const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir,
 	std::span<NativeBlockExitSite> replays, NativeRegisterUses& uses)
 	: m_compiler(sljit_create_compiler(nullptr)), m_cache(m_compiler, NativeBlockAbi::words, NativeBlockAbi::tags,
 													  NativeBlockAbi::wordRegisters, NativeBlockAbi::floatRegisters),
-	  m_blocks(blocks), m_bindings(bindings), m_ir(ir.blocks()), m_requiredSlots(ir.requiredSlots()),
-	  m_admissionReplays(replays), m_uses(uses), m_entries(blocks.size()) {
+	  m_blocks(blocks), m_bindings(bindings), m_ir(ir), m_admissionReplays(replays), m_uses(uses), m_entries(blocks.size()) {
 	if (!m_compiler)
 		throw std::bad_alloc();
 	sljit_set_context(m_compiler, 0, NativeBlockAbi::signature, NativeBlockAbi::scratches, NativeBlockAbi::saveds,

@@ -16,12 +16,12 @@ void NativeLowering::beginBlock(size_t index) {
 		assignFieldAddressSpills(ir.ownFieldAddresses);
 	m_cache.setState({});
 	entry.guarded = sljit_emit_label(m_compiler);
-	// Public entries admit the shared slot window and their own types before
-	// moving registers. Local edges have already admitted the slot window.
+	// Public entries admit their reachable slot window and their own types
+	// before moving registers. Local edges inherit slot admission.
 	auto& replay = m_admissionReplays[ir.entryReplay];
-	if (m_requiredSlots != 0)
+	if (ir.requiredSlots != 0)
 		fault(sljit_emit_cmp(m_compiler, SLJIT_LESS, SLJIT_MEM1(NativeBlockAbi::state),
-			offsetof(NativeBlockRunState, registerCapacity), SLJIT_IMM, m_requiredSlots), replay, m_cache.state());
+			offsetof(NativeBlockRunState, registerCapacity), SLJIT_IMM, ir.requiredSlots), replay, m_cache.state());
 	auto* shortGrant = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM,
 		ir.admissionCycles);
 	fault(shortGrant, replay, m_cache.state());
@@ -102,7 +102,9 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, sljit_labe
 			// payloads retain their locations without constraining their tags.
 			for (auto& binding : entry.registers) {
 				if (binding.guest < 0) continue;
-				if (!m_uses.entryReads(target, binding.guest)) {
+				// Liveness includes semantic exits and the pre-folded graph.
+				// Neither gives the public entry permission to load a slot.
+				if (static_cast<u32>(binding.guest) >= successor.requiredSlots || !m_uses.entryReads(target, binding.guest)) {
 					binding = {};
 					continue;
 				}

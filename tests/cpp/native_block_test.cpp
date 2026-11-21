@@ -99,12 +99,12 @@ void independentEntriesBindTheirOwnValueBanks() {
 	require(helperRegion.expired() && leafRegion.expired(), "independent native bodies retire their own executable allocations");
 }
 
-void entryAdmitsTheWholeRegionWindow() {
-	constexpr u32 sourcePc = 0x0ff8u, firstPc = 0x1000u, nextPc = 0x1008u, exitPc = 0x2000u;
-	std::array<DecodedInstruction, 6> decoded{};
-	const std::array ops{OpCode::K1, OpCode::JMP, OpCode::K1, OpCode::JMP, OpCode::MOV, OpCode::JMP};
-	const std::array pcs{sourcePc, sourcePc + 4, firstPc, firstPc + 4, nextPc, nextPc + 4};
-	std::array<NativeBlockInstruction, 6> source{};
+void entryAdmitsOnlyReachableSlots() {
+	constexpr u32 sourcePc = 0x0ff8u, firstPc = 0x1000u, nextPc = 0x1008u, independentPc = 0x1040u, exitPc = 0x2000u;
+	const std::array ops{OpCode::K1, OpCode::JMP, OpCode::K1, OpCode::JMP, OpCode::MOV, OpCode::JMP, OpCode::K1, OpCode::JMP};
+	const std::array pcs{sourcePc, sourcePc + 4, firstPc, firstPc + 4, nextPc, nextPc + 4, independentPc, independentPc + 4};
+	std::array<DecodedInstruction, ops.size()> decoded{};
+	std::array<NativeBlockInstruction, ops.size()> source{};
 	for (size_t i = 0; i < ops.size(); ++i) {
 		decoded[i].op = static_cast<u8>(ops[i]);
 		decoded[i].width = 1;
@@ -116,8 +116,11 @@ void entryAdmitsTheWholeRegionWindow() {
 	decoded[3].setBx(nextPc);
 	decoded[4].a = 2; decoded[4].b = 7;
 	decoded[5].setBx(exitPc);
+	decoded[6].a = 15;
+	decoded[7].setBx(exitPc);
 	const std::span rows(source);
-	const std::array plans{NativeBlockSource{rows.subspan(2, 2)}, NativeBlockSource{rows.subspan(4, 2)}};
+	const std::array plans{NativeBlockSource{rows.subspan(2, 2)}, NativeBlockSource{rows.subspan(4, 2)},
+		NativeBlockSource{rows.subspan(6, 2)}};
 	auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
 	auto predecessor = test::compileNative(rows.first(2), memory, cpu.stringPool());
 	blocks[0]->linkFrom(predecessor->terminal);
@@ -138,11 +141,15 @@ void entryAdmitsTheWholeRegionWindow() {
 			require(&exit == &blocks[1]->terminal && exit.nextPc == exitPc
 				&& state.remainingCycles == grant - paid - blocks[0]->terminal.cycles - blocks[1]->terminal.cycles
 				&& state.registerTop == 3 && bank.get(0) == valueInteger(1) && bank.get(2) == bank.get(7),
-				"an exact reserved window admits the local successor independently of live top");
+				"an exact reserved window admits the local successor despite a wider independent sibling and lower live top");
 		}
 		require(bank.get(1) == (linked ? valueInteger(1) : valueNil()) && bank.get(7) == valueFloatBits(0x7fc00019u),
 			"window admission preserves the source region's paid writes and the original operand");
 	}
+	ValueSlots wideBank(16);
+	NativeBlockRunState wideState{.remainingCycles = 32};
+	require(blocks[2]->run(wideBank.view(), wideState) == &blocks[2]->terminal && wideBank.get(15) == valueInteger(1)
+		&& wideState.registerTop == 16, "the independently published entry retains its own larger window");
 }
 
 void helperContinuationsReloadTheCurrentRegisterMap() {
@@ -1414,7 +1421,7 @@ int main() {
 		multipleRegisterDefinitionsSurviveCallAndExit();
 		sharedExitMapsPublishRawValuesFromEitherRegisterBank();
 		independentEntriesBindTheirOwnValueBanks();
-		entryAdmitsTheWholeRegionWindow();
+		entryAdmitsOnlyReachableSlots();
 		helperContinuationsReloadTheCurrentRegisterMap();
 		residentValuesCrossInternalComparisonBranches();
 		segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions();

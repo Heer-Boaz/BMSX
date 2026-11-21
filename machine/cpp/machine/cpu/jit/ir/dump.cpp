@@ -192,11 +192,11 @@ void writeExit(std::ostream& out, const NativeIrExit& exit) {
 
 void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 	const auto blocks = region.blocks();
-	out << "region required-slots=" << region.requiredSlots() << '\n';
 	for (size_t index = 0; index < blocks.size(); ++index) {
 		const auto& block = blocks[index];
 		out << "block b" << index << " pc=" << block.firstPc
-			<< " admit-cycles=" << block.admissionCycles << " replay=r" << block.entryReplay << '\n';
+			<< " admit-cycles=" << block.admissionCycles << " replay=r" << block.entryReplay
+			<< " required-slots=" << block.requiredSlots << '\n';
 		for (auto type : block.entryTypes)
 			out << "  admit R" << type.slot << " tag=" << unsigned(type.tag) << '\n';
 		for (size_t edge = 0; edge < block.successors.size(); ++edge) {
