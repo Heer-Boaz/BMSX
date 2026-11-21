@@ -5,6 +5,7 @@ inline void CPU::executeControlWrite(CallFrame& frame, int source, int field) {
 		enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 		return;
 	}
+	if (static_cast<size_t>(source) >= frame.registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	const u32 value = wordOperand(frame.registers.get(source));
 	switch (field) {
 	case COP0_STATUS:

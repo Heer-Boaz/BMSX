@@ -34,7 +34,7 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 	const int extent = result.base + count;
 	if (state.remainingCycles <= count
 		|| (count != 0 && static_cast<size_t>(extent) > caller->registers.size())
-		|| (placement.copied != 0 && static_cast<size_t>(source + placement.copied) > leaving.registers.size()))
+		|| !leaving.registers.containsRange(source, placement.copied))
 		return nullptr;
 
 	const u32 pc = caller->readAdmittedControl(FrameField::Pc);

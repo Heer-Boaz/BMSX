@@ -32,6 +32,7 @@ public:
 	u32 wordAddress() const { return static_cast<u32>(reinterpret_cast<const u8*>(m_words) - m_ram->ramData()); }
 	u32 tagAddress() const { return static_cast<u32>(m_tags - m_ram->ramData()); }
 	size_t size() const { return m_size; }
+	bool containsRange(size_t first, size_t count) const { return count == 0 || first + count <= m_size; }
 	Word* words() const { return m_words; }
 	Tag* tags() const { return m_tags; }
 	Value get(size_t index) const {

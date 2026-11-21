@@ -31,19 +31,21 @@ function fixedRegisterWrites(op: OpCode, b: number): number {
 }
 
 export function planRegionRegisters(page: DecodedInstructionPage, plans: readonly CompiledBlockSource[]):
-	{ requiredSlots: number; blocks: JavaScriptRegisterPlan[] } {
+	{ requiredSlots: number; requiredCaptures: number; blocks: JavaScriptRegisterPlan[] } {
 	const candidates = new Set<number>();
 	let requiredSlots = 0;
+	let requiredCaptures = 0;
 	for (const plan of plans) for (let word = plan.firstWord; word < plan.endWord; word += page.widths[word]) {
 		const op = page.ops[word], a = page.a[word], b = page.b[word], c = page.c[word];
 		const flags = generatedRegisterReads(op, b);
 		if (flags & REGISTER_OPERAND_A) candidates.add(a);
 		if ((flags & REGISTER_OPERAND_B) && b >= 0) candidates.add(b);
 		if ((flags & REGISTER_OPERAND_C) && c >= 0) candidates.add(c);
-		const writes = fixedRegisterWrites(op, b);
-		if (writes !== 0) requiredSlots = Math.max(requiredSlots, a + writes);
-		if ((op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D) && c !== 0)
-			requiredSlots = Math.max(requiredSlots, a + c);
+		requiredSlots = Math.max(requiredSlots, page.requiredSlots[word]);
+		// Fixed VARARG can grow on the scalar route; generated copies require
+		// the destination window to already exist.
+		if (op === OpCode.VARARG && b > 1) requiredSlots = Math.max(requiredSlots, a + b - 1);
+		if (op === OpCode.GETUP || op === OpCode.SETUP) requiredCaptures = Math.max(requiredCaptures, b + 1);
 	}
 	for (const slot of candidates) requiredSlots = Math.max(requiredSlots, slot + 1);
 	const entries = new Map(plans.map((plan, index) => [plan.pc, index]));
@@ -123,5 +125,5 @@ export function planRegionRegisters(page: DecodedInstructionPage, plans: readonl
 		// raw state. Output locals become valid only at their actual definitions.
 		return { entry: new Map([...registers].map(register => [register, written[index].has(register)])), outputs };
 	});
-	return { requiredSlots, blocks };
+	return { requiredSlots, requiredCaptures, blocks };
 }

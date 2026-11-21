@@ -463,7 +463,7 @@ void feedbackDoesNotDependOnStoreAdjacency() {
 void decodedFieldsBecomeOperationsAndEffects() {
 	DecodedInstruction memory, call, rk;
 	memory.op = static_cast<u8>(OpCode::STORE_MEM_WORDS_D);
-	memory.a = 20; memory.b = 6; memory.c = 3; memory.disp = 7;
+	memory.a = 20; memory.b = 6; memory.c = 3; memory.setBx(7);
 	memory.width = 2; memory.baseCycles = BASE_CYCLES[memory.op];
 	call.op = static_cast<u8>(OpCode::CALL);
 	call.a = 4; call.b = 3; call.c = 0;
@@ -981,7 +981,7 @@ void fixedWindowCountsOnlyAdmittedAccesses() {
 		Case{OpCode::STORE_MEM_WORDS, 5, 2, 4, true, 9},
 		Case{OpCode::VARARG, 31, 0, 0, true, 0},
 		Case{OpCode::VARARG, 31, 5, 0, true, 0},
-		Case{OpCode::CONCAT, 31, 21, 22, true, 0},
+		Case{OpCode::CONCAT, 31, 21, 22, true, 32},
 		Case{OpCode::RET, 31, 9, 0, true, 0},
 		Case{OpCode::CALL, 9, 7, 9, true, 10},
 		Case{OpCode::CALL, 9, 3, 2, true, 12},
@@ -997,7 +997,7 @@ void fixedWindowCountsOnlyAdmittedAccesses() {
 		const std::array sources{NativeBlockSource{rows}};
 		NativeRegisterUses uses;
 		const NativeIrRegion region(sources, uses, cpuOwned);
-		require(region.blocks().front().requiredSlots == slots, "the entry admits generated fixed operands, not semantic placement ranges");
+		require(region.blocks().front().requiredSlots == slots, "the entry admits fixed operands, not dynamic receiving ranges");
 	}
 }
 } // namespace

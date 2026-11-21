@@ -112,7 +112,7 @@ void directRomLoadsUseCurrentOwners() {
 		const u32 width = format == 1 ? 1u : format == 2 ? 2u : format == 5 ? 8u : 4u;
 		DecodedInstruction load;
 		load.op = static_cast<u8>(displaced ? OpCode::LOAD_MEM_D : OpCode::LOAD_MEM);
-		load.a = 0; load.b = 1; load.c = format; load.disp = displaced ? 255 : 0; load.width = 2; load.baseCycles = BASE_CYCLES[load.op];
+		load.a = 0; load.b = 1; load.c = format; load.setBx(displaced ? 255 : 0); load.width = 2; load.baseCycles = BASE_CYCLES[load.op];
 		const std::array source{NativeBlockInstruction{&load, 0x1000}};
 		const int charge = BASE_CYCLES[load.op] + (kind == MemoryAccessKind::F64LE ? 2 : 0);
 		auto block = test::compileNative(source, memory, cpu.stringPool());
@@ -120,7 +120,7 @@ void directRomLoadsUseCurrentOwners() {
 			memory.writeMappedWord(IO_CART_SELECT, select);
 			for (const u32 address : {0u, 4u, 16u, CART_ROM_BASE, CART_ROM_BASE + 4u, CART_ROM_BASE + 24u}) {
 				ValueSlots registers(2);
-				registers.set(1, valueInteger(address - static_cast<u32>(load.disp) * 4u));
+				registers.set(1, valueInteger(address - static_cast<u32>(load.bx()) * 4u));
 				NativeBlockRunState run{};
 				run.remainingCycles = charge;
 				require(block->run(registers.view(), run) == &block->terminal && run.remainingCycles == 0
@@ -130,7 +130,7 @@ void directRomLoadsUseCurrentOwners() {
 		for (u32 address : {SYSTEM_ROM_SIZE - 4u, 72u, CART_ROM_BASE + 32u, CART_ROM_END - 4u}) {
 			ValueSlots registers(2);
 			registers.set(0, valueInteger(73));
-			registers.set(1, valueInteger(address - static_cast<u32>(load.disp) * 4u));
+			registers.set(1, valueInteger(address - static_cast<u32>(load.bx()) * 4u));
 			const bool backed = address >= CART_ROM_BASE && address < CART_ROM_END
 				&& address - CART_ROM_BASE + width <= slot0.size();
 			NativeBlockRunState run{};
@@ -138,14 +138,14 @@ void directRomLoadsUseCurrentOwners() {
 			const auto* exit = block->run(registers.view(), run);
 			require((exit == &block->terminal) == backed, "short tails and logical boundary crossings use the ordered bus owner");
 			if (!backed) require(registers.get(0) == valueInteger(73) && exit->exit == NativeBlockExit::ReadMemory
-				&& registers.get(1) == valueInteger(address - static_cast<u32>(load.disp) * 4u),
+				&& registers.get(1) == valueInteger(address - static_cast<u32>(load.bx()) * 4u),
 				"a ROM side exit preserves its raw address and has not committed its destination");
 		}
 		load.a = load.b;
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
 		auto alias = test::compileNative(aliasSource, memory, cpu.stringPool());
 		ValueSlots registers(2);
-		registers.set(1, valueInteger(CART_ROM_BASE + 4u - load.disp * 4u));
+		registers.set(1, valueInteger(CART_ROM_BASE + 4u - load.bx() * 4u));
 		NativeBlockRunState run{};
 		run.remainingCycles = charge;
 		require(alias->run(registers.view(), run) == &alias->terminal

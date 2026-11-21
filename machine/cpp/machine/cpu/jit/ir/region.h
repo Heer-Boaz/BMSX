@@ -79,6 +79,7 @@ struct NativeIrBlock {
 	int admissionCycles = 0;
 	u16 sourceWords = 0;
 	u16 firstSideExit = 0;
+	u16 requiredCaptures = 0;
 	u8 sideExitCount = 0;
 	bool hasFusedJump = false;
 	u8 skippedWidth = 0, fusedJumpCycles = 0;

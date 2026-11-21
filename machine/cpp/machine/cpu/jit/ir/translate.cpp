@@ -44,13 +44,13 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 		return NativeControlAccess{a, static_cast<u16>(b), mode, true};
 	}
 	case OpCode::LOAD_MEM: case OpCode::LOAD_MEM_D:
-		return NativeMemoryAccess{a, b, op == OpCode::LOAD_MEM_D ? u32{instruction.disp} * 4u : 0u,
+		return NativeMemoryAccess{a, b, op == OpCode::LOAD_MEM_D ? instruction.bx() * 4u : 0u,
 			static_cast<MemoryAccessKind>(c), NativeMemoryMode::Load, 0};
 	case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
-		return NativeMemoryAccess{a, b, op == OpCode::STORE_MEM_D ? u32{instruction.disp} * 4u : 0u,
+		return NativeMemoryAccess{a, b, op == OpCode::STORE_MEM_D ? instruction.bx() * 4u : 0u,
 			static_cast<MemoryAccessKind>(c), NativeMemoryMode::Store, 0};
 	case OpCode::STORE_MEM_WORDS: case OpCode::STORE_MEM_WORDS_D:
-		return NativeMemoryAccess{a, b, op == OpCode::STORE_MEM_WORDS_D ? u32{instruction.disp} * 4u : 0u,
+		return NativeMemoryAccess{a, b, op == OpCode::STORE_MEM_WORDS_D ? instruction.bx() * 4u : 0u,
 			MemoryAccessKind::Word, NativeMemoryMode::StoreWords, static_cast<u16>(c)};
 	case OpCode::GETT:
 		return NativeTableAccess{.value = static_cast<i16>(a), .receiver = b, .key = c, .mode = NativeTableMode::Read,

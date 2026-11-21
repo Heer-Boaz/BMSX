@@ -36,7 +36,6 @@ inline constexpr size_t DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 6u
 	+ 2u
 #endif
 	;
-extern const std::array<uint8_t, DECODED_DISPATCH_OP_COUNT> DECODED_DISPATCH_BASE_CYCLES;
 
 inline constexpr bool decodedDispatchCanFuse(uint8_t op) {
 	return op == static_cast<uint8_t>(OpCode::SHL)
@@ -100,9 +99,8 @@ struct DecodedInstruction {
 	uint8_t op = 0;
 	uint8_t dispatchOp = 0;
 	uint8_t width = 0;
-	uint8_t disp = 0;
 	uint8_t baseCycles = 0;
-	uint8_t dispatchCycles = 0;
+	uint16_t requiredSlots = 0;
 
 	constexpr u32 bx() const { return static_cast<u32>(payload.m_word); }
 	constexpr void setBx(u32 value) { payload = Payload::bx(value); }

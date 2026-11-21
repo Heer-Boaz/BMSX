@@ -24,7 +24,7 @@ const system = (() => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.K1, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
-	return linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }, { firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 });
+	return linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 2 }, { firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 });
 })();
 
 function machine(backend: CpuExecutionBackend, cartRam = 0) {

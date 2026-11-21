@@ -9,6 +9,42 @@
 #include "spec/blua32/memory_access_kind.h"
 
 namespace bmsx {
+namespace {
+
+u16 fixedRegisterExtent(const DecodedInstruction& row) {
+	const auto op = static_cast<OpCode>(row.op);
+	switch (op) {
+		// These owners admit operands after a mode check or as part of a
+		// dynamic placement, and are also reached from native exits.
+		case OpCode::MFC0: case OpCode::MTC0:
+		case OpCode::CLOSURE: case OpCode::CALL:
+			return 0;
+		default: break;
+	}
+	const u8 reads = OPCODE_SCALAR_REGISTER_READS[row.op];
+	int extent = ((reads & REGISTER_OPERAND_A) || OPCODE_WRITES_REGISTER_A[row.op]) ? row.a + 1 : 0;
+	if (reads & REGISTER_OPERAND_B) extent = std::max(extent, row.b + 1);
+	if (reads & REGISTER_OPERAND_C) extent = std::max(extent, row.c + 1);
+	switch (op) {
+		case OpCode::LOADNIL:
+			if (row.b != 0) extent = row.a + row.b;
+			break;
+		case OpCode::SELF:
+			extent = std::max(extent, row.a + 2);
+			break;
+		case OpCode::CONCATN:
+			if (row.c != 0) extent = std::max(extent, row.b + row.c);
+			break;
+		case OpCode::STORE_MEM_WORDS: case OpCode::STORE_MEM_WORDS_D:
+			if (row.c != 0) extent = std::max(extent, row.a + row.c);
+			break;
+		default: break;
+	}
+	static_assert(2 * MAX_EXT_REGISTER_BC <= UINT16_MAX);
+	return static_cast<u16>(extent);
+}
+
+} // namespace
 
 // Source words and their execution image are the decode inputs. This producer
 // changes only decoded-cache state; instruction-bus faults belong to the fetch
@@ -131,10 +167,9 @@ void CPU::decodeInstructionWords(
 					+ static_cast<u32>(decodedSbx * INSTRUCTION_BYTES));
 				break;
 			default:
-				decoded.setBx(decodedBx);
+				decoded.setBx(usesDisp ? ext : decodedBx);
 				break;
 		}
-		decoded.disp = ext;
 		if (rawC > static_cast<u32>(MemoryAccessKind::F64LE)
 			&& (static_cast<OpCode>(op) == OpCode::LOAD_MEM
 				|| static_cast<OpCode>(op) == OpCode::STORE_MEM
@@ -145,6 +180,7 @@ void CPU::decodeInstructionWords(
 			// Fault only on dispatch, retaining the original width and charge.
 			decoded.op = static_cast<u8>(DecodedDispatchOp::InvalidImageOperand);
 		}
+		if (decoded.op == op) decoded.requiredSlots = fixedRegisterExtent(decoded);
 		destination = decoded;
 		page.sourceWords[pageOffset] = sourceWord;
 		page.bodyWords[pageOffset] = bodyWord;
@@ -157,7 +193,6 @@ void CPU::decodeInstructionWords(
 		decoded.setBx(m_memory.readRamRecordWord(base + 4u * index));
 	}
 	decoded.dispatchOp = decoded.op;
-	decoded.dispatchCycles = decoded.baseCycles;
 	page.refreshState[pageOffset] = instructionCacheable ? 0u : DECODED_REFRESH_DECODE;
 	if (instructionCacheable && page.writeWatch.groups) {
 		page.writeWatch.armWord(pageOffset);
@@ -169,7 +204,6 @@ void CPU::decodeInstructionWords(
 	const auto& observed = m_instructionObserver.points[static_cast<size_t>(image.executionDomainId + 1)];
 	if (observed.contains(pc)) {
 		decoded.dispatchOp = static_cast<u8>(DecodedDispatchOp::Observe);
-		decoded.dispatchCycles = DECODED_DISPATCH_BASE_CYCLES[decoded.dispatchOp];
 		return;
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -263,7 +297,6 @@ bool CPU::decodeInstruction(
 	}
 	const DecodedInstruction& successor = nextPage.words[nextOffset];
 	decoded.dispatchOp = decodedDispatchOp(decoded.op, successor.op);
-	decoded.dispatchCycles = DECODED_DISPATCH_BASE_CYCLES[decoded.dispatchOp];
 	return true;
 }
 

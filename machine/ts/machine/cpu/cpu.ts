@@ -20,7 +20,7 @@ import {
 } from '../memory/bus_signals';
 import { readLE32 } from '../../common/endian';
 import type { IrqController } from '../devices/irq/controller';
-import { BASE_CYCLES, TABLE_INDEX_VISIT_CYCLES, TABLE_LENGTH_PROBE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
+import { BASE_CYCLES, TABLE_INDEX_VISIT_CYCLES, TABLE_LENGTH_PROBE_CYCLES, OPCODE_COUNT, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
 import {
 	cop0FieldImplemented,
 	COP0_BAD_ADDRESS,
@@ -139,6 +139,7 @@ import {
 	decodedDispatchCanFuse,
 	decodedDispatchOp,
 	decodedInstructionBaseCycles,
+	fixedRegisterExtent,
 	DecodedDispatchOp,
 	type Blua32ExecutionImage,
 	type Blua32FunctionRecordLatch,
@@ -1241,6 +1242,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 				}
 			}
+			page.requiredSlots[pageOffset] = fixedRegisterExtent(op, page.a[pageOffset], page.b[pageOffset], page.c[pageOffset]);
 		}
 		if (op >= OpCode.GETSYS && op <= OpCode.SETGL) {
 			const system = op <= OpCode.SETSYS;
@@ -2135,6 +2137,7 @@ export class CPU implements MappedPageInvalidator {
 		const registers = frame.registers;
 		const image = frame.executionImage;
 		const a = page.a[pageOffset];
+		if (page.requiredSlots[pageOffset] > registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		const rkB = page.b[pageOffset];
 		const rkC = page.c[pageOffset];
 		const left = this.readRKValue(frame, rkB), right = this.readRKValue(frame, rkC);
@@ -2167,6 +2170,7 @@ export class CPU implements MappedPageInvalidator {
 		this.instructionBudgetRemaining -= BASE_CYCLES[
 			isAddShl ? OpCode.SHL : OpCode.BXOR
 		];
+		if (secondPage.requiredSlots[secondPageOffset] > registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		const secondRkB = secondPage.b[secondPageOffset];
 		const secondRkC = secondPage.c[secondPageOffset];
 		const secondLeft = integerOperand(this.readRKValue(frame, secondRkB));
@@ -2193,9 +2197,10 @@ export class CPU implements MappedPageInvalidator {
 
 	private executeClosure(frame: CallFrame, a: number, bx: number, c: number): void {
 		const registers = frame.registers;
-		const functionAddress = (c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0
-			? wordOperand(registers.get(bx))
-			: bx * BLUA32_FUNCTION_ALIGNMENT;
+		const registerAddress = (c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0;
+		const capacity = registers.capacity();
+		if (a >= capacity || (registerAddress && bx >= capacity)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const functionAddress = registerAddress ? wordOperand(registers.get(bx)) : bx * BLUA32_FUNCTION_ALIGNMENT;
 		if (!this.readFunctionRecordOnBus(
 			this.activeExecutionImage,
 			functionAddress,
@@ -2215,10 +2220,19 @@ export class CPU implements MappedPageInvalidator {
 	private executeCall(frame: CallFrame, a: number, b: number, c: number): boolean {
 		const registers = frame.registers;
 		const argCount = decodeValueCount(b, Math.max(frame.top - a - 1, 0));
+		const capacity = registers.capacity();
+		if (a >= capacity) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		switch (registers.getTag(a)) {
-			case ValueTag.BuiltinFunction:
+			case ValueTag.BuiltinFunction: {
+				// Unlike closure placement, a primitive does not reserve a new
+				// argument window. Its shared source must already be backed.
+				const last = a + argCount;
+				if (last >= capacity && frame.stackBase + last >= frame.thread.stackRegisters.capacity()) {
+					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				}
 				this.runBuiltinFunction(registers.getBuiltinFunctionId(a), frame, a, c, argCount);
 				return false;
+			}
 			case ValueTag.Closure: {
 				const closure = this.gc.closureRecordAddress(registers.getPayload(a));
 				if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
@@ -2242,6 +2256,10 @@ export class CPU implements MappedPageInvalidator {
 	private executeReturn(frame: CallFrame, a: number, b: number): boolean {
 		const registers = frame.registers;
 		const total = decodeValueCount(b, Math.max(frame.top - a, 0));
+		if (total !== 0 && a + total > registers.capacity()) {
+			const copied = this.returnSourceCount(frame, total);
+			if (copied !== 0 && a + copied > registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		}
 		this.charge(this.closeUpvalues(frame));
 		const frameIndex = this.activeThread.frameDepth - 1;
 		if (frame.protectedContinuationIndex >= 0) {
@@ -2277,6 +2295,25 @@ export class CPU implements MappedPageInvalidator {
 		frame.thread.leaveFrame();
 		this.resumeFrameBank();
 		return true;
+	}
+
+	/** A receiver may discard part or all of the produced range without reading it. */
+	private returnSourceCount(frame: CallFrame, produced: number): number {
+		const thread = frame.thread;
+		const continuation = frame.protectedContinuationIndex;
+		if (continuation >= 0) {
+			const flags = thread.protectedWord(continuation, ProtectedField.Flags);
+			if ((flags & PROTECTED_CALL_KIND_MASK) === ProtectedCallKind.XPCallHandler) return 1;
+			const wanted = thread.protectedWord(continuation, ProtectedField.Wanted);
+			if ((flags & PROTECTED_CALL_PARENT) !== 0 && (wanted & CALL_RESULT_EXTEND_TOP) !== 0) return 0;
+			return Math.max(0, Math.min(produced, selectedCallResultCount(wanted, produced + 1) - 1));
+		}
+		if (frame.returnToCompletionLatch) return produced;
+		if (frame.previous !== null) return Math.min(produced, selectedCallResultCount(frame.returnCount, produced));
+		const resumer = thread.resumer;
+		if (resumer === 0) return produced;
+		const wanted = this.memory.readRamRecordWord(resumer + ThreadField.ReturnCount);
+		return Math.max(0, Math.min(produced, selectedCallResultCount(wanted, produced + 1) - 1));
 	}
 
 	private executeVararg(frame: CallFrame, a: number, b: number): void {
@@ -2700,6 +2737,17 @@ export class CPU implements MappedPageInvalidator {
 		const registers = frame.registers;
 		const image = frame.executionImage;
 		const a = page.a[pageOffset];
+		if (op < OPCODE_COUNT && page.requiredSlots[pageOffset] > registers.capacity()) {
+			switch (op) {
+				// Mode and selector faults precede these register operands.
+				case OpCode.MFC0: case OpCode.MTC0: break;
+				// F64LE bills its format before it reads a register.
+				case OpCode.LOAD_MEM: case OpCode.STORE_MEM: case OpCode.LOAD_MEM_D: case OpCode.STORE_MEM_D:
+					if (page.c[pageOffset] === MemoryAccessKind.F64LE) this.instructionBudgetRemaining -= 2;
+					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				default: throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			}
+		}
 		switch (op) {
 				case DecodedDispatchOp.CompiledWarm:
 				case DecodedDispatchOp.Compiled:
@@ -2905,6 +2953,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 					const field = page.b[pageOffset];
 					if (!cop0FieldImplemented(field)) { this.hardHalt(); return; }
+					if (a >= registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 					const value = field === COP0_EXEC ? 0 : this.cop0Words[field];
 					this.setRegisterIntegerFast(frame, registers, a, value);
 					return;
@@ -2914,6 +2963,7 @@ export class CPU implements MappedPageInvalidator {
 						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 						return;
 					}
+					if (a >= registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 					const value = wordOperand(registers.get(a));
 					switch (page.b[pageOffset]) {
 						case COP0_STATUS: this.cop0Words[COP0_STATUS] = value; return;
@@ -2976,12 +3026,16 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.CLOSURE:
 					this.executeClosure(frame, a, page.bx[pageOffset], page.c[pageOffset]); return;
 				case OpCode.GETUP: {
-					const address = frame.captureAddress(page.b[pageOffset]);
+					const index = page.b[pageOffset];
+					if (index >= frame.captureCount) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+					const address = frame.captureAddress(index);
 					this.copyUpvalueToRegister(frame, registers, a, address);
 					return;
 				}
 				case OpCode.SETUP: {
-					const address = frame.captureAddress(page.b[pageOffset]);
+					const index = page.b[pageOffset];
+					if (index >= frame.captureCount) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+					const address = frame.captureAddress(index);
 					this.copyRegisterToUpvalue(address, registers, a);
 					return;
 				}

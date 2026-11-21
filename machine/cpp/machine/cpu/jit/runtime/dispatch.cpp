@@ -72,8 +72,16 @@ NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState
 	if (call.requested > 1 || (receiving && base >= state->frame->stackCapacity()))
 		return NativeBuiltinCallOutcome::Declined;
 	const int count = call.supplied < 0 ? std::max(state->registerTop - base - 1, 0) : call.supplied;
-	auto& registers = state->frame->registers;
-	const BuiltinArgsView args(registers.subspan(base + 1, static_cast<size_t>(count)));
+	auto& frame = *state->frame;
+	auto& registers = frame.registers;
+	BuiltinArgsView args;
+	if (registers.containsRange(base + 1, count)) {
+		args = BuiltinArgsView(registers.subspan(base + 1, count));
+	} else {
+		const int first = frame.readAdmittedWindow(FrameField::StackBase) + base + 1;
+		if (!frame.thread->stack.containsRange(first, count)) return NativeBuiltinCallOutcome::Declined;
+		args = BuiltinArgsView(frame.thread->stack.subspan(first, count));
+	}
 	const auto& function = cpu->m_builtinFunctions[static_cast<size_t>(static_cast<BuiltinFunctionId>(builtinWord))];
 	Value result;
 	if (!cpu->executeBuiltinLeaf(function.id, args, result)) return NativeBuiltinCallOutcome::Declined;

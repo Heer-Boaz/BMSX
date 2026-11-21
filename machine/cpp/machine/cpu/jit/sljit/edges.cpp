@@ -2,6 +2,7 @@
 #include "machine/cpu/jit/sljit/gate.h"
 
 #include <algorithm>
+#include "machine/cpu/call_state.h"
 
 namespace bmsx {
 void NativeLowering::beginBlock(size_t index) {
@@ -22,6 +23,25 @@ void NativeLowering::beginBlock(size_t index) {
 	if (ir.requiredSlots != 0)
 		fault(sljit_emit_cmp(m_compiler, SLJIT_LESS, SLJIT_MEM1(NativeBlockAbi::state),
 			offsetof(NativeBlockRunState, registerCapacity), SLJIT_IMM, ir.requiredSlots), replay, m_cache.state());
+	if (ir.requiredCaptures != 0) {
+		auto* c = m_compiler;
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, nativeControl));
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), static_cast<u32>(FrameField::Closure));
+		if constexpr (std::endian::native == std::endian::big)
+			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R2, 0, SLJIT_R2, 0);
+		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+		NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), GC_RECORD_LINK);
+		if constexpr (std::endian::native == std::endian::big)
+			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
+		sljit_emit_op2(c, SLJIT_LSHR32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, GC_GRAY_INDEX_BITS);
+		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), CLOSURE_COUNT_HIGH_BYTE);
+		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 0x7fu);
+		sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, CLOSURE_COUNT_LOW_BITS);
+		sljit_emit_op2(c, SLJIT_OR32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R1, 0);
+		fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, ir.requiredCaptures), replay, m_cache.state());
+	}
 	auto* shortGrant = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM,
 		ir.admissionCycles);
 	fault(shortGrant, replay, m_cache.state());

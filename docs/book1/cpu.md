@@ -349,6 +349,13 @@ set `top` beyond the reserved capacity without allocating or accessing slots.
 Do not treat the instruction's maximum field value as available scratch storage
 in every function.
 
+A fixed register read or write must fit the current frame's reserved
+window, independently of `top`. A fixed capture selector must name a cell
+in the current closure. An instruction that actually attempts either
+access outside those limits raises `INVALID_ARGUMENT` (10). Empty
+ranges do not access a slot. Call argument placement, vararg placement
+and return placement use their own windows and range rules.
+
 ### Execution addresses and instruction reads {#sec-memory-execution-addresses-and-instruction-reads}
 
 #### Function records and instruction addresses {#sec-memory-function-records-and-instruction-addresses}

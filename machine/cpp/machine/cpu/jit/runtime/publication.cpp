@@ -38,7 +38,6 @@ void DecodedInstructionPage::retireNativeRegion(const NativeCodeRegion* region, 
 		--nativeBlocks->count;
 		auto& instruction = words[entry];
 		instruction.dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
-		instruction.dispatchCycles = instruction.baseCycles;
 		nativeVisits[entry] = reason == Retirement::Feedback ? NATIVE_BLOCK_COMPILATION_THRESHOLD : 0u;
 	}
 	retiring->withdrawFromCache();
@@ -137,7 +136,6 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 		page.nativeCode[entry] = page.nativeBlocks->entries[entry]->m_body;
 		++page.nativeBlocks->count;
 		page.words[entry].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
-		page.words[entry].dispatchCycles = page.words[entry].baseCycles;
 		page.refreshState[entry] &= static_cast<u8>(~DECODED_REFRESH_FUSION);
 	}
 	if (m_nativeCompilationProfiling) {

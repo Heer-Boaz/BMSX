@@ -1843,14 +1843,12 @@ dispatch_decode:
 			if constexpr (Instrumented) {
 				dispatchOp = decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
 					? decoded->dispatchOp : decoded->op;
-				instructionBudgetRemaining -= dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
-					? decoded->dispatchCycles : decoded->baseCycles;
 			} else {
 				dispatchOp = decoded->dispatchOp;
 				// Cacheable instruction reads cannot raise a device edge during fetch.
 				canReuseFrame = (refreshState & DECODED_REFRESH_DECODE) == 0u;
-				instructionBudgetRemaining -= decoded->dispatchCycles;
 			}
+			instructionBudgetRemaining -= decoded->baseCycles;
 
 #define FRAME (*frame)
 #define IMAGE (*image)
@@ -1882,6 +1880,20 @@ dispatch_decode:
 } while (0)
 
 dispatch_instruction:
+			if (decoded->requiredSlots > registers.size()) {
+				if (dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)) goto dispatch_observe;
+				if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) {
+					switch (static_cast<OpCode>(decoded->op)) {
+					case OpCode::LOAD_MEM: case OpCode::LOAD_MEM_D:
+					case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
+						instructionBudgetRemaining -= F64_ACCESS_EXTRA_CYCLES;
+						break;
+					default:
+						break;
+					}
+				}
+				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			}
 			if constexpr (Instrumented) {
 				switch (dispatchOp) {
 				case static_cast<u8>(DecodedDispatchOp::ReservedMemory):
@@ -1975,6 +1987,7 @@ dispatch_instruction:
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 					instructionBudgetRemaining -= decoded->baseCycles;
+					if (decoded->requiredSlots > registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 					const Value& xorLeftValue = readRK(IMAGE, registers, decoded->b);
 					const Value& xorRightValue = readRK(IMAGE, registers, decoded->c);
 					const int32_t xorResult = static_cast<int32_t>(
@@ -2026,6 +2039,7 @@ dispatch_instruction:
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 					instructionBudgetRemaining -= decoded->baseCycles;
+					if (decoded->requiredSlots > registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 					const Value& shiftLeftValue = readRK(IMAGE, registers, decoded->b);
 					const Value& shiftRightValue = readRK(IMAGE, registers, decoded->c);
 					const i32 shifted = luaShiftLeft(integerOperand(shiftLeftValue), integerOperand(shiftRightValue));
@@ -2118,8 +2132,9 @@ dispatch_observe:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
 #endif
+			// Observation precedes the original instruction's charge.
+			instructionBudgetRemaining += decoded->baseCycles;
 			m_instructionObserver.observe(m_instructionObserver.context, image->executionDomainId, pc, registers);
-			// Observe has zero base cost; execute and charge the original instruction once.
 			dispatchOp = decoded->op;
 			instructionBudgetRemaining -= decoded->baseCycles;
 			goto dispatch_instruction;

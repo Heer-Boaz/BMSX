@@ -318,7 +318,10 @@ private:
 		const Value* detached;
 		int base, count;
 		BuiltinArgsView values() const {
-			return frame ? BuiltinArgsView(frame->registers.subspan(base, count)) : BuiltinArgsView(detached, count);
+			if (count == 0) return {};
+			return frame
+				? BuiltinArgsView(frame->thread->stack.subspan(frame->stackBase() + base, count))
+				: BuiltinArgsView(detached, count);
 		}
 		CallArguments tail(int skip) const {
 			return frame ? CallArguments{frame, nullptr, base + skip, std::max(count - skip, 0)}

@@ -656,6 +656,7 @@ void rawContextValues(CpuMachine& machine) {
 	machine.memory.writeRamRecordWord(rawCell + UPVALUE_OWNER, owner->address | 0x80000000u);
 	outerRegisters.set(0, valueFloatBits(0xffa12345u));
 	const u32 rawClosure = DYNAMIC_RAM_BASE + 0x700u;
+	ClosureRecord::initialize(machine.memory, rawClosure, {}, heap.white(), 1u, false, false);
 	machine.memory.writeRamRecordWord(rawClosure + CLOSURE_CAPTURE_WORDS, rawCell | 0x80000000u);
 	machine.memory.writeRamRecordWord(frame.controlOffset + static_cast<u32>(FrameField::Closure), rawClosure | 0x80000000u);
 	ContextBlock rawOpen(machine, {{OpCode::GETUP, 1}, {OpCode::JMP}});

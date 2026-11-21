@@ -12,7 +12,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { LUA_FAULT_REASON_CALL_NON_FUNCTION } from '../../machine/ts/spec/blua32/cop0';
+import { LUA_FAULT_REASON_CALL_NON_FUNCTION, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { RAM_CODE_FIXTURE_BYTES, blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
@@ -290,6 +290,42 @@ test('CALL retains varargs below the relocated fixed-parameter window', () => {
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
 	for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(7), valueInteger(99));
+});
+
+test('RET admits only the source values the receiver actually reads', () => {
+	for (const selected of [1, 2]) {
+		const text = new Uint8Array(7 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+		writeInstruction(text, 2, OpCode.CALL, 0, 1, selected + 1);
+		writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
+		writeInstruction(text, 4, OpCode.K1, 0, 0, 0);
+		writeInstruction(text, 5, OpCode.RET, 0, 3, 0);
+		writeInstruction(text, 6, OpCode.HALT, 0, 0, 0);
+		const image = linkRawTestSystemBlua32({ text, functions: [
+			{ firstWord: 0, wordCount: 4, maxStack: 2 }, { firstWord: 4, wordCount: 2, maxStack: 1 }, { firstWord: 6, wordCount: 1 },
+		], exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+		for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
+			const { cpu } = createTestSystemCpu(image, backend);
+			const callCycles = BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL];
+			assert.equal(cpu.runUntilDepth(0, callCycles), RunResult.Yielded);
+			const caller = cpu.rootThread.frameAtDepth(0), callee = cpu.rootThread.frameAtDepth(1);
+			const before = caller.registers.get(0);
+			const grant = BASE_CYCLES[OpCode.K1] + 1;
+			if (selected === 1) {
+				assert.equal(cpu.runUntilDepth(1, grant), RunResult.Halted);
+				assert.equal(caller.registers.get(0), valueInteger(1));
+				assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET] - 1);
+			} else {
+				assert.equal(cpu.runUntilDepth(1, grant), RunResult.Yielded);
+				assert.equal(cpu.readEpcWord(), image.image.functions[1].codeAddress + INSTRUCTION_BYTES);
+				assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+				assert.equal(caller.registers.get(0), before);
+				assert.equal(callee.registers.get(0), valueInteger(1));
+				assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET]);
+			}
+		}
+	}
 });
 
 for (const wide of [false, true]) test(`generated CALL/RET preserve full state and fault boundaries (WIDE: ${wide})`, () => {

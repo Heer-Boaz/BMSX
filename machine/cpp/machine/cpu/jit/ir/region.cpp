@@ -44,7 +44,9 @@ struct NativeWindowExtent {
 	bool cpuOwned;
 
 	u32 operator()(const auto&) const { return slots.fixedExtent(); }
-	u32 operator()(const auto& op) const requires requires { op.terminalExit; } { return 0; }
+	u32 operator()(const auto& op) const requires requires { op.terminalExit; } { return cpuOwned ? slots.fixedExtent() : 0; }
+	u32 operator()(const NativeReturnSite&) const { return 0; } // Only the receiving placement selects a source.
+	u32 operator()(const NativeClosure&) const { return 0; } // CLOSURE admits its optional Bx register in the owner.
 	u32 operator()(const NativeVararg&) const { return 0; } // Placement admits its own range.
 	u32 operator()(const NativeControlAccess& op) const {
 		return op.mode == NativeControlMode::WriteSemantic ? 0 : slots.fixedExtent();
@@ -145,9 +147,12 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 		finalizeBlockExits(block, options.observesArithmetic);
 		for (const auto& type : block.entryTypes)
 			block.requiredSlots = std::max(block.requiredSlots, u32{type.slot} + 1u);
-		for (const auto& instruction : block.instructions)
+		for (const auto& instruction : block.instructions) {
 			block.requiredSlots = std::max(block.requiredSlots,
 				std::visit(NativeWindowExtent{instruction.slots, cpuOwned}, instruction.operation));
+			if (const auto* access = std::get_if<NativeUpvalueAccess>(&instruction.operation))
+				block.requiredCaptures = std::max(block.requiredCaptures, static_cast<u16>(access->capture + 1u));
+		}
 		if (block.completedCall)
 			block.requiredSlots = std::max(block.requiredSlots, block.instructions.back().slots.fixedExtent());
 	}
@@ -158,11 +163,13 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 		changed = false;
 		for (size_t index = m_blocks.size(); index-- > 0;) {
 			auto& block = m_blocks[index];
-			for (const auto target : block.successors)
-				if (target != m_blocks.size() && m_blocks[target].requiredSlots > block.requiredSlots) {
-					block.requiredSlots = m_blocks[target].requiredSlots;
-					changed = true;
-				}
+			for (const auto target : block.successors) {
+				if (target == m_blocks.size()) continue;
+				const auto& successor = m_blocks[target];
+				changed |= successor.requiredSlots > block.requiredSlots || successor.requiredCaptures > block.requiredCaptures;
+				block.requiredSlots = std::max(block.requiredSlots, successor.requiredSlots);
+				block.requiredCaptures = std::max(block.requiredCaptures, successor.requiredCaptures);
+			}
 		}
 	} while (changed);
 	planAdmissionReplays();

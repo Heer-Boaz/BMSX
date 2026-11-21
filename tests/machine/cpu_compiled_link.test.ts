@@ -137,7 +137,7 @@ for (const [label, op, a, b, c, slots] of [
 	['SELF receiver', OpCode.SELF, 14, 3, 0, 16],
 	['counted store range', OpCode.STORE_MEM_WORDS, 12, 1, 4, 16],
 	['empty counted store address', OpCode.STORE_MEM_WORDS, 31, 15, 0, 16],
-	['semantic CONCAT operands', OpCode.CONCAT, 15, 13, 14, 1],
+	['semantic CONCAT operands', OpCode.CONCAT, 15, 13, 14, 16],
 ] as const) test(`compiled register admission counts ${label}`, () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 0, 0, 0);

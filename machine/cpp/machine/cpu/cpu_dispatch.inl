@@ -409,6 +409,7 @@ DISPATCH_LABEL(MFC0) {
 		DISPATCH_CONTINUE();
 	}
 	if (!cop0FieldImplemented(b)) { hardHalt(); DISPATCH_CONTINUE(); }
+	if (static_cast<size_t>(a) >= registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	const u32 value = b == COP0_EXEC ? 0u : m_cop0Words[b];
 	SET_REGISTER_FAST(a, valueInteger(static_cast<i32>(value)));
 	DISPATCH_CONTINUE();
@@ -452,6 +453,7 @@ DISPATCH_LABEL(CLOSURE) {
 DISPATCH_LABEL(GETUP) {
 	const int a = decoded->a;
 	const int b = decoded->b;
+	if (static_cast<u32>(b) >= FRAME.captureCount()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	const u32 address = FRAME.captureAddress(static_cast<u32>(b));
 	SET_REGISTER_FAST(a, Upvalue::load(m_memory, address));
 	DISPATCH_NEXT();
@@ -460,6 +462,7 @@ DISPATCH_LABEL(GETUP) {
 DISPATCH_LABEL(SETUP) {
 	const int a = decoded->a;
 	const int b = decoded->b;
+	if (static_cast<u32>(b) >= FRAME.captureCount()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	const u32 address = FRAME.captureAddress(static_cast<u32>(b));
 	Upvalue::store(m_heap, address, REG(a));
 	DISPATCH_NEXT();
@@ -490,20 +493,20 @@ DISPATCH_LABEL(RET) {
 
 DISPATCH_LABEL(LOAD_MEM_D) {
 	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= F64_ACCESS_EXTRA_CYCLES;
-	const u32 address = wordOperand(REG(decoded->b)) + (static_cast<u32>(decoded->disp) << 2u);
+	const u32 address = wordOperand(REG(decoded->b)) + (decoded->bx() << 2u);
 	executeMemoryLoad(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address);
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(STORE_MEM_D) {
 	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= F64_ACCESS_EXTRA_CYCLES;
-	const u32 address = wordOperand(REG(decoded->b)) + (static_cast<u32>(decoded->disp) << 2u);
+	const u32 address = wordOperand(REG(decoded->b)) + (decoded->bx() << 2u);
 	if (!executeMemoryStore(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address)) DISPATCH_BLOCKED();
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(STORE_MEM_WORDS_D) {
-	const u32 address = wordOperand(REG(decoded->b)) + (static_cast<u32>(decoded->disp) << 2u);
+	const u32 address = wordOperand(REG(decoded->b)) + (decoded->bx() << 2u);
 	if (!executeWordStores(FRAME, address, decoded->a, decoded->c)) DISPATCH_BLOCKED();
 	DISPATCH_CONTINUE();
 }

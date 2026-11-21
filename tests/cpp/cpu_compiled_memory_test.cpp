@@ -73,7 +73,7 @@ void ramScalarDatapathsAndGuards() {
 		const u32 width = format == 1 ? 1 : format == 2 ? 2 : format == 5 ? 8 : 4;
 		DecodedInstruction store, load;
 		store.op = static_cast<u8>(displaced ? OpCode::STORE_MEM_D : OpCode::STORE_MEM);
-		store.a = 0; store.b = 1; store.c = format; store.disp = displaced ? 255 : 0;
+		store.a = 0; store.b = 1; store.c = format; store.setBx(displaced ? 255 : 0);
 		store.width = 2; store.baseCycles = BASE_CYCLES[store.op];
 		load = store; load.op = static_cast<u8>(displaced ? OpCode::LOAD_MEM_D : OpCode::LOAD_MEM); load.a = 2;
 		load.baseCycles = BASE_CYCLES[load.op];
@@ -82,7 +82,7 @@ void ramScalarDatapathsAndGuards() {
 		auto block = test::compileNative(source, memory, cpu.stringPool());
 		for (const u32 target : {DYNAMIC_RAM_BASE + 0x204u, DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4u,
 			memory.ramBusEnd() - width}) for (const Value value : values) {
-			ValueSlots registers(3); registers.set(0, value); registers.set(1, valueInteger(target - static_cast<u32>(store.disp) * 4u)); registers.set(2, valueNil());
+			ValueSlots registers(3); registers.set(0, value); registers.set(1, valueInteger(target - static_cast<u32>(store.bx()) * 4u)); registers.set(2, valueNil());
 			const auto offset = target - RAM_BASE;
 			std::memset(memory.ramData() + offset, 0xb6, width);
 			const auto* exit = block->run(registers.view(), nativeRunState = {.remainingCycles = 20});
@@ -112,7 +112,7 @@ void ramScalarDatapathsAndGuards() {
 		}
 		for (u32 address : {0u, RAM_BASE, RAM_BASE + IO_SLOT_COUNT * IO_WORD_SIZE - 1u,
 			RAM_BASE + PSX_MACHINE_SPEC.ramBytes, 0xffffffffu, DYNAMIC_RAM_BASE + 1u}) {
-			ValueSlots registers(3); registers.set(0, valueInteger(7)); registers.set(1, valueInteger(address - static_cast<u32>(store.disp) * 4u)); registers.set(2, valueInteger(99));
+			ValueSlots registers(3); registers.set(0, valueInteger(7)); registers.set(1, valueInteger(address - static_cast<u32>(store.bx()) * 4u)); registers.set(2, valueInteger(99));
 			const bool direct = address >= RAM_BASE + IO_SLOT_COUNT * IO_WORD_SIZE
 				&& address <= memory.ramBusEnd() - width
 				&& (address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[format]) == 0u;
@@ -124,7 +124,7 @@ void ramScalarDatapathsAndGuards() {
 		load.a = load.b;
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
 		auto alias = test::compileNative(aliasSource, memory, cpu.stringPool());
-		ValueSlots registers(2); registers.set(0, valueNil()); registers.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x204u - store.disp * 4u));
+		ValueSlots registers(2); registers.set(0, valueNil()); registers.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x204u - store.bx() * 4u));
 		require(alias->run(registers.view(), nativeRunState = {.remainingCycles = alias->terminal.cycles}) == &alias->terminal && valueIsNumber(registers.get(1)),
 			"a memory load can replace its own address register");
 	}
@@ -323,10 +323,10 @@ void coldExitsPreserveAddressOperands() {
 			DecodedInstruction instruction{};
 			instruction.op = static_cast<u8>(op); instruction.a = 0; instruction.b = constant ? -1 : 1;
 			instruction.c = static_cast<u8>(MemoryAccessKind::F64LE);
-			instruction.disp = displaced ? 255 : 0;
+			instruction.setBx(displaced ? 255 : 0);
 			instruction.width = 1; instruction.baseCycles = BASE_CYCLES[instruction.op];
 			const std::array source{NativeBlockInstruction{&instruction, 0x1000u}};
-			const Value base = valueInteger(address - static_cast<u32>(instruction.disp) * 4u);
+			const Value base = valueInteger(address - static_cast<u32>(instruction.bx()) * 4u);
 			ValueSlots constants(1); constants.set(0, constant ? base : valueInteger(DYNAMIC_RAM_BASE));
 			auto block = test::compileNative(source, memory, cpu.stringPool());
 			ValueSlots registers(2); registers.set(0, valueInteger(17)); registers.set(1, constant ? valueInteger(DYNAMIC_RAM_BASE) : base);
@@ -334,7 +334,7 @@ void coldExitsPreserveAddressOperands() {
 			const auto* exit = block->run(registers.view(), state);
 			require(exit->exit == (op == OpCode::LOAD_MEM || op == OpCode::LOAD_MEM_D
 				? NativeBlockExit::ReadMemory : NativeBlockExit::WriteMemory)
-				&& exit->operands.memory.address == instruction.b && exit->operands.memory.displacement == static_cast<u32>(instruction.disp) * 4u && registers.get(0) == valueInteger(17),
+				&& exit->operands.memory.address == instruction.b && exit->operands.memory.displacement == static_cast<u32>(instruction.bx()) * 4u && registers.get(0) == valueInteger(17),
 				"misaligned, MMIO and unmapped exits preserve the selector and byte displacement before side effects");
 		}
 	}
@@ -348,16 +348,16 @@ void coldExitsPreserveAddressOperands() {
 			if (displaced && constant) continue; // Displaced addressing takes a register.
 			DecodedInstruction instruction{};
 			instruction.op = static_cast<u8>(op); instruction.a = 2; instruction.b = constant ? -1 : 1;
-			instruction.c = 2; instruction.disp = displaced ? 255 : 0;
+			instruction.c = 2; instruction.setBx(displaced ? 255 : 0);
 			instruction.width = 1; instruction.baseCycles = BASE_CYCLES[instruction.op];
 			const std::array source{NativeBlockInstruction{&instruction, 0x1000u}};
-			const Value base = valueInteger(address - static_cast<u32>(instruction.disp) * 4u);
+			const Value base = valueInteger(address - static_cast<u32>(instruction.bx()) * 4u);
 			ValueSlots constants(1); constants.set(0, constant ? base : valueInteger(DYNAMIC_RAM_BASE));
 			auto block = test::compileNative(source, memory, cpu.stringPool());
 			ValueSlots registers(4); registers.set(0, valueNil()); registers.set(1, constant ? valueInteger(DYNAMIC_RAM_BASE) : base); registers.set(2, valueInteger(11)); registers.set(3, valueInteger(12));
 			NativeBlockRunState state{.constants = constants.view(), .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
-			require(exit->exit == NativeBlockExit::WriteWords && exit->operands.memory.address == instruction.b && exit->operands.memory.displacement == static_cast<u32>(instruction.disp) * 4u,
+			require(exit->exit == NativeBlockExit::WriteWords && exit->operands.memory.address == instruction.b && exit->operands.memory.displacement == static_cast<u32>(instruction.bx()) * 4u,
 				"counted stores preserve address operands across bounds, alignment and watched-page exits");
 		}
 	}

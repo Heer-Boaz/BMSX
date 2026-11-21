@@ -1042,6 +1042,54 @@ void fusionRequiresBothImageOperandsAdmitted() {
 	}
 }
 
+void fixedWindowAndCaptureOperandsTrapBeforeEffects() {
+	struct OperandCase {
+		OpCode op;
+		u8 a, b, c;
+	};
+	const OperandCase cases[]{
+		{OpCode::MOV, 0, 1, 0},
+		{OpCode::LOADNIL, 0, 2, 0},
+		{OpCode::NEWT, 1, 0, 0},
+		{OpCode::CONCATN, 0, 0, 2},
+		{OpCode::SELF, 0, 0, 0},
+		{OpCode::CALL, 1, 1, 1},
+		{OpCode::RET, 1, 2, 0},
+		{OpCode::GETUP, 0, 0, 0},
+		{OpCode::SETUP, 0, 0, 0},
+		{OpCode::LOAD_MEM_D, 1, 0, static_cast<u8>(MemoryAccessKind::F64LE)},
+		{OpCode::STORE_MEM_WORDS_D, 0, 0, 2},
+	};
+	for (const auto [op, a, b, c] : cases) for (const bool scalar : {false, true}) {
+		auto image = returnImage();
+		image.text.resize(3 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(op), a, b, c);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions[0].wordCount = 3;
+		image.constants[0] = std::string("field");
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		cpu.activeThread()->resizeStack(64);
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		require(frame.registers.size() == 1 && frame.captureCount() == 0, "the Thread reserve is larger than this activation");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		if (!scalar) cpu.prepareSystemNativeCode();
+#endif
+		const u32 pc = frame.readControl(FrameField::Pc);
+		const u32 allocationBefore = cpu.heapAllocator().occupiedBytes();
+		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + 1;
+		require(cpu.runUntilDepth(0, grant) == RunResult::Yielded, "the current grant stops on the rejected operand");
+		require(cpu.readCauseWord() == CPU_CAUSE_CODE_TRAP && cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+			&& cpu.readEpcWord() == pc + INSTRUCTION_BYTES, "nonempty operands must fit their window regardless of larger backing");
+		const int cycles = BASE_CYCLES[static_cast<u8>(op)]
+			+ (op == OpCode::LOAD_MEM_D ? F64_ACCESS_EXTRA_CYCLES : 0);
+		require(cpu.instructionBudgetRemaining == 1 - cycles && frame.registers.get(0) == valueInteger(1)
+			&& cpu.heapAllocator().occupiedBytes() == allocationBefore, "the fault follows its charged prefix and precedes other effects");
+	}
+}
+
 void zeroLoadNil() {
 	CpuMachine machine(returnImage(OpCode::LOADNIL, 6, 0, 0));
 	machine.cpu.runUntilDepth(0, 1);
@@ -1273,7 +1321,7 @@ void instructionFetchRejectsCartridgeMmio() {
 		image.text.resize(2u * INSTRUCTION_BYTES);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
 		writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-		image.functions = {{.firstWord = 0, .wordCount = 1}, {.firstWord = 1, .wordCount = 1}};
+		image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 2}, {.firstWord = 1, .wordCount = 1}};
 		image.exceptionFunctionIndex = 1;
 		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 		auto slots = test::cartridgeSlots();
@@ -1837,10 +1885,10 @@ void cachedPcWrapping() {
 				frame.decodedPageBusSignals = mappedBusSignalsForCartridgeSlot(0);
 				page.words[255].width = width;
 				page.words[255].op = page.words[255].dispatchOp = static_cast<u8>(OpCode::K1);
-				page.words[255].baseCycles = page.words[255].dispatchCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
+				page.words[255].baseCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
 				page.words[254].width = 1;
 				page.words[254].op = page.words[254].dispatchOp = static_cast<u8>(OpCode::EQ);
-				page.words[254].baseCycles = page.words[254].dispatchCycles = BASE_CYCLES[static_cast<u8>(OpCode::EQ)];
+				page.words[254].baseCycles = BASE_CYCLES[static_cast<u8>(OpCode::EQ)];
 				cpu.runUntilDepth(0, 1);
 				require(frame.readControl(bmsx::FrameField::Pc) == (width - 1u) * INSTRUCTION_BYTES, "sequential/wide/skip PC wraps to a word");
 			}
@@ -1859,9 +1907,9 @@ void cachedPcWrapping() {
 	page.words[254].width = page.words[255].width = 1;
 	page.words[254].op = static_cast<u8>(OpCode::SHL);
 	page.words[254].dispatchOp = static_cast<u8>(DecodedDispatchOp::FusedShlBxor);
-	page.words[254].baseCycles = page.words[254].dispatchCycles = BASE_CYCLES[static_cast<u8>(OpCode::SHL)];
+	page.words[254].baseCycles = BASE_CYCLES[static_cast<u8>(OpCode::SHL)];
 	page.words[255].op = page.words[255].dispatchOp = static_cast<u8>(OpCode::BXOR);
-	page.words[255].baseCycles = page.words[255].dispatchCycles = BASE_CYCLES[static_cast<u8>(OpCode::BXOR)];
+	page.words[255].baseCycles = BASE_CYCLES[static_cast<u8>(OpCode::BXOR)];
 	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SHL)] + BASE_CYCLES[static_cast<u8>(OpCode::BXOR)]);
 	require(frame.readControl(bmsx::FrameField::Pc) == 0u, "fused successor PC wraps to a word");
 }
@@ -1915,7 +1963,8 @@ int main() {
 		nativeCallUsesItsClosureBoundFunctionRecord();
 #endif
 		stringBytePositions(); loadKrIndices(); missingImageOperandsTrapAtExecution(); skippedImageOperandRemainsUnobserved();
-		fusionRequiresBothImageOperandsAdmitted(); closureDescriptorAdmissionPrecedesAllocation(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
+		fusionRequiresBothImageOperandsAdmitted(); fixedWindowAndCaptureOperandsTrapBeforeEffects(); closureDescriptorAdmissionPrecedesAllocation();
+		zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();
 		wideSignedImmediatesKeepTheirRange();
 		instructionBoundaryResynchronizesAfterFetchOrObservation();

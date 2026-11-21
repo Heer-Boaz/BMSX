@@ -11,6 +11,8 @@ import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/
 import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { DYNAMIC_RAM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
@@ -239,6 +241,80 @@ test('numeric fusion does not execute a following invalid image operand early', 
 	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
 	assert.equal(frame.registers.get(1), valueInteger(18));
 	assert.equal(frame.registers.get(2), valueInteger(73));
+});
+
+test('fixed operands fit the bound frame independently of its active top', () => {
+	const cases = [
+		[OpCode.MOV, 3, 0, 0],
+		[OpCode.MOV, 0, 3, 0],
+		[OpCode.LOADNIL, 2, 2, 0],
+		[OpCode.SELF, 2, 0, 0],
+		[OpCode.CONCATN, 0, 2, 2],
+		[OpCode.LOAD_MEM_D, 3, 0, MemoryAccessKind.F64LE],
+		[OpCode.STORE_MEM_WORDS_D, 2, 0, 2],
+		[OpCode.CALL, 0, 255, 1],
+		[OpCode.RET, 2, 3, 0],
+	] as const;
+	for (const [op, a, b, c] of cases) {
+		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, op, a, b, c, (b >>> 6) << 3);
+		writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+		const image = linkRawTestSystemBlua32({ text, constants: ['key'],
+			functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }, { firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 });
+		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+			const { cpu } = createTestSystemCpu(image, backend);
+			const frame = cpu.rootThread.frameAtDepth(0);
+			if (op === OpCode.CALL) frame.registers.setBuiltinFunction(0, BuiltinFunctionId.Select);
+			else frame.registers.setInteger(0, 73);
+			frame.registers.setInteger(2, 75);
+			const original = frame.registers.get(0);
+			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[op] - (op === OpCode.LOAD_MEM_D ? 2 : 0));
+			assert.equal(cpu.readEpcWord(), image.image.functions[0].codeAddress);
+			assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_TRAP);
+			assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+			assert.equal(frame.registers.get(0), original);
+			assert.equal(frame.registers.get(2), valueInteger(75));
+			assert.equal(frame.top, 0);
+		}
+	}
+});
+
+test('a generated capture access admits the currently bound closure', () => {
+	const text = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.K1, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.GETUP, 1, 0, 0);
+	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
+	writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text,
+		functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }, { firstWord: 3, wordCount: 1 }], exceptionFunctionIndex: 1 });
+	const pc = image.image.functions[0].codeAddress;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const frames = [js, ref].map(cpu => cpu.rootThread.frameAtDepth(0));
+	const original = frames.map(frame => frame.closureAddress);
+	for (const [index, cpu] of [js, ref].entries()) {
+		const frame = frames[index], cells = new Uint32Array(1);
+		const replacement = cpu.luaHeap.allocateClosureRecord(1, false, cells, cells.length);
+		Upvalue.bindOpen(cpu.memory, cells[0], frame.thread.address, frame.stackBase, 0);
+		ClosureRecord.initializeRecord(cpu.memory, replacement, cpu.captureClosureBinding(original[index]), false, cpu.gc.white(), 1);
+		ClosureRecord.setCaptureAddress(cpu.memory, replacement, 0, cells[0]);
+		frame.closureAddress = replacement;
+	}
+	const loopCycles = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.GETUP] + BASE_CYCLES[OpCode.JMP];
+	assert.equal(runCpuParity(js, ref, 50 * loopCycles), RunResult.Yielded);
+	const entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	assert.equal(frames[0].decodedPage!.compiledBlocks!.entries[entry]!.region.requiredCaptures, 1);
+	for (const [index, frame] of frames.entries()) {
+		frame.closureAddress = original[index];
+		frame.registers.setInteger(1, 73);
+	}
+	assert.equal(runCpuParity(js, ref, BASE_CYCLES[OpCode.K1] + 1), RunResult.Yielded);
+	assert.equal(js.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.GETUP]);
+	assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);
+	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+	assert.equal(frames[0].registers.get(0), valueInteger(1));
+	assert.equal(frames[0].registers.get(1), valueInteger(73));
 });
 
 test('compiled upvalues follow open aliases and closed values without stale numeric locals', () => {

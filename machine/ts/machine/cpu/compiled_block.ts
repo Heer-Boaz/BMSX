@@ -127,7 +127,8 @@ export type CompiledBlock = {
 /** External entries admit the whole region before any register can become resident. */
 export function compiledBlockAdmits(block: CompiledBlock, frame: CallFrame, remaining: number): boolean {
 	return remaining > block.admissionCycles + (block.admissionVarargs === 0 ? 0 : block.admissionVarargs * frame.varargCount)
-		&& block.region.requiredSlots <= frame.stackCapacity;
+		&& block.region.requiredSlots <= frame.registers.capacity()
+		&& (block.region.requiredCaptures === 0 || block.region.requiredCaptures <= frame.captureCount);
 }
 
 type StatementEmitter = (page: DecodedInstructionPage, word: number,
