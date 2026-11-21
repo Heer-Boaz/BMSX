@@ -337,9 +337,10 @@ void nestedFieldsShareOnlyTheCheckedAddress() {
 }
 
 void fieldAddressesStopAtDefinitionsAndEffects() {
-	enum class Boundary { Copy, Redefinition, UncheckedField, Store, Upvalue, Global, Call, FieldKey, Prediction };
+	enum class Boundary { Copy, EmptyVararg, FixedVararg, Redefinition, UncheckedField, Store, Upvalue, Global, Call, FieldKey, Prediction };
 	for (const auto boundary : {Boundary::Copy, Boundary::Redefinition, Boundary::Store, Boundary::Upvalue,
-		Boundary::Global, Boundary::Call, Boundary::UncheckedField, Boundary::FieldKey, Boundary::Prediction}) {
+		Boundary::Global, Boundary::Call, Boundary::UncheckedField, Boundary::FieldKey, Boundary::Prediction,
+		Boundary::EmptyVararg, Boundary::FixedVararg}) {
 		std::array decoded{
 			DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(4), .a = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
 			DecodedInstruction{.a = 4, .op = static_cast<u8>(OpCode::MOV)},
@@ -349,6 +350,11 @@ void fieldAddressesStopAtDefinitionsAndEffects() {
 		auto& after = decoded[2];
 		switch (boundary) {
 			case Boundary::Copy: break;
+			case Boundary::EmptyVararg: case Boundary::FixedVararg:
+				between.op = static_cast<u8>(OpCode::VARARG);
+				between.b = boundary == Boundary::EmptyVararg ? 1 : 2;
+				after.b = 0;
+				break;
 			case Boundary::Redefinition: between.b = 3; break;
 			case Boundary::UncheckedField:
 				between.op = static_cast<u8>(OpCode::GETFIELD);
@@ -379,11 +385,11 @@ void fieldAddressesStopAtDefinitionsAndEffects() {
 		const auto& last = std::get<NativeTableAccess>(lastBlock.instructions.back().operation);
 		require(first.ownFieldAddress && last.ownFieldAddress, "each fixed-field read has a checked address operand");
 		const auto& definition = firstBlock.ownFieldAddresses[*first.ownFieldAddress];
-		if (boundary == Boundary::Copy) {
+		if (boundary == Boundary::Copy || boundary == Boundary::EmptyVararg) {
 			require(&firstBlock == &lastBlock && first.ownFieldAddress == last.ownFieldAddress
 				&& definition.lastUseRow == 2 && first.readPlan == NativeTableReadPlan::OwnSlot
 				&& last.readPlan == NativeTableReadPlan::OwnSlot && !first.resultTag && !last.resultTag,
-				"repeated untyped loads can share an own-only path through an ordinary copy");
+				"repeated untyped loads share the checked address across operations without conflicting effects");
 		} else {
 			require(!definition.lastUseRow && first.readPlan == NativeTableReadPlan::OneHopIndex
 				&& last.readPlan == NativeTableReadPlan::OneHopIndex,
@@ -690,6 +696,31 @@ void dataflowPlansTableAndMemoryInputs() {
 		"the table plan distinguishes a live constant bank load from an immediate with a proved tag");
 	require(memory.addressCheck == NativeTagCheck::Proved && memory.store == NativeWordSource::Dynamic,
 		"the memory plan receives the immediate address proof but no tag proof for the live constant value");
+	std::ostringstream report;
+	dumpNativeIr(report, region);
+	const auto text = report.str();
+	require(text.find("table-write R7 R8 K2 receiver=guard barrier=none value=present") != std::string::npos
+		&& text.find("address=proved") != std::string::npos && text.find("source-word=dynamic") != std::string::npos
+		&& text.find("terminal kind=") != std::string::npos,
+		"the dump exposes store, address, value and continuation choices directly");
+}
+
+void rejectedReceiverDoesNotAdvertiseAFieldDatapath() {
+	std::array decoded{
+		DecodedInstruction{.op = static_cast<u8>(OpCode::KFALSE)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(1), .a = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
+	};
+	for (auto& row : decoded) { row.width = 1; row.baseCycles = BASE_CYCLES[row.op]; }
+	const std::array source{NativeBlockInstruction{&decoded[0], 0x5400}, NativeBlockInstruction{&decoded[1], 0x5404}};
+	NativeRegisterUses uses;
+	const std::array runs{NativeBlockSource{source}};
+	NativeIrRegion region(runs, uses);
+	std::ostringstream report;
+	dumpNativeIr(report, region);
+	const auto text = report.str();
+	require(text.find("table-semantic R0 K0 receiver=rejected miss=e") != std::string::npos
+		&& text.find("checked-own-field") == std::string::npos,
+		"an operation that always leaves has no emitted checked address");
 }
 
 void recordPlanUsesTypedEntriesAndFullRomWords() {
@@ -794,6 +825,7 @@ int main() {
 		forwardJoinMeetsTagsNotValues();
 		nativeTableGuardProvesTheFollowingReceiver();
 		dataflowPlansTableAndMemoryInputs();
+		rejectedReceiverDoesNotAdvertiseAFieldDatapath();
 		recordPlanUsesTypedEntriesAndFullRomWords();
 		registerUses();
 		return 0;
