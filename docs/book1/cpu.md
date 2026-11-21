@@ -1506,12 +1506,10 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 | `SELF` | `3EH` | `A, B, C` | Preserve original `R(B)` in `R(A+1)`, then set `R(A) = index(original R(B), K(C))`, where `K(C)` supplies the string key. | 17 |
 | `NEWT` | `10H` | `A, B, C` | Put a new table in `R(A)`, with array-capacity request `B` and hash-size request `C`. | 24 |
 
-After successful table construction, `NEWT` adds one cycle per initialized Value
-slot: `B + 2 × H`, where `H` is zero when `C` is zero and otherwise the smallest
-power of two at least `C`. Each array slot holds one value; each hash entry
-initializes a key and a value. The empty request adds zero. This initialization
-completes before the next instruction begins or the CPU accepts a pending interrupt. A failed
-construction incurs the base charge but not this completed-initialization term.
+After successful table construction, `NEWT` adds `B + 2 × C` cycles to its
+base charge. The charge depends only on the capacity requests, not on how
+much space the table actually reserves. A failed construction incurs the
+base charge but not this reservation term.
 
 An insertion may reserve more storage. Its charge does not depend on
 whether the current storage can hold the mapping, or on how entries are
@@ -1524,8 +1522,7 @@ storage leaves the requested mapping unmodified.
 
 CALL costs 32 base cycles. A primitive target adds its own base charge of 1, 2
 or 4 cycles. Its completed receiving ranges also incur the value-placement
-charges above; discarded scratch results do not. Table traversal additionally
-charges the examined positions specified for `next` in the BIOS base reference.
+charges above; discarded scratch results do not.
 String construction charges the input work specified in the String reference. Installed
 BIOS functions can execute ordinary instructions and call further primitives,
 so include the executed sequence when budgeting the whole service. The
@@ -1778,7 +1775,7 @@ are selected instruction base charges, not a complete timing table:
 | `GETT`, `GETFIELD`, `SETT`, `SETFIELD` | 16 cycles |
 | `GETI`, `SETI` | 8 cycles |
 | `SELF` | 17 cycles |
-| `NEWT` | 24 cycles, plus initialized Value slots |
+| `NEWT` | 24 cycles, plus `B + 2 × C` on success |
 | `CLOSURE` | 8 cycles, plus bound upvalue descriptors |
 | `CALL` | 32 cycles, plus placed values |
 | `RET` | 16 cycles, plus placed values and closed captures |

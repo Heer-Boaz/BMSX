@@ -252,7 +252,7 @@ DISPATCH_LABEL(NEWT) {
 	auto table = createTable(b, c);
 	RESUME_SCALAR_FRONTIER();
 	registers = FRAME.registers;
-	CYCLES_ADD(2 * static_cast<int>(table.storedSlotCount()) - b);
+	CYCLES_ADD(b + 2 * c);
 	SET_REGISTER_FAST(a, valueTable(table.address()));
 	DISPATCH_NEXT();
 }

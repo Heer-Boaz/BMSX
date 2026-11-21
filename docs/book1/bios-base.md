@@ -325,11 +325,10 @@ console output use the same ordinary call and result-adjustment rules.
 `next` traverses entries stored in a Table. Its first argument must be a Table; an omitted argument, nil, or another value faults with `Attempted to iterate a non-table value.` The optional second argument is the continuation key. Omitting it is the same as supplying nil. The key is used in its existing value representation, without a conversion by this function. Arguments after the second are unused.
 
 
-A successful step returns exactly two results, `(key, value)`. Array keys are Numbers, and the returned value retains its stored representation. Exhaustion returns exactly **one nil**, not zero results and not a pair of nils. Starting with a nil key visits live array slots in ascending order, followed by live hash slots, according to the Table's current storage. This is not a guarantee of insertion order or a sorted ordering of all keys.
+A successful step returns exactly two results, `(key, value)`. The returned value retains its stored representation. Exhaustion returns exactly **one nil**, not zero results and not a pair of nils. Start with a nil key to visit every live mapping. The order is unspecified, even for numeric keys.
 
-Use the returned key to continue traversal of the same Table. An array key
-within the current capacity resumes after that slot even if its value has
-become nil. An unrecognized non-array continuation key raises `INVALID_NEXT_KEY`
+Use the returned key to continue traversal of the same Table. An
+unrecognized continuation key raises `INVALID_NEXT_KEY`
 (11), with the message `invalid key to 'next'`.
 Existing fields may be changed or set to nil during traversal. A returned key
 remains a valid continuation after its mapping is removed, and removing an
@@ -339,15 +338,10 @@ and changes which entries subsequent steps visit.
 
 `next` visits stored entries, not values supplied by inherited ordinary indexing. Its returned key is also the continuation control for a subsequent step. Test that key for nil when detecting exhaustion: false is not an exhaustion marker.
 
-The traversal examines array positions after the supplied continuation, then
-hash positions. Each examined array position costs one additional cycle;
-each examined hash position costs two, for its key and value. Empty and deleted
-positions count, and a successful step includes the returned position. Exhaustion
-pays for all positions examined before reaching the end. An invalid continuation
-faults without examining any following positions or producing a result tuple.
-This is the same one-cycle-per-Value-slot cadence used for Table initialization.
-The step completes, including its result tuple and traversal charge, before the
-next instruction begins or a pending interrupt is accepted.
+The primitive adds one cycle to the base `CALL` charge. Ordinary result
+placement is charged separately. Neither the Table's reserved capacity nor
+the traversal position changes the primitive charge. An invalid continuation
+faults without producing a result tuple.
 
 ### `pairs(target)` {#sec-bios-base-pairstarget}
 

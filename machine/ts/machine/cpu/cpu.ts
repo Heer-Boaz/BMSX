@@ -2657,7 +2657,7 @@ export class CPU implements MappedPageInvalidator {
 					const table = this.createTable(exit.exitB, exit.exitC);
 					registers.setTable(exit.exitA, table);
 					this.bumpRegisterTop(frame, exit.exitA);
-					this.charge(2 * this.gc.tables.storedSlotCount(table) - exit.exitB);
+					this.charge(exit.exitB + 2 * exit.exitC);
 					break;
 				}
 				case CompiledBlockExit.ReadMemory:
@@ -2869,11 +2869,11 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.SETT:
 					this.storeTableIndex(frame, registers.get(a), this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset])); return;
 				case OpCode.NEWT: {
-					const arraySize = page.b[pageOffset];
-					const table = this.createTable(arraySize, page.c[pageOffset]);
+					const arraySize = page.b[pageOffset], hashSize = page.c[pageOffset];
+					const table = this.createTable(arraySize, hashSize);
 					registers.setTable(a, table);
 					this.bumpRegisterTop(frame, a);
-					this.charge(2 * this.gc.tables.storedSlotCount(table) - arraySize);
+					this.charge(arraySize + 2 * hashSize);
 					return;
 				}
 				case OpCode.ADD:
@@ -3936,7 +3936,7 @@ export class CPU implements MappedPageInvalidator {
 		const registers = args.registers, base = args.base;
 		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ITERATE_NON_TABLE);
 		const address = registers.getPayload(base);
-		this.charge(this.gc.tables.next(address, args.length > 1 ? registers.get(base + 1) : valueNil(), out, 0));
+		this.gc.tables.next(address, args.length > 1 ? registers.get(base + 1) : valueNil(), out, 0);
 	}
 
 	private runBuiltinType(tag: ValueTag, out: BuiltinResults): void {

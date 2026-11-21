@@ -127,7 +127,7 @@ public:
 		}
 	}
 	// Returns inspected Value slots; a nil output key denotes exhaustion.
-	size_t nextEntry(const Value& after, Value& key, Value& value) const;
+	void nextEntry(const Value& after, Value& key, Value& value) const;
 	size_t trackedHeapBytes() const;
 	u32 metatableAddress() const { return readHeader(TableHeader::Metatable); }
 	void setMetatableAddress(u32 address);

@@ -712,41 +712,42 @@ bool TableRecord::loadStoredEntry(size_t slot, Value& key, Value& value) const {
 	return true;
 }
 
-size_t TableRecord::nextEntry(const Value& rawAfter, Value& key, Value& value) const {
+void TableRecord::nextEntry(const Value& rawAfter, Value& key, Value& value) const {
 	if (valueIsNaN(rawAfter)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_NEXT_KEY);
 	const Value after = canonicalTableKey(rawAfter);
+	const auto arraySize = arrayCapacity();
 	size_t arrayStart = 0;
 	size_t hashStart = 0;
 	if (!isNil(after)) {
 		const u32 index = arraySlot(after);
-		if (index < arrayCapacity()) {
+		if (index < arraySize) {
 			arrayStart = index + 1u;
 		} else {
 			const int nodeIndex = findNodeIndex(after, true);
 			if (nodeIndex < 0) {
 				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_NEXT_KEY);
 			}
-			arrayStart = arrayCapacity();
+			arrayStart = arraySize;
 			hashStart = static_cast<size_t>(nodeIndex + 1);
 		}
 	}
-	for (size_t i = arrayStart; i < arrayCapacity(); ++i) {
-		if (!isNil(values().get(i))) {
+	const auto slots = values();
+	for (size_t i = arrayStart; i < arraySize; ++i) {
+		const Value entry = slots.get(i);
+		if (!isNil(entry)) {
 			key = valueInteger(static_cast<i32>(i + 1));
-			value = values().get(i);
-			return i - arrayStart + 1;
+			value = entry;
+			return;
 		}
 	}
-	const size_t arraySlots = arrayCapacity() - arrayStart;
 	const int hashIndex = findNextLiveHashIndex(hashStart);
 	if (hashIndex >= 0) {
 		const size_t slot = static_cast<size_t>(hashIndex);
-		key = values().get(hashKeySlot(slot));
-		value = values().get(hashValueSlot(slot));
-		return arraySlots + 2 * (slot - hashStart + 1);
+		key = slots.get(hashKeySlot(slot));
+		value = slots.get(hashValueSlot(slot));
+		return;
 	}
 	key = valueNil();
-	return arraySlots + 2 * (hashSlots() - hashStart);
 }
 
 

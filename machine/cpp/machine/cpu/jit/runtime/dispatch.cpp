@@ -356,7 +356,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			auto* record = exit->recordConstructor;
 			auto table = cpu.createTable(array, allocation.hashSize);
 			frame->registers.set(a, valueTable(table.address()));
-			cpu.instructionBudgetRemaining -= 2 * static_cast<int>(table.storedSlotCount()) - array;
+			cpu.instructionBudgetRemaining -= array + 2 * allocation.hashSize;
 			frame->extendTop(a + 1);
 			if (record) {
 				const int fieldCycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];

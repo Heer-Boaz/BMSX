@@ -1462,7 +1462,7 @@ void CPU::runBuiltinNextValue(Value target, Value key, BuiltinResults& out) {
 	}
 	Value nextKey;
 	Value nextValue;
-	instructionBudgetRemaining -= static_cast<int>(TableRecord(m_heap, valuePayload(target)).nextEntry(key, nextKey, nextValue));
+	TableRecord(m_heap, valuePayload(target)).nextEntry(key, nextKey, nextValue);
 	out.push_back(nextKey);
 	if (!isNil(nextKey)) out.push_back(nextValue);
 }
@@ -2236,11 +2236,11 @@ dispatch_continue:
 	}
 }
 
-RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target) {
-	if (target == 0u) target = m_rootView.address;
 #undef RESUME_SCALAR_FRONTIER
 #undef PUBLISH_SCALAR_FRONTIER
 
+RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target) {
+	if (target == 0u) target = m_rootView.address;
 	for (;;) {
 		const RunResult result = m_runUntilDepthEntry(*this, m_activeThread->address == target ? targetDepth : 0, instructionBudget);
 		if (!m_threadSwitchRequested) return result;

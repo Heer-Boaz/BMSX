@@ -381,6 +381,75 @@ void methodCallReturnsOriginalReceiver() {
 #endif
 }
 
+void iterationChargeIgnoresVacantCapacity() {
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, 3, 3);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 3, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 4}};
+	for (const int capacity : {1, 1024}) {
+		CpuMachine generated(image), scalar(image, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		generated.cpu.prepareSystemNativeCode();
+#endif
+		for (const Value after : {valueNil(), valueInteger(1)}) {
+			for (auto* machine : {&generated, &scalar}) {
+				auto& cpu = machine->cpu;
+				auto table = cpu.createTable(capacity, capacity);
+				table.setInteger(1, valueBool(false));
+				auto registers = cpu.activeThread()->currentFrame->registers;
+				registers.set(0, valueBuiltinFunction(BuiltinFunctionId::Next));
+				registers.set(1, valueTable(table.address()));
+				registers.set(2, after);
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+			}
+			test::runCpuParity(generated.cpu, scalar.cpu, 1);
+			requireParity(generated, scalar);
+			require(generated.cpu.instructionBudgetRemaining == 1 - 32 - 1 - 2
+				&& generated.cpu.readFramePc(0) == generated.rom.textAddress + INSTRUCTION_BYTES
+				&& isNil(generated.cpu.readFrameRegister(0, 3)), "next pays the same call and receiving range without charging vacant capacity");
+			require(generated.cpu.readFrameRegister(0, 0) == (isNil(after) ? valueInteger(1) : valueNil())
+				&& generated.cpu.readFrameRegister(0, 1) == (isNil(after) ? valueBool(false) : valueNil()),
+				"next returns the own mapping or exhaustion, not a traversal count");
+		}
+	}
+}
+
+void allocationChargesRequestedCapacity() {
+	for (const bool wide : {false, true}) {
+		test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+		u32 word = 0;
+		if (wide) writeInstruction(image.text, word++, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, word++, static_cast<u8>(OpCode::NEWT), 0, 2, 3, wide ? 1 : 0);
+		const u32 successor = word;
+		writeInstruction(image.text, word++, static_cast<u8>(OpCode::K1), 1, 0, 0);
+		writeInstruction(image.text, word, static_cast<u8>(OpCode::JMP), 0, 63, 63 - word, 255);
+		image.functions = {{.firstWord = 0, .wordCount = word + 1, .maxStack = 2}};
+		CpuMachine native(image), scalar(image, true);
+		const int hash = wide ? 67 : 3;
+		const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 2 + 2 * hash;
+		const int loopCycles = cycles + BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+		test::runCpuParity(native.cpu, scalar.cpu, loopCycles * NATIVE_WARM_SCALE * 34);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		const auto& page = *native.cpu.activeThread()->currentFrame->decodedPage;
+		const auto index = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		test::waitForNativeEntry(native.cpu, page, index);
+		require(page.nativeBlocks->entries[index]->terminal.exit == NativeBlockExit::AllocateTable,
+			"the charge is tested through the native allocation exit");
+#endif
+		for (auto* machine : {&native, &scalar}) {
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+			machine->cpu.activeThread()->currentFrame->registers.set(1, valueNil());
+		}
+		test::runCpuParity(native.cpu, scalar.cpu, 1);
+		requireParity(native, scalar);
+		require(native.cpu.instructionBudgetRemaining == 1 - cycles
+			&& native.cpu.readFramePc(0) == native.rom.textAddress + successor * INSTRUCTION_BYTES
+			&& isNil(native.cpu.readFrameRegister(0, 1)), "successful NEWT charges only the requests and stops before the successor");
+		const auto table = asTable(native.cpu.readFrameRegister(0, 0), native.cpu.gcHeap());
+		require(table.arrayCapacity() == 2 && table.hashSlots() > static_cast<u32>(hash), "actual hash storage is rounded independently of the charge");
+	}
+}
+
 void wideAllocationFailure() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 7, 0, 0);
@@ -928,7 +997,7 @@ int main() {
 		stringReadChainBoundaries();
 		observedArithmeticResumesAtItsOwnInstruction();
 		contradictoryOwnFieldProofRetiresItsSource();
-		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); wideAllocationFailure();
+		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); iterationChargeIgnoresVacantCapacity(); allocationChargesRequestedCapacity(); wideAllocationFailure();
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 
 		nativeFieldOperationsLearnTheDecodedSite();
