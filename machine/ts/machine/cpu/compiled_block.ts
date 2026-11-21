@@ -1,6 +1,6 @@
 import { ValueMoveKind, INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
-import { DECODED_PAGE_WORDS, DecodedDispatchOp, type DecodedInstructionPage } from './execution_image';
+import { DECODED_PAGE_WORDS, DecodedDispatchOp, type Blua32ExecutionImage, type DecodedInstructionPage } from './execution_image';
 import { ValueTag } from './value';
 import type { Memory } from '../memory/memory';
 import { compiledArithmeticSupports, emitArithmetic } from './compiled_block_arithmetic';
@@ -131,7 +131,7 @@ type StatementEmitter = (page: DecodedInstructionPage, word: number,
 	registers: JavaScriptRegisterCache, exitIndex: number) => string;
 const emitters: (StatementEmitter | undefined)[] = new Array(OPCODE_COUNT);
 emitters[OpCode.MOV] = (p, w, r) => r.copy(p.a[w], p.b[w]);
-emitters[OpCode.LOADK] = (p, w, r) => r.writeEncoded(p.a[w], `kt[${p.bx[w]}]`, `k[${p.bx[w]}]`);
+emitters[OpCode.LOADK] = (p, w, r) => r.copy(p.a[w], -p.bx[w] - 1);
 emitters[OpCode.KNIL] = (p, w, r) => r.writeEncoded(p.a[w], `${ValueTag.Nil}`, '0');
 emitters[OpCode.KFALSE] = (p, w, r) => r.writeEncoded(p.a[w], `${ValueTag.False}`, '0');
 emitters[OpCode.KTRUE] = (p, w, r) => r.writeEncoded(p.a[w], `${ValueTag.True}`, '0');
@@ -222,13 +222,13 @@ export type EmittedJavaScriptBlock = {
 export function emitJavaScriptBlock(
 	plan: CompiledBlockSource, tableCache: string,
 	memory: Memory, exits: CompiledBlockExitSite[], residents: ReadonlyMap<number, boolean>, outputs: ReadonlySet<number>,
-	writeBacks: CompiledExitWriteBacks,
+	writeBacks: CompiledExitWriteBacks, image: Blua32ExecutionImage,
 ): EmittedJavaScriptBlock {
 	const { page, firstWord, endWord, skippedInstructionWidth } = plan;
 	let pc = plan.pc;
 	const firstExit = exits.length;
 	const source: string[] = [];
-	const registers = new JavaScriptRegisterCache(residents, outputs, writeBacks);
+	const registers = new JavaScriptRegisterCache(residents, outputs, writeBacks, image);
 	let cycles = 0;
 	let openVarargs = 0;
 	let admissionCycles = 0;

@@ -185,6 +185,8 @@ test('warmed RK comparisons at one RAM PC belong to each execution image and ret
 	const systemPage = systemOwner.compiledCodeLookup!.find(DYNAMIC_RAM_BASE, 0)!;
 	const cartPage = cartOwner.compiledCodeLookup!.find(DYNAMIC_RAM_BASE, 0)!;
 	const systemBlock = systemPage.compiledBlocks!.entries[0], cartBlock = cartPage.compiledBlocks!.entries[0];
+	assert.doesNotMatch(systemBlock!.region.execute.toString(), /\b(?:kt|k)\[0\]/, 'the Number RK uses an image literal');
+	assert.doesNotMatch(cartBlock!.region.execute.toString(), /\b(?:kt|k)\[0\]/, 'the String RK uses an image literal');
 	assert.notEqual(systemPage, cartPage, 'image ownership is distinct even when executable bytes have one physical backing');
 	for (const { cpu, memory } of machines) {
 		memory.installSystemRom(replacement.romBytes);

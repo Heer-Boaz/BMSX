@@ -328,7 +328,7 @@ for (const blocked of [false, true]) test(`later counted blocks retain earlier c
 test('bulk source publication neither discards clean SSA values nor repeats their writeback', () => {
 	const { cpu } = createTestSystemCpu(wordLoop(0), CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
-	const cache = new JavaScriptRegisterCache(new Map(), new Set(), new CompiledExitWriteBacks()), writes = new Uint32Array(8);
+	const cache = new JavaScriptRegisterCache(new Map(), new Set(), new CompiledExitWriteBacks(), frame.executionImage), writes = new Uint32Array(8);
 	const source = [cache.writeInteger(0, '1'), cache.writeInteger(7, '1'), cache.publishRange(0, 1),
 		'observed.push(r.getInteger(0));', cache.copy(0, 0),
 		cache.writeInteger(2, `${cache.wordOperand(0)}+${cache.wordOperand(7)}`), cache.publishRange(0, 1),

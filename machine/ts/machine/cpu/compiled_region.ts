@@ -57,7 +57,7 @@ export function compileJavaScriptRegion(plans: readonly CompiledBlockSource[],
 			tableCache = tableCaches.size === 0 ? 'ts' : `ts${tableCaches.size}`;
 			tableCaches.set(plan.page, tableCache);
 		}
-		blocks.push(emitJavaScriptBlock(plan, tableCache, memory, exits, residents[index], registers[index].outputs, writeBacks));
+		blocks.push(emitJavaScriptBlock(plan, tableCache, memory, exits, residents[index], registers[index].outputs, writeBacks, image));
 	}
 	for (let index = blocks.length - 1; index >= 0; --index) {
 		if (plans[index].fallthrough) {

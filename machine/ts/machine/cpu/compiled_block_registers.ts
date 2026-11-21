@@ -1,3 +1,5 @@
+import { f32BitsToNumber } from '../../common/float32';
+import type { Blua32ExecutionImage } from './execution_image';
 import { ValueTag } from './value';
 
 type LocalValue = { readonly tag: string; readonly word: string };
@@ -41,19 +43,26 @@ export class JavaScriptRegisterCache {
 	public readonly residents: Map<number, boolean>;
 
 	public constructor(residents: ReadonlyMap<number, boolean>,
-		private readonly outputs: ReadonlySet<number>, private readonly exits: CompiledExitWriteBacks) {
+		private readonly outputs: ReadonlySet<number>, private readonly exits: CompiledExitWriteBacks,
+		private readonly constants: Blua32ExecutionImage) {
 		this.residents = new Map(residents);
 	}
 	public tagOperand(selector: number): string {
-		if (selector < 0) return `kt[${-selector - 1}]`;
+		if (selector < 0) return `${this.constants.constTags[-selector - 1]}`;
 		return this.locals.get(selector)?.tag ?? (this.residents.has(selector) ? `y${selector}` : `r.t(${selector})`);
 	}
 	public wordOperand(selector: number): string {
-		if (selector < 0) return `k[${-selector - 1}]`;
+		if (selector < 0) return `${this.constants.constWords[-selector - 1]}`;
 		return this.locals.get(selector)?.word ?? (this.residents.has(selector) ? `z${selector}` : `r.p(${selector})`);
 	}
 	/** Exact int/f32 value for comparisons; arithmetic rounds Integer inputs separately. */
 	public numberOperand(selector: number): string {
+		if (selector < 0) {
+			const slot = -selector - 1, bits = this.constants.constWords[slot];
+			if (this.constants.constTags[slot] === ValueTag.Integer) return `${bits | 0}`;
+			const number = f32BitsToNumber(bits);
+			return Object.is(number, -0) ? '-0' : `${number}`;
+		}
 		const tag = this.tagOperand(selector), word = this.wordOperand(selector);
 		return `(${tag}===${ValueTag.Integer}?(${word}|0):bf(${word}))`;
 	}
