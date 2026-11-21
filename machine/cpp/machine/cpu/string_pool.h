@@ -60,14 +60,14 @@ private:
 	u32 readWord(u32 base, u32 displacement = 0) const;
 	ByteSpan readBytes(StringId id) const;
 	u32 metadata(u32 field) const;
-	u32 ramBucketCount() const;
 	void writeMetadata(u32 field, u32 word);
 	Span<const u8> bindRomStringHeader(u32 address, u32 cartridgeSlot) const;
 	std::string_view bindRomStringBytes(u32 address, u32 cartridgeSlot, u32 length) const;
+	u32 lookupRamChain(u32 bucket, u32 hash, std::string_view bytes) const;
 	u32 lookupRam(u32 hash, std::string_view bytes) const;
 	u32 lookupRom(u32 directory, u32 hash, std::string_view bytes) const;
 	u32 lookup(u32 hash, std::string_view bytes) const;
-	void grow(u32 count);
+	size_t rehashStep(u32 oldCount, u32 nextBase, size_t allowance);
 	bool mark(StringId id);
 	StringId retain(StringId id);
 

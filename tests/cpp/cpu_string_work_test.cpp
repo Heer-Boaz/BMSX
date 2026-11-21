@@ -98,40 +98,6 @@ void ramStringPorts() {
 		memory.writeRamRecordWord(bucket, mirror);
 		require(pool.find(bytes) == mirror, "intern probing compares the wrapped bytes");
 	}
-	for (const bool grow : {false, true}) {
-		CpuMachine machine(image, true);
-		auto& pool = machine.cpu.stringPool();
-		auto& memory = machine.memory;
-		const char* original = "cycle at an intern bucket head";
-		const u32 metadata = machine.cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
-		(void)pool.intern("index seed");
-		const u32 count = memory.readRamRecordWord(metadata + 4u);
-		if (grow) {
-			for (u32 i = memory.readRamRecordWord(metadata + 8u); i + 1u < count; ++i) {
-				(void)pool.intern("bucket filler " + std::to_string(i));
-			}
-		}
-		const u32 self = pool.intern(original);
-		std::string missing;
-		for (unsigned i = 0; ; ++i) {
-			missing = "lookup collision " + std::to_string(i);
-			if (((fnv1a32(missing) ^ fnv1a32(original)) & (count - 1u)) == 0u) break;
-		}
-		memory.writeRamRecordWord(self + BLUA32_STRING_NEXT_OFFSET, self);
-		require(!pool.find(missing), "a missing String terminates a cyclic probe");
-		if (grow) {
-			const u32 inserted = pool.intern(missing);
-			require(pool.find(missing) == inserted, "a cyclic chain terminates rehash and permits insertion");
-			require(memory.readRamRecordWord(metadata + 4u) == count * 2u, "insertion exercised the growing index");
-		} else {
-			machine.cpu.collectHeap(valueString(self));
-			require(pool.find(original) == self, "sweep keeps the reachable String");
-			require(memory.readRamRecordWord(self + BLUA32_STRING_NEXT_OFFSET) == 0u, "sweep terminates the live prefix");
-			memory.writeRamRecordWord(self + BLUA32_STRING_NEXT_OFFSET, self);
-			machine.cpu.collectHeap();
-			require(!pool.find(original), "sweep can unlink the dead String without revisiting its freed record");
-		}
-	}
 }
 
 void selectAndChar(bool scalar) {

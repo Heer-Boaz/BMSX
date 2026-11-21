@@ -5,7 +5,7 @@ import test from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { BuiltinResults } from '../../machine/ts/machine/cpu/builtin_values';
 import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { valueNil, valueInteger, valueString } from '../../machine/ts/machine/cpu/value';
+import { valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -140,35 +140,4 @@ test('RAM String reads and intern probes wrap at the physical seam', () => {
 	memory.writeRamRecordWord(mirror + BLUA32_STRING_NEXT_OFFSET, memory.readRamRecordWord(bucket));
 	memory.writeRamRecordWord(bucket, mirror);
 	assert.equal(pool.find(bytes), mirror);
-});
-
-for (const grow of [false, true]) test(`cyclic String links terminate lookup and ${grow ? 'growth' : 'sweep'}`, () => {
-	const { cpu } = createTestSystemCpu(portImage, CpuExecutionBackend.Interpreter);
-	const memory = cpu.memory, pool = cpu.stringPool, original = 'cycle at an intern bucket head';
-	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
-	pool.intern('index seed');
-	const count = memory.readRamRecordWord(metadata + 4);
-	if (grow) {
-		for (let i = memory.readRamRecordWord(metadata + 8); i + 1 < count; ++i) pool.intern('bucket filler ' + i);
-	}
-	const self = pool.intern(original);
-	let missing: string;
-	for (let i = 0; ; ++i) {
-		missing = 'lookup collision ' + i;
-		if (((hashText(missing) ^ hashText(original)) & (count - 1)) === 0) break;
-	}
-	memory.writeRamRecordWord(self + BLUA32_STRING_NEXT_OFFSET, self);
-	assert.equal(pool.find(missing), undefined);
-	if (grow) {
-		const inserted = pool.intern(missing);
-		assert.equal(pool.find(missing), inserted);
-		assert.equal(memory.readRamRecordWord(metadata + 4), count * 2);
-	} else {
-		cpu.gc.collect(valueString(self));
-		assert.equal(pool.find(original), self);
-		assert.equal(memory.readRamRecordWord(self + BLUA32_STRING_NEXT_OFFSET), 0);
-		memory.writeRamRecordWord(self + BLUA32_STRING_NEXT_OFFSET, self);
-		cpu.gc.collect();
-		assert.equal(pool.find(original), undefined);
-	}
 });

@@ -46,7 +46,7 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 const bootThreadBytes = 80 + 40 + 112;
 const bootThreadWords = bootThreadBytes / 4;
 const bootBytes = bootThreadBytes + 12 + 15 + 697 + 128 + 8 + 2 * 136;
-const bootCollectionWork = 4 * bootThreadWords + 3 + 1 + 3 * 12 + 2 * 17 + 32;
+const bootCollectionWork = 4 * bootThreadWords + 3 + 1 + 3 * 12 + 3 * 17 + 32;
 
 test('physical GC work counts canonical scans, reclamation and three unique root passes without a cycle debit', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
@@ -60,7 +60,7 @@ test('physical GC work counts canonical scans, reclamation and three unique root
 	frame.registers.setString(1, cpu.stringPool.intern(textToByteString('é😀'))); //6 canonical UTF8 bytes, not3 UTF16 units.
 	frame.top = 2;
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 98 + 22);
-	assert.equal(cpu.gc.collect(), bootCollectionWork + (8 + 2 + 8 + 1) + 2, 'scan the Table, mark the String leaf and visit each record');
+	assert.equal(cpu.gc.collect(), bootCollectionWork + (8 + 2 + 8 + 1) + 3, 'scan the Table, mark the String leaf and visit each record');
 	assert.equal(cpu.instructionBudgetRemaining, 7);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 98 + 22);
 	assert.equal(cpu.luaHeap.collectionTarget(), 1048576);
@@ -328,7 +328,7 @@ test('temporary roots survive unbilled admission; unreachable allocations only a
 	assert.equal(cpu.gc.isAlive(table), true, 'the first mark actually visited the temporary Table');
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 32 + 22); assert.equal(cpu.stringPool.toString(id), 'é😀');
 	while (cpu.gc.active()) cpu.gc.step(valueTable(table), valueString(id));
-	assert.equal(cpu.gc.collect(), bootCollectionWork + 2);
+	assert.equal(cpu.gc.collect(), bootCollectionWork + 3);
 	assert.equal(cpu.instructionBudgetRemaining, 1);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
 });

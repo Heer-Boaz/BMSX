@@ -17,11 +17,14 @@ export const STRING_GC_EPOCH_MASK = 1;
 
 const BUCKETS = 0x00, CAPACITY = 0x04, USED = 0x08, EPOCH = 0x0c, SWEEP = 0x10;
 const FIRST_CART = 0x14, ROM_TABLES = 0x18;
-const SWEEP_LINK = 0x30, SWEEP_LEFT = 0x34, SWEEP_SPLIT = 0x38;
+const SWEEP_LINK = 0x30, SWEEP_LEFT = 0x34, REHASH_BASE = 0x38, REHASH_READY = 0x3c;
+const SWEEP_REHASH = 0x80000000;
 const INITIAL_BUCKETS = 16;
+const INTERN_REHASH_WORK = 64;
 const RAM_BYTE_MASK = MAIN_RAM_SIZE - 1;
 const MAX_RAM_RECORDS = MAIN_RAM_SIZE / BLUA32_STRING_RECORD_HEADER_SIZE;
 const RAM_BUCKET_EXTENT_MASK = 2 * MAX_RAM_RECORDS - 1;
+const RAM_BUCKET_REHASH = 0x80000000;
 const SLOT_BIT = 0x80000000;
 
 function ramAddress(address: number): boolean { return address >= RAM_BASE && address < CART_ROM_BASE; }
@@ -58,7 +61,6 @@ export class StringPool {
 	}
 
 	private metadata(field: number): number { return this.memory.readRamRecordWord(this.metadataOffset + field); }
-	private ramBucketCount(): number { return this.metadata(CAPACITY) & RAM_BUCKET_EXTENT_MASK; }
 	private writeMetadata(field: number, word: number): void { this.memory.writeRamRecordWord(this.metadataOffset + field, word); }
 	private storage(address: number): Uint8Array | null {
 		if (address < RAM_BASE) return this.memory.systemRomStorage().bytes;
@@ -153,12 +155,10 @@ export class StringPool {
 		view.byteLength = length;
 	}
 
-	private lookupRam(hash: number, source: string | Uint8Array, offset: number, length: number): number {
-		const count = this.ramBucketCount();
-		if (count === 0) return 0;
+	private lookupRamChain(bucket: number, hash: number, source: string | Uint8Array, offset: number, length: number): number {
 		const memory = this.memory;
 		const ram = memory.ramData();
-		let record = memory.readRamRecordWord(this.metadata(BUCKETS) + (hash & (count - 1)) * 4);
+		let record = memory.readRamRecordWord(bucket);
 		if (record === 0) return 0;
 		let remaining = Math.min(this.metadata(USED), MAX_RAM_RECORDS);
 		while (record !== 0 && remaining-- !== 0) {
@@ -171,6 +171,22 @@ export class StringPool {
 			record = memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
 		}
 		return 0;
+	}
+
+	private lookupRam(hash: number, source: string | Uint8Array, offset: number, length: number): number {
+		const control = this.metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
+		if (count === 0) return 0;
+		const index = hash & (count - 1);
+		if ((control & RAM_BUCKET_REHASH) !== 0) {
+			const ready = this.metadata(REHASH_READY);
+			if (index < ready) {
+				const bucket = this.metadata(REHASH_BASE) + 4 * (hash & (2 * count - 1));
+				const found = this.lookupRamChain(bucket, hash, source, offset, length);
+				if (found !== 0) return found;
+				if (index + 1 < ready) return 0;
+			}
+		}
+		return this.lookupRamChain(this.metadata(BUCKETS) + 4 * index, hash, source, offset, length);
 	}
 
 	private lookupRom(directory: number, hash: number, source: string | Uint8Array, offset: number, length: number): number {
@@ -236,50 +252,72 @@ export class StringPool {
 		return domain === -1 || (domain + 1 === this.metadata(FIRST_CART) && (id >>> 31) !== domain);
 	}
 
-	private grow(count: number): void {
-		const newBase = this.heap.allocateRecord(4 * count, true, 0, 0);
-		const sweep = this.metadata(SWEEP);
-		const oldBase = this.metadata(BUCKETS), oldCount = this.ramBucketCount();
-		const offset = storageOffset(newBase);
+	private rehashStep(oldCount: number, nextBase: number, allowance: number): number {
+		const oldBase = this.metadata(BUCKETS), count = 2 * oldCount;
+		let ready = this.metadata(REHASH_READY), work = 0;
 		const memory = this.memory;
-		memory.ramData().fill(0, offset, offset + 4 * count);
-		memory.invalidateRamWrite(offset, 4 * count);
-		let remaining = Math.min(this.metadata(USED), MAX_RAM_RECORDS);
-		for (let i = 0; i < oldCount && remaining !== 0; ++i) {
-			let record = memory.readRamRecordWord(oldBase + 4 * i);
-			while (record !== 0 && remaining !== 0 && memory.readRamRecordByte(record) === BLUA32_STRING_RECORD_KIND) {
-				--remaining;
-				const link = record + BLUA32_STRING_NEXT_OFFSET;
-				const next = memory.readRamRecordWord(link);
-				const hash = memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET);
-				const bucket = newBase + 4 * (hash & (count - 1));
-				memory.writeRamRecordWord(link, memory.readRamRecordWord(bucket));
-				memory.writeRamRecordWord(bucket, record);
-				record = next;
+		// Only the last prepared pair can still have records in its old bucket.
+		while (work < allowance) {
+			if (ready !== 0) {
+				const head = oldBase + 4 * (ready - 1);
+				const record = memory.readRamRecordWord(head);
+				if (record !== 0) {
+					const link = record + BLUA32_STRING_NEXT_OFFSET;
+					const hash = memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET);
+					const bucket = nextBase + 4 * (hash & (count - 1));
+					memory.writeRamRecordWord(head, memory.readRamRecordWord(link));
+					memory.writeRamRecordWord(link, memory.readRamRecordWord(bucket));
+					memory.writeRamRecordWord(bucket, record);
+					++work;
+					continue;
+				}
 			}
+			if (ready === oldCount) {
+				this.writeMetadata(BUCKETS, nextBase);
+				this.writeMetadata(CAPACITY, count);
+				memory.writeRamRecordPair(this.metadataOffset + REHASH_BASE, 0, 0);
+				this.heap.releaseRecord(oldBase, 4 * oldCount);
+				return work;
+			}
+			memory.writeRamRecordWord(nextBase + 4 * ready, 0);
+			memory.writeRamRecordWord(nextBase + 4 * (ready + oldCount), 0);
+			++ready;
+			++work;
 		}
-		this.writeMetadata(BUCKETS, newBase);
-		this.writeMetadata(CAPACITY, count);
-		if (sweep !== 0) {
-			// A growth that crosses into sweeping splits each old bucket in
-			// two. Keep the completed prefix in both halves.
-			memory.writeRamRecordPair(this.metadataOffset + SWEEP_LINK, 0, 0);
-			this.writeMetadata(SWEEP_SPLIT, oldCount + sweep - 1);
-		}
-		if (oldCount !== 0) this.heap.releaseRecord(oldBase, 4 * oldCount);
+		this.writeMetadata(REHASH_READY, ready);
+		return work;
 	}
 	public intern(value: string): StringId {
 		const hash = hashText(value);
 		const existing = this.lookup(hash, value, 0, value.length);
 		if (existing !== 0) return this.retain(existing);
-		const count = this.ramBucketCount();
-		if (count === 0) this.grow(INITIAL_BUCKETS);
-		else if (this.metadata(USED) >= count && !this.sweeping()) this.grow(count * 2);
+		const control = this.metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
+		const memory = this.memory;
+		if (count === 0) {
+			const base = this.heap.allocateRecord(4 * INITIAL_BUCKETS, true, 0, 0);
+			const offset = storageOffset(base);
+			memory.ramData().fill(0, offset, offset + 4 * INITIAL_BUCKETS);
+			memory.invalidateRamWrite(offset, 4 * INITIAL_BUCKETS);
+			memory.writeRamRecordPair(this.metadataOffset + BUCKETS, base, INITIAL_BUCKETS);
+		} else if (!this.sweeping()) {
+			if ((control & RAM_BUCKET_REHASH) !== 0) {
+				this.rehashStep(count, this.metadata(REHASH_BASE), INTERN_REHASH_WORK);
+			} else if (this.metadata(USED) >= count) {
+				const nextBase = this.heap.allocateRecord(8 * count, true, 0, 0);
+				this.writeMetadata(REHASH_BASE, nextBase);
+				this.writeMetadata(CAPACITY, count | RAM_BUCKET_REHASH);
+				// Admission may itself have started sweeping the old directory.
+				if (!this.sweeping()) this.rehashStep(count, nextBase, INTERN_REHASH_WORK);
+			}
+		}
 		// An unrepresentable length requests the full bank and still clocks
 		// the final collection before the admission fault.
 		const id = this.heap.allocateRecord(BLUA32_STRING_RECORD_HEADER_SIZE + Math.min(value.length, MAIN_RAM_SIZE), false, 0, 0);
-		const bucket = this.metadata(BUCKETS) + 4 * (hash & (this.ramBucketCount() - 1));
-		const memory = this.memory;
+		const currentControl = this.metadata(CAPACITY), current = currentControl & RAM_BUCKET_EXTENT_MASK;
+		const index = hash & (current - 1);
+		const bucket = (currentControl & RAM_BUCKET_REHASH) !== 0 && index < this.metadata(REHASH_READY)
+			? this.metadata(REHASH_BASE) + 4 * (hash & (2 * current - 1))
+			: this.metadata(BUCKETS) + 4 * index;
 		memory.writeRamRecordWord(id, BLUA32_STRING_RECORD_KIND | ((this.metadata(EPOCH) & STRING_GC_EPOCH_MASK) << 8));
 		memory.writeRamRecordWord(id + BLUA32_STRING_HASH_OFFSET, hash);
 		memory.writeRamRecordWord(id + BLUA32_STRING_LENGTH_OFFSET, value.length);
@@ -319,48 +357,63 @@ export class StringPool {
 	}
 
 	public beginSweep(): void {
-		this.writeMetadata(SWEEP, 1);
+		const ready = this.metadata(REHASH_READY);
+		this.writeMetadata(SWEEP, Math.max(1, ready));
 		this.memory.writeRamRecordPair(this.metadataOffset + SWEEP_LINK, 0, 0);
-		this.writeMetadata(SWEEP_SPLIT, 0);
 	}
 	public sweeping(): boolean { return this.metadata(SWEEP) !== 0; }
 	public sweepStep(allowance: number): number {
-		const base = this.metadata(BUCKETS), count = this.ramBucketCount(), epoch = this.metadata(EPOCH) & STRING_GC_EPOCH_MASK;
-		let index = this.metadata(SWEEP) - 1, used = this.metadata(USED), work = 0;
-		let link = this.metadata(SWEEP_LINK), remaining = this.metadata(SWEEP_LEFT), split = this.metadata(SWEEP_SPLIT);
+		const cursor = this.metadata(SWEEP), control = this.metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
+		const nextBase = (control & RAM_BUCKET_REHASH) !== 0 ? this.metadata(REHASH_BASE) : 0;
+		let work = 0;
 		const memory = this.memory;
-		while (index < count && allowance !== 0) {
-			if (link === 0) {
-				if (split !== 0 && index === (count >>> 1)) { index = split; split = 0; }
-				link = base + 4 * index;
-				++work; --allowance;
+		if (cursor !== SWEEP_REHASH) {
+			const base = this.metadata(BUCKETS), epoch = this.metadata(EPOCH) & STRING_GC_EPOCH_MASK;
+			const ready = this.metadata(REHASH_READY), lowEnd = count + ready, end = lowEnd + ready;
+			let index = cursor - 1, used = this.metadata(USED);
+			let link = this.metadata(SWEEP_LINK), remaining = this.metadata(SWEEP_LEFT);
+			// Freeze rehash until the remaining old buckets and the two prepared
+			// prefixes have been swept. Inserts still select their owning bucket.
+			while (index < end && allowance !== 0) {
+				const bucket = index < count ? base + 4 * index : index < lowEnd
+					? nextBase + 4 * (index - count) : nextBase + 4 * (index - ready);
+				if (link === 0) { link = bucket; ++work; --allowance; }
+				// A new intern can prepend before a survivor link, never after it.
+				if (link === bucket) remaining = Math.min(used, MAX_RAM_RECORDS);
+				let record = memory.readRamRecordWord(link);
+				while (record !== 0 && remaining !== 0 && allowance !== 0
+					&& memory.readRamRecordByte(record) === BLUA32_STRING_RECORD_KIND) {
+					const next = memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
+					--remaining; --allowance; ++work;
+					if ((memory.readRamRecordByte(record + 1) & STRING_GC_EPOCH_MASK) !== epoch) {
+						memory.writeRamRecordWord(link, next);
+						memory.writeRamRecordByte(record, 0);
+						this.heap.releaseRecord(record, BLUA32_STRING_RECORD_HEADER_SIZE + this.byteLength(record));
+						--used;
+					} else link = record + BLUA32_STRING_NEXT_OFFSET;
+					record = next;
+				}
+				if (record !== 0 && remaining !== 0 && allowance === 0) break;
+				if (record !== 0) memory.writeRamRecordWord(link, 0);
+				link = remaining = 0; ++index;
 			}
-			// New interns can prepend only before this stable survivor link.
-			if (link === base + 4 * index) remaining = Math.min(used, MAX_RAM_RECORDS);
-			let record = memory.readRamRecordWord(link);
-			while (record !== 0 && remaining !== 0 && allowance !== 0
-				&& memory.readRamRecordByte(record) === BLUA32_STRING_RECORD_KIND) {
-				const next = memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
-				--remaining; --allowance;
-				if ((memory.readRamRecordByte(record + 1) & STRING_GC_EPOCH_MASK) !== epoch) {
-					memory.writeRamRecordWord(link, next);
-					memory.writeRamRecordByte(record, 0);
-					this.heap.releaseRecord(record, BLUA32_STRING_RECORD_HEADER_SIZE + this.byteLength(record));
-					--used;
-				} else link = record + BLUA32_STRING_NEXT_OFFSET;
-				record = next;
+			this.writeMetadata(USED, used);
+			memory.writeRamRecordPair(this.metadataOffset + SWEEP_LINK, link, remaining);
+			if (index < end) {
+				this.writeMetadata(SWEEP, index + 1);
+				return work;
 			}
-			if (record !== 0 && remaining !== 0 && allowance === 0) break;
-			if (record !== 0) memory.writeRamRecordWord(link, 0);
-			link = remaining = 0; ++index;
 		}
-		this.writeMetadata(SWEEP, index < count ? index + 1 : 0);
-		this.writeMetadata(USED, used);
-		memory.writeRamRecordPair(this.metadataOffset + SWEEP_LINK, link, remaining);
-		this.writeMetadata(SWEEP_SPLIT, split);
-
+		// Emergency admission can recover the old directory without waiting
+		// for another distinct intern.
+		if (nextBase !== 0) {
+			if (allowance !== 0) work += this.rehashStep(count, nextBase, allowance);
+			if (this.metadata(REHASH_BASE) !== 0) {
+				this.writeMetadata(SWEEP, SWEEP_REHASH);
+				return work;
+			}
+		}
+		this.writeMetadata(SWEEP, 0);
 		return work;
 	}
-
-
 }

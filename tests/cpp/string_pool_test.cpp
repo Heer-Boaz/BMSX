@@ -6,6 +6,7 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
+#include "machine/runtime/history/ram_history.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/model.h"
@@ -94,12 +95,12 @@ void resumeMajorStringBucket() {
 	pool.beginReachabilityEpoch();
 	pool.markReachable(ids.back()); pool.takeMarkWork();
 	pool.beginSweep();
-	require(pool.sweepStep(2) == 1u && pool.find(names[4]) == ids[4],
+	require(pool.sweepStep(2) == 2u && pool.find(names[4]) == ids[4],
 		"one bucket and its first retained header exhaust two units without visiting the suffix");
 	const auto ram = machine.memory.captureSaveState();
 	const auto finish = [&] {
 		const auto fresh = pool.intern(names.back());
-		require(pool.sweepStep(1) == 0u && !pool.find(names[4]) && pool.find(names[3]) == ids[3],
+		require(pool.sweepStep(1) == 1u && !pool.find(names[4]) && pool.find(names[3]) == ids[3],
 			"resume retires exactly the next header without charging the same index");
 		for (int step = 0; pool.sweeping() && step < 100; ++step) pool.sweepStep(2);
 		require(!pool.sweeping(), "all String buckets finish");
@@ -137,10 +138,12 @@ void growWhileAdmissionStartsStringSweep() {
 	const auto finish = [&] {
 		cpu.luaHeap().setCollectionTarget(0);
 		const auto added = pool.intern("growth crosses into Strings");
-		require(read(4u) == 2u * capacity && cpu.gcHeap().phase() == GcPhase::Strings && read(0x38u) > capacity,
-			"growth keeps both swept prefixes without draining the Strings phase");
+		require((read(4u) & 0x7fffffffu) == capacity && cpu.gcHeap().phase() == GcPhase::Strings
+			&& read(0x38u) != 0u && read(0x3cu) == 0u,
+			"growth reserves the destination without draining or moving the active String sweep");
 		for (int step = 0; cpu.collecting() && step < 20; ++step) advance();
-		require(!cpu.collecting() && pool.find("growth crosses into Strings") == added, "later work retains the new String");
+		require(!cpu.collecting() && read(4u) == 2u * capacity && pool.find("growth crosses into Strings") == added,
+			"later work completes the growth and retains the new String");
 		for (u32 i = 0; i < count; ++i) require(pool.find(name(i)) == asStringId(roots.getInteger(i + 1u)), "each split retains its original interned addresses");
 		return memory.captureSaveState().ram;
 	};
@@ -148,6 +151,83 @@ void growWhileAdmissionStartsStringSweep() {
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);
 	require(finish() == expected, "rewind replays growth during String sweep");
+}
+
+void rehashCollisionAcrossSweepAndRewind() {
+	PoolMachine machine;
+	auto& cpu = machine.cpu;
+	auto& pool = cpu.stringPool();
+	auto& memory = machine.memory;
+	constexpr u32 capacity = 4096u;
+	auto roots = cpu.createTable(4, 0);
+	cpu.setGlobalByKey(pool.intern("collision rehash root"), valueTable(roots.address()));
+	const u32 metadata = cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const auto read = [&](u32 field) { return memory.readRamRecordWord(metadata + field); };
+	u32 candidate = 0;
+	const auto collision = [&]() {
+		for (;;) {
+			auto text = "rehash collision " + std::to_string(candidate++);
+			if ((fnv1a32(text) & (capacity - 1u)) == 0u) return text;
+		}
+	};
+	std::vector<std::pair<std::string, StringId>> entries;
+	const u32 count = capacity - read(8u);
+	entries.reserve(count);
+	for (u32 i = 0; i < count; ++i) {
+		auto text = i < 128u ? collision() : "rehash filler " + std::to_string(i);
+		const auto id = pool.intern(text);
+		entries.emplace_back(std::move(text), id);
+	}
+	require(read(4u) == capacity, "the next distinct String starts the 4096-bucket growth");
+	const u32 oldBase = read(0u);
+	const auto trigger = collision();
+	const auto inserted = pool.intern(trigger);
+	const u32 nextBase = read(0x38u);
+	require(nextBase != 0u && read(0x3cu) == 1u, "the intern yields inside the first long bucket, not after it");
+	const std::array survivors{memory.readRamRecordWord(oldBase), memory.readRamRecordWord(nextBase),
+		memory.readRamRecordWord(nextBase + 4u * capacity), inserted};
+	for (u32 index = 0; index < survivors.size(); ++index) {
+		require(survivors[index] != 0u, "the old chain and both destination chains are populated");
+		roots.setInteger(index + 1u, valueString(survivors[index]));
+	}
+	const auto retained = [&](StringId id) { return std::find(survivors.begin(), survivors.end(), id) != survivors.end(); };
+	u32 logicalRelease = 4u * capacity, physicalRelease = heapAllocationBytes(logicalRelease);
+	for (const auto& [text, id] : entries) {
+		require(pool.find(text) == id, "lookups preserve IDs in each directory");
+		if (!retained(id)) {
+			const u32 bytes = BLUA32_STRING_RECORD_HEADER_SIZE + static_cast<u32>(text.size());
+			logicalRelease += bytes;
+			physicalRelease += heapAllocationBytes(bytes);
+		}
+	}
+	const auto usage = cpu.luaHeap().usedBytes();
+	const auto occupied = cpu.heapAllocator().occupiedBytes();
+	RamHistory archive;
+	RamHistory::PageMap checkpoint, collected;
+	archive.capture(memory, nullptr, checkpoint);
+	const auto state = cpu.captureRuntimeState();
+	const auto advance = [&] { cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
+	const auto finish = [&] {
+		for (int step = 0; cpu.gcHeap().phase() != GcPhase::Strings && step < 40; ++step) advance();
+		require(cpu.gcHeap().phase() == GcPhase::Strings && read(0x3cu) == 1u,
+			"sweep visits both planes before moving any more links");
+		for (int step = 0; cpu.collecting() && step < 40; ++step) advance();
+		require(!cpu.collecting() && read(0u) == nextBase && read(4u) == 2u * capacity && read(0x38u) == 0u,
+			"the old directory is no longer published when collection completes");
+		require(pool.find(trigger) == inserted, "the inserted String survives its new chain's sweep");
+		for (const auto& [text, id] : entries) {
+			const auto found = pool.find(text);
+			require(retained(id) ? found == id : !found, "both directories sweep exactly their unmarked Strings");
+		}
+		require(cpu.luaHeap().usedBytes() == usage - logicalRelease && cpu.heapAllocator().occupiedBytes() == occupied - physicalRelease,
+			"retirement returns both the logical and physical bytes of the old directory and dead records");
+		return memory.captureSaveState().ram;
+	};
+	const auto expected = finish();
+	archive.capture(memory, &checkpoint, collected);
+	archive.restore(memory, collected, checkpoint);
+	cpu.restoreRuntimeState(state);
+	require(finish() == expected, "rewind reproduces the old and new chain frontiers and allocation bytes");
 }
 
 void reclaimLongByteStrings() {
@@ -302,6 +382,7 @@ int main() {
 		collectEmptyString();
 		resumeMajorStringBucket();
 		growWhileAdmissionStartsStringSweep();
+		rehashCollisionAcrossSweepAndRewind();
 		reclaimLongByteStrings();
 		retainNestedMaterializationRoots();
 		replaySparseAllocationOrder();

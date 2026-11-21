@@ -1216,6 +1216,10 @@ The occupied-byte counts used for admission are:
 | One global namespace with room for `N` names and Values | `17N` |
 | Activated image with `C` constants and `G` names across both global namespaces | `5C + 4G` |
 
+During String index growth, both the old and the new bucket reservations count
+against the occupied budget. The old reservation is released once its entries
+have been redistributed. The Strings themselves retain their addresses.
+
 A Table's slots and links occupy one block in the language heap. A Thread
 keeps its Value slots, frame controls and protected continuations in separate
 allocations. Growing one allocation does not move either of the others.

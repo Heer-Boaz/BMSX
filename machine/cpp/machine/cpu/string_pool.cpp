@@ -17,11 +17,14 @@ namespace bmsx {
 namespace {
 constexpr u32 BUCKETS = 0x00, CAPACITY = 0x04, USED = 0x08, EPOCH = 0x0c, SWEEP = 0x10;
 constexpr u32 FIRST_CART = 0x14, ROM_TABLES = 0x18;
-constexpr u32 SWEEP_LINK = 0x30, SWEEP_LEFT = 0x34, SWEEP_SPLIT = 0x38;
+constexpr u32 SWEEP_LINK = 0x30, SWEEP_LEFT = 0x34, REHASH_BASE = 0x38, REHASH_READY = 0x3c;
+constexpr u32 SWEEP_REHASH = 0x80000000u;
 constexpr u32 INITIAL_BUCKETS = 16;
+constexpr size_t INTERN_REHASH_WORK = 64;
 constexpr u32 MAX_RAM_RECORDS = MAIN_RAM_SIZE / BLUA32_STRING_RECORD_HEADER_SIZE;
 // The bucket extent field includes the bit for the maximum RAM string count.
 constexpr u32 RAM_BUCKET_EXTENT_MASK = 2u * MAX_RAM_RECORDS - 1u;
+constexpr u32 RAM_BUCKET_REHASH = 0x80000000u;
 constexpr u32 SLOT_BIT = 0x80000000u;
 constexpr bool ramAddress(u32 address) { return address >= RAM_BASE && address < CART_ROM_BASE; }
 constexpr u32 romOffset(u32 address) {
@@ -37,7 +40,6 @@ StringPool::StringPool(LuaHeap& heap, Memory& memory, HeapAllocator& arena)
 	: m_heap(heap), m_memory(memory), m_metadata(arena.managementOffset() + HEAP_STRING_METADATA_OFFSET) {}
 
 u32 StringPool::metadata(u32 field) const { return m_memory.readRamRecordWord(m_metadata + field); }
-u32 StringPool::ramBucketCount() const { return metadata(CAPACITY) & RAM_BUCKET_EXTENT_MASK; }
 void StringPool::writeMetadata(u32 field, u32 word) { m_memory.writeRamRecordWord(m_metadata + field, word); }
 
 Span<const u8> StringPool::romStorage(u32 address) const {
@@ -155,10 +157,8 @@ std::string_view StringPool::bindRomStringBytes(u32 address, u32 cartridgeSlot, 
 	return {reinterpret_cast<const char*>(record.data() + BLUA32_STRING_RECORD_HEADER_SIZE), length};
 }
 
-u32 StringPool::lookupRam(u32 hash, std::string_view bytes) const {
-	const u32 count = ramBucketCount();
-	if (count == 0) return 0;
-	u32 record = m_memory.readRamRecordWord(metadata(BUCKETS) + 4u * (hash & (count - 1u)));
+u32 StringPool::lookupRamChain(u32 bucket, u32 hash, std::string_view bytes) const {
+	u32 record = m_memory.readRamRecordWord(bucket);
 	if (record == 0u) return 0;
 	u32 remaining = std::min(metadata(USED), MAX_RAM_RECORDS);
 	while (record != 0u && remaining-- != 0u) {
@@ -171,6 +171,21 @@ u32 StringPool::lookupRam(u32 hash, std::string_view bytes) const {
 		record = m_memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
 	}
 	return 0;
+}
+
+u32 StringPool::lookupRam(u32 hash, std::string_view bytes) const {
+	const u32 control = metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
+	if (count == 0u) return 0u;
+	const u32 index = hash & (count - 1u);
+	if ((control & RAM_BUCKET_REHASH) != 0u) {
+		const u32 ready = metadata(REHASH_READY);
+		if (index < ready) {
+			const u32 bucket = metadata(REHASH_BASE) + 4u * (hash & (2u * count - 1u));
+			if (const u32 found = lookupRamChain(bucket, hash, bytes)) return found;
+			if (index + 1u < ready) return 0u;
+		}
+	}
+	return lookupRamChain(metadata(BUCKETS) + 4u * index, hash, bytes);
 }
 
 u32 StringPool::lookupRom(u32 directory, u32 hash, std::string_view bytes) const {
@@ -218,51 +233,71 @@ std::optional<StringId> StringPool::find(std::string_view value) const {
 	return id == 0 ? std::nullopt : std::optional<StringId>(id);
 }
 
-void StringPool::grow(u32 count) {
-	const u32 newBase = m_heap.allocateRecord(4u * count, true, 0, 0);
-	const u32 sweep = metadata(SWEEP);
-	const u32 oldBase = metadata(BUCKETS), oldCount = ramBucketCount();
-	const u32 offset = newBase & (MAIN_RAM_SIZE - 1u);
-	std::memset(m_memory.ramData() + offset, 0, 4u * count);
-	m_memory.invalidateRamWrite(offset, 4u * count);
-	u32 remaining = std::min(metadata(USED), MAX_RAM_RECORDS);
-	for (u32 i = 0; i < oldCount && remaining != 0u; ++i) {
-		u32 record = m_memory.readRamRecordWord(oldBase + 4u * i);
-		while (record != 0u && remaining != 0u
-			&& m_memory.readRamRecordByte(record) == BLUA32_STRING_RECORD_KIND) {
-			--remaining;
-			const u32 link = record + BLUA32_STRING_NEXT_OFFSET;
-			const u32 next = m_memory.readRamRecordWord(link);
-			const u32 hash = m_memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET);
-			const u32 bucket = newBase + 4u * (hash & (count - 1u));
-			m_memory.writeRamRecordWord(link, m_memory.readRamRecordWord(bucket));
-			m_memory.writeRamRecordWord(bucket, record);
-			record = next;
+size_t StringPool::rehashStep(u32 oldCount, u32 nextBase, size_t allowance) {
+	const u32 oldBase = metadata(BUCKETS), count = 2u * oldCount;
+	u32 ready = metadata(REHASH_READY);
+	size_t work = 0;
+	// Only the last prepared pair can still have records in its old bucket.
+	while (work < allowance) {
+		if (ready != 0u) {
+			const u32 head = oldBase + 4u * (ready - 1u);
+			if (const u32 record = m_memory.readRamRecordWord(head)) {
+				const u32 link = record + BLUA32_STRING_NEXT_OFFSET;
+				const u32 hash = m_memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET);
+				const u32 bucket = nextBase + 4u * (hash & (count - 1u));
+				m_memory.writeRamRecordWord(head, m_memory.readRamRecordWord(link));
+				m_memory.writeRamRecordWord(link, m_memory.readRamRecordWord(bucket));
+				m_memory.writeRamRecordWord(bucket, record);
+				++work;
+				continue;
+			}
 		}
+		if (ready == oldCount) {
+			writeMetadata(BUCKETS, nextBase);
+			writeMetadata(CAPACITY, count);
+			m_memory.writeRamRecordPair(m_metadata + REHASH_BASE, 0u, 0u);
+			m_heap.releaseRecord(oldBase, 4u * oldCount);
+			return work;
+		}
+		m_memory.writeRamRecordWord(nextBase + 4u * ready, 0u);
+		m_memory.writeRamRecordWord(nextBase + 4u * (ready + oldCount), 0u);
+		++ready;
+		++work;
 	}
-	writeMetadata(BUCKETS, newBase);
-	writeMetadata(CAPACITY, count);
-	if (sweep != 0u) {
-		// Admission may have started sweeping the old table. Each old
-		// bucket splits into i and i + oldCount; both prefixes are done.
-		// Reopen only the possibly incomplete bucket in each half.
-		m_memory.writeRamRecordPair(m_metadata + SWEEP_LINK, 0u, 0u);
-		writeMetadata(SWEEP_SPLIT, oldCount + sweep - 1u);
-	}
-	if (oldCount != 0u) m_heap.releaseRecord(oldBase, 4u * oldCount);
+	writeMetadata(REHASH_READY, ready);
+	return work;
 }
 
 StringId StringPool::intern(std::string_view value) {
 	const u32 hash = fnv1a32(value);
 	if (const u32 id = lookup(hash, value)) return retain(id);
-	const u32 count = ramBucketCount();
-	if (count == 0) grow(INITIAL_BUCKETS);
-	else if (metadata(USED) >= count && !sweeping()) grow(count * 2u);
+	const u32 control = metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
+	if (count == 0u) {
+		const u32 base = m_heap.allocateRecord(4u * INITIAL_BUCKETS, true, 0, 0);
+		const u32 offset = base & (MAIN_RAM_SIZE - 1u);
+		std::memset(m_memory.ramData() + offset, 0, 4u * INITIAL_BUCKETS);
+		m_memory.invalidateRamWrite(offset, 4u * INITIAL_BUCKETS);
+		m_memory.writeRamRecordPair(m_metadata + BUCKETS, base, INITIAL_BUCKETS);
+	} else if (!sweeping()) {
+		if ((control & RAM_BUCKET_REHASH) != 0u) {
+			rehashStep(count, metadata(REHASH_BASE), INTERN_REHASH_WORK);
+		} else if (metadata(USED) >= count) {
+			const u32 nextBase = m_heap.allocateRecord(8u * count, true, 0, 0);
+			writeMetadata(REHASH_BASE, nextBase);
+			writeMetadata(CAPACITY, count | RAM_BUCKET_REHASH);
+			// Admission may itself have started sweeping the old directory.
+			if (!sweeping()) rehashStep(count, nextBase, INTERN_REHASH_WORK);
+		}
+	}
 	// Keep an oversized request in the allocation admission path: the
 	// full-bank request cannot fit, but still clocks the final collection.
 	const u32 size = static_cast<u32>(std::min(value.size(), size_t(MAIN_RAM_SIZE)));
 	const u32 id = m_heap.allocateRecord(BLUA32_STRING_RECORD_HEADER_SIZE + size, false, 0, 0);
-	const u32 bucket = metadata(BUCKETS) + 4u * (hash & (ramBucketCount() - 1u));
+	const u32 currentControl = metadata(CAPACITY), current = currentControl & RAM_BUCKET_EXTENT_MASK;
+	const u32 index = hash & (current - 1u);
+	const u32 bucket = (currentControl & RAM_BUCKET_REHASH) != 0u && index < metadata(REHASH_READY)
+		? metadata(REHASH_BASE) + 4u * (hash & (2u * current - 1u))
+		: metadata(BUCKETS) + 4u * index;
 	m_memory.writeRamRecordWord(id, BLUA32_STRING_RECORD_KIND | ((metadata(EPOCH) & STRING_GC_EPOCH_MASK) << 8));
 	m_memory.writeRamRecordWord(id + BLUA32_STRING_HASH_OFFSET, hash);
 	m_memory.writeRamRecordWord(id + BLUA32_STRING_LENGTH_OFFSET, size);
@@ -302,52 +337,71 @@ void StringPool::markLocalRoots() { for (StringId id : m_localRoots) markReachab
 size_t StringPool::takeMarkWork() { return std::exchange(m_markWork, size_t{0}); }
 
 void StringPool::beginSweep() {
-	writeMetadata(SWEEP, 1u);
+	const u32 ready = metadata(REHASH_READY);
+	writeMetadata(SWEEP, std::max(1u, ready));
 	m_memory.writeRamRecordPair(m_metadata + SWEEP_LINK, 0u, 0u);
-	writeMetadata(SWEEP_SPLIT, 0u);
 }
 bool StringPool::sweeping() const { return metadata(SWEEP) != 0; }
 
 size_t StringPool::sweepStep(size_t allowance) {
-	const u32 base = metadata(BUCKETS), count = ramBucketCount(), epoch = metadata(EPOCH) & STRING_GC_EPOCH_MASK;
-	u32 index = metadata(SWEEP) - 1u, used = metadata(USED);
-	u32 link = metadata(SWEEP_LINK), remaining = metadata(SWEEP_LEFT), split = metadata(SWEEP_SPLIT);
+	const u32 cursor = metadata(SWEEP), control = metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
+	const u32 nextBase = (control & RAM_BUCKET_REHASH) != 0u ? metadata(REHASH_BASE) : 0u;
 	size_t work = 0;
-	while (index < count && allowance != 0u) {
-		if (link == 0u) {
-			if (split != 0u && index == count / 2u) { index = split; split = 0u; }
-			link = base + 4u * index;
-			++work;
-			--allowance;
+	if (cursor != SWEEP_REHASH) {
+		const u32 base = metadata(BUCKETS), epoch = metadata(EPOCH) & STRING_GC_EPOCH_MASK;
+		const u32 ready = metadata(REHASH_READY), lowEnd = count + ready, end = lowEnd + ready;
+		u32 index = cursor - 1u, used = metadata(USED);
+		u32 link = metadata(SWEEP_LINK), remaining = metadata(SWEEP_LEFT);
+		// Freeze rehash until the remaining old buckets and the two prepared
+		// prefixes have been swept. Inserts still select their owning bucket.
+		while (index < end && allowance != 0u) {
+			const u32 bucket = index < count ? base + 4u * index : index < lowEnd
+				? nextBase + 4u * (index - count) : nextBase + 4u * (index - ready);
+			if (link == 0u) {
+				link = bucket;
+				++work;
+				--allowance;
+			}
+			// A new intern can prepend before a survivor link, never after it.
+			if (link == bucket) remaining = std::min(used, MAX_RAM_RECORDS);
+			u32 record = m_memory.readRamRecordWord(link);
+			while (record != 0u && remaining != 0u && allowance != 0u
+				&& m_memory.readRamRecordByte(record) == BLUA32_STRING_RECORD_KIND) {
+				const u32 next = m_memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
+				--remaining;
+				--allowance;
+				++work;
+				if ((m_memory.readRamRecordByte(record + 1u) & STRING_GC_EPOCH_MASK) != epoch) {
+					m_memory.writeRamRecordWord(link, next);
+					// A repeated link cannot clock a freed String, including a whole page run.
+					m_memory.writeRamRecordByte(record, 0u);
+					m_heap.releaseRecord(record, BLUA32_STRING_RECORD_HEADER_SIZE + byteLength(record));
+					--used;
+				} else link = record + BLUA32_STRING_NEXT_OFFSET;
+				record = next;
+			}
+			if (record != 0u && remaining != 0u && allowance == 0u) break;
+			if (record != 0u) m_memory.writeRamRecordWord(link, 0u);
+			link = remaining = 0u;
+			++index;
 		}
-		// A new intern can prepend to the current bucket between grants.
-		// Once we pass a survivor, the link points into that stable suffix.
-		if (link == base + 4u * index) remaining = std::min(used, MAX_RAM_RECORDS);
-		u32 record = m_memory.readRamRecordWord(link);
-		while (record != 0u && remaining != 0u && allowance != 0u
-			&& m_memory.readRamRecordByte(record) == BLUA32_STRING_RECORD_KIND) {
-			const u32 next = m_memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
-			--remaining;
-			--allowance;
-			if ((m_memory.readRamRecordByte(record + 1u) & STRING_GC_EPOCH_MASK) != epoch) {
-				m_memory.writeRamRecordWord(link, next);
-				// A repeated link cannot clock a freed String, including a whole page run.
-				m_memory.writeRamRecordByte(record, 0u);
-				m_heap.releaseRecord(record, BLUA32_STRING_RECORD_HEADER_SIZE + byteLength(record));
-				--used;
-			} else link = record + BLUA32_STRING_NEXT_OFFSET;
-			record = next;
+		writeMetadata(USED, used);
+		m_memory.writeRamRecordPair(m_metadata + SWEEP_LINK, link, remaining);
+		if (index < end) {
+			writeMetadata(SWEEP, index + 1u);
+			return work;
 		}
-		if (record != 0u && remaining != 0u && allowance == 0u) break;
-		if (record != 0u) m_memory.writeRamRecordWord(link, 0u);
-		link = remaining = 0u;
-		++index;
 	}
-	writeMetadata(SWEEP, index < count ? index + 1u : 0u);
-	writeMetadata(USED, used);
-	m_memory.writeRamRecordPair(m_metadata + SWEEP_LINK, link, remaining);
-	writeMetadata(SWEEP_SPLIT, split);
-
+	// A collection also retires the old directory; in particular an emergency
+	// admission can recover it without waiting for another distinct intern.
+	if (nextBase != 0u) {
+		if (allowance != 0u) work += rehashStep(count, nextBase, allowance);
+		if (metadata(REHASH_BASE) != 0u) {
+			writeMetadata(SWEEP, SWEEP_REHASH);
+			return work;
+		}
+	}
+	writeMetadata(SWEEP, 0u);
 	return work;
 }
 

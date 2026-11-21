@@ -55,9 +55,9 @@ struct Machine {
 // Thread232 (80-byte header, 40 Value bytes and two 56-byte frame records)
 // + Closure12, a 15-byte constant bank (three slots), 17 machine Strings charged 697 bytes
 // and their 32 four-byte intern buckets, two 136-byte global banks and a 16-byte image map. Each live String marks once,
-// and every issued object block and intern bucket is visited once.
+// and every issued object block, intern bucket and String chain node is visited once.
 constexpr int bootBytes = 232 + 12 + 15 + 697 + 128 + 16 + 2 * 136;
-constexpr int bootCollectionWork = 4 * 58 + 3 + 1 + 3 * 12 + 2 * 17 + 32;
+constexpr int bootCollectionWork = 4 * 58 + 3 + 1 + 3 * 12 + 3 * 17 + 32;
 
 void allocationAdmissionUsesLogicalBytes() {
 	Machine machine(image()); auto& cpu = machine.cpu;
@@ -89,7 +89,7 @@ void canonicalPoolAndRootRanges() {
 	frame.registers.set(1, valueString(cpu.stringPool().intern("é😀"))); //6 UTF8 bytes.
 	frame.writeControl(bmsx::FrameField::Top, 2);
 	require(cpu.luaHeap().usedBytes() == bootBytes + 98 + 22, "canonical reserved table capacity and UTF8 text bytes agree");
-	require(cpu.collectHeap() == bootCollectionWork + (8 + 2 + 8 + 1) + 2
+	require(cpu.collectHeap() == bootCollectionWork + (8 + 2 + 8 + 1) + 3
 		&& cpu.instructionBudgetRemaining == 7 && cpu.luaHeap().usedBytes() == bootBytes + 98 + 22,
 		"table scans reserved slots; the String is marked and visited without reading its bytes");
 	const auto threshold = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
@@ -277,7 +277,7 @@ void temporaryRootsAndUnreachablePool() {
 		&& cpu.gcHeap().isAlive(table.address()) && cpu.stringPool().toString(id) == "é😀",
 		"all reserve temporary roots survive the first unbilled incremental pass");
 	while (cpu.collecting()) cpu.stepHeap(valueTable(table.address()), valueString(id), valueNil());
-	require(cpu.collectHeap() == bootCollectionWork + 2 && cpu.instructionBudgetRemaining == 1
+	require(cpu.collectHeap() == bootCollectionWork + 3 && cpu.instructionBudgetRemaining == 1
 		&& cpu.luaHeap().usedBytes() == bootBytes,
 		"dead Table incurs one block visit, not another mark pass; its String incurs one visit, not a scan of its bytes");
 }

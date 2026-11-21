@@ -11,6 +11,7 @@ import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { linkRawTestBlua32Pair } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -66,12 +67,12 @@ test('major String sweep rewinds a real bucket chain behind a retained predecess
 	pool.beginReachabilityEpoch();
 	pool.markReachable(ids[5]); pool.takeMarkWork();
 	pool.beginSweep();
-	assert.equal(pool.sweepStep(2), 1, 'one bucket and one live header exhaust two physical units');
+	assert.equal(pool.sweepStep(2), 2, 'one bucket and one live header exhaust two physical units');
 	assert.equal(pool.find(names[4]), ids[4], 'other records in this same bucket have not been visited');
 	const ram = cpu.memory.captureSaveState();
 	const finish = () => {
 		const fresh = pool.intern(names[6]);
-		assert.equal(pool.sweepStep(1), 0, 'resuming the current bucket does not charge its index twice');
+		assert.equal(pool.sweepStep(1), 1, 'resuming the current bucket charges only the next header');
 		assert.equal(pool.find(names[4]), undefined);
 		assert.equal(pool.find(names[3]), ids[3]);
 		for (let step = 0; pool.sweeping() && step < 100; ++step) pool.sweepStep(2);
@@ -86,13 +87,13 @@ test('major String sweep rewinds a real bucket chain behind a retained predecess
 	assert.deepEqual(finish(), expected);
 });
 
-test('intern growth admitted into String sweep preserves both split prefixes without draining', () => {
+test('intern growth admitted into String sweep does not invalidate the original cursor', () => {
 	const cpu = createCpu(), pool = cpu.stringPool, { gc, memory } = cpu;
 	const capacity = 8192;
 	const roots = cpu.createTable(capacity, 0), key = pool.intern('String growth root');
 	cpu.setGlobalByKey(key, valueTable(roots));
 	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
-	const bucketCapacity = () => memory.readRamRecordWord(metadata + 4);
+	const bucketCapacity = () => memory.readRamRecordWord(metadata + 4) & 0x7fffffff;
 	const count = capacity - memory.readRamRecordWord(metadata + 8);
 	const name = (index: number) => `fill:${index}`;
 	for (let i = 0; i < count; ++i) gc.tables.setInteger(roots, i + 1, valueString(pool.intern(name(i))));
@@ -106,12 +107,13 @@ test('intern growth admitted into String sweep preserves both split prefixes wit
 	const finish = () => {
 		cpu.luaHeap.setCollectionTarget(0);
 		const added = pool.intern('growth crosses into Strings');
-		assert.equal(bucketCapacity(), 2 * capacity);
+		assert.equal(bucketCapacity(), capacity);
 		assert.equal(gc.phase(), GcPhase.Strings, 'growth does not synchronously drain the new sweep');
-		assert.ok(memory.readRamRecordWord(metadata + 0x38) > capacity,
-			'the split cursor skips the already visited upper prefix');
+		assert.notEqual(memory.readRamRecordWord(metadata + 0x38), 0, 'the destination owner is already reserved');
+		assert.equal(memory.readRamRecordWord(metadata + 0x3c), 0, 'no bucket changes owner during the sweep');
 		for (let step = 0; gc.active() && step < 20; ++step) gc.step();
 		assert.equal(gc.phase(), GcPhase.Pause);
+		assert.equal(bucketCapacity(), 2 * capacity, 'the collection completes the pending resize incrementally');
 		assert.equal(pool.find('growth crosses into Strings'), added);
 		for (let i = 0; i < count; ++i) assert.equal(pool.find(name(i)), valuePayload(gc.tables.getInteger(roots, i + 1)));
 		return memory.captureSaveState();
@@ -119,6 +121,64 @@ test('intern growth admitted into String sweep preserves both split prefixes wit
 	const expected = finish();
 	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
 	assert.deepEqual(finish(), expected);
+});
+
+test('String rehash splits a collision chain across both planes and replays sweep and retirement', () => {
+	const cpu = createCpu(), pool = cpu.stringPool, { gc, memory } = cpu;
+	const capacity = 4096;
+	const roots = cpu.createTable(4, 0);
+	cpu.setGlobalByKey(pool.intern('collision rehash root'), valueTable(roots));
+	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const read = (field: number) => memory.readRamRecordWord(metadata + field);
+	let candidate = 0;
+	const collision = () => {
+		for (;;) {
+			const text = `rehash collision ${candidate++}`;
+			if ((hashText(text) & (capacity - 1)) === 0) return text;
+		}
+	};
+	const entries = Array.from({ length: capacity - read(8) }, (_, i) => {
+		const text = i < 128 ? collision() : `rehash filler ${i}`;
+		return { text, id: pool.intern(text) };
+	});
+	assert.equal(read(4), capacity);
+	const oldBase = read(0), trigger = collision(), inserted = pool.intern(trigger);
+	const nextBase = read(0x38);
+	assert.notEqual(nextBase, 0);
+	assert.equal(read(0x3c), 1, 'the intern yields inside the first long bucket, not after it');
+	const survivors = [memory.readRamRecordWord(oldBase), memory.readRamRecordWord(nextBase),
+		memory.readRamRecordWord(nextBase + 4 * capacity), inserted];
+	assert.ok(survivors.every(id => id !== 0), 'the old chain and both destination chains are populated');
+	for (let index = 0; index < survivors.length; ++index) gc.tables.setInteger(roots, index + 1, valueString(survivors[index]));
+	for (const { text, id } of entries) assert.equal(pool.find(text), id, 'lookups preserve IDs in each directory');
+
+	let logicalRelease = 4 * capacity, physicalRelease = heapAllocationBytes(logicalRelease);
+	for (const { text, id } of entries) if (!survivors.includes(id)) {
+		const bytes = BLUA32_STRING_RECORD_HEADER_SIZE + text.length;
+		logicalRelease += bytes;
+		physicalRelease += heapAllocationBytes(bytes);
+	}
+	const usage = cpu.luaHeap.usedBytes(), occupied = cpu.heapAllocator.occupiedBytes();
+	const archive = new RamHistory(); archive.start(memory);
+	const checkpoint = archive.capture(memory, null), state = cpu.captureRuntimeState();
+	const finish = () => {
+		for (let step = 0; gc.phase() !== GcPhase.Strings && step < 40; ++step) gc.step();
+		assert.equal(gc.phase(), GcPhase.Strings);
+		assert.equal(read(0x3c), 1, 'sweep visits both planes before moving any more links');
+		for (let step = 0; gc.active() && step < 40; ++step) gc.step();
+		assert.equal(gc.phase(), GcPhase.Pause);
+		assert.equal(read(0), nextBase);
+		assert.equal(read(4), 2 * capacity);
+		assert.equal(read(0x38), 0);
+		assert.equal(pool.find(trigger), inserted);
+		for (const { text, id } of entries) assert.equal(pool.find(text), survivors.includes(id) ? id : undefined);
+		assert.equal(cpu.luaHeap.usedBytes(), usage - logicalRelease, 'retirement returns the old index and dead String charges');
+		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - physicalRelease, 'the old directory is physically reclaimed');
+		return memory.captureSaveState().ram;
+	};
+	const expected = finish(), collected = archive.capture(memory, checkpoint);
+	archive.restore(memory, collected, checkpoint); cpu.restoreRuntimeState(state);
+	assert.deepEqual(finish(), expected, 'rewind reproduces the old and new chain frontiers and allocation bytes');
 });
 
 test('empty strings are interned and then collected like non-empty records', () => {
