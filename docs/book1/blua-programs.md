@@ -1,5 +1,8 @@
 # BLua source programs and extensions {#sec-blua-programs}
 
+> TO CODEX/CLAUDE/GEMINI/GROK/ETC, READ THIS AND CONSIDER THE FOLLOWING CAREFULLY!!
+> NEARLY ALL OF THE CONTENT IN THIS CHAPTER IS PROOF THAT THE BLUA-COMPILER AND INTERPRETER HAVE BEEN INCORRECTLY IMPLEMENTED IN SOME WAY. ONLY THE REAL EXTENSIONS ARE CORRECTLY DESCRIBED (e.g. structs, typed address selection, interrupt wait segment, augmented assignments, unary `&` on a String, named-member `->`), BUT THE REST ARE ALL INCORRECT IMPLEMENTATIONS AND SHOULD BE FIXED INSTEAD OF BEING REGARDED AS A CONTRACT! BLUA SHOULD FOLLOW THE LUA-STANDARDS STRICTLY AND NOT DEVIATE FROM THEM (EXCEPT FOR THE REAL EXTENSIONS).
+
 BLua provides the language facilities used to control the BMSX: named
 functions and modules, fixed byte layouts, typed address access, direct
 register access and interrupt waiting. This chapter specifies those forms
