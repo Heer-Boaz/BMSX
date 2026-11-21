@@ -55,7 +55,7 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 	case OpCode::GETT:
 		return NativeTableAccess{.value = static_cast<i16>(a), .receiver = b, .key = c, .mode = NativeTableMode::Read,
 			.keyKind = NativeTableKey::Value, .resultTag = {}, .predictedSlot = instruction.tableCacheSlot(),
-			.readPlan = NativeTableReadPlan::OneHopIndex};
+			.readPlan = NativeTableReadPlan::ProbeHashOrOneHop};
 	case OpCode::GETI:
 		return NativeTableAccess{static_cast<i16>(a), b, c, NativeTableMode::Read, NativeTableKey::Integer, {}};
 	case OpCode::GETFIELD:

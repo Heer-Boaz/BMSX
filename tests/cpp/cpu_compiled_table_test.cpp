@@ -1328,6 +1328,107 @@ void negativeIntegerKeysUseHashStorage() {
 			"inherited positive reads retain the valid array and the exact successor");
 	}
 }
+
+void nativeDynamicHashProbeReturnsLiveValuesWithinTheGrant() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::KSMI), 4, 0, 39);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::LOADK), 5, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::GETT), 1, 0, 1);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::MOV), 9, 1, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 10}};
+	image.constants = {Blua32FloatConstant{0x80000000u}};
+
+	CpuMachine native(image), scalar(image, true);
+	const Value indexed = valueFloatBits(0x7fc01234u), identity = valueFromTag(ValueTag::False, 37);
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto receiver = cpu.createTable(2, 4), key = cpu.createTable(), otherKey = cpu.createTable();
+		receiver.setInteger(1, valueInteger(61));
+		receiver.setInteger(INT32_MIN, indexed);
+		receiver.setInteger(INT32_MAX, valueInteger(-73));
+		receiver.set(valueTable(key.address()), identity);
+		require(receiver.arrayCapacity() == 2 && receiver.hashSlots() == 4 && key.address() != otherKey.address(),
+			"the signed-extreme keys are outside the array and the two empty tables have distinct identities");
+		auto& frame = *cpu.activeThread()->currentFrame;
+		frame.registers.set(0, valueTable(receiver.address()));
+		frame.registers.set(6, valueTable(key.address()));
+		frame.registers.set(7, valueTable(otherKey.address()));
+		frame.setTop(8);
+	}
+
+	auto& cpu = native.cpu;
+	const u32 pc = native.rom.textAddress, word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const auto& imageState = *cpu.activeThread()->currentFrame->executionImage;
+	cpu.prepareSystemNativeCode();
+	auto& page = *imageState.nativeCodeLookup->find(pc, 0);
+	const auto* installed = page.nativeBlocks->entries[word].get();
+	require(installed != nullptr, "the WIDE dynamic read has a native checkpoint");
+	const auto region = installed->region;
+	const auto exit = std::ranges::find(installed->sideExits, NativeBlockExit::ReadIndex, &NativeBlockExitSite::exit);
+	require(exit != installed->sideExits.end() && exit->currentPc == pc + 2 * INSTRUCTION_BYTES,
+		"the prefix and the dynamic GETT execute within the selected native block");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& readExits = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::ReadIndex)].entries;
+	const u64 originalExits = readExits;
+#endif
+	const int prefix = BASE_CYCLES[static_cast<u8>(OpCode::KSMI)] + BASE_CYCLES[static_cast<u8>(OpCode::LOADK)];
+	const int field = BASE_CYCLES[static_cast<u8>(OpCode::GETT)];
+	const int follow = BASE_CYCLES[static_cast<u8>(OpCode::MOV)];
+	const auto read = [&](Value query, Value expected, int inheritedCost = 0, bool successor = true) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& lane = machine->cpu;
+			lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+			auto& frame = *lane.activeThread()->currentFrame;
+			frame.registers.set(1, query);
+			frame.registers.set(9, valueInteger(99));
+			frame.setTop(8);
+		}
+		require(test::runCpuParity(cpu, scalar.cpu, prefix + field + inheritedCost + (successor ? follow : 0)) == RunResult::Yielded
+			&& cpu.instructionBudgetRemaining == 0, "only the admitted guest prefix and exact lookup tariff consume the grant");
+		require(cpu.readFrameRegister(0, 1) == expected && cpu.readFrameRegister(0, 4) == valueInteger(39)
+			&& cpu.readFrameRegister(0, 5) == valueFloatBits(0x80000000u)
+			&& cpu.readFrameRegister(0, 9) == (successor ? expected : valueInteger(99))
+			&& cpu.readFramePc(0) == pc + (successor ? 5 : 4) * INSTRUCTION_BYTES,
+			"the aliased result and live integer and float writes survive the returning lookup with no extra instruction");
+		require(page.nativeBlocks->entries[word].get() == installed && installed->region == region,
+			"lookup variants reuse the same installed native region");
+		requireParity(native, scalar);
+	};
+	for (int warm = 0; warm < 3; ++warm) read(valueInteger(1), valueInteger(61));
+	const Value key = cpu.readFrameRegister(0, 6), otherKey = cpu.readFrameRegister(0, 7);
+	for (const bool successor : {false, true}) {
+		read(valueInteger(INT32_MIN), indexed, 0, successor);
+		read(valueInteger(INT32_MIN + 1), valueNil(), 0, successor);
+		read(valueInteger(INT32_MAX), valueInteger(-73), 0, successor);
+		read(valueInteger(INT32_MAX - 1), valueNil(), 0, successor);
+		read(key, identity, 0, successor);
+		read(otherKey, valueNil(), 0, successor);
+	}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(readExits == originalExits, "int32 and table-identity hits and absent keys complete without a ReadIndex exit");
+#endif
+
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		auto receiver = asTable(lane.readFrameRegister(0, 0), lane.gcHeap());
+		auto meta = lane.createTable(0, 1), holder = lane.createTable(0, 1);
+		holder.set(lane.readFrameRegister(0, 7), valueInteger(107));
+		meta.setStringKey(lane.stringPool().intern("__index"), valueTable(holder.address()));
+		receiver.setMetatableAddress(meta.address());
+	}
+	read(valueInteger(INT32_MIN), indexed);
+	read(otherKey, valueInteger(107), TABLE_INDEX_VISIT_CYCLES);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(readExits == originalExits + 2, "a metatable leaves both own and inherited dynamic hash reads to their semantic owner");
+#endif
+#endif
+}
 } // namespace
 
 int main() {
@@ -1348,6 +1449,7 @@ int main() {
 
 		warmTableStoresCompleteTheirEffects();
 		negativeIntegerKeysUseHashStorage();
+		nativeDynamicHashProbeReturnsLiveValuesWithinTheGrant();
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

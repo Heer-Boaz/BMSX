@@ -4,6 +4,7 @@
 #include "machine/cpu/gc_object.h"
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/table_access.h"
+#include "machine/cpu/jit/sljit/value_transport.h"
 #include "machine/cpu/table.h"
 #include "spec/blua32/opcode.h"
 
@@ -17,6 +18,15 @@ constexpr auto keyWord = NativeTableScratch::keyWord;
 constexpr auto arrayLength = NativeTableScratch::arrayLength;
 constexpr auto wordOffset = NativeTableScratch::wordOffset;
 constexpr auto tagOffset = NativeTableScratch::tagOffset;
+constexpr auto hashOperand = (NativeBlockAbi::helperResultOffset + alignof(Value) - 1) & ~(alignof(Value) - 1);
+static_assert(hashOperand + sizeof(Value) <= NativeBlockAbi::stackBytes);
+
+// The caller has established that no metatable can observe this read.
+void SLJIT_FUNC readNativeTableHash(GcHeap* heap, u32 receiverAddress, Value* keyAndResult) noexcept {
+	const TableRecord table(*heap, receiverAddress);
+	const Value key = *keyAndResult;
+	*keyAndResult = valueIsInteger(key) ? table.getInteger(asInteger(key)) : table.get(key);
+}
 
 void SLJIT_FUNC writeTableBarrier(GcHeap* heap, u32 receiver, u32 flags) {
 	heap->writeBarrier(receiver, GC_RECORD_LINK, static_cast<u8>(flags));
@@ -39,10 +49,11 @@ void NativeLowering::emitTableValueWrite(int value) {
 	}
 }
 
-void NativeLowering::emitArrayRead(NativeBlockExitSite& exit) {
+sljit_jump* NativeLowering::emitArrayRead(NativeBlockExitSite& exit, bool routeOutside) {
 	auto* c = m_compiler;
-	fault(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
-		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array)), exit, m_cache.state());
+	auto* outside = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
+		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array));
+	if (!routeOutside) fault(outside, exit, m_cache.state());
 	emitTableSlotOffset(c, SLJIT_R2, true);
 	emitTableSlotOffset(c, SLJIT_R3, false);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
@@ -54,6 +65,7 @@ void NativeLowering::emitArrayRead(NativeBlockExitSite& exit) {
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Metatable), SLJIT_IMM, 0), exit, m_cache.state());
 	sljit_set_label(own, sljit_emit_label(c));
+	return outside;
 }
 
 void NativeLowering::emitArrayStore(int value, NativeStorePlan plan, NativeBlockExitSite& exit) {
@@ -243,7 +255,8 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	}
 	// An own-only read can be inside a fixed-cost segment. Only
 	// checkpointed reads can complete a returning variable-cost lookup.
-	if (readPlan == NativeTableReadPlan::OneHopIndex || readPlan == NativeTableReadPlan::ProbeOwnOrOneHop) {
+	if (readPlan == NativeTableReadPlan::OneHopIndex || readPlan == NativeTableReadPlan::ProbeOwnOrOneHop ||
+		readPlan == NativeTableReadPlan::ProbeHashOrOneHop) {
 		// Standalone blocks do not own decoder feedback.
 		auto* ownPrediction = readPlan == NativeTableReadPlan::ProbeOwnOrOneHop && m_bindings.cpu
 			? exit.tableRead.own.decoded : nullptr;
@@ -370,16 +383,45 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		emitRawLoad(key, SLJIT_R3, SLJIT_R2);
 		auto* string = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 			SLJIT_IMM, static_cast<u8>(ValueTag::String));
-		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM,
-			static_cast<u8>(ValueTag::Integer)), exit, m_cache.state());
-		fault(sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0), exit, m_cache.state());
+		const bool hashLeaf = m_bindings.cpu && access.readPlan == NativeTableReadPlan::ProbeHashOrOneHop;
+		auto* otherKey = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+			SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
+		if (!hashLeaf) fault(otherKey, exit, m_cache.state());
+		auto* nonpositive = sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0);
+		if (!hashLeaf) fault(nonpositive, exit, m_cache.state());
 		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
-		if (load) emitArrayRead(exit);
+		sljit_jump* outside = nullptr;
+		if (load) outside = emitArrayRead(exit, hashLeaf);
 		else emitArrayStore(value, access.store, exit);
 		auto* joined = sljit_emit_jump(c, SLJIT_JUMP);
+		sljit_jump* hashJoined = nullptr;
+		if (hashLeaf) {
+			auto* probe = sljit_emit_label(c);
+			for (auto* edge : {otherKey, nonpositive, outside}) sljit_set_label(edge, probe);
+			// These edges still carry the raw key in R3/R2 and the table
+			// header in R0. Never turn an in-array nil into a hash probe.
+			auto* integer = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+				SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
+			fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+				SLJIT_IMM, static_cast<u8>(ValueTag::Table)), exit, m_cache.state());
+			sljit_set_label(integer, sljit_emit_label(c));
+			fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R0),
+				static_cast<u32>(TableHeader::Metatable), SLJIT_IMM, 0), exit, m_cache.state());
+			emitValueTransportStore(c, SLJIT_SP, hashOperand, SLJIT_R3, SLJIT_R2);
+			emitPayload(base, SLJIT_R1);
+			m_cache.spillCall(false, 0);
+			sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+			sljit_get_local_base(c, SLJIT_R2, 0, hashOperand);
+			sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&readNativeTableHash));
+			m_cache.spillCall(true, 0);
+			emitValueTransportLoad(c, SLJIT_SP, hashOperand, SLJIT_R2, SLJIT_R3);
+			hashJoined = sljit_emit_jump(c, SLJIT_JUMP);
+		}
 		sljit_set_label(string, sljit_emit_label(c));
 		emitStringSlot(load, value, exit, std::nullopt, std::nullopt, access.store, access.readPlan);
-		sljit_set_label(joined, sljit_emit_label(c));
+		auto* done = sljit_emit_label(c);
+		sljit_set_label(joined, done);
+		if (hashJoined) sljit_set_label(hashJoined, done);
 		break;
 	}
 	case NativeTableKey::Integer:

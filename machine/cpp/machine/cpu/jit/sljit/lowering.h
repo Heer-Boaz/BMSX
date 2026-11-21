@@ -80,7 +80,7 @@ private:
 	void emitFloatInput(int selector, ValueTag tag, sljit_s32 destination);
 	void emitFloatCanonicalization(sljit_s32 reg);
 	void emitWordOperand(int selector, NativeWordSource source, NativeBlockExitSite& invalid);
-	void emitArrayRead(NativeBlockExitSite&);
+	sljit_jump* emitArrayRead(NativeBlockExitSite&, bool routeOutside = false);
 	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&);
 	void emitTableStoreBarrier(int value, NativeGcBarrier);
 	void emitTableStoreBarriers();
