@@ -974,15 +974,20 @@ void tableFactsAreValidatedAtIndependentRegionEntries(CPU& cpu, Memory& memory) 
 			require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x3004u,
 				"the first receiver guard still takes its semantic exit");
 		} else {
-			require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x300cu
-				&& registers.get(0) == valueNil() && registers.get(5) == valueInteger(1),
-				"external and internal entries check their actual receiver at the access");
+			const bool completedEdge = entry != entries[1];
+			const int prefix = completedEdge ? BASE_CYCLES[static_cast<u8>(OpCode::MOV)]
+				+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)] : 0;
+			require(exit->exit == NativeBlockExit::ScalarBoundary && exit->nextPc == 0x3008u
+				&& exit->operands.replay.hasCompletedInstruction == completedEdge
+				&& state.remainingCycles == 100 - prefix
+				&& registers.get(0) == valueNil() && registers.get(5) == valueNil(),
+				"unproved entries resume at the segment start with only the completed edge charged");
 		}
 	}
 	ValueSlots registers(7);
 	registers.set(6, valueTable(table.address()));
 	NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
-	require(entries[2]->run(registers.view(), state)->exit == NativeBlockExit::ReadInteger && registers.get(0) == valueNil(),
+	require(entries[2]->run(registers.view(), state)->exit == NativeBlockExit::ScalarBoundary && registers.get(0) == valueNil(),
 		"the first internal predecessor cannot reuse the second predecessor's table fact");
 	state.remainingCycles = 100;
 	const auto* exit = entries[3]->run(registers.view(), state);
@@ -1029,9 +1034,9 @@ void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
 		ValueSlots registers(6);
 		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
 		const auto* exit = blocks[1]->run(registers.view(), state);
-		require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x5010u
-			&& registers.get(5) == valueInteger(1),
-			"a copied receiver is checked at the field access after fallthrough");
+		require(exit->exit == NativeBlockExit::ScalarBoundary && exit->nextPc == 0x5008u
+			&& !exit->operands.replay.hasCompletedInstruction && registers.get(5) == valueNil(),
+			"a copied receiver requires admission before its first downstream use");
 		auto table = cpu.createTable(2); table.setInteger(1, valueInteger(23));
 		registers.set(0, valueTable(table.address())); state.remainingCycles = 100;
 		const auto* hit = blocks[1]->run(registers.view(), state);
@@ -1040,7 +1045,7 @@ void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
 	}
 }
 
-void overwrittenAndEvictedFactsDoNotGuardEntries(CPU& cpu, Memory& memory) {
+void logicalFactsDoNotDependOnPhysicalEviction(CPU& cpu, Memory& memory) {
 	for (const bool evict : {false, true}) {
 		std::array<DecodedInstruction, 12> decoded{};
 		std::array<NativeBlockInstruction, 12> instructions{};
@@ -1067,9 +1072,12 @@ void overwrittenAndEvictedFactsDoNotGuardEntries(CPU& cpu, Memory& memory) {
 		for (int operand : {4, 5, 6, 7}) registers.set(operand, valueInteger(0));
 		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
 		const auto* exit = blocks[1]->run(registers.view(), state);
-		require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x7024u,
-			"an overwritten or evicted table fact does not guard an earlier independent entry");
-		require(registers.get(4) == valueInteger(1), "ordinary prefix definitions execute before the later table fault");
+		if (evict)
+			require(exit->exit == NativeBlockExit::ScalarBoundary && exit->nextPc == 0x7008u
+				&& registers.get(4) == valueInteger(0), "host eviction cannot discard a live logical admission proof");
+		else
+			require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x7024u
+				&& registers.get(4) == valueInteger(1), "overwriting the receiver removes the earlier proof");
 	}
 }
 } // namespace
@@ -1090,7 +1098,7 @@ int main() {
 		guardedTableFactsFollowRegisterDefinitions(cpu, memory);
 		tableFactsAreValidatedAtIndependentRegionEntries(cpu, memory);
 		entryGuardsFollowConsumedTableFacts(cpu, memory);
-		overwrittenAndEvictedFactsDoNotGuardEntries(cpu, memory);
+		logicalFactsDoNotDependOnPhysicalEviction(cpu, memory);
 		std::cout << "Native string table store tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {
