@@ -210,10 +210,12 @@ void cartridgeReturnSelectsLiveBank() {
 				"a callee MMIO SELECT write selects the actual return instructions from the other cartridge");
 			if (round >= 15) {
 				if (scalar) break;
-				auto& lookup = *parent->executionImage->nativeCodeLookup;
-				auto* a = lookup.entrySlot(first.textAddress + 3 * INSTRUCTION_BYTES, 0);
-				auto* b = lookup.entrySlot(first.textAddress + 3 * INSTRUCTION_BYTES, 1);
-				if (a != b && *a && *b && parent->nativeContinuationCells[0] == a && parent->nativeContinuationCells[1] == b) break;
+				// The worker, not the number of grants, owns publication.
+				if (auto* lookup = parent->executionImage->nativeCodeLookup.get()) {
+					auto* a = lookup->entrySlot(first.textAddress + 3 * INSTRUCTION_BYTES, 0);
+					auto* b = lookup->entrySlot(first.textAddress + 3 * INSTRUCTION_BYTES, 1);
+					if (a != b && *a && *b && parent->nativeContinuationCells[0] == a && parent->nativeContinuationCells[1] == b) break;
+				}
 			}
 			require(std::chrono::steady_clock::now() < deadline, "real cartridge publication supplies both live continuation cells");
 			std::this_thread::yield();
