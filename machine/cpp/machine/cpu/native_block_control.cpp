@@ -5,7 +5,7 @@
 namespace bmsx {
 
 void NativeLowering::lowerOperation(const NativeControlAccess& access, const NativeInstruction& instruction) {
-	auto* slow = instruction.slow;
+	auto* slow = sideExit(instruction.slow);
 	// Operations requiring the CPU's control path already carry a precise
 	// exit. That path owns admission and conversion, in that order.
 	if (access.mode == NativeControlMode::ReadFault || access.mode == NativeControlMode::WriteSemantic) {

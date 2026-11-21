@@ -102,21 +102,22 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 	const auto instructions = source.instructions;
 	const auto* skippedInstruction = source.skippedInstruction;
 	const u8 skippedInstructionWidth = skippedInstruction ? skippedInstruction->width : 0;
-	auto block = std::unique_ptr<NativeBlock>(new NativeBlock());
-	block->firstPc = instructions.front().pc;
+	auto& block = m_blocks.emplace_back(NativeIrBlock{
+		.instructions = operations, .firstPc = instructions.front().pc,
+		.firstSideExit = static_cast<u16>(m_sideExits.size())});
+	const auto appendExit = [&](const NativeIrExit& exit, NativeIrSideExit& id) -> NativeIrExit& {
+		id = block.sideExitCount++;
+		return m_sideExits.emplace_back(exit);
+	};
 	bool controlGuarded = false;
 	bool reachesEnd = true;
-	std::array<NativeExitPlan, NATIVE_BLOCK_MAX_INSTRUCTIONS> checks;
-	size_t slowCount = 0;
-	for (size_t index = 0; index < operations.size(); ++index) {
-		auto& operation = operations[index].operation;
+	for (auto& instruction : operations) {
+		auto& operation = instruction.operation;
 		if (auto* control = std::get_if<NativeControlAccess>(&operation)) {
 			control->checkPrivilege = !controlGuarded;
 			controlGuarded = true;
 		}
 		reachesEnd &= nativeOperationFlow(operation) != NativeOperationFlow::LeavesNative;
-		checks[index] = std::visit(NativeCheckedExit{}, operation);
-		slowCount += checks[index].kind != NativeBlockExit::Continue;
 	}
 	const auto& final = operations.back().operation;
 	const auto* call = std::get_if<NativeCallSite>(&final);
@@ -124,20 +125,18 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 		&& call->requested <= 1;
 	const bool comparison = std::holds_alternative<NativeComparison>(final);
 	const auto* branch = std::get_if<NativeTruthBranch>(&final);
-	block->hasFusedJump = comparison && skippedInstruction
+	block.hasFusedJump = comparison && skippedInstruction
 		&& skippedInstruction->op == static_cast<u8>(OpCode::JMP) && skippedInstruction->a == 0
 		&& skippedInstruction->dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe);
-	block->sideExits.reserve(slowCount + (branch || comparison ? 1 : 0)
-		+ (block->hasFusedJump ? 1 : 0) + (inlineBuiltin ? 1 : 0));
-	auto& terminal = block->terminal;
+	auto& terminal = block.terminal;
 	for (size_t index = 0; index < instructions.size(); ++index) {
 		const auto& source = instructions[index];
 		NativeResumePoint before{source.pc, terminal.cycles, terminal.registerTop};
 		if (index != 0) before.completed = NativeResumePoint::CompletedInstruction{terminal.currentPc, terminal.lastPc};
-		if (source.pc != block->firstPc) block->admissionCycles = terminal.cycles;
+		if (source.pc != block.firstPc) block.admissionCycles = terminal.cycles;
 		const auto& instruction = *source.decoded;
 		terminal.cycles += instruction.baseCycles;
-		block->sourceWords += instruction.width;
+		block.sourceWords += instruction.width;
 		terminal.currentPc = source.pc;
 		terminal.lastPc = source.pc + (static_cast<u32>(instruction.width) - 1u) * INSTRUCTION_BYTES;
 		auto& ir = operations[index];
@@ -160,17 +159,12 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 		const auto* table = std::get_if<NativeTableAccess>(&ir.operation);
 		if (table && table->mode == NativeTableMode::ReadMethod)
 			terminal.registerTop = std::max(terminal.registerTop, ir.slots.writes.end());
-		const auto [slow, operands] = checks[index];
+		const auto [slow, operands] = std::visit(NativeCheckedExit{}, ir.operation);
 		if (slow != NativeBlockExit::Continue) {
-			auto& exit = block->sideExits.emplace_back(terminal);
-			ir.slow = &exit;
+			auto& exit = appendExit(terminal, ir.slow);
 			exit.exit = slow;
 			exit.operands = operands;
-			if (slow == NativeBlockExit::ReadField || slow == NativeBlockExit::ReadIndex)
-				std::construct_at(&exit.tableReadCache, TableStringReadCache{
-					.receiverSlot = table->predictedSlot, .holderSlot = -1, .holderDepth = 0, .indexSlots = {-1, -1, -1}});
-			else if (slow == NativeBlockExit::WriteField || slow == NativeBlockExit::WriteIndex)
-				std::construct_at(&exit.tableStore, NativeTableStorePrediction{table->predictedSlot, nullptr});
+			if (table) exit.tableSlotSeed = table->predictedSlot;
 		}
 		// The checked exit owns the start charge above. Per-slot and
 		// per-word charges are applied here only for the fast completion.
@@ -194,29 +188,23 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 	const auto [kind, operands] = std::visit(NativeTerminalExit{}, final);
 	terminal.exit = kind;
 	terminal.operands = operands;
-	if (kind == NativeBlockExit::AllocateTable)
-		terminal.recordConstructor = nullptr;
-	NativeBlockExitSite* taken = nullptr;
-	NativeBlockExitSite* beforeFusedJump = nullptr;
-	NativeBlockExitSite* completedCall = nullptr;
 	if (inlineBuiltin) {
-		completedCall = &block->sideExits.emplace_back(terminal);
-		completedCall->exit = NativeBlockExit::CompletedCall;
-		completedCall->cycles = completedCall->registerTop = 0;
+		auto& completedCall = appendExit(terminal, block.completedCall);
+		completedCall.exit = NativeBlockExit::CompletedCall;
+		completedCall.cycles = completedCall.registerTop = 0;
 	}
 	if (branch || comparison) {
-		if (block->hasFusedJump) {
+		if (block.hasFusedJump) {
 			// A compare can exhaust its grant, including a string surcharge.
 			// Retain its successor before constructing the fused JMP edge.
-			beforeFusedJump = &block->sideExits.emplace_back(terminal);
+			appendExit(terminal, block.beforeFusedJump);
 		}
-		auto& exit = block->sideExits.emplace_back(terminal);
-		taken = &exit;
+		auto& exit = appendExit(terminal, block.taken);
 		if (comparison) {
 			exit.exit = skippedInstructionWidth == 0 ? NativeBlockExit::SkipInstruction : NativeBlockExit::Continue;
 			exit.nextPc += static_cast<u32>(skippedInstructionWidth) * INSTRUCTION_BYTES;
-			block->sourceWords += skippedInstructionWidth;
-			if (block->hasFusedJump) {
+			block.sourceWords += skippedInstructionWidth;
+			if (block.hasFusedJump) {
 				terminal.cycles += skippedInstruction->baseCycles;
 				terminal.currentPc = terminal.nextPc;
 				terminal.lastPc = terminal.currentPc + (static_cast<u32>(skippedInstructionWidth) - 1u) * INSTRUCTION_BYTES;
@@ -225,11 +213,7 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 		}
 		else exit.nextPc = branch->target;
 	}
-	m_blocks.push_back({.instructions = operations, .taken = taken, .successors = {},
-		.beforeFusedJump = beforeFusedJump, .completedCall = completedCall,
-		.nativeSuccessor = reachesEnd && terminal.exit == NativeBlockExit::Continue});
-	entries.push_back(std::move(block));
+	block.nativeSuccessor = reachesEnd && terminal.exit == NativeBlockExit::Continue;
 }
-
 
 } // namespace bmsx

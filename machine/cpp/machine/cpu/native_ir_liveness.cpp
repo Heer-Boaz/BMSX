@@ -5,7 +5,6 @@
 #include <bit>
 #include <limits>
 
-#include "machine/cpu/native_block.h"
 #include "machine/cpu/native_ir.h"
 
 namespace bmsx {

@@ -89,7 +89,7 @@ void NativeLowering::deferColdExit(sljit_jump* jump, ExitTarget target, const St
 	m_coldExits.push_back({target, state});
 }
 void NativeLowering::lowerOperation(const NativeMove& instruction, const NativeInstruction& row) {
-	auto* invalid = row.slow;
+	auto* invalid = sideExit(row.slow);
 	const auto mode = instruction.conversion;
 	if (mode == ValueMoveKind::Copy) {
 		if (!instruction.copyTag) {
@@ -154,17 +154,17 @@ void NativeLowering::lowerOperation(const NativeTruthBranch& branch, const Nativ
 	auto& terminal = m_blocks[m_current]->terminal;
 	if (branch.sourceTruthy) {
 		const bool taken = *branch.sourceTruthy == branch.takeOnTruthy;
-		emitExit(taken ? *block.taken : terminal, block.successors[taken]);
+		emitExit(taken ? *sideExit(block.taken) : terminal, block.successors[taken]);
 		return;
 	}
 	emitTag(branch.condition, SLJIT_R1);
 	auto* falsey = sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::False));
 	const auto state = m_cache.state();
-	emitExit(branch.takeOnTruthy ? *block.taken : terminal, block.successors[branch.takeOnTruthy]);
+	emitExit(branch.takeOnTruthy ? *sideExit(block.taken) : terminal, block.successors[branch.takeOnTruthy]);
 	sljit_set_label(falsey, sljit_emit_label(m_compiler));
 	m_cache.setState(state);
-	emitExit(branch.takeOnTruthy ? terminal : *block.taken, block.successors[!branch.takeOnTruthy]);
+	emitExit(branch.takeOnTruthy ? terminal : *sideExit(block.taken), block.successors[!branch.takeOnTruthy]);
 }
 
 void NativeLowering::lower(const NativeInstruction& source) {

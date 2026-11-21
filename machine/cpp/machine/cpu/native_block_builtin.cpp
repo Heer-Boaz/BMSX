@@ -43,7 +43,7 @@ void NativeLowering::lowerOperation(const NativeCallSite& site, const NativeInst
 	if (site.requested != 0) m_cache.discardRange(base, base + 1);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, remainingCycles));
-	auto& completed = *ir.completedCall;
+	auto& completed = *sideExit(ir.completedCall);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM,
 		static_cast<u32>(NativeBuiltinCallOutcome::CompletedStop)), completed, m_cache.state(), Charge::Paid);
 	emitExit(completed, ir.successors[0]);

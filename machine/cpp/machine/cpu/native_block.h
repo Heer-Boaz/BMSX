@@ -10,6 +10,7 @@
 #include "common/primitives.h"
 #include "machine/cpu/value_slots.h"
 #include "machine/cpu/native_block_exit.h"
+#include "machine/cpu/native_limits.h"
 #include "machine/cpu/table_lookup.h"
 #if defined(BMSX_NATIVE_PERF_MAP)
 #include "spec/blua32/execution_domain.h"
@@ -26,7 +27,6 @@ class GcHeap;
 class NativeBlock;
 class NativeBlockGate;
 class NativeLowering;
-class NativeIrRegion;
 class NativeCompiler;
 struct NativeCpuRunState;
 struct NativeBlockExitSite;
@@ -62,10 +62,6 @@ struct NativeBlockRunState {
 	DiagnosticNativeOpcodeCounts diagnosticOpcodes;
 #endif
 };
-
-inline constexpr u8 NATIVE_BLOCK_COMPILATION_THRESHOLD = 64u;
-inline constexpr u32 NATIVE_BLOCK_MAX_INSTRUCTIONS = 64u;
-inline constexpr size_t NATIVE_CODE_CACHE_MAX_BYTES = 32u * 1024u * 1024u;
 
 // Semantic helpers with a fixed successor and no frame, image or device change.
 // Ordinary Continue edges use the region's direct branches instead.
@@ -157,7 +153,6 @@ private:
 	friend class NativeLowering;
 	friend class NativeCompiler;
 	void execute(NativeCpuRunState& state) const;
-	friend class NativeIrRegion;
 	NativeBlock() = default;
 	void* m_body = nullptr;
 	void* m_linkEntry = nullptr;

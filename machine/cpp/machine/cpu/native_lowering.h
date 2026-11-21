@@ -6,6 +6,7 @@
 #include "machine/cpu/native_block.h"
 #include "machine/cpu/native_block_abi.h"
 #include "machine/cpu/native_block_registers.h"
+#include "machine/cpu/native_compiler.h"
 #include "machine/cpu/native_ir.h"
 #include "machine/cpu/native_ir_liveness.h"
 #include "machine/cpu/native_ir_optimize.h"
@@ -26,6 +27,9 @@ public:
 
 private:
 	using State = NativeRegisterCache::State;
+	NativeBlockExitSite* sideExit(NativeIrSideExit id) {
+		return id ? &m_blocks[m_current]->sideExits[*id] : nullptr;
+	}
 	void lowerOperation(const NativeReplay&, const NativeInstruction&);
 	void lowerOperation(const NativeJump&, const NativeInstruction&);
 	void lowerOperation(const auto& op, const NativeInstruction&)

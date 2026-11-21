@@ -50,7 +50,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Const
 	for (const auto& source : sources) instructionCount += source.instructions.size();
 	m_instructions.reserve(instructionCount);
 	m_blocks.reserve(sources.size());
-	entries.reserve(sources.size());
+	m_sideExits.reserve(instructionCount);
 	for (const auto& source : sources) {
 		const size_t first = m_instructions.size();
 		for (const auto& inst : source.instructions)
@@ -61,7 +61,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Const
 		operations = operations.first(count);
 		if (!completeRun) m_instructions.erase(m_instructions.begin() + first + count, m_instructions.end());
 
-		const size_t firstEntry = entries.size();
+		const size_t firstEntry = m_blocks.size();
 		size_t segment = 0;
 		for (size_t index = 0; index < count; ++index) {
 			const bool last = index + 1 == count;
@@ -75,31 +75,29 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Const
 		u16 coveredWords = 0;
 		// Source dependencies cover only this physical run, including
 		// compiler-created continuation entries and any fused following word.
-		for (size_t index = entries.size(); index-- > firstEntry;) {
-			coveredWords += entries[index]->sourceWords;
-			entries[index]->sourceWords = coveredWords;
+		for (size_t index = m_blocks.size(); index-- > firstEntry;) {
+			coveredWords += m_blocks[index].sourceWords;
+			m_blocks[index].sourceWords = coveredWords;
 		}
 	}
 
 	// Emission order can differ from guest address order. Only a published
 	// entry at the exact PC is a local successor.
 	std::array<u16, DECODED_PAGE_WORDS> byAddress;
-	const auto directory = std::span(byAddress).first(entries.size());
+	const auto directory = std::span(byAddress).first(m_blocks.size());
 	std::iota(directory.begin(), directory.end(), u16{0});
-	std::ranges::sort(directory, {}, [&](u16 index) { return entries[index]->firstPc; });
+	std::ranges::sort(directory, {}, [&](u16 index) { return m_blocks[index].firstPc; });
 	const auto entryForPc = [&](u32 pc) -> size_t {
-		const auto entry = std::ranges::lower_bound(directory, pc, {}, [&](u16 index) { return entries[index]->firstPc; });
-		return entry != directory.end() && entries[*entry]->firstPc == pc ? *entry : entries.size();
+		const auto entry = std::ranges::lower_bound(directory, pc, {}, [&](u16 index) { return m_blocks[index].firstPc; });
+		return entry != directory.end() && m_blocks[*entry].firstPc == pc ? *entry : m_blocks.size();
 	};
-	for (size_t index = entries.size(); index-- > 0;) {
-		auto& entry = *entries[index];
-		const auto& primary = entry.terminal;
+	for (size_t index = m_blocks.size(); index-- > 0;) {
 		auto& block = m_blocks[index];
-		const auto* alternate = block.taken;
+		const auto* alternate = block.taken ? &sideExits(block)[*block.taken] : nullptr;
 		block.successors = {
-			block.nativeSuccessor || block.completedCall ? entryForPc(primary.nextPc) : entries.size(),
+			block.nativeSuccessor || block.completedCall ? entryForPc(block.terminal.nextPc) : m_blocks.size(),
 			block.nativeSuccessor && alternate && alternate->exit == NativeBlockExit::Continue
-				? entryForPc(alternate->nextPc) : entries.size(),
+				? entryForPc(alternate->nextPc) : m_blocks.size(),
 		};
 	}
 	if (options.immutablePagePc) planRecordConstructors(directory, *options.immutablePagePc, constants);

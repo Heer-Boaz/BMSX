@@ -117,7 +117,11 @@ on logical guest slots. Within a source run, scalar operands also name their
 producing instruction and output; copying a value does not change its origin.
 Field selection can follow both operands across reuse of the original slot.
 The numeric planner uses observed operand types independently of the next
-guest instruction. SLJIT lowering owns physical registers, spills,
+guest instruction. IR exit IDs name guest operands and timing, not executable
+descriptors. A table allocation can name a fixed-key construction plan in
+the IR while retaining ordinary entries for the original stores.
+The compiler materializes runtime exits and prediction storage after these
+plans are finalized. SLJIT lowering owns physical registers, spills,
 executable labels and link fixups. A live payload can cross an edge without a
 type proof: its tag stays authoritative in guest memory. The CPU publishes
 the compiler's entries by guest PC and binds their continuation cells; it does

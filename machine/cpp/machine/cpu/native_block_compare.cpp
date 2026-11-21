@@ -20,7 +20,7 @@ template <OpCode op> u32 compareKernel(const Value* args, const StringPool* stri
 }
 } // namespace
 void NativeLowering::lowerOperation(const NativeComparison& comparison, const NativeInstruction&) {
-	auto& taken = *m_ir[m_current].taken;
+	auto& taken = *sideExit(m_ir[m_current].taken);
 	const auto op = comparison.operation;
 	sljit_jump* matched;
 	switch (comparison.strategy) {
@@ -76,7 +76,7 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 	auto& terminal = m_blocks[m_current]->terminal;
 	const auto outcome = [&](bool skip) {
 		if (!skip && ir.beforeFusedJump) {
-			auto& deferred = *ir.beforeFusedJump;
+			auto& deferred = *sideExit(ir.beforeFusedJump);
 			fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM,
 					  deferred.cycles),
 				deferred, m_cache.state());

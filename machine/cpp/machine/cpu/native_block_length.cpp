@@ -6,7 +6,7 @@
 namespace bmsx {
 
 void NativeLowering::lowerOperation(const NativeLength& length, const NativeInstruction& instruction) {
-	auto& invalid = *instruction.slow;
+	auto& invalid = *sideExit(instruction.slow);
 	constexpr auto value = NativeBlockAbi::helperResultOffset;
 	emitRawLoad(length.source, SLJIT_R0, SLJIT_R1);
 	emitValueTransportStore(m_compiler, SLJIT_SP, value, SLJIT_R0, SLJIT_R1);

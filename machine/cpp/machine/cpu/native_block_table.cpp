@@ -223,7 +223,7 @@ void NativeLowering::emitSingleStringReads() {
 
 void NativeLowering::lowerOperation(const NativeTableAccess& access, const NativeInstruction& instruction) {
 	auto* c = m_compiler;
-	auto& exit = *instruction.slow;
+	auto& exit = *sideExit(instruction.slow);
 	const bool load = access.mode != NativeTableMode::Write;
 	const int base = access.receiver;
 	const int key = access.key;

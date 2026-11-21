@@ -115,7 +115,7 @@ void NativeLowering::emitRomReads() {
 }
 
 void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const NativeInstruction& instruction) {
-	auto& slow = *instruction.slow;
+	auto& slow = *sideExit(instruction.slow);
 	const auto kind = access.format;
 	const bool words = access.mode == NativeMemoryMode::StoreWords;
 	const bool load = access.mode == NativeMemoryMode::Load;

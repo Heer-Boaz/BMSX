@@ -10,7 +10,7 @@
 
 namespace bmsx {
 void NativeLowering::lowerOperation(const NativeGlobalAccess& access, const NativeInstruction& instruction) {
-	auto* watched = instruction.slow;
+	auto* watched = sideExit(instruction.slow);
 	auto* c = m_compiler;
 	const auto bank = access.bank == NativeGlobalBank::System ? offsetof(NativeBlockRunState, systemGlobalValues)
 		: offsetof(NativeBlockRunState, globalValues);
@@ -47,7 +47,7 @@ void NativeLowering::lowerOperation(const NativeGlobalAccess& access, const Nati
 	emitRawStore(access.slot, SLJIT_R0, SLJIT_R1);
 }
 void NativeLowering::lowerOperation(const NativePoolRead& read, const NativeInstruction& instruction) {
-	auto& invalid = *instruction.slow;
+	auto& invalid = *sideExit(instruction.slow);
 	if (read.indexPlan == NativeWordSource::Invalid) {
 		emitLeave(invalid, Charge::Pending);
 		return;
@@ -72,7 +72,7 @@ void NativeLowering::lowerOperation(const NativePoolRead& read, const NativeInst
 }
 
 void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const NativeInstruction& instruction) {
-	auto* openWrite = instruction.slow;
+	auto* openWrite = sideExit(instruction.slow);
 	sljit_emit_op1(
 		m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, nativeControl));
@@ -147,7 +147,7 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 }
 
 void NativeLowering::lowerOperation(const NativeVararg& placement, const NativeInstruction& instruction) {
-	auto& growth = *instruction.slow;
+	auto& growth = *sideExit(instruction.slow);
 	const auto [first, requested] = placement;
 	const bool open = requested < 0;
 	if (requested == 0) return;

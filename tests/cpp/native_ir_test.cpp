@@ -92,14 +92,15 @@ void fieldChainHasAnExplicitResumePoint() {
 	const auto& arithmetic = std::get<NativeArithmetic>(ops[1].operation);
 	const auto& store = std::get<NativeTableAccess>(ops[2].operation);
 	const auto& add = std::get<NativeNumericPlan>(arithmetic.strategy);
-	require(field.resultTag == ValueTag::Float && ops[0].slow->exit == NativeBlockExit::ReadField,
+	const auto& checkedAdd = region.sideExits(region.blocks().front())[*ops[1].slow];
+	require(field.resultTag == ValueTag::Float && region.sideExits(region.blocks().front())[*ops[0].slow].exit == NativeBlockExit::ReadField,
 		"only a successful own-field hit provides the Float proof");
 	require(add.action == NativeNumericAction::Float && add.left == ValueTag::Float
 		&& add.right == ValueTag::Integer && !add.guardLeft && add.guardRight
 		&& arithmetic.left == field.value && store.value == arithmetic.result,
 		"the sum uses the proven field result, checks the other input and supplies the store");
 	require(ops[1].before == NativeResumePoint{pc + 4, decoded[0].baseCycles, 10, NativeResumePoint::CompletedInstruction{pc, pc}}
-		&& ops[1].slow->lastPc == pc + 8 && ops[1].slow->nextPc == pc + 12,
+		&& checkedAdd.lastPc == pc + 8 && checkedAdd.nextPc == pc + 12,
 		"a type miss retires only GETFIELD before replaying the WIDE sum");
 }
 
@@ -126,7 +127,7 @@ void fieldSelectionOwnsColdCutAndContinuation() {
 	const std::array runs{NativeBlockSource{source}};
 	{
 		NativeIrRegion region(runs, {}, false, {.tier = NativeCompilationTier::ColdImage});
-		require(region.instructionCount() == 1 && region.entries.front()->terminal.nextPc == pc + INSTRUCTION_BYTES,
+		require(region.instructionCount() == 1 && region.blocks().front().terminal.nextPc == pc + INSTRUCTION_BYTES,
 			"unobserved numeric field use defers only its suffix, even across independent assignments");
 	}
 
@@ -143,7 +144,7 @@ void fieldSelectionOwnsColdCutAndContinuation() {
 		NativeIrRegion region(runs);
 		const auto& field = std::get<NativeTableAccess>(region.blocks().front().instructions[1].operation);
 		require(region.blocks().size() == 2 && !field.resultTag
-			&& region.entries[1]->firstPc == pc + 2 * INSTRUCTION_BYTES,
+			&& region.blocks()[1].firstPc == pc + 2 * INSTRUCTION_BYTES,
 			"an overwritten field does not donate a type and its real lookup can charge variable work");
 	}
 }
@@ -169,7 +170,7 @@ void distinctFieldValuesSurviveCopiesAndSlotReuse() {
 	decoded[5].bx = pc + 0x100;
 	const std::array runs{NativeBlockSource{source}};
 	NativeIrRegion cold(runs, {}, false, {.tier = NativeCompilationTier::ColdImage});
-	require(cold.instructionCount() == 1 && cold.entries.front()->terminal.nextPc == source[1].pc,
+	require(cold.instructionCount() == 1 && cold.blocks().front().terminal.nextPc == source[1].pc,
 		"the cold cut begins at the first reaching field producer, not the most recent slot definition");
 
 	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
@@ -257,7 +258,7 @@ void undefinedMoveKindDoesNotBecomeANumericWordMove() {
 	NativeIrRegion region(sources);
 	const auto& row = region.blocks()[0].instructions[0];
 	require(std::holds_alternative<NativeReplay>(row.operation) && row.before.pc == 0x4100 && row.before.cycles == 0
-		&& region.entries[0]->sideExits.empty(),
+		&& region.sideExits(region.blocks().front()).empty(),
 		"an unhandled move replays from its start without committing the numeric transfer");
 }
 
@@ -381,10 +382,11 @@ void recordPlanUsesTypedEntriesAndFullRomWords() {
 		// Publish out of address order to exercise the typed entry directory.
 		const std::array sources{NativeBlockSource{fields}, NativeBlockSource{head}};
 		NativeIrRegion writable(sources, constants.view(), true);
-		require(!writable.entries.back()->terminal.recordConstructor, "writable code never owns a record recipe");
+		require(writable.recordPlans().empty(), "writable code never owns a record recipe");
 		NativeIrRegion readonly(sources, constants.view(), true, {.immutablePagePc = page});
-		const auto& entry = *readonly.entries.back();
-		const auto* recipe = entry.terminal.recordConstructor;
+		const auto& entry = readonly.blocks().back();
+		const auto& allocation = std::get<NativeTableAllocation>(entry.instructions.back().operation);
+		const auto* recipe = allocation.record ? &readonly.recordPlans()[*allocation.record] : nullptr;
 		if (start != page) {
 			require(!recipe, "a WIDE body must also belong to the captured immutable page");
 			continue;
@@ -394,7 +396,7 @@ void recordPlanUsesTypedEntriesAndFullRomWords() {
 			&& recipe->lastInstructionPc == start + 2 * INSTRUCTION_BYTES && recipe->lastWordPc == start + 3 * INSTRUCTION_BYTES
 			&& recipe->nextPc == start + 4 * INSTRUCTION_BYTES && entry.sourceWords == 4,
 			"the typed plan preserves operands, guest positions and complete source coverage");
-		require(readonly.entries[0]->firstPc == fields[0].pc && readonly.entries[1]->firstPc == fields[1].pc,
+		require(readonly.blocks()[0].firstPc == fields[0].pc && readonly.blocks()[1].firstPc == fields[1].pc,
 			"each field retains its ordinary independent entry");
 	}
 }
@@ -405,8 +407,8 @@ void registerUses() {
 	std::array right{NativeInstruction(NativeLiteral{11, valueInteger(0)})};
 	std::array join{NativeInstruction(NativeArithmetic{8, 10, 12, OpCode::ADD, NativeArithmeticHint{}})};
 	std::array blocks{
-		NativeIrBlock{first, nullptr, {1, 2}}, NativeIrBlock{left, nullptr, {3, 3}},
-		NativeIrBlock{right, nullptr, {3, 4}}, NativeIrBlock{join, nullptr, {4, 4}},
+		NativeIrBlock{first, std::nullopt, {1, 2}}, NativeIrBlock{left, std::nullopt, {3, 3}},
+		NativeIrBlock{right, std::nullopt, {3, 4}}, NativeIrBlock{join, std::nullopt, {4, 4}},
 	};
 	NativeRegisterUses uses;
 	uses.analyze(blocks);

@@ -135,7 +135,7 @@ void NativeLowering::emitFloatCanonicalization(sljit_s32 reg) {
 	sljit_set_label(ordinary, sljit_emit_label(m_compiler));
 }
 void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const NativeInstruction& instruction) {
-	auto& invalid = *instruction.slow;
+	auto& invalid = *sideExit(instruction.slow);
 	const auto op = arithmetic.operation;
 	const bool unary = arithmetic.unary();
 	const auto& plan = std::get<NativeNumericPlan>(arithmetic.strategy);

@@ -1,34 +1,12 @@
 #pragma once
 
-#include <optional>
-
 #include "machine/cpu/native_block.h"
+#include "machine/cpu/native_compilation_input.h"
 
 namespace bmsx {
 
-struct DecodedInstruction;
 class Memory;
 class StringPool;
-
-struct NativeBlockInstruction {
-	const DecodedInstruction* decoded;
-	u32 pc;
-};
-
-enum class NativeCompilationTier : u8 { OnDemand, ColdImage };
-
-struct NativeCompilationOptions {
-	NativeCompilationTier tier = NativeCompilationTier::OnDemand;
-	// Set only for a complete, directly backed read-only instruction page.
-	std::optional<u32> immutablePagePc = std::nullopt;
-};
-
-// A contiguous source run between guest entries or control-flow boundaries.
-// The compiler can create more entries inside it for precise timing and exits.
-struct NativeBlockSource {
-	std::span<const NativeBlockInstruction> instructions;
-	const DecodedInstruction* skippedInstruction = nullptr;
-};
 
 // Captured on the CPU owner thread. Code emission consumes these bindings,
 // not mutable Memory/controller state. The pointed-to owners are used only by

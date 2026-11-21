@@ -8,6 +8,7 @@
 
 #include "machine/cpu/native_block_exit.h"
 #include "machine/cpu/native_ir_numeric.h"
+#include "machine/cpu/native_record_plan.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/memory_access_kind.h"
 
@@ -68,6 +69,7 @@ struct NativeReturnSite : NativeExitOperands::Return {
 };
 struct NativeTableAllocation : NativeExitOperands::Allocation {
 	static constexpr auto terminalExit = NativeBlockExit::AllocateTable;
+	std::optional<NativeRecordId> record{};
 	constexpr NativeSlotAccess slots() const { return {.writes = {result, 1}}; }
 };
 struct NativeConcat : NativeExitOperands::Concat {
