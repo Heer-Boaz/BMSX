@@ -16,9 +16,12 @@ void NativeLowering::beginBlock(size_t index) {
 		assignFieldAddressSpills(ir.ownFieldAddresses);
 	m_cache.setState({});
 	entry.guarded = sljit_emit_label(m_compiler);
-	// Public entry points admit their own type proofs before any register move.
-	// Internal edges have already established the exact same payload map.
+	// Public entries admit the shared slot window and their own types before
+	// moving registers. Local edges have already admitted the slot window.
 	auto& replay = m_admissionReplays[ir.entryReplay];
+	if (m_requiredSlots != 0)
+		fault(sljit_emit_cmp(m_compiler, SLJIT_LESS, SLJIT_MEM1(NativeBlockAbi::state),
+			offsetof(NativeBlockRunState, registerCapacity), SLJIT_IMM, m_requiredSlots), replay, m_cache.state());
 	auto* shortGrant = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM,
 		ir.admissionCycles);
 	fault(shortGrant, replay, m_cache.state());

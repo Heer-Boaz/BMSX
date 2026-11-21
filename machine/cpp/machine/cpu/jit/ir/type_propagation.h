@@ -35,7 +35,7 @@ private:
 	void define(NativeValueId value, Fact fact);
 	void define(NativeValueId value, ValueTag tag) { define(value, Fact{tag}); }
 	void require(Type type);
-	void specialize(std::span<NativeInstruction>, NativeSlotValues& values, bool inlineBuiltin, size_t first = 0, size_t count = 0);
+	void specialize(NativeIrBlock&, NativeSlotValues& values, size_t noSuccessor, size_t first = 0, size_t count = 0);
 
 	std::vector<Type> m_facts;
 	std::vector<Assumption> m_assumptions;

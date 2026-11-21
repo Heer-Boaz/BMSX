@@ -19,13 +19,14 @@ struct NativeCheckedExit {
 	NativeExitPlan operator()(const auto&) const { return {}; }
 
 	NativeExitPlan operator()(const NativeMove& move) const {
-		return move.conversion == ValueMoveKind::Copy || move.conversionCheck == NativeTagCheck::Proved
-			? NativeExitPlan{} : NativeExitPlan{NativeBlockExit::InvalidOperand};
+		return move.conversion != ValueMoveKind::Copy && move.conversionCheck == NativeTagCheck::Dynamic
+			? NativeExitPlan{NativeBlockExit::InvalidOperand} : NativeExitPlan{};
 	}
 
 	NativeExitPlan operator()(const NativeArithmetic& op) const {
 		switch (std::get<NativeNumericPlan>(op.strategy).action) {
-		case NativeNumericAction::Fault: case NativeNumericAction::Kernel: return {NativeBlockExit::InvalidOperand};
+		case NativeNumericAction::Fault: BMSX_UNREACHABLE();
+		case NativeNumericAction::Kernel: return {NativeBlockExit::InvalidOperand};
 		case NativeNumericAction::Word: case NativeNumericAction::Float: return {};
 		}
 		BMSX_UNREACHABLE();
@@ -180,6 +181,7 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 }
 
 void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block, bool observesArithmetic) {
+	if (block.terminal.exit == NativeBlockExit::InvalidOperand) truncateOwnFieldAddresses(block);
 	block.firstSideExit = static_cast<u16>(m_sideExits.size());
 	const auto appendExit = [&](const NativeIrExit& exit, NativeIrSideExit& id) -> NativeIrExit& {
 		if (m_sideExits.capacity() == 0) m_sideExits.reserve(m_instructions.size());

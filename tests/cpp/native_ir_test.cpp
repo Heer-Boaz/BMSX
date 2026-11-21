@@ -744,27 +744,56 @@ void rejectedReceiverDoesNotAdvertiseAFieldDatapath() {
 }
 
 void dumpDistinguishesFoldedEdgesFromPublicEntries() {
-	constexpr u32 pc = 0x5500, fallthrough = pc + 8, taken = pc + 16;
+	constexpr u32 pc = 0x5500, branchPc = pc + 8, fallthrough = branchPc + 8, taken = pc + 32;
 	std::array decoded{
-		DecodedInstruction{.op = static_cast<u8>(OpCode::KTRUE)},
-		DecodedInstruction{.op = static_cast<u8>(OpCode::JMPIF)},
-		DecodedInstruction{.op = static_cast<u8>(OpCode::HALT)},
+		DecodedInstruction{.a = 7},
+		DecodedInstruction{.op = static_cast<u8>(OpCode::JMP)},
+		DecodedInstruction{.a = 7, .op = static_cast<u8>(OpCode::JMPIF)},
+		DecodedInstruction{.op = static_cast<u8>(OpCode::K1)},
 		DecodedInstruction{.op = static_cast<u8>(OpCode::HALT)},
 	};
 	for (auto& row : decoded) { row.width = 1; row.baseCycles = BASE_CYCLES[row.op]; }
-	decoded[1].setBx(taken);
+	decoded[1].setBx(branchPc);
+	decoded[2].setBx(taken);
+	decoded[2].width = 2;
 	const std::array entry{NativeBlockInstruction{&decoded[0], pc}, NativeBlockInstruction{&decoded[1], pc + 4}};
-	const std::array left{NativeBlockInstruction{&decoded[2], fallthrough}};
-	const std::array right{NativeBlockInstruction{&decoded[3], taken}};
-	const std::array sources{NativeBlockSource{entry}, NativeBlockSource{left}, NativeBlockSource{right}};
-	NativeRegisterUses uses;
-	NativeIrRegion region(sources, uses);
-	std::ostringstream report;
-	dumpNativeIr(report, region);
-	const auto text = report.str();
-	require(text.find("edge b1 eliminated") != std::string::npos && text.find("edge b2\n") != std::string::npos
-		&& text.find("block b1 pc=") != std::string::npos,
-		"folding an edge neither advertises it as emitted nor deletes the independent entry");
+	const std::array condition{NativeBlockInstruction{&decoded[2], branchPc}};
+	const std::array left{NativeBlockInstruction{&decoded[3], fallthrough}, NativeBlockInstruction{&decoded[4], fallthrough + 4}};
+	const std::array right{NativeBlockInstruction{&decoded[3], taken}, NativeBlockInstruction{&decoded[4], taken + 4}};
+	const std::array sources{NativeBlockSource{entry}, NativeBlockSource{condition}, NativeBlockSource{left}, NativeBlockSource{right}};
+	for (const bool truthy : {false, true}) {
+		decoded[0].op = static_cast<u8>(truthy ? OpCode::KTRUE : OpCode::KFALSE);
+		decoded[0].baseCycles = BASE_CYCLES[decoded[0].op];
+		NativeRegisterUses uses;
+		NativeIrRegion region(sources, uses);
+		const auto blocks = region.blocks();
+		const auto& branch = blocks[1];
+		const size_t chosen = truthy ? 3 : 2, discarded = truthy ? 2 : 3;
+		const auto& jump = std::get<NativeJump>(branch.instructions.front().operation);
+		const u32 destination = truthy ? taken : fallthrough;
+		const auto replays = region.admissionReplays();
+		require(jump.target == destination && branch.terminal.nextPc == destination
+			&& branch.successors == std::array<size_t, 2>{chosen, blocks.size()}
+			&& !branch.taken && region.sideExits(branch).empty(),
+			"the proven WIDE branch has exactly the selected destination and no conditional exit");
+		require(branch.entryTypes.size() == 1 && branch.entryTypes[0].slot == 7
+			&& branch.entryTypes[0].tag == (truthy ? ValueTag::True : ValueTag::False) && blocks[0].provesEntryTo(1),
+			"an independently entered branch still checks the proof that selected its jump");
+		require(branch.edgeReplay[0] && !branch.edgeReplay[1] && replays.size() == blocks.size() + 1,
+			"only the selected successor has a linked admission replay");
+		const auto& replay = replays[*branch.edgeReplay[0]];
+		require(replay.nextPc == destination && replay.currentPc == branchPc && replay.lastPc == branchPc + 4
+			&& replay.operands.replay.hasCompletedInstruction && replay.cycles == 0
+			&& branch.terminal.cycles == decoded[2].baseCycles,
+			"the surviving replay keeps the already charged WIDE branch as its exact prefix");
+		std::ostringstream report;
+		dumpNativeIr(report, region);
+		const auto text = report.str();
+		require(text.find("edge b" + std::to_string(chosen) + " replay=r") != std::string::npos
+			&& text.find("edge b" + std::to_string(discarded)) == std::string::npos
+			&& text.find("block b" + std::to_string(discarded) + " pc=") != std::string::npos,
+			"folding removes the dead edge from the plan, not its independent entry");
+	}
 }
 
 void dumpReportsSelectedBuiltinAndVarargPaths() {
@@ -883,6 +912,94 @@ void registerUses() {
 	require(uses.nextUse(62, 10) == 1 && uses.nextUse(63, 10) == 0 && uses.nextUse(64, 10) == never,
 		"next use includes the final instruction in a full block");
 }
+
+void knownFaultEndsOnlyTheNativePath() {
+	constexpr u32 pc = 0x5800, target = 0x5810, independent = 0x5820;
+	std::array decoded{
+		DecodedInstruction{.op = static_cast<u8>(OpCode::KFALSE)},
+		DecodedInstruction{.op = static_cast<u8>(OpCode::JMP)},
+		DecodedInstruction{.a = 1, .op = static_cast<u8>(OpCode::K1)},
+		DecodedInstruction{.a = 2, .c = 1, .op = static_cast<u8>(OpCode::ADD)},
+		DecodedInstruction{.a = 3, .b = 1, .op = static_cast<u8>(OpCode::LEN)},
+		DecodedInstruction{.op = static_cast<u8>(OpCode::HALT)},
+	};
+	for (auto& row : decoded) { row.width = 1; row.baseCycles = BASE_CYCLES[row.op]; }
+	decoded[1].setBx(target);
+	decoded[3].width = 2;
+	const std::array from{NativeBlockInstruction{&decoded[0], pc}, NativeBlockInstruction{&decoded[1], pc + 4}};
+	const std::array body{NativeBlockInstruction{&decoded[2], target}, NativeBlockInstruction{&decoded[3], target + 4},
+		NativeBlockInstruction{&decoded[4], target + 12}};
+	const std::array publicEntry{NativeBlockInstruction{&decoded[5], independent}};
+	const std::array sources{NativeBlockSource{from}, NativeBlockSource{body}, NativeBlockSource{publicEntry}};
+	NativeRegisterUses uses;
+	const NativeIrRegion region(sources, uses);
+	const auto blocks = region.blocks();
+	const auto& fault = blocks[1];
+	require(blocks.size() == 3 && blocks[0].provesEntryTo(1) && fault.entryTypes.size() == 1
+		&& fault.entryTypes[0].slot == 0 && fault.entryTypes[0].tag == ValueTag::False,
+		"the fault consumes the incoming tag proof and its separately callable entry still admits it");
+	require(fault.instructions.size() == 2 && std::holds_alternative<NativeInvalidOperand>(fault.instructions.back().operation)
+		&& region.sideExits(fault).empty() && fault.successors == std::array<size_t, 2>{blocks.size(), blocks.size()}
+		&& fault.terminal.exit == NativeBlockExit::InvalidOperand && fault.terminal.currentPc == target + 4
+		&& fault.terminal.lastPc == target + 8 && fault.terminal.nextPc == target + 12
+		&& fault.admissionCycles == decoded[2].baseCycles && fault.terminal.cycles == decoded[2].baseCycles + decoded[3].baseCycles
+		&& fault.terminal.registerTop == 2 && fault.sourceWords == 4 && blocks[2].firstPc == independent,
+		"the fault is the only terminal: the dead LEN cannot add an exit, charge or top, and source dependencies stay intact");
+}
+
+void knownFaultEndsTheFieldAddressLifetime() {
+	std::array decoded{
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(1), .a = 2, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(1), .a = 3, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.a = 1, .op = static_cast<u8>(OpCode::KFALSE)},
+		DecodedInstruction{.a = 4, .b = 1, .c = 2, .op = static_cast<u8>(OpCode::ADD)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(1), .a = 5, .op = static_cast<u8>(OpCode::GETFIELD)},
+	};
+	std::array<NativeBlockInstruction, decoded.size()> rows;
+	for (size_t row = 0; row < rows.size(); ++row) {
+		decoded[row].width = 1;
+		decoded[row].baseCycles = BASE_CYCLES[decoded[row].op];
+		rows[row] = {&decoded[row], 0x5900 + static_cast<u32>(row) * INSTRUCTION_BYTES};
+	}
+	const std::array sources{NativeBlockSource{rows}};
+	NativeRegisterUses uses;
+	const NativeIrRegion region(sources, uses);
+	const auto& block = region.blocks().front();
+	require(region.blocks().size() == 1 && block.instructions.size() == 4 && block.ownFieldAddresses.size() == 1
+		&& block.ownFieldAddresses[0].lastUseRow == 1 && region.sideExits(block).size() == 2,
+		"a checked address remains shared only through the last reachable consumer");
+}
+
+void fixedWindowCountsOnlyAdmittedAccesses() {
+	struct Case { OpCode op; u16 a; i16 b, c; bool cpuOwned; u32 slots; };
+	const std::array cases{
+		Case{OpCode::MOV, 0, 31, 0, true, 32},
+		Case{OpCode::LOADNIL, 31, 0, 0, true, 0},
+		Case{OpCode::LOADNIL, 5, 4, 0, true, 9},
+		Case{OpCode::SELF, 5, 2, 40, true, 7},
+		Case{OpCode::STORE_MEM_WORDS, 31, 2, 0, true, 3},
+		Case{OpCode::STORE_MEM_WORDS, 5, 2, 4, true, 9},
+		Case{OpCode::VARARG, 31, 0, 0, true, 0},
+		Case{OpCode::VARARG, 31, 5, 0, true, 0},
+		Case{OpCode::CONCAT, 31, 21, 22, true, 0},
+		Case{OpCode::RET, 31, 9, 0, true, 0},
+		Case{OpCode::CALL, 9, 7, 9, true, 10},
+		Case{OpCode::CALL, 9, 3, 2, true, 12},
+		Case{OpCode::CALL, 9, 3, 2, false, 0},
+	};
+	for (const auto& [op, a, b, c, cpuOwned, slots] : cases) {
+		std::array<DecodedInstruction, 2> decoded{};
+		decoded[0].op = static_cast<u8>(op);
+		decoded[0].a = a; decoded[0].b = b; decoded[0].c = c;
+		decoded[1].op = static_cast<u8>(OpCode::HALT);
+		for (auto& row : decoded) { row.width = 1; row.baseCycles = BASE_CYCLES[row.op]; }
+		const std::array rows{NativeBlockInstruction{&decoded[0], 0x1000}, NativeBlockInstruction{&decoded[1], 0x1004}};
+		const std::array sources{NativeBlockSource{rows}};
+		NativeRegisterUses uses;
+		const NativeIrRegion region(sources, uses, cpuOwned);
+		require(region.requiredSlots() == slots, "the region admits generated fixed operands, not semantic placement ranges");
+	}
+}
 } // namespace
 
 int main() {
@@ -910,6 +1027,9 @@ int main() {
 		dumpReportsSelectedBuiltinAndVarargPaths();
 		recordPlanUsesTypedEntriesAndFullRomWords();
 		registerUses();
+		knownFaultEndsOnlyTheNativePath();
+		knownFaultEndsTheFieldAddressLifetime();
+		fixedWindowCountsOnlyAdmittedAccesses();
 		return 0;
 	} catch (const std::exception& error) {
 		std::cerr << error.what() << '\n';

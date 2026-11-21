@@ -9,11 +9,12 @@
 namespace bmsx {
 
 NativeLowering::NativeLowering(std::span<const std::unique_ptr<NativeBlock>> blocks,
-	const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir,
+	const NativeCodeBindings& bindings, const NativeIrRegion& ir,
 	std::span<NativeBlockExitSite> replays, NativeRegisterUses& uses)
 	: m_compiler(sljit_create_compiler(nullptr)), m_cache(m_compiler, NativeBlockAbi::words, NativeBlockAbi::tags,
 													  NativeBlockAbi::wordRegisters, NativeBlockAbi::floatRegisters),
-	  m_blocks(blocks), m_bindings(bindings), m_ir(ir), m_admissionReplays(replays), m_uses(uses), m_entries(blocks.size()) {
+	  m_blocks(blocks), m_bindings(bindings), m_ir(ir.blocks()), m_requiredSlots(ir.requiredSlots()),
+	  m_admissionReplays(replays), m_uses(uses), m_entries(blocks.size()) {
 	if (!m_compiler)
 		throw std::bad_alloc();
 	sljit_set_context(m_compiler, 0, NativeBlockAbi::signature, NativeBlockAbi::scratches, NativeBlockAbi::saveds,
@@ -119,7 +120,6 @@ void NativeLowering::fault(sljit_jump* jump, NativeBlockExitSite& site, const St
 	m_coldExits.push_back({target, state});
 }
 void NativeLowering::lowerOperation(const NativeMove& instruction, const NativeInstruction& row) {
-	auto* invalid = sideExit(row.slow);
 	const auto mode = instruction.conversion;
 	if (mode == ValueMoveKind::Copy) {
 		if (!instruction.copyTag) {
@@ -138,12 +138,8 @@ void NativeLowering::lowerOperation(const NativeMove& instruction, const NativeI
 		return;
 	}
 	const ValueTag required = mode == ValueMoveKind::FloatBits ? ValueTag::Float : ValueTag::Integer;
-	if (instruction.conversionCheck == NativeTagCheck::Rejected) {
-		emitLeave(*invalid, Charge::Pending);
-		return;
-	}
 	if (instruction.conversionCheck == NativeTagCheck::Dynamic)
-		fault(guardTag(instruction.source, required, SLJIT_R0), *invalid, m_cache.state());
+		fault(guardTag(instruction.source, required, SLJIT_R0), *sideExit(row.slow), m_cache.state());
 	const auto source = readTyped(instruction.source, required);
 	const auto target = m_cache.write(instruction.result, required == ValueTag::Float ? ValueTag::Integer : ValueTag::Float);
 	sljit_emit_fcopy(m_compiler, required == ValueTag::Float ? SLJIT_COPY32_FROM_F32 : SLJIT_COPY32_TO_F32,
@@ -182,11 +178,6 @@ void NativeLowering::lowerOperation(const NativeLiteral& literal, const NativeIn
 void NativeLowering::lowerOperation(const NativeTruthBranch& branch, const NativeInstruction&) {
 	const auto& block = m_ir[m_current];
 	auto& terminal = m_blocks[m_current]->terminal;
-	if (branch.sourceTruthy) {
-		const bool taken = *branch.sourceTruthy == branch.takeOnTruthy;
-		emitExit(taken ? *sideExit(block.taken) : terminal, taken);
-		return;
-	}
 	emitTag(branch.condition, SLJIT_R1);
 	auto* falsey = sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::False));

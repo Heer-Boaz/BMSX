@@ -39,6 +39,23 @@ struct OperationFlow {
 	}
 };
 
+struct NativeWindowExtent {
+	const NativeSlotAccess& slots;
+	bool cpuOwned;
+
+	u32 operator()(const auto&) const { return slots.fixedExtent(); }
+	u32 operator()(const auto& op) const requires requires { op.terminalExit; } { return 0; }
+	u32 operator()(const NativeVararg&) const { return 0; } // Placement admits its own range.
+	u32 operator()(const NativeControlAccess& op) const {
+		return op.mode == NativeControlMode::WriteSemantic ? 0 : slots.fixedExtent();
+	}
+	u32 operator()(const NativeCallSite& op) const {
+		// The shared gate reads the callee. The return owner admits the
+		// destination; only an in-region leaf also needs its arguments here.
+		return cpuOwned ? u32{op.callee} + 1u : 0u;
+	}
+};
+
 } // namespace
 
 NativeOperationFlow nativeOperationFlow(const NativeOperation& operation) {
@@ -112,7 +129,28 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 	}
 	uses.analyze(m_blocks);
 	NativeTypePropagation{}.specializeRegion(m_blocks, uses, values, m_entryTypes);
-	for (auto& block : m_blocks) finalizeBlockExits(block, options.observesArithmetic);
+	for (auto& block : m_blocks) {
+		auto& final = block.instructions.back();
+		if (const auto* branch = std::get_if<NativeTruthBranch>(&final.operation);
+			branch && branch->sourceTruthy) {
+			const bool taken = *branch->sourceTruthy == branch->takeOnTruthy;
+			const auto target = block.successors[taken];
+			const bool proven = block.provesEntryTo(target);
+			if (taken) block.terminal.nextPc = branch->target;
+			final.operation = NativeJump{block.terminal.nextPc};
+			final.slots = {};
+			block.successors = {target, m_blocks.size()};
+			block.provesSuccessorTypes = {proven, false};
+		}
+		finalizeBlockExits(block, options.observesArithmetic);
+		for (const auto& type : block.entryTypes)
+			m_requiredSlots = std::max(m_requiredSlots, u32{type.slot} + 1u);
+		for (const auto& instruction : block.instructions)
+			m_requiredSlots = std::max(m_requiredSlots,
+				std::visit(NativeWindowExtent{instruction.slots, cpuOwned}, instruction.operation));
+		if (block.completedCall)
+			m_requiredSlots = std::max(m_requiredSlots, block.instructions.back().slots.fixedExtent());
+	}
 	planAdmissionReplays();
 	if (options.immutablePagePc) planRecordConstructors(directory, *options.immutablePagePc);
 }

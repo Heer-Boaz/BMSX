@@ -18,7 +18,7 @@ namespace bmsx {
 class NativeLowering {
 public:
 	NativeLowering(std::span<const std::unique_ptr<NativeBlock>> blocks,
-		const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir, std::span<NativeBlockExitSite> replays, NativeRegisterUses& uses);
+		const NativeCodeBindings& bindings, const NativeIrRegion& ir, std::span<NativeBlockExitSite> replays, NativeRegisterUses& uses);
 	~NativeLowering();
 	void beginBlock(size_t index);
 	void lower(const NativeInstruction& instruction);
@@ -110,6 +110,7 @@ private:
 	std::span<const std::unique_ptr<NativeBlock>> m_blocks;
 	const NativeCodeBindings& m_bindings;
 	std::span<const NativeIrBlock> m_ir;
+	u32 m_requiredSlots;
 	std::span<NativeBlockExitSite> m_admissionReplays;
 	NativeRegisterUses& m_uses;
 	struct Entry {

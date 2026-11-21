@@ -105,6 +105,7 @@ public:
 	std::span<const NativeIrExit> admissionReplays() const { return m_admissionReplays; }
 	std::span<const NativeRecordPlan> recordPlans() const { return m_records; }
 	size_t instructionCount() const { return m_instructions.size(); }
+	u32 requiredSlots() const { return m_requiredSlots; }
 
 private:
 	std::vector<NativeInstruction> m_instructions;
@@ -114,10 +115,15 @@ private:
 	std::vector<NativeIrExit> m_admissionReplays;
 	std::vector<NativeRecordPlan> m_records;
 	std::vector<NativeOwnFieldAddress> m_ownFieldAddresses;
+	// All local entries share one logical window: a live-in binding can
+	// come from an access in a different block. Semantic transfers admit
+	// their own footprints.
+	u32 m_requiredSlots = 0;
 	void buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations, bool cpuOwned);
 	void finalizeBlockExits(NativeIrBlock& block, bool observesArithmetic);
 	void planAdmissionReplays();
 	void bindOwnFieldAddresses(NativeIrBlock& block, std::span<const NativeFieldAddressUse> uses, size_t firstRow);
+	void truncateOwnFieldAddresses(NativeIrBlock& block);
 	void planRecordConstructors(std::span<const u16> byAddress, u32 immutablePagePc);
 };
 

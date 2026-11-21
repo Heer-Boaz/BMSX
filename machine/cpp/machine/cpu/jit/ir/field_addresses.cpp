@@ -165,4 +165,22 @@ void NativeIrRegion::bindOwnFieldAddresses(NativeIrBlock& block, std::span<const
 	block.ownFieldAddresses = std::span(m_ownFieldAddresses).subspan(firstAddress);
 }
 
+void NativeIrRegion::truncateOwnFieldAddresses(NativeIrBlock& block) {
+	if (block.ownFieldAddresses.empty()) return;
+	auto addresses = std::span(m_ownFieldAddresses).subspan(
+		block.ownFieldAddresses.data() - m_ownFieldAddresses.data(), block.ownFieldAddresses.size());
+	const size_t rows = block.instructions.size();
+	const auto discarded = std::ranges::lower_bound(addresses, rows, {}, &NativeOwnFieldAddress::definingRow);
+	addresses = addresses.first(discarded - addresses.begin());
+	block.ownFieldAddresses = addresses;
+	for (auto& address : addresses)
+		if (address.lastUseRow && *address.lastUseRow >= rows) address.lastUseRow.reset();
+	for (size_t row = rows; row-- > 0;) {
+		const auto* op = fixedFieldRead(block.instructions[row].operation);
+		if (!op) continue;
+		auto& address = addresses[*op->ownFieldAddress];
+		if (address.definingRow != row && !address.lastUseRow) address.lastUseRow = static_cast<u8>(row);
+	}
+}
+
 } // namespace bmsx

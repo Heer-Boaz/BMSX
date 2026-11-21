@@ -59,6 +59,8 @@ NativeBlockGate::NativeBlockGate() {
 	auto* bindWindow = sljit_emit_label(compiler);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::words, 0, SLJIT_MEM1(SLJIT_R1), ValueSpan::wordsOffset());
 	sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::tags, 0, SLJIT_MEM1(SLJIT_R1), ValueSpan::tagsOffset());
+	sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerCapacity),
+		SLJIT_MEM1(SLJIT_R1), ValueSpan::sizeOffset());
 	sljit_emit_op1(compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, remainingCycles));
 	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_R0, 0);

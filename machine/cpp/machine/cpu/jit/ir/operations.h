@@ -32,6 +32,15 @@ struct NativeSlotAccess {
 	std::array<NativeValueRef, 3> reads{NATIVE_NO_OPERAND, NATIVE_NO_OPERAND, NATIVE_NO_OPERAND};
 	NativeSlotRange writes{};
 	NativeSlotRange readsRange{};
+
+	constexpr u32 fixedExtent() const {
+		u32 extent = 0;
+		for (const int slot : reads)
+			if (slot >= 0) extent = std::max(extent, static_cast<u32>(slot + 1));
+		for (const auto range : {readsRange, writes})
+			if (range.count != 0) extent = std::max(extent, range.first + range.count);
+		return extent;
+	}
 };
 
 enum class NativeAccess : u8 { Read, Write };
@@ -55,6 +64,10 @@ struct NativeJump {
 };
 struct NativeHalt {
 	static constexpr auto terminalExit = NativeBlockExit::Halt;
+	constexpr NativeSlotAccess slots() const { return {}; }
+};
+struct NativeInvalidOperand {
+	static constexpr auto terminalExit = NativeBlockExit::InvalidOperand;
 	constexpr NativeSlotAccess slots() const { return {}; }
 };
 struct NativeExceptionReturn {
@@ -271,7 +284,7 @@ struct NativeVararg : NativeExitOperands::Vararg {
 };
 
 using NativeOperation = std::variant<
-	NativeReplay, NativeJump, NativeHalt, NativeExceptionReturn, NativeReturnSite, NativeTableAllocation,
+	NativeReplay, NativeJump, NativeHalt, NativeInvalidOperand, NativeExceptionReturn, NativeReturnSite, NativeTableAllocation,
 	NativeConcat, NativeConcatRange, NativeClosure, NativeLiteral, NativeConstantLoad, NativeMove, NativeNot, NativeClearSlots, NativePoolRead,
 	NativeLength, NativeGlobalAccess, NativeUpvalueAccess, NativeControlAccess, NativeMemoryAccess,
 	NativeTableAccess, NativeArithmetic, NativeTruthBranch, NativeComparison, NativeCallSite, NativeVararg>;

@@ -95,8 +95,7 @@ void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const Na
 	if (plan.guardRight) guard(arithmetic.right, *plan.right);
 	switch (plan.action) {
 	case NativeNumericAction::Fault:
-		fault(sljit_emit_jump(m_compiler, SLJIT_JUMP), *sideExit(instruction.slow), m_cache.state());
-		return;
+		BMSX_UNREACHABLE();
 	case NativeNumericAction::Kernel:
 		emitNumericKernel(arithmetic, instruction, plan.result);
 		return;

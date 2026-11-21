@@ -8,6 +8,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/value_bank.h"
 
 #include <algorithm>
 #include <array>
@@ -186,6 +187,49 @@ void hotEmptyVararg() {
 	test::waitForNativeEntry(native.cpu, *frame.decodedPage, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->sourceWords == 2, "the empty copy executes through both the native path and scalar warmup");
+#endif
+}
+
+void freshVarargActivationGrowsBeforeWarmContinuation() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::VARARG), 12, 5, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 0, 15, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8, .isVararg = true}};
+	CpuMachine native(image), scalar(image, true);
+	const u32 start = native.rom.textAddress;
+	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 1200);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 entry = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, entry);
+	const auto* regionEntry = page.nativeBlocks->entries[entry].get();
+	const auto* continuation = page.nativeBlocks->entries[entry + 1u].get();
+	require(continuation && regionEntry->region == continuation->region,
+		"the vararg and its warm continuation share an admitted region");
+#endif
+	const auto arguments = test::valueBank(std::array{valueInteger(11), valueInteger(22), valueInteger(33), valueInteger(44)});
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		const auto& root = *cpu.activeThread()->frameAtDepth(0);
+		require(root.registers.size() == 16, "the existing activation has already grown");
+		cpu.beginCompletionCall(root.closureAddress(), BuiltinArgsView(arguments.view()));
+		require(cpu.activeThread()->frameAtDepth(1)->registers.size() == 8,
+			"the new activation starts with the original function reservation");
+	}
+	const int placement = BASE_CYCLES[static_cast<u8>(OpCode::VARARG)] + 4;
+	test::runCpuParity(native.cpu, scalar.cpu, placement, 1);
+	requireParity(native, scalar);
+	const auto& frame = *native.cpu.activeThread()->frameAtDepth(1);
+	require(frame.registers.size() == 16 && frame.registers.get(15) == valueInteger(44)
+		&& native.cpu.readFramePc(1) == start + INSTRUCTION_BYTES && native.cpu.instructionBudgetRemaining == 0,
+		"the complete placement grows and charges the fresh window before the continuation");
+	test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::MOV)], 1);
+	requireParity(native, scalar);
+	require(native.cpu.readFrameRegister(1, 0) == valueInteger(44), "the continuation reads the grown slot");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	require(page.nativeBlocks->entries[entry + 1u].get() == continuation, "growth retains the warm continuation");
 #endif
 }
 
@@ -720,7 +764,8 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 
 int main() {
 	try {
-		physicalVarargWindow(); hotVarargFrames(0); hotVarargFrames(5); hotEmptyVararg(); hotConstantTrap(); hotUpvalueAlias(); physicalUpvalueFootprints(); hotGlobalBanks();
+		physicalVarargWindow(); hotVarargFrames(0); hotVarargFrames(5); hotEmptyVararg(); freshVarargActivationGrowsBeforeWarmContinuation();
+		hotConstantTrap(); hotUpvalueAlias(); physicalUpvalueFootprints(); hotGlobalBanks();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		test::Blua32TestImage image; image.text.resize(INSTRUCTION_BYTES);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0); image.functions = {{.firstWord = 0, .wordCount = 1}};

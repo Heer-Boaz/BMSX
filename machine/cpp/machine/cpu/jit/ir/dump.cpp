@@ -21,6 +21,7 @@ struct OperationName {
 	const char* operator()(const NativeReplay&) const { return "replay"; }
 	const char* operator()(const NativeJump&) const { return "jump"; }
 	const char* operator()(const NativeHalt&) const { return "halt"; }
+	const char* operator()(const NativeInvalidOperand&) const { return "invalid-operand"; }
 	const char* operator()(const NativeExceptionReturn&) const { return "exception-return"; }
 	const char* operator()(const NativeReturnSite&) const { return "return"; }
 	const char* operator()(const NativeTableAllocation& op) const { return op.record ? "allocate-record" : "allocate-table"; }
@@ -128,7 +129,6 @@ struct OperationPlan {
 	}
 	void operator()(const NativeTruthBranch& op) const {
 		out << " target=" << op.target << (op.takeOnTruthy ? " when-truthy" : " when-false");
-		if (op.sourceTruthy) out << (*op.sourceTruthy == op.takeOnTruthy ? " always-taken" : " never-taken");
 	}
 	void operator()(const NativeComparison& op) const {
 		constexpr std::array strategies{"word", "float", "kernel"};
@@ -192,22 +192,18 @@ void writeExit(std::ostream& out, const NativeIrExit& exit) {
 
 void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 	const auto blocks = region.blocks();
+	out << "region required-slots=" << region.requiredSlots() << '\n';
 	for (size_t index = 0; index < blocks.size(); ++index) {
 		const auto& block = blocks[index];
 		out << "block b" << index << " pc=" << block.firstPc
 			<< " admit-cycles=" << block.admissionCycles << " replay=r" << block.entryReplay << '\n';
 		for (auto type : block.entryTypes)
 			out << "  admit R" << type.slot << " tag=" << unsigned(type.tag) << '\n';
-		const auto* branch = std::get_if<NativeTruthBranch>(&block.instructions.back().operation);
 		for (size_t edge = 0; edge < block.successors.size(); ++edge) {
 			const auto target = block.successors[edge];
 			if (target == blocks.size() || (edge != 0 && target == block.successors[0]
-				&& block.edgeReplay[edge] == block.edgeReplay[0] && !(branch && branch->sourceTruthy))) continue;
+				&& block.edgeReplay[edge] == block.edgeReplay[0])) continue;
 			out << "  edge b" << target;
-			if (branch && branch->sourceTruthy && size_t(*branch->sourceTruthy == branch->takeOnTruthy) != edge) {
-				out << " eliminated\n";
-				continue;
-			}
 			if (!blocks[target].entryTypes.empty()) out << (block.provesEntryTo(target) ? " proven" : " checked");
 			if (const auto replay = block.edgeReplay[edge]) out << " replay=r" << *replay;
 			out << '\n';

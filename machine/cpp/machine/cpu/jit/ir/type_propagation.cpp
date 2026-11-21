@@ -11,7 +11,7 @@ namespace bmsx {
 void NativeTypePropagation::specializeRegion(std::span<NativeIrBlock> blocks,
 	const NativeRegisterUses& uses, NativeSlotValues& values, std::vector<NativeSlotType>& imports) {
 	if (blocks.size() == 1) {
-		specialize(blocks.front().instructions, values, false);
+		specialize(blocks.front(), values, blocks.size());
 		return;
 	}
 	// The forward meet proves tags, not identities: two branches can
@@ -21,7 +21,7 @@ void NativeTypePropagation::specializeRegion(std::span<NativeIrBlock> blocks,
 	for (size_t index = 0; index < blocks.size(); ++index) {
 		auto& block = blocks[index];
 		const auto& incoming = ranges[index];
-		specialize(block.instructions, values, block.inlineBuiltin, incoming.first, incoming.count);
+		specialize(block, values, blocks.size(), incoming.first, incoming.count);
 		if (!block.nativeSuccessor) continue;
 		for (size_t edge = 0; edge < block.successors.size(); ++edge) {
 			const size_t target = block.successors[edge];
@@ -91,6 +91,7 @@ struct NativeTypePropagation::Transfer {
 	NativeTypePropagation& facts;
 	NativeRowValues values;
 	bool inlineBuiltin;
+	bool invalidOperand = false;
 
 	Type input(size_t ordinal) const { return facts.type(values.inputs[ordinal]); }
 	void result(ValueTag tag) const { facts.define(values.result, tag); }
@@ -98,7 +99,7 @@ struct NativeTypePropagation::Transfer {
 	// The value flow has already bound untyped writes to fresh identities.
 	void operator()(const auto&) const {}
 
-	void operator()(NativeArithmetic& op) const {
+	void operator()(NativeArithmetic& op) {
 		const auto& hint = std::get<NativeArithmeticHint>(op.strategy);
 		const auto left = input(0);
 		const auto right = input(1);
@@ -106,6 +107,7 @@ struct NativeTypePropagation::Transfer {
 		auto plan = planNativeNumeric(op.operation, tag(left), tag(right), hint.feedback, values.inputs[0] == values.inputs[1]);
 		bool needsLeft = true, needsRight = !op.unary();
 		if (plan.action == NativeNumericAction::Fault) {
+			invalidOperand = true;
 			const auto nonnumeric = [](Type type) {
 				return type && type->tag != ValueTag::Integer && type->tag != ValueTag::Float;
 			};
@@ -182,7 +184,7 @@ struct NativeTypePropagation::Transfer {
 		}
 	}
 
-	void operator()(NativeMove& op) const {
+	void operator()(NativeMove& op) {
 		if (op.conversion == ValueMoveKind::Copy) {
 			const auto type = input(0);
 			// Copying bits does not need a speculative admission check. A
@@ -191,6 +193,10 @@ struct NativeTypePropagation::Transfer {
 		} else {
 			const auto expected = op.conversion == ValueMoveKind::FloatBits ? ValueTag::Float : ValueTag::Integer;
 			op.conversionCheck = check(0, expected);
+			if (op.conversionCheck == NativeTagCheck::Rejected) {
+				invalidOperand = true;
+				return;
+			}
 			if (op.conversionCheck == NativeTagCheck::Dynamic) facts.define(values.inputs[0], expected);
 			result(expected == ValueTag::Float ? ValueTag::Integer : ValueTag::Float);
 		}
@@ -255,18 +261,33 @@ struct NativeTypePropagation::Transfer {
 
 };
 
-void NativeTypePropagation::specialize(std::span<NativeInstruction> instructions, NativeSlotValues& values,
-	bool inlineBuiltin, size_t first, size_t count) {
+void NativeTypePropagation::specialize(NativeIrBlock& block, NativeSlotValues& values,
+	size_t noSuccessor, size_t first, size_t count) {
 	values.beginScope();
 	m_facts.clear();
 	for (size_t index = first; index < first + count; ++index) {
 		const auto& type = m_assumptions[index].type;
 		define(values.slot(type.slot), Fact{type.tag, static_cast<u32>(index + 1u)});
 	}
-	for (u16 row = 0; row < instructions.size(); ++row) {
-		auto& instruction = instructions[row];
+	for (u16 row = 0; row < block.instructions.size(); ++row) {
+		auto& instruction = block.instructions[row];
 		const auto rowValues = values.advance(instruction, row);
-		std::visit(Transfer{*this, rowValues, inlineBuiltin}, instruction.operation);
+		Transfer transfer{*this, rowValues, block.inlineBuiltin};
+		std::visit(transfer, instruction.operation);
+		if (!transfer.invalidOperand) continue;
+		// A proven guest fault pays for the attempted instruction, but no
+		// result or native successor exists. Other public entries stay intact.
+		instruction.operation = NativeInvalidOperand{};
+		instruction.slots = {};
+		block.instructions = block.instructions.first(row + 1u);
+		block.terminal = {.exit = NativeInvalidOperand::terminalExit,
+			.nextPc = instruction.pc + u32{instruction.width} * INSTRUCTION_BYTES};
+		block.nativeSuccessor = false;
+		block.inlineBuiltin = false;
+		block.hasFusedJump = false;
+		block.skippedWidth = block.fusedJumpCycles = 0;
+		block.successors = {noSuccessor, noSuccessor};
+		return;
 	}
 }
 

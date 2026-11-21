@@ -99,6 +99,52 @@ void independentEntriesBindTheirOwnValueBanks() {
 	require(helperRegion.expired() && leafRegion.expired(), "independent native bodies retire their own executable allocations");
 }
 
+void entryAdmitsTheWholeRegionWindow() {
+	constexpr u32 sourcePc = 0x0ff8u, firstPc = 0x1000u, nextPc = 0x1008u, exitPc = 0x2000u;
+	std::array<DecodedInstruction, 6> decoded{};
+	const std::array ops{OpCode::K1, OpCode::JMP, OpCode::K1, OpCode::JMP, OpCode::MOV, OpCode::JMP};
+	const std::array pcs{sourcePc, sourcePc + 4, firstPc, firstPc + 4, nextPc, nextPc + 4};
+	std::array<NativeBlockInstruction, 6> source{};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		decoded[i].op = static_cast<u8>(ops[i]);
+		decoded[i].width = 1;
+		decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+		source[i] = {&decoded[i], pcs[i]};
+	}
+	decoded[0].a = 1;
+	decoded[1].setBx(firstPc);
+	decoded[3].setBx(nextPc);
+	decoded[4].a = 2; decoded[4].b = 7;
+	decoded[5].setBx(exitPc);
+	const std::span rows(source);
+	const std::array plans{NativeBlockSource{rows.subspan(2, 2)}, NativeBlockSource{rows.subspan(4, 2)}};
+	auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
+	auto predecessor = test::compileNative(rows.first(2), memory, cpu.stringPool());
+	blocks[0]->linkFrom(predecessor->terminal);
+	for (const bool linked : {false, true}) for (const size_t capacity : {7u, 8u}) {
+		ValueSlots bank(8);
+		bank.set(7, valueFloatBits(0x7fc00019u));
+		constexpr int grant = 32;
+		NativeBlockRunState state{.remainingCycles = grant, .registerTop = 1};
+		const auto& entry = linked ? *predecessor : *blocks[0];
+		const auto& exit = *entry.run(bank.view().subspan(0, capacity), state);
+		const int paid = linked ? predecessor->terminal.cycles : 0;
+		if (capacity == 7) {
+			require(exit.exit == NativeBlockExit::ScalarBoundary && exit.nextPc == firstPc
+				&& !exit.operands.replay.hasCompletedInstruction && state.remainingCycles == grant - paid
+				&& state.registerTop == (linked ? 2 : 1) && bank.get(0) == valueNil() && bank.get(2) == valueNil(),
+				"an undersized public or linked entry retires no part of the receiving region");
+		} else {
+			require(&exit == &blocks[1]->terminal && exit.nextPc == exitPc
+				&& state.remainingCycles == grant - paid - blocks[0]->terminal.cycles - blocks[1]->terminal.cycles
+				&& state.registerTop == 3 && bank.get(0) == valueInteger(1) && bank.get(2) == bank.get(7),
+				"an exact reserved window admits the local successor independently of live top");
+		}
+		require(bank.get(1) == (linked ? valueInteger(1) : valueNil()) && bank.get(7) == valueFloatBits(0x7fc00019u),
+			"window admission preserves the source region's paid writes and the original operand");
+	}
+}
+
 void helperContinuationsReloadTheCurrentRegisterMap() {
 	std::array<DecodedInstruction, 6> decoded{};
 	std::array<NativeBlockInstruction, 6> source{};
@@ -776,6 +822,40 @@ void arithmeticAndWordDatapaths() {
 	}
 }
 
+void provenOperandFaultNeedsOnlyItsOwnGrant() {
+	constexpr u32 pc = 0x1300;
+	for (const auto op : {OpCode::ADD, OpCode::MOV}) {
+		std::array decoded{
+			DecodedInstruction{.a = 1, .op = static_cast<u8>(OpCode::KFALSE)},
+			DecodedInstruction{.a = 5, .b = 1, .c = 2, .op = static_cast<u8>(op)},
+			DecodedInstruction{.a = 6, .b = 2, .op = static_cast<u8>(OpCode::LEN)},
+		};
+		for (auto& row : decoded) { row.width = 1; row.baseCycles = BASE_CYCLES[row.op]; }
+		decoded[1].width = 2;
+		const std::array source{NativeBlockInstruction{&decoded[0], pc},
+			NativeBlockInstruction{&decoded[1], pc + 4}, NativeBlockInstruction{&decoded[2], pc + 12}};
+		const auto block = test::compileNative(source, memory, cpu.stringPool());
+		ValueSlots registers(7);
+		registers.set(1, valueInteger(3));
+		registers.set(5, valueInteger(5));
+		registers.set(6, valueInteger(6));
+		const int prefix = decoded[0].baseCycles;
+		NativeBlockRunState state{.remainingCycles = prefix};
+		const auto* replay = block->run(registers.view(), state);
+		require(replay->exit == NativeBlockExit::ScalarBoundary && replay->nextPc == pc
+			&& state.remainingCycles == prefix && registers.get(1) == valueInteger(3),
+			"a grant ending before the WIDE fault replays before any native work");
+		state.remainingCycles = prefix + 1;
+		const auto* fault = block->run(registers.view(), state);
+		require(fault == &block->terminal && fault->exit == NativeBlockExit::InvalidOperand
+			&& fault->currentPc == pc + 4 && fault->lastPc == pc + 8 && fault->nextPc == pc + 12
+			&& state.remainingCycles == 1 - decoded[1].baseCycles && state.registerTop == 2
+			&& registers.get(1) == valueBool(false) && registers.get(5) == valueInteger(5)
+			&& registers.get(6) == valueInteger(6),
+			"the positive grant at a proven WIDE fault charges only the attempted instruction and publishes its prefix");
+	}
+}
+
 void wordProducerFactsPreserveRawValuesAndOverwrites() {
 	const std::array inputs{valueInteger(0x12345678), valueInteger(INT32_MIN), valueInteger(-1), valueFloat(-0.0), valueFloat(0.75), valueFloat(-1.75),
 		valueInteger(INT32_MAX), valueFloat(2147483648.0), valueFloat(4294967295.0),
@@ -1334,6 +1414,7 @@ int main() {
 		multipleRegisterDefinitionsSurviveCallAndExit();
 		sharedExitMapsPublishRawValuesFromEitherRegisterBank();
 		independentEntriesBindTheirOwnValueBanks();
+		entryAdmitsTheWholeRegionWindow();
 		helperContinuationsReloadTheCurrentRegisterMap();
 		residentValuesCrossInternalComparisonBranches();
 		segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions();
@@ -1345,6 +1426,7 @@ int main() {
 		linkedSlowExitPublishesTheWholeExecutedChain();
 		comparisonDatapathsRespectEveryValueKind();
 		arithmeticAndWordDatapaths();
+		provenOperandFaultNeedsOnlyItsOwnGrant();
 		wordProducerFactsPreserveRawValuesAndOverwrites();
 		movesAndLiteralsPreserveRawValues();
 		pinnedOperandsSurviveColdReadsAndDestinationReuse();
