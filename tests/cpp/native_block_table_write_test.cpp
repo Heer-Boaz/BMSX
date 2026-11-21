@@ -190,7 +190,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	read(valueInteger(44), 2);
 }
 
-void readsRequireAnOwnSlot(CPU& cpu, Memory& memory) {
+void readsWithoutAProvedPathUseTheSemanticOwner(CPU& cpu, Memory& memory) {
 	const auto key = cpu.stringPool().intern("native read field");
 	const auto indexKey = cpu.stringPool().intern("__index");
 	const auto other = cpu.stringPool().intern("other read field");
@@ -348,6 +348,88 @@ void readsRequireAnOwnSlot(CPU& cpu, Memory& memory) {
 			const int cycles = instructionCharge(std::span(decoded).first(tableReceiver ? decoded.size() : 2));
 			require(state.remainingCycles == 100 - cycles, "proved receivers retain the precise instruction charge");
 		}
+	}
+}
+
+void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
+	const auto key = cpu.stringPool().intern("bounded lookup");
+	const auto indexKey = cpu.stringPool().intern("__index");
+	const u32 home = hashCanonicalTableKey(valueString(key)) & 1u;
+	auto collision = cpu.stringPool().intern("bounded collision a");
+	if ((hashCanonicalTableKey(valueString(collision)) & 1u) != home)
+		collision = cpu.stringPool().intern("bounded collision b");
+	ValueSlots constants(1);
+	constants.set(0, valueString(key));
+	const auto firstResult = valueFloatBits(0xffa12345u), secondResult = valueFromTag(ValueTag::False, 73);
+	for (const auto op : {OpCode::GETFIELD, OpCode::SELF, OpCode::GETT}) {
+		DecodedInstruction lookup{}, suffix{};
+		lookup.op = static_cast<u8>(op);
+		lookup.a = 2; lookup.b = 0; lookup.c = op == OpCode::GETT ? 1 : 0;
+		lookup.tableCacheSlot = -1;
+		lookup.width = suffix.width = 1;
+		suffix.op = static_cast<u8>(OpCode::K1); suffix.a = 4;
+		lookup.baseCycles = BASE_CYCLES[lookup.op];
+		suffix.baseCycles = BASE_CYCLES[suffix.op];
+		const std::array source{NativeBlockInstruction{&lookup, 0x1000u}, NativeBlockInstruction{&suffix, 0x1004u}};
+		size_t bytes = 0;
+		auto block = test::compileNative(source, constants.view(), bytes, memory, cpu.stringPool());
+		auto table = cpu.createTable(0, 2), meta = cpu.createTable(0, 1);
+		auto holder = cpu.createTable(0, 1), nextHolder = cpu.createTable(0, 1);
+		holder.setStringKey(key, firstResult);
+		nextHolder.setStringKey(key, secondResult);
+		meta.setStringKey(indexKey, valueTable(holder.address()));
+		table.setMetatableAddress(meta.address());
+		const auto slow = op == OpCode::GETT ? NativeBlockExit::ReadIndex : NativeBlockExit::ReadField;
+		auto& cache = block->sideExits[0].tableReadCache;
+		const auto run = [&](const TableRecord& base, int grant, Value result) {
+			ValueSlots registers(5);
+			registers.set(0, valueTable(base.address()));
+			registers.set(1, valueString(key));
+			registers.set(2, valueInteger(31));
+			registers.set(3, valueInteger(32));
+			registers.set(4, valueInteger(33));
+			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(),
+				.tableIndexKey = indexKey, .remainingCycles = grant};
+			const auto* exit = block->run(registers.view(), state);
+			require(registers.get(3) == (op == OpCode::SELF ? registers.get(0) : valueInteger(32)),
+				"SELF keeps its original receiver independently of a one-hop hit");
+			const int debt = grant - lookup.baseCycles;
+			if (isNil(result)) {
+				require(exit->exit == slow && exit->currentPc == source[0].pc && exit->nextPc == source[1].pc
+					&& state.remainingCycles == debt && registers.get(2) == valueInteger(31)
+					&& registers.get(4) == valueInteger(33) && state.registerTop == (op == OpCode::SELF ? 4 : 0),
+					"an unproved path performs no inherited work or destination write before the semantic owner");
+			} else {
+				const bool completedSuffix = debt > TABLE_INDEX_VISIT_CYCLES;
+				require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source[completedSuffix].pc
+					&& state.remainingCycles == debt - TABLE_INDEX_VISIT_CYCLES - (completedSuffix ? suffix.baseCycles : 0)
+					&& registers.get(2) == result && registers.get(4) == valueInteger(completedSuffix ? 1 : 33)
+					&& state.registerTop == (completedSuffix ? 5 : op == OpCode::SELF ? 4 : 3),
+					"one native hop preserves exact value bits and charges the extra visit before admitting its successor");
+			}
+		};
+		run(table, 100, valueNil());
+		TableLookupResult result;
+		table.resolveStringIndexPath(indexKey, key, cache.receiverSlot, result, cache);
+		require(result.value == firstResult && result.extraVisits == 1 && cache.holderDepth == 1,
+			"the semantic lookup trains exactly one hop");
+		for (const int grant : {1, lookup.baseCycles + TABLE_INDEX_VISIT_CYCLES,
+			lookup.baseCycles + TABLE_INDEX_VISIT_CYCLES + 1}) run(table, grant, firstResult);
+
+		table.setStringKey(collision, valueInteger(42));
+		require(table.setStringKey(key, secondResult) != static_cast<i32>(home) && cache.receiverSlot == -1,
+			"the stale receiver prediction is absent while the live own mapping is in a collision node");
+		run(table, 100, valueNil());
+
+		auto other = cpu.createTable();
+		other.setMetatableAddress(meta.address());
+		run(other, 100, firstResult);
+		meta.setStringKey(indexKey, valueTable(nextHolder.address()));
+		run(other, 100, secondResult);
+		nextHolder.setStringKey(key, valueNil());
+		run(other, 100, valueNil());
+		meta.setStringKey(indexKey, valueBool(false));
+		run(other, 100, valueNil());
 	}
 }
 
@@ -983,7 +1065,8 @@ int main() {
 		Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
 		inheritedReadFollowsLiveOwners(cpu, memory);
-		readsRequireAnOwnSlot(cpu, memory);
+		readsWithoutAProvedPathUseTheSemanticOwner(cpu, memory);
+		oneHopStringReadsProveTheCurrentPath(cpu, memory);
 		numericFieldArithmeticKeepsNativeFrame(cpu, memory);
 		storesRequireAPredictedOverwrite(cpu, memory);
 		compactArraySlots(cpu, memory);

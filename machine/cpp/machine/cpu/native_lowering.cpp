@@ -200,6 +200,7 @@ void NativeLowering::endBlock() {
 }
 void* NativeLowering::finish(size_t& codeBytes, std::vector<NativeBlockExitSite>& replaySites) {
 	emitRomReads();
+	emitSingleStringReads();
 	replaySites.reserve(std::count_if(m_coldExits.begin(), m_coldExits.end(), [](const ColdExit& exit) {
 		return std::holds_alternative<NativeResumePoint>(exit.target);
 	}));

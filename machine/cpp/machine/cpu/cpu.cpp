@@ -2015,6 +2015,7 @@ dispatch_native_block: {
 				nativeState.state = {.constants = IMAGE.constPool, .frame = frame, .heap = &m_heap,
 					.globalValues = m_globalBank.values(), .systemGlobalValues = m_systemGlobalBank.values(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.size()),
+					.tableIndexKey = asStringId(m_indexKey),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.readWindow(FrameField::Top),
 					.ram = m_memory.ramData(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)

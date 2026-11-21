@@ -68,6 +68,7 @@ public:
 	void resolveStringIndexCached(StringId indexKey, StringId key, int predictedSlot, TableLookupResult& result) const;
 	void resolveStringIndexPath(StringId indexKey, StringId key, int receiverPrediction,
 		TableLookupResult& result, TableStringReadCache& cache) const;
+	static u32 trySingleStringIndex(GcHeap* heap, TableSingleIndexProbe* probe, const TableStringReadCache* slots) noexcept;
 	// Pure boundary search; also the generated-code entry point.
 	static i32 length(const TableRecord* table, u32* probes = nullptr) noexcept;
 	void clear();
@@ -175,6 +176,11 @@ private:
 		u32 array, count, links;
 		int findNode(const Value& key, u32 home, bool matchDead = false) const;
 		int findString(StringId key, u32 home) const;
+		bool matchesString(u32 node, StringId key) const {
+			const u32 slot = array + node;
+			return slots.tag(slot) == ValueTag::String && slots.word(slot) == key;
+		}
+		Value predictedString(i32 node, StringId key) const;
 		i32 next(u32 index) const {
 			return static_cast<i32>(slots.memory->readRamRecordWord(links + index * 4u));
 		}

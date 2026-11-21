@@ -77,6 +77,7 @@ private:
 	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&);
 	void emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<StringId> constantKey,
 		std::optional<ValueTag> resultTag, NativeStorePlan store);
+	void emitSingleStringReads();
 	void emitTableSlotOffset(sljit_s32 destination, bool word);
 	void emitTableSlotLoad(sljit_s32 destination, bool word);
 	void emitTableOverwrite(NativeBlockExitSite&, int value, NativeGcBarrier);
@@ -129,6 +130,14 @@ private:
 		MemoryAccessKind format;
 	};
 	std::vector<RomRead> m_romReads;
+	struct SingleStringRead {
+		std::array<sljit_jump*, 4> ownMisses;
+		std::optional<StringId> key;
+		State registers;
+		NativeBlockExitSite* exit;
+		sljit_label* result;
+	};
+	std::vector<SingleStringRead> m_singleStringReads;
 	size_t m_current = 0, m_instruction = 0;
 	bool m_terminal = false;
 };

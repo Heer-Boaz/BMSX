@@ -166,6 +166,81 @@ void faultsOnce() {
 	}
 }
 
+void warmedOneHopUsesLiveMappings() {
+	for (bool wide : {false, true}) for (const auto op : {OpCode::GETFIELD, OpCode::SELF, OpCode::GETT}) {
+		Program program(op, wide); Machine generated(program, false), scalar(program, true);
+		const std::array machines{&generated, &scalar};
+		for (auto* m : machines) {
+			auto& cpu = m->cpu;
+			const auto key = keyFor(cpu, KeyKind::String);
+			auto receiver = cpu.createTable(0, 2);
+			makeChain(cpu, receiver, 2, key, valueInteger(73));
+			auto replacement = cpu.createTable(0, 2);
+			replacement.set(key, valueInteger(107));
+			auto r = cpu.activeThread()->currentFrame->registers;
+			r.set(0, valueTable(receiver.address())); r.set(1, key); r.set(2, valueTable(replacement.address()));
+		}
+		const int base = op == OpCode::SELF ? 17 : 16;
+		const auto check = [&](Value result, int work) {
+			const std::array charges{2, base + work, 2};
+			for (const int grant : {2, 3, charges[0] + charges[1] + charges[2]}) {
+				for (auto* m : machines) {
+					m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+					auto* frame = m->cpu.activeThread()->currentFrame;
+					frame->registers.set(7, valueNil()); frame->registers.set(8, valueInteger(57));
+					frame->writeControl(FrameField::Top, 0x49000003u);
+				}
+				require(test::runCpuParity(generated.cpu, scalar.cpu, grant) == RunResult::Yielded,
+					"one-hop lookup remains runnable across exact and short grants");
+				int remaining = grant, completed = 0;
+				while (remaining > 0) remaining -= charges[completed++];
+				auto* frame = generated.cpu.activeThread()->currentFrame;
+				const auto r = frame->registers;
+				const u32 top = completed == 3 ? 9u : completed == 2 && op == OpCode::SELF ? 8u : 7u;
+				require(generated.cpu.instructionBudgetRemaining == remaining
+					&& frame->readControl(FrameField::Pc) == generated.rom.textAddress + program.starts[completed] * INSTRUCTION_BYTES
+					&& frame->readControl(FrameField::Top) == (0x49000000u | top),
+					"the live lookup charges only visited Tables and publishes exact PC and register top");
+				require(r.get(6) == (completed >= 2 ? result : r.get(0))
+					&& r.get(7) == (op == OpCode::SELF && completed >= 2 ? r.get(0) : valueNil())
+					&& r.get(8) == (completed == 3 ? result : valueInteger(57)),
+					"the aliased read and SELF receiver observe live mappings without running an unadmitted successor");
+				sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
+				require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
+			}
+		};
+		// Warm the published site before changing any of the mappings it observes.
+		check(valueInteger(73), 8);
+		check(valueInteger(73), 8);
+		for (auto* m : machines) {
+			auto root = asTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap());
+			root.set(m->cpu.readFrameRegister(0, 1), valueBool(false));
+		}
+		check(valueBool(false), 0);
+		for (auto* m : machines) {
+			auto root = asTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap());
+			root.set(m->cpu.readFrameRegister(0, 1), valueNil());
+		}
+		check(valueInteger(73), 8);
+		for (auto* m : machines) {
+			auto& cpu = m->cpu;
+			auto root = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+			TableRecord(cpu.gcHeap(), root.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), cpu.readFrameRegister(0, 2));
+		}
+		check(valueInteger(107), 8);
+		for (auto* m : machines) {
+			auto holder = asTable(m->cpu.readFrameRegister(0, 2), m->cpu.gcHeap());
+			holder.set(m->cpu.readFrameRegister(0, 1), valueBool(false));
+		}
+		check(valueBool(false), 8);
+		for (auto* m : machines) {
+			auto holder = asTable(m->cpu.readFrameRegister(0, 2), m->cpu.gcHeap());
+			holder.set(m->cpu.readFrameRegister(0, 1), valueNil());
+		}
+		check(valueNil(), 8);
+	}
+}
+
 void stringReceiver() {
 	for (bool wide : {false, true}) {
 		Program program(OpCode::GETFIELD, wide, true); Machine generated(program, false), scalar(program, true);
@@ -208,7 +283,7 @@ void stringReceiver() {
 }
 } // namespace
 int main() {
-	try { grantsAndRestore(); faultsOnce(); stringReceiver(); }
+	try { grantsAndRestore(); faultsOnce(); warmedOneHopUsesLiveMappings(); stringReceiver(); }
 	catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 	return 0;
 }

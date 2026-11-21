@@ -105,11 +105,17 @@ inline int TableRecord::HashBody::findString(StringId key, u32 home) const {
 	int index = static_cast<int>(home);
 	for (u32 remaining = count; index >= 0 && remaining != 0u; --remaining) {
 		const u32 slot = static_cast<u32>(index);
-		const u32 keySlot = array + slot;
-		if (slots.tag(keySlot) == ValueTag::String && slots.word(keySlot) == key) return index;
+		if (matchesString(slot, key)) return index;
 		index = next(slot);
 	}
 	return -1;
+}
+
+Value TableRecord::HashBody::predictedString(i32 node, StringId key) const {
+	if (node < 0 || static_cast<u32>(node) >= count || !matchesString(node, key)) return valueNil();
+	const u32 slot = array + count + static_cast<u32>(node);
+	const auto tag = slots.tag(slot);
+	return tag == ValueTag::Nil ? valueNil() : valueFromTag(tag, slots.word(slot));
 }
 
 int TableRecord::getFreeIndex(const HashBody& body) {
@@ -489,14 +495,8 @@ Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot) const {
 	if (count != 0u) {
 		const auto body = hashBody(count, arrayCapacity());
 		const auto& slots = body.slots;
-		if (predictedSlot >= 0 && static_cast<u32>(predictedSlot) < count) {
-			const u32 keySlot = body.array + static_cast<u32>(predictedSlot);
-			if (slots.tag(keySlot) == ValueTag::String && slots.word(keySlot) == key) {
-				const u32 valueSlot = keySlot + count;
-				const auto tag = slots.tag(valueSlot);
-				if (tag != ValueTag::Nil) return valueFromTag(tag, slots.word(valueSlot));
-			}
-		}
+		const Value predicted = body.predictedString(predictedSlot, key);
+		if (!isNil(predicted)) return predicted;
 		const int nodeIndex = body.findString(key, hashCanonicalTableKey(valueString(key)) & (count - 1u));
 		if (nodeIndex >= 0) {
 			const u32 valueSlot = body.array + count + static_cast<u32>(nodeIndex);
@@ -575,6 +575,35 @@ void TableRecord::resolveStringIndexPath(StringId indexKey, StringId key, int re
 	TableLookupResult& result, TableStringReadCache& cache) const {
 	resolveIndexChain<true>(indexKey, receiverPrediction, result,
 		[key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); }, &cache);
+}
+
+u32 TableRecord::trySingleStringIndex(GcHeap* heap, TableSingleIndexProbe* probe, const TableStringReadCache* slots) noexcept {
+	const TableRecord receiver(*heap, probe->receiver);
+	const auto key = probe->key;
+	const u32 count = receiver.hashSlots();
+	if (count != 0u) {
+		// The emitted receiver prediction missed, but that does not prove
+		// absence. Prove it at the live home bucket without chasing links.
+		const u32 home = hashCanonicalTableKey(valueString(key)) & (count - 1u);
+		if (static_cast<i32>(home) >= 0) {
+			const auto body = receiver.hashBody(count, receiver.arrayCapacity());
+			if (body.matchesString(home, key)) {
+				if (body.slots.tag(body.array + count + home) != ValueTag::Nil) return 0;
+			} else if (count != 1u && body.next(home) >= 0) {
+				return 0;
+			}
+		}
+	}
+	const u32 metatable = receiver.metatableAddress();
+	if (metatable == 0u) return 0;
+	const TableRecord meta(*heap, metatable);
+	const Value parent = meta.hashBody(meta.hashSlots(), meta.arrayCapacity()).predictedString(slots->indexSlots[0], probe->indexKey);
+	if (!valueIsTable(parent)) return 0;
+	const TableRecord holder(*heap, valuePayload(parent));
+	const Value result = holder.hashBody(holder.hashSlots(), holder.arrayCapacity()).predictedString(slots->holderSlot, key);
+	if (isNil(result)) return 0;
+	probe->result = result;
+	return 1;
 }
 
 int TableRecord::setStringKey(StringId key, const Value& value) {
