@@ -82,7 +82,6 @@ private:
 	bool m_tickCompletionPending = false;
 	bool m_tickCompletionVisualCommitted = false;
 	bool m_backendServiceSuspended = false;
-	bool m_collectionSuspended = false;
 	bool m_logicalTickRunPending = false;
 	i64 m_logicalTickRunTargetSequence = 0;
 };

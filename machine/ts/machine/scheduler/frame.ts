@@ -51,7 +51,6 @@ export class FrameSchedulerState {
 	private tickCompletionPending = false;
 	private tickCompletionVisualCommitted = false;
 	private backendServiceSuspended = false;
-	private collectionSuspended = false;
 	private logicalTickRunPending = false;
 	private logicalTickRunTargetSequence = 0;
 
@@ -95,23 +94,16 @@ export class FrameSchedulerState {
 	private beginScheduledExecution(hostDeltaMs: number): Pulse {
 		const runtime = this.runtime;
 		if (runtime.history.executionPaused) return Pulse.Blocked;
+		const backendBlocked = runtime.machine.gxGpu.backendServiceBlocksMachine();
+		if (!backendBlocked && !this.backendServiceSuspended) this.accumulateHostTime(hostDeltaMs);
+		this.backendServiceSuspended = backendBlocked;
 		const heap = runtime.machine.cpu.gc;
 		if (heap.finalMarkPending()) {
+			// Keep the host grant queued while the guest clock is stopped.
 			heap.stepFinalMark();
-			this.collectionSuspended = true;
 			return Pulse.Maintenance;
 		}
-		if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
-			this.backendServiceSuspended = true;
-			return Pulse.Blocked;
-		}
-		if (this.backendServiceSuspended || this.collectionSuspended) {
-			// Host service latency never accumulates machine time.
-			this.backendServiceSuspended = this.collectionSuspended = false;
-			hostDeltaMs = 0;
-		}
-		this.accumulateHostTime(hostDeltaMs);
-		return Pulse.Ready;
+		return backendBlocked ? Pulse.Blocked : Pulse.Ready;
 	}
 
 	/** Reconcile backend suspension without executing or admitting another tick. */
@@ -140,7 +132,7 @@ export class FrameSchedulerState {
 		this.clearQueuedTime();
 		this.cycleGrantRemainder = 0;
 		this.clearPendingTickCompletion();
-		this.backendServiceSuspended = this.collectionSuspended = false;
+		this.backendServiceSuspended = false;
 		this.logicalTickRunPending = false;
 		this.logicalTickRunTargetSequence = 0;
 	}
@@ -192,7 +184,7 @@ export class FrameSchedulerState {
 		this.tickCompletionVisualCommitted = state.tickCompletionVisualCommitted;
 		this.logicalTickRunPending = state.logicalTickRunPending;
 		this.logicalTickRunTargetSequence = state.logicalTickRunTargetSequence;
-		this.backendServiceSuspended = this.collectionSuspended = false;
+		this.backendServiceSuspended = false;
 	}
 
 	public run(hostDeltaMs: number): void {

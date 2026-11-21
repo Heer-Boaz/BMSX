@@ -41,23 +41,16 @@ i64 FrameSchedulerState::takeScheduledCycleBudget(const Runtime& runtime) {
 
 FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime& runtime, f64 hostDeltaMs) {
 	if (runtime.history.executionPaused()) return Pulse::Blocked;
+	const bool backendBlocked = runtime.machine.gxGpu.backendServiceBlocksMachine();
+	if (!backendBlocked && !m_backendServiceSuspended) accumulateHostTime(hostDeltaMs);
+	m_backendServiceSuspended = backendBlocked;
 	auto& heap = runtime.machine.cpu.gcHeap();
 	if (heap.finalMarkPending()) {
+		// Keep the host grant queued while the guest clock is stopped.
 		heap.stepFinalMark();
-		m_collectionSuspended = true;
 		return Pulse::Maintenance;
 	}
-	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
-		m_backendServiceSuspended = true;
-		return Pulse::Blocked;
-	}
-	if (m_backendServiceSuspended || m_collectionSuspended) {
-		// Host service latency never accumulates machine time.
-		m_backendServiceSuspended = m_collectionSuspended = false;
-		hostDeltaMs = 0.0;
-	}
-	accumulateHostTime(hostDeltaMs);
-	return Pulse::Ready;
+	return backendBlocked ? Pulse::Blocked : Pulse::Ready;
 }
 
 void FrameSchedulerState::synchronizeBackendService(Runtime& runtime) {
@@ -79,7 +72,7 @@ void FrameSchedulerState::reset() {
 	clearQueuedTime();
 	m_cycleGrantRemainder = 0.0;
 	clearPendingTickCompletion();
-	m_backendServiceSuspended = m_collectionSuspended = false;
+	m_backendServiceSuspended = false;
 	m_logicalTickRunPending = false;
 	m_logicalTickRunTargetSequence = 0;
 }
@@ -131,7 +124,7 @@ void FrameSchedulerState::restoreState(const FrameSchedulerStateSnapshot& state)
 	lastTickVisualFrameCommitted = state.lastTickVisualFrameCommitted;
 	lastTickCompleted = state.lastTickCompleted;
 	lastTickConsumedSequence = state.lastTickConsumedSequence;
-	m_backendServiceSuspended = m_collectionSuspended = false;
+	m_backendServiceSuspended = false;
 }
 
 void FrameSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& frameState) {

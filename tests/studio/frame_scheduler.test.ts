@@ -331,6 +331,23 @@ test('final collection advances the heap without accepting a new machine grant',
 	const expected = finish();
 	applyRuntimeSaveState(runtime, checkpoint);
 	assert.ok(isDeepStrictEqual(finish(), expected), 'restore resumes at the same physical collection cursor');
+
+	applyRuntimeSaveState(runtime, checkpoint);
+	scheduler.run(1);
+	assert.equal(clock.nowCycles, before[0], 'only the collector progresses during a real-time offer');
+	assert.equal(scheduler.captureState().accumulatedHostTimeMs, 1);
+	for (let step = 0; gc.finalMarkPending() && step < 40; ++step) scheduler.run(0);
+	assert.equal(gc.finalMarkPending(), false);
+	assert.equal(clock.nowCycles, before[0], 'the last maintenance quantum does not advance the guest clock');
+	const marked = captureRuntimeSaveState(runtime);
+	const resume = () => {
+		scheduler.run(2);
+		assert.equal(clock.nowCycles, before[0] + 127 + Math.trunc(3 * runtime.timing.cpuCyclesPerMillisecond));
+		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	};
+	const resumed = resume();
+	applyRuntimeSaveState(runtime, marked);
+	assert.ok(isDeepStrictEqual(resume(), resumed), 'restoring just after final mark retains the same real-time frontier');
 });
 
 test('busy CPU execution publishes consumed cycles before VBlank carries the remaining grant', () => {

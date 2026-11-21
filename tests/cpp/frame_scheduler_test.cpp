@@ -134,6 +134,25 @@ void testFinalCollectionRetainsTheMachineGrant() {
 	const auto expected = finish();
 	applyRuntimeSaveState(runtime, checkpoint);
 	require(finish() == expected, "the suspended collector resumes identically after a full save/load");
+
+	applyRuntimeSaveState(runtime, checkpoint);
+	scheduler.run(runtime, 1.0);
+	require(runtime.machine.scheduler.nowCycles() == clock && scheduler.captureState().accumulatedHostTimeMs == 1.0,
+		"a real-time offer waits in the scheduler while only the collector progresses");
+	for (int step = 0; heap.finalMarkPending() && step < 40; ++step) scheduler.run(runtime, 0.0);
+	require(!heap.finalMarkPending() && runtime.machine.scheduler.nowCycles() == clock,
+		"finishing the last maintenance quantum does not advance guest time");
+	const auto marked = captureRuntimeSaveState(runtime);
+	const auto resume = [&] {
+		scheduler.run(runtime, 2.0);
+		require(runtime.machine.scheduler.nowCycles() == clock + 127
+			+ static_cast<i64>(3.0 * runtime.timing.cpuCyclesPerMillisecond),
+			"both the queued host offer and the first post-collection offer fund guest execution");
+		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	};
+	const auto resumed = resume();
+	applyRuntimeSaveState(runtime, marked);
+	require(resume() == resumed, "restoring just after final mark retains the same real-time frontier");
 }
 
 void testRuntimeRestoreRearmsCpuGp0Wait() {
