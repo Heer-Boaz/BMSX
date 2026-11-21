@@ -52,7 +52,7 @@ void NativeLowering::emitTableSlotLoad(sljit_s32 destination, bool word) {
 	sljit_emit_op1(m_compiler, word ? SLJIT_MOV32 : SLJIT_MOV_U8, destination, 0, SLJIT_MEM1(destination), 0);
 }
 
-void NativeLowering::emitTableWriteWatch(NativeBlockExitSite& exit, bool arraySlot, int value) {
+void NativeLowering::emitTableWriteWatch(NativeBlockExitSite& exit, bool arraySlot, int value, NativeGcBarrier barrier) {
 	if (arraySlot) {
 		for (bool word : {true, false}) {
 			const auto address = word ? wordOffset : tagOffset;
@@ -71,9 +71,8 @@ void NativeLowering::emitTableWriteWatch(NativeBlockExitSite& exit, bool arraySl
 		emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), tagOffset, SLJIT_R2, SLJIT_R3);
 	}
 
-	const int tag = knownTag(value);
-	if (tag >= 0 && !valueTagHasGcEdge(static_cast<ValueTag>(tag))) return;
-	const auto scalar = tag < 0 ? emitSkipScalarBarrier(value, SLJIT_R2) : std::array<sljit_jump*, 2>{};
+	if (barrier == NativeGcBarrier::None) return;
+	const auto scalar = barrier == NativeGcBarrier::Dynamic ? emitSkipScalarBarrier(value, SLJIT_R2) : std::array<sljit_jump*, 2>{};
 	// All potential exits precede the actual slot store. A backward barrier
 	// only enqueues work, so it may publish before the value reaches its lane.
 	auto* c = m_compiler;
@@ -116,21 +115,20 @@ std::array<sljit_jump*, 2> NativeLowering::emitArrayRead() {
 	return {outside, inherited};
 }
 
-void NativeLowering::emitArrayStore(int value, NativeBlockExitSite& exit) {
+void NativeLowering::emitArrayStore(int value, NativeStorePlan plan, NativeBlockExitSite& exit) {
 	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array)), exit, m_cache.state());
-	emitTableWriteWatch(exit, true, value);
+	emitTableWriteWatch(exit, true, value, plan.barrier);
 	emitTableSlotStore(value);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), slot);
-	const int tag = knownTag(value);
 	sljit_jump* nil = nullptr;
-	if (tag < 0) {
+	if (plan.nilValue == NativeNilValue::Dynamic) {
 		nil =
 			sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Nil));
 	}
 	sljit_jump* retained = nullptr;
 	sljit_jump* advanced = nullptr;
-	if (tag != static_cast<int>(ValueTag::Nil)) {
+	if (plan.nilValue != NativeNilValue::Nil) {
 		retained = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0),
 								  static_cast<u32>(TableHeader::Length));
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Length), SLJIT_R1, 0, SLJIT_IMM, 1);
@@ -138,7 +136,7 @@ void NativeLowering::emitArrayStore(int value, NativeBlockExitSite& exit) {
 			advanced = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 	}
 	sljit_jump* unchanged = nullptr;
-	if (tag < 0 || tag == static_cast<int>(ValueTag::Nil)) {
+	if (plan.nilValue != NativeNilValue::Present) {
 		if (nil)
 			sljit_set_label(nil, sljit_emit_label(m_compiler));
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
@@ -207,7 +205,7 @@ void NativeLowering::emitIndexRead(int key, NativeBlockExitSite& exit) {
 
 // Hash keys start after the array; hash values start after all hash keys.
 sljit_jump* NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& exit,
-	std::optional<StringId> constantKey, std::optional<ValueTag> resultTag) {
+	std::optional<StringId> constantKey, std::optional<ValueTag> resultTag, NativeStorePlan plan) {
 	if (!constantKey)
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
 	const sljit_s32 keySource = constantKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP);
@@ -243,16 +241,15 @@ sljit_jump* NativeLowering::emitStringSlot(bool load, int value, NativeBlockExit
 		valueTagReg, 0, SLJIT_IMM, static_cast<u8>(resultTag.value_or(ValueTag::Nil)));
 	if (!load) {
 		// Deletion has to retain a dead key for next(), not just overwrite the tag.
-		const int tag = knownTag(value);
-		if (tag < 0) {
-			sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::tags), value);
+		if (plan.nilValue == NativeNilValue::Dynamic) {
+			emitTag(value, SLJIT_R2);
 			misses[n++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM,
 										 static_cast<u8>(ValueTag::Nil));
-		} else if (tag == static_cast<int>(ValueTag::Nil))
+		} else if (plan.nilValue == NativeNilValue::Nil)
 			misses[n++] = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), wordOffset, SLJIT_R1, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), tagOffset, SLJIT_R3, 0);
-		emitTableWriteWatch(exit, false, value);
+		emitTableWriteWatch(exit, false, value, plan.barrier);
 		emitTableSlotStore(value);
 	} else {
 		NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);
@@ -297,24 +294,19 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 	const int base = access.receiver;
 	const int key = access.key;
 	const int value = access.value;
-	const int baseTag = knownTag(base);
-	constexpr int tableTag = static_cast<int>(ValueTag::Table);
 	if (access.mode == NativeTableMode::ReadMethod) {
 		emitRawLoad(base, SLJIT_R0, SLJIT_R1);
 		emitRawStore(value + 1, SLJIT_R0, SLJIT_R1);
-	} else if (baseTag == tableTag) {
-		const auto word = readTyped(base, ValueTag::Table);
-		if (word.reg != SLJIT_R0)
-			sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, word.reg, 0);
-	} else if (baseTag < 0) {
-		emitRawLoad(base, SLJIT_R0, SLJIT_R1);
+		if (access.receiverCheck == NativeTagCheck::Dynamic)
+			fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
+				static_cast<u8>(ValueTag::Table)), exit, m_cache.state());
+	} else if (access.receiverCheck != NativeTagCheck::Rejected) {
+		if (access.receiverCheck == NativeTagCheck::Dynamic)
+			fault(m_cache.guard(base, ValueTag::Table, SLJIT_R1), exit, m_cache.state());
+		emitPayload(base, SLJIT_R0);
 	}
-	if (baseTag < 0) {
-		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, tableTag),
-			exit, m_cache.state());
-	} else if (baseTag != tableTag) {
-		fault(sljit_emit_jump(m_compiler, SLJIT_JUMP), exit, m_cache.state());
-		m_terminal = true;
+	if (access.receiverCheck == NativeTagCheck::Rejected) {
+		emitLeave(exit, Charge::Pending);
 		return;
 	}
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), receiver, SLJIT_R0, 0);
@@ -334,10 +326,10 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM,
 			static_cast<u8>(ValueTag::Integer)), exit, m_cache.state());
 		sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
-		emitArrayStore(value, exit);
+		emitArrayStore(value, access.store, exit);
 		auto* joined = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		sljit_set_label(string, sljit_emit_label(m_compiler));
-		emitStringSlot(false, value, exit);
+		emitStringSlot(false, value, exit, std::nullopt, std::nullopt, access.store);
 		sljit_set_label(joined, sljit_emit_label(m_compiler));
 		break;
 	}
@@ -346,11 +338,11 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		if (load) {
 			for (auto* miss : emitArrayRead()) fault(miss, exit, m_cache.state());
 		} else {
-			emitArrayStore(value, exit);
+			emitArrayStore(value, access.store, exit);
 		}
 		break;
 	case NativeTableKey::Field: {
-		auto* hit = emitStringSlot(load, value, exit, m_constants.payload(key), access.resultTag);
+		auto* hit = emitStringSlot(load, value, exit, m_constants.payload(key), access.resultTag, access.store);
 		if (access.resultTag) {
 			const auto target = m_cache.write(value, *access.resultTag);
 			if (target.tag == ValueTag::Float)

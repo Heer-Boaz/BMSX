@@ -16,14 +16,13 @@ void NativeLowering::lowerOperation(const NativeCallSite& site, const NativeInst
 	auto& call = block.terminal;
 	const auto& ir = m_ir[m_current];
 	const int base = site.callee;
-	const int tag = knownTag(base);
-	if (!ir.completedCall || ir.successors[0] == m_ir.size()
-		|| (tag >= 0 && tag != static_cast<int>(ValueTag::BuiltinFunction))) {
+	if (!ir.completedCall || ir.successors[0] == m_ir.size() || site.calleeCheck == NativeTagCheck::Rejected) {
 		emitLeave(call, Charge::Pending);
 		return;
 	}
 
-	fault(m_cache.guard(base, ValueTag::BuiltinFunction, SLJIT_R0), call, m_cache.state());
+	if (site.calleeCheck == NativeTagCheck::Dynamic)
+		fault(m_cache.guard(base, ValueTag::BuiltinFunction, SLJIT_R0), call, m_cache.state());
 	const auto id = readTyped(base, ValueTag::BuiltinFunction);
 	fault(NativeBlockAbi::emitNonleafBuiltinJump(m_compiler, id.reg), call, m_cache.state());
 	// The already loaded builtin word crosses the ABI directly. Keep

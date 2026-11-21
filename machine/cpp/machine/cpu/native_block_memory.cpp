@@ -129,14 +129,15 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 	const bool load = access.mode == NativeMemoryMode::Load;
 	const u32 width = words ? static_cast<u32>(access.wordCount) * sizeof(u32)
 		: kind == MemoryAccessKind::U8 ? 1u : kind == MemoryAccessKind::U16LE ? 2u : kind == MemoryAccessKind::F64LE ? 8u : 4u;
-	if (knownTag(access.address) == static_cast<int>(ValueTag::Integer)) {
-		const auto address = readTyped(access.address, ValueTag::Integer);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, address.reg, 0);
-	} else {
-		emitRawLoad(access.address, SLJIT_R0, SLJIT_R1);
-		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
-			static_cast<u8>(ValueTag::Integer)), slow, m_cache.state());
+	const bool floatStore = kind == MemoryAccessKind::F32LE || kind == MemoryAccessKind::F64LE;
+	if (access.addressCheck == NativeTagCheck::Rejected || (!load && !words
+		&& (access.store == NativeWordSource::Invalid || (access.store == NativeWordSource::Float && !floatStore)))) {
+		emitLeave(slow, Charge::Pending);
+		return;
 	}
+	if (access.addressCheck == NativeTagCheck::Dynamic)
+		fault(m_cache.guard(access.address, ValueTag::Integer, SLJIT_R1), slow, m_cache.state());
+	emitPayload(access.address, SLJIT_R0);
 	if (access.displacement != 0u)
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM,
 			access.displacement);
@@ -220,13 +221,12 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 		}
 		return;
 	}
-	if (kind == MemoryAccessKind::F32LE || kind == MemoryAccessKind::F64LE) {
-		const int tag = knownTag(access.slot);
+	if (floatStore) {
 		const auto conversion = kind == MemoryAccessKind::F32LE ? SLJIT_CONV_F32_FROM_S32 : SLJIT_CONV_F64_FROM_S32;
-		if (tag == static_cast<int>(ValueTag::Integer)) {
+		if (access.store == NativeWordSource::Integer) {
 			const auto source = readTyped(access.slot, ValueTag::Integer);
 			sljit_emit_fop1(m_compiler, conversion, SLJIT_FR0, 0, source.reg, 0);
-		} else if (tag == static_cast<int>(ValueTag::Float)) {
+		} else if (access.store == NativeWordSource::Float) {
 			const auto source = readTyped(access.slot, ValueTag::Float);
 			sljit_emit_fop1(m_compiler, kind == MemoryAccessKind::F32LE ? SLJIT_MOV_F32 : SLJIT_CONV_F64_FROM_F32,
 				SLJIT_FR0, 0, source.reg, 0);
@@ -266,14 +266,9 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 			sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), 4, SLJIT_R1, 0);
 		}
 	} else {
-		if (knownTag(access.slot) == static_cast<int>(ValueTag::Integer)) {
-			const auto source = readTyped(access.slot, ValueTag::Integer);
-			sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, source.reg, 0);
-		} else {
-			emitRawLoad(access.slot, SLJIT_R0, SLJIT_R1);
-			fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
-				static_cast<u8>(ValueTag::Integer)), slow, m_cache.state());
-		}
+		if (access.store == NativeWordSource::Dynamic)
+			fault(m_cache.guard(access.slot, ValueTag::Integer, SLJIT_R1), slow, m_cache.state());
+		emitPayload(access.slot, SLJIT_R0);
 		if constexpr (std::endian::native == std::endian::big)
 			if (width != 1)
 				sljit_emit_op1(m_compiler, width == 2 ? SLJIT_REV32_U16 : SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);

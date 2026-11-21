@@ -2,6 +2,7 @@
 
 #include <array>
 #include <limits>
+#include <optional>
 #include <span>
 
 #include "common/primitives.h"
@@ -15,14 +16,14 @@ struct NativeRegisterHost {
 	bool calleeSaved;
 };
 
-// Payloads alone inhabit host registers. The compiler owns the proved tag;
-// publication writes the compact word/tag planes, never a boxed Value bank.
+// Host registers hold payloads, not guest values. An exact tag can travel
+// with a binding; a raw binding leaves the tag authoritative in guest memory.
 class NativeRegisterCache {
 public:
 	static constexpr int capacity = SLJIT_NUMBER_OF_REGISTERS + SLJIT_NUMBER_OF_FLOAT_REGISTERS;
 	struct Binding {
 		int guest = -1;
-		ValueTag tag = ValueTag::Nil;
+		std::optional<ValueTag> tag;
 		bool wordDirty = false, tagDirty = false;
 		u32 lastUse = 0;
 		int nextUse = std::numeric_limits<int>::max();
@@ -41,6 +42,8 @@ public:
 	// A read's tag must have been proved by the entry/admission or instruction.
 	// guard emits only the missing proof, not a repeated check of a known tag.
 	sljit_jump* guard(int guest, ValueTag tag, sljit_s32 scratch) const;
+	void emitWord(int guest, sljit_s32 destination) const;
+	void emitTag(int guest, sljit_s32 destination) const;
 	Operand read(int guest, ValueTag tag);
 	// Acquire after all inputs: with a full bank the destination may reuse an
 	// input register. The old guest value is published before that overwrite.
@@ -59,11 +62,9 @@ public:
 	void setState(const State& state);
 	void emitState(const State& state) const;
 	bool samePublication(const State& left, const State& right) const;
-	// Guards precede every parallel move. Returned branches retain the source
-	// map on failure; success establishes the target map without a guest-memory
-	// roundtrip for retained dirty payloads. Scratch belongs to neither bank.
-	using GuardBranches = std::array<sljit_jump*, capacity>;
-	GuardBranches transferTo(const State& target, sljit_s32 integerScratch, sljit_s32 floatScratch);
+	// The edge has already admitted the target's logical proofs. Transfer
+	// only reconciles locations and publishes lanes not retained by the edge.
+	void transferTo(const State& target, sljit_s32 integerScratch, sljit_s32 floatScratch);
 
 private:
 	int find(int guest) const;
@@ -73,6 +74,7 @@ private:
 	const NativeRegisterHost& host(int slot) const;
 	void load(int slot, int guest) const;
 	void store(int slot, const Binding& binding, bool word, bool tag) const;
+	void movePayload(int destination, sljit_s32 source, bool sourceFloat) const;
 
 	sljit_compiler* m_compiler;
 	sljit_s32 m_words, m_tags;

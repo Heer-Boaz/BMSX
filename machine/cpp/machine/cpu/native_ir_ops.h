@@ -29,14 +29,22 @@ struct NativeSlotAccess {
 	std::array<NativeValueRef, 3> reads{-1, -1, -1};
 	NativeSlotRange writes{};
 	NativeSlotRange readsRange{};
-	bool propagatesEntryTypes = true;
 };
 
 enum class NativeAccess : u8 { Read, Write };
 enum class NativeGlobalBank : u8 { Execution, System };
+enum class NativeTagCheck : u8 { Dynamic, Proved, Rejected };
+enum class NativeWordSource : u8 { Dynamic, Integer, Float, Invalid };
+enum class NativeGcBarrier : u8 { Dynamic, None, Reference };
+enum class NativeNilValue : u8 { Dynamic, Nil, Present };
+
+struct NativeStorePlan {
+	NativeGcBarrier barrier = NativeGcBarrier::Dynamic;
+	NativeNilValue nilValue = NativeNilValue::Dynamic;
+};
 
 struct NativeReplay {
-	constexpr NativeSlotAccess slots() const { return {.propagatesEntryTypes = false}; }
+	constexpr NativeSlotAccess slots() const { return {}; }
 };
 struct NativeJump {
 	u32 target;
@@ -44,40 +52,39 @@ struct NativeJump {
 };
 struct NativeHalt {
 	static constexpr auto terminalExit = NativeBlockExit::Halt;
-	constexpr NativeSlotAccess slots() const { return {.propagatesEntryTypes = false}; }
+	constexpr NativeSlotAccess slots() const { return {}; }
 };
 struct NativeExceptionReturn {
 	static constexpr auto terminalExit = NativeBlockExit::ExceptionReturn;
-	constexpr NativeSlotAccess slots() const { return {.propagatesEntryTypes = false}; }
+	constexpr NativeSlotAccess slots() const { return {}; }
 };
 struct NativeReturnSite : NativeExitOperands::Return {
 	static constexpr auto terminalExit = NativeBlockExit::Return;
 	constexpr NativeSlotAccess slots() const {
-		return {.readsRange = {first, static_cast<u16>(std::max<int>(produced, 0)), produced < 0}, .propagatesEntryTypes = false};
+		return {.readsRange = {first, static_cast<u16>(std::max<int>(produced, 0)), produced < 0}};
 	}
 };
 struct NativeTableAllocation : NativeExitOperands::Allocation {
 	static constexpr auto terminalExit = NativeBlockExit::AllocateTable;
-	constexpr NativeSlotAccess slots() const { return {.writes = {result, 1}, .propagatesEntryTypes = false}; }
+	constexpr NativeSlotAccess slots() const { return {.writes = {result, 1}}; }
 };
 struct NativeConcat : NativeExitOperands::Concat {
 	static constexpr auto terminalExit = NativeBlockExit::Concat;
 	constexpr NativeSlotAccess slots() const {
-		return {.reads = {left, right, -1}, .writes = {result, 1}, .propagatesEntryTypes = false};
+		return {.reads = {left, right, -1}, .writes = {result, 1}};
 	}
 };
 struct NativeConcatRange : NativeExitOperands::ConcatRange {
 	static constexpr auto terminalExit = NativeBlockExit::ConcatRange;
 	constexpr NativeSlotAccess slots() const {
-		return {.writes = {result, 1}, .readsRange = {first, count}, .propagatesEntryTypes = false};
+		return {.writes = {result, 1}, .readsRange = {first, count}};
 	}
 };
 struct NativeClosure : NativeExitOperands::Closure {
 	static constexpr auto terminalExit = NativeBlockExit::CreateClosure;
 	constexpr NativeSlotAccess slots() const {
 		return {.writes = {result, 1},
-			.readsRange = (flags & CLOSURE_ADDRESS_REGISTER_FLAG) != 0 ? NativeSlotRange{address, 1} : NativeSlotRange{},
-			.propagatesEntryTypes = false};
+			.readsRange = (flags & CLOSURE_ADDRESS_REGISTER_FLAG) != 0 ? NativeSlotRange{address, 1} : NativeSlotRange{}};
 	}
 };
 struct NativeLiteral {
@@ -89,11 +96,14 @@ struct NativeMove {
 	NativeSlot result;
 	NativeValueRef source;
 	ValueMoveKind conversion;
+	std::optional<ValueTag> copyTag{};
+	NativeTagCheck conversionCheck = NativeTagCheck::Dynamic;
 	constexpr NativeSlotAccess slots() const { return {{source, -1, -1}, {result, 1}}; }
 };
 struct NativeNot {
 	NativeSlot result;
 	NativeValueRef source;
+	std::optional<bool> sourceTruthy{};
 	constexpr NativeSlotAccess slots() const { return {{source, -1, -1}, {result, 1}}; }
 };
 struct NativeClearSlots {
@@ -103,6 +113,7 @@ struct NativeClearSlots {
 };
 struct NativePoolRead {
 	NativeSlot result, index;
+	NativeWordSource indexPlan = NativeWordSource::Dynamic;
 	constexpr NativeSlotAccess slots() const { return {{static_cast<i16>(index), -1, -1}, {result, 1}}; }
 };
 struct NativeLength {
@@ -123,6 +134,7 @@ struct NativeUpvalueAccess {
 	NativeSlot slot;
 	u16 capture;
 	NativeAccess access;
+	NativeGcBarrier barrier = NativeGcBarrier::Dynamic;
 	constexpr NativeSlotAccess slots() const {
 		return access == NativeAccess::Read ? NativeSlotAccess{.writes = {slot, 1}}
 			: NativeSlotAccess{.reads = {static_cast<i16>(slot), -1, -1}};
@@ -135,6 +147,7 @@ struct NativeControlAccess {
 	u16 field;
 	NativeControlMode mode;
 	bool checkPrivilege;
+	NativeWordSource operand = NativeWordSource::Dynamic;
 	constexpr NativeSlotAccess slots() const {
 		switch (mode) {
 		case NativeControlMode::ReadWord: case NativeControlMode::ReadZero:
@@ -142,9 +155,9 @@ struct NativeControlAccess {
 		case NativeControlMode::WriteWord: case NativeControlMode::ConsumeWord:
 			return {.reads = {static_cast<i16>(slot), -1, -1}};
 		case NativeControlMode::WriteSemantic:
-			return {.reads = {static_cast<i16>(slot), -1, -1}, .propagatesEntryTypes = false};
+			return {.reads = {static_cast<i16>(slot), -1, -1}};
 		case NativeControlMode::ReadFault:
-			return {.propagatesEntryTypes = false};
+			return {};
 		}
 		BMSX_UNREACHABLE();
 	}
@@ -158,13 +171,15 @@ struct NativeMemoryAccess {
 	MemoryAccessKind format;
 	NativeMemoryMode mode;
 	u16 wordCount;
+	NativeTagCheck addressCheck = NativeTagCheck::Dynamic;
+	NativeWordSource store = NativeWordSource::Dynamic;
 
 	constexpr NativeSlotAccess slots() const {
 		switch (mode) {
 		case NativeMemoryMode::Load: return {{address, -1, -1}, {slot, 1}};
 		case NativeMemoryMode::Store: return {.reads = {address, static_cast<i16>(slot), -1}};
 		case NativeMemoryMode::StoreWords:
-			return {.reads = {address, -1, -1}, .readsRange = {slot, wordCount}, .propagatesEntryTypes = false};
+			return {.reads = {address, -1, -1}, .readsRange = {slot, wordCount}};
 		}
 		BMSX_UNREACHABLE();
 	}
@@ -180,13 +195,15 @@ struct NativeTableAccess {
 	NativeTableKey keyKind;
 	std::optional<ValueTag> resultTag;
 	i32 predictedSlot = -1;
+	NativeTagCheck receiverCheck = NativeTagCheck::Dynamic;
+	NativeStorePlan store{};
 
 	constexpr NativeSlotAccess slots() const {
 		const i16 keySlot = keyKind == NativeTableKey::Value ? key : -1;
 		if (mode == NativeTableMode::Write)
-			return {.reads = {receiver, keySlot, value}, .propagatesEntryTypes = false};
+			return {.reads = {receiver, keySlot, value}};
 		const u16 results = mode == NativeTableMode::ReadMethod ? 2u : 1u;
-		return {.reads = {receiver, keySlot, -1}, .writes = {static_cast<u16>(value), results}, .propagatesEntryTypes = false};
+		return {.reads = {receiver, keySlot, -1}, .writes = {static_cast<u16>(value), results}};
 	}
 };
 
@@ -209,6 +226,7 @@ struct NativeTruthBranch {
 	u32 target;
 	NativeValueRef condition;
 	bool takeOnTruthy;
+	std::optional<bool> sourceTruthy{};
 	constexpr NativeSlotAccess slots() const { return {.reads = {condition, -1, -1}}; }
 };
 enum class NativeComparisonStrategy : u8 { Word, Float, Kernel };
@@ -222,15 +240,15 @@ struct NativeComparison {
 
 struct NativeCallSite : NativeExitOperands::Call {
 	static constexpr auto terminalExit = NativeBlockExit::Call;
+	NativeTagCheck calleeCheck = NativeTagCheck::Dynamic;
 	constexpr NativeSlotAccess slots() const {
 		return {.writes = {callee, static_cast<u16>(std::max<int>(requested, 0)), requested < 0},
-			.readsRange = {callee, static_cast<u16>(1 + std::max<int>(supplied, 0)), supplied < 0},
-			.propagatesEntryTypes = false};
+			.readsRange = {callee, static_cast<u16>(1 + std::max<int>(supplied, 0)), supplied < 0}};
 	}
 };
 struct NativeVararg : NativeExitOperands::Vararg {
 	constexpr NativeSlotAccess slots() const {
-		return {.writes = {first, static_cast<u16>(std::max<int>(requested, 0)), requested < 0}, .propagatesEntryTypes = false};
+		return {.writes = {first, static_cast<u16>(std::max<int>(requested, 0)), requested < 0}};
 	}
 };
 

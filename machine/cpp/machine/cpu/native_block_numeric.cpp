@@ -68,25 +68,29 @@ Kernel kernelFor(OpCode op) {
 }
 } // namespace
 
-void NativeLowering::emitWordOperand(int selector,NativeBlockExitSite& invalid) {
-	if(knownTag(selector)==static_cast<int>(ValueTag::Integer)) {
-		const auto source=readTyped(selector,ValueTag::Integer);
-		if(source.reg!=SLJIT_R0)sljit_emit_op1(m_compiler,SLJIT_MOV32,SLJIT_R0,0,source.reg,0);
-		return;
+void NativeLowering::emitWordOperand(int selector, NativeWordSource source, NativeBlockExitSite& invalid) {
+	emitPayload(selector, SLJIT_R0);
+	if (source == NativeWordSource::Integer) return;
+
+	sljit_jump* integer = nullptr;
+	if (source == NativeWordSource::Dynamic) {
+		emitTag(selector, SLJIT_R1);
+		integer = sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0,
+			SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
+	} else {
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Float));
 	}
-	emitRawLoad(selector,SLJIT_R0,SLJIT_R1);
-	auto* integer=knownTag(selector)<0?sljit_emit_cmp(m_compiler,SLJIT_EQUAL|SLJIT_32,
-		SLJIT_R1,0,SLJIT_IMM,static_cast<u8>(ValueTag::Integer)):nullptr;
-	constexpr sljit_sw input=NativeBlockAbi::helperResultOffset, output=input+sizeof(Value);
-	emitValueTransportStore(m_compiler,SLJIT_SP,input,SLJIT_R0,SLJIT_R1);
-	const auto state=m_cache.state();m_cache.spillCall(false,0);
+	constexpr sljit_sw input = NativeBlockAbi::helperResultOffset, output = input + sizeof(Value);
+	emitValueTransportStore(m_compiler, SLJIT_SP, input, SLJIT_R0, SLJIT_R1);
+	const auto state = m_cache.state();
+	m_cache.spillCall(false, 0);
 	sljit_get_local_base(m_compiler, SLJIT_R0, 0, input);
 	sljit_get_local_base(m_compiler, SLJIT_R1, 0, output);
-	sljit_emit_icall(m_compiler,SLJIT_CALL,SLJIT_ARGS2(32,P,P),SLJIT_IMM,SLJIT_FUNC_ADDR(wordKernel));
-	m_cache.spillCall(true,0);
-	fault(sljit_emit_cmp(m_compiler,SLJIT_EQUAL|SLJIT_32,SLJIT_R0,0,SLJIT_IMM,0),invalid,state);
-	sljit_emit_op1(m_compiler,SLJIT_MOV32,SLJIT_R0,0,SLJIT_MEM1(SLJIT_SP),output);
-	if(integer)sljit_set_label(integer,sljit_emit_label(m_compiler));
+	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(32, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(wordKernel));
+	m_cache.spillCall(true, 0);
+	fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), invalid, state);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), output);
+	if (integer) sljit_set_label(integer, sljit_emit_label(m_compiler));
 }
 
 void NativeLowering::emitNumericKernel(

@@ -16,7 +16,7 @@ void NativeLowering::lowerOperation(const NativeControlAccess& access, const Nat
 	const bool readsWord = access.mode == NativeControlMode::ReadWord;
 	const bool readsZero = access.mode == NativeControlMode::ReadZero;
 	const bool writesWord = access.mode == NativeControlMode::WriteWord;
-	const bool integer = !readsWord && !readsZero && knownTag(access.slot) == static_cast<int>(ValueTag::Integer);
+	const bool integer = access.operand == NativeWordSource::Integer;
 	constexpr auto bank = offsetof(NativeBlockRunState, cop0Words);
 	if (access.checkPrivilege || readsWord || (integer && writesWord))
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), bank);
@@ -36,6 +36,10 @@ void NativeLowering::lowerOperation(const NativeControlAccess& access, const Nat
 		return;
 	}
 
+	if (access.operand == NativeWordSource::Invalid) {
+		emitLeave(*slow, Charge::Pending);
+		return;
+	}
 	sljit_s32 word;
 	if (integer) {
 		if (!writesWord) return;
@@ -43,7 +47,7 @@ void NativeLowering::lowerOperation(const NativeControlAccess& access, const Nat
 	} else {
 		// Ignored writes still consume the word operand. A failed conversion
 		// uses the semantic exit before any CP0 mutation.
-		emitWordOperand(access.slot, *slow);
+		emitWordOperand(access.slot, access.operand, *slow);
 		if (!writesWord) return;
 		word = SLJIT_R0;
 		// Conversion can call the numeric leaf and clobber R2.

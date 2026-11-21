@@ -3,15 +3,6 @@
 #include <algorithm>
 
 namespace bmsx {
-namespace {
-bool registerTransferProves(const NativeRegisterCache::State& registers, NativeSlotType type) {
-	return std::any_of(registers.begin(), registers.end(), [&](const auto& binding) {
-		return binding.guest == type.slot && binding.tag == type.tag;
-	});
-}
-
-} // namespace
-
 void NativeLowering::beginBlock(size_t index) {
 	m_current = index;
 	m_instruction = 0;
@@ -31,10 +22,8 @@ void NativeLowering::beginBlock(size_t index) {
 		m_blocks[index]->admissionCycles);
 	deferColdExit(shortGrant, replay, memoryAuthoritative);
 	for (const auto type : ir.entryTypes)
-		if (!registerTransferProves(entry.registers, type))
-			deferColdExit(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, memoryAuthoritative);
-	for (auto* miss : m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2))
-		deferColdExit(miss, replay, memoryAuthoritative);
+		deferColdExit(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, memoryAuthoritative);
+	m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2);
 	entry.proven = sljit_emit_label(m_compiler);
 }
 
@@ -89,22 +78,25 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t target) {
 		if (!entry.planned && !m_uses.hasForwardMerge(target)) {
 			entry.planned = true;
 			entry.registers = source;
-			// This map can receive a dirty backedge after a clean public entry.
-			// Treat retained payloads as deferred until an actual publication.
-			for (auto& binding : entry.registers)
-				if (binding.guest >= 0) {
-					if (m_uses.entryReads(target, binding.guest))
-						binding.wordDirty = binding.tagDirty = true;
-					else
-						binding = {};
+			// Only the entry contract establishes exact tags. Other live
+			// payloads retain their locations without constraining their tags.
+			for (auto& binding : entry.registers) {
+				if (binding.guest < 0) continue;
+				if (!m_uses.entryReads(target, binding.guest)) {
+					binding = {};
+					continue;
 				}
+				const auto type = std::ranges::lower_bound(successor.entryTypes, binding.guest, {}, &NativeSlotType::slot);
+				binding.tag = type != successor.entryTypes.end() && type->slot == binding.guest
+					? std::optional(type->tag) : std::nullopt;
+				binding.wordDirty = true; // Another edge can bring a dirty payload.
+				binding.tagDirty = binding.tag.has_value();
+			}
 		}
 		if (successor.typePredecessor != m_current)
 			for (const auto type : successor.entryTypes)
-				if (!registerTransferProves(entry.registers, type))
-					deferColdExit(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, source);
-		for (auto* miss : m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2))
-			deferColdExit(miss, replay, source);
+				deferColdExit(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, source);
+		m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2);
 		m_branches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), target});
 		m_terminal = true;
 		return;

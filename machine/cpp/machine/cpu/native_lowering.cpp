@@ -27,16 +27,10 @@ NativeLowering::NativeLowering(ConstValueSpan constants, std::span<const std::un
 NativeLowering::~NativeLowering() {
 	sljit_free_compiler(m_compiler);
 }
-int NativeLowering::knownTag(int selector) const {
-	if (selector < 0)
-		return static_cast<int>(m_constants.tag(-selector - 1));
-	const auto* binding = m_cache.binding(selector);
-	return binding ? static_cast<int>(binding->tag) : -1;
-}
 std::array<sljit_jump*, 2> NativeLowering::emitSkipScalarBarrier(int value, sljit_s32 scratch) {
 	// The unsigned range check rejects both ends of the tag range.
 	// Builtin is the one immediate tag between String and Thread.
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, scratch, 0, SLJIT_MEM1(NativeBlockAbi::tags), value);
+	emitTag(value, scratch);
 	sljit_emit_op2(m_compiler, SLJIT_SUB32, scratch, 0, scratch, 0, SLJIT_IMM, static_cast<u8>(ValueTag::String));
 	return {
 		sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, scratch, 0, SLJIT_IMM,
@@ -56,20 +50,25 @@ NativeRegisterCache::Operand NativeLowering::readTyped(
 	sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, floatScratch, wordScratch);
 	return {floatScratch, tag, -1};
 }
-void NativeLowering::emitRawLoad(int selector, sljit_s32 word, sljit_s32 tag) {
-	const int kind = knownTag(selector);
-	if (kind >= 0) {
-		const auto value = readTyped(selector, static_cast<ValueTag>(kind), word, SLJIT_FR0);
-		if (value.tag == ValueTag::Float)
-			sljit_emit_fcopy(m_compiler, SLJIT_COPY32_FROM_F32, value.reg, word);
-		else if (word != value.reg)
-			sljit_emit_op1(m_compiler, SLJIT_MOV32, word, 0, value.reg, 0);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, tag, 0, SLJIT_IMM, kind);
-	} else {
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, word, 0, SLJIT_MEM1(NativeBlockAbi::words), selector * sizeof(u32));
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, tag, 0, SLJIT_MEM1(NativeBlockAbi::tags), selector);
-	}
+void NativeLowering::emitPayload(int selector, sljit_s32 word) {
+	if (selector >= 0)
+		m_cache.emitWord(selector, word);
+	else
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, word, 0, SLJIT_IMM, m_constants.payload(-selector - 1));
 }
+
+void NativeLowering::emitTag(int selector, sljit_s32 tag) {
+	if (selector >= 0)
+		m_cache.emitTag(selector, tag);
+	else
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, tag, 0, SLJIT_IMM, static_cast<u8>(m_constants.tag(-selector - 1)));
+}
+
+void NativeLowering::emitRawLoad(int selector, sljit_s32 word, sljit_s32 tag) {
+	emitPayload(selector, word);
+	emitTag(selector, tag);
+}
+
 void NativeLowering::emitRawStore(int guest, sljit_s32 word, sljit_s32 tag) {
 	m_cache.discardRange(guest, guest + 1);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::words), guest * sizeof(u32), word, 0);
@@ -104,14 +103,13 @@ void NativeLowering::deferColdExit(sljit_jump* jump, ExitTarget target, const St
 void NativeLowering::lowerOperation(const NativeMove& instruction, const NativeInstruction& row) {
 	auto* invalid = row.slow;
 	const auto mode = instruction.conversion;
-	int tag = knownTag(instruction.source);
 	if (mode == ValueMoveKind::Copy) {
-		if (tag < 0) {
+		if (!instruction.copyTag) {
 			emitRawLoad(instruction.source, SLJIT_R0, SLJIT_R1);
 			emitRawStore(instruction.result, SLJIT_R0, SLJIT_R1);
 			return;
 		}
-		const auto source = readTyped(instruction.source, static_cast<ValueTag>(tag));
+		const auto source = readTyped(instruction.source, *instruction.copyTag);
 		const auto target = m_cache.write(instruction.result, source.tag);
 		if (source.reg != target.reg) {
 			if (source.tag == ValueTag::Float)
@@ -122,22 +120,22 @@ void NativeLowering::lowerOperation(const NativeMove& instruction, const NativeI
 		return;
 	}
 	const ValueTag required = mode == ValueMoveKind::FloatBits ? ValueTag::Float : ValueTag::Integer;
-	if (tag >= 0 && tag != static_cast<int>(required)) {
-		fault(sljit_emit_jump(m_compiler, SLJIT_JUMP), *invalid, m_cache.state());
+	if (instruction.conversionCheck == NativeTagCheck::Rejected) {
+		emitLeave(*invalid, Charge::Pending);
 		return;
 	}
-	fault(m_cache.guard(instruction.source, required, SLJIT_R0), *invalid, m_cache.state());
+	if (instruction.conversionCheck == NativeTagCheck::Dynamic)
+		fault(m_cache.guard(instruction.source, required, SLJIT_R0), *invalid, m_cache.state());
 	const auto source = readTyped(instruction.source, required);
 	const auto target = m_cache.write(instruction.result, required == ValueTag::Float ? ValueTag::Integer : ValueTag::Float);
 	sljit_emit_fcopy(m_compiler, required == ValueTag::Float ? SLJIT_COPY32_FROM_F32 : SLJIT_COPY32_TO_F32,
 		required == ValueTag::Float ? source.reg : target.reg, required == ValueTag::Float ? target.reg : source.reg);
 }
 void NativeLowering::lowerOperation(const NativeNot& instruction, const NativeInstruction&) {
-	const int tag = knownTag(instruction.source);
-	if (tag >= 0)
-		emitConstant(instruction.result, valueBool(tag <= static_cast<int>(ValueTag::False)));
+	if (instruction.sourceTruthy)
+		emitConstant(instruction.result, valueBool(!*instruction.sourceTruthy));
 	else {
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::tags), instruction.source);
+		emitTag(instruction.source, SLJIT_R1);
 		auto* falsey = sljit_emit_cmp(
 			m_compiler, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, static_cast<u8>(ValueTag::False));
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, static_cast<u8>(ValueTag::False));
@@ -166,7 +164,12 @@ void NativeLowering::lowerOperation(const NativeLiteral& literal, const NativeIn
 void NativeLowering::lowerOperation(const NativeTruthBranch& branch, const NativeInstruction&) {
 	const auto& block = m_ir[m_current];
 	auto& terminal = m_blocks[m_current]->terminal;
-	emitRawLoad(branch.condition, SLJIT_R0, SLJIT_R1);
+	if (branch.sourceTruthy) {
+		const bool taken = *branch.sourceTruthy == branch.takeOnTruthy;
+		emitExit(taken ? *block.taken : terminal, block.successors[taken]);
+		return;
+	}
+	emitTag(branch.condition, SLJIT_R1);
 	auto* falsey = sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::False));
 	const auto state = m_cache.state();

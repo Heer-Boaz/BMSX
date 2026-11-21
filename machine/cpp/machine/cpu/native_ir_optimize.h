@@ -37,7 +37,7 @@ private:
 	void define(u16 slot, ValueTag tag) { define(slot, Fact{m_block, tag}); }
 	void require(Type type);
 	void forgetRange(size_t first, size_t end);
-	void specialize(std::span<NativeInstruction>, ConstValueSpan, size_t first = 0, size_t count = 0);
+	void specialize(std::span<NativeInstruction>, ConstValueSpan, bool inlineBuiltin, size_t first = 0, size_t count = 0);
 
 	std::vector<Fact> m_facts;
 	std::vector<Assumption> m_assumptions;

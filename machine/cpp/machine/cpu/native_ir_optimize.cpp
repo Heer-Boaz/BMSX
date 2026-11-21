@@ -11,8 +11,7 @@ namespace bmsx {
 void NativeTypePropagation::specializeRegion(std::span<NativeIrBlock> blocks, ConstValueSpan constants,
 	const NativeRegisterUses& uses, std::vector<NativeSlotType>& imports) {
 	if (blocks.size() == 1) {
-		auto& block = blocks.front();
-		if (block.optimizationPrefix != 0) specialize(block.instructions.first(block.optimizationPrefix), constants);
+		specialize(blocks.front().instructions, constants, false);
 		return;
 	}
 	// Each candidate names the proof at its origin. A copy can forward the
@@ -27,16 +26,13 @@ void NativeTypePropagation::specializeRegion(std::span<NativeIrBlock> blocks, Co
 		};
 		const auto [primary, alternate] = block.successors;
 		const bool exportPrimary = outgoing(primary), exportAlternate = alternate != primary && outgoing(alternate);
-		const size_t length = exportPrimary || exportAlternate ? block.instructions.size() : block.optimizationPrefix;
-		if (length == 0) continue;
-
 		const auto [first, count] = ranges[index];
-		specialize(block.instructions.first(length), constants, first, count);
+		specialize(block.instructions, constants, block.completedCall && primary < blocks.size(), first, count);
 		const auto add = [&](size_t target) {
 			const size_t start = m_assumptions.size();
 			uses.forEachEntryRead(target, [&](int slot) {
 				const auto fact = type(slot, constants);
-				if (fact && (fact->tag == ValueTag::Integer || fact->tag == ValueTag::Float))
+				if (fact)
 					m_assumptions.push_back({{static_cast<u16>(slot), fact->tag}, fact->assumption});
 			});
 			ranges[target] = {start, m_assumptions.size() - start};
@@ -96,6 +92,7 @@ struct NativeTypePropagation::Transfer {
 	NativeTypePropagation& facts;
 	ConstValueSpan constants;
 	const NativeSlotAccess& slots;
+	bool inlineBuiltin;
 
 	// A definition without a typed result kills the previous slot fact.
 	void operator()(const auto&) const {
@@ -111,7 +108,12 @@ struct NativeTypePropagation::Transfer {
 		auto plan = planNativeNumeric(op.operation, tag(left), tag(right), hint.feedback, op.left == op.right, hint.resultFeedsStore);
 		bool needsLeft = true, needsRight = !op.unary();
 		if (plan.action == NativeNumericAction::Fault) {
-			needsLeft = needsRight = false;
+			const auto nonnumeric = [](Type type) {
+				return type && type->tag != ValueTag::Integer && type->tag != ValueTag::Float;
+			};
+			const bool leftInvalid = nonnumeric(left), rightInvalid = nonnumeric(right);
+			needsLeft = leftInvalid && (!rightInvalid || left->assumption == 0 || right->assumption != 0);
+			needsRight = !needsLeft && rightInvalid;
 		} else if (plan.action == NativeNumericAction::Kernel) {
 			if (!plan.resultDependsOnInputs) {
 				needsLeft = needsRight = false;
@@ -148,35 +150,110 @@ struct NativeTypePropagation::Transfer {
 	void operator()(const NativeLiteral& op) const { facts.define(op.result, valueTag(op.value)); }
 	void operator()(const NativeLength& op) const { facts.define(op.result, ValueTag::Integer); }
 
-	void operator()(const NativeControlAccess& op) const {
-		if (op.mode == NativeControlMode::ReadWord || op.mode == NativeControlMode::ReadZero)
+	NativeTagCheck check(int slot, ValueTag expected) const {
+		const auto type = facts.type(slot, constants);
+		if (!type) return NativeTagCheck::Dynamic;
+		facts.require(type);
+		return type->tag == expected ? NativeTagCheck::Proved : NativeTagCheck::Rejected;
+	}
+
+	NativeWordSource wordSource(int slot) const {
+		const auto type = facts.type(slot, constants);
+		if (!type) return NativeWordSource::Dynamic;
+		facts.require(type);
+		if (type->tag == ValueTag::Integer) return NativeWordSource::Integer;
+		if (type->tag == ValueTag::Float) return NativeWordSource::Float;
+		return NativeWordSource::Invalid;
+	}
+
+	void operator()(NativePoolRead& op) const {
+		op.indexPlan = wordSource(op.index);
+		facts.define(op.result, std::nullopt);
+	}
+
+	void operator()(NativeControlAccess& op) const {
+		switch (op.mode) {
+		case NativeControlMode::ReadWord: case NativeControlMode::ReadZero:
 			facts.define(op.slot, ValueTag::Integer);
+			break;
+		case NativeControlMode::WriteWord: case NativeControlMode::ConsumeWord:
+			op.operand = wordSource(op.slot);
+			break;
+		case NativeControlMode::ReadFault: case NativeControlMode::WriteSemantic:
+			break;
+		}
 	}
 
-	void operator()(const NativeMove& op) const {
-		if (op.conversion == ValueMoveKind::Copy)
-			facts.define(op.result, facts.type(op.source, constants));
+	void operator()(NativeMove& op) const {
+		if (op.conversion == ValueMoveKind::Copy) {
+			const auto type = facts.type(op.source, constants);
+			// Copying bits does not need a speculative admission check. A
+			// downstream typed consumer can still require the copied proof.
+			if (type && type->assumption == 0) op.copyTag = type->tag;
+			facts.define(op.result, type);
+		} else {
+			const auto expected = op.conversion == ValueMoveKind::FloatBits ? ValueTag::Float : ValueTag::Integer;
+			op.conversionCheck = check(op.source, expected);
+			if (op.conversionCheck == NativeTagCheck::Dynamic) facts.define(op.source, expected);
+			facts.define(op.result, expected == ValueTag::Float ? ValueTag::Integer : ValueTag::Float);
+		}
+	}
+
+	std::optional<bool> truth(int slot) const {
+		const auto type = facts.type(slot, constants);
+		if (!type) return std::nullopt;
+		facts.require(type);
+		return type->tag > ValueTag::False;
+	}
+
+	void operator()(NativeNot& op) const {
+		op.sourceTruthy = truth(op.source);
+		if (op.sourceTruthy)
+			facts.define(op.result, *op.sourceTruthy ? ValueTag::False : ValueTag::True);
 		else
-			facts.define(op.result, op.conversion == ValueMoveKind::FloatBits ? ValueTag::Integer : ValueTag::Float);
+			facts.define(op.result, std::nullopt);
 	}
 
-	void operator()(const NativeNot& op) const {
-		auto type = facts.type(op.source, constants);
-		if (type) type->tag = type->tag <= ValueTag::False ? ValueTag::True : ValueTag::False;
-		facts.define(op.result, type);
+	void operator()(NativeTruthBranch& op) const { op.sourceTruthy = truth(op.condition); }
+
+	void operator()(NativeUpvalueAccess& op) const {
+		if (op.access == NativeAccess::Read) {
+			facts.define(op.slot, std::nullopt);
+		} else if (const auto type = facts.type(op.slot, constants)) {
+			facts.require(type);
+			op.barrier = valueTagHasGcEdge(type->tag) ? NativeGcBarrier::Reference : NativeGcBarrier::None;
+		}
 	}
 
-	void operator()(const NativeTableAccess& op) const {
-		if (op.mode == NativeTableMode::Write) return;
+	void operator()(NativeTableAccess& op) const {
+		op.receiverCheck = check(op.receiver, ValueTag::Table);
+		if (op.mode == NativeTableMode::Write) {
+			if (const auto type = facts.type(op.value, constants)) {
+				facts.require(type);
+				op.store = {valueTagHasGcEdge(type->tag) ? NativeGcBarrier::Reference : NativeGcBarrier::None,
+					type->tag == ValueTag::Nil ? NativeNilValue::Nil : NativeNilValue::Present};
+			}
+			return;
+		}
 		if (op.mode == NativeTableMode::ReadMethod)
 			facts.define(op.value + 1, facts.type(op.receiver, constants));
 		facts.define(op.value, op.resultTag ? Type(Fact{facts.m_block, *op.resultTag}) : std::nullopt);
 	}
 
-	void operator()(const NativeMemoryAccess& op) const {
-		if (op.mode == NativeMemoryMode::Load)
+	void operator()(NativeMemoryAccess& op) const {
+		op.addressCheck = check(op.address, ValueTag::Integer);
+		if (op.mode == NativeMemoryMode::Load) {
 			facts.define(op.slot, op.format == MemoryAccessKind::F32LE || op.format == MemoryAccessKind::F64LE
 				? ValueTag::Float : ValueTag::Integer);
+		} else if (op.mode == NativeMemoryMode::Store && op.addressCheck != NativeTagCheck::Rejected) {
+			op.store = wordSource(op.slot);
+		}
+	}
+
+	void operator()(NativeCallSite& op) const {
+		if (inlineBuiltin) op.calleeCheck = check(op.callee, ValueTag::BuiltinFunction);
+		if (slots.writes.count != 0 || slots.writes.open)
+			facts.forgetRange(slots.writes.first, slots.writes.end());
 	}
 
 	void operator()(const NativeClearSlots& op) const {
@@ -188,14 +265,14 @@ struct NativeTypePropagation::Transfer {
 };
 
 void NativeTypePropagation::specialize(std::span<NativeInstruction> instructions, ConstValueSpan constants,
-	size_t first, size_t count) {
+	bool inlineBuiltin, size_t first, size_t count) {
 	++m_block;
 	for (size_t index = first; index < first + count; ++index) {
 		const auto& type = m_assumptions[index].type;
 		define(type.slot, Fact{m_block, type.tag, static_cast<u32>(index + 1u)});
 	}
 	for (auto& instruction : instructions)
-		std::visit(Transfer{*this, constants, instruction.slots}, instruction.operation);
+		std::visit(Transfer{*this, constants, instruction.slots, inlineBuiltin}, instruction.operation);
 }
 
 } // namespace bmsx

@@ -226,8 +226,8 @@ void parallelTransfers() {
 		auto* skipCold=sljit_emit_jump(code.compiler,SLJIT_JUMP);
 		auto* failure=sljit_emit_label(code.compiler);cache.emitState(source);code.result(1);
 		sljit_set_label(skipCold,sljit_emit_label(code.compiler));
-		for(auto* miss:cache.transferTo(target,SLJIT_R0,SLJIT_FR0))
-			if(miss)sljit_set_label(miss,failure);
+		if (missing) sljit_set_label(cache.guard(5, ValueTag::Integer, SLJIT_R0), failure);
+		cache.transferTo(target, SLJIT_R0, SLJIT_FR0);
 		// Retained dirty payloads must not have gone through the memory bank.
 		sljit_emit_op1(code.compiler,SLJIT_MOV32,SLJIT_R0,0,SLJIT_MEM1(SLJIT_S0),0);
 		sljit_emit_op1(code.compiler,SLJIT_MOV32,SLJIT_MEM1(SLJIT_S0),7*sizeof(u32),SLJIT_R0,0);
@@ -246,28 +246,58 @@ void parallelTransfers() {
 	} }while(std::next_permutation(permutation.begin(),permutation.end()));
 }
 
+void untypedTransfersPublishTagsButKeepPayloads() {
+	Code code;
+	NativeRegisterCache cache(code.compiler, SLJIT_S0, SLJIT_S1, std::span(integers).first(1), std::span(floats).first(1));
+	const auto word = cache.write(0, ValueTag::Integer);
+	const auto fp = cache.write(1, ValueTag::Float);
+	sljit_emit_op1(code.compiler, SLJIT_MOV32, word.reg, 0, SLJIT_IMM, 0x12345678);
+	setFloatWord(code.compiler, fp.reg, 0xffa12345u);
+
+	auto target = cache.state();
+	std::swap(target[0], target[1]);
+	for (auto& binding : std::span(target).first(2)) {
+		binding.tag.reset();
+		binding.tagDirty = false;
+	}
+	cache.transferTo(target, SLJIT_R0, SLJIT_FR0);
+
+	// The edge published the tags but neither payload has roundtripped.
+	sljit_emit_op1(code.compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_S0), 0);
+	sljit_emit_op1(code.compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S0), 2 * sizeof(u32), SLJIT_R0, 0);
+	cache.emitTag(0, SLJIT_R0);
+	sljit_emit_op1(code.compiler, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_S1), 2, SLJIT_R0, 0);
+	cache.publish();
+	code.result(0);
+	code.finish();
+
+	ValueSlots slots(3);
+	slots.set(0, valueInteger(19));
+	slots.set(1, valueBool(false));
+	require(code.run(slots) == 0 && slots.get(0) == valueInteger(0x12345678)
+		&& slots.get(1) == valueFloatBits(0xffa12345u) && slots.get(2) == valueInteger(19),
+		"raw permutations left tags authoritative in memory while carrying both payloads across banks");
+}
+
 void loopEdges() {
 	Code code;NativeRegisterCache cache(code.compiler,SLJIT_S0,SLJIT_S1,std::span(integers).first(2),floats);
 	cache.beginInstruction();cache.read(0,ValueTag::Integer);cache.read(1,ValueTag::Integer);
 	cache.write(0,ValueTag::Integer);cache.write(1,ValueTag::Integer);
 	const auto entry=cache.state();
-	auto* skipCold=sljit_emit_jump(code.compiler,SLJIT_JUMP);
-	auto* failure=sljit_emit_label(code.compiler);code.result(1);
-	sljit_set_label(skipCold,sljit_emit_label(code.compiler));
 	auto* loop=sljit_emit_label(code.compiler);
 	cache.beginInstruction();const auto counter=cache.read(0,ValueTag::Integer),sum=cache.read(1,ValueTag::Integer);
 	const auto output=cache.write(1,ValueTag::Integer);
 	sljit_emit_op2(code.compiler,SLJIT_ADD32,output.reg,0,sum.reg,0,counter.reg,0);
 	const auto decremented=cache.write(0,ValueTag::Integer);
 	sljit_emit_op2(code.compiler,SLJIT_SUB32,decremented.reg,0,counter.reg,0,SLJIT_IMM,1);
-	auto swapped=cache.state();std::swap(swapped[0],swapped[1]);for(auto* miss:cache.transferTo(swapped,SLJIT_R0,SLJIT_FR0))
-		if(miss)sljit_set_label(miss,failure);
+	auto swapped = cache.state();
+	std::swap(swapped[0], swapped[1]);
+	cache.transferTo(swapped, SLJIT_R0, SLJIT_FR0);
 	cache.beginInstruction();const auto condition=cache.read(0,ValueTag::Integer);
 	auto* taken=sljit_emit_cmp(code.compiler,SLJIT_SIG_GREATER | SLJIT_32,condition.reg,0,SLJIT_IMM,0);
 	const auto backedge=cache.state();cache.publish();code.result(0);
 	sljit_set_label(taken,sljit_emit_label(code.compiler));cache.setState(backedge);
-	for(auto* miss:cache.transferTo(entry,SLJIT_R0,SLJIT_FR0))
-		if(miss)sljit_set_label(miss,failure);
+	cache.transferTo(entry, SLJIT_R0, SLJIT_FR0);
 	sljit_set_label(sljit_emit_jump(code.compiler,SLJIT_JUMP),loop);
 	code.finish();
 	for (int count:{1,2,3,17,1000}) {
@@ -283,7 +313,7 @@ int main() {
 	try {
 		wordsFloatsAndReferences();arithmeticAndBitMoves();futureUseAndPublication();
 		aliasEvictionAndRetagging();preciseGuardSnapshots();
-		selectiveCallSpills();parallelTransfers();loopEdges();
+		selectiveCallSpills();parallelTransfers();untypedTransfersPublishTagsButKeepPayloads();loopEdges();
 		std::cout<<"Native word/F32 cache, precise exits, selective spills and typed loop transfers passed\n";
 		return 0;
 	} catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}

@@ -48,7 +48,11 @@ void NativeLowering::lowerOperation(const NativeGlobalAccess& access, const Nati
 }
 void NativeLowering::lowerOperation(const NativePoolRead& read, const NativeInstruction& instruction) {
 	auto& invalid = *instruction.slow;
-	emitWordOperand(read.index, invalid);
+	if (read.indexPlan == NativeWordSource::Invalid) {
+		emitLeave(invalid, Charge::Pending);
+		return;
+	}
+	emitWordOperand(read.index, read.indexPlan, invalid);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, m_constants.size()),
 		invalid, m_cache.state());
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_R0, 0);
@@ -89,9 +93,8 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 		fault(open, *openWrite, m_cache.state());
 		// Both value lanes are in the aligned cell's write-watch group.
 		emitRamWordWriteWatch(*openWrite, SLJIT_R3, 0, SLJIT_R0, SLJIT_R1, 3u);
-		const int tag = knownTag(access.slot);
-		if (tag < 0 || valueTagHasGcEdge(static_cast<ValueTag>(tag))) {
-			const auto scalar = tag < 0 ? emitSkipScalarBarrier(access.slot, SLJIT_R0) : std::array<sljit_jump*, 2>{};
+		if (access.barrier != NativeGcBarrier::None) {
+			const auto scalar = access.barrier == NativeGcBarrier::Dynamic ? emitSkipScalarBarrier(access.slot, SLJIT_R0) : std::array<sljit_jump*, 2>{};
 			sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), GC_COLOR_OFFSET);
 			sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, GC_OLD | GC_REMEMBERED);
 			fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, GC_OLD), *openWrite, m_cache.state());

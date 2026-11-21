@@ -47,7 +47,6 @@ struct NativeIrBlock {
 	std::array<size_t, 2> successors;
 	NativeBlockExitSite* beforeFusedJump = nullptr;
 	NativeBlockExitSite* completedCall = nullptr;
-	size_t optimizationPrefix = 0;
 	bool nativeSuccessor = true;
 	std::span<const NativeSlotType> entryTypes{};
 	size_t typePredecessor = std::numeric_limits<size_t>::max();

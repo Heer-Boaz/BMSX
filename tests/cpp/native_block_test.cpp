@@ -311,9 +311,11 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 			"external entry reloads the current payload of each permuted register");
 		for (int i = 0; i < 4; ++i) registers.set(i, constants[3 - i]);
 		run.remainingCycles = 6;
-		const auto* miss = blocks[1]->run(registers.view(), run);
-		require(miss->exit == NativeBlockExit::ScalarBoundary && miss->nextPc == blocks[1]->firstPc && run.remainingCycles == 6,
-			"incompatible public-entry facts leave the unexecuted suffix to scalar dispatch");
+		const auto* polymorphic = blocks[1]->run(registers.view(), run);
+		require(polymorphic == &blocks[1]->terminal && run.remainingCycles == 0,
+			"a public entry that only copies incoming values does not require the donor's tags");
+		for (int i = 0; i < 4; ++i) require(registers.get(i + 4) == constants[3 - permutation[i]],
+			"an untyped native entry preserves values of every incoming tag");
 
 	}
 	require(bytes == 0, "per-segment register plans do not retain executable storage");

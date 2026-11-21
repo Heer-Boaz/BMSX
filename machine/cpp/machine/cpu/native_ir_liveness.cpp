@@ -33,17 +33,15 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 		return;
 	}
 
-	std::vector<size_t> typedPrefix(blocks.size());
-	for (size_t i = 0; i < blocks.size(); ++i) {
-		for (const auto& inst : blocks[i].instructions) {
+	for (const auto& block : blocks)
+		for (const auto& inst : block.instructions) {
 			const auto& access = inst.slots;
-			if (!access.propagatesEntryTypes)
-				break;
-			++typedPrefix[i];
 			for (int guest : access.reads)
 				if (guest >= 0) m_entryRegisters.push_back(guest);
+			// Only individually produced payloads can occupy a host binding.
+			// Include them when their next access is inside an open range.
+			if (access.writes.count == 1) m_entryRegisters.push_back(access.writes.first);
 		}
-	}
 	std::sort(m_entryRegisters.begin(), m_entryRegisters.end());
 	m_entryRegisters.erase(std::unique(m_entryRegisters.begin(), m_entryRegisters.end()), m_entryRegisters.end());
 
@@ -58,7 +56,7 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 	const auto definitions = std::span(local).last(m_entryLive.size());
 	for (size_t i = 0; i < blocks.size(); ++i) {
 		const size_t base = i * m_liveWordCount;
-		for (const auto& inst : blocks[i].instructions.first(typedPrefix[i])) {
+		for (const auto& inst : blocks[i].instructions) {
 			const auto& access = inst.slots;
 			for (int guest : access.reads) {
 				if (guest < 0) continue;
@@ -78,7 +76,7 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 				}
 			};
 			if (access.readsRange.count != 0 || access.readsRange.open) markRange(access.readsRange, false);
-			if (access.writes.count != 0 || access.writes.open) markRange(access.writes, true);
+			if (access.writes.count != 0 && !access.writes.open) markRange(access.writes, true);
 		}
 	}
 
@@ -89,10 +87,9 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 			const auto& block = blocks[i];
 			for (size_t word = 0; word < m_liveWordCount; ++word) {
 				u64 liveOut = 0;
-				if (typedPrefix[i] == block.instructions.size())
-					for (const size_t successor : block.successors)
-						if (successor != blocks.size())
-							liveOut |= m_entryLive[successor * m_liveWordCount + word];
+				for (const size_t successor : block.successors)
+					if (successor != blocks.size())
+						liveOut |= m_entryLive[successor * m_liveWordCount + word];
 				const size_t slot = i * m_liveWordCount + word;
 				const u64 live = uses[slot] | (liveOut & ~definitions[slot]);
 				changed |= m_entryLive[slot] != live;

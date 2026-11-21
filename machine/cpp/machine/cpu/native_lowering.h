@@ -22,7 +22,7 @@ public:
 	void beginBlock(size_t index);
 	void lower(const NativeInstruction& instruction);
 	void endBlock();
-void* finish(size_t& codeBytes, std::vector<NativeBlockExitSite>& replaySites);
+	void* finish(size_t& codeBytes, std::vector<NativeBlockExitSite>& replaySites);
 
 private:
 	using State = NativeRegisterCache::State;
@@ -53,11 +53,12 @@ private:
 	void emitExit(NativeBlockExitSite& exit, size_t target);
 	void emitTop(int extent);
 	void emitConstant(int guest, Value value);
+	void emitPayload(int selector, sljit_s32 word);
+	void emitTag(int selector, sljit_s32 tag);
 	void emitRawLoad(int selector, sljit_s32 word, sljit_s32 tag);
 	void emitRawStore(int guest, sljit_s32 word, sljit_s32 tag);
 	NativeRegisterCache::Operand readTyped(
 		int selector, ValueTag tag, sljit_s32 wordScratch = SLJIT_R0, sljit_s32 floatScratch = SLJIT_FR0);
-	int knownTag(int selector) const;
 	enum class Charge : u8 { Pending, Paid };
 	struct SemanticExit {
 		NativeBlockExitSite* site;
@@ -71,16 +72,17 @@ private:
 	void emitNumericKernel(const NativeArithmetic&, NativeBlockExitSite& invalid, std::optional<ValueTag> resultTag);
 	void emitFloatInput(int selector, ValueTag tag, sljit_s32 destination);
 	void emitFloatCanonicalization(sljit_s32 reg);
-	void emitWordOperand(int selector, NativeBlockExitSite& invalid);
+	void emitWordOperand(int selector, NativeWordSource source, NativeBlockExitSite& invalid);
 	std::array<sljit_jump*, 2> emitArrayRead();
-	void emitArrayStore(int value, NativeBlockExitSite&);
+	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&);
 	void emitIndexRead(int key, NativeBlockExitSite&);
-	sljit_jump* emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<StringId> constantKey = std::nullopt, std::optional<ValueTag> resultTag = std::nullopt);
+	sljit_jump* emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<StringId> constantKey = std::nullopt,
+		std::optional<ValueTag> resultTag = std::nullopt, NativeStorePlan store = {});
 	void emitTableReadLeaf(bool stringKey, NativeBlockExitSite&);
 	void emitTableSlotStore(int value);
 	void emitTableSlotOffset(sljit_s32 destination, bool word);
 	void emitTableSlotLoad(sljit_s32 destination, bool word);
-	void emitTableWriteWatch(NativeBlockExitSite&, bool arraySlot, int value);
+	void emitTableWriteWatch(NativeBlockExitSite&, bool arraySlot, int value, NativeGcBarrier barrier);
 	std::array<sljit_jump*, 2> emitSkipScalarBarrier(int value, sljit_s32 scratch);
 	void emitGrayChange(NativeBlockExitSite&, sljit_s32 offset, sljit_s32 record, u32 link);
 	void emitRamWordWriteWatch(NativeBlockExitSite&, sljit_s32 address, sljit_sw addressArg, sljit_s32 bits, sljit_s32 group, u32 wordMask = 1u);

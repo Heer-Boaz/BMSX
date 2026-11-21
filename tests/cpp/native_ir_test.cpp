@@ -252,6 +252,50 @@ void onlyConsumedEntryProofsSurviveCopies() {
 		"the proof follows the copied value, not the separately read global-store operand");
 }
 
+void dataflowPlansTableAndMemoryInputs() {
+	constexpr u32 pc = 0x5300;
+	std::array<DecodedInstruction, 7> decoded{};
+	std::array<NativeBlockInstruction, 7> source;
+	const std::array opcodes{OpCode::LOADK, OpCode::KFALSE, OpCode::K1, OpCode::LOADK, OpCode::JMP, OpCode::SETFIELD, OpCode::STORE_MEM};
+	for (size_t index = 0; index < decoded.size(); ++index) {
+		auto& instruction = decoded[index];
+		instruction.op = static_cast<u8>(opcodes[index]);
+		instruction.width = 1;
+		instruction.baseCycles = BASE_CYCLES[instruction.op];
+		source[index] = {&instruction, pc + static_cast<u32>(index) * INSTRUCTION_BYTES};
+	}
+	ValueSlots pool(3);
+	pool.set(0, valueTable(0x1000));
+	pool.set(1, valueFloat(1.5f));
+	pool.set(2, valueString(0));
+	decoded[0].a = 7;
+	decoded[1].a = 8;
+	decoded[2].a = 9;
+	decoded[3].a = 10;
+	decoded[3].bx = 1;
+	decoded[4].bx = source[5].pc;
+	decoded[5].a = 7;
+	decoded[5].b = 2;
+	decoded[5].c = 8;
+	decoded[6].a = 10;
+	decoded[6].b = 9;
+	decoded[6].c = static_cast<i16>(MemoryAccessKind::F32LE);
+	const std::span instructions(source);
+	const std::array runs{NativeBlockSource{instructions.first(5)}, NativeBlockSource{instructions.last(2)}};
+	NativeIrRegion region(runs, pool.view());
+	NativeRegisterUses uses;
+	region.optimize(pool.view(), uses);
+	const auto blocks = region.blocks();
+	const auto& table = std::get<NativeTableAccess>(blocks[1].instructions.front().operation);
+	const auto& memory = std::get<NativeMemoryAccess>(blocks[2].instructions.front().operation);
+	require(table.receiverCheck == NativeTagCheck::Proved && table.store.barrier == NativeGcBarrier::None
+		&& table.store.nilValue == NativeNilValue::Present,
+		"the checked table path consumes logical receiver and value proofs");
+	require(memory.addressCheck == NativeTagCheck::Proved && memory.store == NativeWordSource::Float
+		&& blocks[1].entryTypes.size() == 4 && blocks[2].entryTypes.size() == 2,
+		"the memory plan receives its proofs through a table edge without depending on host register residency");
+}
+
 void registerUses() {
 	std::array first{NativeInstruction(NativeLiteral{1, valueInteger(0)})};
 	std::array left{NativeInstruction(NativeClearSlots{10, 2})};
@@ -304,6 +348,7 @@ int main() {
 		undefinedMoveKindDoesNotBecomeANumericWordMove();
 		successorsImportLogicalTypesBeforeLowering();
 		onlyConsumedEntryProofsSurviveCopies();
+		dataflowPlansTableAndMemoryInputs();
 		registerUses();
 		return 0;
 	} catch (const std::exception& error) {

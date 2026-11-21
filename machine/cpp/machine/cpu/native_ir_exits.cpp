@@ -130,7 +130,6 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 	block->sideExits.reserve(slowCount + (branch || comparison ? 1 : 0)
 		+ (block->hasFusedJump ? 1 : 0) + (inlineBuiltin ? 1 : 0));
 	auto& terminal = block->terminal;
-	size_t optimizationPrefix = 0;
 	for (size_t index = 0; index < instructions.size(); ++index) {
 		const auto& source = instructions[index];
 		NativeResumePoint before{source.pc, terminal.cycles, terminal.registerTop};
@@ -161,8 +160,6 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 		const auto* table = std::get_if<NativeTableAccess>(&ir.operation);
 		if (table && table->mode == NativeTableMode::ReadMethod)
 			terminal.registerTop = std::max(terminal.registerTop, ir.slots.writes.end());
-		if (std::holds_alternative<NativeArithmetic>(ir.operation) || std::holds_alternative<NativeComparison>(ir.operation))
-			optimizationPrefix = index + 1;
 		const auto [slow, operands] = checks[index];
 		if (slow != NativeBlockExit::Continue) {
 			auto& exit = block->sideExits.emplace_back(terminal);
@@ -229,7 +226,7 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 		else exit.nextPc = branch->target;
 	}
 	m_blocks.push_back({.instructions = operations, .taken = taken, .successors = {},
-		.beforeFusedJump = beforeFusedJump, .completedCall = completedCall, .optimizationPrefix = optimizationPrefix,
+		.beforeFusedJump = beforeFusedJump, .completedCall = completedCall,
 		.nativeSuccessor = reachesEnd && terminal.exit == NativeBlockExit::Continue});
 	entries.push_back(std::move(block));
 }

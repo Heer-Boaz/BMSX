@@ -112,11 +112,12 @@ pointers or cache-link topology.
 In the native tier, the CPU discovers bounded runs of decoded instructions.
 The compiler translates them to typed slot operations, selects native
 continuation boundaries, and records the semantic exits and scalar resume
-points. Numeric specialization and register-use analysis operate on logical
-guest slots. SLJIT lowering owns physical registers, spills, executable labels
-and link fixups. The CPU publishes the compiler's entries by guest PC; it
-does not reconstruct their boundaries. The IR is transient, not a second
-representation of machine state.
+points. The optimizer chooses operation plans and their required type proofs
+on logical guest slots. SLJIT lowering owns physical registers, spills,
+executable labels and link fixups. A live payload can cross an edge without a
+type proof: its tag stays authoritative in guest memory. The CPU publishes
+the compiler's entries by guest PC; it does not reconstruct their boundaries.
+The IR is transient, not a second representation of machine state.
 
 Frame entry and value placement belong to the CPU, thread and slot owners,
 not to generated opcode bodies. The native runtime admits a transfer before
