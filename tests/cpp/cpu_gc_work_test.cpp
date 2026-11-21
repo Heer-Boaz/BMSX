@@ -642,6 +642,61 @@ void incrementalSharedWeakMode() {
 	require(weak.getInteger(1) == childValue, "the newly strong entry retains its child in the next cycle");
 }
 
+void resumesWeakTableRemark() {
+	Machine machine(image(), true);
+	auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& memory = machine.memory;
+	constexpr u32 count = GC_STEP_WORDS + 256;
+	auto roots = cpu.createTable(count, 0), changed = cpu.createTable();
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(roots.address()));
+	frame.registers.set(1, valueTable(changed.address()));
+	frame.setTop(2);
+	const auto modeKey = cpu.stringPool().intern("__mode");
+	auto meta = cpu.createTable(0, 1);
+	meta.setStringKey(modeKey, valueString(cpu.stringPool().intern("v")));
+	auto watcher = cpu.createTable(1, 0);
+	watcher.setMetatableAddress(meta.address());
+	roots.setInteger(count, valueTable(watcher.address()));
+	for (u32 slot = 1; slot < count; ++slot) {
+		auto child = cpu.createTable();
+		child.setMetatableAddress(meta.address());
+		roots.setInteger(slot, valueTable(child.address()));
+	}
+	auto watched = cpu.createTable();
+	watcher.setInteger(1, valueTable(watched.address()));
+	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const auto read = [&](u32 field) { return memory.readRamRecordWord(control + field); };
+	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
+	const u32 head = (watcher.address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT;
+	for (int step = 0; read(GC_REMARK_VISIT_INDEX) == 0u && step < 100; ++step) advance();
+	const auto cursor = read(GC_REMARK_VISIT_INDEX);
+	require(cursor != 0u && cursor != head && read(GC_REMARK_VISIT_STATE) != 0u
+		&& read(GC_WEAK_VISITS) == head && read(GC_WEAK_VISITS + GC_VISIT_COUNT) == count
+		&& heap.phase() == GcPhase::Mark && !heap.isAlive(watched.address()),
+		"a partially clocked weak-table remark retains the original list");
+	const auto state = cpu.captureRuntimeState();
+	const auto ram = memory.captureSaveState();
+	const auto finish = [&] {
+		require(read(GC_REMARK_VISIT_INDEX) == cursor, "remark resumes from the saved visit");
+		auto late = cpu.createTable();
+		changed.setInteger(1, valueTable(late.address()));
+		meta.setStringKey(modeKey, valueNil());
+		require(!heap.isAlive(late.address()), "the intervening write is not marked eagerly");
+		for (int step = 0; heap.active() && step < 100; ++step) advance();
+		require(!heap.active() && read(GC_REMARK_VISIT_STATE) == 0u
+			&& heap.tableRecordAddress(watched.address()) == watched.address()
+			&& heap.tableRecordAddress(late.address()) == late.address(),
+			"remark uses the current weak mode and retains intervening writes");
+		return memory.captureSaveState().ram;
+	};
+	const auto expected = finish();
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(state);
+	require(finish() == expected, "partially visited weak list replays to identical RAM");
+}
+
 void consumesSelfLinkedGrayEdge() {
 	Machine machine(image()); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap();
 	auto rooted = cpu.createTable();
@@ -855,7 +910,8 @@ int main(int argc, char** argv) {
 		allocationCollectionAndFailure(); constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		referenceWritesPayOnlyForNewEdges(); incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
-		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues(); incrementalSharedWeakMode(); consumesSelfLinkedGrayEdge();
+		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues(); incrementalSharedWeakMode();
+		resumesWeakTableRemark(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
 		return 0;

@@ -35,10 +35,14 @@ export const GC_ROOT_CURSOR = GC_TRACE_CURSOR + 4;
 export const GC_THREAD_TRACE_OPEN = GC_ROOT_CURSOR + 4;
 const GC_THREAD_TRACE_TOP = GC_THREAD_TRACE_OPEN + 4;
 const GC_THREAD_TRACE_BILLED = GC_THREAD_TRACE_TOP + 4;
+// Remark revisits the weak list without consuming its head.
+export const GC_REMARK_VISIT_INDEX = GC_THREAD_TRACE_BILLED + 4;
+export const GC_REMARK_VISIT_STATE = GC_REMARK_VISIT_INDEX + 4;
 // Capture lanes use four bytes each and Table entries require a separate tag.
 const TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1;
 const TRACE_CURSOR_MASK = (1 << TRACE_CURSOR_BITS) - 1;
 const enum ThreadTraceStage { Frames, Protected, Values, Padding }
+const enum RemarkStage { None, Threads, Weak, Roots }
 const THREAD_TRACE_OPEN_HEAD = 1; // An open cell's address is aligned.
 export const GC_VISIT_HEADER_BYTE = 3;
 export const GC_VISIT_MEMBER = 0x40;
@@ -181,26 +185,36 @@ export class GcHeap {
 		const count = this.indexWord(list + GC_VISIT_COUNT);
 		this.memory.writeRamRecordWord(this.controlOffset + list + GC_VISIT_COUNT, (count + 1) & GC_GRAY_INDEX_MASK);
 	}
-	private visitList(list: number, kind: ValueTag.Table | typeof THREAD_RECORD_KIND, drain: boolean, visitor: (address: number) => number): number {
-		let index = this.indexWord(list);
-		let remaining = this.indexWord(list + GC_VISIT_COUNT);
-		let work = 0;
-		while (index !== 0 && remaining-- !== 0) {
+	private visitList(list: number, kind: ValueTag.Table | typeof THREAD_RECORD_KIND, drain: boolean,
+		visitor: (address: number) => number, allowance = Infinity, stage = RemarkStage.None): number {
+		const resumeWeak = stage === RemarkStage.Weak;
+		let index = this.indexWord(resumeWeak ? GC_REMARK_VISIT_INDEX : list);
+		let remaining = this.indexWord(resumeWeak ? GC_REMARK_VISIT_STATE : list + GC_VISIT_COUNT);
+		let work = 0, visits = 0;
+		while (index !== 0 && remaining !== 0 && visits < allowance) {
 			const address = RAM_BASE + (index << GC_RECORD_SHIFT);
 			const meta = this.memory.readRamRecordByte(address + GC_VISIT_HEADER_BYTE);
 			// Only the matching, linked record clocks the list port.
-			if ((meta & GC_VISIT_MEMBER) === 0) break;
-			if (kind === ValueTag.Table ? this.tableRecordAddress(address) !== address : this.threadRecordAddress(address) !== address) break;
+			if ((meta & GC_VISIT_MEMBER) === 0
+				|| (kind === ValueTag.Table ? this.tableRecordAddress(address) !== address : this.threadRecordAddress(address) !== address)) {
+				index = 0; break;
+			}
+			--remaining;
+			++visits;
 			const low = this.memory.readRamRecordWord(address + GC_RECORD_LINK) >>> GC_GRAY_INDEX_BITS;
 			index = low | ((meta & VISIT_LINK_HIGH_MASK) << VISIT_LINK_LOW_BITS);
 			if (drain) this.setVisitLink(address, meta & ~GC_VISIT_MEMBER, 0);
 			work += visitor(address);
 		}
+		if (index === 0 || remaining === 0) index = remaining = 0;
 		if (drain) {
-			this.memory.writeRamRecordPair(this.controlOffset + list, 0, 0);
-			this.memory.writeRamRecordWord(this.controlOffset + list + GC_VISIT_COUNT, 0);
+			if (index === 0) this.memory.writeRamRecordPair(this.controlOffset + list, 0, 0);
+			else this.memory.writeRamRecordWord(this.controlOffset + list, index);
+			this.memory.writeRamRecordWord(this.controlOffset + list + GC_VISIT_COUNT, remaining);
+		} else if (resumeWeak) {
+			this.memory.writeRamRecordPair(this.controlOffset + GC_REMARK_VISIT_INDEX, index, (stage << GC_GRAY_INDEX_BITS) | remaining);
 		}
-		return work;
+		return stage === RemarkStage.None ? work : visits;
 	}
 	private readonly remarkRecord = (address: number): number => {
 		if (this.markColor(address) === 3) this.enqueue(address, GC_RECORD_LINK, GC_CHANGED_HEAD);
@@ -457,7 +471,7 @@ export class GcHeap {
 			next < end ? (mode << TRACE_CURSOR_BITS) | next : 0);
 		return work;
 	}
-	private traceInitialRoots(limit: number): number {
+	private traceRootBanks(limit: number): number {
 		const cursor = this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR);
 		let work = 0, next = cursor & TRACE_CURSOR_MASK;
 		const strings = this.cpu.stringPool;
@@ -478,6 +492,43 @@ export class GcHeap {
 		}
 		this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, 0);
 		this.cpu.markRootThreads(this);
+		return work;
+	}
+	private remarkStage(): RemarkStage {
+		return this.memory.readRamRecordWord(this.controlOffset + GC_REMARK_VISIT_STATE) >>> GC_GRAY_INDEX_BITS;
+	}
+	private remarkVisits(allowance: number): number {
+		this.diagnostics?.phase('rootsNanoseconds');
+		let stage = this.remarkStage(), visits = 0;
+		if (stage === RemarkStage.Threads) {
+			visits = this.visitList(GC_THREAD_VISITS, THREAD_RECORD_KIND, true, this.remarkRecord, allowance, stage);
+			if (this.indexWord(GC_THREAD_VISITS) !== 0) return visits;
+			stage = RemarkStage.Weak;
+			this.memory.writeRamRecordPair(this.controlOffset + GC_REMARK_VISIT_INDEX, this.indexWord(GC_WEAK_VISITS),
+				(stage << GC_GRAY_INDEX_BITS) | this.indexWord(GC_WEAK_VISITS + GC_VISIT_COUNT));
+		}
+		if (stage === RemarkStage.Weak) {
+			visits += this.visitList(GC_WEAK_VISITS, ValueTag.Table, false, this.remarkRecord, allowance - visits, stage);
+			if (this.indexWord(GC_REMARK_VISIT_INDEX) !== 0 || visits === allowance) return visits;
+			// Transfer only after the visits: writes keep publishing to Changed
+			// while no allocation can progress to the sweep.
+			this.memory.writeRamRecordPair(this.controlOffset + GC_TRACE_HEAD, this.indexWord(GC_CHANGED_HEAD), 0);
+			this.memory.writeRamRecordWord(this.controlOffset + GC_REMARK_VISIT_STATE, RemarkStage.Roots << GC_GRAY_INDEX_BITS);
+			this.cpu.markRootHead(this);
+			this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, GcRootBank.SystemGlobals << TRACE_CURSOR_BITS);
+		}
+		return visits;
+	}
+	private remarkRoots(t0: Value, t1: Value, t2: Value, allowance: number): number {
+		this.diagnostics?.phase('rootsNanoseconds');
+		this.markValue(t0); this.markValue(t1); this.markValue(t2);
+		this.cpu.stringPool.markLocalRoots();
+		let work = this.cpu.stringPool.takeMarkWork();
+		if (work < allowance) work += this.traceRootBanks(allowance - work);
+		if (this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR) === 0) {
+			this.memory.writeRamRecordWord(this.controlOffset + GC_REMARK_VISIT_STATE, 0);
+			this.setPhase(GcPhase.MarkAgain);
+		}
 		return work;
 	}
 	/** Called with the current trace queue empty; mutations stay separate until this pass. */
@@ -596,39 +647,46 @@ export class GcHeap {
 		finally { this.diagnostics?.endStep(); }
 	}
 	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number, compactThreads: boolean): number {
-		let work = 0;
-		if (this.phase() === GcPhase.Pause) {
-			if (this.diagnostics !== null) ++this.diagnostics.collections;
+		let work = 0, limit = GC_STEP_WORDS;
+		if (this.remarkStage() !== RemarkStage.None) {
+			limit -= this.remarkVisits(limit);
+			if (this.remarkStage() !== RemarkStage.Roots) return 0;
+			work += this.remarkRoots(t0, t1, t2, limit);
+			if (this.phase() === GcPhase.Mark) return work;
+		} else if (this.phase() === GcPhase.Pause || this.phase() === GcPhase.Mark || this.phase() === GcPhase.MarkAgain) {
 			this.diagnostics?.phase('rootsNanoseconds');
-			this.setPhase(GcPhase.Mark); this.cpu.stringPool.beginReachabilityEpoch();
-			this.cpu.markRootHead(this);
-			this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, GcRootBank.SystemGlobals << TRACE_CURSOR_BITS);
-		}
-		if (this.phase() === GcPhase.Mark || this.phase() === GcPhase.MarkAgain) {
-			this.diagnostics?.phase('rootsNanoseconds');
+			if (this.phase() === GcPhase.Pause) {
+				if (this.diagnostics !== null) ++this.diagnostics.collections;
+				this.setPhase(GcPhase.Mark); this.cpu.stringPool.beginReachabilityEpoch();
+				this.cpu.markRootHead(this);
+				this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, GcRootBank.SystemGlobals << TRACE_CURSOR_BITS);
+			}
 			if (this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR) !== 0) {
 				work += this.cpu.stringPool.takeMarkWork();
-				if (work < GC_STEP_WORDS) work += this.traceInitialRoots(GC_STEP_WORDS - work);
+				if (work < limit) work += this.traceRootBanks(limit - work);
 			}
 			this.markValue(t0); this.markValue(t1); this.markValue(t2);
 			this.cpu.stringPool.markLocalRoots();
 			work += this.cpu.stringPool.takeMarkWork();
 		}
-		while (work < GC_STEP_WORDS && this.active()) {
+		while (work < limit && this.active()) {
 			switch (this.phase()) {
 				case GcPhase.Mark:
 				case GcPhase.MarkAgain:
 					this.diagnostics?.phase(this.phase() === GcPhase.Mark ? 'traceNanoseconds' : 'markAgainNanoseconds');
 					{
 						const record = this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD);
-						if (record !== 0) work += this.resumeTrace(record, GC_STEP_WORDS - work);
+						if (record !== 0) work += this.resumeTrace(record, limit - work);
 					}
-					while (this.indexWord(GC_TRACE_HEAD) !== 0 && work < GC_STEP_WORDS)
-						work += this.trace(false, GC_STEP_WORDS - work) + this.cpu.stringPool.takeMarkWork();
-					if (work < GC_STEP_WORDS) {
+					while (this.indexWord(GC_TRACE_HEAD) !== 0 && work < limit)
+						work += this.trace(false, limit - work) + this.cpu.stringPool.takeMarkWork();
+					if (work < limit) {
 						if (this.phase() === GcPhase.Mark) {
-							work += this.remark(t0, t1, t2);
-							this.setPhase(GcPhase.MarkAgain);
+							this.memory.writeRamRecordWord(this.controlOffset + GC_REMARK_VISIT_STATE, RemarkStage.Threads << GC_GRAY_INDEX_BITS);
+							limit -= this.remarkVisits(limit - work);
+							if (this.remarkStage() !== RemarkStage.Roots) return work;
+							work += this.remarkRoots(t0, t1, t2, limit - work);
+							if (this.phase() === GcPhase.Mark) return work;
 						} else {
 							this.setPhase(GcPhase.Atomic);
 							return work;

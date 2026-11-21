@@ -42,7 +42,7 @@ import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_
 
 // One current internal layout, deliberately without a legacy reader.
 // TODO: MUST BE FIXED TO `BMSX` INSTEAD OF CHANGING THE SIGNATURE AFTER EACH VERSION! WE ARE NOT DOING VERSIONING!
-const SAVE_STATE_SIGNATURE = 0x56534d42; // BMSV: resumable Thread traversal
+const SAVE_STATE_SIGNATURE = 0x57534d42; // BMSW: resumable second-pass collection roots
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);

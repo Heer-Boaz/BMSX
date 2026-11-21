@@ -10,7 +10,7 @@ import { HEAP_GC_CONTROL_OFFSET, heapAllocationBytes } from '../../machine/ts/ma
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
-import { GcPhase, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
+import { GcPhase, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
@@ -338,6 +338,53 @@ test('small collection skips scalar-only table writes, follows live keys and cle
 	assert.equal(tables.get(weak, weakKey), valueNil());
 	assert.equal(stringPool.find('young-key:new-name'), newField);
 	assert.equal(tables.getStringKey(strong, newField), valueInteger(2));
+});
+
+test('weak-table remark resumes without consuming list order or losing writes to Changed', () => {
+	const cpu = machine(), { gc, memory } = cpu;
+	const count = GC_STEP_WORDS + 256;
+	const roots = cpu.createTable(count, 0), changed = cpu.createTable();
+	const frame = cpu.rootThread.currentFrame!;
+	frame.registers.setTable(0, roots); frame.registers.setTable(1, changed); frame.top = 2;
+	const modeKey = cpu.stringPool.intern('__mode'), meta = cpu.createTable(0, 1);
+	gc.tables.setStringKey(meta, modeKey, valueString(cpu.stringPool.intern('v')));
+	const watcher = cpu.createTable(1, 0);
+	gc.tables.setMetatableAddress(watcher, meta);
+	gc.tables.setInteger(roots, count, valueTable(watcher));
+	for (let i = 1; i < count; ++i) {
+		const child = cpu.createTable();
+		gc.tables.setMetatableAddress(child, meta);
+		gc.tables.setInteger(roots, i, valueTable(child));
+	}
+	const watched = cpu.createTable();
+	gc.tables.setInteger(watcher, 1, valueTable(watched));
+	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const read = (field: number) => memory.readRamRecordWord(control + field);
+	const head = (watcher & (MAIN_RAM_SIZE - 1)) >>> GC_RECORD_SHIFT;
+	for (let step = 0; read(GC_REMARK_VISIT_INDEX) === 0 && step < 100; ++step) gc.step();
+	const cursor = read(GC_REMARK_VISIT_INDEX);
+	assert.ok(cursor !== 0 && cursor !== head && read(GC_REMARK_VISIT_STATE) !== 0);
+	assert.equal(read(GC_WEAK_VISITS), head);
+	assert.equal(read(GC_WEAK_VISITS + GC_VISIT_COUNT), count);
+	assert.equal(gc.phase(), GcPhase.Mark);
+	assert.equal(gc.isAlive(watched), false);
+	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	const finish = () => {
+		assert.equal(read(GC_REMARK_VISIT_INDEX), cursor);
+		const late = cpu.createTable();
+		gc.tables.setInteger(changed, 1, valueTable(late));
+		gc.tables.setStringKey(meta, modeKey, valueNil());
+		assert.equal(gc.isAlive(late), false);
+		for (let step = 0; gc.active() && step < 100; ++step) gc.step();
+		assert.equal(gc.phase(), GcPhase.Pause);
+		assert.equal(read(GC_REMARK_VISIT_STATE), 0);
+		assert.equal(gc.tableRecordAddress(watched), watched, 'the first previously weak Table picked up the current strong mode');
+		assert.equal(gc.tableRecordAddress(late), late, 'the changed queue retains writes made between visit grants');
+		return memory.captureSaveState();
+	};
+	const expected = finish();
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	assert.deepEqual(finish(), expected);
 });
 
 test('consuming a gray record also consumes a self-linked mark edge', () => {

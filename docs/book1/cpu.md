@@ -1353,7 +1353,8 @@ count registered system-global and cartridge-global slots; repeated registration
 of one name shares its existing slot. Nil slots count too. These root ranges are
 read once in a small collection. In a full collection they are read at the
 beginning of marking, at the start of the second pass and at the final
-remark. The first pass can resume at the next root slot in a later step.
+remark. The first two passes can resume at the next root slot in a later
+step.
 Thread storage is scanned in all three full-collection passes. Function-activation control and fixed collector bookkeeping are included
 in these allowances, not charged by a separate frame-record size.
 
@@ -1369,9 +1370,10 @@ objects and Strings resumes from its previous position on the next step. An
 object page already being examined is completed before the sweep advances.
 
 Writes to already scanned objects enter a changed-object queue rather than
-immediately restarting their first scan. The second pass drains the queue as
-it stood at its start; later writes wait for the final remark. Repeated writes
-to an already queued object do not add another queue entry.
+immediately restarting their first scan. The second pass revisits Threads
+and weak Tables over successive steps before tracing the detached changed-object
+queue. Later writes wait for the final remark. Repeated writes to an already
+queued object do not add another queue entry.
 
 Incremental collection does not relocate a surviving Thread's storage.
 A synchronous full collection can halve a surviving Thread's reserved Value

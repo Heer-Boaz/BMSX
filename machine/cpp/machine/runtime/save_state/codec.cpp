@@ -8,7 +8,7 @@ namespace {
 
 // One current internal layout, deliberately without a legacy reader.
 // TODO: MUST BE FIXED TO `BMSX` INSTEAD OF CHANGING THE SIGNATURE AFTER EACH VERSION! WE ARE NOT DOING VERSIONING!
-constexpr u32 kSaveStateSignature = 0x56534d42u; // BMSV: resumable Thread traversal
+constexpr u32 kSaveStateSignature = 0x57534d42u; // BMSW: resumable second-pass collection roots
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
