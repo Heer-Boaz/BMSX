@@ -16,6 +16,7 @@
 #include "spec/blua32/opcode.h"
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/closure.h"
 #include "machine/cpu/native_block.h"
 #include "machine/cpu/native_code_lookup.h"
 #endif
@@ -145,10 +146,7 @@ inline constexpr u32 DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3u;
 struct NativeRomCallBinding {
 	static constexpr u32 slotCount = 64u;
 	u32 functionAddress = ~0u;
-	u32 codeAddress = 0u;
-	u32 numParams = 0u;
-	u32 maxStack = 0u;
-	u32 flags = 0u;
+	FunctionEntry entry{};
 	std::array<void* const*, CARTRIDGE_SLOT_COUNT> entryCells{};
 };
 
@@ -212,10 +210,6 @@ struct DecodedInstructionPage {
 };
 
 struct Blua32ExecutionImage {
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	static size_t nativeExecutionDomainOffset();
-	static size_t nativeRomCallBindingsOffset();
-#endif
 	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
 	u32 staticEnd = 0;

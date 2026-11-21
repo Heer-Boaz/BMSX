@@ -2,6 +2,7 @@
 
 #include <type_traits>
 #include <bit>
+#include <cstring>
 #include "machine/memory/memory.h"
 #include "machine/cpu/value.h"
 #include "machine/cpu/value_storage.h"
@@ -80,7 +81,7 @@ public:
 			for (size_t i = 0; i < tags; ++i) m_ram->writeRamRecordByte(byte + static_cast<u32>(i), 0);
 			return;
 		}
-		std::fill_n(m_words + first, count, uint32_t{0}); std::fill_n(m_tags + first, count, uint8_t{0});
+		clearLinear(first, count);
 		reportWrite(first, count);
 	}
 	void copyFrom(BasicValueSpan<true> source, size_t destination, size_t first, size_t count) requires (!Constant) {
@@ -112,19 +113,55 @@ public:
 				return;
 			}
 		}
+		copyLinearFrom(destination, source, first, count);
 		if (count == 1) {
-			auto* const word = m_words + destination;
-			auto* const byte = m_tags + destination;
-			*word = source.words()[first];
-			*byte = source.tags()[first];
-			if (m_ram) m_ram->invalidateRamValueSlot(word, byte);
+			if (m_ram) m_ram->invalidateRamValueSlot(m_words + destination, m_tags + destination);
 			return;
 		}
-		std::memmove(m_words + destination, source.words() + first, count * sizeof(uint32_t));
-		std::memmove(m_tags + destination, source.tags() + first, count);
 		reportWrite(destination, count);
 	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	// The CPU grant has already admitted and accounted for the linear RAM
+	// ranges. These operations do not call out to the bus or its observers.
+	BasicValueSpan admittedSubspan(size_t first, size_t count) const {
+		BasicValueSpan result(m_words + first, m_tags + first, count);
+		result.m_ram = m_ram;
+		return result;
+	}
+	u32 admittedPayload(size_t index) const {
+		return readLE32(reinterpret_cast<const u8*>(m_words + index));
+	}
+	void clearAdmitted(size_t first, size_t count) requires (!Constant) {
+		if (count != 0) clearLinear(first, count);
+	}
+	void placeAdmitted(size_t destination, BasicValueSpan<true> source, size_t first, size_t copied,
+		size_t padded) requires (!Constant) {
+		if (copied != 0) copyLinearFrom(destination, source, first, copied);
+		if (padded != 0) clearLinear(destination + copied, padded);
+	}
+
+#endif
+
 private:
+	void copyLinearFrom(size_t destination, BasicValueSpan<true> source, size_t first, size_t count) requires (!Constant) {
+		if (count == 1) {
+			m_words[destination] = source.words()[first];
+			m_tags[destination] = source.tags()[first];
+		} else {
+			std::memmove(m_words + destination, source.words() + first, count * sizeof(uint32_t));
+			std::memmove(m_tags + destination, source.tags() + first, count);
+		}
+	}
+	void clearLinear(size_t first, size_t count) requires (!Constant) {
+		if (count == 1) {
+			m_words[first] = 0;
+			m_tags[first] = 0;
+		} else {
+			std::fill_n(m_words + first, count, uint32_t{0});
+			std::fill_n(m_tags + first, count, uint8_t{0});
+		}
+	}
+
 	u32 linearPayload(size_t index) const {
 		if constexpr (std::endian::native == std::endian::big)
 			if (m_ram) return readLE32(reinterpret_cast<const u8*>(m_words + index));

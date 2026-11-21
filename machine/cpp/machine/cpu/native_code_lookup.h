@@ -47,9 +47,16 @@ public:
 	}
 
 	static DecodedInstructionPage* findInRoot(Group* const* root, u32 pc) {
-		const auto* group = root[pc >> ROOT_SHIFT];
-		const auto* page = group ? group->pages[(pc >> MAPPED_PAGE_BYTE_SHIFT) & (GROUP_PAGES - 1u)] : nullptr;
+		const auto* page = pageInRoot(root, pc);
 		return page ? page->decoded : nullptr;
+	}
+
+	// Borrow an installed cell without allocating or admitting an unaligned
+	// instruction fetch. Its contents may be null after code retirement.
+	static void* const* findEntryCellInRoot(Group* const* root, u32 pc) {
+		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) return nullptr;
+		const auto* page = pageInRoot(root, pc);
+		return page ? &page->code[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES] : nullptr;
 	}
 
 	// A cold continuation can reserve its zero cell without fetching/decoding
@@ -65,6 +72,11 @@ public:
 	}
 
 private:
+	static const DispatchPage* pageInRoot(Group* const* root, u32 pc) {
+		const auto* group = root[pc >> ROOT_SHIFT];
+		return group ? group->pages[(pc >> MAPPED_PAGE_BYTE_SHIFT) & (GROUP_PAGES - 1u)] : nullptr;
+	}
+
 	DispatchPage& dispatchPage(u32 pc, u32 slot) {
 		const bool shared = pc < CART_ROM_BASE;
 		const u32 root = pc >> ROOT_SHIFT;

@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/frame_placement.h"
 #include "machine/cpu/native_block_abi.h"
 #include "machine/cpu/native_execution.h"
 #include "machine/cpu/native_table_constructor.h"
@@ -14,35 +15,10 @@
 
 namespace bmsx {
 
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Winvalid-offsetof"
-#endif
-CPU::NativeFrameOffsets CPU::nativeFrameOffsets() {
-	return {offsetof(CPU, m_haltedUntilIrqThreadAddress), offsetof(CPU, m_haltedUntilIrqFrameDepth)};
-}
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-
 #include "machine/cpu/cpu_calls.inl"
 #include "machine/cpu/cpu_memory.inl"
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
-
-NativeRomCallBinding* CPU::fillNativeRomCallBinding(const CPU* cpu, NativeRomCallBinding* binding,
-	u32 functionAddress, u32 closureBindingFlags) noexcept {
-	const u32 cartridgeSlot = (closureBindingFlags & CLOSURE_BINDING_DOMAIN_MASK) >= 2u;
-	Span<const u8> view;
-	if (!cpu->m_memory.bindRomByteView(functionAddress, BLUA32_FUNCTION_RECORD_SIZE, cartridgeSlot, view)) return nullptr;
-	FunctionPrototype record;
-	record.readRecordWords(view.data());
-	// Cells belonged to the old prototype. The gate binds a live entry for
-	// this record and bank before it commits any guest frame writes.
-	*binding = {.functionAddress = functionAddress, .codeAddress = record.codeAddress, .numParams = record.numParams,
-		.maxStack = record.maxStack, .flags = record.flags};
-	return binding;
-}
 
 NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept {
 	const int base = exit->exitA;
@@ -312,7 +288,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			auto& thread = *cpu.m_activeThread;
 			const auto depth = static_cast<int>(thread.frameDepth());
 			if (depth <= run->targetDepth
-				|| (cpu.m_haltedUntilIrqThreadAddress == thread.address && cpu.m_haltedUntilIrqFrameDepth == depth)
+				|| cpu.retargetsHaltedFrame(thread, depth)
 				|| thread.stackRequiresScalar()) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 				++gateProfile.returns;
@@ -381,7 +357,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		run->codeRoot = lookup->root(slot);
 		run->cartridgeSlot = slot;
 		run->frameBank = frameBankWord(frame->executionImage->executionDomainId);
-		run->cartridgeRom = cpu.m_memory.cartridgeController().romStorage(slot);
 		state.globalValues = cpu.m_globalBank.values();
 		state.systemGlobalValues = cpu.m_systemGlobalBank.values();
 		if (!sameFrame) {

@@ -6,12 +6,7 @@
 namespace bmsx {
 
 sljit_jump* NativeBlockAbi::emitNonleafBuiltinJump(sljit_compiler* compiler, sljit_s32 id) {
-	static_assert(BUILTIN_FUNCTION_COUNT <= 32);
-	constexpr u32 leafIds = (1u << static_cast<u32>(BuiltinFunctionId::SetMetatable))
-		| (1u << static_cast<u32>(BuiltinFunctionId::GetMetatable))
-		| (1u << static_cast<u32>(BuiltinFunctionId::StringByte))
-		| (1u << static_cast<u32>(BuiltinFunctionId::ToInteger));
-	sljit_emit_op2(compiler, SLJIT_LSHR32, SLJIT_R1, 0, SLJIT_IMM, leafIds, id, 0);
+	sljit_emit_op2(compiler, SLJIT_LSHR32, SLJIT_R1, 0, SLJIT_IMM, NATIVE_BUILTIN_LEAF_IDS, id, 0);
 	sljit_emit_op2u(compiler, SLJIT_AND32 | SLJIT_SET_Z, SLJIT_R1, 0, SLJIT_IMM, 1);
 	return sljit_emit_jump(compiler, SLJIT_ZERO);
 }

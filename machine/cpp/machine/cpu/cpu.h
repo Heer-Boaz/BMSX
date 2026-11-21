@@ -368,6 +368,9 @@ private:
 	void executeFunctionAddress(u32 functionAddress);
 	bool setProgramHeapFloor(u32 staticEnd);
 	void executeControlWrite(CallFrame& frame, int source, int field);
+	bool retargetsHaltedFrame(const Thread& thread, int depth) const {
+		return m_haltedUntilIrqThreadAddress == thread.address && m_haltedUntilIrqFrameDepth == depth;
+	}
 	CallFrame* pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
 		int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc);
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
@@ -417,13 +420,13 @@ private:
 	void skipNextInstruction(CallFrame& frame);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	friend class NativeBlockGate;
-	struct NativeFrameOffsets { size_t haltedThreadAddress, haltedDepth; };
-	static NativeFrameOffsets nativeFrameOffsets();
+	static void* tryCallNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
+	static void* tryReturnNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
+	static int placeNativeVarargs(NativeBlockRunState*, int first, int request) noexcept;
 	friend class NativeLowering;
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
 	static NativeBuiltinCallOutcome runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
-	static NativeRomCallBinding* fillNativeRomCallBinding(const CPU* cpu, NativeRomCallBinding* binding,
-		u32 functionAddress, u32 closureBindingFlags) noexcept;
+	NativeRomCallBinding* bindNativeRomFunction(Blua32ExecutionImage& image, u32 functionAddress) const noexcept;
 	static void* tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	void prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pc, MappedBusSignals busSignals);
 	void prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32ExecutionBoot& boot);

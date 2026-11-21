@@ -1,4 +1,5 @@
 #include "machine/cpu/native_lowering.h"
+#include "machine/cpu/cpu.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/native_value_emit.h"
 #include "machine/cpu/call_state.h"
@@ -154,48 +155,23 @@ void NativeLowering::emitVararg(const NativeOperands& instruction, NativeBlockEx
 	const bool open = instruction.b == 0;
 	const int first = instruction.a, fixed = instruction.b - 1;
 	if (fixed == 0) return;
-	auto* c = m_compiler;
-	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
-	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, nativeControl));
-	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), static_cast<u32>(FrameField::VarargCount), SLJIT_IMM, FRAME_WINDOW_MASK);
-	if (!open) {
-		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R3), static_cast<u32>(FrameField::StackCapacity), SLJIT_IMM, FRAME_WINDOW_MASK);
-		fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, first + fixed), growth, m_cache.state());
-		auto* fits = sljit_emit_cmp(c, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, fixed);
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, fixed);
-		sljit_set_label(fits, sljit_emit_label(c));
-	}
-	// The forward bulk path uses a disjoint source below this frame. A
-	// changed descriptor can alias cached registers or the RAM mirror.
-	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R3), static_cast<u32>(FrameField::StackBase), SLJIT_IMM, FRAME_WINDOW_MASK);
-	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), static_cast<u32>(FrameField::VarargBase), SLJIT_IMM, FRAME_WINDOW_MASK);
-	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R1, 0);
-	auto* empty = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R3, 0, SLJIT_R2, 0);
-	fault(sljit_emit_cmp(c, SLJIT_SIG_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0), growth, m_cache.state());
-	if (open) {
-		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R2, 0, SLJIT_IMM, first);
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, nativeControl));
-		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::StackCapacity), SLJIT_IMM, FRAME_WINDOW_MASK);
-		fault(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_R0, 0), growth, m_cache.state());
-		auto* extent = sljit_emit_jump(c, SLJIT_JUMP);
-		sljit_set_label(empty, sljit_emit_label(c));
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, first);
-		sljit_set_label(extent, sljit_emit_label(c));
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop), SLJIT_R1, 0);
-		sljit_emit_op2(c, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_R2, 0);
-		// The runtime extent can be zero. Dirty slots outside it must survive.
-		m_cache.publishRange(first, std::numeric_limits<int>::max());
-		m_cache.discardRange(first, std::numeric_limits<int>::max());
-	} else {
-		sljit_set_label(empty, sljit_emit_label(c));
-		m_cache.discardRange(first, first + fixed);
-	}
-	sljit_emit_op1(c, SLJIT_MOV_S32, SLJIT_R0, 0, SLJIT_R3, 0);
-	sljit_emit_op1(c, SLJIT_MOV, SLJIT_R1, 0, SLJIT_IMM, first);
-	if (!open)
-		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R3, 0, SLJIT_IMM, fixed, SLJIT_R2, 0);
-	NativeBlockAbi::emitFramePlacement(c, false, !open);
+	const int end = open ? std::numeric_limits<int>::max() : first + fixed;
+	// On a miss these values still belong to the executed prefix. On a
+	// successful open copy the runtime may write none or only some of them.
+	if (open) m_cache.publishRange(first, end);
+	m_cache.spillCall(false, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, NativeBlockAbi::state, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, first);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, instruction.b);
+	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, 32, 32),
+		SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::placeNativeVarargs));
+	m_cache.spillCall(true, 0);
+	fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), growth, m_cache.state());
+	m_cache.discardRange(first, end);
+	// The IR already accounts for fixed placement. Only an open transfer
+	// introduces a dynamic charge into the running native grant.
+	if (open)
+		sljit_emit_op2(m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_R0, 0);
 }
 
 void NativeLowering::emitNilRange(int first, int count) {

@@ -73,12 +73,13 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 }
 
 inline void CPU::executeVararg(CallFrame& frame, int a, int b) {
-	const int count = decodeValueCount(b, frame.readWindow(FrameField::VarargCount));
+	const int available = frame.readWindow(FrameField::VarargCount);
+	const auto placement = ValuePlacement::fit(available, decodeValueCount(b, available));
+	const int count = placement.count();
 	if (count != 0) {
 		ValueSpan registers = ensureRegisterCapacity(frame, a + count - 1);
-		const int copied = std::min(count, frame.readWindow(FrameField::VarargCount));
-		registers.copyFrom(m_activeThread->stack, a, frame.readWindow(FrameField::VarargBase), copied);
-		registers.clear(a + copied, count - copied);
+		registers.copyFrom(m_activeThread->stack, a, frame.readWindow(FrameField::VarargBase), placement.copied);
+		registers.clear(a + placement.copied, placement.padded);
 	}
 	instructionBudgetRemaining -= count;
 	if (b == 0) frame.setTop(a + count);

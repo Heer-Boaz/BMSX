@@ -35,6 +35,22 @@ struct Thread {
 	u32 backingByteLength() const { return boundBackingBytes; }
 	bool stackRequiresScalar() const;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	u32 admittedFrameDepth() const {
+		return readLE32(nativeRecord + static_cast<u32>(ThreadField::FrameDepth)) & THREAD_CONTROL_COUNT_MASK;
+	}
+	CallFrame* retainedFrameForEntry(u32 nextDepth) const {
+		return nextDepth < boundFrameCapacity ? currentFrame->next : nullptr;
+	}
+	void publishAdmittedFrame(CallFrame& frame, u32 depth, i32 top) {
+		currentFrame = &frame;
+		writeLE32(nativeRecord + static_cast<u32>(ThreadField::StackTop), static_cast<u32>(top));
+		writeLE32(nativeRecord + static_cast<u32>(ThreadField::FrameDepth), depth);
+	}
+	void retireAdmittedFrame(CallFrame& leaving, CallFrame& caller, u32 depth) {
+		const auto base = caller.readAdmittedWindow(FrameField::StackBase);
+		publishAdmittedFrame(caller, depth, base + caller.readAdmittedWindow(FrameField::StackCapacity));
+		releaseFrameView(leaving);
+	}
 	void recordNativeWrites(MappedPageWriteWatches& watches) {
 		const u32 epoch = watches.historyEpoch();
 		if (recordedWriteEpoch == epoch) return;
@@ -51,10 +67,6 @@ struct Thread {
 	void setProtectedKind(u32 index, ProtectedCallKind kind);
 	CallFrame* protectedCaller(u32 index) const;
 	u32 pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int wanted, int handler);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	struct NativeOffsets { size_t currentFrame, record, address, stackWords, stackTags, stackCapacity, frameCapacity; };
-	static NativeOffsets nativeOffsets();
-#endif
 
 	u32 address;
 	ThreadStatus status() const;
@@ -79,6 +91,11 @@ struct Thread {
 	size_t stackCapacity = 0;
 	u8* nativeRecord;
 private:
+	static void releaseFrameView(CallFrame& frame) {
+		frame.registers = {};
+		frame.decodedPage = nullptr;
+		frame.compilationEntry = true;
+	}
 	friend struct CallFrame;
 	u32 frameCapacity() const;
 	u32 protectedCapacity() const;

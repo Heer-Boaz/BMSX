@@ -8,20 +8,6 @@
 
 namespace bmsx {
 
-struct NativeCallScratch {
-	int argumentBase;
-	u32 closureAddress, functionAddress, codeAddress, numParams, maxStack;
-	// These phases are disjoint. The ABI slot is overwritten at each handoff.
-	union {
-		u32 closureBindingFlags;
-		u32 prototypeFlags;
-		i32 placementCycles;
-	};
-	u32 frameDepth;
-	int argCount, varargBase, varargCount, stackBase, stackTop;
-	void* romBinding;
-};
-
 // Word registers left for the value cache when `fixedSaved` saved registers are pinned.
 inline constexpr int nativeWordCacheRegisters(int fixedSaved) {
 	const int saved = std::min(4, SLJIT_NUMBER_OF_SAVED_REGISTERS - fixedSaved);
@@ -34,9 +20,6 @@ inline constexpr int nativeWordCacheRegisters(int fixedSaved) {
 struct NativeBlockAbi {
 	// Test the builtin ID against the nonallocating leaf repertoire; clobbers R1.
 	static sljit_jump* emitNonleafBuiltinJump(sljit_compiler*, sljit_s32 id);
-	// S0/S1 = slot planes, R0/R1 = signed indices relative to those bases.
-	// R2 is the copy count; R3 is the nil tail when padding is requested.
-	static void emitFramePlacement(sljit_compiler*, bool moveFormals, bool pad);
 	// destination = host address of the main-RAM byte offset in `offset`.
 	// The only way generated code reaches the RAM base.
 	static void emitRamAddress(sljit_compiler*, sljit_s32 destination, sljit_s32 offset);
@@ -59,7 +42,6 @@ struct NativeBlockAbi {
 	static constexpr int saveds = (fixedSaved + savedWords) | SLJIT_ENTER_FLOAT(savedFloats);
 	static constexpr int helperResultOffset = registerCacheCapacity * sizeof(u32);
 	static constexpr int stackBytes = helperResultOffset + 64;
-	static_assert(sizeof(NativeCallScratch) <= stackBytes);
 	static constexpr int signature = SLJIT_ARGS3(P, P, P, P);
 	static constexpr auto wordRegisters = [] {
 		std::array<NativeRegisterHost, wordCount> result{};
@@ -67,9 +49,8 @@ struct NativeBlockAbi {
 			result[i] = {i < savedWords ? SLJIT_S(fixedSaved + i) : SLJIT_R(4 + i - savedWords), i < savedWords};
 		return result;
 	}();
-	// All cached values have been materialized before CALL/RET enter the
-	// stable gate. Its four word registers are free until the next body.
-	static_assert(wordCount == 4);
+	// A transfer can call C++ after materializing the register cache. Keep
+	// its exit only until the helper either admits the transfer or declines.
 	static_assert(wordRegisters[0].calleeSaved);
 	static constexpr sljit_s32 transitionExit = wordRegisters[0].reg;
 	static constexpr auto floatRegisters = [] {
@@ -94,14 +75,6 @@ public:
 	void* dispatch;
 	void* publishSegment;
 	void* leaveSegment;
-private:
-	static sljit_label* emitCallGate(sljit_compiler*, sljit_label* cold);
-	static sljit_label* emitReturnGate(sljit_compiler*, sljit_label* cold);
-	// Input: R0 = PC. Outputs: R3 = live entry; optionally R2 = its stable cell.
-	static void emitCodeLookup(sljit_compiler*, sljit_label* declined, bool keepCell = false);
-	static void emitPublishFrameTop(sljit_compiler*, sljit_s32 control, sljit_s32 top, sljit_s32 scratch);
-	static void emitFrameEntry(sljit_compiler*, sljit_s32 frame, sljit_s32 target);
-
 };
 const NativeBlockGate& nativeBlockGate();
 

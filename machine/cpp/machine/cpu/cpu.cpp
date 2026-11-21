@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/frame_placement.h"
 
 #include <bit>
 #include "machine/cpu/upvalue.h"
@@ -442,10 +443,7 @@ bool CPU::isExecutionDomainResident(ExecutionDomainId executionDomainId) const {
 FunctionPrototype CPU::decodePrototype(const Blua32FunctionRecordLatch& record) const {
 	FunctionPrototype result;
 	result.functionAddress = record.address;
-	result.codeAddress = record.codeAddress;
-	result.numParams = record.numParams;
-	result.maxStack = record.maxStack;
-	result.flags = record.flags;
+	result.entry = {record.codeAddress, record.numParams, record.maxStack, record.flags};
 	result.upvalueTableAddress = record.upvalueTableAddress;
 	result.recordUpvalueCount = record.upvalueCount;
 	result.executionDomainId = record.image->executionDomainId;
@@ -1687,8 +1685,6 @@ RunResult CPU::runLoop(
 	int nativeFirstDispatchCycles = 0;
 	bool forceScalarOnce = false;
 	NativeCpuRunState nativeState{.state = {}, .cpu = this, .targetDepth = targetDepth,
-		.heapPageEntries = m_memory.ramData() + m_heapAllocator.managementOffset() + HEAP_PAGE_ENTRIES,
-		.heapPageLimit = m_heapAllocator.pageLimit(),
 		.error = {}};
 #endif
 	for (;;) {
@@ -2007,7 +2003,6 @@ dispatch_native_block: {
 				thread.recordNativeWrites(m_memory.ramWriteWatches());
 				nativeState.frameBank = frameBankWord(IMAGE.executionDomainId);
 				nativeState.cartridgeSlot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
-				nativeState.cartridgeRom = m_memory.cartridgeController().romStorage(nativeState.cartridgeSlot);
 				nativeState.codeRoot = IMAGE.nativeCodeLookup->root(nativeState.cartridgeSlot);
 				nativeState.state = {.constants = IMAGE.constPool, .frame = frame, .heap = &m_heap,
 					.globalValues = m_globalBank.values(), .systemGlobalValues = m_systemGlobalBank.values(),
@@ -2472,36 +2467,28 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 	const int callerArgBase = caller.stackBase() + argBase;
 	const bool sharedStack = caller.thread == m_activeThread;
 	const int argumentBase = sharedStack ? callerArgBase : m_activeThread->stackTop();
-	const bool vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u;
-	const int varargCount = vararg && static_cast<u32>(argCount) > functionRecord.numParams
-		? static_cast<int>(static_cast<u32>(argCount) - functionRecord.numParams) : 0;
-	const int top = static_cast<int>(functionRecord.numParams);
-	const int varargBase = argumentBase + top;
-	const int stackBase = vararg ? argumentBase + argCount : argumentBase;
-	const size_t targetCapacity = std::max({functionRecord.maxStack, functionRecord.numParams, 1u});
+	const ArgumentPlacement placement(argumentBase, argCount, functionRecord.entry.numParams, functionRecord.entry.maxStack, functionRecord.entry.flags);
 	auto* frame = m_activeThread->acquireFrame();
-	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(closure), true);
+	ensureStackSize(placement.stackEnd(), valueClosure(closure), true);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
-	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc,
+	frame->initializeControl({
+		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc,
 		frameBankWord(functionRecord.executionDomainId) | (returnToCompletionLatch ? FRAME_COMPLETION : 0u),
-		varargBase, varargCount, returnBase, returnCount, top, closure, stackBase, static_cast<int>(targetCapacity));
-	const int copiedCount = std::min(top, argCount);
-	if (vararg || !sharedStack) {
-		frame->registers.copyFrom(caller.thread->stack, 0, callerArgBase, copiedCount);
+		placement.varargBase, placement.varargCount, returnBase, returnCount, placement.top(),
+		closure, placement.stackBase, static_cast<int>(placement.capacity),
+	});
+	const auto [copied, padded] = placement.formals;
+	if (placement.relocatesFormals || !sharedStack)
+		frame->registers.copyFrom(caller.thread->stack, 0, callerArgBase, copied);
+	frame->registers.clear(copied, padded);
+	if (placement.relocatesFormals) {
+		if (sharedStack)
+			m_activeThread->stack.clear(placement.argumentBase, copied);
+		else
+			m_activeThread->stack.copyFrom(caller.thread->stack, placement.varargBase, callerArgBase + placement.top(), placement.varargCount);
 	}
-	frame->registers.clear(copiedCount, top - copiedCount);
-	if (vararg) {
-		if (sharedStack) {
-			// Fixed arguments now live in the relocated working frame. Keep only
-			// the original extra arguments below it, as in a Lua vararg frame.
-			m_activeThread->stack.clear(argumentBase, copiedCount);
-		} else {
-			m_activeThread->stack.copyFrom(caller.thread->stack, varargBase, callerArgBase + top, varargCount);
-		}
-	}
-	instructionBudgetRemaining -= (vararg || !sharedStack ? top : top - copiedCount)
-		+ (sharedStack ? 0 : varargCount);
-	m_activeThread->setStackTop(stackBase + static_cast<int>(targetCapacity));
+	instructionBudgetRemaining -= placement.cycles(sharedStack);
+	m_activeThread->setStackTop(static_cast<int>(placement.stackEnd()));
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(functionRecord.executionDomainId, frame->executionImage);
 	return frame;
@@ -2513,41 +2500,37 @@ CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 	const size_t argCount = args.size();
 	auto* frame = m_activeThread->acquireFrame();
 	const int argumentBase = m_activeThread->stackTop();
-	const bool vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u;
-	const int varargCount = vararg && argCount > functionRecord.numParams
-		? static_cast<int>(argCount - functionRecord.numParams) : 0;
-	const int top = static_cast<int>(functionRecord.numParams);
-	const int varargBase = argumentBase + top;
-	const int stackBase = vararg ? argumentBase + static_cast<int>(argCount) : argumentBase;
-	const size_t targetCapacity = std::max({functionRecord.maxStack, functionRecord.numParams, 1u});
-	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(closure), true, exception);
+	const ArgumentPlacement placement(argumentBase, static_cast<int>(argCount), functionRecord.entry.numParams, functionRecord.entry.maxStack,
+		functionRecord.entry.flags);
+	ensureStackSize(placement.stackEnd(), valueClosure(closure), true, exception);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
-	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress,
+	frame->initializeControl({
+		functionRecord.functionAddress, functionRecord.entry.codeAddress, functionRecord.entry.codeAddress,
 		frameBankWord(functionRecord.executionDomainId) | (returnToCompletionLatch ? FRAME_COMPLETION : 0u),
-		varargBase, varargCount, returnBase, returnCount, top, closure, stackBase, static_cast<int>(targetCapacity));
-	const int copiedCount = std::min(top, static_cast<int>(argCount));
-	for (int i = 0; i < copiedCount; ++i) frame->registers.set(i, args[i]);
-	frame->registers.clear(copiedCount, top - copiedCount);
-	if (varargCount != 0) {
-		for (int i = 0; i < varargCount; ++i) m_activeThread->stack.set(varargBase + i, args[top + i]);
-	}
-	m_activeThread->setStackTop(stackBase + static_cast<int>(targetCapacity));
+		placement.varargBase, placement.varargCount, returnBase, returnCount, placement.top(),
+		closure, placement.stackBase, static_cast<int>(placement.capacity),
+	});
+	const auto [copied, padded] = placement.formals;
+	for (int i = 0; i < copied; ++i) frame->registers.set(i, args[i]);
+	frame->registers.clear(copied, padded);
+	for (int i = 0; i < placement.varargCount; ++i)
+		m_activeThread->stack.set(placement.varargBase + i, args[placement.top() + i]);
+	m_activeThread->setStackTop(static_cast<int>(placement.stackEnd()));
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(functionRecord.executionDomainId, frame->executionImage);
 	return frame;
 }
 
 void CPU::writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount) {
-	const int targetCount = decodeValueCount(count, sourceCount);
-	if (targetCount > 0) {
-		ValueSpan registers = ensureRegisterCapacity(frame, base + targetCount - 1);
+	const auto placement = ValuePlacement::fit(sourceCount, decodeValueCount(count, sourceCount));
+	if (placement.count() > 0) {
+		ValueSpan registers = ensureRegisterCapacity(frame, base + placement.count() - 1);
 		// Backing growth can relocate both views; their stack offsets stay fixed.
-		const int copiedCount = std::min(sourceCount, targetCount);
-		registers.copyFrom(source.registers, base, sourceBase, copiedCount);
-		registers.clear(base + copiedCount, targetCount - copiedCount);
+		registers.copyFrom(source.registers, base, sourceBase, placement.copied);
+		registers.clear(base + placement.copied, placement.padded);
 	}
-	frame.setTop(base + targetCount);
-	instructionBudgetRemaining -= targetCount;
+	frame.setTop(base + placement.count());
+	instructionBudgetRemaining -= placement.count();
 }
 
 void CPU::writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int count, const BuiltinResults& values) {

@@ -114,9 +114,15 @@ inputs. The region translator turns those inputs into slot-based IR with
 explicit successors, semantic exits and interpreter resume points. Register-use
 analysis and type specialization work on logical guest slots; specialization
 can use the proved types at a block entry. SLJIT lowering owns physical
-registers, spills, executable labels and link fixups. The execution gate and
-CPU own state publication and runtime transitions. The IR is transient, not a
-second representation of machine state.
+registers, spills, executable labels and link fixups. The IR is transient,
+not a second representation of machine state.
+
+Frame entry and value placement belong to the CPU, thread and slot owners,
+not to generated opcode bodies. The native runtime admits a transfer before
+changing either frame and borrows the live continuation only for that
+transfer. The stable execution gate marshals the runtime call and rebinds
+the next register window. Transfers that can change backing, rebind
+execution state or observe a boundary stay with the ordinary CPU path.
 
 Both engines consume the same guest values, frames, heap and control state.
 Generated execution retains intermediate values in locals or native registers

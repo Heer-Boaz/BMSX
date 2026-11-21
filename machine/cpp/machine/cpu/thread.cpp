@@ -58,20 +58,6 @@ void Thread::setError(Value value) {
 	heap.memory.writeRamRecordPair(address + static_cast<u32>(ThreadField::ErrorWord), valuePayload(value), static_cast<u32>(valueTag(value)));
 }
 
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Winvalid-offsetof"
-#endif
-Thread::NativeOffsets Thread::nativeOffsets() {
-	constexpr size_t stack = offsetof(Thread, stack);
-	return {offsetof(Thread, currentFrame), offsetof(Thread, nativeRecord), offsetof(Thread, address),
-		stack + ValueSpan::wordsOffset(), stack + ValueSpan::tagsOffset(), offsetof(Thread, stackCapacity), offsetof(Thread, boundFrameCapacity)};
-}
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-#endif
 
 Thread::~Thread() {
 	while (firstFrame) {
@@ -250,9 +236,7 @@ void Thread::leaveFrame() {
 	setStackTop(currentFrame ? currentFrame->stackBase() + currentFrame->stackCapacity() : 0);
 	publishDepth(static_cast<u32>(frameDepth()) - 1u);
 	// Inactive pointers are not roots; active paths establish them before use.
-	frame->registers = {};
-	frame->decodedPage = nullptr;
-	frame->compilationEntry = true;
+	releaseFrameView(*frame);
 }
 
 CallFrame* Thread::frameAtDepth(size_t depth) const {

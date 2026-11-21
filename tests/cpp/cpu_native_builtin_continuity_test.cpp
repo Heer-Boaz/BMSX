@@ -208,7 +208,7 @@ void inlineInterruptStop(bool nmi, bool wide) {
 	NativeCpuRunState run{.state={.constants=owner->constPool,.frame=frame,
 		.constantCount=static_cast<u32>(owner->constPool.size()),.remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)),.exitCode=gate.dispatch,.ram=machine.memory.ramData()},
 		.cpu=&machine.cpu,.targetDepth=0,.codeRoot=owner->nativeCodeLookup->root(0),
-		.cartridgeRom=machine.memory.cartridgeController().romStorage(0),.cartridgeSlot=0,.error={}};
+		.cartridgeSlot=0,.error={}};
 	// The typed gate is an already-admitted native segment, not a fresh outer
 	// CPU IRQ admission. Its successful CALL must stop at the next instruction.
 	if(nmi) machine.cpu.requestNonMaskableInterrupt();else machine.irq.raise(1);

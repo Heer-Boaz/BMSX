@@ -468,7 +468,12 @@ void rawContextValues(CpuMachine& machine) {
 }
 
 void varargAliasesAndSideExits(CpuMachine& machine) {
-	ValueSlots stack(48); CallFrame frame; frame.registers = stack.view().subspan(16, 32);
+	ValueSlots stack(48);
+	Thread thread(machine.cpu.gcHeap());
+	thread.stack = stack.view();
+	CallFrame frame;
+	frame.thread = &thread;
+	frame.registers = thread.stack.subspan(16, 32);
 	frame.bindControl(machine.memory, DYNAMIC_RAM_BASE - RAM_BASE + 0x700);
 	frame.writeControl(bmsx::FrameField::StackBase, 16);
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),

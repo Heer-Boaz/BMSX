@@ -245,7 +245,6 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 		.diagnosticOpcodes={},
 #endif
 		}, .cpu=&m.cpu, .targetDepth=targetDepth, .codeRoot=sourceImage->nativeCodeLookup->root(sourceSlot),
-		.cartridgeRom=m.memory.cartridgeController().romStorage(sourceSlot),
 		.cartridgeSlot=sourceSlot, .frameBank=frameBankWord(sourceImage->executionDomainId), .error={}};
 	// No CPU run loop surrounds this call. Only a same-stable-gate resume can
 	// execute the genuine guest marker instructions before the gate returns.
@@ -271,7 +270,7 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 		&& run.state.systemGlobalValues.words() != decoyGlobals.words() && run.state.systemGlobalValues.tags() != decoyGlobals.tags()
 		&& run.state.cop0Words != decoyCp0.data() && run.state.cop0Words[COP0_STATUS] == CPU_STATUS_CART_ENTRY
 		&& run.codeRoot == run.state.frame->executionImage->nativeCodeLookup->root(slot)
-		&& run.cartridgeSlot == slot && run.cartridgeRom == m.memory.cartridgeController().romStorage(slot),
+		&& run.cartridgeSlot == slot,
 		"the retained native frame rebinds every image/CPU/instruction-socket bank before resuming");
 }
 #endif

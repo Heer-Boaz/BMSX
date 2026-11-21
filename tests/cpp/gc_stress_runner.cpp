@@ -58,9 +58,9 @@ void exerciseYoung(bmsx::CPU& cpu, bool compiled) {
 	if (compiled) for (std::string_view name : {"assign", "change"}) {
 		const auto prototype = ClosureRecord::readBinding(memory, valuePayload(global(name)));
 		MappedPageBinding binding{};
-		memory.bindMappedPage(prototype.codeAddress & ~MAPPED_PAGE_BYTE_MASK, MAPPED_BUS_MASTER_CPU, binding);
+		memory.bindMappedPage(prototype.entry.codeAddress & ~MAPPED_PAGE_BYTE_MASK, MAPPED_BUS_MASTER_CPU, binding);
 		auto& page = cpu.rootThread()->currentFrame->executionImage->decodedPages.at(binding.key);
-		const u32 word = (prototype.codeAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		const u32 word = (prototype.entry.codeAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		require(page.nativeBlocks && page.nativeBlocks->entries[word], "both mutations execute a real native entry");
 	}
 #endif

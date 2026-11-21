@@ -8,6 +8,16 @@
 
 namespace bmsx {
 
+static_assert(BUILTIN_FUNCTION_COUNT <= 32);
+inline constexpr u32 NATIVE_BUILTIN_LEAF_IDS = (1u << static_cast<u32>(BuiltinFunctionId::SetMetatable))
+	| (1u << static_cast<u32>(BuiltinFunctionId::GetMetatable))
+	| (1u << static_cast<u32>(BuiltinFunctionId::StringByte))
+	| (1u << static_cast<u32>(BuiltinFunctionId::ToInteger));
+
+constexpr bool nativeBuiltinLeafId(u32 id) {
+	return id < 32 && (NATIVE_BUILTIN_LEAF_IDS & (1u << id)) != 0;
+}
+
 // A leaf builtin either leaves CALL untouched for its ordinary semantic path,
 // or completes it once before deciding whether its receiving body may run.
 enum class NativeBuiltinCallOutcome : u32 {
@@ -23,9 +33,6 @@ struct NativeCpuRunState {
 	CPU* cpu;
 	int targetDepth;
 	NativeCodeLookup::Group* const* codeRoot = nullptr;
-	const Span<const u8>* cartridgeRom = nullptr;
-	const u8* heapPageEntries = nullptr;
-	u32 heapPageLimit = 0;
 	u32 cartridgeSlot = 0;
 	u32 frameBank = 0;
 	std::exception_ptr error;

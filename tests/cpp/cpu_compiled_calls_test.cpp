@@ -104,7 +104,7 @@ void reusableFrameChain() {
 		auto* previous = thread.currentFrame;
 		auto* frame = thread.acquireFrame();
 		thread.reserveFrame(thread.stackCapacity);
-		frame->initializeControl(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+		frame->initializeControl({});
 		require(frame->previous == previous && previous->next == frame && frame->thread == &thread,
 			"reusable nodes have stable identity and belong to their thread");
 		thread.enterFrame(frame);
@@ -501,6 +501,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bool exceptionFrame, int grant = -1) {
 	// The protected target repeatedly calls an ordinary child. A separate live
 	// translation writes a marker without changing top or any frame register.
+	constexpr int callerCapacity = 16;
 	test::Blua32TestImage image;
 	image.text.resize(3 * MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
@@ -518,10 +519,10 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS, static_cast<u8>(OpCode::SETGL), 7, 0, 0);
 	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
-		{.firstWord = 16, .wordCount = 6, .maxStack = 16},
+		{.firstWord = 16, .wordCount = 6, .maxStack = callerCapacity},
 		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 1, .maxStack = 8},
-		{.firstWord = 20, .wordCount = 2, .maxStack = 16},
-		{.firstWord = 2 * DECODED_PAGE_WORDS, .wordCount = 2, .maxStack = 16}};
+		{.firstWord = 20, .wordCount = 2, .maxStack = callerCapacity},
+		{.firstWord = 2 * DECODED_PAGE_WORDS, .wordCount = 2, .maxStack = callerCapacity}};
 	image.systemGlobalNames = {"pcall"}; image.globalNames = {"nativeReturnMarker"};
 	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
 		{17, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
@@ -549,6 +550,9 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	if (exceptionFrame) callee->addControlFlags(FRAME_EXCEPTION | FRAME_NMI);
 	caller->registers.set(6, valueInteger(-7));
 	caller->registers.set(7, valueInteger(99));
+	std::array<Value, callerCapacity> callerBeforeReturn;
+	for (size_t index = 0; index < callerBeforeReturn.size(); ++index)
+		callerBeforeReturn[index] = caller->registers.get(index);
 	const auto marker = machine.cpu.stringPool().intern("nativeReturnMarker");
 	machine.cpu.setGlobalByKey(marker, valueNil());
 	const auto& lookup = *caller->executionImage->nativeCodeLookup;
@@ -583,10 +587,17 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	for (int index = 0; index < copied; ++index) require(caller->registers.get(base + index) == payloads[index],
 		"native and late-cold result movement preserve every raw tagged and numeric bit");
 	for (int index = copied; index < count; ++index) require(caller->registers.get(base + index) == valueNil(), "fixed results nil-pad only the requested suffix");
-	if (base + count <= 6 || count == 0) require(caller->registers.get(6) == valueInteger(-7) && caller->registers.get(7) == valueInteger(99),
-		"return does not overwrite retained caller registers outside its result range");
-	require(machine.cpu.getGlobalByKey(marker) == ((!coldTarget && !grows && grant > returnBase + count + markerAdmission) ? caller->registers.get(7) : valueNil()),
+	for (int index = 0; index < static_cast<int>(callerBeforeReturn.size()); ++index)
+		if (index < base || index >= base + count)
+			require(caller->registers.get(index) == callerBeforeReturn[index],
+				"return does not overwrite slots outside the selected receiving range");
+	const bool runsMarker = !coldTarget && !grows && grant > returnBase + count + markerAdmission;
+	require(machine.cpu.getGlobalByKey(marker) == (runsMarker ? caller->registers.get(7) : valueNil()),
 		"warm RET branches through the raw native code word without executeReturn or the C++ descriptor dispatcher");
+	const int markerCycles = markerAdmission + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+	if (runsMarker && grant <= returnBase + count + markerCycles)
+		require(machine.cpu.instructionBudgetRemaining == grant - returnBase - count - markerCycles,
+			"the warm RET places and charges only the selected range before the independent marker runs");
 	if (grant <= returnBase + count) require(machine.cpu.instructionBudgetRemaining == grant - returnBase - count,
 		"native RET charges the receiving range once and cannot execute the next body with an exhausted grant");
 	require(callee->decodedPage == nullptr && callee->compilationEntry && thread->currentFrame == caller,
@@ -972,7 +983,7 @@ void weakCanonicalClosuresAndStaticEntry() {
 		require(countVersions() == 1 && machine.cpu.luaHeap().usedBytes() < bytesBefore,
 			"guest GC removes unreachable record versions from the weak index and heap");
 		const auto last = asClosure(machine.cpu.readFrameRegister(0, 0), machine.cpu.gcHeap());
-		require(ClosureRecord::readBinding(machine.cpu.memory(), last).maxStack == 64, "the live closure survives guest GC");
+		require(ClosureRecord::readBinding(machine.cpu.memory(), last).entry.maxStack == 64, "the live closure survives guest GC");
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 3);
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 4096);
 		const auto pressure = std::pair{machine.cpu.luaHeap().usedBytes(), machine.cpu.luaHeap().collectionTarget()};
@@ -1188,17 +1199,17 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		const auto oldFunction = machine->cpu.readFrameRegister(0, 1);
 		const auto newFunction = machine->cpu.readFrameRegister(0, 0);
 		require(oldFunction != newFunction && ClosureRecord::readBinding(machine->cpu.memory(), asClosure(oldFunction, machine->cpu.gcHeap())) != ClosureRecord::readBinding(machine->cpu.memory(), asClosure(newFunction, machine->cpu.gcHeap()))
-			&& ClosureRecord::readBinding(machine->cpu.memory(), asClosure(oldFunction, machine->cpu.gcHeap())).codeAddress != ClosureRecord::readBinding(machine->cpu.memory(), asClosure(newFunction, machine->cpu.gcHeap())).codeAddress,
+			&& ClosureRecord::readBinding(machine->cpu.memory(), asClosure(oldFunction, machine->cpu.gcHeap())).entry.codeAddress != ClosureRecord::readBinding(machine->cpu.memory(), asClosure(newFunction, machine->cpu.gcHeap())).entry.codeAddress,
 			"different static prototypes have distinct canonical closures");
-		const u32 oldCode = ClosureRecord::readBinding(machine->cpu.memory(), asClosure(oldFunction, machine->cpu.gcHeap())).codeAddress;
-		const u32 newCode = ClosureRecord::readBinding(machine->cpu.memory(), asClosure(newFunction, machine->cpu.gcHeap())).codeAddress;
+		const u32 oldCode = ClosureRecord::readBinding(machine->cpu.memory(), asClosure(oldFunction, machine->cpu.gcHeap())).entry.codeAddress;
+		const u32 newCode = ClosureRecord::readBinding(machine->cpu.memory(), asClosure(newFunction, machine->cpu.gcHeap())).entry.codeAddress;
 		const auto snapshot = machine->cpu.captureRuntimeState();
 		const auto ram = machine->memory.captureSaveState();
 		machine->cpu.restoreRuntimeState(snapshot);
 		const auto restoredOld = machine->cpu.readFrameRegister(0, 1);
 		const auto restoredNew = machine->cpu.readFrameRegister(0, 0);
-		require(restoredOld != restoredNew && ClosureRecord::readBinding(machine->cpu.memory(), asClosure(restoredOld, machine->cpu.gcHeap())).codeAddress == oldCode
-			&& ClosureRecord::readBinding(machine->cpu.memory(), asClosure(restoredNew, machine->cpu.gcHeap())).codeAddress == newCode,
+		require(restoredOld != restoredNew && ClosureRecord::readBinding(machine->cpu.memory(), asClosure(restoredOld, machine->cpu.gcHeap())).entry.codeAddress == oldCode
+			&& ClosureRecord::readBinding(machine->cpu.memory(), asClosure(restoredNew, machine->cpu.gcHeap())).entry.codeAddress == newCode,
 			"snapshot restores both distinct canonical prototypes");
 		// A hot-resume relocation can bind two previously distinct closures to
 		// identical records. Their identities and hash keys must still survive.
@@ -1297,7 +1308,7 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 			machine->rom.textAddress + 2 * INSTRUCTION_BYTES);
 		auto* frame = machine->cpu.activeThread()->currentFrame;
 		const u32 closure = valuePayload(frame->registers.get(0));
-		require(ClosureRecord::readBinding(machine->memory, closure).codeAddress
+		require(ClosureRecord::readBinding(machine->memory, closure).entry.codeAddress
 			== machine->rom.textAddress + MAPPED_PAGE_BYTE_SIZE, "the newly constructed closure binds the original code record");
 		if (ramRecord) {
 			// Updating the source record does not change the construction-time RAM latch.
@@ -1325,7 +1336,7 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 			= alternate->nativeCode[(markerPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 		cpu.runUntilDepth(0, 100);
 		require(cpu.getGlobalByKey(cpu.stringPool().intern("rawBindingMarker")) == valueInteger(73)
-			&& cpu.getFrameDepth() == 2, "native CALL reads the live raw binding and enters its independently redirected native target without C++ replay");
+			&& cpu.getFrameDepth() == 2, "native CALL reads the live raw binding and enters its independently redirected native target without general VM dispatch");
 		return;
 	}
 #else
@@ -1398,9 +1409,10 @@ int main(int argc, char** argv) {
 		nativeReturnRouting(2, 4, 0, false, false);
 		nativeReturnRouting(6, 2, 0, false, false);
 		const int retAndMarker = BASE_CYCLES[static_cast<u8>(OpCode::RET)] + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)] + 1;
-		nativeReturnRouting(0, 0, 10, false, false, retAndMarker); // empty, beyond reserved capacity
+		nativeReturnRouting(0, 0, 17, false, false, retAndMarker); // empty, beyond reserved capacity
 		nativeReturnRouting(0, 1, 0, false, false, retAndMarker + 1); // one nil, no source
 		nativeReturnRouting(6, 1, 0, false, false, retAndMarker + 1); // one result, discard suffix
+		nativeReturnRouting(6, 2, 11, false, false, retAndMarker + 2); // upward overlap with the callee's source at slot 10
 		nativeReturnRouting(6, 0, 0, true, false);
 		nativeReturnRouting(6, 0, 6, false, false);
 		nativeReturnRouting(2, 4, 0, false, false, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 4 + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)] + 1);

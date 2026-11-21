@@ -44,6 +44,32 @@ constexpr ExecutionDomainId frameExecutionBank(u32 flags) {
 	return (flags & FRAME_BANK_CART) != 0u ? static_cast<ExecutionDomainId>((flags & FRAME_BANK_SECOND) >> 4u) : SYSTEM_EXECUTION_DOMAIN_ID;
 }
 
+// Architectural words for a new activation. The same record is published
+// through the RAM port or into a backing already admitted by a native grant.
+struct FrameEntryControl {
+	u32 function, pc, callSite, flags;
+	i32 varargBase, varargCount, returnBase, returnCount, top;
+	u32 closure;
+	i32 stackBase, capacity;
+
+	template<typename Write> void writeWords(Write&& write) const {
+		write(FrameField::Function, function);
+		write(FrameField::CallSite, callSite);
+		write(FrameField::OpenHead, 0u);
+		write(FrameField::Protected, static_cast<u32>(-1));
+		write(FrameField::Flags, flags);
+		write(FrameField::Pc, pc);
+		write(FrameField::VarargBase, static_cast<u32>(varargBase));
+		write(FrameField::VarargCount, static_cast<u32>(varargCount));
+		write(FrameField::ReturnBase, static_cast<u32>(returnBase));
+		write(FrameField::ReturnCount, static_cast<u32>(returnCount));
+		write(FrameField::Top, static_cast<u32>(top));
+		write(FrameField::Closure, closure);
+		write(FrameField::StackBase, static_cast<u32>(stackBase));
+		write(FrameField::StackCapacity, static_cast<u32>(capacity));
+	}
+};
+
 struct CallFrame {
 	Thread* thread = nullptr;
 	CallFrame* previous = nullptr;
@@ -82,8 +108,28 @@ struct CallFrame {
 	void saveExecutionBank(ExecutionDomainId domain) {
 		writeControl(FrameField::Flags, (readControl(FrameField::Flags) & ~FRAME_BANK_MASK) | frameBankWord(domain));
 	}
-	void initializeControl(u32 function, u32 pc, u32 callSite, u32 flags,
-		i32 varargBase, i32 varargCount, i32 returnBase, i32 returnCount, i32 top, u32 closure, i32 base, i32 capacity);
+	void initializeControl(const FrameEntryControl& entry);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	// Only used inside a grant that already admitted the linear frame/stack
+	// backing and recorded those ranges for history.
+	u32 readAdmittedControl(FrameField field) const {
+		return readLE32(nativeControl + static_cast<u32>(field));
+	}
+	i32 readAdmittedWindow(FrameField field) const {
+		return static_cast<i32>(readAdmittedControl(field) & FRAME_WINDOW_MASK);
+	}
+	void writeAdmittedControl(FrameField field, u32 word) {
+		writeLE32(nativeControl + static_cast<u32>(field), word);
+	}
+	void setAdmittedTop(i32 top) {
+		writeAdmittedControl(FrameField::Top,
+			(readAdmittedControl(FrameField::Top) & ~FRAME_WINDOW_MASK) | static_cast<u32>(top));
+	}
+	void initializeAdmittedControl(const FrameEntryControl& entry, ValueSpan stack) {
+		entry.writeWords([&](FrameField field, u32 word) { writeAdmittedControl(field, word); });
+		registers = stack.admittedSubspan(entry.stackBase, entry.capacity);
+	}
+#endif
 	i32 stackBase() const { return readWindow(FrameField::StackBase); }
 	i32 stackCapacity() const { return readWindow(FrameField::StackCapacity); }
 	void growRegisterWindow(i32 capacity);
