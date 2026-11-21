@@ -179,7 +179,8 @@ local function install()
   both[drop] = { own_key = drop }
   weak[1], weak[2] = keep, drop
 end
-install()
+-- Keep the objects in a separate activation even with the O3 inliner.
+assert(pcall(install))
 collectgarbage()
 local function detach()
   local keep = weak[1]
@@ -187,7 +188,7 @@ local function detach()
   assert(weak[2] == nil and next(both) == nil, 'a doubly weak entry retained its key')
   entries[keep].own_key = nil
 end
-detach()
+assert(pcall(detach))
 collectgarbage()
 assert(next(entries) == nil and weak[1] == nil, 'weak key retained after its final strong reference')
 weak[3] = 'value-like:' .. 42
