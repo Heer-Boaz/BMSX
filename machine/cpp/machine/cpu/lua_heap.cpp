@@ -173,7 +173,6 @@ void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, u32 growingT
 }
 
 bool LuaHeap::stepRuntime() {
-	if (m_cpu.gcHeap().finalMarkPending()) return false;
 	const size_t work = m_cpu.stepHeap(valueNil(), valueNil(), valueNil());
 	m_cpu.instructionBudgetRemaining -= static_cast<int>(work);
 	creditStep(work);

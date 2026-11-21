@@ -187,7 +187,6 @@ export class LuaHeap {
 
 	/** Explicit work earns the same allocation credit as an automatic assist. */
 	public stepRuntime(): boolean {
-		if (this.cpu.gc.finalMarkPending()) return false;
 		const work = this.cpu.gc.step();
 		this.cpu.instructionBudgetRemaining -= work;
 		this.creditStep(work);
