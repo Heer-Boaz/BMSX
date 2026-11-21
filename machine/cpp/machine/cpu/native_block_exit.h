@@ -60,7 +60,10 @@ union NativeExitOperands {
 	struct Call { u16 callee; i16 supplied, requested; } call;
 	struct Return { u16 first; i16 produced; } returned;
 	struct Vararg { u16 first; i16 requested; } vararg;
-	struct Table { i16 value, receiver, key; } table;
+	struct Table {
+		i16 value, receiver, key;
+		std::optional<ValueTag> resultProof{};
+	} table;
 	struct Length { u16 result, source; } length;
 	struct Memory {
 		u32 displacement;

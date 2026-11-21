@@ -98,13 +98,37 @@ void CPU::observeNativeArithmeticReplay(DecodedInstructionPage& page, u32 word,
 	const auto observed = decoded.nativeNumericTypes();
 	if (observed.stable && observed.left == assumption.left && observed.right == assumption.right) return;
 
-	// The failed guard has already left generated code. Withdraw all source
+	retireNativeInstructionUsers(page, word);
+}
+
+void CPU::retireNativeInstructionUsers(DecodedInstructionPage& page, u32 word) {
+	// This operation is reached outside generated code. Withdraw all source
 	// users (including an independently published suffix) and preserve the
-	// decoded score for the next compilation.
+	// feedback for the next compilation.
 	page.retireNativeBlocks(word, word + 1u);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (m_pendingNativeCompilation.page == &page) m_pendingNativeCompilation.invalidated = true;
 #endif
+}
+
+bool NativeFieldProofFeedback::contradict(u32 word, ValueTag tag) {
+	const auto sameWord = std::ranges::equal_range(m_sites, word, {}, &Site::word);
+	const auto site = std::ranges::find(sameWord, tag, &Site::tag);
+	if (site != sameWord.end()) return ++site->misses == RETIRE_AFTER;
+	m_sites.insert(sameWord.end(), {static_cast<u16>(word), tag, 1});
+	return false;
+}
+
+void NativeFieldProofFeedback::forget(u32 word) {
+	const auto sites = std::ranges::equal_range(m_sites, word, {}, &Site::word);
+	m_sites.erase(sites.begin(), sites.end());
+}
+
+std::vector<NativeRejectedFieldProof> NativeFieldProofFeedback::snapshot(u32 pagePc) const {
+	std::vector<NativeRejectedFieldProof> rejected;
+	for (const auto& site : m_sites)
+		if (site.misses == RETIRE_AFTER) rejected.push_back({pagePc + site.word * INSTRUCTION_BYTES, site.tag});
+	return rejected;
 }
 
 void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing) {
@@ -223,6 +247,7 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 		.tier = coldImage ? NativeCompilationTier::ColdImage : NativeCompilationTier::OnDemand,
 		.immutablePagePc = binding.readBytes && !binding.writeWatch.groups ? std::optional{pagePc} : std::nullopt,
 	};
+	auto rejectedFieldProofs = page.fieldProofFeedback.snapshot(pagePc);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (!coldImage) {
 		auto& pendingJob = m_pendingNativeCompilation;
@@ -233,12 +258,13 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 		pendingJob.slot = source.slot;
 		pendingJob.invalidated = false;
 		m_nativeCompilerWorker->submit(sources,
-			NativeCodeBindings(m_memory, m_stringPool, this), options, profile != nullptr);
+			NativeCodeBindings(m_memory, m_stringPool, this), options, profile != nullptr, std::move(rejectedFieldProofs));
 		return;
 	}
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
-	auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(m_memory, m_stringPool, this), options);
+	auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(m_memory, m_stringPool, this), options,
+		{.rejectedFieldProofs = rejectedFieldProofs});
 	if (!blocks.empty()) installNativeRegion(image, page, pagePc, source.slot, std::move(blocks));
 }
 

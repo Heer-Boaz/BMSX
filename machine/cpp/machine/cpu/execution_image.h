@@ -19,6 +19,7 @@
 #include "machine/cpu/closure.h"
 #include "machine/cpu/native_block.h"
 #include "machine/cpu/native_code_lookup.h"
+#include "machine/cpu/native_field_feedback.h"
 #endif
 
 namespace bmsx {
@@ -68,6 +69,7 @@ struct DecodedInstructionPage {
 	MappedPageWriteWatch writeWatch;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	std::array<u8, DECODED_PAGE_WORDS> nativeVisits{};
+	NativeFieldProofFeedback fieldProofFeedback;
 	// Borrowed image-lifetime dispatch cells. Retiring regions zeros entries,
 	// but leaves the cells available to suspended native continuations.
 	void** nativeCode = nullptr;

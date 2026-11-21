@@ -95,7 +95,8 @@ struct NativeFieldAddressUse {
 
 class NativeIrRegion {
 public:
-	explicit NativeIrRegion(std::span<const NativeBlockSource> source, bool cpuOwned = false, NativeCompilationOptions options = {});
+	explicit NativeIrRegion(std::span<const NativeBlockSource> source, bool cpuOwned = false, NativeCompilationOptions options = {},
+		NativeCompileSpecializations specializations = {});
 	void optimize(NativeRegisterUses& uses);
 	std::span<const NativeIrBlock> blocks() const { return m_blocks; }
 	std::span<const NativeIrExit> sideExits(const NativeIrBlock& block) const {
@@ -119,7 +120,7 @@ private:
 NativeOperation translateNativeOperation(const DecodedInstruction& source);
 enum class NativeOperationFlow : u8 { Linear, Checkpoint, Terminal, LeavesNative };
 NativeOperationFlow nativeOperationFlow(const NativeOperation& operation);
-size_t planNativeFieldReads(std::span<NativeInstruction> instructions, NativeCompilationTier tier,
-	std::span<NativeFieldAddressUse> addressUses);
+size_t planNativeFieldReads(std::span<NativeInstruction> instructions, std::span<const NativeBlockInstruction> source,
+	NativeCompilationTier tier, std::span<NativeFieldAddressUse> addressUses, NativeCompileSpecializations specializations);
 
 } // namespace bmsx

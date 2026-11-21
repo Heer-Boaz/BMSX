@@ -55,7 +55,7 @@ struct NativeCheckedExit {
 
 	NativeExitPlan operator()(const NativeTableAccess& access) const {
 		const bool write = access.mode == NativeTableMode::Write;
-		const NativeExitOperands operands{.table = {access.value, access.receiver, access.key}};
+		const NativeExitOperands operands{.table = {access.value, access.receiver, access.key, access.resultTag}};
 		switch (access.keyKind) {
 		case NativeTableKey::Field: return {write ? NativeBlockExit::WriteField : NativeBlockExit::ReadField, operands};
 		case NativeTableKey::Value: return {write ? NativeBlockExit::WriteIndex : NativeBlockExit::ReadIndex, operands};

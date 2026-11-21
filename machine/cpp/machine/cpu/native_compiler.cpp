@@ -46,9 +46,9 @@ NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, CPU* cp
 
 std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 	std::span<const NativeBlockSource> sources,
-	const NativeCodeBindings& bindings, NativeCompilationOptions options
+	const NativeCodeBindings& bindings, NativeCompilationOptions options, NativeCompileSpecializations specializations
 ) {
-	NativeIrRegion ir(sources, bindings.cpu != nullptr, options);
+	NativeIrRegion ir(sources, bindings.cpu != nullptr, options, specializations);
 	const auto plans = ir.blocks();
 	if (plans.empty()) return {};
 	NativeRegisterUses uses;

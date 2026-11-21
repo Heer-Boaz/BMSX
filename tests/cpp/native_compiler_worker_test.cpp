@@ -86,6 +86,35 @@ void unpublishedCodeCanBeDiscarded() {
 	}
 }
 
+void rejectedFieldProofIsFrozenForWorker() {
+	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory);
+	ExecutionAddressSpace addresses(memory);
+	CPU cpu(memory, irq, addresses);
+	constexpr u32 pc = 0x1000u;
+	std::array decoded{
+		DecodedInstruction{.tableCacheSlot = 0, .a = 2, .b = 0, .c = 0, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.bx = 0, .a = 3, .b = 2, .c = 1, .op = static_cast<u8>(OpCode::SUB)},
+	};
+	for (auto& row : decoded) {
+		row.width = 1;
+		row.baseCycles = BASE_CYCLES[row.op];
+	}
+	for (int i = 0; i < 4; ++i) decoded.back().observeNativeNumericTypes(valueInteger(8), valueInteger(3));
+	const std::array instructions{NativeBlockInstruction{&decoded[0], pc}, NativeBlockInstruction{&decoded[1], pc + INSTRUCTION_BYTES}};
+	const std::array sources{NativeBlockSource{instructions}};
+	NativeFieldProofFeedback sourceProfile;
+	for (int i = 0; i < 3; ++i) sourceProfile.contradict(0, ValueTag::Integer);
+	NativeCompilerWorker worker;
+	worker.submit(sources, NativeCodeBindings(memory, cpu.stringPool(), &cpu), {}, false, sourceProfile.snapshot(pc));
+	sourceProfile.forget(0);
+	worker.wait();
+	auto blocks = worker.take();
+	require(blocks.size() == 2 && blocks.front()->sideExits.front().exit == NativeBlockExit::ReadField
+		&& !blocks.front()->sideExits.front().operands.table.resultProof,
+		"the worker retains the submitted rejection after the source profile drops it");
+}
+
 void recordPlanIsReadyBeforePublication() {
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory);
@@ -389,6 +418,7 @@ void independentInteriorEntryRetiresEveryOverlappingOwner(int mutation) {
 int main() {
 	try {
 		copiedSourceAndDeferredPublication();
+		rejectedFieldProofIsFrozenForWorker();
 		unpublishedCodeCanBeDiscarded();
 		recordPlanIsReadyBeforePublication();
 		cpuInvalidationAndLifecycle();

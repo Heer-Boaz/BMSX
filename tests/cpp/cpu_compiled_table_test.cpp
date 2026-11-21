@@ -515,6 +515,101 @@ void observedArithmeticResumesAtItsOwnInstruction() {
 	}
 }
 
+void contradictoryOwnFieldProofRetiresItsSource() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 6, 0, 4);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::GETFIELD), 3, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::SUB), 4, 3, 1);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::K1), 5, 0, 0);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.constants = {std::string("observed field")};
+	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 7}};
+	CpuMachine native(image), scalar(image, true);
+	const u32 start = native.rom.textAddress + INSTRUCTION_BYTES;
+	const u32 arithmetic = start + 2u * INSTRUCTION_BYTES, suffix = arithmetic + 2u * INSTRUCTION_BYTES;
+	const int fieldCharge = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)];
+	const int arithmeticCharge = BASE_CYCLES[static_cast<u8>(OpCode::SUB)];
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		const auto key = *cpu.stringPool().find("observed field");
+		auto receiver = cpu.createTable(0, 1), forwarded = cpu.createTable(0, 1);
+		auto holder = cpu.createTable(0, 1), meta = cpu.createTable(0, 1);
+		holder.setStringKey(key, valueFloat(12.5f));
+		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(holder.address()));
+		forwarded.setMetatableAddress(meta.address());
+		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+		registers.set(0, valueTable(receiver.address())); registers.set(1, valueInteger(2));
+		registers.set(2, valueTable(forwarded.address())); registers.set(6, valueTable(receiver.address()));
+	}
+	const auto read = [&](Value field, Value expected, bool forwarded, bool shortGrant) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+			auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+			asTable(registers.get(6), cpu.gcHeap()).setStringKey(*cpu.stringPool().find("observed field"), field);
+			registers.set(0, registers.get(forwarded ? 2 : 6));
+			registers.set(4, valueInteger(73)); registers.set(5, valueInteger(99));
+		}
+		const int charged = fieldCharge + (forwarded ? TABLE_INDEX_VISIT_CYCLES : 0) + arithmeticCharge;
+		const int grant = charged - (shortGrant ? arithmeticCharge - 1 : 0);
+		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded, "the grant stops before the suffix");
+		require(native.cpu.readFrameRegister(0, 4) == expected && native.cpu.readFrameRegister(0, 5) == valueInteger(99)
+			&& native.cpu.instructionBudgetRemaining == grant - charged && native.cpu.readCurrentInstructionPc() == arithmetic
+			&& native.cpu.lastPc == arithmetic + INSTRUCTION_BYTES && native.cpu.readFramePc(0) == suffix,
+			"own results and delegated reads complete with the same exact WIDE frontier and charge");
+		requireParity(native, scalar);
+	};
+	for (int visit = 0; visit < 16; ++visit) read(valueInteger(12), valueInteger(10), false, false);
+
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 entry = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const auto installed = [&] { return page.nativeBlocks && page.nativeBlocks->entries[entry]; };
+	require(installed() && page.nativeBlocks->entries[entry]->admissionCycles == fieldCharge
+		&& page.nativeBlocks->entries[entry]->terminal.currentPc == arithmetic,
+		"the two WIDE instructions are genuinely published in one admitted specializable region");
+#endif
+	for (int visit = 0; visit < 5; ++visit) read(valueInteger(12), valueFloat(10.5f), true, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	require(installed(), "a different metatable's result does not count as a contradictory own field");
+	read(valueFloat(12.5f), valueFloat(10.5f), false, true);
+	require(installed(), "one contradictory own result does not withdraw the region");
+	for (int visit = 0; visit < 8 && installed(); ++visit) read(valueFloat(12.5f), valueFloat(10.5f), false, true);
+	require(!installed(), "only repeated contradictory own results withdraw the region");
+
+	// Restore the original arithmetic profile via real integer executions.
+	// The old field proof must not return merely because the consumer still
+	// benefits from arithmetic specialization; it now guards at its own PC.
+	for (int visit = 0; visit < 10; ++visit) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], arithmetic);
+			cpu.activeThread()->frameAtDepth(0)->registers.set(3, valueInteger(12));
+		}
+		test::runCpuParity(native.cpu, scalar.cpu, arithmeticCharge);
+	}
+	const auto types = page.words[entry + 2u].nativeNumericTypes();
+	require(types.stable && types.left == ValueTag::Integer, "the real arithmetic profile still prefers integers");
+	native.cpu.prepareSystemNativeCode();
+	require(installed(), "updated field policy does not prevent native compilation");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& exits = native.cpu.nativeGateProfile().exits;
+	const auto fieldMisses = exits[static_cast<size_t>(NativeBlockExit::ReadField)].entries;
+	const auto replayExits = exits[static_cast<size_t>(NativeBlockExit::ScalarBoundary)].entries;
+#endif
+	read(valueFloat(12.5f), valueFloat(10.5f), false, true);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(exits[static_cast<size_t>(NativeBlockExit::ReadField)].entries == fieldMisses
+		&& exits[static_cast<size_t>(NativeBlockExit::ScalarBoundary)].entries == replayExits + 1,
+		"the live field stays on its native own read while arithmetic, not the field, checks the subtype");
+#endif
+#endif
+}
+
 void stringStoreGrowthRoots(bool generic, bool full) {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 7, 9, 0);
@@ -747,6 +842,7 @@ int main() {
 		stringReadChainBoundaries();
 		observedArithmeticResumesAtItsOwnInstruction();
 		lengthSeesMaterializedRegisterTags();
+		contradictoryOwnFieldProofRetiresItsSource();
 		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); wideAllocationFailure();
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 		stringStoreCanRetireItsOwnSource();

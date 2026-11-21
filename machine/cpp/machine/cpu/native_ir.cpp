@@ -44,7 +44,8 @@ NativeOperationFlow nativeOperationFlow(const NativeOperation& operation) {
 	return std::visit(OperationFlow{}, operation);
 }
 
-NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, bool cpuOwned, NativeCompilationOptions options) {
+NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, bool cpuOwned, NativeCompilationOptions options,
+	NativeCompileSpecializations specializations) {
 	size_t instructionCount = 0;
 	for (const auto& source : sources) instructionCount += source.instructions.size();
 	m_instructions.reserve(instructionCount);
@@ -56,7 +57,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, bool 
 		for (const auto& inst : source.instructions)
 			m_instructions.emplace_back(translateNativeOperation(*inst.decoded));
 		auto operations = std::span(m_instructions).subspan(first);
-		const size_t count = planNativeFieldReads(operations, options.tier, addressUses);
+		const size_t count = planNativeFieldReads(operations, source.instructions, options.tier, addressUses, specializations);
 		const bool completeRun = count == operations.size();
 		operations = operations.first(count);
 		if (!completeRun) m_instructions.erase(m_instructions.begin() + first + count, m_instructions.end());

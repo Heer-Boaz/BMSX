@@ -32,10 +32,21 @@ enum class NativeBlockTransition : u8 {
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
 
-bool CPU::loadNativeTableField(CallFrame& frame, int destination, TableStringReadCache& cache, Value base, StringId key) {
+bool CPU::loadNativeTableField(CallFrame& frame, int destination, TableStringReadCache& cache, Value base, StringId key,
+	const NativeCpuRunState& run, std::optional<ValueTag> resultProof) {
 	TableLookupResult result;
 	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexPath(
 		asStringId(m_indexKey), key, cache.receiverSlot, result, cache);
+	// Only a value actually found in the receiver contradicts the result
+	// proof. A different shape or metatable path is not type feedback.
+	if (resultProof && valueIsTable(base) && result.status == TableLookupStatus::Resolved
+		&& result.extraVisits == 0u && result.slot >= 0 && valueTag(result.value) != *resultProof) {
+		auto& page = *NativeCodeLookup::findInRoot(run.codeRoot, m_currentInstructionPc);
+		const u32 word = (m_currentInstructionPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		if (page.fieldProofFeedback.contradict(word, *resultProof)) retireNativeInstructionUsers(page, word);
+		// The dispatched site (including cache) may now be retired. The
+		// semantic result and the caller's image-owned continuation still live.
+	}
 	return finishTableRead(frame, destination, base, valueString(key), result);
 }
 
@@ -254,7 +265,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::ReadField: {
 			const auto access = exit->operands.table;
 			const bool invoked = cpu.loadNativeTableField(*frame, access.value, exit->tableReadCache,
-				frame->registers.get(access.receiver), asStringId(frame->executionImage->constPool.get(access.key)));
+				frame->registers.get(access.receiver), asStringId(frame->executionImage->constPool.get(access.key)), *run, access.resultProof);
 			transition = invoked ? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
 			break;
 		}
@@ -263,7 +274,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			const Value base = frame->registers.get(access.receiver);
 			const Value key = readRK(*frame->executionImage, frame->registers, access.key);
 			const bool invoked = valueIsString(key)
-				? cpu.loadNativeTableField(*frame, access.value, exit->tableReadCache, base, asStringId(key))
+				? cpu.loadNativeTableField(*frame, access.value, exit->tableReadCache, base, asStringId(key), *run)
 				: cpu.loadTableIndex(*frame, access.value, base, key);
 			transition = invoked ? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
 			break;

@@ -243,6 +243,20 @@ void nestedFieldsShareOnlyTheCheckedAddress() {
 		&& text.find("R1 = load-own-field %addr0") != std::string::npos
 		&& text.find("R2 = load-own-field %addr0") != std::string::npos,
 		"the diagnostic exposes the one checked field address and both consumers without lowering");
+
+	const std::array rejected{NativeRejectedFieldProof{source[0].pc, ValueTag::Table}};
+	NativeIrRegion adapted(runs, false, {}, {.rejectedFieldProofs = rejected});
+	adapted.optimize(uses);
+	const auto& adaptedBlock = adapted.blocks().front();
+	const auto& adaptedFirst = std::get<NativeTableAccess>(adaptedBlock.instructions[0].operation);
+	const auto& adaptedSecond = std::get<NativeTableAccess>(adaptedBlock.instructions[3].operation);
+	require(adaptedFirst.ownFieldAddress == adaptedSecond.ownFieldAddress && !adaptedFirst.resultTag
+		&& adaptedSecond.resultTag == ValueTag::Table,
+		"field rejection removes only the contradictory proof; both sites still reuse the same checked address");
+	const auto& adaptedMiss = adapted.sideExits(adaptedBlock)[*adaptedBlock.instructions[0].slow];
+	require(adaptedMiss.exit == NativeBlockExit::ReadField && !adaptedMiss.operands.table.resultProof
+		&& adaptedMiss.currentPc == source[0].pc,
+		"the original semantic owner's recipe no longer carries the rejected result tag");
 }
 
 void fieldAddressesStopAtDefinitionsAndEffects() {

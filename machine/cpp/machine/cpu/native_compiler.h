@@ -31,7 +31,7 @@ public:
 	// Source runs contain at most one decoded page's worth of instructions.
 	static std::vector<std::unique_ptr<NativeBlock>> compile(
 		std::span<const NativeBlockSource> sources,
-		const NativeCodeBindings& bindings, NativeCompilationOptions options = {});
+		const NativeCodeBindings& bindings, NativeCompilationOptions options = {}, NativeCompileSpecializations specializations = {});
 };
 
 } // namespace bmsx

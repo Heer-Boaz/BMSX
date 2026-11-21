@@ -31,6 +31,9 @@ bool CPU::decodeInstructionWords(
 		&& page.bodyWords[pageOffset] == bodyWord
 		&& destination.width == static_cast<uint8_t>(width);
 	if (!unchanged) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		if (destination.op == static_cast<u8>(OpCode::GETFIELD)) page.fieldProofFeedback.forget(pageOffset);
+#endif
 		DecodedInstruction decoded{};
 		const uint8_t aLow = static_cast<uint8_t>((bodyWord >> 12) & 0x3f);
 		const uint8_t bLow = static_cast<uint8_t>((bodyWord >> 6) & 0x3f);

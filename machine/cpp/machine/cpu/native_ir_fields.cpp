@@ -76,8 +76,8 @@ void selectFieldAddresses(std::span<NativeInstruction> instructions, const Nativ
 
 } // namespace
 
-size_t planNativeFieldReads(std::span<NativeInstruction> instructions, NativeCompilationTier tier,
-	std::span<NativeFieldAddressUse> addressUses) {
+size_t planNativeFieldReads(std::span<NativeInstruction> instructions, std::span<const NativeBlockInstruction> source,
+	NativeCompilationTier tier, std::span<NativeFieldAddressUse> addressUses, NativeCompileSpecializations specializations) {
 	const auto first = std::ranges::find_if(instructions,
 		[](NativeInstruction& instruction) { return fixedFieldRead(instruction.operation); });
 	if (first == instructions.end()) return instructions.size();
@@ -95,8 +95,11 @@ size_t planNativeFieldReads(std::span<NativeInstruction> instructions, NativeCom
 	const auto select = [&](size_t index, NativeValueOrigin origin, ValueTag tag) {
 		if (origin.producer < frontier || origin.producer >= index) return;
 		auto* field = fixedFieldRead(tail[origin.producer].operation);
-		if (auto& candidate = selections[origin.producer];
-			field && field->predictedSlot >= 0 && candidate.consumer == NativeValueOrigin::Input)
+		auto& candidate = selections[origin.producer];
+		if (!field || field->predictedSlot < 0 || candidate.consumer != NativeValueOrigin::Input) return;
+		const u32 pc = source[prefix + origin.producer].pc;
+		const auto rejected = std::ranges::equal_range(specializations.rejectedFieldProofs, pc, {}, &NativeRejectedFieldProof::pc);
+		if (std::ranges::find(rejected, tag, &NativeRejectedFieldProof::tag) == rejected.end())
 			candidate = {static_cast<u16>(index), tag};
 	};
 	for (size_t index = 0; index < cut; ++index) {

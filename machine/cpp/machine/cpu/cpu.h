@@ -421,7 +421,8 @@ private:
 	bool loadTableIndex(CallFrame& frame, int destination, Value base, Value key);
 	bool loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index);
 	bool loadTableFieldIndexCached(CallFrame& frame, int destination, int& predictedSlot, Value base, StringId key);
-	bool loadNativeTableField(CallFrame& frame, int destination, TableStringReadCache& cache, Value base, StringId key);
+	bool loadNativeTableField(CallFrame& frame, int destination, TableStringReadCache& cache, Value base, StringId key,
+		const NativeCpuRunState& run, std::optional<ValueTag> resultProof = {});
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
 	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);
@@ -448,6 +449,7 @@ private:
 	static void* tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	void prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pc, MappedBusSignals busSignals);
 	void observeNativeArithmeticReplay(DecodedInstructionPage&, u32 word, NativeArithmeticFeedback assumption, Value left, Value right);
+	void retireNativeInstructionUsers(DecodedInstructionPage&, u32 word);
 	void prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32ExecutionBoot& boot);
 	void discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing);
 	void prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, bool coldImage);

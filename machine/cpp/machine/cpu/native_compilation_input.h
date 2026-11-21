@@ -4,6 +4,7 @@
 #include <span>
 
 #include "machine/cpu/native_limits.h"
+#include "machine/cpu/value.h"
 
 namespace bmsx {
 
@@ -12,6 +13,16 @@ struct DecodedInstruction;
 struct NativeBlockInstruction {
 	const DecodedInstruction* decoded;
 	u32 pc;
+};
+
+struct NativeRejectedFieldProof {
+	u32 pc;
+	ValueTag tag;
+};
+
+// Frozen profile inputs, separate from bytecode and compilation topology.
+struct NativeCompileSpecializations {
+	std::span<const NativeRejectedFieldProof> rejectedFieldProofs{}; // sorted by PC
 };
 
 enum class NativeCompilationTier : u8 { OnDemand, ColdImage };
