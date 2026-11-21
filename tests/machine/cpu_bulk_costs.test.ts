@@ -19,7 +19,7 @@ import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32'
 import { compileTableIterationTest } from '../helpers/table_iteration';
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
- test(`NEXT charges physical scan slots and completes an exhausted primitive (${backend})`, () => {
+ test(`NEXT ignores physical scan slots and completes an exhausted primitive (${backend})`, () => {
   const text = new Uint8Array(3 * INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.CALL, 0, 3, 0);
   writeInstruction(text, 1, OpCode.K1, 7, 0, 0);
@@ -32,39 +32,39 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
   const frame = cpu.rootThread.currentFrame!;
   const entry = image.image.functions[0].codeAddress;
   const grant = BASE_CYCLES[OpCode.CALL] + 1;
-  const runNext = (table: number, after: Value, slots: number, expected: Value[]) => {
+  const runNext = (table: number, after: Value, expected: Value[]) => {
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
    frame.registers.set(0, next);
    frame.registers.setTable(1, table);
    frame.registers.set(2, after);
    frame.registers.setInteger(7, 91);
    assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
-   assert.equal(cpu.instructionBudgetRemaining, -slots - expected.length,
-    'NEXT adds only inspected Value slots to its existing primitive and result-placement costs');
+   assert.equal(cpu.instructionBudgetRemaining, -expected.length,
+    'NEXT charges only the primitive and the receiving range');
    assert.equal(frame.top, expected.length, 'success returns two values; exhaustion returns one nil');
    assert.deepEqual(Array.from({ length: frame.top }, (_, index) => frame.registers.get(index)), expected);
    assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
    assert.equal(frame.registers.getInteger(7), 91, 'the instruction following the admitted primitive does not execute');
   };
   const warm = cpu.createTable();
-  for (let repeat = 0; repeat < 72; ++repeat) runNext(warm, valueNil(), 0, [valueNil()]);
+  for (let repeat = 0; repeat < 72; ++repeat) runNext(warm, valueNil(), [valueNil()]);
   if (backend === CpuExecutionBackend.JavaScript) {
    assert.equal(frame.decodedPage!.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!.terminal.exit,
     CompiledBlockExit.Call, 'the measured NEXT calls use a warmed generated call entry');
   }
 
-  for (const [array, hash, slots] of [[5, 0, 5], [0, 3, 8], [5, 3, 13]]) {
+  for (const [array, hash] of [[5, 0], [0, 3], [5, 3]]) {
    const empty = cpu.createTable(array, hash);
-   for (let repeat = 0; repeat < 3; ++repeat) runNext(empty, valueNil(), slots, [valueNil()]);
+   for (let repeat = 0; repeat < 3; ++repeat) runNext(empty, valueNil(), [valueNil()]);
   }
   const sparse = cpu.createTable(8, 0);
   cpu.gc.tables.setInteger(sparse, 3, valueInteger(33));
   cpu.gc.tables.setInteger(sparse, 7, valueInteger(77));
-  runNext(sparse, valueNil(), 3, [valueInteger(3), valueInteger(33)]);
-  runNext(sparse, valueInteger(3), 4, [valueInteger(7), valueInteger(77)]);
-  runNext(sparse, valueInteger(7), 1, [valueNil()]);
-  runNext(sparse, valueInteger(8), 0, [valueNil()]);
-  runNext(sparse, valueInteger(2), 1, [valueInteger(3), valueInteger(33)]);
+  runNext(sparse, valueNil(), [valueInteger(3), valueInteger(33)]);
+  runNext(sparse, valueInteger(3), [valueInteger(7), valueInteger(77)]);
+  runNext(sparse, valueInteger(7), [valueNil()]);
+  runNext(sparse, valueInteger(8), [valueNil()]);
+  runNext(sparse, valueInteger(2), [valueInteger(3), valueInteger(33)]);
 
   const hash = cpu.createTable(0, 8);
   for (let index = 0; index < 8; ++index) cpu.gc.tables.setStringKey(hash, cpu.stringPool.intern(`next-${index}`), valueInteger(index + 10));
@@ -76,15 +76,15 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
    values.push(stored.get(1));
   }
   for (let slot = 0; slot < 8; ++slot) if (slot !== 1 && slot !== 4) cpu.gc.tables.set(hash, keys[slot], valueNil());
-  runNext(hash, valueNil(), 4, [keys[1], values[1]]);
-  runNext(hash, keys[1], 6, [keys[4], values[4]]);
-  runNext(hash, keys[2], 4, [keys[4], values[4]]);
-  runNext(hash, keys[4], 6, [valueNil()]);
+  runNext(hash, valueNil(), [keys[1], values[1]]);
+  runNext(hash, keys[1], [keys[4], values[4]]);
+  runNext(hash, keys[2], [keys[4], values[4]]);
+  runNext(hash, keys[4], [valueNil()]);
 
   const falseKey = cpu.createTable(0, 1);
   cpu.gc.tables.set(falseKey, valueBool(false), valueBool(false));
-  runNext(falseKey, valueNil(), 2, [valueBool(false), valueBool(false)]);
-  runNext(falseKey, valueBool(false), 0, [valueNil()]);
+  runNext(falseKey, valueNil(), [valueBool(false), valueBool(false)]);
+  runNext(falseKey, valueBool(false), [valueNil()]);
  });
 
  test(`NEXT source result counts remain one nil or a key/value pair (${backend})`, () => {
@@ -109,7 +109,7 @@ return true`, 3);
  });
 
  for (const [array, hash, capacity] of [[0, 0, 0], [1, 0, 0], [0, 1, 1], [7, 3, 4], [13, 5, 8], [0, 31, 32], [9, 33, 64], [63, 63, 64]]) {
-  test(`NEWT charges initialized value capacity (${backend}, ${array}, ${hash})`, () => {
+  test(`NEWT charges requested capacity (${backend}, ${array}, ${hash})`, () => {
    const text = new Uint8Array(2 * INSTRUCTION_BYTES);
    writeInstruction(text, 0, OpCode.NEWT, 0, array, hash);
    writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
@@ -125,7 +125,7 @@ return true`, 3);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
    const grant = BASE_CYCLES[OpCode.NEWT];
    assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
-   assert.equal(cpu.instructionBudgetRemaining, 0 - (array + 2 * capacity));
+   assert.equal(cpu.instructionBudgetRemaining, 0 - (array + 2 * hash));
    assert.equal(cpu.rootThread.currentFrame!.pc, image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
    assert.equal(cpu.gc.tables.storedSlotCount(cpu.rootThread.currentFrame!.registers.getPayload(0)), array + capacity);
   });

@@ -332,7 +332,7 @@ test::Blua32TestRom recordConstructorProgram(std::string firstKey = "castle") {
 
 void recordConstructorPreservesGrantAndLayout() {
 	const auto rom = recordConstructorProgram();
-	const int allocateCycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 16;
+	const int allocateCycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 2 * 5;
 	const int fieldCycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
 	for (const bool shortGrant : {true, false}) {
 		Fixture prepared(rom), scalar(withoutHints(rom));
@@ -452,7 +452,7 @@ void recordConstructorPreservesGrantAndLayout() {
 }
 
 void recordConstructorUsesItsImageKeys() {
-	const int allocateCycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 16;
+	const int allocateCycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 2 * 5;
 	const int fieldCycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
 	const int grant = allocateCycles + 5 * fieldCycles;
 	for (const char* key : {"castle", "observatory", "room"}) {
