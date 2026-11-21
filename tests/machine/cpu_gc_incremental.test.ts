@@ -10,7 +10,7 @@ import { HEAP_GC_CONTROL_OFFSET, heapAllocationBytes } from '../../machine/ts/ma
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
-import { GcPhase, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
+import { GcPhase, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, hashCanonicalTableKey, valueBuiltinFunction, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString, valueThread } from '../../machine/ts/machine/cpu/value';
@@ -61,6 +61,54 @@ test('incremental marking preserves changed table edges, metatables and final re
 	frame.registers.clear(frame.stackCapacity); frame.top = 0;
 	cpu.collectTrackedHeapBytes();
 	for (const id of expectedIds) assert.ok(!allocatedObjectRecords(cpu).includes(id));
+});
+
+test('initial root marking resumes a large global bank from a RAM snapshot', () => {
+	const text = new Uint8Array(4);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	const globalNames = Array.from({ length: 2200 }, (_, slot) => `root-${slot}`);
+	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({ text, globalNames,
+		constants: Array.from({ length: 1600 }, (_, slot) => slot),
+		functions: [{ firstWord: 0, wordCount: 1, maxStack: 8 }] }));
+	const gc = cpu.gc;
+	const first = cpu.stringPool.intern(globalNames[0]), last = cpu.stringPool.intern(globalNames[globalNames.length - 1]);
+	const weakRoot = cpu.stringPool.intern(globalNames[1]), finalRoot = cpu.stringPool.intern(globalNames[2]);
+	const lastTarget = cpu.createTable();
+	cpu.setGlobalByKey(last, valueTable(lastTarget));
+	const weak = cpu.createTable(1, 0), mode = cpu.createTable(), weakTarget = cpu.createTable();
+	gc.tables.setStringKey(mode, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
+	gc.tables.setMetatableAddress(weak, mode);
+	gc.tables.setInteger(weak, 1, valueTable(weakTarget));
+	cpu.setGlobalByKey(weakRoot, valueTable(weak));
+	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const work = gc.step();
+	assert.ok(work >= GC_STEP_WORDS && work <= GC_STEP_WORDS + 4);
+	assert.equal(gc.phase(), GcPhase.Mark);
+	assert.notEqual(memory.readRamRecordWord(control + GC_ROOT_CURSOR), 0);
+	assert.equal(gc.isAlive(lastTarget), false, 'the last global has not been read');
+	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	const finish = () => {
+		const late = cpu.createTable();
+		cpu.setGlobalByKey(first, valueTable(late));
+		gc.step();
+		assert.equal(gc.isAlive(lastTarget), true);
+		assert.equal(gc.isAlive(late), false, 'the initial scan does not repeat the changed prefix');
+		for (let step = 0; gc.phase() !== GcPhase.Atomic && step < 30; ++step) gc.step();
+		assert.equal(gc.phase(), GcPhase.Atomic);
+		assert.equal(gc.isAlive(weakTarget), false);
+		cpu.setGlobalByKey(finalRoot, valueTable(weakTarget));
+		for (let step = 0; gc.active() && step < 30; ++step) gc.step();
+		assert.equal(gc.active(), false);
+		assert.equal(memory.readRamRecordWord(control + GC_ROOT_CURSOR), 0);
+		assert.equal(gc.tableRecordAddress(late), late, 'remark discovers the new edge');
+		assert.equal(gc.tableRecordAddress(lastTarget), lastTarget);
+		assert.equal(gc.tableRecordAddress(weakTarget), weakTarget);
+		assert.equal(gc.tables.getInteger(weak, 1), valueTable(weakTarget), 'final roots are visible before weak cleanup');
+		return memory.captureSaveState();
+	};
+	const expected = finish();
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	assert.deepEqual(finish(), expected);
 });
 
 test('major marking resumes large closure captures from a RAM snapshot', () => {

@@ -1353,7 +1353,8 @@ count registered system-global and cartridge-global slots; repeated registration
 of one name shares its existing slot. Nil slots count too. These root ranges are
 read once in a small collection. In a full collection they are read at the
 beginning of marking, at the start of the second pass and at the final
-remark, using the ranges present at each pass. Thread storage is scanned
+remark. The first pass can resume at the next root slot in a later step.
+Thread storage is scanned
 in all three full-collection passes. Function-activation control and fixed collector bookkeeping are included
 in these allowances, not charged by a separate frame-record size.
 

@@ -415,6 +415,31 @@ size_t GcHeap::traceTableEntries(const TableRecord& table, u8 mode, u32 next, si
 	return work;
 }
 
+size_t GcHeap::traceInitialRoots(size_t limit) {
+	const u32 cursor = memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR);
+	u32 kind = cursor >> TRACE_CURSOR_BITS;
+	size_t work = 0u, next = cursor & TRACE_CURSOR_MASK;
+	for (; kind < static_cast<u32>(GcRootBank::End); ++kind, next = 0u) {
+		const auto bank = static_cast<GcRootBank>(kind);
+		const size_t end = m_cpu.rootBankSlots(bank);
+		const bool globals = bank < GcRootBank::SystemConstants;
+		const size_t words = globals ? 3u : 2u, worst = words + (globals ? 2u : 1u);
+		while (next < end) {
+			if (work >= limit) {
+				memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, (kind << TRACE_CURSOR_BITS) | static_cast<u32>(next));
+				return work;
+			}
+			const size_t stop = std::min(end, next + std::max(size_t{1}, (limit - work) / worst));
+			m_cpu.markRootBank(*this, bank, next, stop);
+			work += (stop - next) * words + m_stringPool.takeMarkWork();
+			next = stop;
+		}
+	}
+	memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, 0u);
+	m_cpu.markRootThreads(*this);
+	return work;
+}
+
 size_t GcHeap::remark(Value root0, Value root1, Value root2) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
@@ -607,8 +632,12 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 			setPhase(GcPhase::Mark);
 			m_stringPool.beginReachabilityEpoch();
 			m_stringPool.markReachable(m_modeKey);
-			m_cpu.markRoots(*this);
-			work += m_cpu.collectionRootWordCount();
+			m_cpu.markRootHead(*this);
+			memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, static_cast<u32>(GcRootBank::SystemGlobals) << TRACE_CURSOR_BITS);
+		}
+		if (memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR) != 0u) {
+			work += m_stringPool.takeMarkWork();
+			if (work < GC_STEP_WORDS) work += traceInitialRoots(GC_STEP_WORDS - work);
 		}
 		markValue(root0); markValue(root1); markValue(root2);
 		m_stringPool.markLocalRoots();

@@ -490,6 +490,10 @@ private:
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void resumePendingMemoryOperation();
 	void markRoots(GcHeap& heap);
+	void markRootHead(GcHeap& heap);
+	void markRootThreads(GcHeap& heap);
+	size_t rootBankSlots(GcRootBank bank) const;
+	void markRootBank(GcHeap& heap, GcRootBank bank, size_t first, size_t end);
 	void pruneStaticClosures();
 	void retireStaticClosure(u32 address);
 

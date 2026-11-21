@@ -32,6 +32,7 @@ export const GC_VISIT_COUNT = 8;
 // The major trace owns one suspended record ahead of the gray queue.
 export const GC_TRACE_RECORD = 0x34;
 export const GC_TRACE_CURSOR = GC_TRACE_RECORD + 4;
+export const GC_ROOT_CURSOR = GC_TRACE_CURSOR + 4;
 // Capture lanes use four bytes each and Table entries require a separate tag.
 const TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1;
 const TRACE_CURSOR_MASK = (1 << TRACE_CURSOR_BITS) - 1;
@@ -42,6 +43,7 @@ const VISIT_LINK_HIGH_MASK = GC_GRAY_INDEX_MASK >>> VISIT_LINK_LOW_BITS;
 export const GC_STEP_WORDS = 4096;
 export const GC_ASSIST_BYTES = 256;
 export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
+export const enum GcRootBank { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, End }
 // Two unconnected selector inputs do not clock the collector.
 const GC_PHASE_SELECTOR = [GcPhase.Pause, GcPhase.Mark, GcPhase.MarkAgain, GcPhase.Atomic,
 	GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause, GcPhase.Pause];
@@ -398,6 +400,29 @@ export class GcHeap {
 			next < end ? (mode << TRACE_CURSOR_BITS) | next : 0);
 		return work;
 	}
+	private traceInitialRoots(limit: number): number {
+		const cursor = this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR);
+		let work = 0, next = cursor & TRACE_CURSOR_MASK;
+		const strings = this.cpu.stringPool;
+		for (let kind = cursor >>> TRACE_CURSOR_BITS; kind < GcRootBank.End; ++kind, next = 0) {
+			const end = this.cpu.rootBankSlots(kind);
+			const globals = kind < GcRootBank.SystemConstants;
+			const words = globals ? 3 : 2, worst = words + (globals ? 2 : 1);
+			while (next < end) {
+				if (work >= limit) {
+					this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, (kind << TRACE_CURSOR_BITS) | next);
+					return work;
+				}
+				const stop = Math.min(end, next + Math.max(1, ((limit - work) / worst) | 0));
+				this.cpu.markRootBank(this, kind, next, stop);
+				work += (stop - next) * words + strings.takeMarkWork();
+				next = stop;
+			}
+		}
+		this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, 0);
+		this.cpu.markRootThreads(this);
+		return work;
+	}
 	/** Called with the current trace queue empty; mutations stay separate until this pass. */
 	private remark(t0: Value, t1: Value, t2: Value): number {
 		this.diagnostics?.phase('rootsNanoseconds');
@@ -524,10 +549,15 @@ export class GcHeap {
 			if (this.diagnostics !== null) ++this.diagnostics.collections;
 			this.diagnostics?.phase('rootsNanoseconds');
 			this.setPhase(GcPhase.Mark); this.cpu.stringPool.beginReachabilityEpoch();
-			this.cpu.markHeapRoots(this); work += this.cpu.collectionRootWordCount();
+			this.cpu.markRootHead(this);
+			this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, GcRootBank.SystemGlobals << TRACE_CURSOR_BITS);
 		}
 		if (this.phase() === GcPhase.Mark || this.phase() === GcPhase.MarkAgain) {
 			this.diagnostics?.phase('rootsNanoseconds');
+			if (this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR) !== 0) {
+				work += this.cpu.stringPool.takeMarkWork();
+				if (work < GC_STEP_WORDS) work += this.traceInitialRoots(GC_STEP_WORDS - work);
+			}
 			this.markValue(t0); this.markValue(t1); this.markValue(t2);
 			this.cpu.stringPool.markLocalRoots();
 			work += this.cpu.stringPool.takeMarkWork();

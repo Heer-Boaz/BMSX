@@ -2778,7 +2778,7 @@ void CPU::trackLocalRoot(Value value) {
 	}
 }
 
-void CPU::markRoots(GcHeap& heap) {
+void CPU::markRootHead(GcHeap& heap) {
 	// Opcode metamethod selectors stay interned independently of guest tables.
 	heap.markValue(m_indexKey);
 	heap.markValue(m_newIndexKey);
@@ -2798,27 +2798,43 @@ void CPU::markRoots(GcHeap& heap) {
 	for (const Value value : m_localRoots) {
 		heap.markValue(value);
 	}
-	for (size_t slot = 0; slot < m_systemGlobalBank.count(); ++slot) {
-		heap.markString(m_systemGlobalBank.name(slot));
-		heap.markValue(m_systemGlobalBank.values().get(slot));
-	}
-	for (size_t slot = 0; slot < m_globalBank.count(); ++slot) {
-		heap.markString(m_globalBank.name(slot));
-		heap.markValue(m_globalBank.values().get(slot));
-	}
-	for (const std::unique_ptr<Blua32ExecutionImage>& executionImage : m_executionImagesByDomain) {
-		if (!executionImage) {
-			continue;
+}
+
+size_t CPU::rootBankSlots(GcRootBank bank) const {
+	if (bank == GcRootBank::SystemGlobals) return m_systemGlobalBank.count();
+	if (bank == GcRootBank::Globals) return m_globalBank.count();
+	const auto& image = m_executionImagesByDomain[static_cast<u32>(bank) - static_cast<u32>(GcRootBank::SystemConstants)];
+	return image ? image->constPool.size() : 0u;
+}
+
+void CPU::markRootBank(GcHeap& heap, GcRootBank bank, size_t first, size_t end) {
+	if (bank < GcRootBank::SystemConstants) {
+		const auto& names = bank == GcRootBank::SystemGlobals ? m_systemGlobalBank : m_globalBank;
+		const auto slots = names.values();
+		for (size_t slot = first; slot < end; ++slot) {
+			heap.markString(names.name(slot));
+			heap.markValue(slots.get(slot));
 		}
-		Blua32ExecutionImage* image = executionImage.get();
-		for (size_t index = 0; index < image->constPool.size(); ++index) {
-			heap.markValue(image->constPool.get(index));
-		}
+		return;
 	}
+	const auto pool = m_executionImagesByDomain[static_cast<u32>(bank) - static_cast<u32>(GcRootBank::SystemConstants)]->constPool;
+	for (size_t slot = first; slot < end; ++slot) heap.markValue(pool.get(slot));
+}
+
+void CPU::markRootThreads(GcHeap& heap) {
 	heap.markThread(m_rootView.address);
 	if (m_activeThread) heap.markThread(m_activeThread->address);
 	heap.markThread(m_completionThreadAddress);
 	heap.markThread(m_haltedUntilIrqThreadAddress);
+}
+
+void CPU::markRoots(GcHeap& heap) {
+	markRootHead(heap);
+	for (u32 kind = static_cast<u32>(GcRootBank::SystemGlobals); kind < static_cast<u32>(GcRootBank::End); ++kind) {
+		const auto bank = static_cast<GcRootBank>(kind);
+		if (const auto end = rootBankSlots(bank)) markRootBank(heap, bank, 0u, end);
+	}
+	markRootThreads(heap);
 }
 
 // end repeated-sequence-acceptable

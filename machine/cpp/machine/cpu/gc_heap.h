@@ -13,6 +13,7 @@ class CPU;
 inline constexpr size_t GC_STEP_WORDS = 4096;
 inline constexpr size_t GC_ASSIST_BYTES = 256;
 enum class GcPhase : u32 { Pause, Mark, MarkAgain, Atomic, Sweep, Strings };
+enum class GcRootBank : u32 { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, End };
 
 // Physical records start on an eight-byte boundary, including size-class slots.
 inline constexpr u32 GC_RECORD_ALIGNMENT = 1u << GC_RECORD_SHIFT;
@@ -29,6 +30,7 @@ inline constexpr u32 GC_VISIT_COUNT = 8u;
 // The major trace owns one suspended record ahead of the gray queue.
 inline constexpr u32 GC_TRACE_RECORD = 0x34u;
 inline constexpr u32 GC_TRACE_CURSOR = GC_TRACE_RECORD + sizeof(u32);
+inline constexpr u32 GC_ROOT_CURSOR = GC_TRACE_CURSOR + sizeof(u32);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD) % (2 * sizeof(u32)) == 0u);
 inline constexpr u32 GC_VISIT_HEADER_BYTE = 3u;
 inline constexpr u8 GC_VISIT_MEMBER = 0x40u;
@@ -103,6 +105,7 @@ private:
 	size_t visitList(u32 list, Visitor&& visitor);
 	size_t markCell(u32 cell);
 	size_t trace(bool atomic, size_t limit = 0u);
+	size_t traceInitialRoots(size_t limit);
 	size_t traceCaptures(u32 closure, u32 next, u32 count, size_t work, size_t limit);
 	size_t resumeTrace(u32 record, size_t limit);
 	size_t remark(Value root0, Value root1, Value root2);

@@ -1,5 +1,5 @@
 import { ValueMoveKind } from '../../spec/blua32/instruction_format';
-import { GcHeap } from './gc_heap';
+import { GcHeap, GcRootBank } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
@@ -4180,12 +4180,6 @@ export class CPU implements MappedPageInvalidator {
 		this.hardHalted = state.hardHalted;
 	}
 
-	private markHeapImage(image: Blua32ExecutionImage): void {
-		for (let index = 0; index < image.constTags.length; index += 1) {
-			this.gc.markValue(valueFromTag(image.constTags[index], image.constWords[index]));
-		}
-	}
-
 	public visitReachableClosures(visitor: (closure: number) => void): void {
 		const objects: number[] = [];
 		const upvalues: number[] = [];
@@ -4290,7 +4284,7 @@ export class CPU implements MappedPageInvalidator {
 		return this.luaHeap.usedBytes();
 	}
 
-	public markHeapRoots(heap: GcHeap): void {
+	public markRootHead(heap: GcHeap): void {
 		heap.markString(this.modeKey);
 		heap.markString(this.indexKey);
 		heap.markString(this.newIndexKey);
@@ -4305,15 +4299,40 @@ export class CPU implements MappedPageInvalidator {
 			for (let j = 0; j < slots.length; ++j) heap.markValue(slots.get(j));
 		}
 		for (const value of this.localRoots) heap.markValue(value);
-		for (let i = 0; i < this.systemGlobalBank.count; ++i) {
-			heap.markString(this.systemGlobalBank.name(i)); heap.markSlot(this.systemGlobalBank.slots, i);
+	}
+
+	public rootBankSlots(bank: GcRootBank): number {
+		if (bank === GcRootBank.SystemGlobals) return this.systemGlobalBank.count;
+		if (bank === GcRootBank.Globals) return this.globalBank.count;
+		const image = this.executionImagesByDomain[bank - GcRootBank.SystemConstants];
+		return image === null ? 0 : image.constTags.length;
+	}
+
+	public markRootBank(heap: GcHeap, bank: GcRootBank, first: number, end: number): void {
+		if (bank < GcRootBank.SystemConstants) {
+			const names = bank === GcRootBank.SystemGlobals ? this.systemGlobalBank : this.globalBank;
+			const slots = names.slots;
+			for (let slot = first; slot < end; ++slot) {
+				heap.markString(names.name(slot)); heap.markSlot(slots, slot);
+			}
+			return;
 		}
-		for (let i = 0; i < this.globalBank.count; ++i) {
-			heap.markString(this.globalBank.name(i)); heap.markSlot(this.globalBank.slots, i);
-		}
-		for (const image of this.executionImagesByDomain) if (image !== null) this.markHeapImage(image);
+		const image = this.executionImagesByDomain[bank - GcRootBank.SystemConstants]!;
+		for (let slot = first; slot < end; ++slot) heap.markValue(valueFromTag(image.constTags[slot], image.constWords[slot]));
+	}
+
+	public markRootThreads(heap: GcHeap): void {
 		heap.markThread(this.rootThread.address); heap.markThread(this.activeThread.address); heap.markThread(this.completionThread);
 		heap.markThread(this.haltedUntilIrqThread);
+	}
+
+	public markHeapRoots(heap: GcHeap): void {
+		this.markRootHead(heap);
+		for (let bank = GcRootBank.SystemGlobals; bank < GcRootBank.End; ++bank) {
+			const end = this.rootBankSlots(bank);
+			if (end !== 0) this.markRootBank(heap, bank, 0, end);
+		}
+		this.markRootThreads(heap);
 	}
 	public retireStaticClosure(address: number): void {
 		if ((this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) === 0) return;

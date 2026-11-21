@@ -327,6 +327,58 @@ void incrementalStateAndBarriers() {
 		"full collection retains root Thread, closure, roots Table, 1000 children and three new live Tables");
 }
 
+void resumesRootBanksBeforeTracing() {
+	auto program = image();
+	for (int slot = 0; slot < 2200; ++slot) program.globalNames.push_back("root-" + std::to_string(slot));
+	for (int slot = 0; slot < 1600; ++slot) program.constants.emplace_back(slot);
+	Machine machine(program, true);
+	auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& memory = machine.memory;
+	const auto first = cpu.stringPool().intern("global");
+	const auto weakRoot = cpu.stringPool().intern("root-0");
+	const auto finalRoot = cpu.stringPool().intern("root-1");
+	const auto last = cpu.stringPool().intern(program.globalNames.back());
+	const u32 lastTarget = cpu.createTable().address();
+	cpu.setGlobalByKey(last, valueTable(lastTarget));
+	auto weak = cpu.createTable(1, 0), mode = cpu.createTable();
+	mode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+	weak.setMetatableAddress(mode.address());
+	const u32 weakTarget = cpu.createTable().address();
+	weak.setInteger(1, valueTable(weakTarget));
+	cpu.setGlobalByKey(weakRoot, valueTable(weak.address()));
+	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
+	const size_t work = advance();
+	require(work >= GC_STEP_WORDS && work <= GC_STEP_WORDS + 4 && heap.phase() == GcPhase::Mark
+		&& memory.readRamRecordWord(control + GC_ROOT_CURSOR) != 0u && !heap.isAlive(lastTarget),
+		"initial root admission stops before unvisited entries of a large global bank");
+	const auto state = cpu.captureRuntimeState();
+	const auto ram = memory.captureSaveState();
+	const auto finish = [&] {
+		const u32 late = cpu.createTable().address();
+		cpu.setGlobalByKey(first, valueTable(late));
+		advance();
+		require(heap.isAlive(lastTarget) && !heap.isAlive(late),
+			"resuming scans the untouched suffix without repeating the amended prefix");
+		for (int step = 0; heap.phase() != GcPhase::Atomic && step < 30; ++step) advance();
+		require(heap.phase() == GcPhase::Atomic && !heap.isAlive(weakTarget),
+			"the last weak value is still unmarked just before the final root pass");
+		cpu.setGlobalByKey(finalRoot, valueTable(weakTarget));
+		for (int step = 0; heap.active() && step < 30; ++step) advance();
+		require(!heap.active() && memory.readRamRecordWord(control + GC_ROOT_CURSOR) == 0u
+			&& heap.tableRecordAddress(late) == late && heap.tableRecordAddress(lastTarget) == lastTarget,
+			"remark preserves a global written behind the initial root cursor");
+		require(heap.tableRecordAddress(weakTarget) == weakTarget && weak.getInteger(1) == valueTable(weakTarget),
+			"the final pass observes a newly rooted existing Table before clearing weak values");
+		return memory.captureSaveState().ram;
+	};
+	const auto expected = finish();
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(state);
+	require(finish() == expected, "restore resumes root scanning and replays later roots exactly");
+}
+
 void resumesLargeClosureCaptures() {
 	constexpr u32 captures = 9000;
 	test::Blua32TestImage program;
@@ -697,7 +749,8 @@ int main(int argc, char** argv) {
 		}
 		canonicalPoolAndRootRanges(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
-		referenceWritesPayOnlyForNewEdges(); incrementalStateAndBarriers(); resumesLargeClosureCaptures();
+		referenceWritesPayOnlyForNewEdges(); incrementalStateAndBarriers();
+		resumesRootBanksBeforeTracing(); resumesLargeClosureCaptures();
 		resumesTableAfterPrimitiveDisplacement(); incrementalSharedWeakMode(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
