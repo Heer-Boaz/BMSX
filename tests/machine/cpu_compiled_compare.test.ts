@@ -197,7 +197,7 @@ test('warmed RK comparisons at one RAM PC belong to each execution image and ret
 	assert.equal(systemPage.compiledBlocks!.entries[0], systemBlock);
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 	for (const { cpu, executionAddressSpace } of machines) {
-		cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+		cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
 		// The revision producer relocates suspended activations after replacing
 		// their image, before any further instruction is allowed to execute.
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, replacement.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);

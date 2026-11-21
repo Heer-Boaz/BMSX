@@ -154,6 +154,7 @@ import {
 	fixedRegisterExtent,
 	DecodedDispatchOp,
 	type Blua32ExecutionImage,
+	type ExecutionImageRelocation,
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
@@ -973,51 +974,112 @@ export class CPU implements MappedPageInvalidator {
 		});
 	}
 
-	public replaceExecutionImages(...executionBoots: Blua32ExecutionBoot[]): void {
+	public replaceExecutionImages(executionBoots: readonly Blua32ExecutionBoot[], relocation?: ExecutionImageRelocation): void {
+		if (executionBoots.length === 0) return;
 		const headers = executionBoots.map(boot => this.readExecutionImageHeader(boot));
-		// All media is already mounted. Rebind every index before looking up
-		// any constants: a lookup can touch the table of another changed image.
-		for (let i = 0; i < executionBoots.length; ++i) {
-			const { executionDomainId, staticEnd } = executionBoots[i];
-			if (executionDomainId === this.programExecutionDomainId && !this.heapAllocator.setFloor(staticEnd)) {
-				throw new Error('Replacement program static storage overlaps live language-heap pages.');
-			}
-			const { stringBucketAddress, stringBucketCount } = headers[i];
-			this.stringPool.activateRomTable(executionDomainId, stringBucketAddress, stringBucketCount);
-		}
-		for (let i = 0; i < executionBoots.length; ++i) {
-			const boot = executionBoots[i], domain = boot.executionDomainId, imageIndex = domain + 1;
-			const previous = this.executionImagesByDomain[imageIndex];
-			if (previous !== null) {
-				for (const page of previous.decodedPages.values()) {
-					this.compiledCodeCache.retirePage(page);
-				}
-			}
-			const image = this.materializeExecutionImage(boot, headers[i]);
-			this.executionImagesByDomain[imageIndex] = image;
-			this.unpublishedRomMask &= ~executionDomainBit(domain);
-			if (domain === SYSTEM_EXECUTION_DOMAIN_ID) {
-				this.systemImage = image;
-				this.systemExceptionFunctionAddress = boot.exceptionFunctionAddress;
-			}
-			if (previous !== null) {
-				for (const thread of this.threadBanks) {
-					if (thread.address === 0) continue;
-					for (let frame = thread.firstFrame; frame !== null; frame = frame.next) {
-						if (frame.executionImage !== previous) continue;
-						frame.executionImage = image;
-						frame.decodedPage = null;
-						frame.decodedPageAddress = 0;
-						frame.compilationEntry = true;
+		const replacements = new Array<Blua32ExecutionImage['romFunctions'] | null>(EXECUTION_DOMAIN_COUNT).fill(null);
+		for (let i = 0; i < executionBoots.length; ++i)
+			replacements[executionBoots[i].executionDomainId + 1] = headers[i].romFunctions;
+		// The guest can retain a closure or activation without any host
+		// frame view. Admit these against the new catalogs before bank writes.
+		this.visitReachableExecutionRecords(address => {
+			const flags = this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
+			if ((flags & Closure.CLOSURE_LATCHED_PROTOTYPE) !== 0) return;
+			const bank = Closure.executionDomain(flags) + 1;
+			const next = replacements[bank];
+			const previous = this.executionImagesByDomain[bank]?.romFunctions;
+			if (next === null || (next.mappedCode && previous?.mappedCode !== false)) return;
+			if (next.mappedCode || previous?.mappedCode === true)
+				throw new Error('Replacement image changes the addressing mode of a retained closure.');
+			const record = this.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
+			const lane = romFunctionVersionLane(next, relocation?.closures.get(address) ?? record);
+			const old = previous === undefined ? -1 : romFunctionVersionLane(previous, record);
+			if (lane < 0 || (previous !== undefined && old >= 0
+				&& previous.versions[old + RomFunctionLane.UpvalueCount] !== next.versions[lane + RomFunctionLane.UpvalueCount]))
+				throw new Error('Replacement image does not preserve a retained closure binding.');
+		}, (address, depth) => {
+			for (let i = 0; i < depth; ++i) {
+				const domain = this.readThreadFrameExecutionDomain(address, i);
+				const next = replacements[domain + 1];
+				const previous = this.executionImagesByDomain[domain + 1]?.romFunctions;
+				if (next === null || (next.mappedCode && previous?.mappedCode !== false)) continue;
+				if (next.mappedCode || previous?.mappedCode === true)
+					throw new Error('Replacement image changes the addressing mode of a retained frame.');
+				const target = address === this.activeThread.address ? relocation?.frames[i] : undefined;
+				const record = this.readThreadFrameWord(address, i, FrameField.Function);
+				const old = previous === undefined ? -1 : romFunctionVersionLane(previous, record);
+				const pc = this.readThreadFrameWord(address, i, FrameField.Pc);
+				const nextRecord = target?.functionAddress ?? record, nextPc = target?.pc ?? pc;
+				const lane = romFunctionVersionLane(next, nextRecord);
+				if ((old >= 0 && lane < 0) || !admitsFunctionPc(next, nextRecord, nextPc))
+					throw new Error('Replacement image does not admit a retained frame continuation.');
+				if (target == null && previous !== undefined && old >= 0) {
+					for (const field of [RomFunctionLane.NumParams, RomFunctionLane.MaxStack, RomFunctionLane.Flags, RomFunctionLane.UpvalueCount]) {
+						if (previous.versions[old + field] !== next.versions[lane + field])
+							throw new Error('Replacement image does not preserve a retained frame layout.');
 					}
 				}
 			}
-			if (previous !== null) this.releaseImageData(previous);
-			if (this.activeExecutionDomainId === domain) {
-				this.latchActiveExecutionImage(domain, image);
-				const frame = this.activeThread.currentFrame;
-				if (frame !== null && frame.executionImage === null) frame.executionImage = image;
+		});
+		const roots = this.acquireLocalRoots();
+		if (relocation !== undefined)
+			for (const closure of relocation.closures.keys()) this.localRoots.push(valueClosure(closure));
+		try {
+			// All media is already mounted. Rebind every index before looking up
+			// any constants: a lookup can touch the table of another changed image.
+			for (let i = 0; i < executionBoots.length; ++i) {
+				const { executionDomainId, staticEnd } = executionBoots[i];
+				if (executionDomainId === this.programExecutionDomainId && !this.heapAllocator.setFloor(staticEnd)) {
+					throw new Error('Replacement program static storage overlaps live language-heap pages.');
+				}
+				const { stringBucketAddress, stringBucketCount } = headers[i];
+				this.stringPool.activateRomTable(executionDomainId, stringBucketAddress, stringBucketCount);
 			}
+			for (let i = 0; i < executionBoots.length; ++i) {
+				const boot = executionBoots[i], domain = boot.executionDomainId, imageIndex = domain + 1;
+				const previous = this.executionImagesByDomain[imageIndex];
+				if (previous !== null) {
+					for (const page of previous.decodedPages.values()) {
+						this.compiledCodeCache.retirePage(page);
+					}
+				}
+				const image = this.materializeExecutionImage(boot, headers[i]);
+				this.executionImagesByDomain[imageIndex] = image;
+				this.unpublishedRomMask &= ~executionDomainBit(domain);
+				if (domain === SYSTEM_EXECUTION_DOMAIN_ID) {
+					this.systemImage = image;
+					this.systemExceptionFunctionAddress = boot.exceptionFunctionAddress;
+				}
+				if (previous !== null) {
+					for (const thread of this.threadBanks) {
+						if (thread.address === 0) continue;
+						for (let frame = thread.firstFrame; frame !== null; frame = frame.next) {
+							if (frame.executionImage !== previous) continue;
+							frame.executionImage = image;
+							frame.decodedPage = null;
+							frame.decodedPageAddress = 0;
+							frame.compilationEntry = true;
+						}
+					}
+				}
+				if (previous !== null) this.releaseImageData(previous);
+				if (this.activeExecutionDomainId === domain) {
+					this.latchActiveExecutionImage(domain, image);
+					const frame = this.activeThread.currentFrame;
+					if (frame !== null && frame.executionImage === null) frame.executionImage = image;
+				}
+			}
+			if (relocation !== undefined) {
+				for (const [closure, record] of relocation.closures)
+					this.memory.writeRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS, record);
+				if (relocation.closures.size !== 0) this.reindexCanonicalClosures();
+				for (let i = 0; i < relocation.frames.length; ++i) {
+					const target = relocation.frames[i];
+					if (target !== null) this.writeFrameExecution(i, target.domain, target.functionAddress, target.pc);
+				}
+			}
+		} finally {
+			this.releaseLocalRoots(roots);
 		}
 	}
 
@@ -1415,7 +1477,7 @@ export class CPU implements MappedPageInvalidator {
 				bytes,
 				recordByteOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 			);
-			return admitsFunctionPc(image, address, latch.codeAddress);
+			return admitsFunctionPc(image.romFunctions, address, latch.codeAddress);
 		}
 		const faultSequence = this.memory.readBusFaultSequence();
 		latch.codeAddress = this.memory.readMappedBusU32LE(
@@ -1442,7 +1504,7 @@ export class CPU implements MappedPageInvalidator {
 			(address + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET) >>> 0,
 			busSignals,
 		);
-		return this.memory.readBusFaultSequence() === faultSequence && admitsFunctionPc(image, address, latch.codeAddress);
+		return this.memory.readBusFaultSequence() === faultSequence && admitsFunctionPc(image.romFunctions, address, latch.codeAddress);
 	}
 
 	private readFunctionRecordOnBus(
@@ -1748,7 +1810,7 @@ export class CPU implements MappedPageInvalidator {
 			this.cop0Words[COP0_LUA_FAULT_REASON] = this.nmiReturnLuaFaultReasonWord;
 			this.exceptionDomainWord = this.nmiReturnExceptionDomainWord;
 		}
-		if (caller && caller.executionImage && !admitsFunctionPc(caller.executionImage, caller.functionAddress, returnPc)) {
+		if (caller && caller.executionImage && !admitsFunctionPc(caller.executionImage.romFunctions, caller.functionAddress, returnPc)) {
 			this.cop0Words[COP0_BAD_ADDRESS] = returnPc;
 			const cause = (returnPc & (INSTRUCTION_BYTES - 1)) !== 0
 				? CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD : CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR;
@@ -2131,7 +2193,7 @@ export class CPU implements MappedPageInvalidator {
 		pc: number,
 	): void {
 		const image = this.executionImageForDomain(executionDomainId)!;
-		if (!admitsFunctionPc(image, functionAddress, pc)
+		if (!admitsFunctionPc(image.romFunctions, functionAddress, pc)
 			|| !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId)))
 			throw new Error('Frame execution must enter an instruction of its published function.');
 		const frame = this.activeThread.frameAtDepth(frameIndex);

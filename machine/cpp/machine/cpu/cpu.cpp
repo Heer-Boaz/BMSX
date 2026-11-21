@@ -291,7 +291,7 @@ void CPU::registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 na
 }
 
 std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
-	Blua32ExecutionBoot executionBoot, std::optional<std::array<u32, 2>> restoredBases
+	Blua32ExecutionBoot executionBoot, std::optional<std::array<u32, 2>> restoredBases, ExecutionImageUpdate update
 ) {
 	const bool restoring = restoredBases.has_value();
 	const ExecutionDomainId executionDomainId = executionBoot.executionDomainId;
@@ -334,6 +334,18 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		throw BMSX_RUNTIME_ERROR("BLua32 image bank extents exceed main RAM.");
 	}
 	image->romFunctions = Blua32RomFunctionDirectory::read(m_memory, executionDomainId, header);
+	if (update == ExecutionImageUpdate::Replace) {
+		admitImageReplacement(*image);
+		if (executionDomainId == m_programExecutionDomainId && !m_heapAllocator.setFloor(executionBoot.staticEnd)) {
+			throw BMSX_RUNTIME_ERROR("Replacement program static storage overlaps live language-heap pages.");
+		}
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		discardNativeCompilation();
+#endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		clearNativeContinuationBindings();
+#endif
+	}
 	if (!restoring) m_stringPool.activateRomTable(executionDomainId,
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
@@ -355,6 +367,55 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		image->constPool = constants;
 	}
 	return image;
+}
+
+void CPU::admitImageReplacement(const Blua32ExecutionImage& image) {
+	const auto* previous = m_executionImagesByDomain[static_cast<size_t>(image.executionDomainId + 1)].get();
+	if (image.romFunctions.mappedCode && (!previous || previous->romFunctions.mappedCode)) return;
+	struct Admission {
+		const Memory& memory;
+		const GcHeap& heap;
+		const Blua32ExecutionImage* previous;
+		const Blua32ExecutionImage& image;
+	} admission{m_memory, m_heap, previous, image};
+	// A dormant coroutine may not have a host Thread view. Walk the allocated
+	// records before changing banks or rebinding any retained frame view.
+	m_heapAllocator.visitObjectRecords(&admission, [](void* context, u32 address) -> i32 {
+		const auto& [memory, heap, previous, image] = *static_cast<const Admission*>(context);
+		const u8 kind = memory.readRamRecordByte(address);
+		if (kind == static_cast<u8>(ValueTag::Closure)) {
+			const ClosureRecord::BindingFlags binding{memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS)};
+			if (binding.latched() || binding.domain() != image.executionDomainId || heap.sweepGarbage(address)) return 1;
+			const u32 function = memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
+			const auto* prior = previous && !previous->romFunctions.mappedCode ? previous->romFunctions.find(function) : nullptr;
+			const auto* next = image.romFunctions.find(function);
+			if (!prior || image.romFunctions.mappedCode || !next || prior->upvalueCount != next->upvalueCount) {
+				throw BMSX_RUNTIME_ERROR("Replacement image does not preserve a retained ROM closure.");
+			}
+		} else if (kind == THREAD_RECORD_KIND && !heap.sweepGarbage(address)) {
+			const u32 depth = ThreadRecord::count(memory, address, ThreadField::FrameDepth);
+			const auto storage = ThreadRecord::storageLayout(memory, address);
+			for (u32 i = 0; i < depth; ++i) {
+				const u32 frame = storage.frameAddress(i);
+				const u32 flags = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Flags));
+				if (frameExecutionBank(flags) != image.executionDomainId) continue;
+				const u32 function = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Function));
+				const u32 pc = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Pc));
+				if ((previous && previous->romFunctions.mappedCode != image.romFunctions.mappedCode)
+					|| !image.admitsFunctionPc(function, pc)) {
+					throw BMSX_RUNTIME_ERROR("Replacement image does not preserve a retained frame continuation.");
+				}
+				if (const auto* prior = previous ? previous->romFunctions.find(function) : nullptr) {
+					const auto* next = image.romFunctions.find(function);
+					if (!next || prior->entry.numParams != next->entry.numParams || prior->entry.maxStack != next->entry.maxStack
+						|| prior->entry.flags != next->entry.flags || prior->upvalueCount != next->upvalueCount) {
+						throw BMSX_RUNTIME_ERROR("Replacement image does not preserve a retained frame layout.");
+					}
+				}
+			}
+		}
+		return 1;
+	});
 }
 
 Blua32ExecutionImage* CPU::executionImageForDomain(
@@ -407,20 +468,11 @@ void CPU::resumeFrameBank() {
 }
 
 void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
-#if defined(BMSX_NATIVE_COMPILER_WORKER)
-	discardNativeCompilation();
-#endif
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	clearNativeContinuationBindings();
-#endif
-	if (executionBoot.executionDomainId == m_programExecutionDomainId && !m_heapAllocator.setFloor(executionBoot.staticEnd)) {
-		throw BMSX_RUNTIME_ERROR("Replacement program static storage overlaps live language-heap pages.");
-	}
 	std::unique_ptr<Blua32ExecutionImage>& imageEntry = m_executionImagesByDomain[
 		static_cast<size_t>(executionBoot.executionDomainId + 1)
 	];
 	std::unique_ptr<Blua32ExecutionImage> image =
-		activateExecutionImage(executionBoot);
+		activateExecutionImage(executionBoot, std::nullopt, ExecutionImageUpdate::Replace);
 	auto previousImage = std::move(imageEntry);
 	Blua32ExecutionImage* activatedImage = image.get();
 	imageEntry = std::move(image);

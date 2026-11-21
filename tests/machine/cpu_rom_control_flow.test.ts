@@ -77,8 +77,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		memory.installSystemRom(replacement);
 		assert.equal(cpu.captureClosureBinding(closure).codeAddress, textAddress);
 		assert.throws(() => cpu.beginCompletionCall(closure), /ROM must be published/);
-		cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, record, nextEntry);
+		const boots = [executionAddressSpace.resolveSystemDomain()];
+		assert.throws(() => cpu.replaceExecutionImages(boots), /retained frame continuation/);
+		assert.equal(cpu.readFramePc(0), textAddress);
+		cpu.replaceExecutionImages(boots, { closures: new Map(), frames: [{ domain: SYSTEM_EXECUTION_DOMAIN_ID, functionAddress: record, pc: nextEntry }] });
 		cpu.beginCompletionCall(closure);
 		assert.equal(cpu.readFramePc(1), nextEntry);
 		assert.equal(cpu.activeThread.currentFrame!.stackCapacity, 7);
@@ -104,7 +106,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		memory.installSystemRom(replacement);
 		assert.throws(() => cpu.runUntilDepth(0, 4000), /ROM must be published/);
 		assert.equal(cpu.readFramePc(0), textAddress);
-		cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+		cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
 		assert.equal(cpu.runUntilDepth(0, 4000), RunResult.Halted);
 		const result: Value[] = [];
 		cpu.readCompletionValues(result);

@@ -1,5 +1,6 @@
-import { writeBinding, type FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
-import { FrameField } from '../../machine/ts/machine/cpu/call_state';
+import type { FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
+import { FrameField, type FrameExecutionTarget } from '../../machine/ts/machine/cpu/call_state';
+import type { ExecutionImageRelocation } from '../../machine/ts/machine/cpu/execution_image';
 import {
 	blua32FunctionIndexAtAddress,
 	type Blua32ImageLayout,
@@ -23,10 +24,9 @@ export type HotResumeRevisions = readonly [
 	HotResumeRevision | null,
 ];
 
-const FRAME_EXECUTION_WORDS = 3;
-const FRAME_EXECUTION_DOMAIN = 0;
-const FRAME_EXECUTION_FUNCTION = 1;
-const FRAME_EXECUTION_PC = 2;
+export type HotResumeRelocation = ExecutionImageRelocation & {
+	readonly observations: Uint32Array;
+};
 
 const FRAME_CALL_SITE_WORDS = 2;
 const FRAME_CALL_SITE_WRITE = 0;
@@ -42,10 +42,11 @@ export function buildHotResumeRelocation(
 	cpu: CPU,
 	revisions: HotResumeRevisions,
 	frameCount: number,
-): Uint32Array {
-	const frameCallSiteBase = frameCount * FRAME_EXECUTION_WORDS;
-	const latchBase = frameCallSiteBase + frameCount * FRAME_CALL_SITE_WORDS;
-	const relocation = new Uint32Array(latchBase + LATCH_WORDS);
+): HotResumeRelocation {
+	const latchBase = frameCount * FRAME_CALL_SITE_WORDS;
+	const observations = new Uint32Array(latchBase + LATCH_WORDS);
+	const frames = new Array<FrameExecutionTarget | null>(frameCount).fill(null);
+	const closures = new Map<number, number>();
 	const unmappedWords: string[] = [];
 	let binding: FunctionPrototype | undefined;
 	cpu.visitReachableExecutionRecords(closure => {
@@ -63,6 +64,7 @@ export function buildHotResumeRelocation(
 		if (target.nextImage.functions[newIndex].upvalues.length !== binding.recordUpvalueCount) {
 			unmappedWords.push(`closure 0x${binding.functionAddress.toString(16)} captures`);
 		}
+		if (address !== binding.functionAddress) closures.set(closure, address);
 	}, (thread, depth) => {
 		if (thread === cpu.activeThread.address) return;
 		for (let index = 0; index < depth; ++index) {
@@ -95,19 +97,15 @@ export function buildHotResumeRelocation(
 			unmappedWords.push(`frame ${frameIndex} continuation 0x${cpu.readFramePc(frameIndex).toString(16)}`);
 			continue;
 		}
-		const writeOffset = frameIndex * FRAME_EXECUTION_WORDS;
-		relocation[writeOffset + FRAME_EXECUTION_DOMAIN]
-			= executionDomain + 2;
-		relocation[writeOffset + FRAME_EXECUTION_FUNCTION] = functionAddress;
-		relocation[writeOffset + FRAME_EXECUTION_PC] = pc;
+		frames[frameIndex] = { domain: executionDomain, functionAddress, pc };
 	}
 
 	for (let childFrameIndex = 1; childFrameIndex < frameCount; childFrameIndex += 1) {
 		// External completion roots have no guest CALL in the frame below them.
 		if (cpu.readFrameReturnsToCompletionLatch(childFrameIndex)) continue;
-		const parentDomainWord = relocation[(childFrameIndex - 1) * FRAME_EXECUTION_WORDS + FRAME_EXECUTION_DOMAIN];
-		if (parentDomainWord === 0) continue;
-		const target = revisions[parentDomainWord - 1]!;
+		const parent = frames[childFrameIndex - 1];
+		if (parent === null) continue;
+		const target = revisions[parent.domain + 1]!;
 		const rawPc = cpu.readFrameCallSitePc(childFrameIndex);
 		const pc = cpu.isExceptionFrame(childFrameIndex)
 			? relocatedContinuationPc(target.revision, target.previousImage, rawPc)
@@ -116,9 +114,9 @@ export function buildHotResumeRelocation(
 			unmappedWords.push(`frame ${childFrameIndex} call site 0x${rawPc.toString(16)}`);
 			continue;
 		}
-		const writeOffset = frameCallSiteBase + childFrameIndex * FRAME_CALL_SITE_WORDS;
-		relocation[writeOffset + FRAME_CALL_SITE_WRITE] = 1;
-		relocation[writeOffset + FRAME_CALL_SITE_PC] = pc;
+		const writeOffset = childFrameIndex * FRAME_CALL_SITE_WORDS;
+		observations[writeOffset + FRAME_CALL_SITE_WRITE] = 1;
+		observations[writeOffset + FRAME_CALL_SITE_PC] = pc;
 	}
 
 	let activeExceptionFrameIndex = -1;
@@ -129,14 +127,15 @@ export function buildHotResumeRelocation(
 		}
 	}
 	const epcOwnerFrameIndex = activeExceptionFrameIndex - 1;
-	if (epcOwnerFrameIndex >= 0 && relocation[epcOwnerFrameIndex * FRAME_EXECUTION_WORDS + FRAME_EXECUTION_DOMAIN] !== 0) {
-		const target = revisions[relocation[epcOwnerFrameIndex * FRAME_EXECUTION_WORDS + FRAME_EXECUTION_DOMAIN] - 1]!;
+	const epcOwner = epcOwnerFrameIndex < 0 ? null : frames[epcOwnerFrameIndex];
+	if (epcOwner !== null) {
+		const target = revisions[epcOwner.domain + 1]!;
 		const pc = relocatedContinuationPc(target.revision, target.previousImage, cpu.readEpcWord());
 		if (pc < 0) {
 			unmappedWords.push(`exception EPC 0x${cpu.readEpcWord().toString(16)}`);
 		} else {
-			relocation[latchBase + EPC_WRITE] = 1;
-			relocation[latchBase + EPC_WORD] = pc;
+			observations[latchBase + EPC_WRITE] = 1;
+			observations[latchBase + EPC_WORD] = pc;
 		}
 	}
 
@@ -150,14 +149,15 @@ export function buildHotResumeRelocation(
 			}
 		}
 		const nmiReturnEpcOwnerFrameIndex = interruptedExceptionFrameIndex - 1;
-		if (nmiReturnEpcOwnerFrameIndex >= 0 && relocation[nmiReturnEpcOwnerFrameIndex * FRAME_EXECUTION_WORDS + FRAME_EXECUTION_DOMAIN] !== 0) {
-			const target = revisions[relocation[nmiReturnEpcOwnerFrameIndex * FRAME_EXECUTION_WORDS + FRAME_EXECUTION_DOMAIN] - 1]!;
+		const nmiOwner = nmiReturnEpcOwnerFrameIndex < 0 ? null : frames[nmiReturnEpcOwnerFrameIndex];
+		if (nmiOwner !== null) {
+			const target = revisions[nmiOwner.domain + 1]!;
 			const pc = relocatedContinuationPc(target.revision, target.previousImage, cpu.readNmiReturnEpcWord());
 			if (pc < 0) {
 				unmappedWords.push(`NMI return EPC 0x${cpu.readNmiReturnEpcWord().toString(16)}`);
 			} else {
-				relocation[latchBase + NMI_RETURN_EPC_WRITE] = 1;
-				relocation[latchBase + NMI_RETURN_EPC_WORD] = pc;
+				observations[latchBase + NMI_RETURN_EPC_WRITE] = 1;
+				observations[latchBase + NMI_RETURN_EPC_WORD] = pc;
 			}
 		}
 	}
@@ -171,84 +171,36 @@ export function buildHotResumeRelocation(
 			`Hot Resume could not map: ${unmappedWords.join('; ')}.`,
 		);
 	}
-	return relocation;
+	return { closures, frames, observations };
 }
 
-/** Apply source correspondence to live ROM closures, retaining their object identity and captures. */
-export function applyHotResumeClosureRevision(cpu: CPU, revisions: HotResumeRevisions): void {
-	let binding: FunctionPrototype | undefined;
-	cpu.visitReachableExecutionRecords(closure => {
-		binding = cpu.captureClosureBinding(closure, binding);
-		const target = revisions[binding.executionDomainId + 1];
-		if (target === null) return;
-		const index = blua32FunctionIndexAtAddress(target.previousImage, binding.functionAddress);
-		if (index === -1) return;
-		const functionAddress = target.revision.functionAddresses[index];
-		const image = target.nextImage;
-		const nextFunction = image.functions[blua32FunctionIndexAtAddress(image, functionAddress)];
-		binding.functionAddress = functionAddress;
-		binding.codeAddress = nextFunction.codeAddress;
-		binding.numParams = nextFunction.numParams;
-		binding.maxStack = nextFunction.maxStack;
-		binding.flags = nextFunction.flags;
-		binding.upvalueTableAddress = nextFunction.upvalueTableAddress;
-		binding.recordUpvalueCount = nextFunction.upvalues.length;
-		writeBinding(cpu.memory, closure, binding);
-	});
-	cpu.reindexCanonicalClosures();
-}
-
-export function applyHotResumeRelocation(cpu: CPU, relocation: Uint32Array): void {
-	const frameCount = (relocation.length - LATCH_WORDS)
-		/ (FRAME_EXECUTION_WORDS + FRAME_CALL_SITE_WORDS);
-	const frameCallSiteBase = frameCount * FRAME_EXECUTION_WORDS;
-	const latchBase = frameCallSiteBase + frameCount * FRAME_CALL_SITE_WORDS;
-	for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
-		const readOffset = frameIndex * FRAME_EXECUTION_WORDS;
-		const domainWord = relocation[readOffset + FRAME_EXECUTION_DOMAIN];
-		switch (domainWord) {
-			case 1:
-				cpu.writeFrameExecution(
-					frameIndex,
-					-1,
-					relocation[readOffset + FRAME_EXECUTION_FUNCTION],
-					relocation[readOffset + FRAME_EXECUTION_PC],
-				);
-				break;
-			case 2:
-				cpu.writeFrameExecution(
-					frameIndex,
-					0,
-					relocation[readOffset + FRAME_EXECUTION_FUNCTION],
-					relocation[readOffset + FRAME_EXECUTION_PC],
-				);
-				break;
-			case 3:
-				cpu.writeFrameExecution(
-					frameIndex,
-					1,
-					relocation[readOffset + FRAME_EXECUTION_FUNCTION],
-					relocation[readOffset + FRAME_EXECUTION_PC],
-				);
-				break;
-		}
-	}
-
+export function applyHotResumeObservations(cpu: CPU, relocation: HotResumeRelocation): void {
+	const { frames, observations } = relocation;
+	const frameCount = frames.length;
+	const latchBase = frameCount * FRAME_CALL_SITE_WORDS;
 	for (let childFrameIndex = 1; childFrameIndex < frameCount; childFrameIndex += 1) {
 		// External completion roots have no guest CALL in the frame below them.
 		if (cpu.readFrameReturnsToCompletionLatch(childFrameIndex)) continue;
-		const readOffset = frameCallSiteBase + childFrameIndex * FRAME_CALL_SITE_WORDS;
-		if (relocation[readOffset + FRAME_CALL_SITE_WRITE] !== 0) {
+		const readOffset = childFrameIndex * FRAME_CALL_SITE_WORDS;
+		if (observations[readOffset + FRAME_CALL_SITE_WRITE] !== 0) {
 			cpu.writeFrameCallSitePc(
 				childFrameIndex,
-				relocation[readOffset + FRAME_CALL_SITE_PC],
+				observations[readOffset + FRAME_CALL_SITE_PC],
 			);
 		}
 	}
-	if (relocation[latchBase + EPC_WRITE] !== 0) {
-		cpu.writeEpcWord(relocation[latchBase + EPC_WORD]);
+	if (observations[latchBase + EPC_WRITE] !== 0) {
+		cpu.writeEpcWord(observations[latchBase + EPC_WORD]);
 	}
-	if (relocation[latchBase + NMI_RETURN_EPC_WRITE] !== 0) {
-		cpu.writeNmiReturnEpcWord(relocation[latchBase + NMI_RETURN_EPC_WORD]);
+	if (observations[latchBase + NMI_RETURN_EPC_WRITE] !== 0) {
+		cpu.writeNmiReturnEpcWord(observations[latchBase + NMI_RETURN_EPC_WORD]);
 	}
+}
+
+export function applyHotResumeRelocation(cpu: CPU, relocation: HotResumeRelocation): void {
+	for (let i = 0; i < relocation.frames.length; ++i) {
+		const frame = relocation.frames[i];
+		if (frame !== null) cpu.writeFrameExecution(i, frame.domain, frame.functionAddress, frame.pc);
+	}
+	applyHotResumeObservations(cpu, relocation);
 }

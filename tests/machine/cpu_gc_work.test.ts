@@ -282,7 +282,7 @@ test('image replacement rejects bank extents beyond main RAM before changing run
 		memory.installSystemRom(rom);
 		const boot = executionAddressSpace.resolveSystemDomain();
 		const before = cpu.captureRuntimeState(), ram = memory.captureSaveState();
-		assert.throws(() => cpu.replaceExecutionImages(boot), { message: 'BLua32 image bank extents exceed main RAM.' });
+		assert.throws(() => cpu.replaceExecutionImages([boot]), { message: 'BLua32 image bank extents exceed main RAM.' });
 		assert.deepEqual(cpu.captureRuntimeState(), before);
 		assert.deepEqual(memory.captureSaveState(), ram);
 	}

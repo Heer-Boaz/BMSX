@@ -1,4 +1,5 @@
 import type { FunctionPrototype } from './closure';
+import type { FrameExecutionTarget } from './call_state';
 import { readLE32 } from '../../common/endian';
 import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../spec/blua32/execution_domain';
@@ -40,6 +41,11 @@ export type Blua32RomFunctionDirectory = {
 	readonly textByteCount: number;
 	readonly instructionHeads: Uint32Array;
 	readonly codeOrder: Uint32Array;
+};
+
+export type ExecutionImageRelocation = {
+	readonly frames: readonly (FrameExecutionTarget | null)[];
+	readonly closures: ReadonlyMap<number, number>;
 };
 
 const EMPTY_ROM_LANES = new Uint32Array(0);
@@ -293,8 +299,7 @@ export type Blua32ExecutionImage = {
 	compiledCodeLookup: CompiledCodeLookup | null;
 };
 
-export function admitsFunctionPc(image: Blua32ExecutionImage, record: number, pc: number): boolean {
-	const directory = image.romFunctions;
+export function admitsFunctionPc(directory: Blua32RomFunctionDirectory, record: number, pc: number): boolean {
 	if (directory.mappedCode) return true;
 	const lane = romFunctionVersionLane(directory, record);
 	if (lane >= 0) return pc >= directory.versions[lane + RomFunctionLane.FirstPc]

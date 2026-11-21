@@ -44,8 +44,8 @@ import {
 import { RuntimeGuestCallPlan } from './guest_call';
 import type { RuntimeFaultState } from './fault_state';
 import {
-	applyHotResumeClosureRevision,
-	applyHotResumeRelocation,
+	applyHotResumeObservations,
+	type HotResumeRelocation,
 	buildHotResumeRelocation,
 	type HotResumeRevision,
 	type HotResumeRevisions,
@@ -258,7 +258,7 @@ export function installBlua32Revision(
 	runtime: Runtime,
 	guest: SuspendedGuestSession,
 	built: BuiltBlua32Revision,
-	relocation: Uint32Array,
+	relocation: HotResumeRelocation,
 ): void {
 	const rebuilt = built.mediaInstallation.rebuilt;
 	const cpu = runtime.machine.cpu;
@@ -277,9 +277,8 @@ export function installBlua32Revision(
 			replacements.push(image);
 		}
 	}
-	cpu.replaceExecutionImages(...replacements);
-	applyHotResumeClosureRevision(cpu, built.revisions);
-	applyHotResumeRelocation(cpu, relocation);
+	cpu.replaceExecutionImages(replacements, relocation);
+	applyHotResumeObservations(cpu, relocation);
 }
 
 /** Admit installation or a supervisor-return plan; init completion is reported by its physical roots. */
@@ -391,7 +390,7 @@ export function admitHotResume(
 		const retainedFrameCount = prepared.failedCompletionFrameIndex >= 0
 			? prepared.failedCompletionFrameIndex
 			: cpu.getFrameDepth();
-		let relocation: Uint32Array | null;
+		let relocation: HotResumeRelocation | null;
 		try {
 			if (prepared.built !== null) verifyHotResumeStringIdentities(runtime, prepared.built.revisions);
 			relocation = prepared.built === null
@@ -450,7 +449,7 @@ function applyPreparedHotResume(
 	debuggerState: RuntimeDebuggerState,
 	runtime: Runtime,
 	prepared: PreparedHotResume,
-	relocation: Uint32Array | null,
+	relocation: HotResumeRelocation | null,
 	report: (event: HotResumeEvent) => void,
 	context: RuntimeDebuggerExecutionContext,
 ): void {

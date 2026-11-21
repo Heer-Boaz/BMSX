@@ -23,7 +23,7 @@ import {
 	installBlua32Revision,
 	type BuiltBlua32Revision,
 } from './hot_resume';
-import { buildHotResumeRelocation } from './hot_resume_relocation';
+import { buildHotResumeRelocation, type HotResumeRelocation } from './hot_resume_relocation';
 
 export type BuiltAemSourceRevision = {
 	resource: RuntimeResource;
@@ -31,7 +31,7 @@ export type BuiltAemSourceRevision = {
 	source: string;
 	eventMap: Record<string, unknown>;
 	revision: BuiltBlua32Revision;
-	relocation: Uint32Array;
+	relocation: HotResumeRelocation;
 };
 
 export type AemSourceApplyResult =

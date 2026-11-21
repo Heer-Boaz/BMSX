@@ -354,8 +354,11 @@ private:
 	void decodeConstantPool(ExecutionDomainId executionDomainId, u32 tableAddress, ValueSpan constants);
 	void releaseImageData(Blua32ExecutionImage& image);
 	void registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 nameCount, GlobalBank& bank, u32 destination);
+	enum class ExecutionImageUpdate { Install, Replace };
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot boot,
-		std::optional<std::array<u32, 2>> restoredBases = std::nullopt);
+		std::optional<std::array<u32, 2>> restoredBases = std::nullopt,
+		ExecutionImageUpdate update = ExecutionImageUpdate::Install);
+	void admitImageReplacement(const Blua32ExecutionImage& image);
 	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId);
 	static MappedBusSignals executionBusSignalsForDomain(ExecutionDomainId executionDomainId);
 	void latchActiveExecutionImage(ExecutionDomainId domain, Blua32ExecutionImage* image);
