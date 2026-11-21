@@ -1705,6 +1705,28 @@ RunResult CPU::runLoop(
 	DecodedInstructionPage* decodedPage = nullptr;
 	u32 pageAddress = 0;
 	u32 pc = 0;
+	u32 nextPc = 0;
+	int registerTop = 0;
+	int publishedTop = 0;
+	CallFrame* scalarFrame = nullptr;
+	// Keep the ordinary same-page frontier local. The physical frame is
+	// authoritative at explicit observer and activation boundaries.
+	const auto publishScalarFrontier = [&] {
+		if constexpr (!Instrumented) {
+			if (scalarFrame) {
+				scalarFrame->writeControl(FrameField::Pc, nextPc);
+				if (registerTop != publishedTop) scalarFrame->setTop(registerTop);
+				scalarFrame = nullptr;
+			}
+		}
+	};
+	const auto resumeScalarFrontier = [&] {
+		if constexpr (!Instrumented) {
+			nextPc = frame->readControl(FrameField::Pc);
+			publishedTop = registerTop = frame->readWindow(FrameField::Top);
+			scalarFrame = frame;
+		}
+	};
 	ValueSpan registers;
 	bool canReuseFrame = false;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -1808,6 +1830,7 @@ dispatch_fetch:
 				enterInstructionFetchException(*frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 				continue;
 			}
+			if constexpr (!Instrumented) publishedTop = registerTop = frame->readWindow(FrameField::Top);
 			pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
 			decodedPage = &decodedPageForFrame(*frame, pc);
 			goto dispatch_decode;
@@ -1827,14 +1850,18 @@ dispatch_decode:
 			if ((Instrumented
 					? (refreshState & DECODED_REFRESH_DECODE)
 					: refreshState) != 0u) {
+				publishScalarFrontier();
 				if (!decodeInstruction(*frame, *decodedPage, pageOffset, pc, !Instrumented)) {
 					continue;
 				}
 				refreshState = decodedPage->refreshState[pageOffset];
+				if constexpr (!Instrumented) publishedTop = registerTop = frame->readWindow(FrameField::Top);
 			}
 			decoded = &decodedPage->words[pageOffset];
 			m_currentInstructionPc = pc;
-			frame->writeControl(FrameField::Pc, pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES));
+			nextPc = pc + static_cast<u32>(decoded->width) * INSTRUCTION_BYTES;
+			if constexpr (Instrumented) frame->writeControl(FrameField::Pc, nextPc);
+			else scalarFrame = frame;
 			m_lastExecutionDomainId = image->executionDomainId;
 			lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 			uint8_t dispatchOp;
@@ -1852,11 +1879,20 @@ dispatch_decode:
 #define IMAGE (*image)
 #define REG(index) registers.get(static_cast<size_t>(index))
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
+#define EXTEND_TOP(extent) do { \
+	if constexpr (Instrumented) FRAME.extendTop(extent); \
+	else registerTop = std::max(registerTop, static_cast<int>(extent)); \
+} while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
 	registers.set(static_cast<size_t>(index), (valueExpr)); \
-	FRAME.extendTop((index) + 1); \
+	EXTEND_TOP((index) + 1); \
+} while (0)
+#define SET_NEXT_PC(target) do { \
+	if constexpr (Instrumented) FRAME.writeControl(FrameField::Pc, target); \
+	else nextPc = (target); \
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
+	publishScalarFrontier(); \
 	skipNextInstruction(FRAME); \
 } while (0)
 #define TABLE_CACHE_SLOT() (decoded->tableCacheSlot())
@@ -1865,10 +1901,12 @@ dispatch_decode:
 #define DISPATCH_NEXT() do { \
 	if constexpr (!Instrumented) { \
 		if (canReuseFrame && instructionBudgetRemaining > 0) { \
-			pc = frame->readControl(FrameField::Pc); \
+			pc = nextPc; \
 			if ((pc & ~MAPPED_PAGE_BYTE_MASK) == pageAddress) goto dispatch_decode; \
+			publishScalarFrontier(); \
 			goto dispatch_fetch; \
 		} \
+		publishScalarFrontier(); \
 	} \
 	goto dispatch_continue; \
 } while (0)
@@ -1895,6 +1933,7 @@ dispatch_instruction:
 			if constexpr (Instrumented) {
 				switch (dispatchOp) {
 				case static_cast<u8>(DecodedDispatchOp::ReservedMemory):
+					publishScalarFrontier();
 					enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					DISPATCH_CONTINUE();
 				case static_cast<u8>(DecodedDispatchOp::Observe):
@@ -1930,13 +1969,14 @@ dispatch_instruction:
 						goto dispatch_instruction;
 					}
 					nativeBlock = decodedPage->nativeBlocks->entries[pageOffset].get();
-					// The first instruction's ordinary charge/PC publication has
-					// already happened with positive budget, admitting this segment.
+					// The first instruction was admitted and charged with positive
+					// budget; the native grant takes over that accounting.
 					nativeFirstDispatchCycles = decoded->baseCycles;
 					goto dispatch_native_block;
 				}
 #endif
 				case static_cast<u8>(DecodedDispatchOp::ReservedMemory):
+					publishScalarFrontier();
 					enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					DISPATCH_CONTINUE();
 				case static_cast<u8>(DecodedDispatchOp::Observe):
@@ -1960,13 +2000,15 @@ dispatch_instruction:
 						valueInteger(shifted)
 					);
 					if (instructionBudgetRemaining <= 0) {
+						publishScalarFrontier();
 						DISPATCH_CONTINUE();
 					}
-					const u32 successorPc = FRAME.readControl(FrameField::Pc);
+					const u32 successorPc = nextPc;
 					DecodedInstructionPage& successorPage = decodedPageForFrame(FRAME, successorPc);
 					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 					if ((successorPage.refreshState[successorOffset]
 						& DECODED_REFRESH_DECODE) != 0u) {
+						publishScalarFrontier();
 						if (!decodeInstruction(
 							FRAME,
 							successorPage,
@@ -1979,8 +2021,8 @@ dispatch_instruction:
 					}
 					decoded = &successorPage.words[successorOffset];
 					m_currentInstructionPc = successorPc;
-					FRAME.writeControl(FrameField::Pc, successorPc
-						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES));
+					nextPc = successorPc + static_cast<u32>(decoded->width) * INSTRUCTION_BYTES;
+					scalarFrame = frame;
 					m_lastExecutionDomainId = IMAGE.executionDomainId;
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
@@ -1995,6 +2037,7 @@ dispatch_instruction:
 						decoded->a,
 						valueInteger(xorResult)
 					);
+					publishScalarFrontier();
 					DISPATCH_CONTINUE();
 				}
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedAddShl): {
@@ -2012,13 +2055,15 @@ dispatch_instruction:
 						valueAdd(addLeftValue, addRightValue)
 					);
 					if (instructionBudgetRemaining <= 0) {
+						publishScalarFrontier();
 						DISPATCH_CONTINUE();
 					}
-					const u32 successorPc = FRAME.readControl(FrameField::Pc);
+					const u32 successorPc = nextPc;
 					DecodedInstructionPage& successorPage = decodedPageForFrame(FRAME, successorPc);
 					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 					if ((successorPage.refreshState[successorOffset]
 						& DECODED_REFRESH_DECODE) != 0u) {
+						publishScalarFrontier();
 						if (!decodeInstruction(
 							FRAME,
 							successorPage,
@@ -2031,8 +2076,8 @@ dispatch_instruction:
 					}
 					decoded = &successorPage.words[successorOffset];
 					m_currentInstructionPc = successorPc;
-					FRAME.writeControl(FrameField::Pc, successorPc
-						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES));
+					nextPc = successorPc + static_cast<u32>(decoded->width) * INSTRUCTION_BYTES;
+					scalarFrame = frame;
 					m_lastExecutionDomainId = IMAGE.executionDomainId;
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
@@ -2045,6 +2090,7 @@ dispatch_instruction:
 						decoded->a,
 						valueInteger(shifted)
 					);
+					publishScalarFrontier();
 					DISPATCH_CONTINUE();
 				}
 #include "machine/cpu/cpu_dispatch.inl"
@@ -2054,6 +2100,7 @@ dispatch_instruction:
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_native_block: {
+				publishScalarFrontier();
 				thread.recordNativeWrites(m_memory.ramWriteWatches());
 				nativeState.frameBank = frameBankWord(IMAGE.executionDomainId);
 				nativeState.cartridgeSlot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
@@ -2126,6 +2173,7 @@ dispatch_rebind_frame:
 			goto dispatch_continue;
 
 dispatch_observe:
+			publishScalarFrontier();
 			canReuseFrame = false;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
@@ -2133,6 +2181,7 @@ dispatch_observe:
 			// Observation precedes the original instruction's charge.
 			instructionBudgetRemaining += decoded->baseCycles;
 			m_instructionObserver.observe(m_instructionObserver.context, image->executionDomainId, pc, registers);
+			resumeScalarFrontier();
 			dispatchOp = decoded->op;
 			instructionBudgetRemaining -= decoded->baseCycles;
 			goto dispatch_instruction;
@@ -2145,13 +2194,16 @@ dispatch_continue:
 #undef DISPATCH_LABEL
 #undef SKIP_NEXT_INSTRUCTION
 #undef TABLE_CACHE_SLOT
+#undef SET_NEXT_PC
 #undef SET_REGISTER_FAST
+#undef EXTEND_TOP
 #undef CYCLES_ADD
 #undef REG
 #undef IMAGE
 #undef FRAME
 			continue;
 		} catch (const LuaOutOfMemorySignal&) {
+			publishScalarFrontier();
 			if (!handleThreadError(m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY])) {
 				enterLuaFaultException(
 					LUA_FAULT_REASON_OUT_OF_MEMORY,
@@ -2159,10 +2211,12 @@ dispatch_continue:
 				);
 			}
 		} catch (const LuaThrownValueError& error) {
+			publishScalarFrontier();
 			if (!handleThreadError(error.value)) {
 				enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
 			}
 		} catch (const LuaExecutionError& error) {
+			publishScalarFrontier();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			nativeState.replay.reset();
 #endif
@@ -2170,6 +2224,9 @@ dispatch_continue:
 			if (!handleThreadError(errorValue)) {
 				enterLuaFaultException(error.reason, errorValue);
 			}
+		} catch (...) {
+			publishScalarFrontier();
+			throw;
 		}
 	}
 }

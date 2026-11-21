@@ -536,21 +536,32 @@ void dmaMemorySpanRetiresGeneratedCode() {
 
 void fatalHelperErrorsLeaveTheNativeFrameBeforeUnwinding() {
 	struct ReadFailure { int code; };
-	for (const bool scalar : {false, true}) {
-		CpuMachine machine(memoryLoop(OpCode::LOAD_MEM, MemoryAccessKind::U32LE), scalar);
+	enum class Mode { Native, Scalar, Hook };
+	for (const auto mode : {Mode::Native, Mode::Scalar, Mode::Hook}) {
+		CpuMachine machine(memoryLoop(OpCode::LOAD_MEM, MemoryAccessKind::U32LE), mode == Mode::Hook);
 		auto& cpu = machine.cpu;
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
-		frame.registers.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x1000));
-		machine.memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x1000, 7);
-		cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
-		if (!scalar) test::waitForNativeEntry(cpu, *frame.decodedPage, (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
-		if (!scalar) require(frame.decodedPage->nativeBlocks->entries[(machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES] != nullptr,
-			"the failure originates in a warmed native memory body");
-		struct Port { bool fail = true; int reads = 0; } port;
+		const u32 pc = machine.rom.textAddress;
+		if (mode == Mode::Native) {
+			frame.registers.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x1000));
+			machine.memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x1000, 7);
+			cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
+			const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+			test::waitForNativeEntry(cpu, *frame.decodedPage, word);
+			require(frame.decodedPage->nativeBlocks->entries[word] != nullptr,
+				"the failure originates in a warmed native memory body");
+		}
+		frame.registers.set(0, valueInteger(7)); frame.registers.set(6, valueInteger(7));
+		struct Port { CPU& cpu; u32 pc; bool fail = true; int reads = 0; } port{cpu, pc};
 		constexpr u32 address = IO_BASE + 0x5000;
 		machine.memory.mapIoRead(address, &port, [](void* context, u32, MappedBusSignals) -> u32 {
 			auto& port = *static_cast<Port*>(context);
 			++port.reads;
+			require(port.cpu.readFramePc(0) == port.pc + 3 * INSTRUCTION_BYTES
+				&& port.cpu.lastPc == port.pc + 2 * INSTRUCTION_BYTES
+				&& port.cpu.getFrameRegisterCount(0) >= 5
+				&& port.cpu.readFrameRegister(0, 4) == valueInteger(1),
+				"the mapped consumer sees the completed prefix and charged WIDE frontier in RAM");
 			if (port.fail) throw ReadFailure{73};
 			return 11;
 		});
