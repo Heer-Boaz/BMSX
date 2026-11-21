@@ -38,15 +38,13 @@ private:
 
 class GcStepMeasurement {
 public:
-	explicit GcStepMeasurement(DiagnosticGcProfile& profile, bool young = false)
-		: m_profile(profile), m_start(GcProfileClock::now()), m_young(young) {
+	explicit GcStepMeasurement(DiagnosticGcProfile& profile)
+		: m_profile(profile), m_start(GcProfileClock::now()) {
 		++profile.steps;
-		if (young) ++profile.minorCollections;
 	}
 	~GcStepMeasurement() {
 		const u64 elapsed = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(GcProfileClock::now() - m_start).count());
 		m_profile.totalNanoseconds += elapsed;
-		if (m_young) m_profile.minorNanoseconds += elapsed;
 		m_profile.maxStepNanoseconds = std::max(m_profile.maxStepNanoseconds, elapsed);
 		if (elapsed > 2000000) ++m_profile.stepsOver2ms;
 		if (elapsed > 8000000) ++m_profile.stepsOver8ms;
@@ -54,7 +52,6 @@ public:
 private:
 	DiagnosticGcProfile& m_profile;
 	GcProfileClock::time_point m_start;
-	bool m_young;
 };
 #endif
 
@@ -246,16 +243,6 @@ size_t GcHeap::markCell(u32 cell) {
 size_t GcHeap::allocationBytes(u32 threadAddress) const {
 	return ThreadRecord::storageLayout(memory, threadAddress).allocationBytes();
 }
-uint8_t GcHeap::tableWeakMode(const TableRecord& table) {
-	const u32 meta = table.metatableAddress();
-	if (meta == 0u) {
-		return 0;
-	}
-	const u32 address = tableRecordAddress(meta);
-	if (address == 0u) return 0;
-	return weakModeBits(TableRecord(*this, address).getStringKey(m_modeKey));
-}
-
 u8 GcHeap::weakModeBits(Value modeValue) {
 	if (!valueIsString(modeValue)) {
 		return 0;
@@ -336,9 +323,7 @@ size_t GcHeap::trace(bool atomic, size_t limit) {
 	const u32 packed = memory.readRamRecordWord(link);
 	memory.writeRamRecordWord(m_controlOffset + GC_TRACE_HEAD, packed & GC_GRAY_INDEX_MASK);
 	memory.writeRamRecordWord(link, cell ? 0u : packed & ~GC_GRAY_INDEX_MASK);
-	const u8 flags = memory.readRamRecordByte(address + GC_COLOR_OFFSET);
-	if (m_minor && (flags & GC_OLD)) memory.writeRamRecordByte(address + GC_COLOR_OFFSET, GC_OLD | white());
-	else color(address, 3);
+	color(address, 3);
 	if (table) return traceTable(address, limit);
 	if (cell) {
 		markValue(Upvalue::load(memory, address));
@@ -516,8 +501,7 @@ size_t GcHeap::traceTable(u32 address, size_t limit, bool resumingMode) {
 	if (meta != 0u && !resumingMode) markTable(meta);
 	const size_t words = resumingMode ? 0u : TableRecord::HEADER_BYTES / sizeof(u32);
 	int mode = 0;
-	if (m_minor) mode = tableWeakMode(table);
-	else if (meta != 0u || resumingMode) {
+	if (meta != 0u || resumingMode) {
 		const auto before = m_modeProbeWork;
 		mode = probeTableMode(table, words < limit ? limit - words : 0u);
 		limit -= m_modeProbeWork - before;
@@ -639,15 +623,29 @@ size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t& limit,
 }
 
 size_t GcHeap::finishFinalMark(Value root0, Value root1, Value root2) {
+	if (!finalMarkPending()) return 0u;
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	auto& profile = m_cpu.m_diagnosticGcProfile;
+	GcStepMeasurement total(profile);
+	GcPhaseMeasurement atomicTime(profile.atomicNanoseconds);
+#endif
 	size_t work = 0;
-	while (finalMarkPending()) work += stepFinalMark(root0, root1, root2);
+	do { work += finalMarkWork(root0, root1, root2); } while (finalMarkPending());
 	return work;
 }
 
 size_t GcHeap::stepFinalMark(Value root0, Value root1, Value root2) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
-	GcPhaseMeasurement totalAtomic(profile.atomicNanoseconds);
+	GcStepMeasurement total(profile);
+	GcPhaseMeasurement atomicTime(profile.atomicNanoseconds);
+#endif
+	return finalMarkWork(root0, root1, root2);
+}
+
+size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2) {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	auto& profile = m_cpu.m_diagnosticGcProfile;
 #endif
 	size_t limit = GC_STEP_WORDS, work = 0;
 	if (remarkStage() == RemarkStage::None) setRemarkStage(RemarkStage::Threads);
@@ -730,93 +728,12 @@ size_t GcHeap::clearWeakQuantum(size_t limit) {
 	return work;
 }
 
-size_t GcHeap::resolveWeak() {
-	size_t work = 0;
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	auto& profile = m_cpu.m_diagnosticGcProfile;
-	GcPhaseMeasurement timing(profile.traceNanoseconds);
-#endif
-
-	while (indexWord(GC_TRACE_HEAD) != 0u) {
-		work += trace(true);
-		work += m_stringPool.takeMarkWork();
-	}
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	timing.phase(profile.weakNanoseconds);
-#endif
-	work += visitList<tableRecordKind, true>(GC_WEAK_VISITS, [&](u32 address) {
-		TableRecord table(*this, address);
-		const auto mode = tableWeakMode(table);
-		const auto slots = table.scanSlots();
-		clearWeakRange(table, mode, 0u, static_cast<u32>(table.storedSlotCount()));
-		return slots;
-	});
-	return work + m_stringPool.takeMarkWork();
-}
-
-i32 GcHeap::seedRemembered(void* context, u32 address) {
-	auto& heap = *static_cast<GcHeap*>(context);
-	const u32 header = heap.memory.readRamRecordWord(address);
-	const u8 kind = static_cast<u8>(header);
-	if ((header & (u32{GC_REMEMBERED} << 8u)) != 0u) {
-		if (kind == tableRecordKind) heap.enqueue(address, GC_RECORD_LINK, GC_TRACE_HEAD);
-		else if (kind == UPVALUE_RECORD_KIND && !Upvalue::isOpen(heap.memory, address))
-			heap.enqueue(address, UPVALUE_NEXT, GC_TRACE_HEAD);
-	}
-	return 1;
-}
-
-i32 GcHeap::seedThread(void* context, u32 address) {
-	auto& heap = *static_cast<GcHeap*>(context);
-	const u32 header = heap.memory.readRamRecordWord(address);
-	if ((header & (0xffu | (u32{GC_OLD} << 8u))) == (THREAD_RECORD_KIND | (u32{GC_OLD} << 8u)))
-		heap.enqueue(address, GC_RECORD_LINK, GC_TRACE_HEAD);
-	return 1;
-}
-
-size_t GcHeap::collectYoung(Value root0, Value root1, Value root2) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	auto& profile = m_cpu.m_diagnosticGcProfile;
-	GcStepMeasurement total(profile, true);
-	++profile.collections;
-#endif
-	m_minor = true;
-	size_t work;
-	{
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-		GcPhaseMeasurement roots(profile.rootsNanoseconds);
-#endif
-		markString(m_modeKey);
-		m_cpu.markRoots(*this);
-		markValue(root0); markValue(root1); markValue(root2);
-		m_stringPool.markLocalRoots(true);
-		work = m_cpu.collectionRootWordCount() + m_stringPool.takeMarkWork();
-		work += arena.visitGcPages(HeapGcPages::Remembered, this, &GcHeap::seedRemembered);
-		work += arena.visitGcPages(HeapGcPages::Threads, this, &GcHeap::seedThread);
-	}
-	work += resolveWeak();
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);
-#endif
-	SweepContext sweep{*this, 0u, white()};
-	work += arena.visitGcPages(HeapGcPages::Young, &sweep, &GcHeap::sweepRecord);
-	arena.clearGcPages(HeapGcPages::Young);
-	arena.clearGcPages(HeapGcPages::Remembered);
-	m_minor = false;
-	return work;
-}
-
 i32 GcHeap::sweepRecord(void* context, u32 address) {
 	const auto& sweep = *static_cast<SweepContext*>(context);
 	auto& heap = sweep.heap;
 	const u32 header = heap.memory.readRamRecordWord(address);
 	const u8 kind = static_cast<u8>(header);
-	const u8 flags = static_cast<u8>(header >> 8u);
-	if (heap.m_minor && kind == BLUA32_STRING_RECORD_KIND)
-		return 1 + static_cast<i32>(heap.m_stringPool.sweepYoungBucket(address));
-	if (heap.m_minor && (flags & GC_OLD)) return 1;
-	const bool garbage = (flags & GC_COLOR_MASK) == (sweep.white ^ (heap.m_minor ? 0u : 1u));
-	const u8 survivor = sweep.white | (heap.m_minor ? GC_OLD : flags & ~GC_COLOR_MASK);
+	const bool garbage = ((header >> 8u) & GC_COLOR_MASK) == (sweep.white ^ 1u);
 	if (kind == tableRecordKind || kind == UPVALUE_RECORD_KIND || kind == static_cast<u8>(ValueTag::Closure)) {
 		if (garbage) {
 			if (kind == tableRecordKind) TableRecord(heap, address).freeRecord();
@@ -829,14 +746,14 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 			}
 			return -1;
 		}
-		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, survivor);
+		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
 		return 1;
 	}
 	if (kind != THREAD_RECORD_KIND || heap.threadRecordAddress(address) == 0u) return 1;
 	const auto layout = ThreadRecord::storageLayout(heap.memory, address);
 	const i32 work = ceilDiv4(static_cast<int>(layout.allocationBytes()));
 	if (!garbage) {
-		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, survivor);
+		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
 		const u32 relocated = sweep.compactThreads && address != sweep.growingThread
 			? ThreadRecord::shrinkStack(heap, address, layout) : 0u;
 		if (relocated != 0u) heap.m_cpu.rebindRelocatedThread(address);
@@ -854,12 +771,14 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 }
 
 size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads) {
+	// Only explicit and space-exhausted collection enters a synchronous final pass.
+	if (finalMarkPending()) return finishFinalMark(root0, root1, root2);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcStepMeasurement total(profile);
 #endif
 	size_t work = 0, limit = GC_STEP_WORDS;
-	if (phase() != GcPhase::Atomic && remarkStage() != RemarkStage::None) {
+	if (remarkStage() != RemarkStage::None) {
 		limit -= remarkVisits(limit);
 		if (remarkStage() != RemarkStage::Roots) return 0u;
 		work = remarkRoots(root0, root1, root2, limit, work, false);
@@ -910,9 +829,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 				}
 				break;
 			}
-			case GcPhase::Atomic:
-				// The explicit and space-exhausted collection paths stay synchronous.
-				return work + finishFinalMark(root0, root1, root2);
+			case GcPhase::Atomic: return work;
 			case GcPhase::Sweep: {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 				GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);

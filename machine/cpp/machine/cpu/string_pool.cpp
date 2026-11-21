@@ -277,22 +277,17 @@ StringId StringPool::intern(std::string_view value) {
 	return retain(id);
 }
 
-bool StringPool::mark(StringId id, bool youngOnly) {
+bool StringPool::mark(StringId id) {
 	if (!ramAddress(id)) return false;
 	const u32 markByte = id + 1u;
-	const u8 flags = m_memory.readRamRecordByte(markByte);
-	if (youngOnly) {
-		if ((flags & (STRING_GC_OLD | STRING_GC_MINOR_MARK)) != 0u) return false;
-		m_memory.writeRamRecordByte(markByte, flags | STRING_GC_MINOR_MARK);
-	} else {
-		const u8 epoch = static_cast<u8>(metadata(EPOCH) & STRING_GC_EPOCH_MASK);
-		if ((flags & STRING_GC_EPOCH_MASK) == epoch) return false;
-		m_memory.writeRamRecordByte(markByte, (flags & ~STRING_GC_EPOCH_MASK) | epoch);
-	}
+	const u8 epoch = static_cast<u8>(metadata(EPOCH) & STRING_GC_EPOCH_MASK);
+	if ((m_memory.readRamRecordByte(markByte) & STRING_GC_EPOCH_MASK) == epoch) return false;
+	m_memory.writeRamRecordByte(markByte, epoch);
 	return true;
 }
+
 StringId StringPool::retain(StringId id) {
-	mark(id, false);
+	mark(id);
 	if (!m_localRootBases.empty()) m_localRoots.push_back(id);
 	return id;
 }
@@ -302,8 +297,8 @@ void StringPool::endLocalRoots() {
 	m_localRootBases.pop_back();
 }
 void StringPool::beginReachabilityEpoch() { writeMetadata(EPOCH, metadata(EPOCH) ^ 1u); }
-void StringPool::markReachable(StringId id, bool youngOnly) { m_markWork += mark(id, youngOnly); }
-void StringPool::markLocalRoots(bool youngOnly) { for (StringId id : m_localRoots) markReachable(id, youngOnly); }
+void StringPool::markReachable(StringId id) { m_markWork += mark(id); }
+void StringPool::markLocalRoots() { for (StringId id : m_localRoots) markReachable(id); }
 size_t StringPool::takeMarkWork() { return std::exchange(m_markWork, size_t{0}); }
 
 void StringPool::beginSweep() {
@@ -353,36 +348,6 @@ size_t StringPool::sweepStep(size_t allowance) {
 	m_memory.writeRamRecordPair(m_metadata + SWEEP_LINK, link, remaining);
 	writeMetadata(SWEEP_SPLIT, split);
 
-	return work;
-}
-
-size_t StringPool::sweepYoungBucket(StringId id) {
-	if (!ramAddress(id) || m_memory.readRamRecordByte(id) != BLUA32_STRING_RECORD_KIND
-		|| (m_memory.readRamRecordByte(id + 1u) & STRING_GC_OLD) != 0u) return 0;
-	const u32 hash = m_memory.readRamRecordWord(id + BLUA32_STRING_HASH_OFFSET);
-	u32 link = metadata(BUCKETS) + 4u * (hash & (ramBucketCount() - 1u));
-	u32 record = m_memory.readRamRecordWord(link), used = metadata(USED);
-	size_t work = 1;
-	for (u32 remaining = std::min(used, MAX_RAM_RECORDS); remaining != 0u && record != 0u; --remaining) {
-		++work;
-		if (m_memory.readRamRecordByte(record) != BLUA32_STRING_RECORD_KIND) break;
-		const u32 next = m_memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
-		const u8 flags = m_memory.readRamRecordByte(record + 1u);
-		if ((flags & STRING_GC_OLD) != 0u) {
-			link = record + BLUA32_STRING_NEXT_OFFSET;
-		} else if ((flags & STRING_GC_MINOR_MARK) != 0u) {
-			m_memory.writeRamRecordByte(record + 1u, (flags & ~STRING_GC_MINOR_MARK) | STRING_GC_OLD);
-			link = record + BLUA32_STRING_NEXT_OFFSET;
-		} else {
-			m_memory.writeRamRecordWord(link, next);
-			m_memory.writeRamRecordByte(record, 0u);
-			m_heap.releaseRecord(record, BLUA32_STRING_RECORD_HEADER_SIZE + byteLength(record));
-			--used;
-		}
-		record = next;
-	}
-	if (record != 0u) m_memory.writeRamRecordWord(link, 0u);
-	writeMetadata(USED, used);
 	return work;
 }
 

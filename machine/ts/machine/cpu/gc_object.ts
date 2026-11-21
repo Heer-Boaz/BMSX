@@ -1,7 +1,5 @@
 export const GC_COLOR_OFFSET = 1;
 export const GC_COLOR_MASK = 0x03;
-export const GC_REMEMBERED = 0x40;
-export const GC_OLD = 0x80;
 export const GC_RECORD_SHIFT = 3;
 export const GC_RECORD_LINK = 4;
 // A four-MiB RAM bank has 19 index bits at eight-byte record alignment.

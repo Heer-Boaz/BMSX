@@ -5,8 +5,6 @@ export type GcTimingPhase = 'rootsNanoseconds' | 'traceNanoseconds' | 'markAgain
 export class GcDiagnostics {
 	public collections = 0;
 	public fullCollections = 0;
-	public minorCollections = 0;
-	public minorNanoseconds = 0;
 	public steps = 0;
 	public totalNanoseconds = 0;
 	public rootsNanoseconds = 0;
@@ -25,15 +23,12 @@ export class GcDiagnostics {
 	private phaseStart = 0;
 	private atomicStart = 0;
 	private inAtomic = false;
-	private young = false;
 	private currentPhase: GcTimingPhase | null = null;
 
 	public constructor(private readonly clock = () => performance.now() * 1e6) {}
 
-	public beginStep(young = false): void {
+	public beginStep(): void {
 		++this.steps;
-		this.young = young;
-		if (young) ++this.minorCollections;
 		this.stepStart = this.clock();
 		this.currentPhase = null;
 		this.inAtomic = false;
@@ -51,7 +46,6 @@ export class GcDiagnostics {
 		if (this.inAtomic) this.atomicNanoseconds += now - this.atomicStart;
 		const elapsed = now - this.stepStart;
 		this.totalNanoseconds += elapsed;
-		if (this.young) this.minorNanoseconds += elapsed;
 		this.maxStepNanoseconds = Math.max(this.maxStepNanoseconds, elapsed);
 		if (elapsed > 2e6) ++this.stepsOver2ms;
 		if (elapsed > 8e6) ++this.stepsOver8ms;

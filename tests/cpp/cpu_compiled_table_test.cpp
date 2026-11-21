@@ -905,10 +905,13 @@ void warmTableStoresCompleteTheirEffects() {
 		auto table = asTable(registers.get(0), cpu.gcHeap());
 		auto fields = asTable(registers.get(8), cpu.gcHeap());
 		table.setInteger(1, valueNil());
-		require(cpu.gcHeap().collectYoung(valueNil(), valueNil(), valueNil()) > 0u
-			&& (machine->memory.readRamRecordByte(table.address() + GC_COLOR_OFFSET) & (GC_OLD | GC_REMEMBERED)) == GC_OLD
-			&& (machine->memory.readRamRecordByte(fields.address() + GC_COLOR_OFFSET) & (GC_OLD | GC_REMEMBERED)) == GC_OLD,
-			"the receivers are real unremembered old objects before inserting the new edges");
+		const auto pressure = cpu.createTable(2 * GC_STEP_WORDS, 0);
+		cpu.setGlobalByKey(cpu.stringPool().intern("mark pressure"), valueTable(pressure.address()));
+		cpu.stepHeap(valueNil(), valueNil(), valueNil());
+		require(cpu.gcHeap().phase() == GcPhase::Mark
+			&& (machine->memory.readRamRecordByte(table.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3u
+			&& (machine->memory.readRamRecordByte(fields.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3u,
+			"the receivers have both been visited before adding the new edges");
 		registers.set(1, valueTable(cpu.createTable().address()));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
 	}
@@ -927,10 +930,10 @@ void warmTableStoresCompleteTheirEffects() {
 	const Value child = registers.get(1);
 	require(registers.get(5) == valueInteger(1) && isNil(registers.get(6)) && registers.get(7) == child
 		&& table.lengthHint() == 1 && table.getInteger(1) == child
-		&& (native.memory.readRamRecordByte(table.address() + GC_COLOR_OFFSET) & GC_REMEMBERED) != 0u,
-		"the stores append, retreat, then append and remember their real young edge");
+		&& (native.memory.readRamRecordByte(table.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 2u,
+		"the stores append, retreat, then append and requeue the black owner for its new edge");
 	require(registers.get(9) == child && fields.getStringKey(*native.cpu.stringPool().find("retained")) == child
-		&& (native.memory.readRamRecordByte(fields.address() + GC_COLOR_OFFSET) & GC_REMEMBERED) != 0u,
+		&& (native.memory.readRamRecordByte(fields.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 2u,
 		"the predicted own field uses the same native collector effect");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(exits[static_cast<size_t>(NativeBlockExit::WriteInteger)].entries == integerMisses
@@ -946,9 +949,9 @@ void warmTableStoresCompleteTheirEffects() {
 		slots.set(7, valueNil());
 		slots.set(9, valueNil());
 		asTable(slots.get(0), cpu.gcHeap()).setInteger(1, valueNil());
-		cpu.gcHeap().collectYoung(valueNil(), valueNil(), valueNil());
+		while (cpu.collecting()) cpu.stepHeap(valueNil(), valueNil(), valueNil());
 		require(cpu.gcHeap().tableRecordAddress(valuePayload(child)) == valuePayload(child),
-			"the remembered field edge promotes a child no longer rooted by any register or array");
+			"the revisited field edge retains a child no longer rooted by any register or array");
 	}
 	requireParity(native, scalar);
 }

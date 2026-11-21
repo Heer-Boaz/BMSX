@@ -1,5 +1,5 @@
 import { CLOSURE_CAPTURE_WORDS } from './closure';
-import { GC_COLOR_OFFSET, GC_COLOR_MASK, GC_OLD, GC_REMEMBERED } from './gc_object';
+import { GC_COLOR_OFFSET, GC_COLOR_MASK } from './gc_object';
 import { UPVALUE_ADDRESS_MASK, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from './upvalue';
 import { ThreadField } from './thread_record';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
@@ -64,7 +64,7 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 					if((flags&${GC_COLOR_MASK})===3){
 						if(watches.anyWatched(c+${UPVALUE_NEXT},4)||watches.anyWatched(h.changedHeadOffset(),4)) ${failure}
 						h.writeBarrier(c,${UPVALUE_NEXT});
-					}else if((flags&${GC_OLD | GC_REMEMBERED})===${GC_OLD}) h.writeBarrier(c,${UPVALUE_NEXT});
+					}
 				}
 				m.wd(c+${UPVALUE_VALUE_WORD},${word});m.wb(c+${UPVALUE_VALUE_TAG},t);}`;
 		}

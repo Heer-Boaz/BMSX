@@ -78,7 +78,6 @@ void invokeDiagnostic(GcHeap& heap, BuiltinFunctionId id, BuiltinArgsView args, 
 }
 
 void initialize(GcHeap& heap, u32 address, u32 valueBlock, u32 frameBlock, u32 entry) {
-	heap.arena.trackGcPage(HeapGcPages::Threads, address);
 	auto& memory = heap.memory;
 	const u32 offset = address & RAM_RECORD_WORD_MASK;
 	auto* record = memory.ramData() + offset;

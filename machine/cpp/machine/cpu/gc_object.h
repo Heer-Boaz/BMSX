@@ -4,8 +4,6 @@
 namespace bmsx {
 inline constexpr uint32_t GC_COLOR_OFFSET = 1;
 inline constexpr uint8_t GC_COLOR_MASK = 0x03;
-inline constexpr uint8_t GC_REMEMBERED = 0x40;
-inline constexpr uint8_t GC_OLD = 0x80;
 inline constexpr uint32_t GC_RECORD_SHIFT = 3;
 inline constexpr uint32_t GC_RECORD_LINK = 4;
 // A four-MiB RAM bank has 19 index bits at eight-byte record alignment.

@@ -4325,14 +4325,6 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	public collectionRootWordCount(): number {
-		let words = 3 * (this.systemGlobalBank.count + this.globalBank.count);
-		for (const image of this.executionImagesByDomain) {
-			if (image !== null) words += 2 * image.constTags.length;
-		}
-		return words;
-	}
-
 	public collectTrackedHeapBytes(root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil()): number {
 		this.gc.collect(root0, root1, root2);
 		return this.luaHeap.usedBytes();
@@ -4384,15 +4376,7 @@ export class CPU implements MappedPageInvalidator {
 		heap.markThread(this.haltedUntilIrqThread);
 	}
 
-	public markHeapRoots(heap: GcHeap): void {
-		this.markRootHead(heap);
-		for (let bank = GcRootBank.SystemGlobals; bank < GcRootBank.End; ++bank) {
-			const end = this.rootBankSlots(bank);
-			if (end !== 0) this.markRootBank(heap, bank, 0, end);
-		}
-		this.markRootThreads(heap);
-	}
-	public retireStaticClosure(address: number): void {
+public retireStaticClosure(address: number): void {
 		if ((this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) === 0) return;
 		const prototype = this.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
 		const entries = this.staticClosuresByAddress.get(prototype);

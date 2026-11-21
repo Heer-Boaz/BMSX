@@ -12,8 +12,6 @@
 namespace bmsx {
 
 using StringId = u32;
-inline constexpr u8 STRING_GC_OLD = 0x80u;
-inline constexpr u8 STRING_GC_MINOR_MARK = 0x40u;
 inline constexpr u8 STRING_GC_EPOCH_MASK = 1u;
 class HeapAllocator;
 class LuaHeap;
@@ -39,12 +37,11 @@ public:
 	void beginLocalRoots();
 	void endLocalRoots();
 	void beginReachabilityEpoch();
-	void markReachable(StringId id, bool youngOnly = false);
-	void markLocalRoots(bool youngOnly = false);
+	void markReachable(StringId id);
+	void markLocalRoots();
 	size_t takeMarkWork();
 	void beginSweep();
 	size_t sweepStep(size_t allowance);
-	size_t sweepYoungBucket(StringId id);
 	bool sweeping() const;
 
 private:
@@ -71,7 +68,7 @@ private:
 	u32 lookupRom(u32 directory, u32 hash, std::string_view bytes) const;
 	u32 lookup(u32 hash, std::string_view bytes) const;
 	void grow(u32 count);
-	bool mark(StringId id, bool youngOnly);
+	bool mark(StringId id);
 	StringId retain(StringId id);
 
 	LuaHeap& m_heap;

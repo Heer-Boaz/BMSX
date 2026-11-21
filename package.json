@@ -106,7 +106,7 @@
 		"test:cartridge-conformance": "bash scripts/test.sh node tests/conformance/cartridge/run.mjs",
 		"test:coroutines": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/coroutine/run.ts",
 		"test:gc-stress": "bash scripts/test.sh node scripts/run_node_conformance.mjs tests/conformance/gc_stress/run.ts",
-		"test:gc-young": "bash scripts/test.sh node scripts/run_node_conformance.mjs tests/conformance/gc_stress/young.ts",
+		"test:gc-pressure": "bash scripts/test.sh node scripts/run_node_conformance.mjs tests/conformance/gc_stress/pressure.ts",
 		"test:table-iteration": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/table_iteration/run.ts",
 		"test:runtime-replay": "bash scripts/test.sh node tests/conformance/runtime_replay/run.mjs",
 		"test:studio-workflows": "bash scripts/test.sh node scripts/test_playable_studio.mjs workflows",

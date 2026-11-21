@@ -10,8 +10,6 @@ struct DiagnosticGcProfile {
 	// Cycles started, not assist calls. A continuation can report time with zero starts.
 	u64 collections = 0;
 	u64 fullCollections = 0;
-	u64 minorCollections = 0;
-	u64 minorNanoseconds = 0;
 	u64 steps = 0;
 	// Lifetime gauge, never subtracted as a counter. The two tail counters can
 	// be differenced to identify long individual steps in a measured interval.

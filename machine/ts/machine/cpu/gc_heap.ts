@@ -1,8 +1,8 @@
 import { HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
-import { HEAP_GC_CONTROL_OFFSET, HeapGcPages, heapClassIndex, type HeapAllocator } from './heap_allocator';
-import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_COLOR_OFFSET, GC_COLOR_MASK, GC_OLD, GC_REMEMBERED, GC_RECORD_LINK, GC_RECORD_SHIFT } from './gc_object';
+import { HEAP_GC_CONTROL_OFFSET, heapClassIndex, type HeapAllocator } from './heap_allocator';
+import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_COLOR_OFFSET, GC_COLOR_MASK, GC_RECORD_LINK, GC_RECORD_SHIFT } from './gc_object';
 import * as Closure from './closure';
 import { UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from './upvalue';
 import * as Upvalue from './upvalue';
@@ -10,11 +10,10 @@ import { TableRecords, type TableStringProbe } from './table';
 import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadLayout, ThreadRecords, allocatedThreadBackingBytes } from './thread_record';
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
 import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from './value';
-import { ValueSlots } from './value_slots';
+import type { ValueSlots } from './value_slots';
 import type { LuaHeap } from './lua_heap';
 import { ceilDiv4 } from '../common/numeric';
 import type { GcDiagnostics } from './gc_diagnostics';
-import { BLUA32_STRING_RECORD_KIND } from '../../spec/blua32/image_format';
 
 const GC_RECORD_ALIGNMENT = 1 << GC_RECORD_SHIFT;
 const GC_RECORD_MASK = MAIN_RAM_SIZE - GC_RECORD_ALIGNMENT;
@@ -70,8 +69,6 @@ export class GcHeap {
 	}
 	public white(): number { return this.memory.readRamRecordByte(this.controlOffset + 1) & 1; }
 	private setPhase(phase: GcPhase): void { this.memory.writeRamRecordByte(this.controlOffset, phase); }
-	private readonly scratch = new ValueSlots(1);
-	private minor = false; // Only physical state crosses a grant.
 	private readonly modeProbe: TableStringProbe = { node: -1, remaining: 0, value: valueNil() };
 	private modeProbeWork = 0;
 	private completionRootWork = 0;
@@ -134,12 +131,12 @@ export class GcHeap {
 	public finalMarkPending(): boolean { return this.phase() === GcPhase.Atomic; }
 	public isAlive(address: number): boolean { return address !== 0 && !this.unmarked(this.memory.readRamRecordByte(address + GC_COLOR_OFFSET)); }
 	private markColor(address: number): number { return this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK; }
-	private unmarked(flags: number): boolean { return (flags & (GC_COLOR_MASK | (this.minor ? GC_OLD : 0))) === this.white(); }
+	private unmarked(flags: number): boolean { return (flags & GC_COLOR_MASK) === this.white(); }
 	private setColor(address: number, color: number): void {
 		const lane = address + GC_COLOR_OFFSET;
 		this.memory.writeRamRecordByte(lane, (this.memory.readRamRecordByte(lane) & ~GC_COLOR_MASK) | color);
 	}
-	public markString(id: number): void { this.cpu.stringPool.markReachable(id, this.minor); }
+	public markString(id: number): void { this.cpu.stringPool.markReachable(id); }
 	public sweepGarbage(address: number): boolean {
 		return this.phase() === GcPhase.Sweep && this.markColor(address) === (this.white() ^ 1);
 	}
@@ -156,13 +153,7 @@ export class GcHeap {
 		if (valueTagHasGcEdge(tag)) this.writeBarrier(address, link);
 	}
 	public writeBarrier(address: number, link: number): void {
-		let flags = this.memory.readRamRecordByte(address + GC_COLOR_OFFSET);
-		if ((flags & (GC_OLD | GC_REMEMBERED)) === GC_OLD) {
-			this.arena.trackGcPage(HeapGcPages.Remembered, address);
-			flags |= GC_REMEMBERED;
-			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, flags);
-		}
-		if ((flags & GC_COLOR_MASK) === 3) this.enqueue(address, link, GC_CHANGED_HEAD);
+		if (this.markColor(address) === 3) this.enqueue(address, link, GC_CHANGED_HEAD);
 	}
 	public tableEntriesMoved(address: number): void {
 		const table = this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD);
@@ -231,10 +222,6 @@ export class GcHeap {
 		if (this.markColor(address) === 3) this.enqueue(address, GC_RECORD_LINK, GC_CHANGED_HEAD);
 		return 0;
 	};
-	private readonly visitWeakEntries = (table: number): number => {
-		this.clearWeakRange(table, this.tableMode(table), 0, this.tables.storedSlotCount(table));
-		return this.tables.scanSlots(table);
-	};
 	private readonly startWeakClear = (table: number): number => {
 		this.memory.writeRamRecordPair(this.controlOffset + GC_TRACE_RECORD, table, TABLE_MODE_PENDING);
 		return 0;
@@ -282,16 +269,6 @@ export class GcHeap {
 	public allocationBytes(address: number): number {
 		return this.threads.allocationBytes(address);
 	}
-	private tableMode(table: number): number {
-		const meta = this.tables.metatableAddress(table);
-		if (meta === 0) return 0;
-		const record = this.tableRecordAddress(meta);
-		if (record === 0) return 0;
-		this.tables.loadStringKey(record, this.modeKey, this.scratch, 0);
-		const mode = this.scratch.get(0);
-		this.scratch.setNil(0);
-		return this.weakModeBits(mode);
-	}
 	private weakModeBits(mode: Value): number {
 		if (valueTag(mode) !== ValueTag.String) return 0;
 		const id = valuePayload(mode), pool = this.cpu.stringPool;
@@ -325,7 +302,7 @@ export class GcHeap {
 		}
 		return address === 0 ? 0 : this.weakModeBits(probe.value);
 	}
-	private trace(atomic: boolean, limit = 0x7fffffff): number {
+	private trace(atomic: boolean, limit: number): number {
 		const index = this.indexWord(GC_TRACE_HEAD), offset = index << GC_RECORD_SHIFT, address = RAM_BASE + offset;
 		const kind = offset < this.arena.managementOffset() ? this.memory.readRamRecordByte(address) : 0;
 		const slotClass = kind === ValueTag.Table || kind === UPVALUE_RECORD_KIND || kind === THREAD_RECORD_KIND
@@ -343,9 +320,7 @@ export class GcHeap {
 		const packed = this.memory.readRamRecordWord(link);
 		this.memory.writeRamRecordWord(this.controlOffset + GC_TRACE_HEAD, packed & GC_GRAY_INDEX_MASK);
 		this.memory.writeRamRecordWord(link, cell ? 0 : packed & ~GC_GRAY_INDEX_MASK);
-		const flags = this.memory.readRamRecordByte(address + GC_COLOR_OFFSET);
-		if (this.minor && (flags & GC_OLD) !== 0) this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, GC_OLD | this.white());
-		else this.setColor(address, 3);
+		this.setColor(address, 3);
 		if (table) return this.traceTable(address, limit);
 		if (cell) {
 			this.markValue(Upvalue.load(this.memory, address));
@@ -500,8 +475,7 @@ export class GcHeap {
 		if (meta !== 0 && !resumingMode) this.markTable(meta);
 		const words = resumingMode ? 0 : TableRecords.HEADER_BYTES >>> 2;
 		let mode = 0;
-		if (this.minor) mode = this.tableMode(address);
-		else if (meta !== 0 || resumingMode) {
+		if (meta !== 0 || resumingMode) {
 			const before = this.modeProbeWork;
 			mode = this.probeTableMode(address, Math.max(0, limit - words));
 			limit -= this.modeProbeWork - before;
@@ -609,13 +583,23 @@ export class GcHeap {
 	}
 	/** Only the stopped mutator may advance the final pass. */
 	public finishFinalMark(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil()): number {
-		let work = 0;
-		while (this.finalMarkPending()) work += this.stepFinalMark(t0, t1, t2);
-		return work;
+		if (!this.finalMarkPending()) return 0;
+		this.diagnostics?.beginStep();
+		this.diagnostics?.beginAtomic();
+		try {
+			let work = 0;
+			do { work += this.finalMarkWork(t0, t1, t2); } while (this.finalMarkPending());
+			return work;
+		} finally { this.diagnostics?.endStep(); }
 	}
 
 	public stepFinalMark(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil()): number {
+		this.diagnostics?.beginStep();
 		this.diagnostics?.beginAtomic();
+		try { return this.finalMarkWork(t0, t1, t2); }
+		finally { this.diagnostics?.endStep(); }
+	}
+	private finalMarkWork(t0: Value, t1: Value, t2: Value): number {
 		let limit = GC_STEP_WORDS, work = 0;
 		if (this.remarkStage() === RemarkStage.None) this.setRemarkStage(RemarkStage.Threads);
 		if (this.remarkStage() <= RemarkStage.Weak) {
@@ -684,67 +668,17 @@ export class GcHeap {
 		return work;
 	}
 
-	private resolveWeak(): number {
-		let work = 0;
-		while (this.indexWord(GC_TRACE_HEAD) !== 0) work += this.trace(true) + this.cpu.stringPool.takeMarkWork();
-		this.diagnostics?.phase('weakNanoseconds');
-		work += this.visitList(GC_WEAK_VISITS, ValueTag.Table, true, this.visitWeakEntries);
-		return work + this.cpu.stringPool.takeMarkWork();
-	}
-
-	private readonly seedRemembered = (address: number): number => {
-		const header = this.memory.readRamRecordWord(address), kind = header & 0xff;
-		if ((header & (GC_REMEMBERED << 8)) !== 0) {
-			if (kind === ValueTag.Table) this.enqueue(address, GC_RECORD_LINK, GC_TRACE_HEAD);
-			else if (kind === UPVALUE_RECORD_KIND && !Upvalue.isOpen(this.memory, address))
-				this.enqueue(address, UPVALUE_NEXT, GC_TRACE_HEAD);
-		}
-		return 1;
-	};
-	private readonly seedThread = (address: number): number => {
-		const header = this.memory.readRamRecordWord(address);
-		if ((header & (0xff | (GC_OLD << 8))) === (THREAD_RECORD_KIND | (GC_OLD << 8)))
-			this.enqueue(address, GC_RECORD_LINK, GC_TRACE_HEAD);
-		return 1;
-	};
-	private readonly sweepYoung = (address: number): number => this.sweepRecord(0, address);
-
-	public collectYoung(t0: Value, t1: Value, t2: Value): number {
-		this.diagnostics?.beginStep(true);
-		if (this.diagnostics !== null) ++this.diagnostics.collections;
-		this.diagnostics?.phase('rootsNanoseconds');
-		this.minor = true;
-		this.markString(this.modeKey);
-		this.cpu.markHeapRoots(this);
-		this.markValue(t0); this.markValue(t1); this.markValue(t2);
-		this.cpu.stringPool.markLocalRoots(true);
-		let work = this.cpu.collectionRootWordCount() + this.cpu.stringPool.takeMarkWork();
-		work += this.arena.visitGcPages(HeapGcPages.Remembered, this.seedRemembered);
-		work += this.arena.visitGcPages(HeapGcPages.Threads, this.seedThread);
-		this.diagnostics?.phase('traceNanoseconds');
-		work += this.resolveWeak();
-		this.diagnostics?.phase('sweepNanoseconds');
-		work += this.arena.visitGcPages(HeapGcPages.Young, this.sweepYoung);
-		this.arena.clearGcPages(HeapGcPages.Young);
-		this.arena.clearGcPages(HeapGcPages.Remembered);
-		this.minor = false;
-		this.diagnostics?.endStep();
-		return work;
-	}
 	private readonly sweepRecord = (growingThread: number, address: number, compactThreads = false): number => {
 		const white = this.white();
-		const header = this.memory.readRamRecordWord(address), kind = header & 0xff, flags = (header >>> 8) & 0xff;
-		if (this.minor && kind === BLUA32_STRING_RECORD_KIND) return 1 + this.cpu.stringPool.sweepYoungBucket(address);
-		if (this.minor && (flags & GC_OLD) !== 0) return 1;
-		const garbage = (flags & GC_COLOR_MASK) === (white ^ (this.minor ? 0 : 1));
-		const survivor = white | (this.minor ? GC_OLD : flags & ~GC_COLOR_MASK);
+		const header = this.memory.readRamRecordWord(address), kind = header & 0xff;
+		const garbage = ((header >>> 8) & GC_COLOR_MASK) === (white ^ 1);
 		if (kind === ValueTag.Table || kind === UPVALUE_RECORD_KIND || kind === ValueTag.Closure) {
 			if (garbage) {
 				if (kind === ValueTag.Table) {
 					this.tables.freeRecord(address);
 					this.onRecordRetirement?.(address);
 				} else {
-				if (kind === ValueTag.Closure) this.cpu.retireStaticClosure(address);
+					if (kind === ValueTag.Closure) this.cpu.retireStaticClosure(address);
 					const bytes = kind === UPVALUE_RECORD_KIND ? UPVALUE_HEAP_BYTES
 						: Closure.closureRecordBytes(Closure.captureCount(this.memory, address),
 							(header & (Closure.CLOSURE_LATCHED_PROTOTYPE << (8 * Closure.CLOSURE_BINDING_FLAGS))) !== 0);
@@ -753,7 +687,7 @@ export class GcHeap {
 				}
 				return -1;
 			}
-			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, survivor);
+			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, white);
 			return 1;
 		}
 		if (kind !== THREAD_RECORD_KIND || this.threadRecordAddress(address) !== address) return 1;
@@ -761,7 +695,7 @@ export class GcHeap {
 		this.threads.readLayout(address, layout);
 		const work = ceilDiv4(THREAD_HEAP_BYTES + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations));
 		if (!garbage) {
-			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, survivor);
+			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, white);
 			const copied = compactThreads && address !== growingThread ? this.threads.shrinkStack(address, layout) : 0;
 			// Existing execution views follow raw relocation; they are never GC roots here.
 			if (copied !== 0) this.cpu.rebindRelocatedThread(address);
@@ -777,13 +711,15 @@ export class GcHeap {
 	};
 	private readonly sweepAndCompact = (growingThread: number, address: number): number => this.sweepRecord(growingThread, address, true);
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false): number {
+		// Explicit and space-exhausted collection can finish the final pass synchronously.
+		if (this.finalMarkPending()) return this.finishFinalMark(t0, t1, t2);
 		this.diagnostics?.beginStep();
 		try { return this.stepWork(t0, t1, t2, growingThread, compactThreads); }
 		finally { this.diagnostics?.endStep(); }
 	}
 	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number, compactThreads: boolean): number {
 		let work = 0, limit = GC_STEP_WORDS;
-		if (this.phase() !== GcPhase.Atomic && this.remarkStage() !== RemarkStage.None) {
+		if (this.remarkStage() !== RemarkStage.None) {
 			limit -= this.remarkVisits(limit);
 			if (this.remarkStage() !== RemarkStage.Roots) return 0;
 			work = this.remarkRoots(t0, t1, t2, limit, work, false);
@@ -829,9 +765,7 @@ export class GcHeap {
 						}
 					}
 					break;
-				case GcPhase.Atomic:
-					// Explicit and space-exhausted collection stay synchronous.
-					return work + this.finishFinalMark(t0, t1, t2);
+				case GcPhase.Atomic: return work;
 				case GcPhase.Sweep:
 					this.diagnostics?.phase('sweepNanoseconds');
 					work += this.arena.sweepObjects(GC_STEP_WORDS - work, growingThread,

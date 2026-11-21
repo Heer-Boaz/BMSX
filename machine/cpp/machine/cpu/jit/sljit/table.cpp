@@ -121,15 +121,15 @@ void NativeLowering::emitArrayStore(int value, NativeStorePlan plan, NativeBlock
 
 void NativeLowering::emitTableStoreBarrier(int value, NativeGcBarrier barrier) {
 	if (barrier == NativeGcBarrier::None) return;
-	const auto mutations = emitGcMutationBranches(SLJIT_MEM1(SLJIT_R0), GC_COLOR_OFFSET, value, barrier, SLJIT_R2, SLJIT_R3);
-	m_tableStoreBarriers.push_back({mutations, m_cache.state(), sljit_emit_label(m_compiler)});
+	auto* mutation = emitGcMutationBranch(SLJIT_MEM1(SLJIT_R0), GC_COLOR_OFFSET, value, barrier, SLJIT_R2, SLJIT_R3);
+	m_tableStoreBarriers.push_back({mutation, m_cache.state(), sljit_emit_label(m_compiler)});
 }
 
 void NativeLowering::emitTableStoreBarriers() {
 	auto* c = m_compiler;
 	for (const auto& barrier : m_tableStoreBarriers) {
 		auto* entry = sljit_emit_label(c);
-		for (auto* branch : barrier.mutations) sljit_set_label(branch, entry);
+		sljit_set_label(barrier.mutation, entry);
 		m_cache.setState(barrier.registers);
 		m_cache.spillCall(false, 0);
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));

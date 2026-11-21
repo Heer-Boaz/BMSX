@@ -98,7 +98,7 @@ private:
 	void admitTableValueWrite(NativeBlockExitSite&);
 	void emitTableValueWrite(int value);
 	// flags cannot address the mark byte; test is first clobbered after the load.
-	std::array<sljit_jump*, 2> emitGcMutationBranches(sljit_s32 mark, sljit_sw markArg,
+	sljit_jump* emitGcMutationBranch(sljit_s32 mark, sljit_sw markArg,
 		int source, NativeGcBarrier, sljit_s32 flags, sljit_s32 test);
 	void emitGuardNoGcMutation(NativeBlockExitSite&, sljit_s32 mark, sljit_sw markArg,
 		int source, NativeGcBarrier barrier, sljit_s32 scratch, sljit_s32 test);
@@ -152,7 +152,7 @@ private:
 	};
 	std::vector<RomRead> m_romReads;
 	struct TableStoreBarrier {
-		std::array<sljit_jump*, 2> mutations;
+		sljit_jump* mutation;
 		State registers;
 		sljit_label* resumeStore;
 	};

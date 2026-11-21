@@ -31,7 +31,7 @@ void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 
 	sljit_set_label(clear, sljit_emit_label(c));
 }
 
-std::array<sljit_jump*, 2> NativeLowering::emitGcMutationBranches(sljit_s32 mark, sljit_sw markArg,
+sljit_jump* NativeLowering::emitGcMutationBranch(sljit_s32 mark, sljit_sw markArg,
 	int source, NativeGcBarrier barrier, sljit_s32 flags, sljit_s32 test) {
 	auto* c = m_compiler;
 	std::array<sljit_jump*, 2> scalar{};
@@ -46,22 +46,19 @@ std::array<sljit_jump*, 2> NativeLowering::emitGcMutationBranches(sljit_s32 mark
 		};
 	}
 	sljit_emit_op1(c, SLJIT_MOV_U8, flags, 0, mark, markArg);
-	sljit_emit_op2(c, SLJIT_AND32, test, 0, flags, 0, SLJIT_IMM, GC_OLD | GC_REMEMBERED);
-	auto* remember = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, test, 0, SLJIT_IMM, GC_OLD);
 	sljit_emit_op2(c, SLJIT_AND32, test, 0, flags, 0, SLJIT_IMM, GC_COLOR_MASK);
 	auto* revisit = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, test, 0, SLJIT_IMM, 3);
 	if (barrier == NativeGcBarrier::Dynamic) {
 		auto* ready = sljit_emit_label(c);
 		for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
 	}
-	return {remember, revisit};
+	return revisit;
 }
 
 void NativeLowering::emitGuardNoGcMutation(NativeBlockExitSite& exit, sljit_s32 mark, sljit_sw markArg,
 	int source, NativeGcBarrier barrier, sljit_s32 flags, sljit_s32 test) {
 	if (barrier == NativeGcBarrier::None) return;
-	for (auto* mutation : emitGcMutationBranches(mark, markArg, source, barrier, flags, test))
-		fault(mutation, exit, m_cache.state());
+	fault(emitGcMutationBranch(mark, markArg, source, barrier, flags, test), exit, m_cache.state());
 }
 
 void NativeLowering::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {

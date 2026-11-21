@@ -5,7 +5,7 @@ import { HEAP_PAGE_SIZE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
-import { GC_COLOR_OFFSET, GC_OLD, GC_REMEMBERED, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
@@ -342,41 +342,6 @@ test('weak keys still trace strong values while weak keys and values release a c
 	assert.equal(gc.tableRecordAddress(value), value, 'its strong value was already marked for this cycle');
 	gc.collect();
 	assert.equal(gc.tableRecordAddress(value), 0);
-});
-
-test('small collection skips scalar-only table writes, follows live keys and clears young weak keys', () => {
-	const cpu = machine(), { gc, memory, stringPool } = cpu;
-	const frame = cpu.rootThread.currentFrame!;
-	const strong = cpu.createTable(4096, 4), weak = cpu.createTable(0, 4);
-	const mode = cpu.createTable(0, 1), field = stringPool.intern('counter');
-	const tables = gc.tables;
-	tables.setStringKey(mode, stringPool.intern('__mode'), valueString(stringPool.intern('k')));
-	tables.setMetatableAddress(weak, mode);
-	tables.setStringKey(strong, field, valueInteger(0));
-	tables.setInteger(strong, 1, valueBool(true));
-	frame.registers.setTable(0, strong); frame.registers.setTable(1, weak); frame.top = 2;
-	const minor = () => gc.collectYoung(valueNil(), valueNil(), valueNil());
-	minor();
-	assert.ok(memory.readRamRecordByte(strong + GC_COLOR_OFFSET) & GC_OLD);
-	const quietWork = minor();
-	for (let counter = 1; counter <= 8; ++counter) {
-		tables.storeStringKeyCached(strong, field, 0, ValueTag.Integer, counter);
-		tables.storeIntegerArrayKey(strong, 1, ValueTag.Float, 0x3f800000);
-	}
-	assert.equal(memory.readRamRecordByte(strong + GC_COLOR_OFFSET) & GC_REMEMBERED, 0);
-	assert.equal(minor(), quietWork, 'an existing String key and immediate values do not add scan cycles');
-	const strongKey = valueTable(cpu.createTable()), weakKey = valueTable(cpu.createTable());
-	tables.set(strong, strongKey, valueInteger(12));
-	tables.set(weak, weakKey, valueInteger(15));
-	const newField = stringPool.intern('young-key:new-name');
-	tables.setStringKey(strong, newField, valueInteger(2));
-	assert.ok(memory.readRamRecordByte(strong + GC_COLOR_OFFSET) & GC_REMEMBERED);
-	assert.ok(minor() >= quietWork + 8 + 4096 + 8, 'a new reference pays for the actual reserved-slot scan');
-	assert.equal(gc.tableRecordAddress(valuePayload(strongKey)), valuePayload(strongKey));
-	assert.equal(gc.tableRecordAddress(valuePayload(weakKey)), 0);
-	assert.equal(tables.get(weak, weakKey), valueNil());
-	assert.equal(stringPool.find('young-key:new-name'), newField);
-	assert.equal(tables.getStringKey(strong, newField), valueInteger(2));
 });
 
 test('remark resumes a real metatable collision chain and withdraws its cursor on a shape change', () => {
@@ -796,16 +761,25 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 });
 
 
-test('short-lived allocations above two MiB retained are served by young collections', () => {
+test('allocation pressure advances resumable collection above two MiB retained', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	const retained = cpu.createTable(419430, 0);
 	frame.registers.setTable(0, retained); frame.top = 1;
 	cpu.collectTrackedHeapBytes();
 	const diagnostics = cpu.gc.diagnostics = new GcDiagnostics();
-	for (let i = 0; i < 4000; ++i) cpu.createTable(8, 0);
-	assert.ok(diagnostics.minorCollections >= 2, 'repeated allocation bursts collect the young generation');
-	assert.equal(diagnostics.steps, diagnostics.minorCollections, 'no major step retraces the retained heap');
-	assert.equal(diagnostics.fullCollections, 0);
+	let pauses = 0;
+	for (let i = 0; i < 2400; ++i) {
+		const before = cpu.instructionBudgetRemaining;
+		cpu.createTable(384, 0);
+		assert.ok(before - cpu.instructionBudgetRemaining <= GC_STEP_WORDS + 32, 'ordinary admission never drains the graph');
+		if (!cpu.gc.finalMarkPending()) continue;
+		++pauses;
+		for (let step = 0; cpu.gc.finalMarkPending() && step < 256; ++step) cpu.gc.stepFinalMark();
+		assert.equal(cpu.gc.finalMarkPending(), false);
+	}
+	assert.ok(pauses >= 2, 'retained data survives repeated automatically paced cycles');
+	assert.equal(diagnostics.fullCollections, 0, 'no allocation required a space-exhausted collection');
+	assert.ok(diagnostics.atomicNanoseconds > 0 && diagnostics.steps > pauses);
 	assert.ok(cpu.luaHeap.usedBytes() <= cpu.luaHeap.capacity());
 	assert.equal(frame.registers.getPayload(0), retained);
 });

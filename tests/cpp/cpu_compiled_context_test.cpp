@@ -353,7 +353,7 @@ void hotUpvalueAlias() {
 		require(frame.registers.get(3) == valueInteger(10) && frame.registers.get(4) == valueInteger(9)
 			&& frame.registers.get(6) == value && static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 7, "a self-alias side exit writes the actual cell without losing live values or extending top");
 	}
-	for (const u8 flags : {GC_OLD, static_cast<u8>(GC_OLD | GC_REMEMBERED | 3u)}) {
+	for (const u8 flags : {u8{0}, u8{3}}) {
 		for (auto* m : {&native, &scalar}) {
 			auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
 			const auto child = valueTable(m->cpu.createTable().address());
@@ -372,10 +372,10 @@ void hotUpvalueAlias() {
 		test::runCpuParity(native.cpu, scalar.cpu, loopCycles);
 		requireParity(native, scalar);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-		require(writes.entries == previousWrites + 2, "the open write and the GC barrier both reach the CPU's semantic store");
+		require(writes.entries == previousWrites + (flags == 3u ? 2u : 1u), "only the black reference write joins the open write on the semantic route");
 #endif
 		const bool black = (flags & GC_COLOR_MASK) == 3u;
-		require(native.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | (black ? 2u : 0u))
+		require(native.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (black ? 2u : flags)
 			&& Upvalue::load(native.memory, closed) == frame.registers.get(12)
 			&& frame.registers.get(6) == frame.registers.get(12),
 			"CPU SETUP owns the reference barrier and resumes the compiled GETUP with the committed value");
@@ -475,7 +475,7 @@ void rawContextValues(CpuMachine& machine) {
 			&& captureRegisters.get(6) == value && Upvalue::load(machine.memory, closed) == value && state.registerTop == 7,
 			"native outer and closed cells preserve raw values without invalidating unrelated register definitions");
 	}
-	machine.memory.writeRamRecordByte(closed + GC_COLOR_OFFSET, GC_OLD | heap.white());
+	machine.memory.writeRamRecordByte(closed + GC_COLOR_OFFSET, heap.white());
 	const Value scalar = valueFloatBits(0xffa54321u);
 	captureRegisters.set(12, scalar);
 	NativeBlockRunState closedStore{.frame = &frame, .heap = &heap,
@@ -483,21 +483,17 @@ void rawContextValues(CpuMachine& machine) {
 	const auto& scalarExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
 	require(scalarExit.exit == NativeBlockExit::Continue && scalarExit.currentPc == outerRead.source.back().pc && scalarExit.nextPc == 0
 		&& Upvalue::load(machine.memory, closed) == scalar
-		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | heap.white()),
-		"native scalar writes do not remember old closed cells");
+		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (heap.white()),
+		"native scalar writes leave an unvisited closed cell unchanged");
 	const Value child = valueTable(cpu.createTable().address());
 	captureRegisters.set(12, child);
 	closedStore.remainingCycles = 100;
-	const auto& rememberedExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
-	require(rememberedExit.exit == NativeBlockExit::WriteUpvalue && rememberedExit.currentPc == outerRead.source[3].pc
-		&& rememberedExit.nextPc == outerRead.source[4].pc
-		&& Upvalue::load(machine.memory, closed) == scalar, "the first reference write to an old cell leaves before changing either lane");
-	Upvalue::store(heap, closed, child);
-	require(machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | heap.white())
-		&& Upvalue::load(machine.memory, closed) == child,
-		"the semantic store publishes the new edge and remembers its owner");
+	const auto& whiteReferenceExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
+	require(whiteReferenceExit.exit == NativeBlockExit::Continue && whiteReferenceExit.currentPc == outerRead.source.back().pc
+		&& Upvalue::load(machine.memory, closed) == child && machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == heap.white(),
+		"an unvisited cell accepts the reference natively without a collector mutation");
 
-	machine.memory.writeRamRecordByte(closed + GC_COLOR_OFFSET, GC_OLD | GC_REMEMBERED | 3u);
+	machine.memory.writeRamRecordByte(closed + GC_COLOR_OFFSET, 3u);
 	const u32 head = heap.changedHeadOffset();
 	const u32 previousHead = machine.memory.readRamRecordWord(head);
 	auto& watches = machine.memory.ramWriteWatches();
@@ -509,7 +505,7 @@ void rawContextValues(CpuMachine& machine) {
 	require(blackScalarExit.exit == NativeBlockExit::Continue && blackScalarExit.currentPc == outerRead.source.back().pc
 		&& blackScalarExit.nextPc == 0
 		&& Upvalue::load(machine.memory, closed) == valueInteger(23)
-		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 3u)
+		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == 3u
 		&& machine.memory.readRamRecordWord(head) == previousHead,
 		"a scalar write to a black cell does not touch its watched queue link");
 	captureRegisters.set(12, child);
@@ -518,7 +514,7 @@ void rawContextValues(CpuMachine& machine) {
 	require(watchedLinkExit.exit == NativeBlockExit::WriteUpvalue && watchedLinkExit.currentPc == outerRead.source[3].pc
 		&& watchedLinkExit.nextPc == outerRead.source[4].pc
 		&& Upvalue::load(machine.memory, closed) == valueInteger(23)
-		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 3u)
+		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == 3u
 		&& machine.memory.readRamRecordWord(head) == previousHead,
 		"a watched queue link defers the reference barrier and its value write");
 	watches.clearCodeRange(cellLink, sizeof(u32));
@@ -526,12 +522,12 @@ void rawContextValues(CpuMachine& machine) {
 	const auto& blackReferenceExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
 	require(blackReferenceExit.exit == NativeBlockExit::WriteUpvalue && blackReferenceExit.currentPc == outerRead.source[3].pc
 		&& blackReferenceExit.nextPc == outerRead.source[4].pc && Upvalue::load(machine.memory, closed) == valueInteger(23)
-		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 3u)
+		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == 3u
 		&& machine.memory.readRamRecordWord(head) == previousHead,
 		"even an unwatched collector update leaves native code before changing the cell or queue");
 	Upvalue::store(heap, closed, child);
 	require(Upvalue::load(machine.memory, closed) == child
-		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 2u)
+		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == 2u
 		&& machine.memory.readRamRecordWord(closed + UPVALUE_NEXT) == previousHead
 		&& machine.memory.readRamRecordWord(head) == ((closed & GC_RECORD_MASK) >> GC_RECORD_SHIFT),
 		"the semantic store publishes both the reference and the closed cell's raw changed-queue link");

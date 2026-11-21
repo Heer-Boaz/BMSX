@@ -252,40 +252,6 @@ void temporaryRootsAndUnreachablePool() {
 		"dead Table incurs one block visit, not another mark pass; its String incurs one visit, not a scan of its bytes");
 }
 
-void referenceWritesPayOnlyForNewEdges() {
-	Machine machine(image()); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap();
-	auto& frame = *cpu.rootThread()->currentFrame;
-	auto strong = cpu.createTable(4096, 4), weak = cpu.createTable(0, 4), mode = cpu.createTable(0, 1);
-	const StringId field = cpu.stringPool().intern("counter");
-	mode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("k")));
-	weak.setMetatableAddress(mode.address());
-	int slot = strong.setStringKey(field, valueInteger(0));
-	strong.setInteger(1, valueBool(true));
-	frame.registers.set(0, valueTable(strong.address()));
-	frame.registers.set(1, valueTable(weak.address()));
-	frame.writeControl(bmsx::FrameField::Top, 2);
-	const auto minor = [&] { return gc.collectYoung(valueNil(), valueNil(), valueNil()); };
-	minor();
-	require(machine.memory.readRamRecordByte(strong.address() + GC_COLOR_OFFSET) & GC_OLD, "owner is actually old");
-	const auto quietWork = minor();
-	for (int counter = 1; counter <= 8; ++counter) {
-		strong.setStringKeyCached(field, valueInteger(counter), slot);
-		strong.setIntegerArrayKey(1, valueFloat(1.0f));
-	}
-	require((machine.memory.readRamRecordByte(strong.address() + GC_COLOR_OFFSET) & GC_REMEMBERED) == 0
-		&& minor() == quietWork, "scalar writes to old array and live hash slots do not add small-collection cycles");
-	const Value strongKey = valueTable(cpu.createTable().address()), weakKey = valueTable(cpu.createTable().address());
-	strong.set(strongKey, valueInteger(12));
-	weak.set(weakKey, valueInteger(15));
-	const StringId newField = cpu.stringPool().intern("young-key:new-name");
-	strong.setStringKey(newField, valueInteger(2));
-	require(minor() >= quietWork + 8 + 4096 + 8, "a new edge pays for the reserved-slot scan");
-	require(gc.tableRecordAddress(valuePayload(strongKey)) == valuePayload(strongKey)
-		&& gc.tableRecordAddress(valuePayload(weakKey)) == 0 && weak.get(weakKey) == valueNil()
-		&& cpu.stringPool().find("young-key:new-name") == newField && strong.getStringKey(newField) == valueInteger(2),
-		"tracked Table and String keys survive; a key that is only weak is removed");
-}
-
 void incrementalStateAndBarriers() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto roots = cpu.createTable(1024, 0);
@@ -1041,7 +1007,18 @@ void highRetainedPacing() {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const auto before = cpu.diagnosticGcProfile();
 #endif
-	for (int i = 0; i < 24000; ++i) cpu.createTable(8, 0);
+		int pauses = 0;
+	for (int i = 0; i < 2400; ++i) {
+		const auto before = cpu.instructionBudgetRemaining;
+		cpu.createTable(384, 0);
+		require(before - cpu.instructionBudgetRemaining <= static_cast<int>(GC_STEP_WORDS) + 32,
+			"ordinary allocation advances at most one marking/reclamation quantum");
+		if (!cpu.gcHeap().finalMarkPending()) continue;
+		++pauses;
+		for (int step = 0; cpu.gcHeap().finalMarkPending() && step < 256; ++step) cpu.gcHeap().stepFinalMark();
+		require(!cpu.gcHeap().finalMarkPending(), "the stopped final pass drains in bounded quanta");
+	}
+	require(pauses >= 2, "retained data survives repeated automatically paced cycles");
 	require(cpu.luaHeap().usedBytes() <= cpu.luaHeap().capacity() && frame.registers.get(0) == valueTable(retained.address()),
 		"retained pool and transient allocation coexist inside the physical capacity");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
@@ -1063,7 +1040,7 @@ int main(int argc, char** argv) {
 		canonicalPoolAndRootRanges();
 		allocationAdmissionUsesLogicalBytes(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
-		referenceWritesPayOnlyForNewEdges(); incrementalStateAndBarriers();
+		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
 		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues(); incrementalSharedWeakMode();
 		resumesFinalWeakCleanup(); resumesMetatableModeProbe(); resumesWeakTableRemark(); consumesSelfLinkedGrayEdge();

@@ -1,6 +1,6 @@
 import { closureRecordBytes } from './closure';
 import { UPVALUE_HEAP_BYTES, initialize as initializeCell } from './upvalue';
-import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_YOUNG_DEBT_OFFSET } from './heap_allocator';
+import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from './heap_allocator';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
 import { GC_ASSIST_BYTES } from './gc_heap';
@@ -11,17 +11,14 @@ import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD
 
 const NO_NEW_CELLS = new Uint32Array(0);
 const MIN_COLLECTION_BYTES = 1024 * 1024;
-const YOUNG_INTERVAL_BYTES = 128 * 1024;
 
 export class LuaHeap {
 	private readonly targetAddress: number;
-	private readonly youngDebtAddress: number;
 	private readonly occupiedAddress: number;
 
 	public constructor(private readonly cpu: CPU) {
 		const management = cpu.heapAllocator.managementOffset();
 		this.targetAddress = management + HEAP_COLLECTION_TARGET_OFFSET;
-		this.youngDebtAddress = management + HEAP_YOUNG_DEBT_OFFSET;
 		this.occupiedAddress = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 		this.setCollectionTarget(MIN_COLLECTION_BYTES);
 	}
@@ -39,14 +36,7 @@ export class LuaHeap {
 		const capacity = this.capacity();
 		const nextBytes = this.usedBytes() + byteCount;
 		const exhausted = nextBytes > capacity;
-		if (!exhausted && nextBytes <= this.collectionTarget()) {
-			const memory = this.cpu.memory, debt = memory.readRamRecordWord(this.youngDebtAddress);
-			if (debt !== 0 && debt + byteCount > YOUNG_INTERVAL_BYTES && !this.cpu.gc.active()) {
-				this.cpu.instructionBudgetRemaining -= this.cpu.gc.collectYoung(root0, root1, root2);
-				memory.writeRamRecordWord(this.youngDebtAddress, 0);
-			}
-			return false;
-		}
+		if (!exhausted && nextBytes <= this.collectionTarget()) return false;
 		if (exhausted) {
 			this.collectRuntime(root0, root1, root2, growingThread);
 		} else if (!this.cpu.gc.finalMarkPending()) {
@@ -86,8 +76,7 @@ export class LuaHeap {
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
 			const block = this.cpu.heapAllocator.allocate(bytes, true);
 			if (block !== 0) {
-				this.addYoungDebt(bytes);
-				return block;
+						return block;
 			}
 			if (attempt === 0) this.collectRuntime(root, valueNil(), valueNil(), thread);
 		}
@@ -136,7 +125,6 @@ export class LuaHeap {
 					const threads = this.cpu.gc.threads;
 					if (values !== 0) threads.replaceStack(address, values, valueCapacity);
 					if (frames !== 0) threads.replaceControls(address, ThreadField.FrameBlock, frames, frameCapacity);
-					this.addYoungDebt(charged);
 					return;
 				}
 				if (values !== 0) arena.free(values);
@@ -196,12 +184,6 @@ export class LuaHeap {
 	private accountAllocation(bytes: number): void {
 		const memory = this.cpu.memory;
 		memory.writeRamRecordWord(this.occupiedAddress, memory.readRamRecordWord(this.occupiedAddress) + bytes);
-		this.addYoungDebt(bytes);
-	}
-
-	private addYoungDebt(bytes: number): void {
-		const memory = this.cpu.memory;
-		memory.writeRamRecordWord(this.youngDebtAddress, memory.readRamRecordWord(this.youngDebtAddress) + bytes);
 	}
 
 	public releaseRecord(address: number, bytes: number): void {
@@ -225,7 +207,6 @@ export class LuaHeap {
 
 
 	public finishCollection(): void {
-		this.cpu.memory.writeRamRecordWord(this.youngDebtAddress, 0);
 		const liveBytes = this.usedBytes();
 		const capacity = this.capacity();
 		this.setCollectionTarget(Math.max(liveBytes + GC_ASSIST_BYTES,

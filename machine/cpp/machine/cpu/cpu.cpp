@@ -2317,14 +2317,6 @@ void CPU::unwindToDepth(int targetDepth, bool chargeCaptures) {
 	m_activeThread->setProtectedDepth(depth);
 }
 
-size_t CPU::collectionRootWordCount() const {
-	size_t words = 3 * (m_systemGlobalBank.count() + m_globalBank.count());
-	for (const auto& image : m_executionImagesByDomain) {
-		if (image) words += 2 * image->constPool.size();
-	}
-	return words;
-}
-
 size_t CPU::collectHeap(Value root0, Value root1, Value root2, u32 growingThread) {
 	return m_heap.collect(root0, root1, root2, growingThread);
 }
@@ -2824,15 +2816,6 @@ void CPU::markRootThreads(GcHeap& heap) {
 	if (m_activeThread) heap.markThread(m_activeThread->address);
 	heap.markThread(m_completionThreadAddress);
 	heap.markThread(m_haltedUntilIrqThreadAddress);
-}
-
-void CPU::markRoots(GcHeap& heap) {
-	markRootHead(heap);
-	for (u32 kind = static_cast<u32>(GcRootBank::SystemGlobals); kind < static_cast<u32>(GcRootBank::End); ++kind) {
-		const auto bank = static_cast<GcRootBank>(kind);
-		if (const auto end = rootBankSlots(bank)) markRootBank(heap, bank, 0u, end);
-	}
-	markRootThreads(heap);
 }
 
 // end repeated-sequence-acceptable

@@ -1,6 +1,6 @@
 import type { Memory } from '../memory/memory';
 import type { HeapAllocator } from './heap_allocator';
-import { HeapGcPages, heapAllocationBytes } from './heap_allocator';
+import { heapAllocationBytes } from './heap_allocator';
 import { FRAME_COMPLETION, FRAME_CONTROL_BYTES, FRAME_EXCEPTION, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, FrameField, frameExecutionBank } from './call_state';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { writeLE32 } from '../../common/endian';
@@ -104,7 +104,6 @@ export class ThreadRecords {
 		}
 	}
 	public initializeRecord(address: number, block: number, frameBlock: number, entry: number, white: number): void {
-		this.arena.trackGcPage(HeapGcPages.Threads, address);
 		const memory = this.memory, ram = memory.ramData(), offset = address & RAM_RECORD_WORD_MASK;
 		const start = block & RAM_RECORD_WORD_MASK, control = frameBlock & RAM_RECORD_WORD_MASK;
 		ram.fill(0, offset, offset + THREAD_HEAP_BYTES);

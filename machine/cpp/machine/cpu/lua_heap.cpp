@@ -16,7 +16,6 @@ void stressHeapAllocation(LuaHeap& heap);
 
 LuaHeap::LuaHeap(CPU& cpu)
 	: m_cpu(cpu), m_targetAddress(cpu.heapAllocator().managementOffset() + HEAP_COLLECTION_TARGET_OFFSET),
-	  m_youngDebtAddress(cpu.heapAllocator().managementOffset() + HEAP_YOUNG_DEBT_OFFSET),
 	  m_occupiedAddress(cpu.heapAllocator().managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET) {
 	setCollectionTarget(MIN_COLLECTION_BYTES);
 }
@@ -40,15 +39,7 @@ bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, u32
 	const size_t limit = capacity();
 	const size_t nextBytes = usedBytes() + byteCount;
 	const bool exhausted = nextBytes > limit;
-	auto& memory = m_cpu.memory();
-	if (!exhausted && nextBytes <= collectionTarget()) {
-		const size_t debt = memory.readRamRecordWord(m_youngDebtAddress);
-		if (debt != 0 && debt + byteCount > YOUNG_INTERVAL_BYTES && !m_cpu.collecting()) {
-			m_cpu.instructionBudgetRemaining -= static_cast<int>(m_cpu.gcHeap().collectYoung(root0, root1, root2));
-			memory.writeRamRecordWord(m_youngDebtAddress, 0u);
-		}
-		return false;
-	}
+	if (!exhausted && nextBytes <= collectionTarget()) return false;
 	if (exhausted) {
 		collectRuntime(root0, root1, root2, growingThread);
 	} else if (!m_cpu.gcHeap().finalMarkPending()) {
@@ -85,8 +76,7 @@ u32 LuaHeap::allocateStack(u32 bytes, u32 threadAddress, Value root) {
 	const bool collected = admit(bytes, root, valueNil(), valueNil(), threadAddress);
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
 		if (const u32 block = m_cpu.heapAllocator().allocate(bytes, true)) {
-			addYoungDebt(bytes);
-			return block;
+					return block;
 		}
 		if (attempt == 0) collectRuntime(root, valueNil(), valueNil(), threadAddress);
 	}
@@ -130,7 +120,6 @@ void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 fram
 			if (frameBytes == 0u || frames != 0u) {
 				if (values != 0u) ThreadRecord::replaceStack(m_cpu.gcHeap(), address, values, valueCapacity);
 				if (frames != 0u) ThreadRecord::replaceControls(m_cpu.gcHeap(), address, ThreadField::FrameBlock, frames, frameCapacity);
-				addYoungDebt(charged);
 				return;
 			}
 			if (values != 0u) arena.free(values);
@@ -182,12 +171,6 @@ bool LuaHeap::stepRuntime() {
 void LuaHeap::accountAllocation(u32 bytes) {
 	auto& memory = m_cpu.memory();
 	memory.writeRamRecordWord(m_occupiedAddress, memory.readRamRecordWord(m_occupiedAddress) + bytes);
-	addYoungDebt(bytes);
-}
-
-void LuaHeap::addYoungDebt(u32 bytes) {
-	auto& memory = m_cpu.memory();
-	memory.writeRamRecordWord(m_youngDebtAddress, memory.readRamRecordWord(m_youngDebtAddress) + bytes);
 }
 
 void LuaHeap::releaseRecord(u32 address, u32 bytes) {
@@ -211,7 +194,6 @@ size_t LuaHeap::capacity() const {
 }
 
 void LuaHeap::finishCollection() {
-	m_cpu.memory().writeRamRecordWord(m_youngDebtAddress, 0u);
 	const size_t liveBytes = usedBytes();
 	const size_t limit = capacity();
 	setCollectionTarget(static_cast<u32>(std::max(liveBytes + GC_ASSIST_BYTES,

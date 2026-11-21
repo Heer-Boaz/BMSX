@@ -350,7 +350,6 @@ private:
 	void finishProtectedContinuation(u32 continuationIndex, int resultCount);
 	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth, bool chargeCaptures);
-	size_t collectionRootWordCount() const;
 	void decodeConstantPool(ExecutionDomainId executionDomainId, u32 tableAddress, ValueSpan constants);
 	void releaseImageData(Blua32ExecutionImage& image);
 	void registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 nameCount, GlobalBank& bank, u32 destination);
@@ -495,7 +494,6 @@ private:
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void resumePendingMemoryOperation();
-	void markRoots(GcHeap& heap);
 	void markRootHead(GcHeap& heap);
 	void markRootThreads(GcHeap& heap);
 	size_t rootBankSlots(GcRootBank bank) const;
