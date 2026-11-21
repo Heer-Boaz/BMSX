@@ -1,7 +1,7 @@
 #include "common/mmap_file.h"
 #include "cartridge_media.h"
 #include "machine/runtime/runtime.h"
-#include "machine/cpu/native_compilation_profile.h"
+#include "machine/cpu/jit/runtime/compilation_profile.h"
 #include "rompack/image.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"

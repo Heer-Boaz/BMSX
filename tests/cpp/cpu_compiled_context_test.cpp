@@ -1,7 +1,7 @@
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
-#include "machine/cpu/native_compiler.h"
+#include "machine/cpu/jit/compiler.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"

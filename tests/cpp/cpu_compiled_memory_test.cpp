@@ -1,7 +1,7 @@
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
-#include "machine/cpu/native_block.h"
+#include "machine/cpu/jit/runtime/block.h"
 #include "support/native_region_fixture.h"
 #include "machine/cpu/table.h"
 #include "machine/devices/irq/controller.h"

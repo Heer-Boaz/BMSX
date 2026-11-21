@@ -1,0 +1,113 @@
+#include "machine/cpu/jit/ir/region.h"
+#include "machine/cpu/jit/ir/liveness.h"
+#include "machine/cpu/jit/ir/type_propagation.h"
+
+#include <algorithm>
+#include <numeric>
+#include "machine/cpu/decoded_instruction.h"
+#include "spec/blua32/cop0.h"
+#include "spec/blua32/instruction_format.h"
+
+namespace bmsx {
+namespace {
+
+struct OperationFlow {
+	using Flow = NativeOperationFlow;
+	Flow operator()(const auto&) const { return Flow::Linear; }
+	Flow operator()(const auto& op) const requires requires { op.terminalExit; } { return Flow::Terminal; }
+	Flow operator()(const NativeJump&) const { return Flow::Terminal; }
+	Flow operator()(const NativeTruthBranch&) const { return Flow::Terminal; }
+	Flow operator()(const NativeComparison&) const { return Flow::Terminal; }
+	Flow operator()(const NativeReplay&) const { return Flow::LeavesNative; }
+
+	Flow operator()(const NativeTableAccess& op) const { return op.ownFieldOnly ? Flow::Linear : Flow::Checkpoint; }
+	Flow operator()(const NativeVararg&) const { return Flow::Checkpoint; }
+	Flow operator()(const NativeLength&) const { return Flow::Checkpoint; }
+	Flow operator()(const NativeMemoryAccess&) const { return Flow::Checkpoint; }
+	Flow operator()(const NativeUpvalueAccess& op) const {
+		return op.access == NativeAccess::Write ? Flow::Checkpoint : Flow::Linear;
+	}
+	Flow operator()(const NativeControlAccess& op) const {
+		switch (op.mode) {
+		case NativeControlMode::ReadWord: case NativeControlMode::ReadZero: return Flow::Linear;
+		case NativeControlMode::WriteWord: return op.field == COP0_STATUS ? Flow::Terminal : Flow::Checkpoint;
+		case NativeControlMode::ConsumeWord: return Flow::Checkpoint;
+		case NativeControlMode::ReadFault: case NativeControlMode::WriteSemantic: return Flow::LeavesNative;
+		}
+		BMSX_UNREACHABLE();
+	}
+};
+
+} // namespace
+
+NativeOperationFlow nativeOperationFlow(const NativeOperation& operation) {
+	return std::visit(OperationFlow{}, operation);
+}
+
+NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, bool cpuOwned, NativeCompilationOptions options,
+	NativeCompileSpecializations specializations) {
+	size_t instructionCount = 0;
+	for (const auto& source : sources) instructionCount += source.instructions.size();
+	m_instructions.reserve(instructionCount);
+	m_blocks.reserve(sources.size());
+	m_sideExits.reserve(instructionCount);
+	std::array<NativeFieldAddressUse, NATIVE_BLOCK_MAX_INSTRUCTIONS> addressUses;
+	for (const auto& source : sources) {
+		const size_t first = m_instructions.size();
+		for (const auto& inst : source.instructions)
+			m_instructions.emplace_back(translateNativeOperation(*inst.decoded));
+		auto operations = std::span(m_instructions).subspan(first);
+		const size_t count = planNativeFieldReads(operations, source.instructions, options.tier, addressUses, specializations);
+		const bool completeRun = count == operations.size();
+		operations = operations.first(count);
+		if (!completeRun) m_instructions.erase(m_instructions.begin() + first + count, m_instructions.end());
+
+		const size_t firstEntry = m_blocks.size();
+		size_t segment = 0;
+		for (size_t index = 0; index < count; ++index) {
+			const bool last = index + 1 == count;
+			if (!last && nativeOperationFlow(operations[index].operation) == NativeOperationFlow::Linear) continue;
+			const size_t length = index - segment + 1;
+			const NativeBlockSource slice{source.instructions.subspan(segment, length),
+				last && completeRun ? source.skippedInstruction : nullptr};
+			buildBlock(slice, operations.subspan(segment, length), cpuOwned);
+			bindOwnFieldAddresses(m_blocks.back(), std::span(addressUses).subspan(segment, length), segment);
+			segment = index + 1;
+		}
+		u16 coveredWords = 0;
+		// Source dependencies cover only this physical run, including
+		// compiler-created continuation entries and any fused following word.
+		for (size_t index = m_blocks.size(); index-- > firstEntry;) {
+			coveredWords += m_blocks[index].sourceWords;
+			m_blocks[index].sourceWords = coveredWords;
+		}
+	}
+
+	// Emission order can differ from guest address order. Only a published
+	// entry at the exact PC is a local successor.
+	std::array<u16, DECODED_PAGE_WORDS> byAddress;
+	const auto directory = std::span(byAddress).first(m_blocks.size());
+	std::iota(directory.begin(), directory.end(), u16{0});
+	std::ranges::sort(directory, {}, [&](u16 index) { return m_blocks[index].firstPc; });
+	const auto entryForPc = [&](u32 pc) -> size_t {
+		const auto entry = std::ranges::lower_bound(directory, pc, {}, [&](u16 index) { return m_blocks[index].firstPc; });
+		return entry != directory.end() && m_blocks[*entry].firstPc == pc ? *entry : m_blocks.size();
+	};
+	for (size_t index = m_blocks.size(); index-- > 0;) {
+		auto& block = m_blocks[index];
+		const auto* alternate = block.taken ? &sideExits(block)[*block.taken] : nullptr;
+		block.successors = {
+			block.nativeSuccessor || block.completedCall ? entryForPc(block.terminal.nextPc) : m_blocks.size(),
+			block.nativeSuccessor && alternate && alternate->exit == NativeBlockExit::Continue
+				? entryForPc(alternate->nextPc) : m_blocks.size(),
+		};
+	}
+	if (options.immutablePagePc) planRecordConstructors(directory, *options.immutablePagePc);
+}
+
+void NativeIrRegion::optimize(NativeRegisterUses& uses) {
+	uses.analyze(m_blocks);
+	NativeTypePropagation{}.specializeRegion(m_blocks, uses, m_entryTypes);
+}
+
+} // namespace bmsx

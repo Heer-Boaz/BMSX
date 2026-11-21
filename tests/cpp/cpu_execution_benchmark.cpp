@@ -1,4 +1,5 @@
 #include <unordered_set>
+#include "machine/cpu/jit/runtime/block.h"
 #include <chrono>
 #include <algorithm>
 #include <array>

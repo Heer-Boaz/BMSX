@@ -1,6 +1,6 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/execution_image.h"
-#include "machine/cpu/native_block.h"
+#include "machine/cpu/jit/runtime/block.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"

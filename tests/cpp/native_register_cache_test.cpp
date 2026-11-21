@@ -1,4 +1,4 @@
-#include "machine/cpu/native_block_registers.h"
+#include "machine/cpu/jit/sljit/register_cache.h"
 #include "machine/cpu/value_slots.h"
 
 #include <algorithm>

@@ -1,4 +1,5 @@
 #include <unordered_set>
+#include "machine/cpu/jit/runtime/block.h"
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"

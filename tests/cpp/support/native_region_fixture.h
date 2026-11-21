@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machine/cpu/native_compiler.h"
+#include "machine/cpu/jit/compiler.h"
 
 namespace bmsx::test {
 

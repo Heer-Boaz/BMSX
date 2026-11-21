@@ -1,10 +1,10 @@
 #include "machine/cpu/decoded_instruction.h"
-#include "machine/cpu/native_ir.h"
-#include "machine/cpu/native_ir_dump.h"
-#include "machine/cpu/native_ir_optimize.h"
-#include "machine/cpu/native_ir_liveness.h"
-#include "machine/cpu/native_ir_numeric.h"
-#include "machine/cpu/native_ir_values.h"
+#include "machine/cpu/jit/ir/region.h"
+#include "machine/cpu/jit/ir/dump.h"
+#include "machine/cpu/jit/ir/type_propagation.h"
+#include "machine/cpu/jit/ir/liveness.h"
+#include "machine/cpu/jit/ir/numeric_plan.h"
+#include "machine/cpu/jit/ir/value_flow.h"
 
 #include <array>
 #include <iostream>

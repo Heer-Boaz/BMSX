@@ -17,9 +17,8 @@
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/closure.h"
-#include "machine/cpu/native_block.h"
-#include "machine/cpu/native_code_lookup.h"
-#include "machine/cpu/native_field_feedback.h"
+#include "machine/cpu/jit/runtime/code_lookup.h"
+#include "machine/cpu/jit/runtime/field_feedback.h"
 #endif
 
 namespace bmsx {
@@ -40,6 +39,9 @@ struct Blua32FunctionRecordLatch {
 };
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+class NativeBlock;
+class NativeCodeRegion;
+
 // ROM prototype words and image-owned dispatch cell addresses, never a closure or code pointer.
 struct NativeRomCallBinding {
 	static constexpr u32 slotCount = 64u;
@@ -49,6 +51,7 @@ struct NativeRomCallBinding {
 };
 
 struct NativeBlockPage {
+	~NativeBlockPage();
 	std::array<std::unique_ptr<NativeBlock>, DECODED_PAGE_WORDS> entries{};
 	u32 count = 0;
 };
@@ -75,35 +78,8 @@ struct DecodedInstructionPage {
 	void** nativeCode = nullptr;
 	std::unique_ptr<NativeBlockPage> nativeBlocks;
 
-	void retireNativeRegion(const NativeCodeRegion* region) {
-		for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
-			auto& block = nativeBlocks->entries[entry];
-			if (!block || block->region.get() != region) continue;
-			nativeCode[entry] = nullptr;
-			block.reset();
-			--nativeBlocks->count;
-			auto& instruction = words[entry];
-			instruction.dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
-			instruction.dispatchCycles = instruction.baseCycles;
-			nativeVisits[entry] = 0;
-		}
-		if (nativeBlocks->count == 0u) {
-			nativeBlocks.reset();
-		}
-	}
-
-	void retireNativeBlocks(u32 firstWord = 0, u32 endWord = DECODED_PAGE_WORDS + 1u) {
-		if (!nativeBlocks) return;
-		const u32 firstEntry = firstWord > 2u * (NATIVE_BLOCK_MAX_INSTRUCTIONS + 1u)
-			? firstWord - 2u * (NATIVE_BLOCK_MAX_INSTRUCTIONS + 1u) : 0u;
-		const u32 endEntry = endWord < DECODED_PAGE_WORDS ? endWord : DECODED_PAGE_WORDS;
-		for (u32 word = firstEntry; word < endEntry; ++word) {
-			const auto& block = nativeBlocks->entries[word];
-			if (!block || word + block->sourceWords <= firstWord) continue;
-			retireNativeRegion(block->region.get());
-			if (!nativeBlocks) return;
-		}
-	}
+	void retireNativeRegion(const NativeCodeRegion*);
+	void retireNativeBlocks(u32 firstWord = 0, u32 endWord = DECODED_PAGE_WORDS + 1u);
 
 #endif
 };

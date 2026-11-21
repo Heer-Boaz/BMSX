@@ -1,7 +1,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-#include "machine/cpu/native_compiler.h"
+#include "machine/cpu/jit/compiler.h"
 #endif
 #include "machine/cpu/value_arithmetic.h"
 #include "machine/devices/irq/controller.h"

@@ -1,5 +1,5 @@
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/native_block.h"
+#include "machine/cpu/jit/runtime/block.h"
 #include "machine/cpu/execution_image.h"
 #include "common/endian.h"
 #include "spec/audio/apu.h"

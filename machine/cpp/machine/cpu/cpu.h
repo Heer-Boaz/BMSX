@@ -43,10 +43,10 @@
 #include "machine/cpu/diagnostic_execution_profile.h"
 #endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-#include "machine/cpu/native_compilation_profile.h"
+#include "machine/cpu/jit/runtime/compilation_profile.h"
 #endif
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-#include "machine/cpu/native_gate_profile.h"
+#include "machine/cpu/jit/runtime/gate_profile.h"
 #endif
 
 namespace bmsx {
@@ -55,6 +55,9 @@ class CPU;
 class NativeCompilerWorker;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 enum class NativeBuiltinCallOutcome : u32;
+struct NativeBlockExitSite;
+struct NativeBlockRunState;
+struct NativeCpuRunState;
 #endif
 struct NativeCompilationSource;
 class GcHeap;

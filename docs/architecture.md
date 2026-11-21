@@ -109,12 +109,14 @@ symbols or editor revisions. The memory and execution owners invalidate those
 caches. Checkpoints contain guest state, never generated functions, executable
 pointers or cache-link topology.
 
-In the native tier, the CPU discovers bounded runs of decoded instructions.
-The compiler translates them to typed slot operations, selects native
-continuation boundaries, and records the semantic exits and scalar resume
-points. The optimizer chooses operation plans and their required type proofs
-on logical guest slots. Within a source run, scalar operands also name their
-producing instruction and output; copying a value does not change its origin.
+In the native tier, the CPU decoder owns instruction words and the source
+graph admits bounded runs for compilation. The compiler entry point in
+`machine/cpp/machine/cpu/jit/` accepts those runs and a snapshot of speculation
+feedback, not an installed execution image or a copy of its value bank.
+The `ir/` translation selects typed operations and continuation boundaries,
+records semantic exits and scalar resume points, and runs optimization on
+logical guest slots. Within a source run, operands can name their producing
+instruction and output; copying a value does not change its origin.
 Field selection can follow both operands across reuse of the original slot.
 Fixed-field reads can share a checked address value without sharing the
 loaded value or the miss site. Reuse stops at effect boundaries. The backend
@@ -125,14 +127,15 @@ guest instruction. IR exit IDs name guest operands and timing, not executable
 descriptors. A table allocation can name a fixed-key construction plan in
 the IR while retaining ordinary entries for the original stores.
 The compiler materializes runtime exits and prediction storage after these
-plans are finalized. SLJIT lowering owns physical registers, spills,
+plans are finalized. The `sljit/` backend owns physical registers, spills,
 executable labels and link fixups. A live payload can cross an edge without a
-type proof: its tag stays authoritative in guest memory. The CPU publishes
-the compiler's entries by guest PC and binds their continuation cells; it does
-not reconstruct boundaries or recognize instruction sequences. A fixed-key
-record allocation recipe comes from the typed operations on a captured
-read-only code page. CPU execution owns allocation and layout publication.
-The IR is transient, not a second representation of machine state.
+type proof: its tag stays authoritative in guest memory. Generated execution
+reads both constant lanes from the active image. The `runtime/` publication
+owner installs entries by guest PC and binds their continuation cells without
+reconstructing compiler plans. A fused allocation recipe describes its
+constant selectors and ordered operands; CPU execution binds the actual
+keys and publishes the allocated record. The IR is transient, not a second
+representation of machine state.
 
 Frame entry and value placement belong to the CPU, thread and slot owners,
 not to generated opcode bodies. The native runtime admits a transfer before

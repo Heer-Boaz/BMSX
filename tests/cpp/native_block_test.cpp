@@ -1,4 +1,4 @@
-#include "machine/cpu/native_block.h"
+#include "machine/cpu/jit/runtime/block.h"
 #include "support/native_region_fixture.h"
 #include "common/compiler.h"
 #include "machine/cpu/cpu.h"

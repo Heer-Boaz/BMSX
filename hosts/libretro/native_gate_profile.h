@@ -1,7 +1,7 @@
 #pragma once
 
 #include "libretro.h"
-#include "machine/cpu/native_gate_profile.h"
+#include "machine/cpu/jit/runtime/gate_profile.h"
 #include "machine/cpu/diagnostic_gc_profile.h"
 
 namespace bmsx {

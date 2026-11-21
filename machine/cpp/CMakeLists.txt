@@ -389,12 +389,44 @@ if(BMSX_ENABLE_NATIVE_BLOCKS OR BMSX_BUILD_TESTS)
 endif()
 
 if(BMSX_ENABLE_NATIVE_BLOCKS)
-	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_compiler.cpp machine/cpu/native_lowering.cpp machine/cpu/native_block_abi.cpp
-		machine/cpu/native_block_builtin.cpp machine/cpu/cpu_native_call.cpp machine/cpu/cpu_native_return.cpp
-		machine/cpu/native_block_registers.cpp machine/cpu/native_block_numeric.cpp machine/cpu/native_block_compare.cpp
-		machine/cpu/native_block_context.cpp machine/cpu/native_block_control.cpp machine/cpu/native_block_length.cpp machine/cpu/native_block_table.cpp machine/cpu/native_table_constructor.cpp machine/cpu/native_block_memory.cpp machine/cpu/native_block_edges.cpp machine/cpu/native_ir.cpp machine/cpu/native_ir_exits.cpp machine/cpu/native_ir_translate.cpp machine/cpu/native_ir_fields.cpp machine/cpu/native_ir_numeric.cpp machine/cpu/native_ir_liveness.cpp machine/cpu/native_ir_optimize.cpp machine/cpu/native_ir_records.cpp machine/cpu/native_ir_values.cpp
-		machine/cpu/native_ir_dump.cpp
-		machine/cpu/cpu_native_blocks.cpp machine/cpu/cpu_native_execution.cpp machine/cpu/cpu_native_prepare.cpp)
+	target_sources(bmsx_core PRIVATE
+		machine/cpu/jit/compile_image.cpp
+		machine/cpu/jit/compile_source.cpp
+		machine/cpu/jit/compiler.cpp
+		machine/cpu/jit/source_discovery.cpp
+
+		machine/cpu/jit/ir/dump.cpp
+		machine/cpu/jit/ir/exit_planning.cpp
+		machine/cpu/jit/ir/field_addresses.cpp
+		machine/cpu/jit/ir/liveness.cpp
+		machine/cpu/jit/ir/numeric_plan.cpp
+		machine/cpu/jit/ir/record_fusion.cpp
+		machine/cpu/jit/ir/region.cpp
+		machine/cpu/jit/ir/translate.cpp
+		machine/cpu/jit/ir/type_propagation.cpp
+		machine/cpu/jit/ir/value_flow.cpp
+
+		machine/cpu/jit/sljit/builtin_call.cpp
+		machine/cpu/jit/sljit/comparison.cpp
+		machine/cpu/jit/sljit/context.cpp
+		machine/cpu/jit/sljit/control.cpp
+		machine/cpu/jit/sljit/edges.cpp
+		machine/cpu/jit/sljit/gate.cpp
+		machine/cpu/jit/sljit/length.cpp
+		machine/cpu/jit/sljit/lowering.cpp
+		machine/cpu/jit/sljit/memory.cpp
+		machine/cpu/jit/sljit/numeric.cpp
+		machine/cpu/jit/sljit/register_cache.cpp
+		machine/cpu/jit/sljit/table.cpp
+
+		machine/cpu/jit/runtime/block.cpp
+		machine/cpu/jit/runtime/closure_call.cpp
+		machine/cpu/jit/runtime/dispatch.cpp
+		machine/cpu/jit/runtime/feedback.cpp
+		machine/cpu/jit/runtime/publication.cpp
+		machine/cpu/jit/runtime/record_constructor.cpp
+		machine/cpu/jit/runtime/return.cpp
+	)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_ENABLE_NATIVE_BLOCKS=1)
 	target_link_libraries(bmsx_core PRIVATE bmsx_sljit)
 	if(BMSX_NATIVE_PERF_MAP OR BMSX_NATIVE_COMPILER_WORKER)
@@ -402,11 +434,11 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 		target_link_libraries(bmsx_core PRIVATE Threads::Threads)
 	endif()
 	if(BMSX_NATIVE_PERF_MAP)
-		target_sources(bmsx_core PRIVATE machine/cpu/native_perf_map.cpp)
+		target_sources(bmsx_core PRIVATE machine/cpu/jit/runtime/perf_map.cpp)
 		target_compile_definitions(bmsx_core PUBLIC BMSX_NATIVE_PERF_MAP=1)
 	endif()
 	if(BMSX_NATIVE_COMPILER_WORKER)
-		target_sources(bmsx_core PRIVATE machine/cpu/native_compiler_worker.cpp)
+		target_sources(bmsx_core PRIVATE machine/cpu/jit/worker.cpp)
 		target_compile_definitions(bmsx_core PUBLIC BMSX_NATIVE_COMPILER_WORKER=1)
 	endif()
 endif()
@@ -747,7 +779,7 @@ if(BMSX_BUILD_TESTS)
 	add_test(NAME bmsx_geometry_sat_intervals_tests COMMAND bmsx_geometry_sat_intervals_tests)
 	add_executable(bmsx_native_register_cache_tests
 		../../tests/cpp/native_register_cache_test.cpp
-		machine/cpu/native_block_registers.cpp
+		machine/cpu/jit/sljit/register_cache.cpp
 		machine/memory/mapped_page.cpp)
 	target_include_directories(bmsx_native_register_cache_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 	target_link_libraries(bmsx_native_register_cache_tests PRIVATE bmsx_sljit)

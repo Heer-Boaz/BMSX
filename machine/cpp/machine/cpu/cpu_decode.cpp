@@ -3,7 +3,7 @@
 
 #include "common/endian.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-#include "machine/cpu/native_source_policy.h"
+#include "machine/cpu/jit/source_policy.h"
 #endif
 #include "machine/memory/memory.h"
 #include "spec/blua32/memory_access_kind.h"

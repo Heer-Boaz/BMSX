@@ -1,4 +1,5 @@
 #include "support/cpu_execution_parity.h"
+#include "machine/cpu/jit/runtime/block.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/table.h"

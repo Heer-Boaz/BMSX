@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
@@ -10,8 +11,8 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-#include "machine/cpu/native_block_abi.h"
-#include "machine/cpu/native_execution.h"
+#include "machine/cpu/jit/sljit/abi.h"
+#include "machine/cpu/jit/runtime/execution.h"
 #endif
 
 #include <algorithm>

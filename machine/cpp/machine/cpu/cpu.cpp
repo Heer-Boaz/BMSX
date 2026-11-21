@@ -6,13 +6,13 @@
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
-#include "machine/cpu/native_compiler_worker.h"
+#include "machine/cpu/jit/worker.h"
 #endif
 
 #include "common/compiler.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-#include "machine/cpu/native_source_policy.h"
-#include "machine/cpu/native_execution.h"
+#include "machine/cpu/jit/source_policy.h"
+#include "machine/cpu/jit/runtime/execution.h"
 #endif
 #include "common/endian.h"
 #include "machine/common/numeric.h"

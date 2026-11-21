@@ -1,10 +1,11 @@
 #include "machine/cpu/decoded_instruction.h"
+#include "machine/cpu/jit/runtime/block.h"
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
 #include "machine/runtime/runtime.h"
-#include "machine/cpu/native_compilation_profile.h"
+#include "machine/cpu/jit/runtime/compilation_profile.h"
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/model.h"
 

@@ -1,5 +1,5 @@
-#include "machine/cpu/native_compiler_worker.h"
-#include "machine/cpu/native_table_constructor.h"
+#include "machine/cpu/jit/worker.h"
+#include "machine/cpu/jit/runtime/record_constructor.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/devices/irq/controller.h"

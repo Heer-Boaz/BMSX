@@ -1,7 +1,7 @@
 #include "common/float32.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/native_block.h"
+#include "machine/cpu/jit/runtime/block.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state.h"

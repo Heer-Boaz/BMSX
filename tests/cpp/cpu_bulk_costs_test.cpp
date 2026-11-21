@@ -1,7 +1,7 @@
 #include "common/utf8.h"
 #include "machine/cpu/cpu.h"
 #include "machine/common/numeric.h"
-#include "machine/cpu/native_block.h"
+#include "machine/cpu/jit/runtime/block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"

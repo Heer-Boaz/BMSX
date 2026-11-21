@@ -1,6 +1,6 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
-#include "machine/cpu/native_block.h"
+#include "machine/cpu/jit/runtime/block.h"
 #include "machine/common/numeric.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"

@@ -1,5 +1,6 @@
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/native_block_abi.h"
+#include "machine/cpu/jit/sljit/gate.h"
+#include "machine/cpu/jit/sljit/abi.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/scheduler/device.h"

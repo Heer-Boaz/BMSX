@@ -1,7 +1,7 @@
 #pragma once
 
 #include "machine/runtime/runtime.h"
-#include "machine/cpu/native_compilation_profile.h"
+#include "machine/cpu/jit/runtime/compilation_profile.h"
 
 #include <fstream>
 #include <iomanip>

@@ -1,4 +1,5 @@
 #include "common/endian.h"
+#include "machine/cpu/jit/runtime/block.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/execution_image.h"
