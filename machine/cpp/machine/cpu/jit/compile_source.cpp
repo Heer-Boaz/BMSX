@@ -110,7 +110,7 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page,
 	if (!m_nativeCompilerWorker->idle()) return;
 #endif
 	auto& image = *frame.executionImage;
-	const auto version = image.romFunctions.find(m_memory, image.executionDomainId, frame.readControl(FrameField::Function));
+	const auto version = image.romFunctions.find(frame.readControl(FrameField::Function));
 	if (version && version->contains(pc)
 		&& prepareNativeFunction(image, *version, pc, busSignals, NATIVE_VERSION_REGION_MAX_PAGES, false)) return;
 	const u32 pagePc = pc & ~MAPPED_PAGE_BYTE_MASK;

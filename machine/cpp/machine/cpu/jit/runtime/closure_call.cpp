@@ -57,10 +57,12 @@ NativeRomCallBinding* CPU::bindNativeRomFunction(Blua32ExecutionImage& image, u3
 }
 
 std::optional<NativeFixedCallPlan> CPU::captureNativeFixedCall(Blua32ExecutionImage& image, u32 prototype, int supplied) const {
-	const auto version = image.romFunctions.find(m_memory, image.executionDomainId, prototype);
+	const auto version = image.romFunctions.find(prototype);
 	if (!version) return std::nullopt;
-	const auto& function = bindNativeRomFunction(image, prototype)->entry;
-	if ((function.flags & BLUA32_FUNCTION_VARARG) != 0) return std::nullopt;
+	const auto* binding = bindNativeRomFunction(image, prototype);
+	if (!binding) return std::nullopt;
+	const auto& function = binding->entry;
+	if (function.codeAddress != version->firstPc || (function.flags & BLUA32_FUNCTION_VARARG) != 0) return std::nullopt;
 	const auto layout = ArgumentPlacement::forEntry(0, supplied, function);
 	if (!layout) return std::nullopt;
 	return NativeFixedCallPlan{prototype, version->firstPc, static_cast<u32>(layout->capacity),

@@ -332,17 +332,12 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		|| static_cast<u64>(globalNameCount) + systemGlobalNameCount > MAIN_RAM_SIZE / sizeof(u32)) {
 		throw BMSX_RUNTIME_ERROR("BLua32 image bank extents exceed main RAM.");
 	}
+	image->romFunctions = Blua32RomFunctionDirectory::read(m_memory, executionDomainId, header);
 	if (!restoring) m_stringPool.activateRomTable(executionDomainId,
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
 	image->globalNameCount = globalNameCount;
 	image->systemNameCount = systemGlobalNameCount;
-	image->romFunctions = {
-		readLE32(header + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET),
-		readLE32(header + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET),
-		readLE32(header + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET),
-		readLE32(header + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET),
-	};
 	if (const u32 bytes = image->globalMapBytes()) {
 		image->globalMapBase = restoring ? (*restoredBases)[1] : m_luaHeap.allocateRecord(bytes, true, 0, 0);
 		const u32 base = image->globalMapBase;

@@ -19,6 +19,7 @@
 
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace {
@@ -548,17 +549,21 @@ void residentExecDoesNotReopenTheBootHeader() {
 		"the resident image fetches the installed replacement instruction");
 }
 
-void descriptiveTablesAndStaticAcceptanceRemainIndependent() {
+void invalidDirectoryAndNonStaticEntryPreventCompilation() {
 	for (const u32 table : {IO_IRQ_FLAGS, CART_ROM_BASE + CART_ROM_SIZE - 32u}) {
 		auto rom = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridgeProgram("no-backed-hints"));
 		writeLE32(rom.bytes.data() + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET, table);
 		Fixture machine(std::move(rom));
 		const auto fault = machine.runtime.machine.memory.readBusFaultSequence();
-		machine.execute();
-		machine.prepareAtGrantBoundary();
-		require(machine.cpu().readNativeCompilationProfile().codeBytes == 0 && machine.reads == 0
+		bool rejected = false;
+		try {
+			machine.cpu().runUntilDepth(0, 32);
+		} catch (const std::runtime_error& e) {
+			rejected = std::string_view(e.what()) == "BLua32 function directory is not backed by the image's ROM.";
+		}
+		require(rejected && machine.cpu().readNativeCompilationProfile().prepareRequests == 0 && machine.reads == 0
 			&& machine.runtime.machine.memory.readBusFaultSequence() == fault,
-			"unbacked descriptive tables cannot become new EXEC admission or MMIO/fault requirements");
+			"EXEC rejects a directory outside backed cartridge ROM without reading through the bus");
 	}
 	auto image = cartridgeProgram("non-static");
 	image.functions[0].staticClosure = false;
@@ -649,17 +654,12 @@ void boundedWarmupLeavesDistantBranchesToHotCompilation() {
 		"ordinary hot compilation installs the later entry without changing guest state");
 }
 
-void observationsAndUnusedHintsStayAtExecution() {
+void observationsAndUnusedOperandsStayAtExecution() {
 	auto image = cartridgeProgram("observed");
 	writeInstruction(image.text, 128, static_cast<u8>(OpCode::GETGL), 0, 63, 63, 255);
 	writeInstruction(image.text, 132, static_cast<u8>(OpCode::LOADK), 0, 0, 63);
-	for (const u32 word : {128u, 132u, 136u, 140u, 144u, 148u}) image.functions.push_back({.firstWord=word, .wordCount=1});
-	auto rom = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
-	writeLE32(rom.bytes.data() + rom.functionAddresses[5] - CART_ROM_BASE, IO_IRQ_FLAGS);
-	writeLE32(rom.bytes.data() + rom.functionAddresses[6] - CART_ROM_BASE, CART_RAM_BASE);
-	writeLE32(rom.bytes.data() + rom.functionAddresses[7] - CART_ROM_BASE, rom.textAddress + 1u);
-	writeLE32(rom.bytes.data() + rom.functionAddresses[8] - CART_ROM_BASE, DYNAMIC_RAM_BASE);
-	Fixture machine(std::move(rom));
+	for (const u32 word : {128u, 132u}) image.functions.push_back({.firstWord=word, .wordCount=1});
+	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, image));
 	int observations = 0;
 	InstructionObserverBinding observer;
 	observer.points[1].insert(machine.cart.textAddress);
@@ -675,7 +675,7 @@ void observationsAndUnusedHintsStayAtExecution() {
 	require(observations == 0 && machine.reads == 0 && machine.runtime.machine.memory.readBusFaultSequence() == fault
 		&& !entryAt(machine.cpu(), machine.cart.textAddress, 0)
 		&& entryAt(machine.cpu(), machine.cart.textAddress + 64u * INSTRUCTION_BYTES, 0),
-		"cold hints cannot observe guest code, raise unused constant/name faults or read MMIO/RAM");
+		"cold preparation cannot observe guest code, raise unused constant/name faults or read MMIO/RAM");
 	require(machine.cpu().runUntilDepth(0, 1) == RunResult::Yielded && observations == 1,
 		"the observed cartridge instruction runs exactly once on its own grant");
 }
@@ -692,8 +692,8 @@ int main() {
 		repeatExecAndRestoreHaveDistinctPolicies();
 		instrumentedGrantsDoNotPrepareNativeCode();
 		residentExecDoesNotReopenTheBootHeader();
-		observationsAndUnusedHintsStayAtExecution();
-		descriptiveTablesAndStaticAcceptanceRemainIndependent();
+		observationsAndUnusedOperandsStayAtExecution();
+		invalidDirectoryAndNonStaticEntryPreventCompilation();
 		hintsDoNotBoundReachableCode();
 		crossPageWideSourceUsesItsPhysicalSlot();
 		boundedWarmupLeavesDistantBranchesToHotCompilation();

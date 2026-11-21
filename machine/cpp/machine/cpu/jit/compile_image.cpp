@@ -1,6 +1,5 @@
 #include "machine/cpu/cpu.h"
 
-#include "common/endian.h"
 #include "machine/cpu/jit/limits.h"
 #include "machine/cpu/jit/source.h"
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -16,28 +15,6 @@
 #include <map>
 
 namespace bmsx {
-
-std::optional<Blua32RomFunctionVersion> Blua32RomFunctionDirectory::find(
-	const Memory& memory, ExecutionDomainId domain, u32 record) const {
-	const u32 recordOffset = record - tableAddress;
-	if (record < tableAddress || (recordOffset % BLUA32_FUNCTION_RECORD_SIZE) != 0u
-		|| recordOffset / BLUA32_FUNCTION_RECORD_SIZE >= count) return std::nullopt;
-	const bool system = domain == SYSTEM_EXECUTION_DOMAIN_ID;
-	const u32 slot = system ? 0u : static_cast<u32>(domain);
-	const u32 base = system ? SYSTEM_ROM_BASE : CART_ROM_BASE;
-	const u32 extent = system ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
-	Span<const u8> bytes;
-	if (record - base >= extent || !memory.bindRomByteView(record, BLUA32_FUNCTION_RECORD_SIZE, slot, bytes))
-		return std::nullopt;
-	const u32 start = readLE32(bytes.data() + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
-	const u32 size = readLE32(bytes.data() + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
-	const u32 offset = start - textAddress;
-	if (size == 0u || ((start | size) & (INSTRUCTION_BYTES - 1u)) != 0u
-		|| start < textAddress || offset > textBytes || size > textBytes - offset
-		|| start - base >= extent || size > extent - (start - base)
-		|| !memory.bindRomByteView(start, size, slot, bytes)) return std::nullopt;
-	return Blua32RomFunctionVersion{start, start + size};
-}
 
 u32 CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunctionVersion& version,
 	u32 rootPc, MappedBusSignals busSignals, size_t pageBudget, bool coldImage) {
@@ -106,14 +83,11 @@ void CPU::prepareSystemNativeCode() {
 
 void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32> entryPc) {
 	const auto& functions = image.romFunctions;
-	if (m_nativeCode.full() || functions.count == 0u) return;
-	const u32 functionCount = std::min(functions.count, NATIVE_IMAGE_WARMUP_MAX_HINTS);
+	if (m_nativeCode.full() || functions.versions.empty()) return;
+	const auto versions = std::span(functions.versions).first(std::min<size_t>(functions.versions.size(), NATIVE_IMAGE_WARMUP_MAX_HINTS));
 	const bool system = image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID;
 	const u32 slot = system ? 0u : static_cast<u32>(image.executionDomainId);
 	const auto busSignals = executionBusSignalsForDomain(image.executionDomainId);
-	Span<const u8> records;
-	if (!m_memory.bindRomByteView(functions.tableAddress,
-		static_cast<size_t>(functionCount) * BLUA32_FUNCTION_RECORD_SIZE, slot, records)) return;
 
 	// Limit candidate pages before allocating either the worklist node or its
 	// decoded page. Source outside the initial batch retains the hot compiler.
@@ -122,11 +96,8 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 	std::vector<NativeCompilationSource*> pending;
 	std::vector<u32> outgoing;
 	size_t pageBudget = NATIVE_IMAGE_WARMUP_MAX_PAGES;
-	for (u32 function = 0; function < functionCount; ++function) {
-		const u32 address = functions.tableAddress + function * BLUA32_FUNCTION_RECORD_SIZE;
-		if (const auto version = functions.find(m_memory, image.executionDomainId, address))
-			pageBudget -= prepareNativeFunction(image, *version, version->firstPc, busSignals, pageBudget, true);
-	}
+	for (const auto& version : versions)
+		pageBudget -= prepareNativeFunction(image, version, version.firstPc, busSignals, pageBudget, true);
 	const auto discoveryStart = m_nativeCompilationProfiling ? Clock::now() : Clock::time_point{};
 	const auto enqueue = [&](u32 pc) -> NativeCompilationSource* {
 		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) return nullptr;
@@ -150,9 +121,7 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 		return &source;
 	};
 	auto* entrySource = entryPc ? enqueue(*entryPc) : nullptr;
-	for (u32 function = 0; function < functionCount; ++function)
-		enqueue(readLE32(records.data() + static_cast<size_t>(function) * BLUA32_FUNCTION_RECORD_SIZE
-			+ BLUA32_FUNCTION_CODE_ADDRESS_OFFSET));
+	for (const auto& version : versions) enqueue(version.firstPc);
 
 	// Discover before emitting so all incoming function and cross-page roots
 	// split one shared physical-page graph instead of compiling duplicate suffixes.

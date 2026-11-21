@@ -2,8 +2,9 @@ import type { FunctionPrototype } from './closure';
 import { readLE32 } from '../../common/endian';
 import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../spec/blua32/execution_domain';
-import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
-	BLUA32_FUNCTION_RECORD_SIZE } from '../../spec/blua32/image_format';
+import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
+	BLUA32_FUNCTION_RECORD_SIZE, BLUA32_IMAGE_FUNCTION_COUNT_OFFSET, BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_TEXT_ADDRESS_OFFSET, BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET } from '../../spec/blua32/image_format';
 import {
 	BASE_CYCLES, OPCODE_COUNT, OPCODE_SCALAR_REGISTER_READS, OPCODE_WRITES_REGISTER_A,
 	REGISTER_OPERAND_A, REGISTER_OPERAND_B, REGISTER_OPERAND_C, OpCode,
@@ -26,30 +27,46 @@ export const COMPILED_VERSION_MAX_PAGES = 4;
 
 export type Blua32RomFunctionDirectory = {
 	readonly tableAddress: number;
-	readonly count: number;
-	readonly textAddress: number;
-	readonly textBytes: number;
+	readonly ranges: Uint32Array;
 };
 
-/** A checked compiler source extent; the frame's opcode fetch rules do not depend on it. */
-export function findRomFunctionVersion(memory: Memory, domain: ExecutionDomainId, directory: Blua32RomFunctionDirectory,
-	record: number, view: MemoryByteView): { firstPc: number; endPc: number } | null {
-	const recordOffset = record - directory.tableAddress;
-	if (recordOffset < 0 || recordOffset % BLUA32_FUNCTION_RECORD_SIZE !== 0
-		|| recordOffset / BLUA32_FUNCTION_RECORD_SIZE >= directory.count) return null;
+export function readRomFunctionDirectory(memory: Memory, domain: ExecutionDomainId, view: MemoryByteView): Blua32RomFunctionDirectory {
+	const { bytes, byteOffset } = view;
+	const count = readLE32(bytes, byteOffset + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET);
+	if (count === 0) return { tableAddress: 0, ranges: new Uint32Array(0) };
+	const tableAddress = readLE32(bytes, byteOffset + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET);
+	const text = readLE32(bytes, byteOffset + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET);
+	const textBytes = readLE32(bytes, byteOffset + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET);
 	const system = domain === SYSTEM_EXECUTION_DOMAIN_ID;
 	const base = system ? SYSTEM_ROM_BASE : CART_ROM_BASE;
 	const extent = system ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
 	const slot = system ? 0 : domain;
-	if (record < base || record - base > extent - BLUA32_FUNCTION_RECORD_SIZE
-		|| !memory.bindRomByteView(record, BLUA32_FUNCTION_RECORD_SIZE, slot, view)) return null;
-	const firstPc = readLE32(view.bytes, view.byteOffset + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
-	const size = readLE32(view.bytes, view.byteOffset + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
-	const offset = firstPc - directory.textAddress, romOffset = firstPc - base;
-	if (size === 0 || ((firstPc | size) & (INSTRUCTION_BYTES - 1)) !== 0
-		|| offset < 0 || size > directory.textBytes - offset
-		|| romOffset < 0 || size > extent - romOffset || !memory.bindRomByteView(firstPc, size, slot, view)) return null;
-	return { firstPc, endPc: firstPc + size };
+	if (((text | textBytes) & (INSTRUCTION_BYTES - 1)) !== 0 || textBytes === 0
+		|| text < base || textBytes > extent - (text - base) || !memory.bindRomByteView(text, textBytes, slot, view))
+		throw new Error("BLua32 published TEXT is not backed by the image's ROM.");
+	const recordBytes = count * BLUA32_FUNCTION_RECORD_SIZE;
+	if ((tableAddress & (BLUA32_FUNCTION_ALIGNMENT - 1)) !== 0
+		|| tableAddress < base || recordBytes > extent - (tableAddress - base)
+		|| !memory.bindRomByteView(tableAddress, recordBytes, slot, view))
+		throw new Error("BLua32 function directory is not backed by the image's ROM.");
+	const ranges = new Uint32Array(count * 2);
+	for (let index = 0, record = view.byteOffset; index < count; ++index, record += BLUA32_FUNCTION_RECORD_SIZE) {
+		const firstPc = readLE32(view.bytes, record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
+		const size = readLE32(view.bytes, record + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
+		if (firstPc < text || size === 0 || size > textBytes - (firstPc - text)
+			|| ((firstPc | size) & (INSTRUCTION_BYTES - 1)) !== 0)
+			throw new Error('BLua32 published function has an invalid TEXT extent.');
+		ranges[index * 2] = firstPc;
+		ranges[index * 2 + 1] = firstPc + size;
+	}
+	return { tableAddress, ranges };
+}
+
+export function findRomFunctionVersion(directory: Blua32RomFunctionDirectory, record: number): { firstPc: number; endPc: number } | null {
+	const offset = record - directory.tableAddress;
+	if (offset < 0 || offset % BLUA32_FUNCTION_RECORD_SIZE !== 0) return null;
+	const index = (offset / BLUA32_FUNCTION_RECORD_SIZE) * 2;
+	return index < directory.ranges.length ? { firstPc: directory.ranges[index], endPc: directory.ranges[index + 1] } : null;
 }
 
 export const enum DecodedDispatchOp {

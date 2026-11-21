@@ -292,10 +292,9 @@ to the program-header address obtained above. The CPU uses these six unsigned
 | `28H` | System-global-name-table address | Absolute machine byte address in installed ROM. |
 | `2CH` | System-global-name count | Number of 4-byte name records. |
 
-The other four-byte header slots describe the program's format, sections
-and linkage:
+The remaining header slots identify the program's format, sections and linkage:
 
-| Image byte offset | Descriptive field |
+| Image byte offset | Field |
 | --- | --- |
 | `00H` | Magic; declared constant `32334C42H`. |
 | `04H` | Format version; required value 2. |
@@ -308,15 +307,20 @@ and linkage:
 | `54H`, `58H` | TEXT address; TEXT byte count. |
 | `5CH` | Preparation-sequence function-record address; zero when no sequence is present. |
 
-Provide the complete 96-byte header, including its descriptive slots. The CPU
-reads the explicit constant/name addresses and counts. Reset and EXEC also read
+Provide the complete 96-byte header. Reset and EXEC also read
 the DATA byte count and run address (`44H`, `48H`) and the BSS address and
 byte count (`4CH`, `50H`): the larger of the two section ends sets the
 language-heap floor; see
-[[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}. Magic, version,
-function-table enumeration, section order and declared section extents do not
-alter those reads or bound instruction fetching. DATA and BSS are initialized
-by the startup instructions.
+[[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}.
+DATA and BSS are initialized by the startup instructions.
+
+A nonzero function count publishes a function directory. The directory begins
+on a 16-byte boundary and contains that many consecutive 32-byte records.
+Both the directory and TEXT must fit in installed ROM of the same execution
+image. The TEXT address and size must be multiples of four. Each directory
+record names a nonempty, word-aligned code extent wholly inside TEXT. An image
+that violates these conditions is rejected at activation. A zero function
+count does not publish a directory and leaves its address unused.
 
 The preparation address selects a separate ordinary function, not another
 startup vector. Calling it completes pending module initialization and runs
@@ -419,7 +423,7 @@ A function address identifies a **32-byte function record**, not its first instr
 | Record byte offset | Field | Interpretation |
 | --- | --- | --- |
 | `00H` | Code address | Absolute machine byte address of the initial instruction. |
-| `04H` | Declared code byte count | Not read. |
+| `04H` | Code byte count | Extent of this function in TEXT for a published function directory. |
 | `08H` | Parameter count | Number of fixed parameter slots. |
 | `0CH` | Maximum stack | Number of register-value slots, not bytes or a RAM address. |
 | `10H` | Flags | Bit 0 VARARG; bit 1 STATIC. |

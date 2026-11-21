@@ -18,7 +18,10 @@ import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_pa
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { COP0_EXEC } from '../../machine/ts/spec/blua32/cop0';
-import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_RECORD_SIZE } from '../../machine/ts/spec/blua32/image_format';
+import {
+	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET,
+	BLUA32_FUNCTION_RECORD_SIZE, BLUA32_IMAGE_FUNCTION_COUNT_OFFSET, BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
+} from '../../machine/ts/spec/blua32/image_format';
 import { BASE_BX_BITS, INSTRUCTION_BYTES, MAX_EXT_BX, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -52,6 +55,23 @@ function machine(systemRom: Uint8Array, slots: CartridgeSocketMediaPair, backend
 	cpu.reset();
 	return { cpu, memory, addresses };
 }
+
+test('published ROM function directories are admitted before either backend executes', () => {
+	const image = linkRawTestSystemBlua32(loadSource(MemoryAccessKind.U32LE), RAM_CODE_FIXTURE_BYTES);
+	const record = image.vectors.startupFunctionAddress;
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const unbacked = image.romBytes.slice();
+		writeLE32(unbacked, image.image.address + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET, unbacked.length);
+		assert.throws(() => machine(unbacked, [null, null], backend), /function directory is not backed/);
+
+		const pastText = image.romBytes.slice();
+		writeLE32(pastText, record + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET, image.image.header.textByteCount + INSTRUCTION_BYTES);
+		assert.throws(() => machine(pastText, [null, null], backend), /invalid TEXT extent/);
+
+		writeLE32(unbacked, image.image.address + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET, 0);
+		assert.equal(machine(unbacked, [null, null], backend).cpu.readFramePc(0), image.image.header.textAddress);
+	}
+});
 
 test('the sparse code index preserves page identity, socket banks and unsigned address boundaries', () => {
 	const lookup = new CompiledCodeLookup();

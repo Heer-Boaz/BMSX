@@ -286,6 +286,7 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/save_state.cpp
 
 	machine/cpu/cpu.cpp
+	machine/cpu/execution_image.cpp
 	machine/cpu/cpu_table.cpp
 	machine/cpu/cpu_builtins_leaf.cpp
 	machine/cpu/cpu_decode.cpp

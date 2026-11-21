@@ -77,8 +77,6 @@ import {
 	BLUA32_GLOBAL_NAME_RECORD_SIZE,
 	BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
 	BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
-	BLUA32_IMAGE_FUNCTION_COUNT_OFFSET,
-	BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_HEADER_SIZE,
@@ -90,8 +88,6 @@ import {
 	BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
-	BLUA32_IMAGE_TEXT_ADDRESS_OFFSET,
-	BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
 	BLUA32_UPVALUE_INDEX_MASK,
 	BLUA32_UPVALUE_IN_STACK_MASK,
 	BLUA32_UPVALUE_RECORD_SIZE,
@@ -146,6 +142,7 @@ import {
 	decodedDispatchOp,
 	decodedInstructionBaseCycles,
 	findRomFunctionVersion,
+	readRomFunctionDirectory,
 	fixedRegisterExtent,
 	DecodedDispatchOp,
 	type Blua32ExecutionImage,
@@ -821,12 +818,7 @@ export class CPU implements MappedPageInvalidator {
 			systemGlobalNameCount,
 			stringBucketAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
 			stringBucketCount: readLE32(bytes, byteOffset + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET),
-			romFunctions: {
-				tableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET),
-				count: readLE32(bytes, byteOffset + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET),
-				textAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET),
-				textBytes: readLE32(bytes, byteOffset + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET),
-			},
+			romFunctions: readRomFunctionDirectory(this.memory, executionBoot.executionDomainId, this.executionReadView),
 		};
 	}
 
@@ -2470,16 +2462,18 @@ export class CPU implements MappedPageInvalidator {
 		const slot = this.memory.cartridgeController.selectedSlot(this.executionBusSignals);
 		const romView = this.executionReadView, domain = image.executionDomainId;
 		const version = domain === SYSTEM_EXECUTION_DOMAIN_ID || domain === slot
-			? findRomFunctionVersion(this.memory, domain, image.romFunctions, frame.functionAddress, romView) : null;
+			? findRomFunctionVersion(image.romFunctions, frame.functionAddress) : null;
 		const pages = [page];
 		let basePc = pagePc, firstWord = 0, endWord = DECODED_PAGE_WORDS;
-		let spanning = false;
+		let spanning = false, finalWordStartsInstruction = false;
 		if (version !== null && pc >= version.firstPc && pc < version.endPc) {
 			const firstPage = (version.firstPc & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
 			const lastPage = ((version.endPc - 1) & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
 			const pageCount = (lastPage - firstPage) / MAPPED_PAGE_BYTE_SIZE + 1;
-			if (pageCount > 1 && pageCount <= COMPILED_VERSION_MAX_PAGES) {
+			if (pageCount > 1 && pageCount <= COMPILED_VERSION_MAX_PAGES
+				&& this.memory.bindRomByteView(version.endPc - INSTRUCTION_BYTES, INSTRUCTION_BYTES, slot, romView)) {
 				spanning = true;
+				finalWordStartsInstruction = ((readLE32(romView.bytes, romView.byteOffset) >>> 18) & 0x3f) !== OpCode.WIDE;
 				basePc = firstPage;
 				firstWord = (version.firstPc - basePc) / INSTRUCTION_BYTES;
 				endWord = (version.endPc - basePc) / INSTRUCTION_BYTES;
@@ -2499,8 +2493,7 @@ export class CPU implements MappedPageInvalidator {
 		const pageAt = (index: number) => pages[index >>> DECODED_PAGE_SHIFT];
 		const wordAt = (index: number) => index & (DECODED_PAGE_WORDS - 1);
 		const contains = (index: number) => index >= firstWord && index < endWord;
-		const canDecode = (index: number) => mayLookAhead && (index + 1 < endWord || (spanning
-			&& ((readLE32(romView.bytes, romView.byteOffset + (index - firstWord) * INSTRUCTION_BYTES) >>> 18) & 0x3f) !== OpCode.WIDE));
+		const canDecode = (index: number) => mayLookAhead && (index + 1 < endWord || finalWordStartsInstruction);
 		const roots = new Uint8Array(endWord), queued = new Uint8Array(endWord);
 		const available = new Uint8Array(endWord), leaders = new Uint8Array(endWord), skipWidths = new Uint8Array(endWord);
 		const pending: number[] = [];

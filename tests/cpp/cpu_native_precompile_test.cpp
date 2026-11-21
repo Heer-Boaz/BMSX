@@ -20,6 +20,7 @@
 #include <vector>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 
 namespace {
 using namespace bmsx;
@@ -161,51 +162,55 @@ void coldLazyWritesAndRestoreAgree() {
 		"restore retires host metadata and replay remains identical with or without repreparation");
 }
 
-void invalidUnusedHintsRemainUnobserved() {
+void unusedOperandsRemainUnobserved() {
 	auto image = program();
 	writeInstruction(image.text, 256, static_cast<u8>(OpCode::GETGL), 0, 63, 63, 255);
 	writeInstruction(image.text, 300, static_cast<u8>(OpCode::LOADK), 0, 0, 2);
 	writeInstruction(image.text, 304, static_cast<u8>(OpCode::ADD), 0, 61, 1, 56);
 	writeInstruction(image.text, 308, static_cast<u8>(OpCode::GETFIELD), 0, 1, 2);
 	for (const u32 word : {300u, 304u, 308u}) image.functions.push_back({.firstWord=word, .wordCount=1});
-	const auto mmioFunction = image.functions.size();
-	image.functions.push_back({.firstWord=512, .wordCount=1});
-	image.functions.push_back({.firstWord=513, .wordCount=1});
-	image.functions.push_back({.firstWord=514, .wordCount=1});
-	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
-	rom.bytes.resize((rom.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~MAPPED_PAGE_BYTE_MASK);
-	writeLE32(rom.bytes.data() + rom.functionAddresses[mmioFunction] - SYSTEM_ROM_BASE + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, IO_IRQ_FLAGS);
-	writeLE32(rom.bytes.data() + rom.functionAddresses[mmioFunction + 1u] - SYSTEM_ROM_BASE + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, SYSTEM_ROM_BASE + static_cast<u32>(rom.bytes.size()) + INSTRUCTION_BYTES);
-	writeLE32(rom.bytes.data() + rom.functionAddresses[mmioFunction + 2u] - SYSTEM_ROM_BASE + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, SYSTEM_ROM_BASE + static_cast<u32>(rom.bytes.size()) - INSTRUCTION_BYTES);
-	writeLE32(rom.bytes.data() + rom.bytes.size() - INSTRUCTION_BYTES, static_cast<u32>(OpCode::WIDE) << 18u);
-	Fixture machine(std::move(rom));
+	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::System, image));
 	const auto before = encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime));
 	const auto fault = machine.runtime.machine.memory.readBusFaultSequence();
 	machine.runtime.machine.cpu.prepareSystemNativeCode();
 	require(encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == before && machine.reads == 0
 		&& machine.runtime.machine.memory.readBusFaultSequence() == fault,
-		"invalid name/constant slots, MMIO/unbacked roots and an unbacked WIDE body cannot manufacture early guest faults or reads");
+		"unused invalid name/constant operands cannot manufacture early guest faults or reads");
 	require(entryAt(machine.runtime.machine.cpu, machine.rom.textAddress),
-		"ineligible unused hints do not prevent supported BIOS roots from compiling");
+		"ineligible unused instructions do not prevent supported BIOS roots from compiling");
 }
 
-void descriptiveFunctionTablesAreNotFetchRequirements() {
-	for (const bool empty : {false, true}) {
+void publishedDirectoryRequiresBackedRomExtents() {
+	for (const bool corruptTable : {false, true}) {
 		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, program());
-		const u32 table = empty ? IO_IRQ_FLAGS
-			: SYSTEM_ROM_BASE + static_cast<u32>(rom.bytes.size()) + MAPPED_PAGE_BYTE_SIZE;
-		writeLE32(rom.bytes.data() + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET, table);
-		writeLE32(rom.bytes.data() + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET, empty ? 0u : 1u);
-		Fixture machine(std::move(rom));
-		auto& cpu = machine.runtime.machine.cpu;
-		cpu.setNativeCompilationProfiling(true);
-		const auto before = encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime));
-		const auto fault = machine.runtime.machine.memory.readBusFaultSequence();
-		cpu.prepareSystemNativeCode();
-		require(encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == before && machine.reads == 0
-			&& machine.runtime.machine.memory.readBusFaultSequence() == fault && cpu.readNativeCompilationProfile().codeBytes == 0,
-			"empty and unbacked descriptive function tables cannot become instruction-fetch requirements");
+		if (corruptTable) {
+			writeLE32(rom.bytes.data() + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
+				SYSTEM_ROM_BASE + static_cast<u32>(rom.bytes.size()) + MAPPED_PAGE_BYTE_SIZE);
+		} else {
+			writeLE32(rom.bytes.data() + rom.functionAddresses.back() - SYSTEM_ROM_BASE + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
+				static_cast<u32>(rom.bytes.size()));
+		}
+		bool rejected = false;
+		try {
+			Fixture machine(std::move(rom));
+		} catch (const std::runtime_error& e) {
+			rejected = std::string_view(e.what()) == (corruptTable
+				? "BLua32 function directory is not backed by the image's ROM."
+				: "BLua32 published function has an invalid TEXT extent.");
+		}
+		require(rejected, "boot rejects a published directory or function that leaves its backed ROM section");
 	}
+	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, program());
+	writeLE32(rom.bytes.data() + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET, 0u);
+	writeLE32(rom.bytes.data() + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET, IO_IRQ_FLAGS);
+	Fixture machine(std::move(rom));
+	auto& cpu = machine.runtime.machine.cpu;
+	cpu.setNativeCompilationProfiling(true);
+	const auto before = encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime));
+	cpu.prepareSystemNativeCode();
+	require(encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == before
+		&& machine.reads == 0 && cpu.readNativeCompilationProfile().codeBytes == 0,
+		"an image without a published directory leaves the address field unused");
 }
 
 void preparationPreservesConfiguredObservation() {
@@ -340,8 +345,8 @@ int main() {
 	try {
 		preparationHasNoGuestEffects();
 		coldLazyWritesAndRestoreAgree();
-		invalidUnusedHintsRemainUnobserved();
-		descriptiveFunctionTablesAreNotFetchRequirements();
+		unusedOperandsRemainUnobserved();
+		publishedDirectoryRequiresBackedRomExtents();
 		preparationPreservesConfiguredObservation();
 		preparationLeavesFetchFaultsAtExecution();
 		crossPageWideDependenciesRemainOwned();
