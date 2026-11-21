@@ -581,6 +581,74 @@ void stringStoreCanRetireItsOwnSource() {
 	}
 }
 
+void nestedFieldReadObservesPublishedRegisterAlias() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETFIELD), 2, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::GETFIELD), 3, 2, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::K1), 6, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}};
+	image.constants = {std::string("nested subject"), std::string("nested word")};
+	CpuMachine native(image), scalar(image, true);
+	const int readCycles = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)];
+	const u32 start = native.rom.textAddress;
+	const u32 nestedPc = start + INSTRUCTION_BYTES;
+	const u32 suffixPc = start + 3u * INSTRUCTION_BYTES;
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto outer = cpu.createTable(0, 1), nested = cpu.createTable(0, 1);
+		outer.setStringKey(*cpu.stringPool().find("nested subject"), valueTable(nested.address()));
+		nested.setStringKey(*cpu.stringPool().find("nested word"), valueInteger(41));
+		cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueTable(outer.address()));
+	}
+	require(test::runCpuParity(native.cpu, scalar.cpu, 2 * readCycles) == RunResult::Yielded
+		&& native.cpu.readFrameRegister(0, 3) == valueInteger(41), "both initial own-field reads train on the ordinary table layout");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const auto& entry = page.nativeBlocks->entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	require(entry && entry->terminal.currentPc == nestedPc && entry->terminal.nextPc == suffixPc
+		&& entry->admissionCycles == readCycles && entry->sideExits.size() == 2
+		&& entry->sideExits[0].tableReadCache.receiverSlot == 0 && entry->sideExits[1].tableReadCache.receiverSlot == 0,
+		"both own predictions are published in one native entry admissible on the short grant");
+#endif
+
+	const Value subject = native.cpu.readFrameRegister(0, 2);
+	const auto word = valuePayload(subject);
+	for (auto* machine : {&native, &scalar}) {
+		const auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
+		// For A=0,H=1, the value immediately follows the key word; the
+		// two tag bytes follow those words and the hash link.
+		const u32 storage = frame.registers.wordAddress() + sizeof(u32);
+		const u32 tags = storage + 3u * sizeof(u32);
+		machine->memory.writeRamRecordWord(word + static_cast<u32>(TableHeader::Storage), storage);
+		machine->memory.writeRamRecordWord(storage, *machine->cpu.stringPool().find("nested word"));
+		machine->memory.writeRamRecordByte(tags, static_cast<u8>(ValueTag::String));
+		machine->memory.writeRamRecordByte(tags + 1u, static_cast<u8>(ValueTag::Integer));
+	}
+	for (const int grant : {2 * readCycles, readCycles + 1}) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+			registers.set(2, valueInteger(73));
+			registers.set(3, valueInteger(-1));
+			registers.set(6, valueInteger(99));
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded,
+			"both runs complete the WIDE read without entering the suffix");
+		require(native.cpu.readFrameRegister(0, 2) == subject && native.cpu.readFrameRegister(0, 3) == valueInteger(static_cast<i32>(word)),
+			"the nested read observes the newly written register word, not its previous spill");
+		require(native.cpu.readCurrentInstructionPc() == nestedPc && native.cpu.lastPc == nestedPc + INSTRUCTION_BYTES
+			&& native.cpu.readFramePc(0) == suffixPc && native.cpu.instructionBudgetRemaining == grant - 2 * readCycles
+			&& native.cpu.readFrameRegister(0, 6) == valueInteger(99),
+			"the overlapping read pays both base charges and publishes the WIDE boundary exactly");
+		requireParity(native, scalar);
+	}
+}
+
 void negativeIntegerKeysDoNotEnterRawArrayCapacity() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETT), 3, 0, 1);
@@ -640,6 +708,7 @@ int main() {
 		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); wideAllocationFailure();
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 		stringStoreCanRetireItsOwnSource();
+		nestedFieldReadObservesPublishedRegisterAlias();
 		negativeIntegerKeysDoNotEnterRawArrayCapacity();
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

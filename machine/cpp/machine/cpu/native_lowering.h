@@ -77,21 +77,20 @@ private:
 	void emitFloatInput(int selector, ValueTag tag, sljit_s32 destination);
 	void emitFloatCanonicalization(sljit_s32 reg);
 	void emitWordOperand(int selector, NativeWordSource source, NativeBlockExitSite& invalid);
-	void emitArrayRead(NativeBlockExitSite&);
-	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&);
-	void emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBlockExitSite&);
+	void emitArrayRead(NativeBlockExitSite&, bool guardStack);
+	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&, bool guardStack);
+	void emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBlockExitSite&, sljit_s32 scratch = SLJIT_R2);
 	std::array<sljit_jump*, 3> emitStringValueAddress(NativeBlockExitSite&, bool load,
-		sljit_s32 keySource, sljit_sw keyOperand, std::optional<u8> temporary);
+		sljit_s32 keySource, sljit_sw keyOperand, bool guardStack, std::optional<u8> temporary);
 	sljit_jump* emitStringValueTag(bool load, std::optional<ValueTag> resultTag);
 	void emitStringPayload();
 	void emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<StringId> constantKey,
-		std::optional<ValueTag> resultTag, NativeStorePlan store, bool ownFieldOnly = false,
+		std::optional<ValueTag> resultTag, NativeStorePlan store, bool guardStack, bool ownFieldOnly = false,
 		std::optional<u8> temporary = {});
 	void emitReusedFieldAddress(u8 temporary, NativeBlockExitSite&, std::optional<ValueTag> resultTag);
 	void emitFieldResult(int slot, std::optional<ValueTag> resultTag);
 	void emitSingleStringReads();
 	void emitTableSlotOffset(sljit_s32 destination, bool word);
-	void emitTableSlotLoad(sljit_s32 destination, bool word);
 	void emitTableOverwrite(NativeBlockExitSite&, int value, NativeGcBarrier);
 	// scratch cannot address the mark byte; test is first clobbered after the load.
 	void emitGuardNoGcMutation(NativeBlockExitSite&, sljit_s32 mark, sljit_sw markArg,
