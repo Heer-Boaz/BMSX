@@ -3,6 +3,9 @@
 #include "machine/cpu/native_block_abi.h"
 #include "machine/cpu/native_execution.h"
 #include "machine/cpu/native_table_constructor.h"
+#include "machine/cpu/thread.h"
+
+#include <algorithm>
 
 #if defined(BMSX_NATIVE_PERF_MAP)
 #include <cstdio>
@@ -55,11 +58,23 @@ NativeBlock::~NativeBlock() {
 const NativeBlockExitSite* NativeBlock::run(const ValueSpan& registers, NativeBlockRunState& state) const {
 	state.exitCode = m_gate->exit;
 	state.ram = region->ram;
+	if (state.frame && state.frame->thread) state.bindStack(*state.frame->thread);
+	else if (registers.ram()) {
+		const auto count = static_cast<u32>(registers.size());
+		state.stackBegin = std::min(registers.wordAddress(), registers.tagAddress());
+		state.stackEnd = std::max(registers.wordAddress() + count * u32{sizeof(u32)}, registers.tagAddress() + count);
+	} else state.stackBegin = state.stackEnd = 0;
 	return reinterpret_cast<NativeBlockGate::Entry>(m_gate->entry)(&state, m_body, &registers);
+}
+
+void NativeBlockRunState::bindStack(const Thread& thread) {
+	stackBegin = thread.stackOffset();
+	stackEnd = stackBegin + thread.backingByteLength();
 }
 
 void NativeBlock::execute(NativeCpuRunState& state) const {
 	state.state.exitCode = m_gate->dispatch;
+	state.state.bindStack(*state.state.frame->thread);
 	reinterpret_cast<NativeBlockGate::Entry>(m_gate->entry)(&state.state, m_body, &state.state.frame->registers);
 }
 

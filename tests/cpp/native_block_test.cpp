@@ -1246,6 +1246,70 @@ void twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead() {
 	}
 }
 
+void reusedFieldAddressHonorsEachSiteAndPhysicalStackAliases() {
+	const auto key = cpu.stringPool().intern("reused field");
+	const auto alternate = cpu.stringPool().intern("alternate field");
+	auto table = cpu.createTable(0, 2);
+	int slot = table.setStringKey(key, valueInteger(13));
+	const int alternateSlot = table.setStringKey(alternate, valueInteger(29));
+	table.getStringKeyCached(key, slot);
+	const auto constants = test::valueBank(std::array{valueString(key)});
+	std::array decoded{
+		DecodedInstruction{.tableCacheSlot = slot, .a = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.bx = 0, .a = 4, .op = static_cast<u8>(OpCode::MOV)},
+		DecodedInstruction{.tableCacheSlot = slot, .a = 2, .b = 4, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.bx = 0, .a = 3, .b = 1, .c = 2, .op = static_cast<u8>(OpCode::ADD)},
+	};
+	std::array<NativeBlockInstruction, decoded.size()> source;
+	u32 pc = 0xa000u;
+	for (size_t index = 0; index < decoded.size(); ++index) {
+		auto& inst = decoded[index];
+		inst.width = index == 2 ? 2 : 1;
+		inst.baseCycles = BASE_CYCLES[inst.op];
+		source[index] = {&inst, pc};
+		pc += inst.width * INSTRUCTION_BYTES;
+	}
+	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
+		decoded.back().observeNativeNumericTypes(valueInteger(13), valueInteger(13));
+
+	size_t bytes = 0;
+	auto block = test::compileNative(source, constants.view(), bytes, memory, cpu.stringPool());
+	const int grant = block->terminal.cycles;
+	require(block->terminal.currentPc == source.back().pc, "a repeated field can share the native segment through a receiver copy");
+	ValueSlots registers(5);
+	registers.set(0, valueTable(table.address()));
+	NativeBlockRunState state{};
+	state.remainingCycles = grant;
+	require(block->run(registers.view(), state) == &block->terminal && registers.get(3) == valueInteger(26),
+		"both VM reads consume the checked address and produce their own results");
+	// Distinct callsites can accept distinct matching raw hash nodes. The
+	// optimized read must not silently substitute the first prediction.
+	const u32 words = table.storageAddress();
+	memory.writeRamRecordWord(words + static_cast<u32>(alternateSlot) * sizeof(u32), key);
+	block->sideExits[1].tableReadCache.receiverSlot = alternateSlot;
+	registers.set(2, valueInteger(-3));
+	state.remainingCycles = grant;
+	const auto* mismatch = block->run(registers.view(), state);
+	require(mismatch == &block->sideExits[1] && mismatch->currentPc == source[2].pc
+		&& mismatch->lastPc == source[2].pc + INSTRUCTION_BYTES && state.remainingCycles == grant - mismatch->cycles
+		&& registers.get(1) == valueInteger(13) && registers.get(2) == valueInteger(-3),
+		"a live prediction split takes the consuming instruction's exact WIDE exit");
+	memory.writeRamRecordWord(words + static_cast<u32>(alternateSlot) * sizeof(u32), alternate);
+	block->sideExits[1].tableReadCache.receiverSlot = slot;
+
+	// An admitted host-owned fixture has no guest alias; a RAM-backed view
+	// can physically overlap a field value even when the guest slots differ.
+	const u32 valueWord = words + (table.hashSlots() + static_cast<u32>(slot)) * sizeof(u32);
+	const u32 tags = DYNAMIC_RAM_BASE + 0x70000u;
+	ValueSpan aliased(memory, valueWord, tags, registers.capacity());
+	aliased.set(0, valueTable(table.address()));
+	state.remainingCycles = grant;
+	const auto* overlap = block->run(aliased, state);
+	require(overlap == &block->sideExits[0] && state.remainingCycles == grant - overlap->cycles,
+		"a checked address cannot be retained across physical writes to its backing through the register window");
+	table.setStringKey(key, valueInteger(13));
+}
+
 } // namespace
 
 int main() {
@@ -1272,6 +1336,7 @@ int main() {
 		truthinessAndConditionalExits();
 		typedCallExitPublishesPrefix();
 		twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead();
+		reusedFieldAddressHonorsEachSiteAndPhysicalStackAliases();
 		std::cout << "Native block datapath tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

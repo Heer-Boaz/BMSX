@@ -119,9 +119,94 @@ void NativeLowering::emitArrayStore(int value, NativeStorePlan plan, NativeBlock
 	emitTableOverwrite(exit, value, plan.barrier);
 }
 
+void NativeLowering::emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBlockExitSite& exit) {
+	auto* c = m_compiler;
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, offset, 0, SLJIT_IMM, bytes);
+	auto* before = sljit_emit_cmp(c, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R2, 0,
+		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, stackBegin));
+	fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, offset, 0,
+		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, stackEnd)), exit, m_cache.state());
+	sljit_set_label(before, sljit_emit_label(c));
+}
+
 // Hash keys start after the array; hash values start after all hash keys.
+// The checked result is the pair of physical offsets in R1 and R3.
+std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExitSite& exit, bool load,
+	sljit_s32 keySource, sljit_sw keyOperand, std::optional<u8> temporary) {
+	auto* c = m_compiler;
+	const sljit_sw prediction = reinterpret_cast<sljit_sw>(load ? &exit.tableReadCache.receiverSlot : &exit.tableStore.slot);
+	sljit_sw saved = 0;
+	std::array<sljit_jump*, 3> checks;
+	sljit_emit_op1(c, SLJIT_MOV_S32, SLJIT_R1, 0, SLJIT_MEM0(), prediction);
+	checks[0] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
+		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash));
+	if (temporary) {
+		saved = NativeBlockAbi::fieldAddressOffset + *temporary * NativeBlockAbi::fieldAddressBytes;
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), saved + 2 * sizeof(u32), SLJIT_R1, 0);
+	}
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0,
+		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array));
+	emitTableSlotOffset(SLJIT_R3, false);
+	if (temporary) emitGuardOutsideStack(SLJIT_R3, 1, exit);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	checks[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+		SLJIT_IMM, static_cast<u8>(ValueTag::String));
+	emitTableSlotOffset(SLJIT_R1, true);
+	if (temporary) emitGuardOutsideStack(SLJIT_R1, sizeof(u32), exit);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R1);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	checks[2] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, keySource, keyOperand);
+
+	// Advance to the value lane and mirror the two offsets independently.
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash));
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
+	sljit_emit_op2(c, SLJIT_AND, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
+	sljit_emit_op2(c, SLJIT_AND, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	if (temporary) {
+		// The producer and its consumers read the live record. None of
+		// these bytes may be hidden in the native register window cache.
+		emitGuardOutsideStack(SLJIT_R1, sizeof(u32), exit);
+		emitGuardOutsideStack(SLJIT_R3, 1, exit);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), saved, SLJIT_R1, 0);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), saved + sizeof(u32), SLJIT_R3, 0);
+	}
+	return checks;
+}
+
+sljit_jump* NativeLowering::emitStringValueTag(bool load, std::optional<ValueTag> resultTag) {
+	auto* c = m_compiler;
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
+	const sljit_s32 valueTagReg = load ? SLJIT_R3 : SLJIT_R2;
+	sljit_emit_op1(c, SLJIT_MOV_U8, valueTagReg, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	return sljit_emit_cmp(c, (resultTag ? SLJIT_NOT_EQUAL : SLJIT_EQUAL) | SLJIT_32,
+		valueTagReg, 0, SLJIT_IMM, static_cast<u8>(resultTag.value_or(ValueTag::Nil)));
+}
+
+void NativeLowering::emitStringPayload() {
+	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
+}
+
+void NativeLowering::emitReusedFieldAddress(u8 temporary, NativeBlockExitSite& exit, std::optional<ValueTag> resultTag) {
+	auto* c = m_compiler;
+	const sljit_sw saved = NativeBlockAbi::fieldAddressOffset + temporary * NativeBlockAbi::fieldAddressBytes;
+	// Each callsite can change its own prediction independently. Check
+	// identity before allowing the consumer to use a different site's proof.
+	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
+		SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&exit.tableReadCache.receiverSlot),
+		SLJIT_MEM1(SLJIT_SP), saved + 2 * sizeof(u32)), exit, m_cache.state());
+	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), saved);
+	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_SP), saved + sizeof(u32));
+	fault(emitStringValueTag(true, resultTag), exit, m_cache.state());
+	emitStringPayload();
+}
+
 void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& exit,
-	std::optional<StringId> constantKey, std::optional<ValueTag> resultTag, NativeStorePlan plan) {
+	std::optional<StringId> constantKey, std::optional<ValueTag> resultTag, NativeStorePlan plan,
+	bool ownFieldOnly, std::optional<u8> temporary) {
 	auto* c = m_compiler;
 	if (!load && plan.nilValue == NativeNilValue::Nil) {
 		fault(sljit_emit_jump(c, SLJIT_JUMP), exit, m_cache.state());
@@ -132,48 +217,20 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
 	const sljit_s32 keySource = constantKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP);
 	const sljit_sw keyOperand = constantKey ? static_cast<sljit_sw>(*constantKey) : keyWord;
-	const sljit_sw prediction = reinterpret_cast<sljit_sw>(load ? &exit.tableReadCache.receiverSlot : &exit.tableStore.slot);
-	// A result-specialized field may be inside a fixed-cost segment. Only
-	// the untyped reads already end at a checkpoint for variable work.
-	const bool allowSingleIndex = load && !resultTag;
-	std::array<sljit_jump*, 4> ownMisses;
-	size_t misses = 0;
-	const auto rejectOwn = [&](sljit_jump* jump) {
-		if (allowSingleIndex) ownMisses[misses++] = jump;
-		else fault(jump, exit, m_cache.state());
-	};
-	sljit_emit_op1(c, SLJIT_MOV_S32, SLJIT_R1, 0, SLJIT_MEM0(), prediction);
-	rejectOwn(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
-		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash)));
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0,
-		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array));
-	emitTableSlotOffset(SLJIT_R3, false);
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
-	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
-	rejectOwn(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
-		SLJIT_IMM, static_cast<u8>(ValueTag::String)));
-	emitTableSlotOffset(SLJIT_R1, true);
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R1);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
-	rejectOwn(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, keySource, keyOperand));
-
-	// Advance to the value lane and mirror the two offsets independently.
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash));
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
-	sljit_emit_op2(c, SLJIT_AND, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
-	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
-	sljit_emit_op2(c, SLJIT_AND, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
-	const sljit_s32 valueTagReg = load ? SLJIT_R3 : SLJIT_R2;
-	sljit_emit_op1(c, SLJIT_MOV_U8, valueTagReg, 0, SLJIT_MEM1(SLJIT_R2), 0);
-	rejectOwn(sljit_emit_cmp(c, (resultTag ? SLJIT_NOT_EQUAL : SLJIT_EQUAL) | SLJIT_32,
-		valueTagReg, 0, SLJIT_IMM, static_cast<u8>(resultTag.value_or(ValueTag::Nil))));
+	const auto address = emitStringValueAddress(exit, load, keySource, keyOperand, temporary);
+	auto* valueFailure = emitStringValueTag(load, resultTag);
+	// An own-only read can be inside a fixed-cost segment. Only
+	// checkpointed reads can complete a returning variable-cost lookup.
+	if (load && !ownFieldOnly && !resultTag) {
+		emitStringPayload();
+		m_singleStringReads.push_back({{address[0], address[1], address[2], valueFailure},
+			constantKey, m_cache.state(), &exit, sljit_emit_label(c)});
+		return;
+	}
+	for (auto* guard : address) fault(guard, exit, m_cache.state());
+	fault(valueFailure, exit, m_cache.state());
 	if (load) {
-		NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R1);
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
-		if (allowSingleIndex)
-			m_singleStringReads.push_back({ownMisses, constantKey, m_cache.state(), &exit, sljit_emit_label(c)});
+		emitStringPayload();
 		return;
 	}
 
@@ -225,9 +282,16 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 	auto* c = m_compiler;
 	auto& exit = *sideExit(instruction.slow);
 	const bool load = access.mode != NativeTableMode::Write;
-	const int base = access.receiver;
-	const int key = access.key;
+	const auto* address = access.ownFieldAddress
+		? &m_ir[m_current].ownFieldAddresses[*access.ownFieldAddress] : nullptr;
+	const int base = address ? address->receiver : access.receiver;
+	const int key = address ? address->key : access.key;
 	const int value = access.value;
+	if (address && address->definingRow + 1u != m_instruction) {
+		emitReusedFieldAddress(*address->temporary, exit, access.resultTag);
+		emitFieldResult(value, access.resultTag);
+		return;
+	}
 	if (access.mode == NativeTableMode::ReadMethod) {
 		emitRawLoad(base, SLJIT_R0, SLJIT_R1);
 		emitRawStore(value + 1, SLJIT_R0, SLJIT_R1);
@@ -248,6 +312,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	fault(sljit_emit_cmp(c, SLJIT_GREATER, SLJIT_R0, 0, SLJIT_IMM,
 		MAIN_RAM_SIZE - TableRecord::HEADER_BYTES), exit, m_cache.state());
+	if (address && address->temporary) emitGuardOutsideStack(SLJIT_R0, TableRecord::HEADER_BYTES, exit);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
 	switch (access.keyKind) {
 	case NativeTableKey::Value: {
@@ -272,18 +337,27 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		else emitArrayStore(value, access.store, exit);
 		break;
 	case NativeTableKey::Field:
-		emitStringSlot(load, value, exit, m_constants.payload(key), access.resultTag, access.store);
-		if (access.resultTag) {
-			const auto target = m_cache.write(value, *access.resultTag);
-			if (target.tag == ValueTag::Float)
-				sljit_emit_fcopy(c, SLJIT_COPY32_TO_F32, target.reg, SLJIT_R2);
-			else
-				sljit_emit_op1(c, SLJIT_MOV32, target.reg, 0, SLJIT_R2, 0);
+		emitStringSlot(load, value, exit, m_constants.payload(key), access.resultTag, access.store,
+			access.ownFieldOnly, address ? address->temporary : std::nullopt);
+		if (load) {
+			emitFieldResult(value, access.resultTag);
 			return;
 		}
 		break;
 	}
 	if (load)
 		emitRawStore(value, SLJIT_R2, SLJIT_R3);
+}
+
+void NativeLowering::emitFieldResult(int slot, std::optional<ValueTag> resultTag) {
+	if (!resultTag) {
+		emitRawStore(slot, SLJIT_R2, SLJIT_R3);
+		return;
+	}
+	const auto target = m_cache.write(slot, *resultTag);
+	if (target.tag == ValueTag::Float)
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, target.reg, SLJIT_R2);
+	else
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_R2, 0);
 }
 } // namespace bmsx

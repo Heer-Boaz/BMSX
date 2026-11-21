@@ -22,6 +22,7 @@
 namespace bmsx {
 
 struct CallFrame;
+struct Thread;
 class CPU;
 class GcHeap;
 class NativeBlock;
@@ -45,6 +46,7 @@ struct NativeBlockLink {
 static_assert(sizeof(TableStringReadCache) <= sizeof(NativeBlockLink));
 
 struct NativeBlockRunState {
+	void bindStack(const Thread&);
 	ConstValueSpan constants;
 	CallFrame* frame = nullptr;
 	GcHeap* heap = nullptr;
@@ -58,6 +60,9 @@ struct NativeBlockRunState {
 	void* exitCode = nullptr;
 	// Host base of guest main RAM; the gate pins it for the whole native frame.
 	u8* ram = nullptr;
+	// The admitted nonwrapping physical extent, including frame-control words.
+	u32 stackBegin = 0;
+	u32 stackEnd = 0;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	DiagnosticNativeOpcodeCounts diagnosticOpcodes;
 #endif

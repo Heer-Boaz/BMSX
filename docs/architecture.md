@@ -116,6 +116,10 @@ points. The optimizer chooses operation plans and their required type proofs
 on logical guest slots. Within a source run, scalar operands also name their
 producing instruction and output; copying a value does not change its origin.
 Field selection can follow both operands across reuse of the original slot.
+Fixed-field reads can share a checked address value without sharing the
+loaded value or the miss site. Reuse stops at effect boundaries. The backend
+admits the physical footprint and the consumer's live prediction before it
+uses the retained offsets.
 The numeric planner uses observed operand types independently of the next
 guest instruction. IR exit IDs name guest operands and timing, not executable
 descriptors. A table allocation can name a fixed-key construction plan in

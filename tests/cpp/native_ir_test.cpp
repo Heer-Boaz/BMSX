@@ -191,6 +191,133 @@ void distinctFieldValuesSurviveCopiesAndSlotReuse() {
 		"the sum uses both field proofs, including the one forwarded by MOV");
 }
 
+void nestedFieldsShareOnlyTheCheckedAddress() {
+	constexpr u32 pc = 0x5300u;
+	std::array decoded{
+		DecodedInstruction{.tableCacheSlot = 7, .a = 1, .b = 0, .c = 0, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.tableCacheSlot = 1, .a = 3, .b = 1, .c = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.bx = 0, .a = 4, .b = 0, .op = static_cast<u8>(OpCode::MOV)},
+		DecodedInstruction{.tableCacheSlot = 7, .a = 2, .b = 4, .c = 0, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.tableCacheSlot = 2, .a = 5, .b = 2, .c = 2, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.bx = 0, .a = 6, .b = 3, .c = 5, .op = static_cast<u8>(OpCode::ADD)},
+	};
+	std::array<NativeBlockInstruction, decoded.size()> source;
+	for (size_t row = 0; row < decoded.size(); ++row) {
+		decoded[row].width = row == 3 ? 2 : 1;
+		decoded[row].baseCycles = BASE_CYCLES[decoded[row].op];
+		source[row] = {&decoded[row], pc + static_cast<u32>(row + (row > 3)) * INSTRUCTION_BYTES};
+	}
+	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
+		decoded.back().observeNativeNumericTypes(valueFloat(1.5f), valueInteger(2));
+	const std::array runs{NativeBlockSource{source}};
+	NativeIrRegion region(runs);
+	NativeRegisterUses uses;
+	region.optimize({}, uses);
+	require(region.blocks().size() == 1, "a repeated own-field path stays in one native segment");
+	const auto& block = region.blocks().front();
+	const auto& first = std::get<NativeTableAccess>(block.instructions[0].operation);
+	const auto& second = std::get<NativeTableAccess>(block.instructions[3].operation);
+	require(first.ownFieldAddress && first.ownFieldAddress == second.ownFieldAddress
+		&& first.ownFieldOnly && second.ownFieldOnly
+		&& first.resultTag == ValueTag::Table && second.resultTag == ValueTag::Table,
+		"the two t.a loads share a checked address but keep their own Table result checks");
+	const auto& definition = block.ownFieldAddresses[*first.ownFieldAddress];
+	require(block.ownFieldAddresses.size() == 3 && definition.definingRow == 0 && definition.receiver == 0
+		&& definition.key == 0 && definition.temporary,
+		"only the repeated receiver origin and key share a live address definition");
+	const auto& b = std::get<NativeTableAccess>(block.instructions[1].operation);
+	const auto& c = std::get<NativeTableAccess>(block.instructions[4].operation);
+	require(b.receiverCheck == NativeTagCheck::Proved && c.receiverCheck == NativeTagCheck::Proved
+		&& b.ownFieldAddress != c.ownFieldAddress && b.resultTag == ValueTag::Float && c.resultTag == ValueTag::Integer,
+		"nested receivers use their own Table proofs and independent field addresses");
+	const auto& miss = region.sideExits(block)[*block.instructions[3].slow];
+	require(block.instructions[0].slow != block.instructions[3].slow && miss.exit == NativeBlockExit::ReadField
+		&& miss.currentPc == source[3].pc && miss.lastPc == source[3].pc + INSTRUCTION_BYTES
+		&& miss.nextPc == source[4].pc,
+		"a reused address does not reuse the first read's semantic miss or WIDE timing");
+}
+
+void fieldAddressesStopAtDefinitionsAndEffects() {
+	enum class Boundary { Copy, Redefinition, UncheckedField, Store, Upvalue, Global, Call, FieldKey, Prediction };
+	for (const auto boundary : {Boundary::Copy, Boundary::Redefinition, Boundary::Store, Boundary::Upvalue,
+		Boundary::Global, Boundary::Call, Boundary::UncheckedField, Boundary::FieldKey, Boundary::Prediction}) {
+		std::array decoded{
+			DecodedInstruction{.tableCacheSlot = 4, .a = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
+			DecodedInstruction{.bx = 0, .a = 4, .op = static_cast<u8>(OpCode::MOV)},
+			DecodedInstruction{.tableCacheSlot = 4, .a = 2, .b = 4, .op = static_cast<u8>(OpCode::GETFIELD)},
+		};
+		auto& between = decoded[1];
+		auto& after = decoded[2];
+		switch (boundary) {
+			case Boundary::Copy: break;
+			case Boundary::Redefinition: between.b = 3; break;
+			case Boundary::UncheckedField:
+				between.op = static_cast<u8>(OpCode::GETFIELD);
+				between.tableCacheSlot = -1;
+				after.b = 0;
+				break;
+			case Boundary::Store: between.op = static_cast<u8>(OpCode::SETI); after.b = 0; break;
+			case Boundary::Upvalue: between.op = static_cast<u8>(OpCode::SETUP); after.b = 0; break;
+			case Boundary::Global: between.op = static_cast<u8>(OpCode::SETGL); after.b = 0; break;
+			case Boundary::Call: between.op = static_cast<u8>(OpCode::CALL); after.b = 0; break;
+			case Boundary::FieldKey: after.c = 1; break;
+			case Boundary::Prediction: after.tableCacheSlot = 5; break;
+		}
+		std::array<NativeBlockInstruction, decoded.size()> source;
+		for (size_t row = 0; row < decoded.size(); ++row) {
+			decoded[row].width = 1;
+			decoded[row].baseCycles = BASE_CYCLES[decoded[row].op];
+			source[row] = {&decoded[row], 0x5400u + static_cast<u32>(row) * INSTRUCTION_BYTES};
+		}
+		const std::span instructions(source);
+		const std::array runs{NativeBlockSource{boundary == Boundary::Call ? instructions.first(2) : instructions},
+			NativeBlockSource{instructions.last(1)}};
+		NativeIrRegion region{std::span(runs).first(boundary == Boundary::Call ? 2 : 1)};
+		const auto& firstBlock = region.blocks().front();
+		const auto& lastBlock = region.blocks().back();
+		const auto& first = std::get<NativeTableAccess>(firstBlock.instructions.front().operation);
+		const auto& last = std::get<NativeTableAccess>(lastBlock.instructions.back().operation);
+		require(first.ownFieldAddress && last.ownFieldAddress, "each fixed-field read has a checked address operand");
+		const auto& definition = firstBlock.ownFieldAddresses[*first.ownFieldAddress];
+		if (boundary == Boundary::Copy) {
+			require(&firstBlock == &lastBlock && first.ownFieldAddress == last.ownFieldAddress
+				&& definition.temporary && first.ownFieldOnly && last.ownFieldOnly && !first.resultTag && !last.resultTag,
+				"repeated untyped loads can share an own-only path through an ordinary copy");
+		} else {
+			require(!definition.temporary && !first.ownFieldOnly && !last.ownFieldOnly,
+				"different receivers, keys, seeds or intervening effects do not retain checked addresses");
+		}
+	}
+}
+
+void fieldAddressTemporariesAreBoundedByLifetime() {
+	constexpr size_t keyCount = 1 + NATIVE_OWN_FIELD_TEMPORARIES;
+	std::array<DecodedInstruction, 2 * keyCount> decoded;
+	std::array<NativeBlockInstruction, decoded.size()> source;
+	for (size_t row = 0; row < decoded.size(); ++row) {
+		const auto key = static_cast<u16>(row % keyCount);
+		decoded[row] = {.tableCacheSlot = key, .a = static_cast<u16>(row + 1), .c = static_cast<i16>(key),
+			.op = static_cast<u8>(OpCode::GETFIELD), .width = 1, .baseCycles = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)]};
+		source[row] = {&decoded[row], 0x5500u + static_cast<u32>(row) * INSTRUCTION_BYTES};
+	}
+	const std::array runs{NativeBlockSource{source}};
+	NativeIrRegion region(runs);
+	const auto& block = region.blocks().front();
+	require(region.blocks().size() == 1 && block.ownFieldAddresses.size() == keyCount + 1,
+		"overlapping field addresses do not require an additional native temporary");
+	for (size_t key = 0; key < keyCount; ++key) {
+		const auto& first = std::get<NativeTableAccess>(block.instructions[key].operation);
+		const auto& repeated = std::get<NativeTableAccess>(block.instructions[keyCount + key].operation);
+		const auto& definition = block.ownFieldAddresses[*first.ownFieldAddress];
+		if (key < NATIVE_OWN_FIELD_TEMPORARIES)
+			require(first.ownFieldAddress == repeated.ownFieldAddress && definition.temporary == key,
+				"simultaneously live addresses occupy distinct temporary ordinals");
+		else
+			require(first.ownFieldAddress != repeated.ownFieldAddress && !definition.temporary,
+				"the excess use computes its checked address anew");
+	}
+}
+
 void feedbackDoesNotDependOnStoreAdjacency() {
 	DecodedInstruction sum{.bx = 0, .a = 3, .b = 1, .c = 2, .op = static_cast<u8>(OpCode::ADD)};
 	DecodedInstruction store{.tableCacheSlot = -1, .c = 3, .op = static_cast<u8>(OpCode::SETFIELD)};
@@ -450,6 +577,9 @@ int main() {
 		fieldChainHasAnExplicitResumePoint();
 		fieldSelectionOwnsColdCutAndContinuation();
 		distinctFieldValuesSurviveCopiesAndSlotReuse();
+		nestedFieldsShareOnlyTheCheckedAddress();
+		fieldAddressesStopAtDefinitionsAndEffects();
+		fieldAddressTemporariesAreBoundedByLifetime();
 		feedbackDoesNotDependOnStoreAdjacency();
 		decodedFieldsBecomeOperationsAndEffects();
 		undefinedMoveKindDoesNotBecomeANumericWordMove();

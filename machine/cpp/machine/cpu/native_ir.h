@@ -60,6 +60,13 @@ struct NativeInstruction {
 		: operation(std::move(operation)), slots(std::visit([](const auto& op) { return op.slots(); }, this->operation)), before(before) {}
 };
 
+struct NativeOwnFieldAddress {
+	u8 definingRow;
+	NativeValueRef receiver;
+	u16 key;
+	std::optional<u8> temporary{};
+};
+
 struct NativeIrBlock {
 	std::span<NativeInstruction> instructions;
 	NativeIrSideExit taken{};
@@ -77,6 +84,13 @@ struct NativeIrBlock {
 	u16 firstSideExit = 0;
 	u8 sideExitCount = 0;
 	bool hasFusedJump = false;
+	std::span<const NativeOwnFieldAddress> ownFieldAddresses{};
+};
+
+// Temporary source-row links retained only until the region is partitioned.
+struct NativeFieldAddressUse {
+	u8 definition;
+	std::optional<u8> temporary{};
 };
 
 class NativeIrRegion {
@@ -97,13 +111,16 @@ private:
 	std::vector<NativeIrBlock> m_blocks;
 	std::vector<NativeIrExit> m_sideExits;
 	std::vector<NativeRecordPlan> m_records;
+	std::vector<NativeOwnFieldAddress> m_ownFieldAddresses;
 	void buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations, bool cpuOwned);
+	void bindOwnFieldAddresses(NativeIrBlock& block, std::span<const NativeFieldAddressUse> uses, size_t firstRow);
 	void planRecordConstructors(std::span<const u16> byAddress, u32 immutablePagePc, ConstValueSpan constants);
 };
 
 NativeOperation translateNativeOperation(const DecodedInstruction& source, ConstValueSpan constants);
 enum class NativeOperationFlow : u8 { Linear, Checkpoint, Terminal, LeavesNative };
 NativeOperationFlow nativeOperationFlow(const NativeOperation& operation);
-size_t planNativeFieldReads(std::span<NativeInstruction> instructions, NativeCompilationTier tier);
+size_t planNativeFieldReads(std::span<NativeInstruction> instructions, NativeCompilationTier tier,
+	std::span<NativeFieldAddressUse> addressUses);
 
 } // namespace bmsx

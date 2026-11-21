@@ -20,7 +20,7 @@ struct OperationFlow {
 	Flow operator()(const NativeComparison&) const { return Flow::Terminal; }
 	Flow operator()(const NativeReplay&) const { return Flow::LeavesNative; }
 
-	Flow operator()(const NativeTableAccess& op) const { return op.resultTag ? Flow::Linear : Flow::Checkpoint; }
+	Flow operator()(const NativeTableAccess& op) const { return op.ownFieldOnly ? Flow::Linear : Flow::Checkpoint; }
 	Flow operator()(const NativeVararg&) const { return Flow::Checkpoint; }
 	Flow operator()(const NativeLength&) const { return Flow::Checkpoint; }
 	Flow operator()(const NativeMemoryAccess&) const { return Flow::Checkpoint; }
@@ -51,12 +51,13 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Const
 	m_instructions.reserve(instructionCount);
 	m_blocks.reserve(sources.size());
 	m_sideExits.reserve(instructionCount);
+	std::array<NativeFieldAddressUse, NATIVE_BLOCK_MAX_INSTRUCTIONS> addressUses;
 	for (const auto& source : sources) {
 		const size_t first = m_instructions.size();
 		for (const auto& inst : source.instructions)
 			m_instructions.emplace_back(translateNativeOperation(*inst.decoded, constants));
 		auto operations = std::span(m_instructions).subspan(first);
-		const size_t count = planNativeFieldReads(operations, options.tier);
+		const size_t count = planNativeFieldReads(operations, options.tier, addressUses);
 		const bool completeRun = count == operations.size();
 		operations = operations.first(count);
 		if (!completeRun) m_instructions.erase(m_instructions.begin() + first + count, m_instructions.end());
@@ -70,6 +71,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Const
 			const NativeBlockSource slice{source.instructions.subspan(segment, length),
 				last && completeRun ? source.skippedInstruction : nullptr};
 			buildBlock(slice, operations.subspan(segment, length), cpuOwned);
+			bindOwnFieldAddresses(m_blocks.back(), std::span(addressUses).subspan(segment, length), segment);
 			segment = index + 1;
 		}
 		u16 coveredWords = 0;

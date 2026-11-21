@@ -384,6 +384,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				return nullptr;
 			}
 			thread.recordNativeWrites(cpu.m_memory.ramWriteWatches());
+			state.bindStack(thread);
 			frame = thread.currentFrame;
 		}
 		// Read-only helpers preserve the admitted window. Other same-frame

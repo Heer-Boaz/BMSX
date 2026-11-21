@@ -191,6 +191,7 @@ struct NativeMemoryAccess {
 
 enum class NativeTableMode : u8 { Read, Write, ReadMethod };
 enum class NativeTableKey : u8 { Value, Integer, Field };
+using NativeOwnFieldAddressId = u8;
 struct NativeTableAccess {
 	NativeValueRef value;
 	NativeValueRef receiver;
@@ -201,6 +202,10 @@ struct NativeTableAccess {
 	i32 predictedSlot = -1;
 	NativeTagCheck receiverCheck = NativeTagCheck::Dynamic;
 	NativeStorePlan store{};
+	std::optional<NativeOwnFieldAddressId> ownFieldAddress{};
+	bool ownFieldOnly = false;
+
+	constexpr bool readsFixedField() const { return mode == NativeTableMode::Read && keyKind == NativeTableKey::Field; }
 
 	constexpr NativeSlotAccess slots() const {
 		const i16 keySlot = keyKind == NativeTableKey::Value ? key : NATIVE_NO_OPERAND;

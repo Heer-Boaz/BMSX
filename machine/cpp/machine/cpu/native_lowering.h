@@ -79,8 +79,16 @@ private:
 	void emitWordOperand(int selector, NativeWordSource source, NativeBlockExitSite& invalid);
 	void emitArrayRead(NativeBlockExitSite&);
 	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&);
+	void emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBlockExitSite&);
+	std::array<sljit_jump*, 3> emitStringValueAddress(NativeBlockExitSite&, bool load,
+		sljit_s32 keySource, sljit_sw keyOperand, std::optional<u8> temporary);
+	sljit_jump* emitStringValueTag(bool load, std::optional<ValueTag> resultTag);
+	void emitStringPayload();
 	void emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<StringId> constantKey,
-		std::optional<ValueTag> resultTag, NativeStorePlan store);
+		std::optional<ValueTag> resultTag, NativeStorePlan store, bool ownFieldOnly = false,
+		std::optional<u8> temporary = {});
+	void emitReusedFieldAddress(u8 temporary, NativeBlockExitSite&, std::optional<ValueTag> resultTag);
+	void emitFieldResult(int slot, std::optional<ValueTag> resultTag);
 	void emitSingleStringReads();
 	void emitTableSlotOffset(sljit_s32 destination, bool word);
 	void emitTableSlotLoad(sljit_s32 destination, bool word);
