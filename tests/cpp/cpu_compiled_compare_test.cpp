@@ -1,4 +1,5 @@
 #include "common/hash_fnv.h"
+#include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/devices/irq/controller.h"
@@ -12,7 +13,6 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <iostream>
 #include <stdexcept>
 
@@ -112,7 +112,7 @@ void stringOrderingReadsPendingRegisterWords() {
 		writeInstruction(image.text, 7, static_cast<u8>(OpCode::MOV), 8, 4, 0);
 		writeInstruction(image.text, 8, static_cast<u8>(OpCode::JMP), 0, 63, 55, 255);
 		image.functions = {{.firstWord = 0, .wordCount = 9, .maxStack = 9}};
-		image.constants = {std::bit_cast<i32>(fnv1a32("mz"))};
+		image.constants = {toSignedWord(fnv1a32("mz"))};
 		CpuMachine native(image, false), scalar(image, true);
 		const u32 pc = native.rom.textAddress;
 		const int prefix = BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::KSMI)];
@@ -152,7 +152,7 @@ void stringOrderingReadsPendingRegisterWords() {
 			&& test::sameLanguageRam(native.cpu, scalar.cpu), "ordering publishes the same architectural state");
 		for (auto* machine : {&native, &scalar}) {
 			auto& registers = machine->cpu.activeThread()->frameAtDepth(0)->registers;
-			registers.set(3, valueInteger(std::bit_cast<i32>(fnv1a32("m"))));
+			registers.set(3, valueInteger(toSignedWord(fnv1a32("m"))));
 			registers.set(4, valueInteger(1));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
 		}

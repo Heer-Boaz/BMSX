@@ -1,10 +1,10 @@
 #pragma once
 
 #include <array>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
 
+#include "machine/common/numeric.h"
 #include "machine/cpu/value.h"
 #include "machine/memory/mapped_page.h"
 #include "spec/blua32/instruction_format.h"
@@ -82,7 +82,7 @@ struct DecodedInstruction {
 	class Payload {
 	public:
 		constexpr Payload() = default;
-		static constexpr Payload bx(u32 value) { return Payload(std::bit_cast<i32>(value)); }
+		static constexpr Payload bx(u32 value) { return Payload(toSignedWord(value)); }
 		static constexpr Payload sbx(i32 value) { return Payload(value); }
 		static constexpr Payload tableSlot(i32 slot) { return Payload(slot); }
 
@@ -103,7 +103,7 @@ struct DecodedInstruction {
 	uint8_t baseCycles = 0;
 	uint8_t dispatchCycles = 0;
 
-	constexpr u32 bx() const { return std::bit_cast<u32>(payload.m_word); }
+	constexpr u32 bx() const { return static_cast<u32>(payload.m_word); }
 	constexpr void setBx(u32 value) { payload = Payload::bx(value); }
 	constexpr i32 sbx() const { return payload.m_word; }
 	constexpr void setSbx(i32 value) { payload = Payload::sbx(value); }
@@ -113,7 +113,7 @@ struct DecodedInstruction {
 	// ADD/SUB/MUL do not encode a Bx operand. A fresh decode leaves their
 	// type pair unseen (zero confidence), independently of either tag.
 	NativeNumericTypes nativeNumericTypes() const {
-		const u32 bits = std::bit_cast<u32>(payload.m_word);
+		const u32 bits = static_cast<u32>(payload.m_word);
 		return {static_cast<ValueTag>(bits & NUMERIC_TAG_MASK),
 			static_cast<ValueTag>((bits >> NUMERIC_RIGHT_TAG_SHIFT) & NUMERIC_TAG_MASK),
 			static_cast<u16>(bits >> NUMERIC_CONFIDENCE_SHIFT)};
@@ -123,20 +123,20 @@ struct DecodedInstruction {
 	// Report whether this sample confirms the stable candidate, including
 	// when the executing code was compiled before the site became stable.
 	bool observeNativeNumericTypes(Value lhs, Value rhs) {
-		const u32 bits = std::bit_cast<u32>(payload.m_word);
+		const u32 bits = static_cast<u32>(payload.m_word);
 		const u32 pair = bits & NUMERIC_PAIR_MASK;
 		const u32 sample = static_cast<u32>(valueTag(lhs)) | (static_cast<u32>(valueTag(rhs)) << NUMERIC_RIGHT_TAG_SHIFT);
 		const u32 confidence = bits >> NUMERIC_CONFIDENCE_SHIFT;
 		if (pair == sample) {
 			if (confidence < NativeNumericTypes::MAX_CONFIDENCE)
-				payload.m_word = std::bit_cast<i32>(bits + (1u << NUMERIC_CONFIDENCE_SHIFT));
+				payload.m_word = toSignedWord(bits + (1u << NUMERIC_CONFIDENCE_SHIFT));
 			return confidence + 1u >= NativeNumericTypes::STABLE_CONFIDENCE;
 		}
 		// Contradictory samples age the candidate. A short startup type
 		// change can recover; an alternating pair never becomes stable.
 		const u32 next = confidence > 2u ? pair | ((confidence >> 1u) << NUMERIC_CONFIDENCE_SHIFT)
 			: sample | (1u << NUMERIC_CONFIDENCE_SHIFT);
-		payload.m_word = std::bit_cast<i32>(next);
+		payload.m_word = toSignedWord(next);
 		return false;
 	}
 

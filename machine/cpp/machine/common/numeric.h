@@ -2,7 +2,6 @@
 
 #include "common/primitives.h"
 #include <cstddef>
-#include <cstring>
 #include <limits>
 
 namespace bmsx {
@@ -11,10 +10,9 @@ constexpr int FIX16_SHIFT = 16;
 constexpr i64 FIX16_ONE = static_cast<i64>(1) << FIX16_SHIFT;
 constexpr double FIX16_SCALE = static_cast<double>(FIX16_ONE);
 
-inline auto toSignedWord(u32 value) -> i32 {
-	i32 result = 0;
-	std::memcpy(&result, &value, sizeof(result));
-	return result;
+constexpr auto toSignedWord(u32 value) -> i32 {
+	// Same-width integral conversion preserves all bits in C++20.
+	return static_cast<i32>(value);
 }
 
 inline auto lowSignedHalfword(u32 value) -> i32 {
