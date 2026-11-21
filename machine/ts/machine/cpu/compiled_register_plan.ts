@@ -1,5 +1,5 @@
 import { INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
-import { COP0_EXEC, COP0_STATUS } from '../../spec/blua32/cop0';
+import { COP0_EXEC, COP0_STATUS, cop0FieldImplemented } from '../../spec/blua32/cop0';
 import { OpCode, OPCODE_SCALAR_REGISTER_READS, OPCODE_WRITES_REGISTER_A,
 	REGISTER_OPERAND_A, REGISTER_OPERAND_B, REGISTER_OPERAND_C } from '../../spec/blua32/opcode';
 import { compiledBlockEndsBlock, type CompiledBlockSource } from './compiled_block';
@@ -11,16 +11,41 @@ export type JavaScriptRegisterPlan = {
 	readonly outputs: ReadonlySet<number>;
 };
 
-export function planRegionRegisters(page: DecodedInstructionPage, plans: readonly CompiledBlockSource[]): JavaScriptRegisterPlan[] {
-	const candidates = new Set<number>();
-	for (const plan of plans) for (let word = plan.firstWord; word < plan.endWord; word += page.widths[word]) {
-		const op = page.ops[word];
-		if ((op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D) && page.c[word] === 0) continue;
-		const flags = OPCODE_SCALAR_REGISTER_READS[op];
-		if (flags & REGISTER_OPERAND_A) candidates.add(page.a[word]);
-		if ((flags & REGISTER_OPERAND_B) && page.b[word] >= 0) candidates.add(page.b[word]);
-		if ((flags & REGISTER_OPERAND_C) && page.c[word] >= 0) candidates.add(page.c[word]);
+// Semantic-only exits consume their own operands after generated code leaves.
+function generatedRegisterReads(op: OpCode, b: number): number {
+	switch (op) {
+		case OpCode.CALL: case OpCode.CONCAT: return 0;
+		case OpCode.MTC0: return b === COP0_EXEC ? 0 : REGISTER_OPERAND_A;
+		default: return OPCODE_SCALAR_REGISTER_READS[op];
 	}
+}
+
+function fixedRegisterWrites(op: OpCode, b: number): number {
+	switch (op) {
+		case OpCode.LOADNIL: return b;
+		case OpCode.VARARG: return b === 0 ? 0 : b - 1;
+		case OpCode.SELF: return 2;
+		case OpCode.MFC0: return cop0FieldImplemented(b) ? 1 : 0;
+		default: return OPCODE_WRITES_REGISTER_A[op] === 0 || compiledBlockEndsBlock(op, b) ? 0 : 1;
+	}
+}
+
+export function planRegionRegisters(page: DecodedInstructionPage, plans: readonly CompiledBlockSource[]):
+	{ requiredSlots: number; blocks: JavaScriptRegisterPlan[] } {
+	const candidates = new Set<number>();
+	let requiredSlots = 0;
+	for (const plan of plans) for (let word = plan.firstWord; word < plan.endWord; word += page.widths[word]) {
+		const op = page.ops[word], a = page.a[word], b = page.b[word], c = page.c[word];
+		const flags = generatedRegisterReads(op, b);
+		if (flags & REGISTER_OPERAND_A) candidates.add(a);
+		if ((flags & REGISTER_OPERAND_B) && b >= 0) candidates.add(b);
+		if ((flags & REGISTER_OPERAND_C) && c >= 0) candidates.add(c);
+		const writes = fixedRegisterWrites(op, b);
+		if (writes !== 0) requiredSlots = Math.max(requiredSlots, a + writes);
+		if ((op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D) && c !== 0)
+			requiredSlots = Math.max(requiredSlots, a + c);
+	}
+	for (const slot of candidates) requiredSlots = Math.max(requiredSlots, slot + 1);
 	const entries = new Map(plans.map((plan, index) => [plan.pc, index]));
 	const uses = plans.map(() => new Set<number>()), defs = plans.map(() => new Set<number>());
 	const successors = plans.map(() => new Set<number>());
@@ -31,21 +56,17 @@ export function planRegionRegisters(page: DecodedInstructionPage, plans: readonl
 		let finalWord = plan.firstWord;
 		for (let word = plan.firstWord; word < plan.endWord; word += page.widths[word]) {
 			finalWord = word;
-			const op = page.ops[word];
-			const words = op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D;
-			if (words && page.c[word] === 0) continue;
-			const flags = OPCODE_SCALAR_REGISTER_READS[op];
-			if (flags & REGISTER_OPERAND_A) read(page.a[word]);
-			if (flags & REGISTER_OPERAND_B) read(page.b[word]);
-			if (flags & REGISTER_OPERAND_C) read(page.c[word]);
-			if (words) for (const register of candidates)
-				if (register >= page.a[word] && register < page.a[word] + page.c[word]) read(register);
-			if (OPCODE_WRITES_REGISTER_A[op] !== 0 && !compiledBlockEndsBlock(op, page.b[word])) define(page.a[word]);
-			if (op === OpCode.SELF) define(page.a[word] + 1);
-			if (op === OpCode.LOADNIL || (op === OpCode.VARARG && page.b[word] !== 0)) {
-				for (const register of candidates)
-					if (register >= page.a[word] && register < page.a[word] + page.b[word] - (op === OpCode.VARARG ? 1 : 0)) define(register);
-			}
+			const op = page.ops[word], a = page.a[word], b = page.b[word], c = page.c[word];
+			const flags = generatedRegisterReads(op, b);
+			if (flags & REGISTER_OPERAND_A) read(a);
+			if (flags & REGISTER_OPERAND_B) read(b);
+			if (flags & REGISTER_OPERAND_C) read(c);
+			if ((op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D) && c !== 0)
+				for (const register of candidates) if (register >= a && register < a + c) read(register);
+			const writes = fixedRegisterWrites(op, b);
+			if (writes === 1) define(a);
+			else if (writes !== 0) for (const register of candidates)
+				if (register >= a && register < a + writes) define(register);
 			// Open VARARG can copy zero values: its suffix remains live-in.
 		}
 		const addSuccessor = (pc: number) => {
@@ -94,7 +115,7 @@ export function planRegionRegisters(page: DecodedInstructionPage, plans: readonl
 			}
 		}
 	} while (changed);
-	return live.map((registers, index) => {
+	const blocks = live.map((registers, index) => {
 		const outputs = new Set<number>();
 		for (const target of successors[index]) for (const register of live[target])
 			if (defs[index].has(register)) outputs.add(register);
@@ -102,4 +123,5 @@ export function planRegionRegisters(page: DecodedInstructionPage, plans: readonl
 		// raw state. Output locals become valid only at their actual definitions.
 		return { entry: new Map([...registers].map(register => [register, written[index].has(register)])), outputs };
 	});
+	return { requiredSlots, blocks };
 }

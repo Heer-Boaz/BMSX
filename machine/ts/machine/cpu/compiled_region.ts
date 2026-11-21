@@ -38,14 +38,14 @@ aliasGeneratedMethods(Memory.prototype, { rb: 'readRamRecordByte', rd: 'readRamR
 export class CompiledRegion {
 	public readonly entries: CompiledBlock[] = [];
 	public constructor(public readonly execute: RegionBody, public readonly exits: readonly CompiledBlockExitSite[],
-		public readonly sourceUnits: number) {}
+		public readonly sourceUnits: number, public readonly requiredSlots: number) {}
 }
 
 export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: readonly CompiledBlockSource[],
 	image: Blua32ExecutionImage, memory: Memory, strings: StringPool, globalSlots: ValueSlots,
 	systemGlobalSlots: ValueSlots, cop0Words: Uint32Array, heap: GcHeap, newIndexKey: StringId): CompiledRegion {
 	const exits: CompiledBlockExitSite[] = [];
-	const registers = planRegionRegisters(page, plans), residents = registers.map(plan => plan.entry);
+	const { requiredSlots, blocks: registers } = planRegionRegisters(page, plans), residents = registers.map(plan => plan.entry);
 	const blocks: ReturnType<typeof emitJavaScriptBlock>[] = [];
 	const writeBacks = new CompiledExitWriteBacks();
 	for (let index = 0; index < plans.length; ++index) {
@@ -130,7 +130,7 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 		f32BitsToNumber, numberToF32Bits, luaFloatResultBits, luaFloatToInteger, luaFloatToWord,
 		luaIntegerModulo, luaIntegerFloorDivide, luaFloatModuloBits, luaFloatFloorDivideBits,
 		luaShiftLeft, luaShiftRight, luaPow, cop0Words, heap, exits, heap.tables, page.tableCacheSlots, newIndexKey) as RegionBody;
-	const region = new CompiledRegion(execute, exits, functionSource.length);
+	const region = new CompiledRegion(execute, exits, functionSource.length, requiredSlots);
 	for (let entry = 0; entry < blocks.length; ++entry) {
 		const block = blocks[entry];
 		region.entries.push({ region, entry, page, firstWord: block.firstWord,

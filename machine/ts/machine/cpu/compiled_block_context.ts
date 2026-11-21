@@ -84,7 +84,7 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 			else registers.discardRange(a, a + b - 1);
 			return `{const n=${b === 0 ? 'F.varargCount' : b - 1};
 				const copied=${b === 0 ? 'n' : 'Math.min(n,F.varargCount)'},v=F.varargBase;
-				if((n>0 && ${a}+n>F.stackCapacity) || (copied>0 && v+copied>F.stackBase)) ${failure}
+				if(${b === 0 ? `(n>0 && ${a}+n>F.stackCapacity) || ` : ''}(copied>0 && v+copied>F.stackBase)) ${failure}
 				${b === 0 ? 'B-=n;' : ''}${published}
 				r.copyRangeFrom(F.thread.stackRegisters,${a},v,copied);
 				r.clear(n-copied,${a}+copied);

@@ -153,7 +153,7 @@ import { HeapAllocator } from './heap_allocator';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
 	COMPILED_BLOCK_MAX_INSTRUCTIONS,
-	compiledBlockSupports, compiledBlockEndsBlock, compiledBlockComparison, compiledBlockHasContinuation,
+	compiledBlockSupports, compiledBlockEndsBlock, compiledBlockComparison, compiledBlockHasContinuation, compiledBlockAdmits,
 	type CompiledBlockExitSite, type CompiledBlockSource,
 } from './compiled_block';
 import { CompiledBlockPage, CompiledCodeCache, linkCompiledBlock } from './compiled_code_cache';
@@ -2523,7 +2523,7 @@ export class CPU implements MappedPageInvalidator {
 		// The first instruction was admitted with positive budget and charged by
 		// dispatch. Execute its bounded segment and return the complete charge.
 		let remaining = this.instructionBudgetRemaining + page.dispatchCycles[word];
-		if (remaining <= block.admissionCycles + block.admissionVarargs * frame.varargCount) {
+		if (!compiledBlockAdmits(block, frame, remaining)) {
 			frame.compilationEntry = rewritten || compiledBlockEndsBlock(page.ops[word], page.b[word]);
 			this.executeInstruction(frame, page, word, page.ops[word], targetDepth);
 			return;
@@ -2542,7 +2542,7 @@ export class CPU implements MappedPageInvalidator {
 				if (exit.exit !== CompiledBlockExit.Continue) break;
 				const target = exit.linkedBlock;
 				if (target === null) break;
-				if (remaining <= target.admissionCycles + target.admissionVarargs * frame.varargCount) break;
+				if (!compiledBlockAdmits(target, frame, remaining)) break;
 				current = target;
 				page = target.page;
 			}
@@ -2651,7 +2651,7 @@ export class CPU implements MappedPageInvalidator {
 				// Pure same-frame helpers retain the image and socket selection.
 				// Target retirement already withdraws this intrusive cache link.
 				block = exit.linkedBlock;
-				if (remaining <= block.admissionCycles + block.admissionVarargs * frame.varargCount) return;
+				if (!compiledBlockAdmits(block, frame, remaining)) return;
 				page = block.page;
 				continue;
 			}
@@ -2666,7 +2666,7 @@ export class CPU implements MappedPageInvalidator {
 			if (nextCache === null) return;
 			const next = nextCache.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 			if (next === null) return;
-			if (remaining <= next.admissionCycles + next.admissionVarargs * frame.varargCount) return;
+			if (!compiledBlockAdmits(next, frame, remaining)) return;
 			// Only shared-memory system code entering the selectable cartridge
 			// window needs a fresh chip-select lookup on each traversal.
 			if (pc === exit.nextPc && (exit.resumesFrame || exit.exit === CompiledBlockExit.Continue) && exit.linkedBlock === null

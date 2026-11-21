@@ -13,6 +13,7 @@ import { compiledContextSupports, emitContext } from './compiled_block_context';
 import { compiledTableSupports, emitTableOperation } from './compiled_block_table';
 import { COP0_EXEC, COP0_STATUS, cop0FieldImplemented } from '../../spec/blua32/cop0';
 import { compiledControlSupports, emitControl } from './compiled_block_control';
+import type { CallFrame } from './call_state';
 
 export const enum CpuExecutionBackend {
 	Interpreter,
@@ -122,6 +123,12 @@ export type CompiledBlock = {
 	readonly sourceWords: number;
 	incoming: CompiledBlockExitSite | null;
 };
+
+/** External entries admit the whole region before any register can become resident. */
+export function compiledBlockAdmits(block: CompiledBlock, frame: CallFrame, remaining: number): boolean {
+	return remaining > block.admissionCycles + (block.admissionVarargs === 0 ? 0 : block.admissionVarargs * frame.varargCount)
+		&& block.region.requiredSlots <= frame.stackCapacity;
+}
 
 type StatementEmitter = (page: DecodedInstructionPage, word: number,
 	registers: JavaScriptRegisterCache, exitIndex: number) => string;

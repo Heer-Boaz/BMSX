@@ -131,6 +131,47 @@ for (const kind of ['Integer', 'String'] as const) test(`resident Values cross i
 	}
 });
 
+for (const [label, op, a, b, c, slots] of [
+	['LOADNIL range', OpCode.LOADNIL, 12, 4, 0, 16],
+	['fixed VARARG range', OpCode.VARARG, 12, 5, 0, 16],
+	['SELF receiver', OpCode.SELF, 14, 3, 0, 16],
+	['counted store range', OpCode.STORE_MEM_WORDS, 12, 1, 4, 16],
+	['empty counted store address', OpCode.STORE_MEM_WORDS, 31, 15, 0, 16],
+	['semantic CONCAT operands', OpCode.CONCAT, 15, 13, 14, 1],
+] as const) test(`compiled register admission counts ${label}`, () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.K1, 0, 0, 0);
+	writeInstruction(text, 1, op, a, b, c);
+	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 16 }],
+		constants: ['method'] }, RAM_CODE_FIXTURE_BYTES);
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	for (const cpu of [js, scalar]) {
+		const r = cpu.rootThread.frameAtDepth(0).registers;
+		const table = cpu.createTable(0, 1);
+		cpu.gc.tables.storeStringKey(table, cpu.stringPool.intern('method'), ValueTag.Integer, 73);
+		r.setTable(3, table);
+		r.setInteger(1, DYNAMIC_RAM_BASE);
+		for (let index = 12; index < 16; ++index) r.setInteger(index, index);
+		if (op === OpCode.STORE_MEM_WORDS && c === 0) r.setInteger(15, DYNAMIC_RAM_BASE);
+	}
+	const warm = 2048;
+	runCpuParity(js, scalar, warm);
+	const frame = js.rootThread.frameAtDepth(0), start = image.image.functions[0].codeAddress;
+	const first = (start & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const block = frame.decodedPage!.compiledBlocks!.entries[first]!;
+	assert.equal(block.region.requiredSlots, slots);
+	assert.equal(frame.stackCapacity, 16);
+	for (const cpu of [js, scalar]) {
+		cpu.rootThread.frameAtDepth(0).top = 4;
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
+	}
+	runCpuParity(js, scalar, 90);
+	assert.deepEqual(js.captureRuntimeState(), scalar.captureRuntimeState());
+	assert.equal(Buffer.compare(js.memory.ramData(), scalar.memory.ramData()), 0);
+});
+
 test('linked physical-page segments retain complete charges and disconnect rewritten targets', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.ADD, 8, 8, 1);
@@ -235,7 +276,7 @@ test('cross-page chains retain successor page ownership and disconnect rewritten
 	writeInstruction(text, second + 2, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(text, second + 3, OpCode.ADD, 4, 0, 8);
 	writeInstruction(text, second + 4, OpCode.JMP, 0, 59, 59, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: second + 5, maxStack: 12 }] }, RAM_CODE_FIXTURE_BYTES);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: second + 5, maxStack: 9 }] }, RAM_CODE_FIXTURE_BYTES);
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
@@ -247,7 +288,9 @@ test('cross-page chains retain successor page ownership and disconnect rewritten
 	const lookup = machines[0].cpu.rootThread.frameAtDepth(0).executionImage.compiledCodeLookup!;
 	const firstPage = lookup.find(DYNAMIC_RAM_BASE, 0)!, secondPage = lookup.find(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE, 0)!;
 	const root = firstPage.compiledBlocks!.entries[0]!, target = secondPage.compiledBlocks!.entries[0]!;
-	assert.ok(root); assert.ok(target);
+	assert.equal(machines[0].cpu.rootThread.frameAtDepth(0).stackCapacity, 9);
+	assert.equal(root.region.requiredSlots, 9);
+	assert.equal(target.region.requiredSlots, 9);
 	assert.equal(root.terminal.linkedBlock, target); assert.equal(target.terminal.linkedBlock, root);
 	assert.equal(root.page, firstPage); assert.equal(target.page, secondPage, 'a linked body carries its own page, not the predecessor page');
 	for (let grant = 1; grant <= 128; ++grant) {

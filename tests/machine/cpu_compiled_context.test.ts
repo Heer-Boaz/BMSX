@@ -273,7 +273,42 @@ test('an empty compiled open VARARG changes top without touching or growing the 
 	const frame = js.rootThread.frameAtDepth(0);
 	assert.equal(frame.top, 31); assert.equal(frame.stackCapacity, 4); assert.equal(frame.registers.get(0), valueInteger(73));
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 2);
+	const block = frame.decodedPage!.compiledBlocks!.entries[entry]!;
+	assert.equal(block.sourceWords, 2);
+	assert.equal(block.region.requiredSlots, 0, 'the dynamic range is not part of the fixed extent');
+});
+
+test('a fresh frame grows through scalar VARARG before using a warm generated region', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.VARARG, 12, 5, 0);
+	writeInstruction(text, 1, OpCode.MOV, 0, 15, 0);
+	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8, isVararg: true }] });
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	runCpuParity(js, scalar, 1200);
+	const root = js.rootThread.frameAtDepth(0), start = image.image.functions[0].codeAddress;
+	const at = (start & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const entries = root.decodedPage!.compiledBlocks!.entries;
+	const block = entries[at]!, continuation = entries[at + 1]!;
+	assert.equal(block.region, continuation.region);
+	assert.equal(root.stackCapacity, 16);
+	const region = block.region, execute = region.execute;
+	let firstEntry = -1;
+	Object.defineProperty(region, 'execute', { value: (...args: Parameters<typeof execute>) => {
+		assert.equal(args[3].stackCapacity, 16, 'the growing VARARG must run before any public entry of the warm region');
+		if (firstEntry < 0) firstEntry = args[4];
+		return execute(...args);
+	} });
+	for (const cpu of [js, scalar]) {
+		cpu.beginCompletionCall(cpu.rootThread.frameAtDepth(0).closure, [11, 22, 33, 44].map(valueInteger));
+		assert.equal(cpu.rootThread.frameAtDepth(1).stackCapacity, 8);
+	}
+	const loop = BASE_CYCLES[OpCode.VARARG] + 4 + BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP];
+	runCpuParity(js, scalar, 4 * loop, 1);
+	assert.equal(firstEntry, continuation.entry, 'the generated continuation accepts the exact grown window');
+	assert.equal(js.readFrameRegister(1, 0), valueInteger(44));
+	assert.deepEqual(js.captureRuntimeState(), scalar.captureRuntimeState());
 });
 
 for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil padding and stack relocation (B=${fixed})`, () => {
