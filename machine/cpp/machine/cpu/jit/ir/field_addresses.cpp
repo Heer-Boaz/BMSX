@@ -76,11 +76,11 @@ void selectFieldAddresses(std::span<NativeInstruction> instructions, const Nativ
 
 } // namespace
 
-size_t planNativeFieldReads(std::span<NativeInstruction> instructions, std::span<const NativeBlockInstruction> source,
-	NativeCompilationTier tier, std::span<NativeFieldAddressUse> addressUses, NativeCompileSpecializations specializations) {
+void planNativeFieldReads(std::span<NativeInstruction> instructions, std::span<const NativeBlockInstruction> source,
+	std::span<NativeFieldAddressUse> addressUses, NativeCompileSpecializations specializations) {
 	const auto first = std::ranges::find_if(instructions,
 		[](NativeInstruction& instruction) { return fixedFieldRead(instruction.operation); });
-	if (first == instructions.end()) return instructions.size();
+	if (first == instructions.end()) return;
 
 	const auto prefix = static_cast<size_t>(first - instructions.begin());
 	auto tail = instructions.subspan(prefix);
@@ -91,7 +91,6 @@ size_t planNativeFieldReads(std::span<NativeInstruction> instructions, std::span
 	};
 	std::array<Selection, NATIVE_BLOCK_MAX_INSTRUCTIONS> selections;
 	size_t frontier = 0;
-	size_t cut = tail.size();
 	const auto select = [&](size_t index, NativeValueOrigin origin, ValueTag tag) {
 		if (origin.producer < frontier || origin.producer >= index) return;
 		auto* field = fixedFieldRead(tail[origin.producer].operation);
@@ -102,7 +101,7 @@ size_t planNativeFieldReads(std::span<NativeInstruction> instructions, std::span
 		if (std::ranges::find(rejected, tag, &NativeRejectedFieldProof::tag) == rejected.end())
 			candidate = {static_cast<u16>(index), tag};
 	};
-	for (size_t index = 0; index < cut; ++index) {
+	for (size_t index = 0; index < tail.size(); ++index) {
 		auto& operation = tail[index].operation;
 		// Fixed-key loads can each acquire a checked fast path. Other
 		// checkpoints delimit the native path used by this optimization.
@@ -118,23 +117,15 @@ size_t planNativeFieldReads(std::span<NativeInstruction> instructions, std::span
 		if (!arithmetic || (arithmetic->operation != OpCode::ADD && arithmetic->operation != OpCode::SUB
 			&& arithmetic->operation != OpCode::MUL)) continue;
 		const auto& hint = std::get<NativeArithmeticHint>(arithmetic->strategy);
+		if (!hint.feedback) continue;
 		const auto& inputs = values.inputs(index);
-		for (size_t operand = 0; operand < 2; ++operand) {
-			const auto origin = inputs[operand];
-			if (origin.producer < frontier || origin.producer >= index) continue;
-			auto* field = fixedFieldRead(tail[origin.producer].operation);
-			if (!field) continue;
-			if (tier == NativeCompilationTier::ColdImage && !hint.observed)
-				cut = std::min<size_t>(cut, origin.producer);
-			else if (hint.feedback)
-				select(index, origin, operand == 0 ? hint.feedback->left : hint.feedback->right);
-		}
+		select(index, inputs[0], hint.feedback->left);
+		select(index, inputs[1], hint.feedback->right);
 	}
-	for (size_t producer = 0; producer < cut; ++producer)
-		if (selections[producer].consumer < cut)
+	for (size_t producer = 0; producer < tail.size(); ++producer)
+		if (selections[producer].consumer != NativeValueOrigin::Input)
 			std::get<NativeTableAccess>(tail[producer].operation).resultTag = selections[producer].tag;
-	selectFieldAddresses(tail.first(cut), values, prefix, addressUses.subspan(prefix, cut));
-	return prefix + cut;
+	selectFieldAddresses(tail, values, prefix, addressUses.subspan(prefix, tail.size()));
 }
 
 void NativeIrRegion::bindOwnFieldAddresses(NativeIrBlock& block, std::span<const NativeFieldAddressUse> uses, size_t firstRow) {

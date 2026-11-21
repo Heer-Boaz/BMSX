@@ -168,7 +168,7 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 	block.nativeSuccessor = reachesEnd && kind == NativeBlockExit::Continue;
 }
 
-void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block) {
+void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block, bool observesArithmetic) {
 	block.firstSideExit = static_cast<u16>(m_sideExits.size());
 	const auto appendExit = [&](const NativeIrExit& exit, NativeIrSideExit& id) -> NativeIrExit& {
 		if (m_sideExits.capacity() == 0) m_sideExits.reserve(m_instructions.size());
@@ -202,8 +202,10 @@ void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block) {
 			exit.operands = operands;
 			if (table) exit.tableSlotSeed = table->predictedSlot;
 		}
-		if (auto* arithmetic = std::get_if<NativeArithmetic>(&instruction.operation)) {
-			auto& plan = std::get<NativeNumericPlan>(arithmetic->strategy);
+		auto* arithmetic = std::get_if<NativeArithmetic>(&instruction.operation);
+		auto* numeric = arithmetic ? &std::get<NativeNumericPlan>(arithmetic->strategy) : nullptr;
+		if (numeric) {
+			auto& plan = *numeric;
 			if (plan.guardLeft || plan.guardRight)
 				appendExit(scalarReplay(before, std::exchange(plan.feedbackAssumption, {})), instruction.replay);
 		} else if (std::holds_alternative<NativeReplay>(instruction.operation)) {
@@ -225,6 +227,12 @@ void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block) {
 		const bool placesResults = &instruction != &block.instructions.back() || block.terminal.exit == NativeBlockExit::Continue;
 		if (placesResults && writes.count != 0 && !writes.open)
 			state.registerTop = std::max(state.registerTop, writes.end());
+		if (observesArithmetic && numeric && numeric->action == NativeNumericAction::Kernel
+			&& (arithmetic->operation == OpCode::ADD || arithmetic->operation == OpCode::SUB || arithmetic->operation == OpCode::MUL)) {
+			auto& completed = appendExit(state, instruction.feedback);
+			completed.exit = NativeBlockExit::ProfileReady;
+			completed.operands.feedback = {block.sourcePc};
+		}
 	}
 
 	const auto& final = block.instructions.back().operation;

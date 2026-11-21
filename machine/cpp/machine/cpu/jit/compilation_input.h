@@ -25,10 +25,8 @@ struct NativeCompileSpecializations {
 	std::span<const NativeRejectedFieldProof> rejectedFieldProofs{}; // sorted by PC
 };
 
-enum class NativeCompilationTier : u8 { OnDemand, ColdImage };
-
 struct NativeCompilationOptions {
-	NativeCompilationTier tier = NativeCompilationTier::OnDemand;
+	bool observesArithmetic = false;
 	// Set only for a complete, directly backed read-only instruction page.
 	std::optional<u32> immutablePagePc = std::nullopt;
 };

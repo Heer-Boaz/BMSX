@@ -147,7 +147,7 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 	}
 	if (sources.empty()) return;
 	const NativeCompilationOptions options{
-		.tier = coldImage ? NativeCompilationTier::ColdImage : NativeCompilationTier::OnDemand,
+		.observesArithmetic = true,
 		.immutablePagePc = binding.readBytes && !binding.writeWatch.groups ? std::optional{pagePc} : std::nullopt,
 	};
 	auto rejectedFieldProofs = page.fieldProofFeedback.snapshot(pagePc);

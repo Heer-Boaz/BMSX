@@ -44,13 +44,13 @@ struct NativeIrExit {
 // Rows can have distinct semantic and scalar exits. The remaining
 // side exits belong to the block terminator.
 using NativeIrSideExit = std::optional<u8>;
-static_assert(2u * NATIVE_BLOCK_MAX_INSTRUCTIONS + 3u < std::numeric_limits<u8>::max());
+static_assert(3u * NATIVE_BLOCK_MAX_INSTRUCTIONS + 3u < std::numeric_limits<u8>::max());
 
 struct NativeInstruction {
 	NativeOperation operation;
 	NativeSlotAccess slots;
 	u32 pc = 0;
-	NativeIrSideExit slow{}, replay{};
+	NativeIrSideExit slow{}, replay{}, feedback{};
 	u8 width = 0, baseCycles = 0;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	NativeAttempt attempt = NativeAttempt::None;
@@ -79,7 +79,7 @@ struct NativeIrBlock {
 	std::span<const NativeSlotType> entryTypes{};
 	size_t typePredecessor = std::numeric_limits<size_t>::max();
 	NativeIrExit terminal{};
-	u32 firstPc = 0;
+	u32 firstPc = 0, sourcePc = 0;
 	int admissionCycles = 0;
 	u16 sourceWords = 0;
 	u16 firstSideExit = 0;
@@ -114,7 +114,7 @@ private:
 	std::vector<NativeRecordPlan> m_records;
 	std::vector<NativeOwnFieldAddress> m_ownFieldAddresses;
 	void buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations, bool cpuOwned);
-	void finalizeBlockExits(NativeIrBlock& block);
+	void finalizeBlockExits(NativeIrBlock& block, bool observesArithmetic);
 	void bindOwnFieldAddresses(NativeIrBlock& block, std::span<const NativeFieldAddressUse> uses, size_t firstRow);
 	void planRecordConstructors(std::span<const u16> byAddress, u32 immutablePagePc);
 };
@@ -122,7 +122,7 @@ private:
 NativeOperation translateNativeOperation(const DecodedInstruction& source);
 enum class NativeOperationFlow : u8 { Linear, Checkpoint, Terminal, LeavesNative };
 NativeOperationFlow nativeOperationFlow(const NativeOperation& operation);
-size_t planNativeFieldReads(std::span<NativeInstruction> instructions, std::span<const NativeBlockInstruction> source,
-	NativeCompilationTier tier, std::span<NativeFieldAddressUse> addressUses, NativeCompileSpecializations specializations);
+void planNativeFieldReads(std::span<NativeInstruction> instructions, std::span<const NativeBlockInstruction> source,
+	std::span<NativeFieldAddressUse> addressUses, NativeCompileSpecializations specializations);
 
 } // namespace bmsx

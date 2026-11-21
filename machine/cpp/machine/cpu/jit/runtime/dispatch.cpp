@@ -188,6 +188,11 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::CompletedCall:
 			transition = NativeBlockTransition::Redispatch;
 			break;
+		case NativeBlockExit::ProfileReady: {
+			const u32 completed = exit->currentPc, source = exit->operands.feedback.sourcePc;
+			cpu.recompileNativeSource(*frame, *run, completed, source);
+			break;
+		}
 		case NativeBlockExit::Call: {
 			const auto& call = exit->operands.call;
 			transition = cpu.executeCall(*frame, call.callee, call.supplied, call.requested)

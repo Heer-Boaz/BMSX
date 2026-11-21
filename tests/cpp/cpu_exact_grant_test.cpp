@@ -14,6 +14,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <limits>
@@ -43,6 +44,65 @@ struct Machine {
 
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
+}
+
+void generatedArithmeticTrainsTheCompiler() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	image.constants = {Blua32FloatConstant{valuePayload(valueFloat(1.5f))}};
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 6, 0, 3);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 2, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 63);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::ADD), 4, 0, 63, 7);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::K1), 5, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 7}};
+	Machine native(image, false), scalar(image, true);
+	auto& cpu = native.cpu;
+	const u32 start = native.rom.textAddress, pc = start + INSTRUCTION_BYTES, wide = pc + INSTRUCTION_BYTES;
+	const auto& installed = *cpu.activeThread()->frameAtDepth(0)->executionImage;
+	cpu.prepareSystemNativeCode();
+	auto& page = *installed.nativeCodeLookup->find(pc, 0);
+	const u32 entryWord = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const int prefixCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
+	const int sumCycles = BASE_CYCLES[static_cast<u8>(OpCode::ADD)];
+	const auto hasPromotion = [&](const NativeBlock& entry) {
+		return std::ranges::any_of(entry.sideExits, [](const auto& exit) { return exit.exit == NativeBlockExit::ProfileReady; });
+	};
+	require(hasPromotion(*page.nativeBlocks->entries[entryWord]), "cold arithmetic starts in a sampling native entry");
+	for (int attempt = 0; attempt < 12; ++attempt) {
+		for (auto* machine : {&native, &scalar}) {
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
+			frame.registers.set(0, valueInteger(12));
+			frame.registers.set(4, valueInteger(91));
+			frame.registers.set(5, valueInteger(73));
+			frame.setTop(6);
+		}
+		require(test::runCpuParity(cpu, scalar.cpu, prefixCycles + 1) == RunResult::Yielded
+			&& cpu.instructionBudgetRemaining == 1 - sumCycles
+			&& cpu.readCurrentInstructionPc() == wide && cpu.lastPc == wide + INSTRUCTION_BYTES
+			&& cpu.readFramePc(0) == wide + 2 * INSTRUCTION_BYTES
+			&& cpu.readFrameRegister(0, 2) == valueInteger(1)
+			&& cpu.readFrameRegister(0, 4) == valueFloat(13.5f) && cpu.readFrameRegister(0, 5) == valueInteger(73)
+			&& test::sameLanguageRam(cpu, scalar.cpu),
+			"the sampling or specialized body completes WIDE ADD exactly once and does not enter its suffix");
+		if (!page.nativeBlocks || !page.nativeBlocks->entries[entryWord])
+			test::waitForNativeEntry(cpu, page, entryWord);
+	}
+	const auto& trained = *page.nativeBlocks->entries[entryWord];
+	require(!hasPromotion(trained) && trained.sideExits.size() == 1
+		&& trained.sideExits.front().operands.replay.arithmetic == NativeArithmeticFeedback{ValueTag::Integer, ValueTag::Float},
+		"completed native operations train an inline specialization without a manually prepared replacement");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& gate = cpu.nativeGateProfile();
+	require(gate.exits[static_cast<size_t>(NativeBlockExit::ProfileReady)].entries == 1,
+		"only the completed promotion leaves the generic datapath to rebuild");
+	require(gate.exits[static_cast<size_t>(NativeBlockExit::ScalarBoundary)].entries == 0,
+		"training never replays the already completed opcode");
+#endif
+#endif
 }
 
 void adaptiveArithmeticReplay() {
@@ -132,10 +192,13 @@ void adaptiveArithmeticReplay() {
 	native.cpu.prepareSystemNativeCode();
 	require(installed(), "the code owner can republish the source with the updated feedback");
 	const auto& generic = page.nativeBlocks->entries[entry]->sideExits;
-	require(generic.size() == 1 && generic.front().exit == NativeBlockExit::InvalidOperand
+	require(generic.size() == 2 && generic.front().exit == NativeBlockExit::InvalidOperand
 		&& generic.front().currentPc == wide && generic.front().lastPc == wide + INSTRUCTION_BYTES
 		&& generic.front().nextPc == suffix && generic.front().cycles == complete && generic.front().registerTop == 3,
 		"generic WIDE arithmetic owns its semantic fault with the instruction charged and its destination uncommitted");
+	require(generic.back().exit == NativeBlockExit::ProfileReady && generic.back().nextPc == suffix
+		&& generic.back().cycles == complete && generic.back().registerTop == 5,
+		"the completed feedback exit instead includes the committed destination");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto boundary = static_cast<size_t>(NativeBlockExit::ScalarBoundary);
 	const auto exitsBefore = native.cpu.nativeGateProfile().exits[boundary].entries;
@@ -639,6 +702,7 @@ int main(int argc, char** argv) {
 		else if (scenario == "nmi-short") nmiAfterShortGrant();
 		else if (scenario == "rewrite-short") rewriteAndObserveAfterShortGrant();
 		else if (scenario == "adaptive-arithmetic") adaptiveArithmeticReplay();
+		else if (scenario == "native-arithmetic-profile") generatedArithmeticTrainsTheCompiler();
 		else throw std::runtime_error("unknown scenario");
 		return 0;
 	} catch (const std::exception& error) {

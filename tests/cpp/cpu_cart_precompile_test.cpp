@@ -234,10 +234,11 @@ void coldExecLetsNumericFieldChainsWarm() {
 		Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, image));
 		machine.execute();
 		auto& cpu = machine.cpu();
-		const u32 pc = machine.cart.textAddress + INSTRUCTION_BYTES;
-		require(entryAt(cpu, machine.cart.textAddress, 0) && !entryAt(cpu, pc, 0)
-			&& entryAt(cpu, machine.cart.textAddress + 64u * INSTRUCTION_BYTES, 0),
-			"EXEC compiles the prefix and unrelated function but not the unobserved field/arithmetic chain");
+		const u32 root = machine.cart.textAddress, pc = root + INSTRUCTION_BYTES;
+		const auto* cold = entryAt(cpu, root, 0);
+		require(cold && cold->terminal.currentPc == pc && entryAt(cpu, pc + INSTRUCTION_BYTES, 0)
+			&& entryAt(cpu, root + 64u * INSTRUCTION_BYTES, 0),
+			"EXEC compiles the whole source, using a generic continuation until the types stabilize");
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		auto receiver = cpu.createTable(0, 1);
 		auto holder = receiver;
@@ -251,21 +252,25 @@ void coldExecLetsNumericFieldChainsWarm() {
 		holder.setStringKey(key, valueFloat(4.0f));
 		frame.registers.set(0, valueTable(receiver.address()));
 		frame.registers.set(1, valueFloat(0.5f));
+		frame.setTop(5);
+		const int completeLoop = loopCycles + BASE_CYCLES[static_cast<u8>(OpCode::K1)]
+			+ (inherited ? TABLE_INDEX_VISIT_CYCLES : 0);
 		if (!inherited) {
 			// The original ROM star positions first contain integers, then
 			// ordinary movement settles on Float. Exercise the same startup
 			// type change through real bytecode, not seeded compiler hints.
 			holder.setStringKey(key, valueInteger(4));
-			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::K1)] + 8 * loopCycles) == RunResult::Yielded,
+			require(cpu.runUntilDepth(0, 2 * completeLoop) == RunResult::Yielded,
 				"the cold Float step first consumes an Integer field");
 			holder.setStringKey(key, valueFloat(4.0f));
 		}
-		require(cpu.runUntilDepth(0, (loopCycles + BASE_CYCLES[static_cast<u8>(OpCode::K1)]
-			+ (inherited ? TABLE_INDEX_VISIT_CYCLES : 0)) * (NATIVE_BLOCK_COMPILATION_THRESHOLD + 12)) == RunResult::Yielded,
-			"the real EXEC path visits and warms its deferred field entry");
-		const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-		test::waitForNativeEntry(cpu, *frame.decodedPage, word);
-		const auto* entry = entryAt(cpu, pc, 0);
+		const u32 word = (root & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		for (int sample = 0; sample < 16; ++sample) {
+			require(cpu.runUntilDepth(0, completeLoop) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0,
+				"each generic or specialized traversal consumes exactly one completed loop");
+			if (!entryAt(cpu, root, 0)) test::waitForNativeEntry(cpu, *frame.decodedPage, word);
+		}
+		const auto* entry = entryAt(cpu, root, 0);
 		if (inherited) {
 			require(entry->terminal.currentPc == pc,
 				"a consistently inherited numeric field does not speculate on an unobserved own slot");
@@ -273,13 +278,14 @@ void coldExecLetsNumericFieldChainsWarm() {
 		}
 		require(entry->hasFusedJump && entry->terminal.currentPc == pc + 3 * INSTRUCTION_BYTES,
 			"an observed own numeric read keeps subtraction and comparison in the same native body without a following store");
-		NativeBlockRunState grant{.constants = frame.executionImage->constPool, .heap = &cpu.gcHeap(), .remainingCycles = loopCycles};
+		const auto prefixCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
+		NativeBlockRunState grant{.constants = frame.executionImage->constPool, .heap = &cpu.gcHeap(), .remainingCycles = prefixCycles + loopCycles};
 		const auto* exit = entry->run(frame.registers, grant);
 		require(exit->nextPc == machine.cart.textAddress && grant.remainingCycles == 0 && frame.registers.get(3) == valueFloat(3.5f),
 			"the warmed Float path executes through the comparison and fused jump at the exact guest cost");
 
 		holder.setStringKey(key, valueFloat(0.25f));
-		grant.remainingCycles = compareGrant;
+		grant.remainingCycles = prefixCycles + compareGrant;
 		exit = entry->run(frame.registers, grant);
 		require(exit->nextPc == pc + 4 * INSTRUCTION_BYTES && grant.remainingCycles == 0
 			&& frame.registers.get(3) == valueFloat(-0.25f),
@@ -287,7 +293,7 @@ void coldExecLetsNumericFieldChainsWarm() {
 
 		frame.registers.set(1, valueInteger(1));
 		frame.registers.set(3, valueInteger(99));
-		grant.remainingCycles = compareGrant;
+		grant.remainingCycles = prefixCycles + compareGrant;
 		exit = entry->run(frame.registers, grant);
 		require(exit->exit == NativeBlockExit::ScalarBoundary && exit->nextPc == pc + INSTRUCTION_BYTES
 			&& grant.remainingCycles == compareGrant - readCycles && frame.registers.get(2) == valueFloat(0.25f)

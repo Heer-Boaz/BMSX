@@ -1,5 +1,6 @@
 #include "machine/cpu/jit/runtime/numeric_kernel.h"
 
+#include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/value_arithmetic.h"
 
 namespace bmsx {
@@ -7,7 +8,7 @@ namespace {
 // Unknown operand subtypes use a nonallocating C++ leaf, not a VM exit. The
 // leaf owns the exception boundary: generated frames have no unwind metadata.
 // Complete Values are confined to these temporary C++ arguments/results.
-template <OpCode op> u32 numericKernel(const Value* args, Value* out) noexcept {
+template <OpCode op> NativeNumericCompletion numericKernel(const Value* args, Value* out) noexcept {
 	try {
 		if constexpr (op == OpCode::ADD)
 			*out = valueAdd(args[0], args[1]);
@@ -40,10 +41,19 @@ template <OpCode op> u32 numericKernel(const Value* args, Value* out) noexcept {
 			if constexpr (op == OpCode::SHR)
 				*out = valueInteger(luaShiftRight(left, right));
 		}
-		return 0;
-	} catch (const LuaExecutionError& error) {
-		return error.reason;
+		return NativeNumericCompletion::Completed;
+	} catch (const LuaExecutionError&) {
+		return NativeNumericCompletion::InvalidOperand;
 	}
+}
+
+template <OpCode op>
+NativeNumericCompletion sample(const Value* args, Value* out, DecodedInstruction* source) noexcept {
+	const auto completion = numericKernel<op>(args, out);
+	if (completion != NativeNumericCompletion::Completed) return completion;
+	const bool stable = source->nativeNumericTypes().stable;
+	source->observeNativeNumericTypes(args[0], args[1]);
+	return !stable && source->nativeNumericTypes().stable ? NativeNumericCompletion::ProfileReady : completion;
 }
 } // namespace
 
@@ -65,6 +75,15 @@ NativeNumericKernel nativeNumericKernel(OpCode op) {
 	case OpCode::SHL: return &numericKernel<OpCode::SHL>;
 	case OpCode::SHR: return &numericKernel<OpCode::SHR>;
 	case OpCode::BNOT: return &numericKernel<OpCode::BNOT>;
+	default: BMSX_UNREACHABLE();
+	}
+}
+
+NativeSamplingKernel nativeSamplingKernel(OpCode op) {
+	switch (op) {
+	case OpCode::ADD: return &sample<OpCode::ADD>;
+	case OpCode::SUB: return &sample<OpCode::SUB>;
+	case OpCode::MUL: return &sample<OpCode::MUL>;
 	default: BMSX_UNREACHABLE();
 	}
 }

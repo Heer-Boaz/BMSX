@@ -56,10 +56,8 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 		for (const auto& inst : source.instructions)
 			m_instructions.emplace_back(translateNativeOperation(*inst.decoded));
 		auto operations = std::span(m_instructions).subspan(first);
-		const size_t count = planNativeFieldReads(operations, source.instructions, options.tier, addressUses, specializations);
-		const bool completeRun = count == operations.size();
-		operations = operations.first(count);
-		if (!completeRun) m_instructions.erase(m_instructions.begin() + first + count, m_instructions.end());
+		planNativeFieldReads(operations, source.instructions, addressUses, specializations);
+		const size_t count = operations.size();
 
 		const size_t firstEntry = m_blocks.size();
 		size_t segment = 0;
@@ -68,8 +66,9 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 			if (!last && nativeOperationFlow(operations[index].operation) == NativeOperationFlow::Linear) continue;
 			const size_t length = index - segment + 1;
 			const NativeBlockSource slice{source.instructions.subspan(segment, length),
-				last && completeRun ? source.skippedInstruction : nullptr};
+				last ? source.skippedInstruction : nullptr};
 			buildBlock(slice, operations.subspan(segment, length), cpuOwned);
+			m_blocks.back().sourcePc = source.instructions.front().pc;
 			bindOwnFieldAddresses(m_blocks.back(), std::span(addressUses).subspan(segment, length), segment);
 			segment = index + 1;
 		}
@@ -109,7 +108,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 	}
 	uses.analyze(m_blocks);
 	NativeTypePropagation{}.specializeRegion(m_blocks, uses, m_entryTypes);
-	for (auto& block : m_blocks) finalizeBlockExits(block);
+	for (auto& block : m_blocks) finalizeBlockExits(block, options.observesArithmetic);
 	if (options.immutablePagePc) planRecordConstructors(directory, *options.immutablePagePc);
 }
 

@@ -107,7 +107,7 @@ void fieldChainHasAnExplicitResumePoint() {
 		"a type miss retires only GETFIELD before replaying the WIDE sum");
 }
 
-void fieldSelectionOwnsColdCutAndContinuation() {
+void fieldSelectionPreservesColdCodeAndContinuation() {
 	constexpr u32 pc = 0x5100;
 	std::array<DecodedInstruction, 5> decoded{};
 	std::array<NativeBlockInstruction, 5> source;
@@ -130,9 +130,16 @@ void fieldSelectionOwnsColdCutAndContinuation() {
 	const std::array runs{NativeBlockSource{source}};
 	{
 		NativeRegisterUses uses;
-		NativeIrRegion region(runs, uses, false, {.tier = NativeCompilationTier::ColdImage});
-		require(region.instructionCount() == 1 && region.blocks().front().terminal.nextPc == pc + INSTRUCTION_BYTES,
-			"unobserved numeric field use defers only its suffix, even across independent assignments");
+		NativeIrRegion region(runs, uses, false, {.observesArithmetic = true});
+		require(region.instructionCount() == decoded.size() && region.blocks().size() == 2,
+			"unknown types select generic arithmetic without removing its field load or unrelated instructions");
+		const auto& block = region.blocks().back();
+		const auto& sum = block.instructions.back();
+		const auto& ready = region.sideExits(block)[*sum.feedback];
+		require(ready.exit == NativeBlockExit::ProfileReady && ready.operands.feedback.sourcePc == pc
+			&& ready.currentPc == sum.pc && ready.nextPc == sum.pc + INSTRUCTION_BYTES && ready.registerTop == 10
+			&& ready.cycles == block.terminal.cycles,
+			"the generic sum can announce a complete result at its original frontier and rebuild from its source root");
 	}
 
 	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
@@ -176,9 +183,10 @@ void distinctFieldValuesSurviveCopiesAndSlotReuse() {
 	decoded[5].bx = pc + 0x100;
 	const std::array runs{NativeBlockSource{source}};
 	NativeRegisterUses uses;
-	NativeIrRegion cold(runs, uses, false, {.tier = NativeCompilationTier::ColdImage});
-	require(cold.instructionCount() == 1 && cold.blocks().front().terminal.nextPc == source[1].pc,
-		"the cold cut begins at the first reaching field producer, not the most recent slot definition");
+	NativeIrRegion cold(runs, uses, false, {.observesArithmetic = true});
+	require(cold.instructionCount() == decoded.size() && cold.blocks().size() == 3
+		&& cold.blocks().back().firstPc == source[4].pc && cold.blocks().back().instructions.front().feedback,
+		"initial generic code keeps both field producers and the consumer");
 
 	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
 		decoded[4].observeNativeNumericTypes(valueFloat(1.5f), valueInteger(2));
@@ -601,7 +609,7 @@ int main() {
 	try {
 		numericPlans();
 		fieldChainHasAnExplicitResumePoint();
-		fieldSelectionOwnsColdCutAndContinuation();
+		fieldSelectionPreservesColdCodeAndContinuation();
 		distinctFieldValuesSurviveCopiesAndSlotReuse();
 		nestedFieldsShareOnlyTheCheckedAddress();
 		fieldAddressesStopAtDefinitionsAndEffects();

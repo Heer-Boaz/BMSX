@@ -77,7 +77,7 @@ private:
 	void fault(sljit_jump* jump, NativeBlockExitSite& site, const State& state, Charge charge = Charge::Pending);
 	void deferColdExit(sljit_jump* jump, ExitTarget target, const State& state);
 	void emitLeave(NativeBlockExitSite& exit, Charge charge);
-	void emitNumericKernel(const NativeArithmetic&, NativeBlockExitSite& invalid, std::optional<ValueTag> resultTag);
+	void emitNumericKernel(const NativeArithmetic&, const NativeInstruction&, std::optional<ValueTag> resultTag);
 	void emitFloatInput(int selector, ValueTag tag, sljit_s32 destination);
 	void emitFloatCanonicalization(sljit_s32 reg);
 	void emitWordOperand(int selector, NativeWordSource source, NativeBlockExitSite& invalid);

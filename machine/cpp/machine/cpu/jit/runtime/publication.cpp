@@ -22,7 +22,7 @@ NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, CPU* cp
 
 NativeBlockPage::~NativeBlockPage() = default;
 
-void DecodedInstructionPage::retireNativeRegion(const NativeCodeRegion* region) {
+void DecodedInstructionPage::retireNativeRegion(const NativeCodeRegion* region, Retirement reason) {
 	for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
 		auto& block = nativeBlocks->entries[entry];
 		if (!block || block->region.get() != region) continue;
@@ -32,14 +32,14 @@ void DecodedInstructionPage::retireNativeRegion(const NativeCodeRegion* region) 
 		auto& instruction = words[entry];
 		instruction.dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
 		instruction.dispatchCycles = instruction.baseCycles;
-		nativeVisits[entry] = 0;
+		nativeVisits[entry] = reason == Retirement::Feedback ? NATIVE_BLOCK_COMPILATION_THRESHOLD : 0u;
 	}
 	if (nativeBlocks->count == 0u) {
 		nativeBlocks.reset();
 	}
 }
 
-void DecodedInstructionPage::retireNativeBlocks(u32 firstWord, u32 endWord) {
+void DecodedInstructionPage::retireNativeBlocks(u32 firstWord, u32 endWord, Retirement reason) {
 	if (!nativeBlocks) return;
 	const u32 firstEntry = firstWord > 2u * (NATIVE_BLOCK_MAX_INSTRUCTIONS + 1u)
 		? firstWord - 2u * (NATIVE_BLOCK_MAX_INSTRUCTIONS + 1u) : 0u;
@@ -47,7 +47,7 @@ void DecodedInstructionPage::retireNativeBlocks(u32 firstWord, u32 endWord) {
 	for (u32 word = firstEntry; word < endEntry; ++word) {
 		const auto& block = nativeBlocks->entries[word];
 		if (!block || word + block->sourceWords <= firstWord) continue;
-		retireNativeRegion(block->region.get());
+		retireNativeRegion(block->region.get(), reason);
 		if (!nativeBlocks) return;
 	}
 }
@@ -56,7 +56,7 @@ void CPU::retireNativeInstructionUsers(DecodedInstructionPage& page, u32 word) {
 	// This operation is reached outside generated code. Withdraw all source
 	// users (including an independently published suffix) and preserve the
 	// feedback for the next compilation.
-	page.retireNativeBlocks(word, word + 1u);
+	page.retireNativeBlocks(word, word + 1u, DecodedInstructionPage::Retirement::Feedback);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (m_pendingNativeCompilation.page == &page) m_pendingNativeCompilation.invalidated = true;
 #endif

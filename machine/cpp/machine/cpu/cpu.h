@@ -425,8 +425,6 @@ private:
 	bool loadTableIndex(CallFrame& frame, int destination, Value base, Value key);
 	bool loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index);
 	bool loadTableFieldIndexCached(CallFrame& frame, int destination, int& predictedSlot, Value base, StringId key);
-	bool loadNativeTableField(CallFrame& frame, int destination, int& receiverSlot, TableStringPathCache& path, Value base, StringId key,
-		const NativeCpuRunState& run, std::optional<ValueTag> resultProof = {});
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
 	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);
@@ -447,6 +445,8 @@ private:
 	static u32 readNativeLength(NativeBlockRunState*, const StringPool*, Value* operand) noexcept;
 	static int placeNativeVarargs(NativeBlockRunState*, int first, int requested) noexcept;
 	friend class NativeLowering;
+	bool loadNativeTableField(CallFrame& frame, int destination, int& receiverSlot, TableStringPathCache& path, Value base, StringId key,
+		const NativeCpuRunState& run, std::optional<ValueTag> resultProof = {});
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
 	static NativeBuiltinCallOutcome runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	NativeRomCallBinding* bindNativeRomFunction(Blua32ExecutionImage& image, u32 functionAddress) const noexcept;
@@ -454,6 +454,7 @@ private:
 	void prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pc, MappedBusSignals busSignals);
 	void observeNativeArithmeticReplay(DecodedInstructionPage&, u32 word, NativeArithmeticFeedback assumption, Value left, Value right);
 	void retireNativeInstructionUsers(DecodedInstructionPage&, u32 word);
+	void recompileNativeSource(CallFrame&, const NativeCpuRunState&, u32 changedPc, u32 sourcePc);
 	void prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32ExecutionBoot& boot);
 	void discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing);
 	void prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, bool coldImage);
