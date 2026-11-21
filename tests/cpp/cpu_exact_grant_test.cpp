@@ -323,21 +323,42 @@ void exactGrantSweep(bool scalarControl) {
 	for (int grant = 1; grant <= 64; ++grant) {
 		Machine native(image, scalarControl, bssByteCount), scalar(image, true, bssByteCount);
 		for (auto* machine : {&native, &scalar}) {
-			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
-			frame->registers.set(4, valueInteger(address));
-			frame->registers.set(5, valueInteger(0x12345678));
-			for (int i = 0; i < 20; ++i) machine->cpu.runUntilDepth(0, 128);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			if (machine == &native && !scalarControl) {
-				waitForNativeEntries(*machine, machine->rom.textAddress, {0});
-				const auto* page = frame->decodedPage;
-				require(page && page->nativeBlocks && page->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2],
-					"the sweep enters compiled native code");
-			}
+			auto& frame = *machine->cpu.rootThread()->frameAtDepth(0);
+			frame.registers.set(4, valueInteger(address));
+			frame.registers.set(5, valueInteger(0x12345678));
+			// These inputs are live across NEWT and its GC work, not just within the register capacity.
+			frame.setTop(6);
+		}
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		if (!scalarControl) native.cpu.setNativeCompilationProfiling(true);
 #endif
+		for (int slice = 0; slice < 64; ++slice) {
+			require(test::runCpuParity(native.cpu, scalar.cpu, 128) == RunResult::Yielded,
+				"both warm loops stop on the same guest budget");
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+			// Only publish a submitted job; host waiting must not run more guest code or collect more objects.
+			if (!scalarControl) test::waitForFixtureWorkerRequests(native.cpu);
+#endif
+		}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		if (!scalarControl) {
+			const auto& page = *native.cpu.rootThread()->frameAtDepth(0)->decodedPage;
+			const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+			require(page.nativeBlocks && page.nativeBlocks->entries[word], "the sweep enters compiled native code");
+		}
+#endif
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		if (!scalarControl) native.cpu.setNativeCompilationProfiling(false);
+#endif
+		for (auto* machine : {&native, &scalar}) {
+			const auto* thread = machine->cpu.activeThread();
+			require(thread->frameDepth() == 1u && machine->cpu.readFrameRegister(0, 4) == valueInteger(address)
+				&& machine->cpu.readFrameRegister(0, 5) == valueInteger(0x12345678),
+				"the warm allocation loop preserves live store operands without faulting");
+			auto& frame = *thread->frameAtDepth(0);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
 				machine->rom.functionAddresses[0], machine->rom.textAddress);
-			for (int reg = 0; reg < 4; ++reg) frame->registers.set(reg, valueNil());
+			for (int reg = 0; reg < 4; ++reg) frame.registers.set(reg, valueNil());
 			machine->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 			machine->memory.writeU32(address, 0);
 		}
@@ -348,7 +369,7 @@ void exactGrantSweep(bool scalarControl) {
 		const auto nativePc = native.cpu.readFramePc(0), scalarPc = scalar.cpu.readFramePc(0);
 		const u32 nativeAllocations = test::allocatedObjectRecords(native.cpu) - nativeStartCount;
 		const u32 scalarAllocations = test::allocatedObjectRecords(scalar.cpu) - scalarStartCount;
-		bool registersEqual = true;
+		bool registersEqual = native.cpu.getFrameRegisterCount(0) == scalar.cpu.getFrameRegisterCount(0);
 		for (const int reg : {0, 1, 2, 4, 5}) {
 			registersEqual &= native.cpu.readFrameRegister(0, reg) == scalar.cpu.readFrameRegister(0, reg);
 		}
