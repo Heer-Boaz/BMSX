@@ -86,9 +86,9 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, sljit_labe
 		const auto source = m_cache.state();
 		if (!completed) {
 			emitTop(exit.registerTop);
-			sljit_emit_op2(
-				m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
-			fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM, 0),
+			sljit_emit_op2(m_compiler, SLJIT_SUB32 | SLJIT_SET_SIG_LESS_EQUAL, NativeBlockAbi::budget, 0,
+				NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
+			fault(sljit_emit_jump(m_compiler, SLJIT_SIG_LESS_EQUAL),
 				exit, source, Charge::Paid);
 		}
 		auto& entry = m_entries[target];
