@@ -3,12 +3,14 @@ import { test } from 'node:test';
 import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/number';
 import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
@@ -179,6 +181,83 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	assert.equal(writes[0], 1, 'an ordinary closed-cell write does not publish unrelated local definitions');
 	assert.equal(writes[2], 1, 'a pending numeric source is forwarded to the upvalue without an intermediate writeback');
 	assert.equal(r.get(3), valueInteger(2));
+});
+
+test('compiled upvalues honor mirrored stack values, control observations and physical continuations', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.JMPIF, 7, 0, 5);
+	writeInstruction(text, 1, OpCode.K1, 5, 0, 0);
+	writeInstruction(text, 2, OpCode.GETUP, 2, 0, 0);
+	writeInstruction(text, 3, OpCode.SETUP, 0, 1, 0);
+	writeInstruction(text, 4, OpCode.KSMI, 3, 0, 33);
+	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
+	writeInstruction(text, 6, OpCode.KSMI, 3, 0, 60);
+	writeInstruction(text, 7, OpCode.JMP, 0, 63, 56, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 8, maxStack: 16 }] });
+	const start = image.image.functions[0].codeAddress, alternate = start + 6 * INSTRUCTION_BYTES;
+	const prefix = BASE_CYCLES[OpCode.JMPIF] + BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.GETUP] + BASE_CYCLES[OpCode.SETUP];
+	const tail = BASE_CYCLES[OpCode.KSMI] + BASE_CYCLES[OpCode.JMP];
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const machines = [js, ref].map(cpu => {
+		const frame = cpu.rootThread.frameAtDepth(0), cells = new Uint32Array(2);
+		const closure = cpu.luaHeap.allocateClosureRecord(2, false, cells, cells.length);
+		ClosureRecord.initializeRecord(cpu.memory, closure, cpu.captureClosureBinding(frame.closure), false, cpu.gc.white(), 2);
+		for (let capture = 0; capture < cells.length; ++capture)
+			ClosureRecord.setCaptureAddress(cpu.memory, closure, capture, cells[capture]);
+		frame.closureAddress = closure;
+		Upvalue.bindOpen(cpu.memory, cells[1], frame.thread.address, frame.stackBase + 8, 0);
+		frame.registers.set(7, valueBool(true));
+		cpu.runUntilDepth(0, 30 * (BASE_CYCLES[OpCode.JMPIF] + tail));
+		frame.registers.set(7, valueBool(false));
+		cpu.runUntilDepth(0, 30 * (prefix + tail));
+		return { cpu, frame, closure, cells };
+	});
+	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
+	const firstWord = (start & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const entry = page.compiledBlocks!.entries[firstWord + 1]!;
+	const setup = entry.exits.find(exit => exit.exit === CompiledBlockExit.WriteUpvalue)!;
+	assert.equal(setup.linkedBlock?.firstWord, firstWord + 4, 'the ordinary SETUP continuation is cached before redirecting it');
+	assert.ok(page.compiledBlocks!.entries[firstWord + 6], 'the alternate target is already generated');
+	// These are private RAM record-port fixtures, not ordinary cartridge bus operations.
+	for (const port of ['closed-read', 'closed-write', 'read-pc', 'read-top', 'write-pc'] as const) {
+		for (const { cpu, frame, closure, cells } of machines) {
+			const memory = cpu.memory;
+			frame.pc = start;
+			frame.compilationEntry = true;
+			frame.top = 0;
+			frame.registers.setInteger(0, port === 'write-pc' ? alternate : 9);
+			frame.registers.setNil(2);
+			frame.registers.setNil(3);
+			frame.registers.setInteger(4, 0);
+			frame.registers.setInteger(5, 9);
+			for (let capture = 0; capture < cells.length; ++capture) {
+				memory.writeRamRecordByte(cells[capture] + Upvalue.UPVALUE_FLAGS, 0);
+				ClosureRecord.setCaptureAddress(memory, closure, capture, cells[capture]);
+			}
+			if (port === 'closed-read' || port === 'closed-write') {
+				const cell = frame.registers.ramOffset() + 5 * 4 - Upvalue.UPVALUE_VALUE_WORD;
+				assert.equal(cell & Upvalue.UPVALUE_ADDRESS_MASK, cell);
+				memory.writeRamRecordByte(cell + Upvalue.UPVALUE_VALUE_TAG, ValueTag.Integer);
+				ClosureRecord.setCaptureAddress(memory, closure, port === 'closed-read' ? 0 : 1, cell);
+			} else {
+				const owner = DYNAMIC_RAM_BASE - RAM_BASE + 0x200, tag = owner + 0x100;
+				const word = frame.controlOffset + (port === 'read-top' ? FrameField.Top : FrameField.Pc);
+				memory.writeRamRecordWord(owner + ThreadField.StackBlock, word);
+				memory.writeRamRecordWord(owner + ThreadField.StackCapacity, ((tag - word) & RAM_RECORD_WORD_MASK) >>> 2);
+				memory.writeRamRecordByte(tag, ValueTag.Integer);
+				Upvalue.bindOpen(memory, cells[port === 'write-pc' ? 1 : 0], owner, 0, 0);
+			}
+		}
+		runCpuParity(js, ref, prefix + tail);
+		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState(), port);
+		if (port === 'closed-read') assert.equal(frame.registers.get(2), valueInteger(1), 'closed GETUP loads the current dirty register word');
+		if (port === 'closed-write') assert.equal(frame.registers.get(5), valueInteger(9), 'closed SETUP is not overwritten by a stale cached register');
+		if (port === 'read-pc') assert.equal(frame.registers.get(2), valueInteger(start + 3 * INSTRUCTION_BYTES), 'open GETUP observes its advanced PC');
+		if (port === 'read-top') assert.equal(frame.registers.get(2), valueInteger(6), 'open GETUP observes the prefix register extent');
+		if (port === 'write-pc') assert.equal(frame.registers.get(3), valueInteger(60), 'SETUP takes the written PC, not its warmed fallthrough');
+		assert.equal(setup.linkedBlock?.firstWord, firstWord + 4, 'alternate destinations do not replace the canonical continuation');
+	}
 });
 
 test('an empty compiled open VARARG changes top without touching or growing the destination range', () => {

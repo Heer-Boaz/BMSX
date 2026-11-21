@@ -2586,6 +2586,8 @@ export class CPU implements MappedPageInvalidator {
 					redispatch = true;
 					break;
 				}
+				case CompiledBlockExit.ReadUpvalue:
+					this.copyUpvalueToRegister(frame, registers, exit.exitA, frame.captureAddress(exit.exitB)); break;
 				case CompiledBlockExit.WriteUpvalue:
 					this.copyRegisterToUpvalue(frame.captureAddress(exit.exitB), registers, exit.exitA); break;
 				case CompiledBlockExit.InvalidOperand:
@@ -2644,7 +2646,8 @@ export class CPU implements MappedPageInvalidator {
 			if (thread.frameDepth <= targetDepth || remaining <= 0 || thread.stackRequiresScalar()
 				|| (this.haltedUntilIrqThread === this.activeThread.address && this.haltedUntilIrqFrameDepth === thread.frameDepth)) return;
 			frame = thread.currentFrame!;
-			if (exit.resumesFrame && exit.linkedBlock !== null) {
+			const pc = frame.pc;
+			if (exit.resumesFrame && pc === exit.nextPc && exit.linkedBlock !== null) {
 				// Pure same-frame helpers retain the image and socket selection.
 				// Target retirement already withdraws this intrusive cache link.
 				block = exit.linkedBlock;
@@ -2653,7 +2656,6 @@ export class CPU implements MappedPageInvalidator {
 				continue;
 			}
 			if (frame.executionImage !== image) return;
-			const pc = frame.pc;
 			if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) return;
 			const lookup = frame.executionImage.compiledCodeLookup;
 			if (lookup === null) return;
@@ -2667,7 +2669,7 @@ export class CPU implements MappedPageInvalidator {
 			if (remaining <= next.admissionCycles + next.admissionVarargs * frame.varargCount) return;
 			// Only shared-memory system code entering the selectable cartridge
 			// window needs a fresh chip-select lookup on each traversal.
-			if ((exit.resumesFrame || exit.exit === CompiledBlockExit.Continue) && exit.linkedBlock === null
+			if (pc === exit.nextPc && (exit.resumesFrame || exit.exit === CompiledBlockExit.Continue) && exit.linkedBlock === null
 				&& (frame.executionImage.executionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID
 					|| pc < CART_ROM_BASE || exit.currentPc >= CART_ROM_BASE)) linkCompiledBlock(exit, next);
 			block = next;

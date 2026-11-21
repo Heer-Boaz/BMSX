@@ -33,6 +33,7 @@ export const enum CompiledBlockExit {
 	WriteMemory,
 	SkipInstruction,
 	WriteUpvalue,
+	ReadUpvalue,
 	Vararg,
 	InvalidConstant,
 	ReadIndex,
@@ -65,6 +66,7 @@ for (const [op, exit] of [
 	[OpCode.STORE_MEM, CompiledBlockExit.WriteMemory], [OpCode.STORE_MEM_D, CompiledBlockExit.WriteMemory],
 	[OpCode.STORE_MEM_WORDS, CompiledBlockExit.WriteWords], [OpCode.STORE_MEM_WORDS_D, CompiledBlockExit.WriteWords],
 	[OpCode.VARARG, CompiledBlockExit.Vararg], [OpCode.SETUP, CompiledBlockExit.WriteUpvalue],
+	[OpCode.GETUP, CompiledBlockExit.ReadUpvalue],
 	[OpCode.LOADKR, CompiledBlockExit.InvalidConstant],
 	[OpCode.SETGL, CompiledBlockExit.WriteGlobal], [OpCode.SETSYS, CompiledBlockExit.WriteSystemGlobal],
 ] as const) sideExitKinds[op] = exit;
@@ -73,7 +75,7 @@ function compiledBlockExitResumesFrame(exit: CompiledBlockExit): boolean {
 	switch (exit) {
 		case CompiledBlockExit.ReadField: case CompiledBlockExit.ReadIndex:
 		case CompiledBlockExit.ReadInteger: case CompiledBlockExit.Length:
-		case CompiledBlockExit.WriteUpvalue: case CompiledBlockExit.Vararg:
+		case CompiledBlockExit.ReadUpvalue: case CompiledBlockExit.WriteUpvalue: case CompiledBlockExit.Vararg:
 		case CompiledBlockExit.AllocateTable: case CompiledBlockExit.Concat: case CompiledBlockExit.ConcatRange:
 			return true;
 		default:
