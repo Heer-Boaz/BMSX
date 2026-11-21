@@ -455,28 +455,34 @@ size_t GcHeap::traceTable(u32 address, size_t limit) {
 	const size_t words = TableRecord::HEADER_BYTES / sizeof(u32);
 	const size_t slots = table.scanSlots();
 	if (limit != 0u && words + slots * 2 > limit) return traceTableEntries(table, weakMode, 0u, words, limit);
-	if ((weakMode & kTableWeakKeys) == 0u) {
-		table.forEachEntry([this, weakMode](Value key, Value value) {
-			markValue(key);
-			if (weakMode == 0u) markValue(value);
-		});
-	}
+	traceTableEdges(table, weakMode);
 	return words + slots;
+}
+
+void GcHeap::traceTableEdges(const TableRecord& table, u8 mode, u32 first, u32 end) {
+	switch (mode) {
+	case 0u:
+		table.forEachEntry([this](Value key, Value value) { markValue(key); markValue(value); }, first, end);
+		break;
+	case kTableWeakKeys:
+		table.forEachEntry([this](Value, Value value) { markValue(value); }, first, end);
+		break;
+	case kTableWeakValues:
+		table.forEachEntry([this](Value key, Value) { markValue(key); }, first, end);
+		break;
+	}
 }
 
 size_t GcHeap::traceTableEntries(const TableRecord& table, u8 mode, u32 next, size_t work, size_t limit) {
 	const u32 array = table.arrayCapacity(), end = static_cast<u32>(table.storedSlotCount());
-	const bool scan = (mode & kTableWeakKeys) == 0u;
+	const bool scan = mode != (kTableWeakKeys | kTableWeakValues);
 	while (next < end && work < limit) {
 		const bool arrayEntry = next < array;
 		const u32 entryWords = arrayEntry ? 1u : 2u;
 		const size_t worst = entryWords * (scan ? 2u : 1u); // at most one String mark per Value
 		const u32 span = static_cast<u32>(std::max(size_t{1}, (limit - work) / worst));
 		const u32 stop = std::min(arrayEntry ? array : end, next + span);
-		if (scan) table.forEachEntry([this, mode](Value key, Value value) {
-			markValue(key);
-			if (mode == 0u) markValue(value);
-		}, next, stop);
+		traceTableEdges(table, mode, next, stop);
 		work += (stop - next) * entryWords + m_stringPool.takeMarkWork();
 		next = stop;
 	}
@@ -555,22 +561,6 @@ size_t GcHeap::resolveWeak() {
 		work += trace(true);
 		work += m_stringPool.takeMarkWork();
 	}
-	bool changed;
-	do {
-		changed = false;
-		work += visitList<tableRecordKind, false>(GC_WEAK_VISITS, [&](u32 address) -> size_t {
-			const TableRecord table(*this, address);
-			if (tableWeakMode(table) != kTableWeakKeys) return 0;
-			table.forEachEntry([&](Value key, Value value) {
-				if (valueIsAlive(key) && markValue(value)) changed = true;
-			});
-			return table.scanSlots();
-		});
-		while (indexWord(GC_TRACE_HEAD) != 0u) {
-			work += trace(true);
-			work += m_stringPool.takeMarkWork();
-		}
-	} while (changed);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	timing.phase(profile.weakNanoseconds);
 #endif

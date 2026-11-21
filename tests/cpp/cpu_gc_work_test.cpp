@@ -556,6 +556,43 @@ void resumesTableAfterPrimitiveDisplacement() {
 	require(finish() == expected, "restore captures the exact hash scan frontier and replays structural invalidation");
 }
 
+void weakKeysTraceStrongValues() {
+	Machine machine(image(), true);
+	auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& frame = *cpu.rootThread()->currentFrame;
+	const auto modeKey = cpu.stringPool().intern("__mode");
+	auto entries = cpu.createTable(), both = cpu.createTable();
+	auto weakKeys = cpu.createTable(), weakBoth = cpu.createTable();
+	weakKeys.setStringKey(modeKey, valueString(cpu.stringPool().intern("k")));
+	weakBoth.setStringKey(modeKey, valueString(cpu.stringPool().intern("kv")));
+	entries.setMetatableAddress(weakKeys.address());
+	both.setMetatableAddress(weakBoth.address());
+	frame.registers.set(0, valueTable(entries.address()));
+	frame.registers.set(1, valueTable(both.address()));
+	frame.setTop(2);
+
+	auto key = cpu.createTable(), value = cpu.createTable();
+	value.setInteger(1, valueTable(key.address()));
+	entries.set(valueTable(key.address()), valueTable(value.address()));
+	auto dropKey = cpu.createTable(), dropValue = cpu.createTable();
+	dropValue.setInteger(1, valueTable(dropKey.address()));
+	both.set(valueTable(dropKey.address()), valueTable(dropValue.address()));
+	cpu.collectHeap();
+	require(heap.tableRecordAddress(key.address()) == key.address()
+		&& entries.get(valueTable(key.address())) == valueTable(value.address()),
+		"the strong value in a weak-key entry keeps its own key alive");
+	require(heap.tableRecordAddress(dropKey.address()) == 0u && heap.tableRecordAddress(dropValue.address()) == 0u
+		&& isNil(both.get(valueTable(dropKey.address()))), "weak-key-and-value entries do not retain the same cycle");
+
+	value.setInteger(1, valueNil());
+	cpu.collectHeap();
+	require(heap.tableRecordAddress(key.address()) == 0u && heap.tableRecordAddress(value.address()) == value.address()
+		&& isNil(entries.get(valueTable(key.address()))), "the dead key drops its entry after its value was marked");
+	cpu.collectHeap();
+	require(heap.tableRecordAddress(value.address()) == 0u, "the dropped entry cannot retain its value in the next cycle");
+}
+
 void incrementalSharedWeakMode() {
 	Machine machine(image());
 	auto& cpu = machine.cpu;
@@ -818,7 +855,7 @@ int main(int argc, char** argv) {
 		allocationCollectionAndFailure(); constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		referenceWritesPayOnlyForNewEdges(); incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
-		resumesTableAfterPrimitiveDisplacement(); incrementalSharedWeakMode(); consumesSelfLinkedGrayEdge();
+		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues(); incrementalSharedWeakMode(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
 		return 0;

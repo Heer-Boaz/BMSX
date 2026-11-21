@@ -67,8 +67,9 @@ assert(read().answer == 75, 'remembered closed-cell child')
 assert(weak[1] == owner.child, 'live weak value')
 assert(weak[2] == nil, 'dead young weak value')
 assert(weak[3] == 'young-dead:é😀:' .. nonce, 'surviving weak String entries remain value-like')
-assert(weak[4] == entries[head].next and entries[weak[4]].answer == 91, 'young ephemeron convergence')
-assert(weak[5] == nil, 'an ephemeron value cannot retain its own young key')
+assert(weak[4] == entries[head].next and entries[weak[4]].answer == 91, 'strong values of young weak-key maps')
+local retained = weak[5]
+assert(retained ~= nil and entries[retained].self == retained, 'a strong value can retain its own weak key')
 assert(owner.text == 'young-live:é😀:' .. nonce and old_text == 'old-live:' .. nonce, 'canonical live String bytes')
 return true`;
 

@@ -98,6 +98,7 @@ private:
 	uint8_t tableWeakMode(const TableRecord& table);
 	bool markTable(u32 address);
 	size_t traceTable(u32 address, size_t limit);
+	void traceTableEdges(const TableRecord&, u8 mode, u32 first = 0u, u32 end = UINT32_MAX);
 	size_t traceTableEntries(const TableRecord&, u8 mode, u32 next, size_t work, size_t limit);
 	bool valueIsAlive(Value value) const;
 	u32 indexWord(u32 queue) const { return memory.readRamRecordWord(m_controlOffset + queue) & GC_GRAY_INDEX_MASK; }

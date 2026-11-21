@@ -169,31 +169,30 @@ for i = 1, 24 do
   assert(coroutine.status(thread) == 'dead')
 end
 return true`,
-	weak_ephemerons: `
+	weak_key_values: `
 local entries = setmetatable({}, { __mode = 'k' })
+local both = setmetatable({}, { __mode = 'kv' })
 local weak = setmetatable({}, { __mode = 'v' })
-local function chain()
-  local keys = {}
-  for i = 1, 32 do keys[i] = {} end
-  for i = 1, 31 do entries[keys[i]] = { next = keys[i + 1] } end
-  entries[keys[32]] = { text = 'reachable:' .. 32 }
-  weak[1] = keys[32]
-  return keys[1]
+local function install()
+  local keep, drop = {}, {}
+  entries[keep] = { own_key = keep }
+  both[drop] = { own_key = drop }
+  weak[1], weak[2] = keep, drop
 end
-local worker = coroutine.create(function()
-  local head = chain()
-  collectgarbage()
-  local current = head
-  for i = 1, 31 do current = entries[current].next end
-  assert(current == weak[1] and entries[current].text == 'reachable:32', 'ephemeron chain lost a live key')
-  return true
-end)
-assert(coroutine.resume(worker))
+install()
 collectgarbage()
-assert(next(entries) == nil and weak[1] == nil, 'ephemeron chain still retained')
-weak[2] = 'value-like:' .. 42
+local function detach()
+  local keep = weak[1]
+  assert(keep ~= nil and entries[keep].own_key == keep, 'strong value lost its weak key')
+  assert(weak[2] == nil and next(both) == nil, 'a doubly weak entry retained its key')
+  entries[keep].own_key = nil
+end
+detach()
 collectgarbage()
-assert(weak[2] == 'value-like:42')
+assert(next(entries) == nil and weak[1] == nil, 'weak key retained after its final strong reference')
+weak[3] = 'value-like:' .. 42
+collectgarbage()
+assert(weak[3] == 'value-like:42')
 return true`,
 	closure_lifetime: `
 local weak = setmetatable({}, { __mode = 'v' })

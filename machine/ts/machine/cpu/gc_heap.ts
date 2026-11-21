@@ -63,13 +63,10 @@ export class GcHeap {
 	public white(): number { return this.memory.readRamRecordByte(this.controlOffset + 1) & 1; }
 	private setPhase(phase: GcPhase): void { this.memory.writeRamRecordByte(this.controlOffset, phase); }
 	private readonly scratch = new ValueSlots(1);
-	private mode = 0;
 	private minor = false; // Only physical state crosses a grant.
-	private changed = false;
-	private readonly traceEntry = (key: Value, value: Value): void => {
-		this.markValue(key);
-		if (this.mode === 0) this.markValue(value);
-	};
+	private readonly traceBoth = (key: Value, value: Value): void => { this.markValue(key); this.markValue(value); };
+	private readonly traceKey = (key: Value): void => { this.markValue(key); };
+	private readonly traceValue = (_key: Value, value: Value): void => { this.markValue(value); };
 	private readonly alive = (value: Value): boolean => {
 		const tag = valueTag(value);
 		switch (tag) {
@@ -87,9 +84,6 @@ export class GcHeap {
 			}
 			default: return true;
 		}
-	};
-	private readonly ephemeronEntry = (key: Value, value: Value): void => {
-		if (this.alive(key) && this.markValue(value)) this.changed = true;
 	};
 	private readonly weakStrings = (key: Value, value: Value): void => {
 		if (valueTag(key) === ValueTag.String) this.markString(valuePayload(key));
@@ -212,11 +206,6 @@ export class GcHeap {
 		if (this.markColor(address) === 3) this.enqueue(address, GC_RECORD_LINK, GC_CHANGED_HEAD);
 		return 0;
 	};
-	private readonly visitEphemeron = (table: number): number => {
-		if (this.tableMode(table) !== 1) return 0;
-		this.tables.forEachStoredEntry(table, this.ephemeronEntry);
-		return this.tables.scanSlots(table);
-	};
 	private readonly visitWeakEntries = (table: number): number => {
 		const mode = this.tableMode(table);
 		const slots = this.tables.scanSlots(table);
@@ -310,11 +299,11 @@ export class GcHeap {
 		if (table) {
 			const meta = this.tables.metatableAddress(address);
 			if (meta !== 0) this.markTable(meta);
-			this.mode = this.tableMode(address);
-			if (this.mode !== 0) this.appendVisit(GC_WEAK_VISITS, address);
+			const mode = this.tableMode(address);
+			if (mode !== 0) this.appendVisit(GC_WEAK_VISITS, address);
 			const words = TableRecords.HEADER_BYTES >>> 2, slots = this.tables.scanSlots(address);
-			if (limit !== 0 && words + slots * 2 > limit) return this.traceTableEntries(address, this.mode, 0, words, limit);
-			if ((this.mode & 1) === 0) this.tables.forEachStoredEntry(address, this.traceEntry);
+			if (limit !== 0 && words + slots * 2 > limit) return this.traceTableEntries(address, mode, 0, words, limit);
+			this.traceTableEdges(address, mode);
 			return words + slots;
 		}
 		if (cell) {
@@ -445,16 +434,22 @@ export class GcHeap {
 			default: return this.traceCaptures(record, cursor, Closure.captureCount(this.memory, record), 0, limit);
 		}
 	}
+	private traceTableEdges(table: number, mode: number, first = 0, end = 0x7fffffff): void {
+		switch (mode) {
+			case 0: this.tables.forEachStoredEntry(table, this.traceBoth, first, end); break;
+			case 1: this.tables.forEachStoredEntry(table, this.traceValue, first, end); break;
+			case 2: this.tables.forEachStoredEntry(table, this.traceKey, first, end); break;
+		}
+	}
 	private traceTableEntries(table: number, mode: number, next: number, work: number, limit: number): number {
 		const array = this.tables.arrayCapacity(table), end = this.tables.storedSlotCount(table);
-		const scan = (mode & 1) === 0, strings = this.cpu.stringPool;
-		this.mode = mode;
+		const scan = mode !== 3, strings = this.cpu.stringPool;
 		while (next < end && work < limit) {
 			const arrayEntry = next < array, entryWords = arrayEntry ? 1 : 2;
 			const worst = entryWords * (scan ? 2 : 1);
 			const span = Math.max(1, ((limit - work) / worst) | 0);
 			const stop = Math.min(arrayEntry ? array : end, next + span);
-			if (scan) this.tables.forEachStoredEntry(table, this.traceEntry, next, stop);
+			this.traceTableEdges(table, mode, next, stop);
 			work += (stop - next) * entryWords + strings.takeMarkWork();
 			next = stop;
 		}
@@ -509,11 +504,6 @@ export class GcHeap {
 	private resolveWeak(): number {
 		let work = 0;
 		while (this.indexWord(GC_TRACE_HEAD) !== 0) work += this.trace(true) + this.cpu.stringPool.takeMarkWork();
-		do {
-			this.changed = false;
-			work += this.visitList(GC_WEAK_VISITS, ValueTag.Table, false, this.visitEphemeron);
-			while (this.indexWord(GC_TRACE_HEAD) !== 0) work += this.trace(true) + this.cpu.stringPool.takeMarkWork();
-		} while (this.changed);
 		this.diagnostics?.phase('weakNanoseconds');
 		work += this.visitList(GC_WEAK_VISITS, ValueTag.Table, true, this.visitWeakEntries);
 		return work + this.cpu.stringPool.takeMarkWork();

@@ -1324,7 +1324,6 @@ Collection work consumes cycles as follows:
 | Examine an object slot or run for reclamation, except an occupied Thread slot | `1` per visited block, including a free slot; a page run is one block |
 | Examine an occupied Thread slot for reclamation | `ceil(occupied allocation bytes / 4)` |
 | Read the constant and global root ranges | `2C + 3(S + G)` per pass |
-| Examine a weak-key Table in one dependency-convergence pass | `A + 2H` |
 | Clear weak entries and retain surviving String entries in one weak Table | `A + 2H` |
 | Mark a previously unmarked RAM String | `1` |
 | Examine one RAM intern bucket, including an empty bucket | `1` |
@@ -1362,7 +1361,7 @@ A full-collection step normally stops after **4,096 work cycles**. During
 incremental marking, the scan of a Table, a Thread, or a closure's capture
 list can resume in a later step. When a closure or a Thread first reaches a captured-variable cell, its four-cycle scan is
 included in the step that reaches it. The final root remark, remaining
-changed-object scans, weak-key convergence and weak-entry clearing can
+changed-object scans and weak-entry clearing can
 exceed the step target: it is not a maximum instruction latency. The final
 atomic remark starts in a separate step, rather than extending the last
 incremental marking step. Reclamation of
@@ -1439,9 +1438,14 @@ capacity become observable as collection advances, not at a fixed display frame.
 | Mode | Collection effect |
 | --- | --- |
 | Strong | Entries retain their keys and values. |
-| `k` | An entry's value is retained only when its key is alive independently; chains of such dependencies are followed to convergence. A value cannot keep its own otherwise unreachable weak key alive through that entry. |
+| `k` | The key position does not retain collectable objects. The value position still retains its value, including any objects that value refers to. |
 | `v` | Keys remain strong; values alone do not retain collectable objects. |
 | `kv` | Neither side alone retains collectable objects. |
+
+A value in a `k` Table can keep its own key alive by referring to it. Use
+`kv` for a cache whose values can refer back to their keys and should not
+keep either side alive. When a weak key disappears, the corresponding entry
+is removed; its value may survive until a later collection.
 
 Collectable weak entries can refer to Tables, threads and closures, including
 closures without captured variables. Numbers, booleans and builtin functions do

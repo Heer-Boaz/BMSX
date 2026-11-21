@@ -23,7 +23,7 @@ struct DiagnosticGcProfile {
 	u64 totalNanoseconds = 0;
 	// Reachability epoch/setup, CPU roots and the three allocation-time roots.
 	u64 rootsNanoseconds = 0;
-	// Graph traversal and the ephemeron fixed point (including its trace work).
+	// Graph traversal, including traversal during the final remark.
 	u64 traceNanoseconds = 0;
 	u64 markAgainNanoseconds = 0;
 	// Enclosing atomic interval; overlaps its roots, trace and weak measurements.

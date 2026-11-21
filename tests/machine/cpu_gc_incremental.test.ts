@@ -271,6 +271,40 @@ test('primitive hash displacement withdraws a suspended Table mark cursor', () =
 	assert.deepEqual(finish(), expected);
 });
 
+test('weak keys still trace strong values while weak keys and values release a cycle', () => {
+	const cpu = machine(), { gc, stringPool } = cpu, tables = gc.tables;
+	const frame = cpu.rootThread.currentFrame!;
+	const entries = cpu.createTable(), both = cpu.createTable();
+	const weakKeys = cpu.createTable(), weakBoth = cpu.createTable();
+	const mode = stringPool.intern('__mode');
+	tables.setStringKey(weakKeys, mode, valueString(stringPool.intern('k')));
+	tables.setStringKey(weakBoth, mode, valueString(stringPool.intern('kv')));
+	tables.setMetatableAddress(entries, weakKeys);
+	tables.setMetatableAddress(both, weakBoth);
+	frame.registers.setTable(0, entries); frame.registers.setTable(1, both); frame.top = 2;
+	const key = cpu.createTable(), value = cpu.createTable();
+	tables.setInteger(value, 1, valueTable(key));
+	tables.set(entries, valueTable(key), valueTable(value));
+	const dropKey = cpu.createTable(), dropValue = cpu.createTable();
+	tables.setInteger(dropValue, 1, valueTable(dropKey));
+	tables.set(both, valueTable(dropKey), valueTable(dropValue));
+
+	gc.collect();
+	assert.equal(gc.tableRecordAddress(key), key);
+	assert.equal(tables.get(entries, valueTable(key)), valueTable(value), 'the strong value keeps its own key alive');
+	assert.equal(gc.tableRecordAddress(dropKey), 0);
+	assert.equal(gc.tableRecordAddress(dropValue), 0);
+	assert.equal(tables.get(both, valueTable(dropKey)), valueNil());
+
+	tables.setInteger(value, 1, valueNil());
+	gc.collect();
+	assert.equal(gc.tableRecordAddress(key), 0);
+	assert.equal(tables.get(entries, valueTable(key)), valueNil(), 'the dead key drops its entry');
+	assert.equal(gc.tableRecordAddress(value), value, 'its strong value was already marked for this cycle');
+	gc.collect();
+	assert.equal(gc.tableRecordAddress(value), 0);
+});
+
 test('small collection skips scalar-only table writes, follows live keys and clears young weak keys', () => {
 	const cpu = machine(), { gc, memory, stringPool } = cpu;
 	const frame = cpu.rootThread.currentFrame!;
