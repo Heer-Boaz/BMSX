@@ -58,7 +58,7 @@ void exercisePressure(bmsx::CPU& cpu, bool compiled) {
 	runPressureStage(cpu);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	if (compiled) for (std::string_view name : {"assign", "change"}) {
-		const auto prototype = ClosureRecord::readBinding(memory, valuePayload(global(name)));
+		const auto prototype = cpu.readClosureBinding(valuePayload(global(name)));
 		MappedPageBinding binding{};
 		memory.bindMappedPage(prototype.entry.codeAddress & ~MAPPED_PAGE_BYTE_MASK, MAPPED_BUS_MASTER_CPU, binding);
 		auto& page = cpu.rootThread()->currentFrame->executionImage->decodedPages.at(binding.key);

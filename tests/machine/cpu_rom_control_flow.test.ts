@@ -3,11 +3,12 @@ import { test } from 'node:test';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { findRomFunctionExtentAtPc, isRomInstructionHead } from '../../machine/ts/machine/cpu/execution_image';
+import { findRomFunctionExtentAtPc, isRomInstructionHead, RomFunctionLane } from '../../machine/ts/machine/cpu/execution_image';
 import { valueInteger, type Value } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
+	BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
 	BLUA32_IMAGE_FLAGS_OFFSET, BLUA32_IMAGE_FUNCTION_COUNT_OFFSET, BLUA32_IMAGE_MAPPED_CODE_FLAG,
 } from '../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -49,7 +50,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(findRomFunctionExtentAtPc(dir, head), 0);
 		assert.equal(findRomFunctionExtentAtPc(dir, body), 0);
 		assert.equal(findRomFunctionExtentAtPc(dir, body + 2 * INSTRUCTION_BYTES), -1, 'padding belongs to no function');
-		assert.equal(findRomFunctionExtentAtPc(dir, body + 3 * INSTRUCTION_BYTES), 2);
+		assert.equal(findRomFunctionExtentAtPc(dir, body + 3 * INSTRUCTION_BYTES), RomFunctionLane.Count);
 		assert.equal(isRomInstructionHead(dir, head), true);
 		assert.equal(isRomInstructionHead(dir, head + 2), false);
 		assert.equal(isRomInstructionHead(dir, body), false);
@@ -58,6 +59,34 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const result: Value[] = [];
 		cpu.readCompletionValues(result);
 		assert.deepEqual(result, [valueInteger(0)]);
+	});
+}
+
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	test(`live closures use the newly published entry and register layout (${backend})`, () => {
+		const { image, prefix, textAddress } = validImage();
+		const { cpu, memory, executionAddressSpace } = createTestSystemCpu(image, backend);
+		const closure = cpu.rootThread.currentFrame!.closure;
+		const record = image.symbols.functionAddresses[0];
+		const nextEntry = textAddress + (prefix + 4) * INSTRUCTION_BYTES;
+		const replacement = image.romBytes.slice();
+		writeLE32(replacement, record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, nextEntry);
+		writeLE32(replacement, record + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET, 2 * INSTRUCTION_BYTES);
+		writeLE32(replacement, record + BLUA32_FUNCTION_NUM_PARAMS_OFFSET, 1);
+		writeLE32(replacement, record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 7);
+		memory.installSystemRom(replacement);
+		assert.equal(cpu.captureClosureBinding(closure).codeAddress, textAddress);
+		assert.throws(() => cpu.beginCompletionCall(closure), /ROM must be published/);
+		cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, record, nextEntry);
+		cpu.beginCompletionCall(closure);
+		assert.equal(cpu.readFramePc(1), nextEntry);
+		assert.equal(cpu.activeThread.currentFrame!.stackCapacity, 7);
+		assert.equal(cpu.activeThread.currentFrame!.top, 1);
+		assert.equal(cpu.runUntilDepth(1, 40), RunResult.Halted);
+		const result: Value[] = [];
+		cpu.readCompletionValues(result);
+		assert.deepEqual(result, [valueInteger(1)]);
 	});
 }
 
@@ -148,8 +177,8 @@ test('the same executable extent may be named by multiple record addresses', () 
 	const { cpu } = createTestSystemCpu({ romBytes });
 	const dir = cpu.rootThread.currentFrame!.executionImage.romFunctions;
 	assert.deepEqual([...dir.codeOrder], [0]);
-	assert.equal(dir.ranges[1], textAddress + (prefix + 3) * INSTRUCTION_BYTES);
-	assert.equal(dir.ranges.length, 4);
+	assert.equal(dir.versions[RomFunctionLane.EndPc], textAddress + (prefix + 3) * INSTRUCTION_BYTES);
+	assert.equal(dir.versions.length, 2 * RomFunctionLane.Count);
 });
 
 test('mapped code permits a branch between function extent hints only when explicitly declared', () => {

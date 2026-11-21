@@ -369,7 +369,7 @@ void closureAddressAlias(int source) {
 			m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(m->rom.functionAddresses[index]));
 		}
 		require(native.cpu.runUntilDepth(0, 4) == scalar.cpu.runUntilDepth(0, 4), "both live operand paths consume the same grant"); requireParity(native, scalar);
-		require(ClosureRecord::readBinding(native.cpu.memory(), asClosure(native.cpu.readFrameRegister(0, source), native.cpu.gcHeap())).functionAddress == native.rom.functionAddresses[index], "the full source address is sampled before its slot is replaced");
+		require(native.cpu.readClosureBinding(asClosure(native.cpu.readFrameRegister(0, source), native.cpu.gcHeap())).functionAddress == native.rom.functionAddresses[index], "the full source address is sampled before its slot is replaced");
 	}
 }
 

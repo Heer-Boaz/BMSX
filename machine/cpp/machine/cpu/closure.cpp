@@ -1,4 +1,5 @@
 #include "machine/cpu/closure.h"
+#include "machine/cpu/execution_image.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx::ClosureRecord {
@@ -31,8 +32,8 @@ void initialize(Memory& memory, u32 address, const FunctionPrototype& prototype,
 	}
 }
 
-FunctionPrototype readBinding(const Memory& memory, u32 address) {
-	const BindingFlags binding{memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS)};
+FunctionPrototype readBinding(const Memory& memory, u32 address, BindingFlags binding,
+	const Blua32RomFunctionDirectory& directory) {
 	FunctionPrototype record;
 	record.functionAddress = memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
 	record.executionDomainId = binding.domain();
@@ -41,6 +42,11 @@ FunctionPrototype readBinding(const Memory& memory, u32 address) {
 		record.entry = readEntryTail(memory, tail);
 		record.upvalueTableAddress = memory.readRamRecordWord(tail + 16u);
 		record.recordUpvalueCount = memory.readRamRecordWord(tail + 20u);
+	} else if (!directory.mappedCode) {
+		const auto& version = *directory.find(record.functionAddress);
+		record.entry = version.entry;
+		record.upvalueTableAddress = version.upvalueTableAddress;
+		record.recordUpvalueCount = version.upvalueCount;
 	} else {
 		Span<const u8> view;
 		// The ROM port does not clock the bus. An undriven binding has zero data lanes.

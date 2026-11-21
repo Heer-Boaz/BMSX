@@ -46,12 +46,16 @@ NativeRomCallBinding* CPU::bindNativeRomFunction(Blua32ExecutionImage& image, u3
 	auto& binding = image.nativeRomCallBindings[
 		(functionAddress / BLUA32_FUNCTION_RECORD_SIZE) % NativeRomCallBinding::slotCount];
 	if (binding.functionAddress != functionAddress) {
-		Span<const u8> view;
-		if (!m_memory.bindRomByteView(functionAddress, BLUA32_FUNCTION_RECORD_SIZE, image.executionDomainId == 1, view))
-			return nullptr;
 		// Cells belong to this immutable prototype and die with the image.
 		// Replacing the prototype drops both of the old bindings.
-		binding = {functionAddress, FunctionEntry::fromRom(view.data()), {}};
+		if (!image.romFunctions.mappedCode) {
+			binding = {functionAddress, image.romFunctions.find(functionAddress)->entry, {}};
+		} else {
+			Span<const u8> view;
+			if (!m_memory.bindRomByteView(functionAddress, BLUA32_FUNCTION_RECORD_SIZE, image.executionDomainId == 1, view))
+				return nullptr;
+			binding = {functionAddress, FunctionEntry::fromRom(view.data()), {}};
+		}
 	}
 	return &binding;
 }
@@ -59,13 +63,16 @@ NativeRomCallBinding* CPU::bindNativeRomFunction(Blua32ExecutionImage& image, u3
 std::optional<NativeFixedCallPlan> CPU::captureNativeFixedCall(Blua32ExecutionImage& image, u32 prototype, int supplied) const {
 	const auto version = image.romFunctions.find(prototype);
 	if (!version) return std::nullopt;
-	const auto* binding = bindNativeRomFunction(image, prototype);
-	if (!binding) return std::nullopt;
-	const auto& function = binding->entry;
-	if (function.codeAddress != version->firstPc || (function.flags & BLUA32_FUNCTION_VARARG) != 0) return std::nullopt;
-	const auto layout = ArgumentPlacement::forEntry(0, supplied, function);
+	const FunctionEntry* function = &version->entry;
+	if (image.romFunctions.mappedCode) {
+		const auto* binding = bindNativeRomFunction(image, prototype);
+		if (!binding || binding->entry.codeAddress != function->codeAddress) return std::nullopt;
+		function = &binding->entry;
+	}
+	if ((function->flags & BLUA32_FUNCTION_VARARG) != 0) return std::nullopt;
+	const auto layout = ArgumentPlacement::forEntry(0, supplied, *function);
 	if (!layout) return std::nullopt;
-	return NativeFixedCallPlan{prototype, version->firstPc, static_cast<u32>(layout->capacity),
+	return NativeFixedCallPlan{prototype, function->codeAddress, static_cast<u32>(layout->capacity),
 		layout->formals.copied, layout->formals.padded};
 }
 

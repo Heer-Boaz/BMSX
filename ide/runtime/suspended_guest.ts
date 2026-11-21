@@ -1,4 +1,4 @@
-import { CLOSURE_PROTOTYPE_ADDRESS, executionDomain } from '../../machine/ts/machine/cpu/closure';
+import { CLOSURE_BINDING_FLAGS, CLOSURE_PROTOTYPE_ADDRESS, executionDomain } from '../../machine/ts/machine/cpu/closure';
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import type { StringId, StringPool } from '../../machine/ts/machine/cpu/string_pool';
@@ -202,7 +202,7 @@ export class SuspendedGuestSession {
 		if (valueTag(value) !== ValueTag.Closure) return undefined;
 		const closure = asClosure(value, this.cpu.gc);
 		const address = this.cpu.memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
-		const domain = executionDomain(this.cpu.memory, closure);
+		const domain = executionDomain(this.cpu.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS));
 		if (target === undefined) return { domain, address };
 		target.domain = domain; target.address = address;
 		return target;

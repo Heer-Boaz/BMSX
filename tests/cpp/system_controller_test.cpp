@@ -744,7 +744,7 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	require(cpu.activeCartridgeSlot() == 0, "CP0.EXEC latches physically selected cartridge slot 0");
 	const bmsx::Value slot0ClosureValue = cpu.getGlobalByKey(publishedClosureName);
 	bmsx::u32 slot0Closure = bmsx::asClosure(slot0ClosureValue, cpu.gcHeap());
-	require(bmsx::ClosureRecord::readBinding(cpu.memory(), slot0Closure).executionDomainId == 0, "slot 0 closure binds its execution domain");
+	require(cpu.readClosureBinding(slot0Closure).executionDomainId == 0, "slot 0 closure binds its execution domain");
 	require(cpu.getGlobalByKey(publishedValueName) == bmsx::valueInteger(111), "slot 0 startup executes its published closure");
 	const bmsx::StringId savedClosureName = cpu.stringPool().intern("saved_closure");
 	const bmsx::StringId closureTableName = cpu.stringPool().intern("closure_table");
@@ -754,18 +754,18 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	cpu.setGlobalByKey(closureTableName, bmsx::valueTable(closureTable.address()));
 
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
-	require(bmsx::ClosureRecord::readBinding(cpu.memory(), slot0Closure).executionDomainId == 0, "data selection does not change the closure domain");
+	require(cpu.readClosureBinding(slot0Closure).executionDomainId == 0, "data selection does not change the closure domain");
 	cpu.requestNonMaskableInterrupt();
 	require(cpu.enterPendingInterrupt(), "physical NMI enters the system execution selector");
-	require(bmsx::ClosureRecord::readBinding(cpu.memory(), slot0Closure).executionDomainId == 0, "entering a system exception does not change the closure domain");
+	require(cpu.readClosureBinding(slot0Closure).executionDomainId == 0, "entering a system exception does not change the closure domain");
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system NMI handler enters the selected cartridge through CP0.EXEC");
 	require(cpu.activeCartridgeSlot() == 1, "CP0.EXEC latches physically selected cartridge slot 1");
 	const bmsx::Value slot1ClosureValue = cpu.getGlobalByKey(publishedClosureName);
 	bmsx::u32 slot1Closure = bmsx::asClosure(slot1ClosureValue, cpu.gcHeap());
 	require(slot1Closure != slot0Closure, "different execution domains own distinct canonical closures");
-	require(bmsx::ClosureRecord::readBinding(cpu.memory(), slot1Closure) != bmsx::ClosureRecord::readBinding(cpu.memory(), slot0Closure)
-		&& bmsx::ClosureRecord::readBinding(cpu.memory(), slot1Closure).functionAddress == bmsx::ClosureRecord::readBinding(cpu.memory(), slot0Closure).functionAddress, "same mapped address in different cartridge domains retains separate prototypes");
-	require(bmsx::ClosureRecord::readBinding(cpu.memory(), slot1Closure).executionDomainId == 1, "slot 1 closure binds its execution domain");
+	require(cpu.readClosureBinding(slot1Closure) != cpu.readClosureBinding(slot0Closure)
+		&& cpu.readClosureBinding(slot1Closure).functionAddress == cpu.readClosureBinding(slot0Closure).functionAddress, "same mapped address in different cartridge domains retains separate prototypes");
+	require(cpu.readClosureBinding(slot1Closure).executionDomainId == 1, "slot 1 closure binds its execution domain");
 	require(closureTable.get(slot0ClosureValue) == bmsx::valueInteger(77) && bmsx::isNil(closureTable.get(slot1ClosureValue)),
 		"closure table keys retain their own execution domain");
 	require(cpu.getGlobalByKey(publishedValueName) == bmsx::valueInteger(222), "slot 1 startup executes the canonical closure against slot 1 code");
@@ -776,7 +776,7 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 		cpu.activeCartridgeSlot() == 1,
 		"data-bus cartridge selection does not replace the post-unwind execution domain"
 	);
-	require(bmsx::ClosureRecord::readBinding(cpu.memory(), slot0Closure).executionDomainId == 0, "data and execution selection do not redirect the slot 0 closure");
+	require(cpu.readClosureBinding(slot0Closure).executionDomainId == 0, "data and execution selection do not redirect the slot 0 closure");
 
 	const std::vector<bmsx::u8> saveBytes =
 		bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
@@ -799,9 +799,9 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	require(bmsx::asClosure(restoredClosureValue, cpu.gcHeap()) == slot0Closure, "wire restore preserves canonical static closure identity");
 	require(restoredTable.get(restoredClosureValue) == bmsx::valueInteger(77), "wire restore preserves closure-keyed table entries");
 	bmsx::u32 restoredPublished = bmsx::asClosure(cpu.getGlobalByKey(publishedClosureName), cpu.gcHeap());
-	require(restoredPublished != slot0Closure && bmsx::ClosureRecord::readBinding(cpu.memory(), restoredPublished).executionDomainId == 1, "wire restore preserves the distinct slot 1 closure");
+	require(restoredPublished != slot0Closure && cpu.readClosureBinding(restoredPublished).executionDomainId == 1, "wire restore preserves the distinct slot 1 closure");
 	require(cpu.activeCartridgeSlot() == 1, "wire restore preserves slot 1 as the physical execution source");
-	require(bmsx::ClosureRecord::readBinding(cpu.memory(), bmsx::asClosure(restoredClosureValue, cpu.gcHeap())).executionDomainId == 0, "wire restore retains the slot 0 closure's domain");
+	require(cpu.readClosureBinding(bmsx::asClosure(restoredClosureValue, cpu.gcHeap())).executionDomainId == 0, "wire restore retains the slot 0 closure's domain");
 	require(
 		cpu.getGlobalByKey(publishedValueName) == bmsx::valueInteger(222),
 		"wire restore preserves the slot 1 closure result"
@@ -829,7 +829,7 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 	const bmsx::Value secondClosureValue = cpu.getGlobalByKey(publishedClosureName);
 	bmsx::u32 secondClosure = bmsx::asClosure(secondClosureValue, cpu.gcHeap());
 	require(firstClosure != secondClosure, "non-static closure creation retains object identity");
-	require(bmsx::ClosureRecord::readBinding(cpu.memory(), firstClosure) == bmsx::ClosureRecord::readBinding(cpu.memory(), secondClosure), "distinct non-static closures retain the same published function binding");
+	require(cpu.readClosureBinding(firstClosure) == cpu.readClosureBinding(secondClosure), "distinct non-static closures retain the same published function binding");
 
 	const bmsx::StringId firstName = cpu.stringPool().intern("first_closure");
 	const bmsx::StringId secondName = cpu.stringPool().intern("second_closure");
@@ -856,7 +856,7 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 	bmsx::u32 restoredSecond = bmsx::asClosure(restoredSecondValue, cpu.gcHeap());
 	bmsx::TableRecord restoredTable = bmsx::asTable(cpu.getGlobalByKey(tableName), cpu.gcHeap());
 	require(restoredFirst != restoredSecond, "wire restore retains distinct non-static closure identities");
-	require(bmsx::ClosureRecord::readBinding(cpu.memory(), restoredFirst) == bmsx::ClosureRecord::readBinding(cpu.memory(), restoredSecond), "wire restore preserves the common published function binding");
+	require(cpu.readClosureBinding(restoredFirst) == cpu.readClosureBinding(restoredSecond), "wire restore preserves the common published function binding");
 	require(restoredTable.get(restoredFirstValue) == bmsx::valueInteger(11), "wire restore retains the first closure table key");
 	require(restoredTable.get(restoredSecondValue) == bmsx::valueInteger(22), "wire restore retains the second closure table key");
 }
@@ -882,7 +882,7 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	const bmsx::Value canonicalClosureValue = cpu.getGlobalByKey(publishedClosureName);
 	bmsx::u32 canonicalClosure = bmsx::asClosure(canonicalClosureValue, cpu.gcHeap());
 	require(dynamicClosure != canonicalClosure, "mixed cartridge closure modes retain distinct object identities");
-	require(bmsx::ClosureRecord::readBinding(cpu.memory(), dynamicClosure).functionAddress == bmsx::ClosureRecord::readBinding(cpu.memory(), canonicalClosure).functionAddress, "mixed cartridge closure modes share one raw address");
+	require(cpu.readClosureBinding(dynamicClosure).functionAddress == cpu.readClosureBinding(canonicalClosure).functionAddress, "mixed cartridge closure modes share one raw address");
 
 	const bmsx::StringId dynamicName = cpu.stringPool().intern("dynamic_closure");
 	const bmsx::StringId canonicalName = cpu.stringPool().intern("canonical_closure");

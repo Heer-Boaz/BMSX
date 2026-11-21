@@ -46,13 +46,16 @@ Blua32RomFunctionDirectory Blua32RomFunctionDirectory::read(const Memory& memory
 	result.versions.reserve(count);
 	const u8* record = records.data();
 	for (u32 index = 0; index < count; ++index, record += BLUA32_FUNCTION_RECORD_SIZE) {
-		const u32 start = readLE32(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
+		const auto entry = FunctionEntry::fromRom(record);
+		const u32 start = entry.codeAddress;
 		const u32 size = readLE32(record + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
 		const u32 offset = start - text;
 		if (start < text || offset >= textBytes || size == 0u || size > textBytes - offset
 			|| ((start | size) & (INSTRUCTION_BYTES - 1u)) != 0u)
 			throw BMSX_RUNTIME_ERROR("BLua32 published function has an invalid TEXT extent.");
-		result.versions.push_back({start, start + size});
+		result.versions.push_back({entry, start + size,
+			readLE32(record + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET),
+			readLE32(record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET)});
 	}
 	if (result.mappedCode) return result;
 
@@ -65,20 +68,20 @@ Blua32RomFunctionDirectory Blua32RomFunctionDirectory::read(const Memory& memory
 	std::ranges::sort(order, [&](u32 a, u32 b) {
 		const auto& x = versions[a];
 		const auto& y = versions[b];
-		return x.firstPc == y.firstPc ? x.endPc < y.endPc : x.firstPc < y.firstPc;
+		return x.entry.codeAddress == y.entry.codeAddress ? x.endPc < y.endPc : x.entry.codeAddress < y.entry.codeAddress;
 	});
 	order.erase(std::ranges::unique(order, [&](u32 a, u32 b) {
-		return versions[a].firstPc == versions[b].firstPc && versions[a].endPc == versions[b].endPc;
+		return versions[a].entry.codeAddress == versions[b].entry.codeAddress && versions[a].endPc == versions[b].endPc;
 	}).begin(), order.end());
 	result.instructionHeads.resize((textBytes / INSTRUCTION_BYTES + 31u) / 32u);
 	u32 previousEnd = text;
 	for (u32 index : order) {
 		const auto& version = versions[index];
-		if (version.firstPc < previousEnd)
+		if (version.entry.codeAddress < previousEnd)
 			throw BMSX_RUNTIME_ERROR("BLua32 function TEXT extents overlap.");
 		previousEnd = version.endPc;
 		auto read = [&](u32 pc) { return readLE32(code.data() + (pc - text)); };
-		for (u32 pc = version.firstPc; pc < version.endPc;) {
+		for (u32 pc = version.entry.codeAddress; pc < version.endPc;) {
 			const u32 word = (pc - text) / INSTRUCTION_BYTES;
 			result.instructionHeads[word >> 5u] |= u32{1} << (word & 31u);
 			const bool wide = instructionOpcode(read(pc)) == static_cast<u8>(OpCode::WIDE);
@@ -89,7 +92,7 @@ Blua32RomFunctionDirectory Blua32RomFunctionDirectory::read(const Memory& memory
 				pc += INSTRUCTION_BYTES;
 			}
 		}
-		for (u32 pc = version.firstPc; pc < version.endPc;) {
+		for (u32 pc = version.entry.codeAddress; pc < version.endPc;) {
 			const u32 source = read(pc);
 			const bool wide = instructionOpcode(source) == static_cast<u8>(OpCode::WIDE);
 			const int width = wide ? 2 : 1;
@@ -124,7 +127,7 @@ const Blua32RomFunctionVersion* Blua32RomFunctionDirectory::find(u32 record) con
 }
 
 const Blua32RomFunctionVersion* Blua32RomFunctionDirectory::atPc(u32 pc) const {
-	const auto it = std::ranges::upper_bound(codeOrder, pc, {}, [&](u32 index) { return versions[index].firstPc; });
+	const auto it = std::ranges::upper_bound(codeOrder, pc, {}, [&](u32 index) { return versions[index].entry.codeAddress; });
 	if (it == codeOrder.begin()) return nullptr;
 	const auto& version = versions[*(it - 1)];
 	return version.contains(pc) ? &version : nullptr;

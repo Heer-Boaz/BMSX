@@ -464,6 +464,11 @@ FunctionPrototype CPU::decodePrototype(const Blua32FunctionRecordLatch& record) 
 	return result;
 }
 
+FunctionPrototype CPU::readClosureBinding(u32 closure) {
+	const ClosureRecord::BindingFlags binding{m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
+	return ClosureRecord::readBinding(m_memory, closure, binding, executionImageForDomain(binding.domain())->romFunctions);
+}
+
 u32 CPU::staticClosureForRecord(const FunctionPrototype& record) {
 	auto found = m_staticClosuresByAddress.find(record.functionAddress);
 	u32 first = 0u;
@@ -473,7 +478,7 @@ u32 CPU::staticClosureForRecord(const FunctionPrototype& record) {
 			if ((first == 0u || closure < first) && (header & 0xffu) == static_cast<u8>(ValueTag::Closure)
 				&& (header & (CLOSURE_CANONICAL << (8u * CLOSURE_BINDING_FLAGS))) != 0u
 				&& !m_heap.sweepGarbage(closure)
-				&& ClosureRecord::readBinding(m_memory, closure) == record)
+				&& readClosureBinding(closure) == record)
 				first = closure;
 		}
 	}
@@ -712,6 +717,20 @@ bool CPU::readFunctionRecord(
 	m_functionRecordLatch.busSignals = busSignals;
 	m_functionRecordLatch.address = address;
 	m_functionRecordLatch.romBacked = false;
+	if (!image.romFunctions.mappedCode) {
+		if (m_unpublishedRomMask & executionDomainBit(image.executionDomainId)) return false;
+		if (const auto* version = image.romFunctions.find(address)) {
+			m_functionRecordLatch.romBacked = true;
+			m_functionRecordLatch.codeAddress = version->entry.codeAddress;
+			m_functionRecordLatch.numParams = version->entry.numParams;
+			m_functionRecordLatch.maxStack = version->entry.maxStack;
+			m_functionRecordLatch.flags = version->entry.flags;
+			m_functionRecordLatch.upvalueTableAddress = version->upvalueTableAddress;
+			m_functionRecordLatch.upvalueCount = version->upvalueCount;
+			return true;
+		}
+		if (address - SYSTEM_ROM_BASE < SYSTEM_ROM_SIZE || address - CART_ROM_BASE < CART_ROM_SIZE) return false;
+	}
 	Span<const u8> view;
 	if (m_memory.bindMappedReadView(address, BLUA32_FUNCTION_RECORD_SIZE, busSignals, view)) {
 		m_functionRecordLatch.romBacked = address < RAM_BASE || (address >= CART_ROM_BASE && address < CART_ROM_END);
@@ -832,6 +851,8 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 }
 
 void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
+	if (m_unpublishedRomMask != 0u)
+		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
 	auto roots = acquireLocalRoots();
 	trackLocalRoot(valueClosure(closure));
 	for (size_t index = 0; index < args.size(); ++index) trackLocalRoot(args[index]);
@@ -2609,7 +2630,7 @@ int CPU::closeUpvalues(CallFrame& frame, u32 firstSlot) {
 
 CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
 	CallResultPlacement result, u32 callSitePc) {
-	const FunctionPrototype functionRecord = ClosureRecord::readBinding(m_memory, closure);
+	const FunctionPrototype functionRecord = readClosureBinding(closure);
 	const int callerArgBase = caller.stackBase() + argBase;
 	const bool sharedStack = caller.thread == m_activeThread;
 	const int argumentBase = sharedStack ? callerArgBase : m_activeThread->stackTop();
@@ -2644,7 +2665,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 
 CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 	CallResultPlacement result, u32 flags, std::optional<u32> callSitePc) {
-	const FunctionPrototype functionRecord = ClosureRecord::readBinding(m_memory, closure);
+	const FunctionPrototype functionRecord = readClosureBinding(closure);
 	const size_t argCount = args.size();
 	auto* frame = m_activeThread->acquireFrame();
 	const int argumentBase = m_activeThread->stackTop();

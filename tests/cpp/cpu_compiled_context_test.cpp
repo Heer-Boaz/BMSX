@@ -317,7 +317,7 @@ void hotUpvalueAlias() {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
 		auto& heap = m->cpu.gcHeap();
 		std::array<u32, 2> cells{};
-		const auto prototype = ClosureRecord::readBinding(heap.memory, frame.closureAddress());
+		const auto prototype = m->cpu.readClosureBinding(frame.closureAddress());
 		const u32 closure = heap.budget.allocateClosureRecord(2, false, cells);
 		ClosureRecord::initialize(heap.memory, closure, prototype, heap.white(), 2, false, false);
 		Upvalue::bindOpen(heap.memory, cells[0], frame.thread->address, frame.stackBase(), 0);

@@ -23,7 +23,7 @@ u32 CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunct
 	using Clock = std::chrono::steady_clock;
 	const u32 slot = m_memory.cartridgeController().selectedSlot(busSignals);
 	if (image.executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID && static_cast<u32>(image.executionDomainId) != slot) return 0u;
-	const u32 first = version.firstPc & ~MAPPED_PAGE_BYTE_MASK;
+	const u32 first = version.entry.codeAddress & ~MAPPED_PAGE_BYTE_MASK;
 	const u32 last = (version.endPc - 1u) & ~MAPPED_PAGE_BYTE_MASK;
 	const u32 count = (last - first) / MAPPED_PAGE_BYTE_SIZE + 1u;
 	if (count <= 1u || count > NATIVE_VERSION_REGION_MAX_PAGES || count > pageBudget || (coldImage && m_nativeCode.full())) return 0;
@@ -39,11 +39,11 @@ u32 CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunct
 		auto& page = decodedPageForAddress(image, binding);
 		if (index == rootPage && page.nativeBlocks && page.nativeBlocks->entries[(rootPc - address) / INSTRUCTION_BYTES]) return 0u;
 		auto& source = sources[index].emplace(page, binding, address, busSignals, slot);
-		source.firstPc = version.firstPc;
+		source.firstPc = version.entry.codeAddress;
 		source.lastPc = version.endPc - INSTRUCTION_BYTES;
 		region[index] = &source;
 	}
-	region.front()->enqueue(version.firstPc, true, nullptr, true);
+	region.front()->enqueue(version.entry.codeAddress, true, nullptr, true);
 	region[rootPage]->enqueue(rootPc, true, nullptr, true);
 	std::vector<u32> outgoing;
 	u32 ready = 1u | (1u << rootPage);
@@ -99,7 +99,7 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 	std::vector<u32> outgoing;
 	size_t pageBudget = NATIVE_IMAGE_WARMUP_MAX_PAGES;
 	for (const auto& version : versions)
-		pageBudget -= prepareNativeFunction(image, version, version.firstPc, busSignals, pageBudget, true);
+		pageBudget -= prepareNativeFunction(image, version, version.entry.codeAddress, busSignals, pageBudget, true);
 	const auto discoveryStart = m_nativeCompilationProfiling ? Clock::now() : Clock::time_point{};
 	const auto enqueue = [&](u32 pc) -> NativeCompilationSource* {
 		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) return nullptr;
@@ -123,7 +123,7 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 		return &source;
 	};
 	auto* entrySource = entryPc ? enqueue(*entryPc) : nullptr;
-	for (const auto& version : versions) enqueue(version.firstPc);
+	for (const auto& version : versions) enqueue(version.entry.codeAddress);
 
 	// Discover before emitting so all incoming function and cross-page roots
 	// split one shared physical-page graph instead of compiling duplicate suffixes.

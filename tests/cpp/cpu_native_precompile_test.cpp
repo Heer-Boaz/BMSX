@@ -127,7 +127,7 @@ void verifiedFunctionControlFlowIsAdmittedBeforeExecution() {
 	} catch (const std::runtime_error& error) {
 		rejectedSuffix = std::string_view(error.what()) == "Frame execution must enter an instruction of its published function.";
 	}
-	require(rejectedSuffix && cpu.readFramePc(0) == directory.find(firstRecord)->firstPc,
+	require(rejectedSuffix && cpu.readFramePc(0) == directory.find(firstRecord)->entry.codeAddress,
 		"explicit placement rejects a WIDE body without changing the active PC");
 
 	auto replacement = valid->rom.bytes;

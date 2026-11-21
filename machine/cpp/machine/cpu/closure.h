@@ -15,6 +15,7 @@
 namespace bmsx {
 
 class Memory;
+struct Blua32RomFunctionDirectory;
 // The entry portion of a function record. Activation does not consume the
 // upvalue descriptors used to construct and identify the closure.
 struct FunctionEntry {
@@ -69,7 +70,7 @@ struct BindingFlags {
 	constexpr bool latched() const { return (bits & CLOSURE_LATCHED_PROTOTYPE) != 0u; }
 };
 void initialize(Memory&, u32 address, const FunctionPrototype&, u8 white, u32 count, bool canonical, bool latched);
-FunctionPrototype readBinding(const Memory&, u32 address);
+FunctionPrototype readBinding(const Memory&, u32 address, BindingFlags, const Blua32RomFunctionDirectory&);
 FunctionEntry readLatchedEntry(const Memory&, u32 address);
 u32 captureCount(const Memory&, u32 address);
 constexpr u32 captureWordAddress(u32 address, u32 index) {

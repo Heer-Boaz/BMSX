@@ -578,7 +578,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 				"record selection and activation windows agree at each call boundary");
 			for (int reg = 0; reg < a.stackCapacity(); ++reg) {
 				const Value left = a.registers.get(reg), right = b.registers.get(reg);
-				if (valueIsClosure(left)) require(valueIsClosure(right) && ClosureRecord::readBinding(native.cpu.memory(), asClosure(left, native.cpu.gcHeap())).functionAddress == ClosureRecord::readBinding(scalar.cpu.memory(), asClosure(right, scalar.cpu.gcHeap())).functionAddress,
+				if (valueIsClosure(left)) require(valueIsClosure(right) && native.cpu.readClosureBinding(asClosure(left, native.cpu.gcHeap())).functionAddress == scalar.cpu.readClosureBinding(asClosure(right, scalar.cpu.gcHeap())).functionAddress,
 					"corresponding closure values retain their function-record addresses");
 				else require(left == right, "every retained register agrees across record-domain transitions");
 			}

@@ -3,7 +3,7 @@ import { GcHeap, GcRootBank } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { CART_ROM_BASE, CART_ROM_END, MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -146,7 +146,9 @@ import {
 	decodedDispatchOp,
 	decodedInstructionBaseCycles,
 	admitsFunctionPc,
-	findRomFunctionVersion,
+	readPublishedPrototype,
+	romFunctionVersionLane,
+	RomFunctionLane,
 	readRomFunctionDirectory,
 	fixedRegisterExtent,
 	DecodedDispatchOp,
@@ -933,7 +935,7 @@ export class CPU implements MappedPageInvalidator {
 				const header = this.memory.readRamRecordWord(address);
 				if ((match !== 0 && address >= match) || (header & 0xff) !== ValueTag.Closure || (header & (CLOSURE_CANONICAL << (8 * CLOSURE_BINDING_FLAGS))) === 0) continue;
 				if (this.gc.sweepGarbage(address)) continue;
-				Closure.readBinding(this.memory, address, (header >>> (8 * CLOSURE_BINDING_FLAGS)) & 0xff, this.executionReadView, this.canonicalBinding);
+				this.readClosureBinding(address, (header >>> (8 * CLOSURE_BINDING_FLAGS)) & 0xff, this.canonicalBinding);
 				if (sameFunctionPrototype(this.canonicalBinding, record)) match = address;
 			}
 			if (match !== 0) return match;
@@ -949,8 +951,12 @@ export class CPU implements MappedPageInvalidator {
 
 	/** Cold inspector/hot-resume snapshot. Execution uses the caller-owned latch. */
 	public captureClosureBinding(address: number, record: FunctionPrototype = { functionAddress: 0, codeAddress: 0, numParams: 0, maxStack: 0, flags: 0, upvalueTableAddress: 0, recordUpvalueCount: 0, executionDomainId: SYSTEM_EXECUTION_DOMAIN_ID }): FunctionPrototype {
-		Closure.readBinding(this.memory, address, this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS), this.executionReadView, record);
+		this.readClosureBinding(address, this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS), record);
 		return record;
+	}
+	private readClosureBinding(address: number, flags: number, target: FunctionPrototype): void {
+		const image = this.executionImageForDomain(Closure.executionDomain(flags))!;
+		Closure.readBinding(this.memory, address, flags, image.romFunctions, this.executionReadView, target);
 	}
 	public reindexCanonicalClosures(): void {
 		this.staticClosuresByAddress.clear();
@@ -1368,6 +1374,17 @@ export class CPU implements MappedPageInvalidator {
 		latch.functionAddress = address;
 		latch.executionDomainId = image.executionDomainId;
 		latch.romBacked = false;
+		const directory = image.romFunctions;
+		if (!directory.mappedCode) {
+			if ((this.unpublishedRomMask & executionDomainBit(image.executionDomainId)) !== 0) return false;
+			const lane = romFunctionVersionLane(directory, address);
+			if (lane >= 0) {
+				latch.romBacked = true;
+				readPublishedPrototype(directory.versions, lane, latch);
+				return true;
+			}
+			if (((address - SYSTEM_ROM_BASE) >>> 0) < SYSTEM_ROM_SIZE || ((address - CART_ROM_BASE) >>> 0) < CART_ROM_SIZE) return false;
+		}
 		const view = this.executionReadView;
 		if (this.memory.bindMappedReadView(address, BLUA32_FUNCTION_RECORD_SIZE, busSignals, view)) {
 			latch.romBacked = address < RAM_BASE || (address >= CART_ROM_BASE && address < CART_ROM_END);
@@ -1497,6 +1514,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
+		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		const roots = this.acquireLocalRoots();
 		this.localRoots.push(valueClosure(closure));
 		for (const arg of args) this.localRoots.push(arg);
@@ -2487,22 +2505,25 @@ export class CPU implements MappedPageInvalidator {
 		const fetchSignals = this.executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH;
 		const slot = this.memory.cartridgeController.selectedSlot(this.executionBusSignals);
 		const romView = this.executionReadView, domain = image.executionDomainId;
+		const directory = image.romFunctions;
 		const version = domain === SYSTEM_EXECUTION_DOMAIN_ID || domain === slot
-			? findRomFunctionVersion(image.romFunctions, frame.functionAddress) : null;
+			? romFunctionVersionLane(directory, frame.functionAddress) : -1;
 		const pages = [page];
 		let basePc = pagePc, firstWord = 0, endWord = DECODED_PAGE_WORDS;
 		let spanning = false, finalWordStartsInstruction = false;
-		if (version !== null && pc >= version.firstPc && pc < version.endPc) {
-			const firstPage = (version.firstPc & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
-			const lastPage = ((version.endPc - 1) & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
+		const versionStart = directory.versions[version + RomFunctionLane.FirstPc];
+		const versionEnd = directory.versions[version + RomFunctionLane.EndPc];
+		if (version >= 0 && pc >= versionStart && pc < versionEnd) {
+			const firstPage = (versionStart & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
+			const lastPage = ((versionEnd - 1) & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
 			const pageCount = (lastPage - firstPage) / MAPPED_PAGE_BYTE_SIZE + 1;
 			if (pageCount > 1 && pageCount <= COMPILED_VERSION_MAX_PAGES
-				&& this.memory.bindRomByteView(version.endPc - INSTRUCTION_BYTES, INSTRUCTION_BYTES, slot, romView)) {
+				&& this.memory.bindRomByteView(versionEnd - INSTRUCTION_BYTES, INSTRUCTION_BYTES, slot, romView)) {
 				spanning = true;
 				finalWordStartsInstruction = instructionOpcode(readLE32(romView.bytes, romView.byteOffset)) !== OpCode.WIDE;
 				basePc = firstPage;
-				firstWord = (version.firstPc - basePc) / INSTRUCTION_BYTES;
-				endWord = (version.endPc - basePc) / INSTRUCTION_BYTES;
+				firstWord = (versionStart - basePc) / INSTRUCTION_BYTES;
+				endWord = (versionEnd - basePc) / INSTRUCTION_BYTES;
 				for (let address = firstPage, index = 0; address <= lastPage; address += MAPPED_PAGE_BYTE_SIZE, ++index) {
 					if (address === pagePc) pages[index] = page;
 					else {
@@ -3171,7 +3192,7 @@ export class CPU implements MappedPageInvalidator {
 		detachedCount = 0,
 	): CallFrame {
 		const functionRecord = this.functionRecordLatch;
-		Closure.readBinding(this.memory, closure, this.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS), this.executionReadView, functionRecord);
+		this.readClosureBinding(closure, this.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS), functionRecord);
 		const frame = this.activeThread.acquireFrame();
 		const argumentBase = this.activeThread.stackTop;
 		const argCount = args instanceof ValueSlots ? detachedCount : args.length;
@@ -3208,7 +3229,7 @@ export class CPU implements MappedPageInvalidator {
 
 	private pushFrameFromCaller(caller: CallFrame, closure: number, argBase: number, argCount: number, returnBase: number, returnCount: number, returnToCompletionLatch: boolean, callSitePc: number): CallFrame | null {
 		const functionRecord = this.functionRecordLatch;
-		Closure.readBinding(this.memory, closure, this.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS), this.executionReadView, functionRecord);
+		this.readClosureBinding(closure, this.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS), functionRecord);
 		const frame = this.activeThread.acquireFrame();
 		const sharedStack = caller.thread === this.activeThread;
 		const argumentBase = sharedStack ? caller.stackBase + argBase : this.activeThread.stackTop;

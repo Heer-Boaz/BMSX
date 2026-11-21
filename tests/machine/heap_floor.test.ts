@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { writeLE32 } from '../../machine/ts/common/endian';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import {
+	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_RECORD_SIZE,
+} from '../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
@@ -64,10 +68,16 @@ test('EXEC refuses a cartridge whose statics overlap a live heap page before wri
 });
 
 test('warm RAM code is retired when the floor shrinks and WIDE obeys both fetches', () => {
-	const { cpu, memory, executionAddressSpace } = bootPair(CpuExecutionBackend.JavaScript);
+	const { cpu, memory } = bootPair(CpuExecutionBackend.JavaScript);
 	const pc = cpu.heapAllocator.floorAddress();
-	const system = executionAddressSpace.resolveSystemDomain();
-	const select = (address: number) => cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.startupFunctionAddress, address);
+	const prototypeAddress = pc - 2 * BLUA32_FUNCTION_RECORD_SIZE;
+	const prototype = new Uint8Array(BLUA32_FUNCTION_RECORD_SIZE);
+	writeLE32(prototype, BLUA32_FUNCTION_MAX_STACK_OFFSET, 2);
+	const select = (address: number) => {
+		writeLE32(prototype, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, address);
+		memory.writeBytes(prototypeAddress, prototype);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, prototypeAddress, address);
+	};
 	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.K1, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.JMP, 0, 63, 62, 255);

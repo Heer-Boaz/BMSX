@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "common/primitives.h"
+#include "machine/cpu/closure.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/value_slots.h"
 #include "machine/memory/bus_signals.h"
@@ -19,7 +20,6 @@
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include <bitset>
 
-#include "machine/cpu/closure.h"
 #include "machine/cpu/jit/runtime/code_lookup.h"
 #include "machine/cpu/jit/runtime/field_feedback.h"
 #endif
@@ -32,8 +32,9 @@ class Memory;
 // The directory is scoped to one mounted execution image. A version names a
 // checked ROM span, not a latched copy of physical RAM or MMIO code.
 struct Blua32RomFunctionVersion {
-	u32 firstPc, endPc;
-	bool contains(u32 pc) const { return pc >= firstPc && pc < endPc; }
+	FunctionEntry entry;
+	u32 endPc, upvalueTableAddress, upvalueCount;
+	bool contains(u32 pc) const { return pc >= entry.codeAddress && pc < endPc; }
 };
 
 struct Blua32RomFunctionDirectory {

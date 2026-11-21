@@ -2,6 +2,7 @@ import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from './gc_object';
 import { ValueTag } from './value';
 import { readLE32 } from '../../common/endian';
 import type { Memory, MemoryByteView } from '../memory/memory';
+import { readPublishedPrototype, romFunctionVersionLane, type Blua32RomFunctionDirectory } from './execution_image';
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET,
@@ -40,8 +41,8 @@ export function closureRecordBytes(captures: number, latched = false): number {
 	return CLOSURE_CAPTURE_WORDS + 4 * captures + (latched ? CLOSURE_LATCHED_PROTOTYPE_BYTES : 0);
 }
 
-export function executionDomain(memory: Memory, address: number): ExecutionDomainId {
-	const bank = memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_BINDING_DOMAIN_MASK;
+export function executionDomain(flags: number): ExecutionDomainId {
+	const bank = flags & CLOSURE_BINDING_DOMAIN_MASK;
 	return (bank >= 2 ? 1 : bank - 1) as ExecutionDomainId;
 }
 export function captureCount(memory: Memory, address: number): number {
@@ -79,10 +80,10 @@ function writePrototypeWords(memory: Memory, address: number, prototype: Readonl
 	}
 }
 // The caller owns this latch. CALL never allocates a decoded prototype object.
-export function readBinding(memory: Memory, address: number, flags: number, view: MemoryByteView, target: FunctionPrototype): void {
+export function readBinding(memory: Memory, address: number, flags: number, directory: Blua32RomFunctionDirectory, view: MemoryByteView, target: FunctionPrototype): void {
 	target.functionAddress = memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
 	const bank = flags & CLOSURE_BINDING_DOMAIN_MASK;
-	target.executionDomainId = (bank >= 2 ? 1 : bank - 1) as ExecutionDomainId;
+	target.executionDomainId = executionDomain(flags);
 	if ((flags & CLOSURE_LATCHED_PROTOTYPE) !== 0) {
 		const tail = address + CLOSURE_CAPTURE_WORDS + captureCount(memory, address) * 4;
 		target.codeAddress = memory.readRamRecordWord(tail);
@@ -91,6 +92,10 @@ export function readBinding(memory: Memory, address: number, flags: number, view
 		target.flags = memory.readRamRecordWord(tail + 12);
 		target.upvalueTableAddress = memory.readRamRecordWord(tail + 16);
 		target.recordUpvalueCount = memory.readRamRecordWord(tail + 20);
+		return;
+	}
+	if (!directory.mappedCode) {
+		readPublishedPrototype(directory.versions, romFunctionVersionLane(directory, target.functionAddress), target);
 		return;
 	}
 	if (!memory.bindRomByteView(target.functionAddress, BLUA32_FUNCTION_RECORD_SIZE, bank >>> 1, view)) {

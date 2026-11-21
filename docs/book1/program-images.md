@@ -450,6 +450,12 @@ A function address identifies a **32-byte function record**, not its first instr
 
 VARARG retains arguments beyond the fixed parameters. STATIC permits direct entry through EXEC; the closure-construction rules are described in [CPU — Closures and captured variables](cpu.md#sec-cpu-closures-and-captured-variables). The immediate-address form of `CLOSURE` encodes a function-record address in **16-byte units**; its register-address form supplies the full address. Function-record reads themselves do not impose a 16-byte alignment check. In a mapped-code image the declared byte count is descriptive, not an instruction-fetch limit.
 
+In an image with a published function directory, a ROM function address must
+name a record in that directory. The addressed record's entry, frame layout and
+upvalue information are fixed for the installed image. To change them, publish
+the replacement image before continuing execution. A separately constructed
+mapped function record can enter mapped code outside the ROM windows.
+
 The code address names an instruction in an executable ROM or RAM window.
 Instruction fetch does not access system I/O or cartridge MMIO; the CPU
 [fetch rules](cpu.md#sec-memory-instruction-alignment-and-read-faults) define

@@ -3,7 +3,9 @@ import { readLE32 } from '../../common/endian';
 import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
-	BLUA32_FUNCTION_RECORD_SIZE, BLUA32_IMAGE_FLAGS_OFFSET, BLUA32_IMAGE_MAPPED_CODE_FLAG,
+	BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
+	BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_FLAGS_OFFSET, BLUA32_IMAGE_MAPPED_CODE_FLAG,
 	BLUA32_IMAGE_FUNCTION_COUNT_OFFSET, BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_TEXT_ADDRESS_OFFSET, BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET } from '../../spec/blua32/image_format';
 import {
@@ -26,10 +28,14 @@ export const DECODED_REFRESH_FUSION = 2;
 export const DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3;
 export const COMPILED_VERSION_MAX_PAGES = 4;
 
+export const enum RomFunctionLane {
+	FirstPc, EndPc, NumParams, MaxStack, Flags, UpvalueTable, UpvalueCount, Count,
+}
+
 export type Blua32RomFunctionDirectory = {
 	readonly mappedCode: boolean;
 	readonly tableAddress: number;
-	readonly ranges: Uint32Array;
+	readonly versions: Uint32Array;
 	readonly textAddress: number;
 	readonly textByteCount: number;
 	readonly instructionHeads: Uint32Array;
@@ -45,25 +51,25 @@ export function isRomInstructionHead(directory: Blua32RomFunctionDirectory, pc: 
 	return (directory.instructionHeads[word >>> 5] & (1 << (word & 31))) !== 0;
 }
 
-// Return the offset of the owning (firstPc, endPc) pair, without allocating a version view.
+// Return the first lane of the owning function version.
 export function findRomFunctionExtentAtPc(directory: Blua32RomFunctionDirectory, pc: number): number {
-	const { codeOrder, ranges } = directory;
+	const { codeOrder, versions } = directory;
 	let first = 0, end = codeOrder.length;
 	while (first < end) {
 		const middle = (first + end) >>> 1;
-		const pair = codeOrder[middle];
-		if (pc < ranges[pair]) end = middle;
-		else if (pc >= ranges[pair + 1]) first = middle + 1;
-		else return pair;
+		const version = codeOrder[middle];
+		if (pc < versions[version + RomFunctionLane.FirstPc]) end = middle;
+		else if (pc >= versions[version + RomFunctionLane.EndPc]) first = middle + 1;
+		else return version;
 	}
 	return -1;
 }
 
 function verifyRomControlFlow(directory: Blua32RomFunctionDirectory, code: Uint8Array, codeOffset: number): void {
-	const { instructionHeads, codeOrder, ranges, textAddress } = directory;
+	const { instructionHeads, codeOrder, versions, textAddress } = directory;
 	for (let i = 0; i < codeOrder.length; ++i) {
-		const index = codeOrder[i], end = ranges[index + 1];
-		for (let pc = ranges[index]; pc < end;) {
+		const index = codeOrder[i], end = versions[index + RomFunctionLane.EndPc];
+		for (let pc = versions[index + RomFunctionLane.FirstPc]; pc < end;) {
 			const offset = pc - textAddress;
 			const wide = instructionOpcode(readLE32(code, codeOffset + offset)) === OpCode.WIDE;
 			if (wide && (pc + INSTRUCTION_BYTES >= end
@@ -77,7 +83,7 @@ function verifyRomControlFlow(directory: Blua32RomFunctionDirectory, code: Uint8
 
 	// Comparison outcomes and relative branches use the same encoded width as dispatch.
 	for (let i = 0; i < codeOrder.length; ++i) {
-		const index = codeOrder[i], first = ranges[index], end = ranges[index + 1];
+		const index = codeOrder[i], first = versions[index + RomFunctionLane.FirstPc], end = versions[index + RomFunctionLane.EndPc];
 		for (let pc = first; pc < end;) {
 			const offset = codeOffset + pc - textAddress;
 			const head = readLE32(code, offset);
@@ -110,7 +116,7 @@ export function readRomFunctionDirectory(memory: Memory, domain: ExecutionDomain
 	const count = readLE32(bytes, byteOffset + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET);
 	if (count === 0) {
 		if (!mappedCode) throw new Error('A BLua32 function image has no function directory.');
-		return { mappedCode, tableAddress: 0, ranges: EMPTY_ROM_LANES, textAddress: 0, textByteCount: 0,
+		return { mappedCode, tableAddress: 0, versions: EMPTY_ROM_LANES, textAddress: 0, textByteCount: 0,
 			instructionHeads: EMPTY_ROM_LANES, codeOrder: EMPTY_ROM_LANES };
 	}
 	const tableAddress = readLE32(bytes, byteOffset + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET);
@@ -129,45 +135,60 @@ export function readRomFunctionDirectory(memory: Memory, domain: ExecutionDomain
 		|| tableAddress < base || recordBytes > extent - (tableAddress - base)
 		|| !memory.bindRomByteView(tableAddress, recordBytes, slot, view))
 		throw new Error("BLua32 function directory is not backed by the image's ROM.");
-	const ranges = new Uint32Array(count * 2);
+	const versions = new Uint32Array(count * RomFunctionLane.Count);
 	for (let index = 0, record = view.byteOffset; index < count; ++index, record += BLUA32_FUNCTION_RECORD_SIZE) {
 		const firstPc = readLE32(view.bytes, record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
 		const size = readLE32(view.bytes, record + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
 		if (firstPc < textAddress || size === 0 || size > textByteCount - (firstPc - textAddress)
 			|| ((firstPc | size) & (INSTRUCTION_BYTES - 1)) !== 0)
 			throw new Error('BLua32 published function has an invalid TEXT extent.');
-		ranges[index * 2] = firstPc;
-		ranges[index * 2 + 1] = firstPc + size;
+		const lane = index * RomFunctionLane.Count;
+		versions[lane + RomFunctionLane.FirstPc] = firstPc;
+		versions[lane + RomFunctionLane.EndPc] = firstPc + size;
+		versions[lane + RomFunctionLane.NumParams] = readLE32(view.bytes, record + BLUA32_FUNCTION_NUM_PARAMS_OFFSET);
+		versions[lane + RomFunctionLane.MaxStack] = readLE32(view.bytes, record + BLUA32_FUNCTION_MAX_STACK_OFFSET);
+		versions[lane + RomFunctionLane.Flags] = readLE32(view.bytes, record + BLUA32_FUNCTION_FLAGS_OFFSET);
+		versions[lane + RomFunctionLane.UpvalueTable] = readLE32(view.bytes, record + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET);
+		versions[lane + RomFunctionLane.UpvalueCount] = readLE32(view.bytes, record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET);
 	}
-	if (mappedCode) return { mappedCode, tableAddress, ranges, textAddress, textByteCount,
+	if (mappedCode) return { mappedCode, tableAddress, versions, textAddress, textByteCount,
 		instructionHeads: EMPTY_ROM_LANES, codeOrder: EMPTY_ROM_LANES };
 
 	// Keep the original record order. The sorted index names one record pair
-	// per distinct extent and refers back to the same range storage.
+	// per distinct extent and refers back to the same version storage.
 	const order = new Uint32Array(count);
-	for (let i = 0; i < count; ++i) order[i] = i * 2;
-	order.sort((a, b) => ranges[a] - ranges[b] || ranges[a + 1] - ranges[b + 1]);
+	for (let i = 0; i < count; ++i) order[i] = i * RomFunctionLane.Count;
+	order.sort((a, b) => versions[a] - versions[b] || versions[a + RomFunctionLane.EndPc] - versions[b + RomFunctionLane.EndPc]);
 	let length = 0, previousEnd = textAddress, previousStart = -1;
 	for (let i = 0; i < count; ++i) {
-		const index = order[i], first = ranges[index], end = ranges[index + 1];
+		const index = order[i], first = versions[index + RomFunctionLane.FirstPc], end = versions[index + RomFunctionLane.EndPc];
 		if (first === previousStart && end === previousEnd) continue;
 		if (first < previousEnd) throw new Error('BLua32 function TEXT extents overlap.');
 		order[length++] = index;
 		previousStart = first;
 		previousEnd = end;
 	}
-	const directory = { mappedCode, tableAddress, ranges, textAddress, textByteCount,
+	const directory = { mappedCode, tableAddress, versions, textAddress, textByteCount,
 		instructionHeads: new Uint32Array(((textByteCount >>> 2) + 31) >>> 5),
 		codeOrder: order.subarray(0, length) };
 	verifyRomControlFlow(directory, code, codeOffset);
 	return directory;
 }
 
-export function findRomFunctionVersion(directory: Blua32RomFunctionDirectory, record: number): { firstPc: number; endPc: number } | null {
+export function romFunctionVersionLane(directory: Blua32RomFunctionDirectory, record: number): number {
 	const offset = record - directory.tableAddress;
-	if (offset < 0 || offset % BLUA32_FUNCTION_RECORD_SIZE !== 0) return null;
-	const index = (offset / BLUA32_FUNCTION_RECORD_SIZE) * 2;
-	return index < directory.ranges.length ? { firstPc: directory.ranges[index], endPc: directory.ranges[index + 1] } : null;
+	if (offset < 0 || offset % BLUA32_FUNCTION_RECORD_SIZE !== 0) return -1;
+	const lane = (offset / BLUA32_FUNCTION_RECORD_SIZE) * RomFunctionLane.Count;
+	return lane < directory.versions.length ? lane : -1;
+}
+
+export function readPublishedPrototype(versions: Uint32Array, lane: number, target: FunctionPrototype): void {
+	target.codeAddress = versions[lane + RomFunctionLane.FirstPc];
+	target.numParams = versions[lane + RomFunctionLane.NumParams];
+	target.maxStack = versions[lane + RomFunctionLane.MaxStack];
+	target.flags = versions[lane + RomFunctionLane.Flags];
+	target.upvalueTableAddress = versions[lane + RomFunctionLane.UpvalueTable];
+	target.recordUpvalueCount = versions[lane + RomFunctionLane.UpvalueCount];
 }
 
 export const enum DecodedDispatchOp {
@@ -275,12 +296,9 @@ export type Blua32ExecutionImage = {
 export function admitsFunctionPc(image: Blua32ExecutionImage, record: number, pc: number): boolean {
 	const directory = image.romFunctions;
 	if (directory.mappedCode) return true;
-	const offset = record - directory.tableAddress;
-	if (offset >= 0 && offset % BLUA32_FUNCTION_RECORD_SIZE === 0) {
-		const index = (offset / BLUA32_FUNCTION_RECORD_SIZE) * 2;
-		if (index < directory.ranges.length)
-			return pc >= directory.ranges[index] && pc < directory.ranges[index + 1] && isRomInstructionHead(directory, pc);
-	}
+	const lane = romFunctionVersionLane(directory, record);
+	if (lane >= 0) return pc >= directory.versions[lane + RomFunctionLane.FirstPc]
+		&& pc < directory.versions[lane + RomFunctionLane.EndPc] && isRomInstructionHead(directory, pc);
 	return ((pc - SYSTEM_ROM_BASE) >>> 0) >= SYSTEM_ROM_SIZE && ((pc - CART_ROM_BASE) >>> 0) >= CART_ROM_SIZE;
 }
 

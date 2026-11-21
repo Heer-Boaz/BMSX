@@ -173,6 +173,7 @@ public:
 	void reset();
 	void installBootPrimitives();
 	void replaceExecutionImage(Blua32ExecutionBoot executionBoot);
+	FunctionPrototype readClosureBinding(u32 closure);
 	bool isExecutionDomainResident(ExecutionDomainId executionDomainId) const;
 	void clearExecutionEnvironment();
 	bool isCartridgeExecutionActive() const { return m_activeExecutionDomainId >= 0; }
