@@ -1212,13 +1212,14 @@ The occupied-byte counts used for admission are:
 | Captured-variable cell | `16` |
 | Thread with `V` reserved Value slots, `F` reserved frame-control records and `P` reserved protected continuations | `80 + 5V + 56F + 20P` |
 | RAM String containing `n` bytes | `16 + n` |
-| RAM String index with `B` buckets | `4B` |
-| One global namespace with room for `N` names and Values | `17N` |
+| Global namespace with `N` registered names | `9N` |
 | Activated image with `C` constants and `G` names across both global namespaces | `5C + 4G` |
 
-During String index growth, both the old and the new bucket reservations count
-against the occupied budget. The old reservation is released once its entries
-have been redistributed. The Strings themselves retain their addresses.
+Global names remain registered when their Values are set to nil. Writing a
+registered name does not add a charge. Space reserved for future names and
+the lookup indexes for names and Strings do not contribute to the occupied
+budget, including while an index grows. The Strings themselves retain their
+addresses during that growth.
 
 A Table's slots and links occupy one block in the language heap. A Thread
 keeps its Value slots, frame controls and protected continuations in separate
@@ -1255,10 +1256,11 @@ read the bus for those words again. A RAM String occupies one block containing
 its 16-byte header and its bytes. Its byte count is 22 bits. The String
 port selects main RAM for the record and uses the 22-bit physical byte
 address for its header and bytes; reaching the end of RAM wraps to its start.
-An empty backing layout has no charge. A request to grow a reservation must
-fit alongside the previous reservation; the previous charge ends when that
-reservation is released. The reported count can be below capacity even when
-there is no suitable free RAM block to satisfy a request.
+An empty backing layout has no charge. When the budget charges a reservation,
+a request to replace it must fit alongside the previous reservation; the
+previous charge ends when that reservation is released. The reported count
+can be below capacity even when there is no suitable free RAM block to
+satisfy a request.
 
 A reserved Value slot occupies four payload bytes and one kind byte, regardless
 of its current value. A hash node holds a key slot, a value slot and a four-byte

@@ -6,6 +6,10 @@
 
 namespace bmsx {
 
+namespace {
+constexpr u32 GLOBAL_NAME_BUDGET_BYTES = 9u;
+}
+
 void GlobalBank::bind(GlobalBankState state) {
 	m_state = state;
 	if (state.capacity == 0u) {
@@ -17,7 +21,7 @@ void GlobalBank::bind(GlobalBankState state) {
 }
 
 void GlobalBank::clear() {
-	if (m_state.base != 0u) m_heap.releaseRecord(m_state.base, 17u * m_state.capacity);
+	if (m_state.base != 0u) m_heap.releaseRecord(m_state.base, GLOBAL_NAME_BUDGET_BYTES * m_state.count);
 	bind({});
 }
 
@@ -50,9 +54,7 @@ std::optional<u32> GlobalBank::find(StringId key) const {
 	return stored != 0u && name(slot) == key ? std::optional<u32>(slot) : std::nullopt;
 }
 
-void GlobalBank::grow(StringId key, Value pending) {
-	const u32 capacity = m_state.capacity == 0u ? 8u : 2u * m_state.capacity;
-	const u32 base = m_heap.allocateRecord(17u * capacity, true, 0, 0, valueString(key), pending);
+void GlobalBank::grow(u32 base, u32 capacity) {
 	const auto old = m_state;
 	const ConstValueSpan prior = m_values;
 	const u32 offset = base & RAM_RECORD_WORD_MASK;
@@ -65,18 +67,26 @@ void GlobalBank::grow(StringId key, Value pending) {
 	m_values.copyFrom(prior, 0, 0, old.count);
 	m_values.clear(old.count, capacity - old.count);
 	for (u32 slot = 0; slot < old.count; ++slot) writeBucket(bucketFor(name(slot)), slot);
-	if (old.base != 0u) m_heap.releaseRecord(old.base, 17u * old.capacity);
 }
 
 u32 GlobalBank::registerName(StringId key, Value pending) {
 	if (const auto slot = find(key)) return *slot;
-	if (m_state.count == m_state.capacity) grow(key, pending);
+	u32 oldBase = 0u;
+	if (m_state.count == m_state.capacity) {
+		const u32 capacity = m_state.capacity == 0u ? 8u : 2u * m_state.capacity;
+		const u32 base = m_heap.reserveBacking(17u * capacity, GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
+		oldBase = m_state.base;
+		grow(base, capacity);
+	} else {
+		m_heap.admit(GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
+	}
 	const u32 slot = m_state.count;
 	const u32 bucket = bucketFor(key);
 	m_memory.writeRamRecordWord(m_state.base + 4u * slot, key);
 	m_values.set(slot, valueNil());
 	writeBucket(bucket, slot);
 	++m_state.count;
+	m_heap.replaceRecord(oldBase, 0u, GLOBAL_NAME_BUDGET_BYTES);
 	return slot;
 }
 

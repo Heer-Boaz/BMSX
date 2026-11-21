@@ -54,9 +54,9 @@ struct Machine {
 
 // Thread232 (80-byte header, 40 Value bytes and two 56-byte frame records)
 // + Closure12, a 15-byte constant bank (three slots), 17 machine Strings charged 697 bytes
-// and their 32 four-byte intern buckets, two 136-byte global banks and a 16-byte image map. Each live String marks once,
-// and every issued object block, intern bucket and String chain node is visited once.
-constexpr int bootBytes = 232 + 12 + 15 + 697 + 128 + 16 + 2 * 136;
+// and two registered globals with a 16-byte image map. Both lookup indexes
+// are uncharged. The collector still visits issued objects and intern buckets.
+constexpr int bootBytes = 232 + 12 + 15 + 697 + 16 + 2 * 9;
 constexpr int bootCollectionWork = 4 * 58 + 3 + 1 + 3 * 12 + 3 * 17 + 32;
 
 void allocationAdmissionUsesLogicalBytes() {
@@ -251,7 +251,8 @@ void allActivatedImagesAndUniqueGlobals() {
 	cpu.writeFrameExecution(0, 1, card1.functionAddresses[0], card1.textAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], system.textAddress);
 	cpu.collectHeap();
-	require(cpu.luaHeap().usedBytes() == bootBytes + (20 + 20) + (5 + 16), "each card allocates one constant bank and one name-slot map");
+	require(cpu.luaHeap().usedBytes() == bootBytes + (20 + 20) + (5 + 16) + 2 * 9,
+		"each card charges its constant bank, name-slot map and new unique global");
 	cpu.instructionBudgetRemaining = 5;
 	// C=3+4+1, S=1, G=3; all activated images remain roots. The two
 	// retired cartridge closure slots still cost one visit each on the system closure's page.

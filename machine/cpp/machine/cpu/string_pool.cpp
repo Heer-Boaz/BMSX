@@ -256,7 +256,7 @@ size_t StringPool::rehashStep(u32 oldCount, u32 nextBase, size_t allowance) {
 			writeMetadata(BUCKETS, nextBase);
 			writeMetadata(CAPACITY, count);
 			m_memory.writeRamRecordPair(m_metadata + REHASH_BASE, 0u, 0u);
-			m_heap.releaseRecord(oldBase, 4u * oldCount);
+			m_heap.replaceRecord(oldBase, 0u, 0u);
 			return work;
 		}
 		m_memory.writeRamRecordWord(nextBase + 4u * ready, 0u);
@@ -273,7 +273,7 @@ StringId StringPool::intern(std::string_view value) {
 	if (const u32 id = lookup(hash, value)) return retain(id);
 	const u32 control = metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
 	if (count == 0u) {
-		const u32 base = m_heap.allocateRecord(4u * INITIAL_BUCKETS, true, 0, 0);
+		const u32 base = m_heap.reserveBacking(4u * INITIAL_BUCKETS, 0u);
 		const u32 offset = base & (MAIN_RAM_SIZE - 1u);
 		std::memset(m_memory.ramData() + offset, 0, 4u * INITIAL_BUCKETS);
 		m_memory.invalidateRamWrite(offset, 4u * INITIAL_BUCKETS);
@@ -282,11 +282,10 @@ StringId StringPool::intern(std::string_view value) {
 		if ((control & RAM_BUCKET_REHASH) != 0u) {
 			rehashStep(count, metadata(REHASH_BASE), INTERN_REHASH_WORK);
 		} else if (metadata(USED) >= count) {
-			const u32 nextBase = m_heap.allocateRecord(8u * count, true, 0, 0);
+			const u32 nextBase = m_heap.reserveBacking(8u * count, 0u);
 			writeMetadata(REHASH_BASE, nextBase);
 			writeMetadata(CAPACITY, count | RAM_BUCKET_REHASH);
-			// Admission may itself have started sweeping the old directory.
-			if (!sweeping()) rehashStep(count, nextBase, INTERN_REHASH_WORK);
+			rehashStep(count, nextBase, INTERN_REHASH_WORK);
 		}
 	}
 	// Keep an oversized request in the allocation admission path: the

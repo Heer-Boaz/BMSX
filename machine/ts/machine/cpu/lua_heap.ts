@@ -67,15 +67,13 @@ export class LuaHeap {
 		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}
 
-	/** A thread reserves its replacement backing, then its owner publishes it. */
-	public allocateStack(bytes: number, thread: number, root: Value): number {
-		const collected = this.admit(bytes, root, valueNil(), valueNil(), thread);
+	/** Admit the owner's logical increase, then reserve backing without committing occupancy. */
+	public reserveBacking(bytes: number, logicalBytes: number, root0 = valueNil(), root1 = valueNil(), growingThread = 0): number {
+		const collected = logicalBytes !== 0 && this.admit(logicalBytes, root0, root1, valueNil(), growingThread);
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
 			const block = this.cpu.heapAllocator.allocate(bytes, true);
-			if (block !== 0) {
-						return block;
-			}
-			if (attempt === 0) this.collectRuntime(root, valueNil(), valueNil(), thread);
+			if (block !== 0) return block;
+			if (attempt === 0) this.collectRuntime(root0, root1, valueNil(), growingThread);
 		}
 		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}
@@ -188,8 +186,7 @@ export class LuaHeap {
 
 	public replaceRecord(oldAddress: number, oldBytes: number, newBytes: number): void {
 		if (oldAddress !== 0) this.cpu.heapAllocator.free(oldAddress);
-		const memory = this.cpu.memory;
-		memory.writeRamRecordWord(this.occupiedAddress, memory.readRamRecordWord(this.occupiedAddress) - oldBytes + newBytes);
+		if (oldBytes !== newBytes) this.accountAllocation(newBytes - oldBytes);
 	}
 
 	private creditStep(): void {

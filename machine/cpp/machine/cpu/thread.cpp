@@ -108,7 +108,8 @@ u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, CallResultPla
 	const u32 reserved = protectedCapacity();
 	if (index == reserved) {
 		const u32 capacity = reserved == 0 ? 1 : reserved * 2;
-		const u32 block = heap.budget.allocateStack(capacity * PROTECTED_CALL_BYTES, address, valueNil());
+		const u32 bytes = capacity * PROTECTED_CALL_BYTES;
+		const u32 block = heap.budget.reserveBacking(bytes, bytes, valueNil(), valueNil(), address);
 		ThreadRecord::replaceControls(heap, address, ThreadField::ProtectedBlock, block, capacity);
 		boundProtectedOffset = block & RAM_RECORD_WORD_MASK;
 		boundProtectedCapacity = capacity;
@@ -182,7 +183,8 @@ void Thread::bindFrameControl(CallFrame& frame, u32 address, u32 index) {
 
 void Thread::resizeStack(size_t capacity, Value root) {
 	if (capacity == stackCapacity) return;
-	const u32 block = heap.budget.allocateStack(static_cast<u32>(capacity) * THREAD_STACK_SLOT_BYTES, address, root);
+	const u32 bytes = static_cast<u32>(capacity) * THREAD_STACK_SLOT_BYTES;
+	const u32 block = heap.budget.reserveBacking(bytes, bytes, root, valueNil(), address);
 	ThreadRecord::replaceStack(heap, address, block, static_cast<u32>(capacity));
 	const u32 offset = block & RAM_RECORD_WORD_MASK;
 	stackCapacity = capacity;

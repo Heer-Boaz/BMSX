@@ -419,9 +419,20 @@ void preserveDynamicGlobalRegisters() {
 	SnapshotMachine machine(allocationImage());
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto count = cpu.globalSlotCount();
+	bool grewBank = false;
 	for (int index = 0; index < 257; ++index) {
-		cpu.setGlobalByKey(cpu.stringPool().intern("dynamic" + std::to_string(index)), bmsx::valueInteger(index));
+		const auto key = cpu.stringPool().intern("dynamic" + std::to_string(index));
+		const auto logical = cpu.luaHeap().usedBytes();
+		const auto physical = cpu.heapAllocator().occupiedBytes();
+		const auto previous = cpu.captureRuntimeState().globals.capacity;
+		cpu.setGlobalByKey(key, bmsx::valueInteger(index));
+		require(cpu.luaHeap().usedBytes() == logical + 9u, "every newly registered name costs nine bytes");
+		if (cpu.captureRuntimeState().globals.capacity != previous) {
+			grewBank = true;
+			require(cpu.heapAllocator().occupiedBytes() > physical, "the physical index reserve grows separately");
+		} else require(cpu.heapAllocator().occupiedBytes() == physical, "growing membership need not grow the reserve");
 	}
+	require(grewBank, "the names cross an actual capacity boundary");
 	const auto key = cpu.stringPool().intern("held");
 	auto object = cpu.createTable(1, 0);
 	object.setInteger(1, bmsx::valueInteger(42));
@@ -432,12 +443,14 @@ void preserveDynamicGlobalRegisters() {
 
 	const auto ram = cpu.memory().captureSaveState();
 	const auto state = cpu.captureRuntimeState();
+	const auto usage = cpu.luaHeap().usedBytes();
 	cpu.setGlobalByKey(key, bmsx::valueNil());
 	cpu.setGlobalByKey(cpu.stringPool().intern("future"), bmsx::valueInteger(100));
 	cpu.collectHeap();
 
 	cpu.memory().restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);
+	require(cpu.luaHeap().usedBytes() == usage, "restore retains logical occupancy, not capacity-derived accounting");
 	require(cpu.globalSlotCount() == count + 259, "dynamic register membership restores exactly");
 	for (int index = 0; index < 257; ++index) {
 		require(cpu.getGlobalByKey(cpu.stringPool().intern("dynamic" + std::to_string(index))) == bmsx::valueInteger(index),

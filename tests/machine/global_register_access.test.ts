@@ -65,10 +65,19 @@ return before, get('irq'), irq(3), invalid_read, invalid_write, missing_name
 test('dynamic names and values survive growth, collection and exact checkpoint restore', () => {
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'global-growth.lua')));
 	const count = cpu.globalSlotCount;
+	let grewBank = false;
 	for (let index = 0; index < 257; index++) {
 		const key = cpu.stringPool.intern(`dynamic${index}`);
+		const logical = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
+		const previous = cpu.captureRuntimeState().globals.capacity;
 		cpu.setGlobalByKey(key, valueInteger(index));
+		assert.equal(cpu.luaHeap.usedBytes(), logical + 9, 'every newly registered name costs nine bytes');
+		if (cpu.captureRuntimeState().globals.capacity !== previous) {
+			grewBank = true;
+			assert.ok(cpu.heapAllocator.occupiedBytes() > physical, 'the physical index reserve grows separately');
+		} else assert.equal(cpu.heapAllocator.occupiedBytes(), physical, 'members can grow without growing the reserve');
 	}
+	assert.ok(grewBank, 'the names cross an actual capacity boundary');
 	const objectKey = cpu.stringPool.intern('object');
 	const object = cpu.createTable(1);
 	cpu.gc.tables.setInteger(object, 1, valueInteger(42));
@@ -80,6 +89,7 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 
 	const memory = cpu.memory.captureSaveState();
 	const anchor = cpu.captureRuntimeState();
+	const usage = cpu.luaHeap.usedBytes();
 	for (let index = 0; index < 257; index++) assert.equal(cpu.getGlobalByKey(cpu.stringPool.find(`dynamic${index}`)!), valueInteger(index));
 	cpu.setGlobalByKey(objectKey, valueNil());
 	cpu.setGlobalByKey(cpu.stringPool.intern('future'), valueInteger(100));
@@ -87,6 +97,7 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 
 	cpu.memory.restoreSaveState(memory);
 	cpu.restoreRuntimeState(anchor);
+	assert.equal(cpu.luaHeap.usedBytes(), usage, 'restore retains the logical count independently of capacity');
 	assert.deepEqual(cpu.captureRuntimeState(), anchor);
 	assert.equal(cpu.gc.tables.getInteger(tableAddressPayload(cpu.getGlobalByKey(objectKey)), 1), valueInteger(42));
 	assert.equal(cpu.stringPool.toString(nilKey), 'nil-name');

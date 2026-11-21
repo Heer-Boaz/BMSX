@@ -42,15 +42,16 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 
 // The root Thread owns an 80-byte header, 40 bytes for eight Value slots
 // and 112 bytes for two reserved activations. The remainder is a
-// Closure, 17 RAM String records, their 32 intern buckets, two global banks and an 8-byte map (the linker emits unique names).
+// Closure, 17 RAM String records, two names and an 8-byte image map.
+// Both lookup indexes are storage, not logical occupancy.
 const bootThreadBytes = 80 + 40 + 112;
 const bootThreadWords = bootThreadBytes / 4;
-const bootBytes = bootThreadBytes + 12 + 15 + 697 + 128 + 8 + 2 * 136;
+const bootBytes = bootThreadBytes + 12 + 15 + 697 + 8 + 2 * 9;
 const bootCollectionWork = 4 * bootThreadWords + 3 + 1 + 3 * 12 + 3 * 17 + 32;
 
 test('physical GC work counts canonical scans, reclamation and three unique root passes without a cycle debit', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'charge the allocated RAM String and index blocks');
+	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'charge allocated Strings and names, not their indexes');
 	cpu.instructionBudgetRemaining = 7;
 	assert.equal(cpu.gc.collect(), bootCollectionWork, 'only physical object slots and the RAM intern index are swept');
 	assert.equal(cpu.instructionBudgetRemaining, 7);
@@ -193,7 +194,8 @@ test('all activated image constants and unique namespace slots remain in the phy
 	cpu.writeFrameExecution(0, 0, first.cartSymbols.functionAddresses[0], first.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, 1, second.cartSymbols.functionAddresses[0], second.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, first.systemSymbols.functionAddresses[0], first.systemImage.functions[0].codeAddress);
-	cpu.collectTrackedHeapBytes(); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + (20 + 12) + (5 + 12), 'each card allocates one constant bank and one name-slot map');
+	cpu.collectTrackedHeapBytes();
+	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + (20 + 12) + (5 + 12) + 2 * 9, 'each card charges its constant bank, name-slot map and new unique global');
 	cpu.instructionBudgetRemaining = 5;
 	const work = bootCollectionWork + 3 * (2 * 5 + 3 * 2);
 	assert.equal(cpu.gc.collect(), work, 'all three root passes include constants and registered names of both activated cards');

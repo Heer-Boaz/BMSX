@@ -45,7 +45,7 @@ private:
 	u32 bucketFor(StringId key) const;
 	u32 readBucket(u32 bucket) const;
 	void writeBucket(u32 bucket, u32 slot);
-	void grow(StringId key, Value pending);
+	void grow(u32 base, u32 capacity);
 
 	Memory& m_memory;
 	LuaHeap& m_heap;

@@ -90,7 +90,9 @@ collection continues without these calls.
 
 One KiB is 1,024 bytes; fractional KiB are retained. Counts use the canonical
 logical allocation charges in the [CPU reference](cpu.md#sec-cpu-language-allocation-and-collection).
-They include reserved slots but not padding or free fragments of RAM. Reading a count does not collect.
+They include charged reservations such as Thread slots, but not registry
+indexes, space for unregistered global names, padding or free fragments of RAM.
+Reading a count does not collect.
 An unlisted option raises an error. The service captures its collection and
 error primitives when installed; replacing public bindings does not alter them.
 

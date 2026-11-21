@@ -87,7 +87,7 @@ test('major String sweep rewinds a real bucket chain behind a retained predecess
 	assert.deepEqual(finish(), expected);
 });
 
-test('intern growth admitted into String sweep does not invalidate the original cursor', () => {
+test('String admission starts its sweep during an uncharged index resize', () => {
 	const cpu = createCpu(), pool = cpu.stringPool, { gc, memory } = cpu;
 	const capacity = 8192;
 	const roots = cpu.createTable(capacity, 0), key = pool.intern('String growth root');
@@ -102,7 +102,7 @@ test('intern growth admitted into String sweep does not invalidate the original 
 	for (let step = 0; gc.phase() !== GcPhase.Sweep && step < 40; ++step) gc.step();
 	assert.equal(gc.phase(), GcPhase.Sweep);
 	gc.step(); gc.step();
-	assert.equal(gc.phase(), GcPhase.Sweep, 'the last object page is reached by the growth admission');
+	assert.equal(gc.phase(), GcPhase.Sweep, 'the last object page is reached by the String admission');
 	const ram = memory.captureSaveState(), state = cpu.captureRuntimeState();
 	const finish = () => {
 		cpu.luaHeap.setCollectionTarget(0);
@@ -110,7 +110,7 @@ test('intern growth admitted into String sweep does not invalidate the original 
 		assert.equal(bucketCapacity(), capacity);
 		assert.equal(gc.phase(), GcPhase.Strings, 'growth does not synchronously drain the new sweep');
 		assert.notEqual(memory.readRamRecordWord(metadata + 0x38), 0, 'the destination owner is already reserved');
-		assert.equal(memory.readRamRecordWord(metadata + 0x3c), 0, 'no bucket changes owner during the sweep');
+		assert.ok(memory.readRamRecordWord(metadata + 0x3c) > 0, 'the index moved buckets before admitting the String');
 		for (let step = 0; gc.active() && step < 20; ++step) gc.step();
 		assert.equal(gc.phase(), GcPhase.Pause);
 		assert.equal(bucketCapacity(), 2 * capacity, 'the collection completes the pending resize incrementally');
@@ -142,7 +142,12 @@ test('String rehash splits a collision chain across both planes and replays swee
 		return { text, id: pool.intern(text) };
 	});
 	assert.equal(read(4), capacity);
-	const oldBase = read(0), trigger = collision(), inserted = pool.intern(trigger);
+	const oldBase = read(0), trigger = collision();
+	const logicalBefore = cpu.luaHeap.usedBytes(), physicalBefore = cpu.heapAllocator.occupiedBytes();
+	const inserted = pool.intern(trigger);
+	const insertedBytes = BLUA32_STRING_RECORD_HEADER_SIZE + trigger.length;
+	assert.equal(cpu.luaHeap.usedBytes(), logicalBefore + insertedBytes, 'only the String costs budget');
+	assert.equal(cpu.heapAllocator.occupiedBytes(), physicalBefore + heapAllocationBytes(8 * capacity) + heapAllocationBytes(insertedBytes));
 	const nextBase = read(0x38);
 	assert.notEqual(nextBase, 0);
 	assert.equal(read(0x3c), 1, 'the intern yields inside the first long bucket, not after it');
@@ -152,7 +157,7 @@ test('String rehash splits a collision chain across both planes and replays swee
 	for (let index = 0; index < survivors.length; ++index) gc.tables.setInteger(roots, index + 1, valueString(survivors[index]));
 	for (const { text, id } of entries) assert.equal(pool.find(text), id, 'lookups preserve IDs in each directory');
 
-	let logicalRelease = 4 * capacity, physicalRelease = heapAllocationBytes(logicalRelease);
+	let logicalRelease = 0, physicalRelease = heapAllocationBytes(4 * capacity);
 	for (const { text, id } of entries) if (!survivors.includes(id)) {
 		const bytes = BLUA32_STRING_RECORD_HEADER_SIZE + text.length;
 		logicalRelease += bytes;
@@ -172,7 +177,7 @@ test('String rehash splits a collision chain across both planes and replays swee
 		assert.equal(read(0x38), 0);
 		assert.equal(pool.find(trigger), inserted);
 		for (const { text, id } of entries) assert.equal(pool.find(text), survivors.includes(id) ? id : undefined);
-		assert.equal(cpu.luaHeap.usedBytes(), usage - logicalRelease, 'retirement returns the old index and dead String charges');
+		assert.equal(cpu.luaHeap.usedBytes(), usage - logicalRelease, 'retirement returns only the dead String charges');
 		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - physicalRelease, 'the old directory is physically reclaimed');
 		return memory.captureSaveState().ram;
 	};

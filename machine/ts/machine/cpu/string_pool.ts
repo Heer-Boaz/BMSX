@@ -276,7 +276,7 @@ export class StringPool {
 				this.writeMetadata(BUCKETS, nextBase);
 				this.writeMetadata(CAPACITY, count);
 				memory.writeRamRecordPair(this.metadataOffset + REHASH_BASE, 0, 0);
-				this.heap.releaseRecord(oldBase, 4 * oldCount);
+				this.heap.replaceRecord(oldBase, 0, 0);
 				return work;
 			}
 			memory.writeRamRecordWord(nextBase + 4 * ready, 0);
@@ -294,7 +294,7 @@ export class StringPool {
 		const control = this.metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
 		const memory = this.memory;
 		if (count === 0) {
-			const base = this.heap.allocateRecord(4 * INITIAL_BUCKETS, true, 0, 0);
+			const base = this.heap.reserveBacking(4 * INITIAL_BUCKETS, 0);
 			const offset = storageOffset(base);
 			memory.ramData().fill(0, offset, offset + 4 * INITIAL_BUCKETS);
 			memory.invalidateRamWrite(offset, 4 * INITIAL_BUCKETS);
@@ -303,11 +303,10 @@ export class StringPool {
 			if ((control & RAM_BUCKET_REHASH) !== 0) {
 				this.rehashStep(count, this.metadata(REHASH_BASE), INTERN_REHASH_WORK);
 			} else if (this.metadata(USED) >= count) {
-				const nextBase = this.heap.allocateRecord(8 * count, true, 0, 0);
+				const nextBase = this.heap.reserveBacking(8 * count, 0);
 				this.writeMetadata(REHASH_BASE, nextBase);
 				this.writeMetadata(CAPACITY, count | RAM_BUCKET_REHASH);
-				// Admission may itself have started sweeping the old directory.
-				if (!this.sweeping()) this.rehashStep(count, nextBase, INTERN_REHASH_WORK);
+				this.rehashStep(count, nextBase, INTERN_REHASH_WORK);
 			}
 		}
 		// An unrepresentable length requests the full bank and still clocks

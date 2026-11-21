@@ -114,7 +114,7 @@ void resumeMajorStringBucket() {
 	require(finish() == expected, "String sweep link and extent replay byte-exactly");
 }
 
-void growWhileAdmissionStartsStringSweep() {
+void stringAdmissionStartsSweepDuringUnchargedRehash() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
 	auto& pool = cpu.stringPool();
@@ -132,15 +132,15 @@ void growWhileAdmissionStartsStringSweep() {
 	for (int step = 0; cpu.gcHeap().phase() != GcPhase::Sweep && step < 40; ++step) advance();
 	require(cpu.gcHeap().phase() == GcPhase::Sweep, "objects must be swept before String reclamation");
 	advance(); advance();
-	require(cpu.gcHeap().phase() == GcPhase::Sweep, "growth admission will reach the last object page");
+	require(cpu.gcHeap().phase() == GcPhase::Sweep, "String admission will reach the last object page");
 	const auto state = cpu.captureRuntimeState();
 	const auto ram = memory.captureSaveState();
 	const auto finish = [&] {
 		cpu.luaHeap().setCollectionTarget(0);
 		const auto added = pool.intern("growth crosses into Strings");
 		require((read(4u) & 0x7fffffffu) == capacity && cpu.gcHeap().phase() == GcPhase::Strings
-			&& read(0x38u) != 0u && read(0x3cu) == 0u,
-			"growth reserves the destination without draining or moving the active String sweep");
+			&& read(0x38u) != 0u && read(0x3cu) > 0u,
+			"unbilled rehash work advances before admitting the String and then yields to its sweep");
 		for (int step = 0; cpu.collecting() && step < 20; ++step) advance();
 		require(!cpu.collecting() && read(4u) == 2u * capacity && pool.find("growth crosses into Strings") == added,
 			"later work completes the growth and retains the new String");
@@ -181,7 +181,13 @@ void rehashCollisionAcrossSweepAndRewind() {
 	require(read(4u) == capacity, "the next distinct String starts the 4096-bucket growth");
 	const u32 oldBase = read(0u);
 	const auto trigger = collision();
+	const auto logicalBefore = cpu.luaHeap().usedBytes();
+	const auto physicalBefore = cpu.heapAllocator().occupiedBytes();
 	const auto inserted = pool.intern(trigger);
+	const u32 insertedBytes = BLUA32_STRING_RECORD_HEADER_SIZE + static_cast<u32>(trigger.size());
+	require(cpu.luaHeap().usedBytes() == logicalBefore + insertedBytes
+		&& cpu.heapAllocator().occupiedBytes() == physicalBefore + heapAllocationBytes(8u * capacity) + heapAllocationBytes(insertedBytes),
+		"the new directory is physically reserved without adding to the String's nominal charge");
 	const u32 nextBase = read(0x38u);
 	require(nextBase != 0u && read(0x3cu) == 1u, "the intern yields inside the first long bucket, not after it");
 	const std::array survivors{memory.readRamRecordWord(oldBase), memory.readRamRecordWord(nextBase),
@@ -191,7 +197,7 @@ void rehashCollisionAcrossSweepAndRewind() {
 		roots.setInteger(index + 1u, valueString(survivors[index]));
 	}
 	const auto retained = [&](StringId id) { return std::find(survivors.begin(), survivors.end(), id) != survivors.end(); };
-	u32 logicalRelease = 4u * capacity, physicalRelease = heapAllocationBytes(logicalRelease);
+	u32 logicalRelease = 0u, physicalRelease = heapAllocationBytes(4u * capacity);
 	for (const auto& [text, id] : entries) {
 		require(pool.find(text) == id, "lookups preserve IDs in each directory");
 		if (!retained(id)) {
@@ -220,7 +226,7 @@ void rehashCollisionAcrossSweepAndRewind() {
 			require(retained(id) ? found == id : !found, "both directories sweep exactly their unmarked Strings");
 		}
 		require(cpu.luaHeap().usedBytes() == usage - logicalRelease && cpu.heapAllocator().occupiedBytes() == occupied - physicalRelease,
-			"retirement returns both the logical and physical bytes of the old directory and dead records");
+			"retirement returns only the dead String charges and physically frees the old directory");
 		return memory.captureSaveState().ram;
 	};
 	const auto expected = finish();
@@ -381,7 +387,7 @@ int main() {
 		reclaimUnreachableRecords();
 		collectEmptyString();
 		resumeMajorStringBucket();
-		growWhileAdmissionStartsStringSweep();
+		stringAdmissionStartsSweepDuringUnchargedRehash();
 		rehashCollisionAcrossSweepAndRewind();
 		reclaimLongByteStrings();
 		retainNestedMaterializationRoots();

@@ -6,6 +6,7 @@ import { hashCanonicalTableKey, valueFromTag, valueInteger, valueNil, valuePaylo
 import { ValueSlots } from './value_slots';
 
 export type GlobalBankState = { base: number; capacity: number; count: number };
+const GLOBAL_NAME_BUDGET_BYTES = 9;
 
 // A CPU-owned namespace. Ordinals are stable even when the bank moves.
 // Guest bytes are name words, two hash buckets per slot, payloads, then tags.
@@ -35,7 +36,7 @@ export class GlobalBank {
 	}
 
 	public clear(): void {
-		if (this.base !== 0) this.heap.releaseRecord(this.base, 17 * this.capacity);
+		if (this.base !== 0) this.heap.releaseRecord(this.base, GLOBAL_NAME_BUDGET_BYTES * this.count);
 		this.base = 0; this.capacity = 0; this.count = 0;
 		this.slots.unbind();
 	}
@@ -62,11 +63,8 @@ export class GlobalBank {
 		return stored !== 0 && this.name(slot) === key ? slot : undefined;
 	}
 
-	private grow(key: StringId, pending: Value): void {
-		const capacity = this.capacity === 0 ? 8 : 2 * this.capacity;
-		const base = this.heap.allocateRecord(17 * capacity, true, 0, 0, valueString(key), pending);
-		const oldBase = this.base, oldCapacity = this.capacity;
-		const offset = base & RAM_RECORD_WORD_MASK, source = oldBase & RAM_RECORD_WORD_MASK;
+	private grow(base: number, capacity: number): void {
+		const offset = base & RAM_RECORD_WORD_MASK, source = this.base & RAM_RECORD_WORD_MASK;
 		const ram = this.memory.ramData();
 		ram.fill(0, offset, offset + 12 * capacity);
 		ram.copyWithin(offset, source, source + 4 * this.count);
@@ -74,18 +72,26 @@ export class GlobalBank {
 		this.base = base; this.capacity = capacity;
 		this.slots.bindRam(this.memory, offset + 12 * capacity, capacity, true);
 		for (let slot = 0; slot < this.count; ++slot) this.writeBucket(this.bucketFor(this.name(slot)), slot);
-		if (oldBase !== 0) this.heap.releaseRecord(oldBase, 17 * oldCapacity);
 	}
 
 	public registerName(key: StringId, pending: Value = valueNil()): number {
 		const prior = this.find(key);
 		if (prior !== undefined) return prior;
-		if (this.count === this.capacity) this.grow(key, pending);
+		let oldBase = 0;
+		if (this.count === this.capacity) {
+			const capacity = this.capacity === 0 ? 8 : 2 * this.capacity;
+			const base = this.heap.reserveBacking(17 * capacity, GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
+			oldBase = this.base;
+			this.grow(base, capacity);
+		} else {
+			this.heap.admit(GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
+		}
 		const slot = this.count, bucket = this.bucketFor(key);
 		this.memory.writeRamRecordWord(this.base + 4 * slot, key);
 		this.slots.setNil(slot);
 		this.writeBucket(bucket, slot);
 		++this.count;
+		this.heap.replaceRecord(oldBase, 0, GLOBAL_NAME_BUDGET_BYTES);
 		return slot;
 	}
 }

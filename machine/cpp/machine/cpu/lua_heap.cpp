@@ -71,13 +71,11 @@ u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backing
 	throw LuaOutOfMemorySignal{};
 }
 
-u32 LuaHeap::allocateStack(u32 bytes, u32 threadAddress, Value root) {
-	const bool collected = admit(bytes, root, valueNil(), valueNil(), threadAddress);
+u32 LuaHeap::reserveBacking(u32 bytes, u32 logicalBytes, Value root0, Value root1, u32 growingThread) {
+	const bool collected = logicalBytes != 0u && admit(logicalBytes, root0, root1, valueNil(), growingThread);
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
-		if (const u32 block = m_cpu.heapAllocator().allocate(bytes, true)) {
-					return block;
-		}
-		if (attempt == 0) collectRuntime(root, valueNil(), valueNil(), threadAddress);
+		if (const u32 block = m_cpu.heapAllocator().allocate(bytes, true)) return block;
+		if (attempt == 0) collectRuntime(root0, root1, valueNil(), growingThread);
 	}
 	throw LuaOutOfMemorySignal{};
 }
@@ -179,8 +177,10 @@ void LuaHeap::releaseRecord(u32 address, u32 bytes) {
 
 void LuaHeap::replaceRecord(u32 oldAddress, u32 oldBytes, u32 newBytes) {
 	if (oldAddress != 0u) m_cpu.heapAllocator().free(oldAddress);
-	auto& memory = m_cpu.memory();
-	memory.writeRamRecordWord(m_occupiedAddress, memory.readRamRecordWord(m_occupiedAddress) - oldBytes + newBytes);
+	if (oldBytes != newBytes) {
+		auto& memory = m_cpu.memory();
+		memory.writeRamRecordWord(m_occupiedAddress, memory.readRamRecordWord(m_occupiedAddress) - oldBytes + newBytes);
+	}
 }
 
 void LuaHeap::creditStep() {
