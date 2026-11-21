@@ -345,6 +345,47 @@ void incrementalStateAndBarriers() {
 		"full collection retains root Thread, closure, roots Table, 1000 children and three new live Tables");
 }
 
+void resumesCompletionRootBank() {
+	test::Blua32TestImage source;
+	source.text.resize(5 * INSTRUCTION_BYTES);
+	writeInstruction(source.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(source.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(source.text, 2, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(source.text, 3, static_cast<u8>(OpCode::VARARG), 0, 0, 0);
+	writeInstruction(source.text, 4, static_cast<u8>(OpCode::RET), 0, 0, 0);
+	source.functions = {{.firstWord=0, .wordCount=3}, {.firstWord=3, .wordCount=2, .isVararg=true}};
+	source.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	Machine machine(source, true);
+	auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& memory = machine.memory;
+	require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "bring back an actual guest vararg closure");
+	const auto callee = asClosure(cpu.readCompletionValues().get(0), heap);
+	const auto target = cpu.createTable().address();
+	std::vector<Value> args(GC_STEP_WORDS + 64, valueInteger(7));
+	args.back() = valueTable(target);
+	cpu.beginCompletionCall(callee, BuiltinArgsView(args.data(), args.size()));
+	require(cpu.runUntilDepth(0, static_cast<int>(4 * args.size() + 1000)) == RunResult::Halted
+		&& cpu.getFrameDepth() == 0 && cpu.readCompletionValues().size() == args.size()
+		&& cpu.readCompletionValues().get(args.size() - 1) == valueTable(target),
+		"VARARG and RET leave the real completion latch as the last table's only root");
+	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
+	require(advance() < GC_STEP_WORDS && memory.readRamRecordWord(control + GC_ROOT_CURSOR) != 0u
+		&& !heap.isAlive(target), "the first quantum stops before the last Value without pricing completion slot reads");
+	const auto state = cpu.captureRuntimeState();
+	const auto ram = memory.captureSaveState();
+	const auto finish = [&] {
+		for (int step = 0; heap.active() && step < 60; ++step) advance();
+		require(!heap.active() && heap.tableRecordAddress(target) == target, "the resumed completion root retains the table");
+		return memory.captureSaveState().ram;
+	};
+	const auto expected = finish();
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(state);
+	require(finish() == expected, "restoring the completion Values and the raw index replays exactly");
+}
+
 void resumesRootBanksBeforeTracing() {
 	auto program = image();
 	for (int slot = 0; slot < 2200; ++slot) program.globalNames.push_back("root-" + std::to_string(slot));
@@ -1023,7 +1064,7 @@ int main(int argc, char** argv) {
 		allocationAdmissionUsesLogicalBytes(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		referenceWritesPayOnlyForNewEdges(); incrementalStateAndBarriers();
-		resumesRootBanksBeforeTracing(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
+		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
 		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues(); incrementalSharedWeakMode();
 		resumesFinalWeakCleanup(); resumesMetatableModeProbe(); resumesWeakTableRemark(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();

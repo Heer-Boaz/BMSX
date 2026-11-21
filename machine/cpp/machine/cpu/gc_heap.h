@@ -13,7 +13,7 @@ class CPU;
 inline constexpr size_t GC_STEP_WORDS = 4096;
 inline constexpr size_t GC_ASSIST_BYTES = 256;
 enum class GcPhase : u32 { Pause, Mark, MarkAgain, Atomic, Sweep, Strings };
-enum class GcRootBank : u32 { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, End };
+enum class GcRootBank : u32 { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, Completion, End };
 
 // Physical records start on an eight-byte boundary, including size-class slots.
 inline constexpr u32 GC_RECORD_ALIGNMENT = 1u << GC_RECORD_SHIFT;
@@ -124,13 +124,13 @@ private:
 	void requeueVisited(u32 address);
 	size_t markCell(u32 cell);
 	size_t trace(bool atomic, size_t limit = SIZE_MAX);
-	size_t traceRootBanks(size_t limit);
+	size_t traceRootBanks(size_t& limit, size_t work);
 	size_t traceCaptures(u32 closure, u32 next, u32 count, size_t work, size_t limit);
 	size_t traceThread(u32 thread, bool atomic, size_t limit, u32 cursor, u32 open, u32 captureTop, u32 billed);
 	size_t resumeTrace(u32 record, bool atomic, size_t limit);
 	size_t traceQuantum(bool atomic, size_t& limit, size_t work);
 	size_t remarkVisits(size_t allowance);
-	size_t remarkRoots(Value root0, Value root1, Value root2, size_t allowance, bool final);
+	size_t remarkRoots(Value root0, Value root1, Value root2, size_t& limit, size_t work, bool final);
 	RemarkStage remarkStage() const {
 		return static_cast<RemarkStage>(memory.readRamRecordWord(m_controlOffset + GC_REMARK_VISIT_STATE) >> GC_GRAY_INDEX_BITS);
 	}

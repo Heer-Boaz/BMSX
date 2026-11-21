@@ -2780,9 +2780,6 @@ void CPU::markRootHead(GcHeap& heap) {
 	heap.markValue(m_errorInErrorHandlingValue);
 	for (const Value value : m_luaFaultErrorValues) heap.markValue(value);
 	heap.markValue(m_stringIndexTable);
-	for (size_t i = 0; i < m_completionValueCount; ++i) {
-		heap.markValue(m_completionValues.get(i));
-	}
 	for (size_t scratchIndex = 0; scratchIndex < m_builtinResultScratchIndex; ++scratchIndex) {
 		BuiltinResults& scratch = m_builtinResultScratch.get(scratchIndex);
 		for (size_t valueIndex = 0; valueIndex < scratch.size(); ++valueIndex) {
@@ -2797,6 +2794,7 @@ void CPU::markRootHead(GcHeap& heap) {
 size_t CPU::rootBankSlots(GcRootBank bank) const {
 	if (bank == GcRootBank::SystemGlobals) return m_systemGlobalBank.count();
 	if (bank == GcRootBank::Globals) return m_globalBank.count();
+	if (bank == GcRootBank::Completion) return m_completionValueCount;
 	const auto& image = m_executionImagesByDomain[static_cast<u32>(bank) - static_cast<u32>(GcRootBank::SystemConstants)];
 	return image ? image->constPool.size() : 0u;
 }
@@ -2809,6 +2807,10 @@ void CPU::markRootBank(GcHeap& heap, GcRootBank bank, size_t first, size_t end) 
 			heap.markString(names.name(slot));
 			heap.markValue(slots.get(slot));
 		}
+		return;
+	}
+	if (bank == GcRootBank::Completion) {
+		for (size_t slot = first; slot < end; ++slot) heap.markValue(m_completionValues.get(slot));
 		return;
 	}
 	const auto pool = m_executionImagesByDomain[static_cast<u32>(bank) - static_cast<u32>(GcRootBank::SystemConstants)]->constPool;

@@ -8,7 +8,7 @@ namespace {
 
 // One current internal layout, deliberately without a legacy reader.
 // TODO: MUST BE FIXED TO `BMSX` INSTEAD OF CHANGING THE SIGNATURE AFTER EACH VERSION! WE ARE NOT DOING VERSIONING!
-constexpr u32 kSaveStateSignature = 0x5a534d42u; // BMSZ: resumable String intern-bucket sweep
+constexpr u32 kSaveStateSignature = 0x30544d42u; // BMT0: resumable completion root range
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);

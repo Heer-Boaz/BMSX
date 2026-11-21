@@ -4345,7 +4345,6 @@ export class CPU implements MappedPageInvalidator {
 		for (let i = 0; i < this.luaFaultErrorStringIds.length; ++i)
 			if (i !== LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(this.luaFaultErrorStringIds[i]);
 		heap.markValue(this.stringIndexTable);
-		for (let i = 0; i < this.completionValueCount; ++i) heap.markSlot(this.completionValueSlots, i);
 		for (let i = 0; i < this.builtinResultsScratchIndex; ++i) {
 			const slots = this.builtinResultsScratch.peek(i);
 			for (let j = 0; j < slots.length; ++j) heap.markValue(slots.get(j));
@@ -4356,6 +4355,7 @@ export class CPU implements MappedPageInvalidator {
 	public rootBankSlots(bank: GcRootBank): number {
 		if (bank === GcRootBank.SystemGlobals) return this.systemGlobalBank.count;
 		if (bank === GcRootBank.Globals) return this.globalBank.count;
+		if (bank === GcRootBank.Completion) return this.completionValueCount;
 		const image = this.executionImagesByDomain[bank - GcRootBank.SystemConstants];
 		return image === null ? 0 : image.constTags.length;
 	}
@@ -4367,6 +4367,10 @@ export class CPU implements MappedPageInvalidator {
 			for (let slot = first; slot < end; ++slot) {
 				heap.markString(names.name(slot)); heap.markSlot(slots, slot);
 			}
+			return;
+		}
+		if (bank === GcRootBank.Completion) {
+			for (let slot = first; slot < end; ++slot) heap.markSlot(this.completionValueSlots, slot);
 			return;
 		}
 		const image = this.executionImagesByDomain[bank - GcRootBank.SystemConstants]!;

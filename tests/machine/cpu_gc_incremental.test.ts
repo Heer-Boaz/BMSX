@@ -14,7 +14,7 @@ import { GcPhase, GC_MODE_META, GC_MODE_NODE, GC_REMARK_VISIT_INDEX, GC_REMARK_V
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
-import { ValueTag, hashCanonicalTableKey, valueBuiltinFunction, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString, valueThread } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, hashCanonicalTableKey, valueBuiltinFunction, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString, valueThread, type Value } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -62,6 +62,45 @@ test('incremental marking preserves changed table edges, metatables and final re
 	frame.registers.clear(frame.stackCapacity); frame.top = 0;
 	cpu.collectTrackedHeapBytes();
 	for (const id of expectedIds) assert.ok(!allocatedObjectRecords(cpu).includes(id));
+});
+
+test('completion Values form a resumable root range after the real returning frame is gone', () => {
+	const text = new Uint8Array(20);
+	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.RET, 0, 2, 0);
+	writeInstruction(text, 3, OpCode.VARARG, 0, 0, 0);
+	writeInstruction(text, 4, OpCode.RET, 0, 0, 0);
+	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
+		functions: [{ firstWord: 0, wordCount: 3 }, { firstWord: 3, wordCount: 2, isVararg: true }],
+		closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }],
+	}));
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	const results: Value[] = [];
+	cpu.readCompletionValues(results);
+	const callee = valuePayload(results[0]), target = cpu.createTable();
+	const args = new Array(GC_STEP_WORDS + 64).fill(valueInteger(7));
+	args[args.length - 1] = valueTable(target);
+	cpu.beginCompletionCall(callee, args);
+	assert.equal(cpu.runUntilDepth(0, 4 * args.length + 1000), RunResult.Halted);
+	assert.equal(cpu.rootThread.frameDepth, 0);
+	cpu.readCompletionValues(results);
+	assert.equal(results.length, args.length);
+	assert.equal(results[args.length - 1], valueTable(target));
+	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	assert.ok(cpu.gc.step() < GC_STEP_WORDS, 'completion slot reads are not guest cycle work');
+	assert.notEqual(memory.readRamRecordWord(control + GC_ROOT_CURSOR), 0);
+	assert.equal(cpu.gc.isAlive(target), false, 'the last completion Value has not been reached');
+	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	const finish = () => {
+		for (let step = 0; cpu.gc.active() && step < 60; ++step) cpu.gc.step();
+		assert.equal(cpu.gc.phase(), GcPhase.Pause);
+		assert.equal(cpu.gc.tableRecordAddress(target), target);
+		return memory.captureSaveState();
+	};
+	const expected = finish();
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	assert.deepEqual(finish(), expected);
 });
 
 test('initial root marking resumes a large global bank from a RAM snapshot', () => {

@@ -566,15 +566,16 @@ size_t GcHeap::traceTableEntries(const TableRecord& table, u8 mode, u32 next, si
 	return work;
 }
 
-size_t GcHeap::traceRootBanks(size_t limit) {
+size_t GcHeap::traceRootBanks(size_t& limit, size_t work) {
 	const u32 cursor = memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR);
 	u32 kind = cursor >> TRACE_CURSOR_BITS;
-	size_t work = 0u, next = cursor & TRACE_CURSOR_MASK;
+	size_t next = cursor & TRACE_CURSOR_MASK;
 	for (; kind < static_cast<u32>(GcRootBank::End); ++kind, next = 0u) {
 		const auto bank = static_cast<GcRootBank>(kind);
 		const size_t end = m_cpu.rootBankSlots(bank);
 		const bool globals = bank < GcRootBank::SystemConstants;
-		const size_t words = globals ? 3u : 2u, worst = words + (globals ? 2u : 1u);
+		const bool completion = bank == GcRootBank::Completion;
+		const size_t words = globals ? 3u : completion ? 1u : 2u, worst = words + (globals ? 2u : 1u);
 		while (next < end) {
 			if (work >= limit) {
 				memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, (kind << TRACE_CURSOR_BITS) | static_cast<u32>(next));
@@ -582,7 +583,11 @@ size_t GcHeap::traceRootBanks(size_t limit) {
 			}
 			const size_t stop = std::min(end, next + std::max(size_t{1}, (limit - work) / worst));
 			m_cpu.markRootBank(*this, bank, next, stop);
-			work += (stop - next) * words + m_stringPool.takeMarkWork();
+			// The completion latch is a host root range, not a named or
+			// constant-bank access billed to instructions.
+			if (completion) limit -= stop - next;
+			else work += (stop - next) * words;
+			work += m_stringPool.takeMarkWork();
 			next = stop;
 		}
 	}
@@ -618,14 +623,14 @@ size_t GcHeap::remarkVisits(size_t allowance) {
 	return visits;
 }
 
-size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t allowance, bool final) {
+size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t& limit, size_t work, bool final) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	GcPhaseMeasurement measurement(m_cpu.m_diagnosticGcProfile.rootsNanoseconds);
 #endif
 	markValue(root0); markValue(root1); markValue(root2);
 	m_stringPool.markLocalRoots();
-	size_t work = m_stringPool.takeMarkWork();
-	if (work < allowance) work += traceRootBanks(allowance - work);
+	work += m_stringPool.takeMarkWork();
+	if (work < limit) work = traceRootBanks(limit, work);
 	if (memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR) == 0u) {
 		setRemarkStage(final ? RemarkStage::Trace : RemarkStage::None);
 		if (!final) setPhase(GcPhase::MarkAgain);
@@ -651,7 +656,7 @@ size_t GcHeap::stepFinalMark(Value root0, Value root1, Value root2) {
 		if (remarkStage() != RemarkStage::Roots) return 0u;
 	}
 	if (remarkStage() == RemarkStage::Roots) {
-		work += remarkRoots(root0, root1, root2, limit, true);
+		work = remarkRoots(root0, root1, root2, limit, work, true);
 		if (remarkStage() == RemarkStage::Roots || work >= limit) return work;
 	}
 	if (remarkStage() == RemarkStage::Trace) {
@@ -857,7 +862,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 	if (phase() != GcPhase::Atomic && remarkStage() != RemarkStage::None) {
 		limit -= remarkVisits(limit);
 		if (remarkStage() != RemarkStage::Roots) return 0u;
-		work += remarkRoots(root0, root1, root2, limit, false);
+		work = remarkRoots(root0, root1, root2, limit, work, false);
 		if (phase() == GcPhase::Mark) return work;
 	} else if (phase() == GcPhase::Pause || phase() == GcPhase::Mark || phase() == GcPhase::MarkAgain) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
@@ -875,7 +880,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 		}
 		if (memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR) != 0u) {
 			work += m_stringPool.takeMarkWork();
-			if (work < GC_STEP_WORDS) work += traceRootBanks(GC_STEP_WORDS - work);
+			if (work < limit) work = traceRootBanks(limit, work);
 		}
 		markValue(root0); markValue(root1); markValue(root2);
 		m_stringPool.markLocalRoots();
@@ -896,7 +901,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 						setRemarkStage(RemarkStage::Threads);
 						limit -= remarkVisits(limit - work);
 						if (remarkStage() != RemarkStage::Roots) return work;
-						work += remarkRoots(root0, root1, root2, limit - work, false);
+						work = remarkRoots(root0, root1, root2, limit, work, false);
 						if (phase() == GcPhase::Mark) return work;
 					} else {
 						setPhase(GcPhase::Atomic);

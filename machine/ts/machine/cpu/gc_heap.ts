@@ -55,7 +55,7 @@ const VISIT_LINK_HIGH_MASK = GC_GRAY_INDEX_MASK >>> VISIT_LINK_LOW_BITS;
 export const GC_STEP_WORDS = 4096;
 export const GC_ASSIST_BYTES = 256;
 export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
-export const enum GcRootBank { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, End }
+export const enum GcRootBank { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, Completion, End }
 // Two unconnected selector inputs do not clock the collector.
 const GC_PHASE_SELECTOR = [GcPhase.Pause, GcPhase.Mark, GcPhase.MarkAgain, GcPhase.Atomic,
 	GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause, GcPhase.Pause];
@@ -74,6 +74,7 @@ export class GcHeap {
 	private minor = false; // Only physical state crosses a grant.
 	private readonly modeProbe: TableStringProbe = { node: -1, remaining: 0, value: valueNil() };
 	private modeProbeWork = 0;
+	private completionRootWork = 0;
 	private readonly traceBoth = (key: Value, value: Value): void => { this.markValue(key); this.markValue(value); };
 	private readonly traceKey = (key: Value): void => { this.markValue(key); };
 	private readonly traceValue = (_key: Value, value: Value): void => { this.markValue(value); };
@@ -538,22 +539,26 @@ export class GcHeap {
 			next < end ? (mode << TRACE_CURSOR_BITS) | next : 0);
 		return work;
 	}
-	private traceRootBanks(limit: number): number {
+	private traceRootBanks(limit: number, work: number): number {
+		this.completionRootWork = 0;
 		const cursor = this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR);
-		let work = 0, next = cursor & TRACE_CURSOR_MASK;
+		let next = cursor & TRACE_CURSOR_MASK;
 		const strings = this.cpu.stringPool;
 		for (let kind = cursor >>> TRACE_CURSOR_BITS; kind < GcRootBank.End; ++kind, next = 0) {
 			const end = this.cpu.rootBankSlots(kind);
 			const globals = kind < GcRootBank.SystemConstants;
-			const words = globals ? 3 : 2, worst = words + (globals ? 2 : 1);
+			const completion = kind === GcRootBank.Completion;
+			const words = globals ? 3 : completion ? 1 : 2, worst = words + (globals ? 2 : 1);
 			while (next < end) {
-				if (work >= limit) {
+				if (work + this.completionRootWork >= limit) {
 					this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, (kind << TRACE_CURSOR_BITS) | next);
 					return work;
 				}
-				const stop = Math.min(end, next + Math.max(1, ((limit - work) / worst) | 0));
+				const stop = Math.min(end, next + Math.max(1, ((limit - work - this.completionRootWork) / worst) | 0));
 				this.cpu.markRootBank(this, kind, next, stop);
-				work += (stop - next) * words + strings.takeMarkWork();
+				if (completion) this.completionRootWork += stop - next;
+				else work += (stop - next) * words;
+				work += strings.takeMarkWork();
 				next = stop;
 			}
 		}
@@ -589,12 +594,13 @@ export class GcHeap {
 		}
 		return visits;
 	}
-	private remarkRoots(t0: Value, t1: Value, t2: Value, allowance: number, final: boolean): number {
+	private remarkRoots(t0: Value, t1: Value, t2: Value, limit: number, work: number, final: boolean): number {
 		this.diagnostics?.phase('rootsNanoseconds');
 		this.markValue(t0); this.markValue(t1); this.markValue(t2);
 		this.cpu.stringPool.markLocalRoots();
-		let work = this.cpu.stringPool.takeMarkWork();
-		if (work < allowance) work += this.traceRootBanks(allowance - work);
+		this.completionRootWork = 0;
+		work += this.cpu.stringPool.takeMarkWork();
+		if (work < limit) work = this.traceRootBanks(limit, work);
 		if (this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR) === 0) {
 			this.setRemarkStage(final ? RemarkStage.Trace : RemarkStage.None);
 			if (!final) this.setPhase(GcPhase.MarkAgain);
@@ -617,7 +623,8 @@ export class GcHeap {
 			if (this.remarkStage() !== RemarkStage.Roots) return 0;
 		}
 		if (this.remarkStage() === RemarkStage.Roots) {
-			work += this.remarkRoots(t0, t1, t2, limit, true);
+			work = this.remarkRoots(t0, t1, t2, limit, work, true);
+			limit -= this.completionRootWork;
 			if (this.remarkStage() === RemarkStage.Roots || work >= limit) return work;
 		}
 		if (this.remarkStage() === RemarkStage.Trace) {
@@ -779,7 +786,8 @@ export class GcHeap {
 		if (this.phase() !== GcPhase.Atomic && this.remarkStage() !== RemarkStage.None) {
 			limit -= this.remarkVisits(limit);
 			if (this.remarkStage() !== RemarkStage.Roots) return 0;
-			work += this.remarkRoots(t0, t1, t2, limit, false);
+			work = this.remarkRoots(t0, t1, t2, limit, work, false);
+			limit -= this.completionRootWork;
 			if (this.phase() === GcPhase.Mark) return work;
 		} else if (this.phase() === GcPhase.Pause || this.phase() === GcPhase.Mark || this.phase() === GcPhase.MarkAgain) {
 			this.diagnostics?.phase('rootsNanoseconds');
@@ -791,7 +799,10 @@ export class GcHeap {
 			}
 			if (this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR) !== 0) {
 				work += this.cpu.stringPool.takeMarkWork();
-				if (work < limit) work += this.traceRootBanks(limit - work);
+				if (work < limit) {
+					work = this.traceRootBanks(limit, work);
+					limit -= this.completionRootWork;
+				}
 			}
 			this.markValue(t0); this.markValue(t1); this.markValue(t2);
 			this.cpu.stringPool.markLocalRoots();
@@ -809,7 +820,8 @@ export class GcHeap {
 							this.setRemarkStage(RemarkStage.Threads);
 							limit -= this.remarkVisits(limit - work);
 							if (this.remarkStage() !== RemarkStage.Roots) return work;
-							work += this.remarkRoots(t0, t1, t2, limit - work, false);
+							work = this.remarkRoots(t0, t1, t2, limit, work, false);
+							limit -= this.completionRootWork;
 							if (this.phase() === GcPhase.Mark) return work;
 						} else {
 							this.setPhase(GcPhase.Atomic);
