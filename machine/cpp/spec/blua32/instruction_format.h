@@ -43,7 +43,32 @@ constexpr int MAX_EXT_BX = (MAX_WIDE << BASE_BX_BITS) | MAX_BASE_BX;
 constexpr int CLOSURE_ADDRESS_REGISTER_WIDE_C = 1 << (MAX_OPERAND_BITS - 1);
 constexpr int CLOSURE_ADDRESS_REGISTER_FLAG = CLOSURE_ADDRESS_REGISTER_WIDE_C << (MAX_OPERAND_BITS + EXT_C_BITS);
 
-int signExtend(uint32_t value, int bits);
+constexpr int signExtend(uint32_t value, int bits) {
+	const int shift = 32 - bits;
+	return static_cast<int>(value << shift) >> shift;
+}
+
+constexpr uint8_t instructionOpcode(uint32_t word) {
+	return static_cast<uint8_t>((word >> (3 * MAX_OPERAND_BITS)) & ((1 << MAX_OP_BITS) - 1));
+}
+
+constexpr uint32_t instructionLowB(uint32_t word) {
+	return (word >> MAX_OPERAND_BITS) & MAX_LOW_OPERAND;
+}
+
+constexpr uint32_t instructionBx(uint32_t body, uint32_t wideB, bool withExtension) {
+	return (wideB << BASE_BX_BITS)
+		| (withExtension ? (body >> 24) << MAX_BX_BITS : 0u)
+		| (body & MAX_LOW_BX);
+}
+
+constexpr int instructionSignedBx(uint32_t bx, int width) {
+	return signExtend(bx, BASE_BX_BITS + (width - 1) * MAX_OPERAND_BITS);
+}
+
+constexpr uint32_t instructionBranchTarget(uint32_t pc, int width, uint32_t bx) {
+	return pc + static_cast<uint32_t>((width + instructionSignedBx(bx, width)) * INSTRUCTION_BYTES);
+}
 uint32_t packInstructionWord(uint8_t op, uint8_t a, uint8_t b, uint8_t c, uint8_t ext = 0);
 void writeInstruction(std::span<uint8_t> code, int index, uint8_t op, uint8_t a, uint8_t b, uint8_t c, uint8_t ext = 0);
 void writeInstructionWord(std::span<uint8_t> code, int index, uint32_t word);

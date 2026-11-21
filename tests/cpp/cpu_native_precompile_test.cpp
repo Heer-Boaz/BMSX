@@ -16,6 +16,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 
+#include <memory>
 #include <utility>
 #include <vector>
 #include <iostream>
@@ -90,6 +91,63 @@ const NativeBlock* entryAt(CPU& cpu, u32 pc) {
 	const auto page = pages.find(pc & ~MAPPED_PAGE_BYTE_MASK);
 	if (page == pages.end() || !page->second.nativeBlocks) return nullptr;
 	return page->second.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+}
+
+void verifiedFunctionControlFlowIsAdmittedBeforeExecution() {
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
+	image.functions = {{.firstWord = 0u, .wordCount = 4u}, {.firstWord = 4u, .wordCount = 1u}};
+	const auto layout = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	const u32 boundary = (layout.textAddress + MAPPED_PAGE_BYTE_MASK) & ~MAPPED_PAGE_BYTE_MASK;
+	const u32 word = (boundary - layout.textAddress) / INSTRUCTION_BYTES - 2u;
+	image.functions[0].firstWord = word;
+	image.functions[1].firstWord = word + 4u;
+	image.exceptionFunctionIndex = image.irqFunctionIndex = 1u;
+	writeInstruction(image.text, word, static_cast<u8>(OpCode::K0), 0, 0, 0);
+	writeInstruction(image.text, word + 1u, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, word + 2u, static_cast<u8>(OpCode::KSMI), 0, 0, 7);
+	writeInstruction(image.text, word + 3u, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(image.text, word + 4u, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	auto valid = std::make_unique<Fixture>(test::encodeBlua32TestRom(RomImageDomain::System, image));
+	auto& cpu = valid->runtime.machine.cpu;
+	const auto& directory = cpu.rootThread()->currentFrame->executionImage->romFunctions;
+	require(!directory.mappedCode && directory.instructionHead(boundary - INSTRUCTION_BYTES)
+		&& !directory.instructionHead(boundary) && directory.instructionHead(boundary + INSTRUCTION_BYTES),
+		"the verified image records the WIDE head across physical pages but not its body");
+	require(directory.atPc(boundary) == directory.find(valid->rom.functionAddresses[0])
+		&& directory.atPc(boundary + 2u * INSTRUCTION_BYTES) == directory.find(valid->rom.functionAddresses[1]),
+		"the code ranges remain independent from the physical page index");
+	require(cpu.runUntilDepth(0, 30) == RunResult::Halted && cpu.readCompletionValues().get(0) == valueInteger(7),
+		"a verified cross-page WIDE program executes the expected body");
+
+	const auto rejects = [](test::Blua32TestImage source, std::string_view message) {
+		try {
+			std::make_unique<Fixture>(test::encodeBlua32TestRom(RomImageDomain::System, source));
+		} catch (const std::runtime_error& error) {
+			require(std::string_view(error.what()) == message, "mount reports the rejected control-flow rule");
+			return;
+		}
+		throw std::runtime_error("mount admitted invalid function control flow");
+	};
+	for (const u8 displacement : {1u, 3u}) {
+		auto invalid = image;
+		writeInstruction(invalid.text, word, static_cast<u8>(OpCode::JMP), 0, 0, displacement);
+		rejects(std::move(invalid), "BLua32 branch target is not an instruction in its function.");
+	}
+	auto invalid = image;
+	writeInstruction(invalid.text, word + 2u, static_cast<u8>(OpCode::EQ), 0, 0, 0);
+	rejects(std::move(invalid), "BLua32 comparison skips past the end of its function.");
+	invalid = image;
+	writeInstruction(invalid.text, word + 3u, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	rejects(std::move(invalid), "BLua32 function has an incomplete WIDE instruction.");
+	invalid = image;
+	writeInstruction(invalid.text, word + 3u, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	rejects(std::move(invalid), "BLua32 function falls through the end of its TEXT extent.");
+	invalid = image;
+	invalid.functions[1].firstWord = word + 3u;
+	rejects(std::move(invalid), "BLua32 function TEXT extents overlap.");
 }
 
 void preparationHasNoGuestEffects() {
@@ -343,6 +401,7 @@ void descriptiveHintsAreBudgetedBeforeDiscovery() {
 
 int main() {
 	try {
+		verifiedFunctionControlFlowIsAdmittedBeforeExecution();
 		preparationHasNoGuestEffects();
 		coldLazyWritesAndRestoreAgree();
 		unusedOperandsRemainUnobserved();

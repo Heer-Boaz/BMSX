@@ -59,12 +59,12 @@ void CPU::decodeInstructionWords(
 	DecodedInstructionPage* bodyPage
 ) {
 	DecodedInstruction& destination = page.words[pageOffset];
-	const bool wide = ((sourceWord >> 18) & 0x3fu) == static_cast<u32>(OpCode::WIDE);
+	const bool wide = instructionOpcode(sourceWord) == static_cast<u8>(OpCode::WIDE);
 	const int width = wide ? 2 : 1;
 	const u8 wideA = wide ? static_cast<u8>((sourceWord >> 12) & 0x3fu) : 0;
-	const u8 wideB = wide ? static_cast<u8>((sourceWord >> 6) & 0x3fu) : 0;
+	const u8 wideB = wide ? instructionLowB(sourceWord) : 0;
 	const u8 wideC = wide ? static_cast<u8>(sourceWord & 0x3fu) : 0;
-	const u8 op = static_cast<u8>((bodyWord >> 18) & 0x3fu);
+	const u8 op = instructionOpcode(bodyWord);
 	const u8 ext = static_cast<u8>(bodyWord >> 24);
 	const bool unchanged = destination.width != 0u
 		&& page.sourceWords[pageOffset] == sourceWord
@@ -76,7 +76,7 @@ void CPU::decodeInstructionWords(
 #endif
 		DecodedInstruction decoded{};
 		const uint8_t aLow = static_cast<uint8_t>((bodyWord >> 12) & 0x3f);
-		const uint8_t bLow = static_cast<uint8_t>((bodyWord >> 6) & 0x3f);
+		const uint8_t bLow = instructionLowB(bodyWord);
 		const uint8_t cLow = static_cast<uint8_t>(bodyWord & 0x3f);
 		const bool usesDisp = OPCODE_USES_DISP[op] != 0u;
 		const bool usesBx = !usesDisp && OPCODE_USES_BX[op] != 0u;
@@ -98,22 +98,13 @@ void CPU::decodeInstructionWords(
 		const int cShift = usesDisp
 			? MAX_OPERAND_BITS
 			: MAX_OPERAND_BITS + EXT_C_BITS;
-		const uint32_t bxLow =
-			(static_cast<uint32_t>(bLow) << MAX_OPERAND_BITS) | cLow;
 		const uint32_t rawB = (static_cast<uint32_t>(wideB) << bShift)
 			| (static_cast<uint32_t>(extB) << MAX_OPERAND_BITS)
 			| bLow;
 		const uint32_t rawC = (static_cast<uint32_t>(wideC) << cShift)
 			| (static_cast<uint32_t>(extC) << MAX_OPERAND_BITS)
 			| cLow;
-		const uint32_t decodedBx =
-			(static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS))
-			| (static_cast<uint32_t>(usesBx ? ext : 0) << MAX_BX_BITS)
-			| bxLow;
-		const int32_t decodedSbx = signExtend(
-			decodedBx,
-			MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS)
-		);
+		const uint32_t decodedBx = instructionBx(bodyWord, wideB, usesBx);
 		decoded.op = op;
 		decoded.width = static_cast<uint8_t>(width);
 		decoded.baseCycles = BASE_CYCLES[op];
@@ -149,7 +140,7 @@ void CPU::decodeInstructionWords(
 			case OpCode::CALL:
 				break;
 			case OpCode::KSMI:
-				decoded.setSbx(decodedSbx);
+				decoded.setSbx(instructionSignedBx(decodedBx, width));
 				break;
 			case OpCode::GETFIELD:
 			case OpCode::SELF:
@@ -167,9 +158,7 @@ void CPU::decodeInstructionWords(
 			case OpCode::JMP:
 			case OpCode::JMPIF:
 			case OpCode::JMPIFNOT:
-				decoded.setBx(pc
-					+ static_cast<u32>(width * INSTRUCTION_BYTES)
-					+ static_cast<u32>(decodedSbx * INSTRUCTION_BYTES));
+				decoded.setBx(instructionBranchTarget(pc, width, decodedBx));
 				break;
 			default:
 				decoded.setBx(usesDisp ? ext : decodedBx);
@@ -193,7 +182,7 @@ void CPU::decodeInstructionWords(
 	DecodedInstruction& decoded = destination;
 	if (decoded.op >= static_cast<u8>(OpCode::GETSYS) && decoded.op <= static_cast<u8>(OpCode::SETGL)) {
 		const bool system = op <= static_cast<u8>(OpCode::SETSYS);
-		const u32 index = (static_cast<u32>(wideB) << BASE_BX_BITS) | (static_cast<u32>(ext) << MAX_BX_BITS) | (bodyWord & MAX_LOW_BX);
+		const u32 index = instructionBx(bodyWord, wideB, true);
 		const u32 base = image.globalMapBase + (system ? 4u * image.globalNameCount : 0u);
 		decoded.setBx(m_memory.readRamRecordWord(base + 4u * index));
 	}
@@ -234,7 +223,7 @@ bool CPU::decodeInstruction(
 		return false;
 	}
 	uint32_t bodyWord = sourceWord;
-	if (((sourceWord >> 18) & 0x3fu) == static_cast<u32>(OpCode::WIDE)) {
+	if (instructionOpcode(sourceWord) == static_cast<u8>(OpCode::WIDE)) {
 		width = 2;
 		if (pageOffset == DECODED_PAGE_WORDS - 1u) {
 			bodyPage = &decodedPageForFrame(
@@ -316,7 +305,7 @@ bool CPU::decodeBackedInstruction(
 	const u32 sourceWord = readLE32(binding.readBytes + pageOffset * INSTRUCTION_BYTES);
 	u32 bodyWord = sourceWord;
 	DecodedInstructionPage* bodyPage = nullptr;
-	if (((sourceWord >> 18) & 0x3fu) == static_cast<u32>(OpCode::WIDE)) {
+	if (instructionOpcode(sourceWord) == static_cast<u8>(OpCode::WIDE)) {
 		if (pageOffset == DECODED_PAGE_WORDS - 1u) {
 			MappedPageBinding bodyBinding;
 			m_memory.bindMappedPage(pc + INSTRUCTION_BYTES, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, bodyBinding);

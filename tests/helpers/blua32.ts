@@ -1,6 +1,7 @@
 import type { Blua32DiagnosticSourceMap } from '../../toolchain/ts/rompack/blua32_diagnostics';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import assert from 'node:assert/strict';
+import { writeLE32 } from '../../machine/ts/common/endian';
 
 import {
 	encodeCompiledProgramObject,
@@ -18,7 +19,9 @@ import type {
 } from '../../toolchain/ts/rompack/blua32_image';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
+	BLUA32_IMAGE_FLAGS_OFFSET,
 	BLUA32_IMAGE_HEADER_SIZE,
+	BLUA32_IMAGE_MAPPED_CODE_FLAG,
 } from '../../machine/ts/spec/blua32/image_format';
 import {
 	type Blua32SymbolsImage,
@@ -110,6 +113,8 @@ export type TestBlua32Function = {
 };
 
 export type TestBlua32Source = {
+	/** Handwritten fixtures normally exercise mapped code rather than bounded ROM functions. */
+	verifiedControlFlow?: boolean;
 	text: Uint8Array;
 	functions: ReadonlyArray<TestBlua32Function>;
 	constants?: ReadonlyArray<ProgramConstant>;
@@ -320,10 +325,12 @@ function rawTestVectors(source: TestBlua32Source, linked: LinkedBlua32Image): Te
 	};
 }
 
-function applyRawTestClosureRelocations(
-	text: Uint8Array,
-	relocations: TestBlua32Source['closureRelocations'],
-): void {
+function prepareRawTestImage(linked: LinkedBlua32Image, source: TestBlua32Source): void {
+	if (!source.verifiedControlFlow) {
+		linked.layout.header.flags = BLUA32_IMAGE_MAPPED_CODE_FLAG;
+		writeLE32(linked.bytes, BLUA32_IMAGE_FLAGS_OFFSET, BLUA32_IMAGE_MAPPED_CODE_FLAG);
+	}
+	const text = linked.layout.textBytes, relocations = source.closureRelocations;
 	if (!relocations) {
 		return;
 	}
@@ -361,7 +368,7 @@ export function linkRawTestSystemBlua32(source: TestBlua32Source, bssByteCount =
 		LINK_TARGET_RAM_BYTES,
 		[],
 	);
-	applyRawTestClosureRelocations(linked.layout.textBytes, source.closureRelocations);
+	prepareRawTestImage(linked, source);
 	return testImage(linked, rawTestVectors(source, linked));
 }
 
@@ -378,7 +385,7 @@ export function linkRawTestBlua32Pair(
 		LINK_TARGET_RAM_BYTES,
 		[],
 	);
-	applyRawTestClosureRelocations(system.layout.textBytes, systemSource.closureRelocations);
+	prepareRawTestImage(system, systemSource);
 	const cartRaw = createRawTestBlua32Object(cartSource, 'cart', bssByteCount);
 	const cart = linkCartBlua32Image(
 		system.biosImports,
@@ -387,7 +394,7 @@ export function linkRawTestBlua32Pair(
 		CART_ROM_BASE + TEST_EXECUTABLE_OFFSET,
 		LINK_TARGET_RAM_BYTES,
 	);
-	applyRawTestClosureRelocations(cart.layout.textBytes, cartSource.closureRelocations);
+	prepareRawTestImage(cart, cartSource);
 	return {
 		systemImage: system.layout,
 		systemSymbols: system.symbols,

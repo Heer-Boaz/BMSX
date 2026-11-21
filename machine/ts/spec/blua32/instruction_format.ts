@@ -43,6 +43,26 @@ export function signExtend(value: number, bits: number): number {
 	return (value << shift) >> shift;
 }
 
+export function instructionOpcode(word: number): number {
+	return (word >>> (3 * MAX_OPERAND_BITS)) & ((1 << MAX_OP_BITS) - 1);
+}
+
+export function instructionLowB(word: number): number {
+	return (word >>> MAX_OPERAND_BITS) & MAX_LOW_OPERAND;
+}
+
+export function instructionBx(body: number, wideB: number): number {
+	return (wideB << BASE_BX_BITS) | ((body >>> 24) << MAX_BX_BITS) | (body & MAX_LOW_BX);
+}
+
+export function instructionSignedBx(bx: number, width: number): number {
+	return signExtend(bx, BASE_BX_BITS + (width - 1) * MAX_OPERAND_BITS);
+}
+
+export function instructionBranchTarget(pc: number, width: number, bx: number): number {
+	return (pc + (width + instructionSignedBx(bx, width)) * INSTRUCTION_BYTES) >>> 0;
+}
+
 export function packInstructionWord(op: number, a: number, b: number, c: number, ext: number = 0): number {
 	return (((ext & 0xff) << 24)
 		| ((op & 0x3f) << 18)

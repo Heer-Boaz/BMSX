@@ -4,7 +4,7 @@ import type { ProgramConstant } from '../lua/compiler/program';
 import { inlineCallSiteChainsEqual } from '../lua/compiler/inline_debug';
 import { LexicalDeclarationKind, StaticDeclarationKind } from '../lua/compiler/declaration_kind';
 import type { SourceRange } from '../lua/source_range';
-import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { OPCODE_COUNT, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
 	BASE_BX_BITS,
 	CLOSURE_ADDRESS_REGISTER_WIDE_C,
@@ -798,7 +798,9 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const code = new Uint8Array(textByteCount);
 	code.set(text.code);
 	if (functionLayout.hasTombstones) {
-		writeInstruction(code, text.code.byteLength / INSTRUCTION_BYTES, OpCode.WIDE, 0, 0, 0);
+		// Retained prototype slots have no continuation. Entering one raises
+		// the ordinary reserved-instruction exception within its own body.
+		writeInstruction(code, text.code.byteLength / INSTRUCTION_BYTES, OPCODE_COUNT - 1, 0, 0, 0);
 	}
 	rewriteLocalClosures(code, functionAddressByProtoIndex);
 	rewriteImageRelocations(

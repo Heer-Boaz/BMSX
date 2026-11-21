@@ -56,7 +56,7 @@ function machine(systemRom: Uint8Array, slots: CartridgeSocketMediaPair, backend
 	return { cpu, memory, addresses };
 }
 
-test('published ROM function directories are admitted before either backend executes', () => {
+test('mapped ROM function hints still require backed extents', () => {
 	const image = linkRawTestSystemBlua32(loadSource(MemoryAccessKind.U32LE), RAM_CODE_FIXTURE_BYTES);
 	const record = image.vectors.startupFunctionAddress;
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {

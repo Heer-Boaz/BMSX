@@ -14,7 +14,7 @@ import type {
 } from '../../toolchain/ts/lua/compiler/program_object';
 import type { Instruction } from '../../toolchain/ts/lua/compiler/optimizer';
 import { replaceWithJump, replaceWithMov } from '../../toolchain/ts/lua/compiler/optimizer/values';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { OPCODE_COUNT, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import type {
 	ProgramConstant,
@@ -1074,7 +1074,7 @@ test('BLua32 hot revision rejects a changed static storage layout', () => {
 	);
 });
 
-test('BLua32 hot revision preserves removed function records while leaving their code unmapped', () => {
+test('BLua32 hot revision preserves removed function records without a resumable source site', () => {
 	const initial = makeSystemObject([
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
@@ -1313,7 +1313,7 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 			linked.layout.textBytes,
 			(linked.layout.functions[1].codeAddress - linked.layout.header.textAddress) / INSTRUCTION_BYTES,
 		) >>> 18) & 0x3f,
-		OpCode.WIDE,
+		OPCODE_COUNT - 1,
 	);
 
 	const removalRevision = buildBlua32ExecutionRevision(

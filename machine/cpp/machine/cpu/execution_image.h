@@ -38,13 +38,19 @@ struct Blua32RomFunctionVersion {
 
 struct Blua32RomFunctionDirectory {
 	u32 tableAddress = 0;
+	u32 textAddress = 0;
+	bool mappedCode = false;
 	std::vector<Blua32RomFunctionVersion> versions;
+	std::vector<u32> codeOrder;
+	std::vector<u32> instructionHeads;
 	static Blua32RomFunctionDirectory read(const Memory&, ExecutionDomainId, const u8* imageHeader);
 	static constexpr bool ownsAddress(ExecutionDomainId domain, u32 address) {
 		return domain == SYSTEM_EXECUTION_DOMAIN_ID
 			? address - SYSTEM_ROM_BASE < SYSTEM_ROM_SIZE : address - CART_ROM_BASE < CART_ROM_SIZE;
 	}
 	const Blua32RomFunctionVersion* find(u32 record) const;
+	const Blua32RomFunctionVersion* atPc(u32 pc) const;
+	bool instructionHead(u32 pc) const;
 };
 
 struct Blua32FunctionRecordLatch {

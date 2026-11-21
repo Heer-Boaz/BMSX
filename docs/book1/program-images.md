@@ -314,13 +314,30 @@ language-heap floor; see
 [[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}.
 DATA and BSS are initialized by the startup instructions.
 
-A nonzero function count publishes a function directory. The directory begins
-on a 16-byte boundary and contains that many consecutive 32-byte records.
-Both the directory and TEXT must fit in installed ROM of the same execution
-image. The TEXT address and size must be multiples of four. Each directory
-record names a nonempty, word-aligned code extent wholly inside TEXT. An image
-that violates these conditions is rejected at activation. A zero function
-count does not publish a directory and leaves its address unused.
+With flag bit 0 clear, the image publishes a nonempty function directory.
+The directory begins on a 16-byte boundary and its records are
+32 bytes each. Both the directory and TEXT must fit in the installed ROM
+of the same execution image. The TEXT address and size must be multiples
+of four. Every record names a nonempty, word-aligned extent inside TEXT.
+Different bodies cannot overlap; more than one record can name the same
+complete body.
+
+A body must contain complete instructions. In the function directory, a
+WIDE prefix is part of its following instruction and the second word is
+not a possible branch target. Each branch, sequential continuation and
+comparison skip must reach an instruction in that body. A final RET,
+RFE, unconditional branch or reserved-instruction trap does not require
+a sequential continuation. A HALT that can resume upon an interrupt
+does. The console rejects an image that violates these requirements
+before entering it.
+
+Set flag bit 0 for **mapped code**, when instruction flow is defined by
+addresses in the executable bus regions rather than by function bodies.
+A mapped-code image may omit its directory; a zero function count then
+leaves the table address unused. If a directory is supplied it must fit
+in ROM and its extents must fit in TEXT, but the extents do not limit
+mapped instruction fetches.
+
 
 The preparation address selects a separate ordinary function, not another
 startup vector. Calling it completes pending module initialization and runs
@@ -431,7 +448,7 @@ A function address identifies a **32-byte function record**, not its first instr
 | `18H` | Upvalue count | Number of four-byte descriptors. |
 | `1CH` | Reserved | Not read. |
 
-VARARG retains arguments beyond the fixed parameters. STATIC permits direct entry through EXEC; the closure-construction rules are described in [CPU — Closures and captured variables](cpu.md#sec-cpu-closures-and-captured-variables). The immediate-address form of `CLOSURE` encodes a function-record address in **16-byte units**; its register-address form supplies the full address. Function-record reads themselves do not impose a 16-byte alignment check. The declared code byte count does not bound instruction fetches.
+VARARG retains arguments beyond the fixed parameters. STATIC permits direct entry through EXEC; the closure-construction rules are described in [CPU — Closures and captured variables](cpu.md#sec-cpu-closures-and-captured-variables). The immediate-address form of `CLOSURE` encodes a function-record address in **16-byte units**; its register-address form supplies the full address. Function-record reads themselves do not impose a 16-byte alignment check. In a mapped-code image the declared byte count is descriptive, not an instruction-fetch limit.
 
 The code address names an instruction in an executable ROM or RAM window.
 Instruction fetch does not access system I/O or cartridge MMIO; the CPU

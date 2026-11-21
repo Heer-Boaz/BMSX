@@ -42,6 +42,7 @@ struct Blua32TestImage {
 	u32 startupFunctionIndex = 0;
 	u32 irqFunctionIndex = 0;
 	u32 exceptionFunctionIndex = 0;
+	bool mappedCode = true;
 };
 
 struct Blua32TestRom {

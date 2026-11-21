@@ -58,7 +58,10 @@ import {
 	LUA_FAULT_REASON_UNKNOWN,
 	LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION,
 } from '../../spec/blua32/cop0';
-import { BASE_BX_BITS, BASE_OPERAND_A_BITS, BASE_OPERAND_BC_BITS, CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_LOW_BX, MAX_OPERAND_BITS, signExtend } from '../../spec/blua32/instruction_format';
+import {
+	BASE_OPERAND_A_BITS, BASE_OPERAND_BC_BITS, CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, MAX_OPERAND_BITS,
+	instructionBranchTarget, instructionBx, instructionLowB, instructionOpcode, instructionSignedBx, signExtend,
+} from '../../spec/blua32/instruction_format';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET,
 	BLUA32_CONSTANT_RECORD_SIZE,
@@ -1165,7 +1168,7 @@ export class CPU implements MappedPageInvalidator {
 			return false;
 		}
 		let bodyWord = sourceWord;
-		op = (sourceWord >>> 18) & 0x3f;
+		op = instructionOpcode(sourceWord);
 		let ext = sourceWord >>> 24;
 		if (op === OpCode.WIDE) {
 			width = 2;
@@ -1174,7 +1177,7 @@ export class CPU implements MappedPageInvalidator {
 				instructionCacheable = instructionCacheable && bodyPage.cacheable;
 			}
 			wideA = (sourceWord >>> 12) & 0x3f;
-			wideB = (sourceWord >>> 6) & 0x3f;
+			wideB = instructionLowB(sourceWord);
 			wideC = sourceWord & 0x3f;
 			bodyWord = this.memory.readMappedBusU32LE(
 				(pc + INSTRUCTION_BYTES) >>> 0,
@@ -1184,7 +1187,7 @@ export class CPU implements MappedPageInvalidator {
 				this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 				return false;
 			}
-			op = (bodyWord >>> 18) & 0x3f;
+			op = instructionOpcode(bodyWord);
 			ext = bodyWord >>> 24;
 		}
 		const unchanged = page.widths[pageOffset] !== 0
@@ -1193,7 +1196,7 @@ export class CPU implements MappedPageInvalidator {
 			&& page.widths[pageOffset] === width;
 		if (!unchanged) {
 			const aLow = (bodyWord >>> 12) & 0x3f;
-			const bLow = (bodyWord >>> 6) & 0x3f;
+			const bLow = instructionLowB(bodyWord);
 			const cLow = bodyWord & 0x3f;
 			page.widths[pageOffset] = width;
 			page.sourceWords[pageOffset] = sourceWord;
@@ -1210,16 +1213,15 @@ export class CPU implements MappedPageInvalidator {
 				}
 			} else if (OPCODE_USES_BX[op] !== 0) {
 				page.a[pageOffset] = (wideA << MAX_OPERAND_BITS) | aLow;
-				const bx = (wideB << BASE_BX_BITS) | (ext << MAX_BX_BITS) | (bodyWord & MAX_LOW_BX);
+				const bx = instructionBx(bodyWord, wideB);
 				switch (op) {
 					case OpCode.KSMI:
-						page.sbx[pageOffset] = signExtend(bx, BASE_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
+						page.sbx[pageOffset] = instructionSignedBx(bx, width);
 						break;
 					case OpCode.JMP:
 					case OpCode.JMPIF:
 					case OpCode.JMPIFNOT:
-						page.bx[pageOffset] = (pc + width * INSTRUCTION_BYTES
-							+ signExtend(bx, BASE_BX_BITS + ((width - 1) * MAX_OPERAND_BITS)) * INSTRUCTION_BYTES) >>> 0;
+						page.bx[pageOffset] = instructionBranchTarget(pc, width, bx);
 						break;
 					case OpCode.CLOSURE:
 						page.c[pageOffset] = (wideC << BASE_OPERAND_BC_BITS) | cLow;
@@ -1258,7 +1260,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		if (op >= OpCode.GETSYS && op <= OpCode.SETGL) {
 			const system = op <= OpCode.SETSYS;
-			const index = (wideB << BASE_BX_BITS) | (ext << MAX_BX_BITS) | (bodyWord & MAX_LOW_BX);
+			const index = instructionBx(bodyWord, wideB);
 			if (index >= (system ? image.systemNameCount : image.globalNameCount)) {
 				page.ops[pageOffset] = DecodedDispatchOp.InvalidImageOperand;
 			} else {
@@ -2476,7 +2478,7 @@ export class CPU implements MappedPageInvalidator {
 			if (pageCount > 1 && pageCount <= COMPILED_VERSION_MAX_PAGES
 				&& this.memory.bindRomByteView(version.endPc - INSTRUCTION_BYTES, INSTRUCTION_BYTES, slot, romView)) {
 				spanning = true;
-				finalWordStartsInstruction = ((readLE32(romView.bytes, romView.byteOffset) >>> 18) & 0x3f) !== OpCode.WIDE;
+				finalWordStartsInstruction = instructionOpcode(readLE32(romView.bytes, romView.byteOffset)) !== OpCode.WIDE;
 				basePc = firstPage;
 				firstWord = (version.firstPc - basePc) / INSTRUCTION_BYTES;
 				endWord = (version.endPc - basePc) / INSTRUCTION_BYTES;
