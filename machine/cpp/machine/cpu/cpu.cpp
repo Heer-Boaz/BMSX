@@ -1744,18 +1744,18 @@ RunResult CPU::runLoop(
 	int nativeFirstDispatchCycles = 0;
 	NativeCpuRunState nativeState{.state = {}, .cpu = this, .targetDepth = targetDepth,
 		.error = {}};
-	const auto observeScalarArithmetic = [&](Value left, Value right) {
-		if constexpr (!Instrumented) {
-			if (nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic) {
-				const auto assumption = *nativeState.replay->arithmetic;
-				nativeState.replay.reset();
-				observeNativeArithmeticReplay(*decodedPage, (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES,
-					assumption, left, right);
-			} else if (decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm)) {
-				decoded->observeNativeNumericTypes(left, right);
-			}
-		}
-	};
+#define OBSERVE_SCALAR_ARITHMETIC(left, right) do { \
+	if constexpr (!Instrumented) { \
+		if (nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic) { \
+			const auto assumption = *nativeState.replay->arithmetic; \
+			nativeState.replay.reset(); \
+			observeNativeArithmeticReplay(*decodedPage, (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES, \
+				assumption, left, right); \
+		} else if (decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm)) { \
+			decoded->observeNativeNumericTypes(left, right); \
+		} \
+	} \
+} while (0)
 #endif
 	for (;;) {
 		try {
@@ -2243,6 +2243,7 @@ dispatch_continue:
 
 #undef RESUME_SCALAR_FRONTIER
 #undef PUBLISH_SCALAR_FRONTIER
+#undef OBSERVE_SCALAR_ARITHMETIC
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target) {
 	if (target == 0u) target = m_rootView.address;

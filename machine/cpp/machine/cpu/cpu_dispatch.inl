@@ -263,7 +263,7 @@ DISPATCH_LABEL(ADD) {
 	const Value result = valueAdd(left, right);
 	SET_REGISTER_FAST(decoded->a, result);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	observeScalarArithmetic(left, right);
+	OBSERVE_SCALAR_ARITHMETIC(left, right);
 #endif
 	DISPATCH_NEXT();
 }
@@ -274,7 +274,7 @@ DISPATCH_LABEL(SUB) {
 	const Value result = valueSubtract(left, right);
 	SET_REGISTER_FAST(decoded->a, result);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	observeScalarArithmetic(left, right);
+	OBSERVE_SCALAR_ARITHMETIC(left, right);
 #endif
 	DISPATCH_NEXT();
 }
@@ -285,7 +285,7 @@ DISPATCH_LABEL(MUL) {
 	const Value result = valueMultiply(left, right);
 	SET_REGISTER_FAST(decoded->a, result);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	observeScalarArithmetic(left, right);
+	OBSERVE_SCALAR_ARITHMETIC(left, right);
 #endif
 	DISPATCH_NEXT();
 }
