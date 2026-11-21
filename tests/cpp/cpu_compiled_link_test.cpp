@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 
 namespace {

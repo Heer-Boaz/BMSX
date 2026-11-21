@@ -91,6 +91,7 @@ void CPU::prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage
 }
 
 void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, bool coldImage) {
+	if (coldImage && m_nativeCode.full()) return;
 	auto& page = source.page;
 	const auto& binding = source.binding;
 	const u32 pagePc = source.pagePc;
