@@ -158,7 +158,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, type CallFrame } from './call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, type CallFrame } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
@@ -4376,7 +4376,8 @@ export class CPU implements MappedPageInvalidator {
 				add(valueFromTag(image.constTags[index], image.constWords[index]));
 		}
 		add(this.stringIndexTable);
-		objects.push(this.rootThread.address, this.activeThread.address, this.completionThread);
+		objects.push(this.rootThread.address, this.activeThread.address);
+		if (this.completionThread !== 0) objects.push(this.completionThread);
 		if (this.haltedUntilIrqThread !== 0) objects.push(this.haltedUntilIrqThread);
 		for (const versions of this.staticClosuresByAddress.values())
 			for (const closure of versions) if (!this.gc.sweepGarbage(closure)) objects.push(closure);
@@ -4425,6 +4426,12 @@ export class CPU implements MappedPageInvalidator {
 					const layout = this.inspectionThreadLayout;
 					this.gc.threads.readLayout(address, layout);
 					visitThread?.(address, layout.depth);
+					for (let index = 0; index < layout.protectedDepth; ++index) {
+						const continuation = layout.protectedOffset + index * PROTECTED_CALL_BYTES;
+						const flags = this.memory.readRamRecordWord(continuation + ProtectedField.Flags);
+						if ((flags & PROTECTED_CALL_KIND_MASK) !== ProtectedCallKind.PCall && (flags & PROTECTED_CALL_HANDLER_BUILTIN) === 0)
+							objects.push(this.memory.readRamRecordWord(continuation + ProtectedField.Handler));
+					}
 					this.inspectionThreadValues.bindRam(this.memory, layout.offset, layout.capacity, false, true);
 					addSlots(this.inspectionThreadValues, layout.top);
 					for (let index = layout.depth - 1; index >= 0; --index) {

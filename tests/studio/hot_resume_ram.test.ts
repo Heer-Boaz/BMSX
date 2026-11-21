@@ -2,7 +2,8 @@ import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { asThread } from '../../machine/ts/machine/cpu/value';
+import { asThread, type Value, valueBool, valueClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK } from '../../machine/ts/machine/cpu/call_state';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
@@ -88,4 +89,34 @@ halt_until_irq
 	const before = cpu.captureRuntimeState();
 	assert.throws(() => buildHotResumeRelocation(cpu, [identityHotResumeRevision(image.image), null, null], cpu.getFrameDepth()), /inactive thread .* frame 0/);
 	assert.deepEqual(cpu.captureRuntimeState(), before);
+});
+
+test('Hot Resume retains a closure held only by the xpcall continuation', () => {
+	const image = compileFrameEvaluationTest(`
+local function run(captured)
+ return xpcall(function() halt_until_irq; error('failure') end, function() return captured end)
+end
+return run(17)
+`, 0);
+	const { cpu } = createTestSystemCpu(image);
+	cpu.installBootPrimitives();
+	assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
+	const thread = cpu.activeThread;
+	let handler = 0;
+	for (let i = 0; i < thread.protectedDepth; ++i)
+		if ((thread.protectedWord(i, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK) === ProtectedCallKind.XPCallBody)
+			handler = thread.protectedWord(i, ProtectedField.Handler);
+	assert.notEqual(handler, 0);
+	assert.equal(ClosureRecord.captureCount(cpu.memory, handler), 1);
+	for (let frame = thread.firstFrame; frame !== null; frame = frame.next)
+		for (let slot = 0; slot < frame.top; ++slot)
+			if (frame.registers.get(slot) === valueClosure(handler)) frame.registers.set(slot, valueNil());
+	const seen = new Set<number>();
+	cpu.visitReachableExecutionRecords(closure => seen.add(closure));
+	assert.ok(seen.has(handler));
+	cpu.clearHaltUntilIrq();
+	assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
+	const result: Value[] = [];
+	cpu.readCompletionValues(result);
+	assert.deepEqual(result, [valueBool(true), valueBool(false), valueInteger(17)]);
 });
