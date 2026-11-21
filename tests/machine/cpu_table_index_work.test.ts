@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
 import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { ProtectedField } from '../../machine/ts/machine/cpu/call_state';
 
 import { valueBuiltinFunction, valueBool, valueFloat, valueInteger, valueNil, valueTable, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE, MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
@@ -128,6 +129,8 @@ return true`, 0);
 			assert.equal(cpu.runUntilDepth(0, 20000), RunResult.Halted);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
+			assert.notEqual(cpu.rootThread.protectedWord(0, ProtectedField.Base), 0, 'the outer read returns into a nonzero slot');
+			assert.equal(cpu.rootThread.protectedWord(1, ProtectedField.Base), 0, 'the discard-only handler continuation has no receiving slot');
 			const completed = captureCpuCheckpoint(cpu);
 			if (replay === 0) {
 				expected = completed;

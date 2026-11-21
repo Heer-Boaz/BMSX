@@ -3621,8 +3621,10 @@ export class CPU implements MappedPageInvalidator {
 				this.charge(BUILTIN_FUNCTIONS[builtinId].cost.base);
 				if (builtinId === BuiltinFunctionId.PCall || builtinId === BuiltinFunctionId.XPCall) {
 					const word = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted);
-					this.startProtectedCall(builtinId, caller, this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0,
-						(word & CALL_RESULT_EXTEND_TOP) !== 0 ? DISCARD_CALL_RESULT : 0, argumentBase, argumentCount, true, detached);
+					const implicit = (word & CALL_RESULT_EXTEND_TOP) !== 0;
+					const base = implicit ? 0 : this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
+					this.startProtectedCall(builtinId, caller, base, implicit ? DISCARD_CALL_RESULT : 0,
+						argumentBase, argumentCount, true, detached);
 					return;
 				}
 				const builtinArgs = this.acquireRegisterBuiltinArgs();
