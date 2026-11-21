@@ -85,13 +85,17 @@ void reclaimLongByteStrings() {
 	auto& cpu = machine.cpu; auto& pool = cpu.stringPool();
 	cpu.collectHeap();
 	const auto baseline = cpu.luaHeap().usedBytes();
+	const u32 physical = cpu.heapAllocator().occupiedBytes();
 	std::string text;
 	for (int i = 0; i < 23; ++i) text += std::string("β😀A🚀\0é", 14);
 	const auto old = pool.intern(text);
-	require(cpu.luaHeap().usedBytes() == baseline + heapAllocationBytes(BLUA32_STRING_RECORD_HEADER_SIZE + text.size()), "the complete record allocation is charged");
+	const size_t bytes = BLUA32_STRING_RECORD_HEADER_SIZE + text.size();
+	require(cpu.luaHeap().usedBytes() == baseline + bytes, "logical charge includes the header and payload but not class padding");
+	require(cpu.heapAllocator().occupiedBytes() == physical + heapAllocationBytes(bytes), "physical diagnostics include padding");
 	require(pool.byteAt(old, 128) == static_cast<u8>(text[128]), "long indexes address the exact byte");
 	cpu.collectHeap();
-	require(cpu.luaHeap().usedBytes() == baseline, "GC releases the long Unicode payload");
+	require(cpu.luaHeap().usedBytes() == baseline && cpu.heapAllocator().occupiedBytes() == physical,
+		"GC releases both the logical charge and the physical record");
 	text.clear(); for (int i = 0; i < 65; ++i) text += "😀";
 	const auto id = pool.intern(text);
 	require(pool.byteAt(id, 64) == 0xf0, "subsequent allocation publishes replacement bytes");

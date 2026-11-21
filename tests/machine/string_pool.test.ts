@@ -129,13 +129,16 @@ test('reusing an unreachable deleted string-key ID cannot resurrect its old mapp
 test('long byte strings are reclaimed before an ID is reused', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
 	cpu.collectTrackedHeapBytes();
-	const baseline = cpu.luaHeap.usedBytes();
+	const baseline = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
 	const text = textToByteString('β😀A🚀\0é'.repeat(23));
 	const old = pool.intern(text);
-	assert.equal(cpu.luaHeap.usedBytes(), baseline + heapAllocationBytes(BLUA32_STRING_RECORD_HEADER_SIZE + text.length));
+	const bytes = BLUA32_STRING_RECORD_HEADER_SIZE + text.length;
+	assert.equal(cpu.luaHeap.usedBytes(), baseline + bytes);
+	assert.equal(cpu.heapAllocator.occupiedBytes(), physical + heapAllocationBytes(bytes));
 	assert.equal(pool.byteAt(old, 128), text.charCodeAt(128));
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.luaHeap.usedBytes(), baseline);
+	assert.equal(cpu.heapAllocator.occupiedBytes(), physical);
 	assert.equal(pool.find(text), undefined);
 	const id = pool.intern(textToByteString('😀'.repeat(65)));
 	assert.equal(pool.byteAt(id, 64), 0xf0);
