@@ -54,7 +54,8 @@ typedef struct BmsxCoreSession {
 	uint64_t frame_period_usec;
 	uint64_t frame_period_ns;
 	BmsxGxUploadProfileInterfaceV1 gx_upload_profile;
-	BmsxNativeCompilationProfileInterface native_compilation_profile;
+	BmsxNativeCompilationProfileInterfaceV1 native_compilation_profile_v1;
+	BmsxNativeCompilationProfileInterfaceV2 native_compilation_profile_v2;
 	BmsxExecutionProfileInterface execution_profile;
 	BmsxExecutionDomainInterfaceV1 execution_domain;
 	BmsxGuestProgressInterfaceV1 guest_progress;
@@ -62,7 +63,6 @@ typedef struct BmsxCoreSession {
 	bool accept_gx_upload_profile_interface;
 	bool gx_upload_profile_interface_set;
 	bool accept_native_compilation_profile_interface;
-	bool native_compilation_profile_interface_set;
 	bool accept_execution_profile_interface;
 	bool execution_profile_interface_set;
 	bool execution_domain_interface_set;
@@ -76,6 +76,8 @@ void core_session_open(
 		const char* core_path,
 		const char* system_directory,
 		const char* save_directory);
+void core_session_read_native_compilation_profile(
+		const BmsxCoreSession* session, BmsxNativeCompilationProfileV2* profile);
 void core_session_load_content(
 		BmsxCoreSession* session,
 		bool no_game,

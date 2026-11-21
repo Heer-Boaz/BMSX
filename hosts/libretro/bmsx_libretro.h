@@ -21,8 +21,10 @@ extern "C" {
 	(RETRO_ENVIRONMENT_PRIVATE | 0x4281u)
 #define BMSX_ENVIRONMENT_SET_INPUT_LIFECYCLE_INTERFACE_V1 \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x4291u)
-#define BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE \
+#define BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE_V1 \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x42a1u)
+#define BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE_V2 \
+	(RETRO_ENVIRONMENT_PRIVATE | 0x42a2u)
 #define BMSX_ENVIRONMENT_SET_SHUTDOWN_REASON_V1 \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x42b1u)
 #define BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE \
@@ -74,7 +76,7 @@ typedef struct BmsxGxUploadProfileInterfaceV1 {
  * their raw guest identity are lifetime maxima. Read after content load and
  * before unload. Offered by native cores
  * only; accepting the interface enables measurement for loaded runtimes. */
-typedef struct BmsxNativeCompilationProfile {
+typedef struct BmsxNativeCompilationProfileV1 {
 	uint64_t prepare_requests;
 	uint64_t regions_published;
 	uint64_t entries_published;
@@ -89,20 +91,38 @@ typedef struct BmsxNativeCompilationProfile {
 	uint64_t compilation_nanoseconds;
 	uint64_t merged_regions;
 	uint64_t merged_code_bytes;
-	uint64_t capacity_evicted_regions;
+	/* V1 builds counted either whole-cache flushes or individual evictions.
+	 * V2 always counts individual capacity-evicted regions. */
+	uint64_t capacity_events;
 	uint64_t capacity_retired_code_bytes;
 	int32_t max_prepare_domain;
 	uint32_t max_prepare_cartridge_slot;
 	uint32_t max_prepare_root_pc;
 	uint32_t max_prepare_page_pc;
-} BmsxNativeCompilationProfile;
+} BmsxNativeCompilationProfileV1;
 
-typedef void (RETRO_CALLCONV *bmsx_read_native_compilation_profile_t)(
-	BmsxNativeCompilationProfile* profile);
+typedef void (RETRO_CALLCONV *bmsx_read_native_compilation_profile_v1_t)(
+	BmsxNativeCompilationProfileV1* profile);
 
-typedef struct BmsxNativeCompilationProfileInterface {
-	bmsx_read_native_compilation_profile_t read_profile;
-} BmsxNativeCompilationProfileInterface;
+typedef struct BmsxNativeCompilationProfileInterfaceV1 {
+	bmsx_read_native_compilation_profile_v1_t read_profile;
+} BmsxNativeCompilationProfileInterfaceV1;
+
+/* Completed includes cancelled jobs. Work is accounted when the CPU collects
+ * the result; background elapsed time can overlap foreground host execution. */
+typedef struct BmsxNativeCompilationProfileV2 {
+	BmsxNativeCompilationProfileV1 counters;
+	uint64_t background_completed;
+	uint64_t background_cancelled;
+	uint64_t background_nanoseconds;
+} BmsxNativeCompilationProfileV2;
+
+typedef void (RETRO_CALLCONV *bmsx_read_native_compilation_profile_v2_t)(
+	BmsxNativeCompilationProfileV2* profile);
+
+typedef struct BmsxNativeCompilationProfileInterfaceV2 {
+	bmsx_read_native_compilation_profile_v2_t read_profile;
+} BmsxNativeCompilationProfileInterfaceV2;
 
 /* Offered only by BMSX_DIAGNOSTIC_CPU_SLICES cores. Read synchronously after
  * content load and before unload. Reading has no execution or reset effects.

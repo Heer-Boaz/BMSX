@@ -29,7 +29,7 @@ unsigned supervisorInterfaceQueries = 0u;
 bool defaultRequestLineWasLow = false;
 bool acceptPrivateInterfaces = true;
 unsigned nativeProfileOffers = 0u;
-BmsxNativeCompilationProfileInterface nativeProfile{};
+BmsxNativeCompilationProfileInterfaceV2 nativeProfile{};
 unsigned executionProfileOffers = 0u;
 BmsxExecutionProfileInterface executionProfile{};
 bool acceptXrgb8888 = true;
@@ -129,9 +129,9 @@ bool softwareFrontendEnvironment(unsigned command, void* data) {
 		if (acceptPrivateInterfaces) executionProfile = *static_cast<BmsxExecutionProfileInterface*>(data);
 		return acceptPrivateInterfaces;
 	}
-	if (command == BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE) {
+	if (command == BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE_V2) {
 		++nativeProfileOffers;
-		if (acceptPrivateInterfaces) nativeProfile = *static_cast<BmsxNativeCompilationProfileInterface*>(data);
+		if (acceptPrivateInterfaces) nativeProfile = *static_cast<BmsxNativeCompilationProfileInterfaceV2*>(data);
 		return acceptPrivateInterfaces;
 	}
 	if (command == RETRO_ENVIRONMENT_SET_PIXEL_FORMAT) {
@@ -352,9 +352,11 @@ int main() {
 		"the core should load both physical cartridge sockets through the libretro subsystem");
 	require(pixelFormatRequests == 1u, "content load should negotiate the XRGB8888 framebuffer contract once");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	BmsxNativeCompilationProfile initialNativeProfile{};
+	BmsxNativeCompilationProfileV2 initialNativeProfile{};
 	nativeProfile.read_profile(&initialNativeProfile);
-	require(initialNativeProfile.prepare_requests == 0u && initialNativeProfile.prepare_nanoseconds == 0u,
+	require(initialNativeProfile.counters.prepare_requests == 0u && initialNativeProfile.counters.prepare_nanoseconds == 0u
+		&& initialNativeProfile.background_completed == 0u && initialNativeProfile.background_cancelled == 0u
+		&& initialNativeProfile.background_nanoseconds == 0u,
 		"accepted native profile reads the loaded CPU before guest execution");
 #endif
 	std::vector<bmsx::u8> cartridgeState(retro_serialize_size());
@@ -429,11 +431,11 @@ int main() {
 		"a nonallocating boot HALT does not fabricate a guest collection");
 #endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	BmsxNativeCompilationProfile runningNativeProfile{};
+	BmsxNativeCompilationProfileV2 runningNativeProfile{};
 	nativeProfile.read_profile(&runningNativeProfile);
-	require(runningNativeProfile.prepare_nanoseconds == runningNativeProfile.discovery_nanoseconds
-		+ runningNativeProfile.retirement_nanoseconds + runningNativeProfile.compilation_nanoseconds
-		&& runningNativeProfile.peak_code_bytes >= runningNativeProfile.code_bytes,
+	require(runningNativeProfile.counters.prepare_nanoseconds == runningNativeProfile.counters.discovery_nanoseconds
+		+ runningNativeProfile.counters.retirement_nanoseconds + runningNativeProfile.counters.compilation_nanoseconds
+		&& runningNativeProfile.counters.peak_code_bytes >= runningNativeProfile.counters.code_bytes,
 		"private profile readout preserves the owning CPU phase totals and absolute cache gauges");
 #endif
 

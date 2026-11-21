@@ -11,6 +11,9 @@ static uint64_t frames;
 static bool run_timestamps;
 static const char* guest_timing;
 static BmsxGuestProgressV1 guest_progress;
+static bool content_loaded;
+static unsigned execution_reads;
+static unsigned native_reads;
 
 static void RETRO_CALLCONV read_guest_progress(BmsxGuestProgressV1* output) { *output = guest_progress; }
 static int32_t RETRO_CALLCONV read_execution_domain(void) { return frames >= 2u ? 0 : -1; }
@@ -27,6 +30,8 @@ static void RETRO_CALLCONV read_stale_profile(void* output) {
 }
 
 static void RETRO_CALLCONV read_current_profile(BmsxExecutionProfile* output) {
+	if (!content_loaded) _exit(99);
+	++execution_reads;
 	*output = (BmsxExecutionProfile){
 		.scheduler_now_cycles = (int64_t)frames * 100,
 		.cpu_slice_count = frames,
@@ -45,6 +50,22 @@ static void RETRO_CALLCONV read_current_profile(BmsxExecutionProfile* output) {
 		.interpreter_newt_count = frames, .interpreter_call_count = frames,
 		.interpreter_setfield_count = frames, .interpreter_concat_count = frames, .interpreter_concatn_count = frames,
 	};
+}
+
+static void RETRO_CALLCONV read_native_v1(BmsxNativeCompilationProfileV1* output) {
+	if (!content_loaded) _exit(99);
+	++native_reads;
+	*output = (BmsxNativeCompilationProfileV1){
+		.prepare_requests = 30u + frames * 4u,
+		.capacity_events = 20u + frames * 2u,
+	};
+}
+
+static void RETRO_CALLCONV read_native_v2(BmsxNativeCompilationProfileV2* output) {
+	read_native_v1(&output->counters);
+	output->background_completed = 10u + frames * 3u;
+	output->background_cancelled = 2u + frames;
+	output->background_nanoseconds = 5000u + frames * 1234u;
 }
 
 void retro_set_environment(retro_environment_t callback) { environment = callback; }
@@ -76,6 +97,15 @@ void retro_init(void) {
 	} else if (profile && strcmp(profile, "current") == 0) {
 		BmsxExecutionProfileInterface interface = {read_current_profile};
 		environment(BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE, &interface);
+	}
+	const char* native_profile = getenv("BMSX_TEST_NATIVE_COMPILATION_PROFILE");
+	if (native_profile && strcmp(native_profile, "v2") != 0) {
+		BmsxNativeCompilationProfileInterfaceV1 interface = {read_native_v1};
+		environment(BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE_V1, &interface);
+	}
+	if (native_profile && strcmp(native_profile, "v1") != 0) {
+		BmsxNativeCompilationProfileInterfaceV2 interface = {read_native_v2};
+		environment(BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE_V2, &interface);
 	}
 }
 void retro_deinit(void) { if (write(STDOUT_FILENO, "D", 1) != 1) _exit(1); }
@@ -130,11 +160,15 @@ void retro_run(void) {
 			(unsigned long long)end.tv_sec * 1000000000u + end.tv_nsec);
 	}
 }
-bool retro_load_game(const struct retro_game_info* info) { (void)info; return true; }
+bool retro_load_game(const struct retro_game_info* info) { (void)info; content_loaded = true; return true; }
 bool retro_load_game_special(unsigned type, const struct retro_game_info* info, size_t count) {
-	(void)type; (void)info; (void)count; return true;
+	(void)type; (void)info; (void)count; content_loaded = true; return true;
 }
-void retro_unload_game(void) {}
+void retro_unload_game(void) {
+	content_loaded = false;
+	if (execution_reads != 0u || native_reads != 0u)
+		fprintf(stderr, "[signal-core][profile-reads] execution=%u native=%u\n", execution_reads, native_reads);
+}
 unsigned retro_get_region(void) { return RETRO_REGION_NTSC; }
 size_t retro_serialize_size(void) { return 0; }
 bool retro_serialize(void* data, size_t size) { (void)data; (void)size; return false; }

@@ -405,7 +405,9 @@ int main(int argc, char** argv) {
 	input_devices_open(input_driver, !hidden_window, video_surface);
 
 	core->retro_init();
-	if (profile_native_compilation && !session.native_compilation_profile_interface_set)
+	const unsigned native_profile_version = session.native_compilation_profile_v2.read_profile ? 2u
+		: session.native_compilation_profile_v1.read_profile ? 1u : 0u;
+	if (profile_native_compilation && native_profile_version == 0u)
 		host_fatal("--profile-native-compilation requires a native compilation profile interface");
 	if (profile_execution && !session.execution_profile_interface_set)
 		host_fatal("--profile-execution requires current execution profile interface from a diagnostic core");
@@ -467,6 +469,7 @@ int main(int argc, char** argv) {
 			monotonic_ns(),
 			session.frame_period_ns);
 	bool runloop_quit_requested = false;
+	BmsxExecutionProfile execution_start, execution_end;
 
 	while (!g_signal_quit_requested &&
 			!session.shutdown_requested &&
@@ -500,12 +503,14 @@ int main(int argc, char** argv) {
 		input_timeline_dispatch_before_run();
 		if (use_control) host_control_poll();
 		video_presenter_begin_frame(drop_video);
-		BmsxNativeCompilationProfile native_before;
+		BmsxNativeCompilationProfileV2 native_before;
 		if (profile_native_compilation && frame_timing.record_frame)
-			session.native_compilation_profile.read_profile(&native_before);
+			core_session_read_native_compilation_profile(&session, &native_before);
 		BmsxExecutionProfile execution_before;
-		if (profile_execution && frame_timing.record_frame)
+		if (profile_execution && frame_timing.record_frame) {
 			session.execution_profile.read_profile(&execution_before);
+			if (frame_timing.report.retro_run.count == 0u) execution_start = execution_before;
+		}
 		BmsxGuestProgressInterval guest;
 		if (session.single_guest_tick) session.guest_progress.read_progress(&guest.before);
 		// CPU clocks sample the same run/presentation boundary. Read them outside
@@ -550,20 +555,19 @@ int main(int argc, char** argv) {
 					current_gx_upload = &gx_upload_frame;
 				}
 			}
-			BmsxNativeCompilationProfile native_interval;
-			const BmsxNativeCompilationProfile* current_native = NULL;
+			BmsxNativeCompilationProfileV2 native_interval;
+			const BmsxNativeCompilationProfileV2* current_native = NULL;
 			if (profile_native_compilation) {
-				BmsxNativeCompilationProfile native_after;
-				session.native_compilation_profile.read_profile(&native_after);
+				BmsxNativeCompilationProfileV2 native_after;
+				core_session_read_native_compilation_profile(&session, &native_after);
 				native_interval = bmsx_native_compilation_profile_delta(&native_before, &native_after);
 				current_native = &native_interval;
 			}
 			BmsxExecutionProfileInterval execution_interval;
 			const BmsxExecutionProfileInterval* current_execution = NULL;
 			if (profile_execution) {
-				BmsxExecutionProfile execution_after;
-				session.execution_profile.read_profile(&execution_after);
-				execution_interval = bmsx_execution_profile_delta(&execution_before, &execution_after);
+				session.execution_profile.read_profile(&execution_end);
+				execution_interval = bmsx_execution_profile_delta(&execution_before, &execution_end);
 				current_execution = &execution_interval;
 			}
 			const uint64_t run_ns = run_end_ns - run_start_ns;
@@ -617,8 +621,17 @@ int main(int argc, char** argv) {
 		bmsx_frame_timing_print(
 				&frame_timing.report,
 				frame_timing.warmup_frames,
-				profile_gx_upload);
+				profile_gx_upload,
+				native_profile_version);
 		if (frame_timing.report.retro_run.count != 0u) {
+			if (profile_execution) {
+				const BmsxExecutionProfileInterval execution =
+					bmsx_execution_profile_delta(&execution_start, &execution_end);
+				fprintf(stderr, "[libretro-host][execution] frames=%llu",
+					(unsigned long long)frame_timing.report.retro_run.count);
+				bmsx_execution_profile_print(stderr, &execution);
+				fputc('\n', stderr);
+			}
 			fprintf(stderr, "[libretro-host][timing] audio_alsa_underruns=%u before_timing=%u\n",
 				alsa_underruns_at_timing_end - alsa_underruns_at_timing_start,
 				alsa_underruns_at_timing_start);

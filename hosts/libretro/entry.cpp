@@ -115,15 +115,18 @@ static std::unique_ptr<bmsx::LibretroContent> g_content;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 static bool g_profile_native_compilation = false;
 
-static void RETRO_CALLCONV read_native_compilation_profile(BmsxNativeCompilationProfile* output) {
+static void RETRO_CALLCONV read_native_compilation_profile(BmsxNativeCompilationProfileV2* output) {
 	const auto profile = g_content->runtime.machine.cpu.readNativeCompilationProfile();
 	*output = {
-		profile.prepareRequests, profile.regionsPublished, profile.entriesPublished,
-		profile.sourceInstructions, profile.emittedCodeBytes, profile.codeBytes, profile.peakCodeBytes,
-		profile.prepareNanoseconds, profile.maxPrepareNanoseconds, profile.discoveryNanoseconds,
-		profile.retirementNanoseconds, profile.compilationNanoseconds, profile.mergedRegions,
-		profile.mergedCodeBytes, profile.capacityEvictedRegions, profile.capacityRetiredCodeBytes,
-		profile.maxPrepareDomain, profile.maxPrepareCartridgeSlot, profile.maxPrepareRootPc, profile.maxPreparePagePc,
+		{
+			profile.prepareRequests, profile.regionsPublished, profile.entriesPublished,
+			profile.sourceInstructions, profile.emittedCodeBytes, profile.codeBytes, profile.peakCodeBytes,
+			profile.prepareNanoseconds, profile.maxPrepareNanoseconds, profile.discoveryNanoseconds,
+			profile.retirementNanoseconds, profile.compilationNanoseconds, profile.mergedRegions,
+			profile.mergedCodeBytes, profile.capacityEvictedRegions, profile.capacityRetiredCodeBytes,
+			profile.maxPrepareDomain, profile.maxPrepareCartridgeSlot, profile.maxPrepareRootPc, profile.maxPreparePagePc,
+		},
+		profile.backgroundCompleted, profile.backgroundCancelled, profile.backgroundNanoseconds,
 	};
 }
 #endif
@@ -1304,8 +1307,8 @@ void retro_init(void) {
 	g_single_guest_tick = false;
 	environ_cb(BMSX_ENVIRONMENT_GET_SINGLE_GUEST_TICK_V1, &g_single_guest_tick);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	BmsxNativeCompilationProfileInterface nativeCompilationProfile{read_native_compilation_profile};
-	g_profile_native_compilation = environ_cb(BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE,
+	BmsxNativeCompilationProfileInterfaceV2 nativeCompilationProfile{read_native_compilation_profile};
+	g_profile_native_compilation = environ_cb(BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE_V2,
 		&nativeCompilationProfile);
 #endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)

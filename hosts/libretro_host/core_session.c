@@ -187,6 +187,20 @@ void core_session_close(BmsxCoreSession* session) {
 	g_active_session = NULL;
 }
 
+void core_session_read_native_compilation_profile(
+		const BmsxCoreSession* session, BmsxNativeCompilationProfileV2* profile) {
+	if (session->native_compilation_profile_v2.read_profile) {
+		session->native_compilation_profile_v2.read_profile(profile);
+	} else {
+		/* Only the historical layout crosses this callback. Its caller reports
+		 * V1 distinctly and never prints the absent worker fields. */
+		profile->background_completed = 0;
+		profile->background_cancelled = 0;
+		profile->background_nanoseconds = 0;
+		session->native_compilation_profile_v1.read_profile(&profile->counters);
+	}
+}
+
 bool core_session_environment(unsigned command, void* data) {
 	BmsxCoreSession* session = g_active_session;
 	switch (command) {
@@ -219,10 +233,13 @@ bool core_session_environment(unsigned command, void* data) {
 					*(const BmsxGxUploadProfileInterfaceV1*)data;
 			session->gx_upload_profile_interface_set = true;
 			return true;
-		case BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE:
+		case BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE_V1:
 			if (!session->accept_native_compilation_profile_interface) return false;
-			session->native_compilation_profile = *(const BmsxNativeCompilationProfileInterface*)data;
-			session->native_compilation_profile_interface_set = true;
+			session->native_compilation_profile_v1 = *(const BmsxNativeCompilationProfileInterfaceV1*)data;
+			return true;
+		case BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE_V2:
+			if (!session->accept_native_compilation_profile_interface) return false;
+			session->native_compilation_profile_v2 = *(const BmsxNativeCompilationProfileInterfaceV2*)data;
 			return true;
 		case BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE:
 			if (!session->accept_execution_profile_interface) return false;

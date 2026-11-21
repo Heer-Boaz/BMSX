@@ -38,7 +38,7 @@ typedef struct BmsxSlowFrameSample {
 	bool has_gx_upload;
 	BmsxGxUploadProfileFrameV1 gx_upload;
 	bool has_native_compilation;
-	BmsxNativeCompilationProfile native_compilation;
+	BmsxNativeCompilationProfileV2 native_compilation;
 	bool has_execution;
 	BmsxExecutionProfileInterval execution;
 } BmsxSlowFrameSample;
@@ -69,7 +69,7 @@ typedef struct BmsxFrameTimingReport {
 	uint64_t guest_process_cpu_ns;
 	uint64_t gx_profiled_frames;
 	uint64_t native_profiled_frames;
-	BmsxNativeCompilationProfile native_compilation;
+	BmsxNativeCompilationProfileV2 native_compilation;
 	uint64_t gx_cpu_to_vram_commands;
 	uint64_t gx_logical_bytes;
 	uint64_t gx_host_calls;
@@ -109,7 +109,7 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		bool dropped,
 		bool presented,
 		const BmsxGxUploadProfileFrameV1* gx_upload,
-		const BmsxNativeCompilationProfile* native_compilation,
+		const BmsxNativeCompilationProfileV2* native_compilation,
 		const BmsxExecutionProfileInterval* execution,
 		uint64_t host_main_thread_cpu_ns,
 		uint64_t host_process_cpu_ns,
@@ -121,4 +121,5 @@ uint64_t bmsx_frame_timing_percentile_ms(const BmsxFrameTimingHistogram* histogr
 void bmsx_frame_timing_print(
 	const BmsxFrameTimingReport* report,
 	uint64_t warmup_frames,
-	bool include_gx_upload);
+	bool include_gx_upload,
+		unsigned native_profile_version);

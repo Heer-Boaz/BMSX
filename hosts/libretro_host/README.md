@@ -165,10 +165,15 @@ Options:
   core. Adds compilation deltas to the existing slow-frame records and prints
   cumulative measured-window totals at shutdown. Discovery includes decoding
   and region planning; retirement covers capacity evictions and interior-entry
-  merges; compilation includes descriptor allocation, register analysis, SLJIT
-  generation and publication. Timers run only at those cold owner boundaries,
-  not for guest instructions or warm native entries. Profile runs are separate
-  from unprofiled throughput comparisons.
+  merges; compilation covers foreground compile and publication work. Native
+  profile V2 separately reports collected background jobs
+  (`background_completed`, including `background_cancelled`) and their elapsed
+  generation time (`background_ns`). A job is charged when its result is
+  collected, not divided across the calls it overlapped; this duration is not
+  host CPU time and must not be added to foreground or frame times.
+  Timers run only at cold owner boundaries, not for guest instructions or warm
+  native entries. Profile runs are separate from unprofiled throughput
+  comparisons.
   Counts, emitted bytes and times cover measured `retro_run` calls only.
   Source-instruction, entry and emitted-byte totals count compilation work,
   including repeated or merged source; they are not unique guest instructions,
@@ -180,6 +185,12 @@ Options:
   host-only counters; loading another runtime starts a new lifetime. Cache
   bytes exclude metadata and allocator reservation. A merge is not a capacity
   eviction, and repeated publications alone do not prove cache churn.
+  The host reports the negotiated `profile_version`. New cores offer the V2
+  command only; the host can read the historical V1 command to measure an
+  unchanged baseline. V1 logs no worker fields. Its `capacity_events_v1` is
+  build-specific: older cores counted whole-cache flushes, and later V1 cores
+  counted per-region evictions. Do not compare that field to V2's
+  `capacity_evicted_regions`.
 - `--timing-warmup <count>`: excludes the first `<count>` host runs from timing
   reports (default: 500; must be positive). With `--guest-ticks`, the count
   excludes that many scripted guest ticks, in addition to boot. Histograms
@@ -189,9 +200,11 @@ Options:
   `BMSX_DIAGNOSTIC_CPU_SLICES=ON`; a core without this private diagnostic
   interface is rejected instead of silently omitting attribution. Works with
   interpreter and native cores. Adds execution counters to the same retained
-  32 slow-frame records; no per-frame log output or growing trace is produced.
-  Two fixed snapshots bracket each measured host call, outside its elapsed-time
-  clocks, just like native compilation profiling. `scheduler_before_cycles`
+  32 slow-frame records and reports a separate `[execution]` summary from the
+  first pre-call snapshot to the last post-call snapshot, including every
+  measured call, not just the slowest 32. No per-frame log output or growing
+  trace is produced. The same two fixed snapshots bracket each measured host
+  call outside its elapsed-time clocks. `scheduler_before_cycles`
   and `scheduler_after_cycles` are raw signed machine positions: reset and
   state restore can move them backwards. They are not clamped or relabelled as
   elapsed time. Without a reset/restore inside the call, their difference less
