@@ -1,4 +1,4 @@
-import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { heapAllocationBytes } from './heap_allocator';
 import { GC_RECORD_LINK } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
@@ -6,6 +6,7 @@ import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASO
 import { LuaExecutionError } from './errors';
 import type { GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
+import type { Thread } from './thread';
 import {
 	ValueTag, asInteger, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
 	valueIsNaN, valueNil, valuePayload, valueString, valueTable, valueTag, valueTagHasGcEdge, type Value,
@@ -87,6 +88,14 @@ export class TableRecords {
 	private wordAt(record: number, slot: number): number { return this.heap.memory.readRamRecordWord(this.storageAddress(record) + slot * 4); }
 	private tagAt(record: number, slot: number): ValueTag { return this.heap.memory.readRamRecordByte(this.tags(record) + slot); }
 	private valueAt(record: number, slot: number): Value { return valueFromTag(this.tagAt(record, slot), this.wordAt(record, slot)); }
+	private headerIsDisjoint(record: number, stack: Thread): boolean {
+		const start = record & RAM_RECORD_WORD_MASK;
+		return start <= MAIN_RAM_SIZE - TableRecords.HEADER_BYTES && !stack.overlapsStack(start, TableRecords.HEADER_BYTES);
+	}
+	private slotIsDisjoint(words: number, tags: number, slot: number, stack: Thread): boolean {
+		return !stack.overlapsStack((words + slot * 4) & RAM_RECORD_WORD_MASK, 4)
+			&& !stack.overlapsStack((tags + slot) & (MAIN_RAM_SIZE - 1), 1);
+	}
 	private setEncoded(record: number, slot: number, tag: ValueTag, word: number): void {
 		const words = this.storageAddress(record), tags = words + (this.arrayCapacity(record) + 3 * this.hashSize(record)) * 4;
 		this.writeSlot(words, tags, slot, tag, word);
@@ -177,21 +186,29 @@ export class TableRecords {
 		const value = this.getInteger(record, index);
 		target.setEncoded(destination, valueTag(value), valuePayload(value));
 	}
-	public loadIntegerArrayKey(record: number, index: number, target: ValueWriteTarget, destination: number): boolean {
+	public loadIntegerArrayKey(record: number, index: number, target: ValueWriteTarget, destination: number, stack?: Thread): boolean {
+		if (stack !== undefined && !this.headerIsDisjoint(record, stack)) return false;
 		const slot = this.integerArrayIndex(index), array = this.arrayCapacity(record);
 		if (slot < 0 || slot >= array) return false;
 		const memory = this.heap.memory, words = this.storageAddress(record);
 		const tags = words + (array + 3 * this.hashSize(record)) * 4;
+		if (stack !== undefined && !this.slotIsDisjoint(words, tags, slot, stack)) return false;
 		const tag = memory.readRamRecordByte(tags + slot);
 		if (tag === ValueTag.Nil && this.metatableAddress(record) !== 0) return false;
 		target.setEncoded(destination, tag, memory.readRamRecordWord(words + slot * 4)); return true;
 	}
-	public storeIntegerArrayKey(record: number, index: number, tag: ValueTag, word: number, newIndexKey: StringId): boolean {
-		const slot = this.integerArrayIndex(index);
-		if (slot < 0 || slot >= this.arrayCapacity(record)) return false;
-		if (this.tagAt(record, slot) === ValueTag.Nil && !isNil(this.metafield(record, newIndexKey))) return false;
+	public storeIntegerArrayKey(record: number, index: number, tag: ValueTag, word: number, newIndexKey: StringId, stack?: Thread): boolean {
+		if (stack !== undefined && !this.headerIsDisjoint(record, stack)) return false;
+		const slot = this.integerArrayIndex(index), array = this.arrayCapacity(record);
+		if (slot < 0 || slot >= array) return false;
+		const words = this.storageAddress(record), tags = words + (array + 3 * this.hashSize(record)) * 4;
+		if (stack !== undefined && !this.storeIsAdmitted(record, words, tags, slot, stack)) return false;
+		if (this.heap.memory.readRamRecordByte(tags + slot) === ValueTag.Nil
+			&& (stack !== undefined ? this.metatableAddress(record) !== 0 : !isNil(this.metafield(record, newIndexKey)))) return false;
 		this.heap.writeValueBarrier(record, GC_RECORD_LINK, tag);
-		this.setEncoded(record, slot, tag, word); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return true;
+		this.writeSlot(words, tags, slot, tag, word);
+		this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
+		return true;
 	}
 	public setInteger(record: number, index: number, value: Value): void { this.set(record, valueInteger(index), value); }
 	public storeInteger(record: number, index: number, tag: ValueTag, word: number): void { this.set(record, valueInteger(index), valueFromTag(tag, word)); }
@@ -224,13 +241,17 @@ export class TableRecords {
 		return memory.readRamRecordByte(tags + keySlot) === ValueTag.String
 			&& memory.readRamRecordWord(words + keySlot * 4) === key ? keySlot + hash : -1;
 	}
-	public loadPredictedStringKey(record: number, key: StringId, predicted: number, target: ValueWriteTarget, destination: number): boolean {
+	public loadPredictedStringKey(record: number, key: StringId, predicted: number, target: ValueWriteTarget, destination: number, stack?: Thread): boolean {
+		if (predicted < 0 || (stack !== undefined && !this.headerIsDisjoint(record, stack))) return false;
 		const hash = this.hashSize(record);
-		if (predicted < 0 || predicted >= hash) return false;
+		if (predicted >= hash) return false;
 		const array = this.arrayCapacity(record), words = this.storageAddress(record);
 		const tags = words + (array + 3 * hash) * 4;
-		const slot = this.predictedStringValueSlot(key, array + predicted, hash, words, tags);
+		const keySlot = array + predicted;
+		if (stack !== undefined && !this.slotIsDisjoint(words, tags, keySlot, stack)) return false;
+		const slot = this.predictedStringValueSlot(key, keySlot, hash, words, tags);
 		if (slot < 0) return false;
+		if (stack !== undefined && !this.slotIsDisjoint(words, tags, slot, stack)) return false;
 		const memory = this.heap.memory, tag = memory.readRamRecordByte(tags + slot);
 		if (tag === ValueTag.Nil) return false;
 		target.setEncoded(destination, tag, memory.readRamRecordWord(words + slot * 4));
@@ -434,12 +455,21 @@ export class TableRecords {
 		this.heap.writeBarrier(record, GC_RECORD_LINK);
 		return inserted;
 	}
-	public storePredictedStringKey(record: number, key: StringId, predicted: number, tag: ValueTag, word: number): boolean {
-		if (tag === ValueTag.Nil || predicted < 0) return false;
+	private storeIsAdmitted(record: number, words: number, tags: number, slot: number, stack: Thread): boolean {
+		const word = (words + slot * 4) & RAM_RECORD_WORD_MASK, tag = (tags + slot) & (MAIN_RAM_SIZE - 1);
+		if (stack.overlapsStack(word, 4) || stack.overlapsStack(tag, 1)) return false;
+		const watches = this.heap.memory.ramWriteWatches();
+		return !watches.anyWatched(record & RAM_RECORD_WORD_MASK, TableRecords.HEADER_BYTES)
+			&& !watches.anyWatched(word, 4) && !watches.anyWatched(tag, 1);
+	}
+	public storePredictedStringKey(record: number, key: StringId, predicted: number, tag: ValueTag, word: number, stack?: Thread): boolean {
+		if (tag === ValueTag.Nil || predicted < 0 || (stack !== undefined && !this.headerIsDisjoint(record, stack))) return false;
 		const hash = this.hashSize(record);
 		if (predicted >= hash) return false;
 		const memory = this.heap.memory, array = this.arrayCapacity(record), words = this.storageAddress(record);
 		const tags = words + (array + 3 * hash) * 4, keySlot = array + predicted, valueSlot = keySlot + hash;
+		if (stack !== undefined && (!this.slotIsDisjoint(words, tags, keySlot, stack)
+			|| !this.storeIsAdmitted(record, words, tags, valueSlot, stack))) return false;
 		if (memory.readRamRecordByte(tags + keySlot) !== ValueTag.String || memory.readRamRecordWord(words + keySlot * 4) !== key
 			|| memory.readRamRecordByte(tags + valueSlot) === ValueTag.Nil) return false;
 		this.heap.writeValueBarrier(record, GC_RECORD_LINK, tag);

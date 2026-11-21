@@ -71,9 +71,8 @@ for (const [op, exit] of [
 
 function compiledBlockExitResumesFrame(exit: CompiledBlockExit): boolean {
 	switch (exit) {
-		case CompiledBlockExit.ReadField: case CompiledBlockExit.WriteField:
-		case CompiledBlockExit.ReadIndex: case CompiledBlockExit.WriteIndex:
-		case CompiledBlockExit.ReadInteger: case CompiledBlockExit.WriteInteger: case CompiledBlockExit.Length:
+		case CompiledBlockExit.ReadField: case CompiledBlockExit.ReadIndex:
+		case CompiledBlockExit.ReadInteger: case CompiledBlockExit.Length:
 		case CompiledBlockExit.WriteUpvalue: case CompiledBlockExit.Vararg:
 		case CompiledBlockExit.AllocateTable: case CompiledBlockExit.Concat: case CompiledBlockExit.ConcatRange:
 			return true;

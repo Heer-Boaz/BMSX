@@ -7,7 +7,6 @@ import { ValueSlots } from './value_slots';
 import type { CallFrame } from './call_state';
 import { Memory } from '../memory/memory';
 import type { StringId, StringPool } from './string_pool';
-import { isNil } from './value';
 import type { Blua32ExecutionImage, DecodedInstructionPage } from './execution_image';
 import { planRegionRegisters } from './compiled_register_plan';
 import { CompiledExitWriteBacks } from './compiled_block_registers';
@@ -27,7 +26,7 @@ function aliasGeneratedMethods(prototype: object, aliases: Readonly<Record<strin
 }
 aliasGeneratedMethods(ValueSlots.prototype, { t: 'getTag', p: 'getPayload', s: 'setEncoded' });
 aliasGeneratedMethods(TableRecords.prototype, { li: 'loadIntegerArrayKey', si: 'storeIntegerArrayKey',
-	lp: 'loadPredictedStringKey', sp: 'storePredictedStringKey', sg: 'storeStringKeyWithoutGrowth', mf: 'metafield' });
+	lp: 'loadPredictedStringKey', sp: 'storePredictedStringKey' });
 aliasGeneratedMethods(Memory.prototype, { rb: 'readRamRecordByte', rd: 'readRamRecordWord',
 	wb: 'writeRamRecordByte', wd: 'writeRamRecordWord' });
 
@@ -44,7 +43,7 @@ export class CompiledRegion {
 
 export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: readonly CompiledBlockSource[],
 	image: Blua32ExecutionImage, memory: Memory, strings: StringPool, globalSlots: ValueSlots,
-	systemGlobalSlots: ValueSlots, cop0Words: Uint32Array, heap: GcHeap, newIndexKey: StringId, lengthKey: StringId): CompiledRegion {
+	systemGlobalSlots: ValueSlots, cop0Words: Uint32Array, heap: GcHeap, newIndexKey: StringId): CompiledRegion {
 	const exits: CompiledBlockExitSite[] = [];
 	const registers = planRegionRegisters(page, plans), residents = registers.map(plan => plan.entry);
 	const blocks: ReturnType<typeof emitJavaScriptBlock>[] = [];
@@ -125,12 +124,12 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 	const functionSource = source.join('\n').replace(/\n\s+/g, '\n');
 	const cartridges = memory.cartridgeController;
 	const execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'q', 'kt', 'gl', 'sy',
-		'bf', 'fb', 'fr', 'fi', 'fw', 'imod', 'idiv', 'fmod', 'fdiv', 'shl', 'shr', 'pow', 'cp', 'h', 'x', 'tb', 'ts', 'tn', 'nk', 'lk', functionSource)(
+		'bf', 'fb', 'fr', 'fi', 'fw', 'imod', 'idiv', 'fmod', 'fdiv', 'shl', 'shr', 'pow', 'cp', 'h', 'x', 'tb', 'ts', 'nk', functionSource)(
 		memory.ramView, memory.ramWriteWatches().groupData(), memory.systemRomStorage(), cartridges,
 		cartridges.romStorage(0), cartridges.romStorage(1), strings, image.constTags, globalSlots, systemGlobalSlots,
 		f32BitsToNumber, numberToF32Bits, luaFloatResultBits, luaFloatToInteger, luaFloatToWord,
 		luaIntegerModulo, luaIntegerFloorDivide, luaFloatModuloBits, luaFloatFloorDivideBits,
-		luaShiftLeft, luaShiftRight, luaPow, cop0Words, heap, exits, heap.tables, page.tableCacheSlots, isNil, newIndexKey, lengthKey) as RegionBody;
+		luaShiftLeft, luaShiftRight, luaPow, cop0Words, heap, exits, heap.tables, page.tableCacheSlots, newIndexKey) as RegionBody;
 	const region = new CompiledRegion(execute, exits, functionSource.length);
 	for (let entry = 0; entry < blocks.length; ++entry) {
 		const block = blocks[entry];

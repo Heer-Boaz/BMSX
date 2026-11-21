@@ -7,11 +7,11 @@ import { captureCpuCheckpoint, restoreCpuCheckpoint, runCpuParity } from '../hel
 import { isDeepStrictEqual } from 'node:util';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { ValueTag, valueBool, valueFloat, valueFloatBits, valueFromTag, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
-import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
+import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_METATABLE_LOOP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode, TABLE_LENGTH_PROBE_CYCLES } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32, RAM_CODE_FIXTURE_BYTES } from '../helpers/blua32';
 
 test('an installed region reads the current LOADK, LOADKR and RK tags and words', () => {
@@ -52,6 +52,53 @@ test('an installed region reads the current LOADK, LOADKR and RK tags and words'
 		}
 		assert.equal(frames[0].decodedPage!.compiledBlocks!.entries[word], compiled);
 	}
+});
+
+for (const [op, name] of [[OpCode.GETFIELD, 'GETFIELD'], [OpCode.LEN, 'LEN']] as const) test(`compiled WIDE ${name} observes a dirty physical register word or tag`, () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.K1, 2, 0, 0);
+	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 2, op, 3, 0, 0);
+	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
+	const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [{ firstWord: 0, wordCount: 4, maxStack: 8 }] });
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const entry = image.image.functions[0].codeAddress;
+	for (const { cpu, memory } of [js, ref]) {
+		const frame = cpu.rootThread.currentFrame!, r = frame.registers;
+		const table = cpu.createTable(op === OpCode.LEN ? 1 : 0, op === OpCode.LEN ? 0 : 1), key = cpu.stringPool.intern('field');
+		r.setTable(0, table);
+		if (op === OpCode.LEN) cpu.gc.tables.setInteger(table, 1, valueInteger(41));
+		else cpu.gc.tables.setStringKey(table, key, valueInteger(41));
+		cpu.runUntilDepth(0, 2048);
+		const stack = frame.thread.stackRegisters;
+		const tagBase = stack.ramOffset() + 4 * stack.capacity() + frame.stackBase;
+		const storage = op === OpCode.LEN ? tagBase + 2 - 4 : r.ramOffset() + 4;
+		// The single array tag or hash value word lands on register 2.
+		// The raw backing uses the physical RAM mirror.
+		memory.writeRamRecordWord(table + TableHeader.Storage, storage + MAIN_RAM_SIZE);
+		if (op === OpCode.GETFIELD) {
+			memory.writeRamRecordWord(storage, key);
+			memory.writeRamRecordByte(storage + 12, ValueTag.String);
+			memory.writeRamRecordByte(storage + 13, ValueTag.Integer);
+		}
+	}
+	const frame = js.cpu.rootThread.currentFrame!;
+	const block = frame.decodedPage!.compiledBlocks!.entries[(entry & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]!;
+	const fixed = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[op];
+	const grant = fixed + 1;
+	assert.ok(block && block.admissionCycles < grant, 'the alias is checked in an admitted generated body');
+	for (const { cpu } of [js, ref]) {
+		const registers = cpu.rootThread.currentFrame!.registers;
+		registers.set(2, op === OpCode.LEN ? valueNil() : valueInteger(73)); registers.setInteger(3, -1);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+	}
+	runCpuParity(js.cpu, ref.cpu, grant);
+	assert.ok(isDeepStrictEqual(js.cpu.captureRuntimeState(), ref.cpu.captureRuntimeState()));
+	assert.equal(frame.registers.getInteger(2), 1);
+	assert.equal(frame.registers.getInteger(3), 1, 'the read sees K1, not the stale physical lane at block entry');
+	assert.equal(js.cpu.lastPc, entry + (op === OpCode.LEN ? 2 : 3) * INSTRUCTION_BYTES);
+	assert.equal(frame.pc, op === OpCode.LEN ? entry + 3 * INSTRUCTION_BYTES : entry);
+	assert.equal(js.cpu.instructionBudgetRemaining, 1 - (op === OpCode.LEN ? 2 * TABLE_LENGTH_PROBE_CYCLES : BASE_CYCLES[OpCode.JMP]));
 });
 
 test('only positive integer keys enter the array even with a raw high-bit capacity', () => {

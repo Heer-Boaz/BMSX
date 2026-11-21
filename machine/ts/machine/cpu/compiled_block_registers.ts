@@ -127,6 +127,12 @@ export class JavaScriptRegisterCache {
 			source += `r.s(${register},${local.tag},${local.word});`;
 		return source + (includeResidents ? this.writeResidents() : '');
 	}
+	public hasPendingWrites(): boolean {
+		for (const register of this.locals.keys()) if (!this.published.has(register)) return true;
+		for (const [register, written] of this.residents)
+			if (written && !this.published.has(register)) return true;
+		return false;
+	}
 	public publishRange(first: number, end: number): string {
 		let source = '';
 		for (const [register, local] of this.locals) {

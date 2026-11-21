@@ -2491,7 +2491,7 @@ export class CPU implements MappedPageInvalidator {
 		const image = frame.executionImage;
 
 		const region = compileJavaScriptRegion(page, plans, image, this.memory, this.stringPool,
-			this.globalBank.slots, this.systemGlobalBank.slots, this.cop0Words, this.gc, this.newIndexKey, this.lengthKey);
+			this.globalBank.slots, this.systemGlobalBank.slots, this.cop0Words, this.gc, this.newIndexKey);
 		this.compiledCodeCache.install(page, region);
 		for (const block of region.entries) {
 			page.dispatchCycles[block.firstWord] = BASE_CYCLES[page.ops[block.firstWord]];
@@ -2624,10 +2624,11 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.WriteInteger:
 				case CompiledBlockExit.WriteIndex: {
 					const base = registers.get(exit.exitA), value = this.readRKValue(frame, exit.exitC);
-					const invoked = exit.exit === CompiledBlockExit.WriteField
-						? this.storeTableFieldIndexCached(frame, base, page, exit.exitWord, image.constWords[exit.exitB], value)
-						: this.storeTableIndex(frame, base, exit.exit === CompiledBlockExit.WriteInteger
-							? valueInteger(exit.exitB) : this.readRKValue(frame, exit.exitB), value);
+					const key = exit.exit === CompiledBlockExit.WriteField ? valueString(image.constWords[exit.exitB])
+						: exit.exit === CompiledBlockExit.WriteInteger ? valueInteger(exit.exitB) : this.readRKValue(frame, exit.exitB);
+					const invoked = valueTag(key) === ValueTag.String
+						? this.storeTableFieldIndexCached(frame, base, page, exit.exitWord, valuePayload(key), value)
+						: this.storeTableIndex(frame, base, key, value);
 					if (invoked) return;
 					break;
 				}

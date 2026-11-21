@@ -55,6 +55,11 @@ export class Thread {
 	public backingByteLength(): number {
 		return this.boundBackingBytes;
 	}
+	/** Checked execution footprints use physical offsets, after RAM-port mirroring. */
+	public overlapsStack(first: number, bytes: number): boolean {
+		const begin = this.stackOffset();
+		return first + bytes > begin && first < begin + this.boundBackingBytes;
+	}
 	private get frameCapacity(): number { return this.read(ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK; }
 	private get protectedCapacity(): number { return this.read(ThreadField.ProtectedCapacity) & THREAD_CONTROL_COUNT_MASK; }
 	public get protectedDepth(): number { return this.read(ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK; }
