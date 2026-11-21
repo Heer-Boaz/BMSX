@@ -9,6 +9,16 @@
 #include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
+void NativeLowering::emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBlockExitSite& exit, sljit_s32 scratch) {
+	auto* c = m_compiler;
+	sljit_emit_op2(c, SLJIT_ADD32, scratch, 0, offset, 0, SLJIT_IMM, bytes);
+	auto* before = sljit_emit_cmp(c, SLJIT_LESS_EQUAL | SLJIT_32, scratch, 0,
+		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, stackBegin));
+	fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, offset, 0,
+		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, stackEnd)), exit, m_cache.state());
+	sljit_set_label(before, sljit_emit_label(c));
+}
+
 void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 address, sljit_sw addressArg, sljit_s32 bits, sljit_s32 group, u32 wordMask) {
 	auto* c = m_compiler;
 	sljit_emit_op2(c, SLJIT_LSHR32, bits, 0, address, addressArg, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT - 2u);

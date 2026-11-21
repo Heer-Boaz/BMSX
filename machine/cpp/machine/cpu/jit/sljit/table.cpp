@@ -106,16 +106,6 @@ void NativeLowering::emitArrayStore(int value, NativeStorePlan plan, NativeBlock
 	emitTableOverwrite(exit, value, plan.barrier);
 }
 
-void NativeLowering::emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBlockExitSite& exit, sljit_s32 scratch) {
-	auto* c = m_compiler;
-	sljit_emit_op2(c, SLJIT_ADD32, scratch, 0, offset, 0, SLJIT_IMM, bytes);
-	auto* before = sljit_emit_cmp(c, SLJIT_LESS_EQUAL | SLJIT_32, scratch, 0,
-		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, stackBegin));
-	fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, offset, 0,
-		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, stackEnd)), exit, m_cache.state());
-	sljit_set_label(before, sljit_emit_label(c));
-}
-
 void NativeLowering::admitTableFootprint(sljit_s32 offset, u32 bytes, bool wholeStack,
 	NativeBlockExitSite& exit, sljit_s32 scratch) {
 	if (wholeStack)
