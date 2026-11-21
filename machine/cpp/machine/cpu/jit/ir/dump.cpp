@@ -81,7 +81,7 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 				const unsigned id = *tableAccess->ownFieldAddress;
 				const auto& address = block.ownFieldAddresses[id];
 				if (address.definingRow == row) {
-					out << "  @" << inst.before.pc << " %addr" << id << " = checked-own-field ";
+					out << "  @" << inst.pc << " %addr" << id << " = checked-own-field ";
 					writeValue(out, address.receiver);
 					out << ", K" << address.key << " miss=e" << unsigned(*inst.slow);
 					if (tableAccess->receiverCheck == NativeTagCheck::Dynamic) out << " guard-table";
@@ -90,7 +90,7 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 				}
 			}
 
-			out << "  @" << inst.before.pc << ' ';
+			out << "  @" << inst.pc << ' ';
 			if (inst.slots.writes.count == 1 && !inst.slots.writes.open)
 				out << 'R' << inst.slots.writes.first << " = ";
 			out << std::visit(OperationName{}, inst.operation);
@@ -109,6 +109,7 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 			if (const auto* arithmetic = std::get_if<NativeArithmetic>(&inst.operation))
 				writeNumericPlan(out, *arithmetic);
 			if (inst.slow) out << " miss=e" << unsigned(*inst.slow);
+			if (inst.replay) out << " replay=e" << unsigned(*inst.replay);
 			if (const auto* allocation = std::get_if<NativeTableAllocation>(&inst.operation); allocation && allocation->record)
 				writeRecord(out, region.recordPlans()[*allocation->record]);
 			out << '\n';
@@ -117,7 +118,12 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 		for (size_t id = 0; id < exits.size(); ++id) {
 			const auto& exit = exits[id];
 			out << "  e" << id << " kind=" << unsigned(exit.exit) << " pc=" << exit.currentPc
-				<< " last-word=" << exit.lastPc << " next=" << exit.nextPc << " charge=" << exit.cycles << '\n';
+				<< " last-word=" << exit.lastPc << " next=" << exit.nextPc << " charge=" << exit.cycles;
+			if (exit.exit == NativeBlockExit::ScalarBoundary && exit.operands.replay.arithmetic) {
+				const auto [left, right] = *exit.operands.replay.arithmetic;
+				out << " assumed=" << unsigned(left) << ',' << unsigned(right);
+			}
+			out << '\n';
 		}
 	}
 }

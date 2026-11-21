@@ -147,10 +147,10 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 }
 
 void NativeLowering::lowerOperation(const NativeVararg& placement, const NativeInstruction& instruction) {
-	auto& growth = *sideExit(instruction.slow);
 	const auto [first, requested] = placement;
-	const bool open = requested < 0;
 	if (requested == 0) return;
+	auto& growth = *sideExit(instruction.slow);
+	const bool open = requested < 0;
 	const int end = open ? std::numeric_limits<int>::max() : first + requested;
 	// On a miss these values still belong to the executed prefix. On a
 	// successful open copy the runtime may write none or only some of them.

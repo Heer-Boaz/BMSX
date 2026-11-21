@@ -27,7 +27,7 @@ void NativeTypePropagation::specializeRegion(std::span<NativeIrBlock> blocks,
 		const auto [primary, alternate] = block.successors;
 		const bool exportPrimary = outgoing(primary), exportAlternate = alternate != primary && outgoing(alternate);
 		const auto [first, count] = ranges[index];
-		specialize(block.instructions, block.completedCall && primary < blocks.size(), first, count);
+		specialize(block.instructions, block.inlineBuiltin, first, count);
 		const auto add = [&](size_t target) {
 			const size_t start = m_assumptions.size();
 			uses.forEachEntryRead(target, [&](int slot) {

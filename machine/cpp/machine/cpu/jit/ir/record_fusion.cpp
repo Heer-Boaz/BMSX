@@ -16,12 +16,12 @@ bool collectRecordFields(std::span<const u16> successors, std::span<const Native
 	auto entry = successors.begin();
 	for (u32 field = 0; field < record.count; ++field) {
 		// An independent entry at a WIDE body isn't on this fallthrough.
-		while (entry != successors.end() && blocks[*entry].instructions.front().before.pc < record.nextPc) ++entry;
+		while (entry != successors.end() && blocks[*entry].instructions.front().pc < record.nextPc) ++entry;
 		if (entry == successors.end()) return false;
 		const auto& block = blocks[*entry++];
 		const auto& inst = block.instructions.front();
 		const auto* store = std::get_if<NativeTableAccess>(&inst.operation);
-		if (inst.before.pc != record.nextPc || !store || store->mode != NativeTableMode::Write
+		if (inst.pc != record.nextPc || !store || store->mode != NativeTableMode::Write
 			|| store->keyKind != NativeTableKey::Field || store->receiver != allocation.result
 			|| store->value == allocation.result) return false;
 		// A decoded WIDE head at the page tail does not make its body immutable.
@@ -34,7 +34,7 @@ bool collectRecordFields(std::span<const u16> successors, std::span<const Native
 		record.operands[field] = store->value;
 		if (store->value >= 0)
 			record.requiredSlots = std::max(record.requiredSlots, static_cast<u32>(store->value) + 1u);
-		record.lastInstructionPc = inst.before.pc;
+		record.lastInstructionPc = inst.pc;
 		record.lastWordPc = checked.lastPc;
 		record.nextPc = checked.nextPc;
 	}

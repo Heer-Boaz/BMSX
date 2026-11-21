@@ -11,8 +11,8 @@ namespace bmsx {
 
 class NativeRegisterUses;
 
-// A miss that must execute the opcode in the interpreter. The charge and
-// top describe only the instructions that already completed.
+// The observable prefix before a guest instruction. The charge and top
+// describe only the instructions that already completed.
 struct NativeResumePoint {
 	struct CompletedInstruction {
 		u32 pc, lastWord;
@@ -21,7 +21,6 @@ struct NativeResumePoint {
 	u32 pc;
 	int cycles, top;
 	std::optional<CompletedInstruction> completed{};
-	std::optional<NativeArithmeticFeedback> arithmeticAssumption{};
 	bool operator==(const NativeResumePoint&) const = default;
 };
 
@@ -42,22 +41,23 @@ struct NativeIrExit {
 	i32 tableSlotSeed = -1;
 };
 
-// Each guest instruction contributes at most one check. The remaining
-// side exits belong to the block's terminator.
+// Rows can have distinct semantic and scalar exits. The remaining
+// side exits belong to the block terminator.
 using NativeIrSideExit = std::optional<u8>;
-static_assert(NATIVE_BLOCK_MAX_INSTRUCTIONS + 3u < std::numeric_limits<u8>::max());
+static_assert(2u * NATIVE_BLOCK_MAX_INSTRUCTIONS + 3u < std::numeric_limits<u8>::max());
 
 struct NativeInstruction {
 	NativeOperation operation;
 	NativeSlotAccess slots;
-	NativeResumePoint before;
-	NativeIrSideExit slow{};
+	u32 pc = 0;
+	NativeIrSideExit slow{}, replay{};
+	u8 width = 0, baseCycles = 0;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	NativeAttempt attempt = NativeAttempt::None;
 #endif
 
-	NativeInstruction(NativeOperation operation, NativeResumePoint before = {})
-		: operation(std::move(operation)), slots(std::visit([](const auto& op) { return op.slots(); }, this->operation)), before(before) {}
+	explicit NativeInstruction(NativeOperation operation)
+		: operation(std::move(operation)), slots(std::visit([](const auto& op) { return op.slots(); }, this->operation)) {}
 };
 
 struct NativeOwnFieldAddress {
@@ -75,6 +75,7 @@ struct NativeIrBlock {
 	NativeIrSideExit beforeFusedJump{};
 	NativeIrSideExit completedCall{};
 	bool nativeSuccessor = true;
+	bool inlineBuiltin = false;
 	std::span<const NativeSlotType> entryTypes{};
 	size_t typePredecessor = std::numeric_limits<size_t>::max();
 	NativeIrExit terminal{};
@@ -84,6 +85,7 @@ struct NativeIrBlock {
 	u16 firstSideExit = 0;
 	u8 sideExitCount = 0;
 	bool hasFusedJump = false;
+	u8 skippedWidth = 0, fusedJumpCycles = 0;
 	std::span<const NativeOwnFieldAddress> ownFieldAddresses{};
 };
 
@@ -95,9 +97,8 @@ struct NativeFieldAddressUse {
 
 class NativeIrRegion {
 public:
-	explicit NativeIrRegion(std::span<const NativeBlockSource> source, bool cpuOwned = false, NativeCompilationOptions options = {},
-		NativeCompileSpecializations specializations = {});
-	void optimize(NativeRegisterUses& uses);
+	NativeIrRegion(std::span<const NativeBlockSource> source, NativeRegisterUses& uses, bool cpuOwned = false,
+		NativeCompilationOptions options = {}, NativeCompileSpecializations specializations = {});
 	std::span<const NativeIrBlock> blocks() const { return m_blocks; }
 	std::span<const NativeIrExit> sideExits(const NativeIrBlock& block) const {
 		return std::span(m_sideExits).subspan(block.firstSideExit, block.sideExitCount);
@@ -113,6 +114,7 @@ private:
 	std::vector<NativeRecordPlan> m_records;
 	std::vector<NativeOwnFieldAddress> m_ownFieldAddresses;
 	void buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations, bool cpuOwned);
+	void finalizeBlockExits(NativeIrBlock& block);
 	void bindOwnFieldAddresses(NativeIrBlock& block, std::span<const NativeFieldAddressUse> uses, size_t firstRow);
 	void planRecordConstructors(std::span<const u16> byAddress, u32 immutablePagePc);
 };

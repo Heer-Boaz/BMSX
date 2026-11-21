@@ -15,6 +15,7 @@ struct NativeNumericPlan {
 	std::optional<ValueTag> left, right, result;
 	bool guardLeft = false, guardRight = false;
 	bool resultDependsOnInputs = false;
+	// Consumed by IR exit planning, never used by the emitter.
 	std::optional<NativeArithmeticFeedback> feedbackAssumption{};
 };
 

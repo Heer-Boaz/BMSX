@@ -44,13 +44,12 @@ NativeOperationFlow nativeOperationFlow(const NativeOperation& operation) {
 	return std::visit(OperationFlow{}, operation);
 }
 
-NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, bool cpuOwned, NativeCompilationOptions options,
-	NativeCompileSpecializations specializations) {
+NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, NativeRegisterUses& uses, bool cpuOwned,
+	NativeCompilationOptions options, NativeCompileSpecializations specializations) {
 	size_t instructionCount = 0;
 	for (const auto& source : sources) instructionCount += source.instructions.size();
 	m_instructions.reserve(instructionCount);
 	m_blocks.reserve(sources.size());
-	m_sideExits.reserve(instructionCount);
 	std::array<NativeFieldAddressUse, NATIVE_BLOCK_MAX_INSTRUCTIONS> addressUses;
 	for (const auto& source : sources) {
 		const size_t first = m_instructions.size();
@@ -93,21 +92,25 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, bool 
 		const auto entry = std::ranges::lower_bound(directory, pc, {}, [&](u16 index) { return m_blocks[index].firstPc; });
 		return entry != directory.end() && m_blocks[*entry].firstPc == pc ? *entry : m_blocks.size();
 	};
-	for (size_t index = m_blocks.size(); index-- > 0;) {
-		auto& block = m_blocks[index];
-		const auto* alternate = block.taken ? &sideExits(block)[*block.taken] : nullptr;
+	for (auto& block : m_blocks) {
+		const auto& final = block.instructions.back();
+		size_t alternate = m_blocks.size();
+		if (block.nativeSuccessor) {
+			if (const auto* branch = std::get_if<NativeTruthBranch>(&final.operation))
+				alternate = entryForPc(branch->target);
+			else if (block.skippedWidth != 0 && std::holds_alternative<NativeComparison>(final.operation))
+				alternate = entryForPc(final.pc + (u32{final.width} + block.skippedWidth) * INSTRUCTION_BYTES);
+		}
 		block.successors = {
-			block.nativeSuccessor || block.completedCall ? entryForPc(block.terminal.nextPc) : m_blocks.size(),
-			block.nativeSuccessor && alternate && alternate->exit == NativeBlockExit::Continue
-				? entryForPc(alternate->nextPc) : m_blocks.size(),
+			block.nativeSuccessor || block.inlineBuiltin ? entryForPc(block.terminal.nextPc) : m_blocks.size(),
+			alternate,
 		};
+		block.inlineBuiltin &= block.successors[0] != m_blocks.size();
 	}
-	if (options.immutablePagePc) planRecordConstructors(directory, *options.immutablePagePc);
-}
-
-void NativeIrRegion::optimize(NativeRegisterUses& uses) {
 	uses.analyze(m_blocks);
 	NativeTypePropagation{}.specializeRegion(m_blocks, uses, m_entryTypes);
+	for (auto& block : m_blocks) finalizeBlockExits(block);
+	if (options.immutablePagePc) planRecordConstructors(directory, *options.immutablePagePc);
 }
 
 } // namespace bmsx

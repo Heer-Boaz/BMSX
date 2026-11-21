@@ -169,7 +169,7 @@ void NativeLowering::lowerOperation(const NativeNot& instruction, const NativeIn
 }
 
 void NativeLowering::lowerOperation(const NativeReplay&, const NativeInstruction& row) {
-	deferColdExit(sljit_emit_jump(m_compiler, SLJIT_JUMP), row.before, m_cache.state());
+	fault(sljit_emit_jump(m_compiler, SLJIT_JUMP), *sideExit(row.replay), m_cache.state());
 	m_terminal = true;
 }
 
@@ -244,7 +244,7 @@ void* NativeLowering::finish(size_t& codeBytes, std::vector<NativeBlockExitSite>
 			const auto& point = std::get<NativeResumePoint>(exit.target);
 			auto& site = replaySites.emplace_back(NativeBlockExitSite{
 				.exit = NativeBlockExit::ScalarBoundary,
-				.operands = {.replay = {point.completed.has_value(), point.arithmeticAssumption}},
+				.operands = {.replay = {point.completed.has_value()}},
 				.cycles = point.cycles,
 				.registerTop = point.top,
 				.nextPc = point.pc,

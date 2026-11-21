@@ -99,6 +99,13 @@ void adaptiveArithmeticReplay() {
 	require(installed() && page.nativeBlocks->entries[entry]->admissionCycles == prefixCycles
 		&& page.nativeBlocks->entries[entry]->terminal.currentPc == wide && page.words[entry + 1u].nativeNumericTypes().stable,
 		"successful scalar observations specialize a published region containing WIDE SUB");
+	const auto& exits = page.nativeBlocks->entries[entry]->sideExits;
+	require(exits.size() == 1 && exits.front().exit == NativeBlockExit::ScalarBoundary
+		&& exits.front().nextPc == wide && exits.front().currentPc == pc && exits.front().lastPc == pc
+		&& exits.front().cycles == prefixCycles && exits.front().registerTop == 3
+		&& exits.front().operands.replay.hasCompletedInstruction
+		&& exits.front().operands.replay.arithmetic == NativeArithmeticFeedback{ValueTag::Integer, ValueTag::Integer},
+		"published WIDE arithmetic keeps its exact scalar replay, not a dead semantic fault site");
 	const auto feedback = page.words[entry + 1u].bx;
 #endif
 	input(valueBool(false));
@@ -124,6 +131,11 @@ void adaptiveArithmeticReplay() {
 		"repeated successful contradictions withdraw native users and lose the stale type assumption");
 	native.cpu.prepareSystemNativeCode();
 	require(installed(), "the code owner can republish the source with the updated feedback");
+	const auto& generic = page.nativeBlocks->entries[entry]->sideExits;
+	require(generic.size() == 1 && generic.front().exit == NativeBlockExit::InvalidOperand
+		&& generic.front().currentPc == wide && generic.front().lastPc == wide + INSTRUCTION_BYTES
+		&& generic.front().nextPc == suffix && generic.front().cycles == complete && generic.front().registerTop == 3,
+		"generic WIDE arithmetic owns its semantic fault with the instruction charged and its destination uncommitted");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto boundary = static_cast<size_t>(NativeBlockExit::ScalarBoundary);
 	const auto exitsBefore = native.cpu.nativeGateProfile().exits[boundary].entries;

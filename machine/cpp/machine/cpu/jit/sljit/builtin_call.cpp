@@ -16,7 +16,7 @@ void NativeLowering::lowerOperation(const NativeCallSite& site, const NativeInst
 	auto& call = block.terminal;
 	const auto& ir = m_ir[m_current];
 	const int base = site.callee;
-	if (!ir.completedCall || ir.successors[0] == m_ir.size() || site.calleeCheck == NativeTagCheck::Rejected) {
+	if (!ir.completedCall) {
 		emitLeave(call, Charge::Pending);
 		return;
 	}

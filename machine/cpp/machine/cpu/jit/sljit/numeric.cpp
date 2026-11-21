@@ -71,23 +71,20 @@ void NativeLowering::emitFloatCanonicalization(sljit_s32 reg) {
 	sljit_set_label(ordinary, sljit_emit_label(m_compiler));
 }
 void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const NativeInstruction& instruction) {
-	auto& invalid = *sideExit(instruction.slow);
 	const auto op = arithmetic.operation;
 	const bool unary = arithmetic.unary();
 	const auto& plan = std::get<NativeNumericPlan>(arithmetic.strategy);
 	const auto guard = [&](i16 operand, ValueTag tag) {
-		auto replay = instruction.before;
-		replay.arithmeticAssumption = plan.feedbackAssumption;
-		deferColdExit(guardTag(operand, tag, SLJIT_R0), replay, m_cache.state());
+		fault(guardTag(operand, tag, SLJIT_R0), *sideExit(instruction.replay), m_cache.state());
 	};
 	if (plan.guardLeft) guard(arithmetic.left, *plan.left);
 	if (plan.guardRight) guard(arithmetic.right, *plan.right);
 	switch (plan.action) {
 	case NativeNumericAction::Fault:
-		fault(sljit_emit_jump(m_compiler, SLJIT_JUMP), invalid, m_cache.state());
+		fault(sljit_emit_jump(m_compiler, SLJIT_JUMP), *sideExit(instruction.slow), m_cache.state());
 		return;
 	case NativeNumericAction::Kernel:
-		emitNumericKernel(arithmetic, invalid, plan.result);
+		emitNumericKernel(arithmetic, *sideExit(instruction.slow), plan.result);
 		return;
 	case NativeNumericAction::Word:
 		break;
