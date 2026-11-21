@@ -2,7 +2,6 @@
 
 #include <algorithm>
 
-#include "machine/cpu/table.h"
 #include "machine/memory/mapped_page.h"
 #include "spec/blua32/instruction_format.h"
 
@@ -13,7 +12,7 @@ namespace {
 // ordinary entries stay available for other predecessors and shorter grants.
 bool collectRecordFields(std::span<const u16> successors, std::span<const NativeIrBlock> blocks,
 	std::span<const NativeIrExit> exits, const NativeTableAllocation& allocation,
-	ConstValueSpan constants, u32 pagePc, NativeRecordPlan& record) {
+	u32 pagePc, NativeRecordPlan& record) {
 	auto entry = successors.begin();
 	for (u32 field = 0; field < record.count; ++field) {
 		// An independent entry at a WIDE body isn't on this fallthrough.
@@ -24,14 +23,14 @@ bool collectRecordFields(std::span<const u16> successors, std::span<const Native
 		const auto* store = std::get_if<NativeTableAccess>(&inst.operation);
 		if (inst.before.pc != record.nextPc || !store || store->mode != NativeTableMode::Write
 			|| store->keyKind != NativeTableKey::Field || store->receiver != allocation.result
-			|| store->value == allocation.result || constants.tag(store->key) != ValueTag::String) return false;
+			|| store->value == allocation.result) return false;
 		// A decoded WIDE head at the page tail does not make its body immutable.
 		const auto& checked = exits[block.firstSideExit + *inst.slow];
 		if (checked.lastPc - pagePc >= MAPPED_PAGE_BYTE_SIZE) return false;
-		const StringId key = constants.payload(store->key);
-		const auto end = record.keys.begin() + field;
-		if (std::find(record.keys.begin(), end, key) != end) return false;
-		record.keys[field] = key;
+		const auto key = static_cast<u16>(store->key);
+		const auto end = record.keySelectors.begin() + field;
+		if (std::find(record.keySelectors.begin(), end, key) != end) return false;
+		record.keySelectors[field] = key;
 		record.operands[field] = store->value;
 		if (store->value >= 0)
 			record.requiredSlots = std::max(record.requiredSlots, static_cast<u32>(store->value) + 1u);
@@ -44,7 +43,7 @@ bool collectRecordFields(std::span<const u16> successors, std::span<const Native
 
 } // namespace
 
-void NativeIrRegion::planRecordConstructors(std::span<const u16> byAddress, u32 immutablePagePc, ConstValueSpan constants) {
+void NativeIrRegion::planRecordConstructors(std::span<const u16> byAddress, u32 immutablePagePc) {
 	for (size_t index = 0; index < byAddress.size(); ++index) {
 		auto& entry = m_blocks[byAddress[index]];
 		auto* allocation = std::get_if<NativeTableAllocation>(&entry.instructions.back().operation);
@@ -57,9 +56,8 @@ void NativeIrRegion::planRecordConstructors(std::span<const u16> byAddress, u32 
 		record.count = count;
 		record.requiredSlots = static_cast<u32>(allocation->result) + 1u;
 		record.nextPc = entry.terminal.nextPc;
-		if (!collectRecordFields(byAddress.subspan(index + 1), m_blocks, m_sideExits, *allocation, constants, immutablePagePc, record))
+		if (!collectRecordFields(byAddress.subspan(index + 1), m_blocks, m_sideExits, *allocation, immutablePagePc, record))
 			continue;
-		record.full = TableRecord::planStringRecord(std::span(record.keys).first(count), (1u << count) - 1u);
 		entry.sourceWords = std::max(entry.sourceWords, static_cast<u16>((record.nextPc - entry.firstPc) / INSTRUCTION_BYTES));
 		allocation->record = static_cast<NativeRecordId>(m_records.size());
 		m_records.push_back(std::move(record));

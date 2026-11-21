@@ -124,8 +124,7 @@ void rawContinuity(BuiltinFunctionId id, int results, int mode = 0, float positi
 	auto* frame = machine.cpu.rootThread()->currentFrame;
 	auto* caller = preparedCaller(machine);
 	machine.cpu.instructionBudgetRemaining = 12345;
-	NativeBlockRunState state{.constants=frame->executionImage->constPool, .frame=frame,
-		.constantCount=static_cast<u32>(frame->executionImage->constPool.size()), .remainingCycles=64, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
+	NativeBlockRunState state{.constants=frame->executionImage->constPool, .frame=frame, .remainingCycles=64, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 	const auto* exit = caller->run(frame->registers, state);
 	// Base NativeBlock::run deliberately has no NativeCpuRunState tail or C++
 	// dispatcher. Only a real body-internal completed CALL can reach this HALT.
@@ -149,8 +148,7 @@ void rawSetMetatableReturnsUnexecutedCall() {
 		const u32 original = clear ? machine.meta->address() : 0u;
 		auto* frame = machine.cpu.rootThread()->currentFrame;
 		auto* caller = preparedCaller(machine);
-		NativeBlockRunState state{.constants=frame->executionImage->constPool, .frame=frame,
-			.constantCount=static_cast<u32>(frame->executionImage->constPool.size()), .remainingCycles=64,
+		NativeBlockRunState state{.constants=frame->executionImage->constPool, .frame=frame, .remainingCycles=64,
 			.registerTop=static_cast<i32>(frame->readControl(FrameField::Top))};
 		const auto* exit = caller->run(frame->registers, state);
 		require(exit == &caller->terminal && exit->currentPc == rom.textAddress + 4 * INSTRUCTION_BYTES
@@ -171,8 +169,7 @@ void rawDeclines() {
 		const auto rom = image(results, variant == 4 ? 0 : 3); Machine machine(rom, false); machine.seed(variant == 1 ? BuiltinFunctionId::Type : BuiltinFunctionId::StringByte, variant == 2 ? 3 : 0);
 		if (variant == 3) machine.selectClosure();
 		auto* frame = machine.cpu.rootThread()->currentFrame;
-		NativeBlockRunState state{.constants=frame->executionImage->constPool, .frame=frame,
-			.constantCount=static_cast<u32>(frame->executionImage->constPool.size()), .remainingCycles=64, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
+		NativeBlockRunState state{.constants=frame->executionImage->constPool, .frame=frame, .remainingCycles=64, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 		const auto* exit = preparedCaller(machine)->run(frame->registers, state);
 		require(exit->exit == NativeBlockExit::Call && state.remainingCycles == 64 - 4 * BASE_CYCLES[static_cast<u8>(OpCode::MOV)] - BASE_CYCLES[static_cast<u8>(OpCode::CALL)],
 			"padding, unsupported primitive, bad arguments and a real Closure preserve the ordinary unexecuted CALL boundary");
@@ -187,8 +184,7 @@ void completedDebtDoesNotRunTheSuccessor() {
 		const auto rom=image(results,3);Machine machine(rom,false);machine.seed(BuiltinFunctionId::StringByte);
 		auto* frame=machine.cpu.rootThread()->currentFrame;
 		const int prefix=4*BASE_CYCLES[static_cast<u8>(OpCode::MOV)]+BASE_CYCLES[static_cast<u8>(OpCode::CALL)];
-		NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame,
-			.constantCount=static_cast<u32>(frame->executionImage->constPool.size()),.remainingCycles=prefix,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
+		NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame, .remainingCycles=prefix,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 		const auto* caller=preparedCaller(machine);const auto* exit=caller->run(frame->registers, state);const int receiving=results==1?0:1;
 		require(exit->exit==NativeBlockExit::CompletedCall && exit->cycles==0 && exit->nextPc==caller->terminal.nextPc,
 			"an exhausting successful leaf returns its completed successor frontier, never the original CALL");
@@ -205,8 +201,7 @@ void mutableCalleesUseTheirCurrentIdentity() {
 	const auto rom=image(2,3);Machine machine(rom,false);auto* caller=preparedCaller(machine);
 	for(const auto id:{BuiltinFunctionId::StringByte,BuiltinFunctionId::SetMetatable,BuiltinFunctionId::GetMetatable,BuiltinFunctionId::Type}) {
 		machine.seed(id);auto* frame=machine.cpu.rootThread()->currentFrame;
-		NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame,
-			.constantCount=static_cast<u32>(frame->executionImage->constPool.size()),.remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
+		NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame, .remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 		const auto* exit=caller->run(frame->registers, state);
 		if(id==BuiltinFunctionId::SetMetatable || id==BuiltinFunctionId::Type)
 			require(exit==&caller->terminal && frame->registers.get(0)==frame->registers.get(12) && frame->registers.get(8)==valueInteger(-8),
@@ -214,8 +209,7 @@ void mutableCalleesUseTheirCurrentIdentity() {
 		else require(exit->exit==NativeBlockExit::Halt && frame->registers.get(8)==machine.expected,"one published callsite observes each actual supported primitive ID");
 	}
 	machine.seed(BuiltinFunctionId::StringByte);machine.selectClosure();auto* frame=machine.cpu.rootThread()->currentFrame;
-	NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame,
-		.constantCount=static_cast<u32>(frame->executionImage->constPool.size()),.remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
+	NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame, .remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 	require(caller->run(frame->registers, state)->exit==NativeBlockExit::Call && valueIsClosure(frame->registers.get(0)),
 		"a real Closure replacing a formerly hot primitive retains normal activation semantics");
 }
@@ -234,8 +228,7 @@ void inlineInterruptStop(bool nmi, bool wide) {
 	machine.seed(BuiltinFunctionId::StringByte);auto* frame=machine.cpu.rootThread()->currentFrame;
 	auto* caller=preparedCaller(machine);auto* owner=frame->executionImage;auto* page=owner->nativeCodeLookup->find(rom.textAddress,0);
 	const auto& gate=nativeBlockGate();
-	NativeCpuRunState run{.state={.constants=owner->constPool,.frame=frame,
-		.constantCount=static_cast<u32>(owner->constPool.size()),.remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)),.exitCode=gate.dispatch,.ram=machine.memory.ramData()},
+	NativeCpuRunState run{.state={.constants=owner->constPool,.frame=frame, .remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)),.exitCode=gate.dispatch,.ram=machine.memory.ramData()},
 		.cpu=&machine.cpu,.targetDepth=0,.codeRoot=owner->nativeCodeLookup->root(0),
 		.cartridgeSlot=0,.error={}};
 	// The typed gate is an already-admitted native segment, not a fresh outer
@@ -263,7 +256,7 @@ void unboundStandaloneStillReturnsCall() {
 		decoded[i].baseCycles=BASE_CYCLES[decoded[i].op]; source[i]={&decoded[i],rom.textAddress+static_cast<u32>(i)*INSTRUCTION_BYTES}; }
 	decoded[0].a=0; decoded[0].b=12; decoded[1].a=0; decoded[1].b=3; decoded[1].c=2;
 	const std::array plans{NativeBlockSource{std::span(source.data(),2)}, NativeBlockSource{std::span(source.data()+2,1)}};
-	auto blocks=NativeCompiler::compile(plans,{},NativeCodeBindings(machine.memory,machine.cpu.stringPool()));
+	auto blocks=NativeCompiler::compile(plans,NativeCodeBindings(machine.memory,machine.cpu.stringPool()));
 	size_t bytes=0; blocks.front()->region->publish(bytes);
 	auto* frame=machine.cpu.rootThread()->currentFrame;
 	NativeBlockRunState state{.remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};

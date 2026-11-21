@@ -41,7 +41,7 @@ struct NativeBlockAbi {
 	static constexpr int scratches = (4 + scratchWords) | SLJIT_ENTER_FLOAT(scratchFloats);
 	static constexpr int saveds = (fixedSaved + savedWords) | SLJIT_ENTER_FLOAT(savedFloats);
 	static constexpr int fieldAddressOffset = registerCacheCapacity * sizeof(u32);
-	static constexpr int fieldAddressBytes = 3 * sizeof(u32);
+	static constexpr int fieldAddressBytes = 4 * sizeof(u32);
 	static constexpr int helperResultOffset = fieldAddressOffset + NATIVE_OWN_FIELD_TEMPORARIES * fieldAddressBytes;
 	static constexpr int stackBytes = helperResultOffset + 64;
 	static constexpr int signature = SLJIT_ARGS3(P, P, P, P);

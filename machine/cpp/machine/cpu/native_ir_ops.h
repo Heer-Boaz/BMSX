@@ -96,6 +96,11 @@ struct NativeLiteral {
 	Value value;
 	constexpr NativeSlotAccess slots() const { return {.writes = {result, 1}}; }
 };
+struct NativeConstantLoad {
+	NativeSlot result;
+	u32 index;
+	constexpr NativeSlotAccess slots() const { return {.writes = {result, 1}}; }
+};
 struct NativeMove {
 	NativeSlot result;
 	NativeValueRef source;
@@ -262,7 +267,7 @@ struct NativeVararg : NativeExitOperands::Vararg {
 
 using NativeOperation = std::variant<
 	NativeReplay, NativeJump, NativeHalt, NativeExceptionReturn, NativeReturnSite, NativeTableAllocation,
-	NativeConcat, NativeConcatRange, NativeClosure, NativeLiteral, NativeMove, NativeNot, NativeClearSlots, NativePoolRead,
+	NativeConcat, NativeConcatRange, NativeClosure, NativeLiteral, NativeConstantLoad, NativeMove, NativeNot, NativeClearSlots, NativePoolRead,
 	NativeLength, NativeGlobalAccess, NativeUpvalueAccess, NativeControlAccess, NativeMemoryAccess,
 	NativeTableAccess, NativeArithmetic, NativeTruthBranch, NativeComparison, NativeCallSite, NativeVararg>;
 

@@ -8,10 +8,10 @@
 
 namespace bmsx {
 
-void NativeTypePropagation::specializeRegion(std::span<NativeIrBlock> blocks, ConstValueSpan constants,
+void NativeTypePropagation::specializeRegion(std::span<NativeIrBlock> blocks,
 	const NativeRegisterUses& uses, std::vector<NativeSlotType>& imports) {
 	if (blocks.size() == 1) {
-		specialize(blocks.front().instructions, constants, false);
+		specialize(blocks.front().instructions, false);
 		return;
 	}
 	// Each candidate names the proof at its origin. A copy can forward the
@@ -27,11 +27,11 @@ void NativeTypePropagation::specializeRegion(std::span<NativeIrBlock> blocks, Co
 		const auto [primary, alternate] = block.successors;
 		const bool exportPrimary = outgoing(primary), exportAlternate = alternate != primary && outgoing(alternate);
 		const auto [first, count] = ranges[index];
-		specialize(block.instructions, constants, block.completedCall && primary < blocks.size(), first, count);
+		specialize(block.instructions, block.completedCall && primary < blocks.size(), first, count);
 		const auto add = [&](size_t target) {
 			const size_t start = m_assumptions.size();
 			uses.forEachEntryRead(target, [&](int slot) {
-				const auto fact = type(slot, constants);
+				const auto fact = type(slot);
 				if (fact)
 					m_assumptions.push_back({{static_cast<u16>(slot), fact->tag}, fact->assumption});
 			});
@@ -57,8 +57,8 @@ void NativeTypePropagation::specializeRegion(std::span<NativeIrBlock> blocks, Co
 	}
 }
 
-NativeTypePropagation::Type NativeTypePropagation::type(int selector, ConstValueSpan constants) const {
-	if (selector < 0) return Fact{m_block, constants.tag(-selector - 1)};
+NativeTypePropagation::Type NativeTypePropagation::type(int selector) const {
+	if (selector < 0) return std::nullopt;
 	const auto slot = static_cast<size_t>(selector);
 	if (slot < m_facts.size() && m_facts[slot].block == m_block) return m_facts[slot];
 	return std::nullopt;
@@ -90,7 +90,6 @@ void NativeTypePropagation::forgetRange(size_t first, size_t end) {
 
 struct NativeTypePropagation::Transfer {
 	NativeTypePropagation& facts;
-	ConstValueSpan constants;
 	const NativeSlotAccess& slots;
 	bool inlineBuiltin;
 
@@ -102,8 +101,8 @@ struct NativeTypePropagation::Transfer {
 
 	void operator()(NativeArithmetic& op) const {
 		const auto& hint = std::get<NativeArithmeticHint>(op.strategy);
-		const auto left = facts.type(op.left, constants);
-		const auto right = op.unary() ? std::nullopt : facts.type(op.right, constants);
+		const auto left = facts.type(op.left);
+		const auto right = op.unary() ? std::nullopt : facts.type(op.right);
 		const auto tag = [](Type input) { return input ? std::optional(input->tag) : std::nullopt; };
 		auto plan = planNativeNumeric(op.operation, tag(left), tag(right), hint.feedback, op.left == op.right);
 		bool needsLeft = true, needsRight = !op.unary();
@@ -132,14 +131,14 @@ struct NativeTypePropagation::Transfer {
 		plan.guardLeft &= needsLeft;
 		plan.guardRight &= needsRight;
 		if (plan.guardLeft || plan.guardRight) plan.feedbackAssumption = hint.feedback;
-		if (plan.guardLeft) facts.define(op.left, *plan.left);
-		if (plan.guardRight) facts.define(op.right, *plan.right);
+		if (plan.guardLeft && op.left >= 0) facts.define(op.left, *plan.left);
+		if (plan.guardRight && op.right >= 0) facts.define(op.right, *plan.right);
 		facts.define(op.result, plan.result ? Type(Fact{facts.m_block, *plan.result}) : std::nullopt);
 		op.strategy.emplace<NativeNumericPlan>(plan);
 	}
 
 	void operator()(NativeComparison& op) const {
-		const auto left = facts.type(op.left, constants), right = facts.type(op.right, constants);
+		const auto left = facts.type(op.left), right = facts.type(op.right);
 		if (!left || !right || left->tag != right->tag) return;
 		if (left->tag == ValueTag::Integer) op.strategy = NativeComparisonStrategy::Word;
 		else if (left->tag == ValueTag::Float) op.strategy = NativeComparisonStrategy::Float;
@@ -152,14 +151,14 @@ struct NativeTypePropagation::Transfer {
 	void operator()(const NativeLength& op) const { facts.define(op.result, ValueTag::Integer); }
 
 	NativeTagCheck check(int slot, ValueTag expected) const {
-		const auto type = facts.type(slot, constants);
+		const auto type = facts.type(slot);
 		if (!type) return NativeTagCheck::Dynamic;
 		facts.require(type);
 		return type->tag == expected ? NativeTagCheck::Proved : NativeTagCheck::Rejected;
 	}
 
 	NativeWordSource wordSource(int slot) const {
-		const auto type = facts.type(slot, constants);
+		const auto type = facts.type(slot);
 		if (!type) return NativeWordSource::Dynamic;
 		facts.require(type);
 		if (type->tag == ValueTag::Integer) return NativeWordSource::Integer;
@@ -187,7 +186,7 @@ struct NativeTypePropagation::Transfer {
 
 	void operator()(NativeMove& op) const {
 		if (op.conversion == ValueMoveKind::Copy) {
-			const auto type = facts.type(op.source, constants);
+			const auto type = facts.type(op.source);
 			// Copying bits does not need a speculative admission check. A
 			// downstream typed consumer can still require the copied proof.
 			if (type && type->assumption == 0) op.copyTag = type->tag;
@@ -195,13 +194,13 @@ struct NativeTypePropagation::Transfer {
 		} else {
 			const auto expected = op.conversion == ValueMoveKind::FloatBits ? ValueTag::Float : ValueTag::Integer;
 			op.conversionCheck = check(op.source, expected);
-			if (op.conversionCheck == NativeTagCheck::Dynamic) facts.define(op.source, expected);
+			if (op.conversionCheck == NativeTagCheck::Dynamic && op.source >= 0) facts.define(op.source, expected);
 			facts.define(op.result, expected == ValueTag::Float ? ValueTag::Integer : ValueTag::Float);
 		}
 	}
 
 	std::optional<bool> truth(int slot) const {
-		const auto type = facts.type(slot, constants);
+		const auto type = facts.type(slot);
 		if (!type) return std::nullopt;
 		facts.require(type);
 		return type->tag > ValueTag::False;
@@ -220,7 +219,7 @@ struct NativeTypePropagation::Transfer {
 	void operator()(NativeUpvalueAccess& op) const {
 		if (op.access == NativeAccess::Read) {
 			facts.define(op.slot, std::nullopt);
-		} else if (const auto type = facts.type(op.slot, constants)) {
+		} else if (const auto type = facts.type(op.slot)) {
 			facts.require(type);
 			op.barrier = valueTagHasGcEdge(type->tag) ? NativeGcBarrier::Reference : NativeGcBarrier::None;
 		}
@@ -229,7 +228,7 @@ struct NativeTypePropagation::Transfer {
 	void operator()(NativeTableAccess& op) const {
 		op.receiverCheck = check(op.receiver, ValueTag::Table);
 		if (op.mode == NativeTableMode::Write) {
-			if (const auto type = facts.type(op.value, constants)) {
+			if (const auto type = facts.type(op.value)) {
 				facts.require(type);
 				op.store = {valueTagHasGcEdge(type->tag) ? NativeGcBarrier::Reference : NativeGcBarrier::None,
 					type->tag == ValueTag::Nil ? NativeNilValue::Nil : NativeNilValue::Present};
@@ -237,7 +236,7 @@ struct NativeTypePropagation::Transfer {
 			return;
 		}
 		if (op.mode == NativeTableMode::ReadMethod)
-			facts.define(op.value + 1, facts.type(op.receiver, constants));
+			facts.define(op.value + 1, facts.type(op.receiver));
 		facts.define(op.value, op.resultTag ? Type(Fact{facts.m_block, *op.resultTag}) : std::nullopt);
 	}
 
@@ -265,7 +264,7 @@ struct NativeTypePropagation::Transfer {
 
 };
 
-void NativeTypePropagation::specialize(std::span<NativeInstruction> instructions, ConstValueSpan constants,
+void NativeTypePropagation::specialize(std::span<NativeInstruction> instructions,
 	bool inlineBuiltin, size_t first, size_t count) {
 	++m_block;
 	for (size_t index = first; index < first + count; ++index) {
@@ -273,7 +272,7 @@ void NativeTypePropagation::specialize(std::span<NativeInstruction> instructions
 		define(type.slot, Fact{m_block, type.tag, static_cast<u32>(index + 1u)});
 	}
 	for (auto& instruction : instructions)
-		std::visit(Transfer{*this, constants, instruction.slots, inlineBuiltin}, instruction.operation);
+		std::visit(Transfer{*this, instruction.slots, inlineBuiltin}, instruction.operation);
 }
 
 } // namespace bmsx

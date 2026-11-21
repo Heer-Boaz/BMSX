@@ -348,7 +348,7 @@ struct ContextBlock {
 	std::vector<DecodedInstruction> decoded;
 	std::vector<NativeBlockInstruction> source;
 	std::vector<std::unique_ptr<NativeBlock>> blocks;
-	ContextBlock(CpuMachine& machine, std::initializer_list<Instruction> code, ConstValueSpan constants = {}, u32 pc = 0x1000u) {
+	ContextBlock(CpuMachine& machine, std::initializer_list<Instruction> code, u32 pc = 0x1000u) {
 		decoded.resize(code.size()); source.resize(code.size());
 		size_t i = 0;
 		for (const auto& instruction : code) {
@@ -358,7 +358,7 @@ struct ContextBlock {
 		}
 		const std::array runs{NativeBlockSource{source}};
 		auto& strings = machine.cpu.stringPool();
-		blocks = NativeCompiler::compile(runs, constants, NativeCodeBindings(machine.memory, strings));
+		blocks = NativeCompiler::compile(runs, NativeCodeBindings(machine.memory, strings));
 		blocks.front()->region->publish(bytes);
 	}
 };
@@ -523,7 +523,7 @@ void rawContextValues(CpuMachine& machine) {
 	for (size_t i = 0; i < literals.size(); ++i) constants.set(i, literals[i]);
 	for (const int destination : {0, 2}) {
 		ContextBlock pool(machine, {{OpCode::K1, 8}, {OpCode::K1, 9}, {OpCode::LOADNIL, 8, 2},
-			{OpCode::LOADNIL, 15, 0}, {OpCode::LOADKR, static_cast<u16>(destination), 2}, {OpCode::MOV, 3, static_cast<i16>(destination)}, {OpCode::JMP}}, constants.view());
+			{OpCode::LOADNIL, 15, 0}, {OpCode::LOADKR, static_cast<u16>(destination), 2}, {OpCode::MOV, 3, static_cast<i16>(destination)}, {OpCode::JMP}});
 		for (const auto& [index, expected] : std::array<std::pair<Value, int>, 9>{{
 			{valueInteger(0), 0}, {valueFloat(1.9f), 1}, {valueFloat(2.9f), 2}, {valueInteger(3), 3},
 			{valueFloat(4.f), 4}, {valueInteger(5), 5}, {valueInteger(6), 6}, {valueFloat(0x1p32f), 0}, {valueFloat(-0.f), 0}}}) {
@@ -539,9 +539,10 @@ void rawContextValues(CpuMachine& machine) {
 }
 
 void varargAliasesAndSideExits(CpuMachine& machine) {
-	ValueSlots stack(48);
+	constexpr u32 stackBase = DYNAMIC_RAM_BASE - RAM_BASE + 0x800;
+	ValueSpan stack(machine.memory, stackBase, stackBase + 48 * sizeof(u32), 48);
 	Thread thread(machine.cpu.gcHeap());
-	thread.stack = stack.view();
+	thread.stack = stack;
 	CallFrame frame;
 	frame.thread = &thread;
 	frame.registers = thread.stack.subspan(16, 32);
@@ -552,13 +553,13 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 		valueTable(machine.cpu.createTable().address()), valueThread(machine.cpu.activeThread()->address)};
 	ContextBlock empty(machine, {{OpCode::VARARG, 31, 0}, {OpCode::JMP}});
 	frame.writeControl(bmsx::FrameField::VarargCount, 0); frame.writeControl(bmsx::FrameField::StackCapacity, 16);
-	for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));
+	for (size_t i = 0; i < stack.size(); ++i) stack.set(i, valueInteger(73));
 	NativeBlockRunState zero{.frame = &frame, .remainingCycles = 100, .registerTop = 48};
 	const auto& emptyExit = *empty.blocks.front()->run(frame.registers, zero);
 	require(emptyExit.exit == NativeBlockExit::Continue && emptyExit.currentPc == empty.source.back().pc && emptyExit.nextPc == 0
 		&& zero.registerTop == 31,
 		"an empty open VARARG resets top without touching or growing the destination range");
-	for (size_t i = 0; i < stack.capacity(); ++i) require(stack.get(i) == valueInteger(73), "empty window leaves both planes unchanged");
+	for (size_t i = 0; i < stack.size(); ++i) require(stack.get(i) == valueInteger(73), "empty window leaves both planes unchanged");
 	// The fixed form charges requested slots (also nil padding), never available slots.
 	// B=1 performs no copy and leaves top alone even when A is beyond capacity.
 	frame.writeControl(bmsx::FrameField::VarargBase, 14); frame.writeControl(bmsx::FrameField::VarargCount, 2);
@@ -579,10 +580,10 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 		constexpr u32 receivingPc = 0x2000u;
 		ContextBlock first(machine, {{OpCode::K1, 1}, {OpCode::K1, 7}, {OpCode::VARARG, 2, static_cast<i16>(fixed == 0 ? 0 : fixed + 1)},
 			{OpCode::MOV, 0, 7}, {OpCode::MOV, 1, 2}, {OpCode::BNOT, 15, 7}, {OpCode::JMP, 0, 0, 0, receivingPc}});
-		ContextBlock second(machine, {{OpCode::VARARG, 0, 0}, {OpCode::LOADKR, 15, 14}}, {}, receivingPc);
+		ContextBlock second(machine, {{OpCode::VARARG, 0, 0}, {OpCode::LOADKR, 15, 14}}, receivingPc);
 		second.blocks.front()->linkFrom(first.blocks.back()->terminal);
 		for (const int count : {0, 2, 8}) {
-			for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));
+			for (size_t i = 0; i < stack.size(); ++i) stack.set(i, valueInteger(73));
 			frame.writeControl(bmsx::FrameField::VarargCount, count); frame.writeControl(bmsx::FrameField::StackCapacity, 16);
 			frame.writeControl(bmsx::FrameField::VarargBase, frame.stackBase() - count);
 			for (int i = 0; i < count; ++i) stack.set(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::VarargBase)) + i, values[i]);
@@ -596,7 +597,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 			require(frame.registers.get(15) == valueInteger(fixed == 0 && count == 8 ? -1 : -2),
 				"a word consumer sees the overwritten vararg kind, not a cached literal fact; fixed ranges retain untouched facts");
 		}
-		for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));
+		for (size_t i = 0; i < stack.size(); ++i) stack.set(i, valueInteger(73));
 		frame.writeControl(bmsx::FrameField::VarargCount, 8); frame.writeControl(bmsx::FrameField::StackCapacity, 8);
 		frame.writeControl(bmsx::FrameField::VarargBase, frame.stackBase() - 8);
 		for (int i = 0; i < 8; ++i) stack.set(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::VarargBase)) + i, values[i]);

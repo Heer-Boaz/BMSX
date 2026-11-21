@@ -548,7 +548,7 @@ void polymorphicForwardJoin() {
 	auto& pool = machine.cpu.stringPool();
 	size_t bytes = 0;
 	auto blocks = NativeCompiler::compile(
-		sources, constants.view(), NativeCodeBindings(machine.memory, pool));
+		sources, NativeCodeBindings(machine.memory, pool));
 	blocks.front()->region->publish(bytes);
 	const std::array expected{valueInteger(1), constants.get(0), valueBool(true)};
 	for (size_t i = 0; i < blocks.size(); ++i) {

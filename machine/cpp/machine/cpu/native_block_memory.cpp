@@ -128,7 +128,7 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 		return;
 	}
 	if (access.addressCheck == NativeTagCheck::Dynamic)
-		fault(m_cache.guard(access.address, ValueTag::Integer, SLJIT_R1), slow, m_cache.state());
+		fault(guardTag(access.address, ValueTag::Integer, SLJIT_R1), slow, m_cache.state());
 	emitPayload(access.address, SLJIT_R0);
 	if (access.displacement != 0u)
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM,
@@ -259,7 +259,7 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 		}
 	} else {
 		if (access.store == NativeWordSource::Dynamic)
-			fault(m_cache.guard(access.slot, ValueTag::Integer, SLJIT_R1), slow, m_cache.state());
+			fault(guardTag(access.slot, ValueTag::Integer, SLJIT_R1), slow, m_cache.state());
 		emitPayload(access.slot, SLJIT_R0);
 		if constexpr (std::endian::native == std::endian::big)
 			if (width != 1)

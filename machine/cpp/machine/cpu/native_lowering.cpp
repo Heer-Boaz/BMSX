@@ -1,5 +1,7 @@
 #include "machine/cpu/native_lowering.h"
 
+#include <bit>
+
 #include <algorithm>
 #include <new>
 #include "machine/cpu/execution_image.h"
@@ -7,11 +9,11 @@
 
 namespace bmsx {
 
-NativeLowering::NativeLowering(ConstValueSpan constants, std::span<const std::unique_ptr<NativeBlock>> blocks,
+NativeLowering::NativeLowering(std::span<const std::unique_ptr<NativeBlock>> blocks,
 	const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir, NativeRegisterUses& uses)
 	: m_compiler(sljit_create_compiler(nullptr)), m_cache(m_compiler, NativeBlockAbi::words, NativeBlockAbi::tags,
 													  NativeBlockAbi::wordRegisters, NativeBlockAbi::floatRegisters),
-	  m_constants(constants), m_blocks(blocks), m_bindings(bindings), m_ir(ir), m_uses(uses), m_entries(blocks.size()) {
+	  m_blocks(blocks), m_bindings(bindings), m_ir(ir), m_uses(uses), m_entries(blocks.size()) {
 	if (!m_compiler)
 		throw std::bad_alloc();
 	sljit_set_context(m_compiler, 0, NativeBlockAbi::signature, NativeBlockAbi::scratches, NativeBlockAbi::saveds,
@@ -31,25 +33,56 @@ NativeRegisterCache::Operand NativeLowering::readTyped(
 	int selector, ValueTag tag, sljit_s32 wordScratch, sljit_s32 floatScratch) {
 	if (selector >= 0)
 		return m_cache.read(selector, tag);
-	const u32 word = m_constants.payload(-selector - 1);
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, wordScratch, 0, SLJIT_IMM, word);
+	emitPoolWord(-selector - 1, wordScratch);
 	if (tag != ValueTag::Float)
 		return {wordScratch, tag, -1};
 	sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, floatScratch, wordScratch);
 	return {floatScratch, tag, -1};
 }
+void NativeLowering::emitPoolWord(u32 index, sljit_s32 word) {
+	auto* c = m_compiler;
+	constexpr auto base = offsetof(NativeBlockRunState, constants);
+	sljit_emit_op1(c, SLJIT_MOV_P, word, 0, SLJIT_MEM1(NativeBlockAbi::state), base + ConstValueSpan::wordsOffset());
+	sljit_emit_op1(c, SLJIT_MOV32, word, 0, SLJIT_MEM1(word), index * sizeof(u32));
+	if constexpr (std::endian::native == std::endian::big) {
+		auto* hostPool = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM1(NativeBlockAbi::state),
+			base + ConstValueSpan::ramOffset(), SLJIT_IMM, 0);
+		sljit_emit_op1(c, SLJIT_REV32, word, 0, word, 0);
+		sljit_set_label(hostPool, sljit_emit_label(c));
+	}
+}
+
+void NativeLowering::emitPoolTag(u32 index, sljit_s32 tag) {
+	auto* c = m_compiler;
+	sljit_emit_op1(c, SLJIT_MOV_P, tag, 0, SLJIT_MEM1(NativeBlockAbi::state),
+		offsetof(NativeBlockRunState, constants) + ConstValueSpan::tagsOffset());
+	sljit_emit_op1(c, SLJIT_MOV_U8, tag, 0, SLJIT_MEM1(tag), index);
+}
+
+sljit_jump* NativeLowering::guardTag(int selector, ValueTag tag, sljit_s32 scratch) {
+	if (selector >= 0) return m_cache.guard(selector, tag, scratch);
+	emitPoolTag(-selector - 1, scratch);
+	return sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, scratch, 0, SLJIT_IMM, static_cast<u8>(tag));
+}
+
+void NativeLowering::lowerOperation(const NativeConstantLoad& load, const NativeInstruction&) {
+	emitPoolWord(load.index, SLJIT_R0);
+	emitPoolTag(load.index, SLJIT_R1);
+	emitRawStore(load.result, SLJIT_R0, SLJIT_R1);
+}
+
 void NativeLowering::emitPayload(int selector, sljit_s32 word) {
 	if (selector >= 0)
 		m_cache.emitWord(selector, word);
 	else
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, word, 0, SLJIT_IMM, m_constants.payload(-selector - 1));
+		emitPoolWord(-selector - 1, word);
 }
 
 void NativeLowering::emitTag(int selector, sljit_s32 tag) {
 	if (selector >= 0)
 		m_cache.emitTag(selector, tag);
 	else
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, tag, 0, SLJIT_IMM, static_cast<u8>(m_constants.tag(-selector - 1)));
+		emitPoolTag(-selector - 1, tag);
 }
 
 void NativeLowering::emitRawLoad(int selector, sljit_s32 word, sljit_s32 tag) {
@@ -113,7 +146,7 @@ void NativeLowering::lowerOperation(const NativeMove& instruction, const NativeI
 		return;
 	}
 	if (instruction.conversionCheck == NativeTagCheck::Dynamic)
-		fault(m_cache.guard(instruction.source, required, SLJIT_R0), *invalid, m_cache.state());
+		fault(guardTag(instruction.source, required, SLJIT_R0), *invalid, m_cache.state());
 	const auto source = readTyped(instruction.source, required);
 	const auto target = m_cache.write(instruction.result, required == ValueTag::Float ? ValueTag::Integer : ValueTag::Float);
 	sljit_emit_fcopy(m_compiler, required == ValueTag::Float ? SLJIT_COPY32_FROM_F32 : SLJIT_COPY32_TO_F32,

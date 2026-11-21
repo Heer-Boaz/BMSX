@@ -2,7 +2,6 @@
 
 #include "machine/cpu/native_compilation_input.h"
 #include "machine/cpu/native_ir_ops.h"
-#include "machine/cpu/value_slots.h"
 
 #include <limits>
 #include <utility>
@@ -96,9 +95,8 @@ struct NativeFieldAddressUse {
 
 class NativeIrRegion {
 public:
-	explicit NativeIrRegion(std::span<const NativeBlockSource> source, ConstValueSpan constants = {},
-		bool cpuOwned = false, NativeCompilationOptions options = {});
-	void optimize(ConstValueSpan constants, NativeRegisterUses& uses);
+	explicit NativeIrRegion(std::span<const NativeBlockSource> source, bool cpuOwned = false, NativeCompilationOptions options = {});
+	void optimize(NativeRegisterUses& uses);
 	std::span<const NativeIrBlock> blocks() const { return m_blocks; }
 	std::span<const NativeIrExit> sideExits(const NativeIrBlock& block) const {
 		return std::span(m_sideExits).subspan(block.firstSideExit, block.sideExitCount);
@@ -115,10 +113,10 @@ private:
 	std::vector<NativeOwnFieldAddress> m_ownFieldAddresses;
 	void buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations, bool cpuOwned);
 	void bindOwnFieldAddresses(NativeIrBlock& block, std::span<const NativeFieldAddressUse> uses, size_t firstRow);
-	void planRecordConstructors(std::span<const u16> byAddress, u32 immutablePagePc, ConstValueSpan constants);
+	void planRecordConstructors(std::span<const u16> byAddress, u32 immutablePagePc);
 };
 
-NativeOperation translateNativeOperation(const DecodedInstruction& source, ConstValueSpan constants);
+NativeOperation translateNativeOperation(const DecodedInstruction& source);
 enum class NativeOperationFlow : u8 { Linear, Checkpoint, Terminal, LeavesNative };
 NativeOperationFlow nativeOperationFlow(const NativeOperation& operation);
 size_t planNativeFieldReads(std::span<NativeInstruction> instructions, NativeCompilationTier tier,

@@ -18,6 +18,7 @@ struct OperationName {
 	const char* operator()(const NativeConcatRange&) const { return "concat-range"; }
 	const char* operator()(const NativeClosure&) const { return "create-closure"; }
 	const char* operator()(const NativeLiteral&) const { return "literal"; }
+	const char* operator()(const NativeConstantLoad&) const { return "load-constant"; }
 	const char* operator()(const NativeMove&) const { return "move"; }
 	const char* operator()(const NativeNot&) const { return "not"; }
 	const char* operator()(const NativeClearSlots&) const { return "clear-slots"; }
@@ -46,7 +47,7 @@ void writeRecord(std::ostream& out, const NativeRecordPlan& record) {
 	out << " {";
 	for (u32 field = 0; field < record.count; ++field) {
 		if (field != 0) out << ", ";
-		out << "key#" << record.keys[field] << '=';
+		out << 'K' << record.keySelectors[field] << '=';
 		writeValue(out, record.operands[field]);
 	}
 	out << "} -> pc=" << record.nextPc;
@@ -104,6 +105,7 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 					writeValue(out, operand);
 				}
 			}
+			if (const auto* constant = std::get_if<NativeConstantLoad>(&inst.operation)) out << " K" << constant->index;
 			if (const auto* arithmetic = std::get_if<NativeArithmetic>(&inst.operation))
 				writeNumericPlan(out, *arithmetic);
 			if (inst.slow) out << " miss=e" << unsigned(*inst.slow);

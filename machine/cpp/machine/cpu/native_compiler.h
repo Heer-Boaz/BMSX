@@ -30,7 +30,7 @@ class NativeCompiler {
 public:
 	// Source runs contain at most one decoded page's worth of instructions.
 	static std::vector<std::unique_ptr<NativeBlock>> compile(
-		std::span<const NativeBlockSource> sources, ConstValueSpan constants,
+		std::span<const NativeBlockSource> sources,
 		const NativeCodeBindings& bindings, NativeCompilationOptions options = {});
 };
 

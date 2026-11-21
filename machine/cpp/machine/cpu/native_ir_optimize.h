@@ -4,7 +4,6 @@
 #include <span>
 #include <vector>
 #include "machine/cpu/native_ir_ops.h"
-#include "machine/cpu/value_slots.h"
 
 namespace bmsx {
 
@@ -16,7 +15,7 @@ class NativeRegisterUses;
 // do not affect these facts. Entry facts must have an explicit admission proof.
 class NativeTypePropagation {
 public:
-	void specializeRegion(std::span<NativeIrBlock> blocks, ConstValueSpan constants,
+	void specializeRegion(std::span<NativeIrBlock> blocks,
 		const NativeRegisterUses& uses, std::vector<NativeSlotType>& imports);
 private:
 	struct Transfer;
@@ -32,12 +31,12 @@ private:
 	};
 
 	using Type = std::optional<Fact>;
-	Type type(int selector, ConstValueSpan constants) const;
+	Type type(int selector) const;
 	void define(u16 slot, Type type);
 	void define(u16 slot, ValueTag tag) { define(slot, Fact{m_block, tag}); }
 	void require(Type type);
 	void forgetRange(size_t first, size_t end);
-	void specialize(std::span<NativeInstruction>, ConstValueSpan, bool inlineBuiltin, size_t first = 0, size_t count = 0);
+	void specialize(std::span<NativeInstruction>, bool inlineBuiltin, size_t first = 0, size_t count = 0);
 
 	std::vector<Fact> m_facts;
 	std::vector<Assumption> m_assumptions;

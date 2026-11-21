@@ -6,13 +6,53 @@ import { test } from 'node:test';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { ValueTag, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueFloat, valueFloatBits, valueFromTag, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_METATABLE_LOOP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32, RAM_CODE_FIXTURE_BYTES } from '../helpers/blua32';
+
+test('an installed region reads the current LOADK, LOADKR and RK tags and words', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.LOADKR, 1, 2, 0);
+	writeInstruction(text, 2, OpCode.SETI, 3, 1, 63, 7); // RK(C) = K[0].
+	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
+	const image = linkRawTestSystemBlua32({ text, constants: [13], functions: [{ firstWord: 0, wordCount: 4, maxStack: 4 }] });
+	const pc = image.image.functions[0].codeAddress;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const grant = BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.LOADKR] + BASE_CYCLES[OpCode.SETI] + BASE_CYCLES[OpCode.JMP];
+	const frames = [js.rootThread.frameAtDepth(0), scalar.rootThread.frameAtDepth(0)];
+	const tables = [js, scalar].map((cpu, i) => {
+		const table = cpu.createTable(1);
+		cpu.gc.tables.setInteger(table, 1, valueInteger(0));
+		frames[i].registers.setInteger(2, 0);
+		frames[i].registers.setTable(3, table);
+		return table;
+	});
+	runCpuParity(js, scalar, grant * 64);
+	const word = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const compiled = frames[0].decodedPage!.compiledBlocks!.entries[word];
+	assert.ok(compiled);
+	for (const [tag, payload] of [[ValueTag.Integer, 13], [ValueTag.Float, 0xffa12345], [ValueTag.False, 37]] as const) {
+		for (const frame of frames) {
+			frame.executionImage.constTags[0] = tag;
+			frame.executionImage.constWords[0] = payload;
+		}
+		runCpuParity(js, scalar, grant);
+		const value = valueFromTag(tag, payload);
+		for (const [i, cpu] of [js, scalar].entries()) {
+			assert.equal(frames[i].pc, pc);
+			assert.equal(frames[i].registers.get(0), value);
+			assert.equal(frames[i].registers.get(1), value);
+			assert.equal(cpu.gc.tables.getInteger(tables[i], 1), value);
+		}
+		assert.equal(frames[0].decodedPage!.compiledBlocks!.entries[word], compiled);
+	}
+});
 
 test('only positive integer keys enter the array even with a raw high-bit capacity', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);

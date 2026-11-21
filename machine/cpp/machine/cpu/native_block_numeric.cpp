@@ -142,7 +142,7 @@ void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const Na
 	const auto guard = [&](i16 operand, ValueTag tag) {
 		auto replay = instruction.before;
 		replay.arithmeticAssumption = plan.feedbackAssumption;
-		deferColdExit(m_cache.guard(operand, tag, SLJIT_R0), replay, m_cache.state());
+		deferColdExit(guardTag(operand, tag, SLJIT_R0), replay, m_cache.state());
 	};
 	if (plan.guardLeft) guard(arithmetic.left, *plan.left);
 	if (plan.guardRight) guard(arithmetic.right, *plan.right);

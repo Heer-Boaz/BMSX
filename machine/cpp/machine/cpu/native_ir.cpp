@@ -44,8 +44,7 @@ NativeOperationFlow nativeOperationFlow(const NativeOperation& operation) {
 	return std::visit(OperationFlow{}, operation);
 }
 
-NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, ConstValueSpan constants,
-	bool cpuOwned, NativeCompilationOptions options) {
+NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, bool cpuOwned, NativeCompilationOptions options) {
 	size_t instructionCount = 0;
 	for (const auto& source : sources) instructionCount += source.instructions.size();
 	m_instructions.reserve(instructionCount);
@@ -55,7 +54,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Const
 	for (const auto& source : sources) {
 		const size_t first = m_instructions.size();
 		for (const auto& inst : source.instructions)
-			m_instructions.emplace_back(translateNativeOperation(*inst.decoded, constants));
+			m_instructions.emplace_back(translateNativeOperation(*inst.decoded));
 		auto operations = std::span(m_instructions).subspan(first);
 		const size_t count = planNativeFieldReads(operations, options.tier, addressUses);
 		const bool completeRun = count == operations.size();
@@ -102,12 +101,12 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Const
 				? entryForPc(alternate->nextPc) : m_blocks.size(),
 		};
 	}
-	if (options.immutablePagePc) planRecordConstructors(directory, *options.immutablePagePc, constants);
+	if (options.immutablePagePc) planRecordConstructors(directory, *options.immutablePagePc);
 }
 
-void NativeIrRegion::optimize(ConstValueSpan constants, NativeRegisterUses& uses) {
+void NativeIrRegion::optimize(NativeRegisterUses& uses) {
 	uses.analyze(m_blocks);
-	NativeTypePropagation{}.specializeRegion(m_blocks, constants, uses, m_entryTypes);
+	NativeTypePropagation{}.specializeRegion(m_blocks, uses, m_entryTypes);
 }
 
 } // namespace bmsx

@@ -17,7 +17,7 @@ namespace bmsx {
 
 class NativeLowering {
 public:
-	NativeLowering(ConstValueSpan constants, std::span<const std::unique_ptr<NativeBlock>> blocks,
+	NativeLowering(std::span<const std::unique_ptr<NativeBlock>> blocks,
 		const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir, NativeRegisterUses& uses);
 	~NativeLowering();
 	void beginBlock(size_t index);
@@ -38,6 +38,7 @@ private:
 		emitExit(m_blocks[m_current]->terminal, m_ir[m_current].successors[0]);
 	}
 	void lowerOperation(const NativeLiteral&, const NativeInstruction&);
+	void lowerOperation(const NativeConstantLoad&, const NativeInstruction&);
 	void lowerOperation(const NativeMove&, const NativeInstruction&);
 	void lowerOperation(const NativeNot&, const NativeInstruction&);
 	void lowerOperation(const NativeClearSlots&, const NativeInstruction&);
@@ -57,6 +58,9 @@ private:
 	void emitExit(NativeBlockExitSite& exit, size_t target);
 	void emitTop(int extent);
 	void emitConstant(int guest, Value value);
+	void emitPoolWord(u32 index, sljit_s32 word);
+	void emitPoolTag(u32 index, sljit_s32 tag);
+	sljit_jump* guardTag(int selector, ValueTag tag, sljit_s32 scratch);
 	void emitPayload(int selector, sljit_s32 word);
 	void emitTag(int selector, sljit_s32 tag);
 	void emitRawLoad(int selector, sljit_s32 word, sljit_s32 tag);
@@ -81,13 +85,13 @@ private:
 	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&, bool guardStack);
 	void emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBlockExitSite&, sljit_s32 scratch = SLJIT_R2);
 	std::array<sljit_jump*, 3> emitStringValueAddress(NativeBlockExitSite&, bool load,
-		sljit_s32 keySource, sljit_sw keyOperand, bool guardStack, std::optional<u8> temporary);
+		bool guardStack, std::optional<u8> temporary);
 	sljit_jump* emitStringValueTag(bool load, std::optional<ValueTag> resultTag);
 	void emitStringPayload();
-	void emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<StringId> constantKey,
+	void emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<u16> keyIndex,
 		std::optional<ValueTag> resultTag, NativeStorePlan store, bool guardStack, bool ownFieldOnly = false,
 		std::optional<u8> temporary = {});
-	void emitReusedFieldAddress(u8 temporary, NativeBlockExitSite&, std::optional<ValueTag> resultTag);
+	void emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBlockExitSite&, std::optional<ValueTag> resultTag);
 	void emitFieldResult(int slot, std::optional<ValueTag> resultTag);
 	void emitSingleStringReads();
 	void emitTableSlotOffset(sljit_s32 destination, bool word);
@@ -102,7 +106,6 @@ private:
 
 	sljit_compiler* m_compiler;
 	NativeRegisterCache m_cache;
-	ConstValueSpan m_constants;
 	std::span<const std::unique_ptr<NativeBlock>> m_blocks;
 	const NativeCodeBindings& m_bindings;
 	std::span<const NativeIrBlock> m_ir;
@@ -143,7 +146,6 @@ private:
 	std::vector<RomRead> m_romReads;
 	struct SingleStringRead {
 		std::array<sljit_jump*, 4> ownMisses;
-		std::optional<StringId> key;
 		State registers;
 		NativeBlockExitSite* exit;
 		sljit_label* result;

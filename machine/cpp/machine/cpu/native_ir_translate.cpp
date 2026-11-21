@@ -5,7 +5,7 @@
 
 namespace bmsx {
 
-NativeOperation translateNativeOperation(const DecodedInstruction& instruction, ConstValueSpan constants) {
+NativeOperation translateNativeOperation(const DecodedInstruction& instruction) {
 	const auto op = static_cast<OpCode>(instruction.op);
 	const auto a = instruction.a;
 	const auto b = instruction.b, c = instruction.c;
@@ -19,7 +19,7 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction, 
 
 	case OpCode::NOT: return NativeNot{a, b};
 	case OpCode::LOADNIL: return NativeClearSlots{a, static_cast<u16>(b)};
-	case OpCode::LOADK: return NativeLiteral{a, constants.get(instruction.bx)};
+	case OpCode::LOADK: return NativeConstantLoad{a, instruction.bx};
 	case OpCode::KNIL: return NativeLiteral{a, valueNil()};
 	case OpCode::KFALSE: return NativeLiteral{a, valueBool(false)};
 	case OpCode::KTRUE: return NativeLiteral{a, valueBool(true)};

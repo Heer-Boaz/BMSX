@@ -1,6 +1,6 @@
 import { ValueMoveKind, INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
-import { DecodedDispatchOp, type Blua32ExecutionImage, type DecodedInstructionPage } from './execution_image';
+import { DecodedDispatchOp, type DecodedInstructionPage } from './execution_image';
 import { ValueTag } from './value';
 import type { Memory } from '../memory/memory';
 import { compiledArithmeticSupports, emitArithmetic } from './compiled_block_arithmetic';
@@ -117,19 +117,19 @@ export type CompiledBlock = {
 	incoming: CompiledBlockExitSite | null;
 };
 
-type StatementEmitter = (page: DecodedInstructionPage, word: number, image: Blua32ExecutionImage,
+type StatementEmitter = (page: DecodedInstructionPage, word: number,
 	registers: JavaScriptRegisterCache, exitIndex: number) => string;
 const emitters: (StatementEmitter | undefined)[] = new Array(OPCODE_COUNT);
-emitters[OpCode.MOV] = (p, w, _image, r) => r.copy(p.a[w], p.b[w]);
-emitters[OpCode.LOADK] = (p, w, image, r) => r.writeEncoded(p.a[w], `${image.constTags[p.bx[w]]}`, `k[${p.bx[w]}]`);
-emitters[OpCode.KNIL] = (p, w, _image, r) => r.writeEncoded(p.a[w], `${ValueTag.Nil}`, '0');
-emitters[OpCode.KFALSE] = (p, w, _image, r) => r.writeEncoded(p.a[w], `${ValueTag.False}`, '0');
-emitters[OpCode.KTRUE] = (p, w, _image, r) => r.writeEncoded(p.a[w], `${ValueTag.True}`, '0');
-emitters[OpCode.NOT] = (p, w, _image, r) => r.writeEncoded(p.a[w], `${r.truthy(p.b[w])}?${ValueTag.False}:${ValueTag.True}`, '0');
-emitters[OpCode.K0] = (p, w, _image, r) => r.writeInteger(p.a[w], '0');
-emitters[OpCode.K1] = (p, w, _image, r) => r.writeInteger(p.a[w], '1');
-emitters[OpCode.KM1] = (p, w, _image, r) => r.writeInteger(p.a[w], '-1');
-emitters[OpCode.KSMI] = (p, w, _image, r) => r.writeInteger(p.a[w], `${p.sbx[w]}`);
+emitters[OpCode.MOV] = (p, w, r) => r.copy(p.a[w], p.b[w]);
+emitters[OpCode.LOADK] = (p, w, r) => r.writeEncoded(p.a[w], `kt[${p.bx[w]}]`, `k[${p.bx[w]}]`);
+emitters[OpCode.KNIL] = (p, w, r) => r.writeEncoded(p.a[w], `${ValueTag.Nil}`, '0');
+emitters[OpCode.KFALSE] = (p, w, r) => r.writeEncoded(p.a[w], `${ValueTag.False}`, '0');
+emitters[OpCode.KTRUE] = (p, w, r) => r.writeEncoded(p.a[w], `${ValueTag.True}`, '0');
+emitters[OpCode.NOT] = (p, w, r) => r.writeEncoded(p.a[w], `${r.truthy(p.b[w])}?${ValueTag.False}:${ValueTag.True}`, '0');
+emitters[OpCode.K0] = (p, w, r) => r.writeInteger(p.a[w], '0');
+emitters[OpCode.K1] = (p, w, r) => r.writeInteger(p.a[w], '1');
+emitters[OpCode.KM1] = (p, w, r) => r.writeInteger(p.a[w], '-1');
+emitters[OpCode.KSMI] = (p, w, r) => r.writeInteger(p.a[w], `${p.sbx[w]}`);
 emitters[OpCode.JMP] = () => '';
 emitters[OpCode.JMPIF] = emitters[OpCode.JMP];
 emitters[OpCode.JMPIFNOT] = emitters[OpCode.JMP];
@@ -210,14 +210,14 @@ export type EmittedJavaScriptBlock = {
 /** Emit a segment and its precise side exits; the region owns control flow. */
 export function emitJavaScriptBlock(
 	page: DecodedInstructionPage, plan: CompiledBlockSource,
-	image: Blua32ExecutionImage, memory: Memory, exits: CompiledBlockExitSite[], residents: ReadonlyMap<number, boolean>, outputs: ReadonlySet<number>,
+	memory: Memory, exits: CompiledBlockExitSite[], residents: ReadonlyMap<number, boolean>, outputs: ReadonlySet<number>,
 	writeBacks: CompiledExitWriteBacks,
 ): EmittedJavaScriptBlock {
 	const { firstWord, endWord, skippedInstructionWidth } = plan;
 	let pc = plan.pc;
 	const firstExit = exits.length;
 	const source: string[] = [];
-	const registers = new JavaScriptRegisterCache(image, residents, outputs, writeBacks);
+	const registers = new JavaScriptRegisterCache(residents, outputs, writeBacks);
 	let cycles = 0;
 	let openVarargs = 0;
 	let admissionCycles = 0;
@@ -292,7 +292,7 @@ export function emitJavaScriptBlock(
 		} else if (arithmetic) {
 			source.push(emitArithmetic(page, word, registers, numericFault));
 		} else {
-			source.push(emitters[op]!(page, word, image, registers, exitIndex));
+			source.push(emitters[op]!(page, word, registers, exitIndex));
 		}
 		// The checked exit precedes this instruction's readiness surcharge.
 		if (words) formatCycles += page.c[word];

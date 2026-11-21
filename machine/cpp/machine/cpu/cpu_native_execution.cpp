@@ -330,7 +330,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				// The final store may exhaust the grant, but every store must
 				// begin with positive budget. Otherwise use the original PCs.
 				if (cpu.instructionBudgetRemaining > (fields - 1) * fieldCycles
-					&& record->requiredSlots <= static_cast<u32>(frame->stackCapacity())) {
+					&& record->requiredSlots <= static_cast<u32>(frame->stackCapacity())
+					&& record->bindKeys(frame->executionImage->constPool)) {
 					std::array<Value, TABLE_RECORD_FIELDS_MAX> values;
 					u32 present = 0;
 					for (int field = 0; field < fields; ++field) {
@@ -454,7 +455,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			state.constants = frame->executionImage->constPool;
 			state.frame = frame;
 			state.cop0Words = cpu.m_cop0Words.data();
-			state.constantCount = static_cast<u32>(frame->executionImage->constPool.size());
 		}
 		state.remainingCycles = cpu.instructionBudgetRemaining;
 		state.registerTop = frame->readWindow(FrameField::Top);

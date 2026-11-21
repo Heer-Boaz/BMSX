@@ -136,7 +136,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		field.a = 0; field.b = 1; field.c = store ? -1 : 1;
 		field.width = 2; field.baseCycles = BASE_CYCLES[field.op]; field.tableCacheSlot = slot;
 		const std::array source{NativeBlockInstruction{&field, 0x1000u}};
-		auto block = test::compileNative(source, constants.view(), bytes, machine.memory, machine.cpu.stringPool());
+		auto block = test::compileNative(source, bytes, machine.memory, machine.cpu.stringPool());
 		ValueSlots registers(2);
 		registers.set(0, valueTable(table.address())); registers.set(1, valueTable(table.address()));
 		if (store) {
@@ -153,7 +153,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 			DecodedInstruction alias = field;
 			alias.a = alias.b;
 			const std::array aliasSource{NativeBlockInstruction{&alias, 0x1000u}};
-			auto aliasBlock = test::compileNative(aliasSource, constants.view(), bytes, machine.memory, machine.cpu.stringPool());
+			auto aliasBlock = test::compileNative(aliasSource, bytes, machine.memory, machine.cpu.stringPool());
 			table.setStringKey(key, valueFloatBits(0x80000000u));
 			require(aliasBlock->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = aliasBlock->terminal.cycles})->exit == NativeBlockExit::Continue
 				&& registers.get(1) == valueFloatBits(0x80000000u), "a cached field result can replace its own table receiver");

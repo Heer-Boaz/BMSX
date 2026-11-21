@@ -45,14 +45,14 @@ NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, CPU* cp
 	  memory(&memory), strings(&pool), cpu(cpu) {}
 
 std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
-	std::span<const NativeBlockSource> sources, ConstValueSpan constants,
+	std::span<const NativeBlockSource> sources,
 	const NativeCodeBindings& bindings, NativeCompilationOptions options
 ) {
-	NativeIrRegion ir(sources, constants, bindings.cpu != nullptr, options);
+	NativeIrRegion ir(sources, bindings.cpu != nullptr, options);
 	const auto plans = ir.blocks();
 	if (plans.empty()) return {};
 	NativeRegisterUses uses;
-	ir.optimize(constants, uses);
+	ir.optimize(uses);
 
 	auto region = std::make_shared<NativeCodeRegion>();
 	region->ram = bindings.ram;
@@ -77,7 +77,7 @@ std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 			block->terminal.recordConstructor = new NativeTableConstructor(ir.recordPlans()[*allocation->record]);
 		entries.push_back(std::move(block));
 	}
-	NativeLowering compiler(constants, entries, bindings, plans, uses);
+	NativeLowering compiler(entries, bindings, plans, uses);
 	for (size_t index = 0; index < plans.size(); ++index) {
 		compiler.beginBlock(index);
 		for (const auto& instruction : plans[index].instructions)

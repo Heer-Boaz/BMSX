@@ -231,19 +231,13 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 		pendingJob.pagePc = pagePc;
 		pendingJob.slot = source.slot;
 		pendingJob.invalidated = false;
-		if (!image.workerConstantsCurrent) {
-			const size_t count = image.constPool.size();
-			if (image.workerConstants.capacity() != count) image.workerConstants.resize(count);
-			image.workerConstants.view().copyFrom(image.constPool, 0, 0, count);
-			image.workerConstantsCurrent = true;
-		}
-		m_nativeCompilerWorker->submit(sources, image.workerConstants.view(),
+		m_nativeCompilerWorker->submit(sources,
 			NativeCodeBindings(m_memory, m_stringPool, this), options, profile != nullptr);
 		return;
 	}
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
-	auto blocks = NativeCompiler::compile(sources, image.constPool, NativeCodeBindings(m_memory, m_stringPool, this), options);
+	auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(m_memory, m_stringPool, this), options);
 	if (!blocks.empty()) installNativeRegion(image, page, pagePc, source.slot, std::move(blocks));
 }
 

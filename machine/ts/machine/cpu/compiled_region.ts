@@ -52,7 +52,7 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 	for (let index = 0; index < plans.length; ++index) {
 		// Helper-success spans inherit all actual definitions and no new admission.
 		if (index !== 0 && plans[index - 1].fallthrough) residents[index] = blocks[index - 1].registers.residents;
-		blocks.push(emitJavaScriptBlock(page, plans[index], image, memory, exits, residents[index], registers[index].outputs, writeBacks));
+		blocks.push(emitJavaScriptBlock(page, plans[index], memory, exits, residents[index], registers[index].outputs, writeBacks));
 	}
 	for (let index = blocks.length - 1; index >= 0; --index) {
 		if (plans[index].fallthrough) {

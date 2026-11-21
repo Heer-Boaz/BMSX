@@ -89,7 +89,7 @@ void fieldChainHasAnExplicitResumePoint() {
 	NativeIrRegion region(sources);
 	const auto ops = region.blocks()[0].instructions;
 	NativeRegisterUses uses;
-	region.optimize({}, uses);
+	region.optimize(uses);
 	const auto& field = std::get<NativeTableAccess>(ops[0].operation);
 	const auto& arithmetic = std::get<NativeArithmetic>(ops[1].operation);
 	const auto& store = std::get<NativeTableAccess>(ops[2].operation);
@@ -128,7 +128,7 @@ void fieldSelectionOwnsColdCutAndContinuation() {
 	decoded[4].c = 7;
 	const std::array runs{NativeBlockSource{source}};
 	{
-		NativeIrRegion region(runs, {}, false, {.tier = NativeCompilationTier::ColdImage});
+		NativeIrRegion region(runs, false, {.tier = NativeCompilationTier::ColdImage});
 		require(region.instructionCount() == 1 && region.blocks().front().terminal.nextPc == pc + INSTRUCTION_BYTES,
 			"unobserved numeric field use defers only its suffix, even across independent assignments");
 	}
@@ -171,7 +171,7 @@ void distinctFieldValuesSurviveCopiesAndSlotReuse() {
 	decoded[4].a = 5; decoded[4].b = 9; decoded[4].c = 6;
 	decoded[5].bx = pc + 0x100;
 	const std::array runs{NativeBlockSource{source}};
-	NativeIrRegion cold(runs, {}, false, {.tier = NativeCompilationTier::ColdImage});
+	NativeIrRegion cold(runs, false, {.tier = NativeCompilationTier::ColdImage});
 	require(cold.instructionCount() == 1 && cold.blocks().front().terminal.nextPc == source[1].pc,
 		"the cold cut begins at the first reaching field producer, not the most recent slot definition");
 
@@ -179,7 +179,7 @@ void distinctFieldValuesSurviveCopiesAndSlotReuse() {
 		decoded[4].observeNativeNumericTypes(valueFloat(1.5f), valueInteger(2));
 	NativeIrRegion warm(runs);
 	NativeRegisterUses uses;
-	warm.optimize({}, uses);
+	warm.optimize(uses);
 	require(warm.blocks().size() == 1, "two proved field reads can share a native segment");
 	const auto instructions = warm.blocks().front().instructions;
 	const NativeRunValues values(instructions);
@@ -214,7 +214,7 @@ void nestedFieldsShareOnlyTheCheckedAddress() {
 	const std::array runs{NativeBlockSource{source}};
 	NativeIrRegion region(runs);
 	NativeRegisterUses uses;
-	region.optimize({}, uses);
+	region.optimize(uses);
 	require(region.blocks().size() == 1, "a repeated own-field path stays in one native segment");
 	const auto& block = region.blocks().front();
 	const auto& first = std::get<NativeTableAccess>(block.instructions[0].operation);
@@ -341,7 +341,7 @@ void feedbackDoesNotDependOnStoreAdjacency() {
 		const std::array runs{NativeBlockSource{std::span(source).first(count)}};
 		NativeIrRegion region(runs);
 		NativeRegisterUses uses;
-		region.optimize({}, uses);
+		region.optimize(uses);
 		const auto& operation = std::get<NativeArithmetic>(region.blocks().front().instructions.front().operation);
 		const auto& plan = std::get<NativeNumericPlan>(operation.strategy);
 		require(plan.action == NativeNumericAction::Float && plan.left == ValueTag::Integer && plan.right == ValueTag::Float
@@ -410,7 +410,7 @@ void successorsImportLogicalTypesBeforeLowering() {
 	const std::array sources{NativeBlockSource{before}, NativeBlockSource{after}};
 	NativeIrRegion region(sources);
 	NativeRegisterUses uses;
-	region.optimize({}, uses);
+	region.optimize(uses);
 	const auto& entry = region.blocks()[1];
 	require(entry.entryTypes.size() == 1 && entry.entryTypes[0].slot == 7 && entry.entryTypes[0].tag == ValueTag::Integer,
 		"the successor has an explicit Integer entry proof independently of host allocation");
@@ -446,7 +446,7 @@ void onlyConsumedEntryProofsSurviveCopies() {
 	const std::array sources{NativeBlockSource{producer}, NativeBlockSource{copy}, NativeBlockSource{consumer}};
 	NativeIrRegion region(sources);
 	NativeRegisterUses uses;
-	region.optimize({}, uses);
+	region.optimize(uses);
 	const auto blocks = region.blocks();
 	for (size_t target : {1u, 2u})
 		require(blocks[target].typePredecessor == target - 1 && blocks[target].entryTypes.size() == 1,
@@ -468,10 +468,6 @@ void dataflowPlansTableAndMemoryInputs() {
 		instruction.baseCycles = BASE_CYCLES[instruction.op];
 		source[index] = {&instruction, pc + static_cast<u32>(index) * INSTRUCTION_BYTES};
 	}
-	ValueSlots pool(3);
-	pool.set(0, valueTable(0x1000));
-	pool.set(1, valueFloat(1.5f));
-	pool.set(2, valueString(0));
 	decoded[0].a = 7;
 	decoded[1].a = 8;
 	decoded[2].a = 9;
@@ -486,18 +482,19 @@ void dataflowPlansTableAndMemoryInputs() {
 	decoded[6].c = static_cast<i16>(MemoryAccessKind::F32LE);
 	const std::span instructions(source);
 	const std::array runs{NativeBlockSource{instructions.first(5)}, NativeBlockSource{instructions.last(2)}};
-	NativeIrRegion region(runs, pool.view());
+	NativeIrRegion region(runs);
 	NativeRegisterUses uses;
-	region.optimize(pool.view(), uses);
+	region.optimize(uses);
 	const auto blocks = region.blocks();
 	const auto& table = std::get<NativeTableAccess>(blocks[1].instructions.front().operation);
 	const auto& memory = std::get<NativeMemoryAccess>(blocks[2].instructions.front().operation);
-	require(table.receiverCheck == NativeTagCheck::Proved && table.store.barrier == NativeGcBarrier::None
+	const auto& receiver = std::get<NativeConstantLoad>(blocks[0].instructions.front().operation);
+	require(receiver.index == 0 && receiver.result == 7
+		&& table.receiverCheck == NativeTagCheck::Dynamic && table.store.barrier == NativeGcBarrier::None
 		&& table.store.nilValue == NativeNilValue::Present,
-		"the checked table path consumes logical receiver and value proofs");
-	require(memory.addressCheck == NativeTagCheck::Proved && memory.store == NativeWordSource::Float
-		&& blocks[1].entryTypes.size() == 4 && blocks[2].entryTypes.size() == 2,
-		"the memory plan receives its proofs through a table edge without depending on host register residency");
+		"the table plan distinguishes a live constant bank load from an immediate with a proved tag");
+	require(memory.addressCheck == NativeTagCheck::Proved && memory.store == NativeWordSource::Dynamic,
+		"the memory plan receives the immediate address proof but no tag proof for the live constant value");
 }
 
 void recordPlanUsesTypedEntriesAndFullRomWords() {
@@ -507,9 +504,6 @@ void recordPlanUsesTypedEntriesAndFullRomWords() {
 	allocation.width = first.width = 1;
 	last.width = 2;
 	for (auto* instruction : {&allocation, &first, &last}) instruction->baseCycles = BASE_CYCLES[instruction->op];
-	ValueSlots constants(2);
-	constants.set(0, valueString(5));
-	constants.set(1, valueString(7));
 	constexpr u32 page = 0x1000;
 	for (const u32 start : {page, page + MAPPED_PAGE_BYTE_SIZE - 3 * INSTRUCTION_BYTES}) {
 		const std::array head{NativeBlockInstruction{&allocation, start}};
@@ -517,9 +511,9 @@ void recordPlanUsesTypedEntriesAndFullRomWords() {
 			NativeBlockInstruction{&last, start + 2 * INSTRUCTION_BYTES}};
 		// Publish out of address order to exercise the typed entry directory.
 		const std::array sources{NativeBlockSource{fields}, NativeBlockSource{head}};
-		NativeIrRegion writable(sources, constants.view(), true);
+		NativeIrRegion writable(sources, true);
 		require(writable.recordPlans().empty(), "writable code never owns a record recipe");
-		NativeIrRegion readonly(sources, constants.view(), true, {.immutablePagePc = page});
+		NativeIrRegion readonly(sources, true, {.immutablePagePc = page});
 		const auto& entry = readonly.blocks().back();
 		const auto& allocation = std::get<NativeTableAllocation>(entry.instructions.back().operation);
 		const auto* recipe = allocation.record ? &readonly.recordPlans()[*allocation.record] : nullptr;
@@ -528,7 +522,7 @@ void recordPlanUsesTypedEntriesAndFullRomWords() {
 			continue;
 		}
 		require(recipe && recipe->count == 2 && recipe->requiredSlots == 71
-			&& recipe->keys[0] == 5 && recipe->keys[1] == 7 && recipe->operands[0] == -1 && recipe->operands[1] == 70
+			&& recipe->keySelectors[0] == 0 && recipe->keySelectors[1] == 1 && recipe->operands[0] == -1 && recipe->operands[1] == 70
 			&& recipe->lastInstructionPc == start + 2 * INSTRUCTION_BYTES && recipe->lastWordPc == start + 3 * INSTRUCTION_BYTES
 			&& recipe->nextPc == start + 4 * INSTRUCTION_BYTES && entry.sourceWords == 4,
 			"the typed plan preserves operands, guest positions and complete source coverage");
@@ -536,7 +530,7 @@ void recordPlanUsesTypedEntriesAndFullRomWords() {
 			"each field retains its ordinary independent entry");
 		std::ostringstream report;
 		dumpNativeIr(report, readonly);
-		require(report.str().find("allocate-record {key#5=K0, key#7=R70}") != std::string::npos,
+		require(report.str().find("allocate-record {K0=K0, K1=R70}") != std::string::npos,
 			"the fused constructor recipe is visible in the IR beside ordinary field entries");
 	}
 }

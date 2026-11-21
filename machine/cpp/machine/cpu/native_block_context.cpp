@@ -53,9 +53,9 @@ void NativeLowering::lowerOperation(const NativePoolRead& read, const NativeInst
 		return;
 	}
 	emitWordOperand(read.index, read.indexPlan, invalid);
-	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, m_constants.size()),
-		invalid, m_cache.state());
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_R0, 0);
+	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state),
+		offsetof(NativeBlockRunState, constants) + ConstValueSpan::sizeOffset()), invalid, m_cache.state());
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, constants) + ConstValueSpan::wordsOffset());
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R2), 2);

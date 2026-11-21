@@ -238,8 +238,7 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 	const int grant = exhausted ? BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1 : 100;
 	const auto& gate = nativeBlockGate();
 	NativeCpuRunState run{.state={.constants=sourceImage->constPool, .frame=frame, .heap=&m.cpu.gcHeap(),
-		.globalValues=decoyGlobals.view(), .systemGlobalValues=decoyGlobals.view(), .cop0Words=decoyCp0.data(),
-		.constantCount=static_cast<u32>(sourceImage->constPool.size()), .remainingCycles=grant, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)),
+		.globalValues=decoyGlobals.view(), .systemGlobalValues=decoyGlobals.view(), .cop0Words=decoyCp0.data(), .remainingCycles=grant, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)),
 		.exitCode=gate.dispatch, .ram=m.memory.ramData(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 		.diagnosticOpcodes={},
@@ -265,7 +264,7 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 	require(run.state.frame == m.cpu.activeThread()->currentFrame
 		&& run.state.constants.words() == run.state.frame->executionImage->constPool.words()
 		&& run.state.constants.tags() == run.state.frame->executionImage->constPool.tags()
-		&& run.state.constantCount == run.state.frame->executionImage->constPool.size()
+		&& run.state.constants.size() == run.state.frame->executionImage->constPool.size()
 		&& run.state.globalValues.words() != decoyGlobals.words() && run.state.globalValues.tags() != decoyGlobals.tags()
 		&& run.state.systemGlobalValues.words() != decoyGlobals.words() && run.state.systemGlobalValues.tags() != decoyGlobals.tags()
 		&& run.state.cop0Words != decoyCp0.data() && run.state.cop0Words[COP0_STATUS] == CPU_STATUS_CART_ENTRY

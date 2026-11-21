@@ -47,7 +47,7 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 	ops[3].a = 6; ops[3].c = 8; ops[3].tableCacheSlot = 0;
 	ops[4].bx = 0x2000u;
 	size_t bytes = 0;
-	auto block = test::compileNative(instructions, constants.view(), bytes, memory, cpu.stringPool());
+	auto block = test::compileNative(instructions, bytes, memory, cpu.stringPool());
 	ValueSlots registers(11);
 	registers.set(6, valueTable(particle.address()));
 	registers.set(1, valueInteger(1));
@@ -81,7 +81,7 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 	ops[2].bx = 0;
 	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
 		ops[2].observeNativeNumericTypes(valueFloat(12.5f), valueFloat(0.25f));
-	auto floats = test::compileNative(instructions, constants.view(), bytes, memory, cpu.stringPool());
+	auto floats = test::compileNative(instructions, bytes, memory, cpu.stringPool());
 	particle.setStringKey(x, valueFloat(12.5f));
 	registers.set(1, valueFloat(0.25f)); run.remainingCycles = 100;
 	const auto* floatHit = floats->run(registers.view(), run);
@@ -111,7 +111,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	constants.set(0, valueString(key));
 	registers.set(1, receiver);
 	size_t bytes = 0;
-	auto block = test::compileNative(instructions, constants.view(), bytes, memory, cpu.stringPool());
+	auto block = test::compileNative(instructions, bytes, memory, cpu.stringPool());
 	auto& hint = block->sideExits[0].tableReadCache;
 	NativeBlockRunState grant{.constants = constants.view(), .heap = &cpu.gcHeap()};
 	const auto read = [&](Value want, int hops, TableLookupStatus status = TableLookupStatus::Resolved) {
@@ -217,7 +217,7 @@ void readsWithoutAProvedPathUseTheSemanticOwner(CPU& cpu, Memory& memory) {
 		decoded[6].bx = 0x2000u;
 		const int cycles = instructionCharge(decoded);
 		size_t bytes = 0;
-		auto block = test::compileNative(source, constants.view(), bytes, memory, cpu.stringPool());
+		auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
 		auto table = cpu.createTable(0, 8);
 		auto parent = cpu.createTable(0, 1);
 		auto meta = cpu.createTable(0, 1);
@@ -328,12 +328,12 @@ void readsWithoutAProvedPathUseTheSemanticOwner(CPU& cpu, Memory& memory) {
 				decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
 				source[i] = {&decoded[i], 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
 			}
-			decoded[0].b = -2; // Proved receiver in R0, also the read destination.
+			decoded[0].b = -2; // Live receiver in R0, also the read destination.
 			decoded[1].tableCacheSlot = ownSlot;
 			decoded[2].a = 2;
 			decoded[3].bx = 0x2000;
 			size_t bytes = 0;
-			auto block = test::compileNative(source, constants.view(), bytes, memory, cpu.stringPool());
+			auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
 			ValueSlots registers(3);
 			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
@@ -342,11 +342,11 @@ void readsWithoutAProvedPathUseTheSemanticOwner(CPU& cpu, Memory& memory) {
 				: exit == &block->sideExits.front() && exit->currentPc == source[1].pc)
 				&& registers.get(0) == (tableReceiver ? valueInteger(59) : receiver)
 				&& registers.get(2) == (tableReceiver ? valueInteger(1) : valueNil()),
-				"a proved receiver takes only its field path and a cold read keeps its destination and suffix");
+				"a live receiver takes only its field path and a cold read keeps its destination and suffix");
 			if (op == OpCode::SELF)
 				require(registers.get(1) == receiver, "SELF publishes its aliased receiver before either read path");
 			const int cycles = instructionCharge(std::span(decoded).first(tableReceiver ? decoded.size() : 2));
-			require(state.remainingCycles == 100 - cycles, "proved receivers retain the precise instruction charge");
+			require(state.remainingCycles == 100 - cycles, "the dynamic receiver retains the precise instruction charge");
 		}
 	}
 }
@@ -372,7 +372,7 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 		suffix.baseCycles = BASE_CYCLES[suffix.op];
 		const std::array source{NativeBlockInstruction{&lookup, 0x1000u}, NativeBlockInstruction{&suffix, 0x1004u}};
 		size_t bytes = 0;
-		auto block = test::compileNative(source, constants.view(), bytes, memory, cpu.stringPool());
+		auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
 		auto table = cpu.createTable(0, 2), meta = cpu.createTable(0, 1);
 		auto holder = cpu.createTable(0, 1), nextHolder = cpu.createTable(0, 1);
 		holder.setStringKey(key, firstResult);
@@ -457,7 +457,7 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 		decoded[5].bx = 0x2000;
 		const int cycles = instructionCharge(decoded);
 		size_t bytes = 0;
-		auto block = test::compileNative(source, constants.view(), bytes, memory, cpu.stringPool());
+		auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
 		auto parent = cpu.createTable(0, 1); parent.setStringKey(key, valueInteger(71));
 		auto meta = cpu.createTable(0, 1); meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(parent.address()));
 		for (size_t n = 0; n < values.size(); ++n) {
@@ -557,7 +557,7 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 		read.baseCycles = BASE_CYCLES[read.op];
 		const std::array source{NativeBlockInstruction{&write, 0x1000}, NativeBlockInstruction{&read, 0x1004}};
 		size_t bytes = 0;
-		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool());
+		auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
 		ValueSlots registers(3);
 		registers.set(0, ref);
 		NativeBlockRunState state{.heap = &cpu.gcHeap()};
@@ -666,7 +666,7 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 	write.baseCycles = BASE_CYCLES[write.op]; read.baseCycles = BASE_CYCLES[read.op];
 	const std::array source{NativeBlockInstruction{&write, 0x1000}, NativeBlockInstruction{&read, 0x1004}};
 	size_t bytes = 0;
-	auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool());
+	auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
 	ValueSlots registers(4); registers.set(0, valueTable(mirror)); registers.set(2, valueInteger(83));
 	NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
 	const auto* arrayHit = block->run(registers.view(), state);
@@ -711,7 +711,8 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 	read.tableCacheSlot = write.tableCacheSlot = static_cast<int>(keySlot);
 	const std::array fields{NativeBlockInstruction{&read, 0x1000}, NativeBlockInstruction{&write, 0x1004}};
 	ValueSlots constants(1); constants.set(0, valueString(key));
-	auto fieldBlock = test::compileNative(fields, constants.view(), bytes, memory, cpu.stringPool());
+	auto fieldBlock = test::compileNative(fields, bytes, memory, cpu.stringPool());
+	state.constants = constants.view();
 	registers.set(2, valueFromTag(ValueTag::False, 37));
 	watches.armHistoryWrites();
 	watches.consumeHistoryWrites(hashBody, 1);
@@ -764,7 +765,7 @@ void watchedTableWordOrTagLeavesBeforeWriting(CPU& cpu, Memory& memory) {
 	store.baseCycles = BASE_CYCLES[store.op];
 	const std::array source{NativeBlockInstruction{&store, 0x1000u}};
 	size_t bytes = 0;
-	auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool());
+	auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
 	ValueSlots registers(3);
 	registers.set(0, valueTable(table.address()));
 	registers.set(2, valueFloatBits(0x80000000u));
@@ -831,7 +832,7 @@ void boundaryLengthRetainsNativeFrame(CPU& cpu, Memory& memory) {
 	decoded[2].a = 5; decoded[2].b = 6;
 	decoded[3].bx = 0x2000;
 	size_t bytes = 0;
-	auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool());
+	auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
 	auto table = cpu.createTable(0, 128);
 	for (int bit = 30; bit >= 0; --bit) table.set(valueInteger(i32{1} << bit), valueBool(false));
 	const Value root = valueTable(cpu.createTable().address());
@@ -885,7 +886,7 @@ void guardedTableFactsFollowRegisterDefinitions(CPU& cpu, Memory& memory) {
 		decoded[4].a = 5; decoded[4].b = 0; decoded[4].c = 1;
 		decoded[5].bx = 0x4000u;
 		size_t bytes = 0;
-		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool());
+		auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
 		auto table = cpu.createTable(2);
 		table.setInteger(1, valueInteger(23));
 		for (const Value first : {valueTable(table.address()), valueNil()}) for (const Value next : {valueTable(table.address()), valueNil()}) {
@@ -935,7 +936,7 @@ void tableFactsAreValidatedAtIndependentRegionEntries(CPU& cpu, Memory& memory) 
 	const std::array sources{NativeBlockSource{std::span(instructions).first<5>()}, NativeBlockSource{std::span(instructions.data() + 5, 2)},
 		NativeBlockSource{std::span(instructions.data() + 7, 2)}};
 	size_t bytes = 0;
-	auto blocks = NativeCompiler::compile(sources, {}, NativeCodeBindings(memory, cpu.stringPool()));
+	auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(memory, cpu.stringPool()));
 	blocks.front()->region->publish(bytes);
 	constexpr std::array entryIndices{0u, 2u, 5u, 7u};
 	std::array<const NativeBlock*, entryIndices.size()> entries;
@@ -998,7 +999,7 @@ void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
 		auto unusedInstructions = instructions;
 		unusedInstructions[4].decoded = &unusedDecoded[4];
 		const std::array unusedSources{NativeBlockSource{std::span(unusedInstructions).first<5>()}};
-		auto blocks = NativeCompiler::compile(unusedSources, {}, NativeCodeBindings(memory, cpu.stringPool()));
+		auto blocks = NativeCompiler::compile(unusedSources, NativeCodeBindings(memory, cpu.stringPool()));
 		blocks.front()->region->publish(bytes);
 		ValueSlots registers(6);
 		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
@@ -1010,7 +1011,7 @@ void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
 		const std::array usedSources{NativeBlockSource{std::span(instructions.data(), 2)},
 			NativeBlockSource{std::span(instructions.data() + 2, 2)},
 			NativeBlockSource{std::span(instructions.data() + 4, 2)}};
-		auto blocks = NativeCompiler::compile(usedSources, {}, NativeCodeBindings(memory, cpu.stringPool()));
+		auto blocks = NativeCompiler::compile(usedSources, NativeCodeBindings(memory, cpu.stringPool()));
 		blocks.front()->region->publish(bytes);
 		ValueSlots registers(6);
 		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
@@ -1047,7 +1048,7 @@ void overwrittenAndEvictedFactsDoNotGuardEntries(CPU& cpu, Memory& memory) {
 		decoded[10].bx = decoded[11].bx = 0x8000u;
 		const std::array sources{NativeBlockSource{std::span(instructions).first<11>()}};
 		size_t bytes = 0;
-		auto blocks = NativeCompiler::compile(sources, {}, NativeCodeBindings(memory, cpu.stringPool()));
+		auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(memory, cpu.stringPool()));
 		blocks.front()->region->publish(bytes);
 		ValueSlots registers(11);
 		for (int operand : {4, 5, 6, 7}) registers.set(operand, valueInteger(0));

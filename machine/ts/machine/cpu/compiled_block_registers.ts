@@ -1,4 +1,3 @@
-import type { Blua32ExecutionImage } from './execution_image';
 import { ValueTag } from './value';
 
 type LocalValue = { readonly tag: string; readonly word: string };
@@ -41,12 +40,12 @@ export class JavaScriptRegisterCache {
 	public localCount = 0;
 	public readonly residents: Map<number, boolean>;
 
-	public constructor(private readonly image: Blua32ExecutionImage, residents: ReadonlyMap<number, boolean>,
+	public constructor(residents: ReadonlyMap<number, boolean>,
 		private readonly outputs: ReadonlySet<number>, private readonly exits: CompiledExitWriteBacks) {
 		this.residents = new Map(residents);
 	}
 	public tagOperand(selector: number): string {
-		if (selector < 0) return `${this.image.constTags[-selector - 1]}`;
+		if (selector < 0) return `kt[${-selector - 1}]`;
 		return this.locals.get(selector)?.tag ?? (this.residents.has(selector) ? `y${selector}` : `r.t(${selector})`);
 	}
 	public wordOperand(selector: number): string {

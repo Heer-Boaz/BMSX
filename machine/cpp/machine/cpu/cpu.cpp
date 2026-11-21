@@ -2044,7 +2044,7 @@ dispatch_native_block: {
 				nativeState.codeRoot = IMAGE.nativeCodeLookup->root(nativeState.cartridgeSlot);
 				nativeState.state = {.constants = IMAGE.constPool, .frame = frame, .heap = &m_heap,
 					.globalValues = m_globalBank.values(), .systemGlobalValues = m_systemGlobalBank.values(),
-					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.size()),
+					.cop0Words = m_cop0Words.data(),
 					.tableIndexKey = asStringId(m_indexKey),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.readWindow(FrameField::Top),
 					.ram = m_memory.ramData(),

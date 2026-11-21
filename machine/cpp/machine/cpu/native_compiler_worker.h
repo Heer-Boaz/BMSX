@@ -23,7 +23,7 @@ public:
 
 	bool idle() const { return m_state.load(std::memory_order_acquire) == State::Idle; }
 	bool ready() const { return m_state.load(std::memory_order_acquire) == State::Ready; }
-	void submit(std::span<const NativeBlockSource> sources, ConstValueSpan constants,
+	void submit(std::span<const NativeBlockSource> sources,
 		const NativeCodeBindings& bindings, NativeCompilationOptions options = {}, bool profile = false);
 	void wait();
 	std::vector<std::unique_ptr<NativeBlock>> take();
@@ -42,7 +42,6 @@ private:
 	std::array<DecodedInstruction, DECODED_PAGE_WORDS * 2u> m_decoded;
 	std::array<NativeBlockInstruction, DECODED_PAGE_WORDS> m_instructions;
 	std::vector<NativeBlockSource> m_sources;
-	ConstValueSpan m_constants; // CPU owns immutable compilation input until take().
 	NativeCodeBindings m_bindings;
 	NativeCompilationOptions m_options;
 	std::vector<std::unique_ptr<NativeBlock>> m_blocks;
