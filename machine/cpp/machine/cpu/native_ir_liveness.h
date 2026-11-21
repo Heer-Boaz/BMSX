@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <span>
 #include <vector>
 
@@ -18,6 +19,16 @@ public:
 
 	bool entryReads(size_t block, int guest) const;
 	bool hasForwardMerge(size_t block) const { return m_forwardEdges[block] > 1; }
+
+	template<class Visit> void forEachEntryRead(size_t block, Visit&& visit) const {
+		const size_t base = block * m_liveWordCount;
+		for (size_t word = 0; word < m_liveWordCount; ++word) {
+			for (u64 live = m_entryLive[base + word]; live != 0; live &= live - 1) {
+				const size_t index = 64 * word + std::countr_zero(live);
+				visit(m_entryRegisters[index]);
+			}
+		}
+	}
 
 	void beginBlock(std::span<const NativeInstruction> instructions);
 	int nextUse(size_t nextInstruction, int guest) const;

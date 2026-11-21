@@ -498,6 +498,77 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		"varargs retain their ordered original argument slots below the working frame");
 }
 
+void wideNativeClosureCallResumesAfterItsBody() {
+	constexpr u32 prefix = 4, body = 5, continuation = 6;
+	constexpr int callBase = 256;
+	test::Blua32TestImage image;
+	image.text.resize(2 * MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 1, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::MOV), 0, 0, 0); // R256 = R0
+	writeInstruction(image.text, prefix, static_cast<u8>(OpCode::WIDE), 1, 0, 0);
+	writeInstruction(image.text, body, static_cast<u8>(OpCode::CALL), 0, 1, 2); // R256(), one result
+	writeInstruction(image.text, continuation, static_cast<u8>(OpCode::K1), 1, 0, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, DECODED_PAGE_WORDS, static_cast<u8>(OpCode::KSMI), 0, 0, 27);
+	writeInstruction(image.text, DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 8, .maxStack = callBase + 1},
+		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 2, .maxStack = 1},
+		{.firstWord = prefix, .wordCount = 4, .maxStack = callBase + 1}};
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
+	CpuMachine native(image, false), scalar(image, true);
+	native.cpu.prepareSystemNativeCode();
+	require(test::runCpuParity(native.cpu, scalar.cpu, 1000) == RunResult::Halted,
+		"a complete guest call leaves a retained frame and sufficient stack backing");
+	const u32 prefixPc = native.rom.textAddress + prefix * INSTRUCTION_BYTES;
+	const u32 bodyPc = native.rom.textAddress + body * INSTRUCTION_BYTES;
+	const u32 continuationPc = native.rom.textAddress + continuation * INSTRUCTION_BYTES;
+	const u32 calleePc = native.rom.textAddress + MAPPED_PAGE_BYTE_SIZE;
+	const auto& caller = *native.cpu.activeThread()->currentFrame;
+	const auto& lookup = *caller.executionImage->nativeCodeLookup;
+	const auto* page = lookup.find(prefixPc, 0);
+	const u32 word = (prefixPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	require(page && page->nativeBlocks && page->nativeBlocks->entries[word]
+		&& page->nativeBlocks->entries[word]->terminal.exit == NativeBlockExit::Call && page->nativeCode[word],
+		"the exact WIDE prefix has a published native CALL body");
+	const auto* calleeEntry = NativeCodeLookup::findEntryCellInRoot(lookup.root(0), calleePc);
+	const auto* fallthrough = NativeCodeLookup::findEntryCellInRoot(lookup.root(0), continuationPc);
+	require(calleeEntry && *calleeEntry && fallthrough && *fallthrough,
+		"the closure entry and caller fallthrough both have live native bodies");
+	for (auto* machine : {&native, &scalar}) {
+		machine->cpu.clearHaltUntilIrq();
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], prefixPc);
+		auto& registers = machine->cpu.activeThread()->currentFrame->registers;
+		registers.set(callBase, registers.get(0));
+		registers.set(1, valueInteger(0));
+	}
+
+	const int enterGrant = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + BASE_CYCLES[static_cast<u8>(OpCode::KSMI)];
+	require(test::runCpuParity(native.cpu, scalar.cpu, enterGrant) == RunResult::Yielded,
+		"the short grant pays for the complete WIDE call and one callee instruction");
+	requireParity(native, scalar);
+	require(native.cpu.getFrameDepth() == 2 && native.cpu.readFramePc(1) == calleePc + INSTRUCTION_BYTES
+		&& native.cpu.readFrameRegister(1, 0) == valueInteger(27), "the closure is suspended immediately before RET");
+	require(native.cpu.readFrameCallSitePc(1) == bodyPc && native.cpu.readFramePc(0) == continuationPc,
+		"the callee records the physical CALL body and its caller the following instruction");
+	require(caller.nativeContinuationCells[0] == fallthrough && caller.nativeContinuationPc == continuationPc,
+		"the direct native CALL gate, not the scalar helper, binds the caller's live continuation");
+
+	require(test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1) == RunResult::Yielded,
+		"RET and one result placement exhaust the next grant");
+	requireParity(native, scalar);
+	require(native.cpu.getFrameDepth() == 1 && native.cpu.readFramePc(0) == continuationPc
+		&& native.cpu.readFrameRegister(0, callBase) == valueInteger(27)
+		&& native.cpu.readFrameRegister(0, 1) == valueInteger(0), "the return commits without executing the fallthrough");
+	require(test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::K1)]) == RunResult::Yielded,
+		"the next grant runs exactly the caller continuation");
+	requireParity(native, scalar);
+	require(native.cpu.lastPc == continuationPc && native.cpu.readFramePc(0) == continuationPc + INSTRUCTION_BYTES
+		&& native.cpu.readFrameRegister(0, 1) == valueInteger(1), "resume executes the instruction after the WIDE body");
+}
+
 void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bool exceptionFrame, int grant = -1) {
 	// The protected target repeatedly calls an ordinary child. A separate live
 	// translation writes a marker without changing top or any frame register.
@@ -1405,6 +1476,7 @@ int main(int argc, char** argv) {
 		nativeCallRouting(10, 1, false, false, false, false, false, 2);
 		nativeCallRouting(6, 4, false, false, false, false, false, 2);
 		nativeCallRouting(3, 1, false, false, false, false, false, 0);
+		wideNativeClosureCallResumesAfterItsBody();
 		nativeReturnRouting(6, 0, 0, false, true);
 		nativeReturnRouting(2, 4, 0, false, false);
 		nativeReturnRouting(6, 2, 0, false, false);

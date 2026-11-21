@@ -8,20 +8,22 @@
 namespace bmsx {
 
 struct NativeInstruction;
+struct NativeIrBlock;
+class NativeRegisterUses;
 
-struct NativeSlotType {
-	u16 slot;
-	ValueTag tag;
-};
+struct NativeSlotType;
 
 // Guest-slot facts on the successful path. Register assignment and spills
 // do not affect these facts. Entry facts must have an explicit admission proof.
 class NativeTypePropagation {
 public:
+	void specializeRegion(std::span<NativeIrBlock> blocks, ConstValueSpan constants,
+		const NativeRegisterUses& uses, std::vector<NativeSlotType>& imports);
 	void specialize(std::span<NativeInstruction> instructions, ConstValueSpan constants,
 		std::span<const NativeSlotType> entryTypes = {});
 
 private:
+	struct Transfer;
 	struct Fact {
 		size_t block = 0;
 		ValueTag tag = ValueTag::Nil;

@@ -1,34 +1,13 @@
 #pragma once
 
-#include <optional>
-#include <variant>
 #include "machine/cpu/native_block.h"
-#include "machine/cpu/native_ir_numeric.h"
+#include "machine/cpu/native_ir_ops.h"
+
+#include <utility>
 
 namespace bmsx {
 
-// The JIT's logical operands are guest slots (or RK constant selectors), not
-// host registers. The immediate is an index, an integer word or a byte
-// displacement, as selected by the operation.
-struct NativeOperands {
-	OpCode op;
-	u16 a;
-	i16 b, c;
-	u32 immediate;
-};
-
-struct NativeArithmeticHint {
-	std::optional<NativeArithmeticFeedback> feedback;
-	bool resultFeedsStore;
-};
-
-struct NativeFieldRead {
-	ValueTag result;
-};
-
-struct NativeControlAccess {
-	bool checkPrivilege;
-};
+class NativeRegisterUses;
 
 // A miss that must execute the opcode in the interpreter. The charge and
 // top describe only the instructions that already completed.
@@ -38,11 +17,21 @@ struct NativeResumePoint {
 	bool operator==(const NativeResumePoint&) const = default;
 };
 
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+enum class NativeAttempt : u8 { None, NewTable, Call, AssignField, Concat, ConcatRange };
+#endif
+
 struct NativeInstruction {
-	NativeOperands operands;
+	NativeOperation operation;
+	NativeSlotAccess slots;
 	NativeResumePoint before;
 	NativeBlockExitSite* slow;
-	std::variant<std::monostate, NativeArithmeticHint, NativeFieldRead, NativeControlAccess, NativeNumericPlan> specialization;
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	NativeAttempt attempt = NativeAttempt::None;
+#endif
+
+	NativeInstruction(NativeOperation operation, NativeResumePoint before = {}, NativeBlockExitSite* slow = nullptr)
+		: operation(std::move(operation)), slots(std::visit([](const auto& op) { return op.slots(); }, this->operation)), before(before), slow(slow) {}
 };
 
 struct NativeIrBlock {
@@ -52,20 +41,27 @@ struct NativeIrBlock {
 	std::array<size_t, 2> successors;
 	NativeBlockExitSite* beforeFusedJump = nullptr;
 	NativeBlockExitSite* completedCall = nullptr;
-	size_t numericPrefix = 0;
+	size_t optimizationPrefix = 0;
+	bool nativeSuccessor = true;
+	std::span<const NativeSlotType> entryTypes{};
 };
 
 class NativeIrRegion {
 public:
-	NativeIrRegion(std::span<const NativeBlockSource> source, const NativeBlockExitHandlers& handlers, bool cpuOwned = false);
+	NativeIrRegion(std::span<const NativeBlockSource> source, const NativeBlockExitHandlers& handlers, ConstValueSpan constants = {}, bool cpuOwned = false);
+	void optimize(ConstValueSpan constants, NativeRegisterUses& uses);
 	std::span<const NativeIrBlock> blocks() const { return m_blocks; }
 	std::vector<std::unique_ptr<NativeBlock>> entries;
 
 private:
 	std::vector<NativeInstruction> m_instructions;
+	std::vector<NativeSlotType> m_entryTypes;
 	std::vector<NativeIrBlock> m_blocks;
-	void translate(const NativeBlockSource& source, const NativeBlockExitHandlers& handlers, bool cpuOwned);
+	void translate(const NativeBlockSource& source, const NativeBlockExitHandlers& handlers, ConstValueSpan constants, bool cpuOwned);
 };
+
+NativeOperation translateNativeOperation(std::span<const NativeBlockInstruction> source, ConstValueSpan constants,
+	bool controlGuarded);
 
 // Region discovery uses the same selection as translation, so it can keep a
 // guarded read and its consumer in one admitted block.

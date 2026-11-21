@@ -4,6 +4,7 @@
 #include <bit>
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
+#include "machine/cpu/value_length.h"
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 #include "machine/cpu/native_compiler_worker.h"
 #endif

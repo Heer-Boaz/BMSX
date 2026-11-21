@@ -8,6 +8,7 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 using namespace bmsx;
@@ -83,26 +84,97 @@ void fieldChainHasAnExplicitResumePoint() {
 	const std::array sources{NativeBlockSource{input}};
 	NativeIrRegion region(sources, {});
 	const auto ops = region.blocks()[0].instructions;
-	NativeTypePropagation types;
-	types.specialize(ops, {});
-	const auto& add = std::get<NativeNumericPlan>(ops[1].specialization);
-	require(std::get<NativeFieldRead>(ops[0].specialization).result == ValueTag::Float
-		&& ops[0].slow->exit == NativeBlockExit::ReadField,
+	NativeRegisterUses uses;
+	region.optimize({}, uses);
+	const auto& field = std::get<NativeTableAccess>(ops[0].operation);
+	const auto& arithmetic = std::get<NativeArithmetic>(ops[1].operation);
+	const auto& store = std::get<NativeTableAccess>(ops[2].operation);
+	const auto& add = std::get<NativeNumericPlan>(arithmetic.strategy);
+	require(field.resultTag == ValueTag::Float && ops[0].slow->exit == NativeBlockExit::ReadField,
 		"only a successful own-field hit provides the Float proof");
 	require(add.action == NativeNumericAction::Float && add.left == ValueTag::Float
 		&& add.right == ValueTag::Integer && !add.guardLeft && add.guardRight
-		&& ops[1].operands.b == ops[0].operands.a && ops[2].operands.c == ops[1].operands.a,
+		&& arithmetic.left == field.value && store.value == arithmetic.result,
 		"the sum uses the proven field result, checks the other input and supplies the store");
 	require(ops[1].before == NativeResumePoint{pc + 4, decoded[0].baseCycles, 10}
 		&& ops[1].slow->lastPc == pc + 8 && ops[1].slow->nextPc == pc + 12,
 		"a type miss retires only GETFIELD before replaying the WIDE sum");
 }
 
+void decodedFieldsBecomeOperationsAndEffects() {
+	DecodedInstruction memory, call, rk;
+	memory.op = static_cast<u8>(OpCode::STORE_MEM_WORDS_D);
+	memory.a = 20; memory.b = 6; memory.c = 3; memory.disp = 7;
+	memory.width = 2; memory.baseCycles = BASE_CYCLES[memory.op];
+	call.op = static_cast<u8>(OpCode::CALL);
+	call.a = 4; call.b = 3; call.c = 0;
+	call.width = 1; call.baseCycles = BASE_CYCLES[call.op];
+	const std::array first{NativeBlockInstruction{&memory, 0x4000}};
+	const std::array second{NativeBlockInstruction{&call, 0x4008}};
+	rk = memory;
+	rk.op = static_cast<u8>(OpCode::STORE_MEM_WORDS);
+	rk.b = -1; rk.width = 1;
+	const std::array third{NativeBlockInstruction{&rk, 0x4010}};
+	const std::array source{NativeBlockSource{first}, NativeBlockSource{second}, NativeBlockSource{third}};
+	NativeIrRegion region(source, {});
+	const auto& write = region.blocks()[0].instructions.front();
+	const auto& transfer = region.blocks()[1].instructions.front();
+	const auto& store = std::get<NativeMemoryAccess>(write.operation);
+	const auto& invoke = std::get<NativeCallSite>(transfer.operation);
+	require(store.mode == NativeMemoryMode::StoreWords && store.format == MemoryAccessKind::Word
+		&& store.displacement == 28 && store.address == 6 && store.wordCount == 3
+		&& write.slots.readsRange.first == 20 && write.slots.readsRange.end() == 23 && !write.slots.readsRange.open,
+		"a counted displaced write carries a byte displacement and a register address");
+	const auto& direct = std::get<NativeMemoryAccess>(region.blocks()[2].instructions.front().operation);
+	require(direct.address == -1 && direct.displacement == 0, "only the undisplaced form takes an RK address");
+	require(invoke.callee == 4 && invoke.supplied == 2 && invoke.requested < 0
+		&& transfer.slots.readsRange.end() == 7 && transfer.slots.writes.first == 4 && transfer.slots.writes.open,
+		"a call carries a selected argument range, not the biased instruction operand");
+}
+
+void undefinedMoveKindDoesNotBecomeANumericWordMove() {
+	DecodedInstruction move;
+	move.op = static_cast<u8>(OpCode::MOV);
+	move.a = 2;
+	move.b = 1;
+	move.c = 3;
+	move.width = 2;
+	move.baseCycles = BASE_CYCLES[move.op];
+	const std::array instructions{NativeBlockInstruction{&move, 0x4100}};
+	const std::array sources{NativeBlockSource{instructions}};
+	NativeIrRegion region(sources, {});
+	const auto& row = region.blocks()[0].instructions[0];
+	require(std::holds_alternative<NativeReplay>(row.operation) && row.before.pc == 0x4100 && row.before.cycles == 0
+		&& region.entries[0]->sideExits.empty(),
+		"an unhandled move replays from its start without committing the numeric transfer");
+}
+
+void successorsImportLogicalTypesBeforeLowering() {
+	constexpr u32 producerPc = 0x4000, consumerPc = 0x4200;
+	DecodedInstruction load, jump, arithmetic;
+	load.op = static_cast<u8>(OpCode::K1); load.a = 7; load.width = load.baseCycles = 1;
+	jump.op = static_cast<u8>(OpCode::JMP); jump.bx = consumerPc; jump.width = jump.baseCycles = 1;
+	arithmetic.op = static_cast<u8>(OpCode::ADD); arithmetic.a = 1; arithmetic.b = arithmetic.c = 7;
+	arithmetic.width = 1; arithmetic.baseCycles = BASE_CYCLES[arithmetic.op];
+	const std::array before{NativeBlockInstruction{&load, producerPc}, NativeBlockInstruction{&jump, producerPc + 4}};
+	const std::array after{NativeBlockInstruction{&arithmetic, consumerPc}};
+	const std::array sources{NativeBlockSource{before}, NativeBlockSource{after}};
+	NativeIrRegion region(sources, {});
+	NativeRegisterUses uses;
+	region.optimize({}, uses);
+	const auto& entry = region.blocks()[1];
+	require(entry.entryTypes.size() == 1 && entry.entryTypes[0].slot == 7 && entry.entryTypes[0].tag == ValueTag::Integer,
+		"the successor has an explicit Integer entry proof independently of host allocation");
+	const auto& plan = std::get<NativeNumericPlan>(std::get<NativeArithmetic>(entry.instructions[0].operation).strategy);
+	require(plan.action == NativeNumericAction::Word && !plan.guardLeft && !plan.guardRight,
+		"the sum consumes its block's admission proof before a backend binds locations");
+}
+
 void registerUses() {
-	std::array first{NativeInstruction{{OpCode::K0, 1, 0, 0, 0}, {}, nullptr, {}}};
-	std::array left{NativeInstruction{{OpCode::LOADNIL, 10, 2, 0, 0}, {}, nullptr, {}}};
-	std::array right{NativeInstruction{{OpCode::K0, 11, 0, 0, 0}, {}, nullptr, {}}};
-	std::array join{NativeInstruction{{OpCode::ADD, 8, 10, 12, 0}, {}, nullptr, {}}};
+	std::array first{NativeInstruction(NativeLiteral{1, valueInteger(0)})};
+	std::array left{NativeInstruction(NativeClearSlots{10, 2})};
+	std::array right{NativeInstruction(NativeLiteral{11, valueInteger(0)})};
+	std::array join{NativeInstruction(NativeArithmetic{8, 10, 12, OpCode::ADD, NativeArithmeticHint{}})};
 	std::array blocks{
 		NativeIrBlock{first, nullptr, {1, 2}}, NativeIrBlock{left, nullptr, {3, 3}},
 		NativeIrBlock{right, nullptr, {3, 4}}, NativeIrBlock{join, nullptr, {4, 4}},
@@ -118,13 +190,13 @@ void registerUses() {
 	uses.analyze(blocks);
 	require(!uses.hasForwardMerge(3), "two exits from one predecessor do not form a merge");
 
-	std::array<NativeInstruction, 64> instructions;
-	instructions.fill(NativeInstruction{{OpCode::K0, 1, 0, 0, 0}, {}, nullptr, {}});
-	instructions[0].operands = {OpCode::MOV, 10, 9, 0, 0};
-	instructions[2].operands = {OpCode::MOV, 8, 10, 0, 0};
-	instructions[4].operands = {OpCode::LOADNIL, 10, 2, 0, 0};
-	instructions[5].operands = {OpCode::STORE_MEM_WORDS_D, 15, 16, 3, 0};
-	instructions[63].operands = {OpCode::K0, 10, 0, 0, 0};
+	std::vector<NativeInstruction> instructions(64, NativeInstruction(NativeLiteral{1, valueInteger(0)}));
+	instructions[0] = NativeInstruction(NativeMove{10, 9, ValueMoveKind::Copy});
+	instructions[2] = NativeInstruction(NativeMove{8, 10, ValueMoveKind::Copy});
+	instructions[4] = NativeInstruction(NativeClearSlots{10, 2});
+	instructions[5] = NativeInstruction(NativeMemoryAccess{15, 16, 12u, MemoryAccessKind::Word, NativeMemoryMode::StoreWords, 3});
+	instructions[6] = NativeInstruction(NativeClosure{{65537u, 1, CLOSURE_ADDRESS_REGISTER_FLAG}});
+	instructions[63] = NativeInstruction(NativeLiteral{10, valueInteger(0)});
 	uses.beginBlock(instructions);
 	constexpr int never = std::numeric_limits<int>::max();
 	require(uses.nextUse(1, 10) == 1 && uses.nextUse(2, 10) == 0 && uses.nextUse(3, 10) == 1,
@@ -134,6 +206,8 @@ void registerUses() {
 	require(uses.nextUse(5, 14) == never && uses.nextUse(5, 15) == 0 && uses.nextUse(5, 16) == 0
 		&& uses.nextUse(5, 17) == 0 && uses.nextUse(5, 18) == never,
 		"word-store liveness includes the exact source range and an aliased address");
+	require(uses.nextUse(6, 65537) == 0 && uses.nextUse(6, 1) == 0 && uses.nextUse(6, 65538) == never,
+		"register-address CLOSURE reads the complete Bx slot and independently defines its result");
 	require(uses.nextUse(62, 10) == 1 && uses.nextUse(63, 10) == 0 && uses.nextUse(64, 10) == never,
 		"next use includes the final instruction in a full block");
 }
@@ -143,6 +217,9 @@ int main() {
 	try {
 		numericPlans();
 		fieldChainHasAnExplicitResumePoint();
+		decodedFieldsBecomeOperationsAndEffects();
+		undefinedMoveKindDoesNotBecomeANumericWordMove();
+		successorsImportLogicalTypesBeforeLowering();
 		registerUses();
 		return 0;
 	} catch (const std::exception& error) {

@@ -11,11 +11,11 @@ sljit_jump* NativeBlockAbi::emitNonleafBuiltinJump(sljit_compiler* compiler, slj
 	return sljit_emit_jump(compiler, SLJIT_ZERO);
 }
 
-void NativeLowering::emitBuiltinCall(const NativeOperands& instruction) {
+void NativeLowering::lowerOperation(const NativeCallSite& site, const NativeInstruction&) {
 	auto& block = *m_blocks[m_current];
 	auto& call = block.terminal;
 	const auto& ir = m_ir[m_current];
-	const int base = instruction.a;
+	const int base = site.callee;
 	const int tag = knownTag(base);
 	if (!ir.completedCall || ir.successors[0] == m_ir.size()
 		|| (tag >= 0 && tag != static_cast<int>(ValueTag::BuiltinFunction))) {
@@ -28,7 +28,7 @@ void NativeLowering::emitBuiltinCall(const NativeOperands& instruction) {
 	fault(NativeBlockAbi::emitNonleafBuiltinJump(m_compiler, id.reg), call, m_cache.state());
 	// The already loaded builtin word crosses the ABI directly. Keep
 	// unrelated guest payloads in the same registers across the host call.
-	m_cache.publishRange(base, base + instruction.b);
+	m_cache.publishRange(base, base + 1 + site.supplied);
 	m_cache.spillCall(false, 0);
 	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, remainingCycles),
 		NativeBlockAbi::budget, 0, SLJIT_IMM, call.cycles);
@@ -41,7 +41,7 @@ void NativeLowering::emitBuiltinCall(const NativeOperands& instruction) {
 	fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM,
 		static_cast<u32>(NativeBuiltinCallOutcome::Declined)), call, m_cache.state());
 
-	if (instruction.c != 1) m_cache.discardRange(base, base + 1);
+	if (site.requested != 0) m_cache.discardRange(base, base + 1);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, remainingCycles));
 	auto& completed = *ir.completedCall;

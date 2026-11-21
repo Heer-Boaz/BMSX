@@ -381,9 +381,9 @@ private:
 	void executeConcat(CallFrame& frame, int destination, int left, int right);
 	void executeConcatRange(CallFrame& frame, int destination, int base, int count);
 	int closeUpvalues(CallFrame& frame, u32 firstSlot = 0);
-	bool executeCall(CallFrame& frame, int a, int b, int c);
-	bool executeReturn(CallFrame& frame, int a, int b);
-	void executeVararg(CallFrame& frame, int a, int b);
+	bool executeCall(CallFrame& frame, int callee, int supplied, int requested);
+	bool executeReturn(CallFrame& frame, int first, int produced);
+	void executeVararg(CallFrame& frame, int first, int requested);
 	u32 findOpenUpvalue(const CallFrame& frame, int index) const;
 	void linkOpenUpvalue(CallFrame& frame, u32 cell, u32 slot);
 	void writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount);
@@ -422,7 +422,8 @@ private:
 	friend class NativeBlockGate;
 	static void* tryCallNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
 	static void* tryReturnNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
-	static int placeNativeVarargs(NativeBlockRunState*, int first, int request) noexcept;
+	static u32 readNativeLength(NativeBlockRunState*, const StringPool*, Value* operand) noexcept;
+	static int placeNativeVarargs(NativeBlockRunState*, int first, int requested) noexcept;
 	friend class NativeLowering;
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
 	static NativeBuiltinCallOutcome runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;

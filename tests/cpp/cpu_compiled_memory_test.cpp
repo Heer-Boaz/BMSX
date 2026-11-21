@@ -171,7 +171,7 @@ void ramScalarDatapathsAndGuards() {
 	auto constant = NativeBlock::compile(constantSource, constants.view(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	ValueSlots constantRegisters(3); constantRegisters.set(0, valueNil()); constantRegisters.set(1, valueNil()); constantRegisters.set(2, valueNil());
 	require(constant->run(constantRegisters.view(), nativeRunState = {.constants = constants.view(), .remainingCycles = constant->terminal.cycles}) == &constant->terminal
-		&& constant->sideExits[0].exitB == -1, "a constant memory address retains its signed RK selector");
+		&& constant->sideExits[0].operands.memory.address == -1, "a constant memory address retains its signed RK selector");
 }
 
 void generatedMemoryBoundaries() {
@@ -244,7 +244,7 @@ void coldExitsPreserveAddressOperands() {
 			const auto* exit = block->run(registers.view(), state);
 			require(exit->exit == (op == OpCode::LOAD_MEM || op == OpCode::LOAD_MEM_D
 				? NativeBlockExit::ReadMemory : NativeBlockExit::WriteMemory)
-				&& exit->exitB == instruction.b && exit->exitBx == static_cast<u32>(instruction.disp) * 4u && registers.get(0) == valueInteger(17),
+				&& exit->operands.memory.address == instruction.b && exit->operands.memory.displacement == static_cast<u32>(instruction.disp) * 4u && registers.get(0) == valueInteger(17),
 				"misaligned, MMIO and unmapped exits preserve the selector and byte displacement before side effects");
 		}
 	}
@@ -268,7 +268,7 @@ void coldExitsPreserveAddressOperands() {
 			ValueSlots registers(4); registers.set(0, valueNil()); registers.set(1, constant ? valueInteger(DYNAMIC_RAM_BASE) : base); registers.set(2, valueInteger(11)); registers.set(3, valueInteger(12));
 			NativeBlockRunState state{.constants = constants.view(), .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
-			require(exit->exit == NativeBlockExit::WriteWords && exit->exitB == instruction.b && exit->exitBx == static_cast<u32>(instruction.disp) * 4u,
+			require(exit->exit == NativeBlockExit::WriteWords && exit->operands.memory.address == instruction.b && exit->operands.memory.displacement == static_cast<u32>(instruction.disp) * 4u,
 				"counted stores preserve address operands across bounds, alignment and watched-page exits");
 		}
 	}

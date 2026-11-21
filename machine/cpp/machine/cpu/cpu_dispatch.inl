@@ -377,23 +377,12 @@ DISPATCH_LABEL(NOT) {
 }
 
 DISPATCH_LABEL(LEN) {
-	const int a = decoded->a;
-	const int b = decoded->b;
-	const Value& val = REG(b);
-	if (valueIsString(val)) {
-		int cp = static_cast<int>(m_stringPool.byteLength(asStringId(val)));
-		SET_REGISTER_FAST(a, valueInteger(cp));
-		DISPATCH_NEXT();
-	}
-	if (valueIsTable(val)) {
-		u32 probes;
-		const TableRecord table(m_heap, valuePayload(val));
-		const i32 boundary = TableRecord::length(&table, &probes);
-		CYCLES_ADD(static_cast<int>(probes) * TABLE_LENGTH_PROBE_CYCLES);
-		SET_REGISTER_FAST(a, valueInteger(boundary));
-		DISPATCH_NEXT();
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
+	const int destination = decoded->a;
+	const auto length = measureValueLength(REG(decoded->b), m_stringPool, &m_heap);
+	if (!length) throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
+	CYCLES_ADD(length->extraCycles);
+	SET_REGISTER_FAST(destination, valueInteger(length->count));
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(BNOT) {
@@ -523,7 +512,7 @@ DISPATCH_LABEL(SETUP) {
 }
 
 DISPATCH_LABEL(VARARG) {
-	executeVararg(FRAME, decoded->a, decoded->b);
+	executeVararg(FRAME, decoded->a, decodeValueCount(decoded->b, -1));
 	registers = FRAME.registers;
 	DISPATCH_NEXT();
 }
@@ -532,14 +521,14 @@ DISPATCH_LABEL(CALL) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	++m_diagnosticExecutionProfile.interpreterOpcodes.call;
 #endif
-	if (executeCall(FRAME, decoded->a, decoded->b, decoded->c)) {
+	if (executeCall(FRAME, decoded->a, decodeValueCount(decoded->b, -1), decodeValueCount(decoded->c, -1))) {
 		DISPATCH_REBIND_FRAME();
 	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(RET) {
-	if (executeReturn(FRAME, decoded->a, decoded->b)) {
+	if (executeReturn(FRAME, decoded->a, decodeValueCount(decoded->b, -1))) {
 		DISPATCH_REBIND_FRAME();
 	}
 	DISPATCH_CONTINUE();

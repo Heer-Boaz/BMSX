@@ -318,7 +318,7 @@ void execReplacesFramesAfterNativeReturn() {
 	bool generated = false;
 	for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks) {
 		const auto& block = page.nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-		generated |= block && block->terminal.exit == NativeBlockExit::WriteControl && block->terminal.exitB == COP0_EXEC && block->terminal.currentPc == native.rom.textAddress + INSTRUCTION_BYTES;
+		generated |= block && block->terminal.exit == NativeBlockExit::WriteControl && block->terminal.operands.control.field == COP0_EXEC && block->terminal.currentPc == native.rom.textAddress + INSTRUCTION_BYTES;
 	}
 	require(generated, "the context-replacing EXEC is a real generated exit, even when the new frame has not fetched yet");
 #endif

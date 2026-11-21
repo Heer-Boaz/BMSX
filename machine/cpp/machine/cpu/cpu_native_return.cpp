@@ -23,8 +23,9 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 	if (static_cast<int>(receivingDepth) <= run->targetDepth || run->cpu->retargetsHaltedFrame(thread, static_cast<int>(receivingDepth)))
 		return nullptr;
 
-	const int source = exit->exitA;
-	const int produced = decodeValueCount(exit->exitB, std::max(state.registerTop - source, 0));
+	const auto& returned = exit->operands.returned;
+	const int source = returned.first;
+	const int produced = returned.produced < 0 ? std::max(state.registerTop - source, 0) : returned.produced;
 	const int destination = leaving.readAdmittedWindow(FrameField::ReturnBase);
 	const int encodedCount = leaving.readAdmittedWindow(FrameField::ReturnCount);
 	const auto placement = ValuePlacement::fit(produced, decodeValueCount(encodedCount, produced));

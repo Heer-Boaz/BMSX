@@ -4,6 +4,7 @@
 #include "machine/cpu/native_execution.h"
 #include "machine/cpu/native_lowering.h"
 #include "machine/cpu/native_ir.h"
+#include "machine/cpu/native_ir_liveness.h"
 #include "machine/cpu/native_table_constructor.h"
 
 #if defined(BMSX_NATIVE_PERF_MAP)
@@ -65,7 +66,7 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 	std::span<const NativeBlockSource> sources, ConstValueSpan constants,
 	const NativeCodeBindings& bindings, const NativeBlockExitHandlers& exitHandlers
 ) {
-	NativeIrRegion ir(sources, exitHandlers, bindings.cpu != nullptr);
+	NativeIrRegion ir(sources, exitHandlers, constants, bindings.cpu != nullptr);
 	auto region = std::make_shared<NativeCodeRegion>();
 	region->ram = bindings.ram;
 	const auto& gate = nativeBlockGate();
@@ -73,7 +74,9 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 		block->region = region;
 		block->m_gate = &gate;
 	}
-	NativeLowering compiler(constants, ir.entries, bindings, ir.blocks());
+	NativeRegisterUses uses;
+	ir.optimize(constants, uses);
+	NativeLowering compiler(constants, ir.entries, bindings, ir.blocks(), uses);
 	for (size_t index = 0; index < ir.blocks().size(); ++index) {
 		compiler.beginBlock(index);
 		for (const auto& instruction : ir.blocks()[index].instructions)

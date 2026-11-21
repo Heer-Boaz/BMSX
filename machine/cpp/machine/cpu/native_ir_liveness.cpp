@@ -9,81 +9,6 @@
 #include "machine/cpu/native_ir.h"
 
 namespace bmsx {
-namespace {
-
-struct RegisterAccess {
-	std::array<int, 3> slots;
-	u8 reads;
-	bool writesA;
-	int rangeEnd;
-};
-
-RegisterAccess registerAccess(const NativeOperands& op) {
-	const auto code = static_cast<u8>(op.op);
-	const int rangeCount = op.op == OpCode::LOADNIL ? op.b
-		: (op.op == OpCode::STORE_MEM_WORDS || op.op == OpCode::STORE_MEM_WORDS_D) ? op.c : 0;
-	return {{op.a, op.b, op.c}, OPCODE_SCALAR_REGISTER_READS[code], OPCODE_WRITES_REGISTER_A[code] != 0,
-		op.a + rangeCount};
-}
-
-// The incoming map is useful only for a typed use before publication. Table
-// lookups and frame/semantic operations do not justify imposing one edge's
-// proved register types on other incoming edges.
-bool propagatesEntryFacts(OpCode op) {
-	switch (op) {
-	case OpCode::MOV:
-	case OpCode::LOADNIL:
-	case OpCode::NOT:
-	case OpCode::LOADK:
-	case OpCode::LOADKR:
-	case OpCode::GETUP:
-	case OpCode::SETUP:
-	case OpCode::LEN:
-	case OpCode::MFC0:
-	case OpCode::MTC0:
-	case OpCode::LOAD_MEM:
-	case OpCode::LOAD_MEM_D:
-	case OpCode::STORE_MEM:
-	case OpCode::STORE_MEM_D:
-	case OpCode::KNIL:
-	case OpCode::KFALSE:
-	case OpCode::KTRUE:
-	case OpCode::K0:
-	case OpCode::K1:
-	case OpCode::KM1:
-	case OpCode::KSMI:
-	case OpCode::ADD:
-	case OpCode::SUB:
-	case OpCode::MUL:
-	case OpCode::DIV:
-	case OpCode::MOD:
-	case OpCode::FLOORDIV:
-	case OpCode::POW:
-	case OpCode::BAND:
-	case OpCode::BOR:
-	case OpCode::BXOR:
-	case OpCode::SHL:
-	case OpCode::SHR:
-	case OpCode::BNOT:
-	case OpCode::UNM:
-	case OpCode::GETGL:
-	case OpCode::SETGL:
-	case OpCode::GETSYS:
-	case OpCode::SETSYS:
-	case OpCode::JMP:
-	case OpCode::JMPIF:
-	case OpCode::JMPIFNOT:
-	case OpCode::EQ:
-	case OpCode::LT:
-	case OpCode::LE:
-		return true;
-	default:
-		return false;
-	}
-}
-
-} // namespace
-
 void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 	m_entryRegisters.clear();
 	m_forwardEdges.assign(blocks.size(), 0);
@@ -99,7 +24,7 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 
 		maxBlockLength = std::max(maxBlockLength, block.instructions.size());
 	}
-	if (maxBlockLength > 1) m_nextUses.reserve(maxBlockLength * 6);
+	if (maxBlockLength > 1) m_nextUses.reserve(maxBlockLength * 8);
 	// A block can inherit an optimized entry map only from a single forward
 	// predecessor. Standalone regions and all-merge regions need no live map.
 	if (std::none_of(m_forwardEdges.begin(), m_forwardEdges.end(), [](u16 edges) { return edges == 1; })) {
@@ -111,13 +36,12 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 	std::vector<size_t> typedPrefix(blocks.size());
 	for (size_t i = 0; i < blocks.size(); ++i) {
 		for (const auto& inst : blocks[i].instructions) {
-			if (!propagatesEntryFacts(inst.operands.op))
+			const auto& access = inst.slots;
+			if (!access.propagatesEntryTypes)
 				break;
 			++typedPrefix[i];
-			const auto access = registerAccess(inst.operands);
-			for (size_t operand = 0; operand < access.slots.size(); ++operand)
-				if ((access.reads & (1u << operand)) && access.slots[operand] >= 0)
-					m_entryRegisters.push_back(access.slots[operand]);
+			for (int guest : access.reads)
+				if (guest >= 0) m_entryRegisters.push_back(guest);
 		}
 	}
 	std::sort(m_entryRegisters.begin(), m_entryRegisters.end());
@@ -135,25 +59,26 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 	for (size_t i = 0; i < blocks.size(); ++i) {
 		const size_t base = i * m_liveWordCount;
 		for (const auto& inst : blocks[i].instructions.first(typedPrefix[i])) {
-			const auto access = registerAccess(inst.operands);
-			for (size_t operand = 0; operand < access.slots.size(); ++operand) {
-				const int guest = access.slots[operand];
-				if ((access.reads & (1u << operand)) == 0 || guest < 0)
-					continue;
+			const auto& access = inst.slots;
+			for (int guest : access.reads) {
+				if (guest < 0) continue;
 				const size_t reg = std::lower_bound(m_entryRegisters.begin(), m_entryRegisters.end(), guest)
 					- m_entryRegisters.begin();
 				const size_t word = base + reg / 64u;
 				uses[word] |= (u64{1} << (reg % 64u)) & ~definitions[word];
 			}
-			if (access.writesA || inst.operands.op == OpCode::LOADNIL) {
-				const int first = access.slots[0];
-				const int end = access.writesA ? first + 1 : access.rangeEnd;
-				for (auto reg = std::lower_bound(m_entryRegisters.begin(), m_entryRegisters.end(), first);
+			const auto markRange = [&](NativeSlotRange range, bool write) {
+				const int end = range.end();
+				for (auto reg = std::lower_bound(m_entryRegisters.begin(), m_entryRegisters.end(), static_cast<int>(range.first));
 					reg != m_entryRegisters.end() && *reg < end; ++reg) {
-					const size_t index = reg - m_entryRegisters.begin();
-					definitions[base + index / 64u] |= u64{1} << (index % 64u);
+					const size_t index = reg - m_entryRegisters.begin(), word = base + index / 64u;
+					const u64 bit = u64{1} << (index % 64u);
+					if (write) definitions[word] |= bit;
+					else uses[word] |= bit & ~definitions[word];
 				}
-			}
+			};
+			if (access.readsRange.count != 0 || access.readsRange.open) markRange(access.readsRange, false);
+			if (access.writes.count != 0 || access.writes.open) markRange(access.writes, true);
 		}
 	}
 
@@ -190,28 +115,38 @@ void NativeRegisterUses::beginBlock(std::span<const NativeInstruction> instructi
 	m_currentLength = instructions.size();
 	m_nextUses.clear();
 	for (size_t i = 0; i < instructions.size(); ++i) {
-		const auto access = registerAccess(instructions[i].operands);
+		const auto& access = instructions[i].slots;
 		const u64 position = u64{1} << i;
-		const int rangeFirst = access.slots[0];
-		const auto add = [&](int first, int end) {
-			m_nextUses.push_back({first, position});
-			m_nextUses.push_back({end, position});
+		// Normalize this instruction's reads and writes to disjoint intervals
+		// before the sweep: an aliased input/output must not cancel its bit.
+		std::array<NativeSlotRange, 5> ranges;
+		size_t count = 0;
+		const auto insert = [&](NativeSlotRange range) {
+			size_t index = count++;
+			while (index != 0 && range.first < ranges[index - 1].first) {
+				ranges[index] = ranges[index - 1];
+				--index;
+			}
+			ranges[index] = range;
 		};
-		if (rangeFirst < access.rangeEnd)
-			add(rangeFirst, access.rangeEnd);
-		// Writes count as accesses: a cached destination can overwrite its
-		// old dirty value directly instead of causing a spill before the write.
-		const u8 slots = access.reads | (access.writesA ? REGISTER_OPERAND_A : 0);
-		for (size_t operand = 0; operand < access.slots.size(); ++operand) {
-			const int guest = access.slots[operand];
-			if ((slots & (1u << operand)) == 0 || guest < 0 || (guest >= rangeFirst && guest < access.rangeEnd))
-				continue;
-			bool duplicate = false;
-			for (size_t earlier = 0; earlier < operand; ++earlier)
-				duplicate |= (slots & (1u << earlier)) && access.slots[earlier] == guest;
-			if (!duplicate)
-				add(guest, guest + 1);
+		for (const auto range : {access.readsRange, access.writes})
+			if (range.count != 0 || range.open) insert(range);
+		for (const int guest : access.reads)
+			if (guest >= 0) insert({static_cast<u16>(guest), 1});
+		if (count == 0) continue;
+		int first = ranges[0].first, end = ranges[0].end();
+		for (size_t range = 1; range < count; ++range) {
+			if (ranges[range].first <= end) {
+				end = std::max(end, ranges[range].end());
+			} else {
+				m_nextUses.push_back({first, position});
+				m_nextUses.push_back({end, position});
+				first = ranges[range].first;
+				end = ranges[range].end();
+			}
 		}
+		m_nextUses.push_back({first, position});
+		m_nextUses.push_back({end, position});
 	}
 
 	// Sweep disjoint register intervals in place. Adjacent slots with the same

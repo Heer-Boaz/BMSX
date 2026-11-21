@@ -1,6 +1,5 @@
 #include "machine/cpu/native_lowering.h"
 #include "machine/cpu/native_value_emit.h"
-#include "machine/cpu/execution_image.h"
 #include "machine/cpu/string_pool.h"
 
 namespace bmsx {
@@ -20,33 +19,38 @@ template <OpCode op> u32 compareKernel(const Value* args, const StringPool* stri
 	return 0;
 }
 } // namespace
-void NativeLowering::emitComparison(const NativeOperands& instruction, NativeBlockExitSite& taken) {
-	const auto op = instruction.op;
-	const int a = knownTag(instruction.b), b = knownTag(instruction.c);
+void NativeLowering::lowerOperation(const NativeComparison& comparison, const NativeInstruction&) {
+	auto& taken = *m_ir[m_current].taken;
+	const auto op = comparison.operation;
 	sljit_jump* matched;
-	if (a == static_cast<int>(ValueTag::Integer) && b == a) {
-		const auto left = readTyped(instruction.b, ValueTag::Integer, SLJIT_R0),
-				   right = readTyped(instruction.c, ValueTag::Integer, SLJIT_R1);
+	switch (comparison.strategy) {
+	case NativeComparisonStrategy::Word: {
+		const auto left = readTyped(comparison.left, ValueTag::Integer, SLJIT_R0),
+				   right = readTyped(comparison.right, ValueTag::Integer, SLJIT_R1);
 		matched = sljit_emit_cmp(m_compiler,
 			(op == OpCode::EQ	   ? SLJIT_EQUAL
 				: op == OpCode::LT ? SLJIT_SIG_LESS
 								   : SLJIT_SIG_LESS_EQUAL) |
 				SLJIT_32,
 			left.reg, 0, right.reg, 0);
-	} else if (a == static_cast<int>(ValueTag::Float) && b == a) {
-		const auto left = readTyped(instruction.b, ValueTag::Float, SLJIT_R0, SLJIT_FR0),
-				   right = readTyped(instruction.c, ValueTag::Float, SLJIT_R1, SLJIT_FR1);
+		break;
+	}
+	case NativeComparisonStrategy::Float: {
+		const auto left = readTyped(comparison.left, ValueTag::Float, SLJIT_R0, SLJIT_FR0),
+				   right = readTyped(comparison.right, ValueTag::Float, SLJIT_R1, SLJIT_FR1);
 		matched = sljit_emit_fcmp(m_compiler,
 			(op == OpCode::EQ	   ? SLJIT_ORDERED_EQUAL
 				: op == OpCode::LT ? SLJIT_ORDERED_LESS
 								   : SLJIT_ORDERED_LESS_EQUAL) |
 				SLJIT_32,
 			left.reg, 0, right.reg, 0);
-	} else {
+		break;
+	}
+	case NativeComparisonStrategy::Kernel: {
 		constexpr auto args = NativeBlockAbi::helperResultOffset;
-		emitRawLoad(instruction.b, SLJIT_R0, SLJIT_R1);
+		emitRawLoad(comparison.left, SLJIT_R0, SLJIT_R1);
 		emitValueTransportStore(m_compiler, SLJIT_SP, args, SLJIT_R0, SLJIT_R1);
-		emitRawLoad(instruction.c, SLJIT_R0, SLJIT_R1);
+		emitRawLoad(comparison.right, SLJIT_R0, SLJIT_R1);
 		emitValueTransportStore(m_compiler, SLJIT_SP, args + sizeof(Value), SLJIT_R0, SLJIT_R1);
 		m_cache.spillCall(false, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),
@@ -63,6 +67,9 @@ void NativeLowering::emitComparison(const NativeOperands& instruction, NativeBlo
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state),
 			offsetof(NativeBlockRunState, remainingCycles));
 		matched = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
+		break;
+	}
+	default: BMSX_UNREACHABLE();
 	}
 	const auto state = m_cache.state();
 	const auto& ir = m_ir[m_current];
@@ -76,9 +83,9 @@ void NativeLowering::emitComparison(const NativeOperands& instruction, NativeBlo
 		}
 		emitExit(skip ? taken : terminal, ir.successors[skip ? 1 : 0]);
 	};
-	outcome(instruction.a != 0);
+	outcome(!comparison.skipOnMatch);
 	sljit_set_label(matched, sljit_emit_label(m_compiler));
 	m_cache.setState(state);
-	outcome(instruction.a == 0);
+	outcome(comparison.skipOnMatch);
 }
 } // namespace bmsx

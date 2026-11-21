@@ -80,7 +80,7 @@ void NativeLowering::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {
 
 void NativeLowering::emitRomReads() {
 	for (const auto& read : m_romReads) {
-		const auto kind = static_cast<MemoryAccessKind>(read.bus->exitC);
+		const auto kind = read.format;
 		sljit_set_label(read.ramMiss, sljit_emit_label(m_compiler));
 		auto* system = sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, SYSTEM_ROM_SIZE - read.width);
 		sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, CART_ROM_BASE);
@@ -122,28 +122,28 @@ void NativeLowering::emitRomReads() {
 	}
 }
 
-void NativeLowering::emitMemory(const NativeOperands& instruction, NativeBlockExitSite& slow) {
-	const bool words = slow.exit == NativeBlockExit::WriteWords;
-	const auto kind = words ? MemoryAccessKind::Word : static_cast<MemoryAccessKind>(instruction.c);
-	const bool load = slow.exit == NativeBlockExit::ReadMemory;
-	const u32 width = words ? static_cast<u32>(instruction.c) * 4u : kind == MemoryAccessKind::U8 ? 1 : kind == MemoryAccessKind::U16LE ? 2
-		: kind == MemoryAccessKind::F64LE ? 8 : 4;
+void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const NativeInstruction& instruction) {
+	auto& slow = *instruction.slow;
+	const auto kind = access.format;
+	const bool words = access.mode == NativeMemoryMode::StoreWords;
+	const bool load = access.mode == NativeMemoryMode::Load;
+	const u32 width = words ? static_cast<u32>(access.wordCount) * sizeof(u32)
+		: kind == MemoryAccessKind::U8 ? 1u : kind == MemoryAccessKind::U16LE ? 2u : kind == MemoryAccessKind::F64LE ? 8u : 4u;
 	// The instruction has started. Even invalid address operands retain this
 	// charge; ordinary bus exits and retained retries must not charge it again.
 	if (kind == MemoryAccessKind::F64LE)
 		sljit_emit_op2(m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, 2);
-	if (knownTag(instruction.b) == static_cast<int>(ValueTag::Integer)) {
-		const auto address = readTyped(instruction.b, ValueTag::Integer);
+	if (knownTag(access.address) == static_cast<int>(ValueTag::Integer)) {
+		const auto address = readTyped(access.address, ValueTag::Integer);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, address.reg, 0);
 	} else {
-		emitRawLoad(instruction.b, SLJIT_R0, SLJIT_R1);
+		emitRawLoad(access.address, SLJIT_R0, SLJIT_R1);
 		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
 			static_cast<u8>(ValueTag::Integer)), slow, m_cache.state());
 	}
-	if (instruction.op == OpCode::LOAD_MEM_D || instruction.op == OpCode::STORE_MEM_D
-		|| instruction.op == OpCode::STORE_MEM_WORDS_D)
+	if (access.displacement != 0u)
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM,
-			instruction.immediate);
+			access.displacement);
 	const auto alignment = MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(kind)];
 	if (alignment) {
 		sljit_emit_op2(m_compiler, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, alignment);
@@ -179,15 +179,15 @@ void NativeLowering::emitMemory(const NativeOperands& instruction, NativeBlockEx
 		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL, SLJIT_R2, 0, SLJIT_R0, 0), page);
 		// Admit the Integer span before copying any payload. The bus owner
 		// converts mixed spans in order, including partial writes on a fault.
-		m_cache.publishRange(instruction.a, instruction.a + instruction.c);
-		sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_IMM, instruction.a);
+		m_cache.publishRange(access.slot, access.slot + access.wordCount);
+		sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_IMM, access.slot);
 		auto* tag = sljit_emit_label(m_compiler);
 		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM2(NativeBlockAbi::tags, SLJIT_R0), 0);
 		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Integer)), slow, m_cache.state());
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
-		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS, SLJIT_R0, 0, SLJIT_IMM, instruction.a + instruction.c), tag);
+		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS, SLJIT_R0, 0, SLJIT_IMM, access.slot + access.wordCount), tag);
 		NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);
-		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, NativeBlockAbi::words, 0, SLJIT_IMM, instruction.a * sizeof(u32));
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, NativeBlockAbi::words, 0, SLJIT_IMM, access.slot * sizeof(u32));
 		sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_IMM, 0);
 		auto* copy = sljit_emit_label(m_compiler);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R0), 2);
@@ -195,7 +195,7 @@ void NativeLowering::emitMemory(const NativeOperands& instruction, NativeBlockEx
 			sljit_emit_op1(m_compiler, SLJIT_REV32, SLJIT_R3, 0, SLJIT_R3, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM2(SLJIT_R2, SLJIT_R0), 2, SLJIT_R3, 0);
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
-		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS, SLJIT_R0, 0, SLJIT_IMM, instruction.c), copy);
+		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS, SLJIT_R0, 0, SLJIT_IMM, access.wordCount), copy);
 		return;
 	}
 	if (!load) {
@@ -209,9 +209,9 @@ void NativeLowering::emitMemory(const NativeOperands& instruction, NativeBlockEx
 	const auto move = kind == MemoryAccessKind::U8 ? SLJIT_MOV32_U8 : kind == MemoryAccessKind::U16LE ? SLJIT_MOV32_U16 : SLJIT_MOV32;
 	if (load) {
 		emitBackingLoad(kind, false);
-		m_romReads.push_back({ramMiss, sljit_emit_label(m_compiler), &slow, m_cache.state(), width});
+		m_romReads.push_back({ramMiss, sljit_emit_label(m_compiler), &slow, m_cache.state(), width, kind});
 		if (kind != MemoryAccessKind::F64LE) {
-			const auto target = m_cache.write(instruction.a, kind == MemoryAccessKind::F32LE ? ValueTag::Float : ValueTag::Integer);
+			const auto target = m_cache.write(access.slot, kind == MemoryAccessKind::F32LE ? ValueTag::Float : ValueTag::Integer);
 			if (target.tag == ValueTag::Float)
 				sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, target.reg, SLJIT_R0);
 			else
@@ -219,23 +219,23 @@ void NativeLowering::emitMemory(const NativeOperands& instruction, NativeBlockEx
 		} else {
 			sljit_emit_fop1(m_compiler, SLJIT_CONV_F32_FROM_F64, SLJIT_FR0, 0, SLJIT_FR0, 0);
 			emitFloatCanonicalization(SLJIT_FR0);
-			const auto target = m_cache.write(instruction.a, ValueTag::Float);
+			const auto target = m_cache.write(access.slot, ValueTag::Float);
 			sljit_emit_fop1(m_compiler, SLJIT_MOV_F32, target.reg, 0, SLJIT_FR0, 0);
 		}
 		return;
 	}
 	if (kind == MemoryAccessKind::F32LE || kind == MemoryAccessKind::F64LE) {
-		const int tag = knownTag(instruction.a);
+		const int tag = knownTag(access.slot);
 		const auto conversion = kind == MemoryAccessKind::F32LE ? SLJIT_CONV_F32_FROM_S32 : SLJIT_CONV_F64_FROM_S32;
 		if (tag == static_cast<int>(ValueTag::Integer)) {
-			const auto source = readTyped(instruction.a, ValueTag::Integer);
+			const auto source = readTyped(access.slot, ValueTag::Integer);
 			sljit_emit_fop1(m_compiler, conversion, SLJIT_FR0, 0, source.reg, 0);
 		} else if (tag == static_cast<int>(ValueTag::Float)) {
-			const auto source = readTyped(instruction.a, ValueTag::Float);
+			const auto source = readTyped(access.slot, ValueTag::Float);
 			sljit_emit_fop1(m_compiler, kind == MemoryAccessKind::F32LE ? SLJIT_MOV_F32 : SLJIT_CONV_F64_FROM_F32,
 				SLJIT_FR0, 0, source.reg, 0);
 		} else {
-			emitRawLoad(instruction.a, SLJIT_R0, SLJIT_R1);
+			emitRawLoad(access.slot, SLJIT_R0, SLJIT_R1);
 			auto* integer = sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
 			fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
 				static_cast<u8>(ValueTag::Float)), slow, m_cache.state());
@@ -270,11 +270,11 @@ void NativeLowering::emitMemory(const NativeOperands& instruction, NativeBlockEx
 			sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), 4, SLJIT_R1, 0);
 		}
 	} else {
-		if (knownTag(instruction.a) == static_cast<int>(ValueTag::Integer)) {
-			const auto source = readTyped(instruction.a, ValueTag::Integer);
+		if (knownTag(access.slot) == static_cast<int>(ValueTag::Integer)) {
+			const auto source = readTyped(access.slot, ValueTag::Integer);
 			sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, source.reg, 0);
 		} else {
-			emitRawLoad(instruction.a, SLJIT_R0, SLJIT_R1);
+			emitRawLoad(access.slot, SLJIT_R0, SLJIT_R1);
 			fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
 				static_cast<u8>(ValueTag::Integer)), slow, m_cache.state());
 		}

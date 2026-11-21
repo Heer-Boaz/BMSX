@@ -1,6 +1,5 @@
 #include "machine/cpu/native_lowering.h"
 #include "machine/cpu/native_value_emit.h"
-#include "machine/cpu/execution_image.h"
 #include "machine/cpu/value_arithmetic.h"
 
 namespace bmsx {
@@ -50,15 +49,21 @@ u32 wordKernel(const Value* value,u32* out) noexcept { return valueToWord(*value
 using Kernel = u32 (*)(const Value*, Value*) noexcept;
 Kernel kernelFor(OpCode op) {
 	switch (op) {
-#define KERNEL(OP)                                                                                                     \
-	case OpCode::OP:                                                                                                   \
-		return &numericKernel<OpCode::OP>;
-		KERNEL(ADD)
-		KERNEL(SUB)
-		KERNEL(MUL) KERNEL(DIV) KERNEL(MOD) KERNEL(FLOORDIV) KERNEL(POW) KERNEL(UNM) KERNEL(BNOT) KERNEL(BAND)
-			KERNEL(BOR) KERNEL(BXOR) KERNEL(SHL) KERNEL(SHR)
-#undef KERNEL
-				default : BMSX_UNREACHABLE();
+	case OpCode::ADD: return &numericKernel<OpCode::ADD>;
+	case OpCode::SUB: return &numericKernel<OpCode::SUB>;
+	case OpCode::MUL: return &numericKernel<OpCode::MUL>;
+	case OpCode::DIV: return &numericKernel<OpCode::DIV>;
+	case OpCode::MOD: return &numericKernel<OpCode::MOD>;
+	case OpCode::FLOORDIV: return &numericKernel<OpCode::FLOORDIV>;
+	case OpCode::POW: return &numericKernel<OpCode::POW>;
+	case OpCode::UNM: return &numericKernel<OpCode::UNM>;
+	case OpCode::BAND: return &numericKernel<OpCode::BAND>;
+	case OpCode::BOR: return &numericKernel<OpCode::BOR>;
+	case OpCode::BXOR: return &numericKernel<OpCode::BXOR>;
+	case OpCode::SHL: return &numericKernel<OpCode::SHL>;
+	case OpCode::SHR: return &numericKernel<OpCode::SHR>;
+	case OpCode::BNOT: return &numericKernel<OpCode::BNOT>;
+	default: BMSX_UNREACHABLE();
 	}
 }
 } // namespace
@@ -85,13 +90,13 @@ void NativeLowering::emitWordOperand(int selector,NativeBlockExitSite& invalid) 
 }
 
 void NativeLowering::emitNumericKernel(
-	const NativeOperands& instruction, NativeBlockExitSite& invalid, std::optional<ValueTag> resultTag) {
+	const NativeArithmetic& arithmetic, NativeBlockExitSite& invalid, std::optional<ValueTag> resultTag) {
 	constexpr sljit_sw args = NativeBlockAbi::helperResultOffset, result = args + 2 * sizeof(Value);
-	const auto op = instruction.op;
-	emitRawLoad(instruction.b, SLJIT_R0, SLJIT_R1);
+	const auto op = arithmetic.operation;
+	emitRawLoad(arithmetic.left, SLJIT_R0, SLJIT_R1);
 	emitValueTransportStore(m_compiler, SLJIT_SP, args, SLJIT_R0, SLJIT_R1);
-	if (op != OpCode::UNM && op != OpCode::BNOT) {
-		emitRawLoad(instruction.c, SLJIT_R0, SLJIT_R1);
+	if (!arithmetic.unary()) {
+		emitRawLoad(arithmetic.right, SLJIT_R0, SLJIT_R1);
 		emitValueTransportStore(m_compiler, SLJIT_SP, args + sizeof(Value), SLJIT_R0, SLJIT_R1);
 	}
 	const auto prefix = m_cache.state();
@@ -103,9 +108,9 @@ void NativeLowering::emitNumericKernel(
 	fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), invalid, prefix);
 	emitValueTransportLoad(m_compiler, SLJIT_SP, result, SLJIT_R0, SLJIT_R1);
 	if (!resultTag)
-		emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
+		emitRawStore(arithmetic.result, SLJIT_R0, SLJIT_R1);
 	else {
-		const auto target = m_cache.write(instruction.a, *resultTag);
+		const auto target = m_cache.write(arithmetic.result, *resultTag);
 		if (target.tag == ValueTag::Float)
 			sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, target.reg, SLJIT_R0);
 		else
@@ -125,36 +130,35 @@ void NativeLowering::emitFloatCanonicalization(sljit_s32 reg) {
 	sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, reg, SLJIT_R0);
 	sljit_set_label(ordinary, sljit_emit_label(m_compiler));
 }
-void NativeLowering::emitNumeric(const NativeInstruction& source) {
-	const auto& instruction = source.operands;
-	auto& invalid = *source.slow;
-	const auto op = instruction.op;
-	const bool unary = op == OpCode::UNM || op == OpCode::BNOT;
-	const auto& plan = std::get<NativeNumericPlan>(source.specialization);
+void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const NativeInstruction& instruction) {
+	auto& invalid = *instruction.slow;
+	const auto op = arithmetic.operation;
+	const bool unary = arithmetic.unary();
+	const auto& plan = std::get<NativeNumericPlan>(arithmetic.strategy);
 	const auto guard = [&](i16 operand, ValueTag tag) {
-		deferColdExit(m_cache.guard(operand, tag, SLJIT_R0), source.before, m_cache.state());
+		deferColdExit(m_cache.guard(operand, tag, SLJIT_R0), instruction.before, m_cache.state());
 	};
-	if (plan.guardLeft) guard(instruction.b, *plan.left);
-	if (plan.guardRight) guard(instruction.c, *plan.right);
+	if (plan.guardLeft) guard(arithmetic.left, *plan.left);
+	if (plan.guardRight) guard(arithmetic.right, *plan.right);
 	switch (plan.action) {
 	case NativeNumericAction::Fault:
 		fault(sljit_emit_jump(m_compiler, SLJIT_JUMP), invalid, m_cache.state());
 		return;
 	case NativeNumericAction::Kernel:
-		emitNumericKernel(instruction, invalid, plan.result);
+		emitNumericKernel(arithmetic, invalid, plan.result);
 		return;
 	case NativeNumericAction::Word:
 		break;
 	case NativeNumericAction::Float:
 		if (op == OpCode::UNM) {
-			const auto source = readTyped(instruction.b, ValueTag::Float);
-			const auto target = m_cache.write(instruction.a, ValueTag::Float);
+			const auto source = readTyped(arithmetic.left, ValueTag::Float);
+			const auto target = m_cache.write(arithmetic.result, ValueTag::Float);
 			sljit_emit_fop1(m_compiler, SLJIT_NEG_F32, target.reg, 0, source.reg, 0);
 			return;
 		}
-		emitFloatInput(instruction.b, *plan.left, SLJIT_FR0);
-		emitFloatInput(instruction.c, *plan.right, SLJIT_FR1);
-		const auto target = m_cache.write(instruction.a, ValueTag::Float);
+		emitFloatInput(arithmetic.left, *plan.left, SLJIT_FR0);
+		emitFloatInput(arithmetic.right, *plan.right, SLJIT_FR1);
+		const auto target = m_cache.write(arithmetic.result, ValueTag::Float);
 		sljit_emit_fop2(m_compiler,
 			op == OpCode::ADD	? SLJIT_ADD_F32
 			: op == OpCode::SUB ? SLJIT_SUB_F32
@@ -164,17 +168,17 @@ void NativeLowering::emitNumeric(const NativeInstruction& source) {
 		emitFloatCanonicalization(target.reg);
 		return;
 	}
-	const auto a = readTyped(instruction.b, ValueTag::Integer, SLJIT_R0);
+	const auto a = readTyped(arithmetic.left, ValueTag::Integer, SLJIT_R0);
 	if (unary) {
-		const auto target = m_cache.write(instruction.a, ValueTag::Integer);
+		const auto target = m_cache.write(arithmetic.result, ValueTag::Integer);
 		if (op == OpCode::UNM)
 			sljit_emit_op2(m_compiler, SLJIT_SUB32, target.reg, 0, SLJIT_IMM, 0, a.reg, 0);
 		else
 			sljit_emit_op2(m_compiler, SLJIT_XOR32, target.reg, 0, a.reg, 0, SLJIT_IMM, -1);
 		return;
 	}
-	const auto b = readTyped(instruction.c, ValueTag::Integer, SLJIT_R1);
-	const auto target = m_cache.write(instruction.a, ValueTag::Integer);
+	const auto b = readTyped(arithmetic.right, ValueTag::Integer, SLJIT_R1);
+	const auto target = m_cache.write(arithmetic.result, ValueTag::Integer);
 	if (op == OpCode::SHL || op == OpCode::SHR) {
 		auto* negative = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS | SLJIT_32, b.reg, 0, SLJIT_IMM, 0);
 		auto* zeroPositive = sljit_emit_cmp(m_compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, b.reg, 0, SLJIT_IMM, 32);

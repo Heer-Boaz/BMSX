@@ -5,6 +5,7 @@
 #include "machine/cpu/native_table_constructor.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
+#include "machine/cpu/value_length.h"
 
 #include <algorithm>
 
@@ -20,12 +21,21 @@ namespace bmsx {
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
 
+u32 CPU::readNativeLength(NativeBlockRunState* state, const StringPool* strings, Value* operand) noexcept {
+	const auto length = measureValueLength(*operand, *strings, state->heap);
+	if (!length) return 0;
+	state->remainingCycles -= length->extraCycles;
+	*operand = valueInteger(length->count);
+	return 1;
+}
+
 NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept {
-	const int base = exit->exitA;
-	const int receiving = exit->exitC == 1 ? 0 : 1;
-	if (static_cast<u32>(exit->exitC) > 2u || (receiving && base >= state->frame->stackCapacity()))
+	const auto& call = exit->operands.call;
+	const int base = call.callee;
+	const int receiving = call.requested == 0 ? 0 : 1;
+	if (call.requested > 1 || (receiving && base >= state->frame->stackCapacity()))
 		return NativeBuiltinCallOutcome::Declined;
-	const int count = decodeValueCount(exit->exitB, std::max(state->registerTop - base - 1, 0));
+	const int count = call.supplied < 0 ? std::max(state->registerTop - base - 1, 0) : call.supplied;
 	auto& registers = state->frame->registers;
 	const BuiltinArgsView args(registers.subspan(base + 1, static_cast<size_t>(count)));
 	const auto& function = cpu->m_builtinFunctions[static_cast<size_t>(static_cast<BuiltinFunctionId>(builtinWord))];
@@ -147,14 +157,18 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::CompletedCall:
 			transition = NativeBlockTransition::Redispatch;
 			break;
-		case NativeBlockExit::Call:
-			transition = cpu.executeCall(*frame, exit->exitA, exit->exitB, exit->exitC)
+		case NativeBlockExit::Call: {
+			const auto& call = exit->operands.call;
+			transition = cpu.executeCall(*frame, call.callee, call.supplied, call.requested)
 				? NativeBlockTransition::RebindFrame : NativeBlockTransition::Redispatch;
 			break;
-		case NativeBlockExit::Return:
-			transition = cpu.executeReturn(*frame, exit->exitA, exit->exitB)
+		}
+		case NativeBlockExit::Return: {
+			const auto& returned = exit->operands.returned;
+			transition = cpu.executeReturn(*frame, returned.first, returned.produced)
 				? NativeBlockTransition::RebindFrame : NativeBlockTransition::Redispatch;
 			break;
+		}
 		case NativeBlockExit::Halt:
 			cpu.haltUntilIrq();
 			transition = NativeBlockTransition::Redispatch;
@@ -165,46 +179,48 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::WriteControl:
-			cpu.executeControlWrite(*frame, exit->exitA, exit->exitB);
+			cpu.executeControlWrite(*frame, exit->operands.control.slot, exit->operands.control.field);
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::ControlBoundary:
-			transition = NativeBlockTransition::Redispatch;
-			break;
-		case NativeBlockExit::ExecuteFunction:
-			cpu.executeFunctionAddress(wordOperand(frame->registers.get(exit->exitA)));
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::ExceptionReturn:
 			cpu.returnFromException(*frame);
 			transition = NativeBlockTransition::Redispatch;
 			break;
-		case NativeBlockExit::CreateClosure:
-			cpu.executeClosure(*frame, exit->exitA, exit->exitBx, exit->exitC);
+		case NativeBlockExit::CreateClosure: {
+			const auto& closure = exit->operands.closure;
+			cpu.executeClosure(*frame, closure.result, closure.address, closure.flags);
 			transition = NativeBlockTransition::Redispatch;
 			break;
-		case NativeBlockExit::Concat:
-			cpu.executeConcat(*frame, exit->exitA, exit->exitB, exit->exitC);
+		}
+		case NativeBlockExit::Concat: {
+			const auto& concat = exit->operands.concat;
+			cpu.executeConcat(*frame, concat.result, concat.left, concat.right);
 			break;
-		case NativeBlockExit::ConcatRange:
-			cpu.executeConcatRange(*frame, exit->exitA, exit->exitB, exit->exitC);
+		}
+		case NativeBlockExit::ConcatRange: {
+			const auto& concat = exit->operands.concatRange;
+			cpu.executeConcatRange(*frame, concat.result, concat.first, concat.count);
 			break;
+		}
 		case NativeBlockExit::SkipInstruction:
 			cpu.skipNextInstruction(*frame);
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::Vararg:
-			cpu.executeVararg(*frame, exit->exitA, exit->exitB);
+			cpu.executeVararg(*frame, exit->operands.vararg.first, exit->operands.vararg.requested);
 			break;
 		case NativeBlockExit::WriteGlobal:
 		case NativeBlockExit::WriteSystemGlobal: {
 			auto& bank = exit->exit == NativeBlockExit::WriteGlobal ? cpu.m_globalBank : cpu.m_systemGlobalBank;
-			bank.values().set(exit->exitBx, frame->registers.get(exit->exitA));
+			bank.values().set(exit->operands.global.index, frame->registers.get(exit->operands.global.slot));
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		}
 		case NativeBlockExit::WriteUpvalue:
-			Upvalue::store(cpu.m_heap, frame->captureAddress(exit->exitB), frame->registers.get(exit->exitA));
+			Upvalue::store(cpu.m_heap, frame->captureAddress(exit->operands.upvalue.capture), frame->registers.get(exit->operands.upvalue.slot));
 			break;
 		case NativeBlockExit::InvalidOperand:
 		case NativeBlockExit::InvalidConstant:
@@ -212,26 +228,25 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::InvalidLength:
 			throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
 		case NativeBlockExit::ReadMemory:
-			cpu.executeMemoryLoad(*frame, exit->exitA, static_cast<MemoryAccessKind>(exit->exitC),
-				wordOperand(readRK(*frame->executionImage, frame->registers, exit->exitB)) + exit->exitBx);
-			transition = NativeBlockTransition::Redispatch;
-			break;
 		case NativeBlockExit::WriteMemory:
-			cpu.executeMemoryStore(*frame, exit->exitA, static_cast<MemoryAccessKind>(exit->exitC),
-				wordOperand(readRK(*frame->executionImage, frame->registers, exit->exitB)) + exit->exitBx);
+		case NativeBlockExit::WriteWords: {
+			const auto& access = exit->operands.memory;
+			const u32 address = wordOperand(readRK(*frame->executionImage, frame->registers, access.address)) + access.displacement;
+			if (exit->exit == NativeBlockExit::ReadMemory)
+				cpu.executeMemoryLoad(*frame, access.slot, access.format, address);
+			else if (exit->exit == NativeBlockExit::WriteMemory)
+				cpu.executeMemoryStore(*frame, access.slot, access.format, address);
+			else
+				cpu.executeWordStores(*frame, address, access.slot, access.wordCount);
 			transition = NativeBlockTransition::Redispatch;
 			break;
-		case NativeBlockExit::WriteWords:
-			cpu.executeWordStores(*frame,
-				wordOperand(readRK(*frame->executionImage, frame->registers, exit->exitB)) + exit->exitBx,
-				exit->exitA, exit->exitC);
-			transition = NativeBlockTransition::Redispatch;
-			break;
+		}
 		case NativeBlockExit::AllocateTable: {
-			const int a = exit->exitA, array = exit->exitB;
+			const auto& allocation = exit->operands.allocation;
+			const int a = allocation.result, array = allocation.arraySize;
 			// A ROM recipe stays resident across allocation and watched RAM writes.
 			auto* record = exit->recordConstructor;
-			auto table = cpu.createTable(array, exit->exitC);
+			auto table = cpu.createTable(array, allocation.hashSize);
 			frame->registers.set(a, valueTable(table.address()));
 			cpu.instructionBudgetRemaining -= 2 * static_cast<int>(table.storedSlotCount()) - array;
 			frame->extendTop(a + 1);

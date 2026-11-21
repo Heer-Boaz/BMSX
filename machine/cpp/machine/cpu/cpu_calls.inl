@@ -14,25 +14,26 @@ inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, 
 	frame.extendTop(destination + 1);
 }
 
-inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
-	const int argCount = decodeValueCount(b, std::max(frame.readWindow(FrameField::Top) - a - 1, 0));
+inline bool CPU::executeCall(CallFrame& frame, int a, int supplied, int requested) {
+	const int argCount = supplied < 0 ? std::max(frame.readWindow(FrameField::Top) - a - 1, 0) : supplied;
+	const int resultWord = requested < 0 ? 0 : encodeFixedValueCount(requested);
 	const Value callee = frame.registers.get(a);
 	if (valueIsClosure(callee)) {
 		const u32 closure = asClosure(callee, m_heap);
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-		CallFrame* pushed = pushFrame(frame, closure, a + 1, argCount, a, c, false,
+		CallFrame* pushed = pushFrame(frame, closure, a + 1, argCount, a, resultWord, false,
 			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES);
 		return pushed != nullptr;
 	}
 	if (valueIsBuiltinFunction(callee)) {
-		runBuiltinFunction(m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(callee))], frame, a, c, argCount);
+		runBuiltinFunction(m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(callee))], frame, a, resultWord, argCount);
 		return false;
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 }
 
-inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
-	const int count = decodeValueCount(b, std::max(frame.readWindow(FrameField::Top) - a, 0));
+inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
+	const int count = produced < 0 ? std::max(frame.readWindow(FrameField::Top) - a, 0) : produced;
 	instructionBudgetRemaining -= closeUpvalues(frame);
 	const u32 continuation = frame.readControl(FrameField::Protected);
 	if (static_cast<i32>(continuation) >= 0) {
@@ -72,9 +73,9 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 	return true;
 }
 
-inline void CPU::executeVararg(CallFrame& frame, int a, int b) {
+inline void CPU::executeVararg(CallFrame& frame, int a, int requested) {
 	const int available = frame.readWindow(FrameField::VarargCount);
-	const auto placement = ValuePlacement::fit(available, decodeValueCount(b, available));
+	const auto placement = ValuePlacement::fit(available, requested < 0 ? available : requested);
 	const int count = placement.count();
 	if (count != 0) {
 		ValueSpan registers = ensureRegisterCapacity(frame, a + count - 1);
@@ -82,6 +83,6 @@ inline void CPU::executeVararg(CallFrame& frame, int a, int b) {
 		registers.clear(a + placement.copied, placement.padded);
 	}
 	instructionBudgetRemaining -= count;
-	if (b == 0) frame.setTop(a + count);
+	if (requested < 0) frame.setTop(a + count);
 	else if (count != 0) frame.extendTop(a + count);
 }

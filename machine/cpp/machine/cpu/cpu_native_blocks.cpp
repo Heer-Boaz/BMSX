@@ -372,46 +372,52 @@ Value CPU::loadNativeTableField(TableStringReadCache& cache, const Value& base, 
 }
 
 NativeBlockTransition CPU::compiledReadFieldExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	frame->registers.set(exit->exitA, owner->loadNativeTableField(exit->tableReadCache,
-		frame->registers.get(exit->exitB), asStringId(frame->executionImage->constPool.get(exit->exitC))));
-	frame->extendTop(static_cast<int>(exit->exitA) + 1);
+	const auto& access = exit->operands.table;
+	frame->registers.set(access.value, owner->loadNativeTableField(exit->tableReadCache,
+		frame->registers.get(access.receiver), asStringId(frame->executionImage->constPool.get(access.key))));
+	frame->extendTop(static_cast<int>(access.value) + 1);
 	return NativeBlockTransition::SameWindow;
 }
 
 NativeBlockTransition CPU::compiledWriteFieldExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	owner->storeTableFieldIndexCached(exit->tableStoreSlot, frame->registers.get(exit->exitA),
-		asStringId(frame->executionImage->constPool.get(exit->exitB)), owner->readRK(*frame->executionImage, frame->registers, exit->exitC));
+	const auto& access = exit->operands.table;
+	owner->storeTableFieldIndexCached(exit->tableStoreSlot, frame->registers.get(access.receiver),
+		asStringId(frame->executionImage->constPool.get(access.key)), owner->readRK(*frame->executionImage, frame->registers, access.value));
 	return NativeBlockTransition::NextInstruction;
 }
 
 NativeBlockTransition CPU::compiledReadIndexExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const Value base = frame->registers.get(exit->exitB);
-	const Value key = owner->readRK(*frame->executionImage, frame->registers, exit->exitC);
-	frame->registers.set(exit->exitA, valueIsString(key)
+	const auto& access = exit->operands.table;
+	const Value base = frame->registers.get(access.receiver);
+	const Value key = owner->readRK(*frame->executionImage, frame->registers, access.key);
+	frame->registers.set(access.value, valueIsString(key)
 		? owner->loadNativeTableField(exit->tableReadCache, base, asStringId(key))
 		: owner->loadTableIndex(base, key));
-	frame->extendTop(static_cast<int>(exit->exitA) + 1);
+	frame->extendTop(static_cast<int>(access.value) + 1);
 	return NativeBlockTransition::SameWindow;
 }
 
 NativeBlockTransition CPU::compiledWriteIndexExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const Value base = frame->registers.get(exit->exitA);
-	const Value key = owner->readRK(*frame->executionImage, frame->registers, exit->exitB);
-	const Value value = owner->readRK(*frame->executionImage, frame->registers, exit->exitC);
+	const auto& access = exit->operands.table;
+	const Value base = frame->registers.get(access.receiver);
+	const Value key = owner->readRK(*frame->executionImage, frame->registers, access.key);
+	const Value value = owner->readRK(*frame->executionImage, frame->registers, access.value);
 	if (valueIsString(key)) owner->storeTableFieldIndexCached(exit->tableStoreSlot, base, asStringId(key), value);
 	else owner->storeTableIndex(base, key, value);
 	return NativeBlockTransition::NextInstruction;
 }
 
 NativeBlockTransition CPU::compiledReadIntegerExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	frame->registers.set(exit->exitA, owner->loadTableIntegerIndex(frame->registers.get(exit->exitB), exit->exitC));
-	frame->extendTop(static_cast<int>(exit->exitA) + 1);
+	const auto& access = exit->operands.table;
+	frame->registers.set(access.value, owner->loadTableIntegerIndex(frame->registers.get(access.receiver), access.key));
+	frame->extendTop(static_cast<int>(access.value) + 1);
 	return NativeBlockTransition::SameWindow;
 }
 
 NativeBlockTransition CPU::compiledWriteIntegerExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	owner->storeTableIntegerIndex(frame->registers.get(exit->exitA), exit->exitB,
-		owner->readRK(*frame->executionImage, frame->registers, exit->exitC));
+	const auto& access = exit->operands.table;
+	owner->storeTableIntegerIndex(frame->registers.get(access.receiver), access.key,
+		owner->readRK(*frame->executionImage, frame->registers, access.value));
 	return NativeBlockTransition::NextInstruction;
 }
 

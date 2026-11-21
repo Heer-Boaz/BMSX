@@ -624,7 +624,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 			return binding.functionAddress == prototype;
 		});
 	};
-	require(compiledBinding() != bindings.end() && compiledBinding()->maxStack == 8u
+	require(compiledBinding() != bindings.end() && compiledBinding()->entry.maxStack == 8u
 		&& compiledBinding()->entryCells[0] && *compiledBinding()->entryCells[0]
 		&& !compiledBinding()->entryCells[1],
 		"the warm ROM call binds a live cell on the fetch bank, not the data bank");
@@ -651,7 +651,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
 	for (auto* machine : {&native, &scalar}) require(machine->cpu.readFrameRegister(0, 3) == valueInteger(1),
 		"the same closure enters the code named by the newly fitted ROM record");
-	require(compiledBinding() != bindings.end() && compiledBinding()->maxStack == 10u
+	require(compiledBinding() != bindings.end() && compiledBinding()->entry.maxStack == 10u
 		&& compiledBinding()->entryCells[0] && *compiledBinding()->entryCells[0],
 		"warm native CALL decodes the replacement layout and binds its RAM target");
 	auto* cell = compiledBinding()->entryCells[0];

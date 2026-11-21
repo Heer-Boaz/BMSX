@@ -1,6 +1,5 @@
 #include "machine/cpu/native_lowering.h"
 #include "machine/cpu/native_value_emit.h"
-#include "machine/cpu/native_table_index.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/gc_object.h"
 #include "machine/cpu/table.h"
@@ -158,18 +157,15 @@ void NativeLowering::emitTableReadLeaf(bool fixedStringKey, NativeBlockExitSite&
 	auto* c = m_compiler;
 	// The leaf only reads RAM. Charge additional visits after success; the
 	// dispatcher owns faults and charges their full semantic work there.
-	if (fixedStringKey)
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, NativeBlockAbi::state, 0);
-	else sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), request + offsetof(TableReadRequest, indexKey),
 		SLJIT_IMM, m_bindings.indexKey);
 	sljit_get_local_base(c, SLJIT_R1, 0, request);
 	sljit_get_local_base(c, SLJIT_R2, 0, result);
 	m_cache.spillCall(false, 0);
-	const auto lookup = fixedStringKey ? SLJIT_FUNC_ADDR(nativeFixedStringLookup())
-		: SLJIT_FUNC_ADDR(&TableRecord::loadIndexInNative);
+	const auto lookup = fixedStringKey ? &TableRecord::loadStringIndexInNative : &TableRecord::loadIndexInNative;
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&exit.tableReadCache));
-	sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4V(P, P, P, P), SLJIT_IMM, lookup);
+	sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4V(P, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(lookup));
 	m_cache.spillCall(true, 0);
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_SP),
 		result + offsetof(TableLookupResult, status), SLJIT_IMM, static_cast<u32>(TableLookupStatus::Resolved)),
@@ -210,7 +206,8 @@ void NativeLowering::emitIndexRead(int key, NativeBlockExitSite& exit) {
 }
 
 // Hash keys start after the array; hash values start after all hash keys.
-sljit_jump* NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& exit, std::optional<StringId> constantKey, ValueTag loadTag) {
+sljit_jump* NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& exit,
+	std::optional<StringId> constantKey, std::optional<ValueTag> resultTag) {
 	if (!constantKey)
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
 	const sljit_s32 keySource = constantKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP);
@@ -242,9 +239,8 @@ sljit_jump* NativeLowering::emitStringSlot(bool load, int value, NativeBlockExit
 	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R3);
 	const sljit_s32 valueTagReg = load ? SLJIT_R3 : SLJIT_R2;
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, valueTagReg, 0, SLJIT_MEM1(SLJIT_R2), 0);
-	misses[n++] =
-		sljit_emit_cmp(m_compiler, (loadTag == ValueTag::Nil ? SLJIT_EQUAL : SLJIT_NOT_EQUAL) | SLJIT_32,
-			valueTagReg, 0, SLJIT_IMM, static_cast<u8>(loadTag));
+	misses[n++] = sljit_emit_cmp(m_compiler, (resultTag ? SLJIT_NOT_EQUAL : SLJIT_EQUAL) | SLJIT_32,
+		valueTagReg, 0, SLJIT_IMM, static_cast<u8>(resultTag.value_or(ValueTag::Nil)));
 	if (!load) {
 		// Deletion has to retain a dead key for next(), not just overwrite the tag.
 		const int tag = knownTag(value);
@@ -262,8 +258,8 @@ sljit_jump* NativeLowering::emitStringSlot(bool load, int value, NativeBlockExit
 		NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	}
-	if (loadTag != ValueTag::Nil) {
-		// Guard failure completes the original GETFIELD in the semantic owner.
+	if (resultTag) {
+		// Guard failure completes the original read in the semantic owner.
 		// No typed destination or additional successor cycles are visible yet.
 		for (size_t i = 0; i < n; ++i) fault(misses[i], exit, m_cache.state());
 		return nullptr;
@@ -295,17 +291,17 @@ sljit_jump* NativeLowering::emitStringSlot(bool load, int value, NativeBlockExit
 	return nullptr;
 }
 
-void NativeLowering::emitTableAccess(
-	const NativeOperands& instruction, NativeBlockExitSite& exit, ValueTag fieldValueTag) {
-	const auto op = instruction.op;
-	const bool load = op == OpCode::GETT || op == OpCode::GETI || op == OpCode::GETFIELD || op == OpCode::SELF;
-	const int base = load ? instruction.b : instruction.a;
-	const int key = load ? instruction.c : instruction.b;
+void NativeLowering::lowerOperation(const NativeTableAccess& access, const NativeInstruction& instruction) {
+	auto& exit = *instruction.slow;
+	const bool load = access.mode != NativeTableMode::Write;
+	const int base = access.receiver;
+	const int key = access.key;
+	const int value = access.value;
 	const int baseTag = knownTag(base);
 	constexpr int tableTag = static_cast<int>(ValueTag::Table);
-	if (op == OpCode::SELF) {
+	if (access.mode == NativeTableMode::ReadMethod) {
 		emitRawLoad(base, SLJIT_R0, SLJIT_R1);
-		emitRawStore(instruction.a + 1, SLJIT_R0, SLJIT_R1);
+		emitRawStore(value + 1, SLJIT_R0, SLJIT_R1);
 	} else if (baseTag == tableTag) {
 		const auto word = readTyped(base, ValueTag::Table);
 		if (word.reg != SLJIT_R0)
@@ -326,41 +322,51 @@ void NativeLowering::emitTableAccess(
 	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER, SLJIT_R0, 0, SLJIT_IMM,
 		MAIN_RAM_SIZE - TableRecord::HEADER_BYTES), exit, m_cache.state());
 	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R0, SLJIT_R0);
-	if (op == OpCode::GETT) {
-		emitIndexRead(key, exit);
-	} else if (op == OpCode::SETT) {
+	switch (access.keyKind) {
+	case NativeTableKey::Value: {
+		if (load) {
+			emitIndexRead(key, exit);
+			break;
+		}
 		emitRawLoad(key, SLJIT_R3, SLJIT_R2);
 		auto* string = sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM,
-									  static_cast<u8>(ValueTag::String));
+			static_cast<u8>(ValueTag::String));
 		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM,
-							 static_cast<u8>(ValueTag::Integer)),
-			  exit, m_cache.state());
+			static_cast<u8>(ValueTag::Integer)), exit, m_cache.state());
 		sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
-		emitArrayStore(instruction.c, exit);
+		emitArrayStore(value, exit);
 		auto* joined = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		sljit_set_label(string, sljit_emit_label(m_compiler));
-		emitStringSlot(false, instruction.c, exit);
+		emitStringSlot(false, value, exit);
 		sljit_set_label(joined, sljit_emit_label(m_compiler));
-	} else if (op == OpCode::GETI || op == OpCode::SETI) {
+		break;
+	}
+	case NativeTableKey::Integer:
 		sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R1, 0, SLJIT_IMM, key - 1);
 		if (load) {
 			for (auto* miss : emitArrayRead()) fault(miss, exit, m_cache.state());
-		} else emitArrayStore(instruction.c, exit);
-	} else {
-		auto* hit = emitStringSlot(load, instruction.c, exit, m_constants.payload(key), fieldValueTag);
-		if (fieldValueTag != ValueTag::Nil) {
-			const auto target = m_cache.write(instruction.a, fieldValueTag);
-			if (fieldValueTag == ValueTag::Float)
+		} else {
+			emitArrayStore(value, exit);
+		}
+		break;
+	case NativeTableKey::Field: {
+		auto* hit = emitStringSlot(load, value, exit, m_constants.payload(key), access.resultTag);
+		if (access.resultTag) {
+			const auto target = m_cache.write(value, *access.resultTag);
+			if (target.tag == ValueTag::Float)
 				sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, target.reg, SLJIT_R2);
-			else sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_R2, 0);
+			else
+				sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_R2, 0);
 			return;
 		}
 		if (load) {
 			emitTableReadLeaf(true, exit);
 			sljit_set_label(hit, sljit_emit_label(m_compiler));
 		}
+		break;
+	}
 	}
 	if (load)
-		emitRawStore(instruction.a, SLJIT_R2, SLJIT_R3);
+		emitRawStore(value, SLJIT_R2, SLJIT_R3);
 }
 } // namespace bmsx

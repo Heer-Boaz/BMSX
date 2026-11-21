@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -145,7 +146,7 @@ inline constexpr u32 DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3u;
 // ROM prototype words and image-owned dispatch cell addresses, never a closure or code pointer.
 struct NativeRomCallBinding {
 	static constexpr u32 slotCount = 64u;
-	u32 functionAddress = ~0u;
+	std::optional<u32> functionAddress;
 	FunctionEntry entry{};
 	std::array<void* const*, CARTRIDGE_SLOT_COUNT> entryCells{};
 };

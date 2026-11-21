@@ -32,11 +32,11 @@ void initialize(Memory& memory, u32 address, const FunctionPrototype& prototype,
 }
 
 FunctionPrototype readBinding(const Memory& memory, u32 address) {
-	const u8 flags = memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
+	const BindingFlags binding{memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS)};
 	FunctionPrototype record;
 	record.functionAddress = memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-	record.executionDomainId = executionDomain(flags);
-	if ((flags & CLOSURE_LATCHED_PROTOTYPE) != 0u) {
+	record.executionDomainId = binding.domain();
+	if (binding.latched()) {
 		const u32 tail = captureWordAddress(address, captureCount(memory, address));
 		record.entry = readEntryTail(memory, tail);
 		record.upvalueTableAddress = memory.readRamRecordWord(tail + 16u);

@@ -54,10 +54,14 @@ inline constexpr u32 closureRecordBytes(u32 captures, bool latched = false) {
 }
 
 namespace ClosureRecord {
-constexpr ExecutionDomainId executionDomain(u8 bindingFlags) {
-	const auto bank = bindingFlags & CLOSURE_BINDING_DOMAIN_MASK;
-	return bank >= 2u ? 1 : static_cast<ExecutionDomainId>(bank) - 1;
-}
+struct BindingFlags {
+	u8 bits;
+	constexpr ExecutionDomainId domain() const {
+		const u32 bank = bits & CLOSURE_BINDING_DOMAIN_MASK;
+		return bank >= 2u ? 1 : static_cast<ExecutionDomainId>(bank) - 1;
+	}
+	constexpr bool latched() const { return (bits & CLOSURE_LATCHED_PROTOTYPE) != 0u; }
+};
 void initialize(Memory&, u32 address, const FunctionPrototype&, u8 white, u32 count, bool canonical, bool latched);
 FunctionPrototype readBinding(const Memory&, u32 address);
 FunctionEntry readLatchedEntry(const Memory&, u32 address);

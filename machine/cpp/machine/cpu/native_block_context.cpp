@@ -1,22 +1,22 @@
 #include "machine/cpu/native_lowering.h"
+
+#include <bit>
+#include <limits>
+
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/execution_image.h"
-#include "machine/cpu/native_value_emit.h"
 #include "machine/cpu/call_state.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/thread.h"
 
-#include <bit>
-
 namespace bmsx {
-void NativeLowering::emitContext(const NativeOperands& instruction, NativeBlockExitSite* watched) {
+void NativeLowering::lowerOperation(const NativeGlobalAccess& access, const NativeInstruction& instruction) {
+	auto* watched = instruction.slow;
 	auto* c = m_compiler;
-	const auto op = instruction.op;
-	const auto bank = op == OpCode::GETSYS || op == OpCode::SETSYS ? offsetof(NativeBlockRunState, systemGlobalValues)
+	const auto bank = access.bank == NativeGlobalBank::System ? offsetof(NativeBlockRunState, systemGlobalValues)
 		: offsetof(NativeBlockRunState, globalValues);
 	const sljit_sw words = bank + ValueSpan::wordsOffset(), tags = bank + ValueSpan::tagsOffset();
-	const sljit_sw wordOffset = instruction.immediate * sizeof(u32), tagOffset = instruction.immediate;
-	if (watched) {
+	const sljit_sw wordOffset = access.index * sizeof(u32), tagOffset = access.index;
+	if (access.access == NativeAccess::Write) {
 		// Neither lane can be written until both have passed admission:
 		// either one can invalidate the executing region.
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), words);
@@ -30,7 +30,7 @@ void NativeLowering::emitContext(const NativeOperands& instruction, NativeBlockE
 			SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, ram));
 		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, tagOffset);
 		emitRamWordWriteWatch(*watched, SLJIT_R0, 0, SLJIT_R1, SLJIT_R3);
-		emitRawLoad(instruction.a, SLJIT_R0, SLJIT_R1);
+		emitRawLoad(access.slot, SLJIT_R0, SLJIT_R1);
 		if constexpr (std::endian::native == std::endian::big)
 			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), wordOffset, SLJIT_R0, 0);
@@ -44,10 +44,11 @@ void NativeLowering::emitContext(const NativeOperands& instruction, NativeBlockE
 		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), tags);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), tagOffset);
-	emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
+	emitRawStore(access.slot, SLJIT_R0, SLJIT_R1);
 }
-void NativeLowering::emitConstantIndex(const NativeOperands& instruction, NativeBlockExitSite& invalid) {
-	emitWordOperand(instruction.b, invalid);
+void NativeLowering::lowerOperation(const NativePoolRead& read, const NativeInstruction& instruction) {
+	auto& invalid = *instruction.slow;
+	emitWordOperand(read.index, invalid);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, m_constants.size()),
 		invalid, m_cache.state());
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_R0, 0);
@@ -63,15 +64,16 @@ void NativeLowering::emitConstantIndex(const NativeOperands& instruction, Native
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, constants) + ConstValueSpan::tagsOffset());
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R2), 0);
-	emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
+	emitRawStore(read.result, SLJIT_R0, SLJIT_R1);
 }
 
-void NativeLowering::emitUpvalue(const NativeOperands& instruction, NativeBlockExitSite* openWrite) {
+void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const NativeInstruction& instruction) {
+	auto* openWrite = instruction.slow;
 	sljit_emit_op1(
 		m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, nativeControl));
 	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), static_cast<u32>(FrameField::Closure),
-		SLJIT_IMM, CLOSURE_CAPTURE_WORDS + instruction.b * sizeof(u32));
+		SLJIT_IMM, ClosureRecord::captureWordAddress(0u, access.capture));
 	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R2);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
@@ -83,13 +85,13 @@ void NativeLowering::emitUpvalue(const NativeOperands& instruction, NativeBlockE
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_FLAGS);
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, UPVALUE_OPEN);
 	auto* open = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
-	if (instruction.op == OpCode::SETUP) {
+	if (access.access == NativeAccess::Write) {
 		fault(open, *openWrite, m_cache.state());
 		// Both value lanes are in the aligned cell's write-watch group.
 		emitRamWordWriteWatch(*openWrite, SLJIT_R3, 0, SLJIT_R0, SLJIT_R1, 3u);
-		const int tag = knownTag(instruction.a);
+		const int tag = knownTag(access.slot);
 		if (tag < 0 || valueTagHasGcEdge(static_cast<ValueTag>(tag))) {
-			const auto scalar = tag < 0 ? emitSkipScalarBarrier(instruction.a, SLJIT_R0) : std::array<sljit_jump*, 2>{};
+			const auto scalar = tag < 0 ? emitSkipScalarBarrier(access.slot, SLJIT_R0) : std::array<sljit_jump*, 2>{};
 			sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), GC_COLOR_OFFSET);
 			sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, GC_OLD | GC_REMEMBERED);
 			fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, GC_OLD), *openWrite, m_cache.state());
@@ -100,7 +102,7 @@ void NativeLowering::emitUpvalue(const NativeOperands& instruction, NativeBlockE
 			sljit_set_label(notBlack, ready);
 			for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
 		}
-		emitRawLoad(instruction.a, SLJIT_R0, SLJIT_R1);
+		emitRawLoad(access.slot, SLJIT_R0, SLJIT_R1);
 		if constexpr (std::endian::native == std::endian::big)
 			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), UPVALUE_VALUE_WORD, SLJIT_R0, 0);
@@ -148,21 +150,22 @@ void NativeLowering::emitUpvalue(const NativeOperands& instruction, NativeBlockE
 	if constexpr (std::endian::native == std::endian::big)
 		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
 	sljit_set_label(ready, sljit_emit_label(c));
-	emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
+	emitRawStore(access.slot, SLJIT_R0, SLJIT_R1);
 }
 
-void NativeLowering::emitVararg(const NativeOperands& instruction, NativeBlockExitSite& growth) {
-	const bool open = instruction.b == 0;
-	const int first = instruction.a, fixed = instruction.b - 1;
-	if (fixed == 0) return;
-	const int end = open ? std::numeric_limits<int>::max() : first + fixed;
+void NativeLowering::lowerOperation(const NativeVararg& placement, const NativeInstruction& instruction) {
+	auto& growth = *instruction.slow;
+	const auto [first, requested] = placement;
+	const bool open = requested < 0;
+	if (requested == 0) return;
+	const int end = open ? std::numeric_limits<int>::max() : first + requested;
 	// On a miss these values still belong to the executed prefix. On a
 	// successful open copy the runtime may write none or only some of them.
 	if (open) m_cache.publishRange(first, end);
 	m_cache.spillCall(false, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, NativeBlockAbi::state, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, first);
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, instruction.b);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, requested);
 	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, 32, 32),
 		SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::placeNativeVarargs));
 	m_cache.spillCall(true, 0);
@@ -174,7 +177,8 @@ void NativeLowering::emitVararg(const NativeOperands& instruction, NativeBlockEx
 		sljit_emit_op2(m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_R0, 0);
 }
 
-void NativeLowering::emitNilRange(int first, int count) {
+void NativeLowering::lowerOperation(const NativeClearSlots& clear, const NativeInstruction&) {
+	const auto [first, count] = clear;
 	if (count == 0)
 		return;
 	m_cache.discardRange(first, first + count);

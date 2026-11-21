@@ -146,7 +146,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		ValueSlots registers(2);
 		registers.set(0, valueTable(table.address())); registers.set(1, valueTable(table.address()));
 		if (store) {
-			require(block->sideExits[0].exitC == -1, "native field exits keep signed RK selectors");
+			require(block->sideExits[0].operands.table.value == -1, "native field exits keep signed RK selectors");
 			require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
 				&& table.getStringKey(key) == constants.get(0), "a native field store updates the real hash slot without a helper");
 		} else {
@@ -318,7 +318,7 @@ void nativeFieldStoreMissKeepsSignedConstantSelectors() {
 	const auto& frame = *machine.cpu.activeThread()->frameAtDepth(0);
 	test::waitForNativeEntry(machine.cpu, *frame.decodedPage, (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u);
 	const auto& block = frame.decodedPage->nativeBlocks->entries[(machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
-	require(block && block->sideExits[0].exitC == -2, "compiled field maps retain signed constant selectors");
+	require(block && block->sideExits[0].operands.table.value == -2, "compiled field maps retain signed constant selectors");
 	table.setStringKey(key, valueNil());
 	require(machine.cpu.runUntilDepth(0, 3) == RunResult::Yielded
 		&& table.getStringKey(key) == valueInteger(7) && machine.cpu.readLuaFaultReasonWord() == 0,

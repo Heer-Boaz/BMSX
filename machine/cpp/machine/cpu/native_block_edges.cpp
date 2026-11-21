@@ -1,5 +1,7 @@
 #include "machine/cpu/native_lowering.h"
 
+#include <algorithm>
+
 namespace bmsx {
 namespace {
 const NativeBlockExitSite scalarBoundary = [] {
@@ -7,6 +9,12 @@ const NativeBlockExitSite scalarBoundary = [] {
 	result.exit = NativeBlockExit::ScalarBoundary;
 	return result;
 }();
+bool registerTransferProves(const NativeRegisterCache::State& registers, NativeSlotType type) {
+	return std::any_of(registers.begin(), registers.end(), [&](const auto& binding) {
+		return binding.guest == type.slot && binding.tag == type.tag;
+	});
+}
+
 } // namespace
 
 void NativeLowering::beginBlock(size_t index) {
@@ -17,20 +25,15 @@ void NativeLowering::beginBlock(size_t index) {
 	auto& entry = m_entries[index];
 	entry.planned = true;
 	const auto& ir = m_ir[index];
-	if (ir.numericPrefix != 0) {
-		std::array<NativeSlotType, NativeRegisterCache::capacity> entryTypes;
-		size_t typeCount = 0;
-		for (const auto& binding : entry.registers)
-			if (binding.guest >= 0)
-				entryTypes[typeCount++] = {static_cast<u16>(binding.guest), binding.tag};
-		m_types.specialize(ir.instructions.first(ir.numericPrefix), m_constants, std::span(entryTypes).first(typeCount));
-	}
 	m_cache.setState({});
 	entry.guarded = sljit_emit_label(m_compiler);
 	// Public entry points admit their own type proofs before any register move.
 	// Internal edges have already established the exact same payload map.
 	const u32 pc = m_blocks[index]->firstPc;
 	const State memoryAuthoritative{};
+	for (const auto type : ir.entryTypes)
+		if (!registerTransferProves(entry.registers, type))
+			deferColdExit(m_cache.guard(type.slot, type.tag, SLJIT_R2), NativeResumePoint{pc, 0, 0}, memoryAuthoritative);
 	for (auto* miss : m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2))
 		deferColdExit(miss, NativeResumePoint{pc, 0, 0}, memoryAuthoritative);
 	entry.proven = sljit_emit_label(m_compiler);
@@ -64,18 +67,20 @@ void NativeLowering::emitScalarBoundary(NativeResumePoint point) {
 }
 
 void NativeLowering::emitLeave(NativeBlockExitSite& exit, Charge charge) {
-	const bool charged = charge == Charge::Paid;
 	m_cache.publish();
 	const auto& gate = nativeBlockGate();
-	const bool frameTransfer = exit.exit == NativeBlockExit::Call || exit.exit == NativeBlockExit::Return;
-	// The common CALL/RET edges enter another body without calling C++.
-	// Keep their literal charge/top inline; share the true cold publication.
-	if (!charged && frameTransfer) {
-		emitTop(exit.registerTop);
-		sljit_emit_op2(m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0,
-			NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
+	void* target = gate.leaveSegment;
+	if (charge == Charge::Pending) {
+		// Activation transfers can continue inside the grant. Encode their
+		// already known prefix rather than loading it in the shared gate.
+		if (exit.exit == NativeBlockExit::Call || exit.exit == NativeBlockExit::Return) {
+			emitTop(exit.registerTop);
+			sljit_emit_op2(m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0,
+				NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
+		} else if (exit.cycles != 0 || exit.registerTop != 0) {
+			target = gate.publishSegment;
+		}
 	}
-	void* target = charged || frameTransfer || (exit.cycles == 0 && exit.registerTop == 0) ? gate.leaveSegment : gate.publishSegment;
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&exit));
 	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM, reinterpret_cast<sljit_sw>(target));
 	m_terminal = true;
@@ -106,6 +111,9 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t target) {
 						binding = {};
 				}
 		}
+		for (const auto type : m_ir[target].entryTypes)
+			if (!registerTransferProves(entry.registers, type))
+				fault(m_cache.guard(type.slot, type.tag, SLJIT_R2), exit, source, Charge::Paid);
 		for (auto* miss : m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2))
 			fault(miss, exit, source, Charge::Paid);
 		m_branches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), target});

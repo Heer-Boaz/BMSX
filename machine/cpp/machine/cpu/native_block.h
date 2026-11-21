@@ -101,10 +101,7 @@ inline constexpr bool nativeBlockExitResumesFrame(NativeBlockExit exit) {
 struct NativeBlockExitSite {
 	NativeBlockExit exit = NativeBlockExit::Continue;
 	NativeBlockExitHandler handler = nullptr;
-	u16 exitA = 0;
-	i16 exitB = 0;
-	i16 exitC = 0;
-	u32 exitBx = 0;
+	NativeExitOperands operands{};
 	int cycles = 0;
 	int registerTop = 0;
 	u32 nextPc = 0;
@@ -288,38 +285,6 @@ inline constexpr auto NATIVE_BLOCK_BOUNDARY_OPS = [] {
 inline constexpr bool nativeBlockEndsBlock(u8 op, int field) {
 	return NATIVE_BLOCK_BOUNDARY_OPS[op]
 		|| (op == static_cast<u8>(OpCode::MTC0) && (field == COP0_STATUS || field == COP0_EXEC || !cop0FieldImplemented(field)));
-}
-
-inline constexpr NativeBlockExit nativeBlockSlowExit(u8 op, int field, bool controlGuarded, int c = 0) {
-	switch (static_cast<OpCode>(op)) {
-		case OpCode::MOV: return c == 0 ? NativeBlockExit::Continue : NativeBlockExit::InvalidOperand;
-		case OpCode::ADD: case OpCode::SUB: case OpCode::MUL: case OpCode::DIV:
-		case OpCode::MOD: case OpCode::FLOORDIV: case OpCode::POW: case OpCode::UNM:
-		case OpCode::BAND: case OpCode::BOR: case OpCode::BXOR: case OpCode::SHL:
-		case OpCode::SHR: case OpCode::BNOT: return NativeBlockExit::InvalidOperand;
-		case OpCode::MFC0: return controlGuarded && cop0FieldImplemented(field) ? NativeBlockExit::Continue : NativeBlockExit::ControlFault;
-		case OpCode::MTC0: return NativeBlockExit::WriteControl;
-		case OpCode::GETFIELD: return NativeBlockExit::ReadField;
-		case OpCode::SELF: return NativeBlockExit::ReadField;
-		case OpCode::SETFIELD: return NativeBlockExit::WriteField;
-		case OpCode::GETT: return NativeBlockExit::ReadIndex;
-		case OpCode::SETT: return NativeBlockExit::WriteIndex;
-		case OpCode::GETI: return NativeBlockExit::ReadInteger;
-		case OpCode::SETI: return NativeBlockExit::WriteInteger;
-		case OpCode::LEN: return NativeBlockExit::InvalidLength;
-		case OpCode::SETUP: return NativeBlockExit::WriteUpvalue;
-		case OpCode::SETGL: return NativeBlockExit::WriteGlobal;
-		case OpCode::SETSYS: return NativeBlockExit::WriteSystemGlobal;
-		case OpCode::VARARG: return NativeBlockExit::Vararg;
-		case OpCode::LOADKR: return NativeBlockExit::InvalidConstant;
-		case OpCode::LOAD_MEM:
-		case OpCode::LOAD_MEM_D: return NativeBlockExit::ReadMemory;
-		case OpCode::STORE_MEM:
-		case OpCode::STORE_MEM_D: return NativeBlockExit::WriteMemory;
-		case OpCode::STORE_MEM_WORDS:
-		case OpCode::STORE_MEM_WORDS_D: return NativeBlockExit::WriteWords;
-		default: return NativeBlockExit::Continue;
-	}
 }
 
 class NativeBlock {

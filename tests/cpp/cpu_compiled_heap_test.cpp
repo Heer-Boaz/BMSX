@@ -194,7 +194,7 @@ void concatConstants() {
 	test::waitForNativeEntry(native.cpu, page, word);
 	requireParity(native, scalar);
 	const auto& block = page.nativeBlocks->entries[word];
-	require(block && block->terminal.exit == NativeBlockExit::Concat && block->terminal.exitB == -1 && block->terminal.exitC == -2, "the native terminal retains signed RK constants");
+	require(block && block->terminal.exit == NativeBlockExit::Concat && block->terminal.operands.concat.left == -1 && block->terminal.operands.concat.right == -2, "the native terminal retains signed RK constants");
 #endif
 	require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, 0))) == "-0.0🍻", "numeric conversion is not u32 conversion");
 }
@@ -224,7 +224,7 @@ void concatRange(int count) {
 	test::waitForNativeEntry(native.cpu, page, word);
 	requireParity(native, scalar);
 	const auto& block = page.nativeBlocks->entries[word];
-	require(block && block->terminal.exit == NativeBlockExit::ConcatRange && block->terminal.exitC == count, "the full WIDE count belongs to the native terminal");
+	require(block && block->terminal.exit == NativeBlockExit::ConcatRange && block->terminal.operands.concatRange.count == count, "the full WIDE count belongs to the native terminal");
 #endif
 	require(static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 514, "counted sources do not inflate the destination top");
 }
@@ -299,7 +299,7 @@ void canonicalImmediateClosure() {
 	requireParity(native, scalar);
 	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->sourceWords == 3 && block->terminal.exit == NativeBlockExit::CreateClosure
-		&& block->terminal.exitBx == DYNAMIC_RAM_BASE / BLUA32_FUNCTION_ALIGNMENT && block->terminal.exitBx > 0xffffu, "the native closure exit retains every Bx bit");
+		&& block->terminal.operands.closure.address == DYNAMIC_RAM_BASE / BLUA32_FUNCTION_ALIGNMENT && block->terminal.operands.closure.address > 0xffffu, "the native closure exit retains every Bx bit");
 #endif
 	require(native.cpu.readFrameRegister(0, 0) == native.cpu.readFrameRegister(0, 2), "STATIC creation preserves canonical function identity");
 }
@@ -322,7 +322,7 @@ void closureBusFault(bool descriptors) {
 	test::waitForNativeEntry(native.cpu, page, word);
 	requireParity(native, scalar);
 	const auto& block = page.nativeBlocks->entries[word];
-	require(block && block->terminal.exit == NativeBlockExit::CreateClosure && block->terminal.exitA == 256,
+	require(block && block->terminal.exit == NativeBlockExit::CreateClosure && block->terminal.operands.closure.result == 256,
 		"the actual hot register-address path retains its WIDE destination");
 #endif
 	for (auto* m : {&native, &scalar}) {
@@ -360,8 +360,8 @@ void closureAddressAlias(int source) {
 	test::waitForNativeEntry(native.cpu, page, word);
 	requireParity(native, scalar);
 	const auto& block = page.nativeBlocks->entries[word];
-	require(block && block->terminal.exit == NativeBlockExit::CreateClosure && block->terminal.exitA == source
-		&& block->terminal.exitBx == static_cast<u32>(source), "the generated body retains the aliasing WIDE register operand");
+	require(block && block->terminal.exit == NativeBlockExit::CreateClosure && block->terminal.operands.closure.result == source
+		&& block->terminal.operands.closure.address == static_cast<u32>(source), "the generated body retains the aliasing WIDE register operand");
 #endif
 	for (int index : {2, 1, 2, 2, 1}) {
 		for (auto* m : {&native, &scalar}) {

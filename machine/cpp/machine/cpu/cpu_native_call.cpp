@@ -9,7 +9,6 @@
 namespace bmsx {
 
 NativeRomCallBinding* CPU::bindNativeRomFunction(Blua32ExecutionImage& image, u32 functionAddress) const noexcept {
-	if (functionAddress > CART_ROM_END - BLUA32_FUNCTION_RECORD_SIZE) return nullptr;
 	auto& binding = image.nativeRomCallBindings[
 		(functionAddress / BLUA32_FUNCTION_RECORD_SIZE) % NativeRomCallBinding::slotCount];
 	if (binding.functionAddress != functionAddress) {
@@ -27,7 +26,8 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 	auto& cpu = *run->cpu;
 	auto& state = run->state;
 	auto& caller = *state.frame;
-	const int base = exit->exitA;
+	const auto& call = exit->operands.call;
+	const int base = call.callee;
 	// Run-state frames are bound to the linear value planes of the grant.
 	switch (static_cast<ValueTag>(caller.registers.tags()[base])) {
 		case ValueTag::BuiltinFunction: {
@@ -46,15 +46,15 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 	if (!callee || cpu.retargetsHaltedFrame(thread, depth)) return nullptr;
 	const u32 closure = cpu.m_heap.closureRecordAddress(caller.registers.admittedPayload(base));
 	if (!closure) return nullptr;
-	const u8 bindingFlags = cpu.m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS);
+	const ClosureRecord::BindingFlags binding{cpu.m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
 	auto& image = *caller.executionImage;
-	if (ClosureRecord::executionDomain(bindingFlags) != image.executionDomainId) return nullptr;
+	if (binding.domain() != image.executionDomainId) return nullptr;
 	const u32 functionAddress = cpu.m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
 
 	NativeRomCallBinding* romBinding = nullptr;
 	FunctionEntry latched;
 	const FunctionEntry* function;
-	if ((bindingFlags & CLOSURE_LATCHED_PROTOTYPE) != 0u) {
+	if (binding.latched()) {
 		latched = ClosureRecord::readLatchedEntry(cpu.m_memory, closure);
 		function = &latched;
 	} else {
@@ -63,7 +63,7 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 		function = &romBinding->entry;
 	}
 
-	const int supplied = decodeValueCount(exit->exitB, std::max(state.registerTop - base - 1, 0));
+	const int supplied = call.supplied < 0 ? std::max(state.registerTop - base - 1, 0) : call.supplied;
 	const auto callerBase = caller.readAdmittedWindow(FrameField::StackBase);
 	const ArgumentPlacement placement{callerBase + base + 1, supplied,
 		function->numParams, function->maxStack, function->flags};
@@ -92,8 +92,9 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 
 	callee->executionImage = &image;
 	callee->initializeAdmittedControl({
-		functionAddress, function->codeAddress, nextPc - INSTRUCTION_BYTES, run->frameBank,
-		placement.varargBase, placement.varargCount, base, exit->exitC, placement.top(),
+		functionAddress, function->codeAddress, exit->lastPc, run->frameBank,
+		placement.varargBase, placement.varargCount, base,
+		call.requested < 0 ? 0 : encodeFixedValueCount(call.requested), placement.top(),
 		closure, placement.stackBase, static_cast<i32>(placement.capacity)
 	}, thread.stack);
 	if (placement.relocatesFormals) {
@@ -110,10 +111,11 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 	return target;
 }
 
-int CPU::placeNativeVarargs(NativeBlockRunState* state, int first, int request) noexcept {
+int CPU::placeNativeVarargs(NativeBlockRunState* state, int first, int requested) noexcept {
 	auto& frame = *state->frame;
 	const int available = frame.readAdmittedWindow(FrameField::VarargCount);
-	const auto placement = ValuePlacement::fit(available, decodeValueCount(request, available));
+	const bool open = requested < 0;
+	const auto placement = ValuePlacement::fit(available, open ? available : requested);
 	const int count = placement.count();
 	const int top = first + count;
 	if (count != 0 && top > frame.readAdmittedWindow(FrameField::StackCapacity)) return -1;
@@ -124,7 +126,7 @@ int CPU::placeNativeVarargs(NativeBlockRunState* state, int first, int request) 
 	if (placement.copied != 0 && source + placement.copied > frame.readAdmittedWindow(FrameField::StackBase))
 		return -1;
 	frame.registers.placeAdmitted(first, frame.thread->stack, source, placement.copied, placement.padded);
-	if (request == 0) state->registerTop = top;
+	if (open) state->registerTop = top;
 	return count;
 }
 

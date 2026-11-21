@@ -1121,7 +1121,7 @@ std::unique_ptr<NativeBlock>* retiringBlock = nullptr;
 
 NativeBlockTransition exitResult(CPU*, CallFrame* frame, const NativeBlockExitSite* exit) {
 	require(frame->registers.get(1) == valueInteger(2), "side-exit handlers see committed word conversions");
-	require(exit->exit == NativeBlockExit::Call && exit->exitA == 3 && exit->exitB == 1 && exit->exitC == 2,
+	require(exit->exit == NativeBlockExit::Call && exit->operands.call.callee == 3 && exit->operands.call.supplied == 0 && exit->operands.call.requested == 1,
 		"a generated exit retains decoded call operands");
 	return NativeBlockTransition::RebindFrame;
 }

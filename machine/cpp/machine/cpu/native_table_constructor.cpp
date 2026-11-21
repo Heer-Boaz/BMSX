@@ -8,11 +8,12 @@ namespace bmsx {
 
 std::unique_ptr<NativeTableConstructor> NativeTableConstructor::prepare(const NativeBlockExitSite& exit,
 	const DecodedInstructionPage& page, u32 pagePc, ConstValueSpan constants) {
-	const auto count = static_cast<u32>(exit.exitC);
-	if (exit.exitB != 0 || count < 2 || count > TABLE_RECORD_FIELDS_MAX) return nullptr;
+	const auto& allocation = exit.operands.allocation;
+	const auto count = static_cast<u32>(allocation.hashSize);
+	if (allocation.arraySize != 0 || count < 2 || count > TABLE_RECORD_FIELDS_MAX) return nullptr;
 	NativeTableConstructor plan;
 	plan.count = count;
-	plan.requiredSlots = static_cast<u32>(exit.exitA) + 1u;
+	plan.requiredSlots = static_cast<u32>(allocation.result) + 1u;
 	u32 pc = exit.nextPc;
 	for (u32 field = 0; field < count; ++field) {
 		const u32 word = (pc - pagePc) / INSTRUCTION_BYTES;
@@ -21,8 +22,8 @@ std::unique_ptr<NativeTableConstructor> NativeTableConstructor::prepare(const Na
 		// SETFIELD keeps its normal entry even when reached independently;
 		// only the preceding NEWT owns this construction recipe.
 		if (instruction.op != static_cast<u8>(OpCode::SETFIELD)
-			|| instruction.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe) || instruction.a != exit.exitA
-			|| instruction.c == exit.exitA || static_cast<size_t>(instruction.b) >= constants.size()
+			|| instruction.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe) || instruction.a != allocation.result
+			|| instruction.c == allocation.result || static_cast<size_t>(instruction.b) >= constants.size()
 			|| constants.tag(instruction.b) != ValueTag::String) return nullptr;
 		const StringId key = constants.payload(instruction.b);
 		const auto end = plan.keys.begin() + field;

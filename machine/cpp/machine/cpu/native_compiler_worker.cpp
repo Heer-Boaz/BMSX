@@ -4,7 +4,6 @@
 #include <chrono>
 
 #include "machine/cpu/native_block_abi.h"
-#include "machine/cpu/native_table_index.h"
 
 namespace bmsx {
 
@@ -12,7 +11,6 @@ NativeCompilerWorker::NativeCompilerWorker() {
 	m_sources.reserve(DECODED_PAGE_WORDS);
 	// Build the process-wide entry gate before emission moves to the worker.
 	nativeBlockGate();
-	nativeFixedStringLookup();
 	m_thread = std::thread(&NativeCompilerWorker::run, this);
 }
 
