@@ -13,7 +13,11 @@ completion_recorder.__index = completion_recorder
 local binding_recorder<const> = {}
 binding_recorder.__index = binding_recorder
 
-local weak_keys<const> = { __mode = 'k' }
+-- The subjects own their observations. The recorder's indexes must not keep
+-- an actor alive through a captured callback or a completed binding.
+local weak_entries<const> = { __mode = 'kv' }
+local program_capture<const> = {}
+local bound_program<const> = {}
 
 -- This is a compilation probe, not a source graph or a per-actor runtime
 -- tracer. A declaration may be shared by several lowering occurrences.
@@ -46,7 +50,7 @@ end
 function completion_recorder:record(compiled)
 	local layout<const> = self.layout
 	local capture<const> = self.capture
-	self.owner.programs[compiled] = {
+	local record<const> = {
 		nodes = capture.nodes,
 		node_count = layout.execution_index_count,
 		declaration_count = capture.declaration_count,
@@ -55,18 +59,21 @@ function completion_recorder:record(compiled)
 		record_slots = layout.record_slots,
 		service_count = layout.service_count,
 	}
+	compiled[program_capture] = record
+	self.owner.programs[compiled] = record
 end
 
 -- This is the last completed bind, not a claim about the coherence of fields
 -- while a later rebind is writing them or has failed part way through.
 function binding_recorder:record(component, compiled)
+	component[bound_program] = compiled
 	self.completed_bindings[component] = compiled
 end
 
 function compile_recorder.new()
-	local completed_bindings<const> = setmetatable({}, weak_keys)
+	local completed_bindings<const> = setmetatable({}, weak_entries)
 	local self<const> = setmetatable({
-		programs = setmetatable({}, weak_keys),
+		programs = setmetatable({}, weak_entries),
 		completed_bindings = completed_bindings,
 	}, compile_recorder)
 	blua32.trace_sink(program, 'bt.compile.begin', self)

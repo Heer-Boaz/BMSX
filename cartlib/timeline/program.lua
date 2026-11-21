@@ -18,7 +18,9 @@ local playback_mode_by_name<const> = {
 local empty_defs<const> = {}
 local primary_binding_ids<const> = { 'target' }
 local primary_binding_index_by_id<const> = { target = 1 }
-local program_by_definition<const> = setmetatable({}, { __mode = 'k' })
+-- Active timelines own their compiled programs. Cached programs can contain
+-- authored callbacks that capture the definition used to create them.
+local program_by_definition<const> = setmetatable({}, { __mode = 'kv' })
 
 local compile_bindings<const> = function(binding_defs)
 	if #binding_defs == 0 then

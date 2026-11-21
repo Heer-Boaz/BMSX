@@ -85,8 +85,6 @@ local event_emitter<const> = {
 local event_port<const> = {}
 event_port.__index = event_port
 
-local port_cache<const> = setmetatable({}, { __mode = 'k' })
-
 local retire_listener_list<const> = function(self, list)
 	local event_name<const> = list._event_name
 	local emitter_id<const> = list._emitter_id
@@ -171,12 +169,7 @@ local remove_listener<const> = function(self, entry)
 end
 
 function event_emitter.events_of(emitter)
-	local port = port_cache[emitter]
-	if not port then
-		port = setmetatable({ emitter = emitter, emitter_id = emitter.id }, event_port)
-		port_cache[emitter] = port
-	end
-	return port
+	return setmetatable({ emitter = emitter, emitter_id = emitter.id }, event_port)
 end
 
 -- event_emitter:on(spec): register a listener.

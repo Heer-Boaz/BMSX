@@ -15,6 +15,28 @@ end`,
 );
 const instrumentedModules = [{ path: 'cartlib/timeline/track_evaluator', source: trackEvaluator }];
 
+test('a memoized timeline does not retain a definition captured by a callback', () => {
+	const { cpu } = createCartlibProgramHarness(`
+local programs<const> = require('cartlib/timeline/program')
+probe = setmetatable({}, { __mode = 'v' })
+local function compile()
+ local definition<const> = { phase = 'presentation', duration_ms = 100, marker = 42 }
+ definition.apply = function() return definition.marker end
+ local program<const> = programs.compile(definition)
+ assert(programs.compile(definition) == program and program.apply_function() == 42)
+ probe[1], probe[2] = definition, program
+end
+compile()
+`, { optLevel: 3 });
+	runGuestToHalt(cpu, 10_000_000);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	assert.notEqual(cpu.gc.tables.getInteger(probe, 1), valueNil());
+	assert.notEqual(cpu.gc.tables.getInteger(probe, 2), valueNil());
+	cpu.collectTrackedHeapBytes();
+	assert.equal(cpu.gc.tables.getInteger(probe, 1), valueNil());
+	assert.equal(cpu.gc.tables.getInteger(probe, 2), valueNil());
+});
+
 for (const optLevel of [3] as const) test(`timeline step appliers reuse matching code without retaining abandoned closures (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 local apply<const> = require('cartlib/timeline/apply')

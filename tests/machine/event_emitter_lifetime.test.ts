@@ -5,12 +5,31 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_FAULT_REASON_CALL_NON_FUNCTION } from '../../machine/ts/spec/blua32/cop0';
 import { createCartlibCaseRom, createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const setup = `
 local events<const> = require('cartlib/event_emitter')
 local source<const> = { id = 'event.fixture' }
 local port<const> = events.events_of(source)
 `;
+
+test('the event port is retained by its owning emitter, not by dispatch', () => {
+	const { cpu } = createCartlibProgramHarness(`
+local events<const> = require('cartlib/event_emitter')
+probe = setmetatable({}, { __mode = 'v' })
+owner = { id = 'port-owner' }
+owner.events = events.events_of(owner)
+probe[1], probe[2] = owner, owner.events
+`, { optLevel: 3 });
+	runGuestToHalt(cpu, 10_000_000);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	cpu.collectTrackedHeapBytes();
+	assert.notEqual(cpu.gc.tables.getInteger(probe, 2), valueNil());
+	cpu.setGlobalByKey(cpu.stringPool.find('owner')!, valueNil());
+	cpu.collectTrackedHeapBytes();
+	assert.equal(cpu.gc.tables.getInteger(probe, 1), valueNil());
+	assert.equal(cpu.gc.tables.getInteger(probe, 2), valueNil());
+});
 
 const recoveryVectors = {
 	scoped_identity_namespace: `
