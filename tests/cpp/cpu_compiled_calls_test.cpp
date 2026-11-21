@@ -890,8 +890,7 @@ void protectedReturnPlacementCycles() {
 		require(thread->protectedDepth() == 2, "nested builtin pcall owns two result ranges");
 		thread->currentFrame->registers.set(0, valueInteger(17)); thread->currentFrame->registers.set(1, valueInteger(29));
 		const bool failFirst = wanted == static_cast<int>(PSX_MACHINE_SPEC.ramBytes + 1);
-		const u32 frames = machine.cpu.memory().readRamRecordWord(thread->address + static_cast<u32>(ThreadField::FrameCapacity));
-		const u32 controls = thread->stackOffset() + ((thread->stackByteLength() + 3u) & ~3u) + frames * FRAME_CONTROL_BYTES;
+		const u32 controls = ThreadRecord::storageLayout(machine.cpu.memory(), thread->address).protectedAddress(0u);
 		machine.cpu.memory().writeRamRecordWord(controls + (failFirst ? PROTECTED_CALL_BYTES : 0)
 			+ static_cast<u32>(ProtectedField::Wanted), failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted);
 		const bool fault = wanted >= static_cast<int>(PSX_MACHINE_SPEC.ramBytes);
@@ -900,8 +899,9 @@ void protectedReturnPlacementCycles() {
 		// Completing the inner return drops its closure before the first scan: three fewer mark words.
 		// Each collection also visits 32 intern buckets and marks/visits the 17 RAM String roots.
 		// Four reserved frame slots and two continuation records are examined on all four visits.
-		const int extraWords = (heapAllocationBytes(8 * 5 + 4 * FRAME_CONTROL_BYTES + 2 * PROTECTED_CALL_BYTES) - heapAllocationBytes(8 * 5)) / 4;
-		const int gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (32 + 2 * 17 + 4 * extraWords) : 0;
+		const int threadWords = (THREAD_HEAP_BYTES + heapAllocationBytes(8 * THREAD_STACK_SLOT_BYTES)
+			+ heapAllocationBytes(4 * FRAME_CONTROL_BYTES) + heapAllocationBytes(2 * PROTECTED_CALL_BYTES)) / 4;
+		const int gcCycles = fault ? (failFirst ? 34 : 31) + 2 * (32 + 2 * 17 + 4 * threadWords) : 0;
 		bool rejected = false;
 		try { require(machine.cpu.runUntilDepth(1, 2) == RunResult::Halted, "protected return completes at caller"); }
 		catch (const LuaOutOfMemorySignal&) { rejected = true; }

@@ -32,10 +32,10 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 		systemGlobalNames: ['system', 'system'], globalNames: ['global', 'global'] };
 }
 
-// The root Thread owns a 64-byte header and a 160-byte allocation for
-// eight Value slots and two reserved activations. The remainder is a
+// The root Thread owns an 80-byte header, 40 bytes for eight Value slots
+// and 112 bytes for two reserved activations. The remainder is a
 // Closure, 17 RAM String records, their 32 intern buckets, two global banks and an 8-byte map (the linker emits unique names).
-const bootThreadBytes = 64 + 160;
+const bootThreadBytes = 80 + 40 + 112;
 const bootThreadWords = bootThreadBytes / 4;
 const bootBytes = bootThreadBytes + 16 + 16 + 744 + 128 + 8 + 2 * 160;
 const bootMarkWork = 2 * bootThreadWords + 3 + 2 * 12 + 17;

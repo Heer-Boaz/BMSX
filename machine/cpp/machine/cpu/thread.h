@@ -32,7 +32,6 @@ struct Thread {
 	void bindStack();
 	u32 stackOffset() const;
 	u32 stackByteLength() const { return static_cast<u32>(stack.size()) * THREAD_STACK_SLOT_BYTES; }
-	u32 backingByteLength() const { return boundBackingBytes; }
 	bool stackRequiresScalar() const;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	u32 admittedFrameDepth() const {
@@ -56,8 +55,10 @@ struct Thread {
 		if (recordedWriteEpoch == epoch) return;
 		recordedWriteEpoch = epoch;
 		if ((epoch & 1u) == 0u) return;
-		// Native calls stay in the admitted backing, including frame writes.
-		watches.consumeHistoryWrites(stackOffset(), backingByteLength());
+		// Native transitions write only Values, frame controls and this
+		// Thread's depth/top words. Protected handling uses the record owner.
+		watches.consumeHistoryWrites(stackOffset(), stackByteLength());
+		watches.consumeHistoryWrites(boundFrameOffset, boundFrameCapacity * FRAME_CONTROL_BYTES);
 		watches.consumeHistoryWrites(address & RAM_RECORD_WORD_MASK, THREAD_HEAP_BYTES);
 	}
 #endif
@@ -103,12 +104,14 @@ private:
 	u32 frameControlAddress(u32 index) const;
 	CallFrame* frameNode(CallFrame* previous);
 	void bindFrameControl(CallFrame& frame, u32 address, u32 index);
+	void bindFrameControls();
+	void rebindRegisters();
 	void publishDepth(u32 depth);
 	u32 protectedAddress(u32 index) const;
 	u32 read(ThreadField field) const { return readLE32(nativeRecord + static_cast<u32>(field)); }
 	void write(ThreadField field, u32 word);
 	u32 boundFrameOffset = 0;
-	u32 boundBackingBytes = 0;
+	u32 boundProtectedOffset = 0;
 	u32 boundFrameCapacity = 0;
 	u32 boundProtectedCapacity = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

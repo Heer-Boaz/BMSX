@@ -6,10 +6,9 @@ import { ValueTag, valueBool, valueBuiltinFunction, valueInteger, valueString, t
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
-import { FRAME_CONTROL_BYTES, FrameField, ProtectedField, type CallFrame } from '../../machine/ts/machine/cpu/call_state';
+import { FRAME_CONTROL_BYTES, FrameField, ProtectedCallKind, ProtectedField, type CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_CAPTURE_WORDS } from '../../machine/ts/machine/cpu/closure';
 import { UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
-import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
@@ -34,6 +33,40 @@ function callImage(maxStack: number, returns: number, base = 0) {
 	], exceptionFunctionIndex: 2,
 	closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] });
 }
+
+test('thread growth relocates only the required storage lane', () => {
+	const { cpu, memory } = createTestSystemCpu(callImage(8, 1));
+	const thread = cpu.rootThread, frame = thread.currentFrame!;
+	const location = (field: ThreadField) => memory.readRamRecordWord(thread.address + field);
+	const oldStack = location(ThreadField.StackBlock), oldFrames = location(ThreadField.FrameBlock);
+	frame.registers.setInteger(0, 73);
+	const pc = frame.pc;
+
+	thread.resizeStack(64);
+	const stack = location(ThreadField.StackBlock);
+	assert.notEqual(stack, oldStack);
+	assert.equal(location(ThreadField.FrameBlock), oldFrames);
+	assert.equal(location(ThreadField.ProtectedBlock), 0);
+	assert.equal(frame.registers.get(0), valueInteger(73));
+
+	thread.reserveFrame(64);
+	const frames = location(ThreadField.FrameBlock);
+	assert.notEqual(frames, oldFrames);
+	assert.equal(location(ThreadField.StackBlock), stack);
+	assert.equal(location(ThreadField.ProtectedBlock), 0);
+	assert.equal(frame.pc, pc);
+
+	const handler = valueBuiltinFunction(BuiltinFunctionId.PCall);
+	thread.pushProtectedCall(ProtectedCallKind.PCall, false, 0, 3, handler);
+	const oldProtected = location(ThreadField.ProtectedBlock);
+	thread.pushProtectedCall(ProtectedCallKind.PCall, true, 1, 6, handler);
+	assert.notEqual(location(ThreadField.ProtectedBlock), oldProtected);
+	assert.equal(location(ThreadField.FrameBlock), frames);
+	assert.equal(location(ThreadField.StackBlock), stack);
+	assert.equal(thread.protectedWord(0, ProtectedField.Wanted), 3);
+	assert.equal(thread.protectedWord(1, ProtectedField.Wanted), 6);
+	assert.equal(frame.registers.get(0), valueInteger(73));
+});
 
 test('reusing a frame view does not publish it before activation', () => {
 	const { cpu } = createTestSystemCpu(callImage(8, 1));
@@ -236,14 +269,12 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 
 		cpu.memory.restoreSaveState(ram);
 		cpu.restoreRuntimeState(snapshot);
-		const block = cpu.memory.readRamRecordWord(cpu.rootThread.address + ThreadField.StackBlock);
-		const slots = cpu.memory.readRamRecordWord(cpu.rootThread.address + ThreadField.StackCapacity);
-		const control = block + ((slots * THREAD_STACK_SLOT_BYTES + 3) & ~3);
-		const frames = cpu.memory.readRamRecordWord(cpu.rootThread.address + ThreadField.FrameCapacity);
+		const control = cpu.memory.readRamRecordWord(cpu.rootThread.address + ThreadField.FrameBlock);
+		const protectedControl = cpu.memory.readRamRecordWord(cpu.rootThread.address + ThreadField.ProtectedBlock);
 		const target = cpu.rootThread.currentFrame!.previous!;
 		cpu.memory.writeRamRecordWord(control + FRAME_CONTROL_BYTES + FrameField.CallSite, 0x1234);
 		assert.equal(target.callSitePc, 0x1234, 'a raw write updates the suspended frame diagnostic');
-		cpu.memory.writeRamRecordWord(control + frames * FRAME_CONTROL_BYTES + ProtectedField.Wanted, 4);
+		cpu.memory.writeRamRecordWord(protectedControl + ProtectedField.Wanted, 4);
 		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
 		const caller = cpu.rootThread.currentFrame!;
 		assert.equal(caller.top, 3, 'return placement consumes the RAM record, not a cached host continuation');

@@ -1,4 +1,3 @@
-import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueBool, valueInteger, asClosure } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -108,9 +107,9 @@ advance = assert(load('for i = 1, 10000 do score = score + 1 end; return score')
 		assert.equal(cpu.getGlobalByKey(score), valueInteger(10000));
 		assert.equal(cpu.globalSlotCount, globals);
 		assert.equal(cpu.luaHeap.usedBytes(), heap, 'no transient guest allocation between explicit collections');
-		const stackBytes = heapAllocationBytes(cpu.rootThread.backingByteLength());
+		const stackBytes = cpu.gc.allocationBytes(cpu.rootThread.address);
 		const collected = cpu.collectTrackedHeapBytes();
-		assert.equal(heap - collected, stackBytes - heapAllocationBytes(cpu.rootThread.backingByteLength()));
+		assert.equal(heap - collected, stackBytes - cpu.gc.allocationBytes(cpu.rootThread.address));
 		cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(saved);
 		assert.equal(cpu.getGlobalByKey(score), valueInteger(0));
 	}

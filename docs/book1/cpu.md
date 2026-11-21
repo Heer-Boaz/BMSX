@@ -1256,14 +1256,15 @@ The occupied-byte counts used for admission are:
 | Closure with `U` captured-variable references, function record backed by contiguous ROM | `S(12 + 4U)` |
 | Closure with `U` captured-variable references, other mapped function record | `S(36 + 4U)` |
 | Captured-variable cell | `16` |
-| Thread with `V` reserved Value slots, `F` reserved frame-control records and `P` reserved protected continuations | `64 + S(round4(5V) + 56F + 20P)` |
+| Thread with `V` reserved Value slots, `F` reserved frame-control records and `P` reserved protected continuations | `80 + S(5V) + S(56F) + S(20P)` |
 | RAM String containing `n` bytes | `S(16 + n)` |
 | RAM String index with `B` buckets | `S(4B)` |
 
-A Table's slots and links occupy one block in the language heap. Each Thread
-keeps its value slots, frame controls and protected continuations in one
-separately allocated block. The frame-control area begins at the next
-four-byte boundary after the Value slots, denoted by `round4(5V)`.
+A Table's slots and links occupy one block in the language heap. A Thread
+keeps its Value slots, frame controls and protected continuations in separate
+allocations. Growing one allocation does not move either of the others.
+If a call needs both more Value slots and another frame control, both
+reservations must succeed before the frame is entered.
 Each active frame records the address of its closure, which supplies
 the references to its captured-variable cells. It also saves its execution
 bank. Resumption restores that bank independently of the current
@@ -1279,9 +1280,9 @@ transfers use the main RAM address aperture. The Thread record holds the
 active frame count and the next free Value slot for a new, separate window.
 One count selects the active prefix of the frame area; the other is a
 20-bit slot index in the Value area.
-Protected continuations follow the reserved frame controls. A suspended protected
-call records its caller and result window there so it can finish when that Thread
-resumes. A new Thread reserves two frame controls. An ordinary entry leaves
+The protected-continuation allocation records a suspended protected call's
+caller and result window so it can finish when the Thread resumes. A new
+Thread reserves eight Value slots and two frame controls. An ordinary entry leaves
 one slot available for exception entry even when no further heap storage can
 be admitted. Frame capacity doubles as needed before an entry. The first
 protected call reserves one continuation, and a full continuation reservation
@@ -1365,7 +1366,7 @@ Collection work consumes cycles as follows:
 | Examine one RAM intern bucket, including an empty bucket | `1` |
 | Examine a slot in a page selected for old Thread or remembered-owner discovery | `1` |
 | Examine a String candidate's RAM intern bucket in a small collection | `1` plus `1` per chain header examined |
-| Copy retained Thread storage when shrinking | `2 × ceil((round4(5V') + 56F' + 20P') / 4)` for the new reservations |
+| Copy retained Thread storage when shrinking | For each allocation moved, `2 × ceil(new unrounded reservation bytes / 4)` |
 
 For charges based on bytes, round each allocation independently.
 A repeated scan costs again; unreachable objects that are not scanned still
@@ -1414,7 +1415,8 @@ than `V`. The required extent includes the Thread's current stack top and every
 active frame's complete reserved register window, not only its live values.
 The frame-control and protected-continuation reservations likewise halve when
 their reserve exceeds four and three times the active count is less than the
-reserve. When a reservation shrinks, the released space leaves the occupied budget. A Thread
+reserve. The three reservations are considered independently. When a
+reservation shrinks, the released space leaves the occupied budget. A Thread
 whose own stack-growth request caused the step is not shrunk during that
 request. Moving storage incurs the charge above in addition to examining the
 old allocation. Existing frame and captured-variable references retain their

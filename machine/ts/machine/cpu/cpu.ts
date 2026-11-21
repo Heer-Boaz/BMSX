@@ -147,8 +147,8 @@ import {
 } from './execution_image';
 import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, type CallFrame } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
-import { Thread, ThreadStatus, THREAD_RECORD_KIND, THREAD_HEAP_BYTES, THREAD_INITIAL_BACKING_BYTES } from './thread';
-import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS, controlOffset } from './thread_record';
+import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
+import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
 import { LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import {
@@ -1064,8 +1064,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 	public readThreadFrameDepth(address: number): number { return this.memory.readRamRecordWord(address + ThreadField.FrameDepth) & THREAD_CONTROL_COUNT_MASK; }
 	public readThreadFrameAddress(address: number, index: number): number {
-		return (this.memory.readRamRecordWord(address + ThreadField.StackBlock) & RAM_RECORD_WORD_MASK)
-			+ controlOffset(this.memory.readRamRecordWord(address + ThreadField.StackCapacity)) + index * FRAME_CONTROL_BYTES;
+		return (this.memory.readRamRecordWord(address + ThreadField.FrameBlock) & RAM_RECORD_WORD_MASK) + index * FRAME_CONTROL_BYTES;
 	}
 	public readThreadFrameWord(address: number, index: number, field: FrameField): number {
 		return this.memory.readRamRecordWord(this.readThreadFrameAddress(address, index) + field);
@@ -3490,9 +3489,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public createThread(entry: number): number {
-		const address = this.luaHeap.allocateRecord(THREAD_HEAP_BYTES, false, THREAD_INITIAL_BACKING_BYTES, ThreadField.StackBlock,
-			entry === 0 ? valueNil() : valueClosure(entry));
-		this.gc.threads.initializeRecord(address, entry, this.gc.white());
+		const address = this.luaHeap.allocateThreadRecord(entry);
 		if (this.localRootScopeDepth > 0) this.localRoots.push(valueThread(address));
 		return address;
 	}
@@ -3502,7 +3499,7 @@ export class CPU implements MappedPageInvalidator {
 		for (let index = 0, depth = this.readThreadFrameDepth(address); index < depth; ++index)
 			if ((this.readThreadFrameWord(address, index, FrameField.Flags) & (FRAME_COMPLETION | FRAME_EXCEPTION)) !== 0) return false;
 		const depth = this.memory.readRamRecordWord(address + ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK;
-		const protectedBase = this.readThreadFrameAddress(address, this.memory.readRamRecordWord(address + ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK);
+		const protectedBase = this.memory.readRamRecordWord(address + ThreadField.ProtectedBlock) & RAM_RECORD_WORD_MASK;
 		for (let index = 0; index < depth; ++index) {
 			if ((this.memory.readRamRecordWord(protectedBase + index * PROTECTED_CALL_BYTES + ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK) === ProtectedCallKind.XPCallHandler) return false;
 		}

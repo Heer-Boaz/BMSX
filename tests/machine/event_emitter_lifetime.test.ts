@@ -1,4 +1,3 @@
-import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { asClosure, valueInteger, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -250,7 +249,7 @@ return true`, { optLevel });
 				assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 			}
 			assert.equal(result, RunResult.Halted);
-			const retained = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength());
+			const retained = cpu.collectTrackedHeapBytes() - cpu.gc.allocationBytes(cpu.rootThread.address);
 			for (let index = 1; index <= 64; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil());
 			if (batch === 0) first = retained;
 			assert.equal(retained, first, 'handled failures grew retained listener storage after warmup');

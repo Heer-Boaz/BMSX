@@ -21,21 +21,21 @@ import { GC_RECORD_LINK } from './gc_object';
 export const enum ThreadField {
 	Header = 0, Gray = GC_RECORD_LINK, Status = 8, Resumer = 12, Entry = 16, StackTop = 20, StackBlock = 24, StackCapacity = 28,
 	FrameCapacity = 32, ProtectedCapacity = 36, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
-	FrameDepth = 56, ProtectedDepth = 60,
+	FrameDepth = 56, ProtectedDepth = 60, FrameBlock = 64, ProtectedBlock = 68,
 }
 
 export const enum ThreadStatus { New, Running, Normal, Suspended, Dead, Failed }
-export const THREAD_HEAP_BYTES = 64;
+export const THREAD_HEAP_BYTES = 80;
 export const THREAD_STACK_SLOT_BYTES = 5;
 export const MAX_THREAD_VALUE_SLOTS = (MAIN_RAM_SIZE / THREAD_STACK_SLOT_BYTES) | 0;
 export const THREAD_INITIAL_VALUES = 8;
 export const THREAD_INITIAL_FRAMES = 2;
-export const THREAD_INITIAL_BACKING_BYTES = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES + THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
 export const THREAD_RECORD_KIND = 4;
 export const THREAD_CONTROL_COUNT_MASK = (1 << 18) - 1;
-export function controlOffset(values: number): number { return (values * THREAD_STACK_SLOT_BYTES + 3) & ~3; }
-export function backingBytes(values: number, frames: number, continuations: number): number {
-	return controlOffset(values) + frames * FRAME_CONTROL_BYTES + continuations * PROTECTED_CALL_BYTES;
+export function allocatedThreadBackingBytes(values: number, frames: number, continuations: number): number {
+	return heapAllocationBytes(values * THREAD_STACK_SLOT_BYTES)
+		+ heapAllocationBytes(frames * FRAME_CONTROL_BYTES)
+		+ heapAllocationBytes(continuations * PROTECTED_CALL_BYTES);
 }
 export class ThreadLayout {
 	public block = 0;
@@ -46,15 +46,10 @@ export class ThreadLayout {
 	public depth = 0;
 	public protectedDepth = 0;
 	public top = 0;
+	public frameBlock = 0;
 	public frameOffset = 0;
-	public bytes = 0;
-}
-function copyStackControl(ram: Uint8Array, destination: number, source: number, bytes: number): void {
-	if (bytes === 0) return;
-	source &= RAM_RECORD_WORD_MASK;
-	const first = Math.min(bytes, MAIN_RAM_SIZE - source);
-	ram.copyWithin(destination, source, source + first);
-	if (first !== bytes) ram.copyWithin(destination + first, 0, bytes - first);
+	public protectedBlock = 0;
+	public protectedOffset = 0;
 }
 /** Physical Thread stack/control datapaths. Host execution views do not own these words. */
 export class ThreadRecords {
@@ -107,17 +102,17 @@ export class ThreadRecords {
 			else out.push(Upvalue.load(memory, cell));
 		}
 	}
-	public initializeRecord(address: number, entry: number, white: number): void {
+	public initializeRecord(address: number, block: number, frameBlock: number, entry: number, white: number): void {
 		this.arena.trackGcPage(HeapGcPages.Threads, address);
 		const memory = this.memory, ram = memory.ramData(), offset = address & RAM_RECORD_WORD_MASK;
-		const block = memory.readRamRecordWord(address + ThreadField.StackBlock), start = block & RAM_RECORD_WORD_MASK;
+		const start = block & RAM_RECORD_WORD_MASK, control = frameBlock & RAM_RECORD_WORD_MASK;
 		ram.fill(0, offset, offset + THREAD_HEAP_BYTES);
 		writeLE32(ram, offset + ThreadField.Header, THREAD_RECORD_KIND | (white << 8));
 		writeLE32(ram, offset + ThreadField.Entry, entry);
 		writeLE32(ram, offset + ThreadField.StackBlock, block);
+		writeLE32(ram, offset + ThreadField.FrameBlock, frameBlock);
 		writeLE32(ram, offset + ThreadField.StackCapacity, THREAD_INITIAL_VALUES);
 		writeLE32(ram, offset + ThreadField.FrameCapacity, THREAD_INITIAL_FRAMES);
-		const control = start + controlOffset(THREAD_INITIAL_VALUES);
 		ram.fill(0, control, control + THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES);
 		memory.invalidateRamWrite(control, THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES);
 		memory.invalidateRamWrite(offset, THREAD_HEAP_BYTES);
@@ -136,17 +131,19 @@ export class ThreadRecords {
 		target.depth = memory.readRamRecordWord(address + ThreadField.FrameDepth) & THREAD_CONTROL_COUNT_MASK;
 		target.protectedDepth = memory.readRamRecordWord(address + ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK;
 		target.top = memory.readRamRecordWord(address + ThreadField.StackTop) & FRAME_WINDOW_MASK;
-		target.frameOffset = controlOffset(target.capacity);
-		target.bytes = backingBytes(target.capacity, target.frames, target.continuations);
+		target.frameBlock = memory.readRamRecordWord(address + ThreadField.FrameBlock);
+		target.frameOffset = target.frameBlock & RAM_RECORD_WORD_MASK;
+		target.protectedBlock = memory.readRamRecordWord(address + ThreadField.ProtectedBlock);
+		target.protectedOffset = target.protectedBlock & RAM_RECORD_WORD_MASK;
 	}
 	public frameAddress(layout: ThreadLayout, index: number): number {
-		return layout.offset + layout.frameOffset + index * FRAME_CONTROL_BYTES;
+		return layout.frameOffset + index * FRAME_CONTROL_BYTES;
 	}
-	public backingByteLength(address: number): number {
-		this.readLayout(address, this.layout);
-		return this.layout.bytes;
+	public allocationBytes(address: number): number {
+		const layout = this.layout;
+		this.readLayout(address, layout);
+		return THREAD_HEAP_BYTES + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations);
 	}
-	public allocationBytes(address: number): number { return THREAD_HEAP_BYTES + heapAllocationBytes(this.backingByteLength(address)); }
 	public clearUnused(layout: ThreadLayout, liveTop: number): void {
 		const count = layout.capacity - liveTop;
 		if (count <= 0) return;
@@ -161,33 +158,38 @@ export class ThreadRecords {
 		this.memory.invalidateRamWrite(word, count * 4);
 		this.memory.invalidateRamWrite(tag, count);
 	}
-	public replaceStack(address: number, block: number, capacity: number, frames: number, continuations: number): void {
-		// Admission can collect and relocate aliased geometry. Sample after it returns.
-		const old = this.layout;
-		this.readLayout(address, old);
-		const memory = this.memory, ram = memory.ramData(), start = block & RAM_RECORD_WORD_MASK;
-		const kept = Math.min(old.capacity, capacity), tags = start + capacity * 4;
-		for (let index = 0; index < kept; ++index) {
-			writeLE32(ram, start + index * 4, memory.readRamRecordWord(old.offset + index * 4));
-			ram[tags + index] = memory.readRamRecordByte(old.offset + old.capacity * 4 + index);
-		}
+	public replaceStack(address: number, block: number, capacity: number): void {
+		// Sample the raw owner after allocation admission has completed.
+		const memory = this.memory;
+		const oldBlock = memory.readRamRecordWord(address + ThreadField.StackBlock);
+		const oldCapacity = memory.readRamRecordWord(address + ThreadField.StackCapacity);
+		const old = oldBlock & RAM_RECORD_WORD_MASK;
+		const ram = memory.ramData(), start = block & RAM_RECORD_WORD_MASK;
+		const kept = Math.min(oldCapacity, capacity), tags = start + capacity * 4;
+		const oldTags = old + oldCapacity * 4;
+		ram.copyWithin(start, old, old + kept * 4);
+		ram.copyWithin(tags, oldTags, oldTags + kept);
 		memory.ramWords.fill(0, (start >>> 2) + kept, (start >>> 2) + capacity);
 		ram.fill(0, tags + kept, tags + capacity);
 		memory.invalidateRamWrite(start, capacity * THREAD_STACK_SLOT_BYTES);
-		const records = start + controlOffset(capacity), protectedRecords = records + frames * FRAME_CONTROL_BYTES;
-		const frameBytes = Math.min(old.depth, old.frames, frames) * FRAME_CONTROL_BYTES;
-		const occupied = Math.min(old.protectedDepth, old.continuations, continuations) * PROTECTED_CALL_BYTES;
-		copyStackControl(ram, records, this.frameAddress(old, 0), frameBytes);
-		copyStackControl(ram, protectedRecords, this.frameAddress(old, old.frames), occupied);
-		ram.fill(0, start + capacity * THREAD_STACK_SLOT_BYTES, records);
-		ram.fill(0, records + frameBytes, protectedRecords);
-		ram.fill(0, protectedRecords + occupied, start + backingBytes(capacity, frames, continuations));
-		memory.invalidateRamWrite(start + capacity * THREAD_STACK_SLOT_BYTES, backingBytes(capacity, frames, continuations) - capacity * THREAD_STACK_SLOT_BYTES);
-		const descriptor = (address + ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
-		writeLE32(ram, descriptor, block); writeLE32(ram, descriptor + 4, capacity);
-		writeLE32(ram, descriptor + 8, frames); writeLE32(ram, descriptor + 12, continuations);
-		memory.invalidateRamWrite(descriptor, 16);
-		this.arena.free(old.block);
+		memory.writeRamRecordPair(address + ThreadField.StackBlock, block, capacity);
+		this.arena.free(oldBlock);
+	}
+	public replaceControls(address: number, field: ThreadField.FrameBlock | ThreadField.ProtectedBlock, block: number, capacity: number): void {
+		const memory = this.memory, ram = memory.ramData(), offset = block & RAM_RECORD_WORD_MASK;
+		const frames = field === ThreadField.FrameBlock;
+		const stride = frames ? FRAME_CONTROL_BYTES : PROTECTED_CALL_BYTES;
+		const capacityField = frames ? ThreadField.FrameCapacity : ThreadField.ProtectedCapacity;
+		const depthField = frames ? ThreadField.FrameDepth : ThreadField.ProtectedDepth;
+		const oldBlock = memory.readRamRecordWord(address + field);
+		const old = oldBlock & RAM_RECORD_WORD_MASK;
+		const occupied = (memory.readRamRecordWord(address + depthField) & THREAD_CONTROL_COUNT_MASK) * stride;
+		ram.copyWithin(offset, old, old + occupied);
+		ram.fill(0, offset + occupied, offset + capacity * stride);
+		memory.invalidateRamWrite(offset, capacity * stride);
+		memory.writeRamRecordWord(address + field, block);
+		memory.writeRamRecordWord(address + capacityField, capacity);
+		if (oldBlock !== 0) this.arena.free(oldBlock);
 	}
 	public shrinkStack(address: number, layout: ThreadLayout): number {
 		let used = layout.top;
@@ -199,10 +201,19 @@ export class ThreadRecords {
 		const continuations = layout.continuations > 4 && layout.protectedDepth * 3 < layout.continuations ? layout.continuations >>> 1 : layout.continuations;
 		const values = layout.capacity > 16 && used * 3 < layout.capacity ? layout.capacity >>> 1 : layout.capacity;
 		const frames = layout.frames > 4 && layout.depth * 3 < layout.frames ? layout.frames >>> 1 : layout.frames;
-		if (values === layout.capacity && continuations === layout.continuations && frames === layout.frames) return 0;
-		const bytes = backingBytes(values, frames, continuations), block = this.arena.allocate(bytes, true);
-		if (block === 0) return 0;
-		this.replaceStack(address, block, values, frames, continuations);
-		return bytes;
+		let copied = 0;
+		if (values !== layout.capacity) {
+			const bytes = values * THREAD_STACK_SLOT_BYTES, block = this.arena.allocate(bytes, true);
+			if (block !== 0) { this.replaceStack(address, block, values); copied += bytes; }
+		}
+		if (frames !== layout.frames) {
+			const bytes = frames * FRAME_CONTROL_BYTES, block = this.arena.allocate(bytes, true);
+			if (block !== 0) { this.replaceControls(address, ThreadField.FrameBlock, block, frames); copied += bytes; }
+		}
+		if (continuations !== layout.continuations) {
+			const bytes = continuations * PROTECTED_CALL_BYTES, block = this.arena.allocate(bytes, true);
+			if (block !== 0) { this.replaceControls(address, ThreadField.ProtectedBlock, block, continuations); copied += bytes; }
+		}
+		return copied;
 	}
 }

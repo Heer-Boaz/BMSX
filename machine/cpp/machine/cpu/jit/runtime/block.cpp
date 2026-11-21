@@ -68,7 +68,7 @@ const NativeBlockExitSite* NativeBlock::run(const ValueSpan& registers, NativeBl
 void NativeBlockRunState::bindWindow(CallFrame& active) {
 	const auto& thread = *active.thread;
 	stackBegin = thread.stackOffset();
-	stackEnd = stackBegin + thread.backingByteLength();
+	stackEnd = stackBegin + thread.stackByteLength();
 	bindFrame(active);
 }
 

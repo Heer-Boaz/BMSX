@@ -1112,16 +1112,14 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 }
 
 u32 CPU::createThread(u32 entry) {
-	const u32 address = m_luaHeap.allocateRecord(THREAD_HEAP_BYTES, false, THREAD_INITIAL_BACKING_BYTES, static_cast<u32>(ThreadField::StackBlock),
-		entry ? valueClosure(entry) : valueNil());
-	ThreadRecord::initialize(m_heap, address, entry);
+	const u32 address = m_luaHeap.allocateThreadRecord(entry);
 	trackLocalRoot(valueThread(address));
 	return address;
 }
 
 bool CPU::coroutineYieldable(u32 address) const {
 	if (address == m_rootView.address) return false;
-	const auto layout = ThreadRecord::stackLayout(m_memory, address);
+	const auto layout = ThreadRecord::storageLayout(m_memory, address);
 	for (u32 depth = ThreadRecord::count(m_memory, address, ThreadField::FrameDepth); depth != 0u; --depth) {
 		const u32 flags = m_memory.readRamRecordWord(layout.frameAddress(depth - 1u) + static_cast<u32>(FrameField::Flags));
 		if ((flags & (FRAME_EXCEPTION | FRAME_COMPLETION)) != 0u) return false;
@@ -2300,7 +2298,7 @@ u32 CPU::readFrameCallSitePc(int childFrameIndex) const {
 
 bool CPU::completionCallPending() const {
 	const u32 thread = m_completionThreadAddress;
-	const auto layout = ThreadRecord::stackLayout(m_memory, thread);
+	const auto layout = ThreadRecord::storageLayout(m_memory, thread);
 	for (u32 depth = ThreadRecord::count(m_memory, thread, ThreadField::FrameDepth); depth != 0u; --depth) {
 		const u32 flags = m_memory.readRamRecordWord(layout.frameAddress(depth - 1u) + static_cast<u32>(FrameField::Flags));
 		if ((flags & FRAME_COMPLETION) != 0u) return true;

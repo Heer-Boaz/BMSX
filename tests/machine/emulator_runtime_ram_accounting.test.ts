@@ -1,5 +1,4 @@
 import { ValueTag, valueBuiltinFunction, valueInteger, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
-import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -129,12 +128,12 @@ test('non-capturing const functions materialize as static proto references', () 
 		'return f',
 	].join('\n'));
 	const before = cpu.collectTrackedHeapBytes();
-	const backingBefore = heapAllocationBytes(cpu.rootThread.backingByteLength());
+	const backingBefore = cpu.gc.allocationBytes(cpu.rootThread.address);
 
 	runGuestToHalt(cpu, 100000);
 
 	assert.equal(cpu.collectTrackedHeapBytes() - before,
-		heapAllocationBytes(cpu.rootThread.backingByteLength()) - backingBefore);
+		cpu.gc.allocationBytes(cpu.rootThread.address) - backingBefore);
 });
 
 test('restored static closures reuse the static proto cache', () => {

@@ -93,6 +93,53 @@ u32 LuaHeap::allocateStack(u32 bytes, u32 threadAddress, Value root) {
 	throw LuaOutOfMemorySignal{};
 }
 
+u32 LuaHeap::allocateThreadRecord(u32 entry) {
+	constexpr u32 valueBytes = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES;
+	constexpr u32 frameBytes = THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
+	const auto charged = THREAD_HEAP_BYTES + heapAllocationBytes(valueBytes) + heapAllocationBytes(frameBytes);
+	const Value root = entry != 0u ? valueClosure(entry) : valueNil();
+	const bool collected = admit(charged, root);
+	auto& arena = m_cpu.heapAllocator();
+	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
+		if (const u32 address = arena.allocate(THREAD_HEAP_BYTES, false)) {
+			if (const u32 values = arena.allocate(valueBytes, true)) {
+				if (const u32 frames = arena.allocate(frameBytes, true)) {
+					ThreadRecord::initialize(m_cpu.gcHeap(), address, values, frames, entry);
+					accountAllocation(charged);
+					return address;
+				}
+				arena.free(values);
+			}
+			arena.free(address);
+		}
+		if (attempt == 0) collectRuntime(root);
+	}
+	throw LuaOutOfMemorySignal{};
+}
+
+void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 frameCapacity, Value root) {
+	const u32 valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
+	const u32 frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
+	const auto charged = heapAllocationBytes(valueBytes) + heapAllocationBytes(frameBytes);
+	const bool collected = admit(charged, root, valueNil(), valueNil(), address);
+	auto& arena = m_cpu.heapAllocator();
+	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
+		const u32 values = valueBytes != 0u ? arena.allocate(valueBytes, true) : 0u;
+		if (valueBytes == 0u || values != 0u) {
+			const u32 frames = frameBytes != 0u ? arena.allocate(frameBytes, true) : 0u;
+			if (frameBytes == 0u || frames != 0u) {
+				if (values != 0u) ThreadRecord::replaceStack(m_cpu.gcHeap(), address, values, valueCapacity);
+				if (frames != 0u) ThreadRecord::replaceControls(m_cpu.gcHeap(), address, ThreadField::FrameBlock, frames, frameCapacity);
+				accountAllocation(charged);
+				return;
+			}
+			if (values != 0u) arena.free(values);
+		}
+		if (attempt == 0) collectRuntime(root, valueNil(), valueNil(), address);
+	}
+	throw LuaOutOfMemorySignal{};
+}
+
 u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> cells) {
 	const u32 bytes = closureRecordBytes(captures, latched);
 	const size_t charged = heapAllocationBytes(bytes) + cells.size() * UPVALUE_HEAP_BYTES;

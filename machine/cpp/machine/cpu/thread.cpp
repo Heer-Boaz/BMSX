@@ -15,7 +15,7 @@ void Thread::select(u32 selected) {
 	stack = {};
 	stackCapacity = 0;
 	boundFrameOffset = 0;
-	boundBackingBytes = 0;
+	boundProtectedOffset = 0;
 	boundFrameCapacity = 0;
 	boundProtectedCapacity = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -74,10 +74,10 @@ u32 Thread::protectedCapacity() const { return read(ThreadField::ProtectedCapaci
 u32 Thread::protectedDepth() const { return read(ThreadField::ProtectedDepth) & THREAD_CONTROL_COUNT_MASK; }
 void Thread::setProtectedDepth(u32 depth) { write(ThreadField::ProtectedDepth, depth); }
 u32 Thread::frameControlAddress(u32 index) const {
-	return stackOffset() + boundFrameOffset + index * FRAME_CONTROL_BYTES;
+	return boundFrameOffset + index * FRAME_CONTROL_BYTES;
 }
 u32 Thread::protectedAddress(u32 index) const {
-	return frameControlAddress(boundFrameCapacity) + index * PROTECTED_CALL_BYTES;
+	return boundProtectedOffset + index * PROTECTED_CALL_BYTES;
 }
 u32 Thread::protectedWord(u32 index, ProtectedField field) const {
 	return heap.memory.readRamRecordWord(protectedAddress(index) + static_cast<u32>(field));
@@ -108,10 +108,10 @@ u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, CallResultPla
 	const u32 reserved = protectedCapacity();
 	if (index == reserved) {
 		const u32 capacity = reserved == 0 ? 1 : reserved * 2;
-		ThreadStackLayout next{0u, static_cast<u32>(stack.size()), boundFrameCapacity, capacity};
-		next.block = heap.budget.allocateStack(next.byteLength(), address, valueNil());
-		ThreadRecord::relocateStack(heap, address, ThreadRecord::stackLayout(heap.memory, address), next);
-		bindStack();
+		const u32 block = heap.budget.allocateStack(capacity * PROTECTED_CALL_BYTES, address, valueNil());
+		ThreadRecord::replaceControls(heap, address, ThreadField::ProtectedBlock, block, capacity);
+		boundProtectedOffset = block & RAM_RECORD_WORD_MASK;
+		boundProtectedCapacity = capacity;
 	}
 	const u32 addr = protectedAddress(index) & RAM_RECORD_WORD_MASK;
 	auto& memory = heap.memory;
@@ -131,7 +131,7 @@ u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, CallResultPla
 }
 
 bool Thread::stackRequiresScalar() const {
-	const u32 bytes = backingByteLength(), offset = stackOffset();
+	const u32 bytes = stackByteLength(), offset = stackOffset();
 	if (stack.mirrored() || static_cast<size_t>(stackTop()) > stack.size() || frameDepth() > boundFrameCapacity
 		|| bytes > MAIN_RAM_SIZE - offset) return true;
 	const u32 publicBytes = heap.memory.ramBusEnd() - RAM_BASE;
@@ -139,29 +139,39 @@ bool Thread::stackRequiresScalar() const {
 	const auto& watches = heap.memory.ramWriteWatches();
 	return (record < publicBytes && (watches.anyWatched(record + static_cast<u32>(ThreadField::StackTop), 4u)
 		|| watches.anyWatched(record + static_cast<u32>(ThreadField::FrameDepth), 4u)))
-		|| (offset < publicBytes && watches.anyWatched(offset, bytes));
+		|| (offset < publicBytes && watches.anyWatched(offset, bytes))
+		|| (boundFrameOffset < publicBytes && watches.anyWatched(boundFrameOffset, boundFrameCapacity * FRAME_CONTROL_BYTES))
+		|| (boundProtectedCapacity != 0u && boundProtectedOffset < publicBytes
+			&& watches.anyWatched(boundProtectedOffset, boundProtectedCapacity * PROTECTED_CALL_BYTES));
 }
 
 void Thread::bindStack() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	recordedWriteEpoch = 0;
 #endif
-	const auto layout = ThreadRecord::stackLayout(heap.memory, address);
+	const auto layout = ThreadRecord::storageLayout(heap.memory, address);
 	stackCapacity = layout.valueCapacity;
 	boundFrameCapacity = layout.frameCapacity;
 	boundProtectedCapacity = layout.protectedCapacity;
-	boundFrameOffset = layout.controlOffset();
-	boundBackingBytes = layout.byteLength();
-	const u32 controls = layout.frameAddress(0);
-	u32 index = 0;
-	for (auto* frame = firstFrame; frame; frame = frame->next, ++index)
-		bindFrameControl(*frame, controls + index * FRAME_CONTROL_BYTES, index);
+	boundFrameOffset = layout.frameAddress(0);
+	boundProtectedOffset = layout.protectedAddress(0);
+	bindFrameControls();
 	size_t extent = 0;
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
 		extent = std::max(extent, static_cast<size_t>(frame->stackBase() + frame->stackCapacity()));
 	stack = layout.slots(heap.memory, extent > stackCapacity);
+	rebindRegisters();
+}
+
+void Thread::rebindRegisters() {
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
 		frame->registers = stack.subspan(frame->stackBase(), frame->stackCapacity());
+}
+
+void Thread::bindFrameControls() {
+	u32 index = 0;
+	for (auto* frame = firstFrame; frame; frame = frame->next, ++index)
+		bindFrameControl(*frame, frameControlAddress(index), index);
 }
 
 void Thread::bindFrameControl(CallFrame& frame, u32 address, u32 index) {
@@ -172,21 +182,39 @@ void Thread::bindFrameControl(CallFrame& frame, u32 address, u32 index) {
 
 void Thread::resizeStack(size_t capacity, Value root) {
 	if (capacity == stackCapacity) return;
-	ThreadStackLayout next{0u, static_cast<u32>(capacity), boundFrameCapacity, boundProtectedCapacity};
-	next.block = heap.budget.allocateStack(next.byteLength(), address, root);
-	ThreadRecord::relocateStack(heap, address, ThreadRecord::stackLayout(heap.memory, address), next);
-	bindStack();
+	const u32 block = heap.budget.allocateStack(static_cast<u32>(capacity) * THREAD_STACK_SLOT_BYTES, address, root);
+	ThreadRecord::replaceStack(heap, address, block, static_cast<u32>(capacity));
+	const u32 offset = block & RAM_RECORD_WORD_MASK;
+	stackCapacity = capacity;
+	stack = ValueSpan(heap.memory, offset, offset + static_cast<u32>(capacity) * sizeof(u32), capacity);
+	rebindRegisters();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	recordedWriteEpoch = 0;
+#endif
 }
 
 void Thread::reserveFrame(size_t values, Value root, bool exception) {
 	const size_t wanted = frameDepth() + (exception ? 1 : 2);
 	u32 frames = std::max(THREAD_INITIAL_FRAMES, boundFrameCapacity);
 	while (frames < wanted) frames *= 2;
-	if (values == stackCapacity && frames == boundFrameCapacity) return;
-	ThreadStackLayout next{0u, static_cast<u32>(values), frames, boundProtectedCapacity};
-	next.block = heap.budget.allocateStack(next.byteLength(), address, root);
-	ThreadRecord::relocateStack(heap, address, ThreadRecord::stackLayout(heap.memory, address), next);
-	bindStack();
+	const u32 valueChange = values == stackCapacity ? 0u : static_cast<u32>(values);
+	const u32 frameChange = frames == boundFrameCapacity ? 0u : frames;
+	if (valueChange == 0u && frameChange == 0u) return;
+	heap.budget.reserveThreadFrameStorage(address, valueChange, frameChange, root);
+	if (frameChange != 0u) {
+		boundFrameCapacity = frameChange;
+		boundFrameOffset = read(ThreadField::FrameBlock) & RAM_RECORD_WORD_MASK;
+		bindFrameControls();
+	}
+	if (valueChange != 0u) {
+		stackCapacity = valueChange;
+		const u32 offset = read(ThreadField::StackBlock) & RAM_RECORD_WORD_MASK;
+		stack = ValueSpan(heap.memory, offset, offset + valueChange * sizeof(u32), valueChange);
+		rebindRegisters();
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	recordedWriteEpoch = 0;
+#endif
 }
 
 CallFrame* Thread::frameNode(CallFrame* previous) {

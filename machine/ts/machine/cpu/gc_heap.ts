@@ -1,14 +1,14 @@
-import { MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
+import { HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
-import { HEAP_GC_CONTROL_OFFSET, HeapGcPages, heapAllocationBytes, heapClassIndex, type HeapAllocator } from './heap_allocator';
+import { HEAP_GC_CONTROL_OFFSET, HeapGcPages, heapClassIndex, type HeapAllocator } from './heap_allocator';
 import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_COLOR_OFFSET, GC_COLOR_MASK, GC_OLD, GC_REMEMBERED, GC_RECORD_LINK, GC_RECORD_SHIFT } from './gc_object';
 import * as Closure from './closure';
 import { UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_CHAIN_LIMIT, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from './upvalue';
 import * as Upvalue from './upvalue';
 import { TableRecords } from './table';
 import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND } from './thread_record';
-import { ThreadField, ThreadLayout, ThreadRecords } from './thread_record';
+import { ThreadField, ThreadLayout, ThreadRecords, allocatedThreadBackingBytes } from './thread_record';
 import { FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
 import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from './value';
 import { ValueSlots } from './value_slots';
@@ -110,7 +110,7 @@ export class GcHeap {
 	}
 	public threadRecordAddress(address: number): number {
 		const offset = address & GC_RECORD_MASK;
-		return (offset & (THREAD_HEAP_BYTES - 1)) === 0 && this.arena.issuedObjectSlotClass(offset) === THREAD_SIZE_CLASS
+		return (offset & (HEAP_PAGE_SIZE - 1)) % THREAD_HEAP_BYTES === 0 && this.arena.issuedObjectSlotClass(offset) === THREAD_SIZE_CLASS
 			&& this.memory.readRamRecordByte(offset) === THREAD_RECORD_KIND ? RAM_BASE + offset : 0;
 	}
 	public active(): boolean { return this.phase() !== GcPhase.Pause; }
@@ -207,7 +207,7 @@ export class GcHeap {
 	};
 	public markThread(address: number): boolean {
 		const offset = address & GC_RECORD_MASK;
-		if (offset >= this.arena.managementOffset() || (offset & (THREAD_HEAP_BYTES - 1)) !== 0) return false;
+		if (offset >= this.arena.managementOffset() || (offset & (HEAP_PAGE_SIZE - 1)) % THREAD_HEAP_BYTES !== 0) return false;
 		const header = this.memory.readRamRecordWord(offset);
 		if ((header & 0xff) !== THREAD_RECORD_KIND || !this.unmarked(header >>> 8)
 			|| this.arena.issuedObjectSlotClass(offset) !== THREAD_SIZE_CLASS) return false;
@@ -275,7 +275,7 @@ export class GcHeap {
 		const table = kind === ValueTag.Table && slotClass === TABLE_SIZE_CLASS && (offset & (TableRecords.HEADER_BYTES - 1)) === 0;
 		const cell = kind === UPVALUE_RECORD_KIND && slotClass === CELL_SIZE_CLASS && (offset & (UPVALUE_HEAP_BYTES - 1)) === 0 && !Upvalue.isOpen(this.memory, address);
 		const closure = kind === ValueTag.Closure && this.arena.issuedObjectStart(offset);
-		const thread = kind === THREAD_RECORD_KIND && slotClass === THREAD_SIZE_CLASS && (offset & (THREAD_HEAP_BYTES - 1)) === 0;
+		const thread = kind === THREAD_RECORD_KIND && slotClass === THREAD_SIZE_CLASS && (offset & (HEAP_PAGE_SIZE - 1)) % THREAD_HEAP_BYTES === 0;
 		// Only a queued color clocks the link, even for malformed cycles.
 		if ((!table && !cell && !closure && !thread) || this.markColor(address) !== 2) {
 			this.memory.writeRamRecordWord(this.controlOffset + GC_TRACE_HEAD, 0);
@@ -333,7 +333,7 @@ export class GcHeap {
 				cellAddress = this.memory.readRamRecordWord(cell + UPVALUE_NEXT);
 			}
 		}
-		const protectedBase = this.threads.frameAddress(layout, layout.frames);
+		const protectedBase = layout.protectedOffset;
 		for (let index = 0; index < layout.protectedDepth; ++index) {
 			const continuation = protectedBase + index * PROTECTED_CALL_BYTES;
 			const flags = this.memory.readRamRecordWord(continuation + ProtectedField.Flags);
@@ -344,7 +344,7 @@ export class GcHeap {
 		for (let slot = 0; slot < liveTop; ++slot)
 			this.markValue(valueFromTag(this.memory.readRamRecordByte(tags + slot), this.memory.readRamRecordWord(layout.offset + slot * 4)));
 		this.threads.clearUnused(layout, liveTop);
-		return cellWork + ceilDiv4(THREAD_HEAP_BYTES + heapAllocationBytes(layout.bytes));
+		return cellWork + ceilDiv4(THREAD_HEAP_BYTES + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations));
 	}
 	/** Called with the current trace queue empty; mutations stay separate until this pass. */
 	private remark(t0: Value, t1: Value, t2: Value): number {
@@ -444,7 +444,7 @@ export class GcHeap {
 		if (kind !== THREAD_RECORD_KIND || this.threadRecordAddress(address) !== address) return 1;
 		const layout = this.threadLayout;
 		this.threads.readLayout(address, layout);
-		const work = ceilDiv4(THREAD_HEAP_BYTES + heapAllocationBytes(layout.bytes));
+		const work = ceilDiv4(THREAD_HEAP_BYTES + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations));
 		if (!garbage) {
 			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, survivor);
 			const copied = this.minor || address === growingThread ? 0 : this.threads.shrinkStack(address, layout);
@@ -453,7 +453,9 @@ export class GcHeap {
 			return work + 2 * ceilDiv4(copied);
 		}
 		this.cpu.retireThreadView(address);
-		this.arena.free(this.memory.readRamRecordWord(address + ThreadField.StackBlock));
+		this.arena.free(layout.block);
+		this.arena.free(layout.frameBlock);
+		if (layout.protectedBlock !== 0) this.arena.free(layout.protectedBlock);
 		this.arena.free(address);
 		this.onRecordRetirement?.(address);
 		return -work;

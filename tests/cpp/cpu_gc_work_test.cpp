@@ -51,13 +51,13 @@ struct Machine {
 	}
 };
 
-// Thread224 (64-byte header and the 160-byte class for 40 Value bytes plus two 48-byte frames)
+// Thread232 (80-byte header, 40 Value bytes and two 56-byte frame records)
 // + Closure16, a 16-byte constant bank (three slots), 17 machine Strings occupying 744 bytes
 // and their 32 four-byte intern buckets, two 160-byte global banks and a 16-byte image map. Each live String marks once,
 // and every issued object block and intern bucket is visited once.
-constexpr int bootBytes = 224 + 16 + 16 + 744 + 128 + 16 + 2 * 160;
-constexpr int bootMarkWork = 2 * 56 + 3 + 2 * 12 + 17;
-constexpr int bootCollectionWork = 4 * 56 + 3 + 1 + 3 * 12 + 2 * 17 + 32;
+constexpr int bootBytes = 232 + 16 + 16 + 744 + 128 + 16 + 2 * 160;
+constexpr int bootMarkWork = 2 * 58 + 3 + 2 * 12 + 17;
+constexpr int bootCollectionWork = 4 * 58 + 3 + 1 + 3 * 12 + 2 * 17 + 32;
 
 void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;
@@ -429,25 +429,22 @@ void collectUnattachedThreadRecord() {
 	Machine machine(image()); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap(); auto& memory = machine.memory;
 	const size_t baselineWork = gc.collect();
 	const size_t baselineBytes = cpu.heapAllocator().occupiedBytes();
-	const u32 address = cpu.luaHeap().allocateRecord(THREAD_HEAP_BYTES, false, THREAD_INITIAL_BACKING_BYTES,
-		static_cast<u32>(ThreadField::StackBlock));
-	ThreadRecord::initialize(gc, address, 0u);
-	ThreadStackLayout wide{0u, 64u, THREAD_INITIAL_FRAMES, 0u};
-	wide.block = cpu.heapAllocator().allocate(wide.byteLength(), true);
-	require(wide.block != 0u, "a large unviewed stack fits the test heap");
-	ThreadRecord::relocateStack(gc, address, ThreadRecord::stackLayout(memory, address), wide);
-	const u32 block = wide.block;
+	const u32 address = cpu.luaHeap().allocateThreadRecord(0u);
+	constexpr u32 capacity = 64u;
+	const u32 block = cpu.heapAllocator().allocate(capacity * THREAD_STACK_SLOT_BYTES, true);
+	require(block != 0u, "a large unviewed stack fits the test heap");
+	ThreadRecord::replaceStack(gc, address, block, capacity);
 	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::Status), static_cast<u32>(ThreadStatus::Suspended));
 	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::FrameDepth), 1u);
 	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::StackTop), 1u);
-	const auto layout = ThreadRecord::stackLayout(memory, address);
+	const auto layout = ThreadRecord::storageLayout(memory, address);
 	const u32 frame = layout.frameAddress(0);
 	memory.writeRamRecordWord(frame + static_cast<u32>(FrameField::StackCapacity), THREAD_INITIAL_VALUES);
 	memory.writeRamRecordWord(frame + static_cast<u32>(FrameField::Top), 1u);
 	const u32 child = cpu.createTable().address();
 	memory.writeRamRecordWord(block, child);
-	memory.writeRamRecordByte(block + wide.valueCapacity * sizeof(u32), static_cast<u8>(ValueTag::Table));
-	const size_t bytes = THREAD_HEAP_BYTES + heapAllocationBytes(layout.byteLength());
+	memory.writeRamRecordByte(block + capacity * sizeof(u32), static_cast<u8>(ValueTag::Table));
+	const size_t bytes = layout.allocationBytes();
 	require(layout.block == block && gc.threadRecordAddress(address) == address && gc.allocationBytes(address) == bytes,
 		"an issued raw Thread has its physical header and backing without an execution view");
 	require(cpu.heapAllocator().occupiedBytes() == baselineBytes + bytes + TableRecord::HEADER_BYTES,
@@ -461,13 +458,13 @@ void collectUnattachedThreadRecord() {
 	require(gc.collect(valueThread(address), valueNil(), valueNil(), address) == liveWork,
 		"repeated collection follows the same RAM frame and charges no host attachment work");
 	const size_t shrinkWork = gc.collect(valueThread(address));
-	const auto reduced = ThreadRecord::stackLayout(memory, address);
-	const size_t reducedBytes = THREAD_HEAP_BYTES + heapAllocationBytes(reduced.byteLength());
-	require(reduced.valueCapacity == wide.valueCapacity / 2 && reduced.block != block
+	const auto reduced = ThreadRecord::storageLayout(memory, address);
+	const size_t reducedBytes = reduced.allocationBytes();
+	require(reduced.valueCapacity == capacity / 2 && reduced.block != block && reduced.frameBlock == layout.frameBlock
 		&& reduced.slots(memory).get(0) == valueTable(child)
 		&& memory.readRamRecordWord(reduced.frameAddress(0) + static_cast<u32>(FrameField::Top)) == 1u,
-		"shrinking relocates the frame and its live tagged slot without a host view");
-	require(shrinkWork == liveWork + 2 * (reduced.byteLength() / sizeof(u32))
+		"shrinking relocates the live tagged slot, not its frame control");
+	require(shrinkWork == liveWork + 2 * (reduced.valueBytes() / sizeof(u32))
 		&& cpu.heapAllocator().occupiedBytes() == baselineBytes + reducedBytes + TableRecord::HEADER_BYTES,
 		"relocation charges the new physical copy and releases the old backing");
 	size_t deadWork = 0;
@@ -477,7 +474,7 @@ void collectUnattachedThreadRecord() {
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);
 	require(gc.threadRecordAddress(address) == address
-		&& ThreadRecord::stackLayout(memory, address).block == reduced.block,
+		&& ThreadRecord::storageLayout(memory, address).block == reduced.block,
 		"restore preserves the sweep victim's issued RAM record and owned backing");
 	while (gc.active()) deadWork += gc.step(valueNil(), valueNil(), valueNil());
 	require(deadWork == baselineWork + reducedBytes / sizeof(u32) + 1,

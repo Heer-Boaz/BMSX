@@ -148,14 +148,14 @@ size_t GcHeap::visitList(u32 list, Visitor&& visitor) {
 
 u32 GcHeap::threadRecordAddress(u32 address) const {
 	const u32 offset = address & GC_RECORD_MASK;
-	return (offset & (THREAD_HEAP_BYTES - 1u)) == 0u && offset < arena.managementOffset()
+	return (offset & (HEAP_PAGE_SIZE - 1u)) % THREAD_HEAP_BYTES == 0u && offset < arena.managementOffset()
 		&& memory.readRamRecordByte(offset) == THREAD_RECORD_KIND
 		&& arena.issuedObjectSlotClass(offset) == threadSlotClass ? RAM_BASE + offset : 0u;
 }
 
 bool GcHeap::markThread(u32 address) {
 	const u32 offset = address & GC_RECORD_MASK;
-	if ((offset & (THREAD_HEAP_BYTES - 1u)) != 0u || offset >= arena.managementOffset()) return false;
+	if ((offset & (HEAP_PAGE_SIZE - 1u)) % THREAD_HEAP_BYTES != 0u || offset >= arena.managementOffset()) return false;
 	const u32 header = memory.readRamRecordWord(offset);
 	if ((header & 0xffu) != THREAD_RECORD_KIND || !unmarked(static_cast<u8>(header >> 8u))
 		|| arena.issuedObjectSlotClass(offset) != threadSlotClass) return false;
@@ -212,7 +212,7 @@ size_t GcHeap::markCell(u32 cell) {
 }
 
 size_t GcHeap::allocationBytes(u32 threadAddress) const {
-	return THREAD_HEAP_BYTES + heapAllocationBytes(ThreadRecord::stackLayout(memory, threadAddress).byteLength());
+	return ThreadRecord::storageLayout(memory, threadAddress).allocationBytes();
 }
 uint8_t GcHeap::tableWeakMode(const TableRecord& table) {
 	const u32 meta = table.metatableAddress();
@@ -270,7 +270,7 @@ size_t GcHeap::trace(bool atomic) {
 	const bool cell = kind == UPVALUE_RECORD_KIND && (offset & (UPVALUE_HEAP_BYTES - 1u)) == 0u
 		&& arena.issuedObjectSlotClass(offset) == cellSlotClass && !Upvalue::isOpen(memory, address);
 	const bool closure = kind == static_cast<u8>(ValueTag::Closure) && arena.issuedObjectStart(offset);
-	const bool thread = kind == THREAD_RECORD_KIND && (offset & (THREAD_HEAP_BYTES - 1u)) == 0u
+	const bool thread = kind == THREAD_RECORD_KIND && (offset & (HEAP_PAGE_SIZE - 1u)) % THREAD_HEAP_BYTES == 0u
 		&& arena.issuedObjectSlotClass(offset) == threadSlotClass;
 	// A link is clocked only by a queued record. Consuming its color bounds
 	// malformed cycles as well as preventing a duplicate scan.
@@ -302,7 +302,7 @@ size_t GcHeap::trace(bool atomic) {
 	markThread(ThreadRecord::read(memory, address, ThreadField::Resumer));
 	markClosure(ThreadRecord::read(memory, address, ThreadField::Entry));
 	markValue(ThreadRecord::error(memory, address));
-	const auto layout = ThreadRecord::stackLayout(memory, address);
+	const auto layout = ThreadRecord::storageLayout(memory, address);
 	const u32 depth = ThreadRecord::count(memory, address, ThreadField::FrameDepth);
 	u32 liveTop = 0;
 	if (depth != 0u) {
@@ -337,7 +337,7 @@ size_t GcHeap::trace(bool atomic) {
 	auto slots = layout.slots(memory, liveTop > layout.valueCapacity);
 	for (u32 index = 0; index < liveTop; ++index) markValue(slots.get(index));
 	if (liveTop < layout.valueCapacity) slots.clear(liveTop, layout.valueCapacity - liveTop);
-	return cellWork + ceilDiv4(static_cast<int>(THREAD_HEAP_BYTES + heapAllocationBytes(layout.byteLength())));
+	return cellWork + ceilDiv4(static_cast<int>(layout.allocationBytes()));
 }
 
 size_t GcHeap::traceTable(u32 address) {
@@ -510,8 +510,8 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 		return 1;
 	}
 	if (kind != THREAD_RECORD_KIND || heap.threadRecordAddress(address) == 0u) return 1;
-	const auto layout = ThreadRecord::stackLayout(heap.memory, address);
-	const i32 work = ceilDiv4(static_cast<int>(THREAD_HEAP_BYTES + heapAllocationBytes(layout.byteLength())));
+	const auto layout = ThreadRecord::storageLayout(heap.memory, address);
+	const i32 work = ceilDiv4(static_cast<int>(layout.allocationBytes()));
 	if (!garbage) {
 		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, survivor);
 		const u32 relocated = !heap.m_minor && address != sweep.growingThread ? ThreadRecord::shrinkStack(heap, address, layout) : 0u;
@@ -523,6 +523,8 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 	// be reused. View residency does not contribute a root or collector work.
 	heap.m_cpu.retireThreadView(address);
 	heap.arena.free(layout.block);
+	heap.arena.free(layout.frameBlock);
+	if (layout.protectedBlock != 0u) heap.arena.free(layout.protectedBlock);
 	heap.arena.free(address);
 	return -work;
 }

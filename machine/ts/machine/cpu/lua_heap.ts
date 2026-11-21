@@ -5,7 +5,9 @@ import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
 import { GC_ASSIST_BYTES } from './gc_heap';
 import { shiftRightSigned } from '../common/numeric';
-import { valueNil, type Value } from './value';
+import { valueClosure, valueNil, type Value } from './value';
+import { FRAME_CONTROL_BYTES } from './call_state';
+import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadField } from './thread_record';
 
 const NO_NEW_CELLS = new Uint32Array(0);
 const MIN_COLLECTION_BYTES = 1024 * 1024;
@@ -86,6 +88,58 @@ export class LuaHeap {
 				return block;
 			}
 			if (attempt === 0) this.collectRuntime(root, valueNil(), valueNil(), thread);
+		}
+		throw LUA_OUT_OF_MEMORY_SIGNAL;
+	}
+
+	public allocateThreadRecord(entry: number): number {
+		const valueBytes = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES;
+		const frameBytes = THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
+		const charged = THREAD_HEAP_BYTES + heapAllocationBytes(valueBytes) + heapAllocationBytes(frameBytes);
+		const root = entry === 0 ? valueNil() : valueClosure(entry);
+		const collected = this.admit(charged, root);
+		const arena = this.cpu.heapAllocator;
+		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
+			const address = arena.allocate(THREAD_HEAP_BYTES, false);
+			if (address !== 0) {
+				const values = arena.allocate(valueBytes, true);
+				if (values !== 0) {
+					const frames = arena.allocate(frameBytes, true);
+					if (frames !== 0) {
+						this.cpu.gc.threads.initializeRecord(address, values, frames, entry, this.cpu.gc.white());
+						this.accountAllocation(charged);
+						return address;
+					}
+					arena.free(values);
+				}
+				arena.free(address);
+			}
+			if (attempt === 0) this.collectRuntime(root);
+		}
+		throw LUA_OUT_OF_MEMORY_SIGNAL;
+	}
+
+	/** A call can need both storage lanes. Acquire them before changing either raw descriptor. */
+	public reserveThreadFrameStorage(address: number, valueCapacity: number, frameCapacity: number, root: Value): void {
+		const valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
+		const frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
+		const charged = heapAllocationBytes(valueBytes) + heapAllocationBytes(frameBytes);
+		const collected = this.admit(charged, root, valueNil(), valueNil(), address);
+		const arena = this.cpu.heapAllocator;
+		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
+			const values = valueBytes === 0 ? 0 : arena.allocate(valueBytes, true);
+			if (valueBytes === 0 || values !== 0) {
+				const frames = frameBytes === 0 ? 0 : arena.allocate(frameBytes, true);
+				if (frameBytes === 0 || frames !== 0) {
+					const threads = this.cpu.gc.threads;
+					if (values !== 0) threads.replaceStack(address, values, valueCapacity);
+					if (frames !== 0) threads.replaceControls(address, ThreadField.FrameBlock, frames, frameCapacity);
+					this.accountAllocation(charged);
+					return;
+				}
+				if (values !== 0) arena.free(values);
+			}
+			if (attempt === 0) this.collectRuntime(root, valueNil(), valueNil(), address);
 		}
 		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}

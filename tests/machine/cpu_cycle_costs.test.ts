@@ -13,7 +13,7 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
-import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
+import { THREAD_HEAP_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { valueBool, valueBuiltinFunction, valueInteger, valueNil, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
@@ -197,8 +197,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			assert.equal(thread.protectedDepth, 2);
 			thread.currentFrame!.registers.setInteger(0, 17); thread.currentFrame!.registers.setInteger(1, 29);
 			const failFirst = wanted === PSX_MACHINE_SPEC.ramBytes + 1;
-			const frames = cpu.memory.readRamRecordWord(thread.address + ThreadField.FrameCapacity);
-			const controls = thread.stackOffset() + ((thread.stackRegisters.byteLength() + 3) & ~3) + frames * FRAME_CONTROL_BYTES;
+			const controls = cpu.memory.readRamRecordWord(thread.address + ThreadField.ProtectedBlock);
 			cpu.memory.writeRamRecordWord(controls + (failFirst ? PROTECTED_CALL_BYTES : 0) + ProtectedField.Wanted,
 				failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted);
 			const fault = wanted >= PSX_MACHINE_SPEC.ramBytes;
@@ -207,8 +206,9 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			// 32 intern buckets and mark/visit 17 live RAM string roots.
 			// Four reserved frame slots (including the exception reserve) and two
 			// continuation records are present during all three scans and sweep.
-			const extraWords = (heapAllocationBytes(8 * 5 + 4 * FRAME_CONTROL_BYTES + 2 * PROTECTED_CALL_BYTES) - heapAllocationBytes(8 * 5)) / 4;
-			const gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (32 + 2 * 17 + 4 * extraWords) : 0;
+			const threadWords = (THREAD_HEAP_BYTES + heapAllocationBytes(8 * 5) + heapAllocationBytes(4 * FRAME_CONTROL_BYTES)
+				+ heapAllocationBytes(2 * PROTECTED_CALL_BYTES)) / 4;
+			const gcCycles = fault ? (failFirst ? 34 : 31) + 2 * (32 + 2 * 17 + 4 * threadWords) : 0;
 			if (fault) assert.throws(() => cpu.runUntilDepth(1, 2), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			else assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
 			const outer = wanted === 0 ? 4 : wanted - 1;

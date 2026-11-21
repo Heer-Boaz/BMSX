@@ -1,5 +1,5 @@
-import { ThreadField, ThreadStatus, THREAD_INITIAL_FRAMES, THREAD_CONTROL_COUNT_MASK, controlOffset, backingBytes } from './thread_record';
-export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_BACKING_BYTES, THREAD_RECORD_KIND } from './thread_record';
+import { ThreadField, ThreadStatus, THREAD_INITIAL_FRAMES, THREAD_STACK_SLOT_BYTES, THREAD_CONTROL_COUNT_MASK } from './thread_record';
+export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_RECORD_KIND } from './thread_record';
 import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, PROTECTED_CALL_HANDLER_BUILTIN, ProtectedField, type ProtectedCallKind } from './call_state';
 import type { GcHeap } from './gc_heap';
 import { ValueTag, valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
@@ -16,7 +16,7 @@ export class Thread {
 	public get stackTop(): number { return this.read(ThreadField.StackTop) & FRAME_WINDOW_MASK; }
 	public set stackTop(top: number) { this.write(ThreadField.StackTop, top); }
 	private boundFrameOffset = 0;
-	private boundBackingBytes = 0;
+	private boundProtectedOffset = 0;
 	private boundFrameCapacity = 0;
 	private boundProtectedCapacity = 0;
 	private recordWordOffset = 0;
@@ -52,23 +52,23 @@ export class Thread {
 	}
 
 	public stackOffset(): number { return this.stackRegisters.ramOffset(); }
-	public backingByteLength(): number {
-		return this.boundBackingBytes;
-	}
 	/** Checked execution footprints use physical offsets, after RAM-port mirroring. */
 	public overlapsRam(first: number, bytes: number): boolean {
-		const begin = this.stackOffset();
-		return first + bytes > begin && first < begin + this.boundBackingBytes;
+		const begin = this.stackOffset(), end = first + bytes;
+		return (end > begin && first < begin + this.stackRegisters.byteLength())
+			|| (end > this.boundFrameOffset && first < this.boundFrameOffset + this.boundFrameCapacity * FRAME_CONTROL_BYTES)
+			|| (this.boundProtectedCapacity !== 0 && end > this.boundProtectedOffset
+				&& first < this.boundProtectedOffset + this.boundProtectedCapacity * PROTECTED_CALL_BYTES);
 	}
 	private get frameCapacity(): number { return this.read(ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK; }
 	private get protectedCapacity(): number { return this.read(ThreadField.ProtectedCapacity) & THREAD_CONTROL_COUNT_MASK; }
 	public get protectedDepth(): number { return this.read(ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK; }
 	public set protectedDepth(depth: number) { this.write(ThreadField.ProtectedDepth, depth); }
 	private frameControlAddress(index: number): number {
-		return this.stackOffset() + this.boundFrameOffset + index * FRAME_CONTROL_BYTES;
+		return this.boundFrameOffset + index * FRAME_CONTROL_BYTES;
 	}
 	private protectedAddress(index: number): number {
-		return this.frameControlAddress(this.boundFrameCapacity) + index * PROTECTED_CALL_BYTES;
+		return this.boundProtectedOffset + index * PROTECTED_CALL_BYTES;
 	}
 	public protectedWord(index: number, field: ProtectedField): number {
 		return this.heap.memory.readRamRecordWord(this.protectedAddress(index) + field);
@@ -94,10 +94,10 @@ export class Thread {
 		const reserved = this.protectedCapacity;
 		if (index === reserved) {
 			const capacity = reserved === 0 ? 1 : reserved * 2;
-			const values = this.stackRegisters.capacity();
-			const frames = this.boundFrameCapacity;
-			const block = this.heap.budget.allocateStack(backingBytes(values, frames, capacity), this.address, valueNil());
-			this.replaceStack(block, values, frames, capacity);
+			const block = this.heap.budget.allocateStack(capacity * PROTECTED_CALL_BYTES, this.address, valueNil());
+			this.heap.threads.replaceControls(this.address, ThreadField.ProtectedBlock, block, capacity);
+			this.boundProtectedOffset = block & RAM_RECORD_WORD_MASK;
+			this.boundProtectedCapacity = capacity;
 		}
 		const address = this.protectedAddress(index) & RAM_RECORD_WORD_MASK;
 		const memory = this.heap.memory, ram = memory.ramData();
@@ -115,14 +115,17 @@ export class Thread {
 	}
 
 	public stackRequiresScalar(): boolean {
-		const bytes = this.backingByteLength(), offset = this.stackOffset();
+		const bytes = this.stackRegisters.byteLength(), offset = this.stackOffset();
 		if (this.stackRegisters.ramMirrored() || this.stackTop > this.stackRegisters.capacity()
 			|| this.frameDepth > this.boundFrameCapacity || bytes > MAIN_RAM_SIZE - offset) return true;
 		const publicBytes = this.heap.memory.ramBusEnd() - RAM_BASE, record = this.address & RAM_RECORD_WORD_MASK;
 		const watches = this.heap.memory.ramWriteWatches();
 		return (record < publicBytes && (watches.anyWatched(record + ThreadField.StackTop, 4)
 			|| watches.anyWatched(record + ThreadField.FrameDepth, 4)))
-			|| (offset < publicBytes && watches.anyWatched(offset, bytes));
+			|| (offset < publicBytes && watches.anyWatched(offset, bytes))
+			|| (this.boundFrameOffset < publicBytes && watches.anyWatched(this.boundFrameOffset, this.boundFrameCapacity * FRAME_CONTROL_BYTES))
+			|| (this.boundProtectedCapacity !== 0 && this.boundProtectedOffset < publicBytes
+				&& watches.anyWatched(this.boundProtectedOffset, this.boundProtectedCapacity * PROTECTED_CALL_BYTES));
 	}
 
 	public bindStack(): void {
@@ -130,9 +133,9 @@ export class Thread {
 		this.boundFrameCapacity = this.frameCapacity;
 		this.boundProtectedCapacity = this.protectedCapacity;
 		const block = this.read(ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
-		this.boundFrameOffset = controlOffset(capacity);
-		this.boundBackingBytes = backingBytes(capacity, this.boundFrameCapacity, this.boundProtectedCapacity);
-		this.bindFrameControls(block + this.boundFrameOffset);
+		this.boundFrameOffset = this.read(ThreadField.FrameBlock) & RAM_RECORD_WORD_MASK;
+		this.boundProtectedOffset = this.read(ThreadField.ProtectedBlock) & RAM_RECORD_WORD_MASK;
+		this.bindFrameControls(this.boundFrameOffset);
 		let extent = 0;
 		for (let frame = this.currentFrame; frame !== null; frame = frame.previous)
 			extent = Math.max(extent, frame.stackBase + frame.stackCapacity);
@@ -154,24 +157,29 @@ export class Thread {
 
 	public resizeStack(capacity: number, root = valueNil()): void {
 		if (capacity === this.stackRegisters.capacity()) return;
-		const frames = this.boundFrameCapacity, continuations = this.boundProtectedCapacity;
-		const block = this.heap.budget.allocateStack(backingBytes(capacity, frames, continuations), this.address, root);
-		this.replaceStack(block, capacity, frames, continuations);
+		const block = this.heap.budget.allocateStack(capacity * THREAD_STACK_SLOT_BYTES, this.address, root);
+		this.heap.threads.replaceStack(this.address, block, capacity);
+		this.stackRegisters.bindRam(this.heap.memory, block & RAM_RECORD_WORD_MASK, capacity);
+		this.rebindFrames();
 	}
 
 	public reserveFrame(values: number, root = valueNil(), exception = false): void {
 		const wanted = this.frameDepth + (exception ? 1 : 2);
 		let frames = Math.max(THREAD_INITIAL_FRAMES, this.boundFrameCapacity);
 		while (frames < wanted) frames *= 2;
-		if (values === this.stackRegisters.capacity() && frames === this.boundFrameCapacity) return;
-		const continuations = this.boundProtectedCapacity;
-		const block = this.heap.budget.allocateStack(backingBytes(values, frames, continuations), this.address, root);
-		this.replaceStack(block, values, frames, continuations);
-	}
-
-	private replaceStack(block: number, capacity: number, frames: number, continuations: number): void {
-		this.heap.threads.replaceStack(this.address, block, capacity, frames, continuations);
-		this.bindStack();
+		const valueChange = values === this.stackRegisters.capacity() ? 0 : values;
+		const frameChange = frames === this.boundFrameCapacity ? 0 : frames;
+		if (valueChange === 0 && frameChange === 0) return;
+		this.heap.budget.reserveThreadFrameStorage(this.address, valueChange, frameChange, root);
+		if (frameChange !== 0) {
+			this.boundFrameCapacity = frameChange;
+			this.boundFrameOffset = this.read(ThreadField.FrameBlock) & RAM_RECORD_WORD_MASK;
+			this.bindFrameControls(this.boundFrameOffset);
+		}
+		if (valueChange !== 0) {
+			this.stackRegisters.bindRam(this.heap.memory, this.read(ThreadField.StackBlock) & RAM_RECORD_WORD_MASK, valueChange);
+			this.rebindFrames();
+		}
 	}
 
 	/** Prepare the first inactive node; stack growth can collect before entry. */

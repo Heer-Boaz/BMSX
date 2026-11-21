@@ -1,4 +1,3 @@
-import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { asClosure, numberToHost, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -68,7 +67,7 @@ function probe.clear() clear(map) end
 		for (let cycle = 0; cycle < 3; cycle++) {
 			runCompletionClosure(cpu, seed, []);
 			runCompletionClosure(cpu, clear, []);
-			const heap = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength());
+			const heap = cpu.collectTrackedHeapBytes() - cpu.gc.allocationBytes(cpu.rootThread.address);
 			const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
 			for (let index = 1; index <= 64; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil());
 			if (cycle === 0) warmed = heap;

@@ -1,5 +1,4 @@
 import type { TableRecords } from '../../machine/ts/machine/cpu/table';
-import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueNil, asClosure, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -81,7 +80,7 @@ end
 		let warmed = 0;
 		for (let cycle = 0; cycle < 3; cycle++) {
 			runCompletionClosure(cpu, churn, [valueInteger(256)]);
-			const heap = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength());
+			const heap = cpu.collectTrackedHeapBytes() - cpu.gc.allocationBytes(cpu.rootThread.address);
 			const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
 			assert.equal(cpu.gc.tables.getInteger(weak, 1), valueNil(), 'retired key graph remained reachable');
 			assert.equal(cpu.gc.tables.getInteger(weak, 2), valueNil(), 'deregistered entry remained reachable');
@@ -125,7 +124,7 @@ end
 	let warmed = 0;
 	for (let cycle = 0; cycle < 3; cycle++) {
 		runCompletionClosure(cpu, churn, [valueInteger(128)]);
-		const heap = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength());
+		const heap = cpu.collectTrackedHeapBytes() - cpu.gc.allocationBytes(cpu.rootThread.address);
 		const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
 		for (let index = 1; index <= 128; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil());
 		if (cycle === 0) warmed = heap;
