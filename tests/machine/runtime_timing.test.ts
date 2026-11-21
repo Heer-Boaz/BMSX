@@ -392,12 +392,7 @@ test('host machine-cycle grants remain exact while PCRTC is stopped', () => {
 	const runtime = {
 		history: { mode: HistoryMode.Disabled, executionPaused: false },
 		timing: { cpuHz: 5_000_000, cpuCyclesPerMillisecond: 5_000, pcrtcRunning: false },
-		machine: {
-			gxGpu: {
-				backendServiceBlocksMachine: () => false,
-				lastFrameCommitted: () => false,
-			},
-		},
+		machine: createTimingRuntime().machine,
 		frameLoop,
 	} as unknown as Runtime;
 	scheduler = new FrameSchedulerState(runtime);

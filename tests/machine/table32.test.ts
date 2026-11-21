@@ -24,7 +24,7 @@ test('Table backing is five bytes per Value plus four bytes per hash link', () =
 	const cpu = machine(), start = cpu.luaHeap.usedBytes();
 	const occupied = cpu.heapAllocator.occupiedBytes();
 	const table = cpu.createTable(8, 16);
-	assert.equal(cpu.luaHeap.usedBytes() - start, cpu.gc.tables.getTrackedHeapBytes(table));
+	assert.equal(cpu.luaHeap.usedBytes() - start, 32 + 5 * 8 + 14 * 16);
 	assert.equal(cpu.heapAllocator.occupiedBytes() - occupied, cpu.gc.tables.getTrackedHeapBytes(table));
 	const base = cpu.gc.tables.storageAddress(table);
 	const links = base + (8 + 2 * 16) * 4;

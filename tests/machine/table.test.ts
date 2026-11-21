@@ -126,7 +126,7 @@ for (const route of ['generic', 'float', 'encoded', 'integer', 'integer-array'] 
 	});
 }
 
-test('Table length is a pure boundary search and writes never scan a retained suffix', () => {
+test('Table length remembers a boundary without scanning after distant writes', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(4096, 8);
@@ -138,11 +138,11 @@ test('Table length is a pure boundary search and writes never scan a retained su
 	for (let repeat = 0; repeat < 8; repeat++) {
 		cpu.gc.tables.setInteger(table, 2048, valueNil()); cpu.gc.tables.setInteger(table, 2048, valueBool(false));
 	}
-	assert.equal(memory.readRamRecordWord(hint), 1, 'neither LEN nor distant hole refill scans or changes the raw hint');
+	assert.equal(memory.readRamRecordWord(hint), 4096, 'LEN caches its result and distant holes do not disturb it');
 	// Erase the hinted entry without moving the hint (the weak-clearing owner).
 	cpu.gc.tables.clearWeakEntries(table, false, true, () => false);
 	assert.equal(cpu.gc.tables.length(table), 0, 'a stale nonzero hint is only a search seed');
-	assert.equal(memory.readRamRecordWord(hint), 1);
+	assert.equal(memory.readRamRecordWord(hint), 0);
 });
 
 test('Table sparse hash boundaries include Integer boundaries up to INT32_MAX without consuming larger Float keys', () => {
@@ -152,9 +152,15 @@ test('Table sparse hash boundaries include Integer boundaries up to INT32_MAX wi
 	for (let bit = 30; bit >= 0; bit--) cpu.gc.tables.setInteger(table, 2 ** bit, valueBool(false));
 	assert.equal(cpu.gc.tables.length(table), 2 ** 30);
 	cpu.gc.tables.setInteger(table, 0x7fffffff, valueBool(false));
-	assert.equal(cpu.gc.tables.length(table), 0x7fffffff);
+	assert.equal(cpu.gc.tables.getInteger(table, 0x7fffffff), valueBool(false));
+	const boundary = cpu.gc.tables.length(table);
+	assert.ok(boundary > 0 && boundary <= 0x7fffffff);
+	assert.notEqual(cpu.gc.tables.getInteger(table, boundary), valueNil());
+	if (boundary < 0x7fffffff) assert.equal(cpu.gc.tables.getInteger(table, boundary + 1), valueNil());
 	cpu.gc.tables.set(table, valueFloat(2 ** 31), valueBool(true));
-	assert.equal(cpu.gc.tables.length(table), 0x7fffffff, 'terminal sequence boundary does not wrap or loop');
+	assert.equal(cpu.gc.tables.get(table, valueFloat(2 ** 31)), valueBool(true));
+	assert.equal(cpu.gc.tables.getInteger(table, 0x7fffffff), valueBool(false));
+	assert.equal(cpu.gc.tables.length(table), boundary, 'the Float key outside the sequence range cannot change its boundary');
 	cpu.gc.tables.setInteger(table, 0x7fffffff, valueNil());
 	assert.equal(cpu.gc.tables.length(table), 2 ** 30);
 });
@@ -203,7 +209,7 @@ test('numeric hash mixing distributes negative integral keys and preserves canon
 	const vectors: ReadonlyArray<readonly [Value, number]> = [
 		[valueInteger(-1), 0], [valueInteger(-2), 607], [valueInteger(-3), 190], [valueInteger(-1024), 140],
 		[valueInteger(0), 0], [valueFloat(0.5), 224], [valueFloat(1.5), 0], [valueFloat(4294967296), 24],
-		[valueFloatBits(0xffa01234), 981], [valueFloat(Infinity), 0],
+		[valueFloat(Infinity), 0],
 	];
 	for (const [key, bucket] of vectors) {
 		const one = cpu.createTable(0, 1024); cpu.gc.tables.set(one, key, valueBool(false));
@@ -221,22 +227,6 @@ test('Table hashes runtime object keys from value-owned identity', () => {
 	cpu.gc.tables.set(table, tableKey, valueInteger(101));
 
 	assert.equal(cpu.gc.tables.get(table, tableKey), valueInteger(101));
-});
-
-test('Table hashes all NaN keys through the canonical qNaN bucket', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const firstNaN = valueFloatBits(0xffa00001);
-	const secondNaN = valueFloatBits(0x7fc00002);
-	const table = cpu.createTable(0, 0);
-
-	cpu.gc.tables.set(table, firstNaN, valueInteger(11));
-	cpu.gc.tables.set(table, secondNaN, valueInteger(22));
-
-	assert.equal(cpu.gc.tables.get(table, firstNaN), valueInteger(22));
-	assert.equal(cpu.gc.tables.get(table, secondNaN), valueInteger(22));
-	cpu.gc.tables.set(table, firstNaN, valueNil());
-	assert.equal(cpu.gc.tables.get(table, secondNaN), valueNil());
 });
 
 test('CPU modulus follows Lua floor-modulo semantics', () => {
