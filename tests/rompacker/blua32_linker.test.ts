@@ -14,7 +14,9 @@ import type {
 } from '../../toolchain/ts/lua/compiler/program_object';
 import type { Instruction } from '../../toolchain/ts/lua/compiler/optimizer';
 import { replaceWithJump, replaceWithMov } from '../../toolchain/ts/lua/compiler/optimizer/values';
-import { OPCODE_COUNT, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../machine/ts/spec/blua32/cop0';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import type {
 	ProgramConstant,
@@ -27,6 +29,9 @@ import {
 } from '../../machine/ts/spec/blua32/image_format';
 import {
 	INSTRUCTION_BYTES,
+	instructionBranchTarget,
+	instructionBx,
+	instructionOpcode,
 	readInstructionWord,
 	writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
@@ -46,6 +51,8 @@ import {
 	relocatedContinuationPc,
 } from '../../toolchain/ts/rompack/blua32_revision';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { LuaBinaryOperator } from '../../toolchain/ts/lua/syntax/ast';
 
 type EncodedWord = {
@@ -1101,8 +1108,18 @@ test('BLua32 hot revision preserves removed function records without a resumable
 
 	assert.equal(revision.functionAddresses[1], linked.symbols.functionAddresses[1]);
 	assert.equal(revision.pcAddresses[1], -1);
-	assert.equal(linked.symbols.metadata.debugRanges.length, 2);
-	assert.deepEqual(linked.symbols.metadata.debugInlineCallSiteChainIds, [0, 0]);
+	assert.equal(linked.symbols.metadata.debugRanges.length, 3);
+	assert.deepEqual(linked.symbols.metadata.debugInlineCallSiteChainIds, [0, 0, 0]);
+
+	const romBytes = writeTestBlua32Rom(linked);
+	const retired = linked.layout.functions[1];
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const { cpu } = createTestSystemCpu({ romBytes }, backend);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, linked.symbols.functionAddresses[1], retired.codeAddress);
+		cpu.runUntilDepth(0, BASE_CYCLES[OpCode.MOV]);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		assert.equal(cpu.readEpcWord(), retired.codeAddress);
+	}
 });
 
 test('BLua32 relinks live and tombstoned captures from their own declaration generations', () => {
@@ -1307,14 +1324,13 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 	assert.deepEqual(linked.layout.functions[1].upvalues, [{ inStack: true, index: 0 }]);
 	assert.deepEqual(linked.symbols.metadata.upvalueBindingsByFunction[1], [0]);
 	assert.deepEqual(linked.symbols.metadata.lexicalDeclarations, initial.metadata.lexicalDeclarations);
-	assert.equal(linked.layout.functions[1].codeByteCount, INSTRUCTION_BYTES);
-	assert.equal(
-		(readInstructionWord(
-			linked.layout.textBytes,
-			(linked.layout.functions[1].codeAddress - linked.layout.header.textAddress) / INSTRUCTION_BYTES,
-		) >>> 18) & 0x3f,
-		OPCODE_COUNT - 1,
-	);
+	const retired = linked.layout.functions[1];
+	assert.equal(retired.codeByteCount, 2 * INSTRUCTION_BYTES);
+	const trap = (retired.codeAddress - linked.layout.header.textAddress) / INSTRUCTION_BYTES;
+	assert.equal(instructionOpcode(readInstructionWord(linked.layout.textBytes, trap)), OpCode.MOV);
+	const jump = readInstructionWord(linked.layout.textBytes, trap + 1);
+	assert.equal(instructionOpcode(jump), OpCode.JMP);
+	assert.equal(instructionBranchTarget(retired.codeAddress + INSTRUCTION_BYTES, 1, instructionBx(jump, 0)), retired.codeAddress);
 
 	const removalRevision = buildBlua32ExecutionRevision(
 		previous.layout,

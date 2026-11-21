@@ -4,7 +4,7 @@ import type { ProgramConstant } from '../lua/compiler/program';
 import { inlineCallSiteChainsEqual } from '../lua/compiler/inline_debug';
 import { LexicalDeclarationKind, StaticDeclarationKind } from '../lua/compiler/declaration_kind';
 import type { SourceRange } from '../lua/source_range';
-import { OPCODE_COUNT, OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
 	BASE_BX_BITS,
 	CLOSURE_ADDRESS_REGISTER_WIDE_C,
@@ -12,6 +12,9 @@ import {
 	MAX_BX_BITS,
 	MAX_EXT_BX,
 	MAX_LOW_BX,
+	MAX_LOW_OPERAND,
+	MAX_OPERAND_BITS,
+	ValueMoveKind,
 	readInstructionWord,
 	writeInstruction,
 } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -107,6 +110,8 @@ import type {
 } from './blua32_bios_imports';
 import { SYSTEM_BLUA32_FUNCTION_TABLE_ALIGNMENT } from './system';
 import { evaluateProgramLinkValueExpression } from '../lua/compiler/compile_time_number';
+
+const RETIRED_FUNCTION_BYTES = 2 * INSTRUCTION_BYTES;
 
 export type LinkedBlua32ImageBase = {
 	bytes: Uint8Array;
@@ -699,7 +704,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	}
 	const functionLayout = layoutFunctionRecords(input.metadata.protoIds, pinnedFunctionIds, input.previous);
 	const functionCount = functionLayout.protoIndexBySlot.length;
-	const textByteCount = text.code.byteLength + (functionLayout.hasTombstones ? INSTRUCTION_BYTES : 0);
+	const textByteCount = text.code.byteLength + (functionLayout.hasTombstones ? RETIRED_FUNCTION_BYTES : 0);
 
 	let offset = BLUA32_IMAGE_HEADER_SIZE;
 	let rodataOffset = 0;
@@ -798,9 +803,13 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const code = new Uint8Array(textByteCount);
 	code.set(text.code);
 	if (functionLayout.hasTombstones) {
-		// Retained prototype slots have no continuation. Entering one raises
-		// the ordinary reserved-instruction exception within its own body.
-		writeInstruction(code, text.code.byteLength / INSTRUCTION_BYTES, OPCODE_COUNT - 1, 0, 0, 0);
+		// A reserved MOV traps. If the exception handler skips it, jump back
+		// to the trap instead of falling through into someone else's code.
+		const word = text.code.byteLength / INSTRUCTION_BYTES;
+		const back = (1 << BASE_BX_BITS) - 2;
+		writeInstruction(code, word, OpCode.MOV, 0, 0, ValueMoveKind.FloatFromBits + 1);
+		writeInstruction(code, word + 1, OpCode.JMP, 0,
+			(back & MAX_LOW_BX) >>> MAX_OPERAND_BITS, back & MAX_LOW_OPERAND, back >>> MAX_BX_BITS);
 	}
 	rewriteLocalClosures(code, functionAddressByProtoIndex);
 	rewriteImageRelocations(
@@ -883,7 +892,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 				? input.loadAddress + textOffset + text.code.byteLength
 				: input.loadAddress + textOffset + currentProto.entryPC,
 		);
-		writeLE32(bytes, recordOffset + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET, currentProto === null ? INSTRUCTION_BYTES : currentProto.codeLen);
+		writeLE32(bytes, recordOffset + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET, currentProto === null ? RETIRED_FUNCTION_BYTES : currentProto.codeLen);
 		writeLE32(bytes, recordOffset + BLUA32_FUNCTION_NUM_PARAMS_OFFSET, record.numParams);
 		writeLE32(bytes, recordOffset + BLUA32_FUNCTION_MAX_STACK_OFFSET, record.maxStack);
 		writeLE32(
@@ -1013,11 +1022,11 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		systemGlobalNames: systemGlobalNameLayout.names,
 		staticFunctionIdBySlot: input.metadata.exportProtoIdBySlot,
 		debugRanges: functionLayout.hasTombstones
-			? [...input.metadata.debugRanges, null]
+			? [...input.metadata.debugRanges, null, null]
 			: input.metadata.debugRanges,
 		debugInlineCallSiteChains: debugInlineCallSiteTable.debugInlineCallSiteChains,
 		debugInlineCallSiteChainIds: functionLayout.hasTombstones
-			? [...debugInlineCallSiteTable.debugInlineCallSiteChainIds, 0]
+			? [...debugInlineCallSiteTable.debugInlineCallSiteChainIds, 0, 0]
 			: debugInlineCallSiteTable.debugInlineCallSiteChainIds,
 		statementPointsByFunction,
 		resumePointsByFunction,
