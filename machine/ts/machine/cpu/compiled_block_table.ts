@@ -11,14 +11,14 @@ export function compiledTableSupports(op: number): op is TableOpCode {
 }
 
 export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage, word: number,
-	r: JavaScriptRegisterCache, exit: number): string {
+	r: JavaScriptRegisterCache, exit: number, frameControl: string): string {
 	const a = page.a[word], b = page.b[word], c = page.c[word];
 	if (op === OpCode.LEN) {
 		// The record traversal can observe any physical lane reached by the
 		// table or String. Publish the prefix but retain cached bindings.
 		const publish = r.publishRange(0, Infinity);
 		const tag = `l${word}`, value = `v${word}`, failure = r.exit(exit);
-		return `${publish}const ${tag}=${r.tagOperand(b)},A=${r.wordOperand(b)};
+		return `${publish}${frameControl}const ${tag}=${r.tagOperand(b)},A=${r.wordOperand(b)};
 			let ${value};if(${tag}===${ValueTag.Table}){
 			if(tb.metatableAddress(A)!==0) ${failure}
 			${value}=tb.length(A,S.lengthWork);B-=S.lengthWork.probes*${TABLE_LENGTH_PROBE_CYCLES};}

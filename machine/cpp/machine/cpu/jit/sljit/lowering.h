@@ -55,8 +55,9 @@ private:
 	void lowerOperation(const NativeTableAccess&, const NativeInstruction&);
 	void lowerOperation(const NativeVararg&, const NativeInstruction&);
 
-	void emitExit(NativeBlockExitSite& exit, size_t edge = 0);
+	void emitExit(NativeBlockExitSite& exit, size_t edge = 0, sljit_label** sharedExternal = nullptr);
 	void emitTop(int extent);
+	void emitPublishRecordObserver(u32 nextPc, int prefixTop);
 	void emitConstant(int guest, Value value);
 	void emitPoolWord(u32 index, sljit_s32 word);
 	void emitPoolTag(u32 index, sljit_s32 tag);

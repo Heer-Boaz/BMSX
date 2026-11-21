@@ -24,7 +24,7 @@ struct NativeBlockAbi {
 	// The physical frame control can lag behind admitted control latches.
 	// Return the branch taken when this RAM footprint can observe it.
 	static sljit_jump* emitFrameControlOverlap(sljit_compiler*, sljit_s32 offset, u32 bytes, sljit_s32 scratch);
-	// Publish the before-operation PC and current virtual top for a RAM observer.
+	// Publish the next sequential PC and before-operation top for a RAM observer.
 	// Uses R1/R2; R0 remains available to carry a record address.
 	static void emitPublishFrameControl(sljit_compiler*, u32 nextPc);
 	static constexpr sljit_s32 words = SLJIT_S0, tags = SLJIT_S1, state = SLJIT_S2, budget = SLJIT_S3;

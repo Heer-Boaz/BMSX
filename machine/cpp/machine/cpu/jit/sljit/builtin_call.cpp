@@ -1,7 +1,5 @@
 #include "machine/cpu/jit/sljit/lowering.h"
 
-#include <algorithm>
-
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/runtime/execution.h"
 
@@ -46,21 +44,15 @@ void NativeLowering::lowerOperation(const NativeCallSite& site, const NativeInst
 			static_cast<u32>(NativeBuiltinCallOutcome::CompletedStop)), completed, m_cache.state(), Charge::Paid);
 		emitExit(completed);
 	};
-	const auto& prefix = m_cache.state();
-	if (!std::ranges::any_of(prefix, [](const auto& slot) { return slot.wordDirty || slot.tagDirty; })) {
-		emitLeafCall();
-		return;
-	}
-
-	// A read-only record can overlap the frame outside the arguments. Emit a
-	// separate publication state so neither path writes those slots twice.
+	// A record can overlap either control or slots outside the arguments.
+	// Keep the operand-only path's slots and control deferred.
 	sljit_emit_op2u(m_compiler, SLJIT_AND32 | SLJIT_SET_Z, SLJIT_R1, 0, SLJIT_IMM, NATIVE_BUILTIN_RECORD_OBSERVER_IDS);
 	auto* observer = sljit_emit_jump(m_compiler, SLJIT_NOT_ZERO);
-	const auto operandOnly = prefix;
+	const auto operandOnly = m_cache.state();
 	emitLeafCall();
 	sljit_set_label(observer, sljit_emit_label(m_compiler));
 	m_cache.setState(operandOnly);
-	m_cache.publish();
+	emitPublishRecordObserver(call.nextPc, call.registerTop);
 	emitLeafCall();
 }
 

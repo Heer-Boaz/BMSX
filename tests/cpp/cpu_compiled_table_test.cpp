@@ -4,6 +4,7 @@
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
+#include "spec/blua32/image_format.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
@@ -154,6 +155,45 @@ void lengthSeesMaterializedRegisterTags() {
 		&& native.cpu.readFramePc(0) == pc + 3u * INSTRUCTION_BYTES
 		&& native.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::LEN)] - 2 * TABLE_LENGTH_PROBE_CYCLES,
 		"LEN observes the newly written tag and charges the original WIDE frontier exactly");
+}
+
+void lengthSeesThePrefixFrameControl() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 6, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::LEN), 7, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 8}};
+	CpuMachine native(image), scalar(image, true);
+	const u32 pc = native.rom.textAddress, nextPc = pc + 3u * INSTRUCTION_BYTES;
+	const int prefix = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+	const auto& frame = *native.cpu.activeThread()->currentFrame;
+	const auto& page = *frame.executionImage->nativeCodeLookup->find(pc, 0);
+	const auto* entry = page.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+	require(entry && entry->admissionCycles == prefix, "the prefix and WIDE LEN are admitted together");
+#endif
+	for (const auto field : {FrameField::Pc, FrameField::Top}) {
+		// A mirrored String length lands on the frame control. At the read,
+		// K1 has extended top to 7 but LEN has not placed its result in R7.
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			auto& frame = *cpu.activeThread()->currentFrame;
+			const u32 record = RAM_BASE + frame.controlOffset + static_cast<u32>(field) - BLUA32_STRING_LENGTH_OFFSET;
+			frame.registers.set(0, valueString(record));
+			frame.setTop(1);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, prefix + BASE_CYCLES[static_cast<u8>(OpCode::LEN)]) == RunResult::Yielded,
+			"LEN completes but not the next JMP");
+		const int length = field == FrameField::Pc ? static_cast<int>(nextPc & (MAIN_RAM_SIZE - 1u)) : 7;
+		require(native.cpu.readFrameRegister(0, 7) == valueInteger(length) && native.cpu.readFramePc(0) == nextPc
+			&& native.cpu.activeThread()->currentFrame->readWindow(FrameField::Top) == 8,
+			"LEN observes the sequential WIDE PC and prefix top, not the result extent");
+		requireParity(native, scalar);
+	}
 }
 
 void genericArraysAndHashKeys() {
@@ -1215,6 +1255,7 @@ int main() {
 		stringReadChainBoundaries();
 		observedArithmeticResumesAtItsOwnInstruction();
 		lengthSeesMaterializedRegisterTags();
+		lengthSeesThePrefixFrameControl();
 		contradictoryOwnFieldProofRetiresItsSource();
 		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); wideAllocationFailure();
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);

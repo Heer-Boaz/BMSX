@@ -94,6 +94,12 @@ void* CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExit
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	++cpu.m_nativeGateProfile.builtinAttempts;
 #endif
+	CallFrame& frame = *state.frame;
+	// The CALL exit has already published its slots and applied its top floor.
+	if ((NATIVE_BUILTIN_RECORD_OBSERVER_IDS & (1u << builtinWord)) != 0) {
+		frame.writeAdmittedControl(FrameField::Pc, exit->nextPc);
+		frame.setAdmittedTop(state.registerTop);
+	}
 	const auto completion = runNativeBuiltinLeaf(&cpu, &state, exit, builtinWord);
 	if (completion == NativeBuiltinCallOutcome::Declined) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -101,7 +107,6 @@ void* CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExit
 #endif
 		return nullptr;
 	}
-	CallFrame& frame = *state.frame;
 	frame.compilationEntry = true;
 	cpu.m_currentInstructionPc = exit->currentPc;
 	cpu.m_lastExecutionDomainId = frame.executionImage->executionDomainId;

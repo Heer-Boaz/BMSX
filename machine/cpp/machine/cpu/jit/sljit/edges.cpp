@@ -38,6 +38,16 @@ void NativeLowering::emitTop(int extent) {
 		offsetof(NativeBlockRunState, registerTop), SLJIT_IMM, extent);
 	sljit_set_label(retained, sljit_emit_label(m_compiler));
 }
+void NativeLowering::emitPublishRecordObserver(u32 nextPc, int prefixTop) {
+	// The observer may read both the register planes and the control record.
+	// It changes neither, so only their pending stores need to be published.
+	m_cache.publish();
+	if (m_bindings.cpu) {
+		emitTop(prefixTop);
+		NativeBlockAbi::emitPublishFrameControl(m_compiler, nextPc);
+	}
+}
+
 void NativeLowering::emitLeave(NativeBlockExitSite& exit, Charge charge) {
 	m_cache.publish();
 	const auto& gate = nativeBlockGate();
@@ -58,7 +68,7 @@ void NativeLowering::emitLeave(NativeBlockExitSite& exit, Charge charge) {
 	m_terminal = true;
 }
 
-void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge) {
+void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, sljit_label** sharedExternal) {
 	const auto& block = m_ir[m_current];
 	const auto target = block.successors[edge];
 	const bool completed = exit.exit == NativeBlockExit::CompletedCall;
@@ -112,6 +122,15 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge) {
 	// Separately published regions have independent maps. Publish only here;
 	// the receiving public entry will admit its own guarded representation.
 	m_cache.publish();
+	// Distinct cache-publication arms share one patchable branch per link.
+	if (sharedExternal) {
+		if (*sharedExternal) {
+			sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), *sharedExternal);
+			m_terminal = true;
+			return;
+		}
+		*sharedExternal = sljit_emit_label(m_compiler);
+	}
 	emitTop(exit.registerTop);
 	sljit_emit_op2(m_compiler, SLJIT_SUB32 | SLJIT_SET_SIG_GREATER, NativeBlockAbi::budget, 0,
 		NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);

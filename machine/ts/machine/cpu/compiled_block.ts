@@ -71,6 +71,11 @@ for (const [op, exit] of [
 	[OpCode.SETGL, CompiledBlockExit.WriteGlobal], [OpCode.SETSYS, CompiledBlockExit.WriteSystemGlobal],
 ] as const) sideExitKinds[op] = exit;
 
+function publishFrameControl(nextPc: number, prefixTop: number, resetsRegisterTop: boolean): string {
+	const top = resetsRegisterTop ? 'F.top' : 'T';
+	return `F.pc=${nextPc};F.top=${prefixTop === 0 ? top : `Math.max(${top},${prefixTop})`};`;
+}
+
 function compiledBlockExitResumesFrame(exit: CompiledBlockExit): boolean {
 	switch (exit) {
 		case CompiledBlockExit.ReadField: case CompiledBlockExit.ReadIndex:
@@ -280,7 +285,8 @@ export function emitJavaScriptBlock(
 		} else if (compiledContextSupports(op)) {
 			source.push(emitContext(op, page, word, registers, exitIndex));
 		} else if (compiledTableSupports(op)) {
-			source.push(emitTableOperation(op, page, word, registers, exitIndex));
+			source.push(emitTableOperation(op, page, word, registers, exitIndex,
+				op === OpCode.LEN ? publishFrameControl(nextPc, registerTop, resetsRegisterTop) : ''));
 		} else if (load || store || words) {
 			if (!words && page.c[word] === MemoryAccessKind.F64LE) source.push('B-=2;');
 			const selector = page.b[word], tag = registers.tagOperand(selector), payload = registers.wordOperand(selector);
@@ -361,11 +367,15 @@ export function emitJavaScriptBlock(
 }
 
 export function finishJavaScriptBlock(page: DecodedInstructionPage, block: EmittedJavaScriptBlock,
-	transfer: (index: number, residentsPublished: boolean) => string): string {
+	exits: readonly CompiledBlockExitSite[], transfer: (index: number, residentsPublished: boolean) => string): string {
 	const finalOp = page.ops[block.finalWord];
 	if (compiledBlockComparison(finalOp)) {
 		const expected = page.a[block.finalWord] !== 0;
-		return emitComparison(page, block.finalWord, block.registers, (matched, published) => {
+		// A fused JMP's outgoing edge is not the PC observed by the comparison.
+		const comparison = block.deferredJumpIndex < 0 ? block.terminal : exits[block.deferredJumpIndex];
+		const frameControl = finalOp === OpCode.EQ ? ''
+			: publishFrameControl(comparison.nextPc, comparison.registerTop, comparison.resetsRegisterTop);
+		return emitComparison(page, block.finalWord, block.registers, frameControl, (matched, published) => {
 			if (matched !== expected) return transfer(block.takenIndex, published);
 			const terminal = transfer(block.terminalIndex, published);
 			return block.deferredJumpIndex < 0 ? terminal

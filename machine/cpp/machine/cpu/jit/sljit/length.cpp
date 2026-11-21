@@ -10,9 +10,7 @@ void NativeLowering::lowerOperation(const NativeLength& length, const NativeInst
 	constexpr auto value = NativeBlockAbi::helperResultOffset;
 	emitRawLoad(length.source, SLJIT_R0, SLJIT_R1);
 	emitValueTransportStore(m_compiler, SLJIT_SP, value, SLJIT_R0, SLJIT_R1);
-	// LEN can observe any RAM lane reached by the table or String record.
-	// Publish pending slots before the read-only helper; retain their bindings.
-	m_cache.publish();
+	emitPublishRecordObserver(semantic.nextPc, semantic.registerTop);
 	const auto state = m_cache.state();
 	m_cache.spillCall(false, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),

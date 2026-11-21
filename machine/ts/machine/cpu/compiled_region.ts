@@ -115,7 +115,7 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 			const frontier = (page.ops[block.finalWord] === OpCode.LEN || block.formatCycles !== 0)
 				? `if(B-${exit.cycles}<=${required}){${block.registers.leaveResidents(block.terminalIndex)}}` : '';
 			source.push(`case ${index}:{${block.body}\n${frontier}B-=${exit.cycles};${top}}`);
-		} else source.push(`case ${index}:{${block.body}\n${finishJavaScriptBlock(page, block, (index, published) => transfer(block, index, published))}}`);
+		} else source.push(`case ${index}:{${block.body}\n${finishJavaScriptBlock(page, block, exits, (index, published) => transfer(block, index, published))}}`);
 	}
 	source.push('}}', writeBacks.epilogue(), 'const e=x[X];S.remainingCycles=B-e.cycles;',
 		'S.registerTop=Math.max(e.resetsRegisterTop?F.top:T,e.registerTop);return X;}');

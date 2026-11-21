@@ -165,6 +165,26 @@ void stringOrderingReadsPendingRegisterWords() {
 			"the linked successor sees the retained length binding with its exact known charge");
 		require(native.cpu.captureRuntimeState() == scalar.cpu.captureRuntimeState()
 			&& test::sameLanguageRam(native.cpu, scalar.cpu), "the linked successor publishes the same architectural state");
+		const u32 nextPc = pc + 4u * INSTRUCTION_BYTES;
+		for (const auto field : {FrameField::Pc, FrameField::Top}) {
+			for (auto* machine : {&native, &scalar}) {
+				auto& cpu = machine->cpu;
+				auto& frame = *cpu.activeThread()->currentFrame;
+				const u32 record = RAM_BASE + frame.controlOffset + static_cast<u32>(field) - BLUA32_STRING_LENGTH_OFFSET;
+				// Comparing the same String charges its byte length without
+				// requiring unrelated frame-control words to name real bytes.
+				frame.registers.set(0, valueString(record));
+				frame.registers.set(1, valueString(record));
+				frame.setTop(2);
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+			}
+			const bool skips = (op == OpCode::LE) != expected;
+			const int length = field == FrameField::Pc ? static_cast<int>(nextPc & (MAIN_RAM_SIZE - 1u)) : 5;
+			require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded
+				&& native.cpu.readFramePc(0) == nextPc + (skips ? INSTRUCTION_BYTES : 0u)
+				&& native.cpu.instructionBudgetRemaining == -length,
+				"String ordering charges the visible sequential WIDE PC or updated prefix top, before the fused JMP");
+		}
 	}
 }
 

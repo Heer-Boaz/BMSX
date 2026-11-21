@@ -182,6 +182,50 @@ void recordObserversReadPendingFrameWords() {
 	}
 }
 
+void recordObserversReadTheCallFrameControl() {
+	for (const bool open : {false, true}) {
+		test::Blua32TestImage source;
+		source.text.resize(MAPPED_PAGE_BYTE_SIZE);
+		writeInstruction(source.text, 0, static_cast<u8>(OpCode::K1), 6, 0, 0);
+		writeInstruction(source.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(source.text, 2, static_cast<u8>(OpCode::CALL), 0, open ? 0 : 2, 2);
+		writeInstruction(source.text, 3, static_cast<u8>(OpCode::MOV), 3, 0, 0);
+		writeInstruction(source.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		source.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}};
+		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, source);
+		const u32 nextPc = rom.textAddress + 3u * INSTRUCTION_BYTES;
+		for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable}) {
+			Machine native(rom, false), scalar(rom, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			require(preparedCaller(native)->admissionCycles == BASE_CYCLES[static_cast<u8>(OpCode::K1)],
+				"the generated CALL owns the preceding register-top advance");
+#endif
+			for (auto* machine : {&native, &scalar}) {
+				auto& frame = *machine->cpu.rootThread()->currentFrame;
+				auto& r = frame.registers;
+				r.set(0, machine->cpu.createBuiltinFunction(id));
+				const auto control = RAM_BASE + frame.controlOffset;
+				if (id == BuiltinFunctionId::StringByte) {
+					// Byte 1 is the low byte of Pc. The masked Protected
+					// word supplies a length large enough for that byte.
+					r.set(1, valueString(control + static_cast<u32>(FrameField::Pc) - BLUA32_STRING_RECORD_HEADER_SIZE));
+				} else {
+					r.set(1, valueTable(control + static_cast<u32>(FrameField::Top) - static_cast<u32>(TableHeader::Metatable)));
+				}
+				frame.setTop(2);
+			}
+			const int grant = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 2 + 1;
+			const auto expected = id == BuiltinFunctionId::StringByte ? valueInteger(nextPc & 0xffu) : valueTable(7);
+			require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded
+				&& native.cpu.readFrameRegister(0, 0) == expected && native.cpu.readFramePc(0) == nextPc
+				&& native.cpu.activeThread()->currentFrame->readWindow(FrameField::Top) == 1
+				&& native.cpu.lastPc == nextPc - INSTRUCTION_BYTES && native.cpu.instructionBudgetRemaining == 0,
+				"the inline or gate leaf reads the WIDE CALL frontier before placing results");
+			parity(native, scalar);
+		}
+	}
+}
+
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void rawContinuity(BuiltinFunctionId id, int results, int mode = 0, float position = 3, bool missing = false) {
 	const int arguments = id == BuiltinFunctionId::GetMetatable || id == BuiltinFunctionId::ToInteger || missing ? 2 : 3;
@@ -202,8 +246,11 @@ void rawContinuity(BuiltinFunctionId id, int results, int mode = 0, float positi
 		"dirty cached values not consumed by the leaf survive its host-call ABI");
 	require(frame->registers.get(8) == (receiving ? machine.expected : frame->registers.get(12)),
 		"the successor consumes the new result, or the retained callee when results are discarded");
-	require(machine.cpu.instructionBudgetRemaining == 12345 && frame->readControl(bmsx::FrameField::Pc) == rom.textAddress && static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)) == 3,
-		"the base native ABI updates its own state, never hidden CPU/frame copies behind live native registers");
+	const bool observesRecord = id != BuiltinFunctionId::ToInteger;
+	require(machine.cpu.instructionBudgetRemaining == 12345, "the base native ABI owns the live cycle grant");
+	require(frame->readControl(FrameField::Pc) == (observesRecord ? caller->terminal.nextPc : rom.textAddress)
+		&& frame->readWindow(FrameField::Top) == (observesRecord ? 8 : 3),
+		"only record readers expose the CALL's pre-placement control in RAM");
 }
 
 void rawSetMetatableReturnsUnexecutedCall() {
@@ -297,6 +344,7 @@ void inlineInterruptStop(bool nmi, bool wide) {
 	NativeCpuRunState run{.state={.constants=owner->constPool,.frame=frame, .remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)),.exitCode=gate.dispatch,.ram=machine.memory.ramData()},
 		.cpu=&machine.cpu,.targetDepth=0,.codeRoot=owner->nativeCodeLookup->root(0),
 		.cartridgeSlot=0,.error={}};
+	run.state.bindWindow(*frame);
 	// The typed gate is an already-admitted native segment, not a fresh outer
 	// CPU IRQ admission. Its successful CALL must stop at the next instruction.
 	if(nmi) machine.cpu.requestNonMaskableInterrupt();else machine.irq.raise(1);
@@ -369,6 +417,7 @@ int main() {
 		for(const bool nmi:{false,true})for(const bool wide:{false,true})inlineInterruptStop(nmi,wide);
 #endif
 		recordObserversReadPendingFrameWords();
+		recordObserversReadTheCallFrameControl();
 		grantsAndRestore();
 		std::cout<<"Native builtin continuity tests passed\n";return 0;
 	} catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}

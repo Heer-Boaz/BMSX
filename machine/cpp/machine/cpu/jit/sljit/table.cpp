@@ -248,14 +248,9 @@ void NativeLowering::emitSingleStringReads() {
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&slots));
 		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
 			SLJIT_MEM1(SLJIT_R1), offsetof(TableStringPathCache, holderDepth), SLJIT_IMM, 1), *read.exit, read.registers);
-		// The shared leaf reads physical RAM outside the checked own slot.
-		// Publish any aliased stack planes, retaining the resident bindings.
-		m_cache.publish();
-		if (m_bindings.cpu) {
-			emitTop(read.exit->registerTop);
-			NativeBlockAbi::emitPublishFrameControl(c, read.exit->nextPc);
+		emitPublishRecordObserver(read.exit->nextPc, read.exit->registerTop);
+		if (m_bindings.cpu)
 			sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&slots));
-		}
 		// Each own miss leaves the aligned receiver header in R0. The leaf
 		// preserves the guest register cache and returns the live value lanes.
 		sljit_emit_ijump(c, SLJIT_FAST_CALL, SLJIT_IMM,

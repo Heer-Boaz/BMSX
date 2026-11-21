@@ -1,3 +1,5 @@
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { BLUA32_STRING_LENGTH_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -99,6 +101,39 @@ for (const [op, name] of [[OpCode.GETFIELD, 'GETFIELD'], [OpCode.LEN, 'LEN']] as
 	assert.equal(js.cpu.lastPc, entry + (op === OpCode.LEN ? 2 : 3) * INSTRUCTION_BYTES);
 	assert.equal(frame.pc, op === OpCode.LEN ? entry + 3 * INSTRUCTION_BYTES : entry);
 	assert.equal(js.cpu.instructionBudgetRemaining, 1 - (op === OpCode.LEN ? 2 * TABLE_LENGTH_PROBE_CYCLES : BASE_CYCLES[OpCode.JMP]));
+});
+
+test('compiled WIDE LEN observes the sequential PC and the top before result placement', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.K1, 6, 0, 0);
+	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.LEN, 7, 0, 0);
+	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 8 }] });
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const pc = image.image.functions[0].codeAddress, nextPc = pc + 3 * INSTRUCTION_BYTES;
+	const frame = js.rootThread.frameAtDepth(0);
+	for (const cpu of [js, scalar]) {
+		cpu.rootThread.frameAtDepth(0).registers.setString(0, cpu.stringPool.intern('seed'));
+	}
+	runCpuParity(js, scalar, 256);
+	const entry = frame.decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]!;
+	const grant = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.LEN] + 1;
+	assert.equal(entry.admissionCycles, grant - 1);
+	for (const field of [FrameField.Pc, FrameField.Top]) {
+		for (const cpu of [js, scalar]) {
+			const current = cpu.rootThread.frameAtDepth(0);
+			current.registers.setString(0, RAM_BASE + current.controlOffset + field - BLUA32_STRING_LENGTH_OFFSET);
+			current.top = 1;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		}
+		runCpuParity(js, scalar, grant);
+		assert.equal(frame.pc, pc);
+		assert.equal(js.lastPc, nextPc);
+		assert.equal(frame.top, 8);
+		assert.equal(frame.registers.getInteger(7), field === FrameField.Pc ? nextPc & (MAIN_RAM_SIZE - 1) : 7);
+	}
 });
 
 test('only positive integer keys enter the array even with a raw high-bit capacity', () => {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { hashText } from '../../machine/ts/common/hash';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -15,7 +16,7 @@ import { BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_R
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
-import { DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { RAM_CODE_FIXTURE_BYTES, createTestBlua32PairCpu, createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32, type TestBlua32Source } from '../helpers/blua32';
 
 function comparisonImage(op: OpCode, expected: boolean, left = 0, right = 1, constants: TestBlua32Source['constants'] = []) {
@@ -140,6 +141,24 @@ for (const op of [OpCode.LT, OpCode.LE]) test(`compiled ordering ${op} reads a p
 		assert.equal(js.instructionBudgetRemaining, 0);
 		assert.equal(frame.registers.getInteger(expected ? 7 : 8), 2, 'the linked successor sees the retained length binding');
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+		const nextPc = pc + 4 * INSTRUCTION_BYTES;
+		for (const field of [FrameField.Pc, FrameField.Top]) {
+			for (const cpu of [js, ref]) {
+				const current = cpu.rootThread.frameAtDepth(0);
+				const record = RAM_BASE + current.controlOffset + field - BLUA32_STRING_LENGTH_OFFSET;
+				// String identity still charges both byte lengths; those
+				// fields alias the live control rather than an interned copy.
+				current.registers.setString(0, record);
+				current.registers.setString(1, record);
+				current.top = 2;
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+			}
+			const skips = (op === OpCode.LE) !== expected;
+			const length = field === FrameField.Pc ? nextPc & (MAIN_RAM_SIZE - 1) : 5;
+			assert.equal(runCpuParity(js, ref, grant), RunResult.Yielded);
+			assert.equal(frame.pc, nextPc + (skips ? INSTRUCTION_BYTES : 0));
+			assert.equal(js.instructionBudgetRemaining, -length);
+		}
 	}
 });
 

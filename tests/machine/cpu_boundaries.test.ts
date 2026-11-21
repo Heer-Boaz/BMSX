@@ -2,6 +2,8 @@ import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { integerConstant } from '../../toolchain/ts/lua/number';
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -17,16 +19,17 @@ import { readLE16, readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, CPU_CAUSE_IRQ, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { BASE_BX_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_BX, MAX_LOW_OPERAND, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
+import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE } from '../../machine/ts/spec/blua32/image_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE, IO_GX_GPU_GP0, IO_IRQ_MASK, IRQ_GPU, IO_CART_SELECT } from '../../machine/ts/spec/bmsx/io';
-import { CART_RAM_BASE, DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_RAM_BASE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { RAM_CODE_FIXTURE_BYTES, blua32TestFunctionAddress, createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
+import { runCpuParity } from '../helpers/cpu_execution';
 
 function returnImage(op = OpCode.RET, a = 0, b = 2, c = 0) {
 	const text = new Uint8Array(INSTRUCTION_BYTES);
@@ -71,6 +74,37 @@ test('string.byte uses signed word positions in a builtin CALL', () => {
 			}
 		}
 	}
+});
+
+test('generated CALL publishes its sequential PC and prefix top before a builtin reads the frame', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.K1, 6, 0, 0);
+	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.CALL, 0, 2, 2);
+	writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 8 }] });
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const pc = image.image.functions[0].codeAddress, nextPc = pc + 3 * INSTRUCTION_BYTES;
+	const frame = js.rootThread.frameAtDepth(0), grant = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.CALL] + 3;
+	for (let iteration = 0; iteration < 16; ++iteration) {
+		const byte = (iteration & 1) === 0;
+		const id = byte ? BuiltinFunctionId.StringByte : BuiltinFunctionId.GetMetatable;
+		for (const cpu of [js, scalar]) {
+			const current = cpu.rootThread.frameAtDepth(0), control = RAM_BASE + current.controlOffset;
+			current.registers.setBuiltinFunction(0, id);
+			// String byte 1 overlaps Pc; the table metatable lane overlaps Top.
+			if (byte) current.registers.setString(1, control + FrameField.Pc - BLUA32_STRING_RECORD_HEADER_SIZE);
+			else current.registers.setTable(1, control + FrameField.Top - TableHeader.Metatable);
+			current.top = 2;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		}
+		assert.equal(runCpuParity(js, scalar, grant), RunResult.Yielded);
+		assert.equal(frame.registers.get(0), byte ? valueInteger(nextPc & 0xff) : valueTable(7));
+		assert.equal(frame.pc, nextPc);
+		assert.equal(frame.top, 1);
+	}
+	assert.ok(frame.decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]);
 });
 
 test('LOADKR converts its Number index to U32 and faults outside the constant pool', () => {
