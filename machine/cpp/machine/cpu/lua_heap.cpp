@@ -107,8 +107,11 @@ u32 LuaHeap::allocateThreadRecord(u32 entry) {
 void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 frameCapacity, Value root) {
 	const u32 valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
 	const u32 frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
-	const u32 charged = valueBytes + frameBytes;
-	const bool collected = admit(charged, root, valueNil(), valueNil(), address);
+	const auto& memory = m_cpu.memory();
+	const u32 previousValues = valueCapacity != 0u ? ThreadRecord::read(memory, address, ThreadField::StackCapacity) * THREAD_STACK_SLOT_BYTES : 0u;
+	const u32 previousFrames = frameCapacity != 0u ? ThreadRecord::count(memory, address, ThreadField::FrameCapacity) * FRAME_CONTROL_BYTES : 0u;
+	const u32 requested = valueBytes + frameBytes, previous = previousValues + previousFrames;
+	const bool collected = requested > previous && admit(requested - previous, root, valueNil(), valueNil(), address);
 	auto& arena = m_cpu.heapAllocator();
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
 		const u32 values = valueBytes != 0u ? arena.allocate(valueBytes, true) : 0u;

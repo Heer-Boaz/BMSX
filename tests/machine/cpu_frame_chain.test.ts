@@ -6,15 +6,15 @@ import { ValueTag, valueBool, valueBuiltinFunction, valueInteger, valueString, t
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
-import { FRAME_CONTROL_BYTES, FrameField, ProtectedCallKind, ProtectedField, type CallFrame } from '../../machine/ts/machine/cpu/call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FrameField, ProtectedCallKind, ProtectedField, type CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_CAPTURE_WORDS } from '../../machine/ts/machine/cpu/closure';
 import { UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
-import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
+import { THREAD_STACK_SLOT_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
@@ -66,6 +66,69 @@ test('thread growth relocates only the required storage lane', () => {
 	assert.equal(thread.protectedWord(0, ProtectedField.Wanted), 3);
 	assert.equal(thread.protectedWord(1, ProtectedField.Wanted), 6);
 	assert.equal(frame.registers.get(0), valueInteger(73));
+});
+
+test('Thread growth at its logical assist threshold admits only the new capacity', () => {
+	const { cpu, memory } = createTestSystemCpu(callImage(8, 1));
+	const thread = cpu.rootThread, frame = thread.currentFrame!, heap = cpu.luaHeap;
+	const read = (field: ThreadField) => memory.readRamRecordWord(thread.address + field);
+	const oldValues = read(ThreadField.StackBlock), oldFrames = read(ThreadField.FrameBlock);
+	const oldValueCount = read(ThreadField.StackCapacity), oldFrameCount = read(ThreadField.FrameCapacity);
+	const pc = frame.pc;
+	frame.registers.setInteger(0, 73); frame.top = 1;
+	let target = heap.usedBytes() + (64 - oldValueCount) * THREAD_STACK_SLOT_BYTES + oldFrameCount * FRAME_CONTROL_BYTES;
+	heap.setCollectionTarget(target);
+	thread.reserveFrame(64);
+	assert.notEqual(read(ThreadField.StackBlock), oldValues);
+	assert.notEqual(read(ThreadField.FrameBlock), oldFrames);
+	assert.equal(read(ThreadField.StackCapacity), 64);
+	assert.equal(read(ThreadField.FrameCapacity), 2 * oldFrameCount);
+	assert.equal(heap.usedBytes(), target);
+	assert.equal(heap.collectionTarget(), target, 'only the combined increase affects the admission threshold');
+	assert.equal(cpu.gc.active(), false);
+	assert.equal(frame.pc, pc); assert.equal(frame.registers.get(0), valueInteger(73));
+
+	const handler = valueBuiltinFunction(BuiltinFunctionId.PCall);
+	heap.setCollectionTarget(target += PROTECTED_CALL_BYTES);
+	thread.pushProtectedCall(ProtectedCallKind.PCall, false, 0, 3, handler);
+	const first = read(ThreadField.ProtectedBlock);
+	heap.setCollectionTarget(target += PROTECTED_CALL_BYTES);
+	thread.pushProtectedCall(ProtectedCallKind.PCall, true, 1, 6, handler);
+	assert.notEqual(read(ThreadField.ProtectedBlock), first);
+	assert.equal(thread.protectedWord(0, ProtectedField.Wanted), 3);
+	assert.equal(thread.protectedWord(1, ProtectedField.Wanted), 6);
+	assert.equal(heap.usedBytes(), target);
+	assert.equal(heap.collectionTarget(), target);
+	assert.equal(cpu.gc.active(), false);
+
+	heap.setCollectionTarget(target += (128 - 64) * THREAD_STACK_SLOT_BYTES);
+	thread.resizeStack(128);
+	assert.equal(heap.usedBytes(), target);
+	assert.equal(heap.collectionTarget(), target);
+	assert.equal(cpu.gc.active(), false);
+});
+
+test('second-lane physical failure does not publish either replacement or charge', () => {
+	const { cpu, memory } = createTestSystemCpu(callImage(8, 1));
+	const thread = cpu.rootThread, frame = thread.currentFrame!, arena = cpu.heapAllocator;
+	const read = (field: ThreadField) => memory.readRamRecordWord(thread.address + field);
+	frame.registers.setInteger(0, 73); frame.top = 1;
+	cpu.collectTrackedHeapBytes();
+	const fields = [ThreadField.StackBlock, ThreadField.FrameBlock, ThreadField.StackCapacity, ThreadField.FrameCapacity];
+	const before = fields.map(read), used = cpu.luaHeap.usedBytes();
+	const newValues = 16, valueBytes = newValues * THREAD_STACK_SLOT_BYTES;
+	assert.notEqual(arena.allocate(valueBytes, true), 0, 'keep an owned Values size-class page with spare slots');
+	while (arena.allocate(HEAP_PAGE_SIZE, true) !== 0) { /* fixture-owned physical pages */ }
+	const available = arena.allocate(valueBytes, true);
+	assert.notEqual(available, 0);
+	assert.equal(arena.allocate(2 * before[3] * FRAME_CONTROL_BYTES, true), 0, 'replacement frame controls cannot fit');
+	arena.free(available);
+	const occupied = arena.occupiedBytes();
+	assert.throws(() => thread.reserveFrame(newValues), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
+	assert.deepEqual(fields.map(read), before);
+	assert.equal(frame.registers.get(0), valueInteger(73));
+	assert.equal(cpu.luaHeap.usedBytes(), used);
+	assert.equal(arena.occupiedBytes(), occupied, 'no destination survives the failed owner allocation');
 });
 
 test('reusing a frame view does not publish it before activation', () => {

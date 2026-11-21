@@ -6,7 +6,7 @@ import type { CPU } from './cpu';
 import { GC_ASSIST_BYTES } from './gc_heap';
 import { valueClosure, valueNil, type Value } from './value';
 import { FRAME_CONTROL_BYTES } from './call_state';
-import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadField } from './thread_record';
+import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadField } from './thread_record';
 
 const NO_NEW_CELLS = new Uint32Array(0);
 const MIN_COLLECTION_BYTES = 1024 * 1024;
@@ -109,8 +109,12 @@ export class LuaHeap {
 	public reserveThreadFrameStorage(address: number, valueCapacity: number, frameCapacity: number, root: Value): void {
 		const valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
 		const frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
-		const charged = valueBytes + frameBytes;
-		const collected = this.admit(charged, root, valueNil(), valueNil(), address);
+		const memory = this.cpu.memory;
+		const previousValues = valueCapacity !== 0 ? memory.readRamRecordWord(address + ThreadField.StackCapacity) * THREAD_STACK_SLOT_BYTES : 0;
+		const previousFrames = frameCapacity !== 0
+			? (memory.readRamRecordWord(address + ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK) * FRAME_CONTROL_BYTES : 0;
+		const requested = valueBytes + frameBytes, previous = previousValues + previousFrames;
+		const collected = requested > previous && this.admit(requested - previous, root, valueNil(), valueNil(), address);
 		const arena = this.cpu.heapAllocator;
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
 			const values = valueBytes === 0 ? 0 : arena.allocate(valueBytes, true);

@@ -1122,6 +1122,72 @@ void stackShrinkAndAdmission() {
 		"shrunken and regrown stack storage survives snapshot replay");
 }
 
+void threadReplacementAdmitsOnlyItsLogicalIncrease() {
+	Machine machine(image()); auto& cpu = machine.cpu;
+	auto& thread = *cpu.rootThread(); auto& frame = *thread.currentFrame;
+	auto& heap = cpu.luaHeap(); auto& memory = cpu.memory();
+	const auto before = ThreadRecord::storageLayout(memory, thread.address);
+	const u32 pc = frame.readControl(FrameField::Pc);
+	frame.registers.set(0, valueInteger(73)); frame.setTop(1);
+	const u32 valueIncrease = (64u - before.valueCapacity) * THREAD_STACK_SLOT_BYTES;
+	const u32 frameIncrease = before.frameBytes();
+	u32 target = static_cast<u32>(heap.usedBytes()) + valueIncrease + frameIncrease;
+	heap.setCollectionTarget(target);
+	thread.reserveFrame(64);
+	const auto after = ThreadRecord::storageLayout(memory, thread.address);
+	require(after.block != before.block && after.frameBlock != before.frameBlock
+		&& after.valueCapacity == 64u && after.frameCapacity == 2u * before.frameCapacity,
+		"the entering call reserves both new lanes");
+	require(heap.usedBytes() == target && heap.collectionTarget() == target && !cpu.collecting(),
+		"the combined Value/frame replacement fits its exact logical increase without assisting collection");
+	require(frame.readControl(FrameField::Pc) == pc && frame.registers.get(0) == valueInteger(73),
+		"growth preserves the published caller and its Values");
+
+	const auto handler = valueBuiltinFunction(BuiltinFunctionId::PCall);
+	heap.setCollectionTarget(target += PROTECTED_CALL_BYTES);
+	thread.pushProtectedCall(ProtectedCallKind::PCall, false, CallResultPlacement::call(0, 2), handler);
+	const auto first = ThreadRecord::storageLayout(memory, thread.address).protectedBlock;
+	heap.setCollectionTarget(target += PROTECTED_CALL_BYTES);
+	thread.pushProtectedCall(ProtectedCallKind::PCall, true, CallResultPlacement::call(1, 5), handler);
+	require(ThreadRecord::storageLayout(memory, thread.address).protectedBlock != first && thread.protectedDepth() == 2u
+		&& thread.protectedWord(0, ProtectedField::Wanted) == 3u && thread.protectedWord(1, ProtectedField::Wanted) == 6u,
+		"protected growth replaces only its lane and retains both continuations");
+	require(heap.usedBytes() == target && heap.collectionTarget() == target && !cpu.collecting(),
+		"protected growth admits only the one additional continuation");
+
+	heap.setCollectionTarget(target += (128u - 64u) * THREAD_STACK_SLOT_BYTES);
+	thread.resizeStack(128);
+	require(heap.usedBytes() == target && heap.collectionTarget() == target && !cpu.collecting(),
+		"standalone Value-window growth admits just the additional slots");
+}
+
+void failedThreadReplacementLeavesBothOwnedLanes() {
+	Machine machine(image()); auto& cpu = machine.cpu;
+	auto& thread = *cpu.rootThread(); auto& frame = *thread.currentFrame;
+	auto& arena = cpu.heapAllocator(); auto& memory = cpu.memory();
+	frame.registers.set(0, valueInteger(73)); frame.setTop(1);
+	cpu.collectHeap();
+	const auto before = ThreadRecord::storageLayout(memory, thread.address);
+	const auto used = cpu.luaHeap().usedBytes();
+	constexpr u32 newValues = 16u, valueBytes = newValues * THREAD_STACK_SLOT_BYTES;
+	require(arena.allocate(valueBytes, true) != 0u, "keep an owned Values size-class page with spare slots");
+	while (arena.allocate(HEAP_PAGE_SIZE, true) != 0u) {}
+	const u32 available = arena.allocate(valueBytes, true);
+	require(available != 0u && arena.allocate(2u * before.frameBytes(), true) == 0u,
+		"physical pressure admits the replacement Values but not the frame controls");
+	arena.free(available);
+	const auto occupied = arena.occupiedBytes();
+	bool failed = false;
+	try { thread.reserveFrame(newValues); }
+	catch (const LuaOutOfMemorySignal&) { failed = true; }
+	const auto after = ThreadRecord::storageLayout(memory, thread.address);
+	require(failed && after.block == before.block && after.frameBlock == before.frameBlock
+		&& after.valueCapacity == before.valueCapacity && after.frameCapacity == before.frameCapacity
+		&& frame.registers.get(0) == valueInteger(73), "neither lane publishes if the second physical reservation fails");
+	require(cpu.luaHeap().usedBytes() == used && arena.occupiedBytes() == occupied,
+		"the failed request commits no charge and leaves no allocated destination");
+}
+
 void highRetainedPacing() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto retained = cpu.createTable(419430, 0);
@@ -1161,7 +1227,8 @@ int main(int argc, char** argv) {
 			return 0;
 		}
 		canonicalPoolAndRootRanges();
-		allocationAdmissionUsesLogicalBytes(); tableReplacementAdmitsOnlyItsLogicalIncrease(); explicitCollectionAndNoReplay();
+		allocationAdmissionUsesLogicalBytes(); tableReplacementAdmitsOnlyItsLogicalIncrease();
+		threadReplacementAdmitsOnlyItsLogicalIncrease(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); collectionPrimitiveCyclesIgnoreHeapShape();
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
