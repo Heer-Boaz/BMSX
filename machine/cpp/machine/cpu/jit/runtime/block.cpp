@@ -58,7 +58,7 @@ NativeBlock::~NativeBlock() {
 const NativeBlockExitSite* NativeBlock::run(const ValueSpan& registers, NativeBlockRunState& state) const {
 	state.exitCode = m_gate->exit;
 	state.ram = region->ram;
-	if (state.frame && state.frame->thread) state.bindStack(*state.frame->thread);
+	if (state.frame && state.frame->thread) state.bindThread(*state.frame->thread);
 	else if (registers.ram()) {
 		const auto count = static_cast<u32>(registers.size());
 		state.stackBegin = std::min(registers.wordAddress(), registers.tagAddress());
@@ -67,14 +67,20 @@ const NativeBlockExitSite* NativeBlock::run(const ValueSpan& registers, NativeBl
 	return reinterpret_cast<NativeBlockGate::Entry>(m_gate->entry)(&state, m_body, &registers);
 }
 
-void NativeBlockRunState::bindStack(const Thread& thread) {
+void NativeBlockRunState::bindThread(const Thread& thread) {
 	stackBegin = thread.stackOffset();
 	stackEnd = stackBegin + thread.backingByteLength();
+	bindFrame(*thread.currentFrame);
+}
+
+void NativeBlockRunState::bindFrame(CallFrame& active) {
+	frame = &active;
+	frameControl = active.controlOffset;
 }
 
 void NativeBlock::execute(NativeCpuRunState& state) const {
 	state.state.exitCode = m_gate->dispatch;
-	state.state.bindStack(*state.state.frame->thread);
+	state.state.bindThread(*state.state.frame->thread);
 	reinterpret_cast<NativeBlockGate::Entry>(m_gate->entry)(&state.state, m_body, &state.state.frame->registers);
 }
 

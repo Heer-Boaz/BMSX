@@ -104,7 +104,7 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 		thread.stack.clearAdmitted(stackBase + placement.formals.copied, placement.formals.padded);
 	}
 	thread.publishAdmittedFrame(*callee, depth, static_cast<i32>(placement.stackEnd()));
-	state.frame = callee;
+	state.bindFrame(*callee);
 	state.registerTop = placement.top();
 	state.remainingCycles -= cycles;
 	return target;

@@ -21,6 +21,9 @@ struct NativeBlockAbi {
 	// destination = host address of the main-RAM byte offset in `offset`.
 	// The only way generated code reaches the RAM base.
 	static void emitRamAddress(sljit_compiler*, sljit_s32 destination, sljit_s32 offset);
+	// The physical frame control can lag behind admitted control latches.
+	// Return the branch taken when this RAM footprint can observe it.
+	static sljit_jump* emitFrameControlOverlap(sljit_compiler*, sljit_s32 offset, u32 bytes, sljit_s32 scratch);
 	static constexpr sljit_s32 words = SLJIT_S0, tags = SLJIT_S1, state = SLJIT_S2, budget = SLJIT_S3;
 	// The main-RAM base is pinned in S4 only where the value cache keeps all of
 	// its word registers (x86-64, AArch64). ARMv7 reads it from the run state at

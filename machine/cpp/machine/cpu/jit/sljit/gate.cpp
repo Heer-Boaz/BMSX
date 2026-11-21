@@ -24,6 +24,13 @@ void NativeBlockAbi::emitRamAddress(sljit_compiler* compiler, sljit_s32 destinat
 	}
 }
 
+sljit_jump* NativeBlockAbi::emitFrameControlOverlap(sljit_compiler* c, sljit_s32 offset, u32 bytes, sljit_s32 scratch) {
+	// Mark starts at most bytes - 1 before the record as overlapping too.
+	sljit_emit_op2(c, SLJIT_SUB32, scratch, 0, offset, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, frameControl));
+	if (bytes != 1u)
+		sljit_emit_op2(c, SLJIT_ADD32, scratch, 0, scratch, 0, SLJIT_IMM, bytes - 1u);
+	return sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, scratch, 0, SLJIT_IMM, FRAME_CONTROL_BYTES + bytes - 1u);
+}
 
 NativeBlockGate::NativeBlockGate() {
 	auto* compiler = sljit_create_compiler(nullptr);

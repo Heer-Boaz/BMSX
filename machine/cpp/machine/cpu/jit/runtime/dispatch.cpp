@@ -408,7 +408,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				return nullptr;
 			}
 			thread.recordNativeWrites(cpu.m_memory.ramWriteWatches());
-			state.bindStack(thread);
+			state.bindThread(thread);
 			frame = thread.currentFrame;
 		}
 		// Read-only helpers preserve the admitted window. Other same-frame
@@ -476,7 +476,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		state.systemGlobalValues = cpu.m_systemGlobalBank.values();
 		if (!sameFrame) {
 			state.constants = frame->executionImage->constPool;
-			state.frame = frame;
 			state.cop0Words = cpu.m_cop0Words.data();
 		}
 		state.remainingCycles = cpu.instructionBudgetRemaining;
