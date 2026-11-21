@@ -43,6 +43,7 @@
 #include "machine/cpu/diagnostic_execution_profile.h"
 #endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/jit/runtime/code_cache.h"
 #include "machine/cpu/jit/runtime/compilation_profile.h"
 #endif
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -458,7 +459,7 @@ private:
 	void discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing);
 	void prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, bool coldImage);
 	void installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pagePc, u32 slot,
-		std::vector<std::unique_ptr<NativeBlock>> blocks);
+		std::vector<std::unique_ptr<NativeBlock>> blocks, NativeCodeAdmission);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	void publishNativeCompilation();
 	void discardNativeCompilation();
@@ -471,7 +472,7 @@ private:
 		bool invalidated = false;
 	} m_pendingNativeCompilation;
 #endif
-	size_t m_nativeCodeBytes = 0;
+	NativeCodeCache m_nativeCode;
 	bool m_nativeCompilationProfiling = false;
 	NativeCompilationProfile m_nativeCompilationProfile;
 #endif

@@ -122,7 +122,7 @@ static void RETRO_CALLCONV read_native_compilation_profile(BmsxNativeCompilation
 		profile.sourceInstructions, profile.emittedCodeBytes, profile.codeBytes, profile.peakCodeBytes,
 		profile.prepareNanoseconds, profile.maxPrepareNanoseconds, profile.discoveryNanoseconds,
 		profile.retirementNanoseconds, profile.compilationNanoseconds, profile.mergedRegions,
-		profile.mergedCodeBytes, profile.capacityFlushes, profile.capacityRetiredCodeBytes,
+		profile.mergedCodeBytes, profile.capacityEvictedRegions, profile.capacityRetiredCodeBytes,
 		profile.maxPrepareDomain, profile.maxPrepareCartridgeSlot, profile.maxPrepareRootPc, profile.maxPreparePagePc,
 	};
 }

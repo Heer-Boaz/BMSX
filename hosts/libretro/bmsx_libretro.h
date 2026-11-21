@@ -64,8 +64,9 @@ typedef struct BmsxGxUploadProfileInterfaceV1 {
 } BmsxGxUploadProfileInterfaceV1;
 
 /* Cumulative CPU-lifetime counters, not a per-presentation sample. code_bytes
- * is a live gauge; peak/max fields and their raw guest identity are lifetime
- * maxima. Read after content load and before unload. Offered by native cores
+ * counts published native code bytes, not process RSS. Peak/max fields and
+ * their raw guest identity are lifetime maxima. Read after content load and
+ * before unload. Offered by native cores
  * only; accepting the interface enables measurement for loaded runtimes. */
 typedef struct BmsxNativeCompilationProfile {
 	uint64_t prepare_requests;
@@ -82,7 +83,7 @@ typedef struct BmsxNativeCompilationProfile {
 	uint64_t compilation_nanoseconds;
 	uint64_t merged_regions;
 	uint64_t merged_code_bytes;
-	uint64_t capacity_flushes;
+	uint64_t capacity_evicted_regions;
 	uint64_t capacity_retired_code_bytes;
 	int32_t max_prepare_domain;
 	uint32_t max_prepare_cartridge_slot;

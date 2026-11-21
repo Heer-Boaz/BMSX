@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
 				<< ",\"newMerges\":" << profile.mergedRegions - previous.mergedRegions
 				<< ",\"emittedCodeBytes\":" << profile.emittedCodeBytes
 				<< ",\"liveCodeBytes\":" << profile.codeBytes
-				<< ",\"capacityFlushes\":" << profile.capacityFlushes
+				<< ",\"capacityEvictedRegions\":" << profile.capacityEvictedRegions
 				<< ",\"prepareNanoseconds\":" << profile.prepareNanoseconds
 				<< ",\"evaluators\":[";
 			if (phase >= 1 && phase < 8) {

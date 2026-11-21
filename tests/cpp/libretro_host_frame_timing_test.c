@@ -91,7 +91,7 @@ int main(void) {
 	after.retirement_nanoseconds += 250000u;
 	after.compilation_nanoseconds += 1250000u;
 	after.merged_regions = 1u; after.merged_code_bytes = 100u;
-	after.capacity_flushes = 1u; after.capacity_retired_code_bytes = 800u;
+	after.capacity_evicted_regions = 1u; after.capacity_retired_code_bytes = 800u;
 	const BmsxNativeCompilationProfile interval = bmsx_native_compilation_profile_delta(&before, &after);
 	CHECK(interval.prepare_requests == 2u && interval.regions_published == 2u);
 	CHECK(interval.entries_published == 5u && interval.source_instructions == 20u);
@@ -111,7 +111,7 @@ int main(void) {
 	CHECK(native_report.native_compilation.compilation_nanoseconds == 1250000u);
 	CHECK(native_report.native_compilation.max_prepare_nanoseconds == 3000000u);
 	CHECK(native_report.native_compilation.peak_code_bytes == 1000u);
-	CHECK(native_report.native_compilation.capacity_flushes == 1u);
+	CHECK(native_report.native_compilation.capacity_evicted_regions == 1u);
 	CHECK(native_report.native_compilation.capacity_retired_code_bytes == 800u);
 	CHECK(native_report.native_compilation.merged_regions == 1u && native_report.native_compilation.merged_code_bytes == 100u);
 	CHECK(native_report.slow_frames[0].has_native_compilation);

@@ -30,7 +30,7 @@ void CPU::prepareSystemNativeCode() {
 
 void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32> entryPc) {
 	const auto& warmup = image.nativeWarmup;
-	if (m_nativeCodeBytes >= NATIVE_CODE_CACHE_MAX_BYTES || warmup.functionCount == 0u) return;
+	if (m_nativeCode.full() || warmup.functionCount == 0u) return;
 	const u32 functionCount = std::min(warmup.functionCount, NATIVE_IMAGE_WARMUP_MAX_HINTS);
 	const bool system = image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID;
 	const u32 slot = system ? 0u : static_cast<u32>(image.executionDomainId);

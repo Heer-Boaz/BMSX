@@ -262,7 +262,7 @@ int main(int argc, char** argv) {
 				<< ",\"regions\":" << end.regionsPublished - compilationStart.regionsPublished
 				<< ",\"sourceInstructions\":" << end.sourceInstructions - compilationStart.sourceInstructions
 				<< ",\"emittedCodeBytes\":" << end.emittedCodeBytes - compilationStart.emittedCodeBytes
-				<< ",\"capacityFlushes\":" << end.capacityFlushes - compilationStart.capacityFlushes
+				<< ",\"capacityEvictedRegions\":" << end.capacityEvictedRegions - compilationStart.capacityEvictedRegions
 				<< ",\"backgroundCompleted\":" << end.backgroundCompleted - compilationStart.backgroundCompleted
 				<< ",\"backgroundCancelled\":" << end.backgroundCancelled - compilationStart.backgroundCancelled
 				<< ",\"backgroundMs\":" << (end.backgroundNanoseconds - compilationStart.backgroundNanoseconds) / 1000000.0

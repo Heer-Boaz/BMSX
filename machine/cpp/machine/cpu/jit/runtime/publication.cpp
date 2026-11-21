@@ -20,12 +20,19 @@ NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, CPU* cp
 	  ramCodeWatchWords(memory.ramWriteWatches().codeWordMasks()),
 	  memory(&memory), strings(&pool), cpu(cpu), decodedPage(decodedPage) {}
 
-NativeBlockPage::~NativeBlockPage() = default;
+NativeBlockPage::~NativeBlockPage() {
+	// Images can disappear without individual source invalidation. The
+	// region may still be borrowed by an inspector, but is no longer resident.
+	for (const auto& block : entries)
+		if (block) block->region->withdrawFromCache();
+}
 
 void DecodedInstructionPage::retireNativeRegion(const NativeCodeRegion* region, Retirement reason) {
+	std::shared_ptr<NativeCodeRegion> retiring;
 	for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
 		auto& block = nativeBlocks->entries[entry];
 		if (!block || block->region.get() != region) continue;
+		if (!retiring) retiring = block->region;
 		nativeCode[entry] = nullptr;
 		block.reset();
 		--nativeBlocks->count;
@@ -34,6 +41,7 @@ void DecodedInstructionPage::retireNativeRegion(const NativeCodeRegion* region, 
 		instruction.dispatchCycles = instruction.baseCycles;
 		nativeVisits[entry] = reason == Retirement::Feedback ? NATIVE_BLOCK_COMPILATION_THRESHOLD : 0u;
 	}
+	retiring->withdrawFromCache();
 	if (nativeBlocks->count == 0u) {
 		nativeBlocks.reset();
 	}
@@ -74,7 +82,7 @@ void CPU::publishNativeCompilation() {
 	}
 	if (job.invalidated) return;
 	auto& page = *job.page;
-	installNativeRegion(*job.image, page, job.pagePc, job.slot, std::move(blocks));
+	installNativeRegion(*job.image, page, job.pagePc, job.slot, std::move(blocks), NativeCodeAdmission::Adaptive);
 }
 
 void CPU::discardNativeCompilation() {
@@ -91,9 +99,11 @@ void CPU::discardNativeCompilation() {
 #endif
 
 void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pagePc, u32 slot,
-	std::vector<std::unique_ptr<NativeBlock>> blocks) {
+	std::vector<std::unique_ptr<NativeBlock>> blocks, NativeCodeAdmission admission) {
 	// This is the only publication boundary for either compilation policy.
 	// All source retirement and emitted-code ownership transfers run on the CPU.
+	auto& region = *blocks.front()->region;
+	if (!m_nativeCode.tryInstall(region, page, admission, m_nativeCompilationProfiling ? &m_nativeCompilationProfile : nullptr)) return;
 	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
 	auto& lookup = image.nativeCodeLookup;
 	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
@@ -102,8 +112,6 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 	// Only system code needs cells for both selectable cartridge mappings.
 	const u32 firstBank = image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID ? 0u : slot;
 	const u32 endBank = image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID ? CARTRIDGE_SLOT_COUNT : slot + 1u;
-	const auto& region = *blocks.front()->region;
-	blocks.front()->region->publish(m_nativeCodeBytes);
 #if defined(BMSX_NATIVE_PERF_MAP)
 	blocks.front()->region->recordPerfMap(image.executionDomainId, slot, blocks.front()->firstPc);
 #endif
@@ -138,7 +146,7 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 		profile.entriesPublished += blocks.size();
 		profile.sourceInstructions += region.sourceInstructions;
 		profile.emittedCodeBytes += region.codeBytes;
-		profile.peakCodeBytes = std::max(profile.peakCodeBytes, static_cast<u64>(m_nativeCodeBytes));
+		profile.peakCodeBytes = std::max(profile.peakCodeBytes, static_cast<u64>(m_nativeCode.codeBytes()));
 	}
 }
 

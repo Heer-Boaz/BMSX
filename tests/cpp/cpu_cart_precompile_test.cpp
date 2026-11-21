@@ -646,7 +646,7 @@ void boundedWarmupLeavesDistantBranchesToHotCompilation() {
 	const u32 distant = rom.textAddress + (pages - 1u) * MAPPED_PAGE_BYTE_SIZE;
 	require(prepared.cpu().rootThread()->currentFrame->executionImage->decodedPages.size() == NATIVE_IMAGE_WARMUP_MAX_PAGES
 		&& entryAt(prepared.cpu(), rom.textAddress, 0) && !entryAt(prepared.cpu(), distant, 0)
-		&& profile.capacityFlushes == 0u,
+		&& profile.capacityEvictedRegions == 0u,
 		"startup work is bounded in decoded pages as well as emitted code");
 	require(encodeRuntimeSaveState(captureRuntimeSaveState(prepared.runtime))
 		== encodeRuntimeSaveState(captureRuntimeSaveState(ordinary.runtime)) && prepared.reads == 0,

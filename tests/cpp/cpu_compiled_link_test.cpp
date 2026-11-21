@@ -1,5 +1,6 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
+#include "machine/cpu/jit/compiler.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/common/numeric.h"
 #include "machine/devices/irq/controller.h"
@@ -405,7 +406,7 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 		&& page.nativeBlocks->entries[entry]->region != page.nativeBlocks->entries[entry + 4]->region
 		&& incrementalProfile.regionsPublished > initialProfile.regionsPublished
 		&& incrementalProfile.codeBytes == incrementalProfile.emittedCodeBytes
-		&& incrementalProfile.capacityFlushes == 0 && incrementalProfile.capacityRetiredCodeBytes == 0
+		&& incrementalProfile.capacityEvictedRegions == 0 && incrementalProfile.capacityRetiredCodeBytes == 0
 		&& incrementalProfile.maxPrepareNanoseconds >= initialProfile.maxPrepareNanoseconds,
 		"an interior entry adds an independent owner without replacing the original");
 #endif
@@ -535,6 +536,98 @@ void entriesIntoWideBodiesRetainIndependentOwners() {
 		"a late observer sees the raw WIDE body entry but not a prefix instruction");
 }
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void codeCapacityRetiresOldestCompleteRegion() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1}};
+	CpuMachine machine(image, false);
+	constexpr u32 firstPc = DYNAMIC_RAM_BASE, secondPc = firstPc + MAPPED_PAGE_BYTE_SIZE;
+	constexpr u32 thirdPc = secondPc + MAPPED_PAGE_BYTE_SIZE;
+	const auto compileJumps = [&](u32 origin, u32 target, size_t entries) {
+		DecodedInstruction jump{.op = static_cast<u8>(OpCode::JMP), .width = 1};
+		jump.setBx(target);
+		jump.baseCycles = BASE_CYCLES[jump.op];
+		const std::array source{
+			NativeBlockInstruction{&jump, origin}, NativeBlockInstruction{&jump, origin + INSTRUCTION_BYTES}};
+		const std::array runs{NativeBlockSource{std::span(source).first(1)},
+			NativeBlockSource{std::span(source).last(1)}};
+		return NativeCompiler::compile(std::span(runs).first(entries),
+			NativeCodeBindings(machine.memory, machine.cpu.stringPool()));
+	};
+	auto first = compileJumps(firstPc, secondPc, 2);
+	auto second = compileJumps(secondPc, firstPc, 1);
+	auto third = compileJumps(thirdPc, secondPc, 2);
+	const size_t firstBytes = first[0]->region->codeBytes, secondBytes = second[0]->region->codeBytes;
+	const size_t limit = firstBytes + secondBytes;
+	require(third[0]->region->codeBytes == firstBytes, "the replacement needs exactly one region's bytes");
+
+	NativeCodeCache cache(limit);
+	NativeCompilationProfile profile;
+	DecodedInstructionPage oldest(true, {}), survivor(true, {});
+	std::optional<DecodedInstructionPage> incomingStorage(std::in_place, true, MappedPageWriteWatch{});
+	auto& incoming = *incomingStorage;
+	std::array<void*, DECODED_PAGE_WORDS> oldestCells{}, survivorCells{}, incomingCells{};
+	oldest.nativeCode = oldestCells.data();
+	survivor.nativeCode = survivorCells.data();
+	incoming.nativeCode = incomingCells.data();
+	const auto install = [](DecodedInstructionPage& page, auto& blocks) {
+		page.nativeBlocks = std::make_unique<NativeBlockPage>();
+		for (auto& block : blocks) {
+			const u32 word = (block->firstPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+			page.nativeBlocks->entries[word] = std::move(block);
+			// The owner clears the cell without interpreting its executable address.
+			page.nativeCode[word] = page.nativeBlocks->entries[word].get();
+			++page.nativeBlocks->count;
+		}
+	};
+	require(cache.tryInstall(*first[0]->region, oldest, NativeCodeAdmission::Warmup, &profile), "first region fits");
+	install(oldest, first);
+	require(cache.tryInstall(*second[0]->region, survivor, NativeCodeAdmission::Adaptive, &profile), "second region fits exactly");
+	install(survivor, second);
+	auto& predecessor = *survivor.nativeBlocks->entries[0];
+	oldest.nativeBlocks->entries[0]->linkFrom(predecessor.terminal);
+	const auto borrowed = oldest.nativeBlocks->entries[0]->region;
+	oldest.nativeSourceLeaders.set(0);
+
+	require(cache.full() && cache.codeBytes() == limit, "published bytes hit the exact cap");
+	require(!cache.tryInstall(*third[0]->region, incoming, NativeCodeAdmission::Warmup, &profile)
+		&& cache.codeBytes() == limit && profile.capacityEvictedRegions == 0
+		&& predecessor.terminal.link.target == oldest.nativeBlocks->entries[0].get(),
+		"warm-up cannot evict or disturb resident code");
+	auto oversized = compileJumps(thirdPc, secondPc, 2);
+	NativeCodeCache tooSmall(firstBytes - 1);
+	require(!tooSmall.tryInstall(*oversized[0]->region, incoming, NativeCodeAdmission::Adaptive, &profile)
+		&& tooSmall.codeBytes() == 0 && profile.capacityEvictedRegions == 0,
+		"an individually oversized result is not published");
+
+	require(cache.tryInstall(*third[0]->region, incoming, NativeCodeAdmission::Adaptive, &profile),
+		"adaptive publication can evict the oldest complete region");
+	install(incoming, third);
+	require(cache.full() && cache.codeBytes() == limit
+		&& profile.capacityEvictedRegions == 1 && profile.capacityRetiredCodeBytes == firstBytes,
+		"capacity accounting counts resident bytes even if a retired region is borrowed");
+	require(!oldest.nativeBlocks && oldestCells[0] == nullptr && oldestCells[1] == nullptr
+		&& oldest.nativeSourceLeaders[0] && survivorCells[0] && incomingCells[0]
+		&& predecessor.terminal.link.target == nullptr,
+		"all victim entries and incoming links are withdrawn, while the source leader and newer regions survive");
+	std::array<Value, 1> values{valueNil()};
+	auto regs = test::valueBank(values);
+	NativeBlockRunState state{};
+	state.remainingCycles = 64;
+	require(predecessor.run(regs.view(), state) == &predecessor.terminal,
+		"the surviving predecessor branches through its original cold exit");
+
+	survivor.retireNativeBlocks(0, 1);
+	require(cache.codeBytes() == firstBytes && profile.capacityEvictedRegions == 1,
+		"explicit source retirement releases bytes without reporting a capacity eviction");
+	incomingStorage.reset(); // Image teardown also releases residency.
+	require(cache.codeBytes() == 0 && borrowed->codeBytes == firstBytes,
+		"page teardown detaches membership before the last borrowed allocation is released");
+}
+#endif
+
 } // namespace
 
 int main() {
@@ -543,6 +636,7 @@ int main() {
 		shortGrantsDoNotPromoteSequentialPositions(false); shortGrantsDoNotPromoteSequentialPositions(true);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		compilationProfilingIsOptInAndSurvivesReset();
+		codeCapacityRetiresOldestCompleteRegion();
 #endif
 		std::cout << "Compiled block link tests passed\n"; return 0;
 	}

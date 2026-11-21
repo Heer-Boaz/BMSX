@@ -19,11 +19,13 @@ struct NativeCompilationProfile {
 	u64 prepareNanoseconds = 0;
 	u64 maxPrepareNanoseconds = 0;
 	u64 discoveryNanoseconds = 0;
+	// A ready worker can publish (and evict) after its prepare request.
 	u64 retirementNanoseconds = 0;
 	u64 compilationNanoseconds = 0;
 	u64 mergedRegions = 0;
 	u64 mergedCodeBytes = 0;
-	u64 capacityFlushes = 0;
+	// Capacity eviction counts regions and their code bytes, never source invalidation.
+	u64 capacityEvictedRegions = 0;
 	u64 capacityRetiredCodeBytes = 0;
 	// Parallel emission is not CPU-thread preparation time. Keep it separate
 	// rather than adding overlapping worker time to frame-blocking costs.

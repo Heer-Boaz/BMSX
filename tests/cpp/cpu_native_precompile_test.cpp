@@ -306,7 +306,7 @@ void descriptiveHintsAreBudgetedBeforeDiscovery() {
 	cpu.prepareSystemNativeCode();
 	const auto profile = cpu.readNativeCompilationProfile();
 	const u32 root = machine.rom.textAddress;
-	require(encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == before && profile.codeBytes > 0 && profile.capacityFlushes == 0
+	require(encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == before && profile.codeBytes > 0 && profile.capacityEvictedRegions == 0
 		&& entryAt(cpu, root) && !entryAt(cpu, root + MAPPED_PAGE_BYTE_SIZE),
 		"descriptive records outside the startup budget do not become eager native roots");
 	require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.instructionBudgetRemaining == -1,

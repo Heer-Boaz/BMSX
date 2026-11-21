@@ -29,6 +29,8 @@ class NativeBlock;
 class NativeBlockGate;
 class NativeLowering;
 class NativeCompiler;
+class NativeCodeCache;
+struct DecodedInstructionPage;
 struct NativeCpuRunState;
 struct NativeBlockExitSite;
 struct NativeTableConstructor;
@@ -137,9 +139,17 @@ public:
 	u8* ram = nullptr;
 private:
 	friend class NativeCompiler;
+	friend class NativeCodeCache;
+	friend struct DecodedInstructionPage;
+	friend struct NativeBlockPage;
+	void withdrawFromCache();
 	void* m_code = nullptr;
 	std::vector<NativeBlockExitSite> m_replaySites;
 	size_t* m_cacheBytes = nullptr;
+	NativeCodeCache* m_cache = nullptr;
+	DecodedInstructionPage* m_page = nullptr;
+	NativeCodeRegion* m_older = nullptr;
+	NativeCodeRegion* m_newer = nullptr;
 };
 
 class NativeBlock {

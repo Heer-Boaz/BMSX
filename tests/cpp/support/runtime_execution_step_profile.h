@@ -137,7 +137,7 @@ inline void writeRuntimeStepRecords(const char* path, std::span<const RuntimeSte
 			<< ",\"backgroundCompleted\":" << after.backgroundCompleted - before.backgroundCompleted
 			<< ",\"backgroundCancelled\":" << after.backgroundCancelled - before.backgroundCancelled
 			<< ",\"backgroundNanoseconds\":" << after.backgroundNanoseconds - before.backgroundNanoseconds
-			<< ",\"capacityFlushes\":" << after.capacityFlushes - before.capacityFlushes
+			<< ",\"capacityEvictedRegions\":" << after.capacityEvictedRegions - before.capacityEvictedRegions
 			<< ",\"codeBytes\":" << after.codeBytes << "}}\n";
 	}
 	if (!output) throw std::runtime_error("cannot write host-step profile");

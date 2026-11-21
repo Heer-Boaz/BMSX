@@ -32,7 +32,7 @@ public:
 	~NativeCompilationMeasurement() {
 		if (!m_profile) return;
 		const auto now = Clock::now();
-		m_profile->*m_phase += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_phaseStart).count());
+		if (m_phase) m_profile->*m_phase += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_phaseStart).count());
 		const u64 elapsed = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_start).count());
 		m_profile->prepareNanoseconds += elapsed;
 		if (elapsed > m_profile->maxPrepareNanoseconds) {
@@ -46,7 +46,7 @@ public:
 	void phase(u64 NativeCompilationProfile::* next) {
 		if (!m_profile) return;
 		const auto now = Clock::now();
-		m_profile->*m_phase += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_phaseStart).count());
+		if (m_phase) m_profile->*m_phase += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_phaseStart).count());
 		m_phaseStart = now;
 		m_phase = next;
 	}
@@ -63,12 +63,12 @@ private:
 void CPU::setNativeCompilationProfiling(bool enabled) {
 	m_nativeCompilationProfiling = enabled;
 	if (enabled) m_nativeCompilationProfile.peakCodeBytes = std::max(m_nativeCompilationProfile.peakCodeBytes,
-		static_cast<u64>(m_nativeCodeBytes));
+		static_cast<u64>(m_nativeCode.codeBytes()));
 }
 
 NativeCompilationProfile CPU::readNativeCompilationProfile() const {
 	auto profile = m_nativeCompilationProfile;
-	profile.codeBytes = m_nativeCodeBytes;
+	profile.codeBytes = m_nativeCode.codeBytes();
 	return profile;
 }
 
@@ -100,20 +100,6 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 	const auto firstRoot = std::find(source.roots.begin(), source.roots.end(), u8{1});
 	const u32 rootPc = pagePc + static_cast<u32>(firstRoot - source.roots.begin()) * INSTRUCTION_BYTES;
 	NativeCompilationMeasurement measurement(profile, image.executionDomainId, source.slot, rootPc);
-	if (m_nativeCodeBytes >= NATIVE_CODE_CACHE_MAX_BYTES) {
-		if (coldImage) return; // Optional boot work does not evict resident code.
-		measurement.phase(&NativeCompilationProfile::retirementNanoseconds);
-		const auto before = m_nativeCodeBytes;
-		for (auto& installed : m_executionImagesByDomain) {
-			if (!installed) continue;
-			for (auto& [key, decodedPage] : installed->decodedPages) decodedPage.retireNativeBlocks();
-		}
-		if (profile) {
-			++profile->capacityFlushes;
-			profile->capacityRetiredCodeBytes += before - m_nativeCodeBytes;
-		}
-		measurement.phase(&NativeCompilationProfile::discoveryNanoseconds);
-	}
 	if (!coldImage) discoverNativeSource(image, source, nullptr);
 	const bool immutable = binding.readBytes && !binding.writeWatch.groups;
 	if (immutable) {
@@ -175,8 +161,10 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 	auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(m_memory, m_stringPool, this, page.words.data()), options,
 		{.rejectedFieldProofs = rejectedFieldProofs});
 	if (blocks.empty()) return;
-	if (coldImage && blocks.front()->region->codeBytes > NATIVE_CODE_CACHE_MAX_BYTES - m_nativeCodeBytes) return;
-	installNativeRegion(image, page, pagePc, source.slot, std::move(blocks));
+	// Publication owns any capacity retirement and profiles it separately.
+	measurement.phase(nullptr);
+	installNativeRegion(image, page, pagePc, source.slot, std::move(blocks),
+		coldImage ? NativeCodeAdmission::Warmup : NativeCodeAdmission::Adaptive);
 }
 
 } // namespace bmsx

@@ -90,7 +90,7 @@ struct DecodedInstructionPage {
 	void** nativeCode = nullptr;
 	std::unique_ptr<NativeBlockPage> nativeBlocks;
 
-	enum class Retirement : u8 { SourceChanged, Feedback };
+	enum class Retirement : u8 { SourceChanged, Feedback, Capacity };
 	void retireNativeRegion(const NativeCodeRegion*, Retirement);
 	void retireNativeBlocks(u32 firstWord = 0, u32 endWord = DECODED_PAGE_WORDS + 1u, Retirement = Retirement::SourceChanged);
 

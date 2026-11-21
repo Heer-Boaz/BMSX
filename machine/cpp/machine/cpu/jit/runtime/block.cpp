@@ -42,6 +42,7 @@ void NativeCodeRegion::recordPerfMap(ExecutionDomainId domain, u32 slot, u32 fir
 #endif
 
 NativeCodeRegion::~NativeCodeRegion() {
+	withdrawFromCache();
 	if (m_code) sljit_free_code(m_code, nullptr);
 	if (m_cacheBytes) *m_cacheBytes -= codeBytes;
 }

@@ -421,6 +421,7 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 		machine/cpu/jit/sljit/table_access.cpp
 
 		machine/cpu/jit/runtime/block.cpp
+		machine/cpu/jit/runtime/code_cache.cpp
 		machine/cpu/jit/runtime/closure_call.cpp
 		machine/cpu/jit/runtime/dispatch.cpp
 		machine/cpu/jit/runtime/feedback.cpp
