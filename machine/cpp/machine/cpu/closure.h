@@ -2,6 +2,7 @@
 
 #include "machine/cpu/gc_object.h"
 
+#include <algorithm>
 #include <cstddef>
 
 #include "common/endian.h"
@@ -18,6 +19,8 @@ class Memory;
 // upvalue descriptors used to construct and identify the closure.
 struct FunctionEntry {
 	u32 codeAddress, numParams, maxStack, flags;
+
+	constexpr u32 registerCapacity() const { return std::max({1u, numParams, maxStack}); }
 
 	static FunctionEntry fromRom(const u8* bytes) {
 		return {
@@ -49,6 +52,9 @@ inline constexpr u32 CLOSURE_COUNT_LOW_BITS = 32 - GC_GRAY_INDEX_BITS;
 inline constexpr u32 CLOSURE_PROTOTYPE_ADDRESS = 8;
 inline constexpr u32 CLOSURE_CAPTURE_WORDS = 12;
 inline constexpr u32 CLOSURE_LATCHED_PROTOTYPE_BYTES = 6 * sizeof(u32);
+inline constexpr u32 maxClosureCaptures(bool latched) {
+	return (MAIN_RAM_SIZE - CLOSURE_CAPTURE_WORDS - (latched ? CLOSURE_LATCHED_PROTOTYPE_BYTES : 0u)) / sizeof(u32);
+}
 inline constexpr u32 closureRecordBytes(u32 captures, bool latched = false) {
 	return CLOSURE_CAPTURE_WORDS + sizeof(u32) * captures + (latched ? CLOSURE_LATCHED_PROTOTYPE_BYTES : 0u);
 }

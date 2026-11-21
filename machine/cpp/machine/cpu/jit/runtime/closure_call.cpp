@@ -65,8 +65,9 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 
 	const int supplied = call.supplied < 0 ? std::max(state.registerTop - base - 1, 0) : call.supplied;
 	const auto callerBase = caller.readAdmittedWindow(FrameField::StackBase);
-	const ArgumentPlacement placement{callerBase + base + 1, supplied,
-		function->numParams, function->maxStack, function->flags};
+	const auto admitted = ArgumentPlacement::forEntry(callerBase + base + 1, supplied, *function);
+	if (!admitted) return nullptr;
+	const auto& placement = *admitted;
 	const size_t stackBase = placement.stackBase;
 	if (stackBase > thread.stackCapacity || placement.capacity > thread.stackCapacity - stackBase) return nullptr;
 	const int cycles = placement.cycles(true);

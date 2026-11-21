@@ -1090,6 +1090,38 @@ void fixedWindowAndCaptureOperandsTrapBeforeEffects() {
 	}
 }
 
+void functionReservationIsAdmittedBeforeActivation() {
+	for (const bool scalar : {false, true}) for (const bool parameters : {false, true}) {
+		auto image = returnImage();
+		image.text.resize(4 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, 1, 1);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 3},
+			{.firstWord = 3, .wordCount = 1,
+				.numParams = parameters ? MAX_THREAD_VALUE_SLOTS + 1u : 0u,
+				.maxStack = parameters ? 1u : MAX_THREAD_VALUE_SLOTS + 1u}};
+		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		if (!scalar) cpu.prepareSystemNativeCode();
+#endif
+		const u32 pc = cpu.readFramePc(0);
+		cpu.runUntilDepth(0, 1);
+		require(valueIsClosure(cpu.readFrameRegister(0, 0)), "binding a prototype does not reserve its activation");
+		const u32 occupied = cpu.heapAllocator().occupiedBytes();
+		cpu.runUntilDepth(0, 1);
+		require(cpu.readCauseWord() == CPU_CAUSE_CODE_TRAP && cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
+			&& cpu.readEpcWord() == pc + 2 * INSTRUCTION_BYTES && cpu.getFrameDepth() == 2,
+			"an impossible raw frame reservation raises OOM at CALL without entering its target");
+		require(cpu.heapAllocator().occupiedBytes() == occupied && cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)],
+			"an unplaceable frame does not allocate or charge formal copies");
+	}
+}
+
 void zeroLoadNil() {
 	CpuMachine machine(returnImage(OpCode::LOADNIL, 6, 0, 0));
 	machine.cpu.runUntilDepth(0, 1);
@@ -1964,6 +1996,7 @@ int main() {
 #endif
 		stringBytePositions(); loadKrIndices(); missingImageOperandsTrapAtExecution(); skippedImageOperandRemainsUnobserved();
 		fusionRequiresBothImageOperandsAdmitted(); fixedWindowAndCaptureOperandsTrapBeforeEffects(); closureDescriptorAdmissionPrecedesAllocation();
+		functionReservationIsAdmittedBeforeActivation();
 		zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();
 		wideSignedImmediatesKeepTheirRange();

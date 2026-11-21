@@ -27,6 +27,7 @@ export const enum ThreadField {
 export const enum ThreadStatus { New, Running, Normal, Suspended, Dead, Failed }
 export const THREAD_HEAP_BYTES = 64;
 export const THREAD_STACK_SLOT_BYTES = 5;
+export const MAX_THREAD_VALUE_SLOTS = (MAIN_RAM_SIZE / THREAD_STACK_SLOT_BYTES) | 0;
 export const THREAD_INITIAL_VALUES = 8;
 export const THREAD_INITIAL_FRAMES = 2;
 export const THREAD_INITIAL_BACKING_BYTES = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES + THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;

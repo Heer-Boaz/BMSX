@@ -12,7 +12,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { LUA_FAULT_REASON_CALL_NON_FUNCTION, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
+import { LUA_FAULT_REASON_CALL_NON_FUNCTION, LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { RAM_CODE_FIXTURE_BYTES, blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
@@ -324,6 +324,34 @@ test('RET admits only the source values the receiver actually reads', () => {
 				assert.equal(callee.registers.get(0), valueInteger(1));
 				assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET]);
 			}
+		}
+	}
+});
+
+test('function records that exceed the physical stack or capture capacity fault before placement', () => {
+	for (const captureCount of [false, true]) {
+		const text = new Uint8Array(5 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+		writeInstruction(text, 2, OpCode.CALL, 0, 1, 1);
+		writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
+		writeInstruction(text, 4, OpCode.RET, 0, 1, 0);
+		const image = linkRawTestSystemBlua32({ text, functions: [
+			{ firstWord: 0, wordCount: 3 }, { firstWord: 4, wordCount: 1 }, { firstWord: 3, wordCount: 1 },
+		], exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+		const field = captureCount ? BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET : BLUA32_FUNCTION_MAX_STACK_OFFSET;
+		writeLE32(image.romBytes, image.symbols.functionAddresses[1] - SYSTEM_ROM_BASE + field, 0xffffffff);
+		for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
+			const { cpu } = createTestSystemCpu(image, backend);
+			if (!captureCount) assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			const caller = cpu.rootThread.frameAtDepth(0);
+			const value = caller.registers.get(0);
+			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			assert.equal(cpu.readEpcWord(), image.image.functions[0].codeAddress + (captureCount ? 0 : 2 * INSTRUCTION_BYTES));
+			assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
+			assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[captureCount ? OpCode.CLOSURE : OpCode.CALL]);
+			assert.equal(caller.registers.get(0), value);
+			assert.equal(caller.stackCapacity, 1);
 		}
 	}
 });

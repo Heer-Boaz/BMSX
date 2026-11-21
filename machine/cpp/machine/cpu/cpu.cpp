@@ -2406,18 +2406,20 @@ void CPU::writeFrameExecution(
 		executionBusSignalsForDomain(executionDomainId)
 	);
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
+	const auto prototype = decodePrototype(functionRecord);
+	const u32 registerCount = prototype.entry.registerCapacity();
+	if (registerCount > MAX_THREAD_VALUE_SLOTS) throw LuaOutOfMemorySignal{};
 	CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
 	if (&frame == m_activeThread->currentFrame) abortStalledMemoryWrite();
-	const u32 registerCount = std::max(functionRecord.maxStack, functionRecord.numParams);
 	if (registerCount > static_cast<u32>(frame.stackCapacity())) {
 		ensureRegisterCapacity(frame, static_cast<int>(registerCount) - 1);
 	}
 	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
 		&& functionRecord.upvalueCount == 0u) {
-		frame.writeControl(FrameField::Closure, staticClosureForRecord(decodePrototype(functionRecord)));
+		frame.writeControl(FrameField::Closure, staticClosureForRecord(prototype));
 	} else {
 		const u32 count = frame.captureCount();
-		u32 replacement = allocateClosure(decodePrototype(functionRecord), count, false);
+		u32 replacement = allocateClosure(prototype, count, false);
 		for (u32 index = 0; index < count; ++index)
 			ClosureRecord::setCaptureAddress(m_memory, replacement, index, frame.captureAddress(index));
 		frame.writeControl(FrameField::Closure, replacement);
@@ -2472,6 +2474,7 @@ u32 CPU::createClosure(CallFrame& frame) {
 		&& functionRecord.upvalueCount == 0u) {
 		return staticClosureForRecord(decodePrototype(functionRecord));
 	}
+	if (functionRecord.upvalueCount > maxClosureCaptures(!functionRecord.romBacked)) throw LuaOutOfMemorySignal{};
 	m_closureCellScratch.resize(functionRecord.upvalueCount);
 	std::fill(m_closureCellScratch.begin(), m_closureCellScratch.end(), 0u);
 	m_closureUpvalueWordScratch.resize(functionRecord.upvalueCount);
@@ -2541,7 +2544,9 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 	const int callerArgBase = caller.stackBase() + argBase;
 	const bool sharedStack = caller.thread == m_activeThread;
 	const int argumentBase = sharedStack ? callerArgBase : m_activeThread->stackTop();
-	const ArgumentPlacement placement(argumentBase, argCount, functionRecord.entry.numParams, functionRecord.entry.maxStack, functionRecord.entry.flags);
+	const auto admitted = ArgumentPlacement::forEntry(argumentBase, argCount, functionRecord.entry);
+	if (!admitted) throw LuaOutOfMemorySignal{};
+	const auto& placement = *admitted;
 	auto* frame = m_activeThread->acquireFrame();
 	ensureStackSize(placement.stackEnd(), valueClosure(closure), true);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
@@ -2574,8 +2579,9 @@ CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 	const size_t argCount = args.size();
 	auto* frame = m_activeThread->acquireFrame();
 	const int argumentBase = m_activeThread->stackTop();
-	const ArgumentPlacement placement(argumentBase, static_cast<int>(argCount), functionRecord.entry.numParams, functionRecord.entry.maxStack,
-		functionRecord.entry.flags);
+	const auto admitted = ArgumentPlacement::forEntry(argumentBase, static_cast<int>(argCount), functionRecord.entry);
+	if (!admitted) throw LuaOutOfMemorySignal{};
+	const auto& placement = *admitted;
 	ensureStackSize(placement.stackEnd(), valueClosure(closure), true, (flags & FRAME_EXCEPTION) != 0u);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
 	frame->initializeControl({

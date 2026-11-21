@@ -3,7 +3,7 @@ import { GcHeap } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { CART_ROM_BASE, CART_ROM_END, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_END, MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -148,7 +148,7 @@ import {
 import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, type CallFrame } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND, THREAD_HEAP_BYTES, THREAD_INITIAL_BACKING_BYTES } from './thread';
-import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, controlOffset } from './thread_record';
+import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS, controlOffset } from './thread_record';
 import { LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import {
@@ -2081,6 +2081,7 @@ export class CPU implements MappedPageInvalidator {
 		if (frame === this.activeThread.currentFrame) this.abortStalledMemoryWrite();
 		this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId));
 		const registerCount = Math.max(this.functionRecordLatch.maxStack, this.functionRecordLatch.numParams);
+		if (registerCount > MAX_THREAD_VALUE_SLOTS) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		if (registerCount > frame.stackCapacity) {
 			this.ensureRegisterCapacity(frame, registerCount - 1);
 		}
@@ -3095,6 +3096,7 @@ export class CPU implements MappedPageInvalidator {
 		const varargCount = vararg ? Math.max(argCount - functionRecord.numParams, 0) : 0;
 		const stackBase = vararg ? argumentBase + argCount : argumentBase;
 		const capacity = Math.max(functionRecord.maxStack, functionRecord.numParams, 1);
+		if (stackBase + capacity > MAX_THREAD_VALUE_SLOTS) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		this.ensureStackCapacity(stackBase + capacity, valueClosure(closure), true, exception);
 		frame.executionImage = this.executionImageForDomain(functionRecord.executionDomainId)!;
 		frame.decodedPage = null;
@@ -3132,6 +3134,7 @@ export class CPU implements MappedPageInvalidator {
 		const stackBase = vararg ? argumentBase + argCount : argumentBase;
 		const callerRegisters = caller.registers;
 		const capacity = Math.max(functionRecord.maxStack, functionRecord.numParams, 1);
+		if (stackBase + capacity > MAX_THREAD_VALUE_SLOTS) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		this.ensureStackCapacity(stackBase + capacity, valueClosure(closure), true);
 		frame.executionImage = this.executionImageForDomain(functionRecord.executionDomainId)!;
 		frame.decodedPage = null;
@@ -3167,6 +3170,8 @@ export class CPU implements MappedPageInvalidator {
 			return this.staticClosureFromLatch();
 		}
 		const count = functionRecord.recordUpvalueCount;
+		const latched = !functionRecord.romBacked;
+		if (Closure.closureRecordBytes(count, latched) > MAIN_RAM_SIZE) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		if (this.closureUpvalueWords.length < count) {
 			this.closureUpvalueWords = new Uint32Array(count);
 			this.closureCellAddresses = new Uint32Array(count);
@@ -3199,7 +3204,6 @@ export class CPU implements MappedPageInvalidator {
 			upvalues[index] = frame.captureAddress(upvalueIndex);
 		}
 		if (this.captureAddresses.length < newUpvalueCount) this.captureAddresses = new Uint32Array(newUpvalueCount);
-		const latched = !functionRecord.romBacked;
 		const address = this.luaHeap.allocateClosureRecord(count, latched, this.captureAddresses, newUpvalueCount);
 		const closure = address;
 		Closure.initializeRecord(this.memory, address, functionRecord, false, this.gc.white(), count, latched);
