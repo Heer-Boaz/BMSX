@@ -440,6 +440,73 @@ void resumesLargeClosureCaptures() {
 	require(finish() == expected, "a RAM save and restore replay the suspended closure exactly");
 }
 
+void resumesOpenThreadAfterClosingInstruction() {
+	constexpr u32 captures = 3000;
+	test::Blua32TestImage program;
+	program.text.resize(9 * INSTRUCTION_BYTES);
+	writeInstruction(program.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(program.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(program.text, 2, static_cast<u8>(OpCode::CALL), 0, 2, 2);
+	writeInstruction(program.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(program.text, 4, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(program.text, 5, static_cast<u8>(OpCode::CLOSURE), 3, 0, 0);
+	writeInstruction(program.text, 6, static_cast<u8>(OpCode::JMP), 1, 0, 0);
+	writeInstruction(program.text, 7, static_cast<u8>(OpCode::RET), 3, 2, 0);
+	writeInstruction(program.text, 8, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	program.functions = {{.firstWord=0, .wordCount=4, .maxStack=8},
+		{.firstWord=4, .wordCount=4, .numParams=1, .maxStack=8},
+		{.firstWord=8, .wordCount=1, .upvalues=std::vector<Blua32UpvalueRecord>(captures, {true, 1})}};
+	program.functions.back().upvalues.back().index = 0;
+	program.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
+		{5, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
+	Machine generated(program), scalar(program, true);
+	const auto setup = [](Machine& machine) {
+		const auto target = machine.cpu.createTable().address();
+		auto& frame = *machine.cpu.rootThread()->currentFrame;
+		frame.registers.set(1, valueTable(target));
+		frame.setTop(2);
+		return target;
+	};
+	const u32 target = setup(generated);
+	require(setup(scalar) == target, "the test shares the same physical operands across modes");
+	constexpr auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
+	require(test::runCpuParity(generated.cpu, scalar.cpu, 2 * cycles(OpCode::CLOSURE) + cycles(OpCode::CALL) + captures) == RunResult::Yielded,
+		"the child remains at its closing JMP after creating a large open chain");
+	const u32 control = generated.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const auto step = [](Machine& machine) { return machine.cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
+	const auto firstWork = step(generated);
+	require(step(scalar) == firstWork && firstWork >= GC_STEP_WORDS && firstWork <= GC_STEP_WORDS + 4
+		&& generated.memory.readRamRecordWord(control + GC_TRACE_RECORD) == generated.cpu.rootThread()->address
+		&& !generated.cpu.gcHeap().isAlive(target), "marking stops within the open chain ahead of the distinct live tail");
+	const u32 open = generated.memory.readRamRecordWord(control + GC_THREAD_TRACE_OPEN);
+	require(Upvalue::isOpen(generated.memory, open), "the live cursor points to an open capture before guest execution");
+	const auto state = generated.cpu.captureRuntimeState();
+	const auto ram = generated.memory.captureSaveState();
+
+	require(test::runCpuParity(generated.cpu, scalar.cpu, cycles(OpCode::JMP) + captures) == RunResult::Yielded
+		&& !Upvalue::isOpen(generated.memory, open) && generated.cpu.getFrameDepth() == 2,
+		"the guest closes the saved cell without replacing the activation");
+	require(step(generated) == step(scalar), "resuming a closed cursor is deterministic in both execution modes");
+	require(test::runCpuParity(generated.cpu, scalar.cpu, cycles(OpCode::RET) + 1) == RunResult::Yielded
+		&& generated.cpu.getFrameDepth() == 1, "RET transfers the real capture owner into the caller's window");
+	for (int i = 0; generated.cpu.collecting() && i < 30; ++i)
+		require(step(generated) == step(scalar), "mark and cleanup work stay paired");
+	const u32 returned = valuePayload(generated.cpu.readFrameRegister(0, 0));
+	const auto expected = generated.memory.captureSaveState();
+	require(!generated.cpu.collecting() && test::sameLanguageRam(generated.cpu, scalar.cpu)
+		&& generated.cpu.gcHeap().tableRecordAddress(target) == target
+		&& Upvalue::load(generated.memory, ClosureRecord::captureAddress(generated.memory, returned, captures - 1)) == valueTable(target),
+		"the returned closed Closure preserves the only path to the originally unvisited capture");
+
+	generated.memory.restoreSaveState(ram);
+	generated.cpu.restoreRuntimeState(state);
+	generated.cpu.runUntilDepth(0, cycles(OpCode::JMP) + captures);
+	step(generated);
+	generated.cpu.runUntilDepth(0, cycles(OpCode::RET) + 1);
+	for (int i = 0; generated.cpu.collecting() && i < 30; ++i) step(generated);
+	require(generated.memory.captureSaveState().ram == expected.ram, "save/load resumes a real Thread's open capture frontier");
+}
+
 void resumesTableAfterPrimitiveDisplacement() {
 	constexpr u32 count = 4096, occupiedTail = 1000;
 	std::array<i32, count> keys{};
@@ -750,7 +817,7 @@ int main(int argc, char** argv) {
 		canonicalPoolAndRootRanges(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		referenceWritesPayOnlyForNewEdges(); incrementalStateAndBarriers();
-		resumesRootBanksBeforeTracing(); resumesLargeClosureCaptures();
+		resumesRootBanksBeforeTracing(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
 		resumesTableAfterPrimitiveDisplacement(); incrementalSharedWeakMode(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";

@@ -4,6 +4,7 @@
 #include "machine/common/numeric.h"
 #include "spec/blua32/image_format.h"
 #include <algorithm>
+#include <limits>
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 #include <chrono>
 #endif
@@ -65,6 +66,8 @@ constexpr u32 threadSlotClass = heapClassIndex(THREAD_HEAP_BYTES);
 // one Value word plus a tag; both cursors fit one more bit than a gray index.
 constexpr u32 TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1u;
 constexpr u32 TRACE_CURSOR_MASK = (1u << TRACE_CURSOR_BITS) - 1u;
+enum class ThreadTraceStage : u32 { Frames, Protected, Values, Padding };
+constexpr u32 THREAD_TRACE_OPEN_HEAD = 1u; // An open cell's address is aligned.
 }
 bool GcHeap::markValue(Value v) {
 	switch (valueTag(v)) {
@@ -311,47 +314,106 @@ size_t GcHeap::trace(bool atomic, size_t limit) {
 			work += markCell(cellRecordAddress(ClosureRecord::captureAddress(memory, address, index)));
 		return work;
 	}
-	size_t cellWork = 0;
-	if (!atomic) appendVisit(GC_THREAD_VISITS, address);
-	markThread(ThreadRecord::read(memory, address, ThreadField::Resumer));
-	markClosure(ThreadRecord::read(memory, address, ThreadField::Entry));
-	markValue(ThreadRecord::error(memory, address));
+	return traceThread(address, atomic, limit, 0u, THREAD_TRACE_OPEN_HEAD, 0u, 0u);
+}
+
+size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u32 open, u32 captureTop, u32 billed) {
+	const bool resumed = billed != 0u;
+	size_t work = 0;
+	if (atomic) limit = std::numeric_limits<size_t>::max();
+	if (!resumed) {
+		if (!atomic) appendVisit(GC_THREAD_VISITS, address);
+		markThread(ThreadRecord::read(memory, address, ThreadField::Resumer));
+		markClosure(ThreadRecord::read(memory, address, ThreadField::Entry));
+		markValue(ThreadRecord::error(memory, address));
+		billed = THREAD_HEAP_BYTES / sizeof(u32);
+		work = billed + m_stringPool.takeMarkWork();
+	}
 	const auto layout = ThreadRecord::storageLayout(memory, address);
 	const u32 depth = ThreadRecord::count(memory, address, ThreadField::FrameDepth);
-	u32 liveTop = 0;
-	if (depth != 0u) {
-		const u32 frame = layout.frameAddress(depth - 1u);
-		const u32 base = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackBase)) & FRAME_WINDOW_MASK;
-		const u32 top = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Top)) & FRAME_WINDOW_MASK;
-		const u32 capacity = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackCapacity)) & FRAME_WINDOW_MASK;
-		liveTop = base + std::min(top, capacity);
+	auto stage = static_cast<ThreadTraceStage>(cursor >> TRACE_CURSOR_BITS);
+	u32 next = cursor & TRACE_CURSOR_MASK;
+	const auto chargeStorage = [&](u32 words) { billed += words; work += words; };
+	// Rebind logical indices every time. The frame and value allocations can
+	// move between grants, but neither a span nor a frame pointer is saved.
+	if (stage == ThreadTraceStage::Frames) {
+		while (next < depth && work < limit) {
+			if (open == THREAD_TRACE_OPEN_HEAD) {
+				const u32 frame = layout.frameAddress(next);
+				markClosure(memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Closure)));
+				open = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::OpenHead));
+				chargeStorage(FRAME_CONTROL_BYTES / sizeof(u32));
+			}
+			while (open != 0u && work < limit) {
+				const u32 cell = openCellAddress(open);
+				// A returning frame may have closed the saved cell while the
+				// collector was paused. Its Next lane is no longer a stack link.
+				if (cell == 0u) { open = 0u; break; }
+				const u32 slot = memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
+				if (slot < layout.valueCapacity) captureTop = std::max(captureTop, slot + 1u);
+				open = memory.readRamRecordWord(cell + UPVALUE_NEXT);
+				work += std::max(size_t{1}, markCell(cell));
+				work += m_stringPool.takeMarkWork();
+			}
+			if (open == 0u) { ++next; open = THREAD_TRACE_OPEN_HEAD; }
+		}
+		if (next >= depth) { stage = ThreadTraceStage::Protected; next = 0u; open = 0u; }
 	}
-	u32 frame = layout.frameAddress(0);
-	for (u32 index = 0; index < depth; ++index, frame += FRAME_CONTROL_BYTES) {
-		markClosure(memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Closure)));
-		u32 open = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::OpenHead));
-		for (u32 remaining = UPVALUE_CHAIN_LIMIT; open != 0 && remaining != 0; --remaining) {
-			const u32 cell = openCellAddress(open);
-			if (cell == 0u) break;
-			cellWork += markCell(cell);
-			const u32 slot = memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
-			if (slot < layout.valueCapacity) liveTop = std::max(liveTop, slot + 1u);
-			open = memory.readRamRecordWord(cell + UPVALUE_NEXT);
+	if (stage == ThreadTraceStage::Protected) {
+		const u32 depth = ThreadRecord::count(memory, address, ThreadField::ProtectedDepth);
+		while (next < depth && work < limit) {
+			const u32 continuation = layout.protectedAddress(next++);
+			const u32 flags = memory.readRamRecordWord(continuation + static_cast<u32>(ProtectedField::Flags));
+			if ((flags & PROTECTED_CALL_KIND_MASK) != static_cast<u32>(ProtectedCallKind::PCall)
+				&& (flags & PROTECTED_CALL_HANDLER_BUILTIN) == 0u) {
+				markClosure(memory.readRamRecordWord(continuation + static_cast<u32>(ProtectedField::Handler)));
+			}
+			chargeStorage(PROTECTED_CALL_BYTES / sizeof(u32));
+		}
+		if (next >= depth) { stage = ThreadTraceStage::Values; next = 0u; }
+	}
+	if (stage == ThreadTraceStage::Values) {
+		u32 liveTop = captureTop;
+		if (depth != 0u) {
+			const u32 frame = layout.frameAddress(depth - 1u);
+			const u32 base = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackBase)) & FRAME_WINDOW_MASK;
+			const u32 top = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Top)) & FRAME_WINDOW_MASK;
+			const u32 capacity = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackCapacity)) & FRAME_WINDOW_MASK;
+			liveTop = std::max(liveTop, base + std::min(top, capacity));
+		}
+		auto slots = layout.slots(memory, liveTop > layout.valueCapacity);
+		while (next < liveTop && work < limit) {
+			// One five-byte slot costs at most two storage words and one String mark.
+			const u32 stop = next + static_cast<u32>(std::min<size_t>(liveTop - next, std::max(size_t{1}, (limit - work) / 3u)));
+			const u32 words = ceilDiv4(static_cast<int>(stop * THREAD_STACK_SLOT_BYTES))
+				- ceilDiv4(static_cast<int>(next * THREAD_STACK_SLOT_BYTES));
+			while (next < stop) markValue(slots.get(next++));
+			chargeStorage(words);
+			work += m_stringPool.takeMarkWork();
+		}
+		if (next >= liveTop) {
+			// Only the final pass has the stable complete open-capture frontier.
+			if (atomic && liveTop < layout.valueCapacity) slots.clear(liveTop, layout.valueCapacity - liveTop);
+			stage = ThreadTraceStage::Padding;
+			next = 0u;
 		}
 	}
-	const u32 protectedDepth = ThreadRecord::count(memory, address, ThreadField::ProtectedDepth);
-	for (u32 index = 0; index < protectedDepth; ++index) {
-		const u32 continuation = layout.protectedAddress(index);
-		const u32 flags = memory.readRamRecordWord(continuation + static_cast<u32>(ProtectedField::Flags));
-		if ((flags & PROTECTED_CALL_KIND_MASK) != static_cast<u32>(ProtectedCallKind::PCall)
-			&& (flags & PROTECTED_CALL_HANDLER_BUILTIN) == 0u) {
-			markClosure(memory.readRamRecordWord(continuation + static_cast<u32>(ProtectedField::Handler)));
+	if (stage == ThreadTraceStage::Padding) {
+		const u32 total = ceilDiv4(static_cast<int>(layout.allocationBytes()));
+		if (work < limit) chargeStorage(static_cast<u32>(std::min<size_t>(total - billed, limit - work)));
+		if (billed == total) {
+			if (resumed) {
+				memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, 0u, 0u);
+				memory.writeRamRecordWord(m_controlOffset + GC_THREAD_TRACE_OPEN, 0u);
+				memory.writeRamRecordPair(m_controlOffset + GC_THREAD_TRACE_TOP, 0u, 0u);
+			}
+			return work;
 		}
 	}
-	auto slots = layout.slots(memory, liveTop > layout.valueCapacity);
-	for (u32 index = 0; index < liveTop; ++index) markValue(slots.get(index));
-	if (liveTop < layout.valueCapacity) slots.clear(liveTop, layout.valueCapacity - liveTop);
-	return cellWork + ceilDiv4(static_cast<int>(layout.allocationBytes()));
+	memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, address, (static_cast<u32>(stage) << TRACE_CURSOR_BITS) | next);
+	memory.writeRamRecordWord(m_controlOffset + GC_THREAD_TRACE_OPEN, open);
+	memory.writeRamRecordPair(m_controlOffset + GC_THREAD_TRACE_TOP, captureTop, billed);
+	return work;
 }
 
 size_t GcHeap::traceCaptures(u32 closure, u32 next, u32 count, size_t work, size_t limit) {
@@ -368,12 +430,20 @@ size_t GcHeap::traceCaptures(u32 closure, u32 next, u32 count, size_t work, size
 
 size_t GcHeap::resumeTrace(u32 record, size_t limit) {
 	const u32 cursor = memory.readRamRecordWord(m_controlOffset + GC_TRACE_CURSOR);
-	if (memory.readRamRecordByte(record) == tableRecordKind) {
+	switch (memory.readRamRecordByte(record)) {
+	case tableRecordKind: {
 		const TableRecord table(*this, record);
 		return traceTableEntries(table, static_cast<u8>(cursor >> TRACE_CURSOR_BITS),
 			cursor & TRACE_CURSOR_MASK, 0u, limit);
 	}
-	return traceCaptures(record, cursor, ClosureRecord::captureCount(memory, record), 0u, limit);
+	case THREAD_RECORD_KIND:
+		return traceThread(record, false, limit, cursor,
+			memory.readRamRecordWord(m_controlOffset + GC_THREAD_TRACE_OPEN),
+			memory.readRamRecordWord(m_controlOffset + GC_THREAD_TRACE_TOP),
+			memory.readRamRecordWord(m_controlOffset + GC_THREAD_TRACE_BILLED));
+	default:
+		return traceCaptures(record, cursor, ClosureRecord::captureCount(memory, record), 0u, limit);
+	}
 }
 
 size_t GcHeap::traceTable(u32 address, size_t limit) {

@@ -4,12 +4,11 @@ import type { Memory } from '../memory/memory';
 import { HEAP_GC_CONTROL_OFFSET, HeapGcPages, heapClassIndex, type HeapAllocator } from './heap_allocator';
 import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_COLOR_OFFSET, GC_COLOR_MASK, GC_OLD, GC_REMEMBERED, GC_RECORD_LINK, GC_RECORD_SHIFT } from './gc_object';
 import * as Closure from './closure';
-import { UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_CHAIN_LIMIT, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from './upvalue';
+import { UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from './upvalue';
 import * as Upvalue from './upvalue';
 import { TableRecords } from './table';
-import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND } from './thread_record';
-import { ThreadField, ThreadLayout, ThreadRecords, allocatedThreadBackingBytes } from './thread_record';
-import { FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
+import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadLayout, ThreadRecords, allocatedThreadBackingBytes } from './thread_record';
+import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
 import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from './value';
 import { ValueSlots } from './value_slots';
 import type { LuaHeap } from './lua_heap';
@@ -33,9 +32,14 @@ export const GC_VISIT_COUNT = 8;
 export const GC_TRACE_RECORD = 0x34;
 export const GC_TRACE_CURSOR = GC_TRACE_RECORD + 4;
 export const GC_ROOT_CURSOR = GC_TRACE_CURSOR + 4;
+export const GC_THREAD_TRACE_OPEN = GC_ROOT_CURSOR + 4;
+const GC_THREAD_TRACE_TOP = GC_THREAD_TRACE_OPEN + 4;
+const GC_THREAD_TRACE_BILLED = GC_THREAD_TRACE_TOP + 4;
 // Capture lanes use four bytes each and Table entries require a separate tag.
 const TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1;
 const TRACE_CURSOR_MASK = (1 << TRACE_CURSOR_BITS) - 1;
+const enum ThreadTraceStage { Frames, Protected, Values, Padding }
+const THREAD_TRACE_OPEN_HEAD = 1; // An open cell's address is aligned.
 export const GC_VISIT_HEADER_BYTE = 3;
 export const GC_VISIT_MEMBER = 0x40;
 const VISIT_LINK_LOW_BITS = 32 - GC_GRAY_INDEX_BITS;
@@ -325,45 +329,98 @@ export class GcHeap {
 			for (let index = 0; index < count; ++index) work += this.markCell(this.cellRecordAddress(Closure.captureAddress(this.memory, address, index)));
 			return work;
 		}
-		const layout = this.threadLayout;
-		let cellWork = 0;
-		if (!atomic) this.appendVisit(GC_THREAD_VISITS, address);
-		this.markThread(this.memory.readRamRecordWord(address + ThreadField.Resumer));
-		this.markClosure(this.memory.readRamRecordWord(address + ThreadField.Entry));
-		this.markValue(valueFromTag(this.memory.readRamRecordByte(address + ThreadField.ErrorKind), this.memory.readRamRecordWord(address + ThreadField.ErrorWord)));
-		this.threads.readLayout(address, layout);
-		let liveTop = 0;
-		if (layout.depth !== 0) {
-			const current = this.threads.frameAddress(layout, layout.depth - 1);
-			liveTop = (this.memory.readRamRecordWord(current + FrameField.StackBase) & FRAME_WINDOW_MASK)
-				+ Math.min(this.memory.readRamRecordWord(current + FrameField.Top) & FRAME_WINDOW_MASK,
-					this.memory.readRamRecordWord(current + FrameField.StackCapacity) & FRAME_WINDOW_MASK);
+		return this.traceThread(address, atomic, limit, 0, THREAD_TRACE_OPEN_HEAD, 0, 0);
+	}
+	private traceThread(address: number, atomic: boolean, limit: number, cursor: number, open: number,
+		captureTop: number, billed: number): number {
+		const resumed = billed !== 0, layout = this.threadLayout;
+		const memory = this.memory, strings = this.cpu.stringPool;
+		let work = 0;
+		if (atomic) limit = 0x7fffffff;
+		if (!resumed) {
+			if (!atomic) this.appendVisit(GC_THREAD_VISITS, address);
+			this.markThread(memory.readRamRecordWord(address + ThreadField.Resumer));
+			this.markClosure(memory.readRamRecordWord(address + ThreadField.Entry));
+			this.markValue(valueFromTag(memory.readRamRecordByte(address + ThreadField.ErrorKind), memory.readRamRecordWord(address + ThreadField.ErrorWord)));
+			billed = THREAD_HEAP_BYTES >>> 2;
+			work = billed + strings.takeMarkWork();
 		}
-		for (let depth = 0; depth < layout.depth; ++depth) {
-			const frame = this.threads.frameAddress(layout, depth);
-			this.markClosure(this.memory.readRamRecordWord(frame + FrameField.Closure));
-			let cellAddress = this.memory.readRamRecordWord(frame + FrameField.OpenHead);
-			for (let remaining = UPVALUE_CHAIN_LIMIT; cellAddress !== 0 && remaining !== 0; --remaining) {
-				const cell = this.openCellAddress(cellAddress);
-				if (cell === 0) break;
-				cellWork += this.markCell(cell);
-				const slot = this.memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
-				if (slot < layout.capacity) liveTop = Math.max(liveTop, slot + 1);
-				cellAddress = this.memory.readRamRecordWord(cell + UPVALUE_NEXT);
+		this.threads.readLayout(address, layout);
+		let stage = cursor >>> TRACE_CURSOR_BITS, next = cursor & TRACE_CURSOR_MASK;
+		// Only the logical indices survive this call; storage may grow while
+		// another CPU grant owns the Thread.
+		if (stage === ThreadTraceStage.Frames) {
+			while (next < layout.depth && work < limit) {
+				if (open === THREAD_TRACE_OPEN_HEAD) {
+					const frame = this.threads.frameAddress(layout, next);
+					this.markClosure(memory.readRamRecordWord(frame + FrameField.Closure));
+					open = memory.readRamRecordWord(frame + FrameField.OpenHead);
+					billed += FRAME_CONTROL_BYTES >>> 2; work += FRAME_CONTROL_BYTES >>> 2;
+				}
+				while (open !== 0 && work < limit) {
+					const cell = this.openCellAddress(open);
+					// A returned frame's closed cell uses Next for a different queue.
+					if (cell === 0) { open = 0; break; }
+					const slot = memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
+					if (slot < layout.capacity) captureTop = Math.max(captureTop, slot + 1);
+					open = memory.readRamRecordWord(cell + UPVALUE_NEXT);
+					work += Math.max(1, this.markCell(cell)) + strings.takeMarkWork();
+				}
+				if (open === 0) { ++next; open = THREAD_TRACE_OPEN_HEAD; }
+			}
+			if (next >= layout.depth) { stage = ThreadTraceStage.Protected; next = 0; open = 0; }
+		}
+		if (stage === ThreadTraceStage.Protected) {
+			while (next < layout.protectedDepth && work < limit) {
+				const continuation = layout.protectedOffset + next++ * PROTECTED_CALL_BYTES;
+				const flags = memory.readRamRecordWord(continuation + ProtectedField.Flags);
+				if ((flags & PROTECTED_CALL_KIND_MASK) !== ProtectedCallKind.PCall && (flags & PROTECTED_CALL_HANDLER_BUILTIN) === 0)
+					this.markClosure(memory.readRamRecordWord(continuation + ProtectedField.Handler));
+				billed += PROTECTED_CALL_BYTES >>> 2; work += PROTECTED_CALL_BYTES >>> 2;
+			}
+			if (next >= layout.protectedDepth) { stage = ThreadTraceStage.Values; next = 0; }
+		}
+		if (stage === ThreadTraceStage.Values) {
+			let liveTop = captureTop;
+			if (layout.depth !== 0) {
+				const current = this.threads.frameAddress(layout, layout.depth - 1);
+				const base = memory.readRamRecordWord(current + FrameField.StackBase) & FRAME_WINDOW_MASK;
+				const top = memory.readRamRecordWord(current + FrameField.Top) & FRAME_WINDOW_MASK;
+				const capacity = memory.readRamRecordWord(current + FrameField.StackCapacity) & FRAME_WINDOW_MASK;
+				liveTop = Math.max(liveTop, base + Math.min(top, capacity));
+			}
+			const tags = layout.offset + layout.capacity * 4;
+			while (next < liveTop && work < limit) {
+				const stop = Math.min(liveTop, next + Math.max(1, ((limit - work) / 3) | 0));
+				const words = ceilDiv4(stop * THREAD_STACK_SLOT_BYTES) - ceilDiv4(next * THREAD_STACK_SLOT_BYTES);
+				for (; next < stop; ++next)
+					this.markValue(valueFromTag(memory.readRamRecordByte(tags + next), memory.readRamRecordWord(layout.offset + next * 4)));
+				billed += words; work += words + strings.takeMarkWork();
+			}
+			if (next >= liveTop) {
+				if (atomic) this.threads.clearUnused(layout, liveTop);
+				stage = ThreadTraceStage.Padding; next = 0;
 			}
 		}
-		const protectedBase = layout.protectedOffset;
-		for (let index = 0; index < layout.protectedDepth; ++index) {
-			const continuation = protectedBase + index * PROTECTED_CALL_BYTES;
-			const flags = this.memory.readRamRecordWord(continuation + ProtectedField.Flags);
-			if ((flags & PROTECTED_CALL_KIND_MASK) !== ProtectedCallKind.PCall && (flags & PROTECTED_CALL_HANDLER_BUILTIN) === 0)
-				this.markClosure(this.memory.readRamRecordWord(continuation + ProtectedField.Handler));
+		if (stage === ThreadTraceStage.Padding) {
+			const total = ceilDiv4(THREAD_HEAP_BYTES + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations));
+			if (work < limit) {
+				const words = Math.min(total - billed, limit - work);
+				billed += words; work += words;
+			}
+			if (billed === total) {
+				if (resumed) {
+					memory.writeRamRecordPair(this.controlOffset + GC_TRACE_RECORD, 0, 0);
+					memory.writeRamRecordWord(this.controlOffset + GC_THREAD_TRACE_OPEN, 0);
+					memory.writeRamRecordPair(this.controlOffset + GC_THREAD_TRACE_TOP, 0, 0);
+				}
+				return work;
+			}
 		}
-		const tags = layout.offset + layout.capacity * 4;
-		for (let slot = 0; slot < liveTop; ++slot)
-			this.markValue(valueFromTag(this.memory.readRamRecordByte(tags + slot), this.memory.readRamRecordWord(layout.offset + slot * 4)));
-		this.threads.clearUnused(layout, liveTop);
-		return cellWork + ceilDiv4(THREAD_HEAP_BYTES + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations));
+		memory.writeRamRecordPair(this.controlOffset + GC_TRACE_RECORD, address, (stage << TRACE_CURSOR_BITS) | next);
+		memory.writeRamRecordWord(this.controlOffset + GC_THREAD_TRACE_OPEN, open);
+		memory.writeRamRecordPair(this.controlOffset + GC_THREAD_TRACE_TOP, captureTop, billed);
+		return work;
 	}
 	private traceCaptures(closure: number, next: number, count: number, work: number, limit: number): number {
 		const strings = this.cpu.stringPool;
@@ -379,9 +436,14 @@ export class GcHeap {
 	}
 	private resumeTrace(record: number, limit: number): number {
 		const cursor = this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_CURSOR);
-		if (this.memory.readRamRecordByte(record) === ValueTag.Table)
-			return this.traceTableEntries(record, cursor >>> TRACE_CURSOR_BITS, cursor & TRACE_CURSOR_MASK, 0, limit);
-		return this.traceCaptures(record, cursor, Closure.captureCount(this.memory, record), 0, limit);
+		switch (this.memory.readRamRecordByte(record)) {
+			case ValueTag.Table: return this.traceTableEntries(record, cursor >>> TRACE_CURSOR_BITS, cursor & TRACE_CURSOR_MASK, 0, limit);
+			case THREAD_RECORD_KIND: return this.traceThread(record, false, limit, cursor,
+				this.memory.readRamRecordWord(this.controlOffset + GC_THREAD_TRACE_OPEN),
+				this.memory.readRamRecordWord(this.controlOffset + GC_THREAD_TRACE_TOP),
+				this.memory.readRamRecordWord(this.controlOffset + GC_THREAD_TRACE_BILLED));
+			default: return this.traceCaptures(record, cursor, Closure.captureCount(this.memory, record), 0, limit);
+		}
 	}
 	private traceTableEntries(table: number, mode: number, next: number, work: number, limit: number): number {
 		const array = this.tables.arrayCapacity(table), end = this.tables.storedSlotCount(table);

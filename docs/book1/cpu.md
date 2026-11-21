@@ -1320,6 +1320,7 @@ Collection work consumes cycles as follows:
 | Scan a closure | `3 + U` |
 | Scan a Thread | `ceil(occupied allocation bytes / 4)` |
 | Scan a captured-variable cell | `4` |
+| Follow a Thread's open capture link to an already marked cell | `1` |
 | Examine an object slot or run for reclamation, except an occupied Thread slot | `1` per visited block, including a free slot; a page run is one block |
 | Examine an occupied Thread slot for reclamation | `ceil(occupied allocation bytes / 4)` |
 | Read the constant and global root ranges | `2C + 3(S + G)` per pass |
@@ -1354,14 +1355,12 @@ of one name shares its existing slot. Nil slots count too. These root ranges are
 read once in a small collection. In a full collection they are read at the
 beginning of marking, at the start of the second pass and at the final
 remark. The first pass can resume at the next root slot in a later step.
-Thread storage is scanned
-in all three full-collection passes. Function-activation control and fixed collector bookkeeping are included
+Thread storage is scanned in all three full-collection passes. Function-activation control and fixed collector bookkeeping are included
 in these allowances, not charged by a separate frame-record size.
 
 A full-collection step normally stops after **4,096 work cycles**. During
-incremental marking, the scan of a Table or a closure's capture list can
-resume in a later step. A Thread scan is still indivisible. When a closure
-or a Thread first reaches a captured-variable cell, its four-cycle scan is
+incremental marking, the scan of a Table, a Thread, or a closure's capture
+list can resume in a later step. When a closure or a Thread first reaches a captured-variable cell, its four-cycle scan is
 included in the step that reaches it. The final root remark, remaining
 changed-object scans, weak-key convergence and weak-entry clearing can
 exceed the step target: it is not a maximum instruction latency. The final

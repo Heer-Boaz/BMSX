@@ -10,12 +10,13 @@ import { HEAP_GC_CONTROL_OFFSET, heapAllocationBytes } from '../../machine/ts/ma
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
-import { GcPhase, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
+import { GcPhase, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, hashCanonicalTableKey, valueBuiltinFunction, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString, valueThread } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 function machine() {
@@ -169,6 +170,62 @@ test('major marking resumes large closure captures from a RAM snapshot', () => {
 	const expected = finish();
 	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
 	assert.deepEqual(finish(), expected, 'save and restore reproduce both marking and mutation');
+});
+
+test('a suspended Thread scan follows the real CLOSURE, closing JMP and RET lifecycle', () => {
+	const captures = 3000, text = new Uint8Array(9 * 4);
+	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.CALL, 0, 2, 2);
+	writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
+	writeInstruction(text, 4, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 5, OpCode.CLOSURE, 3, 0, 0);
+	writeInstruction(text, 6, OpCode.JMP, 1, 0, 0);
+	writeInstruction(text, 7, OpCode.RET, 3, 2, 0);
+	writeInstruction(text, 8, OpCode.HALT, 0, 0, 0);
+	const capture = { inStack: true, index: 1 };
+	const upvalueDescs = Array<typeof capture>(captures).fill(capture);
+	upvalueDescs[captures - 1] = { inStack: true, index: 0 };
+	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({
+		text, functions: [
+			{ firstWord: 0, wordCount: 4, maxStack: 8 },
+			{ firstWord: 4, wordCount: 4, numParams: 1, maxStack: 8 },
+			{ firstWord: 8, wordCount: 1, upvalueDescs },
+		],
+		closureRelocations: [
+			{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) },
+			{ wordIndex: 5, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 2) },
+		],
+	}));
+	const frame = cpu.rootThread.currentFrame!, gc = cpu.gc, target = cpu.createTable();
+	frame.registers.setTable(1, target); frame.top = 2;
+	assert.equal(cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL] + captures), RunResult.Yielded);
+	assert.equal(cpu.getFrameDepth(), 2);
+	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const work = gc.step();
+	assert.ok(work >= GC_STEP_WORDS && work <= GC_STEP_WORDS + 4);
+	assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), cpu.rootThread.address);
+	assert.equal(gc.isAlive(target), false, 'the tail capture has not been reached');
+	const open = memory.readRamRecordWord(control + GC_THREAD_TRACE_OPEN);
+	assert.equal(Upvalue.isOpen(memory, open), true);
+	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	const finish = () => {
+		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.JMP] + captures), RunResult.Yielded);
+		assert.equal(Upvalue.isOpen(memory, open), false);
+		assert.equal(cpu.getFrameDepth(), 2, 'closing invalidates the saved link without changing the depth');
+		gc.step();
+		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.RET] + 1), RunResult.Yielded);
+		assert.equal(cpu.getFrameDepth(), 1);
+		for (let step = 0; gc.active() && step < 30; ++step) gc.step();
+		assert.equal(gc.active(), false);
+		const returned = valuePayload(cpu.readFrameRegister(0, 0));
+		assert.equal(gc.tableRecordAddress(target), target);
+		assert.equal(Upvalue.load(memory, Closure.captureAddress(memory, returned, captures - 1)), valueTable(target));
+		return memory.captureSaveState();
+	};
+	const expected = finish();
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	assert.deepEqual(finish(), expected);
 });
 
 test('primitive hash displacement withdraws a suspended Table mark cursor', () => {
