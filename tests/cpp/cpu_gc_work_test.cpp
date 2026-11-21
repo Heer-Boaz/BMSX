@@ -660,6 +660,101 @@ void incrementalSharedWeakMode() {
 	require(weak.getInteger(1) == childValue, "the newly strong entry retains its child in the next cycle");
 }
 
+void resumesMetatableModeProbe() {
+	Machine machine(image(), true);
+	auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& memory = machine.memory;
+	constexpr u32 capacity = 2 * GC_STEP_WORDS;
+	const auto mode = cpu.stringPool().intern("__mode");
+	const auto home = hashCanonicalTableKey(valueString(mode)) & (capacity - 1u);
+	auto target = cpu.createTable(1, 0), meta = cpu.createTable(0, capacity);
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(target.address()));
+	frame.setTop(1);
+	target.setMetatableAddress(meta.address());
+	for (i32 key = -1, count = 0; count < static_cast<i32>(GC_STEP_WORDS + 64); --key) {
+		if ((hashCanonicalTableKey(valueInteger(key)) & (capacity - 1u)) != home) continue;
+		meta.setInteger(key, valueInteger(1));
+		if (count++ == 0) meta.setStringKey(mode, valueString(cpu.stringPool().intern("v")));
+	}
+	auto watched = cpu.createTable();
+	target.setInteger(1, valueTable(watched.address()));
+	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const auto read = [&](u32 field) { return memory.readRamRecordWord(control + field); };
+	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
+	for (int step = 0; read(GC_MODE_META) == 0u && step < 20; ++step) advance();
+	require(read(GC_MODE_META) == meta.address() && read(GC_TRACE_RECORD) == target.address()
+		&& read(GC_MODE_NODE) != home && !heap.isAlive(watched.address()), "a real colliding metatable search is suspended");
+	const auto state = cpu.captureRuntimeState();
+	const auto ram = memory.captureSaveState();
+	const auto finish = [&](bool move) {
+		if (move) {
+			meta.clear();
+			require(read(GC_MODE_META) == 0u && read(GC_TRACE_RECORD) == 0u, "an owning metatable shape write cancels its probe");
+		}
+		for (int step = 0; heap.active() && step < 50; ++step) advance();
+		require(!heap.active() && heap.tableRecordAddress(watched.address()) == (move ? watched.address() : 0u),
+			"both the completed weak lookup and the withdrawn strong lookup produce exact liveness");
+		return memory.captureSaveState().ram;
+	};
+	const auto expected = finish(false);
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(state);
+	require(finish(false) == expected, "rewind resumes the same metatable topology");
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(state);
+	finish(true);
+}
+
+void resumesFinalWeakCleanup() {
+	Machine machine(image(), true);
+	auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& memory = machine.memory;
+	constexpr u32 slots = 3 * GC_STEP_WORDS;
+	auto weak = cpu.createTable(slots, 0), strong = cpu.createTable(1, 0);
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(weak.address()));
+	frame.registers.set(1, valueTable(strong.address()));
+	frame.setTop(2);
+	const auto mode = cpu.stringPool().intern("__mode");
+	auto weakMeta = cpu.createTable(0, 1), strongMeta = cpu.createTable(0, 1);
+	weakMeta.setStringKey(mode, valueString(cpu.stringPool().intern("v")));
+	strongMeta.setStringKey(mode, valueString(cpu.stringPool().intern("very")));
+	weak.setMetatableAddress(weakMeta.address());
+	strong.setMetatableAddress(strongMeta.address());
+	auto onlyStrong = cpu.createTable(), first = cpu.createTable(), last = cpu.createTable();
+	strong.setInteger(1, valueTable(onlyStrong.address()));
+	weak.setInteger(1, valueTable(first.address()));
+	weak.setInteger(slots, valueTable(last.address()));
+	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
+	for (int step = 0; heap.phase() != GcPhase::Atomic && step < 30; ++step) advance();
+	require(heap.phase() == GcPhase::Atomic, "the last mark pass is ready");
+	for (int step = 0; !isNil(weak.getInteger(1)) && step < 30; ++step) heap.stepFinalMark();
+	require(heap.phase() == GcPhase::Atomic && isNil(weak.getInteger(1))
+		&& weak.getInteger(slots) == valueTable(last.address())
+		&& heap.tableRecordAddress(first.address()) == first.address(),
+		"the final pass can suspend after clearing only a prefix and before object reclamation");
+	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	require(memory.readRamRecordWord(control + GC_TRACE_RECORD) == weak.address(), "a weak slot frontier is present in RAM");
+	const auto state = cpu.captureRuntimeState();
+	const auto ram = memory.captureSaveState();
+	const auto finish = [&] {
+		for (int step = 0; heap.phase() == GcPhase::Atomic && step < 30; ++step) heap.stepFinalMark();
+		require(heap.phase() == GcPhase::Sweep && isNil(weak.getInteger(slots)), "all weak entries are resolved before sweep starts");
+		for (int step = 0; heap.active() && step < 40; ++step) advance();
+		require(!heap.active() && heap.tableRecordAddress(first.address()) == 0u && heap.tableRecordAddress(last.address()) == 0u
+			&& heap.tableRecordAddress(onlyStrong.address()) == onlyStrong.address(),
+			"the two weak values die; a String merely containing v selects strong entries");
+		return memory.captureSaveState().ram;
+	};
+	const auto expected = finish();
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(state);
+	require(finish() == expected, "partly cleared weak entries replay to identical RAM");
+}
+
 void resumesWeakTableRemark() {
 	Machine machine(image(), true);
 	auto& cpu = machine.cpu;
@@ -930,7 +1025,7 @@ int main(int argc, char** argv) {
 		referenceWritesPayOnlyForNewEdges(); incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
 		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues(); incrementalSharedWeakMode();
-		resumesWeakTableRemark(); consumesSelfLinkedGrayEdge();
+		resumesFinalWeakCleanup(); resumesMetatableModeProbe(); resumesWeakTableRemark(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
 		return 0;

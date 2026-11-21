@@ -23,6 +23,12 @@ enum class TableHeader : u32 {
 	Kind = 0, Gray = 4, Metatable = 8, Storage = 12, Array = 16, Hash = 20, Length = 24, Free = 28,
 };
 
+struct TableStringProbe {
+	i32 node;
+	u32 remaining;
+	Value value = valueNil();
+};
+
 class TableRecord {
 public:
 	TableRecord(GcHeap& heap, u32 address);
@@ -66,6 +72,8 @@ public:
 	Value getInteger(int index) const;
 	void setInteger(int index, const Value& value);
 	Value getStringKey(StringId key) const;
+	TableStringProbe beginStringProbe(StringId key) const;
+	size_t advanceStringProbe(StringId key, TableStringProbe& probe, size_t limit) const;
 	Value getStringKeyCached(StringId key, int& predictedSlot) const;
 	int setStringKey(StringId key, const Value& value);
 	void setStringKeyCached(StringId key, const Value& value, int& predictedSlot);
@@ -104,18 +112,19 @@ public:
 		}
 	}
 	template <typename ValueIsAlive>
-	void clearWeakEntries(bool weakKeys, bool weakValues, ValueIsAlive&& valueIsAlive) {
+	void clearWeakEntries(bool weakKeys, bool weakValues, ValueIsAlive&& valueIsAlive,
+		u32 first = 0u, u32 end = UINT32_MAX) {
+		const u32 array = arrayCapacity(), hash = hashSlots();
+		const auto slots = values();
 		if (weakValues) {
-			for (size_t i = 0; i < arrayCapacity(); ++i) {
-				if (isNil(values().get(i)) || valueIsAlive(values().get(i))) {
-					continue;
-				}
-				values().set(i, valueNil());
+			for (u32 slot = first; slot < std::min(array, end); ++slot) {
+				const Value value = slots.get(slot);
+				if (!isNil(value) && !valueIsAlive(value)) slots.set(slot, valueNil());
 			}
 		}
-		for (size_t i = 0; i < hashSlots(); ++i) {
-			const Value key = values().get(hashKeySlot(i));
-			const Value value = values().get(hashValueSlot(i));
+		for (u32 slot = std::max(first, array); slot < std::min(array + hash, end); ++slot) {
+			const Value key = slots.get(slot);
+			const Value value = slots.get(slot + hash);
 			if (isNil(key) || isNil(value)) {
 				continue;
 			}
@@ -124,7 +133,7 @@ public:
 			if (keyIsAlive && valueIsStillAlive) {
 				continue;
 			}
-			markHashNodeDead(i);
+			markHashNodeDead(slot - array);
 		}
 	}
 	// Returns inspected Value slots; a nil output key denotes exhaustion.

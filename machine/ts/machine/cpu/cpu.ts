@@ -925,6 +925,7 @@ export class CPU implements MappedPageInvalidator {
 			for (const address of closures) {
 				const header = this.memory.readRamRecordWord(address);
 				if ((match !== 0 && address >= match) || (header & 0xff) !== ValueTag.Closure || (header & (CLOSURE_CANONICAL << (8 * CLOSURE_BINDING_FLAGS))) === 0) continue;
+				if (this.gc.sweepGarbage(address)) continue;
 				Closure.readBinding(this.memory, address, (header >>> (8 * CLOSURE_BINDING_FLAGS)) & 0xff, this.executionReadView, this.canonicalBinding);
 				if (sameFunctionPrototype(this.canonicalBinding, record)) match = address;
 			}
@@ -4258,7 +4259,8 @@ export class CPU implements MappedPageInvalidator {
 		add(this.stringIndexTable);
 		objects.push(this.rootThread.address, this.activeThread.address, this.completionThread);
 		if (this.haltedUntilIrqThread !== 0) objects.push(this.haltedUntilIrqThread);
-		for (const versions of this.staticClosuresByAddress.values()) for (const closure of versions) objects.push(closure);
+		for (const versions of this.staticClosuresByAddress.values())
+			for (const closure of versions) if (!this.gc.sweepGarbage(closure)) objects.push(closure);
 		for (const value of this.localRoots) add(value);
 		for (let index = 0; index < this.builtinResultsScratchIndex; index += 1) {
 			const slots = this.builtinResultsScratch.peek(index);
@@ -4395,14 +4397,6 @@ export class CPU implements MappedPageInvalidator {
 		if (entries.length === 0) this.staticClosuresByAddress.delete(prototype);
 	}
 
-	public pruneStaticClosures(): void {
-		for (const [address, closures] of this.staticClosuresByAddress) {
-			let write = 0;
-			for (const closure of closures) if (this.gc.isAlive(closure)) closures[write++] = closure;
-			closures.length = write;
-			if (write === 0) this.staticClosuresByAddress.delete(address);
-		}
-	}
 }
 
 // end normalized-body-acceptable

@@ -6,7 +6,7 @@ import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_COLOR_OFFSET, GC_COLOR_MASK,
 import * as Closure from './closure';
 import { UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from './upvalue';
 import * as Upvalue from './upvalue';
-import { TableRecords } from './table';
+import { TableRecords, type TableStringProbe } from './table';
 import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadLayout, ThreadRecords, allocatedThreadBackingBytes } from './thread_record';
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
 import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from './value';
@@ -38,11 +38,15 @@ const GC_THREAD_TRACE_BILLED = GC_THREAD_TRACE_TOP + 4;
 // Remark revisits the weak list without consuming its head.
 export const GC_REMARK_VISIT_INDEX = GC_THREAD_TRACE_BILLED + 4;
 export const GC_REMARK_VISIT_STATE = GC_REMARK_VISIT_INDEX + 4;
+export const GC_MODE_META = GC_REMARK_VISIT_STATE + 4;
+export const GC_MODE_NODE = GC_MODE_META + 4;
+const GC_MODE_REMAINING = GC_MODE_NODE + 4;
 // Capture lanes use four bytes each and Table entries require a separate tag.
 const TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1;
 const TRACE_CURSOR_MASK = (1 << TRACE_CURSOR_BITS) - 1;
-const enum ThreadTraceStage { Frames, Protected, Values, Padding }
-const enum RemarkStage { None, Threads, Weak, Roots }
+const TABLE_MODE_PENDING = 4 << TRACE_CURSOR_BITS;
+const enum ThreadTraceStage { Frames, Protected, Values, Clear, Padding }
+const enum RemarkStage { None, Threads, Weak, Roots, Trace, ClearWeak }
 const THREAD_TRACE_OPEN_HEAD = 1; // An open cell's address is aligned.
 export const GC_VISIT_HEADER_BYTE = 3;
 export const GC_VISIT_MEMBER = 0x40;
@@ -68,6 +72,8 @@ export class GcHeap {
 	private setPhase(phase: GcPhase): void { this.memory.writeRamRecordByte(this.controlOffset, phase); }
 	private readonly scratch = new ValueSlots(1);
 	private minor = false; // Only physical state crosses a grant.
+	private readonly modeProbe: TableStringProbe = { node: -1, remaining: 0, value: valueNil() };
+	private modeProbeWork = 0;
 	private readonly traceBoth = (key: Value, value: Value): void => { this.markValue(key); this.markValue(value); };
 	private readonly traceKey = (key: Value): void => { this.markValue(key); };
 	private readonly traceValue = (_key: Value, value: Value): void => { this.markValue(value); };
@@ -157,11 +163,14 @@ export class GcHeap {
 		if ((flags & GC_COLOR_MASK) === 3) this.enqueue(address, link, GC_CHANGED_HEAD);
 	}
 	public tableEntriesMoved(address: number): void {
-		if (this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD) !== address) return;
+		const table = this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD);
+		if (table !== address && this.memory.readRamRecordWord(this.controlOffset + GC_MODE_META) !== address) return;
 		// An unvisited entry may now be behind the cursor. Resume on the
 		// next pass rather than retrying this Table under the mutator.
 		this.memory.writeRamRecordPair(this.controlOffset + GC_TRACE_RECORD, 0, 0);
-		if (this.markColor(address) === 3) this.enqueue(address, GC_RECORD_LINK, GC_CHANGED_HEAD);
+		this.memory.writeRamRecordPair(this.controlOffset + GC_MODE_META, 0, 0);
+		this.memory.writeRamRecordWord(this.controlOffset + GC_MODE_REMAINING, 0);
+		if (this.markColor(table) === 3) this.enqueue(table, GC_RECORD_LINK, GC_CHANGED_HEAD);
 	}
 	private setVisitLink(address: number, meta: number, index: number): void {
 		const gray = this.memory.readRamRecordWord(address + GC_RECORD_LINK) & GC_GRAY_INDEX_MASK;
@@ -221,11 +230,12 @@ export class GcHeap {
 		return 0;
 	};
 	private readonly visitWeakEntries = (table: number): number => {
-		const mode = this.tableMode(table);
-		const slots = this.tables.scanSlots(table);
-		this.tables.clearWeakEntries(table, (mode & 1) !== 0, (mode & 2) !== 0, this.alive);
-		this.tables.forEachStoredEntry(table, this.weakStrings);
-		return slots;
+		this.clearWeakRange(table, this.tableMode(table), 0, this.tables.storedSlotCount(table));
+		return this.tables.scanSlots(table);
+	};
+	private readonly startWeakClear = (table: number): number => {
+		this.memory.writeRamRecordPair(this.controlOffset + GC_TRACE_RECORD, table, TABLE_MODE_PENDING);
+		return 0;
 	};
 	public markThread(address: number): boolean {
 		const offset = address & GC_RECORD_MASK;
@@ -276,20 +286,44 @@ export class GcHeap {
 		const record = this.tableRecordAddress(meta);
 		if (record === 0) return 0;
 		this.tables.loadStringKey(record, this.modeKey, this.scratch, 0);
-		let mode = 0;
-		if (this.scratch.getTag(0) === ValueTag.String) {
-			const id = this.scratch.getStringId(0), pool = this.cpu.stringPool;
-			const length = pool.byteLength(id);
-			for (let i = 0; i < length; ++i) {
-				const byte = pool.byteAt(id, i);
-				if (byte === 107) mode |= 1;
-				if (byte === 118) mode |= 2;
+		const mode = this.scratch.get(0);
+		this.scratch.setNil(0);
+		return this.weakModeBits(mode);
+	}
+	private weakModeBits(mode: Value): number {
+		if (valueTag(mode) !== ValueTag.String) return 0;
+		const id = valuePayload(mode), pool = this.cpu.stringPool;
+		const length = pool.byteLength(id);
+		if (length !== 1 && length !== 2) return 0;
+		const first = pool.byteAt(id, 0);
+		if (length === 1) return first === 107 ? 1 : first === 118 ? 2 : 0;
+		const second = pool.byteAt(id, 1);
+		return (first === 107 && second === 118) || (first === 118 && second === 107) ? 3 : 0;
+	}
+	private probeTableMode(table: number, limit: number): number {
+		const address = this.tableRecordAddress(this.tables.metatableAddress(table));
+		const current = this.memory.readRamRecordWord(this.controlOffset + GC_MODE_META);
+		const probe = this.modeProbe;
+		if (address !== 0) {
+			if (address === current) {
+				probe.node = this.memory.readRamRecordWord(this.controlOffset + GC_MODE_NODE) | 0;
+				probe.remaining = this.memory.readRamRecordWord(this.controlOffset + GC_MODE_REMAINING);
+				probe.value = valueNil();
+			} else this.tables.beginStringProbe(address, this.modeKey, probe);
+			this.modeProbeWork += this.tables.advanceStringProbe(address, this.modeKey, probe, limit);
+			if (probe.node >= 0 && probe.remaining !== 0) {
+				this.memory.writeRamRecordPair(this.controlOffset + GC_MODE_META, address, probe.node);
+				this.memory.writeRamRecordWord(this.controlOffset + GC_MODE_REMAINING, probe.remaining);
+				return -1;
 			}
 		}
-		this.scratch.setNil(0);
-		return mode;
+		if (current !== 0) {
+			this.memory.writeRamRecordPair(this.controlOffset + GC_MODE_META, 0, 0);
+			this.memory.writeRamRecordWord(this.controlOffset + GC_MODE_REMAINING, 0);
+		}
+		return address === 0 ? 0 : this.weakModeBits(probe.value);
 	}
-	private trace(atomic: boolean, limit = 0): number {
+	private trace(atomic: boolean, limit = 0x7fffffff): number {
 		const index = this.indexWord(GC_TRACE_HEAD), offset = index << GC_RECORD_SHIFT, address = RAM_BASE + offset;
 		const kind = offset < this.arena.managementOffset() ? this.memory.readRamRecordByte(address) : 0;
 		const slotClass = kind === ValueTag.Table || kind === UPVALUE_RECORD_KIND || kind === THREAD_RECORD_KIND
@@ -310,16 +344,7 @@ export class GcHeap {
 		const flags = this.memory.readRamRecordByte(address + GC_COLOR_OFFSET);
 		if (this.minor && (flags & GC_OLD) !== 0) this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, GC_OLD | this.white());
 		else this.setColor(address, 3);
-		if (table) {
-			const meta = this.tables.metatableAddress(address);
-			if (meta !== 0) this.markTable(meta);
-			const mode = this.tableMode(address);
-			if (mode !== 0) this.appendVisit(GC_WEAK_VISITS, address);
-			const words = TableRecords.HEADER_BYTES >>> 2, slots = this.tables.scanSlots(address);
-			if (limit !== 0 && words + slots * 2 > limit) return this.traceTableEntries(address, mode, 0, words, limit);
-			this.traceTableEdges(address, mode);
-			return words + slots;
-		}
+		if (table) return this.traceTable(address, limit);
 		if (cell) {
 			this.markValue(Upvalue.load(this.memory, address));
 			return UPVALUE_HEAP_BYTES >>> 2;
@@ -327,7 +352,7 @@ export class GcHeap {
 		if (closure) {
 			const count = Closure.captureCount(this.memory, address);
 			// A capture word can discover a four-word cell and one String.
-			if (!atomic && 3 + 6 * count > limit) return this.traceCaptures(address, 0, count, 3, limit);
+			if (3 + 6 * count > limit) return this.traceCaptures(address, 0, count, 3, limit);
 			let work = 3 + count;
 			for (let index = 0; index < count; ++index) work += this.markCell(this.cellRecordAddress(Closure.captureAddress(this.memory, address, index)));
 			return work;
@@ -339,7 +364,6 @@ export class GcHeap {
 		const resumed = billed !== 0, layout = this.threadLayout;
 		const memory = this.memory, strings = this.cpu.stringPool;
 		let work = 0;
-		if (atomic) limit = 0x7fffffff;
 		if (!resumed) {
 			if (!atomic) this.appendVisit(GC_THREAD_VISITS, address);
 			this.markThread(memory.readRamRecordWord(address + ThreadField.Resumer));
@@ -401,9 +425,18 @@ export class GcHeap {
 				billed += words; work += words + strings.takeMarkWork();
 			}
 			if (next >= liveTop) {
-				if (atomic) this.threads.clearUnused(layout, liveTop);
-				stage = ThreadTraceStage.Padding; next = 0;
+				stage = atomic ? ThreadTraceStage.Clear : ThreadTraceStage.Padding; next = liveTop;
 			}
+		}
+		if (stage === ThreadTraceStage.Clear) {
+			while (next < layout.capacity && work < limit) {
+				const stop = Math.min(layout.capacity, next + Math.max(1, ((limit - work) / 2) | 0));
+				this.threads.clearStackRange(layout, next, stop);
+				const words = ceilDiv4(stop * THREAD_STACK_SLOT_BYTES) - ceilDiv4(next * THREAD_STACK_SLOT_BYTES);
+				billed += words; work += words;
+				next = stop;
+			}
+			if (next >= layout.capacity) stage = ThreadTraceStage.Padding;
 		}
 		if (stage === ThreadTraceStage.Padding) {
 			const total = ceilDiv4(THREAD_HEAP_BYTES + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations));
@@ -437,16 +470,49 @@ export class GcHeap {
 			next < count ? closure : 0, next < count ? next : 0);
 		return work;
 	}
-	private resumeTrace(record: number, limit: number): number {
+	private resumeTrace(record: number, atomic: boolean, limit: number): number {
 		const cursor = this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_CURSOR);
 		switch (this.memory.readRamRecordByte(record)) {
-			case ValueTag.Table: return this.traceTableEntries(record, cursor >>> TRACE_CURSOR_BITS, cursor & TRACE_CURSOR_MASK, 0, limit);
-			case THREAD_RECORD_KIND: return this.traceThread(record, false, limit, cursor,
+			case ValueTag.Table: return cursor === TABLE_MODE_PENDING ? this.traceTable(record, limit, true)
+				: this.traceTableEntries(record, cursor >>> TRACE_CURSOR_BITS, cursor & TRACE_CURSOR_MASK, 0, limit);
+			case THREAD_RECORD_KIND: return this.traceThread(record, atomic, limit, cursor,
 				this.memory.readRamRecordWord(this.controlOffset + GC_THREAD_TRACE_OPEN),
 				this.memory.readRamRecordWord(this.controlOffset + GC_THREAD_TRACE_TOP),
 				this.memory.readRamRecordWord(this.controlOffset + GC_THREAD_TRACE_BILLED));
 			default: return this.traceCaptures(record, cursor, Closure.captureCount(this.memory, record), 0, limit);
 		}
+	}
+	private traceQuantum(atomic: boolean, limit: number, work: number): number {
+		this.modeProbeWork = 0;
+		const record = this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD);
+		if (record !== 0) {
+			work += this.resumeTrace(record, atomic, limit - work);
+			if (this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD) !== 0) return work;
+		}
+		while (this.indexWord(GC_TRACE_HEAD) !== 0 && work + this.modeProbeWork < limit)
+			work += this.trace(atomic, limit - work - this.modeProbeWork) + this.cpu.stringPool.takeMarkWork();
+		return work;
+	}
+	private traceTable(address: number, limit: number, resumingMode = false): number {
+		const meta = this.tables.metatableAddress(address);
+		if (meta !== 0 && !resumingMode) this.markTable(meta);
+		const words = resumingMode ? 0 : TableRecords.HEADER_BYTES >>> 2;
+		let mode = 0;
+		if (this.minor) mode = this.tableMode(address);
+		else if (meta !== 0 || resumingMode) {
+			const before = this.modeProbeWork;
+			mode = this.probeTableMode(address, Math.max(0, limit - words));
+			limit -= this.modeProbeWork - before;
+		}
+		if (mode < 0) {
+			this.memory.writeRamRecordPair(this.controlOffset + GC_TRACE_RECORD, address, TABLE_MODE_PENDING);
+			return words;
+		}
+		if (mode !== 0) this.appendVisit(GC_WEAK_VISITS, address);
+		const slots = this.tables.scanSlots(address);
+		if (resumingMode || words + slots * 2 > limit) return this.traceTableEntries(address, mode, 0, words, limit);
+		this.traceTableEdges(address, mode);
+		return words + slots;
 	}
 	private traceTableEdges(table: number, mode: number, first = 0, end = 0x7fffffff): void {
 		switch (mode) {
@@ -497,6 +563,9 @@ export class GcHeap {
 	private remarkStage(): RemarkStage {
 		return this.memory.readRamRecordWord(this.controlOffset + GC_REMARK_VISIT_STATE) >>> GC_GRAY_INDEX_BITS;
 	}
+	private setRemarkStage(stage: RemarkStage): void {
+		this.memory.writeRamRecordWord(this.controlOffset + GC_REMARK_VISIT_STATE, stage << GC_GRAY_INDEX_BITS);
+	}
 	private remarkVisits(allowance: number): number {
 		this.diagnostics?.phase('rootsNanoseconds');
 		let stage = this.remarkStage(), visits = 0;
@@ -513,42 +582,91 @@ export class GcHeap {
 			// Transfer only after the visits: writes keep publishing to Changed
 			// while no allocation can progress to the sweep.
 			this.memory.writeRamRecordPair(this.controlOffset + GC_TRACE_HEAD, this.indexWord(GC_CHANGED_HEAD), 0);
-			this.memory.writeRamRecordWord(this.controlOffset + GC_REMARK_VISIT_STATE, RemarkStage.Roots << GC_GRAY_INDEX_BITS);
+			this.setRemarkStage(RemarkStage.Roots);
 			this.cpu.markRootHead(this);
 			this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, GcRootBank.SystemGlobals << TRACE_CURSOR_BITS);
 		}
 		return visits;
 	}
-	private remarkRoots(t0: Value, t1: Value, t2: Value, allowance: number): number {
+	private remarkRoots(t0: Value, t1: Value, t2: Value, allowance: number, final: boolean): number {
 		this.diagnostics?.phase('rootsNanoseconds');
 		this.markValue(t0); this.markValue(t1); this.markValue(t2);
 		this.cpu.stringPool.markLocalRoots();
 		let work = this.cpu.stringPool.takeMarkWork();
 		if (work < allowance) work += this.traceRootBanks(allowance - work);
 		if (this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR) === 0) {
-			this.memory.writeRamRecordWord(this.controlOffset + GC_REMARK_VISIT_STATE, 0);
-			this.setPhase(GcPhase.MarkAgain);
+			this.setRemarkStage(final ? RemarkStage.Trace : RemarkStage.None);
+			if (!final) this.setPhase(GcPhase.MarkAgain);
 		}
 		return work;
 	}
-	/** Called with the current trace queue empty; mutations stay separate until this pass. */
-	private remark(t0: Value, t1: Value, t2: Value): number {
-		this.diagnostics?.phase('rootsNanoseconds');
-		this.visitList(GC_THREAD_VISITS, THREAD_RECORD_KIND, true, this.remarkRecord);
-		this.visitList(GC_WEAK_VISITS, ValueTag.Table, false, this.remarkRecord);
-		this.memory.writeRamRecordPair(this.controlOffset + GC_TRACE_HEAD, this.indexWord(GC_CHANGED_HEAD), 0);
-		this.cpu.markHeapRoots(this); this.cpu.stringPool.markLocalRoots();
-		this.markValue(t0); this.markValue(t1); this.markValue(t2);
-		return this.cpu.collectionRootWordCount() + this.cpu.stringPool.takeMarkWork();
-	}
-	private atomic(t0: Value, t1: Value, t2: Value): number {
+	/** Only the stopped mutator may advance the final pass. */
+	public stepFinalMark(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil()): number {
 		this.diagnostics?.beginAtomic();
-		let work = this.remark(t0, t1, t2);
-		this.diagnostics?.phase('traceNanoseconds');
-		work += this.resolveWeak();
-		this.cpu.pruneStaticClosures();
+		let limit = GC_STEP_WORDS, work = 0;
+		if (this.remarkStage() === RemarkStage.None) this.setRemarkStage(RemarkStage.Threads);
+		if (this.remarkStage() <= RemarkStage.Weak) {
+			limit -= this.remarkVisits(limit);
+			if (this.remarkStage() !== RemarkStage.Roots) return 0;
+		}
+		if (this.remarkStage() === RemarkStage.Roots) {
+			work += this.remarkRoots(t0, t1, t2, limit, true);
+			if (this.remarkStage() === RemarkStage.Roots || work >= limit) return work;
+		}
+		if (this.remarkStage() === RemarkStage.Trace) {
+			this.diagnostics?.phase('traceNanoseconds');
+			work = this.traceQuantum(true, limit, work);
+			limit -= this.modeProbeWork;
+			if (this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD) !== 0 || this.indexWord(GC_TRACE_HEAD) !== 0)
+				return work;
+			this.setRemarkStage(RemarkStage.ClearWeak);
+			if (work >= limit) return work;
+		}
+		work += this.clearWeakQuantum(limit - work);
+		if (this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD) !== 0 || this.indexWord(GC_WEAK_VISITS) !== 0) return work;
 		this.memory.writeRamRecordByte(this.controlOffset + 1, this.white() ^ 1);
-		this.arena.beginObjectSweep(); this.setPhase(GcPhase.Sweep);
+		this.arena.beginObjectSweep();
+		this.setRemarkStage(RemarkStage.None);
+		this.setPhase(GcPhase.Sweep);
+		return work;
+	}
+	private clearWeakRange(table: number, mode: number, first: number, end: number): void {
+		this.tables.clearWeakEntries(table, (mode & 1) !== 0, (mode & 2) !== 0, this.alive, first, end);
+		this.tables.forEachStoredEntry(table, this.weakStrings, first, end);
+	}
+	private clearWeakQuantum(limit: number): number {
+		this.diagnostics?.phase('weakNanoseconds');
+		let work = 0;
+		this.modeProbeWork = 0;
+		while (work < limit) {
+			let record = this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD);
+			if (record === 0) {
+				if (this.indexWord(GC_WEAK_VISITS) === 0) break;
+				this.visitList(GC_WEAK_VISITS, ValueTag.Table, true, this.startWeakClear, 1);
+				record = this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD);
+				--limit; // Empty weak tables still consume a physical visit.
+				if (record === 0 || work === limit) break;
+			}
+			let cursor = this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_CURSOR);
+			if (cursor === TABLE_MODE_PENDING) {
+				const mode = this.probeTableMode(record, limit - work);
+				limit -= this.modeProbeWork; this.modeProbeWork = 0;
+				if (mode < 0) break;
+				cursor = mode << TRACE_CURSOR_BITS;
+			}
+			const mode = cursor >>> TRACE_CURSOR_BITS;
+			const array = this.tables.arrayCapacity(record), end = this.tables.storedSlotCount(record);
+			let next = cursor & TRACE_CURSOR_MASK;
+			while (next < end && work < limit) {
+				const entryWords = next < array ? 1 : 2;
+				const stop = Math.min(next < array ? array : end, next + Math.max(1, ((limit - work) / (2 * entryWords)) | 0));
+				this.clearWeakRange(record, mode, next, stop);
+				work += (stop - next) * entryWords + this.cpu.stringPool.takeMarkWork();
+				next = stop;
+			}
+			this.memory.writeRamRecordPair(this.controlOffset + GC_TRACE_RECORD, next < end ? record : 0,
+				next < end ? (mode << TRACE_CURSOR_BITS) | next : 0);
+		}
 		return work;
 	}
 
@@ -612,7 +730,7 @@ export class GcHeap {
 					this.tables.freeRecord(address);
 					this.onRecordRetirement?.(address);
 				} else {
-					if (this.minor && kind === ValueTag.Closure) this.cpu.retireStaticClosure(address);
+				if (kind === ValueTag.Closure) this.cpu.retireStaticClosure(address);
 					const bytes = kind === UPVALUE_RECORD_KIND ? UPVALUE_HEAP_BYTES
 						: Closure.closureRecordBytes(Closure.captureCount(this.memory, address),
 							(header & (Closure.CLOSURE_LATCHED_PROTOTYPE << (8 * Closure.CLOSURE_BINDING_FLAGS))) !== 0);
@@ -651,10 +769,10 @@ export class GcHeap {
 	}
 	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number, compactThreads: boolean): number {
 		let work = 0, limit = GC_STEP_WORDS;
-		if (this.remarkStage() !== RemarkStage.None) {
+		if (this.phase() !== GcPhase.Atomic && this.remarkStage() !== RemarkStage.None) {
 			limit -= this.remarkVisits(limit);
 			if (this.remarkStage() !== RemarkStage.Roots) return 0;
-			work += this.remarkRoots(t0, t1, t2, limit);
+			work += this.remarkRoots(t0, t1, t2, limit, false);
 			if (this.phase() === GcPhase.Mark) return work;
 		} else if (this.phase() === GcPhase.Pause || this.phase() === GcPhase.Mark || this.phase() === GcPhase.MarkAgain) {
 			this.diagnostics?.phase('rootsNanoseconds');
@@ -677,18 +795,14 @@ export class GcHeap {
 				case GcPhase.Mark:
 				case GcPhase.MarkAgain:
 					this.diagnostics?.phase(this.phase() === GcPhase.Mark ? 'traceNanoseconds' : 'markAgainNanoseconds');
-					{
-						const record = this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD);
-						if (record !== 0) work += this.resumeTrace(record, limit - work);
-					}
-					while (this.indexWord(GC_TRACE_HEAD) !== 0 && work < limit)
-						work += this.trace(false, limit - work) + this.cpu.stringPool.takeMarkWork();
+					work = this.traceQuantum(false, limit, work);
+					limit -= this.modeProbeWork;
 					if (work < limit) {
 						if (this.phase() === GcPhase.Mark) {
-							this.memory.writeRamRecordWord(this.controlOffset + GC_REMARK_VISIT_STATE, RemarkStage.Threads << GC_GRAY_INDEX_BITS);
+							this.setRemarkStage(RemarkStage.Threads);
 							limit -= this.remarkVisits(limit - work);
 							if (this.remarkStage() !== RemarkStage.Roots) return work;
-							work += this.remarkRoots(t0, t1, t2, limit - work);
+							work += this.remarkRoots(t0, t1, t2, limit - work, false);
 							if (this.phase() === GcPhase.Mark) return work;
 						} else {
 							this.setPhase(GcPhase.Atomic);
@@ -697,7 +811,9 @@ export class GcHeap {
 					}
 					break;
 				case GcPhase.Atomic:
-					return this.atomic(t0, t1, t2);
+					// Explicit and space-exhausted collection stay synchronous.
+					do { work += this.stepFinalMark(t0, t1, t2); } while (this.phase() === GcPhase.Atomic);
+					return work;
 				case GcPhase.Sweep:
 					this.diagnostics?.phase('sweepNanoseconds');
 					work += this.arena.sweepObjects(GC_STEP_WORDS - work, growingThread,

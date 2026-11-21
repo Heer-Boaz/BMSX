@@ -37,6 +37,9 @@ inline constexpr u32 GC_THREAD_TRACE_BILLED = GC_THREAD_TRACE_TOP + sizeof(u32);
 // Independent of the weak-list head: remark revisits without consuming it.
 inline constexpr u32 GC_REMARK_VISIT_INDEX = GC_THREAD_TRACE_BILLED + sizeof(u32);
 inline constexpr u32 GC_REMARK_VISIT_STATE = GC_REMARK_VISIT_INDEX + sizeof(u32);
+inline constexpr u32 GC_MODE_META = GC_REMARK_VISIT_STATE + sizeof(u32);
+inline constexpr u32 GC_MODE_NODE = GC_MODE_META + sizeof(u32);
+inline constexpr u32 GC_MODE_REMAINING = GC_MODE_NODE + sizeof(u32);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD) % (2 * sizeof(u32)) == 0u);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_REMARK_VISIT_INDEX) % (2 * sizeof(u32)) == 0u);
 inline constexpr u32 GC_VISIT_HEADER_BYTE = 3u;
@@ -69,6 +72,8 @@ public:
 	bool isAlive(u32 address) const { return !unmarked(memory.readRamRecordByte(address + GC_COLOR_OFFSET)); }
 	size_t allocationBytes(u32 threadAddress) const;
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false);
+	// Only the stopped mutator may advance the final pass.
+	size_t stepFinalMark(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
 	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	size_t collectYoung(Value root0, Value root1, Value root2);
 	void markString(StringId id) { m_stringPool.markReachable(id, m_minor); }
@@ -92,7 +97,7 @@ public:
 	void tableEntriesMoved(u32 address);
 	u32 changedHeadOffset() const { return m_controlOffset + GC_CHANGED_HEAD; }
 private:
-	enum class RemarkStage : u32 { None, Threads, Weak, Roots };
+	enum class RemarkStage : u32 { None, Threads, Weak, Roots, Trace, ClearWeak };
 	u8 markColor(u32 address) const { return memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK; }
 	bool unmarked(u8 flags) const { return (flags & (GC_COLOR_MASK | (m_minor ? GC_OLD : 0))) == white(); }
 	void color(u32 address, u8 mark) {
@@ -101,8 +106,10 @@ private:
 	}
 	bool markClosure(u32 address);
 	uint8_t tableWeakMode(const TableRecord& table);
+	u8 weakModeBits(Value value);
+	int probeTableMode(const TableRecord&, size_t limit);
 	bool markTable(u32 address);
-	size_t traceTable(u32 address, size_t limit);
+	size_t traceTable(u32 address, size_t limit, bool resumingMode = false);
 	void traceTableEdges(const TableRecord&, u8 mode, u32 first = 0u, u32 end = UINT32_MAX);
 	size_t traceTableEntries(const TableRecord&, u8 mode, u32 next, size_t work, size_t limit);
 	bool valueIsAlive(Value value) const;
@@ -114,18 +121,22 @@ private:
 	size_t visitList(u32 list, Visitor&& visitor, size_t allowance = SIZE_MAX, RemarkStage stage = RemarkStage::None);
 	void requeueVisited(u32 address);
 	size_t markCell(u32 cell);
-	size_t trace(bool atomic, size_t limit = 0u);
+	size_t trace(bool atomic, size_t limit = SIZE_MAX);
 	size_t traceRootBanks(size_t limit);
 	size_t traceCaptures(u32 closure, u32 next, u32 count, size_t work, size_t limit);
 	size_t traceThread(u32 thread, bool atomic, size_t limit, u32 cursor, u32 open, u32 captureTop, u32 billed);
-	size_t resumeTrace(u32 record, size_t limit);
+	size_t resumeTrace(u32 record, bool atomic, size_t limit);
+	size_t traceQuantum(bool atomic, size_t& limit, size_t work);
 	size_t remarkVisits(size_t allowance);
-	size_t remarkRoots(Value root0, Value root1, Value root2, size_t allowance);
+	size_t remarkRoots(Value root0, Value root1, Value root2, size_t allowance, bool final);
 	RemarkStage remarkStage() const {
 		return static_cast<RemarkStage>(memory.readRamRecordWord(m_controlOffset + GC_REMARK_VISIT_STATE) >> GC_GRAY_INDEX_BITS);
 	}
-	size_t remark(Value root0, Value root1, Value root2);
-	size_t atomic(Value root0, Value root1, Value root2);
+	void setRemarkStage(RemarkStage stage) {
+		memory.writeRamRecordWord(m_controlOffset + GC_REMARK_VISIT_STATE, static_cast<u32>(stage) << GC_GRAY_INDEX_BITS);
+	}
+	void clearWeakRange(TableRecord& table, u8 mode, u32 first, u32 end);
+	size_t clearWeakQuantum(size_t limit);
 	size_t resolveWeak();
 	static i32 seedRemembered(void*, u32 address);
 	static i32 seedThread(void*, u32 address);
@@ -137,6 +148,7 @@ private:
 	StringPool& m_stringPool;
 	const u32 m_controlOffset;
 	bool m_minor = false; // A small collection is synchronous; only RAM state crosses a grant.
+	size_t m_modeProbeWork = 0; // Current quantum only; the actual probe frontier lives in RAM.
 
 };
 

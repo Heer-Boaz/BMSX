@@ -8,7 +8,7 @@ namespace {
 
 // One current internal layout, deliberately without a legacy reader.
 // TODO: MUST BE FIXED TO `BMSX` INSTEAD OF CHANGING THE SIGNATURE AFTER EACH VERSION! WE ARE NOT DOING VERSIONING!
-constexpr u32 kSaveStateSignature = 0x58534d42u; // BMSX: logical language-allocation occupancy
+constexpr u32 kSaveStateSignature = 0x59534d42u; // BMSY: resumable final heap mark and weak cleanup
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);

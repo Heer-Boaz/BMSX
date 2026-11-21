@@ -145,15 +145,14 @@ export class ThreadRecords {
 		this.readLayout(address, layout);
 		return THREAD_HEAP_BYTES + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations);
 	}
-	public clearUnused(layout: ThreadLayout, liveTop: number): void {
-		const count = layout.capacity - liveTop;
-		if (count <= 0) return;
+	public clearStackRange(layout: ThreadLayout, first: number, end: number): void {
+		const count = end - first;
 		if (layout.capacity > (MAIN_RAM_SIZE - layout.offset) / THREAD_STACK_SLOT_BYTES) {
 			this.values.bindRam(this.memory, layout.offset, layout.capacity, false, true);
-			this.values.clear(count, liveTop);
+			this.values.clear(count, first);
 			return;
 		}
-		const word = layout.offset + liveTop * 4, tag = layout.offset + layout.capacity * 4 + liveTop;
+		const word = layout.offset + first * 4, tag = layout.offset + layout.capacity * 4 + first;
 		this.memory.ramWords.fill(0, word >>> 2, (word + count * 4) >>> 2);
 		this.memory.ramData().fill(0, tag, tag + count);
 		this.memory.invalidateRamWrite(word, count * 4);

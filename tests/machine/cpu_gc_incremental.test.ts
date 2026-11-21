@@ -10,7 +10,7 @@ import { HEAP_GC_CONTROL_OFFSET, heapAllocationBytes } from '../../machine/ts/ma
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
-import { GcPhase, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
+import { GcPhase, GC_MODE_META, GC_MODE_NODE, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
@@ -338,6 +338,88 @@ test('small collection skips scalar-only table writes, follows live keys and cle
 	assert.equal(tables.get(weak, weakKey), valueNil());
 	assert.equal(stringPool.find('young-key:new-name'), newField);
 	assert.equal(tables.getStringKey(strong, newField), valueInteger(2));
+});
+
+test('remark resumes a real metatable collision chain and withdraws its cursor on a shape change', () => {
+	const cpu = machine(), { gc, memory } = cpu;
+	const capacity = 2 * GC_STEP_WORDS, mode = cpu.stringPool.intern('__mode');
+	const home = hashCanonicalTableKey(valueString(mode)) & (capacity - 1);
+	const target = cpu.createTable(1, 0), meta = cpu.createTable(0, capacity);
+	const frame = cpu.rootThread.currentFrame!;
+	frame.registers.setTable(0, target); frame.top = 1;
+	gc.tables.setMetatableAddress(target, meta);
+	for (let key = -1, count = 0; count < GC_STEP_WORDS + 64; --key) {
+		if ((hashCanonicalTableKey(valueInteger(key)) & (capacity - 1)) !== home) continue;
+		gc.tables.setInteger(meta, key, valueInteger(1));
+		if (count++ === 0) gc.tables.setStringKey(meta, mode, valueString(cpu.stringPool.intern('v')));
+	}
+	const watched = cpu.createTable();
+	gc.tables.setInteger(target, 1, valueTable(watched));
+	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	for (let step = 0; memory.readRamRecordWord(control + GC_MODE_META) === 0 && step < 20; ++step) gc.step();
+	assert.equal(memory.readRamRecordWord(control + GC_MODE_META), meta);
+	assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), target);
+	assert.notEqual(memory.readRamRecordWord(control + GC_MODE_NODE), home);
+	assert.equal(gc.isAlive(watched), false);
+	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	const finish = (move: boolean) => {
+		if (move) {
+			gc.tables.clear(meta);
+			assert.equal(memory.readRamRecordWord(control + GC_MODE_META), 0);
+			assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), 0);
+		}
+		for (let step = 0; gc.active() && step < 50; ++step) gc.step();
+		assert.equal(gc.phase(), GcPhase.Pause);
+		assert.equal(gc.tableRecordAddress(watched), move ? watched : 0);
+		return memory.captureSaveState();
+	};
+	const finishWeak = finish(false);
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	assert.deepEqual(finish(false), finishWeak, 'rewind resumes the chain rather than replacing a pending weak decision');
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	finish(true);
+});
+
+test('final mark rewinds a partly cleared weak Table without retiring unvisited entries', () => {
+	const cpu = machine(), { gc, memory } = cpu;
+	const slots = 3 * GC_STEP_WORDS;
+	const weak = cpu.createTable(slots, 0), strong = cpu.createTable(1, 0);
+	const frame = cpu.rootThread.currentFrame!;
+	frame.registers.setTable(0, weak); frame.registers.setTable(1, strong); frame.top = 2;
+	const weakMeta = cpu.createTable(0, 1), strongMeta = cpu.createTable(0, 1);
+	const mode = cpu.stringPool.intern('__mode');
+	gc.tables.setStringKey(weakMeta, mode, valueString(cpu.stringPool.intern('v')));
+	gc.tables.setStringKey(strongMeta, mode, valueString(cpu.stringPool.intern('very')));
+	gc.tables.setMetatableAddress(weak, weakMeta);
+	gc.tables.setMetatableAddress(strong, strongMeta);
+	const onlyStrong = cpu.createTable(), first = cpu.createTable(), last = cpu.createTable();
+	gc.tables.setInteger(strong, 1, valueTable(onlyStrong));
+	gc.tables.setInteger(weak, 1, valueTable(first));
+	gc.tables.setInteger(weak, slots, valueTable(last));
+	for (let step = 0; gc.phase() !== GcPhase.Atomic && step < 30; ++step) gc.step();
+	assert.equal(gc.phase(), GcPhase.Atomic);
+	for (let step = 0; gc.tables.getInteger(weak, 1) !== valueNil() && step < 30; ++step) gc.stepFinalMark();
+	assert.equal(gc.phase(), GcPhase.Atomic, 'entry cleanup has not crossed the final mark boundary');
+	assert.equal(gc.tables.getInteger(weak, 1), valueNil());
+	assert.equal(gc.tables.getInteger(weak, slots), valueTable(last));
+	assert.equal(gc.tableRecordAddress(first), first, 'object reclamation waits for all weak entries');
+	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), weak);
+	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	const finish = () => {
+		for (let step = 0; gc.phase() === GcPhase.Atomic && step < 30; ++step) gc.stepFinalMark();
+		assert.equal(gc.phase(), GcPhase.Sweep);
+		assert.equal(gc.tables.getInteger(weak, slots), valueNil());
+		for (let step = 0; gc.active() && step < 40; ++step) gc.step();
+		assert.equal(gc.phase(), GcPhase.Pause);
+		assert.equal(gc.tableRecordAddress(first), 0);
+		assert.equal(gc.tableRecordAddress(last), 0);
+		assert.equal(gc.tableRecordAddress(onlyStrong), onlyStrong, 'a String merely containing v selects strong entries');
+		return memory.captureSaveState();
+	};
+	const expected = finish();
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	assert.deepEqual(finish(), expected);
 });
 
 test('weak-table remark resumes without consuming list order or losing writes to Changed', () => {

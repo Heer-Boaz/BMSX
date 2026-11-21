@@ -21,6 +21,7 @@ type TableLookupSlot = { value: Value; slot: number };
 export type TableLookupResult = TableLookupSlot & { extraVisits: number; status: TableLookupStatus; receiver: number };
 type StoredEntryVisitor = (key: Value, value: Value) => void;
 type StoredValuePredicate = (value: Value) => boolean;
+export interface TableStringProbe { node: number; remaining: number; value: Value }
 
 export const enum TableHeader {
 	Kind = 0, Gray = 4, Metatable = 8, Storage = 12, Array = 16, Hash = 20, Length = 24, Free = 28,
@@ -221,6 +222,30 @@ export class TableRecords {
 			}
 		}
 		target.setNil(destination);
+	}
+	public beginStringProbe(record: number, key: StringId, probe: TableStringProbe): void {
+		const count = this.hashSize(record);
+		probe.node = count === 0 ? -1 : hashCanonicalTableKey(valueString(key)) & (count - 1);
+		probe.remaining = count;
+		probe.value = valueNil();
+	}
+	public advanceStringProbe(record: number, key: StringId, probe: TableStringProbe, limit: number): number {
+		const hash = this.hashSize(record), array = this.arrayCapacity(record), words = this.storageAddress(record);
+		const memory = this.heap.memory, tags = words + (array + 3 * hash) * 4, links = tags - hash * 4;
+		const available = Math.min(probe.remaining, limit);
+		let inspected = 0;
+		while (probe.node >= 0 && inspected < available) {
+			const slot = array + probe.node;
+			++inspected;
+			if (memory.readRamRecordByte(tags + slot) === ValueTag.String && memory.readRamRecordWord(words + slot * 4) === key) {
+				probe.value = valueFromTag(memory.readRamRecordByte(tags + slot + hash), memory.readRamRecordWord(words + (slot + hash) * 4));
+				probe.node = -1;
+				break;
+			}
+			probe.node = memory.readRamRecordWord(links + probe.node * 4) | 0;
+		}
+		probe.remaining -= inspected;
+		return inspected;
 	}
 	private predictedStringValueSlot(key: StringId, keySlot: number, hash: number, words: number, tags: number): number {
 		const memory = this.heap.memory;
@@ -640,13 +665,15 @@ export class TableRecords {
 				valueFromTag(valueTag, memory.readRamRecordWord(words + value * 4)));
 		}
 	}
-	public clearWeakEntries(record: number, weakKeys: boolean, weakValues: boolean, isAlive: StoredValuePredicate): void {
-		if (weakValues) for (let slot = 0; slot < this.arrayCapacity(record); ++slot)
+	public clearWeakEntries(record: number, weakKeys: boolean, weakValues: boolean, isAlive: StoredValuePredicate,
+		first = 0, end = this.storedSlotCount(record)): void {
+		const array = this.arrayCapacity(record), hash = this.hashSize(record);
+		if (weakValues) for (let slot = first; slot < Math.min(array, end); ++slot)
 			if (this.tagAt(record, slot) !== ValueTag.Nil && !isAlive(this.valueAt(record, slot))) this.setEncoded(record, slot, ValueTag.Nil, 0);
-		for (let index = 0; index < this.hashSize(record); ++index) {
-			const key = this.hashKeySlot(record, index), value = this.hashValueSlot(record, index);
+		for (let key = Math.max(first, array); key < Math.min(array + hash, end); ++key) {
+			const value = key + hash;
 			if (this.tagAt(record, key) === ValueTag.Nil || this.tagAt(record, value) === ValueTag.Nil) continue;
-			if ((weakKeys && !isAlive(this.valueAt(record, key))) || (weakValues && !isAlive(this.valueAt(record, value)))) this.markHashNodeDead(record, index);
+			if ((weakKeys && !isAlive(this.valueAt(record, key))) || (weakValues && !isAlive(this.valueAt(record, value)))) this.markHashNodeDead(record, key - array);
 		}
 	}
 	public next(record: number, rawAfter: Value, target: ValueWriteTarget, destination: number): void {

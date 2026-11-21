@@ -487,6 +487,29 @@ Value TableRecord::getStringKey(StringId key) const {
 	return nodeIndex < 0 ? valueNil() : body.slots.get(body.array + count + static_cast<u32>(nodeIndex));
 }
 
+TableStringProbe TableRecord::beginStringProbe(StringId key) const {
+	const u32 count = hashSlots();
+	return {count == 0u ? -1 : static_cast<i32>(hashCanonicalTableKey(valueString(key)) & (count - 1u)), count};
+}
+
+size_t TableRecord::advanceStringProbe(StringId key, TableStringProbe& probe, size_t limit) const {
+	const auto body = hashBody(hashSlots(), arrayCapacity());
+	const auto available = std::min<size_t>(probe.remaining, limit);
+	size_t inspected = 0;
+	while (probe.node >= 0 && inspected < available) {
+		const u32 slot = static_cast<u32>(probe.node);
+		++inspected;
+		if (body.matchesString(slot, key)) {
+			probe.value = body.slots.get(body.array + body.count + slot);
+			probe.node = -1;
+			break;
+		}
+		probe.node = body.next(slot);
+	}
+	probe.remaining -= static_cast<u32>(inspected);
+	return inspected;
+}
+
 Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot) const {
 	const u32 count = hashSlots();
 	if (count != 0u) {

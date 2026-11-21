@@ -5,6 +5,7 @@
 #include "spec/blua32/image_format.h"
 #include <algorithm>
 #include <limits>
+#include <utility>
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 #include <chrono>
 #endif
@@ -66,7 +67,8 @@ constexpr u32 threadSlotClass = heapClassIndex(THREAD_HEAP_BYTES);
 // one Value word plus a tag; both cursors fit one more bit than a gray index.
 constexpr u32 TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1u;
 constexpr u32 TRACE_CURSOR_MASK = (1u << TRACE_CURSOR_BITS) - 1u;
-enum class ThreadTraceStage : u32 { Frames, Protected, Values, Padding };
+constexpr u32 TABLE_MODE_PENDING = 4u << TRACE_CURSOR_BITS;
+enum class ThreadTraceStage : u32 { Frames, Protected, Values, Clear, Padding };
 constexpr u32 THREAD_TRACE_OPEN_HEAD = 1u; // An open cell's address is aligned.
 }
 bool GcHeap::markValue(Value v) {
@@ -97,11 +99,14 @@ void GcHeap::enqueue(u32 address, u32 link, u32 queue) {
 }
 
 void GcHeap::tableEntriesMoved(u32 address) {
-	if (memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD) != address) return;
+	const u32 table = memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD);
+	if (table != address && memory.readRamRecordWord(m_controlOffset + GC_MODE_META) != address) return;
 	// An unvisited entry may now be behind the cursor. Revisit the record in
 	// the next pass rather than retrying it indefinitely under the mutator.
 	memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, 0u, 0u);
-	if (markColor(address) == 3u) enqueue(address, GC_RECORD_LINK, GC_CHANGED_HEAD);
+	memory.writeRamRecordPair(m_controlOffset + GC_MODE_META, 0u, 0u);
+	memory.writeRamRecordWord(m_controlOffset + GC_MODE_REMAINING, 0u);
+	if (markColor(table) == 3u) enqueue(table, GC_RECORD_LINK, GC_CHANGED_HEAD);
 }
 
 // The regular gray index occupies the low bits of +4. Tables and Threads
@@ -248,25 +253,47 @@ uint8_t GcHeap::tableWeakMode(const TableRecord& table) {
 	}
 	const u32 address = tableRecordAddress(meta);
 	if (address == 0u) return 0;
-	const Value modeValue = TableRecord(*this, address).getStringKey(m_modeKey);
+	return weakModeBits(TableRecord(*this, address).getStringKey(m_modeKey));
+}
+
+u8 GcHeap::weakModeBits(Value modeValue) {
 	if (!valueIsString(modeValue)) {
 		return 0;
 	}
 	const StringId mode = asStringId(modeValue);
 	const int length = m_stringPool.byteLength(mode);
-	uint8_t weakMode = 0;
-	for (int i = 0; i < length; ++i) {
-		const auto ch = m_stringPool.byteAt(mode, i);
-		switch (ch) {
-			case 'k':
-				weakMode |= kTableWeakKeys;
-				break;
-			case 'v':
-				weakMode |= kTableWeakValues;
-				break;
+	if (length != 1 && length != 2) return 0u;
+	const u32 first = m_stringPool.byteAt(mode, 0u);
+	if (length == 1) return first == 'k' ? kTableWeakKeys : first == 'v' ? kTableWeakValues : 0u;
+	const u32 second = m_stringPool.byteAt(mode, 1u);
+	return (first == 'k' && second == 'v') || (first == 'v' && second == 'k') ? kTableWeakKeys | kTableWeakValues : 0u;
+}
+
+int GcHeap::probeTableMode(const TableRecord& table, size_t limit) {
+	const u32 address = tableRecordAddress(table.metatableAddress());
+	const u32 current = memory.readRamRecordWord(m_controlOffset + GC_MODE_META);
+	if (address != 0u) {
+		const TableRecord meta(*this, address);
+		auto probe = address == current
+			? TableStringProbe{static_cast<i32>(memory.readRamRecordWord(m_controlOffset + GC_MODE_NODE)),
+				memory.readRamRecordWord(m_controlOffset + GC_MODE_REMAINING)}
+			: meta.beginStringProbe(m_modeKey);
+		m_modeProbeWork += meta.advanceStringProbe(m_modeKey, probe, limit);
+		if (probe.node >= 0 && probe.remaining != 0u) {
+			memory.writeRamRecordPair(m_controlOffset + GC_MODE_META, address, static_cast<u32>(probe.node));
+			memory.writeRamRecordWord(m_controlOffset + GC_MODE_REMAINING, probe.remaining);
+			return -1;
 		}
+		if (current == 0u) return weakModeBits(probe.value);
+		memory.writeRamRecordPair(m_controlOffset + GC_MODE_META, 0u, 0u);
+		memory.writeRamRecordWord(m_controlOffset + GC_MODE_REMAINING, 0u);
+		return weakModeBits(probe.value);
 	}
-	return weakMode;
+	if (current != 0u) {
+		memory.writeRamRecordPair(m_controlOffset + GC_MODE_META, 0u, 0u);
+		memory.writeRamRecordWord(m_controlOffset + GC_MODE_REMAINING, 0u);
+	}
+	return 0;
 }
 
 bool GcHeap::valueIsAlive(Value value) const {
@@ -320,7 +347,7 @@ size_t GcHeap::trace(bool atomic, size_t limit) {
 	if (closure) {
 		const u32 count = ClosureRecord::captureCount(memory, address);
 		// A capture word can discover a four-word cell and one String.
-		if (!atomic && 3u + 6u * count > limit) return traceCaptures(address, 0u, count, 3u, limit);
+		if (3u + 6u * count > limit) return traceCaptures(address, 0u, count, 3u, limit);
 		size_t work = 3u + count;
 		for (u32 index = 0; index < count; ++index)
 			work += markCell(cellRecordAddress(ClosureRecord::captureAddress(memory, address, index)));
@@ -332,7 +359,6 @@ size_t GcHeap::trace(bool atomic, size_t limit) {
 size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u32 open, u32 captureTop, u32 billed) {
 	const bool resumed = billed != 0u;
 	size_t work = 0;
-	if (atomic) limit = std::numeric_limits<size_t>::max();
 	if (!resumed) {
 		if (!atomic) appendVisit(GC_THREAD_VISITS, address);
 		markThread(ThreadRecord::read(memory, address, ThreadField::Resumer));
@@ -405,10 +431,20 @@ size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u
 		}
 		if (next >= liveTop) {
 			// Only the final pass has the stable complete open-capture frontier.
-			if (atomic && liveTop < layout.valueCapacity) slots.clear(liveTop, layout.valueCapacity - liveTop);
-			stage = ThreadTraceStage::Padding;
-			next = 0u;
+			stage = atomic ? ThreadTraceStage::Clear : ThreadTraceStage::Padding;
+			next = liveTop;
 		}
+	}
+	if (stage == ThreadTraceStage::Clear) {
+		while (next < layout.valueCapacity && work < limit) {
+			const u32 stop = next + static_cast<u32>(std::min<size_t>(layout.valueCapacity - next,
+				std::max(size_t{1}, (limit - work) / 2u)));
+			layout.slots(memory).clear(next, stop - next);
+			chargeStorage(ceilDiv4(static_cast<int>(stop * THREAD_STACK_SLOT_BYTES))
+				- ceilDiv4(static_cast<int>(next * THREAD_STACK_SLOT_BYTES)));
+			next = stop;
+		}
+		if (next >= layout.valueCapacity) stage = ThreadTraceStage::Padding;
 	}
 	if (stage == ThreadTraceStage::Padding) {
 		const u32 total = ceilDiv4(static_cast<int>(layout.allocationBytes()));
@@ -440,16 +476,17 @@ size_t GcHeap::traceCaptures(u32 closure, u32 next, u32 count, size_t work, size
 	return work;
 }
 
-size_t GcHeap::resumeTrace(u32 record, size_t limit) {
+size_t GcHeap::resumeTrace(u32 record, bool atomic, size_t limit) {
 	const u32 cursor = memory.readRamRecordWord(m_controlOffset + GC_TRACE_CURSOR);
 	switch (memory.readRamRecordByte(record)) {
 	case tableRecordKind: {
+		if (cursor == TABLE_MODE_PENDING) return traceTable(record, limit, true);
 		const TableRecord table(*this, record);
 		return traceTableEntries(table, static_cast<u8>(cursor >> TRACE_CURSOR_BITS),
 			cursor & TRACE_CURSOR_MASK, 0u, limit);
 	}
 	case THREAD_RECORD_KIND:
-		return traceThread(record, false, limit, cursor,
+		return traceThread(record, atomic, limit, cursor,
 			memory.readRamRecordWord(m_controlOffset + GC_THREAD_TRACE_OPEN),
 			memory.readRamRecordWord(m_controlOffset + GC_THREAD_TRACE_TOP),
 			memory.readRamRecordWord(m_controlOffset + GC_THREAD_TRACE_BILLED));
@@ -458,15 +495,41 @@ size_t GcHeap::resumeTrace(u32 record, size_t limit) {
 	}
 }
 
-size_t GcHeap::traceTable(u32 address, size_t limit) {
+size_t GcHeap::traceQuantum(bool atomic, size_t& limit, size_t work) {
+	m_modeProbeWork = 0;
+	if (const u32 record = memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD)) {
+		work += resumeTrace(record, atomic, limit - work);
+		limit -= std::exchange(m_modeProbeWork, 0u);
+		if (memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD) != 0u) return work;
+	}
+	while (indexWord(GC_TRACE_HEAD) != 0u && work < limit) {
+		work += trace(atomic, limit - work);
+		work += m_stringPool.takeMarkWork();
+		limit -= std::exchange(m_modeProbeWork, 0u);
+	}
+	return work;
+}
+
+size_t GcHeap::traceTable(u32 address, size_t limit, bool resumingMode) {
 	const TableRecord table(*this, address);
 	const u32 meta = table.metatableAddress();
-	if (meta != 0u) markTable(meta);
-	const u8 weakMode = tableWeakMode(table);
+	if (meta != 0u && !resumingMode) markTable(meta);
+	const size_t words = resumingMode ? 0u : TableRecord::HEADER_BYTES / sizeof(u32);
+	int mode = 0;
+	if (m_minor) mode = tableWeakMode(table);
+	else if (meta != 0u || resumingMode) {
+		const auto before = m_modeProbeWork;
+		mode = probeTableMode(table, words < limit ? limit - words : 0u);
+		limit -= m_modeProbeWork - before;
+	}
+	if (mode < 0) {
+		memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, address, TABLE_MODE_PENDING);
+		return words;
+	}
+	const auto weakMode = static_cast<u8>(mode);
 	if (weakMode != 0u) appendVisit(GC_WEAK_VISITS, address);
-	const size_t words = TableRecord::HEADER_BYTES / sizeof(u32);
 	const size_t slots = table.scanSlots();
-	if (limit != 0u && words + slots * 2 > limit) return traceTableEntries(table, weakMode, 0u, words, limit);
+	if (resumingMode || words + slots * 2 > limit) return traceTableEntries(table, weakMode, 0u, words, limit);
 	traceTableEdges(table, weakMode);
 	return words + slots;
 }
@@ -548,15 +611,14 @@ size_t GcHeap::remarkVisits(size_t allowance) {
 		// Transfer only after all visits. During the visit slices mutator
 		// barriers still publish to Changed, and no allocation can sweep.
 		memory.writeRamRecordPair(m_controlOffset + GC_TRACE_HEAD, indexWord(GC_CHANGED_HEAD), 0u);
-		memory.writeRamRecordWord(m_controlOffset + GC_REMARK_VISIT_STATE,
-			static_cast<u32>(RemarkStage::Roots) << GC_GRAY_INDEX_BITS);
+		setRemarkStage(RemarkStage::Roots);
 		m_cpu.markRootHead(*this);
 		memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, static_cast<u32>(GcRootBank::SystemGlobals) << TRACE_CURSOR_BITS);
 	}
 	return visits;
 }
 
-size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t allowance) {
+size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t allowance, bool final) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	GcPhaseMeasurement measurement(m_cpu.m_diagnosticGcProfile.rootsNanoseconds);
 #endif
@@ -565,40 +627,95 @@ size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t allowan
 	size_t work = m_stringPool.takeMarkWork();
 	if (work < allowance) work += traceRootBanks(allowance - work);
 	if (memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR) == 0u) {
-		memory.writeRamRecordWord(m_controlOffset + GC_REMARK_VISIT_STATE, 0u);
-		setPhase(GcPhase::MarkAgain);
+		setRemarkStage(final ? RemarkStage::Trace : RemarkStage::None);
+		if (!final) setPhase(GcPhase::MarkAgain);
 	}
 	return work;
 }
 
-size_t GcHeap::remark(Value root0, Value root1, Value root2) {
+size_t GcHeap::stepFinalMark(Value root0, Value root1, Value root2) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
-	GcPhaseMeasurement measurement(profile.rootsNanoseconds);
+	GcPhaseMeasurement totalAtomic(profile.atomicNanoseconds);
 #endif
-	const auto requeue = [this](u32 address) { requeueVisited(address); return 0u; };
-	visitList<THREAD_RECORD_KIND, true>(GC_THREAD_VISITS, requeue);
-	// Also observe mode changes made through a shared metatable.
-	visitList<tableRecordKind, false>(GC_WEAK_VISITS, requeue);
-	// The current trace queue is empty. Further writes go to grayAgain, so
-	// mutation cannot continually put the same object in this pass's queue.
-	memory.writeRamRecordPair(m_controlOffset + GC_TRACE_HEAD, indexWord(GC_CHANGED_HEAD), 0u);
-	m_cpu.markRoots(*this);
-	m_stringPool.markLocalRoots();
-	markValue(root0); markValue(root1); markValue(root2);
-	return m_cpu.collectionRootWordCount() + m_stringPool.takeMarkWork();
-}
-
-size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
+	size_t limit = GC_STEP_WORDS, work = 0;
+	if (remarkStage() == RemarkStage::None) setRemarkStage(RemarkStage::Threads);
+	if (remarkStage() <= RemarkStage::Weak) {
+		limit -= remarkVisits(limit);
+		if (remarkStage() != RemarkStage::Roots) return 0u;
+	}
+	if (remarkStage() == RemarkStage::Roots) {
+		work += remarkRoots(root0, root1, root2, limit, true);
+		if (remarkStage() == RemarkStage::Roots || work >= limit) return work;
+	}
+	if (remarkStage() == RemarkStage::Trace) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	GcPhaseMeasurement totalAtomic(m_cpu.m_diagnosticGcProfile.atomicNanoseconds);
+		GcPhaseMeasurement traceTime(profile.traceNanoseconds);
 #endif
-	size_t work = remark(root0, root1, root2);
-	work += resolveWeak();
-	m_cpu.pruneStaticClosures();
+		work = traceQuantum(true, limit, work);
+		if (memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD) != 0u || indexWord(GC_TRACE_HEAD) != 0u)
+			return work;
+		setRemarkStage(RemarkStage::ClearWeak);
+		if (work >= limit) return work;
+	}
+	work += clearWeakQuantum(limit - work);
+	if (memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD) != 0u || indexWord(GC_WEAK_VISITS) != 0u) return work;
 	memory.writeRamRecordByte(m_controlOffset + 1u, white() ^ 1u);
 	arena.beginObjectSweep();
+	setRemarkStage(RemarkStage::None);
 	setPhase(GcPhase::Sweep);
+	return work;
+}
+
+void GcHeap::clearWeakRange(TableRecord& table, u8 mode, u32 first, u32 end) {
+	table.clearWeakEntries((mode & kTableWeakKeys) != 0u, (mode & kTableWeakValues) != 0u,
+		[this](Value value) { return valueIsAlive(value); }, first, end);
+	table.forEachEntry([this](Value key, Value value) {
+		if (valueIsString(key)) markString(asStringId(key));
+		if (valueIsString(value)) markString(asStringId(value));
+	}, first, end);
+}
+
+size_t GcHeap::clearWeakQuantum(size_t limit) {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	GcPhaseMeasurement weakTime(m_cpu.m_diagnosticGcProfile.weakNanoseconds);
+#endif
+	size_t work = 0;
+	m_modeProbeWork = 0;
+	while (work < limit) {
+		u32 record = memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD);
+		if (record == 0u) {
+			if (indexWord(GC_WEAK_VISITS) == 0u) break;
+			visitList<tableRecordKind, true>(GC_WEAK_VISITS, [&](u32 address) {
+				record = address;
+				memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, address, TABLE_MODE_PENDING);
+				return 0u;
+			}, 1u);
+			--limit; // Even an empty weak table consumes one physical visit.
+			if (record == 0u || work == limit) break;
+		}
+		TableRecord table(*this, record);
+		u32 cursor = memory.readRamRecordWord(m_controlOffset + GC_TRACE_CURSOR);
+		if (cursor == TABLE_MODE_PENDING) {
+			const int mode = probeTableMode(table, limit - work);
+			limit -= std::exchange(m_modeProbeWork, 0u);
+			if (mode < 0) break;
+			cursor = static_cast<u32>(mode) << TRACE_CURSOR_BITS;
+		}
+		const u8 mode = static_cast<u8>(cursor >> TRACE_CURSOR_BITS);
+		const u32 array = table.arrayCapacity(), end = static_cast<u32>(table.storedSlotCount());
+		u32 next = cursor & TRACE_CURSOR_MASK;
+		while (next < end && work < limit) {
+			const u32 entryWords = next < array ? 1u : 2u;
+			const u32 stop = std::min(next < array ? array : end,
+				next + static_cast<u32>(std::max(size_t{1}, (limit - work) / (2u * entryWords))));
+			clearWeakRange(table, mode, next, stop);
+			work += (stop - next) * entryWords + m_stringPool.takeMarkWork();
+			next = stop;
+		}
+		memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, next < end ? record : 0u,
+			next < end ? (u32{mode} << TRACE_CURSOR_BITS) | next : 0u);
+	}
 	return work;
 }
 
@@ -620,12 +737,7 @@ size_t GcHeap::resolveWeak() {
 		TableRecord table(*this, address);
 		const auto mode = tableWeakMode(table);
 		const auto slots = table.scanSlots();
-		table.clearWeakEntries((mode & 1) != 0, (mode & 2) != 0,
-			[this](Value value) { return valueIsAlive(value); });
-		table.forEachEntry([this](Value key, Value value) {
-			if (valueIsString(key)) markString(asStringId(key));
-			if (valueIsString(value)) markString(asStringId(value));
-		});
+		clearWeakRange(table, mode, 0u, static_cast<u32>(table.storedSlotCount()));
 		return slots;
 	});
 	return work + m_stringPool.takeMarkWork();
@@ -698,7 +810,7 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 		if (garbage) {
 			if (kind == tableRecordKind) TableRecord(heap, address).freeRecord();
 			else {
-				if (heap.m_minor && kind == static_cast<u8>(ValueTag::Closure)) heap.m_cpu.retireStaticClosure(address);
+				if (kind == static_cast<u8>(ValueTag::Closure)) heap.m_cpu.retireStaticClosure(address);
 				const u32 bytes = kind == UPVALUE_RECORD_KIND ? UPVALUE_HEAP_BYTES
 					: closureRecordBytes(ClosureRecord::captureCount(heap.memory, address),
 						(header & (CLOSURE_LATCHED_PROTOTYPE << (8u * CLOSURE_BINDING_FLAGS))) != 0u);
@@ -736,10 +848,10 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 	GcStepMeasurement total(profile);
 #endif
 	size_t work = 0, limit = GC_STEP_WORDS;
-	if (remarkStage() != RemarkStage::None) {
+	if (phase() != GcPhase::Atomic && remarkStage() != RemarkStage::None) {
 		limit -= remarkVisits(limit);
 		if (remarkStage() != RemarkStage::Roots) return 0u;
-		work += remarkRoots(root0, root1, root2, limit);
+		work += remarkRoots(root0, root1, root2, limit, false);
 		if (phase() == GcPhase::Mark) return work;
 	} else if (phase() == GcPhase::Pause || phase() == GcPhase::Mark || phase() == GcPhase::MarkAgain) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
@@ -771,20 +883,14 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 					GcPhaseMeasurement traceTime(phase() == GcPhase::Mark ? profile.traceNanoseconds : profile.markAgainNanoseconds);
 #endif
-					if (const u32 record = memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD))
-						work += resumeTrace(record, limit - work);
-					while (indexWord(GC_TRACE_HEAD) != 0u && work < limit) {
-						work += trace(false, limit - work);
-						work += m_stringPool.takeMarkWork();
-					}
+					work = traceQuantum(false, limit, work);
 				}
 				if (work < limit) {
 					if (phase() == GcPhase::Mark) {
-						memory.writeRamRecordWord(m_controlOffset + GC_REMARK_VISIT_STATE,
-							static_cast<u32>(RemarkStage::Threads) << GC_GRAY_INDEX_BITS);
+						setRemarkStage(RemarkStage::Threads);
 						limit -= remarkVisits(limit - work);
 						if (remarkStage() != RemarkStage::Roots) return work;
-						work += remarkRoots(root0, root1, root2, limit - work);
+						work += remarkRoots(root0, root1, root2, limit - work, false);
 						if (phase() == GcPhase::Mark) return work;
 					} else {
 						setPhase(GcPhase::Atomic);
@@ -793,7 +899,10 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 				}
 				break;
 			}
-			case GcPhase::Atomic: return atomic(root0, root1, root2);
+			case GcPhase::Atomic:
+				// The explicit and space-exhausted collection paths stay synchronous.
+				do { work += stepFinalMark(root0, root1, root2); } while (phase() == GcPhase::Atomic);
+				return work;
 			case GcPhase::Sweep: {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 				GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);

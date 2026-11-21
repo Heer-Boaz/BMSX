@@ -470,6 +470,7 @@ u32 CPU::staticClosureForRecord(const FunctionPrototype& record) {
 			const u32 header = m_memory.readRamRecordWord(closure);
 			if ((first == 0u || closure < first) && (header & 0xffu) == static_cast<u8>(ValueTag::Closure)
 				&& (header & (CLOSURE_CANONICAL << (8u * CLOSURE_BINDING_FLAGS))) != 0u
+				&& !m_heap.sweepGarbage(closure)
 				&& ClosureRecord::readBinding(m_memory, closure) == record)
 				first = closure;
 		}
@@ -487,14 +488,6 @@ void CPU::retireStaticClosure(u32 address) {
 	if (entry == m_staticClosuresByAddress.end()) return;
 	std::erase(entry->second, address);
 	if (entry->second.empty()) m_staticClosuresByAddress.erase(entry);
-}
-
-void CPU::pruneStaticClosures() {
-	for (auto entry = m_staticClosuresByAddress.begin(); entry != m_staticClosuresByAddress.end();) {
-		std::erase_if(entry->second, [this](u32 closure) { return !m_heap.isAlive(closure); });
-		if (entry->second.empty()) entry = m_staticClosuresByAddress.erase(entry);
-		else ++entry;
-	}
 }
 
 void CPU::clearExecutionEnvironment() {

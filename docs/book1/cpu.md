@@ -1422,10 +1422,9 @@ bookkeeping add no separate charge.
 
 #### Weak references and collection {#sec-cpu-weak-references-and-collection}
 
-The collector reads a Table's metatable member `__mode` directly. A String
-containing lowercase `k` selects weak keys; lowercase `v` selects weak values;
-both select both. Other characters do not select a mode. A missing or non-String
-member selects ordinary strong entries. This lookup does not invoke `__index`.
+The collector reads a Table's metatable member `__mode` directly, without
+invoking `__index`. Exactly `'k'`, `'v'`, `'kv'` and `'vk'` select a weak
+mode. A missing member or any other value selects ordinary strong entries.
 
 A change to `__mode` during collection can take effect in that cycle or the
 next. In particular, an object already retained by a strong entry need not be
@@ -1437,7 +1436,7 @@ capacity become observable as collection advances, not at a fixed display frame.
 | Strong | Entries retain their keys and values. |
 | `k` | The key position does not retain collectable objects. The value position still retains its value, including any objects that value refers to. |
 | `v` | Keys remain strong; values alone do not retain collectable objects. |
-| `kv` | Neither side alone retains collectable objects. |
+| `kv` or `vk` | Neither side alone retains collectable objects. |
 
 A value in a `k` Table can keep its own key alive by referring to it. Use
 `kv` for a cache whose values can refer back to their keys and should not
