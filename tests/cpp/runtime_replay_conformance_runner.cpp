@@ -100,6 +100,10 @@ int main(int argc, char** argv) {
 		for (int frame = 0; frame < 75 && observeReplay(runtime).voices == 0; ++frame) tick();
 		const auto booted = observeReplay(runtime);
 		require(booted.domain == 0 && booted.voices == (1u << 4), "fixture has started the APU voice");
+		auto* pendingLookup = runtime.machine.cpu.rootThread()->currentFrame;
+		while (pendingLookup && !pendingLookup->hasControlFlag(bmsx::FRAME_EXTEND_RESULT_TOP))
+			pendingLookup = pendingLookup->previous;
+		require(pendingLookup != nullptr, "the checkpoint includes a suspended implicit table read");
 		const auto anchor = capture();
 		std::vector<bmsx::u8> envelope(bmsx::libretroStateSize(runtime));
 		require(bmsx::serializeLibretroState(runtime, envelope), "libretro serialize must succeed");

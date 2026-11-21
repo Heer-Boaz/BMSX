@@ -28,10 +28,16 @@ end
 
 display.reset_256x192()
 *pmode = 0
+-- Suspend with an implicit result placement still live in the guest frame.
+local next_frame<const> = setmetatable({}, {
+	__index = function(_, tick)
+		vblank.wait()
+		return tick
+	end,
+})
 local frame = 0
 while true do
 	*background = 0x00400000 | ((*pad_buttons & 0x7f) << 8) | (frame & 0xff)
 	*input_control = 1
-	vblank.wait()
-	frame = frame + 1
+	frame = next_frame[frame + 1]
 end

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
+import { CALL_RESULT_EXTEND_TOP } from '../../../machine/ts/machine/cpu/call_state';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { parseSystemRomImage, parseCartridgePackage } from '../../../machine/ts/rompack/image';
 import { cartridgeMediaFromPackage } from '../../../hosts/common/cartridge_media';
@@ -73,6 +74,10 @@ async function main(): Promise<void> {
 	const booted = observe();
 	assert.equal(booted.domain, 0);
 	assert.equal(booted.voices, 1 << 4, 'fixture has started the APU voice');
+	let pendingLookup = runtime.machine.cpu.rootThread.currentFrame;
+	while (pendingLookup !== null && (pendingLookup.returnCount & CALL_RESULT_EXTEND_TOP) === 0)
+		pendingLookup = pendingLookup.previous;
+	assert.ok(pendingLookup !== null, 'the checkpoint includes a suspended implicit table read');
 	const anchor = capture();
 	const bytes = encodeRuntimeSaveState(anchor);
 	for (let frame = 0; frame < 6; frame += 1) tick();
