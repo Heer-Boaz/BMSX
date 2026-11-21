@@ -37,6 +37,50 @@ function returnImage(op = OpCode.RET, a = 0, b = 2, c = 0) {
 	return linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }], constants: [integerConstant(11), integerConstant(29)] }, RAM_CODE_FIXTURE_BYTES);
 }
 
+test('normal scalar dispatch publishes a warmed arithmetic prefix once before MMIO', () => {
+	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.KSMI, 0, 0, 41);
+	writeInstruction(text, 1, OpCode.K1, 1, 0, 0);
+	writeInstruction(text, 2, OpCode.ADD, 2, 0, 1);
+	writeInstruction(text, 3, OpCode.LOAD_MEM_D, 4, 3, MemoryAccessKind.U32LE);
+	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
+	writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
+	const image = linkRawTestSystemBlua32({ verifiedControlFlow: true, text,
+		functions: [{ firstWord: 0, wordCount: 6, maxStack: 8 }] });
+	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const frame = cpu.rootThread.currentFrame!, entry = image.image.functions[0].codeAddress;
+	const device = { reads: 0 };
+	memory.mapIoRead(IO_IRQ_MASK, device, probe => {
+		++probe.reads;
+		assert.equal(memory.readRamRecordWord(frame.controlOffset + FrameField.Pc), entry + 4 * INSTRUCTION_BYTES);
+		assert.equal(cpu.lastPc, entry + 3 * INSTRUCTION_BYTES);
+		assert.equal(frame.registers.getInteger(2), 42);
+		assert.ok(frame.top >= 3);
+		return 73;
+	});
+	frame.registers.setInteger(3, IO_IRQ_MASK);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	cpu.clearHaltUntilIrq();
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+	frame.top = 0;
+	const pcs: number[] = [], tops: number[] = [];
+	const write = memory.writeRamRecordWord.bind(memory);
+	memory.writeRamRecordWord = (address, word) => {
+		if (address === frame.controlOffset + FrameField.Pc) pcs.push(word);
+		if (address === frame.controlOffset + FrameField.Top) tops.push(word);
+		write(address, word);
+	};
+	const prefix = BASE_CYCLES[OpCode.KSMI] + BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.ADD];
+	assert.equal(cpu.runUntilDepth(0, prefix), RunResult.Yielded);
+	assert.deepEqual(pcs, [entry + 3 * INSTRUCTION_BYTES]);
+	assert.deepEqual(tops, [3]);
+	assert.equal(frame.pc, pcs[0]);
+	assert.equal(device.reads, 1);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(device.reads, 2);
+	assert.equal(frame.registers.getInteger(4), 73);
+});
+
 test('string.byte uses signed word positions in a builtin CALL', () => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);

@@ -29,6 +29,16 @@ export const DECODED_REFRESH_FUSION = 2;
 export const DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3;
 export const COMPILED_VERSION_MAX_PAGES = 4;
 
+// Straight-line scalar operations can keep the next PC local. Operations
+// that may enter guest callbacks, branch, or touch the bus publish first.
+export const SCALAR_LOCAL_PC = new Uint8Array(OPCODE_COUNT);
+for (const opcode of [
+	OpCode.LOADK, OpCode.LOADKR, OpCode.LOADNIL, OpCode.KNIL, OpCode.KFALSE, OpCode.KTRUE,
+	OpCode.K0, OpCode.K1, OpCode.KM1, OpCode.KSMI, OpCode.NOT,
+	OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.FLOORDIV, OpCode.MOD, OpCode.POW, OpCode.UNM,
+	OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.BNOT, OpCode.SHL, OpCode.SHR,
+]) SCALAR_LOCAL_PC[opcode] = 1;
+
 export const enum RomFunctionLane {
 	FirstPc, EndPc, NumParams, MaxStack, Flags, UpvalueTable, UpvalueCount, Count,
 }

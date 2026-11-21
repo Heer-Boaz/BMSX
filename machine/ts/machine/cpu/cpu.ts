@@ -150,6 +150,7 @@ import {
 	readPublishedPrototype,
 	romFunctionVersionLane,
 	RomFunctionLane,
+	SCALAR_LOCAL_PC,
 	readRomFunctionDirectory,
 	fixedRegisterExtent,
 	DecodedDispatchOp,
@@ -268,6 +269,7 @@ export class CPU implements MappedPageInvalidator {
 	private memoryWriteBlockedAddress = 0;
 	private readonly pendingMemory: PendingMemoryOperation = { kind: PendingMemoryKind.None, instructionPc: 0, nextPc: 0, address: 0, accessKind: MemoryAccessKind.Word, registerIndex: 0, wordCount: 0 };
 	private currentInstructionPc = 0;
+	private scalarRegisterTop = -1;
 	private lastExecutionDomainId: ExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	private hardHalted = false;
 	private readonly cop0Words = new Uint32Array(COP0_EXEC + 1);
@@ -1872,74 +1874,95 @@ export class CPU implements MappedPageInvalidator {
 	private runUntilDepthNormal(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const thread = this.activeThread;
-		while (thread.frameDepth > targetDepth) {
-			try {
-				if (this.instructionBudgetRemaining > 0 && !this.memoryWriteBlocked && !this.hardHalted
-					&& !this.yieldRequested && !this.isHaltedUntilIrq()) this.resumePendingMemoryOperation();
-				while (thread.frameDepth > targetDepth) {
-					if (this.hardHalted
-						|| (this.haltedUntilIrqThread === this.activeThread.address && this.haltedUntilIrqFrameDepth === thread.frameDepth)
-						|| this.memoryWriteBlocked) {
-						return RunResult.Halted;
+		let scalarFrame: CallFrame | null = null, nextPc = 0;
+		try {
+			while (thread.frameDepth > targetDepth) {
+				try {
+					if (this.instructionBudgetRemaining > 0 && !this.memoryWriteBlocked && !this.hardHalted
+						&& !this.yieldRequested && !this.isHaltedUntilIrq()) this.resumePendingMemoryOperation();
+					while (scalarFrame !== null || thread.frameDepth > targetDepth) {
+						if (this.hardHalted
+							|| (this.haltedUntilIrqThread === this.activeThread.address && this.haltedUntilIrqFrameDepth === thread.frameDepth)
+							|| this.memoryWriteBlocked) {
+							return RunResult.Halted;
+						}
+						if (this.yieldRequested) {
+							this.yieldRequested = false;
+							return RunResult.Yielded;
+						}
+						if (this.instructionBudgetRemaining <= 0) {
+							return RunResult.Yielded;
+						}
+						const frame = scalarFrame ?? thread.currentFrame!;
+						const image = frame.executionImage;
+						if (image !== null && this.activeExecutionImage !== image) this.latchActiveExecutionImage(image.executionDomainId, image);
+						if (this.nonMaskableInterruptPending
+							|| ((this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
+								&& this.irqController.hasAssertedMaskableInterruptLine())
+						) {
+								if (scalarFrame !== null) { this.publishScalarFrontier(scalarFrame, nextPc); scalarFrame = null; }
+							this.enterPendingInterrupt();
+							continue;
+						}
+						const pc = scalarFrame === null ? frame.pc : nextPc;
+						if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) {
+							this.cop0Words[COP0_BAD_ADDRESS] = pc;
+							this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
+							continue;
+						}
+						if (image === null) {
+							this.cop0Words[COP0_BAD_ADDRESS] = pc;
+							this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
+							continue;
+						}
+						const page = this.decodedPageForFrame(frame, pc);
+						const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
+						const refreshState = page.refreshState[pageOffset];
+						const rewritten = (refreshState & DECODED_REFRESH_DECODE) !== 0
+							&& page.widths[pageOffset] !== 0;
+						if (refreshState !== 0) {
+								if (scalarFrame !== null) { this.publishScalarFrontier(scalarFrame, nextPc); scalarFrame = null; }
+							if (!this.decodeInstruction(frame, page, pageOffset, pc, true)) continue;
+						}
+						const width = page.widths[pageOffset];
+						const dispatchOp = page.dispatchOps[pageOffset];
+						this.currentInstructionPc = pc;
+						nextPc = (pc + width * INSTRUCTION_BYTES) >>> 0;
+						if (SCALAR_LOCAL_PC[dispatchOp] || (dispatchOp === OpCode.MOV && page.c[pageOffset] <= ValueMoveKind.FloatFromBits)) {
+								if (scalarFrame === null) this.scalarRegisterTop = frame.top;
+							scalarFrame = frame;
+						} else {
+								if (scalarFrame === null) frame.pc = nextPc;
+								else this.publishScalarFrontier(frame, nextPc);
+							scalarFrame = null;
+						}
+						this.lastExecutionDomainId = image.executionDomainId;
+						this.lastPc = (pc + ((width - 1) * INSTRUCTION_BYTES)) >>> 0;
+						this.instructionBudgetRemaining -= page.dispatchCycles[pageOffset];
+						this.executeInstruction(
+							frame,
+							page,
+							pageOffset,
+							dispatchOp,
+							targetDepth,
+							rewritten,
+						);
 					}
-					if (this.yieldRequested) {
-						this.yieldRequested = false;
-						return RunResult.Yielded;
-					}
-					if (this.instructionBudgetRemaining <= 0) {
-						return RunResult.Yielded;
-					}
-					const frame = thread.currentFrame!;
-					const image = frame.executionImage;
-					if (image !== null && this.activeExecutionImage !== image) this.latchActiveExecutionImage(image.executionDomainId, image);
-					if (this.nonMaskableInterruptPending
-						|| ((this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
-							&& this.irqController.hasAssertedMaskableInterruptLine())
-					) {
-						this.enterPendingInterrupt();
-						continue;
-					}
-					const pc = frame.pc;
-					if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) {
-						this.cop0Words[COP0_BAD_ADDRESS] = pc;
-						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
-						continue;
-					}
-					if (image === null) {
-						this.cop0Words[COP0_BAD_ADDRESS] = pc;
-						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
-						continue;
-					}
-					const page = this.decodedPageForFrame(frame, pc);
-					const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
-					const refreshState = page.refreshState[pageOffset];
-					const rewritten = (refreshState & DECODED_REFRESH_DECODE) !== 0
-						&& page.widths[pageOffset] !== 0;
-					if (refreshState !== 0
-						&& !this.decodeInstruction(frame, page, pageOffset, pc, true)) {
-						continue;
-					}
-					const width = page.widths[pageOffset];
-					const dispatchOp = page.dispatchOps[pageOffset];
-					this.currentInstructionPc = pc;
-					frame.pc = (pc + (width * INSTRUCTION_BYTES)) >>> 0;
-					this.lastExecutionDomainId = image.executionDomainId;
-					this.lastPc = (pc + ((width - 1) * INSTRUCTION_BYTES)) >>> 0;
-					this.instructionBudgetRemaining -= page.dispatchCycles[pageOffset];
-					this.executeInstruction(
-						frame,
-						page,
-						pageOffset,
-						dispatchOp,
-						targetDepth,
-						rewritten,
-					);
+				} catch (error) {
+					if (scalarFrame !== null) { this.publishScalarFrontier(scalarFrame, nextPc); scalarFrame = null; }
+					this.handleRunLoopError(error);
 				}
-			} catch (error) {
-				this.handleRunLoopError(error);
 			}
+			return RunResult.Halted;
+		} finally {
+			if (scalarFrame !== null) this.publishScalarFrontier(scalarFrame, nextPc);
 		}
-		return RunResult.Halted;
+	}
+
+	private publishScalarFrontier(frame: CallFrame, pc: number): void {
+		frame.pc = pc;
+		if (this.scalarRegisterTop !== frame.top) frame.top = this.scalarRegisterTop;
+		this.scalarRegisterTop = -1;
 	}
 
 	private runUntilDepthInstrumented(targetDepth: number, instructionBudget: number): RunResult {
@@ -2994,7 +3017,7 @@ export class CPU implements MappedPageInvalidator {
 					const b = page.b[pageOffset];
 					registers.clear(b, a);
 					this.charge(b);
-					if (b !== 0) frame.top = Math.max(frame.top, a + b);
+					if (b !== 0) this.bumpRegisterTop(frame, a + b - 1);
 					return;
 				}
 				case OpCode.GETSYS:
@@ -3475,7 +3498,8 @@ export class CPU implements MappedPageInvalidator {
 
 	private bumpRegisterTop(frame: CallFrame, index: number): void {
 		const nextTop = index + 1;
-		if (nextTop > frame.top) {
+		if (this.scalarRegisterTop >= 0) this.scalarRegisterTop = Math.max(this.scalarRegisterTop, nextTop);
+		else if (nextTop > frame.top) {
 			frame.top = nextTop;
 		}
 	}
