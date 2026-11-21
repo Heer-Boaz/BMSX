@@ -27,6 +27,12 @@ extern "C" {
 	(RETRO_ENVIRONMENT_PRIVATE | 0x42b1u)
 #define BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x42c2u)
+#define BMSX_ENVIRONMENT_SET_GUEST_PROGRESS_INTERFACE_V1 \
+	(RETRO_ENVIRONMENT_PRIVATE | 0x42d1u)
+/* The frontend writes a bool. When true, retro_run never starts a second
+ * guest tick after completing the first; a partial tick remains pending. */
+#define BMSX_ENVIRONMENT_GET_SINGLE_GUEST_TICK_V1 \
+	(RETRO_ENVIRONMENT_PRIVATE | 0x42d2u)
 #define BMSX_SUBSYSTEM_DUAL_CARTRIDGE 1u
 
 /* Sent immediately before RETRO_ENVIRONMENT_SHUTDOWN. EXIT_GAME asks the
@@ -157,6 +163,19 @@ typedef int32_t (RETRO_CALLCONV *bmsx_read_execution_domain_id_t)(void);
 typedef struct BmsxExecutionDomainInterfaceV1 {
 	bmsx_read_execution_domain_id_t read_active_domain_id;
 } BmsxExecutionDomainInterfaceV1;
+
+/* Read synchronously with content loaded, outside retro_run. Positions are
+ * machine state; reset or restore can move them backwards. */
+typedef struct BmsxGuestProgressV1 {
+	int64_t tick_sequence;
+	int64_t scheduler_cycles;
+} BmsxGuestProgressV1;
+
+typedef void (RETRO_CALLCONV *bmsx_read_guest_progress_t)(BmsxGuestProgressV1* progress);
+
+typedef struct BmsxGuestProgressInterfaceV1 {
+	bmsx_read_guest_progress_t read_progress;
+} BmsxGuestProgressInterfaceV1;
 
 typedef void (RETRO_CALLCONV *bmsx_set_audio_transport_suspended_t)(bool suspended);
 

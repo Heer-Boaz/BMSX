@@ -29,6 +29,7 @@ LibretroFrameResult runLibretroFrame(
 	VideoPresenter& presenter,
 	f64& totalTime,
 	f64 deltaTime,
+	bool singleGuestTick = false,
 	GlesFrameWorker* worker = nullptr);
 
 } // namespace bmsx

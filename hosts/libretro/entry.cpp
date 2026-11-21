@@ -161,9 +161,15 @@ static double g_frame_time_sec =
 	/ static_cast<double>(bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED);
 static double g_total_time = 0.0;
 static int64_t g_runtime_ufps_scaled = 0;
+static bool g_single_guest_tick = false;
 
 static int32_t RETRO_CALLCONV read_active_execution_domain_id(void) {
 	return g_content->runtime.machine.cpu.activeCartridgeSlot();
+}
+
+static void RETRO_CALLCONV read_guest_progress(BmsxGuestProgressV1* progress) {
+	const auto& runtime = g_content->runtime;
+	*progress = {runtime.frameScheduler.lastTickSequence, runtime.machine.scheduler.currentNowCycles()};
 }
 
 static void RETRO_CALLCONV cancel_keyboard_input(void) {
@@ -1062,6 +1068,8 @@ void retro_set_environment(retro_environment_t cb) {
 	};
 	cb(BMSX_ENVIRONMENT_SET_EXECUTION_DOMAIN_INTERFACE_V1,
 		&executionDomainInterface);
+	BmsxGuestProgressInterfaceV1 guestProgressInterface{read_guest_progress};
+	cb(BMSX_ENVIRONMENT_SET_GUEST_PROGRESS_INTERFACE_V1, &guestProgressInterface);
 	BmsxSupervisorRequestInterfaceV1 supervisorRequestInterface{
 		supervisor_request_line_low,
 	};
@@ -1170,7 +1178,7 @@ static void activate_runtime(bmsx::Runtime& runtime) {
 	const char* threaded = std::getenv("BMSX_GLES2_THREADED");
 	if (g_active_backend == bmsx::BackendType::OpenGLES2 && threaded != nullptr && std::strcmp(threaded, "1") == 0) {
 		g_gles_frame_worker = std::make_unique<bmsx::GlesFrameWorker>(runtime,
-			*g_video_presenter, *g_input, *g_presentation, *g_overlay_menu);
+			*g_video_presenter, *g_input, *g_presentation, *g_overlay_menu, g_single_guest_tick);
 		logging.log(RETRO_LOG_INFO, "[BMSX] Threaded GLES submission enabled\n");
 	}
 #endif
@@ -1293,6 +1301,8 @@ void retro_init(void) {
 	bmsx::resetLibretroNativeGateProfile();
 #endif
 	logging.log(RETRO_LOG_INFO, "[BMSX] retro_init\n");
+	g_single_guest_tick = false;
+	environ_cb(BMSX_ENVIRONMENT_GET_SINGLE_GUEST_TICK_V1, &g_single_guest_tick);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	BmsxNativeCompilationProfileInterface nativeCompilationProfile{read_native_compilation_profile};
 	g_profile_native_compilation = environ_cb(BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE,
@@ -1772,7 +1782,8 @@ void retro_run(void) {
 			*g_presentation,
 			*g_video_presenter,
 			g_total_time,
-			deltaTime
+			deltaTime,
+			g_single_guest_tick
 #if BMSX_ENABLE_GLES2
 			, g_gles_frame_worker.get()
 #endif

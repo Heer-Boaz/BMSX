@@ -21,6 +21,7 @@ LibretroFrameResult runLibretroFrame(
 	VideoPresenter& presenter,
 	f64& totalTime,
 	f64 deltaTime,
+	bool singleGuestTick,
 	[[maybe_unused]] GlesFrameWorker* worker
 ) {
 	presentation.recordHostFrame();
@@ -63,7 +64,9 @@ LibretroFrameResult runLibretroFrame(
 		} else
 #endif
 		{
-			runtime.frameScheduler.run(runtime, hostDeltaMs);
+			bool tickCompleted = false;
+			if (singleGuestTick) tickCompleted = runtime.frameScheduler.runScheduledToNextLogicalTick(runtime, hostDeltaMs);
+			else runtime.frameScheduler.run(runtime, hostDeltaMs);
 			GxGpu& gxGpu = runtime.machine.gxGpu;
 			while (gxGpu.backendServicePending()) {
 				if (gxGpu.backendCommandDrainPending()) {
@@ -72,7 +75,8 @@ LibretroFrameResult runLibretroFrame(
 					presenter.backend().executeGxGpuReadback(gxGpu);
 				}
 				runtime.frameScheduler.synchronizeBackendService(runtime);
-				runtime.frameScheduler.run(runtime, 0.0);
+				if (!singleGuestTick) runtime.frameScheduler.run(runtime, 0.0);
+				else if (!tickCompleted) tickCompleted = runtime.frameScheduler.runScheduledToNextLogicalTick(runtime, 0.0);
 			}
 			presentation.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 		}

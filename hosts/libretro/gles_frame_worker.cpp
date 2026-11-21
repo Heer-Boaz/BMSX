@@ -9,9 +9,9 @@
 namespace bmsx {
 
 GlesFrameWorker::GlesFrameWorker(Runtime& runtime, VideoPresenter& presenter, LibretroInput& input,
-	RenderPresentationState& presentation, HostOverlayMenu& overlayMenu)
+	RenderPresentationState& presentation, HostOverlayMenu& overlayMenu, bool singleGuestTick)
 	: m_runtime(runtime), m_backend(static_cast<OpenGLES2Backend&>(presenter.backend())), m_input(input),
-	  m_presenter(presenter), m_presentation(presentation), m_overlayMenu(overlayMenu),
+	  m_presenter(presenter), m_presentation(presentation), m_overlayMenu(overlayMenu), m_singleGuestTick(singleGuestTick),
 	  m_batches(std::make_unique<std::array<Batch, QueueCapacity>>()),
 	  m_snapshotBytes(runtime.machine.gxGpu.readDeviceOutput().vramSnapshotBytes.size()),
 	  m_readbackBytes(GX_GPU_TRANSFER_MAX_BYTE_COUNT),
@@ -73,7 +73,10 @@ void GlesFrameWorker::publishSnapshot() {
 void GlesFrameWorker::executeFrame(f64 hostDeltaMs) {
 	auto& gpu = m_runtime.machine.gxGpu;
 	publishSnapshot();
-	m_runtime.frameScheduler.run(m_runtime, hostDeltaMs);
+	auto& scheduler = m_runtime.frameScheduler;
+	bool tickCompleted = false;
+	if (m_singleGuestTick) tickCompleted = scheduler.runScheduledToNextLogicalTick(m_runtime, hostDeltaMs);
+	else scheduler.run(m_runtime, hostDeltaMs);
 	for (;;) {
 		publishSnapshot();
 		if (!gpu.backendServicePending()) break;
@@ -102,8 +105,9 @@ void GlesFrameWorker::executeFrame(f64 hostDeltaMs) {
 			readback.completeReadback(token);
 			gpu.completePublishedCommands();
 		}
-		m_runtime.frameScheduler.synchronizeBackendService(m_runtime);
-		m_runtime.frameScheduler.run(m_runtime, 0.0);
+		scheduler.synchronizeBackendService(m_runtime);
+		if (!m_singleGuestTick) scheduler.run(m_runtime, 0.0);
+		else if (!tickCompleted) tickCompleted = scheduler.runScheduledToNextLogicalTick(m_runtime, 0.0);
 	}
 }
 

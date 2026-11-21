@@ -28,7 +28,7 @@ class OpenGLES2Backend;
 class GlesFrameWorker {
 public:
 	GlesFrameWorker(Runtime& runtime, VideoPresenter& presenter, LibretroInput& input,
-		RenderPresentationState& presentation, HostOverlayMenu& overlayMenu);
+		RenderPresentationState& presentation, HostOverlayMenu& overlayMenu, bool singleGuestTick);
 	~GlesFrameWorker();
 	bool run(f64 currentTime, f64 deltaTime);
 
@@ -61,6 +61,7 @@ private:
 	VideoPresenter& m_presenter;
 	RenderPresentationState& m_presentation;
 	HostOverlayMenu& m_overlayMenu;
+	const bool m_singleGuestTick;
 	bool m_rumbleApplied = false;
 	std::unique_ptr<std::array<Batch, QueueCapacity>> m_batches;
 	std::vector<u8> m_snapshotBytes;
