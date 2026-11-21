@@ -1,5 +1,6 @@
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/native_ir.h"
+#include "machine/cpu/native_ir_dump.h"
 #include "machine/cpu/native_ir_optimize.h"
 #include "machine/cpu/native_ir_liveness.h"
 #include "machine/cpu/native_ir_numeric.h"
@@ -9,6 +10,7 @@
 #include <array>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -235,6 +237,13 @@ void nestedFieldsShareOnlyTheCheckedAddress() {
 		&& miss.currentPc == source[3].pc && miss.lastPc == source[3].pc + INSTRUCTION_BYTES
 		&& miss.nextPc == source[4].pc,
 		"a reused address does not reuse the first read's semantic miss or WIDE timing");
+	std::ostringstream report;
+	dumpNativeIr(report, region);
+	const auto text = report.str();
+	require(text.find("%addr0 = checked-own-field R0, K0") != std::string::npos
+		&& text.find("R1 = load-own-field %addr0") != std::string::npos
+		&& text.find("R2 = load-own-field %addr0") != std::string::npos,
+		"the diagnostic exposes the one checked field address and both consumers without lowering");
 }
 
 void fieldAddressesStopAtDefinitionsAndEffects() {
@@ -525,6 +534,10 @@ void recordPlanUsesTypedEntriesAndFullRomWords() {
 			"the typed plan preserves operands, guest positions and complete source coverage");
 		require(readonly.blocks()[0].firstPc == fields[0].pc && readonly.blocks()[1].firstPc == fields[1].pc,
 			"each field retains its ordinary independent entry");
+		std::ostringstream report;
+		dumpNativeIr(report, readonly);
+		require(report.str().find("allocate-record {key#5=K0, key#7=R70}") != std::string::npos,
+			"the fused constructor recipe is visible in the IR beside ordinary field entries");
 	}
 }
 
