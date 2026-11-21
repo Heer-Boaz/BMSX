@@ -60,8 +60,10 @@ test('hash membership and quota are independent of tombstone-driven physical reb
 	for (const id of [keys[0], keys[1], collision]) assert.equal(tables.getInteger(tombstones, id), tables.getInteger(spare, id));
 
 	const logical = cpu.luaHeap.usedBytes(), table = cpu.createTable(0, 3);
+	const backing = tables.storageAddress(table);
 	for (let i = 0; i < 4; ++i) tables.setInteger(table, keys[i], v.valueInteger(29));
 	assert.equal(tables.hashSize(table), 4);
+	assert.equal(tables.storageAddress(table), backing, 'the new logical frontier reuses the same physical bucket reserve');
 	assert.equal(cpu.luaHeap.usedBytes(), logical + 32 + 40);
 	const ram = cpu.memory.captureSaveState();
 	tables.setInteger(table, keys[0], v.valueNil());
@@ -69,6 +71,33 @@ test('hash membership and quota are independent of tombstone-driven physical reb
 	cpu.memory.restoreSaveState(ram);
 	tables.setInteger(table, keys[0], v.valueNil());
 	assert.equal(cpu.luaHeap.usedBytes(), logical + 32 + 30, 'restored membership releases the same charge');
+});
+
+test('hash deletion and replay do not reopen the remembered array repartition frontier', () => {
+	const cpu = machine(), tables = cpu.gc.tables, keys = new Int32Array(4);
+	let assigned = 0;
+	for (let id = -1; assigned !== keys.length; --id) {
+		const home = v.hashCanonicalTableKey(v.valueInteger(id)) & (keys.length - 1);
+		if (keys[home] === 0) { keys[home] = id; ++assigned; }
+	}
+	const table = cpu.createTable();
+	for (const key of keys) tables.setInteger(table, key, v.valueInteger(13));
+	const backing = tables.storageAddress(table), home = v.hashCanonicalTableKey(v.valueInteger(1)) & (keys.length - 1);
+	tables.setInteger(table, keys[home], v.valueNil());
+	tables.setInteger(table, keys[(home + 1) & (keys.length - 1)], v.valueNil());
+	const used = cpu.luaHeap.usedBytes(), saved = cpu.memory.captureSaveState();
+	for (const replay of [false, true]) {
+		if (replay) cpu.memory.restoreSaveState(saved);
+		for (let step = 0; step < 16; ++step) {
+			tables.setInteger(table, 1, v.valueInteger(29));
+			assert.equal(tables.storageAddress(table), backing);
+			assert.equal(tables.arrayCapacity(table), 0, 'refill below the saved limit does not repartition live keys');
+			assert.equal(tables.hashSize(table), 4);
+			assert.equal(tables.getInteger(table, 1), v.valueInteger(29));
+			tables.setInteger(table, 1, v.valueNil());
+			assert.equal(cpu.luaHeap.usedBytes(), used);
+		}
+	}
 });
 
 test('Table keys normalize Integer/Float identity without changing stored value bits', () => {

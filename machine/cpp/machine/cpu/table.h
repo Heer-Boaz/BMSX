@@ -167,9 +167,9 @@ private:
 	bool hasIntegerKey(u32 key) const;
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
 	int findNextLiveHashIndex(size_t start) const;
-	struct ResizePlan { size_t array, hash; u32 members; };
-	ResizePlan planRehash(Value key, u32 reserve, u32 members) const;
-	int rehash(Value key, Value value, u32 reserve, u32 members);
+	struct ResizePlan { size_t array, hash; u32 members, watermark; };
+	ResizePlan planRehash(Value key, u32 reserve, u32 members, u32 watermark) const;
+	int insertHashWithAdmission(Value key, Value value, u32 reserve, u32 members, u32 watermark, int existing);
 	int resize(const ResizePlan&, u32 storage, Value key, Value value, u32 reserve);
 	void bindStorage(size_t arraySize, size_t hashSize, u32 address);
 	void initializeStorage();
@@ -177,7 +177,9 @@ private:
 	u32 hashMetadata() const;
 	u32 hashReserve() const;
 	u32 hashMembers() const;
+	u32 hashWatermark() const;
 	void publishHashMembers(u32 previous, u32 members, u32 reserve);
+	void publishHashWatermark(u32 watermark);
 	u32 readHeader(TableHeader field) const { return m_memory->readRamRecordWord(m_address + static_cast<u32>(field)); }
 	void writeHeader(TableHeader field, u32 word) { m_memory->writeRamRecordWord(m_address + static_cast<u32>(field), word); }
 	struct TableValues {
@@ -225,6 +227,7 @@ private:
 	int findFreeIndex(const HashBody& body) const;
 	int rawSet(const Value& key, const Value& value);
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
+	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
 	int setHash(u32 array, Value key, Value value);
 	void removeFromHash(const Value& key);
 	void markHashNodeDead(size_t index);

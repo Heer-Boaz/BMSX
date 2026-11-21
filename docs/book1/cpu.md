@@ -1231,14 +1231,16 @@ hash reservation. Clearing the Table releases its reservations. Physical
 hash growth can move mappings without changing either the nominal hash
 reservation or the reserved array slots.
 
-An insertion outside the reserved array can reconsider the array range
-when it takes the hash membership above both the prepaid hash request and
-the least power of two at or above the previous hash membership (zero for
-an empty hash). The new array reserves the largest power-of-two prefix of
-positive integers for which more than half the keys are present, including
-the inserted key. The other mappings remain in the hash. If collection
-changes the old mappings while admitting the insertion, the processor
-calculates both the range and the charge from the surviving mappings.
+An insertion outside the reserved array reconsiders the array range only
+when it takes hash membership above both the prepaid hash request and the
+Table's remembered hash limit. The limit starts at zero. The new array
+reserves the largest power-of-two prefix of positive integers for which
+more than half the keys are present, including the inserted key. The other
+mappings remain in the hash. The new limit is the least power of two at or
+above the new hash membership, or zero if that membership is empty.
+Deleting entries or rebuilding physical buckets does not lower the limit.
+If collection changes the old mappings while admitting the insertion, the
+processor calculates the range and charge from the surviving mappings.
 
 A Table's slots and links occupy one block in the language heap. A Thread
 keeps its Value slots, frame controls and protected continuations in separate

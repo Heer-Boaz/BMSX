@@ -42,11 +42,41 @@ void hashBudgetIgnoresPhysicalRebuild(bmsx::CPU& cpu) {
 
 	const auto logical = cpu.luaHeap().usedBytes();
 	auto table = cpu.createTable(0, 3);
+	const u32 backing = table.storageAddress();
 	for (size_t i = 0; i < 4; ++i) table.setInteger(keys[i], valueInteger(29));
-	require(table.hashSlots() == 4u && cpu.luaHeap().usedBytes() == logical + 32u + 40u,
+	require(table.hashSlots() == 4u && table.storageAddress() == backing && cpu.luaHeap().usedBytes() == logical + 32u + 40u,
 		"only the fourth mapping exceeds the prepaid three mappings, inside the same physical hash");
 	table.setInteger(keys[0], valueNil());
 	require(cpu.luaHeap().usedBytes() == logical + 32u + 30u, "removal returns the charge above the floor");
+	table.clear();
+}
+
+void hashWatermarkSurvivesDeletionAndRestore(bmsx::CPU& cpu) {
+	using namespace bmsx;
+	std::array<i32, 4> keys{};
+	u32 assigned = 0u;
+	for (i32 id = -1; assigned != keys.size(); --id) {
+		const auto home = hashCanonicalTableKey(valueInteger(id)) & (keys.size() - 1u);
+		if (keys[home] == 0) { keys[home] = id; ++assigned; }
+	}
+	auto table = cpu.createTable();
+	for (auto key : keys) table.setInteger(key, valueInteger(13));
+	const u32 backing = table.storageAddress();
+	const auto home = hashCanonicalTableKey(valueInteger(1)) & (keys.size() - 1u);
+	table.setInteger(keys[home], valueNil());
+	table.setInteger(keys[(home + 1u) & (keys.size() - 1u)], valueNil());
+	const auto used = cpu.luaHeap().usedBytes();
+	const auto saved = cpu.memory().captureSaveState();
+	for (bool replay : {false, true}) {
+		if (replay) cpu.memory().restoreSaveState(saved);
+		for (int step = 0; step < 16; ++step) {
+			table.setInteger(1, valueInteger(29));
+			require(table.storageAddress() == backing && table.arrayCapacity() == 0 && table.hashSlots() == 4
+				&& table.getInteger(1) == valueInteger(29), "refill below the saved watermark reuses its home and keeps the array range");
+			table.setInteger(1, valueNil());
+			require(cpu.luaHeap().usedBytes() == used, "each refill and removal returns to the same nominal charge");
+		}
+	}
 	table.clear();
 }
 }
@@ -59,6 +89,7 @@ int main() {
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
 		hashBudgetIgnoresPhysicalRebuild(cpu);
+		hashWatermarkSurvivesDeletionAndRestore(cpu);
 		const auto key = cpu.stringPool().intern("retired");
 		const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 		const u32 physicalBefore = cpu.heapAllocator().occupiedBytes();
