@@ -234,6 +234,74 @@ void cpuInvalidationAndLifecycle() {
 	}
 }
 
+void pendingWorkDependsOnItsCapturedFeedback() {
+	for (const bool matching : {false, true}) {
+		test::Blua32TestImage image;
+		image.mappedCode = false;
+		image.text.resize(18u * INSTRUCTION_BYTES);
+		image.functions = {{.firstWord = 0u, .wordCount = 10u, .maxStack = 3},
+			{.firstWord = 12u, .wordCount = 2u, .numParams = 1u}, {.firstWord = 16u, .wordCount = 2u}};
+		image.closureRelocations = {{1u, test::blua32TestFunctionAddress(RomImageDomain::System, 1u)},
+			{3u, test::blua32TestFunctionAddress(RomImageDomain::System, 2u)}};
+		const auto put = [&](u32 word, OpCode op, u8 a = 0u, u8 b = 0u, u8 c = 0u, u8 ext = 0u) {
+			writeInstruction(image.text, word, static_cast<u8>(op), a, b, c, ext);
+		};
+		put(0, OpCode::WIDE);
+		put(1, OpCode::CLOSURE, 1);
+		put(2, OpCode::WIDE);
+		put(3, OpCode::CLOSURE, 2);
+		put(4, OpCode::KFALSE);
+		put(5, OpCode::JMPIF, 0, 0, 1);
+		put(6, OpCode::JMP, 0, 63, 62, 255);
+		put(7, OpCode::WIDE);
+		put(8, OpCode::CALL, 1, matching ? 2 : 0, 2);
+		put(9, OpCode::RET, 1, 2);
+		put(12, OpCode::CALL, 0, 1, 2);
+		put(13, OpCode::RET, 0, 2);
+		put(16, OpCode::KSMI, 0, 0, 29);
+		put(17, OpCode::RET, 0, 2);
+
+		CpuMachine machine(image, false);
+		auto& cpu = machine.cpu;
+		const u32 text = machine.rom.textAddress, root = text + 5u * INSTRUCTION_BYTES;
+		for (int step = 0; cpu.readFramePc(0) != root && step < 4; ++step) cpu.runUntilDepth(0, 1);
+		require(cpu.readFramePc(0) == root, "real closure setup reaches the verified loop root");
+		auto& page = *cpu.rootThread()->currentFrame->decodedPage;
+		const u32 first = (text & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		require(first + 17u < DECODED_PAGE_WORDS, "the source and the sibling function share one physical page");
+		for (u32 visit = 1; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++visit) {
+			require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFramePc(0) == root + INSTRUCTION_BYTES,
+				"the untaken branch does not execute either unresolved CALL");
+			require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFramePc(0) == root,
+				"the loop re-enters the same native demand root");
+		}
+		require(cpu.readNativeCompilationProfile().prepareRequests == 0, "the next root visit will submit the worker job");
+		cpu.rootThread()->currentFrame->registers.set(0, valueBool(true));
+		require(cpu.runUntilDepth(0, 1024) == RunResult::Halted && cpu.readCompletionValues().get(0) == valueInteger(29),
+			"submission and later feedback happen in the same real CPU grant");
+		const auto queued = cpu.readNativeCompilationProfile();
+		require(queued.prepareRequests == 1u && queued.backgroundCompleted == 0u && queued.regionsPublished == 0u,
+			"no poll can publish the result before feedback has already happened");
+		require(page.words[first + 12u].nativeCallTarget() == machine.rom.functionAddresses[2]
+			&& page.words[first + 7u].nativeCallTarget() == (matching ? machine.rom.functionAddresses[1] : DecodedInstruction::CALL_TARGET_UNSEEN),
+			"the sibling CALL teaches a prototype in both lanes; only the fixed WIDE CALL also teaches a captured instruction");
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+		while (cpu.readNativeCompilationProfile().backgroundCompleted == 0u) {
+			require(std::chrono::steady_clock::now() < deadline, "the worker returns the original captured batch");
+			cpu.runUntilDepth(0, 0);
+			std::this_thread::yield();
+		}
+		const auto completed = cpu.readNativeCompilationProfile();
+		if (matching)
+			require(completed.backgroundCancelled == 1u && completed.regionsPublished == 0u,
+				"feedback for the captured WIDE instruction withdraws the pending plan");
+		else
+			require(completed.backgroundCancelled == 0u && completed.regionsPublished == 1u
+				&& page.nativeBlocks->entries[first + 5u],
+				"feedback for a different function does not cancel a pending plan on their shared page");
+	}
+}
+
 void imageReplacementRetiresBorrowedConstants() {
 	test::Blua32TestImage image;
 	image.text.resize(24);
@@ -424,6 +492,7 @@ int main() {
 		unpublishedCodeCanBeDiscarded();
 		recordPlanIsReadyBeforePublication();
 		cpuInvalidationAndLifecycle();
+		pendingWorkDependsOnItsCapturedFeedback();
 		imageReplacementRetiresBorrowedConstants();
 		invalidatedPendingMergeDoesNotRetireDeadOwners();
 		for (int mutation = 0; mutation < 5; ++mutation) independentInteriorEntryRetiresEveryOverlappingOwner(mutation);

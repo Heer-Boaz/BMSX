@@ -160,6 +160,9 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 	bool immutableSource = true;
 	std::vector<NativeRejectedFieldProof> rejectedFieldProofs;
 	std::vector<NativeCallProfile> calls;
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	auto* pending = coldImage ? nullptr : &m_pendingNativeCompilation;
+#endif
 	for (auto* source : pages) {
 		auto& page = source->page;
 		const auto& binding = source->binding;
@@ -177,6 +180,10 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 				page.words[word].dispatchOp = page.words[word].op;
 		}
 		const auto firstInstruction = instructionCount;
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		auto* feedback = pending ? &pending->feedbackHeads[codePageCount] : nullptr;
+		if (feedback) feedback->reset();
+#endif
 		for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
 			if (!leaders[entry] || !available[entry]) continue;
 			const size_t start = instructionCount;
@@ -185,6 +192,9 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 				const auto& instruction = page.words[cursor];
 				const u32 pc = pagePc + cursor * INSTRUCTION_BYTES;
 				instructions[instructionCount++] = {&instruction, pc};
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+				if (feedback) (*feedback)[cursor] = true;
+#endif
 				if (immutable && instruction.op == static_cast<u8>(OpCode::CALL)
 					&& instruction.b != 0 && Blua32RomFunctionDirectory::ownsAddress(image.executionDomainId, pc)) {
 					const auto prototype = instruction.nativeCallTarget();
@@ -205,8 +215,12 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 				const u32 successor = cursor + page.words[cursor].width;
 				if (successor < DECODED_PAGE_WORDS && (page.refreshState[successor] & DECODED_REFRESH_DECODE) == 0u
 					&& successor + page.words[successor].width <= DECODED_PAGE_WORDS
-					&& pagePc + (successor + page.words[successor].width - 1u) * INSTRUCTION_BYTES <= source->lastPc)
+					&& pagePc + (successor + page.words[successor].width - 1u) * INSTRUCTION_BYTES <= source->lastPc) {
 					skippedInstruction = &page.words[successor];
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+					if (feedback) (*feedback)[successor] = true;
+#endif
+				}
 			}
 			sources.push_back({instructions.subspan(start, instructionCount - start), skippedInstruction});
 		}
@@ -227,13 +241,12 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 	const auto bindingsPages = std::span(codePages).first(codePageCount);
 	const NativeCodeBindings bindings(m_memory, m_stringPool, this, bindingsPages);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
-	if (!coldImage) {
-		auto& pendingJob = m_pendingNativeCompilation;
-		pendingJob.image = &image;
-		std::ranges::copy(bindingsPages, pendingJob.pages.begin());
-		pendingJob.pageCount = static_cast<u32>(codePageCount);
-		pendingJob.slot = first.slot;
-		pendingJob.invalidated = false;
+	if (pending) {
+		pending->image = &image;
+		std::ranges::copy(bindingsPages, pending->pages.begin());
+		pending->pageCount = static_cast<u32>(codePageCount);
+		pending->slot = first.slot;
+		pending->invalidated = false;
 		m_nativeCompilerWorker->submit(sources, bindings, options, profile != nullptr,
 			std::move(rejectedFieldProofs), std::move(constants), std::move(calls));
 		return;

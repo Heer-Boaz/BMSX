@@ -4,6 +4,7 @@
 #include "machine/cpu/builtin_values.h"
 
 #include <array>
+#include <bitset>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -480,6 +481,9 @@ private:
 	struct PendingNativeCompilation {
 		Blua32ExecutionImage* image = nullptr;
 		std::array<NativeCodeSourcePage, NATIVE_VERSION_REGION_MAX_PAGES> pages;
+		// Feedback belongs to a decoded instruction head, not to all its
+		// backing words or the rest of the physical page.
+		std::array<std::bitset<DECODED_PAGE_WORDS>, NATIVE_VERSION_REGION_MAX_PAGES> feedbackHeads;
 		u32 pageCount = 0, slot = 0;
 		bool invalidated = false;
 		std::span<const NativeCodeSourcePage> sources() const { return std::span(pages).first(pageCount); }

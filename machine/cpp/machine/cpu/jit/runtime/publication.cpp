@@ -65,9 +65,10 @@ void CPU::retireNativeInstructionUsers(DecodedInstructionPage& page, u32 word) {
 	// feedback for the next compilation.
 	page.retireNativeBlocks(word, word + 1u, DecodedInstructionPage::Retirement::Feedback);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
-	const auto sourcePages = m_pendingNativeCompilation.sources();
-	if (std::ranges::find(sourcePages, &page, &NativeCodeSourcePage::page) != sourcePages.end())
-		m_pendingNativeCompilation.invalidated = true;
+	auto& pending = m_pendingNativeCompilation;
+	const auto sources = pending.sources();
+	const auto source = std::ranges::find(sources, &page, &NativeCodeSourcePage::page);
+	if (source != sources.end() && pending.feedbackHeads[source - sources.begin()][word]) pending.invalidated = true;
 #endif
 }
 
