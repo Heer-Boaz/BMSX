@@ -4,7 +4,7 @@ import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { integerConstant } from '../../toolchain/ts/lua/number';
-import { ValueTag, valueInteger, valueFloatBits, valueBool, valueTable, valueNil } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueInteger, valueFloatBits, valueBool, valueTable, valueNil, valueString } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -91,7 +91,7 @@ test('helper-success fallthrough does not execute a later store without a grant'
 	}
 });
 
-test('resident Values cross internal string branches and publish only when leaving the region', () => {
+for (const kind of ['Integer', 'String'] as const) test(`resident Values cross internal ${kind} branches`, () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.MOV, 7, 8, 0);
 	writeInstruction(text, 1, OpCode.LT, 0, 0, 1);
@@ -105,16 +105,17 @@ test('resident Values cross internal string branches and publish only when leavi
 	writeInstruction(text, 9, OpCode.JMP, 0, 63, 54, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 10, maxStack: 11 }], constants: [integerConstant(1)] }, RAM_CODE_FIXTURE_BYTES);
 	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
-	const alpha = cpu.stringPool.intern('alpha'), omega = cpu.stringPool.intern('omega');
-	frame.registers.setString(0, alpha); frame.registers.setString(1, omega); frame.registers.setInteger(4, 0);
+	const lower = kind === 'Integer' ? valueInteger(0) : valueString(cpu.stringPool.intern('alpha'));
+	const higher = kind === 'Integer' ? valueInteger(1) : valueString(cpu.stringPool.intern('omega'));
+	frame.registers.set(0, lower); frame.registers.set(1, higher); frame.registers.setInteger(4, 0);
 	frame.registers.setEncoded(8, ValueTag.False, 37); cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[first]!, table = cpu.createTable();
-	for (const less of [false, true]) for (const kind of [ValueTag.False, ValueTag.Table, ValueTag.Float]) for (const grant of [32, 63, 128, 257]) {
+	for (const less of [false, true]) for (const tag of [ValueTag.False, ValueTag.Table, ValueTag.Float]) for (const grant of [32, 63, 128, 257]) {
 		const r = new ValueSlots(11), writes = new Uint32Array(11);
-		r.setString(0, less ? alpha : omega); r.setString(1, less ? omega : alpha);
+		r.set(0, less ? lower : higher); r.set(1, less ? higher : lower);
 		r.setInteger(3, 73); r.setInteger(4, 0);
-		r.setEncoded(8, kind, kind === ValueTag.False ? 37 : kind === ValueTag.Float ? 0x80000000 : table);
+		r.setEncoded(8, tag, tag === ValueTag.False ? 37 : tag === ValueTag.Float ? 0x80000000 : table);
 		observeRegisterStores(r, register => { ++writes[register]; });
 		const run = { remainingCycles: grant, registerTop: 0, memoryAddress: 0, lengthWork: { probes: 0 } };
 		block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, run);
@@ -123,9 +124,9 @@ test('resident Values cross internal string branches and publish only when leavi
 		for (const register of less ? [3, 6, 7, 9, 10] : [6, 7, 10]) {
 			assert.equal(r.getTag(register), r.getTag(8)); assert.equal(r.getPayload(register), r.getPayload(8));
 		}
-		assert.ok(writes[4] <= 1, 'the live-through accumulator is not written back at internal branches');
-		// r7 is redefined before use at the loop head, so it leaves that entry's
-		// map. Its prior raw value must still be published on the backedge.
+		// String ordering can observe dirty slots through its RAM-backed
+		// records. Operand-only Integer ordering need not publish early.
+		if (kind === 'Integer') assert.ok(writes[4] <= 1, 'the accumulator stays resident across operand-only internal branches');
 		assert.equal(writes[8], 0, 'the read-only resident is never redundantly published');
 	}
 });
