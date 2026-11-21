@@ -555,8 +555,7 @@ void polymorphicForwardJoin() {
 	for (size_t i = 0; i < blocks.size(); ++i) {
 		ValueSlots registers(2);
 		registers.set(0, valueBool(true));
-		NativeBlockRunState state{};
-		state.remainingCycles = 100;
+		NativeBlockRunState state{.constants = constants.view(), .remainingCycles = 100};
 		require(blocks[i]->run(registers.view(), state) == &blocks.back()->terminal,
 			"neither predecessor nor a public entry may deopt at a polymorphic forward join");
 		require(registers.get(0) == expected[i] && registers.get(1) == expected[i],

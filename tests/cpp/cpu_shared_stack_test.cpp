@@ -5,6 +5,7 @@
 #include "spec/bmsx/io.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 
 #include <array>
 #include <iostream>
@@ -195,8 +196,13 @@ void privatePhysicalStack() {
 #endif
 	const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::KSMI)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
 	auto* thread = cpu.activeThread(); auto& regs = thread->currentFrame->registers;
-	regs.set(0, valueInteger(41)); cpu.runUntilDepth(0, 512 * cycles);
+	regs.set(0, valueInteger(41));
+	thread->currentFrame->setTop(1);
+	cpu.runUntilDepth(0, 512 * cycles);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	test::waitForFixtureWorkerRequests(cpu);
+#endif
 	require(cpu.readNativeCompilationProfile().entriesPublished != 0u, "the private-stack regression exercises a warmed native entry");
 #endif
 	const u32 offset = thread->stackOffset(), slot = RAM_BASE + offset;
