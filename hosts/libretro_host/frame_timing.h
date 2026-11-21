@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "bmsx_libretro.h"
@@ -8,6 +9,13 @@
 
 enum { BMSX_FRAME_TIMING_BUCKET_COUNT = 4097 };
 enum { BMSX_FRAME_TIMING_SLOW_FRAME_COUNT = 32 };
+enum { BMSX_FRAME_TIMING_OUTLIER_NS = 15000000 };
+
+typedef struct BmsxFrameTimingOutlier {
+	uint64_t host_frame;
+	uint64_t run_ns;
+	uint64_t core_without_present_ns;
+} BmsxFrameTimingOutlier;
 
 typedef struct BmsxSlowFrameSample {
 	uint64_t host_frame;
@@ -53,6 +61,8 @@ typedef struct BmsxFrameTimingReport {
 	uint64_t gx_max_command_nanoseconds;
 	BmsxSlowFrameSample slow_frames[BMSX_FRAME_TIMING_SLOW_FRAME_COUNT];
 	unsigned slow_frame_count;
+	BmsxFrameTimingOutlier* outliers;
+	size_t outlier_count;
 } BmsxFrameTimingReport;
 
 typedef struct BmsxFrameTimingState {

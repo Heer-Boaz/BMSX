@@ -144,6 +144,9 @@ Options:
   It retains the 32 slowest measured calls with their host-frame numbers,
   presentation times and matching GX upload counters. Samples use fixed
   storage; no per-frame log output is emitted.
+  With `--max-frames`, it also lists every measured call strictly above 15 ms
+  in frame order, with exact durations before and after subtracting final
+  blit and swap. It reserves storage before the run and prints at shutdown.
   The ALSA underrun line covers the same measured window; `before_timing` counts
   earlier underruns. The final `audio stats` line covers the entire session,
   including teardown.

@@ -6,7 +6,8 @@
 #define CHECK(condition) do { if (!(condition)) return __LINE__; } while (0)
 
 int main(void) {
-	BmsxFrameTimingReport report = {0};
+	BmsxFrameTimingOutlier outliers[102];
+	BmsxFrameTimingReport report = {.outliers = outliers};
 	const BmsxGxUploadProfileFrameV1 gx_upload = {
 		.render_frame_serial = 7u,
 		.cpu_to_vram_commands = 2u,
@@ -59,6 +60,10 @@ int main(void) {
 		bmsx_frame_timing_record(&report, 502u + index, UINT64_C(9007199254741000) + index, index * 1000000ull, 0u, false, 0u, false, false, true, NULL, NULL, NULL, index * 2u, index * 3u);
 	}
 	CHECK(report.slow_frame_count == BMSX_FRAME_TIMING_SLOW_FRAME_COUNT);
+	CHECK(report.outlier_count == 85u);
+	CHECK(outliers[0].host_frame == 501u && outliers[0].run_ns == 5000000000ull);
+	CHECK(outliers[1].host_frame == 518u && outliers[1].run_ns == 16000000u);
+	CHECK(outliers[84].host_frame == 601u && outliers[84].core_without_present_ns == 99000000u);
 	CHECK(report.slow_frames[0].host_frame == 501u);
 	CHECK(report.slow_frames[1].host_frame == 601u);
 	CHECK(report.slow_frames[BMSX_FRAME_TIMING_SLOW_FRAME_COUNT - 1u].host_frame == 571u);

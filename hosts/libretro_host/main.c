@@ -314,6 +314,13 @@ int main(int argc, char** argv) {
 		host_fatal("--profile-native-compilation requires --timing-report");
 	if (profile_execution && !frame_timing.enabled)
 		host_fatal("--profile-execution requires --timing-report");
+	if (frame_timing.enabled && maximum_run_frames > frame_timing.warmup_frames) {
+		const uint64_t measured_frames = maximum_run_frames - frame_timing.warmup_frames;
+		if (measured_frames > SIZE_MAX / sizeof(BmsxFrameTimingOutlier))
+			host_fatal("--max-frames exceeds the timing report's address space");
+		frame_timing.report.outliers = calloc((size_t)measured_frames, sizeof(BmsxFrameTimingOutlier));
+		if (frame_timing.report.outliers == NULL) host_fatal("Cannot allocate bounded frame timing samples");
+	}
 	const bool profile_gx_upload =
 			frame_timing.enabled && strcmp(backend, "gles2") == 0;
 	const bool use_sdl_backend = strcmp(video_backend, "sdl") == 0;
@@ -573,6 +580,7 @@ int main(int argc, char** argv) {
 				alsa_underruns_at_timing_start);
 		}
 	}
+	free(frame_timing.report.outliers);
 
 	int exit_status = 0;
 	if (clover_launch && !(session.shutdown_requested &&

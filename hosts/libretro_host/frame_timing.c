@@ -80,7 +80,15 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		bmsx_native_compilation_profile_accumulate(&report->native_compilation, native_compilation);
 	}
 	record_histogram(&report->retro_run, retro_run_ns);
-	record_histogram(&report->core_without_present, retro_run_ns - final_blit_ns - swap_ns);
+	const uint64_t core_without_present_ns = retro_run_ns - final_blit_ns - swap_ns;
+	record_histogram(&report->core_without_present, core_without_present_ns);
+	if (report->outliers != NULL && retro_run_ns > BMSX_FRAME_TIMING_OUTLIER_NS) {
+		report->outliers[report->outlier_count++] = (BmsxFrameTimingOutlier){
+			.host_frame = host_frame,
+			.run_ns = retro_run_ns,
+			.core_without_present_ns = core_without_present_ns,
+		};
+	}
 	if (final_blit_ran) {
 		record_histogram(&report->final_blit, final_blit_ns);
 	}
@@ -153,6 +161,15 @@ void bmsx_frame_timing_print(
 			(unsigned long long)report->presented_frames,
 			(unsigned long long)report->dropped_presentations,
 			(unsigned long long)warmup_frames);
+	if (report->outliers != NULL) {
+		fprintf(stderr, "[libretro-host][timing] over_15ms=%zu\n", report->outlier_count);
+		for (size_t index = 0; index < report->outlier_count; ++index) {
+			const BmsxFrameTimingOutlier* sample = &report->outliers[index];
+			fprintf(stderr, "[libretro-host][over-15ms] host_frame=%llu run_ns=%llu core_without_present_ns=%llu\n",
+				(unsigned long long)sample->host_frame, (unsigned long long)sample->run_ns,
+				(unsigned long long)sample->core_without_present_ns);
+		}
+	}
 	for (unsigned index = 0u; index < report->slow_frame_count; ++index) {
 		const BmsxSlowFrameSample* sample = &report->slow_frames[index];
 		fprintf(stderr,
