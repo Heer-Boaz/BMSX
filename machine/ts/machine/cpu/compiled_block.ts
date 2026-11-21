@@ -359,18 +359,20 @@ export function emitJavaScriptBlock(
 }
 
 export function finishJavaScriptBlock(page: DecodedInstructionPage, block: EmittedJavaScriptBlock,
-	transfer: (index: number) => string): string {
+	transfer: (index: number, residentsPublished: boolean) => string): string {
 	const finalOp = page.ops[block.finalWord];
 	if (compiledBlockComparison(finalOp)) {
 		const expected = page.a[block.finalWord] !== 0;
-		const continuation = block.deferredJumpIndex < 0 ? transfer(block.terminalIndex)
-			: `if(B>${block.terminal.cycles - BASE_CYCLES[OpCode.JMP]}){${transfer(block.terminalIndex)}}else{${transfer(block.deferredJumpIndex)}}`;
-		return emitComparison(page, block.finalWord, block.registers,
-			expected ? continuation : transfer(block.takenIndex), expected ? transfer(block.takenIndex) : continuation);
+		return emitComparison(page, block.finalWord, block.registers, (matched, published) => {
+			if (matched !== expected) return transfer(block.takenIndex, published);
+			const terminal = transfer(block.terminalIndex, published);
+			return block.deferredJumpIndex < 0 ? terminal
+				: `if(B>${block.terminal.cycles - BASE_CYCLES[OpCode.JMP]}){${terminal}}else{${transfer(block.deferredJumpIndex, published)}}`;
+		});
 	}
 	if (finalOp === OpCode.JMPIF || finalOp === OpCode.JMPIFNOT) {
 		const truth = `${finalOp === OpCode.JMPIFNOT ? '!' : ''}${block.registers.truthy(page.a[block.finalWord])}`;
-		return `if(${truth}){${transfer(block.takenIndex)}}else{${transfer(block.terminalIndex)}}`;
+		return `if(${truth}){${transfer(block.takenIndex, false)}}else{${transfer(block.terminalIndex, false)}}`;
 	}
-	return transfer(block.terminalIndex);
+	return transfer(block.terminalIndex, false);
 }

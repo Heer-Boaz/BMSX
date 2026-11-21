@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { runCpuParity } from '../helpers/cpu_execution';
+import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
+import { hashText } from '../../machine/ts/common/hash';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Blua32ExecutionImage } from '../../machine/ts/machine/cpu/execution_image';
@@ -9,10 +10,12 @@ import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE,
+	BLUA32_STRING_RECORD_KIND, BLUA32_STRING_NEXT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
-import { DYNAMIC_RAM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { RAM_CODE_FIXTURE_BYTES, createTestBlua32PairCpu, createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32, type TestBlua32Source } from '../helpers/blua32';
 
 function comparisonImage(op: OpCode, expected: boolean, left = 0, right = 1, constants: TestBlua32Source['constants'] = []) {
@@ -65,6 +68,80 @@ for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const expected of [fals
 		}
 	});
 }
+
+for (const op of [OpCode.LT, OpCode.LE]) test(`compiled ordering ${op} reads a pending register through a RAM String`, () => {
+	for (const expected of [true, false]) {
+		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+		writeInstruction(text, 0, OpCode.LOADK, 3, 0, 0);
+		writeInstruction(text, 1, OpCode.KSMI, 4, 0, 2);
+		writeInstruction(text, 2, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 3, op, expected ? 1 : 0, 0, 1);
+		writeInstruction(text, 4, OpCode.JMP, 0, 0, 2);
+		writeInstruction(text, 5, OpCode.MOV, 7, 4, 0);
+		writeInstruction(text, 6, OpCode.JMP, 0, 0, 1);
+		writeInstruction(text, 7, OpCode.MOV, 8, 4, 0);
+		writeInstruction(text, 8, OpCode.JMP, 0, 63, 55, 255);
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 9 }],
+			constants: [integerConstant(hashText('mz') | 0)] });
+		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+		const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+		const pc = image.image.functions[0].codeAddress;
+		const entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+		const grant = BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.KSMI] + BASE_CYCLES[op];
+		// Warm through both numeric outcomes before installing the synthetic record.
+		for (const left of [0, 2]) {
+			for (const cpu of [js, ref]) {
+				cpu.rootThread.frameAtDepth(0).registers.setInteger(0, left);
+				cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 1);
+			}
+			runCpuParity(js, ref, 256);
+		}
+		const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
+		const block = page.compiledBlocks!.entries[entry]!;
+		assert.equal(block.admissionCycles, grant - BASE_CYCLES[op]);
+		assert.equal(block.region, page.compiledBlocks!.entries[entry + 5]!.region);
+		assert.equal(block.region, page.compiledBlocks!.entries[entry + 7]!.region);
+		let countStores = 0;
+		observeRegisterStores(frame.registers, index => { if (index === 4) ++countStores; });
+		for (const cpu of [js, ref]) {
+			const current = cpu.rootThread.frameAtDepth(0);
+			const record = RAM_BASE + current.registers.ramOffset() + 2 * INSTRUCTION_BYTES;
+			// Register words R2:R6 back a complete RAM String. The prefix changes "m" to "mz"
+			// by publishing its hash and length, while both successors keep R4 live.
+			cpu.memory.writeRamRecordWord(record, BLUA32_STRING_RECORD_KIND);
+			cpu.memory.writeRamRecordWord(record + BLUA32_STRING_HASH_OFFSET, hashText('m'));
+			cpu.memory.writeRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET, 1);
+			cpu.memory.writeRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET, 0);
+			cpu.memory.writeRamRecordWord(record + BLUA32_STRING_RECORD_HEADER_SIZE, 0x7a6d);
+			current.registers.setString(0, record);
+			current.registers.setString(1, cpu.stringPool.intern('my'));
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		}
+		countStores = 0;
+		assert.equal(runCpuParity(js, ref, grant), RunResult.Yielded);
+		for (const cpu of [js, ref]) {
+			assert.equal(cpu.rootThread.frameAtDepth(0).pc, pc + (expected ? 5 : 4) * INSTRUCTION_BYTES);
+			assert.equal(cpu.readCurrentInstructionPc(), pc + 2 * INSTRUCTION_BYTES);
+			assert.equal(cpu.lastPc, pc + 3 * INSTRUCTION_BYTES);
+			assert.equal(cpu.instructionBudgetRemaining, -2);
+		}
+		assert.equal(countStores, 1, 'the read-only comparison publishes the dirty length only once');
+		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+		const linkedWord = expected ? 5 : 7;
+		for (const cpu of [js, ref]) {
+			const current = cpu.rootThread.frameAtDepth(0);
+			current.registers.setInteger(3, hashText('m') | 0);
+			current.registers.setInteger(4, 1);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		}
+		assert.equal(runCpuParity(js, ref, grant + 2 + BASE_CYCLES[OpCode.MOV] + (expected ? 0 : BASE_CYCLES[OpCode.JMP])), RunResult.Yielded);
+		assert.equal(frame.pc, pc + (linkedWord + 1) * INSTRUCTION_BYTES);
+		assert.equal(js.lastPc, pc + linkedWord * INSTRUCTION_BYTES);
+		assert.equal(js.instructionBudgetRemaining, 0);
+		assert.equal(frame.registers.getInteger(expected ? 7 : 8), 2, 'the linked successor sees the retained length binding');
+		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+	}
+});
 
 test('comparison RK constants agree after each admitted segment, including short grants', () => {
 	const constants = [null, false, true, ...[-0, NaN, Infinity, 0.25].map(numberConstantFromHost), '', 'a\0b', '\ue000', '\u{10000}'];

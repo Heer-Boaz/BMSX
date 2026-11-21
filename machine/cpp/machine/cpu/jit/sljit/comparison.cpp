@@ -52,6 +52,9 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 		emitValueTransportStore(m_compiler, SLJIT_SP, args, SLJIT_R0, SLJIT_R1);
 		emitRawLoad(comparison.right, SLJIT_R0, SLJIT_R1);
 		emitValueTransportStore(m_compiler, SLJIT_SP, args + sizeof(Value), SLJIT_R0, SLJIT_R1);
+		// Ordering can read String records that overlap the frame in RAM. EQ
+		// only reads its transported operands. Keep the resident bindings.
+		if (op != OpCode::EQ) m_cache.publish();
 		m_cache.spillCall(false, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),
 			offsetof(NativeBlockRunState, remainingCycles), NativeBlockAbi::budget, 0);

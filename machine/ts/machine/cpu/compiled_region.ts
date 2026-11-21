@@ -88,7 +88,7 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 	}
 	for (const [load, group] of prologues) if (load !== '') source.push(`${group.map(index => `case ${index}:`).join('')}${load}break;`);
 	source.push('}R:for(;;){switch(N){');
-	const transfer = (block: typeof blocks[number], index: number): string => {
+	const transfer = (block: typeof blocks[number], index: number, residentsPublished: boolean): string => {
 		const exit = exits[index];
 		if (exit.exit === CompiledBlockExit.Continue) {
 			const target = entries.get(exit.nextPc);
@@ -97,10 +97,10 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 					: exit.registerTop === 0 ? '' : `if(T<${exit.registerTop})T=${exit.registerTop};`;
 				const required = admissionVarargs[target] === 0 ? `${admissionCycles[target]}`
 					: `${admissionCycles[target]}+${admissionVarargs[target]}*F.varargCount`;
-				return `if(B-${exit.cycles}>${required}){B-=${exit.cycles};${top}${block.registers.transferResidents(residents[target])}N=${target};continue R;}${block.registers.leaveResidents(index)}`;
+				return `if(B-${exit.cycles}>${required}){B-=${exit.cycles};${top}${block.registers.transferResidents(residents[target], residentsPublished)}N=${target};continue R;}${block.registers.leaveResidents(index, residentsPublished)}`;
 			}
 		}
-		return block.registers.leaveResidents(index);
+		return block.registers.leaveResidents(index, residentsPublished);
 	};
 	for (let index = 0; index < blocks.length; ++index) {
 		const block = blocks[index];
@@ -115,7 +115,7 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 			const frontier = (page.ops[block.finalWord] === OpCode.LEN || block.formatCycles !== 0)
 				? `if(B-${exit.cycles}<=${required}){${block.registers.leaveResidents(block.terminalIndex)}}` : '';
 			source.push(`case ${index}:{${block.body}\n${frontier}B-=${exit.cycles};${top}}`);
-		} else source.push(`case ${index}:{${block.body}\n${finishJavaScriptBlock(page, block, index => transfer(block, index))}}`);
+		} else source.push(`case ${index}:{${block.body}\n${finishJavaScriptBlock(page, block, (index, published) => transfer(block, index, published))}}`);
 	}
 	source.push('}}', writeBacks.epilogue(), 'const e=x[X];S.remainingCycles=B-e.cycles;',
 		'S.registerTop=Math.max(e.resetsRegisterTop?F.top:T,e.registerTop);return X;}');

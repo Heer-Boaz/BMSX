@@ -1,7 +1,9 @@
+#include "common/hash_fnv.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
+#include "spec/blua32/image_format.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
@@ -10,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <iostream>
 #include <stdexcept>
 
@@ -36,6 +39,75 @@ struct CpuMachine {
 			nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	}
 };
+
+void stringOrderingReadsPendingRegisterWords() {
+	for (const auto op : {OpCode::LT, OpCode::LE}) for (const bool expected : {true, false}) {
+		test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOADK), 3, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::KSMI), 4, 0, 2);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 3, static_cast<u8>(op), expected, 0, 1);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 0, 2);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::MOV), 7, 4, 0);
+		writeInstruction(image.text, 6, static_cast<u8>(OpCode::JMP), 0, 0, 1);
+		writeInstruction(image.text, 7, static_cast<u8>(OpCode::MOV), 8, 4, 0);
+		writeInstruction(image.text, 8, static_cast<u8>(OpCode::JMP), 0, 63, 55, 255);
+		image.functions = {{.firstWord = 0, .wordCount = 9, .maxStack = 9}};
+		image.constants = {std::bit_cast<i32>(fnv1a32("mz"))};
+		CpuMachine native(image, false), scalar(image, true);
+		const u32 pc = native.rom.textAddress;
+		const int prefix = BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::KSMI)];
+		const int grant = prefix + BASE_CYCLES[static_cast<u8>(op)];
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		native.cpu.prepareSystemNativeCode();
+		const auto& installed = *native.cpu.activeThread()->frameAtDepth(0)->executionImage;
+		const auto* page = installed.nativeCodeLookup->find(pc, 0);
+		const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		const auto* block = page->nativeBlocks->entries[word].get();
+		require(block && block->admissionCycles == prefix && block->sourceWords >= 5,
+			"the generated entry admits the prefix and comparison in one grant");
+#endif
+		for (auto* machine : {&native, &scalar}) {
+			auto& registers = machine->cpu.activeThread()->frameAtDepth(0)->registers;
+			const u32 record = RAM_BASE + registers.wordAddress() + 2u * INSTRUCTION_BYTES;
+			// Register words R2:R6 back a complete RAM String. The prefix changes "m" to "mz"
+			// by publishing its hash and length, while both successors keep R4 live.
+			machine->memory.writeRamRecordWord(record, BLUA32_STRING_RECORD_KIND);
+			machine->memory.writeRamRecordWord(record + BLUA32_STRING_HASH_OFFSET, fnv1a32("m"));
+			machine->memory.writeRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET, 1u);
+			machine->memory.writeRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET, 0u);
+			machine->memory.writeRamRecordWord(record + BLUA32_STRING_RECORD_HEADER_SIZE, 0x7a6du);
+			registers.set(0, valueString(record));
+			registers.set(1, valueString(machine->cpu.stringPool().intern("my")));
+		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded,
+			"the String comparison consumes both bytes and exhausts the grant");
+		for (auto* machine : {&native, &scalar}) {
+			const auto& cpu = machine->cpu;
+			require(cpu.readFramePc(0) == pc + (expected ? 5u : 4u) * INSTRUCTION_BYTES
+				&& cpu.readCurrentInstructionPc() == pc + 2u * INSTRUCTION_BYTES
+				&& cpu.lastPc == pc + 3u * INSTRUCTION_BYTES && cpu.instructionBudgetRemaining == -2,
+				"the ordering reads the new length, retaining the exact WIDE and fused JMP frontier");
+		}
+		require(native.cpu.captureRuntimeState() == scalar.cpu.captureRuntimeState()
+			&& test::sameLanguageRam(native.cpu, scalar.cpu), "ordering publishes the same architectural state");
+		for (auto* machine : {&native, &scalar}) {
+			auto& registers = machine->cpu.activeThread()->frameAtDepth(0)->registers;
+			registers.set(3, valueInteger(std::bit_cast<i32>(fnv1a32("m"))));
+			registers.set(4, valueInteger(1));
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+		}
+		const auto linkedWord = expected ? 5u : 7u;
+		const int continuation = BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + (expected ? 0 : BASE_CYCLES[static_cast<u8>(OpCode::JMP)]);
+		require(test::runCpuParity(native.cpu, scalar.cpu, grant + 2 + continuation) == RunResult::Yielded
+			&& native.cpu.readFramePc(0) == pc + (linkedWord + 1u) * INSTRUCTION_BYTES
+			&& native.cpu.lastPc == pc + linkedWord * INSTRUCTION_BYTES && native.cpu.instructionBudgetRemaining == 0
+			&& native.cpu.readFrameRegister(0, expected ? 7 : 8) == valueInteger(2),
+			"the linked successor sees the retained length binding with its exact known charge");
+		require(native.cpu.captureRuntimeState() == scalar.cpu.captureRuntimeState()
+			&& test::sameLanguageRam(native.cpu, scalar.cpu), "the linked successor publishes the same architectural state");
+	}
+}
 
 void numericRkComparisonsBelongToTheirExecutionImage() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -563,7 +635,7 @@ void pairedJumpLinksAcrossPages() {
 }
 
 void pairedJumpFaultsOnlyOnTheNextGrant() {
-	test::Blua32TestImage image; image.text.resize(9 * INSTRUCTION_BYTES);
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::EQ), 1, 0, 2);
 	constexpr u32 jumpWords = 2;
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, jumpWords >> 6u, jumpWords & 63u);
@@ -650,6 +722,7 @@ void skipFetchBoundaries() {
 
 int main() {
 	try {
+		stringOrderingReadsPendingRegisterWords();
 		numericRkComparisonsBelongToTheirExecutionImage();
 		changingSkippedBytesRetireResolvedEdges(); maximumLengthSkipDependencyRetires(); resolvedComparisonLinksBothPaths();
 		pairedWideJumpsRetainBoundariesAndMutableTargets(); pairedJumpLinksAcrossPages(); pairedJumpFaultsOnlyOnTheNextGrant(); skipFetchBoundaries();

@@ -98,10 +98,12 @@ export class JavaScriptRegisterCache {
 		return source;
 	}
 	/** Retain common locals; only departing dirty bindings return to the bank. */
-	public transferResidents(target: ReadonlyMap<number, boolean>): string {
+	public transferResidents(target: ReadonlyMap<number, boolean>, published: boolean): string {
 		let source = '';
-		for (const [register, written] of this.residents) if (written && target.get(register) !== true && !this.published.has(register))
-			source += `r.s(${register},y${register},z${register});`;
+		if (!published) {
+			for (const [register, written] of this.residents) if (written && target.get(register) !== true && !this.published.has(register))
+				source += `r.s(${register},y${register},z${register});`;
+		}
 		for (const register of target.keys()) if (!this.residents.has(register))
 			source += `y${register}=r.t(${register});z${register}=r.p(${register});`;
 		return source;
@@ -149,5 +151,5 @@ export class JavaScriptRegisterCache {
 	}
 	public exit(index: number): string { return `{${this.exits.leave(index, this.writeBack(true))}}`; }
 	/** Leave after the block body has already stored its non-resident locals. */
-	public leaveResidents(index: number): string { return this.exits.leave(index, this.writeResidents()); }
+	public leaveResidents(index: number, published = false): string { return this.exits.leave(index, published ? '' : this.writeResidents()); }
 }

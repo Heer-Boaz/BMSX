@@ -5,7 +5,9 @@ import { ValueTag } from './value';
 
 /** A comparison has two control successors and never writes operand A. */
 export function emitComparison(page: DecodedInstructionPage, word: number, registers: JavaScriptRegisterCache,
-	yes: string, no: string): string {
+	transfer: (matched: boolean, residentsPublished: boolean) => string): string {
+	const branch = (published: boolean) => `if(M){${transfer(true, published)}}else{${transfer(false, published)}}`;
+	const ordinaryBranch = branch(false);
 	const left = page.b[word], right = page.c[word];
 	let source = `{const l=${registers.tagOperand(left)},r0=${registers.tagOperand(right)};let M=false;`;
 	const numeric = `(l===${ValueTag.Integer}||l===${ValueTag.Float})&&(r0===${ValueTag.Integer}||r0===${ValueTag.Float})`;
@@ -14,8 +16,12 @@ export function emitComparison(page: DecodedInstructionPage, word: number, regis
 else if(l===r0)M=l<=${ValueTag.True}||${registers.wordOperand(left)}===${registers.wordOperand(right)};`;
 	} else {
 		const operator = page.ops[word] === OpCode.LT ? '<' : '<=';
+		// Non-resident locals are already published by the block body. String
+		// records can overlap resident slots; only this arm needs them in RAM.
+		// Its edges keep the bindings but must not publish the same slots again.
+		const publish = registers.writeResidents();
 		source += `if(${numeric}) M=${registers.numberOperand(left)}${operator}${registers.numberOperand(right)};
-else if(l===${ValueTag.String}&&r0===${ValueTag.String}) {const leftId=${registers.wordOperand(left)},rightId=${registers.wordOperand(right)};B-=Math.min(q.byteLength(leftId),q.byteLength(rightId));M=q.compare(leftId,rightId)${operator}0;}`;
+else if(l===${ValueTag.String}&&r0===${ValueTag.String}) {const leftId=${registers.wordOperand(left)},rightId=${registers.wordOperand(right)};${publish}B-=Math.min(q.byteLength(leftId),q.byteLength(rightId));M=q.compare(leftId,rightId)${operator}0;${publish === '' ? '' : branch(true)}}`;
 	}
-	return `${source}if(M){${yes}}else{${no}}}`;
+	return `${source}${ordinaryBranch}}`;
 }
