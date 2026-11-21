@@ -17,8 +17,8 @@ int main(void) {
 		.cpu_nanoseconds = 400u,
 		.max_command_nanoseconds = 300u,
 	};
-	bmsx_frame_timing_record(&report, 500u, UINT64_C(9007199254740997), 10000000u, 1000000u, true, 2000000u, true, false, true, &gx_upload, NULL, NULL, UINT64_C(9007199254740993), UINT64_C(18014398509481989), NULL);
-	bmsx_frame_timing_record(&report, 501u, 0u, 5000000000u, 0u, false, 0u, false, true, false, NULL, NULL, NULL, 0u, 0u, NULL);
+	bmsx_frame_timing_record(&report, 500u, UINT64_C(9007199254740997), 10000000u, 20000000u, UINT64_C(9007199264740997), 1000000u, true, 2000000u, true, false, true, &gx_upload, NULL, NULL, UINT64_C(9007199254740993), UINT64_C(18014398509481989), NULL);
+	bmsx_frame_timing_record(&report, 501u, 0u, 5000000000u, 16683333u, 16683333u, 0u, false, 0u, false, true, false, NULL, NULL, NULL, 0u, 0u, NULL);
 	bmsx_frame_timing_record_gx_upload(&report, &gx_upload);
 
 	CHECK(report.retro_run.count == 2u);
@@ -30,6 +30,7 @@ int main(void) {
 	CHECK(report.swap.buckets[2] == 1u);
 	CHECK(report.presented_frames == 1u);
 	CHECK(report.dropped_presentations == 1u);
+	CHECK(report.over_period_runs == 1u && report.paced_runs == 2u && report.missed_deadlines == 1u);
 	CHECK(report.gx_profiled_frames == 1u);
 	CHECK(report.gx_cpu_to_vram_commands == 2u);
 	CHECK(report.gx_logical_bytes == 16u);
@@ -57,13 +58,16 @@ int main(void) {
 	CHECK(report.slow_frames[1].final_blit_ns == 1000000u);
 	CHECK(report.slow_frames[1].swap_ns == 2000000u);
 	for (unsigned index = 0u; index < 100u; ++index) {
-		bmsx_frame_timing_record(&report, 502u + index, UINT64_C(9007199254741000) + index, index * 1000000ull, 0u, false, 0u, false, false, true, NULL, NULL, NULL, index * 2u, index * 3u, NULL);
+		bmsx_frame_timing_record(&report, 502u + index, UINT64_C(9007199254741000) + index, index * 1000000ull, 20000000u, 0u, 0u, false, 0u, false, false, true, NULL, NULL, NULL, index * 2u, index * 3u, NULL);
 	}
 	CHECK(report.slow_frame_count == BMSX_FRAME_TIMING_SLOW_FRAME_COUNT);
 	CHECK(report.outlier_count == 85u);
 	CHECK(outliers[0].host_frame == 501u && outliers[0].run_ns == 5000000000ull);
+	CHECK(outliers[0].period_ns == 16683333u && outliers[0].missed_deadline);
 	CHECK(outliers[1].host_frame == 518u && outliers[1].run_ns == 16000000u);
 	CHECK(outliers[84].host_frame == 601u && outliers[84].core_without_present_ns == 99000000u);
+	CHECK(outliers[84].period_ns == 20000000u && !outliers[84].missed_deadline);
+	CHECK(report.over_period_runs == 80u && report.paced_runs == 2u && report.missed_deadlines == 1u);
 	CHECK(report.slow_frames[0].host_frame == 501u);
 	CHECK(report.slow_frames[1].host_frame == 601u);
 	CHECK(report.slow_frames[BMSX_FRAME_TIMING_SLOW_FRAME_COUNT - 1u].host_frame == 571u);
@@ -103,12 +107,13 @@ int main(void) {
 	CHECK(interval.emitted_code_bytes == 120u && interval.code_bytes == 120u);
 	CHECK(interval.prepare_nanoseconds == 2000000u && interval.max_prepare_nanoseconds == 3000000u);
 	CHECK(interval.peak_code_bytes == 1000u && interval.max_prepare_root_pc == 0x1234u);
-	bmsx_frame_timing_record(&native_report, 20u, 0u, 10000000u, 0u, false, 0u, false, false, true, NULL, &interval, NULL, 0u, 0u, NULL);
+	bmsx_frame_timing_record(&native_report, 20u, 0u, 10000000u, 20000000u, 9000000u, 0u, false, 0u, false, false, true, NULL, &interval, NULL, 0u, 0u, NULL);
 	const BmsxNativeCompilationProfile idle = bmsx_native_compilation_profile_delta(&after, &after);
 	CHECK(idle.prepare_requests == 0u && idle.prepare_nanoseconds == 0u && idle.emitted_code_bytes == 0u);
 	CHECK(idle.code_bytes == 120u && idle.max_prepare_nanoseconds == 3000000u);
-	bmsx_frame_timing_record(&native_report, 21u, 0u, 5000000u, 0u, false, 0u, false, false, true, NULL, &idle, NULL, 0u, 0u, NULL);
+	bmsx_frame_timing_record(&native_report, 21u, 0u, 5000000u, 20000000u, 0u, 0u, false, 0u, false, false, true, NULL, &idle, NULL, 0u, 0u, NULL);
 	CHECK(native_report.native_profiled_frames == 2u);
+	CHECK(native_report.over_period_runs == 0u && native_report.paced_runs == 1u && native_report.missed_deadlines == 1u);
 	CHECK(native_report.native_compilation.prepare_requests == 2u);
 	CHECK(native_report.native_compilation.prepare_nanoseconds == 2000000u);
 	CHECK(native_report.native_compilation.discovery_nanoseconds == 500000u);
@@ -226,15 +231,15 @@ int main(void) {
 	CHECK(execution_idle.interpreter_concatn_count == 0);
 
 	BmsxFrameTimingReport execution_report = {0};
-	bmsx_frame_timing_record(&execution_report, 51u, 0u, 100000000u, 0u, false, 0u, false, true, false, NULL, NULL, &execution, 0u, 0u, NULL);
-	bmsx_frame_timing_record(&execution_report, 52u, 0u, 50000000u, 0u, false, 0u, false, false, true, NULL, NULL, &execution_idle, 0u, 0u, NULL);
+	bmsx_frame_timing_record(&execution_report, 51u, 0u, 100000000u, 20000000u, 0u, 0u, false, 0u, false, true, false, NULL, NULL, &execution, 0u, 0u, NULL);
+	bmsx_frame_timing_record(&execution_report, 52u, 0u, 50000000u, 20000000u, 0u, 0u, false, 0u, false, false, true, NULL, NULL, &execution_idle, 0u, 0u, NULL);
 	CHECK(execution_report.slow_frames[0].host_frame == 51u && execution_report.slow_frames[0].has_execution);
 	CHECK(execution_report.slow_frames[0].execution.scheduler_before_cycles == execution_before.scheduler_now_cycles);
 	CHECK(execution_report.slow_frames[0].execution.scheduler_after_cycles == execution_after.scheduler_now_cycles);
 	CHECK(execution_report.slow_frames[0].execution.gc_trace_nanoseconds == 22u);
 	CHECK(execution_report.slow_frames[1].execution.cpu_slice_count == 0u);
 	for (unsigned index = 0u; index < BMSX_FRAME_TIMING_SLOW_FRAME_COUNT; ++index) {
-		bmsx_frame_timing_record(&execution_report, 53u + index, 0u, 200000000ull + index, 0u, false, 0u, false, false, true, NULL, NULL, NULL, 0u, 0u, NULL);
+		bmsx_frame_timing_record(&execution_report, 53u + index, 0u, 200000000ull + index, 20000000u, 0u, 0u, false, 0u, false, false, true, NULL, NULL, NULL, 0u, 0u, NULL);
 	}
 	CHECK(execution_report.slow_frame_count == BMSX_FRAME_TIMING_SLOW_FRAME_COUNT);
 	CHECK(execution_report.slow_frames[0].host_frame == 84u);
@@ -259,11 +264,11 @@ int main(void) {
 	const BmsxGuestProgressInterval maintenance = {{58, first_cycle}, {58, first_cycle}};
 	const BmsxGuestProgressInterval partial = {{58, first_cycle}, {58, first_cycle + 4}};
 	const BmsxGuestProgressInterval completed = {{58, first_cycle + 4}, {59, first_cycle + 512}};
-	bmsx_frame_timing_record(&guest_report, 500, 20000000, 16000000, 0, false, 0, false, false, false,
+	bmsx_frame_timing_record(&guest_report, 500, 20000000, 16000000, 20000000u, 40000000u, 0, false, 0, false, false, false,
 		NULL, NULL, NULL, 1000, 5000, &maintenance);
-	bmsx_frame_timing_record(&guest_report, 501, 40000000, 10000000, 0, false, 0, false, false, false,
+	bmsx_frame_timing_record(&guest_report, 501, 40000000, 10000000, 20000000u, 60000000u, 0, false, 0, false, false, false,
 		NULL, NULL, NULL, 2000, 6000, &partial);
-	bmsx_frame_timing_record(&guest_report, 502, 60000000, 18000000, 250000, true, 0, false, false, true,
+	bmsx_frame_timing_record(&guest_report, 502, 60000000, 18000000, 20000000u, 80000000u, 250000, true, 0, false, false, true,
 		NULL, NULL, NULL, 3000, 7000, &completed);
 	CHECK(guest_report.guest_progress_runs == 3u && guest_report.retro_run.count == 3u);
 	CHECK(guest_report.zero_guest_tick_runs == 2u && guest_report.zero_guest_cycle_runs == 1u);

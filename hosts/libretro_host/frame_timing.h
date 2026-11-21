@@ -20,6 +20,8 @@ typedef struct BmsxFrameTimingOutlier {
 	uint64_t host_frame;
 	uint64_t run_ns;
 	uint64_t core_without_present_ns;
+	uint64_t period_ns;
+	bool missed_deadline;
 	BmsxGuestProgressInterval guest;
 } BmsxFrameTimingOutlier;
 
@@ -55,6 +57,9 @@ typedef struct BmsxFrameTimingReport {
 	BmsxFrameTimingHistogram swap;
 	uint64_t presented_frames;
 	uint64_t dropped_presentations;
+	uint64_t over_period_runs;
+	uint64_t paced_runs;
+	uint64_t missed_deadlines;
 	BmsxGuestProgressInterval guest;
 	uint64_t guest_progress_runs;
 	uint64_t zero_guest_tick_runs;
@@ -95,6 +100,8 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		uint64_t host_frame,
 		uint64_t host_run_start_monotonic_ns,
 		uint64_t retro_run_ns,
+		uint64_t period_ns,
+		uint64_t finish_deadline_ns,
 		uint64_t final_blit_ns,
 		bool final_blit_ran,
 		uint64_t swap_ns,

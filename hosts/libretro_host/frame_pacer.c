@@ -14,10 +14,12 @@ BmsxFramePacerDecision bmsx_frame_pacer_begin(BmsxFramePacer* pacer, uint64_t no
 			&& now_ns - pacer->next_deadline_ns > kFrameScheduleResyncNs) {
 		pacer->next_deadline_ns = now_ns;
 	}
+	const uint64_t finish_deadline_ns = pacer->next_deadline_ns + pacer->frame_period_ns;
 	BmsxFramePacerDecision decision = {
 		.elapsed_ns = pacer->has_previous_frame ? now_ns - pacer->previous_frame_start_ns : 0u,
+		.finish_deadline_ns = finish_deadline_ns,
 		.has_elapsed = pacer->has_previous_frame,
-		.drop_presentation = now_ns >= pacer->next_deadline_ns + pacer->frame_period_ns,
+		.drop_presentation = now_ns >= finish_deadline_ns,
 	};
 	pacer->previous_frame_start_ns = now_ns;
 	pacer->has_previous_frame = true;

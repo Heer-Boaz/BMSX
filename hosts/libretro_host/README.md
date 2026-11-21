@@ -148,6 +148,10 @@ Options:
   ticks must complete; an incomplete run, rewind, or multi-tick call fails
   without a benchmark summary.
 - `--timing-report`: prints fixed-size `retro_run`, core-without-presentation, final-blit and swap histograms at shutdown; the GLES2 backend additionally reports GX CPU-to-VRAM command/call/byte/time totals
+  `over_period` counts host calls longer than their assigned display period.
+  `missed_deadlines` counts paced host calls that finish after their scheduled
+  deadline, even if the call itself takes less than one period. Unpaced calls
+  have no deadline. Neither count is the number of dropped presentations.
   It retains the 32 slowest measured calls with their host-frame numbers,
   presentation times and matching GX upload counters. Samples use fixed
   storage; no per-frame log output is emitted.

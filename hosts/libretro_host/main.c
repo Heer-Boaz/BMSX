@@ -571,6 +571,8 @@ int main(int argc, char** argv) {
 					run_frame_count,
 					run_start_ns,
 					run_ns,
+					frame_pacer.frame_period_ns,
+					unpaced_timeline ? 0u : pacing.finish_deadline_ns,
 					frame_timing.current_blit_ns,
 					frame_timing.current_blit_ran,
 					frame_timing.current_swap_ns,

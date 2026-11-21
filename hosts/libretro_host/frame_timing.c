@@ -64,6 +64,8 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		uint64_t host_frame,
 		uint64_t host_run_start_monotonic_ns,
 		uint64_t retro_run_ns,
+		uint64_t period_ns,
+		uint64_t finish_deadline_ns,
 		uint64_t final_blit_ns,
 		bool final_blit_ran,
 		uint64_t swap_ns,
@@ -83,13 +85,19 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 	record_histogram(&report->retro_run, retro_run_ns);
 	const uint64_t core_without_present_ns = retro_run_ns - final_blit_ns - swap_ns;
 	record_histogram(&report->core_without_present, core_without_present_ns);
+	const uint64_t run_end_ns = host_run_start_monotonic_ns + retro_run_ns;
+	const bool paced = finish_deadline_ns != 0u;
+	const bool missed_deadline = paced && run_end_ns > finish_deadline_ns;
+	report->over_period_runs += retro_run_ns > period_ns;
+	report->paced_runs += paced;
+	report->missed_deadlines += missed_deadline;
 	if (guest != NULL) {
 		if (report->guest_progress_runs++ == 0u) {
 			report->guest.before = guest->before;
 			report->guest_first_run_start_ns = host_run_start_monotonic_ns;
 		}
 		report->guest.after = guest->after;
-		report->guest_last_run_end_ns = host_run_start_monotonic_ns + retro_run_ns;
+		report->guest_last_run_end_ns = run_end_ns;
 		report->guest_process_cpu_ns += host_process_cpu_ns;
 		report->zero_guest_tick_runs += guest->before.tick_sequence == guest->after.tick_sequence;
 		report->zero_guest_cycle_runs += guest->before.scheduler_cycles == guest->after.scheduler_cycles;
@@ -100,6 +108,8 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 			.host_frame = host_frame,
 			.run_ns = retro_run_ns,
 			.core_without_present_ns = core_without_present_ns,
+			.period_ns = period_ns,
+			.missed_deadline = missed_deadline,
 		};
 		if (guest != NULL) sample->guest = *guest;
 	}
@@ -170,6 +180,9 @@ void bmsx_frame_timing_print(
 	print_histogram("core_without_present", &report->core_without_present);
 	print_histogram("final_blit", &report->final_blit);
 	print_histogram("swap", &report->swap);
+	fprintf(stderr, "[libretro-host][timing] over_period=%llu paced_runs=%llu missed_deadlines=%llu\n",
+			(unsigned long long)report->over_period_runs, (unsigned long long)report->paced_runs,
+			(unsigned long long)report->missed_deadlines);
 	fprintf(stderr,
 			"[libretro-host][timing] presented=%llu dropped=%llu %s=%llu\n",
 			(unsigned long long)report->presented_frames,
@@ -191,9 +204,10 @@ void bmsx_frame_timing_print(
 		fprintf(stderr, "[libretro-host][timing] over_15ms=%zu\n", report->outlier_count);
 		for (size_t index = 0; index < report->outlier_count; ++index) {
 			const BmsxFrameTimingOutlier* sample = &report->outliers[index];
-			fprintf(stderr, "[libretro-host][over-15ms] host_frame=%llu run_ns=%llu core_without_present_ns=%llu",
+			fprintf(stderr, "[libretro-host][over-15ms] host_frame=%llu run_ns=%llu core_without_present_ns=%llu period_ns=%llu missed_deadline=%u",
 				(unsigned long long)sample->host_frame, (unsigned long long)sample->run_ns,
-				(unsigned long long)sample->core_without_present_ns);
+				(unsigned long long)sample->core_without_present_ns, (unsigned long long)sample->period_ns,
+				(unsigned)sample->missed_deadline);
 			if (report->guest_progress_runs != 0u) {
 				fprintf(stderr, " tick_before=%lld tick_after=%lld cycle_before=%lld cycle_after=%lld",
 					(long long)sample->guest.before.tick_sequence, (long long)sample->guest.after.tick_sequence,

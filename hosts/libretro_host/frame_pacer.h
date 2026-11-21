@@ -12,6 +12,7 @@ typedef struct BmsxFramePacer {
 
 typedef struct BmsxFramePacerDecision {
 	uint64_t elapsed_ns;
+	uint64_t finish_deadline_ns;
 	bool has_elapsed;
 	bool drop_presentation;
 } BmsxFramePacerDecision;
