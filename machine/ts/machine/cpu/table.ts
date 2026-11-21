@@ -7,6 +7,7 @@ import { LuaExecutionError } from './errors';
 import type { GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
 import type { Thread } from './thread';
+import type { CallFrame } from './call_state';
 import {
 	ValueTag, asInteger, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
 	valueIsNaN, valueNil, valuePayload, valueString, valueTable, valueTag, valueTagHasGcEdge, type Value,
@@ -88,13 +89,13 @@ export class TableRecords {
 	private wordAt(record: number, slot: number): number { return this.heap.memory.readRamRecordWord(this.storageAddress(record) + slot * 4); }
 	private tagAt(record: number, slot: number): ValueTag { return this.heap.memory.readRamRecordByte(this.tags(record) + slot); }
 	private valueAt(record: number, slot: number): Value { return valueFromTag(this.tagAt(record, slot), this.wordAt(record, slot)); }
-	private headerIsDisjoint(record: number, stack: Thread): boolean {
+	private headerIsDisjoint(record: number, frame: Thread | CallFrame): boolean {
 		const start = record & RAM_RECORD_WORD_MASK;
-		return start <= MAIN_RAM_SIZE - TableRecords.HEADER_BYTES && !stack.overlapsStack(start, TableRecords.HEADER_BYTES);
+		return start <= MAIN_RAM_SIZE - TableRecords.HEADER_BYTES && !frame.overlapsRam(start, TableRecords.HEADER_BYTES);
 	}
-	private slotIsDisjoint(words: number, tags: number, slot: number, stack: Thread): boolean {
-		return !stack.overlapsStack((words + slot * 4) & RAM_RECORD_WORD_MASK, 4)
-			&& !stack.overlapsStack((tags + slot) & (MAIN_RAM_SIZE - 1), 1);
+	private slotIsDisjoint(words: number, tags: number, slot: number, frame: Thread | CallFrame): boolean {
+		return !frame.overlapsRam((words + slot * 4) & RAM_RECORD_WORD_MASK, 4)
+			&& !frame.overlapsRam((tags + slot) & (MAIN_RAM_SIZE - 1), 1);
 	}
 	private setEncoded(record: number, slot: number, tag: ValueTag, word: number): void {
 		const words = this.storageAddress(record), tags = words + (this.arrayCapacity(record) + 3 * this.hashSize(record)) * 4;
@@ -186,7 +187,7 @@ export class TableRecords {
 		const value = this.getInteger(record, index);
 		target.setEncoded(destination, valueTag(value), valuePayload(value));
 	}
-	public loadIntegerArrayKey(record: number, index: number, target: ValueWriteTarget, destination: number, stack?: Thread): boolean {
+	public loadIntegerArrayKey(record: number, index: number, target: ValueWriteTarget, destination: number, stack?: Thread | CallFrame): boolean {
 		if (stack !== undefined && !this.headerIsDisjoint(record, stack)) return false;
 		const slot = this.integerArrayIndex(index), array = this.arrayCapacity(record);
 		if (slot < 0 || slot >= array) return false;
@@ -241,7 +242,7 @@ export class TableRecords {
 		return memory.readRamRecordByte(tags + keySlot) === ValueTag.String
 			&& memory.readRamRecordWord(words + keySlot * 4) === key ? keySlot + hash : -1;
 	}
-	public loadPredictedStringKey(record: number, key: StringId, predicted: number, target: ValueWriteTarget, destination: number, stack?: Thread): boolean {
+	public loadPredictedStringKey(record: number, key: StringId, predicted: number, target: ValueWriteTarget, destination: number, stack?: Thread | CallFrame): boolean {
 		if (predicted < 0 || (stack !== undefined && !this.headerIsDisjoint(record, stack))) return false;
 		const hash = this.hashSize(record);
 		if (predicted >= hash) return false;
@@ -457,7 +458,7 @@ export class TableRecords {
 	}
 	private storeIsAdmitted(record: number, words: number, tags: number, slot: number, stack: Thread): boolean {
 		const word = (words + slot * 4) & RAM_RECORD_WORD_MASK, tag = (tags + slot) & (MAIN_RAM_SIZE - 1);
-		if (stack.overlapsStack(word, 4) || stack.overlapsStack(tag, 1)) return false;
+		if (stack.overlapsRam(word, 4) || stack.overlapsRam(tag, 1)) return false;
 		const watches = this.heap.memory.ramWriteWatches();
 		return !watches.anyWatched(record & RAM_RECORD_WORD_MASK, TableRecords.HEADER_BYTES)
 			&& !watches.anyWatched(word, 4) && !watches.anyWatched(tag, 1);

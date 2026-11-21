@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { valueBool, valueBuiltinFunction, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { TableHeader } from '../../machine/ts/machine/cpu/table';
+import { ValueTag, valueBool, valueBuiltinFunction, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { LUA_FAULT_REASON_ASSIGN_NON_TABLE, LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL,
@@ -13,6 +15,41 @@ import { BASE_CYCLES, OpCode, TABLE_INDEX_VISIT_CYCLES, TABLE_LENGTH_PROBE_CYCLE
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+
+test('a compiled array lookup observes the advanced physical PC without dirty value slots', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.MOV, 1, 1, 0);
+	writeInstruction(text, 1, OpCode.GETI, 2, 0, 1);
+	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
+	const image = linkRawTestSystemBlua32({ text, constants: [], functions: [{ firstWord: 0, wordCount: 3, maxStack: 4 }] });
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const { cpu } = createTestSystemCpu(image, backend);
+		const frame = cpu.rootThread.currentFrame!, start = frame.pc, afterRead = start + 2 * INSTRUCTION_BYTES;
+		const table = cpu.createTable(1);
+		cpu.gc.tables.setInteger(table, 1, valueInteger(73));
+		frame.registers.setTable(0, table);
+		frame.top = 4;
+		cpu.runUntilDepth(0, 2048);
+		const cell = frame.controlOffset + FrameField.Pc;
+		cpu.memory.writeRamRecordWord(table + TableHeader.Storage, cell);
+		cpu.memory.writeRamRecordByte(cell + Uint32Array.BYTES_PER_ELEMENT, ValueTag.Integer);
+		if (backend === CpuExecutionBackend.JavaScript) {
+			const page = frame.decodedPage!, word = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+			const entry = page.compiledBlocks!.entries[word];
+			assert.ok(entry);
+			// The enclosing CPU has published only the first instruction's
+			// PC. The raw port names the same frame word as the table lane.
+			frame.pc = start + INSTRUCTION_BYTES;
+			const run = { remainingCycles: 64, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } };
+			const id = entry.region.execute(frame.registers, frame.executionImage.constWords, page, frame, entry.entry, run);
+			assert.equal(entry.region.exits[id].exit, CompiledBlockExit.ReadInteger);
+		}
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
+		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.GETI] + BASE_CYCLES[OpCode.JMP]), RunResult.Yielded);
+		assert.equal(frame.registers.getInteger(2), afterRead);
+		assert.equal(frame.pc, start);
+	}
+});
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 	test(`WIDE __newindex and __len use the ordinary activation and preserve result placement (${backend})`, () => {

@@ -34,7 +34,7 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 	const value = load ? '' : `${r.tagOperand(c)},${r.wordOperand(c)}`;
 	const target = load ? `r,${a}` : value;
 	const arrayTarget = load ? target : `${target},nk`;
-	const stack = !load || r.hasPendingWrites() ? ',F.thread' : '';
+	const stack = !load || r.hasPendingWrites() ? ',F.thread' : ',F';
 	const stringOperation = load ? 'lp' : 'sp';
 	const arrayOperation = load ? 'li' : 'si';
 	let access: string;

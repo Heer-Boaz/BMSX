@@ -756,6 +756,36 @@ void semanticStoreContinuesAtTheLivePc() {
 		"the live guest PC selects the successor despite a published sequential entry");
 }
 
+void linkedArrayReadObservesTheAdvancedPc() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMP), 0, 0, 1);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::GETI), 2, 0, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}};
+	CpuMachine native(image), scalar(image, true);
+	const u32 start = native.rom.textAddress, afterRead = start + 3 * INSTRUCTION_BYTES;
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		auto table = cpu.createTable(1);
+		frame.registers.set(0, valueTable(table.address()));
+		frame.setTop(4);
+		const u32 cell = frame.controlOffset + static_cast<u32>(FrameField::Pc);
+		machine->memory.writeRamRecordWord(table.address() + static_cast<u32>(TableHeader::Storage), cell);
+		machine->memory.writeRamRecordByte(cell + sizeof(u32), static_cast<u8>(ValueTag::Integer));
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+#endif
+	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::JMP)] + BASE_CYCLES[static_cast<u8>(OpCode::GETI)];
+	require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded, "the read exhausts the exact post-branch grant");
+	require(native.cpu.readFrameRegister(0, 2) == valueInteger(afterRead),
+		"the lookup sees the advanced PC even without dirty value slots");
+	requireParity(native, scalar);
+}
+
 void nativeFieldOperationsLearnTheDecodedSite() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::Blua32TestImage image;
@@ -928,7 +958,7 @@ void nestedFieldReadObservesPublishedRegisterAlias() {
 	}
 }
 
-void inheritedFieldReadObservesPublishedRegisterAlias() {
+void inheritedFieldReadObservesPublishedFrame(bool control) {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 3, 0, 0);
@@ -944,7 +974,7 @@ void inheritedFieldReadObservesPublishedRegisterAlias() {
 	const int total = prefix + BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + TABLE_INDEX_VISIT_CYCLES;
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu;
-		auto receiver = cpu.createTable(), meta = cpu.createTable(0, 1), holder = cpu.createTable(0, 1);
+		auto receiver = cpu.createTable(), meta = cpu.createTable(0, 1), holder = cpu.createTable(0, control ? 16 : 1);
 		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(holder.address()));
 		holder.setStringKey(*cpu.stringPool().find("inherited word"), valueInteger(41));
 		receiver.setMetatableAddress(meta.address());
@@ -970,15 +1000,21 @@ void inheritedFieldReadObservesPublishedRegisterAlias() {
 #endif
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu;
-		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
-		// A=0,H=1: the holder's value is the physical R3 payload. The
-		// receiver and its metatable remain disjoint from the activation.
-		const u32 storage = registers.wordAddress() + 2u * sizeof(u32);
-		const u32 tags = storage + 3u * sizeof(u32);
-		machine->memory.writeRamRecordWord(valuePayload(registers.get(1)) + static_cast<u32>(TableHeader::Storage), storage);
-		machine->memory.writeRamRecordWord(storage, *cpu.stringPool().find("inherited word"));
-		machine->memory.writeRamRecordByte(tags, static_cast<u8>(ValueTag::String));
-		machine->memory.writeRamRecordByte(tags + 1u, static_cast<u8>(ValueTag::Integer));
+		const auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		auto holder = asTable(frame.registers.get(1), cpu.gcHeap());
+		const auto key = *cpu.stringPool().find("inherited word");
+		int prediction = -1;
+		require(holder.getStringKeyCached(key, prediction) == valueInteger(41) && prediction >= 0,
+			"the prepared holder key occupies its trained slot");
+		const u32 value = control ? frame.controlOffset + static_cast<u32>(FrameField::Pc)
+			: frame.registers.wordAddress() + 3u * sizeof(u32);
+		const u32 keySlot = static_cast<u32>(prediction), hash = holder.hashSlots();
+		const u32 storage = value - (keySlot + hash) * sizeof(u32);
+		const u32 tags = storage + 3u * hash * sizeof(u32);
+		machine->memory.writeRamRecordWord(holder.address() + static_cast<u32>(TableHeader::Storage), storage);
+		machine->memory.writeRamRecordWord(storage + keySlot * sizeof(u32), key);
+		machine->memory.writeRamRecordByte(tags + keySlot, static_cast<u8>(ValueTag::String));
+		machine->memory.writeRamRecordByte(tags + keySlot + hash, static_cast<u8>(ValueTag::Integer));
 	}
 	for (int grant : {prefix + 1, total}) {
 		for (auto* machine : {&native, &scalar}) {
@@ -989,8 +1025,9 @@ void inheritedFieldReadObservesPublishedRegisterAlias() {
 			registers.set(6, valueInteger(99)); registers.set(7, valueInteger(99));
 		}
 		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded, "one hop stops at the suffix");
-		require(native.cpu.readFrameRegister(0, 3) == valueInteger(1) && native.cpu.readFrameRegister(0, 6) == valueInteger(1),
-			"the inherited probe sees the pending prefix word rather than the old spill");
+		require(native.cpu.readFrameRegister(0, 3) == valueInteger(1)
+			&& native.cpu.readFrameRegister(0, 6) == valueInteger(control ? suffix : 1),
+			"the inherited probe sees the published slot or advanced PC, not the old frame word");
 		require(native.cpu.readCurrentInstructionPc() == field && native.cpu.lastPc == field + INSTRUCTION_BYTES
 			&& native.cpu.readFramePc(0) == suffix && native.cpu.instructionBudgetRemaining == grant - total
 			&& native.cpu.readFrameRegister(0, 7) == valueInteger(99), "the WIDE read charges one hop and publishes the exact frontier");
@@ -1183,10 +1220,11 @@ int main() {
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 		stringStoreCanRetireItsOwnSource();
 		semanticStoreContinuesAtTheLivePc();
+		linkedArrayReadObservesTheAdvancedPc();
 		nativeFieldOperationsLearnTheDecodedSite();
 		coldRepeatedFieldsRecompileTheirSource();
 		nestedFieldReadObservesPublishedRegisterAlias();
-		inheritedFieldReadObservesPublishedRegisterAlias();
+		for (const bool control : {false, true}) inheritedFieldReadObservesPublishedFrame(control);
 		for (bool field : {false, true}) tableWriteObservesCleanRegisterAlias(field);
 		tableWriteDoesNotExportAStaleRamTagProof();
 		negativeIntegerKeysDoNotEnterRawArrayCapacity();

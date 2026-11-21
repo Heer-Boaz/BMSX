@@ -56,7 +56,7 @@ export class Thread {
 		return this.boundBackingBytes;
 	}
 	/** Checked execution footprints use physical offsets, after RAM-port mirroring. */
-	public overlapsStack(first: number, bytes: number): boolean {
+	public overlapsRam(first: number, bytes: number): boolean {
 		const begin = this.stackOffset();
 		return first + bytes > begin && first < begin + this.boundBackingBytes;
 	}

@@ -32,6 +32,15 @@ sljit_jump* NativeBlockAbi::emitFrameControlOverlap(sljit_compiler* c, sljit_s32
 	return sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, scratch, 0, SLJIT_IMM, FRAME_CONTROL_BYTES + bytes - 1u);
 }
 
+void NativeBlockAbi::emitPublishFrameControl(sljit_compiler* c, u32 nextPc) {
+	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, frameControl));
+	emitRamAddress(c, SLJIT_R1, SLJIT_R1);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R1), static_cast<u32>(FrameField::Pc), SLJIT_IMM, nextPc);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), static_cast<u32>(FrameField::Top), SLJIT_IMM, ~FRAME_WINDOW_MASK);
+	sljit_emit_op2(c, SLJIT_OR32, SLJIT_MEM1(SLJIT_R1), static_cast<u32>(FrameField::Top), SLJIT_R2, 0,
+		SLJIT_MEM1(state), offsetof(NativeBlockRunState, registerTop));
+}
+
 NativeBlockGate::NativeBlockGate() {
 	auto* compiler = sljit_create_compiler(nullptr);
 	if (!compiler)

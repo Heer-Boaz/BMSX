@@ -84,6 +84,7 @@ private:
 	void emitArrayRead(NativeBlockExitSite&, bool guardStack);
 	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&, bool guardStack);
 	void emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBlockExitSite&, sljit_s32 scratch = SLJIT_R2);
+	void admitTableFootprint(sljit_s32 offset, u32 bytes, bool wholeStack, NativeBlockExitSite&, sljit_s32 scratch = SLJIT_R2);
 	struct TableStackAdmission { bool reads, overwrites; };
 	std::array<sljit_jump*, 3> emitStringValueAddress(NativeBlockExitSite&, bool load,
 		TableStackAdmission, std::optional<u8> temporary);

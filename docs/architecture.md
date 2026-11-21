@@ -152,7 +152,10 @@ execution state or observe a boundary stay with the ordinary CPU path.
 
 Both engines consume the same guest values, frames, heap and control state.
 Generated execution retains intermediate values in locals or native registers
-where possible and publishes required state at semantic exits. Allocation,
+where possible. A physical RAM observer either admits a footprint disjoint
+from deferred writes or observes the published values and frame control.
+Returning helpers resume at the live frame PC, not at a cached destination
+when those addresses differ. Allocation,
 checked bus operations, exceptions and frame transitions use the CPU's shared
 semantic owners rather than a second implementation of the machine contract.
 Debug observation and bounded execution retain their ordinary CPU boundaries;
