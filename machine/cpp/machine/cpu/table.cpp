@@ -11,20 +11,29 @@ namespace bmsx {
 
 namespace {
 constexpr int32_t kTableHashNextEnd = -1;
-constexpr int kStoreRequiresGrowth = -2;
+// An explicit reservation can outlive its physical hash, for example when
+// all its integer keys move to the array. The record-pair trailer is cold.
+constexpr u32 kExplicitHashReserve = 1u << 16;
+constexpr u32 kHashMappingBytes = 10u;
+
+constexpr u32 hashMetadataOffset(size_t array, size_t hash) {
+	return (static_cast<u32>(5u * array + 14u * hash) + 7u) & ~7u;
+}
 } // namespace
 
 TableRecord::TableRecord(GcHeap& heap, u32 address)
 	: m_heap(&heap), m_memory(&heap.memory), m_address(address) {
 }
 
-void TableRecord::initialize(size_t array, size_t hash) {
-	writeHeader(TableHeader::Kind, static_cast<u32>(ValueTag::Table) | (static_cast<u32>(m_heap->white()) << 8u));
+void TableRecord::initialize(size_t array, size_t hash, u32 reserve) {
+	writeHeader(TableHeader::Kind, static_cast<u32>(ValueTag::Table) | (static_cast<u32>(m_heap->white()) << 8u)
+		| (reserve != 0u ? kExplicitHashReserve : 0u));
 	writeHeader(TableHeader::Gray, 0);
 	writeHeader(TableHeader::Metatable, 0);
 	writeHeader(TableHeader::Length, 0);
 	bindStorage(array, hash, storageAddress());
 	initializeStorage();
+	if (hash != 0u || reserve != 0u) m_memory->writeRamRecordPair(hashMetadata(), reserve, 0u);
 }
 
 void TableRecord::setMetatableAddress(u32 address) {
@@ -38,19 +47,35 @@ void TableRecord::setArraySlot(size_t slot, const Value& value) {
 	updateLengthHint(slot, !isNil(value));
 }
 
-u32 TableRecord::storageBytes(size_t arraySize, size_t hashSize) {
-	return static_cast<u32>(arraySize * 5 + hashSize * 14);
+u32 TableRecord::storageBytes(size_t arraySize, size_t hashSize, u32 reserve) {
+	return hashSize != 0u || reserve != 0u ? hashMetadataOffset(arraySize, hashSize) + 8u : static_cast<u32>(arraySize) * 5u;
+}
+
+u32 TableRecord::allocationCharge(size_t arraySize, u32 hashEntries) {
+	return static_cast<u32>(arraySize) * 5u + hashEntries * kHashMappingBytes;
+}
+
+u32 TableRecord::hashMetadata() const {
+	return storageAddress() + hashMetadataOffset(arrayCapacity(), hashSlots());
+}
+
+u32 TableRecord::hashReserve() const {
+	return (readHeader(TableHeader::Kind) & kExplicitHashReserve) != 0u ? m_memory->readRamRecordWord(hashMetadata()) : 0u;
+}
+
+u32 TableRecord::hashMembers() const {
+	return hashSlots() != 0u ? m_memory->readRamRecordWord(hashMetadata() + 4u) : 0u;
+}
+
+void TableRecord::publishHashMembers(u32 previous, u32 members, u32 reserve) {
+	m_memory->writeRamRecordWord(hashMetadata() + 4u, members);
+	m_heap->budget.replaceRecord(0u, std::max(reserve, previous) * kHashMappingBytes, std::max(reserve, members) * kHashMappingBytes);
 }
 
 size_t TableRecord::hashCapacity(int hashSize) {
 	return hashSize > 0
 		? nextPowerOfTwo(static_cast<size_t>(hashSize))
 		: 0;
-}
-
-size_t TableRecord::trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCapacity) {
-	const u32 bytes = storageBytes(arrayCapacity, hashCapacity);
-	return HEADER_BYTES + (bytes ? heapAllocationBytes(bytes) : 0u);
 }
 
 u32 TableRecord::arraySlot(const Value& key) {
@@ -118,19 +143,21 @@ Value TableRecord::HashBody::predictedString(i32 node, StringId key) const {
 	return tag == ValueTag::Nil ? valueNil() : valueFromTag(tag, slots.word(slot));
 }
 
-int TableRecord::getFreeIndex(const HashBody& body) {
+int TableRecord::findFreeIndex(const HashBody& body) const {
 	for (int i = hashFree(); i >= 0; --i) {
 		const u32 keySlot = body.array + static_cast<u32>(i);
 		if (body.slots.tag(keySlot) == ValueTag::Nil && body.slots.tag(keySlot + body.count) == ValueTag::Nil) {
-			writeHeader(TableHeader::Free, static_cast<u32>(i - 1));
 			return i;
 		}
 	}
-	writeHeader(TableHeader::Free, static_cast<u32>(-1));
 	return -1;
 }
 
-void TableRecord::rehash(const Value& key, const Value& value) {
+TableRecord::ResizePlan TableRecord::planRehash(Value key, u32 reserve, u32 members) const {
+	// Physical tombstones can require a fresh layout even when the logical
+	// hash has not reached the occupancy frontier that reconsiders the array.
+	if (members + 1u <= std::max<size_t>(reserve, hashCapacity(static_cast<int>(members))))
+		return {arrayCapacity(), hashCapacity(static_cast<int>(members + 1u)), members + 1u};
 	const auto body = hashBody(hashSlots(), arrayCapacity());
 	const auto& slots = body.slots;
 	size_t totalKeys = 0;
@@ -184,39 +211,61 @@ void TableRecord::rehash(const Value& key, const Value& value) {
 
 	size_t hashKeys = totalKeys - arrayKeys;
 	size_t hashSize = hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0;
-	resize(arraySize, hashSize, key, value);
+	return {arraySize, hashSize, static_cast<u32>(hashKeys)};
 }
 
-void TableRecord::resize(
-	size_t newArraySize,
-	size_t newHashSize,
-	const Value& key,
-	const Value& value
-) {
+int TableRecord::rehash(Value key, Value value, u32 reserve, u32 members) {
+	auto& budget = m_heap->budget;
+	const Value owner = valueTable(m_address);
+	auto plan = planRehash(key, reserve, members);
+	u32 previous = allocationCharge(arrayCapacity(), std::max(reserve, members));
+	u32 requested = allocationCharge(plan.array, std::max(reserve, plan.members));
+	const auto assist = requested > previous ? budget.prepareAllocation(requested - previous, owner, key, value) : LuaAllocationAssist::None;
+	bool replan = assist == LuaAllocationAssist::Full;
+#if defined(BMSX_GC_STRESS)
+	replan = assist != LuaAllocationAssist::None;
+#endif
+	for (int attempt = assist == LuaAllocationAssist::Full ? 1 : 0; attempt != 2; ++attempt) {
+		if (replan) {
+			const u32 retained = hashMembers();
+			plan = planRehash(key, reserve, retained);
+			previous = allocationCharge(arrayCapacity(), std::max(reserve, retained));
+			requested = allocationCharge(plan.array, std::max(reserve, plan.members));
+		}
+		if (requested <= previous || budget.usedBytes() + requested - previous <= budget.capacity()) {
+			if (const u32 storage = m_heap->arena.allocate(storageBytes(plan.array, plan.hash, reserve), true))
+				return resize(plan, storage, key, value, reserve);
+		}
+		if (attempt == 0) {
+			budget.collectRuntime(owner, key, value);
+			replan = true;
+		}
+	}
+	throw LuaOutOfMemorySignal{};
+}
+
+int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value value, u32 reserve) {
+	const auto [newArraySize, newHashSize, wantedMembers] = plan;
 	const size_t oldArraySize = arrayCapacity(), oldHashSize = hashSlots();
-	const u32 previous = storageBytes(oldArraySize, oldHashSize);
-	const u32 requested = storageBytes(newArraySize, newHashSize);
-	const u32 increase = requested - std::min(requested, previous);
-	const u32 storage = m_heap->budget.reserveBacking(requested, increase, valueTable(m_address), key, value);
-	// Admission can collect weak entries but not change these capacities.
 	// Restart any collector scan against the complete, redistributed body.
 	m_heap->tableEntriesMoved(m_address);
 	const auto oldValues = values();
+	const u32 retained = allocationCharge(oldArraySize, std::max(reserve, hashMembers()));
 	bindStorage(newArraySize, newHashSize, storage);
 	initializeStorage();
 
 	for (size_t i = 0; i < oldArraySize; ++i) {
-		if (!isNil(oldValues.get(i))) {
-			rawSet(valueInteger(static_cast<i32>(i + 1)), oldValues.get(i));
-		}
+		const Value prior = oldValues.get(i);
+		if (!isNil(prior)) rawSet(valueInteger(static_cast<i32>(i + 1)), prior);
 	}
 	for (size_t i = 0; i < oldHashSize; ++i) {
-		const Value key = oldValues.get(oldArraySize + i);
-		if (!isNil(key) && !isNil(oldValues.get(oldArraySize + oldHashSize + i))) {
-			rawSet(key, oldValues.get(oldArraySize + oldHashSize + i));
-		}
+		const Value priorKey = oldValues.get(oldArraySize + i), prior = oldValues.get(oldArraySize + oldHashSize + i);
+		if (!isNil(priorKey) && !isNil(prior)) rawSet(priorKey, prior);
 	}
-	m_heap->budget.replaceRecord(oldValues.words, previous, requested);
+	const int slot = rawSet(key, value);
+	if (newHashSize != 0u || reserve != 0u) m_memory->writeRamRecordPair(hashMetadata(), reserve, wantedMembers);
+	m_heap->budget.replaceRecord(oldValues.words, retained, allocationCharge(newArraySize, std::max(reserve, wantedMembers)));
+	return slot;
 }
 
 void TableRecord::bindStorage(size_t arraySize, size_t hashSize, u32 address) {
@@ -227,7 +276,7 @@ void TableRecord::bindStorage(size_t arraySize, size_t hashSize, u32 address) {
 }
 
 void TableRecord::initializeStorage() {
-	const u32 bytes = storageBytes(arrayCapacity(), hashSlots());
+	const u32 bytes = static_cast<u32>(arrayCapacity()) * 5u + static_cast<u32>(hashSlots()) * 14u;
 	if (bytes == 0) return;
 	const u32 words = storageAddress() & RAM_RECORD_WORD_MASK;
 	const u32 links = words + (arrayCapacity() + 2u * hashSlots()) * 4u;
@@ -241,7 +290,7 @@ void TableRecord::initializeStorage() {
 
 void TableRecord::freeStorage() {
 	const u32 storage = storageAddress();
-	if (storage != 0) m_heap->budget.releaseRecord(storage, storageBytes(arrayCapacity(), hashSlots()));
+	if (storage != 0) m_heap->budget.releaseRecord(storage, allocationCharge(arrayCapacity(), std::max(hashReserve(), hashMembers())));
 }
 
 void TableRecord::freeRecord() {
@@ -258,15 +307,8 @@ int TableRecord::rawSet(const Value& key, const Value& value) {
 		body.slots.set(index, value);
 		return -1;
 	}
-	if (count != 0u) {
-		const u32 home = hashCanonicalTableKey(canonicalTableKey(key)) & (count - 1u);
-		const int nodeIndex = insertHashWithoutGrowth(body, home, key, value);
-		if (nodeIndex >= 0) return nodeIndex;
-	}
-	// Growth may collect and relocate a source Thread's register storage.
-	const Value pendingKey = key, pendingValue = value;
-	rehash(pendingKey, pendingValue);
-	return rawSet(pendingKey, pendingValue);
+	const u32 home = hashCanonicalTableKey(key) & (count - 1u);
+	return insertHashWithoutGrowth(body, home, key, value, body.vacantHome(home) ? -1 : findFreeIndex(body));
 }
 
 namespace {
@@ -333,8 +375,11 @@ struct ConstructorScratch {
 };
 } // namespace
 
-int TableRecord::insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept {
-	return insertAbsentHashKey(body, home, key, value, [this, &body] { return getFreeIndex(body); },
+int TableRecord::insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept {
+	return insertAbsentHashKey(body, home, key, value, [this, available] {
+		writeHeader(TableHeader::Free, static_cast<u32>(available - (available >= 0)));
+		return available;
+	},
 		[this] { m_heap->tableEntriesMoved(m_address); });
 }
 
@@ -366,14 +411,17 @@ TableConstructorLayout TableRecord::planStringRecord(std::span<const StringId> k
 void TableRecord::fillStringRecord(const TableConstructorLayout& layout, std::span<const StringId> keys,
 	std::span<const Value> values) noexcept {
 	const auto body = hashBody(hashSlots(), arrayCapacity());
+	u32 members = 0;
 	for (u32 slot = 0; slot < body.count; ++slot) {
 		const auto& node = layout.nodes[slot];
 		if (node.field < 0) continue;
 		const auto field = static_cast<u32>(node.field);
 		body.slots.set(slot, valueString(keys[field]));
 		body.slots.set(slot + body.count, values[field]);
+		++members;
 		if (node.next >= 0) body.setNext(slot, node.next);
 	}
+	m_memory->writeRamRecordWord(hashMetadata() + 4u, members);
 	if (layout.free != static_cast<i8>(body.count - 1u)) writeHeader(TableHeader::Free, static_cast<u32>(layout.free));
 	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 }
@@ -387,6 +435,8 @@ void TableRecord::removeFromHash(const Value& key) {
 }
 
 void TableRecord::markHashNodeDead(size_t index) {
+	const u32 members = hashMembers();
+	publishHashMembers(members, members - 1u, hashReserve());
 	const Value key = values().get(hashKeySlot(index));
 	if (valueIsTable(key) || valueIsThread(key) || valueIsClosure(key)) {
 		const uint32_t hashId = valuePayload(key);
@@ -432,37 +482,54 @@ void TableRecord::set(const Value& rawKey, const Value& value) {
 	if (index != NO_ARRAY_SLOT) updateLengthHint(index, present);
 }
 
-void TableRecord::setHash(u32 array, Value key, Value value) {
+int TableRecord::setHash(u32 array, Value key, Value value) {
 	if (isNil(value)) {
 		removeFromHash(key);
-		return;
+		return -1;
 	}
 	const bool keyHasEdge = valueTagHasGcEdge(valueTag(key));
 	const bool valueHasEdge = valueTagHasGcEdge(valueTag(value));
 	const u32 count = hashSlots();
-	bool needsGrowth = true;
+	const auto body = hashBody(count, array);
+	const u32 home = hashCanonicalTableKey(key) & (count - 1u);
+	int nodeIndex = -1;
 	if (count != 0u) {
-		const auto body = hashBody(count, array);
-		const u32 home = hashCanonicalTableKey(key) & (count - 1u);
-		const int nodeIndex = body.findNode(key, home, true);
+		nodeIndex = valueIsString(key) ? body.findString(asStringId(key), home) : body.findNode(key, home, true);
 		if (nodeIndex >= 0) {
-			const u32 keySlot = array + static_cast<u32>(nodeIndex), valueSlot = keySlot + count;
-			const bool deadKey = keyHasEdge && body.slots.tag(keySlot) == ValueTag::Nil;
-			if (deadKey) body.slots.set(keySlot, key);
-			if (valueHasEdge || (keyHasEdge && (deadKey || body.slots.tag(valueSlot) == ValueTag::Nil))) {
-				m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+			const u32 valueSlot = array + static_cast<u32>(nodeIndex) + count;
+			const auto prior = body.slots.tag(valueSlot);
+			if (prior != ValueTag::Nil && prior != ValueTag::DeadKey) {
+				if (valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+				body.slots.set(valueSlot, value);
+				return nodeIndex;
 			}
-			body.slots.set(valueSlot, value);
-			return;
 		}
-		needsGrowth = insertHashWithoutGrowth(body, home, key, value) < 0;
 	}
-	if (needsGrowth) {
-		// Growth invalidates the home and can move the key to the array.
-		rehash(key, value);
-		rawSet(key, value);
+	const u32 reserve = hashReserve(), members = hashMembers();
+	const size_t threshold = std::max<size_t>(reserve, hashCapacity(static_cast<int>(members)));
+	const bool repartition = members + 1u > threshold;
+	if (repartition || count == 0u) {
+		nodeIndex = rehash(key, value, reserve, members);
+	} else {
+		const bool useHome = body.vacantHome(home);
+		const int available = nodeIndex >= 0 || useHome ? -1 : findFreeIndex(body);
+		if (nodeIndex < 0 && !useHome && available < 0) {
+			nodeIndex = rehash(key, value, reserve, members);
+		} else {
+			if (members >= reserve) m_heap->budget.admit(kHashMappingBytes, valueTable(m_address), key, value);
+			if (nodeIndex >= 0) {
+				const u32 slot = array + static_cast<u32>(nodeIndex);
+				body.slots.set(slot, key);
+				body.slots.set(slot + count, value);
+			} else {
+				nodeIndex = insertHashWithoutGrowth(body, home, key, value, available);
+			}
+			const u32 retained = hashMembers();
+			publishHashMembers(retained, retained + 1u, reserve);
+		}
 	}
 	if (keyHasEdge || valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+	return nodeIndex;
 }
 
 Value TableRecord::getInteger(int indexValue) const {
@@ -642,38 +709,7 @@ void TableRecord::resolveStringAssignment(StringId newIndexKey, StringId key, in
 }
 
 int TableRecord::setStringKey(StringId key, const Value& value) {
-	const int nodeIndex = storeStringKeyWithoutGrowth(key, value);
-	if (nodeIndex != kStoreRequiresGrowth) return nodeIndex;
-	const Value keyValue = valueString(key);
-	const Value pendingValue = value;
-	rehash(keyValue, pendingValue);
-	const int slot = rawSet(keyValue, pendingValue);
-	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
-	return slot;
-}
-
-int TableRecord::storeStringKeyWithoutGrowth(StringId key, const Value& value) noexcept {
-	const Value keyValue = valueString(key);
-	if (isNil(value)) {
-		removeFromHash(keyValue);
-		return -1;
-	}
-	const u32 count = hashSlots();
-	if (count == 0u) return kStoreRequiresGrowth;
-	const auto body = hashBody(count, arrayCapacity());
-	const u32 home = hashCanonicalTableKey(keyValue) & (count - 1u);
-	const int nodeIndex = body.findString(key, home);
-	if (nodeIndex >= 0) {
-		const u32 slot = body.array + count + static_cast<u32>(nodeIndex);
-		if (valueTagHasGcEdge(valueTag(value)) || body.slots.tag(slot) == ValueTag::Nil)
-			m_heap->writeBarrier(m_address, GC_RECORD_LINK);
-		body.slots.set(slot, value);
-		return nodeIndex;
-	}
-	const int inserted = insertHashWithoutGrowth(body, home, keyValue, value);
-	if (inserted < 0) return kStoreRequiresGrowth;
-	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
-	return inserted;
+	return setHash(arrayCapacity(), valueString(key), value);
 }
 
 void TableRecord::setStringKeyCached(StringId key, const Value& value, int& predictedSlot) {
@@ -725,6 +761,7 @@ void TableRecord::clear() {
 	m_heap->tableEntriesMoved(m_address);
 	writeHeader(TableHeader::Length, 0);
 	freeStorage();
+	writeHeader(TableHeader::Kind, readHeader(TableHeader::Kind) & ~kExplicitHashReserve);
 	bindStorage(0, 0, 0);
 
 }
@@ -784,7 +821,8 @@ void TableRecord::nextEntry(const Value& rawAfter, Value& key, Value& value) con
 
 
 size_t TableRecord::trackedHeapBytes() const {
-	return trackedHeapBytesForCapacities(arrayCapacity(), hashSlots());
+	const u32 bytes = storageBytes(arrayCapacity(), hashSlots(), hashReserve());
+	return HEADER_BYTES + (bytes ? heapAllocationBytes(bytes) : 0u);
 }
 
 

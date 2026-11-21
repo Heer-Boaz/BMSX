@@ -57,18 +57,18 @@ test('physical GC work counts canonical scans, reclamation and three unique root
 	assert.equal(cpu.instructionBudgetRemaining, 7);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'read-only ROM Strings are not allocated');
 	const frame = cpu.rootThread.currentFrame!;
-	frame.registers.setTable(0, cpu.createTable(2, 3)); //32+10+4×14=98 logical bytes.
+	frame.registers.setTable(0, cpu.createTable(2, 3)); //32+10+3×10=72 logical bytes.
 	frame.registers.setString(1, cpu.stringPool.intern(textToByteString('é😀'))); //6 canonical UTF8 bytes, not3 UTF16 units.
 	frame.top = 2;
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 98 + 22);
+	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 72 + 22);
 	assert.equal(cpu.gc.collect(), bootCollectionWork + (8 + 2 + 8 + 1) + 3, 'scan the Table, mark the String leaf and visit each record');
 	assert.equal(cpu.instructionBudgetRemaining, 7);
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 98 + 22);
+	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 72 + 22);
 	assert.equal(cpu.luaHeap.collectionTarget(), 1048576);
 	cpu.instructionBudgetRemaining = 123; cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'raw host collection is unbilled');
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
-	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 98 + 22);
+	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 72 + 22);
 	cpu.reset();
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'reset maintenance does not implicitly collect or bill the retained transient grant');
 });
@@ -76,7 +76,7 @@ test('physical GC work counts canonical scans, reclamation and three unique root
 test('allocation admission and GC use logical bytes, not size-class slack', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const logical = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
-	const logicalCharge = (32 + 2 * 5 + 4 * 14) + (32 + 512 * 5);
+	const logicalCharge = (32 + 2 * 5 + 3 * 10) + (32 + 512 * 5);
 	cpu.luaHeap.setCollectionTarget(logical + logicalCharge);
 	cpu.instructionBudgetRemaining = 23;
 	cpu.createTable(2, 3);
@@ -90,24 +90,24 @@ test('allocation admission and GC use logical bytes, not size-class slack', () =
 });
 
 test('table replacement admits just its logical increase, even when both layouts need backing', () => {
-	for (const packHashIntoArray of [false, true]) {
+	for (const packArrayIntoHash of [false, true]) {
 		const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
-		const table = packHashIntoArray ? cpu.createTable(0, 8) : cpu.createTable(1, 0);
+		const table = packArrayIntoHash ? cpu.createTable(8, 0) : cpu.createTable(1, 0);
 		const frame = cpu.rootThread.currentFrame!, tables = cpu.gc.tables;
 		frame.registers.setTable(0, table); frame.top = 1;
-		const entries = packHashIntoArray ? 8 : 1;
-		for (let key = 1; key <= entries; ++key) tables.setInteger(table, key, valueInteger(100 + key));
+		const residentKey = packArrayIntoHash ? 8 : 1, trigger = packArrayIntoHash ? 0 : 2;
+		tables.setInteger(table, residentKey, valueInteger(100 + residentKey));
 		const logical = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
-		const target = logical + (packHashIntoArray ? 0 : 5);
+		const target = logical + (packArrayIntoHash ? 0 : 5);
 		cpu.luaHeap.setCollectionTarget(target);
-		tables.setInteger(table, entries + 1, valueInteger(73));
+		tables.setInteger(table, trigger, valueInteger(73));
 		assert.equal(cpu.luaHeap.collectionTarget(), target, 'replacing a layout must not cause a gratuitous GC assist');
 		assert.equal(cpu.gc.active(), false);
-		assert.equal(cpu.luaHeap.usedBytes(), logical + (packHashIntoArray ? -32 : 5));
-		const oldStorage = packHashIntoArray ? 112 : 5, newStorage = packHashIntoArray ? 80 : 10;
+		assert.equal(cpu.luaHeap.usedBytes(), logical + (packArrayIntoHash ? -20 : 5));
+		const oldStorage = packArrayIntoHash ? 40 : 5, newStorage = packArrayIntoHash ? 40 : 10;
 		assert.equal(cpu.heapAllocator.occupiedBytes(), physical - heapAllocationBytes(oldStorage) + heapAllocationBytes(newStorage));
-		for (let key = 1; key <= entries; ++key) assert.equal(tables.getInteger(table, key), valueInteger(100 + key));
-		assert.equal(tables.getInteger(table, entries + 1), valueInteger(73));
+		assert.equal(tables.getInteger(table, residentKey), valueInteger(100 + residentKey));
+		assert.equal(tables.getInteger(table, trigger), valueInteger(73));
 	}
 });
 
@@ -163,7 +163,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - 24 - 4, 'charge NEWT and its initialized slots, not the marking step');
 		assert.ok(cpu.gc.active(), 'allocation actually assisted an in-progress collection');
-		assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 56, 'request56 is admitted after collection and excluded from B_pre');
+		assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 52, 'request52 is admitted after collection and excluded from B_pre');
 		assert.equal(frame.registers.getTag(0), ValueTag.Table); assert.equal(frame.registers.get(7), valueNil());
 		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(frame.registers.get(7), valueInteger(37));

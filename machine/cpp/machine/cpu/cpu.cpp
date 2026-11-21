@@ -144,10 +144,11 @@ Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
 
 TableRecord CPU::createTable(int arraySize, int hashSize) {
 	const size_t hashCapacity = TableRecord::hashCapacity(hashSize);
-	const u32 address = m_luaHeap.allocateRecord(TableRecord::HEADER_BYTES, false, TableRecord::storageBytes(arraySize, hashCapacity),
-		static_cast<u32>(TableHeader::Storage));
+	const auto reserve = static_cast<u32>(hashSize);
+	const u32 address = m_luaHeap.allocateRecord(TableRecord::HEADER_BYTES, false, TableRecord::storageBytes(arraySize, hashCapacity, reserve),
+		static_cast<u32>(TableHeader::Storage), valueNil(), valueNil(), valueNil(), TableRecord::allocationCharge(arraySize, reserve));
 	TableRecord table(m_heap, address);
-	table.initialize(arraySize, hashCapacity);
+	table.initialize(arraySize, hashCapacity, reserve);
 	trackLocalRoot(valueTable(address));
 	return table;
 }

@@ -52,7 +52,6 @@ export const GC_VISIT_MEMBER = 0x40;
 const VISIT_LINK_LOW_BITS = 32 - GC_GRAY_INDEX_BITS;
 const VISIT_LINK_HIGH_MASK = GC_GRAY_INDEX_MASK >>> VISIT_LINK_LOW_BITS;
 export const GC_STEP_WORDS = 4096;
-export const GC_ASSIST_BYTES = 256;
 export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
 export const enum GcRootBank { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, Completion, End }
 // Two unconnected selector inputs do not clock the collector.

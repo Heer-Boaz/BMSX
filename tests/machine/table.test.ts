@@ -172,11 +172,13 @@ test('table values come directly from the allocator-owned RAM block', () => {
 	const table = cpu.createTable(2, 1);
 	cpu.gc.tables.setInteger(table, 1, valueInteger(71));
 	const base = cpu.gc.tables.storageAddress(table);
-	assert.equal(cpu.heapAllocator.occupiedBytes() - occupiedBefore, 56, 'the 32-byte header and 24-byte body are physical allocations');
+	assert.equal(cpu.heapAllocator.occupiedBytes() - occupiedBefore, 64, 'the 32-byte header and 32-byte body are physical allocations');
 	assert.equal(memory.readRamRecordWord(base), 71);
 	assert.equal(memory.readRamRecordWord(base + 4 * 4), 0xffffffff, 'the hash-chain word follows the four payload words');
 	const tags = base + 5 * 4;
 	assert.equal(memory.readRamRecordByte(tags), ValueTag.Integer);
+	assert.equal(memory.readRamRecordWord(base + 24), 1, 'the aligned trailer preserves the nominal hash reservation');
+	assert.equal(memory.readRamRecordWord(base + 28), 0, 'an array write does not change hash membership');
 	const backing = table + TableHeader.Storage;
 	assert.equal(memory.readRamRecordWord(backing), base);
 	memory.writeRamRecordWord(backing, base + MAIN_RAM_SIZE);

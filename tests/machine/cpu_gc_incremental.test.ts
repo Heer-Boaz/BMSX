@@ -6,11 +6,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_GC_CONTROL_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
-import { GcPhase, GC_MODE_META, GC_MODE_NODE, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_ASSIST_BYTES, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
+import { GcPhase, GC_MODE_META, GC_MODE_NODE, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_ASSIST_BYTES } from '../../machine/ts/machine/cpu/lua_heap';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
@@ -424,6 +425,29 @@ test('final mark rewinds a partly cleared weak Table without retiring unvisited 
 	const expected = finish();
 	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
 	assert.deepEqual(finish(), expected);
+});
+
+test('weak Table admission replans its array span after clearing a hash mapping at the quota ceiling', () => {
+	const cpu = machine(), { gc, luaHeap: heap, stringPool } = cpu;
+	const weak = cpu.createTable(0, 4), meta = cpu.createTable(0, 1);
+	gc.tables.setStringKey(meta, stringPool.intern('__mode'), valueString(stringPool.intern('v')));
+	gc.tables.setMetatableAddress(weak, meta);
+	const frame = cpu.rootThread.currentFrame!;
+	frame.registers.setTable(0, weak);
+	frame.top = 1;
+	cpu.collectTrackedHeapBytes();
+	gc.tables.setInteger(weak, 8, valueTable(cpu.createTable()));
+	for (let i = 9; i < 16; ++i) gc.tables.setInteger(weak, i, valueInteger(i));
+	assert.equal(gc.tables.arrayCapacity(weak), 0);
+	assert.equal(gc.tables.hashSize(weak), 8);
+	// Hold the rest of the logical budget without filling the physical arena.
+	cpu.memory.writeRamRecordWord(cpu.heapAllocator.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, heap.capacity());
+	gc.tables.setInteger(weak, 16, valueInteger(16));
+	assert.ok(heap.usedBytes() <= heap.capacity(), 'weak removal must not finance a stale capacity projection');
+	assert.equal(gc.tables.arrayCapacity(weak), 0, 'the collected key removes the reason to reserve a sixteen-slot array');
+	assert.equal(gc.tables.getInteger(weak, 8), valueNil());
+	assert.equal(gc.tables.getInteger(weak, 16), valueInteger(16));
+	assert.equal(heap.usedBytes(), heap.capacity() - TableRecords.HEADER_BYTES);
 });
 
 test('weak-table remark resumes without consuming list order or losing writes to Changed', () => {

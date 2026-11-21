@@ -358,10 +358,13 @@ void recordConstructorPreservesGrantAndLayout() {
 		const int grant = allocateCycles + (shortGrant ? 2 * fieldCycles : 4 * fieldCycles + 1);
 		const u32 expectedPc = start + (shortGrant ? 3u : 6u) * INSTRUCTION_BYTES;
 		for (auto* machine : {&prepared, &scalar}) {
+			const size_t before = machine->cpu().luaHeap().usedBytes();
 			require(machine->cpu().runUntilDepth(0, grant) == RunResult::Yielded
 				&& machine->cpu().readFramePc(0) == expectedPc
 				&& machine->cpu().instructionBudgetRemaining == (shortGrant ? 0 : 1 - fieldCycles),
 				"constructor publishes the same original PC and exact cycle frontier");
+			require(machine->cpu().luaHeap().usedBytes() - before == 32u + 5u * 10u,
+				"construction reserves five mappings, not all eight physical hash slots");
 		}
 		require(plan->partialMask == (shortGrant ? 0u : 29u),
 			"only the admitted full group executes the prepared nil-aware placement");
@@ -381,10 +384,25 @@ void recordConstructorPreservesGrantAndLayout() {
 					"the original stores resume at the short-grant frontier");
 			}
 		}
-		const auto id = prepared.cpu().stringPool().intern("item_id");
-		require(a.getStringKey(id) == valueInteger(11), "completed constructor publishes all admitted values");
-		a.setStringKey(id, valueInteger(29));
-		require(a.getStringKey(id) == valueInteger(29), "the prepared body remains an ordinary mutable table");
+		for (auto* machine : {&prepared, &scalar}) {
+			auto& cpu = machine->cpu();
+			auto body = table(*machine);
+			const auto item = cpu.stringPool().intern("item_id");
+			const auto room = cpu.stringPool().intern("room");
+			const auto extra = cpu.stringPool().intern("actor_direction");
+			const size_t before = cpu.luaHeap().usedBytes();
+			require(body.getStringKey(item) == valueInteger(11), "completed construction publishes all admitted values");
+			body.setStringKey(item, valueInteger(29));
+			body.setStringKey(room, valueInteger(37));
+			require(body.getStringKey(item) == valueInteger(29) && body.getStringKey(room) == valueInteger(37)
+				&& cpu.luaHeap().usedBytes() == before, "the absent field occupies its prepaid mapping");
+			body.setStringKey(extra, valueInteger(43));
+			require(body.getStringKey(extra) == valueInteger(43) && body.hashSlots() == 8u
+				&& cpu.luaHeap().usedBytes() == before + 10u,
+				"the first additional live field charges ten logical bytes without hash growth");
+			body.setStringKey(extra, valueNil());
+			require(cpu.luaHeap().usedBytes() == before, "deleting the extra field releases that mapping");
+		}
 	}
 
 	{

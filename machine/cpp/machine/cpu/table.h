@@ -33,8 +33,9 @@ class TableRecord {
 public:
 	TableRecord(GcHeap& heap, u32 address);
 	static constexpr u32 HEADER_BYTES = 32;
-	static u32 storageBytes(size_t arraySize, size_t hashSize);
-	void initialize(size_t arrayCapacity, size_t hashCapacity);
+	static u32 storageBytes(size_t arraySize, size_t hashSize, u32 hashReserve = 0u);
+	static u32 allocationCharge(size_t arraySize, u32 hashEntries);
+	void initialize(size_t arrayCapacity, size_t hashCapacity, u32 hashReserve);
 	void freeRecord();
 	u32 address() const { return m_address; }
 	u32 storageAddress() const { return readHeader(TableHeader::Storage); }
@@ -43,7 +44,6 @@ public:
 	u32 lengthHint() const { return readHeader(TableHeader::Length); }
 	i32 hashFree() const { return static_cast<i32>(readHeader(TableHeader::Free)); }
 	static size_t hashCapacity(int hashSize);
-	static size_t trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCapacity);
 	// Fixed string keys, selected by a presence mask in source order. The
 	// constructor owns the new empty table and its complete field set.
 	static TableConstructorLayout planStringRecord(std::span<const StringId> keys, u32 present) noexcept;
@@ -167,11 +167,17 @@ private:
 	bool hasIntegerKey(u32 key) const;
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
 	int findNextLiveHashIndex(size_t start) const;
-	void rehash(const Value& key, const Value& value);
-	void resize(size_t newArraySize, size_t newHashSize, const Value& key, const Value& value);
+	struct ResizePlan { size_t array, hash; u32 members; };
+	ResizePlan planRehash(Value key, u32 reserve, u32 members) const;
+	int rehash(Value key, Value value, u32 reserve, u32 members);
+	int resize(const ResizePlan&, u32 storage, Value key, Value value, u32 reserve);
 	void bindStorage(size_t arraySize, size_t hashSize, u32 address);
 	void initializeStorage();
 	void freeStorage();
+	u32 hashMetadata() const;
+	u32 hashReserve() const;
+	u32 hashMembers() const;
+	void publishHashMembers(u32 previous, u32 members, u32 reserve);
 	u32 readHeader(TableHeader field) const { return m_memory->readRamRecordWord(m_address + static_cast<u32>(field)); }
 	void writeHeader(TableHeader field, u32 word) { m_memory->writeRamRecordWord(m_address + static_cast<u32>(field), word); }
 	struct TableValues {
@@ -195,6 +201,10 @@ private:
 		u32 array, count, links;
 		int findNode(const Value& key, u32 home, bool matchDead = false) const;
 		int findString(StringId key, u32 home) const;
+		bool vacantHome(u32 home) const {
+			const u32 slot = array + home;
+			return slots.tag(slot) == ValueTag::Nil || slots.tag(slot + count) == ValueTag::Nil;
+		}
 		bool matchesString(u32 node, StringId key) const {
 			const u32 slot = array + node;
 			return slots.tag(slot) == ValueTag::String && slots.word(slot) == key;
@@ -212,11 +222,10 @@ private:
 		const u32 links = words + (array + 2u * count) * 4u;
 		return {{m_memory, words, links + count * 4u}, array, count, links};
 	}
-	int getFreeIndex(const HashBody& body);
+	int findFreeIndex(const HashBody& body) const;
 	int rawSet(const Value& key, const Value& value);
-	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept;
-	int storeStringKeyWithoutGrowth(StringId key, const Value& value) noexcept;
-	void setHash(u32 array, Value key, Value value);
+	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
+	int setHash(u32 array, Value key, Value value);
 	void removeFromHash(const Value& key);
 	void markHashNodeDead(size_t index);
 	Value getCanonical(const Value& key) const;

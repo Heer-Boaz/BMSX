@@ -1053,7 +1053,9 @@ Writes accept only table bases, including for integer and string-field forms. As
 
 `SELF` prepares both a method value and its receiver. It preserves the original `R(B)` in `R(A+1)` before looking up the string-keyed field into `R(A)`. The receiver therefore remains available as the first argument when the method value is called. Both destination writes extend `top` as needed. Preserving the original receiver also defines the result when a destination overlaps the source register.
 
-`NEWT` creates an empty table with an array-capacity request and a hash-size request. These operands request storage; they neither supply initial elements nor state the number of elements already present.
+`NEWT` creates an empty table with an array-capacity request and a hash-size
+request. Neither operand supplies initial elements. The hash request prepays
+that many hash mappings; occupied keys beyond the reservation count individually.
 
 ### Table entries and inherited reads {#sec-cpu-table-entries-and-inherited-reads}
 
@@ -1206,7 +1208,7 @@ The occupied-byte counts used for admission are:
 
 | Allocation | Occupied budget bytes |
 | --- | --- |
-| Table with array capacity `A` and hash capacity `H` | `32 + 5A + 14H` |
+| Table with `A` reserved array slots, hash request `C`, and `N` live hash mappings | `32 + 5A + 10 × max(C, N)` |
 | Closure with `U` captured-variable references, function record backed by contiguous ROM | `12 + 4U` |
 | Closure with `U` captured-variable references, other mapped function record | `36 + 4U` |
 | Captured-variable cell | `16` |
@@ -1220,6 +1222,23 @@ registered name does not add a charge. Space reserved for future names and
 the lookup indexes for names and Strings do not contribute to the occupied
 budget, including while an index grows. The Strings themselves retain their
 addresses during that growth.
+
+For a Table, a hash mapping counts its key and Value, not a collision link,
+an empty bucket, or a deleted mapping. Setting an existing key to a non-nil
+Value does not add a charge. Removing a hash mapping, including removal by
+collection, releases its charge when the live count was above the original
+hash reservation. Clearing the Table releases its reservations. Physical
+hash growth can move mappings without changing either the nominal hash
+reservation or the reserved array slots.
+
+An insertion outside the reserved array can reconsider the array range
+when it takes the hash membership above both the prepaid hash request and
+the least power of two at or above the previous hash membership (zero for
+an empty hash). The new array reserves the largest power-of-two prefix of
+positive integers for which more than half the keys are present, including
+the inserted key. The other mappings remain in the hash. If collection
+changes the old mappings while admitting the insertion, the processor
+calculates both the range and the charge from the surviving mappings.
 
 A Table's slots and links occupy one block in the language heap. A Thread
 keeps its Value slots, frame controls and protected continuations in separate
@@ -1266,9 +1285,9 @@ admitted before the call is entered. The reported count can be below capacity
 even when there is no suitable free RAM block to satisfy a request.
 
 A reserved Value slot occupies four payload bytes and one kind byte, regardless
-of its current value. A hash node holds a key slot, a value slot and a four-byte
-chain link; a closure's captured-variable reference occupies four bytes. These
-fixed sizes apply to Integer and Float Numbers as well as reference values.
+of its current value. A hash mapping charges two such slots. A closure's
+captured-variable reference occupies four bytes. These fixed sizes apply to
+Integer and Float Numbers as well as reference values.
 They are capacity charges: replacing one kind with another does not allocate
 another slot or change its occupied-byte charge.
 

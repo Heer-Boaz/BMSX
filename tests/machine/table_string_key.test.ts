@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valueTable, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { TABLE_STORE_REQUIRES_GROWTH, TableLookupStatus, type TableLookupResult } from '../../machine/ts/machine/cpu/table';
+import { TableLookupStatus, type TableLookupResult } from '../../machine/ts/machine/cpu/table';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
@@ -64,11 +64,7 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 		cpu.gc.tables.set(generic, valueString(key), value);
 		slots.set(0, value);
 		if ((n & 1) === 0) {
-			const before = cpu.gc.tables.getTrackedHeapBytes(strings);
-			const slot = cpu.gc.tables.storeStringKeyWithoutGrowth(strings, key, slots.getTag(0), slots.getPayload(0));
-			assert.equal(cpu.gc.tables.getTrackedHeapBytes(strings), before, 'bounded mutation reserves no storage');
-			if (slot === TABLE_STORE_REQUIRES_GROWTH)
-				cpu.gc.tables.storeStringKey(strings, key, slots.getTag(0), slots.getPayload(0));
+			cpu.gc.tables.storeStringKey(strings, key, slots.getTag(0), slots.getPayload(0));
 		} else {
 			prediction = cpu.gc.tables.storeStringKeyCached(strings, key, prediction, slots.getTag(0), slots.getPayload(0));
 		}
@@ -90,9 +86,9 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 	const tail = tables.storeStringKey(chain, keys[1], ValueTag.Integer, 22);
 	tables.setStringKey(chain, keys[0], valueNil());
 	assert.notEqual(head, tail);
-	assert.equal(tables.storeStringKeyWithoutGrowth(chain, keys[1], ValueTag.Integer, 33), tail,
+	assert.equal(tables.storeStringKey(chain, keys[1], ValueTag.Integer, 33), tail,
 		'a tombstoned home must not hide a live colliding key');
-	assert.equal(tables.storeStringKeyWithoutGrowth(chain, keys[2], ValueTag.Integer, 44), head);
+	assert.equal(tables.storeStringKey(chain, keys[2], ValueTag.Integer, 44), head);
 	assert.equal(tables.getStringKey(chain, keys[1]), valueInteger(33), 'reusing the home keeps its live link');
 	assert.equal(tables.getStringKey(chain, keys[0]), valueNil());
 });
@@ -149,19 +145,15 @@ test('known string lookup follows changing inherited fields and preserves false 
 });
 
 
-test('rejected string-store growth retains the exhausted cursor for allocating completion', () => {
+test('deleting a string mapping allows its reserved hash placement to be reused', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 1), present = cpu.stringPool.intern('full'), missing = cpu.stringPool.intern('new');
 	cpu.gc.tables.setStringKey(table, present, valueInteger(73));
-	const free = table + TableHeader.Free;
-	assert.equal(memory.readRamRecordWord(free), 0);
-	assert.equal(cpu.gc.tables.storeStringKeyWithoutGrowth(table, missing, ValueTag.Integer, 19), TABLE_STORE_REQUIRES_GROWTH);
-	assert.equal(memory.readRamRecordWord(free) | 0, -1);
-	assert.equal(cpu.gc.tables.getStringKey(table, present), valueInteger(73)); assert.equal(cpu.gc.tables.getStringKey(table, missing), valueNil());
-	assert.equal(cpu.gc.tables.storeStringKeyWithoutGrowth(table, missing, ValueTag.Integer, 19), TABLE_STORE_REQUIRES_GROWTH);
+	const storage = cpu.gc.tables.storageAddress(table), used = cpu.luaHeap.usedBytes();
 	cpu.gc.tables.setStringKey(table, present, valueNil());
-	assert.equal(cpu.gc.tables.storeStringKeyWithoutGrowth(table, missing, ValueTag.Integer, 19), 0);
-	assert.equal(cpu.gc.tables.storedSlotCount(table), 1);
+	assert.equal(cpu.gc.tables.storeStringKey(table, missing, ValueTag.Integer, 19), 0);
+	assert.equal(cpu.gc.tables.storageAddress(table), storage);
+	assert.equal(cpu.luaHeap.usedBytes(), used, 'the pre-paid mapping is reused');
 	assert.equal(cpu.gc.tables.getStringKey(table, missing), valueInteger(19));
 });

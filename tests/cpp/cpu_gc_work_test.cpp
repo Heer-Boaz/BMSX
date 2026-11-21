@@ -63,7 +63,7 @@ void allocationAdmissionUsesLogicalBytes() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	const size_t logical = cpu.luaHeap().usedBytes();
 	const u32 physical = cpu.heapAllocator().occupiedBytes();
-	constexpr u32 logicalCharge = (32 + 2 * 5 + 4 * 14) + (32 + 512 * 5);
+	constexpr u32 logicalCharge = (32 + 2 * 5 + 3 * 10) + (32 + 512 * 5);
 	cpu.luaHeap().setCollectionTarget(static_cast<u32>(logical) + logicalCharge);
 	cpu.instructionBudgetRemaining = 23;
 	cpu.createTable(2, 3);
@@ -78,28 +78,27 @@ void allocationAdmissionUsesLogicalBytes() {
 }
 
 void tableReplacementAdmitsOnlyItsLogicalIncrease() {
-	for (const bool packHashIntoArray : {false, true}) {
+	for (const bool packArrayIntoHash : {false, true}) {
 		Machine machine(image()); auto& cpu = machine.cpu;
-		auto table = packHashIntoArray ? cpu.createTable(0, 8) : cpu.createTable(1, 0);
+		auto table = packArrayIntoHash ? cpu.createTable(8, 0) : cpu.createTable(1, 0);
 		auto& frame = *cpu.rootThread()->currentFrame;
 		frame.registers.set(0, valueTable(table.address())); frame.setTop(1);
-		const int entries = packHashIntoArray ? 8 : 1;
-		for (int key = 1; key <= entries; ++key) table.setInteger(key, valueInteger(100 + key));
+		const int residentKey = packArrayIntoHash ? 8 : 1, trigger = packArrayIntoHash ? 0 : 2;
+		table.setInteger(residentKey, valueInteger(100 + residentKey));
 		const auto logical = cpu.luaHeap().usedBytes();
 		const auto physical = cpu.heapAllocator().occupiedBytes();
-		const auto target = logical + (packHashIntoArray ? 0u : 5u);
+		const auto target = logical + (packArrayIntoHash ? 0u : 5u);
 		cpu.luaHeap().setCollectionTarget(target);
-		table.setInteger(entries + 1, valueInteger(73));
+		table.setInteger(trigger, valueInteger(73));
 		require(cpu.luaHeap().collectionTarget() == target && !cpu.collecting(),
 			"a resize at the exact growth threshold must not assist collection for the outgoing layout");
-		require(cpu.luaHeap().usedBytes() == (packHashIntoArray ? logical - 32u : logical + 5u),
+		require(cpu.luaHeap().usedBytes() == (packArrayIntoHash ? logical - 20u : logical + 5u),
 			"the budget commits the resulting capacities only");
-		const u32 oldStorage = packHashIntoArray ? 112u : 5u, newStorage = packHashIntoArray ? 80u : 10u;
+		const u32 oldStorage = packArrayIntoHash ? 40u : 5u, newStorage = packArrayIntoHash ? 40u : 10u;
 		require(cpu.heapAllocator().occupiedBytes() == physical - heapAllocationBytes(oldStorage) + heapAllocationBytes(newStorage),
 			"the owner physically retires the old layout");
-		for (int key = 1; key <= entries; ++key)
-			require(table.getInteger(key) == valueInteger(100 + key), "redistribution preserves each existing mapping");
-		require(table.getInteger(entries + 1) == valueInteger(73), "the triggering mapping is written once");
+		require(table.getInteger(residentKey) == valueInteger(100 + residentKey), "redistribution preserves the existing mapping");
+		require(table.getInteger(trigger) == valueInteger(73), "the triggering mapping is written once");
 	}
 }
 
@@ -111,12 +110,12 @@ void canonicalPoolAndRootRanges() {
 		"physical collection counts object passes, three root passes and String work without a cycle debit");
 	require(cpu.luaHeap().usedBytes() == bootBytes, "readonly ROM String bytes are not charged as allocated text");
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(cpu.createTable(2, 3).address())); //32+10+56=98 logical bytes.
+	frame.registers.set(0, valueTable(cpu.createTable(2, 3).address())); //32+10+30=72 logical bytes.
 	frame.registers.set(1, valueString(cpu.stringPool().intern("é😀"))); //6 UTF8 bytes.
 	frame.writeControl(bmsx::FrameField::Top, 2);
-	require(cpu.luaHeap().usedBytes() == bootBytes + 98 + 22, "canonical reserved table capacity and UTF8 text bytes agree");
+	require(cpu.luaHeap().usedBytes() == bootBytes + 72 + 22, "canonical reserved table capacity and UTF8 text bytes agree");
 	require(cpu.collectHeap() == bootCollectionWork + (8 + 2 + 8 + 1) + 3
-		&& cpu.instructionBudgetRemaining == 7 && cpu.luaHeap().usedBytes() == bootBytes + 98 + 22,
+		&& cpu.instructionBudgetRemaining == 7 && cpu.luaHeap().usedBytes() == bootBytes + 72 + 22,
 		"table scans reserved slots; the String is marked and visited without reading its bytes");
 	const auto threshold = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 	require(threshold.second == 1048576, "the existing minimum collection threshold is unchanged");
@@ -125,7 +124,7 @@ void canonicalPoolAndRootRanges() {
 	require(cpu.instructionBudgetRemaining == 123, "host/reset raw collection does not bill guest work");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes + 98 + 22,
+	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes + 72 + 22,
 		"snapshot capture/restore does not collect or bill runtime work and preserves canonical accounting");
 	cpu.reset();
 	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes,
@@ -167,8 +166,8 @@ void allocationCollectionAndFailure() {
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
 			&& generated.cpu.instructionBudgetRemaining == 1 - 24 - 4 && generated.cpu.collecting(),
 			"automatic GC advances; only NEWT24 and four initialized Values are charged");
-		require(generated.cpu.luaHeap().usedBytes() == bootBytes + 56 && valueIsTable(generated.cpu.readFrameRegister(0, 0))
-			&& isNil(generated.cpu.readFrameRegister(0, 7)), "request56 is admitted after collection");
+		require(generated.cpu.luaHeap().usedBytes() == bootBytes + 52 && valueIsTable(generated.cpu.readFrameRegister(0, 0))
+			&& isNil(generated.cpu.readFrameRegister(0, 7)), "request52 is admitted after collection");
 		test::runCpuParity(generated.cpu, scalar.cpu, 2);
 		require(generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.readFrameRegister(0, 7) == valueInteger(37),
 			"allocation and GC are not replayed on the next grant");
@@ -1122,6 +1121,30 @@ void stackShrinkAndAdmission() {
 		"shrunken and regrown stack storage survives snapshot replay");
 }
 
+void weakTableAdmissionReplansAfterCollection() {
+	Machine machine(image()); auto& cpu = machine.cpu; auto& heap = cpu.luaHeap();
+	auto weak = cpu.createTable(0, 4);
+	auto meta = cpu.createTable(0, 1);
+	meta.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+	weak.setMetatableAddress(meta.address());
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(weak.address()));
+	frame.setTop(1);
+	cpu.collectHeap();
+	weak.setInteger(8, valueTable(cpu.createTable().address()));
+	for (int i = 9; i < 16; ++i) weak.setInteger(i, valueInteger(i));
+	require(weak.arrayCapacity() == 0 && weak.hashSlots() == 8,
+		"eight sparse entries fit without reserving an array");
+	// Reserve the rest of the logical budget without filling the physical arena.
+	cpu.memory().writeRamRecordWord(cpu.heapAllocator().managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, static_cast<u32>(heap.capacity()));
+	weak.setInteger(16, valueInteger(16));
+	require(heap.usedBytes() <= heap.capacity(), "reclaimed weak entries must not finance a stale capacity projection");
+	require(weak.arrayCapacity() == 0 && isNil(weak.getInteger(8)) && weak.getInteger(16) == valueInteger(16),
+		"the collected key removes the reason to reserve a sixteen-slot array");
+	require(heap.usedBytes() == heap.capacity() - TableRecord::HEADER_BYTES,
+		"admission spends only the one mapping released by the collector, not a reclaimed array projection");
+}
+
 void threadReplacementAdmitsOnlyItsLogicalIncrease() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& thread = *cpu.rootThread(); auto& frame = *thread.currentFrame;
@@ -1228,6 +1251,7 @@ int main(int argc, char** argv) {
 		}
 		canonicalPoolAndRootRanges();
 		allocationAdmissionUsesLogicalBytes(); tableReplacementAdmitsOnlyItsLogicalIncrease();
+		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); collectionPrimitiveCyclesIgnoreHeapShape();
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();

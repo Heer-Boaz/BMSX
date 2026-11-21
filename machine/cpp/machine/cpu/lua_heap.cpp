@@ -32,27 +32,38 @@ size_t LuaHeap::usedBytes() const {
 	return m_cpu.memory().readRamRecordWord(m_occupiedAddress);
 }
 
-bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {
+LuaAllocationAssist LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {
 #if defined(BMSX_GC_STRESS)
 	stressHeapAllocation(*this);
 #endif
 	const size_t limit = capacity();
 	const size_t nextBytes = usedBytes() + byteCount;
 	const bool exhausted = nextBytes > limit;
-	if (!exhausted && nextBytes <= collectionTarget()) return false;
 	if (exhausted) {
 		collectRuntime(root0, root1, root2, growingThread);
-	} else if (!m_cpu.gcHeap().finalMarkPending()) {
+		return LuaAllocationAssist::Full;
+	}
+	if (nextBytes > collectionTarget() && !m_cpu.gcHeap().finalMarkPending()) {
 		m_cpu.stepHeap(root0, root1, root2, growingThread);
 		creditStep();
+		return LuaAllocationAssist::Step;
 	}
-	if (usedBytes() + byteCount > limit) throw LuaOutOfMemorySignal{};
-	return exhausted;
+#if defined(BMSX_GC_STRESS)
+	return LuaAllocationAssist::Step;
+#else
+	return LuaAllocationAssist::None;
+#endif
+}
+
+bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {
+	const auto assist = prepareAllocation(byteCount, root0, root1, root2, growingThread);
+	if (assist != LuaAllocationAssist::None && usedBytes() + byteCount > capacity()) throw LuaOutOfMemorySignal{};
+	return assist == LuaAllocationAssist::Full;
 }
 
 u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField,
-	Value root0, Value root1, Value root2) {
-	const u32 charged = bytes + backingBytes;
+	Value root0, Value root1, Value root2, std::optional<u32> backingCharge) {
+	const u32 charged = bytes + backingCharge.value_or(backingBytes);
 	const bool collected = admit(charged, root0, root1, root2, 0u);
 	auto& arena = m_cpu.heapAllocator();
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {

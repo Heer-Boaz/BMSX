@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { TABLE_STORE_REQUIRES_GROWTH, TableLookupStatus } from '../../machine/ts/machine/cpu/table';
+import { TableLookupStatus } from '../../machine/ts/machine/cpu/table';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -20,11 +20,11 @@ function machine(): CPU {
 	return new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 }
 
-test('Table backing is five bytes per Value plus four bytes per hash link', () => {
+test('Table budget charges Values and mappings rather than physical hash links', () => {
 	const cpu = machine(), start = cpu.luaHeap.usedBytes();
 	const occupied = cpu.heapAllocator.occupiedBytes();
 	const table = cpu.createTable(8, 16);
-	assert.equal(cpu.luaHeap.usedBytes() - start, 32 + 5 * 8 + 14 * 16);
+	assert.equal(cpu.luaHeap.usedBytes() - start, 32 + 5 * 8 + 10 * 16);
 	assert.equal(cpu.heapAllocator.occupiedBytes() - occupied, cpu.gc.tables.getTrackedHeapBytes(table));
 	const base = cpu.gc.tables.storageAddress(table);
 	const links = base + (8 + 2 * 16) * 4;
@@ -35,6 +35,40 @@ test('Table backing is five bytes per Value plus four bytes per hash link', () =
 	assert.equal(cpu.memory.readRamRecordByte(tags + 2), v.ValueTag.Float);
 	assert.equal(cpu.gc.tables.getInteger(table, 3), v.valueFloatBits(0xffa12345));
 	cpu.gc.tables.clear(table); assert.equal(cpu.luaHeap.usedBytes() - start, 32);
+});
+
+test('hash membership and quota are independent of tombstone-driven physical rebuilds', () => {
+	const cpu = machine(), tables = cpu.gc.tables, keys = new Int32Array(16);
+	let assigned = 0, collision = 0;
+	for (let id = -1; assigned !== keys.length || collision === 0; --id) {
+		const home = v.hashCanonicalTableKey(v.valueInteger(id)) & (keys.length - 1);
+		if (keys[home] === 0) { keys[home] = id; ++assigned; }
+		else if (home === 0) collision = id;
+	}
+	const spare = cpu.createTable(0, 16), tombstones = cpu.createTable(0, 16);
+	for (const id of keys) tables.setInteger(tombstones, id, v.valueInteger(17));
+	for (let i = 2; i < keys.length; ++i) tables.setInteger(tombstones, keys[i], v.valueNil());
+	for (let i = 0; i < 2; ++i) tables.setInteger(spare, keys[i], v.valueInteger(17));
+	const used = cpu.luaHeap.usedBytes(), before = tables.storageAddress(tombstones);
+	tables.setInteger(tombstones, collision, v.valueInteger(23));
+	tables.setInteger(spare, collision, v.valueInteger(23));
+	assert.notEqual(tables.storageAddress(tombstones), before);
+	assert.equal(tables.hashSize(tombstones), 4);
+	assert.equal(tables.hashSize(spare), 16);
+	assert.equal(tables.arrayCapacity(tombstones), tables.arrayCapacity(spare));
+	assert.equal(cpu.luaHeap.usedBytes(), used);
+	for (const id of [keys[0], keys[1], collision]) assert.equal(tables.getInteger(tombstones, id), tables.getInteger(spare, id));
+
+	const logical = cpu.luaHeap.usedBytes(), table = cpu.createTable(0, 3);
+	for (let i = 0; i < 4; ++i) tables.setInteger(table, keys[i], v.valueInteger(29));
+	assert.equal(tables.hashSize(table), 4);
+	assert.equal(cpu.luaHeap.usedBytes(), logical + 32 + 40);
+	const ram = cpu.memory.captureSaveState();
+	tables.setInteger(table, keys[0], v.valueNil());
+	assert.equal(cpu.luaHeap.usedBytes(), logical + 32 + 30);
+	cpu.memory.restoreSaveState(ram);
+	tables.setInteger(table, keys[0], v.valueNil());
+	assert.equal(cpu.luaHeap.usedBytes(), logical + 32 + 30, 'restored membership releases the same charge');
 });
 
 test('Table keys normalize Integer/Float identity without changing stored value bits', () => {
@@ -88,8 +122,8 @@ test('compact hash growth, cached string access and inherited reads use real hea
 	cpu.gc.tables.getStringKeyCached(table, cachedKey, predicted, result);
 	assert.equal(result.value, v.valueFloatBits(0xffa12345));
 	const empty = cpu.createTable();
-	assert.equal(cpu.gc.tables.storeStringKeyWithoutGrowth(empty, key, v.ValueTag.Integer, 1), TABLE_STORE_REQUIRES_GROWTH);
-	assert.equal(cpu.gc.tables.getStringKey(empty, key), v.valueNil());
+	cpu.gc.tables.storeStringKey(empty, key, v.ValueTag.Integer, 1);
+	assert.equal(cpu.gc.tables.getStringKey(empty, key), v.valueInteger(1));
 });
 
 test('tombstone continuation retains a stable object hash, not the recycled reference', () => {

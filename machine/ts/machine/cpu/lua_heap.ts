@@ -3,13 +3,14 @@ import { UPVALUE_HEAP_BYTES, initialize as initializeCell } from './upvalue';
 import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from './heap_allocator';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
-import { GC_ASSIST_BYTES } from './gc_heap';
 import { valueClosure, valueNil, type Value } from './value';
 import { FRAME_CONTROL_BYTES } from './call_state';
 import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadField } from './thread_record';
 
 const NO_NEW_CELLS = new Uint32Array(0);
 const MIN_COLLECTION_BYTES = 1024 * 1024;
+export const GC_ASSIST_BYTES = 256;
+export const enum LuaAllocationAssist { None, Step, Full }
 
 export class LuaHeap {
 	private readonly targetAddress: number;
@@ -30,25 +31,33 @@ export class LuaHeap {
 		this.cpu.memory.writeRamRecordWord(this.targetAddress, bytes);
 	}
 
-	public admit(byteCount: number, root0: Value = valueNil(), root1: Value = valueNil(),
-		root2: Value = valueNil(), growingThread = 0): boolean {
+	public prepareAllocation(byteCount: number, root0: Value, root1: Value,
+		root2: Value, growingThread = 0): LuaAllocationAssist {
 		const capacity = this.capacity();
 		const nextBytes = this.usedBytes() + byteCount;
 		const exhausted = nextBytes > capacity;
-		if (!exhausted && nextBytes <= this.collectionTarget()) return false;
 		if (exhausted) {
 			this.collectRuntime(root0, root1, root2, growingThread);
-		} else if (!this.cpu.gc.finalMarkPending()) {
+			return LuaAllocationAssist.Full;
+		}
+		if (nextBytes > this.collectionTarget() && !this.cpu.gc.finalMarkPending()) {
 			this.cpu.gc.step(root0, root1, root2, growingThread);
 			this.creditStep();
+			return LuaAllocationAssist.Step;
 		}
-		if (this.usedBytes() + byteCount > capacity) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		return exhausted;
+		return LuaAllocationAssist.None;
+	}
+
+	public admit(byteCount: number, root0: Value = valueNil(), root1: Value = valueNil(),
+		root2: Value = valueNil(), growingThread = 0): boolean {
+		const assist = this.prepareAllocation(byteCount, root0, root1, root2, growingThread);
+		if (assist !== LuaAllocationAssist.None && this.usedBytes() + byteCount > this.capacity()) throw LUA_OUT_OF_MEMORY_SIGNAL;
+		return assist === LuaAllocationAssist.Full;
 	}
 
 	public allocateRecord(bytes: number, owned: boolean, backingBytes: number, backingField: number,
-		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil()): number {
-		const charged = bytes + backingBytes;
+		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(), backingCharge = backingBytes): number {
+		const charged = bytes + backingCharge;
 		const collected = this.admit(charged, root0, root1, root2, 0);
 		const arena = this.cpu.heapAllocator;
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {

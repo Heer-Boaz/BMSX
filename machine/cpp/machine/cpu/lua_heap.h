@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <span>
 
 #include "common/primitives.h"
@@ -10,6 +11,7 @@ namespace bmsx {
 
 class CPU;
 struct Thread;
+enum class LuaAllocationAssist { None, Step, Full };
 
 class LuaHeap {
 public:
@@ -24,9 +26,13 @@ public:
 		Value root2 = valueNil(),
 		u32 growingThread = 0u
 	);
+	// An owner whose logical request depends on retained weak values must
+	// quote it again after this phase, before checking the final admission.
+	LuaAllocationAssist prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread = 0u);
 	// A record with optional separately allocated backing. Record and backing
 	// are charged together, after both allocations are admitted.
-	u32 allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
+	u32 allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField, Value root0 = valueNil(), Value root1 = valueNil(),
+		Value root2 = valueNil(), std::optional<u32> backingCharge = {});
 	// Physical backing can reserve more bytes than the owner's logical increase.
 	// Admission does not commit occupancy; the owner publishes its replacement.
 	u32 reserveBacking(u32 bytes, u32 logicalBytes, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);

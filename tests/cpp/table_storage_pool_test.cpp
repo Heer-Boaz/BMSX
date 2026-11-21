@@ -4,12 +4,50 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 
+#include <array>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 namespace {
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
+}
+
+void hashBudgetIgnoresPhysicalRebuild(bmsx::CPU& cpu) {
+	using namespace bmsx;
+	std::array<i32, 16> keys{};
+	u32 assigned = 0u;
+	i32 collision = 0;
+	for (i32 id = -1; assigned != keys.size() || collision == 0; --id) {
+		const auto home = hashCanonicalTableKey(valueInteger(id)) & (keys.size() - 1u);
+		if (keys[home] == 0u) { keys[home] = id; ++assigned; }
+		else if (home == 0u) collision = id;
+	}
+	auto spare = cpu.createTable(0, 16), tombstones = cpu.createTable(0, 16);
+	for (auto key : keys) tombstones.setInteger(key, valueInteger(17));
+	for (size_t i = 2; i < keys.size(); ++i) tombstones.setInteger(keys[i], valueNil());
+	for (size_t i = 0; i < 2; ++i) spare.setInteger(keys[i], valueInteger(17));
+	const auto used = cpu.luaHeap().usedBytes();
+	const auto before = tombstones.storageAddress();
+	tombstones.setInteger(collision, valueInteger(23));
+	spare.setInteger(collision, valueInteger(23));
+	require(tombstones.storageAddress() != before && tombstones.hashSlots() == 4u && spare.hashSlots() == 16u,
+		"tombstones can rebuild a physical hash below the unchanged logical reservation");
+	require(cpu.luaHeap().usedBytes() == used && tombstones.arrayCapacity() == spare.arrayCapacity(),
+		"different bucket counts leave the same membership charge and array range");
+	for (auto key : {keys[0], keys[1], collision})
+		require(tombstones.getInteger(key) == spare.getInteger(key), "both physical layouts retain the same mappings");
+	tombstones.clear(); spare.clear();
+
+	const auto logical = cpu.luaHeap().usedBytes();
+	auto table = cpu.createTable(0, 3);
+	for (size_t i = 0; i < 4; ++i) table.setInteger(keys[i], valueInteger(29));
+	require(table.hashSlots() == 4u && cpu.luaHeap().usedBytes() == logical + 32u + 40u,
+		"only the fourth mapping exceeds the prepaid three mappings, inside the same physical hash");
+	table.setInteger(keys[0], valueNil());
+	require(cpu.luaHeap().usedBytes() == logical + 32u + 30u, "removal returns the charge above the floor");
+	table.clear();
 }
 }
 
@@ -20,6 +58,7 @@ int main() {
 		IrqController irq(memory);
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
+		hashBudgetIgnoresPhysicalRebuild(cpu);
 		const auto key = cpu.stringPool().intern("retired");
 		const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 		const u32 physicalBefore = cpu.heapAllocator().occupiedBytes();
@@ -36,9 +75,9 @@ int main() {
 		require(cpu.luaHeap().usedBytes() == before.first + 32,
 			"cleared tables retain only the table header charge");
 		// Different exact capacities can share one guest size class.
-		auto second = cpu.createTable(4, 4);
+		auto second = cpu.createTable(2, 4);
 		require(second.trackedHeapBytes() == 112u && second.storageAddress() == bodyAddress, "the freed guest size class is reused");
-		for (int index = 1; index <= 4; ++index)
+		for (int index = 1; index <= 2; ++index)
 			require(isNil(second.getInteger(index)), "reused array slots are initialized to nil");
 		require(isNil(second.getStringKey(key)), "reused hash storage does not retain old keys or values");
 		second.setStringKey(key, valueInteger(73));
