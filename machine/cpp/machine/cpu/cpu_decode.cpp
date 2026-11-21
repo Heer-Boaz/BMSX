@@ -3,6 +3,7 @@
 
 #include "common/endian.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/jit/source.h"
 #include "machine/cpu/jit/source_policy.h"
 #endif
 #include "machine/memory/memory.h"
@@ -297,7 +298,7 @@ bool CPU::decodeInstruction(
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 bool CPU::decodeBackedInstruction(
 	Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
-	u32 pc, MappedBusSignals busSignals
+	u32 pc, MappedBusSignals busSignals, NativeWarmupPages* requested
 ) {
 	MappedPageBinding binding;
 	m_memory.bindMappedPage(pc & ~MAPPED_PAGE_BYTE_MASK, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
@@ -322,11 +323,13 @@ bool CPU::decodeBackedInstruction(
 	DecodedInstructionPage* bodyPage = nullptr;
 	if (instructionOpcode(sourceWord) == static_cast<u8>(OpCode::WIDE)) {
 		if (pageOffset == DECODED_PAGE_WORDS - 1u) {
+			const u32 bodyPc = pc + INSTRUCTION_BYTES;
 			MappedPageBinding bodyBinding;
-			m_memory.bindMappedPage(pc + INSTRUCTION_BYTES, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, bodyBinding);
+			m_memory.bindMappedPage(bodyPc, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, bodyBinding);
 			if (!bodyBinding.cacheable) return false;
+			if (requested && !requested->include(bodyPc)) return false;
 			if (bodyBinding.readBytes) bodyWord = readLE32(bodyBinding.readBytes);
-			else if (!readPublishedWord(pc + INSTRUCTION_BYTES, bodyWord)) return false;
+			else if (!readPublishedWord(bodyPc, bodyWord)) return false;
 			bodyPage = &decodedPageForAddress(image, bodyBinding);
 		} else if (binding.readBytes) bodyWord = readLE32(binding.readBytes + (pageOffset + 1u) * INSTRUCTION_BYTES);
 		else if (!readPublishedWord(pc + INSTRUCTION_BYTES, bodyWord)) return false;

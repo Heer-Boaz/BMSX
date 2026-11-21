@@ -6,7 +6,8 @@
 
 namespace bmsx {
 
-void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing) {
+void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing,
+	NativeWarmupPages* requested) {
 	auto& page = source.page;
 	const auto& binding = source.binding;
 	const u32 pagePc = source.pagePc;
@@ -20,7 +21,11 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 		// ordinary external link. Interior entries compile a separate suffix.
 		if (page.nativeBlocks && page.nativeBlocks->entries[cursor]) continue;
 		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u) {
-			if (!decodeBackedInstruction(image, page, cursor, pc, source.busSignals)) continue;
+			if (!decodeBackedInstruction(image, page, cursor, pc, source.busSignals, requested)) continue;
+		} else if (requested && cursor == DECODED_PAGE_WORDS - 1u && page.words[cursor].width == 2u
+			&& !requested->include(pagePc + MAPPED_PAGE_BYTE_SIZE)) {
+			// A previously decoded WIDE still depends on its physical body.
+			continue;
 		}
 		const auto& instruction = page.words[cursor];
 		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u

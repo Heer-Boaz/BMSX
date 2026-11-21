@@ -15,9 +15,7 @@ namespace bmsx {
 
 struct DecodedInstructionPage;
 
-// One immutable image owns one physical page namespace. Take a copy while
-// discovering or compiling a candidate; only its published dependencies spend
-// the shared allowance.
+// One immutable image owns one physical page namespace.
 struct NativeWarmupPages {
 	bool include(u32 pagePc) {
 		const auto admitted = std::span(pages).first(count);
@@ -29,6 +27,12 @@ struct NativeWarmupPages {
 
 	std::array<u32, NATIVE_IMAGE_WARMUP_MAX_PAGES> pages{};
 	size_t count = 0;
+};
+
+struct NativeWarmupAdmission {
+	// Bound decoded work independently of the pages an installed region uses.
+	NativeWarmupPages requested;
+	NativeWarmupPages published;
 };
 
 // A physical instruction page and its compilation graph. No running frame,

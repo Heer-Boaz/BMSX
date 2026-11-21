@@ -766,14 +766,65 @@ void warmupAdmitsTheEntryBeforeCompetingFunctionSpans() {
 	}
 	for (u32 index = 0; index < sparseFunctions; ++index) {
 		const auto pc = machine.cart.textAddress + image.functions[2u + twoPageFunctions + index].firstWord * INSTRUCTION_BYTES;
-		if (index < admittedSparse)
-			require(entryAt(cpu, pc, 0) && !decoded.contains(pc + MAPPED_PAGE_BYTE_SIZE),
+		MappedPageBinding page;
+		machine.runtime.machine.memory.bindMappedPage(pc, MAPPED_BUS_INSTRUCTION_FETCH, page);
+		if (index < admittedSparse) {
+			MappedPageBinding unreachable;
+			machine.runtime.machine.memory.bindMappedPage(pc + MAPPED_PAGE_BYTE_SIZE, MAPPED_BUS_INSTRUCTION_FETCH, unreachable);
+			require(entryAt(cpu, pc, 0) && !decoded.contains(unreachable.key),
 				"unreachable function body pages neither create decoded source nor consume warmup allowance");
-		else require(!entryAt(cpu, pc, 0) && !decoded.contains(pc),
+		} else require(!entryAt(cpu, pc, 0) && !decoded.contains(page.key),
 				"the WIDE body page still belongs to the dependency allowance when no entry was published in it");
 	}
 	require(decoded.size() == NATIVE_IMAGE_WARMUP_MAX_PAGES && cpu.readNativeCompilationProfile().capacityEvictedRegions == 0,
 		"prepared code stays within the unchanged physical page allowance");
+}
+
+void coldDiscoveryDoesNotFetchAPageBeyondItsWideBudget() {
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.functions.resize(NATIVE_IMAGE_WARMUP_MAX_PAGES);
+	image.text.resize((NATIVE_IMAGE_WARMUP_MAX_PAGES + NATIVE_VERSION_REGION_MAX_PAGES + 2u) * MAPPED_PAGE_BYTE_SIZE);
+	const auto layout = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
+	const u32 firstPage = (layout.textAddress + MAPPED_PAGE_BYTE_MASK) & ~MAPPED_PAGE_BYTE_MASK;
+	const u32 firstWord = (firstPage - layout.textAddress) / INSTRUCTION_BYTES;
+	const auto put = [&](u32 word, OpCode op, u8 b = 0, u8 c = 0) {
+		writeInstruction(image.text, word, static_cast<u8>(op), 0, b, c);
+	};
+	for (u32 page = 0; page + 1u < NATIVE_IMAGE_WARMUP_MAX_PAGES; ++page) {
+		const u32 word = firstWord + page * DECODED_PAGE_WORDS;
+		image.functions[page] = {.firstWord = word, .wordCount = 1};
+		put(word, OpCode::RET, 1);
+	}
+	const u32 bodyWord = firstWord + NATIVE_IMAGE_WARMUP_MAX_PAGES * DECODED_PAGE_WORDS;
+	const u32 prefixWord = bodyWord - 1u, rootWord = prefixWord - 1u;
+	const u32 extent = NATIVE_VERSION_REGION_MAX_PAGES * DECODED_PAGE_WORDS + 3u;
+	image.functions.back() = {.firstWord = rootWord, .wordCount = extent};
+	put(rootWord, OpCode::KSMI, 0, 7);
+	put(prefixWord, OpCode::WIDE);
+	put(bodyWord, OpCode::RET, 2);
+	for (u32 word = bodyWord + 1u; word < rootWord + extent - 1u; ++word) put(word, OpCode::K0);
+	put(rootWord + extent - 1u, OpCode::RET, 1);
+	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, image));
+	auto& cpu = machine.cpu();
+	const auto grant = BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::MTC0)];
+	require(cpu.runUntilDepth(0, grant) == RunResult::Yielded && cpu.readFramePc(0) == firstPage,
+		"the real cartridge begins on the first admitted page");
+	require(cpu.runUntilDepth(0, 0) == RunResult::Yielded && cpu.readFramePc(0) == firstPage,
+		"the cold batch is prepared without running any of the cartridge functions");
+	const auto& decoded = cpu.rootThread()->currentFrame->executionImage->decodedPages;
+	const u32 root = machine.cart.textAddress + rootWord * INSTRUCTION_BYTES;
+	const u32 body = machine.cart.textAddress + bodyWord * INSTRUCTION_BYTES;
+	MappedPageBinding bodyPage;
+	machine.runtime.machine.memory.bindMappedPage(body, MAPPED_BUS_INSTRUCTION_FETCH, bodyPage);
+	require(decoded.size() == NATIVE_IMAGE_WARMUP_MAX_PAGES && !decoded.contains(bodyPage.key),
+		"the crossing WIDE body cannot decode a 33rd physical page during warmup");
+	const auto* entry = entryAt(cpu, root, 0);
+	require(entry && entry->sourceWords == 1u && !entryAt(cpu, root + INSTRUCTION_BYTES, 0),
+		"the useful prefix still publishes and leaves the complete WIDE for ordinary execution");
+	cpu.beginCompletionCallInExecutionDomain(0, machine.cart.functionAddresses.back());
+	require(cpu.runUntilDepth(1, 1024) == RunResult::Halted && cpu.readCompletionValues().get(0) == valueInteger(7)
+		&& decoded.contains(bodyPage.key), "ordinary execution fetches the body and returns after the native prefix");
 }
 
 } // namespace
@@ -794,6 +845,7 @@ int main() {
 		crossPageWideSourceUsesItsPhysicalSlot();
 		boundedWarmupLeavesDistantBranchesToHotCompilation();
 		warmupAdmitsTheEntryBeforeCompetingFunctionSpans();
+		coldDiscoveryDoesNotFetchAPageBeyondItsWideBudget();
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 		cartridgePreparationFollowsWorkerPublication();
 #endif

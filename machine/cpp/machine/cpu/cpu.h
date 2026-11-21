@@ -64,6 +64,7 @@ struct NativeCpuRunState;
 #endif
 struct NativeCompilationSource;
 struct NativeCodeSourcePage;
+struct NativeWarmupAdmission;
 struct NativeWarmupPages;
 class GcHeap;
 class IrqController;
@@ -379,7 +380,7 @@ private:
 		u32 pc, u32 sourceWord, u32 bodyWord, bool instructionCacheable, DecodedInstructionPage* bodyPage);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool decodeBackedInstruction(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
-		u32 pc, MappedBusSignals busSignals);
+		u32 pc, MappedBusSignals busSignals, NativeWarmupPages* requested = nullptr);
 #endif
 	u32 staticClosureForRecord(const FunctionPrototype& record);
 	FunctionPrototype decodePrototype(const Blua32FunctionRecordLatch& record) const;
@@ -465,12 +466,13 @@ private:
 	static void* tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	void prepareNativeBlock(CallFrame&, DecodedInstructionPage&, u32 pc, MappedBusSignals);
 	bool prepareNativeFunction(Blua32ExecutionImage&, const Blua32RomFunctionVersion&, u32 rootPc,
-		MappedBusSignals, NativeWarmupPages* = nullptr);
+		MappedBusSignals, NativeWarmupAdmission* = nullptr);
 	void observeNativeArithmeticReplay(DecodedInstructionPage&, u32 word, NativeArithmeticFeedback assumption, Value left, Value right);
 	void retireNativeInstructionUsers(DecodedInstructionPage&, u32 word);
 	void recompileNativeSource(CallFrame&, DecodedInstructionPage&, u32 changedWord, u32 sourcePc);
 	void prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32> entryPc);
-	void discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing);
+	void discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing,
+		NativeWarmupPages* requested = nullptr);
 	void prepareNativeSources(Blua32ExecutionImage&, std::span<NativeCompilationSource* const>, NativeWarmupPages* = nullptr);
 	bool installNativeRegion(Blua32ExecutionImage& image, std::span<const NativeCodeSourcePage>, u32 slot,
 		std::vector<std::unique_ptr<NativeBlock>> blocks, NativeCodeAdmission);
