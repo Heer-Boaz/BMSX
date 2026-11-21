@@ -454,7 +454,7 @@ private:
 	void observeNativeArithmeticReplay(DecodedInstructionPage&, u32 word, NativeArithmeticFeedback assumption, Value left, Value right);
 	void retireNativeInstructionUsers(DecodedInstructionPage&, u32 word);
 	void recompileNativeSource(CallFrame&, DecodedInstructionPage&, u32 changedWord, u32 sourcePc);
-	void prepareNativeImageCode(Blua32ExecutionImage& image);
+	void prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32> entryPc);
 	void discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing);
 	void prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, bool coldImage);
 	void installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pagePc, u32 slot,

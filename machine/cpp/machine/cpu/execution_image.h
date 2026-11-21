@@ -58,11 +58,12 @@ struct NativeBlockPage {
 	u32 count = 0;
 };
 
-// Advisory boot policy for this resident image, never guest or saved state.
+// Resident source hints and one-shot cartridge scheduling, never guest or
+// saved state. Explicit system preparation does not consume the schedule.
 struct NativeImageWarmup {
 	u32 functionTable = 0, functionCount = 0;
 	std::optional<u32> entryPc;
-	bool prepared = false;
+	bool consumed = false;
 };
 #endif
 

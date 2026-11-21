@@ -818,7 +818,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	// A later native grant may warm this entry. EXEC only commits the machine
 	// activation and never waits for or runs the compiler itself.
 	auto& warmup = m_activeExecutionImage->nativeWarmup;
-	if (m_activeExecutionDomainId >= 0 && !warmup.prepared) warmup.entryPc = m_functionRecordLatch.codeAddress;
+	if (m_activeExecutionDomainId >= 0 && !warmup.consumed) warmup.entryPc = m_functionRecordLatch.codeAddress;
 #endif
 }
 
@@ -2178,8 +2178,18 @@ RunResult CPU::runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBud
 	cpu.publishNativeCompilation();
 #endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	if (auto* image = cpu.m_activeExecutionImage; image && image->nativeWarmup.entryPc)
-		cpu.prepareNativeImageCode(*image);
+	if (auto* image = cpu.m_activeExecutionImage; image && image->nativeWarmup.entryPc) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		// Preserve the request until no worker snapshot can overlap it.
+		if (!cpu.m_nativeCompilerWorker || cpu.m_nativeCompilerWorker->idle())
+#endif
+		{
+			auto& warmup = image->nativeWarmup;
+			cpu.prepareNativeImageCode(*image, warmup.entryPc);
+			warmup.entryPc.reset();
+			warmup.consumed = true;
+		}
+	}
 #endif
 	if (targetDepth == 0) {
 		return cpu.runLoop<true, false>(targetDepth, instructionBudget);

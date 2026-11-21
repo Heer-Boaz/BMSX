@@ -114,7 +114,18 @@ void preparationHasNoGuestEffects() {
 	const auto repeated = cpu.readNativeCompilationProfile();
 	require(encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == before && repeated.codeBytes == compiled.codeBytes
 		&& repeated.prepareRequests == compiled.prepareRequests,
-		"repeating preparation neither repeats source analysis nor accumulates duplicate installed code or guest effects");
+		"repeating preparation does not recompile already installed sources or change guest state");
+
+	const u32 observedPc = machine.rom.textAddress + 64u * INSTRUCTION_BYTES;
+	InstructionObserverBinding observer;
+	observer.points[0].insert(observedPc);
+	observer.observe = [](void*, ExecutionDomainId, u32, ConstValueSpan) {};
+	cpu.setInstructionObserver(std::move(observer));
+	require(!entryAt(cpu, machine.rom.textAddress), "an observer change retires resident native sources");
+	cpu.prepareSystemNativeCode();
+	require(entryAt(cpu, machine.rom.textAddress) && !entryAt(cpu, observedPc)
+		&& encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == before,
+		"explicit system preparation can republish missing roots in the same image without compiling an observed PC");
 }
 
 void coldLazyWritesAndRestoreAgree() {

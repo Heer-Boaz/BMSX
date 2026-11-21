@@ -13,24 +13,23 @@
 #include <algorithm>
 #include <chrono>
 #include <map>
-#include <utility>
 
 namespace bmsx {
 
 void CPU::prepareSystemNativeCode() {
-	prepareNativeImageCode(*m_systemImage);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	// An explicit host request is synchronous. Resolve any existing snapshot
+	// before selecting missing system roots; cartridge grants never wait.
+	if (m_nativeCompilerWorker) {
+		m_nativeCompilerWorker->wait();
+		publishNativeCompilation();
+	}
+#endif
+	prepareNativeImageCode(*m_systemImage, std::nullopt);
 }
 
-void CPU::prepareNativeImageCode(Blua32ExecutionImage& image) {
-	auto& warmup = image.nativeWarmup;
-	if (warmup.prepared) return;
-#if defined(BMSX_NATIVE_COMPILER_WORKER)
-	// The normal grant boundary consumes a ready result. Never block boot
-	// or publish over a concurrent snapshot of the same source.
-	if (m_nativeCompilerWorker && !m_nativeCompilerWorker->idle()) return;
-#endif
-	const auto entryPc = std::exchange(warmup.entryPc, std::nullopt);
-	warmup.prepared = true;
+void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32> entryPc) {
+	const auto& warmup = image.nativeWarmup;
 	if (m_nativeCodeBytes >= NATIVE_CODE_CACHE_MAX_BYTES || warmup.functionCount == 0u) return;
 	const u32 functionCount = std::min(warmup.functionCount, NATIVE_IMAGE_WARMUP_MAX_HINTS);
 	const bool system = image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID;
