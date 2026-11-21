@@ -132,9 +132,7 @@ struct NativeCodeBindings {
 	const u32* ramBusEnd = nullptr;
 	const u32* ramWriteGroups = nullptr;
 	const u32* ramCodeWatchWords = nullptr;
-	const u32* cartridgeSelection = nullptr;
-	std::array<const Span<const u8>*, 2> cartridgeRom{};
-	const Span<const u8>* systemRom = nullptr;
+	const Memory* memory = nullptr;
 	StringPool* strings = nullptr;
 	StringId indexKey = 0;
 	// Only CPU-owned emission may call completion owners. Standalone blocks

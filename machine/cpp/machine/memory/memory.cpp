@@ -811,6 +811,14 @@ bool Memory::bindRomByteView(uint32_t addr, size_t length, u32 cartridgeSlot, Sp
 	return false;
 }
 
+const u8* Memory::bindCpuRomLoad(const Memory* memory, u32 addr, u32 length) noexcept {
+	if (addr < CART_ROM_BASE && !addressRangeWithin(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, length))
+		return nullptr;
+	const u32 slot = addr >= CART_ROM_BASE ? memory->m_cartridgeController.selectedSlot(MAPPED_BUS_MASTER_CPU) : 0u;
+	Span<const u8> view;
+	return memory->bindRomByteView(addr, length, slot, view) ? view.data() : nullptr;
+}
+
 bool Memory::bindMappedReadView(uint32_t addr, size_t length, MappedBusSignals busSignals, Span<const u8>& out) const {
 	if (addr < RAM_BASE) return bindRomByteView(addr, length, 0u, out);
 	if (addr < CART_ROM_BASE) {

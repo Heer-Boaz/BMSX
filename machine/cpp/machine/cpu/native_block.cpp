@@ -20,9 +20,7 @@ NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, StringI
 	: ramBytes(memory.ramByteCount()), ram(memory.ramData()), ramBusEnd(memory.ramBusEndAddress()),
 	  ramWriteGroups(memory.ramWriteWatches().groupData()),
 	  ramCodeWatchWords(memory.ramWriteWatches().codeWordMasks()),
-	  cartridgeSelection(&memory.cartridgeController().selectionWord()),
-	  cartridgeRom{memory.cartridgeController().romStorage(0), memory.cartridgeController().romStorage(1)},
-	  systemRom(&memory.systemRomStorage()), strings(&pool), indexKey(indexKey), cpu(cpu) {}
+	  memory(&memory), strings(&pool), indexKey(indexKey), cpu(cpu) {}
 
 void NativeCodeRegion::publish(size_t& cacheBytes) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER) && defined(SLJIT_CONFIG_ARM)

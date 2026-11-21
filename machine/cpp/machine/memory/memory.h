@@ -160,6 +160,9 @@ public:
 	void readBytes(uint32_t addr, u8* out, size_t length) const;
 	bool isReadableMainMemoryRange(uint32_t addr, size_t length) const;
 	bool bindRomByteView(uint32_t addr, size_t length, u32 cartridgeSlot, Span<const u8>& out) const;
+	// Borrow a complete ROM transfer through the ordinary CPU data port.
+	// The caller must complete the load before any operation that changes media.
+	static const u8* bindCpuRomLoad(const Memory* memory, u32 addr, u32 length) noexcept;
 	bool bindMappedReadView(uint32_t addr, size_t length, MappedBusSignals busSignals, Span<const u8>& out) const;
 	bool isRamRange(uint32_t addr, size_t length) const;
 	MemoryRegionKind mappedRegion(uint32_t addr) const;
