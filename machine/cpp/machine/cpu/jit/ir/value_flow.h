@@ -1,30 +1,58 @@
 #pragma once
 
-#include "machine/cpu/jit/ir/region.h"
+#include <array>
+#include <limits>
+#include <span>
+#include <vector>
+
+#include "machine/cpu/jit/ir/operations.h"
 
 namespace bmsx {
 
-// The definition of one scalar input in a straight-line source run. The
-// output slot distinguishes results of the same instruction; a copy forwards
-// the original value rather than acquiring a new identity.
+struct NativeInstruction;
+
+// Identity of captured guest value bits within one value-flow scope. This
+// neither names a guest slot nor commits it to a physical host register.
+enum class NativeValueId : u16 { None };
+
 struct NativeValueOrigin {
-	static constexpr u16 Input = std::numeric_limits<u16>::max();
-	static constexpr u16 Unknown = Input - 1;
-	u16 producer = Input;
-	NativeValueRef slot = NATIVE_NO_OPERAND;
+	static constexpr u16 Entry = std::numeric_limits<u16>::max();
+	static constexpr u16 Opaque = Entry - 1;
+	u16 producer;
+	NativeValueRef slot;
 	bool operator==(const NativeValueOrigin&) const = default;
 };
 
-// Run-local definitions for the individually named operands, independent of
-// native register residency. Ranges contribute definitions, not scalar uses. Open result ranges kill earlier definitions
-// without claiming that the runtime writes every candidate slot.
-class NativeRunValues {
+struct NativeRowValues {
+	std::array<NativeValueId, 3> inputs{};
+	NativeValueId result{};
+};
+
+// A sparse value map shared by field planning (one source run) and type
+// specialization (one published block). Resetting a scope gives independent
+// identities to incoming slots, even if a preceding source run copied them.
+class NativeSlotValues {
 public:
-	explicit NativeRunValues(std::span<const NativeInstruction> instructions);
-	const std::array<NativeValueOrigin, 3>& inputs(size_t instruction) const { return m_inputs[instruction]; }
+	explicit NativeSlotValues(std::span<const NativeInstruction> instructions);
+	void beginScope();
+	NativeRowValues advance(const NativeInstruction& instruction, u16 row);
+	NativeValueId slot(NativeSlot slot);
+	NativeValueId current(NativeSlot slot) const;
+	NativeValueOrigin origin(NativeValueId value) const { return m_origins[static_cast<u16>(value) - 1u]; }
 
 private:
-	std::array<std::array<NativeValueOrigin, 3>, NATIVE_BLOCK_MAX_INSTRUCTIONS> m_inputs;
+	struct Binding {
+		NativeSlot slot;
+		u16 producer = NativeValueOrigin::Entry;
+		NativeValueId value{};
+		u32 generation = 0;
+	};
+	NativeValueId create(u16 producer, NativeValueRef slot);
+	NativeValueId read(Binding& binding);
+
+	std::vector<Binding> m_slots;
+	std::vector<NativeValueOrigin> m_origins;
+	u32 m_generation = 0;
 };
 
 } // namespace bmsx

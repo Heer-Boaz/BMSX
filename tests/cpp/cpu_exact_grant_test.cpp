@@ -229,6 +229,59 @@ void adaptiveArithmeticReplay() {
 #endif
 }
 
+void copiedArithmeticReplay() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 5, 0, 3);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 1, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::ADD), 2, 0, 1);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::K1), 4, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 6}};
+	Machine native(image, false), scalar(image, true);
+	const u32 pc = native.rom.textAddress + INSTRUCTION_BYTES;
+	const u32 wide = pc + INSTRUCTION_BYTES, suffix = wide + 2u * INSTRUCTION_BYTES;
+	const int copyCycles = BASE_CYCLES[static_cast<u8>(OpCode::MOV)];
+	const int addCycles = BASE_CYCLES[static_cast<u8>(OpCode::ADD)];
+	const auto run = [&](Value input, Value result, int grant) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+			auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+			registers.set(0, input);
+			registers.set(1, valueNil());
+			registers.set(2, valueInteger(95));
+			registers.set(4, valueInteger(96));
+		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded,
+			"the exact grant retires the copied sum and not its successor");
+		require(native.cpu.instructionBudgetRemaining == grant - copyCycles - addCycles
+			&& native.cpu.readCurrentInstructionPc() == wide && native.cpu.lastPc == wide + INSTRUCTION_BYTES
+			&& native.cpu.readFramePc(0) == suffix,
+			"a WIDE retry keeps the prefix PC, last body word and exact debt");
+		require(native.cpu.readFrameRegister(0, 0) == input && native.cpu.readFrameRegister(0, 1) == input
+			&& native.cpu.readFrameRegister(0, 2) == result && native.cpu.readFrameRegister(0, 4) == valueInteger(96)
+			&& test::sameLanguageRam(native.cpu, scalar.cpu),
+			"the MOV value, retried result and untouched suffix match the interpreter's guest RAM");
+	};
+	for (int sample = 0; sample < 16; ++sample)
+		run(valueInteger(7), valueInteger(14), copyCycles + addCycles);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const auto& block = page.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	require(block && block->admissionCycles == copyCycles && block->sideExits.size() == 1,
+		"the copied arithmetic is a published proof-specialized native block");
+	const auto& replay = block->sideExits.front();
+	require(replay.exit == NativeBlockExit::ScalarBoundary && replay.currentPc == pc && replay.lastPc == pc
+		&& replay.nextPc == wide && replay.cycles == copyCycles && replay.registerTop == 2
+		&& replay.operands.replay.arithmetic == NativeArithmeticFeedback{ValueTag::Integer, ValueTag::Integer},
+		"the copied-input proof failure replays at the WIDE prefix after committing only the MOV");
+#endif
+	run(valueFloat(1.25f), valueFloat(2.5f), copyCycles + 1);
+}
+
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void waitForNativeEntries(Machine& machine, u32 base, std::initializer_list<u32> offsets) {
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
@@ -714,6 +767,7 @@ int main(int argc, char** argv) {
 		else if (scenario == "nmi-short") nmiAfterShortGrant();
 		else if (scenario == "rewrite-short") rewriteAndObserveAfterShortGrant();
 		else if (scenario == "adaptive-arithmetic") adaptiveArithmeticReplay();
+		else if (scenario == "copied-arithmetic") copiedArithmeticReplay();
 		else if (scenario == "native-arithmetic-profile") {
 			generatedArithmeticTrainsTheCompiler(false);
 			generatedArithmeticTrainsTheCompiler(true);

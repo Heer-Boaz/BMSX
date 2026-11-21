@@ -1281,6 +1281,7 @@ if(BMSX_BUILD_TESTS)
 	add_test(NAME bmsx_cpu_exact_grant_nmi_short COMMAND bmsx_cpu_exact_grant_tests nmi-short)
 	add_test(NAME bmsx_cpu_exact_grant_rewrite_short COMMAND bmsx_cpu_exact_grant_tests rewrite-short)
 	add_test(NAME bmsx_cpu_exact_grant_adaptive_arithmetic COMMAND bmsx_cpu_exact_grant_tests adaptive-arithmetic)
+	add_test(NAME bmsx_cpu_exact_grant_copied_arithmetic COMMAND bmsx_cpu_exact_grant_tests copied-arithmetic)
 	add_test(NAME bmsx_cpu_exact_grant_native_arithmetic_profile COMMAND bmsx_cpu_exact_grant_tests native-arithmetic-profile)
 
 	add_executable(bmsx_cpu_compiled_calls_tests ../../tests/cpp/cpu_compiled_calls_test.cpp ${BMSX_TEST_ROM_OBJECTS})

@@ -1,6 +1,7 @@
 #include "machine/cpu/jit/ir/region.h"
 #include "machine/cpu/jit/ir/liveness.h"
 #include "machine/cpu/jit/ir/type_propagation.h"
+#include "machine/cpu/jit/ir/value_flow.h"
 
 #include <algorithm>
 #include <numeric>
@@ -50,14 +51,17 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 	for (const auto& source : sources) instructionCount += source.instructions.size();
 	m_instructions.reserve(instructionCount);
 	m_blocks.reserve(sources.size());
-	std::array<NativeFieldAddressUse, NATIVE_BLOCK_MAX_INSTRUCTIONS> addressUses;
-	for (const auto& source : sources) {
-		const size_t first = m_instructions.size();
+	for (const auto& source : sources)
 		for (const auto& inst : source.instructions)
 			m_instructions.emplace_back(translateNativeOperation(*inst.decoded));
-		auto operations = std::span(m_instructions).subspan(first);
-		planNativeFieldReads(operations, source.instructions, addressUses, specializations);
-		const size_t count = operations.size();
+	NativeSlotValues values(m_instructions);
+	std::array<NativeFieldAddressUse, NATIVE_BLOCK_MAX_INSTRUCTIONS> addressUses;
+	size_t first = 0;
+	for (const auto& source : sources) {
+		const size_t count = source.instructions.size();
+		auto operations = std::span(m_instructions).subspan(first, count);
+		first += count;
+		planNativeFieldReads(operations, source.instructions, values, addressUses, specializations);
 
 		const size_t firstEntry = m_blocks.size();
 		size_t segment = 0;
@@ -107,7 +111,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 		block.inlineBuiltin &= block.successors[0] != m_blocks.size();
 	}
 	uses.analyze(m_blocks);
-	NativeTypePropagation{}.specializeRegion(m_blocks, uses, m_entryTypes);
+	NativeTypePropagation{}.specializeRegion(m_blocks, uses, values, m_entryTypes);
 	for (auto& block : m_blocks) finalizeBlockExits(block, options.observesArithmetic);
 	if (options.immutablePagePc) planRecordConstructors(directory, *options.immutablePagePc);
 }

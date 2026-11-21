@@ -256,8 +256,9 @@ struct NativeCallSite : NativeExitOperands::Call {
 	static constexpr auto terminalExit = NativeBlockExit::Call;
 	NativeTagCheck calleeCheck = NativeTagCheck::Dynamic;
 	constexpr NativeSlotAccess slots() const {
-		return {.writes = {callee, static_cast<u16>(std::max<int>(requested, 0)), requested < 0},
-			.readsRange = {callee, static_cast<u16>(1 + std::max<int>(supplied, 0)), supplied < 0}};
+		return {.reads = {static_cast<i16>(callee), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND},
+			.writes = {callee, static_cast<u16>(std::max<int>(requested, 0)), requested < 0},
+			.readsRange = {u32{callee} + 1u, static_cast<u16>(std::max<int>(supplied, 0)), supplied < 0}};
 	}
 };
 struct NativeVararg : NativeExitOperands::Vararg {

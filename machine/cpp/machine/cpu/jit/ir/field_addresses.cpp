@@ -23,7 +23,7 @@ bool invalidatesFieldAddresses(const NativeOperation& operation) {
 // location. Matching seeds are a profitability choice; lowering still
 // admits the physical footprint and checks each consumer's live prediction.
 void selectFieldAddresses(std::span<NativeInstruction> instructions, std::span<const NativeBlockInstruction> source,
-	const NativeRunValues& values, size_t firstRow, std::span<NativeFieldAddressUse> uses) {
+	std::span<const NativeRowValues> rows, const NativeSlotValues& values, size_t firstRow, std::span<NativeFieldAddressUse> uses) {
 	std::array<u8, NATIVE_BLOCK_MAX_INSTRUCTIONS> candidates;
 	std::array<u8, NATIVE_BLOCK_MAX_INSTRUCTIONS> lastUses{};
 	size_t count = 0, addressFloor = 0;
@@ -38,12 +38,12 @@ void selectFieldAddresses(std::span<NativeInstruction> instructions, std::span<c
 		uses[index] = {static_cast<u8>(firstRow + index)};
 		const bool hasSlot = field->predictedSlot >= 0;
 		if (!hasSlot) addressFloor = index + 1;
-		const auto receiver = values.inputs(index)[0];
-		if (receiver.producer == NativeValueOrigin::Unknown) continue;
+		const auto receiver = rows[index].inputs[0];
+		if (values.origin(receiver).producer == NativeValueOrigin::Opaque) continue;
 		std::optional<u8> reuse, learn;
 		for (const u8 row : std::span(candidates).first(count)) {
 			auto& prior = std::get<NativeTableAccess>(instructions[row].operation);
-			if (values.inputs(row)[0] != receiver || prior.key != field->key) continue;
+			if (rows[row].inputs[0] != receiver || prior.key != field->key) continue;
 			if (row >= addressFloor && hasSlot && prior.predictedSlot == field->predictedSlot) {
 				reuse = row;
 				break;
@@ -89,16 +89,20 @@ void selectFieldAddresses(std::span<NativeInstruction> instructions, std::span<c
 } // namespace
 
 void planNativeFieldReads(std::span<NativeInstruction> instructions, std::span<const NativeBlockInstruction> source,
-	std::span<NativeFieldAddressUse> addressUses, NativeCompileSpecializations specializations) {
+	NativeSlotValues& values, std::span<NativeFieldAddressUse> addressUses, NativeCompileSpecializations specializations) {
 	const auto first = std::ranges::find_if(instructions,
 		[](NativeInstruction& instruction) { return fixedFieldRead(instruction.operation); });
 	if (first == instructions.end()) return;
 
 	const auto prefix = static_cast<size_t>(first - instructions.begin());
 	auto tail = instructions.subspan(prefix);
-	const NativeRunValues values(tail);
+	std::array<NativeRowValues, NATIVE_BLOCK_MAX_INSTRUCTIONS> rowStorage;
+	auto rows = std::span(rowStorage).first(tail.size());
+	values.beginScope();
+	for (u16 row = 0; row < rows.size(); ++row)
+		rows[row] = values.advance(tail[row], row);
 	struct Selection {
-		u16 consumer = NativeValueOrigin::Input;
+		u16 consumer = NativeValueOrigin::Entry;
 		ValueTag tag = ValueTag::Nil;
 	};
 	std::array<Selection, NATIVE_BLOCK_MAX_INSTRUCTIONS> selections;
@@ -107,7 +111,7 @@ void planNativeFieldReads(std::span<NativeInstruction> instructions, std::span<c
 		if (origin.producer < frontier || origin.producer >= index) return;
 		auto* field = fixedFieldRead(tail[origin.producer].operation);
 		auto& candidate = selections[origin.producer];
-		if (!field || field->predictedSlot < 0 || candidate.consumer != NativeValueOrigin::Input) return;
+		if (!field || field->predictedSlot < 0 || candidate.consumer != NativeValueOrigin::Entry) return;
 		const u32 pc = source[prefix + origin.producer].pc;
 		const auto rejected = std::ranges::equal_range(specializations.rejectedFieldProofs, pc, {}, &NativeRejectedFieldProof::pc);
 		if (std::ranges::find(rejected, tag, &NativeRejectedFieldProof::tag) == rejected.end())
@@ -118,7 +122,7 @@ void planNativeFieldReads(std::span<NativeInstruction> instructions, std::span<c
 		// Fixed-key loads can each acquire a checked fast path. Other
 		// checkpoints delimit the native path used by this optimization.
 		if (fixedFieldRead(operation)) {
-			select(index, values.inputs(index)[0], ValueTag::Table);
+			select(index, values.origin(rows[index].inputs[0]), ValueTag::Table);
 			continue;
 		}
 		if (invalidatesFieldAddresses(operation)) {
@@ -130,14 +134,14 @@ void planNativeFieldReads(std::span<NativeInstruction> instructions, std::span<c
 			&& arithmetic->operation != OpCode::MUL)) continue;
 		const auto& hint = std::get<NativeArithmeticHint>(arithmetic->strategy);
 		if (!hint.feedback) continue;
-		const auto& inputs = values.inputs(index);
-		select(index, inputs[0], hint.feedback->left);
-		select(index, inputs[1], hint.feedback->right);
+		const auto& inputs = rows[index].inputs;
+		select(index, values.origin(inputs[0]), hint.feedback->left);
+		select(index, values.origin(inputs[1]), hint.feedback->right);
 	}
 	for (size_t producer = 0; producer < tail.size(); ++producer)
-		if (selections[producer].consumer != NativeValueOrigin::Input)
+		if (selections[producer].consumer != NativeValueOrigin::Entry)
 			std::get<NativeTableAccess>(tail[producer].operation).resultTag = selections[producer].tag;
-	selectFieldAddresses(tail, source.subspan(prefix), values, prefix, addressUses.subspan(prefix, tail.size()));
+	selectFieldAddresses(tail, source.subspan(prefix), rows, values, prefix, addressUses.subspan(prefix, tail.size()));
 }
 
 void NativeIrRegion::bindOwnFieldAddresses(NativeIrBlock& block, std::span<const NativeFieldAddressUse> uses, size_t firstRow) {

@@ -193,8 +193,12 @@ void distinctFieldValuesSurviveCopiesAndSlotReuse() {
 	NativeIrRegion warm(runs, uses);
 	require(warm.blocks().size() == 1, "two proved field reads can share a native segment");
 	const auto instructions = warm.blocks().front().instructions;
-	const NativeRunValues values(instructions);
-	require(values.inputs(4)[0] == NativeValueOrigin{1, 6} && values.inputs(4)[1] == NativeValueOrigin{3, 6},
+	NativeSlotValues values(instructions);
+	values.beginScope();
+	for (u16 index = 0; index < 4; ++index) values.advance(instructions[index], index);
+	const auto sum = values.advance(instructions[4], 4);
+	require(values.origin(sum.inputs[0]) == NativeValueOrigin{1, 6}
+		&& values.origin(sum.inputs[1]) == NativeValueOrigin{3, 6},
 		"copying and reusing the same guest slot do not merge two value definitions");
 	require(std::get<NativeTableAccess>(instructions[1].operation).resultTag == ValueTag::Float
 		&& std::get<NativeTableAccess>(instructions[3].operation).resultTag == ValueTag::Integer,
@@ -202,6 +206,69 @@ void distinctFieldValuesSurviveCopiesAndSlotReuse() {
 	const auto& plan = std::get<NativeNumericPlan>(std::get<NativeArithmetic>(instructions[4].operation).strategy);
 	require(plan.action == NativeNumericAction::Float && !plan.guardLeft && !plan.guardRight,
 		"the sum uses both field proofs, including the one forwarded by MOV");
+}
+
+void capturedOperandsShareOnlyLocalProofs() {
+	constexpr u32 pc = 0x5600;
+	DecodedInstruction copy{.a = 1, .b = 0, .op = static_cast<u8>(OpCode::MOV), .width = 1, .baseCycles = 1};
+	DecodedInstruction replace{.op = static_cast<u8>(OpCode::LOADK), .width = 1, .baseCycles = 1};
+	DecodedInstruction sum{.a = 2, .b = 0, .c = 1, .op = static_cast<u8>(OpCode::ADD), .width = 2, .baseCycles = 2};
+	DecodedInstruction use{.a = 3, .b = 1, .c = 2, .op = static_cast<u8>(OpCode::ADD), .width = 1, .baseCycles = 2};
+	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
+		sum.observeNativeNumericTypes(valueInteger(1), valueInteger(1));
+
+	const std::array dependent{NativeBlockInstruction{&copy, pc}, NativeBlockInstruction{&sum, pc + 4},
+		NativeBlockInstruction{&use, pc + 12}};
+	const std::array local{NativeBlockSource{dependent}};
+	NativeRegisterUses uses;
+	NativeIrRegion region(local, uses);
+	const auto rows = region.blocks().front().instructions;
+	const auto& checked = std::get<NativeNumericPlan>(std::get<NativeArithmetic>(rows[1].operation).strategy);
+	const auto& proved = std::get<NativeNumericPlan>(std::get<NativeArithmetic>(rows[2].operation).strategy);
+	require(checked.action == NativeNumericAction::Word && checked.guardLeft && !checked.guardRight && rows[1].replay,
+		"copied inputs use a single guard and retain one exact replay site");
+	require(proved.action == NativeNumericAction::Word && !proved.guardLeft && !proved.guardRight && !rows[2].replay,
+		"the successful guard proves a later use of the copied value, not merely the checked register");
+
+	const std::array overwritten{dependent[0], NativeBlockInstruction{&replace, pc + 4}, NativeBlockInstruction{&sum, pc + 8}};
+	const std::array reassigned{NativeBlockSource{overwritten}};
+	NativeIrRegion redefined(reassigned, uses);
+	const auto& separate = std::get<NativeNumericPlan>(
+		std::get<NativeArithmetic>(redefined.blocks().front().instructions.back().operation).strategy);
+	require(separate.guardLeft && separate.guardRight, "a load into the old source slot creates a different value");
+
+	const std::span chain(dependent);
+	const std::array entries{NativeBlockSource{chain.first(1)}, NativeBlockSource{chain.subspan(1)}};
+	NativeIrRegion independent(entries, uses);
+	const auto& admitted = std::get<NativeNumericPlan>(
+		std::get<NativeArithmetic>(independent.blocks()[1].instructions.front().operation).strategy);
+	require(admitted.guardLeft && admitted.guardRight,
+		"a public entry cannot assume its incoming slots were copied by the preceding source run");
+}
+
+void rangeWritesAndMethodCopiesDefineValues() {
+	std::array instructions{
+		NativeInstruction(NativeTableAccess{2, 1, 0, NativeTableMode::ReadMethod, NativeTableKey::Field, {}}),
+		NativeInstruction(NativeArithmetic{4, 1, 3, OpCode::ADD, NativeArithmeticHint{}}),
+		NativeInstruction(NativeVararg{{3, -1}}),
+		NativeInstruction(NativeArithmetic{4, 1, 3, OpCode::ADD, NativeArithmeticHint{}}),
+		NativeInstruction(NativeMove{5, -1, ValueMoveKind::Copy}),
+		NativeInstruction(NativeArithmetic{4, 5, -1, OpCode::ADD, NativeArithmeticHint{}}),
+	};
+	NativeSlotValues values(instructions);
+	values.beginScope();
+	values.advance(instructions[0], 0);
+	const auto method = values.advance(instructions[1], 1);
+	require(method.inputs[0] == method.inputs[1], "SELF binds A+1 to the captured receiver");
+	values.advance(instructions[2], 2);
+	const auto open = values.advance(instructions[3], 3);
+	require(open.inputs[0] == method.inputs[0] && open.inputs[1] != method.inputs[1]
+		&& values.origin(open.inputs[1]).producer == NativeValueOrigin::Opaque,
+		"open results end earlier proofs inside their possible write range, not below it");
+	const auto captured = values.advance(instructions[4], 4);
+	const auto live = values.advance(instructions[5], 5);
+	require(live.inputs[0] == captured.inputs[0] && live.inputs[1] != captured.inputs[0],
+		"a copied RK value does not alias a later access to the live RAM-backed constant bank");
 }
 
 void nestedFieldsShareOnlyTheCheckedAddress() {
@@ -611,6 +678,8 @@ int main() {
 		fieldChainHasAnExplicitResumePoint();
 		fieldSelectionPreservesColdCodeAndContinuation();
 		distinctFieldValuesSurviveCopiesAndSlotReuse();
+		capturedOperandsShareOnlyLocalProofs();
+		rangeWritesAndMethodCopiesDefineValues();
 		nestedFieldsShareOnlyTheCheckedAddress();
 		fieldAddressesStopAtDefinitionsAndEffects();
 		fieldAddressTemporariesAreBoundedByLifetime();

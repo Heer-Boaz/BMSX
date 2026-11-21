@@ -10,6 +10,7 @@
 namespace bmsx {
 
 class NativeRegisterUses;
+class NativeSlotValues;
 
 // The observable prefix before a guest instruction. The charge and top
 // describe only the instructions that already completed.
@@ -123,6 +124,6 @@ NativeOperation translateNativeOperation(const DecodedInstruction& source);
 enum class NativeOperationFlow : u8 { Linear, Checkpoint, Terminal, LeavesNative };
 NativeOperationFlow nativeOperationFlow(const NativeOperation& operation);
 void planNativeFieldReads(std::span<NativeInstruction> instructions, std::span<const NativeBlockInstruction> source,
-	std::span<NativeFieldAddressUse> addressUses, NativeCompileSpecializations specializations);
+	NativeSlotValues& values, std::span<NativeFieldAddressUse> addressUses, NativeCompileSpecializations specializations);
 
 } // namespace bmsx
