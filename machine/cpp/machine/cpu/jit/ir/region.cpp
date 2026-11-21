@@ -144,7 +144,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 		block.inlineBuiltin &= block.successors[0] != m_blocks.size();
 	}
 	uses.analyze(m_blocks);
-	NativeTypePropagation{specializations.imageConstants}.specializeRegion(m_blocks, uses, values, m_entryTypes);
+	NativeTypePropagation{specializations.imageConstants, options.observesArithmetic}.specializeRegion(m_blocks, uses, values, m_entryTypes);
 	for (auto& block : m_blocks) {
 		auto& final = block.instructions.back();
 		if (const auto* branch = std::get_if<NativeTruthBranch>(&final.operation);
@@ -158,7 +158,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 			block.successors = {target, m_blocks.size()};
 			block.provesSuccessorTypes = {proven, false};
 		}
-		finalizeBlockExits(block, options.observesArithmetic);
+		finalizeBlockExits(block);
 		for (const auto& type : block.entryTypes)
 			block.requiredSlots = std::max(block.requiredSlots, u32{type.slot} + 1u);
 		for (const auto& instruction : block.instructions) {

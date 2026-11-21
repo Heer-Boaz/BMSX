@@ -228,7 +228,7 @@ void preparedCodeUsesItsImageConstants() {
 	}
 }
 
-void coldExecLetsNumericFieldChainsWarm() {
+void coldExecRecordsNumericFieldFeedback() {
 	test::Blua32TestImage image;
 	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
 	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 5}, {.firstWord = 64, .wordCount = 1}};
@@ -253,7 +253,8 @@ void coldExecLetsNumericFieldChainsWarm() {
 		const auto* cold = entryAt(cpu, root, 0);
 		require(cold && cold->terminal.currentPc == pc && entryAt(cpu, pc + INSTRUCTION_BYTES, 0)
 			&& entryAt(cpu, root + 64u * INSTRUCTION_BYTES, 0),
-				"prepared code uses a generic continuation until the types stabilize");
+			"cold code prepares the field read, its generic continuation and the other function");
+		const auto coldRegion = cold->region;
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		auto receiver = cpu.createTable(0, 1);
 		auto holder = receiver;
@@ -283,16 +284,22 @@ void coldExecLetsNumericFieldChainsWarm() {
 		for (int sample = 0; sample < 16; ++sample) {
 			require(cpu.runUntilDepth(0, completeLoop) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0,
 				"each generic or specialized traversal consumes exactly one completed loop");
-			if (!entryAt(cpu, root, 0)) test::waitForNativeEntry(cpu, *frame.decodedPage, word);
 		}
+		auto& page = *frame.decodedPage;
+		require(entryAt(cpu, root, 0) == cold && cold->region == coldRegion
+			&& page.words[word + 2u].nativeNumericTypes().stable(),
+			"completed generic operations train both routes without replacing their published entries");
+		if (inherited) continue;
+
+		// An independent cache withdrawal, not learning a pair, permits a
+		// later compilation to consume the field and arithmetic feedback.
+		page.retireNativeRegion(coldRegion.get(), DecodedInstructionPage::Retirement::Capacity);
+		require(cpu.runUntilDepth(0, NATIVE_BLOCK_COMPILATION_THRESHOLD * completeLoop) == RunResult::Yielded,
+			"the live loop reaches readmission after a cache withdrawal");
+		test::waitForNativeEntry(cpu, page, word);
 		const auto* entry = entryAt(cpu, root, 0);
-		if (inherited) {
-			require(entry->terminal.currentPc == pc,
-				"a consistently inherited numeric field does not speculate on an unobserved own slot");
-			continue;
-		}
 		require(entry->hasFusedJump && entry->terminal.currentPc == pc + 3 * INSTRUCTION_BYTES,
-			"an observed own numeric read keeps subtraction and comparison in the same native body without a following store");
+			"readmission can use existing feedback to specialize the own read and its consumers");
 		const auto prefixCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
 		NativeBlockRunState grant{.constants = frame.executionImage->constPool, .heap = &cpu.gcHeap(),
 			.globalValues = {}, .systemGlobalValues = {}, .remainingCycles = prefixCycles + loopCycles};
@@ -833,7 +840,7 @@ int main() {
 	try {
 		coldExecPreservesGuestStateAndBanks();
 		preparedCodeUsesItsImageConstants();
-		coldExecLetsNumericFieldChainsWarm();
+		coldExecRecordsNumericFieldFeedback();
 		recordConstructorPreservesGrantAndLayout();
 		recordConstructorUsesItsImageKeys();
 		repeatExecAndRestoreHaveDistinctPolicies();

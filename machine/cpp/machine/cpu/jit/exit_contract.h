@@ -40,7 +40,6 @@ enum class NativeBlockExit : u8 {
 	WriteControl,
 	WriteGlobal,
 	WriteSystemGlobal,
-	ProfileReady,
 	ReadUpvalue,
 	Count,
 };
@@ -90,7 +89,6 @@ union NativeExitOperands {
 	struct Concat { u16 result; i16 left, right; } concat;
 	struct ConcatRange { u16 result, first, count; } concatRange;
 	struct Closure { u32 address; u16 result, flags; } closure;
-	struct Feedback { u32 sourcePc; } feedback;
 };
 
 } // namespace bmsx

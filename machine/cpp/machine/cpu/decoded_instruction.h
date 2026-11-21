@@ -131,26 +131,24 @@ struct DecodedInstruction {
 		payload.m_word = toSignedWord(static_cast<u32>(NativeNumericTypes::POLYMORPHIC) << NUMERIC_CONFIDENCE_SHIFT);
 	}
 
-	// Only a completed arithmetic instruction contributes a sample.
-	// Report whether this sample confirms the stable candidate, including
-	// when the executing code was compiled before the site became stable.
-	bool observeNativeNumericTypes(Value lhs, Value rhs) {
+	// Only completed arithmetic contributes a sample. New feedback can guide
+	// a future compilation but does not invalidate a generic implementation.
+	void observeNativeNumericTypes(Value lhs, Value rhs) {
 		const u32 bits = static_cast<u32>(payload.m_word);
 		const u32 confidence = bits >> NUMERIC_CONFIDENCE_SHIFT;
-		if (confidence == NativeNumericTypes::POLYMORPHIC) return false;
+		if (confidence == NativeNumericTypes::POLYMORPHIC) return;
 		const u32 pair = bits & NUMERIC_PAIR_MASK;
 		const u32 sample = static_cast<u32>(valueTag(lhs)) | (static_cast<u32>(valueTag(rhs)) << NUMERIC_RIGHT_TAG_SHIFT);
 		if (pair == sample) {
 			if (confidence < NativeNumericTypes::MAX_CONFIDENCE)
 				payload.m_word = toSignedWord(bits + (1u << NUMERIC_CONFIDENCE_SHIFT));
-			return confidence + 1u >= NativeNumericTypes::STABLE_CONFIDENCE;
+			return;
 		}
 		// Contradictory samples age the candidate. A short startup type
 		// change can recover; an alternating pair never becomes stable.
 		const u32 next = confidence > 2u ? pair | ((confidence >> 1u) << NUMERIC_CONFIDENCE_SHIFT)
 			: sample | (1u << NUMERIC_CONFIDENCE_SHIFT);
 		payload.m_word = toSignedWord(next);
-		return false;
 	}
 
 private:

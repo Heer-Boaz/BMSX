@@ -40,7 +40,7 @@ struct NativeInstruction {
 	NativeOperation operation;
 	NativeSlotAccess slots;
 	u32 pc = 0;
-	NativeIrSideExit slow{}, replay{}, feedback{};
+	NativeIrSideExit slow{}, replay{};
 	u8 width = 0, baseCycles = 0;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	NativeAttempt attempt = NativeAttempt::None;
@@ -118,7 +118,7 @@ private:
 	std::vector<NativeRecordPlan> m_records;
 	std::vector<NativeOwnFieldAddress> m_ownFieldAddresses;
 	void buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations, bool cpuOwned);
-	void finalizeBlockExits(NativeIrBlock& block, bool observesArithmetic);
+	void finalizeBlockExits(NativeIrBlock& block);
 	void planAdmissionReplays();
 	void bindOwnFieldAddresses(NativeIrBlock& block, std::span<const NativeFieldAddressUse> uses, size_t firstRow);
 	void truncateOwnFieldAddresses(NativeIrBlock& block);

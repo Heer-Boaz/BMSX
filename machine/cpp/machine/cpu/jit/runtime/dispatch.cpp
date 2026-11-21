@@ -200,12 +200,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::CompletedCall:
 			transition = NativeBlockTransition::Redispatch;
 			break;
-		case NativeBlockExit::ProfileReady: {
-			const u32 completed = exit->currentPc, source = exit->operands.feedback.sourcePc;
-			auto& page = *NativeCodeLookup::findInRoot(run->codeRoot, completed);
-			cpu.recompileNativeSource(*frame, page, (completed & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES, source);
-			break;
-		}
 		case NativeBlockExit::Call: {
 			const auto call = exit->operands.call; // Feedback can withdraw the descriptor.
 			const u32 feedback = std::exchange(run->callTargetFeedback, DecodedInstruction::CALL_TARGET_UNSEEN);

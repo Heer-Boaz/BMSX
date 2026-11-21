@@ -181,7 +181,7 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 	block.nativeSuccessor = reachesEnd && kind == NativeBlockExit::Continue;
 }
 
-void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block, bool observesArithmetic) {
+void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block) {
 	if (block.terminal.exit == NativeBlockExit::InvalidOperand) truncateOwnFieldAddresses(block);
 	block.firstSideExit = static_cast<u16>(m_sideExits.size());
 	const auto appendExit = [&](const NativeIrExit& exit, NativeIrSideExit& id) -> NativeIrExit& {
@@ -247,11 +247,6 @@ void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block, bool observesArith
 		const bool placesResults = &instruction != &block.instructions.back() || block.terminal.exit == NativeBlockExit::Continue;
 		if (placesResults && writes.count != 0 && !writes.open)
 			state.registerTop = std::max(state.registerTop, writes.end());
-		if (observesArithmetic && numeric && numeric->sampleOperands) {
-			auto& completed = appendExit(state, instruction.feedback);
-			completed.exit = NativeBlockExit::ProfileReady;
-			completed.operands.feedback = {block.sourcePc};
-		}
 	}
 
 	const auto& final = block.instructions.back().operation;

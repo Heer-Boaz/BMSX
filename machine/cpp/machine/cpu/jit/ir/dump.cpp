@@ -91,6 +91,7 @@ void writeNumericPlan(std::ostream& out, const NativeArithmetic& arithmetic) {
 	if (plan.result) out << " result-tag=" << unsigned(*plan.result);
 	if (plan.guardLeft) out << " guard-left=" << unsigned(*plan.left);
 	if (plan.guardRight) out << " guard-right=" << unsigned(*plan.right);
+	if (plan.sampleOperands) out << " sample-operands";
 }
 
 constexpr std::array tagChecks{"guard", "proved", "rejected"};
@@ -186,7 +187,6 @@ struct OperationPlan {
 void writeExit(std::ostream& out, const NativeIrExit& exit) {
 	out << " kind=" << unsigned(exit.exit) << " pc=" << exit.currentPc
 		<< " last-word=" << exit.lastPc << " next=" << exit.nextPc << " charge=" << exit.cycles << " top=" << exit.registerTop;
-	if (exit.exit == NativeBlockExit::ProfileReady) out << " rebuild=" << exit.operands.feedback.sourcePc;
 	if (exit.exit == NativeBlockExit::ReadField && exit.operands.table.reusePeerWord)
 		out << " layout-peer=" << *exit.operands.table.reusePeerWord << " rebuild=" << exit.operands.table.sourcePc;
 	if (exit.exit == NativeBlockExit::ScalarBoundary && exit.operands.replay.arithmetic) {
@@ -270,7 +270,6 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 			}
 			if (inst.slow) out << " miss=e" << unsigned(*inst.slow);
 			if (inst.replay) out << " replay=e" << unsigned(*inst.replay);
-			if (inst.feedback) out << " profile-ready=e" << unsigned(*inst.feedback);
 			out << '\n';
 		}
 		const auto exits = region.sideExits(block);

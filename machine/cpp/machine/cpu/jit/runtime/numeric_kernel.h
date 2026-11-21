@@ -7,7 +7,7 @@ namespace bmsx {
 
 // Kernels run inside generated code; return the status through the native
 // ABI instead of unwinding through frames with no C++ unwind information.
-enum class NativeNumericCompletion : u32 { Completed, InvalidOperand, ProfileReady };
+enum class NativeNumericCompletion : u32 { Completed, InvalidOperand };
 using NativeNumericKernel = NativeNumericCompletion (*)(const Value* arguments, Value* result) noexcept;
 struct DecodedInstruction;
 using NativeSamplingKernel = NativeNumericCompletion (*)(const Value*, Value*, DecodedInstruction*) noexcept;

@@ -57,33 +57,36 @@ void arithmeticFeedbackTransitions() {
 	const auto initial = instruction.nativeNumericTypes();
 	require(!initial.observed() && !initial.stable(), "a decoded arithmetic site starts unseen");
 
-	for (int i = 0; i < 3; ++i)
-		require(!instruction.observeNativeNumericTypes(squared, one), "an immature pair is not stable feedback");
+	for (int i = 0; i < 3; ++i) instruction.observeNativeNumericTypes(squared, one);
 	const auto candidate = instruction.nativeNumericTypes();
 	require(candidate.observed() && !candidate.stable()
 		&& candidate.left == ValueTag::Integer && candidate.right == ValueTag::Integer,
 		"an unstable site still retains its observed operand tags");
-	require(instruction.observeNativeNumericTypes(squared, one), "a repeated pair stabilizes at the confidence threshold");
-	for (int i = 0; i < 32; ++i)
-		require(instruction.observeNativeNumericTypes(squared, one), "matching samples continue to confirm stable feedback");
+	instruction.observeNativeNumericTypes(squared, one);
+	require(instruction.nativeNumericTypes().stable(), "a repeated pair stabilizes at the confidence threshold");
+	for (int i = 0; i < 32; ++i) instruction.observeNativeNumericTypes(squared, one);
 
-	auto copy = instruction;
+	const auto copy = instruction;
 	for (int i = 0; i < 2; ++i) {
-		require(!instruction.observeNativeNumericTypes(fraction, one) && instruction.nativeNumericTypes().stable(),
+		instruction.observeNativeNumericTypes(fraction, one);
+		require(instruction.nativeNumericTypes().stable() && instruction.nativeNumericTypes().left == ValueTag::Integer,
 			"a mature pair survives short contradictions");
 	}
-	require(!instruction.observeNativeNumericTypes(fraction, one) && !instruction.nativeNumericTypes().stable(),
-		"contradictions can age a candidate out of stability without promoting");
-	for (int i = 0; i < 3; ++i)
-		require(!instruction.observeNativeNumericTypes(fraction, one), "a replacement pair must establish its own confidence");
-	require(instruction.observeNativeNumericTypes(fraction, one)
-		&& instruction.nativeNumericTypes().left == ValueTag::Float && copy.nativeNumericTypes().left == ValueTag::Integer,
+	instruction.observeNativeNumericTypes(fraction, one);
+	require(!instruction.nativeNumericTypes().stable(), "contradictions can age the incumbent pair out of stability");
+	for (int i = 0; i < 3; ++i) instruction.observeNativeNumericTypes(fraction, one);
+	require(!instruction.nativeNumericTypes().stable(), "a replacement pair must establish its own confidence");
+	instruction.observeNativeNumericTypes(fraction, one);
+	require(instruction.nativeNumericTypes().stable() && instruction.nativeNumericTypes().left == ValueTag::Float
+		&& copy.nativeNumericTypes().left == ValueTag::Integer,
 		"a new pair can stabilize without changing a previously copied compilation snapshot");
 
 	DecodedInstruction alternating{.op = static_cast<u8>(OpCode::ADD)};
 	for (int i = 0; i < 32; ++i) {
-		require(!alternating.observeNativeNumericTypes(squared, one)
-			&& !alternating.observeNativeNumericTypes(squared, fraction) && !alternating.nativeNumericTypes().stable(),
+		alternating.observeNativeNumericTypes(squared, one);
+		require(!alternating.nativeNumericTypes().stable(), "alternating observations cannot confirm the first pair");
+		alternating.observeNativeNumericTypes(squared, fraction);
+		require(!alternating.nativeNumericTypes().stable(),
 			"alternating observations never stabilize a numeric site");
 	}
 }

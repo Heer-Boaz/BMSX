@@ -135,11 +135,16 @@ void fieldSelectionPreservesColdCodeAndContinuation() {
 			"unknown types select generic arithmetic without removing its field load or unrelated instructions");
 		const auto& block = region.blocks().back();
 		const auto& sum = block.instructions.back();
-		const auto& ready = region.sideExits(block)[*sum.feedback];
-		require(ready.exit == NativeBlockExit::ProfileReady && ready.operands.feedback.sourcePc == pc
-			&& ready.currentPc == sum.pc && ready.nextPc == sum.pc + INSTRUCTION_BYTES && ready.registerTop == 10
-			&& ready.cycles == block.terminal.cycles,
-			"the generic sum can announce a complete result at its original frontier and rebuild from its source root");
+		const auto& plan = std::get<NativeNumericPlan>(std::get<NativeArithmetic>(sum.operation).strategy);
+		const auto exits = region.sideExits(block);
+		require(plan.action == NativeNumericAction::Kernel && plan.sampleOperands && !sum.replay
+			&& sum.slow && exits.size() == 1,
+			"the generic sum samples in its kernel without an exit to rebuild the region");
+		const auto& fault = exits[*sum.slow];
+		require(fault.exit == NativeBlockExit::InvalidOperand && fault.currentPc == sum.pc
+			&& fault.nextPc == sum.pc + INSTRUCTION_BYTES && fault.registerTop == 10
+			&& fault.cycles == block.terminal.cycles,
+			"passive sampling does not remove the generic sum's exact semantic fault");
 	}
 
 	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
@@ -184,8 +189,9 @@ void distinctFieldValuesSurviveCopiesAndSlotReuse() {
 	const std::array runs{NativeBlockSource{source}};
 	NativeRegisterUses uses;
 	NativeIrRegion cold(runs, uses, false, {.observesArithmetic = true});
+	const auto& coldSum = std::get<NativeArithmetic>(cold.blocks().back().instructions.front().operation);
 	require(cold.instructionCount() == decoded.size() && cold.blocks().size() == 3
-		&& cold.blocks().back().firstPc == source[4].pc && cold.blocks().back().instructions.front().feedback,
+		&& cold.blocks().back().firstPc == source[4].pc && std::get<NativeNumericPlan>(coldSum.strategy).sampleOperands,
 		"initial generic code keeps both field producers and the consumer");
 
 	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)

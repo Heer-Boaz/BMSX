@@ -46,7 +46,7 @@ void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
 
-void generatedArithmeticTrainsTheCompiler(bool liveFeedbackIsAlreadyStable) {
+void generatedArithmeticKeepsItsEntry(bool liveFeedbackIsAlreadyStable) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -67,22 +67,26 @@ void generatedArithmeticTrainsTheCompiler(bool liveFeedbackIsAlreadyStable) {
 	const u32 entryWord = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	const int prefixCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
 	const int sumCycles = BASE_CYCLES[static_cast<u8>(OpCode::ADD)];
-	const auto hasPromotion = [&](const NativeBlock& entry) {
-		return std::ranges::any_of(entry.sideExits, [](const auto& exit) { return exit.exit == NativeBlockExit::ProfileReady; });
-	};
-	require(hasPromotion(*page.nativeBlocks->entries[entryWord]), "cold arithmetic starts in a sampling native entry");
+	const auto* entry = page.nativeBlocks->entries[entryWord].get();
+	const auto region = entry->region;
+	const auto* successor = page.nativeBlocks->entries[entryWord + 3u].get();
+	require(entry->admissionCycles == prefixCycles && entry->terminal.currentPc == wide
+		&& entry->sideExits.size() == 1 && entry->sideExits.front().exit == NativeBlockExit::InvalidOperand
+		&& successor && successor->firstPc == wide + 2u * INSTRUCTION_BYTES,
+		"cold WIDE ADD has a generic native entry and no feedback exit");
+	auto& decoded = page.words[entryWord + 1u];
+	require(!decoded.nativeNumericTypes().stable(), "native code was prepared before it had a stable type pair");
 	if (liveFeedbackIsAlreadyStable) {
 		// The compiler snapshots this opcode while it is still generic. By
 		// the time that image executes, scalar samples may have caught up.
-		auto& decoded = page.words[entryWord + 1u];
 		for (int sample = 0; sample < 16; ++sample)
 			decoded.observeNativeNumericTypes(valueInteger(12), valueFloat(1.5f));
 	}
-	for (int attempt = 0; attempt < 12; ++attempt) {
+	const auto add = [&](Value left, Value result) {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
 			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-			frame.registers.set(0, valueInteger(12));
+			frame.registers.set(0, left);
 			frame.registers.set(4, valueInteger(91));
 			frame.registers.set(5, valueInteger(73));
 			frame.setTop(6);
@@ -92,25 +96,25 @@ void generatedArithmeticTrainsTheCompiler(bool liveFeedbackIsAlreadyStable) {
 			&& cpu.readCurrentInstructionPc() == wide && cpu.lastPc == wide + INSTRUCTION_BYTES
 			&& cpu.readFramePc(0) == wide + 2 * INSTRUCTION_BYTES
 			&& cpu.readFrameRegister(0, 2) == valueInteger(1)
-			&& cpu.readFrameRegister(0, 4) == valueFloat(13.5f) && cpu.readFrameRegister(0, 5) == valueInteger(73)
+			&& cpu.readFrameRegister(0, 4) == result && cpu.readFrameRegister(0, 5) == valueInteger(73)
 			&& test::sameLanguageRam(cpu, scalar.cpu),
-			"the sampling or specialized body completes WIDE ADD exactly once and does not enter its suffix");
-		if (!page.nativeBlocks || !page.nativeBlocks->entries[entryWord])
-			test::waitForNativeEntry(cpu, page, entryWord);
+			"the sampling body completes WIDE ADD exactly once and does not enter its suffix");
+		require(page.nativeBlocks && page.nativeBlocks->entries[entryWord].get() == entry
+			&& page.nativeBlocks->entries[entryWord]->region == region
+			&& page.nativeBlocks->entries[entryWord + 3u].get() == successor,
+			"learning a type pair does not withdraw the original body or its independent successor");
+	};
+	for (const auto left : {valueInteger(12), valueFloat(12.25f), valueInteger(12)}) {
+		const auto result = valueTag(left) == ValueTag::Integer ? valueFloat(13.5f) : valueFloat(13.75f);
+		for (int sample = 0; sample < 12; ++sample) add(left, result);
+		const auto learned = decoded.nativeNumericTypes();
+		require(learned.stable() && learned.left == valueTag(left) && learned.right == ValueTag::Float,
+			"generic native arithmetic keeps training through stable bursts of different operand pairs");
 	}
-	const auto& trained = *page.nativeBlocks->entries[entryWord];
-	require(!hasPromotion(trained) && trained.sideExits.size() == 1
-		&& trained.sideExits.front().operands.replay.arithmetic == NativeArithmeticFeedback{ValueTag::Integer, ValueTag::Float},
-		"completed native operations train an inline specialization without a manually prepared replacement");
-	const auto& successor = page.nativeBlocks->entries[entryWord + 3u];
-	require(trained.terminal.currentPc == wide && successor && successor->firstPc == wide + 2u * INSTRUCTION_BYTES,
-		"the replacement preserves independent entries from the original source graph");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& gate = cpu.nativeGateProfile();
-	require(gate.exits[static_cast<size_t>(NativeBlockExit::ProfileReady)].entries == 1,
-		"only the completed promotion leaves the generic datapath to rebuild");
 	require(gate.exits[static_cast<size_t>(NativeBlockExit::ScalarBoundary)].entries == 0,
-		"training never replays the already completed opcode");
+		"passive native training never replays a completed opcode");
 #endif
 #else
 	(void)liveFeedbackIsAlreadyStable;
@@ -164,10 +168,12 @@ void adaptiveArithmeticReplay() {
 	for (int i = 0; i < 16; ++i) subtract(valueInteger(2), valueInteger(10), complete);
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	native.cpu.prepareSystemNativeCode();
 	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const u32 entry = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	const auto installed = [&] { return page.nativeBlocks && page.nativeBlocks->entries[entry]; };
+	require(!installed() && page.words[entry + 1u].nativeNumericTypes().stable(),
+		"the specialization fixture has scalar feedback before its first native publication");
+	native.cpu.prepareSystemNativeCode();
 	require(installed() && page.nativeBlocks->entries[entry]->admissionCycles == prefixCycles
 		&& page.nativeBlocks->entries[entry]->terminal.currentPc == wide && page.words[entry + 1u].nativeNumericTypes().stable(),
 		"successful scalar observations specialize a published region containing WIDE SUB");
@@ -772,8 +778,8 @@ int main(int argc, char** argv) {
 		else if (scenario == "adaptive-arithmetic") adaptiveArithmeticReplay();
 		else if (scenario == "copied-arithmetic") copiedArithmeticReplay();
 		else if (scenario == "native-arithmetic-profile") {
-			generatedArithmeticTrainsTheCompiler(false);
-			generatedArithmeticTrainsTheCompiler(true);
+			generatedArithmeticKeepsItsEntry(false);
+			generatedArithmeticKeepsItsEntry(true);
 		}
 		else throw std::runtime_error("unknown scenario");
 		return 0;
