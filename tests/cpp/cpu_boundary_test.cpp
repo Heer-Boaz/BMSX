@@ -130,14 +130,13 @@ void nativeFieldGuardsAndRawSlotAccess() {
 	const int otherSlot = table.setStringKey(other, valueInteger(2));
 	table.getStringKeyCached(key, slot);
 	ValueSlots constants(2); constants.set(0, valueInteger(7)); constants.set(1, valueString(key));
-	size_t bytes = 0;
 	for (const bool store : {false, true}) {
 		DecodedInstruction field;
 		field.op = static_cast<u8>(store ? OpCode::SETFIELD : OpCode::GETFIELD);
 		field.a = 0; field.b = 1; field.c = store ? -1 : 1;
 		field.width = 2; field.baseCycles = BASE_CYCLES[field.op]; field.tableCacheSlot() = slot;
 		const std::array source{NativeBlockInstruction{&field, 0x1000u}};
-		auto block = test::compileNative(source, bytes, machine.memory, machine.cpu.stringPool());
+		auto block = test::compileNative(source, machine.memory, machine.cpu.stringPool());
 		ValueSlots registers(2);
 		registers.set(0, valueTable(table.address())); registers.set(1, valueTable(table.address()));
 		if (store) {
@@ -154,7 +153,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 			DecodedInstruction alias = field;
 			alias.a = alias.b;
 			const std::array aliasSource{NativeBlockInstruction{&alias, 0x1000u}};
-			auto aliasBlock = test::compileNative(aliasSource, bytes, machine.memory, machine.cpu.stringPool());
+			auto aliasBlock = test::compileNative(aliasSource, machine.memory, machine.cpu.stringPool());
 			table.setStringKey(key, valueFloatBits(0x80000000u));
 			require(aliasBlock->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = aliasBlock->terminal.cycles})->exit == NativeBlockExit::Continue
 				&& registers.get(1) == valueFloatBits(0x80000000u), "a cached field result can replace its own table receiver");
@@ -200,7 +199,6 @@ void nativeFieldGuardsAndRawSlotAccess() {
 			slot = table.setStringKey(key, valueInteger(1));
 		}
 	}
-	require(bytes == 0, "native field blocks release their executable cache bytes");
 }
 
 void nativeFieldExitsPublishCyclesAndFaultPc() {

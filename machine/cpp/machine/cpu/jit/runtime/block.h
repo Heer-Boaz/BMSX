@@ -126,7 +126,8 @@ struct NativeBlockExitSite {
 class NativeCodeRegion {
 public:
 	NativeCodeRegion() = default;
-	void publish(size_t& cacheBytes);
+	// Synchronize on the receiving thread before entering worker-emitted code.
+	void synchronizeInstructionStream() const;
 #if defined(BMSX_NATIVE_PERF_MAP)
 	void recordPerfMap(ExecutionDomainId domain, u32 slot, u32 firstPc) const;
 #endif
@@ -145,7 +146,6 @@ private:
 	void withdrawFromCache();
 	void* m_code = nullptr;
 	std::vector<NativeBlockExitSite> m_replaySites;
-	size_t* m_cacheBytes = nullptr;
 	NativeCodeCache* m_cache = nullptr;
 	DecodedInstructionPage* m_page = nullptr;
 	NativeCodeRegion* m_older = nullptr;

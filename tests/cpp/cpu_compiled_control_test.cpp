@@ -162,8 +162,7 @@ void rawNativeControlWrites() {
 		const auto op = static_cast<u8>(OpCode::MTC0);
 		const DecodedInstruction decoded{.b = field, .op = op, .width = 1, .baseCycles = BASE_CYCLES[op]};
 		const std::array source{NativeBlockInstruction{&decoded, machine.rom.textAddress}};
-		size_t bytes = 0;
-		auto block = test::compileNative(source, bytes, machine.memory, machine.cpu.stringPool());
+		auto block = test::compileNative(source, machine.memory, machine.cpu.stringPool());
 		for (const auto& [value, word] : std::array<std::pair<Value,u32>, 5>{{
 			{valueInteger(-1), 0xffffffffu}, {valueInteger(INT32_MIN), 0x80000000u},
 			{valueFloat(-1.5f), 0xffffffffu}, {valueFloat(-0.f), 0}, {valueFloat(0x1.000002p32f), 512}}}) {

@@ -14,7 +14,7 @@
 
 namespace bmsx {
 
-void NativeCodeRegion::publish(size_t& cacheBytes) {
+void NativeCodeRegion::synchronizeInstructionStream() const {
 #if defined(BMSX_NATIVE_COMPILER_WORKER) && defined(SLJIT_CONFIG_ARM)
 	// Emission flushed the worker's instruction stream. Synchronize the
 	// executing core before any entry from this allocation becomes reachable.
@@ -24,8 +24,6 @@ void NativeCodeRegion::publish(size_t& cacheBytes) {
 #endif
 	SLJIT_CACHE_FLUSH(reinterpret_cast<void*>(address), reinterpret_cast<void*>(address + codeBytes));
 #endif
-	m_cacheBytes = &cacheBytes;
-	cacheBytes += codeBytes;
 }
 
 #if defined(BMSX_NATIVE_PERF_MAP)
@@ -44,7 +42,6 @@ void NativeCodeRegion::recordPerfMap(ExecutionDomainId domain, u32 slot, u32 fir
 NativeCodeRegion::~NativeCodeRegion() {
 	withdrawFromCache();
 	if (m_code) sljit_free_code(m_code, nullptr);
-	if (m_cacheBytes) *m_cacheBytes -= codeBytes;
 }
 
 NativeBlock::~NativeBlock() {

@@ -13,6 +13,7 @@
 
 #include <array>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 
 namespace {
@@ -27,7 +28,6 @@ void copiedSourceAndDeferredPublication() {
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
 	NativeCompilerWorker worker;
-	size_t bytes = 0;
 	for (int iteration = 0; iteration < 64; ++iteration) {
 		std::array<DecodedInstruction, 3> decoded{};
 		const std::array ops{OpCode::KSMI, OpCode::ADD, OpCode::JMP};
@@ -51,16 +51,18 @@ void copiedSourceAndDeferredPublication() {
 		worker.wait();
 		require(worker.ready(), "the bounded worker delivers one completed request");
 		auto blocks = worker.take();
-		require(worker.idle() && bytes == 0, "unpublished code does not alter the CPU-owned code cache");
-		blocks.front()->region->publish(bytes);
-		require(bytes == blocks.front()->region->codeBytes && blocks[1]->region == blocks[0]->region,
-			"one region is accounted once when the owner publishes all its entries");
+		require(worker.idle() && cpu.readNativeCompilationProfile().codeBytes == 0,
+			"taking an emitted region does not install it in the CPU cache");
+		blocks.front()->region->synchronizeInstructionStream();
+		const std::weak_ptr<NativeCodeRegion> region = blocks.front()->region;
+		require(blocks[1]->region == blocks[0]->region, "a standalone result owns one shared region");
 		ValueSlots registers(3); registers.set(0, valueInteger(7));
 		NativeBlockRunState state{.remainingCycles = 100};
 		require(blocks.front()->run(registers.view(), state)->nextPc == 0x1800u && registers.get(2) == valueInteger(iteration + 7),
 			"the worker compiles captured instructions and the original internal edge");
 		blocks.clear();
-		require(bytes == 0, "published code leaves its owner accounting on retirement");
+		require(region.expired() && cpu.readNativeCompilationProfile().codeBytes == 0,
+			"releasing the standalone entries frees the region without changing CPU residency");
 	}
 }
 

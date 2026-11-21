@@ -371,7 +371,6 @@ void unboundStandaloneStillReturnsCall() {
 	decoded[0].a=0; decoded[0].b=12; decoded[1].a=0; decoded[1].b=3; decoded[1].c=2;
 	const std::array plans{NativeBlockSource{std::span(source.data(),2)}, NativeBlockSource{std::span(source.data()+2,1)}};
 	auto blocks=NativeCompiler::compile(plans,NativeCodeBindings(machine.memory,machine.cpu.stringPool()));
-	size_t bytes=0; blocks.front()->region->publish(bytes);
 	auto* frame=machine.cpu.rootThread()->currentFrame;
 	NativeBlockRunState state{.remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 	require(blocks.front()->run(frame->registers, state)==&blocks.front()->terminal && state.remainingCycles==64-BASE_CYCLES[static_cast<u8>(OpCode::MOV)]-BASE_CYCLES[static_cast<u8>(OpCode::CALL)],

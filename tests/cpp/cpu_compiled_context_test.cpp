@@ -449,7 +449,6 @@ void physicalUpvalueFootprints() {
 struct ContextBlock {
 	using Payload = DecodedInstruction::Payload;
 	struct Instruction { OpCode op; u16 a = 0; i16 b = 0; i16 c = 0; Payload payload{}; };
-	size_t bytes = 0;
 	std::vector<DecodedInstruction> decoded;
 	std::vector<NativeBlockInstruction> source;
 	std::vector<std::unique_ptr<NativeBlock>> blocks;
@@ -464,7 +463,6 @@ struct ContextBlock {
 		const std::array runs{NativeBlockSource{source}};
 		auto& strings = machine.cpu.stringPool();
 		blocks = NativeCompiler::compile(runs, NativeCodeBindings(machine.memory, strings));
-		blocks.front()->region->publish(bytes);
 	}
 };
 

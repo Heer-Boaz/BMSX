@@ -107,7 +107,6 @@ void directRomLoadsUseCurrentOwners() {
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
-	size_t bytes = 0;
 	for (int format = 0; format <= 5; ++format) for (const bool displaced : {false, true}) {
 		const auto kind = static_cast<MemoryAccessKind>(format);
 		const u32 width = format == 1 ? 1u : format == 2 ? 2u : format == 5 ? 8u : 4u;
@@ -116,7 +115,7 @@ void directRomLoadsUseCurrentOwners() {
 		load.a = 0; load.b = 1; load.c = format; load.disp = displaced ? 255 : 0; load.width = 2; load.baseCycles = BASE_CYCLES[load.op];
 		const std::array source{NativeBlockInstruction{&load, 0x1000}};
 		const int charge = BASE_CYCLES[load.op] + (kind == MemoryAccessKind::F64LE ? 2 : 0);
-		auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
+		auto block = test::compileNative(source, memory, cpu.stringPool());
 		for (const u32 select : {0xfffffffdu, 0x80000000u}) {
 			memory.writeMappedWord(IO_CART_SELECT, select);
 			for (const u32 address : {0u, 4u, 16u, CART_ROM_BASE, CART_ROM_BASE + 4u, CART_ROM_BASE + 24u}) {
@@ -144,7 +143,7 @@ void directRomLoadsUseCurrentOwners() {
 		}
 		load.a = load.b;
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
-		auto alias = test::compileNative(aliasSource, bytes, memory, cpu.stringPool());
+		auto alias = test::compileNative(aliasSource, memory, cpu.stringPool());
 		ValueSlots registers(2);
 		registers.set(1, valueInteger(CART_ROM_BASE + 4u - load.disp * 4u));
 		NativeBlockRunState run{};

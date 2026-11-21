@@ -22,6 +22,7 @@ public:
 	bool tryInstall(NativeCodeRegion&, DecodedInstructionPage&, NativeCodeAdmission, NativeCompilationProfile*);
 private:
 	friend class NativeCodeRegion;
+	void withdraw(NativeCodeRegion&);
 	const size_t m_capacity;
 	size_t m_codeBytes = 0;
 	NativeCodeRegion* m_oldest = nullptr;

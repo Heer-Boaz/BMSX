@@ -29,28 +29,31 @@ bool NativeCodeCache::tryInstall(NativeCodeRegion& region, DecodedInstructionPag
 			profile->prepareNanoseconds += elapsed;
 		}
 	}
+	region.synchronizeInstructionStream();
 	region.m_cache = this;
 	region.m_page = &page;
 	region.m_older = m_newest;
 	if (m_newest) m_newest->m_newer = &region;
 	else m_oldest = &region;
 	m_newest = &region;
-	region.publish(m_codeBytes);
+	m_codeBytes += region.codeBytes;
 	return true;
 }
 
+void NativeCodeCache::withdraw(NativeCodeRegion& region) {
+	if (region.m_older) region.m_older->m_newer = region.m_newer;
+	else m_oldest = region.m_newer;
+	if (region.m_newer) region.m_newer->m_older = region.m_older;
+	else m_newest = region.m_older;
+	m_codeBytes -= region.codeBytes;
+	region.m_cache = nullptr;
+	region.m_page = nullptr;
+	region.m_older = nullptr;
+	region.m_newer = nullptr;
+}
+
 void NativeCodeRegion::withdrawFromCache() {
-	if (!m_cache) return;
-	if (m_older) m_older->m_newer = m_newer;
-	else m_cache->m_oldest = m_newer;
-	if (m_newer) m_newer->m_older = m_older;
-	else m_cache->m_newest = m_older;
-	m_cache->m_codeBytes -= codeBytes;
-	m_cache = nullptr;
-	m_page = nullptr;
-	m_older = nullptr;
-	m_newer = nullptr;
-	m_cacheBytes = nullptr;
+	if (m_cache) m_cache->withdraw(*this);
 }
 
 } // namespace bmsx

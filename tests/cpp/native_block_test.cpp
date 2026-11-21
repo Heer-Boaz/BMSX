@@ -14,6 +14,7 @@
 #include <array>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 
 namespace {
@@ -46,17 +47,15 @@ void multipleRegisterDefinitionsSurviveCallAndExit() {
 		if (ops[i] == OpCode::JMP) instruction.setBx(0x12345678);
 		source[i] = {&instruction, 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
 	}
-	size_t bytes = 0;
 	for (const auto op : {OpCode::SHR, OpCode::MOD, OpCode::FLOORDIV, OpCode::POW}) {
 		decoded[8].op = static_cast<u8>(op);
-		auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
+		auto block = test::compileNative(source, memory, cpu.stringPool());
 		ValueSlots registers(5);
 		const Value result = op == OpCode::POW ? valueFloat(luaPow(66, 72)) : valueInteger(op == OpCode::MOD ? 66 : 0);
 		const std::array expected{valueInteger(83), valueInteger(11), result, valueInteger(66), valueInteger(72)};
 		require(block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles}) == &block->terminal && test::matchesValues(registers.view(), expected),
 			"multiple live native values survive ABI calls, register pressure, alias copies and an actual exit");
 	}
-	require(bytes == 0, "register-allocated blocks retire their executable storage");
 }
 
 void independentEntriesBindTheirOwnValueBanks() {
@@ -76,11 +75,13 @@ void independentEntriesBindTheirOwnValueBanks() {
 	const auto constantsABank = test::valueBank(constantsA);
 	const std::array constantsB{valueInteger(10), valueInteger(2)};
 	const auto constantsBBank = test::valueBank(constantsB);
-	size_t bytes = 0;
+	std::weak_ptr<NativeCodeRegion> helperRegion, leafRegion;
 	{
-		auto helper = test::compileNative(source, bytes, memory, cpu.stringPool());
+		auto helper = test::compileNative(source, memory, cpu.stringPool());
 		decoded[1].op = static_cast<u8>(OpCode::MUL);
-		auto leaf = test::compileNative(source, bytes, memory, cpu.stringPool());
+		auto leaf = test::compileNative(source, memory, cpu.stringPool());
+		helperRegion = helper->region;
+		leafRegion = leaf->region;
 		auto registersA = test::valueBank(std::array{valueInteger(1), valueNil(), valueNil(), valueNil(), valueBool(true)});
 		auto registersB = test::valueBank(std::array{valueInteger(2), valueNil(), valueNil(), valueNil(), valueBool(false)});
 		for (int iteration = 0; iteration < 256; ++iteration) {
@@ -95,7 +96,7 @@ void independentEntriesBindTheirOwnValueBanks() {
 				"alternating native entries reload the correct value banks without leaking another caller's state");
 		}
 	}
-	require(bytes == 0, "independent native bodies retire their own executable allocations");
+	require(helperRegion.expired() && leafRegion.expired(), "independent native bodies retire their own executable allocations");
 }
 
 void helperContinuationsReloadTheCurrentRegisterMap() {
@@ -116,10 +117,10 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 	const std::array plans{NativeBlockSource{instructions}};
 	constexpr u32 target = DYNAMIC_RAM_BASE + 0x84000u;
 	const Value payload = valueInteger(0x13574201);
-	size_t bytes = 0;
+	std::weak_ptr<NativeCodeRegion> region;
 	{
 		auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
-		blocks.front()->region->publish(bytes);
+		region = blocks[0]->region;
 		require(blocks[0]->region == blocks[1]->region && blocks[1]->region == blocks[2]->region,
 			"helper continuations are entries of one executable allocation");
 		require(blocks[0]->sourceWords == 6 && blocks[1]->sourceWords == 4 && blocks[2]->sourceWords == 2,
@@ -150,7 +151,7 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 			prefix[1].op = static_cast<u8>(OpCode::JMP); prefix[1].setBx(blocks[entry]->firstPc);
 			for (auto& op : prefix) { op.width = 1; op.baseCycles = BASE_CYCLES[op.op]; }
 			const std::array prefixSource{NativeBlockInstruction{&prefix[0], 0x2000}, NativeBlockInstruction{&prefix[1], 0x2004}};
-			auto predecessor = test::compileNative(prefixSource, bytes, memory, cpu.stringPool());
+			auto predecessor = test::compileNative(prefixSource, memory, cpu.stringPool());
 			require(predecessor->terminal.link.patchAddress != 0,
 				"an external continuation owns a patchable generated-code edge");
 			blocks[entry]->linkFrom(predecessor->terminal);
@@ -180,7 +181,7 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 			}
 		}
 	}
-	require(bytes == 0, "continuation descriptors release their shared executable exactly once");
+	require(region.expired(), "the shared region is released when all continuation descriptors leave scope");
 }
 
 void residentValuesCrossInternalComparisonBranches() {
@@ -211,11 +212,9 @@ void residentValuesCrossInternalComparisonBranches() {
 	const auto alpha = valueString(cpu.stringPool().intern("alpha")), omega = valueString(cpu.stringPool().intern("omega"));
 	const std::array values{valueFromTag(ValueTag::False, 37), valueTable(cpu.createTable().address()), valueFloat(-0.0),
 		valueFloatBits(0x7fc0002au)};
-	size_t bytes = 0;
 	for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (bool expected : {false, true}) {
 		decoded[1].op = static_cast<u8>(op); decoded[1].a = expected ? 1 : 0;
 		auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
-		blocks.front()->region->publish(bytes);
 		const int throughCompare = decoded[0].baseCycles + decoded[1].baseCycles;
 		for (bool predicate : {false, true}) for (auto value : values) for (int grant : {1, throughCompare, 32, 63, 128, 257}) {
 			ValueSlots registers(11);
@@ -247,7 +246,6 @@ void residentValuesCrossInternalComparisonBranches() {
 				"raw tagged payloads, references, NaN payloads and negative zero survive both cold comparison paths");
 		}
 	}
-	require(bytes == 0, "regional resident bindings do not retain an executable allocation");
 }
 
 void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
@@ -275,12 +273,10 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 		valueFloat(-0.0), valueString(cpu.stringPool().intern("register permutation")), valueInteger(73), valueInteger(2), valueInteger(4)};
 	const auto constantsBank = test::valueBank(constants);
 	const std::array<std::array<int, 4>, 3> permutations{{{3, 2, 1, 0}, {1, 2, 3, 0}, {2, 0, 3, 1}}};
-	size_t bytes = 0;
 	for (const auto& permutation : permutations) for (bool helper : {false, true}) {
 		for (int index = 0; index < 4; ++index) decoded[index + 6].b = permutation[index];
 		decoded[10].op = static_cast<u8>(helper ? OpCode::POW : OpCode::ADD);
 		auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
-		blocks.front()->region->publish(bytes);
 		for (int grant : {1, 6, 7, 12, 100}) {
 			ValueSlots registers(10);
 			NativeBlockRunState run{.constants = constantsBank.view(), .remainingCycles = grant};
@@ -318,7 +314,6 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 			"an untyped native entry preserves values of every incoming tag");
 
 	}
-	require(bytes == 0, "per-segment register plans do not retain executable storage");
 }
 
 void admissionReplayPublishesOnlyThePaidPrefix() {
@@ -392,12 +387,10 @@ void sparseRegionSuccessorsPreserveExactPcIdentity() {
 		const std::span source(instructions);
 		const std::array plans{NativeBlockSource{source.first(2)}, NativeBlockSource{source.subspan(2, 1)},
 			NativeBlockSource{source.subspan(3)}};
-		size_t bytes = 0;
 		for (const u32 target : {page, page + MAPPED_PAGE_BYTE_SIZE, page - MAPPED_PAGE_BYTE_SIZE,
 			page + 1u, page + INSTRUCTION_BYTES}) {
 			decoded[2].setBx(target);
 			auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
-			blocks.front()->region->publish(bytes);
 			require(blocks[0]->terminal.link.patchAddress != 0 && blocks[0]->sideExits.back().link.patchAddress == 0,
 				"a sparse conditional leaves its missing fallthrough external but binds its last-word target internally");
 			require((blocks[1]->terminal.link.patchAddress == 0) == (target == page),
@@ -421,7 +414,6 @@ void sparseRegionSuccessorsPreserveExactPcIdentity() {
 					"transitive live-in planning preserves raw resident values across sparse reordered entries");
 			}
 		}
-		require(bytes == 0, "indexed region compilation releases the same executable owners");
 	}
 }
 
@@ -461,14 +453,12 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 	const std::array constants{valueInteger(2), valueInteger(3), valueFromTag(ValueTag::False, 57),
 		valueTable(cpu.createTable().address()), valueFloat(-0.0), valueString(cpu.stringPool().intern("diamond register"))};
 	const auto constantsBank = test::valueBank(constants);
-	size_t bytes = 0;
 	for (const bool helper : {false, true}) for (const bool bypassHelper : {false, true}) {
 		decoded[17].op = static_cast<u8>(helper ? OpCode::POW : OpCode::ADD);
 		// A forward branch directly into the inherited continuation cannot
 		// borrow the values or dirty state of its linear helper predecessor.
 		decoded[9].setBx(instructions[bypassHelper ? 18 : 15].pc);
 		auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
-		blocks.front()->region->publish(bytes);
 		for (size_t entry = 0; entry < plans.size(); ++entry) for (const bool arm : {false, true})
 		for (const bool loop : {false, true}) for (const int grant : {1, 4, 5, 6, 9, 10, 11, 14, 20, 31, 64, 257}) {
 			std::array<Value, 16> initial{constants[2], constants[3], constants[4], constants[5],
@@ -521,7 +511,6 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 			}
 		}
 	}
-	require(bytes == 0, "diamond and backedge entry maps release their shared generated code");
 }
 
 void linkedBodiesShareOneFrameAndRetireTheirEdges() {
@@ -541,9 +530,9 @@ void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 		NativeBlockInstruction{&decoded[4], 0x1088}};
 	const std::array constants{valueInteger(1)};
 	const auto constantsBank = test::valueBank(constants);
-	size_t bytes = 0;
-	auto first = test::compileNative(firstSource, bytes, memory, cpu.stringPool());
-	auto second = test::compileNative(secondSource, bytes, memory, cpu.stringPool());
+	auto first = test::compileNative(firstSource, memory, cpu.stringPool());
+	auto second = test::compileNative(secondSource, memory, cpu.stringPool());
+	const std::weak_ptr<NativeCodeRegion> firstRegion = first->region, secondRegion = second->region;
 	second->linkFrom(first->sideExits.back()); first->linkFrom(second->terminal);
 	for (const int budget : {2, 3, 4, 5, 6, 7, 11, 127, 500002}) {
 		std::array<Value, 8> initial{}; initial.fill(valueNil());
@@ -577,6 +566,7 @@ void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 	first->terminal.link.disconnect();
 	require(first->sideExits.back().link.target == second.get(), "unlinking one incoming edge preserves the other");
 	second.reset();
+	require(secondRegion.expired() && !firstRegion.expired(), "retiring a linked target releases only its own executable allocation");
 	require(!first->sideExits.back().link.target,
 		"retiring a target disconnects each surviving source before executable storage is freed");
 	registers.set(2, valueBool(true));
@@ -584,7 +574,7 @@ void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 		"an unlinked predecessor returns normally instead of entering retired native code");
 	first->linkFrom(first->sideExits.back());
 	first.reset();
-	require(bytes == 0, "retiring a self-linked block releases its frame and executable storage exactly once");
+	require(firstRegion.expired(), "a self-link does not retain its executable region");
 }
 
 void linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor() {
@@ -599,10 +589,9 @@ void linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor() {
 	const std::array prefix{NativeBlockInstruction{&decoded[0], 0x1000}, NativeBlockInstruction{&decoded[1], 0x1004}};
 	const std::array span{NativeBlockInstruction{&decoded[2], 0x1080}};
 	const std::array successor{NativeBlockInstruction{&decoded[3], 0x1088}};
-	size_t bytes = 0;
-	auto first = test::compileNative(prefix, bytes, memory, cpu.stringPool());
-	auto second = test::compileNative(span, bytes, memory, cpu.stringPool());
-	auto third = test::compileNative(successor, bytes, memory, cpu.stringPool());
+	auto first = test::compileNative(prefix, memory, cpu.stringPool());
+	auto second = test::compileNative(span, memory, cpu.stringPool());
+	auto third = test::compileNative(successor, memory, cpu.stringPool());
 	require(first->terminal.link.patchAddress && second->terminal.link.patchAddress,
 		"plain spans have a native completion edge for the following segment");
 	second->linkFrom(first->terminal); third->linkFrom(second->terminal);
@@ -644,9 +633,9 @@ void linkedSlowExitPublishesTheWholeExecutedChain() {
 	const std::array firstSource{NativeBlockInstruction{&decoded[0], 0x1000}, NativeBlockInstruction{&decoded[1], 0x1004}};
 	const std::array secondSource{NativeBlockInstruction{&decoded[2], 0x1080}, NativeBlockInstruction{&decoded[3], 0x1084},
 		NativeBlockInstruction{&decoded[4], 0x1088}};
-	size_t bytes = 0;
-	auto first = test::compileNative(firstSource, bytes, memory, cpu.stringPool());
-	auto second = test::compileNative(secondSource, bytes, memory, cpu.stringPool());
+	auto first = test::compileNative(firstSource, memory, cpu.stringPool());
+	auto second = test::compileNative(secondSource, memory, cpu.stringPool());
+	const std::weak_ptr<NativeCodeRegion> firstRegion = first->region, secondRegion = second->region;
 	second->linkFrom(first->terminal);
 	ValueSlots registers(8);
 	registers.set(1, valueInteger(IO_SYS_BUS_FAULT_CODE)); registers.set(6, valueInteger(73));
@@ -657,7 +646,8 @@ void linkedSlowExitPublishesTheWholeExecutedChain() {
 		"a target's slow exit materializes the complete chain prefix without executing its load or later arithmetic");
 	first.reset();
 	// The surviving target must not retain an incoming node in the freed source.
-	second.reset(); require(bytes == 0, "a slow exit leaves no executable-frame allocation");
+	second.reset();
+	require(firstRegion.expired() && secondRegion.expired(), "a slow exit does not retain the linked regions");
 }
 
 void comparisonDatapathsRespectEveryValueKind() {
@@ -681,7 +671,6 @@ void comparisonDatapathsRespectEveryValueKind() {
 		valueFromTag(ValueTag::BuiltinFunction, 37), valueFromTag(ValueTag::BuiltinFunction, 0x80000025u),
 		valueThread(cpu.activeThread()->address), valueThread(cpu.activeThread()->address - THREAD_HEAP_BYTES), valueBuiltinFunction(BuiltinFunctionId::Type),
 		valueBuiltinFunction(BuiltinFunctionId::Next)};
-	size_t bytes = 0;
 	for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (const bool expected : {false, true}) {
 		DecodedInstruction compare;
 		compare.op = static_cast<u8>(op); compare.a = expected ? 0x3fffu : 0u; compare.width = 2; compare.baseCycles = 1;
@@ -700,7 +689,7 @@ void comparisonDatapathsRespectEveryValueKind() {
 			const std::array pool{left, right};
 			const auto poolBank = test::valueBank(pool);
 			auto registers = test::valueBank(pool);
-			auto block = test::compileNative(source, bytes, memory, strings);
+			auto block = test::compileNative(source, memory, strings);
 			const auto* exit = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 			require((exit->exit == NativeBlockExit::SkipInstruction) == (predicate != expected)
 				&& test::matchesValues(registers.view(), pool) && exit->registerTop == 0 && exit->cycles == 1
@@ -708,7 +697,6 @@ void comparisonDatapathsRespectEveryValueKind() {
 				"native EQ/LT/LE preserve kind rules, RK sources, NaNs, UTF-8 order and non-destination A flags");
 		}
 	}
-	require(bytes == 0, "native comparisons retire all generated storage");
 }
 
 Value evaluate(OpCode op, Value left, Value right) {
@@ -745,7 +733,6 @@ void arithmeticAndWordDatapaths() {
 		valueFloatBits(BLUA32_FLOAT_NAN), valueFloatBits(0x7f800001u), valueNil(), valueBool(false),
 		valueBool(true), valueString(0x12345678u), valueFromTag(ValueTag::Table, 0x1234u),
 	};
-	size_t cacheBytes = 0;
 	for (const auto op : {OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::DIV, OpCode::MOD, OpCode::FLOORDIV, OpCode::POW,
 		OpCode::BAND, OpCode::BOR, OpCode::BXOR, OpCode::SHL, OpCode::SHR, OpCode::UNM, OpCode::BNOT}) {
 		for (const Value left : values) for (const Value right : values) {
@@ -768,26 +755,22 @@ void arithmeticAndWordDatapaths() {
 				const std::array pool{left, right};
 				const auto poolBank = test::valueBank(pool);
 				auto registers = test::valueBank(std::array{left, right, valueNil(), valueNil()});
-				{
-					auto block = test::compileNative(instructions, cacheBytes, memory, cpu.stringPool());
-					const auto* exit = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
-					try {
-						const Value expected = evaluate(op, left, right);
-						require(exit == &block->terminal && nativeRunState.remainingCycles == 0
-							&& registers.get(destination) == expected && registers.get(3) == expected,
-							"native arithmetic retains exact number/word semantics and register aliases");
-					} catch (const LuaExecutionError& error) {
-						require(error.reason == LUA_FAULT_REASON_INVALID_ARGUMENT && exit->exit == NativeBlockExit::InvalidOperand
-							&& exit->currentPc == 0x1000u && nativeRunState.remainingCycles == 1 && nativeRunState.registerTop == 0
-							&& test::matchesValues(registers.view(), std::array{left, right, valueNil(), valueNil()}),
-							"an invalid operand charges only the attempted operation and commits neither destination");
-					}
-					require(block->terminal.cycles == operation.baseCycles + 1 && block->terminal.registerTop == 4
-						&& block->terminal.currentPc == 0x1008u && block->terminal.lastPc == 0x1008u
-						&& block->terminal.nextPc == 0x100cu, "native block publishes its physical instruction extent");
-					require(cacheBytes == block->region->codeBytes && cacheBytes != 0, "native code allocation is accounted");
+				auto block = test::compileNative(instructions, memory, cpu.stringPool());
+				const auto* exit = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
+				try {
+					const Value expected = evaluate(op, left, right);
+					require(exit == &block->terminal && nativeRunState.remainingCycles == 0
+						&& registers.get(destination) == expected && registers.get(3) == expected,
+						"native arithmetic retains exact number/word semantics and register aliases");
+				} catch (const LuaExecutionError& error) {
+					require(error.reason == LUA_FAULT_REASON_INVALID_ARGUMENT && exit->exit == NativeBlockExit::InvalidOperand
+						&& exit->currentPc == 0x1000u && nativeRunState.remainingCycles == 1 && nativeRunState.registerTop == 0
+						&& test::matchesValues(registers.view(), std::array{left, right, valueNil(), valueNil()}),
+						"an invalid operand charges only the attempted operation and commits neither destination");
 				}
-				require(cacheBytes == 0, "retiring native code releases its cache accounting");
+				require(block->terminal.cycles == operation.baseCycles + 1 && block->terminal.registerTop == 4
+					&& block->terminal.currentPc == 0x1008u && block->terminal.lastPc == 0x1008u
+					&& block->terminal.nextPc == 0x100cu, "native block publishes its physical instruction extent");
 			}
 		}
 	}
@@ -816,11 +799,10 @@ void wordProducerFactsPreserveRawValuesAndOverwrites() {
 		source[i] = {&op, 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
 	}
 	decoded.back().setBx(0x2000);
-	size_t bytes = 0;
 	for (const auto constant : inputs) {
 		const std::array constants{constant, valueInteger(-1), valueInteger(7), valueInteger(31)};
 		const auto constantsBank = test::valueBank(constants);
-		auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
+		auto block = test::compileNative(source, memory, cpu.stringPool());
 		for (const auto incoming : inputs) for (const int grant : {1, 15, 100}) {
 			std::array<Value, 16> initial; initial.fill(valueFromTag(ValueTag::True, 53)); initial[13] = incoming;
 			auto expected = initial;
@@ -855,7 +837,6 @@ void wordProducerFactsPreserveRawValuesAndOverwrites() {
 				"word producer facts preserve full raw state through MOV aliases, signed chains, arithmetic/unknown overwrites and nil ranges");
 		}
 	}
-	require(bytes == 0, "word provenance is compile-time metadata, not retained executable ownership");
 }
 
 void movesAndLiteralsPreserveRawValues() {
@@ -863,7 +844,6 @@ void movesAndLiteralsPreserveRawValues() {
 	const std::array pool{valueNil(), valueBool(false), valueBool(true), valueString(0x12345678u),
 		valueFromTag(ValueTag::Table, 0x1234u), valueFloatBits(0xff800001u), valueFloat(-0.0)};
 	const auto poolBank = test::valueBank(pool);
-	size_t bytes = 0;
 	for (u32 index = 0; index < pool.size(); ++index) {
 		DecodedInstruction load;
 		load.op = static_cast<u8>(OpCode::LOADK);
@@ -874,7 +854,7 @@ void movesAndLiteralsPreserveRawValues() {
 		move.width = move.baseCycles = 1;
 		move.a = 1;
 		const std::array instructions{NativeBlockInstruction{&load, 0x1000}, NativeBlockInstruction{&move, 0x1004}};
-		auto block = test::compileNative(instructions, bytes, memory, cpu.stringPool());
+		auto block = test::compileNative(instructions, memory, cpu.stringPool());
 		auto registers = test::valueBank(std::array{Value{0}, Value{0}});
 		block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 		require(registers.get(0) == pool[index] && registers.get(1) == pool[index], "moves preserve every raw tagged and number bit");
@@ -886,7 +866,7 @@ void movesAndLiteralsPreserveRawValues() {
 		load.baseCycles = 1;
 		load.setSbx(-33554432);
 		const std::array instructions{NativeBlockInstruction{&load, 0x1000}};
-		auto block = test::compileNative(instructions, bytes, memory, cpu.stringPool());
+		auto block = test::compileNative(instructions, memory, cpu.stringPool());
 		ValueSlots reg(1);
 		block->run(reg.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 		const Value expected = op == OpCode::KNIL ? valueNil() : op == OpCode::KFALSE ? valueBool(false)
@@ -901,7 +881,6 @@ void pinnedOperandsSurviveColdReadsAndDestinationReuse() {
 	const std::array values{valueFloat(-0.0), valueFloat(3.5), valueFloat(-17.25),
 		valueFloat(std::numeric_limits<float>::infinity()), valueFloatBits(BLUA32_FLOAT_NAN),
 		valueString(0x12345678u), valueFloatBits(0xff800001u)};
-	size_t bytes = 0;
 	for (const bool helper : {false, true}) for (const bool coldLeft : {false, true}) {
 		for (const auto op : {OpCode::MOV, OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::DIV, OpCode::UNM}) {
 			for (const u16 destination : {u16{0}, u16{1}, u16{4}, u16{5}}) for (const Value value : values) {
@@ -935,7 +914,7 @@ void pinnedOperandsSurviveColdReadsAndDestinationReuse() {
 					decoded[i].width = 1; decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
 					source[i] = {&decoded[i], 0x1000u + i * INSTRUCTION_BYTES};
 				}
-				auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
+				auto block = test::compileNative(source, memory, cpu.stringPool());
 				NativeBlockRunState state{.constants = poolBank.view(), .remainingCycles = block->terminal.cycles};
 				const auto* exit = block->run(registers.view(), state);
 				require((invalid ? exit->exit == NativeBlockExit::InvalidOperand && exit->currentPc == source[4].pc
@@ -945,7 +924,6 @@ void pinnedOperandsSurviveColdReadsAndDestinationReuse() {
 			}
 		}
 	}
-	require(bytes == 0, "direct-register bodies release their accounted executable storage");
 }
 
 void nextAccessPressurePreservesEveryRawGuestSlot() {
@@ -988,7 +966,6 @@ void nextAccessPressurePreservesEveryRawGuestSlot() {
 			std::array<Value, 526> initial; initial.fill(raw[rotation]);
 			auto expected = initial;
 			int cycles = 0, top = -7;
-			size_t bytes = 0;
 			for (size_t prefix = 1; prefix <= source.size(); ++prefix) {
 				const auto& op = decoded[prefix - 1]; cycles += op.baseCycles;
 				if (op.op == static_cast<u8>(OpCode::LOADNIL)) cycles += op.b;
@@ -1006,7 +983,7 @@ void nextAccessPressurePreservesEveryRawGuestSlot() {
 				if (op.op == static_cast<u8>(OpCode::LOADNIL)) {
 					if (op.b != 0) top = std::max(top, static_cast<int>(op.a) + op.b);
 				} else if (op.op != static_cast<u8>(OpCode::JMP)) top = std::max(top, static_cast<int>(op.a) + 1);
-				auto block = test::compileNative(std::span(source).first(prefix), bytes, memory, cpu.stringPool());
+				auto block = test::compileNative(std::span(source).first(prefix), memory, cpu.stringPool());
 				for (const int grant : {cycles, cycles + 7}) {
 					auto actual = test::valueBank(initial);
 					NativeBlockRunState state{.constants = constantsBank.view(),
@@ -1025,7 +1002,6 @@ void nextAccessPressurePreservesEveryRawGuestSlot() {
 						"a short pressure grant exits before its first definition for scalar admission");
 				}
 			}
-			require(bytes == 0, "pressure prefixes retire all generated allocations");
 		}
 	}
 }
@@ -1046,7 +1022,6 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 		random ^= random << 13u; random ^= random >> 17u; random ^= random << 5u;
 		return random;
 	};
-	size_t bytes = 0;
 	for (u32 program = 0; program < 128; ++program) {
 		std::array<Value, 8> initial;
 		for (auto& reg : initial) reg = pool[next() % pool.size()];
@@ -1092,7 +1067,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			}
 			source[index] = {&instruction, index == 0 ? 0x1000u : source[index - 1].pc + decoded[index - 1].width * INSTRUCTION_BYTES};
 			previous = instruction.a;
-			auto block = test::compileNative(std::span(source).first(index + 1), bytes, memory, cpu.stringPool());
+			auto block = test::compileNative(std::span(source).first(index + 1), memory, cpu.stringPool());
 			auto registers = test::valueBank(initial);
 			const auto* exit = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 			require((invalid ? exit->exit == NativeBlockExit::InvalidOperand && exit->currentPc == source[index].pc
@@ -1111,7 +1086,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			terminal.op = static_cast<u8>(op); terminal.width = 2; terminal.baseCycles = BASE_CYCLES[terminal.op];
 			terminal.a = previous; terminal.setBx(0x2000u);
 			source.back() = {&terminal, source[31].pc + decoded[31].width * INSTRUCTION_BYTES};
-			auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
+			auto block = test::compileNative(source, memory, cpu.stringPool());
 			auto registers = test::valueBank(initial);
 			const auto pc = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles})->nextPc;
 			const bool taken = op == OpCode::JMP || (op == OpCode::JMPIF && isTruthy(expected[previous]))
@@ -1120,12 +1095,10 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 				"all native control exits consume and publish the final pending result");
 		}
 	}
-	require(bytes == 0, "dependent block compilation retires all executable allocations");
 }
 
 void truthinessAndConditionalExits() {
 	NativeBlockRunState nativeRunState;
-	size_t bytes = 0;
 	for (const auto op : {OpCode::NOT, OpCode::JMPIF, OpCode::JMPIFNOT}) {
 		DecodedInstruction instruction;
 		instruction.op = static_cast<u8>(op);
@@ -1135,7 +1108,7 @@ void truthinessAndConditionalExits() {
 		instruction.baseCycles = 1;
 		instruction.setBx(0xfffffffcu);
 		const std::array source{NativeBlockInstruction{&instruction, 0x1000u}};
-		auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
+		auto block = test::compileNative(source, memory, cpu.stringPool());
 		// Exhaust the entire raw Value-header domain, with nonzero payloads:
 		// falsey tags are not compared as floating-point NaNs or whole values.
 		for (u32 header = 0; header != 256u; ++header) {
@@ -1160,7 +1133,7 @@ void truthinessAndConditionalExits() {
 	halt.width = 2;
 	halt.baseCycles = 1;
 	const std::array source{NativeBlockInstruction{&halt, 0xfffffff8u}};
-	auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
+	auto block = test::compileNative(source, memory, cpu.stringPool());
 	require(block->run({}, nativeRunState = {.remainingCycles = block->terminal.cycles})->nextPc == 0u && block->terminal.exit == NativeBlockExit::Halt
 		&& block->terminal.registerTop == 0 && block->terminal.cycles == 1 && block->terminal.lastPc == 0xfffffffcu,
 		"a standalone native WIDE HALT has an exact wrapped continuation and explicit exit");
@@ -1175,9 +1148,8 @@ void typedCallExitPublishesPrefix() {
 	call.a = 3; call.b = 1; call.c = 2;
 	const std::array source{NativeBlockInstruction{&one, 0x1000u}, NativeBlockInstruction{&shift, 0x1004u},
 		NativeBlockInstruction{&call, 0x1008u}};
-	size_t bytes = 0;
 	ValueSlots registers(4);
-	auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
+	auto block = test::compileNative(source, memory, cpu.stringPool());
 	NativeBlockRunState state{.remainingCycles = 4};
 	const auto* exit = block->run(registers.view(), state);
 	require(exit->exit == NativeBlockExit::Call && exit->operands.call.callee == 3
@@ -1194,7 +1166,6 @@ void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 		valueFromTag(ValueTag::Nil, 19), valueTable(cpu.createTable().address()),
 		valueString(cpu.stringPool().intern("field")), valueInteger(5), valueInteger(2)};
 	const auto constantsBank = test::valueBank(constants);
-	size_t bytes = 0;
 	for (bool calling : {false, true}) for (int definitions = 0; definitions <= 4; ++definitions) {
 		for (auto terminal : {OpCode::JMP, OpCode::GETFIELD, OpCode::LOAD_MEM}) {
 			std::array<DecodedInstruction, 6> decoded{};
@@ -1221,7 +1192,7 @@ void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 				decoded[index].width = 1; decoded[index].baseCycles = BASE_CYCLES[decoded[index].op];
 				source[index] = {&decoded[index], 0x1000u + static_cast<u32>(index) * INSTRUCTION_BYTES};
 			}
-			auto block = test::compileNative(std::span(source).first(count), bytes, memory, cpu.stringPool());
+			auto block = test::compileNative(std::span(source).first(count), memory, cpu.stringPool());
 			const int grant = block->terminal.cycles;
 			NativeBlockRunState state{.constants = constantsBank.view(), .remainingCycles = grant, .registerTop = -3};
 			const auto* exit = block->run(registers.view(), state);
@@ -1234,7 +1205,6 @@ void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 				"the shared gate charges a segment once and preserves an unchanged register top");
 		}
 	}
-	require(bytes == 0, "shared exit descriptors do not retain retired code allocations");
 }
 
 void twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead() {
@@ -1260,8 +1230,7 @@ void twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead() {
 	}
 	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
 		decoded.back().observeNativeNumericTypes(valueFloat(1.5f), valueInteger(2));
-	size_t bytes = 0;
-	auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
+	auto block = test::compileNative(source, memory, cpu.stringPool());
 	const int grant = block->terminal.cycles;
 	require(block->terminal.currentPc == source.back().pc, "both field proofs and their arithmetic share one native entry");
 	for (const auto failure : {-1, 0, 2}) {
@@ -1321,8 +1290,7 @@ void reusedFieldAddressHonorsEachSiteAndPhysicalStackAliases() {
 	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
 		decoded.back().observeNativeNumericTypes(valueInteger(13), valueInteger(13));
 
-	size_t bytes = 0;
-	auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
+	auto block = test::compileNative(source, memory, cpu.stringPool());
 	const int grant = block->terminal.cycles;
 	require(block->terminal.currentPc == source.back().pc, "a repeated field can share the native segment through a receiver copy");
 	ValueSlots registers(5);
