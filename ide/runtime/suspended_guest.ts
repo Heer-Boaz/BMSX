@@ -60,7 +60,7 @@ export class SuspendedGuestSession {
 	public readonly cpu: CPU;
 	private readonly stringPool: StringPool;
 	private readonly lookupResult: TableLookupResult = {
-		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, invokeReceiver: 0,
+		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0,
 	};
 	private readonly entryScratch = new ScratchBuffer<ValueSlots>(() => new ValueSlots(2));
 	private readonly previewParts = new ScratchBuffer<string[]>(() => []);
@@ -226,7 +226,7 @@ export class SuspendedGuestSession {
 		if (this.lookupResult.status === TableLookupStatus.ChainExhausted) {
 			throw new Error(METATABLE_LOOP_MESSAGE);
 		}
-		return this.lookupResult.status === TableLookupStatus.Invoke ? valueNil() : this.lookupResult.value;
+		return this.lookupResult.status === TableLookupStatus.Resolved ? this.lookupResult.value : valueNil();
 	}
 
 	public readStringPath(
@@ -267,7 +267,7 @@ export class SuspendedGuestSession {
 		let current = valuePayload(value);
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
 			this.cpu.gc.tables.forEachStoredEntry(current, visitEntry);
-			const next = this.cpu.gc.tables.metatableIndexValue(current, this.indexKey);
+			const next = this.cpu.gc.tables.metafield(current, this.indexKey);
 			if (valueTag(next) !== ValueTag.Table) {
 				return;
 			}

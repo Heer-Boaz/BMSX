@@ -609,7 +609,7 @@ Thus `−8 >> 1` is 2147483644, `8 << −1` is 4, and `1 << 32` is zero.
 
 Only nil and false are falsey. Every other value is truthy, including Number 0, Number NaN, and an empty String. NOT writes a boolean, not a Number. In particular, negating the truth of zero produces false.
 
-LEN returns a Number. A String's length is its byte count. Bytes may contain NUL or sequences that are not valid UTF-8. A Table's length is a boundary in its own positive integer keys. LEN on any other value kind faults; it does not invoke a metatable length operation.
+LEN returns a String's byte count or a Table's length. Bytes may contain NUL or sequences that are not valid UTF-8. A Table with a `__len` method uses its first result (or nil if it returns none); otherwise the CPU finds a boundary in the Table's own positive integer keys. LEN on any other value kind faults.
 
 
 Concatenation uses language value-to-string conversion rather than accepting only strings and Numbers. CONCAT joins its two RK operands in B-then-C order. CONCATN joins exactly C consecutive registers starting at R[B], in increasing register order. All CONCATN sources are read before the result is written, so the destination may overlap the input range. A zero CONCATN count produces the empty String.
@@ -627,7 +627,7 @@ only its three base cycles.
 | CONCAT | `1DH` | RK(B), then RK(C); every language value kind has the conversion shown below | Combined String | 2 |
 | CONCATN | `1EH` | B first register; C register count; neither B nor C is RK | String formed from `R[B]` through `R[B+C−1]`; empty String when C=0 | 3 |
 | NOT | `20H` | R[B], not RK(B); C unused | Boolean true for nil or false; boolean false for every other kind | 2 |
-| LEN | `21H` | R[B], not RK(B); C unused; String or Table | Number equal to the String byte count or Table array length; other kinds fault | 3 |
+| LEN | `21H` | R[B], not RK(B); C unused; String or Table | String byte count, Table length boundary, or first result of `__len` | 3 |
 
 
 
@@ -1027,7 +1027,7 @@ The table instruction families differ in where the key comes from:
 - `GETI` and `SETI` carry the integer key directly in an instruction operand.
 - `GETFIELD`, `SETFIELD`, and `SELF` select a string key directly from the image constant pool. That constant operand is not an `RK` operand.
 
-Reads accept a table base. A string base instead uses the CPU's string-index table; these instructions do not specify substring indexing. Other base value categories raise `INDEX_NON_TABLE`. Without a metatable, a table read is direct. Indexed lookup, its pending correction and its exact chain bound are specified below.
+Reads accept a table base. A string base instead uses the CPU's string-index table; these instructions do not specify substring indexing. Other base value categories raise `INDEX_NON_TABLE`. Without a metatable, a table read is direct. See [Metatables and indexed reads](#sec-cpu-metatables-and-indexed-reads) for lookup and its chain bound.
 
 Writes accept only table bases, including for integer and string-field forms. Assigning through any other value category, including a string, raises `ASSIGN_NON_TABLE`.
 
@@ -1041,32 +1041,34 @@ A Table maps admissible keys to non-nil values. Numeric and nonnumeric keys may 
 
 #### Keys and presence {#sec-cpu-keys-and-presence}
 
-Nil is not an admissible key. Reading or writing with a nil key raises `INDEX_NIL` (4), even when the Table is empty or the value being written is nil. This is distinct from reading a missing admissible key, which returns nil.
+Nil and NaN are not stored keys. An own lookup with either key misses, so an ordinary indexed read can pass the key to `__index`. An attempted direct write with either key raises `INDEX_NIL` (4) or `INDEX_NAN` (12), respectively. An ordinary assignment may instead pass the original key to a function-valued `__newindex`.
 
 | Key category | Matching rule |
 | --- | --- |
 | Boolean | `false` and `true` are distinct keys. |
-| Number | Numeric matching, with the zero and NaN rules below. |
+| Number | Numeric matching, with the zero rule below. |
 | String | Matching String contents; no conversion to a numeric key occurs. |
 | Table, closure, thread | The same reference matches; separate objects do not match by contents. |
 | Builtin function | The same builtin identity matches. |
 
-Numeric `1`, string `"1"`, and boolean `true` are separate keys. An Integer and a Float with the same exact numerical value address the same mapping: Integer `2` and Float `2.0` are the same key. Integer zero and both Float zero signs address the same key. A canonical numeric NaN is also an admissible key: repeated NaN keys address the same mapping, although ordinary numeric NaN equality is false. Positive and negative infinity are admissible numeric keys.
+Numeric `1`, string `"1"`, and boolean `true` are separate keys. An Integer and a Float with the same exact numerical value address the same mapping: Integer `2` and Float `2.0` are the same key. Integer zero and both Float zero signs address the same key. Positive and negative infinity are admissible numeric keys.
 
 Insertion stores an exactly integral Float in Integer range as an Integer key.
-This includes both Float zero signs, which become Integer zero. NaN keys use
-word `7FC00000H`, irrespective of the supplied NaN payload or sign. This
-normalization applies to keys, not to stored values: a Float value retains its
-subtype and word bits.
+This includes both Float zero signs, which become Integer zero. This
+normalization applies to keys, not to stored values: a Float value retains
+its subtype and word bits.
 
-Only positive integral numeric keys from 1 through `7FFFFFFFH` are eligible for array storage. Zero, negative numbers, fractions, NaN, infinities, and larger numbers use hash storage. An eligible numeric key may also reside in hash storage when it lies beyond the allocated array capacity. Numeric key zero has no special indexing role.
+Only positive integral numeric keys from 1 through `7FFFFFFFH` are eligible for array storage. Zero, negative numbers, fractions, infinities, and larger numbers use hash storage. An eligible numeric key may also reside in hash storage when it lies beyond the allocated array capacity. Numeric key zero has no special indexing role.
 
 A non-nil value establishes a mapping. In particular, `false` is present: it is not a missing entry and does not permit an inherited value to replace it. Assigning nil removes the Table's own mapping. It does not create a retrievable nil-valued entry. An allocated but empty array slot is likewise missing. Deletion does not erase other keys.
 
 #### Table length {#sec-cpu-table-length}
 
-The Table length operation, `#t`, returns a **boundary** in its own positive
-integer keys. A boundary is a nonnegative integer `L` for which both conditions
+For a Table with a non-nil `__len` in its metatable, `#t` invokes that method
+with the Table as both arguments and uses the first result. The base LEN
+charge does not include the invocation or the method's work. Without this
+method, `#t` returns a **boundary** in the Table's own positive integer keys.
+A boundary is a nonnegative integer `L` for which both conditions
 hold:
 
 - `L` is zero, or `t[L]` is non-nil;
@@ -1135,7 +1137,7 @@ execution state.
 
 A Table may have a metatable. An ordinary indexed read first checks the queried Table's own mapping. A non-nil value wins immediately, including `false`. If the entry is missing, the read obtains the direct `"__index"` member of that Table's metatable. A Table-valued `__index` continues the lookup on that Table with the original key. Each subsequent Table is processed in the same way.
 
-A function-valued `__index` is called with the receiver at that step and the original key. The read uses its first result, or nil if it returns none. A missing `__index` terminates the read with nil. Retrieving the metatable member itself does not start another inherited lookup. One chained read permits 32 visited Tables. Exhausting that bound raises `METATABLE_LOOP` (5); an actual cyclic reference is not required to exhaust the bound.
+A function-valued `__index` is called with the receiver at that step and the original key. The read uses its first result, or nil if it returns none. A missing `__index` terminates the read with nil. Forwarding to a String uses its installed index Table. Forwarding to a value that cannot be indexed raises `INDEX_NON_TABLE`. Retrieving the metatable member itself does not start another inherited lookup. One chained read permits 32 visited Tables. Exhausting that bound raises `METATABLE_LOOP` (5); an actual cyclic reference is not required to exhaust the bound.
 
 For Table-valued `__index` traversal, the indexed-read base charge covers the
 first visited Table. Each additional visited Table adds **8 cycles**, whether
@@ -1153,7 +1155,15 @@ hash probes or depend on earlier accesses.
 
 An indexed read writes its destination and extends `top` only after obtaining a result, including an ordinary missing-key result of nil. A failed lookup leaves that destination unchanged. For `SELF`, the preceding receiver copy into `R(A+1)` remains visible even if the lookup fails.
 
-Writes always modify the named target Table directly. They do not redirect through `__newindex` and do not invoke a function stored there. Deleting an own mapping may therefore expose an inherited mapping on a later ordinary read.
+An assignment to an existing own mapping writes or deletes it directly.
+For a missing mapping, a Table-valued `__newindex` redirects the assignment
+to that Table. A function-valued `__newindex` receives the receiver at that
+step, the original key and the assigned value. Its results are discarded.
+If `__newindex` is absent, the CPU writes the own mapping directly.
+Forwarding to a non-Table that cannot be assigned into raises
+`ASSIGN_NON_TABLE`. The same 32-Table bound and 8-cycle additional visit
+charge apply to assignments. The method invocation and its work are
+charged separately from traversing the Tables.
 
 
 The [BIOS Table and metatable interface](bios-base.md#sec-bios-base-table-and-metatable-access)

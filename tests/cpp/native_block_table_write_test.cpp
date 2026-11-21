@@ -114,7 +114,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	auto block = test::compileNative(instructions, constants.view(), bytes, memory, cpu.stringPool());
 	auto& hint = block->sideExits[0].tableReadCache;
 	NativeBlockRunState grant{.constants = constants.view(), .heap = &cpu.gcHeap()};
-	const auto read = [&](Value want, int hops) {
+	const auto read = [&](Value want, int hops, TableLookupStatus status = TableLookupStatus::Resolved) {
 		grant.remainingCycles = 100;
 		registers.set(0, valueInteger(73));
 		const auto* exit = block->run(registers.view(), grant);
@@ -129,7 +129,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 			"the gate publishes the read boundary before resolving an unproved field");
 		TableLookupResult result;
 		root.resolveStringIndexPath(indexKey, key, hint.receiverSlot, result, hint);
-		require(result.status == TableLookupStatus::Resolved && result.value == want && result.extraVisits == static_cast<u32>(hops),
+		require(result.status == status && result.value == want && result.extraVisits == static_cast<u32>(hops),
 			"the resolver follows live owners, preserves the raw result and counts each actual hop");
 	};
 	// Train the one-hop recipe against a holder with an array prefix.
@@ -173,7 +173,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	holder.setStringKey(key, valueNil());
 	read(valueNil(), 2);
 	secondMeta.setStringKey(indexKey, valueBool(true));
-	read(valueNil(), 1);
+	read(valueBool(true), 1, TableLookupStatus::Forward);
 
 	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
 	read(valueInteger(41), 2);

@@ -282,6 +282,7 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/save_state.cpp
 
 	machine/cpu/cpu.cpp
+	machine/cpu/cpu_table.cpp
 	machine/cpu/cpu_builtins_leaf.cpp
 	machine/cpu/cpu_decode.cpp
 	machine/cpu/thread.cpp
@@ -1284,6 +1285,9 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_cpu_table_index_work_tests ../../tests/cpp/cpu_table_index_work_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_table_index_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_table_index_work_tests COMMAND bmsx_cpu_table_index_work_tests)
+	add_executable(bmsx_cpu_table_metamethod_tests ../../tests/cpp/cpu_table_metamethod_test.cpp ${BMSX_TEST_ROM_OBJECTS})
+	target_link_libraries(bmsx_cpu_table_metamethod_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_table_metamethod_tests COMMAND bmsx_cpu_table_metamethod_tests)
 	add_executable(bmsx_cpu_table_length_work_tests ../../tests/cpp/cpu_table_length_work_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_table_length_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_table_length_work_tests COMMAND bmsx_cpu_table_length_work_tests)

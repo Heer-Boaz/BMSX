@@ -4,7 +4,6 @@
 #include <bit>
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
-#include "machine/cpu/value_length.h"
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 #include "machine/cpu/native_compiler_worker.h"
 #endif
@@ -86,6 +85,8 @@ CPU::CPU(
 	, m_luaHeap(*this)
 	, m_stringPool(m_luaHeap, memory, m_heapAllocator)
 	, m_indexKey(valueString(m_stringPool.intern("__index")))
+	, m_newIndexKey(valueString(m_stringPool.intern("__newindex")))
+	, m_lengthKey(valueString(m_stringPool.intern("__len")))
 	, m_heap(*this, m_luaHeap, m_memory, m_heapAllocator, m_stringPool, m_stringPool.intern("__mode"))
 	, m_rootView(m_heap)
 	, m_transferViews{Thread{m_heap}, Thread{m_heap}}
@@ -99,12 +100,13 @@ CPU::CPU(
 	m_luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NON_TABLE] = valueString(m_stringPool.intern("Attempted to index field on a non-table value."));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = valueString(m_stringPool.intern("Attempted to assign to a non-table value."));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NIL] = valueString(m_stringPool.intern("Table index is nil."));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_METATABLE_LOOP] = valueString(m_stringPool.intern("Metatable __index loop detected."));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_METATABLE_LOOP] = valueString(m_stringPool.intern("Metatable index chain too long."));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_ITERATE_NON_TABLE] = valueString(m_stringPool.intern("Attempted to iterate a non-table value."));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = valueString(m_stringPool.intern("xpcall error handler must be a function."));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY] = valueString(m_stringPool.intern("Out of memory."));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_ARGUMENT] = valueString(m_stringPool.intern("Invalid argument."));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_NEXT_KEY] = valueString(m_stringPool.intern("invalid key to 'next'"));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NAN] = valueString(m_stringPool.intern("Table index is NaN."));
 	m_builtinResultScratch.reserve(1);
 	m_builtinResultScratch.get(0).ensureCapacity(8);
 	m_builtinResultScratch.clear();
@@ -1277,9 +1279,7 @@ void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, const CallA
 		instructionBudgetRemaining -= static_cast<int>(builtin.cycleBase);
 		if (builtin.id == BuiltinFunctionId::PCall || builtin.id == BuiltinFunctionId::XPCall) {
 			const auto parent = m_activeThread->protectedResult(continuationIndex);
-			// An implicit xpcall only observes its handler's first result.
-			// Do not stage the nested tuple across live caller registers.
-			startProtectedCall(builtin.id, parent.extendsTop() ? CallResultPlacement::single(parent.base)
+			startProtectedCall(builtin.id, parent.extendsTop() ? CallResultPlacement::discard()
 				: CallResultPlacement::call(parent.base, -1), arguments, true);
 			return;
 		}
@@ -1298,6 +1298,7 @@ void CPU::finishProtectedCall(u32 continuationIndex, const Value* values, int va
 		finishProtectedCallWithError(continuationIndex, valueCount > 0 ? values[0] : valueNil());
 		return;
 	}
+	if (finishImplicitProtectedHandler(continuationIndex, true)) return;
 	const int resultCount = writeProtectedResults(continuationIndex, true, values, valueCount);
 	instructionBudgetRemaining -= resultCount;
 	finishProtectedContinuation(continuationIndex, resultCount);
@@ -1312,12 +1313,14 @@ void CPU::finishProtectedCall(u32 continuationIndex, CallFrame& source, int sour
 		);
 		return;
 	}
+	if (finishImplicitProtectedHandler(continuationIndex, true)) return;
 	const int resultCount = writeProtectedResults(continuationIndex, true, source, sourceBase, sourceCount);
 	instructionBudgetRemaining -= resultCount;
 	finishProtectedContinuation(continuationIndex, resultCount);
 }
 
 void CPU::finishProtectedCallWithError(u32 continuationIndex, Value errorValue) {
+	if (finishImplicitProtectedHandler(continuationIndex, false)) return;
 	CallFrame& caller = protectedCaller(continuationIndex);
 	const auto result = m_activeThread->protectedResult(continuationIndex);
 	const i32 callBase = result.base;
@@ -1335,6 +1338,18 @@ void CPU::finishProtectedCallWithError(u32 continuationIndex, Value errorValue) 
 	caller.placeResultTop(result, resultCount);
 	instructionBudgetRemaining -= resultCount;
 	finishProtectedContinuation(continuationIndex, resultCount);
+}
+
+bool CPU::finishImplicitProtectedHandler(u32 continuationIndex, bool succeeded) {
+	const u32 flags = m_activeThread->protectedWord(continuationIndex, ProtectedField::Flags);
+	if ((flags & PROTECTED_CALL_PARENT) == 0u || !m_activeThread->protectedResult(continuationIndex).extendsTop()) return false;
+	// The enclosing implicit xpcall receives only its handler's first value.
+	// A nested protected builtin delivers its status directly, without staging
+	// it in the caller's live operand window or charging a write not performed.
+	m_activeThread->setProtectedDepth(continuationIndex);
+	const Value status = valueBool(succeeded);
+	finishProtectedCall(continuationIndex - 1u, &status, 1);
+	return true;
 }
 
 int CPU::writeProtectedResults(u32 continuationIndex, bool prefix, const Value* values, int valueCount) {
@@ -1447,7 +1462,7 @@ void CPU::runBuiltinNextValue(Value target, Value key, BuiltinResults& out) {
 
 void CPU::runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out) {
 	const Value target = args[0];
-	if (!valueIsTable(target)) {
+	if (!valueIsTable(target) || args.size() < 2) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	}
 	out.push_back(TableRecord(m_heap, valuePayload(target)).get(args[1]));
@@ -1455,7 +1470,7 @@ void CPU::runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out) {
 
 void CPU::runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out) {
 	const Value target = args[0];
-	if (!valueIsTable(target)) {
+	if (!valueIsTable(target) || args.size() < 3) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	}
 	TableRecord(m_heap, valuePayload(target)).set(args[1], args[2]);
@@ -2602,89 +2617,6 @@ ValueSpan CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 	return frame.registers;
 }
 
-u32 CPU::tableIndexAddress(Value base) const {
-	switch (valueTag(base)) {
-		case ValueTag::Table: return valuePayload(base);
-		case ValueTag::String: return valuePayload(m_stringIndexTable);
-		default: throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
-	}
-}
-
-bool CPU::finishTableRead(CallFrame& frame, int destination, Value base, Value key, const TableLookupResult& result) {
-	instructionBudgetRemaining -= static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
-	if (result.status == TableLookupStatus::ChainExhausted) throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-	if (result.status == TableLookupStatus::Resolved) {
-		frame.registers.set(destination, result.value);
-		frame.extendTop(destination + 1);
-		return false;
-	}
-
-	// The forwarding Table, not the initial operand, is the receiver when
-	// its own lookup found this method. Preserve the original (uncanonicalized) key.
-	const std::array args{result.extraVisits == 0u ? base : valueTable(result.invokeReceiver), key};
-	auto roots = acquireLocalRoots();
-	trackLocalRoot(result.value);
-	for (const auto& arg : args) trackLocalRoot(arg);
-	const auto placement = CallResultPlacement::single(destination);
-	if (valueIsClosure(result.value)) {
-		const u32 closure = asClosure(result.value, m_heap);
-		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-		pushFrame(closure, BuiltinArgsView(args.data(), args.size()), placement, 0u, m_currentInstructionPc);
-	} else {
-		runBuiltinFunction(m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(result.value))],
-			frame, placement, {nullptr, args.data(), 0, static_cast<int>(args.size())});
-	}
-	return true;
-}
-
-bool CPU::loadTableIndex(CallFrame& frame, int destination, Value base, Value key) {
-	TableLookupResult result;
-	TableRecord(m_heap, tableIndexAddress(base)).resolveIndex(asStringId(m_indexKey), key, result);
-	return finishTableRead(frame, destination, base, key, result);
-}
-
-bool CPU::loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index) {
-	TableLookupResult result;
-	TableRecord(m_heap, tableIndexAddress(base)).resolveIntegerIndex(asStringId(m_indexKey), index, result);
-	return finishTableRead(frame, destination, base, valueInteger(index), result);
-}
-
-bool CPU::loadTableFieldIndexCached(CallFrame& frame, int destination, int& predictedSlot, Value base, StringId key) {
-	TableLookupResult result;
-	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexCached(asStringId(m_indexKey), key, predictedSlot, result);
-	if (result.extraVisits == 0 && result.slot >= 0) predictedSlot = result.slot;
-	return finishTableRead(frame, destination, base, valueString(key), result);
-}
-
-void CPU::storeTableIndex(const Value& base, const Value& key, const Value& value) {
-	if (valueIsTable(base)) {
-		TableRecord(m_heap, valuePayload(base)).set(key, value);
-		return;
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-}
-
-void CPU::storeTableIntegerIndex(const Value& base, int index, const Value& value) {
-	if (valueIsTable(base)) {
-		TableRecord(m_heap, valuePayload(base)).setInteger(index, value);
-		return;
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-}
-
-void CPU::storeTableFieldIndexCached(
-	int& predictedSlot,
-	const Value& base,
-	StringId key,
-	const Value& value
-) {
-	if (valueIsTable(base)) {
-		TableRecord(m_heap, valuePayload(base)).setStringKeyCached(key, value, predictedSlot);
-		return;
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-}
-
 void CPU::clearCallStack() {
 	abortStalledMemoryWrite();
 	for (;;) {
@@ -2745,8 +2677,10 @@ void CPU::trackLocalRoot(Value value) {
 }
 
 void CPU::markRoots(GcHeap& heap) {
-	// Keep the interned "__index" key tracked even while no live metatable uses it.
+	// Opcode metamethod selectors stay interned independently of guest tables.
 	heap.markValue(m_indexKey);
+	heap.markValue(m_newIndexKey);
+	heap.markValue(m_lengthKey);
 	heap.markValue(m_errorInErrorHandlingValue);
 	for (const Value value : m_luaFaultErrorValues) heap.markValue(value);
 	heap.markValue(m_stringIndexTable);

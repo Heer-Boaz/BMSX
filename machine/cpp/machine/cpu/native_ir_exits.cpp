@@ -24,7 +24,7 @@ struct NativeCheckedExit {
 
 	NativeExitPlan operator()(const NativeArithmetic&) const { return {NativeBlockExit::InvalidOperand}; }
 	NativeExitPlan operator()(const NativePoolRead&) const { return {NativeBlockExit::InvalidConstant}; }
-	NativeExitPlan operator()(const NativeLength&) const { return {NativeBlockExit::InvalidLength}; }
+	NativeExitPlan operator()(const NativeLength& length) const { return {NativeBlockExit::Length, {.length = {length.result, length.source}}}; }
 
 	NativeExitPlan operator()(const NativeVararg& placement) const {
 		return {NativeBlockExit::Vararg, {.vararg = placement}};

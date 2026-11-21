@@ -1,6 +1,6 @@
 import { formatInteger, formatFloat } from '../../common/number_format';
 import { f32BitsToNumber } from '../../common/float32';
-import { BLUA32_FLOAT_NAN, luaCompareIntegerFloat, luaFloatResultBits, luaFloatToInteger, luaFloatToWord, NumericOrder } from '../../spec/blua32/numeric';
+import { luaCompareIntegerFloat, luaFloatResultBits, luaFloatToInteger, luaFloatToWord, NumericOrder } from '../../spec/blua32/numeric';
 import { BuiltinFunctionId } from '../../spec/blua32/builtin';
 import type { StringId, StringPool } from './string_pool';
 import type { GcHeap } from './gc_heap';
@@ -33,6 +33,9 @@ export function valueThread(reference: number): Value { return valueFromTag(Valu
 export function valueBuiltinFunction(id: BuiltinFunctionId): Value { return valueFromTag(ValueTag.BuiltinFunction, id); }
 export function valueIsInteger(value: Value): boolean { return valueTag(value) === ValueTag.Integer; }
 export function valueIsFloat(value: Value): boolean { return valueTag(value) === ValueTag.Float; }
+export function valueIsNaN(value: Value): boolean {
+	return valueIsFloat(value) && (valuePayload(value) & 0x7fffffff) > 0x7f800000;
+}
 export function valueIsNumber(value: Value): boolean { const tag = valueTag(value); return tag === ValueTag.Integer || tag === ValueTag.Float; }
 export function isNil(value: Value): boolean { return valueTag(value) === ValueTag.Nil; }
 export function isTruthy(value: Value): boolean { const tag = valueTag(value); return tag !== ValueTag.Nil && tag !== ValueTag.False; }
@@ -74,11 +77,12 @@ export function valuesEqual(left: Value, right: Value): boolean {
 	return tag <= ValueTag.True ? tag === valueTag(right) : left === right;
 }
 export function canonicalTableKey(value: Value): Value {
-	if (valueTag(value) <= ValueTag.True) return valueFromTag(valueTag(value));
-	if (!valueIsFloat(value)) return value;
+	const tag = valueTag(value);
+	if (tag <= ValueTag.True) return valueFromTag(tag);
+	if (tag !== ValueTag.Float) return value;
 	const integer = luaFloatToInteger(valuePayload(value));
 	if (integer !== null) return valueInteger(integer);
-	return (valuePayload(value) & 0x7fffffff) > 0x7f800000 ? valueFloatBits(BLUA32_FLOAT_NAN) : value;
+	return value;
 }
 export function tableKeysEqual(left: Value, right: Value): boolean { return canonicalTableKey(left) === canonicalTableKey(right); }
 // A table operation normalizes its key before selecting the array or hash.

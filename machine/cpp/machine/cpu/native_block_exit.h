@@ -28,7 +28,7 @@ enum class NativeBlockExit : u8 {
 	WriteIndex,
 	ReadInteger,
 	WriteInteger,
-	InvalidLength,
+	Length,
 	AllocateTable,
 	ControlFault,
 	ControlBoundary,
@@ -61,6 +61,7 @@ union NativeExitOperands {
 	struct Return { u16 first; i16 produced; } returned;
 	struct Vararg { u16 first; i16 requested; } vararg;
 	struct Table { i16 value, receiver, key; } table;
+	struct Length { u16 result, source; } length;
 	struct Memory {
 		u32 displacement;
 		u16 slot;

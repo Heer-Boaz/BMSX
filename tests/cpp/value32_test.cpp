@@ -55,7 +55,8 @@ void valuesAndText() {
 	require(valuesEqual(valueInteger(2), valueFloat(2.0f)), "cross-subtype equality");
 	require(!valuesEqual(valueInteger(16777217), valueFloat(16777216.0f)), "Integer precision retained");
 	require(!valuesEqual(valueFloatBits(BLUA32_FLOAT_NAN), valueFloatBits(BLUA32_FLOAT_NAN)), "NaN is not equal to itself");
-	require(ValueEq{}(valueFloatBits(0xffa12345), valueFloatBits(BLUA32_FLOAT_NAN)), "table NaN key canonicalization");
+	require(valueIsNaN(valueFloatBits(0xffa12345)) && !valueIsNaN(valueFloatBits(0x7f800000)),
+		"the raw Float discriminator rejects NaN keys without rejecting infinity");
 	require(ValueEq{}(valueInteger(0), valueFloatBits(0x80000000)), "zero keys canonicalize");
 	require(hashCanonicalTableKey(valueInteger(2)) == hashCanonicalTableKey(canonicalTableKey(valueFloat(2.0f))), "equal numeric keys share hash");
 	require(hashCanonicalTableKey(valueTable(0x81234564u)) == hashCanonicalTableKey(valueInteger(0x81234564u)),

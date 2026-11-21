@@ -40,6 +40,7 @@ bool CPU::loadNativeTableField(CallFrame& frame, int destination, TableStringRea
 }
 
 u32 CPU::readNativeLength(NativeBlockRunState* state, const StringPool* strings, Value* operand) noexcept {
+	if (valueIsTable(*operand) && TableRecord(*state->heap, valuePayload(*operand)).metatableAddress() != 0u) return 0;
 	const auto length = measureValueLength(*operand, *strings, state->heap);
 	if (!length) return 0;
 	state->remainingCycles -= length->extraCycles;
@@ -244,8 +245,12 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::InvalidOperand:
 		case NativeBlockExit::InvalidConstant:
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		case NativeBlockExit::InvalidLength:
-			throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
+		case NativeBlockExit::Length: {
+			const auto length = exit->operands.length;
+			transition = cpu.executeLength(*frame, length.result, frame->registers.get(length.source))
+				? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
+			break;
+		}
 		case NativeBlockExit::ReadField: {
 			const auto access = exit->operands.table;
 			const bool invoked = cpu.loadNativeTableField(*frame, access.value, exit->tableReadCache,
@@ -282,17 +287,18 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				const auto prediction = exit->tableStore;
 				void* const source = *prediction.sourceEntry;
 				int slot = prediction.slot;
-				cpu.storeTableFieldIndexCached(slot, base, asStringId(key), value);
+				if (cpu.storeTableFieldIndexCached(*frame, slot, base, asStringId(key), value))
+					transition = NativeBlockTransition::Redispatch;
 				// Physical table writes can retire their executing RAM source.
 				// Only a still-published entry owns this descriptor afterward.
 				if (slot != prediction.slot && *prediction.sourceEntry == source) exit->tableStore.slot = slot;
-			} else cpu.storeTableIndex(base, key, value);
+			} else if (cpu.storeTableIndex(*frame, base, key, value)) transition = NativeBlockTransition::Redispatch;
 			break;
 		}
 		case NativeBlockExit::WriteInteger: {
 			const auto& access = exit->operands.table;
-			cpu.storeTableIntegerIndex(frame->registers.get(access.receiver), access.key,
-				readRK(*frame->executionImage, frame->registers, access.value));
+			if (cpu.storeTableIntegerIndex(*frame, frame->registers.get(access.receiver), access.key,
+				readRK(*frame->executionImage, frame->registers, access.value))) transition = NativeBlockTransition::Redispatch;
 			break;
 		}
 		case NativeBlockExit::ReadMemory:

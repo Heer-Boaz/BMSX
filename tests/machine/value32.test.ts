@@ -60,7 +60,7 @@ test('Value identity is tag/word, not JS object shape, NaN space or numeric inte
 	assert.notEqual(v.valueInteger(2), v.valueFloat(2)); assert.ok(v.valuesEqual(v.valueInteger(2), v.valueFloat(2)));
 	assert.ok(!v.valuesEqual(v.valueInteger(16777217), v.valueFloat(16777216)));
 	assert.ok(!v.valuesEqual(v.valueFloatBits(0x7fc00000), v.valueFloatBits(0x7fc00000)));
-	assert.ok(v.tableKeysEqual(v.valueFloatBits(0xffa12345), v.valueFloatBits(0x7fc00000)));
+	assert.equal(v.canonicalTableKey(v.valueFloatBits(0xffa12345)), v.valueFloatBits(0xffa12345));
 	assert.equal(v.hashCanonicalTableKey(v.valueInteger(2)), v.hashCanonicalTableKey(v.canonicalTableKey(v.valueFloat(2))));
 	assert.ok(v.tableKeysEqual(v.valueInteger(0), v.valueFloatBits(0x80000000)));
 	assert.ok(v.valuesEqual(v.valueFromTag(v.ValueTag.True, 1), v.valueFromTag(v.ValueTag.True, 2)));

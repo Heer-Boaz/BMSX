@@ -72,13 +72,14 @@ export class BuiltinArgsView {
 		if (this.registers === this.aperture) this.aperture.unbind();
 		this.registers = EMPTY_VALUE_SLOTS; this.base = 0; this.length = 0;
 	}
-	public bindDetached(first: Value, second?: Value): void {
-		const slots = this.detached ??= new ValueSlots(2);
+	public bindDetached(first: Value, second?: Value, third?: Value): void {
+		const slots = this.detached ??= new ValueSlots(3);
 		slots.set(0, first);
 		if (second !== undefined) slots.set(1, second);
+		if (third !== undefined) slots.set(2, third);
 		this.registers = slots;
 		this.base = 0;
-		this.length = second === undefined ? 1 : 2;
+		this.length = third !== undefined ? 3 : second !== undefined ? 2 : 1;
 	}
 }
 export class BuiltinResults {

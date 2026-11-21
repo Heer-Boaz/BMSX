@@ -136,10 +136,10 @@ DISPATCH_LABEL(SETI) {
 	const Value tableValue = REG(a);
 	const Value& value = readRK(IMAGE, registers, rkC);
 	if (valueIsTable(tableValue)
-		&& TableRecord(m_heap, valuePayload(tableValue)).setIntegerArrayKey(b, value)) {
+		&& TableRecord(m_heap, valuePayload(tableValue)).tryAssignIntegerArrayKey(b, value)) {
 		DISPATCH_NEXT();
 	}
-	storeTableIntegerIndex(tableValue, b, value);
+	if (storeTableIntegerIndex(FRAME, tableValue, b, value)) DISPATCH_CONTINUE();
 	registers = FRAME.registers;
 	DISPATCH_NEXT();
 }
@@ -163,12 +163,12 @@ DISPATCH_LABEL(SETFIELD) {
 	const int a = decoded->a;
 	const int b = decoded->b;
 	const int rkC = decoded->c;
-	storeTableFieldIndexCached(
+	if (storeTableFieldIndexCached(FRAME,
 		TABLE_CACHE_SLOT(),
 		REG(a),
 		asStringId(IMAGE.constPool.get(static_cast<size_t>(b))),
 		readRK(IMAGE, registers, rkC)
-	);
+	)) DISPATCH_CONTINUE();
 	registers = FRAME.registers;
 	DISPATCH_NEXT();
 }
@@ -216,10 +216,10 @@ DISPATCH_LABEL(SETT) {
 	const Value& value = readRK(IMAGE, registers, rkC);
 	if (valueIsTable(tableValue)
 		&& valueIsInteger(key)
-		&& TableRecord(m_heap, valuePayload(tableValue)).setIntegerArrayKey(asInteger(key), value)) {
+		&& TableRecord(m_heap, valuePayload(tableValue)).tryAssignIntegerArrayKey(asInteger(key), value)) {
 		DISPATCH_NEXT();
 	}
-	storeTableIndex(tableValue, key, value);
+	if (storeTableIndex(FRAME, tableValue, key, value)) DISPATCH_CONTINUE();
 	registers = FRAME.registers;
 	DISPATCH_NEXT();
 }
@@ -368,11 +368,7 @@ DISPATCH_LABEL(NOT) {
 }
 
 DISPATCH_LABEL(LEN) {
-	const int destination = decoded->a;
-	const auto length = measureValueLength(REG(decoded->b), m_stringPool, &m_heap);
-	if (!length) throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
-	CYCLES_ADD(length->extraCycles);
-	SET_REGISTER_FAST(destination, valueInteger(length->count));
+	if (executeLength(FRAME, decoded->a, REG(decoded->b))) DISPATCH_CONTINUE();
 	DISPATCH_NEXT();
 }
 

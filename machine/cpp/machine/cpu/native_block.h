@@ -68,13 +68,14 @@ struct NativeBlockRunState {
 #endif
 };
 
-// Semantic helpers with a fixed successor and no frame, image or device change.
-// Ordinary Continue edges use the region's direct branches instead.
+// Semantic exits with a fixed physical successor. The CPU uses it only if
+// the path taken retained the frame and image. Pure edges branch directly.
 inline constexpr bool nativeBlockExitResumesFrame(NativeBlockExit exit) {
 	switch (exit) {
 	case NativeBlockExit::ReadField: case NativeBlockExit::WriteField:
 	case NativeBlockExit::ReadIndex: case NativeBlockExit::WriteIndex:
 	case NativeBlockExit::ReadInteger: case NativeBlockExit::WriteInteger:
+	case NativeBlockExit::Length:
 	case NativeBlockExit::WriteUpvalue: case NativeBlockExit::Vararg:
 	case NativeBlockExit::AllocateTable: case NativeBlockExit::Concat: case NativeBlockExit::ConcatRange:
 		return true;

@@ -160,10 +160,15 @@ void inheritedAndFullWordKeys(CPU& cpu, Memory& memory) {
 
 	auto raw = cpu.createTable(0, 8);
 	const Value integerKey = valueInteger(BLUA32_FLOAT_NAN);
-	raw.set(valueFloatBits(0xffc01234u), valueInteger(13));
 	raw.set(integerKey, valueInteger(14));
-	require(raw.get(valueFloatBits(0x7fa12345u)) == valueInteger(13) && raw.get(integerKey) == valueInteger(14),
-		"canonical NaN and Integer keys with the same stored word remain distinct in the same hash chain");
+	require(isNil(raw.get(valueFloatBits(0x7fa12345u))) && isNil(raw.get(valueNil())) && raw.get(integerKey) == valueInteger(14),
+		"raw nil and NaN reads miss without confusing a legal Integer of the same payload");
+	for (const bool nan : {false, true}) {
+		bool rejected = false;
+		try { raw.set(nan ? valueFloatBits(0xffc01234u) : valueNil(), valueNil()); }
+		catch (const LuaExecutionError& error) { rejected = error.reason == (nan ? LUA_FAULT_REASON_INDEX_NAN : LUA_FAULT_REASON_INDEX_NIL); }
+		require(rejected, "raw mutation rejects invalid insertion keys even for a nil source");
+	}
 	const Value highBitKey = valueFromTag(ValueTag::String, key ^ 0x80000000u);
 	raw.set(highBitKey, valueInteger(21));
 	require(isNil(raw.getStringKey(key)), "a known StringId does not match a different high payload bit during chain search");

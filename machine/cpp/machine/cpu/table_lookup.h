@@ -6,7 +6,7 @@
 #include "machine/cpu/value.h"
 
 namespace bmsx {
-enum class TableLookupStatus : u32 { Resolved, ChainExhausted, Invoke };
+enum class TableLookupStatus : u32 { Resolved, ChainExhausted, Invoke, Forward, Store };
 
 // Transient semantic result, not a guest allocation or a predicted-probe counter.
 struct TableLookupResult {
@@ -14,7 +14,7 @@ struct TableLookupResult {
 	i32 slot;
 	u32 extraVisits;
 	TableLookupStatus status;
-	u32 invokeReceiver = 0;
+	u32 receiver = 0;
 };
 
 // Native callsite metadata. Slots are hints on the table reached during the

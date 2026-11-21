@@ -49,6 +49,9 @@ inline constexpr bool valueTagHasGcEdge(ValueTag tag) {
 }
 inline constexpr bool valueIsInteger(Value value) { return valueTag(value) == ValueTag::Integer; }
 inline constexpr bool valueIsFloat(Value value) { return valueTag(value) == ValueTag::Float; }
+inline constexpr bool valueIsNaN(Value value) {
+	return valueIsFloat(value) && (valuePayload(value) & 0x7fffffffu) > 0x7f800000u;
+}
 inline constexpr bool valueIsNumber(Value value) { return valueIsInteger(value) || valueIsFloat(value); }
 inline constexpr bool isNil(Value value) { return valueTag(value) == ValueTag::Nil; }
 inline constexpr bool isTruthy(Value value) { return valueTag(value) != ValueTag::Nil && valueTag(value) != ValueTag::False; }
@@ -96,7 +99,7 @@ inline Value canonicalTableKey(Value value) {
 	if (!valueIsFloat(value)) return value;
 	int32_t integer;
 	if (luaFloatToInteger(valuePayload(value), integer)) return valueInteger(integer);
-	return (valuePayload(value) & 0x7fffffffu) > 0x7f800000u ? valueFloatBits(BLUA32_FLOAT_NAN) : value;
+	return value;
 }
 struct ValueEq {
 	bool operator()(Value left, Value right) const { return canonicalTableKey(left) == canonicalTableKey(right); }

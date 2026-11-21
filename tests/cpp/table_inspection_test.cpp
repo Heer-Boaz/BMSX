@@ -121,14 +121,13 @@ void boundarySearchAndHashMix(bmsx::CPU& cpu) {
 	require(*std::max_element(occupancy.begin(), occupancy.end()) <= 8, "negative Integer keys do not pile up in one hash bucket");
 
 	// These physical buckets are also exercised by the TypeScript table fixture.
-	for (const auto& [key, bucket] : std::array<std::pair<Value, size_t>, 10>{{
+	for (const auto& [key, bucket] : std::array<std::pair<Value, size_t>, 9>{{
 		{valueInteger(-1), 0}, {valueInteger(-2), 607}, {valueInteger(-3), 190}, {valueInteger(-1024), 140},
 		{valueInteger(0), 0}, {valueFloat(0.5f), 224}, {valueFloat(1.5f), 0}, {valueFloat(4294967296.0f), 24},
-		{valueFloatBits(0xffa01234u), 981}, {valueFloatBits(0x7f800000u), 0}}}) {
+		{valueFloatBits(0x7f800000u), 0}}}) {
 		require((hashCanonicalTableKey(canonicalTableKey(key)) & 1023) == bucket, "numeric hash matches compact TS golden buckets");
 	}
 	require(hashCanonicalTableKey(canonicalTableKey(valueFloatBits(0x80000000u))) == hashCanonicalTableKey(valueInteger(0)), "signed zeros share a hash");
-	require(hashCanonicalTableKey(canonicalTableKey(valueFloatBits(0xffc00001u))) == hashCanonicalTableKey(canonicalTableKey(valueFloatBits(0x7fc0002au))), "all raw NaNs share a hash");
 }
 
 void continueAfterDeletedZeroIdentityKey(bmsx::CPU& cpu) {

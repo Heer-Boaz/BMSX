@@ -203,11 +203,12 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 				failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted);
 			const fault = wanted >= PSX_MACHINE_SPEC.ramBytes;
 			// Both success- and error-placement collect. If the inner return completed,
-			// its closure is already dead at the first scan. Both passes visit the RAM String index.
+			// its closure is already dead at the first scan. Both passes scan
+			// 32 intern buckets and mark/visit 17 live RAM string roots.
 			// Four reserved frame slots (including the exception reserve) and two
 			// continuation records are present during all three scans and sweep.
 			const extraWords = (heapAllocationBytes(8 * 5 + 4 * FRAME_CONTROL_BYTES + 2 * PROTECTED_CALL_BYTES) - heapAllocationBytes(8 * 5)) / 4;
-			const gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (16 + 2 * 14 + 4 * extraWords) : 0;
+			const gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (32 + 2 * 17 + 4 * extraWords) : 0;
 			if (fault) assert.throws(() => cpu.runUntilDepth(1, 2), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			else assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
 			const outer = wanted === 0 ? 4 : wanted - 1;

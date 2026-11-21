@@ -354,6 +354,7 @@ The raw Cause word uses the following values. The exception-code mask is
 | 9 | OUT_OF_MEMORY |
 | 10 | INVALID_ARGUMENT |
 | 11 | INVALID_NEXT_KEY |
+| 12 | INDEX_NAN |
 
 Interpret LuaReason with Cause rather than treating every retained reason as a
 new Lua failure.

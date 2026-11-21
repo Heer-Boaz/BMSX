@@ -61,6 +61,9 @@ struct CallResultPlacement {
 	static constexpr CallResultPlacement single(i32 base) {
 		return {base, static_cast<u32>(encodeFixedValueCount(1)) | extendTopBit};
 	}
+	static constexpr CallResultPlacement discard() {
+		return {0, static_cast<u32>(encodeFixedValueCount(0)) | extendTopBit};
+	}
 	static constexpr CallResultPlacement frame(i32 base, i32 count, u32 flags) {
 		return {base, static_cast<u32>(count) | ((flags & FRAME_EXTEND_RESULT_TOP) != 0u ? extendTopBit : 0u)};
 	}

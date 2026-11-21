@@ -115,6 +115,15 @@ void NativeLowering::emitArrayStore(int value, NativeStorePlan plan, NativeBlock
 		if (guardStack) emitGuardOutsideStack(SLJIT_R3, word ? sizeof(u32) : 1, exit);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), word ? wordOffset : tagOffset, SLJIT_R3, 0);
 	}
+	// An empty array slot is not an own entry. Only the CPU may select an
+	// inherited assignment when its receiver has a metatable.
+	auto* noMetatable = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32,
+		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Metatable), SLJIT_IMM, 0);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+		SLJIT_IMM, static_cast<u8>(ValueTag::Nil)), exit, m_cache.state());
+	sljit_set_label(noMetatable, sljit_emit_label(c));
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), receiver,
 		SLJIT_IMM, static_cast<u32>(TableHeader::Length));
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);

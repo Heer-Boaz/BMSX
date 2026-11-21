@@ -2,13 +2,13 @@ import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { heapAllocationBytes } from './heap_allocator';
 import { GC_RECORD_LINK } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
-import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
+import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
 import type { GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
 import {
 	ValueTag, asInteger, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
-	valueNil, valuePayload, valueString, valueTable, valueTag, valueTagHasGcEdge, type Value,
+	valueIsNaN, valueNil, valuePayload, valueString, valueTable, valueTag, valueTagHasGcEdge, type Value,
 } from './value';
 import type { ValueWriteTarget } from './value_slots';
 
@@ -17,9 +17,9 @@ const TABLE_MAX_ARRAY_INDEX = 0x7fffffff;
 export const TABLE_INDEX_CHAIN_LIMIT = 32;
 export const TABLE_STORE_REQUIRES_GROWTH = -2;
 export type TableLengthWork = { probes: number };
-export const enum TableLookupStatus { Resolved, ChainExhausted, Invoke }
+export const enum TableLookupStatus { Resolved, ChainExhausted, Invoke, Forward, Store }
 type TableLookupSlot = { value: Value; slot: number };
-export type TableLookupResult = TableLookupSlot & { extraVisits: number; status: TableLookupStatus; invokeReceiver: number };
+export type TableLookupResult = TableLookupSlot & { extraVisits: number; status: TableLookupStatus; receiver: number };
 type StoredEntryVisitor = (key: Value, value: Value) => void;
 type StoredValuePredicate = (value: Value) => boolean;
 
@@ -99,7 +99,7 @@ export class TableRecords {
 	private hashKeySlot(record: number, index: number): number { return this.arrayCapacity(record) + index; }
 	private hashValueSlot(record: number, index: number): number { return this.arrayCapacity(record) + this.hashSize(record) + index; }
 	// Callers normalize the key once before lookup/insertion. Integral Float
-	// keys are Integer keys, including -0; every NaN key has one canonical word.
+	// keys are Integer keys, including -0. Nil and NaN cannot name entries.
 	private getArrayIndex(key: Value): number {
 		return valueTag(key) === ValueTag.Integer ? this.integerArrayIndex(asInteger(key)) : -1;
 	}
@@ -143,8 +143,8 @@ export class TableRecords {
 	}
 
 	public get(record: number, rawKey: Value): Value {
+		if (isNil(rawKey) || valueIsNaN(rawKey)) return valueNil();
 		const key = canonicalTableKey(rawKey);
-		if (isNil(key)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		return this.getCanonical(record, key, this.getArrayIndex(key));
 	}
 	private getCanonical(record: number, key: Value, arrayIndex: number): Value {
@@ -186,9 +186,10 @@ export class TableRecords {
 		if (tag === ValueTag.Nil && this.metatableAddress(record) !== 0) return false;
 		target.setEncoded(destination, tag, memory.readRamRecordWord(words + slot * 4)); return true;
 	}
-	public storeIntegerArrayKey(record: number, index: number, tag: ValueTag, word: number): boolean {
+	public storeIntegerArrayKey(record: number, index: number, tag: ValueTag, word: number, newIndexKey: StringId): boolean {
 		const slot = this.integerArrayIndex(index);
 		if (slot < 0 || slot >= this.arrayCapacity(record)) return false;
+		if (this.tagAt(record, slot) === ValueTag.Nil && !isNil(this.metafield(record, newIndexKey))) return false;
 		this.heap.writeValueBarrier(record, GC_RECORD_LINK, tag);
 		this.setEncoded(record, slot, tag, word); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return true;
 	}
@@ -261,13 +262,14 @@ export class TableRecords {
 		}
 		result.value = valueNil(); result.slot = -1;
 	}
-	public resolveIndex(record: number, indexKey: StringId, rawKey: Value, result: TableLookupResult): void {
+	public resolveIndex(record: number, indexKey: StringId, rawKey: Value, result: TableLookupResult,
+		visitLimit = TABLE_INDEX_CHAIN_LIMIT): void {
+		const validKey = !isNil(rawKey) && !valueIsNaN(rawKey);
 		const key = canonicalTableKey(rawKey);
-		if (isNil(key)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		const arrayIndex = this.getArrayIndex(key);
 		let current = record;
-		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
-			const own = this.getCanonical(current, key, arrayIndex);
+		for (let depth = 0; depth < visitLimit; ++depth) {
+			const own = validKey ? this.getCanonical(current, key, arrayIndex) : valueNil();
 			if (!isNil(own)) {
 				result.value = own; result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
 			}
@@ -279,15 +281,16 @@ export class TableRecords {
 			const next = this.getStringKey(meta, indexKey);
 			const tag = valueTag(next);
 			if (tag !== ValueTag.Table) {
+				result.value = tag === ValueTag.Nil ? valueNil() : next;
+				result.slot = -1; result.extraVisits = depth;
 				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction) {
-					result.value = next; result.slot = -1; result.extraVisits = depth;
-					result.invokeReceiver = current; result.status = TableLookupStatus.Invoke; return;
-				}
-				result.value = valueNil(); result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
+					result.receiver = current; result.status = TableLookupStatus.Invoke;
+				} else result.status = tag === ValueTag.Nil ? TableLookupStatus.Resolved : TableLookupStatus.Forward;
+				return;
 			}
 			current = valuePayload(next);
 		}
-		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
+		result.extraVisits = visitLimit - 1; result.status = TableLookupStatus.ChainExhausted;
 	}
 	public resolveIntegerIndex(record: number, indexKey: StringId, key: number, result: TableLookupResult): void {
 		this.resolveIndex(record, indexKey, valueInteger(key), result);
@@ -295,11 +298,9 @@ export class TableRecords {
 	public resolveStringIndex(record: number, indexKey: StringId, key: StringId, result: TableLookupResult): void {
 		this.resolveStringIndexCached(record, indexKey, key, -1, result);
 	}
-	// Also used when the debugger enumerates the chain rather than looking
-	// up one field. The metatable's __index is a direct read.
-	public metatableIndexValue(record: number, indexKey: StringId): Value {
+	public metafield(record: number, key: StringId): Value {
 		const meta = this.metatableAddress(record);
-		return meta !== 0 ? this.getStringKey(meta, indexKey) : valueNil();
+		return meta !== 0 ? this.getStringKey(meta, key) : valueNil();
 	}
 	public resolveStringIndexCached(record: number, indexKey: StringId, key: StringId, predicted: number, result: TableLookupResult): void {
 		let current = record;
@@ -308,12 +309,14 @@ export class TableRecords {
 			if (result.slot >= 0) {
 				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
 			}
-			const next = this.metatableIndexValue(current, indexKey);
+			const next = this.metafield(current, indexKey);
 			const tag = valueTag(next);
 			if (tag !== ValueTag.Table) {
 				result.extraVisits = depth;
 				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction) {
-					result.value = next; result.invokeReceiver = current; result.status = TableLookupStatus.Invoke;
+					result.value = next; result.receiver = current; result.status = TableLookupStatus.Invoke;
+				} else if (tag !== ValueTag.Nil) {
+					result.value = next; result.status = TableLookupStatus.Forward;
 				} else result.status = TableLookupStatus.Resolved;
 				return;
 			}
@@ -322,9 +325,42 @@ export class TableRecords {
 		}
 		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
 	}
+	public resolveAssignment(record: number, newIndexKey: StringId, rawKey: Value, result: TableLookupResult,
+		predicted?: number): void {
+		const validKey = !isNil(rawKey) && !valueIsNaN(rawKey);
+		const key = canonicalTableKey(rawKey), arrayIndex = this.getArrayIndex(key);
+		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
+			const meta = this.metatableAddress(record);
+			result.slot = predicted ?? -1;
+			let next = valueNil();
+			if (meta !== 0) {
+				if (predicted !== undefined) {
+					this.getStringKeyCached(record, valuePayload(key), predicted, result);
+					if (result.slot < 0) next = this.getStringKey(meta, newIndexKey);
+				} else if (!validKey || isNil(this.getCanonical(record, key, arrayIndex))) {
+					next = this.getStringKey(meta, newIndexKey);
+				}
+			}
+			const tag = valueTag(next);
+			if (tag === ValueTag.Table) {
+				record = valuePayload(next);
+				if (predicted !== undefined) predicted = -1;
+				continue;
+			}
+			result.extraVisits = depth;
+			result.receiver = record;
+			result.value = next;
+			result.status = tag === ValueTag.Nil ? TableLookupStatus.Store
+				: tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction ? TableLookupStatus.Invoke
+				: TableLookupStatus.Forward;
+			return;
+		}
+		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
+	}
 	public set(record: number, rawKey: Value, value: Value): void {
+		if (isNil(rawKey)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
+		if (valueIsNaN(rawKey)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
 		const key = canonicalTableKey(rawKey);
-		if (isNil(key)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		const tag = valueTag(value);
 		const slot = this.getArrayIndex(key), array = this.arrayCapacity(record);
 		if (slot >= 0 && slot < array) {

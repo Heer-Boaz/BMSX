@@ -48,5 +48,6 @@ constexpr uint32_t LUA_FAULT_REASON_EXPLICIT_ERROR = 8u;
 constexpr uint32_t LUA_FAULT_REASON_OUT_OF_MEMORY = 9u;
 constexpr uint32_t LUA_FAULT_REASON_INVALID_ARGUMENT = 10u;
 constexpr uint32_t LUA_FAULT_REASON_INVALID_NEXT_KEY = 11u;
+constexpr uint32_t LUA_FAULT_REASON_INDEX_NAN = 12u;
 
 } // namespace bmsx

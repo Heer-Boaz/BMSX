@@ -22,6 +22,7 @@ export const FRAME_CONTROL_BYTES = 56;
 export const FRAME_WINDOW_MASK = (MAIN_RAM_SIZE >>> 2) - 1;
 export const CALL_RESULT_EXTEND_TOP = 0x80000000;
 export const SINGLE_CALL_RESULT = CALL_RESULT_EXTEND_TOP | encodeFixedValueCount(1);
+export const DISCARD_CALL_RESULT = CALL_RESULT_EXTEND_TOP | encodeFixedValueCount(0);
 export function selectedCallResultCount(word: number, available: number): number {
 	return decodeValueCount(word & ~CALL_RESULT_EXTEND_TOP, available);
 }

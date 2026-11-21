@@ -397,8 +397,8 @@ void TableRecord::markHashNodeDead(size_t index) {
 }
 
 Value TableRecord::get(const Value& rawKey) const {
+	if (isNil(rawKey) || valueIsNaN(rawKey)) return valueNil();
 	const Value key = canonicalTableKey(rawKey);
-	if (isNil(key)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 	return getCanonical(key);
 }
 
@@ -417,10 +417,9 @@ Value TableRecord::getHash(const Value& key) const {
 }
 
 void TableRecord::set(const Value& rawKey, const Value& value) {
+	if (isNil(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
+	if (valueIsNaN(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
 	const Value key = canonicalTableKey(rawKey);
-	if (isNil(key)) {
-		throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
-	}
 	const u32 index = arraySlot(key);
 	const u32 array = arrayCapacity();
 	if (index < array) {
@@ -511,16 +510,34 @@ Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot) const {
 	return valueNil();
 }
 
-template <bool RememberPath, typename Lookup>
+Value TableRecord::metatableField(StringId key) const {
+	const u32 address = metatableAddress();
+	return address != 0u ? TableRecord(*m_heap, address).getStringKey(key) : valueNil();
+}
+
+template <bool Assignment, bool RememberPath, typename Lookup>
 void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup,
-	TableStringReadCache* cache) const {
+	TableStringReadCache* cache, u32 visitLimit) const {
 	TableRecord current = *this;
-	for (u32 depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
+	for (u32 depth = 0; depth < visitLimit; ++depth) {
+		const u32 receiver = current.address();
+		u32 metatable;
+		if constexpr (Assignment) {
+			metatable = current.metatableAddress();
+			if (metatable == 0u) {
+				result = {valueNil(), slot, depth, TableLookupStatus::Store, receiver};
+				return;
+			}
+		}
 		if constexpr (RememberPath) {
 			if (depth != 0 && depth == cache->holderDepth) slot = cache->holderSlot;
 		}
 		const Value own = lookup(current, slot);
 		if (!isNil(own)) {
+			if constexpr (Assignment) {
+				result = {valueNil(), slot, depth, TableLookupStatus::Store, receiver};
+				return;
+			}
 			if constexpr (RememberPath) {
 				if (depth == 0) cache->receiverSlot = slot;
 				else {
@@ -531,11 +548,12 @@ void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResu
 			result = {own, slot, depth, TableLookupStatus::Resolved};
 			return;
 		}
-		const u32 receiver = current.address();
-		const u32 metatable = current.metatableAddress();
-		if (metatable == 0u) {
-			result = {depth == 0u ? own : valueNil(), -1, depth, TableLookupStatus::Resolved};
-			return;
+		if constexpr (!Assignment) {
+			metatable = current.metatableAddress();
+			if (metatable == 0u) {
+				result = {depth == 0u ? own : valueNil(), -1, depth, TableLookupStatus::Resolved};
+				return;
+			}
 		}
 		current.m_address = metatable;
 		Value parent;
@@ -546,19 +564,23 @@ void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResu
 		if (!valueIsTable(parent)) {
 			if (valueIsClosure(parent) || valueIsBuiltinFunction(parent))
 				result = {parent, -1, depth, TableLookupStatus::Invoke, receiver};
+			else if (!isNil(parent)) result = {parent, -1, depth, TableLookupStatus::Forward};
+			else if constexpr (Assignment) result = {valueNil(), -1, depth, TableLookupStatus::Store, receiver};
 			else result = {valueNil(), -1, depth, TableLookupStatus::Resolved};
 			return;
 		}
 		current.m_address = valuePayload(parent);
 		slot = -1;
 	}
-	result = {valueNil(), -1, TABLE_INDEX_CHAIN_LIMIT - 1, TableLookupStatus::ChainExhausted};
+	result = {valueNil(), -1, visitLimit - 1, TableLookupStatus::ChainExhausted};
 }
 
-void TableRecord::resolveIndex(StringId indexKey, const Value& rawKey, TableLookupResult& result) const {
+void TableRecord::resolveIndex(StringId indexKey, const Value& rawKey, TableLookupResult& result, u32 visitLimit) const {
 	const Value key = canonicalTableKey(rawKey);
-	if (isNil(key)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
-	resolveIndexChain(indexKey, -1, result, [key](const TableRecord& table, int&) { return table.getCanonical(key); });
+	const bool miss = isNil(key) || valueIsNaN(key);
+	resolveIndexChain(indexKey, -1, result, [key, miss](const TableRecord& table, int&) {
+		return miss ? valueNil() : table.getCanonical(key);
+	}, nullptr, visitLimit);
 }
 
 void TableRecord::resolveIntegerIndex(StringId indexKey, int key, TableLookupResult& result) const {
@@ -575,8 +597,24 @@ void TableRecord::resolveStringIndexCached(StringId indexKey, StringId key, int 
 
 void TableRecord::resolveStringIndexPath(StringId indexKey, StringId key, int receiverPrediction,
 	TableLookupResult& result, TableStringReadCache& cache) const {
-	resolveIndexChain<true>(indexKey, receiverPrediction, result,
+	resolveIndexChain<false, true>(indexKey, receiverPrediction, result,
 		[key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); }, &cache);
+}
+
+void TableRecord::resolveAssignment(StringId newIndexKey, Value rawKey, TableLookupResult& result) const {
+	const Value key = canonicalTableKey(rawKey);
+	const bool miss = isNil(key) || valueIsNaN(key);
+	resolveIndexChain<true>(newIndexKey, -1, result, [key, miss](const TableRecord& table, int&) {
+		return miss ? valueNil() : table.getCanonical(key);
+	});
+}
+
+void TableRecord::resolveIntegerAssignment(StringId newIndexKey, int key, TableLookupResult& result) const {
+	resolveIndexChain<true>(newIndexKey, -1, result, [key](const TableRecord& table, int&) { return table.getInteger(key); });
+}
+
+void TableRecord::resolveStringAssignment(StringId newIndexKey, StringId key, int predictedSlot, TableLookupResult& result) const {
+	resolveIndexChain<true>(newIndexKey, predictedSlot, result, [key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); });
 }
 
 u32 TableRecord::trySingleStringIndex(GcHeap* heap, TableSingleIndexProbe* probe, const TableStringReadCache* slots) noexcept {
@@ -725,6 +763,7 @@ bool TableRecord::loadStoredEntry(size_t slot, Value& key, Value& value) const {
 }
 
 size_t TableRecord::nextEntry(const Value& rawAfter, Value& key, Value& value) const {
+	if (valueIsNaN(rawAfter)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_NEXT_KEY);
 	const Value after = canonicalTableKey(rawAfter);
 	size_t arrayStart = 0;
 	size_t hashStart = 0;

@@ -7,6 +7,7 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL } from '../../machine/ts/spec/blua32/cop0';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
@@ -42,9 +43,8 @@ test('Table keys normalize Integer/Float identity without changing stored value 
 	assert.equal(cpu.gc.tables.get(table, v.valueInteger(2)), v.valueFloatBits(0xffa12345));
 	cpu.gc.tables.set(table, v.valueFloatBits(0x80000000), v.valueInteger(19));
 	assert.equal(cpu.gc.tables.get(table, v.valueInteger(0)), v.valueInteger(19));
-	cpu.gc.tables.set(table, v.valueFloatBits(0x7fa12345), v.valueInteger(20));
 	cpu.gc.tables.set(table, v.valueInteger(0x7fc00000), v.valueInteger(23));
-	assert.equal(cpu.gc.tables.get(table, v.valueFloatBits(0xffc54321)), v.valueInteger(20));
+	assert.equal(cpu.gc.tables.get(table, v.valueFloatBits(0xffc54321)), v.valueNil());
 	assert.equal(cpu.gc.tables.get(table, v.valueInteger(0x7fc00000)), v.valueInteger(23));
 	cpu.gc.tables.set(table, v.valueInteger(16777217), v.valueInteger(21));
 	cpu.gc.tables.set(table, v.valueFloat(16777216), v.valueInteger(22));
@@ -53,8 +53,21 @@ test('Table keys normalize Integer/Float identity without changing stored value 
 	const entries: [v.Value, v.Value][] = [];
 	cpu.gc.tables.forEachStoredEntry(table, (key, value) => entries.push([key, value]));
 	assert.ok(entries.some(([key]) => key === v.valueInteger(2)));
-	assert.ok(entries.some(([key]) => key === v.valueFloatBits(0x7fc00000)));
 	assert.ok(!entries.some(([key]) => key === v.valueFloat(2)));
+});
+
+test('raw nil and NaN keys miss and cannot mutate a Table even with a nil value', () => {
+	const cpu = machine(), table = cpu.createTable();
+	cpu.gc.tables.setInteger(table, 1, v.valueInteger(91));
+	for (const [key, reason] of [[v.valueNil(), LUA_FAULT_REASON_INDEX_NIL],
+		[v.valueFloatBits(0x7fa12345), LUA_FAULT_REASON_INDEX_NAN], [v.valueFloatBits(0xffc54321), LUA_FAULT_REASON_INDEX_NAN]] as const) {
+		assert.equal(cpu.gc.tables.get(table, key), v.valueNil());
+		assert.throws(() => cpu.gc.tables.set(table, key, v.valueInteger(7)), { reason });
+		assert.throws(() => cpu.gc.tables.set(table, key, v.valueNil()), { reason });
+	}
+	const entries: [v.Value, v.Value][] = [];
+	cpu.gc.tables.forEachStoredEntry(table, (key, value) => entries.push([key, value]));
+	assert.deepEqual(entries, [[v.valueInteger(1), v.valueInteger(91)]]);
 });
 
 test('compact hash growth, cached string access and inherited reads use real heap references', () => {
@@ -63,7 +76,7 @@ test('compact hash growth, cached string access and inherited reads use real hea
 	const inherited = v.valueTable(parent);
 	cpu.gc.tables.setStringKey(meta, index, inherited); cpu.gc.tables.setMetatableAddress(table, meta);
 	cpu.gc.tables.setStringKey(parent, key, v.valueBool(false));
-	const result = { value: v.valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved };
+	const result = { value: v.valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0 };
 	cpu.gc.tables.resolveStringIndexCached(table, index, key, -1, result);
 	assert.equal(result.value, v.valueBool(false)); assert.equal(result.extraVisits, 1);
 	for (let i = 1; i <= 512; ++i) { cpu.gc.tables.setInteger(table, i, v.valueInteger(i * -3)); cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('key' + i), v.valueInteger(i)); }
@@ -126,7 +139,7 @@ test('length candidates are bounded signed-32 keys and keep their guest probe co
 
 test('Table mutation streams preserve raw words through collisions, growth and deletions', () => {
 	const cpu = machine(), table = cpu.createTable(), oracle = new Map<v.Value, v.Value>();
-	const keys: v.Value[] = [v.valueBool(false), v.valueBool(true), v.valueFloatBits(0x7fa12345), v.valueFloatBits(0xffc00001), v.valueFloatBits(0x80000000), v.valueInteger(0), v.valueInteger(-2147483648), v.valueInteger(2147483647)];
+	const keys: v.Value[] = [v.valueBool(false), v.valueBool(true), v.valueFloat(Infinity), v.valueFloat(-Infinity), v.valueFloatBits(0x80000000), v.valueInteger(0), v.valueInteger(-2147483648), v.valueInteger(2147483647)];
 	for (let i = 1; i <= 48; ++i) keys.push(v.valueInteger(i), v.valueFloat(i), v.valueFloat(i + 0.5), v.valueString(cpu.stringPool.intern('field' + i)), v.valueTable(cpu.createTable()));
 	let seed = 0x5130bbad;
 	const next = (): number => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return seed >>> 0; };
@@ -152,7 +165,7 @@ test('machine snapshots restore table records and their references to a differen
 	source.gc.tables.setInteger(table, 1, v.valueFloatBits(0xffa54321));
 	source.gc.tables.setInteger(table, 2, v.valueInteger(-2147483648));
 	source.gc.tables.setInteger(table, 3, v.valueTable(child));
-	source.gc.tables.set(table, v.valueFloatBits(0xffa12345), v.valueFloatBits(0xffc00000));
+	source.gc.tables.set(table, v.valueFloat(1.5), v.valueFloatBits(0xffc00000));
 	const name = source.stringPool.intern('saved_table');
 	source.setGlobalByKey(name, v.valueTable(table));
 	const { cpu: target } = createTestSystemCpu(image);
@@ -165,6 +178,6 @@ test('machine snapshots restore table records and their references to a differen
 	assert.equal(target.gc.tables.getInteger(restored, 1), v.valueFloatBits(0xffa54321));
 	assert.equal(target.gc.tables.getInteger(restored, 2), v.valueInteger(-2147483648));
 	assert.equal(v.valuePayload(target.gc.tables.getInteger(restored, 3)), child);
-	assert.equal(target.gc.tables.get(restored, v.valueFloatBits(0x7fc00001)), v.valueFloatBits(0xffc00000));
+	assert.equal(target.gc.tables.get(restored, v.valueFloat(1.5)), v.valueFloatBits(0xffc00000));
 	assert.equal(target.gc.tables.getTrackedHeapBytes(restored), source.gc.tables.getTrackedHeapBytes(table));
 });

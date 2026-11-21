@@ -896,10 +896,10 @@ void protectedReturnPlacementCycles() {
 		// The failed success-range admission is followed by protected error-range admission, which also fails.
 		// Both emergency collections scan/reclaim the compact five-byte stack slots.
 		// Completing the inner return drops its closure before the first scan: three fewer mark words.
-		// Each collection also visits 16 intern buckets and marks/visits the 14 RAM roots.
+		// Each collection also visits 32 intern buckets and marks/visits the 17 RAM String roots.
 		// Four reserved frame slots and two continuation records are examined on all four visits.
 		const int extraWords = (heapAllocationBytes(8 * 5 + 4 * FRAME_CONTROL_BYTES + 2 * PROTECTED_CALL_BYTES) - heapAllocationBytes(8 * 5)) / 4;
-		const int gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (16 + 2 * 14 + 4 * extraWords) : 0;
+		const int gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (32 + 2 * 17 + 4 * extraWords) : 0;
 		bool rejected = false;
 		try { require(machine.cpu.runUntilDepth(1, 2) == RunResult::Halted, "protected return completes at caller"); }
 		catch (const LuaOutOfMemorySignal&) { rejected = true; }

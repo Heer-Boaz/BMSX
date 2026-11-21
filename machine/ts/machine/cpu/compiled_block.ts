@@ -39,7 +39,7 @@ export const enum CompiledBlockExit {
 	WriteIndex,
 	ReadInteger,
 	WriteInteger,
-	InvalidLength,
+	Length,
 	AllocateTable,
 	ControlFault,
 	ControlBoundary,
@@ -60,7 +60,7 @@ for (const [op, exit] of [
 	[OpCode.GETFIELD, CompiledBlockExit.ReadField], [OpCode.SELF, CompiledBlockExit.ReadField],
 	[OpCode.SETFIELD, CompiledBlockExit.WriteField], [OpCode.GETT, CompiledBlockExit.ReadIndex],
 	[OpCode.SETT, CompiledBlockExit.WriteIndex], [OpCode.GETI, CompiledBlockExit.ReadInteger],
-	[OpCode.SETI, CompiledBlockExit.WriteInteger], [OpCode.LEN, CompiledBlockExit.InvalidLength],
+	[OpCode.SETI, CompiledBlockExit.WriteInteger], [OpCode.LEN, CompiledBlockExit.Length],
 	[OpCode.LOAD_MEM, CompiledBlockExit.ReadMemory], [OpCode.LOAD_MEM_D, CompiledBlockExit.ReadMemory],
 	[OpCode.STORE_MEM, CompiledBlockExit.WriteMemory], [OpCode.STORE_MEM_D, CompiledBlockExit.WriteMemory],
 	[OpCode.STORE_MEM_WORDS, CompiledBlockExit.WriteWords], [OpCode.STORE_MEM_WORDS_D, CompiledBlockExit.WriteWords],
@@ -73,7 +73,7 @@ function compiledBlockExitResumesFrame(exit: CompiledBlockExit): boolean {
 	switch (exit) {
 		case CompiledBlockExit.ReadField: case CompiledBlockExit.WriteField:
 		case CompiledBlockExit.ReadIndex: case CompiledBlockExit.WriteIndex:
-		case CompiledBlockExit.ReadInteger: case CompiledBlockExit.WriteInteger:
+		case CompiledBlockExit.ReadInteger: case CompiledBlockExit.WriteInteger: case CompiledBlockExit.Length:
 		case CompiledBlockExit.WriteUpvalue: case CompiledBlockExit.Vararg:
 		case CompiledBlockExit.AllocateTable: case CompiledBlockExit.Concat: case CompiledBlockExit.ConcatRange:
 			return true;

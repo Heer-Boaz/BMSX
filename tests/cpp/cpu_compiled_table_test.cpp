@@ -80,7 +80,7 @@ void stringReadChainBoundaries() {
 			}
 			if (depth > 1) current.setStringKey(key, valueFromTag(ValueTag::False, 37));
 			else {
-				auto meta = cpu.createTable(0, 1); meta.setStringKey(indexKey, valueBool(false)); root.setMetatableAddress(meta.address());
+				root.setMetatableAddress(cpu.createTable(0, 1).address());
 			}
 			TableLookupResult scratch{valueInteger(73), -1, 0, TableLookupStatus::Resolved};
 			const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
@@ -145,7 +145,7 @@ void genericArraysAndHashKeys() {
 	require(field == scalar.cpu.stringPool().intern("field") && valueText == scalar.cpu.stringPool().intern("value"), "matching runtime string ids");
 	const std::array keys{valueInteger(1), valueInteger(2), valueInteger(4), valueInteger(5), valueInteger(0), valueFloat(-0.f),
 		valueInteger(-7), valueFloat(1.f), valueFloat(1.5f), valueInteger(INT32_MAX), valueInteger(16777217), valueFloat(16777216.f), valueFloat(0x1p31f), valueFloat(0x1p32f),
-		valueFloatBits(0xffc01234u), valueFloat(std::numeric_limits<float>::infinity()), valueFloat(-std::numeric_limits<float>::infinity()),
+		valueFloat(std::numeric_limits<float>::infinity()), valueFloat(-std::numeric_limits<float>::infinity()),
 		valueBool(false), valueBool(true), valueString(field)};
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),
 		valueFloat(-0.f), valueFloatBits(0xffc01234u), valueFloat(std::numeric_limits<float>::infinity()), valueString(valueText)};

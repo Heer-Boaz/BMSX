@@ -34,12 +34,12 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 
 // The root Thread owns a 64-byte header and a 160-byte allocation for
 // eight Value slots and two reserved activations. The remainder is a
-// Closure, 14 RAM String records, their 16 intern buckets, two global banks and an 8-byte map (the linker emits unique names).
+// Closure, 17 RAM String records, their 32 intern buckets, two global banks and an 8-byte map (the linker emits unique names).
 const bootThreadBytes = 64 + 160;
 const bootThreadWords = bootThreadBytes / 4;
-const bootBytes = bootThreadBytes + 16 + 16 + 648 + 64 + 8 + 2 * 160;
-const bootMarkWork = 2 * bootThreadWords + 3 + 2 * 12 + 14;
-const bootCollectionWork = 4 * bootThreadWords + 3 + 1 + 3 * 12 + 2 * 14 + 16;
+const bootBytes = bootThreadBytes + 16 + 16 + 744 + 128 + 8 + 2 * 160;
+const bootMarkWork = 2 * bootThreadWords + 3 + 2 * 12 + 17;
+const bootCollectionWork = 4 * bootThreadWords + 3 + 1 + 3 * 12 + 2 * 17 + 32;
 
 test('runtime GC bills actual canonical scans, reclamation and three unique root passes', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));

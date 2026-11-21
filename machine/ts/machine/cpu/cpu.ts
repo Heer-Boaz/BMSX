@@ -47,6 +47,7 @@ import {
 	LUA_FAULT_REASON_ASSIGN_NON_TABLE,
 	LUA_FAULT_REASON_CALL_NON_FUNCTION,
 	LUA_FAULT_REASON_EXPLICIT_ERROR,
+	LUA_FAULT_REASON_INDEX_NAN,
 	LUA_FAULT_REASON_INDEX_NIL,
 	LUA_FAULT_REASON_INDEX_NON_TABLE,
 	LUA_FAULT_REASON_INVALID_ARGUMENT,
@@ -116,12 +117,12 @@ import {
 	ValueTag,
 	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag, valueToByteString,
 	valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueBuiltinFunction, valueString, valueBool, valueThread, asThread,
-	valueTag, valueToInteger,
+	isNil, valueTag, valueToInteger,
 	valueTypeNameForLuaTag,
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { TableRecords, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
+import { TableRecords, TableHeader, TABLE_INDEX_CHAIN_LIMIT, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
 import * as Closure from './closure';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, sameFunctionPrototype, type FunctionPrototype } from './closure';
 import { UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, UPVALUE_VALUE_WORD, UPVALUE_OWNER } from './upvalue';
@@ -143,7 +144,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, selectedCallResultCount, type CallFrame } from './call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, type CallFrame } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND, THREAD_HEAP_BYTES, THREAD_INITIAL_BACKING_BYTES } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, controlOffset } from './thread_record';
@@ -242,6 +243,8 @@ export class CPU implements MappedPageInvalidator {
 	public readonly gc: GcHeap;
 	public readonly stringPool: StringPool;
 	private indexKey!: StringId;
+	private newIndexKey!: StringId;
+	private lengthKey!: StringId;
 	private modeKey!: StringId;
 	private haltedUntilIrqFrameDepth = -1;
 	private haltedUntilIrqThread = 0;
@@ -289,7 +292,7 @@ export class CPU implements MappedPageInvalidator {
 	private closureCellAddresses = new Uint32Array(0);
 	private captureAddresses = new Uint32Array(0);
 	private readonly tableLookupResult: TableLookupResult = {
-		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, invokeReceiver: 0,
+		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0,
 	};
 
 	private readonly executionImagesByDomain: Array<Blua32ExecutionImage | null> =
@@ -356,6 +359,8 @@ export class CPU implements MappedPageInvalidator {
 		this.globalBank = new GlobalBank(memory, this.heapAllocator, this.luaHeap);
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
 		this.indexKey = this.stringPool.intern('__index');
+		this.newIndexKey = this.stringPool.intern('__newindex');
+		this.lengthKey = this.stringPool.intern('__len');
 		this.modeKey = this.stringPool.intern('__mode');
 		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator, this.modeKey);
 		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling');
@@ -364,12 +369,13 @@ export class CPU implements MappedPageInvalidator {
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NON_TABLE] = this.stringPool.intern('Attempted to index field on a non-table value.');
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = this.stringPool.intern('Attempted to assign to a non-table value.');
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NIL] = this.stringPool.intern('Table index is nil.');
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_METATABLE_LOOP] = this.stringPool.intern('Metatable __index loop detected.');
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_METATABLE_LOOP] = this.stringPool.intern('Metatable index chain too long.');
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_ITERATE_NON_TABLE] = this.stringPool.intern('Attempted to iterate a non-table value.');
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = this.stringPool.intern('xpcall error handler must be a function.');
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY] = this.stringPool.intern('Out of memory.');
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = this.stringPool.intern('Invalid argument.');
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_NEXT_KEY] = this.stringPool.intern("invalid key to 'next'");
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NAN] = this.stringPool.intern('Table index is NaN.');
 		this.rootThread = new Thread(this.gc);
 		this.threadBanks = [this.rootThread, new Thread(this.gc), new Thread(this.gc)];
 		this.rootThread.bindAddress(this.createThread(0));
@@ -484,11 +490,23 @@ export class CPU implements MappedPageInvalidator {
 	private tableIndexAddress(base: Value): number {
 		switch (valueTag(base)) {
 			case ValueTag.Table: return valuePayload(base);
-			case ValueTag.String: return valuePayload(this.stringIndexTable);
-			default: throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
+			case ValueTag.String:
+				if (!isNil(this.stringIndexTable)) return valuePayload(this.stringIndexTable);
+				break;
 		}
+		throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 	}
 	private finishTableRead(frame: CallFrame, destination: number, base: Value, key: Value, result: TableLookupResult): boolean {
+		let remaining = TABLE_INDEX_CHAIN_LIMIT;
+		while (result.status === TableLookupStatus.Forward) {
+			this.charge(result.extraVisits * TABLE_INDEX_VISIT_CYCLES);
+			remaining -= result.extraVisits + 1;
+			base = result.value;
+			const record = this.tableIndexAddress(base);
+			if (remaining === 0) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+			this.charge(TABLE_INDEX_VISIT_CYCLES);
+			this.gc.tables.resolveIndex(record, this.indexKey, key, result, remaining);
+		}
 		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
 		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 		if (result.status === TableLookupStatus.Resolved) {
@@ -498,25 +516,34 @@ export class CPU implements MappedPageInvalidator {
 		}
 		// A forwarded lookup passes the reached table. The String-index table
 		// is an implementation of the initial String receiver, not its value.
-		const receiver = result.extraVisits === 0 ? base : valueTable(result.invokeReceiver);
-		const method = result.value;
+		const receiver = result.extraVisits === 0 ? base : valueTable(result.receiver);
+		this.invokeTableMetamethod(frame, result.value, destination, SINGLE_CALL_RESULT, receiver, key);
+		return true;
+	}
+	private invokeTableMetamethod(frame: CallFrame, method: Value, destination: number, result: number,
+		receiver: Value, operand: Value, assignment?: Value): void {
 		const args = this.acquireRegisterBuiltinArgs();
 		const rootBase = this.localRoots.length;
-		this.localRoots.push(method, receiver, key);
-		args.bindDetached(receiver, key);
+		this.localRoots.push(method, receiver, operand);
+		if (assignment !== undefined) this.localRoots.push(assignment);
+		args.bindDetached(receiver, operand, assignment);
 		try {
-			if (valueTag(method) === ValueTag.Closure) {
-				const closure = this.gc.closureRecordAddress(valuePayload(method));
-				if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-				this.pushFrame(closure, args.registers, destination, SINGLE_CALL_RESULT, false, false, this.currentInstructionPc, 0, 2);
-			} else {
-				this.runBuiltinFunction(valuePayload(method), frame, destination, SINGLE_CALL_RESULT, 2, args.registers, 0);
+			switch (valueTag(method)) {
+				case ValueTag.Closure: {
+					const closure = this.gc.closureRecordAddress(valuePayload(method));
+					if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
+					this.pushFrame(closure, args.registers, destination, result, false, false, this.currentInstructionPc, 0, args.length);
+					break;
+				}
+				case ValueTag.BuiltinFunction:
+					this.runBuiltinFunction(valuePayload(method), frame, destination, result, args.length, args.registers, 0);
+					break;
+				default: throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 			}
 		} finally {
 			this.localRoots.length = rootBase;
 			this.releaseRegisterBuiltinArgs(args);
 		}
-		return true;
 	}
 	private loadTableIndex(base: Value, key: Value, frame: CallFrame, targetIndex: number): boolean {
 		const result = this.tableLookupResult;
@@ -529,17 +556,65 @@ export class CPU implements MappedPageInvalidator {
 		if (result.extraVisits === 0 && result.slot >= 0) page.tableCacheSlots[pageOffset] = result.slot;
 		return this.finishTableRead(frame, targetIndex, base, valueString(key), result);
 	}
-	private storeTableIndex(base: Value, key: Value, value: Value): void {
+	private storeTableIndex(frame: CallFrame, base: Value, key: Value, value: Value): boolean {
 		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-		this.gc.tables.set(valuePayload(base), key, value);
+		const tables = this.gc.tables, record = valuePayload(base);
+		if (tables.metatableAddress(record) === 0) {
+			tables.set(record, key, value);
+			return false;
+		}
+		const assignment = this.tableLookupResult;
+		tables.resolveAssignment(record, this.newIndexKey, key, assignment);
+		if (this.finishTableAssignment(frame, key, value, assignment)) return true;
+		tables.set(assignment.receiver, key, value);
+		return false;
 	}
-	private storeTableIntegerIndex(base: Value, index: number, value: Value): void {
-		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-		this.gc.tables.setInteger(valuePayload(base), index, value);
+	private finishTableAssignment(frame: CallFrame, key: Value, value: Value, assignment: TableLookupResult): boolean {
+		this.charge(assignment.extraVisits * TABLE_INDEX_VISIT_CYCLES);
+		if (assignment.status === TableLookupStatus.Store) return false;
+		if (assignment.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+		if (assignment.status === TableLookupStatus.Forward) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
+		this.invokeTableMetamethod(frame, assignment.value, 0, DISCARD_CALL_RESULT, valueTable(assignment.receiver), key, value);
+		return true;
 	}
-	private storeTableFieldIndexCached(base: Value, page: DecodedInstructionPage, pageOffset: number, key: StringId, value: Value): void {
+	private storeTableFieldIndexCached(frame: CallFrame, base: Value, page: DecodedInstructionPage, pageOffset: number, key: StringId, value: Value): boolean {
 		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-		page.tableCacheSlots[pageOffset] = this.gc.tables.storeStringKeyCached(valuePayload(base), key, page.tableCacheSlots[pageOffset], valueTag(value), valuePayload(value));
+		const tables = this.gc.tables, record = valuePayload(base);
+		const tag = valueTag(value), word = valuePayload(value);
+		if (tables.storePredictedStringKey(record, key, page.tableCacheSlots[pageOffset], tag, word)) return false;
+		if (tables.metatableAddress(record) === 0) {
+			page.tableCacheSlots[pageOffset] = tables.storeStringKey(record, key, tag, word);
+			return false;
+		}
+		const assignment = this.tableLookupResult, field = valueString(key);
+		tables.resolveAssignment(record, this.newIndexKey, field, assignment, page.tableCacheSlots[pageOffset]);
+		if (this.finishTableAssignment(frame, field, value, assignment)) return true;
+		if (assignment.extraVisits === 0) {
+			page.tableCacheSlots[pageOffset] = tables.storeStringKeyCached(record, key, assignment.slot, tag, word);
+		} else tables.storeStringKey(assignment.receiver, key, tag, word);
+		return false;
+	}
+	private executeLength(frame: CallFrame, destination: number, source: number): boolean {
+		const registers = frame.registers;
+		switch (registers.getTag(source)) {
+			case ValueTag.String:
+				this.setRegisterIntegerFast(frame, registers, destination, this.stringPool.byteLength(registers.getStringId(source)));
+				return false;
+			case ValueTag.Table: {
+				const record = registers.getPayload(source);
+				const method = this.gc.tables.metafield(record, this.lengthKey);
+				if (!isNil(method)) {
+					const operand = valueTable(record);
+					this.invokeTableMetamethod(frame, method, destination, SINGLE_CALL_RESULT, operand, operand);
+					return true;
+				}
+				const boundary = this.gc.tables.length(record, this.tableLengthWork);
+				this.charge(this.tableLengthWork.probes * TABLE_LENGTH_PROBE_CYCLES);
+				this.setRegisterIntegerFast(frame, registers, destination, boundary);
+				return false;
+			}
+			default: throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
+		}
 	}
 
 	private clearCallStack(): void {
@@ -2416,7 +2491,7 @@ export class CPU implements MappedPageInvalidator {
 		const image = frame.executionImage;
 
 		const region = compileJavaScriptRegion(page, plans, image, this.memory, this.stringPool,
-			this.globalBank.slots, this.systemGlobalBank.slots, this.cop0Words, this.gc);
+			this.globalBank.slots, this.systemGlobalBank.slots, this.cop0Words, this.gc, this.newIndexKey, this.lengthKey);
 		this.compiledCodeCache.install(page, region);
 		for (const block of region.entries) {
 			page.dispatchCycles[block.firstWord] = BASE_CYCLES[page.ops[block.firstWord]];
@@ -2515,7 +2590,9 @@ export class CPU implements MappedPageInvalidator {
 					this.copyRegisterToUpvalue(frame.captureAddress(exit.exitB), registers, exit.exitA); break;
 				case CompiledBlockExit.InvalidOperand:
 				case CompiledBlockExit.InvalidConstant: throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				case CompiledBlockExit.InvalidLength: throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
+				case CompiledBlockExit.Length:
+					if (this.executeLength(frame, exit.exitA, exit.exitB)) return;
+					break;
 				case CompiledBlockExit.AllocateTable: {
 					const table = this.createTable(exit.exitB, exit.exitC);
 					registers.setTable(exit.exitA, table);
@@ -2547,13 +2624,11 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.WriteInteger:
 				case CompiledBlockExit.WriteIndex: {
 					const base = registers.get(exit.exitA), value = this.readRKValue(frame, exit.exitC);
-					if (exit.exit === CompiledBlockExit.WriteField) {
-						this.storeTableFieldIndexCached(base, page, exit.exitWord, image.constWords[exit.exitB], value);
-					} else if (exit.exit === CompiledBlockExit.WriteInteger) {
-						this.storeTableIntegerIndex(base, exit.exitB, value);
-					} else {
-						this.storeTableIndex(base, this.readRKValue(frame, exit.exitB), value);
-					}
+					const invoked = exit.exit === CompiledBlockExit.WriteField
+						? this.storeTableFieldIndexCached(frame, base, page, exit.exitWord, image.constWords[exit.exitB], value)
+						: this.storeTableIndex(frame, base, exit.exit === CompiledBlockExit.WriteInteger
+							? valueInteger(exit.exitB) : this.readRKValue(frame, exit.exitB), value);
+					if (invoked) return;
 					break;
 				}
 			}
@@ -2701,14 +2776,14 @@ export class CPU implements MappedPageInvalidator {
 				}
 				case OpCode.SETI: {
 					const base = registers.get(a), index = page.b[pageOffset], value = this.readRKValue(frame, page.c[pageOffset]);
-					if (valueTag(base) !== ValueTag.Table || !this.gc.tables.storeIntegerArrayKey(valuePayload(base), index, valueTag(value), valuePayload(value)))
-						this.storeTableIntegerIndex(base, index, value);
+					if (valueTag(base) !== ValueTag.Table || !this.gc.tables.storeIntegerArrayKey(valuePayload(base), index, valueTag(value), valuePayload(value), this.newIndexKey))
+						this.storeTableIndex(frame, base, valueInteger(index), value);
 					return;
 				}
 				case OpCode.GETFIELD:
 					this.loadTableFieldIndexCached(registers.get(page.b[pageOffset]), page, pageOffset, image.constWords[page.c[pageOffset]], frame, a); return;
 				case OpCode.SETFIELD:
-					this.storeTableFieldIndexCached(registers.get(a), page, pageOffset, image.constWords[page.b[pageOffset]], this.readRKValue(frame, page.c[pageOffset])); return;
+					this.storeTableFieldIndexCached(frame, registers.get(a), page, pageOffset, image.constWords[page.b[pageOffset]], this.readRKValue(frame, page.c[pageOffset])); return;
 				case OpCode.SELF: {
 					const b = page.b[pageOffset], base = registers.get(b), key = image.constWords[page.c[pageOffset]];
 					registers.copySlot(a + 1, b); this.bumpRegisterTop(frame, a + 1);
@@ -2718,7 +2793,7 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.GETT:
 					this.loadTableIndex(registers.get(page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]), frame, a); return;
 				case OpCode.SETT:
-					this.storeTableIndex(registers.get(a), this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset])); return;
+					this.storeTableIndex(frame, registers.get(a), this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset])); return;
 				case OpCode.NEWT: {
 					const arraySize = page.b[pageOffset];
 					const table = this.createTable(arraySize, page.c[pageOffset]);
@@ -2777,24 +2852,8 @@ export class CPU implements MappedPageInvalidator {
 						!registers.isTruthy(page.b[pageOffset]),
 					);
 					return;
-				case OpCode.LEN: {
-					const b = page.b[pageOffset];
-					switch (registers.getTag(b)) {
-						case ValueTag.String: {
-							const cp = this.stringPool.byteLength(registers.getStringId(b));
-							this.setRegisterIntegerFast(frame, registers, a, cp);
-							return;
-						}
-						case ValueTag.Table: {
-							const boundary = this.gc.tables.length(registers.getPayload(b), this.tableLengthWork);
-							this.instructionBudgetRemaining -= this.tableLengthWork.probes * TABLE_LENGTH_PROBE_CYCLES;
-							this.setRegisterIntegerFast(frame, registers, a, boundary);
-							return;
-						}
-						default:
-							throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
-					}
-				}
+				case OpCode.LEN:
+					this.executeLength(frame, a, page.b[pageOffset]); return;
 				case OpCode.BNOT: {
 					const value = integerOperand(registers.get(page.b[pageOffset]));
 					this.setRegisterIntegerFast(frame, registers, a, ~value);
@@ -3562,7 +3621,7 @@ export class CPU implements MappedPageInvalidator {
 				if (builtinId === BuiltinFunctionId.PCall || builtinId === BuiltinFunctionId.XPCall) {
 					const word = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted);
 					this.startProtectedCall(builtinId, caller, this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0,
-						(word & CALL_RESULT_EXTEND_TOP) !== 0 ? SINGLE_CALL_RESULT : 0, argumentBase, argumentCount, true, detached);
+						(word & CALL_RESULT_EXTEND_TOP) !== 0 ? DISCARD_CALL_RESULT : 0, argumentBase, argumentCount, true, detached);
 					return;
 				}
 				const builtinArgs = this.acquireRegisterBuiltinArgs();
@@ -3597,6 +3656,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			return;
 		}
+		if (this.finishImplicitProtectedHandler(continuationIndex, true)) return;
 		const resultCount = this.writeProtectedResultsFromBuiltinResults(continuationIndex, true, values);
 		this.charge(resultCount);
 		this.finishProtectedContinuation(continuationIndex, resultCount);
@@ -3617,6 +3677,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			return;
 		}
+		if (this.finishImplicitProtectedHandler(continuationIndex, true)) return;
 		const resultCount = this.writeProtectedResultsFromRegisters(continuationIndex, true, source, sourceBase, sourceCount);
 		this.charge(resultCount);
 		this.finishProtectedContinuation(continuationIndex, resultCount);
@@ -3626,6 +3687,7 @@ export class CPU implements MappedPageInvalidator {
 		continuationIndex: number,
 		error: Value,
 	): void {
+		if (this.finishImplicitProtectedHandler(continuationIndex, false)) return;
 		const caller = this.protectedCaller(continuationIndex);
 		const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
 		const returnCount = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted) | 0;
@@ -3643,6 +3705,21 @@ export class CPU implements MappedPageInvalidator {
 		caller.setCallResultTop(callBase + resultCount, returnCount);
 		this.charge(resultCount);
 		this.finishProtectedContinuation(continuationIndex, resultCount);
+	}
+
+	private finishImplicitProtectedHandler(continuationIndex: number, succeeded: boolean): boolean {
+		const thread = this.activeThread;
+		if ((thread.protectedWord(continuationIndex, ProtectedField.Flags) & PROTECTED_CALL_PARENT) === 0
+			|| (thread.protectedWord(continuationIndex, ProtectedField.Wanted) & CALL_RESULT_EXTEND_TOP) === 0) return false;
+		// Deliver the protected handler's first return directly. No temporary
+		// guest slot is written, regardless of the enclosing operation's result count.
+		thread.protectedDepth = continuationIndex;
+		const results = this.acquireBuiltinResults();
+		try {
+			results.push(valueBool(succeeded));
+			this.finishProtectedCallFromBuiltinResults(continuationIndex - 1, results);
+		} finally { this.releaseBuiltinResults(results); }
+		return true;
 	}
 
 	private writeProtectedResultsFromBuiltinResults(
@@ -3817,15 +3894,14 @@ export class CPU implements MappedPageInvalidator {
 
 	private runBuiltinRawGet(args: BuiltinArgsView, out: BuiltinResults): void {
 		const registers = args.registers, base = args.base;
-		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		if (args.length < 2 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		const address = registers.getPayload(base);
-		if (args.length > 1) this.gc.tables.load(address, registers.getTag(base + 1), registers.getPayload(base + 1), out, 0);
-		else this.gc.tables.load(address, ValueTag.Nil, 0, out, 0);
+		this.gc.tables.load(address, registers.getTag(base + 1), registers.getPayload(base + 1), out, 0);
 	}
 	private runBuiltinRawSet(args: BuiltinArgsView, out: BuiltinResults): void {
 		const registers = args.registers, base = args.base;
-		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		this.gc.tables.set(registers.getPayload(base), args.length > 1 ? registers.get(base + 1) : valueNil(), args.length > 2 ? registers.get(base + 2) : valueNil());
+		if (args.length < 3 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		this.gc.tables.set(registers.getPayload(base), registers.get(base + 1), registers.get(base + 2));
 		out.push(registers.get(base));
 	}
 
@@ -4134,6 +4210,8 @@ export class CPU implements MappedPageInvalidator {
 	public markHeapRoots(heap: GcHeap): void {
 		heap.markString(this.modeKey);
 		heap.markString(this.indexKey);
+		heap.markString(this.newIndexKey);
+		heap.markString(this.lengthKey);
 		heap.markString(this.errorInErrorHandlingStringId);
 		for (let i = 0; i < this.luaFaultErrorStringIds.length; ++i)
 			if (i !== LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(this.luaFaultErrorStringIds[i]);

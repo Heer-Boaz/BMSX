@@ -18,7 +18,8 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 		const tag = `l${word}`, failure = r.exit(exit);
 		const value = `v${word}`;
 		return `const ${tag}=${r.tagOperand(b)};if(${tag}!==${ValueTag.Table}&&${tag}!==${ValueTag.String}) ${failure}
-			let ${value};if(${tag}===${ValueTag.Table}){${value}=tb.length(${r.wordOperand(b)},S.lengthWork);
+			let ${value};if(${tag}===${ValueTag.Table}){const A=${r.wordOperand(b)};if(!tn(tb.mf(A,lk))) ${failure}
+			${value}=tb.length(A,S.lengthWork);
 			B-=S.lengthWork.probes*${TABLE_LENGTH_PROBE_CYCLES};}else{${value}=q.byteLength(${r.wordOperand(b)});}
 			${r.writeInteger(a, value)}`;
 	}
@@ -29,21 +30,22 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 	const failure = r.exit(exit);
 	const value = load ? '' : `${r.tagOperand(c)},${r.wordOperand(c)}`;
 	const target = load ? `r,${a}` : value;
+	const arrayTarget = load ? target : `${target},nk`;
 	let access: string;
 	if (op === OpCode.GETI || op === OpCode.SETI) {
-		access = `if(!tb.${load ? 'li' : 'si'}(A,${key},${target})) ${failure}`;
+		access = `if(!tb.${load ? 'li' : 'si'}(A,${key},${arrayTarget})) ${failure}`;
 	} else if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF) {
 		access = load ? `if(!tb.lp(A,k[${key}],ts[${word}],${target})) ${failure}`
 			: `const key=k[${key}];
-				if(!tb.sp(A,key,ts[${word}],${target})){const slot=tb.sg(A,key,${target});
+				if(!tb.sp(A,key,ts[${word}],${target})){if(!tn(tb.mf(A,nk))) ${failure}const slot=tb.sg(A,key,${target});
 					if(slot===${TABLE_STORE_REQUIRES_GROWTH}) ${failure} ts[${word}]=slot;}`;
 	} else {
 		access = `const tag=${r.tagOperand(key)},key=${r.wordOperand(key)};
-			if(tag===${ValueTag.Integer}||tag===${ValueTag.Float}){const i=tag===${ValueTag.Integer}?key|0:fi(key);if(i===null||!tb.${load ? 'li' : 'si'}(A,i,${target})) ${failure}}
+			if(tag===${ValueTag.Integer}||tag===${ValueTag.Float}){const i=tag===${ValueTag.Integer}?key|0:fi(key);if(i===null||!tb.${load ? 'li' : 'si'}(A,i,${arrayTarget})) ${failure}}
 			else if(tag!==${ValueTag.String}) ${failure}
 			else if(!tb.${load ? 'lp' : 'sp'}(A,key,ts[${word}],${target})) ${load
 				? failure
-				: `{const slot=tb.sg(A,key,${target});
+				: `{if(!tn(tb.mf(A,nk))) ${failure}const slot=tb.sg(A,key,${target});
 					if(slot===${TABLE_STORE_REQUIRES_GROWTH}) ${failure} ts[${word}]=slot;}`}`;
 	}
 	const source = `${receiver}if(${r.tagOperand(base)}!==${ValueTag.Table}) ${failure}{const A=${r.wordOperand(base)};${access}}`;

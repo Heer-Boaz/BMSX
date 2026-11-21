@@ -102,7 +102,7 @@ unpack_ok,unpack_error=pcall(table.unpack,faulting,1,12)
 		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('unpack_ok')), valueBool(false));
 		const error = cpu.getGlobalByKey(cpu.stringPool.intern('unpack_error'));
 		assert.ok(valueIsString(error));
-		assert.equal(cpu.stringPool.toString(asStringId(error)), 'Metatable __index loop detected.');
+		assert.equal(cpu.stringPool.toString(asStringId(error)), 'Metatable index chain too long.');
 	});
 
 	test(`BIOS mapped byte spans preserve raw bytes and stop at the supplied length (O${optLevel})`, () => {

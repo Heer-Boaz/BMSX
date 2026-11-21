@@ -81,7 +81,7 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 	for (const cpu of [js, ref]) cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 	for (const key of [valueInteger(1), valueInteger(2), valueInteger(4), valueInteger(5), valueInteger(0),
 		valueFloat(-0), valueInteger(-7), valueFloat(1), valueFloat(1.5), valueInteger(0x7fffffff), valueInteger(16777217),
-		valueFloat(16777216), valueFloat(2 ** 31), valueFloat(2 ** 32), valueFloatBits(0xffc01234), valueFloat(Infinity),
+		valueFloat(16777216), valueFloat(2 ** 31), valueFloat(2 ** 32), valueFloat(Infinity),
 		valueFloat(-Infinity), valueBool(false), valueBool(true), 'field'] as const) {
 		for (const value of [valueNil(), valueBool(false), valueBool(true), valueFloat(-0), valueFloatBits(0xffc01234), valueFloat(Infinity), 'value'] as const) {
 			for (const cpu of [js, ref]) {

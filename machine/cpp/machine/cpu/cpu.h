@@ -334,6 +334,7 @@ private:
 	void finishProtectedCall(u32 continuationIndex, const Value* values, int valueCount);
 	void finishProtectedCall(u32 continuationIndex, CallFrame& source, int sourceBase, int sourceCount);
 	void finishProtectedCallWithError(u32 continuationIndex, Value errorValue);
+	bool finishImplicitProtectedHandler(u32 continuationIndex, bool succeeded);
 	CallFrame& protectedCaller(u32 continuationIndex);
 	int writeProtectedResults(u32 continuationIndex, bool prefix, const Value* values, int valueCount);
 	int writeProtectedResults(u32 continuationIndex, bool prefix, CallFrame& source, int sourceBase, int sourceCount);
@@ -415,14 +416,17 @@ private:
 		return registers.get(static_cast<size_t>(rk));
 	}
 	u32 tableIndexAddress(Value base) const;
-	bool finishTableRead(CallFrame& frame, int destination, Value base, Value key, const TableLookupResult& result);
+	void invokeImplicit(CallFrame& frame, CallResultPlacement, Value method, std::span<const Value> args);
+	bool finishTableRead(CallFrame& frame, int destination, Value base, Value key, TableLookupResult& result);
 	bool loadTableIndex(CallFrame& frame, int destination, Value base, Value key);
 	bool loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index);
 	bool loadTableFieldIndexCached(CallFrame& frame, int destination, int& predictedSlot, Value base, StringId key);
 	bool loadNativeTableField(CallFrame& frame, int destination, TableStringReadCache& cache, Value base, StringId key);
-	void storeTableIndex(const Value& base, const Value& key, const Value& value);
-	void storeTableIntegerIndex(const Value& base, int index, const Value& value);
-	void storeTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key, const Value& value);
+	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
+	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
+	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);
+	bool storeTableFieldIndexCached(CallFrame&, int& predictedSlot, Value base, StringId key, Value value);
+	bool executeLength(CallFrame& frame, int destination, Value operand);
 
 	void clearCallStack();
 	void ensureStackSize(size_t size, Value root = valueNil(), bool frameEntry = false, bool exception = false);
@@ -538,10 +542,12 @@ private:
 	LuaHeap m_luaHeap;
 	StringPool m_stringPool;
 	Value m_indexKey;
+	Value m_newIndexKey;
+	Value m_lengthKey;
 	GcHeap m_heap;
 	Thread m_rootView;
 	std::array<Thread, 2> m_transferViews;
-	std::array<Value, LUA_FAULT_REASON_INVALID_NEXT_KEY + 1u> m_luaFaultErrorValues;
+	std::array<Value, LUA_FAULT_REASON_INDEX_NAN + 1u> m_luaFaultErrorValues;
 	Value m_errorInErrorHandlingValue;
 	std::unordered_map<u32, std::vector<u32>> m_staticClosuresByAddress;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;

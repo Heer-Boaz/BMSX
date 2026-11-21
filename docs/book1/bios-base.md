@@ -306,7 +306,9 @@ All four functions below require a Table as their first argument; otherwise they
 | `rawset(t, key, value)` | Writes only the own mapping and returns `t`. Nil `value` deletes it. |
 
 
-For `rawget` and `rawset`, a nil key raises `INDEX_NIL` (4). `rawset` uses the
+`rawget` requires a key argument and returns nil for a nil or NaN key.
+`rawset` requires both the key and value arguments. It rejects nil or NaN
+keys with `INDEX_NIL` (4) or `INDEX_NAN` (12), respectively, and uses the
 ordinary [Table-length boundary rules](cpu.md#sec-cpu-table-length).
 
 
