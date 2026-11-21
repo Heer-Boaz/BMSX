@@ -3,6 +3,7 @@
 #include <optional>
 #include <span>
 #include <vector>
+#include "machine/cpu/native_ir_ops.h"
 #include "machine/cpu/value_slots.h"
 
 namespace bmsx {
@@ -11,29 +12,35 @@ struct NativeInstruction;
 struct NativeIrBlock;
 class NativeRegisterUses;
 
-struct NativeSlotType;
-
 // Guest-slot facts on the successful path. Register assignment and spills
 // do not affect these facts. Entry facts must have an explicit admission proof.
 class NativeTypePropagation {
 public:
 	void specializeRegion(std::span<NativeIrBlock> blocks, ConstValueSpan constants,
 		const NativeRegisterUses& uses, std::vector<NativeSlotType>& imports);
-	void specialize(std::span<NativeInstruction> instructions, ConstValueSpan constants,
-		std::span<const NativeSlotType> entryTypes = {});
-
 private:
 	struct Transfer;
 	struct Fact {
 		size_t block = 0;
 		ValueTag tag = ValueTag::Nil;
+		u32 assumption = 0;
+	};
+	struct Assumption {
+		NativeSlotType type;
+		u32 source;
+		bool required = false;
 	};
 
-	std::optional<ValueTag> type(int selector, ConstValueSpan constants) const;
-	void define(u16 slot, std::optional<ValueTag> tag);
+	using Type = std::optional<Fact>;
+	Type type(int selector, ConstValueSpan constants) const;
+	void define(u16 slot, Type type);
+	void define(u16 slot, ValueTag tag) { define(slot, Fact{m_block, tag}); }
+	void require(Type type);
 	void forgetRange(size_t first, size_t end);
+	void specialize(std::span<NativeInstruction>, ConstValueSpan, size_t first = 0, size_t count = 0);
 
 	std::vector<Fact> m_facts;
+	std::vector<Assumption> m_assumptions;
 	size_t m_block = 0;
 };
 

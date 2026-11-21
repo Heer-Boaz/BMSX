@@ -136,7 +136,7 @@ void NativeRegisterUses::beginBlock(std::span<const NativeInstruction> instructi
 		if (count == 0) continue;
 		int first = ranges[0].first, end = ranges[0].end();
 		for (size_t range = 1; range < count; ++range) {
-			if (ranges[range].first <= end) {
+			if (static_cast<int>(ranges[range].first) <= end) {
 				end = std::max(end, ranges[range].end());
 			} else {
 				m_nextUses.push_back({first, position});

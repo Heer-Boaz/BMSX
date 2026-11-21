@@ -83,7 +83,7 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 			compiler.lower(instruction);
 		compiler.endBlock();
 	}
-	region->m_code = compiler.finish(region->codeBytes);
+	region->m_code = compiler.finish(region->codeBytes, region->m_replaySites);
 	return std::move(ir.entries);
 }
 

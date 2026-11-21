@@ -1684,9 +1684,8 @@ RunResult CPU::runLoop(
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const NativeBlock* nativeBlock = nullptr;
 	int nativeFirstDispatchCycles = 0;
-	bool forceScalarOnce = false;
 	NativeCpuRunState nativeState{.state = {}, .cpu = this, .targetDepth = targetDepth,
-		.error = {}};
+		.error = {}, .replayPc = {}};
 #endif
 	for (;;) {
 		try {
@@ -1745,7 +1744,7 @@ RunResult CPU::runLoop(
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 					// The next instruction belongs to the interrupt handler; retry admission
 					// for the suspended instruction after RFE instead.
-					forceScalarOnce = false;
+					nativeState.replayPc.reset();
 #endif
 					enterPendingInterrupt();
 					continue;
@@ -1872,7 +1871,7 @@ dispatch_instruction:
 					// interrupt entry above cancels the retry before any handler runs.
 					// An interior scalar continuation may already have run before
 					// reaching the next native entry. Only bypass its exact PC.
-					if ((std::exchange(forceScalarOnce, false) && pc == nativeState.state.scalarPc)
+					if (std::exchange(nativeState.replayPc, std::nullopt) == pc
 						|| std::endian::native == std::endian::big || thread.stackRequiresScalar()) {
 						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
 						dispatchOp = decoded->op;
@@ -2030,7 +2029,6 @@ dispatch_native_block: {
 				total.concat += counts.concat;
 				total.concatn += counts.concatn;
 #endif
-				if (nativeState.forceScalar) { forceScalarOnce = true; nativeState.forceScalar = false; }
 				if (nativeState.error) std::rethrow_exception(std::exchange(nativeState.error, {}));
 				DISPATCH_CONTINUE();
 			}

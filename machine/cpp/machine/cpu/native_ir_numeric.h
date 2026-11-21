@@ -20,6 +20,7 @@ struct NativeNumericPlan {
 	NativeNumericAction action;
 	std::optional<ValueTag> left, right, result;
 	bool guardLeft = false, guardRight = false;
+	bool resultDependsOnInputs = false;
 };
 
 // Missing tags are unknown, not BLua Nil. Guarded tags only hold on the

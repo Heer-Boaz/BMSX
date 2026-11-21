@@ -428,6 +428,63 @@ void previousChargesSurviveLaterExit(bool blocked) {
 	requireParity(native, scalar);
 }
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void typedSuccessorRechecksLoopEntry() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 0, 1); // -> word 3
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::ADD), 1, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::MOV), 2, 1, 0);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255); // -5 -> word 3
+	image.constants.emplace_back(Blua32FloatConstant{0x3fa00000u}); // 1.25
+	image.functions = {{.firstWord = 0, .wordCount = 8, .maxStack = 3}};
+
+	CpuMachine native(image), scalar(image, true);
+	native.cpu.prepareSystemNativeCode();
+	const u32 start = native.rom.textAddress;
+	const u32 add = start + 3u * INSTRUCTION_BYTES;
+	const u32 save = start + 5u * INSTRUCTION_BYTES;
+	const auto* lookup = native.cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup.get();
+	require(lookup, "the backed instruction page is published before the fixture runs");
+	for (const u32 pc : {start, add}) {
+		const auto* page = lookup->find(pc, 0);
+		require(page && page->nativeBlocks && page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES],
+			"both the forward producer and loop target have published native entries");
+	}
+
+	// First leave enough cycles to admit a whole second iteration. The Float
+	// result must not depend on a short grant forcing scalar execution.
+	constexpr int firstIterationCycles = 12; // K1, JMP, ADD, MOV, LOADK, JMP
+	constexpr int subsequentIterationCycles = 8; // ADD, MOV, LOADK, JMP
+	require(test::runCpuParity(native.cpu, scalar.cpu, firstIterationCycles + subsequentIterationCycles) == RunResult::Yielded,
+		"both paths complete two loop iterations in the same grant");
+	requireParity(native, scalar);
+	const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
+	const u32 backedge = start + 7u * INSTRUCTION_BYTES;
+	require(frame.registers.get(2) == valueFloat(2.5f) && native.cpu.instructionBudgetRemaining == 0
+		&& native.cpu.readCurrentInstructionPc() == backedge && native.cpu.lastPc == backedge
+		&& frame.readControl(FrameField::Pc) == add,
+		"the Float iteration completes at its backedge without the forward edge's Integer assumption");
+
+	// Repeat with just one cycle left on the second arrival: it starts ADD,
+	// but must not execute the following MOV.
+	for (auto* machine : {&native, &scalar})
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+	require(test::runCpuParity(native.cpu, scalar.cpu, firstIterationCycles + 1) == RunResult::Yielded,
+		"both paths yield before the second MOV");
+	requireParity(native, scalar);
+	require(frame.registers.get(2) == valueInteger(2) && frame.registers.get(1) == valueFloat(2.5f),
+		"the first sum stays Integer and the second sum uses the Float from the backedge");
+	require(native.cpu.instructionBudgetRemaining == -1 && native.cpu.readCurrentInstructionPc() == add
+		&& native.cpu.lastPc == add + INSTRUCTION_BYTES && frame.readControl(FrameField::Pc) == save,
+		"the short grant pays only the started WIDE ADD and stops at its successor");
+}
+#endif
+
 void terminalSpanStartsWithOneCycle(int count, bool displaced) {
 	const auto image = wordLoop(count, displaced);
 	const u32 bssBytes = std::max(test::RAM_CODE_FIXTURE_BYTES, 0x4000u + static_cast<u32>(count) * 4u);
@@ -559,6 +616,7 @@ int main() {
 		require(!nativeBlockSupports(static_cast<u8>(OpCode::WIDE)), "WIDE is a decode prefix");
 		for (size_t op = 1; op < OPCODE_COUNT; ++op) require(nativeBlockSupports(op), "every executable BLua32 opcode is admitted by native codegen");
 		nativeRegisterSpillIsDirty();
+		typedSuccessorRechecksLoopEntry();
 #endif
 		for (bool displaced : {false, true}) for (int count : {0, 5, 1025}) plainSpansAndCycles(count, displaced);
 		pageTailEntry(1, false); pageTailEntry(2, false); pageTailEntry(2, true);

@@ -4,11 +4,6 @@
 
 namespace bmsx {
 namespace {
-const NativeBlockExitSite scalarBoundary = [] {
-	NativeBlockExitSite result;
-	result.exit = NativeBlockExit::ScalarBoundary;
-	return result;
-}();
 bool registerTransferProves(const NativeRegisterCache::State& registers, NativeSlotType type) {
 	return std::any_of(registers.begin(), registers.end(), [&](const auto& binding) {
 		return binding.guest == type.slot && binding.tag == type.tag;
@@ -31,15 +26,16 @@ void NativeLowering::beginBlock(size_t index) {
 	// Internal edges have already established the exact same payload map.
 	const u32 pc = m_blocks[index]->firstPc;
 	const State memoryAuthoritative{};
-	for (const auto type : ir.entryTypes)
-		if (!registerTransferProves(entry.registers, type))
-			deferColdExit(m_cache.guard(type.slot, type.tag, SLJIT_R2), NativeResumePoint{pc, 0, 0}, memoryAuthoritative);
-	for (auto* miss : m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2))
-		deferColdExit(miss, NativeResumePoint{pc, 0, 0}, memoryAuthoritative);
-	entry.proven = sljit_emit_label(m_compiler);
+	const NativeResumePoint replay{pc, 0, 0};
 	auto* shortGrant = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM,
 		m_blocks[index]->admissionCycles);
-	deferColdExit(shortGrant, NativeResumePoint{pc, 0, 0}, entry.registers);
+	deferColdExit(shortGrant, replay, memoryAuthoritative);
+	for (const auto type : ir.entryTypes)
+		if (!registerTransferProves(entry.registers, type))
+			deferColdExit(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, memoryAuthoritative);
+	for (auto* miss : m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2))
+		deferColdExit(miss, replay, memoryAuthoritative);
+	entry.proven = sljit_emit_label(m_compiler);
 }
 
 void NativeLowering::emitTop(int extent) {
@@ -52,20 +48,6 @@ void NativeLowering::emitTop(int extent) {
 		offsetof(NativeBlockRunState, registerTop), SLJIT_IMM, extent);
 	sljit_set_label(retained, sljit_emit_label(m_compiler));
 }
-void NativeLowering::emitScalarBoundary(NativeResumePoint point) {
-	const auto [pc, cycles, top] = point;
-	m_cache.publish();
-	emitTop(top);
-	if (cycles)
-		sljit_emit_op2(
-			m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, cycles);
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, scalarPc),
-		SLJIT_IMM, pc);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&scalarBoundary));
-	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM, reinterpret_cast<sljit_sw>(nativeBlockGate().leaveSegment));
-	m_terminal = true;
-}
-
 void NativeLowering::emitLeave(NativeBlockExitSite& exit, Charge charge) {
 	m_cache.publish();
 	const auto& gate = nativeBlockGate();
@@ -98,6 +80,12 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t target) {
 				exit, source, Charge::Paid);
 		}
 		auto& entry = m_entries[target];
+		const auto& successor = m_ir[target];
+		const NativeResumePoint replay{exit.nextPc, 0, 0,
+			NativeResumePoint::CompletedInstruction{exit.currentPc, exit.lastPc}};
+		if (const int minimum = m_blocks[target]->admissionCycles; minimum != 0)
+			deferColdExit(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
+				NativeBlockAbi::budget, 0, SLJIT_IMM, minimum), replay, source);
 		if (!entry.planned && !m_uses.hasForwardMerge(target)) {
 			entry.planned = true;
 			entry.registers = source;
@@ -111,11 +99,12 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t target) {
 						binding = {};
 				}
 		}
-		for (const auto type : m_ir[target].entryTypes)
-			if (!registerTransferProves(entry.registers, type))
-				fault(m_cache.guard(type.slot, type.tag, SLJIT_R2), exit, source, Charge::Paid);
+		if (successor.typePredecessor != m_current)
+			for (const auto type : successor.entryTypes)
+				if (!registerTransferProves(entry.registers, type))
+					deferColdExit(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, source);
 		for (auto* miss : m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2))
-			fault(miss, exit, source, Charge::Paid);
+			deferColdExit(miss, replay, source);
 		m_branches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), target});
 		m_terminal = true;
 		return;

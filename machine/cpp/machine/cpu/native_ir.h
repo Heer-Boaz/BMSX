@@ -3,6 +3,7 @@
 #include "machine/cpu/native_block.h"
 #include "machine/cpu/native_ir_ops.h"
 
+#include <limits>
 #include <utility>
 
 namespace bmsx {
@@ -12,8 +13,13 @@ class NativeRegisterUses;
 // A miss that must execute the opcode in the interpreter. The charge and
 // top describe only the instructions that already completed.
 struct NativeResumePoint {
+	struct CompletedInstruction {
+		u32 pc, lastWord;
+		bool operator==(const CompletedInstruction&) const = default;
+	};
 	u32 pc;
 	int cycles, top;
+	std::optional<CompletedInstruction> completed{};
 	bool operator==(const NativeResumePoint&) const = default;
 };
 
@@ -44,6 +50,7 @@ struct NativeIrBlock {
 	size_t optimizationPrefix = 0;
 	bool nativeSuccessor = true;
 	std::span<const NativeSlotType> entryTypes{};
+	size_t typePredecessor = std::numeric_limits<size_t>::max();
 };
 
 class NativeIrRegion {

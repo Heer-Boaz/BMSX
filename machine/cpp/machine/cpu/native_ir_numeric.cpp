@@ -26,8 +26,8 @@ NativeNumericPlan planNativeNumeric(OpCode op, std::optional<ValueTag> left,
 	const bool bitwise = op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR ||
 		op == OpCode::SHL || op == OpCode::SHR || op == OpCode::BNOT;
 	const bool bothIntegers = left == integer && right == integer;
-	const bool producesFloat = !bitwise &&
-		(op == OpCode::DIV || op == OpCode::POW || left == floating || right == floating);
+	const bool forcedFloat = op == OpCode::DIV || op == OpCode::POW;
+	const bool producesFloat = !bitwise && (forcedFloat || left == floating || right == floating);
 	std::optional<ValueTag> result;
 	if (producesFloat)
 		result = floating;
@@ -37,7 +37,7 @@ NativeNumericPlan planNativeNumeric(OpCode op, std::optional<ValueTag> left,
 	auto action = producesFloat ? NativeNumericAction::Float : NativeNumericAction::Word;
 	if (!left || !right || op == OpCode::MOD || op == OpCode::FLOORDIV || op == OpCode::POW || (bitwise && !bothIntegers))
 		action = NativeNumericAction::Kernel;
-	return {action, left, right, result, guardLeft, guardRight};
+	return {action, left, right, result, guardLeft, guardRight, result.has_value() && !bitwise && !forcedFloat};
 }
 
 } // namespace bmsx

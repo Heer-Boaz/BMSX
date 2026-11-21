@@ -151,7 +151,8 @@ void NativeLowering::lowerOperation(const NativeNot& instruction, const NativeIn
 }
 
 void NativeLowering::lowerOperation(const NativeReplay&, const NativeInstruction& row) {
-	emitScalarBoundary(row.before);
+	deferColdExit(sljit_emit_jump(m_compiler, SLJIT_JUMP), row.before, m_cache.state());
+	m_terminal = true;
 }
 
 void NativeLowering::lowerOperation(const NativeJump&, const NativeInstruction&) {
@@ -206,13 +207,31 @@ void NativeLowering::endBlock() {
 	if (!m_terminal)
 		emitExit(m_blocks[m_current]->terminal, m_ir[m_current].successors[0]);
 }
-void* NativeLowering::finish(size_t& codeBytes) {
+void* NativeLowering::finish(size_t& codeBytes, std::vector<NativeBlockExitSite>& replaySites) {
 	emitRomReads();
+	replaySites.reserve(std::count_if(m_coldExits.begin(), m_coldExits.end(), [](const ColdExit& exit) {
+		return std::holds_alternative<NativeResumePoint>(exit.target);
+	}));
 	for (auto& exit : m_coldExits) {
 		exit.label = sljit_emit_label(m_compiler);
 		m_cache.setState(exit.state);
 		if (const auto* semantic = std::get_if<SemanticExit>(&exit.target)) emitLeave(*semantic->site, semantic->charge);
-		else emitScalarBoundary(std::get<NativeResumePoint>(exit.target));
+		else {
+			const auto& point = std::get<NativeResumePoint>(exit.target);
+			auto& site = replaySites.emplace_back(NativeBlockExitSite{
+				.exit = NativeBlockExit::ScalarBoundary,
+				.operands = {.replay = {point.completed.has_value()}},
+				.cycles = point.cycles,
+				.registerTop = point.top,
+				.nextPc = point.pc,
+				.link = {},
+			});
+			if (point.completed) {
+				site.currentPc = point.completed->pc;
+				site.lastPc = point.completed->lastWord;
+			}
+			emitLeave(site, Charge::Pending);
+		}
 	}
 	for (const auto& branch : m_coldBranches)
 		sljit_set_label(branch.jump, m_coldExits[branch.target].label);

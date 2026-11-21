@@ -44,6 +44,7 @@ enum class NativeBlockExit : u8 {
 // are actual counts; -1 selects the open window. Guest frame words retain
 // the instruction encoding at the frame-control boundary.
 union NativeExitOperands {
+	struct Replay { bool hasCompletedInstruction; } replay;
 	struct Call { u16 callee; i16 supplied, requested; } call;
 	struct Return { u16 first; i16 produced; } returned;
 	struct Vararg { u16 first; i16 requested; } vararg;

@@ -102,10 +102,15 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	auto& state = run->state;
 	CallFrame* frame = state.frame;
 	if (exit->exit == NativeBlockExit::ScalarBoundary) {
+		if (exit->operands.replay.hasCompletedInstruction) {
+			cpu.m_currentInstructionPc = exit->currentPc;
+			cpu.m_lastExecutionDomainId = frame->executionImage->executionDomainId;
+			cpu.lastPc = exit->lastPc;
+		}
 		cpu.instructionBudgetRemaining = state.remainingCycles;
-		frame->writeControl(FrameField::Pc, state.scalarPc);
+		frame->writeControl(FrameField::Pc, exit->nextPc);
 		frame->setTop(state.registerTop);
-		run->forceScalar = true;
+		run->replayPc = exit->nextPc;
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		++gateProfile.returns;
 #endif

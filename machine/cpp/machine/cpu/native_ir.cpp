@@ -25,12 +25,11 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, const
 		auto& entry = *entries[index];
 		if (sources[index].fallthrough) entry.sourceWords += entries[index + 1]->sourceWords;
 		const auto& primary = entry.terminal;
-		const auto* alternate = m_blocks[index].taken;
-		const bool resumes = primary.exit == NativeBlockExit::Continue || primary.exit == NativeBlockExit::Call
-			|| nativeBlockExitResumesFrame(primary.exit);
-		m_blocks[index].successors = {
-			resumes ? entryForPc(primary.nextPc) : entries.size(),
-			alternate && alternate->exit == NativeBlockExit::Continue
+		auto& block = m_blocks[index];
+		const auto* alternate = block.taken;
+		block.successors = {
+			block.nativeSuccessor || block.completedCall ? entryForPc(primary.nextPc) : entries.size(),
+			block.nativeSuccessor && alternate && alternate->exit == NativeBlockExit::Continue
 				? entryForPc(alternate->nextPc) : entries.size(),
 		};
 	}
@@ -49,18 +48,23 @@ void NativeIrRegion::translate(const NativeBlockSource& source, const NativeBloc
 	auto block = std::unique_ptr<NativeBlock>(new NativeBlock());
 	block->firstPc = instructions.front().pc;
 	bool controlGuarded = false;
+	bool reachesEnd = true;
 	std::array<NativeExitPlan, NATIVE_BLOCK_MAX_INSTRUCTIONS> checks;
 	size_t slowCount = 0;
 	for (size_t index = 0; index < instructions.size(); ++index) {
 		const auto operation = translateNativeOperation(instructions.subspan(index), constants, controlGuarded);
-		controlGuarded |= std::holds_alternative<NativeControlAccess>(operation);
+		if (const auto* control = std::get_if<NativeControlAccess>(&operation)) {
+			controlGuarded = true;
+			reachesEnd &= control->mode != NativeControlMode::ReadFault && control->mode != NativeControlMode::WriteSemantic;
+		}
+		reachesEnd &= !std::holds_alternative<NativeReplay>(operation);
 		auto& ir = m_instructions.emplace_back(operation);
 		checks[index] = std::visit(NativeCheckedExit{}, ir.operation);
 		slowCount += checks[index].kind != NativeBlockExit::Continue;
 	}
 	const auto& final = m_instructions.back().operation;
 	const auto* call = std::get_if<NativeCallSite>(&final);
-	const bool inlineBuiltin = cpuOwned && call && static_cast<unsigned>(call->supplied) <= 2u
+	const bool inlineBuiltin = reachesEnd && cpuOwned && call && static_cast<unsigned>(call->supplied) <= 2u
 		&& call->requested <= 1;
 	const bool comparison = std::holds_alternative<NativeComparison>(final);
 	const auto* branch = std::get_if<NativeTruthBranch>(&final);
@@ -73,7 +77,8 @@ void NativeIrRegion::translate(const NativeBlockSource& source, const NativeBloc
 	size_t optimizationPrefix = 0;
 	for (size_t index = 0; index < instructions.size(); ++index) {
 		const auto& source = instructions[index];
-		const NativeResumePoint before{source.pc, terminal.cycles, terminal.registerTop};
+		NativeResumePoint before{source.pc, terminal.cycles, terminal.registerTop};
+		if (index != 0) before.completed = NativeResumePoint::CompletedInstruction{terminal.currentPc, terminal.lastPc};
 		if (source.pc != block->firstPc) block->admissionCycles = terminal.cycles;
 		const auto& instruction = *source.decoded;
 		terminal.cycles += instruction.baseCycles;
@@ -168,7 +173,7 @@ void NativeIrRegion::translate(const NativeBlockSource& source, const NativeBloc
 		}
 		else exit.nextPc = branch->target;
 	}
-	m_blocks.push_back({std::span<NativeInstruction>(m_instructions).subspan(first, instructions.size()), taken, {}, beforeFusedJump, completedCall, optimizationPrefix, terminal.exit == NativeBlockExit::Continue});
+	m_blocks.push_back({std::span<NativeInstruction>(m_instructions).subspan(first, instructions.size()), taken, {}, beforeFusedJump, completedCall, optimizationPrefix, reachesEnd && terminal.exit == NativeBlockExit::Continue});
 	entries.push_back(std::move(block));
 }
 

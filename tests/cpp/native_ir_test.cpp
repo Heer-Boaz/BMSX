@@ -96,7 +96,7 @@ void fieldChainHasAnExplicitResumePoint() {
 		&& add.right == ValueTag::Integer && !add.guardLeft && add.guardRight
 		&& arithmetic.left == field.value && store.value == arithmetic.result,
 		"the sum uses the proven field result, checks the other input and supplies the store");
-	require(ops[1].before == NativeResumePoint{pc + 4, decoded[0].baseCycles, 10}
+	require(ops[1].before == NativeResumePoint{pc + 4, decoded[0].baseCycles, 10, NativeResumePoint::CompletedInstruction{pc, pc}}
 		&& ops[1].slow->lastPc == pc + 8 && ops[1].slow->nextPc == pc + 12,
 		"a type miss retires only GETFIELD before replaying the WIDE sum");
 }
@@ -170,6 +170,43 @@ void successorsImportLogicalTypesBeforeLowering() {
 		"the sum consumes its block's admission proof before a backend binds locations");
 }
 
+void onlyConsumedEntryProofsSurviveCopies() {
+	constexpr u32 firstPc = 0x4000, copyPc = 0x4100, consumerPc = 0x4200;
+	std::array<DecodedInstruction, 7> decoded{};
+	const std::array opcodes{OpCode::K1, OpCode::K1, OpCode::JMP, OpCode::MOV, OpCode::SETGL, OpCode::JMP, OpCode::ADD};
+	for (size_t index = 0; index < decoded.size(); ++index) {
+		auto& inst = decoded[index];
+		inst.op = static_cast<u8>(opcodes[index]);
+		inst.width = 1;
+		inst.baseCycles = BASE_CYCLES[inst.op];
+	}
+	decoded[0].a = 7;
+	decoded[1].a = 8;
+	decoded[2].bx = copyPc;
+	decoded[3].a = 10;
+	decoded[3].b = 7;
+	decoded[4].a = 8;
+	decoded[5].bx = consumerPc;
+	decoded[6].a = 1;
+	decoded[6].b = decoded[6].c = 10;
+	const std::array producer{NativeBlockInstruction{&decoded[0], firstPc},
+		NativeBlockInstruction{&decoded[1], firstPc + 4}, NativeBlockInstruction{&decoded[2], firstPc + 8}};
+	const std::array copy{NativeBlockInstruction{&decoded[3], copyPc},
+		NativeBlockInstruction{&decoded[4], copyPc + 4}, NativeBlockInstruction{&decoded[5], copyPc + 8}};
+	const std::array consumer{NativeBlockInstruction{&decoded[6], consumerPc}};
+	const std::array sources{NativeBlockSource{producer}, NativeBlockSource{copy}, NativeBlockSource{consumer}};
+	NativeIrRegion region(sources, {});
+	NativeRegisterUses uses;
+	region.optimize({}, uses);
+	const auto blocks = region.blocks();
+	for (size_t target : {1u, 2u})
+		require(blocks[target].typePredecessor == target - 1 && blocks[target].entryTypes.size() == 1,
+			"only the consumed proof reaches each block's entry contract");
+	require(blocks[1].entryTypes[0].slot == 7 && blocks[2].entryTypes[0].slot == 10
+		&& blocks[2].entryTypes[0].tag == ValueTag::Integer,
+		"the proof follows the copied value, not the separately read global-store operand");
+}
+
 void registerUses() {
 	std::array first{NativeInstruction(NativeLiteral{1, valueInteger(0)})};
 	std::array left{NativeInstruction(NativeClearSlots{10, 2})};
@@ -220,6 +257,7 @@ int main() {
 		decodedFieldsBecomeOperationsAndEffects();
 		undefinedMoveKindDoesNotBecomeANumericWordMove();
 		successorsImportLogicalTypesBeforeLowering();
+		onlyConsumedEntryProofsSurviveCopies();
 		registerUses();
 		return 0;
 	} catch (const std::exception& error) {

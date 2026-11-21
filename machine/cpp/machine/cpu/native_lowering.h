@@ -22,7 +22,7 @@ public:
 	void beginBlock(size_t index);
 	void lower(const NativeInstruction& instruction);
 	void endBlock();
-	void* finish(size_t& codeBytes);
+void* finish(size_t& codeBytes, std::vector<NativeBlockExitSite>& replaySites);
 
 private:
 	using State = NativeRegisterCache::State;
@@ -51,7 +51,6 @@ private:
 	void lowerOperation(const NativeVararg&, const NativeInstruction&);
 
 	void emitExit(NativeBlockExitSite& exit, size_t target);
-	void emitScalarBoundary(NativeResumePoint point);
 	void emitTop(int extent);
 	void emitConstant(int guest, Value value);
 	void emitRawLoad(int selector, sljit_s32 word, sljit_s32 tag);

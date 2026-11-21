@@ -1,6 +1,7 @@
 #pragma once
 
 #include <exception>
+#include <optional>
 #include <type_traits>
 
 #include "machine/cpu/native_block.h"
@@ -36,7 +37,7 @@ struct NativeCpuRunState {
 	u32 cartridgeSlot = 0;
 	u32 frameBank = 0;
 	std::exception_ptr error;
-	bool forceScalar = false;
+	std::optional<u32> replayPc{};
 };
 
 static_assert(std::is_standard_layout_v<NativeCpuRunState>);

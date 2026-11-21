@@ -59,7 +59,6 @@ struct NativeBlockRunState {
 	u32 constantCount = 0;
 	int remainingCycles = 0;
 	int registerTop = 0;
-	u32 scalarPc = 0;
 	void* exitCode = nullptr;
 	// Host base of guest main RAM; the gate pins it for the whole native frame.
 	u8* ram = nullptr;
@@ -172,6 +171,7 @@ public:
 private:
 	friend class NativeBlock;
 	void* m_code = nullptr;
+	std::vector<NativeBlockExitSite> m_replaySites;
 	size_t* m_cacheBytes = nullptr;
 };
 

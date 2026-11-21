@@ -55,7 +55,7 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 		registers.set(1, right); registers.set(8, valueInteger(59)); registers.set(10, valueNil());
 		run.remainingCycles = 100; run.registerTop = 0;
 		const auto* exit = blocks[0]->run(registers.view(), run);
-		require(exit->exit == NativeBlockExit::ScalarBoundary && run.scalarPc == instructions[2].pc
+		require(exit->exit == NativeBlockExit::ScalarBoundary && exit->nextPc == instructions[2].pc
 			&& run.remainingCycles == 100 - ops[0].baseCycles - ops[1].baseCycles && run.registerTop == 11
 			&& registers.get(9) == before && registers.get(10) == valueInteger(1)
 			&& registers.get(8) == valueInteger(59) && particle.getStringKey(x) == before,

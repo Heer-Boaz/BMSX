@@ -312,7 +312,7 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 		for (int i = 0; i < 4; ++i) registers.set(i, constants[3 - i]);
 		run.remainingCycles = 6;
 		const auto* miss = blocks[1]->run(registers.view(), run);
-		require(miss->exit == NativeBlockExit::ScalarBoundary && run.scalarPc == blocks[1]->firstPc && run.remainingCycles == 6,
+		require(miss->exit == NativeBlockExit::ScalarBoundary && miss->nextPc == blocks[1]->firstPc && run.remainingCycles == 6,
 			"incompatible public-entry facts leave the unexecuted suffix to scalar dispatch");
 
 	}

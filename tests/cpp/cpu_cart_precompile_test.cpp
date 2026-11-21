@@ -239,7 +239,7 @@ void coldExecLetsNumericFieldChainsWarm() {
 		frame.registers.set(3, valueInteger(99));
 		grant.remainingCycles = compareGrant;
 		exit = entry->run(frame.registers, grant);
-		require(exit->exit == NativeBlockExit::ScalarBoundary && grant.scalarPc == pc + INSTRUCTION_BYTES
+		require(exit->exit == NativeBlockExit::ScalarBoundary && exit->nextPc == pc + INSTRUCTION_BYTES
 			&& grant.remainingCycles == compareGrant - readCycles && frame.registers.get(2) == valueFloat(0.25f)
 			&& frame.registers.get(3) == valueInteger(99),
 			"a change in the step's tag publishes the read but leaves the arithmetic at its original guest PC");
