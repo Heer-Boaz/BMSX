@@ -1,72 +1,8 @@
 #include "machine/cpu/jit/sljit/lowering.h"
 #include "machine/cpu/jit/sljit/value_transport.h"
-#include "machine/cpu/value_arithmetic.h"
+#include "machine/cpu/jit/runtime/numeric_kernel.h"
 
 namespace bmsx {
-namespace {
-// Unknown operand subtypes use a nonallocating C++ leaf, not a VM exit. The
-// leaf owns the exception boundary: generated frames have no unwind metadata.
-// Complete Values are confined to these temporary C++ arguments/results.
-template <OpCode op> u32 numericKernel(const Value* args, Value* out) noexcept {
-	try {
-		if constexpr (op == OpCode::ADD)
-			*out = valueAdd(args[0], args[1]);
-		else if constexpr (op == OpCode::SUB)
-			*out = valueSubtract(args[0], args[1]);
-		else if constexpr (op == OpCode::MUL)
-			*out = valueMultiply(args[0], args[1]);
-		else if constexpr (op == OpCode::DIV)
-			*out = valueDivide(args[0], args[1]);
-		else if constexpr (op == OpCode::MOD)
-			*out = valueModulo(args[0], args[1]);
-		else if constexpr (op == OpCode::FLOORDIV)
-			*out = valueFloorDivide(args[0], args[1]);
-		else if constexpr (op == OpCode::POW)
-			*out = valuePower(args[0], args[1]);
-		else if constexpr (op == OpCode::UNM)
-			*out = valueNegate(args[0]);
-		else if constexpr (op == OpCode::BNOT)
-			*out = valueInteger(~integerOperand(args[0]));
-		else {
-			const i32 left = integerOperand(args[0]), right = integerOperand(args[1]);
-			if constexpr (op == OpCode::BAND)
-				*out = valueInteger(left & right);
-			if constexpr (op == OpCode::BOR)
-				*out = valueInteger(left | right);
-			if constexpr (op == OpCode::BXOR)
-				*out = valueInteger(left ^ right);
-			if constexpr (op == OpCode::SHL)
-				*out = valueInteger(luaShiftLeft(left, right));
-			if constexpr (op == OpCode::SHR)
-				*out = valueInteger(luaShiftRight(left, right));
-		}
-		return 0;
-	} catch (const LuaExecutionError& error) {
-		return error.reason;
-	}
-}
-u32 wordKernel(const Value* value,u32* out) noexcept { return valueToWord(*value,*out); }
-using Kernel = u32 (*)(const Value*, Value*) noexcept;
-Kernel kernelFor(OpCode op) {
-	switch (op) {
-	case OpCode::ADD: return &numericKernel<OpCode::ADD>;
-	case OpCode::SUB: return &numericKernel<OpCode::SUB>;
-	case OpCode::MUL: return &numericKernel<OpCode::MUL>;
-	case OpCode::DIV: return &numericKernel<OpCode::DIV>;
-	case OpCode::MOD: return &numericKernel<OpCode::MOD>;
-	case OpCode::FLOORDIV: return &numericKernel<OpCode::FLOORDIV>;
-	case OpCode::POW: return &numericKernel<OpCode::POW>;
-	case OpCode::UNM: return &numericKernel<OpCode::UNM>;
-	case OpCode::BAND: return &numericKernel<OpCode::BAND>;
-	case OpCode::BOR: return &numericKernel<OpCode::BOR>;
-	case OpCode::BXOR: return &numericKernel<OpCode::BXOR>;
-	case OpCode::SHL: return &numericKernel<OpCode::SHL>;
-	case OpCode::SHR: return &numericKernel<OpCode::SHR>;
-	case OpCode::BNOT: return &numericKernel<OpCode::BNOT>;
-	default: BMSX_UNREACHABLE();
-	}
-}
-} // namespace
 
 void NativeLowering::emitWordOperand(int selector, NativeWordSource source, NativeBlockExitSite& invalid) {
 	emitPayload(selector, SLJIT_R0);
@@ -86,7 +22,7 @@ void NativeLowering::emitWordOperand(int selector, NativeWordSource source, Nati
 	m_cache.spillCall(false, 0);
 	sljit_get_local_base(m_compiler, SLJIT_R0, 0, input);
 	sljit_get_local_base(m_compiler, SLJIT_R1, 0, output);
-	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(32, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(wordKernel));
+	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(32, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(nativeWordOperandKernel));
 	m_cache.spillCall(true, 0);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), invalid, state);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), output);
@@ -107,7 +43,7 @@ void NativeLowering::emitNumericKernel(
 	m_cache.spillCall(false, 0);
 	sljit_get_local_base(m_compiler, SLJIT_R0, 0, args);
 	sljit_get_local_base(m_compiler, SLJIT_R1, 0, result);
-	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(32, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(kernelFor(op)));
+	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(32, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(nativeNumericKernel(op)));
 	m_cache.spillCall(true, 0);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), invalid, prefix);
 	emitValueTransportLoad(m_compiler, SLJIT_SP, result, SLJIT_R0, SLJIT_R1);
