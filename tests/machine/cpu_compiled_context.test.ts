@@ -11,9 +11,9 @@ import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/
 import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { DYNAMIC_RAM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
+import { CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
@@ -127,6 +127,118 @@ test('a hot WIDE LOADKR fault publishes its prefix before trapping without writi
 		assert.equal(frame.registers.get(256), valueInteger(73));
 		assert.equal(frame.top, 8, 'the trapping load did not extend top');
 	}
+});
+
+test('fixed selectors must name an entry in their own image extent', () => {
+	// Encode K[1] as -2 in the B or C RK lane. Fixed field indices stay unsigned.
+	const cases = [
+		[OpCode.LOADK, 0, 1, 0, 0, 0],
+		[OpCode.GETGL, 0, 1, 0, 0, 0],
+		[OpCode.SETGL, 0, 1, 0, 0, 0],
+		[OpCode.GETSYS, 0, 1, 0, 0, 0],
+		[OpCode.SETSYS, 0, 1, 0, 0, 0],
+		[OpCode.DIV, 62, 0, 7 << 3, 63, 0],
+		[OpCode.POW, 0, 62, 7, 0, 63],
+		[OpCode.GETFIELD, 0, 1, 0, 0, 0],
+		[OpCode.SETFIELD, 1, 0, 0, 0, 0],
+		[OpCode.SELF, 0, 1, 0, 0, 0],
+	] as const;
+	for (const [op, b, c, ext, wideB, wideC] of cases) {
+		for (const wide of [false, true]) {
+			const width = wide ? 2 : 1;
+			const text = new Uint8Array((width + 1) * INSTRUCTION_BYTES);
+			if (wide) writeInstruction(text, 0, OpCode.WIDE, 0, wideB, wideC);
+			writeInstruction(text, width - 1, op, 0, b, c, ext);
+			writeInstruction(text, width, OpCode.HALT, 0, 0, 0);
+			const image = linkRawTestSystemBlua32({ text, constants: ['key'], globalNames: ['g'], systemGlobalNames: ['s'],
+				functions: [{ firstWord: 0, wordCount: width, maxStack: 2 }, { firstWord: width, wordCount: 1 }], exceptionFunctionIndex: 1 });
+			const pc = image.image.functions[0].codeAddress;
+			for (const dispatch of ['interpreter', 'js', 'instrumented', 'observed'] as const) {
+				const backend = dispatch === 'js' ? CpuExecutionBackend.JavaScript : CpuExecutionBackend.Interpreter;
+				const { cpu } = createTestSystemCpu(image, backend);
+				const frame = cpu.rootThread.frameAtDepth(0);
+				const g = cpu.stringPool.find('g')!, s = cpu.stringPool.find('s')!;
+				cpu.setGlobalByKey(g, valueInteger(81));
+				cpu.setSystemGlobalByKey(s, valueInteger(91));
+				frame.registers.setInteger(0, 73);
+				frame.registers.setInteger(1, 75);
+				let observations = 0;
+				if (dispatch === 'instrumented') cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+				if (dispatch === 'observed') cpu.setInstructionObserver({
+					points: [new Set([pc]), new Set(), new Set()],
+					observe: () => { ++observations; assert.equal(frame.pc, pc + width * INSTRUCTION_BYTES); },
+				});
+				assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+				assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[op], `opcode ${op} in ${dispatch}`);
+				assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_TRAP);
+				assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+				assert.equal(cpu.readEpcWord(), pc);
+				assert.equal(cpu.lastPc, pc + (width - 1) * INSTRUCTION_BYTES);
+				assert.equal(frame.registers.get(0), valueInteger(73));
+				assert.equal(frame.registers.get(1), valueInteger(75));
+				assert.equal(frame.top, 0);
+				assert.equal(cpu.getGlobalByKey(g), valueInteger(81));
+				assert.equal(cpu.getSystemGlobalByKey(s), valueInteger(91));
+				assert.equal(observations, dispatch === 'observed' ? 1 : 0);
+			}
+		}
+	}
+});
+
+test('a hot comparison skips a WIDE invalid selector without executing it', () => {
+	const text = new Uint8Array(5 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.EQ, 0, 0, 1);
+	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.LOADK, 2, 0, 1);
+	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
+	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(11)],
+		functions: [{ firstWord: 0, wordCount: 4, maxStack: 3 }, { firstWord: 4, wordCount: 1 }], exceptionFunctionIndex: 1 });
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	for (const cpu of [js, ref]) {
+		const registers = cpu.rootThread.frameAtDepth(0).registers;
+		registers.setInteger(0, 9);
+		registers.setInteger(1, 9);
+		registers.setInteger(2, 73);
+	}
+	const pc = image.image.functions[0].codeAddress;
+	const loopCycles = BASE_CYCLES[OpCode.EQ] + BASE_CYCLES[OpCode.JMP];
+	assert.equal(runCpuParity(js, ref, 50 * loopCycles), RunResult.Yielded);
+	assert.equal(js.readCauseWord(), 0);
+	assert.equal(js.readFramePc(0), pc);
+	const frame = js.rootThread.frameAtDepth(0);
+	const entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry]);
+	assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry + 1], null);
+	for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 10);
+	assert.equal(runCpuParity(js, ref, BASE_CYCLES[OpCode.EQ]), RunResult.Yielded);
+	assert.equal(js.readFramePc(0), pc + INSTRUCTION_BYTES);
+	assert.equal(js.readCauseWord(), 0);
+	assert.equal(runCpuParity(js, ref, 1), RunResult.Yielded);
+	assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);
+	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+	assert.equal(frame.registers.get(2), valueInteger(73));
+});
+
+test('numeric fusion does not execute a following invalid image operand early', () => {
+	const text = new Uint8Array(3 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.ADD, 1, 0, 0);
+	writeInstruction(text, 1, OpCode.SHL, 2, 0, 62, 7);
+	writeInstruction(text, 2, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(11)],
+		functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }, { firstWord: 2, wordCount: 1 }], exceptionFunctionIndex: 1 });
+	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const frame = cpu.rootThread.frameAtDepth(0);
+	const pc = image.image.functions[0].codeAddress;
+	frame.registers.setInteger(0, 9);
+	frame.registers.setInteger(2, 73);
+	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.ADD] + 1), RunResult.Yielded);
+	assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.SHL]);
+	assert.equal(cpu.readEpcWord(), pc + INSTRUCTION_BYTES);
+	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+	assert.equal(frame.registers.get(1), valueInteger(18));
+	assert.equal(frame.registers.get(2), valueInteger(73));
 });
 
 test('compiled upvalues follow open aliases and closed values without stale numeric locals', () => {

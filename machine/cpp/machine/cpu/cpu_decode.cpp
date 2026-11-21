@@ -13,10 +13,10 @@ namespace bmsx {
 // Source words and their execution image are the decode inputs. This producer
 // changes only decoded-cache state; instruction-bus faults belong to the fetch
 // path below, not to a speculative native compilation request.
-bool CPU::decodeInstructionWords(
+void CPU::decodeInstructionWords(
 	Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset, u32 pc,
 	u32 sourceWord, u32 bodyWord, bool instructionCacheable,
-	DecodedInstructionPage* bodyPage, bool compilation
+	DecodedInstructionPage* bodyPage
 ) {
 	DecodedInstruction& destination = page.words[pageOffset];
 	const bool wide = ((sourceWord >> 18) & 0x3fu) == static_cast<u32>(OpCode::WIDE);
@@ -76,6 +76,7 @@ bool CPU::decodeInstructionWords(
 		);
 		decoded.op = op;
 		decoded.width = static_cast<uint8_t>(width);
+		decoded.baseCycles = BASE_CYCLES[op];
 		decoded.a = static_cast<uint16_t>(
 			(wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow
 		);
@@ -86,7 +87,22 @@ bool CPU::decodeInstructionWords(
 		decoded.c = static_cast<int16_t>((rkOperands & RK_OPERAND_C) != 0u
 			? signExtend(rawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS))
 			: static_cast<int32_t>(rawC));
+		const size_t constantCount = image.constPool.size();
+		bool invalidImageOperand = ((rkOperands & RK_OPERAND_B) != 0u
+				&& decoded.b < 0 && static_cast<size_t>(-1 - decoded.b) >= constantCount)
+			|| ((rkOperands & RK_OPERAND_C) != 0u
+				&& decoded.c < 0 && static_cast<size_t>(-1 - decoded.c) >= constantCount);
 		switch (static_cast<OpCode>(op)) {
+			case OpCode::GETSYS: case OpCode::SETSYS:
+				invalidImageOperand = decodedBx >= image.systemNameCount;
+				break;
+			case OpCode::GETGL: case OpCode::SETGL:
+				invalidImageOperand = decodedBx >= image.globalNameCount;
+				break;
+			case OpCode::LOADK:
+				invalidImageOperand = decodedBx >= constantCount;
+				decoded.setBx(decodedBx);
+				break;
 			case OpCode::ADD:
 			case OpCode::SUB:
 			case OpCode::MUL:
@@ -95,8 +111,14 @@ bool CPU::decodeInstructionWords(
 				decoded.setSbx(decodedSbx);
 				break;
 			case OpCode::GETFIELD:
-			case OpCode::SETFIELD:
 			case OpCode::SELF:
+				invalidImageOperand |= rawC >= constantCount;
+				decoded.tableCacheSlot() = -1;
+				break;
+			case OpCode::SETFIELD:
+				invalidImageOperand |= rawB >= constantCount;
+				decoded.tableCacheSlot() = -1;
+				break;
 			case OpCode::GETT:
 			case OpCode::SETT:
 				decoded.tableCacheSlot() = -1;
@@ -119,25 +141,22 @@ bool CPU::decodeInstructionWords(
 				|| static_cast<OpCode>(op) == OpCode::LOAD_MEM_D
 				|| static_cast<OpCode>(op) == OpCode::STORE_MEM_D)) {
 			decoded.op = static_cast<u8>(DecodedDispatchOp::ReservedMemory);
+		} else if (invalidImageOperand) {
+			// Fault only on dispatch, retaining the original width and charge.
+			decoded.op = static_cast<u8>(DecodedDispatchOp::InvalidImageOperand);
 		}
 		destination = decoded;
 		page.sourceWords[pageOffset] = sourceWord;
 		page.bodyWords[pageOffset] = bodyWord;
 	}
 	DecodedInstruction& decoded = destination;
-	if (op >= static_cast<u8>(OpCode::GETSYS) && op <= static_cast<u8>(OpCode::SETGL)) {
+	if (decoded.op >= static_cast<u8>(OpCode::GETSYS) && decoded.op <= static_cast<u8>(OpCode::SETGL)) {
 		const bool system = op <= static_cast<u8>(OpCode::SETSYS);
 		const u32 index = (static_cast<u32>(wideB) << BASE_BX_BITS) | (static_cast<u32>(ext) << MAX_BX_BITS) | (bodyWord & MAX_LOW_BX);
-		const u32 count = system ? image.systemNameCount : image.globalNameCount;
-		// Outside the watched map extent the record port is still defined,
-		// but a cached instruction cannot own the unrelated RAM dependency.
-		instructionCacheable &= index < count;
-		if (compilation && !instructionCacheable) return false;
 		const u32 base = image.globalMapBase + (system ? 4u * image.globalNameCount : 0u);
 		decoded.setBx(m_memory.readRamRecordWord(base + 4u * index));
 	}
 	decoded.dispatchOp = decoded.op;
-	decoded.baseCycles = DECODED_DISPATCH_BASE_CYCLES[decoded.op];
 	decoded.dispatchCycles = decoded.baseCycles;
 	page.refreshState[pageOffset] = instructionCacheable ? 0u : DECODED_REFRESH_DECODE;
 	if (instructionCacheable && page.writeWatch.groups) {
@@ -151,17 +170,15 @@ bool CPU::decodeInstructionWords(
 	if (observed.contains(pc)) {
 		decoded.dispatchOp = static_cast<u8>(DecodedDispatchOp::Observe);
 		decoded.dispatchCycles = DECODED_DISPATCH_BASE_CYCLES[decoded.dispatchOp];
-		return true;
+		return;
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	if (instructionCacheable && nativeBlockSupports(decoded.op)
 		&& (decoded.op != static_cast<u8>(OpCode::JMP) || decoded.a == 0)) {
 		decoded.dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
 		page.nativeVisits[pageOffset] = 0;
-		return true;
 	}
 #endif
-	return true;
 }
 
 bool CPU::decodeInstruction(
@@ -171,7 +188,6 @@ bool CPU::decodeInstruction(
 	bool instructionCacheable = page.cacheable;
 	DecodedInstructionPage* bodyPage = nullptr;
 	int width = 1;
-	uint8_t op;
 	const u32 faultSequence = m_memory.readBusFaultSequence();
 	const uint32_t sourceWord = m_memory.readMappedBusU32LE(pc, m_executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH);
 	if (m_memory.readBusFaultSequence() != faultSequence) {
@@ -179,8 +195,7 @@ bool CPU::decodeInstruction(
 		return false;
 	}
 	uint32_t bodyWord = sourceWord;
-	op = static_cast<uint8_t>((sourceWord >> 18) & 0x3f);
-	if (static_cast<OpCode>(op) == OpCode::WIDE) {
+	if (((sourceWord >> 18) & 0x3fu) == static_cast<u32>(OpCode::WIDE)) {
 		width = 2;
 		if (pageOffset == DECODED_PAGE_WORDS - 1u) {
 			bodyPage = &decodedPageForFrame(
@@ -197,16 +212,15 @@ bool CPU::decodeInstruction(
 			enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 			return false;
 		}
-		op = static_cast<uint8_t>((bodyWord >> 18) & 0x3f);
 	}
 	decodeInstructionWords(*frame.executionImage, page, pageOffset, pc,
-		sourceWord, bodyWord, instructionCacheable, bodyPage, false);
+		sourceWord, bodyWord, instructionCacheable, bodyPage);
 	if (decoded.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)) return true;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	if (decoded.dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm)) return true;
 #endif
 	const auto& observed = m_instructionObserver.points[static_cast<size_t>(frame.executionImage->executionDomainId + 1)];
-	const bool fusionCandidate = decodedDispatchCanFuse(op);
+	const bool fusionCandidate = decodedDispatchCanFuse(decoded.op);
 	if (!allowFusion) {
 		if (fusionCandidate && instructionCacheable) {
 			page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
@@ -248,7 +262,7 @@ bool CPU::decodeInstruction(
 		}
 	}
 	const DecodedInstruction& successor = nextPage.words[nextOffset];
-	decoded.dispatchOp = decodedDispatchOp(op, successor.op);
+	decoded.dispatchOp = decodedDispatchOp(decoded.op, successor.op);
 	decoded.dispatchCycles = DECODED_DISPATCH_BASE_CYCLES[decoded.dispatchOp];
 	return true;
 }
@@ -273,8 +287,8 @@ bool CPU::decodeBackedInstruction(
 			bodyWord = readLE32(bodyBinding.readBytes);
 		} else bodyWord = readLE32(binding.readBytes + (pageOffset + 1u) * INSTRUCTION_BYTES);
 	}
-	return decodeInstructionWords(image, page, pageOffset, pc,
-		sourceWord, bodyWord, true, bodyPage, true);
+	decodeInstructionWords(image, page, pageOffset, pc, sourceWord, bodyWord, true, bodyPage);
+	return true;
 }
 #endif
 

@@ -113,24 +113,11 @@ inline constexpr bool nativeBlockEndsBlock(u8 op, int field) {
 		|| (op == static_cast<u8>(OpCode::MTC0) && (field == COP0_STATUS || field == COP0_EXEC || !cop0FieldImplemented(field)));
 }
 
-// Emission specializes constant operands. A source word that cannot bind
-// those constants is not compilable; executing it remains the CPU's job.
-inline bool nativeSourceCanEmit(const DecodedInstruction& instruction, size_t constantCount) {
-	if (!nativeBlockSupports(instruction.op)
-		|| (instruction.op == static_cast<u8>(OpCode::MOV) && instruction.c > static_cast<int>(ValueMoveKind::FloatFromBits))) return false;
-	const u8 rk = OPCODE_RK_OPERANDS[instruction.op];
-	if (((rk & RK_OPERAND_B) != 0u && instruction.b < 0
-			&& static_cast<size_t>(-instruction.b - 1) >= constantCount)
-		|| ((rk & RK_OPERAND_C) != 0u && instruction.c < 0
-			&& static_cast<size_t>(-instruction.c - 1) >= constantCount)) return false;
+inline bool nativeSourceCanEmit(const DecodedInstruction& instruction) {
 	switch (static_cast<OpCode>(instruction.op)) {
 		case OpCode::JMP: return instruction.a == 0;
-		case OpCode::LOADK: return instruction.bx() < constantCount;
-		case OpCode::GETFIELD: case OpCode::SELF:
-			return static_cast<size_t>(instruction.c) < constantCount;
-		case OpCode::SETFIELD:
-			return static_cast<size_t>(instruction.b) < constantCount;
-		default: return true;
+		case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::FloatFromBits);
+		default: return nativeBlockSupports(instruction.op);
 	}
 }
 

@@ -28,9 +28,10 @@ enum class DecodedDispatchOp : uint8_t {
 	NativeWarm,
 	NativeBlock,
 #endif
+	InvalidImageOperand,
 };
 
-inline constexpr size_t DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 5u
+inline constexpr size_t DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 6u
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	+ 2u
 #endif

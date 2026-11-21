@@ -327,7 +327,14 @@ unprefixed RK can name R0–R255 or K0–K255; each WIDE RK can name R0–R16383
 K0–K16383. A raw count/key field instead keeps its unsigned encoded value.
 
 An instruction's encoding range does not allocate its referenced registers or
-constants. A frame obtains its entry PC, parameter count and stack allocation
+constants. A fixed constant selector, whether encoded as RK, LOADK, or a
+string-field key, must name an entry in the active execution image's constant
+pool. Executing a selector outside that pool raises `INVALID_ARGUMENT` (10)
+after the nominal instruction charge and before any operand read or result
+write. If a comparison skips the instruction, its encoded width is still used,
+but the operand fault is not raised.
+
+A frame obtains its entry PC, parameter count and stack allocation
 from its closure's bound function data. The reserved capacity is the largest of one slot, the declared maximum stack
 and the fixed-parameter count. Missing fixed parameters are nil;
 other scratch slots must be written before they are read. A call may reuse its
@@ -1018,6 +1025,11 @@ operand rules.
 Ordinary globals and system globals are separate namespaces. `GETGL` and `SETGL` access ordinary globals; `GETSYS` and `SETSYS` access system globals. A matching name in one namespace does not select the value stored under that name in the other.
 
 For these instructions, `Bx` is an index into the corresponding execution-image name table. It is not a register operand, a constant-pool string operand, or a table key. Each image's ordinary and system name tables are independently mapped to their namespace slots. Registering a new name initializes its value to nil; registering an existing name reuses the slot in that namespace. The namespace distinction alone does not specify a privilege boundary.
+
+Executing a global instruction whose index is outside its selected name table
+raises `INVALID_ARGUMENT` (10) after the nominal instruction charge and before
+reading or changing a value. An index cannot continue into the other namespace
+or into storage following the name table.
 
 ### Tables, keys, and method receivers {#sec-cpu-tables-keys-and-method-receivers}
 

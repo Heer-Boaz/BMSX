@@ -939,6 +939,109 @@ void loadKrIndices() {
 	}
 }
 
+void missingImageOperandsTrapAtExecution() {
+	struct OperandCase {
+		OpCode op;
+		u8 b, c, ext;
+		bool wide;
+	};
+	const OperandCase cases[]{
+		{OpCode::GETGL, 0, 1, 0, false}, {OpCode::SETGL, 0, 1, 0, false},
+		{OpCode::GETSYS, 0, 1, 0, false}, {OpCode::SETSYS, 0, 1, 0, true},
+		{OpCode::LOADK, 0, 2, 0, true},
+		{OpCode::SUB, 61, 1, 56, false}, // RK B = -3
+		{OpCode::SUB, 1, 61, 7, false}, // RK C = -3
+		{OpCode::GETFIELD, 1, 2, 0, false}, {OpCode::SELF, 1, 2, 0, false},
+		{OpCode::SETFIELD, 2, 1, 0, false}, {OpCode::SETFIELD, 0, 61, 7, false},
+	};
+	enum class Dispatch { Ordinary, Instrumented, Observed };
+	for (const auto [op, b, c, ext, wide] : cases) for (const auto dispatch : {
+		Dispatch::Ordinary, Dispatch::Instrumented, Dispatch::Observed}) {
+		auto image = returnImage();
+		const u32 width = wide ? 2u : 1u;
+		image.text.resize(width * INSTRUCTION_BYTES);
+		if (wide) writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, width - 1u, static_cast<u8>(op), 0, b, c, ext);
+		image.functions[0].wordCount = width;
+		image.functions[0].maxStack = 2;
+		image.constants[0] = std::string("field");
+		image.globalNames = {"ordinary"};
+		image.systemGlobalNames = {"system"};
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		frame.registers.set(0, valueInteger(97));
+		const u32 pc = frame.readControl(FrameField::Pc);
+		int observations = 0;
+		if (dispatch == Dispatch::Instrumented) {
+			cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		} else if (dispatch == Dispatch::Observed) {
+			InstructionObserverBinding observer;
+			observer.points[0].insert(pc);
+			observer.context = &observations;
+			observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) { ++*static_cast<int*>(context); };
+			cpu.setInstructionObserver(std::move(observer));
+		}
+		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "the failed operation consumes the short grant");
+		require(cpu.readCauseWord() == CPU_CAUSE_CODE_TRAP && cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+			&& cpu.readEpcWord() == pc, "missing image operands trap at the logical instruction head");
+		require(frame.registers.get(0) == valueInteger(97), "operand admission precedes the operation");
+		require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(op)]
+			&& frame.readControl(FrameField::Pc) == pc
+			&& cpu.lastPc == pc + (width - 1u) * INSTRUCTION_BYTES,
+			"operand rejection keeps the original width and charge, then rewinds to the faulting head");
+		require(observations == (dispatch == Dispatch::Observed ? 1 : 0), "observation precedes the reached operand fault exactly once");
+	}
+}
+
+void skippedImageOperandRemainsUnobserved() {
+	auto image = returnImage();
+	image.text.resize(4 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::EQ), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::LOADK), 0, 0, 2);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::LOADK), 0, 0, 1);
+	image.functions[0].wordCount = 4;
+	for (const bool scalar : {false, true}) {
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		if (!scalar) cpu.prepareSystemNativeCode();
+#endif
+		const u32 pc = cpu.readFramePc(0);
+		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::EQ)] + BASE_CYCLES[static_cast<u8>(OpCode::LOADK)];
+		require(cpu.runUntilDepth(0, grant) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0,
+			"a skipped absent operand incurs no cycles");
+		require(cpu.readCauseWord() == 0u && cpu.readFramePc(0) == pc + 4 * INSTRUCTION_BYTES
+			&& cpu.readFrameRegister(0, 0) == valueInteger(29), "skip uses the absent operand's WIDE length without raising a trap");
+	}
+}
+
+void fusionRequiresBothImageOperandsAdmitted() {
+	for (const bool invalidHead : {false, true}) {
+		auto image = returnImage();
+		image.text.resize(2 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::ADD), 2, invalidHead ? 61u : 63u, 0, 56);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::SHL), 2, 2, 61, 7);
+		image.functions[0].maxStack = 3;
+		image.functions[0].wordCount = 2;
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		frame.registers.set(0, valueInteger(5));
+		frame.registers.set(2, valueInteger(97));
+		const u32 pc = frame.readControl(FrameField::Pc);
+		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + 1;
+		cpu.runUntilDepth(0, grant);
+		require(cpu.readCauseWord() == CPU_CAUSE_CODE_TRAP && cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+			&& cpu.readEpcWord() == pc + (invalidHead ? 0u : INSTRUCTION_BYTES),
+			"an invalid head or successor cannot execute as an arithmetic fusion");
+		require(frame.registers.get(2) == valueInteger(invalidHead ? 97 : 16),
+			"only the admitted head can execute before the precise operand fault");
+	}
+}
+
 void zeroLoadNil() {
 	CpuMachine machine(returnImage(OpCode::LOADNIL, 6, 0, 0));
 	machine.cpu.runUntilDepth(0, 1);
@@ -1811,7 +1914,8 @@ int main() {
 		nativeCallsAndReturnsPublishFaultBoundaries();
 		nativeCallUsesItsClosureBoundFunctionRecord();
 #endif
-		stringBytePositions(); loadKrIndices(); closureDescriptorAdmissionPrecedesAllocation(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
+		stringBytePositions(); loadKrIndices(); missingImageOperandsTrapAtExecution(); skippedImageOperandRemainsUnobserved();
+		fusionRequiresBothImageOperandsAdmitted(); closureDescriptorAdmissionPrecedesAllocation(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();
 		wideSignedImmediatesKeepTheirRange();
 		instructionBoundaryResynchronizesAfterFetchOrObservation();

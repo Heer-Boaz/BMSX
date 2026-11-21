@@ -131,7 +131,6 @@ import { ValueSlots } from './value_slots';
 import { GlobalBank, type GlobalBankState } from './global_bank';
 import { BuiltinArgsView, BuiltinResults, BUILTIN_FUNCTIONS } from './builtin_values';
 import {
-	DECODED_DISPATCH_BASE_CYCLES,
 	DECODED_PAGE_WORDS,
 	DECODED_DEPENDENCY_PREDECESSOR_WORDS,
 	DECODED_REFRESH_DECODE,
@@ -139,6 +138,7 @@ import {
 	createDecodedInstructionPage,
 	decodedDispatchCanFuse,
 	decodedDispatchOp,
+	decodedInstructionBaseCycles,
 	DecodedDispatchOp,
 	type Blua32ExecutionImage,
 	type Blua32FunctionRecordLatch,
@@ -1138,6 +1138,7 @@ export class CPU implements MappedPageInvalidator {
 		pc: number,
 		allowFusion: boolean,
 	): boolean {
+		const image = frame.executionImage;
 		let instructionCacheable = page.cacheable;
 		let bodyPage: DecodedInstructionPage | null = null;
 		let width = 1;
@@ -1214,6 +1215,9 @@ export class CPU implements MappedPageInvalidator {
 						page.bx[pageOffset] = bx;
 						break;
 				}
+				if (op === OpCode.LOADK && bx >= image.constWords.length) {
+					page.ops[pageOffset] = DecodedDispatchOp.InvalidImageOperand;
+				}
 			} else {
 				page.a[pageOffset] = (wideA << BASE_OPERAND_A_BITS) | ((ext >>> 6) << MAX_OPERAND_BITS) | aLow;
 				const rawB = (wideB << BASE_OPERAND_BC_BITS) | (((ext >>> 3) & 7) << MAX_OPERAND_BITS) | bLow;
@@ -1228,18 +1232,28 @@ export class CPU implements MappedPageInvalidator {
 				}
 				if (rawC > MemoryAccessKind.F64LE && (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM)) {
 					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
+				} else {
+					const constantCount = image.constWords.length;
+					if (-page.b[pageOffset] > constantCount || -page.c[pageOffset] > constantCount
+						|| ((op === OpCode.GETFIELD || op === OpCode.SELF) && rawC >= constantCount)
+						|| (op === OpCode.SETFIELD && rawB >= constantCount)) {
+						page.ops[pageOffset] = DecodedDispatchOp.InvalidImageOperand;
+					}
 				}
 			}
 		}
 		if (op >= OpCode.GETSYS && op <= OpCode.SETGL) {
-			const system = op <= OpCode.SETSYS, image = frame.executionImage;
+			const system = op <= OpCode.SETSYS;
 			const index = (wideB << BASE_BX_BITS) | (ext << MAX_BX_BITS) | (bodyWord & MAX_LOW_BX);
-			const base = image.globalMapBase + (system ? 4 * image.globalNameCount : 0);
-			instructionCacheable &&= index < (system ? image.systemNameCount : image.globalNameCount);
-			page.bx[pageOffset] = this.memory.readRamRecordWord(base + 4 * index);
+			if (index >= (system ? image.systemNameCount : image.globalNameCount)) {
+				page.ops[pageOffset] = DecodedDispatchOp.InvalidImageOperand;
+			} else {
+				const base = image.globalMapBase + (system ? 4 * image.globalNameCount : 0);
+				page.bx[pageOffset] = this.memory.readRamRecordWord(base + 4 * index);
+			}
 		}
 		page.dispatchOps[pageOffset] = page.ops[pageOffset];
-		page.dispatchCycles[pageOffset] = DECODED_DISPATCH_BASE_CYCLES[page.ops[pageOffset]];
+		page.dispatchCycles[pageOffset] = decodedInstructionBaseCycles(page, pageOffset);
 		page.refreshState[pageOffset] = instructionCacheable ? 0 : DECODED_REFRESH_DECODE;
 		if (instructionCacheable && page.writeWatches !== null) {
 			page.writeWatches.armWord(page.writeWatchIndex, pageOffset);
@@ -1261,7 +1275,7 @@ export class CPU implements MappedPageInvalidator {
 			page.dispatchOps[pageOffset] = DecodedDispatchOp.CompiledWarm;
 			return true;
 		}
-		const fusionCandidate = decodedDispatchCanFuse(op);
+		const fusionCandidate = decodedDispatchCanFuse(page.ops[pageOffset]);
 		if (!allowFusion) {
 			if (fusionCandidate && instructionCacheable) {
 				page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
@@ -1309,8 +1323,8 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		page.dispatchOps[pageOffset] = decodedDispatchOp(
-			op as OpCode,
-			nextPage.ops[nextPageOffset] as OpCode,
+			page.ops[pageOffset],
+			nextPage.ops[nextPageOffset],
 		);
 		return true;
 	}
@@ -1813,7 +1827,6 @@ export class CPU implements MappedPageInvalidator {
 	private runUntilDepthInstrumented(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const thread = this.activeThread;
-		const baseCycles = DECODED_DISPATCH_BASE_CYCLES;
 		const executionHook = this.executionHook!;
 		const executionDomainMask = this.executionHookDomainMask;
 		const preMaskableInterruptExecutionDomainMask =
@@ -1881,7 +1894,7 @@ export class CPU implements MappedPageInvalidator {
 					frame.pc = (pc + (width * INSTRUCTION_BYTES)) >>> 0;
 					this.lastExecutionDomainId = image.executionDomainId;
 					this.lastPc = (pc + ((width - 1) * INSTRUCTION_BYTES)) >>> 0;
-					this.instructionBudgetRemaining -= baseCycles[op];
+					this.instructionBudgetRemaining -= page.dispatchCycles[pageOffset];
 					this.executeInstruction(
 						frame,
 						page,
@@ -2696,7 +2709,7 @@ export class CPU implements MappedPageInvalidator {
 					frame.compilationEntry = rewritten || compiledBlockEndsBlock(page.ops[pageOffset], page.b[pageOffset]);
 					this.instructionObserver!.observe(image.executionDomainId, this.currentInstructionPc, registers);
 					// Observe has zero base cost; execute and charge the original instruction once.
-					this.instructionBudgetRemaining -= DECODED_DISPATCH_BASE_CYCLES[page.ops[pageOffset]];
+					this.instructionBudgetRemaining -= decodedInstructionBaseCycles(page, pageOffset);
 					this.executeInstruction(frame, page, pageOffset, page.ops[pageOffset], targetDepth);
 					return;
 				case DecodedDispatchOp.FusedShlBxor:
@@ -2714,6 +2727,8 @@ export class CPU implements MappedPageInvalidator {
 				case DecodedDispatchOp.ReservedMemory:
 					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					return;
+				case DecodedDispatchOp.InvalidImageOperand:
+					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				case OpCode.MOV: {
 					const kind = page.c[pageOffset], b = page.b[pageOffset];
 					if (kind === ValueMoveKind.Copy) this.copyRegisterFast(frame, registers, a, b);

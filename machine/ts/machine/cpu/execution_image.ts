@@ -21,18 +21,17 @@ export const enum DecodedDispatchOp {
 	ReservedMemory = OPCODE_COUNT + 4,
 	CompiledWarm = OPCODE_COUNT + 5,
 	Compiled = OPCODE_COUNT + 6,
+	InvalidImageOperand = OPCODE_COUNT + 7,
 }
 
-export const DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 7;
+export function decodedInstructionBaseCycles(page: DecodedInstructionPage, word: number): number {
+	const op = page.ops[word];
+	if (op === DecodedDispatchOp.InvalidImageOperand) return BASE_CYCLES[(page.bodyWords[word] >>> 18) & 0x3f];
+	if (op === DecodedDispatchOp.ReservedMemory) return BASE_CYCLES[OpCode.LOAD_MEM];
+	return BASE_CYCLES[op];
+}
 
-export const DECODED_DISPATCH_BASE_CYCLES = new Uint8Array(DECODED_DISPATCH_OP_COUNT);
-DECODED_DISPATCH_BASE_CYCLES.set(BASE_CYCLES);
-DECODED_DISPATCH_BASE_CYCLES[DecodedDispatchOp.FusedShlBxor] = BASE_CYCLES[OpCode.SHL];
-DECODED_DISPATCH_BASE_CYCLES[DecodedDispatchOp.FusedAddShl] = BASE_CYCLES[OpCode.ADD];
-DECODED_DISPATCH_BASE_CYCLES[DecodedDispatchOp.FusedShrBxor] = BASE_CYCLES[OpCode.SHR];
-DECODED_DISPATCH_BASE_CYCLES[DecodedDispatchOp.ReservedMemory] = BASE_CYCLES[OpCode.LOAD_MEM];
-
-export function decodedDispatchOp(first: OpCode, second: OpCode): number {
+export function decodedDispatchOp(first: number, second: number): number {
 	switch (first) {
 		case OpCode.SHL:
 			return second === OpCode.BXOR ? DecodedDispatchOp.FusedShlBxor : first;

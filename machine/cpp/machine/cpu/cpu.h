@@ -366,8 +366,8 @@ private:
 	void invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord);
 	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, u32 pc);
 	bool decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);
-	bool decodeInstructionWords(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
-		u32 pc, u32 sourceWord, u32 bodyWord, bool instructionCacheable, DecodedInstructionPage* bodyPage, bool compilation);
+	void decodeInstructionWords(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
+		u32 pc, u32 sourceWord, u32 bodyWord, bool instructionCacheable, DecodedInstructionPage* bodyPage);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool decodeBackedInstruction(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
 		u32 pc, MappedBusSignals busSignals);
