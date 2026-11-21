@@ -113,7 +113,11 @@ In the native tier, the CPU discovers bounded runs of decoded instructions.
 The compiler translates them to typed slot operations, selects native
 continuation boundaries, and records the semantic exits and scalar resume
 points. The optimizer chooses operation plans and their required type proofs
-on logical guest slots. SLJIT lowering owns physical registers, spills,
+on logical guest slots. Within a source run, scalar operands also name their
+producing instruction and output; copying a value does not change its origin.
+Field selection can follow both operands across reuse of the original slot.
+The numeric planner uses observed operand types independently of the next
+guest instruction. SLJIT lowering owns physical registers, spills,
 executable labels and link fixups. A live payload can cross an edge without a
 type proof: its tag stays authoritative in guest memory. The CPU publishes
 the compiler's entries by guest PC and binds their continuation cells; it does

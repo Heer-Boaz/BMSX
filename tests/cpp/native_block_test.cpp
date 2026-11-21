@@ -1188,6 +1188,64 @@ void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 	require(bytes == 0, "shared exit descriptors do not retain retired code allocations");
 }
 
+void twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead() {
+	const auto x = cpu.stringPool().intern("two-field x");
+	const auto y = cpu.stringPool().intern("two-field y");
+	auto table = cpu.createTable(0, 2);
+	int xSlot = table.setStringKey(x, valueFloat(1.5f));
+	const int ySlot = table.setStringKey(y, valueInteger(2));
+	table.getStringKeyCached(x, xSlot);
+	const auto constants = test::valueBank(std::array{valueString(x), valueString(y)});
+	std::array decoded{
+		DecodedInstruction{.tableCacheSlot = xSlot, .a = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.bx = 0, .a = 2, .b = 1, .op = static_cast<u8>(OpCode::MOV)},
+		DecodedInstruction{.tableCacheSlot = ySlot, .a = 1, .c = 1, .op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.bx = 0, .a = 3, .b = 2, .c = 1, .op = static_cast<u8>(OpCode::ADD)},
+	};
+	std::array<NativeBlockInstruction, decoded.size()> source;
+	for (size_t index = 0; index < decoded.size(); ++index) {
+		auto& inst = decoded[index];
+		inst.width = index == 2 ? 2 : 1;
+		inst.baseCycles = BASE_CYCLES[inst.op];
+		source[index] = {&inst, 0x9000u + static_cast<u32>(index + (index > 2)) * INSTRUCTION_BYTES};
+	}
+	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
+		decoded.back().observeNativeNumericTypes(valueFloat(1.5f), valueInteger(2));
+	size_t bytes = 0;
+	auto block = test::compileNative(source, constants.view(), bytes, memory, cpu.stringPool());
+	const int grant = block->terminal.cycles;
+	require(block->terminal.currentPc == source.back().pc, "both field proofs and their arithmetic share one native entry");
+	for (const auto failure : {-1, 0, 2}) {
+		table.setStringKey(x, failure == 0 ? valueInteger(4) : valueFloat(1.5f));
+		table.setStringKey(y, failure == 2 ? valueFloat(4.0f) : valueInteger(2));
+		ValueSlots registers(4);
+		registers.set(0, valueTable(table.address()));
+		registers.set(1, valueBool(true));
+		registers.set(2, valueBool(false));
+		registers.set(3, valueInteger(-7));
+		NativeBlockRunState state{};
+		state.constants = constants.view();
+		state.remainingCycles = grant;
+		state.registerTop = 1;
+		const auto* exit = block->run(registers.view(), state);
+		if (failure < 0) {
+			require(exit == &block->terminal && registers.get(3) == valueFloat(3.5f)
+				&& registers.get(1) == valueInteger(2) && registers.get(2) == valueFloat(1.5f)
+				&& state.remainingCycles == 0 && state.registerTop == 4,
+				"native sum consumes both proved values without confusing the reused guest slot");
+			continue;
+		}
+		require(exit->exit == NativeBlockExit::ReadField && exit->currentPc == source[failure].pc
+			&& exit->lastPc == source[failure].pc + (decoded[failure].width - 1u) * INSTRUCTION_BYTES
+			&& exit->nextPc == source[failure].pc + decoded[failure].width * INSTRUCTION_BYTES
+			&& state.remainingCycles == grant - exit->cycles && registers.get(3) == valueInteger(-7),
+			"the checked field exit names its original instruction, including the full WIDE span");
+		require(failure == 0 ? registers.get(1) == valueBool(true) && registers.get(2) == valueBool(false)
+			: registers.get(1) == valueFloat(1.5f) && registers.get(2) == valueFloat(1.5f),
+			"a failed proof leaves the destination of that field read untouched, including after its slot was used");
+	}
+}
+
 } // namespace
 
 int main() {
@@ -1213,6 +1271,7 @@ int main() {
 		dependentInstructionsWriteBackEveryLiveRegister();
 		truthinessAndConditionalExits();
 		typedCallExitPublishesPrefix();
+		twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead();
 		std::cout << "Native block datapath tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

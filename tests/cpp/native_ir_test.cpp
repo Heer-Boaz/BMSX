@@ -3,6 +3,7 @@
 #include "machine/cpu/native_ir_optimize.h"
 #include "machine/cpu/native_ir_liveness.h"
 #include "machine/cpu/native_ir_numeric.h"
+#include "machine/cpu/native_ir_values.h"
 #include "machine/cpu/native_table_constructor.h"
 
 #include <array>
@@ -22,42 +23,42 @@ void numericPlans() {
 	constexpr auto integer = ValueTag::Integer, floating = ValueTag::Float;
 	constexpr NativeArithmeticFeedback integers{integer, integer}, mixed{integer, floating};
 
-	const auto fault = planNativeNumeric(OpCode::ADD, ValueTag::Nil, integer, integers, false, true);
+	const auto fault = planNativeNumeric(OpCode::ADD, ValueTag::Nil, integer, integers, false);
 	require(fault.action == NativeNumericAction::Fault && !fault.guardLeft && !fault.result,
 		"a known Nil is a guest operand fault, not a missing proof");
 
-	const auto generic = planNativeNumeric(OpCode::ADD, std::nullopt, std::nullopt, integers, false, false);
+	const auto generic = planNativeNumeric(OpCode::ADD, std::nullopt, std::nullopt, std::nullopt, false);
 	require(generic.action == NativeNumericAction::Kernel && !generic.result && !generic.guardLeft && !generic.guardRight,
-		"an untyped, unconsumed sum is not specialized from feedback alone");
+		"unknown operands with no stable feedback use the numeric kernel");
 
-	const auto store = planNativeNumeric(OpCode::ADD, std::nullopt, std::nullopt, mixed, false, true);
-	require(store.action == NativeNumericAction::Float && store.left == integer && store.right == floating
-		&& store.result == floating && store.guardLeft && store.guardRight,
-		"a store consumer admits separate assumptions for both input values");
+	const auto predicted = planNativeNumeric(OpCode::ADD, std::nullopt, std::nullopt, mixed, false);
+	require(predicted.action == NativeNumericAction::Float && predicted.left == integer && predicted.right == floating
+		&& predicted.result == floating && predicted.guardLeft && predicted.guardRight,
+		"stable feedback permits independent guards for two unknown operands");
 
-	const auto known = planNativeNumeric(OpCode::SUB, floating, std::nullopt, integers, false, false);
+	const auto known = planNativeNumeric(OpCode::SUB, floating, std::nullopt, integers, false);
 	require(known.action == NativeNumericAction::Float && known.left == floating && known.right == integer
 		&& !known.guardLeft && known.guardRight && known.result == floating,
 		"a proven operand keeps its tag even when feedback predicts a different one");
 
-	const auto alias = planNativeNumeric(OpCode::MUL, std::nullopt, std::nullopt, integers, true, true);
+	const auto alias = planNativeNumeric(OpCode::MUL, std::nullopt, std::nullopt, integers, true);
 	require(alias.action == NativeNumericAction::Word && alias.left == integer && alias.right == integer
 		&& alias.guardLeft && !alias.guardRight && alias.result == integer,
 		"two uses of one value share its guest tag guard");
 
-	const auto division = planNativeNumeric(OpCode::DIV, integer, integer, std::nullopt, false, false);
+	const auto division = planNativeNumeric(OpCode::DIV, integer, integer, std::nullopt, false);
 	require(division.action == NativeNumericAction::Float && division.result == floating,
 		"integer operands to DIV produce a Float");
 
-	const auto modulo = planNativeNumeric(OpCode::MOD, integer, integer, std::nullopt, false, false);
+	const auto modulo = planNativeNumeric(OpCode::MOD, integer, integer, std::nullopt, false);
 	require(modulo.action == NativeNumericAction::Kernel && modulo.result == integer,
 		"integer modulo keeps the result proof without bypassing the semantic kernel");
 
-	const auto bitwise = planNativeNumeric(OpCode::BNOT, floating, std::nullopt, std::nullopt, false, false);
+	const auto bitwise = planNativeNumeric(OpCode::BNOT, floating, std::nullopt, std::nullopt, false);
 	require(bitwise.action == NativeNumericAction::Kernel && bitwise.result == integer,
 		"bitwise conversion is a kernel on Float and only yields an Integer");
 
-	const auto unary = planNativeNumeric(OpCode::UNM, floating, std::nullopt, std::nullopt, false, false);
+	const auto unary = planNativeNumeric(OpCode::UNM, floating, std::nullopt, std::nullopt, false);
 	require(unary.action == NativeNumericAction::Float && unary.result == floating,
 		"unary negation needs only its one operand proof");
 }
@@ -144,6 +145,71 @@ void fieldSelectionOwnsColdCutAndContinuation() {
 		require(region.blocks().size() == 2 && !field.resultTag
 			&& region.entries[1]->firstPc == pc + 2 * INSTRUCTION_BYTES,
 			"an overwritten field does not donate a type and its real lookup can charge variable work");
+	}
+}
+
+void distinctFieldValuesSurviveCopiesAndSlotReuse() {
+	constexpr u32 pc = 0x5200;
+	const std::array opcodes{OpCode::K1, OpCode::GETFIELD, OpCode::MOV, OpCode::GETFIELD, OpCode::ADD, OpCode::JMP};
+	std::array<DecodedInstruction, opcodes.size()> decoded{};
+	std::array<NativeBlockInstruction, opcodes.size()> source;
+	for (size_t i = 0; i < decoded.size(); ++i) {
+		auto& inst = decoded[i];
+		inst.op = static_cast<u8>(opcodes[i]);
+		inst.width = 1;
+		inst.baseCycles = BASE_CYCLES[inst.op];
+		source[i] = {&inst, pc + static_cast<u32>(i) * INSTRUCTION_BYTES};
+	}
+	decoded[1].a = decoded[3].a = 6;
+	decoded[1].b = decoded[3].b = 3;
+	decoded[1].tableCacheSlot = decoded[3].tableCacheSlot = 0;
+	decoded[3].c = 1;
+	decoded[2].a = 9; decoded[2].b = 6;
+	decoded[4].a = 5; decoded[4].b = 9; decoded[4].c = 6;
+	decoded[5].bx = pc + 0x100;
+	const std::array runs{NativeBlockSource{source}};
+	NativeIrRegion cold(runs, {}, false, {.tier = NativeCompilationTier::ColdImage});
+	require(cold.instructionCount() == 1 && cold.entries.front()->terminal.nextPc == source[1].pc,
+		"the cold cut begins at the first reaching field producer, not the most recent slot definition");
+
+	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
+		decoded[4].observeNativeNumericTypes(valueFloat(1.5f), valueInteger(2));
+	NativeIrRegion warm(runs);
+	NativeRegisterUses uses;
+	warm.optimize({}, uses);
+	require(warm.blocks().size() == 1, "two proved field reads can share a native segment");
+	const auto instructions = warm.blocks().front().instructions;
+	const NativeRunValues values(instructions);
+	require(values.inputs(4)[0] == NativeValueOrigin{1, 6} && values.inputs(4)[1] == NativeValueOrigin{3, 6},
+		"copying and reusing the same guest slot do not merge two value definitions");
+	require(std::get<NativeTableAccess>(instructions[1].operation).resultTag == ValueTag::Float
+		&& std::get<NativeTableAccess>(instructions[3].operation).resultTag == ValueTag::Integer,
+		"the optimizer proves each field result at its own producing instruction");
+	const auto& plan = std::get<NativeNumericPlan>(std::get<NativeArithmetic>(instructions[4].operation).strategy);
+	require(plan.action == NativeNumericAction::Float && !plan.guardLeft && !plan.guardRight,
+		"the sum uses both field proofs, including the one forwarded by MOV");
+}
+
+void feedbackDoesNotDependOnStoreAdjacency() {
+	DecodedInstruction sum{.bx = 0, .a = 3, .b = 1, .c = 2, .op = static_cast<u8>(OpCode::ADD)};
+	DecodedInstruction store{.tableCacheSlot = -1, .c = 3, .op = static_cast<u8>(OpCode::SETFIELD)};
+	for (auto* instruction : {&sum, &store}) {
+		instruction->width = 1;
+		instruction->baseCycles = BASE_CYCLES[instruction->op];
+	}
+	for (unsigned sample = 0; sample < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++sample)
+		sum.observeNativeNumericTypes(valueInteger(2), valueFloat(1.5f));
+	const std::array source{NativeBlockInstruction{&sum, 0x5300u}, NativeBlockInstruction{&store, 0x5304u}};
+	for (const size_t count : {1, 2}) {
+		const std::array runs{NativeBlockSource{std::span(source).first(count)}};
+		NativeIrRegion region(runs);
+		NativeRegisterUses uses;
+		region.optimize({}, uses);
+		const auto& operation = std::get<NativeArithmetic>(region.blocks().front().instructions.front().operation);
+		const auto& plan = std::get<NativeNumericPlan>(operation.strategy);
+		require(plan.action == NativeNumericAction::Float && plan.left == ValueTag::Integer && plan.right == ValueTag::Float
+			&& plan.result == ValueTag::Float && plan.guardLeft && plan.guardRight,
+			"the same arithmetic feedback gives the same guards with or without a following SETFIELD");
 	}
 }
 
@@ -381,6 +447,8 @@ int main() {
 		numericPlans();
 		fieldChainHasAnExplicitResumePoint();
 		fieldSelectionOwnsColdCutAndContinuation();
+		distinctFieldValuesSurviveCopiesAndSlotReuse();
+		feedbackDoesNotDependOnStoreAdjacency();
 		decodedFieldsBecomeOperationsAndEffects();
 		undefinedMoveKindDoesNotBecomeANumericWordMove();
 		successorsImportLogicalTypesBeforeLowering();

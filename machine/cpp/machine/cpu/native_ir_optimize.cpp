@@ -105,7 +105,7 @@ struct NativeTypePropagation::Transfer {
 		const auto left = facts.type(op.left, constants);
 		const auto right = op.unary() ? std::nullopt : facts.type(op.right, constants);
 		const auto tag = [](Type input) { return input ? std::optional(input->tag) : std::nullopt; };
-		auto plan = planNativeNumeric(op.operation, tag(left), tag(right), hint.feedback, op.left == op.right, hint.resultFeedsStore);
+		auto plan = planNativeNumeric(op.operation, tag(left), tag(right), hint.feedback, op.left == op.right);
 		bool needsLeft = true, needsRight = !op.unary();
 		if (plan.action == NativeNumericAction::Fault) {
 			const auto nonnumeric = [](Type type) {

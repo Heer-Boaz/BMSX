@@ -72,6 +72,6 @@ private:
 NativeOperation translateNativeOperation(const DecodedInstruction& source, ConstValueSpan constants);
 enum class NativeOperationFlow : u8 { Linear, Checkpoint, Terminal, LeavesNative };
 NativeOperationFlow nativeOperationFlow(const NativeOperation& operation);
-size_t selectNativeFieldPaths(std::span<NativeInstruction> instructions, NativeCompilationTier tier);
+size_t planNativeFieldReads(std::span<NativeInstruction> instructions, NativeCompilationTier tier);
 
 } // namespace bmsx

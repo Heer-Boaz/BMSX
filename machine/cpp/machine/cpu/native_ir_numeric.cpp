@@ -4,7 +4,7 @@ namespace bmsx {
 
 NativeNumericPlan planNativeNumeric(OpCode op, std::optional<ValueTag> left,
 	std::optional<ValueTag> right, std::optional<NativeArithmeticFeedback> stableFeedback,
-	bool sameOperand, bool resultFeedsStore) {
+	bool sameOperand) {
 	constexpr auto integer = ValueTag::Integer, floating = ValueTag::Float;
 	if (op == OpCode::UNM || op == OpCode::BNOT)
 		right = left;
@@ -12,7 +12,7 @@ NativeNumericPlan planNativeNumeric(OpCode op, std::optional<ValueTag> left,
 		return {NativeNumericAction::Fault, left, right, std::nullopt};
 
 	bool guardLeft = false, guardRight = false;
-	if (stableFeedback && (left || right || resultFeedsStore)) {
+	if (stableFeedback) {
 		if (!left) {
 			left = stableFeedback->left;
 			guardLeft = true;

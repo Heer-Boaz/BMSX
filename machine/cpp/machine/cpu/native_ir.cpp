@@ -56,7 +56,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Const
 		for (const auto& inst : source.instructions)
 			m_instructions.emplace_back(translateNativeOperation(*inst.decoded, constants));
 		auto operations = std::span(m_instructions).subspan(first);
-		const size_t count = selectNativeFieldPaths(operations, options.tier);
+		const size_t count = planNativeFieldReads(operations, options.tier);
 		const bool completeRun = count == operations.size();
 		operations = operations.first(count);
 		if (!completeRun) m_instructions.erase(m_instructions.begin() + first + count, m_instructions.end());

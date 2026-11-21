@@ -17,6 +17,8 @@ namespace bmsx {
 // negative selector of a constant-pool entry. Destinations are slots only.
 using NativeValueRef = i16;
 using NativeSlot = u16;
+inline constexpr NativeValueRef NATIVE_NO_OPERAND = std::numeric_limits<NativeValueRef>::min();
+static_assert(NATIVE_NO_OPERAND < -MAX_EXT_CONST - 1);
 
 struct NativeSlotRange {
 	u32 first = 0;
@@ -26,7 +28,7 @@ struct NativeSlotRange {
 };
 
 struct NativeSlotAccess {
-	std::array<NativeValueRef, 3> reads{-1, -1, -1};
+	std::array<NativeValueRef, 3> reads{NATIVE_NO_OPERAND, NATIVE_NO_OPERAND, NATIVE_NO_OPERAND};
 	NativeSlotRange writes{};
 	NativeSlotRange readsRange{};
 };
@@ -71,7 +73,7 @@ struct NativeTableAllocation : NativeExitOperands::Allocation {
 struct NativeConcat : NativeExitOperands::Concat {
 	static constexpr auto terminalExit = NativeBlockExit::Concat;
 	constexpr NativeSlotAccess slots() const {
-		return {.reads = {left, right, -1}, .writes = {result, 1}};
+		return {.reads = {left, right, NATIVE_NO_OPERAND}, .writes = {result, 1}};
 	}
 };
 struct NativeConcatRange : NativeExitOperands::ConcatRange {
@@ -98,13 +100,13 @@ struct NativeMove {
 	ValueMoveKind conversion;
 	std::optional<ValueTag> copyTag{};
 	NativeTagCheck conversionCheck = NativeTagCheck::Dynamic;
-	constexpr NativeSlotAccess slots() const { return {{source, -1, -1}, {result, 1}}; }
+	constexpr NativeSlotAccess slots() const { return {{source, NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}, {result, 1}}; }
 };
 struct NativeNot {
 	NativeSlot result;
 	NativeValueRef source;
 	std::optional<bool> sourceTruthy{};
-	constexpr NativeSlotAccess slots() const { return {{source, -1, -1}, {result, 1}}; }
+	constexpr NativeSlotAccess slots() const { return {{source, NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}, {result, 1}}; }
 };
 struct NativeClearSlots {
 	NativeSlot first;
@@ -114,11 +116,11 @@ struct NativeClearSlots {
 struct NativePoolRead {
 	NativeSlot result, index;
 	NativeWordSource indexPlan = NativeWordSource::Dynamic;
-	constexpr NativeSlotAccess slots() const { return {{static_cast<i16>(index), -1, -1}, {result, 1}}; }
+	constexpr NativeSlotAccess slots() const { return {{static_cast<i16>(index), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}, {result, 1}}; }
 };
 struct NativeLength {
 	NativeSlot result, source;
-	constexpr NativeSlotAccess slots() const { return {{static_cast<i16>(source), -1, -1}, {result, 1}}; }
+	constexpr NativeSlotAccess slots() const { return {{static_cast<i16>(source), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}, {result, 1}}; }
 };
 struct NativeGlobalAccess {
 	NativeSlot slot;
@@ -127,7 +129,7 @@ struct NativeGlobalAccess {
 	NativeAccess access;
 	constexpr NativeSlotAccess slots() const {
 		return access == NativeAccess::Read ? NativeSlotAccess{.writes = {slot, 1}}
-			: NativeSlotAccess{.reads = {static_cast<i16>(slot), -1, -1}};
+			: NativeSlotAccess{.reads = {static_cast<i16>(slot), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}};
 	}
 };
 struct NativeUpvalueAccess {
@@ -137,7 +139,7 @@ struct NativeUpvalueAccess {
 	NativeGcBarrier barrier = NativeGcBarrier::Dynamic;
 	constexpr NativeSlotAccess slots() const {
 		return access == NativeAccess::Read ? NativeSlotAccess{.writes = {slot, 1}}
-			: NativeSlotAccess{.reads = {static_cast<i16>(slot), -1, -1}};
+			: NativeSlotAccess{.reads = {static_cast<i16>(slot), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}};
 	}
 };
 
@@ -153,9 +155,9 @@ struct NativeControlAccess {
 		case NativeControlMode::ReadWord: case NativeControlMode::ReadZero:
 			return {.writes = {slot, 1}};
 		case NativeControlMode::WriteWord: case NativeControlMode::ConsumeWord:
-			return {.reads = {static_cast<i16>(slot), -1, -1}};
+			return {.reads = {static_cast<i16>(slot), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}};
 		case NativeControlMode::WriteSemantic:
-			return {.reads = {static_cast<i16>(slot), -1, -1}};
+			return {.reads = {static_cast<i16>(slot), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}};
 		case NativeControlMode::ReadFault:
 			return {};
 		}
@@ -176,10 +178,10 @@ struct NativeMemoryAccess {
 
 	constexpr NativeSlotAccess slots() const {
 		switch (mode) {
-		case NativeMemoryMode::Load: return {{address, -1, -1}, {slot, 1}};
-		case NativeMemoryMode::Store: return {.reads = {address, static_cast<i16>(slot), -1}};
+		case NativeMemoryMode::Load: return {{address, NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}, {slot, 1}};
+		case NativeMemoryMode::Store: return {.reads = {address, static_cast<i16>(slot), NATIVE_NO_OPERAND}};
 		case NativeMemoryMode::StoreWords:
-			return {.reads = {address, -1, -1}, .readsRange = {slot, wordCount}};
+			return {.reads = {address, NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}, .readsRange = {slot, wordCount}};
 		}
 		BMSX_UNREACHABLE();
 	}
@@ -199,17 +201,16 @@ struct NativeTableAccess {
 	NativeStorePlan store{};
 
 	constexpr NativeSlotAccess slots() const {
-		const i16 keySlot = keyKind == NativeTableKey::Value ? key : -1;
+		const i16 keySlot = keyKind == NativeTableKey::Value ? key : NATIVE_NO_OPERAND;
 		if (mode == NativeTableMode::Write)
 			return {.reads = {receiver, keySlot, value}};
 		const u16 results = mode == NativeTableMode::ReadMethod ? 2u : 1u;
-		return {.reads = {receiver, keySlot, -1}, .writes = {static_cast<u16>(value), results}};
+		return {.reads = {receiver, keySlot, NATIVE_NO_OPERAND}, .writes = {static_cast<u16>(value), results}};
 	}
 };
 
 struct NativeArithmeticHint {
 	std::optional<NativeArithmeticFeedback> feedback;
-	bool resultFeedsStore = false;
 	bool observed = false;
 };
 struct NativeArithmetic {
@@ -219,7 +220,7 @@ struct NativeArithmetic {
 	std::variant<NativeArithmeticHint, NativeNumericPlan> strategy;
 
 	constexpr bool unary() const { return operation == OpCode::UNM || operation == OpCode::BNOT; }
-	constexpr NativeSlotAccess slots() const { return {{left, unary() ? i16{-1} : right, -1}, {result, 1}}; }
+	constexpr NativeSlotAccess slots() const { return {{left, unary() ? NATIVE_NO_OPERAND : right, NATIVE_NO_OPERAND}, {result, 1}}; }
 };
 
 struct NativeTruthBranch {
@@ -227,7 +228,7 @@ struct NativeTruthBranch {
 	NativeValueRef condition;
 	bool takeOnTruthy;
 	std::optional<bool> sourceTruthy{};
-	constexpr NativeSlotAccess slots() const { return {.reads = {condition, -1, -1}}; }
+	constexpr NativeSlotAccess slots() const { return {.reads = {condition, NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}}; }
 };
 enum class NativeComparisonStrategy : u8 { Word, Float, Kernel };
 struct NativeComparison {
@@ -235,7 +236,7 @@ struct NativeComparison {
 	OpCode operation;
 	bool skipOnMatch;
 	NativeComparisonStrategy strategy = NativeComparisonStrategy::Kernel;
-	constexpr NativeSlotAccess slots() const { return {.reads = {left, right, -1}}; }
+	constexpr NativeSlotAccess slots() const { return {.reads = {left, right, NATIVE_NO_OPERAND}}; }
 };
 
 struct NativeCallSite : NativeExitOperands::Call {
