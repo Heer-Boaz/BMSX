@@ -418,6 +418,7 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 		machine/cpu/jit/sljit/numeric.cpp
 		machine/cpu/jit/sljit/register_cache.cpp
 		machine/cpu/jit/sljit/table.cpp
+		machine/cpu/jit/sljit/table_access.cpp
 
 		machine/cpu/jit/runtime/block.cpp
 		machine/cpu/jit/runtime/closure_call.cpp

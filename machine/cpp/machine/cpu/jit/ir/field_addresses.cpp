@@ -82,7 +82,8 @@ void selectFieldAddresses(std::span<NativeInstruction> instructions, std::span<c
 		}
 		if (const size_t definition = use.definition - firstRow; definition != index && !uses[definition].temporary)
 			use.definition = static_cast<u8>(firstRow + index);
-		field->ownFieldOnly = field->resultTag.has_value() || static_cast<int>(index) <= inlineThrough;
+		if (field->resultTag || static_cast<int>(index) <= inlineThrough)
+			field->readPlan = NativeTableReadPlan::OwnSlot;
 	}
 }
 

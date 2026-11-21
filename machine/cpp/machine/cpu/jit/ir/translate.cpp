@@ -53,13 +53,19 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 		return NativeMemoryAccess{a, b, op == OpCode::STORE_MEM_WORDS_D ? u32{instruction.disp} * 4u : 0u,
 			MemoryAccessKind::Word, NativeMemoryMode::StoreWords, static_cast<u16>(c)};
 	case OpCode::GETT:
-		return NativeTableAccess{static_cast<i16>(a), b, c, NativeTableMode::Read, NativeTableKey::Value, {}, instruction.tableCacheSlot()};
+		return NativeTableAccess{.value = static_cast<i16>(a), .receiver = b, .key = c, .mode = NativeTableMode::Read,
+			.keyKind = NativeTableKey::Value, .resultTag = {}, .predictedSlot = instruction.tableCacheSlot(),
+			.readPlan = NativeTableReadPlan::OneHopIndex};
 	case OpCode::GETI:
 		return NativeTableAccess{static_cast<i16>(a), b, c, NativeTableMode::Read, NativeTableKey::Integer, {}};
 	case OpCode::GETFIELD:
-		return NativeTableAccess{static_cast<i16>(a), b, c, NativeTableMode::Read, NativeTableKey::Field, {}, instruction.tableCacheSlot()};
+		return NativeTableAccess{.value = static_cast<i16>(a), .receiver = b, .key = c, .mode = NativeTableMode::Read,
+			.keyKind = NativeTableKey::Field, .resultTag = {}, .predictedSlot = instruction.tableCacheSlot(),
+			.readPlan = NativeTableReadPlan::OneHopIndex};
 	case OpCode::SELF:
-		return NativeTableAccess{static_cast<i16>(a), b, c, NativeTableMode::ReadMethod, NativeTableKey::Field, {}, instruction.tableCacheSlot()};
+		return NativeTableAccess{.value = static_cast<i16>(a), .receiver = b, .key = c, .mode = NativeTableMode::ReadMethod,
+			.keyKind = NativeTableKey::Field, .resultTag = {}, .predictedSlot = instruction.tableCacheSlot(),
+			.readPlan = NativeTableReadPlan::OneHopIndex};
 	case OpCode::SETT:
 		return NativeTableAccess{c, static_cast<i16>(a), b, NativeTableMode::Write, NativeTableKey::Value, {}, instruction.tableCacheSlot()};
 	case OpCode::SETI:

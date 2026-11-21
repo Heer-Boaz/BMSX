@@ -114,6 +114,7 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 					writeValue(out, operand);
 				}
 			}
+			if (tableAccess && tableAccess->readPlan == NativeTableReadPlan::OneHopIndex) out << " check-one-hop";
 			if (const auto* constant = std::get_if<NativeConstantLoad>(&inst.operation)) out << " K" << constant->index;
 			if (const auto* arithmetic = std::get_if<NativeArithmetic>(&inst.operation))
 				writeNumericPlan(out, *arithmetic);

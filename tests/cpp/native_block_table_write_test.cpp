@@ -374,8 +374,8 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 		const std::array source{NativeBlockInstruction{&lookup, 0x1000u}, NativeBlockInstruction{&suffix, 0x1004u}};
 		size_t bytes = 0;
 		auto block = test::compileNative(source, bytes, memory, cpu.stringPool());
-		auto table = cpu.createTable(0, 2), meta = cpu.createTable(0, 1);
-		auto holder = cpu.createTable(0, 1), nextHolder = cpu.createTable(0, 1);
+		auto table = cpu.createTable(0, 2), meta = cpu.createTable(2, 1);
+		auto holder = cpu.createTable(3, 1), nextHolder = cpu.createTable(1, 1);
 		holder.setStringKey(key, firstResult);
 		nextHolder.setStringKey(key, secondResult);
 		meta.setStringKey(indexKey, valueTable(holder.address()));
@@ -389,8 +389,9 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 			registers.set(2, valueInteger(31));
 			registers.set(3, valueInteger(32));
 			registers.set(4, valueInteger(33));
-			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(),
-				.tableIndexKey = indexKey, .remainingCycles = grant};
+			// A trained hit uses only the admitted RAM and native frame,
+			// not the C++ heap owner needed by the semantic lookup.
+			NativeBlockRunState state{.constants = constants.view(), .tableIndexKey = indexKey, .remainingCycles = grant};
 			const auto* exit = block->run(registers.view(), state);
 			require(registers.get(3) == (op == OpCode::SELF ? registers.get(0) : valueInteger(32)),
 				"SELF keeps its original receiver independently of a one-hop hit");
@@ -426,9 +427,20 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 		other.setMetatableAddress(meta.address());
 		run(other, 100, firstResult);
 		meta.setStringKey(indexKey, valueTable(nextHolder.address()));
+		memory.writeRamRecordWord(nextHolder.address() + static_cast<u32>(TableHeader::Storage),
+			nextHolder.storageAddress() + MAIN_RAM_SIZE);
 		run(other, 100, secondResult);
 		nextHolder.setStringKey(key, valueNil());
+		auto nextMeta = cpu.createTable(0, 1);
+		nextMeta.setStringKey(indexKey, valueTable(holder.address()));
+		nextHolder.setMetatableAddress(nextMeta.address());
 		run(other, 100, valueNil());
+		other.resolveStringIndexPath(indexKey, key, cache.own.standalone, result, cache.path);
+		require(result.value == firstResult && result.extraVisits == 2,
+			"the bounded native read leaves a longer path to the semantic owner");
+		meta.setStringKey(indexKey, valueTable(holder.address()));
+		other.resolveStringIndexPath(indexKey, key, cache.own.standalone, result, cache.path);
+		run(other, 100, firstResult);
 		meta.setStringKey(indexKey, valueBool(false));
 		run(other, 100, valueNil());
 	}

@@ -8,7 +8,8 @@ namespace bmsx {
 struct NativeBlockExitSite;
 struct NativeBlockRunState;
 
-// Cold semantic work returns through this stable allocation. A helper may
+// Shared frame entries live here. Cold semantic work returns through this
+// stable allocation. A C++ helper may
 // retire the region it came from; no return address points into that region.
 class NativeBlockGate {
 public:
@@ -22,6 +23,7 @@ public:
 	void* dispatch;
 	void* publishSegment;
 	void* leaveSegment;
+	void* oneHopStringRead;
 };
 const NativeBlockGate& nativeBlockGate();
 

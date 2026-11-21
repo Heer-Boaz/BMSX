@@ -297,7 +297,7 @@ void nestedFieldsShareOnlyTheCheckedAddress() {
 	const auto& first = std::get<NativeTableAccess>(block.instructions[0].operation);
 	const auto& second = std::get<NativeTableAccess>(block.instructions[3].operation);
 	require(first.ownFieldAddress && first.ownFieldAddress == second.ownFieldAddress
-		&& first.ownFieldOnly && second.ownFieldOnly
+		&& first.readPlan == NativeTableReadPlan::OwnSlot && second.readPlan == NativeTableReadPlan::OwnSlot
 		&& first.resultTag == ValueTag::Table && second.resultTag == ValueTag::Table,
 		"the two t.a loads share a checked address but keep their own Table result checks");
 	const auto& definition = block.ownFieldAddresses[*first.ownFieldAddress];
@@ -381,10 +381,12 @@ void fieldAddressesStopAtDefinitionsAndEffects() {
 		const auto& definition = firstBlock.ownFieldAddresses[*first.ownFieldAddress];
 		if (boundary == Boundary::Copy) {
 			require(&firstBlock == &lastBlock && first.ownFieldAddress == last.ownFieldAddress
-				&& definition.temporary && first.ownFieldOnly && last.ownFieldOnly && !first.resultTag && !last.resultTag,
+				&& definition.temporary && first.readPlan == NativeTableReadPlan::OwnSlot
+				&& last.readPlan == NativeTableReadPlan::OwnSlot && !first.resultTag && !last.resultTag,
 				"repeated untyped loads can share an own-only path through an ordinary copy");
 		} else {
-			require(!definition.temporary && !first.ownFieldOnly && !last.ownFieldOnly,
+			require(!definition.temporary && first.readPlan == NativeTableReadPlan::OneHopIndex
+				&& last.readPlan == NativeTableReadPlan::OneHopIndex,
 				"different receivers, keys, seeds or intervening effects do not retain checked addresses");
 		}
 	}

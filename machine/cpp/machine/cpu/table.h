@@ -78,7 +78,6 @@ public:
 	void resolveAssignment(StringId newIndexKey, Value key, TableLookupResult& result) const;
 	void resolveIntegerAssignment(StringId newIndexKey, int key, TableLookupResult& result) const;
 	void resolveStringAssignment(StringId newIndexKey, StringId key, int predictedSlot, TableLookupResult& result) const;
-	static u32 trySingleStringIndex(GcHeap* heap, TableSingleIndexProbe* probe, const TableStringPathCache* slots) noexcept;
 	// Pure boundary search; also the generated-code entry point.
 	static i32 length(const TableRecord* table, u32* probes = nullptr) noexcept;
 	void clear();

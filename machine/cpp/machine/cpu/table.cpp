@@ -617,35 +617,6 @@ void TableRecord::resolveStringAssignment(StringId newIndexKey, StringId key, in
 	resolveIndexChain<true>(newIndexKey, predictedSlot, result, [key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); });
 }
 
-u32 TableRecord::trySingleStringIndex(GcHeap* heap, TableSingleIndexProbe* probe, const TableStringPathCache* slots) noexcept {
-	const TableRecord receiver(*heap, probe->receiver);
-	const auto key = probe->key;
-	const u32 count = receiver.hashSlots();
-	if (count != 0u) {
-		// The emitted receiver prediction missed, but that does not prove
-		// absence. Prove it at the live home bucket without chasing links.
-		const u32 home = hashCanonicalTableKey(valueString(key)) & (count - 1u);
-		if (static_cast<i32>(home) >= 0) {
-			const auto body = receiver.hashBody(count, receiver.arrayCapacity());
-			if (body.matchesString(home, key)) {
-				if (body.slots.tag(body.array + count + home) != ValueTag::Nil) return 0;
-			} else if (count != 1u && body.next(home) >= 0) {
-				return 0;
-			}
-		}
-	}
-	const u32 metatable = receiver.metatableAddress();
-	if (metatable == 0u) return 0;
-	const TableRecord meta(*heap, metatable);
-	const Value parent = meta.hashBody(meta.hashSlots(), meta.arrayCapacity()).predictedString(slots->indexSlots[0], probe->indexKey);
-	if (!valueIsTable(parent)) return 0;
-	const TableRecord holder(*heap, valuePayload(parent));
-	const Value result = holder.hashBody(holder.hashSlots(), holder.arrayCapacity()).predictedString(slots->holderSlot, key);
-	if (isNil(result)) return 0;
-	probe->result = result;
-	return 1;
-}
-
 int TableRecord::setStringKey(StringId key, const Value& value) {
 	const int nodeIndex = storeStringKeyWithoutGrowth(key, value);
 	if (nodeIndex != kStoreRequiresGrowth) return nodeIndex;

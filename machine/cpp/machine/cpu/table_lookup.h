@@ -25,11 +25,4 @@ struct TableStringPathCache {
 	std::array<i32, 3> indexSlots;
 };
 
-// Transient ABI for a bounded read-only path after the receiver prediction misses.
-struct TableSingleIndexProbe {
-	Value result;
-	u32 receiver;
-	StringId key, indexKey;
-};
-
 } // namespace bmsx

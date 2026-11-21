@@ -21,7 +21,7 @@ struct OperationFlow {
 	Flow operator()(const NativeComparison&) const { return Flow::Terminal; }
 	Flow operator()(const NativeReplay&) const { return Flow::LeavesNative; }
 
-	Flow operator()(const NativeTableAccess& op) const { return op.ownFieldOnly ? Flow::Linear : Flow::Checkpoint; }
+	Flow operator()(const NativeTableAccess& op) const { return op.readPlan == NativeTableReadPlan::OwnSlot ? Flow::Linear : Flow::Checkpoint; }
 	Flow operator()(const NativeVararg&) const { return Flow::Checkpoint; }
 	Flow operator()(const NativeLength&) const { return Flow::Checkpoint; }
 	Flow operator()(const NativeMemoryAccess&) const { return Flow::Checkpoint; }

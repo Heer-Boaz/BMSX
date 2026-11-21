@@ -90,12 +90,11 @@ private:
 	sljit_jump* emitStringValueTag(bool load, std::optional<ValueTag> resultTag);
 	void emitStringPayload();
 	void emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<u16> keyIndex,
-		std::optional<ValueTag> resultTag, NativeStorePlan store, TableStackAdmission, bool ownFieldOnly = false,
+		std::optional<ValueTag> resultTag, NativeStorePlan store, TableStackAdmission, NativeTableReadPlan,
 		std::optional<u8> temporary = {});
 	void emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBlockExitSite&, std::optional<ValueTag> resultTag);
 	void emitFieldResult(int slot, std::optional<ValueTag> resultTag);
 	void emitSingleStringReads();
-	void emitTableSlotOffset(sljit_s32 destination, bool word);
 	void emitTableOverwrite(NativeBlockExitSite&, int value, NativeGcBarrier);
 	// scratch cannot address the mark byte; test is first clobbered after the load.
 	void emitGuardNoGcMutation(NativeBlockExitSite&, sljit_s32 mark, sljit_sw markArg,

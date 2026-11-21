@@ -196,6 +196,9 @@ struct NativeMemoryAccess {
 
 enum class NativeTableMode : u8 { Read, Write, ReadMethod };
 enum class NativeTableKey : u8 { Value, Integer, Field };
+// The inherited read requires a variable-cost checkpoint. A checked own
+// slot can instead be used within an admitted fixed-cost segment.
+enum class NativeTableReadPlan : u8 { Checkpoint, OwnSlot, OneHopIndex };
 using NativeOwnFieldAddressId = u8;
 struct NativeTableAccess {
 	NativeValueRef value;
@@ -210,7 +213,7 @@ struct NativeTableAccess {
 	std::optional<NativeOwnFieldAddressId> ownFieldAddress{};
 	// A cold own-slot site can learn reuse from a peer on the source page.
 	std::optional<u16> reusePeerWord{};
-	bool ownFieldOnly = false;
+	NativeTableReadPlan readPlan = NativeTableReadPlan::Checkpoint;
 
 	constexpr bool readsFixedField() const { return mode == NativeTableMode::Read && keyKind == NativeTableKey::Field; }
 

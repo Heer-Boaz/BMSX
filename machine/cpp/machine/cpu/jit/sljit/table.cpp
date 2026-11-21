@@ -1,7 +1,8 @@
 #include "machine/cpu/jit/sljit/lowering.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/gc_object.h"
-#include "machine/cpu/jit/sljit/value_transport.h"
+#include "machine/cpu/jit/sljit/gate.h"
+#include "machine/cpu/jit/sljit/table_access.h"
 #include "machine/cpu/table.h"
 #include "spec/blua32/opcode.h"
 
@@ -10,38 +11,11 @@
 namespace bmsx {
 
 namespace {
-struct TableScratch {
-	u32 receiver, keyWord, wordOffset, tagOffset;
-};
-constexpr auto scratch = NativeBlockAbi::helperResultOffset;
-constexpr auto receiver = scratch + offsetof(TableScratch, receiver);
-constexpr auto keyWord = scratch + offsetof(TableScratch, keyWord);
-constexpr auto wordOffset = scratch + offsetof(TableScratch, wordOffset);
-constexpr auto tagOffset = scratch + offsetof(TableScratch, tagOffset);
-static_assert(scratch + sizeof(TableScratch) <= NativeBlockAbi::stackBytes);
-constexpr auto singleIndex = (scratch + sizeof(TableScratch) + alignof(TableSingleIndexProbe) - 1)
-	& -static_cast<sljit_sw>(alignof(TableSingleIndexProbe));
-static_assert(singleIndex + sizeof(TableSingleIndexProbe) <= NativeBlockAbi::stackBytes);
+constexpr auto receiver = NativeTableScratch::receiver;
+constexpr auto keyWord = NativeTableScratch::keyWord;
+constexpr auto wordOffset = NativeTableScratch::wordOffset;
+constexpr auto tagOffset = NativeTableScratch::tagOffset;
 } // namespace
-
-// R0 addresses the aligned table header; R1 is the slot. The stored backing
-// address and capacities are guest words: mirror each derived access.
-void NativeLowering::emitTableSlotOffset(sljit_s32 destination, bool word) {
-	if (word) {
-		sljit_emit_op2(m_compiler, SLJIT_SHL32, destination, 0, SLJIT_R1, 0, SLJIT_IMM, 2);
-	} else {
-		sljit_emit_op2(m_compiler, SLJIT_MUL32, destination, 0, SLJIT_MEM1(SLJIT_R0),
-			static_cast<u32>(TableHeader::Hash), SLJIT_IMM, 3);
-		sljit_emit_op2(m_compiler, SLJIT_ADD32, destination, 0, destination, 0, SLJIT_MEM1(SLJIT_R0),
-			static_cast<u32>(TableHeader::Array));
-		sljit_emit_op2(m_compiler, SLJIT_SHL32, destination, 0, destination, 0, SLJIT_IMM, 2);
-		sljit_emit_op2(m_compiler, SLJIT_ADD32, destination, 0, destination, 0, SLJIT_R1, 0);
-	}
-	sljit_emit_op2(m_compiler, SLJIT_ADD32, destination, 0, destination, 0, SLJIT_MEM1(SLJIT_R0),
-		static_cast<u32>(TableHeader::Storage));
-	sljit_emit_op2(m_compiler, SLJIT_AND, destination, 0, destination, 0, SLJIT_IMM,
-		word ? RAM_RECORD_WORD_MASK : MAIN_RAM_SIZE - 1u);
-}
 
 void NativeLowering::emitTableOverwrite(NativeBlockExitSite& exit, int value, NativeGcBarrier barrier) {
 	auto* c = m_compiler;
@@ -68,8 +42,8 @@ void NativeLowering::emitArrayRead(NativeBlockExitSite& exit, bool guardStack) {
 	auto* c = m_compiler;
 	fault(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array)), exit, m_cache.state());
-	emitTableSlotOffset(SLJIT_R2, true);
-	emitTableSlotOffset(SLJIT_R3, false);
+	emitTableSlotOffset(c, SLJIT_R2, true);
+	emitTableSlotOffset(c, SLJIT_R3, false);
 	if (guardStack) {
 		emitGuardOutsideStack(SLJIT_R2, sizeof(u32), exit, SLJIT_R1);
 		emitGuardOutsideStack(SLJIT_R3, 1, exit, SLJIT_R1);
@@ -112,7 +86,7 @@ void NativeLowering::emitArrayStore(int value, NativeStorePlan plan, NativeBlock
 	// mirror can put either lane in that word even when the pre-write hint
 	// did not select an update.
 	for (bool word : {true, false}) {
-		emitTableSlotOffset(SLJIT_R3, word);
+		emitTableSlotOffset(c, SLJIT_R3, word);
 		if (guardStack) emitGuardOutsideStack(SLJIT_R3, word ? sizeof(u32) : 1, exit);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), word ? wordOffset : tagOffset, SLJIT_R3, 0);
 	}
@@ -163,25 +137,19 @@ std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExi
 	}
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array));
-	emitTableSlotOffset(SLJIT_R3, false);
+	emitTableSlotOffset(c, SLJIT_R3, false);
 	if (stack.reads) emitGuardOutsideStack(SLJIT_R3, 1, exit);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	checks[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::String));
-	emitTableSlotOffset(SLJIT_R1, true);
+	emitTableSlotOffset(c, SLJIT_R1, true);
 	if (stack.reads) emitGuardOutsideStack(SLJIT_R1, sizeof(u32), exit);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R1);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	checks[2] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), keyWord);
 
-	// Advance to the value lane and mirror the two offsets independently.
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash));
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
-	sljit_emit_op2(c, SLJIT_AND, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
-	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
-	sljit_emit_op2(c, SLJIT_AND, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	emitHashValueOffsets(c);
 	if (stack.reads || stack.overwrites) {
 		// The two lanes can alias independently. Reads need the published
 		// values; writes must also preserve the admitted resident bindings.
@@ -228,7 +196,7 @@ void NativeLowering::emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBl
 
 void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& exit,
 	std::optional<u16> keyIndex, std::optional<ValueTag> resultTag, NativeStorePlan plan,
-	TableStackAdmission stack, bool ownFieldOnly, std::optional<u8> temporary) {
+	TableStackAdmission stack, NativeTableReadPlan readPlan, std::optional<u8> temporary) {
 	auto* c = m_compiler;
 	if (!load && plan.nilValue == NativeNilValue::Nil) {
 		fault(sljit_emit_jump(c, SLJIT_JUMP), exit, m_cache.state());
@@ -251,7 +219,7 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	}
 	// An own-only read can be inside a fixed-cost segment. Only
 	// checkpointed reads can complete a returning variable-cost lookup.
-	if (load && !ownFieldOnly && !resultTag) {
+	if (readPlan == NativeTableReadPlan::OneHopIndex) {
 		emitStringPayload();
 		m_singleStringReads.push_back({{address[0], address[1], address[2], valueFailure},
 			m_cache.state(), &exit, sljit_emit_label(c)});
@@ -282,32 +250,20 @@ void NativeLowering::emitSingleStringReads() {
 		auto* entry = sljit_emit_label(c);
 		for (auto* miss : read.ownMisses) sljit_set_label(miss, entry);
 		m_cache.setState(read.registers);
-		auto& slots = read.exit->tableRead.path;
+		const auto& slots = read.exit->tableRead.path;
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&slots));
 		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
-			SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&slots.holderDepth), SLJIT_IMM, 1), *read.exit, read.registers);
-		// Home, metatable and holder lookups read physical RAM beyond the
-		// checked own slot. Publish dirty planes without moving bindings.
-		// A declined probe then exits from this already-published state.
+			SLJIT_MEM1(SLJIT_R1), offsetof(TableStringPathCache, holderDepth), SLJIT_IMM, 1), *read.exit, read.registers);
+		// The shared leaf reads physical RAM outside the checked own slot.
+		// Publish any aliased stack planes, retaining the resident bindings.
 		m_cache.publish();
-		// Each own-slot miss leaves R0 pointing at the aligned receiver
-		// header. All Table header fields use the RAM word port.
-		sljit_emit_op2(c, SLJIT_SUB, SLJIT_R0, 0, SLJIT_R0, 0,
-			SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, ram));
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), singleIndex + offsetof(TableSingleIndexProbe, receiver),
-			SLJIT_R0, 0);
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), singleIndex + offsetof(TableSingleIndexProbe, key),
-			SLJIT_MEM1(SLJIT_SP), keyWord);
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), singleIndex + offsetof(TableSingleIndexProbe, indexKey),
-			SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, tableIndexKey));
-		m_cache.spillCall(false, 0);
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-		sljit_get_local_base(c, SLJIT_R1, 0, singleIndex);
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&slots));
-		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3(32, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&TableRecord::trySingleStringIndex));
-		m_cache.spillCall(true, 0);
-		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), *read.exit, m_cache.state());
+		// Each own miss leaves the aligned receiver header in R0. The leaf
+		// preserves the guest register cache and returns the live value lanes.
+		sljit_emit_ijump(c, SLJIT_FAST_CALL, SLJIT_IMM,
+			reinterpret_cast<sljit_sw>(nativeBlockGate().oneHopStringRead));
+		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0,
+			SLJIT_IMM, static_cast<u8>(ValueTag::Nil)), *read.exit, m_cache.state());
 		sljit_emit_op2(c, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, TABLE_INDEX_VISIT_CYCLES);
-		emitValueTransportLoad(c, SLJIT_SP, singleIndex + offsetof(TableSingleIndexProbe, result), SLJIT_R2, SLJIT_R3);
 		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), read.result);
 	}
 }
@@ -372,7 +328,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		else emitArrayStore(value, access.store, exit, stack.reads || stack.overwrites);
 		auto* joined = sljit_emit_jump(c, SLJIT_JUMP);
 		sljit_set_label(string, sljit_emit_label(c));
-		emitStringSlot(load, value, exit, std::nullopt, std::nullopt, access.store, stack);
+		emitStringSlot(load, value, exit, std::nullopt, std::nullopt, access.store, stack, access.readPlan);
 		sljit_set_label(joined, sljit_emit_label(c));
 		break;
 	}
@@ -383,7 +339,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		break;
 	case NativeTableKey::Field:
 		emitStringSlot(load, value, exit, static_cast<u16>(key), access.resultTag, access.store,
-			stack, access.ownFieldOnly, address ? address->temporary : std::nullopt);
+			stack, access.readPlan, address ? address->temporary : std::nullopt);
 		if (load) {
 			emitFieldResult(value, access.resultTag);
 			return;
