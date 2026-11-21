@@ -571,6 +571,64 @@ void wideNativeClosureCallResumesAfterItsBody() {
 		&& native.cpu.readFrameRegister(0, 1) == valueInteger(1), "resume executes the instruction after the WIDE body");
 }
 
+void nativeReturnPublishesCallerTopAtMappedObserver() {
+	constexpr u32 continuation = 5u;
+	test::Blua32TestImage image;
+	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::KSMI), 5, 0, 23);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::K1), 7, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::CALL), 4, 2, 2);
+	writeInstruction(image.text, continuation, static_cast<u8>(OpCode::LOAD_MEM_D), 0, 1, static_cast<u8>(MemoryAccessKind::U32LE));
+	writeInstruction(image.text, continuation + 1u, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, DECODED_PAGE_WORDS, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8},
+		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 1, .numParams = 1}};
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	for (const bool enough : {false, true}) {
+		CpuMachine machine(image, false);
+		auto& cpu = machine.cpu;
+		const u32 nextPc = machine.rom.textAddress + continuation * INSTRUCTION_BYTES;
+		struct Observer { CPU& cpu; u32 pc; int reads = 0; } observer{cpu, nextPc};
+		constexpr u32 address = IO_BASE + 0x5000u;
+		machine.memory.mapIoRead(address, &observer, [](void* context, u32, MappedBusSignals) -> u32 {
+			auto& current = *static_cast<Observer*>(context);
+			require(current.cpu.getFrameDepth() == 1 && current.cpu.readFramePc(0) == current.pc + INSTRUCTION_BYTES
+				&& current.cpu.getFrameRegisterCount(0) == 5 && current.cpu.readFrameRegister(0, 4) == valueInteger(23),
+				"the mapped observer sees the returned value, exact caller top and next PC");
+			++current.reads;
+			return 71;
+		});
+		cpu.rootThread()->currentFrame->registers.set(1, valueInteger(address));
+		cpu.prepareSystemNativeCode();
+		for (int step = 0; step != 4; ++step)
+			require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "a short grant executes one caller instruction");
+		require(cpu.getFrameDepth() == 2 && cpu.getFrameRegisterCount(0) == 8
+			&& cpu.readFramePc(1) == machine.rom.textAddress + MAPPED_PAGE_BYTE_SIZE, "the real call suspends a wider logical caller range");
+
+		constexpr int placed = 1;
+		const int resultCycles = BASE_CYCLES[static_cast<u8>(OpCode::RET)] + placed;
+		const int readCycles = BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM_D)];
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto& exits = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::Return)].entries;
+		const auto before = exits;
+#endif
+		const int grant = resultCycles + (enough ? readCycles : 0);
+		require(cpu.runUntilDepth(0, grant) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0
+			&& observer.reads == (enough ? 1 : 0), "only an adequate RET grant reaches the mapped observer");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		require(exits == before + static_cast<u64>(!enough), "only an exhausted native return uses the semantic RET dispatcher");
+#endif
+		require(cpu.getFrameDepth() == 1 && cpu.getFrameRegisterCount(0) == 5
+			&& cpu.readFrameRegister(0, 4) == valueInteger(23), "every grant boundary exposes the selected caller range");
+		if (!enough)
+			require(cpu.runUntilDepth(0, readCycles) == RunResult::Yielded && observer.reads == 1,
+				"the next grant observes the committed caller without retrying RET");
+		require(cpu.readFrameRegister(0, 0) == valueInteger(71), "the mapped access completed once");
+	}
+}
+
 void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bool exceptionFrame, int grant = -1) {
 	// The protected target repeatedly calls an ordinary child. A separate live
 	// translation writes a marker without changing top or any frame register.
@@ -1479,6 +1537,7 @@ int main(int argc, char** argv) {
 		nativeCallRouting(6, 4, false, false, false, false, false, 2);
 		nativeCallRouting(3, 1, false, false, false, false, false, 0);
 		wideNativeClosureCallResumesAfterItsBody();
+		nativeReturnPublishesCallerTopAtMappedObserver();
 		nativeReturnRouting(6, 0, 0, false, true);
 		nativeReturnRouting(2, 4, 0, false, false);
 		nativeReturnRouting(6, 2, 0, false, false);

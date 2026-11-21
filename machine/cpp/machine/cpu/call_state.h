@@ -163,12 +163,6 @@ struct CallFrame {
 		writeAdmittedControl(FrameField::Top,
 			(readAdmittedControl(FrameField::Top) & ~FRAME_WINDOW_MASK) | static_cast<u32>(top));
 	}
-	i32 placeAdmittedResultTop(CallResultPlacement result, int count) {
-		const u32 packed = readAdmittedControl(FrameField::Top);
-		const i32 top = result.topAfter(static_cast<i32>(packed & FRAME_WINDOW_MASK), count);
-		writeAdmittedControl(FrameField::Top, (packed & ~FRAME_WINDOW_MASK) | static_cast<u32>(top));
-		return top;
-	}
 	void initializeAdmittedControl(const FrameEntryControl& entry, ValueSpan stack) {
 		entry.writeWords([&](FrameField field, u32 word) { writeAdmittedControl(field, word); });
 		registers = stack.admittedSubspan(entry.stackBase, entry.capacity);

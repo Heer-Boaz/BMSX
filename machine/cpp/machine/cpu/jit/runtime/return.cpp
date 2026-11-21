@@ -50,7 +50,10 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 	leaving.writeAdmittedControl(FrameField::Pc, exit->nextPc);
 	leaving.setAdmittedTop(state.registerTop);
 	caller->registers.placeAdmitted(result.base, leaving.registers, source, placement.copied, placement.padded);
-	const int nextTop = caller->placeAdmittedResultTop(result, count);
+	// The caller resumes inside this grant. Only the departing activation
+	// is published here; a caller observer or exit publishes its live top.
+	const int nextTop = result.extendsTop()
+		? result.topAfter(caller->readAdmittedWindow(FrameField::Top), count) : extent;
 	thread.retireAdmittedFrame(leaving, *caller, receivingDepth);
 	state.frame = caller;
 	state.registerTop = nextTop;
