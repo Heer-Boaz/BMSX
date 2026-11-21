@@ -14,46 +14,60 @@ void NativeTypePropagation::specializeRegion(std::span<NativeIrBlock> blocks,
 		specialize(blocks.front().instructions, values, false);
 		return;
 	}
-	// Each candidate names the proof at its origin. A copy can forward the
-	// dependency without needing a check itself. Only an emitted use makes
-	// that candidate and its incoming chain part of the entry contract.
-	struct ImportRange { size_t first = 0, count = 0; };
+	// The forward meet proves tags, not identities: two branches can
+	// produce different values with the same tag for one entry slot.
+	struct ImportRange { size_t first = 0, count = 0; bool received = false; };
 	std::vector<ImportRange> ranges(blocks.size());
 	for (size_t index = 0; index < blocks.size(); ++index) {
 		auto& block = blocks[index];
-		const auto outgoing = [&](size_t target) {
-			return block.nativeSuccessor && target > index && target < blocks.size() && !uses.hasForwardMerge(target);
-		};
-		const auto [primary, alternate] = block.successors;
-		const bool exportPrimary = outgoing(primary), exportAlternate = alternate != primary && outgoing(alternate);
-		const auto [first, count] = ranges[index];
-		specialize(block.instructions, values, block.inlineBuiltin, first, count);
-		const auto add = [&](size_t target) {
+		const auto& incoming = ranges[index];
+		specialize(block.instructions, values, block.inlineBuiltin, incoming.first, incoming.count);
+		if (!block.nativeSuccessor) continue;
+		for (size_t edge = 0; edge < block.successors.size(); ++edge) {
+			const size_t target = block.successors[edge];
+			if (target <= index || target >= blocks.size() || (edge != 0 && target == block.successors[0])) continue;
+			auto& range = ranges[target];
 			const size_t start = m_assumptions.size();
-			uses.forEachEntryRead(target, [&](int slot) {
-				const auto fact = type(values.current(static_cast<NativeSlot>(slot)));
-				if (fact)
-					m_assumptions.push_back({{static_cast<u16>(slot), fact->tag}, fact->assumption});
-			});
-			ranges[target] = {start, m_assumptions.size() - start};
-			blocks[target].typePredecessor = index;
-		};
-		if (exportPrimary) add(primary);
-		if (exportAlternate) add(alternate);
+			if (range.received) {
+				for (size_t previous = range.first; previous < range.first + range.count; ++previous) {
+					const auto candidate = m_assumptions[previous].type;
+					const auto fact = type(values.current(candidate.slot));
+					if (fact && fact->tag == candidate.tag)
+						m_assumptions.push_back({candidate, fact->assumption, static_cast<u32>(previous + 1u)});
+				}
+			} else {
+				uses.forEachEntryRead(target, [&](int slot) {
+					const auto fact = type(values.current(static_cast<NativeSlot>(slot)));
+					if (fact)
+						m_assumptions.push_back({{static_cast<u16>(slot), fact->tag}, fact->assumption});
+				});
+			}
+			range = {start, m_assumptions.size() - start, true};
+			block.provesSuccessorTypes[edge] = true;
+		}
 	}
 
-	imports.reserve(std::count_if(m_assumptions.begin(), m_assumptions.end(),
-		[](const Assumption& assumption) { return assumption.required; }));
-	for (auto& [first, count] : ranges) {
-		const size_t output = imports.size();
-		for (const auto& assumption : std::span(m_assumptions).subspan(first, count))
+	// Assumptions always depend on earlier offers. Follow dependencies of
+	// consumed tags once, after specialization; unused meets need no checks.
+	for (size_t index = m_assumptions.size(); index-- > 0;) {
+		const auto& proof = m_assumptions[index];
+		if (!proof.required) continue;
+		if (proof.source != 0) m_assumptions[proof.source - 1u].required = true;
+		if (proof.alternate != 0) m_assumptions[proof.alternate - 1u].required = true;
+	}
+	size_t required = 0;
+	for (const auto& range : ranges)
+		required += std::ranges::count_if(std::span(m_assumptions).subspan(range.first, range.count), &Assumption::required);
+	imports.reserve(required);
+	for (auto& range : ranges) {
+		const size_t first = imports.size();
+		for (const auto& assumption : std::span(m_assumptions).subspan(range.first, range.count))
 			if (assumption.required) imports.push_back(assumption.type);
-		first = output;
-		count = imports.size() - output;
+		range = {first, imports.size() - first, false};
 	}
 	for (size_t index = 0; index < blocks.size(); ++index) {
-		const auto [first, count] = ranges[index];
-		blocks[index].entryTypes = std::span(imports).subspan(first, count);
+		const auto& range = ranges[index];
+		blocks[index].entryTypes = std::span(imports).subspan(range.first, range.count);
 	}
 }
 
@@ -69,13 +83,8 @@ void NativeTypePropagation::define(NativeValueId value, Fact fact) {
 }
 
 void NativeTypePropagation::require(Type type) {
-	if (!type) return;
-	for (u32 proof = type->assumption; proof != 0;) {
-		auto& assumption = m_assumptions[proof - 1u];
-		if (assumption.required) break;
-		assumption.required = true;
-		proof = assumption.source;
-	}
+	if (type && type->assumption != 0)
+		m_assumptions[type->assumption - 1u].required = true;
 }
 
 struct NativeTypePropagation::Transfer {

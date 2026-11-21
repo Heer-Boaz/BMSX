@@ -26,6 +26,7 @@ private:
 	struct Assumption {
 		NativeSlotType type;
 		u32 source;
+		u32 alternate = 0;
 		bool required = false;
 	};
 

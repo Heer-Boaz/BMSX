@@ -115,8 +115,11 @@ graph admits bounded runs for compilation. The compiler entry point in
 feedback, not an installed execution image or a copy of its value bank.
 The `ir/` translation selects typed operations and continuation boundaries,
 records semantic exits and scalar resume points, and runs optimization on
-logical guest slots. Within a source run, operands can name their producing
-instruction and output; copying a value does not change its origin.
+logical guest slots. Field selection and type propagation share a sparse
+value map. Copies preserve value identity within a run; independently
+admitted slots have their own identities. Forward joins meet tags rather
+than values. An edge can discharge the join's type requirements, while a
+public or unproved entry checks them against the live register window.
 Field selection can follow both operands across reuse of the original slot.
 Fixed-field reads can share a checked address value without sharing the
 loaded value or the miss site. Reuse stops at effect boundaries. The backend

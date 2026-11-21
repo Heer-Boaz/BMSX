@@ -94,7 +94,7 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t target) {
 				binding.tagDirty = binding.tag.has_value();
 			}
 		}
-		if (successor.typePredecessor != m_current)
+		if (!m_ir[m_current].provesEntryTo(target))
 			for (const auto type : successor.entryTypes)
 				deferColdExit(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, source);
 		m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2);

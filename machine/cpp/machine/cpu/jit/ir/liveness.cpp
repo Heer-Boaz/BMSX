@@ -24,9 +24,9 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 		maxBlockLength = std::max(maxBlockLength, block.instructions.size());
 	}
 	if (maxBlockLength > 1) m_nextUses.reserve(maxBlockLength * 8);
-	// A block can inherit an optimized entry map only from a single forward
-	// predecessor. Standalone regions and all-merge regions need no live map.
-	if (std::none_of(m_forwardEdges.begin(), m_forwardEdges.end(), [](u16 edges) { return edges == 1; })) {
+	// Forward edges export logical facts even when their successor cannot
+	// borrow a particular predecessor's physical register map.
+	if (std::none_of(m_forwardEdges.begin(), m_forwardEdges.end(), [](u16 edges) { return edges != 0; })) {
 		m_liveWordCount = 0;
 		m_entryLive.clear();
 		return;

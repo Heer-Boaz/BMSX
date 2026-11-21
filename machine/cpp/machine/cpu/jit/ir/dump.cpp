@@ -74,6 +74,15 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 	for (size_t index = 0; index < blocks.size(); ++index) {
 		const auto& block = blocks[index];
 		out << "block b" << index << " pc=" << block.firstPc << '\n';
+		for (auto type : block.entryTypes)
+			out << "  admit R" << type.slot << " tag=" << unsigned(type.tag) << '\n';
+		for (size_t edge = 0; edge < block.successors.size(); ++edge) {
+			const auto target = block.successors[edge];
+			if (target == blocks.size() || (edge != 0 && target == block.successors[0])) continue;
+			out << "  edge b" << target;
+			if (!blocks[target].entryTypes.empty()) out << (block.provesSuccessorTypes[edge] ? " proven" : " checked");
+			out << '\n';
+		}
 		for (size_t row = 0; row < block.instructions.size(); ++row) {
 			const auto& inst = block.instructions[row];
 			const auto* tableAccess = std::get_if<NativeTableAccess>(&inst.operation);

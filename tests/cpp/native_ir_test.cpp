@@ -543,11 +543,45 @@ void onlyConsumedEntryProofsSurviveCopies() {
 	NativeIrRegion region(sources, uses);
 	const auto blocks = region.blocks();
 	for (size_t target : {1u, 2u})
-		require(blocks[target].typePredecessor == target - 1 && blocks[target].entryTypes.size() == 1,
+		require(blocks[target - 1].provesEntryTo(target) && blocks[target].entryTypes.size() == 1,
 			"only the consumed proof reaches each block's entry contract");
 	require(blocks[1].entryTypes[0].slot == 7 && blocks[2].entryTypes[0].slot == 10
 		&& blocks[2].entryTypes[0].tag == ValueTag::Integer,
 		"the proof follows the copied value, not the separately read global-store operand");
+}
+
+void forwardJoinMeetsTagsNotValues() {
+	constexpr u32 leftPc = 0x4000, rightPc = 0x4100, joinPc = 0x4200;
+	for (const bool matching : {true, false}) {
+		std::array decoded{
+			DecodedInstruction{.a = 7, .op = static_cast<u8>(OpCode::K1)},
+			DecodedInstruction{.op = static_cast<u8>(OpCode::JMP)},
+			DecodedInstruction{.a = 7, .op = static_cast<u8>(matching ? OpCode::KSMI : OpCode::KFALSE)},
+			DecodedInstruction{.op = static_cast<u8>(OpCode::JMP)},
+			DecodedInstruction{.a = 2, .b = 7, .c = 7, .op = static_cast<u8>(OpCode::ADD)},
+		};
+		for (auto& op : decoded) { op.width = 1; op.baseCycles = BASE_CYCLES[op.op]; }
+		decoded[1].setBx(joinPc);
+		decoded[2].setSbx(3);
+		decoded[3].setBx(joinPc);
+		const std::array left{NativeBlockInstruction{&decoded[0], leftPc}, NativeBlockInstruction{&decoded[1], leftPc + 4}};
+		const std::array right{NativeBlockInstruction{&decoded[2], rightPc}, NativeBlockInstruction{&decoded[3], rightPc + 4}};
+		const std::array join{NativeBlockInstruction{&decoded[4], joinPc}};
+		const std::array sources{NativeBlockSource{left}, NativeBlockSource{right}, NativeBlockSource{join}};
+		NativeRegisterUses uses;
+		NativeIrRegion region(sources, uses);
+		const auto blocks = region.blocks();
+		const auto& entry = blocks[2];
+		const auto& plan = std::get<NativeNumericPlan>(std::get<NativeArithmetic>(entry.instructions[0].operation).strategy);
+		if (matching) {
+			require(entry.entryTypes.size() == 1 && entry.entryTypes[0].slot == 7
+				&& entry.entryTypes[0].tag == ValueTag::Integer && blocks[0].provesEntryTo(2) && blocks[1].provesEntryTo(2),
+				"both forward edges discharge the same public tag contract after distinct definitions");
+			require(plan.action == NativeNumericAction::Word && region.sideExits(entry).empty(),
+				"the joined arithmetic consumes the proof without a per-operation guard");
+		} else require(entry.entryTypes.empty() && plan.action == NativeNumericAction::Kernel,
+			"one conflicting forward edge prevents importing that slot's tag");
+	}
 }
 
 void dataflowPlansTableAndMemoryInputs() {
@@ -688,6 +722,7 @@ int main() {
 		undefinedMoveKindDoesNotBecomeANumericWordMove();
 		successorsImportLogicalTypesBeforeLowering();
 		onlyConsumedEntryProofsSurviveCopies();
+		forwardJoinMeetsTagsNotValues();
 		dataflowPlansTableAndMemoryInputs();
 		recordPlanUsesTypedEntriesAndFullRomWords();
 		registerUses();

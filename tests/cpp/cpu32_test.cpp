@@ -9,6 +9,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 #include "support/number32_cpu_fixture.h"
 #include <iostream>
 #include <iterator>
@@ -565,6 +566,47 @@ void polymorphicForwardJoin() {
 			"each predecessor and the common suffix charge only their own instructions");
 	}
 }
+
+void installedForwardJoinChecksIndependentEntry() {
+	test::Blua32TestImage image;
+	image.text.resize(7 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 0, 0, 2);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 7, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 0, 2);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::KSMI), 7, 0, 3);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::ADD), 5, 7, 7);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}};
+	const std::array expected{valueInteger(2), valueInteger(6), valueFloat(6.5f)};
+	for (size_t route = 0; route < expected.size(); ++route) {
+		Number32Machine native(image), scalar(image, false);
+		const u32 start = native.rom.textAddress, join = start + 5 * INSTRUCTION_BYTES;
+		const bool direct = route == 2;
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], direct ? join : start);
+			auto& frame = *cpu.activeThread()->frameAtDepth(0);
+			frame.registers.set(0, valueBool(route == 1));
+			frame.registers.set(7, valueFloat(3.25f));
+			frame.setTop(8);
+		}
+		auto& cpu = native.cpu;
+		const auto& active = *cpu.activeThread()->frameAtDepth(0)->executionImage;
+		const auto* page = active.nativeCodeLookup->find(join, 0);
+		const auto& entry = page->nativeBlocks->entries[(join & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+		require(entry && entry->sideExits.empty(), "the installed join contains typed ADD and no opcode exit");
+		require(test::runCpuParity(cpu, scalar.cpu, 40) == RunResult::Halted
+			&& cpu.readFrameRegister(0, 5) == expected[route]
+			&& cpu.captureRuntimeState() == scalar.cpu.captureRuntimeState()
+			&& test::sameLanguageRam(cpu, scalar.cpu), "both predecessors and independent public admission match the scalar CPU");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto boundary = static_cast<size_t>(NativeBlockExit::ScalarBoundary);
+		require(cpu.nativeGateProfile().exits[boundary].entries == static_cast<unsigned>(direct),
+			"proven edges do not re-admit tags, but an independent Float entry replays");
+#endif
+	}
+}
 #endif
 
 void typedLoopBoundaries() {
@@ -737,6 +779,7 @@ int main(int argc, char** argv) {
 		scalarRegions();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		polymorphicForwardJoin();
+		installedForwardJoinChecksIndependentEntry();
 #endif
 		typedLoopBoundaries();
 		constantsGlobalsAndRestore();

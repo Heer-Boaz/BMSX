@@ -78,7 +78,7 @@ struct NativeIrBlock {
 	bool nativeSuccessor = true;
 	bool inlineBuiltin = false;
 	std::span<const NativeSlotType> entryTypes{};
-	size_t typePredecessor = std::numeric_limits<size_t>::max();
+	std::array<bool, 2> provesSuccessorTypes{};
 	NativeIrExit terminal{};
 	u32 firstPc = 0, sourcePc = 0;
 	int admissionCycles = 0;
@@ -88,6 +88,11 @@ struct NativeIrBlock {
 	bool hasFusedJump = false;
 	u8 skippedWidth = 0, fusedJumpCycles = 0;
 	std::span<const NativeOwnFieldAddress> ownFieldAddresses{};
+
+	bool provesEntryTo(size_t target) const {
+		return (provesSuccessorTypes[0] && successors[0] == target)
+			|| (provesSuccessorTypes[1] && successors[1] == target);
+	}
 };
 
 // Temporary source-row links retained only until the region is partitioned.

@@ -329,10 +329,11 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 	const bool readStack = (address && address->temporary) || std::ranges::any_of(m_cache.state(), [](const auto& binding) {
 		return binding.wordDirty || binding.tagDirty;
 	});
-	const auto successor = m_ir[m_current].successors[0];
+	const auto& block = m_ir[m_current];
+	const auto successor = block.successors[0];
 	// Even if an input was evicted, a direct edge can continue using its
 	// type proof without re-admission. Clean resident payloads are live too.
-	const bool carriesTypes = successor < m_ir.size() && m_ir[successor].typePredecessor == m_current
+	const bool carriesTypes = block.provesSuccessorTypes[0]
 		&& !m_ir[successor].entryTypes.empty();
 	const TableStackAdmission stack{readStack, !load && (carriesTypes || std::ranges::any_of(m_cache.state(),
 		[](const auto& binding) { return binding.guest >= 0; }))};
