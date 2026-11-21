@@ -1246,6 +1246,7 @@ if(BMSX_BUILD_TESTS)
 	add_test(NAME bmsx_cpu_exact_grant_irq_short COMMAND bmsx_cpu_exact_grant_tests irq-short)
 	add_test(NAME bmsx_cpu_exact_grant_nmi_short COMMAND bmsx_cpu_exact_grant_tests nmi-short)
 	add_test(NAME bmsx_cpu_exact_grant_rewrite_short COMMAND bmsx_cpu_exact_grant_tests rewrite-short)
+	add_test(NAME bmsx_cpu_exact_grant_adaptive_arithmetic COMMAND bmsx_cpu_exact_grant_tests adaptive-arithmetic)
 
 	add_executable(bmsx_cpu_compiled_calls_tests ../../tests/cpp/cpu_compiled_calls_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_compiled_calls_tests PRIVATE bmsx_core bmsx_blua32_tooling)

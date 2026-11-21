@@ -140,7 +140,9 @@ void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const Na
 	const bool unary = arithmetic.unary();
 	const auto& plan = std::get<NativeNumericPlan>(arithmetic.strategy);
 	const auto guard = [&](i16 operand, ValueTag tag) {
-		deferColdExit(m_cache.guard(operand, tag, SLJIT_R0), instruction.before, m_cache.state());
+		auto replay = instruction.before;
+		replay.arithmeticAssumption = plan.feedbackAssumption;
+		deferColdExit(m_cache.guard(operand, tag, SLJIT_R0), replay, m_cache.state());
 	};
 	if (plan.guardLeft) guard(arithmetic.left, *plan.left);
 	if (plan.guardRight) guard(arithmetic.right, *plan.right);

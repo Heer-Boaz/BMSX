@@ -212,7 +212,7 @@ void* NativeLowering::finish(size_t& codeBytes, std::vector<NativeBlockExitSite>
 			const auto& point = std::get<NativeResumePoint>(exit.target);
 			auto& site = replaySites.emplace_back(NativeBlockExitSite{
 				.exit = NativeBlockExit::ScalarBoundary,
-				.operands = {.replay = {point.completed.has_value()}},
+				.operands = {.replay = {point.completed.has_value(), point.arithmeticAssumption}},
 				.cycles = point.cycles,
 				.registerTop = point.top,
 				.nextPc = point.pc,

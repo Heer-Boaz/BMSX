@@ -443,6 +443,7 @@ private:
 	NativeRomCallBinding* bindNativeRomFunction(Blua32ExecutionImage& image, u32 functionAddress) const noexcept;
 	static void* tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	void prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pc, MappedBusSignals busSignals);
+	void observeNativeArithmeticReplay(DecodedInstructionPage&, u32 word, NativeArithmeticFeedback assumption, Value left, Value right);
 	void prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32ExecutionBoot& boot);
 	void discoverNativeSource(NativeCompilationSource& source, std::vector<u32>* outgoing);
 	void prepareNativeSource(NativeCompilationSource& source, bool coldImage);

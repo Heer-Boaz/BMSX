@@ -1694,7 +1694,19 @@ RunResult CPU::runLoop(
 	const NativeBlock* nativeBlock = nullptr;
 	int nativeFirstDispatchCycles = 0;
 	NativeCpuRunState nativeState{.state = {}, .cpu = this, .targetDepth = targetDepth,
-		.error = {}, .replayPc = {}};
+		.error = {}};
+	const auto observeScalarArithmetic = [&](Value left, Value right) {
+		if constexpr (!Instrumented) {
+			if (nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic) {
+				const auto assumption = *nativeState.replay->arithmetic;
+				nativeState.replay.reset();
+				observeNativeArithmeticReplay(*decodedPage, (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES,
+					assumption, left, right);
+			} else if (decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm)) {
+				decoded->observeNativeNumericTypes(left, right);
+			}
+		}
+	};
 #endif
 	for (;;) {
 		try {
@@ -1753,7 +1765,7 @@ RunResult CPU::runLoop(
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 					// The next instruction belongs to the interrupt handler; retry admission
 					// for the suspended instruction after RFE instead.
-					nativeState.replayPc.reset();
+					nativeState.replay.reset();
 #endif
 					enterPendingInterrupt();
 					continue;
@@ -1866,7 +1878,8 @@ dispatch_instruction:
 				case static_cast<u8>(DecodedDispatchOp::NativeWarm): {
 					auto& visits = decodedPage->nativeVisits[pageOffset];
 					if (visits < NATIVE_BLOCK_COMPILATION_THRESHOLD) ++visits;
-					if (FRAME.compilationEntry && visits == NATIVE_BLOCK_COMPILATION_THRESHOLD) {
+					if (FRAME.compilationEntry && visits == NATIVE_BLOCK_COMPILATION_THRESHOLD
+						&& !(nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic)) {
 						prepareNativeBlock(IMAGE, *decodedPage, pc, m_executionBusSignals);
 					}
 					FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
@@ -1880,8 +1893,9 @@ dispatch_instruction:
 					// interrupt entry above cancels the retry before any handler runs.
 					// An interior scalar continuation may already have run before
 					// reaching the next native entry. Only bypass its exact PC.
-					if (std::exchange(nativeState.replayPc, std::nullopt) == pc
-						|| std::endian::native == std::endian::big || thread.stackRequiresScalar()) {
+					const bool replay = nativeState.replay && nativeState.replay->pc == pc;
+					if (!replay || !nativeState.replay->arithmetic) nativeState.replay.reset();
+					if (replay || std::endian::native == std::endian::big || thread.stackRequiresScalar()) {
 						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;
@@ -2117,6 +2131,9 @@ dispatch_continue:
 				enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
 			}
 		} catch (const LuaExecutionError& error) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			nativeState.replay.reset();
+#endif
 			const Value errorValue = m_luaFaultErrorValues[error.reason];
 			if (!handleThreadError(errorValue)) {
 				enterLuaFaultException(error.reason, errorValue);

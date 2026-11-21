@@ -22,6 +22,7 @@ struct NativeResumePoint {
 	u32 pc;
 	int cycles, top;
 	std::optional<CompletedInstruction> completed{};
+	std::optional<NativeArithmeticFeedback> arithmeticAssumption{};
 	bool operator==(const NativeResumePoint&) const = default;
 };
 

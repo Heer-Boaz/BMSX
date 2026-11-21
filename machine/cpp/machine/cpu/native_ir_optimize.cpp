@@ -131,6 +131,7 @@ struct NativeTypePropagation::Transfer {
 		if (needsRight) facts.require(right);
 		plan.guardLeft &= needsLeft;
 		plan.guardRight &= needsRight;
+		if (plan.guardLeft || plan.guardRight) plan.feedbackAssumption = hint.feedback;
 		if (plan.guardLeft) facts.define(op.left, *plan.left);
 		if (plan.guardRight) facts.define(op.right, *plan.right);
 		facts.define(op.result, plan.result ? Type(Fact{facts.m_block, *plan.result}) : std::nullopt);

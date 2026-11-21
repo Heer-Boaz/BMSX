@@ -242,13 +242,10 @@ DISPATCH_LABEL(ADD) {
 	const Value left = readRK(IMAGE, registers, decoded->b);
 	const Value right = readRK(IMAGE, registers, decoded->c);
 	const Value result = valueAdd(left, right);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	if constexpr (!Instrumented) {
-		if (decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm))
-			decoded->observeNativeNumericTypes(left, right);
-	}
-#endif
 	SET_REGISTER_FAST(decoded->a, result);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	observeScalarArithmetic(left, right);
+#endif
 	DISPATCH_NEXT();
 }
 
@@ -256,13 +253,10 @@ DISPATCH_LABEL(SUB) {
 	const Value left = readRK(IMAGE, registers, decoded->b);
 	const Value right = readRK(IMAGE, registers, decoded->c);
 	const Value result = valueSubtract(left, right);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	if constexpr (!Instrumented) {
-		if (decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm))
-			decoded->observeNativeNumericTypes(left, right);
-	}
-#endif
 	SET_REGISTER_FAST(decoded->a, result);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	observeScalarArithmetic(left, right);
+#endif
 	DISPATCH_NEXT();
 }
 
@@ -270,13 +264,10 @@ DISPATCH_LABEL(MUL) {
 	const Value left = readRK(IMAGE, registers, decoded->b);
 	const Value right = readRK(IMAGE, registers, decoded->c);
 	const Value result = valueMultiply(left, right);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	if constexpr (!Instrumented) {
-		if (decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm))
-			decoded->observeNativeNumericTypes(left, right);
-	}
-#endif
 	SET_REGISTER_FAST(decoded->a, result);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	observeScalarArithmetic(left, right);
+#endif
 	DISPATCH_NEXT();
 }
 

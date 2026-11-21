@@ -124,7 +124,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		cpu.instructionBudgetRemaining = state.remainingCycles;
 		frame->writeControl(FrameField::Pc, exit->nextPc);
 		frame->setTop(state.registerTop);
-		run->replayPc = exit->nextPc;
+		run->replay = NativeCpuRunState::Replay{exit->nextPc, exit->operands.replay.arithmetic};
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		++gateProfile.returns;
 #endif

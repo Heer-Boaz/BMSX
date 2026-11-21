@@ -3,16 +3,10 @@
 #include <optional>
 
 #include "common/primitives.h"
-#include "machine/cpu/value.h"
+#include "machine/cpu/native_block_exit.h"
 #include "spec/blua32/opcode.h"
 
 namespace bmsx {
-
-// A stable pair observed after a successful ADD, SUB or MUL. The translator
-// passes no feedback for other operations or before the pair stabilizes.
-struct NativeArithmeticFeedback {
-	ValueTag left, right;
-};
 
 enum class NativeNumericAction : u8 { Fault, Kernel, Word, Float };
 
@@ -21,6 +15,7 @@ struct NativeNumericPlan {
 	std::optional<ValueTag> left, right, result;
 	bool guardLeft = false, guardRight = false;
 	bool resultDependsOnInputs = false;
+	std::optional<NativeArithmeticFeedback> feedbackAssumption{};
 };
 
 // Missing tags are unknown, not BLua Nil. Guarded tags only hold on the

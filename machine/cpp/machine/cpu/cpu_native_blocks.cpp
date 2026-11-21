@@ -88,6 +88,22 @@ void CPU::prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage
 	prepareNativeSource(source, false);
 }
 
+void CPU::observeNativeArithmeticReplay(DecodedInstructionPage& page, u32 word,
+	NativeArithmeticFeedback assumption, Value left, Value right) {
+	auto& decoded = page.words[word];
+	decoded.observeNativeNumericTypes(left, right);
+	const auto observed = decoded.nativeNumericTypes();
+	if (observed.stable && observed.left == assumption.left && observed.right == assumption.right) return;
+
+	// The failed guard has already left generated code. Withdraw all source
+	// users (including an independently published suffix) and preserve the
+	// decoded score for the next compilation.
+	page.retireNativeBlocks(word, word + 1u);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	if (m_pendingNativeCompilation.page == &page) m_pendingNativeCompilation.invalidated = true;
+#endif
+}
+
 void CPU::discoverNativeSource(NativeCompilationSource& source, std::vector<u32>* outgoing) {
 	auto& image = source.image;
 	auto& page = source.page;

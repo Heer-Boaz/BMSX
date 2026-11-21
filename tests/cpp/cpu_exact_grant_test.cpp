@@ -44,6 +44,103 @@ void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
 
+void adaptiveArithmeticReplay() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	// The taken edge gives the suffix a separate published entry. The fallthrough
+	// can therefore start its final WIDE arithmetic with one cycle left.
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 6, 0, 3);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 2, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::SUB), 4, 0, 1);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::K1), 5, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 16, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 7}, {.firstWord = 16, .wordCount = 1}};
+	image.exceptionFunctionIndex = 1;
+	Machine native(image, false), scalar(image, true);
+	const u32 pc = native.rom.textAddress + INSTRUCTION_BYTES;
+	const u32 wide = pc + INSTRUCTION_BYTES, suffix = wide + 2u * INSTRUCTION_BYTES;
+	const int prefixCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
+	const int complete = prefixCycles + BASE_CYCLES[static_cast<u8>(OpCode::SUB)];
+	const auto input = [&](Value step) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+			auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+			registers.set(0, valueInteger(12));
+			registers.set(1, step);
+			registers.set(2, valueNil());
+			registers.set(4, valueInteger(73));
+			registers.set(5, valueInteger(99));
+		}
+	};
+	const auto subtract = [&](Value step, Value expected, int grant) {
+		input(step);
+		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded, "the grant stops before the suffix");
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			require(cpu.instructionBudgetRemaining == grant - complete
+				&& cpu.readCurrentInstructionPc() == wide && cpu.lastPc == wide + INSTRUCTION_BYTES
+				&& cpu.readFramePc(0) == suffix, "the WIDE replay pays its base charge once and reports the exact frontier");
+			require(cpu.readFrameRegister(0, 2) == valueInteger(1) && cpu.readFrameRegister(0, 4) == expected
+				&& cpu.readFrameRegister(0, 5) == valueInteger(99), "the completed prefix, arithmetic result and unstarted suffix agree");
+		}
+		require(test::sameLanguageRam(native.cpu, scalar.cpu), "arithmetic retry preserves guest RAM");
+	};
+	for (int i = 0; i < 16; ++i) subtract(valueInteger(2), valueInteger(10), complete);
+
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 entry = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const auto installed = [&] { return page.nativeBlocks && page.nativeBlocks->entries[entry]; };
+	require(installed() && page.nativeBlocks->entries[entry]->admissionCycles == prefixCycles
+		&& page.nativeBlocks->entries[entry]->terminal.currentPc == wide && page.words[entry + 1u].nativeNumericTypes().stable,
+		"successful scalar observations specialize a published region containing WIDE SUB");
+	const auto feedback = page.words[entry + 1u].bx;
+#endif
+	input(valueBool(false));
+	test::runCpuParity(native.cpu, scalar.cpu, prefixCycles + 1);
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		require(cpu.readEpcWord() == wide && cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+			&& cpu.readFrameRegister(0, 4) == valueInteger(73), "a failed arithmetic replay faults before committing its result");
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	require(installed() && page.words[entry + 1u].bx == feedback, "a faulting arithmetic execution cannot train or retire its specialization");
+#endif
+	for (auto* machine : {&native, &scalar}) {
+		require(machine->cpu.runUntilDepth(1, BASE_CYCLES[static_cast<u8>(OpCode::RFE)]) == RunResult::Halted,
+			"the real exception return restores the root activation");
+	}
+
+	subtract(valueFloat(0.5f), valueFloat(11.5f), prefixCycles + 1);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	require(installed(), "a single contradictory success does not retire a stable specialization");
+	for (int i = 0; i < 8 && installed(); ++i) subtract(valueFloat(0.5f), valueFloat(11.5f), complete);
+	require(!installed() && !page.words[entry + 1u].nativeNumericTypes().stable,
+		"repeated successful contradictions withdraw native users and lose the stale type assumption");
+	native.cpu.prepareSystemNativeCode();
+	require(installed(), "the code owner can republish the source with the updated feedback");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto boundary = static_cast<size_t>(NativeBlockExit::ScalarBoundary);
+	const auto exitsBefore = native.cpu.nativeGateProfile().exits[boundary].entries;
+#endif
+#endif
+	for (int i = 0; i < 8; ++i) {
+		subtract(valueInteger(2), valueInteger(10), complete);
+		subtract(valueFloat(0.5f), valueFloat(11.5f), prefixCycles + 1);
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	require(installed(), "the rebuilt generic arithmetic does not retire on alternating subtypes");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(native.cpu.nativeGateProfile().exits[boundary].entries == exitsBefore,
+		"the rebuilt native body does not repeatedly deoptimize on valid alternating numeric subtypes");
+#endif
+#endif
+}
+
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void waitForNativeEntries(Machine& machine, u32 base, std::initializer_list<u32> offsets) {
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
@@ -507,6 +604,7 @@ int main(int argc, char** argv) {
 		else if (scenario == "irq-short") irqAfterNativeMmioBeforeShortSuccessor();
 		else if (scenario == "nmi-short") nmiAfterShortGrant();
 		else if (scenario == "rewrite-short") rewriteAndObserveAfterShortGrant();
+		else if (scenario == "adaptive-arithmetic") adaptiveArithmeticReplay();
 		else throw std::runtime_error("unknown scenario");
 		return 0;
 	} catch (const std::exception& error) {

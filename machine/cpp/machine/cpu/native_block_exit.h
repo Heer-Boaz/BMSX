@@ -1,6 +1,9 @@
 #pragma once
 
+#include <optional>
+
 #include "common/primitives.h"
+#include "machine/cpu/value.h"
 #include "spec/blua32/memory_access_kind.h"
 
 namespace bmsx {
@@ -40,11 +43,20 @@ enum class NativeBlockExit : u8 {
 	Count,
 };
 
+// The stable operand pair used by an ADD, SUB or MUL specialization.
+struct NativeArithmeticFeedback {
+	ValueTag left, right;
+	bool operator==(const NativeArithmeticFeedback&) const = default;
+};
+
 // Runtime operands accompany the exit kind. Counts for activation transfers
 // are actual counts; -1 selects the open window. Guest frame words retain
 // the instruction encoding at the frame-control boundary.
 union NativeExitOperands {
-	struct Replay { bool hasCompletedInstruction; } replay;
+	struct Replay {
+		bool hasCompletedInstruction;
+		std::optional<NativeArithmeticFeedback> arithmetic{};
+	} replay;
 	struct Call { u16 callee; i16 supplied, requested; } call;
 	struct Return { u16 first; i16 produced; } returned;
 	struct Vararg { u16 first; i16 requested; } vararg;
