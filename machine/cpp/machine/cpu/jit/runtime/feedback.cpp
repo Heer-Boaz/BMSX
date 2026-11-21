@@ -4,6 +4,7 @@
 
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/execution_image.h"
+#include "machine/cpu/jit/exit_contract.h"
 
 namespace bmsx {
 

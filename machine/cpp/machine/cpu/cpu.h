@@ -55,6 +55,7 @@ class CPU;
 class NativeCompilerWorker;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 enum class NativeBuiltinCallOutcome : u32;
+struct NativeArithmeticFeedback;
 struct NativeBlockExitSite;
 struct NativeBlockRunState;
 struct NativeCpuRunState;
