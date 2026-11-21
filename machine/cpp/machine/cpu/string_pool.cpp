@@ -112,11 +112,6 @@ int StringPool::compare(StringId left, StringId right) const {
 	return (a.length > b.length) - (a.length < b.length);
 }
 
-int compareStringIds(const StringPool* pool, StringId left, StringId right, int* remainingCycles) {
-	*remainingCycles -= std::min(pool->byteLength(left), pool->byteLength(right));
-	return pool->compare(left, right);
-}
-
 void StringPool::clearRomTables() {
 	writeMetadata(FIRST_CART, 0);
 	for (u32 field = ROM_TABLES; field < ROM_TABLES + 24; field += 4) writeMetadata(field, 0);

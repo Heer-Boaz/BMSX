@@ -5,6 +5,7 @@
 #include <bit>
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
+#include "machine/cpu/value_comparison.h"
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 #include "machine/cpu/jit/worker.h"
 #endif

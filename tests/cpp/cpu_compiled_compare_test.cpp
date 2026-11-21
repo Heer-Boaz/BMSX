@@ -40,6 +40,65 @@ struct CpuMachine {
 	}
 };
 
+void genericPredicatesAndStringChargeAgree() {
+	constexpr std::array operations{OpCode::EQ, OpCode::LT, OpCode::LE};
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	for (size_t i = 0; i < operations.size(); ++i) for (bool expected : {false, true}) {
+		const u32 word = 4 * static_cast<u32>(i) + 2 * expected;
+		writeInstruction(image.text, word, static_cast<u8>(operations[i]), expected ? 2 : 0, 0, 1);
+		writeInstruction(image.text, word + 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions.push_back({.firstWord = word, .wordCount = 2, .maxStack = 2});
+	}
+	CpuMachine native(image, false), scalar(image, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+#endif
+	struct Comparison {
+		Value left, right;
+		std::array<bool, operations.size()> results;
+		int orderedStringCycles = 0;
+	};
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto& registers = cpu.activeThread()->currentFrame->registers;
+		const auto a = valueString(cpu.stringPool().intern("aa"));
+		const auto b = valueString(cpu.stringPool().intern("aaa"));
+		const std::array cases{
+			Comparison{valueInteger(16777216), valueFloat(16777216.0f), {true, false, true}},
+			Comparison{valueFloat(16777216.0f), valueInteger(16777217), {false, true, true}},
+			Comparison{valueFloatBits(BLUA32_FLOAT_NAN), valueFloatBits(BLUA32_FLOAT_NAN), {false, false, false}},
+			Comparison{a, valueInteger(0), {false, false, false}},
+			Comparison{a, a, {true, false, true}, 2},
+			Comparison{a, b, {false, true, true}, 2},
+		};
+		for (size_t i = 0; i < operations.size(); ++i) for (bool expected : {false, true}) {
+			const size_t function = 2 * i + expected;
+			const u32 pc = machine->rom.textAddress + 2 * static_cast<u32>(function) * INSTRUCTION_BYTES;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (machine == &native) {
+				const auto& image = *cpu.activeThread()->currentFrame->executionImage;
+				const auto& page = *image.nativeCodeLookup->find(pc, 0);
+				require(page.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES] != nullptr,
+					"the generic comparison entry is resident");
+			}
+#endif
+			for (const auto& comparison : cases) {
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[function], pc);
+				registers.set(0, comparison.left);
+				registers.set(1, comparison.right);
+				const int expectedDebt = operations[i] == OpCode::EQ ? 0 : -comparison.orderedStringCycles;
+				const bool skips = comparison.results[i] != expected;
+				require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(operations[i])]) == RunResult::Yielded
+					&& cpu.readFramePc(0) == pc + (skips ? 2u : 1u) * INSTRUCTION_BYTES
+					&& cpu.readCurrentInstructionPc() == pc && cpu.lastPc == pc
+					&& cpu.instructionBudgetRemaining == expectedDebt,
+					"generic comparisons use exact value order, A polarity and ordered-String work");
+			}
+		}
+	}
+}
+
 void stringOrderingReadsPendingRegisterWords() {
 	for (const auto op : {OpCode::LT, OpCode::LE}) for (const bool expected : {true, false}) {
 		test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -722,6 +781,7 @@ void skipFetchBoundaries() {
 
 int main() {
 	try {
+		genericPredicatesAndStringChargeAgree();
 		stringOrderingReadsPendingRegisterWords();
 		numericRkComparisonsBelongToTheirExecutionImage();
 		changingSkippedBytesRetireResolvedEdges(); maximumLengthSkipDependencyRetires(); resolvedComparisonLinksBothPaths();

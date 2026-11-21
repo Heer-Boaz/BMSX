@@ -1,24 +1,8 @@
 #include "machine/cpu/jit/sljit/lowering.h"
 #include "machine/cpu/jit/sljit/value_transport.h"
-#include "machine/cpu/string_pool.h"
+#include "machine/cpu/value_comparison.h"
 
 namespace bmsx {
-namespace {
-template <OpCode op> u32 compareKernel(const Value* args, const StringPool* strings, int* budget) {
-	const Value a = args[0], b = args[1];
-	if constexpr (op == OpCode::EQ)
-		return valuesEqual(a, b);
-	if (valueIsNumber(a) && valueIsNumber(b)) {
-		const auto order = compareNumbers(a, b);
-		return op == OpCode::LT ? order == NumericOrder::Less : static_cast<int>(order) <= 0;
-	}
-	if (valueIsString(a) && valueIsString(b)) {
-		const int order = compareStringIds(strings, asStringId(a), asStringId(b), budget);
-		return op == OpCode::LT ? order < 0 : order <= 0;
-	}
-	return 0;
-}
-} // namespace
 void NativeLowering::lowerOperation(const NativeComparison& comparison, const NativeInstruction&) {
 	auto& taken = *sideExit(m_ir[m_current].taken);
 	const auto op = comparison.operation;
@@ -62,9 +46,9 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.strings));
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, NativeBlockAbi::state, 0, SLJIT_IMM,
 			offsetof(NativeBlockRunState, remainingCycles));
-		const auto kernel = op == OpCode::EQ   ? &compareKernel<OpCode::EQ>
-							: op == OpCode::LT ? &compareKernel<OpCode::LT>
-											   : &compareKernel<OpCode::LE>;
+		const auto kernel = op == OpCode::EQ   ? &testValueComparison<OpCode::EQ>
+							: op == OpCode::LT ? &testValueComparison<OpCode::LT>
+											   : &testValueComparison<OpCode::LE>;
 		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(kernel));
 		m_cache.spillCall(true, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state),

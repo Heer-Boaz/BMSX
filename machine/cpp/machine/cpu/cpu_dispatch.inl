@@ -382,57 +382,21 @@ DISPATCH_LABEL(BNOT) {
 	DISPATCH_NEXT();
 }
 
-DISPATCH_LABEL(EQ) {
-	const int a = decoded->a;
-	const int rkB = decoded->b;
-	const int rkC = decoded->c;
-	const Value left = readRK(IMAGE, registers, rkB);
-	const Value right = readRK(IMAGE, registers, rkC);
-	const bool eq = valuesEqual(left, right);
-	if (eq != (a != 0)) {
-		SKIP_NEXT_INSTRUCTION();
-		DISPATCH_CONTINUE();
+#define DISPATCH_COMPARISON(name) \
+	DISPATCH_LABEL(name) { \
+		const Value operands[]{readRK(IMAGE, registers, decoded->b), readRK(IMAGE, registers, decoded->c)}; \
+		if (testValueComparison<OpCode::name>(operands, m_stringPool, instructionBudgetRemaining) != (decoded->a != 0)) { \
+			SKIP_NEXT_INSTRUCTION(); \
+			DISPATCH_CONTINUE(); \
+		} \
+		DISPATCH_NEXT(); \
 	}
-	DISPATCH_NEXT();
-}
 
-DISPATCH_LABEL(LT) {
-	const int a = decoded->a;
-	const int rkB = decoded->b;
-	const int rkC = decoded->c;
-	const Value leftValue = readRK(IMAGE, registers, rkB);
-	const Value rightValue = readRK(IMAGE, registers, rkC);
-	bool ok = false;
-	if (valueIsNumber(leftValue) && valueIsNumber(rightValue)) {
-		ok = compareNumbers(leftValue, rightValue) == NumericOrder::Less;
-	} else if (valueIsString(leftValue) && valueIsString(rightValue)) {
-		ok = compareStringIds(&m_stringPool, asStringId(leftValue), asStringId(rightValue), &instructionBudgetRemaining) < 0;
-	}
-	if (ok != (a != 0)) {
-		SKIP_NEXT_INSTRUCTION();
-		DISPATCH_CONTINUE();
-	}
-	DISPATCH_NEXT();
-}
+DISPATCH_COMPARISON(EQ)
+DISPATCH_COMPARISON(LT)
+DISPATCH_COMPARISON(LE)
 
-DISPATCH_LABEL(LE) {
-	const int a = decoded->a;
-	const int rkB = decoded->b;
-	const int rkC = decoded->c;
-	const Value leftValue = readRK(IMAGE, registers, rkB);
-	const Value rightValue = readRK(IMAGE, registers, rkC);
-	bool ok = false;
-	if (valueIsNumber(leftValue) && valueIsNumber(rightValue)) {
-		ok = static_cast<int>(compareNumbers(leftValue, rightValue)) <= 0;
-	} else if (valueIsString(leftValue) && valueIsString(rightValue)) {
-		ok = compareStringIds(&m_stringPool, asStringId(leftValue), asStringId(rightValue), &instructionBudgetRemaining) <= 0;
-	}
-	if (ok != (a != 0)) {
-		SKIP_NEXT_INSTRUCTION();
-		DISPATCH_CONTINUE();
-	}
-	DISPATCH_NEXT();
-}
+#undef DISPATCH_COMPARISON
 
 DISPATCH_LABEL(MFC0) {
 	const int a = decoded->a;

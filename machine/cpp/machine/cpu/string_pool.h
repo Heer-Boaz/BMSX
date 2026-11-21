@@ -80,6 +80,4 @@ private:
 	size_t m_markWork = 0; // Collected before a GC step yields.
 };
 
-int compareStringIds(const StringPool* pool, StringId left, StringId right, int* remainingCycles);
-
 } // namespace bmsx
