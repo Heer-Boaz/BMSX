@@ -4,9 +4,9 @@
 #include <optional>
 #include <type_traits>
 
-#include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/cpu/jit/runtime/code_lookup.h"
+#include "spec/blua32/builtin.h"
 
 namespace bmsx {
 
@@ -48,7 +48,7 @@ struct NativeCpuRunState {
 	void publishActivation(u32 pc) noexcept;
 	std::exception_ptr error;
 	std::optional<Replay> replay{};
-	u32 callTargetFeedback = DecodedInstruction::CALL_TARGET_UNSEEN;
+	bool fixedCallMismatch = false;
 };
 
 static_assert(std::is_standard_layout_v<NativeCpuRunState>);

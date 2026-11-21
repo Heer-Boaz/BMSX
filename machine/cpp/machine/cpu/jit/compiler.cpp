@@ -47,6 +47,12 @@ NativeBlockExitSite materializeExit(const NativeIrExit& exit, const NativeCodeBi
 	case NativeBlockExit::AllocateTable:
 		site.recordConstructor = nullptr;
 		break;
+	case NativeBlockExit::Call:
+		if (site.operands.call.strategy == NativeCallStrategy::Observe) {
+			const u32 word = (exit.currentPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+			site.observingCall = &bindings.decodedPageFor(exit.currentPc)[word];
+		}
+		break;
 	default:
 		break;
 	}

@@ -32,6 +32,7 @@ class NativeLowering;
 class NativeCompiler;
 class NativeCodeCache;
 struct DecodedInstructionPage;
+struct DecodedInstruction;
 struct NativeCpuRunState;
 struct NativeBlockExitSite;
 struct NativeTableConstructor;
@@ -119,6 +120,7 @@ struct NativeBlockExitSite {
 		mutable NativeTableSlotBinding tableStore;
 		NativeTableConstructor* recordConstructor;
 		NativeFixedCallBinding fixedCall;
+		mutable DecodedInstruction* observingCall;
 	};
 	// Bound on CPU-side publication for CALL returns and same-frame helpers.
 	// Image-lifetime cells survive retirement of the source or target region.

@@ -614,10 +614,13 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget() {
 	const u32 pc = generated.rom.textAddress + callWord * INSTRUCTION_BYTES;
 	const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	const auto* owner = generated.cpu.activeThread()->currentFrame->executionImage;
-	const auto* page = owner->nativeCodeLookup->find(pc, 0);
+	auto* page = owner->nativeCodeLookup->find(pc, 0);
 	require(page && page->nativeBlocks && page->nativeBlocks->entries[word]
-		&& page->nativeBlocks->entries[word]->terminal.operands.call.strategy == NativeCallStrategy::Observe,
+		&& page->nativeBlocks->entries[word]->terminal.operands.call.strategy == NativeCallStrategy::Observe
+		&& page->words[word].nativeCallTarget() == DecodedInstruction::CALL_TARGET_UNSEEN,
 		"cold generated CALL has no invented target identity");
+	const auto* original = page->nativeBlocks->entries[word].get();
+	const auto originalRegion = original->region;
 	const auto restart = [&](int selected) {
 		for (auto* machine : {&generated, &scalar}) {
 			machine->cpu.clearHaltUntilIrq();
@@ -629,8 +632,14 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget() {
 		}
 	};
 	restart(1);
-	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted, "training executes ordinary CALL exactly once");
-	require(page->words[word].nativeCallTarget() == prototype, "compiled execution records the installed prototype, not the closure");
+	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted
+		&& generated.cpu.readFrameRegister(0, 4) == valueInteger(11),
+		"first observation executes the actual ordinary CALL and its return");
+	requireParity(generated, scalar);
+	require(page->words[word].nativeCallTarget() == prototype && page->nativeBlocks
+		&& page->nativeBlocks->entries[word].get() == original && original->region == originalRegion,
+		"compiled execution records the installed prototype without replacing its own valid body");
+	page->retireNativeRegion(originalRegion.get(), DecodedInstructionPage::Retirement::Capacity);
 	generated.cpu.prepareSystemNativeCode();
 	require(page->nativeBlocks && page->nativeBlocks->entries[word], "trained source was republished");
 	const auto& fixed = page->nativeBlocks->entries[word]->terminal;
@@ -672,8 +681,9 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget() {
 	restart(3);
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted
 		&& generated.cpu.readFrameRegister(0, 4) == valueInteger(39), "a new prototype calls the actual semantic target");
-	require(page->words[word].nativeCallTarget() == DecodedInstruction::CALL_TARGET_DISABLED,
-		"the first contradicted target disables that site's speculation");
+	require(page->words[word].nativeCallTarget() == DecodedInstruction::CALL_TARGET_DISABLED
+		&& (!page->nativeBlocks || !page->nativeBlocks->entries[word]),
+		"contradicting an actually fixed target disables and retires that site's specialization");
 	generated.cpu.prepareSystemNativeCode();
 	require(page->nativeBlocks && page->nativeBlocks->entries[word]
 		&& page->nativeBlocks->entries[word]->terminal.operands.call.strategy == NativeCallStrategy::Generic,
@@ -695,11 +705,20 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget() {
 	}
 	restart(2);
 	generated.cpu.prepareSystemNativeCode();
+	const auto& newImage = *generated.cpu.activeThread()->currentFrame->executionImage;
+	auto* newPage = newImage.nativeCodeLookup->find(pc, 0);
+	const auto* newOriginal = newPage->nativeBlocks->entries[word].get();
+	const auto newRegion = newOriginal->region;
+	require(newPage->words[word].nativeCallTarget() == DecodedInstruction::CALL_TARGET_UNSEEN,
+		"the replacement source starts without feedback from the old code");
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted
 		&& generated.cpu.readFrameRegister(0, 4) == valueInteger(39), "the same live closure calls the replacement code");
+	require(newPage->words[word].nativeCallTarget() == prototype && newPage->nativeBlocks
+		&& newPage->nativeBlocks->entries[word].get() == newOriginal && newOriginal->region == newRegion,
+		"learning the replacement target leaves its new generic body installed");
+	newPage->retireNativeRegion(newRegion.get(), DecodedInstructionPage::Retirement::Capacity);
 	generated.cpu.prepareSystemNativeCode();
-	const auto& newImage = *generated.cpu.activeThread()->currentFrame->executionImage;
-	const auto& newFixed = newImage.nativeCodeLookup->find(pc, 0)->nativeBlocks->entries[word]->terminal;
+	const auto& newFixed = newPage->nativeBlocks->entries[word]->terminal;
 	require(newFixed.operands.call.strategy == NativeCallStrategy::Fixed && newFixed.fixedCall.plan.entryPc == newEntry
 		&& newFixed.fixedCall.plan.capacity == 7u && newFixed.fixedCall.plan.padded == 0,
 		"replacement invalidates old feedback, code cells and specialized argument placement");
@@ -782,14 +801,35 @@ void nativeFixedCallChainIsRestorableAtBlockedMmio() {
 				machine->rom.textAddress + parentCall * INSTRUCTION_BYTES);
 		}
 	};
+	auto& lookup = *generated.cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup;
+	struct CallEntry {
+		DecodedInstructionPage* page;
+		u32 word, prototype;
+		const NativeBlock* block;
+		std::shared_ptr<NativeCodeRegion> region;
+	};
+	std::array<CallEntry, 2> calls;
+	for (u32 i = 0; i < calls.size(); ++i) {
+		const u32 pc = generated.rom.textAddress + (i == 0 ? parentCall : middle) * INSTRUCTION_BYTES;
+		auto* page = lookup.find(pc, 0);
+		const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		const auto* block = page->nativeBlocks->entries[word].get();
+		require(block && block->terminal.operands.call.strategy == NativeCallStrategy::Observe,
+			"both sites begin in the generic native path");
+		calls[i] = {page, word, generated.rom.functionAddresses[i + 1u], block, block->region};
+	}
 	restart();
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 200) == RunResult::Halted, "warm both genuine call sites");
+	for (const auto& call : calls)
+		require(call.page->words[call.word].nativeCallTarget() == call.prototype && call.page->nativeBlocks
+			&& call.page->nativeBlocks->entries[call.word].get() == call.block && call.block->region == call.region,
+			"both first observations preserve the exact published nested bodies");
+	for (u32 i = 0; i < calls.size(); ++i)
+		if (i == 0 || calls[i].region != calls[0].region)
+			calls[i].page->retireNativeRegion(calls[i].region.get(), DecodedInstructionPage::Retirement::Capacity);
 	generated.cpu.prepareSystemNativeCode();
-	auto& lookup = *generated.cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup;
-	for (u32 entry : {parentCall, middle}) {
-		const u32 pc = generated.rom.textAddress + entry * INSTRUCTION_BYTES;
-		const auto* page = lookup.find(pc, 0);
-		const auto& block = page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	for (const auto& call : calls) {
+		const auto& block = call.page->nativeBlocks->entries[call.word];
 		require(block && block->terminal.operands.call.strategy == NativeCallStrategy::Fixed,
 			"both transfers enter the fixed-call path");
 	}
@@ -863,7 +903,6 @@ void nativeReturnPublishesCallerTopAtMappedObserver() {
 			require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "a short grant executes one caller instruction");
 		require(cpu.getFrameDepth() == 2 && cpu.getFrameRegisterCount(0) == 8
 			&& cpu.readFramePc(1) == machine.rom.textAddress + MAPPED_PAGE_BYTE_SIZE, "the real call suspends a wider logical caller range");
-		cpu.prepareSystemNativeCode(); // Keep the receiving body warm after CALL's first observation.
 
 		constexpr int placed = 1;
 		const int resultCycles = BASE_CYCLES[static_cast<u8>(OpCode::RET)] + placed;

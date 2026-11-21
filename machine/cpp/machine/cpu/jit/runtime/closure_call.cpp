@@ -128,7 +128,6 @@ void CPU::observeNativeCallTarget(CallFrame& frame, DecodedInstructionPage& page
 	const u32 prototype = m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
 	if (!captureNativeFixedCall(image, prototype, decodeValueCount(decoded.b, -1))) return;
 	decoded.setNativeCallTarget(prototype);
-	retireNativeInstructionUsers(page, word);
 }
 
 void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
@@ -167,12 +166,16 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 		function = &romBinding->entry;
 	}
 
-	// Only immutable same-image closures with a fixed layout supply a
-	// profile. Leave builtin and cross-image continuations intact.
-	if (call.strategy == NativeCallStrategy::Observe && romBinding
-		&& cpu.captureNativeFixedCall(image, functionAddress, call.supplied)) {
-		run->callTargetFeedback = functionAddress;
-		return nullptr;
+	// Learning the target doesn't invalidate the generic call. This
+	// binding observes the owning decoded site until its first sample.
+	if (call.strategy == NativeCallStrategy::Observe && romBinding && exit->observingCall) {
+		auto& decoded = *exit->observingCall;
+		if (decoded.nativeCallTarget() != DecodedInstruction::CALL_TARGET_UNSEEN) {
+			exit->observingCall = nullptr;
+		} else if (cpu.captureNativeFixedCall(image, functionAddress, call.supplied)) {
+			decoded.setNativeCallTarget(functionAddress);
+			exit->observingCall = nullptr;
+		}
 	}
 
 	// The caller's native grant has already admitted the contiguous thread
@@ -220,18 +223,18 @@ void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExit
 	// A prototype version identifies code and frame layout, never captures.
 	// The actual heap closure remains the owner of every capture slot.
 	if (static_cast<ValueTag>(caller.registers.tags()[base]) != ValueTag::Closure) {
-		run->callTargetFeedback = DecodedInstruction::CALL_TARGET_DISABLED;
+		run->fixedCallMismatch = true;
 		return nullptr;
 	}
 	const u32 closure = cpu.m_heap.closureRecordAddress(caller.registers.admittedPayload(base));
 	if (!closure) {
-		run->callTargetFeedback = DecodedInstruction::CALL_TARGET_DISABLED;
+		run->fixedCallMismatch = true;
 		return nullptr;
 	}
 	const ClosureRecord::BindingFlags flags{cpu.m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
 	if (flags.latched() || flags.domain() != caller.executionImage->executionDomainId
 		|| cpu.m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) != plan.prototype) {
-		run->callTargetFeedback = DecodedInstruction::CALL_TARGET_DISABLED;
+		run->fixedCallMismatch = true;
 		return nullptr;
 	}
 

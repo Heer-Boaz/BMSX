@@ -234,7 +234,7 @@ void cpuInvalidationAndLifecycle() {
 	}
 }
 
-void pendingWorkDependsOnItsCapturedFeedback() {
+void pendingGenericWorkSurvivesFirstCallObservation() {
 	for (const bool matching : {false, true}) {
 		test::Blua32TestImage image;
 		image.mappedCode = false;
@@ -292,13 +292,12 @@ void pendingWorkDependsOnItsCapturedFeedback() {
 			std::this_thread::yield();
 		}
 		const auto completed = cpu.readNativeCompilationProfile();
-		if (matching)
-			require(completed.backgroundCancelled == 1u && completed.regionsPublished == 0u,
-				"feedback for the captured WIDE instruction withdraws the pending plan");
-		else
-			require(completed.backgroundCancelled == 0u && completed.regionsPublished == 1u
-				&& page.nativeBlocks->entries[first + 5u],
-				"feedback for a different function does not cancel a pending plan on their shared page");
+		require(completed.backgroundCancelled == 0u && completed.regionsPublished == 1u
+			&& page.nativeBlocks->entries[first + 5u],
+			"first learning at either the captured WIDE call or the sibling call does not invalidate a generic pending body");
+		require(page.words[first + 12u].nativeCallTarget() == machine.rom.functionAddresses[2]
+			&& page.words[first + 7u].nativeCallTarget() == (matching ? machine.rom.functionAddresses[1] : DecodedInstruction::CALL_TARGET_UNSEEN),
+			"publication preserves the prototype observations newer than its source snapshot");
 	}
 }
 
@@ -492,7 +491,7 @@ int main() {
 		unpublishedCodeCanBeDiscarded();
 		recordPlanIsReadyBeforePublication();
 		cpuInvalidationAndLifecycle();
-		pendingWorkDependsOnItsCapturedFeedback();
+		pendingGenericWorkSurvivesFirstCallObservation();
 		imageReplacementRetiresBorrowedConstants();
 		invalidatedPendingMergeDoesNotRetireDeadOwners();
 		for (int mutation = 0; mutation < 5; ++mutation) independentInteriorEntryRetiresEveryOverlappingOwner(mutation);
