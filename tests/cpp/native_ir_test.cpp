@@ -319,8 +319,9 @@ void nestedFieldsShareOnlyTheCheckedAddress() {
 	const auto text = report.str();
 	require(text.find("%addr0 = checked-own-field R0, K0") != std::string::npos
 		&& text.find("R1 = load-own-field %addr0") != std::string::npos
-		&& text.find("R2 = load-own-field %addr0") != std::string::npos,
-		"the diagnostic exposes the one checked field address and both consumers without lowering");
+		&& text.find("R2 = load-own-field %addr0") != std::string::npos
+		&& text.find(" own-only miss=e") != std::string::npos,
+		"the diagnostic exposes the checked address, both consumers and the selected own-only path");
 
 	const std::array rejected{NativeRejectedFieldProof{source[0].pc, ValueTag::Table}};
 	NativeIrRegion adapted(runs, uses, false, {}, {.rejectedFieldProofs = rejected});
@@ -489,6 +490,12 @@ void decodedFieldsBecomeOperationsAndEffects() {
 	require(invoke.callee == 4 && invoke.supplied == 2 && invoke.requested < 0
 		&& transfer.slots.readsRange.end() == 7 && transfer.slots.writes.first == 4 && transfer.slots.writes.open,
 		"a call carries a selected argument range, not the biased instruction operand");
+	std::ostringstream report;
+	dumpNativeIr(report, region);
+	const auto text = report.str();
+	require(text.find("memory R6 reads=R20..R22 store-words") != std::string::npos
+		&& text.find("R4..top = call R4 reads=R5..R6") != std::string::npos,
+		"the dump preserves counted source and open destination operands");
 }
 
 void undefinedMoveKindDoesNotBecomeANumericWordMove() {
@@ -564,6 +571,19 @@ void admissionReplaysPreserveTheExactFusedPredecessor() {
 		&& withJump.operands.replay.hasCompletedInstruction && withJump.currentPc == pc + 4 && withJump.lastPc == pc + 8
 		&& withoutJump.operands.replay.hasCompletedInstruction && withoutJump.currentPc == pc && withoutJump.lastPc == pc,
 		"public, fused-jump and skipped-jump admission each identify the actual completed guest prefix");
+	std::ostringstream report;
+	dumpNativeIr(report, region);
+	const auto text = report.str();
+	require(text.find(" taken=e" + std::to_string(*source.taken)) != std::string::npos
+		&& text.find(" fused-jump-pc=" + std::to_string(pc + INSTRUCTION_BYTES) + " jump-target=" + std::to_string(successorPc)
+			+ " jump-cycles=" + std::to_string(jump.baseCycles) + " before-jump=e" + std::to_string(*source.beforeFusedJump)) != std::string::npos,
+		"the dump names the planned jump fusion, skip and short-grant exit");
+	jump.dispatchOp = static_cast<u8>(DecodedDispatchOp::Observe);
+	NativeIrRegion notFused(sources, uses);
+	std::ostringstream observed;
+	dumpNativeIr(observed, notFused);
+	require(observed.str().find("fused-jump-pc=") == std::string::npos,
+		"a compare with a separately observed following jump does not advertise fusion");
 }
 
 void onlyConsumedEntryProofsSurviveCopies() {
@@ -747,6 +767,42 @@ void dumpDistinguishesFoldedEdgesFromPublicEntries() {
 		"folding an edge neither advertises it as emitted nor deletes the independent entry");
 }
 
+void dumpReportsSelectedBuiltinAndVarargPaths() {
+	constexpr u32 pc = 0x5600;
+	std::array decoded{
+		DecodedInstruction{.a = 7, .b = 1, .op = static_cast<u8>(OpCode::VARARG)},
+		DecodedInstruction{.a = 3, .b = 3, .c = 2, .op = static_cast<u8>(OpCode::CALL)},
+		DecodedInstruction{.op = static_cast<u8>(OpCode::HALT)},
+	};
+	for (auto& row : decoded) { row.width = 1; row.baseCycles = BASE_CYCLES[row.op]; }
+	const std::array entry{NativeBlockInstruction{&decoded[0], pc}, NativeBlockInstruction{&decoded[1], pc + 4}};
+	const std::array after{NativeBlockInstruction{&decoded[2], pc + 8}};
+	const std::array sources{NativeBlockSource{entry}, NativeBlockSource{after}};
+	NativeRegisterUses uses;
+	NativeIrRegion eligible(sources, uses, true);
+	const auto& block = eligible.blocks().front();
+	require(block.instructions.size() == 2 && !block.instructions.front().slow && block.completedCall,
+		"a no-result VARARG has no exit and an eligible CALL has a returning builtin arm");
+	std::ostringstream eligibleReport;
+	dumpNativeIr(eligibleReport, eligible);
+	const auto text = eligibleReport.str();
+	require(text.find("vararg no-results\n") != std::string::npos
+		&& text.find("builtin-tag=guard completed-call=e" + std::to_string(*block.completedCall)) != std::string::npos,
+		"the dump reports the empty placement and names the actual returning builtin arm");
+	decoded[0].op = static_cast<u8>(OpCode::K1);
+	decoded[0].a = decoded[1].a;
+	decoded[0].baseCycles = BASE_CYCLES[decoded[0].op];
+	NativeIrRegion rejected(sources, uses, true);
+	const auto& fallback = rejected.blocks().front();
+	require(!fallback.completedCall && std::get<NativeCallSite>(fallback.instructions.back().operation).calleeCheck
+		== NativeTagCheck::Rejected, "the proved integer callee prevents emitting the builtin arm");
+	std::ostringstream rejectedReport;
+	dumpNativeIr(rejectedReport, rejected);
+	require(rejectedReport.str().find("builtin-tag=") == std::string::npos
+		&& rejectedReport.str().find("completed-call=") == std::string::npos,
+		"a rejected builtin candidate is not printed as an emitted fast path");
+}
+
 void recordPlanUsesTypedEntriesAndFullRomWords() {
 	DecodedInstruction allocation{.c = 2, .op = static_cast<u8>(OpCode::NEWT)};
 	DecodedInstruction first{.payload = DecodedInstruction::Payload::tableSlot(-1), .c = -1, .op = static_cast<u8>(OpCode::SETFIELD)};
@@ -851,6 +907,7 @@ int main() {
 		dataflowPlansTableAndMemoryInputs();
 		rejectedReceiverDoesNotAdvertiseAFieldDatapath();
 		dumpDistinguishesFoldedEdgesFromPublicEntries();
+		dumpReportsSelectedBuiltinAndVarargPaths();
 		recordPlanUsesTypedEntriesAndFullRomWords();
 		registerUses();
 		return 0;

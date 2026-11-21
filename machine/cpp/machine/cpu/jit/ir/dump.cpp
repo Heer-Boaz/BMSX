@@ -39,7 +39,13 @@ struct OperationName {
 	const char* operator()(const NativeControlAccess&) const { return "control"; }
 	const char* operator()(const NativeMemoryAccess&) const { return "memory"; }
 	const char* operator()(const NativeTableAccess& op) const {
-		return op.ownFieldAddress ? "load-own-field" : op.mode == NativeTableMode::Write ? "table-write" : "table-read";
+		if (op.ownFieldAddress) return "load-own-field";
+		switch (op.mode) {
+		case NativeTableMode::Read: return "table-read";
+		case NativeTableMode::Write: return "table-write";
+		case NativeTableMode::ReadMethod: return "table-read-method";
+		}
+		BMSX_UNREACHABLE();
 	}
 	const char* operator()(const NativeArithmetic&) const { return "arithmetic"; }
 	const char* operator()(const NativeTruthBranch&) const { return "branch"; }
@@ -51,6 +57,12 @@ struct OperationName {
 void writeValue(std::ostream& out, NativeValueRef operand) {
 	if (operand < 0) out << 'K' << -1 - operand;
 	else out << 'R' << operand;
+}
+
+void writeSlotRange(std::ostream& out, NativeSlotRange range) {
+	out << 'R' << range.first;
+	if (range.open) out << "..top";
+	else if (range.count > 1) out << "..R" << range.end() - 1;
 }
 
 void writeRecord(std::ostream& out, const NativeRecordPlan& record) {
@@ -90,7 +102,22 @@ struct OperationPlan {
 	std::ostream& out;
 	void operator()(const auto&) const {}
 	void operator()(const NativeArithmetic& op) const { writeNumericPlan(out, op); }
+	void operator()(const NativeJump& op) const { out << " target=" << op.target; }
+	void operator()(const NativeLiteral& op) const {
+		out << " tag=" << unsigned(valueTag(op.value)) << " word=" << valuePayload(op.value);
+	}
 	void operator()(const NativeConstantLoad& op) const { out << " K" << op.index; }
+	void operator()(const NativeTableAllocation& op) const {
+		out << " array=" << op.arraySize << " hash=" << op.hashSize;
+	}
+	void operator()(const NativeClosure& op) const {
+		if ((op.flags & CLOSURE_ADDRESS_REGISTER_FLAG) == 0) out << " address=" << op.address;
+		out << " flags=" << op.flags;
+	}
+	void operator()(const NativeGlobalAccess& op) const {
+		out << (op.access == NativeAccess::Read ? " read" : " write")
+			<< (op.bank == NativeGlobalBank::System ? " system=" : " execution=") << op.index;
+	}
 	void operator()(const NativeMove& op) const {
 		if (op.conversion == ValueMoveKind::Copy) {
 			if (op.copyTag) out << " copy-tag=" << unsigned(*op.copyTag);
@@ -118,9 +145,12 @@ struct OperationPlan {
 			constexpr std::array nilPlans{"dynamic", "nil", "present"};
 			out << " barrier=" << barriers[unsigned(op.store.barrier)] << " value=" << nilPlans[unsigned(op.store.nilValue)];
 		} else if (op.readPlan == NativeTableReadPlan::OneHopIndex) out << " check-one-hop";
+		else if (op.readPlan == NativeTableReadPlan::OwnSlot) out << " own-only";
 	}
 	void operator()(const NativeMemoryAccess& op) const {
-		out << " address=" << tagChecks[unsigned(op.addressCheck)] << " displacement=" << op.displacement
+		constexpr std::array modes{"load", "store", "store-words"};
+		out << ' ' << modes[unsigned(op.mode)]
+			<< " address=" << tagChecks[unsigned(op.addressCheck)] << " displacement=" << op.displacement
 			<< " format=" << unsigned(op.format);
 		if (op.mode == NativeMemoryMode::Store) out << " source-word=" << wordSources[unsigned(op.store)];
 		if (op.mode == NativeMemoryMode::StoreWords) out << " words=" << op.wordCount;
@@ -134,11 +164,14 @@ struct OperationPlan {
 			out << " source-word=" << wordSources[unsigned(op.operand)];
 	}
 	void operator()(const NativeUpvalueAccess& op) const {
-		out << " capture=" << op.capture;
+		out << (op.access == NativeAccess::Read ? " read" : " write") << " capture=" << op.capture;
 		if (op.access == NativeAccess::Write) out << " barrier=" << barriers[unsigned(op.barrier)];
 	}
 	void operator()(const NativeCallSite& op) const {
 		out << " supplied=" << op.supplied << " results=" << op.requested;
+	}
+	void operator()(const NativeVararg& op) const {
+		if (op.requested == 0) out << " no-results";
 	}
 };
 
@@ -197,8 +230,11 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 			}
 
 			out << "  @" << inst.pc << ' ';
-			if (inst.slots.writes.count == 1 && !inst.slots.writes.open)
-				out << 'R' << inst.slots.writes.first << " = ";
+			const auto& writes = inst.slots.writes;
+			if (writes.count != 0 || writes.open) {
+				writeSlotRange(out, writes);
+				out << " = ";
+			}
 			out << (rejectedField ? "table-semantic" : std::visit(OperationName{}, inst.operation));
 			if (tableAccess && tableAccess->ownFieldAddress && !rejectedField) {
 				out << " %addr" << unsigned(*tableAccess->ownFieldAddress);
@@ -211,14 +247,26 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 					writeValue(out, operand);
 				}
 			}
+			const auto& readsRange = inst.slots.readsRange;
+			if (readsRange.count != 0 || readsRange.open) {
+				out << " reads=";
+				writeSlotRange(out, readsRange);
+			}
+			if (const auto* allocation = std::get_if<NativeTableAllocation>(&inst.operation); allocation && allocation->record)
+				writeRecord(out, region.recordPlans()[*allocation->record]);
 			std::visit(OperationPlan{out}, inst.operation);
-			if (block.inlineBuiltin && std::holds_alternative<NativeCallSite>(inst.operation))
-				out << " builtin-tag=" << tagChecks[unsigned(std::get<NativeCallSite>(inst.operation).calleeCheck)];
+			if (row + 1 == block.instructions.size()) {
+				if (block.taken) out << " taken=e" << unsigned(*block.taken);
+				if (block.hasFusedJump)
+					out << " fused-jump-pc=" << block.terminal.currentPc << " jump-target=" << block.terminal.nextPc
+						<< " jump-cycles=" << unsigned(block.fusedJumpCycles) << " before-jump=e" << unsigned(*block.beforeFusedJump);
+				if (block.completedCall)
+					out << " builtin-tag=" << tagChecks[unsigned(std::get<NativeCallSite>(inst.operation).calleeCheck)]
+						<< " completed-call=e" << unsigned(*block.completedCall);
+			}
 			if (inst.slow) out << " miss=e" << unsigned(*inst.slow);
 			if (inst.replay) out << " replay=e" << unsigned(*inst.replay);
 			if (inst.feedback) out << " profile-ready=e" << unsigned(*inst.feedback);
-			if (const auto* allocation = std::get_if<NativeTableAllocation>(&inst.operation); allocation && allocation->record)
-				writeRecord(out, region.recordPlans()[*allocation->record]);
 			out << '\n';
 		}
 		const auto exits = region.sideExits(block);
@@ -251,7 +299,8 @@ void traceNativeIr(const NativeIrRegion& region) {
 		const auto end = filter.data() + filter.size();
 		const auto parsed = std::from_chars(filter.data(), end, pc, 16);
 		if (parsed.ec != std::errc{} || parsed.ptr != end || !std::ranges::any_of(blocks, [&](const auto& block) {
-			return std::ranges::any_of(block.instructions, [&](const auto& row) { return row.pc == pc; });
+			return (block.hasFusedJump && block.terminal.currentPc == pc)
+				|| std::ranges::any_of(block.instructions, [&](const auto& row) { return row.pc == pc; });
 		})) return;
 	}
 	std::ostringstream output;
