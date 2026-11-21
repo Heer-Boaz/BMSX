@@ -717,6 +717,45 @@ void stringStoreCanRetireItsOwnSource() {
 	}
 }
 
+void semanticStoreContinuesAtTheLivePc() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 7, 0, 3);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SETI), 0, 1, 1);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::KSMI), 2, 0, 9);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::KSMI), 2, 0, 41);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8}};
+	CpuMachine native(image), scalar(image, true);
+	const u32 start = native.rom.textAddress, write = start + INSTRUCTION_BYTES;
+	const u32 redirected = start + 4 * INSTRUCTION_BYTES;
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		auto table = cpu.createTable(1);
+		frame.registers.set(0, valueTable(table.address()));
+		frame.registers.set(1, valueInteger(redirected));
+		frame.setTop(8);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], write);
+		const u32 cell = frame.controlOffset + static_cast<u32>(FrameField::Pc);
+		// Keep the array length at zero: this overwrite updates the length
+		// hint and belongs to the table owner, not the native overwrite path.
+		machine->memory.writeRamRecordWord(table.address() + static_cast<u32>(TableHeader::Storage), cell);
+		machine->memory.writeRamRecordByte(cell + sizeof(u32), static_cast<u8>(ValueTag::Integer));
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+#endif
+	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::SETI)] + BASE_CYCLES[static_cast<u8>(OpCode::KSMI)];
+	require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded,
+		"the semantic write and the selected successor complete within the same grant");
+	requireParity(native, scalar);
+	require(native.cpu.readFrameRegister(0, 2) == valueInteger(41)
+		&& native.cpu.readFramePc(0) == redirected + INSTRUCTION_BYTES,
+		"the live guest PC selects the successor despite a published sequential entry");
+}
+
 void nativeFieldOperationsLearnTheDecodedSite() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::Blua32TestImage image;
@@ -1143,6 +1182,7 @@ int main() {
 		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); wideAllocationFailure();
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 		stringStoreCanRetireItsOwnSource();
+		semanticStoreContinuesAtTheLivePc();
 		nativeFieldOperationsLearnTheDecodedSite();
 		coldRepeatedFieldsRecompileTheirSource();
 		nestedFieldReadObservesPublishedRegisterAlias();

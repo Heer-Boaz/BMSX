@@ -188,6 +188,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	// A helper may retire its source descriptor. The image owns this cell;
 	// reading it after the helper observes any target withdrawal/publication.
 	void* const* continuation = exit->continuationCells[run->cartridgeSlot];
+	u32 continuationPc = exit->nextPc;
 	try {
 		auto transition = NativeBlockTransition::NextInstruction;
 		switch (exit->exit) {
@@ -365,6 +366,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 					cpu.lastPc = record->lastWordPc;
 					frame->writeControl(FrameField::Pc, record->nextPc);
 					continuation = record->continuation[run->cartridgeSlot];
+					continuationPc = record->nextPc;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 					state.diagnosticOpcodes.setfield += record->count;
 #endif
@@ -412,7 +414,10 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		// Read-only helpers preserve the admitted window. Other same-frame
 		// helpers can relocate it but leave the image, bank and globals bound.
 		const bool sameFrame = sameWindow || transition == NativeBlockTransition::NextInstruction;
-		if (sameFrame && continuation) {
+		const u32 pc = frame->readControl(FrameField::Pc);
+		// A record write can change the physical frame's PC. A cached cell
+		// is an optimization of the sequential continuation, not its owner.
+		if (sameFrame && continuation && continuationPc == pc) {
 			void* target = *continuation;
 			if (target) {
 				state.remainingCycles = cpu.instructionBudgetRemaining;
@@ -434,7 +439,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		}
 		if (frame->executionImage != cpu.m_activeExecutionImage)
 			cpu.latchActiveExecutionImage(frame->executionImage->executionDomainId, frame->executionImage);
-		const u32 pc = frame->readControl(FrameField::Pc);
 		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 			++gateProfile.returns;
