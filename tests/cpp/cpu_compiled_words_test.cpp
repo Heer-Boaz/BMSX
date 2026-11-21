@@ -1,5 +1,6 @@
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/native_compilation_source.h"
+#include "machine/cpu/native_limits.h"
+#include "machine/cpu/native_source_policy.h"
 #include "common/endian.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"

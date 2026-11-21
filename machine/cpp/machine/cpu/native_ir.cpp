@@ -4,7 +4,7 @@
 
 #include <algorithm>
 #include <numeric>
-#include "machine/cpu/execution_image.h"
+#include "machine/cpu/decoded_instruction.h"
 #include "spec/blua32/cop0.h"
 #include "spec/blua32/instruction_format.h"
 

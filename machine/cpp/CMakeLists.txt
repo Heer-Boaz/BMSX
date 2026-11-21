@@ -290,7 +290,7 @@ add_library(bmsx_core STATIC
 	machine/cpu/call_state.cpp
 	machine/cpu/closure.cpp
 	machine/cpu/upvalue.cpp
-	machine/cpu/execution_image.cpp
+	machine/cpu/decoded_instruction.cpp
 	machine/cpu/gc_heap.cpp
 	machine/cpu/global_bank.cpp
 	machine/cpu/heap_allocator.cpp

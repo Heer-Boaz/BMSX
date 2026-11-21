@@ -8,6 +8,7 @@
 #include <iterator>
 #include <stdexcept>
 #include "machine/runtime/runtime.h"
+#include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/bmsx/memory_map.h"

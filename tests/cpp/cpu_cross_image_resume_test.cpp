@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/decoded_instruction.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/scheduler/device.h"

@@ -1,4 +1,4 @@
-#include "machine/cpu/execution_image.h"
+#include "machine/cpu/decoded_instruction.h"
 
 #include <algorithm>
 

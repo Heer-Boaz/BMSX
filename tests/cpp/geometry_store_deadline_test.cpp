@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/native_code_lookup.h"
 #include "machine/devices/geometry/contracts.h"

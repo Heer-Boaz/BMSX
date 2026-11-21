@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <new>
-#include "machine/cpu/execution_image.h"
 #include "spec/blua32/instruction_format.h"
 
 namespace bmsx {

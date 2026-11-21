@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/decoded_instruction.h"
 
 #include <algorithm>
 #include <array>
@@ -7,6 +8,8 @@
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/native_block.h"
 #include "machine/cpu/native_compilation_source.h"
+#include "machine/cpu/native_compiler.h"
+#include "machine/cpu/native_source_policy.h"
 #include "machine/cpu/native_table_constructor.h"
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 #include "machine/cpu/native_compiler_worker.h"
@@ -82,10 +85,10 @@ void CPU::prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage
 	const u32 pagePc = pc & ~MAPPED_PAGE_BYTE_MASK;
 	MappedPageBinding binding;
 	m_memory.bindMappedPage(pagePc, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
-	NativeCompilationSource source(image, page, binding, pagePc, busSignals,
+	NativeCompilationSource source(page, binding, pagePc, busSignals,
 		m_memory.cartridgeController().selectedSlot(busSignals));
 	source.enqueue(pc, true, nullptr, true);
-	prepareNativeSource(source, false);
+	prepareNativeSource(image, source, false);
 }
 
 void CPU::observeNativeArithmeticReplay(DecodedInstructionPage& page, u32 word,
@@ -104,8 +107,7 @@ void CPU::observeNativeArithmeticReplay(DecodedInstructionPage& page, u32 word,
 #endif
 }
 
-void CPU::discoverNativeSource(NativeCompilationSource& source, std::vector<u32>* outgoing) {
-	auto& image = source.image;
+void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing) {
 	auto& page = source.page;
 	const auto& binding = source.binding;
 	const u32 pagePc = source.pagePc;
@@ -124,7 +126,7 @@ void CPU::discoverNativeSource(NativeCompilationSource& source, std::vector<u32>
 		const auto& instruction = page.words[cursor];
 		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u
 			|| instruction.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
-			|| !source.canEmit(instruction)) continue;
+			|| !nativeSourceCanEmit(instruction, image.constPool.size())) continue;
 		if (instruction.op >= static_cast<u8>(OpCode::GETSYS) && instruction.op <= static_cast<u8>(OpCode::SETGL)) {
 			const auto& bank = instruction.op <= static_cast<u8>(OpCode::SETSYS) ? m_systemGlobalBank : m_globalBank;
 			if (instruction.bx >= bank.capacity()) continue; // The general mirror port is scalar.
@@ -161,8 +163,7 @@ void CPU::discoverNativeSource(NativeCompilationSource& source, std::vector<u32>
 	}
 }
 
-void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
-	auto& image = source.image;
+void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, bool coldImage) {
 	auto& page = source.page;
 	const auto& binding = source.binding;
 	const u32 pagePc = source.pagePc;
@@ -185,7 +186,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 		}
 		measurement.phase(&NativeCompilationProfile::discoveryNanoseconds);
 	}
-	if (!coldImage) discoverNativeSource(source, nullptr);
+	if (!coldImage) discoverNativeSource(image, source, nullptr);
 	for (u32 word = 0; word < DECODED_PAGE_WORDS; ++word) {
 		if (source.roots[word] && !available[word]
 			&& page.words[word].dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm))

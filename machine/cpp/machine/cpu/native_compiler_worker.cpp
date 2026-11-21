@@ -1,4 +1,5 @@
 #include "machine/cpu/native_compiler_worker.h"
+#include "machine/cpu/decoded_instruction.h"
 
 #include <cassert>
 #include <chrono>

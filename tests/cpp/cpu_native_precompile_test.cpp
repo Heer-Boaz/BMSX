@@ -1,5 +1,6 @@
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"

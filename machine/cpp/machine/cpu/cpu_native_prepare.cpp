@@ -56,7 +56,7 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32Execut
 		const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		if (decoded.nativeBlocks && decoded.nativeBlocks->entries[word]) return;
 		auto& source = pages.try_emplace(binding.key,
-			image, decoded, binding, pagePc, busSignals, slot).first->second;
+			decoded, binding, pagePc, busSignals, slot).first->second;
 		source.enqueue(pc, true, nullptr, true);
 		if (!source.discoveryQueued && source.discoveredCount < source.pendingCount) {
 			source.discoveryQueued = true;
@@ -73,10 +73,10 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32Execut
 		auto& source = *pending[index];
 		source.discoveryQueued = false;
 		outgoing.clear();
-		discoverNativeSource(source, &outgoing);
+		discoverNativeSource(image, source, &outgoing);
 		for (const u32 pc : outgoing) enqueue(pc);
 	}
-	for (auto& [key, source] : pages) prepareNativeSource(source, true);
+	for (auto& [key, source] : pages) prepareNativeSource(image, source, true);
 }
 
 } // namespace bmsx

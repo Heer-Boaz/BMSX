@@ -1,6 +1,7 @@
 #include "spec/bmsx/io.h"
 #include "spec/blua32/cop0.h"
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/decoded_instruction.h"
 #include "spec/blua32/image_format.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"

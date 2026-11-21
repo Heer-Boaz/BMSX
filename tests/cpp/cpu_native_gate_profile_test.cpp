@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/decoded_instruction.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"

@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/decoded_instruction.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/native_compiler.h"
 #endif

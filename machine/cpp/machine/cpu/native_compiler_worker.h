@@ -6,7 +6,7 @@
 #include <mutex>
 #include <thread>
 
-#include "machine/cpu/execution_image.h"
+#include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/native_compiler.h"
 
 namespace bmsx {

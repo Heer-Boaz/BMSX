@@ -1,7 +1,6 @@
 #include "machine/cpu/native_lowering.h"
 
 #include <bit>
-#include "machine/cpu/execution_image.h"
 #include "machine/cpu/gc_object.h"
 #include "machine/memory/mapped_page.h"
 #include "machine/memory/memory.h"

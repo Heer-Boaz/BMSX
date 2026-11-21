@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/frame_placement.h"
 
 #include <bit>
@@ -10,7 +11,7 @@
 
 #include "common/compiler.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-#include "machine/cpu/native_compilation_source.h"
+#include "machine/cpu/native_source_policy.h"
 #include "machine/cpu/native_execution.h"
 #endif
 #include "common/endian.h"

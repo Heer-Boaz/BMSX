@@ -1,3 +1,4 @@
+#include "machine/cpu/decoded_instruction.h"
 #include <fstream>
 #include <iostream>
 #include <iterator>

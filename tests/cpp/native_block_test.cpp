@@ -3,7 +3,7 @@
 #include "common/compiler.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
-#include "machine/cpu/execution_image.h"
+#include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/call_state.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
