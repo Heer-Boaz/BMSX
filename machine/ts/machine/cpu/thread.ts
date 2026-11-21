@@ -87,7 +87,7 @@ export class Thread {
 		if (index === reserved) {
 			const capacity = reserved === 0 ? 1 : reserved * 2;
 			const bytes = capacity * PROTECTED_CALL_BYTES;
-			const block = this.heap.budget.reserveBacking(bytes, bytes, valueNil(), valueNil(), this.address);
+			const block = this.heap.budget.reserveBacking(bytes, bytes, valueNil(), valueNil(), valueNil(), this.address);
 			this.heap.threads.replaceControls(this.address, ThreadField.ProtectedBlock, block, capacity);
 			this.boundProtectedOffset = block & RAM_RECORD_WORD_MASK;
 			this.boundProtectedCapacity = capacity;
@@ -151,7 +151,7 @@ export class Thread {
 	public resizeStack(capacity: number, root = valueNil()): void {
 		if (capacity === this.stackRegisters.capacity()) return;
 		const bytes = capacity * THREAD_STACK_SLOT_BYTES;
-		const block = this.heap.budget.reserveBacking(bytes, bytes, root, valueNil(), this.address);
+		const block = this.heap.budget.reserveBacking(bytes, bytes, root, valueNil(), valueNil(), this.address);
 		this.heap.threads.replaceStack(this.address, block, capacity);
 		this.stackRegisters.bindRam(this.heap.memory, block & RAM_RECORD_WORD_MASK, capacity);
 		this.rebindFrames();

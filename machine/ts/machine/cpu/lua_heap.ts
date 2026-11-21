@@ -68,12 +68,12 @@ export class LuaHeap {
 	}
 
 	/** Admit the owner's logical increase, then reserve backing without committing occupancy. */
-	public reserveBacking(bytes: number, logicalBytes: number, root0 = valueNil(), root1 = valueNil(), growingThread = 0): number {
-		const collected = logicalBytes !== 0 && this.admit(logicalBytes, root0, root1, valueNil(), growingThread);
+	public reserveBacking(bytes: number, logicalBytes: number, root0 = valueNil(), root1 = valueNil(), root2 = valueNil(), growingThread = 0): number {
+		const collected = logicalBytes !== 0 && this.admit(logicalBytes, root0, root1, root2, growingThread);
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
 			const block = this.cpu.heapAllocator.allocate(bytes, true);
 			if (block !== 0) return block;
-			if (attempt === 0) this.collectRuntime(root0, root1, valueNil(), growingThread);
+			if (attempt === 0) this.collectRuntime(root0, root1, root2, growingThread);
 		}
 		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}

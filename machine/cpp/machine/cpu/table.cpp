@@ -193,11 +193,15 @@ void TableRecord::resize(
 	const Value& key,
 	const Value& value
 ) {
-	const u32 storage = m_heap->budget.allocateRecord(storageBytes(newArraySize, newHashSize), true, 0, 0,
-		valueTable(m_address), key, value);
+	const size_t oldArraySize = arrayCapacity(), oldHashSize = hashSlots();
+	const u32 previous = storageBytes(oldArraySize, oldHashSize);
+	const u32 requested = storageBytes(newArraySize, newHashSize);
+	const u32 increase = requested - std::min(requested, previous);
+	const u32 storage = m_heap->budget.reserveBacking(requested, increase, valueTable(m_address), key, value);
+	// Admission can collect weak entries but not change these capacities.
+	// Restart any collector scan against the complete, redistributed body.
 	m_heap->tableEntriesMoved(m_address);
 	const auto oldValues = values();
-	const size_t oldArraySize = arrayCapacity(), oldHashSize = hashSlots();
 	bindStorage(newArraySize, newHashSize, storage);
 	initializeStorage();
 
@@ -212,8 +216,7 @@ void TableRecord::resize(
 			rawSet(key, oldValues.get(oldArraySize + oldHashSize + i));
 		}
 	}
-	if (oldValues.words != 0) m_heap->budget.releaseRecord(oldValues.words, storageBytes(oldArraySize, oldHashSize));
-
+	m_heap->budget.replaceRecord(oldValues.words, previous, requested);
 }
 
 void TableRecord::bindStorage(size_t arraySize, size_t hashSize, u32 address) {

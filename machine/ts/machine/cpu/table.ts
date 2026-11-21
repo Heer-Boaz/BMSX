@@ -578,10 +578,12 @@ export class TableRecords {
 		this.resize(record, arraySize, hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0, key, value);
 	}
 	private resize(record: number, array: number, hash: number, key: Value, value: Value): void {
-		const storage = this.heap.budget.allocateRecord(TableRecords.storageBytes(array, hash), true, 0, 0,
-			valueTable(record), key, value);
+		const oldArray = this.arrayCapacity(record), oldHash = this.hashSize(record);
+		const previous = TableRecords.storageBytes(oldArray, oldHash), requested = TableRecords.storageBytes(array, hash);
+		const storage = this.heap.budget.reserveBacking(requested, Math.max(0, requested - previous), valueTable(record), key, value);
+		// Admission can remove weak entries. Their capacities remain bound.
 		this.heap.tableEntriesMoved(record);
-		const oldWords = this.storageAddress(record), oldTags = this.tags(record), oldArray = this.arrayCapacity(record), oldHash = this.hashSize(record);
+		const oldWords = this.storageAddress(record), oldTags = this.tags(record);
 		const memory = this.heap.memory;
 		this.bindStorage(record, array, hash, storage);
 		this.initializeStorage(record);
@@ -599,8 +601,7 @@ export class TableRecords {
 					valueFromTag(valueTag, memory.readRamRecordWord(oldWords + oldValue * 4)));
 			}
 		}
-		if (oldWords !== 0) this.heap.budget.releaseRecord(oldWords, TableRecords.storageBytes(oldArray, oldHash));
-
+		this.heap.budget.replaceRecord(oldWords, previous, requested);
 	}
 	private updateLengthHint(record: number, slot: number, present: boolean): void {
 		const hint = this.lengthHint(record);

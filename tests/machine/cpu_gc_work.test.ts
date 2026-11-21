@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { CpuExecutionBackend, COMPILED_BLOCK_THRESHOLD } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
-import { HEAP_COLLECTION_TARGET_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_COLLECTION_TARGET_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { ValueTag, valueBool, valueFloatBits, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
@@ -87,6 +87,28 @@ test('allocation admission and GC use logical bytes, not size-class slack', () =
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.luaHeap.usedBytes(), logical, 'reclaim the exact charges');
 	assert.equal(cpu.heapAllocator.occupiedBytes(), physical, 'reclaim class extents and whole pages separately');
+});
+
+test('table replacement admits just its logical increase, even when both layouts need backing', () => {
+	for (const packHashIntoArray of [false, true]) {
+		const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+		const table = packHashIntoArray ? cpu.createTable(0, 8) : cpu.createTable(1, 0);
+		const frame = cpu.rootThread.currentFrame!, tables = cpu.gc.tables;
+		frame.registers.setTable(0, table); frame.top = 1;
+		const entries = packHashIntoArray ? 8 : 1;
+		for (let key = 1; key <= entries; ++key) tables.setInteger(table, key, valueInteger(100 + key));
+		const logical = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
+		const target = logical + (packHashIntoArray ? 0 : 5);
+		cpu.luaHeap.setCollectionTarget(target);
+		tables.setInteger(table, entries + 1, valueInteger(73));
+		assert.equal(cpu.luaHeap.collectionTarget(), target, 'replacing a layout must not cause a gratuitous GC assist');
+		assert.equal(cpu.gc.active(), false);
+		assert.equal(cpu.luaHeap.usedBytes(), logical + (packHashIntoArray ? -32 : 5));
+		const oldStorage = packHashIntoArray ? 112 : 5, newStorage = packHashIntoArray ? 80 : 10;
+		assert.equal(cpu.heapAllocator.occupiedBytes(), physical - heapAllocationBytes(oldStorage) + heapAllocationBytes(newStorage));
+		for (let key = 1; key <= entries; ++key) assert.equal(tables.getInteger(table, key), valueInteger(100 + key));
+		assert.equal(tables.getInteger(table, entries + 1), valueInteger(73));
+	}
 });
 
 test('allocation assist target is only restored by the RAM checkpoint', () => {

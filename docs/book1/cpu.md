@@ -1256,11 +1256,13 @@ read the bus for those words again. A RAM String occupies one block containing
 its 16-byte header and its bytes. Its byte count is 22 bits. The String
 port selects main RAM for the record and uses the 22-bit physical byte
 address for its header and bytes; reaching the end of RAM wraps to its start.
-An empty backing layout has no charge. When the budget charges a reservation,
-a request to replace it must fit alongside the previous reservation; the
-previous charge ends when that reservation is released. The reported count
-can be below capacity even when there is no suitable free RAM block to
-satisfy a request.
+An empty backing layout has no charge. When a Table changes its reserved
+capacities, admission considers only the increase in its occupied bytes.
+The previous and new Table layouts do not count twice during the transfer.
+A replaceable Thread reservation must still fit alongside its previous
+reservation, whose charge ends when it is released. The reported count can
+be below capacity even when there is no suitable free RAM block to satisfy
+a request.
 
 A reserved Value slot occupies four payload bytes and one kind byte, regardless
 of its current value. A hash node holds a key slot, a value slot and a four-byte

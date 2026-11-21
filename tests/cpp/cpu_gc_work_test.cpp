@@ -77,6 +77,32 @@ void allocationAdmissionUsesLogicalBytes() {
 		"reclamation returns the corresponding charges to both measurements");
 }
 
+void tableReplacementAdmitsOnlyItsLogicalIncrease() {
+	for (const bool packHashIntoArray : {false, true}) {
+		Machine machine(image()); auto& cpu = machine.cpu;
+		auto table = packHashIntoArray ? cpu.createTable(0, 8) : cpu.createTable(1, 0);
+		auto& frame = *cpu.rootThread()->currentFrame;
+		frame.registers.set(0, valueTable(table.address())); frame.setTop(1);
+		const int entries = packHashIntoArray ? 8 : 1;
+		for (int key = 1; key <= entries; ++key) table.setInteger(key, valueInteger(100 + key));
+		const auto logical = cpu.luaHeap().usedBytes();
+		const auto physical = cpu.heapAllocator().occupiedBytes();
+		const auto target = logical + (packHashIntoArray ? 0u : 5u);
+		cpu.luaHeap().setCollectionTarget(target);
+		table.setInteger(entries + 1, valueInteger(73));
+		require(cpu.luaHeap().collectionTarget() == target && !cpu.collecting(),
+			"a resize at the exact growth threshold must not assist collection for the outgoing layout");
+		require(cpu.luaHeap().usedBytes() == (packHashIntoArray ? logical - 32u : logical + 5u),
+			"the budget commits the resulting capacities only");
+		const u32 oldStorage = packHashIntoArray ? 112u : 5u, newStorage = packHashIntoArray ? 80u : 10u;
+		require(cpu.heapAllocator().occupiedBytes() == physical - heapAllocationBytes(oldStorage) + heapAllocationBytes(newStorage),
+			"the owner physically retires the old layout");
+		for (int key = 1; key <= entries; ++key)
+			require(table.getInteger(key) == valueInteger(100 + key), "redistribution preserves each existing mapping");
+		require(table.getInteger(entries + 1) == valueInteger(73), "the triggering mapping is written once");
+	}
+}
+
 void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	require(cpu.luaHeap().usedBytes() == bootBytes, "boot pool is the literal canonical allocation sum, not host object sizes");
@@ -1135,7 +1161,7 @@ int main(int argc, char** argv) {
 			return 0;
 		}
 		canonicalPoolAndRootRanges();
-		allocationAdmissionUsesLogicalBytes(); explicitCollectionAndNoReplay();
+		allocationAdmissionUsesLogicalBytes(); tableReplacementAdmitsOnlyItsLogicalIncrease(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); collectionPrimitiveCyclesIgnoreHeapShape();
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();

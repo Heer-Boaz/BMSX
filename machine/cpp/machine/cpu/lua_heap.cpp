@@ -71,11 +71,11 @@ u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backing
 	throw LuaOutOfMemorySignal{};
 }
 
-u32 LuaHeap::reserveBacking(u32 bytes, u32 logicalBytes, Value root0, Value root1, u32 growingThread) {
-	const bool collected = logicalBytes != 0u && admit(logicalBytes, root0, root1, valueNil(), growingThread);
+u32 LuaHeap::reserveBacking(u32 bytes, u32 logicalBytes, Value root0, Value root1, Value root2, u32 growingThread) {
+	const bool collected = logicalBytes != 0u && admit(logicalBytes, root0, root1, root2, growingThread);
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
 		if (const u32 block = m_cpu.heapAllocator().allocate(bytes, true)) return block;
-		if (attempt == 0) collectRuntime(root0, root1, valueNil(), growingThread);
+		if (attempt == 0) collectRuntime(root0, root1, root2, growingThread);
 	}
 	throw LuaOutOfMemorySignal{};
 }
