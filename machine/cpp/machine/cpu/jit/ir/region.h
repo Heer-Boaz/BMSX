@@ -54,7 +54,7 @@ struct NativeOwnFieldAddress {
 	u8 definingRow;
 	NativeValueRef receiver;
 	u16 key;
-	std::optional<u8> temporary{};
+	std::optional<u8> lastUseRow{};
 };
 
 struct NativeIrBlock {
@@ -91,7 +91,7 @@ struct NativeIrBlock {
 // Temporary source-row links retained only until the region is partitioned.
 struct NativeFieldAddressUse {
 	u8 definition;
-	std::optional<u8> temporary{};
+	std::optional<u8> lastUse{};
 };
 
 class NativeIrRegion {

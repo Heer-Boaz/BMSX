@@ -97,7 +97,7 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 					writeValue(out, address.receiver);
 					out << ", K" << address.key << " miss=e" << unsigned(*inst.slow);
 					if (tableAccess->receiverCheck == NativeTagCheck::Dynamic) out << " guard-table";
-					if (address.temporary) out << " retain";
+					if (address.lastUseRow) out << " through=@" << block.instructions[*address.lastUseRow].pc;
 					out << '\n';
 				}
 			}

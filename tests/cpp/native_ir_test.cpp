@@ -302,7 +302,7 @@ void nestedFieldsShareOnlyTheCheckedAddress() {
 		"the two t.a loads share a checked address but keep their own Table result checks");
 	const auto& definition = block.ownFieldAddresses[*first.ownFieldAddress];
 	require(block.ownFieldAddresses.size() == 3 && definition.definingRow == 0 && definition.receiver == 0
-		&& definition.key == 0 && definition.temporary,
+		&& definition.key == 0 && definition.lastUseRow == 3,
 		"only the repeated receiver origin and key share a live address definition");
 	const auto& b = std::get<NativeTableAccess>(block.instructions[1].operation);
 	const auto& c = std::get<NativeTableAccess>(block.instructions[4].operation);
@@ -381,42 +381,52 @@ void fieldAddressesStopAtDefinitionsAndEffects() {
 		const auto& definition = firstBlock.ownFieldAddresses[*first.ownFieldAddress];
 		if (boundary == Boundary::Copy) {
 			require(&firstBlock == &lastBlock && first.ownFieldAddress == last.ownFieldAddress
-				&& definition.temporary && first.readPlan == NativeTableReadPlan::OwnSlot
+				&& definition.lastUseRow == 2 && first.readPlan == NativeTableReadPlan::OwnSlot
 				&& last.readPlan == NativeTableReadPlan::OwnSlot && !first.resultTag && !last.resultTag,
 				"repeated untyped loads can share an own-only path through an ordinary copy");
 		} else {
-			require(!definition.temporary && first.readPlan == NativeTableReadPlan::OneHopIndex
+			require(!definition.lastUseRow && first.readPlan == NativeTableReadPlan::OneHopIndex
 				&& last.readPlan == NativeTableReadPlan::OneHopIndex,
 				"different receivers, keys, seeds or intervening effects do not retain checked addresses");
 		}
 	}
 }
 
-void fieldAddressTemporariesAreBoundedByLifetime() {
+void fieldAddressRetentionIsBoundedByLifetime() {
 	constexpr size_t keyCount = 1 + NATIVE_OWN_FIELD_TEMPORARIES;
-	std::array<DecodedInstruction, 2 * keyCount> decoded;
+	std::array<DecodedInstruction, 2 + 2 * keyCount> decoded;
 	std::array<NativeBlockInstruction, decoded.size()> source;
-	for (size_t row = 0; row < decoded.size(); ++row) {
-		const auto key = static_cast<u16>(row % keyCount);
+	// The source-row and block-row numbering differ after the checkpoint;
+	// the block's address lifetime must not include that earlier segment.
+	decoded[0] = {.a = 12, .b = 13, .op = static_cast<u8>(OpCode::LEN)};
+	decoded[1] = {.a = 14, .op = static_cast<u8>(OpCode::K1)};
+	for (size_t row = 2; row < decoded.size(); ++row) {
+		const auto key = static_cast<u16>((row - 2) % keyCount);
 		decoded[row] = {.payload = DecodedInstruction::Payload::tableSlot(key), .a = static_cast<u16>(row + 1), .c = static_cast<i16>(key),
-			.op = static_cast<u8>(OpCode::GETFIELD), .width = 1, .baseCycles = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)]};
+			.op = static_cast<u8>(OpCode::GETFIELD)};
+	}
+	for (size_t row = 0; row < decoded.size(); ++row) {
+		decoded[row].width = 1;
+		decoded[row].baseCycles = BASE_CYCLES[decoded[row].op];
 		source[row] = {&decoded[row], 0x5500u + static_cast<u32>(row) * INSTRUCTION_BYTES};
 	}
 	const std::array runs{NativeBlockSource{source}};
 	NativeRegisterUses uses;
 	NativeIrRegion region(runs, uses);
-	const auto& block = region.blocks().front();
-	require(region.blocks().size() == 1 && block.ownFieldAddresses.size() == keyCount + 1,
-		"overlapping field addresses do not require an additional native temporary");
+	require(region.blocks().size() == 2, "LEN keeps its own checkpoint");
+	const auto& block = region.blocks().back();
+	require(block.ownFieldAddresses.size() == keyCount + 1,
+		"retention avoids exceeding the overlap budget");
 	for (size_t key = 0; key < keyCount; ++key) {
-		const auto& first = std::get<NativeTableAccess>(block.instructions[key].operation);
-		const auto& repeated = std::get<NativeTableAccess>(block.instructions[keyCount + key].operation);
+		const size_t firstRow = key + 1, lastRow = keyCount + firstRow;
+		const auto& first = std::get<NativeTableAccess>(block.instructions[firstRow].operation);
+		const auto& repeated = std::get<NativeTableAccess>(block.instructions[lastRow].operation);
 		const auto& definition = block.ownFieldAddresses[*first.ownFieldAddress];
 		if (key < NATIVE_OWN_FIELD_TEMPORARIES)
-			require(first.ownFieldAddress == repeated.ownFieldAddress && definition.temporary == key,
-				"simultaneously live addresses occupy distinct temporary ordinals");
+			require(first.ownFieldAddress == repeated.ownFieldAddress && definition.lastUseRow == lastRow,
+				"the definition remains live through its final use in this block");
 		else
-			require(first.ownFieldAddress != repeated.ownFieldAddress && !definition.temporary,
+			require(first.ownFieldAddress != repeated.ownFieldAddress && !definition.lastUseRow,
 				"the excess use computes its checked address anew");
 	}
 }
@@ -774,7 +784,7 @@ int main() {
 		rangeWritesAndMethodCopiesDefineValues();
 		nestedFieldsShareOnlyTheCheckedAddress();
 		fieldAddressesStopAtDefinitionsAndEffects();
-		fieldAddressTemporariesAreBoundedByLifetime();
+		fieldAddressRetentionIsBoundedByLifetime();
 		feedbackDoesNotDependOnStoreAdjacency();
 		decodedFieldsBecomeOperationsAndEffects();
 		undefinedMoveKindDoesNotBecomeANumericWordMove();

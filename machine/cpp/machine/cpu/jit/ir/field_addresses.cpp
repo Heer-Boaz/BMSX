@@ -66,21 +66,21 @@ void selectFieldAddresses(std::span<NativeInstruction> instructions, std::span<c
 	}
 
 	int inlineThrough = -1;
-	std::array<int, NATIVE_OWN_FIELD_TEMPORARIES> temporaryEnds;
-	temporaryEnds.fill(-1);
+	std::array<int, NATIVE_OWN_FIELD_TEMPORARIES> liveEnds;
+	liveEnds.fill(-1);
 	for (size_t index = 0; index < instructions.size(); ++index) {
 		auto* field = fixedFieldRead(instructions[index].operation);
 		if (!field) continue;
 		auto& use = uses[index];
 		if (lastUses[index] > index) {
-			const auto temporary = std::ranges::find_if(temporaryEnds, [index](int end) { return end < static_cast<int>(index); });
-			if (temporary != temporaryEnds.end()) {
-				*temporary = lastUses[index];
-				use.temporary = static_cast<u8>(temporary - temporaryEnds.begin());
-				inlineThrough = std::max(inlineThrough, *temporary);
+			const auto available = std::ranges::find_if(liveEnds, [index](int end) { return end < static_cast<int>(index); });
+			if (available != liveEnds.end()) {
+				use.lastUse = static_cast<u8>(firstRow + lastUses[index]);
+				*available = lastUses[index];
+				inlineThrough = std::max(inlineThrough, *available);
 			}
 		}
-		if (const size_t definition = use.definition - firstRow; definition != index && !uses[definition].temporary)
+		if (const size_t definition = use.definition - firstRow; definition != index && !uses[definition].lastUse)
 			use.definition = static_cast<u8>(firstRow + index);
 		if (field->resultTag || static_cast<int>(index) <= inlineThrough)
 			field->readPlan = NativeTableReadPlan::OwnSlot;
@@ -155,7 +155,9 @@ void NativeIrRegion::bindOwnFieldAddresses(NativeIrBlock& block, std::span<const
 		if (definition == row) {
 			if (m_ownFieldAddresses.capacity() == 0) m_ownFieldAddresses.reserve(m_instructions.capacity());
 			field->ownFieldAddress = static_cast<NativeOwnFieldAddressId>(m_ownFieldAddresses.size() - firstAddress);
-			m_ownFieldAddresses.push_back({static_cast<u8>(row), field->receiver, static_cast<u16>(field->key), use.temporary});
+			const auto lastUse = use.lastUse ? std::optional<u8>{static_cast<u8>(*use.lastUse - firstRow)}
+				: std::nullopt;
+			m_ownFieldAddresses.push_back({static_cast<u8>(row), field->receiver, static_cast<u16>(field->key), lastUse});
 		} else {
 			field->ownFieldAddress = std::get<NativeTableAccess>(block.instructions[definition].operation).ownFieldAddress;
 		}

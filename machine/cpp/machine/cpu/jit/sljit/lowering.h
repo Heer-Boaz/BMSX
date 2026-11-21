@@ -81,6 +81,7 @@ private:
 	void emitWordOperand(int selector, NativeWordSource source, NativeBlockExitSite& invalid);
 	void emitArrayRead(NativeBlockExitSite&, bool guardStack);
 	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&, bool guardStack);
+	void assignFieldAddressSpills(std::span<const NativeOwnFieldAddress>);
 	void emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBlockExitSite&, sljit_s32 scratch = SLJIT_R2);
 	void admitTableFootprint(sljit_s32 offset, u32 bytes, bool wholeStack, NativeBlockExitSite&, sljit_s32 scratch = SLJIT_R2);
 	struct TableStackAdmission { bool reads, overwrites; };
@@ -151,6 +152,7 @@ private:
 		sljit_label* result;
 	};
 	std::vector<SingleStringRead> m_singleStringReads;
+	std::array<u8, NATIVE_BLOCK_MAX_INSTRUCTIONS> m_fieldAddressSpills;
 	size_t m_current = 0, m_instruction = 0;
 	bool m_terminal = false;
 };

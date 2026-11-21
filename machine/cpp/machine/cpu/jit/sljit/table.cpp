@@ -277,6 +277,18 @@ void NativeLowering::emitSingleStringReads() {
 	}
 }
 
+void NativeLowering::assignFieldAddressSpills(std::span<const NativeOwnFieldAddress> addresses) {
+	std::array<int, NATIVE_OWN_FIELD_TEMPORARIES> ends;
+	ends.fill(-1);
+	for (size_t id = 0; id < addresses.size(); ++id) {
+		const auto& address = addresses[id];
+		if (!address.lastUseRow) continue;
+		const auto slot = std::ranges::find_if(ends, [&](int end) { return end < address.definingRow; });
+		m_fieldAddressSpills[id] = static_cast<u8>(slot - ends.begin());
+		*slot = *address.lastUseRow;
+	}
+}
+
 void NativeLowering::lowerOperation(const NativeTableAccess& access, const NativeInstruction& instruction) {
 	auto* c = m_compiler;
 	auto& exit = *sideExit(instruction.slow);
@@ -286,12 +298,14 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 	const int base = address ? address->receiver : access.receiver;
 	const int key = address ? address->key : access.key;
 	const int value = access.value;
+	const auto spill = address && address->lastUseRow ? std::optional{m_fieldAddressSpills[*access.ownFieldAddress]}
+		: std::nullopt;
 	if (address && address->definingRow + 1u != m_instruction) {
-		emitReusedFieldAddress(*address->temporary, address->key, exit, access.resultTag);
+		emitReusedFieldAddress(*spill, address->key, exit, access.resultTag);
 		emitFieldResult(value, access.resultTag);
 		return;
 	}
-	const bool readStack = (address && address->temporary) || std::ranges::any_of(m_cache.state(), [](const auto& binding) {
+	const bool readStack = spill.has_value() || std::ranges::any_of(m_cache.state(), [](const auto& binding) {
 		return binding.wordDirty || binding.tagDirty;
 	});
 	const auto& block = m_ir[m_current];
@@ -348,7 +362,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		break;
 	case NativeTableKey::Field:
 		emitStringSlot(load, value, exit, static_cast<u16>(key), access.resultTag, access.store,
-			stack, access.readPlan, address ? address->temporary : std::nullopt);
+			stack, access.readPlan, spill);
 		if (load) {
 			emitFieldResult(value, access.resultTag);
 			return;

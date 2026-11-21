@@ -12,6 +12,8 @@ void NativeLowering::beginBlock(size_t index) {
 	auto& entry = m_entries[index];
 	entry.planned = true;
 	const auto& ir = m_ir[index];
+	if (!ir.ownFieldAddresses.empty())
+		assignFieldAddressSpills(ir.ownFieldAddresses);
 	m_cache.setState({});
 	entry.guarded = sljit_emit_label(m_compiler);
 	// Public entry points admit their own type proofs before any register move.
