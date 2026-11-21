@@ -1714,24 +1714,24 @@ RunResult CPU::runLoop(
 	int registerTop = 0;
 	int publishedTop = 0;
 	CallFrame* scalarFrame = nullptr;
-	// Keep the ordinary same-page frontier local. The physical frame is
-	// authoritative at explicit observer and activation boundaries.
-	const auto publishScalarFrontier = [&] {
-		if constexpr (!Instrumented) {
-			if (scalarFrame) {
-				scalarFrame->writeControl(FrameField::Pc, nextPc);
-				if (registerTop != publishedTop) scalarFrame->setTop(registerTop);
-				scalarFrame = nullptr;
-			}
-		}
-	};
-	const auto resumeScalarFrontier = [&] {
-		if constexpr (!Instrumented) {
-			nextPc = frame->readControl(FrameField::Pc);
-			publishedTop = registerTop = frame->readWindow(FrameField::Top);
-			scalarFrame = frame;
-		}
-	};
+	// Preserve the local PC/top across ordinary dispatch. Like the dispatch
+	// macros below, these transitions must not pass the locals by address.
+#define PUBLISH_SCALAR_FRONTIER() do { \
+	if constexpr (!Instrumented) { \
+		if (scalarFrame) { \
+			scalarFrame->writeControl(FrameField::Pc, nextPc); \
+			if (registerTop != publishedTop) scalarFrame->setTop(registerTop); \
+			scalarFrame = nullptr; \
+		} \
+	} \
+} while (0)
+#define RESUME_SCALAR_FRONTIER() do { \
+	if constexpr (!Instrumented) { \
+		nextPc = frame->readControl(FrameField::Pc); \
+		publishedTop = registerTop = frame->readWindow(FrameField::Top); \
+		scalarFrame = frame; \
+	} \
+} while (0)
 	ValueSpan registers;
 	bool canReuseFrame = false;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -1855,7 +1855,7 @@ dispatch_decode:
 			if ((Instrumented
 					? (refreshState & DECODED_REFRESH_DECODE)
 					: refreshState) != 0u) {
-				publishScalarFrontier();
+				PUBLISH_SCALAR_FRONTIER();
 				if (!decodeInstruction(*frame, *decodedPage, pageOffset, pc, !Instrumented)) {
 					continue;
 				}
@@ -1897,7 +1897,7 @@ dispatch_decode:
 	else nextPc = (target); \
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
-	publishScalarFrontier(); \
+	PUBLISH_SCALAR_FRONTIER(); \
 	skipNextInstruction(FRAME); \
 } while (0)
 #define TABLE_CACHE_SLOT() (decoded->tableCacheSlot())
@@ -1908,10 +1908,10 @@ dispatch_decode:
 		if (canReuseFrame && instructionBudgetRemaining > 0) { \
 			pc = nextPc; \
 			if ((pc & ~MAPPED_PAGE_BYTE_MASK) == pageAddress) goto dispatch_decode; \
-			publishScalarFrontier(); \
+			PUBLISH_SCALAR_FRONTIER(); \
 			goto dispatch_fetch; \
 		} \
-		publishScalarFrontier(); \
+		PUBLISH_SCALAR_FRONTIER(); \
 	} \
 	goto dispatch_continue; \
 } while (0)
@@ -1938,7 +1938,7 @@ dispatch_instruction:
 			if constexpr (Instrumented) {
 				switch (dispatchOp) {
 				case static_cast<u8>(DecodedDispatchOp::ReservedMemory):
-					publishScalarFrontier();
+					PUBLISH_SCALAR_FRONTIER();
 					enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					DISPATCH_CONTINUE();
 				case static_cast<u8>(DecodedDispatchOp::Observe):
@@ -1981,7 +1981,7 @@ dispatch_instruction:
 				}
 #endif
 				case static_cast<u8>(DecodedDispatchOp::ReservedMemory):
-					publishScalarFrontier();
+					PUBLISH_SCALAR_FRONTIER();
 					enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					DISPATCH_CONTINUE();
 				case static_cast<u8>(DecodedDispatchOp::Observe):
@@ -2005,7 +2005,7 @@ dispatch_instruction:
 						valueInteger(shifted)
 					);
 					if (instructionBudgetRemaining <= 0) {
-						publishScalarFrontier();
+						PUBLISH_SCALAR_FRONTIER();
 						DISPATCH_CONTINUE();
 					}
 					const u32 successorPc = nextPc;
@@ -2013,7 +2013,7 @@ dispatch_instruction:
 					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 					if ((successorPage.refreshState[successorOffset]
 						& DECODED_REFRESH_DECODE) != 0u) {
-						publishScalarFrontier();
+						PUBLISH_SCALAR_FRONTIER();
 						if (!decodeInstruction(
 							FRAME,
 							successorPage,
@@ -2042,7 +2042,7 @@ dispatch_instruction:
 						decoded->a,
 						valueInteger(xorResult)
 					);
-					publishScalarFrontier();
+					PUBLISH_SCALAR_FRONTIER();
 					DISPATCH_CONTINUE();
 				}
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedAddShl): {
@@ -2060,7 +2060,7 @@ dispatch_instruction:
 						valueAdd(addLeftValue, addRightValue)
 					);
 					if (instructionBudgetRemaining <= 0) {
-						publishScalarFrontier();
+						PUBLISH_SCALAR_FRONTIER();
 						DISPATCH_CONTINUE();
 					}
 					const u32 successorPc = nextPc;
@@ -2068,7 +2068,7 @@ dispatch_instruction:
 					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 					if ((successorPage.refreshState[successorOffset]
 						& DECODED_REFRESH_DECODE) != 0u) {
-						publishScalarFrontier();
+						PUBLISH_SCALAR_FRONTIER();
 						if (!decodeInstruction(
 							FRAME,
 							successorPage,
@@ -2095,7 +2095,7 @@ dispatch_instruction:
 						decoded->a,
 						valueInteger(shifted)
 					);
-					publishScalarFrontier();
+					PUBLISH_SCALAR_FRONTIER();
 					DISPATCH_CONTINUE();
 				}
 #include "machine/cpu/cpu_dispatch.inl"
@@ -2105,7 +2105,7 @@ dispatch_instruction:
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_native_block: {
-				publishScalarFrontier();
+				PUBLISH_SCALAR_FRONTIER();
 				thread.recordNativeWrites(m_memory.ramWriteWatches());
 				nativeState.frameBank = frameBankWord(IMAGE.executionDomainId);
 				nativeState.cartridgeSlot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
@@ -2178,7 +2178,7 @@ dispatch_rebind_frame:
 			goto dispatch_continue;
 
 dispatch_observe:
-			publishScalarFrontier();
+			PUBLISH_SCALAR_FRONTIER();
 			canReuseFrame = false;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
@@ -2186,7 +2186,7 @@ dispatch_observe:
 			// Observation precedes the original instruction's charge.
 			instructionBudgetRemaining += decoded->baseCycles;
 			m_instructionObserver.observe(m_instructionObserver.context, image->executionDomainId, pc, registers);
-			resumeScalarFrontier();
+			RESUME_SCALAR_FRONTIER();
 			dispatchOp = decoded->op;
 			instructionBudgetRemaining -= decoded->baseCycles;
 			goto dispatch_instruction;
@@ -2208,7 +2208,7 @@ dispatch_continue:
 #undef FRAME
 			continue;
 		} catch (const LuaOutOfMemorySignal&) {
-			publishScalarFrontier();
+			PUBLISH_SCALAR_FRONTIER();
 			if (!handleThreadError(m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY])) {
 				enterLuaFaultException(
 					LUA_FAULT_REASON_OUT_OF_MEMORY,
@@ -2216,12 +2216,12 @@ dispatch_continue:
 				);
 			}
 		} catch (const LuaThrownValueError& error) {
-			publishScalarFrontier();
+			PUBLISH_SCALAR_FRONTIER();
 			if (!handleThreadError(error.value)) {
 				enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
 			}
 		} catch (const LuaExecutionError& error) {
-			publishScalarFrontier();
+			PUBLISH_SCALAR_FRONTIER();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			nativeState.replay.reset();
 #endif
@@ -2230,7 +2230,7 @@ dispatch_continue:
 				enterLuaFaultException(error.reason, errorValue);
 			}
 		} catch (...) {
-			publishScalarFrontier();
+			PUBLISH_SCALAR_FRONTIER();
 			throw;
 		}
 	}
@@ -2238,6 +2238,9 @@ dispatch_continue:
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target) {
 	if (target == 0u) target = m_rootView.address;
+#undef RESUME_SCALAR_FRONTIER
+#undef PUBLISH_SCALAR_FRONTIER
+
 	for (;;) {
 		const RunResult result = m_runUntilDepthEntry(*this, m_activeThread->address == target ? targetDepth : 0, instructionBudget);
 		if (!m_threadSwitchRequested) return result;
