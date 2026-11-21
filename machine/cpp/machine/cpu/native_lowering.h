@@ -84,12 +84,13 @@ private:
 	void emitArrayRead(NativeBlockExitSite&, bool guardStack);
 	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&, bool guardStack);
 	void emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBlockExitSite&, sljit_s32 scratch = SLJIT_R2);
+	struct TableStackAdmission { bool reads, overwrites; };
 	std::array<sljit_jump*, 3> emitStringValueAddress(NativeBlockExitSite&, bool load,
-		bool guardStack, std::optional<u8> temporary);
+		TableStackAdmission, std::optional<u8> temporary);
 	sljit_jump* emitStringValueTag(bool load, std::optional<ValueTag> resultTag);
 	void emitStringPayload();
 	void emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<u16> keyIndex,
-		std::optional<ValueTag> resultTag, NativeStorePlan store, bool guardStack, bool ownFieldOnly = false,
+		std::optional<ValueTag> resultTag, NativeStorePlan store, TableStackAdmission, bool ownFieldOnly = false,
 		std::optional<u8> temporary = {});
 	void emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBlockExitSite&, std::optional<ValueTag> resultTag);
 	void emitFieldResult(int slot, std::optional<ValueTag> resultTag);

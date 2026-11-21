@@ -785,6 +785,199 @@ void nestedFieldReadObservesPublishedRegisterAlias() {
 	}
 }
 
+void inheritedFieldReadObservesPublishedRegisterAlias() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 3, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::GETFIELD), 6, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::K1), 7, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.constants = {std::string("inherited word")};
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}};
+	CpuMachine native(image), scalar(image, true);
+	const u32 start = native.rom.textAddress, field = start + INSTRUCTION_BYTES, suffix = field + 2u * INSTRUCTION_BYTES;
+	const int prefix = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
+	const int total = prefix + BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + TABLE_INDEX_VISIT_CYCLES;
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto receiver = cpu.createTable(), meta = cpu.createTable(0, 1), holder = cpu.createTable(0, 1);
+		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(holder.address()));
+		holder.setStringKey(*cpu.stringPool().find("inherited word"), valueInteger(41));
+		receiver.setMetatableAddress(meta.address());
+		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+		registers.set(0, valueTable(receiver.address()));
+		registers.set(1, valueTable(holder.address()));
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+#endif
+	require(test::runCpuParity(native.cpu, scalar.cpu, total) == RunResult::Yielded
+		&& native.cpu.readFrameRegister(0, 6) == valueInteger(41), "the ordinary inherited read trains its one-hop cache");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const auto& entry = page.nativeBlocks->entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	require(entry && entry->admissionCycles == prefix && entry->terminal.currentPc == field
+		&& entry->sideExits[0].tableReadCache.holderDepth == 1,
+		"the installed entry has a trained one-hop proof, not just a generic table exit");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& readExits = native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::ReadField)];
+	const auto initialExits = readExits.entries;
+#endif
+#endif
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+		// A=0,H=1: the holder's value is the physical R3 payload. The
+		// receiver and its metatable remain disjoint from the activation.
+		const u32 storage = registers.wordAddress() + 2u * sizeof(u32);
+		const u32 tags = storage + 3u * sizeof(u32);
+		machine->memory.writeRamRecordWord(valuePayload(registers.get(1)) + static_cast<u32>(TableHeader::Storage), storage);
+		machine->memory.writeRamRecordWord(storage, *cpu.stringPool().find("inherited word"));
+		machine->memory.writeRamRecordByte(tags, static_cast<u8>(ValueTag::String));
+		machine->memory.writeRamRecordByte(tags + 1u, static_cast<u8>(ValueTag::Integer));
+	}
+	for (int grant : {prefix + 1, total}) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+			auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+			registers.set(3, valueInteger(73));
+			registers.set(6, valueInteger(99)); registers.set(7, valueInteger(99));
+		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded, "one hop stops at the suffix");
+		require(native.cpu.readFrameRegister(0, 3) == valueInteger(1) && native.cpu.readFrameRegister(0, 6) == valueInteger(1),
+			"the inherited probe sees the pending prefix word rather than the old spill");
+		require(native.cpu.readCurrentInstructionPc() == field && native.cpu.lastPc == field + INSTRUCTION_BYTES
+			&& native.cpu.readFramePc(0) == suffix && native.cpu.instructionBudgetRemaining == grant - total
+			&& native.cpu.readFrameRegister(0, 7) == valueInteger(99), "the WIDE read charges one hop and publishes the exact frontier");
+		requireParity(native, scalar);
+	}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(readExits.entries == initialExits, "publishing a pending prefix does not send the one-hop read to scalar lookup");
+#endif
+}
+
+void tableWriteObservesCleanRegisterAlias(bool field) {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::ADD), 8, 2, 2);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 8, 3, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(field ? OpCode::SETFIELD : OpCode::SETI), 0, field ? 0 : 1, 7);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::MOV), 5, 2, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.constants = {std::string("overwritten slot")};
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 9}};
+	CpuMachine native(image), scalar(image, true);
+	const u32 start = native.rom.textAddress, write = start + 2u * INSTRUCTION_BYTES, copy = write + 2u * INSTRUCTION_BYTES;
+	const int prefix = BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::MOV)];
+	const int store = BASE_CYCLES[static_cast<u8>(field ? OpCode::SETFIELD : OpCode::SETI)];
+	const int move = BASE_CYCLES[static_cast<u8>(OpCode::MOV)], halt = BASE_CYCLES[static_cast<u8>(OpCode::HALT)];
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto table = cpu.createTable(field ? 0 : 2, field ? 1 : 0);
+		if (field) table.setStringKey(*cpu.stringPool().find("overwritten slot"), valueInteger(13));
+		else table.setInteger(1, valueInteger(13));
+		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+		registers.set(0, valueTable(table.address())); registers.set(2, valueInteger(13));
+		registers.set(3, valueString(cpu.stringPool().intern("raw copy"))); registers.set(7, valueInteger(77));
+	}
+	const auto restart = [&] {
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+			auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+			registers.set(2, valueInteger(13)); registers.set(5, valueInteger(99));
+		}
+	};
+	for (int visit = 0; visit < 16; ++visit) {
+		restart();
+		test::runCpuParity(native.cpu, scalar.cpu, prefix + store + move);
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 word = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const auto& entry = page.nativeBlocks->entries[word];
+	require(entry && entry->admissionCycles == prefix && entry->terminal.currentPc == write
+		&& page.nativeBlocks->entries[word + 4u] && page.words[word].nativeNumericTypes().stable,
+		"the real installed body caches a profiled read before the WIDE store and can link to its consumer");
+#endif
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		const auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+		const u32 table = valuePayload(registers.get(0));
+		const u32 storage = registers.wordAddress() + (field ? 1u : 2u) * sizeof(u32);
+		machine->memory.writeRamRecordWord(table + static_cast<u32>(TableHeader::Storage), storage);
+		if (field) {
+			const u32 tags = storage + 3u * sizeof(u32);
+			machine->memory.writeRamRecordWord(storage, *cpu.stringPool().find("overwritten slot"));
+			machine->memory.writeRamRecordByte(tags, static_cast<u8>(ValueTag::String));
+			machine->memory.writeRamRecordByte(tags + 1u, static_cast<u8>(ValueTag::Integer));
+		}
+	}
+	restart();
+	require(test::runCpuParity(native.cpu, scalar.cpu, prefix + 1) == RunResult::Yielded,
+		"one cycle starts the complete WIDE store but not the successor");
+	require(native.cpu.readFrameRegister(0, 2) == valueInteger(77) && native.cpu.readFrameRegister(0, 5) == valueInteger(99)
+		&& native.cpu.instructionBudgetRemaining == 1 - store && native.cpu.readCurrentInstructionPc() == write
+		&& native.cpu.lastPc == write + INSTRUCTION_BYTES && native.cpu.readFramePc(0) == copy,
+		"the physical store commits its value without executing the next instruction");
+	requireParity(native, scalar);
+	restart();
+	require(test::runCpuParity(native.cpu, scalar.cpu, prefix + store + move + 1) == RunResult::Halted,
+		"a larger grant admits the compiled consumer and starts HALT");
+	require(native.cpu.readFrameRegister(0, 2) == valueInteger(77) && native.cpu.readFrameRegister(0, 5) == valueInteger(77),
+		"the successor uses the updated physical value instead of the earlier clean host binding");
+	require(native.cpu.instructionBudgetRemaining == 1 - halt && native.cpu.readCurrentInstructionPc() == copy + INSTRUCTION_BYTES
+		&& native.cpu.lastPc == copy + INSTRUCTION_BYTES && native.cpu.readFramePc(0) == copy + 2u * INSTRUCTION_BYTES,
+		"the aliased write and receiving segment retain exact guest charge and PCs");
+	requireParity(native, scalar);
+}
+
+void tableWriteDoesNotExportAStaleRamTagProof() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 2, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::LOADNIL), 2, 1, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::SETI), 0, 1, 7);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMPIF), 2, 0, 1);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8}};
+	CpuMachine native(image), scalar(image, true);
+	const u32 start = native.rom.textAddress, branch = start + 3u * INSTRUCTION_BYTES, taken = branch + 2u * INSTRUCTION_BYTES;
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto table = cpu.createTable(1, 0);
+		table.setInteger(1, valueInteger(13));
+		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+		registers.set(0, valueTable(table.address())); registers.set(7, valueInteger(77));
+		// With one array slot the tag follows its payload word. LOADNIL
+		// makes R2 definitely Nil in RAM without a resident host binding;
+		// writing the array slot replaces that tag, not R2's zero payload.
+		const u32 storage = registers.tagAddress() + 2u - sizeof(u32);
+		machine->memory.writeRamRecordWord(table.address() + static_cast<u32>(TableHeader::Storage), storage);
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+	const auto& imageState = *native.cpu.activeThread()->frameAtDepth(0)->executionImage;
+	const auto& page = *imageState.nativeCodeLookup->find(start, 0);
+	const u32 word = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	require(page.nativeBlocks->entries[word] && page.nativeBlocks->entries[word + 3u],
+		"the table store and its typed branch have an installed native edge");
+#endif
+	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::LOADNIL)] + 1
+		+ BASE_CYCLES[static_cast<u8>(OpCode::SETI)] + BASE_CYCLES[static_cast<u8>(OpCode::JMPIF)];
+	require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded,
+		"the grant completes the branch but no target instruction");
+	require(native.cpu.readFrameRegister(0, 2) == valueInteger(0) && native.cpu.readFramePc(0) == taken
+		&& native.cpu.instructionBudgetRemaining == 0 && native.cpu.readCurrentInstructionPc() == branch && native.cpu.lastPc == branch,
+		"a type proof in RAM cannot survive a physical tag overwrite across the edge");
+	requireParity(native, scalar);
+}
+
 void negativeIntegerKeysDoNotEnterRawArrayCapacity() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETT), 3, 0, 1);
@@ -847,6 +1040,9 @@ int main() {
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 		stringStoreCanRetireItsOwnSource();
 		nestedFieldReadObservesPublishedRegisterAlias();
+		inheritedFieldReadObservesPublishedRegisterAlias();
+		for (bool field : {false, true}) tableWriteObservesCleanRegisterAlias(field);
+		tableWriteDoesNotExportAStaleRamTagProof();
 		negativeIntegerKeysDoNotEnterRawArrayCapacity();
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

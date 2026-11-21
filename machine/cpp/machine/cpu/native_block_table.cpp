@@ -146,7 +146,7 @@ void NativeLowering::emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBl
 // Hash keys start after the array; hash values start after all hash keys.
 // The checked result is the pair of physical offsets in R1 and R3.
 std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExitSite& exit, bool load,
-	bool guardStack, std::optional<u8> temporary) {
+	TableStackAdmission stack, std::optional<u8> temporary) {
 	auto* c = m_compiler;
 	const sljit_sw prediction = reinterpret_cast<sljit_sw>(load ? &exit.tableReadCache.receiverSlot : &exit.tableStore.slot);
 	sljit_sw saved = 0;
@@ -162,13 +162,13 @@ std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExi
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array));
 	emitTableSlotOffset(SLJIT_R3, false);
-	if (guardStack) emitGuardOutsideStack(SLJIT_R3, 1, exit);
+	if (stack.reads) emitGuardOutsideStack(SLJIT_R3, 1, exit);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	checks[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::String));
 	emitTableSlotOffset(SLJIT_R1, true);
-	if (guardStack) emitGuardOutsideStack(SLJIT_R1, sizeof(u32), exit);
+	if (stack.reads) emitGuardOutsideStack(SLJIT_R1, sizeof(u32), exit);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R1);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	checks[2] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), keyWord);
@@ -180,8 +180,9 @@ std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExi
 	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	if (guardStack) {
-		// The table read must not see an older version of a pending slot.
+	if (stack.reads || stack.overwrites) {
+		// The two lanes can alias independently. Reads need the published
+		// values; writes must also preserve the admitted resident bindings.
 		emitGuardOutsideStack(SLJIT_R1, sizeof(u32), exit);
 		emitGuardOutsideStack(SLJIT_R3, 1, exit);
 	}
@@ -225,7 +226,7 @@ void NativeLowering::emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBl
 
 void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& exit,
 	std::optional<u16> keyIndex, std::optional<ValueTag> resultTag, NativeStorePlan plan,
-	bool guardStack, bool ownFieldOnly, std::optional<u8> temporary) {
+	TableStackAdmission stack, bool ownFieldOnly, std::optional<u8> temporary) {
 	auto* c = m_compiler;
 	if (!load && plan.nilValue == NativeNilValue::Nil) {
 		fault(sljit_emit_jump(c, SLJIT_JUMP), exit, m_cache.state());
@@ -234,7 +235,7 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 
 	if (keyIndex) emitPoolWord(*keyIndex, SLJIT_R3);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
-	const auto address = emitStringValueAddress(exit, load, guardStack, temporary);
+	const auto address = emitStringValueAddress(exit, load, stack, temporary);
 	auto* valueFailure = emitStringValueTag(load, resultTag);
 	// An own-only read can be inside a fixed-cost segment. Only
 	// checkpointed reads can complete a returning variable-cost lookup.
@@ -272,6 +273,10 @@ void NativeLowering::emitSingleStringReads() {
 		auto& slots = read.exit->tableReadCache;
 		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
 			SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&slots.holderDepth), SLJIT_IMM, 1), *read.exit, read.registers);
+		// Home, metatable and holder lookups read physical RAM beyond the
+		// checked own slot. Publish dirty planes without moving bindings.
+		// A declined probe then exits from this already-published state.
+		m_cache.publish();
 		// Each own-slot miss leaves R0 pointing at the aligned receiver
 		// header. All Table header fields use the RAM word port.
 		sljit_emit_op2(c, SLJIT_SUB, SLJIT_R0, 0, SLJIT_R0, 0,
@@ -288,7 +293,7 @@ void NativeLowering::emitSingleStringReads() {
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&slots));
 		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3(32, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&TableRecord::trySingleStringIndex));
 		m_cache.spillCall(true, 0);
-		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), *read.exit, read.registers);
+		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), *read.exit, m_cache.state());
 		sljit_emit_op2(c, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, TABLE_INDEX_VISIT_CYCLES);
 		emitValueTransportLoad(c, SLJIT_SP, singleIndex + offsetof(TableSingleIndexProbe, result), SLJIT_R2, SLJIT_R3);
 		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), read.result);
@@ -309,9 +314,16 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		emitFieldResult(value, access.resultTag);
 		return;
 	}
-	const bool guardStack = (address && address->temporary) || std::ranges::any_of(m_cache.state(), [](const auto& binding) {
+	const bool readStack = (address && address->temporary) || std::ranges::any_of(m_cache.state(), [](const auto& binding) {
 		return binding.wordDirty || binding.tagDirty;
 	});
+	const auto successor = m_ir[m_current].successors[0];
+	// Even if an input was evicted, a direct edge can continue using its
+	// type proof without re-admission. Clean resident payloads are live too.
+	const bool carriesTypes = successor < m_ir.size() && m_ir[successor].typePredecessor == m_current
+		&& !m_ir[successor].entryTypes.empty();
+	const TableStackAdmission stack{readStack, !load && (carriesTypes || std::ranges::any_of(m_cache.state(),
+		[](const auto& binding) { return binding.guest >= 0; }))};
 	if (access.mode == NativeTableMode::ReadMethod) {
 		emitRawLoad(base, SLJIT_R0, SLJIT_R1);
 		emitRawStore(value + 1, SLJIT_R0, SLJIT_R1);
@@ -332,7 +344,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	fault(sljit_emit_cmp(c, SLJIT_GREATER, SLJIT_R0, 0, SLJIT_IMM,
 		MAIN_RAM_SIZE - TableRecord::HEADER_BYTES), exit, m_cache.state());
-	if (guardStack) emitGuardOutsideStack(SLJIT_R0, TableRecord::HEADER_BYTES, exit);
+	if (stack.reads) emitGuardOutsideStack(SLJIT_R0, TableRecord::HEADER_BYTES, exit);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
 	switch (access.keyKind) {
 	case NativeTableKey::Value: {
@@ -343,22 +355,22 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 			static_cast<u8>(ValueTag::Integer)), exit, m_cache.state());
 		fault(sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0), exit, m_cache.state());
 		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
-		if (load) emitArrayRead(exit, guardStack);
-		else emitArrayStore(value, access.store, exit, guardStack);
+		if (load) emitArrayRead(exit, stack.reads);
+		else emitArrayStore(value, access.store, exit, stack.reads || stack.overwrites);
 		auto* joined = sljit_emit_jump(c, SLJIT_JUMP);
 		sljit_set_label(string, sljit_emit_label(c));
-		emitStringSlot(load, value, exit, std::nullopt, std::nullopt, access.store, guardStack);
+		emitStringSlot(load, value, exit, std::nullopt, std::nullopt, access.store, stack);
 		sljit_set_label(joined, sljit_emit_label(c));
 		break;
 	}
 	case NativeTableKey::Integer:
 		sljit_emit_op1(c, SLJIT_MOV, SLJIT_R1, 0, SLJIT_IMM, key - 1);
-		if (load) emitArrayRead(exit, guardStack);
-		else emitArrayStore(value, access.store, exit, guardStack);
+		if (load) emitArrayRead(exit, stack.reads);
+		else emitArrayStore(value, access.store, exit, stack.reads || stack.overwrites);
 		break;
 	case NativeTableKey::Field:
 		emitStringSlot(load, value, exit, static_cast<u16>(key), access.resultTag, access.store,
-			guardStack, access.ownFieldOnly, address ? address->temporary : std::nullopt);
+			stack, access.ownFieldOnly, address ? address->temporary : std::nullopt);
 		if (load) {
 			emitFieldResult(value, access.resultTag);
 			return;
