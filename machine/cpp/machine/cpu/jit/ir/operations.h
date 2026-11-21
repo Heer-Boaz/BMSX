@@ -208,6 +208,8 @@ struct NativeTableAccess {
 	NativeTagCheck receiverCheck = NativeTagCheck::Dynamic;
 	NativeStorePlan store{};
 	std::optional<NativeOwnFieldAddressId> ownFieldAddress{};
+	// A cold own-slot site can learn reuse from a peer on the source page.
+	std::optional<u16> reusePeerWord{};
 	bool ownFieldOnly = false;
 
 	constexpr bool readsFixedField() const { return mode == NativeTableMode::Read && keyKind == NativeTableKey::Field; }

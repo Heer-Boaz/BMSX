@@ -126,8 +126,11 @@ The numeric planner uses observed operand types independently of the next
 guest instruction. IR exit IDs name guest operands and timing, not executable
 descriptors. A table allocation can name a fixed-key construction plan in
 the IR while retaining ordinary entries for the original stores.
-The compiler materializes runtime exits and prediction storage after these
-plans are finalized. The `sljit/` backend owns physical registers, spills,
+The compiler materializes runtime exits after these plans are finalized. The
+decoder owns instruction feedback; a completed baseline operation can request
+a fresh compilation at the stable execution gate. Image-owned continuations
+remain valid across replacement of an installed entry. The `sljit/` backend owns
+physical registers, spills,
 executable labels and link fixups. A live payload can cross an edge without a
 type proof: its tag stays authoritative in guest memory. Generated execution
 reads both constant lanes from the active image. The `runtime/` publication

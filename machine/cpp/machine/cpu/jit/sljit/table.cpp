@@ -1,4 +1,5 @@
 #include "machine/cpu/jit/sljit/lowering.h"
+#include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/gc_object.h"
 #include "machine/cpu/jit/sljit/value_transport.h"
 #include "machine/cpu/table.h"
@@ -238,6 +239,16 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
 	const auto address = emitStringValueAddress(exit, load, stack, temporary);
 	auto* valueFailure = emitStringValueTag(load, resultTag);
+	if (const auto peer = exit.operands.table.reusePeerWord; peer && m_bindings.decodedPage) {
+		// A worker can publish this baseline after scalar execution has
+		// already learned both slots. Confirm the actual own hit before
+		// using the semantic continuation to reproject the source.
+		auto* prediction = exit.tableRead.own.decoded;
+		const auto peerSlot = &m_bindings.decodedPage[*peer].tableCacheSlot();
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(prediction));
+		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+			SLJIT_MEM0(), reinterpret_cast<sljit_sw>(peerSlot)), exit, m_cache.state());
+	}
 	// An own-only read can be inside a fixed-cost segment. Only
 	// checkpointed reads can complete a returning variable-cost lookup.
 	if (load && !ownFieldOnly && !resultTag) {

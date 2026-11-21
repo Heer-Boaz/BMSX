@@ -766,6 +766,61 @@ void nativeFieldOperationsLearnTheDecodedSite() {
 #endif
 }
 
+void coldRepeatedFieldsRecompileTheirSource() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETFIELD), 1, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 4, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::GETFIELD), 2, 4, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::K1), 5, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 6}};
+	image.constants = {std::string("field")};
+	CpuMachine native(image), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		auto table = cpu.createTable(0, 1);
+		table.setStringKey(*cpu.stringPool().find("field"), valueInteger(41));
+		frame.registers.set(0, valueTable(table.address()));
+		frame.registers.set(5, valueInteger(73));
+		frame.setTop(6);
+	}
+	auto& cpu = native.cpu;
+	const auto& frame = *cpu.activeThread()->frameAtDepth(0);
+	const u32 pc = native.rom.textAddress, word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	cpu.prepareSystemNativeCode();
+	auto& page = *frame.executionImage->nativeCodeLookup->find(pc, 0);
+	const auto& coldFirst = page.nativeBlocks->entries[word];
+	const auto& coldSecond = page.nativeBlocks->entries[word + 1];
+	require(coldFirst && coldSecond && coldFirst->terminal.currentPc == pc
+		&& coldSecond->terminal.currentPc == pc + 2 * INSTRUCTION_BYTES,
+		"the two cold reads start at separate generated checkpoints");
+	require(page.words[word].tableCacheSlot() == -1 && page.words[word + 2].tableCacheSlot() == -1,
+		"neither cold read starts with a trained own slot");
+	const int grant = 2 * BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::MOV)];
+	require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded, "cold reads use exactly the requested grant");
+	requireParity(native, scalar);
+	require(cpu.readFramePc(0) == pc + 4 * INSTRUCTION_BYTES && cpu.lastPc == pc + 3 * INSTRUCTION_BYTES
+		&& cpu.readFrameRegister(0, 1) == valueInteger(41) && cpu.readFrameRegister(0, 2) == valueInteger(41)
+		&& cpu.readFrameRegister(0, 5) == valueInteger(73),
+		"learning does not replay either read or execute the successor early");
+	require(page.words[word].tableCacheSlot() >= 0 && page.words[word].tableCacheSlot() == page.words[word + 2].tableCacheSlot(),
+		"both executed own reads learned the same owner slot");
+	test::waitForNativeEntry(cpu, page, word);
+	const auto& optimized = page.nativeBlocks->entries[word];
+	require(optimized && optimized->sideExits.size() == 2 && optimized->terminal.currentPc == pc + 5 * INSTRUCTION_BYTES,
+		"native feedback replaces the source root with both checked reads and the suffix in one entry");
+	for (auto* machine : {&native, &scalar})
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+	require(test::runCpuParity(cpu, scalar.cpu, grant + 10) == RunResult::Halted, "the replacement executes the whole source");
+	requireParity(native, scalar);
+	require(cpu.readFrameRegister(0, 5) == valueInteger(1), "the replacement executes the ordinary successor");
+#endif
+}
+
 void nestedFieldReadObservesPublishedRegisterAlias() {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -1089,6 +1144,7 @@ int main() {
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 		stringStoreCanRetireItsOwnSource();
 		nativeFieldOperationsLearnTheDecodedSite();
+		coldRepeatedFieldsRecompileTheirSource();
 		nestedFieldReadObservesPublishedRegisterAlias();
 		inheritedFieldReadObservesPublishedRegisterAlias();
 		for (bool field : {false, true}) tableWriteObservesCleanRegisterAlias(field);

@@ -32,22 +32,28 @@ enum class NativeBlockTransition : u8 {
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
 
-bool CPU::loadNativeTableField(CallFrame& frame, int destination, int& receiverSlot, TableStringPathCache& path,
-	Value base, StringId key, const NativeCpuRunState& run, std::optional<ValueTag> resultProof) {
+bool CPU::loadNativeTableField(CallFrame& frame, const NativeCpuRunState& run, const NativeBlockExitSite& site,
+	Value base, StringId key) {
+	const auto access = site.operands.table;
 	TableLookupResult result;
 	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexPath(
-		asStringId(m_indexKey), key, receiverSlot, result, path);
-	// Only a value actually found in the receiver contradicts the result
-	// proof. A different shape or metatable path is not type feedback.
-	if (resultProof && valueIsTable(base) && result.status == TableLookupStatus::Resolved
-		&& result.extraVisits == 0u && result.slot >= 0 && valueTag(result.value) != *resultProof) {
-		auto& page = *NativeCodeLookup::findInRoot(run.codeRoot, m_currentInstructionPc);
-		const u32 word = (m_currentInstructionPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-		if (page.fieldProofFeedback.contradict(word, *resultProof)) retireNativeInstructionUsers(page, word);
-		// The dispatched site (including cache) may now be retired. The
-		// semantic result and the caller's image-owned continuation still live.
+		asStringId(m_indexKey), key, *site.tableRead.own.decoded, result, site.tableRead.path);
+	const bool invoked = finishTableRead(frame, access.value, base, valueString(key), result);
+	// A value from a prototype, String library or callable metamethod is
+	// not a fact about the receiver's own slot.
+	if (valueIsTable(base) && result.status == TableLookupStatus::Resolved
+		&& result.extraVisits == 0u && result.slot >= 0) {
+		const bool contradicts = access.resultProof && valueTag(result.value) != *access.resultProof;
+		if (contradicts || access.reusePeerWord) {
+			auto& page = *NativeCodeLookup::findInRoot(run.codeRoot, m_currentInstructionPc);
+			const u32 word = (m_currentInstructionPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+			const bool demote = contradicts && page.fieldProofFeedback.contradict(word, *access.resultProof);
+			if (access.reusePeerWord && page.words[*access.reusePeerWord].tableCacheSlot() == result.slot)
+				recompileNativeSource(frame, page, word, access.sourcePc);
+			else if (demote) retireNativeInstructionUsers(page, word);
+		}
 	}
-	return finishTableRead(frame, destination, base, valueString(key), result);
+	return invoked;
 }
 
 u32 CPU::readNativeLength(NativeBlockRunState* state, const StringPool* strings, Value* operand) noexcept {
@@ -190,7 +196,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			break;
 		case NativeBlockExit::ProfileReady: {
 			const u32 completed = exit->currentPc, source = exit->operands.feedback.sourcePc;
-			cpu.recompileNativeSource(*frame, *run, completed, source);
+			auto& page = *NativeCodeLookup::findInRoot(run->codeRoot, completed);
+			cpu.recompileNativeSource(*frame, page, (completed & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES, source);
 			break;
 		}
 		case NativeBlockExit::Call: {
@@ -269,8 +276,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		}
 		case NativeBlockExit::ReadField: {
 			const auto access = exit->operands.table;
-			const bool invoked = cpu.loadNativeTableField(*frame, access.value, *exit->tableRead.own.decoded,
-				exit->tableRead.path, frame->registers.get(access.receiver), asStringId(frame->executionImage->constPool.get(access.key)), *run, access.resultProof);
+			const bool invoked = cpu.loadNativeTableField(*frame, *run, *exit,
+				frame->registers.get(access.receiver), asStringId(frame->executionImage->constPool.get(access.key)));
 			transition = invoked ? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
 			break;
 		}
@@ -279,7 +286,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			const Value base = frame->registers.get(access.receiver);
 			const Value key = readRK(*frame->executionImage, frame->registers, access.key);
 			const bool invoked = valueIsString(key)
-				? cpu.loadNativeTableField(*frame, access.value, *exit->tableRead.own.decoded, exit->tableRead.path, base, asStringId(key), *run)
+				? cpu.loadNativeTableField(*frame, *run, *exit, base, asStringId(key))
 				: cpu.loadTableIndex(*frame, access.value, base, key);
 			transition = invoked ? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
 			break;

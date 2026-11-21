@@ -1,5 +1,6 @@
 #include "machine/cpu/jit/ir/region.h"
 #include "machine/cpu/jit/ir/value_flow.h"
+#include "machine/memory/mapped_page.h"
 
 #include <algorithm>
 
@@ -21,36 +22,47 @@ bool invalidatesFieldAddresses(const NativeOperation& operation) {
 // is the reaching definition, not the guest register or its current host
 // location. Matching seeds are a profitability choice; lowering still
 // admits the physical footprint and checks each consumer's live prediction.
-void selectFieldAddresses(std::span<NativeInstruction> instructions, const NativeRunValues& values,
-	size_t firstRow, std::span<NativeFieldAddressUse> uses) {
+void selectFieldAddresses(std::span<NativeInstruction> instructions, std::span<const NativeBlockInstruction> source,
+	const NativeRunValues& values, size_t firstRow, std::span<NativeFieldAddressUse> uses) {
 	std::array<u8, NATIVE_BLOCK_MAX_INSTRUCTIONS> candidates;
 	std::array<u8, NATIVE_BLOCK_MAX_INSTRUCTIONS> lastUses{};
-	size_t count = 0;
+	size_t count = 0, addressFloor = 0;
+	const auto pageWord = [&](size_t row) { return static_cast<u16>((source[row].pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES); };
 	for (size_t index = 0; index < instructions.size(); ++index) {
 		auto& operation = instructions[index].operation;
-		const auto* field = fixedFieldRead(operation);
+		auto* field = fixedFieldRead(operation);
 		if (!field) {
 			if (invalidatesFieldAddresses(operation)) count = 0;
 			continue;
 		}
 		uses[index] = {static_cast<u8>(firstRow + index)};
-		if (field->predictedSlot < 0) {
-			count = 0;
-			continue;
-		}
+		const bool hasSlot = field->predictedSlot >= 0;
+		if (!hasSlot) addressFloor = index + 1;
 		const auto receiver = values.inputs(index)[0];
 		if (receiver.producer == NativeValueOrigin::Unknown) continue;
-		const auto available = std::span(candidates).first(count);
-		const auto same = std::ranges::find_if(available, [&](u8 definingRow) {
-			const auto& prior = std::get<NativeTableAccess>(instructions[definingRow].operation);
-			return values.inputs(definingRow)[0] == receiver && prior.key == field->key
-				&& prior.predictedSlot == field->predictedSlot;
-		});
-		if (same == available.end()) candidates[count++] = static_cast<u8>(index);
-		else {
-			uses[index].definition = static_cast<u8>(firstRow + *same);
-			lastUses[*same] = static_cast<u8>(index);
+		std::optional<u8> reuse, learn;
+		for (const u8 row : std::span(candidates).first(count)) {
+			auto& prior = std::get<NativeTableAccess>(instructions[row].operation);
+			if (values.inputs(row)[0] != receiver || prior.key != field->key) continue;
+			if (row >= addressFloor && hasSlot && prior.predictedSlot == field->predictedSlot) {
+				reuse = row;
+				break;
+			}
+			if (!hasSlot || prior.predictedSlot < 0) learn = row;
 		}
+		if (reuse) {
+			uses[index].definition = static_cast<u8>(firstRow + *reuse);
+			lastUses[*reuse] = static_cast<u8>(index);
+			continue;
+		}
+		if (learn) {
+			// A cold pair keeps ordinary checkpointed reads. Request
+			// reprojection only when the owning slots establish reuse.
+			auto& peer = std::get<NativeTableAccess>(instructions[*learn].operation);
+			if (!hasSlot) field->reusePeerWord = pageWord(*learn);
+			if (peer.predictedSlot < 0 && !peer.reusePeerWord) peer.reusePeerWord = pageWord(index);
+		}
+		candidates[count++] = static_cast<u8>(index);
 	}
 
 	int inlineThrough = -1;
@@ -125,7 +137,7 @@ void planNativeFieldReads(std::span<NativeInstruction> instructions, std::span<c
 	for (size_t producer = 0; producer < tail.size(); ++producer)
 		if (selections[producer].consumer != NativeValueOrigin::Input)
 			std::get<NativeTableAccess>(tail[producer].operation).resultTag = selections[producer].tag;
-	selectFieldAddresses(tail, values, prefix, addressUses.subspan(prefix, tail.size()));
+	selectFieldAddresses(tail, source.subspan(prefix), values, prefix, addressUses.subspan(prefix, tail.size()));
 }
 
 void NativeIrRegion::bindOwnFieldAddresses(NativeIrBlock& block, std::span<const NativeFieldAddressUse> uses, size_t firstRow) {

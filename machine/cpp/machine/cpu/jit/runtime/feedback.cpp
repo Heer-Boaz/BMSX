@@ -5,7 +5,6 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/jit/exit_contract.h"
-#include "machine/cpu/jit/runtime/execution.h"
 
 namespace bmsx {
 
@@ -19,9 +18,8 @@ void CPU::observeNativeArithmeticReplay(DecodedInstructionPage& page, u32 word,
 	retireNativeInstructionUsers(page, word);
 }
 
-void CPU::recompileNativeSource(CallFrame& frame, const NativeCpuRunState& run, u32 changedPc, u32 sourcePc) {
-	auto& page = *NativeCodeLookup::findInRoot(run.codeRoot, changedPc);
-	retireNativeInstructionUsers(page, (changedPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+void CPU::recompileNativeSource(CallFrame& frame, DecodedInstructionPage& page, u32 changedWord, u32 sourcePc) {
+	retireNativeInstructionUsers(page, changedWord);
 	prepareNativeBlock(*frame.executionImage, page, sourcePc, executionBusSignalsForDomain(frame.executionImage->executionDomainId));
 }
 

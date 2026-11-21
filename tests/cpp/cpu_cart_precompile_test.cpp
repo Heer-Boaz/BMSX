@@ -279,7 +279,8 @@ void coldExecLetsNumericFieldChainsWarm() {
 		require(entry->hasFusedJump && entry->terminal.currentPc == pc + 3 * INSTRUCTION_BYTES,
 			"an observed own numeric read keeps subtraction and comparison in the same native body without a following store");
 		const auto prefixCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
-		NativeBlockRunState grant{.constants = frame.executionImage->constPool, .heap = &cpu.gcHeap(), .remainingCycles = prefixCycles + loopCycles};
+		NativeBlockRunState grant{.constants = frame.executionImage->constPool, .heap = &cpu.gcHeap(),
+			.globalValues = {}, .systemGlobalValues = {}, .remainingCycles = prefixCycles + loopCycles};
 		const auto* exit = entry->run(frame.registers, grant);
 		require(exit->nextPc == machine.cart.textAddress && grant.remainingCycles == 0 && frame.registers.get(3) == valueFloat(3.5f),
 			"the warmed Float path executes through the comparison and fused jump at the exact guest cost");

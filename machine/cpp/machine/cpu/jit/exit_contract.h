@@ -64,6 +64,8 @@ union NativeExitOperands {
 	struct Table {
 		i16 value, receiver, key;
 		std::optional<ValueTag> resultProof{};
+		std::optional<u16> reusePeerWord{};
+		u32 sourcePc = 0;
 	} table;
 	struct Length { u16 result, source; } length;
 	struct Memory {

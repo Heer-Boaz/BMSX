@@ -121,6 +121,8 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 			out << "  e" << id << " kind=" << unsigned(exit.exit) << " pc=" << exit.currentPc
 				<< " last-word=" << exit.lastPc << " next=" << exit.nextPc << " charge=" << exit.cycles;
 			if (exit.exit == NativeBlockExit::ProfileReady) out << " rebuild=" << exit.operands.feedback.sourcePc;
+			if (exit.exit == NativeBlockExit::ReadField && exit.operands.table.reusePeerWord)
+				out << " layout-peer=" << *exit.operands.table.reusePeerWord << " rebuild=" << exit.operands.table.sourcePc;
 			if (exit.exit == NativeBlockExit::ScalarBoundary && exit.operands.replay.arithmetic) {
 				const auto [left, right] = *exit.operands.replay.arithmetic;
 				out << " assumed=" << unsigned(left) << ',' << unsigned(right);

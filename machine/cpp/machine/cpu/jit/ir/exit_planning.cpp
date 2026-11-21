@@ -200,7 +200,13 @@ void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block, bool observesArith
 			auto& exit = appendExit(state, instruction.slow);
 			exit.exit = slow;
 			exit.operands = operands;
-			if (table) exit.tableSlotSeed = table->predictedSlot;
+			if (table) {
+				exit.tableSlotSeed = table->predictedSlot;
+				if (table->reusePeerWord) {
+					exit.operands.table.reusePeerWord = table->reusePeerWord;
+					exit.operands.table.sourcePc = block.sourcePc;
+				}
+			}
 		}
 		auto* arithmetic = std::get_if<NativeArithmetic>(&instruction.operation);
 		auto* numeric = arithmetic ? &std::get<NativeNumericPlan>(arithmetic->strategy) : nullptr;
