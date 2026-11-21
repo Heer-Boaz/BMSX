@@ -32,30 +32,6 @@ enum class NativeBlockTransition : u8 {
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
 
-bool CPU::loadNativeTableField(CallFrame& frame, const NativeCpuRunState& run, const NativeBlockExitSite& site,
-	Value base, StringId key) {
-	const auto access = site.operands.table;
-	TableLookupResult result;
-	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexPath(
-		asStringId(m_indexKey), key, *site.tableRead.own.decoded, result, site.tableRead.path);
-	const bool invoked = finishTableRead(frame, access.value, base, valueString(key), result);
-	// A value from a prototype, String library or callable metamethod is
-	// not a fact about the receiver's own slot.
-	if (valueIsTable(base) && result.status == TableLookupStatus::Resolved
-		&& result.extraVisits == 0u && result.slot >= 0) {
-		const bool contradicts = access.resultProof && valueTag(result.value) != *access.resultProof;
-		if (contradicts || access.reusePeerWord) {
-			auto& page = *NativeCodeLookup::findInRoot(run.codeRoot, m_currentInstructionPc);
-			const u32 word = (m_currentInstructionPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-			const bool demote = contradicts && page.fieldProofFeedback.contradict(word, *access.resultProof);
-			if (access.reusePeerWord && page.words[*access.reusePeerWord].tableCacheSlot() == result.slot)
-				recompileNativeSource(frame, page, word, access.sourcePc);
-			else if (demote) retireNativeInstructionUsers(page, word);
-		}
-	}
-	return invoked;
-}
-
 u32 CPU::readNativeLength(GcHeap* heap, const StringPool* strings, Value* operand) noexcept {
 	if (valueIsTable(*operand) && TableRecord(*heap, valuePayload(*operand)).metatableAddress() != 0u) return 0;
 	const auto length = measureValueLength(*operand, *strings, heap);
@@ -154,7 +130,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 #endif
 		return nullptr;
 	}
-	const bool continuing = exit->exit == NativeBlockExit::Continue;
+	const auto kind = exit->exit;
+	const bool continuing = kind == NativeBlockExit::Continue;
 	frame->compilationEntry = true;
 	cpu.m_currentInstructionPc = exit->currentPc;
 	cpu.m_lastExecutionDomainId = frame->executionImage->executionDomainId;
@@ -180,10 +157,14 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			}
 		}
 	}
-	// Publish the complete native prefix before leaving the grant, allocating,
-	// touching a device or changing frames. A semantic helper can retire the descriptor.
-	cpu.instructionBudgetRemaining = state.remainingCycles;
-	run->publishActivation(exit->nextPc);
+	// A lookup may finish without a VM observer. Decide from the result, not
+	// from the fact that the generated code needed help locating the value.
+	bool liveFrontier = kind == NativeBlockExit::ReadField || kind == NativeBlockExit::ReadIndex
+		|| kind == NativeBlockExit::ReadInteger;
+	if (!liveFrontier) {
+		cpu.instructionBudgetRemaining = state.remainingCycles;
+		run->publishActivation(exit->nextPc);
+	}
 	if (continuing) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		++gateProfile.returns;
@@ -196,7 +177,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	u32 continuationPc = exit->nextPc;
 	try {
 		auto transition = NativeBlockTransition::NextInstruction;
-		switch (exit->exit) {
+		switch (kind) {
 		case NativeBlockExit::CompletedCall:
 			transition = NativeBlockTransition::Redispatch;
 			break;
@@ -287,26 +268,71 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
 			break;
 		}
-		case NativeBlockExit::ReadField: {
-			const auto access = exit->operands.table;
-			const bool invoked = cpu.loadNativeTableField(*frame, *run, *exit,
-				frame->registers.get(access.receiver), asStringId(frame->executionImage->constPool.get(access.key)));
-			transition = invoked ? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
-			break;
-		}
-		case NativeBlockExit::ReadIndex: {
-			const auto access = exit->operands.table;
-			const Value base = frame->registers.get(access.receiver);
-			const Value key = readRK(*frame->executionImage, frame->registers, access.key);
-			const bool invoked = valueIsString(key)
-				? cpu.loadNativeTableField(*frame, *run, *exit, base, asStringId(key))
-				: cpu.loadTableIndex(*frame, access.value, base, key);
-			transition = invoked ? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
-			break;
-		}
+		case NativeBlockExit::ReadField:
+		case NativeBlockExit::ReadIndex:
 		case NativeBlockExit::ReadInteger: {
 			const auto access = exit->operands.table;
-			const bool invoked = cpu.loadTableIntegerIndex(*frame, access.value, frame->registers.get(access.receiver), access.key);
+			const Value base = frame->registers.get(access.receiver);
+			const Value key = kind == NativeBlockExit::ReadInteger ? valueInteger(access.key)
+				: kind == NativeBlockExit::ReadField ? frame->executionImage->constPool.get(access.key)
+				: readRK(*frame->executionImage, frame->registers, access.key);
+			const bool stringKey = kind == NativeBlockExit::ReadField || valueIsString(key);
+			const StringId index = asStringId(cpu.m_indexKey);
+			const TableRecord table(cpu.m_heap, cpu.tableIndexAddress(base));
+			TableLookupResult result;
+			if (stringKey) {
+				table.resolveStringIndexPath(index, asStringId(key), *exit->tableRead.own.decoded, result, exit->tableRead.path);
+			} else if (kind == NativeBlockExit::ReadInteger) {
+				table.resolveIntegerIndex(index, access.key, result);
+			} else table.resolveIndex(index, key, result);
+
+			// An inherited result (or a result from the String library) is
+			// not evidence about the receiver's own slot.
+			const bool resolved = result.status == TableLookupStatus::Resolved;
+			bool contradicts = false;
+			bool reuse = false;
+			DecodedInstructionPage* feedbackPage = nullptr;
+			if (resolved && stringKey && (access.resultProof || access.reusePeerWord)
+				&& result.extraVisits == 0u && result.slot >= 0 && valueIsTable(base)) {
+				contradicts = access.resultProof && valueTag(result.value) != *access.resultProof;
+				if (contradicts || access.reusePeerWord) {
+					feedbackPage = NativeCodeLookup::findInRoot(run->codeRoot, cpu.m_currentInstructionPc);
+					reuse = access.reusePeerWord && feedbackPage->words[*access.reusePeerWord].tableCacheSlot() == result.slot;
+				}
+			}
+			if (resolved && !contradicts && !reuse) {
+				frame->registers.setAdmitted(access.value, result.value);
+				state.registerTop = std::max(state.registerTop, access.value + 1);
+				state.remainingCycles -= static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
+				// This cell belongs to the installed image and no operation
+				// above can change its bank, stack window or interrupt state.
+				if (state.remainingCycles > 0) {
+					if (void* target = *continuation) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+						++gateProfile.resumes;
+#endif
+						return target;
+					}
+				}
+				cpu.instructionBudgetRemaining = state.remainingCycles;
+				run->publishActivation(continuationPc);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+				++gateProfile.returns;
+#endif
+				return nullptr;
+			}
+
+			// The remaining paths can invoke guest code, throw or recompile.
+			cpu.instructionBudgetRemaining = state.remainingCycles;
+			run->publishActivation(continuationPc);
+			liveFrontier = false;
+			const bool invoked = cpu.finishTableRead(*frame, access.value, base, key, result);
+			if (contradicts || reuse) {
+				const u32 word = (cpu.m_currentInstructionPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+				const bool demote = contradicts && feedbackPage->fieldProofFeedback.contradict(word, *access.resultProof);
+				if (reuse) cpu.recompileNativeSource(*frame, *feedbackPage, word, access.sourcePc);
+				else if (demote) cpu.retireNativeInstructionUsers(*feedbackPage, word);
+			}
 			transition = invoked ? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
 			break;
 		}
@@ -500,6 +526,10 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 #endif
 		return target->m_body;
 	} catch (...) {
+		if (liveFrontier) {
+			cpu.instructionBudgetRemaining = state.remainingCycles;
+			run->publishActivation(continuationPc);
+		}
 		// Generated frames have no C++ unwind metadata. Preserve the actual
 		// exception and rethrow only after the gate restores the registered caller.
 		run->error = std::current_exception();

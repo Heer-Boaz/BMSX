@@ -854,6 +854,140 @@ void warmInheritedFieldReadsKeepTheirFrame() {
 #endif
 }
 
+void resolvedFieldKeepsPendingFixedCallsUntilAnObserver() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(3 * MAPPED_PAGE_BYTE_SIZE);
+	constexpr u32 parent = 16, trap = 32, middle = DECODED_PAGE_WORDS, leaf = 2 * DECODED_PAGE_WORDS;
+	const auto emit = [&](u32 word, OpCode op, u32 a = 0, u32 b = 0, u32 c = 0) {
+		writeInstruction(image.text, word, static_cast<u8>(op), a, b, c);
+	};
+	emit(0, OpCode::WIDE);
+	emit(1, OpCode::CLOSURE, 8);
+	emit(2, OpCode::WIDE);
+	emit(3, OpCode::CLOSURE, 9);
+	emit(4, OpCode::HALT);
+	emit(5, OpCode::RET, 0, 1);
+	emit(parent, OpCode::CALL, 0, 3, 2);
+	emit(parent + 1, OpCode::HALT);
+	emit(parent + 2, OpCode::RET, 0, 1);
+	emit(trap, OpCode::HALT);
+	emit(trap + 1, OpCode::RFE);
+	emit(middle, OpCode::CALL, 0, 2, 2);
+	emit(middle + 1, OpCode::RET, 0, 2);
+	emit(leaf, OpCode::WIDE);
+	emit(leaf + 1, OpCode::GETFIELD, 3, 0, 0);
+	emit(leaf + 2, OpCode::RET, 3, 2);
+	image.functions = {{.firstWord=0, .wordCount=6, .maxStack=16},
+		{.firstWord=parent, .wordCount=3, .maxStack=16}, {.firstWord=trap, .wordCount=2},
+		{.firstWord=middle, .wordCount=2, .numParams=2, .maxStack=2},
+		{.firstWord=leaf, .wordCount=3, .numParams=1, .maxStack=4}};
+	image.exceptionFunctionIndex = 2;
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 3)},
+		{3, test::blua32TestFunctionAddress(RomImageDomain::System, 4)}};
+	image.constants = {std::string("nested inherited field")};
+
+	CpuMachine native(image), scalar(image, true);
+	auto& cpu = native.cpu;
+	cpu.prepareSystemNativeCode();
+	require(test::runCpuParity(cpu, scalar.cpu, 100) == RunResult::Halted, "boot retains both verified closures");
+	for (auto* machine : {&native, &scalar}) {
+		auto& owner = machine->cpu;
+		const auto index = owner.stringPool().intern("__index");
+		auto holder = owner.createTable(0, 1);
+		holder.setStringKey(*owner.stringPool().find("nested inherited field"), valueInteger(41));
+		// Two hops always exercise the runtime resolver, including after the
+		// one-hop generated probe learns that this path has a deeper holder.
+		for (int depth = 0; depth < 2; ++depth) {
+			auto receiver = owner.createTable(), meta = owner.createTable(0, 1);
+			meta.setStringKey(index, valueTable(holder.address()));
+			receiver.setMetatableAddress(meta.address());
+			holder = receiver;
+		}
+		owner.activeThread()->currentFrame->registers.set(10, valueTable(holder.address()));
+	}
+	const auto restart = [&](bool invalid = false) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& owner = machine->cpu;
+			owner.clearHaltUntilIrq();
+			auto& frame = *owner.activeThread()->currentFrame;
+			frame.registers.set(0, frame.registers.get(8));
+			frame.registers.set(1, frame.registers.get(9));
+			frame.registers.set(2, invalid ? valueInteger(19) : frame.registers.get(10));
+			frame.registers.set(5, valueInteger(73));
+			frame.setTop(11);
+			owner.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[1],
+				machine->rom.textAddress + parent * INSTRUCTION_BYTES);
+		}
+	};
+	restart();
+	require(test::runCpuParity(cpu, scalar.cpu, 200) == RunResult::Halted, "learn both CALL targets and prepare retained frame views");
+	const u32 text = native.rom.textAddress, leafPc = text + leaf * INSTRUCTION_BYTES;
+	auto& thread = *cpu.activeThread();
+	auto& lookup = *thread.currentFrame->executionImage->nativeCodeLookup;
+	for (auto [instruction, function] : {std::pair{parent, 3u}, std::pair{middle, 4u}}) {
+		const u32 pc = text + instruction * INSTRUCTION_BYTES, word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		auto& page = *lookup.find(pc, 0);
+		const auto& block = page.nativeBlocks->entries[word];
+		require(block && page.words[word].nativeCallTarget() == native.rom.functionAddresses[function], "the real CALLs have observed fixed targets");
+		const auto region = block->region;
+		page.retireNativeRegion(region.get(), DecodedInstructionPage::Retirement::Capacity);
+	}
+	cpu.prepareSystemNativeCode();
+	for (const u32 instruction : {parent, middle}) {
+		const u32 pc = text + instruction * INSTRUCTION_BYTES, word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		const auto& block = lookup.find(pc, 0)->nativeBlocks->entries[word];
+		require(block && block->terminal.operands.call.strategy == NativeCallStrategy::Fixed, "both frames can stay pending");
+	}
+	const auto& leafBlock = lookup.find(leafPc, 0)->nativeBlocks->entries[(leafPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const auto fieldExit = std::ranges::find(leafBlock->sideExits, NativeBlockExit::ReadField, &NativeBlockExitSite::exit);
+	require(fieldExit != leafBlock->sideExits.end() && fieldExit->currentPc == leafPc
+		&& fieldExit->continuationCells[0] && *fieldExit->continuationCells[0], "the WIDE semantic lookup has a live native successor");
+
+	// Physical control words outside frameDepth are private scratch. An
+	// activation that returns before a real observer never writes that record.
+	constexpr u32 middleScratchPc = 0x10203040, leafScratchPc = 0x20304050;
+	restart();
+	thread.frameAtDepth(1)->writeControl(FrameField::Pc, middleScratchPc);
+	thread.frameAtDepth(2)->writeControl(FrameField::Pc, leafScratchPc);
+	require(test::runCpuParity(cpu, scalar.cpu, 200) == RunResult::Halted && thread.frameDepth() == 1
+		&& cpu.readFrameRegister(0, 0) == valueInteger(41), "the result crosses both native returns before the caller halts");
+	require(thread.frameAtDepth(1)->readControl(FrameField::Pc) == middleScratchPc
+		&& thread.frameAtDepth(2)->readControl(FrameField::Pc) == leafScratchPc,
+		"the resolved native read did not publish either frame before it returned");
+	requireParity(native, scalar);
+
+	const int calls = 2 * BASE_CYCLES[static_cast<u8>(OpCode::CALL)];
+	const int field = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)];
+	const int total = calls + field + 2 * TABLE_INDEX_VISIT_CYCLES;
+	for (const int grant : {total - 1, total}) {
+		restart();
+		require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded
+			&& cpu.instructionBudgetRemaining == grant - total && thread.frameDepth() == 3,
+			"the admitted WIDE read pays both visits even if grant becomes zero or negative");
+		require(cpu.readCurrentInstructionPc() == leafPc && cpu.lastPc == leafPc + INSTRUCTION_BYTES
+			&& cpu.readFramePc(2) == leafPc + 2 * INSTRUCTION_BYTES
+			&& thread.frameAtDepth(2)->readWindow(FrameField::Top) == 4
+			&& cpu.readFrameRegister(2, 3) == valueInteger(41),
+			"grant exhaustion publishes the completed result and exact next PC, not a replay");
+		requireParity(native, scalar);
+		require(test::runCpuParity(cpu, scalar.cpu, 100) == RunResult::Halted
+			&& cpu.readFrameRegister(0, 0) == valueInteger(41), "the next grant resumes at RET and returns the published result");
+	}
+
+	restart(true);
+	require(test::runCpuParity(cpu, scalar.cpu, 100) == RunResult::Halted
+		&& cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INDEX_NON_TABLE && cpu.readEpcWord() == leafPc
+		&& thread.frameDepth() == 4 && cpu.readFramePc(2) == leafPc,
+		"an indexing fault materializes both pending calls before exposing the WIDE instruction to the trap");
+	require(thread.frameAtDepth(2)->readWindow(FrameField::Top) == 1
+		&& cpu.readFrameRegister(2, 0) == valueInteger(19) && cpu.readFrameRegister(2, 3) == valueInteger(73),
+		"the failed read observes its live arguments without storing a result or extending the frame");
+	requireParity(native, scalar);
+#endif
+}
+
 void warmTableStoresCompleteTheirEffects() {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -1002,6 +1136,7 @@ int main() {
 		coldRepeatedFieldsRecompileTheirSource();
 
 		warmInheritedFieldReadsKeepTheirFrame();
+		resolvedFieldKeepsPendingFixedCallsUntilAnObserver();
 
 		warmTableStoresCompleteTheirEffects();
 		negativeIntegerKeysUseHashStorage();

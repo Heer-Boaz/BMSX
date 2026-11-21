@@ -459,7 +459,6 @@ private:
 	static u32 readNativeLength(GcHeap*, const StringPool*, Value* operand) noexcept;
 	static int placeNativeVarargs(NativeBlockRunState*, int first, int requested) noexcept;
 	friend class NativeLowering;
-	bool loadNativeTableField(CallFrame&, const NativeCpuRunState&, const NativeBlockExitSite&, Value base, StringId key);
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
 	static NativeBuiltinCallOutcome runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	NativeRomCallBinding* bindNativeRomFunction(Blua32ExecutionImage& image, u32 functionAddress) const noexcept;

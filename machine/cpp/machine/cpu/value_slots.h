@@ -132,6 +132,10 @@ public:
 	u32 admittedPayload(size_t index) const {
 		return readLE32(reinterpret_cast<const u8*>(m_words + index));
 	}
+	void setAdmitted(size_t index, Value value) requires (!Constant) {
+		writeLE32(reinterpret_cast<u8*>(m_words + index), valuePayload(value));
+		m_tags[index] = static_cast<u8>(valueTag(value));
+	}
 	void clearAdmitted(size_t first, size_t count) requires (!Constant) {
 		if (count != 0) clearLinear(first, count);
 	}
