@@ -155,14 +155,16 @@ void constantBankUsesGuestRam() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		if (!scalar) {
 			const auto* page = cpu.rootThread()->currentFrame->decodedPage;
-			require(page && page->nativeBlocks, "the bank's immediate has been specialized in a native block");
+			const u32 entry = (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+			require(page, "execution has bound the bank's decoded page");
+			test::waitForNativeEntry(cpu, *page, entry);
 		}
 #endif
 		auto ram = machine.memory.captureSaveState();
 		const auto state = cpu.captureRuntimeState();
 		const auto occupied = cpu.heapAllocator().occupiedBytes();
-		// An activated bank is private and immutable. Checkpoint admission must
-		// attach the physical bytes, not keep the old specialization or decode ROM.
+		// Restore binds the image to the saved physical bytes. Compiled
+		// execution must consume those lanes rather than the old ROM value.
 		ram.ram[tag - RAM_BASE] = static_cast<u8>(ValueTag::Float);
 		for (const auto [payload, result] : {std::pair{0x3fa00000u, 0x40200000u}, std::pair{0x40000000u, 0x40800000u},
 				std::pair{0x3fa00000u, 0x40200000u}}) {
