@@ -78,7 +78,7 @@ public:
 	void resolveAssignment(StringId newIndexKey, Value key, TableLookupResult& result) const;
 	void resolveIntegerAssignment(StringId newIndexKey, int key, TableLookupResult& result) const;
 	void resolveStringAssignment(StringId newIndexKey, StringId key, int predictedSlot, TableLookupResult& result) const;
-	// Pure boundary search; also the generated-code entry point.
+	// Find a boundary and remember it after a search.
 	static i32 length(TableRecord* table) noexcept;
 	void clear();
 	// Physical array positions followed by hash nodes, including vacant/dead slots.

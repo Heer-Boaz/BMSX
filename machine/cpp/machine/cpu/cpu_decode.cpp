@@ -19,6 +19,13 @@ u16 fixedRegisterExtent(const DecodedInstruction& row) {
 		case OpCode::MFC0: case OpCode::MTC0:
 		case OpCode::CLOSURE: case OpCode::CALL:
 			return 0;
+		case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
+		case OpCode::STORE_MEM_WORDS: case OpCode::STORE_MEM_WORDS_D:
+			// Source values belong to the admitted bus operation, after readiness.
+			return static_cast<u16>(std::max(0, row.b + 1));
+		case OpCode::MOV:
+			if (row.c > static_cast<i16>(ValueMoveKind::FloatFromBits)) return 0;
+			break;
 		default: break;
 	}
 	const u8 reads = OPCODE_SCALAR_REGISTER_READS[row.op];
@@ -34,9 +41,6 @@ u16 fixedRegisterExtent(const DecodedInstruction& row) {
 			break;
 		case OpCode::CONCATN:
 			if (row.c != 0) extent = std::max(extent, row.b + row.c);
-			break;
-		case OpCode::STORE_MEM_WORDS: case OpCode::STORE_MEM_WORDS_D:
-			if (row.c != 0) extent = std::max(extent, row.a + row.c);
 			break;
 		default: break;
 	}

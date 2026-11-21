@@ -32,6 +32,27 @@ function memoryLoop(op: OpCode, kind: MemoryAccessKind, displacement = 0) {
 
 const widths = [4, 1, 2, 4, 4, 8];
 
+test('counted memory writes commit the available prefix before an absent source register', () => {
+	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.STORE_MEM_WORDS, 0, 63, 2, 56); // RK(B) = K0.
+	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+	const address = DYNAMIC_RAM_BASE + 0x100;
+	const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(address)], exceptionFunctionIndex: 1,
+		functions: [{ firstWord: 0, wordCount: 1, maxStack: 1 }, { firstWord: 1, wordCount: 1 }] }, RAM_CODE_FIXTURE_BYTES);
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const pc = cpu.rootThread.currentFrame!.pc;
+		cpu.rootThread.currentFrame!.registers.setInteger(0, 123);
+		memory.writeMappedU32LE(address + 4, 456);
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+		assert.equal(cpu.readEpcWord(), pc);
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.STORE_MEM_WORDS] - 2);
+		assert.equal(memory.readMappedU32LE(address), 123);
+		assert.equal(memory.readMappedU32LE(address + 4), 456);
+	}
+});
+
 test('compiled memory exits retain the computed raw guest address', () => {
 	for (const op of [OpCode.LOAD_MEM, OpCode.LOAD_MEM_D, OpCode.STORE_MEM, OpCode.STORE_MEM_D,
 		OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D]) {

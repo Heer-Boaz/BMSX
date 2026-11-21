@@ -57,6 +57,32 @@ test::Blua32TestImage memoryLoop(OpCode op, MemoryAccessKind kind, u8 displaceme
 	return image;
 }
 
+void countedStoresPreserveTheirPrefixOnWindowFault() {
+	constexpr u32 address = DYNAMIC_RAM_BASE + 0x100u;
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::STORE_MEM_WORDS), 0, 63, 2, 56); // RK(B) = K0.
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.constants = {static_cast<i32>(address)};
+	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 1}, {.firstWord = 1, .wordCount = 1}};
+	image.exceptionFunctionIndex = 1;
+	for (const bool scalar : {false, true}) {
+		CpuMachine machine(image, scalar);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		if (!scalar) machine.cpu.prepareSystemNativeCode();
+#endif
+		machine.cpu.activeThread()->currentFrame->registers.set(0, valueInteger(123));
+		machine.memory.writeMappedU32LE(address + 4u, 456);
+		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Yielded
+			&& machine.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+			&& machine.cpu.readEpcWord() == machine.rom.textAddress
+			&& machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_WORDS)] - 2,
+			"counted store reaches its missing source after charging the full attempted sequence");
+		require(machine.memory.readMappedU32LE(address) == 123 && machine.memory.readMappedU32LE(address + 4u) == 456,
+			"the source-window fault leaves the completed prefix in RAM");
+	}
+}
+
 void ramScalarDatapathsAndGuards() {
 	NativeBlockRunState nativeRunState;
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes), reference(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
@@ -752,6 +778,7 @@ void wordProducerBoundariesMatchCompleteScalarState() {
 
 int main() {
 	try {
+		countedStoresPreserveTheirPrefixOnWindowFault();
 		ramScalarDatapathsAndGuards();
 		coldExitsPreserveAddressOperands();
 		generatedMemoryBoundaries();

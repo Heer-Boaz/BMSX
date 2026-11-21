@@ -39,6 +39,7 @@ inline bool CPU::continueMemoryStore(CallFrame& frame, int source, MemoryAccessK
 		blockMappedWrite(frame, address);
 		return false;
 	}
+	if (static_cast<size_t>(source) >= frame.registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	const Value value = frame.registers.get(source);
 	const u32 faultSequence = m_memory.readBusFaultSequence();
 	switch (kind) {
@@ -76,7 +77,8 @@ inline bool CPU::continueWordStores(CallFrame& frame, u32 address, int source, i
 	}
 	instructionBudgetRemaining -= count;
 	const u32 faultSequence = m_memory.readBusFaultSequence();
-	for (int offset = 0; offset < count; ++offset) {
+	const int available = std::clamp(static_cast<int>(frame.registers.size()) - source, 0, count);
+	for (int offset = 0; offset < available; ++offset) {
 		m_memory.writeMappedWord(address, wordOperand(frame.registers.get(source + offset)));
 		if (m_memory.readBusFaultSequence() != faultSequence) {
 			enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
@@ -84,6 +86,7 @@ inline bool CPU::continueWordStores(CallFrame& frame, u32 address, int source, i
 		}
 		address += 4u;
 	}
+	if (available != count) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	return true;
 }
 

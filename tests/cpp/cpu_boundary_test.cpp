@@ -1061,7 +1061,6 @@ void fixedWindowAndCaptureOperandsTrapBeforeEffects() {
 		{OpCode::GETUP, 0, 0, 0},
 		{OpCode::SETUP, 0, 0, 0},
 		{OpCode::LOAD_MEM_D, 1, 0, static_cast<u8>(MemoryAccessKind::F64LE)},
-		{OpCode::STORE_MEM_WORDS_D, 0, 0, 2},
 	};
 	for (const auto [op, a, b, c] : cases) for (const bool scalar : {false, true}) {
 		auto image = returnImage();
@@ -1828,6 +1827,25 @@ void successorFetchOrdering() {
 	}
 }
 
+void reservedMoveKindIgnoresUnusedRegisterOperands() {
+	for (const bool instrumented : {false, true}) {
+		auto image = returnImage();
+		image.text.resize(INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 15, 14, 3);
+		image.functions[0].wordCount = 1;
+		image.functions[0].maxStack = 1;
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		const u32 pc = cpu.readFramePc(0);
+		if (instrumented)
+			cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readEpcWord() == pc
+			&& cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION
+			&& cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::MOV)],
+			"a reserved MOV form raises its instruction exception before considering a register");
+	}
+}
+
 void reservedMemoryKinds() {
 	for (const auto op : {OpCode::LOAD_MEM, OpCode::STORE_MEM, OpCode::LOAD_MEM_D, OpCode::STORE_MEM_D}) {
 		for (const u8 kind : {6, 63}) {
@@ -1968,6 +1986,33 @@ void imageTextImport() {
 	}
 }
 
+void imageBankExtentsAreAdmittedBeforeBinding() {
+	for (const bool restore : {false, true}) for (const bool constants : {false, true}) {
+		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, returnImage(), test::RAM_CODE_FIXTURE_BYTES);
+		Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+		IrqController irq(memory);
+		ExecutionAddressSpace addressSpace(memory);
+		CPU cpu(memory, irq, addressSpace);
+		if (restore) cpu.reset();
+		const auto state = restore ? cpu.captureRuntimeState() : CpuRuntimeState{};
+		auto* header = rom.bytes.data() + test::BLUA32_TEST_IMAGE_OFFSET;
+		if (constants) {
+			writeLE32(header + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, MAIN_RAM_SIZE / (sizeof(u32) + sizeof(u8)) + 1u);
+		} else {
+			writeLE32(header + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, MAIN_RAM_SIZE / sizeof(u32));
+			writeLE32(header + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET, 1u);
+		}
+		bool rejected = false;
+		try {
+			if (restore) cpu.restoreRuntimeState(state);
+			else cpu.reset();
+		} catch (const std::exception& error) {
+			rejected = std::string_view(error.what()).find("BLua32 image bank extents exceed main RAM.") != std::string_view::npos;
+		}
+		require(rejected, "activation and restore reject an unplaceable image bank at the header");
+	}
+}
+
 void bootAddressWrap() {
 	auto system = test::encodeBlua32TestRom(RomImageDomain::System, returnImage(), test::RAM_CODE_FIXTURE_BYTES);
 	auto cart = test::encodeBlua32TestRom(RomImageDomain::Cartridge, returnImage(), test::RAM_CODE_FIXTURE_BYTES);
@@ -2000,7 +2045,7 @@ int main() {
 		stringBytePositions(); loadKrIndices(); invalidImageOperandsTrapAtExecution(); skippedImageOperandRemainsUnobserved();
 		fusionRequiresBothImageOperandsAdmitted(); fixedWindowAndCaptureOperandsTrapBeforeEffects(); closureDescriptorAdmissionPrecedesAllocation();
 		functionReservationIsAdmittedBeforeActivation();
-		zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
+		zeroLoadNil(); successorFetchOrdering(); reservedMoveKindIgnoresUnusedRegisterOperands(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();
 		wideSignedImmediatesKeepTheirRange();
 		instructionBoundaryResynchronizesAfterFetchOrObservation();
@@ -2014,7 +2059,7 @@ int main() {
 		writableCodeWatchesBelongToTheirPhysicalSocket();
 		cachedInstructionBindingsFollowThePhysicalSelector();
 		closureCallAndReturnRespectFrameBoundaries();
-		haltYieldPrecedence(); cachedPcWrapping(); imageTextImport(); bootAddressWrap();
+		haltYieldPrecedence(); cachedPcWrapping(); imageTextImport(); imageBankExtentsAreAdmittedBeforeBinding(); bootAddressWrap();
 		std::cout << "CPU boundary tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

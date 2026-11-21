@@ -1,4 +1,3 @@
-import { OpCode } from '../../spec/blua32/opcode';
 import { TableRecords } from './table';
 import { f32BitsToNumber, numberToF32Bits } from '../../common/float32';
 import { luaFloatResultBits, luaFloatToInteger, luaFloatToWord, luaIntegerModulo, luaIntegerFloorDivide, luaFloatModuloBits, luaFloatFloorDivideBits, luaShiftLeft, luaShiftRight } from '../../spec/blua32/numeric';
@@ -108,11 +107,10 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 			const exit = block.terminal;
 			const top = exit.resetsRegisterTop ? `T=Math.max(F.top,${exit.registerTop});`
 				: exit.registerTop === 0 ? '' : `if(T<${exit.registerTop})T=${exit.registerTop};`;
-			// Variable table work and readiness-dependent memory charges are
-			// settled before admitting the next fixed prefix.
+			// Settle memory-format charges before the next fixed prefix.
 			const required = admissionVarargs[index + 1] === 0 ? `${admissionCycles[index + 1]}`
 				: `${admissionCycles[index + 1]}+${admissionVarargs[index + 1]}*F.varargCount`;
-			const frontier = (page.ops[block.finalWord] === OpCode.LEN || block.formatCycles !== 0)
+			const frontier = block.formatCycles !== 0
 				? `if(B-${exit.cycles}<=${required}){${block.registers.leaveResidents(block.terminalIndex)}}` : '';
 			source.push(`case ${index}:{${block.body}\n${frontier}B-=${exit.cycles};${top}}`);
 		} else source.push(`case ${index}:{${block.body}\n${finishJavaScriptBlock(page, block, index => transfer(block, index))}}`);

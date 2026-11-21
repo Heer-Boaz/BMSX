@@ -798,13 +798,19 @@ export class CPU implements MappedPageInvalidator {
 			|| readLE32(bytes, byteOffset + BLUA32_IMAGE_VERSION_OFFSET) !== BLUA32_IMAGE_VERSION) {
 			throw new Error('BLua32 image format is unsupported.');
 		}
+		const constantCount = readLE32(bytes, byteOffset + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET);
+		const globalNameCount = readLE32(bytes, byteOffset + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET);
+		const systemGlobalNameCount = readLE32(bytes, byteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET);
+		if (constantCount > MAIN_RAM_SIZE / 5 || globalNameCount + systemGlobalNameCount > MAIN_RAM_SIZE / 4) {
+			throw new Error('BLua32 image bank extents exceed main RAM.');
+		}
 		return {
 			constantTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET),
-			constantCount: readLE32(bytes, byteOffset + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET),
+			constantCount,
 			globalNameTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
-			globalNameCount: readLE32(bytes, byteOffset + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET),
+			globalNameCount,
 			systemGlobalNameTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
-			systemGlobalNameCount: readLE32(bytes, byteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET),
+			systemGlobalNameCount,
 			stringBucketAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
 			stringBucketCount: readLE32(bytes, byteOffset + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET),
 		};
@@ -2371,6 +2377,7 @@ export class CPU implements MappedPageInvalidator {
 			this.blockMappedWrite(frame, address);
 			return;
 		}
+		if (source >= frame.registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		const value = frame.registers.get(source);
 		const faultSequence = this.memory.readBusFaultSequence();
 		switch (kind) {
@@ -2414,8 +2421,9 @@ export class CPU implements MappedPageInvalidator {
 		}
 		this.charge(valueCount);
 		const faultSequence = this.memory.readBusFaultSequence();
+		const available = Math.max(0, Math.min(valueCount, frame.registers.capacity() - valueBase));
 		let writeAddr = addr;
-		for (let offset = 0; offset < valueCount; offset += 1) {
+		for (let offset = 0; offset < available; offset += 1) {
 			this.memory.writeMappedWord(writeAddr, wordOperand(frame.registers.get(valueBase + offset)));
 			if (this.memory.readBusFaultSequence() !== faultSequence) {
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
@@ -2423,6 +2431,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			writeAddr = (writeAddr + 4) >>> 0;
 		}
+		if (available !== valueCount) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	}
 
 	private resumePendingMemoryOperation(): void {

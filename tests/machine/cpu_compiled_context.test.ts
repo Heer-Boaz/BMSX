@@ -254,7 +254,6 @@ test('fixed operands fit the bound frame independently of its active top', () =>
 		[OpCode.SELF, 2, 0, 0],
 		[OpCode.CONCATN, 0, 2, 2],
 		[OpCode.LOAD_MEM_D, 3, 0, MemoryAccessKind.F64LE],
-		[OpCode.STORE_MEM_WORDS_D, 2, 0, 2],
 		[OpCode.CALL, 0, 255, 1],
 		[OpCode.RET, 2, 3, 0],
 	] as const;

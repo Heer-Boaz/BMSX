@@ -327,6 +327,11 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	const u32 systemGlobalNameCount = readLE32(
 		header + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET
 	);
+	constexpr u32 constantSlotBytes = sizeof(u32) + sizeof(u8);
+	if (constantCount > MAIN_RAM_SIZE / constantSlotBytes
+		|| static_cast<u64>(globalNameCount) + systemGlobalNameCount > MAIN_RAM_SIZE / sizeof(u32)) {
+		throw BMSX_RUNTIME_ERROR("BLua32 image bank extents exceed main RAM.");
+	}
 	if (!restoring) m_stringPool.activateRomTable(executionDomainId,
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
@@ -346,7 +351,7 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		}
 	}
 	if (constantCount != 0u) {
-		image->constantBase = restoring ? (*restoredBases)[0] : m_luaHeap.allocateRecord(constantCount * 5u, true, 0, 0);
+		image->constantBase = restoring ? (*restoredBases)[0] : m_luaHeap.allocateRecord(constantCount * constantSlotBytes, true, 0, 0);
 		const ValueSpan constants(m_memory, image->constantBase, image->constantBase + constantCount * 4u, constantCount);
 		if (!restoring) decodeConstantPool(executionDomainId, constantTableAddress, constants);
 		image->constPool = constants;

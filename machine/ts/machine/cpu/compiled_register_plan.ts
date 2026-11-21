@@ -42,6 +42,10 @@ export function planRegionRegisters(page: DecodedInstructionPage, plans: readonl
 		if ((flags & REGISTER_OPERAND_B) && b >= 0) candidates.add(b);
 		if ((flags & REGISTER_OPERAND_C) && c >= 0) candidates.add(c);
 		requiredSlots = Math.max(requiredSlots, page.requiredSlots[word]);
+		// Native word stores complete the full range; the bus replay can
+		// instead commit its valid prefix before a source-window fault.
+		if ((op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D) && c !== 0)
+			requiredSlots = Math.max(requiredSlots, a + c);
 		// Fixed VARARG can grow on the scalar route; generated copies require
 		// the destination window to already exist.
 		if (op === OpCode.VARARG && b > 1) requiredSlots = Math.max(requiredSlots, a + b - 1);

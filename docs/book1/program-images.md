@@ -331,6 +331,11 @@ of the declared image extent. Cartridge ROM reads select the program's
 execution socket, while system-ROM addresses select system ROM. A zero table
 count leaves its address unused.
 
+The decoded constant bank and the combined name map must each fit in main
+RAM. An image with a count that cannot fit either bank is rejected before
+the banks are installed. The available language-allocation budget still
+applies to valid sizes.
+
 ### Constant and name records {#sec-memory-constant-and-name-records}
 
 Constant record `i` begins at `constantTableAddress + 12i`, with zero-based `i`. The tag is a four-byte unsigned little-endian word at record offset `00H`:

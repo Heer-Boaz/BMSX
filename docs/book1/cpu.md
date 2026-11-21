@@ -1671,8 +1671,9 @@ Before writing anything, the instruction scans the counted span's IO overlap in 
 
 Once preflight succeeds, the instruction charges one additional cycle per
 counted 32-bit word: `C` cycles. It converts and attempts the words in
-increasing `i` order, checking for a new bus fault after every word. An invalid
-source Number conversion raises `INVALID_ARGUMENT`; a new bus fault raises
+increasing `i` order, checking for a new bus fault after every word. A
+source outside the frame or an invalid Number conversion raises
+`INVALID_ARGUMENT`; a new bus fault raises
 `DataBusError`. Either stops the sequence. Earlier successful words remain
 written; later words are not attempted. The full sequence surcharge has
 already been charged even if a later word faults.

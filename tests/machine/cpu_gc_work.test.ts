@@ -6,6 +6,7 @@ import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { HEAP_COLLECTION_TARGET_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { integerConstant } from '../../toolchain/ts/lua/number';
+import { writeLE32 } from '../../machine/ts/common/endian';
 import { ValueTag, valueFloatBits, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -14,8 +15,11 @@ import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/m
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import {
+	BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
+} from '../../machine/ts/spec/blua32/image_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -142,6 +146,28 @@ test('all activated image constants and unique namespace slots remain priced acr
 	assert.equal(cpu.instructionBudgetRemaining, 5 - bootCollectionWork - 3 * (2 * 5 + 3 * 2), 'all three root passes include constants and registered names of both activated cards');
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
 	cpu.instructionBudgetRemaining = 5; cpu.luaHeap.collectRuntime(); assert.equal(cpu.instructionBudgetRemaining, 5 - bootCollectionWork - 3 * (2 * 5 + 3 * 2));
+});
+
+test('image replacement rejects bank extents beyond main RAM before changing runtime records', () => {
+	const image = linkRawTestSystemBlua32(source());
+	for (const constants of [false, true]) {
+		const { cpu, memory, executionAddressSpace } = createTestSystemCpu(image);
+		const rom = image.romBytes.slice();
+		const header = image.image.address - SYSTEM_ROM_BASE;
+		if (constants) {
+			writeLE32(rom, header + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, ((MAIN_RAM_SIZE / 5) | 0) + 1);
+		} else {
+			// Each namespace fits the map on its own; their combined extent does not.
+			writeLE32(rom, header + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, MAIN_RAM_SIZE / 4);
+			writeLE32(rom, header + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET, 1);
+		}
+		memory.installSystemRom(rom);
+		const boot = executionAddressSpace.resolveSystemDomain();
+		const before = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+		assert.throws(() => cpu.replaceExecutionImages(boot), { message: 'BLua32 image bank extents exceed main RAM.' });
+		assert.deepEqual(cpu.captureRuntimeState(), before);
+		assert.deepEqual(memory.captureSaveState(), ram);
+	}
 });
 
 test('constant loads, compiled operands and checkpoints use the physical bank', () => {

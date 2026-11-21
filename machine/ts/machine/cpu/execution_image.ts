@@ -60,6 +60,10 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 		// uses a Bx selector wider than the ordinary register fields.
 		case OpCode.CALL: case OpCode.CLOSURE:
 			return 0;
+		case OpCode.STORE_MEM: case OpCode.STORE_MEM_D:
+		case OpCode.STORE_MEM_WORDS: case OpCode.STORE_MEM_WORDS_D:
+			// Source values are consumed only after the bus admits the write.
+			return Math.max(0, b + 1);
 		case OpCode.MOV:
 			if (c > ValueMoveKind.FloatFromBits) return 0;
 			break;
@@ -75,7 +79,6 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 	if ((reads & REGISTER_OPERAND_B) !== 0 && b >= 0) end = Math.max(end, b + 1);
 	if ((reads & REGISTER_OPERAND_C) !== 0 && c >= 0) end = Math.max(end, c + 1);
 	if (op === OpCode.SELF) end = Math.max(end, a + 2);
-	if ((op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D) && c !== 0) end = Math.max(end, a + c);
 	return end;
 }
 
