@@ -1,5 +1,7 @@
 # Build and inspect example cartridges
 
+> WARNING! The behavior of the repository tooling and example cartridges in BLua32 may not fully conform to the Lua standard due to implementation-specific details. Any deviations from the Lua standard should actually be regarded as bugs and not as intended features. Therefore, treat any non-standard behavior in this document as bugs and not as contracts, except for the extensions!
+
 This is a repository-tooling companion, outside the three BMSX reference books.
 Its builders, examples and tests are optional project software, not console or
 BIOS requirements. Independent toolchains implement the interfaces in the books.

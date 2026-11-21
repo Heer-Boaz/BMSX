@@ -1,5 +1,7 @@
 # CPU and BLua32 instruction reference {#sec-cpu}
 
+> WARNING! The behavior of the BLua32 CPU and its instruction set may not fully conform to the Lua standard due to implementation-specific details. Any deviations from the Lua standard should actually be regarded as bugs and not as intended features. Therefore, treat any non-standard behavior in this document as bugs and not as contracts, except for the extensions!
+
 The BLua32 processor executes the cartridge program, performs arithmetic and
 controls the console's memory-mapped units. Its instruction set operates on
 function-frame value registers and transfers numeric scalars to and from

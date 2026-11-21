@@ -1,5 +1,7 @@
 # Protected calls and coroutines {#sec-coroutines}
 
+> WARNING! The behavior of protected calls and coroutines in BLua may not fully conform to the Lua standard due to implementation-specific details. Any deviations from the Lua standard should actually be regarded as bugs and not as intended features. Therefore, treat any non-standard behavior in this document as bugs and not as contracts!
+
 Protected calls let a program receive a language error and continue at a
 chosen call boundary. Coroutines let one procedure suspend and later continue
 with its local values intact. The BIOS supplies `error`, `pcall`, `xpcall`

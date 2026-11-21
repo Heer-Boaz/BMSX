@@ -1,5 +1,7 @@
 # System control and timing {#sec-system}
 
+> WARNING! The behavior of the system controller and its timing in BLua32 may not fully conform to the Lua standard due to implementation-specific details. Any deviations from the Lua standard should actually be regarded as bugs and not as intended features. Therefore, treat any non-standard behavior in this document as bugs and not as contracts, except for the extensions!
+
 The system controller maintains console-time readouts, accepts reset requests
 and coordinates BIOS supervisor service. Its fault-report words retain CPU
 diagnostics for the monitor. A separate pair of ports provides line-oriented

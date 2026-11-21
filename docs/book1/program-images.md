@@ -1,5 +1,7 @@
 # Program images and startup {#sec-program-images}
 
+> WARNING! The behavior of program images and startup in BLua32 may not fully conform to the Lua standard due to implementation-specific details. Any deviations from the Lua standard should actually be regarded as bugs and not as intended features. Therefore, treat any non-standard behavior in this document as bugs and not as contracts, except for the extensions!
+
 The ROM boot header identifies the console's entry functions and the BLua32
 program header. The program header locates the constants, names and sections
 used by the program. Each function has a separate record describing its code,
