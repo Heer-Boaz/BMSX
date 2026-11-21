@@ -332,6 +332,10 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
 	image->globalNameCount = globalNameCount;
 	image->systemNameCount = systemGlobalNameCount;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	image->nativeFunctionTable = readLE32(header + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET);
+	image->nativeFunctionCount = readLE32(header + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET);
+#endif
 	if (const u32 bytes = image->globalMapBytes()) {
 		image->globalMapBase = restoring ? (*restoredBases)[1] : m_luaHeap.allocateRecord(bytes, true, 0, 0);
 		const u32 base = image->globalMapBase;
@@ -797,10 +801,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// Ordinary EXEC selection has established the image's constant/name banks.
 	// Preparation changes only host code caches, before any target instruction.
-	if (m_functionRecordLatch.image->executionDomainId >= 0) {
-		const auto boot = m_executionAddressSpace.resolveDomain(m_functionRecordLatch.image->executionDomainId);
-		prepareNativeImageCode(*m_functionRecordLatch.image, *boot);
-	}
+	if (m_functionRecordLatch.image->executionDomainId >= 0) prepareNativeImageCode(*m_functionRecordLatch.image);
 #endif
 	clearCallStack();
 	latchActiveExecutionImage(m_functionRecordLatch.image->executionDomainId, m_functionRecordLatch.image);

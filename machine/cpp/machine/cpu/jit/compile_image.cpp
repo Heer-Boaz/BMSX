@@ -5,7 +5,6 @@
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 #include "machine/cpu/jit/worker.h"
 #endif
-#include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/memory_map.h"
@@ -15,10 +14,10 @@
 namespace bmsx {
 
 void CPU::prepareSystemNativeCode() {
-	prepareNativeImageCode(*m_systemImage, m_executionAddressSpace.resolveSystemDomain());
+	prepareNativeImageCode(*m_systemImage);
 }
 
-void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32ExecutionBoot& boot) {
+void CPU::prepareNativeImageCode(Blua32ExecutionImage& image) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (m_nativeCompilerWorker) {
 		m_nativeCompilerWorker->wait();
@@ -28,14 +27,10 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32Execut
 	const bool system = image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID;
 	const u32 slot = system ? 0u : static_cast<u32>(image.executionDomainId);
 	const auto busSignals = executionBusSignalsForDomain(image.executionDomainId);
-	Span<const u8> header;
-	m_executionAddressSpace.bindReadOnlyView(image.executionDomainId,
-		boot.imageAddress, BLUA32_IMAGE_HEADER_SIZE, header);
-	const u32 functionTable = readLE32(header.data() + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET);
-	const u32 functionCount = readLE32(header.data() + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET);
+	const u32 functionCount = image.nativeFunctionCount;
 	if (functionCount == 0u) return;
 	Span<const u8> records;
-	if (!m_memory.bindRomByteView(functionTable,
+	if (!m_memory.bindRomByteView(image.nativeFunctionTable,
 		static_cast<size_t>(functionCount) * BLUA32_FUNCTION_RECORD_SIZE, slot, records)) return;
 
 	// These records are cold compilation hints, never fetch bounds. Only backed

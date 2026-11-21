@@ -99,6 +99,7 @@ struct Blua32ExecutionImage {
 	u32 globalNameCount = 0, systemNameCount = 0;
 	u32 globalMapBytes() const { return 4u * (globalNameCount + systemNameCount); }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	u32 nativeFunctionTable = 0, nativeFunctionCount = 0;
 	// Dispatch storage outlives the decoded descriptors which borrow its cells.
 	std::unique_ptr<NativeCodeLookup> nativeCodeLookup;
 	std::array<NativeRomCallBinding, NativeRomCallBinding::slotCount> nativeRomCallBindings{};

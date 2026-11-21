@@ -12,6 +12,7 @@
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
+#include "spec/bmsx/rom_header.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
@@ -493,6 +494,27 @@ void repeatExecAndRestoreHaveDistinctPolicies() {
 		"repeated restore preserves the ordinary restored state without cold compilation");
 }
 
+void residentExecDoesNotReopenTheBootHeader() {
+	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridgeProgram("resident")));
+	machine.execute();
+	const auto* image = machine.cpu().rootThread()->currentFrame->executionImage;
+	auto replacement = machine.cart.bytes;
+	// Replace the physical ROM without activating another execution image.
+	// EXEC still has a backed static target; only the absent boot image differs.
+	writeLE32(replacement.data() + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, CART_ROM_SIZE - INSTRUCTION_BYTES);
+	writeInstruction(replacement, (machine.cart.textAddress - CART_ROM_BASE) / INSTRUCTION_BYTES,
+		static_cast<u8>(OpCode::K1), 0, 0, 0);
+	machine.runtime.machine.memory.cartridgeController().installRom(0, replacement);
+	machine.cpu().requestNonMaskableInterrupt();
+	require(machine.cpu().enterPendingInterrupt(), "NMI enters the system EXEC handler after replacement");
+	machine.execute();
+	require(machine.cpu().rootThread()->currentFrame->executionImage == image,
+		"EXEC uses the resident image rather than requiring another boot header");
+	require(machine.cpu().runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::K1)]) == RunResult::Yielded
+		&& machine.cpu().readFrameRegister(0, 0) == valueInteger(1),
+		"the resident image fetches the installed replacement instruction");
+}
+
 void descriptiveTablesAndStaticAcceptanceRemainIndependent() {
 	for (const u32 table : {IO_IRQ_FLAGS, CART_ROM_BASE + CART_ROM_SIZE - 32u}) {
 		auto rom = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridgeProgram("no-backed-hints"));
@@ -618,6 +640,7 @@ int main() {
 		recordConstructorPreservesGrantAndLayout();
 		recordConstructorUsesLiveKeys();
 		repeatExecAndRestoreHaveDistinctPolicies();
+		residentExecDoesNotReopenTheBootHeader();
 		observationsAndUnusedHintsStayAtExecution();
 		descriptiveTablesAndStaticAcceptanceRemainIndependent();
 		hintsDoNotBoundReachableCode();
