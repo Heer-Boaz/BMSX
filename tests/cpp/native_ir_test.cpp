@@ -620,6 +620,28 @@ void forwardJoinMeetsTagsNotValues() {
 	}
 }
 
+void nativeTableGuardProvesTheFollowingReceiver() {
+	constexpr u32 pc = 0x6000;
+	std::array decoded{
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(-1), .a = 1, .b = 0,
+			.op = static_cast<u8>(OpCode::GETFIELD)},
+		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(-1), .a = 2, .b = 0, .c = 1,
+			.op = static_cast<u8>(OpCode::GETFIELD)},
+	};
+	for (auto& row : decoded) { row.width = 1; row.baseCycles = BASE_CYCLES[row.op]; }
+	const std::array source{NativeBlockInstruction{&decoded[0], pc}, NativeBlockInstruction{&decoded[1], pc + INSTRUCTION_BYTES}};
+	const std::array sources{NativeBlockSource{source}};
+	NativeRegisterUses uses;
+	NativeIrRegion region(sources, uses);
+	const auto blocks = region.blocks();
+	const auto& first = std::get<NativeTableAccess>(blocks[0].instructions[0].operation);
+	const auto& second = std::get<NativeTableAccess>(blocks[1].instructions[0].operation);
+	require(first.receiverCheck == NativeTagCheck::Dynamic && second.receiverCheck == NativeTagCheck::Proved
+		&& blocks[0].provesEntryTo(1) && blocks[1].entryTypes.size() == 1
+		&& blocks[1].entryTypes[0].slot == 0 && blocks[1].entryTypes[0].tag == ValueTag::Table,
+		"the direct edge carries a successful receiver guard, whereas semantic and public entry must admit it");
+}
+
 void dataflowPlansTableAndMemoryInputs() {
 	constexpr u32 pc = 0x5300;
 	std::array<DecodedInstruction, 7> decoded{};
@@ -760,6 +782,7 @@ int main() {
 		admissionReplaysPreserveTheExactFusedPredecessor();
 		onlyConsumedEntryProofsSurviveCopies();
 		forwardJoinMeetsTagsNotValues();
+		nativeTableGuardProvesTheFollowingReceiver();
 		dataflowPlansTableAndMemoryInputs();
 		recordPlanUsesTypedEntriesAndFullRomWords();
 		registerUses();

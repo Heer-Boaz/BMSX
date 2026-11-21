@@ -220,6 +220,8 @@ struct NativeTypePropagation::Transfer {
 
 	void operator()(NativeTableAccess& op) const {
 		op.receiverCheck = check(0, ValueTag::Table);
+		if (op.receiverCheck == NativeTagCheck::Dynamic)
+			facts.define(values.inputs[0], ValueTag::Table);
 		if (op.mode == NativeTableMode::Write) {
 			if (const auto type = input(2)) {
 				facts.require(type);
@@ -233,6 +235,8 @@ struct NativeTypePropagation::Transfer {
 
 	void operator()(NativeMemoryAccess& op) const {
 		op.addressCheck = check(0, ValueTag::Integer);
+		if (op.addressCheck == NativeTagCheck::Dynamic)
+			facts.define(values.inputs[0], ValueTag::Integer);
 		if (op.mode == NativeMemoryMode::Load) {
 			result(op.format == MemoryAccessKind::F32LE || op.format == MemoryAccessKind::F64LE
 				? ValueTag::Float : ValueTag::Integer);
