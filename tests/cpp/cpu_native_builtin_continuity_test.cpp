@@ -1,3 +1,4 @@
+#include "common/hash_fnv.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/decoded_instruction.h"
@@ -5,6 +6,7 @@
 #include "machine/cpu/jit/compiler.h"
 #endif
 #include "machine/devices/irq/controller.h"
+#include "spec/blua32/image_format.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/io.h"
 #include "support/blua32_test_rom.h"
@@ -118,7 +120,69 @@ NativeBlock* preparedCaller(Machine& machine) {
 	require(successor && successor->region == caller->region, "CALL and its actual successor share a published allocation");
 	return caller;
 }
+#endif
 
+void recordObserversReadPendingFrameWords() {
+	test::Blua32TestImage source; source.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(source.text, 0, static_cast<u8>(OpCode::MOV), 5, 14, static_cast<u8>(ValueMoveKind::FloatBits));
+	writeInstruction(source.text, 1, static_cast<u8>(OpCode::MOV), 6, 15, static_cast<u8>(ValueMoveKind::FloatBits));
+	writeInstruction(source.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(source.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 2);
+	writeInstruction(source.text, 4, static_cast<u8>(OpCode::MOV), 2, 0, 0);
+	writeInstruction(source.text, 5, static_cast<u8>(OpCode::MOV), 3, 6, 0);
+	writeInstruction(source.text, 6, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	source.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 16}};
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, source);
+	for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable}) {
+		Machine native(rom, false), scalar(rom, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		require(preparedCaller(native)->admissionCycles == 2 * BASE_CYCLES[static_cast<u8>(OpCode::MOV)],
+			"the installed leaf call admits both record writes in the same segment");
+#endif
+		for (auto* machine : {&native, &scalar}) {
+			auto& registers = machine->cpu.rootThread()->currentFrame->registers;
+			const u32 record = RAM_BASE + registers.wordAddress() + 4u * sizeof(u32);
+			registers.set(0, machine->cpu.createBuiltinFunction(id));
+			// R4 and following words back the record. R6 is outside the CALL
+			// arguments and holds the metatable address or String byte count.
+			if (id == BuiltinFunctionId::GetMetatable) {
+				TableRecord(machine->cpu.gcHeap(), record).initialize(0, 0);
+				const auto meta = machine->cpu.createTable().address();
+				registers.set(1, valueTable(record));
+				registers.set(14, valueFloatBits(0u));
+				registers.set(15, valueFloatBits(meta));
+				machine->expected = valueTable(meta);
+			} else {
+				machine->memory.writeRamRecordWord(record, BLUA32_STRING_RECORD_KIND);
+				machine->memory.writeRamRecordWord(record + BLUA32_STRING_HASH_OFFSET, fnv1a32(""));
+				machine->memory.writeRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET, 0u);
+				machine->memory.writeRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET, 0u);
+				machine->memory.writeRamRecordByte(record + BLUA32_STRING_RECORD_HEADER_SIZE, 'a');
+				registers.set(1, valueString(record));
+				registers.set(14, valueFloatBits(fnv1a32("a")));
+				registers.set(15, valueFloatBits(1u));
+				machine->expected = valueInteger('a');
+			}
+		}
+		const int grant = 2 * BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 2 + 1;
+		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded
+			&& native.cpu.readFramePc(0) == rom.textAddress + 4 * INSTRUCTION_BYTES
+			&& native.cpu.readCurrentInstructionPc() == rom.textAddress + 2 * INSTRUCTION_BYTES
+			&& native.cpu.lastPc == rom.textAddress + 3 * INSTRUCTION_BYTES && native.cpu.instructionBudgetRemaining == 0,
+			"the record observer completes its WIDE CALL once before the successor");
+		require(native.cpu.readFrameRegister(0, 0) == native.expected,
+			id == BuiltinFunctionId::GetMetatable ? "GetMetatable observes the pending metatable address" : "StringByte observes the pending byte count");
+		parity(native, scalar);
+		const int continuation = 2 * BASE_CYCLES[static_cast<u8>(OpCode::MOV)];
+		require(test::runCpuParity(native.cpu, scalar.cpu, continuation) == RunResult::Yielded
+			&& native.cpu.readFrameRegister(0, 2) == native.expected
+			&& native.cpu.readFrameRegister(0, 3) == native.cpu.readFrameRegister(0, 6),
+			"the successor sees both the result and the published frame word");
+		parity(native, scalar);
+	}
+}
+
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void rawContinuity(BuiltinFunctionId id, int results, int mode = 0, float position = 3, bool missing = false) {
 	const int arguments = id == BuiltinFunctionId::GetMetatable || id == BuiltinFunctionId::ToInteger || missing ? 2 : 3;
 	const auto rom = image(results, arguments); Machine machine(rom, false); machine.seed(id, mode, position);
@@ -304,6 +368,7 @@ int main() {
 		rawDeclines();completedDebtDoesNotRunTheSuccessor();mutableCalleesUseTheirCurrentIdentity();unboundStandaloneStillReturnsCall();
 		for(const bool nmi:{false,true})for(const bool wide:{false,true})inlineInterruptStop(nmi,wide);
 #endif
+		recordObserversReadPendingFrameWords();
 		grantsAndRestore();
 		std::cout<<"Native builtin continuity tests passed\n";return 0;
 	} catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}

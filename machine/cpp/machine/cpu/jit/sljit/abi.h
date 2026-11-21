@@ -18,8 +18,6 @@ inline constexpr int nativeWordCacheRegisters(int fixedSaved) {
 // run state, cycle grant and, where it is free, the main-RAM base are pinned;
 // the remaining banks own raw payloads.
 struct NativeBlockAbi {
-	// Test the builtin ID against the nonallocating leaf repertoire; clobbers R1.
-	static sljit_jump* emitNonleafBuiltinJump(sljit_compiler*, sljit_s32 id);
 	// destination = host address of the main-RAM byte offset in `offset`.
 	// The only way generated code reaches the RAM base.
 	static void emitRamAddress(sljit_compiler*, sljit_s32 destination, sljit_s32 offset);

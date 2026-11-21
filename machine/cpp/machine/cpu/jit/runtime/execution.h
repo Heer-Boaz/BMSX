@@ -12,9 +12,10 @@ namespace bmsx {
 static_assert(BUILTIN_FUNCTION_COUNT <= 32);
 // A returning leaf must not write through the table/collector ports, which
 // can retire the source region before the native return address is used.
-inline constexpr u32 NATIVE_BUILTIN_LEAF_IDS = (1u << static_cast<u32>(BuiltinFunctionId::GetMetatable))
-	| (1u << static_cast<u32>(BuiltinFunctionId::StringByte))
-	| (1u << static_cast<u32>(BuiltinFunctionId::ToInteger));
+inline constexpr u32 NATIVE_BUILTIN_RECORD_OBSERVER_IDS = (1u << static_cast<u32>(BuiltinFunctionId::GetMetatable))
+	| (1u << static_cast<u32>(BuiltinFunctionId::StringByte));
+inline constexpr u32 NATIVE_BUILTIN_OPERAND_ONLY_IDS = 1u << static_cast<u32>(BuiltinFunctionId::ToInteger);
+inline constexpr u32 NATIVE_BUILTIN_LEAF_IDS = NATIVE_BUILTIN_RECORD_OBSERVER_IDS | NATIVE_BUILTIN_OPERAND_ONLY_IDS;
 
 constexpr bool nativeBuiltinLeafId(u32 id) {
 	return id < 32 && (NATIVE_BUILTIN_LEAF_IDS & (1u << id)) != 0;
