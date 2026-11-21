@@ -66,11 +66,9 @@ bool CPU::loadTableIntegerIndex(CallFrame& frame, int destination, Value base, i
 	return finishTableRead(frame, destination, base, valueInteger(index), result);
 }
 
-bool CPU::loadTableFieldIndexCached(CallFrame& frame, int destination, int& predictedSlot, Value base, StringId key) {
-	TableLookupResult result;
+void CPU::resolveTableFieldIndexCached(int& predictedSlot, Value base, StringId key, TableLookupResult& result) {
 	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexCached(asStringId(m_indexKey), key, predictedSlot, result);
 	if (result.extraVisits == 0 && result.slot >= 0) predictedSlot = result.slot;
-	return finishTableRead(frame, destination, base, valueString(key), result);
 }
 
 bool CPU::finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result) {

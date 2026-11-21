@@ -93,7 +93,7 @@ void cycle(CPU& cpu, TableRecord root) {
 }
 
 void grantsAndRestore() {
-	for (bool wide : {false, true}) for (const auto [op, kind] : forms) for (int depth : {1, 2, 5, 32}) {
+	for (bool wide : {false, true}) for (const auto [op, kind] : forms) for (int depth : {1, 2, 3, 5, 32}) {
 		Program program(op, wide); Machine generated(program.image, false), scalar(program.image, true);
 		const std::array charges{2, (op == OpCode::SELF ? 17 : op == OpCode::GETI ? 8 : 16) + 8 * (depth - 1), 2, 2};
 		const int total = charges[0] + charges[1] + charges[2] + charges[3];
@@ -107,7 +107,9 @@ void grantsAndRestore() {
 		for (int grant = 0; grant <= total; ++grant) {
 			for (auto* m : {&generated, &scalar}) {
 				m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-				auto r = m->cpu.activeThread()->currentFrame->registers; r.set(6, valueInteger(91)); r.set(7, valueNil()); r.set(8, valueInteger(57));
+				auto& frame = *m->cpu.activeThread()->currentFrame;
+				auto r = frame.registers; r.set(6, valueInteger(91)); r.set(7, valueNil()); r.set(8, valueInteger(57));
+				frame.setTop(2);
 			}
 			require(test::runCpuParity(generated.cpu, scalar.cpu, grant) == RunResult::Yielded, "an ordinary read loop remains runnable");
 			int remaining = grant, completed = 0;
@@ -116,6 +118,14 @@ void grantsAndRestore() {
 			require(generated.cpu.instructionBudgetRemaining == remaining, "each additionally visited Table costs exactly8, including debt");
 			require(frame->readControl(bmsx::FrameField::Pc) == generated.rom.textAddress + program.starts[completed == 4 ? 0 : completed] * INSTRUCTION_BYTES,
 				"the completed read frontier precedes every unadmitted marker");
+			const int top = completed >= 3 ? 9 : completed == 2 && op == OpCode::SELF ? 8 : completed != 0 ? 7 : 2;
+			require(frame->readWindow(FrameField::Top) == top, "the exhausted grant publishes only results written by admitted instructions");
+			if (completed == 2) {
+				const auto readPc = generated.rom.textAddress + program.starts[1] * INSTRUCTION_BYTES;
+				require(generated.cpu.readCurrentInstructionPc() == readPc
+					&& generated.cpu.lastPc == readPc + (wide ? INSTRUCTION_BYTES : 0u),
+					"an admitted read owns its prefix and body PCs even when the visit cost exhausts the grant");
+			}
 			require(r.get(6) == (completed >= 2 ? valueBool(false) : completed == 1 ? r.get(0) : valueInteger(91))
 				&& r.get(8) == (completed >= 3 ? valueBool(false) : valueInteger(57))
 				&& r.get(7) == (op == OpCode::SELF && completed >= 2 ? r.get(0) : valueNil()),

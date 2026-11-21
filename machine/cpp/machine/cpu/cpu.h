@@ -435,7 +435,7 @@ private:
 	bool finishTableRead(CallFrame& frame, int destination, Value base, Value key, TableLookupResult& result);
 	bool loadTableIndex(CallFrame& frame, int destination, Value base, Value key);
 	bool loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index);
-	bool loadTableFieldIndexCached(CallFrame& frame, int destination, int& predictedSlot, Value base, StringId key);
+	void resolveTableFieldIndexCached(int& predictedSlot, Value base, StringId key, TableLookupResult& result);
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
 	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);

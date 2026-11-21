@@ -567,11 +567,11 @@ export class CPU implements MappedPageInvalidator {
 		this.gc.tables.resolveIndex(this.tableIndexAddress(base), this.indexKey, key, result);
 		return this.finishTableRead(frame, targetIndex, base, key, result);
 	}
-	private loadTableFieldIndexCached(base: Value, page: DecodedInstructionPage, pageOffset: number, key: StringId, frame: CallFrame, targetIndex: number): boolean {
+	private resolveTableFieldIndexCached(base: Value, page: DecodedInstructionPage, pageOffset: number, key: StringId): TableLookupResult {
 		const result = this.tableLookupResult;
 		this.gc.tables.resolveStringIndexCached(this.tableIndexAddress(base), this.indexKey, key, page.tableCacheSlots[pageOffset], result);
 		if (result.extraVisits === 0 && result.slot >= 0) page.tableCacheSlots[pageOffset] = result.slot;
-		return this.finishTableRead(frame, targetIndex, base, valueString(key), result);
+		return result;
 	}
 	private storeTableIndex(frame: CallFrame, base: Value, key: Value, value: Value): boolean {
 		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
@@ -1940,7 +1940,7 @@ export class CPU implements MappedPageInvalidator {
 						this.lastExecutionDomainId = image.executionDomainId;
 						this.lastPc = (pc + ((width - 1) * INSTRUCTION_BYTES)) >>> 0;
 						this.instructionBudgetRemaining -= page.dispatchCycles[pageOffset];
-						this.executeInstruction(
+						const tableReceiver = this.executeInstruction(
 							frame,
 							page,
 							pageOffset,
@@ -1948,6 +1948,11 @@ export class CPU implements MappedPageInvalidator {
 							targetDepth,
 							rewritten,
 						);
+						if (tableReceiver !== undefined) {
+							this.publishScalarFrontier(frame, nextPc);
+							scalarFrame = null;
+							this.finishTableRead(frame, page.a[pageOffset], tableReceiver, valueString(image.constWords[page.c[pageOffset]]), this.tableLookupResult);
+						}
 					}
 				} catch (error) {
 					if (scalarFrame !== null) { this.publishScalarFrontier(scalarFrame, nextPc); scalarFrame = null; }
@@ -2869,11 +2874,12 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.ReadInteger:
 				case CompiledBlockExit.ReadIndex: {
 					const base = registers.get(exit.exitB);
-					const invoked = exit.exit === CompiledBlockExit.ReadField
-						? this.loadTableFieldIndexCached(base, exit.page, exit.exitWord, image.constWords[exit.exitC], frame, exit.exitA)
-						: this.loadTableIndex(base, exit.exit === CompiledBlockExit.ReadInteger
-							? valueInteger(exit.exitC) : this.readRKValue(frame, exit.exitC), frame, exit.exitA);
-					if (invoked) return;
+					if (exit.exit === CompiledBlockExit.ReadField) {
+						const key = image.constWords[exit.exitC];
+						const result = this.resolveTableFieldIndexCached(base, exit.page, exit.exitWord, key);
+						if (this.finishTableRead(frame, exit.exitA, base, valueString(key), result)) return;
+					} else if (this.loadTableIndex(base, exit.exit === CompiledBlockExit.ReadInteger
+						? valueInteger(exit.exitC) : this.readRKValue(frame, exit.exitC), frame, exit.exitA)) return;
 					break;
 				}
 				case CompiledBlockExit.WriteField:
@@ -2935,7 +2941,7 @@ export class CPU implements MappedPageInvalidator {
 		op: number,
 		targetDepth: number,
 		rewritten = false,
-	): void {
+	): Value | undefined {
 		const registers = frame.registers;
 		const image = frame.executionImage;
 		const a = page.a[pageOffset];
@@ -3049,14 +3055,23 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.GETFIELD:
-					this.loadTableFieldIndexCached(registers.get(page.b[pageOffset]), page, pageOffset, image.constWords[page.c[pageOffset]], frame, a); return;
-				case OpCode.SETFIELD:
-					this.storeTableFieldIndexCached(frame, registers.get(a), page, pageOffset, image.constWords[page.b[pageOffset]], this.readRKValue(frame, page.c[pageOffset])); return;
 				case OpCode.SELF: {
 					const b = page.b[pageOffset], base = registers.get(b), key = image.constWords[page.c[pageOffset]];
-					registers.copySlot(a + 1, b); this.bumpRegisterTop(frame, a + 1);
-					this.loadTableFieldIndexCached(base, page, pageOffset, key, frame, a); return;
+					if (op === OpCode.SELF) {
+						registers.copySlot(a + 1, b);
+						this.bumpRegisterTop(frame, a + 1);
+					}
+					const result = this.resolveTableFieldIndexCached(base, page, pageOffset, key);
+					if (result.status !== TableLookupStatus.Resolved && this.scalarRegisterTop >= 0) {
+						// The normal loop owns the PC and must publish before a
+						// metamethod or fault. Return the original SELF receiver.
+						return base;
+					}
+					this.finishTableRead(frame, a, base, valueString(key), result);
+					return;
 				}
+				case OpCode.SETFIELD:
+					this.storeTableFieldIndexCached(frame, registers.get(a), page, pageOffset, image.constWords[page.b[pageOffset]], this.readRKValue(frame, page.c[pageOffset])); return;
 				case OpCode.HALT: this.haltUntilIrq(); return;
 				case OpCode.GETT:
 					this.loadTableIndex(registers.get(page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]), frame, a); return;

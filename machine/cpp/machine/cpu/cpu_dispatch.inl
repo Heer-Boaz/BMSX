@@ -150,16 +150,21 @@ DISPATCH_LABEL(SETI) {
 	DISPATCH_NEXT();
 }
 
-DISPATCH_LABEL(GETFIELD) {
+DISPATCH_LABEL(GETFIELD)
+DISPATCH_LABEL(SELF) {
 	const int a = decoded->a;
-	const int b = decoded->b;
-	const int c = decoded->c;
+	const Value base = REG(decoded->b);
+	const StringId key = asStringId(IMAGE.constPool.get(static_cast<size_t>(decoded->c)));
+	if (decoded->op == static_cast<u8>(OpCode::SELF)) SET_REGISTER_FAST(a + 1, base);
+	TableLookupResult result;
+	resolveTableFieldIndexCached(TABLE_CACHE_SLOT(), base, key, result);
+	if (result.status == TableLookupStatus::Resolved) {
+		CYCLES_ADD(static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES);
+		SET_REGISTER_FAST(a, result.value);
+		DISPATCH_NEXT();
+	}
 	PUBLISH_SCALAR_FRONTIER();
-	if (loadTableFieldIndexCached(FRAME, a,
-		TABLE_CACHE_SLOT(),
-		REG(b),
-		asStringId(IMAGE.constPool.get(static_cast<size_t>(c)))
-	)) DISPATCH_CONTINUE();
+	if (finishTableRead(FRAME, a, base, valueString(key), result)) DISPATCH_CONTINUE();
 	RESUME_SCALAR_FRONTIER();
 	DISPATCH_NEXT();
 }
@@ -180,19 +185,6 @@ DISPATCH_LABEL(SETFIELD) {
 	)) DISPATCH_CONTINUE();
 	RESUME_SCALAR_FRONTIER();
 	registers = FRAME.registers;
-	DISPATCH_NEXT();
-}
-
-DISPATCH_LABEL(SELF) {
-	const int a = decoded->a;
-	const int b = decoded->b;
-	const int c = decoded->c;
-	const Value base = REG(b);
-	const StringId key = asStringId(IMAGE.constPool.get(static_cast<size_t>(c)));
-	SET_REGISTER_FAST(a + 1, base);
-	PUBLISH_SCALAR_FRONTIER();
-	if (loadTableFieldIndexCached(FRAME, a, TABLE_CACHE_SLOT(), base, key)) DISPATCH_CONTINUE();
-	RESUME_SCALAR_FRONTIER();
 	DISPATCH_NEXT();
 }
 

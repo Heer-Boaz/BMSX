@@ -169,7 +169,7 @@ function chain(cpu: CPU, root: number, depth: number, key: Value, value: Value):
 
 for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [false, true]) {
 	test(`semantic inherited visits retain every grant frontier and aliased read (${backend}, WIDE=${wide})`, () => {
-		for (const [op, kind] of forms) for (const depth of [1, 2, 5, 32]) {
+		for (const [op, kind] of forms) for (const depth of [1, 2, 3, 5, 32]) {
 			const { image, starts } = readProgram(op, wide), { cpu } = createTestSystemCpu(image, backend);
 			let frame = cpu.rootThread.currentFrame!;
 			const base = frame.pc, loop = base + starts[0] * INSTRUCTION_BYTES;
@@ -189,11 +189,19 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			for (let grant = 0; grant <= total; ++grant) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], loop);
 				frame.registers.setInteger(6, 91); frame.registers.setNil(7); frame.registers.setInteger(8, 57);
+				frame.top = 2;
 				assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
 				let remaining = grant, completed = 0;
 				while (remaining > 0) remaining -= charges[completed++];
 				assert.equal(cpu.instructionBudgetRemaining, remaining, `${op}/${kind}/${depth}/${grant}: complete semantic debt`);
 				assert.equal(frame.pc, base + starts[completed === 4 ? 0 : completed] * INSTRUCTION_BYTES);
+				const top = completed >= 3 ? 9 : completed === 2 && op === OpCode.SELF ? 8 : completed !== 0 ? 7 : 2;
+				assert.equal(frame.top, top, 'the exhausted grant publishes only results written by admitted instructions');
+				if (completed === 2) {
+					const readPc = base + starts[1] * INSTRUCTION_BYTES;
+					assert.equal(cpu.readCurrentInstructionPc(), readPc);
+					assert.equal(cpu.lastPc, readPc + (wide ? INSTRUCTION_BYTES : 0), 'the final admitted WIDE body owns lastPc');
+				}
 				assert.equal(frame.registers.get(6), completed >= 2 ? valueBool(false) : completed === 1 ? valueTable(root) : valueInteger(91));
 				assert.equal(frame.registers.get(8), completed >= 3 ? valueBool(false) : valueInteger(57), 'following marker obeys the inherited-read frontier');
 				assert.equal(frame.registers.get(7), op === OpCode.SELF && completed >= 2 ? valueTable(root) : valueNil());
