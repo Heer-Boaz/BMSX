@@ -53,8 +53,8 @@ struct NativeCheckedExit {
 	}
 
 	NativeExitPlan operator()(const NativeUpvalueAccess& access) const {
-		if (access.access == NativeAccess::Read) return {};
-		return {NativeBlockExit::WriteUpvalue, {.upvalue = {access.slot, access.capture}}};
+		return {access.access == NativeAccess::Read ? NativeBlockExit::ReadUpvalue : NativeBlockExit::WriteUpvalue,
+			{.upvalue = {access.slot, access.capture}}};
 	}
 
 	NativeExitPlan operator()(const NativeGlobalAccess& access) const {

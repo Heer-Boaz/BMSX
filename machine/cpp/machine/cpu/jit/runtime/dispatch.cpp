@@ -263,6 +263,13 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		}
+		case NativeBlockExit::ReadUpvalue: {
+			const auto access = exit->operands.upvalue;
+			frame->registers.set(access.slot, Upvalue::load(cpu.m_memory, frame->captureAddress(access.capture)));
+			frame->extendTop(access.slot + 1);
+			transition = NativeBlockTransition::SameWindow;
+			break;
+		}
 		case NativeBlockExit::WriteUpvalue:
 			Upvalue::store(cpu.m_heap, frame->captureAddress(exit->operands.upvalue.capture), frame->registers.get(exit->operands.upvalue.slot));
 			break;

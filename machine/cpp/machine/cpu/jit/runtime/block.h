@@ -76,7 +76,7 @@ inline constexpr bool nativeBlockExitResumesFrame(NativeBlockExit exit) {
 	case NativeBlockExit::ReadIndex: case NativeBlockExit::WriteIndex:
 	case NativeBlockExit::ReadInteger: case NativeBlockExit::WriteInteger:
 	case NativeBlockExit::Length:
-	case NativeBlockExit::WriteUpvalue: case NativeBlockExit::Vararg:
+	case NativeBlockExit::ReadUpvalue: case NativeBlockExit::WriteUpvalue: case NativeBlockExit::Vararg:
 	case NativeBlockExit::AllocateTable: case NativeBlockExit::Concat: case NativeBlockExit::ConcatRange:
 		return true;
 	default:

@@ -72,28 +72,38 @@ void NativeLowering::lowerOperation(const NativePoolRead& read, const NativeInst
 }
 
 void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const NativeInstruction& instruction) {
-	auto* openWrite = sideExit(instruction.slow);
-	sljit_emit_op1(
-		m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, nativeControl));
-	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), static_cast<u32>(FrameField::Closure),
-		SLJIT_IMM, ClosureRecord::captureWordAddress(0u, access.capture));
-	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R2);
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
-	if constexpr (std::endian::native == std::endian::big)
-		sljit_emit_op1(m_compiler, SLJIT_REV32, SLJIT_R2, 0, SLJIT_R2, 0);
+	auto& slow = *sideExit(instruction.slow);
 	auto* c = m_compiler;
+	const bool writes = access.access == NativeAccess::Write;
+	const bool observesUnpublished = std::ranges::any_of(m_cache.state(),
+		[](const auto& binding) { return binding.wordDirty || binding.tagDirty; });
+	// Metadata can mirror into value slots or into the current frame record.
+	// A fast store must additionally preserve clean resident slots/edge proofs.
+	const auto admitMetadata = [&](sljit_s32 offset, u32 bytes, sljit_s32 scratch) {
+		if (writes || observesUnpublished) emitGuardOutsideStack(offset, bytes, slow, scratch);
+		else fault(NativeBlockAbi::emitFrameControlOverlap(c, offset, bytes, scratch), slow, m_cache.state());
+	};
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, nativeControl));
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), static_cast<u32>(FrameField::Closure),
+		SLJIT_IMM, ClosureRecord::captureWordAddress(0u, access.capture));
+	sljit_emit_op2(c, SLJIT_AND, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	admitMetadata(SLJIT_R2, sizeof(u32), SLJIT_R0);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	if constexpr (std::endian::native == std::endian::big)
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R2, 0, SLJIT_R2, 0);
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_IMM, UPVALUE_ADDRESS_MASK);
+	admitMetadata(SLJIT_R3, UPVALUE_HEAP_BYTES, SLJIT_R0);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_FLAGS);
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, UPVALUE_OPEN);
 	auto* open = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
-	if (access.access == NativeAccess::Write) {
-		fault(open, *openWrite, m_cache.state());
+	if (writes) {
+		fault(open, slow, m_cache.state());
 		// Both value lanes are in the aligned cell's write-watch group.
-		emitRamWordWriteWatch(*openWrite, SLJIT_R3, 0, SLJIT_R0, SLJIT_R1, 3u);
-		emitGuardNoGcMutation(*openWrite, SLJIT_MEM1(SLJIT_R2), GC_COLOR_OFFSET,
+		emitRamWordWriteWatch(slow, SLJIT_R3, 0, SLJIT_R0, SLJIT_R1, 3u);
+		emitGuardNoGcMutation(slow, SLJIT_MEM1(SLJIT_R2), GC_COLOR_OFFSET,
 			access.slot, access.barrier, SLJIT_R0, SLJIT_R1);
 		emitRawLoad(access.slot, SLJIT_R0, SLJIT_R1);
 		if constexpr (std::endian::native == std::endian::big)
@@ -108,8 +118,6 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_VALUE_TAG);
 	auto* ready = sljit_emit_jump(c, SLJIT_JUMP);
 	sljit_set_label(open, sljit_emit_label(c));
-	// The owner and slot are guest words, so a read can alias any active bank.
-	m_cache.emitState(m_cache.state());
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_VALUE_WORD);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_OWNER);
 	if constexpr (std::endian::native == std::endian::big) {
@@ -118,6 +126,7 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 	}
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R2, 0, SLJIT_IMM, static_cast<u32>(ThreadField::StackBlock));
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	admitMetadata(SLJIT_R0, sizeof(u32), SLJIT_R1);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), 0);
 	if constexpr (std::endian::native == std::endian::big)
@@ -125,6 +134,7 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, static_cast<u32>(ThreadField::StackCapacity));
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	admitMetadata(SLJIT_R2, sizeof(u32), SLJIT_R1);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	if constexpr (std::endian::native == std::endian::big)
@@ -133,11 +143,16 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R3, 0);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R0, 0);
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R1, SLJIT_R1);
-	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), 0);
 	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 2);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R3, 0);
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	// Ordinary open captures can observe the current Thread's value slots.
+	// Publish their lanes, but leave through the owner to observe PC/Top.
+	fault(NativeBlockAbi::emitFrameControlOverlap(c, SLJIT_R0, sizeof(u32), SLJIT_R2), slow, m_cache.state());
+	fault(NativeBlockAbi::emitFrameControlOverlap(c, SLJIT_R1, 1, SLJIT_R2), slow, m_cache.state());
+	m_cache.emitState(m_cache.state());
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R1, SLJIT_R1);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), 0);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), 0);
 	if constexpr (std::endian::native == std::endian::big)

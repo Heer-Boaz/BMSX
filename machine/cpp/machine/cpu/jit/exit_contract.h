@@ -41,6 +41,7 @@ enum class NativeBlockExit : u8 {
 	WriteGlobal,
 	WriteSystemGlobal,
 	ProfileReady,
+	ReadUpvalue,
 	Count,
 };
 
