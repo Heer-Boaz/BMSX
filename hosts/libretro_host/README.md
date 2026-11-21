@@ -248,7 +248,7 @@ Without `--max-frames`, the host exits after all timeline inputs and requested
 captures have been consumed and the completed-run count has passed the final
 marker. `--max-frames` instead limits total host runs, including BIOS startup.
 
-### Equal-work timing runs
+### Timing a fixed guest-tick interval
 
 With `--guest-ticks N`, the first completed tick whose post-call execution
 domain is a cartridge anchors playback. Timeline frame 0 is the *next* guest
@@ -262,11 +262,16 @@ Do not feed other input during the timed run.
 The `guest-progress` line gives the absolute tick and CPU-clock positions at
 the ends of the measurement window, the numbers of host calls without a
 completed tick or without any guest clock progress, summed measured run time,
-wall time including pacing between calls, and process CPU time. Every retained
+wall time including pacing between calls, and process CPU time summed within
+the measured calls. Work on a background thread between calls is not part of
+that CPU sum. Every retained
 `over-15ms` sample includes the guest positions for that particular host call.
 Compare only successful runs with the same guest interval, timeline and
 cartridge/BIOS bytes, build settings, and presentation/audio configuration.
 A shorter host-call histogram by itself does not show higher guest throughput.
+Matching tick counts do not guarantee identical guest instructions or output
+when comparing different machine specifications. Check the visible workload
+separately and distinguish end-to-end changes from JIT-only measurements.
 For a baseline predating the private interfaces, apply only the core-side
 benchmark adapter commit `579dce456` in its own worktree, rebuild its Release
 core, and run it with the same timing host as the candidate. The adapter selects
