@@ -148,7 +148,8 @@ void NativeLowering::emitGuardOutsideStack(sljit_s32 offset, u32 bytes, NativeBl
 std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExitSite& exit, bool load,
 	TableStackAdmission stack, std::optional<u8> temporary) {
 	auto* c = m_compiler;
-	const sljit_sw prediction = reinterpret_cast<sljit_sw>(load ? &exit.tableReadCache.receiverSlot : &exit.tableStore.slot);
+	auto& slot = load ? exit.tableRead.own : exit.tableStore;
+	const sljit_sw prediction = reinterpret_cast<sljit_sw>(m_bindings.decodedPage ? slot.decoded : &slot.standalone);
 	sljit_sw saved = 0;
 	std::array<sljit_jump*, 3> checks;
 	sljit_emit_op1(c, SLJIT_MOV_S32, SLJIT_R1, 0, SLJIT_MEM0(), prediction);
@@ -213,7 +214,7 @@ void NativeLowering::emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBl
 	// Each callsite can change its own prediction independently. Check
 	// identity before allowing the consumer to use a different site's proof.
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
-		SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&exit.tableReadCache.receiverSlot),
+		SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_bindings.decodedPage ? exit.tableRead.own.decoded : &exit.tableRead.own.standalone),
 		SLJIT_MEM1(SLJIT_SP), saved + 2 * sizeof(u32)), exit, m_cache.state());
 	emitPoolWord(keyIndex, SLJIT_R0);
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
@@ -270,7 +271,7 @@ void NativeLowering::emitSingleStringReads() {
 		auto* entry = sljit_emit_label(c);
 		for (auto* miss : read.ownMisses) sljit_set_label(miss, entry);
 		m_cache.setState(read.registers);
-		auto& slots = read.exit->tableReadCache;
+		auto& slots = read.exit->tableRead.path;
 		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
 			SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&slots.holderDepth), SLJIT_IMM, 1), *read.exit, read.registers);
 		// Home, metatable and holder lookups read physical RAM beyond the

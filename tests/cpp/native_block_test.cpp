@@ -1285,7 +1285,7 @@ void reusedFieldAddressHonorsEachSiteAndPhysicalStackAliases() {
 	// optimized read must not silently substitute the first prediction.
 	const u32 words = table.storageAddress();
 	memory.writeRamRecordWord(words + static_cast<u32>(alternateSlot) * sizeof(u32), key);
-	block->sideExits[1].tableReadCache.receiverSlot = alternateSlot;
+	block->sideExits[1].tableRead.own.standalone = alternateSlot;
 	registers.set(2, valueInteger(-3));
 	state.remainingCycles = grant;
 	const auto* mismatch = block->run(registers.view(), state);
@@ -1294,7 +1294,7 @@ void reusedFieldAddressHonorsEachSiteAndPhysicalStackAliases() {
 		&& registers.get(1) == valueInteger(13) && registers.get(2) == valueInteger(-3),
 		"a live prediction split takes the consuming instruction's exact WIDE exit");
 	memory.writeRamRecordWord(words + static_cast<u32>(alternateSlot) * sizeof(u32), alternate);
-	block->sideExits[1].tableReadCache.receiverSlot = slot;
+	block->sideExits[1].tableRead.own.standalone = slot;
 
 	// An admitted host-owned fixture has no guest alias; a RAM-backed view
 	// can physically overlap a field value even when the guest slots differ.

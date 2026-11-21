@@ -160,7 +160,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 				&& registers.get(1) == valueFloatBits(0x80000000u), "a cached field result can replace its own table receiver");
 			registers.set(1, valueTable(table.address()));
 		}
-		auto& hint = store ? block->sideExits[0].tableStore.slot : block->sideExits[0].tableReadCache.receiverSlot;
+		auto& hint = store ? block->sideExits[0].tableStore.standalone : block->sideExits[0].tableRead.own.standalone;
 		const auto semanticExit = store ? NativeBlockExit::WriteField : NativeBlockExit::ReadField;
 		table.setStringKey(key, valueInteger(31));
 		for (int prediction : {-1, otherSlot, 100000}) {

@@ -517,7 +517,7 @@ Value TableRecord::metatableField(StringId key) const {
 
 template <bool Assignment, bool RememberPath, typename Lookup>
 void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup,
-	TableStringReadCache* cache, u32 visitLimit) const {
+	TableStringPathCache* cache, u32 visitLimit) const {
 	TableRecord current = *this;
 	for (u32 depth = 0; depth < visitLimit; ++depth) {
 		const u32 receiver = current.address();
@@ -539,8 +539,7 @@ void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResu
 				return;
 			}
 			if constexpr (RememberPath) {
-				if (depth == 0) cache->receiverSlot = slot;
-				else {
+				if (depth != 0) {
 					cache->holderDepth = depth;
 					cache->holderSlot = slot;
 				}
@@ -595,10 +594,11 @@ void TableRecord::resolveStringIndexCached(StringId indexKey, StringId key, int 
 	resolveIndexChain(indexKey, predictedSlot, result, [key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); });
 }
 
-void TableRecord::resolveStringIndexPath(StringId indexKey, StringId key, int receiverPrediction,
-	TableLookupResult& result, TableStringReadCache& cache) const {
-	resolveIndexChain<false, true>(indexKey, receiverPrediction, result,
+void TableRecord::resolveStringIndexPath(StringId indexKey, StringId key, int& receiverSlot,
+	TableLookupResult& result, TableStringPathCache& cache) const {
+	resolveIndexChain<false, true>(indexKey, receiverSlot, result,
 		[key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); }, &cache);
+	if (result.extraVisits == 0u && result.slot >= 0) receiverSlot = result.slot;
 }
 
 void TableRecord::resolveAssignment(StringId newIndexKey, Value rawKey, TableLookupResult& result) const {
@@ -617,7 +617,7 @@ void TableRecord::resolveStringAssignment(StringId newIndexKey, StringId key, in
 	resolveIndexChain<true>(newIndexKey, predictedSlot, result, [key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); });
 }
 
-u32 TableRecord::trySingleStringIndex(GcHeap* heap, TableSingleIndexProbe* probe, const TableStringReadCache* slots) noexcept {
+u32 TableRecord::trySingleStringIndex(GcHeap* heap, TableSingleIndexProbe* probe, const TableStringPathCache* slots) noexcept {
 	const TableRecord receiver(*heap, probe->receiver);
 	const auto key = probe->key;
 	const u32 count = receiver.hashSlots();

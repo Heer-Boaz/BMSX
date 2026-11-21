@@ -32,11 +32,11 @@ enum class NativeBlockTransition : u8 {
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
 
-bool CPU::loadNativeTableField(CallFrame& frame, int destination, TableStringReadCache& cache, Value base, StringId key,
-	const NativeCpuRunState& run, std::optional<ValueTag> resultProof) {
+bool CPU::loadNativeTableField(CallFrame& frame, int destination, int& receiverSlot, TableStringPathCache& path,
+	Value base, StringId key, const NativeCpuRunState& run, std::optional<ValueTag> resultProof) {
 	TableLookupResult result;
 	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexPath(
-		asStringId(m_indexKey), key, cache.receiverSlot, result, cache);
+		asStringId(m_indexKey), key, receiverSlot, result, path);
 	// Only a value actually found in the receiver contradicts the result
 	// proof. A different shape or metatable path is not type feedback.
 	if (resultProof && valueIsTable(base) && result.status == TableLookupStatus::Resolved
@@ -264,8 +264,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		}
 		case NativeBlockExit::ReadField: {
 			const auto access = exit->operands.table;
-			const bool invoked = cpu.loadNativeTableField(*frame, access.value, exit->tableReadCache,
-				frame->registers.get(access.receiver), asStringId(frame->executionImage->constPool.get(access.key)), *run, access.resultProof);
+			const bool invoked = cpu.loadNativeTableField(*frame, access.value, *exit->tableRead.own.decoded,
+				exit->tableRead.path, frame->registers.get(access.receiver), asStringId(frame->executionImage->constPool.get(access.key)), *run, access.resultProof);
 			transition = invoked ? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
 			break;
 		}
@@ -274,7 +274,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			const Value base = frame->registers.get(access.receiver);
 			const Value key = readRK(*frame->executionImage, frame->registers, access.key);
 			const bool invoked = valueIsString(key)
-				? cpu.loadNativeTableField(*frame, access.value, exit->tableReadCache, base, asStringId(key), *run)
+				? cpu.loadNativeTableField(*frame, access.value, *exit->tableRead.own.decoded, exit->tableRead.path, base, asStringId(key), *run)
 				: cpu.loadTableIndex(*frame, access.value, base, key);
 			transition = invoked ? NativeBlockTransition::Redispatch : NativeBlockTransition::SameWindow;
 			break;
@@ -295,14 +295,10 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				: readRK(*frame->executionImage, frame->registers, access.key);
 			const Value value = readRK(*frame->executionImage, frame->registers, access.value);
 			if (field || valueIsString(key)) {
-				const auto prediction = exit->tableStore;
-				void* const source = *prediction.sourceEntry;
-				int slot = prediction.slot;
-				if (cpu.storeTableFieldIndexCached(*frame, slot, base, asStringId(key), value))
+				// The decoder owns this slot even if the write retires the
+				// executable block and destroys its exit descriptor.
+				if (cpu.storeTableFieldIndexCached(*frame, *exit->tableStore.decoded, base, asStringId(key), value))
 					transition = NativeBlockTransition::Redispatch;
-				// Physical table writes can retire their executing RAM source.
-				// Only a still-published entry owns this descriptor afterward.
-				if (slot != prediction.slot && *prediction.sourceEntry == source) exit->tableStore.slot = slot;
 			} else if (cpu.storeTableIndex(*frame, base, key, value)) transition = NativeBlockTransition::Redispatch;
 			break;
 		}

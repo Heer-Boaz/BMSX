@@ -112,7 +112,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	registers.set(1, receiver);
 	size_t bytes = 0;
 	auto block = test::compileNative(instructions, bytes, memory, cpu.stringPool());
-	auto& hint = block->sideExits[0].tableReadCache;
+	auto& hint = block->sideExits[0].tableRead;
 	NativeBlockRunState grant{.constants = constants.view(), .heap = &cpu.gcHeap()};
 	const auto read = [&](Value want, int hops, TableLookupStatus status = TableLookupStatus::Resolved) {
 		grant.remainingCycles = 100;
@@ -128,7 +128,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 			&& grant.remainingCycles == 100 - decoded.baseCycles,
 			"the gate publishes the read boundary before resolving an unproved field");
 		TableLookupResult result;
-		root.resolveStringIndexPath(indexKey, key, hint.receiverSlot, result, hint);
+		root.resolveStringIndexPath(indexKey, key, hint.own.standalone, result, hint.path);
 		require(result.status == status && result.value == want && result.extraVisits == static_cast<u32>(hops),
 			"the resolver follows live owners, preserves the raw result and counts each actual hop");
 	};
@@ -141,16 +141,16 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 		"the receiver override must be displaced through a real hash link");
 	root.setStringKey(neighbor, valueInteger(99));
 	const auto ownSlot = root.setStringKey(key, valueBool(false));
-	block->sideExits[0].tableReadCache.receiverSlot = -1;
+	block->sideExits[0].tableRead.own.standalone = -1;
 	require(ownSlot != static_cast<int>(hashCanonicalTableKey(valueString(key)) & 3u),
 		"the receiver's method is not in its home slot");
 	read(valueBool(false), 0);
-	require(hint.receiverSlot == ownSlot, "following the live chain rediscovers the shadow");
+	require(hint.own.standalone == ownSlot, "following the live chain rediscovers the shadow");
 	firstMeta.setStringKey(indexKey, valueTable(middle.address()));
 	root.setStringKey(key, valueNil());
 	read(valueInteger(41), 2);
-	require(hint.receiverSlot == ownSlot && hint.holderDepth == 2 && hint.holderSlot == holderSlot
-		&& hint.indexSlots[0] == first && hint.indexSlots[1] == second,
+	require(hint.own.standalone == ownSlot && hint.path.holderDepth == 2 && hint.path.holderSlot == holderSlot
+		&& hint.path.indexSlots[0] == first && hint.path.indexSlots[1] == second,
 		"the receiver guess survives an inherited hit and the cache learns the holder and actual path");
 	const auto ram = memory.captureSaveState();
 	const auto state = cpu.captureRuntimeState();
@@ -224,7 +224,7 @@ void readsWithoutAProvedPathUseTheSemanticOwner(CPU& cpu, Memory& memory) {
 		meta.setStringKey(indexKey, valueTable(parent.address())); table.setMetatableAddress(meta.address());
 		for (const Value value : values) for (const int prediction : {-1, 100000}) {
 			parent.setStringKey(key, value);
-			block->sideExits[0].tableReadCache.receiverSlot = prediction;
+			block->sideExits[0].tableRead.own.standalone = prediction;
 			ValueSlots registers(11); for (size_t i = 0; i < registers.capacity(); ++i) registers.set(i, valueInteger(73));
 			registers.set(0, valueTable(table.address())); registers.set(3, values[3]);
 			registers.set(4, values[0]); registers.set(5, valueString(key));
@@ -246,7 +246,7 @@ void readsWithoutAProvedPathUseTheSemanticOwner(CPU& cpu, Memory& memory) {
 				"the native miss charges the started instruction, not unresolved visits or the suffix");
 		}
 		for (int mutation = 0; mutation < 4; ++mutation) {
-			if (mutation == 0) block->sideExits[0].tableReadCache.receiverSlot = table.setStringKey(key, values[0]);
+			if (mutation == 0) block->sideExits[0].tableRead.own.standalone = table.setStringKey(key, values[0]);
 			if (mutation == 1) {
 				for (int i = 0; i != 64; ++i) table.setStringKey(cpu.stringPool().intern("read_rehash_" + std::to_string(i)), valueInteger(i));
 			}
@@ -280,7 +280,7 @@ void readsWithoutAProvedPathUseTheSemanticOwner(CPU& cpu, Memory& memory) {
 			const auto* stringExit = block->run(stringRegisters.view(), stringState);
 			require(stringExit->exit == NativeBlockExit::ReadIndex && stringExit->nextPc == source[4].pc,
 				"the mixed site leaves for its inherited string key");
-			const int stringHint = block->sideExits[0].tableReadCache.receiverSlot;
+			const int stringHint = block->sideExits[0].tableRead.own.standalone;
 			require(stringHint >= 0, "the site retains its prior own-slot prediction");
 			for (const auto key : {valueInteger(-17), valueFloat(-17.0f), objectKey}) {
 				ValueSlots registers(11);
@@ -292,7 +292,7 @@ void readsWithoutAProvedPathUseTheSemanticOwner(CPU& cpu, Memory& memory) {
 					&& state.remainingCycles == 100 - instructionCharge(std::span(decoded).first<4>()),
 					"sparse numeric and object keys use the same precise semantic read boundary");
 			}
-			require(block->sideExits[0].tableReadCache.receiverSlot == stringHint, "non-string misses keep the string hint at the mixed site");
+			require(block->sideExits[0].tableRead.own.standalone == stringHint, "non-string misses keep the string hint at the mixed site");
 			ValueSlots registers(11);
 			registers.set(0, valueTable(table.address()));
 			registers.set(3, valueInteger(73));
@@ -380,7 +380,7 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 		meta.setStringKey(indexKey, valueTable(holder.address()));
 		table.setMetatableAddress(meta.address());
 		const auto slow = op == OpCode::GETT ? NativeBlockExit::ReadIndex : NativeBlockExit::ReadField;
-		auto& cache = block->sideExits[0].tableReadCache;
+		auto& cache = block->sideExits[0].tableRead;
 		const auto run = [&](const TableRecord& base, int grant, Value result) {
 			ValueSlots registers(5);
 			registers.set(0, valueTable(base.address()));
@@ -410,14 +410,14 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 		};
 		run(table, 100, valueNil());
 		TableLookupResult result;
-		table.resolveStringIndexPath(indexKey, key, cache.receiverSlot, result, cache);
-		require(result.value == firstResult && result.extraVisits == 1 && cache.holderDepth == 1,
+		table.resolveStringIndexPath(indexKey, key, cache.own.standalone, result, cache.path);
+		require(result.value == firstResult && result.extraVisits == 1 && cache.path.holderDepth == 1,
 			"the semantic lookup trains exactly one hop");
 		for (const int grant : {1, lookup.baseCycles + TABLE_INDEX_VISIT_CYCLES,
 			lookup.baseCycles + TABLE_INDEX_VISIT_CYCLES + 1}) run(table, grant, firstResult);
 
 		table.setStringKey(collision, valueInteger(42));
-		require(table.setStringKey(key, secondResult) != static_cast<i32>(home) && cache.receiverSlot == -1,
+		require(table.setStringKey(key, secondResult) != static_cast<i32>(home) && cache.own.standalone == -1,
 			"the stale receiver prediction is absent while the live own mapping is in a collision node");
 		run(table, 100, valueNil());
 
@@ -467,7 +467,7 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 				table.setStringKey(cpu.stringPool().intern("prior_" + std::to_string(prior)), valueInteger(prior));
 			const auto previous = valueInteger(91);
 			for (const bool own : {false, true}) for (const Value value : {values[n], valueNil()}) {
-				block->sideExits[0].tableStore.slot = table.setStringKey(key, own ? previous : valueNil());
+				block->sideExits[0].tableStore.standalone = table.setStringKey(key, own ? previous : valueNil());
 				ValueSlots registers(10); for (size_t i = 0; i < registers.capacity(); ++i) registers.set(i, valueInteger(73));
 				registers.set(0, valueTable(table.address())); registers.set(3, values[n]); registers.set(4, value);
 				const auto before = table.trackedHeapBytes();
@@ -512,7 +512,7 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 		std::copy_n(memory.ramData() + header, oldHeader.size(), oldHeader.begin());
 		std::copy_n(memory.ramData() + backing, oldBacking.size(), oldBacking.begin());
 		registers.set(0, valueTable(full.address()));
-		block->sideExits[0].tableStore.slot = 0;
+		block->sideExits[0].tableStore.standalone = 0;
 		auto& watches = memory.ramWriteWatches();
 		require(!watches.anyWatched(), "exercise the miss without any code watches");
 		for (const bool history : {false, true}) {

@@ -425,7 +425,7 @@ private:
 	bool loadTableIndex(CallFrame& frame, int destination, Value base, Value key);
 	bool loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index);
 	bool loadTableFieldIndexCached(CallFrame& frame, int destination, int& predictedSlot, Value base, StringId key);
-	bool loadNativeTableField(CallFrame& frame, int destination, TableStringReadCache& cache, Value base, StringId key,
+	bool loadNativeTableField(CallFrame& frame, int destination, int& receiverSlot, TableStringPathCache& path, Value base, StringId key,
 		const NativeCpuRunState& run, std::optional<ValueTag> resultProof = {});
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);

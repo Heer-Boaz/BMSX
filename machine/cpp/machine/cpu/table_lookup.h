@@ -17,11 +17,9 @@ struct TableLookupResult {
 	u32 receiver = 0;
 };
 
-// Native callsite metadata. Slots are hints on the table reached during the
-// current lookup, never addresses or copies of values. The most recent
-// inherited hit names the holder by depth; only the first hops need storage.
-struct TableStringReadCache {
-	i32 receiverSlot;
+// Inherited path hints belong to the generated callsite, not the decoded
+// receiver slot. Probe the live table at every hop; never cache a value.
+struct TableStringPathCache {
 	i32 holderSlot;
 	u32 holderDepth;
 	std::array<i32, 3> indexSlots;

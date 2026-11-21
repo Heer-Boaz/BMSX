@@ -43,8 +43,6 @@ struct NativeBlockLink {
 	NativeBlockLink* next = nullptr;
 };
 
-static_assert(sizeof(TableStringReadCache) <= sizeof(NativeBlockLink));
-
 struct NativeBlockRunState {
 	void bindStack(const Thread&);
 	ConstValueSpan constants;
@@ -83,12 +81,19 @@ inline constexpr bool nativeBlockExitResumesFrame(NativeBlockExit exit) {
 	}
 }
 
-struct NativeTableStorePrediction {
-	i32 slot;
-	void* const* sourceEntry;
+// Emission selects the binding from its compilation owner. Only installed
+// code reaches the CPU gate, which always uses the decoded arm.
+union NativeTableSlotBinding {
+	i32* decoded;
+	i32 standalone;
 };
 
-static_assert(sizeof(NativeTableStorePrediction) <= sizeof(NativeBlockLink));
+struct NativeTableReadPrediction {
+	NativeTableSlotBinding own;
+	TableStringPathCache path;
+};
+
+static_assert(sizeof(NativeTableReadPrediction) <= sizeof(NativeBlockLink));
 
 struct NativeBlockExitSite {
 	NativeBlockExit exit = NativeBlockExit::Continue;
@@ -102,8 +107,8 @@ struct NativeBlockExitSite {
 	// exits instead use the same storage for their callsite prediction.
 	union {
 		mutable NativeBlockLink link{};
-		mutable TableStringReadCache tableReadCache;
-		mutable NativeTableStorePrediction tableStore;
+		mutable NativeTableReadPrediction tableRead;
+		mutable NativeTableSlotBinding tableStore;
 		NativeTableConstructor* recordConstructor;
 	};
 	// Bound on CPU-side publication for CALL returns and same-frame helpers.

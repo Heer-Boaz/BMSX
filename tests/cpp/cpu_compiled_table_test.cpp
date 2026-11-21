@@ -690,7 +690,7 @@ void stringStoreCanRetireItsOwnSource() {
 		auto& page = *frame.decodedPage;
 		if (!scalar) {
 			test::waitForNativeEntry(cpu, page, 0);
-			require(page.nativeBlocks->entries[0]->sideExits.front().tableStore.slot == -1,
+			require(*page.nativeBlocks->entries[0]->sideExits.front().tableStore.decoded == -1,
 				"the warm missing key does not train an overwrite prediction");
 		}
 #endif
@@ -715,6 +715,55 @@ void stringStoreCanRetireItsOwnSource() {
 		require(cpu.runUntilDepth(0, 12) == RunResult::Halted,
 			"the loop fetches the replacement without returning through retired code");
 	}
+}
+
+void nativeFieldOperationsLearnTheDecodedSite() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETFIELD), 1, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SETFIELD), 0, 1, 2);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 3}};
+	image.constants = {std::string("read"), std::string("write")};
+	CpuMachine prepared(image), scalar(image, true);
+	for (auto* machine : {&prepared, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		auto table = cpu.createTable(0, 2);
+		table.setStringKey(*cpu.stringPool().find("read"), valueInteger(73));
+		table.setStringKey(*cpu.stringPool().find("write"), valueInteger(5));
+		frame.registers.set(0, valueTable(table.address()));
+		frame.registers.set(2, valueInteger(41));
+		frame.setTop(3);
+	}
+	auto& cpu = prepared.cpu;
+	const u32 pc = prepared.rom.textAddress, word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const auto& activeImage = *cpu.activeThread()->frameAtDepth(0)->executionImage;
+	cpu.prepareSystemNativeCode();
+	auto& page = *activeImage.nativeCodeLookup->find(pc, 0);
+	require(page.nativeBlocks->entries[word] && page.nativeBlocks->entries[word + 1],
+		"both cold operations have independent generated entries");
+	require(page.words[word].tableCacheSlot == -1 && page.words[word + 1].tableCacheSlot == -1,
+		"preparation observes no table layout");
+	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
+	require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded, "the two indexed operations complete exactly");
+	requireParity(prepared, scalar);
+	const auto table = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+	int readSlot = -1, writeSlot = -1;
+	require(table.getStringKeyCached(*cpu.stringPool().find("read"), readSlot) == valueInteger(73)
+		&& table.getStringKeyCached(*cpu.stringPool().find("write"), writeSlot) == valueInteger(41)
+		&& readSlot >= 0 && writeSlot >= 0, "the actual own record contains both live values");
+	require(page.words[word].tableCacheSlot == readSlot && page.words[word + 1].tableCacheSlot == writeSlot,
+		"successful native lookups train the same source slots used by scalar execution and compilation");
+	page.retireNativeBlocks();
+	cpu.prepareSystemNativeCode();
+	const auto& read = page.nativeBlocks->entries[word]->sideExits.front().tableRead;
+	const auto& write = page.nativeBlocks->entries[word + 1]->sideExits.front().tableStore;
+	require(read.own.decoded == &page.words[word].tableCacheSlot
+		&& write.decoded == &page.words[word + 1].tableCacheSlot,
+		"recompilation borrows the learned sites instead of creating independent writable seeds");
+#endif
 }
 
 void nestedFieldReadObservesPublishedRegisterAlias() {
@@ -747,7 +796,7 @@ void nestedFieldReadObservesPublishedRegisterAlias() {
 	const auto& entry = page.nativeBlocks->entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(entry && entry->terminal.currentPc == nestedPc && entry->terminal.nextPc == suffixPc
 		&& entry->admissionCycles == readCycles && entry->sideExits.size() == 2
-		&& entry->sideExits[0].tableReadCache.receiverSlot == 0 && entry->sideExits[1].tableReadCache.receiverSlot == 0,
+		&& *entry->sideExits[0].tableRead.own.decoded == 0 && *entry->sideExits[1].tableRead.own.decoded == 0,
 		"both own predictions are published in one native entry admissible on the short grant");
 #endif
 
@@ -818,7 +867,7 @@ void inheritedFieldReadObservesPublishedRegisterAlias() {
 	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const auto& entry = page.nativeBlocks->entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(entry && entry->admissionCycles == prefix && entry->terminal.currentPc == field
-		&& entry->sideExits[0].tableReadCache.holderDepth == 1,
+		&& entry->sideExits[0].tableRead.path.holderDepth == 1,
 		"the installed entry has a trained one-hop proof, not just a generic table exit");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& readExits = native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::ReadField)];
@@ -1039,6 +1088,7 @@ int main() {
 		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); wideAllocationFailure();
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 		stringStoreCanRetireItsOwnSource();
+		nativeFieldOperationsLearnTheDecodedSite();
 		nestedFieldReadObservesPublishedRegisterAlias();
 		inheritedFieldReadObservesPublishedRegisterAlias();
 		for (bool field : {false, true}) tableWriteObservesCleanRegisterAlias(field);

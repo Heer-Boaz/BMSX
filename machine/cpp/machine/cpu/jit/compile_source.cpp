@@ -161,12 +161,12 @@ void CPU::prepareNativeSource(Blua32ExecutionImage& image, NativeCompilationSour
 		pendingJob.slot = source.slot;
 		pendingJob.invalidated = false;
 		m_nativeCompilerWorker->submit(sources,
-			NativeCodeBindings(m_memory, m_stringPool, this), options, profile != nullptr, std::move(rejectedFieldProofs));
+			NativeCodeBindings(m_memory, m_stringPool, this, page.words.data()), options, profile != nullptr, std::move(rejectedFieldProofs));
 		return;
 	}
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
-	auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(m_memory, m_stringPool, this), options,
+	auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(m_memory, m_stringPool, this, page.words.data()), options,
 		{.rejectedFieldProofs = rejectedFieldProofs});
 	if (!blocks.empty()) installNativeRegion(image, page, pagePc, source.slot, std::move(blocks));
 }

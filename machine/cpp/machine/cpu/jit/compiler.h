@@ -13,7 +13,7 @@ class StringPool;
 // the generated code after it has been published on the CPU thread.
 struct NativeCodeBindings {
 	NativeCodeBindings() = default;
-	NativeCodeBindings(Memory& memory, StringPool& strings, CPU* cpu = nullptr);
+	NativeCodeBindings(Memory& memory, StringPool& strings, CPU* cpu = nullptr, DecodedInstruction* decodedPage = nullptr);
 	u32 ramBytes = 0;
 	u8* ram = nullptr;
 	const u32* ramBusEnd = nullptr;
@@ -24,6 +24,9 @@ struct NativeCodeBindings {
 	// Only CPU-owned emission may call completion owners. Standalone blocks
 	// retain the base run-state ABI and ordinary CALL exits.
 	CPU* cpu = nullptr;
+	// The worker may embed addresses of source-owned sites but never reads
+	// their live data. Compilation decisions use the copied source rows.
+	DecodedInstruction* decodedPage = nullptr;
 };
 
 class NativeCompiler {

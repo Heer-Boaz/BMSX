@@ -73,12 +73,12 @@ public:
 	void resolveIntegerIndex(StringId indexKey, int key, TableLookupResult& result) const;
 	void resolveStringIndex(StringId indexKey, StringId key, TableLookupResult& result) const;
 	void resolveStringIndexCached(StringId indexKey, StringId key, int predictedSlot, TableLookupResult& result) const;
-	void resolveStringIndexPath(StringId indexKey, StringId key, int receiverPrediction,
-		TableLookupResult& result, TableStringReadCache& cache) const;
+	void resolveStringIndexPath(StringId indexKey, StringId key, int& receiverSlot,
+		TableLookupResult& result, TableStringPathCache& cache) const;
 	void resolveAssignment(StringId newIndexKey, Value key, TableLookupResult& result) const;
 	void resolveIntegerAssignment(StringId newIndexKey, int key, TableLookupResult& result) const;
 	void resolveStringAssignment(StringId newIndexKey, StringId key, int predictedSlot, TableLookupResult& result) const;
-	static u32 trySingleStringIndex(GcHeap* heap, TableSingleIndexProbe* probe, const TableStringReadCache* slots) noexcept;
+	static u32 trySingleStringIndex(GcHeap* heap, TableSingleIndexProbe* probe, const TableStringPathCache* slots) noexcept;
 	// Pure boundary search; also the generated-code entry point.
 	static i32 length(const TableRecord* table, u32* probes = nullptr) noexcept;
 	void clear();
@@ -214,7 +214,7 @@ private:
 	Value getHash(const Value& key) const;
 	template <bool Assignment = false, bool RememberPath = false, typename Lookup>
 	void resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup,
-		TableStringReadCache* cache = nullptr, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
+		TableStringPathCache* cache = nullptr, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
 
 	TableValues values() const {
 		const u32 words = storageAddress();

@@ -14,11 +14,11 @@
 
 namespace bmsx {
 
-NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, CPU* cpu)
+NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, CPU* cpu, DecodedInstruction* decodedPage)
 	: ramBytes(memory.ramByteCount()), ram(memory.ramData()), ramBusEnd(memory.ramBusEndAddress()),
 	  ramWriteGroups(memory.ramWriteWatches().groupData()),
 	  ramCodeWatchWords(memory.ramWriteWatches().codeWordMasks()),
-	  memory(&memory), strings(&pool), cpu(cpu) {}
+	  memory(&memory), strings(&pool), cpu(cpu), decodedPage(decodedPage) {}
 
 NativeBlockPage::~NativeBlockPage() = default;
 
@@ -120,8 +120,6 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 				exit.continuationCells[bank] = lookup->entrySlot(exit.nextPc, bank);
 		}
 		for (auto& side : block->sideExits) {
-			if (side.exit == NativeBlockExit::WriteField || side.exit == NativeBlockExit::WriteIndex)
-				side.tableStore.sourceEntry = &page.nativeCode[entry];
 			if (side.exit == NativeBlockExit::Call || nativeBlockExitResumesFrame(side.exit)) {
 				for (u32 bank = firstBank; bank < endBank; ++bank)
 					side.continuationCells[bank] = lookup->entrySlot(side.nextPc, bank);
