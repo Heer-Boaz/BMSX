@@ -91,7 +91,7 @@ void NativeBlockLink::disconnect() {
 void NativeBlock::linkFrom(const NativeBlockExitSite& source) {
 	auto& link = source.link;
 	link.disconnect();
-	sljit_set_jump_addr(link.patchAddress, reinterpret_cast<sljit_uw>(m_linkEntry), link.executableOffset);
+	sljit_set_jump_addr(link.patchAddress, reinterpret_cast<sljit_uw>(m_body), link.executableOffset);
 	link.target = this;
 	link.next = m_incoming;
 	if (m_incoming) m_incoming->previous = &link;

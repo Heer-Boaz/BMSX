@@ -266,8 +266,7 @@ void* NativeLowering::finish(size_t& codeBytes, std::vector<NativeBlockExitSite>
 		throw std::bad_alloc();
 	codeBytes = sljit_get_generated_code_size(m_compiler);
 	for (size_t index = 0; index < m_blocks.size(); ++index) {
-		m_blocks[index]->m_body = m_blocks[index]->m_linkEntry =
-			reinterpret_cast<void*>(sljit_get_label_addr(m_entries[index].guarded));
+		m_blocks[index]->m_body = reinterpret_cast<void*>(sljit_get_label_addr(m_entries[index].guarded));
 	}
 	for (const auto& branch : m_external) {
 		branch.link->patchAddress = sljit_get_jump_addr(branch.jump);

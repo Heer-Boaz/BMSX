@@ -165,7 +165,6 @@ private:
 	void execute(NativeCpuRunState& state) const;
 	NativeBlock() = default;
 	void* m_body = nullptr;
-	void* m_linkEntry = nullptr;
 	const NativeBlockGate* m_gate = nullptr;
 	NativeBlockLink* m_incoming = nullptr;
 };
