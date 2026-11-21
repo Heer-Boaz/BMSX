@@ -65,7 +65,10 @@ private:
 	u32 metadata(u32 field) const;
 	u32 ramBucketCount() const;
 	void writeMetadata(u32 field, u32 word);
-	u32 lookup(u32 buckets, u32 count, u32 hash, std::string_view bytes) const;
+	Span<const u8> bindRomStringHeader(u32 address, u32 cartridgeSlot) const;
+	std::string_view bindRomStringBytes(u32 address, u32 cartridgeSlot, u32 length) const;
+	u32 lookupRam(u32 hash, std::string_view bytes) const;
+	u32 lookupRom(u32 directory, u32 hash, std::string_view bytes) const;
 	u32 lookup(u32 hash, std::string_view bytes) const;
 	void grow(u32 count);
 	bool mark(StringId id, bool youngOnly);

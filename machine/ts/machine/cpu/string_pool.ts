@@ -7,8 +7,8 @@ import {
 	BLUA32_STRING_RECORD_ALIGNMENT, BLUA32_STRING_RECORD_HEADER_SIZE,
 	BLUA32_STRING_RECORD_KIND, BLUA32_STRING_RECORD_ROM_FLAG,
 } from '../../spec/blua32/image_format';
-import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
-import type { Memory } from '../memory/memory';
+import { CART_ROM_BASE, CART_ROM_SIZE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
+import type { Memory, MemoryByteView } from '../memory/memory';
 import { HEAP_STRING_METADATA_OFFSET, type HeapAllocator } from './heap_allocator';
 import type { LuaHeap } from './lua_heap';
 
@@ -31,17 +31,31 @@ function storageOffset(address: number): number {
 	if (address < CART_ROM_BASE) return address & (MAIN_RAM_SIZE - 1);
 	return (address & (SLOT_BIT - 1)) - CART_ROM_BASE;
 }
-function slotWord(domain: ExecutionDomainId): number { return domain === 1 ? SLOT_BIT : 0; }
+function romStringId(address: number, cartridgeSlot: number): number {
+	return address >= CART_ROM_BASE ? (address | (cartridgeSlot << 31)) >>> 0 : address;
+}
+
+function matchesBytes(candidate: Uint8Array, start: number, mask: number, source: string | Uint8Array, offset: number, length: number): boolean {
+	let n = 0;
+	if (typeof source === 'string') {
+		while (n < length && candidate[(start + n) & mask] === source.charCodeAt(n)) ++n;
+	} else {
+		while (n < length && candidate[(start + n) & mask] === source[offset + n]) ++n;
+	}
+	return n === length;
+}
 
 // All persistent interning and collection state is in the raw machine RAM.
 export class StringPool {
 	private readonly localRoots: StringId[] = [];
 	private readonly localRootBases: number[] = [];
 	private readonly metadataOffset: number;
+	private readonly romView: MemoryByteView;
 	private markWork = 0;
 
 	public constructor(private readonly heap: LuaHeap, private readonly memory: Memory, private readonly arena: HeapAllocator) {
 		this.metadataOffset = arena.managementOffset() + HEAP_STRING_METADATA_OFFSET;
+		this.romView = { bytes: memory.systemRomStorage().bytes, byteOffset: 0, byteLength: 0 };
 	}
 
 	private metadata(field: number): number { return this.memory.readRamRecordWord(this.metadataOffset + field); }
@@ -110,72 +124,103 @@ export class StringPool {
 		for (let field = ROM_TABLES; field < ROM_TABLES + 24; field += 4) this.writeMetadata(field, 0);
 	}
 	public activateRomTable(domain: ExecutionDomainId, address: number, count: number): void {
-		const id = (address | slotWord(domain)) >>> 0;
-		const rom = this.storage(id), offset = storageOffset(id);
+		const cartridgeSlot = domain === 1 ? 1 : 0;
 		if ((address & 3) !== 0 || count === 0 || (count & (count - 1)) !== 0
-			|| rom === null || offset > rom.length || 4 * count > rom.length - offset) {
+			|| count > CART_ROM_SIZE / 4 || !this.memory.bindRomByteView(address, 4 * count, cartridgeSlot, this.romView)) {
 			throw new Error('BLua32 String bucket table is invalid.');
 		}
 		const index = domain + 1;
-		this.writeMetadata(ROM_TABLES + 8 * index, id);
+		this.writeMetadata(ROM_TABLES + 8 * index, romStringId(address, cartridgeSlot));
 		this.writeMetadata(ROM_TABLES + 8 * index + 4, count);
 		if (index !== 0 && this.metadata(FIRST_CART) === 0) this.writeMetadata(FIRST_CART, index);
 	}
 
-	private bucketLookup(buckets: number, count: number, hash: number, source: string | Uint8Array, offset: number, length: number): number {
+	private bindRomStringHeader(address: number, cartridgeSlot: number): void {
+		const view = this.romView;
+		if ((address & (BLUA32_STRING_RECORD_ALIGNMENT - 1)) !== 0
+			|| !this.memory.bindRomByteView(address, BLUA32_STRING_RECORD_HEADER_SIZE, cartridgeSlot, view)
+			|| readLE32(view.bytes, view.byteOffset) !== (BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG)) {
+			throw new Error('BLua32 ROM String header is invalid.');
+		}
+	}
+
+	private bindRomStringBytes(address: number, cartridgeSlot: number, length: number): void {
+		const view = this.romView;
+		if (length > CART_ROM_SIZE - BLUA32_STRING_RECORD_HEADER_SIZE
+			|| (length !== 0 && !this.memory.bindRomByteView(address, BLUA32_STRING_RECORD_HEADER_SIZE + length, cartridgeSlot, view))) {
+			throw new Error('BLua32 ROM String is truncated.');
+		}
+		view.byteOffset += BLUA32_STRING_RECORD_HEADER_SIZE;
+		view.byteLength = length;
+	}
+
+	private lookupRam(hash: number, source: string | Uint8Array, offset: number, length: number): number {
+		const count = this.ramBucketCount();
 		if (count === 0) return 0;
-		const slot = buckets & SLOT_BIT;
-		let record = this.readWord(buckets, (hash & (count - 1)) * 4);
+		const memory = this.memory;
+		const ram = memory.ramData();
+		let record = memory.readRamRecordWord(this.metadata(BUCKETS) + (hash & (count - 1)) * 4);
 		if (record === 0) return 0;
-		let remaining = ramAddress(buckets) ? Math.min(this.metadata(USED), MAX_RAM_RECORDS)
-			: ((this.storage(buckets)?.length | 0) / BLUA32_STRING_RECORD_HEADER_SIZE) >>> 0;
+		let remaining = Math.min(this.metadata(USED), MAX_RAM_RECORDS);
 		while (record !== 0 && remaining-- !== 0) {
-			record = (record | slot) >>> 0;
-			if (this.readWord(record, BLUA32_STRING_HASH_OFFSET) === hash
-				&& (this.byteLength(record) >>> 0) === length) {
-				const candidate = this.storage(record);
-				const inRam = ramAddress(record);
-				const start = (storageOffset(record) + BLUA32_STRING_RECORD_HEADER_SIZE) & (inRam ? RAM_BYTE_MASK : -1);
-				if (candidate !== null && (inRam || start + length <= candidate.length)) {
-					const mask = inRam && length > MAIN_RAM_SIZE - start ? RAM_BYTE_MASK : -1;
-					let n = 0;
-					if (typeof source === 'string') {
-						while (n < length && candidate[(start + n) & mask] === source.charCodeAt(n)) ++n;
-					} else {
-						while (n < length && candidate[(start + n) & mask] === source[offset + n]) ++n;
-					}
-					if (n === length) return record;
+			if (memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET) === hash
+				&& (memory.readRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET) & RAM_BYTE_MASK) === length) {
+				const start = (record + BLUA32_STRING_RECORD_HEADER_SIZE) & RAM_BYTE_MASK;
+				const mask = length > MAIN_RAM_SIZE - start ? RAM_BYTE_MASK : -1;
+				if (matchesBytes(ram, start, mask, source, offset, length)) return record;
+			}
+			record = memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
+		}
+		return 0;
+	}
+
+	private lookupRom(directory: number, hash: number, source: string | Uint8Array, offset: number, length: number): number {
+		const table = ROM_TABLES + 8 * directory;
+		const count = this.metadata(table + 4);
+		if (count === 0) return 0;
+		let record = this.readWord(this.metadata(table), (hash & (count - 1)) * 4);
+		if (record === 0) return 0;
+		// Every absolute cartridge reference uses the directory owner's socket.
+		const cartridgeSlot = directory === 2 ? 1 : 0;
+		const cart = this.memory.cartridgeController.romStorage(cartridgeSlot);
+		const available = this.memory.systemRomStorage().bytes.length + (cart === null ? 0 : cart.bytes.length);
+		let remaining = (available / BLUA32_STRING_RECORD_HEADER_SIZE) >>> 0;
+		while (record !== 0) {
+			if (remaining-- === 0) throw new Error('BLua32 ROM String chain is invalid.');
+			this.bindRomStringHeader(record, cartridgeSlot);
+			const { bytes, byteOffset } = this.romView;
+			if (readLE32(bytes, byteOffset + BLUA32_STRING_HASH_OFFSET) === hash
+				&& readLE32(bytes, byteOffset + BLUA32_STRING_LENGTH_OFFSET) === length) {
+				this.bindRomStringBytes(record, cartridgeSlot, length);
+				if (matchesBytes(this.romView.bytes, this.romView.byteOffset, -1, source, offset, length)) {
+					return romStringId(record, cartridgeSlot);
 				}
 			}
-			record = this.readWord(record, BLUA32_STRING_NEXT_OFFSET);
+			record = readLE32(bytes, byteOffset + BLUA32_STRING_NEXT_OFFSET);
 		}
 		return 0;
 	}
 
 	private lookup(hash: number, source: string | Uint8Array, offset: number, length: number): number {
-		let match = this.bucketLookup(this.metadata(BUCKETS), this.ramBucketCount(), hash, source, offset, length);
+		let match = this.lookupRam(hash, source, offset, length);
 		if (match !== 0) return match;
-		match = this.bucketLookup(this.metadata(ROM_TABLES), this.metadata(ROM_TABLES + 4), hash, source, offset, length);
+		match = this.lookupRom(0, hash, source, offset, length);
 		if (match !== 0) return match;
 		const first = this.metadata(FIRST_CART);
 		if (first === 0) return 0;
-		let table = ROM_TABLES + 8 * first;
-		match = this.bucketLookup(this.metadata(table), this.metadata(table + 4), hash, source, offset, length);
+		match = this.lookupRom(first, hash, source, offset, length);
 		if (match !== 0) return match;
-		table = ROM_TABLES + 8 * (3 - first);
-		return this.bucketLookup(this.metadata(table), this.metadata(table + 4), hash, source, offset, length);
+		return this.lookupRom(3 - first, hash, source, offset, length);
 	}
 
 	public resolveImageRecord(domain: ExecutionDomainId, address: number): StringId {
-		const id = (address | slotWord(domain)) >>> 0;
-		if ((address & (BLUA32_STRING_RECORD_ALIGNMENT - 1)) !== 0
-			|| this.readWord(id) !== (BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG)) {
-			throw new Error('BLua32 ROM String header is invalid.');
-		}
-		const offset = storageOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE;
-		const rom = this.storage(id)!, length = this.readWord(id, BLUA32_STRING_LENGTH_OFFSET);
-		if (offset + length > rom.length) throw new Error('BLua32 ROM String is truncated.');
-		const match = this.lookup(this.readWord(id, BLUA32_STRING_HASH_OFFSET), rom, offset, length);
+		const cartridgeSlot = domain === 1 ? 1 : 0;
+		this.bindRomStringHeader(address, cartridgeSlot);
+		const { bytes, byteOffset } = this.romView;
+		const hash = readLE32(bytes, byteOffset + BLUA32_STRING_HASH_OFFSET);
+		const length = readLE32(bytes, byteOffset + BLUA32_STRING_LENGTH_OFFSET);
+		this.bindRomStringBytes(address, cartridgeSlot, length);
+		const match = this.lookup(hash, this.romView.bytes, this.romView.byteOffset, length);
 		if (match === 0) throw new Error('BLua32 ROM String is missing from its bucket.');
 		return this.retain(match);
 	}

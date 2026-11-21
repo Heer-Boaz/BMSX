@@ -6,7 +6,7 @@ import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { HEAP_COLLECTION_TARGET_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { integerConstant } from '../../toolchain/ts/lua/number';
-import { writeLE32 } from '../../machine/ts/common/endian';
+import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { ValueTag, valueFloatBits, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -16,10 +16,14 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import {
-	BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
+	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
+	BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET, BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
+	BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_NEXT_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE,
 } from '../../machine/ts/spec/blua32/image_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -146,6 +150,69 @@ test('all activated image constants and unique namespace slots remain priced acr
 	assert.equal(cpu.instructionBudgetRemaining, 5 - bootCollectionWork - 3 * (2 * 5 + 3 * 2), 'all three root passes include constants and registered names of both activated cards');
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
 	cpu.instructionBudgetRemaining = 5; cpu.luaHeap.collectRuntime(); assert.equal(cpu.instructionBudgetRemaining, 5 - bootCollectionWork - 3 * (2 * 5 + 3 * 2));
+});
+
+test('absolute ROM String references resolve even when backing and directory owner differ', () => {
+	const bios = { ...source(), constants: ['system-shared', 'directory-link'], globalNames: [], systemGlobalNames: [] };
+	const text = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.GETGL, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.LOADK, 1, 0, 0);
+	writeInstruction(text, 2, OpCode.LOADK, 2, 0, 1);
+	writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
+	const media = { text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 3 }],
+		constants: ['unused', 'slot-zero'], globalNames: ['unused'] };
+	const first = linkRawTestBlua32Pair(bios, media);
+	const second = linkRawTestBlua32Pair(bios, { ...media, constants: ['unused', 'slot-one!'] });
+	const biosHeader = first.systemImage.address;
+	const biosConstants = readLE32(first.systemRomBytes, biosHeader + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET);
+	const shared = readLE32(first.systemRomBytes, biosConstants + BLUA32_CONSTANT_PAYLOAD_OFFSET);
+	const bridge = readLE32(first.systemRomBytes, biosConstants + BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_PAYLOAD_OFFSET);
+	const bridgeBytes = BLUA32_STRING_RECORD_HEADER_SIZE + readLE32(first.systemRomBytes, bridge + BLUA32_STRING_LENGTH_OFFSET);
+	const cartHeader = second.cartImage.address - CART_ROM_BASE;
+	const cartConstants = readLE32(second.cartRomBytes, cartHeader + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET) - CART_ROM_BASE;
+	const cartNames = readLE32(second.cartRomBytes, cartHeader + BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET) - CART_ROM_BASE;
+	const local = readLE32(second.cartRomBytes, cartConstants + BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_PAYLOAD_OFFSET);
+	assert.equal(readLE32(first.cartRomBytes, cartConstants + BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_PAYLOAD_OFFSET), local);
+	writeLE32(second.cartRomBytes, cartConstants + BLUA32_CONSTANT_PAYLOAD_OFFSET, shared);
+	writeLE32(second.cartRomBytes, cartNames + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET, shared);
+
+	const directory = (first.systemRomBytes.length + 7) & ~7, link = directory + 8;
+	const shortDirectory = (link + bridgeBytes + 7) & ~7, shortRecord = shortDirectory + 8;
+	const localOffset = local - CART_ROM_BASE;
+	const localBytes = BLUA32_STRING_RECORD_HEADER_SIZE + readLE32(second.cartRomBytes, localOffset + BLUA32_STRING_LENGTH_OFFSET);
+	const systemRom = new Uint8Array(shortRecord + localBytes - 1);
+	systemRom.set(first.systemRomBytes);
+	systemRom.copyWithin(link, bridge, bridge + bridgeBytes);
+	systemRom.set(second.cartRomBytes.subarray(localOffset, localOffset + localBytes - 1), shortRecord);
+	writeLE32(systemRom, shortDirectory, shortRecord);
+	writeLE32(systemRom, directory, link);
+	writeLE32(systemRom, link + BLUA32_STRING_NEXT_OFFSET, local);
+	writeLE32(second.cartRomBytes, local - CART_ROM_BASE + BLUA32_STRING_NEXT_OFFSET, 0);
+	writeLE32(second.cartRomBytes, cartHeader + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET, directory);
+	writeLE32(second.cartRomBytes, cartHeader + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET, 1);
+
+	const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(first.cartRomBytes, second.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	cpu.reset();
+	cpu.setGlobalByKey(shared, valueInteger(19));
+	cpu.writeFrameExecution(0, 0, first.cartSymbols.functionAddresses[0], first.cartImage.functions[0].codeAddress);
+	const bank0 = cpu.rootThread.currentFrame!.executionImage!;
+	cpu.writeFrameExecution(0, 1, second.cartSymbols.functionAddresses[0], second.cartImage.functions[0].codeAddress);
+	runGuestToHalt(cpu, 100);
+	assert.equal(cpu.readFrameRegister(0, 0), valueInteger(19), 'the system-ROM name reuses the existing slot');
+	assert.equal(cpu.readFrameRegister(0, 1), valueString(shared), 'socket one does not retag a system-ROM String ID');
+	assert.equal(bank0.constWords[1], local);
+	assert.equal(cpu.readFrameRegister(0, 2), valueString((local | 0x80000000) >>> 0));
+	assert.equal(cpu.stringPool.toString(local), 'slot-zero');
+	assert.equal(cpu.stringPool.toString((local | 0x80000000) >>> 0), 'slot-one!');
+
+	const strings = cpu.stringPool;
+	assert.throws(() => strings.activateRomTable(1, RAM_BASE, 1), { message: 'BLua32 String bucket table is invalid.' });
+	assert.equal(strings.find('slot-one!'), (local | 0x80000000) >>> 0, 'failed directory admission leaves the index installed');
+	assert.throws(() => strings.resolveImageRecord(1, RAM_BASE), { message: 'BLua32 ROM String header is invalid.' });
+	assert.throws(() => strings.resolveImageRecord(1, shortRecord), { message: 'BLua32 ROM String is truncated.' });
+	strings.activateRomTable(1, shortDirectory, 1);
+	assert.throws(() => strings.find('slot-one!'), { message: 'BLua32 ROM String is truncated.' });
 });
 
 test('image replacement rejects bank extents beyond main RAM before changing runtime records', () => {

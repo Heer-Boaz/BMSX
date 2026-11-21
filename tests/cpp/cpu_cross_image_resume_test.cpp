@@ -1,3 +1,4 @@
+#include "common/endian.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/decoded_instruction.h"
@@ -25,6 +26,90 @@ using namespace bmsx;
 
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
+}
+
+void romStringsUseAbsoluteBackingAndDirectorySocket() {
+	test::Blua32TestImage bios;
+	bios.text.resize(INSTRUCTION_BYTES);
+	writeInstruction(bios.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	bios.functions = {{.firstWord = 0, .wordCount = 1}};
+	bios.constants = {std::string("system-shared"), std::string("directory-link")};
+	auto system = test::encodeBlua32TestRom(RomImageDomain::System, bios);
+	const auto header = test::BLUA32_TEST_IMAGE_OFFSET;
+	const u32 systemConstants = readLE32(system.bytes.data() + header + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET);
+	const u32 shared = readLE32(system.bytes.data() + systemConstants + BLUA32_CONSTANT_PAYLOAD_OFFSET);
+	const u32 bridge = readLE32(system.bytes.data() + systemConstants + BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_PAYLOAD_OFFSET);
+	const u32 bridgeBytes = BLUA32_STRING_RECORD_HEADER_SIZE + readLE32(system.bytes.data() + bridge + BLUA32_STRING_LENGTH_OFFSET);
+
+	test::Blua32TestImage media = bios;
+	media.text.resize(2u * INSTRUCTION_BYTES);
+	writeInstruction(media.text, 0, static_cast<u8>(OpCode::GETGL), 0, 0, 0);
+	writeInstruction(media.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	media.functions[0].wordCount = 2;
+	media.constants = {std::string("unused"), std::string("slot-zero")};
+	media.globalNames = {"unused"};
+	auto card0 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, media);
+	media.constants[1] = std::string("slot-one!");
+	auto card1 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, media);
+	const u32 cardConstants = readLE32(card1.bytes.data() + header + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET) - CART_ROM_BASE;
+	const u32 cardNames = readLE32(card1.bytes.data() + header + BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET) - CART_ROM_BASE;
+	const u32 local = readLE32(card1.bytes.data() + cardConstants + BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_PAYLOAD_OFFSET);
+	require(readLE32(card0.bytes.data() + cardConstants + BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_PAYLOAD_OFFSET) == local,
+		"the same address in the other socket names distinct cartridge text");
+	writeLE32(card1.bytes.data() + cardConstants + BLUA32_CONSTANT_PAYLOAD_OFFSET, shared);
+	writeLE32(card1.bytes.data() + cardNames + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET, shared);
+
+	// This image's one-bucket directory and its first record are in system
+	// ROM; the next absolute address selects the image's own cartridge.
+	const u32 directory = (static_cast<u32>(system.bytes.size()) + 7u) & ~7u;
+	const u32 link = directory + 8u;
+	const u32 shortDirectory = (link + bridgeBytes + 7u) & ~7u;
+	const u32 shortRecord = shortDirectory + 8u;
+	const u32 localOffset = local - CART_ROM_BASE;
+	const u32 localBytes = BLUA32_STRING_RECORD_HEADER_SIZE
+		+ readLE32(card1.bytes.data() + localOffset + BLUA32_STRING_LENGTH_OFFSET);
+	system.bytes.resize(shortRecord + localBytes - 1u);
+	std::copy_n(system.bytes.data() + bridge, bridgeBytes, system.bytes.data() + link);
+	std::copy_n(card1.bytes.data() + localOffset, localBytes - 1u, system.bytes.data() + shortRecord);
+	writeLE32(system.bytes.data() + shortDirectory, shortRecord);
+	writeLE32(system.bytes.data() + directory, link);
+	writeLE32(system.bytes.data() + link + BLUA32_STRING_NEXT_OFFSET, local);
+	// Match the one-bucket list after the cartridge record.
+	writeLE32(card1.bytes.data() + local - CART_ROM_BASE + BLUA32_STRING_NEXT_OFFSET, 0u);
+	writeLE32(card1.bytes.data() + header + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET, directory);
+	writeLE32(card1.bytes.data() + header + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET, 1u);
+
+	Memory memory(MemoryInit{system.bytes, test::cartridgeSlots(card0.bytes, card1.bytes)}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory);
+	ExecutionAddressSpace addresses(memory);
+	CPU cpu(memory, irq, addresses);
+	cpu.reset();
+	cpu.setGlobalByKey(shared, valueInteger(19));
+	cpu.writeFrameExecution(0, 0, card0.functionAddresses[0], card0.textAddress);
+	const auto bank0 = cpu.activeThread()->currentFrame->executionImage->constPool;
+	cpu.writeFrameExecution(0, 1, card1.functionAddresses[0], card1.textAddress);
+	const auto& image1 = *cpu.activeThread()->currentFrame->executionImage;
+	require(image1.constPool.get(0) == valueString(shared), "socket-one constants retain absolute system String identity");
+	require(bank0.get(1) == valueString(local) && image1.constPool.get(1) == valueString(local | 0x80000000u)
+		&& cpu.stringPool().toString(asStringId(bank0.get(1))) == "slot-zero"
+		&& cpu.stringPool().toString(asStringId(image1.constPool.get(1))) == "slot-one!",
+		"a directory and link in system ROM do not change the cartridge owner");
+	cpu.runUntilDepth(0, 1);
+	require(cpu.readFrameRegister(0, 0) == valueInteger(19),
+		"the absolute global name reuses the existing system spelling's slot");
+
+	const auto rejects = [&](auto&& admission, std::string_view message) {
+		try { admission(); }
+		catch (const std::runtime_error& error) { require(error.what() == message, "the ROM owner reports the failed boundary"); return; }
+		throw std::runtime_error("the ROM owner admitted unbacked input");
+	};
+	auto& strings = cpu.stringPool();
+	rejects([&] { strings.activateRomTable(1, RAM_BASE, 1); }, "BLua32 String bucket table is invalid.");
+	require(strings.find("slot-one!") == (local | 0x80000000u), "failed directory admission does not replace the index");
+	rejects([&] { strings.resolveImageRecord(1, RAM_BASE); }, "BLua32 ROM String header is invalid.");
+	rejects([&] { strings.resolveImageRecord(1, shortRecord); }, "BLua32 ROM String is truncated.");
+	strings.activateRomTable(1, shortDirectory, 1);
+	rejects([&] { strings.find("slot-one!"); }, "BLua32 ROM String is truncated.");
 }
 
 struct Images {
@@ -279,6 +364,7 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 
 int main() {
 	try {
+		romStringsUseAbsoluteBackingAndDirectorySocket();
 		const Images images;
 		returnUsesSavedBank(images, false); returnUsesSavedBank(images, true);
 		for (u32 slot = 0; slot != 2; ++slot) {

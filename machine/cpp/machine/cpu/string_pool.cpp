@@ -27,7 +27,9 @@ constexpr u32 romOffset(u32 address) {
 	return address < RAM_BASE ? address & (SYSTEM_ROM_SIZE - 1u)
 		: (address & (SLOT_BIT - 1u)) - CART_ROM_BASE;
 }
-constexpr u32 slotWord(ExecutionDomainId domain) { return domain == 1 ? SLOT_BIT : 0u; }
+constexpr u32 romStringId(u32 address, u32 cartridgeSlot) {
+	return address >= CART_ROM_BASE ? address | (cartridgeSlot << 31u) : address;
+}
 }
 
 StringPool::StringPool(LuaHeap& heap, Memory& memory, HeapAllocator& arena)
@@ -119,59 +121,94 @@ void StringPool::clearRomTables() {
 
 void StringPool::activateRomTable(ExecutionDomainId domain, u32 address, u32 count) {
 	// External image section, not allocator-owned RAM.
-	const auto rom = romStorage(address | slotWord(domain));
-	const size_t offset = romOffset(address);
+	const u32 cartridgeSlot = domain == 1 ? 1u : 0u;
+	Span<const u8> directory;
 	if ((address & 3u) != 0u || !std::has_single_bit(count)
-		|| offset > rom.size() || 4ull * count > rom.size() - offset) {
+		|| count > CART_ROM_SIZE / sizeof(u32)
+		|| !m_memory.bindRomByteView(address, count * sizeof(u32), cartridgeSlot, directory)) {
 		throw BMSX_RUNTIME_ERROR("BLua32 String bucket table is invalid.");
 	}
 	const u32 table = static_cast<u32>(domain + 1);
-	writeMetadata(ROM_TABLES + 8 * table, address | slotWord(domain));
+	writeMetadata(ROM_TABLES + 8 * table, romStringId(address, cartridgeSlot));
 	writeMetadata(ROM_TABLES + 8 * table + 4, count);
 	if (table != 0 && metadata(FIRST_CART) == 0) writeMetadata(FIRST_CART, table);
 }
 
-u32 StringPool::lookup(u32 buckets, u32 count, u32 hash, std::string_view bytes) const {
+Span<const u8> StringPool::bindRomStringHeader(u32 address, u32 cartridgeSlot) const {
+	Span<const u8> header;
+	if ((address & (BLUA32_STRING_RECORD_ALIGNMENT - 1u)) != 0u
+		|| !m_memory.bindRomByteView(address, BLUA32_STRING_RECORD_HEADER_SIZE, cartridgeSlot, header)
+		|| readLE32(header.data()) != (BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG)) {
+		throw BMSX_RUNTIME_ERROR("BLua32 ROM String header is invalid.");
+	}
+	return header;
+}
+
+std::string_view StringPool::bindRomStringBytes(u32 address, u32 cartridgeSlot, u32 length) const {
+	if (length == 0u) return {};
+	Span<const u8> record;
+	if (length > CART_ROM_SIZE - BLUA32_STRING_RECORD_HEADER_SIZE
+		|| !m_memory.bindRomByteView(address, BLUA32_STRING_RECORD_HEADER_SIZE + length, cartridgeSlot, record)) {
+		throw BMSX_RUNTIME_ERROR("BLua32 ROM String is truncated.");
+	}
+	return {reinterpret_cast<const char*>(record.data() + BLUA32_STRING_RECORD_HEADER_SIZE), length};
+}
+
+u32 StringPool::lookupRam(u32 hash, std::string_view bytes) const {
+	const u32 count = ramBucketCount();
 	if (count == 0) return 0;
-	const u32 slot = buckets & SLOT_BIT;
-	u32 record = readWord(buckets, 4u * (hash & (count - 1u)));
+	u32 record = m_memory.readRamRecordWord(metadata(BUCKETS) + 4u * (hash & (count - 1u)));
 	if (record == 0u) return 0;
-	u32 remaining = ramAddress(buckets) ? std::min(metadata(USED), MAX_RAM_RECORDS)
-		: static_cast<u32>(romStorage(buckets).size() / BLUA32_STRING_RECORD_HEADER_SIZE);
+	u32 remaining = std::min(metadata(USED), MAX_RAM_RECORDS);
 	while (record != 0u && remaining-- != 0u) {
-		record |= slot;
-		if (readWord(record, BLUA32_STRING_HASH_OFFSET) == hash
-			&& static_cast<u32>(byteLength(record)) == bytes.size()) {
+		if (m_memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET) == hash
+			&& (m_memory.readRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET) & (MAIN_RAM_SIZE - 1u)) == bytes.size()) {
 			const auto candidate = readBytes(record);
-			if (candidate.backedLength() == bytes.size() && bytes.starts_with(candidate.first)
+			if (bytes.starts_with(candidate.first)
 				&& bytes.substr(candidate.first.size()) == candidate.wrapped) return record;
 		}
-		record = readWord(record, BLUA32_STRING_NEXT_OFFSET);
+		record = m_memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
+	}
+	return 0;
+}
+
+u32 StringPool::lookupRom(u32 directory, u32 hash, std::string_view bytes) const {
+	const u32 table = ROM_TABLES + 8u * directory;
+	const u32 count = metadata(table + 4u);
+	if (count == 0u) return 0;
+	u32 record = readWord(metadata(table), 4u * (hash & (count - 1u)));
+	if (record == 0u) return 0;
+	// The directory owner, not the backing of the directory or preceding
+	// record, selects the socket for every absolute cartridge reference.
+	const u32 cartridgeSlot = directory == 2u ? 1u : 0u;
+	const auto available = m_memory.systemRomStorage().size() + romStorage(romStringId(CART_ROM_BASE, cartridgeSlot)).size();
+	size_t remaining = available / BLUA32_STRING_RECORD_HEADER_SIZE;
+	while (record != 0u) {
+		if (remaining-- == 0u) throw BMSX_RUNTIME_ERROR("BLua32 ROM String chain is invalid.");
+		const auto header = bindRomStringHeader(record, cartridgeSlot);
+		const u32 length = readLE32(header.data() + BLUA32_STRING_LENGTH_OFFSET);
+		if (readLE32(header.data() + BLUA32_STRING_HASH_OFFSET) == hash && length == bytes.size()
+			&& bindRomStringBytes(record, cartridgeSlot, length) == bytes) return romStringId(record, cartridgeSlot);
+		record = readLE32(header.data() + BLUA32_STRING_NEXT_OFFSET);
 	}
 	return 0;
 }
 
 u32 StringPool::lookup(u32 hash, std::string_view bytes) const {
-	if (const u32 match = lookup(metadata(BUCKETS), ramBucketCount(), hash, bytes)) return match;
-	if (const u32 match = lookup(metadata(ROM_TABLES), metadata(ROM_TABLES + 4), hash, bytes)) return match;
+	if (const u32 match = lookupRam(hash, bytes)) return match;
+	if (const u32 match = lookupRom(0u, hash, bytes)) return match;
 	const u32 first = metadata(FIRST_CART);
 	if (first == 0) return 0;
-	for (u32 index : {first, 3u - first}) {
-		const u32 slot = ROM_TABLES + 8u * index;
-		if (const u32 match = lookup(metadata(slot), metadata(slot + 4), hash, bytes)) return match;
-	}
-	return 0;
+	if (const u32 match = lookupRom(first, hash, bytes)) return match;
+	return lookupRom(3u - first, hash, bytes);
 }
 
 StringId StringPool::resolveImageRecord(ExecutionDomainId domain, u32 address) {
-	const u32 id = address | slotWord(domain);
-	if ((address & (BLUA32_STRING_RECORD_ALIGNMENT - 1u)) != 0u
-		|| readWord(id) != (BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG)) {
-		throw BMSX_RUNTIME_ERROR("BLua32 ROM String header is invalid.");
-	}
-	const ByteSpan data = readBytes(id);
-	if (data.first.size() != data.length) throw BMSX_RUNTIME_ERROR("BLua32 ROM String is truncated.");
-	if (const u32 match = lookup(readWord(id, BLUA32_STRING_HASH_OFFSET), data.first)) return retain(match);
+	const u32 cartridgeSlot = domain == 1 ? 1u : 0u;
+	const auto header = bindRomStringHeader(address, cartridgeSlot);
+	const u32 hash = readLE32(header.data() + BLUA32_STRING_HASH_OFFSET);
+	const auto bytes = bindRomStringBytes(address, cartridgeSlot, readLE32(header.data() + BLUA32_STRING_LENGTH_OFFSET));
+	if (const u32 match = lookup(hash, bytes)) return retain(match);
 	throw BMSX_RUNTIME_ERROR("BLua32 ROM String is missing from its bucket.");
 }
 
