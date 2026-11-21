@@ -213,15 +213,15 @@ int main() {
    const Value next = cpu.getSystemGlobalByKey(cpu.stringPool().intern("__bmsx_next"));
    auto* frame = cpu.activeThread()->frameAtDepth(0);
    const int grant = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 1;
-   const auto runNext = [&](TableRecord table, Value after, int slots, std::initializer_list<Value> expected) {
+   const auto runNext = [&](TableRecord table, Value after, std::initializer_list<Value> expected) {
     cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
     frame->registers.set(0, next);
     frame->registers.set(1, valueTable(table.address()));
     frame->registers.set(2, after);
     frame->registers.set(7, valueInteger(91));
     if (cpu.runUntilDepth(0, grant) != RunResult::Yielded
-        || cpu.instructionBudgetRemaining != -slots - static_cast<int>(expected.size()))
-     throw std::runtime_error("NEXT adds inspected Value slots to its existing primitive and result-placement costs");
+        || cpu.instructionBudgetRemaining != -static_cast<int>(expected.size()))
+     throw std::runtime_error("NEXT charges only the primitive and result placement");
     if (static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)) != static_cast<int>(expected.size()))
      throw std::runtime_error("NEXT success returns two values and exhaustion returns one nil");
     int index = 0;
@@ -233,7 +233,7 @@ int main() {
    };
    auto warm = cpu.createTable();
    for (int repeat = 0; repeat < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++repeat)
-    runNext(warm, valueNil(), 0, {valueNil()});
+    runNext(warm, valueNil(), {valueNil()});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
    if (!scalar) {
     test::waitForNativeEntry(cpu, *frame->decodedPage, (rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
@@ -241,18 +241,18 @@ int main() {
     if (!block || block->terminal.exit != NativeBlockExit::Call) throw std::runtime_error("NEXT call entry was not warmed");
    }
 #endif
-   for (const auto [array, hash, slots] : {std::array{5, 0, 5}, std::array{0, 3, 8}, std::array{5, 3, 13}}) {
+   for (const auto [array, hash] : {std::array{5, 0}, std::array{0, 3}, std::array{5, 3}}) {
     auto empty = cpu.createTable(array, hash);
-    for (int repeat = 0; repeat < 3; ++repeat) runNext(empty, valueNil(), slots, {valueNil()});
+    for (int repeat = 0; repeat < 3; ++repeat) runNext(empty, valueNil(), {valueNil()});
    }
    auto sparse = cpu.createTable(8, 0);
    sparse.setInteger(3, valueInteger(33));
    sparse.setInteger(7, valueInteger(77));
-   runNext(sparse, valueNil(), 3, {valueInteger(3), valueInteger(33)});
-   runNext(sparse, valueInteger(3), 4, {valueInteger(7), valueInteger(77)});
-   runNext(sparse, valueInteger(7), 1, {valueNil()});
-   runNext(sparse, valueInteger(8), 0, {valueNil()});
-   runNext(sparse, valueInteger(2), 1, {valueInteger(3), valueInteger(33)});
+   runNext(sparse, valueNil(), {valueInteger(3), valueInteger(33)});
+   runNext(sparse, valueInteger(3), {valueInteger(7), valueInteger(77)});
+   runNext(sparse, valueInteger(7), {valueNil()});
+   runNext(sparse, valueInteger(8), {valueNil()});
+   runNext(sparse, valueInteger(2), {valueInteger(3), valueInteger(33)});
 
    auto hash = cpu.createTable(0, 8);
    for (int index = 0; index < 8; ++index)
@@ -262,15 +262,15 @@ int main() {
     if (!hash.loadStoredEntry(slot, keys[slot], values[slot])) throw std::runtime_error("NEXT fixture fills every reserved hash node");
    }
    for (size_t slot = 0; slot < keys.size(); ++slot) if (slot != 1 && slot != 4) hash.set(keys[slot], valueNil());
-   runNext(hash, valueNil(), 4, {keys[1], values[1]});
-   runNext(hash, keys[1], 6, {keys[4], values[4]});
-   runNext(hash, keys[2], 4, {keys[4], values[4]});
-   runNext(hash, keys[4], 6, {valueNil()});
+   runNext(hash, valueNil(), {keys[1], values[1]});
+   runNext(hash, keys[1], {keys[4], values[4]});
+   runNext(hash, keys[2], {keys[4], values[4]});
+   runNext(hash, keys[4], {valueNil()});
 
    auto falseKey = cpu.createTable(0, 1);
    falseKey.set(valueBool(false), valueBool(false));
-   runNext(falseKey, valueNil(), 2, {valueBool(false), valueBool(false)});
-   runNext(falseKey, valueBool(false), 0, {valueNil()});
+   runNext(falseKey, valueNil(), {valueBool(false), valueBool(false)});
+   runNext(falseKey, valueBool(false), {valueNil()});
   }
   writeRoutes(scalar);
   rebuildWork(scalar);
@@ -297,7 +297,7 @@ int main() {
    }
 #endif
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-   const int surcharge = array + 2 * capacity;
+   const int surcharge = array + 2 * hash;
    const int grant = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)];
    if (cpu.runUntilDepth(0, grant) != RunResult::Yielded || cpu.instructionBudgetRemaining != -surcharge)
     throw std::runtime_error("NEWT must finish its admitted logical initialization charge");

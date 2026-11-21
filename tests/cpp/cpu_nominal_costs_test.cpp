@@ -130,8 +130,8 @@ void creationAndCallWorkOnce() {
 	image.functions = {{.firstWord=0, .wordCount=2, .maxStack=3}};
 	Machine generated(image, false), scalar(image, true);
 	test::runCpuParity(generated.cpu, scalar.cpu, 1);
-	require(generated.cpu.instructionBudgetRemaining == -33 && asTable(generated.cpu.readFrameRegister(0, 0), generated.cpu.gcHeap()).storedSlotCount() == 6,
-		"NEWT pays literal24 base plus2 array and8 rounded-hash Value initializations exactly once");
+	require(generated.cpu.instructionBudgetRemaining == -31 && asTable(generated.cpu.readFrameRegister(0, 0), generated.cpu.gcHeap()).storedSlotCount() == 6,
+		"NEWT pays 24 base cycles plus two array slots and twice the requested hash count");
 	image.text.assign(2 * MAPPED_PAGE_BYTE_SIZE, 0);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
