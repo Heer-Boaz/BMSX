@@ -826,7 +826,7 @@ export class GcHeap {
 					if (!this.cpu.stringPool.sweeping()) {
 						this.setPhase(GcPhase.Pause); this.budget.finishCollection();
 					}
-					break;
+					return work;
 			}
 		}
 		return work;

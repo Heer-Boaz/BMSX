@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "common/hash_fnv.h"
 #include "machine/cpu/heap_allocator.h"
 #include "spec/blua32/image_format.h"
 #include "machine/cpu/lua_heap.h"
@@ -78,6 +79,75 @@ void collectEmptyString() {
 	require(pool.intern("") == empty && pool.byteLength(empty) == 0u, "empty bytes have a canonical live String record");
 	machine.cpu.collectHeap();
 	require(!pool.find(""), "a RAM record with no suffix is still collectible");
+}
+
+void resumeMajorStringBucket() {
+	PoolMachine machine;
+	auto& pool = machine.cpu.stringPool();
+	std::array<std::string, 7> names;
+	for (u32 candidate = 0, count = 0; count < names.size(); ++candidate) {
+		const auto name = "chain:" + std::to_string(candidate);
+		if ((fnv1a32(name) & 63u) == 0u) names[count++] = name;
+	}
+	std::array<StringId, 6> ids;
+	for (size_t i = 0; i < ids.size(); ++i) ids[i] = pool.intern(names[i]);
+	pool.beginReachabilityEpoch();
+	pool.markReachable(ids.back()); pool.takeMarkWork();
+	pool.beginSweep();
+	require(pool.sweepStep(2) == 1u && pool.find(names[4]) == ids[4],
+		"one bucket and its first retained header exhaust two units without visiting the suffix");
+	const auto ram = machine.memory.captureSaveState();
+	const auto finish = [&] {
+		const auto fresh = pool.intern(names.back());
+		require(pool.sweepStep(1) == 0u && !pool.find(names[4]) && pool.find(names[3]) == ids[3],
+			"resume retires exactly the next header without charging the same index");
+		for (int step = 0; pool.sweeping() && step < 100; ++step) pool.sweepStep(2);
+		require(!pool.sweeping(), "all String buckets finish");
+		for (size_t i = 0; i < 5; ++i) require(!pool.find(names[i]), "unmarked collision removed");
+		require(pool.find(names[5]) == ids.back() && pool.find(names[6]) == fresh,
+			"both retained predecessor and new head survive the resumed suffix");
+		return machine.memory.captureSaveState().ram;
+	};
+	const auto expected = finish();
+	machine.memory.restoreSaveState(ram);
+	require(finish() == expected, "String sweep link and extent replay byte-exactly");
+}
+
+void growWhileAdmissionStartsStringSweep() {
+	PoolMachine machine;
+	auto& cpu = machine.cpu;
+	auto& pool = cpu.stringPool();
+	auto& memory = machine.memory;
+	constexpr u32 capacity = 8192;
+	auto roots = cpu.createTable(capacity, 0);
+	cpu.setGlobalByKey(pool.intern("String growth root"), valueTable(roots.address()));
+	const u32 metadata = cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const auto read = [&](u32 field) { return memory.readRamRecordWord(metadata + field); };
+	const u32 count = capacity - read(8u);
+	const auto name = [](u32 index) { return "fill:" + std::to_string(index); };
+	for (u32 i = 0; i < count; ++i) roots.setInteger(i + 1u, valueString(pool.intern(name(i))));
+	require(read(4u) == capacity && read(8u) == capacity, "the next distinct String needs a bucket growth");
+	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
+	for (int step = 0; cpu.gcHeap().phase() != GcPhase::Sweep && step < 40; ++step) advance();
+	require(cpu.gcHeap().phase() == GcPhase::Sweep, "objects must be swept before String reclamation");
+	advance(); advance();
+	require(cpu.gcHeap().phase() == GcPhase::Sweep, "growth admission will reach the last object page");
+	const auto state = cpu.captureRuntimeState();
+	const auto ram = memory.captureSaveState();
+	const auto finish = [&] {
+		cpu.luaHeap().setCollectionTarget(0);
+		const auto added = pool.intern("growth crosses into Strings");
+		require(read(4u) == 2u * capacity && cpu.gcHeap().phase() == GcPhase::Strings && read(0x38u) > capacity,
+			"growth keeps both swept prefixes without draining the Strings phase");
+		for (int step = 0; cpu.collecting() && step < 20; ++step) advance();
+		require(!cpu.collecting() && pool.find("growth crosses into Strings") == added, "later work retains the new String");
+		for (u32 i = 0; i < count; ++i) require(pool.find(name(i)) == asStringId(roots.getInteger(i + 1u)), "each split retains its original interned addresses");
+		return memory.captureSaveState().ram;
+	};
+	const auto expected = finish();
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(state);
+	require(finish() == expected, "rewind replays growth during String sweep");
 }
 
 void reclaimLongByteStrings() {
@@ -224,6 +294,8 @@ int main() {
 		indexBytesAcrossRestore();
 		reclaimUnreachableRecords();
 		collectEmptyString();
+		resumeMajorStringBucket();
+		growWhileAdmissionStartsStringSweep();
 		reclaimLongByteStrings();
 		retainNestedMaterializationRoots();
 		replaySparseAllocationOrder();

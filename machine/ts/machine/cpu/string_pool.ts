@@ -19,6 +19,7 @@ export const STRING_GC_EPOCH_MASK = 1;
 
 const BUCKETS = 0x00, CAPACITY = 0x04, USED = 0x08, EPOCH = 0x0c, SWEEP = 0x10;
 const FIRST_CART = 0x14, ROM_TABLES = 0x18;
+const SWEEP_LINK = 0x30, SWEEP_LEFT = 0x34, SWEEP_SPLIT = 0x38;
 const INITIAL_BUCKETS = 16;
 const RAM_BYTE_MASK = MAIN_RAM_SIZE - 1;
 const MAX_RAM_RECORDS = MAIN_RAM_SIZE / BLUA32_STRING_RECORD_HEADER_SIZE;
@@ -239,9 +240,7 @@ export class StringPool {
 
 	private grow(count: number): void {
 		const newBase = this.heap.allocateRecord(4 * count, true, 0, 0);
-		// Admission can enter the string sweep. Finish it while the cursor
-		// still addresses the old buffer; neither bucket buffer is an object.
-		while (this.sweeping()) this.heap.stepRuntime();
+		const sweep = this.metadata(SWEEP);
 		const oldBase = this.metadata(BUCKETS), oldCount = this.ramBucketCount();
 		const offset = storageOffset(newBase);
 		const memory = this.memory;
@@ -263,6 +262,12 @@ export class StringPool {
 		}
 		this.writeMetadata(BUCKETS, newBase);
 		this.writeMetadata(CAPACITY, count);
+		if (sweep !== 0) {
+			// A growth that crosses into sweeping splits each old bucket in
+			// two. Keep the completed prefix in both halves.
+			memory.writeRamRecordPair(this.metadataOffset + SWEEP_LINK, 0, 0);
+			this.writeMetadata(SWEEP_SPLIT, oldCount + sweep - 1);
+		}
 		if (oldCount !== 0) this.heap.releaseRecord(oldBase, 4 * oldCount);
 	}
 	public intern(value: string): StringId {
@@ -320,19 +325,30 @@ export class StringPool {
 		return work;
 	}
 
-	public beginSweep(): void { this.writeMetadata(SWEEP, 1); }
+	public beginSweep(): void {
+		this.writeMetadata(SWEEP, 1);
+		this.memory.writeRamRecordPair(this.metadataOffset + SWEEP_LINK, 0, 0);
+		this.writeMetadata(SWEEP_SPLIT, 0);
+	}
 	public sweeping(): boolean { return this.metadata(SWEEP) !== 0; }
 	public sweepStep(allowance: number): number {
 		const base = this.metadata(BUCKETS), count = this.ramBucketCount(), epoch = this.metadata(EPOCH) & STRING_GC_EPOCH_MASK;
 		let index = this.metadata(SWEEP) - 1, used = this.metadata(USED), work = 0;
+		let link = this.metadata(SWEEP_LINK), remaining = this.metadata(SWEEP_LEFT), split = this.metadata(SWEEP_SPLIT);
 		const memory = this.memory;
-		while (index < count && work < allowance) {
-			let link = base + 4 * index++;
+		while (index < count && allowance !== 0) {
+			if (link === 0) {
+				if (split !== 0 && index === (count >>> 1)) { index = split; split = 0; }
+				link = base + 4 * index;
+				++work; --allowance;
+			}
+			// New interns can prepend only before this stable survivor link.
+			if (link === base + 4 * index) remaining = Math.min(used, MAX_RAM_RECORDS);
 			let record = memory.readRamRecordWord(link);
-			++work;
-			for (let remaining = Math.min(used, MAX_RAM_RECORDS); remaining !== 0 && record !== 0
-				&& memory.readRamRecordByte(record) === BLUA32_STRING_RECORD_KIND; --remaining) {
+			while (record !== 0 && remaining !== 0 && allowance !== 0
+				&& memory.readRamRecordByte(record) === BLUA32_STRING_RECORD_KIND) {
 				const next = memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
+				--remaining; --allowance;
 				if ((memory.readRamRecordByte(record + 1) & STRING_GC_EPOCH_MASK) !== epoch) {
 					memory.writeRamRecordWord(link, next);
 					memory.writeRamRecordByte(record, 0);
@@ -341,10 +357,14 @@ export class StringPool {
 				} else link = record + BLUA32_STRING_NEXT_OFFSET;
 				record = next;
 			}
+			if (record !== 0 && remaining !== 0 && allowance === 0) break;
 			if (record !== 0) memory.writeRamRecordWord(link, 0);
+			link = remaining = 0; ++index;
 		}
 		this.writeMetadata(SWEEP, index < count ? index + 1 : 0);
 		this.writeMetadata(USED, used);
+		memory.writeRamRecordPair(this.metadataOffset + SWEEP_LINK, link, remaining);
+		this.writeMetadata(SWEEP_SPLIT, split);
 
 		return work;
 	}

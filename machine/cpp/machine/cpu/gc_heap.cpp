@@ -925,7 +925,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 					setPhase(GcPhase::Pause);
 					budget.finishCollection();
 				}
-				break;
+				return work;
 			}
 			case GcPhase::Pause: break;
 		}

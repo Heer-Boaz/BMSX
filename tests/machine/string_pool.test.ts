@@ -1,10 +1,12 @@
 import { textToByteString } from '../../machine/ts/common/byte_string';
+import { hashText } from '../../machine/ts/common/hash';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_METADATA_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
+import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_RECORD_KIND } from '../../machine/ts/spec/blua32/image_format';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { ValueTag, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valuePayload, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -51,6 +53,72 @@ test('collection removes unreachable records from all intern buckets and reuses 
 		assert.equal(bytes, steadyBytes);
 		for (let index = 0; index < 128; index += 1) assert.equal(pool.find(`garbage-${round}-${index}-${suffix}`), undefined);
 	}
+});
+
+test('major String sweep rewinds a real bucket chain behind a retained predecessor', () => {
+	const cpu = createCpu(), pool = cpu.stringPool;
+	const names: string[] = [];
+	for (let i = 0; names.length < 7; ++i) {
+		const name = `chain:${i}`;
+		if ((hashText(name) & 63) === 0) names.push(name);
+	}
+	const ids = names.slice(0, 6).map(name => pool.intern(name));
+	pool.beginReachabilityEpoch();
+	pool.markReachable(ids[5]); pool.takeMarkWork();
+	pool.beginSweep();
+	assert.equal(pool.sweepStep(2), 1, 'one bucket and one live header exhaust two physical units');
+	assert.equal(pool.find(names[4]), ids[4], 'other records in this same bucket have not been visited');
+	const ram = cpu.memory.captureSaveState();
+	const finish = () => {
+		const fresh = pool.intern(names[6]);
+		assert.equal(pool.sweepStep(1), 0, 'resuming the current bucket does not charge its index twice');
+		assert.equal(pool.find(names[4]), undefined);
+		assert.equal(pool.find(names[3]), ids[3]);
+		for (let step = 0; pool.sweeping() && step < 100; ++step) pool.sweepStep(2);
+		assert.equal(pool.sweeping(), false);
+		for (const name of names.slice(0, 5)) assert.equal(pool.find(name), undefined);
+		assert.equal(pool.find(names[5]), ids[5]);
+		assert.equal(pool.find(names[6]), fresh, 'new head does not invalidate the suspended suffix');
+		return cpu.memory.captureSaveState();
+	};
+	const expected = finish();
+	cpu.memory.restoreSaveState(ram);
+	assert.deepEqual(finish(), expected);
+});
+
+test('intern growth admitted into String sweep preserves both split prefixes without draining', () => {
+	const cpu = createCpu(), pool = cpu.stringPool, { gc, memory } = cpu;
+	const capacity = 8192;
+	const roots = cpu.createTable(capacity, 0), key = pool.intern('String growth root');
+	cpu.setGlobalByKey(key, valueTable(roots));
+	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const bucketCapacity = () => memory.readRamRecordWord(metadata + 4);
+	const count = capacity - memory.readRamRecordWord(metadata + 8);
+	const name = (index: number) => `fill:${index}`;
+	for (let i = 0; i < count; ++i) gc.tables.setInteger(roots, i + 1, valueString(pool.intern(name(i))));
+	assert.equal(bucketCapacity(), capacity);
+	assert.equal(memory.readRamRecordWord(metadata + 8), capacity);
+	for (let step = 0; gc.phase() !== GcPhase.Sweep && step < 40; ++step) gc.step();
+	assert.equal(gc.phase(), GcPhase.Sweep);
+	gc.step(); gc.step();
+	assert.equal(gc.phase(), GcPhase.Sweep, 'the last object page is reached by the growth admission');
+	const ram = memory.captureSaveState(), state = cpu.captureRuntimeState();
+	const finish = () => {
+		cpu.luaHeap.setCollectionTarget(0);
+		const added = pool.intern('growth crosses into Strings');
+		assert.equal(bucketCapacity(), 2 * capacity);
+		assert.equal(gc.phase(), GcPhase.Strings, 'growth does not synchronously drain the new sweep');
+		assert.ok(memory.readRamRecordWord(metadata + 0x38) > capacity,
+			'the split cursor skips the already visited upper prefix');
+		for (let step = 0; gc.active() && step < 20; ++step) gc.step();
+		assert.equal(gc.phase(), GcPhase.Pause);
+		assert.equal(pool.find('growth crosses into Strings'), added);
+		for (let i = 0; i < count; ++i) assert.equal(pool.find(name(i)), valuePayload(gc.tables.getInteger(roots, i + 1)));
+		return memory.captureSaveState();
+	};
+	const expected = finish();
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	assert.deepEqual(finish(), expected);
 });
 
 test('empty strings are interned and then collected like non-empty records', () => {

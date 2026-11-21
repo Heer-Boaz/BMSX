@@ -17,6 +17,7 @@ namespace bmsx {
 namespace {
 constexpr u32 BUCKETS = 0x00, CAPACITY = 0x04, USED = 0x08, EPOCH = 0x0c, SWEEP = 0x10;
 constexpr u32 FIRST_CART = 0x14, ROM_TABLES = 0x18;
+constexpr u32 SWEEP_LINK = 0x30, SWEEP_LEFT = 0x34, SWEEP_SPLIT = 0x38;
 constexpr u32 INITIAL_BUCKETS = 16;
 constexpr u32 MAX_RAM_RECORDS = MAIN_RAM_SIZE / BLUA32_STRING_RECORD_HEADER_SIZE;
 // The bucket extent field includes the bit for the maximum RAM string count.
@@ -219,9 +220,7 @@ std::optional<StringId> StringPool::find(std::string_view value) const {
 
 void StringPool::grow(u32 count) {
 	const u32 newBase = m_heap.allocateRecord(4u * count, true, 0, 0);
-	// Admission can enter the string sweep. Finish it before changing the
-	// bucket addresses that its cursor refers to; the new block is owned.
-	while (sweeping()) m_heap.stepRuntime();
+	const u32 sweep = metadata(SWEEP);
 	const u32 oldBase = metadata(BUCKETS), oldCount = ramBucketCount();
 	const u32 offset = newBase & (MAIN_RAM_SIZE - 1u);
 	std::memset(m_memory.ramData() + offset, 0, 4u * count);
@@ -243,6 +242,13 @@ void StringPool::grow(u32 count) {
 	}
 	writeMetadata(BUCKETS, newBase);
 	writeMetadata(CAPACITY, count);
+	if (sweep != 0u) {
+		// Admission may have started sweeping the old table. Each old
+		// bucket splits into i and i + oldCount; both prefixes are done.
+		// Reopen only the possibly incomplete bucket in each half.
+		m_memory.writeRamRecordPair(m_metadata + SWEEP_LINK, 0u, 0u);
+		writeMetadata(SWEEP_SPLIT, oldCount + sweep - 1u);
+	}
 	if (oldCount != 0u) m_heap.releaseRecord(oldBase, 4u * oldCount);
 }
 
@@ -300,20 +306,34 @@ void StringPool::markReachable(StringId id, bool youngOnly) { m_markWork += mark
 void StringPool::markLocalRoots(bool youngOnly) { for (StringId id : m_localRoots) markReachable(id, youngOnly); }
 size_t StringPool::takeMarkWork() { return std::exchange(m_markWork, size_t{0}); }
 
-void StringPool::beginSweep() { writeMetadata(SWEEP, 1); }
+void StringPool::beginSweep() {
+	writeMetadata(SWEEP, 1u);
+	m_memory.writeRamRecordPair(m_metadata + SWEEP_LINK, 0u, 0u);
+	writeMetadata(SWEEP_SPLIT, 0u);
+}
 bool StringPool::sweeping() const { return metadata(SWEEP) != 0; }
 
 size_t StringPool::sweepStep(size_t allowance) {
 	const u32 base = metadata(BUCKETS), count = ramBucketCount(), epoch = metadata(EPOCH) & STRING_GC_EPOCH_MASK;
 	u32 index = metadata(SWEEP) - 1u, used = metadata(USED);
+	u32 link = metadata(SWEEP_LINK), remaining = metadata(SWEEP_LEFT), split = metadata(SWEEP_SPLIT);
 	size_t work = 0;
-	while (index < count && work < allowance) {
-		u32 link = base + 4u * index++;
+	while (index < count && allowance != 0u) {
+		if (link == 0u) {
+			if (split != 0u && index == count / 2u) { index = split; split = 0u; }
+			link = base + 4u * index;
+			++work;
+			--allowance;
+		}
+		// A new intern can prepend to the current bucket between grants.
+		// Once we pass a survivor, the link points into that stable suffix.
+		if (link == base + 4u * index) remaining = std::min(used, MAX_RAM_RECORDS);
 		u32 record = m_memory.readRamRecordWord(link);
-		++work;
-		for (u32 remaining = std::min(used, MAX_RAM_RECORDS); remaining != 0u && record != 0u
-			&& m_memory.readRamRecordByte(record) == BLUA32_STRING_RECORD_KIND; --remaining) {
+		while (record != 0u && remaining != 0u && allowance != 0u
+			&& m_memory.readRamRecordByte(record) == BLUA32_STRING_RECORD_KIND) {
 			const u32 next = m_memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
+			--remaining;
+			--allowance;
 			if ((m_memory.readRamRecordByte(record + 1u) & STRING_GC_EPOCH_MASK) != epoch) {
 				m_memory.writeRamRecordWord(link, next);
 				// A repeated link cannot clock a freed String, including a whole page run.
@@ -323,10 +343,15 @@ size_t StringPool::sweepStep(size_t allowance) {
 			} else link = record + BLUA32_STRING_NEXT_OFFSET;
 			record = next;
 		}
+		if (record != 0u && remaining != 0u && allowance == 0u) break;
 		if (record != 0u) m_memory.writeRamRecordWord(link, 0u);
+		link = remaining = 0u;
+		++index;
 	}
 	writeMetadata(SWEEP, index < count ? index + 1u : 0u);
 	writeMetadata(USED, used);
+	m_memory.writeRamRecordPair(m_metadata + SWEEP_LINK, link, remaining);
+	writeMetadata(SWEEP_SPLIT, split);
 
 	return work;
 }
