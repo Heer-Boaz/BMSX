@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -88,17 +89,17 @@ public:
 	bool loadStoredEntry(size_t slot, Value& key, Value& value) const;
 	size_t scanSlots() const { return arrayCapacity() + 2u * hashSlots(); }
 	template <typename Fn>
-	void forEachEntry(Fn&& fn) const {
+	void forEachEntry(Fn&& fn, u32 first = 0u, u32 end = UINT32_MAX) const {
 		const u32 array = arrayCapacity(), hash = hashSlots(), words = storageAddress();
 		const TableValues slots{m_memory, words, words + (array + 3u * hash) * 4u};
-		for (u32 i = 0; i < array; ++i) {
+		for (u32 i = first; i < std::min(array, end); ++i) {
 			const Value value = slots.get(i);
 			if (!isNil(value)) fn(valueInteger(static_cast<i32>(i + 1)), value);
 		}
-		for (u32 i = 0; i < hash; ++i) {
-			const Value key = slots.get(array + i);
+		for (u32 i = std::max(first, array); i < std::min(array + hash, end); ++i) {
+			const Value key = slots.get(i);
 			if (isNil(key)) continue;
-			const Value value = slots.get(array + hash + i);
+			const Value value = slots.get(i + hash);
 			if (!isNil(value)) fn(key, value);
 		}
 	}

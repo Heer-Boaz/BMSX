@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x52534d42u; // BMSR: independently backed Thread lanes
+constexpr u32 kSaveStateSignature = 0x54534d42u; // BMST: resumable heap traversal state
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);

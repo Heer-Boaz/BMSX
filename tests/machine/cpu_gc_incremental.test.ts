@@ -10,8 +10,10 @@ import { HEAP_GC_CONTROL_OFFSET, heapAllocationBytes } from '../../machine/ts/ma
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
-import { GcPhase, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
-import { ValueTag, valueBuiltinFunction, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString, valueThread } from '../../machine/ts/machine/cpu/value';
+import { GcPhase, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
+import * as Closure from '../../machine/ts/machine/cpu/closure';
+import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
+import { ValueTag, hashCanonicalTableKey, valueBuiltinFunction, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString, valueThread } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -59,6 +61,109 @@ test('incremental marking preserves changed table edges, metatables and final re
 	frame.registers.clear(frame.stackCapacity); frame.top = 0;
 	cpu.collectTrackedHeapBytes();
 	for (const id of expectedIds) assert.ok(!allocatedObjectRecords(cpu).includes(id));
+});
+
+test('major marking resumes large closure captures from a RAM snapshot', () => {
+	const captures = 9000;
+	const text = new Uint8Array(7 * 4);
+	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.CLOSURE, 2, 0, 0);
+	writeInstruction(text, 2, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 3, OpCode.CLOSURE, 3, 0, 0);
+	writeInstruction(text, 4, OpCode.JMP, 1, 0, 0);
+	writeInstruction(text, 5, OpCode.HALT, 0, 0, 0);
+	writeInstruction(text, 6, OpCode.HALT, 0, 0, 0);
+	const capture = { inStack: true, index: 0 }, lastCapture = { inStack: true, index: 1 };
+	const upvalueDescs = Array<typeof capture>(captures).fill(capture);
+	upvalueDescs[captures - 1] = lastCapture;
+	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({
+		text,
+		functions: [
+			{ firstWord: 0, wordCount: 6, maxStack: 8 },
+			{ firstWord: 6, wordCount: 1, upvalueDescs: [capture, lastCapture] },
+			{ firstWord: 6, wordCount: 1, upvalueDescs },
+		],
+		closureRelocations: [
+			{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) },
+			{ wordIndex: 3, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 2) },
+		],
+	}));
+	const frame = cpu.rootThread.currentFrame!, gc = cpu.gc;
+	const lastTarget = cpu.createTable();
+	frame.registers.setTable(0, cpu.createTable());
+	frame.registers.setTable(1, lastTarget); frame.top = 2;
+	cpu.runUntilDepth(0, 20000);
+	frame.registers.clear(3);
+	const closure = frame.registers.getPayload(3);
+	const cell = Closure.captureAddress(memory, closure, 0);
+	assert.equal(Upvalue.isOpen(memory, cell), false);
+
+	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	assert.equal(gc.step(), GC_STEP_WORDS);
+	assert.equal(gc.phase(), GcPhase.Mark);
+	assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), closure);
+	const next = memory.readRamRecordWord(control + GC_TRACE_CURSOR);
+	assert.ok(next > 0 && next < captures);
+	assert.equal(gc.isAlive(lastTarget), false, 'the final capture has not been marked');
+	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	const finish = () => {
+		const replacement = cpu.createTable();
+		Upvalue.store(gc, cell, ValueTag.Table, replacement);
+		assert.equal(gc.step(), GC_STEP_WORDS);
+		assert.ok(memory.readRamRecordWord(control + GC_TRACE_CURSOR) > next);
+		for (let step = 0; gc.active() && step < 20; ++step) gc.step();
+		assert.equal(gc.active(), false);
+		assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), 0);
+		assert.equal(gc.tableRecordAddress(lastTarget), lastTarget);
+		assert.equal(gc.tableRecordAddress(replacement), replacement);
+		return memory.captureSaveState();
+	};
+	const expected = finish();
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	assert.deepEqual(finish(), expected, 'save and restore reproduce both marking and mutation');
+});
+
+test('primitive hash displacement withdraws a suspended Table mark cursor', () => {
+	const count = 4096, occupiedTail = 1000;
+	const keys = new Int32Array(count);
+	let victimKey = 0;
+	for (let key = -1, remaining = count; remaining !== 0 || victimKey === 0; --key) {
+		const home = hashCanonicalTableKey(valueInteger(key)) & (count - 1);
+		if (keys[home] === 0) { keys[home] = key; --remaining; }
+		else if (home === 0 && victimKey === 0) victimKey = key;
+	}
+	const cpu = machine(), { gc, memory } = cpu;
+	const table = cpu.createTable(0, count), victim = cpu.createTable(), tables = gc.tables;
+	const frame = cpu.rootThread.currentFrame!;
+	frame.registers.setTable(0, table); frame.top = 1;
+	tables.setInteger(table, keys[0], valueInteger(0));
+	tables.setInteger(table, victimKey, valueTable(victim));
+	for (let home = occupiedTail; home < count - 1; ++home) tables.setInteger(table, keys[home], valueInteger(0));
+	const checkVictimAt = (node: number) => {
+		let seen = false;
+		tables.forEachStoredEntry(table, (key, value) => { seen = key === valueInteger(victimKey) && value === valueTable(victim); }, node, node + 1);
+		assert.ok(seen);
+	};
+	checkVictimAt(count - 1);
+	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const work = gc.step();
+	assert.ok(work >= GC_STEP_WORDS && work <= GC_STEP_WORDS + 1);
+	assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), table);
+	assert.ok(memory.readRamRecordWord(control + GC_TRACE_CURSOR) > occupiedTail);
+	assert.equal(gc.isAlive(victim), false);
+	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	const finish = () => {
+		tables.setInteger(table, keys[count - 1], valueInteger(1));
+		checkVictimAt(occupiedTail - 1);
+		assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), 0);
+		for (let step = 0; gc.active() && step < 20; ++step) gc.step();
+		assert.equal(gc.active(), false);
+		assert.equal(gc.tableRecordAddress(victim), victim, 'the next pass follows the edge at its relocated node');
+		return memory.captureSaveState();
+	};
+	const expected = finish();
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	assert.deepEqual(finish(), expected);
 });
 
 test('small collection skips scalar-only table writes, follows live keys and clears young weak keys', () => {
@@ -239,7 +344,7 @@ test('changed objects wait for a finite second pass and retain later writes acro
 	assert.ok(allocatedObjectRecords(cpu).includes(late));
 });
 
-test('an oversized scan earns actual-work credit, not another assist after 256 bytes', () => {
+test('a large Table scan earns one quantum of allocation credit per assist', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, cpu.createTable(8192, 0)); frame.top = 1;
 	const before = cpu.luaHeap.usedBytes();
@@ -247,9 +352,8 @@ test('an oversized scan earns actual-work credit, not another assist after 256 b
 	cpu.instructionBudgetRemaining = 0;
 	cpu.createTable();
 	const work = -cpu.instructionBudgetRemaining;
-	assert.ok(work > GC_STEP_WORDS);
+	assert.equal(work, GC_STEP_WORDS);
 	assert.equal(cpu.luaHeap.collectionTarget(), before + (work >>> 4));
-	assert.ok(cpu.luaHeap.collectionTarget() > cpu.luaHeap.usedBytes() + 256);
 });
 
 test('a rooted raw Thread frame retains its table edge and is collected without an execution view', () => {

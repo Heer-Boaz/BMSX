@@ -195,6 +195,7 @@ void TableRecord::resize(
 ) {
 	const u32 storage = m_heap->budget.allocateRecord(storageBytes(newArraySize, newHashSize), true, 0, 0,
 		valueTable(m_address), key, value);
+	m_heap->tableEntriesMoved(m_address);
 	const auto oldValues = values();
 	const size_t oldArraySize = arrayCapacity(), oldHashSize = hashSlots();
 	bindStorage(newArraySize, newHashSize, storage);
@@ -269,8 +270,9 @@ namespace {
 // Lua's chained hash insertion is shared by actual writes and by placing the
 // fixed keys of a future fresh table. Both get exactly the same relocation,
 // links and free cursor, including when two keys have the same home.
-template <typename Body, typename TakeFree>
-int insertAbsentHashKey(const Body& body, u32 mainSlot, const Value& key, const Value& value, TakeFree takeFree) noexcept {
+template <typename Body, typename TakeFree, typename Move>
+int insertAbsentHashKey(const Body& body, u32 mainSlot, const Value& key, const Value& value,
+	TakeFree takeFree, Move move) noexcept {
 	const auto& slots = body.slots;
 	const u32 count = body.count;
 	const int mainIndex = static_cast<int>(mainSlot);
@@ -287,6 +289,7 @@ int insertAbsentHashKey(const Body& body, u32 mainSlot, const Value& key, const 
 	const u32 freeSlot = static_cast<u32>(freeIndex), freeKey = body.array + freeSlot;
 	const int mainIndexOfOccupied = static_cast<int>(hashCanonicalTableKey(canonicalTableKey(mainKey)) & (count - 1u));
 	if (mainIndexOfOccupied != mainIndex) {
+		move();
 		slots.set(freeKey, mainKey);
 		slots.set(freeKey + count, slots.get(valueSlot));
 		body.setNext(freeSlot, body.next(mainSlot));
@@ -328,7 +331,8 @@ struct ConstructorScratch {
 } // namespace
 
 int TableRecord::insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept {
-	return insertAbsentHashKey(body, home, key, value, [this, &body] { return getFreeIndex(body); });
+	return insertAbsentHashKey(body, home, key, value, [this, &body] { return getFreeIndex(body); },
+		[this] { m_heap->tableEntriesMoved(m_address); });
 }
 
 TableConstructorLayout TableRecord::planStringRecord(std::span<const StringId> keys, u32 present) noexcept {
@@ -347,7 +351,7 @@ TableConstructorLayout TableRecord::planStringRecord(std::span<const StringId> k
 					return free;
 				}
 				return -1;
-			});
+				}, [] {});
 	}
 	for (u32 slot = 0; slot < count; ++slot) {
 		if (scratch.slots.tag(slot) != ValueTag::Nil)
@@ -692,6 +696,7 @@ i32 TableRecord::length(TableRecord* table) noexcept {
 }
 
 void TableRecord::clear() {
+	m_heap->tableEntriesMoved(m_address);
 	writeHeader(TableHeader::Length, 0);
 	freeStorage();
 	bindStorage(0, 0, 0);

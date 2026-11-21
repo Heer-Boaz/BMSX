@@ -61,6 +61,10 @@ constexpr u8 tableRecordKind = static_cast<u8>(ValueTag::Table);
 constexpr u32 tableSlotClass = heapClassIndex(TableRecord::HEADER_BYTES);
 constexpr u32 cellSlotClass = heapClassIndex(UPVALUE_HEAP_BYTES);
 constexpr u32 threadSlotClass = heapClassIndex(THREAD_HEAP_BYTES);
+// Dense capture lanes use four bytes each, and Table entries use at least
+// one Value word plus a tag; both cursors fit one more bit than a gray index.
+constexpr u32 TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1u;
+constexpr u32 TRACE_CURSOR_MASK = (1u << TRACE_CURSOR_BITS) - 1u;
 }
 bool GcHeap::markValue(Value v) {
 	switch (valueTag(v)) {
@@ -87,6 +91,14 @@ void GcHeap::enqueue(u32 address, u32 link, u32 queue) {
 	memory.writeRamRecordWord(address + link, otherBits | previous);
 	color(address, 2);
 	memory.writeRamRecordWord(m_controlOffset + queue, head);
+}
+
+void GcHeap::tableEntriesMoved(u32 address) {
+	if (memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD) != address) return;
+	// An unvisited entry may now be behind the cursor. Revisit the record in
+	// the next pass rather than retrying it indefinitely under the mutator.
+	memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, 0u, 0u);
+	if (markColor(address) == 3u) enqueue(address, GC_RECORD_LINK, GC_CHANGED_HEAD);
 }
 
 // The regular gray index occupies the low bits of +4. Tables and Threads
@@ -261,7 +273,7 @@ bool GcHeap::valueIsAlive(Value value) const {
 	}
 }
 
-size_t GcHeap::trace(bool atomic) {
+size_t GcHeap::trace(bool atomic, size_t limit) {
 	const u32 index = indexWord(GC_TRACE_HEAD);
 	const u32 offset = index << GC_RECORD_SHIFT, address = RAM_BASE + offset;
 	const u8 kind = offset < arena.managementOffset() ? memory.readRamRecordByte(address) : 0u;
@@ -285,13 +297,15 @@ size_t GcHeap::trace(bool atomic) {
 	const u8 flags = memory.readRamRecordByte(address + GC_COLOR_OFFSET);
 	if (m_minor && (flags & GC_OLD)) memory.writeRamRecordByte(address + GC_COLOR_OFFSET, GC_OLD | white());
 	else color(address, 3);
-	if (table) return traceTable(address);
+	if (table) return traceTable(address, limit);
 	if (cell) {
 		markValue(Upvalue::load(memory, address));
 		return UPVALUE_HEAP_BYTES / sizeof(u32);
 	}
 	if (closure) {
 		const u32 count = ClosureRecord::captureCount(memory, address);
+		// A capture word can discover a four-word cell and one String.
+		if (!atomic && 3u + 6u * count > limit) return traceCaptures(address, 0u, count, 3u, limit);
 		size_t work = 3u + count;
 		for (u32 index = 0; index < count; ++index)
 			work += markCell(cellRecordAddress(ClosureRecord::captureAddress(memory, address, index)));
@@ -340,19 +354,65 @@ size_t GcHeap::trace(bool atomic) {
 	return cellWork + ceilDiv4(static_cast<int>(layout.allocationBytes()));
 }
 
-size_t GcHeap::traceTable(u32 address) {
+size_t GcHeap::traceCaptures(u32 closure, u32 next, u32 count, size_t work, size_t limit) {
+	while (next < count && work < limit) {
+		work += 1u + markCell(cellRecordAddress(ClosureRecord::captureAddress(memory, closure, next++)));
+		work += m_stringPool.takeMarkWork();
+	}
+	// The capture lanes do not move after construction. The saved position
+	// and the queued edges share the same RAM snapshot as the values.
+	memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD,
+		next < count ? closure : 0u, next < count ? next : 0u);
+	return work;
+}
+
+size_t GcHeap::resumeTrace(u32 record, size_t limit) {
+	const u32 cursor = memory.readRamRecordWord(m_controlOffset + GC_TRACE_CURSOR);
+	if (memory.readRamRecordByte(record) == tableRecordKind) {
+		const TableRecord table(*this, record);
+		return traceTableEntries(table, static_cast<u8>(cursor >> TRACE_CURSOR_BITS),
+			cursor & TRACE_CURSOR_MASK, 0u, limit);
+	}
+	return traceCaptures(record, cursor, ClosureRecord::captureCount(memory, record), 0u, limit);
+}
+
+size_t GcHeap::traceTable(u32 address, size_t limit) {
 	const TableRecord table(*this, address);
 	const u32 meta = table.metatableAddress();
 	if (meta != 0u) markTable(meta);
 	const u8 weakMode = tableWeakMode(table);
 	if (weakMode != 0u) appendVisit(GC_WEAK_VISITS, address);
+	const size_t words = TableRecord::HEADER_BYTES / sizeof(u32);
+	const size_t slots = table.scanSlots();
+	if (limit != 0u && words + slots * 2 > limit) return traceTableEntries(table, weakMode, 0u, words, limit);
 	if ((weakMode & kTableWeakKeys) == 0u) {
 		table.forEachEntry([this, weakMode](Value key, Value value) {
 			markValue(key);
 			if (weakMode == 0u) markValue(value);
 		});
 	}
-	return TableRecord::HEADER_BYTES / sizeof(u32) + table.scanSlots();
+	return words + slots;
+}
+
+size_t GcHeap::traceTableEntries(const TableRecord& table, u8 mode, u32 next, size_t work, size_t limit) {
+	const u32 array = table.arrayCapacity(), end = static_cast<u32>(table.storedSlotCount());
+	const bool scan = (mode & kTableWeakKeys) == 0u;
+	while (next < end && work < limit) {
+		const bool arrayEntry = next < array;
+		const u32 entryWords = arrayEntry ? 1u : 2u;
+		const size_t worst = entryWords * (scan ? 2u : 1u); // at most one String mark per Value
+		const u32 span = static_cast<u32>(std::max(size_t{1}, (limit - work) / worst));
+		const u32 stop = std::min(arrayEntry ? array : end, next + span);
+		if (scan) table.forEachEntry([this, mode](Value key, Value value) {
+			markValue(key);
+			if (mode == 0u) markValue(value);
+		}, next, stop);
+		work += (stop - next) * entryWords + m_stringPool.takeMarkWork();
+		next = stop;
+	}
+	memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, next < end ? table.address() : 0u,
+		next < end ? (u32{mode} << TRACE_CURSOR_BITS) | next : 0u);
+	return work;
 }
 
 size_t GcHeap::remark(Value root0, Value root1, Value root2) {
@@ -562,8 +622,10 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 					GcPhaseMeasurement traceTime(phase() == GcPhase::Mark ? profile.traceNanoseconds : profile.markAgainNanoseconds);
 #endif
+					if (const u32 record = memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD))
+						work += resumeTrace(record, GC_STEP_WORDS - work);
 					while (indexWord(GC_TRACE_HEAD) != 0u && work < GC_STEP_WORDS) {
-						work += trace(false);
+						work += trace(false, GC_STEP_WORDS - work);
 						work += m_stringPool.takeMarkWork();
 					}
 				}

@@ -26,6 +26,10 @@ inline constexpr u32 GC_THREAD_VISITS = 12u;
 inline constexpr u32 GC_WEAK_VISITS = 28u;
 inline constexpr u32 GC_VISIT_TAIL = 4u;
 inline constexpr u32 GC_VISIT_COUNT = 8u;
+// The major trace owns one suspended record ahead of the gray queue.
+inline constexpr u32 GC_TRACE_RECORD = 0x34u;
+inline constexpr u32 GC_TRACE_CURSOR = GC_TRACE_RECORD + sizeof(u32);
+static_assert((HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD) % (2 * sizeof(u32)) == 0u);
 inline constexpr u32 GC_VISIT_HEADER_BYTE = 3u;
 inline constexpr u8 GC_VISIT_MEMBER = 0x40u;
 
@@ -76,6 +80,7 @@ public:
 		}
 		if ((flags & GC_COLOR_MASK) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
 	}
+	void tableEntriesMoved(u32 address);
 	u32 changedHeadOffset() const { return m_controlOffset + GC_CHANGED_HEAD; }
 private:
 	u8 markColor(u32 address) const { return memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK; }
@@ -87,7 +92,8 @@ private:
 	bool markClosure(u32 address);
 	uint8_t tableWeakMode(const TableRecord& table);
 	bool markTable(u32 address);
-	size_t traceTable(u32 address);
+	size_t traceTable(u32 address, size_t limit);
+	size_t traceTableEntries(const TableRecord&, u8 mode, u32 next, size_t work, size_t limit);
 	bool valueIsAlive(Value value) const;
 	u32 indexWord(u32 queue) const { return memory.readRamRecordWord(m_controlOffset + queue) & GC_GRAY_INDEX_MASK; }
 	void enqueue(u32 address, u32 link, u32 queue);
@@ -96,7 +102,9 @@ private:
 	template<u8 Kind, bool Drain, class Visitor>
 	size_t visitList(u32 list, Visitor&& visitor);
 	size_t markCell(u32 cell);
-	size_t trace(bool atomic);
+	size_t trace(bool atomic, size_t limit = 0u);
+	size_t traceCaptures(u32 closure, u32 next, u32 count, size_t work, size_t limit);
+	size_t resumeTrace(u32 record, size_t limit);
 	size_t remark(Value root0, Value root1, Value root2);
 	size_t atomic(Value root0, Value root1, Value root2);
 	size_t resolveWeak();

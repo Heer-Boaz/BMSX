@@ -2,6 +2,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/errors.h"
 #include "machine/cpu/thread_record.h"
+#include "machine/cpu/upvalue.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
@@ -326,6 +327,116 @@ void incrementalStateAndBarriers() {
 		"full collection retains root Thread, closure, roots Table, 1000 children and three new live Tables");
 }
 
+void resumesLargeClosureCaptures() {
+	constexpr u32 captures = 9000;
+	test::Blua32TestImage program;
+	program.text.resize(7 * INSTRUCTION_BYTES);
+	writeInstruction(program.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(program.text, 1, static_cast<u8>(OpCode::CLOSURE), 2, 0, 0);
+	writeInstruction(program.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(program.text, 3, static_cast<u8>(OpCode::CLOSURE), 3, 0, 0);
+	writeInstruction(program.text, 4, static_cast<u8>(OpCode::JMP), 1, 0, 0);
+	writeInstruction(program.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(program.text, 6, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	program.functions = {{.firstWord=0, .wordCount=6, .maxStack=8},
+		{.firstWord=6, .wordCount=1, .upvalues={{true, 0}, {true, 1}}},
+		{.firstWord=6, .wordCount=1, .upvalues=std::vector<Blua32UpvalueRecord>(captures, {true, 0})}};
+	program.functions.back().upvalues.back().index = 1;
+	program.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
+		{3, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
+	Machine machine(program, true);
+	auto& cpu = machine.cpu;
+	auto& memory = machine.memory;
+	auto& heap = cpu.gcHeap();
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(cpu.createTable().address()));
+	const auto lastTarget = cpu.createTable().address();
+	frame.registers.set(1, valueTable(lastTarget));
+	frame.setTop(2);
+	require(cpu.runUntilDepth(0, 20000) == RunResult::Halted, "guest creates and closes both capture cells");
+	frame.registers.clear(0, 3);
+	const u32 closure = valuePayload(frame.registers.get(3));
+	const u32 cell = ClosureRecord::captureAddress(memory, closure, 0);
+	require(!Upvalue::isOpen(memory, cell), "the test updates a genuinely closed cell");
+
+	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
+	require(advance() == GC_STEP_WORDS && heap.phase() == GcPhase::Mark
+		&& memory.readRamRecordWord(control + GC_TRACE_RECORD) == closure,
+		"the first grant stops within the Closure instead of scanning its complete vector");
+	const u32 next = memory.readRamRecordWord(control + GC_TRACE_CURSOR);
+	require(next > 0 && next < captures && !heap.isAlive(lastTarget), "the final capture has not been marked");
+
+	const auto state = cpu.captureRuntimeState();
+	const auto ram = memory.captureSaveState();
+	const auto finish = [&] {
+		const auto replacement = cpu.createTable().address();
+		Upvalue::store(heap, cell, valueTable(replacement));
+		require(advance() == GC_STEP_WORDS
+			&& memory.readRamRecordWord(control + GC_TRACE_CURSOR) > next,
+			"the next grant resumes from the saved capture word");
+		for (int step = 0; heap.active() && step < 20; ++step) advance();
+		require(!heap.active() && memory.readRamRecordWord(control + GC_TRACE_RECORD) == 0u,
+			"the queue and cursor drain before collection completes");
+		require(heap.tableRecordAddress(lastTarget) == lastTarget && heap.tableRecordAddress(replacement) == replacement,
+			"both the unscanned suffix and a mutation of a previously scanned cell retain their live targets");
+		return memory.captureSaveState().ram;
+	};
+	const auto expected = finish();
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(state);
+	require(finish() == expected, "a RAM save and restore replay the suspended closure exactly");
+}
+
+void resumesTableAfterPrimitiveDisplacement() {
+	constexpr u32 count = 4096, occupiedTail = 1000;
+	std::array<i32, count> keys{};
+	i32 victimKey = 0;
+	for (i32 key = -1, remaining = count; remaining != 0 || victimKey == 0; --key) {
+		const u32 home = hashCanonicalTableKey(valueInteger(key)) & (count - 1u);
+		if (keys[home] == 0) { keys[home] = key; --remaining; }
+		else if (home == 0 && victimKey == 0) victimKey = key;
+	}
+	Machine machine(image(), true);
+	auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& memory = machine.memory;
+	auto table = cpu.createTable(0, count);
+	const u32 victim = cpu.createTable().address();
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(table.address()));
+	frame.setTop(1);
+	table.setInteger(keys[0], valueInteger(0));
+	table.setInteger(victimKey, valueTable(victim)); // chained at the last node
+	for (u32 home = occupiedTail; home < count - 1; ++home) table.setInteger(keys[home], valueInteger(0));
+	Value key, value;
+	require(table.loadStoredEntry(count - 1, key, value) && key == valueInteger(victimKey),
+		"the real hash insertion placed the live edge at its unvisited high node");
+	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
+	const auto work = advance();
+	require(work >= GC_STEP_WORDS && work <= GC_STEP_WORDS + 1
+		&& memory.readRamRecordWord(control + GC_TRACE_RECORD) == table.address()
+		&& memory.readRamRecordWord(control + GC_TRACE_CURSOR) > occupiedTail
+		&& !heap.isAlive(victim), "the first grant suspends a hash scan ahead of the new spill destination");
+
+	const auto state = cpu.captureRuntimeState();
+	const auto ram = memory.captureSaveState();
+	const auto finish = [&] {
+		table.setInteger(keys.back(), valueInteger(1)); // neither operand is a GC edge
+		require(table.loadStoredEntry(occupiedTail - 1, key, value) && key == valueInteger(victimKey)
+			&& value == valueTable(victim), "primitive insertion moved the unvisited reference behind the old cursor");
+		require(memory.readRamRecordWord(control + GC_TRACE_RECORD) == 0u, "a physical move withdraws the old scan frontier");
+		for (int step = 0; heap.active() && step < 20; ++step) advance();
+		require(!heap.active() && heap.tableRecordAddress(victim) == victim, "the next pass retains the displaced live reference");
+		return memory.captureSaveState().ram;
+	};
+	const auto expected = finish();
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(state);
+	require(finish() == expected, "restore captures the exact hash scan frontier and replays structural invalidation");
+}
+
 void incrementalSharedWeakMode() {
 	Machine machine(image());
 	auto& cpu = machine.cpu;
@@ -404,8 +515,8 @@ void secondMarkPassAndCredit() {
 	cpu.luaHeap().setCollectionTarget(before); cpu.instructionBudgetRemaining = 0;
 	cpu.createTable();
 	const size_t work = static_cast<size_t>(-cpu.instructionBudgetRemaining);
-	require(work > GC_STEP_WORDS && cpu.luaHeap().collectionTarget() == before + work / 16,
-		"oversized marking earns its actual allocation credit before the pending request");
+	require(work == GC_STEP_WORDS && cpu.luaHeap().collectionTarget() == before + work / 16,
+		"the partial Table scan earns credit for one quantum before the pending request");
 	u32 phases = 0;
 	for (int i = 0; i < 12; ++i) {
 		auto target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
@@ -586,7 +697,8 @@ int main(int argc, char** argv) {
 		}
 		canonicalPoolAndRootRanges(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
-		referenceWritesPayOnlyForNewEdges(); incrementalStateAndBarriers(); incrementalSharedWeakMode(); consumesSelfLinkedGrayEdge();
+		referenceWritesPayOnlyForNewEdges(); incrementalStateAndBarriers(); resumesLargeClosureCaptures();
+		resumesTableAfterPrimitiveDisplacement(); incrementalSharedWeakMode(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
 		return 0;
