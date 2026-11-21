@@ -95,12 +95,22 @@ void grantsAndTargetRetirement(bool inRam) {
 	test::waitForNativeEntry(native.cpu, page, base);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (inRam) for (const bool flag : {true, false}) {
-		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueBool(flag));
-			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], startPc);
+		const u32 target = base + (flag ? 4u : 2u);
+		// The single worker can still own another branch or a feedback job.
+		// Publish submitted work, then exercise the desired edge with a real
+		// grant. Polling with no budget cannot request a missing branch.
+		test::waitForFixtureWorkerRequests(native.cpu);
+		for (int pass = 0; pass < 4; ++pass) {
+			for (auto* machine : {&native, &scalar}) {
+				machine->cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueBool(flag));
+				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], startPc);
+			}
+			test::runCpuParity(native.cpu, scalar.cpu, 2048);
+			test::waitForFixtureWorkerRequests(native.cpu);
+			if (page.nativeBlocks && page.nativeBlocks->entries[target]) break;
 		}
-		test::runCpuParity(native.cpu, scalar.cpu, 2048);
-		test::waitForNativeEntry(native.cpu, page, base + (flag ? 4u : 2u));
+		require(page.nativeBlocks && page.nativeBlocks->entries[target],
+			"the worker publishes the actual exercised RAM branch after competing jobs drain");
 	}
 	if (inRam) for (const bool flag : {true, false}) {
 		for (auto* machine : {&native, &scalar}) {
