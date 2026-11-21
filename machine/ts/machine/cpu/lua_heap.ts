@@ -4,7 +4,6 @@ import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from './h
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
 import { GC_ASSIST_BYTES } from './gc_heap';
-import { shiftRightSigned } from '../common/numeric';
 import { valueClosure, valueNil, type Value } from './value';
 import { FRAME_CONTROL_BYTES } from './call_state';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadField } from './thread_record';
@@ -40,10 +39,8 @@ export class LuaHeap {
 		if (exhausted) {
 			this.collectRuntime(root0, root1, root2, growingThread);
 		} else if (!this.cpu.gc.finalMarkPending()) {
-			const work = this.cpu.gc.step(
-				root0, root1, root2, growingThread);
-			this.cpu.instructionBudgetRemaining -= work;
-			this.creditStep(work);
+			this.cpu.gc.step(root0, root1, root2, growingThread);
+			this.creditStep();
 		}
 		if (this.usedBytes() + byteCount > capacity) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		return exhausted;
@@ -168,16 +165,13 @@ export class LuaHeap {
 		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(),
 		growingThread = 0,
 	): void {
-		this.cpu.instructionBudgetRemaining -= this.cpu.gc.collect(
-			root0, root1, root2, growingThread,
-		);
+		this.cpu.gc.collect(root0, root1, root2, growingThread);
 	}
 
 	/** Explicit work earns the same allocation credit as an automatic assist. */
 	public stepRuntime(): boolean {
-		const work = this.cpu.gc.step();
-		this.cpu.instructionBudgetRemaining -= work;
-		this.creditStep(work);
+		this.cpu.gc.step();
+		this.creditStep();
 		return !this.cpu.gc.active();
 	}
 
@@ -198,14 +192,9 @@ export class LuaHeap {
 		memory.writeRamRecordWord(this.occupiedAddress, memory.readRamRecordWord(this.occupiedAddress) - oldBytes + newBytes);
 	}
 
-	private creditStep(work: number): void {
-		if (this.cpu.gc.active()) this.setCollectionTarget(this.usedBytes() + Math.max(GC_ASSIST_BYTES, shiftRightSigned(work, 4)));
+	private creditStep(): void {
+		if (this.cpu.gc.active()) this.setCollectionTarget(this.usedBytes() + GC_ASSIST_BYTES);
 	}
-
-
-	/** Completed table-storage work consumes the current run's transient grant. */
-
-
 	public finishCollection(): void {
 		const liveBytes = this.usedBytes();
 		const capacity = this.capacity();

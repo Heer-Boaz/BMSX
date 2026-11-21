@@ -1,7 +1,7 @@
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { captureCpuCheckpoint, restoreCpuCheckpoint, runCpuParity } from '../helpers/cpu_execution';
+import { runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { ValueTag, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
@@ -314,11 +314,8 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, valueTable(retained));
 		cpu.collectTrackedHeapBytes();
 	}
-	const beforeGc = captureCpuCheckpoint(ref);
-	const gcCycles = ref.gc.collect();
-	restoreCpuCheckpoint(ref, beforeGc);
 	runCpuParity(js, ref, BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.NEWT]);
-	assert.equal(js.instructionBudgetRemaining, -gcCycles, 'failed NEWT pays prefix/base and collection, but no initialization');
+	assert.equal(js.instructionBudgetRemaining, 0, 'failed NEWT pays prefix and base, not emergency collection or initialization');
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);

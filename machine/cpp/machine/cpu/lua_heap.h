@@ -45,7 +45,7 @@ public:
 
 private:
 	void accountAllocation(u32 bytes);
-	void creditStep(size_t work);
+	void creditStep();
 	static constexpr size_t MIN_COLLECTION_BYTES = 1024 * 1024;
 
 	CPU& m_cpu;

@@ -43,9 +43,8 @@ bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, u32
 	if (exhausted) {
 		collectRuntime(root0, root1, root2, growingThread);
 	} else if (!m_cpu.gcHeap().finalMarkPending()) {
-		const size_t work = m_cpu.stepHeap(root0, root1, root2, growingThread);
-		m_cpu.instructionBudgetRemaining -= static_cast<int>(work);
-		creditStep(work);
+		m_cpu.stepHeap(root0, root1, root2, growingThread);
+		creditStep();
 	}
 	if (usedBytes() + byteCount > limit) throw LuaOutOfMemorySignal{};
 	return exhausted;
@@ -158,13 +157,12 @@ u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> ce
 }
 
 void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, u32 growingThread) {
-	m_cpu.instructionBudgetRemaining -= static_cast<int>(m_cpu.collectHeap(root0, root1, root2, growingThread));
+	m_cpu.collectHeap(root0, root1, root2, growingThread);
 }
 
 bool LuaHeap::stepRuntime() {
-	const size_t work = m_cpu.stepHeap(valueNil(), valueNil(), valueNil());
-	m_cpu.instructionBudgetRemaining -= static_cast<int>(work);
-	creditStep(work);
+	m_cpu.stepHeap(valueNil(), valueNil(), valueNil());
+	creditStep();
 	return !m_cpu.collecting();
 }
 
@@ -185,8 +183,8 @@ void LuaHeap::replaceRecord(u32 oldAddress, u32 oldBytes, u32 newBytes) {
 	memory.writeRamRecordWord(m_occupiedAddress, memory.readRamRecordWord(m_occupiedAddress) - oldBytes + newBytes);
 }
 
-void LuaHeap::creditStep(size_t work) {
-	if (m_cpu.collecting()) setCollectionTarget(static_cast<u32>(usedBytes() + std::max(GC_ASSIST_BYTES, work / 16)));
+void LuaHeap::creditStep() {
+	if (m_cpu.collecting()) setCollectionTarget(static_cast<u32>(usedBytes() + GC_ASSIST_BYTES));
 }
 
 size_t LuaHeap::capacity() const {

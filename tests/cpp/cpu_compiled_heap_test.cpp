@@ -396,16 +396,10 @@ void concatAllocationFault(bool range) {
 	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == (range ? NativeBlockExit::ConcatRange : NativeBlockExit::Concat), "the allocation fault leaves generated code before throwing");
 #endif
-	const auto beforeGc = scalar.cpu.captureRuntimeState();
-	const auto beforeGcRam = scalar.cpu.memory().captureSaveState();
-	scalar.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::K1)]);
-	const int gcCycles = static_cast<int>(scalar.cpu.collectHeap());
-	scalar.cpu.memory().restoreSaveState(beforeGcRam);
-	scalar.cpu.restoreRuntimeState(beforeGc);
 	require(native.cpu.runUntilDepth(0, range ? 5 : 4) == scalar.cpu.runUntilDepth(0, range ? 5 : 4), "failed allocations consume the same grant"); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES, "allocation faults use the completed prefix PC");
-	require(native.cpu.instructionBudgetRemaining == -4 * 1024 * 1024 - (range ? 2 : 0) - gcCycles, "allocation faults retain complete logical text-work and pre-admission GC charges");
+	require(native.cpu.instructionBudgetRemaining == -4 * 1024 * 1024 - (range ? 2 : 0), "allocation faults retain logical text-work charges without charging emergency collection");
 	require(native.cpu.readFrameRegister(0, 0) == valueInteger(73) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9, "the failed allocation preserves its destination and published top");
 }
 } // namespace

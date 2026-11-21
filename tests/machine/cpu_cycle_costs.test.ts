@@ -4,16 +4,15 @@ import { test } from 'node:test';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, ProtectedField } from '../../machine/ts/machine/cpu/call_state';
+import { PROTECTED_CALL_BYTES, ProtectedField } from '../../machine/ts/machine/cpu/call_state';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
-import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
-import { THREAD_HEAP_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
+import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { valueBool, valueBuiltinFunction, valueInteger, valueNil, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
@@ -201,18 +200,10 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			cpu.memory.writeRamRecordWord(controls + (failFirst ? PROTECTED_CALL_BYTES : 0) + ProtectedField.Wanted,
 				failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted);
 			const fault = wanted >= PSX_MACHINE_SPEC.ramBytes;
-			// Both success- and error-placement collect. If the inner return completed,
-			// its closure is already dead at the first scan. Both passes scan
-			// 32 intern buckets and mark/visit 17 live RAM string roots.
-			// Four reserved frame slots (including the exception reserve) and two
-			// continuation records are present during all three scans and sweep.
-			const threadWords = (THREAD_HEAP_BYTES + heapAllocationBytes(8 * 5) + heapAllocationBytes(4 * FRAME_CONTROL_BYTES)
-				+ heapAllocationBytes(2 * PROTECTED_CALL_BYTES)) / 4;
-			const gcCycles = fault ? (failFirst ? 34 : 31) + 2 * (32 + 2 * 17 + 4 * threadWords) : 0;
 			if (fault) assert.throws(() => cpu.runUntilDepth(1, 2), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			else assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
 			const outer = wanted === 0 ? 4 : wanted - 1;
-			assert.equal(cpu.instructionBudgetRemaining, 2 - BASE_CYCLES[OpCode.RET] - (failFirst ? 0 : 3) - (fault ? 0 : outer) - gcCycles, 'the inner status plus two values remains charged if outer admission throws');
+			assert.equal(cpu.instructionBudgetRemaining, 2 - BASE_CYCLES[OpCode.RET] - (failFirst ? 0 : 3) - (fault ? 0 : outer), 'only completed result placement is charged, even when a later allocation fails');
 			if (!fault) assert.deepEqual(Array.from({ length: outer }, (_, i) => thread.currentFrame!.registers.get(i)), [valueBool(true), valueBool(true), valueInteger(17), valueInteger(29), valueNil()].slice(0, outer));
 		});
 	}

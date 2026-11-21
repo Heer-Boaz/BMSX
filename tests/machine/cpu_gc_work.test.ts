@@ -7,12 +7,12 @@ import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { HEAP_COLLECTION_TARGET_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
-import { ValueTag, valueFloatBits, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueFloatBits, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import { BuiltinFunctionId, GarbageCollectionOperation } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import {
@@ -46,22 +46,22 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 const bootThreadBytes = 80 + 40 + 112;
 const bootThreadWords = bootThreadBytes / 4;
 const bootBytes = bootThreadBytes + 12 + 15 + 697 + 128 + 8 + 2 * 136;
-const bootMarkWork = 2 * bootThreadWords + 3 + 2 * 12 + 17;
 const bootCollectionWork = 4 * bootThreadWords + 3 + 1 + 3 * 12 + 2 * 17 + 32;
 
-test('runtime GC bills actual canonical scans, reclamation and three unique root passes', () => {
+test('physical GC work counts canonical scans, reclamation and three unique root passes without a cycle debit', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'charge the allocated RAM String and index blocks');
-	cpu.instructionBudgetRemaining = 7; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, 7 - bootCollectionWork, 'only physical object slots and the RAM intern index are swept');
+	cpu.instructionBudgetRemaining = 7;
+	assert.equal(cpu.gc.collect(), bootCollectionWork, 'only physical object slots and the RAM intern index are swept');
+	assert.equal(cpu.instructionBudgetRemaining, 7);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'read-only ROM Strings are not allocated');
 	const frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, cpu.createTable(2, 3)); //32+10+4×14=98 logical bytes.
 	frame.registers.setString(1, cpu.stringPool.intern(textToByteString('é😀'))); //6 canonical UTF8 bytes, not3 UTF16 units.
 	frame.top = 2;
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 98 + 22);
-	cpu.instructionBudgetRemaining = 7; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, 7 - bootCollectionWork - (8 + 2 + 8 + 1) - 2, 'scan the Table, mark the String leaf and visit each record');
+	assert.equal(cpu.gc.collect(), bootCollectionWork + (8 + 2 + 8 + 1) + 2, 'scan the Table, mark the String leaf and visit each record');
+	assert.equal(cpu.instructionBudgetRemaining, 7);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 98 + 22);
 	assert.equal(cpu.luaHeap.collectionTarget(), 1048576);
 	cpu.instructionBudgetRemaining = 123; cpu.collectTrackedHeapBytes();
@@ -102,7 +102,7 @@ test('allocation assist target is only restored by the RAM checkpoint', () => {
 });
 
 for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [false, true]) {
-	test(`explicit GC owns full short-grant debt once (${backend}, WIDE=${wide})`, () => {
+	test(`explicit collection uses only CALL and primitive cycles at the short-grant frontier (${backend}, WIDE=${wide})`, () => {
 		const image = linkRawTestSystemBlua32(source(OpCode.CALL, wide));
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, pc = frame.pc;
 		for (let warm = 0; warm < COMPILED_BLOCK_THRESHOLD + 2; ++warm) {
@@ -113,8 +113,10 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage); frame.registers.setNil(7); frame.top = 1;
+		const doomed = cpu.createTable(16384, 0);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - 32 - 4 - bootCollectionWork, 'CALL and primitive plus collection, no receiving slots');
+		assert.equal(cpu.instructionBudgetRemaining, 1 - 32 - 4, 'CALL and primitive only, no receiving slots');
+		assert.equal(cpu.gc.tableRecordAddress(doomed), 0, 'explicit collection finishes before the instruction retires');
 		assert.equal(frame.pc, pc + (wide ? 2 : 1) * INSTRUCTION_BYTES); assert.equal(frame.registers.get(7), valueNil());
 		assert.equal(cpu.runUntilDepth(0, 0), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(frame.registers.get(7), valueNil());
@@ -122,7 +124,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		assert.equal(frame.registers.get(7), valueInteger(37), 'fresh grant executes successor, not CALL/collection again');
 	});
 
-	test(`allocation-triggered GC charges pre-request pool before initialization (${backend}, WIDE=${wide})`, () => {
+	test(`allocation-triggered GC does not add to NEWT initialization cycles (${backend}, WIDE=${wide})`, () => {
 		const image = linkRawTestSystemBlua32(source(OpCode.NEWT, wide));
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, pc = frame.pc;
 		for (let warm = 0; warm < COMPILED_BLOCK_THRESHOLD + 2; ++warm) {
@@ -136,7 +138,8 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		cpu.luaHeap.setCollectionTarget(0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc); frame.registers.setNil(7);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - 24 - 4 - bootMarkWork, 'charge NEWT, its initialized slots and the first marking step');
+		assert.equal(cpu.instructionBudgetRemaining, 1 - 24 - 4, 'charge NEWT and its initialized slots, not the marking step');
+		assert.ok(cpu.gc.active(), 'allocation actually assisted an in-progress collection');
 		assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 56, 'request56 is admitted after collection and excluded from B_pre');
 		assert.equal(frame.registers.getTag(0), ValueTag.Table); assert.equal(frame.registers.get(7), valueNil());
 		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
@@ -144,15 +147,44 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 	});
 }
 
-test('failed allocation retains the collection debit, not pending request bytes', () => {
+test('failed allocation finishes emergency collection without a cycle debit or pending bytes', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const doomed = cpu.createTable(16384, 0);
 	cpu.instructionBudgetRemaining = 1;
 	assert.throws(() => cpu.luaHeap.admit(cpu.luaHeap.capacity() + 1), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
-	assert.equal(cpu.instructionBudgetRemaining, 1 - bootCollectionWork); assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
+	assert.equal(cpu.instructionBudgetRemaining, 1);
+	assert.equal(cpu.gc.tableRecordAddress(doomed), 0);
+	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
 	runGuestToHalt(cpu, 1); assert.equal(cpu.instructionBudgetRemaining, -1);
 });
 
-test('all activated image constants and unique namespace slots remain priced across restore', () => {
+test('collect and step keep the same exact CALL and result-placement cycles across heap shapes', () => {
+	const program = source(OpCode.CALL);
+	writeInstruction(program.text, 0, OpCode.CALL, 0, 2, 2);
+	const image = linkRawTestSystemBlua32(program);
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		for (const operation of [GarbageCollectionOperation.Collect, GarbageCollectionOperation.Step]) {
+			const physicalWork: number[] = [];
+			for (const capacity of [1, 8192]) {
+				const { cpu, memory } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
+				frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage);
+				frame.registers.setInteger(1, operation);
+				frame.registers.setTable(5, cpu.createTable(capacity, 0)); frame.top = 6;
+				const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+				physicalWork.push(operation === GarbageCollectionOperation.Collect ? cpu.gc.collect() : cpu.gc.step());
+				memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+				assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+				assert.equal(cpu.instructionBudgetRemaining, 1 - 32 - 4 - 1);
+				assert.equal(cpu.readFrameRegister(0, 0),
+					operation === GarbageCollectionOperation.Step ? valueBool(false) : valueNil());
+				assert.equal(cpu.gc.active(), operation === GarbageCollectionOperation.Step);
+			}
+			assert.ok(physicalWork[1] > physicalWork[0], 'the same guest charge covers different physical work');
+		}
+	}
+});
+
+test('all activated image constants and unique namespace slots remain in the physical scan across restore', () => {
 	const system = source();
 	const first = linkRawTestBlua32Pair(system, { ...source(), constants: [null, integerConstant(1), integerConstant(2), 'card0'], globalNames: ['global', 'card0', 'card0'] });
 	const second = linkRawTestBlua32Pair(system, { ...source(), constants: ['card1'], globalNames: ['global', 'card1'] });
@@ -162,10 +194,13 @@ test('all activated image constants and unique namespace slots remain priced acr
 	cpu.writeFrameExecution(0, 1, second.cartSymbols.functionAddresses[0], second.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, first.systemSymbols.functionAddresses[0], first.systemImage.functions[0].codeAddress);
 	cpu.collectTrackedHeapBytes(); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + (20 + 12) + (5 + 12), 'each card allocates one constant bank and one name-slot map');
-	cpu.instructionBudgetRemaining = 5; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, 5 - bootCollectionWork - 3 * (2 * 5 + 3 * 2), 'all three root passes include constants and registered names of both activated cards');
+	cpu.instructionBudgetRemaining = 5;
+	const work = bootCollectionWork + 3 * (2 * 5 + 3 * 2);
+	assert.equal(cpu.gc.collect(), work, 'all three root passes include constants and registered names of both activated cards');
+	assert.equal(cpu.instructionBudgetRemaining, 5);
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
-	cpu.instructionBudgetRemaining = 5; cpu.luaHeap.collectRuntime(); assert.equal(cpu.instructionBudgetRemaining, 5 - bootCollectionWork - 3 * (2 * 5 + 3 * 2));
+	assert.equal(cpu.gc.collect(), work);
+	assert.equal(cpu.instructionBudgetRemaining, 5);
 });
 
 test('absolute ROM String references resolve even when backing and directory owner differ', () => {
@@ -283,15 +318,17 @@ test('constant loads, compiled operands and checkpoints use the physical bank', 
 	}
 });
 
-test('temporary roots survive charged steps; unreachable allocations pay reclamation but no mark scan', () => {
+test('temporary roots survive unbilled admission; unreachable allocations only add physical reclamation work', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const table = cpu.createTable(), id = cpu.stringPool.intern(textToByteString('é😀'));
 	const heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()]; assert.equal(heap[0], bootBytes + 32 + 22);
 	cpu.luaHeap.setCollectionTarget(0); cpu.instructionBudgetRemaining = 1;
 	cpu.luaHeap.admit(0, valueTable(table), valueString(id));
-	assert.equal(cpu.instructionBudgetRemaining, 1 - bootMarkWork - 8 - 1, 'first mark with two temporary roots; atomic and reclamation remain');
+	assert.equal(cpu.instructionBudgetRemaining, 1);
+	assert.equal(cpu.gc.isAlive(table), true, 'the first mark actually visited the temporary Table');
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 32 + 22); assert.equal(cpu.stringPool.toString(id), 'é😀');
 	while (cpu.gc.active()) cpu.gc.step(valueTable(table), valueString(id));
-	cpu.instructionBudgetRemaining = 1; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, 1 - bootCollectionWork - 2); assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
+	assert.equal(cpu.gc.collect(), bootCollectionWork + 2);
+	assert.equal(cpu.instructionBudgetRemaining, 1);
+	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
 });

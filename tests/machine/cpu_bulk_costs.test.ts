@@ -1,6 +1,5 @@
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
@@ -217,7 +216,7 @@ return true`, 3);
    const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 },
     { firstWord: 32, wordCount: 1 }], exceptionFunctionIndex: 1 });
    const { cpu } = createTestSystemCpu(image, backend);
-   let frame = cpu.rootThread.currentFrame!, r = frame.registers;
+   const frame = cpu.rootThread.currentFrame!, r = frame.registers;
    const entry = image.image.functions[0].codeAddress;
    r.setTable(0, cpu.createTable(0, 1)); r.set(1, valueString(cpu.stringPool.intern('warm'))); r.setInteger(2, 73);
    cpu.runUntilDepth(0, 10000);
@@ -228,7 +227,7 @@ return true`, 3);
    const other = valueString(cpu.stringPool.intern('other'));
    const array = scenario === 'array-growth' ? 2 : scenario === 'array-to-hash' ? 8 : scenario === 'mixed' ? 4 : 0;
    const hash = scenario === 'hash-to-array' || scenario === 'mixed' || scenario === 'same-capacity' || scenario === 'weak-collection' ? 2 : scenario === 'failed-growth' ? 1024 : 0;
-   let table = cpu.createTable(array, hash);
+   const table = cpu.createTable(array, hash);
    r.setTable(0, table); r.setInteger(2, 73); frame.top = 5;
    let capacity: number;
    if (scenario === 'array-growth') {
@@ -269,17 +268,10 @@ return true`, 3);
     while (cpu.heapAllocator.allocate(HEAP_PAGE_SIZE, true) !== 0) { /* fixture-owned RAM */ }
     capacity = 1024;
    }
-   let gcCycles = 0;
-   if (scenario === 'failed-growth') {
-    const before = captureCpuCheckpoint(cpu);
-    gcCycles = cpu.gc.collect();
-    restoreCpuCheckpoint(cpu, before);
-    frame = cpu.rootThread.currentFrame!; r = frame.registers; table = r.getPayload(0);
-   }
    const key = r.get(1);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
    assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.SETT]), RunResult.Yielded);
-   assert.equal(cpu.instructionBudgetRemaining, 0 - gcCycles);
+   assert.equal(cpu.instructionBudgetRemaining, 0, 'table rebuild pays only the opcode, also under collection pressure');
    assert.equal(frame.pc, scenario === 'failed-growth' ? entry : entry + INSTRUCTION_BYTES);
    assert.equal(cpu.gc.tables.storedSlotCount(table), capacity);
    if (scenario === 'failed-growth') {

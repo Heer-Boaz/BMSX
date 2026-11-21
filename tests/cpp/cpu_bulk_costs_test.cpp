@@ -137,22 +137,11 @@ void rebuildWork(bool scalar) {
    while (cpu.heapAllocator().allocate(HEAP_PAGE_SIZE, true) != 0) { /* fixture-owned RAM */ }
    capacity = 1024;
   }
-  int gcCycles = 0;
-  if (scenario == "failed-growth") {
-   const auto before = cpu.captureRuntimeState();
-   const auto ram = cpu.memory().captureSaveState();
-   gcCycles = static_cast<int>(cpu.collectHeap());
-   cpu.memory().restoreSaveState(ram);
-   cpu.restoreRuntimeState(before);
-   frame = cpu.rootThread()->currentFrame;
-   r = frame->registers;
-   table = asTable(r.get(0), cpu.gcHeap());
-  }
   const Value key = r.get(1); machine.restart();
   if (cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SETT)]) != RunResult::Yielded
-   || cpu.instructionBudgetRemaining != -gcCycles || table.storedSlotCount() != capacity
+   || cpu.instructionBudgetRemaining != 0 || table.storedSlotCount() != capacity
    || frame->readControl(bmsx::FrameField::Pc) != machine.rom.textAddress + (scenario == "failed-growth" ? 0u : INSTRUCTION_BYTES))
-   throw std::runtime_error("table rebuild only charges collection in addition to the opcode: " + scenario);
+   throw std::runtime_error("table rebuild pays only the opcode, also under collection pressure: " + scenario);
   if (scenario == "failed-growth") {
    if (cpu.readLuaFaultReasonWord() != LUA_FAULT_REASON_OUT_OF_MEMORY || !isNil(table.get(key)) || table.get(valueFloat(0.5f)) != valueInteger(0))
     throw std::runtime_error("failed replacement does not mutate mappings");

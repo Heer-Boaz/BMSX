@@ -57,7 +57,6 @@ struct Machine {
 // and their 32 four-byte intern buckets, two 136-byte global banks and a 16-byte image map. Each live String marks once,
 // and every issued object block and intern bucket is visited once.
 constexpr int bootBytes = 232 + 12 + 15 + 697 + 128 + 16 + 2 * 136;
-constexpr int bootMarkWork = 2 * 58 + 3 + 2 * 12 + 17;
 constexpr int bootCollectionWork = 4 * 58 + 3 + 1 + 3 * 12 + 2 * 17 + 32;
 
 void allocationAdmissionUsesLogicalBytes() {
@@ -82,17 +81,16 @@ void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	require(cpu.luaHeap().usedBytes() == bootBytes, "boot pool is the literal canonical allocation sum, not host object sizes");
 	cpu.instructionBudgetRemaining = 7;
-	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == 7 - bootCollectionWork, "runtime collection charges object passes, three root passes and String work");
+	require(cpu.collectHeap() == bootCollectionWork && cpu.instructionBudgetRemaining == 7,
+		"physical collection counts object passes, three root passes and String work without a cycle debit");
 	require(cpu.luaHeap().usedBytes() == bootBytes, "readonly ROM String bytes are not charged as allocated text");
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(cpu.createTable(2, 3).address())); //32+10+56=98 logical bytes.
 	frame.registers.set(1, valueString(cpu.stringPool().intern("é😀"))); //6 UTF8 bytes.
 	frame.writeControl(bmsx::FrameField::Top, 2);
 	require(cpu.luaHeap().usedBytes() == bootBytes + 98 + 22, "canonical reserved table capacity and UTF8 text bytes agree");
-	cpu.instructionBudgetRemaining = 7;
-	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == 7 - bootCollectionWork - (8 + 2 + 8 + 1) - 2 && cpu.luaHeap().usedBytes() == bootBytes + 98 + 22,
+	require(cpu.collectHeap() == bootCollectionWork + (8 + 2 + 8 + 1) + 2
+		&& cpu.instructionBudgetRemaining == 7 && cpu.luaHeap().usedBytes() == bootBytes + 98 + 22,
 		"table scans reserved slots; the String is marked and visited without reading its bytes");
 	const auto threshold = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 	require(threshold.second == 1048576, "the existing minimum collection threshold is unchanged");
@@ -116,9 +114,13 @@ void explicitCollectionAndNoReplay() {
 			frame.registers.set(0, m->cpu.createBuiltinFunction(BuiltinFunctionId::CollectGarbage));
 			frame.writeControl(bmsx::FrameField::Top, 1);
 		}
+		const auto doomed = generated.cpu.createTable(16384, 0).address();
+		require(scalar.cpu.createTable(16384, 0).address() == doomed, "both backends start with the same garbage");
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
-			&& generated.cpu.instructionBudgetRemaining == 1 - 32 - 4 - bootCollectionWork,
-			"explicit primitive retains CALL32+primitive4+collection work after short grant, without receiving slots");
+			&& generated.cpu.instructionBudgetRemaining == 1 - 32 - 4,
+			"explicit collection pays CALL32 and primitive4, without a collector charge or receiving slots");
+		require(generated.cpu.gcHeap().tableRecordAddress(doomed) == 0u,
+			"explicit collection completes before the instruction retires");
 		require(generated.cpu.readFramePc(0) == generated.rom.textAddress + (wide ? 8 : 4)
 			&& isNil(generated.cpu.readFrameRegister(0, 7)), "collection completes but cannot execute its successor");
 		test::runCpuParity(generated.cpu, scalar.cpu, 0);
@@ -137,23 +139,53 @@ void allocationCollectionAndFailure() {
 			m->cpu.luaHeap().setCollectionTarget(0);
 		}
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
-			&& generated.cpu.instructionBudgetRemaining == 1 - 24 - 4 - bootMarkWork,
-			"automatic GC bills first marking plus NEWT24 and four initialized Values exactly once");
+			&& generated.cpu.instructionBudgetRemaining == 1 - 24 - 4 && generated.cpu.collecting(),
+			"automatic GC advances; only NEWT24 and four initialized Values are charged");
 		require(generated.cpu.luaHeap().usedBytes() == bootBytes + 56 && valueIsTable(generated.cpu.readFrameRegister(0, 0))
-			&& isNil(generated.cpu.readFrameRegister(0, 7)), "request56 is admitted after collection, not included in its bill");
+			&& isNil(generated.cpu.readFrameRegister(0, 7)), "request56 is admitted after collection");
 		test::runCpuParity(generated.cpu, scalar.cpu, 2);
 		require(generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.readFrameRegister(0, 7) == valueInteger(37),
 			"allocation and GC are not replayed on the next grant");
 	}
 	Machine failure(image()); auto& cpu = failure.cpu;
+	const auto doomed = cpu.createTable(16384, 0).address();
 	cpu.instructionBudgetRemaining = 1;
 	bool failed = false;
 	try { cpu.luaHeap().admit(4 * 1024 * 1024); }
 	catch (const LuaOutOfMemorySignal&) { failed = true; }
-	require(failed && cpu.instructionBudgetRemaining == 1 - bootCollectionWork && cpu.luaHeap().usedBytes() == bootBytes,
-		"failed oversized admission retains complete collection charge, not pending request bytes");
+	require(failed && cpu.instructionBudgetRemaining == 1 && cpu.luaHeap().usedBytes() == bootBytes
+		&& cpu.gcHeap().tableRecordAddress(doomed) == 0u,
+		"failed admission completes emergency collection, with no cycle debit or pending bytes");
 	cpu.runUntilDepth(0, 1);
-	require(cpu.instructionBudgetRemaining == -1, "out-of-run reserve debt is transient and overwritten by the next run grant");
+	require(cpu.instructionBudgetRemaining == -1, "the next grant pays only for HALT");
+}
+
+void collectionPrimitiveCyclesIgnoreHeapShape() {
+	auto source = image(OpCode::CALL);
+	writeInstruction(source.text, 0, static_cast<u8>(OpCode::CALL), 0, 2, 2);
+	for (auto operation : {GarbageCollectionOperation::Collect, GarbageCollectionOperation::Step}) {
+		size_t previousWork = 0;
+		for (u32 capacity : {1u, 8192u}) {
+			Machine generated(source), scalar(source, true), inspected(source, true);
+			for (auto* machine : {&generated, &scalar, &inspected}) {
+				auto& cpu = machine->cpu;
+				auto& frame = *cpu.rootThread()->currentFrame;
+				frame.registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::CollectGarbage));
+				frame.registers.set(1, valueInteger(static_cast<i32>(operation)));
+				frame.registers.set(5, valueTable(cpu.createTable(capacity, 0).address()));
+				frame.setTop(6);
+			}
+			const bool step = operation == GarbageCollectionOperation::Step;
+			const size_t work = step ? inspected.cpu.stepHeap(valueNil(), valueNil(), valueNil()) : inspected.cpu.collectHeap();
+			require(work > previousWork, "the same guest instruction causes different physical work");
+			previousWork = work;
+			require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
+				&& generated.cpu.instructionBudgetRemaining == 1 - 32 - 4 - 1
+				&& generated.cpu.readFrameRegister(0, 0) == (step ? valueBool(false) : valueNil())
+				&& generated.cpu.collecting() == step,
+				"both execution routes pay only CALL, primitive and placement regardless of heap shape");
+		}
+	}
 }
 
 void constantBankUsesGuestRam() {
@@ -221,16 +253,15 @@ void allActivatedImagesAndUniqueGlobals() {
 	cpu.collectHeap();
 	require(cpu.luaHeap().usedBytes() == bootBytes + (20 + 20) + (5 + 16), "each card allocates one constant bank and one name-slot map");
 	cpu.instructionBudgetRemaining = 5;
-	cpu.luaHeap().collectRuntime();
 	// C=3+4+1, S=1, G=3; all activated images remain roots. The two
 	// retired cartridge closure slots still cost one visit each on the system closure's page.
-	require(cpu.instructionBudgetRemaining == 5 - bootCollectionWork - 3 * (2 * 5 + 3 * 2) - 2,
+	const size_t work = bootCollectionWork + 3 * (2 * 5 + 3 * 2) + 2;
+	require(cpu.collectHeap() == work && cpu.instructionBudgetRemaining == 5,
 		"work includes three root passes over all resident images and two vacant closure slots");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	cpu.instructionBudgetRemaining = 5;
-	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == 5 - bootCollectionWork - 3 * (2 * 5 + 3 * 2) - 2, "restored residency and registered ranges reproduce the same collection bill");
+	require(cpu.collectHeap() == work && cpu.instructionBudgetRemaining == 5,
+		"restored residency and registered ranges reproduce the same physical work");
 }
 
 void temporaryRootsAndUnreachablePool() {
@@ -242,13 +273,12 @@ void temporaryRootsAndUnreachablePool() {
 	cpu.luaHeap().setCollectionTarget(0);
 	cpu.instructionBudgetRemaining = 1;
 	cpu.luaHeap().admit(0, valueTable(table.address()), valueString(id));
-	// First marking + live Table8 + String1; atomic and reclamation remain.
-	require(cpu.instructionBudgetRemaining == 1 - bootMarkWork - 8 - 1 && cpu.luaHeap().usedBytes() == bootBytes + 32 + 22
-		&& cpu.stringPool().toString(id) == "é😀", "all reserve temporary roots survive the first incremental pass");
+	require(cpu.instructionBudgetRemaining == 1 && cpu.luaHeap().usedBytes() == bootBytes + 32 + 22
+		&& cpu.gcHeap().isAlive(table.address()) && cpu.stringPool().toString(id) == "é😀",
+		"all reserve temporary roots survive the first unbilled incremental pass");
 	while (cpu.collecting()) cpu.stepHeap(valueTable(table.address()), valueString(id), valueNil());
-	cpu.instructionBudgetRemaining = 1;
-	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == 1 - bootCollectionWork - 2 && cpu.luaHeap().usedBytes() == bootBytes,
+	require(cpu.collectHeap() == bootCollectionWork + 2 && cpu.instructionBudgetRemaining == 1
+		&& cpu.luaHeap().usedBytes() == bootBytes,
 		"dead Table incurs one block visit, not another mark pass; its String incurs one visit, not a scan of its bytes");
 }
 
@@ -845,9 +875,10 @@ void secondMarkPassAndCredit() {
 	const auto before = cpu.luaHeap().usedBytes();
 	cpu.luaHeap().setCollectionTarget(before); cpu.instructionBudgetRemaining = 0;
 	cpu.createTable();
-	const size_t work = static_cast<size_t>(-cpu.instructionBudgetRemaining);
-	require(work == GC_STEP_WORDS && cpu.luaHeap().collectionTarget() == before + work / 16,
-		"the partial Table scan earns credit for one quantum before the pending request");
+	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	require(cpu.instructionBudgetRemaining == 0 && cpu.luaHeap().collectionTarget() == before + GC_ASSIST_BYTES
+		&& cpu.memory().readRamRecordWord(control + GC_TRACE_RECORD) == valuePayload(frame.registers.get(0)),
+		"a partial Table scan keeps the grant intact and earns the fixed logical credit before admission");
 	u32 phases = 0;
 	for (int i = 0; i < 12; ++i) {
 		auto target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
@@ -865,6 +896,27 @@ void secondMarkPassAndCredit() {
 	auto late = cpu.createTable(); target.setInteger(2, valueTable(late.address()));
 	while (cpu.collecting()) cpu.stepHeap(valueNil(), valueNil(), valueNil());
 	require(target.getInteger(2) == valueTable(late.address()), "final remark retains writes after the second pass");
+}
+
+void explicitAtomicCreditIgnoresPhysicalWork() {
+	Machine machine(image()); auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto weak = cpu.createTable(2 * GC_STEP_WORDS, 0), meta = cpu.createTable(0, 1);
+	meta.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+	weak.setMetatableAddress(meta.address());
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(weak.address())); frame.setTop(1);
+	for (int i = 0; !heap.finalMarkPending() && i < 20; ++i) cpu.stepHeap(valueNil(), valueNil(), valueNil());
+	require(heap.finalMarkPending(), "the final pass is ready");
+	const auto state = cpu.captureRuntimeState();
+	const auto ram = machine.memory.captureSaveState();
+	require(heap.finishFinalMark() > GC_STEP_WORDS, "the synchronous final step spans several physical quanta");
+	machine.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	const auto occupied = cpu.luaHeap().usedBytes();
+	cpu.instructionBudgetRemaining = 7;
+	require(!cpu.luaHeap().stepRuntime() && heap.phase() == GcPhase::Sweep
+		&& cpu.luaHeap().collectionTarget() == occupied + GC_ASSIST_BYTES && cpu.instructionBudgetRemaining == 7,
+		"explicit final work earns only fixed logical credit and does not debit the guest");
 }
 
 void collectUnattachedThreadRecord() {
@@ -1011,8 +1063,7 @@ void highRetainedPacing() {
 	for (int i = 0; i < 2400; ++i) {
 		const auto before = cpu.instructionBudgetRemaining;
 		cpu.createTable(384, 0);
-		require(before - cpu.instructionBudgetRemaining <= static_cast<int>(GC_STEP_WORDS) + 32,
-			"ordinary allocation advances at most one marking/reclamation quantum");
+		require(before == cpu.instructionBudgetRemaining, "ordinary allocation advances collection without debiting the guest grant");
 		if (!cpu.gcHeap().finalMarkPending()) continue;
 		++pauses;
 		for (int step = 0; cpu.gcHeap().finalMarkPending() && step < 256; ++step) cpu.gcHeap().stepFinalMark();
@@ -1039,12 +1090,14 @@ int main(int argc, char** argv) {
 		}
 		canonicalPoolAndRootRanges();
 		allocationAdmissionUsesLogicalBytes(); explicitCollectionAndNoReplay();
-		allocationCollectionAndFailure(); constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
+		allocationCollectionAndFailure(); collectionPrimitiveCyclesIgnoreHeapShape();
+		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
 		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues(); incrementalSharedWeakMode();
 		resumesFinalWeakCleanup(); resumesMetatableModeProbe(); resumesWeakTableRemark(); consumesSelfLinkedGrayEdge();
-		secondMarkPassAndCredit(); collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
+		secondMarkPassAndCredit(); explicitAtomicCreditIgnoresPhysicalWork();
+		collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
 		return 0;
 	} catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

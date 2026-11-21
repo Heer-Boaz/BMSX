@@ -89,7 +89,7 @@ collection continues without these calls.
 | `'step'` | Perform one incremental step, starting a cycle if idle. Return true if that step finishes the cycle, false otherwise. |
 
 One KiB is 1,024 bytes; fractional KiB are retained. Counts use the canonical
-logical allocation charges in the [CPU reference](cpu.md#sec-cpu-collection-work-charge).
+logical allocation charges in the [CPU reference](cpu.md#sec-cpu-language-allocation-and-collection).
 They include reserved slots but not padding or free fragments of RAM. Reading a count does not collect.
 An unlisted option raises an error. The service captures its collection and
 error primitives when installed; replacing public bindings does not alter them.
@@ -100,13 +100,11 @@ local capacity_kib = collectgarbage('capacity')
 local cycle_finished = collectgarbage('step')
 ```
 
-A step targets 4,096 work cycles, but one large object or the final atomic
-remark can exceed that target. It is not a display-frame wait or a promise to
-finish within a fixed time. Full collection is synchronous and is best kept
-out of time-critical play. Both explicit forms consume the work cycles they
-perform; they do not make reclamation free. Each underlying collection-control
-primitive call adds 4 cycles beyond `CALL`, with ordinary result-placement
-charges. Count and capacity use that primitive without collection work.
+A step does not wait for a display frame and does not guarantee a maximum
+pause. Full collection is synchronous; use it at a suitable point, such as
+a loading screen. Each underlying collection-control primitive call adds
+4 cycles beyond `CALL`, with ordinary result placement. The charge does not
+depend on how much collection work it performs.
 
 ## Value checks and conversion {#sec-bios-base-value-checks-and-conversion}
 

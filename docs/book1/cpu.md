@@ -1194,7 +1194,7 @@ buffers using the separate byte-storage reservations in [[Memory](memory.md#sec-
 Use addressed byte storage for exact device records and payloads.
 
 
-#### Collection work charge {#sec-cpu-collection-work-charge}
+#### Language allocation and collection {#sec-cpu-language-allocation-and-collection}
 
 Automatic collection advances incrementally as allocations cross the assist
 threshold. It traces and reclaims the same pool regardless of object age.
@@ -1274,63 +1274,17 @@ in a final atomic remark, and then reclaims unmarked objects and Strings.
 Adding or replacing a tracked reference in a previously scanned Table or
 closed captured-variable cell makes that allocation eligible for another scan.
 Writing the Table's metatable also makes it eligible, since that can change how
-its existing entries are traced. Register and global
-writes do not add a per-write collection charge: roots and retained Thread
-stacks are examined again before reclamation. Allocations created during
-reclamation survive that collection. An object found reachable earlier in the
+its existing entries are traced. Roots and retained Thread stacks are
+examined again before reclamation. Allocations created during reclamation
+survive that collection. An object found reachable earlier in the
 cycle may therefore survive until a later collection even if its last
 reference has gone.
 
-Collection work consumes cycles as follows:
-
-| Work | Cycles |
-| --- | --- |
-| Scan a Table | `8 + A + 2H`; eight header words and one cycle for each reserved Value slot |
-| Scan a closure | `3 + U` |
-| Scan a Thread | `ceil(occupied allocation bytes / 4)` |
-| Scan a captured-variable cell | `4` |
-| Follow a Thread's open capture link to an already marked cell | `1` |
-| Examine an object slot or run for reclamation, except an occupied Thread slot | `1` per visited block, including a free slot; a page run is one block |
-| Examine an occupied Thread slot for reclamation | `ceil(occupied allocation bytes / 4)` |
-| Read the constant and global root ranges | `2C + 3(S + G)` per pass |
-| Clear weak entries and retain surviving String entries in one weak Table | `A + 2H` |
-| Mark a previously unmarked RAM String | `1` |
-| Examine one RAM intern bucket, including an empty bucket | `1` |
-| Copy retained Thread storage when shrinking | For each allocation moved, `2 × ceil(new unrounded reservation bytes / 4)` |
-
-For charges based on bytes, round each allocation independently.
-A repeated scan costs again; unreachable objects that are not scanned still
-incur their reclamation work. A String has no outgoing Value references, so
-marking and reclaiming it do not scan its bytes. Strings in a program image
-occupy no language heap and are not marked or swept; their constant and
-registered-name root slots still count. The sweep examines slots that the
-allocator has issued on an object page, not its unused tail, and leaves a page
-as soon as it is released. Table and Thread backing blocks are released with their owning records
-and are not separate sweep visits. String reclamation visits an intern
-bucket and its chain in order; unmarked records are unlinked and released.
-The intern index walks at
-most the indexed String count, bounded by the number of headers that fit in
-main RAM. It stops probing at that limit; sweep unlinks any tail past the
-limit. Reclaiming a String does not shrink the bucket table.
-
-`C` counts constant Value slots in all activated program images. `S` and `G`
-count registered system-global and cartridge-global slots; repeated registration
-of one name shares its existing slot. Nil slots count too. These ranges are
-read at the beginning of marking, at the start of the second pass and at
-the final remark. Each pass can resume at the next root slot. Thread storage
-is scanned in all three passes. Function-activation control and fixed collector bookkeeping are included
-in these allowances, not charged by a separate frame-record size.
-
-A full-collection step normally stops after **4,096 work cycles**. During
-incremental marking, the scan of a Table, a Thread, or a closure's capture
-list can resume in a later step. When a closure or a Thread first reaches a captured-variable cell, its four-cycle scan is
-included in the step that reaches it. The final root remark, remaining changed-object scans and weak-entry
-clearing begin between execution grants. An automatic final pass can resume
-from the next root slot, object position or weak entry without starting the
-pass over. No CPU instruction, interrupt or device deadline is taken during
-the pause, and final-pass work does not use the active guest grant. Reclamation of
-objects and Strings resumes from its previous position on the next step. An
-object page already being examined is completed before the sweep advances.
+Marking and reclamation can continue in later steps. The automatic final
+remark and weak-entry clearing pause execution between grants; an interrupt
+or device deadline cannot occur partway through that pause. The CPU resumes
+with its previous cycle budget. Collection work does not advance the machine
+clock, regardless of the number of live objects or entries examined.
 
 Writes to already scanned objects enter a changed-object queue rather than
 immediately restarting their first scan. The second pass revisits Threads
@@ -1348,18 +1302,14 @@ their reserve exceeds four and three times the active count is less than the
 reserve. The three reservations are considered independently. When a
 reservation shrinks, the released space leaves the occupied budget. A Thread
 whose own stack-growth request caused the step is not shrunk during that
-request. Moving storage incurs the charge above in addition to examining the
-old allocation. Existing frame and captured-variable references retain their
-meaning.
+request. Existing frame and captured-variable references retain their meaning.
 
 The initial collection threshold is **1 MiB of occupied budget**. A request for
 `R` bytes starts or assists collection when `B + R` exceeds the current
 threshold, where `B` is the occupied budget before admitting the request. While
-a cycle remains active, a step completing `W` work cycles sets the next threshold
-to the remaining occupied budget plus `max(256, floor(W/16))` bytes, before
-adding `R`. Thus an indivisible large scan earns allocation credit for its
-actual work; it does not force another step after only 256 bytes. Explicit
-steps receive the same credit. When the cycle completes,
+a cycle remains active, each allocation assist or explicit step sets the next
+threshold to the remaining occupied budget plus 256 bytes, before admitting
+any pending request. When the cycle completes,
 let `L` be the remaining occupied budget and `K` the total language-allocation
 capacity. The next threshold is:
 
@@ -1380,15 +1330,10 @@ does the same; the fresh cycle removes garbage retained only by an earlier scan
 of the interrupted cycle. If the request still does not fit, it raises the
 out-of-memory error without admitting its bytes.
 
-The requesting instruction pays for collection work performed within that
-instruction. The assist or explicit collection finishes before the next
-instruction or pending interrupt is accepted, including when it exceeds the
-current cycle grant. This charge is retained on an allocation failure. A
-scheduled final pass is separate from this charge. Existing instruction,
-primitive, table-storage and result-placement charges remain additional;
-collection does not repeat them. Ordinary allocator management and write-barrier
-bookkeeping add no separate charge.
-
+An allocation assist, explicit collection or emergency collection can delay
+execution, but none adds guest cycles. An allocation that fails retains the
+ordinary charges for the parts of the instruction it already performed; it
+does not add a collection charge or admit the failed reservation.
 
 #### Weak references and collection {#sec-cpu-weak-references-and-collection}
 

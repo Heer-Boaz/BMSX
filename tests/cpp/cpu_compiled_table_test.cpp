@@ -477,13 +477,8 @@ void wideAllocationFailure() {
 		const auto key = cpu.stringPool().find("retained"); auto retained = cpu.createTable(690000); cpu.setGlobalByKey(*key, valueTable(retained.address()));
 		cpu.collectHeap();
 	}
-	const auto beforeGc = scalar.cpu.captureRuntimeState();
-	const auto beforeGcRam = scalar.cpu.memory().captureSaveState();
-	const int gcCycles = static_cast<int>(scalar.cpu.collectHeap());
-	scalar.cpu.memory().restoreSaveState(beforeGcRam);
-	scalar.cpu.restoreRuntimeState(beforeGc);
 	test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::NEWT)]); requireParity(native, scalar);
-	require(native.cpu.instructionBudgetRemaining == -gcCycles, "failed NEWT pays prefix/base and pre-admission GC, but no initialization");
+	require(native.cpu.instructionBudgetRemaining == 0, "failed NEWT pays prefix and base, not emergency collection or initialization");
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
 		&& native.cpu.readFrameRegister(0, 8) == valueInteger(73) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9,

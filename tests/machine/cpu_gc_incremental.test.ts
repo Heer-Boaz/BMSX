@@ -10,7 +10,7 @@ import { HEAP_GC_CONTROL_OFFSET, heapAllocationBytes } from '../../machine/ts/ma
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
-import { GcPhase, GC_MODE_META, GC_MODE_NODE, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
+import { GcPhase, GC_MODE_META, GC_MODE_NODE, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_ASSIST_BYTES, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
@@ -528,7 +528,7 @@ test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing
 		'root thread, root closure, root table, 1000 children and one sweep-born table remain');
 });
 
-test('allocation assists debit one bounded graph step and retain the pending request outside its work', () => {
+test('allocation assists advance one graph step without debiting the pending request', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, root = cpu.createTable(2048, 0);
 	frame.registers.setTable(0, root); frame.top = 1;
 	for (let i = 1; i <= 2048; ++i) cpu.gc.tables.setInteger(root, i, valueTable(cpu.createTable()));
@@ -537,8 +537,7 @@ test('allocation assists debit one bounded graph step and retain the pending req
 	cpu.instructionBudgetRemaining = 1;
 	const pending = cpu.createTable();
 	assert.equal(cpu.gc.phase(), GcPhase.Mark);
-	assert.ok(cpu.instructionBudgetRemaining < 0);
-	assert.ok(cpu.instructionBudgetRemaining > -2 * GC_STEP_WORDS, 'one large root is indivisible, not the entire graph');
+	assert.equal(cpu.instructionBudgetRemaining, 1);
 	assert.equal(cpu.luaHeap.usedBytes(), before + 32);
 	frame.registers.setTable(1, pending); frame.top = 2;
 	cpu.luaHeap.collectRuntime();
@@ -616,16 +615,37 @@ test('changed objects wait for a finite second pass and retain later writes acro
 	assert.ok(allocatedObjectRecords(cpu).includes(late));
 });
 
-test('a large Table scan earns one quantum of allocation credit per assist', () => {
+test('a partial Table scan earns the fixed logical allocation credit per assist', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, cpu.createTable(8192, 0)); frame.top = 1;
 	const before = cpu.luaHeap.usedBytes();
 	cpu.luaHeap.setCollectionTarget(before);
 	cpu.instructionBudgetRemaining = 0;
 	cpu.createTable();
-	const work = -cpu.instructionBudgetRemaining;
-	assert.equal(work, GC_STEP_WORDS);
-	assert.equal(cpu.luaHeap.collectionTarget(), before + (work >>> 4));
+	assert.equal(cpu.instructionBudgetRemaining, 0);
+	assert.equal(cpu.luaHeap.collectionTarget(), before + GC_ASSIST_BYTES);
+	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	assert.equal(cpu.memory.readRamRecordWord(control + GC_TRACE_RECORD), frame.registers.getPayload(0));
+});
+
+test('even a long explicit final mark earns only the fixed logical allocation credit', () => {
+	const cpu = machine(), { gc, memory } = cpu;
+	const weak = cpu.createTable(2 * GC_STEP_WORDS, 0), meta = cpu.createTable(0, 1);
+	gc.tables.setStringKey(meta, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
+	gc.tables.setMetatableAddress(weak, meta);
+	const frame = cpu.rootThread.currentFrame!;
+	frame.registers.setTable(0, weak); frame.top = 1;
+	for (let i = 0; !gc.finalMarkPending() && i < 20; ++i) gc.step();
+	assert.equal(gc.phase(), GcPhase.Atomic);
+	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	assert.ok(gc.finishFinalMark() > GC_STEP_WORDS, 'the synchronous final step spans several physical quanta');
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	const occupied = cpu.luaHeap.usedBytes();
+	cpu.instructionBudgetRemaining = 7;
+	assert.equal(cpu.luaHeap.stepRuntime(), false);
+	assert.equal(gc.phase(), GcPhase.Sweep);
+	assert.equal(cpu.luaHeap.collectionTarget(), occupied + GC_ASSIST_BYTES);
+	assert.equal(cpu.instructionBudgetRemaining, 7);
 });
 
 test('a rooted raw Thread frame retains its table edge and is collected without an execution view', () => {
@@ -771,7 +791,7 @@ test('allocation pressure advances resumable collection above two MiB retained',
 	for (let i = 0; i < 2400; ++i) {
 		const before = cpu.instructionBudgetRemaining;
 		cpu.createTable(384, 0);
-		assert.ok(before - cpu.instructionBudgetRemaining <= GC_STEP_WORDS + 32, 'ordinary admission never drains the graph');
+		assert.equal(cpu.instructionBudgetRemaining, before, 'ordinary admission does not debit collector work');
 		if (!cpu.gc.finalMarkPending()) continue;
 		++pauses;
 		for (let step = 0; cpu.gc.finalMarkPending() && step < 256; ++step) cpu.gc.stepFinalMark();

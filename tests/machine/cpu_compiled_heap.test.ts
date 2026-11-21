@@ -1,5 +1,4 @@
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import { numberConstantFromHost } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
@@ -249,12 +248,8 @@ for (const range of [false, true]) test(`compiled concatenation allocation failu
 	const frame = js.rootThread.frameAtDepth(0), pc = image.image.functions[0].codeAddress;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!.terminal.exit,
 		range ? CompiledBlockExit.ConcatRange : CompiledBlockExit.Concat);
-	const beforeGc = captureCpuCheckpoint(ref);
-	ref.runUntilDepth(0, BASE_CYCLES[OpCode.K1]);
-	const gcCycles = ref.gc.collect();
-	restoreCpuCheckpoint(ref, beforeGc);
 	assert.equal(js.runUntilDepth(0, range ? 5 : 4), ref.runUntilDepth(0, range ? 5 : 4)); assertParity(js, ref);
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);
-	assert.equal(js.instructionBudgetRemaining, -4 * 1024 * 1024 - (range ? 2 : 0) - gcCycles, 'allocation faults retain complete logical text-work and pre-request collection charges');
+	assert.equal(js.instructionBudgetRemaining, -4 * 1024 * 1024 - (range ? 2 : 0), 'allocation faults retain logical text-work charges without charging emergency collection');
 	assert.equal(frame.registers.getInteger(0), 73); assert.equal(frame.top, 9);
 });
