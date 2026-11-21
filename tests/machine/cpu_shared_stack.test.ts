@@ -3,6 +3,7 @@ import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
+import { MAPPED_BUS_INSTRUCTION_FETCH } from '../../machine/ts/machine/memory/bus_signals';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -211,6 +212,12 @@ test(`an active stack stays private to the physical record port (${backend})`, (
 			'the private-stack regression exercises a warmed JavaScript entry');
 	const offset = thread.stackOffset(), slot = RAM_BASE + offset;
 	assert.ok(slot >= memory.ramBusEnd());
+	for (const address of [slot, thread.address, RAM_BASE + thread.currentFrame!.controlOffset]) {
+		memory.clearBusFault();
+		assert.equal(memory.readMappedBusU32LE(address, MAPPED_BUS_INSTRUCTION_FETCH), 0);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED,
+			'the instruction bus cannot observe the active thread or its frame and Value storage');
+	}
 	memory.clearBusFault(); assert.equal(memory.readMappedU32LE(slot), 0);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
 	memory.clearBusFault(); memory.writeMappedU32LE(slot, 73);

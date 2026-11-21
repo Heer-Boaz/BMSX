@@ -17,7 +17,6 @@ void Thread::select(u32 selected) {
 	boundFrameOffset = 0;
 	boundProtectedOffset = 0;
 	boundFrameCapacity = 0;
-	boundProtectedCapacity = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	recordedWriteEpoch = 0;
 #endif
@@ -113,7 +112,6 @@ u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, CallResultPla
 		const u32 block = heap.budget.reserveBacking(bytes, increase, handler, valueNil(), valueNil(), address);
 		ThreadRecord::replaceControls(heap, address, ThreadField::ProtectedBlock, block, capacity);
 		boundProtectedOffset = block & RAM_RECORD_WORD_MASK;
-		boundProtectedCapacity = capacity;
 	}
 	const u32 addr = protectedAddress(index) & RAM_RECORD_WORD_MASK;
 	auto& memory = heap.memory;
@@ -133,18 +131,10 @@ u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, CallResultPla
 }
 
 bool Thread::stackRequiresScalar() const {
-	const u32 bytes = stackByteLength(), offset = stackOffset();
-	if (stack.mirrored() || static_cast<size_t>(stackTop()) > stack.size() || frameDepth() > boundFrameCapacity
-		|| bytes > MAIN_RAM_SIZE - offset) return true;
-	const u32 publicBytes = heap.memory.ramBusEnd() - RAM_BASE;
-	const u32 record = address & RAM_RECORD_WORD_MASK;
-	const auto& watches = heap.memory.ramWriteWatches();
-	return (record < publicBytes && (watches.anyWatched(record + static_cast<u32>(ThreadField::StackTop), 4u)
-		|| watches.anyWatched(record + static_cast<u32>(ThreadField::FrameDepth), 4u)))
-		|| (offset < publicBytes && watches.anyWatched(offset, bytes))
-		|| (boundFrameOffset < publicBytes && watches.anyWatched(boundFrameOffset, boundFrameCapacity * FRAME_CONTROL_BYTES))
-		|| (boundProtectedCapacity != 0u && boundProtectedOffset < publicBytes
-			&& watches.anyWatched(boundProtectedOffset, boundProtectedCapacity * PROTECTED_CALL_BYTES));
+	// The heap owns all thread storage; the instruction bus cannot watch it.
+	// A native grant only needs to admit the physical Value/control layout.
+	return stack.mirrored() || static_cast<size_t>(stackTop()) > stack.size() || frameDepth() > boundFrameCapacity
+		|| stackByteLength() > MAIN_RAM_SIZE - stackOffset();
 }
 
 void Thread::bindStack() {
@@ -154,7 +144,6 @@ void Thread::bindStack() {
 	const auto layout = ThreadRecord::storageLayout(heap.memory, address);
 	stackCapacity = layout.valueCapacity;
 	boundFrameCapacity = layout.frameCapacity;
-	boundProtectedCapacity = layout.protectedCapacity;
 	boundFrameOffset = layout.frameAddress(0);
 	boundProtectedOffset = layout.protectedAddress(0);
 	bindFrameControls();

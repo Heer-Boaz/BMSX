@@ -114,7 +114,6 @@ private:
 	u32 boundFrameOffset = 0;
 	u32 boundProtectedOffset = 0;
 	u32 boundFrameCapacity = 0;
-	u32 boundProtectedCapacity = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	u32 recordedWriteEpoch = 0;
 #endif

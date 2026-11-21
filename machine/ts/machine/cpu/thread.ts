@@ -4,7 +4,7 @@ import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES
 import type { GcHeap } from './gc_heap';
 import { ValueTag, valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
 import { writeLE32 } from '../../common/endian';
-import { MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueSlots } from './value_slots';
 
 /** Reusable CPU execution bank bound to one raw Thread record; never a guest identity. */
@@ -18,7 +18,6 @@ export class Thread {
 	private boundFrameOffset = 0;
 	private boundProtectedOffset = 0;
 	private boundFrameCapacity = 0;
-	private boundProtectedCapacity = 0;
 	private recordWordOffset = 0;
 	public address = 0;
 	public constructor(private readonly heap: GcHeap) {}
@@ -91,7 +90,6 @@ export class Thread {
 			const block = this.heap.budget.reserveBacking(bytes, increase, handler, valueNil(), valueNil(), this.address);
 			this.heap.threads.replaceControls(this.address, ThreadField.ProtectedBlock, block, capacity);
 			this.boundProtectedOffset = block & RAM_RECORD_WORD_MASK;
-			this.boundProtectedCapacity = capacity;
 		}
 		const address = this.protectedAddress(index) & RAM_RECORD_WORD_MASK;
 		const memory = this.heap.memory, ram = memory.ramData();
@@ -109,23 +107,15 @@ export class Thread {
 	}
 
 	public stackRequiresScalar(): boolean {
-		const bytes = this.stackRegisters.byteLength(), offset = this.stackOffset();
-		if (this.stackRegisters.ramMirrored() || this.stackTop > this.stackRegisters.capacity()
-			|| this.frameDepth > this.boundFrameCapacity || bytes > MAIN_RAM_SIZE - offset) return true;
-		const publicBytes = this.heap.memory.ramBusEnd() - RAM_BASE, record = this.address & RAM_RECORD_WORD_MASK;
-		const watches = this.heap.memory.ramWriteWatches();
-		return (record < publicBytes && (watches.anyWatched(record + ThreadField.StackTop, 4)
-			|| watches.anyWatched(record + ThreadField.FrameDepth, 4)))
-			|| (offset < publicBytes && watches.anyWatched(offset, bytes))
-			|| (this.boundFrameOffset < publicBytes && watches.anyWatched(this.boundFrameOffset, this.boundFrameCapacity * FRAME_CONTROL_BYTES))
-			|| (this.boundProtectedCapacity !== 0 && this.boundProtectedOffset < publicBytes
-				&& watches.anyWatched(this.boundProtectedOffset, this.boundProtectedCapacity * PROTECTED_CALL_BYTES));
+		// The language heap is outside the instruction bus; only the
+		// physical register window matters to the compiled path.
+		return this.stackRegisters.ramMirrored() || this.stackTop > this.stackRegisters.capacity()
+			|| this.frameDepth > this.boundFrameCapacity;
 	}
 
 	public bindStack(): void {
 		const capacity = this.read(ThreadField.StackCapacity);
 		this.boundFrameCapacity = this.frameCapacity;
-		this.boundProtectedCapacity = this.protectedCapacity;
 		const block = this.read(ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
 		this.boundFrameOffset = this.read(ThreadField.FrameBlock) & RAM_RECORD_WORD_MASK;
 		this.boundProtectedOffset = this.read(ThreadField.ProtectedBlock) & RAM_RECORD_WORD_MASK;

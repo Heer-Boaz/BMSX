@@ -207,6 +207,12 @@ void privatePhysicalStack() {
 #endif
 	const u32 offset = thread->stackOffset(), slot = RAM_BASE + offset;
 	require(slot >= memory.ramBusEnd(), "the actual stack resides outside the public aperture");
+	for (const u32 address : {slot, thread->address, RAM_BASE + thread->currentFrame->controlOffset}) {
+		memory.clearBusFault();
+		require(memory.readMappedBusU32LE(address, MAPPED_BUS_INSTRUCTION_FETCH) == 0u
+			&& memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED,
+			"the instruction bus cannot observe the active thread or its frame and Value storage");
+	}
 	memory.clearBusFault(); require(memory.readMappedU32LE(slot) == 0u, "a private stack supplies no ordinary bus payload");
 	require(memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED, "an ordinary private-stack read faults");
 	memory.clearBusFault(); memory.writeMappedU32LE(slot, 73u);
