@@ -1,6 +1,6 @@
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/native_block.h"
+#include "machine/cpu/native_compiler.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
@@ -282,12 +282,19 @@ void hotUpvalueAlias() {
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& first = *native.cpu.activeThread()->frameAtDepth(0);
-	test::waitForNativeEntry(native.cpu, *first.decodedPage, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
-	const auto& compiled = first.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const u32 entry = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, *first.decodedPage, entry);
+	const auto& compiled = first.decodedPage->nativeBlocks->entries[entry];
 	require(compiled && std::any_of(compiled->sideExits.begin(), compiled->sideExits.end(), [&](const auto& exit) {
 		return exit.exit == NativeBlockExit::WriteUpvalue && exit.currentPc == native.rom.textAddress + 3 * INSTRUCTION_BYTES
 			&& exit.nextPc == native.rom.textAddress + 4 * INSTRUCTION_BYTES;
 	}), "the compiled self-alias exit resumes after the captured write");
+	const auto& continuation = first.decodedPage->nativeBlocks->entries[entry + 4];
+	require(continuation && first.decodedPage->nativeBlocks->entries[entry + 7]
+		&& std::any_of(continuation->sideExits.begin(), continuation->sideExits.end(), [&](const auto& exit) {
+			return exit.exit == NativeBlockExit::WriteUpvalue && exit.currentPc == native.rom.textAddress + 6 * INSTRUCTION_BYTES
+				&& exit.nextPc == native.rom.textAddress + 7 * INSTRUCTION_BYTES;
+		}), "the closed capture store has a typed semantic exit and a compiled GETUP continuation");
 #endif
 	int loopCycles = 0;
 	for (const auto op : ops) loopCycles += BASE_CYCLES[static_cast<u8>(op)];
@@ -300,6 +307,37 @@ void hotUpvalueAlias() {
 		const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
 		require(frame.registers.get(3) == valueInteger(10) && frame.registers.get(4) == valueInteger(9)
 			&& frame.registers.get(6) == value && static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 7, "a self-alias side exit writes the actual cell without losing live values or extending top");
+	}
+	for (const u8 flags : {GC_OLD, static_cast<u8>(GC_OLD | GC_REMEMBERED | 3u)}) {
+		for (auto* m : {&native, &scalar}) {
+			auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
+			const auto child = valueTable(m->cpu.createTable().address());
+			m->memory.writeRamRecordByte(frame.captureAddress(1) + GC_COLOR_OFFSET, flags);
+			frame.registers.set(12, child);
+			frame.writeControl(FrameField::Pc, m->rom.textAddress);
+		}
+		const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
+		const auto closed = frame.captureAddress(1);
+		const auto head = native.cpu.gcHeap().changedHeadOffset();
+		const auto previousHead = native.memory.readRamRecordWord(head);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto& writes = native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::WriteUpvalue)];
+		const auto previousWrites = writes.entries;
+#endif
+		test::runCpuParity(native.cpu, scalar.cpu, loopCycles);
+		requireParity(native, scalar);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		require(writes.entries == previousWrites + 2, "the open write and the GC barrier both reach the CPU's semantic store");
+#endif
+		const bool black = (flags & GC_COLOR_MASK) == 3u;
+		require(native.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | (black ? 2u : 0u))
+			&& Upvalue::load(native.memory, closed) == frame.registers.get(12)
+			&& frame.registers.get(6) == frame.registers.get(12),
+			"CPU SETUP owns the reference barrier and resumes the compiled GETUP with the committed value");
+		if (black)
+			require(native.memory.readRamRecordWord(closed + UPVALUE_NEXT) == previousHead
+				&& native.memory.readRamRecordWord(head) == ((closed & GC_RECORD_MASK) >> GC_RECORD_SHIFT),
+				"a black closed capture joins the physical changed queue exactly once");
 	}
 }
 
@@ -320,7 +358,7 @@ struct ContextBlock {
 		}
 		const std::array runs{NativeBlockSource{source}};
 		auto& strings = machine.cpu.stringPool();
-		blocks = NativeBlock::compileRegion(runs, constants, NativeCodeBindings(machine.memory, strings, strings.intern("__index")));
+		blocks = NativeCompiler::compile(runs, constants, NativeCodeBindings(machine.memory, strings));
 		blocks.front()->region->publish(bytes);
 	}
 };
@@ -442,12 +480,17 @@ void rawContextValues(CpuMachine& machine) {
 	watches.clearCodeRange(cellLink, sizeof(u32));
 	closedStore.remainingCycles = 100;
 	const auto& blackReferenceExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
-	require(blackReferenceExit.exit == NativeBlockExit::Continue && blackReferenceExit.currentPc == outerRead.source.back().pc
-		&& blackReferenceExit.nextPc == 0 && Upvalue::load(machine.memory, closed) == child
+	require(blackReferenceExit.exit == NativeBlockExit::WriteUpvalue && blackReferenceExit.currentPc == outerRead.source[3].pc
+		&& blackReferenceExit.nextPc == outerRead.source[4].pc && Upvalue::load(machine.memory, closed) == valueInteger(23)
+		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 3u)
+		&& machine.memory.readRamRecordWord(head) == previousHead,
+		"even an unwatched collector update leaves native code before changing the cell or queue");
+	Upvalue::store(heap, closed, child);
+	require(Upvalue::load(machine.memory, closed) == child
 		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 2u)
 		&& machine.memory.readRamRecordWord(closed + UPVALUE_NEXT) == previousHead
 		&& machine.memory.readRamRecordWord(head) == ((closed & GC_RECORD_MASK) >> GC_RECORD_SHIFT),
-		"generated SETUP publishes both the reference and the closed cell's raw changed-queue link");
+		"the semantic store publishes both the reference and the closed cell's raw changed-queue link");
 	const u32 rawCell = DYNAMIC_RAM_BASE + 0x600u;
 	machine.memory.writeRamRecordByte(rawCell, UPVALUE_RECORD_KIND);
 	require(heap.cellRecordAddress(rawCell) == 0u, "an unallocated header is not a GC cell");

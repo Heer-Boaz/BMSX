@@ -2,9 +2,6 @@
 #include "machine/cpu/call_state.h"
 #include "machine/cpu/native_block_abi.h"
 #include "machine/cpu/native_execution.h"
-#include "machine/cpu/native_lowering.h"
-#include "machine/cpu/native_ir.h"
-#include "machine/cpu/native_ir_liveness.h"
 #include "machine/cpu/native_table_constructor.h"
 
 #if defined(BMSX_NATIVE_PERF_MAP)
@@ -12,15 +9,7 @@
 #include "machine/cpu/native_perf_map.h"
 #endif
 
-#include "machine/memory/memory.h"
-
 namespace bmsx {
-
-NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, StringId indexKey, CPU* cpu)
-	: ramBytes(memory.ramByteCount()), ram(memory.ramData()), ramBusEnd(memory.ramBusEndAddress()),
-	  ramWriteGroups(memory.ramWriteWatches().groupData()),
-	  ramCodeWatchWords(memory.ramWriteWatches().codeWordMasks()),
-	  memory(&memory), strings(&pool), indexKey(indexKey), cpu(cpu) {}
 
 void NativeCodeRegion::publish(size_t& cacheBytes) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER) && defined(SLJIT_CONFIG_ARM)
@@ -48,33 +37,6 @@ void NativeCodeRegion::recordPerfMap(ExecutionDomainId domain, u32 slot, u32 fir
 	recordNativePerfMap(std::span(&range, 1));
 }
 #endif
-
-std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
-	std::span<const NativeBlockSource> sources, ConstValueSpan constants,
-	const NativeCodeBindings& bindings, NativeCompilationTier tier
-) {
-	NativeIrRegion ir(sources, constants, bindings.cpu != nullptr, tier);
-	if (ir.entries.empty()) return {};
-	auto region = std::make_shared<NativeCodeRegion>();
-	region->ram = bindings.ram;
-	region->sourceInstructions = static_cast<u32>(ir.instructionCount());
-	const auto& gate = nativeBlockGate();
-	for (auto& block : ir.entries) {
-		block->region = region;
-		block->m_gate = &gate;
-	}
-	NativeRegisterUses uses;
-	ir.optimize(constants, uses);
-	NativeLowering compiler(constants, ir.entries, bindings, ir.blocks(), uses);
-	for (size_t index = 0; index < ir.blocks().size(); ++index) {
-		compiler.beginBlock(index);
-		for (const auto& instruction : ir.blocks()[index].instructions)
-			compiler.lower(instruction);
-		compiler.endBlock();
-	}
-	region->m_code = compiler.finish(region->codeBytes, region->m_replaySites);
-	return std::move(ir.entries);
-}
 
 NativeCodeRegion::~NativeCodeRegion() {
 	if (m_code) sljit_free_code(m_code, nullptr);

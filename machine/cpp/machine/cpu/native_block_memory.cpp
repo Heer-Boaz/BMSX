@@ -2,7 +2,7 @@
 
 #include <bit>
 #include "machine/cpu/execution_image.h"
-#include "machine/cpu/gc_heap.h"
+#include "machine/cpu/gc_object.h"
 #include "machine/memory/mapped_page.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/memory_access_kind.h"
@@ -29,21 +29,32 @@ void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 
 	sljit_set_label(clear, sljit_emit_label(c));
 }
 
-// The caller proved the raw mark is black. This leaf reserves no memory
-// and changes the queue only after admitting all its physical writes.
-void NativeLowering::emitGrayChange(NativeBlockExitSite& exit, sljit_s32 offset, sljit_s32 record, u32 link) {
+void NativeLowering::emitGuardNoGcMutation(NativeBlockExitSite& exit, sljit_s32 mark, sljit_sw markArg,
+	int source, NativeGcBarrier barrier, sljit_s32 scratch, sljit_s32 test) {
+	if (barrier == NativeGcBarrier::None) return;
 	auto* c = m_compiler;
-	// This leaf uses the last word of the helper area, not the cache spill slots.
-	constexpr auto savedRecord = NativeBlockAbi::stackBytes - sizeof(void*);
-	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), savedRecord, record, 0);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, offset, 0);
-	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, link);
-	m_cache.spillCall(false, 0);
-	sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3(32, P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&GcHeap::tryQueueChangedInNative));
-	m_cache.spillCall(true, 0);
-	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), exit, m_cache.state());
-	sljit_emit_op1(c, SLJIT_MOV_P, record, 0, SLJIT_MEM1(SLJIT_SP), savedRecord);
+	std::array<sljit_jump*, 2> scalar{};
+	if (barrier == NativeGcBarrier::Dynamic) {
+		// Match valueTagHasGcEdge: BuiltinFunction is not a heap edge.
+		constexpr auto first = static_cast<u8>(ValueTag::String);
+		emitTag(source, scratch);
+		sljit_emit_op2(c, SLJIT_SUB32, scratch, 0, scratch, 0, SLJIT_IMM, first);
+		scalar = {
+			sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, scratch, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Thread) - first),
+			sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, scratch, 0, SLJIT_IMM, static_cast<u8>(ValueTag::BuiltinFunction) - first),
+		};
+	}
+	// Leave before either value plane changes when the collector must
+	// remember an old owner or enqueue a black one. The CPU store owns both.
+	sljit_emit_op1(c, SLJIT_MOV_U8, scratch, 0, mark, markArg);
+	sljit_emit_op2(c, SLJIT_AND32, test, 0, scratch, 0, SLJIT_IMM, GC_OLD | GC_REMEMBERED);
+	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, test, 0, SLJIT_IMM, GC_OLD), exit, m_cache.state());
+	sljit_emit_op2(c, SLJIT_AND32, scratch, 0, scratch, 0, SLJIT_IMM, GC_COLOR_MASK);
+	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, scratch, 0, SLJIT_IMM, 3), exit, m_cache.state());
+	if (barrier == NativeGcBarrier::Dynamic) {
+		auto* ready = sljit_emit_label(c);
+		for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
+	}
 }
 
 void NativeLowering::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {

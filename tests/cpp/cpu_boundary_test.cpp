@@ -136,7 +136,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		field.a = 0; field.b = 1; field.c = store ? -1 : 1;
 		field.width = 2; field.baseCycles = BASE_CYCLES[field.op]; field.tableCacheSlot = slot;
 		const std::array source{NativeBlockInstruction{&field, 0x1000u}};
-		auto block = test::compileNative(source, constants.view(), bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"));
+		auto block = test::compileNative(source, constants.view(), bytes, machine.memory, machine.cpu.stringPool());
 		ValueSlots registers(2);
 		registers.set(0, valueTable(table.address())); registers.set(1, valueTable(table.address()));
 		if (store) {
@@ -153,20 +153,22 @@ void nativeFieldGuardsAndRawSlotAccess() {
 			DecodedInstruction alias = field;
 			alias.a = alias.b;
 			const std::array aliasSource{NativeBlockInstruction{&alias, 0x1000u}};
-			auto aliasBlock = test::compileNative(aliasSource, constants.view(), bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"));
+			auto aliasBlock = test::compileNative(aliasSource, constants.view(), bytes, machine.memory, machine.cpu.stringPool());
 			table.setStringKey(key, valueFloatBits(0x80000000u));
 			require(aliasBlock->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = aliasBlock->terminal.cycles})->exit == NativeBlockExit::Continue
 				&& registers.get(1) == valueFloatBits(0x80000000u), "a cached field result can replace its own table receiver");
 			registers.set(1, valueTable(table.address()));
 		}
-		auto& hint = store ? block->sideExits[0].tableStoreSlot : block->sideExits[0].tableReadCache.receiverSlot;
+		auto& hint = store ? block->sideExits[0].tableStore.slot : block->sideExits[0].tableReadCache.receiverSlot;
+		const auto semanticExit = store ? NativeBlockExit::WriteField : NativeBlockExit::ReadField;
+		table.setStringKey(key, valueInteger(31));
 		for (int prediction : {-1, otherSlot, 100000}) {
 			hint = prediction;
+			const auto destination = registers.get(0);
 			const auto* exit = block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles});
-			require(exit->exit == NativeBlockExit::Continue
-				&& (store ? table.getStringKey(key) == constants.get(0) : registers.get(0) == table.getStringKey(key)),
-				"stale predictions complete actual read resolution and allocation-free stores in the native frame");
-			require(hint == slot, "returning field operations repair their actual slot prediction");
+			require(exit->exit == semanticExit && exit->currentPc == source[0].pc && nativeRunState.remainingCycles == 0
+				&& registers.get(0) == destination && table.getStringKey(key) == valueInteger(31) && hint == prediction,
+				"a stale prediction reaches the charged CPU operation without changing either value or the cache");
 		}
 		hint = slot;
 		registers.set(store ? 0 : 1, valueBool(false));
@@ -181,9 +183,9 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		registers.set(0, valueTable(table.address())); registers.set(1, valueTable(table.address()));
 		table.setStringKey(key, valueNil());
 		const auto* deletedExit = block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles});
-		require(deletedExit->exit == NativeBlockExit::Continue
-			&& (store ? table.getStringKey(key) == constants.get(0) : isNil(registers.get(0))),
-			"a deleted own slot is restored without growth or resolved to its actual missing read result");
+		require(deletedExit->exit == semanticExit && isNil(table.getStringKey(key))
+			&& registers.get(0) == valueTable(table.address()),
+			"the CPU owns missing-field resolution and insertion into a deleted slot");
 		slot = table.setStringKey(key, valueInteger(1));
 		hint = slot;
 		if (!store) {
@@ -191,8 +193,8 @@ void nativeFieldGuardsAndRawSlotAccess() {
 			require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue,
 				"a live own field bypasses inheritance even when the table has a metatable");
 			table.setStringKey(key, valueNil());
-			require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
-				&& isNil(registers.get(0)), "an empty live metatable resolves to nil without a semantic side exit");
+			require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::ReadField
+				&& registers.get(0) == valueInteger(1), "missing own values resolve through the CPU even with an empty metatable");
 			table.setMetatableAddress(0u);
 			slot = table.setStringKey(key, valueInteger(1));
 		}

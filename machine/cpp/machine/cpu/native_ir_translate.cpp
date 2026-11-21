@@ -1,6 +1,7 @@
 #include "machine/cpu/native_ir.h"
 
 #include "machine/cpu/execution_image.h"
+#include "spec/blua32/cop0.h"
 
 namespace bmsx {
 

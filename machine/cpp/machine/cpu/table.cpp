@@ -11,6 +11,7 @@ namespace bmsx {
 
 namespace {
 constexpr int32_t kTableHashNextEnd = -1;
+constexpr int kStoreRequiresGrowth = -2;
 } // namespace
 
 TableRecord::TableRecord(GcHeap& heap, u32 address)
@@ -52,11 +53,9 @@ size_t TableRecord::trackedHeapBytesForCapacities(size_t arrayCapacity, size_t h
 	return HEADER_BYTES + (bytes ? heapAllocationBytes(bytes) : 0u);
 }
 
-bool TableRecord::getArrayIndex(const Value& key, int& outIndex) const {
+u32 TableRecord::arraySlot(const Value& key) {
 	i32 integer;
-	if (!valueToInteger(key, integer) || integer <= 0) return false;
-	outIndex = integer - 1;
-	return true;
+	return valueToInteger(key, integer) ? arraySlot(integer) : NO_ARRAY_SLOT;
 }
 
 bool TableRecord::hasIntegerKey(u32 key) const {
@@ -152,19 +151,16 @@ void TableRecord::rehash(const Value& key, const Value& value) {
 		const auto tag = slots.tag(slot);
 		if (tag != ValueTag::Nil && slots.tag(slot + body.count) != ValueTag::Nil) {
 			totalKeys += 1;
-			int index = 0;
-			if ((tag == ValueTag::Integer || tag == ValueTag::Float)
-				&& getArrayIndex(valueFromTag(tag, slots.word(slot)), index)) {
-				countIntegerKey(static_cast<size_t>(index) + 1);
+			if (tag == ValueTag::Integer || tag == ValueTag::Float) {
+				const u32 index = arraySlot(valueFromTag(tag, slots.word(slot)));
+				if (index != NO_ARRAY_SLOT) countIntegerKey(index + 1u);
 			}
 		}
 	}
 	if (!isNil(key)) {
 		totalKeys += 1;
-		int index = 0;
-		if (getArrayIndex(key, index)) {
-			countIntegerKey(static_cast<size_t>(index) + 1);
-		}
+		const u32 index = arraySlot(key);
+		if (index != NO_ARRAY_SLOT) countIntegerKey(index + 1u);
 	}
 
 	size_t arraySize = 0;
@@ -253,9 +249,9 @@ void TableRecord::freeRecord() {
 int TableRecord::rawSet(const Value& key, const Value& value) {
 	const u32 array = arrayCapacity(), count = hashSlots();
 	const auto body = hashBody(count, array);
-	int index;
-	if (getArrayIndex(key, index) && static_cast<u32>(index) < array) {
-		body.slots.set(static_cast<u32>(index), value);
+	const u32 index = arraySlot(key);
+	if (index < array) {
+		body.slots.set(index, value);
 		return -1;
 	}
 	if (count != 0u) {
@@ -401,9 +397,8 @@ Value TableRecord::get(const Value& rawKey) const {
 }
 
 Value TableRecord::getCanonical(const Value& key) const {
-	int index;
-	if (getArrayIndex(key, index) && index < static_cast<int>(arrayCapacity()))
-		return values().get(static_cast<size_t>(index));
+	const u32 index = arraySlot(key);
+	if (index < arrayCapacity()) return values().get(index);
 	return getHash(key);
 }
 
@@ -420,16 +415,15 @@ void TableRecord::set(const Value& rawKey, const Value& value) {
 	if (isNil(key)) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 	}
-	int index;
-	const bool isArrayKey = getArrayIndex(key, index);
+	const u32 index = arraySlot(key);
 	const u32 array = arrayCapacity();
-	if (isArrayKey && static_cast<u32>(index) < array) {
-		setArraySlot(static_cast<u32>(index), value);
+	if (index < array) {
+		setArraySlot(index, value);
 		return;
 	}
 	const bool present = !isNil(value);
 	setHash(array, key, value);
-	if (isArrayKey) updateLengthHint(static_cast<u32>(index), present);
+	if (index != NO_ARRAY_SLOT) updateLengthHint(index, present);
 }
 
 void TableRecord::setHash(u32 array, Value key, Value value) {
@@ -466,20 +460,20 @@ void TableRecord::setHash(u32 array, Value key, Value value) {
 }
 
 Value TableRecord::getInteger(int indexValue) const {
-	const u32 index = static_cast<u32>(indexValue) - 1u;
+	const u32 index = arraySlot(indexValue);
 	if (index < arrayCapacity()) return values().get(index);
 	return getHash(valueInteger(indexValue));
 }
 
 void TableRecord::setInteger(int indexValue, const Value& value) {
-	const u32 index = static_cast<u32>(indexValue) - 1u, array = arrayCapacity();
+	const u32 index = arraySlot(indexValue), array = arrayCapacity();
 	if (index < array) {
 		setArraySlot(index, value);
 		return;
 	}
 	const bool present = !isNil(value);
 	setHash(array, valueInteger(indexValue), value);
-	if (indexValue > 0) updateLengthHint(index, present);
+	if (index != NO_ARRAY_SLOT) updateLengthHint(index, present);
 }
 
 Value TableRecord::getStringKey(StringId key) const {
@@ -583,33 +577,9 @@ void TableRecord::resolveStringIndexPath(StringId indexKey, StringId key, int re
 		[key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); }, &cache);
 }
 
-void TableRecord::loadStringIndex(const TableRecord* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept {
-	table->resolveStringIndexCached(indexKey, key, -1, result);
-}
-
-void TableRecord::loadStringIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result,
-	TableStringReadCache& cache) noexcept {
-	// The generated probe already ruled out the candidate receiver slot.
-	TableRecord(*heap, request.address).resolveStringIndexPath(request.indexKey, request.keyWord, -1, result, cache);
-}
-
-void TableRecord::loadIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result,
-	TableStringReadCache& cache) noexcept {
-	const auto tag = static_cast<ValueTag>(request.keyTag);
-	if (tag == ValueTag::Nil) {
-		result.status = TableLookupStatus::NilKey;
-		return;
-	}
-	if (tag == ValueTag::String) {
-		loadStringIndexInNative(heap, request, result, cache);
-	} else {
-		TableRecord(*heap, request.address).resolveIndex(request.indexKey, valueFromTag(tag, request.keyWord), result);
-	}
-}
-
 int TableRecord::setStringKey(StringId key, const Value& value) {
-	const int nodeIndex = storeStringKeyWithoutGrowth(this, key, value);
-	if (nodeIndex != TABLE_STORE_REQUIRES_GROWTH) return nodeIndex;
+	const int nodeIndex = storeStringKeyWithoutGrowth(key, value);
+	if (nodeIndex != kStoreRequiresGrowth) return nodeIndex;
 	const Value keyValue = valueString(key);
 	const Value pendingValue = value;
 	rehash(keyValue, pendingValue);
@@ -618,44 +588,27 @@ int TableRecord::setStringKey(StringId key, const Value& value) {
 	return slot;
 }
 
-int TableRecord::storeStringKeyInNative(GcHeap* heap, u32 address, StringId key, const Value& value) noexcept {
-	// Hash maintenance can write any linked record word. Never invalidate code
-	// from a returning native leaf: the dispatcher owns that instruction then.
-	TableRecord table(*heap, address);
-	const auto& watches = heap->memory.ramWriteWatches();
-	if (watches.anyWatched()) {
-		const u32 header = address & RAM_RECORD_WORD_MASK;
-		const u32 storage = table.storageAddress() & RAM_RECORD_WORD_MASK;
-		const u64 bytes = 5ull * table.arrayCapacity() + 14ull * table.hashSlots();
-		if (header > MAIN_RAM_SIZE - HEADER_BYTES || watches.anyWatched(header, HEADER_BYTES)
-			|| bytes > MAIN_RAM_SIZE - storage || (bytes && watches.anyWatched(storage, static_cast<size_t>(bytes)))
-			|| ((heap->memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3u && watches.anyWatched(heap->changedHeadOffset(), sizeof(u32))))
-			return TABLE_STORE_REQUIRES_GROWTH;
-	}
-	return storeStringKeyWithoutGrowth(&table, key, value);
-}
-
-int TableRecord::storeStringKeyWithoutGrowth(TableRecord* table, StringId key, const Value& value) noexcept {
+int TableRecord::storeStringKeyWithoutGrowth(StringId key, const Value& value) noexcept {
 	const Value keyValue = valueString(key);
 	if (isNil(value)) {
-		table->removeFromHash(keyValue);
+		removeFromHash(keyValue);
 		return -1;
 	}
-	const u32 count = table->hashSlots();
-	if (count == 0u) return TABLE_STORE_REQUIRES_GROWTH;
-	const auto body = table->hashBody(count, table->arrayCapacity());
+	const u32 count = hashSlots();
+	if (count == 0u) return kStoreRequiresGrowth;
+	const auto body = hashBody(count, arrayCapacity());
 	const u32 home = hashCanonicalTableKey(keyValue) & (count - 1u);
 	const int nodeIndex = body.findString(key, home);
 	if (nodeIndex >= 0) {
 		const u32 slot = body.array + count + static_cast<u32>(nodeIndex);
 		if (valueTagHasGcEdge(valueTag(value)) || body.slots.tag(slot) == ValueTag::Nil)
-			table->m_heap->writeBarrier(table->m_address, GC_RECORD_LINK);
+			m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 		body.slots.set(slot, value);
 		return nodeIndex;
 	}
-	const int inserted = table->insertHashWithoutGrowth(body, home, keyValue, value);
-	if (inserted < 0) return TABLE_STORE_REQUIRES_GROWTH;
-	table->m_heap->writeBarrier(table->m_address, GC_RECORD_LINK);
+	const int inserted = insertHashWithoutGrowth(body, home, keyValue, value);
+	if (inserted < 0) return kStoreRequiresGrowth;
+	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 	return inserted;
 }
 
@@ -745,10 +698,9 @@ size_t TableRecord::nextEntry(const Value& rawAfter, Value& key, Value& value) c
 	size_t arrayStart = 0;
 	size_t hashStart = 0;
 	if (!isNil(after)) {
-		int index = 0;
-		if (getArrayIndex(after, index)
-			&& index < static_cast<int>(arrayCapacity())) {
-			arrayStart = static_cast<size_t>(index + 1);
+		const u32 index = arraySlot(after);
+		if (index < arrayCapacity()) {
+			arrayStart = index + 1u;
 		} else {
 			const int nodeIndex = findNodeIndex(after, true);
 			if (nodeIndex < 0) {

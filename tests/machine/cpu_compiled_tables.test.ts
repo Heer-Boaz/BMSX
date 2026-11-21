@@ -1,6 +1,6 @@
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
-import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runCpuParity } from '../helpers/cpu_execution';
@@ -12,7 +12,52 @@ import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_METATABLE_LOOP, LUA_FAULT_
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, RAM_CODE_FIXTURE_BYTES } from '../helpers/blua32';
+
+test('only positive integer keys enter the array even with a raw high-bit capacity', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.GETT, 3, 0, 1);
+	writeInstruction(text, 1, OpCode.SETT, 0, 1, 2);
+	writeInstruction(text, 2, OpCode.GETT, 4, 0, 1);
+	writeInstruction(text, 3, OpCode.GETT, 6, 5, 7);
+	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] }, RAM_CODE_FIXTURE_BYTES);
+	const pc = image.image.functions[0].codeAddress, key = -0x7ffffffe;
+	const capacity = 0x80000010, invalidSlot = 0x80000001;
+	const words = DYNAMIC_RAM_BASE + 0x3000, tags = words + (capacity + 3) * 4;
+	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
+		const { cpu } = createTestSystemCpu(image, backend);
+		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
+		const table = cpu.createTable(1, 1), child = cpu.createTable(), meta = cpu.createTable(0, 1);
+		cpu.gc.tables.setInteger(table, 1, valueInteger(61));
+		cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(table));
+		cpu.gc.tables.setMetatableAddress(child, meta);
+		r.setTable(0, table); r.setInteger(1, 1); r.setInteger(2, 89); r.setTable(5, child); r.setInteger(7, 1);
+		cpu.runUntilDepth(0, 1024);
+		if (backend === CpuExecutionBackend.JavaScript)
+			assert.ok(frame.decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]);
+		const memory = cpu.memory;
+		memory.writeRamRecordWord(table + TableHeader.Storage, words);
+		memory.writeRamRecordWord(table + TableHeader.Array, capacity);
+		memory.writeRamRecordWord(words, 61);
+		memory.writeRamRecordByte(tags, ValueTag.Integer);
+		memory.writeRamRecordWord(words + capacity * 4, key);
+		memory.writeRamRecordByte(tags + capacity, ValueTag.Integer);
+		memory.writeRamRecordWord(words + (capacity + 1) * 4, 73);
+		memory.writeRamRecordByte(tags + capacity + 1, ValueTag.Integer);
+		memory.writeRamRecordWord(words + invalidSlot * 4, 47);
+		memory.writeRamRecordByte(tags + invalidSlot, ValueTag.Integer);
+		r.setInteger(1, key);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		cpu.runUntilDepth(0, 3 * BASE_CYCLES[OpCode.GETT] + BASE_CYCLES[OpCode.SETT]);
+		assert.equal(r.getInteger(3), 73);
+		assert.equal(r.getInteger(4), 89);
+		assert.equal(cpu.gc.tables.getInteger(table, key), valueInteger(89));
+		assert.equal(memory.readRamRecordWord(words + invalidSlot * 4), 47, 'the invalid array lane remains untouched');
+		assert.equal(r.getInteger(6), 61, 'the inherited positive array value uses the unsigned capacity');
+		assert.equal(frame.pc, pc + 4 * INSTRUCTION_BYTES);
+	}
+});
 
 test('compiled generic arrays and string-cache probes retain all kinds across key changes, rehashing and nil writes', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);

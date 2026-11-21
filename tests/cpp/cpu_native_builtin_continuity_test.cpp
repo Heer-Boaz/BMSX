@@ -1,4 +1,7 @@
 #include "machine/cpu/cpu.h"
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/native_compiler.h"
+#endif
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/io.h"
@@ -77,7 +80,8 @@ struct Machine {
 			r.set(13, valueFloat(position));
 			expected = position == 3 ? valueInteger(3) : valueNil();
 		} else {
-			target = cpu.createTable(); meta = cpu.createTable(); target->setMetatableAddress(meta->address());
+			target = cpu.createTable(); meta = cpu.createTable();
+			if (id != BuiltinFunctionId::SetMetatable || mode != 0) target->setMetatableAddress(meta->address());
 			r.set(13, mode == 3 ? valueInteger(17) : valueTable(target->address()));
 			r.set(14, mode == 1 ? valueNil() : mode == 2 ? valueBool(false) : valueTable(meta->address()));
 			expected = id == BuiltinFunctionId::GetMetatable ? valueTable(meta->address()) : valueTable(target->address());
@@ -135,8 +139,30 @@ void rawContinuity(BuiltinFunctionId id, int results, int mode = 0, float positi
 		"the successor consumes the new result, or the retained callee when results are discarded");
 	require(machine.cpu.instructionBudgetRemaining == 12345 && frame->readControl(bmsx::FrameField::Pc) == rom.textAddress && static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)) == 3,
 		"the base native ABI updates its own state, never hidden CPU/frame copies behind live native registers");
-	if (id == BuiltinFunctionId::SetMetatable) require(machine.target->metatableAddress() == (mode == 1 ? 0u : machine.meta->address()),
-		"the inline route performs the real table mutation");
+}
+
+void rawSetMetatableReturnsUnexecutedCall() {
+	for (const bool clear : {false, true}) {
+		const auto rom = image(2, 3);
+		Machine machine(rom, false);
+		machine.seed(BuiltinFunctionId::SetMetatable, clear ? 1 : 0);
+		const u32 original = clear ? machine.meta->address() : 0u;
+		auto* frame = machine.cpu.rootThread()->currentFrame;
+		auto* caller = preparedCaller(machine);
+		NativeBlockRunState state{.constants=frame->executionImage->constPool, .frame=frame,
+			.constantCount=static_cast<u32>(frame->executionImage->constPool.size()), .remainingCycles=64,
+			.registerTop=static_cast<i32>(frame->readControl(FrameField::Top))};
+		const auto* exit = caller->run(frame->registers, state);
+		require(exit == &caller->terminal && exit->currentPc == rom.textAddress + 4 * INSTRUCTION_BYTES
+			&& state.remainingCycles == 64 - 4 * BASE_CYCLES[static_cast<u8>(OpCode::MOV)] - BASE_CYCLES[static_cast<u8>(OpCode::CALL)],
+			"a valid SetMetatable returns the original CALL with only the prefix and opcode charged");
+		require(machine.target->metatableAddress() == original
+			&& frame->registers.get(0) == frame->registers.get(12)
+			&& frame->registers.get(1) == frame->registers.get(13)
+			&& frame->registers.get(2) == frame->registers.get(14)
+			&& frame->registers.get(8) == valueInteger(-8),
+			"the base native ABI leaves metatable mutation, result placement and the successor to the CPU");
+	}
 }
 
 void rawDeclines() {
@@ -158,30 +184,33 @@ void rawDeclines() {
 
 void completedDebtDoesNotRunTheSuccessor() {
 	for (const int results : {0,1,2}) {
-		const auto rom=image(results,3);Machine machine(rom,false);machine.seed(BuiltinFunctionId::SetMetatable,1);
+		const auto rom=image(results,3);Machine machine(rom,false);machine.seed(BuiltinFunctionId::StringByte);
 		auto* frame=machine.cpu.rootThread()->currentFrame;
 		const int prefix=4*BASE_CYCLES[static_cast<u8>(OpCode::MOV)]+BASE_CYCLES[static_cast<u8>(OpCode::CALL)];
 		NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame,
 			.constantCount=static_cast<u32>(frame->executionImage->constPool.size()),.remainingCycles=prefix,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 		const auto* caller=preparedCaller(machine);const auto* exit=caller->run(frame->registers, state);const int receiving=results==1?0:1;
-		require(exit->exit!=NativeBlockExit::Call && exit->cycles==0 && exit->nextPc==caller->terminal.nextPc,
+		require(exit->exit==NativeBlockExit::CompletedCall && exit->cycles==0 && exit->nextPc==caller->terminal.nextPc,
 			"an exhausting successful leaf returns its completed successor frontier, never the original CALL");
-		require(state.remainingCycles==-2-receiving && state.registerTop==receiving && machine.target->metatableAddress()==0u,
-			"the complete primitive/result charge and real mutation commit even when CALL exhausted the grant");
+		require(state.remainingCycles==-2-receiving && state.registerTop==receiving,
+			"the complete primitive/result charge commits even when CALL exhausted the grant");
 		require(frame->registers.get(8)==valueInteger(-8) && frame->registers.get(9)==valueInteger(-9),
 			"no successor executes after the completed CALL debt");
-		if(receiving) require(frame->registers.get(0)==valueTable(machine.target->address()),"completed debt publishes the raw aliased result");
+		require(frame->registers.get(0)==(receiving ? machine.expected : frame->registers.get(12)),
+			"completed debt publishes the raw result, or retains the callee for a discarded result");
 	}
 }
 
 void mutableCalleesUseTheirCurrentIdentity() {
 	const auto rom=image(2,3);Machine machine(rom,false);auto* caller=preparedCaller(machine);
-	for(const auto id:{BuiltinFunctionId::StringByte,BuiltinFunctionId::GetMetatable,BuiltinFunctionId::SetMetatable,BuiltinFunctionId::Type}) {
+	for(const auto id:{BuiltinFunctionId::StringByte,BuiltinFunctionId::SetMetatable,BuiltinFunctionId::GetMetatable,BuiltinFunctionId::Type}) {
 		machine.seed(id);auto* frame=machine.cpu.rootThread()->currentFrame;
 		NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame,
 			.constantCount=static_cast<u32>(frame->executionImage->constPool.size()),.remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 		const auto* exit=caller->run(frame->registers, state);
-		if(id==BuiltinFunctionId::Type) require(exit->exit==NativeBlockExit::Call,"a reused callsite does not retain an earlier supported builtin ID");
+		if(id==BuiltinFunctionId::SetMetatable || id==BuiltinFunctionId::Type)
+			require(exit==&caller->terminal && frame->registers.get(0)==frame->registers.get(12) && frame->registers.get(8)==valueInteger(-8),
+				"a reused callsite returns ordinary CALL for the current non-leaf builtin");
 		else require(exit->exit==NativeBlockExit::Halt && frame->registers.get(8)==machine.expected,"one published callsite observes each actual supported primitive ID");
 	}
 	machine.seed(BuiltinFunctionId::StringByte);machine.selectClosure();auto* frame=machine.cpu.rootThread()->currentFrame;
@@ -234,7 +263,7 @@ void unboundStandaloneStillReturnsCall() {
 		decoded[i].baseCycles=BASE_CYCLES[decoded[i].op]; source[i]={&decoded[i],rom.textAddress+static_cast<u32>(i)*INSTRUCTION_BYTES}; }
 	decoded[0].a=0; decoded[0].b=12; decoded[1].a=0; decoded[1].b=3; decoded[1].c=2;
 	const std::array plans{NativeBlockSource{std::span(source.data(),2)}, NativeBlockSource{std::span(source.data()+2,1)}};
-	auto blocks=NativeBlock::compileRegion(plans,{},NativeCodeBindings(machine.memory,machine.cpu.stringPool(),machine.cpu.stringPool().intern("__index")));
+	auto blocks=NativeCompiler::compile(plans,{},NativeCodeBindings(machine.memory,machine.cpu.stringPool()));
 	size_t bytes=0; blocks.front()->region->publish(bytes);
 	auto* frame=machine.cpu.rootThread()->currentFrame;
 	NativeBlockRunState state{.remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
@@ -269,9 +298,9 @@ void grantsAndRestore() {
 int main() {
 	try {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		for (const auto id : {BuiltinFunctionId::StringByte,BuiltinFunctionId::GetMetatable,BuiltinFunctionId::SetMetatable})
+		for (const auto id : {BuiltinFunctionId::StringByte,BuiltinFunctionId::GetMetatable})
 		for (const int results : {0,1,2}) rawContinuity(id,results);
-		rawContinuity(BuiltinFunctionId::SetMetatable,2,1);
+		rawSetMetatableReturnsUnexecutedCall();
 		rawContinuity(BuiltinFunctionId::ToInteger,2);
 		rawContinuity(BuiltinFunctionId::ToInteger,2,0,2.9f);
 		rawContinuity(BuiltinFunctionId::StringByte,2,1);

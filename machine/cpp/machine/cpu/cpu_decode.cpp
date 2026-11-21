@@ -1,6 +1,9 @@
 #include "machine/cpu/cpu.h"
 
 #include "common/endian.h"
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/native_compilation_source.h"
+#endif
 #include "machine/memory/memory.h"
 #include "spec/blua32/memory_access_kind.h"
 

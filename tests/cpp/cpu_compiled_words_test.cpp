@@ -1,5 +1,5 @@
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/native_block.h"
+#include "machine/cpu/native_compilation_source.h"
 #include "common/endian.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"

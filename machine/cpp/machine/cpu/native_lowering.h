@@ -73,18 +73,16 @@ private:
 	void emitFloatInput(int selector, ValueTag tag, sljit_s32 destination);
 	void emitFloatCanonicalization(sljit_s32 reg);
 	void emitWordOperand(int selector, NativeWordSource source, NativeBlockExitSite& invalid);
-	std::array<sljit_jump*, 2> emitArrayRead();
+	void emitArrayRead(NativeBlockExitSite&);
 	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&);
-	void emitIndexRead(int key, NativeBlockExitSite&);
-	sljit_jump* emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<StringId> constantKey = std::nullopt,
-		std::optional<ValueTag> resultTag = std::nullopt, NativeStorePlan store = {});
-	void emitTableReadLeaf(bool stringKey, NativeBlockExitSite&);
-	void emitTableSlotStore(int value);
+	void emitStringSlot(bool load, int value, NativeBlockExitSite&, std::optional<StringId> constantKey,
+		std::optional<ValueTag> resultTag, NativeStorePlan store);
 	void emitTableSlotOffset(sljit_s32 destination, bool word);
 	void emitTableSlotLoad(sljit_s32 destination, bool word);
-	void emitTableWriteWatch(NativeBlockExitSite&, bool arraySlot, int value, NativeGcBarrier barrier);
-	std::array<sljit_jump*, 2> emitSkipScalarBarrier(int value, sljit_s32 scratch);
-	void emitGrayChange(NativeBlockExitSite&, sljit_s32 offset, sljit_s32 record, u32 link);
+	void emitTableOverwrite(NativeBlockExitSite&, int value, NativeGcBarrier);
+	// scratch cannot address the mark byte; test is first clobbered after the load.
+	void emitGuardNoGcMutation(NativeBlockExitSite&, sljit_s32 mark, sljit_sw markArg,
+		int source, NativeGcBarrier barrier, sljit_s32 scratch, sljit_s32 test);
 	void emitRamWordWriteWatch(NativeBlockExitSite&, sljit_s32 address, sljit_sw addressArg, sljit_s32 bits, sljit_s32 group, u32 wordMask = 1u);
 	// R2 is the host address; result is a word in R0 or external binary64 in FR0.
 	void emitBackingLoad(MemoryAccessKind kind, bool unaligned);

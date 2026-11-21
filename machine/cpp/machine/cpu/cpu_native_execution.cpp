@@ -59,10 +59,6 @@ NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState
 	const BuiltinArgsView args(registers.subspan(base + 1, static_cast<size_t>(count)));
 	const auto& function = cpu->m_builtinFunctions[static_cast<size_t>(static_cast<BuiltinFunctionId>(builtinWord))];
 	Value result;
-	if (function.id == BuiltinFunctionId::SetMetatable && count != 0 && valueIsTable(args[0])) {
-		const u32 word = (valuePayload(args[0]) + static_cast<u32>(TableHeader::Metatable)) & RAM_RECORD_WORD_MASK;
-		if (cpu->m_memory.ramWriteWatches().anyWatched(word, 4u)) return NativeBuiltinCallOutcome::Declined;
-	}
 	if (!cpu->executeBuiltinLeaf(function.id, args, result)) return NativeBuiltinCallOutcome::Declined;
 	if (receiving) registers.set(base, result);
 	state->registerTop = base + receiving;
@@ -252,7 +248,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::InvalidLength:
 			throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
 		case NativeBlockExit::ReadField: {
-			const auto& access = exit->operands.table;
+			const auto access = exit->operands.table;
 			frame->registers.set(access.value, cpu.loadNativeTableField(exit->tableReadCache,
 				frame->registers.get(access.receiver), asStringId(frame->executionImage->constPool.get(access.key))));
 			frame->extendTop(access.value + 1);
@@ -260,7 +256,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			break;
 		}
 		case NativeBlockExit::ReadIndex: {
-			const auto& access = exit->operands.table;
+			const auto access = exit->operands.table;
 			const Value base = frame->registers.get(access.receiver);
 			const Value key = readRK(*frame->executionImage, frame->registers, access.key);
 			frame->registers.set(access.value, valueIsString(key)
@@ -271,25 +267,30 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			break;
 		}
 		case NativeBlockExit::ReadInteger: {
-			const auto& access = exit->operands.table;
+			const auto access = exit->operands.table;
 			frame->registers.set(access.value, cpu.loadTableIntegerIndex(frame->registers.get(access.receiver), access.key));
 			frame->extendTop(access.value + 1);
 			transition = NativeBlockTransition::SameWindow;
 			break;
 		}
-		case NativeBlockExit::WriteField: {
-			const auto& access = exit->operands.table;
-			cpu.storeTableFieldIndexCached(exit->tableStoreSlot, frame->registers.get(access.receiver),
-				asStringId(frame->executionImage->constPool.get(access.key)), readRK(*frame->executionImage, frame->registers, access.value));
-			break;
-		}
+		case NativeBlockExit::WriteField:
 		case NativeBlockExit::WriteIndex: {
-			const auto& access = exit->operands.table;
+			const auto access = exit->operands.table;
 			const Value base = frame->registers.get(access.receiver);
-			const Value key = readRK(*frame->executionImage, frame->registers, access.key);
+			const bool field = exit->exit == NativeBlockExit::WriteField;
+			const Value key = field
+				? frame->executionImage->constPool.get(access.key)
+				: readRK(*frame->executionImage, frame->registers, access.key);
 			const Value value = readRK(*frame->executionImage, frame->registers, access.value);
-			if (valueIsString(key)) cpu.storeTableFieldIndexCached(exit->tableStoreSlot, base, asStringId(key), value);
-			else cpu.storeTableIndex(base, key, value);
+			if (field || valueIsString(key)) {
+				const auto prediction = exit->tableStore;
+				void* const source = *prediction.sourceEntry;
+				int slot = prediction.slot;
+				cpu.storeTableFieldIndexCached(slot, base, asStringId(key), value);
+				// Physical table writes can retire their executing RAM source.
+				// Only a still-published entry owns this descriptor afterward.
+				if (slot != prediction.slot && *prediction.sourceEntry == source) exit->tableStore.slot = slot;
+			} else cpu.storeTableIndex(base, key, value);
 			break;
 		}
 		case NativeBlockExit::WriteInteger: {

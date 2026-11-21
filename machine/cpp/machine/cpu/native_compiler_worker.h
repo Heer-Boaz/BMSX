@@ -7,6 +7,7 @@
 #include <thread>
 
 #include "machine/cpu/execution_image.h"
+#include "machine/cpu/native_compiler.h"
 
 namespace bmsx {
 
@@ -23,7 +24,7 @@ public:
 	bool idle() const { return m_state.load(std::memory_order_acquire) == State::Idle; }
 	bool ready() const { return m_state.load(std::memory_order_acquire) == State::Ready; }
 	void submit(std::span<const NativeBlockSource> sources, ConstValueSpan constants,
-		const NativeCodeBindings& bindings, bool profile = false);
+		const NativeCodeBindings& bindings, NativeCompilationOptions options = {}, bool profile = false);
 	void wait();
 	std::vector<std::unique_ptr<NativeBlock>> take();
 	u64 compilationNanoseconds() const { return m_compilationNanoseconds; }
@@ -43,6 +44,7 @@ private:
 	std::vector<NativeBlockSource> m_sources;
 	ConstValueSpan m_constants; // CPU owns immutable compilation input until take().
 	NativeCodeBindings m_bindings;
+	NativeCompilationOptions m_options;
 	std::vector<std::unique_ptr<NativeBlock>> m_blocks;
 	std::exception_ptr m_error;
 	u64 m_compilationNanoseconds = 0;

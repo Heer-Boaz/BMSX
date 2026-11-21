@@ -309,20 +309,63 @@ void recordConstructorPreservesGrantAndLayout() {
 		require(a.getStringKey(id) == valueInteger(29), "the prepared body remains an ordinary mutable table");
 	}
 
-	Fixture observed(rom);
-	int storesObserved = 0;
-	InstructionObserverBinding observer;
-	observer.points[1].insert(rom.textAddress + 3 * INSTRUCTION_BYTES);
-	observer.context = &storesObserved;
-	observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) {
-		++*static_cast<int*>(context);
-	};
-	observed.cpu().setInstructionObserver(std::move(observer));
-	observed.execute();
-	require(entryAt(observed.cpu(), rom.textAddress, 0)->terminal.recordConstructor == nullptr,
-		"constructor preparation cannot cross an observed guest instruction");
-	observed.cpu().runUntilDepth(0, allocateCycles + 5 * fieldCycles);
-	require(storesObserved == 1, "the observed original field store runs exactly once");
+	{
+		Fixture prepared(rom), scalar(withoutHints(rom));
+		prepared.execute();
+		scalar.execute();
+		const auto* recipe = entryAt(prepared.cpu(), rom.textAddress, 0)->terminal.recordConstructor;
+		require(recipe && recipe->continuation[0] && *recipe->continuation[0],
+			"publication binds the completed recipe to its warm successor");
+		const int fullGrant = allocateCycles + 5 * fieldCycles + BASE_CYCLES[static_cast<u8>(OpCode::HALT)] + 1;
+		for (auto* machine : {&prepared, &scalar}) {
+			require(machine->cpu().runUntilDepth(0, fullGrant) == RunResult::Halted
+				&& machine->cpu().instructionBudgetRemaining == 1,
+				"both paths reach HALT after charging the complete construction");
+		}
+	}
+
+	{
+		Fixture prepared(rom);
+		prepared.execute();
+		const u32 firstFieldPc = rom.textAddress + INSTRUCTION_BYTES;
+		auto& cpu = prepared.cpu();
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		auto other = cpu.createTable();
+		frame.registers.set(0, valueTable(other.address()));
+		frame.registers.set(1, valueInteger(47));
+		frame.setTop(2);
+		frame.writeControl(FrameField::Pc, firstFieldPc);
+		require(entryAt(cpu, firstFieldPc, 0) && cpu.runUntilDepth(0, fieldCycles) == RunResult::Yielded
+			&& cpu.readFramePc(0) == firstFieldPc + INSTRUCTION_BYTES
+			&& other.getStringKey(cpu.stringPool().intern("castle")) == valueInteger(47),
+			"an independent field entry executes one ordinary store against its own receiver");
+	}
+
+	for (const bool lateObserver : {false, true}) {
+		Fixture observed(rom);
+		if (lateObserver) {
+			observed.execute();
+			require(entryAt(observed.cpu(), rom.textAddress, 0)->terminal.recordConstructor,
+				"the recipe is installed before replacing the observer");
+		}
+		int storesObserved = 0;
+		InstructionObserverBinding observer;
+		observer.points[1].insert(rom.textAddress + 3 * INSTRUCTION_BYTES);
+		observer.context = &storesObserved;
+		observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) {
+			++*static_cast<int*>(context);
+		};
+		observed.cpu().setInstructionObserver(std::move(observer));
+		if (lateObserver)
+			require(!entryAt(observed.cpu(), rom.textAddress, 0), "a late observer retires the prepared recipe");
+		else {
+			observed.execute();
+			require(!entryAt(observed.cpu(), rom.textAddress, 0)->terminal.recordConstructor,
+				"constructor preparation cannot cross an observed guest instruction");
+		}
+		observed.cpu().runUntilDepth(0, allocateCycles + 5 * fieldCycles);
+		require(storesObserved == 1, "the observed original field store runs exactly once");
+	}
 }
 
 void repeatExecAndRestoreHaveDistinctPolicies() {

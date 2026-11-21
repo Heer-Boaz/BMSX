@@ -27,18 +27,6 @@ NativeLowering::NativeLowering(ConstValueSpan constants, std::span<const std::un
 NativeLowering::~NativeLowering() {
 	sljit_free_compiler(m_compiler);
 }
-std::array<sljit_jump*, 2> NativeLowering::emitSkipScalarBarrier(int value, sljit_s32 scratch) {
-	// The unsigned range check rejects both ends of the tag range.
-	// Builtin is the one immediate tag between String and Thread.
-	emitTag(value, scratch);
-	sljit_emit_op2(m_compiler, SLJIT_SUB32, scratch, 0, scratch, 0, SLJIT_IMM, static_cast<u8>(ValueTag::String));
-	return {
-		sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, scratch, 0, SLJIT_IMM,
-			static_cast<u8>(ValueTag::Thread) - static_cast<u8>(ValueTag::String)),
-		sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, scratch, 0, SLJIT_IMM,
-			static_cast<u8>(ValueTag::BuiltinFunction) - static_cast<u8>(ValueTag::String))
-	};
-}
 NativeRegisterCache::Operand NativeLowering::readTyped(
 	int selector, ValueTag tag, sljit_s32 wordScratch, sljit_s32 floatScratch) {
 	if (selector >= 0)

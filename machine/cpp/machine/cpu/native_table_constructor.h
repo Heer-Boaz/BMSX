@@ -1,23 +1,16 @@
 #pragma once
 
 #include <array>
-#include <memory>
-#include <span>
 
+#include "machine/cpu/string_pool.h"
 #include "machine/cpu/table_constructor_layout.h"
-#include "machine/cpu/value_slots.h"
-#include "spec/bmsx/memory_map.h"
+#include "spec/bmsx/cartridge.h"
 
 namespace bmsx {
 
-struct NativeBlockExitSite;
-struct DecodedInstructionPage;
-
-// The decoded ROM recipe owns no guest objects. The all-present layout is
-// immutable; the CPU thread remembers the most recent other presence mask.
+// A compiled fixed-key construction recipe. CPU execution owns the dynamic
+// layout cache and publication binds the continuation cells.
 struct NativeTableConstructor {
-	static std::unique_ptr<NativeTableConstructor> prepare(const NativeBlockExitSite& exit,
-		const DecodedInstructionPage& page, u32 pagePc, ConstValueSpan constants);
 	const TableConstructorLayout& layoutFor(u32 present);
 
 	std::array<StringId, TABLE_RECORD_FIELDS_MAX> keys{};

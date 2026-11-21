@@ -3,6 +3,7 @@
 #include "machine/cpu/native_ir_optimize.h"
 #include "machine/cpu/native_ir_liveness.h"
 #include "machine/cpu/native_ir_numeric.h"
+#include "machine/cpu/native_table_constructor.h"
 
 #include <array>
 #include <iostream>
@@ -123,7 +124,7 @@ void fieldSelectionOwnsColdCutAndContinuation() {
 	decoded[4].c = 7;
 	const std::array runs{NativeBlockSource{source}};
 	{
-		NativeIrRegion region(runs, {}, false, NativeCompilationTier::ColdImage);
+		NativeIrRegion region(runs, {}, false, {.tier = NativeCompilationTier::ColdImage});
 		require(region.instructionCount() == 1 && region.entries.front()->terminal.nextPc == pc + INSTRUCTION_BYTES,
 			"unobserved numeric field use defers only its suffix, even across independent assignments");
 	}
@@ -296,6 +297,42 @@ void dataflowPlansTableAndMemoryInputs() {
 		"the memory plan receives its proofs through a table edge without depending on host register residency");
 }
 
+void recordPlanUsesTypedEntriesAndFullRomWords() {
+	DecodedInstruction allocation{.bx = 0, .c = 2, .op = static_cast<u8>(OpCode::NEWT)};
+	DecodedInstruction first{.tableCacheSlot = -1, .c = -1, .op = static_cast<u8>(OpCode::SETFIELD)};
+	DecodedInstruction last{.tableCacheSlot = -1, .b = 1, .c = 70, .op = static_cast<u8>(OpCode::SETFIELD)};
+	allocation.width = first.width = 1;
+	last.width = 2;
+	for (auto* instruction : {&allocation, &first, &last}) instruction->baseCycles = BASE_CYCLES[instruction->op];
+	ValueSlots constants(2);
+	constants.set(0, valueString(5));
+	constants.set(1, valueString(7));
+	constexpr u32 page = 0x1000;
+	for (const u32 start : {page, page + MAPPED_PAGE_BYTE_SIZE - 3 * INSTRUCTION_BYTES}) {
+		const std::array head{NativeBlockInstruction{&allocation, start}};
+		const std::array fields{NativeBlockInstruction{&first, start + INSTRUCTION_BYTES},
+			NativeBlockInstruction{&last, start + 2 * INSTRUCTION_BYTES}};
+		// Publish out of address order to exercise the typed entry directory.
+		const std::array sources{NativeBlockSource{fields}, NativeBlockSource{head}};
+		NativeIrRegion writable(sources, constants.view(), true);
+		require(!writable.entries.back()->terminal.recordConstructor, "writable code never owns a record recipe");
+		NativeIrRegion readonly(sources, constants.view(), true, {.immutablePagePc = page});
+		const auto& entry = *readonly.entries.back();
+		const auto* recipe = entry.terminal.recordConstructor;
+		if (start != page) {
+			require(!recipe, "a WIDE body must also belong to the captured immutable page");
+			continue;
+		}
+		require(recipe && recipe->count == 2 && recipe->requiredSlots == 71
+			&& recipe->keys[0] == 5 && recipe->keys[1] == 7 && recipe->operands[0] == -1 && recipe->operands[1] == 70
+			&& recipe->lastInstructionPc == start + 2 * INSTRUCTION_BYTES && recipe->lastWordPc == start + 3 * INSTRUCTION_BYTES
+			&& recipe->nextPc == start + 4 * INSTRUCTION_BYTES && entry.sourceWords == 4,
+			"the typed plan preserves operands, guest positions and complete source coverage");
+		require(readonly.entries[0]->firstPc == fields[0].pc && readonly.entries[1]->firstPc == fields[1].pc,
+			"each field retains its ordinary independent entry");
+	}
+}
+
 void registerUses() {
 	std::array first{NativeInstruction(NativeLiteral{1, valueInteger(0)})};
 	std::array left{NativeInstruction(NativeClearSlots{10, 2})};
@@ -349,6 +386,7 @@ int main() {
 		successorsImportLogicalTypesBeforeLowering();
 		onlyConsumedEntryProofsSurviveCopies();
 		dataflowPlansTableAndMemoryInputs();
+		recordPlanUsesTypedEntriesAndFullRomWords();
 		registerUses();
 		return 0;
 	} catch (const std::exception& error) {

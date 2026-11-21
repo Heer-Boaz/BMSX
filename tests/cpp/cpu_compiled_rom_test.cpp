@@ -115,7 +115,7 @@ void directRomLoadsUseCurrentOwners() {
 		load.a = 0; load.b = 1; load.c = format; load.disp = displaced ? 255 : 0; load.width = 2; load.baseCycles = BASE_CYCLES[load.op];
 		const std::array source{NativeBlockInstruction{&load, 0x1000}};
 		const int charge = BASE_CYCLES[load.op] + (kind == MemoryAccessKind::F64LE ? 2 : 0);
-		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto block = test::compileNative(source, {}, bytes, memory, cpu.stringPool());
 		for (const u32 select : {0xfffffffdu, 0x80000000u}) {
 			memory.writeMappedWord(IO_CART_SELECT, select);
 			for (const u32 address : {0u, 4u, 16u, CART_ROM_BASE, CART_ROM_BASE + 4u, CART_ROM_BASE + 24u}) {
@@ -143,7 +143,7 @@ void directRomLoadsUseCurrentOwners() {
 		}
 		load.a = load.b;
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
-		auto alias = test::compileNative(aliasSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+		auto alias = test::compileNative(aliasSource, {}, bytes, memory, cpu.stringPool());
 		ValueSlots registers(2);
 		registers.set(1, valueInteger(CART_ROM_BASE + 4u - load.disp * 4u));
 		NativeBlockRunState run{};

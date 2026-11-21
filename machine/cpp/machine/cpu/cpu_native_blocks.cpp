@@ -202,6 +202,10 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 		sources.push_back({std::span(instructions.data() + first, instructionCount - first), skippedInstruction});
 	}
 	if (sources.empty()) return;
+	const NativeCompilationOptions options{
+		.tier = coldImage ? NativeCompilationTier::ColdImage : NativeCompilationTier::OnDemand,
+		.immutablePagePc = binding.readBytes && !binding.writeWatch.groups ? std::optional{pagePc} : std::nullopt,
+	};
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (!coldImage) {
 		auto& pendingJob = m_pendingNativeCompilation;
@@ -218,14 +222,12 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool coldImage) {
 			image.workerConstantsCurrent = true;
 		}
 		m_nativeCompilerWorker->submit(sources, image.workerConstants.view(),
-			NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this), profile != nullptr);
+			NativeCodeBindings(m_memory, m_stringPool, this), options, profile != nullptr);
 		return;
 	}
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
-	auto blocks = NativeBlock::compileRegion(sources, image.constPool,
-		NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this),
-		coldImage ? NativeCompilationTier::ColdImage : NativeCompilationTier::OnDemand);
+	auto blocks = NativeCompiler::compile(sources, image.constPool, NativeCodeBindings(m_memory, m_stringPool, this), options);
 	if (!blocks.empty()) installNativeRegion(image, page, pagePc, source.slot, std::move(blocks));
 }
 
@@ -275,27 +277,25 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 	blocks.front()->region->recordPerfMap(image.executionDomainId, slot, blocks.front()->firstPc);
 #endif
 	for (auto& block : blocks) {
+		const u32 entry = (block->firstPc - pagePc) / INSTRUCTION_BYTES;
 		auto& exit = block->terminal;
-		if (exit.exit == NativeBlockExit::AllocateTable
-			&& (pagePc < SYSTEM_ROM_SIZE || (pagePc >= CART_ROM_BASE && pagePc < CART_RAM_BASE))) {
-			auto recipe = NativeTableConstructor::prepare(exit, page, pagePc, image.constPool);
-			if (recipe) {
-				for (u32 bank = firstBank; bank < endBank; ++bank)
-					recipe->continuation[bank] = lookup->entrySlot(recipe->nextPc, bank);
-				exit.recordConstructor = recipe.release();
-			}
+		if (exit.exit == NativeBlockExit::AllocateTable && exit.recordConstructor) {
+			auto& recipe = *exit.recordConstructor;
+			for (u32 bank = firstBank; bank < endBank; ++bank)
+				recipe.continuation[bank] = lookup->entrySlot(recipe.nextPc, bank);
 		}
 		if (exit.exit == NativeBlockExit::Call || nativeBlockExitResumesFrame(exit.exit)) {
 			for (u32 bank = firstBank; bank < endBank; ++bank)
 				exit.continuationCells[bank] = lookup->entrySlot(exit.nextPc, bank);
 		}
 		for (auto& side : block->sideExits) {
+			if (side.exit == NativeBlockExit::WriteField || side.exit == NativeBlockExit::WriteIndex)
+				side.tableStore.sourceEntry = &page.nativeCode[entry];
 			if (side.exit == NativeBlockExit::Call || nativeBlockExitResumesFrame(side.exit)) {
 				for (u32 bank = firstBank; bank < endBank; ++bank)
 					side.continuationCells[bank] = lookup->entrySlot(side.nextPc, bank);
 			}
 		}
-		const u32 entry = (block->firstPc - pagePc) / INSTRUCTION_BYTES;
 		page.nativeBlocks->entries[entry] = std::move(block);
 		page.nativeCode[entry] = page.nativeBlocks->entries[entry]->m_body;
 		++page.nativeBlocks->count;

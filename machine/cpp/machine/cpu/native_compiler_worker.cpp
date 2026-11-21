@@ -24,7 +24,7 @@ NativeCompilerWorker::~NativeCompilerWorker() {
 }
 
 void NativeCompilerWorker::submit(std::span<const NativeBlockSource> sources, ConstValueSpan constants,
-	const NativeCodeBindings& bindings, bool profile) {
+	const NativeCodeBindings& bindings, NativeCompilationOptions options, bool profile) {
 	assert(idle());
 	m_sources.clear();
 	size_t decoded = 0, instruction = 0;
@@ -45,6 +45,7 @@ void NativeCompilerWorker::submit(std::span<const NativeBlockSource> sources, Co
 	}
 	m_constants = constants;
 	m_bindings = bindings;
+	m_options = options;
 	m_profile = profile;
 	m_error = nullptr;
 	{
@@ -62,7 +63,7 @@ void NativeCompilerWorker::run() {
 		lock.unlock();
 		const auto start = m_profile ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 		try {
-			m_blocks = NativeBlock::compileRegion(m_sources, m_constants, m_bindings);
+			m_blocks = NativeCompiler::compile(m_sources, m_constants, m_bindings, m_options);
 		} catch (...) {
 			// The worker cannot unwind into the CPU. Deliver the original error
 			// when the owner consumes this request; do not silently fall back.

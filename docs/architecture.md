@@ -116,7 +116,10 @@ points. The optimizer chooses operation plans and their required type proofs
 on logical guest slots. SLJIT lowering owns physical registers, spills,
 executable labels and link fixups. A live payload can cross an edge without a
 type proof: its tag stays authoritative in guest memory. The CPU publishes
-the compiler's entries by guest PC; it does not reconstruct their boundaries.
+the compiler's entries by guest PC and binds their continuation cells; it does
+not reconstruct boundaries or recognize instruction sequences. A fixed-key
+record allocation recipe comes from the typed operations on a captured
+read-only code page. CPU execution owns allocation and layout publication.
 The IR is transient, not a second representation of machine state.
 
 Frame entry and value placement belong to the CPU, thread and slot owners,

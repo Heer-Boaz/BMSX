@@ -17,7 +17,6 @@ namespace bmsx {
 class GcHeap;
 
 inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
-inline constexpr int TABLE_STORE_REQUIRES_GROWTH = -2;
 
 enum class TableHeader : u32 {
 	Kind = 0, Gray = 4, Metatable = 8, Storage = 12, Array = 16, Hash = 20, Length = 24, Free = 28,
@@ -47,10 +46,10 @@ public:
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value);
 	bool getIntegerArrayKey(int key, Value& value) const {
-		return getArraySlot(static_cast<size_t>(key) - 1u, value);
+		return getArraySlot(arraySlot(key), value);
 	}
 	bool setIntegerArrayKey(int key, const Value& value) {
-		const size_t slot = static_cast<size_t>(static_cast<u32>(key) - 1u);
+		const u32 slot = arraySlot(key);
 		if (slot >= arrayCapacity()) {
 			return false;
 		}
@@ -62,9 +61,6 @@ public:
 	Value getStringKey(StringId key) const;
 	Value getStringKeyCached(StringId key, int& predictedSlot) const;
 	int setStringKey(StringId key, const Value& value);
-	// Completes mutations within allocated storage; growth leaves the mapping unchanged.
-	static int storeStringKeyWithoutGrowth(TableRecord* table, StringId key, const Value& value) noexcept;
-	static int storeStringKeyInNative(GcHeap* heap, u32 address, StringId key, const Value& value) noexcept;
 	void setStringKeyCached(StringId key, const Value& value, int& predictedSlot);
 	void resolveIndex(StringId indexKey, const Value& key, TableLookupResult& result) const;
 	void resolveIntegerIndex(StringId indexKey, int key, TableLookupResult& result) const;
@@ -72,11 +68,6 @@ public:
 	void resolveStringIndexCached(StringId indexKey, StringId key, int predictedSlot, TableLookupResult& result) const;
 	void resolveStringIndexPath(StringId indexKey, StringId key, int receiverPrediction,
 		TableLookupResult& result, TableStringReadCache& cache) const;
-	// Generated-code leaf: no allocation, guest callback or architectural write.
-	// The caller commits result only when the returned chain status succeeds.
-	static void loadStringIndex(const TableRecord* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept;
-	static void loadStringIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result, TableStringReadCache& cache) noexcept;
-	static void loadIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result, TableStringReadCache& cache) noexcept;
 	// Pure boundary search; also the generated-code entry point.
 	static i32 length(const TableRecord* table, u32* probes = nullptr) noexcept;
 	void clear();
@@ -132,8 +123,11 @@ public:
 	void setMetatableAddress(u32 address);
 
 private:
+	static constexpr u32 NO_ARRAY_SLOT = UINT32_MAX;
+	static constexpr u32 arraySlot(i32 key) { return key > 0 ? static_cast<u32>(key) - 1u : NO_ARRAY_SLOT; }
+	static u32 arraySlot(const Value& key);
 
-	bool getArraySlot(size_t slot, Value& value) const {
+	bool getArraySlot(u32 slot, Value& value) const {
 		if (slot >= arrayCapacity()) return false;
 		const Value own = values().get(slot);
 		if (isNil(own) && readHeader(TableHeader::Metatable) != 0) return false;
@@ -150,7 +144,6 @@ private:
 
 	size_t hashKeySlot(size_t index) const { return arrayCapacity() + index; }
 	size_t hashValueSlot(size_t index) const { return arrayCapacity() + hashSlots() + index; }
-	bool getArrayIndex(const Value& key, int& outIndex) const;
 	bool hasIntegerKey(u32 key) const;
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
 	int findNextLiveHashIndex(size_t start) const;
@@ -197,6 +190,7 @@ private:
 	int getFreeIndex(const HashBody& body);
 	int rawSet(const Value& key, const Value& value);
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept;
+	int storeStringKeyWithoutGrowth(StringId key, const Value& value) noexcept;
 	void setHash(u32 array, Value key, Value value);
 	void removeFromHash(const Value& key);
 	void markHashNodeDead(size_t index);

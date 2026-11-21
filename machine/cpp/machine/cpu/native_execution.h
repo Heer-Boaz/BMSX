@@ -10,8 +10,9 @@
 namespace bmsx {
 
 static_assert(BUILTIN_FUNCTION_COUNT <= 32);
-inline constexpr u32 NATIVE_BUILTIN_LEAF_IDS = (1u << static_cast<u32>(BuiltinFunctionId::SetMetatable))
-	| (1u << static_cast<u32>(BuiltinFunctionId::GetMetatable))
+// A returning leaf must not write through the table/collector ports, which
+// can retire the source region before the native return address is used.
+inline constexpr u32 NATIVE_BUILTIN_LEAF_IDS = (1u << static_cast<u32>(BuiltinFunctionId::GetMetatable))
 	| (1u << static_cast<u32>(BuiltinFunctionId::StringByte))
 	| (1u << static_cast<u32>(BuiltinFunctionId::ToInteger));
 

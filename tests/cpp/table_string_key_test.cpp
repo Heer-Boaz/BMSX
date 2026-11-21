@@ -61,12 +61,8 @@ void collisionAndMutationParity(CPU& cpu) {
 		const auto key = keys[(n * 7u) & 15u];
 		const Value value = values[(n >> 4u) & 7u];
 		generic.set(valueString(key), value);
-		if ((n & 1u) == 0u) {
-			const auto before = strings.trackedHeapBytes();
-			const int slot = TableRecord::storeStringKeyWithoutGrowth(&strings, key, value);
-			require(strings.trackedHeapBytes() == before, "bounded mutation reserves no storage");
-			if (slot == TABLE_STORE_REQUIRES_GROWTH) strings.setStringKey(key, value);
-		} else strings.setStringKeyCached(key, value, prediction);
+		if ((n & 1u) == 0u) strings.setStringKey(key, value);
+		else strings.setStringKeyCached(key, value, prediction);
 		if ((n & 15u) == 0u) {
 			generic.setInteger(static_cast<int>(n / 16u) + 1, valueInteger(n));
 			strings.setInteger(static_cast<int>(n / 16u) + 1, valueInteger(n));
@@ -87,9 +83,9 @@ void collisionAndMutationParity(CPU& cpu) {
 	const int head = chain.setStringKey(keys[0], valueInteger(11));
 	const int tail = chain.setStringKey(keys[1], valueInteger(22));
 	chain.setStringKey(keys[0], valueNil());
-	require(head != tail && TableRecord::storeStringKeyWithoutGrowth(&chain, keys[1], valueInteger(33)) == tail,
+	require(head != tail && chain.setStringKey(keys[1], valueInteger(33)) == tail,
 		"a tombstoned home must not hide a live colliding key");
-	require(TableRecord::storeStringKeyWithoutGrowth(&chain, keys[2], valueInteger(44)) == head
+	require(chain.setStringKey(keys[2], valueInteger(44)) == head && chain.hashSlots() == 2u
 		&& chain.getStringKey(keys[1]) == valueInteger(33) && isNil(chain.getStringKey(keys[0])),
 		"a real miss can reuse the home without breaking its live link");
 }
@@ -117,25 +113,23 @@ void preparedLayoutMatchesAllMasks(CPU& cpu, Memory& memory) {
 	}
 }
 
-void rejectedGrowthRetainsExhaustedCursor(CPU& cpu) {
+void fullHashGrowsAndRetainsMappings(CPU& cpu) {
 	auto table = cpu.createTable(0, 1);
 	const auto present = cpu.stringPool().intern("full"), missing = cpu.stringPool().intern("new");
 	table.setStringKey(present, valueInteger(73));
 	require(table.hashFree() == 0,
 		"a direct main-bucket insertion has not searched the only free-slot candidate");
-	require(TableRecord::storeStringKeyWithoutGrowth(&table, missing, valueInteger(19)) == TABLE_STORE_REQUIRES_GROWTH,
-		"a full hash requires allocating completion");
-	require(table.hashFree() == -1,
-		"rejected growth retains an exhausted cursor for the allocating completion");
-	require(table.getStringKey(present) == valueInteger(73) && isNil(table.getStringKey(missing)),
-		"rejected growth leaves the original mappings intact");
-	require(TableRecord::storeStringKeyWithoutGrowth(&table, missing, valueInteger(19)) == TABLE_STORE_REQUIRES_GROWTH,
-		"repeated capacity failure remains a request for allocating completion");
-	table.setStringKey(present, valueNil());
-	require(TableRecord::storeStringKeyWithoutGrowth(&table, missing, valueInteger(19)) == 0,
-		"an exhausted free cursor still permits reuse of a deleted main bucket");
-	require(table.storedSlotCount() == 1u && table.getStringKey(missing) == valueInteger(19),
-		"deleted main-bucket reuse does not rebuild storage");
+	auto reuse = cpu.createTable(0, 1);
+	reuse.setStringKey(present, valueInteger(73));
+	reuse.setStringKey(present, valueNil());
+	require(reuse.setStringKey(missing, valueInteger(19)) == 0 && reuse.hashSlots() == 1u,
+		"deleting the only key permits reuse without growing storage");
+	int prediction = table.setStringKey(missing, valueInteger(19));
+	require(table.hashSlots() == 2u && table.getStringKey(present) == valueInteger(73)
+		&& table.getStringKey(missing) == valueInteger(19), "a full hash grows once and preserves both raw mappings");
+	table.setStringKeyCached(missing, valueInteger(97), prediction);
+	require(table.hashSlots() == 2u && table.getStringKey(missing) == valueInteger(97),
+		"an existing mapping is replaced without growing the full hash again");
 }
 
 void inheritedAndFullWordKeys(CPU& cpu, Memory& memory) {
@@ -192,7 +186,7 @@ int main() {
 		collisionAndMutationParity(cpu);
 		preparedLayoutMatchesAllMasks(cpu, memory);
 		inheritedAndFullWordKeys(cpu, memory);
-	rejectedGrowthRetainsExhaustedCursor(cpu);
+		fullHashGrowsAndRetainsMappings(cpu);
 		std::cout << "String-key table tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

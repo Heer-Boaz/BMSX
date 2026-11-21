@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <numeric>
 #include "machine/cpu/execution_image.h"
+#include "spec/blua32/cop0.h"
 #include "spec/blua32/instruction_format.h"
 
 namespace bmsx {
@@ -44,7 +45,7 @@ NativeOperationFlow nativeOperationFlow(const NativeOperation& operation) {
 }
 
 NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, ConstValueSpan constants,
-	bool cpuOwned, NativeCompilationTier tier) {
+	bool cpuOwned, NativeCompilationOptions options) {
 	size_t instructionCount = 0;
 	for (const auto& source : sources) instructionCount += source.instructions.size();
 	m_instructions.reserve(instructionCount);
@@ -55,7 +56,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Const
 		for (const auto& inst : source.instructions)
 			m_instructions.emplace_back(translateNativeOperation(*inst.decoded, constants));
 		auto operations = std::span(m_instructions).subspan(first);
-		const size_t count = selectNativeFieldPaths(operations, tier);
+		const size_t count = selectNativeFieldPaths(operations, options.tier);
 		const bool completeRun = count == operations.size();
 		operations = operations.first(count);
 		if (!completeRun) m_instructions.erase(m_instructions.begin() + first + count, m_instructions.end());
@@ -101,6 +102,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Const
 				? entryForPc(alternate->nextPc) : entries.size(),
 		};
 	}
+	if (options.immutablePagePc) planRecordConstructors(directory, *options.immutablePagePc, constants);
 }
 
 void NativeIrRegion::optimize(ConstValueSpan constants, NativeRegisterUses& uses) {

@@ -11,6 +11,7 @@
 
 #include "common/compiler.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/native_compilation_source.h"
 #include "machine/cpu/native_execution.h"
 #endif
 #include "common/endian.h"
@@ -1000,8 +1001,15 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 				? valueString(m_stringPool.intern(valueIsInteger(args[0]) ? "integer" : "float"))
 				: valueNil());
 			break;
+		case BuiltinFunctionId::SetMetatable: {
+			const Value target = args[0], metatable = args[1];
+			if (!valueIsTable(target) || (!valueIsTable(metatable) && !isNil(metatable)))
+				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			TableRecord(m_heap, valuePayload(target)).setMetatableAddress(valueIsTable(metatable) ? valuePayload(metatable) : 0u);
+			out.push_back(target);
+			break;
+		}
 		case BuiltinFunctionId::ToInteger:
-		case BuiltinFunctionId::SetMetatable:
 		case BuiltinFunctionId::GetMetatable:
 		case BuiltinFunctionId::StringByte: {
 			Value result;

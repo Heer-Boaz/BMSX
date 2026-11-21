@@ -1,4 +1,7 @@
 #include "machine/cpu/cpu.h"
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/native_compiler.h"
+#endif
 #include "machine/cpu/value_arithmetic.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
@@ -544,8 +547,8 @@ void polymorphicForwardJoin() {
 	constants.set(0, valueFloatBits(0xffa12345));
 	auto& pool = machine.cpu.stringPool();
 	size_t bytes = 0;
-	auto blocks = NativeBlock::compileRegion(
-		sources, constants.view(), NativeCodeBindings(machine.memory, pool, pool.intern("__index")));
+	auto blocks = NativeCompiler::compile(
+		sources, constants.view(), NativeCodeBindings(machine.memory, pool));
 	blocks.front()->region->publish(bytes);
 	const std::array expected{valueInteger(1), constants.get(0), valueBool(true)};
 	for (size_t i = 0; i < blocks.size(); ++i) {

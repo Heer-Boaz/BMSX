@@ -1,5 +1,5 @@
 #include "machine/cpu/native_compiler_worker.h"
-#include "machine/cpu/native_block.h"
+#include "machine/cpu/native_table_constructor.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
@@ -44,7 +44,7 @@ void copiedSourceAndDeferredPublication() {
 			NativeBlockSource{std::span(instructions.data(), 1)},
 			NativeBlockSource{std::span(instructions.data() + 1, 2)},
 		};
-		worker.submit(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")));
+		worker.submit(sources, {}, NativeCodeBindings(memory, cpu.stringPool()));
 		decoded.fill({}); // No live decoded-page references may escape capture.
 		instructions.fill({});
 		worker.wait();
@@ -76,13 +76,47 @@ void unpublishedCodeCanBeDiscarded() {
 	const std::array sources{NativeBlockSource{instructions}};
 	for (int iteration = 0; iteration < 32; ++iteration) {
 		NativeCompilerWorker worker;
-		worker.submit(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")));
+		worker.submit(sources, {}, NativeCodeBindings(memory, cpu.stringPool()));
 		if ((iteration & 1) == 0) {
 			worker.wait();
 			worker.take().clear();
 		}
 		// Destruction also joins an outstanding request before source owners die.
 	}
+}
+
+void recordPlanIsReadyBeforePublication() {
+	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory);
+	ExecutionAddressSpace addresses(memory);
+	CPU cpu(memory, irq, addresses);
+	ValueSlots constants(2);
+	constants.set(0, valueString(cpu.stringPool().intern("first")));
+	constants.set(1, valueString(cpu.stringPool().intern("last")));
+	constexpr u32 page = CART_ROM_BASE;
+	std::array decoded{
+		DecodedInstruction{.bx = 0, .c = 2, .op = static_cast<u8>(OpCode::NEWT)},
+		DecodedInstruction{.tableCacheSlot = -1, .c = 1, .op = static_cast<u8>(OpCode::SETFIELD)},
+		DecodedInstruction{.tableCacheSlot = -1, .b = 1, .c = 2, .op = static_cast<u8>(OpCode::SETFIELD)},
+	};
+	std::array<NativeBlockInstruction, decoded.size()> instructions;
+	for (u32 i = 0; i < decoded.size(); ++i) {
+		decoded[i].width = 1;
+		decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+		instructions[i] = {&decoded[i], page + i * INSTRUCTION_BYTES};
+	}
+	const std::array sources{NativeBlockSource{std::span(instructions).first<1>()},
+		NativeBlockSource{std::span(instructions).last<2>()}};
+	NativeCompilerWorker worker;
+	worker.submit(sources, constants.view(), NativeCodeBindings(memory, cpu.stringPool(), &cpu), {.immutablePagePc = page});
+	decoded.fill({});
+	worker.wait();
+	auto blocks = worker.take();
+	const auto* recipe = blocks.front()->terminal.recordConstructor;
+	require(recipe && recipe->count == 2 && recipe->nextPc == page + 3 * INSTRUCTION_BYTES,
+		"the worker builds the recipe from the captured source and page provenance");
+	require(recipe->continuation[0] == nullptr && recipe->continuation[1] == nullptr,
+		"publication alone binds the CPU-owned continuation directory");
 }
 
 struct CpuMachine {
@@ -355,6 +389,7 @@ int main() {
 	try {
 		copiedSourceAndDeferredPublication();
 		unpublishedCodeCanBeDiscarded();
+		recordPlanIsReadyBeforePublication();
 		cpuInvalidationAndLifecycle();
 		imageReplacementRetiresBorrowedConstants();
 		invalidatedPendingMergeDoesNotRetireDeadOwners();

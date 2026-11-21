@@ -93,18 +93,8 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 		fault(open, *openWrite, m_cache.state());
 		// Both value lanes are in the aligned cell's write-watch group.
 		emitRamWordWriteWatch(*openWrite, SLJIT_R3, 0, SLJIT_R0, SLJIT_R1, 3u);
-		if (access.barrier != NativeGcBarrier::None) {
-			const auto scalar = access.barrier == NativeGcBarrier::Dynamic ? emitSkipScalarBarrier(access.slot, SLJIT_R0) : std::array<sljit_jump*, 2>{};
-			sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), GC_COLOR_OFFSET);
-			sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, GC_OLD | GC_REMEMBERED);
-			fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, GC_OLD), *openWrite, m_cache.state());
-			sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, GC_COLOR_MASK);
-			auto* notBlack = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 3);
-			emitGrayChange(*openWrite, SLJIT_R3, SLJIT_R2, UPVALUE_NEXT);
-			auto* ready = sljit_emit_label(c);
-			sljit_set_label(notBlack, ready);
-			for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
-		}
+		emitGuardNoGcMutation(*openWrite, SLJIT_MEM1(SLJIT_R2), GC_COLOR_OFFSET,
+			access.slot, access.barrier, SLJIT_R0, SLJIT_R1);
 		emitRawLoad(access.slot, SLJIT_R0, SLJIT_R1);
 		if constexpr (std::endian::native == std::endian::big)
 			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);

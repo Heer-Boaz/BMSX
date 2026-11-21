@@ -4,23 +4,13 @@
 
 namespace bmsx {
 
-// These primitive cores neither allocate nor execute guest code. A rejected
-// argument leaves both the result and the guest state untouched; the ordinary
-// call owner supplies its existing argument error and primitive charge.
+// These primitive cores do not allocate, write guest RAM or execute guest
+// code. The ordinary CALL owner handles argument errors and cycle charges.
 bool CPU::executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept {
 	switch (id) {
 	case BuiltinFunctionId::ToInteger: {
 		i32 integer;
 		result = valueToInteger(args[0], integer) ? valueInteger(integer) : valueNil();
-		return true;
-	}
-	case BuiltinFunctionId::SetMetatable: {
-		const Value target = args[0];
-		if (!valueIsTable(target)) return false;
-		const Value metatableValue = args[1];
-		if (!valueIsTable(metatableValue) && !isNil(metatableValue)) return false;
-		TableRecord(m_heap, valuePayload(target)).setMetatableAddress(valueIsTable(metatableValue) ? valuePayload(metatableValue) : 0u);
-		result = target;
 		return true;
 	}
 	case BuiltinFunctionId::GetMetatable: {

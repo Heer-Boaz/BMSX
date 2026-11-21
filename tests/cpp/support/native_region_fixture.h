@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machine/cpu/native_block.h"
+#include "machine/cpu/native_compiler.h"
 
 namespace bmsx::test {
 
@@ -8,11 +8,11 @@ namespace bmsx::test {
 // Keep sibling descriptors resident because emitted branches refer to them.
 inline std::shared_ptr<NativeBlock> compileNative(
 	std::span<const NativeBlockInstruction> instructions, ConstValueSpan constants,
-	size_t& cacheBytes, Memory& memory, StringPool& strings, StringId indexKey
+	size_t& cacheBytes, Memory& memory, StringPool& strings
 ) {
 	const std::array runs{NativeBlockSource{instructions}};
 	auto blocks = std::make_shared<std::vector<std::unique_ptr<NativeBlock>>>(
-		NativeBlock::compileRegion(runs, constants, NativeCodeBindings(memory, strings, indexKey)));
+		NativeCompiler::compile(runs, constants, NativeCodeBindings(memory, strings)));
 	auto* first = blocks->front().get();
 	first->region->publish(cacheBytes);
 	return {std::move(blocks), first};

@@ -170,7 +170,7 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 				std::construct_at(&exit.tableReadCache, TableStringReadCache{
 					.receiverSlot = table->predictedSlot, .holderSlot = -1, .holderDepth = 0, .indexSlots = {-1, -1, -1}});
 			else if (slow == NativeBlockExit::WriteField || slow == NativeBlockExit::WriteIndex)
-				exit.tableStoreSlot = table->predictedSlot;
+				std::construct_at(&exit.tableStore, NativeTableStorePrediction{table->predictedSlot, nullptr});
 		}
 		// The checked exit owns the start charge above. Per-slot and
 		// per-word charges are applied here only for the fast completion.

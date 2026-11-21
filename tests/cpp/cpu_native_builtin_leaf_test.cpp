@@ -6,6 +6,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/gc_object.h"
 #include "machine/cpu/native_block_abi.h"
 #include "machine/cpu/native_execution.h"
 #endif
@@ -103,6 +104,8 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	// A real observed successor is not an internal native entry. This retains
 	// the shared materialized gate contract, independently of inline leaf calls.
 	Machine machine(rom, false, true); machine.seed(id, mode);
+	if (id == BuiltinFunctionId::SetMetatable)
+		machine.memory.writeRamRecordByte(machine.target->address() + GC_COLOR_OFFSET, 3u);
 	auto* frame = machine.cpu.rootThread()->currentFrame;
 	require(frame->next == nullptr, "the first builtin has no spare activation node");
 	auto* owner = frame->executionImage; auto* page = owner->nativeCodeLookup->find(frame->readControl(bmsx::FrameField::Pc), 0);
@@ -132,6 +135,20 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	require(run.state.diagnosticOpcodes.call == 1, "the admitted native CALL is counted once");
 #endif
 	const int receiving = results == 1 ? 0 : 1;
+	if (id == BuiltinFunctionId::SetMetatable) {
+		const u32 address = machine.target->address();
+		require(machine.marker() == 0 && machine.target->metatableAddress() == 0u
+			&& (machine.memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 2u
+			&& machine.memory.readRamRecordWord(machine.cpu.gcHeap().changedHeadOffset())
+				== (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT,
+			"SetMetatable uses ordinary CALL to mutate the header and enqueue the black owner without taking a native leaf continuation");
+		require(machine.cpu.instructionBudgetRemaining == grant - 2 - 32 - 2 - receiving
+			&& frame->readControl(bmsx::FrameField::Pc) == rom.textAddress + 2 * INSTRUCTION_BYTES
+			&& frame->readWindow(bmsx::FrameField::Top) == receiving
+			&& (!receiving || frame->registers.get(0) == machine.expected),
+			"ordinary CALL publishes the complete metatable mutation and result at its original successor");
+		return;
+	}
 	if (!cold && !interrupt && grant == 64 && id != BuiltinFunctionId::Type) {
 		require(machine.marker() == 99, "one real native gate follows the builtin raw continuation, not C++ CALL redispatch");
 		require(machine.cpu.instructionBudgetRemaining == 64 - 2 - 32 - 2 - receiving - 3 - 2,
@@ -151,7 +168,6 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 		if (!interrupt) require(machine.cpu.readCauseWord() == 0 && machine.cpu.isHaltedUntilIrq()
 			&& machine.observedSuccessors == 1, "resuming the ordinary successor observes it once and never replays the already committed CALL");
 	}
-	if (id == BuiltinFunctionId::SetMetatable && mode == 1) require(machine.target->metatableAddress() == 0u, "discard and receiving forms still perform the real metatable removal");
 	require(frame->registers.get(7) == valueFloat(99.75f), "the cached numeric prefix survives the returning helper ABI");
 	require(static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)) == receiving && machine.cpu.getFrameDepth() == 1 && frame->next == nullptr, "builtin completion owns exact top without a child frame");
 	if (receiving) require(frame->registers.get(0) == machine.expected, "the raw native result equals the primitive contract");
@@ -210,7 +226,7 @@ void ordinaryCases() {
 int main() {
 	try {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable, BuiltinFunctionId::SetMetatable}) for (int results : {0, 1, 2}) {
+		for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable}) for (int results : {0, 1, 2}) {
 			directGate(id, results, 64); directGate(id, results, 9); directGate(id, results, 64, true);
 		}
 		directGate(BuiltinFunctionId::Type, 2, 64);

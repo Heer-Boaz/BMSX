@@ -7,7 +7,7 @@ import { LuaExecutionError } from './errors';
 import type { GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
 import {
-	ValueTag, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
+	ValueTag, asInteger, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
 	valueNil, valuePayload, valueString, valueTable, valueTag, valueTagHasGcEdge, type Value,
 } from './value';
 import type { ValueWriteTarget } from './value_slots';
@@ -101,8 +101,9 @@ export class TableRecords {
 	// Callers normalize the key once before lookup/insertion. Integral Float
 	// keys are Integer keys, including -0; every NaN key has one canonical word.
 	private getArrayIndex(key: Value): number {
-		return valueTag(key) === ValueTag.Integer && (valuePayload(key) | 0) > 0 ? valuePayload(key) - 1 : -1;
+		return valueTag(key) === ValueTag.Integer ? this.integerArrayIndex(asInteger(key)) : -1;
 	}
+	private integerArrayIndex(key: number): number { return key > 0 ? key - 1 : -1; }
 	private findNodeIndex(record: number, key: Value, matchDead = false): number {
 		const hash = this.hashSize(record);
 		if (hash === 0) return -1;
@@ -166,10 +167,10 @@ export class TableRecords {
 		target.setEncoded(destination, valueTag(value), valuePayload(value));
 	}
 	public getInteger(record: number, index: number): Value {
-		return this.getCanonical(record, valueInteger(index), (index >>> 0) - 1);
+		return this.getCanonical(record, valueInteger(index), this.integerArrayIndex(index));
 	}
 	public loadInteger(record: number, index: number, target: ValueWriteTarget, destination: number): void {
-		const array = (index >>> 0) - 1;
+		const array = this.integerArrayIndex(index);
 		if (array >= 0 && array < this.arrayCapacity(record)) {
 			target.setEncoded(destination, this.tagAt(record, array), this.wordAt(record, array)); return;
 		}
@@ -177,7 +178,7 @@ export class TableRecords {
 		target.setEncoded(destination, valueTag(value), valuePayload(value));
 	}
 	public loadIntegerArrayKey(record: number, index: number, target: ValueWriteTarget, destination: number): boolean {
-		const slot = (index >>> 0) - 1, array = this.arrayCapacity(record);
+		const slot = this.integerArrayIndex(index), array = this.arrayCapacity(record);
 		if (slot < 0 || slot >= array) return false;
 		const memory = this.heap.memory, words = this.storageAddress(record);
 		const tags = words + (array + 3 * this.hashSize(record)) * 4;
@@ -186,7 +187,7 @@ export class TableRecords {
 		target.setEncoded(destination, tag, memory.readRamRecordWord(words + slot * 4)); return true;
 	}
 	public storeIntegerArrayKey(record: number, index: number, tag: ValueTag, word: number): boolean {
-		const slot = (index >>> 0) - 1;
+		const slot = this.integerArrayIndex(index);
 		if (slot < 0 || slot >= this.arrayCapacity(record)) return false;
 		this.heap.writeValueBarrier(record, GC_RECORD_LINK, tag);
 		this.setEncoded(record, slot, tag, word); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return true;
