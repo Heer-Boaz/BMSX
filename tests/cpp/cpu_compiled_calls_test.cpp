@@ -1396,15 +1396,24 @@ void weakCanonicalClosuresAndStaticEntry() {
 			return probe.count;
 		};
 		const auto before = machine.cpu.captureRuntimeState();
+		const Value lastBeforeSweep = machine.cpu.readFrameRegister(0, 0);
 		require(countVersions() == 64, "snapshot retains uncollected weak canonical entries");
 		machine.cpu.restoreRuntimeState(before);
 		require(countVersions() == 64, "restore retains the uncollected interning state");
+		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
+		machine.cpu.runUntilDepth(0, 1);
+		require(machine.cpu.readFrameRegister(0, 0) == lastBeforeSweep,
+			"reindexing the dense bucket preserves the current closure identity");
 		const size_t bytesBefore = machine.cpu.luaHeap().usedBytes();
 		machine.cpu.collectHeap();
 		require(countVersions() == 1 && machine.cpu.luaHeap().usedBytes() < bytesBefore,
 			"guest GC removes unreachable record versions from the weak index and heap");
 		const auto last = asClosure(machine.cpu.readFrameRegister(0, 0), machine.cpu.gcHeap());
 		require(machine.cpu.readClosureBinding(last).entry.maxStack == 64, "the live closure survives guest GC");
+		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
+		machine.cpu.runUntilDepth(0, 1);
+		require(machine.cpu.readFrameRegister(0, 0) == lastBeforeSweep && countVersions() == 1,
+			"retiring other versions preserves the surviving singleton's lookup");
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 3);
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 4096);
 		const auto pressure = std::pair{machine.cpu.luaHeap().usedBytes(), machine.cpu.luaHeap().collectionTarget()};

@@ -129,6 +129,7 @@ import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from
 import { TableRecords, TableHeader, TABLE_INDEX_CHAIN_LIMIT, TableLookupStatus, type TableLookupResult } from './table';
 import * as Closure from './closure';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, sameFunctionPrototype, type FunctionPrototype } from './closure';
+import { StaticClosureIndex } from './static_closure_index';
 import { UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, UPVALUE_VALUE_WORD, UPVALUE_OWNER } from './upvalue';
 import * as Upvalue from './upvalue';
 import { ValueSlots } from './value_slots';
@@ -350,7 +351,7 @@ export class CPU implements MappedPageInvalidator {
 		byteLength: 0,
 	};
 	private readonly canonicalBinding: FunctionPrototype = { functionAddress: 0, codeAddress: 0, numParams: 0, maxStack: 0, flags: 0, upvalueTableAddress: 0, recordUpvalueCount: 0, executionDomainId: SYSTEM_EXECUTION_DOMAIN_ID };
-	private readonly staticClosuresByAddress = new Map<number, number[]>();
+	private readonly staticClosures = new StaticClosureIndex();
 	private stringIndexTable: Value = valueNil();
 	private readonly systemGlobalBank: GlobalBank;
 	private readonly globalBank: GlobalBank;
@@ -682,7 +683,7 @@ export class CPU implements MappedPageInvalidator {
 		this.nmiReturnExceptionDomainWord = 0;
 		this.nonMaskableInterruptPending = false;
 		this.yieldRequested = false;
-		this.staticClosuresByAddress.clear();
+		this.staticClosures.clear();
 		this.memory.clearMappedPageWriteWatches();
 		if (!this.setProgramHeapFloor(systemBoot.staticEnd)) { this.hardHalt(); return; }
 		for (const image of this.executionImagesByDomain) if (image !== null) this.releaseImageData(image);
@@ -930,14 +931,12 @@ export class CPU implements MappedPageInvalidator {
 
 	private staticClosureFromLatch(): number {
 		const record = this.functionRecordLatch;
-		let closures = this.staticClosuresByAddress.get(record.functionAddress);
+		const closures = this.staticClosures.find(record.functionAddress);
 		if (closures !== undefined) {
 			let match = 0;
 			for (const address of closures) {
-				const header = this.memory.readRamRecordWord(address);
-				if ((match !== 0 && address >= match) || (header & 0xff) !== ValueTag.Closure || (header & (CLOSURE_CANONICAL << (8 * CLOSURE_BINDING_FLAGS))) === 0) continue;
-				if (this.gc.sweepGarbage(address)) continue;
-				this.readClosureBinding(address, (header >>> (8 * CLOSURE_BINDING_FLAGS)) & 0xff, this.canonicalBinding);
+				if ((match !== 0 && address >= match) || this.gc.sweepGarbage(address)) continue;
+				this.readClosureBinding(address, this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS), this.canonicalBinding);
 				if (sameFunctionPrototype(this.canonicalBinding, record)) match = address;
 			}
 			if (match !== 0) return match;
@@ -945,9 +944,7 @@ export class CPU implements MappedPageInvalidator {
 		const latched = !record.romBacked;
 		const address = this.luaHeap.allocateClosureRecord(0, latched);
 		Closure.initializeRecord(this.memory, address, record, true, this.gc.white(), 0, latched);
-		closures = this.staticClosuresByAddress.get(record.functionAddress);
-		if (closures === undefined) { closures = []; this.staticClosuresByAddress.set(record.functionAddress, closures); }
-		closures.push(address);
+		this.staticClosures.insert(record.functionAddress, address);
 		return address;
 	}
 
@@ -961,14 +958,15 @@ export class CPU implements MappedPageInvalidator {
 		Closure.readBinding(this.memory, address, flags, image.romFunctions, this.executionReadView, target);
 	}
 	public reindexCanonicalClosures(): void {
-		this.staticClosuresByAddress.clear();
+		this.staticClosures.clear();
+		// Inventory does not advance a saved in-flight sweep.
 		this.heapAllocator.visitObjectRecords(this, (cpu, address) => {
-			if (cpu.memory.readRamRecordByte(address) === ValueTag.Closure
-				&& (cpu.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0
+			const header = cpu.memory.readRamRecordWord(address);
+			if ((header & 0xff) === ValueTag.Closure
+				&& (header & (CLOSURE_CANONICAL << (8 * CLOSURE_BINDING_FLAGS))) !== 0
 				&& !cpu.gc.sweepGarbage(address)) {
 				const functionAddress = cpu.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-				const versions = cpu.staticClosuresByAddress.get(functionAddress);
-				if (versions === undefined) cpu.staticClosuresByAddress.set(functionAddress, [address]); else versions.push(address);
+				cpu.staticClosures.insert(functionAddress, address);
 			}
 			return 1;
 		});
@@ -4341,28 +4339,13 @@ export class CPU implements MappedPageInvalidator {
 	public restoreRuntimeState(state: CpuRuntimeState): void {
 		this.compiledCodeCache.retireAll();
 		this.clearCompletionValues();
-		this.staticClosuresByAddress.clear();
 		this.gc.onRecordRetirement?.(null);
 		for (const bank of this.threadBanks) {
 			bank.bindAddress(0);
 			bank.dropParkedFrameViews();
 		}
 		this.memory.clearMappedPageWriteWatches();
-		// The allocator scan does not advance a saved in-flight sweep.
-		this.heapAllocator.visitObjectRecords(this, (cpu, address) => {
-			const header = cpu.memory.readRamRecordWord(address);
-			switch (header & 0xff) {
-				case ValueTag.Closure:
-					if ((header & (CLOSURE_CANONICAL << (8 * CLOSURE_BINDING_FLAGS))) !== 0
-						&& !cpu.gc.sweepGarbage(address)) {
-						const functionAddress = cpu.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-						const versions = cpu.staticClosuresByAddress.get(functionAddress);
-						if (versions === undefined) cpu.staticClosuresByAddress.set(functionAddress, [address]); else versions.push(address);
-					}
-					break;
-			}
-			return 1;
-		});
+		this.reindexCanonicalClosures();
 		this.executionImagesByDomain.fill(null);
 		this.systemGlobalBank.bind(state.systemGlobals);
 		this.globalBank.bind(state.globals);
@@ -4444,7 +4427,7 @@ export class CPU implements MappedPageInvalidator {
 		objects.push(this.rootThread.address, this.activeThread.address);
 		if (this.completionThread !== 0) objects.push(this.completionThread);
 		if (this.haltedUntilIrqThread !== 0) objects.push(this.haltedUntilIrqThread);
-		for (const versions of this.staticClosuresByAddress.values())
+		for (const versions of this.staticClosures.addressGroups())
 			for (const closure of versions) if (!this.gc.sweepGarbage(closure)) objects.push(closure);
 		for (const value of this.localRoots) add(value);
 		for (let index = 0; index < this.builtinResultsScratchIndex; index += 1) {
@@ -4569,15 +4552,9 @@ export class CPU implements MappedPageInvalidator {
 		heap.markThread(this.haltedUntilIrqThread);
 	}
 
-public retireStaticClosure(address: number): void {
-		if ((this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) === 0) return;
+	public retireStaticClosure(address: number): void {
 		const prototype = this.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-		const entries = this.staticClosuresByAddress.get(prototype);
-		if (entries === undefined) return;
-		const index = entries.indexOf(address);
-		if (index < 0) return;
-		entries.splice(index, 1);
-		if (entries.length === 0) this.staticClosuresByAddress.delete(prototype);
+		this.staticClosures.retire(prototype, address);
 	}
 
 }

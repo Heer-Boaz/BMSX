@@ -676,7 +676,8 @@ export class GcHeap {
 					this.tables.freeRecord(address);
 					this.onRecordRetirement?.(address);
 				} else {
-					if (kind === ValueTag.Closure) this.cpu.retireStaticClosure(address);
+				if (kind === ValueTag.Closure && (header & (Closure.CLOSURE_CANONICAL << (8 * Closure.CLOSURE_BINDING_FLAGS))) !== 0)
+					this.cpu.retireStaticClosure(address);
 					const bytes = kind === UPVALUE_RECORD_KIND ? UPVALUE_HEAP_BYTES
 						: Closure.closureRecordBytes(Closure.captureCount(this.memory, address),
 							(header & (Closure.CLOSURE_LATCHED_PROTOTYPE << (8 * Closure.CLOSURE_BINDING_FLAGS))) !== 0);

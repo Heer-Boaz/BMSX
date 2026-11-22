@@ -524,31 +524,21 @@ FunctionPrototype CPU::readClosureBinding(u32 closure) {
 }
 
 u32 CPU::staticClosureForRecord(const FunctionPrototype& record) {
-	auto found = m_staticClosuresByAddress.find(record.functionAddress);
 	u32 first = 0u;
-	if (found != m_staticClosuresByAddress.end()) {
-		for (const u32 closure : found->second) {
-			const u32 header = m_memory.readRamRecordWord(closure);
-			if ((first == 0u || closure < first) && (header & 0xffu) == static_cast<u8>(ValueTag::Closure)
-				&& (header & (CLOSURE_CANONICAL << (8u * CLOSURE_BINDING_FLAGS))) != 0u
-				&& !m_heap.sweepGarbage(closure)
-				&& readClosureBinding(closure) == record)
-				first = closure;
-		}
+	for (const u32 closure : m_staticClosuresByAddress.find(record.functionAddress)) {
+		if ((first == 0u || closure < first) && !m_heap.sweepGarbage(closure)
+			&& readClosureBinding(closure) == record)
+			first = closure;
 	}
 	if (first != 0u) return first;
 	const u32 closure = allocateClosure(record, 0, true);
-	m_staticClosuresByAddress[record.functionAddress].push_back(closure);
+	m_staticClosuresByAddress.insert(record.functionAddress, closure);
 	return closure;
 }
 
 void CPU::retireStaticClosure(u32 address) {
-	if (!(m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL)) return;
 	const u32 prototype = m_memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-	const auto entry = m_staticClosuresByAddress.find(prototype);
-	if (entry == m_staticClosuresByAddress.end()) return;
-	std::erase(entry->second, address);
-	if (entry->second.empty()) m_staticClosuresByAddress.erase(entry);
+	m_staticClosuresByAddress.retire(prototype, address);
 }
 
 void CPU::clearExecutionEnvironment() {
@@ -1002,7 +992,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				const u8 binding = cpu.m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
 				if ((binding & CLOSURE_CANONICAL) != 0u && !heap.sweepGarbage(address)) {
 					const u32 functionAddress = cpu.m_memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-					cpu.m_staticClosuresByAddress[functionAddress].push_back(address);
+					cpu.m_staticClosuresByAddress.insert(functionAddress, address);
 				}
 				break;
 			}

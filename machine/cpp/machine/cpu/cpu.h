@@ -24,6 +24,7 @@
 #include "machine/cpu/memory_operation.h"
 #include "machine/cpu/thread.h"
 #include "machine/cpu/closure.h"
+#include "machine/cpu/static_closure_index.h"
 #include "machine/execution_address_space.h"
 #include "machine/cpu/errors.h"
 #include "machine/cpu/global_bank.h"
@@ -581,7 +582,7 @@ private:
 	std::array<Thread, 2> m_transferViews;
 	std::array<Value, LUA_FAULT_REASON_INDEX_NAN + 1u> m_luaFaultErrorValues;
 	Value m_errorInErrorHandlingValue;
-	std::unordered_map<u32, std::vector<u32>> m_staticClosuresByAddress;
+	StaticClosureIndex m_staticClosuresByAddress;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;
 
 	ScratchBuffer<BuiltinResults> m_builtinResultScratch;

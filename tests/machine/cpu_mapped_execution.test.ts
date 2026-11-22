@@ -208,15 +208,19 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`canonical RAM clo
 	writeInstruction(code, 0, OpCode.K1, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.RET, 0, 2, 0);
 	writeRamFunction(memory, code, 4);
-	const frame = cpu.rootThread.frameAtDepth(0);
-	for (let index = 0; index < 32; ++index) {
-		memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, 4 + index);
+	const instantiate = (maxStack: number) => {
+		memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, maxStack);
+		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setInteger(1, RAM_FUNCTION_ADDRESS);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		cpu.runUntilDepth(0, 2);
-		if (index === 0) frame.registers.set(2, frame.registers.get(0));
-	}
-	frame.top = 3;
+		return frame.registers.get(0);
+	};
+	const retained = instantiate(4);
+	cpu.rootThread.frameAtDepth(0).registers.set(2, retained);
+	for (let maxStack = 5; maxStack < 35; ++maxStack) instantiate(maxStack);
+	const latest = instantiate(35);
+	cpu.rootThread.frameAtDepth(0).top = 3;
 	const countVersions = (): number => {
 		let count = 0;
 		for (const closure of allocatedObjectRecords(cpu)) {
@@ -225,23 +229,27 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`canonical RAM clo
 		}
 		return count;
 	};
+	const beforeSweep = cpu.captureRuntimeState();
 	assert.equal(countVersions(), 32, 'uncleared weak cache is captured before guest collection');
-	const retained = frame.registers.get(2);
+	cpu.restoreRuntimeState(beforeSweep);
 	cpu.collectTrackedHeapBytes();
 	assert.equal(countVersions(), 2, 'guest GC prunes unreferenced record versions');
-	assert.equal(frame.registers.get(2), retained);
+	assert.equal(instantiate(4), retained, 'the first retained version remains canonical after reindex and sweep');
+	assert.equal(instantiate(35), latest, 'the retained tail still matches its original identity');
+	assert.equal(countVersions(), 2, 'not even an unrooted duplicate was allocated');
 	const weak = cpu.createTable(1, 0);
 	const metatable = cpu.createTable(0, 1);
 	cpu.gc.tables.setStringKey(metatable, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 	cpu.gc.tables.setMetatableAddress(weak, metatable);
-	cpu.gc.tables.setInteger(weak, 1, retained);
+	cpu.gc.tables.setInteger(weak, 1, latest);
 	cpu.setGlobalByKey(cpu.stringPool.intern('weak_closure'), valueTable(weak));
 	cpu.collectTrackedHeapBytes();
-	assert.equal(cpu.gc.tables.getInteger(weak, 1), retained, 'a strong guest root preserves the weak referent identity');
-	frame.registers.setNil(2);
+	assert.equal(cpu.gc.tables.getInteger(weak, 1), latest, 'a strong guest root preserves the weak referent identity');
+	assert.equal(instantiate(4), retained, 'overwriting the result drops the last strong reference to the tail');
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.gc.tables.getInteger(weak, 1), valueNil(), 'a canonical closure is collectible when reachable only through a weak table');
 	assert.equal(countVersions(), 1, 'weak cache and weak value are pruned in the same collection');
+	assert.equal(instantiate(4), retained, 'retiring the moved entry leaves the remaining singleton reusable');
 	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 3);
 	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
 	const heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()];

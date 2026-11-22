@@ -741,7 +741,9 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 		if (garbage) {
 			if (kind == tableRecordKind) TableRecord(heap, address).freeRecord();
 			else {
-				if (kind == static_cast<u8>(ValueTag::Closure)) heap.m_cpu.retireStaticClosure(address);
+				if (kind == static_cast<u8>(ValueTag::Closure)
+					&& (header & (CLOSURE_CANONICAL << (8u * CLOSURE_BINDING_FLAGS))) != 0u)
+					heap.m_cpu.retireStaticClosure(address);
 				const u32 bytes = kind == UPVALUE_RECORD_KIND ? UPVALUE_HEAP_BYTES
 					: closureRecordBytes(ClosureRecord::captureCount(heap.memory, address),
 						(header & (CLOSURE_LATCHED_PROTOTYPE << (8u * CLOSURE_BINDING_FLAGS))) != 0u);
