@@ -107,8 +107,8 @@ function schoorsteen_foe:fire_ray()
 	return '/firing'
 end
 
-local define_fsm<const> = function(fsm_id, opening_frames, closing_frames)
-	fsm_library.register(fsm_id, {
+local define_fsm<const> = function()
+	fsm_library.register(ids_schoorsteen_foe_fsm, {
 		initial = 'startup',
 		update = enemy.update_stage_follower,
 		states = {
@@ -139,24 +139,6 @@ local define_fsm<const> = function(fsm_id, opening_frames, closing_frames)
 				timelines = {
 					open = {
 						target_path = { 'sprite_component' },
-						def = {
-							phase = 'physical',
-							frames = opening_frames,
-							playback_mode = 'once',
-							apply = sprite_component.set_imgid,
-							tracks = {
-								{
-									kind = 'event',
-									keys = {
-										{
-											frame = #opening_frames - 1,
-											event = fire_event,
-											direction = 'forward',
-										},
-									},
-								},
-							},
-						},
 						play_options = { snap_to_start = false },
 					},
 				},
@@ -182,24 +164,6 @@ local define_fsm<const> = function(fsm_id, opening_frames, closing_frames)
 				timelines = {
 					close = {
 						target_path = { 'sprite_component' },
-						def = {
-							phase = 'physical',
-							frames = closing_frames,
-							playback_mode = 'once',
-							apply = sprite_component.set_imgid,
-							tracks = {
-								{
-									kind = 'event',
-									keys = {
-										{
-											frame = #closing_frames - 1,
-											event = closed_event,
-											direction = 'forward',
-										},
-									},
-								},
-							},
-						},
 						play_options = { snap_to_start = false },
 					},
 				},
@@ -222,15 +186,41 @@ local define_fsm<const> = function(fsm_id, opening_frames, closing_frames)
 	})
 end
 
-local register_definition<const> = function(def_id, fsm_id, idle_image, firing_image, geometry)
+local sprite_clip<const> = function(frames, last_frame_event)
+	return {
+		phase = 'physical',
+		frames = frames,
+		playback_mode = 'once',
+		apply = sprite_component.set_imgid,
+		tracks = {
+			{
+				kind = 'event',
+				keys = {
+					{ frame = #frames - 1, event = last_frame_event, direction = 'forward' },
+				},
+			},
+		},
+	}
+end
+
+local register_definition<const> = function(def_id, idle_image, firing_image, geometry, opening_frames, closing_frames)
+	local opening_clip<const> = sprite_clip(opening_frames, fire_event)
+	local closing_clip<const> = sprite_clip(closing_frames, closed_event)
 	prefab.define({
 		def_id = def_id,
 		class = schoorsteen_foe,
 		components = {
 			enemy.collider_factory(geometry.collision),
 			stage_scroll_follower_component.new,
-			timeline_component.new,
-			fsm_component.factory({ fsm_id }),
+			function(owner)
+				-- Both variants use the same controller; the prefab supplies its clips
+				-- before the FSM binds their sprite target and starts playback.
+				local timelines<const> = timeline_component.new(owner)
+				timelines:register('open', opening_clip)
+				timelines:register('close', closing_clip)
+				return timelines
+			end,
+			fsm_component.factory({ ids_schoorsteen_foe_fsm }),
 		},
 		defaults = {
 			imgid = idle_image,
@@ -249,19 +239,18 @@ end
 
 function schoorsteen_foe.register()
 	players_view = world:active_definition_view(ids_player_def)
-	define_fsm(ids_schoorsteen_foe_fsm, roof_opening, roof_closing)
-    define_fsm(ids_kadekanon_fsm, quay_opening, quay_closing)
-	register_definition(ids_schoorsteen_foe_def, ids_schoorsteen_foe_fsm,
+	define_fsm()
+	register_definition(ids_schoorsteen_foe_def,
 		assets_schoorsteen_foe_1, assets_stadsburg_laser_firing, {
 			width = schoorsteen_foe_width, height = schoorsteen_foe_height,
 			collision = assets.collision_shape_schoorsteen_foe_body_addr,
 			direction = -1, ray_origin_y = schoorsteen_ray_offset_y,
-		})
-	register_definition(ids_kadekanon_def, ids_kadekanon_fsm, 'kade_idle', 'kade_firing', {
+		}, roof_opening, roof_closing)
+	register_definition(ids_kadekanon_def, 'kade_idle', 'kade_firing', {
 		width = kadekanon_width, height = kadekanon_height,
 		collision = assets.collision_shape_kadekanon_body_addr,
 		direction = 1, ray_origin_y = kadekanon_ray_offset_y,
-	})
+	}, quay_opening, quay_closing)
 end
 
 return schoorsteen_foe

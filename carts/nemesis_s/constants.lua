@@ -523,4 +523,3 @@ telemetry_event_prefix = 'NEMESIS_S_EVENT'
 
 
 ids_kadekanon_def = 'nemesis_s.enemy.kadekanon'
-ids_kadekanon_fsm = 'nemesis_s.enemy.kadekanon.fsm'
