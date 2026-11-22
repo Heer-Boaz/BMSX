@@ -6,7 +6,7 @@ local model_component<const> = require('cartlib/component/static_model_component
 local model_batch<const> = require('cartlib/gx/model_batch')
 local affine3<const> = require('cartlib/math/affine3')
 local hierarchy<const> = require('cartlib/world/spatial_hierarchy')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 local empty_configuration<const> = {}
 
 local renderer<const> = {}

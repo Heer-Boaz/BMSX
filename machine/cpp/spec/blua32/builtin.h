@@ -8,14 +8,16 @@
 namespace bmsx {
 
 enum class BuiltinFunctionId : uint8_t {
-	Next = 0,
-	Type = 1,
-	SetMetatable = 2,
-	GetMetatable = 3,
+	// Returning native leaves are a dense prefix, before allocating and
+	// observing services.
+	GetMetatable = 0,
+	StringByte = 1,
+	ToInteger = 2,
+	Next = 3,
 	RawGet = 4,
 	RawSet = 5,
 	Select = 6,
-	StringByte = 7,
+	Type = 7,
 	StringChar = 8,
 	Error = 9,
 	PCall = 10,
@@ -38,11 +40,12 @@ enum class BuiltinFunctionId : uint8_t {
 	SetFrameUpvalue = 27,
 	FrameHeader = 28,
 	NumberType = 29,
-	ToInteger = 30,
+	SetMetatable = 30,
 	StringSlice = 31,
+	TableCopy = 32,
 };
 
-constexpr size_t BUILTIN_FUNCTION_COUNT = 32u;
+constexpr size_t BUILTIN_FUNCTION_COUNT = 33u;
 
 enum class GarbageCollectionOperation : int32_t { Collect = 0, Count = 1, Step = 2 };
 
@@ -84,6 +87,7 @@ inline constexpr std::array<LuaBootPrimitive, BUILTIN_FUNCTION_COUNT> LUA_BOOT_P
 	{ "__bmsx_number_type", BuiltinFunctionId::NumberType },
 	{ "__bmsx_tointeger", BuiltinFunctionId::ToInteger },
 	{ "__bmsx_string_slice", BuiltinFunctionId::StringSlice },
+	{ "__bmsx_table_copy", BuiltinFunctionId::TableCopy },
 }};
 
 } // namespace bmsx

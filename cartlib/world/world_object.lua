@@ -63,7 +63,7 @@
 --    subscriptions persist until the object's space is selected again.
 local component_class_chain<const> = require('cartlib/component/component_class').chain
 local event_emitter<const> = require('cartlib/event_emitter')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 
 local world_object<const> = {}
 world_object.__index = world_object

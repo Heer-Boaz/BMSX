@@ -48,6 +48,34 @@ export class TableRecords {
 		this.initializeStorage(record);
 		if (hash !== 0 || reserve !== 0) this.heap.memory.writeRamRecordPair(this.hashMetadata(record), reserve, 0);
 	}
+	public copyOwn(source: number): number {
+		const array = this.arrayCapacity(source), hash = this.hashSize(source);
+		const reserve = Math.max(this.hashReserve(source), this.hashMembers(source));
+		const bytes = TableRecords.storageBytes(array, hash, reserve);
+		const copy = this.heap.budget.allocateRecord(TableRecords.HEADER_BYTES, false, bytes, TableHeader.Storage,
+			valueTable(source), valueNil(), valueNil(), TableRecords.allocationCharge(array, reserve));
+		// The rooted source keeps its layout, but admission can clear weak entries.
+		const memory = this.heap.memory;
+		const watermark = this.readHeader(source, TableHeader.Kind) & TABLE_HASH_WATERMARK_MASK;
+		const kind = ValueTag.Table | (this.heap.white() << 8) | watermark | (reserve !== 0 ? TABLE_EXPLICIT_HASH_RESERVE : 0);
+		memory.writeRamRecordPair(copy + TableHeader.Kind, kind, 0);
+		this.writeHeader(copy, TableHeader.Metatable, 0);
+		memory.writeRamRecordPair(copy + TableHeader.Array, array, hash);
+		memory.writeRamRecordPair(copy + TableHeader.Length, this.lengthHint(source), this.readHeader(source, TableHeader.Free));
+		if (bytes !== 0) {
+			const start = this.storageAddress(source) & RAM_RECORD_WORD_MASK;
+			const target = this.storageAddress(copy) & RAM_RECORD_WORD_MASK;
+			const body = 5 * array + 14 * hash;
+			memory.ramData().copyWithin(target, start, start + body);
+			memory.invalidateRamWrite(target, body);
+			if (hash !== 0 || reserve !== 0) {
+				const metadata = TableRecords.hashMetadataOffset(array, hash);
+				const members = hash !== 0 ? memory.readRamRecordWord(start + metadata + 4) : 0;
+				memory.writeRamRecordPair(target + metadata, reserve, members);
+			}
+		}
+		return copy;
+	}
 	public static hashCapacity(size: number): number { return size > 0 ? nextPowerOfTwo(size) : 0; }
 	private static hashMetadataOffset(array: number, hash: number): number { return ((5 * array + 14 * hash + 7) & ~7) >>> 0; }
 	public static storageBytes(array: number, hash: number, reserve = 0): number {
@@ -59,7 +87,7 @@ export class TableRecords {
 	private hashMetadata(record: number): number {
 		return this.storageAddress(record) + TableRecords.hashMetadataOffset(this.arrayCapacity(record), this.hashSize(record));
 	}
-	private hashReserve(record: number): number {
+	public hashReserve(record: number): number {
 		return (this.readHeader(record, TableHeader.Kind) & TABLE_EXPLICIT_HASH_RESERVE) !== 0
 			? this.heap.memory.readRamRecordWord(this.hashMetadata(record)) : 0;
 	}

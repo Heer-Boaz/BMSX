@@ -1,7 +1,7 @@
 local compiler<const> = require('cartlib/input/actioneffect/compiler')
 local base_component<const> = require('cartlib/component/base_component')
 local clock<const> = require('cartlib/clock')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 
 local input_actioneffect_component<const> = {}
 input_actioneffect_component.__index = input_actioneffect_component

@@ -107,6 +107,26 @@ test('inactive frame reserve does not consume automatic GC quanta', () => {
 	assert.deepEqual(collect(THREAD_INITIAL_FRAMES), collect(1024));
 });
 
+test('table copy observes weak clearing during physical allocation retry', () => {
+	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { tables } = cpu.gc;
+	const input = cpu.createTable(1024, 2), metatable = cpu.createTable(), unrooted = cpu.createTable();
+	const key = cpu.stringPool.intern('weak copy member');
+	tables.setStringKey(input, key, valueTable(unrooted));
+	tables.setInteger(input, 1024, valueInteger(64));
+	tables.setStringKey(metatable, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
+	tables.setMetatableAddress(input, metatable);
+	cpu.createTable(1536, 0);
+	while (cpu.heapAllocator.allocate(HEAP_PAGE_SIZE, true) !== 0) { /* exhaust physical backing pages */ }
+
+	const copy = tables.copyOwn(input);
+	assert.equal(cpu.gc.tableRecordAddress(input), input, 'the initial request roots the borrowed input');
+	assert.equal(tables.getStringKey(input, key), valueNil(), 'failed physical admission cleared the weak source entry');
+	assert.equal(tables.hashReserve(copy), 2, 'the original reservation still applies');
+	assert.equal(tables.getStringKey(copy, key), valueNil(), 'only entries after the collection are copied');
+	assert.equal(tables.getInteger(copy, 1024), valueInteger(64));
+});
+
 test('allocation admission and GC use logical bytes, not size-class slack', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const logical = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();

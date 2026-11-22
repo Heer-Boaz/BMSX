@@ -17,14 +17,14 @@ const BUILTIN_COST_TIER1: BuiltinFunctionCost = { base: 1, perArg: 0, perRet: 0 
 const BUILTIN_COST_TIER2: BuiltinFunctionCost = { base: 2, perArg: 0, perRet: 0 };
 const BUILTIN_COST_TIER4: BuiltinFunctionCost = { base: 4, perArg: 0, perRet: 0 };
 export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
-	{ id: BuiltinFunctionId.Next, cost: BUILTIN_COST_TIER1 },
-	{ id: BuiltinFunctionId.Type, cost: BUILTIN_COST_TIER1 },
-	{ id: BuiltinFunctionId.SetMetatable, cost: BUILTIN_COST_TIER2 },
 	{ id: BuiltinFunctionId.GetMetatable, cost: BUILTIN_COST_TIER2 },
+	{ id: BuiltinFunctionId.StringByte, cost: BUILTIN_COST_TIER2 },
+	{ id: BuiltinFunctionId.ToInteger, cost: BUILTIN_COST_TIER1 },
+	{ id: BuiltinFunctionId.Next, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.RawGet, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.RawSet, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.Select, cost: BUILTIN_COST_TIER1 },
-	{ id: BuiltinFunctionId.StringByte, cost: BUILTIN_COST_TIER2 },
+	{ id: BuiltinFunctionId.Type, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.StringChar, cost: BUILTIN_COST_TIER2 },
 	{ id: BuiltinFunctionId.Error, cost: BUILTIN_COST_TIER2 },
 	{ id: BuiltinFunctionId.PCall, cost: BUILTIN_COST_TIER4 },
@@ -47,8 +47,9 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 	{ id: BuiltinFunctionId.SetFrameUpvalue, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.FrameHeader, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.NumberType, cost: BUILTIN_COST_TIER1 },
-	{ id: BuiltinFunctionId.ToInteger, cost: BUILTIN_COST_TIER1 },
+	{ id: BuiltinFunctionId.SetMetatable, cost: BUILTIN_COST_TIER2 },
 	{ id: BuiltinFunctionId.StringSlice, cost: BUILTIN_COST_TIER2 },
+	{ id: BuiltinFunctionId.TableCopy, cost: BUILTIN_COST_TIER2 },
 ];
 
 // Borrowed argument windows and reusable return transport belong to builtin

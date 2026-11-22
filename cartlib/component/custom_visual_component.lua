@@ -1,5 +1,5 @@
 local visual_component<const> = require('cartlib/component/visual_component')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 
 local custom_visual_component<const> = {}
 custom_visual_component.__index = custom_visual_component

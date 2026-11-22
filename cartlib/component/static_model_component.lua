@@ -5,7 +5,7 @@ local empty_configuration<const> = {}
 local affine3<const> = require('cartlib/math/affine3')
 local hierarchy<const> = require('cartlib/world/spatial_hierarchy')
 local static_model<const> = require('cartlib/gx/static_model')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 
 local model_component<const> = {}
 model_component.__index = model_component

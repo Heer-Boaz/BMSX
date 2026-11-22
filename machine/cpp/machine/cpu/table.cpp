@@ -39,6 +39,32 @@ void TableRecord::initialize(size_t array, size_t hash, u32 reserve) {
 	if (hash != 0u || reserve != 0u) m_memory->writeRamRecordPair(hashMetadata(), reserve, 0u);
 }
 
+TableRecord TableRecord::copyOwn() const {
+	const u32 array = arrayCapacity(), hash = hashSlots();
+	const u32 reserve = std::max(hashReserve(), hashMembers());
+	const u32 target = m_heap->budget.allocateRecord(HEADER_BYTES, false, storageBytes(array, hash, reserve),
+		static_cast<u32>(TableHeader::Storage), valueTable(m_address), valueNil(), valueNil(), allocationCharge(array, reserve));
+	TableRecord copy(*m_heap, target);
+	const u32 storage = copy.storageAddress();
+	const u32 bytes = array * 5u + hash * 14u;
+	if (bytes != 0u) {
+		const u32 dst = storage & RAM_RECORD_WORD_MASK, src = storageAddress() & RAM_RECORD_WORD_MASK;
+		std::memcpy(m_memory->ramData() + dst, m_memory->ramData() + src, bytes);
+		m_memory->invalidateRamWrite(dst, bytes);
+	}
+	// Allocation can clear weak entries on the source but cannot resize it.
+	// Copy the current membership, not the pre-allocation reservation estimate.
+	if (hash != 0u || reserve != 0u)
+		m_memory->writeRamRecordPair(storage + hashMetadataOffset(array, hash), reserve, hashMembers());
+	const u32 kind = static_cast<u32>(ValueTag::Table) | (u32{m_heap->white()} << 8u)
+		| (readHeader(TableHeader::Kind) & kHashWatermarkMask) | (reserve != 0u ? kExplicitHashReserve : 0u);
+	m_memory->writeRamRecordPair(target + static_cast<u32>(TableHeader::Kind), kind, 0u);
+	copy.writeHeader(TableHeader::Metatable, 0u);
+	m_memory->writeRamRecordPair(target + static_cast<u32>(TableHeader::Array), array, hash);
+	m_memory->writeRamRecordPair(target + static_cast<u32>(TableHeader::Length), lengthHint(), readHeader(TableHeader::Free));
+	return copy;
+}
+
 void TableRecord::setMetatableAddress(u32 address) {
 	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 	writeHeader(TableHeader::Metatable, address);

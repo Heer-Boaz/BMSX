@@ -425,6 +425,8 @@ void testDmaSharedBusStopsCpu() {
 void testWarmedGeneratedDmaSharedBus() {
 	using namespace bmsx;
 	test::Blua32TestImage image;
+	// Keep the loop together independently of the BIOS namespace's size.
+	image.textAlignment = MAPPED_PAGE_BYTE_SIZE;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	for (u8 word = 0; word < 5; ++word) {
 		writeInstruction(image.text, word, static_cast<u8>(OpCode::STORE_MEM_D), word, 5,
@@ -460,14 +462,15 @@ void testWarmedGeneratedDmaSharedBus() {
 		require(frame.readControl(bmsx::FrameField::Pc) == entry && frame.registers.get(6) == valueInteger(warmBursts), "the real DMA loop warms through its admitted bursts");
 	}
 	auto& generatedFrame = *generated.machine.cpu.activeThread()->frameAtDepth(0);
+	const u32 triggerPc = entry + 4 * INSTRUCTION_BYTES;
 	const auto& page = *generatedFrame.decodedPage;
-	const u32 triggerWord = ((entry & MAPPED_PAGE_BYTE_MASK) >> 2u) + 4u;
+	const u32 triggerWord = (triggerPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	test::waitForNativeEntry(generated.machine.cpu, page, triggerWord);
 	require(page.nativeBlocks && page.nativeBlocks->entries[triggerWord] && page.nativeCode[triggerWord],
 		"the DMA trigger has a warmed native entry before the exclusion probes");
 	const auto& trigger = *page.nativeBlocks->entries[triggerWord];
-	require(std::any_of(trigger.sideExits.begin(), trigger.sideExits.end(), [entry](const auto& exit) {
-		return exit.exit == NativeBlockExit::WriteMemory && exit.currentPc == entry + 16;
+	require(std::any_of(trigger.sideExits.begin(), trigger.sideExits.end(), [triggerPc](const auto& exit) {
+		return exit.exit == NativeBlockExit::WriteMemory && exit.currentPc == triggerPc;
 	}), "the generated trigger retains the actual MMIO owner exit");
 	require(!reference.machine.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks,
 		"the reference remains interpreter-only");

@@ -1,5 +1,6 @@
 require('base')
 local table<const> = {}
+table.copy = __bmsx_table_copy
 
 table.pack = function(...)
 	local packed<const> = { n = select('#', ...) }

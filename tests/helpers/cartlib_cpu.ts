@@ -54,7 +54,6 @@ const CART_MODULE_FILES = [
 	['cartlib/world/spatial_hierarchy', 'cartlib/world/spatial_hierarchy.lua'],
 	['cartlib/math/affine2', 'cartlib/math/affine2.lua'],
 	['cartlib/math/affine3', 'cartlib/math/affine3.lua'],
-	['cartlib/util/shallow_copy', 'cartlib/util/shallow_copy.lua'],
 	['cartlib/util/dense_set', 'cartlib/util/dense_set.lua'],
 	['cartlib/component/component_class', 'cartlib/component/component_class.lua'],
 	['cartlib/registry', 'cartlib/registry.lua'],

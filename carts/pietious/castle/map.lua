@@ -1,6 +1,6 @@
 require('constants')
 local scene_library<const> = require('cartlib/world/scene_library')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 local text<const> = require('cartlib/util/text')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')

@@ -18,9 +18,8 @@ void NativeLowering::lowerOperation(const NativeCallSite& site, const NativeInst
 	if (site.calleeCheck == NativeTagCheck::Dynamic)
 		fault(m_cache.guard(base, ValueTag::BuiltinFunction, SLJIT_R0), call, m_cache.state());
 	const auto id = readTyped(base, ValueTag::BuiltinFunction);
-	sljit_emit_op2(m_compiler, SLJIT_SHL32, SLJIT_R1, 0, SLJIT_IMM, 1, id.reg, 0);
-	sljit_emit_op2u(m_compiler, SLJIT_AND32 | SLJIT_SET_Z, SLJIT_R1, 0, SLJIT_IMM, NATIVE_BUILTIN_LEAF_IDS);
-	fault(sljit_emit_jump(m_compiler, SLJIT_ZERO), call, m_cache.state());
+	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL | SLJIT_32, id.reg, 0,
+		SLJIT_IMM, NATIVE_BUILTIN_LEAF_LIMIT), call, m_cache.state());
 	m_cache.publishRange(base, base + 1 + site.supplied);
 
 	m_cache.spillCall(false, 0);

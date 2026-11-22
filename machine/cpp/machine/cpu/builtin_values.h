@@ -23,14 +23,14 @@ struct BuiltinFunction {
 };
 
 inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN_FUNCTION_COSTS {{
+	{ 2, 0, 0 }, // GetMetatable
+	{ 2, 0, 0 }, // StringByte
+	{ 1, 0, 0 }, // ToInteger
+	{ 1, 0, 0 }, // Next
 	{ 1, 0, 0 },
 	{ 1, 0, 0 },
-	{ 2, 0, 0 },
-	{ 2, 0, 0 },
 	{ 1, 0, 0 },
-	{ 1, 0, 0 },
-	{ 1, 0, 0 },
-	{ 2, 0, 0 },
+	{ 1, 0, 0 }, // Type
 	{ 2, 0, 0 },
 	{ 2, 0, 0 },
 	{ 4, 0, 0 },
@@ -53,8 +53,9 @@ inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN
 	{ 1, 0, 0 }, // SetFrameUpvalue
 	{ 1, 0, 0 }, // FrameHeader
 	{ 1, 0, 0 }, // NumberType
-	{ 1, 0, 0 }, // ToInteger
+	{ 2, 0, 0 }, // SetMetatable
 	{ 2, 0, 0 }, // StringSlice
+	{ 2, 0, 0 }, // TableCopy
 }};
 
 // Builtins consume compact register windows or temporary complete-value

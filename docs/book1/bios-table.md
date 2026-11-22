@@ -1,8 +1,8 @@
 # BIOS table library {#sec-bios-table}
 
-Use the BIOS `table` functions to keep argument tuples, edit sequences,
-join values into text and sort a numeric-keyed range. The six functions operate
-on ordinary Tables. Their sequence positions begin at key 1.
+Use the BIOS `table` functions to copy mappings, keep argument tuples, edit
+sequences, join values into text and sort a numeric-keyed range. Their sequence
+positions begin at key 1.
 
 [Typed arrays](blua-programs.md#sec-blua-programs-typed-storage-layouts-and-address-views) provide
 the separate byte-addressed representation used for memory buffers and device
@@ -11,6 +11,7 @@ bytes or a device address are required.
 
 | Interface | Purpose | Successful results |
 | --- | --- | --- |
+| `table.copy(source)` | Copy a Table's own mappings | One new Table |
 | `table.pack(...)` | Preserve values and their supplied count | One new Table |
 | `table.insert(target, value)` | Append at the length boundary plus one | No results |
 | `table.insert(target, position, value)` | Shift and insert at a numeric key | No results |
@@ -66,9 +67,37 @@ or a deliberately replaced public dependency can still have its own effects.
 The library's public fields and the `select` global used by pack and unpack
 are ordinary mutable bindings, not permanently reserved operations.
 
-The functions execute ordinary instructions. Loops, tuple forwarding,
+Except for `table.copy`, the functions execute ordinary instructions. Loops, tuple forwarding,
 conversions, temporary Strings and comparison callbacks contribute work; a
 function call is not a single constant-cycle hardware operation. The [CPU reference](cpu.md#sec-cpu) supplies instruction charges.
+
+## Copying a Table {#sec-bios-table-copy}
+
+```text
+table.copy(source) -> copy
+```
+
+The result is a new Table with its own storage and no metatable. Its mappings
+contain the same keys and values as the source's own entries, including
+nonnumeric keys and keys beyond gaps in a sequence. Changing a mapping on
+either Table does not change the other. Referenced objects are shared, not
+recursively copied. No metamethod is invoked, and entries inherited through
+`__index` are not copied.
+
+```lua
+local defaults = { hp = 20, position = { x = 4, y = 7 } }
+local instance = table.copy(defaults)
+instance.hp = 10
+-- defaults.hp is still 20. Both Tables refer to the same position.
+```
+
+A missing argument or any argument other than a Table raises
+`INVALID_ARGUMENT`. The copy reserves the source's array capacity. Its hash
+reservation is the larger of the source's hash reservation and its number of
+live hash mappings when the call starts. If allocation clears weak mappings
+from the source, only the remaining mappings are copied. The service costs
+two base cycles plus one per reserved array slot and two per reserved hash
+mapping, in addition to the ordinary call and result placement.
 
 ## Packing and reading table ranges {#sec-bios-table-packing-and-reading-table-ranges}
 

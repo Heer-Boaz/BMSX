@@ -1,4 +1,4 @@
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 local registry<const> = require('cartlib/registry')
 local atlas<const> = require('cartlib/gx/atlas')
 local image<const> = require('cartlib/gx/image')

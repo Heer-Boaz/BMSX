@@ -295,6 +295,71 @@ void grantsAndRestore() {
 		require(native.cpu.rootThread()->firstFrame->registers.get(8)==valueInteger(-8),"a fault never commits the CALL successor");
 	}
 }
+
+void tableCopyReturnsThroughAllocatingCall() {
+	const auto rom = image(2, 2, true);
+	Machine native(rom, false), scalar(rom, true);
+	for (auto* machine : {&native, &scalar}) {
+		machine->seed(BuiltinFunctionId::TableCopy);
+		auto& cpu = machine->cpu;
+		auto source = cpu.createTable(4, 2);
+		const auto child = cpu.createTable();
+		source.setInteger(1, valueTable(child.address()));
+		source.setInteger(4, valueInteger(47));
+		source.set(valueTable(child.address()), valueInteger(17));
+		const auto erased = cpu.stringPool().intern("erased entry");
+		source.setStringKey(erased, valueInteger(10)); source.setStringKey(erased, valueNil());
+		source.setMetatableAddress(machine->meta->address());
+		auto* frame = cpu.rootThread()->currentFrame;
+		frame->registers.set(13, valueTable(source.address())); frame->setTop(16);
+		cpu.luaHeap().setCollectionTarget(0);
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	preparedCaller(native);
+#endif
+	const int grant = 4 * BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]
+		+ 2 + 4 + 2 * 2 + 1;
+	const auto before = native.cpu.luaHeap().usedBytes();
+	test::runCpuParity(native.cpu, scalar.cpu, grant);
+	parity(native, scalar);
+	auto& cpu = native.cpu;
+	require(cpu.collecting() && cpu.instructionBudgetRemaining == 0
+		&& cpu.readFramePc(0) == rom.textAddress + 6 * INSTRUCTION_BYTES,
+		"the allocating builtin completes one WIDE CALL and pays its exact grant");
+	require(cpu.luaHeap().usedBytes() == before + 32 + 4 * 5 + 2 * 10, "the result reserves one complete table");
+	const auto source = asTable(cpu.readFrameRegister(0, 13), cpu.gcHeap());
+	auto copy = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+	const auto child = source.getInteger(1);
+	require(copy.storageAddress() != source.storageAddress() && copy.metatableAddress() == 0u
+		&& copy.getInteger(1) == child && copy.getInteger(4) == valueInteger(47) && isNil(copy.getInteger(2))
+		&& copy.get(child) == valueInteger(17)
+		&& isNil(copy.getStringKey(cpu.stringPool().intern("erased entry"))),
+		"the copy contains own live entries, identity keys and holes in independent storage");
+	copy.setInteger(4, valueInteger(19));
+	require(source.getInteger(4) == valueInteger(47), "writes to the copy do not mutate its source");
+}
+
+void tableCopyRereadsWeakEntriesAfterAdmission() {
+	const auto rom = image(2, 2);
+	Machine machine(rom, true);
+	auto& cpu = machine.cpu;
+	auto source = cpu.createTable(1024, 2), metatable = cpu.createTable();
+	const u32 unrooted = cpu.createTable().address();
+	const auto key = cpu.stringPool().intern("weak copy member");
+	source.setStringKey(key, valueTable(unrooted));
+	source.setInteger(1024, valueInteger(64));
+	metatable.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+	source.setMetatableAddress(metatable.address());
+	cpu.createTable(1536, 0); // Unreachable backing makes room for exactly this class of request.
+	while (cpu.heapAllocator().allocate(HEAP_PAGE_SIZE, true) != 0u) {}
+
+	const auto copy = source.copyOwn();
+	require(cpu.gcHeap().tableRecordAddress(source.address()) == source.address()
+		&& isNil(source.getStringKey(key)),
+		"failed physical admission collects while retaining the borrowed source");
+	require(copy.hashReserve() == 2u && isNil(copy.getStringKey(key)) && copy.getInteger(1024) == valueInteger(64),
+		"the planned reservation survives, but the completed copy sees the post-collection entries");
+}
 } // namespace
 
 int main() {
@@ -312,6 +377,8 @@ int main() {
 		for(const bool nmi:{false,true})for(const bool wide:{false,true})inlineInterruptStop(nmi,wide);
 #endif
 		grantsAndRestore();
+		tableCopyReturnsThroughAllocatingCall();
+		tableCopyRereadsWeakEntriesAfterAdmission();
 		std::cout<<"Native builtin continuity tests passed\n";return 0;
 	} catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}
 }

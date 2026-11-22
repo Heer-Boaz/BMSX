@@ -36,11 +36,13 @@ public:
 	static u32 storageBytes(size_t arraySize, size_t hashSize, u32 hashReserve = 0u);
 	static u32 allocationCharge(size_t arraySize, u32 hashEntries);
 	void initialize(size_t arrayCapacity, size_t hashCapacity, u32 hashReserve);
+	TableRecord copyOwn() const;
 	void freeRecord();
 	u32 address() const { return m_address; }
 	u32 storageAddress() const { return readHeader(TableHeader::Storage); }
 	u32 arrayCapacity() const { return readHeader(TableHeader::Array); }
 	u32 hashSlots() const { return readHeader(TableHeader::Hash); }
+	u32 hashReserve() const;
 	u32 lengthHint() const { return readHeader(TableHeader::Length); }
 	i32 hashFree() const { return static_cast<i32>(readHeader(TableHeader::Free)); }
 	static size_t hashCapacity(int hashSize);
@@ -182,7 +184,6 @@ private:
 	void initializeStorage(size_t retainedArray = 0);
 	void freeStorage();
 	u32 hashMetadata() const;
-	u32 hashReserve() const;
 	u32 hashMembers() const;
 	u32 hashWatermark() const;
 	void publishHashMembers(u32 previous, u32 members, u32 reserve);

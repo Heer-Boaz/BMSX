@@ -1,7 +1,7 @@
 local clock<const> = require('cartlib/clock')
 local image<const> = require('cartlib/gx/image')
 local sprite_component<const> = require('cartlib/component/sprite_component')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 
 local sprite_animation_component<const> = {}
 sprite_animation_component.__index = sprite_animation_component

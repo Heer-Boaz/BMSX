@@ -1,4 +1,4 @@
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 local channel_binding<const> = require('cartlib/timeline/channel_binding')
 local base_component<const> = require('cartlib/component/base_component')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')

@@ -1,7 +1,7 @@
 -- One live composition. Definitions and game/session state have independent
 -- lifetimes; this owner retains only its current World objects.
 local dense_set<const> = require('cartlib/util/dense_set')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 local world<const> = require('cartlib/world/world')
 
 local scene<const> = {}

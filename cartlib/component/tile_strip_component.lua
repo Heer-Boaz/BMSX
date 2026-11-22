@@ -1,7 +1,7 @@
 local image<const> = require('cartlib/gx/image')
 local visual_2d_component<const> = require('cartlib/component/visual_2d_component')
 local affine_batch<const> = require('cartlib/gx/affine_batch')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 
 local tile_strip_component<const> = {}
 tile_strip_component.__index = tile_strip_component

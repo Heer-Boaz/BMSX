@@ -108,7 +108,7 @@ auto encodeImage(
 	const u32 stringRecordOffset = alignOffset(stringBucketOffset + 4u * stringBucketCount,
 		imageAddress, BLUA32_STRING_RECORD_ALIGNMENT);
 	offset = stringRecordOffset + stringRecordBytes;
-	const u32 textOffset = alignOffset(offset, imageAddress, INSTRUCTION_BYTES);
+	const u32 textOffset = alignOffset(offset, imageAddress, source.textAlignment);
 	const u32 imageByteCount = textOffset + static_cast<u32>(source.text.size());
 	const u32 functionTableAddress = imageAddress + functionTableOffset;
 	const u32 stringAddress = imageAddress + stringRecordOffset;

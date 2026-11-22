@@ -8,6 +8,33 @@ import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 
 for (const optLevel of [3] as const) {
+	test('BIOS table.copy duplicates own entries without following metatables', () => {
+		const { cpu } = createCartlibProgramHarness(`
+local function verify()
+ local shared<const> = {name='shared'}
+ local source<const> = {11,nil,33,[shared]=false,tag=shared,gone=99}
+ source.gone = nil
+ setmetatable(source, {__index=function() error('copy called __index') end})
+ local copy<const> = table.copy(source)
+ assert(copy ~= source and getmetatable(copy) == nil)
+ assert(copy[1] == 11 and copy[2] == nil and copy[3] == 33)
+ assert(copy[shared] == false and copy.tag == shared and copy.gone == nil)
+ copy[1] = 22
+ source.tag = 17
+ assert(source[1] == 11 and copy.tag == shared)
+ local count = 0
+ for key,value in pairs(copy) do count = count + 1 end
+ assert(count == 4)
+ local empty<const> = table.copy({})
+ assert(next(empty) == nil)
+ assert(select('#',table.copy(source)) == 1)
+ assert(not pcall(table.copy) and not pcall(table.copy,17))
+end
+observed_ok,observed_error=pcall(verify)
+`, {optLevel});
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_ok')), valueBool(true));
+	});
 	test(`BIOS table.concat owns conversion independently of global tostring (O${optLevel})`, () => {
 		const {cpu} = createCartlibProgramHarness(`
 local function execute()

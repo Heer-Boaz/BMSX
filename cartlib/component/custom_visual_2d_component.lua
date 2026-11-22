@@ -1,7 +1,7 @@
 -- Explicit 2D custom geometry. Nonspatial/3D custom renderers retain the
 -- generic CustomVisualComponent and never acquire a fabricated Transform2D.
 local visual_2d_component<const> = require('cartlib/component/visual_2d_component')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 
 local custom_visual_2d_component<const> = {}
 custom_visual_2d_component.__index = custom_visual_2d_component

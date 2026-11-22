@@ -2,6 +2,7 @@
 
 #include "rompack/tooling/blua32_image.h"
 #include "spec/blua32/image_format.h"
+#include "spec/blua32/instruction_format.h"
 #include "spec/bmsx/memory_map.h"
 #include "rompack/format.h"
 #include "rompack/manifest.h"
@@ -43,6 +44,7 @@ struct Blua32TestImage {
 	u32 irqFunctionIndex = 0;
 	u32 exceptionFunctionIndex = 0;
 	bool mappedCode = true;
+	u32 textAlignment = INSTRUCTION_BYTES;
 };
 
 struct Blua32TestRom {

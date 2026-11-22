@@ -6,7 +6,7 @@ local collision_shape<const> = require('cartlib/collision/collision_shape')
 local sprite_shape<const> = require('cartlib/collision/sprite_shape')
 local geometry_pool<const> = require('cartlib/collision/geometry_pool')
 local shape_geometry<const> = require('cartlib/collision/shape_geometry')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 
 local collider_2d_component<const> = {}
 collider_2d_component.__index = collider_2d_component

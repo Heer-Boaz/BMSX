@@ -1,7 +1,7 @@
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local visual_2d_component<const> = require('cartlib/component/visual_2d_component')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 
 local sprite_component<const> = {}
 sprite_component.__index = sprite_component

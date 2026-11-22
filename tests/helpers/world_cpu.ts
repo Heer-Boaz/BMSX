@@ -7,7 +7,7 @@ import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_registe
 export const WORLD_CPU_MODULES = [
 	'cartlib/dma', 'cartlib/irq', 'cartlib/irq/source',
 	'cartlib/gx/command_list', 'cartlib/gx/display', 'cartlib/gx/gpu', 'cartlib/gx/gp0', 'cartlib/gx/vram',
-	'cartlib/util/shallow_copy', 'cartlib/world/prefab', 'cartlib/world/scene', 'cartlib/world/scene_library',
+	'cartlib/world/prefab', 'cartlib/world/scene', 'cartlib/world/scene_library',
 	'cartlib/world/space', 'cartlib/world/system_manager', 'cartlib/world/system_schedule_syntax',
 	'cartlib/world/tick_schedule', 'cartlib/world/scene_plan', 'cartlib/world/world', 'cartlib/world/world_object',
 	'cartlib/world/spatial_hierarchy', 'cartlib/math/affine2', 'cartlib/math/affine3',

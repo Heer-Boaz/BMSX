@@ -12,7 +12,7 @@ local font_module<const> = require('cartlib/font')
 local smoothstep<const> = require('cartlib/easing').smoothstep
 local visual_2d_component<const> = require('cartlib/component/visual_2d_component')
 local affine_batch<const> = require('cartlib/gx/affine_batch')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 
 local text_object<const> = {}
 text_object.__index = text_object

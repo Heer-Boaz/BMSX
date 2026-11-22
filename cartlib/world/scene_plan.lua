@@ -1,7 +1,7 @@
 -- Cold declaration admission. Runtime Scenes consume these retained bindings,
 -- never resolving a member's prefab name again during staged construction.
 local prefab<const> = require('cartlib/world/prefab')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local shallow_copy<const> = table.copy
 
 local scene_plan<const> = {}
 local empty_options<const> = {}
