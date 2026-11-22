@@ -599,16 +599,11 @@ export class CPU implements MappedPageInvalidator {
 		const tables = this.gc.tables, record = valuePayload(base);
 		const tag = valueTag(value), word = valuePayload(value);
 		if (tables.storePredictedStringKey(record, key, page.tableCacheSlots[pageOffset], tag, word)) return false;
-		if (tables.metatableAddress(record) === 0) {
-			page.tableCacheSlots[pageOffset] = tables.storeStringKey(record, key, tag, word);
-			return false;
-		}
 		const assignment = this.tableLookupResult, field = valueString(key);
-		tables.resolveAssignment(record, this.newIndexKey, field, assignment, page.tableCacheSlots[pageOffset]);
+		tables.resolveAssignment(record, this.newIndexKey, field, assignment, true);
 		if (this.finishTableAssignment(frame, field, value, assignment)) return true;
-		if (assignment.extraVisits === 0) {
-			page.tableCacheSlots[pageOffset] = tables.storeStringKeyCached(record, key, assignment.slot, tag, word);
-		} else tables.storeStringKey(assignment.receiver, key, tag, word);
+		const slot = tables.storeStringKey(assignment.receiver, key, tag, word, assignment.slot);
+		if (assignment.extraVisits === 0) page.tableCacheSlots[pageOffset] = slot;
 		return false;
 	}
 	private executeLength(frame: CallFrame, destination: number, source: number): boolean {

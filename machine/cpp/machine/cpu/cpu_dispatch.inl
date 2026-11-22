@@ -173,16 +173,15 @@ DISPATCH_LABEL(SETFIELD) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	++m_diagnosticExecutionProfile.interpreterOpcodes.setfield;
 #endif
-	const int a = decoded->a;
-	const int b = decoded->b;
-	const int rkC = decoded->c;
+	const Value base = REG(decoded->a);
+	const StringId key = asStringId(IMAGE.constPool.get(static_cast<size_t>(decoded->b)));
+	const Value value = readRK(IMAGE, registers, decoded->c);
+	int& predicted = TABLE_CACHE_SLOT();
+	// An own overwrite and its write barrier do not observe the frame.
+	if (valueIsTable(base) && TableRecord(m_heap, valuePayload(base)).storePredictedStringKey(key, value, predicted))
+		DISPATCH_NEXT();
 	PUBLISH_SCALAR_FRONTIER();
-	if (storeTableFieldIndexCached(FRAME,
-		TABLE_CACHE_SLOT(),
-		REG(a),
-		asStringId(IMAGE.constPool.get(static_cast<size_t>(b))),
-		readRK(IMAGE, registers, rkC)
-	)) DISPATCH_CONTINUE();
+	if (storeTableFieldIndexCached(FRAME, predicted, base, key, value)) DISPATCH_CONTINUE();
 	RESUME_SCALAR_FRONTIER();
 	registers = FRAME.registers;
 	DISPATCH_NEXT();

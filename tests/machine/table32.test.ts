@@ -162,7 +162,8 @@ test('compact hash growth, cached string access and inherited reads use real hea
 	const cachedKey = cpu.stringPool.find('key123')!;
 	cpu.gc.tables.getStringKeyCached(table, cachedKey, -1, result);
 	assert.equal(result.value, v.valueInteger(123));
-	const predicted = cpu.gc.tables.storeStringKeyCached(table, cachedKey, result.slot, v.ValueTag.Float, 0xffa12345);
+	const predicted = result.slot;
+	assert.equal(cpu.gc.tables.storePredictedStringKey(table, cachedKey, predicted, v.ValueTag.Float, 0xffa12345), true);
 	cpu.gc.tables.getStringKeyCached(table, cachedKey, predicted, result);
 	assert.equal(result.value, v.valueFloatBits(0xffa12345));
 	const empty = cpu.createTable();

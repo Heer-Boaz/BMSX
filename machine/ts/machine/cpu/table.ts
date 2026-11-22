@@ -20,6 +20,9 @@ const TABLE_EXPLICIT_HASH_RESERVE = 1 << 16;
 const TABLE_HASH_WATERMARK_SHIFT = 17;
 const TABLE_HASH_WATERMARK_MASK = 31 << TABLE_HASH_WATERMARK_SHIFT;
 const TABLE_HASH_MAPPING_BYTES = 10;
+// A fixed-string Store carries an unprobed, absent (-1), or matched hash node,
+// including a matched tombstone.
+export const TABLE_HASH_UNPROBED = -2;
 export const TABLE_INDEX_CHAIN_LIMIT = 32;
 export const enum TableLookupStatus { Resolved, ChainExhausted, Invoke, Forward, Store }
 type TableLookupSlot = { value: Value; slot: number };
@@ -388,17 +391,25 @@ export class TableRecords {
 		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
 	}
 	public resolveAssignment(record: number, newIndexKey: StringId, rawKey: Value, result: TableLookupResult,
-		predicted?: number): void {
-		const validKey = !isNil(rawKey) && !valueIsNaN(rawKey);
-		const key = canonicalTableKey(rawKey), arrayIndex = this.getArrayIndex(key);
+		fixedString = false): void {
+		const validKey = fixedString || (!isNil(rawKey) && !valueIsNaN(rawKey));
+		const key = fixedString ? rawKey : canonicalTableKey(rawKey);
+		const arrayIndex = fixedString ? -1 : this.getArrayIndex(key);
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
 			const meta = this.metatableAddress(record);
-			result.slot = predicted ?? -1;
+			let slot = meta === 0 ? TABLE_HASH_UNPROBED : -1;
 			let next = valueNil();
 			if (meta !== 0) {
-				if (predicted !== undefined) {
-					this.getStringKeyCached(record, valuePayload(key), predicted, result);
-					if (result.slot < 0) next = this.getStringKey(meta, newIndexKey);
+				if (fixedString) {
+					const hash = this.hashSize(record);
+					let own = false;
+					if (hash !== 0) {
+						const array = this.arrayCapacity(record), words = this.storageAddress(record);
+						const tags = words + (array + 3 * hash) * 4;
+						slot = this.findStringNodeIndex(valuePayload(key), hashCanonicalTableKey(key) & (hash - 1), hash, array, words, tags);
+						own = slot >= 0 && this.heap.memory.readRamRecordByte(tags + array + hash + slot) !== ValueTag.Nil;
+					}
+					if (!own) next = this.getStringKey(meta, newIndexKey);
 				} else if (!validKey || isNil(this.getCanonical(record, key, arrayIndex))) {
 					next = this.getStringKey(meta, newIndexKey);
 				}
@@ -406,7 +417,6 @@ export class TableRecords {
 			const tag = valueTag(next);
 			if (tag === ValueTag.Table) {
 				record = valuePayload(next);
-				if (predicted !== undefined) predicted = -1;
 				continue;
 			}
 			result.extraVisits = depth;
@@ -415,9 +425,10 @@ export class TableRecords {
 			result.status = tag === ValueTag.Nil ? TableLookupStatus.Store
 				: tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction ? TableLookupStatus.Invoke
 				: TableLookupStatus.Forward;
+			result.slot = tag === ValueTag.Nil ? slot : -1;
 			return;
 		}
-		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
+		result.slot = -1; result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
 	}
 	public set(record: number, rawKey: Value, value: Value): void {
 		if (isNil(rawKey)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
@@ -432,25 +443,26 @@ export class TableRecords {
 		this.setHash(record, array, key, value);
 		if (slot >= 0) this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
 	}
-	private setHash(record: number, array: number, key: Value, value: Value): number {
+	private setHash(record: number, array: number, key: Value, value: Value, resolved = TABLE_HASH_UNPROBED): number {
 		const tag = valueTag(value), word = valuePayload(value);
-		if (tag === ValueTag.Nil) { this.removeFromHash(record, key); return -1; }
+		if (tag === ValueTag.Nil) { this.removeFromHash(record, key, resolved); return -1; }
 		const keyTag = valueTag(key), keyWord = valuePayload(key);
 		const keyHasEdge = valueTagHasGcEdge(keyTag), valueHasEdge = valueTagHasGcEdge(tag);
 		const hash = this.hashSize(record), words = this.storageAddress(record), tags = words + (array + 3 * hash) * 4;
 		const home = hashCanonicalTableKey(key) & (hash - 1);
 		const memory = this.heap.memory;
-		let index = -1;
-		if (hash !== 0) {
-			index = keyTag === ValueTag.String ? this.findStringNodeIndex(keyWord, home, hash, array, words, tags)
+		let index = resolved;
+		if (index === TABLE_HASH_UNPROBED) {
+			index = hash === 0 ? -1 : keyTag === ValueTag.String
+				? this.findStringNodeIndex(keyWord, home, hash, array, words, tags)
 				: this.probeHash(key, home, hash, array, words, tags, true);
-			if (index >= 0) {
-				const valueSlot = array + index + hash, prior = memory.readRamRecordByte(tags + valueSlot);
-				if (prior !== ValueTag.Nil && prior !== ValueTag.DeadKey) {
-					if (valueHasEdge) this.heap.writeBarrier(record, GC_RECORD_LINK);
-					this.writeSlot(words, tags, valueSlot, tag, word);
-					return index;
-				}
+		}
+		if (index >= 0) {
+			const valueSlot = array + index + hash, prior = memory.readRamRecordByte(tags + valueSlot);
+			if (prior !== ValueTag.Nil && prior !== ValueTag.DeadKey) {
+				if (valueHasEdge) this.heap.writeBarrier(record, GC_RECORD_LINK);
+				this.writeSlot(words, tags, valueSlot, tag, word);
+				return index;
 			}
 		}
 		const reserve = this.hashReserve(record), members = this.hashMembers(record), watermark = this.hashWatermark(record);
@@ -476,8 +488,8 @@ export class TableRecords {
 		this.set(record, valueFromTag(keyTag, keyWord), valueFromTag(tag, word));
 	}
 	public setStringKey(record: number, key: StringId, value: Value): void { this.setHash(record, this.arrayCapacity(record), valueString(key), value); }
-	public storeStringKey(record: number, key: StringId, tag: ValueTag, word: number): number {
-		return this.setHash(record, this.arrayCapacity(record), valueString(key), valueFromTag(tag, word));
+	public storeStringKey(record: number, key: StringId, tag: ValueTag, word: number, resolved = TABLE_HASH_UNPROBED): number {
+		return this.setHash(record, this.arrayCapacity(record), valueString(key), valueFromTag(tag, word), resolved);
 	}
 	public storePredictedStringKey(record: number, key: StringId, predicted: number, tag: ValueTag, word: number): boolean {
 		if (tag === ValueTag.Nil || predicted < 0) return false;
@@ -489,9 +501,6 @@ export class TableRecords {
 			|| memory.readRamRecordByte(tags + valueSlot) === ValueTag.Nil) return false;
 		this.heap.writeValueBarrier(record, GC_RECORD_LINK, tag);
 		this.writeSlot(words, tags, valueSlot, tag, word); return true;
-	}
-	public storeStringKeyCached(record: number, key: StringId, predicted: number, tag: ValueTag, word: number): number {
-		return this.storePredictedStringKey(record, key, predicted, tag, word) ? predicted : this.storeStringKey(record, key, tag, word);
 	}
 	private vacantHome(home: number, array: number, hash: number, tags: number): boolean {
 		const memory = this.heap.memory, slot = tags + array + home;
@@ -563,8 +572,8 @@ export class TableRecords {
 			this.setEncoded(record, keySlot, ValueTag.Nil, tag); this.setEncoded(record, valueSlot, ValueTag.DeadKey, hashId);
 		} else this.setEncoded(record, valueSlot, ValueTag.Nil, 0);
 	}
-	private removeFromHash(record: number, key: Value): void {
-		const index = this.findNodeIndex(record, key);
+	private removeFromHash(record: number, key: Value, resolved: number): void {
+		const index = resolved === TABLE_HASH_UNPROBED ? this.findNodeIndex(record, key) : resolved;
 		if (index >= 0 && this.tagAt(record, this.hashValueSlot(record, index)) !== ValueTag.Nil) this.markHashNodeDead(record, index);
 	}
 	private static countIntegerKey(counts: Uint32Array, bins: number, index: number): number {

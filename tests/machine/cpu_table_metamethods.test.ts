@@ -16,7 +16,8 @@ import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execu
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 	test(`WIDE __newindex and __len use the ordinary activation and preserve result placement (${backend})`, () => {
-		for (const op of [OpCode.SETT, OpCode.SETI, OpCode.SETFIELD, OpCode.LEN]) {
+		for (const [op, nilStore] of [[OpCode.SETT, false], [OpCode.SETI, false], [OpCode.SETFIELD, false],
+			[OpCode.SETFIELD, true], [OpCode.LEN, false]] as const) {
 			const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE), length = op === OpCode.LEN;
 			writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
 			writeInstruction(text, 1, OpCode.CLOSURE, 10, 0, 0);
@@ -55,6 +56,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			tables.setMetatableAddress(forwarded, innerMeta);
 			const originalKey = op === OpCode.SETT ? valueFloatBits(0xffc12345) : initialKey;
 			frame.registers.set(1, originalKey);
+			if (nilStore) frame.registers.setNil(2);
 			frame.registers.setInteger(8, 57);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], loop);
 			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
@@ -64,7 +66,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			assert.equal(callback.callSitePc, opcodePc);
 			assert.equal(callback.registers.get(0), valueTable(length ? source : forwarded));
 			assert.equal(callback.registers.get(1), length ? valueTable(source) : originalKey);
-			if (!length) assert.equal(callback.registers.get(2), valueInteger(91));
+			if (!length) assert.equal(callback.registers.get(2), nilStore ? valueNil() : valueInteger(91));
 			assert.equal(frame.registers.getInteger(8), 57);
 			const pending = captureCpuCheckpoint(cpu);
 			for (let replay = 0; replay < 2; ++replay) {

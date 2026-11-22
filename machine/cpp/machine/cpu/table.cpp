@@ -470,9 +470,9 @@ void TableRecord::fillStringRecord(const TableConstructorLayout& layout, std::sp
 	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 }
 
-void TableRecord::removeFromHash(const Value& key) {
-	const int existingIndex = findNodeIndex(key);
-	if (existingIndex < 0 || isNil(values().get(hashValueSlot(static_cast<size_t>(existingIndex))))) {
+void TableRecord::removeFromHash(const Value& key, int slot) {
+	const int existingIndex = slot == TABLE_HASH_UNPROBED ? findNodeIndex(key) : slot;
+	if (existingIndex < 0 || values().tag(static_cast<u32>(hashValueSlot(existingIndex))) == ValueTag::Nil) {
 		return;
 	}
 	markHashNodeDead(static_cast<size_t>(existingIndex));
@@ -526,34 +526,36 @@ void TableRecord::set(const Value& rawKey, const Value& value) {
 	if (index != NO_ARRAY_SLOT) updateLengthHint(index, present);
 }
 
-int TableRecord::setHash(u32 array, Value key, Value value) {
+int TableRecord::setHash(u32 array, Value key, Value value, int slot) {
 	if (isNil(value)) {
-		removeFromHash(key);
+		removeFromHash(key, slot);
 		return -1;
 	}
-	return setNonNilHash<HashStore::General>(array, key, value);
+	return setNonNilHash<HashStore::General>(array, key, value, slot);
 }
 
 template <TableRecord::HashStore Policy>
-int TableRecord::setNonNilHash(u32 array, Value key, Value value, StringId newIndexKey) noexcept(Policy != HashStore::General) {
+int TableRecord::setNonNilHash(u32 array, Value key, Value value, int nodeIndex, StringId newIndexKey) noexcept(Policy != HashStore::General) {
 	constexpr bool inPlaceOnly = Policy != HashStore::General;
 	const bool valueHasEdge = valueTagHasGcEdge(valueTag(value));
 	const u32 count = hashSlots();
 	const auto body = hashBody(count, array);
 	const u32 home = hashCanonicalTableKey(key) & (count - 1u);
-	int nodeIndex = -1;
-	if (count != 0u) {
-		if constexpr (Policy == HashStore::IdentityInPlace) nodeIndex = body.findNode(key, home, true);
-		else if constexpr (Policy == HashStore::FieldInPlace) nodeIndex = body.findString(asStringId(key), home);
-		else nodeIndex = valueIsString(key) ? body.findString(asStringId(key), home) : body.findNode(key, home, true);
-		if (nodeIndex >= 0) {
-			const u32 valueSlot = array + static_cast<u32>(nodeIndex) + count;
-			const auto prior = body.slots.tag(valueSlot);
-			if (prior != ValueTag::Nil && prior != ValueTag::DeadKey) {
-				if (valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
-				body.slots.set(valueSlot, value);
-				return nodeIndex;
-			}
+	if (nodeIndex == TABLE_HASH_UNPROBED) {
+		nodeIndex = -1;
+		if (count != 0u) {
+			if constexpr (Policy == HashStore::IdentityInPlace) nodeIndex = body.findNode(key, home, true);
+			else if constexpr (Policy == HashStore::FieldInPlace) nodeIndex = body.findString(asStringId(key), home);
+			else nodeIndex = valueIsString(key) ? body.findString(asStringId(key), home) : body.findNode(key, home, true);
+		}
+	}
+	if (nodeIndex >= 0) {
+		const u32 valueSlot = array + static_cast<u32>(nodeIndex) + count;
+		const auto prior = body.slots.tag(valueSlot);
+		if (prior != ValueTag::Nil && prior != ValueTag::DeadKey) {
+			if (valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+			body.slots.set(valueSlot, value);
+			return nodeIndex;
 		}
 	}
 	// Only an absent own field can trigger __newindex. Keep the probe's
@@ -595,7 +597,7 @@ bool TableRecord::tryAssignIdentityHash(Value key, Value value) noexcept {
 }
 
 int TableRecord::tryAssignStringField(StringId key, Value value, StringId newIndexKey) noexcept {
-	return setNonNilHash<HashStore::FieldInPlace>(arrayCapacity(), valueString(key), value, newIndexKey);
+	return setNonNilHash<HashStore::FieldInPlace>(arrayCapacity(), valueString(key), value, TABLE_HASH_UNPROBED, newIndexKey);
 }
 
 Value TableRecord::getInteger(int indexValue) const {
@@ -682,19 +684,20 @@ void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResu
 		if constexpr (Assignment) {
 			metatable = current.metatableAddress();
 			if (metatable == 0u) {
-				result = {valueNil(), slot, depth, TableLookupStatus::Store, receiver};
+				result = {valueNil(), TABLE_HASH_UNPROBED, depth, TableLookupStatus::Store, receiver};
 				return;
 			}
 		}
 		if constexpr (RememberPath) {
 			if (depth != 0 && depth == cache->holderDepth) slot = cache->holderSlot;
 		}
-		const Value own = lookup(current, slot);
-		if (!isNil(own)) {
-			if constexpr (Assignment) {
+		const auto own = lookup(current, slot);
+		if constexpr (Assignment) {
+			if (own) {
 				result = {valueNil(), slot, depth, TableLookupStatus::Store, receiver};
 				return;
 			}
+		} else if (!isNil(own)) {
 			if constexpr (RememberPath) {
 				if (depth != 0) {
 					cache->holderDepth = depth;
@@ -721,7 +724,7 @@ void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResu
 			if (valueIsClosure(parent) || valueIsBuiltinFunction(parent))
 				result = {parent, -1, depth, TableLookupStatus::Invoke, receiver};
 			else if (!isNil(parent)) result = {parent, -1, depth, TableLookupStatus::Forward};
-			else if constexpr (Assignment) result = {valueNil(), -1, depth, TableLookupStatus::Store, receiver};
+			else if constexpr (Assignment) result = {valueNil(), slot, depth, TableLookupStatus::Store, receiver};
 			else result = {valueNil(), -1, depth, TableLookupStatus::Resolved};
 			return;
 		}
@@ -762,37 +765,38 @@ void TableRecord::resolveAssignment(StringId newIndexKey, Value rawKey, TableLoo
 	const Value key = canonicalTableKey(rawKey);
 	const bool miss = isNil(key) || valueIsNaN(key);
 	resolveIndexChain<true>(newIndexKey, -1, result, [key, miss](const TableRecord& table, int&) {
-		return miss ? valueNil() : table.getCanonical(key);
+		return !miss && !isNil(table.getCanonical(key));
 	});
 }
 
 void TableRecord::resolveIntegerAssignment(StringId newIndexKey, int key, TableLookupResult& result) const {
-	resolveIndexChain<true>(newIndexKey, -1, result, [key](const TableRecord& table, int&) { return table.getInteger(key); });
+	resolveIndexChain<true>(newIndexKey, -1, result, [key](const TableRecord& table, int&) { return !isNil(table.getInteger(key)); });
 }
 
-void TableRecord::resolveStringAssignment(StringId newIndexKey, StringId key, int predictedSlot, TableLookupResult& result) const {
-	resolveIndexChain<true>(newIndexKey, predictedSlot, result, [key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); });
+void TableRecord::resolveStringAssignment(StringId newIndexKey, StringId key, TableLookupResult& result) const {
+	resolveIndexChain<true>(newIndexKey, -1, result, [key](const TableRecord& table, int& slot) {
+		const u32 count = table.hashSlots();
+		if (count == 0u) return false;
+		const auto body = table.hashBody(count, table.arrayCapacity());
+		slot = body.findString(key, hashCanonicalTableKey(valueString(key)) & (count - 1u));
+		return slot >= 0 && body.slots.tag(body.array + body.count + static_cast<u32>(slot)) != ValueTag::Nil;
+	});
 }
 
-int TableRecord::setStringKey(StringId key, const Value& value) {
-	return setHash(arrayCapacity(), valueString(key), value);
+int TableRecord::setStringKey(StringId key, const Value& value, int slot) {
+	return setHash(arrayCapacity(), valueString(key), value, slot);
 }
 
-void TableRecord::setStringKeyCached(StringId key, const Value& value, int& predictedSlot) {
-	if (!isNil(value) && predictedSlot >= 0) {
-		const u32 count = hashSlots();
-		if (static_cast<u32>(predictedSlot) < count) {
-			const auto body = hashBody(count, arrayCapacity());
-			const u32 keySlot = body.array + static_cast<u32>(predictedSlot), valueSlot = keySlot + count;
-			if (body.slots.tag(keySlot) == ValueTag::String && body.slots.word(keySlot) == key
-				&& body.slots.tag(valueSlot) != ValueTag::Nil) {
-				m_heap->writeValueBarrier(m_address, GC_RECORD_LINK, valueTag(value));
-				body.slots.set(valueSlot, value);
-				return;
-			}
-		}
-	}
-	predictedSlot = setStringKey(key, value);
+bool TableRecord::storePredictedStringKey(StringId key, Value value, int predicted) noexcept {
+	if (isNil(value) || predicted < 0) return false;
+	const u32 count = hashSlots();
+	if (static_cast<u32>(predicted) >= count) return false;
+	const auto body = hashBody(count, arrayCapacity());
+	const u32 node = static_cast<u32>(predicted), valueSlot = body.array + node + count;
+	if (!body.matchesString(node, key) || body.slots.tag(valueSlot) == ValueTag::Nil) return false;
+	m_heap->writeValueBarrier(m_address, GC_RECORD_LINK, valueTag(value));
+	body.slots.set(valueSlot, value);
+	return true;
 }
 
 i32 TableRecord::length(TableRecord* table) noexcept {

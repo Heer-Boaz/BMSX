@@ -81,8 +81,8 @@ public:
 	TableStringProbe beginStringProbe(StringId key) const;
 	size_t advanceStringProbe(StringId key, TableStringProbe& probe, size_t limit) const;
 	Value getStringKeyCached(StringId key, int& predictedSlot) const;
-	int setStringKey(StringId key, const Value& value);
-	void setStringKeyCached(StringId key, const Value& value, int& predictedSlot);
+	int setStringKey(StringId key, const Value& value, int slot = TABLE_HASH_UNPROBED);
+	bool storePredictedStringKey(StringId key, Value value, int predicted) noexcept;
 	Value metatableField(StringId key) const;
 	void resolveIndex(StringId indexKey, const Value& key, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
 	void resolveIntegerIndex(StringId indexKey, int key, TableLookupResult& result) const;
@@ -92,7 +92,7 @@ public:
 		TableLookupResult& result, TableStringPathCache& cache) const;
 	void resolveAssignment(StringId newIndexKey, Value key, TableLookupResult& result) const;
 	void resolveIntegerAssignment(StringId newIndexKey, int key, TableLookupResult& result) const;
-	void resolveStringAssignment(StringId newIndexKey, StringId key, int predictedSlot, TableLookupResult& result) const;
+	void resolveStringAssignment(StringId newIndexKey, StringId key, TableLookupResult& result) const;
 	// Find a boundary and remember it after a search.
 	static i32 length(TableRecord* table) noexcept;
 	void clear();
@@ -234,11 +234,12 @@ private:
 	int rawSet(const Value& key, const Value& value);
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
 	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
-	int setHash(u32 array, Value key, Value value);
+	int setHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED);
 	enum class HashStore : u8 { General, IdentityInPlace, FieldInPlace };
 	template <HashStore Policy>
-	int setNonNilHash(u32 array, Value key, Value value, StringId newIndexKey = 0) noexcept(Policy != HashStore::General);
-	void removeFromHash(const Value& key);
+	int setNonNilHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED,
+		StringId newIndexKey = 0) noexcept(Policy != HashStore::General);
+	void removeFromHash(const Value& key, int slot);
 	void markHashNodeDead(size_t index);
 	Value getCanonical(const Value& key) const;
 	Value getHash(const Value& key) const;

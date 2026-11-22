@@ -108,13 +108,10 @@ bool CPU::storeTableIntegerIndex(CallFrame& frame, Value base, int index, Value 
 bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value base, StringId key, Value value) {
 	if (!valueIsTable(base)) throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	TableLookupResult result;
-	TableRecord(m_heap, valuePayload(base)).resolveStringAssignment(asStringId(m_newIndexKey), key, predictedSlot, result);
+	TableRecord(m_heap, valuePayload(base)).resolveStringAssignment(asStringId(m_newIndexKey), key, result);
 	if (finishTableAssignment(frame, valueString(key), value, result)) return true;
-	TableRecord target(m_heap, result.receiver);
-	if (result.extraVisits == 0) {
-		predictedSlot = result.slot;
-		target.setStringKeyCached(key, value, predictedSlot);
-	} else target.setStringKey(key, value);
+	const int slot = TableRecord(m_heap, result.receiver).setStringKey(key, value, result.slot);
+	if (result.extraVisits == 0) predictedSlot = slot;
 	return false;
 }
 

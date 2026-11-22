@@ -8,6 +8,7 @@
 #include <array>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 namespace {
 using namespace bmsx;
@@ -194,6 +195,90 @@ void tableValuedNewIndexAndOwnOverwrite() {
 	}
 }
 
+void fixedFieldAssignmentReusesTheTerminalProof() {
+	Program program(OpCode::SETFIELD, true);
+	Machine generated(program, false), scalar(program, true);
+	for (auto* m : {&generated, &scalar}) {
+		auto& cpu = m->cpu;
+		auto& strings = cpu.stringPool();
+		const auto field = *strings.find("field"), newIndex = strings.intern("__newindex");
+		auto own = cpu.createTable(1, 2), holder = cpu.createTable(1, 2);
+		auto meta = cpu.createTable(0, 1), holderMeta = cpu.createTable(0, 2);
+		meta.setStringKey(newIndex, valueTable(holder.address()));
+		holderMeta.setStringKey(strings.intern("unrelated method"), valueBool(false));
+		own.setMetatableAddress(meta.address());
+		holder.setMetatableAddress(holderMeta.address());
+		own.setStringKey(field, valueBool(false));
+		holder.setInteger(1, valueInteger(61));
+		const auto home = holder.beginStringProbe(field).node;
+		for (int i = 0; i < 64; ++i) {
+			const auto collider = strings.intern("terminal collision " + std::to_string(i));
+			if (holder.beginStringProbe(collider).node != home) continue;
+			holder.setStringKey(collider, valueInteger(27));
+			break;
+		}
+		auto registers = cpu.activeThread()->currentFrame->registers;
+		registers.set(0, valueTable(own.address()));
+		registers.set(3, valueTable(holder.address()));
+		registers.set(4, valueTable(holderMeta.address()));
+	}
+	const auto assign = [&](Value value, int inheritedVisits) {
+		for (auto* m : {&generated, &scalar}) {
+			auto& cpu = m->cpu;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+			auto registers = cpu.activeThread()->currentFrame->registers;
+			registers.set(2, value); registers.set(8, valueInteger(57));
+		}
+		parity(generated, scalar, cycles(OpCode::SETFIELD) + inheritedVisits * TABLE_INDEX_VISIT_CYCLES);
+		const auto& cpu = generated.cpu;
+		require(cpu.instructionBudgetRemaining == 0 && cpu.readCurrentInstructionPc() == generated.rom.textAddress
+			&& cpu.lastPc == generated.rom.textAddress + INSTRUCTION_BYTES
+			&& cpu.readFramePc(0) == generated.rom.textAddress + program.next * INSTRUCTION_BYTES
+			&& cpu.readFrameRegister(0, 8) == valueInteger(57),
+			"the WIDE store charges exactly its visits and leaves the suffix unexecuted");
+	};
+	const auto hint = [](Machine& m) {
+		const auto& page = *m.cpu.activeThread()->currentFrame->decodedPage;
+		return page.words[(m.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].tableCacheSlot();
+	};
+	auto& cpu = generated.cpu;
+	const auto field = *cpu.stringPool().find("field");
+	auto own = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+	auto holder = asTable(cpu.readFrameRegister(0, 3), cpu.gcHeap());
+	const Value negativeZero = valueFloatBits(0x80000000u), rawNaN = valueFloatBits(0xffc01234u);
+	assign(negativeZero, 0);
+	const int ownHint = hint(scalar);
+	require(ownHint >= 0 && hint(generated) == ownHint && own.getStringKey(field) == negativeZero
+		&& isNil(holder.getStringKey(field)), "a present false field trains the own hint and never forwards");
+	assign(valueBool(false), 0);
+	require(hint(scalar) == ownHint && own.getStringKey(field) == valueBool(false),
+		"the warmed own slot accepts the next exact tagged value");
+
+	for (auto* m : {&generated, &scalar})
+		asTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap()).setStringKey(field, valueNil());
+	assign(negativeZero, 1);
+	int holderSlot = -1;
+	require(isNil(own.getStringKey(field)) && holder.getStringKeyCached(field, holderSlot) == negativeZero
+		&& holderSlot >= 0 && holderSlot != ownHint && hint(scalar) == ownHint && hint(generated) == ownHint,
+		"a stale source hint cannot supply or learn a forwarded holder's different slot");
+	assign(valueNil(), 1);
+	require(isNil(holder.getStringKey(field)) && holder.getInteger(1) == valueInteger(61),
+		"the terminal delete writes nil without disturbing the holder's array");
+	assign(valueBool(false), 1);
+	require(holder.getStringKeyCached(field, holderSlot) == valueBool(false) && holderSlot != ownHint,
+		"the next forwarded write restores the terminal tombstone");
+
+	for (auto* m : {&generated, &scalar}) {
+		auto& lane = m->cpu;
+		asTable(lane.readFrameRegister(0, 4), lane.gcHeap())
+			.setStringKey(lane.stringPool().intern("__newindex"), lane.readFrameRegister(0, 0));
+	}
+	assign(rawNaN, 1);
+	require(holder.getStringKey(field) == rawNaN && isNil(own.getStringKey(field))
+		&& hint(scalar) == ownHint && hint(generated) == ownHint,
+		"a live false terminal slot takes precedence over its own redirect and preserves the original raw Float");
+}
+
 void callableNewIndexDiscardsAllResults() {
 	constexpr u32 handler = 72;
 	for (const Value key : {valueNil(), valueFloatBits(0xffa01234u)}) {
@@ -263,6 +348,7 @@ int main() {
 	try {
 		rawKeysAndReadForwarding(); rawBuiltinsDistinguishExplicitKeysFromMissingArguments();
 		stringForwardingUsesLiveStringReceiverAndVisitBound(); tableValuedNewIndexAndOwnOverwrite();
+		fixedFieldAssignmentReusesTheTerminalProof();
 		callableNewIndexDiscardsAllResults(); tableLengthAllowsOrdinaryMetamethodResult();
 	} catch (const std::exception& error) {
 		std::cerr << error.what() << '\n';

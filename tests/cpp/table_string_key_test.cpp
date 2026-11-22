@@ -61,8 +61,8 @@ void collisionAndMutationParity(CPU& cpu) {
 		const auto key = keys[(n * 7u) & 15u];
 		const Value value = values[(n >> 4u) & 7u];
 		generic.set(valueString(key), value);
-		if ((n & 1u) == 0u) strings.setStringKey(key, value);
-		else strings.setStringKeyCached(key, value, prediction);
+		if ((n & 1u) == 0u || !strings.storePredictedStringKey(key, value, prediction))
+			prediction = strings.setStringKey(key, value);
 		if ((n & 15u) == 0u) {
 			generic.setInteger(static_cast<int>(n / 16u) + 1, valueInteger(n));
 			strings.setInteger(static_cast<int>(n / 16u) + 1, valueInteger(n));
@@ -88,6 +88,53 @@ void collisionAndMutationParity(CPU& cpu) {
 	require(chain.setStringKey(keys[2], valueInteger(44)) == head && chain.hashSlots() == 2u
 		&& chain.getStringKey(keys[1]) == valueInteger(33) && isNil(chain.getStringKey(keys[0])),
 		"a real miss can reuse the home without breaking its live link");
+
+	const auto newIndex = cpu.stringPool().intern("__newindex");
+	auto source = cpu.createTable(0, 2), holder = cpu.createTable(1, 2);
+	auto sourceMeta = cpu.createTable(0, 1), holderMeta = cpu.createTable(0, 2);
+	const int sourceSlot = source.setStringKey(keys[0], valueInteger(11));
+	source.setStringKey(keys[0], valueNil());
+	holder.setInteger(1, valueInteger(53));
+	holder.setStringKey(keys[1], valueInteger(22));
+	sourceMeta.setStringKey(newIndex, valueTable(holder.address()));
+	holderMeta.setStringKey(keys[3], valueBool(true));
+	source.setMetatableAddress(sourceMeta.address());
+	holder.setMetatableAddress(holderMeta.address());
+
+	TableLookupResult assignment;
+	source.resolveStringAssignment(newIndex, keys[0], assignment);
+	require(assignment.status == TableLookupStatus::Store && assignment.receiver == holder.address()
+		&& assignment.extraVisits == 1 && assignment.slot == -1,
+		"a terminal scan proves absence without borrowing the source tombstone");
+	const int holderSlot = holder.setStringKey(keys[0], valueBool(false), assignment.slot);
+	require(holderSlot >= 0 && holderSlot != sourceSlot && holder.hashSlots() == 2
+		&& holder.getStringKey(keys[1]) == valueInteger(22) && isNil(source.getStringKey(keys[0])),
+		"the absent proof inserts at the actual terminal collision slot");
+
+	holderMeta.setStringKey(newIndex, valueTable(source.address()));
+	source.resolveStringAssignment(newIndex, keys[0], assignment);
+	require(assignment.status == TableLookupStatus::Store && assignment.receiver == holder.address()
+		&& assignment.extraVisits == 1 && assignment.slot == holderSlot,
+		"the live false terminal slot wins before its own forwarding method");
+	require(holder.storePredictedStringKey(keys[0], valueFloatBits(0x80000000u), assignment.slot)
+		&& holder.getStringKey(keys[0]) == valueFloatBits(0x80000000u),
+		"a warmed owned slot accepts an exact tagged overwrite");
+	holder.setStringKey(keys[0], valueNil(), assignment.slot);
+	holderMeta.setStringKey(newIndex, valueNil());
+	source.resolveStringAssignment(newIndex, keys[0], assignment);
+	require(assignment.status == TableLookupStatus::Store && assignment.receiver == holder.address()
+		&& assignment.extraVisits == 1 && assignment.slot == holderSlot
+		&& !holder.storePredictedStringKey(keys[0], valueInteger(47), holderSlot) && isNil(holder.getStringKey(keys[0])),
+		"a terminal tombstone is an exact slot proof but not a live predicted hit");
+	require(holder.setStringKey(keys[0], valueInteger(47), assignment.slot) == holderSlot
+		&& holder.getStringKey(keys[0]) == valueInteger(47) && holder.getInteger(1) == valueInteger(53),
+		"a terminal tombstone can be reactivated without displacing a colliding key or array value");
+
+	holder.setMetatableAddress(0);
+	source.resolveStringAssignment(newIndex, keys[0], assignment);
+	require(assignment.status == TableLookupStatus::Store && assignment.receiver == holder.address()
+		&& assignment.extraVisits == 1 && assignment.slot == TABLE_HASH_UNPROBED,
+		"a metatable-free terminal does not claim to have probed its hash");
 }
 
 void preparedLayoutMatchesAllMasks(CPU& cpu, Memory& memory) {
@@ -127,7 +174,7 @@ void fullHashGrowsAndRetainsMappings(CPU& cpu) {
 	int prediction = table.setStringKey(missing, valueInteger(19));
 	require(table.hashSlots() == 2u && table.getStringKey(present) == valueInteger(73)
 		&& table.getStringKey(missing) == valueInteger(19), "a full hash grows once and preserves both raw mappings");
-	table.setStringKeyCached(missing, valueInteger(97), prediction);
+	require(table.storePredictedStringKey(missing, valueInteger(97), prediction), "the full hash has the live predicted field");
 	require(table.hashSlots() == 2u && table.getStringKey(missing) == valueInteger(97),
 		"an existing mapping is replaced without growing the full hash again");
 }

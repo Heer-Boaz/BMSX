@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valueTable, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { TableLookupStatus, type TableLookupResult } from '../../machine/ts/machine/cpu/table';
+import { TABLE_HASH_UNPROBED, TableLookupStatus, type TableLookupResult } from '../../machine/ts/machine/cpu/table';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
@@ -65,8 +65,8 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 		slots.set(0, value);
 		if ((n & 1) === 0) {
 			cpu.gc.tables.storeStringKey(strings, key, slots.getTag(0), slots.getPayload(0));
-		} else {
-			prediction = cpu.gc.tables.storeStringKeyCached(strings, key, prediction, slots.getTag(0), slots.getPayload(0));
+		} else if (!cpu.gc.tables.storePredictedStringKey(strings, key, prediction, slots.getTag(0), slots.getPayload(0))) {
+			prediction = cpu.gc.tables.storeStringKey(strings, key, slots.getTag(0), slots.getPayload(0));
 		}
 		if ((n & 15) === 0) {
 			cpu.gc.tables.setInteger(generic, (n >> 4) + 1, valueInteger(n));
@@ -156,4 +156,38 @@ test('deleting a string mapping allows its reserved hash placement to be reused'
 	assert.equal(cpu.gc.tables.storageAddress(table), storage);
 	assert.equal(cpu.luaHeap.usedBytes(), used, 'the pre-paid mapping is reused');
 	assert.equal(cpu.gc.tables.getStringKey(table, missing), valueInteger(19));
+});
+
+test('fixed string assignment retains the terminal hash result across forwarding', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const tables = cpu.gc.tables, source = cpu.createTable(), forwarded = cpu.createTable(0, 2);
+	const meta = cpu.createTable(0, 1), terminalMeta = cpu.createTable();
+	const newIndex = cpu.stringPool.intern('__newindex'), field = cpu.stringPool.intern('field'), absent = cpu.stringPool.intern('absent');
+	tables.setStringKey(meta, newIndex, valueTable(forwarded));
+	tables.setMetatableAddress(source, meta);
+	const result: TableLookupResult = { value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0 };
+	const ownSlot = tables.storeStringKey(forwarded, field, ValueTag.False, 0);
+
+	tables.resolveAssignment(source, newIndex, valueString(field), result, true);
+	assert.equal(result.slot, TABLE_HASH_UNPROBED, 'without a metatable the mutator owns the only probe');
+	assert.equal(result.receiver, forwarded);
+	assert.equal(result.extraVisits, 1);
+
+	tables.setMetatableAddress(forwarded, terminalMeta);
+	tables.resolveAssignment(source, newIndex, valueString(field), result, true);
+	assert.deepEqual(result, { value: valueNil(), slot: ownSlot, extraVisits: 1, status: TableLookupStatus.Store, receiver: forwarded },
+		'false is a live field, but its payload is not the result of an assignment lookup');
+	tables.storeStringKey(result.receiver, field, ValueTag.Nil, 0, result.slot);
+	assert.equal(tables.getStringKey(forwarded, field), valueNil());
+	tables.resolveAssignment(source, newIndex, valueString(field), result, true);
+	assert.equal(result.slot, ownSlot, 'the matched tombstone is distinct from a scanned miss');
+	assert.equal(tables.storeStringKey(result.receiver, field, ValueTag.Integer, 19, result.slot), ownSlot);
+	assert.equal(tables.getStringKey(forwarded, field), valueInteger(19));
+
+	tables.resolveAssignment(source, newIndex, valueString(absent), result, true);
+	assert.deepEqual(result, { value: valueNil(), slot: -1, extraVisits: 1, status: TableLookupStatus.Store, receiver: forwarded });
+	tables.storeStringKey(result.receiver, absent, ValueTag.Nil, 0, result.slot);
+	assert.equal(tables.getStringKey(forwarded, absent), valueNil());
+	assert.equal(tables.getStringKey(source, field), valueNil());
 });
