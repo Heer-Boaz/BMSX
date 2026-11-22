@@ -11,7 +11,7 @@ import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadF
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
 import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from './value';
 import type { ValueSlots } from './value_slots';
-import type { LuaHeap } from './lua_heap';
+import { GC_STEP_WORDS, type LuaHeap } from './lua_heap';
 import { ceilDiv4 } from '../common/numeric';
 import type { GcDiagnostics } from './gc_diagnostics';
 
@@ -50,7 +50,6 @@ export const GC_VISIT_HEADER_BYTE = 3;
 export const GC_VISIT_MEMBER = 0x40;
 const VISIT_LINK_LOW_BITS = 32 - GC_GRAY_INDEX_BITS;
 const VISIT_LINK_HIGH_MASK = GC_GRAY_INDEX_MASK >>> VISIT_LINK_LOW_BITS;
-export const GC_STEP_WORDS = 4096;
 export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
 export const enum GcRootBank { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, Completion, End }
 // Two unconnected selector inputs do not clock the collector.
@@ -711,15 +710,15 @@ export class GcHeap {
 		return -1;
 	};
 	private readonly sweepAndCompact = (growingThread: number, address: number): number => this.sweepRecord(growingThread, address, true);
-	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false): number {
+	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false,
+		limit = GC_STEP_WORDS): number {
 		// Explicit and space-exhausted collection can finish the final pass synchronously.
 		if (this.finalMarkPending()) return this.finishFinalMark(t0, t1, t2);
 		this.diagnostics?.beginStep();
-		try { return this.stepWork(t0, t1, t2, growingThread, compactThreads); }
+		try { return this.stepWork(t0, t1, t2, growingThread, compactThreads, limit); }
 		finally { this.diagnostics?.endStep(); }
 	}
-	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number, compactThreads: boolean): number {
-		const limit = GC_STEP_WORDS;
+	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number, compactThreads: boolean, limit: number): number {
 		let work = 0;
 		if (this.remarkStage() !== RemarkStage.None) {
 			work += this.remarkVisits(limit);

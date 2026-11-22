@@ -9,6 +9,9 @@ import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, TH
 
 const NO_NEW_CELLS = new Uint32Array(0);
 const MIN_COLLECTION_BYTES = 1024 * 1024;
+const COLLECTION_RESERVE_SHIFT = 3;
+const GC_ASSIST_MIN_WORDS = 512;
+export const GC_STEP_WORDS = 4096;
 export const GC_ASSIST_BYTES = 256;
 export const enum LuaAllocationAssist { None, Step, Full }
 
@@ -40,12 +43,22 @@ export class LuaHeap {
 			this.collectRuntime(root0, root1, root2, growingThread);
 			return LuaAllocationAssist.Full;
 		}
-		if (nextBytes > this.collectionTarget() && !this.cpu.gc.finalMarkPending()) {
-			this.cpu.gc.step(root0, root1, root2, growingThread);
-			this.creditStep();
-			return LuaAllocationAssist.Step;
+		const target = this.collectionTarget();
+		if (nextBytes <= target) return LuaAllocationAssist.None;
+		const gc = this.cpu.gc;
+		if (gc.finalMarkPending()) return LuaAllocationAssist.None;
+		const reserve = capacity - (capacity >>> COLLECTION_RESERVE_SHIFT);
+		const pressure = nextBytes > reserve;
+		const debt = nextBytes - target;
+		const allowance = pressure ? GC_STEP_WORDS : Math.min(GC_STEP_WORDS, Math.max(GC_ASSIST_MIN_WORDS, (debt + 1) >>> 1));
+		const work = gc.step(root0, root1, root2, growingThread, false, allowance);
+		if (pressure) this.creditStep();
+		else if (gc.active()) {
+			// A work unit covers four bytes at a two-times pace. Preserve
+			// unpaid debt and count the pending request in the new frontier.
+			this.setCollectionTarget(Math.min(reserve, Math.max(0, this.usedBytes() + byteCount + 2 * work - debt)));
 		}
-		return LuaAllocationAssist.None;
+		return LuaAllocationAssist.Step;
 	}
 
 	public admit(byteCount: number, root0: Value = valueNil(), root1: Value = valueNil(),
@@ -179,7 +192,6 @@ export class LuaHeap {
 		this.cpu.gc.collect(root0, root1, root2, growingThread);
 	}
 
-	/** Explicit work earns the same allocation credit as an automatic assist. */
 	public stepRuntime(): boolean {
 		this.cpu.gc.step();
 		this.creditStep();
@@ -209,7 +221,7 @@ export class LuaHeap {
 		const liveBytes = this.usedBytes();
 		const capacity = this.capacity();
 		this.setCollectionTarget(Math.max(liveBytes + GC_ASSIST_BYTES,
-			Math.min(capacity - (capacity >>> 3), Math.max(MIN_COLLECTION_BYTES, liveBytes * 2))));
+			Math.min(capacity - (capacity >>> COLLECTION_RESERVE_SHIFT), Math.max(MIN_COLLECTION_BYTES, liveBytes * 2))));
 	}
 
 	public usedBytes(): number {

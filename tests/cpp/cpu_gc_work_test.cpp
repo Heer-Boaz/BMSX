@@ -971,7 +971,7 @@ void consumesSelfLinkedGrayEdge() {
 void secondMarkPassAndCredit() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(cpu.createTable(4096, 0).address()));
+	frame.registers.set(0, valueTable(cpu.createTable(8192, 0).address()));
 	frame.registers.set(1, valueTable(cpu.createTable().address()));
 	frame.registers.set(2, valueTable(cpu.createTable().address()));
 	frame.writeControl(bmsx::FrameField::Top, 3);
@@ -979,9 +979,15 @@ void secondMarkPassAndCredit() {
 	cpu.luaHeap().setCollectionTarget(before); cpu.instructionBudgetRemaining = 0;
 	cpu.createTable();
 	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
-	require(cpu.instructionBudgetRemaining == 0 && cpu.luaHeap().collectionTarget() == before + GC_ASSIST_BYTES
+	require(cpu.instructionBudgetRemaining == 0 && cpu.luaHeap().collectionTarget() == before + 1024
 		&& cpu.memory().readRamRecordWord(control + GC_TRACE_RECORD) == valuePayload(frame.registers.get(0)),
-		"a partial Table scan keeps the grant intact and earns the fixed logical credit before admission");
+		"a small admission earns one baseline quantum of credit and does not debit the guest");
+	const auto firstCursor = cpu.memory().readRamRecordWord(control + GC_TRACE_CURSOR);
+	cpu.createTable(3200, 0);
+	require(cpu.luaHeap().collectionTarget() == before + 1024 + 2 * GC_STEP_WORDS
+		&& cpu.luaHeap().collectionTarget() < cpu.luaHeap().usedBytes()
+		&& cpu.memory().readRamRecordWord(control + GC_TRACE_CURSOR) == firstCursor + GC_STEP_WORDS,
+		"a large admission spends at most one quantum and carries its unpaid debt");
 	u32 phases = 0;
 	for (int i = 0; i < 12; ++i) {
 		auto target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());

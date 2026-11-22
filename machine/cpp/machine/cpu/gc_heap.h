@@ -74,7 +74,8 @@ public:
 	}
 	bool isAlive(u32 address) const { return !unmarked(memory.readRamRecordByte(address + GC_COLOR_OFFSET)); }
 	size_t allocationBytes(u32 threadAddress) const;
-	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false);
+	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false,
+		size_t limit = GC_STEP_WORDS);
 	// Only the stopped mutator may advance the final pass.
 	size_t stepFinalMark();
 	size_t finishFinalMark(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());

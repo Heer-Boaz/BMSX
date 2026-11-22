@@ -54,7 +54,7 @@ public:
 	size_t capacity() const;
 
 private:
-	LuaAllocationAssist allocationAssist(size_t byteCount) const noexcept;
+	LuaAllocationAssist allocationAssist(size_t nextBytes) const noexcept;
 	void accountAllocation(u32 bytes);
 	void creditStep();
 	static constexpr size_t MIN_COLLECTION_BYTES = 1024 * 1024;

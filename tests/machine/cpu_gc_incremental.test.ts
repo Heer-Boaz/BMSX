@@ -10,8 +10,8 @@ import { HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_GC_CONTROL_OFFSET, heapAllocationByt
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
-import { GcPhase, GC_MODE_META, GC_MODE_NODE, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
-import { GC_ASSIST_BYTES } from '../../machine/ts/machine/cpu/lua_heap';
+import { GcPhase, GC_MODE_META, GC_MODE_NODE, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_ASSIST_BYTES, GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
@@ -725,7 +725,7 @@ test('allocation assists defer transient Value and String ranges until final own
 	}
 });
 
-test('a partial Table scan earns the fixed logical allocation credit per assist', () => {
+test('a small allocation assist credits only the work of its small Table scan', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, cpu.createTable(8192, 0)); frame.top = 1;
 	const before = cpu.luaHeap.usedBytes();
@@ -733,9 +733,32 @@ test('a partial Table scan earns the fixed logical allocation credit per assist'
 	cpu.instructionBudgetRemaining = 0;
 	cpu.createTable();
 	assert.equal(cpu.instructionBudgetRemaining, 0);
-	assert.equal(cpu.luaHeap.collectionTarget(), before + GC_ASSIST_BYTES);
+	assert.equal(cpu.luaHeap.collectionTarget(), before + 1024);
 	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	assert.equal(cpu.memory.readRamRecordWord(control + GC_TRACE_RECORD), frame.registers.getPayload(0));
+});
+
+test('an ordinary assist keeps debt beyond its bounded quantum and stops credit at the reserve edge', () => {
+	const cpu = machine(), { luaHeap: heap, gc } = cpu;
+	heap.setCollectionTarget(heap.capacity());
+	const capacity = heap.capacity(), reserve = capacity - (capacity >>> 3);
+	const slots = ((reserve - heap.usedBytes() - TableRecords.HEADER_BYTES - 512) / 5) | 0;
+	const table = cpu.createTable(slots, 0), frame = cpu.rootThread.currentFrame!;
+	frame.registers.setTable(0, table); frame.top = 1;
+	const diagnostics = gc.diagnostics = new GcDiagnostics(() => 0);
+	const target = heap.usedBytes() - 4 * GC_STEP_WORDS;
+	heap.setCollectionTarget(target);
+	cpu.createTable();
+	assert.equal(heap.collectionTarget(), target + 2 * GC_STEP_WORDS, 'one capped quantum cannot repay all allocation debt');
+	heap.setCollectionTarget(heap.usedBytes());
+	cpu.createTable();
+	assert.equal(heap.collectionTarget(), reserve, 'earned credit cannot defer work once admission reaches the reserve');
+	const beforePressure = heap.usedBytes();
+	cpu.createTable(128, 0);
+	assert.equal(heap.collectionTarget(), beforePressure + GC_ASSIST_BYTES, 'admitting inside the reserve uses the existing high-pressure cadence');
+	assert.equal(diagnostics.steps, 3);
+	assert.equal(diagnostics.fullCollections, 0);
+	assert.equal(gc.phase(), GcPhase.Mark);
 });
 
 test('even a long explicit final mark earns only the fixed logical allocation credit', () => {

@@ -1336,10 +1336,15 @@ request. Existing frame and captured-variable references retain their meaning.
 
 The initial collection threshold is **1 MiB of occupied budget**. A request for
 `R` bytes starts or assists collection when `B + R` exceeds the current
-threshold, where `B` is the occupied budget before admitting the request. While
-a cycle remains active, each allocation assist or explicit step sets the next
-threshold to the remaining occupied budget plus 256 bytes, before admitting
-any pending request. When the cycle completes,
+threshold, where `B` is the occupied budget before admitting the request. The
+amount above the threshold is allocation debt. Each ordinary assist does a
+bounded amount of collector work, then credits that work against the debt.
+Credit beyond the outstanding debt permits more allocation before the next
+assist, up to the start of the final eighth of capacity. Unpaid debt makes
+subsequent allocations assist again. Within that final eighth, an assist runs
+a full work quantum and sets the threshold to the remaining occupied budget
+plus 256 bytes before admitting the pending request. An explicit step also
+sets that threshold while the cycle remains active. When the cycle completes,
 let `L` be the remaining occupied budget and `K` the total language-allocation
 capacity. The next threshold is:
 

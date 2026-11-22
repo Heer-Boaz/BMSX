@@ -8,6 +8,11 @@
 
 namespace bmsx {
 
+namespace {
+constexpr size_t COLLECTION_RESERVE_SHIFT = 3;
+constexpr size_t GC_ASSIST_MIN_WORDS = 512;
+}
+
 #if defined(BMSX_GC_STRESS)
 // Defined by the stress runner. Only its allocator translation unit uses this
 // seam; ordinary cores contain neither a callback nor a runtime mode check.
@@ -32,8 +37,7 @@ size_t LuaHeap::usedBytes() const {
 	return m_cpu.memory().readRamRecordWord(m_occupiedAddress);
 }
 
-LuaAllocationAssist LuaHeap::allocationAssist(size_t byteCount) const noexcept {
-	const size_t nextBytes = usedBytes() + byteCount;
+LuaAllocationAssist LuaHeap::allocationAssist(size_t nextBytes) const noexcept {
 	if (nextBytes > capacity()) return LuaAllocationAssist::Full;
 	if (nextBytes > collectionTarget() && !m_cpu.gcHeap().finalMarkPending()) return LuaAllocationAssist::Step;
 	return LuaAllocationAssist::None;
@@ -44,7 +48,7 @@ bool LuaHeap::canAdmitWithoutAssist(size_t byteCount) const noexcept {
 	(void)byteCount;
 	return false;
 #else
-	return allocationAssist(byteCount) == LuaAllocationAssist::None;
+	return allocationAssist(usedBytes() + byteCount) == LuaAllocationAssist::None;
 #endif
 }
 
@@ -52,12 +56,27 @@ LuaAllocationAssist LuaHeap::prepareAllocation(size_t byteCount, Value root0, Va
 #if defined(BMSX_GC_STRESS)
 	stressHeapAllocation(*this);
 #endif
-	const auto assist = allocationAssist(byteCount);
+	const size_t nextBytes = usedBytes() + byteCount;
+	const auto assist = allocationAssist(nextBytes);
 	if (assist == LuaAllocationAssist::Full) {
 		collectRuntime(root0, root1, root2, growingThread);
 	} else if (assist == LuaAllocationAssist::Step) {
-		m_cpu.stepHeap(root0, root1, root2, growingThread);
-		creditStep();
+		const size_t limit = capacity();
+		const size_t reserveEdge = limit - (limit >> COLLECTION_RESERVE_SHIFT);
+		if (nextBytes > reserveEdge) {
+			m_cpu.stepHeap(root0, root1, root2, growingThread);
+			creditStep();
+		} else {
+			// Lua's allocation debt, credited in actual collector work.
+			// Two work bytes per allocation byte, four work bytes per word.
+			const size_t debt = nextBytes - collectionTarget();
+			const size_t words = std::min(GC_STEP_WORDS, std::max(GC_ASSIST_MIN_WORDS, (debt + 1u) >> 1u));
+			const size_t work = m_cpu.gcHeap().step(root0, root1, root2, growingThread, false, words);
+			if (m_cpu.collecting()) {
+				const size_t credited = usedBytes() + byteCount + 2u * work;
+				setCollectionTarget(static_cast<u32>(std::min(reserveEdge, credited > debt ? credited - debt : 0u)));
+			}
+		}
 	}
 	return assist;
 }
@@ -216,7 +235,7 @@ void LuaHeap::finishCollection() {
 	const size_t liveBytes = usedBytes();
 	const size_t limit = capacity();
 	setCollectionTarget(static_cast<u32>(std::max(liveBytes + GC_ASSIST_BYTES,
-		std::min(limit - limit / 8, std::max(MIN_COLLECTION_BYTES, liveBytes * 2)))));
+		std::min(limit - (limit >> COLLECTION_RESERVE_SHIFT), std::max(MIN_COLLECTION_BYTES, liveBytes * 2)))));
 }
 
 } // namespace bmsx

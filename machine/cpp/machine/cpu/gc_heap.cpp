@@ -773,14 +773,13 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 	return -1;
 }
 
-size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads) {
+size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit) {
 	// Only explicit and space-exhausted collection enters a synchronous final pass.
 	if (finalMarkPending()) return finishFinalMark(root0, root1, root2);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcStepMeasurement total(profile);
 #endif
-	constexpr size_t limit = GC_STEP_WORDS;
 	size_t work = 0;
 	if (remarkStage() != RemarkStage::None) {
 		work += remarkVisits(limit);
@@ -838,8 +837,8 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 				GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);
 #endif
 				SweepContext sweep{*this, growingThread, white(), compactThreads};
-				work += arena.sweepObjects(GC_STEP_WORDS - work, &sweep, &GcHeap::sweepRecord);
-				if (work < GC_STEP_WORDS && !arena.objectSweepActive()) {
+				work += arena.sweepObjects(limit - work, &sweep, &GcHeap::sweepRecord);
+				if (work < limit && !arena.objectSweepActive()) {
 					memory.writeRamRecordWord(m_controlOffset + GC_CHANGED_HEAD, 0u);
 					setPhase(GcPhase::Strings);
 					m_stringPool.beginSweep();
@@ -850,7 +849,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 				GcPhaseMeasurement strings(profile.stringReclaimNanoseconds);
 #endif
-				work += m_stringPool.sweepStep(GC_STEP_WORDS - work);
+				work += m_stringPool.sweepStep(limit - work);
 				if (!m_stringPool.sweeping()) {
 					setPhase(GcPhase::Pause);
 					budget.finishCollection();
