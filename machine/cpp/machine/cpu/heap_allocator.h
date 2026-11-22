@@ -74,6 +74,9 @@ public:
 	// Returns the guest address of the allocation, or 0 when no slot or page run fits.
 	u32 allocate(u32 byteCount, bool owned);
 	void free(u32 address);
+	// The owner already retired every reference into the discarded suffix.
+	// The retained prefix still occupies a nonempty, whole-page run.
+	void trimOwnedRun(u32 address, u32 retainedBytes);
 
 	// Sweep only independently allocated records. Each issued slot is a visit,
 	// including a vacant one. Owned blocks are released by their record.

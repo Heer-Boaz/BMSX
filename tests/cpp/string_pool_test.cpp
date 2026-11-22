@@ -176,6 +176,97 @@ void stringAdmissionStartsSweepDuringUnchargedRehash() {
 	require(finish() == expected, "rewind replays growth during String sweep");
 }
 
+void shrinkStringDirectoryInPlaceAcrossRewind() {
+	PoolMachine machine;
+	auto& cpu = machine.cpu;
+	auto& pool = cpu.stringPool();
+	auto& memory = machine.memory;
+	constexpr u32 capacity = 2u * HEAP_PAGE_SIZE / sizeof(u32), half = capacity / 2u;
+	const u32 metadata = cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const auto read = [&](u32 field) { return memory.readRamRecordWord(metadata + field); };
+	for (u32 i = 0; read(4u) != capacity && i < capacity; ++i) pool.intern("shrink filler " + std::to_string(i));
+	require(read(4u) == capacity, "a full-size String directory has already been published");
+	const u32 base = read(0u);
+	u32 candidate = 0;
+	const auto collision = [&](u32 wanted) {
+		for (;;) {
+			auto text = "shrink collision " + std::to_string(candidate++);
+			if ((fnv1a32(text) & (capacity - 1u)) == wanted) return text;
+		}
+	};
+	const std::array names{collision(0u), collision(half), collision(half), collision(half), collision(0u), collision(half + 1u)};
+	const std::array kept{pool.intern(names[0]), pool.intern(names[1]), pool.intern(names[2])};
+	const auto mode = pool.intern("__mode");
+	const u32 used = read(8u);
+	pool.beginReachabilityEpoch();
+	for (const auto id : kept) pool.markReachable(id);
+	pool.markReachable(mode);
+	pool.takeMarkWork();
+	pool.beginSweep();
+	require(pool.sweepStep(capacity + used) == capacity + used && read(8u) == kept.size() + 1u
+		&& pool.sweeping() && read(0u) == base && read(4u) != capacity && read(0x38u) == 0u && read(0x3cu) == 0u,
+		"sparse sweep schedules in-place shrink without a new directory or an unbudgeted move");
+	require(pool.sweepStep(1) == 1u && read(0x3cu) == 0u
+		&& memory.readRamRecordWord(base) == kept[2] && memory.readRamRecordWord(base + half * sizeof(u32)) == kept[1],
+		"one quantum moves only one link and leaves both chains searchable");
+	RamHistory archive;
+	RamHistory::PageMap checkpoint, collected;
+	archive.capture(memory, nullptr, checkpoint);
+	const auto finish = [&] {
+		for (u32 i = 0; i < kept.size(); ++i) require(pool.find(names[i]) == kept[i], "old and new buckets preserve identity");
+		const std::array fresh{pool.intern(names[3]), pool.intern(names[4]), pool.intern(names[5])};
+		require(memory.readRamRecordWord(base) == fresh[1]
+			&& memory.readRamRecordWord(base + half * sizeof(u32)) == kept[1]
+			&& memory.readRamRecordWord(base + (half + 1u) * sizeof(u32)) == fresh[2],
+			"current-chain inserts go to the destination; untouched upper buckets still own their inserts");
+		const auto occupied = cpu.heapAllocator().occupiedBytes();
+		const auto charged = cpu.luaHeap().usedBytes();
+		for (u32 step = 0; pool.sweeping() && step < capacity; ++step)
+			require(pool.sweepStep(1) == 1u, "drain and trim consume one unit at a time");
+		require(!pool.sweeping() && read(4u) == half && read(0u) == base
+			&& occupied - cpu.heapAllocator().occupiedBytes() == HEAP_PAGE_SIZE && cpu.luaHeap().usedBytes() == charged,
+			"the retained prefix keeps its address and only the uncharged suffix returns to the allocator");
+		for (u32 i = 0; i < kept.size(); ++i)
+			require(pool.find(names[i]) == kept[i] && pool.find(names[i + kept.size()]) == fresh[i],
+				"all Strings share their original IDs after halving");
+		pool.beginSweep();
+		require(pool.sweepStep(capacity) == half + kept.size() + fresh.size() + 1u && !pool.sweeping(),
+			"the next sweep touches half as many bucket heads");
+		return memory.captureSaveState().ram;
+	};
+	const auto expected = finish();
+	archive.capture(memory, &checkpoint, collected);
+	archive.restore(memory, collected, checkpoint);
+	require(finish() == expected, "rewind restores a partial merge, its links and allocator pages byte-for-byte");
+}
+
+void stringDirectoryGrowthDoesNotForceCollection() {
+	PoolMachine machine;
+	auto& cpu = machine.cpu;
+	auto& pool = cpu.stringPool();
+	auto& arena = cpu.heapAllocator();
+	constexpr u32 capacity = 2048u;
+	const u32 metadata = arena.managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const auto read = [&](u32 field) { return machine.memory.readRamRecordWord(metadata + field); };
+	std::string text(60, 'a');
+	const auto original = pool.intern(text);
+	const u32 remaining = capacity - read(8u);
+	for (u32 i = 0; i < remaining; ++i) pool.intern("grow filler " + std::to_string(i));
+	require(read(4u) == capacity && read(8u) == capacity, "another String crosses the directory growth threshold");
+	const u32 base = read(0u);
+	while (arena.allocate(HEAP_PAGE_SIZE, true) != 0u) {}
+
+	// The existing class still has a slot for this record, but no pages
+	// remain for a larger directory.
+	text.back() = 'b';
+	const auto inserted = pool.intern(text);
+	require(read(0u) == base && read(4u) == capacity && read(8u) == capacity + 1u
+		&& read(0x38u) == 0u && !cpu.collecting(),
+		"the optional index growth cannot force an emergency collection");
+	require(pool.find(text) == inserted && pool.find(std::string(60, 'a')) == original
+		&& pool.find("grow filler 0"), "the new String uses the pre-existing buckets without retiring their occupants");
+}
+
 void rehashCollisionAcrossSweepAndRewind() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
@@ -412,6 +503,8 @@ int main() {
 		collectEmptyString();
 		resumeMajorStringBucket();
 		stringAdmissionStartsSweepDuringUnchargedRehash();
+		shrinkStringDirectoryInPlaceAcrossRewind();
+		stringDirectoryGrowthDoesNotForceCollection();
 		rehashCollisionAcrossSweepAndRewind();
 		reclaimLongByteStrings();
 		retainNestedMaterializationRoots();

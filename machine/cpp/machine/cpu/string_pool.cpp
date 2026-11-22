@@ -20,12 +20,15 @@ constexpr u32 BUCKETS = 0x00, CAPACITY = 0x04, USED = 0x08, EPOCH = 0x0c, SWEEP 
 constexpr u32 FIRST_CART = 0x14, ROM_TABLES = 0x18;
 constexpr u32 SWEEP_LINK = 0x30, SWEEP_LEFT = 0x34, REHASH_BASE = 0x38, REHASH_READY = 0x3c;
 constexpr u32 SWEEP_REHASH = 0x80000000u;
+constexpr u32 SWEEP_SHRINK = 0xc0000000u;
 constexpr u32 INITIAL_BUCKETS = 16;
+constexpr u32 MIN_SHRINK_BUCKETS = 2u * HEAP_PAGE_SIZE / sizeof(u32);
 constexpr size_t INTERN_REHASH_WORK = 64;
 constexpr u32 MAX_RAM_RECORDS = MAIN_RAM_SIZE / BLUA32_STRING_RECORD_HEADER_SIZE;
 // The bucket extent field includes the bit for the maximum RAM string count.
 constexpr u32 RAM_BUCKET_EXTENT_MASK = 2u * MAX_RAM_RECORDS - 1u;
 constexpr u32 RAM_BUCKET_REHASH = 0x80000000u;
+constexpr u32 RAM_BUCKET_SHRINK = 0x40000000u;
 constexpr u32 SLOT_BIT = 0x80000000u;
 constexpr bool ramAddress(u32 address) { return address >= RAM_BASE && address < CART_ROM_BASE; }
 constexpr u32 romOffset(u32 address) {
@@ -38,7 +41,7 @@ constexpr u32 romStringId(u32 address, u32 cartridgeSlot) {
 }
 
 StringPool::StringPool(LuaHeap& heap, Memory& memory, HeapAllocator& arena)
-	: m_heap(heap), m_memory(memory), m_metadata(arena.managementOffset() + HEAP_STRING_METADATA_OFFSET) {}
+	: m_heap(heap), m_memory(memory), m_arena(arena), m_metadata(arena.managementOffset() + HEAP_STRING_METADATA_OFFSET) {}
 
 u32 StringPool::metadata(u32 field) const { return m_memory.readRamRecordWord(m_metadata + field); }
 void StringPool::writeMetadata(u32 field, u32 word) { m_memory.writeRamRecordWord(m_metadata + field, word); }
@@ -187,12 +190,22 @@ u32 StringPool::lookupRam(u32 hash, const ByteSpan& bytes) const {
 	const u32 control = metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
 	if (count == 0u) return 0u;
 	const u32 index = hash & (count - 1u);
-	if ((control & RAM_BUCKET_REHASH) != 0u) {
+	if ((control & (RAM_BUCKET_REHASH | RAM_BUCKET_SHRINK)) != 0u) {
 		const u32 ready = metadata(REHASH_READY);
-		if (index < ready) {
-			const u32 bucket = metadata(REHASH_BASE) + 4u * (hash & (2u * count - 1u));
-			if (const u32 found = lookupRamChain(bucket, hash, bytes)) return found;
-			if (index + 1u < ready) return 0u;
+		if ((control & RAM_BUCKET_REHASH) != 0u) {
+			if (index < ready) {
+				const u32 bucket = metadata(REHASH_BASE) + 4u * (hash & (2u * count - 1u));
+				if (const u32 found = lookupRamChain(bucket, hash, bytes)) return found;
+				if (index + 1u < ready) return 0u;
+			}
+		} else {
+			const u32 half = count / 2u, ordinal = index - half;
+			if (index >= half && ordinal <= ready) {
+				const u32 base = metadata(BUCKETS);
+				const u32 found = lookupRamChain(base + 4u * ordinal, hash, bytes);
+				if (found != 0u || ordinal < ready) return found;
+				return lookupRamChain(base + 4u * index, hash, bytes);
+			}
 		}
 	}
 	return lookupRamChain(metadata(BUCKETS) + 4u * index, hash, bytes);
@@ -278,6 +291,33 @@ size_t StringPool::rehashStep(u32 oldCount, u32 nextBase, size_t allowance) {
 	return work;
 }
 
+size_t StringPool::shrinkStep(u32 oldCount, size_t allowance) {
+	const u32 base = metadata(BUCKETS), half = oldCount / 2u;
+	const u32 start = metadata(REHASH_READY);
+	u32 ready = start;
+	size_t work = 0;
+	while (ready < half && work < allowance) {
+		const u32 upper = base + 4u * (half + ready);
+		if (const u32 record = m_memory.readRamRecordWord(upper)) {
+			const u32 lower = base + 4u * ready;
+			const u32 link = record + BLUA32_STRING_NEXT_OFFSET;
+			m_memory.writeRamRecordWord(upper, m_memory.readRamRecordWord(link));
+			m_memory.writeRamRecordWord(link, m_memory.readRamRecordWord(lower));
+			m_memory.writeRamRecordWord(lower, record);
+		} else ++ready;
+		++work;
+	}
+	if (ready == half && work < allowance) {
+		m_arena.trimOwnedRun(base, 4u * half);
+		writeMetadata(CAPACITY, half);
+		writeMetadata(REHASH_READY, 0u);
+		writeMetadata(SWEEP, 0u);
+		return work + 1u;
+	}
+	if (ready != start) writeMetadata(REHASH_READY, ready);
+	return work;
+}
+
 StringId StringPool::intern(std::string_view value) {
 	return intern({value, {}, value.size()}, fnv1a32(value), 0u);
 }
@@ -308,10 +348,13 @@ StringId StringPool::intern(const ByteSpan& bytes, u32 hash, StringId source) {
 		if ((control & RAM_BUCKET_REHASH) != 0u) {
 			rehashStep(count, metadata(REHASH_BASE), INTERN_REHASH_WORK);
 		} else if (metadata(USED) >= count) {
-			const u32 nextBase = m_heap.reserveBacking(8u * count, 0u, root);
-			writeMetadata(REHASH_BASE, nextBase);
-			writeMetadata(CAPACITY, count | RAM_BUCKET_REHASH);
-			rehashStep(count, nextBase, INTERN_REHASH_WORK);
+			// The directory is optional; only the String record may trigger
+			// emergency collection, which can change the current directory.
+			if (const u32 nextBase = m_arena.allocate(8u * count, true)) {
+				writeMetadata(REHASH_BASE, nextBase);
+				writeMetadata(CAPACITY, count | RAM_BUCKET_REHASH);
+				rehashStep(count, nextBase, INTERN_REHASH_WORK);
+			}
 		}
 	}
 	// Keep an oversized request in the allocation admission path: the
@@ -319,10 +362,23 @@ StringId StringPool::intern(const ByteSpan& bytes, u32 hash, StringId source) {
 	const u32 size = static_cast<u32>(std::min(bytes.length, size_t(MAIN_RAM_SIZE)));
 	const u32 id = m_heap.allocateRecord(BLUA32_STRING_RECORD_HEADER_SIZE + size, false, 0, 0, root);
 	const u32 currentControl = metadata(CAPACITY), current = currentControl & RAM_BUCKET_EXTENT_MASK;
-	const u32 index = hash & (current - 1u);
-	const u32 bucket = (currentControl & RAM_BUCKET_REHASH) != 0u && index < metadata(REHASH_READY)
-		? metadata(REHASH_BASE) + 4u * (hash & (2u * current - 1u))
-		: metadata(BUCKETS) + 4u * index;
+	u32 index = hash & (current - 1u);
+	u32 base = metadata(BUCKETS);
+	if ((currentControl & (RAM_BUCKET_REHASH | RAM_BUCKET_SHRINK)) != 0u) {
+		const u32 ready = metadata(REHASH_READY);
+		if ((currentControl & RAM_BUCKET_REHASH) != 0u) {
+			if (index < ready) {
+				base = metadata(REHASH_BASE);
+				index = hash & (2u * current - 1u);
+			}
+		} else {
+			const u32 half = current / 2u;
+			// Prepend to the destination of the current chain, not the
+			// chain that the collector is draining.
+			if (index >= half && index - half <= ready) index -= half;
+		}
+	}
+	const u32 bucket = base + 4u * index;
 	m_memory.writeRamRecordWord(id, BLUA32_STRING_RECORD_KIND | ((metadata(EPOCH) & STRING_GC_EPOCH_MASK) << 8));
 	m_memory.writeRamRecordWord(id + BLUA32_STRING_HASH_OFFSET, hash);
 	m_memory.writeRamRecordWord(id + BLUA32_STRING_LENGTH_OFFSET, size);
@@ -374,6 +430,7 @@ bool StringPool::sweeping() const { return metadata(SWEEP) != 0; }
 
 size_t StringPool::sweepStep(size_t allowance) {
 	const u32 cursor = metadata(SWEEP), control = metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
+	if (cursor == SWEEP_SHRINK) return shrinkStep(count, allowance);
 	const u32 nextBase = (control & RAM_BUCKET_REHASH) != 0u ? metadata(REHASH_BASE) : 0u;
 	size_t work = 0;
 	if (cursor != SWEEP_REHASH) {
@@ -429,6 +486,10 @@ size_t StringPool::sweepStep(size_t allowance) {
 			writeMetadata(SWEEP, SWEEP_REHASH);
 			return work;
 		}
+	} else if (count >= MIN_SHRINK_BUCKETS && metadata(USED) <= count / 4u) {
+		writeMetadata(CAPACITY, count | RAM_BUCKET_SHRINK);
+		writeMetadata(SWEEP, SWEEP_SHRINK);
+		return work + shrinkStep(count, allowance);
 	}
 	writeMetadata(SWEEP, 0u);
 	return work;

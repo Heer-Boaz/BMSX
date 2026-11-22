@@ -280,6 +280,16 @@ export class HeapAllocator {
 		return RAM_BASE + slot;
 	}
 
+	// The owner has depopulated the suffix; the retained whole pages stay put.
+	public trimOwnedRun(address: number, bytes: number): void {
+		const page = (address - RAM_BASE) >>> PAGE_SHIFT;
+		const length = this.entry(page) + 4;
+		const end = page + this.memory.readRamRecordWord(length);
+		const retained = bytes >>> PAGE_SHIFT;
+		this.memory.writeRamRecordWord(length, retained);
+		this.releasePages(page + retained, end);
+	}
+
 	public free(address: number): void {
 		const offset = (address - RAM_BASE) >>> 0;
 		const page = offset >>> PAGE_SHIFT;

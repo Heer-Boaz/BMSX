@@ -275,6 +275,15 @@ void HeapAllocator::free(u32 address) {
 	}
 }
 
+void HeapAllocator::trimOwnedRun(u32 address, u32 retainedBytes) {
+	const u32 page = (address - RAM_BASE) >> PAGE_SHIFT;
+	const u32 retained = retainedBytes >> PAGE_SHIFT;
+	const u32 length = entry(page) + sizeof(u32);
+	const u32 previous = m_memory.readRamRecordWord(length);
+	m_memory.writeRamRecordWord(length, retained);
+	releasePages(page + retained, page + previous);
+}
+
 u32 HeapAllocator::allocateRun(u32 byteCount, bool owned) {
 	const u32 pages = byteCount / HEAP_PAGE_SIZE + ((byteCount & PAGE_MASK) != 0u ? 1u : 0u);
 	if (pages > m_pageLimit) return 0u;

@@ -226,6 +226,91 @@ test('String rehash splits a collision chain across both planes and replays swee
 	assert.deepEqual(finish(), expected, 'rewind reproduces the old and new chain frontiers and allocation bytes');
 });
 
+test('sparse String buckets shrink in place and rewind an upper chain mid-merge', () => {
+	const cpu = createCpu(), pool = cpu.stringPool, arena = cpu.heapAllocator, memory = cpu.memory;
+	const half = HEAP_PAGE_SIZE / 4, capacity = 2 * half;
+	const metadata = arena.managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const read = (field: number) => memory.readRamRecordWord(metadata + field);
+	let candidate = 0;
+	const collision = (bucket: number): string => {
+		for (;;) {
+			const text = `shrink collision ${candidate++}`;
+			if ((hashText(text) & (capacity - 1)) === bucket) return text;
+		}
+	};
+	const names = [0, half, half].map(collision), savedIds = names.map(name => pool.intern(name));
+	const freshNames = [half, 0, half + 1].map(collision);
+	for (let filler = 0; read(4) !== capacity && filler < capacity; ++filler) pool.intern(`shrink filler ${filler}`);
+	assert.equal(read(4), capacity, 'real inserts published two pages of settled buckets');
+	const base = read(0), upper = base + 4 * half, used = read(8);
+	pool.beginReachabilityEpoch();
+	pool.markReachable(pool.intern('__mode'));
+	for (const id of savedIds) pool.markReachable(id);
+	pool.takeMarkWork();
+	pool.beginSweep();
+	assert.equal(pool.sweepStep(capacity + used), capacity + used);
+	assert.equal(read(4), capacity | 0x40000000, 'sweeping only arms the shrink after the last record');
+	assert.equal(read(0x3c), 0);
+	assert.equal(pool.find('shrink filler 0'), undefined);
+	assert.equal(pool.sweepStep(1), 1, 'the next grant moves one upper record');
+	assert.equal(read(0x3c), 0);
+	const upperSurvivor = memory.readRamRecordWord(upper), moved = memory.readRamRecordWord(base);
+	assert.ok(savedIds.includes(upperSurvivor) && savedIds.includes(moved) && upperSurvivor !== moved,
+		'the current chain has different survivors on both sides of the merge');
+
+	const archive = new RamHistory(); archive.start(memory);
+	const checkpoint = archive.capture(memory, null), state = cpu.captureRuntimeState();
+	const finish = () => {
+		const freshIds = freshNames.map(name => pool.intern(name));
+		assert.equal(memory.readRamRecordWord(upper), upperSurvivor, 'inserts do not prolong the upper chain being drained');
+		assert.equal(memory.readRamRecordWord(base), freshIds[1]);
+		assert.equal(memory.readRamRecordWord(upper + 4), freshIds[2], 'the next upper bucket is still its own chain');
+		for (const [namesToCheck, ids] of [[names, savedIds], [freshNames, freshIds]] as const) {
+			for (let i = 0; i < ids.length; ++i) assert.equal(pool.find(namesToCheck[i]), ids[i]);
+		}
+		const logical = cpu.luaHeap.usedBytes(), physical = arena.occupiedBytes();
+		for (let step = 0; pool.sweeping() && step < half; ++step) assert.ok(pool.sweepStep(3) <= 3);
+		assert.equal(pool.sweeping(), false);
+		assert.equal(read(0), base, 'the lower directory keeps its address');
+		assert.equal(read(4), half);
+		assert.equal(arena.occupiedBytes(), physical - HEAP_PAGE_SIZE, 'only the upper directory page was released');
+		assert.equal(cpu.luaHeap.usedBytes(), logical);
+		for (const [namesToCheck, ids] of [[names, savedIds], [freshNames, freshIds]] as const) {
+			for (let i = 0; i < ids.length; ++i) assert.equal(pool.find(namesToCheck[i]), ids[i]);
+		}
+		pool.beginSweep();
+		assert.equal(pool.sweepStep(capacity + read(8)), half + read(8), 'subsequent sweeps no longer visit the released buckets');
+		assert.equal(pool.sweeping(), false);
+		return memory.captureSaveState().ram;
+	};
+	const expected = finish(), collected = archive.capture(memory, checkpoint);
+	archive.restore(memory, collected, checkpoint); cpu.restoreRuntimeState(state);
+	assert.deepEqual(finish(), expected, 'rewinding mid-merge reproduces chain ownership and page release');
+});
+
+test('String growth is optional when a record still fits its existing size-class page', () => {
+	const cpu = createCpu(), pool = cpu.stringPool, arena = cpu.heapAllocator;
+	const capacity = HEAP_PAGE_SIZE / 4;
+	const metadata = arena.managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const read = (field: number) => cpu.memory.readRamRecordWord(metadata + field);
+	const earlyText = 'unrooted before directory growth', early = pool.intern(earlyText);
+	pool.intern('p'.repeat(60)); // Reserve the pending String's record size class first.
+	for (let filler = 0; read(8) < capacity; ++filler) pool.intern(`directory filler ${filler}`);
+	assert.equal(read(4), capacity);
+	const base = read(0);
+	let reservedPages = 0;
+	while (arena.allocate(HEAP_PAGE_SIZE, true) !== 0) ++reservedPages;
+	assert.ok(reservedPages > 0);
+	const used = cpu.luaHeap.usedBytes(), pending = 'q'.repeat(60);
+	const id = pool.intern(pending);
+	assert.equal(pool.find(pending), id);
+	assert.equal(pool.find(earlyText), early, 'no emergency collection ran for the optional directory');
+	assert.equal(read(0), base);
+	assert.equal(read(4), capacity);
+	assert.equal(read(0x38), 0);
+	assert.equal(cpu.luaHeap.usedBytes(), used + BLUA32_STRING_RECORD_HEADER_SIZE + pending.length);
+});
+
 test('empty strings are interned and then collected like non-empty records', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
 	const empty = pool.intern('');

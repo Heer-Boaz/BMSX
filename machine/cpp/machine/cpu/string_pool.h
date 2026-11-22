@@ -74,11 +74,13 @@ private:
 	u32 lookup(u32 hash, const ByteSpan& bytes) const;
 	StringId intern(const ByteSpan& bytes, u32 hash, StringId source);
 	size_t rehashStep(u32 oldCount, u32 nextBase, size_t allowance);
+	size_t shrinkStep(u32 oldCount, size_t allowance);
 	bool mark(StringId id);
 	StringId retain(StringId id);
 
 	LuaHeap& m_heap;
 	Memory& m_memory;
+	HeapAllocator& m_arena;
 	const u32 m_metadata;
 	std::vector<StringId> m_localRoots;
 	std::vector<size_t> m_localRootBases;

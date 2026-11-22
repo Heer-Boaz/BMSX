@@ -7,7 +7,7 @@ import {
 	BLUA32_STRING_RECORD_ALIGNMENT, BLUA32_STRING_RECORD_HEADER_SIZE,
 	BLUA32_STRING_RECORD_KIND, BLUA32_STRING_RECORD_ROM_FLAG,
 } from '../../spec/blua32/image_format';
-import { CART_ROM_BASE, CART_ROM_SIZE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_SIZE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import type { Memory, MemoryByteView } from '../memory/memory';
 import { HEAP_STRING_METADATA_OFFSET, type HeapAllocator } from './heap_allocator';
 import type { LuaHeap } from './lua_heap';
@@ -20,12 +20,15 @@ const BUCKETS = 0x00, CAPACITY = 0x04, USED = 0x08, EPOCH = 0x0c, SWEEP = 0x10;
 const FIRST_CART = 0x14, ROM_TABLES = 0x18;
 const SWEEP_LINK = 0x30, SWEEP_LEFT = 0x34, REHASH_BASE = 0x38, REHASH_READY = 0x3c;
 const SWEEP_REHASH = 0x80000000;
+const SWEEP_SHRINK = 0xc0000000;
 const INITIAL_BUCKETS = 16;
+const MIN_SHRINK_BUCKETS = 2 * HEAP_PAGE_SIZE / 4;
 const INTERN_REHASH_WORK = 64;
 const RAM_BYTE_MASK = MAIN_RAM_SIZE - 1;
 const MAX_RAM_RECORDS = MAIN_RAM_SIZE / BLUA32_STRING_RECORD_HEADER_SIZE;
 const RAM_BUCKET_EXTENT_MASK = 2 * MAX_RAM_RECORDS - 1;
 const RAM_BUCKET_REHASH = 0x80000000;
+const RAM_BUCKET_SHRINK = 0x40000000;
 const SLOT_BIT = 0x80000000;
 
 function ramAddress(address: number): boolean { return address >= RAM_BASE && address < CART_ROM_BASE; }
@@ -64,7 +67,7 @@ export class StringPool {
 	private readonly romView: MemoryByteView;
 	private markWork = 0;
 
-	public constructor(private readonly heap: LuaHeap, private readonly memory: Memory, arena: HeapAllocator) {
+	public constructor(private readonly heap: LuaHeap, private readonly memory: Memory, private readonly arena: HeapAllocator) {
 		this.metadataOffset = arena.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 		this.romView = { bytes: memory.systemRomStorage().bytes, byteOffset: 0, byteLength: 0 };
 	}
@@ -186,13 +189,23 @@ export class StringPool {
 		const control = this.metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
 		if (count === 0) return 0;
 		const index = hash & (count - 1);
-		if ((control & RAM_BUCKET_REHASH) !== 0) {
+		if ((control & (RAM_BUCKET_REHASH | RAM_BUCKET_SHRINK)) !== 0) {
 			const ready = this.metadata(REHASH_READY);
-			if (index < ready) {
-				const bucket = this.metadata(REHASH_BASE) + 4 * (hash & (2 * count - 1));
-				const found = this.lookupRamChain(bucket, hash, source, offset, length, first, wrapped);
-				if (found !== 0) return found;
-				if (index + 1 < ready) return 0;
+			if ((control & RAM_BUCKET_REHASH) !== 0) {
+				if (index < ready) {
+					const bucket = this.metadata(REHASH_BASE) + 4 * (hash & (2 * count - 1));
+					const found = this.lookupRamChain(bucket, hash, source, offset, length, first, wrapped);
+					if (found !== 0) return found;
+					if (index + 1 < ready) return 0;
+				}
+			} else {
+				const lower = index - (count >>> 1);
+				if (lower >= 0 && lower <= ready) {
+					const base = this.metadata(BUCKETS);
+					const found = this.lookupRamChain(base + 4 * lower, hash, source, offset, length, first, wrapped);
+					if (found !== 0 || lower < ready) return found;
+					return this.lookupRamChain(base + 4 * index, hash, source, offset, length, first, wrapped);
+				}
 			}
 		}
 		return this.lookupRamChain(this.metadata(BUCKETS) + 4 * index, hash, source, offset, length, first, wrapped);
@@ -296,6 +309,34 @@ export class StringPool {
 		this.writeMetadata(REHASH_READY, ready);
 		return work;
 	}
+
+	private shrinkStep(count: number, allowance: number): number {
+		const base = this.metadata(BUCKETS), half = count >>> 1;
+		const memory = this.memory, start = this.metadata(REHASH_READY);
+		let ready = start, work = 0;
+		// Only the current upper bucket may have live links in both halves.
+		while (work < allowance && ready < half) {
+			const upper = base + 4 * (half + ready);
+			const record = memory.readRamRecordWord(upper);
+			if (record !== 0) {
+				const link = record + BLUA32_STRING_NEXT_OFFSET, lower = base + 4 * ready;
+				memory.writeRamRecordWord(upper, memory.readRamRecordWord(link));
+				memory.writeRamRecordWord(link, memory.readRamRecordWord(lower));
+				memory.writeRamRecordWord(lower, record);
+			} else ++ready;
+			++work;
+		}
+		if (work === allowance) {
+			if (ready !== start) this.writeMetadata(REHASH_READY, ready);
+			return work;
+		}
+		this.arena.trimOwnedRun(base, 4 * half);
+		this.writeMetadata(CAPACITY, half);
+		this.writeMetadata(REHASH_READY, 0);
+		this.writeMetadata(SWEEP, 0);
+		return work + 1;
+	}
+
 	public intern(value: string): StringId {
 		return this.internSource(hashText(value), value, 0, value.length);
 	}
@@ -332,20 +373,34 @@ export class StringPool {
 			if ((control & RAM_BUCKET_REHASH) !== 0) {
 				this.rehashStep(count, this.metadata(REHASH_BASE), INTERN_REHASH_WORK);
 			} else if (this.metadata(USED) >= count) {
-				const nextBase = this.heap.reserveBacking(8 * count, 0, root);
-				this.writeMetadata(REHASH_BASE, nextBase);
-				this.writeMetadata(CAPACITY, count | RAM_BUCKET_REHASH);
-				this.rehashStep(count, nextBase, INTERN_REHASH_WORK);
+				// Directory growth is optional. It must not collect and resize the
+				// published directory underneath this growth decision.
+				const nextBase = this.arena.allocate(8 * count, true);
+				if (nextBase !== 0) {
+					this.writeMetadata(REHASH_BASE, nextBase);
+					this.writeMetadata(CAPACITY, count | RAM_BUCKET_REHASH);
+					this.rehashStep(count, nextBase, INTERN_REHASH_WORK);
+				}
 			}
 		}
 		// An unrepresentable length requests the full bank and still clocks
 		// the final collection before the admission fault.
 		const id = this.heap.allocateRecord(BLUA32_STRING_RECORD_HEADER_SIZE + Math.min(length, MAIN_RAM_SIZE), false, 0, 0, root);
 		const currentControl = this.metadata(CAPACITY), current = currentControl & RAM_BUCKET_EXTENT_MASK;
-		const index = hash & (current - 1);
-		const bucket = (currentControl & RAM_BUCKET_REHASH) !== 0 && index < this.metadata(REHASH_READY)
-			? this.metadata(REHASH_BASE) + 4 * (hash & (2 * current - 1))
-			: this.metadata(BUCKETS) + 4 * index;
+		let index = hash & (current - 1), base = this.metadata(BUCKETS);
+		if ((currentControl & (RAM_BUCKET_REHASH | RAM_BUCKET_SHRINK)) !== 0) {
+			const ready = this.metadata(REHASH_READY);
+			if ((currentControl & RAM_BUCKET_REHASH) !== 0) {
+				if (index < ready) {
+					index = hash & (2 * current - 1);
+					base = this.metadata(REHASH_BASE);
+				}
+			} else {
+				const lower = index - (current >>> 1);
+				if (lower >= 0 && lower <= ready) index = lower;
+			}
+		}
+		const bucket = base + 4 * index;
 		memory.writeRamRecordWord(id, BLUA32_STRING_RECORD_KIND | ((this.metadata(EPOCH) & STRING_GC_EPOCH_MASK) << 8));
 		memory.writeRamRecordWord(id + BLUA32_STRING_HASH_OFFSET, hash);
 		memory.writeRamRecordWord(id + BLUA32_STRING_LENGTH_OFFSET, length);
@@ -400,6 +455,7 @@ export class StringPool {
 	public sweeping(): boolean { return this.metadata(SWEEP) !== 0; }
 	public sweepStep(allowance: number): number {
 		const cursor = this.metadata(SWEEP), control = this.metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
+		if (cursor === SWEEP_SHRINK) return this.shrinkStep(count, allowance);
 		const nextBase = (control & RAM_BUCKET_REHASH) !== 0 ? this.metadata(REHASH_BASE) : 0;
 		let work = 0;
 		const memory = this.memory;
@@ -448,6 +504,10 @@ export class StringPool {
 				this.writeMetadata(SWEEP, SWEEP_REHASH);
 				return work;
 			}
+		} else if (count >= MIN_SHRINK_BUCKETS && this.metadata(USED) <= (count >>> 2)) {
+			this.writeMetadata(CAPACITY, count | RAM_BUCKET_SHRINK);
+			this.writeMetadata(SWEEP, SWEEP_SHRINK);
+			return work + this.shrinkStep(count, allowance);
 		}
 		this.writeMetadata(SWEEP, 0);
 		return work;
