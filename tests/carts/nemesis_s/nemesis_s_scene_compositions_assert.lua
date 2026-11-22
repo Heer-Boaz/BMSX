@@ -46,6 +46,7 @@ return {
 		end,
 		scene_compositions = function(t)
 			t:wait_until('director admission', function() return registry:get('nemesis_s.director') ~= nil end, 120)
+			t:at_boundary(world:request_mutation_boundary(), 30)
 			local test<const> = {}
 			local director<const> = registry:get('nemesis_s.director')
 			local intro<const> = registry:get('nemesis_s.intro')
@@ -68,6 +69,7 @@ return {
 			director.state_machines:transition_to('/game_start')
 			director.state_machines:transition_to('/end_demo')
 			t:wait_until('ending composition', function() return registry:get('nemesis_s.end_demo') ~= nil end, 30)
+			t:at_boundary(world:request_mutation_boundary(), 30)
 			local ending<const> = registry:get('nemesis_s.end_demo')
 			do
 				local members<const> = shallow_copy(ending.presentation.members)
@@ -81,6 +83,7 @@ return {
 
 			end
 			t:wait_until('gameplay composition', function() return director.gameplay ~= nil end, 30)
+			t:at_boundary(world:request_mutation_boundary(), 30)
 			do
 				assert_disposed(test.ending)
 				local members<const> = director.gameplay.members
@@ -135,6 +138,7 @@ return {
 
 			end
 			t:wait_until('replacement gameplay composition', function() return director.gameplay ~= test.old_gameplay end, 30)
+			t:at_boundary(world:request_mutation_boundary(), 30)
 			assert_disposed(test.old_members)
 			assert(#test.old_gameplay.objects.items == 0 and test.old_player.world == nil,
 			'gameplay disposal retained dynamically admitted actors')

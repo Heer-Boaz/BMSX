@@ -371,7 +371,7 @@ assert(constructed==0 and spawned==0 and child.world==nil and #world._objects==0
  'clear retained a teardown-requested birth or entered its ready/active lifecycle')
 `);
 
-	rom.test(`Generated World schedules publish update admission and retire group context on every exit (O${optLevel})`, `
+	rom.test(`World schedules publish update admission and retire group context on every exit (O${optLevel})`, `
 world:start()
 
 local clock<const> = require('cartlib/clock')
@@ -419,6 +419,39 @@ local empty<const> = world._system_manager:configure({},20,20)
 empty()
 assert(world._update_revision==4 and world._executing_tick_group==nil,
  'empty update did not publish a distinct completed admission')
+`);
+	rom.test(`World binds prerequisite order and clock quanta independently of pause (O${optLevel})`, `
+local clock<const> = require('cartlib/clock')
+local frame_tick<const> = {group=20,priority=5,clock_source=clock.frame,method='frame'}
+local gameplay_tick<const> = {group=20,priority=-5,clock_source=clock.gameplay,method='gameplay',
+ prerequisites={frame_tick}}
+local finish_tick<const> = {group=30,priority=0,clock_source=clock.frame,method='finish',
+ prerequisites={gameplay_tick}}
+local system<const> = {}
+local calls<const> = {}
+function system.new(owner)
+ return setmetatable({owner=owner,tick_functions={gameplay_tick,finish_tick,frame_tick}}, {__index=system})
+end
+function system:frame(delta)
+ assert(delta==20 and self.owner==world and world._executing_tick_group==20)
+ calls[#calls+1]='frame'
+end
+function system:gameplay(delta)
+ assert(delta==40 and self.owner==world and world._executing_tick_group==20)
+ calls[#calls+1]='gameplay'
+end
+function system:finish(delta)
+ assert(delta==20 and self.owner==world and world._executing_tick_group==30)
+ calls[#calls+1]='finish'
+end
+local running<const>, paused<const> = world._system_manager:configure({system},40,20,{numerator=1,denominator=2})
+running()
+paused()
+running()
+running()
+assert(table.concat(calls,',')=='frame,gameplay,finish,frame,finish,frame,finish,frame,gameplay,finish',
+ 'prerequisite, clock selection, or paused fractional phase changed')
+assert(world.gameplay_time_ms==80 and world._update_revision==4 and world._executing_tick_group==nil)
 `);
 }
 

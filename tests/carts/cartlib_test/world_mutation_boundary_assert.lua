@@ -111,6 +111,7 @@ return {
 				local owner<const> = getmetatable(world).new()
 				owner:configure({ framebuffer_count = pages, gameplay_interval_vblanks = 1,
 					frame_interval_vblanks = 1, spaces = { 'render_test' }, systems = {} })
+				owner:start()
 				local render_state<const> = { draws = 0, receipt = owner:request_mutation_boundary() }
 				local a<const> = owner:spawn('cartlib_test.boundary_visual', { state = render_state })
 				local b<const> = owner:spawn('cartlib_test.boundary_visual', { state = render_state })

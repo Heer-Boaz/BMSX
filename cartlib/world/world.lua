@@ -388,7 +388,7 @@ function world_class:_commit_gameplay_clock(running)
 end
 
 -- Clock changes requested from scheduled work commit at its tick-group
--- barrier. The compiled runner then stops before executing work selected by
+-- barrier. The runner then stops before executing work selected by
 -- the schedule it just displaced.
 function world_class:set_gameplay_clock_running(running)
 	if self._mutation_barrier_open then

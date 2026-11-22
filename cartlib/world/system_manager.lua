@@ -1,16 +1,11 @@
 local clock<const> = require('cartlib/clock')
-local system_schedule_syntax<const> = require('cartlib/world/system_schedule_syntax')
 local tick_schedule<const> = require('cartlib/world/tick_schedule')
 
 local system_manager<const> = {}
 system_manager.__index = system_manager
-local compile_syntax<const> = lua_compiler.compile_syntax
 
--- Configuration instantiates the concrete systems once, orders their static
--- tick functions, then compiles that fixed composition into straight-line
--- runners. Each runner retains every system directly and opens one structural
--- barrier per group; it does not rediscover group ranges or index the system
--- table.
+-- Configuration orders the concrete systems once and binds the two clock
+-- schedules. Frame execution consumes only the retained group callbacks.
 
 local tick_function_less<const> = function(a, b)
 	local a_definition<const> = a.definition
@@ -66,23 +61,12 @@ function system_manager:configure(
 		end
 	end
 	table.sort(tick_functions, tick_function_less)
-	local update_with_gameplay<const> = tick_schedule.compile(
-		tick_functions,
-		clock.gameplay | clock.frame
-	)
-	local update_without_gameplay<const> = tick_schedule.compile(tick_functions, clock.frame)
 	self._systems = systems
-	local factory<const> = compile_syntax(
-		system_schedule_syntax.build(
-			systems,
-			update_with_gameplay,
-			update_without_gameplay,
-			gameplay_delta_milliseconds,
-			frame_delta_milliseconds
-		),
-		'[world.system_schedule]'
-	)()
-	local update_with_gameplay<const>, update_without_gameplay<const> = factory(self._world, systems)
+	local owner<const> = self._world
+	local update_with_gameplay<const> = tick_schedule.bind(owner, systems, tick_functions,
+		clock.gameplay | clock.frame, gameplay_delta_milliseconds, frame_delta_milliseconds)
+	local update_without_gameplay<const> = tick_schedule.bind(owner, systems, tick_functions,
+		clock.frame, gameplay_delta_milliseconds, frame_delta_milliseconds)
 	if gameplay_clock_rate == nil then
 		return update_with_gameplay, update_without_gameplay
 	end
@@ -107,7 +91,7 @@ end
 
 -- Clock-bound systems publish resume ownership on their static tick-function
 -- records. Dispatch is paid only at the explicit clock boundary; ordinary
--- frame execution retains the compiled straight-line schedule.
+-- frame execution only visits the bound schedule.
 function system_manager:resume_clock(clock_source)
 	local callbacks<const> = self._clock_resume_callbacks[clock_source]
 	for callback_index = 1, #callbacks do

@@ -8,7 +8,7 @@ export const WORLD_CPU_MODULES = [
 	'cartlib/dma', 'cartlib/irq', 'cartlib/irq/source',
 	'cartlib/gx/command_list', 'cartlib/gx/display', 'cartlib/gx/gpu', 'cartlib/gx/gp0', 'cartlib/gx/vram',
 	'cartlib/world/prefab', 'cartlib/world/scene', 'cartlib/world/scene_library',
-	'cartlib/world/space', 'cartlib/world/system_manager', 'cartlib/world/system_schedule_syntax',
+	'cartlib/world/space', 'cartlib/world/system_manager',
 	'cartlib/world/tick_schedule', 'cartlib/world/scene_plan', 'cartlib/world/world', 'cartlib/world/world_object',
 	'cartlib/world/spatial_hierarchy', 'cartlib/math/affine2', 'cartlib/math/affine3',
 	'cartlib/world/object_2d', 'cartlib/world/object_3d',
