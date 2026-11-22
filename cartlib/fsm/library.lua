@@ -16,7 +16,7 @@
 
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm<const> = require('cartlib/fsm/fsm')
-local registry<const> = require('cartlib/registry')
+local world<const> = require('cartlib/world/world')
 
 local fsm_library<const> = {}
 
@@ -30,11 +30,10 @@ function fsm_library.register(machine_name, blueprint)
 		fsm.assert_rebind_compatible(previous, replacement)
 	end
 	fsm_component.set_definition(machine_name, replacement)
-	local components<const> = registry:entries(fsm_component)
-	for i = 1, #components do
-		local state_machines<const> = components[i]
+	if previous == nil then return end
+	world:visit_admitted_components(fsm_component, function(state_machines)
 		state_machines:rebind_state_machine(machine_name, replacement)
-	end
+	end)
 end
 
 return fsm_library

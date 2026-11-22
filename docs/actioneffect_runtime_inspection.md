@@ -62,7 +62,7 @@ nieuwe dispatchbranch. De bestaande C++-veldnaam wordt niet naar TS gekopieerd.
 - `readRuntimeLuaModuleExport` consumeert de compiler-owned exportslotnaam en
   de geïnstalleerde global-registerfilemetadata. Een slot dat nog nil bevat
   bewijst niet dat de moduleinitialisatie is uitgevoerd.
-- De contribution leest `registry._entries_by_key[component_class].items` en
+- De contribution leest de concrete `_components_by_class[component_class]`-lijsten van de toegelaten World-objecten en
   per component de werkelijk opgeslagen `effects`-entries. Geen heap-/worldscan.
   De ordinary global-registerfile is gedeeld; een source-domain maakt geen
   tweede heap of slotgebonden componentidentiteit.

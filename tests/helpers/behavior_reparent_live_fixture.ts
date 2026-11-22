@@ -1,9 +1,11 @@
+import { WORLD_ACTOR_FIXTURE } from './world_actor_fixture';
+
 /** Ordinary cartridge source: real BT registration/rebind and ICU input, independent of game content. */
 export const BT_REPARENT_LIVE_SOURCE = `module<entry>
 local display<const> = require('cartlib/gx/display')
 local vblank<const> = require('cartlib/gx/vblank')
 local clock<const> = require('cartlib/clock')
-local registry<const> = require('cartlib/registry')
+${WORLD_ACTOR_FIXTURE}
 local trees<const> = require('cartlib/behaviour_tree/library')
 local component<const> = require('cartlib/behaviour_tree/bt_component')
 local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
@@ -34,11 +36,13 @@ local function register_tree<init>()
 	bt_live_init_count = bt_live_init_count + 1
 end
 register_tree()
-bt_live_target = { order = 0, executions = 0, retained = 0 }
-bt_live_tree = component.factory('fixture.live')(bt_live_target)
-bt_live_tree.id = 'fixture.live.tree'
-registry:register(bt_live_tree)
-registry:index(bt_live_tree, component)
+bt_live_target = fixture_spawn('fixture.live.target', { order = 0, executions = 0, retained = 0 }, {
+	function(owner)
+		bt_live_tree = component.new(owner, 'fixture.live')
+		bt_live_tree.id = 'fixture.live.tree'
+		return bt_live_tree
+	end,
+})
 bt_live_tree.blackboard:set(retained_key, 73)
 local control<const>: *word = icu.control_address
 local keyboard<const>: *word = icu.keyboard_bitmap_address

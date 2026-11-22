@@ -1,17 +1,20 @@
-/** Executed against the real registry and ActionEffect component; no editor-owned phase emulator. */
+import { WORLD_ACTOR_FIXTURE } from './world_actor_fixture';
+
+/** Executed against real World membership and the ActionEffect component. */
 export const ACTIONEFFECT_PHASE_ENTRY = `
 local effects<const> = require('cartlib/actioneffects')
 local component_type<const> = require('cartlib/actioneffects/actioneffect_component')
-local registry<const> = require('cartlib/registry')
+${WORLD_ACTOR_FIXTURE}
 local blueprint<const> = require('fixture/effects')
-local owner<const> = {
-	world = { gameplay_time_ms = 100 },
+fixture_world.gameplay_time_ms = 100
+local owner<const> = fixture_spawn('phase.actor', {
 	tags = { ready = true }, states = { ['/ready'] = true },
 	tag_checks = 0, state_checks = 0, bindings = 0,
 	calculations = 0, gate_calls = 0, runs = 0,
 	calculated_cooldown = 7, accept = false, result_event = false,
-	events = { count = 0 }, state_machines = {},
-}
+	state_machines = {},
+}, { component_type.new })
+owner.events = { count = 0 }
 function owner:has_tag(tag)
 	self.tag_checks = self.tag_checks + 1
 	return self.tags[tag] == true
@@ -29,11 +32,7 @@ function owner.events:emit(event, payload)
 	self.last_event = event
 	self.last_payload = payload
 end
-local component<const> = component_type.new(owner)
-component.id = registry:next_id()
-registry:register(component)
-registry:index(component, component_type)
-owner.actioneffects = component
+local component<const> = owner.actioneffects
 component:grant_effect('fixture.first')
 component:on_activate()
 local effect<const> = component.effects['fixture.first']
@@ -106,7 +105,7 @@ local rebound<const> = {
 	required_state_paths = { '/new' }, event = 'rebound.event',
 }
 effects.register_effect('fixture.first', rebound)
-assert(component.effects['fixture.first'] == effect and effect.definition == rebound, 'public registration rebinds the existing indexed component record')
+assert(component.effects['fixture.first'] == effect and effect.definition == rebound, 'public registration rebinds the existing admitted component record')
 assert(effect.active_count == 1 and component.periodic_effect_count == 1 and effect.next_execution_ms == 221, 'rebind replans an active period from current gameplay time')
 assert(effect.cooldown_until_ms == 211 and effect.cooldown_pending and effect.pending_cooldown_ms == 11, 'rebind retains cooldown and pending duration and does not reapply initial cooldown')
 assert(owner.bindings == 3 and effect.required_states[1] == '/new' and effect.blocked_states == nil, 'rebind replaces bound requirements')
@@ -120,6 +119,6 @@ owner.world.gameplay_time_ms = 226
 owner.states['/new'] = true
 assert(component:trigger('fixture.first'), 'rebound trigger passes its new requirements at the cooldown deadline')
 assert(effect.cooldown_until_ms == 325 and effect.cooldown_pending == nil, 'non-deferred trigger commits its authored static cooldown immediately')
-registry:deregister(component)
+owner:mark_for_disposal()
 return true
 `;

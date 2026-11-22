@@ -448,15 +448,12 @@ local first<const> = world:spawn('same.base', {})
 local second<const> = world:spawn('same.base', {})
 assert(first:helper() == 'same.base' and first.tags ~= second.tags and first.tags ~= declared_tags,
 	'class/base admission created cyclic lookup or shared instance tag storage')
-assert(#registry:entries('fixture.shared') == 2, 'declared tags were not published for both objects')
+assert(first:has_tag('fixture.shared') and second:has_tag('fixture.shared'), 'declared tags did not reach both instances')
 first:remove_tag('fixture.shared')
 first:add_tag('fixture.first')
 assert(not first:has_tag('fixture.shared') and second:has_tag('fixture.shared') and declared_tags['fixture.shared']
 	and not second:has_tag('fixture.first') and declared_tags['fixture.first'] == nil,
 	'live tag changes mutated another instance or the prefab declaration')
-assert(#registry:entries('fixture.shared') == 1 and registry:entries('fixture.shared')[1] == second
-	and #registry:entries('fixture.first') == 1 and registry:entries('fixture.first')[1] == first,
-	'per-instance tag mutations did not reconcile Registry indexes')
 local authored_tags<const> = { ['fixture.authored'] = true }
 local third<const> = world:spawn('same.base', { tags = authored_tags })
 local fourth<const> = world:spawn('same.base', { tags = authored_tags })
@@ -467,8 +464,8 @@ first:mark_for_disposal()
 second:mark_for_disposal()
 third:mark_for_disposal()
 fourth:mark_for_disposal()
-assert(#registry:entries('fixture.shared') == 0 and #registry:entries('fixture.first') == 0
-	and #registry:entries('fixture.authored') == 0, 'tag ownership retained disposed Registry identities')
+assert(registry:get(first.id) == nil and registry:get(second.id) == nil
+	and registry:get(third.id) == nil and registry:get(fourth.id) == nil, 'disposed owners retained their Registry identities')
 `);
 
 rom.test(`Scene registration rejects unresolved prefabs and duplicate members before runtime construction (O3)`, `
@@ -604,8 +601,39 @@ local component<const> = live_owner:add_component(setmetatable(base_component.ne
 assert(attached == 1 and detached == 1 and bound == 0 and activated == 0,
 	'on_attach self-removal was lost or continued into binding/activation')
 assert(not component._attached and #live_owner._components == 0 and live_owner:get_component(removing_component) == nil
-	and registry:get(component.id) == nil and #registry:entries(removing_component) == 0 and #view.components == 0,
+	and registry:get(component.id) == nil and #view.components == 0,
 	'on_attach self-removal retained owner storage, Registry identity or active membership')
 live_owner:mark_for_disposal()
 assert(detached == 1, 'owner teardown repeated the self-removed component detach callback')
+`);
+
+rom.test('Cold class membership visits only admitted components, including inactive ones (O3)', `
+local class<const> = {}
+class.__index = class
+setmetatable(class, { __index = base_component })
+local checks = 0
+function class:on_attach()
+	-- Local attachment precedes identity publication. Querying from within
+	-- this real hook must find only previously admitted members.
+	world:visit_admitted_components(class, function(member)
+		assert(member ~= self)
+		checks = checks + 1
+	end)
+end
+prefab.define({ def_id = 'inspect.actor', class = world_object })
+local first<const> = world:spawn('inspect.actor')
+first:add_component(setmetatable(base_component.new(first), class))
+assert(checks == 0)
+local second<const> = world:spawn('inspect.actor')
+second:add_component(setmetatable(base_component.new(second), class))
+assert(checks == 1 and not first.active and not second.active)
+local visits = 0
+world:visit_admitted_components(class, function(member)
+	assert(member.owner == first)
+	visits = visits + 1
+	second:mark_for_disposal()
+	local replacement<const> = world:spawn('inspect.actor')
+	replacement:add_component(setmetatable(base_component.new(replacement), class))
+end)
+assert(visits == 1, 'rebind traversed a retired or newly admitted component')
 `);

@@ -19,7 +19,7 @@
 -- 3. QUERY SCOPE IS EXPLICIT.
 --    Systems and long-lived cart queries retain active_*_view() results; the
 --    selected space swaps each view's dense backing array at its barrier.
---    Cart-wide identity and key queries address Registry directly.
+--    Cart-wide identity queries address Registry directly.
 --
 -- 4. THE MODULE RETURNS THE CART WORLD.
 --    Access it via require('cartlib/world/world'); carts do not create another world.
@@ -44,7 +44,6 @@ local gx_display<const> = require('cartlib/gx/display')
 local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_vram<const> = require('cartlib/gx/vram')
 local gp0<const> = require('cartlib/gx/gp0')
-local component_class_chain<const> = require('cartlib/component/component_class').chain
 local prefab<const> = require('cartlib/world/prefab')
 local registry<const> = require('cartlib/registry')
 local shallow_copy<const> = table.copy
@@ -62,7 +61,6 @@ local mutation_admission<const> = 0x01
 local mutation_component_attach<const> = 0x02
 local mutation_object<const> = 0x04
 local mutation_component<const> = 0x08
-local mutation_tag<const> = 0x10
 local mutation_component_detach<const> = 0x20
 local mutation_active_space<const> = 0x40
 local mutation_disposal<const> = 0x80
@@ -74,7 +72,6 @@ local structural_mutation_mask<const> = mutation_admission
 	| mutation_component_attach
 	| mutation_object
 	| mutation_component
-	| mutation_tag
 	| mutation_component_detach
 	| mutation_active_space
 	| mutation_gameplay_clock
@@ -148,9 +145,6 @@ function world_class.new()
 	self._pending_component_attach_count = 0
 	self._pending_component_detaches = {}
 	self._pending_component_detach_count = 0
-	self._pending_tag_objects = {}
-	self._pending_tag_names = {}
-	self._pending_tag_count = 0
 	self._pending_mutation_mask = 0
 	self._spatial_hierarchy = spatial_hierarchy.new()
 	self._pending_reparent_targets = {}
@@ -290,6 +284,31 @@ function world_class:start()
 	self.update = self.gameplay_clock_running and self._update_with_gameplay or self._update_without_gameplay
 end
 
+-- Definition replacement includes inactive owners but not the component
+-- currently inside on_attach, before its identity is published. Rebind hooks
+-- may add or dispose actors, so visit the original admitted set in order.
+function world_class:visit_admitted_components(component_class, visit)
+	local matches<const> = {}
+	local objects<const> = self._objects
+	for object_index = 1, #objects do
+		local bucket<const> = objects[object_index]._components_by_class[component_class]
+		if bucket ~= nil then
+			for component_index = 1, #bucket do
+				local component<const> = bucket[component_index]
+				if registry:get(component.id) == component then
+					matches[#matches + 1] = component
+				end
+			end
+		end
+	end
+	for index = 1, #matches do
+		local component<const> = matches[index]
+		if registry:get(component.id) == component then
+			visit(component)
+		end
+	end
+end
+
 function world_class:active_component_view(component_class)
 	local views<const> = self._active_component_views_by_class
 	local view<const> = views[component_class]
@@ -421,18 +440,6 @@ function world_class:set_space(space_id)
 		self:_commit_active_space(space_id)
 	end
 	return space_id
-end
-
-function world_class:reconcile_object_tag(obj, tag)
-	if self._mutation_barrier_open then
-		local index<const> = self._pending_tag_count + 1
-		self._pending_tag_count = index
-		self._pending_tag_objects[index] = obj
-		self._pending_tag_names[index] = tag
-		self._pending_mutation_mask = self._pending_mutation_mask | mutation_tag
-	else
-		registry:reconcile_index(obj, tag, obj.tags[tag])
-	end
 end
 
 function world_class:set_object_space(obj, space_id)
@@ -577,10 +584,6 @@ function world_class:_commit_component_attach(comp)
 		comp.id = registry:next_id()
 	end
 	registry:register(comp)
-	local classes<const> = component_class_chain(getmetatable(comp))
-	for class_index = 1, #classes do
-		registry:index(comp, classes[class_index])
-	end
 	self:_reconcile_active_component(comp)
 	if comp._attached and owner._bound and not owner.marked_for_disposal then
 		comp:_bind()
@@ -682,28 +685,12 @@ function world_class:_flush_objects()
 	self._pending_object_count = 0
 end
 
-function world_class:_flush_tags()
-	local objects<const> = self._pending_tag_objects
-	local names<const> = self._pending_tag_names
-	for index = 1, self._pending_tag_count do
-		local obj<const> = objects[index]
-		local tag<const> = names[index]
-		objects[index] = nil
-		names[index] = nil
-		registry:reconcile_index(obj, tag, obj.tags[tag])
-	end
-	self._pending_tag_count = 0
-end
-
 function world_class:visual_order_changed()
 	self._visual_revision = self._visual_revision + 1
 end
 
 function world_class:_commit_spawn(obj)
 	registry:register(obj)
-	for tag in pairs(obj.tags) do
-		registry:index(obj, tag)
-	end
 	local components<const> = obj._components
 	for i = 1, #components do
 		local comp<const> = components[i]
@@ -711,10 +698,6 @@ function world_class:_commit_spawn(obj)
 			comp.id = registry:next_id()
 		end
 		registry:register(comp)
-		local classes<const> = component_class_chain(getmetatable(comp))
-		for class_index = 1, #classes do
-			registry:index(comp, classes[class_index])
-		end
 	end
 	self:_add_world_object(obj)
 	self:_reconcile_object(obj)
@@ -1202,10 +1185,6 @@ function world_class:_flush_structural_mutations()
 		if (self._pending_mutation_mask & mutation_component) ~= 0 then
 			self._pending_mutation_mask = self._pending_mutation_mask - mutation_component
 			self:_flush_components()
-		end
-		if (self._pending_mutation_mask & mutation_tag) ~= 0 then
-			self._pending_mutation_mask = self._pending_mutation_mask - mutation_tag
-			self:_flush_tags()
 		end
 		if (self._pending_mutation_mask & mutation_component_detach) ~= 0 then
 			self._pending_mutation_mask = self._pending_mutation_mask - mutation_component_detach

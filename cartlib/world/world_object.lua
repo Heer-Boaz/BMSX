@@ -237,12 +237,7 @@ function world_object:add_tag(tag)
 		explicit_tags[tag] = true
 	end
 	local tags<const> = self.tags
-	if not tags[tag] then
-		tags[tag] = true
-		if self._world_object_index ~= nil then
-			self.world:reconcile_object_tag(self, tag)
-		end
-	end
+	if not tags[tag] then tags[tag] = true end
 end
 
 function world_object:remove_tag(tag)
@@ -258,17 +253,11 @@ function world_object:remove_tag(tag)
 		end
 	end
 	local tags<const> = self.tags
-	if tags[tag] then
-		tags[tag] = nil
-		if self._world_object_index ~= nil then
-			self.world:reconcile_object_tag(self, tag)
-		end
-	end
+	if tags[tag] then tags[tag] = nil end
 end
 
 -- Scoped cartlib producers use retain/release instead of explicit add/remove.
--- The first retained tag snapshots the existing explicit set once; has_tag()
--- and Registry indexing continue to consume the aggregate table directly.
+-- The first retained tag snapshots the existing explicit set once.
 function world_object:_retain_tag(tag)
 	local counts = self._retained_tag_counts
 	if counts == nil then
@@ -287,12 +276,7 @@ function world_object:_retain_tag(tag)
 	end
 	counts[tag] = 1
 	local tags<const> = self.tags
-	if not tags[tag] then
-		tags[tag] = true
-		if self._world_object_index ~= nil then
-			self.world:reconcile_object_tag(self, tag)
-		end
-	end
+	if not tags[tag] then tags[tag] = true end
 end
 
 function world_object:_release_tag(tag)
@@ -307,9 +291,6 @@ function world_object:_release_tag(tag)
 		return
 	end
 	self.tags[tag] = nil
-	if self._world_object_index ~= nil then
-		self.world:reconcile_object_tag(self, tag)
-	end
 end
 
 function world_object:toggle_tag(tag)

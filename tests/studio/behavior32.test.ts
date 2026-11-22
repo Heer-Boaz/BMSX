@@ -1,3 +1,4 @@
+import { WORLD_ACTOR_FIXTURE } from '../helpers/world_actor_fixture';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -16,7 +17,7 @@ import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harnes
 import { afterTest } from '../helpers/test_cleanup';
 
 const ENTRY = `
-local registry<const> = require('cartlib/registry')
+${WORLD_ACTOR_FIXTURE}
 local machines<const> = require('cartlib/fsm/fsm_component')
 local fsm<const> = require('cartlib/fsm/library')
 local trees<const> = require('cartlib/behaviour_tree/bt_component')
@@ -24,35 +25,49 @@ local bt<const> = require('cartlib/behaviour_tree/library')
 local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
 local effects<const> = require('cartlib/actioneffects/actioneffect_component')
 callbacks=0
-local owner<const> = {id=16777217,active=true,tags={},world={gameplay_time_ms=0}}
 fsm.register('live', {initial='idle',states={idle={},moving={}}})
 fsm.register('unused', {states={}})
-local machine<const> = machines.new(owner, {'live'})
-machine.id='machine'; registry:register(machine); registry:index(machine,machines)
 local first<const>,last<const> = blackboard.key('answer',0),blackboard.key('answer',0.25)
 bt.register('board', {blackboard={first,last,blackboard.key('big',16777217),blackboard.key('unset'),blackboard.key(1,2),blackboard.key(1.0,4)},root={type='sequence',children={}}})
 bt.register('bare', {root={type='sequence',children={}}})
-local tree<const> = trees.new(owner,'board')
-tree.id='tree'; registry:register(tree); registry:index(tree,trees)
-local bare<const> = trees.new(owner,'bare')
-bare.id='bare'; registry:register(bare); registry:index(bare,trees)
 local definition<const> = {cooldown_ms=16777217,initial_cooldown_ms=0,
  handler=function() callbacks=callbacks+1 end,
  calculate_cooldown_ms=function() callbacks=callbacks+1; return 0 end}
 effects.set_definition('live',definition); effects.set_definition('alias',definition)
-local effect<const> = effects.new(owner)
-effect.id='effects'; registry:register(effect); registry:index(effect,effects)
+local tree
+local owner<const> = fixture_spawn('inspection.actor', { id = 16777217 }, {
+ function(target)
+  local instance<const> = machines.new(target, { 'live' })
+  instance.id = 'machine'
+  return instance
+ end,
+ function(target)
+  tree = trees.new(target, 'board')
+  tree.id = 'tree'
+  return tree
+ end,
+ function(target)
+  local instance<const> = trees.new(target, 'bare')
+  instance.id = 'bare'
+  return instance
+ end,
+ function(target)
+  local instance<const> = effects.new(target)
+  instance.id = 'effects'
+  return instance
+ end,
+})
+local effect<const> = owner.actioneffects
 effect:grant_effect('live')
 function unbuild() tree.blackboard=blackboard.new() end
 function drop()
- registry:deregister(machine); registry:deregister(tree); registry:deregister(bare)
- effect:revoke_effect('live'); registry:deregister(effect)
+ effect:revoke_effect('live'); owner:mark_for_disposal()
  machines.set_definition('live',nil); machines.set_definition('unused',nil)
  effects.set_definition('live',nil); effects.set_definition('alias',nil)
 end
 return true`;
 
-for (const optLevel of [3] as const) test(`behavior32 O${optLevel}: real cartlib indexes, definitions, blackboard and effects remain read-only`, t => {
+for (const optLevel of [3] as const) test(`behavior32 O${optLevel}: real cartlib membership, definitions, blackboard and effects remain read-only`, t => {
 	const { images, cartSources } = compileCartlibProgram(ENTRY, { optLevel, modules: [{ path: 'cartlib/actioneffects/actioneffect_component', source: readFileSync('cartlib/actioneffects/actioneffect_component.lua', 'utf8') }] });
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
 	// Publish the exact compiler inputs rather than infer source correspondence from guest data.

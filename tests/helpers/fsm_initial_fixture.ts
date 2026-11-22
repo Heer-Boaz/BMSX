@@ -1,3 +1,5 @@
+import { WORLD_ACTOR_FIXTURE } from './world_actor_fixture';
+
 /** Canonical authored Lua, independent of game definitions, paths and line numbers. */
 const SHARED = `local shared<const> = {
 	initial = ( --[[initial intent]] 'idle'),
@@ -23,8 +25,7 @@ export const FSM_INITIAL_CART_SOURCE = `module<entry>
 local display<const> = require('cartlib/gx/display')
 local vblank<const> = require('cartlib/gx/vblank')
 local clock<const> = require('cartlib/clock')
-local registry<const> = require('cartlib/registry')
-local events<const> = require('cartlib/event_emitter')
+${WORLD_ACTOR_FIXTURE}
 local machines = require('cartlib/fsm/library')
 local component<const> = require('cartlib/fsm/fsm_component')
 display.reset_256x192()
@@ -41,17 +42,16 @@ local function register_machine<init>()
 	fsm_initial_init_count = fsm_initial_init_count + 1
 end
 register_machine()
-fsm_initial_target = { id = 'initial-target', active = true, tags = {} }
-function fsm_initial_target:_retain_tag(tag) self.tags[tag] = true end
-function fsm_initial_target:_release_tag(tag) self.tags[tag] = nil end
-fsm_initial_target.events = events.events_of(fsm_initial_target)
-fsm_initial_component = component.factory({'fixture.initial'})(fsm_initial_target)
-fsm_initial_component.id = 'initial-target-fsm'
-fsm_initial_component:on_attach()
-registry:register(fsm_initial_component)
-registry:index(fsm_initial_component, component)
-fsm_initial_component:_bind()
-fsm_initial_component:start()
+local make_fsm<const> = component.factory({ 'fixture.initial' })
+fsm_initial_target = fixture_spawn('fsm_initial_target', { id = 'initial-target' }, {
+	function(owner)
+		local instance<const> = make_fsm(owner)
+		instance.id = 'initial-target-fsm'
+		return instance
+	end,
+})
+fsm_initial_component = fsm_initial_target.state_machines
+fixture_world:start()
 fsm_initial_machine = fsm_initial_component:get_machine('fixture.initial')
 while true do vblank.wait() end
 `;

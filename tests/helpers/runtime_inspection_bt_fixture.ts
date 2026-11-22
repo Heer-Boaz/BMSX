@@ -2,7 +2,6 @@
 export const RUNTIME_INSPECTION_TREES_SOURCE = `local library<const> = require('cartlib/behaviour_tree/library')
 local component<const> = require('cartlib/behaviour_tree/bt_component')
 local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
-local registry<const> = require('cartlib/registry')
 local callbacks<const> = require('inspection_callbacks')
 local trees<const> = {}
 local count_key
@@ -34,8 +33,7 @@ end
 local function attach(owner, id, tree_id)
 	local instance<const> = component.new(owner, tree_id)
 	instance.id = id
-	registry:register(instance)
-	registry:index(instance, component)
+	owner:add_component(instance)
 	return instance
 end
 function trees.attach(first, second)

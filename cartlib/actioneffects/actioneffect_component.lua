@@ -38,7 +38,9 @@ local commit_effect_cooldown<const> = function(effect, owner, cooldown_ms)
 end
 
 function actioneffect_component.set_definition(id, definition)
+	local previous<const> = definitions_by_id[id]
 	definitions_by_id[id] = definition
+	return previous ~= nil
 end
 
 function actioneffect_component.new(owner)

@@ -1,8 +1,10 @@
+import { WORLD_ACTOR_FIXTURE } from './world_actor_fixture';
+
 /** Actual cartlib compilation, publication, two actors and mutable input aliases. */
 export const BT_COMPILATION_PROBE_SOURCE = `
 local library<const> = require('cartlib/behaviour_tree/library')
 local component<const> = require('cartlib/behaviour_tree/bt_component')
-local registry<const> = require('cartlib/registry')
+${WORLD_ACTOR_FIXTURE}
 local recorder<const> = require('testlib/behaviour_tree/compile_recorder')
 local result<const> = require('cartlib/behaviour_tree/result')
 
@@ -41,14 +43,11 @@ function probe.compile(width, retain)
 	probe.weak_inputs = setmetatable({ definition, shared }, { __mode = 'v' })
 	if retain then probe.definition = definition else probe.definition = nil end
 	if probe.first == nil then
-		probe.first = component.new({ ticks = 0, services = 0, predicates = 0 }, 'probe')
-		probe.second = component.new({ ticks = 0, services = 0, predicates = 0 }, 'probe')
-		probe.first.id = 'probe.first'
-		probe.second.id = 'probe.second'
-		for _, instance in ipairs({ probe.first, probe.second }) do
-			registry:register(instance)
-			registry:index(instance, component)
-		end
+		local factories<const> = { component.factory('probe') }
+		local first<const> = fixture_spawn('probe.first', { ticks = 0, services = 0, predicates = 0 }, factories)
+		local second<const> = fixture_spawn('probe.second', { ticks = 0, services = 0, predicates = 0 }, factories)
+		probe.first = first:get_component(component)
+		probe.second = second:get_component(component)
 	end
 end
 function probe.run(count)

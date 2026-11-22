@@ -1,3 +1,4 @@
+import { WORLD_ACTOR_FIXTURE } from '../helpers/world_actor_fixture';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
@@ -25,33 +26,13 @@ import { quoteLuaByteString, quoteLuaString } from '../../toolchain/ts/lua/synta
 import { createLuaStringValueEdit } from '../../ide/language/lua/source_edits';
 
 const CART_ENTRY_SOURCE = `
-local registry<const> = require('cartlib/registry')
-local events<const> = require('cartlib/event_emitter')
+${WORLD_ACTOR_FIXTURE}
 local fsm_library<const> = require('cartlib/fsm/library')
 local state_machine_component<const> = require('cartlib/fsm/fsm_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
 local behaviour_tree_component<const> = require('cartlib/behaviour_tree/bt_component')
 local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
-
-local target<const> = {
-	id = 'hot_target',
-	active = true,
-	tags = {},
-	value = 0,
-}
-function target:_retain_tag(tag)
-	self.tags[tag] = true
-end
-function target:_release_tag(tag)
-	self.tags[tag] = nil
-end
-target.events = events.events_of(target)
-local timelines<const> = timeline_component.new(target,{clock_mode='manual'})
-timelines.id = 'hot_target_timelines'
-timelines:on_attach()
-registry:register(timelines)
-registry:index(timelines, timeline_component)
 
 fsm_library.register('hot_machine', {
 	initial = 'idle',
@@ -94,13 +75,21 @@ fsm_library.register('hot_machine', {
 })
 
 local make_fsm<const> = state_machine_component.factory({ 'hot_machine' })
-local state_machines<const> = make_fsm(target)
-state_machines.id = 'hot_target_fsm'
-state_machines:on_attach()
-registry:register(state_machines)
-registry:index(state_machines, state_machine_component)
-state_machines:_bind()
-state_machines:start()
+local target<const> = fixture_spawn('hot.actor', { id = 'hot_target', value = 0 }, {
+	function(owner)
+		local instance<const> = timeline_component.new(owner, { clock_mode = 'manual' })
+		instance.id = 'hot_target_timelines'
+		return instance
+	end,
+	function(owner)
+		local instance<const> = make_fsm(owner)
+		instance.id = 'hot_target_fsm'
+		return instance
+	end,
+})
+local timelines<const> = target.timelines
+local state_machines<const> = target.state_machines
+fixture_world:start()
 
 local machine<const> = state_machines:get_machine('hot_machine')
 local idle<const> = machine.states.idle
@@ -254,8 +243,7 @@ behaviour_tree_library.register('enemy_hot', {
 local make_old_tree<const> = behaviour_tree_component.factory('enemy_hot')
 local behaviour_tree_instance<const> = make_old_tree(target)
 behaviour_tree_instance.id = 'hot_target_bt'
-registry:register(behaviour_tree_instance)
-registry:index(behaviour_tree_instance, behaviour_tree_component)
+target:add_component(behaviour_tree_instance)
 behaviour_tree_instance.evaluate(target, behaviour_tree_instance, behaviour_tree_instance.operand)
 local blackboard_instance<const> = behaviour_tree_instance.blackboard
 blackboard_instance:set(retained_key, 91)
@@ -366,7 +354,7 @@ for (const optLevel of [3] as const) test(`BT empty/single-child lowering preser
 local compiler<const> = require('cartlib/behaviour_tree/program')
 local library<const> = require('cartlib/behaviour_tree/library')
 local component<const> = require('cartlib/behaviour_tree/bt_component')
-local registry<const> = require('cartlib/registry')
+${WORLD_ACTOR_FIXTURE}
 local result<const> = require('cartlib/behaviour_tree/result')
 local aborts = 0
 local callback<const> = function() return result.running end
@@ -380,10 +368,8 @@ for _, kind in ipairs({ 'sequence', 'selector' }) do
 	local program<const> = compiler.compile(kind, definition)
 	assert(program.evaluate == callback and program.reset == nil and program.create_execution_state() == nil)
 	library.register(kind, definition)
-	local instance<const> = component.new({}, kind)
-	instance.id = kind
-	registry:register(instance)
-	registry:index(instance, component)
+	local owner<const> = fixture_spawn(kind, {}, { component.factory(kind) })
+	local instance<const> = owner:get_component(component)
 	instance:stop()
 	instance:start()
 	library.register(kind, definition)
@@ -613,21 +599,12 @@ test('visual initial edits rebind real cartlib definitions without forcing the l
 	const target = [...indexStateMachineSource(document).initialTargets.values()].find(target => target.name === 'active')!;
 	model.pushEditOperations(createStateMachineInitialEdits(model.buffer, target));
 	const { cpu } = createCartlibProgramHarness(`
-local registry<const> = require('cartlib/registry')
-local events<const> = require('cartlib/event_emitter')
+${WORLD_ACTOR_FIXTURE}
 local component<const> = require('cartlib/fsm/fsm_component')
-local target<const> = {id='initial-test', active=true, tags={}}
-function target:_retain_tag(tag) self.tags[tag]=true end
-function target:_release_tag(tag) self.tags[tag]=nil end
-target.events = events.events_of(target)
 do ${FSM_INITIAL_SOURCE} end
-local machines<const> = component.factory({'fixture.initial'})(target)
-machines.id='initial-test-fsm'
-machines:on_attach()
-registry:register(machines)
-registry:index(machines, component)
-machines:_bind()
-machines:start()
+local target<const> = fixture_spawn('initial-test', { id = 'initial-test' }, { component.factory({'fixture.initial'}) })
+local machines<const> = target.state_machines
+fixture_world:start()
 local machine<const> = machines:get_machine('fixture.initial')
 local left<const> = machine.states.left
 local idle<const> = left.current_state
@@ -793,22 +770,13 @@ test('a retargeted callback preserves live rebind identity, dispatch effects, gu
 	model.pushEditOperations([createLuaStringValueEdit(model.buffer, check.file.chunk.locations, check.literal, check.text, 'bytes')]);
 	assert.equal(model.buffer.getText(), FSM_RETARGET_EXECUTION_SOURCE.replace("--[[chosen path]] 'active'", "--[[chosen path]] 'other'"));
 	const { cpu } = createCartlibProgramHarness(`
-local registry<const> = require('cartlib/registry')
-local events<const> = require('cartlib/event_emitter')
+${WORLD_ACTOR_FIXTURE}
 local component<const> = require('cartlib/fsm/fsm_component')
 local fsm<const> = require('cartlib/fsm/fsm')
-local target<const> = {id='retarget-test', active=true, tags={}, allowed=false, calls=0, guards=0, exits=0, entries=0}
-function target:_retain_tag(tag) self.tags[tag]=true end
-function target:_release_tag(tag) self.tags[tag]=nil end
-target.events = events.events_of(target)
 do ${FSM_RETARGET_EXECUTION_SOURCE} end
-local machines<const> = component.factory({'fixture.execution'})(target)
-machines.id='retarget-test-fsm'
-machines:on_attach()
-registry:register(machines)
-registry:index(machines, component)
-machines:_bind()
-machines:start()
+local target<const> = fixture_spawn('retarget-test', { id = 'retarget-test', allowed = false, calls = 0, guards = 0, exits = 0, entries = 0 }, { component.factory({'fixture.execution'}) })
+local machines<const> = target.state_machines
+fixture_world:start()
 local machine<const> = machines:get_machine('fixture.execution')
 local idle<const> = machine.current_state
 local data<const> = machine.data

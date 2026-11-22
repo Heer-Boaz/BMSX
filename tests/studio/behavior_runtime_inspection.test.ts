@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
@@ -21,27 +22,31 @@ import { applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } 
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import { afterTest } from '../helpers/test_cleanup';
 
-/** Real guest tables/type bucket. Browser validation separately executes actual cartlib constructors. */
+/** The stored projection, isolated from lifecycle execution for history tests. */
 function fixture(historical = false) {
 	const modules = [
 		{ path: 'cartlib/fsm/fsm_component', source: 'return {}' },
-		{ path: 'cartlib/registry', source: `local type<const> = require('cartlib/fsm/fsm_component')
-return { _entries_by_key = { [type] = { items = {} } } }` },
+		{ path: 'cartlib/world/world', source: 'return { _objects = {} }' },
+		{ path: 'cartlib/registry', source: readFileSync('cartlib/registry.lua', 'utf8') },
 	].map(module => ({ ...module, chunk: parseLuaChunk(module.source, `${module.path}.lua`) }));
-	const source = `local registry<const> = require('cartlib/registry')
+	const source = `local world<const> = require('cartlib/world/world')
+local registry<const> = require('cartlib/registry')
 local type<const> = require('cartlib/fsm/fsm_component')
 local state<const> = { id = 'root', localdef_id = 'test', current_id = 'a', states = {}, state_ids = {}, data = {
 answer = 42, nested = { value = 7, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, [1] = 'numeric', ['1'] = 'string', [true] = 'boolean' },
 definition = { def_id = 'root', on = {} } }
-local component<const> = { id = 1, owner = { id = 2 }, enabled = true, _started = true,
+local owner<const> = { id = 2 }
+local component<const> = { id = 1, owner = owner, enabled = true, _started = true,
 _machines = { state }, _machines_by_id = { test = state } }
-registry._entries_by_key[type].items[1] = component
+owner._components_by_class = { [type] = { component } }
+world._objects[1] = owner
+registry:register(component)
 function change() state.current_id = 'b' end
 function change_data() state.data.answer = 43; state.data.nested.value = 8; state.data.nested[2] = 11 end
 function trim_nested() state.data.nested[9] = nil; state.data.nested[10] = nil; state.data.nested.value = nil end
 function grow_definition() state.definition.initial = 'a' end
-function remove_component() registry._entries_by_key[type].items[1] = nil end
-function restore_component() registry._entries_by_key[type].items[1] = component end
+function remove_component() registry:deregister(component); world._objects[1] = nil end
+function restore_component() registry:register(component); world._objects[1] = owner end
 return component`;
 	const chunk = parseLuaChunk(source, 'entry.lua');
 	const compiled = compileLuaChunkToProgram(chunk, selectLuaProgramModules(chunk, modules, []), { entrySource: source, programDomain: 'system', optLevel: 0 });

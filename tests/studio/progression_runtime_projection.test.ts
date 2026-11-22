@@ -1,3 +1,4 @@
+import { WORLD_ACTOR_FIXTURE } from '../helpers/world_actor_fixture';
 import { TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
@@ -166,18 +167,22 @@ test(`input projection reads real component construction and empty-program activ
 		'cartlib/actioneffects/actioneffect_component'].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') }));
 	const f = fixture(t, optLevel, ENTRY + `
 local input_type<const> = require('cartlib/input/actioneffect/actioneffect_component')
-local registry<const> = require('cartlib/registry')
-local owner<const> = {id='player',player_index=0}
+${WORLD_ACTOR_FIXTURE}
+local owner
 local specification<const> = {bindings={},exact=16777217,fraction=0.25,flag=false}
 local component
 local create<const> = function()
- component=input_type.new(owner,{program=specification})
- component.id=0
- registry:register(component); registry:index(component,input_type)
+ owner=fixture_spawn('input.player', {id='player',player_index=0}, {
+  function(target)
+   component=input_type.new(target,{program=specification})
+   component.id=0
+   return component
+  end,
+ })
 end
 create()
 function activate_input() component:on_activate(); compiled_input_evaluate=component.program.evaluate end
-function replace_input() registry:deregister(component); create() end
+function replace_input() owner:mark_for_disposal(); create() end
 `, modules);
 	const choices = readProgramInstances(f.sources, f.guest, 0, 'input');
 	assert.equal(choices.length, 1); assert.equal(choices[0].label, '0'); assert.equal(choices[0].detail, 'Owner player');

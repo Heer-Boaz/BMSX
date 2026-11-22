@@ -5,24 +5,33 @@ import { readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 
-/** Cartlib's retained type index. No guest call, heap scan, or source-registration discovery. */
+/** Visit actual World membership at suspension; the guest maintains no inspection index. */
 export function visitRuntimeComponents(
 	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain,
 	modulePath: string, visit: (component: Value) => void,
 ): boolean {
+	const world = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/world/world');
 	const registry = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/registry');
 	const type = readRuntimeLuaModuleExport(sources, guest, domain, modulePath);
-	if (registry.kind === 'unavailable' || type.kind === 'unavailable' || isNil(registry.value) || isNil(type.value)) return false;
-	const index = valuePayload(guest.readStringMember(registry.value, '_entries_by_key'));
-	const bucket = guest.cpu.gc.tables.get(index, type.value);
-	if (!isNil(bucket)) {
-		const components = valuePayload(guest.readStringMember(bucket, 'items'));
-		for (let i = 1, length = guest.cpu.gc.tables.length(components); i <= length; i += 1) visit(guest.cpu.gc.tables.getInteger(components, i));
+	if (world.kind === 'unavailable' || registry.kind === 'unavailable' || type.kind === 'unavailable' || isNil(world.value) || isNil(type.value)) return false;
+	const tables = guest.cpu.gc.tables;
+	const admitted = valuePayload(guest.readStringMember(registry.value, '_entries_by_id'));
+	const objects = valuePayload(guest.readStringMember(world.value, '_objects'));
+	for (let i = 1, count = tables.length(objects); i <= count; i++) {
+		const object = tables.getInteger(objects, i);
+		const classes = valuePayload(guest.readStringMember(object, '_components_by_class'));
+		const bucket = tables.get(classes, type.value);
+		if (isNil(bucket)) continue;
+		const components = valuePayload(bucket);
+		for (let j = 1, length = tables.length(components); j <= length; j++) {
+			const component = tables.getInteger(components, j);
+			if (tables.get(admitted, guest.readStringMember(component, 'id')) === component) visit(component);
+		}
 	}
 	return true;
 }
 
-/** Reacquire a retained table identity through its owning cartlib type bucket. */
+/** Reacquire a retained table identity through its World membership. */
 export function findRuntimeComponent(
 	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, modulePath: string, hashId: number,
 ): Value | undefined {

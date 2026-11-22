@@ -11,6 +11,7 @@ import { createTestBlua32PairCpu, linkTestBlua32Pair } from './blua32';
 import { BASE_FIRMWARE_MODULES, COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
 import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from './cpu_test_harness';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from './cpu_execution';
+import { WORLD_CPU_MODULES } from './world_cpu';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
 
@@ -178,6 +179,7 @@ export function compileCartlibProgram(
 	const cartSources = new Map(defaultCartSources ??= new Map<string, string>(
 		CART_MODULE_FILES.map(([path, file]) => [path, readFileSync(file, 'utf8')]),
 	));
+	for (const module of WORLD_CPU_MODULES) cartSources.set(module.path, module.source);
 	for (const module of CART_STUB_MODULES) cartSources.set(module.path, module.source);
 	for (const module of modules) cartSources.set(module.path, module.source);
 

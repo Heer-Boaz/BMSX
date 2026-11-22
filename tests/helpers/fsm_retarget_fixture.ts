@@ -1,3 +1,5 @@
+import { WORLD_ACTOR_FIXTURE } from './world_actor_fixture';
+
 /** One authored declaration family, whether inline or spread across module owners. */
 const CALLBACK = `function(actor)
 	if actor.first then return '../active', 'ignored result' end
@@ -102,8 +104,7 @@ export const FSM_RETARGET_CART_SOURCE = `module<entry>
 local display<const> = require('cartlib/gx/display')
 local vblank<const> = require('cartlib/gx/vblank')
 local clock<const> = require('cartlib/clock')
-local registry<const> = require('cartlib/registry')
-local events<const> = require('cartlib/event_emitter')
+${WORLD_ACTOR_FIXTURE}
 local machines<const> = require('cartlib/fsm/library')
 local component<const> = require('cartlib/fsm/fsm_component')
 local icu<const> = require('cartlib/input/icu')
@@ -133,17 +134,16 @@ local function register_machines<init>()
 	fsm_drag_init_count = fsm_drag_init_count + 1
 end
 register_machines()
-fsm_drag_target = { id = 'drag-target', active = true, tags = {}, allowed = false, calls = 0, guards = 0, exits = 0, entries = 0 }
-function fsm_drag_target:_retain_tag(tag) self.tags[tag] = true end
-function fsm_drag_target:_release_tag(tag) self.tags[tag] = nil end
-fsm_drag_target.events = events.events_of(fsm_drag_target)
-fsm_drag_component = component.factory({'fixture.drag.one', 'fixture.drag.two'})(fsm_drag_target)
-fsm_drag_component.id = 'drag-target-fsm'
-fsm_drag_component:on_attach()
-registry:register(fsm_drag_component)
-registry:index(fsm_drag_component, component)
-fsm_drag_component:_bind()
-fsm_drag_component:start()
+local make_fsm<const> = component.factory({ 'fixture.drag.one', 'fixture.drag.two' })
+fsm_drag_target = fixture_spawn('fsm_drag_target', { id = 'drag-target', allowed = false, calls = 0, guards = 0, exits = 0, entries = 0 }, {
+	function(owner)
+		local instance<const> = make_fsm(owner)
+		instance.id = 'drag-target-fsm'
+		return instance
+	end,
+})
+fsm_drag_component = fsm_drag_target.state_machines
+fixture_world:start()
 fsm_drag_machine = fsm_drag_component:get_machine('fixture.drag.one')
 fsm_drag_second = fsm_drag_component:get_machine('fixture.drag.two')
 local control<const>: *word = icu.control_address

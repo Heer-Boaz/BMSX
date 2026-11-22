@@ -10,7 +10,9 @@ setmetatable(bt_component, { __index = base_component })
 local programs_by_id<const> = {}
 
 function bt_component.install_program(program)
+	local previous<const> = programs_by_id[program.id]
 	programs_by_id[program.id] = program
+	return previous ~= nil
 end
 
 function bt_component.new(owner, tree_id)

@@ -1,3 +1,5 @@
+import { WORLD_ACTOR_FIXTURE } from './world_actor_fixture';
+
 export const PRELOAD_TRACE_CHANNELS = ['bt.compile.begin', 'bt.compile.node', 'bt.compile.end', 'bt.bind.complete'];
 export const PRELOAD_SOURCE_MODULES = [
 	{ path: 'observation', source: `local recorder<const> = require('testlib/behaviour_tree/compile_recorder')
@@ -5,7 +7,7 @@ return recorder.new()
 ` },
 	{ path: 'game', source: `local library<const> = require('cartlib/behaviour_tree/library')
 local component<const> = require('cartlib/behaviour_tree/bt_component')
-local registry<const> = require('cartlib/registry')
+${WORLD_ACTOR_FIXTURE}
 local result<const> = require('cartlib/behaviour_tree/result')
 local game<const> = { registrations = 0, ticks = 0, packet = string.char(0, 255, 192, 128, 65) }
 local task<const> = { execute = function(target) target.executions = target.executions + 1; return result.success end }
@@ -16,10 +18,13 @@ local function configure<init>()
 	} } })
 end
 configure()
-game.actor = component.new({ executions = 0, id = 'fixture_actor' }, 'preload.tree')
-game.actor.id = 'fixture.tree'
-registry:register(game.actor)
-registry:index(game.actor, component)
+fixture_spawn('fixture_actor', { id = 'fixture_actor', executions = 0 }, {
+	function(target)
+		game.actor = component.new(target, 'preload.tree')
+		game.actor.id = 'fixture.tree'
+		return game.actor
+	end,
+})
 function game.update()
 	game.ticks = game.ticks + 1
 	blua32.trace(game, 'fixture.tick', game.ticks)

@@ -127,14 +127,13 @@ probe = {
   assert(world._pending_admission_count==0 and world._pending_disposal_count==0
    and world._pending_reparent_count==0 and world._pending_component_count==0
    and world._pending_component_attach_count==0 and world._pending_component_detach_count==0
-   and world._pending_object_count==0 and world._pending_tag_count==0)
+   and world._pending_object_count==0)
   assert(next(world._pending_admissions)==nil and next(world._pending_disposals)==nil
    and next(world._pending_reparent_targets)==nil and next(world._pending_reparent_parents)==nil
    and next(world._pending_reparent_modes)==nil and next(world._pending_reparent_callbacks)==nil
    and next(world._pending_reparent_contexts)==nil and next(world._pending_components)==nil
    and next(world._pending_component_attaches)==nil and next(world._pending_component_detaches)==nil
-   and next(world._pending_objects)==nil and next(world._pending_tag_objects)==nil
-   and next(world._pending_tag_names)==nil)
+   and next(world._pending_objects)==nil)
   for index=1,world._spatial_hierarchy._scratch_capacity do
    assert(world._spatial_hierarchy._scratch[index]==false)
   end
