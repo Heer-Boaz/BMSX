@@ -155,6 +155,9 @@ local no_op<const> = 'no_op'
 local ignored_relative_segments<const> = { [''] = true, ['.'] = true }
 local default_event_filter<const> = {}
 local unfiltered_event_filter<const> = {}
+-- Compiled definition lanes are read-only once published. A leaf need
+-- not own an empty child map, child order, or event-handler map.
+local empty_definition_lane<const> = {}
 local transition_no_op<const> = 0
 local transition_path<const> = 1
 local transition_callback<const> = 2
@@ -173,6 +176,10 @@ local make_def_id<const> = function(id, parent)
 end
 
 local compile_event_handlers<const> = function(actions)
+	if actions == nil then
+		return empty_definition_lane
+	end
+	local handlers<const> = {}
 	for name, action in pairs(actions) do
 		local emitter
 		local unfiltered
@@ -186,9 +193,9 @@ local compile_event_handlers<const> = function(actions)
 				unfiltered = true
 			end
 		end
-		actions[name] = { source = action, emitter = emitter, unfiltered = unfiltered }
+		handlers[name] = { source = action, emitter = emitter, unfiltered = unfiltered }
 	end
-	return actions
+	return handlers
 end
 
 local collect_event_list<const> = function(def, list, seen)
@@ -286,19 +293,13 @@ function state_definition.new(id, def, root, parent)
 		self.clock_source = def.clock_source or clock.gameplay
 	end
 	self.def_id = def.def_id or make_def_id(id, parent)
-	self.data = def.data or {}
-	self.states = {}
+	self.data = def.data
 	self.initial = def.initial
-	self.on = {}
-	if def.on then
-		for k, v in pairs(def.on) do
-			self.on[k] = v
-		end
-	end
+	self.on = compile_event_handlers(def.on)
 	self.update = def.update
 	self.entering_state = def.entering_state
 	self.exiting_state = def.exiting_state
-	local input_event_handlers<const> = def.input_event_handlers or {}
+	local input_event_handlers<const> = def.input_event_handlers
 	self.is_concurrent = def.is_concurrent or false
 	local input_eval<const> = def.input_eval
 	if input_eval ~= nil then
@@ -308,13 +309,8 @@ function state_definition.new(id, def, root, parent)
 	else
 		self.input_eval_first = false
 	end
-	self.on = compile_event_handlers(self.on)
 	self.input_event_handlers = input_event_handlers
-	self.input_handler_count = #input_event_handlers
-	self.input_patterns = nil
-	self.input_player_indices = nil
-	self.input_transition_kinds = nil
-	self.input_transitions = nil
+	self.input_handler_count = input_event_handlers and #input_event_handlers or 0
 	self.event_list = def.event_list
 	self.timelines = compile_timeline_definitions(def.timelines)
 	self.actioneffects = def.actioneffects
@@ -330,28 +326,29 @@ function state_definition.new(id, def, root, parent)
 		end
 		self.tag_lookup = tag_lookup
 	end
-	self.path_plans = nil
-	self.direct_child_plans = nil
-	self.tag_derivations = nil
 	if self.root == self then
 		self.tag_derivations = compile_tag_derivations(def.tag_derivations)
 	end
 
-	if def.states then
-		for state_id, state_def in pairs(def.states) do
+	local source_states<const> = def.states
+	local states = empty_definition_lane
+	local state_ids = empty_definition_lane
+	if source_states ~= nil then
+		states = {}
+		state_ids = {}
+		for state_id, state_def in pairs(source_states) do
 			local child<const> = state_definition.new(state_id, state_def, self.root, self)
-			self.states[state_id] = child
+			states[state_id] = child
 			if not self.initial and start_state_prefixes[string.sub(state_id, 1, 1)] then
 				self.initial = state_id
 			end
 		end
 	end
+	self.states = states
 
 	-- Compiled definitions own immutable traversal order, tag membership and the
 	-- dense concurrent lane that can execute frame work. Runtime trees bind these
 	-- retained plans instead of rediscovering topology every frame.
-	local states<const> = self.states
-	local state_ids<const> = {}
 	local state_count = 0
 	local concurrent_state_ids
 	local concurrent_state_count = 0
@@ -389,7 +386,7 @@ function state_definition.new(id, def, root, parent)
 	if not self.initial then
 		self.initial = state_ids[1]
 	end
-	self.has_local_frame_work = self.update ~= nil or #self.input_event_handlers ~= 0
+	self.has_local_frame_work = self.update ~= nil or self.input_handler_count ~= 0
 	self.has_subtree_frame_work = self.has_local_frame_work
 	if not self.has_subtree_frame_work then
 		for i = 1, self.state_count do

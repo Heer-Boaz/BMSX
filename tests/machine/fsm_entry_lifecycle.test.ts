@@ -85,3 +85,37 @@ assert(not transport:get('parent').playing and not transport:get('child').playin
 `);
 	runGuestToHalt(cpu, 10_000_000);
 });
+
+test('Empty definition lanes do not share live state and a rebind can add descendants', () => {
+	const { cpu } = createCartlibProgramHarness(`
+local fsm<const> = require('cartlib/fsm/fsm')
+local events = 0
+local handler<const> = function()
+	events = events + 1
+	return 'no_op'
+end
+local authored<const> = { ping = handler }
+local blueprint<const> = { initial = 'idle', states = { idle = {}, awake = { on = authored } } }
+local compiled<const> = fsm.state_definition.new('sparse', blueprint)
+local second_definition<const> = fsm.state_definition.new('sparse', blueprint)
+local left<const> = fsm.state.new(compiled, { id = 'left' })
+local right<const> = fsm.state.new(second_definition, { id = 'right' })
+left.states.idle.data.note = 12
+assert(right.states.idle.data.note == nil and not left:dispatch_event('ping', nil, nil, 'left'))
+local replacement<const> = fsm.state_definition.new('sparse', {
+	initial = 'idle',
+	states = { idle = { states = { child = { on = authored } } }, awake = { on = authored } },
+})
+fsm.assert_rebind_compatible(compiled, replacement)
+left:rebind_definition(replacement)
+assert(left.states.idle.data.note == 12 and left.states.idle.states.child ~= nil)
+assert(right.states.idle.states.child == nil and authored.ping == handler)
+fsm.transition_state_path(left, fsm.bind_state_path(replacement, '/awake'))
+fsm.transition_state_path(left, fsm.bind_state_path(replacement, '/idle'))
+left:dispatch_event('ping', nil, nil, 'left')
+assert(events == 1, 'added child did not own its compiled handler')
+left:reset()
+assert(left.states.idle.data.note == nil and right.states.idle.data.note == nil)
+`, { optLevel: 3 });
+	runGuestToHalt(cpu, 10_000_000);
+});
