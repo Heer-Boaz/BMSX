@@ -9,7 +9,7 @@
 namespace bmsx {
 namespace {
 
-constexpr u32 kSaveStateMagic = 0x36534d42u; // BMS6: Table Value payloads are guest addresses
+constexpr u32 kSaveStateMagic = 0x37534d42u; // BMS7: allocator object-page index in RAM
 constexpr size_t kSaveStateHeaderBytes = 8u;
 constexpr size_t kSaveStateBasePayloadCapacityBytes = 0x01000000u;
 

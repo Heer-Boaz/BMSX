@@ -184,7 +184,7 @@ void reclaimRunAcrossBitmapAndHistoryPages() {
 		"rewind restores the run and both neighboring allocations");
 
 	archive.restore(memory, allocated, freed);
-	require(memory.captureSaveState().ram == releasedRam, "forward history publishes every released descriptor, not just the head");
+	require(memory.captureSaveState().ram == releasedRam, "forward history publishes the released head and all returned pages");
 	require(heap.occupiedBytes() == 3u * HEAP_PAGE_SIZE && heap.allocate(bytes + HEAP_PAGE_SIZE, true) == 0u,
 		"reclamation preserves the neighbors in both partial bitmap words");
 	require(heap.allocate(bytes, false) == run, "the same entire run is available again");
@@ -264,6 +264,61 @@ void objectSweepResumesFromRam() {
 		&& !heap.objectSweepActive(), "the saved ordinal resumes against the new class stride");
 }
 
+void sparseObjectSweepTracksPageOwnership() {
+	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	HeapAllocator heap(memory);
+	const u32 high = heap.allocate(32, false), highLast = heap.allocate(32, false);
+	const u32 ownedSlots = heap.allocate(40, true);
+	const u32 owned = heap.allocate(128u * HEAP_PAGE_SIZE, true);
+	const u32 gap = heap.allocate(HEAP_PAGE_SIZE, true);
+	const u32 low = heap.allocate(3u * HEAP_PAGE_SIZE, false);
+	require(low + 3u * HEAP_PAGE_SIZE == gap && gap + HEAP_PAGE_SIZE == owned && heap.setFloor(low),
+		"the sparse extent contains a free gap and owned backing between two object pages");
+	for (const u32 address : {low, low + HEAP_PAGE_SIZE, low + 2u * HEAP_PAGE_SIZE, gap, owned, ownedSlots, high, highLast})
+		memory.writeRamRecordWord(address, 1);
+	heap.free(gap);
+
+	std::vector<u32> records;
+	const auto inspect = +[](void* context, u32 address) -> i32 {
+		static_cast<std::vector<u32>*>(context)->push_back(address);
+		return 1;
+	};
+	heap.beginObjectSweep();
+	require(heap.sweepObjects(1, &records, inspect) == 1 && records == std::vector<u32>{low}
+		&& heap.objectSweepActive(), "a multi-page object emits one visit and leaves the higher page for later");
+	const auto paused = memory.captureSaveState();
+
+	// The bitmap is part of the saved sweep directory, not a host cache.
+	const u32 lowPage = (low - RAM_BASE) / HEAP_PAGE_SIZE;
+	const u32 highPage = (high - RAM_BASE) / HEAP_PAGE_SIZE;
+	const u32 lowWord = heap.managementOffset() + 0x280u + (lowPage >> 5u) * 4u;
+	const u32 highWord = heap.managementOffset() + 0x280u + (highPage >> 5u) * 4u;
+	const u32 highBit = 1u << (highPage & 31u);
+	require(memory.readRamRecordWord(lowWord) == (1u << (lowPage & 31u)),
+		"only the run head participates in the sparse sweep directory");
+	const u32 firstTail = heap.managementOffset() + HEAP_PAGE_ENTRIES + (lowPage + 1u) * HEAP_PAGE_ENTRY_BYTES;
+	require(memory.readRamRecordWord(firstTail) == 0u && memory.readRamRecordWord(firstTail + HEAP_PAGE_ENTRY_BYTES) == 0u,
+		"the run has no descriptors in its tail pages");
+	for (const bool object : {false, true}) {
+		if (object) memory.restoreSaveState(paused);
+		heap.free(highLast);
+		require(memory.readRamRecordWord(highWord) == highBit, "releasing a single slot preserves the object page");
+		heap.free(high);
+		require(memory.readRamRecordWord(highWord) == 0u, "releasing the last slot removes the object page");
+		require(heap.allocate(HEAP_PAGE_SIZE, !object) == high, "the same page can become either run kind");
+		memory.writeRamRecordWord(high, 2);
+
+		records.clear();
+		heap.visitObjectRecords(&records, inspect);
+		require(records == (object ? std::vector<u32>{low, high} : std::vector<u32>{low}),
+			"cold inventory visits the current owners, including the new object head but not its alternatives");
+		records.clear();
+		require(heap.sweepObjects(1, &records, inspect) == static_cast<size_t>(object)
+			&& records == (object ? std::vector<u32>{high} : std::vector<u32>{}) && !heap.objectSweepActive(),
+			"resuming visits only the newly allocated object head, not free gaps or owned backing");
+	}
+}
+
 } // namespace
 
 int main() {
@@ -273,6 +328,7 @@ int main() {
 		execRefusesLivePagesBelowTheFloor();
 		reclaimRunAcrossBitmapAndHistoryPages();
 		objectSweepResumesFromRam();
+		sparseObjectSweepTracksPageOwnership();
 	} catch (const std::exception& error) {
 		std::cerr << error.what() << '\n';
 		return 1;

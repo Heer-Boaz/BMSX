@@ -23,9 +23,11 @@ constexpr u32 MAX_PAGES = (MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE) >> PAGE_SHIF
 constexpr u32 SWEEP_CURSOR = 0x008u;
 constexpr u32 PARTIAL_HEADS = 0x040u;
 constexpr u32 AVAILABLE_PAGES = 0x200u;
+constexpr u32 OBJECT_PAGES = 0x280u;
+static_assert(OBJECT_PAGES + ((MAX_PAGES + 31u) >> 5u) * 4u <= HEAP_STRING_METADATA_OFFSET);
 
 // Page entry: word 0 = kind | class << 8 | live << 16; word 1 = free-slot head
-// (guest address), run length or run head. Word 2 packs the bump in units
+// (guest address) or run length. Word 2 packs the bump in units
 // of 8 bytes, then the previous and next partial-page links, 10 bits each.
 constexpr u32 PREVIOUS_SHIFT = 10u;
 constexpr u32 NEXT_SHIFT = 20u;
@@ -149,44 +151,55 @@ size_t HeapAllocator::walkObjectPages(u32& position, size_t allowance, void* con
 	u32 slot = position & PAGE_MASK;
 	size_t work = 0;
 	while (page < m_pageLimit && work < allowance) {
+		const u32 objectPage = nextObjectPage(page);
+		if (objectPage != page) {
+			slot = 0;
+			page = objectPage;
+			if (page == m_pageLimit) break;
+		}
 		const u32 pageEntry = entry(page);
 		const u32 info = m_memory.readRamRecordWord(pageEntry);
 		const u32 base = RAM_BASE + (page << PAGE_SHIFT);
-		switch (info & 0xffu) {
-			case OwnedRun:
-				// Owned backing has no independently swept records.
-				page += m_memory.readRamRecordWord(pageEntry + 4u) - 1u;
-				break;
-			case ObjectRun:
-				page += std::min(m_memory.readRamRecordWord(pageEntry + 4u) - 1u, m_pageLimit - page - 1u);
-				work += m_memory.readRamRecordByte(base) != 0u ? std::abs(visit(context, base)) : 1;
-				break;
-			case ObjectSlots: {
-				const u32 classIndex = (info >> 8) & 0xffu;
-				// The class and bump are latched for this page visit.
-				if (classIndex >= CLASS_COUNT) break;
-				const u32 stride = HEAP_CLASS_BYTES[classIndex];
-				const u32 end = std::min((m_memory.readRamRecordWord(pageEntry + 8u) & HEAP_PAGE_LINK_MASK) << HEAP_BUMP_SHIFT, HEAP_PAGE_SIZE);
-				u32 live = info >> 16;
-				for (u32 offset = slot * stride; offset + stride <= end; offset += stride, ++slot) {
-					if (work >= allowance) {
-						position = (page << PAGE_SHIFT) | slot;
-						return work;
-					}
-					const u32 address = base + offset;
-					const i32 visited = m_memory.readRamRecordByte(address) != 0u ? visit(context, address) : 1;
-					work += std::abs(visited);
-					if (visited < 0 && --live == 0u) break; // The allocator released the page.
+		if ((info & 0xffu) == ObjectRun) {
+			work += m_memory.readRamRecordByte(base) != 0u ? std::abs(visit(context, base)) : 1;
+		} else {
+			const u32 stride = HEAP_CLASS_BYTES[(info >> 8u) & 0xffu];
+			const u32 end = (m_memory.readRamRecordWord(pageEntry + 8u) & HEAP_PAGE_LINK_MASK) << HEAP_BUMP_SHIFT;
+			u32 live = info >> 16;
+			for (u32 offset = slot * stride; offset + stride <= end; offset += stride, ++slot) {
+				if (work >= allowance) {
+					position = (page << PAGE_SHIFT) | slot;
+					return work;
 				}
-				break;
+				const u32 address = base + offset;
+				const i32 visited = m_memory.readRamRecordByte(address) != 0u ? visit(context, address) : 1;
+				work += std::abs(visited);
+				if (visited < 0 && --live == 0u) break; // The allocator released the page.
 			}
-			default: break;
 		}
 		++page;
 		slot = 0;
 	}
 	position = page << PAGE_SHIFT;
 	return work;
+}
+
+u32 HeapAllocator::nextObjectPage(u32 first) const {
+	const u32 wordCount = (m_pageLimit + 31u) >> 5u;
+	u32 mask = ~0u << (first & 31u);
+	for (u32 word = first >> 5u; word < wordCount; ++word) {
+		const u32 bits = m_memory.readRamRecordWord(m_management + OBJECT_PAGES + word * 4u) & mask;
+		if (bits != 0u) return (word << 5u) + static_cast<u32>(std::countr_zero(bits));
+		mask = ~0u;
+	}
+	return m_pageLimit;
+}
+
+void HeapAllocator::setObjectPage(u32 page, bool object) {
+	const u32 address = m_management + OBJECT_PAGES + (page >> 5u) * 4u;
+	const u32 bit = 1u << (page & 31u);
+	const u32 word = m_memory.readRamRecordWord(address);
+	m_memory.writeRamRecordWord(address, object ? word | bit : word & ~bit);
 }
 
 u32 HeapAllocator::allocate(u32 byteCount, bool owned) {
@@ -206,6 +219,7 @@ u32 HeapAllocator::allocate(u32 byteCount, bool owned) {
 		m_memory.writeRamRecordWord(fresh + 4u, 0u);
 		m_memory.writeRamRecordWord(fresh + 8u, 0u);
 		m_memory.writeRamRecordWord(head, page + 1u);
+		if (!owned) setObjectPage(page, true);
 	} else {
 		page = listed - 1u;
 		if (page >= m_pageLimit) return 0u;
@@ -248,7 +262,7 @@ void HeapAllocator::free(u32 address) {
 	if (kind == ObjectRun || kind == OwnedRun) {
 		const u32 pages = m_memory.readRamRecordWord(pageEntry + 4u);
 		if ((offset & PAGE_MASK) != 0u || pages == 0u || pages > m_pageLimit - page) return;
-		releasePages(page, page + pages);
+		releasePages(page, page + pages, kind == ObjectRun);
 		return;
 	}
 	const u32 classIndex = (word0 >> 8) & 0xffu;
@@ -266,7 +280,7 @@ void HeapAllocator::free(u32 address) {
 	m_memory.writeRamRecordWord(offset + 4u, freeHead);
 	if (live == 1u) {
 		if (!wasFull) unlinkPartial(head, word2);
-		releasePages(page, page + 1u);
+		releasePages(page, page + 1u, kind == ObjectSlots);
 		return;
 	}
 	m_memory.writeRamRecordWord(pageEntry, (word0 & 0xffffu) | ((live - 1u) << 16));
@@ -285,7 +299,7 @@ void HeapAllocator::trimOwnedRun(u32 address, u32 retainedBytes) {
 	const u32 length = entry(page) + sizeof(u32);
 	const u32 previous = m_memory.readRamRecordWord(length);
 	m_memory.writeRamRecordWord(length, retained);
-	releasePages(page + retained, page + previous);
+	setAvailable(page + retained, page + previous, true);
 }
 
 u32 HeapAllocator::allocateRun(u32 byteCount, bool owned) {
@@ -298,12 +312,7 @@ u32 HeapAllocator::allocateRun(u32 byteCount, bool owned) {
 	m_memory.writeRamRecordWord(head, owned ? OwnedRun : ObjectRun);
 	m_memory.writeRamRecordWord(head + 4u, pages);
 	m_memory.writeRamRecordWord(head + 8u, 0u);
-	for (u32 page = first + 1u; page < first + pages; ++page) {
-		const u32 tail = entry(page);
-		m_memory.writeRamRecordWord(tail, RunTail);
-		m_memory.writeRamRecordWord(tail + 4u, first);
-		m_memory.writeRamRecordWord(tail + 8u, 0u);
-	}
+	if (!owned) setObjectPage(first, true);
 	return RAM_BASE + (first << PAGE_SHIFT);
 }
 
@@ -354,11 +363,12 @@ void HeapAllocator::setPreviousPartial(u32 pageLink, u32 previous) {
 	m_memory.writeRamRecordWord(field, (m_memory.readRamRecordWord(field) & ~(HEAP_PAGE_LINK_MASK << PREVIOUS_SHIFT)) | (previous << PREVIOUS_SHIFT));
 }
 
-void HeapAllocator::releasePages(u32 first, u32 end) {
+void HeapAllocator::releasePages(u32 first, u32 end, bool object) {
+	if (object) setObjectPage(first, false);
 	const u32 offset = entry(first);
-	const u32 bytes = (end - first) * HEAP_PAGE_ENTRY_BYTES;
-	std::memset(m_memory.ramData() + offset, 0, bytes);
-	m_memory.invalidateRamWrite(offset, bytes);
+	m_memory.writeRamRecordWord(offset, 0u);
+	m_memory.writeRamRecordWord(offset + 4u, 0u);
+	m_memory.writeRamRecordWord(offset + 8u, 0u);
 	setAvailable(first, end, true);
 }
 

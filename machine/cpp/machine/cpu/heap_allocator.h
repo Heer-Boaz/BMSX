@@ -19,7 +19,7 @@ inline constexpr u32 HEAP_PAGE_ENTRIES = 0x1000u;
 inline constexpr u32 HEAP_PAGE_ENTRY_BYTES = 12u;
 inline constexpr u32 HEAP_BUMP_SHIFT = 3u;
 inline constexpr u32 HEAP_PAGE_LINK_MASK = 0x3ffu;
-enum HeapPageKind : u32 { Unused, ObjectSlots, OwnedSlots, ObjectRun, OwnedRun, RunTail };
+enum HeapPageKind : u32 { Unused, ObjectSlots, OwnedSlots, ObjectRun, OwnedRun };
 
 // Requests up to half a page share 4 KB pages of one size class: multiples of
 // 8 bytes through 64, then four classes per doubling. Larger requests take the
@@ -53,7 +53,8 @@ constexpr u32 heapClassIndex(u32 byteCount) {
 u32 heapAllocationBytes(u32 byteCount);
 
 // Owns the non-moving language-heap allocator whose entire state lives in the
-// private runtime management area. Page descriptors define allocation and visits.
+// private runtime management area. Bitmaps select free and sweepable pages;
+// descriptors belong to slab pages and run heads, not to run interiors.
 class HeapAllocator {
 public:
 	explicit HeapAllocator(Memory& memory);
@@ -90,12 +91,14 @@ public:
 
 private:
 	size_t walkObjectPages(u32& position, size_t allowance, void* context, SweepVisitor visit) const;
+	u32 nextObjectPage(u32 first) const;
+	void setObjectPage(u32 page, bool object);
 	u32 allocateRun(u32 byteCount, bool owned);
 	i32 takeTopPage();
 	i32 takeTopRun(u32 pages);
 	void unlinkPartial(u32 head, u32 links);
 	void setPreviousPartial(u32 pageLink, u32 previous);
-	void releasePages(u32 first, u32 end);
+	void releasePages(u32 first, u32 end, bool object);
 	void setAvailable(u32 first, u32 end, bool available);
 	bool isAvailable(u32 page) const;
 	u32 floorPage() const;

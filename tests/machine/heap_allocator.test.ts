@@ -104,7 +104,7 @@ test('reclaiming a large run preserves neighboring pages and rewinds the entire 
 	assert.equal(heap.allocate(HEAP_PAGE_SIZE, true), 0, 'rewind restores the run and both neighboring allocations');
 
 	archive.restore(memory, allocated, freed);
-	assert.deepEqual(memory.ramData(), releasedRam, 'forward history publishes every released descriptor, not just the head');
+	assert.deepEqual(memory.ramData(), releasedRam, 'forward history publishes the released head and all returned pages');
 	assert.equal(heap.occupiedBytes(), 3 * HEAP_PAGE_SIZE);
 	assert.equal(heap.allocate(bytes + HEAP_PAGE_SIZE, true), 0, 'reclamation preserves the neighbors in both partial bitmap words');
 	assert.equal(heap.allocate(bytes, false), run, 'the same entire run is available again');
@@ -184,34 +184,64 @@ test('object sweep resumes from RAM, visits vacant issued slots and skips owned 
 	assert.ok(!heap.objectSweepActive());
 });
 
-test('object sweep skips owned backing at a constant descriptor cost', t => {
+test('sparse object sweep tracks page ownership across reclamation and restore', t => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const heap = new HeapAllocator(memory);
-	const scan = (ownedPages: number) => {
-		heap.reset(FLOOR);
-		const high = heap.allocate(32, false);
-		const owned = heap.allocate(ownedPages * HEAP_PAGE_SIZE, true);
-		const low = heap.allocate(HEAP_PAGE_SIZE, false);
-		assert.equal(low + HEAP_PAGE_SIZE, owned);
-		assert.equal(owned + ownedPages * HEAP_PAGE_SIZE, high);
-		assert.ok(heap.setFloor(low));
-		for (const address of [low, owned, high]) memory.writeRamRecordWord(address, 1);
+	const high = heap.allocate(32, false), highLast = heap.allocate(32, false);
+	const ownedSlots = heap.allocate(40, true);
+	const owned = heap.allocate(128 * HEAP_PAGE_SIZE, true);
+	const gap = heap.allocate(HEAP_PAGE_SIZE, true);
+	const low = heap.allocate(3 * HEAP_PAGE_SIZE, false);
+	assert.equal(low + 3 * HEAP_PAGE_SIZE, gap);
+	assert.equal(gap + HEAP_PAGE_SIZE, owned);
+	assert.ok(heap.setFloor(low));
+	for (const address of [low, low + HEAP_PAGE_SIZE, low + 2 * HEAP_PAGE_SIZE, gap, owned, ownedSlots, high, highLast])
+		memory.writeRamRecordWord(address, 1);
+	heap.free(gap);
 
-		const records: number[] = [];
-		const inspect = (addresses: number[], address: number) => { addresses.push(address); return 1; };
-		heap.beginObjectSweep();
-		assert.equal(heap.sweepObjects(1, records, inspect), 1);
-		assert.deepEqual(records, [low]);
+	const records: number[] = [];
+	const inspect = (addresses: number[], address: number) => { addresses.push(address); return 1; };
+	heap.beginObjectSweep();
+	assert.equal(heap.sweepObjects(1, records, inspect), 1);
+	assert.deepEqual(records, [low], 'a multi-page object emits one visit');
+	assert.ok(heap.objectSweepActive());
+	const paused = memory.captureSaveState();
 
+	// The bitmap is part of the saved sweep directory, not a host cache.
+	const lowPage = (low - RAM_BASE) / HEAP_PAGE_SIZE;
+	const highPage = (high - RAM_BASE) / HEAP_PAGE_SIZE;
+	const lowWord = heap.managementOffset() + 0x280 + (lowPage >>> 5) * 4;
+	const highWord = heap.managementOffset() + 0x280 + (highPage >>> 5) * 4;
+	const highBit = (1 << (highPage & 31)) >>> 0;
+	const pageEntries = heap.managementOffset() + 0x1000;
+	const firstTail = pageEntries + (lowPage + 1) * 12;
+	assert.equal(memory.readRamRecordWord(lowWord), (1 << (lowPage & 31)) >>> 0, 'the run only indexes its head');
+	assert.equal(memory.readRamRecordWord(firstTail), 0, 'the run has no descriptors in its tail pages');
+	assert.equal(memory.readRamRecordWord(firstTail + 12), 0);
+	for (const object of [false, true]) {
+		if (object) memory.restoreSaveState(paused);
+		heap.free(highLast);
+		assert.equal(memory.readRamRecordWord(highWord), highBit, 'releasing a single slot preserves the object page');
+		heap.free(high);
+		assert.equal(memory.readRamRecordWord(highWord), 0, 'releasing the last slot removes the object page');
+		assert.equal(heap.allocate(HEAP_PAGE_SIZE, !object), high, 'the same page can become either run kind');
+		memory.writeRamRecordWord(high, 2);
+
+		records.length = 0;
+		heap.visitObjectRecords(records, inspect);
+		assert.deepEqual(records, object ? [low, high] : [low]);
+		records.length = 0;
 		const reads = t.mock.method(memory, 'readRamRecordWord');
 		const work = heap.sweepObjects(1, records, inspect);
 		reads.mock.restore();
-		assert.equal(work, 1);
-		assert.deepEqual(records, [low, high]);
+		assert.equal(work, object ? 1 : 0);
+		assert.deepEqual(records, object ? [high] : []);
 		assert.ok(!heap.objectSweepActive());
-		return reads.mock.callCount();
-	};
-	assert.equal(scan(128), scan(2), 'a large owned extent reads no more page descriptors than a small one');
+		const descriptorReads = reads.mock.calls.map(call => call.arguments[0]).filter(address => address >= pageEntries);
+		const highDescriptor = pageEntries + highPage * 12;
+		assert.ok(descriptorReads.every(address => object && address >= highDescriptor && address < highDescriptor + 12),
+			'resuming never reads page descriptors for gaps, run tails or owner backing');
+	}
 });
 
 test('releasing a middle partial page preserves allocation order, including after RAM restore', () => {
