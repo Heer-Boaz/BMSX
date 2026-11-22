@@ -21,6 +21,16 @@ return {
 				t:wait_ticks(5)
 				t:capture('room-' .. tostring(rooms[index]))
 			end
+			local castle<const> = registry:get('c')
+			local from<const> = castle.current_room_number
+			local wet<const> = castle:load_room(8)
+			castle:commit_room_switch({ from_room_number = from, to_room_number = 8, direction = 'right' }, wet.world_number, 5, 12)
+			wet.player:set_global_position(16, 96)
+			local surface<const> = wet.last_water_surface_frame
+			world:set_gameplay_clock_running(true)
+			t:wait_until('wet room animation after resuming gameplay', function()
+				return wet.last_water_surface_frame ~= surface
+			end, 12)
 		end,
 	},
 }

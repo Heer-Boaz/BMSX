@@ -422,38 +422,18 @@ local draw_room_tape<const> = function(layer, draw)
 		room_tile_size, terrain.modes, terrain.uvs, layer.wox, layer.woy)
 end
 
-function room_object:ctor()
-	self.wall_instances = {}
-	self.draaideur_instances = {}
-	self.lithograph_instances = {}
-	self.shrine_instances = {}
-	self.world_entrance_instances = {}
-	self.room_tile_count = 0
-	self.water_tile_count = 0
-	self.water_rows = 0
-	self.water_surface_tile_indices = {}
-	self.water_surface_tile_count = 0
-	self.last_water_surface_frame = 1
-	self.room_tile_layer = visual_2d_component.new(self, room_layer_profile, 'room')
-	self.room_tile_layer:set_draw_function(draw_room_tape)
-	self:add_component(self.room_tile_layer)
-	self.water_tile_layer = tile_layer_component.new(self, water_layer_profile, 'water')
-	self:add_component(self.water_tile_layer)
-	self.tiles_visible = false
-	apply_room_template(self, self.template)
-	self:rebuild_room_tiles()
-end
-
 function room_object:hide_room_tiles()
 	self.tiles_visible = false
 	self.room_tile_layer.visible = false
-	self.water_tile_layer.visible = false
+	local water_layer<const> = self.water_tile_layer
+	if water_layer ~= nil then water_layer.visible = false end
 end
 
 function room_object:show_room_tiles()
 	self.tiles_visible = true
 	self.room_tile_layer.visible = self.room_tile_count ~= 0
-	self.water_tile_layer.visible = self.water_tile_count ~= 0
+	local water_layer<const> = self.water_tile_layer
+	if water_layer ~= nil then water_layer.visible = water_layer.tile_count ~= 0 end
 end
 
 function room_object:rebuild_room_tiles()
@@ -467,13 +447,8 @@ function room_object:rebuild_room_tiles()
 	self.room_tile_layer.tape_rows = terrain.tape + row_directory
 	self.room_tile_count = tile_count
 
-	if self.water == nil then
-		self.water_tile_count = 0
-		self.water_rows = 0
-		self.water_surface_tile_count = 0
-		self.last_water_surface_frame = 1
-		self.water_tile_layer:resize(0, self.tile_columns)
-		self.water_tile_layer.visible = false
+	local water_tile_layer<const> = self.water_tile_layer
+	if water_tile_layer == nil then
 		print('pietious.room.tiles.end', os.clock(), self.room_number, tile_count, 0)
 		return
 	end
@@ -481,7 +456,6 @@ function room_object:rebuild_room_tiles()
 	local water_surface_imgid<const> = water_surface_frame_imgids[1]
 	local water_rows<const> = self.tile_rows - self.water.surface_row + 1
 	local water_tile_count<const> = self.tile_columns * water_rows
-	local water_tile_layer<const> = self.water_tile_layer
 	local water_surface_tile_indices<const> = self.water_surface_tile_indices
 	local water_surface_tile_count = 0
 	water_tile_layer:resize(water_tile_count, self.tile_columns)
@@ -505,8 +479,6 @@ function room_object:rebuild_room_tiles()
 	for i = water_surface_tile_count + 1, prev_water_surface_tile_count do
 		water_surface_tile_indices[i] = nil
 	end
-	self.water_tile_count = water_tile_count
-	self.water_rows = water_rows
 	self.water_surface_tile_count = water_surface_tile_count
 	self.last_water_surface_frame = 1
 	water_tile_layer:set_attachment_origin(self.tile_origin_x, self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size))
@@ -516,8 +488,8 @@ function room_object:rebuild_room_tiles()
 	print('pietious.room.tiles.end', os.clock(), self.room_number, tile_count, water_tile_count)
 end
 
-function room_object:sync_water_surface_frame(water_surface_frame)
-	if self.water == nil or self.last_water_surface_frame == water_surface_frame then
+local sync_water_surface_frame<const> = function(self, water_surface_frame)
+	if self.last_water_surface_frame == water_surface_frame then
 		return
 	end
 	local water_surface_imgid<const> = water_surface_frame_imgids[water_surface_frame]
@@ -525,6 +497,43 @@ function room_object:sync_water_surface_frame(water_surface_frame)
 	local water_surface_tile_indices<const> = self.water_surface_tile_indices
 	water_tile_layer:replace_indexed_tiles(water_surface_tile_indices, self.water_surface_tile_count, water_surface_imgid)
 	self.last_water_surface_frame = water_surface_frame
+end
+
+local water_surface_animation<const> = {
+	phase = 'presentation',
+	-- MoG `TBD06..TBD57`: surface char `0xB6` rotates on a 64-tick cycle.
+	frames = timeline.build_frame_sequence(water_surface_timeline_frame_defs),
+	playback_mode = 'loop',
+	apply = sync_water_surface_frame,
+}
+
+function room_object:ctor()
+	self.wall_instances = {}
+	self.draaideur_instances = {}
+	self.lithograph_instances = {}
+	self.shrine_instances = {}
+	self.world_entrance_instances = {}
+	self.room_tile_layer = visual_2d_component.new(self, room_layer_profile, 'room')
+	self.room_tile_layer:set_draw_function(draw_room_tape)
+	self:add_component(self.room_tile_layer)
+	self.tiles_visible = false
+	apply_room_template(self, self.template)
+	if self.water ~= nil then
+		self.water_surface_tile_indices = {}
+		self.water_surface_tile_count = 0
+		self.water_tile_layer = tile_layer_component.new(self, water_layer_profile, 'water')
+		self:add_component(self.water_tile_layer)
+		local water_timelines<const> = timeline_component.new(self)
+		self:add_component(water_timelines)
+		water_timelines:register(water_surface_timeline_id, water_surface_animation)
+	end
+	self:rebuild_room_tiles()
+end
+
+function room_object:on_activate()
+	if self.water ~= nil then
+		self.timelines:play(water_surface_timeline_id)
+	end
 end
 
 local define_room_fsm<const> = function()
@@ -539,26 +548,6 @@ local define_room_fsm<const> = function()
 			},
 		},
 		states = {
-			water_state = {
-				is_concurrent = true,
-				initial = 'active',
-				states = {
-					active = {
-						timelines = {
-							[water_surface_timeline_id] = {
-								def = {
-									phase = 'presentation',
-									-- MoG `TBD06..TBD57`: surface char `0xB6` rotates on a 64-tick cycle.
-									frames = timeline.build_frame_sequence(water_surface_timeline_frame_defs),
-									playback_mode = 'loop',
-									apply = room_object.sync_water_surface_frame,
-								},
-								autoplay = true,
-							},
-						},
-					},
-				},
-			},
 			tile_visibility = {
 				-- A room is presentable as soon as it is constructed, including
 				-- while paused. Modal flow events explicitly hide/reveal it.
@@ -582,7 +571,6 @@ local register_room_definition<const> = function()
 		def_id = 'room',
 		class = room_object,
 		components = {
-			timeline_component.new,
 			fsm_component.factory({ 'room' }),
 		},
 		defaults = {

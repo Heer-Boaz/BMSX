@@ -47,6 +47,8 @@ return {
 			local _director<const>, castle<const>, player<const> = fixture.start_game(t)
 			local room<const> = castle:load_room(13)
 			castle:commit_room_switch({ from_room_number = 1, to_room_number = 13, direction = 'right' }, 0, 0, 0)
+			assert(room.tiles_visible and room.water_tile_layer == nil and room.timelines == nil,
+				'a dry room must present its terrain without scheduling a water effect')
 			local tx<const>, ty<const> = 27, 11
 			local x<const>, y<const> = room:tile_to_world(tx, ty)
 			local rock<const> = room.scene.members.rock_013_01
@@ -90,6 +92,8 @@ return {
 			assert(wet:water_kind_at_world(floor_x, floor_y) == water_none
 				and wet:player_water_kind_at_world(floor_x, floor_y) == water_body,
 				'the player water plane changed at the submerged support tile')
+			assert(wet.water_tile_layer.visible and wet.water_surface_tile_count > 0,
+				'wet room activation did not publish its water layer')
 		end,
 		room_reload = function(t)
 			t:wait_until('intro director', function() return registry:get('d') ~= nil end, 120)
