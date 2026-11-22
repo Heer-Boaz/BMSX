@@ -54,19 +54,24 @@ local frontworld_blue_tiletypes<const> = {
 	frontworld_blue_r = true,
 }
 
-local supported_enemy_kinds<const> = {
-	mijterfoe = true,
-	crossfoe = true,
-	zakfoe = true,
-	boekfoe = true,
-	muziekfoe = true,
-	stafffoe = true,
-	cloud = true,
-	marspeinenaardappel = true,
-	vlokspawner = true,
-	breakablewall = true,
-	disappearingwall = true,
-	daemon = true,
+local immediate_admission<const> = 1
+local black_wait_admission<const> = 2
+local enemy_admission_by_kind<const> = {
+	-- The bat's construction and activation are local; behaviour and contact
+	-- only run once the room joins the active space. Other actors have not
+	-- opted into this contract.
+	mijterfoe = black_wait_admission,
+	crossfoe = immediate_admission,
+	zakfoe = immediate_admission,
+	boekfoe = immediate_admission,
+	muziekfoe = immediate_admission,
+	stafffoe = immediate_admission,
+	cloud = immediate_admission,
+	marspeinenaardappel = immediate_admission,
+	vlokspawner = immediate_admission,
+	breakablewall = immediate_admission,
+	disappearingwall = immediate_admission,
+	daemon = immediate_admission,
 }
 
 local wall_enemy_kinds<const> = {
@@ -235,15 +240,23 @@ local build_enemies<const> = function(room_number, room_subtype, object_defs)
 	local condition_dependencies<const> = {}
 	local wall_enemies<const> = {}
 	local enemy_index = 0
+	local first_black_wait_enemy = 1
 
 	for i = 1, #object_defs do
 		local object_def<const> = object_defs[i]
 		local kind<const> = object_def.type
-		if supported_enemy_kinds[kind] then
+		local admission<const> = enemy_admission_by_kind[kind]
+		if admission ~= nil then
 			enemy_index = enemy_index + 1
 			local enemy_id<const> = string.format('enemy_%03d_%02d', room_number, enemy_index)
 			local raw_conditions<const> = object_def.condition or empty_conditions
 			local retain_defeat_in_region<const> = object_def.retain_defeat_in_region
+			-- Keep a suffix, not a second roster: creation order and equal-z
+			-- draw order must not change across different admission phases.
+			-- Progression-controlled actors must already exist for reconciliation.
+			if admission == immediate_admission or #raw_conditions ~= 0 or retain_defeat_in_region then
+				first_black_wait_enemy = enemy_index + 1
+			end
 			-- Region defeat is owned by the spawner and the castle's damage rule,
 			-- which key it by member id; the authored conditions stay as written.
 			local conditions<const> = raw_conditions
@@ -321,7 +334,7 @@ local build_enemies<const> = function(room_number, room_subtype, object_defs)
 		end
 	end
 
-	return enemies, condition_dependencies, wall_enemies
+	return enemies, condition_dependencies, wall_enemies, first_black_wait_enemy
 end
 
 local build_rocks<const> = function(room_number, object_defs)
@@ -506,7 +519,7 @@ local load_room_templates<const> = function()
 		local map_rows<const> = room_def.map
 		local object_defs<const> = room_def.objects or empty_object_defs
 		local rocks<const>, inventory_rocks<const> = build_rocks(room_number, object_defs)
-		local enemies<const>, condition_dependencies<const>, wall_enemies<const> = build_enemies(
+		local enemies<const>, condition_dependencies<const>, wall_enemies<const>, first_black_wait_enemy<const> = build_enemies(
 			room_number,
 			room_def.subtype,
 			object_defs
@@ -530,6 +543,7 @@ local load_room_templates<const> = function()
 			room_links = room_links,
 			edge_gates = build_edge_gates(map_rows, room_links),
 			enemies = enemies,
+			first_black_wait_enemy = first_black_wait_enemy,
 			condition_dependencies = condition_dependencies,
 			wall_enemies = wall_enemies,
 			rocks = rocks,

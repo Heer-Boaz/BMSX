@@ -48,6 +48,7 @@ local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
+local room_spawner<const> = require('room/spawner')
 require('constants')
 
 local halo_teleport_timeline_id<const> = 'director.halo.transition'
@@ -317,6 +318,14 @@ local define_director_fsm<const> = function()
 	local apply_curtain_frame<const> = function(self, frame_value)
 		self.effects.curtain.visual.width = (frame_value + 1) * self.curtain_step_width
 	end
+	local apply_room_wait_frame<const> = function(self, frame_value)
+		-- Snap and the first prephysics sample can both run in the
+		-- update which requested the switch. Only spend subsequent
+		-- black updates on deferred construction.
+		if frame_value >= 2 then
+			room_spawner.populate_black_wait(self.castle.room, flow_room_switch_wait_frames - frame_value)
+		end
+	end
 	local on_daemon_finished<const> = function(self)
 		self.events:emit('daemon_appearance_done')
 		return '/room'
@@ -383,6 +392,7 @@ local define_director_fsm<const> = function()
 					frames = timeline.range(flow_room_switch_wait_frames),
 					playback_mode = 'once',
 					clock_source = timeline_clock_source.frame,
+					apply = apply_room_wait_frame,
 				},
 				autoplay = false,
 			},

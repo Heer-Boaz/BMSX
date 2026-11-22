@@ -215,6 +215,10 @@ local vertical_exit_directions<const> = {
 	up = true,
 	down = true,
 }
+local horizontal_exit_directions<const> = {
+	left = true,
+	right = true,
+}
 local stairs_landing_events<const> = {
 	stairs_end_top = true,
 	stairs_end_bottom = true,
@@ -1275,7 +1279,7 @@ function player:switch_room(direction, keep_stairs_lock)
 		self:set_global_position(self.stairs_x, pose_y)
 	end
 
-	local switch<const> = self.castle:switch_room(direction, pose_y, pose_y + self.height)
+	local switch<const> = self.castle:switch_room(direction, horizontal_exit_directions[direction])
 	if switch.outside then
 		local director<const> = self.director
 		director.events:emit('world_leave_transition_start')

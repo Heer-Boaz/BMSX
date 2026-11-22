@@ -584,7 +584,7 @@ function castle:emit_room_enter()
 	self.events:emit('room.enter', payload)
 end
 
-function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter_now)
+function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter_now, use_black_wait)
 	local room<const> = self.room
 	local previous_world_number<const> = self.level.map.rooms[switch.from_room_number].world_number
 	self.current_room_number = switch.to_room_number
@@ -599,7 +599,7 @@ function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter
 		})
 	end
 	self:refresh_current_room_customizations()
-	room_spawner.populate(room)
+	room_spawner.populate(room, use_black_wait)
 	if emit_room_enter_now == nil or emit_room_enter_now then
 		self:emit_room_enter()
 	else
@@ -682,7 +682,7 @@ function castle:begin_open_world_entrance(target)
 	return true
 end
 
-function castle:switch_room(direction, player_top, player_bottom)
+function castle:switch_room(direction, use_black_wait)
 	local room<const> = self.room
 	local switch<const> = room:switch_room(direction)
 
@@ -703,7 +703,7 @@ function castle:switch_room(direction, player_top, player_bottom)
 		map_y = map_y + 1
 	end
 	local next_room<const> = self:load_room(switch.to_room_number)
-	self:commit_room_switch(switch, next_room.world_number, map_x, map_y)
+	self:commit_room_switch(switch, next_room.world_number, map_x, map_y, true, use_black_wait)
 	return switch
 end
 

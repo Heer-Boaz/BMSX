@@ -101,7 +101,7 @@ return {
 			assert(registry:get('d'):reload_room() == 'Return to room gameplay before reloading its scene.',
 			'intro reload replaced a room owned by another flow')
 			local _director<const>, castle<const> = fixture.start_game(t)
-			castle:switch_room('right', 0, 0)
+			castle:switch_room('right')
 			t:at_boundary(world:request_mutation_boundary(), 30)
 			local previous<const> = castle.room
 			local old_scene<const> = previous.scene

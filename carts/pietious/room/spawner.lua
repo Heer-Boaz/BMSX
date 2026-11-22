@@ -61,10 +61,9 @@ local spawn_items<const> = function(room)
 	end
 end
 
-local spawn_enemies<const> = function(room)
+local spawn_enemies<const> = function(room, enemy_count)
 	local castle<const> = room.castle
 	local walls<const> = room.wall_instances
-	local enemy_count<const> = #room.enemies
 	print('pietious.room.enemies.begin', os.clock(), room.room_number, enemy_count)
 	local spawned = 0
 	local wall_count = 0
@@ -180,7 +179,7 @@ local spawn_rock_drops<const> = function(room)
 	end
 end
 
-function room_spawner.populate(room)
+function room_spawner.populate(room, use_black_wait)
 	print('pietious.room.populate.begin', os.clock(), room.room_number)
 	spawn_rocks(room)
 	spawn_destroyed_rock_inventory_items(room)
@@ -190,8 +189,35 @@ function room_spawner.populate(room)
 	spawn_static_members(room, room.draaideuren, room.draaideur_instances)
 	spawn_world_entrances(room)
 	spawn_items(room)
-	spawn_enemies(room)
+	local enemy_count = #room.enemies
+	if use_black_wait then
+		local first<const> = room.template.first_black_wait_enemy
+		if first <= enemy_count then
+			room.black_wait_enemy_index = first
+			enemy_count = first - 1
+		end
+	end
+	spawn_enemies(room, enemy_count)
 	print('pietious.room.populate.end', os.clock(), room.room_number)
+end
+
+-- The map admits only unconditional, non-blocking actors to this suffix.
+-- Each batch passes through the regular World mutation boundary. The room
+-- owns the cursor, so disposal/rewind do not leave an outstanding host job.
+function room_spawner.populate_black_wait(room, windows)
+	local first<const> = room.black_wait_enemy_index
+	if first == nil then return end
+	local enemies<const> = room.enemies
+	local count<const> = #enemies
+	local next_index<const> = first + (count - first + windows) // windows
+	if next_index <= count then
+		room.black_wait_enemy_index = next_index
+	else
+		room.black_wait_enemy_index = nil
+	end
+	for index = first, next_index - 1 do
+		spawn_member(room, enemies[index])
+	end
 end
 
 return room_spawner

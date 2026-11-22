@@ -29,7 +29,7 @@ return {
 				assert(count == 122, 'all 122 placements must be authored scene members')
 				test.room = room
 				test.player = room.player
-				castle:switch_room('right', 0, 0)
+				castle:switch_room('right')
 				room = castle.room
 			end
 			t:at_boundary(world:request_mutation_boundary(), 30)
@@ -56,14 +56,14 @@ return {
 				room.player:collect_item(drop.item_type, drop.item_id)
 				drop:on_collected()
 				assert(progression.get(castle, 'item_picked_drop.rock_002_02'), 'pickup must remain castle progression')
-				castle:switch_room('right', 0, 0)
+				castle:switch_room('right')
 				room = castle.room
 			end
 			t:at_boundary(world:request_mutation_boundary(), 30)
 			do
 				assert(registry:get(test.enemy.id) == nil and test.enemy.marked_for_disposal,
 				'room departure must dispose its scene actors')
-				castle:switch_room('left', 0, 0)
+				castle:switch_room('left')
 				room = castle.room
 			end
 			t:at_boundary(world:request_mutation_boundary(), 30)
