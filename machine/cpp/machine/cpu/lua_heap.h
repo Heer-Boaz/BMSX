@@ -11,24 +11,23 @@ namespace bmsx {
 
 class CPU;
 struct Thread;
-enum class LuaAllocationAssist { None, Step, Full };
+enum class LuaAllocationRecovery { CurrentOrFresh, Fresh, Exhausted };
 
 class LuaHeap {
 public:
 	explicit LuaHeap(CPU& cpu);
 
-	// A stack-growth admission excludes that same allocation from GC shrinking;
-	// its admitted reservation is based on the requested logical bytes.
-	bool admit(
+	// Admit the logical bytes without publishing the reservation.
+	LuaAllocationRecovery admit(
 		size_t byteCount,
 		Value root0 = valueNil(),
 		Value root1 = valueNil(),
 		Value root2 = valueNil(),
 		u32 growingThread = 0u
 	);
-	// An owner whose logical request depends on retained weak values must
-	// quote it again after this phase, before checking the final admission.
-	LuaAllocationAssist prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread = 0u);
+	// Run an ordinary assist; a false result means the logical request
+	// needs recovery before it can be admitted.
+	bool prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread = 0u);
 	// Admit a positive logical increase without running the collector. The
 	// owner commits the increase with its storage mutation.
 	bool canAdmitWithoutAssist(size_t byteCount) const noexcept;
@@ -54,6 +53,7 @@ public:
 	size_t capacity() const;
 
 private:
+	enum class LuaAllocationAssist { None, Step, Limit };
 	LuaAllocationAssist allocationAssist(size_t nextBytes) const noexcept;
 	void accountAllocation(u32 bytes);
 	void creditStep();

@@ -1,7 +1,6 @@
 import { closureRecordBytes } from './closure';
 import { UPVALUE_HEAP_BYTES, initialize as initializeCell } from './upvalue';
 import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from './heap_allocator';
-import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
 import { valueClosure, valueNil, type Value } from './value';
 import { FRAME_CONTROL_BYTES } from './call_state';
@@ -13,7 +12,7 @@ const COLLECTION_RESERVE_SHIFT = 3;
 const GC_ASSIST_MIN_WORDS = 512;
 export const GC_STEP_WORDS = 4096;
 export const GC_ASSIST_BYTES = 256;
-export const enum LuaAllocationAssist { None, Step, Full }
+export const enum LuaAllocationRecovery { CurrentOrFresh, Fresh, Exhausted }
 
 export class LuaHeap {
 	private readonly targetAddress: number;
@@ -35,18 +34,14 @@ export class LuaHeap {
 	}
 
 	public prepareAllocation(byteCount: number, root0: Value, root1: Value,
-		root2: Value, growingThread = 0): LuaAllocationAssist {
+		root2: Value, growingThread = 0): boolean {
 		const capacity = this.capacity();
 		const nextBytes = this.usedBytes() + byteCount;
-		const exhausted = nextBytes > capacity;
-		if (exhausted) {
-			this.collectRuntime(root0, root1, root2, growingThread);
-			return LuaAllocationAssist.Full;
-		}
+		if (nextBytes > capacity) return false;
 		const target = this.collectionTarget();
-		if (nextBytes <= target) return LuaAllocationAssist.None;
+		if (nextBytes <= target) return true;
 		const gc = this.cpu.gc;
-		if (gc.finalMarkPending()) return LuaAllocationAssist.None;
+		if (gc.finalMarkPending()) return true;
 		const reserve = capacity - (capacity >>> COLLECTION_RESERVE_SHIFT);
 		const pressure = nextBytes > reserve;
 		const debt = nextBytes - target;
@@ -58,22 +53,26 @@ export class LuaHeap {
 			// unpaid debt and count the pending request in the new frontier.
 			this.setCollectionTarget(Math.min(reserve, Math.max(0, this.usedBytes() + byteCount + 2 * work - debt)));
 		}
-		return LuaAllocationAssist.Step;
+		return true;
 	}
 
 	public admit(byteCount: number, root0: Value = valueNil(), root1: Value = valueNil(),
-		root2: Value = valueNil(), growingThread = 0): boolean {
-		const assist = this.prepareAllocation(byteCount, root0, root1, root2, growingThread);
-		if (assist !== LuaAllocationAssist.None && this.usedBytes() + byteCount > this.capacity()) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		return assist === LuaAllocationAssist.Full;
+		root2: Value = valueNil(), growingThread = 0): LuaAllocationRecovery {
+		let recovery = LuaAllocationRecovery.CurrentOrFresh;
+		if (!this.prepareAllocation(byteCount, root0, root1, root2, growingThread)) {
+			do {
+				recovery = this.cpu.gc.recoverAllocation(recovery, root0, root1, root2, growingThread);
+			} while (this.usedBytes() + byteCount > this.capacity());
+		}
+		return recovery;
 	}
 
 	public allocateRecord(bytes: number, owned: boolean, backingBytes: number, backingField: number,
 		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(), backingCharge = backingBytes): number {
 		const charged = bytes + backingCharge;
-		const collected = this.admit(charged, root0, root1, root2, 0);
+		let recovery = this.admit(charged, root0, root1, root2, 0);
 		const arena = this.cpu.heapAllocator;
-		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
+		for (;;) {
 			const address = arena.allocate(bytes, owned);
 			if (address !== 0) {
 				const backing = backingBytes === 0 ? 0 : arena.allocate(backingBytes, true);
@@ -84,20 +83,18 @@ export class LuaHeap {
 				}
 				arena.free(address);
 			}
-			if (attempt === 0) this.collectRuntime(root0, root1, root2);
+			recovery = this.cpu.gc.recoverAllocation(recovery, root0, root1, root2);
 		}
-		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}
 
 	/** Admit the owner's logical increase, then reserve backing without committing occupancy. */
 	public reserveBacking(bytes: number, logicalBytes: number, root0 = valueNil(), root1 = valueNil(), root2 = valueNil(), growingThread = 0): number {
-		const collected = logicalBytes !== 0 && this.admit(logicalBytes, root0, root1, root2, growingThread);
-		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
+		let recovery = logicalBytes !== 0 ? this.admit(logicalBytes, root0, root1, root2, growingThread) : LuaAllocationRecovery.CurrentOrFresh;
+		for (;;) {
 			const block = this.cpu.heapAllocator.allocate(bytes, true);
 			if (block !== 0) return block;
-			if (attempt === 0) this.collectRuntime(root0, root1, root2, growingThread);
+			recovery = this.cpu.gc.recoverAllocation(recovery, root0, root1, root2, growingThread);
 		}
-		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}
 
 	public allocateThreadRecord(entry: number): number {
@@ -105,9 +102,9 @@ export class LuaHeap {
 		const frameBytes = THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
 		const charged = THREAD_HEAP_BYTES + valueBytes + frameBytes;
 		const root = entry === 0 ? valueNil() : valueClosure(entry);
-		const collected = this.admit(charged, root);
+		let recovery = this.admit(charged, root);
 		const arena = this.cpu.heapAllocator;
-		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
+		for (;;) {
 			const address = arena.allocate(THREAD_HEAP_BYTES, false);
 			if (address !== 0) {
 				const values = arena.allocate(valueBytes, true);
@@ -122,9 +119,8 @@ export class LuaHeap {
 				}
 				arena.free(address);
 			}
-			if (attempt === 0) this.collectRuntime(root);
+			recovery = this.cpu.gc.recoverAllocation(recovery, root);
 		}
-		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}
 
 	/** A call can need both storage lanes. Acquire them before changing either raw descriptor. */
@@ -136,9 +132,11 @@ export class LuaHeap {
 		const previousFrames = frameCapacity !== 0
 			? (memory.readRamRecordWord(address + ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK) * FRAME_CONTROL_BYTES : 0;
 		const requested = valueBytes + frameBytes, previous = previousValues + previousFrames;
-		const collected = requested > previous && this.admit(requested - previous, root, valueNil(), valueNil(), address);
+		let recovery = requested > previous
+			? this.admit(requested - previous, root, valueNil(), valueNil(), address)
+			: LuaAllocationRecovery.CurrentOrFresh;
 		const arena = this.cpu.heapAllocator;
-		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
+		for (;;) {
 			const values = valueBytes === 0 ? 0 : arena.allocate(valueBytes, true);
 			if (valueBytes === 0 || values !== 0) {
 				const frames = frameBytes === 0 ? 0 : arena.allocate(frameBytes, true);
@@ -150,18 +148,17 @@ export class LuaHeap {
 				}
 				if (values !== 0) arena.free(values);
 			}
-			if (attempt === 0) this.collectRuntime(root, valueNil(), valueNil(), address);
+			recovery = this.cpu.gc.recoverAllocation(recovery, root, valueNil(), valueNil(), address);
 		}
-		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}
 
 	/** Admit the closure and its new cells before publishing any frame link. */
 	public allocateClosureRecord(captures: number, latched = false, cells: Uint32Array = NO_NEW_CELLS, newCount = 0): number {
 		const bytes = closureRecordBytes(captures, latched);
 		const charged = bytes + newCount * UPVALUE_HEAP_BYTES;
-		const collected = this.admit(charged, valueNil(), valueNil(), valueNil(), 0);
+		let recovery = this.admit(charged, valueNil(), valueNil(), valueNil(), 0);
 		const arena = this.cpu.heapAllocator;
-		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
+		for (;;) {
 			const closure = arena.allocate(bytes, false);
 			if (closure !== 0) {
 				let count = 0;
@@ -180,9 +177,8 @@ export class LuaHeap {
 				while (count !== 0) arena.free(cells[--count]);
 				arena.free(closure);
 			}
-			if (attempt === 0) this.collectRuntime();
+			recovery = this.cpu.gc.recoverAllocation(recovery);
 		}
-		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}
 
 	public collectRuntime(

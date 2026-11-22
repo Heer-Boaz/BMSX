@@ -3,7 +3,6 @@
 #include <algorithm>
 
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/errors.h"
 #include "machine/cpu/upvalue.h"
 
 namespace bmsx {
@@ -37,8 +36,8 @@ size_t LuaHeap::usedBytes() const {
 	return m_cpu.memory().readRamRecordWord(m_occupiedAddress);
 }
 
-LuaAllocationAssist LuaHeap::allocationAssist(size_t nextBytes) const noexcept {
-	if (nextBytes > capacity()) return LuaAllocationAssist::Full;
+LuaHeap::LuaAllocationAssist LuaHeap::allocationAssist(size_t nextBytes) const noexcept {
+	if (nextBytes > capacity()) return LuaAllocationAssist::Limit;
 	if (nextBytes > collectionTarget() && !m_cpu.gcHeap().finalMarkPending()) return LuaAllocationAssist::Step;
 	return LuaAllocationAssist::None;
 }
@@ -52,15 +51,14 @@ bool LuaHeap::canAdmitWithoutAssist(size_t byteCount) const noexcept {
 #endif
 }
 
-LuaAllocationAssist LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {
+bool LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {
 #if defined(BMSX_GC_STRESS)
 	stressHeapAllocation(*this);
 #endif
 	const size_t nextBytes = usedBytes() + byteCount;
 	const auto assist = allocationAssist(nextBytes);
-	if (assist == LuaAllocationAssist::Full) {
-		collectRuntime(root0, root1, root2, growingThread);
-	} else if (assist == LuaAllocationAssist::Step) {
+	if (assist == LuaAllocationAssist::Limit) return false;
+	if (assist == LuaAllocationAssist::Step) {
 		const size_t limit = capacity();
 		const size_t reserveEdge = limit - (limit >> COLLECTION_RESERVE_SHIFT);
 		if (nextBytes > reserveEdge) {
@@ -78,21 +76,25 @@ LuaAllocationAssist LuaHeap::prepareAllocation(size_t byteCount, Value root0, Va
 			}
 		}
 	}
-	return assist;
+	return true;
 }
 
-bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {
-	const auto assist = prepareAllocation(byteCount, root0, root1, root2, growingThread);
-	if (assist != LuaAllocationAssist::None && usedBytes() + byteCount > capacity()) throw LuaOutOfMemorySignal{};
-	return assist == LuaAllocationAssist::Full;
+LuaAllocationRecovery LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {
+	auto recovery = LuaAllocationRecovery::CurrentOrFresh;
+	if (!prepareAllocation(byteCount, root0, root1, root2, growingThread)) {
+		do {
+			recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2, growingThread);
+		} while (usedBytes() + byteCount > capacity());
+	}
+	return recovery;
 }
 
 u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField,
 	Value root0, Value root1, Value root2, std::optional<u32> backingCharge) {
 	const u32 charged = bytes + backingCharge.value_or(backingBytes);
-	const bool collected = admit(charged, root0, root1, root2, 0u);
+	auto recovery = admit(charged, root0, root1, root2, 0u);
 	auto& arena = m_cpu.heapAllocator();
-	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
+	for (;;) {
 		const u32 address = arena.allocate(bytes, owned);
 		if (address) {
 			const u32 backing = backingBytes ? arena.allocate(backingBytes, true) : 0u;
@@ -103,18 +105,16 @@ u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backing
 			}
 			arena.free(address);
 		}
-		if (attempt == 0) collectRuntime(root0, root1, root2);
+		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2);
 	}
-	throw LuaOutOfMemorySignal{};
 }
 
 u32 LuaHeap::reserveBacking(u32 bytes, u32 logicalBytes, Value root0, Value root1, Value root2, u32 growingThread) {
-	const bool collected = logicalBytes != 0u && admit(logicalBytes, root0, root1, root2, growingThread);
-	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
+	auto recovery = logicalBytes != 0u ? admit(logicalBytes, root0, root1, root2, growingThread) : LuaAllocationRecovery::CurrentOrFresh;
+	for (;;) {
 		if (const u32 block = m_cpu.heapAllocator().allocate(bytes, true)) return block;
-		if (attempt == 0) collectRuntime(root0, root1, root2, growingThread);
+		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2, growingThread);
 	}
-	throw LuaOutOfMemorySignal{};
 }
 
 u32 LuaHeap::allocateThreadRecord(u32 entry) {
@@ -122,9 +122,9 @@ u32 LuaHeap::allocateThreadRecord(u32 entry) {
 	constexpr u32 frameBytes = THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
 	const u32 charged = THREAD_HEAP_BYTES + valueBytes + frameBytes;
 	const Value root = entry != 0u ? valueClosure(entry) : valueNil();
-	const bool collected = admit(charged, root);
+	auto recovery = admit(charged, root);
 	auto& arena = m_cpu.heapAllocator();
-	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
+	for (;;) {
 		if (const u32 address = arena.allocate(THREAD_HEAP_BYTES, false)) {
 			if (const u32 values = arena.allocate(valueBytes, true)) {
 				if (const u32 frames = arena.allocate(frameBytes, true)) {
@@ -136,9 +136,8 @@ u32 LuaHeap::allocateThreadRecord(u32 entry) {
 			}
 			arena.free(address);
 		}
-		if (attempt == 0) collectRuntime(root);
+		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root);
 	}
-	throw LuaOutOfMemorySignal{};
 }
 
 void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 frameCapacity, Value root) {
@@ -148,9 +147,11 @@ void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 fram
 	const u32 previousValues = valueCapacity != 0u ? ThreadRecord::read(memory, address, ThreadField::StackCapacity) * THREAD_STACK_SLOT_BYTES : 0u;
 	const u32 previousFrames = frameCapacity != 0u ? ThreadRecord::count(memory, address, ThreadField::FrameCapacity) * FRAME_CONTROL_BYTES : 0u;
 	const u32 requested = valueBytes + frameBytes, previous = previousValues + previousFrames;
-	const bool collected = requested > previous && admit(requested - previous, root, valueNil(), valueNil(), address);
+	auto recovery = requested > previous
+		? admit(requested - previous, root, valueNil(), valueNil(), address)
+		: LuaAllocationRecovery::CurrentOrFresh;
 	auto& arena = m_cpu.heapAllocator();
-	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
+	for (;;) {
 		const u32 values = valueBytes != 0u ? arena.allocate(valueBytes, true) : 0u;
 		if (valueBytes == 0u || values != 0u) {
 			const u32 frames = frameBytes != 0u ? arena.allocate(frameBytes, true) : 0u;
@@ -161,17 +162,16 @@ void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 fram
 			}
 			if (values != 0u) arena.free(values);
 		}
-		if (attempt == 0) collectRuntime(root, valueNil(), valueNil(), address);
+		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root, valueNil(), valueNil(), address);
 	}
-	throw LuaOutOfMemorySignal{};
 }
 
 u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> cells) {
 	const u32 bytes = closureRecordBytes(captures, latched);
 	const u32 charged = bytes + static_cast<u32>(cells.size()) * UPVALUE_HEAP_BYTES;
-	const bool collected = admit(charged, valueNil(), valueNil(), valueNil(), 0u);
+	auto recovery = admit(charged, valueNil(), valueNil(), valueNil(), 0u);
 	auto& arena = m_cpu.heapAllocator();
-	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
+	for (;;) {
 		if (const u32 closure = arena.allocate(bytes, false)) {
 			size_t count = 0;
 			for (; count < cells.size(); ++count) {
@@ -189,9 +189,8 @@ u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> ce
 			while (count != 0) arena.free(cells[--count]);
 			arena.free(closure);
 		}
-		if (attempt == 0) collectRuntime();
+		recovery = m_cpu.gcHeap().recoverAllocation(recovery);
 	}
-	throw LuaOutOfMemorySignal{};
 }
 
 void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, u32 growingThread) {

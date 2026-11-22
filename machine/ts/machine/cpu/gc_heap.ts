@@ -11,7 +11,8 @@ import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadF
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
 import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from './value';
 import type { ValueSlots } from './value_slots';
-import { GC_STEP_WORDS, type LuaHeap } from './lua_heap';
+import { GC_STEP_WORDS, LuaAllocationRecovery, type LuaHeap } from './lua_heap';
+import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import { ceilDiv4 } from '../common/numeric';
 import type { GcDiagnostics } from './gc_diagnostics';
 
@@ -778,6 +779,18 @@ export class GcHeap {
 		}
 		return work;
 	}
+	/** The owner retries its actual request after each recovered epoch. */
+	public recoverAllocation(next: LuaAllocationRecovery, t0 = valueNil(), t1 = valueNil(),
+		t2 = valueNil(), growingThread = 0): LuaAllocationRecovery {
+		if (next === LuaAllocationRecovery.Exhausted) throw LUA_OUT_OF_MEMORY_SIGNAL;
+		const first = next === LuaAllocationRecovery.CurrentOrFresh;
+		const continueCurrent = first && this.active();
+		if (first && this.diagnostics !== null) ++this.diagnostics.fullCollections;
+		// Recovery finishes just this epoch, without allocating to shrink live stacks.
+		do { this.step(t0, t1, t2, growingThread); } while (this.active());
+		return continueCurrent ? LuaAllocationRecovery.Fresh : LuaAllocationRecovery.Exhausted;
+	}
+
 	public collect(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0): number {
 		if (this.diagnostics !== null) ++this.diagnostics.fullCollections;
 		let work = 0;

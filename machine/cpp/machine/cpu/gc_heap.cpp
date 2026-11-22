@@ -1,5 +1,6 @@
 #include "machine/cpu/gc_heap.h"
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/errors.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/common/numeric.h"
 #include "spec/blua32/image_format.h"
@@ -863,6 +864,19 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 	}
 	return work;
 }
+
+LuaAllocationRecovery GcHeap::recoverAllocation(LuaAllocationRecovery next, Value root0, Value root1, Value root2, u32 growingThread) {
+	if (next == LuaAllocationRecovery::Exhausted) throw LuaOutOfMemorySignal{};
+	const bool first = next == LuaAllocationRecovery::CurrentOrFresh;
+	const bool continueCurrent = first && active();
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	if (first) ++m_cpu.m_diagnosticGcProfile.fullCollections;
+#endif
+	// Recovery finishes just this epoch, without allocating to shrink live stacks.
+	do { step(root0, root1, root2, growingThread); } while (active());
+	return continueCurrent ? LuaAllocationRecovery::Fresh : LuaAllocationRecovery::Exhausted;
+}
+
 size_t GcHeap::collect(Value root0, Value root1, Value root2, u32 growingThread) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	++m_cpu.m_diagnosticGcProfile.fullCollections;

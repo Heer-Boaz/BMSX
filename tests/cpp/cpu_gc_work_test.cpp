@@ -105,6 +105,56 @@ void tableReplacementAdmitsOnlyItsLogicalIncrease() {
 	}
 }
 
+void tableBackingRecoveryRetriesEachEpoch() {
+	enum class Pressure { Reclaimable, Floating, Unavailable, Explicit };
+	for (const auto pressure : {Pressure::Reclaimable, Pressure::Floating, Pressure::Unavailable, Pressure::Explicit}) {
+		Machine machine(image()); auto& cpu = machine.cpu;
+		auto& gc = cpu.gcHeap(); auto& arena = cpu.heapAllocator();
+		auto table = cpu.createTable(512, 0);
+		auto& frame = *cpu.rootThread()->currentFrame;
+		frame.registers.set(0, valueTable(table.address())); frame.setTop(1);
+		for (int key = 1; key <= 512; ++key) table.setInteger(key, valueInteger(key));
+		const u32 garbage = pressure != Pressure::Unavailable ? cpu.createTable(1024, 0).address() : 0u;
+		u32 lastPage = 0u;
+		while (const u32 page = arena.allocate(HEAP_PAGE_SIZE, true)) lastPage = page;
+		arena.free(lastPage);
+		require(arena.allocate(5 * 1024, true) == 0u && cpu.luaHeap().usedBytes() + 2560u < cpu.luaHeap().capacity(),
+			"the replacement is admitted logically but needs a contiguous two-page run before it can replace one page");
+
+		const u8 white = gc.white();
+		const Value initialRoot = pressure == Pressure::Floating || pressure == Pressure::Explicit ? valueTable(garbage) : valueNil();
+		gc.step(initialRoot, valueNil(), valueNil(), 0u, false, 1u);
+		require(gc.phase() == GcPhase::Mark, "recovery begins with an incomplete automatic mark");
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+		const auto synchronousCollections = cpu.diagnosticGcProfile().fullCollections;
+#endif
+		cpu.instructionBudgetRemaining = 41;
+		if (pressure == Pressure::Explicit) {
+			cpu.collectHeap();
+			require(gc.white() == white && gc.tableRecordAddress(garbage) == 0u,
+				"deliberate full collection still runs a fresh epoch to reclaim floating garbage");
+		} else if (pressure == Pressure::Unavailable) {
+			bool failed = false;
+			try { table.setInteger(513, valueInteger(73)); }
+			catch (const LuaOutOfMemorySignal&) { failed = true; }
+			require(failed && gc.white() == white && table.arrayCapacity() == 512u && isNil(table.getInteger(513)),
+				"an impossible reserve gets one fresh retry and faults before publishing the insertion");
+		} else {
+			table.setInteger(513, valueInteger(73));
+			require(gc.white() == (pressure == Pressure::Reclaimable ? white ^ 1u : white),
+				"only a request that still misses after the old epoch starts a fresh one");
+			require(table.arrayCapacity() == 1024u && table.getInteger(512) == valueInteger(512)
+				&& table.getInteger(513) == valueInteger(73), "the actual replacement keeps the old and new entries");
+		}
+		require(!gc.active() && cpu.instructionBudgetRemaining == 41 && frame.registers.get(0) == valueTable(table.address()),
+			"the recovery retains the live original and doesn't debit the guest instruction grant");
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+		require(cpu.diagnosticGcProfile().fullCollections == synchronousCollections + 1u,
+			"count synchronous recovery once regardless of the number of epochs it needed");
+#endif
+	}
+}
+
 void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	require(cpu.luaHeap().usedBytes() == bootBytes, "boot pool is the literal canonical allocation sum, not host object sizes");
@@ -1408,6 +1458,7 @@ int main(int argc, char** argv) {
 		canonicalPoolAndRootRanges();
 		collectorWorkIgnoresInactiveThreadFrames();
 		allocationAdmissionUsesLogicalBytes(); tableReplacementAdmitsOnlyItsLogicalIncrease();
+		tableBackingRecoveryRetriesEachEpoch();
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); collectionPrimitiveCyclesIgnoreHeapShape();

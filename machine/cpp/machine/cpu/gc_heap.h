@@ -79,6 +79,9 @@ public:
 	// Only the stopped mutator may advance the final pass.
 	size_t stepFinalMark();
 	size_t finishFinalMark(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
+	// The owner retries its actual request after each recovered epoch.
+	LuaAllocationRecovery recoverAllocation(LuaAllocationRecovery next,
+		Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	void markString(StringId id) { m_stringPool.markReachable(id); }
 	bool markValue(Value value);

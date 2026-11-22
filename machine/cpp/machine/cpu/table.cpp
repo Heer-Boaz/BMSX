@@ -288,25 +288,20 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u32 reserve, u3
 		return commitHashPlan(plan, key, value, reserve, members, existing);
 	} else {
 		const Value owner = valueTable(m_address);
-		const auto assist = requested > previous ? budget.prepareAllocation(requested - previous, owner, key, value) : LuaAllocationAssist::None;
-		bool replan = assist == LuaAllocationAssist::Full;
-		for (int attempt = assist == LuaAllocationAssist::Full ? 1 : 0; attempt != 2; ++attempt) {
-			if (replan) {
-				members = hashMembers();
-				plan = planRehash(key, reserve, members, watermark);
-				previous = allocationCharge(arrayCapacity(), std::max(reserve, members));
-				requested = allocationCharge(plan.array, std::max(reserve, plan.members));
-			}
-			if (requested <= previous || budget.usedBytes() + requested - previous <= budget.capacity()) {
+		bool admitted = requested <= previous || budget.prepareAllocation(requested - previous, owner, key, value);
+		auto recovery = LuaAllocationRecovery::CurrentOrFresh;
+		for (;;) {
+			if (admitted) {
 				const int slot = commitHashPlan(plan, key, value, reserve, members, existing);
 				if (slot != HASH_STORE_DECLINED) return slot;
 			}
-			if (attempt == 0) {
-				budget.collectRuntime(owner, key, value);
-				replan = true;
-			}
+			recovery = m_heap->recoverAllocation(recovery, owner, key, value);
+			members = hashMembers();
+			plan = planRehash(key, reserve, members, watermark);
+			previous = allocationCharge(arrayCapacity(), std::max(reserve, members));
+			requested = allocationCharge(plan.array, std::max(reserve, plan.members));
+			admitted = requested <= previous || budget.usedBytes() + requested - previous <= budget.capacity();
 		}
-		throw LuaOutOfMemorySignal{};
 	}
 }
 

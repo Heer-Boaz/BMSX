@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { CpuExecutionBackend, COMPILED_BLOCK_THRESHOLD } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
+import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_COLLECTION_TARGET_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_INITIAL_FRAMES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
@@ -162,6 +163,53 @@ test('table replacement admits just its logical increase, even when both layouts
 		assert.equal(cpu.heapAllocator.occupiedBytes(), physical - heapAllocationBytes(oldStorage) + heapAllocationBytes(newStorage));
 		assert.equal(tables.getInteger(table, residentKey), valueInteger(100 + residentKey));
 		assert.equal(tables.getInteger(table, trigger), valueInteger(73));
+	}
+});
+
+test('table growth retries its actual physical reserve before starting a fresh GC epoch', () => {
+	for (const pressure of ['reclaimable', 'floating', 'unavailable', 'explicit'] as const) {
+		const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+		const { gc, heapAllocator: arena } = cpu, { tables } = gc;
+		const table = cpu.createTable(512, 0);
+		const frame = cpu.rootThread.currentFrame!;
+		frame.registers.setTable(0, table); frame.top = 1;
+		for (let key = 1; key <= 512; ++key) tables.setInteger(table, key, valueInteger(key));
+		const garbage = pressure !== 'unavailable' ? cpu.createTable(1024, 0) : 0;
+		let lastPage: number;
+		for (let page = arena.allocate(HEAP_PAGE_SIZE, true); page !== 0; page = arena.allocate(HEAP_PAGE_SIZE, true)) {
+			lastPage = page;
+		}
+		arena.free(lastPage!);
+		assert.equal(arena.allocate(5 * 1024, true), 0, 'the replacement cannot reserve a two-page run while the old layout is live');
+		assert.ok(cpu.luaHeap.usedBytes() + 2560 < cpu.luaHeap.capacity(), 'the replacement fits the logical budget');
+
+		const white = gc.white();
+		const initialRoot = pressure === 'floating' || pressure === 'explicit' ? valueTable(garbage) : valueNil();
+		const diagnostics = gc.diagnostics = new GcDiagnostics(() => 0);
+		gc.step(initialRoot, valueNil(), valueNil(), 0, false, 1);
+		assert.equal(gc.phase(), GcPhase.Mark);
+		cpu.instructionBudgetRemaining = 41;
+		if (pressure === 'explicit') {
+			gc.collect();
+			assert.equal(gc.white(), white, 'deliberate full collection runs the fresh epoch');
+			assert.equal(gc.tableRecordAddress(garbage), 0, 'a fresh epoch reclaims floating garbage');
+		} else if (pressure === 'unavailable') {
+			assert.throws(() => tables.setInteger(table, 513, valueInteger(73)), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
+			assert.equal(gc.white(), white, 'an impossible reserve retries once after a fresh epoch');
+			assert.equal(tables.arrayCapacity(table), 512);
+			assert.equal(tables.getInteger(table, 513), valueNil(), 'no insertion publishes on failure');
+		} else {
+			tables.setInteger(table, 513, valueInteger(73));
+			assert.equal(gc.white(), pressure === 'reclaimable' ? white ^ 1 : white,
+				'only a request that still misses after the old epoch starts a fresh one');
+			assert.equal(tables.arrayCapacity(table), 1024);
+			assert.equal(tables.getInteger(table, 512), valueInteger(512));
+			assert.equal(tables.getInteger(table, 513), valueInteger(73));
+		}
+		assert.equal(gc.active(), false);
+		assert.equal(cpu.instructionBudgetRemaining, 41);
+		assert.equal(frame.registers.get(0), valueTable(table));
+		assert.equal(diagnostics.fullCollections, 1, 'one synchronous request regardless of the number of epochs');
 	}
 });
 

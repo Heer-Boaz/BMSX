@@ -1322,17 +1322,17 @@ and weak Tables over successive steps before tracing the detached changed-object
 queue. Later writes wait for the final remark. Repeated writes to an already
 queued object do not add another queue entry.
 
-Incremental collection does not relocate a surviving Thread's storage.
-A synchronous full collection can halve a surviving Thread's reserved Value
-storage. This happens when `V > 16` and three times the required extent is less
-than `V`. The required extent includes the Thread's current stack top and every
-active frame's complete reserved register window, not only its live values.
+Incremental collection and allocation recovery do not relocate a surviving
+Thread's storage. A requested full collection can halve a surviving Thread's
+reserved Value storage. This happens when `V > 16` and three times the required
+extent is less than `V`. The required extent includes the Thread's current
+stack top and every active frame's complete reserved register window, not only
+its live values.
 The frame-control and protected-continuation reservations likewise halve when
 their reserve exceeds four and three times the active count is less than the
 reserve. The three reservations are considered independently. When a
-reservation shrinks, the released space leaves the occupied budget. A Thread
-whose own stack-growth request caused the step is not shrunk during that
-request. Existing frame and captured-variable references retain their meaning.
+reservation shrinks, the released space leaves the occupied budget. Existing
+frame and captured-variable references retain their meaning.
 
 The initial collection threshold is **1 MiB of occupied budget**. A request for
 `R` bytes starts or assists collection when `B + R` exceeds the current
@@ -1359,11 +1359,13 @@ pass need not advance.
 The BIOS [collection service](bios-base.md#sec-bios-base-collectgarbage)
 can advance it explicitly and report occupied budget and total capacity.
 
-If a request would exceed capacity, the CPU instead completes any active cycle
-and performs one fresh full cycle before retrying admission. Explicit collection
-does the same; the fresh cycle removes garbage retained only by an earlier scan
-of the interrupted cycle. If the request still does not fit, it raises the
-out-of-memory error without admitting its bytes.
+If a request exceeds the logical budget or cannot reserve the storage it
+needs, the CPU completes any active cycle and retries the request. If no cycle
+was active, or the retry still does not fit, the CPU runs one fresh cycle and
+tries the request again. A fresh cycle can remove garbage retained only by an
+earlier scan of the interrupted cycle. A request that still cannot fit raises
+the out-of-memory error without admitting its bytes. Explicit full collection
+always performs the fresh cycle.
 
 An allocation assist, explicit collection or emergency collection can delay
 execution, but none adds guest cycles. An allocation that fails retains the

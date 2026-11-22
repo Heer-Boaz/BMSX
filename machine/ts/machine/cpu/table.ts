@@ -3,8 +3,8 @@ import { heapAllocationBytes } from './heap_allocator';
 import { GC_RECORD_LINK } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
-import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError } from './errors';
-import { LuaAllocationAssist } from './lua_heap';
+import { LuaExecutionError } from './errors';
+import { LuaAllocationRecovery } from './lua_heap';
 import type { GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
 import {
@@ -654,16 +654,10 @@ export class TableRecords {
 		this.planRehash(record, key, reserve, members, watermark);
 		let previous = TableRecords.allocationCharge(this.arrayCapacity(record), Math.max(reserve, members));
 		let requested = TableRecords.allocationCharge(plan.array, Math.max(reserve, plan.members));
-		const assist = requested > previous ? budget.prepareAllocation(requested - previous, owner, key, value) : LuaAllocationAssist.None;
-		let replan = assist === LuaAllocationAssist.Full;
-		for (let attempt = assist === LuaAllocationAssist.Full ? 1 : 0; attempt !== 2; ++attempt) {
-			if (replan) {
-				members = this.hashMembers(record);
-				this.planRehash(record, key, reserve, members, watermark);
-				previous = TableRecords.allocationCharge(this.arrayCapacity(record), Math.max(reserve, members));
-				requested = TableRecords.allocationCharge(plan.array, Math.max(reserve, plan.members));
-			}
-			if (requested <= previous || budget.usedBytes() + requested - previous <= budget.capacity()) {
+		let admitted = requested <= previous || budget.prepareAllocation(requested - previous, owner, key, value);
+		let recovery = LuaAllocationRecovery.CurrentOrFresh;
+		for (;;) {
+			if (admitted) {
 				const array = this.arrayCapacity(record), hash = this.hashSize(record);
 				if (plan.array === array && hash !== 0) {
 					const words = this.storageAddress(record), tags = words + (array + 3 * hash) * 4;
@@ -680,12 +674,13 @@ export class TableRecords {
 				const storage = this.heap.arena.allocate(TableRecords.storageBytes(plan.array, plan.hash, reserve), true);
 				if (storage !== 0) return this.resize(record, storage, key, value, reserve, previous, requested);
 			}
-			if (attempt === 0) {
-				budget.collectRuntime(owner, key, value);
-				replan = true;
-			}
+			recovery = this.heap.recoverAllocation(recovery, owner, key, value);
+			members = this.hashMembers(record);
+			this.planRehash(record, key, reserve, members, watermark);
+			previous = TableRecords.allocationCharge(this.arrayCapacity(record), Math.max(reserve, members));
+			requested = TableRecords.allocationCharge(plan.array, Math.max(reserve, plan.members));
+			admitted = requested <= previous || budget.usedBytes() + requested - previous <= budget.capacity();
 		}
-		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}
 	private resize(record: number, storage: number, key: Value, value: Value, reserve: number, previous: number, requested: number): number {
 		const { array, hash, members, watermark } = this.resizePlan;
