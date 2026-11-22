@@ -724,7 +724,7 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget() {
 		"replacement invalidates old feedback, code cells and specialized argument placement");
 }
 
-void nativeFixedCallChainIsRestorableAtBlockedMmio() {
+void nativeCallChainIsRestorableAtBlockedMmio(bool openOuter) {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
 	image.text.resize(3 * MAPPED_PAGE_BYTE_SIZE);
@@ -740,35 +740,28 @@ void nativeFixedCallChainIsRestorableAtBlockedMmio() {
 	emit(3, OpCode::CLOSURE, 9);
 	emit(4, OpCode::HALT);
 	emit(5, OpCode::RET, 0, 1);
-	emit(parentCall, OpCode::CALL, 0, 2, 2);
+	emit(parentCall, OpCode::CALL, 0, openOuter ? 0 : 3, openOuter ? 0 : 2);
 	emit(parentCall + 1, OpCode::HALT);
 	emit(parentCall + 2, OpCode::RET, 0, 1);
-	emit(middle, OpCode::CALL, 0, 1, 2);
+	emit(middle, OpCode::CALL, 0, 2, 2);
 	emit(middle + 1, OpCode::RET, 0, 2);
-	emit(leaf, OpCode::LOADK, 1);
+	emit(leaf, OpCode::MOV, 1, 0);
 	emit(leaf + 1, OpCode::KSMI, 0, 1, 9);
 	emit(leaf + 2, OpCode::STORE_MEM_D, 0, 1, static_cast<u32>(MemoryAccessKind::U32LE));
 	emit(leaf + 3, OpCode::RET, 0, 2);
-	image.constants = {static_cast<i32>(IO_GX_GPU_GP0)};
 	image.functions = {{.firstWord=0, .wordCount=6, .maxStack=16},
-		{.firstWord=middle, .wordCount=2, .numParams=1, .maxStack=2},
-		{.firstWord=leaf, .wordCount=4, .maxStack=2},
+		{.firstWord=middle, .wordCount=2, .numParams=2, .maxStack=2},
+		{.firstWord=leaf, .wordCount=4, .numParams=1, .maxStack=2},
 		{.firstWord=parentCall, .wordCount=3, .maxStack=16}};
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
 		{3, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	CpuMachine generated(image, false), scalar(image, true);
-	struct Device { CpuMachine& machine; bool ready = true; unsigned committed = 0; };
-	Device devices[]{{generated}, {scalar}};
-	for (auto& device : devices) {
-		device.machine.memory.mapIoWrite(IO_GX_GPU_GP0, &device, [](void* context, u32, u32 value, MappedBusSignals) {
-			require(value == 73u, "the observer receives the original request from the callee");
-			++static_cast<Device*>(context)->committed;
-		});
-		device.machine.memory.mapIoWriteReady(IO_GX_GPU_GP0, [](void* context, u32, MappedBusSignals) {
-			auto& device = *static_cast<Device*>(context);
-			auto& machine = device.machine;
-			auto& cpu = machine.cpu;
-			auto& thread = *cpu.activeThread();
+	struct Device {
+		CpuMachine& machine;
+		bool openOuter, ready = true;
+		unsigned committed = 0;
+		void verifyFrames(u32 leafPcWord) const {
+			const auto& thread = *machine.cpu.activeThread();
 			const u32 text = machine.rom.textAddress;
 			require(thread.frameDepth() == 3u && thread.stackTop() == 4, "the actual bus observer sees all three activations");
 			const auto& parent = *thread.frameAtDepth(0);
@@ -776,27 +769,45 @@ void nativeFixedCallChainIsRestorableAtBlockedMmio() {
 			const auto& leafFrame = *thread.frameAtDepth(2);
 			require(leafFrame.readControl(FrameField::Function) == machine.rom.functionAddresses[2]
 				&& leafFrame.readControl(FrameField::CallSite) == text + middle * INSTRUCTION_BYTES
-				&& leafFrame.readControl(FrameField::Pc) == text + (leaf + 3u) * INSTRUCTION_BYTES
-				&& leafFrame.readWindow(FrameField::Top) == 2,
+				&& leafFrame.readControl(FrameField::Pc) == text + leafPcWord * INSTRUCTION_BYTES
+				&& leafFrame.stackBase() == 2 && leafFrame.readWindow(FrameField::Top) == 2
+				&& leafFrame.registers.get(0) == valueInteger(73)
+				&& leafFrame.registers.get(1) == valueInteger(IO_GX_GPU_GP0),
 				"the bus observes the leaf's real continuation and live register window");
 			require(body.readControl(FrameField::Function) == machine.rom.functionAddresses[1]
 				&& body.readControl(FrameField::CallSite) == text + parentCall * INSTRUCTION_BYTES
 				&& body.readControl(FrameField::Pc) == text + (middle + 1u) * INSTRUCTION_BYTES
-				&& body.readWindow(FrameField::Top) == 1
-				&& parent.readControl(FrameField::Pc) == text + (parentCall + 1u) * INSTRUCTION_BYTES,
-				"the two parked callers publish their own continuation and top once");
+				&& body.stackBase() == 1 && body.readWindow(FrameField::Top) == 2
+				&& body.readWindow(FrameField::ReturnBase) == 0 && body.readWindow(FrameField::ReturnCount) == (openOuter ? 0 : 2)
+				&& parent.readControl(FrameField::Pc) == text + (parentCall + 1u) * INSTRUCTION_BYTES
+				&& parent.readWindow(FrameField::Top) == 3,
+				"the two parked callers retain their own continuation, top and result placement");
+		}
+	};
+	Device devices[]{{generated, openOuter}, {scalar, openOuter}};
+	for (auto& device : devices) {
+		device.machine.memory.mapIoWrite(IO_GX_GPU_GP0, &device, [](void* context, u32, u32 value, MappedBusSignals) {
+			require(value == 73u, "the observer receives the original request from the callee");
+			++static_cast<Device*>(context)->committed;
+		});
+		device.machine.memory.mapIoWriteReady(IO_GX_GPU_GP0, [](void* context, u32, MappedBusSignals) {
+			auto& device = *static_cast<Device*>(context);
+			device.verifyFrames(leaf + 3u);
 			return device.ready;
 		});
 	}
 	generated.cpu.prepareSystemNativeCode();
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted,
 		"the initial halt retains both ordinary ROM closures");
-	const auto restart = [&] {
+	const auto restart = [&](u32 target = IO_GX_GPU_GP0) {
 		for (auto* machine : {&generated, &scalar}) {
 			machine->cpu.clearHaltUntilIrq();
-			auto& registers = machine->cpu.activeThread()->currentFrame->registers;
+			auto& frame = *machine->cpu.activeThread()->currentFrame;
+			auto& registers = frame.registers;
 			registers.set(0, registers.get(8));
 			registers.set(1, registers.get(9));
+			registers.set(2, valueInteger(target));
+			frame.setTop(3);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[3],
 				machine->rom.textAddress + parentCall * INSTRUCTION_BYTES);
 		}
@@ -814,34 +825,52 @@ void nativeFixedCallChainIsRestorableAtBlockedMmio() {
 		auto* page = lookup.find(pc, 0);
 		const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		const auto* block = page->nativeBlocks->entries[word].get();
-		require(block && block->terminal.operands.call.strategy == NativeCallStrategy::Observe,
-			"both sites begin in the generic native path");
+		require(block && block->terminal.operands.call.strategy == (openOuter && i == 0
+			? NativeCallStrategy::Generic : NativeCallStrategy::Observe), "open arguments cannot specialize their placement");
 		calls[i] = {page, word, generated.rom.functionAddresses[i + 1u], block, block->region};
 	}
 	restart();
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 200) == RunResult::Halted, "warm both genuine call sites");
-	for (const auto& call : calls)
-		require(call.page->words[call.word].nativeCallTarget() == call.prototype && call.page->nativeBlocks
+	for (u32 i = 0; i < calls.size(); ++i) {
+		const auto& call = calls[i];
+		require(((openOuter && i == 0) || call.page->words[call.word].nativeCallTarget() == call.prototype) && call.page->nativeBlocks
 			&& call.page->nativeBlocks->entries[call.word].get() == call.block && call.block->region == call.region,
-			"both first observations preserve the exact published nested bodies");
+			"passive observations preserve the exact published nested bodies");
+	}
 	for (u32 i = 0; i < calls.size(); ++i)
 		if (i == 0 || calls[i].region != calls[0].region)
 			calls[i].page->retireNativeRegion(calls[i].region.get(), DecodedInstructionPage::Retirement::Capacity);
 	generated.cpu.prepareSystemNativeCode();
-	for (const auto& call : calls) {
+	for (u32 i = 0; i < calls.size(); ++i) {
+		const auto& call = calls[i];
 		const auto& block = call.page->nativeBlocks->entries[call.word];
-		require(block && block->terminal.operands.call.strategy == NativeCallStrategy::Fixed,
-			"both transfers enter the fixed-call path");
+		require(block && block->terminal.operands.call.strategy == (openOuter && i == 0
+			? NativeCallStrategy::Generic : NativeCallStrategy::Fixed),
+			"the inner call is fixed, even when the open outer call remains generic");
 	}
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& coldCalls = generated.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::Call)].entries;
 	const u64 before = coldCalls;
 #endif
+	// Without a mapped observer, neither callee needs its private frame words.
+	auto& parkedMiddle = *generated.cpu.activeThread()->currentFrame->next;
+	auto& parkedLeaf = *parkedMiddle.next;
+	const u32 inactiveCallSite = generated.rom.textAddress;
+	parkedMiddle.writeControl(FrameField::CallSite, inactiveCallSite);
+	parkedLeaf.writeControl(FrameField::CallSite, inactiveCallSite);
+	restart(DYNAMIC_RAM_BASE);
+	require(test::runCpuParity(generated.cpu, scalar.cpu, 200) == RunResult::Halted
+		&& generated.memory.readU32(DYNAMIC_RAM_BASE) == 73u && scalar.memory.readU32(DYNAMIC_RAM_BASE) == 73u
+		&& generated.cpu.readFrameRegister(0, 0) == valueInteger(73)
+		&& parkedMiddle.readControl(FrameField::CallSite) == inactiveCallSite
+		&& parkedLeaf.readControl(FrameField::CallSite) == inactiveCallSite,
+		"the complete native chain writes public RAM without materializing either retired frame");
+	requireParity(generated, scalar);
 	restart();
 	for (auto& device : devices) device.ready = false;
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 200) == RunResult::Halted
 		&& generated.cpu.isMemoryWriteBlocked() && generated.cpu.getFrameDepth() == 3,
-		"the nested fixed grant materializes both pending activations when the real MMIO write blocks");
+		"the nested grant materializes both pending activations when the real MMIO write blocks");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(coldCalls == before, "neither CALL entered general runtime dispatch before the mapped observer");
 #endif
@@ -854,6 +883,13 @@ void nativeFixedCallChainIsRestorableAtBlockedMmio() {
 				machine->memory.restoreSaveState(ramSnapshot);
 				machine->cpu.restoreRuntimeState(cpuSnapshot);
 			}
+			for (const auto& device : devices) {
+				require(device.machine.cpu.isMemoryWriteBlocked()
+					&& device.machine.cpu.stalledMemoryWriteAddress() == IO_GX_GPU_GP0,
+					"restoring the snapshot restores the same blocked request");
+				// A rejected write parks the PC on the instruction to retry.
+				device.verifyFrames(leaf + 2u);
+			}
 		}
 		for (auto& device : devices) {
 			device.ready = true;
@@ -861,7 +897,8 @@ void nativeFixedCallChainIsRestorableAtBlockedMmio() {
 			device.machine.cpu.resumeMemoryWrite(IO_GX_GPU_GP0);
 		}
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 200) == RunResult::Halted
-			&& generated.cpu.readFrameRegister(0, 0) == valueInteger(73),
+			&& generated.cpu.readFrameRegister(0, 0) == valueInteger(73)
+			&& generated.cpu.activeThread()->currentFrame->readWindow(FrameField::Top) == 1,
 			"the blocked store and both returns continue after restoring the saved RAM frames");
 		for (const auto& device : devices) require(device.committed == 1, "the resumed write commits once");
 		requireParity(generated, scalar);
@@ -1839,7 +1876,7 @@ int main(int argc, char** argv) {
 		nativeCallRouting(3, 1, false, false, false, false, false, 0);
 		wideNativeClosureCallResumesAfterItsBody();
 		nativeCallProfileKeepsCapturesAndDropsContradictedTarget();
-		nativeFixedCallChainIsRestorableAtBlockedMmio();
+		for (const bool openOuter : {false, true}) nativeCallChainIsRestorableAtBlockedMmio(openOuter);
 		nativeReturnPublishesCallerTopAtMappedObserver();
 		nativeReturnRouting(6, 0, 0, false, true);
 		nativeReturnRouting(2, 4, 0, false, false);

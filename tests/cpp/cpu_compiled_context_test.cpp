@@ -170,6 +170,101 @@ void hotVarargFrames(int fixed) {
 			"open return preserves every argument, including trailing nil");
 }
 
+void nativeGenericVarargCallLeavesInactiveControlUntouched() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
+	constexpr u32 callWord = 2u, haltWord = 3u, calleeWord = DECODED_PAGE_WORDS;
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, callWord, static_cast<u8>(OpCode::CALL), 0, 0, 0);
+	writeInstruction(image.text, haltWord, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, haltWord + 1u, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+	writeInstruction(image.text, calleeWord, static_cast<u8>(OpCode::VARARG), 1, 0, 0);
+	writeInstruction(image.text, calleeWord + 1u, static_cast<u8>(OpCode::RET), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 16},
+		{.firstWord = calleeWord, .wordCount = 2, .numParams = 1, .maxStack = 8, .isVararg = true}};
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
+	CpuMachine generated(image), scalar(image, true);
+	auto& cpu = generated.cpu;
+	const auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
+	require(test::runCpuParity(cpu, scalar.cpu, cycles(OpCode::CLOSURE)) == RunResult::Yielded,
+		"the real ROM closure is available before either call");
+	for (auto* machine : {&generated, &scalar}) {
+		auto& frame = *machine->cpu.activeThread()->currentFrame;
+		frame.registers.set(15, frame.registers.get(0));
+	}
+	const auto run = [&](std::span<const Value> arguments) {
+		for (auto* machine : {&generated, &scalar}) {
+			auto& lane = machine->cpu;
+			lane.clearHaltUntilIrq();
+			lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0],
+				machine->rom.textAddress + callWord * INSTRUCTION_BYTES);
+			auto& frame = *lane.activeThread()->currentFrame;
+			frame.registers.set(0, frame.registers.get(15));
+			for (size_t i = 0; i < arguments.size(); ++i) frame.registers.set(i + 1u, arguments[i]);
+			frame.setTop(static_cast<int>(1u + arguments.size()));
+		}
+		// One relocated formal, then all extras read by open VARARG and all
+		// results placed by open RET. HALT must begin with positive budget.
+		const int grant = cycles(OpCode::CALL) + cycles(OpCode::VARARG) + cycles(OpCode::RET) + cycles(OpCode::HALT)
+			+ 2 * static_cast<int>(arguments.size());
+		require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Halted && cpu.instructionBudgetRemaining == 0,
+			"the open call, vararg read and return consume precisely one grant");
+	};
+	const std::array arguments{valueInteger(91), valueBool(false), valueFloatBits(0xffa12345u), valueNil()};
+	run(std::span(arguments).first(1));
+	requireParity(generated, scalar);
+	auto& inactive = *cpu.activeThread()->currentFrame->next;
+	std::array<u32, FRAME_CONTROL_BYTES / sizeof(u32)> words;
+	for (size_t i = 0; i < words.size(); ++i) words[i] = inactive.readControl(static_cast<FrameField>(i * sizeof(u32)));
+	require(inactive.readWindow(FrameField::VarargCount) == 0, "the earlier real call left an inactive no-extras frame record");
+
+	cpu.prepareSystemNativeCode();
+	const u32 callPc = generated.rom.textAddress + callWord * INSTRUCTION_BYTES;
+	const u32 calleePc = generated.rom.textAddress + calleeWord * INSTRUCTION_BYTES;
+	const auto& lookup = *cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup;
+	const auto entry = [&](u32 pc) -> const NativeBlock& {
+		const auto* page = lookup.find(pc, 0u);
+		const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		require(page && page->nativeBlocks && page->nativeBlocks->entries[word], "both transfers have live native entries");
+		return *page->nativeBlocks->entries[word];
+	};
+	const auto& call = entry(callPc).terminal;
+	const auto& vararg = entry(calleePc);
+	require(call.exit == NativeBlockExit::Call && call.operands.call.strategy == NativeCallStrategy::Generic
+		&& vararg.terminal.exit == NativeBlockExit::Continue
+		&& std::ranges::any_of(vararg.sideExits, [](const auto& exit) { return exit.exit == NativeBlockExit::Vararg; })
+		&& entry(calleePc + INSTRUCTION_BYTES).terminal.exit == NativeBlockExit::Return,
+		"the installed open CALL is generic and enters a compiled VARARG/RET body");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto before = cpu.nativeGateProfile().exits;
+#endif
+	run(arguments);
+	require(cpu.getFrameDepth() == 1 && cpu.getFrameRegisterCount(0) == static_cast<int>(arguments.size())
+		&& cpu.readFramePc(0) == generated.rom.textAddress + (haltWord + 1u) * INSTRUCTION_BYTES,
+		"the returned caller publishes its exact open receiving top and halt continuation");
+	for (size_t i = 0; i < arguments.size(); ++i)
+		require(cpu.readFrameRegister(0, static_cast<int>(i)) == arguments[i], "open results retain every raw Value, including trailing nil");
+	for (size_t i = 0; i < words.size(); ++i)
+		require(inactive.readControl(static_cast<FrameField>(i * sizeof(u32))) == words[i],
+			"an entirely native generic call never writes the inactive architectural frame");
+	require(cpu.captureRuntimeState() == scalar.cpu.captureRuntimeState() && test::sameActiveLanguageRam(cpu, scalar.cpu),
+		"only the retired frame record may differ from scalar execution");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& after = cpu.nativeGateProfile().exits;
+	for (const auto kind : {NativeBlockExit::Call, NativeBlockExit::Vararg, NativeBlockExit::Return, NativeBlockExit::ScalarBoundary}) {
+		const auto i = static_cast<size_t>(kind);
+		require(after[i].entries == before[i].entries, "the call, vararg and return never enter semantic dispatch");
+	}
+	const auto halt = static_cast<size_t>(NativeBlockExit::Halt);
+	require(after[halt].entries == before[halt].entries + 1u, "the native caller reaches its intended halt");
+#endif
+#endif
+}
+
 void hotEmptyVararg() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::VARARG), 31, 0, 0);
@@ -643,6 +738,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 int main() {
 	try {
 		physicalVarargWindow(); hotVarargFrames(0); hotVarargFrames(5); hotEmptyVararg(); freshVarargActivationGrowsBeforeWarmContinuation();
+		nativeGenericVarargCallLeavesInactiveControlUntouched();
 		hotConstantTrap(); hotUpvalueAlias(); hotGlobalBanks();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		test::Blua32TestImage image; image.text.resize(INSTRUCTION_BYTES);

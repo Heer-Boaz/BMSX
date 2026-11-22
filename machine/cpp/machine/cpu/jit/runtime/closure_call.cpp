@@ -9,32 +9,22 @@
 namespace bmsx {
 namespace {
 
-// A generic call has a runtime-selected argument layout. The fixed entry
-// below keeps its narrower layout in the native grant instead.
-void commitNativeCall(NativeCpuRunState& run, const NativeBlockExitSite& exit, CallFrame& callee,
-	const FrameEntryControl& entry, ValuePlacement formals, int cycles,
-	int argumentBase, bool relocatesFormals) {
+inline void enterNativeActivation(NativeCpuRunState& run, const NativeBlockExitSite& exit, CallFrame& callee,
+	u32 closure, int stackBase, int varargBase, size_t capacity, int top, int cycles) noexcept {
 	auto& state = run.state;
-	auto& caller = *state.frame;
-	auto& thread = *caller.thread;
-	run.publishActivation(exit.nextPc);
-	caller.compilationEntry = true;
-	caller.nativeContinuationCells = exit.continuationCells;
-	caller.nativeContinuationPc = exit.nextPc;
-
-	callee.executionImage = caller.executionImage;
-	callee.initializeAdmittedControl(entry, thread.stack);
-	if (relocatesFormals) {
-		thread.stack.placeAdmitted(entry.stackBase, thread.stack, argumentBase, formals.copied, formals.padded);
-		thread.stack.clearAdmitted(argumentBase, formals.copied);
-	} else {
-		thread.stack.clearAdmitted(entry.stackBase + formals.copied, formals.padded);
-	}
-	thread.publishAdmittedFrame(callee, ++state.frameDepth, entry.stackBase + entry.capacity);
+	callee.executionImage = state.frame->executionImage;
+	callee.registers = callee.thread->stack.admittedSubspan(stackBase, capacity);
+	callee.pendingNativeClosure = closure;
+	callee.pendingNativeStackBase = stackBase;
+	callee.pendingNativeVarargBase = varargBase;
+	callee.pendingNativeCallerTop = state.registerTop;
+	callee.pendingNativeCall = &exit;
+	if (!run.firstPendingFrame) run.firstPendingFrame = &callee;
 	state.frame = &callee;
-	state.closure = entry.closure;
-	state.stackBase = entry.stackBase;
-	state.registerTop = entry.top;
+	++state.frameDepth;
+	state.closure = closure;
+	state.stackBase = stackBase;
+	state.registerTop = top;
 	state.remainingCycles -= cycles;
 }
 
@@ -58,16 +48,18 @@ void NativeCpuRunState::publishActivation(u32 pc) noexcept {
 	parent.compilationEntry = true;
 	for (;;) {
 		const auto& site = *callee->pendingNativeCall;
-		const auto& layout = site.fixedCall.plan;
 		const auto& call = site.operands.call;
 		const bool current = callee == state.frame;
 		const auto* nextCall = current ? nullptr : callee->next->pendingNativeCall;
 		const auto resume = current ? pc : nextCall->nextPc;
 		const auto top = current ? state.registerTop : callee->next->pendingNativeCallerTop;
 		const auto base = callee->pendingNativeStackBase;
-		const FrameEntryControl entry{layout.prototype, resume, site.lastPc, frameBank,
-			base + layout.copied + layout.padded, 0, CallResultPlacement::call(call.callee, call.requested),
-			top, callee->pendingNativeClosure, base, static_cast<i32>(layout.capacity)};
+		const auto varargBase = callee->pendingNativeVarargBase;
+		const auto closure = callee->pendingNativeClosure;
+		const auto prototype = cpu->memory().readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
+		const FrameEntryControl entry{prototype, resume, site.lastPc, frameBank,
+			varargBase, std::max(base - varargBase, 0), CallResultPlacement::call(call.callee, call.requested),
+			top, closure, base, static_cast<i32>(callee->registers.size())};
 		entry.writeWords([callee](FrameField field, u32 word) { callee->writeAdmittedControl(field, word); });
 		callee->pendingNativeCall = nullptr;
 		callee->compilationEntry = true;
@@ -204,11 +196,15 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 	// All declines precede the frame writes. An ordinary semantic CALL can
 	// still allocate or finish an exhausted grant; this transition only
 	// commits an admitted frame with a live receiving body.
-	commitNativeCall(*run, *exit, *callee, {
-		functionAddress, function->codeAddress, exit->lastPc, run->frameBank,
-		placement.varargBase, placement.varargCount, CallResultPlacement::call(base, call.requested), placement.top(),
-		closure, placement.stackBase, static_cast<i32>(placement.capacity)
-	}, placement.formals, cycles, placement.argumentBase, placement.relocatesFormals);
+	const auto [copied, padded] = placement.formals;
+	if (placement.relocatesFormals) {
+		thread.stack.placeAdmitted(placement.stackBase, thread.stack, placement.argumentBase, copied, padded);
+		thread.stack.clearAdmitted(placement.argumentBase, copied);
+	} else {
+		thread.stack.clearAdmitted(placement.stackBase + copied, padded);
+	}
+	enterNativeActivation(*run, *exit, *callee, closure, placement.stackBase, placement.varargBase,
+		placement.capacity, placement.top(), cycles);
 	return target;
 }
 
@@ -249,35 +245,26 @@ void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExit
 	if (static_cast<size_t>(stackBase) + plan.capacity > thread.stackCapacity) return nullptr;
 
 	const int top = plan.copied + plan.padded;
-	callee->executionImage = caller.executionImage;
-	callee->registers = thread.stack.admittedSubspan(stackBase, plan.capacity);
-	callee->pendingNativeClosure = closure;
-	callee->pendingNativeStackBase = stackBase;
-	callee->pendingNativeCallerTop = state.registerTop;
-	callee->pendingNativeCall = exit;
-	if (!run->firstPendingFrame) run->firstPendingFrame = callee;
 	thread.stack.clearAdmitted(stackBase + plan.copied, plan.padded);
-	state.frame = callee;
-	state.frameDepth = depth;
-	state.closure = closure;
-	state.stackBase = stackBase;
-	state.registerTop = top;
-	state.remainingCycles -= plan.padded;
+	enterNativeActivation(*run, *exit, *callee, closure, stackBase, stackBase + top, plan.capacity, top, plan.padded);
 	return target;
 }
 
 int CPU::placeNativeVarargs(NativeBlockRunState* state, int first, int requested) noexcept {
 	auto& frame = *state->frame;
-	const int available = frame.pendingNativeCall ? 0 : frame.readAdmittedWindow(FrameField::VarargCount);
+	const bool pending = frame.pendingNativeCall != nullptr;
+	const int available = pending ? std::max(state->stackBase - frame.pendingNativeVarargBase, 0)
+		: frame.readAdmittedWindow(FrameField::VarargCount);
 	const bool open = requested < 0;
 	const auto placement = ValuePlacement::fit(available, open ? available : requested);
 	const int count = placement.count();
 	const int top = first + count;
-	const int capacity = frame.pendingNativeCall ? static_cast<int>(frame.pendingNativeCall->fixedCall.plan.capacity)
+	const int capacity = pending ? static_cast<int>(frame.registers.size())
 		: frame.readAdmittedWindow(FrameField::StackCapacity);
 	if (count != 0 && top > capacity) return -1;
 
-	const int source = placement.copied == 0 ? 0 : frame.readAdmittedWindow(FrameField::VarargBase);
+	const int source = placement.copied == 0 ? 0
+		: pending ? frame.pendingNativeVarargBase : frame.readAdmittedWindow(FrameField::VarargBase);
 	// The caller has not published cached registers below the destination.
 	// Only a source wholly below this frame is safe to read in place.
 	if (placement.copied != 0 && source + placement.copied > state->stackBase)

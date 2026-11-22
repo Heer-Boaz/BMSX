@@ -164,10 +164,6 @@ struct CallFrame {
 		writeAdmittedControl(FrameField::Top,
 			(readAdmittedControl(FrameField::Top) & ~FRAME_WINDOW_MASK) | static_cast<u32>(top));
 	}
-	void initializeAdmittedControl(const FrameEntryControl& entry, ValueSpan stack) {
-		entry.writeWords([&](FrameField field, u32 word) { writeAdmittedControl(field, word); });
-		registers = stack.admittedSubspan(entry.stackBase, entry.capacity);
-	}
 #endif
 	i32 stackBase() const { return readWindow(FrameField::StackBase); }
 	i32 stackCapacity() const { return readWindow(FrameField::StackCapacity); }
@@ -181,12 +177,13 @@ struct CallFrame {
 	// Host translation admission for the next PC; not architectural state.
 	bool compilationEntry = true;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	// A fixed call can run entirely inside a grant. The call site's metadata
-	// owns the unmaterialized activation until return or publication before
-	// an observer. Code retirement is possible only after that publication.
+	// The native grant owns this activation until return or publication
+	// before an observer. Its call site stays live until publication.
 	const NativeBlockExitSite* pendingNativeCall = nullptr;
 	u32 pendingNativeClosure;
 	i32 pendingNativeStackBase;
+	// Excess arguments, if any, occupy [varargBase, stackBase).
+	i32 pendingNativeVarargBase;
 	i32 pendingNativeCallerTop;
 	// Host translation binding for the suspended caller. Not guest/saved state.
 	std::array<void* const*, 2> nativeContinuationCells{};
