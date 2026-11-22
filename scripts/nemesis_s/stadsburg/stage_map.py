@@ -1,6 +1,8 @@
-"""Compile sparse ROM rows, collision words and encounter cues from one map."""
+"""Compile sparse ROM rows, collision and scene cues from one map."""
 
 import struct
+
+from harbor_tape import write_harbor_tape
 
 ACTOR_SYMBOLS = {
     'formation_down': 'p', 'formation_up': 'P', 'red_mitre': 'M',
@@ -35,7 +37,7 @@ def compile_actor_cues(rows, roles):
 
 # Stage-local ROM data, not a machine image format. All offsets are bytes from
 # the asset base; row directories contain (offset, count), then u16 cell pairs.
-TAPE_HEADER_WORDS = 12
+TAPE_HEADER_WORDS = 13
 SOLID_ROLES = {ord(symbol) for symbol in '!#%()+-=@RS^_dsw'}
 
 
@@ -66,12 +68,18 @@ def compile_stage_tape(stage):
     rows, assets = stage['tile_ids'], stage['tile_assets']
     width, height = len(rows[0]), len(rows)
     invisible = set(stage['sky_actor_ids'])
-    foreground = [[(x + 1, assets[tile - 1]) for x, tile in enumerate(row)
-                   if tile and tile not in invisible] for row in rows]
+    data = bytearray(TAPE_HEADER_WORDS * 4)
+    collision = compile_collision_words(rows, stage['tile_roles'])
+    harbor_offset, initial = write_harbor_tape(data, stage['harbor_animation'], rows, assets, invisible, collision)
+    data.extend(bytes(-len(data) % 4))
+    foreground = []
+    for row, poses in zip(rows, initial):
+        cells = {x + 1: assets[tile - 1] for x, tile in enumerate(row) if tile and tile not in invisible}
+        cells.update(poses)
+        foreground.append(sorted(cells.items()))
     backdrop = stage['background']
     background = [[(row[i], backdrop['tile_assets'][row[i + 1] - 1])
                    for i in range(0, len(row), 2)] for row in backdrop['rows']]
-    data = bytearray(TAPE_HEADER_WORDS * 4)
 
     def write_rows(sparse_rows):
         directory = len(data)
@@ -85,7 +93,7 @@ def compile_stage_tape(stage):
     front_offset = write_rows(foreground)
     back_offset = write_rows(background)
     collision_offset = len(data)
-    for row in compile_collision_words(rows, stage['tile_roles']):
+    for row in collision:
         data.extend(struct.pack('<' + 'I' * len(row), *row))
     water_offset = len(data)
     water = stage['water_animation']
@@ -102,16 +110,16 @@ def compile_stage_tape(stage):
     actors = compile_actor_cues(rows, stage['tile_roles'])
     for column, row, role in actors:
         data.extend(struct.pack('<iHH', column, row, role))
-    struct.pack_into('<12I', data, 0, width, height, front_offset, back_offset,
+    struct.pack_into('<13I', data, 0, width, height, front_offset, back_offset,
                      len(background), collision_offset, (width + 31) // 32,
-                     water_offset, water_count, actor_offset, len(actors), len(data))
+                     water_offset, water_count, actor_offset, len(actors), harbor_offset, len(data))
     return bytes(data)
 
 
 def stage_runtime_config(stage):
     """Small control data derived from the same map; no second authored map."""
     config = {key: value for key, value in stage.items() if key not in {
-        'source', 'tile_ids', 'tile_assets', 'tile_roles', 'sky_actor_ids', 'actor_cells',
+        'source', 'tile_ids', 'tile_assets', 'tile_roles', 'sky_actor_ids', 'actor_cells', 'harbor_animation',
     }}
     config['background'] = {key: value for key, value in stage['background'].items()
                             if key not in {'tile_assets', 'rows'}}

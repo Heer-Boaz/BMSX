@@ -3,7 +3,8 @@ local assets<const> = require('bmsx/assets')
 local bin<const> = require('cartlib/bin')
 local gp0<const> = require('cartlib/gx/gp0')
 
-local check_layer<const> = function(tiles, original_rows, assets, invisible, background, first, last)
+local check_layer<const> = function(tiles, original_rows, assets, invisible, harbor_rest, first, last)
+    local background<const> = harbor_rest == nil
     local size<const> = tiles._tile_size
     local domains<const> = tiles._coordinate_domain_columns
     local capacity<const> = tiles._window_capacity
@@ -25,13 +26,15 @@ local check_layer<const> = function(tiles, original_rows, assets, invisible, bac
                 end
             else id = original[x] end
             local source = row.overrides[x]
+            if source == nil and not background then source = harbor_rest[y][x] end
             if source == nil and id ~= nil and id ~= 0 and not invisible[id] then
                 source = tiles.art:resolve(assets[id])
             end
             if source ~= nil then
-                assert(slot <= row.last_visible_source and row.columns[slot] == x,
-                    'visible row lost or reordered an authored column: layer='..tostring(background)
-                    ..' row='..y..' expected='..x..' got='..tostring(row.columns[slot])..' first='..first)
+                if slot > row.last_visible_source or row.columns[slot] ~= x then
+                    error('visible row lost or reordered an authored column: layer='..tostring(background)
+                        ..' row='..y..' expected='..x..' got='..tostring(row.columns[slot])..' first='..first)
+                end
                 assert(row.sources[slot] == source, 'visible tile differs from authored or animated source')
                 assert(row.coordinate_domains[slot] == ((x - 1) // domains) + 1)
                 assert(row.position_words[slot] == gp0.pair16(((x - 1) % domains) * size, (y - 1) * size))
@@ -42,13 +45,25 @@ local check_layer<const> = function(tiles, original_rows, assets, invisible, bac
     end
 end
 
-return {kind='integration',tests={
+return {kind='integration',phase_cycles={bounded_window_preserves_authored_tiles_on_scroll_wrap_and_checkpoints=67737600},tests={
     bounded_window_preserves_authored_tiles_on_scroll_wrap_and_checkpoints=function(t)
         local _,stage<const>,pilot<const> = fixture.start_game(t)
         pilot.body_collider:set_enabled(false)
         stage.scrolling=false
         local original<const> = bin.decode(assets.data_nemesis_s_stage_addr,'window regression source')
         local foreground<const>, background<const> = stage.stage_tiles, stage.background_tiles
+        local harbor<const> = original.harbor_animation
+        local empty<const> = foreground.art:resolve(harbor.empty)
+        local initial<const> = {}
+        for y=1,#original.tile_ids do initial[y] = {} end
+        for _,clip in ipairs(harbor.clips) do
+            for index,cell in ipairs(clip.cells) do
+                if clip.visuals then
+                    local tile<const> = clip.visuals[index][1]
+                    initial[cell[2]][cell[1]] = tile ~= 0 and foreground.art:resolve(tile) or empty
+                elseif cell[4] == 0 then initial[cell[2]][cell[1]] = empty end
+            end
+        end
         local invisible<const> = {}
         for _,id in ipairs(original.sky_actor_ids) do invisible[id] = true end
         local visible<const> = {}
@@ -57,16 +72,16 @@ return {kind='integration',tests={
             local last<const> = math.min(first + count - 1, stage.tape_length_tiles)
             foreground:set_visible_columns(first,count)
             background:set_visible_columns(first,count)
-            check_layer(foreground,original.tile_ids,original.tile_assets,invisible,false,first,last)
-            check_layer(background,original.background.rows,original.background.tile_assets,visible,true,first,last)
+            check_layer(foreground,original.tile_ids,original.tile_assets,invisible,initial,first,last)
+            check_layer(background,original.background.rows,original.background.tile_assets,visible,nil,first,last)
         end
         for x=1,100 do check(x) end
         for x=99,1,-1 do check(x) end
         for _,x in ipairs({127,128,129,255,256,257,432,558,821,900,931,1}) do check(x) end
         -- Scenery changes survive eviction and a backward jump.
-        local clip<const> = stage.harbor.clips[1]
+        local clip<const> = harbor.clips[1]
         local cell<const> = clip.cells[1]
-        local changed<const> = stage.harbor.patterns[0]
+        local changed<const> = empty
         foreground:set_tile_source(cell[1],cell[2],changed)
         check(1)
         check(cell[1])

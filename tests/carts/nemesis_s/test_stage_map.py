@@ -1,4 +1,5 @@
 import sys
+import struct
 import unittest
 from pathlib import Path
 
@@ -43,20 +44,31 @@ class StageMapTest(unittest.TestCase):
 
 class StageTapeTest(unittest.TestCase):
     def test_sparse_cells_collision_and_water_match_the_authored_map(self):
-        import struct
         from stage_map import compile_stage_tape, compile_collision_words, stage_runtime_config
         path = ROOT / 'carts/nemesis_s/res/data'
         stage = yaml.safe_load((path / 'nemesis_s_stage.yaml').read_text())
         blob = (path / 'nemesis_s_stage_tape.bin').read_bytes()
         self.assertEqual(blob, compile_stage_tape(stage))
-        width, height, front, back, back_rows, collision, words, water, count, actors, actor_count, length = struct.unpack_from('<12I', blob)
+        width, height, front, back, back_rows, collision, words, water, count, actors, actor_count, _, length = struct.unpack_from('<13I', blob)
         self.assertEqual((width, height, length), (len(stage['tile_ids'][0]), len(stage['tile_ids']), len(blob)))
         invisible = set(stage['sky_actor_ids'])
+        harbor = stage['harbor_animation']
+        initial = [{} for _ in range(height)]
+        for clip in harbor['clips']:
+            for i, (x, y, _, rest, *_) in enumerate(clip['cells']):
+                if 'visuals' in clip:
+                    tile = clip['visuals'][i][0] or harbor['empty']
+                elif rest == 0:
+                    tile = harbor['empty']
+                else:
+                    continue
+                initial[y - 1][x] = tile
         for y, row in enumerate(stage['tile_ids']):
             offset, size = struct.unpack_from('<II', blob, front + y * 8)
             actual = [struct.unpack_from('<HH', blob, offset + i * 4) for i in range(size)]
-            expected = [(x + 1, stage['tile_assets'][tile - 1]) for x, tile in enumerate(row) if tile and tile not in invisible]
-            self.assertEqual(actual, expected)
+            expected = {x + 1: stage['tile_assets'][tile - 1] for x, tile in enumerate(row) if tile and tile not in invisible}
+            expected.update(initial[y])
+            self.assertEqual(actual, sorted(expected.items()))
         self.assertEqual(back_rows, len(stage['background']['rows']))
         for y, row in enumerate(stage['background']['rows']):
             offset, size = struct.unpack_from('<II', blob, back + y * 8)
@@ -75,6 +87,59 @@ class StageTapeTest(unittest.TestCase):
                          compile_actor_cues(stage['tile_ids'], stage['tile_roles']))
         self.assertEqual(yaml.safe_load((path / 'nemesis_s_stage_runtime.yaml').read_text()), stage_runtime_config(stage))
         self.assertNotIn('actor_cells', stage_runtime_config(stage))
+        self.assertNotIn('harbor_animation', stage_runtime_config(stage))
+
+    def test_harbor_tape_matches_authored_pose_collision_and_damage_roles(self):
+        path = ROOT / 'carts/nemesis_s/res/data'
+        stage = yaml.safe_load((path / 'nemesis_s_stage.yaml').read_text())
+        blob = (path / 'nemesis_s_stage_tape.bin').read_bytes()
+        _, height, _, _, _, collision, words, *_, harbor, _ = struct.unpack_from('<13I', blob)
+        spec = stage['harbor_animation']
+        index, count, transparent = struct.unpack_from('<IHH', blob, harbor)
+        self.assertEqual((count, transparent), (len(spec['clips']), spec['empty']))
+        self.assertEqual((harbor & 3, index & 3), (0, 0))
+
+        # Reconstruct the former role latch from the real stage rest bits.
+        # Nonzero patterns without a rest occurrence (the hook) were solid.
+        solid = {0: False}
+        for clip in spec['clips']:
+            for x, y, moves, rest, *_ in clip['cells']:
+                if moves:
+                    offset = collision + ((y - 1) * words + (x - 1) // 32) * 4
+                    word, = struct.unpack_from('<I', blob, offset)
+                    solid[rest] = bool(word & 1 << ((x - 1) & 31))
+        self.assertNotIn(117, solid)
+
+        cargo_rows = [[] for _ in range(height)]
+        cargo_patterns = set(spec['cargo_patterns'])
+        special = set()
+        for clip_index, clip in enumerate(spec['clips']):
+            coords, steps, poses, start, end, cells, cues, health, once = struct.unpack_from(
+                '<IIIii4H', blob, harbor + 8 + clip_index * 28)
+            self.assertEqual((start, end, cells, cues, health, once),
+                             (clip['start'], clip['end_column'], len(clip['cells']), len(clip['steps']),
+                              clip.get('max_health', 0), int(clip['once'])))
+            self.assertEqual([struct.unpack_from('<HH', blob, steps + i * 4) for i in range(cues)],
+                             [(pose - 1, hold) for pose, hold in clip['steps']])
+            for cell_index, (x, y, moves, *frames) in enumerate(clip['cells']):
+                self.assertEqual(struct.unpack_from('<HH', blob, coords + cell_index * 4), (x, y))
+                if health and moves and cargo_patterns.intersection(frames):
+                    cargo_rows[y - 1].append((x, clip_index, cell_index))
+                for pose, pattern in enumerate(frames):
+                    effective = (clip['visuals'][cell_index][pose] if 'visuals' in clip else
+                                 spec['patterns'][pattern - 1] if pattern else 0)
+                    art, flags = struct.unpack_from('<HH', blob, poses + (pose * cells + cell_index) * 4)
+                    self.assertEqual(art, effective or transparent)
+                    self.assertEqual(bool(flags & 1), bool(moves) and solid.get(pattern, True))
+                    self.assertEqual(bool(flags & 2), pattern in cargo_patterns)
+                    self.assertEqual(bool(flags & 4), bool(moves))
+                    if moves and pattern in (0, 117):
+                        special.add((pattern, flags))
+        self.assertEqual(special, {(0, 4), (117, 5)})
+        self.assertEqual(sum(len(row) for row in cargo_rows), 54)
+        for y, expected in enumerate(cargo_rows):
+            offset, size = struct.unpack_from('<II', blob, index + y * 8)
+            self.assertEqual([struct.unpack_from('<HHH', blob, offset + i * 6) for i in range(size)], sorted(expected))
 
     def test_collision_roles_and_tree_neighbor_precedence(self):
         from stage_map import compile_collision_words

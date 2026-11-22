@@ -68,7 +68,7 @@ function stage:build_tape()
 	stage_tiles:configure(tape.width,tape.height,self.tile_size,self.tile_art)
 	stage_tape.bind_rows(tape,tape.foreground,tape.height,stage_tiles)
 	self.solid_tape = stage_tape.collision_rows(tape)
-	self.harbor=havenanimatie.new(stage_data.harbor_animation,stage_tiles,self.solid_tape)
+	self.harbor=havenanimatie.new(tape,stage_tiles,self.solid_tape)
 	self.water=grachtwater.new(stage_data.water_animation,tape,stage_tiles)
 
 	self.actor_cues = tape.actors
@@ -269,11 +269,11 @@ end
 -- Projectile probes retain their normal terrain stopping rule. A hit also
 -- reaches the animated load that owns that cell, so its art and solid bits
 -- are removed together instead of leaving an invisible obstruction.
-local cargo_hit_feedback<const> = function(self,cargo,screen_x,screen_y)
-    self.scene:spawn(cargo.health>0 and ids_small_explosion_def or ids_large_explosion_def,{
+local cargo_hit_feedback<const> = function(self,health,screen_x,screen_y)
+    self.scene:spawn(health>0 and ids_small_explosion_def or ids_large_explosion_def,{
         position={x=screen_x-self.tile_size,y=screen_y-self.tile_size},stage=self,
     })
-    self.events:emit(cargo.health>0 and 'enemy.structure.hit' or 'enemy.structure.destroyed')
+    self.events:emit(health>0 and 'enemy.structure.hit' or 'enemy.structure.destroyed')
 end
 
 function stage:receive_projectile_impact(projectile, screen_x, screen_y, tile_offset)
@@ -282,9 +282,9 @@ function stage:receive_projectile_impact(projectile, screen_x, screen_y, tile_of
     local hit_x<const> = screen_x+tile_offset*self.tile_size
     local map_x<const> = ((hit_x-pose_x+self.total_scroll_px)//self.tile_size)+1
     local map_y<const> = ((screen_y-pose_y)//self.tile_size)+1
-    local cargo<const> = self.harbor:hit_tile(map_x,map_y,projectile)
-    if not cargo then return end
-    cargo_hit_feedback(self,cargo,hit_x,screen_y)
+    local health<const> = self.harbor:hit_tile(map_x,map_y,projectile)
+    if health == nil then return end
+    cargo_hit_feedback(self,health,hit_x,screen_y)
     return true
 end
 
@@ -295,9 +295,9 @@ function stage:receive_projectile_blast(projectile,width,height)
     local top<const> = projectile.y-pose_y
     for y=(top//self.tile_size)+1,((top+height-1)//self.tile_size)+1 do
         for x=(left//self.tile_size)+1,((left+width-1)//self.tile_size)+1 do
-            local cargo<const> = self.harbor:hit_tile(x,y,projectile)
-            if cargo then
-                cargo_hit_feedback(self,cargo,(x-1)*self.tile_size-self.total_scroll_px+pose_x,
+            local health<const> = self.harbor:hit_tile(x,y,projectile)
+            if health ~= nil then
+                cargo_hit_feedback(self,health,(x-1)*self.tile_size-self.total_scroll_px+pose_x,
                     (y-1)*self.tile_size+pose_y)
             end
         end
