@@ -476,9 +476,17 @@ export class GcHeap {
 			return words;
 		}
 		if (mode !== 0) this.appendVisit(GC_WEAK_VISITS, address);
-		const slots = this.tables.scanSlots(address);
-		if (resumingMode || words + slots * 2 > limit) return this.traceTableEntries(address, mode, 0, words, limit);
-		this.traceTableEdges(address, mode);
+		// Fully weak tables have no marking scan. Weak values leave only
+		// hash keys to trace; array keys are implicit Integers.
+		if (mode === 3) {
+			if (resumingMode) this.memory.writeRamRecordPair(this.controlOffset + GC_TRACE_RECORD, 0, 0);
+			return words;
+		}
+		const weakValues = (mode & 2) !== 0;
+		const first = weakValues ? this.tables.arrayCapacity(address) : 0;
+		const slots = weakValues ? 2 * this.tables.hashSize(address) : this.tables.scanSlots(address);
+		if (resumingMode || words + slots * 2 > limit) return this.traceTableEntries(address, mode, first, words, limit);
+		this.traceTableEdges(address, mode, first);
 		return words + slots;
 	}
 	private traceTableEdges(table: number, mode: number, first = 0, end = 0x7fffffff): void {
@@ -490,10 +498,10 @@ export class GcHeap {
 	}
 	private traceTableEntries(table: number, mode: number, next: number, work: number, limit: number): number {
 		const array = this.tables.arrayCapacity(table), end = this.tables.storedSlotCount(table);
-		const scan = mode !== 3, strings = this.cpu.stringPool;
+		const strings = this.cpu.stringPool;
 		while (next < end && work < limit) {
 			const arrayEntry = next < array, entryWords = arrayEntry ? 1 : 2;
-			const worst = entryWords * (scan ? 2 : 1);
+			const worst = entryWords * 2;
 			const span = Math.max(1, ((limit - work) / worst) | 0);
 			const stop = Math.min(arrayEntry ? array : end, next + span);
 			this.traceTableEdges(table, mode, next, stop);

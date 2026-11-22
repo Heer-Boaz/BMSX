@@ -504,9 +504,16 @@ size_t GcHeap::traceTable(u32 address, size_t limit, bool resumingMode) {
 	}
 	const auto weakMode = static_cast<u8>(mode);
 	if (weakMode != 0u) appendVisit(GC_WEAK_VISITS, address);
-	const size_t slots = table.scanSlots();
-	if (resumingMode || words + slots * 2 > limit) return traceTableEntries(table, weakMode, 0u, words, limit);
-	traceTableEdges(table, weakMode);
+	if (weakMode == (kTableWeakKeys | kTableWeakValues)) {
+		if (resumingMode) memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, 0u, 0u);
+		return words;
+	}
+	// Weak array values have no key edge. The final weak pass owns their visits.
+	const bool weakValues = (weakMode & kTableWeakValues) != 0u;
+	const u32 first = weakValues ? table.arrayCapacity() : 0u;
+	const size_t slots = weakValues ? 2u * table.hashSlots() : table.scanSlots();
+	if (resumingMode || words + slots * 2 > limit) return traceTableEntries(table, weakMode, first, words, limit);
+	traceTableEdges(table, weakMode, first);
 	return words + slots;
 }
 
@@ -526,11 +533,10 @@ void GcHeap::traceTableEdges(const TableRecord& table, u8 mode, u32 first, u32 e
 
 size_t GcHeap::traceTableEntries(const TableRecord& table, u8 mode, u32 next, size_t work, size_t limit) {
 	const u32 array = table.arrayCapacity(), end = static_cast<u32>(table.storedSlotCount());
-	const bool scan = mode != (kTableWeakKeys | kTableWeakValues);
 	while (next < end && work < limit) {
 		const bool arrayEntry = next < array;
 		const u32 entryWords = arrayEntry ? 1u : 2u;
-		const size_t worst = entryWords * (scan ? 2u : 1u); // at most one String mark per Value
+		const size_t worst = 2u * entryWords; // at most one String mark per Value
 		const u32 span = static_cast<u32>(std::max(size_t{1}, (limit - work) / worst));
 		const u32 stop = std::min(arrayEntry ? array : end, next + span);
 		traceTableEdges(table, mode, next, stop);

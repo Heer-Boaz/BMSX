@@ -345,6 +345,40 @@ test('weak keys still trace strong values while weak keys and values release a c
 	assert.equal(gc.tableRecordAddress(value), 0);
 });
 
+test('weak values skip marking storage that has no strong edges', () => {
+	for (const bothWeak of [false, true]) {
+		const cpu = machine(), { gc, stringPool } = cpu, tables = gc.tables;
+		const slots = 2 * GC_STEP_WORDS;
+		const weak = cpu.createTable(slots, bothWeak ? slots : 1), meta = cpu.createTable(0, 1);
+		tables.setStringKey(meta, stringPool.intern('__mode'), valueString(stringPool.intern(bothWeak ? 'kv' : 'v')));
+		tables.setMetatableAddress(weak, meta);
+		const frame = cpu.rootThread.currentFrame!;
+		frame.registers.setTable(0, weak); frame.top = 1;
+		const deadValue = cpu.createTable(), key = cpu.createTable();
+		const text = 'text held only by a surviving weak entry', textId = stringPool.intern(text);
+		tables.setInteger(weak, 1, valueTable(deadValue));
+		tables.setInteger(weak, slots, valueString(textId));
+		tables.set(weak, valueTable(key), valueInteger(17));
+
+		gc.step();
+		assert.ok(gc.finalMarkPending(), 'one mark quantum skips storage with no strong edges');
+		assert.equal(gc.isAlive(deadValue), false);
+		assert.equal(gc.isAlive(key), !bothWeak);
+		assert.equal(tables.getInteger(weak, 1), valueTable(deadValue), 'marking does not clear weak entries');
+		let finalSteps = 0;
+		while (gc.finalMarkPending() && finalSteps < 16) { gc.stepFinalMark(); ++finalSteps; }
+		assert.equal(gc.phase(), GcPhase.Sweep);
+		assert.ok(finalSteps > 1, 'real weak clearing remains resumable');
+		while (gc.active()) gc.step();
+		assert.equal(tables.getInteger(weak, 1), valueNil());
+		assert.equal(gc.tableRecordAddress(deadValue), 0);
+		assert.equal(tables.get(weak, valueTable(key)), bothWeak ? valueNil() : valueInteger(17));
+		assert.equal(gc.tableRecordAddress(key), bothWeak ? 0 : key, 'only the strong hash key survives');
+		assert.equal(tables.getInteger(weak, slots), valueString(textId));
+		assert.equal(stringPool.find(text), textId, 'the final pass retains weak Strings');
+	}
+});
+
 test('remark resumes a real metatable collision chain and withdraws its cursor on a shape change', () => {
 	const cpu = machine(), { gc, memory } = cpu;
 	const capacity = 2 * GC_STEP_WORDS, mode = cpu.stringPool.intern('__mode');
@@ -356,7 +390,7 @@ test('remark resumes a real metatable collision chain and withdraws its cursor o
 	for (let key = -1, count = 0; count < GC_STEP_WORDS + 64; --key) {
 		if ((hashCanonicalTableKey(valueInteger(key)) & (capacity - 1)) !== home) continue;
 		gc.tables.setInteger(meta, key, valueInteger(1));
-		if (count++ === 0) gc.tables.setStringKey(meta, mode, valueString(cpu.stringPool.intern('v')));
+		if (count++ === 0) gc.tables.setStringKey(meta, mode, valueString(cpu.stringPool.intern('kv')));
 	}
 	const watched = cpu.createTable();
 	gc.tables.setInteger(target, 1, valueTable(watched));

@@ -709,6 +709,42 @@ void weakKeysTraceStrongValues() {
 	require(heap.tableRecordAddress(value.address()) == 0u, "the dropped entry cannot retain its value in the next cycle");
 }
 
+void weakValuesSkipMarkingStorageWithoutStrongEdges() {
+	for (bool bothWeak : {false, true}) {
+		Machine machine(image(), true);
+		auto& cpu = machine.cpu;
+		auto& heap = cpu.gcHeap();
+		auto& strings = cpu.stringPool();
+		constexpr u32 slots = 2 * GC_STEP_WORDS;
+		auto weak = cpu.createTable(slots, bothWeak ? slots : 1u);
+		auto meta = cpu.createTable(0, 1);
+		meta.setStringKey(strings.intern("__mode"), valueString(strings.intern(bothWeak ? "kv" : "v")));
+		weak.setMetatableAddress(meta.address());
+		auto& frame = *cpu.rootThread()->currentFrame;
+		frame.registers.set(0, valueTable(weak.address())); frame.setTop(1);
+		const u32 deadValue = cpu.createTable().address(), key = cpu.createTable().address();
+		const auto text = strings.intern("text held only by a surviving weak entry");
+		weak.setInteger(1, valueTable(deadValue));
+		weak.setInteger(slots, valueString(text));
+		weak.set(valueTable(key), valueInteger(17));
+
+		cpu.stepHeap(valueNil(), valueNil(), valueNil());
+		require(heap.finalMarkPending() && !heap.isAlive(deadValue) && heap.isAlive(key) == !bothWeak,
+			"one mark quantum skips the weak array, marking only the hash keys when strong");
+		require(weak.getInteger(1) == valueTable(deadValue), "marking does not clear weak entries");
+		int finalSteps = 0;
+		while (heap.finalMarkPending() && finalSteps < 16) { heap.stepFinalMark(); ++finalSteps; }
+		require(heap.phase() == GcPhase::Sweep && finalSteps > 1, "real weak clearing remains resumable");
+		while (heap.active()) cpu.stepHeap(valueNil(), valueNil(), valueNil());
+		require(isNil(weak.getInteger(1)) && heap.tableRecordAddress(deadValue) == 0u,
+			"the final pass clears dead weak values");
+		require(weak.get(valueTable(key)) == (bothWeak ? valueNil() : valueInteger(17))
+			&& heap.tableRecordAddress(key) == (bothWeak ? 0u : key), "only the strong hash key survives");
+		require(weak.getInteger(slots) == valueString(text)
+			&& strings.find("text held only by a surviving weak entry") == text, "the final pass retains weak Strings");
+	}
+}
+
 void incrementalSharedWeakMode() {
 	Machine machine(image());
 	auto& cpu = machine.cpu;
@@ -774,7 +810,7 @@ void resumesMetatableModeProbe() {
 	for (i32 key = -1, count = 0; count < static_cast<i32>(GC_STEP_WORDS + 64); --key) {
 		if ((hashCanonicalTableKey(valueInteger(key)) & (capacity - 1u)) != home) continue;
 		meta.setInteger(key, valueInteger(1));
-		if (count++ == 0) meta.setStringKey(mode, valueString(cpu.stringPool().intern("v")));
+		if (count++ == 0) meta.setStringKey(mode, valueString(cpu.stringPool().intern("kv")));
 	}
 	auto watched = cpu.createTable();
 	target.setInteger(1, valueTable(watched.address()));
@@ -1294,7 +1330,8 @@ int main(int argc, char** argv) {
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
-		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues(); incrementalSharedWeakMode();
+		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues();
+		weakValuesSkipMarkingStorageWithoutStrongEdges(); incrementalSharedWeakMode();
 		resumesFinalWeakCleanup(); resumesMetatableModeProbe(); resumesWeakTableRemark(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); automaticAssistDefersScopedRoots(); explicitAtomicCreditIgnoresPhysicalWork();
 		collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
