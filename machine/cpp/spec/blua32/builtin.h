@@ -39,9 +39,10 @@ enum class BuiltinFunctionId : uint8_t {
 	FrameHeader = 28,
 	NumberType = 29,
 	ToInteger = 30,
+	StringSlice = 31,
 };
 
-constexpr size_t BUILTIN_FUNCTION_COUNT = 31u;
+constexpr size_t BUILTIN_FUNCTION_COUNT = 32u;
 
 enum class GarbageCollectionOperation : int32_t { Collect = 0, Count = 1, Step = 2 };
 
@@ -82,6 +83,7 @@ inline constexpr std::array<LuaBootPrimitive, BUILTIN_FUNCTION_COUNT> LUA_BOOT_P
 	{ "__bmsx_frame_header", BuiltinFunctionId::FrameHeader },
 	{ "__bmsx_number_type", BuiltinFunctionId::NumberType },
 	{ "__bmsx_tointeger", BuiltinFunctionId::ToInteger },
+	{ "__bmsx_string_slice", BuiltinFunctionId::StringSlice },
 }};
 
 } // namespace bmsx

@@ -130,8 +130,11 @@ The normalized range determines the result in this order:
 | --- | --- |
 | End < start | One empty String. |
 | Start = 1 and end = L | The original value, unchanged. |
-| Start = end | The String constructed from that one byte. |
-| Otherwise | Bytes from start through end, joined in order. |
+| Otherwise | One String containing the bytes from start through end, inclusive. |
+
+A nonempty proper range of N bytes adds N cycles, in addition to
+invocation and endpoint processing. The empty and whole ranges have no
+per-byte charge.
 
 ```lua
 local middle = string.sub('ABCDE', 2.9, 4.9) -- 'BCD'
@@ -147,8 +150,9 @@ and end positions.
 
 There is no preliminary String-only check here either. With a Table, the
 empty-range branch can return an empty String and the full-span branch can
-return that original Table. A partial range that reaches a byte read
-raises `Invalid argument.` Other value kinds fail at `#value`.
+return that original Table. A nonempty proper range requires a String;
+with a Table it raises `Invalid argument.` Other value kinds fail at
+`#value`.
 
 ### Byte reversal {#sec-bios-string-codepoint-reversal}
 

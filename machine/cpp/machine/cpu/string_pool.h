@@ -23,6 +23,8 @@ class StringPool {
 public:
 	StringPool(LuaHeap& heap, Memory& memory, HeapAllocator& arena);
 	StringId intern(std::string_view value);
+	// Intern the admitted byte range while rooting its source during allocation.
+	StringId internSlice(StringId id, size_t offset, size_t count);
 	std::optional<StringId> find(std::string_view value) const;
 	int byteLength(StringId id) const;
 	u32 byteAt(StringId id, size_t index) const;
@@ -50,6 +52,8 @@ private:
 		std::string_view wrapped;
 		size_t length;
 		size_t backedLength() const { return first.size() + wrapped.size(); }
+		// The caller already matched lengths.
+		bool equalBytes(const ByteSpan& other) const;
 		u8 byteAt(size_t index) const {
 			if (index < first.size()) return static_cast<u8>(first[index]);
 			index -= first.size();
@@ -59,14 +63,16 @@ private:
 	Span<const u8> romStorage(u32 address) const;
 	u32 readWord(u32 base, u32 displacement = 0) const;
 	ByteSpan readBytes(StringId id) const;
+	ByteSpan readBytes(StringId id, size_t offset, size_t count) const;
 	u32 metadata(u32 field) const;
 	void writeMetadata(u32 field, u32 word);
 	Span<const u8> bindRomStringHeader(u32 address, u32 cartridgeSlot) const;
 	std::string_view bindRomStringBytes(u32 address, u32 cartridgeSlot, u32 length) const;
-	u32 lookupRamChain(u32 bucket, u32 hash, std::string_view bytes) const;
-	u32 lookupRam(u32 hash, std::string_view bytes) const;
-	u32 lookupRom(u32 directory, u32 hash, std::string_view bytes) const;
-	u32 lookup(u32 hash, std::string_view bytes) const;
+	u32 lookupRamChain(u32 bucket, u32 hash, const ByteSpan& bytes) const;
+	u32 lookupRam(u32 hash, const ByteSpan& bytes) const;
+	u32 lookupRom(u32 directory, u32 hash, const ByteSpan& bytes) const;
+	u32 lookup(u32 hash, const ByteSpan& bytes) const;
+	StringId intern(const ByteSpan& bytes, u32 hash, StringId source);
 	size_t rehashStep(u32 oldCount, u32 nextBase, size_t allowance);
 	bool mark(StringId id);
 	StringId retain(StringId id);

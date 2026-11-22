@@ -8,9 +8,11 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include <array>
 #include <iostream>
 #include <stdexcept>
 #include <tuple>
+#include <utility>
 
 namespace {
 using namespace bmsx;
@@ -91,6 +93,9 @@ void ramStringPorts() {
 		require(pool.byteLength(mirror) == 13 && pool.toString(mirror) == bytes, "String length and data use the mirrored RAM port");
 		require(pool.byteAt(mirror, 8) == 0 && pool.byteAt(mirror, 9) == 0xf7, "byte reads cross the physical seam");
 		require(pool.compare(mirror, straight) == 0 && pool.compare(mirror, after) < 0, "String comparison visits mirrored bytes in order");
+		const auto slice = pool.internSlice(mirror, 6, 6);
+		require(pool.toString(slice) == bytes.substr(6, 6) && pool.intern(bytes.substr(6, 6)) == slice,
+			"a byte slice crossing the physical seam interns the same result as ordinary bytes");
 		const u32 metadata = machine.cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
 		const u32 count = memory.readRamRecordWord(metadata + 4u);
 		const u32 bucket = memory.readRamRecordWord(metadata) + 4u * (fnv1a32(bytes) & (count - 1u));
@@ -135,6 +140,80 @@ void selectAndChar(bool scalar) {
 		}
 	}
 }
+
+void stringSlice(bool wide) {
+	const u32 callWord = wide ? 1u : 0u;
+	const u32 base = wide ? 256u : 0u;
+	std::string input(300, 'x');
+	input.replace(254, 4, std::string("A\0\xf7" "B", 4));
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.constants = {input};
+	image.text.resize((callWord + 3) * INSTRUCTION_BYTES);
+	if (wide) writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 1, 0, 0);
+	writeInstruction(image.text, callWord, static_cast<u8>(OpCode::CALL), 0, 4, 2);
+	writeInstruction(image.text, callWord + 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, callWord + 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = callWord + 3, .maxStack = base + 5}};
+	CpuMachine native(image, false), scalar(image, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+	const auto& execution = *native.cpu.activeThread()->currentFrame->executionImage;
+	const auto* page = execution.nativeCodeLookup->find(native.rom.textAddress, 0);
+	const u32 entryWord = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	require(page && page->nativeBlocks && page->nativeBlocks->entries[entryWord],
+		"the tested StringSlice call has an installed native entry");
+#endif
+	struct Slice {
+		Value first, last;
+		size_t offset, bytes;
+	};
+	const std::array slices{
+		Slice{valueInteger(255), valueInteger(258), 254, 4},
+		Slice{valueFloat(255.0f), valueFloat(258.0f), 254, 4},
+		Slice{valueInteger(256), valueInteger(256), 255, 1},
+		Slice{valueInteger(1), valueInteger(300), 0, 300},
+	};
+	for (const auto& slice : slices) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			auto& frame = machine->restart();
+			frame.registers.set(base, cpu.createBuiltinFunction(BuiltinFunctionId::StringSlice));
+			frame.registers.set(base + 1, frame.executionImage->constPool.get(0));
+			frame.registers.set(base + 2, slice.first);
+			frame.registers.set(base + 3, slice.last);
+			frame.setTop(base + 4);
+			require(cpu.runUntilDepth(0, 1) == RunResult::Yielded
+				&& cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)] - 2 - static_cast<int>(slice.bytes) - 1,
+				"StringSlice charges CALL, tier two, the inclusive byte count and one placed result");
+			require(cpu.readFramePc(0) == machine->rom.textAddress + (callWord + 1) * INSTRUCTION_BYTES
+				&& frame.readControl(FrameField::Top) == base + 1,
+				"the completed StringSlice call publishes its exact successor and single result");
+			const auto result = frame.registers.get(base);
+			require(valueIsString(result) && cpu.stringPool().toString(asStringId(result)) == input.substr(slice.offset, slice.bytes),
+				"StringSlice preserves its exact raw bytes, including NUL and non-UTF-8");
+		}
+	}
+
+	// Discarded results do not bypass argument or byte-range admission.
+	writeInstruction(image.text, callWord, static_cast<u8>(OpCode::CALL), 0, 4, 1);
+	for (const auto [first, last] : std::array{
+		std::pair{valueInteger(0), valueInteger(2)}, std::pair{valueInteger(2), valueInteger(1)},
+		std::pair{valueInteger(1), valueInteger(301)}, std::pair{valueFloat(1.5f), valueInteger(2)},
+		std::pair{valueInteger(1), valueBool(true)},
+	}) {
+		CpuMachine machine(image, true);
+		auto& frame = machine.restart();
+		frame.registers.set(base, machine.cpu.createBuiltinFunction(BuiltinFunctionId::StringSlice));
+		frame.registers.set(base + 1, valueString(machine.cpu.stringPool().intern(input)));
+		frame.registers.set(base + 2, first);
+		frame.registers.set(base + 3, last);
+		frame.setTop(base + 4);
+		machine.cpu.runUntilDepth(0, 1);
+		require(machine.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT,
+			"StringSlice rejects invalid or non-integral endpoints even when its result is discarded");
+	}
+}
 } // namespace
 int main() {
 	try {
@@ -143,6 +222,7 @@ int main() {
 			for (const auto op : {OpCode::CONCAT, OpCode::CONCATN, OpCode::LT, OpCode::LE, OpCode::EQ}) logicalStringWork(scalar, op);
 			selectAndChar(scalar);
 		}
+		for (const bool wide : {false, true}) stringSlice(wide);
 		std::cout << "String operation cycles and builtin demand passed\n";
 		return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

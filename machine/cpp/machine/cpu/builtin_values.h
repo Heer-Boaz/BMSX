@@ -54,6 +54,7 @@ inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN
 	{ 1, 0, 0 }, // FrameHeader
 	{ 1, 0, 0 }, // NumberType
 	{ 1, 0, 0 }, // ToInteger
+	{ 2, 0, 0 }, // StringSlice
 }};
 
 // Builtins consume compact register windows or temporary complete-value

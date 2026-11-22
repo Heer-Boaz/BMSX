@@ -48,6 +48,7 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 	{ id: BuiltinFunctionId.FrameHeader, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.NumberType, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.ToInteger, cost: BUILTIN_COST_TIER1 },
+	{ id: BuiltinFunctionId.StringSlice, cost: BUILTIN_COST_TIER2 },
 ];
 
 // Borrowed argument windows and reusable return transport belong to builtin

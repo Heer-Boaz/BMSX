@@ -3641,6 +3641,21 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.StringChar:
 				this.runBuiltinStringChar(args, out);
 				break;
+			case BuiltinFunctionId.StringSlice: {
+				const { registers, base } = args;
+				if (args.length < 3 || registers.getTag(base) !== ValueTag.String) {
+					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				}
+				const id = registers.getStringId(base);
+				const first = valueToInteger(registers.get(base + 1)), last = valueToInteger(registers.get(base + 2));
+				if (first === null || last === null || first < 1 || last < first || last > this.stringPool.byteLength(id)) {
+					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				}
+				const count = last - first + 1;
+				this.charge(count);
+				out.push(valueString(this.stringPool.internSlice(id, first - 1, count)));
+				break;
+			}
 			case BuiltinFunctionId.SetStringIndex:
 				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.Table) {
 					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);

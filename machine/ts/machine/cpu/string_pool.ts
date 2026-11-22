@@ -1,6 +1,6 @@
 import { byteStringFromBytes, byteStringToText, writeByteString } from '../../common/byte_string';
 import { readLE32 } from '../../common/endian';
-import { hashText } from '../../common/hash';
+import { hashBytes, hashText } from '../../common/hash';
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import {
 	BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_NEXT_OFFSET,
@@ -11,6 +11,7 @@ import { CART_ROM_BASE, CART_ROM_SIZE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_SIZE 
 import type { Memory, MemoryByteView } from '../memory/memory';
 import { HEAP_STRING_METADATA_OFFSET, type HeapAllocator } from './heap_allocator';
 import type { LuaHeap } from './lua_heap';
+import { valueNil, valueString } from './value';
 
 export type StringId = number;
 export const STRING_GC_EPOCH_MASK = 1;
@@ -37,13 +38,21 @@ function romStringId(address: number, cartridgeSlot: number): number {
 	return address >= CART_ROM_BASE ? (address | (cartridgeSlot << 31)) >>> 0 : address;
 }
 
-function matchesBytes(candidate: Uint8Array, start: number, mask: number, source: string | Uint8Array, offset: number, length: number): boolean {
+type InternSource = string | Uint8Array | null;
+
+function matchesBytes(candidate: Uint8Array, start: number, mask: number, source: InternSource,
+	offset: number, length: number, first: number, wrapped: number): boolean {
 	let n = 0;
 	if (typeof source === 'string') {
 		while (n < length && candidate[(start + n) & mask] === source.charCodeAt(n)) ++n;
-	} else {
-		while (n < length && candidate[(start + n) & mask] === source[offset + n]) ++n;
+		return n === length;
 	}
+	while (n < first && candidate[(start + n) & mask] === source![offset + n]) ++n;
+	if (n !== first) return false;
+	const backed = first + wrapped;
+	while (n < backed && candidate[(start + n) & mask] === source![n - first]) ++n;
+	if (n !== backed) return false;
+	while (n < length && candidate[(start + n) & mask] === 0) ++n;
 	return n === length;
 }
 
@@ -155,7 +164,7 @@ export class StringPool {
 		view.byteLength = length;
 	}
 
-	private lookupRamChain(bucket: number, hash: number, source: string | Uint8Array, offset: number, length: number): number {
+	private lookupRamChain(bucket: number, hash: number, source: InternSource, offset: number, length: number, first: number, wrapped: number): number {
 		const memory = this.memory;
 		const ram = memory.ramData();
 		let record = memory.readRamRecordWord(bucket);
@@ -166,14 +175,14 @@ export class StringPool {
 				&& (memory.readRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET) & RAM_BYTE_MASK) === length) {
 				const start = (record + BLUA32_STRING_RECORD_HEADER_SIZE) & RAM_BYTE_MASK;
 				const mask = length > MAIN_RAM_SIZE - start ? RAM_BYTE_MASK : -1;
-				if (matchesBytes(ram, start, mask, source, offset, length)) return record;
+				if (matchesBytes(ram, start, mask, source, offset, length, first, wrapped)) return record;
 			}
 			record = memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
 		}
 		return 0;
 	}
 
-	private lookupRam(hash: number, source: string | Uint8Array, offset: number, length: number): number {
+	private lookupRam(hash: number, source: InternSource, offset: number, length: number, first: number, wrapped: number): number {
 		const control = this.metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
 		if (count === 0) return 0;
 		const index = hash & (count - 1);
@@ -181,15 +190,15 @@ export class StringPool {
 			const ready = this.metadata(REHASH_READY);
 			if (index < ready) {
 				const bucket = this.metadata(REHASH_BASE) + 4 * (hash & (2 * count - 1));
-				const found = this.lookupRamChain(bucket, hash, source, offset, length);
+				const found = this.lookupRamChain(bucket, hash, source, offset, length, first, wrapped);
 				if (found !== 0) return found;
 				if (index + 1 < ready) return 0;
 			}
 		}
-		return this.lookupRamChain(this.metadata(BUCKETS) + 4 * index, hash, source, offset, length);
+		return this.lookupRamChain(this.metadata(BUCKETS) + 4 * index, hash, source, offset, length, first, wrapped);
 	}
 
-	private lookupRom(directory: number, hash: number, source: string | Uint8Array, offset: number, length: number): number {
+	private lookupRom(directory: number, hash: number, source: InternSource, offset: number, length: number, first: number, wrapped: number): number {
 		const table = ROM_TABLES + 8 * directory;
 		const count = this.metadata(table + 4);
 		if (count === 0) return 0;
@@ -207,7 +216,7 @@ export class StringPool {
 			if (readLE32(bytes, byteOffset + BLUA32_STRING_HASH_OFFSET) === hash
 				&& readLE32(bytes, byteOffset + BLUA32_STRING_LENGTH_OFFSET) === length) {
 				this.bindRomStringBytes(record, cartridgeSlot, length);
-				if (matchesBytes(this.romView.bytes, this.romView.byteOffset, -1, source, offset, length)) {
+				if (matchesBytes(this.romView.bytes, this.romView.byteOffset, -1, source, offset, length, first, wrapped)) {
 					return romStringId(record, cartridgeSlot);
 				}
 			}
@@ -216,16 +225,16 @@ export class StringPool {
 		return 0;
 	}
 
-	private lookup(hash: number, source: string | Uint8Array, offset: number, length: number): number {
-		let match = this.lookupRam(hash, source, offset, length);
+	private lookup(hash: number, source: InternSource, offset: number, length: number, backed = length, wrapped = 0): number {
+		let match = this.lookupRam(hash, source, offset, length, backed, wrapped);
 		if (match !== 0) return match;
-		match = this.lookupRom(0, hash, source, offset, length);
+		match = this.lookupRom(0, hash, source, offset, length, backed, wrapped);
 		if (match !== 0) return match;
 		const first = this.metadata(FIRST_CART);
 		if (first === 0) return 0;
-		match = this.lookupRom(first, hash, source, offset, length);
+		match = this.lookupRom(first, hash, source, offset, length, backed, wrapped);
 		if (match !== 0) return match;
-		return this.lookupRom(3 - first, hash, source, offset, length);
+		return this.lookupRom(3 - first, hash, source, offset, length, backed, wrapped);
 	}
 
 	public resolveImageRecord(domain: ExecutionDomainId, address: number): StringId {
@@ -288,13 +297,33 @@ export class StringPool {
 		return work;
 	}
 	public intern(value: string): StringId {
-		const hash = hashText(value);
-		const existing = this.lookup(hash, value, 0, value.length);
+		return this.internSource(hashText(value), value, 0, value.length);
+	}
+
+	public internSlice(id: StringId, first: number, count: number): StringId {
+		const source = this.storage(id), inRam = ramAddress(id);
+		const at = storageOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE + first;
+		const start = inRam ? at & RAM_BYTE_MASK : at;
+		const backed = source === null ? 0 : Math.min(count, Math.max(0, source.length - start));
+		const wrapped = inRam ? count - backed : 0;
+		return this.internSource(hashBytes(source, start, count, backed, wrapped), source, start, count, id, backed, wrapped);
+	}
+
+	private internSource(hash: number, source: InternSource, start: number, length: number, sourceId: StringId = 0,
+		backed = length, wrapped = 0): StringId {
+		const existing = this.lookup(hash, source, start, length, backed, wrapped);
 		if (existing !== 0) return this.retain(existing);
+		// Preserve the borrowed bytes in the active sweep epoch and in any
+		// new collection triggered by bucket or record admission.
+		let root = valueNil();
+		if (sourceId !== 0) {
+			this.mark(sourceId);
+			root = valueString(sourceId);
+		}
 		const control = this.metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
 		const memory = this.memory;
 		if (count === 0) {
-			const base = this.heap.reserveBacking(4 * INITIAL_BUCKETS, 0);
+			const base = this.heap.reserveBacking(4 * INITIAL_BUCKETS, 0, root);
 			const offset = storageOffset(base);
 			memory.ramData().fill(0, offset, offset + 4 * INITIAL_BUCKETS);
 			memory.invalidateRamWrite(offset, 4 * INITIAL_BUCKETS);
@@ -303,7 +332,7 @@ export class StringPool {
 			if ((control & RAM_BUCKET_REHASH) !== 0) {
 				this.rehashStep(count, this.metadata(REHASH_BASE), INTERN_REHASH_WORK);
 			} else if (this.metadata(USED) >= count) {
-				const nextBase = this.heap.reserveBacking(8 * count, 0);
+				const nextBase = this.heap.reserveBacking(8 * count, 0, root);
 				this.writeMetadata(REHASH_BASE, nextBase);
 				this.writeMetadata(CAPACITY, count | RAM_BUCKET_REHASH);
 				this.rehashStep(count, nextBase, INTERN_REHASH_WORK);
@@ -311,7 +340,7 @@ export class StringPool {
 		}
 		// An unrepresentable length requests the full bank and still clocks
 		// the final collection before the admission fault.
-		const id = this.heap.allocateRecord(BLUA32_STRING_RECORD_HEADER_SIZE + Math.min(value.length, MAIN_RAM_SIZE), false, 0, 0);
+		const id = this.heap.allocateRecord(BLUA32_STRING_RECORD_HEADER_SIZE + Math.min(length, MAIN_RAM_SIZE), false, 0, 0, root);
 		const currentControl = this.metadata(CAPACITY), current = currentControl & RAM_BUCKET_EXTENT_MASK;
 		const index = hash & (current - 1);
 		const bucket = (currentControl & RAM_BUCKET_REHASH) !== 0 && index < this.metadata(REHASH_READY)
@@ -319,12 +348,20 @@ export class StringPool {
 			: this.metadata(BUCKETS) + 4 * index;
 		memory.writeRamRecordWord(id, BLUA32_STRING_RECORD_KIND | ((this.metadata(EPOCH) & STRING_GC_EPOCH_MASK) << 8));
 		memory.writeRamRecordWord(id + BLUA32_STRING_HASH_OFFSET, hash);
-		memory.writeRamRecordWord(id + BLUA32_STRING_LENGTH_OFFSET, value.length);
+		memory.writeRamRecordWord(id + BLUA32_STRING_LENGTH_OFFSET, length);
 		memory.writeRamRecordWord(id + BLUA32_STRING_NEXT_OFFSET, memory.readRamRecordWord(bucket));
-		if (value.length !== 0) {
+		if (length !== 0) {
 			const offset = storageOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE;
-			writeByteString(memory.ramData(), offset, value);
-			memory.invalidateRamWrite(offset, value.length);
+			const ram = memory.ramData();
+			if (typeof source === 'string') writeByteString(ram, offset, source);
+			else if (source === ram) {
+				ram.copyWithin(offset, start, start + backed);
+				if (wrapped !== 0) ram.copyWithin(offset + backed, 0, wrapped);
+			} else {
+				for (let index = 0; index < backed; ++index) ram[offset + index] = source![start + index];
+				if (backed !== length) ram.fill(0, offset + backed, offset + length);
+			}
+			memory.invalidateRamWrite(offset, length);
 		}
 		memory.writeRamRecordWord(bucket, id);
 		this.writeMetadata(USED, this.metadata(USED) + 1);

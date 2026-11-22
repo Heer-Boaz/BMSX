@@ -58,6 +58,29 @@ void indexBytesAcrossRestore() {
 	}
 }
 
+void borrowedSliceSurvivesEmergencyAllocation() {
+	PoolMachine machine;
+	auto& cpu = machine.cpu;
+	auto& heap = cpu.luaHeap();
+	auto& pool = cpu.stringPool();
+	heap.setCollectionTarget(static_cast<u32>(heap.capacity()));
+	std::string input(128u * 1024u, 'x');
+	input.replace(4, 3, std::string("\xf7\0A", 3));
+	const auto source = pool.intern(input);
+	const std::string garbage(96u * 1024u, 'q');
+	const u32 disposable = pool.intern(garbage);
+	require(cpu.heapAllocator().setFloor(disposable & ~(HEAP_PAGE_SIZE - 1u)),
+		"the large disposable String sits at the lowest occupied allocation");
+	constexpr size_t start = 4, count = 92u * 1024u;
+	require(heap.usedBytes() + BLUA32_STRING_RECORD_HEADER_SIZE + count > heap.capacity(),
+		"the actual occupied quota requires an emergency collection for this slice");
+	const auto result = pool.internSlice(source, start, count);
+	const std::string_view expected(input.data() + start, count);
+	require(!pool.find(garbage) && pool.find(input) == source
+		&& pool.toString(result) == expected && pool.find(expected) == result,
+		"collection removes the disposable String but retains the source and its exact borrowed bytes");
+}
+
 void reclaimUnreachableRecords() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
@@ -384,6 +407,7 @@ void admitExternalArgumentsAcrossStackGrowth(bool finalPending) {
 int main() {
 	try {
 		indexBytesAcrossRestore();
+		borrowedSliceSurvivesEmergencyAllocation();
 		reclaimUnreachableRecords();
 		collectEmptyString();
 		resumeMajorStringBucket();

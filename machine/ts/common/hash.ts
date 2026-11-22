@@ -32,3 +32,14 @@ export function hashText(text: string): number {
 	}
 	return hash >>> 0;
 }
+
+export function hashBytes(bytes: Uint8Array | null, offset: number, count: number, first: number, wrapped: number): number {
+	let hash = 2166136261;
+	const end = offset + first;
+	for (; offset < end; ++offset) {
+		hash = Math.imul(hash ^ bytes![offset], 16777619);
+	}
+	for (let index = 0; index < wrapped; ++index) hash = Math.imul(hash ^ bytes![index], 16777619);
+	for (let index = first + wrapped; index < count; ++index) hash = Math.imul(hash, 16777619);
+	return hash >>> 0;
+}

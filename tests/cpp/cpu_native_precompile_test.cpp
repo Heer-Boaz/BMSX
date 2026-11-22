@@ -457,8 +457,14 @@ void preparationLeavesFetchFaultsAtExecution() {
 void crossPageWideDependenciesRemainOwned() {
 	auto image = program();
 	const auto initial = test::encodeBlua32TestRom(RomImageDomain::System, image);
-	const u32 word = ((initial.textAddress + MAPPED_PAGE_BYTE_SIZE - 1u) & ~MAPPED_PAGE_BYTE_MASK)
-		/ INSTRUCTION_BYTES - initial.textAddress / INSTRUCTION_BYTES - 1u;
+	// Boot symbols affect the packed text address. Use a boundary beyond
+	// the fixture functions, not one that can overlap their instructions.
+	u32 endWord = 0;
+	for (const auto& function : image.functions)
+		endWord = std::max(endWord, function.firstWord + function.wordCount);
+	const u32 end = initial.textAddress + endWord * INSTRUCTION_BYTES;
+	const u32 boundary = (end + MAPPED_PAGE_BYTE_SIZE) & ~MAPPED_PAGE_BYTE_MASK;
+	const u32 word = (boundary - initial.textAddress) / INSTRUCTION_BYTES - 1u;
 	image.functions[4] = {.firstWord=word, .wordCount=7};
 	writeInstruction(image.text, word, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, word + 1u, static_cast<u8>(OpCode::KSMI), 0, 0, 11);
@@ -477,8 +483,7 @@ void crossPageWideDependenciesRemainOwned() {
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[4]);
 	require(cpu.runUntilDepth(1, 32) == RunResult::Halted && cpu.readCompletionValues().get(0) == valueInteger(11),
 		"the prepared cross-page function executes its complete raw WIDE operand");
-	const u32 nextPage = (pc + INSTRUCTION_BYTES) & ~MAPPED_PAGE_BYTE_MASK;
-	cpu.invalidateMappedWords(nextPage, 5, 6);
+	cpu.invalidateMappedWords(boundary, 5, 6);
 	require(!entryAt(cpu, pc) && !entryAt(cpu, pc + 2u * INSTRUCTION_BYTES),
 		"retiring a word deep in the second page withdraws every entry into the region");
 

@@ -30,9 +30,10 @@ export const enum BuiltinFunctionId {
 	FrameHeader = 28,
 	NumberType = 29,
 	ToInteger = 30,
+	StringSlice = 31,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 31;
+export const BUILTIN_FUNCTION_COUNT = 32;
 
 export const enum GarbageCollectionOperation { Collect = 0, Count = 1, Step = 2 }
 
@@ -73,4 +74,5 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_frame_header', id: BuiltinFunctionId.FrameHeader },
 	{ name: '__bmsx_number_type', id: BuiltinFunctionId.NumberType },
 	{ name: '__bmsx_tointeger', id: BuiltinFunctionId.ToInteger },
+	{ name: '__bmsx_string_slice', id: BuiltinFunctionId.StringSlice },
 ];

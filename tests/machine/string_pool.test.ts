@@ -1,10 +1,13 @@
 import { textToByteString } from '../../machine/ts/common/byte_string';
+import { writeLE32 } from '../../machine/ts/common/endian';
 import { hashText } from '../../machine/ts/common/hash';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HEAP_STRING_METADATA_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
-import { BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_RECORD_KIND } from '../../machine/ts/spec/blua32/image_format';
+import {
+	BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_RECORD_KIND, BLUA32_STRING_RECORD_ROM_FLAG,
+} from '../../machine/ts/spec/blua32/image_format';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag, valuePayload, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
@@ -15,6 +18,7 @@ import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history
 import { linkRawTestBlua32Pair } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -41,6 +45,42 @@ test('all byte values survive intern, indexing and snapshot restore', () => {
 			assert.equal(pool.byteAt(id, index), expected[index]);
 		}
 	}
+});
+
+test('a String slice hashes and copies the logical zero tail of a ROM record', () => {
+	const id = 32, start = id + BLUA32_STRING_RECORD_HEADER_SIZE;
+	const rom = new Uint8Array(start + 2);
+	writeLE32(rom, id, BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG);
+	writeLE32(rom, id + BLUA32_STRING_LENGTH_OFFSET, 6);
+	rom.set([0x41, 0xf7], start);
+	const memory = new Memory({ systemRom: rom, cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
+	const pool = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory)).stringPool;
+	assert.equal(pool.bytes(id), 'A\xf7\0\0\0\0');
+	for (const [first, length] of [[1, 4], [4, 2]]) {
+		const expected = pool.bytes(id).slice(first, first + length);
+		const result = pool.internSlice(id, first, length);
+		assert.equal(pool.bytes(result), expected);
+		assert.equal(pool.find(expected), result);
+		assert.equal(pool.internSlice(id, first, length), result);
+	}
+});
+
+test('a borrowed String stays live through emergency admission of its slice', () => {
+	const cpu = createCpu(), pool = cpu.stringPool, heap = cpu.luaHeap, arena = cpu.heapAllocator;
+	heap.setCollectionTarget(heap.capacity());
+	const input = '\xff\0\x80A'.repeat(32 * 1024);
+	const source = pool.intern(input);
+	const garbage = 'q'.repeat(96 * 1024), disposable = pool.intern(garbage);
+	assert.equal(arena.setFloor(disposable - disposable % HEAP_PAGE_SIZE), true);
+	const first = 13, length = garbage.length, remaining = heap.capacity() - heap.usedBytes();
+	assert.ok(remaining >= 0 && remaining < BLUA32_STRING_RECORD_HEADER_SIZE + length,
+		'the slice needs the quota occupied by the disposable String');
+	const result = pool.internSlice(source, first, length);
+	assert.equal(pool.find(garbage), undefined, 'admission actually collected unreachable Strings');
+	assert.equal(pool.find(input), source, 'the only root for the source was the borrowed slice');
+	assert.equal(pool.bytes(result), input.slice(first, first + length));
+	assert.equal(pool.find(input.slice(first, first + length)), result);
+	assert.ok(heap.usedBytes() <= heap.capacity());
 });
 
 test('collection removes unreachable records from all intern buckets and reuses the same capacity', () => {

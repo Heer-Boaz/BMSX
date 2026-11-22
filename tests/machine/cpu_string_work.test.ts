@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { BuiltinResults } from '../../machine/ts/machine/cpu/builtin_values';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueFloat, valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -17,6 +18,7 @@ import {
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
 	for (const op of [OpCode.CONCAT, OpCode.CONCATN, OpCode.LT, OpCode.LE, OpCode.EQ]) {
@@ -114,6 +116,90 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 	});
 }
 
+for (const wide of [false, true]) {
+	test(`StringSlice charges the inclusive raw byte span and resumes at the next instruction (WIDE=${wide})`, () => {
+		const base = wide ? 256 : 0, callWord = wide ? 1 : 0;
+		const text = new Uint8Array((callWord + 2) * INSTRUCTION_BYTES);
+		if (wide) writeInstruction(text, 0, OpCode.WIDE, 1, 0, 0);
+		writeInstruction(text, callWord, OpCode.CALL, 0, 4, 2);
+		writeInstruction(text, callWord + 1, OpCode.HALT, 0, 0, 0);
+		const functions = [{ firstWord: 0, wordCount: callWord + 2, maxStack: base + 5 }];
+		const image = linkRawTestSystemBlua32({ text, functions });
+		const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+		const pc = image.image.functions[0].codeAddress;
+		const input = 'x'.repeat(254) + 'A\x00\xf7B' + 'x'.repeat(42);
+		const inputId = cpu.stringPool.intern(input);
+		for (const [first, last, expected] of [
+			[valueInteger(255), valueInteger(258), 'A\x00\xf7B'],
+			[valueFloat(255), valueFloat(258), 'A\x00\xf7B'],
+			[valueInteger(256), valueInteger(256), '\x00'],
+			[valueInteger(1), valueInteger(300), input],
+		] as const) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+			const f = cpu.rootThread.currentFrame!;
+			f.registers.setBuiltinFunction(base, BuiltinFunctionId.StringSlice);
+			f.registers.setString(base + 1, inputId);
+			f.registers.set(base + 2, first);
+			f.registers.set(base + 3, last);
+			f.top = base + 4;
+			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - expected.length - 1,
+				'CALL, tier two, inclusive byte count and one placed result');
+			assert.equal(f.pc, pc + (callWord + 1) * INSTRUCTION_BYTES);
+			assert.equal(f.top, base + 1);
+			assert.equal(cpu.stringPool.bytes(f.registers.getStringId(base)), expected);
+		}
+	});
+
+	test(`StringSlice admits endpoints even when its result is discarded (WIDE=${wide})`, () => {
+		const base = wide ? 256 : 0, callWord = wide ? 1 : 0;
+		const text = new Uint8Array((callWord + 2) * INSTRUCTION_BYTES);
+		if (wide) writeInstruction(text, 0, OpCode.WIDE, 1, 0, 0);
+		writeInstruction(text, callWord, OpCode.CALL, 0, 4, 1);
+		writeInstruction(text, callWord + 1, OpCode.HALT, 0, 0, 0);
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: callWord + 2, maxStack: base + 5 }] });
+		for (const [first, last] of [
+			[valueInteger(0), valueInteger(2)],
+			[valueInteger(2), valueInteger(1)],
+			[valueInteger(1), valueInteger(3)],
+			[valueFloat(1.5), valueInteger(2)],
+			[valueInteger(1), valueBool(true)],
+		]) {
+			const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+			const f = cpu.rootThread.currentFrame!;
+			f.registers.setBuiltinFunction(base, BuiltinFunctionId.StringSlice);
+			f.registers.setString(base + 1, cpu.stringPool.intern('ab'));
+			f.registers.set(base + 2, first);
+			f.registers.set(base + 3, last);
+			f.top = base + 4;
+			cpu.runUntilDepth(0, 1);
+			assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+		}
+	});
+}
+
+test('BIOS string.sub normalizes inclusive byte bounds without decoding the input', () => {
+	const { cpu } = createCartlibProgramHarness(`
+bss raw: u8[300]
+raw[254] = 255
+raw[255] = 0
+raw[256] = 128
+raw[257] = 195
+local s<const> = string.from_bytes(raw, 300)
+local span<const> = string.char(255,0,128,195)
+assert(string.sub(s,255,258) == span)
+assert(string.sub(s,-46,-43) == span)
+assert(string.sub(s,255.75,258.9) == span)
+assert(string.sub(s,256,256) == string.char(0))
+assert(string.sub(s,0,1000) == s and string.sub(s,nil) == s)
+assert(string.sub(s,258,255) == '' and string.sub(s,1,0) == '')
+`, { optLevel: 3 });
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	assert.equal(cpu.readLuaFaultReasonWord(), 0);
+	assert.equal(cpu.captureRuntimeState().hardHalted, false);
+	assert.equal(cpu.getFrameDepth(), 0);
+});
+
 const portCode = new Uint8Array(INSTRUCTION_BYTES);
 writeInstruction(portCode, 0, OpCode.HALT, 0, 0, 0);
 const portImage = linkRawTestSystemBlua32({ text: portCode, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }] });
@@ -134,6 +220,12 @@ test('RAM String reads and intern probes wrap at the physical seam', () => {
 	assert.equal(pool.byteAt(mirror, 9), 0xf7);
 	assert.equal(pool.compare(mirror, straight), 0);
 	assert.ok(pool.compare(mirror, after) < 0);
+	for (const start of [6, 9]) {
+		const slice = pool.internSlice(mirror, start, 4), expected = bytes.slice(start, start + 4);
+		assert.equal(pool.bytes(slice), expected);
+		assert.equal(pool.find(expected), slice, 'ordinary interning and slicing hash the same bytes');
+		assert.equal(pool.internSlice(mirror, start, 4), slice, 'slice lookup compares the same physical span');
+	}
 	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const count = memory.readRamRecordWord(metadata + 4);
 	const bucket = memory.readRamRecordWord(metadata) + 4 * (hashText(bytes) & (count - 1));

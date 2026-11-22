@@ -1,5 +1,6 @@
 local byte<const> = __bmsx_string_byte
 local char<const> = __bmsx_string_char
+local slice<const> = __bmsx_string_slice
 local table<const> = require('table')
 local concat<const> = table.concat
 local string<const> = {}
@@ -71,14 +72,7 @@ string.sub = function(value, start_arg, end_arg)
 	if start_index == 1 and end_index == length then
 		return value
 	end
-	if start_index == end_index then
-		return char(byte(value, start_index))
-	end
-	local output<const> = {}
-	for index = start_index, end_index do
-		output[#output + 1] = char(byte(value, index))
-	end
-	return concat(output)
+	return slice(value, start_index, end_index)
 end
 
 

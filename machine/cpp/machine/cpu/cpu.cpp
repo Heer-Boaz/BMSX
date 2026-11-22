@@ -1136,6 +1136,17 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::StringChar:
 			runBuiltinStringChar(args, out);
 			break;
+		case BuiltinFunctionId::StringSlice: {
+			i32 first, last;
+			if (args.size() < 3 || !valueIsString(args[0]) ||
+				!valueToInteger(args[1], first) || !valueToInteger(args[2], last) ||
+				first < 1 || last < first || last > m_stringPool.byteLength(asStringId(args[0])))
+				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			const auto count = last - first + 1;
+			instructionBudgetRemaining -= count;
+			out.push_back(valueString(m_stringPool.internSlice(asStringId(args[0]), first - 1, count)));
+			break;
+		}
 		case BuiltinFunctionId::SetStringIndex:
 			if (!valueIsTable(args[0])) {
 				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
