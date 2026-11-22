@@ -4,6 +4,7 @@ local scene_library<const> = require('cartlib/world/scene_library')
 local castle_map<const> = require('castle/map')
 local progression<const> = require('cartlib/progression')
 local fixture<const> = require('tests/carts/pietious/fixture')
+
 return {
 	kind = 'integration',
 	tests = {
@@ -88,6 +89,40 @@ return {
 			end
 			t:at_boundary(world:request_mutation_boundary(), 30)
 
+		end,
+		rock_break_timer_is_one_shot = function(t)
+			local _director<const>, castle<const>, player<const> = fixture.start_game(t)
+			castle:switch_room('right')
+			t:at_boundary(world:request_mutation_boundary(), 30)
+			local room<const> = castle.room
+			local rock<const> = room.scene.members.rock_002_02
+			player.status.inventory_items.schoentjes = false
+			assert(rock.timelines == nil and rock.collider.enabled, 'intact scenery must not allocate a playback transport')
+			local contact<const> = { other_id = player.id, other_collider_local_id = 'sword', phase = 'begin' }
+			for _ = 1, rock.health do
+				player.sword_strike_id = player.sword_strike_id + 1
+				rock.events:emit('overlap.begin', contact)
+			end
+			t:at_boundary(world:request_mutation_boundary(), 30)
+			assert(rock.breaking and not rock.collider.enabled and rock.sprite_component.imgid == 'stone_broken'
+				and room.progress.destroyed_rocks.rock_002_02, 'terminal contact must publish the broken rock')
+			local transport<const> = rock.timelines
+			assert(transport ~= nil, 'broken scenery must enter its one-shot playback')
+			rock.events:emit('break')
+			rock.events:emit('overlap.stay', contact)
+			world:set_gameplay_clock_running(false)
+			t:wait_ticks(45)
+			assert(rock.timelines == transport and registry:get(rock.id) == rock,
+				'duplicate break must not replace playback, and gameplay pause must preserve it')
+			local count = 0
+			for index = 1, #room.scene.objects.items do
+				if room.scene.objects.items[index].item_id == 'drop.rock_002_02' then count = count + 1 end
+			end
+			assert(count == 1, 'duplicate destruction must not duplicate the pickup')
+			world:set_gameplay_clock_running(true)
+			t:wait_until('rock break playback retires the actor', function()
+				return registry:get(rock.id) == nil
+			end, 45)
 		end,
 	},
 }

@@ -1,5 +1,3 @@
-local fsm_library<const> = require('cartlib/fsm/library')
-local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local collision_storage<const> = require('collision_storage')
@@ -13,6 +11,11 @@ local rock<const> = {}
 rock.__index = rock
 setmetatable(rock, { __index = sprite_object })
 local rock_break_timeline_id<const> = 'rock.tl.break'
+local rock_break_sequence<const> = {
+	frames = timeline.range(rock_break_steps),
+	playback_mode = 'once',
+}
+local break_playback<const> = { rewind = false }
 
 function rock:ctor()
 	self.collider = self:get_component(collider_2d_component)
@@ -31,20 +34,19 @@ function rock:apply_damage(request)
 	return combat_damage.build_applied_result(request, 1, false, 'damaged')
 end
 
-function rock:process_damage_result(result)
-	if result.status == 'rejected' then
-		return
-	end
-	if result.destroyed then
-		self.events:emit('break')
-		return
-	end
-end
-
 function rock:begin_break()
+	if not self.active or self.breaking then return end
+	self.breaking = true
 	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local room<const> = self.room
 	room:mark_rock_destroyed(self.scene_member_id)
+	self.collider:set_enabled(false)
+	self.sprite_component:set_imgid('stone_broken')
+	-- An intact rock has no scheduled work. Attach the same one-shot
+	-- gameplay transport only when its terminal drawing state starts.
+	local transport<const> = self:add_component(timeline_component.new(self))
+	transport:register(rock_break_timeline_id, rock_break_sequence)
+	transport:play(rock_break_timeline_id, break_playback, rock.mark_for_disposal)
 	if self.item_type == nil then
 		return
 	end
@@ -75,57 +77,24 @@ function rock:begin_break()
 	})
 end
 
-local define_rock_fsm<const> = function()
-	local apply_weapon_contact<const> = function(self, _state, event)
-		local weapon_kind<const> = combat_overlap.admit_weapon_contact(self, event)
-		if weapon_kind == nil then
-			return
-		end
-		local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, 'rock', event, weapon_kind))
-		self:process_damage_result(result)
+local apply_weapon_contact<const> = function(self, _event_type, _emitter, event)
+	if not self.active or self.breaking then return end
+	local weapon_kind<const> = combat_overlap.admit_weapon_contact(self, event)
+	if weapon_kind == nil then return end
+	local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, 'rock', event, weapon_kind))
+	if result.destroyed then
+		self.events:emit('break')
 	end
-	fsm_library.register('rock', {
-		initial = 'idle',
-		on = {
-			['overlap.begin'] = apply_weapon_contact,
-			['overlap.stay'] = apply_weapon_contact,
-		},
-		states = {
-			idle = {
-				on = {
-					['break'] = '/breaking',
-					['reset'] = '/idle',
-				},
-			},
-			breaking = {
-				timelines = {
-					[rock_break_timeline_id] = {
-						def = {
-							frames = timeline.range(rock_break_steps),
-							playback_mode = 'once',
-						},
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = {
-							rewind = false,
-							snap_to_start = true,
-						},
-						on_finished = function(self)
-							self:mark_for_disposal()
-						end,
-					},
-				},
-				on = {
-					['reset'] = '/idle',
-				},
-				entering_state = function(self)
-					self:begin_break()
-					self.collider:set_enabled(false)
-					self.sprite_component:set_imgid('stone_broken')
-				end,
-			},
-		},
-	})
+end
+
+local contact_begin<const> = { event = 'overlap.begin', handler = apply_weapon_contact }
+local contact_stay<const> = { event = 'overlap.stay', handler = apply_weapon_contact }
+local break_event<const> = { event = 'break', handler = rock.begin_break }
+
+function rock:bind()
+	self.events:on(contact_begin)
+	self.events:on(contact_stay)
+	self.events:on(break_event)
 end
 
 local register_rock_definition<const> = function()
@@ -134,8 +103,6 @@ local register_rock_definition<const> = function()
 		class = rock,
 		components = {
 			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_enemy_layer, mask = collision_enemy_mask }),
-			timeline_component.new,
-			fsm_component.factory({ 'rock' }),
 		},
 		defaults = {
 			order = 140,
@@ -149,6 +116,5 @@ end
 
 return {
 		rock = rock,
-		define_rock_fsm = define_rock_fsm,
 		register_rock_definition = register_rock_definition,
 }
