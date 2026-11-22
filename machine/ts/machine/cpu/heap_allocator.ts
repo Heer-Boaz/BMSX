@@ -195,6 +195,10 @@ export class HeapAllocator {
 			const info = this.memory.readRamRecordWord(pageEntry);
 			const base = RAM_BASE + (page << PAGE_SHIFT);
 			switch (info & 0xff) {
+				case PageKind.OwnedRun:
+					// Owned backing has no independently swept records.
+					page += this.memory.readRamRecordWord(pageEntry + 4) - 1;
+					break;
 				case PageKind.ObjectRun:
 					page += Math.min((this.memory.readRamRecordWord(pageEntry + 4) - 1) >>> 0, this.pageLimit - page - 1);
 					work += this.memory.readRamRecordByte(base) !== 0 ? Math.abs(visit(context, base)) : 1;

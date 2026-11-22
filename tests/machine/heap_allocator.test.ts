@@ -184,6 +184,36 @@ test('object sweep resumes from RAM, visits vacant issued slots and skips owned 
 	assert.ok(!heap.objectSweepActive());
 });
 
+test('object sweep skips owned backing at a constant descriptor cost', t => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const heap = new HeapAllocator(memory);
+	const scan = (ownedPages: number) => {
+		heap.reset(FLOOR);
+		const high = heap.allocate(32, false);
+		const owned = heap.allocate(ownedPages * HEAP_PAGE_SIZE, true);
+		const low = heap.allocate(HEAP_PAGE_SIZE, false);
+		assert.equal(low + HEAP_PAGE_SIZE, owned);
+		assert.equal(owned + ownedPages * HEAP_PAGE_SIZE, high);
+		assert.ok(heap.setFloor(low));
+		for (const address of [low, owned, high]) memory.writeRamRecordWord(address, 1);
+
+		const records: number[] = [];
+		const inspect = (addresses: number[], address: number) => { addresses.push(address); return 1; };
+		heap.beginObjectSweep();
+		assert.equal(heap.sweepObjects(1, records, inspect), 1);
+		assert.deepEqual(records, [low]);
+
+		const reads = t.mock.method(memory, 'readRamRecordWord');
+		const work = heap.sweepObjects(1, records, inspect);
+		reads.mock.restore();
+		assert.equal(work, 1);
+		assert.deepEqual(records, [low, high]);
+		assert.ok(!heap.objectSweepActive());
+		return reads.mock.callCount();
+	};
+	assert.equal(scan(128), scan(2), 'a large owned extent reads no more page descriptors than a small one');
+});
+
 test('releasing a middle partial page preserves allocation order, including after RAM restore', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const heap = new HeapAllocator(memory);

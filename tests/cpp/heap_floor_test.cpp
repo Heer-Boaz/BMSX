@@ -194,7 +194,8 @@ void objectSweepResumesFromRam() {
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 	HeapAllocator heap(memory);
 	const u32 first = heap.allocate(32, false), vacant = heap.allocate(32, false), last = heap.allocate(32, false);
-	const u32 owned = heap.allocate(2u * HEAP_PAGE_SIZE, true);
+	constexpr u32 ownedBytes = 128u * HEAP_PAGE_SIZE;
+	const u32 owned = heap.allocate(ownedBytes, true);
 	const u32 run = heap.allocate(3u * HEAP_PAGE_SIZE, false);
 	for (const u32 address : {first, vacant, last, owned, run}) memory.writeRamRecordWord(address, 1);
 	heap.free(vacant);
@@ -239,7 +240,7 @@ void objectSweepResumesFromRam() {
 			"the issued hole consumes exactly one visit without inspecting the next record");
 		require(heap.sweepObjects(1, &visits, retire) == 5 && visits.addresses == std::vector<u32>{last},
 			"the next visit resumes at the last record, not the new allocation in the swept prefix");
-		require(heap.occupiedBytes() == 2u * HEAP_PAGE_SIZE + 32u && memory.readRamRecordWord(owned) == 1
+		require(heap.occupiedBytes() == ownedBytes + 32u && memory.readRamRecordWord(owned) == 1
 			&& memory.readRamRecordWord(first) == 2 && !heap.objectSweepActive()
 			&& memory.readRamRecordWord(cursor) == heap.pageLimit() * HEAP_PAGE_SIZE,
 			"the new allocation and owned run survive and the cursor reaches the sentinel");

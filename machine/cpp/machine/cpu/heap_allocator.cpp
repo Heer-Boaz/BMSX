@@ -153,6 +153,10 @@ size_t HeapAllocator::walkObjectPages(u32& position, size_t allowance, void* con
 		const u32 info = m_memory.readRamRecordWord(pageEntry);
 		const u32 base = RAM_BASE + (page << PAGE_SHIFT);
 		switch (info & 0xffu) {
+			case OwnedRun:
+				// Owned backing has no independently swept records.
+				page += m_memory.readRamRecordWord(pageEntry + 4u) - 1u;
+				break;
 			case ObjectRun:
 				page += std::min(m_memory.readRamRecordWord(pageEntry + 4u) - 1u, m_pageLimit - page - 1u);
 				work += m_memory.readRamRecordByte(base) != 0u ? std::abs(visit(context, base)) : 1;
