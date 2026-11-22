@@ -231,6 +231,7 @@ void* NativeLowering::finish(size_t& codeBytes) {
 	emitRomReads();
 	emitTableStoreBarriers();
 	emitSingleStringReads();
+	emitStringStoreMisses();
 	for (auto& exit : m_coldExits) {
 		exit.label = sljit_emit_label(m_compiler);
 		m_cache.setState(exit.state);

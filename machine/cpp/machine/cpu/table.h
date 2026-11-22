@@ -55,6 +55,9 @@ public:
 	// The caller admits an own assignment with a Table key and a non-nil
 	// value. Declining leaves the table and collector unchanged.
 	bool tryAssignIdentityHash(Value key, Value value) noexcept;
+	// A non-nil field write may complete without a VM handoff. Return its
+	// actual hash slot, or -1 before mutation if the VM must handle it.
+	int tryAssignStringField(StringId key, Value value, StringId newIndexKey) noexcept;
 	bool getIntegerArrayKey(int key, Value& value) const {
 		return getArraySlot(arraySlot(key), value);
 	}
@@ -232,8 +235,9 @@ private:
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
 	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
 	int setHash(u32 array, Value key, Value value);
-	template <bool InPlaceOnly>
-	int setNonNilHash(u32 array, Value key, Value value) noexcept(InPlaceOnly);
+	enum class HashStore : u8 { General, IdentityInPlace, FieldInPlace };
+	template <HashStore Policy>
+	int setNonNilHash(u32 array, Value key, Value value, StringId newIndexKey = 0) noexcept(Policy != HashStore::General);
 	void removeFromHash(const Value& key);
 	void markHashNodeDead(size_t index);
 	Value getCanonical(const Value& key) const;

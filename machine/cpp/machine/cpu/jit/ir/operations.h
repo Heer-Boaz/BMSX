@@ -50,13 +50,14 @@ enum class NativeWordSource : u8 { Dynamic, Integer, Float, Invalid };
 enum class NativeGcBarrier : u8 { Dynamic, None, Reference };
 enum class NativeNilValue : u8 { Dynamic, Nil, Present };
 enum class NativeArrayLengthEffect : u8 { ByValue, AdvanceAtBoundary, RetreatAtBoundary };
+enum class NativeHashStore : u8 { Exit, Identity, FixedField };
 
 struct NativeStorePlan {
 	NativeGcBarrier barrier = NativeGcBarrier::Dynamic;
 	NativeNilValue nilValue = NativeNilValue::Dynamic;
 	// Applies only on an admitted in-capacity integer-key route.
 	NativeArrayLengthEffect arrayLength = NativeArrayLengthEffect::ByValue;
-	bool returnIdentityHash = false;
+	NativeHashStore hash = NativeHashStore::Exit;
 };
 
 struct NativeReplay {

@@ -95,6 +95,7 @@ private:
 	void emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBlockExitSite&, std::optional<ValueTag> resultTag);
 	void emitFieldResult(int slot, std::optional<ValueTag> resultTag);
 	void emitSingleStringReads();
+	void emitStringStoreMisses();
 	void admitTableValueWrite(NativeBlockExitSite&);
 	void emitTableValueWrite(int value);
 	// flags cannot address the mark byte; test is first clobbered after the load.
@@ -166,6 +167,16 @@ private:
 		i32* ownPrediction;
 	};
 	std::vector<SingleStringRead> m_singleStringReads;
+	struct StringStoreMiss {
+		std::array<sljit_jump*, 4> misses;
+		State registers;
+		NativeBlockExitSite* exit;
+		sljit_label* resume;
+		int value;
+		u16 keyIndex;
+		NativeNilValue nilValue;
+	};
+	std::vector<StringStoreMiss> m_stringStoreMisses;
 	std::array<u8, NATIVE_BLOCK_MAX_INSTRUCTIONS> m_fieldAddressSpills;
 	size_t m_current = 0, m_instruction = 0;
 	bool m_terminal = false;

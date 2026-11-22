@@ -1,4 +1,5 @@
 #include "machine/cpu/jit/sljit/lowering.h"
+#include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/gc_heap.h"
 #include "machine/cpu/gc_object.h"
@@ -269,8 +270,12 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 			m_cache.state(), &exit, sljit_emit_label(c), ownPrediction});
 		return;
 	}
-	for (auto* guard : address) fault(guard, exit, m_cache.state());
-	fault(valueFailure, exit, m_cache.state());
+	const bool returnMiss = m_bindings.cpu && m_decodedPage && plan.hash == NativeHashStore::FixedField;
+	const auto& missState = m_cache.state();
+	if (!returnMiss) {
+		for (auto* guard : address) fault(guard, exit, missState);
+		fault(valueFailure, exit, missState);
+	}
 	if (load) {
 		emitStringPayload();
 		return;
@@ -288,6 +293,34 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	admitTableValueWrite(exit);
 	emitTableStoreBarrier(value, plan.barrier);
 	emitTableValueWrite(value);
+	if (returnMiss)
+		m_stringStoreMisses.push_back({{address[0], address[1], address[2], valueFailure},
+			missState, &exit, sljit_emit_label(c), value, *keyIndex, plan.nilValue});
+}
+
+void NativeLowering::emitStringStoreMisses() {
+	auto* c = m_compiler;
+	for (const auto& store : m_stringStoreMisses) {
+		auto* entry = sljit_emit_label(c);
+		for (auto* miss : store.misses) sljit_set_label(miss, entry);
+		m_cache.setState(store.registers);
+		emitRawLoad(store.value, SLJIT_R0, SLJIT_R3);
+		if (store.nilValue == NativeNilValue::Dynamic)
+			fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0,
+				SLJIT_IMM, static_cast<u8>(ValueTag::Nil)), *store.exit, store.registers);
+		// Load the receiver before reusing its scratch as a Value.
+		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver);
+		emitPoolWord(store.keyIndex, SLJIT_R2);
+		emitValueTransportStore(c, SLJIT_SP, hashOperand, SLJIT_R0, SLJIT_R3);
+		m_cache.spillCall(false, 0);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.cpu));
+		sljit_get_local_base(c, SLJIT_R3, 0, hashOperand);
+		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4(32, P, 32, 32, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::assignNativeTableField));
+		m_cache.spillCall(true, 0);
+		fault(sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), *store.exit, store.registers);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(store.exit->tableStore.decoded), SLJIT_R0, 0);
+		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), store.resume);
+	}
 }
 
 void NativeLowering::emitSingleStringReads() {
@@ -388,7 +421,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		auto* string = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 			SLJIT_IMM, static_cast<u8>(ValueTag::String));
 		const bool hashLeaf = m_bindings.cpu && access.readPlan == NativeTableReadPlan::ProbeHashOrOneHop;
-		const bool identityStore = m_bindings.cpu && access.store.returnIdentityHash;
+		const bool identityStore = m_bindings.cpu && access.store.hash == NativeHashStore::Identity;
 		auto* otherKey = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 			SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
 		if (!hashLeaf && !identityStore) fault(otherKey, exit, m_cache.state());

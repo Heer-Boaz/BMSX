@@ -1612,6 +1612,179 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 	requireParity(native, scalar);
 #endif
 }
+
+void nativeFixedStringMissReturnsWithinTheGrant() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	image.constants = {std::string("retained field")};
+	constexpr int receiverSlot = 256, methodSlot = 10, warmSlot = 12, spareSlot = 13, fullSlot = 14, metaSlot = 15;
+	constexpr int loop = 16, method = 32, methodArgs = 3;
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), methodSlot, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, loop, static_cast<u8>(OpCode::MOV), 2, 8, 0);
+	writeInstruction(image.text, loop + 1, static_cast<u8>(OpCode::KSMI), 4, 0, 39);
+	writeInstruction(image.text, loop + 2, static_cast<u8>(OpCode::WIDE), 1, 0, 0);
+	writeInstruction(image.text, loop + 3, static_cast<u8>(OpCode::SETFIELD), 0, 0, 2);
+	writeInstruction(image.text, loop + 4, static_cast<u8>(OpCode::MOV), 9, 2, 0);
+	writeInstruction(image.text, loop + 5, static_cast<u8>(OpCode::MOV), 11, 4, 0);
+	writeInstruction(image.text, loop + 6, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
+	writeInstruction(image.text, method, static_cast<u8>(OpCode::SETI), 0, 1, 2);
+	writeInstruction(image.text, method + 1, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = receiverSlot + 1},
+		{.firstWord = loop, .wordCount = 7, .maxStack = receiverSlot + 1},
+		{.firstWord = method, .wordCount = 2, .numParams = methodArgs, .maxStack = methodArgs}};
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
+
+	CpuMachine native(image), scalar(image, true);
+	auto& cpu = native.cpu;
+	const auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
+	const int throughStore = cycles(OpCode::MOV) + cycles(OpCode::KSMI) + cycles(OpCode::SETFIELD);
+	const int throughSuffix = throughStore + 2 * cycles(OpCode::MOV);
+	const u32 pc = native.rom.textAddress + loop * INSTRUCTION_BYTES;
+	const u32 storePc = pc + 2 * INSTRUCTION_BYTES, suffixPc = pc + 4 * INSTRUCTION_BYTES;
+	require(test::runCpuParity(cpu, scalar.cpu, cycles(OpCode::CLOSURE)) == RunResult::Yielded,
+		"the test first creates the actual __newindex closure");
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		auto& frame = *lane.activeThread()->currentFrame;
+		auto& strings = lane.stringPool();
+		const auto field = *strings.find("retained field");
+		auto warm = lane.createTable(1, 4), spare = lane.createTable(1, 0), full = lane.createTable(1, 1);
+		auto meta = lane.createTable(0, 2);
+		frame.registers.set(warmSlot, valueTable(warm.address()));
+		frame.registers.set(spareSlot, valueTable(spare.address()));
+		frame.registers.set(fullSlot, valueTable(full.address()));
+		frame.registers.set(metaSlot, valueTable(meta.address()));
+		frame.setTop(receiverSlot + 1);
+		for (auto* table : {&warm, &spare, &full}) table->setInteger(1, valueInteger(61));
+		const auto home = warm.setStringKey(field, valueBool(false));
+		for (int i = 0; i < 64; ++i) {
+			const auto candidate = strings.intern("field collider " + std::to_string(i));
+			if (warm.beginStringProbe(candidate).node != home) continue;
+			spare.setStringKey(candidate, valueInteger(27));
+			break;
+		}
+		const auto resident = strings.intern("resident field");
+		full.setStringKey(resident, valueInteger(31));
+		spare.setStringKey(resident, valueInteger(31));
+		spare.setStringKey(strings.intern("third field"), valueInteger(37));
+		require(spare.hashSlots() == 4 && isNil(spare.getStringKey(field)),
+			"three unreserved entries leave exactly one spare hash slot");
+		meta.setStringKey(strings.intern("unrelated metatable field"), valueInteger(9));
+		spare.setMetatableAddress(meta.address());
+	}
+	const auto start = [&](int table, Value value) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& lane = machine->cpu;
+			lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[1], pc);
+			auto registers = lane.activeThread()->currentFrame->registers;
+			registers.set(receiverSlot, registers.get(table));
+			registers.set(8, value);
+			registers.set(9, valueInteger(-9));
+			registers.set(11, valueInteger(-11));
+		}
+	};
+	start(warmSlot, valueBool(false));
+	require(test::runCpuParity(cpu, scalar.cpu, NATIVE_WARM_SCALE * 16
+		* (throughSuffix + cycles(OpCode::JMP))) == RunResult::Yielded, "the real fixed field warms a live native entry");
+	auto& page = *cpu.activeThread()->currentFrame->decodedPage;
+	const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(cpu, page, word);
+	const auto* installed = page.nativeBlocks->entries[word].get();
+	const auto exit = std::ranges::find(installed->sideExits, NativeBlockExit::WriteField, &NativeBlockExitSite::exit);
+	require(exit != installed->sideExits.end() && exit->currentPc == storePc && exit->nextPc == suffixPc,
+		"the warmed body contains the WIDE SETFIELD checkpoint");
+	auto& prediction = *exit->tableStore.decoded;
+	const auto originalSlot = prediction;
+	require(originalSlot >= 0, "the first receiver trained the actual store site");
+	requireParity(native, scalar);
+
+	const auto field = *cpu.stringPool().find("retained field");
+	auto warm = asTable(cpu.readFrameRegister(0, warmSlot), cpu.gcHeap());
+	auto spare = asTable(cpu.readFrameRegister(0, spareSlot), cpu.gcHeap());
+	auto full = asTable(cpu.readFrameRegister(0, fullSlot), cpu.gcHeap());
+	const auto charge = TableRecord::allocationCharge(0, 1);
+	const Value raw = valueFloatBits(0x7fc01234u);
+	const auto initialStorage = spare.storageAddress();
+	const auto initialBytes = cpu.luaHeap().usedBytes();
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& writeExits = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::WriteField)].entries;
+	const auto warmExits = writeExits;
+#endif
+	start(spareSlot, raw);
+	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
+		&& cpu.instructionBudgetRemaining == 0 && cpu.readCurrentInstructionPc() == storePc
+		&& cpu.lastPc == storePc + INSTRUCTION_BYTES && cpu.readFramePc(0) == suffixPc
+		&& cpu.readFrameRegister(0, 9) == valueInteger(-9),
+		"the exact WIDE grant commits the field without executing the suffix");
+	int insertedSlot = -1;
+	require(spare.getStringKeyCached(field, insertedSlot) == raw && prediction == insertedSlot && prediction != originalSlot
+		&& spare.storageAddress() == initialStorage && cpu.luaHeap().usedBytes() == initialBytes + charge
+		&& spare.getInteger(1) == valueInteger(61),
+		"absent __newindex allows a colliding own insertion and trains its actual slot without touching the array");
+	requireParity(native, scalar);
+
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		auto meta = asTable(lane.readFrameRegister(0, metaSlot), lane.gcHeap());
+		meta.setStringKey(lane.stringPool().intern("__newindex"), lane.readFrameRegister(0, methodSlot));
+		asTable(lane.readFrameRegister(0, warmSlot), lane.gcHeap()).setMetatableAddress(meta.address());
+	}
+	start(warmSlot, raw);
+	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
+		&& cpu.getFrameDepth() == 1 && cpu.readFramePc(0) == pc + 6 * INSTRUCTION_BYTES
+		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39)
+		&& warm.getStringKey(field) == raw && warm.getInteger(1) == valueInteger(61) && prediction == originalSlot,
+		"a stale slot recovers the live false field despite callable __newindex and continues natively");
+	require(page.nativeBlocks->entries[word].get() == installed, "store feedback keeps the original body");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(writeExits == warmExits, "both warm prediction misses return without a materialized WriteField");
+#endif
+	requireParity(native, scalar);
+
+	start(fullSlot, raw);
+	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
+		&& full.hashSlots() == 2 && full.getStringKey(field) == raw
+		&& full.getStringKey(*cpu.stringPool().find("resident field")) == valueInteger(31)
+		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39),
+		"a full hash uses semantic growth once and continues with the live prefix");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(writeExits == warmExits + 1, "the same warmed WriteField site handles real growth");
+#endif
+	requireParity(native, scalar);
+	start(fullSlot, valueNil());
+	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
+		&& isNil(full.getStringKey(field)) && full.getInteger(1) == valueInteger(61)
+		&& cpu.readFramePc(0) == suffixPc, "nil removes the mapping without touching the array");
+	requireParity(native, scalar);
+
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		asTable(lane.readFrameRegister(0, fullSlot), lane.gcHeap()).setMetatableAddress(valuePayload(lane.readFrameRegister(0, metaSlot)));
+	}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto beforeCallback = writeExits;
+#endif
+	start(fullSlot, raw);
+	require(test::runCpuParity(cpu, scalar.cpu, throughStore + methodArgs) == RunResult::Yielded
+		&& cpu.instructionBudgetRemaining == 0 && cpu.getFrameDepth() == 2 && cpu.readFramePc(0) == suffixPc
+		&& cpu.readFrameRegister(1, 0) == valueTable(full.address()) && cpu.readFrameRegister(1, 1) == valueString(field)
+		&& cpu.readFrameRegister(1, 2) == raw && isNil(full.getStringKey(field)),
+		"callable __newindex receives the exact live operands without an early own assignment");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(writeExits == beforeCallback + 1, "the callable remains an ordinary WriteField observer");
+#endif
+	requireParity(native, scalar);
+	require(test::runCpuParity(cpu, scalar.cpu, cycles(OpCode::SETI) + cycles(OpCode::RET) + 2 * cycles(OpCode::MOV)) == RunResult::Yielded
+		&& cpu.getFrameDepth() == 1 && full.getInteger(1) == raw && isNil(full.getStringKey(field))
+		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39),
+		"the callback marks the receiver once and returns to the live suffix");
+	requireParity(native, scalar);
+#endif
+}
 } // namespace
 
 int main() {
@@ -1634,6 +1807,7 @@ int main() {
 		negativeIntegerKeysUseHashStorage();
 		nativeDynamicHashProbeReturnsLiveValuesWithinTheGrant();
 		nativeIdentityHashStoreReturnsWithinTheGrant();
+		nativeFixedStringMissReturnsWithinTheGrant();
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

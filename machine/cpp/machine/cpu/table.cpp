@@ -531,18 +531,20 @@ int TableRecord::setHash(u32 array, Value key, Value value) {
 		removeFromHash(key);
 		return -1;
 	}
-	return setNonNilHash<false>(array, key, value);
+	return setNonNilHash<HashStore::General>(array, key, value);
 }
 
-template <bool InPlaceOnly>
-int TableRecord::setNonNilHash(u32 array, Value key, Value value) noexcept(InPlaceOnly) {
+template <TableRecord::HashStore Policy>
+int TableRecord::setNonNilHash(u32 array, Value key, Value value, StringId newIndexKey) noexcept(Policy != HashStore::General) {
+	constexpr bool inPlaceOnly = Policy != HashStore::General;
 	const bool valueHasEdge = valueTagHasGcEdge(valueTag(value));
 	const u32 count = hashSlots();
 	const auto body = hashBody(count, array);
 	const u32 home = hashCanonicalTableKey(key) & (count - 1u);
 	int nodeIndex = -1;
 	if (count != 0u) {
-		if constexpr (InPlaceOnly) nodeIndex = body.findNode(key, home, true);
+		if constexpr (Policy == HashStore::IdentityInPlace) nodeIndex = body.findNode(key, home, true);
+		else if constexpr (Policy == HashStore::FieldInPlace) nodeIndex = body.findString(asStringId(key), home);
 		else nodeIndex = valueIsString(key) ? body.findString(asStringId(key), home) : body.findNode(key, home, true);
 		if (nodeIndex >= 0) {
 			const u32 valueSlot = array + static_cast<u32>(nodeIndex) + count;
@@ -553,6 +555,11 @@ int TableRecord::setNonNilHash(u32 array, Value key, Value value) noexcept(InPla
 				return nodeIndex;
 			}
 		}
+	}
+	// Only an absent own field can trigger __newindex. Keep the probe's
+	// slot (including a tombstone) for the insertion below.
+	if constexpr (Policy == HashStore::FieldInPlace) {
+		if (!isNil(metatableField(newIndexKey))) return -1;
 	}
 	const u32 reserve = hashReserve(), members = hashMembers(), watermark = hashWatermark();
 	bool placeInCurrent = false;
@@ -566,25 +573,29 @@ int TableRecord::setNonNilHash(u32 array, Value key, Value value) noexcept(InPla
 	}
 	if (placeInCurrent) {
 		if (members >= reserve) {
-			if constexpr (InPlaceOnly) {
+			if constexpr (inPlaceOnly) {
 				if (!m_heap->budget.canAdmitWithoutAssist(kHashMappingBytes)) return -1;
 			} else {
 				m_heap->budget.admit(kHashMappingBytes, valueTable(m_address), key, value);
 			}
 		}
 		nodeIndex = placeHashMapping(body, home, key, value, nodeIndex, available);
-		const u32 retained = InPlaceOnly ? members : hashMembers();
+		const u32 retained = inPlaceOnly ? members : hashMembers();
 		publishHashMembers(retained, retained + 1u, reserve);
 	} else {
-		if constexpr (InPlaceOnly) return -1;
+		if constexpr (inPlaceOnly) return -1;
 		else nodeIndex = insertHashWithAdmission(key, value, reserve, members, watermark, nodeIndex);
 	}
-	if (InPlaceOnly || valueTagHasGcEdge(valueTag(key)) || valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+	if (inPlaceOnly || valueTagHasGcEdge(valueTag(key)) || valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 	return nodeIndex;
 }
 
 bool TableRecord::tryAssignIdentityHash(Value key, Value value) noexcept {
-	return setNonNilHash<true>(arrayCapacity(), key, value) >= 0;
+	return setNonNilHash<HashStore::IdentityInPlace>(arrayCapacity(), key, value) >= 0;
+}
+
+int TableRecord::tryAssignStringField(StringId key, Value value, StringId newIndexKey) noexcept {
+	return setNonNilHash<HashStore::FieldInPlace>(arrayCapacity(), valueString(key), value, newIndexKey);
 }
 
 Value TableRecord::getInteger(int indexValue) const {

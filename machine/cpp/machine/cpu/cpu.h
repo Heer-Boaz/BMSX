@@ -457,6 +457,7 @@ private:
 	void observeNativeCallTarget(CallFrame&, DecodedInstructionPage&, u32 pc);
 	static void* tryReturnNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
 	static u32 readNativeLength(GcHeap*, const StringPool*, Value* operand) noexcept;
+	static i32 assignNativeTableField(CPU*, u32 receiver, StringId key, const Value*) noexcept;
 	static int placeNativeVarargs(NativeBlockRunState*, int first, int requested) noexcept;
 	friend class NativeLowering;
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
