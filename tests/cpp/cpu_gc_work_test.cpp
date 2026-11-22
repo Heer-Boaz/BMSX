@@ -59,8 +59,8 @@ struct Machine {
 // are uncharged. The collector still visits issued objects and intern buckets.
 constexpr int bootBytes = 232 + 12 + 15 + 697 + 16 + 2 * 9;
 // Two Thread traces of its header and one active frame, an atomic trace
-// that also clears eight Value slots, and a single sweep visit.
-constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 1 + 3 + 1 + 3 * 12 + 3 * 17 + 32;
+// that also clears eight Value slots, two remark visits and a sweep visit.
+constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 3 * 12 + 3 * 17 + 32;
 
 void allocationAdmissionUsesLogicalBytes() {
 	Machine machine(image()); auto& cpu = machine.cpu;
@@ -428,8 +428,10 @@ void resumesCompletionRootBank() {
 		"VARARG and RET leave the real completion latch as the last table's only root");
 	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
-	require(advance() < GC_STEP_WORDS && memory.readRamRecordWord(control + GC_ROOT_CURSOR) != 0u
-		&& !heap.isAlive(target), "the first quantum stops before the last Value without pricing completion slot reads");
+	const int cycles = cpu.instructionBudgetRemaining;
+	require(advance() == GC_STEP_WORDS && memory.readRamRecordWord(control + GC_ROOT_CURSOR) != 0u
+		&& !heap.isAlive(target) && cpu.instructionBudgetRemaining == cycles,
+		"completion slots use the first collector quantum, not guest cycles");
 	const auto state = cpu.captureRuntimeState();
 	const auto ram = memory.captureSaveState();
 	const auto finish = [&] {
@@ -817,9 +819,11 @@ void resumesMetatableModeProbe() {
 	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const auto read = [&](u32 field) { return memory.readRamRecordWord(control + field); };
 	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
-	for (int step = 0; read(GC_MODE_META) == 0u && step < 20; ++step) advance();
+	size_t inspected = 0;
+	for (int step = 0; read(GC_MODE_META) == 0u && step < 20; ++step) inspected = advance();
 	require(read(GC_MODE_META) == meta.address() && read(GC_TRACE_RECORD) == target.address()
-		&& read(GC_MODE_NODE) != home && !heap.isAlive(watched.address()), "a real colliding metatable search is suspended");
+		&& read(GC_MODE_NODE) != home && !heap.isAlive(watched.address()) && inspected == GC_STEP_WORDS,
+		"a real colliding metatable search spends its quantum before suspending");
 	const auto state = cpu.captureRuntimeState();
 	const auto ram = memory.captureSaveState();
 	const auto finish = [&](bool move) {
@@ -865,11 +869,12 @@ void resumesFinalWeakCleanup() {
 	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
 	for (int step = 0; heap.phase() != GcPhase::Atomic && step < 30; ++step) advance();
 	require(heap.phase() == GcPhase::Atomic, "the last mark pass is ready");
-	for (int step = 0; !isNil(weak.getInteger(1)) && step < 30; ++step) heap.stepFinalMark();
+	size_t cleared = 0;
+	for (int step = 0; !isNil(weak.getInteger(1)) && step < 30; ++step) cleared = heap.stepFinalMark();
 	require(heap.phase() == GcPhase::Atomic && isNil(weak.getInteger(1))
 		&& weak.getInteger(slots) == valueTable(last.address())
-		&& heap.tableRecordAddress(first.address()) == first.address(),
-		"the final pass can suspend after clearing only a prefix and before object reclamation");
+		&& heap.tableRecordAddress(first.address()) == first.address() && cleared == GC_STEP_WORDS,
+		"the final pass spends its reported quantum clearing only a prefix before object reclamation");
 	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	require(memory.readRamRecordWord(control + GC_TRACE_RECORD) == weak.address(), "a weak slot frontier is present in RAM");
 	const auto state = cpu.captureRuntimeState();
@@ -917,12 +922,13 @@ void resumesWeakTableRemark() {
 	const auto read = [&](u32 field) { return memory.readRamRecordWord(control + field); };
 	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
 	const u32 head = (watcher.address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT;
-	for (int step = 0; read(GC_REMARK_VISIT_INDEX) == 0u && step < 100; ++step) advance();
+	size_t visited = 0;
+	for (int step = 0; read(GC_REMARK_VISIT_INDEX) == 0u && step < 100; ++step) visited = advance();
 	const auto cursor = read(GC_REMARK_VISIT_INDEX);
 	require(cursor != 0u && cursor != head && read(GC_REMARK_VISIT_STATE) != 0u
 		&& read(GC_WEAK_VISITS) == head && read(GC_WEAK_VISITS + GC_VISIT_COUNT) == count
-		&& heap.phase() == GcPhase::Mark && !heap.isAlive(watched.address()),
-		"a partially clocked weak-table remark retains the original list");
+		&& heap.phase() == GcPhase::Mark && !heap.isAlive(watched.address()) && visited == GC_STEP_WORDS,
+		"a partially clocked weak-table remark spends its quantum and retains the original list");
 	const auto state = cpu.captureRuntimeState();
 	const auto ram = memory.captureSaveState();
 	const auto finish = [&] {
@@ -1086,7 +1092,7 @@ void collectUnattachedThreadRecord() {
 	require(cpu.heapAllocator().occupiedBytes() == baselineBytes + bytes + TableRecord::HEADER_BYTES,
 		"the raw Thread and its sole table edge own only their guest allocations");
 	const size_t liveWork = gc.collect(valueThread(address), valueNil(), valueNil(), address);
-	const size_t threadWork = 3 * (20 + 14) + 2 * 2 + capacity * THREAD_STACK_SLOT_BYTES / sizeof(u32) + 1;
+	const size_t threadWork = 3 * (20 + 14) + 2 * 2 + capacity * THREAD_STACK_SLOT_BYTES / sizeof(u32) + 2 + 1;
 	require(liveWork == baselineWork + threadWork + TableRecord::HEADER_BYTES / sizeof(u32) + 1,
 		"trace the active frame and live Value, clear the final tail, and sweep each record once");
 	require(gc.threadRecordAddress(address) == address && gc.tableRecordAddress(child) == child

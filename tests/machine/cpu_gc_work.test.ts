@@ -49,8 +49,8 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 const bootThreadBytes = 80 + 40 + 112;
 const bootBytes = bootThreadBytes + 12 + 15 + 697 + 8 + 2 * 9;
 // Two Thread traces of its header and one active frame, an atomic trace
-// that also clears eight Value slots, and a single sweep visit.
-const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 1 + 3 + 1 + 3 * 12 + 3 * 17 + 32;
+// that also clears eight Value slots, two remark visits and one sweep visit.
+const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 3 * 12 + 3 * 17 + 32;
 
 test('physical GC work counts canonical scans, reclamation and three unique root passes without a cycle debit', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));

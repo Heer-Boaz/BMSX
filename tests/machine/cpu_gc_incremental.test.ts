@@ -89,7 +89,9 @@ test('completion Values form a resumable root range after the real returning fra
 	assert.equal(results.length, args.length);
 	assert.equal(results[args.length - 1], valueTable(target));
 	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
-	assert.ok(cpu.gc.step() < GC_STEP_WORDS, 'completion slot reads are not guest cycle work');
+	const grant = cpu.instructionBudgetRemaining;
+	assert.equal(cpu.gc.step(), GC_STEP_WORDS, 'completion slot reads consume physical allowance');
+	assert.equal(cpu.instructionBudgetRemaining, grant, 'physical collector work does not debit guest cycles');
 	assert.notEqual(memory.readRamRecordWord(control + GC_ROOT_CURSOR), 0);
 	assert.equal(cpu.gc.isAlive(target), false, 'the last completion Value has not been reached');
 	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
@@ -395,7 +397,9 @@ test('remark resumes a real metatable collision chain and withdraws its cursor o
 	const watched = cpu.createTable();
 	gc.tables.setInteger(target, 1, valueTable(watched));
 	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
-	for (let step = 0; memory.readRamRecordWord(control + GC_MODE_META) === 0 && step < 20; ++step) gc.step();
+	let work = 0;
+	for (let step = 0; memory.readRamRecordWord(control + GC_MODE_META) === 0 && step < 20; ++step) work = gc.step();
+	assert.equal(work, GC_STEP_WORDS, 'the suspended metatable probe reports its physical work');
 	assert.equal(memory.readRamRecordWord(control + GC_MODE_META), meta);
 	assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), target);
 	assert.notEqual(memory.readRamRecordWord(control + GC_MODE_NODE), home);
@@ -437,7 +441,9 @@ test('final mark rewinds a partly cleared weak Table without retiring unvisited 
 	gc.tables.setInteger(weak, slots, valueTable(last));
 	for (let step = 0; gc.phase() !== GcPhase.Atomic && step < 30; ++step) gc.step();
 	assert.equal(gc.phase(), GcPhase.Atomic);
-	for (let step = 0; gc.tables.getInteger(weak, 1) !== valueNil() && step < 30; ++step) gc.stepFinalMark();
+	let work = 0;
+	for (let step = 0; gc.tables.getInteger(weak, 1) !== valueNil() && step < 30; ++step) work = gc.stepFinalMark();
+	assert.equal(work, GC_STEP_WORDS, 'weak-list visits and mode reads share the clearing allowance');
 	assert.equal(gc.phase(), GcPhase.Atomic, 'entry cleanup has not crossed the final mark boundary');
 	assert.equal(gc.tables.getInteger(weak, 1), valueNil());
 	assert.equal(gc.tables.getInteger(weak, slots), valueTable(last));
@@ -505,7 +511,9 @@ test('weak-table remark resumes without consuming list order or losing writes to
 	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const read = (field: number) => memory.readRamRecordWord(control + field);
 	const head = (watcher & (MAIN_RAM_SIZE - 1)) >>> GC_RECORD_SHIFT;
-	for (let step = 0; read(GC_REMARK_VISIT_INDEX) === 0 && step < 100; ++step) gc.step();
+	let work = 0;
+	for (let step = 0; read(GC_REMARK_VISIT_INDEX) === 0 && step < 100; ++step) work = gc.step();
+	assert.equal(work, GC_STEP_WORDS, 'remark visits consume reported work even before roots and graph tracing');
 	const cursor = read(GC_REMARK_VISIT_INDEX);
 	assert.ok(cursor !== 0 && cursor !== head && read(GC_REMARK_VISIT_STATE) !== 0);
 	assert.equal(read(GC_WEAK_VISITS), head);
@@ -773,9 +781,9 @@ test('a rooted raw Thread frame retains its table edge and is collected without 
 	assert.equal(gc.allocationBytes(address), bytes);
 	assert.equal(cpu.heapAllocator.occupiedBytes(), baselineBytes + bytes + TableRecords.HEADER_BYTES);
 	const liveWork = gc.collect(valueThread(address), valueNil(), valueNil(), address);
-	const threadWork = 3 * (20 + 14) + 2 * 2 + ((wide * THREAD_STACK_SLOT_BYTES) >>> 2) + 1;
+	const threadWork = 3 * (20 + 14) + 2 * 2 + ((wide * THREAD_STACK_SLOT_BYTES) >>> 2) + 2 + 1;
 	assert.equal(liveWork, baselineWork + threadWork + (TableRecords.HEADER_BYTES >>> 2) + 1,
-		'trace the active frame and live Value, clear the final tail, and sweep each record once');
+		'trace the active frame and live Value, visit both remark lists, clear the final tail and sweep each record once');
 	assert.equal(gc.threadRecordAddress(address), address);
 	assert.equal(gc.tableRecordAddress(child), child);
 	assert.equal(memory.readRamRecordWord(block), child);

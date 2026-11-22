@@ -140,7 +140,7 @@ size_t GcHeap::visitList(u32 list, Visitor&& visitor, size_t allowance, RemarkSt
 	const bool resumeWeak = stage == RemarkStage::Weak;
 	u32 index = indexWord(resumeWeak ? GC_REMARK_VISIT_INDEX : list);
 	u32 remaining = indexWord(resumeWeak ? GC_REMARK_VISIT_STATE : list + GC_VISIT_COUNT);
-	size_t work = 0, visits = 0;
+	size_t visits = 0;
 	while (index != 0u && remaining != 0u && visits < allowance) {
 		const u32 address = RAM_BASE + (index << GC_RECORD_SHIFT);
 		const u8 meta = memory.readRamRecordByte(address + GC_VISIT_HEADER_BYTE);
@@ -157,7 +157,7 @@ size_t GcHeap::visitList(u32 list, Visitor&& visitor, size_t allowance, RemarkSt
 		const u32 low = memory.readRamRecordWord(address + GC_RECORD_LINK) >> GC_GRAY_INDEX_BITS;
 		index = low | ((meta & VISIT_LINK_HIGH_MASK) << VISIT_LINK_LOW_BITS);
 		if constexpr (Drain) setVisitLink(address, meta & ~GC_VISIT_MEMBER, 0u);
-		work += visitor(address);
+		visitor(address);
 	}
 	if (index == 0u || remaining == 0u) index = remaining = 0u;
 	if constexpr (Drain) {
@@ -168,7 +168,7 @@ size_t GcHeap::visitList(u32 list, Visitor&& visitor, size_t allowance, RemarkSt
 		memory.writeRamRecordPair(m_controlOffset + GC_REMARK_VISIT_INDEX,
 			index, (static_cast<u32>(stage) << GC_GRAY_INDEX_BITS) | remaining);
 	}
-	return stage == RemarkStage::None ? work : visits;
+	return visits;
 }
 
 void GcHeap::requeueVisited(u32 address) {
@@ -256,7 +256,7 @@ u8 GcHeap::weakModeBits(Value modeValue) {
 	return (first == 'k' && second == 'v') || (first == 'v' && second == 'k') ? kTableWeakKeys | kTableWeakValues : 0u;
 }
 
-int GcHeap::probeTableMode(const TableRecord& table, size_t limit) {
+std::pair<int, size_t> GcHeap::probeTableMode(const TableRecord& table, size_t limit) {
 	const u32 address = tableRecordAddress(table.metatableAddress());
 	const u32 current = memory.readRamRecordWord(m_controlOffset + GC_MODE_META);
 	if (address != 0u) {
@@ -265,22 +265,22 @@ int GcHeap::probeTableMode(const TableRecord& table, size_t limit) {
 			? TableStringProbe{static_cast<i32>(memory.readRamRecordWord(m_controlOffset + GC_MODE_NODE)),
 				memory.readRamRecordWord(m_controlOffset + GC_MODE_REMAINING)}
 			: meta.beginStringProbe(m_modeKey);
-		m_modeProbeWork += meta.advanceStringProbe(m_modeKey, probe, limit);
+		const size_t work = meta.advanceStringProbe(m_modeKey, probe, limit);
 		if (probe.node >= 0 && probe.remaining != 0u) {
 			memory.writeRamRecordPair(m_controlOffset + GC_MODE_META, address, static_cast<u32>(probe.node));
 			memory.writeRamRecordWord(m_controlOffset + GC_MODE_REMAINING, probe.remaining);
-			return -1;
+			return {-1, work};
 		}
-		if (current == 0u) return weakModeBits(probe.value);
+		if (current == 0u) return {weakModeBits(probe.value), work};
 		memory.writeRamRecordPair(m_controlOffset + GC_MODE_META, 0u, 0u);
 		memory.writeRamRecordWord(m_controlOffset + GC_MODE_REMAINING, 0u);
-		return weakModeBits(probe.value);
+		return {weakModeBits(probe.value), work};
 	}
 	if (current != 0u) {
 		memory.writeRamRecordPair(m_controlOffset + GC_MODE_META, 0u, 0u);
 		memory.writeRamRecordWord(m_controlOffset + GC_MODE_REMAINING, 0u);
 	}
-	return 0;
+	return {0, 0u};
 }
 
 bool GcHeap::valueIsAlive(Value value) const {
@@ -472,17 +472,14 @@ size_t GcHeap::resumeTrace(u32 record, bool atomic, size_t limit) {
 	}
 }
 
-size_t GcHeap::traceQuantum(bool atomic, size_t& limit, size_t work) {
-	m_modeProbeWork = 0;
+size_t GcHeap::traceQuantum(bool atomic, size_t limit, size_t work) {
 	if (const u32 record = memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD)) {
 		work += resumeTrace(record, atomic, limit - work);
-		limit -= std::exchange(m_modeProbeWork, 0u);
 		if (memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD) != 0u) return work;
 	}
 	while (indexWord(GC_TRACE_HEAD) != 0u && work < limit) {
 		work += trace(atomic, limit - work);
 		work += m_stringPool.takeMarkWork();
-		limit -= std::exchange(m_modeProbeWork, 0u);
 	}
 	return work;
 }
@@ -491,30 +488,30 @@ size_t GcHeap::traceTable(u32 address, size_t limit, bool resumingMode) {
 	const TableRecord table(*this, address);
 	const u32 meta = table.metatableAddress();
 	if (meta != 0u && !resumingMode) markTable(meta);
-	const size_t words = resumingMode ? 0u : TableRecord::HEADER_BYTES / sizeof(u32);
+	size_t work = resumingMode ? 0u : TableRecord::HEADER_BYTES / sizeof(u32);
 	int mode = 0;
 	if (meta != 0u || resumingMode) {
-		const auto before = m_modeProbeWork;
-		mode = probeTableMode(table, words < limit ? limit - words : 0u);
-		limit -= m_modeProbeWork - before;
+		const auto [resolved, inspected] = probeTableMode(table, work < limit ? limit - work : 0u);
+		mode = resolved;
+		work += inspected;
 	}
 	if (mode < 0) {
 		memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, address, TABLE_MODE_PENDING);
-		return words;
+		return work;
 	}
 	const auto weakMode = static_cast<u8>(mode);
 	if (weakMode != 0u) appendVisit(GC_WEAK_VISITS, address);
 	if (weakMode == (kTableWeakKeys | kTableWeakValues)) {
 		if (resumingMode) memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, 0u, 0u);
-		return words;
+		return work;
 	}
 	// Weak array values have no key edge. The final weak pass owns their visits.
 	const bool weakValues = (weakMode & kTableWeakValues) != 0u;
 	const u32 first = weakValues ? table.arrayCapacity() : 0u;
 	const size_t slots = weakValues ? 2u * table.hashSlots() : table.scanSlots();
-	if (resumingMode || words + slots * 2 > limit) return traceTableEntries(table, weakMode, first, words, limit);
+	if (resumingMode || work + slots * 2 > limit) return traceTableEntries(table, weakMode, first, work, limit);
 	traceTableEdges(table, weakMode, first);
-	return words + slots;
+	return work + slots;
 }
 
 void GcHeap::traceTableEdges(const TableRecord& table, u8 mode, u32 first, u32 end) {
@@ -548,7 +545,7 @@ size_t GcHeap::traceTableEntries(const TableRecord& table, u8 mode, u32 next, si
 	return work;
 }
 
-size_t GcHeap::traceRootBanks(size_t& limit, size_t work) {
+size_t GcHeap::traceRootBanks(size_t limit, size_t work) {
 	const u32 cursor = memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR);
 	u32 kind = cursor >> TRACE_CURSOR_BITS;
 	size_t next = cursor & TRACE_CURSOR_MASK;
@@ -565,10 +562,7 @@ size_t GcHeap::traceRootBanks(size_t& limit, size_t work) {
 			}
 			const size_t stop = std::min(end, next + std::max(size_t{1}, (limit - work) / worst));
 			m_cpu.markRootBank(*this, bank, next, stop);
-			// The completion latch is a host root range, not a named or
-			// constant-bank access billed to instructions.
-			if (completion) limit -= stop - next;
-			else work += (stop - next) * words;
+			work += (stop - next) * words;
 			work += m_stringPool.takeMarkWork();
 			next = stop;
 		}
@@ -582,7 +576,7 @@ size_t GcHeap::remarkVisits(size_t allowance) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	GcPhaseMeasurement measurement(m_cpu.m_diagnosticGcProfile.rootsNanoseconds);
 #endif
-	const auto requeue = [this](u32 address) { requeueVisited(address); return 0u; };
+	const auto requeue = [this](u32 address) { requeueVisited(address); };
 	auto stage = remarkStage();
 	size_t visits = 0;
 	if (stage == RemarkStage::Threads) {
@@ -605,7 +599,7 @@ size_t GcHeap::remarkVisits(size_t allowance) {
 	return visits;
 }
 
-size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t& limit, size_t work, bool final) {
+size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t limit, size_t work, bool final) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	GcPhaseMeasurement measurement(m_cpu.m_diagnosticGcProfile.rootsNanoseconds);
 #endif
@@ -648,11 +642,12 @@ size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2, bool scopedR
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 #endif
-	size_t limit = GC_STEP_WORDS, work = 0;
+	constexpr size_t limit = GC_STEP_WORDS;
+	size_t work = 0;
 	if (remarkStage() == RemarkStage::None) setRemarkStage(RemarkStage::Threads);
 	if (remarkStage() <= RemarkStage::Weak) {
-		limit -= remarkVisits(limit);
-		if (remarkStage() != RemarkStage::Roots) return 0u;
+		work += remarkVisits(limit);
+		if (remarkStage() != RemarkStage::Roots) return work;
 	}
 	// Only a synchronous final pass can run inside a temporary host scope.
 	// Before final tracing these values need neither marking nor a cursor:
@@ -701,24 +696,21 @@ size_t GcHeap::clearWeakQuantum(size_t limit) {
 	GcPhaseMeasurement weakTime(m_cpu.m_diagnosticGcProfile.weakNanoseconds);
 #endif
 	size_t work = 0;
-	m_modeProbeWork = 0;
 	while (work < limit) {
 		u32 record = memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD);
 		if (record == 0u) {
 			if (indexWord(GC_WEAK_VISITS) == 0u) break;
-			visitList<tableRecordKind, true>(GC_WEAK_VISITS, [&](u32 address) {
+			work += visitList<tableRecordKind, true>(GC_WEAK_VISITS, [&](u32 address) {
 				record = address;
 				memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, address, TABLE_MODE_PENDING);
-				return 0u;
 			}, 1u);
-			--limit; // Even an empty weak table consumes one physical visit.
 			if (record == 0u || work == limit) break;
 		}
 		TableRecord table(*this, record);
 		u32 cursor = memory.readRamRecordWord(m_controlOffset + GC_TRACE_CURSOR);
 		if (cursor == TABLE_MODE_PENDING) {
-			const int mode = probeTableMode(table, limit - work);
-			limit -= std::exchange(m_modeProbeWork, 0u);
+			const auto [mode, inspected] = probeTableMode(table, limit - work);
+			work += inspected;
 			if (mode < 0) break;
 			cursor = static_cast<u32>(mode) << TRACE_CURSOR_BITS;
 		}
@@ -788,10 +780,11 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcStepMeasurement total(profile);
 #endif
-	size_t work = 0, limit = GC_STEP_WORDS;
+	constexpr size_t limit = GC_STEP_WORDS;
+	size_t work = 0;
 	if (remarkStage() != RemarkStage::None) {
-		limit -= remarkVisits(limit);
-		if (remarkStage() != RemarkStage::Roots) return 0u;
+		work += remarkVisits(limit);
+		if (remarkStage() != RemarkStage::Roots) return work;
 		work = remarkRoots(root0, root1, root2, limit, work, false);
 		if (phase() == GcPhase::Mark) return work;
 	} else if (phase() == GcPhase::Pause || phase() == GcPhase::Mark || phase() == GcPhase::MarkAgain) {
@@ -828,7 +821,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 				if (work < limit) {
 					if (phase() == GcPhase::Mark) {
 						setRemarkStage(RemarkStage::Threads);
-						limit -= remarkVisits(limit - work);
+						work += remarkVisits(limit - work);
 						if (remarkStage() != RemarkStage::Roots) return work;
 						work = remarkRoots(root0, root1, root2, limit, work, false);
 						if (phase() == GcPhase::Mark) return work;

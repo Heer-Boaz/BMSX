@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include "common/compiler.h"
 #include "machine/cpu/heap_allocator.h"
 #include "machine/cpu/table.h"
@@ -102,7 +104,7 @@ private:
 	}
 	bool markClosure(u32 address);
 	u8 weakModeBits(Value value);
-	int probeTableMode(const TableRecord&, size_t limit);
+	std::pair<int, size_t> probeTableMode(const TableRecord&, size_t limit);
 	bool markTable(u32 address);
 	size_t traceTable(u32 address, size_t limit, bool resumingMode = false);
 	void traceTableEdges(const TableRecord&, u8 mode, u32 first = 0u, u32 end = UINT32_MAX);
@@ -117,13 +119,13 @@ private:
 	void requeueVisited(u32 address);
 	size_t markCell(u32 cell);
 	size_t trace(bool atomic, size_t limit);
-	size_t traceRootBanks(size_t& limit, size_t work);
+	size_t traceRootBanks(size_t limit, size_t work);
 	size_t traceCaptures(u32 closure, u32 next, u32 count, size_t work, size_t limit);
 	size_t traceThread(u32 thread, bool atomic, size_t limit, u32 cursor, u32 open, u32 captureTop, bool resumed);
 	size_t resumeTrace(u32 record, bool atomic, size_t limit);
-	size_t traceQuantum(bool atomic, size_t& limit, size_t work);
+	size_t traceQuantum(bool atomic, size_t limit, size_t work);
 	size_t remarkVisits(size_t allowance);
-	size_t remarkRoots(Value root0, Value root1, Value root2, size_t& limit, size_t work, bool final);
+	size_t remarkRoots(Value root0, Value root1, Value root2, size_t limit, size_t work, bool final);
 	size_t finalMarkWork(Value root0, Value root1, Value root2, bool scopedRoots);
 	RemarkStage remarkStage() const {
 		return static_cast<RemarkStage>(memory.readRamRecordWord(m_controlOffset + GC_REMARK_VISIT_STATE) >> GC_GRAY_INDEX_BITS);
@@ -140,8 +142,6 @@ private:
 	StringId m_modeKey;
 	StringPool& m_stringPool;
 	const u32 m_controlOffset;
-	size_t m_modeProbeWork = 0; // Current quantum only; the actual probe frontier lives in RAM.
-
 };
 
 inline u32 asClosure(Value value, const GcHeap& heap) { return heap.closureRecordAddress(valuePayload(value)); }
