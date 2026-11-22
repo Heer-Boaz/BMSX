@@ -23,7 +23,7 @@ public:
 	void reset(VideoPresenter& presenter, Runtime& runtime);
 	void requestHeldPresentation();
 	void requestRestoredPresentation();
-	void syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence);
+	void syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence, bool allowPartial = true);
 	// The producer uses this borrowed output only to submit/copy the selected
 	// prefix. The frame itself owns every value consumed by presentation.
 	const GxGpuDeviceOutput* prepare(Runtime& runtime, bool pausedPresent, RenderPresentation& frame);

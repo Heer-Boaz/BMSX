@@ -59,6 +59,7 @@ typedef struct BmsxCoreSession {
 	BmsxExecutionProfileInterface execution_profile;
 	BmsxExecutionDomainInterfaceV1 execution_domain;
 	BmsxGuestProgressInterfaceV1 guest_progress;
+	BmsxRunCadenceV1* run_cadence;
 	BmsxShutdownReasonV1 shutdown_reason;
 	bool accept_gx_upload_profile_interface;
 	bool gx_upload_profile_interface_set;

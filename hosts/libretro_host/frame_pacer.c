@@ -7,9 +7,14 @@ void bmsx_frame_pacer_init(BmsxFramePacer* pacer, uint64_t now_ns, uint64_t fram
 	pacer->next_deadline_ns = now_ns;
 	pacer->previous_frame_start_ns = 0u;
 	pacer->has_previous_frame = false;
+	pacer->retained_slot = false;
 }
 
-BmsxFramePacerDecision bmsx_frame_pacer_begin(BmsxFramePacer* pacer, uint64_t now_ns) {
+BmsxFramePacerDecision bmsx_frame_pacer_begin(BmsxFramePacer* pacer, uint64_t now_ns, bool paced) {
+	// The host can be descheduled between completion and its next offer.
+	// Close an expired slot before admitting any further work.
+	if (pacer->retained_slot && now_ns >= pacer->next_deadline_ns + pacer->frame_period_ns)
+		bmsx_frame_pacer_complete(pacer, now_ns, paced, pacer->frame_period_ns, false);
 	if (now_ns > pacer->next_deadline_ns
 			&& now_ns - pacer->next_deadline_ns > kFrameScheduleResyncNs) {
 		pacer->next_deadline_ns = now_ns;
@@ -20,13 +25,17 @@ BmsxFramePacerDecision bmsx_frame_pacer_begin(BmsxFramePacer* pacer, uint64_t no
 		.finish_deadline_ns = finish_deadline_ns,
 		.has_elapsed = pacer->has_previous_frame,
 		.drop_presentation = now_ns >= finish_deadline_ns,
+		.retain_frame_grant = pacer->retained_slot,
 	};
 	pacer->previous_frame_start_ns = now_ns;
 	pacer->has_previous_frame = true;
 	return decision;
 }
 
-void bmsx_frame_pacer_complete(BmsxFramePacer* pacer, uint64_t now_ns, bool paced, uint64_t next_frame_period_ns) {
+void bmsx_frame_pacer_complete(BmsxFramePacer* pacer, uint64_t now_ns, bool paced,
+		uint64_t next_frame_period_ns, bool maintenance_only) {
+	pacer->retained_slot = maintenance_only && now_ns < pacer->next_deadline_ns + pacer->frame_period_ns;
+	if (pacer->retained_slot) return;
 	pacer->frame_period_ns = next_frame_period_ns;
 	if (!paced) {
 		pacer->next_deadline_ns = now_ns;

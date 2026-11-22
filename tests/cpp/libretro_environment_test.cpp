@@ -32,6 +32,9 @@ unsigned nativeProfileOffers = 0u;
 BmsxNativeCompilationProfileInterfaceV2 nativeProfile{};
 unsigned executionProfileOffers = 0u;
 BmsxExecutionProfileInterface executionProfile{};
+unsigned runCadenceOffers = 0u;
+BmsxRunCadenceV1* runCadence = nullptr;
+BmsxGuestProgressInterfaceV1 guestProgress{};
 bool acceptXrgb8888 = true;
 unsigned pixelFormatRequests = 0u;
 unsigned requestLineReads = 0u;
@@ -124,6 +127,16 @@ int16_t discardInputState(unsigned, unsigned, unsigned, unsigned) {
 }
 
 bool softwareFrontendEnvironment(unsigned command, void* data) {
+	if (command == BMSX_ENVIRONMENT_SET_RUN_CADENCE_V1) {
+		++runCadenceOffers;
+		if (acceptPrivateInterfaces) runCadence = static_cast<BmsxRunCadenceV1*>(data);
+		else static_cast<BmsxRunCadenceV1*>(data)->retain_frame_grant = true;
+		return acceptPrivateInterfaces;
+	}
+	if (command == BMSX_ENVIRONMENT_SET_GUEST_PROGRESS_INTERFACE_V1) {
+		guestProgress = *static_cast<BmsxGuestProgressInterfaceV1*>(data);
+		return true;
+	}
 	if (command == BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE) {
 		++executionProfileOffers;
 		if (acceptPrivateInterfaces) executionProfile = *static_cast<BmsxExecutionProfileInterface*>(data);
@@ -312,6 +325,9 @@ int main() {
 
 	retro_set_environment(frontendEnvironment);
 	require(subsystemInfoOffers == 1u, "installing an environment should publish the cartridge subsystem once");
+	require(runCadenceOffers == 1u && runCadence != nullptr
+		&& !runCadence->retain_frame_grant && !runCadence->maintenance_only,
+		"an accepting frontend receives a private slot without initially lending a grant");
 	require(supervisorInterfaceQueries == 1u, "the core should negotiate the private supervisor interface exactly once");
 	require(defaultRequestLineWasLow, "the supervisor interface probe should start with a callable low line");
 	retro_system_av_info initialAvInfo{};
@@ -450,6 +466,7 @@ int main() {
 	require(lastSystemAvInfo.geometry.max_width == 1921u && lastSystemAvInfo.geometry.max_height == 1081u, "the system AV update should expand the libretro output envelope");
 	require(lastSystemAvNotificationSequence < lastVideoSequence, "the frontend must receive an expanded AV envelope before the software frame");
 	require(!lastVideoWasNull, "a software frame remains valid after a synchronous system AV update");
+	require(!runCadence->maintenance_only, "ordinary AV updates do not claim a maintenance slot");
 
 	const unsigned notificationsBeforeReset = geometryNotifications + systemAvNotifications;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
@@ -494,6 +511,7 @@ int main() {
 	requestLineReads = 0u;
 	defaultRequestLineWasLow = false;
 	acceptPrivateInterfaces = false;
+	runCadence = nullptr;
 	retro_set_environment(frontendEnvironment);
 	require(supervisorInterfaceQueries == 3u, "a replacement frontend should receive one fresh supervisor interface probe");
 	require(defaultRequestLineWasLow, "an unsupported frontend should inherit a fresh callable low line");
@@ -501,9 +519,16 @@ int main() {
 	retro_init();
 	require(retro_load_game(&game), "the core should reload the minimal cart with the rejected supervisor interface");
 	require(pixelFormatRequests == 2u, "replacement content load should renegotiate the XRGB8888 framebuffer contract once");
+	const unsigned videoBeforeRejectedRun = lastVideoSequence;
+	BmsxGuestProgressV1 positionBeforeRejectedRun{}, positionAfterRejectedRun{};
+	guestProgress.read_progress(&positionBeforeRejectedRun);
 	insideRetroRun = true;
 	retro_run();
 	insideRetroRun = false;
+	guestProgress.read_progress(&positionAfterRejectedRun);
+	require(runCadence == nullptr && lastVideoSequence > videoBeforeRejectedRun
+		&& positionAfterRejectedRun.scheduler_cycles > positionBeforeRejectedRun.scheduler_cycles,
+		"a frontend rejecting the cadence handshake still gets standard video and a new guest grant");
 	require(inputPolls == 1u, "the rejected core should still poll the platform input owner once during the frame");
 	require(requestLineReads == 0u, "a frontend callback written while rejecting the private command must never be retained");
 	retro_deinit();

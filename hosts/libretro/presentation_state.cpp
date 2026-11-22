@@ -157,17 +157,19 @@ bool RenderPresentationState::consumePresentation(RenderPresentation& outPresent
 	return true;
 }
 
-void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence) {
+void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence, bool allowPartial) {
 	bool tickVisualCommitted = runtime.frameScheduler.lastTickVisualFrameCommitted;
+	bool completionPending = false;
 	while (runtime.frameScheduler.consumeTickCompletion(m_tickCompletionScratch)) {
+		completionPending = true;
 		if (m_tickCompletionScratch.visualCommitted) {
 			tickVisualCommitted = true;
 		}
 		recordTickCompletion(m_tickCompletionScratch.visualCommitted);
 	}
-	if (runtime.frameScheduler.lastTickSequence != previousTickSequence) {
+	if (runtime.frameScheduler.lastTickSequence != previousTickSequence || (!allowPartial && completionPending)) {
 		markPresentation(tickVisualCommitted ? PresentationIntent::Commit : PresentationIntent::Held);
-	} else if (runtime.isDrawPending()) {
+	} else if (allowPartial && runtime.isDrawPending()) {
 		markPresentation(PresentationIntent::Partial);
 	}
 }

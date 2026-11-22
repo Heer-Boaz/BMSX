@@ -139,9 +139,16 @@ void testFinalCollectionRetainsTheMachineGrant() {
 	scheduler.run(runtime, 1.0);
 	require(runtime.machine.scheduler.nowCycles() == clock && scheduler.captureState().accumulatedHostTimeMs == 1.0,
 		"a real-time offer waits in the scheduler while only the collector progresses");
-	for (int step = 0; heap.finalMarkPending() && step < 40; ++step) scheduler.run(runtime, 0.0);
+	for (int step = 0; heap.finalMarkPending() && step < 40; ++step) {
+		const auto pulse = scheduler.maintenancePulseSequence();
+		scheduler.run(runtime, 0.0);
+		require(scheduler.maintenancePulseSequence() == pulse + 1u,
+			"including the last reoffer, only actual maintenance reports a pulse");
+	}
 	require(!heap.finalMarkPending() && runtime.machine.scheduler.nowCycles() == clock,
 		"finishing the last maintenance quantum does not advance guest time");
+	require(scheduler.captureState().accumulatedHostTimeMs == 1.0,
+		"reoffers of one slot do not mint additional nominal frame grants");
 	const auto marked = captureRuntimeSaveState(runtime);
 	const auto resume = [&] {
 		scheduler.run(runtime, 2.0);

@@ -48,6 +48,7 @@ FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime&
 	if (heap.finalMarkPending()) {
 		// Keep the host grant queued while the guest clock is stopped.
 		heap.stepFinalMark();
+		++m_maintenancePulseSequence;
 		return Pulse::Maintenance;
 	}
 	return backendBlocked ? Pulse::Blocked : Pulse::Ready;
