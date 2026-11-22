@@ -637,3 +637,39 @@ world:visit_admitted_components(class, function(member)
 end)
 assert(visits == 1, 'rebind traversed a retired or newly admitted component')
 `);
+
+rom.test('Late clock lanes admit only active members of the requested class and clock (O3)', `
+local clock<const> = require('cartlib/clock')
+local parent<const> = {}
+parent.__index = parent
+setmetatable(parent, { __index = base_component })
+local child<const> = {}
+child.__index = child
+setmetatable(child, { __index = parent })
+prefab.define({ def_id = 'clock.actor', class = world_object })
+world:start()
+local first<const> = world:spawn('clock.actor')
+local second<const> = world:spawn('clock.actor')
+second:set_space('other')
+local frame_member<const> = first:add_component(setmetatable(base_component.new(first), child))
+local disabled<const> = first:add_component(setmetatable(base_component.new(first), parent))
+local gameplay_member<const> = second:add_component(setmetatable(base_component.new(second), child))
+frame_member:set_tick_clock_enabled(clock.frame, true)
+disabled:set_tick_clock_enabled(clock.frame, true)
+disabled:set_enabled(false)
+gameplay_member:set_tick_clock_enabled(clock.gameplay, true)
+
+local frame_view<const> = world:active_tick_view(parent, clock.frame)
+local class_view<const> = world:active_component_view(parent)
+local gameplay_view<const> = world:active_tick_view(parent, clock.gameplay)
+assert(#frame_view.components == 1 and frame_view.components[1] == frame_member)
+assert(#gameplay_view.components == 0 and #class_view.components == 1)
+frame_member:set_tick_clock_enabled(clock.gameplay, true)
+assert(#gameplay_view.components == 1 and gameplay_view.components[1] == frame_member)
+world:set_space('other')
+assert(#frame_view.components == 0 and #gameplay_view.components == 1 and gameplay_view.components[1] == gameplay_member)
+assert(#class_view.components == 1 and class_view.components[1] == gameplay_member)
+frame_member:set_tick_clock_enabled(clock.frame, false)
+world:set_space('main')
+assert(#frame_view.components == 0 and #gameplay_view.components == 1 and class_view.components[1] == frame_member)
+`);

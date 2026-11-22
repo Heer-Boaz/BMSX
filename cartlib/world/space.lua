@@ -77,6 +77,23 @@ function space:reconcile_component_visual(comp)
 	return false
 end
 
+-- Late views start from the class membership already maintained by each
+-- object. A clock lane does not need a second, unfiltered partition view.
+function space:_hydrate_component_bucket(bucket, component_class, clocks)
+	local objects<const> = self._active_objects
+	for object_index = 1, #objects do
+		local components<const> = objects[object_index]._components_by_class[component_class]
+		if components ~= nil then
+			for component_index = 1, #components do
+				local component<const> = components[component_index]
+				if component._active_space == self and (clocks == nil or (component._tick_clocks & clocks) ~= 0) then
+					dense_set.add(bucket, component)
+				end
+			end
+		end
+	end
+end
+
 function space:register_component_class(component_class)
 	local component_buckets<const> = self._active_components_by_class
 	local existing<const> = component_buckets[component_class]
@@ -85,22 +102,7 @@ function space:register_component_class(component_class)
 	end
 	local bucket<const> = dense_set.new()
 	component_buckets[component_class] = bucket
-	local objects<const> = self._active_objects
-	for object_index = 1, #objects do
-		local components<const> = objects[object_index]._components
-		for component_index = 1, #components do
-			local component<const> = components[component_index]
-			if component._active_space == self then
-				local classes<const> = component_class_chain(getmetatable(component))
-				for class_index = 1, #classes do
-					if classes[class_index] == component_class then
-						dense_set.add(bucket, component)
-						break
-					end
-				end
-			end
-		end
-	end
+	self:_hydrate_component_bucket(bucket, component_class, nil)
 	return bucket.items
 end
 
@@ -120,12 +122,17 @@ function space:register_tick_class(component_class, clock_source)
 	end
 	local bucket<const> = dense_set.new()
 	tick_buckets[component_class] = bucket
-	local components<const> = self:register_component_class(component_class)
-	for component_index = 1, #components do
-		local component<const> = components[component_index]
-		if (component._tick_clocks & clock_source) ~= 0 then
-			dense_set.add(bucket, component)
+	local class_bucket<const> = self._active_components_by_class[component_class]
+	if class_bucket ~= nil then
+		local components<const> = class_bucket.items
+		for component_index = 1, #components do
+			local component<const> = components[component_index]
+			if (component._tick_clocks & clock_source) ~= 0 then
+				dense_set.add(bucket, component)
+			end
 		end
+	else
+		self:_hydrate_component_bucket(bucket, component_class, clock_source)
 	end
 	return bucket.items
 end
