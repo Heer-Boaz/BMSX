@@ -42,6 +42,7 @@ export type ImgDecControllerState = {
 	statusWord: number;
 	dataWord: number;
 	inputWordsReceived: number;
+	assembledWordCount: number;
 	decodedWordCount: number;
 	outputWordsRead: number;
 	decodePhase: number;
@@ -49,26 +50,23 @@ export type ImgDecControllerState = {
 	repeatWord: number;
 	backReferenceDistance: number;
 	blockPhase: number;
-	blockReadIndex: number;
 	blockCyclesRemaining: number;
 	supervisorQuiesceRequested: boolean;
 	inputWords: number[];
-	blockWords: number[];
 	historyWords: number[];
 };
 
 export class ImgDecController {
 	private readonly inputFifo = new WordFifo(IMGDEC_INPUT_FIFO_WORD_CAPACITY);
-	private readonly block = new Uint32Array(IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY);
+	// The consumer drains a published block before assembly can reuse the ring.
 	private readonly history = new Uint32Array(IMGDEC_HISTORY_WORD_CAPACITY);
-	private historyWriteIndex = 0;
-	private historyWordCount = 0;
 	private inputWordCountWord = 0;
 	private outputWordCountWord = 0;
 	private controlWord = 0;
 	private statusWord = 0;
 	private dataWord = 0;
 	private inputWordsReceived = 0;
+	private assembledWordCount = 0;
 	private decodedWordCount = 0;
 	private outputWordsRead = 0;
 	private decodePhase = DECODE_TOKEN;
@@ -76,8 +74,6 @@ export class ImgDecController {
 	private repeatWord = 0;
 	private backReferenceDistance = 0;
 	private blockPhase = BLOCK_FILLING;
-	private blockWordCount = 0;
-	private blockReadIndex = 0;
 	private blockDeadline = -1;
 	private supervisorQuiesceRequested = false;
 
@@ -100,12 +96,10 @@ export class ImgDecController {
 	private resetStreamState(): void {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMGDEC);
 		this.inputFifo.reset();
-		this.historyWriteIndex = this.historyWordCount = 0;
-		this.inputWordsReceived = this.decodedWordCount = this.outputWordsRead = 0;
+		this.inputWordsReceived = this.assembledWordCount = this.decodedWordCount = this.outputWordsRead = 0;
 		this.decodePhase = DECODE_TOKEN;
 		this.runWordsRemaining = this.repeatWord = this.backReferenceDistance = 0;
 		this.blockPhase = BLOCK_FILLING;
-		this.blockWordCount = this.blockReadIndex = 0;
 		this.blockDeadline = -1;
 		this.dataWord = 0;
 	}
@@ -120,20 +114,21 @@ export class ImgDecController {
 	}
 
 	public captureState(): ImgDecControllerState {
-		const historyWords = new Array<number>(this.historyWordCount);
-		const start = (this.historyWriteIndex - this.historyWordCount) & IMGDEC_HISTORY_WORD_MASK;
-		for (let i = 0; i < this.historyWordCount; ++i) historyWords[i] = this.history[(start + i) & IMGDEC_HISTORY_WORD_MASK];
+		const count = Math.min(this.assembledWordCount, IMGDEC_HISTORY_WORD_CAPACITY);
+		const historyWords = new Array<number>(count);
+		const start = (this.assembledWordCount - count) & IMGDEC_HISTORY_WORD_MASK;
+		for (let i = 0; i < count; ++i) historyWords[i] = this.history[(start + i) & IMGDEC_HISTORY_WORD_MASK];
 		return {
 			inputWordCountWord: this.inputWordCountWord, outputWordCountWord: this.outputWordCountWord,
 			controlWord: this.controlWord, statusWord: this.statusWord, dataWord: this.dataWord,
-			inputWordsReceived: this.inputWordsReceived, decodedWordCount: this.decodedWordCount,
+			inputWordsReceived: this.inputWordsReceived, assembledWordCount: this.assembledWordCount,
+			decodedWordCount: this.decodedWordCount,
 			outputWordsRead: this.outputWordsRead, decodePhase: this.decodePhase,
 			runWordsRemaining: this.runWordsRemaining, repeatWord: this.repeatWord,
 			backReferenceDistance: this.backReferenceDistance, blockPhase: this.blockPhase,
-			blockReadIndex: this.blockReadIndex,
 			blockCyclesRemaining: this.blockPhase === BLOCK_DECODING ? this.blockDeadline - this.scheduler.currentNowCycles() : 0,
 			supervisorQuiesceRequested: this.supervisorQuiesceRequested,
-			inputWords: this.inputFifo.captureWords(), blockWords: Array.from(this.block.subarray(0, this.blockWordCount)), historyWords,
+			inputWords: this.inputFifo.captureWords(), historyWords,
 		};
 	}
 
@@ -145,6 +140,7 @@ export class ImgDecController {
 		this.statusWord = state.statusWord;
 		this.dataWord = state.dataWord;
 		this.inputWordsReceived = state.inputWordsReceived;
+		this.assembledWordCount = state.assembledWordCount;
 		this.decodedWordCount = state.decodedWordCount;
 		this.outputWordsRead = state.outputWordsRead;
 		this.decodePhase = state.decodePhase;
@@ -152,13 +148,10 @@ export class ImgDecController {
 		this.repeatWord = state.repeatWord;
 		this.backReferenceDistance = state.backReferenceDistance;
 		this.blockPhase = state.blockPhase;
-		this.blockReadIndex = state.blockReadIndex;
-		this.blockWordCount = state.blockWords.length;
-		this.block.set(state.blockWords);
 		this.inputFifo.restoreWords(state.inputWords);
-		this.historyWordCount = state.historyWords.length;
-		this.historyWriteIndex = this.historyWordCount & IMGDEC_HISTORY_WORD_MASK;
-		this.history.set(state.historyWords);
+		const count = state.historyWords.length;
+		const start = (this.assembledWordCount - count) & IMGDEC_HISTORY_WORD_MASK;
+		for (let i = 0; i < count; ++i) this.history[(start + i) & IMGDEC_HISTORY_WORD_MASK] = state.historyWords[i];
 		this.supervisorQuiesceRequested = state.supervisorQuiesceRequested;
 		this.blockDeadline = this.blockPhase === BLOCK_DECODING ? this.scheduler.currentNowCycles() + state.blockCyclesRemaining : -1;
 		this.mirrorRegisters();
@@ -197,7 +190,7 @@ export class ImgDecController {
 		if (this.blockPhase === BLOCK_DECODING && nowCycles >= this.blockDeadline) {
 			this.blockPhase = BLOCK_READY;
 			this.blockDeadline = -1;
-			this.decodedWordCount = (this.decodedWordCount + this.blockWordCount) >>> 0;
+			this.decodedWordCount = this.assembledWordCount;
 		}
 		this.updateDmaRequests();
 		this.notifySupervisorBoundary();
@@ -206,9 +199,8 @@ export class ImgDecController {
 	private execute(nowCycles: number): void {
 		if ((this.statusWord & IMGDEC_STATUS_BUSY) === 0 || this.supervisorQuiesceRequested || this.blockPhase === BLOCK_DECODING) return;
 		if (this.blockPhase === BLOCK_READY) {
-			if (this.blockReadIndex !== this.blockWordCount) return;
+			if (this.outputWordsRead !== this.decodedWordCount) return;
 			this.blockPhase = BLOCK_FILLING;
-			this.blockWordCount = this.blockReadIndex = 0;
 		}
 		const remaining = (this.outputWordCountWord - this.decodedWordCount) >>> 0;
 		if (remaining === 0) {
@@ -216,8 +208,9 @@ export class ImgDecController {
 			else if (this.inputWordsReceived === this.inputWordCountWord) this.stop(IMGDEC_STATUS_DONE);
 			return;
 		}
-		const target = Math.min(remaining, IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY);
-		while (this.blockWordCount < target) {
+		const blockWords = Math.min(remaining, IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY);
+		const target = this.decodedWordCount + blockWords;
+		while (this.assembledWordCount < target) {
 			if (this.decodePhase === DECODE_TOKEN || this.decodePhase === DECODE_REPEAT_WORD) {
 				if (this.inputFifo.empty()) break;
 				const word = this.inputFifo.pop();
@@ -234,66 +227,59 @@ export class ImgDecController {
 					case IMGDEC_TOKEN_KIND_BACK_REFERENCE:
 						this.runWordsRemaining = ((word >>> IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT) & IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_MASK) + IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH;
 						this.backReferenceDistance = (word & IMGDEC_TOKEN_BACK_REFERENCE_DISTANCE_MASK) + 1;
-						if (this.backReferenceDistance > this.historyWordCount) { this.stop(IMGDEC_STATUS_FORMAT_FAULT); return; }
+						if (this.backReferenceDistance > this.assembledWordCount) { this.stop(IMGDEC_STATUS_FORMAT_FAULT); return; }
 						this.decodePhase = DECODE_BACK_REFERENCE;
 						break;
 				}
-				if (this.runWordsRemaining > remaining - this.blockWordCount) { this.stop(IMGDEC_STATUS_FORMAT_FAULT); return; }
+				if (this.runWordsRemaining > this.outputWordCountWord - this.assembledWordCount) { this.stop(IMGDEC_STATUS_FORMAT_FAULT); return; }
 				continue;
 			}
-			let words = Math.min(this.runWordsRemaining, target - this.blockWordCount);
+			let words = Math.min(this.runWordsRemaining, target - this.assembledWordCount);
 			if (this.decodePhase === DECODE_LITERAL) words = Math.min(words, this.inputFifo.count());
 			if (words === 0) break;
 			this.preparePayloadWords(words);
 			this.runWordsRemaining -= words;
 			if (this.runWordsRemaining === 0) this.decodePhase = DECODE_TOKEN;
 		}
-		if (this.blockWordCount !== target) {
+		if (this.assembledWordCount !== target) {
 			if (this.inputWordsReceived === this.inputWordCountWord) this.stop(IMGDEC_STATUS_FORMAT_FAULT);
 			return;
 		}
 		// The last block is published only after the complete input is accounted for.
-		if (target === remaining) {
+		if (target === this.outputWordCountWord) {
 			if (!this.inputFifo.empty() || this.decodePhase !== DECODE_TOKEN) { this.stop(IMGDEC_STATUS_FORMAT_FAULT); return; }
 			if (this.inputWordsReceived !== this.inputWordCountWord) return;
 		}
 		this.blockPhase = BLOCK_DECODING;
-		this.blockDeadline = nowCycles + target * this.cyclesPerOutputWord;
+		this.blockDeadline = nowCycles + blockWords * this.cyclesPerOutputWord;
 		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMGDEC, this.blockDeadline);
 	}
 
 	private preparePayloadWords(count: number): void {
-		let remaining = count;
+		// Output blocks are aligned to the ring, including the short final block.
+		const start = this.assembledWordCount & IMGDEC_HISTORY_WORD_MASK;
 		const history = this.history;
-		while (remaining !== 0) {
-			const start = this.historyWriteIndex;
-			const words = Math.min(remaining, IMGDEC_HISTORY_WORD_CAPACITY - start);
-			switch (this.decodePhase) {
-				case DECODE_LITERAL: this.inputFifo.readWords(history, start, words); break;
-				case DECODE_REPEAT: history.fill(this.repeatWord, start, start + words); break;
-				case DECODE_ZERO: history.fill(0, start, start + words); break;
-				case DECODE_BACK_REFERENCE: {
-					const source = (start - this.backReferenceDistance) & IMGDEC_HISTORY_WORD_MASK;
-					const first = Math.min(words, IMGDEC_HISTORY_WORD_CAPACITY - source);
-					// Copy forward: the reference can read words emitted by this run.
-					for (let i = 0; i < first; ++i) history[start + i] = history[source + i];
-					for (let i = first, from = 0; i < words; ++i, ++from) history[start + i] = history[from];
-					break;
-				}
+		switch (this.decodePhase) {
+			case DECODE_LITERAL: this.inputFifo.readWords(history, start, count); break;
+			case DECODE_REPEAT: history.fill(this.repeatWord, start, start + count); break;
+			case DECODE_ZERO: history.fill(0, start, start + count); break;
+			case DECODE_BACK_REFERENCE: {
+				const source = (start - this.backReferenceDistance) & IMGDEC_HISTORY_WORD_MASK;
+				const first = Math.min(count, IMGDEC_HISTORY_WORD_CAPACITY - source);
+				// Copy forward: the reference can read words emitted by this run.
+				for (let i = 0; i < first; ++i) history[start + i] = history[source + i];
+				for (let i = first, from = 0; i < count; ++i, ++from) history[start + i] = history[from];
+				break;
 			}
-			for (let i = 0; i < words; ++i) this.block[this.blockWordCount + i] = history[start + i];
-			this.blockWordCount += words;
-			this.historyWriteIndex = (start + words) & IMGDEC_HISTORY_WORD_MASK;
-			remaining -= words;
 		}
-		this.historyWordCount = Math.min(IMGDEC_HISTORY_WORD_CAPACITY, this.historyWordCount + count);
+		this.assembledWordCount += count;
 	}
 
 	private updateDmaRequests(): void {
 		const running = (this.statusWord & IMGDEC_STATUS_BUSY) !== 0 && !this.supervisorQuiesceRequested;
 		const inputRemaining = (this.inputWordCountWord - this.inputWordsReceived) >>> 0;
 		const inputWords = running ? Math.min(inputRemaining, this.inputFifo.free()) : 0;
-		const outputWords = running && this.blockPhase === BLOCK_READY ? this.blockWordCount - this.blockReadIndex : 0;
+		const outputWords = running && this.blockPhase === BLOCK_READY ? this.decodedWordCount - this.outputWordsRead : 0;
 		this.dma.setEndpointRequests(DmaEndpoint.ImgDecWrite, inputWords, DmaEndpoint.ImgDecRead, outputWords);
 		const status = (this.statusWord & ~(IMGDEC_STATUS_INPUT_REQUEST | IMGDEC_STATUS_OUTPUT_REQUEST))
 			| (inputWords !== 0 ? IMGDEC_STATUS_INPUT_REQUEST : 0) | (outputWords !== 0 ? IMGDEC_STATUS_OUTPUT_REQUEST : 0);
@@ -305,7 +291,6 @@ export class ImgDecController {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMGDEC);
 		this.statusWord = status;
 		this.blockPhase = BLOCK_FILLING;
-		this.blockWordCount = this.blockReadIndex = 0;
 		this.blockDeadline = -1;
 		this.memory.writeIoU32(IO_IMGDEC_STATUS, status);
 		this.updateDmaRequests();
@@ -342,9 +327,9 @@ export class ImgDecController {
 	}
 
 	private static readDataPrefixThunk(c: ImgDecController, _address: number, words: Uint32Array, count: number): void {
-		const available = c.blockPhase === BLOCK_READY ? Math.min(count, c.blockWordCount - c.blockReadIndex) : 0;
-		for (let i = 0; i < available; ++i) words[i] = c.block[c.blockReadIndex + i];
-		c.blockReadIndex += available;
+		const available = c.blockPhase === BLOCK_READY ? Math.min(count, c.decodedWordCount - c.outputWordsRead) : 0;
+		const start = c.outputWordsRead & IMGDEC_HISTORY_WORD_MASK;
+		for (let i = 0; i < available; ++i) words[i] = c.history[start + i];
 		c.outputWordsRead = (c.outputWordsRead + available) >>> 0;
 		if (available !== 0) { c.dataWord = words[available - 1]; c.memory.writeIoU32(IO_IMGDEC_DATA, c.dataWord); }
 		words.fill(c.dataWord, available, count);
@@ -360,8 +345,8 @@ export class ImgDecController {
 	private static readDataThunk(c: ImgDecController, _address: number, signals: MappedBusSignals): number {
 		const dmaRead = (signals & MAPPED_BUS_MASTER_DMA) !== 0;
 		if (!dmaRead && c.dma.ownsReadPort(IO_IMGDEC_DATA)) return c.dataWord;
-		if (c.blockPhase === BLOCK_READY && c.blockReadIndex !== c.blockWordCount) {
-			c.dataWord = c.block[c.blockReadIndex++];
+		if (c.blockPhase === BLOCK_READY && c.outputWordsRead !== c.decodedWordCount) {
+			c.dataWord = c.history[c.outputWordsRead & IMGDEC_HISTORY_WORD_MASK];
 			c.outputWordsRead = (c.outputWordsRead + 1) >>> 0;
 			c.memory.writeIoU32(IO_IMGDEC_DATA, c.dataWord);
 		}

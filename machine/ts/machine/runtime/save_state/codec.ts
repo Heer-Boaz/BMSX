@@ -41,7 +41,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x33534d42; // BMS3: physical allocation pacing in RAM
+const SAVE_STATE_SIGNATURE = 0x34534d42; // BMS4: IMGDEC assembly and readout share history
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -983,6 +983,7 @@ function writeImgDecControllerState(writer: BinarySink, state: ImgDecControllerS
 	writer.u32(state.statusWord);
 	writer.u32(state.dataWord);
 	writer.u32(state.inputWordsReceived);
+	writer.u32(state.assembledWordCount);
 	writer.u32(state.decodedWordCount);
 	writer.u32(state.outputWordsRead);
 	writer.u32(state.decodePhase);
@@ -990,13 +991,10 @@ function writeImgDecControllerState(writer: BinarySink, state: ImgDecControllerS
 	writer.u32(state.repeatWord);
 	writer.u32(state.backReferenceDistance);
 	writer.u32(state.blockPhase);
-	writer.u32(state.blockReadIndex);
 	writer.i64(state.blockCyclesRemaining);
 	writer.bool(state.supervisorQuiesceRequested);
 	writer.u32(state.inputWords.length);
 	writer.u32s(state.inputWords);
-	writer.u32(state.blockWords.length);
-	writer.u32s(state.blockWords);
 	writer.u32(state.historyWords.length);
 	writer.u32s(state.historyWords);
 }
@@ -1009,6 +1007,7 @@ function readImgDecControllerState(reader: BinaryReader): ImgDecControllerState 
 		statusWord: reader.u32(),
 		dataWord: reader.u32(),
 		inputWordsReceived: reader.u32(),
+		assembledWordCount: reader.u32(),
 		decodedWordCount: reader.u32(),
 		outputWordsRead: reader.u32(),
 		decodePhase: reader.u32(),
@@ -1016,11 +1015,9 @@ function readImgDecControllerState(reader: BinaryReader): ImgDecControllerState 
 		repeatWord: reader.u32(),
 		backReferenceDistance: reader.u32(),
 		blockPhase: reader.u32(),
-		blockReadIndex: reader.u32(),
 		blockCyclesRemaining: reader.i64(),
 		supervisorQuiesceRequested: reader.bool(),
 		inputWords: reader.u32s(reader.u32()),
-		blockWords: reader.u32s(reader.u32()),
 		historyWords: reader.u32s(reader.u32()),
 	};
 }

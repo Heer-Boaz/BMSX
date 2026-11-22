@@ -24,6 +24,7 @@ struct ImgDecControllerState {
 	u32 statusWord = 0;
 	u32 dataWord = 0;
 	u32 inputWordsReceived = 0;
+	u32 assembledWordCount = 0;
 	u32 decodedWordCount = 0;
 	u32 outputWordsRead = 0;
 	u32 decodePhase = 0;
@@ -31,11 +32,9 @@ struct ImgDecControllerState {
 	u32 repeatWord = 0;
 	u32 backReferenceDistance = 0;
 	u32 blockPhase = 0;
-	u32 blockReadIndex = 0;
 	i64 blockCyclesRemaining = 0;
 	bool supervisorQuiesceRequested = false;
 	std::vector<u32> inputWords;
-	std::vector<u32> blockWords;
 	std::vector<u32> historyWords;
 };
 
@@ -77,16 +76,15 @@ private:
 	DmaController& m_dma;
 	i64 m_cyclesPerOutputWord;
 	WordFifo<IMGDEC_INPUT_FIFO_WORD_CAPACITY> m_inputFifo;
-	std::array<u32, IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY> m_block{};
+	// The consumer drains a published block before assembly can reuse the ring.
 	std::array<u32, IMGDEC_HISTORY_WORD_CAPACITY> m_history{};
-	size_t m_historyWriteIndex = 0;
-	size_t m_historyWordCount = 0;
 	u32 m_inputWordCountWord = 0;
 	u32 m_outputWordCountWord = 0;
 	u32 m_controlWord = 0;
 	u32 m_statusWord = 0;
 	u32 m_dataWord = 0;
 	u32 m_inputWordsReceived = 0;
+	u32 m_assembledWordCount = 0;
 	u32 m_decodedWordCount = 0;
 	u32 m_outputWordsRead = 0;
 	u32 m_decodePhase = 0;
@@ -94,8 +92,6 @@ private:
 	u32 m_repeatWord = 0;
 	u32 m_backReferenceDistance = 0;
 	u32 m_blockPhase = 0;
-	u32 m_blockWordCount = 0;
-	u32 m_blockReadIndex = 0;
 	i64 m_blockDeadline = -1;
 	bool m_supervisorQuiesceRequested = false;
 };

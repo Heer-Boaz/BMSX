@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as io from '../../machine/ts/spec/bmsx/io';
 import * as img from '../../machine/ts/spec/imgdec/registers';
+import { IMGDEC_HISTORY_WORD_CAPACITY } from '../../machine/ts/spec/imgdec/stream';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { GX_GPU_GP1_DMA_DIRECTION } from '../../machine/ts/spec/gx/gp1';
@@ -76,7 +77,7 @@ test('raw IMGDEC publishes whole blocks at completion, without GPU packet or tok
 	h.memory.writeMappedU32LE(io.IO_IMGDEC_DATA, 0xfedcba98);
 	const pending = h.machine.imgDecController.captureState();
 	assert.equal(pending.controlWord, 0x80000000);
-	assert.equal(pending.blockWords.length, 256);
+	assert.equal(pending.assembledWordCount, 256);
 	assert.equal(pending.decodedWordCount, 0);
 	assert.equal(pending.blockCyclesRemaining, 512);
 	h.machine.scheduler.advanceTo(511);
@@ -158,7 +159,7 @@ test('partial filling, scheduled completion and partly read blocks restore witho
 	h.memory.writeMappedU32LE(io.IO_IMGDEC_DATA, 299);
 	h.memory.writeMappedU32LE(io.IO_IMGDEC_DATA, 0x12345678);
 	const partial = captureMachineState(h.machine);
-	assert.deepEqual(partial.imgDec.blockWords, [0x12345678]);
+	assert.deepEqual(partial.imgDec.historyWords, [0x12345678]);
 	h.machine.imgDecController.beginSupervisorQuiesce();
 	assert.equal(h.machine.imgDecController.supervisorQuiescent(), true);
 	restoreMachineState(h.machine, partial);
@@ -201,4 +202,33 @@ test('malformed work faults before publication; an empty job emits no invented p
 	h.configure(0, 0);
 	h.memory.writeMappedU32LE(io.IO_IMGDEC_CONTROL, 1);
 	assert.equal(h.memory.readIoU32(io.IO_IMGDEC_STATUS), img.IMGDEC_STATUS_DONE);
+});
+
+test('wrapped history restores both a partly assembled block and unread output', () => {
+	const h = fixture();
+	const prefix = IMGDEC_HISTORY_WORD_CAPACITY;
+	h.configure(12, prefix + 34);
+	h.memory.writeMappedU32LE(io.IO_IMGDEC_CONTROL, 1);
+	for (const word of [3, 11, 22, 33, 44, 0x40000000 | (prefix - 5), 99]) {
+		h.memory.writeMappedU32LE(io.IO_IMGDEC_DATA, word);
+	}
+	for (let i = 0; i < prefix; ++i) {
+		while ((h.memory.readIoU32(io.IO_IMGDEC_STATUS) & img.IMGDEC_STATUS_OUTPUT_REQUEST) === 0) h.pump();
+		assert.equal(h.memory.readMappedU32LE(io.IO_IMGDEC_DATA), i < 4 ? (i + 1) * 11 : 99);
+	}
+	h.memory.writeMappedU32LE(io.IO_IMGDEC_DATA, 2);
+	h.memory.writeMappedU32LE(io.IO_IMGDEC_DATA, 101);
+	const filling = captureMachineState(h.machine);
+	assert.equal(filling.imgDec.assembledWordCount, prefix + 1);
+	assert.equal(filling.imgDec.historyWords.at(-1), 101);
+	restoreMachineState(h.machine, filling);
+	for (const word of [102, 103, 0x80000000 | (28 << 12) | (prefix - 1)]) {
+		h.memory.writeMappedU32LE(io.IO_IMGDEC_DATA, word);
+	}
+	while ((h.memory.readIoU32(io.IO_IMGDEC_STATUS) & img.IMGDEC_STATUS_OUTPUT_REQUEST) === 0) h.pump();
+	assert.equal(h.memory.readMappedU32LE(io.IO_IMGDEC_DATA), 101);
+	const ready = captureMachineState(h.machine);
+	assert.equal(h.memory.readMappedU32LE(io.IO_IMGDEC_DATA), 102);
+	restoreMachineState(h.machine, ready);
+	assert.deepEqual(h.drain(), [102, 103, 44, ...Array<number>(30).fill(99)]);
 });

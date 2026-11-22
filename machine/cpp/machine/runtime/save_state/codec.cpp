@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x33534d42u; // BMS3: physical allocation pacing in RAM
+constexpr u32 kSaveStateSignature = 0x34534d42u; // BMS4: IMGDEC assembly and readout share history
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1016,6 +1016,7 @@ template<class Writer> void writeImgDecControllerState(Writer& writer, const Img
 	writer.u32(state.statusWord);
 	writer.u32(state.dataWord);
 	writer.u32(state.inputWordsReceived);
+	writer.u32(state.assembledWordCount);
 	writer.u32(state.decodedWordCount);
 	writer.u32(state.outputWordsRead);
 	writer.u32(state.decodePhase);
@@ -1023,13 +1024,10 @@ template<class Writer> void writeImgDecControllerState(Writer& writer, const Img
 	writer.u32(state.repeatWord);
 	writer.u32(state.backReferenceDistance);
 	writer.u32(state.blockPhase);
-	writer.u32(state.blockReadIndex);
 	writer.i64(state.blockCyclesRemaining);
 	writer.boolean(state.supervisorQuiesceRequested);
 	writer.u32(static_cast<u32>(state.inputWords.size()));
 	writer.u32s(state.inputWords);
-	writer.u32(static_cast<u32>(state.blockWords.size()));
-	writer.u32s(state.blockWords);
 	writer.u32(static_cast<u32>(state.historyWords.size()));
 	writer.u32s(state.historyWords);
 }
@@ -1042,6 +1040,7 @@ ImgDecControllerState readImgDecControllerState(BinaryReader& reader) {
 	state.statusWord = reader.u32();
 	state.dataWord = reader.u32();
 	state.inputWordsReceived = reader.u32();
+	state.assembledWordCount = reader.u32();
 	state.decodedWordCount = reader.u32();
 	state.outputWordsRead = reader.u32();
 	state.decodePhase = reader.u32();
@@ -1049,11 +1048,9 @@ ImgDecControllerState readImgDecControllerState(BinaryReader& reader) {
 	state.repeatWord = reader.u32();
 	state.backReferenceDistance = reader.u32();
 	state.blockPhase = reader.u32();
-	state.blockReadIndex = reader.u32();
 	state.blockCyclesRemaining = reader.i64();
 	state.supervisorQuiesceRequested = reader.boolean();
 	state.inputWords = reader.u32s(reader.u32());
-	state.blockWords = reader.u32s(reader.u32());
 	state.historyWords = reader.u32s(reader.u32());
 	return state;
 }

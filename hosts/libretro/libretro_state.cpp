@@ -9,7 +9,7 @@
 namespace bmsx {
 namespace {
 
-constexpr u32 kSaveStateMagic = 0x38534d42u; // BMS8: physical allocation pacing in RAM
+constexpr u32 kSaveStateMagic = 0x39534d42u; // BMS9: IMGDEC assembly and readout share history
 constexpr size_t kSaveStateHeaderBytes = 8u;
 constexpr size_t kSaveStateBasePayloadCapacityBytes = 0x01000000u;
 

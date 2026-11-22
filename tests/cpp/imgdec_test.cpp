@@ -88,7 +88,7 @@ void testBlocksPublishOnlyAtCompletion() {
 	h.memory.writeMappedU32LE(IO_IMGDEC_DATA, 0xfedcba98);
 	const auto pending = h.machine.imgDecController.captureState();
 	require(pending.controlWord == 0x80000000u, "START retains all uninterpreted control bits as a raw word");
-	require(pending.blockWords.size() == 256 && pending.decodedWordCount == 0 && pending.blockCyclesRemaining == 512, "one full work block has one charged completion edge");
+	require(pending.assembledWordCount == 256 && pending.decodedWordCount == 0 && pending.blockCyclesRemaining == 512, "one full work block has one charged completion edge");
 	h.machine.scheduler.advanceTo(511);
 	require(!h.machine.scheduler.hasDueTimer(), "no per-run or per-sixteen-word decode event");
 	require(h.memory.readMappedU32LE(IO_IMGDEC_DECODED_WORD_COUNT) == 0, "unpublished words do not advance progress");
@@ -168,7 +168,7 @@ void testRestoreAndQuiesce() {
 	h.memory.writeMappedU32LE(IO_IMGDEC_DATA, 299);
 	h.memory.writeMappedU32LE(IO_IMGDEC_DATA, 0x12345678);
 	const auto partial = h.machine.imgDecController.captureState();
-	require(partial.blockWords.size() == 1 && partial.decodedWordCount == 0, "partial input has private prepared data without a timer");
+	require(partial.historyWords == std::vector<u32>{0x12345678} && partial.decodedWordCount == 0, "partial input has private prepared data without a timer");
 	h.machine.imgDecController.beginSupervisorQuiesce();
 	require(h.machine.imgDecController.supervisorQuiescent(), "partial filling pauses without waiting for new input");
 	h.machine.imgDecController.restoreState(partial);
@@ -197,6 +197,36 @@ void testRestoreAndQuiesce() {
 	require(h.drain() == std::vector<u32>(287, 0), "partially drained block resumes with exactly the remaining words");
 }
 
+void testRestoreAfterHistoryWrap() {
+	Harness h({});
+	constexpr u32 prefix = IMGDEC_HISTORY_WORD_CAPACITY;
+	h.configure(12, prefix + 34);
+	h.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
+	for (u32 word : {3u, 11u, 22u, 33u, 44u, (IMGDEC_TOKEN_KIND_REPEAT << 30) | (prefix - 5), 99u}) {
+		h.memory.writeMappedU32LE(IO_IMGDEC_DATA, word);
+	}
+	for (u32 i = 0; i < prefix; ++i) {
+		while ((h.memory.readIoU32(IO_IMGDEC_STATUS) & IMGDEC_STATUS_OUTPUT_REQUEST) == 0) h.pump();
+		require(h.memory.readMappedU32LE(IO_IMGDEC_DATA) == (i < 4 ? (i + 1) * 11 : 99), "prefix fills the ring");
+	}
+	h.memory.writeMappedU32LE(IO_IMGDEC_DATA, 2);
+	h.memory.writeMappedU32LE(IO_IMGDEC_DATA, 101);
+	const auto filling = h.machine.imgDecController.captureState();
+	require(filling.assembledWordCount == prefix + 1 && filling.historyWords.back() == 101, "one unpublished word wrapped the ring");
+	h.machine.imgDecController.restoreState(filling);
+	h.memory.writeMappedU32LE(IO_IMGDEC_DATA, 102);
+	h.memory.writeMappedU32LE(IO_IMGDEC_DATA, 103);
+	h.memory.writeMappedU32LE(IO_IMGDEC_DATA, (IMGDEC_TOKEN_KIND_BACK_REFERENCE << 30) | (28u << 12) | (prefix - 1));
+	while ((h.memory.readIoU32(IO_IMGDEC_STATUS) & IMGDEC_STATUS_OUTPUT_REQUEST) == 0) h.pump();
+	require(h.memory.readMappedU32LE(IO_IMGDEC_DATA) == 101, "unpublished word survived restore");
+	const auto ready = h.machine.imgDecController.captureState();
+	require(h.memory.readMappedU32LE(IO_IMGDEC_DATA) == 102, "first partial read after wrap");
+	h.machine.imgDecController.restoreState(ready);
+	std::vector<u32> expected{102, 103, 44};
+	expected.insert(expected.end(), 30, 99);
+	require(h.drain() == expected, "chronological history restores both the wrapped dictionary and unread output");
+}
+
 void testFaultsAndEmptyJob() {
 	for (const auto& stream : std::vector<std::vector<u32>>{{(IMGDEC_TOKEN_KIND_BACK_REFERENCE << 30)}, {0}, {(IMGDEC_TOKEN_KIND_REPEAT << 30)}, {(IMGDEC_TOKEN_KIND_ZERO << 30) | 1}, {(IMGDEC_TOKEN_KIND_ZERO << 30), 0}}) {
 		Harness h(stream);
@@ -219,5 +249,6 @@ int main() {
 	testCpuBuildsHeadersAndDmaSplitsAtAvailableWords();
 	testHistoryWrapAndAllRunKinds();
 	testRestoreAndQuiesce();
+	testRestoreAfterHistoryWrap();
 	testFaultsAndEmptyJob();
 }
