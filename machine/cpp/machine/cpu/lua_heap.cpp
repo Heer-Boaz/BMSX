@@ -32,23 +32,34 @@ size_t LuaHeap::usedBytes() const {
 	return m_cpu.memory().readRamRecordWord(m_occupiedAddress);
 }
 
+LuaAllocationAssist LuaHeap::allocationAssist(size_t byteCount) const noexcept {
+	const size_t nextBytes = usedBytes() + byteCount;
+	if (nextBytes > capacity()) return LuaAllocationAssist::Full;
+	if (nextBytes > collectionTarget() && !m_cpu.gcHeap().finalMarkPending()) return LuaAllocationAssist::Step;
+	return LuaAllocationAssist::None;
+}
+
+bool LuaHeap::canAdmitWithoutAssist(size_t byteCount) const noexcept {
+#if defined(BMSX_GC_STRESS)
+	(void)byteCount;
+	return false;
+#else
+	return allocationAssist(byteCount) == LuaAllocationAssist::None;
+#endif
+}
+
 LuaAllocationAssist LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {
 #if defined(BMSX_GC_STRESS)
 	stressHeapAllocation(*this);
 #endif
-	const size_t limit = capacity();
-	const size_t nextBytes = usedBytes() + byteCount;
-	const bool exhausted = nextBytes > limit;
-	if (exhausted) {
+	const auto assist = allocationAssist(byteCount);
+	if (assist == LuaAllocationAssist::Full) {
 		collectRuntime(root0, root1, root2, growingThread);
-		return LuaAllocationAssist::Full;
-	}
-	if (nextBytes > collectionTarget() && !m_cpu.gcHeap().finalMarkPending()) {
+	} else if (assist == LuaAllocationAssist::Step) {
 		m_cpu.stepHeap(root0, root1, root2, growingThread);
 		creditStep();
-		return LuaAllocationAssist::Step;
 	}
-	return LuaAllocationAssist::None;
+	return assist;
 }
 
 bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {

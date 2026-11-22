@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cstring>
 
 #include "machine/common/numeric.h"
 #include "machine/cpu/errors.h"
@@ -277,9 +278,18 @@ int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value va
 	const auto oldValues = values();
 	const u32 retained = allocationCharge(oldArraySize, std::max(reserve, hashMembers()));
 	bindStorage(newArraySize, newHashSize, storage);
-	initializeStorage();
+	const size_t retainedArray = std::min(oldArraySize, newArraySize);
+	if (retainedArray != 0) {
+		const auto newValues = values();
+		u8* ram = m_memory->ramData();
+		std::memcpy(ram + (newValues.words & RAM_RECORD_WORD_MASK),
+			ram + (oldValues.words & RAM_RECORD_WORD_MASK), retainedArray * sizeof(u32));
+		std::memcpy(ram + (newValues.tags & RAM_RECORD_WORD_MASK),
+			ram + (oldValues.tags & RAM_RECORD_WORD_MASK), retainedArray);
+	}
+	initializeStorage(retainedArray);
 
-	for (size_t i = 0; i < oldArraySize; ++i) {
+	for (size_t i = retainedArray; i < oldArraySize; ++i) {
 		const Value prior = oldValues.get(i);
 		if (!isNil(prior)) rawSet(valueInteger(static_cast<i32>(i + 1)), prior);
 	}
@@ -301,16 +311,16 @@ void TableRecord::bindStorage(size_t arraySize, size_t hashSize, u32 address) {
 	writeHeader(TableHeader::Free, static_cast<u32>(hashSize) - 1u);
 }
 
-void TableRecord::initializeStorage() {
+void TableRecord::initializeStorage(size_t retainedArray) {
 	const u32 bytes = static_cast<u32>(arrayCapacity()) * 5u + static_cast<u32>(hashSlots()) * 14u;
 	if (bytes == 0) return;
 	const u32 words = storageAddress() & RAM_RECORD_WORD_MASK;
 	const u32 links = words + (arrayCapacity() + 2u * hashSlots()) * 4u;
 	const u32 tags = links + hashSlots() * 4u;
 	u8* ram = m_memory->ramData();
-	std::fill(ram + words, ram + links, u8{0});
+	std::fill(ram + words + retainedArray * sizeof(u32), ram + links, u8{0});
 	std::fill(ram + links, ram + tags, u8{0xff});
-	std::fill(ram + tags, ram + words + bytes, u8{0});
+	std::fill(ram + tags + retainedArray, ram + words + bytes, u8{0});
 	m_memory->invalidateRamWrite(words, bytes);
 }
 
@@ -521,14 +531,19 @@ int TableRecord::setHash(u32 array, Value key, Value value) {
 		removeFromHash(key);
 		return -1;
 	}
-	const bool keyHasEdge = valueTagHasGcEdge(valueTag(key));
+	return setNonNilHash<false>(array, key, value);
+}
+
+template <bool InPlaceOnly>
+int TableRecord::setNonNilHash(u32 array, Value key, Value value) noexcept(InPlaceOnly) {
 	const bool valueHasEdge = valueTagHasGcEdge(valueTag(value));
 	const u32 count = hashSlots();
 	const auto body = hashBody(count, array);
 	const u32 home = hashCanonicalTableKey(key) & (count - 1u);
 	int nodeIndex = -1;
 	if (count != 0u) {
-		nodeIndex = valueIsString(key) ? body.findString(asStringId(key), home) : body.findNode(key, home, true);
+		if constexpr (InPlaceOnly) nodeIndex = body.findNode(key, home, true);
+		else nodeIndex = valueIsString(key) ? body.findString(asStringId(key), home) : body.findNode(key, home, true);
 		if (nodeIndex >= 0) {
 			const u32 valueSlot = array + static_cast<u32>(nodeIndex) + count;
 			const auto prior = body.slots.tag(valueSlot);
@@ -540,24 +555,36 @@ int TableRecord::setHash(u32 array, Value key, Value value) {
 		}
 	}
 	const u32 reserve = hashReserve(), members = hashMembers(), watermark = hashWatermark();
-	const u32 threshold = std::max(reserve, watermark);
-	const bool repartition = members + 1u > threshold;
-	if (repartition || count == 0u) {
-		nodeIndex = insertHashWithAdmission(key, value, reserve, members, watermark, nodeIndex);
-	} else {
-		const bool useHome = body.vacantHome(home);
-		const int available = nodeIndex >= 0 || useHome ? -1 : findFreeIndex(body);
-		if (nodeIndex < 0 && !useHome && available < 0) {
-			nodeIndex = insertHashWithAdmission(key, value, reserve, members, watermark, nodeIndex);
-		} else {
-			if (members >= reserve) m_heap->budget.admit(kHashMappingBytes, valueTable(m_address), key, value);
-			nodeIndex = placeHashMapping(body, home, key, value, nodeIndex, available);
-			const u32 retained = hashMembers();
-			publishHashMembers(retained, retained + 1u, reserve);
+	bool placeInCurrent = false;
+	int available = -1;
+	if (count != 0u && members + 1u <= std::max(reserve, watermark)) {
+		placeInCurrent = nodeIndex >= 0 || body.vacantHome(home);
+		if (!placeInCurrent) {
+			available = findFreeIndex(body);
+			placeInCurrent = available >= 0;
 		}
 	}
-	if (keyHasEdge || valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+	if (placeInCurrent) {
+		if (members >= reserve) {
+			if constexpr (InPlaceOnly) {
+				if (!m_heap->budget.canAdmitWithoutAssist(kHashMappingBytes)) return -1;
+			} else {
+				m_heap->budget.admit(kHashMappingBytes, valueTable(m_address), key, value);
+			}
+		}
+		nodeIndex = placeHashMapping(body, home, key, value, nodeIndex, available);
+		const u32 retained = InPlaceOnly ? members : hashMembers();
+		publishHashMembers(retained, retained + 1u, reserve);
+	} else {
+		if constexpr (InPlaceOnly) return -1;
+		else nodeIndex = insertHashWithAdmission(key, value, reserve, members, watermark, nodeIndex);
+	}
+	if (InPlaceOnly || valueTagHasGcEdge(valueTag(key)) || valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 	return nodeIndex;
+}
+
+bool TableRecord::tryAssignIdentityHash(Value key, Value value) noexcept {
+	return setNonNilHash<true>(arrayCapacity(), key, value) >= 0;
 }
 
 Value TableRecord::getInteger(int indexValue) const {

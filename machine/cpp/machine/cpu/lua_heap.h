@@ -29,6 +29,9 @@ public:
 	// An owner whose logical request depends on retained weak values must
 	// quote it again after this phase, before checking the final admission.
 	LuaAllocationAssist prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread = 0u);
+	// Admit a positive logical increase without running the collector. The
+	// owner commits the increase with its storage mutation.
+	bool canAdmitWithoutAssist(size_t byteCount) const noexcept;
 	// A record with optional separately allocated backing. Record and backing
 	// are charged together, after both allocations are admitted.
 	u32 allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField, Value root0 = valueNil(), Value root1 = valueNil(),
@@ -51,6 +54,7 @@ public:
 	size_t capacity() const;
 
 private:
+	LuaAllocationAssist allocationAssist(size_t byteCount) const noexcept;
 	void accountAllocation(u32 bytes);
 	void creditStep();
 	static constexpr size_t MIN_COLLECTION_BYTES = 1024 * 1024;

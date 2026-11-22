@@ -236,6 +236,10 @@ struct NativeTypePropagation::Transfer {
 					type->tag == ValueTag::Nil ? NativeNilValue::Nil : NativeNilValue::Present,
 					type->tag == ValueTag::Nil ? NativeArrayLengthEffect::RetreatAtBoundary : NativeArrayLengthEffect::AdvanceAtBoundary};
 			}
+			if (op.keyKind == NativeTableKey::Value && op.store.nilValue != NativeNilValue::Nil) {
+				const auto key = input(1);
+				op.store.returnIdentityHash = !key || key->tag == ValueTag::Table;
+			}
 			return;
 		}
 		if (op.resultTag) result(*op.resultTag);

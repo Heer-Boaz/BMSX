@@ -52,6 +52,9 @@ public:
 
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value);
+	// The caller admits an own assignment with a Table key and a non-nil
+	// value. Declining leaves the table and collector unchanged.
+	bool tryAssignIdentityHash(Value key, Value value) noexcept;
 	bool getIntegerArrayKey(int key, Value& value) const {
 		return getArraySlot(arraySlot(key), value);
 	}
@@ -172,7 +175,7 @@ private:
 	int insertHashWithAdmission(Value key, Value value, u32 reserve, u32 members, u32 watermark, int existing);
 	int resize(const ResizePlan&, u32 storage, Value key, Value value, u32 reserve);
 	void bindStorage(size_t arraySize, size_t hashSize, u32 address);
-	void initializeStorage();
+	void initializeStorage(size_t retainedArray = 0);
 	void freeStorage();
 	u32 hashMetadata() const;
 	u32 hashReserve() const;
@@ -229,6 +232,8 @@ private:
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
 	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
 	int setHash(u32 array, Value key, Value value);
+	template <bool InPlaceOnly>
+	int setNonNilHash(u32 array, Value key, Value value) noexcept(InPlaceOnly);
 	void removeFromHash(const Value& key);
 	void markHashNodeDead(size_t index);
 	Value getCanonical(const Value& key) const;

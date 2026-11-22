@@ -56,6 +56,7 @@ struct NativeStorePlan {
 	NativeNilValue nilValue = NativeNilValue::Dynamic;
 	// Applies only on an admitted in-capacity integer-key route.
 	NativeArrayLengthEffect arrayLength = NativeArrayLengthEffect::ByValue;
+	bool returnIdentityHash = false;
 };
 
 struct NativeReplay {

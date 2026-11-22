@@ -94,7 +94,7 @@ export class TableRecords {
 		this.writeHeader(record, TableHeader.Hash, hash);
 		this.writeHeader(record, TableHeader.Free, hash - 1);
 	}
-	private initializeStorage(record: number): void {
+	private initializeStorage(record: number, retainedArray = 0): void {
 		const bytes = 5 * this.arrayCapacity(record) + 14 * this.hashSize(record);
 		if (bytes === 0) return;
 		const memory = this.heap.memory;
@@ -102,9 +102,9 @@ export class TableRecords {
 		const links = words + (this.arrayCapacity(record) + 2 * this.hashSize(record)) * 4;
 		const tags = links + this.hashSize(record) * 4;
 		const ram = memory.ramData();
-		ram.fill(0, words, links);
+		ram.fill(0, words + retainedArray * 4, links);
 		ram.fill(0xff, links, tags);
-		ram.fill(0, tags, words + bytes);
+		ram.fill(0, tags + retainedArray, words + bytes);
 		memory.invalidateRamWrite(words, bytes);
 	}
 	private freeStorage(record: number): void {
@@ -657,8 +657,15 @@ export class TableRecords {
 		const oldArray = this.arrayCapacity(record), oldHash = this.hashSize(record);
 		const memory = this.heap.memory;
 		this.bindStorage(record, array, hash, storage);
-		this.initializeStorage(record);
-		for (let slot = 0; slot < oldArray; ++slot) {
+		const retainedArray = Math.min(oldArray, array);
+		if (retainedArray !== 0) {
+			const ram = memory.ramData();
+			const wordSource = oldWords & RAM_RECORD_WORD_MASK, tagSource = oldTags & RAM_RECORD_WORD_MASK;
+			ram.copyWithin(storage & RAM_RECORD_WORD_MASK, wordSource, wordSource + retainedArray * 4);
+			ram.copyWithin(this.tags(record) & RAM_RECORD_WORD_MASK, tagSource, tagSource + retainedArray);
+		}
+		this.initializeStorage(record, retainedArray);
+		for (let slot = retainedArray; slot < oldArray; ++slot) {
 			const tag = memory.readRamRecordByte(oldTags + slot);
 			if (tag !== ValueTag.Nil) this.rawSet(record, valueInteger(slot + 1), valueFromTag(tag, memory.readRamRecordWord(oldWords + slot * 4)));
 		}

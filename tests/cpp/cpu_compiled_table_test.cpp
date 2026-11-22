@@ -1429,6 +1429,189 @@ void nativeDynamicHashProbeReturnsLiveValuesWithinTheGrant() {
 #endif
 #endif
 }
+
+void nativeIdentityHashStoreReturnsWithinTheGrant() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	constexpr int receiverSlot = 256, methodSlot = 10, keysSlot = 16;
+	constexpr int loop = 16, method = 32, trap = 48, methodArgs = 3;
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), methodSlot, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, loop, static_cast<u8>(OpCode::MOV), 2, 8, 0);
+	writeInstruction(image.text, loop + 1, static_cast<u8>(OpCode::KSMI), 4, 0, 39);
+	writeInstruction(image.text, loop + 2, static_cast<u8>(OpCode::WIDE), 1, 0, 0);
+	writeInstruction(image.text, loop + 3, static_cast<u8>(OpCode::SETT), 0, 1, 2);
+	writeInstruction(image.text, loop + 4, static_cast<u8>(OpCode::MOV), 9, 2, 0);
+	writeInstruction(image.text, loop + 5, static_cast<u8>(OpCode::MOV), 11, 4, 0);
+	writeInstruction(image.text, loop + 6, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
+	writeInstruction(image.text, method, static_cast<u8>(OpCode::SETI), 0, 1, 2);
+	writeInstruction(image.text, method + 1, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, trap, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, trap + 1, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = receiverSlot + 1},
+		{.firstWord = loop, .wordCount = 7, .maxStack = receiverSlot + 1},
+		{.firstWord = method, .wordCount = 2, .numParams = methodArgs, .maxStack = methodArgs},
+		{.firstWord = trap, .wordCount = 2}};
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
+	image.exceptionFunctionIndex = 3;
+
+	CpuMachine native(image), scalar(image, true);
+	auto& cpu = native.cpu;
+	const auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
+	const int prefix = cycles(OpCode::MOV) + cycles(OpCode::KSMI);
+	const int throughStore = prefix + cycles(OpCode::SETT);
+	const int throughSuffix = throughStore + 2 * cycles(OpCode::MOV);
+	const u32 pc = native.rom.textAddress + loop * INSTRUCTION_BYTES;
+	const u32 storePc = pc + 2 * INSTRUCTION_BYTES, suffixPc = pc + 4 * INSTRUCTION_BYTES;
+	require(test::runCpuParity(cpu, scalar.cpu, cycles(OpCode::CLOSURE)) == RunResult::Yielded,
+		"the two lanes first create the real __newindex closure");
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		auto& frame = *lane.activeThread()->currentFrame;
+		auto receiver = lane.createTable(1, 0);
+		frame.registers.set(receiverSlot, valueTable(receiver.address()));
+		frame.registers.set(3, valueNil());
+		frame.setTop(receiverSlot + 1);
+		receiver.setInteger(1, valueInteger(61));
+		std::array<Value, 5> keys;
+		for (size_t i = 0; i < keys.size(); ++i) {
+			keys[i] = valueTable(lane.createTable().address());
+			frame.registers.set(keysSlot + i, keys[i]);
+		}
+		// Five distinct identities guarantee a collision among four hash homes.
+		for (size_t i = 1; i < keys.size(); ++i) {
+			const u32 home = hashCanonicalTableKey(keys[i]) & 3u;
+			const auto end = keys.begin() + i;
+			const auto collider = std::find_if(keys.begin(), end, [home](Value key) {
+				return (hashCanonicalTableKey(key) & 3u) == home;
+			});
+			if (collider == end) continue;
+			std::iter_swap(keys.begin(), collider);
+			std::swap(keys[3], keys[i]);
+			break;
+		}
+		require(keys[0] != keys[3] && ((hashCanonicalTableKey(keys[0]) ^ hashCanonicalTableKey(keys[3])) & 3u) == 0u,
+			"the new identity collides with a different live identity");
+		for (size_t i = 0; i < keys.size(); ++i) frame.registers.set(keysSlot + i, keys[i]);
+		for (int i = 0; i < 3; ++i) receiver.set(keys[i], valueInteger(21 + i));
+		require(receiver.hashSlots() == 4 && isNil(receiver.get(keys[3])),
+			"three ordinary insertions leave one spare slot with no explicit reserve");
+	}
+	const auto start = [&](int keySlot, Value value) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& lane = machine->cpu;
+			lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[1], pc);
+			auto registers = lane.activeThread()->currentFrame->registers;
+			registers.set(1, registers.get(keySlot));
+			registers.set(8, value);
+			registers.set(9, valueInteger(-9));
+			registers.set(11, valueInteger(-11));
+		}
+	};
+	start(keysSlot, valueInteger(21));
+	require(test::runCpuParity(cpu, scalar.cpu, NATIVE_WARM_SCALE * 16
+		* (throughSuffix + cycles(OpCode::JMP))) == RunResult::Yielded,
+		"the real Table-identity store and its successor warm in a guest loop");
+	auto& page = *cpu.activeThread()->currentFrame->decodedPage;
+	const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(cpu, page, word);
+	const auto* installed = page.nativeBlocks->entries[word].get();
+	const auto exit = std::ranges::find(installed->sideExits, NativeBlockExit::WriteIndex, &NativeBlockExitSite::exit);
+	require(exit != installed->sideExits.end() && exit->currentPc == storePc && exit->nextPc == suffixPc,
+		"the warmed native body has the real WIDE store and its exact fallback frontier");
+	requireParity(native, scalar);
+
+	auto receiver = asTable(cpu.readFrameRegister(0, receiverSlot), cpu.gcHeap());
+	const Value inserted = cpu.readFrameRegister(0, keysSlot + 3), grows = cpu.readFrameRegister(0, keysSlot + 4);
+	const Value raw = valueFloatBits(0x7fc01234u);
+	const u32 storage = receiver.storageAddress();
+	const auto bytes = cpu.luaHeap().usedBytes();
+	const auto charge = TableRecord::allocationCharge(0, 1);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& writeExits = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::WriteIndex)].entries;
+	const auto warmExits = writeExits;
+#endif
+	start(keysSlot + 3, raw);
+	require(test::runCpuParity(cpu, scalar.cpu, prefix) == RunResult::Yielded
+		&& cpu.readFramePc(0) == storePc && isNil(receiver.get(inserted))
+		&& cpu.luaHeap().usedBytes() == bytes,
+		"an exhausted prefix cannot enter the store or charge its mapping");
+	requireParity(native, scalar);
+	start(keysSlot + 3, raw);
+	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
+		&& cpu.instructionBudgetRemaining == 0 && cpu.readCurrentInstructionPc() == storePc
+		&& cpu.lastPc == storePc + INSTRUCTION_BYTES && cpu.readFramePc(0) == suffixPc
+		&& cpu.readFrameRegister(0, 9) == valueInteger(-9),
+		"an exact grant commits the WIDE store without executing its successor");
+	require(receiver.get(inserted) == raw && receiver.getInteger(1) == valueInteger(61)
+		&& receiver.get(cpu.readFrameRegister(0, keysSlot)) == valueInteger(21)
+		&& receiver.storageAddress() == storage && cpu.luaHeap().usedBytes() == bytes + charge,
+		"colliding identities remain distinct and an unreserved insertion charges exactly one mapping without growth");
+	requireParity(native, scalar);
+	start(keysSlot + 3, grows);
+	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
+		&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == pc + 6 * INSTRUCTION_BYTES
+		&& cpu.readFrameRegister(0, 9) == grows && cpu.readFrameRegister(0, 11) == valueInteger(39)
+		&& receiver.get(inserted) == grows && cpu.luaHeap().usedBytes() == bytes + charge,
+		"a live overwrite at full occupancy returns to the generated suffix, preserving both prefix values");
+	require(page.nativeBlocks->entries[word].get() == installed, "the complete grant reuses the warmed executable");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(writeExits == warmExits, "the in-capacity insert and overwrite avoid the materialized WriteIndex exit");
+#endif
+	requireParity(native, scalar);
+
+	start(keysSlot + 4, raw);
+	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
+		&& receiver.hashSlots() == 8 && receiver.get(grows) == raw && receiver.get(inserted) == grows
+		&& cpu.luaHeap().usedBytes() == bytes + 2 * charge
+		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39),
+		"a full table falls through to semantic growth once and continues with the live registers");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(writeExits == warmExits + 1, "the same warmed site enters its WriteIndex exit on growth");
+#endif
+	requireParity(native, scalar);
+	start(keysSlot + 3, valueNil());
+	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
+		&& isNil(receiver.get(inserted)) && receiver.get(grows) == raw && cpu.luaHeap().usedBytes() == bytes + charge,
+		"a nil value removes the colliding mapping and releases only its charge");
+	requireParity(native, scalar);
+
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		auto meta = lane.createTable(0, 1);
+		meta.setStringKey(lane.stringPool().intern("__newindex"), lane.readFrameRegister(0, methodSlot));
+		asTable(lane.readFrameRegister(0, receiverSlot), lane.gcHeap()).setMetatableAddress(meta.address());
+	}
+	start(keysSlot + 3, raw);
+	// An implicit call copies its three arguments from outside the shared stack.
+	require(test::runCpuParity(cpu, scalar.cpu, throughStore + methodArgs) == RunResult::Yielded
+		&& cpu.instructionBudgetRemaining == 0 && cpu.getFrameDepth() == 2
+		&& cpu.readFramePc(0) == suffixPc && cpu.readFrameRegister(1, 0) == valueTable(receiver.address())
+		&& cpu.readFrameRegister(1, 1) == inserted && cpu.readFrameRegister(1, 2) == raw
+		&& receiver.getInteger(1) == valueInteger(61) && isNil(receiver.get(inserted)),
+		"callable __newindex sees the live receiver, key and value before the pending append or caller suffix");
+	requireParity(native, scalar);
+	require(test::runCpuParity(cpu, scalar.cpu, cycles(OpCode::SETI) + cycles(OpCode::RET) + 2 * cycles(OpCode::MOV)) == RunResult::Yielded
+		&& cpu.getFrameDepth() == 1 && receiver.getInteger(1) == raw && isNil(receiver.get(inserted))
+		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39),
+		"the callable writes its observable marker and returns once to the saved successor");
+	requireParity(native, scalar);
+
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		asTable(lane.readFrameRegister(0, receiverSlot), lane.gcHeap()).setMetatableAddress(0);
+	}
+	start(3, raw);
+	require(test::runCpuParity(cpu, scalar.cpu, throughStore + cycles(OpCode::HALT)) == RunResult::Halted
+		&& cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INDEX_NIL && cpu.readEpcWord() == storePc
+		&& cpu.readFrameRegister(0, 9) == valueInteger(-9) && receiver.get(grows) == raw,
+		"a nil key traps at the WIDE prefix without assigning or executing the suffix");
+	requireParity(native, scalar);
+#endif
+}
 } // namespace
 
 int main() {
@@ -1450,6 +1633,7 @@ int main() {
 		warmTableStoresCompleteTheirEffects();
 		negativeIntegerKeysUseHashStorage();
 		nativeDynamicHashProbeReturnsLiveValuesWithinTheGrant();
+		nativeIdentityHashStoreReturnsWithinTheGrant();
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

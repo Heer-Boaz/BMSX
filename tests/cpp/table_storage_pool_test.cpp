@@ -79,6 +79,44 @@ void hashWatermarkSurvivesDeletionAndRestore(bmsx::CPU& cpu) {
 	}
 	table.clear();
 }
+
+void mixedArrayMigrationPreservesRawValues(bmsx::CPU& cpu) {
+	using namespace bmsx;
+	auto table = cpu.createTable(4, 0);
+	const Value prefix = valueFloatBits(0x7fc12345u), tail = valueFloatBits(0xffc23456u);
+	table.setInteger(1, valueBool(false));
+	table.setInteger(3, prefix);
+	table.setInteger(4, valueBool(true));
+	// These negative keys share their home in both the two- and four-node hash.
+	table.setInteger(-1, valueInteger(11));
+	table.setInteger(-3, valueInteger(33));
+	table.setInteger(5, valueInteger(50));
+	table.setInteger(6, valueInteger(60));
+	require(table.arrayCapacity() == 4, "entries 5 and 6 start in the hash");
+	const u32 smallBody = table.storageAddress();
+	table.setInteger(7, tail);
+	require(table.arrayCapacity() == 8 && table.storageAddress() != smallBody,
+		"the dense tail grows and relocates the array");
+	require(table.getInteger(1) == valueBool(false) && isNil(table.getInteger(2))
+		&& table.getInteger(3) == prefix && table.getInteger(4) == valueBool(true)
+		&& table.getInteger(5) == valueInteger(50) && table.getInteger(6) == valueInteger(60)
+		&& table.getInteger(7) == tail && isNil(table.getInteger(8))
+		&& table.getInteger(-1) == valueInteger(11) && table.getInteger(-3) == valueInteger(33),
+		"growth preserves the sparse raw prefix and reclassifies the former hash tail");
+	const u32 largeBody = table.storageAddress();
+	table.setInteger(5, valueNil());
+	table.setInteger(6, valueNil());
+	table.setInteger(-2, valueInteger(22));
+	require(table.arrayCapacity() == 4 && table.storageAddress() != largeBody,
+		"repartition shrinks and relocates the sparse array");
+	require(table.getInteger(1) == valueBool(false) && isNil(table.getInteger(2))
+		&& table.getInteger(3) == prefix && table.getInteger(4) == valueBool(true)
+		&& isNil(table.getInteger(5)) && isNil(table.getInteger(6)) && table.getInteger(7) == tail
+		&& table.getInteger(-1) == valueInteger(11) && table.getInteger(-3) == valueInteger(33)
+		&& table.getInteger(-2) == valueInteger(22),
+		"shrink preserves the sparse raw prefix and reinserts overflow without losing colliding keys");
+	table.clear();
+}
 }
 
 int main() {
@@ -90,6 +128,7 @@ int main() {
 		CPU cpu(memory, irq, addresses);
 		hashBudgetIgnoresPhysicalRebuild(cpu);
 		hashWatermarkSurvivesDeletionAndRestore(cpu);
+		mixedArrayMigrationPreservesRawValues(cpu);
 		const auto key = cpu.stringPool().intern("retired");
 		const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 		const u32 physicalBefore = cpu.heapAllocator().occupiedBytes();

@@ -191,6 +191,37 @@ test('table values come directly from the allocator-owned RAM block', () => {
 	assert.equal(cpu.heapAllocator.occupiedBytes() - occupiedBefore, 32, 'clearing releases only the owned body');
 });
 
+test('mixed table migration preserves a sparse raw array prefix and hash overflow', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const tables = cpu.gc.tables, table = cpu.createTable(4, 0);
+	const prefix = valueFloatBits(0x7fc12345), tail = valueFloatBits(0xffc23456);
+	tables.setInteger(table, 1, valueBool(false));
+	tables.setInteger(table, 3, prefix);
+	tables.setInteger(table, 4, valueBool(true));
+	// These negative keys share their home in both the two- and four-node hash.
+	tables.setInteger(table, -1, valueInteger(11));
+	tables.setInteger(table, -3, valueInteger(33));
+	tables.setInteger(table, 5, valueInteger(50));
+	tables.setInteger(table, 6, valueInteger(60));
+	assert.equal(tables.arrayCapacity(table), 4, 'entries 5 and 6 start in the hash');
+	const smallBody = tables.storageAddress(table);
+	tables.setInteger(table, 7, tail);
+	assert.equal(tables.arrayCapacity(table), 8);
+	assert.notEqual(tables.storageAddress(table), smallBody);
+	assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8, -1, -3].map(key => tables.getInteger(table, key)),
+		[valueBool(false), valueNil(), prefix, valueBool(true), valueInteger(50), valueInteger(60), tail, valueNil(), valueInteger(11), valueInteger(33)]);
+
+	const largeBody = tables.storageAddress(table);
+	tables.setInteger(table, 5, valueNil());
+	tables.setInteger(table, 6, valueNil());
+	tables.setInteger(table, -2, valueInteger(22));
+	assert.equal(tables.arrayCapacity(table), 4);
+	assert.notEqual(tables.storageAddress(table), largeBody);
+	assert.deepEqual([1, 2, 3, 4, 5, 6, 7, -1, -3, -2].map(key => tables.getInteger(table, key)),
+		[valueBool(false), valueNil(), prefix, valueBool(true), valueNil(), valueNil(), tail, valueInteger(11), valueInteger(33), valueInteger(22)]);
+});
+
 test('numeric hash mixing distributes negative integral keys and preserves canonical matching', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
