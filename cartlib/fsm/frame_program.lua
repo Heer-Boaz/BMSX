@@ -1,90 +1,84 @@
-local frame_evaluator_syntax<const> = require('cartlib/fsm/frame_evaluator_syntax')
-
 local frame_program<const> = {}
-local compile_syntax<const> = lua_compiler.compile_syntax
-local component_factories_by_machine_count<const> = {}
-local factories_by_shape<const> = {}
-local shape_current<const> = 0x1
-local shape_update<const> = 0x2
-local shape_input_first<const> = 0x4
+local dormant_runner<const> = function() end
 
-function frame_program.compile_component_runner(machines)
+function frame_program.bind_component_runner(machines)
 	local machine_count<const> = #machines
-	local factory = component_factories_by_machine_count[machine_count]
-	if factory == nil then
-		factory = compile_syntax(
-			frame_evaluator_syntax.build_component(machine_count),
-			'[fsm.component_frame]'
-		)()
-		component_factories_by_machine_count[machine_count] = factory
+	if machine_count == 0 then return dormant_runner end
+	local first<const> = machines[1]
+	if machine_count == 1 then
+		return function()
+			if first.active_frame_work then first:update() end
+		end
 	end
-	return factory(machines)
+	return function()
+		for index = 1, machine_count do
+			local machine<const> = machines[index]
+			if machine.active_frame_work then machine:update() end
+		end
+	end
 end
 
-local get_evaluator_factory<const> = function(
-	shape,
-	input_handler_count,
-	frame_concurrent_state_count,
-	values
-)
-	local by_input_count = factories_by_shape[shape]
-	if by_input_count == nil then
-		by_input_count = {}
-		factories_by_shape[shape] = by_input_count
-	end
-	local by_concurrent_count = by_input_count[input_handler_count]
-	if by_concurrent_count == nil then
-		by_concurrent_count = {}
-		by_input_count[input_handler_count] = by_concurrent_count
-	end
-	local factory = by_concurrent_count[frame_concurrent_state_count]
-	if factory == nil then
-		factory = compile_syntax(
-			frame_evaluator_syntax.build(values),
-			'[fsm.frame_evaluator]'
-		)()
-		by_concurrent_count[frame_concurrent_state_count] = factory
-	end
-	return factory
+local current_only<const> = function(state)
+	local current<const> = state.current_state
+	if current.active_frame_work then current:frame_evaluator() end
 end
 
-function frame_program.compile_state_evaluator(definition, no_op)
+-- Most evaluating states only visit their active child or run a local update.
+-- Bind those paths directly; layered states keep their ordered child and input
+-- lanes. These are cartridge functions, not templates compiled by the BIOS.
+function frame_program.bind_state_evaluator(definition, no_op)
 	local has_current_frame_work<const> = definition.has_current_frame_work
-	local has_update<const> = definition.update ~= nil
+	local update_handler<const> = definition.update
 	local input_handler_count<const> = definition.input_handler_count
-	local input_eval_first<const> = input_handler_count ~= 0 and definition.input_eval_first
 	local frame_concurrent_state_count<const> = definition.frame_concurrent_state_count
-	local shape = 0
-	if has_current_frame_work then
-		shape = shape | shape_current
+	if frame_concurrent_state_count == 0 and input_handler_count == 0 then
+		if update_handler == nil then return current_only end
+		if has_current_frame_work then
+			return function(state)
+				local current<const> = state.current_state
+				if current.active_frame_work then current:frame_evaluator() end
+				local next_state<const> = update_handler(state.target, state)
+				if next_state and next_state ~= no_op then state:transition_to(next_state) end
+			end
+		end
+		return function(state)
+			local next_state<const> = update_handler(state.target, state)
+			if next_state and next_state ~= no_op then state:transition_to(next_state) end
+		end
 	end
-	if has_update then
-		shape = shape | shape_update
+	local input_eval_first<const> = definition.input_eval_first
+	local transition_kinds<const> = definition.input_transition_kinds
+	local transitions<const> = definition.input_transitions
+	return function(state)
+		if has_current_frame_work then
+			local current<const> = state.current_state
+			if current.active_frame_work then current:frame_evaluator() end
+		end
+		if frame_concurrent_state_count ~= 0 then
+			local concurrent<const> = state.frame_concurrent_states
+			for index = 1, frame_concurrent_state_count do
+				local child<const> = concurrent[index]
+				if child.active_frame_work then child:frame_evaluator() end
+			end
+		end
+		if input_handler_count == 1 then
+			if state.input_bindings[1]() then
+				state:execute_transition(transition_kinds[1], transitions[1])
+			end
+		elseif input_handler_count ~= 0 then
+			local bindings<const> = state.input_bindings
+			for index = 1, input_handler_count do
+				if bindings[index]() then
+					state:execute_transition(transition_kinds[index], transitions[index])
+					if input_eval_first then break end
+				end
+			end
+		end
+		if update_handler ~= nil then
+			local next_state<const> = update_handler(state.target, state)
+			if next_state and next_state ~= no_op then state:transition_to(next_state) end
+		end
 	end
-	if input_eval_first then
-		shape = shape | shape_input_first
-	end
-	-- Only topology and handler count select code shape. Definitions with the
-	-- same shape share machine code and bind their own immutable handlers into
-	-- the returned evaluator closure.
-	local factory<const> = get_evaluator_factory(
-		shape,
-		input_handler_count,
-		frame_concurrent_state_count,
-		{
-			has_current_frame_work = has_current_frame_work,
-			has_update = has_update,
-			input_handler_count = input_handler_count,
-			input_eval_first = input_eval_first,
-			frame_concurrent_state_count = frame_concurrent_state_count,
-			no_op = no_op,
-		}
-	)
-	return factory(
-		definition.update,
-		definition.input_transition_kinds,
-		definition.input_transitions
-	)
 end
 
 return frame_program

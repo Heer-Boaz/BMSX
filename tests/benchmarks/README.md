@@ -43,7 +43,7 @@ No 8 GiB allocation or BMSX runtime is needed for these gate checks.
 
 ## CPU backend conformance
 
-### Actual firmware-generated FSM adoption
+### ROM-backed FSM evaluator adoption
 
 ```sh
 npm run test:firmware-fsm-parity
@@ -51,22 +51,21 @@ npm run test:firmware-fsm-parity
 
 This diagnostic builds Debug native-ON and native-OFF runners, then executes
 the same system/cartridge ROM pair through those binaries and both TS backends.
-The existing cartlib test BIOS initializes the real firmware compiler and enters
-the cartridge normally; the actual `cartlib/fsm/frame_program` generates the
-evaluators. This is not the complete stock BIOS or a device/frame-scheduler test.
-O0/O3 selects compilation of the fixture and firmware/cartlib ROMs, not two
-optimization modes inside the firmware runtime compiler.
+The cartlib test BIOS enters the cartridge normally. `cartlib/fsm/frame_program`
+binds immutable topology and update functions into evaluators already compiled
+in the cartridge ROM. This is not the complete stock BIOS or a device/frame-scheduler
+test. O0/O3 selects compilation of the fixture and firmware/cartlib ROMs.
 
-Nine checkpoints cover initial setup, compilation, a warm batch and a short repeated batch,
-three same-shape bindings, a new shape warmed and repeated, and
+Nine checkpoints cover initial setup, binding, a warm batch and a short repeated batch,
+three same-shape bindings, a different topology warmed and repeated, and
 completion. The guest checks transition, update and child dispatch at every
 stage, and the four backends agree on cycles, remaining budget and evaluator
 layout. Ordinary guest HALTs stop execution without an instruction hook
-or restoring state. The specific RAM evaluator entry must become compiled;
+or restoring state. The specific ROM evaluator entry must become compiled;
 its executable owner and dispatch entry must survive subsequent execution
 and binding. C++ uses weak owner identity so observing retention does not
-keep retired code alive. All same-shape closures must share the original
-generated function address.
+keep retired code alive. Different topology binds the same evaluator function;
+input evaluation and child order remain properties of each binding.
 
 The printed temporary evidence directory retains the ROMs and C++ JSONL
 profiles, not whole machine states. Phase deltas describe **all CPU native

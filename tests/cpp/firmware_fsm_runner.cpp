@@ -7,6 +7,7 @@
 #include "machine/runtime/runtime.h"
 #include "machine/cpu/jit/runtime/compilation_profile.h"
 #include "spec/blua32/image_format.h"
+#include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/model.h"
 
 using namespace bmsx;
@@ -38,11 +39,10 @@ int main(int argc, char** argv) {
 		auto& memory = runtime.machine.memory;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		cpu.setNativeCompilationProfiling(true);
-		std::array<std::weak_ptr<NativeCodeRegion>, 2> retainedRegions;
-		std::array<void*, 2> retainedEntries{};
+		std::weak_ptr<NativeCodeRegion> retainedRegion;
+		void* retainedEntry = nullptr;
 #endif
 		runtime.boot();
-		const auto* firmware = cpu.rootThread()->currentFrame->executionImage;
 		u32 primaryFunction = 0;
 		u64 activeCycles = 0;
 		NativeCompilationProfile previous;
@@ -79,44 +79,43 @@ int main(int argc, char** argv) {
 				<< ",\"prepareNanoseconds\":" << profile.prepareNanoseconds
 				<< ",\"evaluators\":[";
 			if (phase >= 1 && phase < 8) {
+				const auto* image = cpu.rootThread()->currentFrame->executionImage;
+				const u32 cartEnd = CART_ROM_BASE + static_cast<u32>(cart.size());
 				const auto count = phase >= 5 ? 2 : 1;
 				for (int evaluator = 0; evaluator < count; ++evaluator) {
 					const auto closure = asClosure(cpu.getGlobalByKey(*cpu.stringPool().find(evaluator == 0 ? "fsm_evaluator" : "fsm_other")), cpu.gcHeap());
-					require(cpu.readClosureBinding(closure).executionDomainId == firmware->executionDomainId, "inspect the evaluator in its firmware execution image");
+					require(cpu.readClosureBinding(closure).executionDomainId == image->executionDomainId, "inspect the evaluator in its cartridge execution image");
 					const u32 address = cpu.readClosureBinding(closure).functionAddress;
 					const u32 code = memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
 					const u32 bytes = memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
-					require(address >= DYNAMIC_RAM_BASE && address + BLUA32_FUNCTION_RECORD_SIZE <= RAM_BASE + PSX_MACHINE_SPEC.ramBytes
-						&& code >= DYNAMIC_RAM_BASE && code + bytes <= RAM_BASE + PSX_MACHINE_SPEC.ramBytes,
-						"the actual firmware linker must produce RAM records and code");
+					require(address >= CART_ROM_BASE && address + BLUA32_FUNCTION_RECORD_SIZE <= cartEnd
+						&& code >= CART_ROM_BASE && code + bytes <= cartEnd,
+						"bound evaluators execute code from the cart ROM");
 					if (phase == 1) primaryFunction = address;
-					if (evaluator == 0) require(address == primaryFunction, "retained evaluator function changed");
-					else require(address != primaryFunction, "a new shape must have its own generated function");
+					require(address == primaryFunction, "different topology binds the same ROM evaluator");
 					bool compiled = false;
 					size_t regionBytes = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-					const auto* page = firmware->nativeCodeLookup ? firmware->nativeCodeLookup->find(code, 0) : nullptr;
+					const auto* page = image->nativeCodeLookup ? image->nativeCodeLookup->find(code, 0) : nullptr;
 					const u32 word = (code & (MAPPED_PAGE_BYTE_SIZE - 1u)) / 4u;
 					if (page && page->nativeBlocks && page->nativeBlocks->entries[word]) {
 						const auto& block = *page->nativeBlocks->entries[word];
 						compiled = page->nativeCode[word] != nullptr
 							&& page->words[word].dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock);
 						regionBytes = block.region->codeBytes;
-						if ((evaluator == 0 && phase >= 2) || (evaluator == 1 && phase >= 6)) {
-							auto& retained = retainedRegions[evaluator];
-							if ((evaluator == 0 && phase == 2) || (evaluator == 1 && phase == 6)) {
-								retained = block.region;
-								retainedEntries[evaluator] = page->nativeCode[word];
+						if (phase >= 2) {
+							if (phase == 2) {
+								retainedRegion = block.region;
+								retainedEntry = page->nativeCode[word];
 							} else {
-								require(!retained.expired() && !retained.owner_before(block.region)
-									&& !block.region.owner_before(retained)
-									&& retainedEntries[evaluator] == page->nativeCode[word],
+								require(!retainedRegion.expired() && !retainedRegion.owner_before(block.region)
+									&& !block.region.owner_before(retainedRegion)
+									&& retainedEntry == page->nativeCode[word],
 									"warm evaluator owner/entry replaced during retained execution/binding");
 							}
 						}
 					}
-					if ((evaluator == 0 && phase >= 2) || (evaluator == 1 && phase >= 6))
-						require(compiled, "actual firmware evaluator did not acquire its specific native entry");
+					if (phase >= 2) require(compiled, "ROM evaluator did not acquire its specific native entry");
 #endif
 					if (evaluator != 0) std::cout << ',';
 					std::cout << "{\"function\":" << address << ",\"code\":" << code << ",\"bytecodeBytes\":" << bytes
@@ -126,7 +125,7 @@ int main(int argc, char** argv) {
 					const auto& bindings = asTable(cpu.getGlobalByKey(*cpu.stringPool().find("fsm_bindings")), cpu.gcHeap());
 					for (int index = 1; index <= 3; ++index)
 						require(cpu.readClosureBinding(asClosure(bindings.getInteger(index), cpu.gcHeap())).functionAddress == primaryFunction,
-							"same-shape binding regenerated code instead of sharing the factory's evaluator");
+							"binding did not retain its ROM evaluator");
 				}
 			}
 			std::cout << "]}\n";

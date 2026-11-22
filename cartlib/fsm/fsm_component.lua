@@ -65,10 +65,10 @@ function fsm_component.new(owner, machine_ids)
 		local clock_machines<const> = self._machines_by_clock[definition.clock_source]
 		clock_machines[#clock_machines + 1] = machine
 	end
-	self.update_gameplay = frame_program.compile_component_runner(
+	self.update_gameplay = frame_program.bind_component_runner(
 		self._machines_by_clock[clock.gameplay]
 	)
-	self.update_frame = frame_program.compile_component_runner(
+	self.update_frame = frame_program.bind_component_runner(
 		self._machines_by_clock[clock.frame]
 	)
 	return self

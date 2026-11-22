@@ -159,7 +159,7 @@ local transition_no_op<const> = 0
 local transition_path<const> = 1
 local transition_callback<const> = 2
 local compile_definition_transitions
-local compile_definition_frame_evaluators
+local bind_definition_frame_evaluators
 local transition_cached_path
 
 local assert_rebind_compatible
@@ -402,7 +402,7 @@ function state_definition.new(id, def, root, parent)
 	end
 	if self.root == self then
 		compile_definition_transitions(self)
-		compile_definition_frame_evaluators(self)
+		bind_definition_frame_evaluators(self)
 		local list<const> = {}
 		local seen<const> = {}
 		collect_event_list(self, list, seen)
@@ -1320,14 +1320,14 @@ compile_definition_transitions = function(definition)
 	end
 end
 
-compile_definition_frame_evaluators = function(definition)
+bind_definition_frame_evaluators = function(definition)
 	local states<const> = definition.states
 	local state_ids<const> = definition.state_ids
 	for i = 1, definition.state_count do
-		compile_definition_frame_evaluators(states[state_ids[i]])
+		bind_definition_frame_evaluators(states[state_ids[i]])
 	end
 	if definition.has_subtree_frame_work then
-		definition.frame_evaluator = frame_program.compile_state_evaluator(definition, no_op)
+		definition.frame_evaluator = frame_program.bind_state_evaluator(definition, no_op)
 	end
 end
 

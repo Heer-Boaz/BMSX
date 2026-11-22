@@ -90,7 +90,6 @@ const CART_MODULE_FILES = [
 	['cartlib/timeline/timeline_component', 'cartlib/timeline/timeline_component.lua'],
 	['cartlib/util/clamp', 'cartlib/util/clamp.lua'],
 	['cartlib/util/clear_map', 'cartlib/util/clear_map.lua'],
-	['cartlib/fsm/frame_evaluator_syntax', 'cartlib/fsm/frame_evaluator_syntax.lua'],
 	['cartlib/fsm/frame_program', 'cartlib/fsm/frame_program.lua'],
 	['cartlib/fsm/fsm', 'cartlib/fsm/fsm.lua'],
 	['testlib/fsm/transition_recorder', 'testlib/fsm/transition_recorder.lua'],

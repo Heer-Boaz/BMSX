@@ -85,9 +85,10 @@ return {kind='integration',phase_cycles={full_tape_and_repeated_checkpoint_strea
     end,
     natural_enemy_admission_and_retirement=function(t)
         local _,stage<const>,pilot<const> = fixture.start_game(t)
+        t:at_boundary(world:request_mutation_boundary(), 30)
         pilot.body_collider:set_enabled(false)
         local initial_index<const> = stage.actor_cue_index
-        local objects<const> = world:active_definition_view(ids_sint_pop_def).objects
+        local formations<const> = world:active_definition_view(ids_sint_pop_def)
         local up<const> = { last_phase = -1 }
         local down<const> = { last_phase = -1 }
         local approach_vx<const> = velocity.pixels_per_second_to_velocity_q8(sint_pop_move_to_player_speed_x_px_per_second)
@@ -122,6 +123,7 @@ return {kind='integration',phase_cycles={full_tape_and_repeated_checkpoint_strea
         for elapsed=1,2500 do
             t:wait_ticks(1)
             if up.foe == nil or down.foe == nil then
+                local objects<const> = formations.objects
                 for index=1,#objects do
                     local foe<const> = objects[index]
                     local track<const> = foe.group_type == sint_pop_group_up and up or down

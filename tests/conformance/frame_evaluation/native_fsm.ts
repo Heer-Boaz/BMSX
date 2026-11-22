@@ -11,7 +11,7 @@ import { DecodedDispatchOp } from '../../../machine/ts/machine/cpu/execution_ima
 import { MAPPED_PAGE_BYTE_SIZE } from '../../../machine/ts/machine/memory/mapped_page';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET, BLUA32_FUNCTION_RECORD_SIZE } from '../../../machine/ts/spec/blua32/image_format';
-import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileCartlibProgram } from '../../helpers/cartlib_cpu';
 import { cartridgeSlots } from '../../helpers/cartridge';
@@ -33,8 +33,8 @@ if (suppliedRunners.length === 0) for (const [index, enabled] of ['ON', 'OFF'].e
 		['--build', build, '--target', 'bmsx_firmware_fsm_runner', '--parallel', '2'],
 	]) assert.equal(spawnSync('cmake', args, { stdio: 'inherit' }).status, 0);
 }
-const phases = ['before-compile', 'compiled-once', 'first-warm', 'repeat-warm', 'same-shape-bindings',
-	'new-shape-compiled', 'new-shape-warm', 'new-shape-repeat', 'completed'];
+const phases = ['before-bind', 'first-bind', 'first-warm', 'repeat-warm', 'same-shape-bindings',
+	'new-topology-bound', 'new-topology-warm', 'new-topology-repeat', 'completed'];
 type Evaluator = { function: number; code: number; bytecodeBytes: number; compiled: boolean; regionBytes: number };
 const evaluatorLayout = ({ function: address, code, bytecodeBytes }: Evaluator) => ({ address, code, bytecodeBytes });
 type Observation = { phase: number; activeCycles: number; remainingCycles: number; evaluators: Evaluator[] };
@@ -58,7 +58,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(records.length, phases.length);
 		for (const record of records) for (let evaluator = 0; evaluator < record.evaluators.length; evaluator++) {
 			if (index === 1) assert.equal(record.evaluators[evaluator].compiled, false, 'OFF binary must not emit native code');
-			else if ((evaluator === 0 && record.phase >= 2) || (evaluator === 1 && record.phase >= 6))
+			else if (record.phase >= 2)
 				assert.equal(record.evaluators[evaluator].compiled, true, 'specific warmed evaluator entry must exist');
 		}
 		return records;
@@ -76,10 +76,9 @@ for (const optLevel of [0, 3] as const) {
 			sampleInputControllerSnapshot: () => {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect: () => {},
 		});
 		runtime.boot();
-		const firmware = runtime.machine.cpu.rootThread.currentFrame!.executionImage;
 		const { cpu, memory } = runtime.machine;
 		let primaryFunction = 0, activeCycles = 0;
-		const retained: Array<CompiledRegion | null> = [null, null];
+		let retained: CompiledRegion | null = null;
 		for (let phase = 0; phase < phases.length; phase++) {
 			const grant = 1_000_000;
 			assert.equal(cpu.runUntilDepth(0, grant), RunResult.Halted, `${name} phase ${phase}`);
@@ -93,28 +92,29 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(activeCycles, reference.activeCycles, `${name} O${optLevel} ${phases[phase]}: exact guest cycles`);
 			assert.equal(cpu.instructionBudgetRemaining, reference.remainingCycles, `${name} O${optLevel} ${phases[phase]}: HALT budget`);
 			if (phase >= 1 && phase < 8) {
+				const image = cpu.rootThread.currentFrame!.executionImage;
+				const cartEnd = CART_ROM_BASE + images.cartRomBytes.length;
 				for (let evaluator = 0; evaluator < (phase >= 5 ? 2 : 1); evaluator++) {
 					const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find(evaluator === 0 ? 'fsm_evaluator' : 'fsm_other')!), cpu.gc);
 					const binding = cpu.captureClosureBinding(closure);
-					assert.equal(binding.executionDomainId, firmware.executionDomainId);
+					assert.equal(binding.executionDomainId, image.executionDomainId);
 					const address = binding.functionAddress;
 					const code = memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
 					const bytecodeBytes = memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
-					assert.ok(address >= DYNAMIC_RAM_BASE && address + BLUA32_FUNCTION_RECORD_SIZE <= RAM_BASE + PSX_MACHINE_SPEC.ramBytes
-						&& code >= DYNAMIC_RAM_BASE && code + bytecodeBytes <= RAM_BASE + PSX_MACHINE_SPEC.ramBytes);
+					assert.ok(address >= CART_ROM_BASE && address + BLUA32_FUNCTION_RECORD_SIZE <= cartEnd
+						&& code >= CART_ROM_BASE && code + bytecodeBytes <= cartEnd);
 					assert.deepEqual({ function: address, code, bytecodeBytes },
 						{ function: reference.evaluators[evaluator].function, code: reference.evaluators[evaluator].code, bytecodeBytes: reference.evaluators[evaluator].bytecodeBytes });
 					if (phase === 1) primaryFunction = address;
-					if (evaluator === 0) assert.equal(address, primaryFunction);
-					else assert.notEqual(address, primaryFunction);
-					if (backend === CpuExecutionBackend.JavaScript && ((evaluator === 0 && phase >= 2) || (evaluator === 1 && phase >= 6))) {
-						const page = firmware.compiledCodeLookup!.find(code, 0)!;
+					assert.equal(address, primaryFunction, 'different topology binds the same ROM evaluator');
+					if (backend === CpuExecutionBackend.JavaScript && phase >= 2) {
+						const page = image.compiledCodeLookup!.find(code, 0)!;
 						const word = (code & (MAPPED_PAGE_BYTE_SIZE - 1)) / 4;
 						const block = page.compiledBlocks!.entries[word]!;
 						assert.ok(block, 'specific actual firmware evaluator acquired its generated entry');
 						assert.equal(page.dispatchOps[word], DecodedDispatchOp.Compiled);
-						if (retained[evaluator] === null) retained[evaluator] = block.region;
-						else assert.ok(block.region === retained[evaluator], `${name} O${optLevel} ${phases[phase]}: retained evaluator region changed`);
+						if (retained === null) retained = block.region;
+						else assert.ok(block.region === retained, `${name} O${optLevel} ${phases[phase]}: retained evaluator region changed`);
 					}
 				}
 				if (phase >= 4) {

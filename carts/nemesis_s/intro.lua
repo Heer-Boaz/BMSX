@@ -3,6 +3,7 @@ local clock<const> = require('cartlib/clock')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local atlas<const> = require('cartlib/gx/atlas')
+local input<const> = require('cartlib/input/input')
 local prefab<const> = require('cartlib/world/prefab')
 local scene_library<const> = require('cartlib/world/scene_library')
 local intro_scene<const> = require('scenes/intro')
@@ -78,7 +79,12 @@ local define_fsm<const> = function()
 				input_event_handlers = {
 					{
 						pattern = 'confirm[jp]',
-						go = intro.finish,
+						go = function(self)
+							-- The story observes input on another clock. The press
+							-- that skipped the logo cannot also skip the story.
+							input.consume(self.player_index, clock.frame, 'confirm')
+							return self:finish()
+						end,
 					},
 				},
 				states = {
