@@ -10,6 +10,7 @@
 #include "spec/bmsx/memory_map.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <chrono>
 #include <map>
@@ -136,6 +137,8 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 	// decoded page. Source outside the initial batch retains the hot compiler.
 	using Clock = std::chrono::steady_clock;
 	std::map<u64, NativeCompilationSource> pages;
+	std::array<NativeCompilationSource*, NATIVE_IMAGE_WARMUP_MAX_PAGES> publicationOrder;
+	size_t publicationCount = 0, discovered = 0;
 	std::vector<NativeCompilationSource*> pending;
 	std::vector<u32> outgoing;
 	NativeWarmupAdmission warmup;
@@ -159,8 +162,10 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 		auto& decoded = decodedPageForAddress(image, binding);
 		const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		if (decoded.nativeBlocks && decoded.nativeBlocks->entries[word]) return nullptr;
-		auto& source = pages.try_emplace(binding.key,
-			decoded, binding, pagePc, busSignals, slot, !functions.mappedCode).first->second;
+		const auto [entry, added] = pages.try_emplace(binding.key,
+			decoded, binding, pagePc, busSignals, slot, !functions.mappedCode);
+		auto& source = entry->second;
+		if (added) publicationOrder[publicationCount++] = &source;
 		source.enqueue(pc, true, nullptr, true);
 		if (!source.discoveryQueued && source.discoveredCount < source.pendingCount) {
 			source.discoveryQueued = true;
@@ -168,7 +173,21 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 		}
 		return &source;
 	};
-	auto* entrySource = entryPc ? enqueue(*entryPc) : nullptr;
+	const auto discover = [&] {
+		for (; discovered < pending.size(); ++discovered) {
+			auto& source = *pending[discovered];
+			source.discoveryQueued = false;
+			outgoing.clear();
+			discoverNativeSource(image, source, &outgoing, &warmup.requested);
+			for (const u32 pc : outgoing) enqueue(pc);
+		}
+	};
+	if (entryPc) {
+		enqueue(*entryPc);
+		// Reserve the actual entry graph before optional directory roots can
+		// spend its page budget. Both phases still share the page sources.
+		discover();
+	}
 	for (const auto& version : versions) {
 		const u32 count = functionPageCount(version);
 		if (count == 1u || count > NATIVE_VERSION_REGION_MAX_PAGES) enqueue(version.entry.codeAddress);
@@ -176,24 +195,14 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 
 	// Discover before emitting so all incoming function and cross-page roots
 	// split one shared physical-page graph instead of compiling duplicate suffixes.
-	for (size_t index = 0; index < pending.size(); ++index) {
-		auto& source = *pending[index];
-		source.discoveryQueued = false;
-		outgoing.clear();
-		discoverNativeSource(image, source, &outgoing, &warmup.requested);
-		for (const u32 pc : outgoing) enqueue(pc);
-	}
+	discover();
 	if (m_nativeCompilationProfiling) {
 		const auto elapsed = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - discoveryStart).count());
 		m_nativeCompilationProfile.discoveryNanoseconds += elapsed;
 		m_nativeCompilationProfile.prepareNanoseconds += elapsed;
 	}
-	if (entrySource) prepareNativeSources(image, std::span(&entrySource, 1), &warmup.published);
-	for (auto& [key, source] : pages)
-		if (&source != entrySource) {
-			NativeCompilationSource* page = &source;
-			prepareNativeSources(image, std::span(&page, 1), &warmup.published);
-		}
+	for (size_t index = 0; index < publicationCount; ++index)
+		prepareNativeSources(image, std::span(publicationOrder).subspan(index, 1), &warmup.published);
 	for (const auto& version : versions)
 		prepareNativeFunction(image, version, version.entry.codeAddress, busSignals, &warmup);
 }

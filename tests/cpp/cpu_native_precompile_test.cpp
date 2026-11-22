@@ -592,6 +592,49 @@ void wideFunctionUsesDemandedBoundedRegions() {
 	require(cpu.readFramePc(0) == root, "the separately prepared tail links backward by exact PC");
 }
 
+void verifiedStartupReachabilityOutranksDescriptiveHints() {
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.textAlignment = MAPPED_PAGE_BYTE_SIZE;
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	const u32 tailWord = NATIVE_VERSION_REGION_MAX_PAGES * DECODED_PAGE_WORDS;
+	const u32 lastHintWord = (NATIVE_VERSION_REGION_MAX_PAGES + NATIVE_IMAGE_WARMUP_MAX_PAGES) * DECODED_PAGE_WORDS;
+	image.text.resize((lastHintWord + 1u) * INSTRUCTION_BYTES);
+	image.functions.push_back({.firstWord = 0, .wordCount = tailWord + 2u});
+	const u32 forward = tailWord - 1u;
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMP), 0,
+		(forward >> 6u) & 63u, forward & 63u, forward >> 12u);
+	for (u32 word = 1; word < tailWord; ++word)
+		writeInstruction(image.text, word, static_cast<u8>(OpCode::K0), 0, 0, 0);
+	writeInstruction(image.text, tailWord, static_cast<u8>(OpCode::KSMI), 0, 0, 9);
+	writeInstruction(image.text, tailWord + 1u, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+	for (u32 word = tailWord + DECODED_PAGE_WORDS; word <= lastHintWord; word += DECODED_PAGE_WORDS) {
+		image.functions.push_back({.firstWord = word, .wordCount = 1});
+		writeInstruction(image.text, word, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	}
+
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	Fixture machine(rom), scalar(rom);
+	auto& cpu = machine.runtime.machine.cpu;
+	auto& reference = scalar.runtime.machine.cpu;
+	reference.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
+	const u32 root = rom.textAddress, tail = root + tailWord * INSTRUCTION_BYTES;
+	const auto before = encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime));
+	cpu.prepareSystemNativeCode();
+	require(entryAt(cpu, root) && entryAt(cpu, tail),
+		"the verified startup and its reachable fifth page are prepared before unrelated one-page hints");
+	const auto& decoded = cpu.rootThread()->currentFrame->executionImage->decodedPages;
+	require(!decoded.contains(root + lastHintWord * INSTRUCTION_BYTES),
+		"unrelated hints do not expand the cold source-page budget");
+	require(encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == before,
+		"prioritizing reachable startup code does not execute it");
+	test::runCpuParity(cpu, reference, BASE_CYCLES[static_cast<u8>(OpCode::JMP)]);
+	require(cpu.readFramePc(0) == tail, "the startup jump reaches the prepared fifth-page entry exactly");
+	test::runCpuParity(cpu, reference, BASE_CYCLES[static_cast<u8>(OpCode::KSMI)]);
+	require(cpu.readFramePc(0) == tail + INSTRUCTION_BYTES && cpu.readFrameRegister(0, 0) == valueInteger(9),
+		"the first instruction reached on the fifth page retains exact grant semantics");
+}
+
 void descriptiveHintsAreBudgetedBeforeDiscovery() {
 	test::Blua32TestImage image;
 	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
@@ -632,6 +675,7 @@ int main() {
 		crossPageWideDependenciesRemainOwned();
 		verifiedSinglePagePreparationSharesTheColdBatch();
 		wideFunctionUsesDemandedBoundedRegions();
+		verifiedStartupReachabilityOutranksDescriptiveHints();
 		descriptiveHintsAreBudgetedBeforeDiscovery();
 		std::cout << "NATIVE-PRECOMPILE:PASS\n";
 		return 0;
