@@ -84,8 +84,9 @@ private:
 	sljit_jump* emitArrayRead(NativeBlockExitSite&, bool routeOutside = false);
 	sljit_jump* emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&, bool routeOutside);
 	void emitOwnIndexStore(int value, NativeNilValue, NativeBlockExitSite&, NativeHashStore key);
-	void emitTableStoreBarrier(int value, NativeGcBarrier);
-	void emitTableStoreBarriers();
+	enum class StoreBarrierRecord : u8 { Table, ClosedUpvalue };
+	void emitStoreBarrier(int value, NativeGcBarrier, StoreBarrierRecord, NativeBlockExitSite&);
+	void emitStoreBarriers();
 	void assignFieldAddressSpills(std::span<const NativeOwnFieldAddress>);
 	std::array<sljit_jump*, 3> emitStringValueAddress(NativeBlockExitSite&, bool load,
 		std::optional<StringId> fixedKey, std::optional<u8> temporary);
@@ -100,11 +101,6 @@ private:
 	void emitStringStoreMisses();
 	void admitTableValueWrite(NativeBlockExitSite&);
 	void emitTableValueWrite(int value);
-	// flags cannot address the mark byte; test is first clobbered after the load.
-	sljit_jump* emitGcMutationBranch(sljit_s32 mark, sljit_sw markArg,
-		int source, NativeGcBarrier, sljit_s32 flags, sljit_s32 test);
-	void emitGuardNoGcMutation(NativeBlockExitSite&, sljit_s32 mark, sljit_sw markArg,
-		int source, NativeGcBarrier barrier, sljit_s32 scratch, sljit_s32 test);
 	void emitRamWordWriteWatch(NativeBlockExitSite&, sljit_s32 address, sljit_sw addressArg,
 		sljit_s32 bits, sljit_s32 group, std::optional<u32> codeWords = 1u);
 	// R2 is the host address; result is a word in R0 or external binary64 in FR0.
@@ -154,12 +150,14 @@ private:
 		MemoryAccessKind format;
 	};
 	std::vector<RomRead> m_romReads;
-	struct TableStoreBarrier {
+	struct StoreBarrier {
 		sljit_jump* mutation;
 		State registers;
 		sljit_label* resumeStore;
+		StoreBarrierRecord record;
+		NativeBlockExitSite* exit;
 	};
-	std::vector<TableStoreBarrier> m_tableStoreBarriers;
+	std::vector<StoreBarrier> m_storeBarriers;
 	struct SingleStringRead {
 		std::array<sljit_jump*, 4> ownMisses;
 		std::optional<StringId> fixedKey;
@@ -175,7 +173,7 @@ private:
 		NativeBlockExitSite* exit;
 		sljit_label* resume;
 		int value;
-		u16 keyIndex;
+		std::optional<u16> keyIndex;
 	};
 	std::vector<StringStoreMiss> m_stringStoreMisses;
 	std::array<u8, NATIVE_BLOCK_MAX_INSTRUCTIONS> m_fieldAddressSpills;

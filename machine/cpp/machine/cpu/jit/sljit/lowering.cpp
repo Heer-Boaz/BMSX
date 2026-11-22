@@ -229,7 +229,7 @@ void NativeLowering::endBlock() {
 }
 void* NativeLowering::finish(size_t& codeBytes) {
 	emitRomReads();
-	emitTableStoreBarriers();
+	emitStoreBarriers();
 	emitSingleStringReads();
 	emitStringStoreMisses();
 	for (auto& exit : m_coldExits) {

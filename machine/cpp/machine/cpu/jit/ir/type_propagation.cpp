@@ -237,15 +237,18 @@ struct NativeTypePropagation::Transfer {
 					type->tag == ValueTag::Nil ? NativeNilValue::Nil : NativeNilValue::Present,
 					type->tag == ValueTag::Nil ? NativeArrayLengthEffect::RetreatAtBoundary : NativeArrayLengthEffect::AdvanceAtBoundary};
 			}
-			if (op.keyKind == NativeTableKey::Field) {
-				op.store.hash = NativeHashStore::FixedField;
-			} else if (op.store.nilValue != NativeNilValue::Nil) {
-				if (op.keyKind == NativeTableKey::Integer) op.store.hash = NativeHashStore::Integer;
-				else if (const auto key = input(1)) {
+			const bool canStoreNonNil = op.store.nilValue != NativeNilValue::Nil;
+			if (op.keyKind == NativeTableKey::Field)
+				op.store.hash = NativeHashStore::String;
+			else if (op.keyKind == NativeTableKey::Integer) {
+				if (canStoreNonNil) op.store.hash = NativeHashStore::Integer;
+			} else if (const auto key = input(1)) {
+				if (key->tag == ValueTag::String) op.store.hash = NativeHashStore::String;
+				else if (canStoreNonNil) {
 					if (key->tag == ValueTag::Table) op.store.hash = NativeHashStore::Identity;
 					if (key->tag == ValueTag::Integer) op.store.hash = NativeHashStore::Integer;
-				} else op.store.hash = NativeHashStore::Index;
-			}
+				}
+			} else op.store.hash = canStoreNonNil ? NativeHashStore::Index : NativeHashStore::String;
 			return;
 		}
 		if (op.resultTag) result(*op.resultTag);

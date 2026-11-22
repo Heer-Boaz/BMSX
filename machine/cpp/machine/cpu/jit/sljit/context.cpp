@@ -91,8 +91,7 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 		fault(open, slow, m_cache.state());
 		// Both value lanes are in the aligned cell's write-watch group.
 		emitRamWordWriteWatch(slow, SLJIT_R3, 0, SLJIT_R0, SLJIT_R1, 3u);
-		emitGuardNoGcMutation(slow, SLJIT_MEM1(SLJIT_R2), GC_COLOR_OFFSET,
-			access.slot, access.barrier, SLJIT_R0, SLJIT_R1);
+		emitStoreBarrier(access.slot, access.barrier, StoreBarrierRecord::ClosedUpvalue, slow);
 		emitRawLoad(access.slot, SLJIT_R0, SLJIT_R1);
 		if constexpr (std::endian::native == std::endian::big)
 			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);

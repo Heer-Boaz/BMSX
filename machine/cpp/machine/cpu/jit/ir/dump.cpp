@@ -149,7 +149,7 @@ struct OperationPlan {
 			if (op.store.hash == NativeHashStore::Index) out << " return-index-hash";
 			if (op.store.hash == NativeHashStore::Integer) out << " return-integer-hash";
 			if (op.store.hash == NativeHashStore::Identity) out << " return-identity-hash";
-			if (op.store.hash == NativeHashStore::FixedField) out << " return-field-hash";
+			if (op.store.hash == NativeHashStore::String) out << " return-string-hash";
 			if (op.keyKind != NativeTableKey::Field) {
 				constexpr std::array hintEffects{"by-value", "advance-at-boundary", "retreat-at-boundary"};
 				out << " array-hint=" << hintEffects[unsigned(op.store.arrayLength)];

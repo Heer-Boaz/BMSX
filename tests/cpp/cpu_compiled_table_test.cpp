@@ -1978,6 +1978,128 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 	requireParity(native, scalar);
 #endif
 }
+
+void nativeDynamicStringMissReturnsWithinTheGrant() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	image.constants = {std::string("dynamic resident"), std::string("dynamic growth"), std::string("unrelated metatable field")};
+	constexpr int receiver = 256, ordinary = 6, pressure = 7, nilEntry = 16;
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 5, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 1, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::SETT), 0, 1, 2);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::MOV), 4, 2, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+	writeInstruction(image.text, nilEntry, static_cast<u8>(OpCode::KNIL), 2, 0, 0);
+	writeInstruction(image.text, nilEntry + 1, static_cast<u8>(OpCode::WIDE), 1, 0, 0);
+	writeInstruction(image.text, nilEntry + 2, static_cast<u8>(OpCode::SETT), 0, 1, 2);
+	writeInstruction(image.text, nilEntry + 3, static_cast<u8>(OpCode::MOV), 4, 2, 0);
+	writeInstruction(image.text, nilEntry + 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = receiver + 1},
+		{.firstWord = nilEntry, .wordCount = 5, .maxStack = receiver + 1}};
+
+	CpuMachine native(image), scalar(image, true);
+	auto& cpu = native.cpu;
+	const auto resident = *cpu.stringPool().find("dynamic resident"), growth = *cpu.stringPool().find("dynamic growth");
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		auto& frame = *lane.activeThread()->currentFrame;
+		auto meta = lane.createTable(0, 1);
+		meta.setStringKey(*lane.stringPool().find("unrelated metatable field"), valueInteger(41));
+		for (const int slot : {ordinary, pressure}) {
+			auto table = lane.createTable(1, 1);
+			table.setInteger(1, valueInteger(61));
+			table.setStringKey(resident, valueBool(false));
+			table.setMetatableAddress(meta.address());
+			frame.registers.set(slot, valueTable(table.address()));
+		}
+		frame.setTop(receiver + 1);
+	}
+	const u32 pc = native.rom.textAddress;
+	const int throughStore = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::SETT)];
+	const auto run = [&](int table, StringId key, Value value, bool suffix) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& lane = machine->cpu;
+			lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+			auto registers = lane.activeThread()->currentFrame->registers;
+			registers.set(receiver, registers.get(table));
+			registers.set(1, valueString(key));
+			registers.set(2, value);
+			registers.set(4, valueInteger(-4));
+		}
+		const int grant = throughStore + (suffix ? BASE_CYCLES[static_cast<u8>(OpCode::MOV)] : 0);
+		require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0
+			&& cpu.readFramePc(0) == pc + (suffix ? 4u : 3u) * INSTRUCTION_BYTES
+			&& cpu.readCurrentInstructionPc() == pc + (suffix ? 3u : 1u) * INSTRUCTION_BYTES
+			&& cpu.lastPc == pc + (suffix ? 3u : 2u) * INSTRUCTION_BYTES
+			&& cpu.readFrameRegister(0, 4) == (suffix ? value : valueInteger(-4)) && cpu.readFrameRegister(0, 5) == valueInteger(1),
+			"dynamic WIDE SETT returns to the exact charged boundary and retains the live prefix and suffix");
+		requireParity(native, scalar);
+	};
+	cpu.prepareSystemNativeCode();
+	run(ordinary, resident, valueBool(false), true);
+	const auto& page = *cpu.activeThread()->currentFrame->decodedPage;
+	const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	require(page.nativeBlocks && page.nativeBlocks->entries[word], "the actual dynamic store entered a prepared native body");
+	const auto* installed = page.nativeBlocks->entries[word].get();
+	const auto store = std::ranges::find(installed->sideExits, NativeBlockExit::WriteIndex, &NativeBlockExitSite::exit);
+	require(store != installed->sideExits.end() && store->currentPc == pc + INSTRUCTION_BYTES
+		&& store->nextPc == pc + 3u * INSTRUCTION_BYTES && *store->tableStore.decoded >= 0,
+		"the native body contains the actual WIDE dynamic store and its trained own-slot prediction");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& writeIndex = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::WriteIndex)].entries;
+	const auto warmExits = writeIndex;
+#endif
+	auto table = asTable(cpu.readFrameRegister(0, ordinary), cpu.gcHeap());
+	const auto storage = table.storageAddress();
+	const auto free = table.hashFree();
+	const auto bytes = cpu.luaHeap().usedBytes();
+	run(ordinary, growth, valueNil(), true);
+	require(isNil(table.getStringKey(growth)) && table.hashSlots() == 1 && table.storageAddress() == storage
+		&& table.hashFree() == free && cpu.luaHeap().usedBytes() == bytes,
+		"nil to a different absent key is a no-op with a metatable but no __newindex");
+	const auto raw = valueFloatBits(0x7fc01234u);
+	run(ordinary, growth, raw, false);
+	require(table.getStringKey(growth) == raw && table.getStringKey(resident) == valueBool(false)
+		&& table.hashSlots() == 2 && table.storageAddress() != storage && table.getInteger(1) == valueInteger(61)
+		&& cpu.luaHeap().usedBytes() == bytes + TableRecord::allocationCharge(0, 1),
+		"the changed dynamic key grows full own storage and preserves both earlier mappings");
+	run(ordinary, resident, valueInteger(39), true);
+	require(table.getStringKey(resident) == valueInteger(39) && table.getStringKey(growth) == raw
+		&& cpu.luaHeap().usedBytes() == bytes + TableRecord::allocationCharge(0, 1),
+		"switching back to the earlier String key changes only the selected own mapping");
+	const u32 nilPc = pc + nilEntry * INSTRUCTION_BYTES;
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[1], nilPc);
+		auto registers = lane.activeThread()->currentFrame->registers;
+		registers.set(1, valueString(growth));
+	}
+	const int nilGrant = BASE_CYCLES[static_cast<u8>(OpCode::KNIL)] + BASE_CYCLES[static_cast<u8>(OpCode::SETT)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::MOV)];
+	const auto beforeDelete = cpu.luaHeap().usedBytes();
+	require(test::runCpuParity(cpu, scalar.cpu, nilGrant) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0
+		&& cpu.readFramePc(0) == nilPc + 4u * INSTRUCTION_BYTES && isNil(cpu.readFrameRegister(0, 4))
+		&& isNil(table.getStringKey(growth)) && table.getStringKey(resident) == valueInteger(39)
+		&& cpu.luaHeap().usedBytes() == beforeDelete - TableRecord::allocationCharge(0, 1),
+		"a proven nil still passes the live String key to the returning delete");
+	requireParity(native, scalar);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(writeIndex == warmExits, "ordinary dynamic String misses, growth and overwrite stay in the native body");
+#endif
+	for (auto* machine : {&native, &scalar})
+		machine->cpu.luaHeap().setCollectionTarget(static_cast<u32>(machine->cpu.luaHeap().usedBytes()));
+	run(pressure, growth, raw, true);
+	auto pressured = asTable(cpu.readFrameRegister(0, pressure), cpu.gcHeap());
+	require(pressured.hashSlots() == 2 && pressured.getStringKey(growth) == raw && pressured.getStringKey(resident) == valueBool(false),
+		"allocation under pressure completes the same logical store once through its semantic owner");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(writeIndex == warmExits + 1, "a real collector assist retains the materialized WriteIndex boundary");
+#endif
+	require(page.nativeBlocks->entries[word].get() == installed, "changing runtime keys does not retire the native body");
+#endif
+}
 } // namespace
 
 int main() {
@@ -2002,6 +2124,7 @@ int main() {
 		nativeIdentityHashStoreReturnsWithinTheGrant();
 		nativeIntegerGrowthReturnsWithinTheGrant();
 		nativeFixedStringMissReturnsWithinTheGrant();
+		nativeDynamicStringMissReturnsWithinTheGrant();
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

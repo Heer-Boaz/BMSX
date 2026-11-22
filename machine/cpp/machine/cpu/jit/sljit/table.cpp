@@ -2,7 +2,6 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/gc_heap.h"
-#include "machine/cpu/gc_object.h"
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/table_access.h"
 #include "machine/cpu/jit/sljit/value_transport.h"
@@ -37,9 +36,6 @@ u32 SLJIT_FUNC assignNativeTableInteger(GcHeap* heap, u32 receiverAddress, i32 k
 	return TableRecord(*heap, receiverAddress).tryAssignIntegerHash(key, *value);
 }
 
-void SLJIT_FUNC writeTableBarrier(GcHeap* heap, u32 receiver, u32 flags) {
-	heap->writeBarrier(receiver, GC_RECORD_LINK, static_cast<u8>(flags));
-}
 } // namespace
 
 void NativeLowering::admitTableValueWrite(NativeBlockExitSite& exit) {
@@ -133,7 +129,7 @@ sljit_jump* NativeLowering::emitArrayStore(int value, NativeStorePlan plan, Nati
 	emitRamWordWriteWatch(exit, SLJIT_R1, 0, SLJIT_R2, SLJIT_R3, std::nullopt);
 	sljit_set_label(unchanged, sljit_emit_label(c));
 
-	emitTableStoreBarrier(value, plan.barrier);
+	emitStoreBarrier(value, plan.barrier, StoreBarrierRecord::Table, exit);
 	emitTableValueWrite(value);
 	auto* keep = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_SP), arrayLength, SLJIT_IMM, -1);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Length),
@@ -164,29 +160,6 @@ void NativeLowering::emitOwnIndexStore(int value, NativeNilValue nilValue, Nativ
 	m_cache.spillCall(true, 0);
 	// Declining has not written anything; execute the semantic exit once.
 	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), exit, m_cache.state());
-}
-
-void NativeLowering::emitTableStoreBarrier(int value, NativeGcBarrier barrier) {
-	if (barrier == NativeGcBarrier::None) return;
-	auto* mutation = emitGcMutationBranch(SLJIT_MEM1(SLJIT_R0), GC_COLOR_OFFSET, value, barrier, SLJIT_R2, SLJIT_R3);
-	m_tableStoreBarriers.push_back({mutation, m_cache.state(), sljit_emit_label(m_compiler)});
-}
-
-void NativeLowering::emitTableStoreBarriers() {
-	auto* c = m_compiler;
-	for (const auto& barrier : m_tableStoreBarriers) {
-		auto* entry = sljit_emit_label(c);
-		sljit_set_label(barrier.mutation, entry);
-		m_cache.setState(barrier.registers);
-		m_cache.spillCall(false, 0);
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver);
-		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&writeTableBarrier));
-		m_cache.spillCall(true, 0);
-		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), receiver, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-		NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
-		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), barrier.resumeStore);
-	}
 }
 
 // Hash keys start after the array; hash values start after all hash keys.
@@ -265,12 +238,15 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	std::optional<u16> keyIndex, std::optional<ValueTag> resultTag, NativeStorePlan plan,
 	NativeTableReadPlan readPlan, std::optional<u8> temporary) {
 	auto* c = m_compiler;
-	const bool returnMiss = m_bindings.cpu && m_decodedPage && plan.hash == NativeHashStore::FixedField;
+	const bool returnMiss = !load && m_bindings.cpu && m_decodedPage
+		&& (plan.hash == NativeHashStore::String || plan.hash == NativeHashStore::Index);
 	const auto& missState = m_cache.state();
 	if (!load && plan.nilValue == NativeNilValue::Nil) {
+		if (returnMiss && !keyIndex)
+			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
 		auto* erase = sljit_emit_jump(c, SLJIT_JUMP);
 		if (returnMiss)
-			m_stringStoreMisses.push_back({{erase}, missState, &exit, sljit_emit_label(c), value, *keyIndex});
+			m_stringStoreMisses.push_back({{erase}, missState, &exit, sljit_emit_label(c), value, keyIndex});
 		else fault(erase, exit, missState);
 		return;
 	}
@@ -325,11 +301,11 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), wordOffset, SLJIT_R1, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), tagOffset, SLJIT_R3, 0);
 	admitTableValueWrite(exit);
-	emitTableStoreBarrier(value, plan.barrier);
+	emitStoreBarrier(value, plan.barrier, StoreBarrierRecord::Table, exit);
 	emitTableValueWrite(value);
 	if (returnMiss)
 		m_stringStoreMisses.push_back({{address[0], address[1], address[2], valueFailure, erase},
-			missState, &exit, sljit_emit_label(c), value, *keyIndex});
+			missState, &exit, sljit_emit_label(c), value, keyIndex});
 }
 
 void NativeLowering::emitStringStoreMisses() {
@@ -342,7 +318,8 @@ void NativeLowering::emitStringStoreMisses() {
 		emitRawLoad(store.value, SLJIT_R0, SLJIT_R3);
 		// Load the receiver before reusing its scratch as a Value.
 		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver);
-		emitPoolWord(store.keyIndex, SLJIT_R2);
+		if (store.keyIndex) emitPoolWord(*store.keyIndex, SLJIT_R2);
+		else sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), keyWord);
 		emitValueTransportStore(c, SLJIT_SP, hashOperand, SLJIT_R0, SLJIT_R3);
 		m_cache.spillCall(false, 0);
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.cpu));

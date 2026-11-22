@@ -2,7 +2,10 @@
 
 #include <bit>
 #include <limits>
+#include "machine/cpu/gc_heap.h"
 #include "machine/cpu/gc_object.h"
+#include "machine/cpu/jit/sljit/table_access.h"
+#include "machine/cpu/upvalue.h"
 #include "machine/memory/mapped_page.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/memory_access_kind.h"
@@ -10,6 +13,13 @@
 #include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
+namespace {
+template <u32 Link>
+void SLJIT_FUNC writeNativeBarrier(GcHeap* heap, u32 address, u32 flags) {
+	heap->writeBarrier(address, Link, static_cast<u8>(flags));
+}
+} // namespace
+
 void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 address, sljit_sw addressArg,
 	sljit_s32 bits, sljit_s32 group, std::optional<u32> codeWords) {
 	auto* c = m_compiler;
@@ -31,9 +41,15 @@ void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 
 	sljit_set_label(clear, sljit_emit_label(c));
 }
 
-sljit_jump* NativeLowering::emitGcMutationBranch(sljit_s32 mark, sljit_sw markArg,
-	int source, NativeGcBarrier barrier, sljit_s32 flags, sljit_s32 test) {
+void NativeLowering::emitStoreBarrier(int source, NativeGcBarrier barrier, StoreBarrierRecord record, NativeBlockExitSite& exit) {
+	if (barrier == NativeGcBarrier::None) return;
 	auto* c = m_compiler;
+	// A Table already has its raw receiver in the table scratch; a Cell
+	// keeps its private RAM offset in R3 until the cold arm.
+	const bool cell = record == StoreBarrierRecord::ClosedUpvalue;
+	const auto address = cell ? SLJIT_R2 : SLJIT_R0;
+	const auto flags = cell ? SLJIT_R0 : SLJIT_R2;
+	const auto test = cell ? SLJIT_R1 : SLJIT_R3;
 	std::array<sljit_jump*, 2> scalar{};
 	if (barrier == NativeGcBarrier::Dynamic) {
 		// Match valueTagHasGcEdge: BuiltinFunction is not a heap edge.
@@ -45,20 +61,43 @@ sljit_jump* NativeLowering::emitGcMutationBranch(sljit_s32 mark, sljit_sw markAr
 			sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, flags, 0, SLJIT_IMM, static_cast<u8>(ValueTag::BuiltinFunction) - first),
 		};
 	}
-	sljit_emit_op1(c, SLJIT_MOV_U8, flags, 0, mark, markArg);
+	sljit_emit_op1(c, SLJIT_MOV_U8, flags, 0, SLJIT_MEM1(address), GC_COLOR_OFFSET);
 	sljit_emit_op2(c, SLJIT_AND32, test, 0, flags, 0, SLJIT_IMM, GC_COLOR_MASK);
 	auto* revisit = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, test, 0, SLJIT_IMM, 3);
 	if (barrier == NativeGcBarrier::Dynamic) {
 		auto* ready = sljit_emit_label(c);
 		for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
 	}
-	return revisit;
+	m_storeBarriers.push_back({revisit, m_cache.state(), sljit_emit_label(c), record, &exit});
 }
 
-void NativeLowering::emitGuardNoGcMutation(NativeBlockExitSite& exit, sljit_s32 mark, sljit_sw markArg,
-	int source, NativeGcBarrier barrier, sljit_s32 flags, sljit_s32 test) {
-	if (barrier == NativeGcBarrier::None) return;
-	fault(emitGcMutationBranch(mark, markArg, source, barrier, flags, test), exit, m_cache.state());
+void NativeLowering::emitStoreBarriers() {
+	auto* c = m_compiler;
+	for (const auto& barrier : m_storeBarriers) {
+		sljit_set_label(barrier.mutation, sljit_emit_label(c));
+		m_cache.setState(barrier.registers);
+		const bool cell = barrier.record == StoreBarrierRecord::ClosedUpvalue;
+		const auto savedAddress = cell ? NativeBlockAbi::helperResultOffset : NativeTableScratch::receiver;
+		if (cell) {
+			// The ordinary Cell store admitted its two value words. The
+			// changed-list link must be admitted too, before either write.
+			emitRamWordWriteWatch(*barrier.exit, SLJIT_R3, 0, SLJIT_R1, SLJIT_R2,
+				1u << (UPVALUE_NEXT / sizeof(u32)));
+			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), savedAddress, SLJIT_R3, 0);
+			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R0, 0);
+		}
+		m_cache.spillCall(false, 0);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), savedAddress);
+		const auto target = cell ? SLJIT_FUNC_ADDR(&writeNativeBarrier<UPVALUE_NEXT>)
+			: SLJIT_FUNC_ADDR(&writeNativeBarrier<GC_RECORD_LINK>);
+		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, 32), SLJIT_IMM, target);
+		m_cache.spillCall(true, 0);
+		const auto address = cell ? SLJIT_R2 : SLJIT_R0;
+		sljit_emit_op2(c, SLJIT_AND32, address, 0, SLJIT_MEM1(SLJIT_SP), savedAddress, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+		NativeBlockAbi::emitRamAddress(c, address, address);
+		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), barrier.resumeStore);
+	}
 }
 
 void NativeLowering::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {
