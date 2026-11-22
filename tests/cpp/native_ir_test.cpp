@@ -64,6 +64,50 @@ void numericPlans() {
 		"unary negation needs only its one operand proof");
 }
 
+void widenedNumericSitesHaveOnlyAnOperandFaultCheckpoint() {
+	constexpr u32 pc = 0x4000u;
+	const std::array constants{NativeImageConstant{0, valueInteger(7)}, NativeImageConstant{1, valueInteger(2)},
+		NativeImageConstant{2, valueFloat(1.5f)}};
+	const auto verify = [&](OpCode op, bool widened, i16 left, i16 right, NativeNumericAction action,
+		std::optional<ValueTag> result, bool sample) {
+		const DecodedInstruction prefix{.a = 4, .op = static_cast<u8>(OpCode::K1), .width = 1,
+			.baseCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)]};
+		DecodedInstruction arithmetic{.a = 7, .b = left, .c = right, .op = static_cast<u8>(op),
+			.width = 2, .baseCycles = BASE_CYCLES[static_cast<u8>(op)]};
+		if (widened) arithmetic.widenNativeNumericFeedback();
+		const std::array rows{NativeBlockInstruction{&prefix, pc}, NativeBlockInstruction{&arithmetic, pc + INSTRUCTION_BYTES}};
+		const std::array sources{NativeBlockSource{rows}};
+		NativeRegisterUses uses;
+		const NativeIrRegion region(sources, uses, false, {.observesArithmetic = true}, {.imageConstants = constants});
+		const auto& block = region.blocks().front();
+		require(block.instructions.size() == rows.size(), "numeric lowering retains the preceding instruction");
+		const auto& instruction = block.instructions.back();
+		const auto& plan = std::get<NativeNumericPlan>(std::get<NativeArithmetic>(instruction.operation).strategy);
+		require(plan.action == action && plan.result == result && plan.sampleOperands == sample,
+			"only widened ADD/SUB/MUL with unknown tags select the direct dynamic numeric plan");
+		require(!plan.guardLeft && !plan.guardRight && !instruction.replay,
+			"the numeric path does not speculate on operand tags or replay a legal pair");
+		const auto exits = region.sideExits(block);
+		if (action == NativeNumericAction::Word || action == NativeNumericAction::Float) {
+			require(!instruction.slow && exits.empty(), "proved numeric operands keep the direct static operation");
+		} else {
+			require(instruction.slow && exits.size() == 1, "an unknown numeric operand has one fault checkpoint");
+			const auto& fault = exits[*instruction.slow];
+			require(fault.exit == NativeBlockExit::InvalidOperand && fault.currentPc == pc + INSTRUCTION_BYTES
+				&& fault.lastPc == pc + 2u * INSTRUCTION_BYTES && fault.nextPc == pc + 3u * INSTRUCTION_BYTES
+				&& fault.cycles == prefix.baseCycles + arithmetic.baseCycles && fault.registerTop == 5,
+				"the arithmetic fault pays the WIDE instruction, preserves its prefix PC and does not publish its destination");
+		}
+	};
+	for (const auto op : {OpCode::ADD, OpCode::SUB, OpCode::MUL})
+		verify(op, true, 1, 2, NativeNumericAction::DynamicNumber, std::nullopt, false);
+	verify(OpCode::SUB, true, -3, 2, NativeNumericAction::DynamicNumber, ValueTag::Float, false);
+	verify(OpCode::MUL, true, -1, -2, NativeNumericAction::Word, ValueTag::Integer, false);
+	verify(OpCode::ADD, true, -1, -3, NativeNumericAction::Float, ValueTag::Float, false);
+	verify(OpCode::ADD, false, 1, 2, NativeNumericAction::Kernel, std::nullopt, true);
+	verify(OpCode::FLOORDIV, false, 1, 2, NativeNumericAction::Kernel, std::nullopt, false);
+}
+
 void fieldChainHasAnExplicitResumePoint() {
 	constexpr u32 pc = 0x4000u;
 	std::array<DecodedInstruction, 3> decoded{};
@@ -1048,6 +1092,7 @@ void fixedWindowCountsOnlyAdmittedAccesses() {
 int main() {
 	try {
 		numericPlans();
+		widenedNumericSitesHaveOnlyAnOperandFaultCheckpoint();
 		fieldChainHasAnExplicitResumePoint();
 		fieldSelectionPreservesColdCodeAndContinuation();
 		distinctFieldValuesSurviveCopiesAndSlotReuse();

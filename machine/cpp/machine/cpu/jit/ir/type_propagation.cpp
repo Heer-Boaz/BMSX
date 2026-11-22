@@ -104,7 +104,7 @@ struct NativeTypePropagation::Transfer {
 		const auto left = input(0);
 		const auto right = input(1);
 		const auto tag = [](Type input) { return input ? std::optional(input->tag) : std::nullopt; };
-		auto plan = planNativeNumeric(op.operation, tag(left), tag(right), hint.feedback, values.inputs[0] == values.inputs[1]);
+		auto plan = planNativeNumeric(op.operation, tag(left), tag(right), hint.feedback, values.inputs[0] == values.inputs[1], hint.mode);
 		bool needsLeft = true, needsRight = !op.unary();
 		if (plan.action == NativeNumericAction::Fault) {
 			invalidOperand = true;
@@ -132,7 +132,8 @@ struct NativeTypePropagation::Transfer {
 		plan.guardLeft &= needsLeft;
 		plan.guardRight &= needsRight;
 		if (plan.guardLeft || plan.guardRight) plan.feedbackAssumption = hint.feedback;
-		plan.sampleOperands = facts.m_observesArithmetic && hint.sampleOperands && plan.action == NativeNumericAction::Kernel;
+		plan.sampleOperands = facts.m_observesArithmetic && hint.mode == NativeNumericFeedbackMode::Sampling
+			&& plan.action == NativeNumericAction::Kernel;
 		if (plan.guardLeft) facts.define(values.inputs[0], *plan.left);
 		if (plan.guardRight) facts.define(values.inputs[1], *plan.right);
 		if (plan.result) result(*plan.result);

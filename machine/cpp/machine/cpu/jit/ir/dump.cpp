@@ -85,6 +85,7 @@ void writeNumericPlan(std::ostream& out, const NativeArithmetic& arithmetic) {
 	case NativeNumericAction::Kernel: out << " kernel"; break;
 	case NativeNumericAction::Word: out << " word"; break;
 	case NativeNumericAction::Float: out << " float"; break;
+	case NativeNumericAction::DynamicNumber: out << " dynamic-number"; break;
 	}
 	if (plan.left) out << " left-tag=" << unsigned(*plan.left);
 	if (plan.right && !arithmetic.unary()) out << " right-tag=" << unsigned(*plan.right);

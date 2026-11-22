@@ -26,7 +26,7 @@ struct NativeCheckedExit {
 	NativeExitPlan operator()(const NativeArithmetic& op) const {
 		switch (std::get<NativeNumericPlan>(op.strategy).action) {
 		case NativeNumericAction::Fault: BMSX_UNREACHABLE();
-		case NativeNumericAction::Kernel: return {NativeBlockExit::InvalidOperand};
+		case NativeNumericAction::Kernel: case NativeNumericAction::DynamicNumber: return {NativeBlockExit::InvalidOperand};
 		case NativeNumericAction::Word: case NativeNumericAction::Float: return {};
 		}
 		BMSX_UNREACHABLE();

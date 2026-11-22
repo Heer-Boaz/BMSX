@@ -4,7 +4,7 @@ namespace bmsx {
 
 NativeNumericPlan planNativeNumeric(OpCode op, std::optional<ValueTag> left,
 	std::optional<ValueTag> right, std::optional<NativeArithmeticFeedback> stableFeedback,
-	bool sameOperand) {
+	bool sameOperand, NativeNumericFeedbackMode mode) {
 	constexpr auto integer = ValueTag::Integer, floating = ValueTag::Float;
 	if (op == OpCode::UNM || op == OpCode::BNOT)
 		right = left;
@@ -35,7 +35,10 @@ NativeNumericPlan planNativeNumeric(OpCode op, std::optional<ValueTag> left,
 		result = integer;
 
 	auto action = producesFloat ? NativeNumericAction::Float : NativeNumericAction::Word;
-	if (!left || !right || op == OpCode::MOD || op == OpCode::FLOORDIV || op == OpCode::POW || (bitwise && !bothIntegers))
+	if ((!left || !right) && mode == NativeNumericFeedbackMode::Polymorphic
+		&& (op == OpCode::ADD || op == OpCode::SUB || op == OpCode::MUL))
+		action = NativeNumericAction::DynamicNumber;
+	else if (!left || !right || op == OpCode::MOD || op == OpCode::FLOORDIV || op == OpCode::POW || (bitwise && !bothIntegers))
 		action = NativeNumericAction::Kernel;
 	return {action, left, right, result, guardLeft, guardRight, result.has_value() && !bitwise && !forcedFloat};
 }

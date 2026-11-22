@@ -238,6 +238,128 @@ void adaptiveArithmeticReplay() {
 #endif
 }
 
+void widenedArithmeticPairs() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	enum class Operands { Registers, Shared, IntegerConstant, FloatConstant };
+	struct Case { OpCode op; Operands operands; };
+	for (const auto [op, operands] : std::array{Case{OpCode::ADD, Operands::Registers},
+		Case{OpCode::SUB, Operands::Registers}, Case{OpCode::MUL, Operands::Registers},
+		Case{OpCode::ADD, Operands::Shared}, Case{OpCode::SUB, Operands::IntegerConstant},
+		Case{OpCode::SUB, Operands::FloatConstant}}) {
+		test::Blua32TestImage image;
+		image.mappedCode = false;
+		image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+		if (operands == Operands::FloatConstant)
+			image.constants = {Blua32FloatConstant{valuePayload(valueFloat(1.25f))}};
+		else image.constants = {i32{1}};
+		const bool rk = operands == Operands::IntegerConstant || operands == Operands::FloatConstant;
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 6, 0, 3);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 2, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, rk ? 63 : 0);
+		writeInstruction(image.text, 3, static_cast<u8>(op), 0, 0,
+			rk ? 63 : operands == Operands::Shared ? 0 : 1, rk ? 7 : 0);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::K1), 5, 0, 0);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, 16, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 7}, {.firstWord = 16, .wordCount = 1}};
+		image.exceptionFunctionIndex = 1;
+
+		Machine native(image, false), scalar(image, true);
+		auto& cpu = native.cpu;
+		const u32 pc = native.rom.textAddress + INSTRUCTION_BYTES;
+		const u32 wide = pc + INSTRUCTION_BYTES, suffix = wide + 2 * INSTRUCTION_BYTES;
+		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(op)];
+		const auto input = [&](Value left, Value right) {
+			for (auto* machine : {&native, &scalar}) {
+				auto& lane = machine->cpu;
+				lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+				auto& frame = *lane.activeThread()->currentFrame;
+				frame.registers.set(0, left);
+				frame.registers.set(1, right);
+				frame.registers.set(2, valueNil());
+				frame.registers.set(5, valueInteger(73));
+				frame.setTop(6);
+			}
+		};
+		for (int sample = 0; sample < 16; ++sample) {
+			input(valueInteger(12), valueInteger(3));
+			require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded, "scalar observations stop before the suffix");
+		}
+		const auto& page = *cpu.activeThread()->currentFrame->decodedPage;
+		const u32 entry = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		const auto installed = [&] { return page.nativeBlocks ? page.nativeBlocks->entries[entry].get() : nullptr; };
+		const auto& decoded = page.words[entry + 1u];
+		require(!installed() && decoded.nativeNumericTypes().stable(), "the real instruction has a stable pair before code publication");
+		cpu.prepareSystemNativeCode();
+		for (int sample = 0; sample < 8 && installed(); ++sample) {
+			input(valueFloat(3.5f), valueInteger(3));
+			require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded, "a contradictory numeric pair completes normally");
+		}
+		require(!installed() && decoded.nativeNumericTypes().polymorphic(), "contradictions really widen each decoded site");
+		cpu.prepareSystemNativeCode();
+		const auto* body = installed();
+		require(body && body->sideExits.size() == 1 && body->sideExits.front().exit == NativeBlockExit::InvalidOperand
+			&& body->sideExits.front().currentPc == wide, "the widened body has only its original WIDE semantic fault");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto& exits = cpu.nativeGateProfile().exits;
+		const auto boundary = static_cast<size_t>(NativeBlockExit::ScalarBoundary);
+		const auto completed = static_cast<size_t>(NativeBlockExit::Continue);
+		const auto invalid = static_cast<size_t>(NativeBlockExit::InvalidOperand);
+		const auto beforeBoundary = exits[boundary].entries, beforeInvalid = exits[invalid].entries;
+#endif
+		const auto check = [&](Value left, Value right, Value expected, int runGrant) {
+			input(left, right);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			const auto beforeCompleted = exits[completed].entries;
+#endif
+			require(test::runCpuParity(cpu, scalar.cpu, runGrant) == RunResult::Yielded
+				&& cpu.instructionBudgetRemaining == runGrant - grant && cpu.readCurrentInstructionPc() == wide
+				&& cpu.lastPc == wide + INSTRUCTION_BYTES && cpu.readFramePc(0) == suffix
+				&& cpu.readFrameRegister(0, 0) == expected && cpu.readFrameRegister(0, 1) == right
+				&& cpu.readFrameRegister(0, 2) == valueInteger(1) && cpu.readFrameRegister(0, 5) == valueInteger(73)
+				&& test::sameLanguageRam(cpu, scalar.cpu), "the widened WIDE operation commits aliased output only, with the exact grant");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			require(exits[completed].entries == beforeCompleted + 1 && exits[boundary].entries == beforeBoundary
+				&& exits[invalid].entries == beforeInvalid, "the installed native body completes without scalar replay");
+#endif
+			require(installed() == body && decoded.nativeNumericTypes().polymorphic(), "the widened body neither trains nor republishes");
+		};
+
+		const auto i = valueInteger;
+		const auto f = valueFloat;
+		if (operands == Operands::Registers) {
+			const auto column = static_cast<size_t>(op) - static_cast<size_t>(OpCode::ADD);
+			check(i(INT32_MAX), i(2), std::array{i(INT32_MIN + 1), i(INT32_MAX - 2), i(-2)}[column], grant);
+			check(i(12), f(2.5f), std::array{f(14.5f), f(9.5f), f(30.f)}[column], grant - 1);
+			check(f(2.5f), i(12), std::array{f(14.5f), f(-9.5f), f(30.f)}[column], grant);
+			check(f(3.5f), f(2.5f), std::array{f(6.f), f(1.f), f(8.75f)}[column], grant);
+		} else if (operands == Operands::Shared) {
+			check(i(INT32_MAX), i(3), i(-2), grant - 1);
+			check(f(3.5f), i(3), f(7.f), grant);
+		} else if (operands == Operands::IntegerConstant) {
+			check(i(INT32_MIN), i(3), i(INT32_MAX), grant - 1);
+			check(f(1.5f), i(3), f(0.5f), grant);
+		} else {
+			check(i(12), i(3), f(10.75f), grant - 1);
+			check(f(1.5f), i(3), f(0.25f), grant);
+		}
+		check(valueFloatBits(0xffa12345u), f(2.f), valueFloatBits(BLUA32_FLOAT_NAN), grant);
+		const Value prior = operands == Operands::Registers ? i(12) : valueBool(false);
+		input(prior, valueBool(false));
+		require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded
+			&& cpu.instructionBudgetRemaining == 0 && cpu.readEpcWord() == wide
+			&& cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+			&& cpu.readFrameRegister(0, 0) == prior && cpu.readFrameRegister(0, 5) == i(73)
+			&& test::sameLanguageRam(cpu, scalar.cpu) && installed() == body,
+			"an invalid operand faults without changing its aliased destination or retiring the body");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		require(exits[invalid].entries == beforeInvalid + 1 && exits[boundary].entries == beforeBoundary,
+			"the real generated instruction uses its checked semantic exit exactly once");
+#endif
+	}
+#endif
+}
+
 void copiedArithmeticReplay() {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -775,7 +897,7 @@ int main(int argc, char** argv) {
 		else if (scenario == "irq-short") irqAfterNativeMmioBeforeShortSuccessor();
 		else if (scenario == "nmi-short") nmiAfterShortGrant();
 		else if (scenario == "rewrite-short") rewriteAndObserveAfterShortGrant();
-		else if (scenario == "adaptive-arithmetic") adaptiveArithmeticReplay();
+		else if (scenario == "adaptive-arithmetic") { adaptiveArithmeticReplay(); widenedArithmeticPairs(); }
 		else if (scenario == "copied-arithmetic") copiedArithmeticReplay();
 		else if (scenario == "native-arithmetic-profile") {
 			generatedArithmeticKeepsItsEntry(false);

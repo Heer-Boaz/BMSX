@@ -6,6 +6,30 @@
 
 namespace bmsx {
 
+namespace {
+constexpr sljit_s32 binaryFloatOpcode(OpCode op) {
+	switch (op) {
+		case OpCode::ADD: return SLJIT_ADD_F32;
+		case OpCode::SUB: return SLJIT_SUB_F32;
+		case OpCode::MUL: return SLJIT_MUL_F32;
+		case OpCode::DIV: return SLJIT_DIV_F32;
+		default: BMSX_UNREACHABLE();
+	}
+}
+
+constexpr sljit_s32 binaryWordOpcode(OpCode op) {
+	switch (op) {
+		case OpCode::ADD: return SLJIT_ADD32;
+		case OpCode::SUB: return SLJIT_SUB32;
+		case OpCode::MUL: return SLJIT_MUL32;
+		case OpCode::BAND: return SLJIT_AND32;
+		case OpCode::BOR: return SLJIT_OR32;
+		case OpCode::BXOR: return SLJIT_XOR32;
+		default: BMSX_UNREACHABLE();
+	}
+}
+} // namespace
+
 void NativeLowering::emitWordOperand(int selector, NativeWordSource source, NativeBlockExitSite& invalid) {
 	emitPayload(selector, SLJIT_R0);
 	if (source == NativeWordSource::Integer) return;
@@ -79,6 +103,69 @@ void NativeLowering::emitFloatCanonicalization(sljit_s32 reg) {
 	sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, reg, SLJIT_R0);
 	sljit_set_label(ordinary, sljit_emit_label(m_compiler));
 }
+void NativeLowering::emitDynamicNumeric(const NativeArithmetic& arithmetic,
+	const NativeInstruction& instruction, const NativeNumericPlan& plan) {
+	auto* c = m_compiler;
+	const auto prefix = m_cache.state();
+	auto& invalid = *sideExit(instruction.slow);
+	constexpr auto integerTag = static_cast<u8>(ValueTag::Integer), floatTag = static_cast<u8>(ValueTag::Float);
+	const auto convert = [&](sljit_s32 word, sljit_s32 tag, sljit_s32 dest, bool allowInteger) {
+		auto* integer = allowInteger ? sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, tag, 0, SLJIT_IMM, integerTag) : nullptr;
+		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, tag, 0, SLJIT_IMM, floatTag), invalid, prefix);
+		sljit_emit_fcopy(c, SLJIT_COPY32_TO_F32, dest, word);
+		if (integer) {
+			auto* done = sljit_emit_jump(c, SLJIT_JUMP);
+			sljit_set_label(integer, sljit_emit_label(c));
+			sljit_emit_fop1(c, SLJIT_CONV_F32_FROM_S32, dest, 0, word, 0);
+			sljit_set_label(done, sljit_emit_label(c));
+		}
+	};
+
+	// A proven Float always selects the float route. Keep that operand and
+	// the success result in the typed cache rather than joining a word arm.
+	if (plan.result == ValueTag::Float) {
+		const bool leftFloat = plan.left == ValueTag::Float;
+		emitRawLoad(leftFloat ? arithmetic.right : arithmetic.left, SLJIT_R0, SLJIT_R1);
+		convert(SLJIT_R0, SLJIT_R1, leftFloat ? SLJIT_FR1 : SLJIT_FR0, true);
+		emitFloatInput(leftFloat ? arithmetic.left : arithmetic.right, ValueTag::Float, leftFloat ? SLJIT_FR0 : SLJIT_FR1);
+		const auto target = m_cache.write(arithmetic.result, ValueTag::Float);
+		sljit_emit_fop2(c, binaryFloatOpcode(arithmetic.operation), target.reg, 0, SLJIT_FR0, 0, SLJIT_FR1, 0);
+		emitFloatCanonicalization(target.reg);
+		return;
+	}
+
+	const bool same = arithmetic.left == arithmetic.right;
+	const bool leftDynamic = !plan.left, rightDynamic = !same && !plan.right;
+	emitPayload(arithmetic.left, SLJIT_R0);
+	if (!same) emitPayload(arithmetic.right, SLJIT_R1);
+	if (leftDynamic) emitTag(arithmetic.left, SLJIT_R2);
+	if (rightDynamic) emitTag(arithmetic.right, SLJIT_R3);
+	auto* leftNotInteger = leftDynamic ? sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, integerTag) : nullptr;
+	auto* rightNotInteger = rightDynamic ? sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, integerTag) : nullptr;
+	sljit_emit_op2(c, binaryWordOpcode(arithmetic.operation), SLJIT_R0, 0, SLJIT_R0, 0, same ? SLJIT_R0 : SLJIT_R1, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, integerTag);
+	auto* integerDone = sljit_emit_jump(c, SLJIT_JUMP);
+
+	auto* floating = sljit_emit_label(c);
+	if (leftNotInteger) sljit_set_label(leftNotInteger, floating);
+	if (rightNotInteger) sljit_set_label(rightNotInteger, floating);
+	// If only one tag is dynamic, reaching this arm already rules out
+	// Integer for that tag. Invalid operands leave both guest lanes intact.
+	const bool twoDynamic = leftDynamic && rightDynamic;
+	if (leftDynamic) convert(SLJIT_R0, SLJIT_R2, SLJIT_FR0, twoDynamic);
+	else sljit_emit_fop1(c, SLJIT_CONV_F32_FROM_S32, SLJIT_FR0, 0, SLJIT_R0, 0);
+	if (!same) {
+		if (rightDynamic) convert(SLJIT_R1, SLJIT_R3, SLJIT_FR1, twoDynamic);
+		else sljit_emit_fop1(c, SLJIT_CONV_F32_FROM_S32, SLJIT_FR1, 0, SLJIT_R1, 0);
+	}
+	sljit_emit_fop2(c, binaryFloatOpcode(arithmetic.operation), SLJIT_FR0, 0, SLJIT_FR0, 0, same ? SLJIT_FR0 : SLJIT_FR1, 0);
+	emitFloatCanonicalization(SLJIT_FR0);
+	sljit_emit_fcopy(c, SLJIT_COPY32_FROM_F32, SLJIT_FR0, SLJIT_R0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, floatTag);
+	sljit_set_label(integerDone, sljit_emit_label(c));
+	emitRawStore(arithmetic.result, SLJIT_R0, SLJIT_R1);
+}
+
 void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const NativeInstruction& instruction) {
 	const auto op = arithmetic.operation;
 	const bool unary = arithmetic.unary();
@@ -94,6 +181,9 @@ void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const Na
 	case NativeNumericAction::Kernel:
 		emitNumericKernel(arithmetic, instruction, plan);
 		return;
+	case NativeNumericAction::DynamicNumber:
+		emitDynamicNumeric(arithmetic, instruction, plan);
+		return;
 	case NativeNumericAction::Word:
 		break;
 	case NativeNumericAction::Float:
@@ -106,12 +196,7 @@ void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const Na
 		emitFloatInput(arithmetic.left, *plan.left, SLJIT_FR0);
 		emitFloatInput(arithmetic.right, *plan.right, SLJIT_FR1);
 		const auto target = m_cache.write(arithmetic.result, ValueTag::Float);
-		sljit_emit_fop2(m_compiler,
-			op == OpCode::ADD	? SLJIT_ADD_F32
-			: op == OpCode::SUB ? SLJIT_SUB_F32
-			: op == OpCode::MUL ? SLJIT_MUL_F32
-								: SLJIT_DIV_F32,
-			target.reg, 0, SLJIT_FR0, 0, SLJIT_FR1, 0);
+		sljit_emit_fop2(m_compiler, binaryFloatOpcode(op), target.reg, 0, SLJIT_FR0, 0, SLJIT_FR1, 0);
 		emitFloatCanonicalization(target.reg);
 		return;
 	}
@@ -146,12 +231,6 @@ void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const Na
 		sljit_set_label(negativeDone, done);
 		return;
 	}
-	const sljit_s32 operation = op == OpCode::ADD	 ? SLJIT_ADD32
-								: op == OpCode::SUB	 ? SLJIT_SUB32
-								: op == OpCode::MUL	 ? SLJIT_MUL32
-								: op == OpCode::BAND ? SLJIT_AND32
-								: op == OpCode::BOR	 ? SLJIT_OR32
-													 : SLJIT_XOR32;
-	sljit_emit_op2(m_compiler, operation, target.reg, 0, a.reg, 0, b.reg, 0);
+	sljit_emit_op2(m_compiler, binaryWordOpcode(op), target.reg, 0, a.reg, 0, b.reg, 0);
 }
 } // namespace bmsx
