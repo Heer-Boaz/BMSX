@@ -1158,6 +1158,10 @@
   worldnumber: 1
   condition_reveal_events:
     r109.stairs: appearance
+  stairs_open_rows:
+    18: '#............................-=#'
+    19: '#............................-=#'
+    20: '#............................-=#'
   exits:
   - 0
   - 110

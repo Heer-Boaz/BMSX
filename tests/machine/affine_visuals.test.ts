@@ -431,6 +431,71 @@ test('GX tile packets track sparse and wrapped rows without changing visible ord
 	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 });
 
+const tapePackets = rom.add(WORLD_CPU_SETUP + checks + `
+bss original_words: word[64]
+bss tape_words: word[64]
+bss palette_uvs: word[4]
+bss palette_modes: word[4]
+rodata tape: u8[16] = {8,0,1,1,2,2,2,1,1,7,1,1,3,3,1,2}
+rodata rows: word[3] = {0,8,9}
+local commands<const> = require('cartlib/gx/command_list')
+local gp0<const> = require('cartlib/gx/gp0')
+local image<const> = require('cartlib/gx/image')
+local layers<const> = require('cartlib/component/tile_layer_component')
+local original<const> = commands.new(original_words,64)
+local packed<const> = commands.new(tape_words,64)
+local original_data<const>: *word = original_words
+local packed_data<const>: *word = tape_words
+local uvs<const>: *word = palette_uvs
+local modes<const>: *word = palette_modes
+local art<const> = {'tile_a','tile_b','tile_c'}
+for ordinal=1,#art do
+ local source<const> = image.resolve(art[ordinal])
+ uvs[ordinal] = source._blit_uv_word
+ modes[ordinal] = source._blit_draw_mode
+end
+world:start()
+prefab.define({def_id='terrain',class=object_2d})
+local owner<const> = world:spawn('terrain',{})
+local layer<const> = layers.new(owner,{tile_size=8, attachment_affine={1,0,0,1,9,12}})
+layer:resize(12,4)
+layer:set_tile(1,'tile_a')
+layer:set_tile(3,'tile_b')
+layer:set_tile(4,'tile_a')
+layer:set_tile(10,'tile_c')
+layer:set_tile(12,'tile_b')
+local target<const> = gp0.pair16(128,96)
+commands.begin(original,modes[1],target)
+commands.begin(packed,modes[1],target)
+layer:draw_visual(original)
+commands.fixed_tile_tape(packed,tape,rows,3,8,palette_modes,palette_uvs,9,12)
+local old_index, new_index = 0, 0
+while new_index < packed.word_count do
+ local old_word<const> = original_data[old_index]
+ local new_word<const> = packed_data[new_index]
+ if new_word==0x75808080 and old_word==0x65808080 then
+  assert(original_data[old_index+3]==0x00080008, 'only fixed 8x8 rectangles may use compact packets')
+  assert(original_data[old_index+1]==packed_data[new_index+1] and original_data[old_index+2]==packed_data[new_index+2],
+   'compact rectangle changed the position or source')
+  old_index = old_index + 4
+  new_index = new_index + 3
+ else
+  assert(new_word==old_word, 'tape reordered tiles or GPU state')
+  old_index = old_index + 1
+  new_index = new_index + 1
+ end
+end
+assert(old_index==original.word_count and packed.draw_mode==original.draw_mode
+ and packed.drawing_offset==original.drawing_offset,
+ 'tape did not preserve total coverage or subsequent draw state')
+return assertion_failed
+`);
+test('fixed room tape preserves tile placement and live GPU state across holes and texture pages', () => {
+	const cpu = rom.run(tapePackets, 1_000_000);
+	const [failure] = materializeCpuCompletionValues(cpu);
+	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
+});
+
 test('A large image catalog keeps compact source records and both native format draw contracts', () => {
 	const { cpu } = createCartlibProgramHarness(checks + `
 local commands<const> = require('cartlib/gx/command_list')

@@ -30,7 +30,6 @@ flow_seal_room_dissolve_frames = 50
 flow_seal_dissolution_frames = flow_seal_flash_frames
 	+ flow_seal_sprite_dissolve_frames
 	+ flow_seal_room_dissolve_frames
-flow_seal_room_dissolve_steps = 7
 flow_seal_sprite_dissolve_steps = 6
 -- T7FD0 initializes the smoke countdown to 0x41. T7FDB emits enemy 0x63
 -- after the first decrement and every eight admitted bottom halves thereafter.

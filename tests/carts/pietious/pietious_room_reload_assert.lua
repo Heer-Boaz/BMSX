@@ -5,10 +5,38 @@ local scene_library<const> = require('cartlib/world/scene_library')
 local castle_map<const> = require('castle/map')
 local castle_module<const> = require('castle/castle')
 local fixture<const> = require('tests/carts/pietious/fixture')
+local terrain<const> = require('room/terrain')
 
 return {
 	kind = 'integration',
 	tests = {
+		room_terrain_revision = function(t)
+			local _director<const>, castle<const> = fixture.start_game(t)
+			local room<const> = castle.room
+			local base<const> = room.template.terrain.base
+			assert(room.map_rows == base.rows and room.room_tile_layer.tape_rows == terrain.tape + base.tape,
+				'an ordinary room reprojects its immutable terrain during activation')
+			progression.set(castle, 'r109.stairs', true)
+			local opened<const> = castle:load_room(109)
+			castle:commit_room_switch({ from_room_number = 1, to_room_number = 109, direction = 'right' }, 1, 0, 0)
+			local stair_layout<const> = opened.template.terrain.stairs_open
+			assert(opened.map_rows == stair_layout.rows and opened.map_rows[18] ~= opened.template.terrain.base.rows[18]
+				and opened.room_tile_layer.tape_rows == terrain.tape + stair_layout.tape,
+				'the real room-enter rule did not publish both of the opened stairs surfaces')
+			local sealed<const> = castle:load_room(100)
+			castle:commit_room_switch({ from_room_number = 109, to_room_number = 100, direction = 'down' }, 1, 0, 0)
+			local intact<const> = sealed.template.terrain.base
+			sealed.room_dissolve_step = #intact.dissolve
+			sealed:rebuild_room_tiles()
+			assert(sealed.map_rows == intact.rows and sealed.room_tile_layer.tape_rows == terrain.tape + intact.dissolve[#intact.dissolve],
+				'the dissolve must change the visual tape before changing collision')
+			castle:finish_seal_dissolution()
+			local cleared<const> = sealed.template.terrain.seal_cleared
+			assert(sealed.map_rows == cleared.rows and sealed.map_rows[4]:sub(1, 1) == '.'
+				and intact.rows[4]:sub(1, 1) == '$'
+				and sealed.room_tile_layer.tape_rows == terrain.tape + cleared.dissolve[#cleared.dissolve],
+				'ending the dissolve did not select the cleared terrain without altering the base')
+		end,
 		room_reload = function(t)
 			t:wait_until('intro director', function() return registry:get('d') ~= nil end, 120)
 			t:at_boundary(world:request_mutation_boundary(), 120)

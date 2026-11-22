@@ -115,6 +115,10 @@ export async function compileCart(prepared: PreparedUnit, outputDirectory: strin
 
 	progress({ type: 'phase', message: 'Generate ROM assets' });
 	const romAssets = await generateRomAssets(resources, progress);
+	if (name === 'pietious') {
+		const { cookPietiousTerrain } = await import('../pietious/terrain');
+		cookPietiousTerrain(romAssets);
+	}
 	romAssets.push(...buildScenarioTestSourceAssets(scenarioSourceFiles.map(file => inputs.files.get(resolve(file))!), virtualRoot));
 	const romLayout = layoutRomPrefix(romAssets, debug, romManifest);
 	let blua32: CartRomBlua32Tail | null = null;

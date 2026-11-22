@@ -786,6 +786,60 @@ function command_list.tile_layer(
 	draw.drawing_offset = base_drawing_offset
 end
 
+-- Read an aligned directory of byte offsets into immutable fixed-cell rows.
+-- A row carries its byte count followed by (column, count, ordinals...) spans;
+-- the current atlas projection supplies the raw words for each ordinal.
+function command_list.fixed_tile_tape(draw, tape, directory, row_count, tile_size, palette_modes, palette_uvs, origin_x, origin_y)
+	local words<const>: *word = draw.words
+	local cursor: *word = words + draw.word_count * sizeof(word)
+	local modes<const>: *word = palette_modes
+	local uvs<const>: *word = palette_uvs
+	local rows<const>: *word = directory
+	local offset<const> = gp0.drawing_offset_word(draw.target_x + origin_x, draw.target_y + origin_y)
+	if offset ~= draw.drawing_offset then
+		*cursor = offset
+		cursor = cursor + sizeof(word)
+	end
+	local draw_mode = draw.draw_mode
+	local fixed_command<const> = fixed_blit_commands[gp0.pair16(tile_size, tile_size)]
+	local row_step<const> = tile_size << 16
+	local y = 0
+	for row_index = 0, row_count - 1 do
+		local row<const>: *u8 = tape + rows[row_index]
+		local size<const> = row[0]
+		local index = 1
+		while index < size do
+			local end_index<const> = index + 1 + row[index + 1]
+			local position = y | (row[index] * tile_size)
+			for source_index = index + 2, end_index do
+				local ordinal<const> = row[source_index]
+				local mode<const> = modes[ordinal]
+				if mode ~= draw_mode then
+					*cursor = gp0.draw_mode | mode
+					cursor = cursor + sizeof(word)
+					draw_mode = mode
+				end
+				local packet<const>: *gp0_fixed_textured_rectangle_packet = cursor
+				packet.command = fixed_command
+				packet.position = position
+				packet.uv = uvs[ordinal]
+				cursor = cursor + fixed_textured_rectangle_packet_size
+				position = position + tile_size
+			end
+			index = end_index + 1
+		end
+		y = y + row_step
+	end
+	local base_drawing_offset<const> = draw.base_drawing_offset
+	if offset ~= base_drawing_offset then
+		*cursor = base_drawing_offset
+		cursor = cursor + sizeof(word)
+	end
+	draw.word_count = (cursor - words) >> 2
+	draw.draw_mode = draw_mode
+	draw.drawing_offset = base_drawing_offset
+end
+
 function draw_list:direct16_quad(
 	page_source_x, page_source_y,
 	source_x0, source_y0,

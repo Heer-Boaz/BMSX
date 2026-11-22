@@ -12,7 +12,6 @@ local room_spawner<const> = require('room/spawner')
 local castle<const> = {}
 setmetatable(castle, { __index = world_object })
 
-local world1_stairs_open_row<const> = '#............................-=#'
 local halo_destination_room_number<const> = 1
 local castle_tags<const> = {
 	seal_active = 'c.seal.active',
@@ -251,13 +250,9 @@ local build_progression_program<const> = function(map)
 		},
 		apply = {
 			{
-				op = 'room.patch_rows',
+				op = 'room.select_terrain',
 				room_number = 109,
-				rows = {
-					{ index = 18, value = world1_stairs_open_row },
-					{ index = 19, value = world1_stairs_open_row },
-					{ index = 20, value = world1_stairs_open_row },
-				},
+				variant = 'stairs_open',
 			},
 		},
 	}
@@ -266,8 +261,10 @@ local build_progression_program<const> = function(map)
 		rules = rules,
 		filters = filters,
 		handlers = {
-			['room.patch_rows'] = function(ctx, command)
-				ctx.room:apply_progression_command(command)
+			['room.select_terrain'] = function(ctx, command)
+				if command.room_number == ctx.current_room_number then
+					ctx.room:select_terrain(ctx.room.template.terrain[command.variant])
+				end
 			end,
 			reconcile_room_condition = function(ctx, command, event)
 				if command.room_number ~= ctx.current_room_number then
@@ -399,7 +396,7 @@ function castle:apply_seal_timeline_frame(frame)
 	if frame >= room_phase_start then
 		seal_dissolve_step = flow_seal_sprite_dissolve_steps
 		local progress<const> = frame - room_phase_start
-		room_dissolve_step = ((progress * flow_seal_room_dissolve_steps) // flow_seal_room_dissolve_frames) + 1
+		room_dissolve_step = ((progress * #room.terrain.dissolve) // flow_seal_room_dissolve_frames) + 1
 	elseif frame >= flow_seal_flash_frames then
 		local progress<const> = frame - flow_seal_flash_frames
 		seal_dissolve_step = ((progress * flow_seal_sprite_dissolve_steps) // flow_seal_sprite_dissolve_frames) + 1
@@ -421,20 +418,7 @@ function castle:finish_seal_dissolution()
 	set_tag_flag(self, castle_tags.seal_broken, true)
 	set_tag_flag(self, castle_tags.seal_active, false)
 	set_tag_flag(self, castle_tags.daemon_fight, false)
-	local row_patches<const> = {}
-	for i = 1, #room.map_rows do
-		local row<const> = room.map_rows[i]
-		local patched_row<const> = row:gsub('%$', '.')
-		if patched_row ~= row then
-			row_patches[#row_patches + 1] = {
-				index = i,
-				value = patched_row,
-			}
-		end
-	end
-	if #row_patches > 0 then
-		room:patch_rows(row_patches)
-	end
+	room:select_terrain(room.template.terrain.seal_cleared)
 	self:refresh_current_room_customizations()
 end
 

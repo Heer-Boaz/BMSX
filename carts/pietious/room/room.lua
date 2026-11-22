@@ -7,6 +7,9 @@ require('constants')
 local timeline<const> = require('cartlib/timeline/timeline')
 local tile_layer_component<const> = require('cartlib/component/tile_layer_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
+local visual_2d_component<const> = require('cartlib/component/visual_2d_component')
+local commands<const> = require('cartlib/gx/command_list')
+local terrain<const> = require('room/terrain')
 
 local room<const> = {}
 local water_surface_timeline_id<const> = 'r.ws'
@@ -22,136 +25,16 @@ for i = 1, 63 do
 	water_surface_frame_imgids[i + 1] = 'water_surface_msx_' .. suffix
 	water_surface_timeline_frame_defs[i + 1] = { value = i + 1, hold = 1 }
 end
-local tile_chars<const> = {
-	wall = string.byte('#'),
-	breakable_wall = string.byte('$'),
-	stair_left = string.byte('-'),
-	stair_left_alt = string.byte('_'),
-	stair_right = string.byte('='),
-	stair_right_alt = string.byte('+'),
-	rock_ul = 0xba,
-	rock_ur = 0xbb,
-	rock_dl = 0xbc,
-	rock_dr = 0xbd,
-	pillar_l1 = string.byte('p'),
-	pillar_r1 = string.byte('i'),
-	pillar_mid = string.byte('l'),
-	pillar_l3 = string.byte('a'),
-	pillar_r3 = string.byte('r'),
-	empty = string.byte('.'),
-}
-local solid_tiles<const> = {
-	[tile_chars.wall] = true,
-	[tile_chars.breakable_wall] = true,
-	[tile_chars.rock_ul] = true,
-	[tile_chars.rock_ur] = true,
-	[tile_chars.rock_dl] = true,
-	[tile_chars.rock_dr] = true,
-}
-local stair_left_tiles<const> = {
-	[tile_chars.stair_left] = true,
-	[tile_chars.stair_left_alt] = true,
-}
-local stair_right_tiles<const> = {
-	[tile_chars.stair_right] = true,
-	[tile_chars.stair_right_alt] = true,
-}
+local tile_chars<const> = terrain.tile_chars
+local solid_tiles<const> = terrain.solid_tiles
+local stair_left_tiles<const> = terrain.stair_left_tiles
+local stair_right_tiles<const> = terrain.stair_right_tiles
 local rock_tile_width<const> = rock_width / room_tile_size
 local rock_tile_height<const> = rock_height / room_tile_size
 local rock_logic_tiles<const> = {
 	{ tile_chars.rock_ul, tile_chars.rock_ur },
 	{ tile_chars.rock_dl, tile_chars.rock_dr },
 }
-local world_dissolve_prefix_by_tile_id<const> = {
-	backworld_ul = 'backworld_ul_dissolve_',
-	backworld_ul_dark = 'backworld_ul_dissolve_',
-	backworld_ur = 'backworld_ur_dissolve_',
-	backworld_ur_dark = 'backworld_ur_dissolve_',
-	backworld_dl = 'backworld_dl_dissolve_',
-	backworld_dl_dark = 'backworld_dl_dissolve_',
-	backworld_dr = 'backworld_dr_dissolve_',
-	backworld_dr_dark = 'backworld_dr_dissolve_',
-}
-
-local background_themes<const> = {
-	castleblue = {
-		mode = 'checker2',
-		front = 'castle_front_blue_1',
-		light_l = 'castle_tile_blue_l',
-		light_r = 'castle_tile_blue_r',
-		dark_l = 'castle_tile_blue_l_dark',
-		dark_r = 'castle_tile_blue_r_dark',
-	},
-	castlegarden = {
-		mode = 'grid4',
-		front = 'castle_front_blue_1',
-		tiles = {
-			{ 'castle_tile_garden_1_1', 'castle_tile_garden_2_1', 'castle_tile_garden_3_1', 'castle_tile_garden_4_1' },
-			{ 'castle_tile_garden_1_2', 'castle_tile_garden_2_2', 'castle_tile_garden_3_2', 'castle_tile_garden_4_2' },
-			{ 'castle_tile_garden_1_3', 'castle_tile_garden_2_3', 'castle_tile_garden_3_3', 'castle_tile_garden_4_3' },
-			{ 'castle_tile_garden_1_4', 'castle_tile_garden_2_4', 'castle_tile_garden_3_4', 'castle_tile_garden_4_4' },
-		},
-		dark_tiles = {
-			'castle_tile_garden_dark_1',
-			'castle_tile_garden_dark_2',
-			'castle_tile_garden_dark_3',
-			'castle_tile_garden_dark_4',
-		},
-	},
-	castlegold = {
-		mode = 'checker2',
-		front = 'castle_front_gold_1',
-		light_l = 'castle_tile_gold_l',
-		light_r = 'castle_tile_gold_r',
-		dark_l = 'castle_tile_gold_l_dark',
-		dark_r = 'castle_tile_gold_r_dark',
-	},
-	castlered = {
-		mode = 'grid4',
-		front = 'castle_front_blue_1',
-		tiles = {
-			{ 'castle_tile_red_1_1', 'castle_tile_red_2_1', 'castle_tile_red_3_1', 'castle_tile_red_4_1' },
-			{ 'castle_tile_red_1_2', 'castle_tile_red_2_2', 'castle_tile_red_3_2', 'castle_tile_red_4_2' },
-			{ 'castle_tile_red_1_3', 'castle_tile_red_2_3', 'castle_tile_red_3_3', 'castle_tile_red_4_3' },
-			{ 'castle_tile_red_1_4', 'castle_tile_red_2_4', 'castle_tile_red_3_4', 'castle_tile_red_4_4' },
-		},
-		dark_tiles = {
-			'castle_tile_red_dark_1',
-			'castle_tile_red_dark_2',
-			'castle_tile_red_dark_3',
-			'castle_tile_red_dark_4',
-		},
-	},
-	castlestone = {
-		mode = 'grid4',
-		front = 'castle_front_blue_1',
-		tiles = {
-			{ 'castle_tile_stone_1_1', 'castle_tile_stone_2_1', 'castle_tile_stone_3_1', 'castle_tile_stone_4_1' },
-			{ 'castle_tile_stone_1_2', 'castle_tile_stone_2_2', 'castle_tile_stone_3_2', 'castle_tile_stone_4_2' },
-			{ 'castle_tile_stone_1_3', 'castle_tile_stone_2_3', 'castle_tile_stone_3_3', 'castle_tile_stone_4_3' },
-			{ 'castle_tile_stone_1_4', 'castle_tile_stone_2_4', 'castle_tile_stone_3_4', 'castle_tile_stone_4_4' },
-		},
-		dark_tiles = {
-			'castle_tile_stone_dark_1',
-			'castle_tile_stone_dark_2',
-			'castle_tile_stone_dark_3',
-			'castle_tile_stone_dark_4',
-		},
-	},
-	world = {
-		mode = 'world4',
-		front = 'frontworld_l',
-		ul = 'backworld_ul',
-		ur = 'backworld_ur',
-		dl = 'backworld_dl',
-		dr = 'backworld_dr',
-		ul_dark = 'backworld_ul_dark',
-		ur_dark = 'backworld_ur_dark',
-		dl_dark = 'backworld_dl_dark',
-		dr_dark = 'backworld_dr_dark',
-	},
-}
-
 local room_hidden_mode_events<const> = {
 	'transition',
 	'halo',
@@ -188,191 +71,8 @@ for i = 1, #room_visible_mode_events do
 	}
 end
 
-local pillar_themes<const> = {
-	castleblue = {
-		l1 = 'castle_pillar_blue_l1',
-		r1 = 'castle_pillar_blue_r1',
-		l2 = 'castle_pillar_blue_l2',
-		r2 = 'castle_pillar_blue_r2',
-		l3 = 'castle_pillar_blue_l3',
-		r3 = 'castle_pillar_blue_r3',
-	},
-	castlegarden = {
-		l1 = 'castle_pillar_garden_l1',
-		r1 = 'castle_pillar_garden_r1',
-		l2 = 'castle_pillar_garden_l2',
-		r2 = 'castle_pillar_garden_r2',
-		l3 = 'castle_pillar_garden_l3',
-		r3 = 'castle_pillar_garden_r3',
-	},
-	castlegold = {
-		l1 = 'castle_pillar_red_l1',
-		r1 = 'castle_pillar_red_r1',
-		l2 = 'castle_pillar_red_l2',
-		r2 = 'castle_pillar_red_r2',
-		l3 = 'castle_pillar_red_l3',
-		r3 = 'castle_pillar_red_r3',
-	},
-	castlered = {
-		l1 = 'castle_pillar_red_l1',
-		r1 = 'castle_pillar_red_r1',
-		l2 = 'castle_pillar_red_l2',
-		r2 = 'castle_pillar_red_r2',
-		l3 = 'castle_pillar_red_l3',
-		r3 = 'castle_pillar_red_r3',
-	},
-	castlestone = {
-		l1 = 'castle_pillar_stone_l1',
-		r1 = 'castle_pillar_stone_r1',
-		l2 = 'castle_pillar_stone_l2',
-		r2 = 'castle_pillar_stone_r2',
-		l3 = 'castle_pillar_stone_l3',
-		r3 = 'castle_pillar_stone_r3',
-	},
-	world = {
-		l1 = 'backworld_pillar_l1',
-		r1 = 'backworld_pillar_r1',
-		l2 = 'backworld_pillar_l2',
-		r2 = 'backworld_pillar_r2',
-		l3 = 'backworld_pillar_l3',
-		r3 = 'backworld_pillar_r3',
-	},
-}
-
-local build_screen_rows<const> = function(map_rows, draaideuren)
-	local screen_rows<const> = {}
-	for y = 1, #map_rows do
-		screen_rows[y] = map_rows[y]
-	end
-
-	for i = 1, #draaideuren do
-		local draaideur<const> = draaideuren[i]
-		local tx<const> = draaideur.x // room_tile_size + 1
-		local ty<const> = (draaideur.y - room_tile_origin_y) // room_tile_size + 1
-		for row = ty, ty + 2 do
-			local line<const> = screen_rows[row]
-			screen_rows[row] = line:sub(1, tx - 1) .. '.' .. line:sub(tx + 1)
-		end
-	end
-
-	return screen_rows
-end
-
 local set_row_byte<const> = function(row, tx, byte)
 	return row:sub(1, tx - 1) .. string.char(byte) .. row:sub(tx + 1)
-end
-
-local create_tile_id<const> = function(ch, x, y, map_rows, room_subtype)
-	local background<const> = background_themes[room_subtype]
-	local pillars<const> = pillar_themes[room_subtype]
-
-	if ch == tile_chars.wall then
-		return background.front
-	end
-	if ch == tile_chars.breakable_wall then
-		if background.front_dissolve ~= nil then
-			return background.front_dissolve
-		end
-		return background.front
-	end
-	if stair_left_tiles[ch] then
-		return 'castle_stairs_l'
-	end
-	if stair_right_tiles[ch] then
-		return 'castle_stairs_r'
-	end
-	if ch == tile_chars.pillar_l1 then
-		return pillars.l1
-	end
-	if ch == tile_chars.pillar_r1 then
-		return pillars.r1
-	end
-	if ch == tile_chars.pillar_mid then
-		if y > 1 and y < #map_rows then
-			local ch_up<const> = string.byte(map_rows[y - 1], x)
-			local ch_down<const> = string.byte(map_rows[y + 1], x)
-			if ch_up == tile_chars.pillar_l1 and ch_down == tile_chars.pillar_l3 then
-				return pillars.l2
-			end
-			if ch_up == tile_chars.pillar_r1 and ch_down == tile_chars.pillar_r3 then
-				return pillars.r2
-			end
-		end
-	end
-	if ch == tile_chars.pillar_l3 then
-		return pillars.l3
-	end
-	if ch == tile_chars.pillar_r3 then
-		return pillars.r3
-	end
-
-	if background.mode == 'grid4' then
-		local wall_up<const> = y > 1 and solid_tiles[string.byte(map_rows[y - 1], x)]
-		if wall_up then
-			local dark_index<const> = ((x - 1) % 4) + 1
-			return background.dark_tiles[dark_index]
-		end
-
-		local tx<const> = ((x - 1) % 4) + 1
-		local ty<const> = ((y - 1) % 4) + 1
-		return background.tiles[ty][tx]
-	end
-
-	if background.mode == 'world4' then
-		local dark<const> = y > 1 and solid_tiles[string.byte(map_rows[y - 1], x)]
-		local left_column<const> = ((x - 1) % 2) == 0
-		local row_mod<const> = (y - 1) % 4
-		if row_mod == 0 then
-			if left_column then
-				return dark and background.ul_dark or background.ul
-			end
-			return dark and background.ur_dark or background.ur
-		end
-		if row_mod == 1 then
-			if left_column then
-				return dark and background.dl_dark or background.dl
-			end
-			return dark and background.dr_dark or background.dr
-		end
-		if row_mod == 2 then
-			if left_column then
-				return dark and background.ur_dark or background.ur
-			end
-			return dark and background.ul_dark or background.ul
-		end
-		if left_column then
-			return dark and background.dr_dark or background.dr
-		end
-		return dark and background.dl_dark or background.dl
-	end
-
-	local is_left_column<const> = ((x - 1) % 2) == 0
-	local is_top_row<const> = ((y - 1) % 2) == 0
-	if is_top_row then
-		local dark<const> = y > 1 and solid_tiles[string.byte(map_rows[y - 1], x)]
-		if is_left_column then
-			if dark then
-				return background.dark_l
-			end
-			return background.light_l
-		end
-		if dark then
-			return background.dark_r
-		end
-		return background.light_r
-	end
-
-	local dark<const> = solid_tiles[string.byte(map_rows[y - 1], x)]
-	if is_left_column then
-		if dark then
-			return background.dark_r
-		end
-		return background.light_r
-	end
-	if dark then
-		return background.dark_l
-	end
-	return background.light_l
 end
 
 local build_solids<const> = function(map_rows, tile_size, origin_x, origin_y)
@@ -527,7 +227,9 @@ local refresh_room_geometry<const> = function(room_state)
 end
 
 local apply_room_template<const> = function(room_state, template)
-	local map_rows<const> = build_screen_rows(template.map_rows, template.draaideuren)
+	local geometry<const> = template.terrain
+	local base<const> = geometry.base
+	local map_rows<const> = base.rows
 
 	room_state.room_number = template.room_number
 	room_state.world_number = template.world_number
@@ -544,6 +246,7 @@ local apply_room_template<const> = function(room_state, template)
 	room_state.tile_rows = #map_rows
 	room_state.tile_columns = #map_rows[1]
 	room_state.map_rows = map_rows
+	room_state.terrain = base
 	room_state.water = template.water
 	room_state.scene_id = template.scene_id
 	room_state.enemies = template.enemies
@@ -566,31 +269,12 @@ local room_object<const> = {}
 room_object.__index = room_object
 setmetatable(room_object, { __index = object_2d })
 
-function room_object:patch_rows(rows)
-	local changed
-	for i = 1, #rows do
-		local patch<const> = rows[i]
-		local row_index<const> = patch.index
-		local row_value<const> = patch.value
-		if self.map_rows[row_index] ~= row_value then
-			self.map_rows[row_index] = row_value
-			changed = true
-		end
-	end
-	if changed then
-		refresh_room_geometry(self)
-	end
-	return changed
-end
-
-function room_object:apply_progression_command(command)
-	if command.room_number ~= nil and command.room_number ~= self.castle.current_room_number then
-		return false
-	end
-	if command.op == 'room.patch_rows' then
-		return self:patch_rows(command.rows)
-	end
-	error("Unsupported room progression command op '" .. tostring(command.op) .. "'.")
+function room_object:select_terrain(variant)
+	if variant == self.terrain then return false end
+	self.terrain = variant
+	self.map_rows = variant.rows
+	refresh_room_geometry(self)
+	return true
 end
 
 function room_object:world_to_tile(world_x, world_y)
@@ -827,13 +511,19 @@ function room_object:switch_room(direction)
 end
 
 local room_layer_profile<const> = {
-	columns = 1, tile_size = room_tile_size,
 	attachment_affine = { 1, 0, 0, 1, room_tile_origin_x, room_tile_origin_y }, visible = false,
 }
 local water_layer_profile<const> = {
 	columns = 1, tile_size = room_tile_size,
 	attachment_affine = { 1, 0, 0, 1, room_tile_origin_x, room_tile_origin_y }, visible = false, order = 1,
 }
+
+local draw_room_tape<const> = function(layer, draw)
+	layer:resolve_pose()
+	terrain.project_art()
+	commands.fixed_tile_tape(draw, terrain.tape, layer.tape_rows, layer.owner.tile_rows,
+		room_tile_size, terrain.modes, terrain.uvs, layer.wox, layer.woy)
+end
 
 function room_object:ctor()
 	self.wall_instances = {}
@@ -848,7 +538,8 @@ function room_object:ctor()
 	self.water_surface_tile_indices = {}
 	self.water_surface_tile_count = 0
 	self.last_water_surface_frame = 1
-	self.room_tile_layer = tile_layer_component.new(self, room_layer_profile, 'room')
+	self.room_tile_layer = visual_2d_component.new(self, room_layer_profile, 'room')
+	self.room_tile_layer:set_draw_function(draw_room_tape)
 	self:add_component(self.room_tile_layer)
 	self.water_tile_layer = tile_layer_component.new(self, water_layer_profile, 'water')
 	self:add_component(self.water_tile_layer)
@@ -875,41 +566,9 @@ function room_object:rebuild_room_tiles()
 	local tile_count<const> = tile_columns * tile_rows
 	local dissolve_step<const> = self.room_dissolve_step
 	print('pietious.room.tiles.begin', os.clock(), self.room_number, tile_count, dissolve_step)
-	local room_tile_layer<const> = self.room_tile_layer
-	room_tile_layer:resize(tile_count, tile_columns)
-
-	for y = 1, tile_rows do
-		local row_base<const> = ((y - 1) * tile_columns)
-		local map_row<const> = self.map_rows[y]
-		for x = 1, tile_columns do
-			local tile_index<const> = row_base + x
-			local tile_id = create_tile_id(string.byte(map_row, x), x, y, self.map_rows, self.room_subtype)
-			if dissolve_step > 0 then
-				local dissolve_index<const> = dissolve_step - 1
-				if self.room_subtype == 'world' and string.byte(map_row, x) == tile_chars.breakable_wall then
-					if dissolve_index >= 6 then
-						room_tile_layer:set_tile(tile_index, nil)
-						goto continue
-					end
-					local wall_phase<const> = ((x + (y * 3)) % 6) + 1
-					if dissolve_index >= wall_phase then
-						room_tile_layer:set_tile(tile_index, nil)
-						goto continue
-					end
-				end
-				local dissolve_prefix<const> = world_dissolve_prefix_by_tile_id[tile_id]
-				if dissolve_prefix ~= nil then
-					if dissolve_index >= 6 then
-						room_tile_layer:set_tile(tile_index, nil)
-						goto continue
-					end
-					tile_id = dissolve_prefix .. tostring(dissolve_index)
-				end
-			end
-			room_tile_layer:set_tile(tile_index, tile_id)
-			::continue::
-		end
-	end
+	local layout<const> = self.terrain
+	local row_directory<const> = dissolve_step == 0 and layout.tape or layout.dissolve[dissolve_step]
+	self.room_tile_layer.tape_rows = terrain.tape + row_directory
 	self.room_tile_count = tile_count
 
 	if self.water == nil then

@@ -6,7 +6,7 @@ import { resolveReadPath, type FileAccess } from '../lib/file_access';
 
 const TOOLCHAIN_EXTENSIONS = new Set(['.ts', '.glsl', '.wgsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml', '.lua']);
 const TOOLCHAIN_ROOTS = ['machine/ts/common', 'machine/ts/rompack', 'machine/ts/spec',
-	'scripts/lint', 'scripts/rompacker', 'scripts/lib', 'toolchain/ts',
+	'scripts/lint', 'scripts/pietious', 'scripts/rompacker', 'scripts/lib', 'toolchain/ts',
 	'package.json', 'package-lock.json', 'scripts/tsconfig.json', 'tsconfig.base.json', 'tsconfig.json'];
 
 /** Recipe inputs are code, not resources: hash once without retaining a second code tree. */

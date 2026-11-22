@@ -4,6 +4,7 @@ local shallow_copy<const> = table.copy
 local text<const> = require('cartlib/util/text')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
+local terrain<const> = require('room/terrain')
 
 local castle_map<const> = {}
 local empty_conditions<const> = {}
@@ -521,6 +522,7 @@ local load_room_templates<const> = function()
 			room_number = room_number,
 			world_number = room_def.worldnumber or 0, -- Normalized to prevent bugs like indexing with string world numbers for events/progression
 			room_subtype = room_def.subtype,
+			terrain = room_def.terrain,
 			water = build_water_spec(room_number, room_def.water),
 			map_rows = map_rows,
 			spawn = build_spawn(map_rows),
@@ -623,6 +625,7 @@ castle_map.start_room_number = start_room_number
 castle_map.elevator_routes = build_elevator_routes()
 function castle_map.initialize()
 	local rooms<const>, condition_reveal_events<const> = load_room_templates()
+	terrain.bind_art()
 	for _, template in pairs(rooms) do
 		prepare_scene_members(template)
 	end
