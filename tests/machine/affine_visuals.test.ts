@@ -26,6 +26,7 @@ const modules = [
 		'cartlib/gx/image', 'cartlib/gx/atlas', 'cartlib/gx/imgdec', 'cartlib/gx/affine_batch',
 	].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })),
 	{ path: 'stage_tiles_component', source: readFileSync('carts/nemesis_s/stage_tiles_component.lua', 'utf8') },
+	{ path: 'grachtwater', source: readFileSync('carts/nemesis_s/grachtwater.lua', 'utf8') },
 	{
 		path: 'cartlib/rom_dir',
 		source: `local images<const> = {
@@ -433,7 +434,7 @@ test('GX tile packets track sparse and wrapped rows without changing visible ord
 
 const tapePackets = rom.add(WORLD_CPU_SETUP + checks + `
 bss original_words: word[64]
-bss tape_words: word[64]
+bss room_body: word[24]
 bss palette_uvs: word[4]
 bss palette_modes: word[4]
 rodata tape: u8[16] = {8,0,1,1,2,2,2,1,1,7,1,1,3,3,1,2}
@@ -443,9 +444,8 @@ local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
 local layers<const> = require('cartlib/component/tile_layer_component')
 local original<const> = commands.new(original_words,64)
-local packed<const> = commands.new(tape_words,64)
 local original_data<const>: *word = original_words
-local packed_data<const>: *word = tape_words
+local packed_data<const>: *word = room_body
 local uvs<const>: *word = palette_uvs
 local modes<const>: *word = palette_modes
 local art<const> = {'tile_a','tile_b','tile_c'}
@@ -464,33 +464,38 @@ layer:set_tile(3,'tile_b')
 layer:set_tile(4,'tile_a')
 layer:set_tile(10,'tile_c')
 layer:set_tile(12,'tile_b')
-local target<const> = gp0.pair16(128,96)
-commands.begin(original,modes[1],target)
-commands.begin(packed,modes[1],target)
-layer:draw_visual(original)
-commands.fixed_tile_tape(packed,tape,rows,3,8,palette_modes,palette_uvs,9,12)
-local old_index, new_index = 0, 0
-while new_index < packed.word_count do
- local old_word<const> = original_data[old_index]
- local new_word<const> = packed_data[new_index]
- if new_word==0x75808080 and old_word==0x65808080 then
-  assert(original_data[old_index+3]==0x00080008, 'only fixed 8x8 rectangles may use compact packets')
-  assert(original_data[old_index+1]==packed_data[new_index+1] and original_data[old_index+2]==packed_data[new_index+2],
-   'compact rectangle changed the position or source')
-  old_index = old_index + 4
-  new_index = new_index + 3
- else
-  assert(new_word==old_word, 'tape reordered tiles or GPU state')
-  old_index = old_index + 1
-  new_index = new_index + 1
+local count<const>, final_mode<const> = commands.prepare_fixed_tile_tape(room_body,tape,rows,3,8,palette_modes,palette_uvs)
+assert(packed_data[0]==(gp0.draw_mode | modes[1]), 'the retained body must be independent of the incoming draw mode')
+for page=0,1 do
+ local draw_mode<const> = page == 0 and modes[1] or modes[3]
+ local target<const> = gp0.pair16(128,page*192)
+ commands.begin(original,draw_mode,target)
+ layer:draw_visual(original)
+ assert(original_data[1]==gp0.drawing_offset_word(137,page*192+12), 'the draw page owns the offset, not the body')
+ local old_index, new_index = 2, draw_mode == modes[1] and 1 or 0
+ while new_index < count do
+  local old_word<const> = original_data[old_index]
+  local new_word<const> = packed_data[new_index]
+  if new_word==0x75808080 and old_word==0x65808080 then
+   assert(original_data[old_index+3]==0x00080008, 'only fixed 8x8 rectangles may use compact packets')
+   assert(original_data[old_index+1]==packed_data[new_index+1] and original_data[old_index+2]==packed_data[new_index+2],
+    'compact rectangle changed the position or source')
+   old_index = old_index + 4
+   new_index = new_index + 3
+  else
+   assert(new_word==old_word, 'tape reordered tiles or GPU state at page ' .. page
+    .. ', packet word ' .. new_index .. ': expected ' .. old_word .. ', wrote ' .. new_word)
+   old_index = old_index + 1
+   new_index = new_index + 1
+  end
  end
+ assert(old_index+1==original.word_count and final_mode==original.draw_mode
+  and original_data[old_index]==original.base_drawing_offset,
+  'tape did not preserve total coverage or subsequent draw state')
 end
-assert(old_index==original.word_count and packed.draw_mode==original.draw_mode
- and packed.drawing_offset==original.drawing_offset,
- 'tape did not preserve total coverage or subsequent draw state')
 return assertion_failed
 `);
-test('fixed room tape preserves tile placement and live GPU state across holes and texture pages', () => {
+test('fixed room tape preserves tile placement and GPU state across holes, texture pages and draw pages', () => {
 	const cpu = rom.run(tapePackets, 1_000_000);
 	const [failure] = materializeCpuCompletionValues(cpu);
 	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));

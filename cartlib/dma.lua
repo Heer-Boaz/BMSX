@@ -13,6 +13,7 @@ local dma1_transfer_count<const>: *word = 0x080103ec
 local dma1_control<const>: *word = 0x080103f0
 local dma1_status<const>: *word = 0x080103f4
 local dma1_trigger<const>: *word = 0x080103f8
+local route_copy<const> = 0x00000000
 local route_to_gpu<const> = 0x00000001
 local route_to_apu<const> = 0x00000006
 local route_from_apu<const> = 0x00000007
@@ -62,6 +63,14 @@ function dma.copy_to_gp0(source, word_count)
 	*dma0_read_addr = source
 	*dma0_transfer_count = word_count
 	*dma0_control = route_to_gpu | ((*cartridge_select & 1) << 3)
+	*dma0_trigger = trigger_start
+end
+
+function dma.copy_ram_words(source, target, word_count)
+	*dma0_read_addr = source
+	*dma0_write_addr = target
+	*dma0_transfer_count = word_count
+	*dma0_control = route_copy
 	*dma0_trigger = trigger_start
 end
 

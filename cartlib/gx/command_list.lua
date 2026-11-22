@@ -788,19 +788,14 @@ end
 
 -- Read an aligned directory of byte offsets into immutable fixed-cell rows.
 -- A row carries its byte count followed by (column, count, ordinals...) spans;
--- the current atlas projection supplies the raw words for each ordinal.
-function command_list.fixed_tile_tape(draw, tape, directory, row_count, tile_size, palette_modes, palette_uvs, origin_x, origin_y)
-	local words<const>: *word = draw.words
-	local cursor: *word = words + draw.word_count * sizeof(word)
+-- the current atlas projection supplies the raw words for each ordinal. The
+-- body starts with its own draw mode and uses local destination positions.
+function command_list.prepare_fixed_tile_tape(storage, tape, directory, row_count, tile_size, palette_modes, palette_uvs)
+	local cursor: *word = storage
 	local modes<const>: *word = palette_modes
 	local uvs<const>: *word = palette_uvs
 	local rows<const>: *word = directory
-	local offset<const> = gp0.drawing_offset_word(draw.target_x + origin_x, draw.target_y + origin_y)
-	if offset ~= draw.drawing_offset then
-		*cursor = offset
-		cursor = cursor + sizeof(word)
-	end
-	local draw_mode = draw.draw_mode
+	local draw_mode = -1
 	local fixed_command<const> = fixed_blit_commands[gp0.pair16(tile_size, tile_size)]
 	local row_step<const> = tile_size << 16
 	local y = 0
@@ -830,13 +825,38 @@ function command_list.fixed_tile_tape(draw, tape, directory, row_count, tile_siz
 		end
 		y = y + row_step
 	end
+	return (cursor - storage) >> 2, draw_mode
+end
+
+-- Append into the existing ordered frame, not a separate GPU submission.
+-- The active draw page supplies the offset, and the caller retains the body
+-- unchanged until the DMA COPY has finished reading it.
+function command_list.append_fixed_tile_tape(draw, body, count, final_draw_mode, origin_x, origin_y)
+	local words<const>: *word = draw.words
+	local cursor: *word = words + draw.word_count * sizeof(word)
+	local offset<const> = gp0.drawing_offset_word(draw.target_x + origin_x, draw.target_y + origin_y)
+	if offset ~= draw.drawing_offset then
+		*cursor = offset
+		cursor = cursor + sizeof(word)
+	end
+	if count ~= 0 then
+		local source: *word = body
+		if *source == (gp0.draw_mode | draw.draw_mode) then
+			source = source + sizeof(word)
+			count = count - 1
+		end
+		dma.wait0_idle()
+		dma.copy_ram_words(source, cursor, count)
+		dma.wait0_idle()
+		cursor = cursor + count * sizeof(word)
+		draw.draw_mode = final_draw_mode
+	end
 	local base_drawing_offset<const> = draw.base_drawing_offset
 	if offset ~= base_drawing_offset then
 		*cursor = base_drawing_offset
 		cursor = cursor + sizeof(word)
 	end
 	draw.word_count = (cursor - words) >> 2
-	draw.draw_mode = draw_mode
 	draw.drawing_offset = base_drawing_offset
 end
 

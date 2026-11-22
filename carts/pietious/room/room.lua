@@ -8,7 +8,6 @@ local timeline<const> = require('cartlib/timeline/timeline')
 local tile_layer_component<const> = require('cartlib/component/tile_layer_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local visual_2d_component<const> = require('cartlib/component/visual_2d_component')
-local commands<const> = require('cartlib/gx/command_list')
 local terrain<const> = require('room/terrain')
 
 local room<const> = {}
@@ -417,9 +416,7 @@ local water_layer_profile<const> = {
 
 local draw_room_tape<const> = function(layer, draw)
 	layer:resolve_pose()
-	terrain.project_art()
-	commands.fixed_tile_tape(draw, terrain.tape, layer.tape_rows, layer.owner.tile_rows,
-		room_tile_size, terrain.modes, terrain.uvs, layer.wox, layer.woy)
+	terrain.draw(draw, layer.tape_rows, layer.owner.tile_rows, layer.wox, layer.woy)
 end
 
 function room_object:hide_room_tiles()

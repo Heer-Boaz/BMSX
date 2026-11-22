@@ -107,6 +107,7 @@ export function cookPietiousTerrain(assets: RomAsset[]): void {
 	const ordinals = new Map<string, number>();
 	const chunks: Buffer[] = [];
 	let size = 0;
+	let bodyCapacity = 0;
 	const append = (bytes: Buffer) => {
 		const offset = size;
 		size += bytes.length;
@@ -132,6 +133,8 @@ export function cookPietiousTerrain(assets: RomAsset[]): void {
 	const packRows = (rows: string[], subtype: string, phase: number) => {
 		const directory = Buffer.alloc(rows.length * 4);
 		const start = appendWords(directory);
+		let bodyWords = 0;
+		let previousOrdinal = 0;
 		for (let y = 0; y < rows.length; ++y) {
 			const bytes = [0];
 			let span = 0;
@@ -145,12 +148,18 @@ export function cookPietiousTerrain(assets: RomAsset[]): void {
 						bytes.push(x, 0);
 					}
 					++bytes[span];
-					bytes.push(artOrdinal(art));
+					const ordinal = artOrdinal(art);
+					bytes.push(ordinal);
+					// Different art can require a new draw-mode word after any
+					// atlas placement; repeated ordinals cannot change mode.
+					bodyWords += ordinal === previousOrdinal ? 3 : 4;
+					previousOrdinal = ordinal;
 				}
 			}
 			bytes[0] = bytes.length;
 			directory.writeUInt32LE(append(Buffer.from(bytes)), y * 4);
 		}
+		bodyCapacity = Math.max(bodyCapacity, bodyWords);
 		return start;
 	};
 	const layout = (rows: string[], subtype: string, rocks: RoomObject[], seal: boolean): BaseTerrain => {
@@ -180,5 +189,12 @@ export function cookPietiousTerrain(assets: RomAsset[]): void {
 	assets.push(
 		{ resid: 'pietious_terrain_art', type: 'data', buffer: encodeBinary([...ordinals.keys()]) },
 		{ resid: 'pietious_terrain_tape', type: 'bin', buffer: Buffer.concat(chunks, size) },
+		{ resid: 'pietious_terrain_layout', type: 'lua', program_module: true,
+			source_path: 'room/terrain_layout.lua', normalized_source_path: 'carts/pietious/room/terrain_layout.lua',
+			buffer: Buffer.from(`module<const>
+local body_words<const> = ${bodyCapacity}
+return { body_words = body_words }
+`),
+		},
 	);
 }
