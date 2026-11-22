@@ -54,6 +54,8 @@ void measure(Stream kind, const char* name, bool cartridgeSource = false) {
 	Memory memory(MemoryInit{{}, test::cartridgeSlots(cartRom)}, PSX_MACHINE_SPEC.ramBytes);
 	Machine machine(memory, input, PSX_MACHINE_SPEC);
 	if (!cartridgeSource) {
+		const u32 staticEnd = sourceAddress + static_cast<u32>(source.size()) * sizeof(u32);
+		if (!machine.cpu.heapAllocator().setFloor(staticEnd)) throw std::runtime_error("Could not reserve the public RAM fixture.");
 		for (u32 i = 0; i < source.size(); ++i) memory.writeMappedU32LE(sourceAddress + 4u * i, source[i]);
 	}
 	for (int round = -1; round < 6; ++round) {

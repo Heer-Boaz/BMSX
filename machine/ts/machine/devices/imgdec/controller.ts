@@ -272,9 +272,14 @@ export class ImgDecController {
 				case DECODE_LITERAL: this.inputFifo.readWords(history, start, words); break;
 				case DECODE_REPEAT: history.fill(this.repeatWord, start, start + words); break;
 				case DECODE_ZERO: history.fill(0, start, start + words); break;
-				case DECODE_BACK_REFERENCE:
-					for (let i = 0; i < words; ++i) history[start + i] = history[(start + i - this.backReferenceDistance) & IMGDEC_HISTORY_WORD_MASK];
+				case DECODE_BACK_REFERENCE: {
+					const source = (start - this.backReferenceDistance) & IMGDEC_HISTORY_WORD_MASK;
+					const first = Math.min(words, IMGDEC_HISTORY_WORD_CAPACITY - source);
+					// Copy forward: the reference can read words emitted by this run.
+					for (let i = 0; i < first; ++i) history[start + i] = history[source + i];
+					for (let i = first, from = 0; i < words; ++i, ++from) history[start + i] = history[from];
 					break;
+				}
 			}
 			for (let i = 0; i < words; ++i) this.block[this.blockWordCount + i] = history[start + i];
 			this.blockWordCount += words;

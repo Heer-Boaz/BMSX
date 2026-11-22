@@ -1,5 +1,7 @@
 #include "machine/devices/imgdec/controller.h"
 
+#include <cstring>
+
 #include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/dma/controller.h"
@@ -223,12 +225,18 @@ void ImgDecController::preparePayloadWords(u32 count) {
 		case DecodeLiteral: m_inputFifo.readWords(output, words); break;
 		case DecodeRepeat: std::fill_n(output, words, m_repeatWord); break;
 		case DecodeZero: std::fill_n(output, words, 0u); break;
-		case DecodeBackReference:
-			for (size_t i = 0; i < words; ++i)
-				output[i] = m_history[(m_historyWriteIndex + i - m_backReferenceDistance) & IMGDEC_HISTORY_WORD_MASK];
+		case DecodeBackReference: {
+			const size_t source = (m_historyWriteIndex - m_backReferenceDistance) & IMGDEC_HISTORY_WORD_MASK;
+			const size_t first = std::min(words, IMGDEC_HISTORY_WORD_CAPACITY - source);
+			// Copy forward: the reference can read words emitted by this run.
+			const u32* from = m_history.data() + source;
+			for (u32* to = output; to != output + first; ++to) *to = *from++;
+			from = m_history.data();
+			for (u32* to = output + first; to != output + words; ++to) *to = *from++;
 			break;
 		}
-		std::copy_n(output, words, m_block.data() + m_blockWordCount);
+		}
+		std::memcpy(m_block.data() + m_blockWordCount, output, words * sizeof(u32));
 		m_blockWordCount += static_cast<u32>(words);
 		m_historyWriteIndex = (m_historyWriteIndex + words) & IMGDEC_HISTORY_WORD_MASK;
 		remaining -= static_cast<u32>(words);
