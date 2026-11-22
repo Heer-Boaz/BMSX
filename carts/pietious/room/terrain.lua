@@ -4,55 +4,26 @@ local image<const> = require('cartlib/gx/image')
 local atlas<const> = require('cartlib/gx/atlas')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
+require('constants')
 
-local tile_chars<const> = {
-	wall = string.byte('#'),
-	breakable_wall = string.byte('$'),
-	stair_left = string.byte('-'),
-	stair_left_alt = string.byte('_'),
-	stair_right = string.byte('='),
-	stair_right_alt = string.byte('+'),
-	rock_ul = 0xba,
-	rock_ur = 0xbb,
-	rock_dl = 0xbc,
-	rock_dr = 0xbd,
-	pillar_l1 = string.byte('p'),
-	pillar_r1 = string.byte('i'),
-	pillar_mid = string.byte('l'),
-	pillar_l3 = string.byte('a'),
-	pillar_r3 = string.byte('r'),
-	empty = string.byte('.'),
-}
-local solid_tiles<const> = {
-	[tile_chars.wall] = true,
-	[tile_chars.breakable_wall] = true,
-	[tile_chars.rock_ul] = true,
-	[tile_chars.rock_ur] = true,
-	[tile_chars.rock_dl] = true,
-	[tile_chars.rock_dr] = true,
-}
-local stair_left_tiles<const> = {
-	[tile_chars.stair_left] = true,
-	[tile_chars.stair_left_alt] = true,
-}
-local stair_right_tiles<const> = {
-	[tile_chars.stair_right] = true,
-	[tile_chars.stair_right_alt] = true,
-}
 bss modes: word[256]
 bss uvs: word[256]
 local art_sources
 local projected_revision
 
 local terrain<const> = {
-	tile_chars = tile_chars,
-	solid_tiles = solid_tiles,
-	stair_left_tiles = stair_left_tiles,
-	stair_right_tiles = stair_right_tiles,
 	tape = assets.bin_pietious_terrain_tape_addr,
 	modes = modes,
 	uvs = uvs,
 }
+
+-- A stair span has a tile column, an inclusive first row and an exclusive end.
+-- The player locks against its foot coordinate, one tile above the first row.
+function terrain.stair_bounds(span)
+	return room_tile_origin_x + (span & 0xff) * room_tile_size,
+		room_tile_origin_y + (((span >> 8) & 0xff) - 1) * room_tile_size - player_height,
+		room_tile_origin_y + (span >> 16) * room_tile_size - player_height
+end
 
 function terrain.bind_art()
 	local names<const> = bin.decode(assets.data_pietious_terrain_art_addr, 'pietious terrain art')

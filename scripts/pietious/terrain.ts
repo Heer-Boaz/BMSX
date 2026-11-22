@@ -1,5 +1,6 @@
 import { decodeBinary, encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import { packPietiousCollision } from './collision';
 
 const TILE_SIZE = 8;
 const SEAL_DISSOLVE_COUNT = 7;
@@ -14,7 +15,7 @@ type RoomSource = {
 	stairs_open_rows?: Record<string, string>;
 };
 
-type BaseTerrain = { rows: string[]; tape: number; dissolve?: number[] };
+type BaseTerrain = { tape: number; collision: number; dissolve?: number[] };
 type RoomTerrain = { base: BaseTerrain; stairs_open?: BaseTerrain; seal_cleared?: BaseTerrain };
 
 const checkerTheme = (colour: string) => ({
@@ -112,6 +113,10 @@ export function cookPietiousTerrain(assets: RomAsset[]): void {
 		chunks.push(bytes);
 		return offset;
 	};
+	const appendWords = (bytes: Buffer) => {
+		append(Buffer.alloc((-size) & 3));
+		return append(bytes);
+	};
 	const artOrdinal = (id: string) => {
 		let ordinal = ordinals.get(id);
 		if (ordinal === undefined) {
@@ -125,9 +130,8 @@ export function cookPietiousTerrain(assets: RomAsset[]): void {
 		return ordinal;
 	};
 	const packRows = (rows: string[], subtype: string, phase: number) => {
-		append(Buffer.alloc((-size) & 3));
 		const directory = Buffer.alloc(rows.length * 4);
-		const start = append(directory);
+		const start = appendWords(directory);
 		for (let y = 0; y < rows.length; ++y) {
 			const bytes = [0];
 			let span = 0;
@@ -149,25 +153,27 @@ export function cookPietiousTerrain(assets: RomAsset[]): void {
 		}
 		return start;
 	};
-	const layout = (rows: string[], subtype: string, seal: boolean): BaseTerrain => {
+	const layout = (rows: string[], subtype: string, rocks: RoomObject[], seal: boolean): BaseTerrain => {
 		const tape = packRows(rows, subtype, 0);
-		if (!seal) return { rows, tape };
+		const collision = packPietiousCollision(rows, rocks, appendWords);
+		if (!seal) return { tape, collision };
 		const dissolve = [];
 		for (let phase = 1; phase <= SEAL_DISSOLVE_COUNT; ++phase) dissolve.push(packRows(rows, subtype, phase));
-		return { rows, tape, dissolve };
+		return { tape, collision, dissolve };
 	};
 
 	for (const room of Object.values(rooms)) {
 		const rows = screenRows(room);
+		const rocks = room.objects?.filter(object => object.type === 'rock') ?? [];
 		const seal = room.objects?.some(object => object.type === 'seal') === true;
-		room.terrain = { base: layout(rows, room.subtype, seal) };
+		room.terrain = { base: layout(rows, room.subtype, rocks, seal) };
 		if (room.stairs_open_rows !== undefined) {
 			const opened = rows.slice();
 			for (const [ordinal, row] of Object.entries(room.stairs_open_rows)) opened[Number(ordinal) - 1] = row;
-			room.terrain.stairs_open = layout(opened, room.subtype, false);
+			room.terrain.stairs_open = layout(opened, room.subtype, rocks, false);
 		}
 		if (seal) {
-			room.terrain.seal_cleared = layout(rows.map(row => row.replaceAll('$', '.')), room.subtype, true);
+			room.terrain.seal_cleared = layout(rows.map(row => row.replaceAll('$', '.')), room.subtype, rocks, true);
 		}
 	}
 	mapAsset.buffer = encodeBinary(rooms);

@@ -25,16 +25,6 @@ for i = 1, 63 do
 	water_surface_frame_imgids[i + 1] = 'water_surface_msx_' .. suffix
 	water_surface_timeline_frame_defs[i + 1] = { value = i + 1, hold = 1 }
 end
-local tile_chars<const> = terrain.tile_chars
-local solid_tiles<const> = terrain.solid_tiles
-local stair_left_tiles<const> = terrain.stair_left_tiles
-local stair_right_tiles<const> = terrain.stair_right_tiles
-local rock_tile_width<const> = rock_width / room_tile_size
-local rock_tile_height<const> = rock_height / room_tile_size
-local rock_logic_tiles<const> = {
-	{ tile_chars.rock_ul, tile_chars.rock_ur },
-	{ tile_chars.rock_dl, tile_chars.rock_dr },
-}
 local room_hidden_mode_events<const> = {
 	'transition',
 	'halo',
@@ -71,110 +61,6 @@ for i = 1, #room_visible_mode_events do
 	}
 end
 
-local set_row_byte<const> = function(row, tx, byte)
-	return row:sub(1, tx - 1) .. string.char(byte) .. row:sub(tx + 1)
-end
-
-local build_solids<const> = function(map_rows, tile_size, origin_x, origin_y)
-	local solids<const> = {}
-	local rows<const> = #map_rows
-	local cols<const> = #map_rows[1]
-	for y = 1, rows do
-		local row<const> = map_rows[y]
-		local run_start = 0
-		for x = 1, cols + 1 do
-			local is_solid<const> = x <= cols and solid_tiles[string.byte(row, x)]
-			if is_solid and run_start == 0 then
-				run_start = x
-			elseif (not is_solid) and run_start ~= 0 then
-				local run_width_tiles<const> = x - run_start
-				solids[#solids + 1] = {
-					x = origin_x + ((run_start - 1) * tile_size),
-					y = origin_y + ((y - 1) * tile_size),
-					w = run_width_tiles * tile_size,
-					h = tile_size,
-				}
-				run_start = 0
-			end
-		end
-	end
-	return solids
-end
-
-local build_logic_rows<const> = function(room_state)
-	local logic_rows<const> = {}
-	for y = 1, #room_state.map_rows do
-		logic_rows[y] = room_state.map_rows[y]
-	end
-
-	local destroyed_rock_ids<const> = room_state.progress.destroyed_rocks
-	for i = 1, #room_state.rocks do
-		local rock<const> = room_state.rocks[i]
-		if not destroyed_rock_ids[rock.member_id] then
-			local tx0<const> = ((rock.x - room_state.tile_origin_x) // room_state.tile_size) + 1
-			local ty0<const> = ((rock.y - room_state.tile_origin_y) // room_state.tile_size) + 1
-			for dy = 1, rock_tile_height do
-				local ty<const> = ty0 + dy - 1
-				local row = logic_rows[ty]
-				for dx = 1, rock_tile_width do
-					row = set_row_byte(row, tx0 + dx - 1, rock_logic_tiles[dy][dx])
-				end
-				logic_rows[ty] = row
-			end
-		end
-	end
-
-	return logic_rows
-end
-
-local build_stairs<const> = function(map_rows, tile_size, origin_x, origin_y, player_height)
-	local stairs<const> = {}
-	local row_count<const> = #map_rows
-	local column_count<const> = #map_rows[1]
-
-	for tx = 1, column_count - 1 do
-		local ty = 1
-		while ty <= row_count do
-			local row<const> = map_rows[ty]
-			local left<const> = string.byte(row, tx)
-			local right<const> = string.byte(row, tx + 1)
-			if stair_left_tiles[left] and stair_right_tiles[right] then
-				local min_row<const> = ty
-				local max_row
-				max_row = ty
-				ty = ty + 1
-				while ty <= row_count do
-					local next_row<const> = map_rows[ty]
-					local next_left<const> = string.byte(next_row, tx)
-					local next_right<const> = string.byte(next_row, tx + 1)
-					if not (stair_left_tiles[next_left] and stair_right_tiles[next_right]) then
-						break
-					end
-					max_row = ty
-					ty = ty + 1
-				end
-
-				local x<const> = origin_x + ((tx - 1) * tile_size)
-				local anchor_y<const> = origin_y + ((min_row - 1) * tile_size)
-				local top_y<const> = origin_y + ((min_row - 2) * tile_size) - player_height
-				local bottom_y<const> = origin_y + (max_row * tile_size) - player_height
-				stairs[#stairs + 1] = {
-					x = x,
-					anchor_y = anchor_y,
-					top_y = top_y,
-					bottom_y = bottom_y,
-					min_row = min_row,
-					max_row = max_row,
-				}
-			else
-				ty = ty + 1
-			end
-		end
-	end
-
-	return stairs
-end
-
 local water_kind_at_tile<const> = function(room_state, tx, ty)
 	local water<const> = room_state.water
 	if water == nil then
@@ -186,7 +72,8 @@ local water_kind_at_tile<const> = function(room_state, tx, ty)
 	if tx < 1 or tx > room_state.tile_columns then
 		return water_none
 	end
-	if solid_tiles[string.byte(room_state.logic_rows[ty], tx)] then
+	local walls<const>: *word = room_state.wall_rows
+	if (walls[ty - 1] & (1 << (tx - 1))) ~= 0 then
 		return water_none
 	end
 	if ty == water.surface_row then
@@ -214,22 +101,28 @@ local player_water_kind_at_tile<const> = function(room_state, tx, ty)
 	return water_body
 end
 
-local rebuild_room_logic<const> = function(room_state)
-	local logic_rows<const> = build_logic_rows(room_state)
-	room_state.logic_rows = logic_rows
-	room_state.solids = build_solids(logic_rows, room_tile_size, room_tile_origin_x, room_tile_origin_y)
-	room_state.stairs = build_stairs(logic_rows, room_tile_size, room_tile_origin_x, room_tile_origin_y, player_height)
-end
-
-local refresh_room_geometry<const> = function(room_state)
-	rebuild_room_logic(room_state)
-	room_state:rebuild_room_tiles()
+local bind_room_collision<const> = function(room_state)
+	-- The cooker uses the same rock ordinal order as the room template.
+	local rocks<const> = room_state.rocks
+	local destroyed<const> = room_state.progress.destroyed_rocks
+	local active_mask = 0
+	for i = 1, #rocks do
+		if not destroyed[rocks[i].member_id] then active_mask = active_mask | (1 << (i - 1)) end
+	end
+	local variants<const>: *word = terrain.tape + room_state.terrain.collision
+	local plan<const>: *word = terrain.tape + variants[active_mask]
+	local run_count<const> = plan[0]
+	local runs<const> = plan + (2 + room_state.tile_rows) * sizeof(word)
+	room_state.wall_rows = plan + 2 * sizeof(word)
+	room_state.solid_runs = runs
+	room_state.solid_run_count = run_count
+	room_state.stairs = runs + run_count * sizeof(word)
+	room_state.stair_count = plan[1]
 end
 
 local apply_room_template<const> = function(room_state, template)
 	local geometry<const> = template.terrain
 	local base<const> = geometry.base
-	local map_rows<const> = base.rows
 
 	room_state.room_number = template.room_number
 	room_state.world_number = template.world_number
@@ -243,9 +136,8 @@ local apply_room_template<const> = function(room_state, template)
 	room_state.tile_size = room_tile_size
 	room_state.tile_origin_x = room_tile_origin_x
 	room_state.tile_origin_y = room_tile_origin_y
-	room_state.tile_rows = #map_rows
-	room_state.tile_columns = #map_rows[1]
-	room_state.map_rows = map_rows
+	room_state.tile_rows = template.tile_rows
+	room_state.tile_columns = template.tile_columns
 	room_state.terrain = base
 	room_state.water = template.water
 	room_state.scene_id = template.scene_id
@@ -262,7 +154,7 @@ local apply_room_template<const> = function(room_state, template)
 	room_state.draaideuren = template.draaideuren
 	room_state.room_links = template.room_links
 	room_state.edge_gates = template.edge_gates
-	rebuild_room_logic(room_state)
+	bind_room_collision(room_state)
 end
 
 local room_object<const> = {}
@@ -272,8 +164,8 @@ setmetatable(room_object, { __index = object_2d })
 function room_object:select_terrain(variant)
 	if variant == self.terrain then return false end
 	self.terrain = variant
-	self.map_rows = variant.rows
-	refresh_room_geometry(self)
+	bind_room_collision(self)
+	self:rebuild_room_tiles()
 	return true
 end
 
@@ -302,7 +194,8 @@ function room_object:base_collision_flags_at_tile(tx, ty)
 		return collision_flags_none
 	end
 	local collision = 0
-	if solid_tiles[string.byte(self.logic_rows[ty], tx)] then
+	local walls<const>: *word = self.wall_rows
+	if (walls[ty - 1] & (1 << (tx - 1))) ~= 0 then
 		collision = collision | collision_flags_wall
 	end
 	if self:is_active_draaideur_at_tile(tx, ty) then
@@ -316,7 +209,7 @@ end
 
 function room_object:mark_rock_destroyed(rock_id)
 	self.progress.destroyed_rocks[rock_id] = true
-	rebuild_room_logic(self)
+	bind_room_collision(self)
 	self:rebuild_room_tiles()
 end
 
@@ -451,10 +344,14 @@ function room_object:has_collision_flags_in_rect(x, y, w, h, mask, include_eleva
 end
 
 function room_object:overlaps_solid_rect(x, y, w, h)
-	local solids<const> = self.solids
-	for i = 1, #solids do
-		local solid<const> = solids[i]
-		if rect_overlaps(x, y, w, h, solid.x, solid.y, solid.w, solid.h) then
+	local runs<const>: *word = self.solid_runs
+	for i = 0, self.solid_run_count - 1 do
+		local run<const> = runs[i]
+		local column<const> = run & 0xff
+		local row<const> = (run >> 8) & 0xff
+		local width<const> = run >> 16
+		if rect_overlaps(x, y, w, h, room_tile_origin_x + column * room_tile_size,
+			room_tile_origin_y + row * room_tile_size, width * room_tile_size, room_tile_size) then
 			return true
 		end
 	end
@@ -531,7 +428,6 @@ function room_object:ctor()
 	self.lithograph_instances = {}
 	self.shrine_instances = {}
 	self.world_entrance_instances = {}
-	self.logic_rows = {}
 	self.room_tile_count = 0
 	self.water_tile_count = 0
 	self.water_rows = 0

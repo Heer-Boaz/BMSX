@@ -83,6 +83,7 @@ local velocity<const> = require('cartlib/velocity')
 local clamp<const> = require('cartlib/util/clamp')
 local abs<const> = math.abs
 require('constants')
+local terrain<const> = require('room/terrain')
 local actioneffects<const> = require('cartlib/actioneffects')
 local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
@@ -1437,26 +1438,29 @@ end
 
 function player:pick_entry_stairs(direction)
 	local pose_x<const>, pose_y<const> = self:get_global_position()
-	local stairs<const> = self.room.stairs
+	local stairs<const>: *word = self.room.stairs
 	local best = nil
 	local best_dx = 0
+	local best_x = 0
 
-	for i = 1, #stairs do
+	for i = 0, self.room.stair_count - 1 do
 		local stair<const> = stairs[i]
-		if pose_x >= (stair.x - 4) and pose_x <= (stair.x + 8) then
+		local x<const>, top<const>, bottom<const> = terrain.stair_bounds(stair)
+		if pose_x >= (x - 4) and pose_x <= (x + 8) then
 			local y_ok
 			if direction < 0 then
-				local min_y<const> = stair.top_y + room_tile_size2
-				y_ok = pose_y >= min_y and pose_y <= stair.bottom_y
+				local min_y<const> = top + room_tile_size2
+				y_ok = pose_y >= min_y and pose_y <= bottom
 			else
-				local max_y<const> = stair.top_y + room_tile_size
-				y_ok = pose_y >= stair.top_y and pose_y <= max_y
+				local max_y<const> = top + room_tile_size
+				y_ok = pose_y >= top and pose_y <= max_y
 			end
 			if y_ok then
-				local dx<const> = abs(pose_x - stair.x)
-				if best == nil or dx < best_dx or (dx == best_dx and stair.x > best.x) then
+				local dx<const> = abs(pose_x - x)
+				if best == nil or dx < best_dx or (dx == best_dx and x > best_x) then
 					best = stair
 					best_dx = dx
+					best_x = x
 				end
 			end
 		end
@@ -1466,23 +1470,20 @@ function player:pick_entry_stairs(direction)
 end
 
 function player:search_stairs_at_locked_x(x, y_probe)
-	local stairs<const> = self.room.stairs
+	local stairs<const>: *word = self.room.stairs
 	local y_bottom<const> = y_probe + self.height
-	for i = 1, #stairs do
+	for i = 0, self.room.stair_count - 1 do
 		local stair<const> = stairs[i]
-		if stair.x == x then
-			if stair.top_y <= y_bottom and stair.bottom_y >= y_probe then
-				return stair
-			end
+		local stair_x<const>, top<const>, bottom<const> = terrain.stair_bounds(stair)
+		if stair_x == x and top <= y_bottom and bottom >= y_probe then
+			return stair
 		end
 	end
 	return nil
 end
 
 function player:apply_stairs_lock(stair)
-	self.stairs_x = stair.x
-	self.stairs_top_y = stair.top_y
-	self.stairs_bottom_y = stair.bottom_y
+	self.stairs_x, self.stairs_top_y, self.stairs_bottom_y = terrain.stair_bounds(stair)
 end
 
 function player:sync_stairs_after_vertical_room_switch(direction)
@@ -1497,7 +1498,7 @@ function player:sync_stairs_after_vertical_room_switch(direction)
 	end
 
 	self:apply_stairs_lock(stair)
-	self:set_global_position(stair.x, pose_y)
+	self:set_global_position(self.stairs_x, pose_y)
 	self.last_dx = 0
 	self.last_dy = 0
 	return true
@@ -1628,7 +1629,7 @@ function player:start_stairs(direction, stair, event_name)
 		local feet_y<const> = y + self.height
 		y = (((feet_y // room_tile_size) * room_tile_size) + room_tile_size) - self.height
 	end
-	self:set_global_position(stair.x, y)
+	self:set_global_position(self.stairs_x, y)
 	self.stairs_direction = direction
 	self.stairs_anim_distance = 0
 	self.stairs_anim_frame = 0
