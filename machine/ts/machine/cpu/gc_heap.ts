@@ -7,7 +7,7 @@ import * as Closure from './closure';
 import { UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from './upvalue';
 import * as Upvalue from './upvalue';
 import { TableRecords, type TableStringProbe } from './table';
-import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadLayout, ThreadRecords, allocatedThreadBackingBytes } from './thread_record';
+import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadLayout, ThreadRecords } from './thread_record';
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
 import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from './value';
 import type { ValueSlots } from './value_slots';
@@ -30,21 +30,20 @@ export const GC_VISIT_COUNT = 8;
 // The major trace owns one suspended record ahead of the gray queue.
 export const GC_TRACE_RECORD = 0x34;
 export const GC_TRACE_CURSOR = GC_TRACE_RECORD + 4;
-export const GC_ROOT_CURSOR = GC_TRACE_CURSOR + 4;
-export const GC_THREAD_TRACE_OPEN = GC_ROOT_CURSOR + 4;
+export const GC_THREAD_TRACE_OPEN = GC_TRACE_CURSOR + 4;
 const GC_THREAD_TRACE_TOP = GC_THREAD_TRACE_OPEN + 4;
-const GC_THREAD_TRACE_BILLED = GC_THREAD_TRACE_TOP + 4;
 // Remark revisits the weak list without consuming its head.
-export const GC_REMARK_VISIT_INDEX = GC_THREAD_TRACE_BILLED + 4;
+export const GC_REMARK_VISIT_INDEX = GC_THREAD_TRACE_TOP + 4;
 export const GC_REMARK_VISIT_STATE = GC_REMARK_VISIT_INDEX + 4;
 export const GC_MODE_META = GC_REMARK_VISIT_STATE + 4;
 export const GC_MODE_NODE = GC_MODE_META + 4;
 const GC_MODE_REMAINING = GC_MODE_NODE + 4;
+export const GC_ROOT_CURSOR = GC_MODE_REMAINING + 4;
 // Capture lanes use four bytes each and Table entries require a separate tag.
 const TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1;
 const TRACE_CURSOR_MASK = (1 << TRACE_CURSOR_BITS) - 1;
 const TABLE_MODE_PENDING = 4 << TRACE_CURSOR_BITS;
-const enum ThreadTraceStage { Frames, Protected, Values, Clear, Padding }
+const enum ThreadTraceStage { Frames, Protected, Values, Clear }
 const enum RemarkStage { None, Threads, Weak, Roots, Trace, ClearWeak }
 const THREAD_TRACE_OPEN_HEAD = 1; // An open cell's address is aligned.
 export const GC_VISIT_HEADER_BYTE = 3;
@@ -333,11 +332,11 @@ export class GcHeap {
 			for (let index = 0; index < count; ++index) work += this.markCell(this.cellRecordAddress(Closure.captureAddress(this.memory, address, index)));
 			return work;
 		}
-		return this.traceThread(address, atomic, limit, 0, THREAD_TRACE_OPEN_HEAD, 0, 0);
+		return this.traceThread(address, atomic, limit, 0, THREAD_TRACE_OPEN_HEAD, 0, false);
 	}
 	private traceThread(address: number, atomic: boolean, limit: number, cursor: number, open: number,
-		captureTop: number, billed: number): number {
-		const resumed = billed !== 0, layout = this.threadLayout;
+		captureTop: number, resumed: boolean): number {
+		const layout = this.threadLayout;
 		const memory = this.memory, strings = this.cpu.stringPool;
 		let work = 0;
 		if (!resumed) {
@@ -345,11 +344,11 @@ export class GcHeap {
 			this.markThread(memory.readRamRecordWord(address + ThreadField.Resumer));
 			this.markClosure(memory.readRamRecordWord(address + ThreadField.Entry));
 			this.markValue(valueFromTag(memory.readRamRecordByte(address + ThreadField.ErrorKind), memory.readRamRecordWord(address + ThreadField.ErrorWord)));
-			billed = THREAD_HEAP_BYTES >>> 2;
-			work = billed + strings.takeMarkWork();
+			work = (THREAD_HEAP_BYTES >>> 2) + strings.takeMarkWork();
 		}
 		this.threads.readLayout(address, layout);
 		let stage = cursor >>> TRACE_CURSOR_BITS, next = cursor & TRACE_CURSOR_MASK;
+		let complete = false;
 		// Only the logical indices survive this call; storage may grow while
 		// another CPU grant owns the Thread.
 		if (stage === ThreadTraceStage.Frames) {
@@ -358,7 +357,7 @@ export class GcHeap {
 					const frame = this.threads.frameAddress(layout, next);
 					this.markClosure(memory.readRamRecordWord(frame + FrameField.Closure));
 					open = memory.readRamRecordWord(frame + FrameField.OpenHead);
-					billed += FRAME_CONTROL_BYTES >>> 2; work += FRAME_CONTROL_BYTES >>> 2;
+					work += FRAME_CONTROL_BYTES >>> 2;
 				}
 				while (open !== 0 && work < limit) {
 					const cell = this.openCellAddress(open);
@@ -379,7 +378,7 @@ export class GcHeap {
 				const flags = memory.readRamRecordWord(continuation + ProtectedField.Flags);
 				if ((flags & PROTECTED_CALL_KIND_MASK) !== ProtectedCallKind.PCall && (flags & PROTECTED_CALL_HANDLER_BUILTIN) === 0)
 					this.markClosure(memory.readRamRecordWord(continuation + ProtectedField.Handler));
-				billed += PROTECTED_CALL_BYTES >>> 2; work += PROTECTED_CALL_BYTES >>> 2;
+				work += PROTECTED_CALL_BYTES >>> 2;
 			}
 			if (next >= layout.protectedDepth) { stage = ThreadTraceStage.Values; next = 0; }
 		}
@@ -398,10 +397,13 @@ export class GcHeap {
 				const words = ceilDiv4(stop * THREAD_STACK_SLOT_BYTES) - ceilDiv4(next * THREAD_STACK_SLOT_BYTES);
 				for (; next < stop; ++next)
 					this.markValue(valueFromTag(memory.readRamRecordByte(tags + next), memory.readRamRecordWord(layout.offset + next * 4)));
-				billed += words; work += words + strings.takeMarkWork();
+				work += words + strings.takeMarkWork();
 			}
 			if (next >= liveTop) {
-				stage = atomic ? ThreadTraceStage.Clear : ThreadTraceStage.Padding; next = liveTop;
+				if (atomic) {
+					stage = ThreadTraceStage.Clear;
+					next = liveTop;
+				} else complete = true;
 			}
 		}
 		if (stage === ThreadTraceStage.Clear) {
@@ -409,29 +411,20 @@ export class GcHeap {
 				const stop = Math.min(layout.capacity, next + Math.max(1, ((limit - work) / 2) | 0));
 				this.threads.clearStackRange(layout, next, stop);
 				const words = ceilDiv4(stop * THREAD_STACK_SLOT_BYTES) - ceilDiv4(next * THREAD_STACK_SLOT_BYTES);
-				billed += words; work += words;
+				work += words;
 				next = stop;
 			}
-			if (next >= layout.capacity) stage = ThreadTraceStage.Padding;
+			complete = next >= layout.capacity;
 		}
-		if (stage === ThreadTraceStage.Padding) {
-			const total = ceilDiv4(THREAD_HEAP_BYTES + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations));
-			if (work < limit) {
-				const words = Math.min(total - billed, limit - work);
-				billed += words; work += words;
+		if (complete) {
+			if (resumed) {
+				memory.writeRamRecordPair(this.controlOffset + GC_TRACE_RECORD, 0, 0);
+				memory.writeRamRecordPair(this.controlOffset + GC_THREAD_TRACE_OPEN, 0, 0);
 			}
-			if (billed === total) {
-				if (resumed) {
-					memory.writeRamRecordPair(this.controlOffset + GC_TRACE_RECORD, 0, 0);
-					memory.writeRamRecordWord(this.controlOffset + GC_THREAD_TRACE_OPEN, 0);
-					memory.writeRamRecordPair(this.controlOffset + GC_THREAD_TRACE_TOP, 0, 0);
-				}
-				return work;
-			}
+			return work;
 		}
 		memory.writeRamRecordPair(this.controlOffset + GC_TRACE_RECORD, address, (stage << TRACE_CURSOR_BITS) | next);
-		memory.writeRamRecordWord(this.controlOffset + GC_THREAD_TRACE_OPEN, open);
-		memory.writeRamRecordPair(this.controlOffset + GC_THREAD_TRACE_TOP, captureTop, billed);
+		memory.writeRamRecordPair(this.controlOffset + GC_THREAD_TRACE_OPEN, open, captureTop);
 		return work;
 	}
 	private traceCaptures(closure: number, next: number, count: number, work: number, limit: number): number {
@@ -453,8 +446,7 @@ export class GcHeap {
 				: this.traceTableEntries(record, cursor >>> TRACE_CURSOR_BITS, cursor & TRACE_CURSOR_MASK, 0, limit);
 			case THREAD_RECORD_KIND: return this.traceThread(record, atomic, limit, cursor,
 				this.memory.readRamRecordWord(this.controlOffset + GC_THREAD_TRACE_OPEN),
-				this.memory.readRamRecordWord(this.controlOffset + GC_THREAD_TRACE_TOP),
-				this.memory.readRamRecordWord(this.controlOffset + GC_THREAD_TRACE_BILLED));
+				this.memory.readRamRecordWord(this.controlOffset + GC_THREAD_TRACE_TOP), true);
 			default: return this.traceCaptures(record, cursor, Closure.captureCount(this.memory, record), 0, limit);
 		}
 	}
@@ -703,23 +695,25 @@ export class GcHeap {
 			return 1;
 		}
 		if (kind !== THREAD_RECORD_KIND || this.threadRecordAddress(address) !== address) return 1;
-		const layout = this.threadLayout;
-		this.threads.readLayout(address, layout);
-		const work = ceilDiv4(THREAD_HEAP_BYTES + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations));
 		if (!garbage) {
 			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, white);
-			const copied = compactThreads && address !== growingThread ? this.threads.shrinkStack(address, layout) : 0;
+			if (!compactThreads || address === growingThread) return 1;
+			const layout = this.threadLayout;
+			this.threads.readLayout(address, layout);
+			const copied = this.threads.shrinkStack(address, layout);
 			// Existing execution views follow raw relocation; they are never GC roots here.
 			if (copied !== 0) this.cpu.rebindRelocatedThread(address);
-			return work + 2 * ceilDiv4(copied);
+			return 1 + 2 * ceilDiv4(copied);
 		}
+		const layout = this.threadLayout;
+		this.threads.readLayout(address, layout);
 		this.cpu.retireThreadView(address);
 		this.budget.releaseRecord(layout.block, layout.capacity * THREAD_STACK_SLOT_BYTES);
 		this.budget.releaseRecord(layout.frameBlock, layout.frames * FRAME_CONTROL_BYTES);
 		if (layout.protectedBlock !== 0) this.budget.releaseRecord(layout.protectedBlock, layout.continuations * PROTECTED_CALL_BYTES);
 		this.budget.releaseRecord(address, THREAD_HEAP_BYTES);
 		this.onRecordRetirement?.(address);
-		return -work;
+		return -1;
 	};
 	private readonly sweepAndCompact = (growingThread: number, address: number): number => this.sweepRecord(growingThread, address, true);
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false): number {

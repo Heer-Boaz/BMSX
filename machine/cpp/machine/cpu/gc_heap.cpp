@@ -65,7 +65,7 @@ constexpr u32 threadSlotClass = heapClassIndex(THREAD_HEAP_BYTES);
 constexpr u32 TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1u;
 constexpr u32 TRACE_CURSOR_MASK = (1u << TRACE_CURSOR_BITS) - 1u;
 constexpr u32 TABLE_MODE_PENDING = 4u << TRACE_CURSOR_BITS;
-enum class ThreadTraceStage : u32 { Frames, Protected, Values, Clear, Padding };
+enum class ThreadTraceStage : u32 { Frames, Protected, Values, Clear };
 constexpr u32 THREAD_TRACE_OPEN_HEAD = 1u; // An open cell's address is aligned.
 }
 bool GcHeap::markValue(Value v) {
@@ -338,25 +338,23 @@ size_t GcHeap::trace(bool atomic, size_t limit) {
 			work += markCell(cellRecordAddress(ClosureRecord::captureAddress(memory, address, index)));
 		return work;
 	}
-	return traceThread(address, atomic, limit, 0u, THREAD_TRACE_OPEN_HEAD, 0u, 0u);
+	return traceThread(address, atomic, limit, 0u, THREAD_TRACE_OPEN_HEAD, 0u, false);
 }
 
-size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u32 open, u32 captureTop, u32 billed) {
-	const bool resumed = billed != 0u;
+size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u32 open, u32 captureTop, bool resumed) {
 	size_t work = 0;
 	if (!resumed) {
 		if (!atomic) appendVisit(GC_THREAD_VISITS, address);
 		markThread(ThreadRecord::read(memory, address, ThreadField::Resumer));
 		markClosure(ThreadRecord::read(memory, address, ThreadField::Entry));
 		markValue(ThreadRecord::error(memory, address));
-		billed = THREAD_HEAP_BYTES / sizeof(u32);
-		work = billed + m_stringPool.takeMarkWork();
+		work = THREAD_HEAP_BYTES / sizeof(u32) + m_stringPool.takeMarkWork();
 	}
 	const auto layout = ThreadRecord::storageLayout(memory, address);
 	const u32 depth = ThreadRecord::count(memory, address, ThreadField::FrameDepth);
 	auto stage = static_cast<ThreadTraceStage>(cursor >> TRACE_CURSOR_BITS);
 	u32 next = cursor & TRACE_CURSOR_MASK;
-	const auto chargeStorage = [&](u32 words) { billed += words; work += words; };
+	bool complete = false;
 	// Rebind logical indices every time. The frame and value allocations can
 	// move between grants, but neither a span nor a frame pointer is saved.
 	if (stage == ThreadTraceStage::Frames) {
@@ -365,7 +363,7 @@ size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u
 				const u32 frame = layout.frameAddress(next);
 				markClosure(memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Closure)));
 				open = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::OpenHead));
-				chargeStorage(FRAME_CONTROL_BYTES / sizeof(u32));
+				work += FRAME_CONTROL_BYTES / sizeof(u32);
 			}
 			while (open != 0u && work < limit) {
 				const u32 cell = openCellAddress(open);
@@ -391,7 +389,7 @@ size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u
 				&& (flags & PROTECTED_CALL_HANDLER_BUILTIN) == 0u) {
 				markClosure(memory.readRamRecordWord(continuation + static_cast<u32>(ProtectedField::Handler)));
 			}
-			chargeStorage(PROTECTED_CALL_BYTES / sizeof(u32));
+			work += PROTECTED_CALL_BYTES / sizeof(u32);
 		}
 		if (next >= depth) { stage = ThreadTraceStage::Values; next = 0u; }
 	}
@@ -411,13 +409,14 @@ size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u
 			const u32 words = ceilDiv4(static_cast<int>(stop * THREAD_STACK_SLOT_BYTES))
 				- ceilDiv4(static_cast<int>(next * THREAD_STACK_SLOT_BYTES));
 			while (next < stop) markValue(slots.get(next++));
-			chargeStorage(words);
-			work += m_stringPool.takeMarkWork();
+			work += words + m_stringPool.takeMarkWork();
 		}
 		if (next >= liveTop) {
 			// Only the final pass has the stable complete open-capture frontier.
-			stage = atomic ? ThreadTraceStage::Clear : ThreadTraceStage::Padding;
-			next = liveTop;
+			if (atomic) {
+				stage = ThreadTraceStage::Clear;
+				next = liveTop;
+			} else complete = true;
 		}
 	}
 	if (stage == ThreadTraceStage::Clear) {
@@ -425,27 +424,21 @@ size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u
 			const u32 stop = next + static_cast<u32>(std::min<size_t>(layout.valueCapacity - next,
 				std::max(size_t{1}, (limit - work) / 2u)));
 			layout.slots(memory).clear(next, stop - next);
-			chargeStorage(ceilDiv4(static_cast<int>(stop * THREAD_STACK_SLOT_BYTES))
-				- ceilDiv4(static_cast<int>(next * THREAD_STACK_SLOT_BYTES)));
+			work += ceilDiv4(static_cast<int>(stop * THREAD_STACK_SLOT_BYTES))
+				- ceilDiv4(static_cast<int>(next * THREAD_STACK_SLOT_BYTES));
 			next = stop;
 		}
-		if (next >= layout.valueCapacity) stage = ThreadTraceStage::Padding;
+		complete = next >= layout.valueCapacity;
 	}
-	if (stage == ThreadTraceStage::Padding) {
-		const u32 total = ceilDiv4(static_cast<int>(layout.allocationBytes()));
-		if (work < limit) chargeStorage(static_cast<u32>(std::min<size_t>(total - billed, limit - work)));
-		if (billed == total) {
-			if (resumed) {
-				memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, 0u, 0u);
-				memory.writeRamRecordWord(m_controlOffset + GC_THREAD_TRACE_OPEN, 0u);
-				memory.writeRamRecordPair(m_controlOffset + GC_THREAD_TRACE_TOP, 0u, 0u);
-			}
-			return work;
+	if (complete) {
+		if (resumed) {
+			memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, 0u, 0u);
+			memory.writeRamRecordPair(m_controlOffset + GC_THREAD_TRACE_OPEN, 0u, 0u);
 		}
+		return work;
 	}
 	memory.writeRamRecordPair(m_controlOffset + GC_TRACE_RECORD, address, (static_cast<u32>(stage) << TRACE_CURSOR_BITS) | next);
-	memory.writeRamRecordWord(m_controlOffset + GC_THREAD_TRACE_OPEN, open);
-	memory.writeRamRecordPair(m_controlOffset + GC_THREAD_TRACE_TOP, captureTop, billed);
+	memory.writeRamRecordPair(m_controlOffset + GC_THREAD_TRACE_OPEN, open, captureTop);
 	return work;
 }
 
@@ -473,8 +466,7 @@ size_t GcHeap::resumeTrace(u32 record, bool atomic, size_t limit) {
 	case THREAD_RECORD_KIND:
 		return traceThread(record, atomic, limit, cursor,
 			memory.readRamRecordWord(m_controlOffset + GC_THREAD_TRACE_OPEN),
-			memory.readRamRecordWord(m_controlOffset + GC_THREAD_TRACE_TOP),
-			memory.readRamRecordWord(m_controlOffset + GC_THREAD_TRACE_BILLED));
+			memory.readRamRecordWord(m_controlOffset + GC_THREAD_TRACE_TOP), true);
 	default:
 		return traceCaptures(record, cursor, ClosureRecord::captureCount(memory, record), 0u, limit);
 	}
@@ -763,24 +755,24 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 		return 1;
 	}
 	if (kind != THREAD_RECORD_KIND || heap.threadRecordAddress(address) == 0u) return 1;
-	const auto layout = ThreadRecord::storageLayout(heap.memory, address);
-	const i32 work = ceilDiv4(static_cast<int>(layout.allocationBytes()));
 	if (!garbage) {
 		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
-		const u32 relocated = sweep.compactThreads && address != sweep.growingThread
-			? ThreadRecord::shrinkStack(heap, address, layout) : 0u;
+		if (!sweep.compactThreads || address == sweep.growingThread) return 1;
+		const auto layout = ThreadRecord::storageLayout(heap.memory, address);
+		const u32 relocated = ThreadRecord::shrinkStack(heap, address, layout);
 		if (relocated != 0u) heap.m_cpu.rebindRelocatedThread(address);
-		return work + 2 * ceilDiv4(relocated);
+		return 1 + 2 * ceilDiv4(relocated);
 	}
 
 	// Clear any selected execution view before its old record or backing can
 	// be reused. View residency does not contribute a root or collector work.
+	const auto layout = ThreadRecord::storageLayout(heap.memory, address);
 	heap.m_cpu.retireThreadView(address);
 	heap.budget.releaseRecord(layout.block, layout.valueBytes());
 	heap.budget.releaseRecord(layout.frameBlock, layout.frameBytes());
 	if (layout.protectedBlock != 0u) heap.budget.releaseRecord(layout.protectedBlock, layout.protectedBytes());
 	heap.budget.releaseRecord(address, THREAD_HEAP_BYTES);
-	return -work;
+	return -1;
 }
 
 size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads) {

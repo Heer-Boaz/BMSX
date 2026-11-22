@@ -13,6 +13,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
+#include <vector>
 
 namespace {
 using namespace bmsx;
@@ -57,7 +58,9 @@ struct Machine {
 // and two registered globals with a 16-byte image map. Both lookup indexes
 // are uncharged. The collector still visits issued objects and intern buckets.
 constexpr int bootBytes = 232 + 12 + 15 + 697 + 16 + 2 * 9;
-constexpr int bootCollectionWork = 4 * 58 + 3 + 1 + 3 * 12 + 3 * 17 + 32;
+// Two Thread traces of its header and one active frame, an atomic trace
+// that also clears eight Value slots, and a single sweep visit.
+constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 1 + 3 + 1 + 3 * 12 + 3 * 17 + 32;
 
 void allocationAdmissionUsesLogicalBytes() {
 	Machine machine(image()); auto& cpu = machine.cpu;
@@ -114,7 +117,7 @@ void canonicalPoolAndRootRanges() {
 	frame.registers.set(1, valueString(cpu.stringPool().intern("é😀"))); //6 UTF8 bytes.
 	frame.writeControl(bmsx::FrameField::Top, 2);
 	require(cpu.luaHeap().usedBytes() == bootBytes + 72 + 22, "canonical reserved table capacity and UTF8 text bytes agree");
-	require(cpu.collectHeap() == bootCollectionWork + (8 + 2 + 8 + 1) + 3
+	require(cpu.collectHeap() == bootCollectionWork + (8 + 2 + 8 + 1) + 3 + 2 * 3
 		&& cpu.instructionBudgetRemaining == 7 && cpu.luaHeap().usedBytes() == bootBytes + 72 + 22,
 		"table scans reserved slots; the String is marked and visited without reading its bytes");
 	const auto threshold = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
@@ -129,6 +132,38 @@ void canonicalPoolAndRootRanges() {
 	cpu.reset();
 	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes,
 		"reset installation and raw maintenance collection do not execute or bill guest work");
+}
+
+void collectorWorkIgnoresInactiveThreadFrames() {
+	const auto collect = [](u32 reservedFrames) {
+		Machine machine(image()); auto& cpu = machine.cpu; auto& heap = cpu.gcHeap();
+		const auto retained = cpu.createTable().address();
+		auto& thread = *cpu.rootThread();
+		const u32 doomed = cpu.luaHeap().allocateThreadRecord(0u);
+		if (reservedFrames != THREAD_INITIAL_FRAMES) {
+			cpu.luaHeap().reserveThreadFrameStorage(thread.address, 0u, reservedFrames, valueNil());
+			thread.bindStack();
+			cpu.luaHeap().reserveThreadFrameStorage(doomed, 0u, reservedFrames, valueThread(doomed));
+		}
+		auto& frame = *thread.currentFrame;
+		frame.registers.set(0, valueTable(retained)); frame.setTop(1);
+		cpu.instructionBudgetRemaining = 9;
+		std::vector<std::pair<GcPhase, size_t>> steps;
+		do {
+			const auto phase = heap.phase();
+			const size_t work = heap.finalMarkPending()
+				? heap.stepFinalMark() : cpu.stepHeap(valueNil(), valueNil(), valueNil());
+			steps.emplace_back(phase, work);
+			require(steps.size() < 32, "the automatic cycle drains in bounded quanta");
+		} while (heap.active());
+		require(cpu.instructionBudgetRemaining == 9 && heap.tableRecordAddress(retained) == retained
+			&& heap.threadRecordAddress(doomed) == 0u, "live roots and reclamation do not depend on inactive frame reserve");
+		require(ThreadRecord::storageLayout(machine.memory, thread.address).frameCapacity == reservedFrames,
+			"automatic collection must not shrink the live reservation");
+		return steps;
+	};
+	require(collect(THREAD_INITIAL_FRAMES) == collect(1024u),
+		"inactive frame storage must not consume marking, atomic or sweep work");
 }
 
 void explicitCollectionAndNoReplay() {
@@ -1015,8 +1050,9 @@ void collectUnattachedThreadRecord() {
 	require(cpu.heapAllocator().occupiedBytes() == baselineBytes + bytes + TableRecord::HEADER_BYTES,
 		"the raw Thread and its sole table edge own only their guest allocations");
 	const size_t liveWork = gc.collect(valueThread(address), valueNil(), valueNil(), address);
-	require(liveWork == baselineWork + 4 * (bytes / sizeof(u32)) + TableRecord::HEADER_BYTES / sizeof(u32) + 1,
-		"three raw Thread traces and its sweep charge the physical allocation, plus one table trace and visit");
+	const size_t threadWork = 3 * (20 + 14) + 2 * 2 + capacity * THREAD_STACK_SLOT_BYTES / sizeof(u32) + 1;
+	require(liveWork == baselineWork + threadWork + TableRecord::HEADER_BYTES / sizeof(u32) + 1,
+		"trace the active frame and live Value, clear the final tail, and sweep each record once");
 	require(gc.threadRecordAddress(address) == address && gc.tableRecordAddress(child) == child
 		&& memory.readRamRecordWord(block) == child,
 		"a raw Thread root retains its unviewed frame's table slot");
@@ -1042,8 +1078,8 @@ void collectUnattachedThreadRecord() {
 		&& ThreadRecord::storageLayout(memory, address).block == reduced.block,
 		"restore preserves the sweep victim's issued RAM record and owned backing");
 	while (gc.active()) deadWork += gc.step(valueNil(), valueNil(), valueNil());
-	require(deadWork == baselineWork + reducedBytes / sizeof(u32) + 1,
-		"removing the raw Thread root leaves only its physical sweep and the table visit");
+	require(deadWork == baselineWork + 2,
+		"removing the raw Thread root leaves a sweep visit for the Thread and for its table");
 	require(gc.threadRecordAddress(address) == 0u && gc.tableRecordAddress(child) == 0u
 		&& memory.readRamRecordByte(address) == 0u && cpu.heapAllocator().occupiedBytes() == baselineBytes,
 		"reclamation releases the unviewed Thread header, its owned backing and its sole child");
@@ -1083,7 +1119,7 @@ void sweepCoroutineRecord() {
 	require(sweep() == liveWork, "an occupied Thread slot has the same visit charge whether retained or released");
 	require(gc.threadRecordAddress(address) == 0u && cpu.memory().readRamRecordByte(address) == 0
 		&& cpu.heapAllocator().occupiedBytes() == occupied - bytes, "sweep frees both the coroutine slot and its owned stack");
-	require(sweep() == liveWork - (bytes / sizeof(u32) - 1), "root Thread keeps the page and a vacant Thread slot still costs one visit");
+	require(sweep() == liveWork, "root Thread keeps the page and a vacant Thread slot still costs one visit");
 }
 
 void stackShrinkAndAdmission() {
@@ -1250,6 +1286,7 @@ int main(int argc, char** argv) {
 			return 0;
 		}
 		canonicalPoolAndRootRanges();
+		collectorWorkIgnoresInactiveThreadFrames();
 		allocationAdmissionUsesLogicalBytes(); tableReplacementAdmitsOnlyItsLogicalIncrease();
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();

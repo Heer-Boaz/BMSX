@@ -739,8 +739,9 @@ test('a rooted raw Thread frame retains its table edge and is collected without 
 	assert.equal(gc.allocationBytes(address), bytes);
 	assert.equal(cpu.heapAllocator.occupiedBytes(), baselineBytes + bytes + TableRecords.HEADER_BYTES);
 	const liveWork = gc.collect(valueThread(address), valueNil(), valueNil(), address);
-	assert.equal(liveWork, baselineWork + 4 * (bytes >>> 2) + (TableRecords.HEADER_BYTES >>> 2) + 1,
-		'three raw Thread traces and its sweep charge the physical allocation, plus one table trace and visit');
+	const threadWork = 3 * (20 + 14) + 2 * 2 + ((wide * THREAD_STACK_SLOT_BYTES) >>> 2) + 1;
+	assert.equal(liveWork, baselineWork + threadWork + (TableRecords.HEADER_BYTES >>> 2) + 1,
+		'trace the active frame and live Value, clear the final tail, and sweep each record once');
 	assert.equal(gc.threadRecordAddress(address), address);
 	assert.equal(gc.tableRecordAddress(child), child);
 	assert.equal(memory.readRamRecordWord(block), child);
@@ -766,8 +767,8 @@ test('a rooted raw Thread frame retains its table edge and is collected without 
 	assert.equal(cpu.rootThread.address, state.rootThreadAddress, 'restore rebinds the root while the pending victim remains a raw record');
 	assert.equal(gc.threadRecordAddress(address), address, 'the allocator still owns it until sweep');
 	while (gc.active()) deadWork += gc.step();
-	assert.equal(deadWork, baselineWork + (allocationBytes >>> 2) + 1,
-		'removing the raw Thread root leaves only its physical sweep and the table visit');
+	assert.equal(deadWork, baselineWork + 2,
+		'removing the raw Thread root leaves a sweep visit for the Thread and for its table');
 	assert.equal(gc.threadRecordAddress(address), 0);
 	assert.equal(gc.tableRecordAddress(child), 0);
 	assert.equal(memory.readRamRecordByte(address), 0);
@@ -807,7 +808,7 @@ test('a coroutine header is swept with the object page and its stack is released
 	assert.equal(gc.threadRecordAddress(address), 0);
 	assert.equal(cpu.memory.readRamRecordByte(address), 0);
 	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - bytes);
-	assert.equal(sweep(), liveWork - ((bytes >>> 2) - 1), 'the root Thread keeps the page, and the vacant slot still costs a visit');
+	assert.equal(sweep(), liveWork, 'the root Thread keeps the page, and the vacant slot still costs a visit');
 });
 
 test('sweep shrinks cold stacks with hysteresis, preserves caller windows and rebinds views', () => {

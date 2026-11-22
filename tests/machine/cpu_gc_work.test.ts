@@ -4,10 +4,12 @@ import { test } from 'node:test';
 import { CpuExecutionBackend, COMPILED_BLOCK_THRESHOLD } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
+import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_COLLECTION_TARGET_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
+import { THREAD_INITIAL_FRAMES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
-import { ValueTag, valueBool, valueFloatBits, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueFloatBits, valueNil, valueInteger, valueTable, valueString, valueThread } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -45,9 +47,10 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 // Closure, 17 RAM String records, two names and an 8-byte image map.
 // Both lookup indexes are storage, not logical occupancy.
 const bootThreadBytes = 80 + 40 + 112;
-const bootThreadWords = bootThreadBytes / 4;
 const bootBytes = bootThreadBytes + 12 + 15 + 697 + 8 + 2 * 9;
-const bootCollectionWork = 4 * bootThreadWords + 3 + 1 + 3 * 12 + 3 * 17 + 32;
+// Two Thread traces of its header and one active frame, an atomic trace
+// that also clears eight Value slots, and a single sweep visit.
+const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 1 + 3 + 1 + 3 * 12 + 3 * 17 + 32;
 
 test('physical GC work counts canonical scans, reclamation and three unique root passes without a cycle debit', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
@@ -61,7 +64,8 @@ test('physical GC work counts canonical scans, reclamation and three unique root
 	frame.registers.setString(1, cpu.stringPool.intern(textToByteString('é😀'))); //6 canonical UTF8 bytes, not3 UTF16 units.
 	frame.top = 2;
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 72 + 22);
-	assert.equal(cpu.gc.collect(), bootCollectionWork + (8 + 2 + 8 + 1) + 3, 'scan the Table, mark the String leaf and visit each record');
+	assert.equal(cpu.gc.collect(), bootCollectionWork + (8 + 2 + 8 + 1) + 3 + 2 * 3,
+		'trace the live Values, scan the Table, mark the String leaf and visit each record');
 	assert.equal(cpu.instructionBudgetRemaining, 7);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 72 + 22);
 	assert.equal(cpu.luaHeap.collectionTarget(), 1048576);
@@ -71,6 +75,36 @@ test('physical GC work counts canonical scans, reclamation and three unique root
 	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 72 + 22);
 	cpu.reset();
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'reset maintenance does not implicitly collect or bill the retained transient grant');
+});
+
+test('inactive frame reserve does not consume automatic GC quanta', () => {
+	const image = linkRawTestSystemBlua32(source());
+	const collect = (reservedFrames: number) => {
+		const { cpu, memory } = createTestSystemCpu(image), { gc, rootThread: thread } = cpu;
+		const retained = cpu.createTable(), doomed = cpu.createThread(0);
+		if (reservedFrames !== THREAD_INITIAL_FRAMES) {
+			cpu.luaHeap.reserveThreadFrameStorage(thread.address, 0, reservedFrames, valueNil());
+			thread.bindStack();
+			cpu.luaHeap.reserveThreadFrameStorage(doomed, 0, reservedFrames, valueThread(doomed));
+		}
+		thread.currentFrame!.registers.setTable(0, retained);
+		thread.currentFrame!.top = 1;
+		cpu.instructionBudgetRemaining = 9;
+		const steps: [GcPhase, number][] = [];
+		do {
+			const phase = gc.phase();
+			const work = gc.finalMarkPending() ? gc.stepFinalMark() : gc.step();
+			steps.push([phase, work]);
+			assert.ok(steps.length < 32, 'the automatic cycle drains in bounded quanta');
+		} while (gc.active());
+		assert.equal(cpu.instructionBudgetRemaining, 9);
+		assert.equal(gc.tableRecordAddress(retained), retained);
+		assert.equal(gc.threadRecordAddress(doomed), 0);
+		assert.equal(memory.readRamRecordWord(thread.address + ThreadField.FrameCapacity), reservedFrames,
+			'automatic collection keeps the live reservation');
+		return steps;
+	};
+	assert.deepEqual(collect(THREAD_INITIAL_FRAMES), collect(1024));
 });
 
 test('allocation admission and GC use logical bytes, not size-class slack', () => {

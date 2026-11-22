@@ -30,17 +30,17 @@ inline constexpr u32 GC_VISIT_COUNT = 8u;
 // The major trace owns one suspended record ahead of the gray queue.
 inline constexpr u32 GC_TRACE_RECORD = 0x34u;
 inline constexpr u32 GC_TRACE_CURSOR = GC_TRACE_RECORD + sizeof(u32);
-inline constexpr u32 GC_ROOT_CURSOR = GC_TRACE_CURSOR + sizeof(u32);
-inline constexpr u32 GC_THREAD_TRACE_OPEN = GC_ROOT_CURSOR + sizeof(u32);
+inline constexpr u32 GC_THREAD_TRACE_OPEN = GC_TRACE_CURSOR + sizeof(u32);
 inline constexpr u32 GC_THREAD_TRACE_TOP = GC_THREAD_TRACE_OPEN + sizeof(u32);
-inline constexpr u32 GC_THREAD_TRACE_BILLED = GC_THREAD_TRACE_TOP + sizeof(u32);
 // Independent of the weak-list head: remark revisits without consuming it.
-inline constexpr u32 GC_REMARK_VISIT_INDEX = GC_THREAD_TRACE_BILLED + sizeof(u32);
+inline constexpr u32 GC_REMARK_VISIT_INDEX = GC_THREAD_TRACE_TOP + sizeof(u32);
 inline constexpr u32 GC_REMARK_VISIT_STATE = GC_REMARK_VISIT_INDEX + sizeof(u32);
 inline constexpr u32 GC_MODE_META = GC_REMARK_VISIT_STATE + sizeof(u32);
 inline constexpr u32 GC_MODE_NODE = GC_MODE_META + sizeof(u32);
 inline constexpr u32 GC_MODE_REMAINING = GC_MODE_NODE + sizeof(u32);
+inline constexpr u32 GC_ROOT_CURSOR = GC_MODE_REMAINING + sizeof(u32);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD) % (2 * sizeof(u32)) == 0u);
+static_assert((HEAP_GC_CONTROL_OFFSET + GC_THREAD_TRACE_OPEN) % (2 * sizeof(u32)) == 0u);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_REMARK_VISIT_INDEX) % (2 * sizeof(u32)) == 0u);
 inline constexpr u32 GC_VISIT_HEADER_BYTE = 3u;
 inline constexpr u8 GC_VISIT_MEMBER = 0x40u;
@@ -119,7 +119,7 @@ private:
 	size_t trace(bool atomic, size_t limit);
 	size_t traceRootBanks(size_t& limit, size_t work);
 	size_t traceCaptures(u32 closure, u32 next, u32 count, size_t work, size_t limit);
-	size_t traceThread(u32 thread, bool atomic, size_t limit, u32 cursor, u32 open, u32 captureTop, u32 billed);
+	size_t traceThread(u32 thread, bool atomic, size_t limit, u32 cursor, u32 open, u32 captureTop, bool resumed);
 	size_t resumeTrace(u32 record, bool atomic, size_t limit);
 	size_t traceQuantum(bool atomic, size_t& limit, size_t work);
 	size_t remarkVisits(size_t allowance);
