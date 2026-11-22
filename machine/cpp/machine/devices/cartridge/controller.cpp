@@ -7,6 +7,7 @@
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/memory_map.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace bmsx {
@@ -33,7 +34,9 @@ CartridgeController::CartridgeController(const CartridgeSocketMediaPair& media)
 				CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET
 			)
 			: std::nullopt
-	} {}
+	} {
+	selectCpuSlot(0u);
+}
 
 void CartridgeController::connect(Memory& memory, IrqController& irq, DmaController& dma) {
 	m_irq = &irq;
@@ -45,6 +48,7 @@ void CartridgeController::connect(Memory& memory, IrqController& irq, DmaControl
 
 void CartridgeController::installRom(u32 slotIndex, std::span<const u8> rom) {
 	m_cards[slotIndex]->installRom(rom);
+	if (slotIndex == selectedSlot()) selectCpuSlot(m_selectionWord);
 }
 
 void CartridgeController::attachMappedPageInvalidator(
@@ -84,7 +88,7 @@ void CartridgeController::bindMappedPage(
 }
 
 void CartridgeController::reset() {
-	m_selectionWord = 0u;
+	selectCpuSlot(0u);
 	if (m_cards[0]) m_cards[0]->reset();
 	if (m_cards[1]) m_cards[1]->reset();
 	publishDreqLines(0u);
@@ -109,7 +113,7 @@ void CartridgeController::restoreState(const CartridgeControllerState& state) {
 			);
 		}
 	}
-	m_selectionWord = state.selectionWord;
+	selectCpuSlot(state.selectionWord);
 	for (u32 slotIndex = 0u; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
 		if (m_cards[slotIndex]) {
 			m_cards[slotIndex]->restoreState(*state.slots[slotIndex]);
@@ -171,7 +175,14 @@ void CartridgeController::writeSelectionThunk(
 	u32 value,
 	MappedBusSignals
 ) {
-	static_cast<CartridgeController*>(context)->m_selectionWord = value;
+	static_cast<CartridgeController*>(context)->selectCpuSlot(value);
+}
+
+void CartridgeController::selectCpuSlot(u32 selection) {
+	m_selectionWord = selection;
+	const auto* rom = romStorage(selectedSlot());
+	m_cpuRom = rom ? Span<const u8>(rom->data(), std::min<size_t>(rom->size(), CART_ROM_SIZE))
+		: Span<const u8>{};
 }
 
 u32 CartridgeController::readStatusThunk(void* context, u32, MappedBusSignals) {

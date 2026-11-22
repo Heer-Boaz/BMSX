@@ -23,7 +23,8 @@ struct NativeCodeBindings {
 	const u32* ramBusEnd = nullptr;
 	const u32* ramWriteGroups = nullptr;
 	const u32* ramCodeWatchWords = nullptr;
-	const Memory* memory = nullptr;
+	const Span<const u8>* systemRom = nullptr;
+	const Span<const u8>* cartridgeRom = nullptr;
 	StringPool* strings = nullptr;
 	// Only CPU-owned emission may call completion owners. Standalone blocks
 	// retain the base run-state ABI and ordinary CALL exits.

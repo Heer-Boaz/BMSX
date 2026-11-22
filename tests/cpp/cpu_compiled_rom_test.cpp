@@ -107,6 +107,9 @@ void directRomLoadsUseCurrentOwners() {
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
+	DeviceScheduler scheduler(cpu);
+	DmaController dma(memory, cpu, irq, scheduler);
+	memory.cartridgeController().connect(memory, irq, dma);
 	for (int format = 0; format <= 5; ++format) for (const bool displaced : {false, true}) {
 		const auto kind = static_cast<MemoryAccessKind>(format);
 		const u32 width = format == 1 ? 1u : format == 2 ? 2u : format == 5 ? 8u : 4u;
@@ -190,11 +193,21 @@ void romReplacementAndSelectionKeepRamCode() {
 		cpu.runUntilDepth(0, 9);
 		require(frame.registers.get(0) == valueInteger(55), "selected cartridge ROM replacement updates its existing storage identity");
 		if (!scalar) require(page.nativeBlocks->entries[0].get() == block, "cartridge ROM replacement preserves unrelated RAM code");
+		const std::array<u8, 3> tail{0x55, 0x33, 0x11};
+		machine.memory.cartridgeController().installRom(1, tail);
+		cpu.runUntilDepth(0, 9);
+		require(frame.registers.get(0) == valueInteger(0x113355),
+			"existing native code discovers a shortened ROM and preserves its zero-filled tail");
 		const auto state = machine.memory.cartridgeController().captureState();
 		machine.memory.cartridgeController().reset(); cpu.runUntilDepth(0, 9);
 		require(frame.registers.get(0) == valueInteger(22), "reset changes data selection without recreating the native entry");
 		machine.memory.cartridgeController().restoreState(state); cpu.runUntilDepth(0, 9);
-		require(frame.registers.get(0) == valueInteger(55), "restore changes the same selector used by direct reads");
+		require(frame.registers.get(0) == valueInteger(0x113355), "restore changes the same selector used by direct reads");
+		machine.memory.cartridgeController().installRom(1, std::span<const u8>(replacement).subspan(data, 16));
+		cpu.runUntilDepth(0, 9);
+		require(frame.registers.get(0) == valueInteger(55), "existing native code readmits a complete read after media growth");
+		if (!scalar) require(page.nativeBlocks->entries[0].get() == block,
+			"changing the selected data range never needs to retire the independent native RAM code");
 	}
 }
 

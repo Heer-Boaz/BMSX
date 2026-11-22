@@ -136,24 +136,28 @@ void NativeLowering::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {
 void NativeLowering::emitRomReads() {
 	auto* c = m_compiler;
 	for (const auto& read : m_romReads) {
+		using Rom = Span<const u8>;
 		sljit_set_label(read.ramMiss, sljit_emit_label(c));
-		m_cache.setState(read.registers);
-		m_cache.spillCall(false, 0);
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R0, 0);
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.memory));
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, read.width);
-		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3(P, P, 32, 32),
-			SLJIT_IMM, SLJIT_FUNC_ADDR(&Memory::bindCpuRomLoad));
-		m_cache.spillCall(true, 0);
+		auto* system = sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, CART_ROM_BASE);
+		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, CART_ROM_BASE);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.cartridgeRom));
 
-		// The bus owner selected the current aperture and physical bank. A
-		// partial transfer must still use the ordered bus path.
-		auto* bus = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_R0, 0);
+		// Bound the complete transfer to a live ROM aperture. A short image
+		// tail or another device still belongs to the ordered, scalar bus.
+		auto* range = sljit_emit_label(c);
+		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_R0, 0);
+		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, read.width);
+		fault(sljit_emit_cmp(c, SLJIT_GREATER, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), offsetof(Rom, size_)),
+			*read.bus, read.registers);
+		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(Rom, data_), SLJIT_R0, 0);
 		emitBackingLoad(read.format, true);
 		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), read.result);
-		sljit_set_label(bus, sljit_emit_label(c));
-		emitLeave(*read.bus, Charge::Pending);
+
+		sljit_set_label(system, sljit_emit_label(c));
+		fault(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, SYSTEM_ROM_SIZE - read.width),
+			*read.bus, read.registers);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.systemRom));
+		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), range);
 	}
 }
 

@@ -25,6 +25,7 @@ public:
 	const Span<const u8>* romStorage(u32 slotIndex) const {
 		return m_cards[slotIndex] ? m_cards[slotIndex]->romStorage() : nullptr;
 	}
+	const Span<const u8>& cpuRomStorage() const { return m_cpuRom; }
 	const u32& selectionWord() const { return m_selectionWord; }
 	void attachMappedPageInvalidator(MappedPageInvalidator& invalidator);
 	void detachMappedPageInvalidator();
@@ -81,11 +82,15 @@ private:
 	static void writeSelectionThunk(void* context, u32 address, u32 value, MappedBusSignals busSignals);
 	static u32 readStatusThunk(void* context, u32 address, MappedBusSignals busSignals);
 
+	void selectCpuSlot(u32 selection);
 	void routeCardEffects(u32 slotIndex, u32 effects);
 	void publishDreqLines(u32 slotIndex);
 
 	std::array<std::optional<CartridgeCard>, CARTRIDGE_SLOT_COUNT> m_cards;
 	u32 m_selectionWord = 0u;
+	// The ordinary CPU data aperture. Instruction fetch and DMA retain their
+	// own slot signals; the pointer and length are derived, never saved.
+	Span<const u8> m_cpuRom;
 	IrqController* m_irq;
 	DmaController* m_dma;
 };
