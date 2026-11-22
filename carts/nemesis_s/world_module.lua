@@ -8,6 +8,7 @@ local input_actioneffect_system<const> = require('cartlib/input/actioneffect/sys
 local input_system<const> = require('cartlib/input/input_system')
 local velocity_system<const> = require('cartlib/physics/velocity_system')
 local timeline_system<const> = require('cartlib/timeline/timeline_system')
+local sint_pop_flight_system<const> = require('enemies/sint_pop_flight_system')
 
 local gameplay_interval_vblanks<const> = 2
 
@@ -35,6 +36,7 @@ return {
 		velocity_system,
 		aem,
 		fsm_system,
+		sint_pop_flight_system,
 		actioneffect_system,
 		overlap_2d_system,
 		sprite_animation_system,

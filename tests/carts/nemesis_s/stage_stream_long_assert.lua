@@ -1,4 +1,5 @@
 local fixture<const> = require('tests/carts/nemesis_s/fixture')
+local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
 
 local count_overrides<const> = function(tiles)
@@ -87,14 +88,48 @@ return {kind='integration',phase_cycles={full_tape_and_repeated_checkpoint_strea
         pilot.body_collider:set_enabled(false)
         local initial_index<const> = stage.actor_cue_index
         local objects<const> = world:active_definition_view(ids_sint_pop_def).objects
-        local seen
-        local observed = false
-        local retired = false
+        local up<const> = { last_phase = -1 }
+        local down<const> = { last_phase = -1 }
+        local approach_vx<const> = velocity.pixels_per_second_to_velocity_q8(sint_pop_move_to_player_speed_x_px_per_second)
+        local retreat_vx<const> = velocity.pixels_per_second_to_velocity_q8(sint_pop_move_away_speed_x_px_per_second)
+        local observe<const> = function(track, vertical_speed)
+            local foe<const> = track.foe
+            if foe == nil or track.retired then return end
+            local phase<const> = foe.flight_phase
+            if foe._world_object_index == nil then
+                assert(track.last_phase == sint_pop_flight_retreat and foe:get_global_position() > playfield_width,
+                    'formation member retired before completing its retreat')
+                track.retired = true
+            elseif phase ~= track.last_phase then
+                assert(phase == track.last_phase + 1, 'formation skipped a flight phase')
+                local x<const> = foe:get_global_position()
+                local motion<const> = foe.motion
+                if phase == sint_pop_flight_approach then
+                    assert(x == playfield_width and motion.velocity_x == approach_vx and motion.velocity_y == 0,
+                        'the lead member moved before admission')
+                elseif phase == sint_pop_flight_vertical then
+                    assert(x <= sint_pop_vertical_start_x and motion.velocity_x == approach_vx
+                        and motion.velocity_y == velocity.pixels_per_second_to_velocity_q8(vertical_speed),
+                        'formation turned at the wrong threshold or with the wrong velocity')
+                else
+                    assert(x <= sint_pop_retreat_start_x and motion.velocity_x == retreat_vx and motion.velocity_y == 0,
+                        'formation retreated at the wrong threshold or with the wrong velocity')
+                end
+                track.last_phase = phase
+            end
+        end
         local peak_objects = #world._objects
         for elapsed=1,2500 do
             t:wait_ticks(1)
-            if not observed and #objects>0 then seen=objects[1]; observed=true end
-            if seen~=nil and seen._world_object_index==nil then retired=true; seen=nil end
+            if up.foe == nil or down.foe == nil then
+                for index=1,#objects do
+                    local foe<const> = objects[index]
+                    local track<const> = foe.group_type == sint_pop_group_up and up or down
+                    if track.foe == nil then track.foe = foe end
+                end
+            end
+            observe(up, sint_pop_move_vertical_up_speed_y_px_per_second)
+            observe(down, sint_pop_move_vertical_down_speed_y_px_per_second)
             if #world._objects>peak_objects then peak_objects=#world._objects end
             if elapsed%250==0 then
                 t:log(string.format('natural|%d|tiles=%d|admitted=%d|objects=%d|peak=%d|overrides=%d',
@@ -104,6 +139,6 @@ return {kind='integration',phase_cycles={full_tape_and_repeated_checkpoint_strea
         end
         assert(stage.tile_steps>100, 'natural stage did not scroll through early scenery')
         assert(stage.actor_cue_index>initial_index, 'the stage did not admit authored enemies')
-        assert(observed and retired, 'an admitted enemy was not retired during ordinary movement')
+        assert(up.retired and down.retired, 'both authored formations must complete their flight and retire')
     end,
 }}

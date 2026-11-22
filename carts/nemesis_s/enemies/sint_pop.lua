@@ -1,7 +1,5 @@
 local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
-local fsm_component<const> = require('cartlib/fsm/fsm_component')
-local fsm_library<const> = require('cartlib/fsm/library')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local prefab<const> = require('cartlib/world/prefab')
 local enemy<const> = require('enemies/enemy')
@@ -23,29 +21,6 @@ function sint_pop:ctor()
 	self.motion:set_velocity_pixels_per_second(sint_pop_move_to_player_speed_x_px_per_second, 0)
 end
 
-function sint_pop:update_move_to_player()
-	local pose_x<const> = self:get_global_position()
-	if pose_x > sint_pop_vertical_start_x then
-		return
-	end
-	return '/move_vertical'
-end
-
-function sint_pop:update_move_vertical()
-	local pose_x<const> = self:get_global_position()
-	if pose_x > sint_pop_retreat_start_x then
-		return
-	end
-	return '/move_away_from_player'
-end
-
-function sint_pop:update_move_away_from_player()
-	local pose_x<const> = self:get_global_position()
-	if pose_x > playfield_width then
-		self:mark_for_disposal()
-	end
-end
-
 function sint_pop:on_destroyed(projectile)
 	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local formation<const> = self.formation
@@ -65,35 +40,6 @@ function sint_pop:on_destroyed(projectile)
 end
 
 function sint_pop.register()
-	fsm_library.register(ids_sint_pop_fsm, {
-		initial = 'move_to_player',
-		states = {
-			move_to_player = {
-				update = sint_pop.update_move_to_player,
-			},
-			move_vertical = {
-				entering_state = function(self)
-					local velocity_y<const> = self.group_type == sint_pop_group_up
-						and sint_pop_move_vertical_up_speed_y_px_per_second
-						or sint_pop_move_vertical_down_speed_y_px_per_second
-					self.motion:set_velocity_pixels_per_second(
-						sint_pop_move_to_player_speed_x_px_per_second,
-						velocity_y
-					)
-				end,
-				update = sint_pop.update_move_vertical,
-			},
-			move_away_from_player = {
-				entering_state = function(self)
-					self.motion:set_velocity_pixels_per_second(
-						sint_pop_move_away_speed_x_px_per_second,
-						0
-					)
-				end,
-				update = sint_pop.update_move_away_from_player,
-			},
-		},
-	})
 	prefab.define({
 		def_id = ids_sint_pop_def,
 		class = sint_pop,
@@ -103,12 +49,12 @@ function sint_pop.register()
 				layer = collision_enemy_layer, mask = collision_enemy_mask,
 			}),
 			fixed_point_velocity_component.new,
-			fsm_component.factory({ ids_sint_pop_fsm }),
 		},
 		defaults = {
 			imgid = assets_sint_pop,
 			order = sint_pop_draw_z,
 			group_type = sint_pop_group_up,
+			flight_phase = sint_pop_flight_approach,
 			max_health = 1,
 			small_fry = true,
 		},
