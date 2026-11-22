@@ -235,8 +235,13 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	std::optional<u16> keyIndex, std::optional<ValueTag> resultTag, NativeStorePlan plan,
 	NativeTableReadPlan readPlan, std::optional<u8> temporary) {
 	auto* c = m_compiler;
+	const bool returnMiss = m_bindings.cpu && m_decodedPage && plan.hash == NativeHashStore::FixedField;
+	const auto& missState = m_cache.state();
 	if (!load && plan.nilValue == NativeNilValue::Nil) {
-		fault(sljit_emit_jump(c, SLJIT_JUMP), exit, m_cache.state());
+		auto* erase = sljit_emit_jump(c, SLJIT_JUMP);
+		if (returnMiss)
+			m_stringStoreMisses.push_back({{erase}, missState, &exit, sljit_emit_label(c), value, *keyIndex});
+		else fault(erase, exit, missState);
 		return;
 	}
 
@@ -270,8 +275,6 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 			m_cache.state(), &exit, sljit_emit_label(c), ownPrediction});
 		return;
 	}
-	const bool returnMiss = m_bindings.cpu && m_decodedPage && plan.hash == NativeHashStore::FixedField;
-	const auto& missState = m_cache.state();
 	if (!returnMiss) {
 		for (auto* guard : address) fault(guard, exit, missState);
 		fault(valueFailure, exit, missState);
@@ -283,10 +286,11 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 
 	// A predicted but absent entry or a nil source needs the hash mutation
 	// owner, not a write to the payload and tag of the candidate slot.
+	sljit_jump* erase = nullptr;
 	if (plan.nilValue == NativeNilValue::Dynamic) {
 		emitTag(value, SLJIT_R2);
-		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM,
-			static_cast<u8>(ValueTag::Nil)), exit, m_cache.state());
+		erase = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Nil));
+		if (!returnMiss) fault(erase, exit, missState);
 	}
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), wordOffset, SLJIT_R1, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), tagOffset, SLJIT_R3, 0);
@@ -294,20 +298,18 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	emitTableStoreBarrier(value, plan.barrier);
 	emitTableValueWrite(value);
 	if (returnMiss)
-		m_stringStoreMisses.push_back({{address[0], address[1], address[2], valueFailure},
-			missState, &exit, sljit_emit_label(c), value, *keyIndex, plan.nilValue});
+		m_stringStoreMisses.push_back({{address[0], address[1], address[2], valueFailure, erase},
+			missState, &exit, sljit_emit_label(c), value, *keyIndex});
 }
 
 void NativeLowering::emitStringStoreMisses() {
 	auto* c = m_compiler;
 	for (const auto& store : m_stringStoreMisses) {
 		auto* entry = sljit_emit_label(c);
-		for (auto* miss : store.misses) sljit_set_label(miss, entry);
+		for (auto* miss : store.misses)
+			if (miss) sljit_set_label(miss, entry);
 		m_cache.setState(store.registers);
 		emitRawLoad(store.value, SLJIT_R0, SLJIT_R3);
-		if (store.nilValue == NativeNilValue::Dynamic)
-			fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0,
-				SLJIT_IMM, static_cast<u8>(ValueTag::Nil)), *store.exit, store.registers);
 		// Load the receiver before reusing its scratch as a Value.
 		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver);
 		emitPoolWord(store.keyIndex, SLJIT_R2);
@@ -317,7 +319,8 @@ void NativeLowering::emitStringStoreMisses() {
 		sljit_get_local_base(c, SLJIT_R3, 0, hashOperand);
 		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4(32, P, 32, 32, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::assignNativeTableField));
 		m_cache.spillCall(true, 0);
-		fault(sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), *store.exit, store.registers);
+		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM,
+			TableRecord::HASH_STORE_DECLINED), *store.exit, store.registers);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(store.exit->tableStore.decoded), SLJIT_R0, 0);
 		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), store.resume);
 	}

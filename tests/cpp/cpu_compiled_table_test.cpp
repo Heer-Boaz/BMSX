@@ -1620,7 +1620,7 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	image.constants = {std::string("retained field")};
 	constexpr int receiverSlot = 256, methodSlot = 10, warmSlot = 12, spareSlot = 13, fullSlot = 14, metaSlot = 15;
-	constexpr int loop = 16, method = 32, methodArgs = 3;
+	constexpr int loop = 16, method = 32, methodArgs = 3, nilLoop = 48, nilFunction = 3;
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), methodSlot, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
@@ -1633,9 +1633,15 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 	writeInstruction(image.text, loop + 6, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
 	writeInstruction(image.text, method, static_cast<u8>(OpCode::SETI), 0, 1, 2);
 	writeInstruction(image.text, method + 1, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, nilLoop, static_cast<u8>(OpCode::KNIL), 2, 0, 0);
+	writeInstruction(image.text, nilLoop + 1, static_cast<u8>(OpCode::WIDE), 1, 0, 0);
+	writeInstruction(image.text, nilLoop + 2, static_cast<u8>(OpCode::SETFIELD), 0, 0, 2);
+	writeInstruction(image.text, nilLoop + 3, static_cast<u8>(OpCode::MOV), 9, 2, 0);
+	writeInstruction(image.text, nilLoop + 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = receiverSlot + 1},
 		{.firstWord = loop, .wordCount = 7, .maxStack = receiverSlot + 1},
-		{.firstWord = method, .wordCount = 2, .numParams = methodArgs, .maxStack = methodArgs}};
+		{.firstWord = method, .wordCount = 2, .numParams = methodArgs, .maxStack = methodArgs},
+		{.firstWord = nilLoop, .wordCount = 5, .maxStack = receiverSlot + 1}};
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 
 	CpuMachine native(image), scalar(image, true);
@@ -1676,10 +1682,11 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 		meta.setStringKey(strings.intern("unrelated metatable field"), valueInteger(9));
 		spare.setMetatableAddress(meta.address());
 	}
-	const auto start = [&](int table, Value value) {
+	const auto start = [&](int table, Value value, int function = 1) {
 		for (auto* machine : {&native, &scalar}) {
 			auto& lane = machine->cpu;
-			lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[1], pc);
+			const u32 entry = machine->rom.textAddress + (function == nilFunction ? nilLoop : loop) * INSTRUCTION_BYTES;
+			lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[function], entry);
 			auto registers = lane.activeThread()->currentFrame->registers;
 			registers.set(receiverSlot, registers.get(table));
 			registers.set(8, value);
@@ -1714,6 +1721,20 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 	const auto& writeExits = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::WriteField)].entries;
 	const auto warmExits = writeExits;
 #endif
+	start(spareSlot, valueNil());
+	const auto freeBeforeMiss = spare.hashFree();
+	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
+		&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == pc + 6 * INSTRUCTION_BYTES
+		&& isNil(cpu.readFrameRegister(0, 9)) && cpu.readFrameRegister(0, 11) == valueInteger(39)
+		&& prediction == -1 && spare.storageAddress() == initialStorage && spare.hashFree() == freeBeforeMiss
+		&& cpu.luaHeap().usedBytes() == initialBytes,
+		"nil to a missing field returns as a no-op when the metatable has no __newindex");
+	TableLookupResult absent;
+	spare.resolveStringAssignment(*cpu.stringPool().find("__newindex"), field, absent);
+	require(absent.status == TableLookupStatus::Store && absent.slot == -1 && isNil(spare.getStringKey(field)),
+		"the no-op does not create a new hash node or a tombstone");
+	requireParity(native, scalar);
+
 	start(spareSlot, raw);
 	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
 		&& cpu.instructionBudgetRemaining == 0 && cpu.readCurrentInstructionPc() == storePc
@@ -1740,8 +1761,18 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 		&& warm.getStringKey(field) == raw && warm.getInteger(1) == valueInteger(61) && prediction == originalSlot,
 		"a stale slot recovers the live false field despite callable __newindex and continues natively");
 	require(page.nativeBlocks->entries[word].get() == installed, "store feedback keeps the original body");
+	requireParity(native, scalar);
+
+	const auto warmStorage = warm.storageAddress();
+	const auto beforeOwnDelete = cpu.luaHeap().usedBytes();
+	start(warmSlot, valueNil());
+	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
+		&& cpu.instructionBudgetRemaining == 0 && cpu.getFrameDepth() == 1 && cpu.readFramePc(0) == suffixPc
+		&& prediction == -1 && isNil(warm.getStringKey(field)) && warm.getInteger(1) == valueInteger(61)
+		&& warm.storageAddress() == warmStorage && cpu.luaHeap().usedBytes() == beforeOwnDelete,
+		"a live own field deletes before callable __newindex and clears the prediction");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	require(writeExits == warmExits, "both warm prediction misses return without a materialized WriteField");
+	require(writeExits == warmExits, "warm insert, overwrite, nil no-op and deletion all return without WriteField");
 #endif
 	requireParity(native, scalar);
 
@@ -1755,34 +1786,87 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 	require(writeExits == warmExits + 1, "the same warmed WriteField site handles real growth");
 #endif
 	requireParity(native, scalar);
-	start(fullSlot, valueNil());
-	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
-		&& isNil(full.getStringKey(field)) && full.getInteger(1) == valueInteger(61)
-		&& cpu.readFramePc(0) == suffixPc, "nil removes the mapping without touching the array");
+	const auto fullStorage = full.storageAddress();
+	const auto beforeFullDelete = cpu.luaHeap().usedBytes();
+	for (int attempt = 0; attempt < 2; ++attempt) {
+		start(fullSlot, valueNil());
+		require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
+			&& prediction == -1 && isNil(full.getStringKey(field)) && full.getInteger(1) == valueInteger(61)
+			&& full.storageAddress() == fullStorage && cpu.luaHeap().usedBytes() == beforeFullDelete - charge
+			&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == suffixPc,
+			"nil pays no further storage or mapping charge after deleting this field once");
+		requireParity(native, scalar);
+	}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(writeExits == warmExits + 1, "deletion and the following tombstone no-op never enter WriteField");
+#endif
+	start(spareSlot, raw);
+	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded && prediction == insertedSlot,
+		"retrain the callsite to a different receiver's live field before exercising a decline");
 	requireParity(native, scalar);
 
 	for (auto* machine : {&native, &scalar}) {
 		auto& lane = machine->cpu;
 		asTable(lane.readFrameRegister(0, fullSlot), lane.gcHeap()).setMetatableAddress(valuePayload(lane.readFrameRegister(0, metaSlot)));
 	}
+	for (const Value value : {raw, valueNil()}) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	const auto beforeCallback = writeExits;
+		const auto beforeCallback = writeExits;
 #endif
-	start(fullSlot, raw);
-	require(test::runCpuParity(cpu, scalar.cpu, throughStore + methodArgs) == RunResult::Yielded
-		&& cpu.instructionBudgetRemaining == 0 && cpu.getFrameDepth() == 2 && cpu.readFramePc(0) == suffixPc
-		&& cpu.readFrameRegister(1, 0) == valueTable(full.address()) && cpu.readFrameRegister(1, 1) == valueString(field)
-		&& cpu.readFrameRegister(1, 2) == raw && isNil(full.getStringKey(field)),
-		"callable __newindex receives the exact live operands without an early own assignment");
+		start(fullSlot, value);
+		require(test::runCpuParity(cpu, scalar.cpu, throughStore + methodArgs) == RunResult::Yielded
+			&& cpu.instructionBudgetRemaining == 0 && cpu.getFrameDepth() == 2 && cpu.readFramePc(0) == suffixPc
+			&& cpu.readFrameRegister(1, 0) == valueTable(full.address()) && cpu.readFrameRegister(1, 1) == valueString(field)
+			&& cpu.readFrameRegister(1, 2) == value && isNil(full.getStringKey(field)) && prediction == insertedSlot,
+			"a declined store passes even nil to actual __newindex without clearing the unrelated prediction");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	require(writeExits == beforeCallback + 1, "the callable remains an ordinary WriteField observer");
+		require(writeExits == beforeCallback + 1, "the callable remains an ordinary WriteField observer");
 #endif
-	requireParity(native, scalar);
-	require(test::runCpuParity(cpu, scalar.cpu, cycles(OpCode::SETI) + cycles(OpCode::RET) + 2 * cycles(OpCode::MOV)) == RunResult::Yielded
-		&& cpu.getFrameDepth() == 1 && full.getInteger(1) == raw && isNil(full.getStringKey(field))
-		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39),
-		"the callback marks the receiver once and returns to the live suffix");
-	requireParity(native, scalar);
+		requireParity(native, scalar);
+		require(test::runCpuParity(cpu, scalar.cpu, cycles(OpCode::SETI) + cycles(OpCode::RET) + 2 * cycles(OpCode::MOV)) == RunResult::Yielded
+			&& cpu.getFrameDepth() == 1 && full.getInteger(1) == value && isNil(full.getStringKey(field))
+			&& cpu.readFrameRegister(0, 9) == value && cpu.readFrameRegister(0, 11) == valueInteger(39),
+			"the callback marks the receiver once and returns to the live suffix");
+		requireParity(native, scalar);
+	}
+
+	// A literal nil produced by KNIL is a different lowering than the live
+	// input above. Warm it on a missing key before testing an owned deletion.
+	const int nilThroughSuffix = cycles(OpCode::KNIL) + cycles(OpCode::SETFIELD) + cycles(OpCode::MOV);
+	const u32 nilPc = native.rom.textAddress + nilLoop * INSTRUCTION_BYTES;
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		asTable(lane.readFrameRegister(0, fullSlot), lane.gcHeap()).setMetatableAddress(0);
+	}
+	start(fullSlot, raw, nilFunction);
+	require(test::runCpuParity(cpu, scalar.cpu, NATIVE_WARM_SCALE * 16
+		* (nilThroughSuffix + cycles(OpCode::JMP))) == RunResult::Yielded, "the known-nil WIDE store warms separately");
+	const auto nilWord = (nilPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(cpu, page, nilWord);
+	const auto* nilBody = page.nativeBlocks->entries[nilWord].get();
+	const auto nilExit = std::ranges::find(nilBody->sideExits, NativeBlockExit::WriteField, &NativeBlockExitSite::exit);
+	require(nilExit != nilBody->sideExits.end() && nilExit->currentPc == nilPc + INSTRUCTION_BYTES,
+		"the compiled known-nil row has the actual WIDE checkpoint");
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		asTable(lane.readFrameRegister(0, fullSlot), lane.gcHeap()).setStringKey(field, raw);
+	}
+	const auto beforeKnownDelete = cpu.luaHeap().usedBytes();
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto beforeKnownNil = writeExits;
+#endif
+	for (int attempt = 0; attempt < 2; ++attempt) {
+		start(fullSlot, raw, nilFunction);
+		require(test::runCpuParity(cpu, scalar.cpu, nilThroughSuffix) == RunResult::Yielded
+			&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == nilPc + 4 * INSTRUCTION_BYTES
+			&& isNil(cpu.readFrameRegister(0, 9)) && isNil(full.getStringKey(field))
+			&& cpu.luaHeap().usedBytes() == beforeKnownDelete - charge && *nilExit->tableStore.decoded == -1,
+			"known nil deletes once, then returns from an absent mapping with the same exact charge and suffix");
+		requireParity(native, scalar);
+	}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(writeExits == beforeKnownNil, "the compiled known-nil lane also avoids WriteField");
+#endif
 #endif
 }
 } // namespace

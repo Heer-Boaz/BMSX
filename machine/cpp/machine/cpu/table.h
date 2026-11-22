@@ -55,8 +55,9 @@ public:
 	// The caller admits an own assignment with a Table key and a non-nil
 	// value. Declining leaves the table and collector unchanged.
 	bool tryAssignIdentityHash(Value key, Value value) noexcept;
-	// A non-nil field write may complete without a VM handoff. Return its
-	// actual hash slot, or -1 before mutation if the VM must handle it.
+	// A field write may complete without a VM handoff. Return the actual
+	// slot (-1 for completed nil), or HASH_STORE_DECLINED before mutation.
+	static constexpr i32 HASH_STORE_DECLINED = -2;
 	int tryAssignStringField(StringId key, Value value, StringId newIndexKey) noexcept;
 	bool getIntegerArrayKey(int key, Value& value) const {
 		return getArraySlot(arraySlot(key), value);
@@ -237,7 +238,7 @@ private:
 	int setHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED);
 	enum class HashStore : u8 { General, IdentityInPlace, FieldInPlace };
 	template <HashStore Policy>
-	int setNonNilHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED,
+	int assignHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED,
 		StringId newIndexKey = 0) noexcept(Policy != HashStore::General);
 	void removeFromHash(const Value& key, int slot);
 	void markHashNodeDead(size_t index);

@@ -168,13 +168,12 @@ private:
 	};
 	std::vector<SingleStringRead> m_singleStringReads;
 	struct StringStoreMiss {
-		std::array<sljit_jump*, 4> misses;
+		std::array<sljit_jump*, 5> misses;
 		State registers;
 		NativeBlockExitSite* exit;
 		sljit_label* resume;
 		int value;
 		u16 keyIndex;
-		NativeNilValue nilValue;
 	};
 	std::vector<StringStoreMiss> m_stringStoreMisses;
 	std::array<u8, NATIVE_BLOCK_MAX_INSTRUCTIONS> m_fieldAddressSpills;
