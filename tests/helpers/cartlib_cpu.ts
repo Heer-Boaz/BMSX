@@ -69,6 +69,7 @@ const CART_MODULE_FILES = [
 	['cartlib/timeline/scalar_channel_syntax', 'cartlib/timeline/scalar_channel_syntax.lua'],
 	['cartlib/timeline/scalar_channel', 'cartlib/timeline/scalar_channel.lua'],
 	['cartlib/timeline/event_lane_shape', 'cartlib/timeline/event_lane_shape.lua'],
+	['cartlib/timeline/packed_steps', 'cartlib/timeline/packed_steps.lua'],
 	['cartlib/timeline/track_program', 'cartlib/timeline/track_program.lua'],
 	['cartlib/timeline/sequence_program', 'cartlib/timeline/sequence_program.lua'],
 	['cartlib/timeline/step_track_syntax', 'cartlib/timeline/step_track_syntax.lua'],

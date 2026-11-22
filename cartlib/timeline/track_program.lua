@@ -1,6 +1,7 @@
 local channel_binding<const> = require('cartlib/timeline/channel_binding')
 local timeline_apply<const> = require('cartlib/timeline/apply')
 local event_lane_shape<const> = require('cartlib/timeline/event_lane_shape')
+local packed_steps<const> = require('cartlib/timeline/packed_steps')
 local timeline_playback<const> = require('cartlib/timeline/playback')
 local scalar_channel<const> = require('cartlib/timeline/scalar_channel')
 local timeline_track_evaluator<const> = require('cartlib/timeline/track_evaluator')
@@ -159,7 +160,7 @@ local compile_sample_track<const> = function(track, binding_index_by_id)
 	}
 end
 
-function track_program.prepare(track_defs, binding_index_by_id, phase)
+function track_program.prepare(track_defs, binding_index_by_id, phase, packed_frame_steps)
 	if #track_defs == 0 then
 		return empty_prepared
 	end
@@ -185,6 +186,7 @@ function track_program.prepare(track_defs, binding_index_by_id, phase)
 		event_defs = event_defs,
 		tag_defs = tag_defs,
 		step_defs = step_defs,
+		packed_frame_steps = packed_frame_steps,
 		output_paths = output_paths, writer_outputs = writer_outputs, spatial_groups = spatial_groups,
 	}
 	for index = 1, #track_defs do
@@ -277,14 +279,25 @@ function track_program.prepare(track_defs, binding_index_by_id, phase)
 					has_evaluation_callbacks = true
 					step_has_evaluation_callbacks = true
 				end
-				step_defs[#step_defs + 1] = {
-					apply = timeline_apply.compile_step_apply(track.path, track.apply, binding_index, writer_index, output_index),
-					keys = track.keys,
-				}
-				if track.keys[1].time_ms ~= nil then
-					has_time_steps = true
-				else
+				local apply<const> = timeline_apply.compile_step_apply(
+					track.path, track.apply, binding_index, writer_index, output_index
+				)
+				if packed_frame_steps ~= nil then
+					if track.boolean then
+						step_defs[#step_defs + 1] = function(entry, value, params, evaluation)
+							apply(entry, value ~= 0, params, evaluation)
+						end
+					else
+						step_defs[#step_defs + 1] = apply
+					end
 					has_frame_steps = true
+				else
+					step_defs[#step_defs + 1] = { apply = apply, keys = track.keys }
+					if track.keys[1].time_ms ~= nil then
+						has_time_steps = true
+					else
+						has_frame_steps = true
+					end
 				end
 			else
 				if track.apply ~= nil then
@@ -690,6 +703,7 @@ function track_program.compile(prepared, length, duration_ms)
 	for index = 1, #prepared.spatial_groups do
 		spatial_runners[index] = scalar_channel.compile_spatial(prepared.spatial_groups[index], length, spatial_initial_segments)
 	end
+	local packed_address<const> = prepared.packed_frame_steps
 	local tracks<const> = {
 		spatial_runners = spatial_runners, spatial_initial_segments = spatial_initial_segments,
 		spatial_cache_count = prepared.spatial_cache_count,
@@ -698,7 +712,9 @@ function track_program.compile(prepared, length, duration_ms)
 		position_value_runner = nil,
 		events = compile_events(prepared, length),
 		tags = compile_tags(prepared.tag_defs, length),
-		steps = compile_steps(prepared.step_defs, length, duration_ms),
+		steps = packed_address ~= nil
+			and packed_steps.bind(packed_address, prepared.step_defs)
+			or compile_steps(prepared.step_defs, length, duration_ms),
 		scalar_channels = scalar_channels,
 	}
 	if prepared.value_track_count > 0 then

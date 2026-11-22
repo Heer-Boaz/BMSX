@@ -84,7 +84,9 @@ function timeline_program.compile(definition)
 	local phase<const> = definition.phase or 'presentation'
 	if phase ~= 'physical' and phase ~= 'presentation' then error('unknown timeline phase: ' .. phase) end
 	local binding_ids<const>, binding_index_by_id<const> = compile_bindings(definition.bindings or empty_defs)
-	local prepared_tracks<const> = timeline_track_program.prepare(track_defs, binding_index_by_id, phase)
+	local prepared_tracks<const> = timeline_track_program.prepare(
+		track_defs, binding_index_by_id, phase, definition.packed_frame_steps
+	)
 	local subsequences<const> = timeline_sequence_program.compile(
 		subsequence_defs,
 		binding_index_by_id,

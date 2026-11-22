@@ -1,3 +1,4 @@
+local assets<const> = require('bmsx/assets')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local atlas<const> = require('cartlib/gx/atlas')
@@ -6,6 +7,7 @@ local scene_library<const> = require('cartlib/world/scene_library')
 local world_object<const> = require('cartlib/world/world_object')
 local title_scene<const> = require('scenes/title')
 local hangar_scene<const> = require('scenes/hangar')
+local packed_steps<const> = require('cartlib/timeline/packed_steps')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
@@ -30,8 +32,6 @@ local departure_blackout_timeline_id<const> = 'nemesis_s.title_screen.departure_
 local metalion_lift_end<const> = -56
 local selection_flash_cycles<const> = 10
 local hangar_blackout_duration_frames<const> = 8
-local hangar_duration_frames<const> = 194
-local lift_duration_frames<const> = 58
 local ignition_cycles<const> = 15
 local burst_hold_duration_frames<const> = 49
 local departure_blackout_duration_frames<const> = 107
@@ -40,15 +40,6 @@ local ship_images<const> = {
 	[1] = 'title_startup_metalion_burst_1',
 	[2] = 'title_startup_metalion_burst_2',
 	[3] = 'title_startup_metalion_burst_3',
-}
-local ship_position_keys<const> = {
-	{ frame = 0, value = 0 },
-	{ frame = 4, value = -8 },
-	{ frame = 13, value = -16 },
-	{ frame = 22, value = -24 },
-	{ frame = 31, value = -32 },
-	{ frame = 40, value = -40 },
-	{ frame = 49, value = -48 },
 }
 local selection_flash_frames<const> = timeline.build_frame_sequence({
 	{
@@ -73,24 +64,6 @@ local burst_cooldown_frames<const> = timeline.build_frame_sequence({
 	{ value = 2, hold = 8 },
 	{ value = 1, hold = 7 },
 })
--- These are physical VBlank boundaries observed in the 50 Hz Nemesis 2 ROM.
--- The lift's VRAM work makes its early light intervals deliberately non-uniform.
-local hangar_background_keys<const> = {
-	{ frame = 0, value = 1 },
-	{ frame = 4, value = 2 },
-	{ frame = 21, value = 1 },
-	{ frame = 39, value = 2 },
-	{ frame = 57, value = 1 },
-	{ frame = 74, value = 2 },
-	{ frame = 90, value = 1 },
-	{ frame = 106, value = 2 },
-	{ frame = 122, value = 1 },
-	{ frame = 138, value = 2 },
-	{ frame = 154, value = 1 },
-	{ frame = 170, value = 2 },
-	{ frame = 187, value = 1 },
-}
-
 local apply_background<const> = function(target, frame)
 	local background<const> = target.presentation.members.background
 	background.sprite_component:set_imgid(background.images[frame])
@@ -170,6 +143,10 @@ function title_screen:ondespawn()
 end
 
 local define_fsm<const> = function()
+	local source<const> = assets.bin_nemesis_s_presentation_steps_addr
+	local idle_clip<const>, idle_length<const> = packed_steps.clip(source, 9)
+	local hangar_clip<const>, hangar_length<const> = packed_steps.clip(source, 10)
+	local lift_clip<const>, lift_length<const> = packed_steps.clip(source, 11)
 	fsm_library.register(title_fsm_id, {
 		initial = 'hidden',
 		on = {
@@ -186,7 +163,8 @@ local define_fsm<const> = function()
 					[idle_timeline_id] = {
 						def = {
 							phase = 'presentation',
-							frames = timeline.range(24),
+							frames = timeline.range(idle_length),
+							packed_frame_steps = idle_clip,
 							playback_mode = 'loop',
 							clock_source = timeline_clock_source.frame,
 							tracks = {
@@ -194,21 +172,12 @@ local define_fsm<const> = function()
 									kind = 'value',
 									interpolation = 'step',
 									apply = apply_background,
-									keys = {
-										{ frame = 0, value = 1 },
-										{ frame = 8, value = 2 },
-										{ frame = 12, value = 1 },
-										{ frame = 20, value = 2 },
-									},
 								},
 								{
 									kind = 'value',
 									interpolation = 'step',
 									path = { 'presentation', 'members', 'selector', 'visible' },
-									keys = {
-										{ frame = 0, value = true },
-										{ frame = 12, value = false },
-									},
+									boolean = true,
 								},
 							},
 						},
@@ -267,7 +236,8 @@ local define_fsm<const> = function()
 							[hangar_timeline_id] = {
 								def = {
 									phase = 'presentation',
-									frames = timeline.range(hangar_duration_frames),
+									frames = timeline.range(hangar_length),
+									packed_frame_steps = hangar_clip,
 									playback_mode = 'once',
 									clock_source = timeline_clock_source.frame,
 									tracks = {
@@ -275,7 +245,6 @@ local define_fsm<const> = function()
 											kind = 'value',
 											interpolation = 'step',
 											apply = apply_background,
-											keys = hangar_background_keys,
 										},
 									},
 								},
@@ -289,7 +258,8 @@ local define_fsm<const> = function()
 									[lift_timeline_id] = {
 										def = {
 											phase = 'presentation',
-											frames = timeline.range(lift_duration_frames),
+											frames = timeline.range(lift_length),
+											packed_frame_steps = lift_clip,
 											playback_mode = 'once',
 											clock_source = timeline_clock_source.frame,
 											tracks = {
@@ -297,7 +267,6 @@ local define_fsm<const> = function()
 													kind = 'value',
 													interpolation = 'step',
 													apply = apply_ship_position,
-													keys = ship_position_keys,
 												},
 											},
 										},

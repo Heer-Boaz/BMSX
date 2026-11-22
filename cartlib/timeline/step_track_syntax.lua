@@ -98,6 +98,20 @@ local emit_position_frame_steps<const> = function(statements, values, runner_sym
 	})
 end
 
+local emit_frame_bucket<const> = function(values, runner_symbols, lane, frame)
+	local spans<const> = member_expression(reference(runner_symbols.steps), lane)
+	local arguments<const> = { reference(runner_symbols.entry) }
+	if values.packed_frame_steps then
+		arguments[2] = reference(runner_symbols.steps)
+		arguments[3] = spans
+		arguments[4] = reference(frame)
+	else
+		arguments[2] = index_expression(spans, reference(frame))
+	end
+	return call_statement(call_expression(reference(step_symbols.apply_step_bucket),
+		append_callback_arguments(arguments, values, runner_symbols)))
+end
+
 local emit_play_frame_steps<const> = function(statements, values, runner_symbols)
 	local sample_body<const> = {}
 	local discontinuity<const> = binary_expression(
@@ -146,16 +160,7 @@ local emit_play_frame_steps<const> = function(statements, values, runner_symbols
 				numeric_literal(0)
 			),
 			block({
-				call_statement(call_expression(
-					reference(step_symbols.apply_step_bucket),
-					append_callback_arguments({
-						reference(runner_symbols.entry),
-						index_expression(
-							member_expression(reference(runner_symbols.steps), 'by_frame'),
-							reference(runner_symbols.frame)
-						),
-					}, values, runner_symbols)
-				)),
+				emit_frame_bucket(values, runner_symbols, 'by_frame', runner_symbols.frame),
 			})
 		),
 		if_clause(
@@ -165,16 +170,7 @@ local emit_play_frame_steps<const> = function(statements, values, runner_symbols
 				numeric_literal(0)
 			),
 			block({
-				call_statement(call_expression(
-					reference(step_symbols.apply_step_bucket),
-					append_callback_arguments({
-						reference(runner_symbols.entry),
-						index_expression(
-							member_expression(reference(runner_symbols.steps), 'reverse_by_frame'),
-							reference(runner_symbols.previous_frame)
-						),
-					}, values, runner_symbols)
-				)),
+				emit_frame_bucket(values, runner_symbols, 'reverse_by_frame', runner_symbols.previous_frame),
 			})
 		),
 	})

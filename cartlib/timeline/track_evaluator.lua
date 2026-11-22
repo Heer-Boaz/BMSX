@@ -1,3 +1,4 @@
+local packed_steps<const> = require('cartlib/timeline/packed_steps')
 -- Runtime track evaluation is split into persistent, sampled, and one-shot
 -- phases. Compiled programs contain every lookup table used below; no authored
 -- track kind or binding name is inspected on the update path.
@@ -443,6 +444,7 @@ end
 
 function track_evaluator.compile_values(program, sample_tracks)
 	local has_frame_steps<const> = program.has_frame_steps
+	local packed_frame_steps<const> = program.packed_frame_steps ~= nil
 	local has_time_steps<const> = program.has_time_steps
 	local scalar_program<const> = program.scalar_program
 	local has_scalar_channels<const> = scalar_program.track_count > 0
@@ -499,6 +501,7 @@ function track_evaluator.compile_values(program, sample_tracks)
 	end
 	local syntax_values<const> = {
 		has_frame_steps = has_frame_steps,
+		packed_frame_steps = packed_frame_steps,
 		has_time_steps = has_time_steps,
 		step_has_evaluation_callbacks = program.step_has_evaluation_callbacks,
 		has_scalar_channels = has_scalar_channels,
@@ -536,6 +539,7 @@ function track_evaluator.compile_values(program, sample_tracks)
 		if program.has_spatial_frame_channels then shape = shape | 0x080 end
 		if program.has_spatial_time_channels then shape = shape | 0x100 end
 		if value_has_evaluation_context then shape = shape | 0x200 end
+		if packed_frame_steps then shape = shape | 0x400 end
 		factory = value_factories_without_samples[shape]
 	end
 	if factory == nil then
@@ -547,8 +551,8 @@ function track_evaluator.compile_values(program, sample_tracks)
 			track_evaluator_syntax.build(syntax_values),
 			'[timeline.track_values]',
 			{
-				apply_step_bucket = apply_step_bucket,
-				sample_step_tracks = sample_step_tracks,
+				apply_step_bucket = packed_frame_steps and packed_steps.apply_frame or apply_step_bucket,
+				sample_step_tracks = packed_frame_steps and packed_steps.sample or sample_step_tracks,
 				sample_time_step_tracks = sample_time_step_tracks,
 				sample_functions = sample_functions,
 				pingpong01 = pingpong01,
