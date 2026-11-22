@@ -627,7 +627,7 @@ size_t GcHeap::finishFinalMark(Value root0, Value root1, Value root2) {
 		work += finalMarkWork(root0, root1, root2, scopedRoots);
 		scopedRoots = remarkStage() <= RemarkStage::Weak;
 	} while (finalMarkPending());
-	return work;
+	return accountEpochWork(work);
 }
 
 size_t GcHeap::stepFinalMark() {
@@ -636,7 +636,7 @@ size_t GcHeap::stepFinalMark() {
 	GcStepMeasurement total(profile);
 	GcPhaseMeasurement atomicTime(profile.atomicNanoseconds);
 #endif
-	return finalMarkWork(valueNil(), valueNil(), valueNil(), false);
+	return accountEpochWork(finalMarkWork(valueNil(), valueNil(), valueNil(), false));
 }
 
 size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2, bool scopedRoots) {
@@ -776,9 +776,44 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 	return -1;
 }
 
+size_t GcHeap::accountEpochWork(size_t work) {
+	const u32 epochWork = memory.readRamRecordWord(m_controlOffset + GC_EPOCH_WORK) + static_cast<u32>(work);
+	if (active()) {
+		memory.writeRamRecordWord(m_controlOffset + GC_EPOCH_WORK, epochWork);
+	} else {
+		memory.writeRamRecordPair(m_controlOffset + GC_EPOCH_WORK, 0u, epochWork);
+		memory.writeRamRecordWord(m_controlOffset + GC_PHYSICAL_ASSIST, 0u);
+	}
+	return work;
+}
+
+void GcHeap::assistPhysicalPressureAtTick() {
+	const u32 claims = arena.claimedWholePages();
+	const u32 demand = claims - memory.readRamRecordWord(m_controlOffset + GC_PAGE_CLAIMS_AT_TICK);
+	if (demand != 0u) memory.writeRamRecordWord(m_controlOffset + GC_PAGE_CLAIMS_AT_TICK, claims);
+	// The existing maintenance boundary owns atomic work.
+	if (finalMarkPending()) return;
+	if (memory.readRamRecordWord(m_controlOffset + GC_PHYSICAL_ASSIST) == 0u) {
+		if (demand == 0u) return;
+		const u32 completed = memory.readRamRecordWord(m_controlOffset + GC_EPOCH_WORK);
+		const u32 previous = memory.readRamRecordWord(m_controlOffset + GC_LAST_EPOCH_WORK);
+		const u32 remaining = std::max(previous, completed) - completed;
+		// Allow the two phase handoffs at atomic entry and exit, plus the
+		// next interval's claims. This is an estimate, not a reservation.
+		const u64 quanta = remaining / GC_STEP_WORDS + (remaining % GC_STEP_WORDS != 0u) + 3u;
+		if (arena.availableWholePages() > demand * quanta) return;
+		memory.writeRamRecordWord(m_controlOffset + GC_PHYSICAL_ASSIST, 1u);
+	}
+	step(valueNil(), valueNil(), valueNil());
+}
+
 size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit) {
 	// Only explicit and space-exhausted collection enters a synchronous final pass.
 	if (finalMarkPending()) return finishFinalMark(root0, root1, root2);
+	return accountEpochWork(stepWork(root0, root1, root2, growingThread, compactThreads, limit));
+}
+
+size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcStepMeasurement total(profile);

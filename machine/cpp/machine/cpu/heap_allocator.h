@@ -66,6 +66,8 @@ public:
 	bool setFloor(u32 floorAddress);
 	u32 floorAddress() const;
 	u32 capacityBytes() const;
+	u32 availableWholePages() const;
+	u32 claimedWholePages() const;
 	// Physical class extents, for diagnostics only.
 	u32 occupiedBytes() const;
 	// Decode the page class and issued range. The record port selects alignment.

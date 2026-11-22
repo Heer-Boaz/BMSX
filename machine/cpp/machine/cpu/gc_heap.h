@@ -41,9 +41,14 @@ inline constexpr u32 GC_MODE_META = GC_REMARK_VISIT_STATE + sizeof(u32);
 inline constexpr u32 GC_MODE_NODE = GC_MODE_META + sizeof(u32);
 inline constexpr u32 GC_MODE_REMAINING = GC_MODE_NODE + sizeof(u32);
 inline constexpr u32 GC_ROOT_CURSOR = GC_MODE_REMAINING + sizeof(u32);
+inline constexpr u32 GC_EPOCH_WORK = GC_ROOT_CURSOR + sizeof(u32);
+inline constexpr u32 GC_LAST_EPOCH_WORK = GC_EPOCH_WORK + sizeof(u32);
+inline constexpr u32 GC_PAGE_CLAIMS_AT_TICK = GC_LAST_EPOCH_WORK + sizeof(u32);
+inline constexpr u32 GC_PHYSICAL_ASSIST = GC_PAGE_CLAIMS_AT_TICK + sizeof(u32);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD) % (2 * sizeof(u32)) == 0u);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_THREAD_TRACE_OPEN) % (2 * sizeof(u32)) == 0u);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_REMARK_VISIT_INDEX) % (2 * sizeof(u32)) == 0u);
+static_assert((HEAP_GC_CONTROL_OFFSET + GC_EPOCH_WORK) % (2 * sizeof(u32)) == 0u);
 inline constexpr u32 GC_VISIT_HEADER_BYTE = 3u;
 inline constexpr u8 GC_VISIT_MEMBER = 0x40u;
 
@@ -76,6 +81,7 @@ public:
 	size_t allocationBytes(u32 threadAddress) const;
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false,
 		size_t limit = GC_STEP_WORDS);
+	void assistPhysicalPressureAtTick();
 	// Only the stopped mutator may advance the final pass.
 	size_t stepFinalMark();
 	size_t finishFinalMark(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
@@ -130,6 +136,8 @@ private:
 	size_t traceQuantum(bool atomic, size_t limit, size_t work);
 	size_t remarkVisits(size_t allowance);
 	size_t remarkRoots(Value root0, Value root1, Value root2, size_t limit, size_t work, bool final);
+	size_t accountEpochWork(size_t work);
+	size_t stepWork(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit);
 	size_t finalMarkWork(Value root0, Value root1, Value root2, bool scopedRoots);
 	RemarkStage remarkStage() const {
 		return static_cast<RemarkStage>(memory.readRamRecordWord(m_controlOffset + GC_REMARK_VISIT_STATE) >> GC_GRAY_INDEX_BITS);

@@ -25,6 +25,8 @@ const MAX_PAGES = (MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE) >>> PAGE_SHIFT;
 // Management-area layout, as byte offsets from its base. Every field is a
 // little-endian word in guest RAM; partial-list links store page + 1.
 // Sweep position: page in the high bits, next slot ordinal in the low bits.
+const AVAILABLE_PAGE_COUNT = 0x000;
+const CLAIMED_PAGE_COUNT = 0x004;
 const SWEEP_CURSOR = 0x008;
 const PARTIAL_HEADS = 0x040;
 const AVAILABLE_PAGES = 0x200;
@@ -146,6 +148,14 @@ export class HeapAllocator {
 
 	public capacityBytes(): number {
 		return (this.pageLimit - this.floorPage()) << PAGE_SHIFT;
+	}
+
+	public availableWholePages(): number {
+		return this.memory.readRamRecordWord(this.management + AVAILABLE_PAGE_COUNT);
+	}
+
+	public claimedWholePages(): number {
+		return this.memory.readRamRecordWord(this.management + CLAIMED_PAGE_COUNT);
 	}
 
 	/** Physical class extents, for diagnostics only. */
@@ -384,6 +394,8 @@ export class HeapAllocator {
 			if (bits !== 0) {
 				const bit = 31 - Math.clz32(bits);
 				this.memory.writeRamRecordWord(offset, stored & ~(1 << bit));
+				this.memory.writeRamRecordPair(this.management + AVAILABLE_PAGE_COUNT,
+					this.availableWholePages() - 1, this.claimedWholePages() + 1);
 				return (word << 5) + bit;
 			}
 		}
@@ -400,6 +412,7 @@ export class HeapAllocator {
 			count += 1;
 			if (count === pages) {
 				this.setAvailable(page, page + pages, false);
+				this.memory.writeRamRecordWord(this.management + CLAIMED_PAGE_COUNT, this.claimedWholePages() + pages);
 				return page;
 			}
 		}
@@ -433,6 +446,8 @@ export class HeapAllocator {
 	}
 
 	private setAvailable(first: number, end: number, available: boolean): void {
+		const pages = end - first, previous = this.availableWholePages();
+		this.memory.writeRamRecordWord(this.management + AVAILABLE_PAGE_COUNT, available ? previous + pages : previous - pages);
 		while (first < end) {
 			const word = first >>> 5;
 			const wordEnd = (word + 1) << 5;

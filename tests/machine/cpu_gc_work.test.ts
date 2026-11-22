@@ -213,6 +213,52 @@ test('table growth retries its actual physical reserve before starting a fresh G
 	}
 });
 
+test('whole-page demand advances a large live epoch before a table replacement needs recovery', () => {
+	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { gc, heapAllocator: arena } = cpu, { tables } = gc;
+	const owner = cpu.createTable(512, 0);
+	const frame = cpu.rootThread.currentFrame!;
+	frame.registers.setTable(0, owner); frame.top = 1;
+	for (let key = 1; key <= 512; ++key) tables.setInteger(owner, key, valueInteger(key));
+	frame.registers.setTable(1, cpu.createTable(225280, 0)); frame.top = 2;
+	const garbage = cpu.createTable(65536, 0);
+	frame.registers.setTable(2, garbage); frame.top = 3;
+	const initialFree = 140;
+	while (arena.availableWholePages() > initialFree) {
+		const free = arena.availableWholePages(), claims = arena.claimedWholePages();
+		assert.notEqual(arena.allocate(HEAP_PAGE_SIZE, true), 0);
+		assert.equal(arena.availableWholePages(), free - 1);
+		assert.equal(arena.claimedWholePages(), claims + 1);
+	}
+	gc.assistPhysicalPressureAtTick();
+	gc.collect();
+	frame.top = 2;
+	const white = gc.white();
+	cpu.instructionBudgetRemaining = 89;
+	let physicalSteps = 0;
+	for (let tick = 0; tick + 1 < initialFree; ++tick) {
+		assert.notEqual(arena.allocate(HEAP_PAGE_SIZE, true), 0);
+		const wasActive = gc.active();
+		gc.assistPhysicalPressureAtTick();
+		if (wasActive || gc.active()) ++physicalSteps;
+		for (let steps = 0; gc.finalMarkPending(); ++steps) {
+			assert.ok(steps < 8);
+			gc.stepFinalMark();
+		}
+	}
+	assert.ok(physicalSteps >= 50 && !gc.active() && gc.white() === (white ^ 1));
+	assert.equal(gc.tableRecordAddress(garbage), 0);
+	assert.ok(arena.availableWholePages() > 2);
+	gc.assistPhysicalPressureAtTick();
+	assert.equal(gc.active(), false, 'no new page claims do not trigger another epoch');
+	const recoveredWhite = gc.white();
+	tables.setInteger(owner, 513, valueInteger(73));
+	assert.equal(gc.white(), recoveredWhite, 'the real backing grow requires no synchronous recovery');
+	assert.equal(tables.getInteger(owner, 512), valueInteger(512));
+	assert.equal(tables.getInteger(owner, 513), valueInteger(73));
+	assert.equal(cpu.instructionBudgetRemaining, 89);
+});
+
 test('allocation assist target is only restored by the RAM checkpoint', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const target = cpu.heapAllocator.managementOffset() + HEAP_COLLECTION_TARGET_OFFSET;

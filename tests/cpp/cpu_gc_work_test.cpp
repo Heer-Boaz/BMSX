@@ -155,6 +155,56 @@ void tableBackingRecoveryRetriesEachEpoch() {
 	}
 }
 
+void physicalPressurePacesLargeLiveHeap() {
+	Machine machine(image()); auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap(); auto& arena = cpu.heapAllocator();
+	auto owner = cpu.createTable(512, 0);
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(owner.address())); frame.setTop(1);
+	for (int key = 1; key <= 512; ++key) owner.setInteger(key, valueInteger(key));
+	frame.registers.set(1, valueTable(cpu.createTable(225280, 0).address())); frame.setTop(2);
+	const u32 garbage = cpu.createTable(65536, 0).address();
+	frame.registers.set(2, valueTable(garbage)); frame.setTop(3);
+	constexpr u32 initialFree = 140u;
+	while (arena.availableWholePages() > initialFree) {
+		const u32 free = arena.availableWholePages(), claims = arena.claimedWholePages();
+		require(arena.allocate(HEAP_PAGE_SIZE, true) != 0u && arena.availableWholePages() == free - 1u
+			&& arena.claimedWholePages() == claims + 1u, "another physical page was actually claimed");
+	}
+	heap.assistPhysicalPressureAtTick();
+	cpu.collectHeap(); // calibrate a completed live epoch, then make the large reserve garbage.
+	frame.setTop(2);
+	const u8 white = heap.white();
+	cpu.instructionBudgetRemaining = 89;
+	u32 physicalSteps = 0u;
+	for (u32 tick = 0; tick + 1u < initialFree; ++tick) {
+		require(arena.allocate(HEAP_PAGE_SIZE, true) != 0u, "claim one whole page per interval");
+		const u32 control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+		const u32 before = machine.memory.readRamRecordWord(control + GC_EPOCH_WORK);
+		const bool wasActive = heap.active();
+		heap.assistPhysicalPressureAtTick();
+		const auto after = machine.memory.readRamRecordWord(control + (heap.active() ? GC_EPOCH_WORK : GC_LAST_EPOCH_WORK));
+		if (wasActive || heap.active()) {
+			require(after - before <= GC_STEP_WORDS, "a physical pulse runs one ordinary collector quantum");
+			++physicalSteps;
+		}
+		for (u32 steps = 0; heap.finalMarkPending(); ++steps) {
+			require(steps < 8u, "atomic work uses its regular deferred scheduler boundary");
+			heap.stepFinalMark();
+		}
+	}
+	require(physicalSteps >= 50u && !heap.active() && heap.white() == (white ^ 1u)
+		&& heap.tableRecordAddress(garbage) == 0u && arena.availableWholePages() > 2u,
+		"the larger epoch completed before the physical page runway ran out");
+	heap.assistPhysicalPressureAtTick();
+	require(!heap.active(), "without additional page claims an idle collector does not start again");
+	const u8 recoveredWhite = heap.white();
+	owner.setInteger(513, valueInteger(73));
+	require(heap.white() == recoveredWhite && owner.getInteger(512) == valueInteger(512)
+		&& owner.getInteger(513) == valueInteger(73) && cpu.instructionBudgetRemaining == 89,
+		"the two-page table grow needs no synchronous epoch and leaves the guest charge unchanged");
+}
+
 void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	require(cpu.luaHeap().usedBytes() == bootBytes, "boot pool is the literal canonical allocation sum, not host object sizes");
@@ -1459,6 +1509,7 @@ int main(int argc, char** argv) {
 		collectorWorkIgnoresInactiveThreadFrames();
 		allocationAdmissionUsesLogicalBytes(); tableReplacementAdmitsOnlyItsLogicalIncrease();
 		tableBackingRecoveryRetriesEachEpoch();
+		physicalPressurePacesLargeLiveHeap();
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); collectionPrimitiveCyclesIgnoreHeapShape();

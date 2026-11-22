@@ -40,6 +40,10 @@ export const GC_MODE_META = GC_REMARK_VISIT_STATE + 4;
 export const GC_MODE_NODE = GC_MODE_META + 4;
 const GC_MODE_REMAINING = GC_MODE_NODE + 4;
 export const GC_ROOT_CURSOR = GC_MODE_REMAINING + 4;
+const GC_EPOCH_WORK = GC_ROOT_CURSOR + 4;
+const GC_LAST_EPOCH_WORK = GC_EPOCH_WORK + 4;
+const GC_PAGE_CLAIMS_AT_TICK = GC_LAST_EPOCH_WORK + 4;
+const GC_PHYSICAL_ASSIST = GC_PAGE_CLAIMS_AT_TICK + 4;
 // Capture lanes use four bytes each and Table entries require a separate tag.
 const TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1;
 const TRACE_CURSOR_MASK = (1 << TRACE_CURSOR_BITS) - 1;
@@ -581,14 +585,14 @@ export class GcHeap {
 				work += this.finalMarkWork(t0, t1, t2, scopedRoots);
 				scopedRoots = this.remarkStage() <= RemarkStage.Weak;
 			} while (this.finalMarkPending());
-			return work;
+			return this.accountEpochWork(work);
 		} finally { this.diagnostics?.endStep(); }
 	}
 
 	public stepFinalMark(): number {
 		this.diagnostics?.beginStep();
 		this.diagnostics?.beginAtomic();
-		try { return this.finalMarkWork(valueNil(), valueNil(), valueNil(), false); }
+		try { return this.accountEpochWork(this.finalMarkWork(valueNil(), valueNil(), valueNil(), false)); }
 		finally { this.diagnostics?.endStep(); }
 	}
 	private finalMarkWork(t0: Value, t1: Value, t2: Value, scopedRoots: boolean): number {
@@ -712,12 +716,41 @@ export class GcHeap {
 		return -1;
 	};
 	private readonly sweepAndCompact = (growingThread: number, address: number): number => this.sweepRecord(growingThread, address, true);
+	private accountEpochWork(work: number): number {
+		const epochWork = this.memory.readRamRecordWord(this.controlOffset + GC_EPOCH_WORK) + work;
+		if (this.active()) {
+			this.memory.writeRamRecordWord(this.controlOffset + GC_EPOCH_WORK, epochWork);
+		} else {
+			this.memory.writeRamRecordPair(this.controlOffset + GC_EPOCH_WORK, 0, epochWork);
+			this.memory.writeRamRecordWord(this.controlOffset + GC_PHYSICAL_ASSIST, 0);
+		}
+		return work;
+	}
+
+	public assistPhysicalPressureAtTick(): void {
+		const claims = this.arena.claimedWholePages();
+		const demand = (claims - this.memory.readRamRecordWord(this.controlOffset + GC_PAGE_CLAIMS_AT_TICK)) >>> 0;
+		if (demand !== 0) this.memory.writeRamRecordWord(this.controlOffset + GC_PAGE_CLAIMS_AT_TICK, claims);
+		if (this.finalMarkPending()) return;
+		if (this.memory.readRamRecordWord(this.controlOffset + GC_PHYSICAL_ASSIST) === 0) {
+			if (demand === 0) return;
+			const completed = this.memory.readRamRecordWord(this.controlOffset + GC_EPOCH_WORK);
+			const previous = this.memory.readRamRecordWord(this.controlOffset + GC_LAST_EPOCH_WORK);
+			const remaining = Math.max(previous, completed) - completed;
+			// Atomic entry and exit can end a pulse early. Leave room for the next claims.
+			const quanta = (((remaining + GC_STEP_WORDS - 1) / GC_STEP_WORDS) >>> 0) + 3;
+			if (this.arena.availableWholePages() > demand * quanta) return;
+			this.memory.writeRamRecordWord(this.controlOffset + GC_PHYSICAL_ASSIST, 1);
+		}
+		this.step();
+	}
+
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false,
 		limit = GC_STEP_WORDS): number {
 		// Explicit and space-exhausted collection can finish the final pass synchronously.
 		if (this.finalMarkPending()) return this.finishFinalMark(t0, t1, t2);
 		this.diagnostics?.beginStep();
-		try { return this.stepWork(t0, t1, t2, growingThread, compactThreads, limit); }
+		try { return this.accountEpochWork(this.stepWork(t0, t1, t2, growingThread, compactThreads, limit)); }
 		finally { this.diagnostics?.endStep(); }
 	}
 	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number, compactThreads: boolean, limit: number): number {

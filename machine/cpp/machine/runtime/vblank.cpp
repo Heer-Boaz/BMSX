@@ -53,6 +53,7 @@ void VblankState::completeTickIfPending(Runtime& runtime, FrameState& frameState
 	m_activeTickCompleted = true;
 	runtime.frameScheduler.enqueueTickCompletion(runtime, frameState);
 	m_lastCompletedVblankSequence = vblankSequence;
+	runtime.machine.cpu.gcHeap().assistPhysicalPressureAtTick();
 }
 
 } // namespace bmsx

@@ -20,6 +20,8 @@ constexpr u32 MAX_PAGES = (MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE) >> PAGE_SHIF
 // little-endian word in guest RAM; partial-list links store page + 1.
 // Sweep position: page in the high bits and the next slot ordinal in the
 // low bits. An ordinal stays aligned even if the page is reused between steps.
+constexpr u32 AVAILABLE_PAGE_COUNT = 0x000u;
+constexpr u32 CLAIMED_PAGE_COUNT = 0x004u;
 constexpr u32 SWEEP_CURSOR = 0x008u;
 constexpr u32 PARTIAL_HEADS = 0x040u;
 constexpr u32 AVAILABLE_PAGES = 0x200u;
@@ -79,6 +81,14 @@ u32 HeapAllocator::floorAddress() const {
 
 u32 HeapAllocator::capacityBytes() const {
 	return (m_pageLimit - floorPage()) << PAGE_SHIFT;
+}
+
+u32 HeapAllocator::availableWholePages() const {
+	return m_memory.readRamRecordWord(m_management + AVAILABLE_PAGE_COUNT);
+}
+
+u32 HeapAllocator::claimedWholePages() const {
+	return m_memory.readRamRecordWord(m_management + CLAIMED_PAGE_COUNT);
 }
 
 u32 HeapAllocator::occupiedBytes() const {
@@ -325,6 +335,8 @@ i32 HeapAllocator::takeTopPage() {
 		if (bits != 0u) {
 			const u32 bit = 31u - static_cast<u32>(std::countl_zero(bits));
 			m_memory.writeRamRecordWord(offset, stored & ~(1u << bit));
+			m_memory.writeRamRecordPair(m_management + AVAILABLE_PAGE_COUNT,
+				availableWholePages() - 1u, claimedWholePages() + 1u);
 			return static_cast<i32>((static_cast<u32>(word) << 5) + bit);
 		}
 	}
@@ -340,6 +352,7 @@ i32 HeapAllocator::takeTopRun(u32 pages) {
 		}
 		if (++count == pages) {
 			setAvailable(static_cast<u32>(page), static_cast<u32>(page) + pages, false);
+			m_memory.writeRamRecordWord(m_management + CLAIMED_PAGE_COUNT, claimedWholePages() + pages);
 			return page;
 		}
 	}
@@ -373,6 +386,8 @@ void HeapAllocator::releasePages(u32 first, u32 end, bool object) {
 }
 
 void HeapAllocator::setAvailable(u32 first, u32 end, bool available) {
+	const u32 pages = end - first, previous = availableWholePages();
+	m_memory.writeRamRecordWord(m_management + AVAILABLE_PAGE_COUNT, available ? previous + pages : previous - pages);
 	while (first < end) {
 		const u32 word = first >> 5;
 		const u32 wordEnd = (word + 1u) << 5;

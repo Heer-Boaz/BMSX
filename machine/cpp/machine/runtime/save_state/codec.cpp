@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x32534d42u; // BMS2: allocator object-page index in RAM
+constexpr u32 kSaveStateSignature = 0x33534d42u; // BMS3: physical allocation pacing in RAM
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);

@@ -70,5 +70,6 @@ export class VblankState {
 		const runtime = this.runtime;
 		runtime.frameScheduler.enqueueTickCompletion(frameState);
 		this.lastCompletedVblankSequence = vblankSequence;
+		runtime.machine.cpu.gc.assistPhysicalPressureAtTick();
 	}
 }

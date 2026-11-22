@@ -155,6 +155,46 @@ void testFinalCollectionRetainsTheMachineGrant() {
 	require(resume() == resumed, "restoring just after final mark retains the same real-time frontier");
 }
 
+void testPhysicalCollectionUsesCompletedVblank() {
+	using namespace bmsx;
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& cpu = runtime.machine.cpu;
+	auto& scheduler = runtime.frameScheduler;
+	auto& heap = cpu.gcHeap();
+	auto& arena = cpu.heapAllocator();
+	auto retained = cpu.createTable(16384, 0);
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(retained.address())); frame.setTop(1);
+	cpu.collectHeap();
+	while (arena.availableWholePages() > 32u)
+		require(arena.allocate(HEAP_PAGE_SIZE, true) != 0u, "the physical pressure fixture reserves real pages");
+	const u32 workAddress = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_EPOCH_WORK;
+	const auto checkpoint = captureRuntimeSaveState(runtime);
+	const auto pulse = [&] {
+		const auto now = runtime.machine.scheduler.nowCycles();
+		scheduler.run(runtime, 0.0);
+		require(!heap.active() && runtime.machine.scheduler.nowCycles() == now,
+			"host polling with no VBlank does not start a physical assist");
+		require(scheduler.runDevicesToNextLogicalTick(runtime, runtime.timing.cycleBudgetPerFrame)
+			&& scheduler.lastTickSequence == 1 && heap.phase() == GcPhase::Mark,
+			"one real display tick completes and also starts ordinary marking");
+		const auto work = runtime.machine.memory.readRamRecordWord(workAddress);
+		require(work > 0u && work <= GC_STEP_WORDS, "the display tick carries one collector quantum, not a synchronous recovery");
+		const auto clock = runtime.machine.scheduler.nowCycles();
+		scheduler.clearQueuedTime();
+		scheduler.run(runtime, 0.0);
+		require(runtime.machine.scheduler.nowCycles() == clock
+			&& runtime.machine.memory.readRamRecordWord(workAddress) == work,
+			"extra host polling does not advance an engaged physical assist");
+		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	};
+	applyRuntimeSaveState(runtime, checkpoint);
+	const auto expected = pulse();
+	applyRuntimeSaveState(runtime, checkpoint);
+	require(pulse() == expected, "the allocator pressure and paced frontier replay from the same checkpoint");
+}
+
 void testRuntimeRestoreRearmsCpuGp0Wait() {
 	using namespace bmsx;
 	test::Blua32TestImage image;
@@ -1503,6 +1543,7 @@ void testRuntimeResetNotification() {
 
 int main() {
 	testFinalCollectionRetainsTheMachineGrant();
+	testPhysicalCollectionUsesCompletedVblank();
 	testRuntimeRestoreRearmsCpuGp0Wait();
 	testGpuRawExtensionWordCodec();
 	testSupervisorGpuServiceAtDeviceBoundaries();

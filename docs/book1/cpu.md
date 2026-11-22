@@ -1354,8 +1354,13 @@ $$
 
 The headroom term starts collection before a heavily retained pool fills.
 It does not reserve extra capacity or guarantee that new allocations will fit.
-Without further allocation, an unfinished automatic cycle outside the final
-pass need not advance.
+The collector also compares wholly free RAM pages against recent physical
+page claims and the remaining collection work. At a completed display tick,
+physical pressure can advance marking or reclamation by one additional
+quantum. A collection started this way can finish over later ticks without
+further allocation. Neither this work nor the final remark advances the
+console clock. Available pages can be separated by retained allocations, so
+having enough free pages does not guarantee a contiguous reservation.
 The BIOS [collection service](bios-base.md#sec-bios-base-collectgarbage)
 can advance it explicitly and report occupied budget and total capacity.
 
