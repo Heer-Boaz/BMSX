@@ -2353,6 +2353,9 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target)
 }
 
 RunResult CPU::runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBudget) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	cpu.synchronizeNativeHistoryWrites();
+#endif
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	cpu.publishNativeCompilation();
 #endif

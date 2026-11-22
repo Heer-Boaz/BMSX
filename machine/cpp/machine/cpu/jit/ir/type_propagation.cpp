@@ -228,8 +228,19 @@ struct NativeTypePropagation::Transfer {
 
 	void operator()(NativeTableAccess& op) const {
 		op.receiverCheck = check(0, ValueTag::Table);
+		if (op.receiverCheck == NativeTagCheck::Rejected) return;
 		if (op.receiverCheck == NativeTagCheck::Dynamic)
 			facts.define(values.inputs[0], ValueTag::Table);
+		const auto key = op.keyKind == NativeTableKey::Value ? input(1) : Type{};
+		if (key) {
+			switch (key->tag) {
+			case ValueTag::Integer: op.indexType = NativeTableIndexType::Integer; break;
+			case ValueTag::String: op.indexType = NativeTableIndexType::String; break;
+			case ValueTag::Table: op.indexType = NativeTableIndexType::Table; break;
+			default: break;
+			}
+			if (op.indexType != NativeTableIndexType::Dynamic) facts.require(key);
+		}
 		if (op.mode == NativeTableMode::Write) {
 			if (const auto type = input(2)) {
 				facts.require(type);
@@ -240,15 +251,13 @@ struct NativeTypePropagation::Transfer {
 			const bool canStoreNonNil = op.store.nilValue != NativeNilValue::Nil;
 			if (op.keyKind == NativeTableKey::Field)
 				op.store.hash = NativeHashStore::String;
-			else if (op.keyKind == NativeTableKey::Integer) {
+			else if (op.keyKind == NativeTableKey::Integer || op.indexType == NativeTableIndexType::Integer) {
 				if (canStoreNonNil) op.store.hash = NativeHashStore::Integer;
-			} else if (const auto key = input(1)) {
-				if (key->tag == ValueTag::String) op.store.hash = NativeHashStore::String;
-				else if (canStoreNonNil) {
-					if (key->tag == ValueTag::Table) op.store.hash = NativeHashStore::Identity;
-					if (key->tag == ValueTag::Integer) op.store.hash = NativeHashStore::Integer;
-				}
-			} else op.store.hash = canStoreNonNil ? NativeHashStore::Index : NativeHashStore::String;
+			} else if (op.indexType == NativeTableIndexType::String)
+				op.store.hash = NativeHashStore::String;
+			else if (op.indexType == NativeTableIndexType::Table) {
+				if (canStoreNonNil) op.store.hash = NativeHashStore::Identity;
+			} else if (!key) op.store.hash = canStoreNonNil ? NativeHashStore::Index : NativeHashStore::String;
 			return;
 		}
 		if (op.resultTag) result(*op.resultTag);

@@ -15,13 +15,26 @@
 namespace bmsx {
 
 NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, CPU* cpu,
-	std::span<const NativeCodeSourcePage> sourcePages)
+	std::span<const NativeCodeSourcePage> sourcePages, bool historyWriteWatches)
 	: ramBytes(memory.ramByteCount()), ram(memory.ramData()), ramBusEnd(memory.ramBusEndAddress()),
 	  ramWriteGroups(memory.ramWriteWatches().groupData()),
 	  ramCodeWatchWords(memory.ramWriteWatches().codeWordMasks()),
 	  systemRom(&memory.systemRomStorage()),
 	  cartridgeRom(&memory.cartridgeController().cpuRomStorage()),
-	  strings(&pool), cpu(cpu), sourcePages(sourcePages) {}
+	  strings(&pool), cpu(cpu), sourcePages(sourcePages), historyWriteWatches(historyWriteWatches) {}
+
+void CPU::synchronizeNativeHistoryWrites() {
+	const bool armed = m_memory.ramWriteWatches().historyWritesArmed();
+	if (armed == m_nativeHistoryWrites) return;
+	// History arms/disarms outside CPU execution. Re-arming pages at a
+	// checkpoint changes their epoch, not the session's compilation mode.
+	// Withdraw every entry cell before another grant can enter native code.
+	m_nativeCode.clear();
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	m_pendingNativeCompilation.invalidated = true;
+#endif
+	m_nativeHistoryWrites = armed;
+}
 
 NativeBlockPage::~NativeBlockPage() {
 	// Images can disappear without individual source invalidation. The

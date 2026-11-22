@@ -22,13 +22,16 @@ void SLJIT_FUNC writeNativeBarrier(GcHeap* heap, u32 address, u32 flags) {
 
 void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 address, sljit_sw addressArg,
 	sljit_s32 bits, sljit_s32 group, std::optional<u32> codeWords) {
+	if (!codeWords && !m_bindings.historyWriteWatches) return;
 	auto* c = m_compiler;
 	sljit_emit_op2(c, SLJIT_LSHR32, bits, 0, address, addressArg, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT - 2u);
 	sljit_emit_op2(c, SLJIT_AND32, bits, 0, bits, 0, SLJIT_IMM, -4);
 	sljit_emit_op1(c, SLJIT_MOV_U32, bits, 0, SLJIT_MEM1(bits), reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
 	auto* clear = codeWords ? sljit_emit_cmp(c, SLJIT_EQUAL, bits, 0, SLJIT_IMM, 0) : nullptr;
-	sljit_emit_op2(c, SLJIT_AND32, group, 0, bits, 0, SLJIT_IMM, MAPPED_WATCH_HISTORY_CLEAN);
-	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, group, 0, SLJIT_IMM, 0), slow, m_cache.state());
+	if (m_bindings.historyWriteWatches) {
+		sljit_emit_op2(c, SLJIT_AND32, group, 0, bits, 0, SLJIT_IMM, MAPPED_WATCH_HISTORY_CLEAN);
+		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, group, 0, SLJIT_IMM, 0), slow, m_cache.state());
+	}
 	if (!codeWords) return;
 	// Retire decoded words only if the write overlaps their exact mask.
 	sljit_emit_op2(c, SLJIT_LSHR32, group, 0, address, addressArg, SLJIT_IMM, MAPPED_WATCH_GROUP_BYTE_SHIFT - 2u);

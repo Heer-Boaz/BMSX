@@ -135,6 +135,7 @@ public:
 	void consumeHistoryWrites(size_t offset, size_t byteLength);
 	// The low bit enables tracking. A new epoch re-arms native register windows.
 	u32 historyEpoch() const { return m_historyEpoch; }
+	bool historyWritesArmed() const { return (m_historyEpoch & 1u) != 0u; }
 
 	void invalidateWrite(
 		size_t offset,

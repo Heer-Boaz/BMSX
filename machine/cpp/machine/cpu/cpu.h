@@ -477,6 +477,7 @@ private:
 	void discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing,
 		NativeWarmupPages* requested = nullptr);
 	void prepareNativeSources(Blua32ExecutionImage&, std::span<NativeCompilationSource* const>, NativeWarmupPages* = nullptr);
+	void synchronizeNativeHistoryWrites();
 	bool installNativeRegion(Blua32ExecutionImage& image, std::span<const NativeCodeSourcePage>, u32 slot,
 		std::vector<std::unique_ptr<NativeBlock>> blocks, NativeCodeAdmission);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -495,6 +496,7 @@ private:
 	} m_pendingNativeCompilation;
 #endif
 	NativeCodeCache m_nativeCode;
+	bool m_nativeHistoryWrites = false;
 	bool m_nativeCompilationProfiling = false;
 	NativeCompilationProfile m_nativeCompilationProfile;
 #endif

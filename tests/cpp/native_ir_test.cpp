@@ -736,6 +736,69 @@ void nativeTableGuardProvesTheFollowingReceiver() {
 		"the direct edge carries a successful receiver guard, whereas semantic and public entry must admit it");
 }
 
+void tableIndexProofsFollowTheKeyAcrossEntries() {
+	constexpr u32 firstPc = 0x6100, joinPc = 0x6120;
+	struct Case {
+		OpCode definition;
+		NativeTableIndexType index;
+		NativeHashStore store;
+		std::optional<ValueTag> tag;
+	};
+	const std::array cases{
+		Case{OpCode::K1, NativeTableIndexType::Integer, NativeHashStore::Integer, ValueTag::Integer},
+		Case{OpCode::LOADK, NativeTableIndexType::String, NativeHashStore::String, ValueTag::String},
+		Case{OpCode::GETI, NativeTableIndexType::Table, NativeHashStore::Identity, ValueTag::Table},
+		Case{OpCode::MOV, NativeTableIndexType::Dynamic, NativeHashStore::Index, {}},
+	};
+	const std::array constants{NativeImageConstant{0, valueString(12)}};
+	for (const auto& item : cases) {
+		std::array decoded{
+			DecodedInstruction{.a = 1, .op = static_cast<u8>(item.definition)},
+			DecodedInstruction{.op = static_cast<u8>(OpCode::JMP)},
+			DecodedInstruction{.a = 4, .b = 1, .op = static_cast<u8>(OpCode::MOV)},
+			DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(-1), .a = 0, .b = 4, .c = 2,
+				.op = static_cast<u8>(OpCode::SETT)},
+			DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(-1), .a = 3, .b = 0, .c = 4,
+				.op = static_cast<u8>(OpCode::GETT)},
+		};
+		if (item.definition == OpCode::LOADK) decoded[0].setBx(0);
+		if (item.definition == OpCode::GETI) {
+			decoded[0].a = 5;
+			decoded[0].b = decoded[0].c = 1;
+		}
+		for (auto& row : decoded) { row.width = 1; row.baseCycles = BASE_CYCLES[row.op]; }
+		decoded[1].setBx(joinPc);
+		const std::array first{NativeBlockInstruction{&decoded[0], firstPc}, NativeBlockInstruction{&decoded[1], firstPc + 4}};
+		const std::array join{NativeBlockInstruction{&decoded[2], joinPc}, NativeBlockInstruction{&decoded[3], joinPc + 4},
+			NativeBlockInstruction{&decoded[4], joinPc + 8}};
+		const std::array sources{NativeBlockSource{first}, NativeBlockSource{join}};
+		NativeRegisterUses uses;
+		const NativeIrRegion region(sources, uses, true, {}, {.imageConstants = constants});
+		int accesses = 0;
+		for (const auto& block : region.blocks()) {
+			if (block.firstPc == joinPc) {
+				require(block.entryTypes.size() == static_cast<size_t>(item.tag.has_value())
+					&& (!item.tag || (block.entryTypes[0].slot == 1 && block.entryTypes[0].tag == *item.tag)),
+					"imported index proofs guard the source of the copied key at a public entry");
+			}
+			for (const auto& row : block.instructions) {
+				if (row.pc != joinPc + 4 && row.pc != joinPc + 8) continue;
+				const auto& op = std::get<NativeTableAccess>(row.operation);
+				const bool write = row.pc == joinPc + 4;
+				require(op.keyKind == NativeTableKey::Value && op.key == 4 && op.indexType == item.index
+					&& (!write || op.store.hash == item.store),
+					"both dynamic-key operations select the proved type without changing the key selector");
+				const auto& exit = region.sideExits(block)[*row.slow];
+				require(exit.exit == (write ? NativeBlockExit::WriteIndex : NativeBlockExit::ReadIndex)
+					&& exit.operands.table.key == 4 && exit.currentPc == row.pc,
+					"a specialized index still uses the original semantic continuation");
+				++accesses;
+			}
+		}
+		require(accesses == 2, "both table operations are present in the region");
+	}
+}
+
 void dataflowPlansTableAndMemoryInputs() {
 	constexpr u32 pc = 0x5300;
 	std::array<DecodedInstruction, 7> decoded{};
@@ -1109,6 +1172,7 @@ int main() {
 		onlyConsumedEntryProofsSurviveCopies();
 		forwardJoinMeetsTagsNotValues();
 		nativeTableGuardProvesTheFollowingReceiver();
+		tableIndexProofsFollowTheKeyAcrossEntries();
 		dataflowPlansTableAndMemoryInputs();
 		rejectedReceiverDoesNotAdvertiseAFieldDatapath();
 		dumpDistinguishesFoldedEdgesFromPublicEntries();

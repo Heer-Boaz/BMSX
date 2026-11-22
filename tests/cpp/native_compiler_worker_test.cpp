@@ -174,11 +174,12 @@ void cpuInvalidationAndLifecycle() {
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::ADD), 1, 1, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 2}};
-	for (int mutation = 0; mutation < 4; ++mutation) {
+	for (int mutation = 0; mutation < 7; ++mutation) {
 		CpuMachine generated(image, false), reference(image, true);
 		std::array<u32, 2> observations{};
 		const u32 ramPc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE;
 		for (auto* machine : {&generated, &reference}) {
+			if (mutation == 5) machine->memory.ramWriteWatches().armHistoryWrites();
 			for (size_t i = 0; i < image.text.size(); ++i) machine->memory.writeMappedU8(ramPc + static_cast<u32>(i), image.text[i]);
 			auto* frame = machine->cpu.activeThread()->currentFrame;
 			frame->writeControl(bmsx::FrameField::Pc, ramPc);
@@ -209,11 +210,25 @@ void cpuInvalidationAndLifecycle() {
 				observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) { ++*static_cast<u32*>(context); };
 				machine->cpu.setInstructionObserver(std::move(observer));
 			}
-		} else {
+		} else if (mutation == 3) {
 			for (auto* machine : {&generated, &reference}) {
 				machine->cpu.reset();
 				machine->cpu.activeThread()->currentFrame->registers.set(1, valueInteger(0));
 			}
+		} else {
+			for (auto* machine : {&generated, &reference}) {
+				auto& watches = machine->memory.ramWriteWatches();
+				if (mutation == 5) watches.disarmHistoryWrites();
+				else watches.armHistoryWrites();
+			}
+			if (mutation == 6) {
+				test::runCpuParity(generated.cpu, reference.cpu, 0);
+				for (auto* machine : {&generated, &reference}) machine->memory.ramWriteWatches().disarmHistoryWrites();
+			}
+			test::waitForFixtureWorkerRequests(generated.cpu);
+			const auto profile = generated.cpu.readNativeCompilationProfile();
+			require(profile.backgroundCompleted == 1 && profile.backgroundCancelled == 1 && profile.regionsPublished == 0,
+				"rewind transitions reject an outstanding result from the old compilation mode without executing it");
 		}
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
 		while (generated.cpu.readNativeCompilationProfile().regionsPublished == 0) {
@@ -225,7 +240,7 @@ void cpuInvalidationAndLifecycle() {
 			test::runCpuParity(generated.cpu, reference.cpu, 17);
 			const auto a = generated.cpu.captureRuntimeState(), b = reference.cpu.captureRuntimeState();
 			require((a == b && bmsx::test::sameLanguageRam(generated.cpu, reference.cpu)) && a.lastPc == b.lastPc,
-				"published background code preserves guest state after invalidation, restore, observer replacement and reset");
+				"published background code preserves guest state after invalidation, restore, observer changes, reset and rewind transitions");
 		}
 		if (mutation == 2) require(observations[0] > 0 && observations[0] == observations[1],
 			"an observer inserted during compilation observes every executed instruction after publication");

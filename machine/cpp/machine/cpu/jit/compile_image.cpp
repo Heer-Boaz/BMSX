@@ -113,6 +113,7 @@ bool CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunc
 void CPU::prepareSystemNativeCode() {
 	if (m_unpublishedRomMask & SYSTEM_EXECUTION_DOMAIN_MASK)
 		throw BMSX_RUNTIME_ERROR("Installed system ROM must be published before native preparation.");
+	synchronizeNativeHistoryWrites();
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	// An explicit host request is synchronous. Resolve any existing snapshot
 	// before selecting missing system roots; cartridge grants never wait.

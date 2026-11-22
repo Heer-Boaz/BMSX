@@ -143,6 +143,10 @@ struct OperationPlan {
 		if (op.keyKind == NativeTableKey::Integer) out << " key=" << op.key;
 		out << " receiver=" << tagChecks[unsigned(op.receiverCheck)];
 		if (op.receiverCheck == NativeTagCheck::Rejected) return;
+		if (op.keyKind == NativeTableKey::Value) {
+			constexpr std::array indexTypes{"dynamic", "integer", "string", "table"};
+			out << " index=" << indexTypes[unsigned(op.indexType)];
+		}
 		if (op.mode == NativeTableMode::Write) {
 			constexpr std::array nilPlans{"dynamic", "nil", "present"};
 			out << " barrier=" << barriers[unsigned(op.store.barrier)] << " value=" << nilPlans[unsigned(op.store.nilValue)];
@@ -150,7 +154,8 @@ struct OperationPlan {
 			if (op.store.hash == NativeHashStore::Integer) out << " return-integer-hash";
 			if (op.store.hash == NativeHashStore::Identity) out << " return-identity-hash";
 			if (op.store.hash == NativeHashStore::String) out << " return-string-hash";
-			if (op.keyKind != NativeTableKey::Field) {
+			if (op.keyKind == NativeTableKey::Integer || (op.keyKind == NativeTableKey::Value
+					&& (op.indexType == NativeTableIndexType::Dynamic || op.indexType == NativeTableIndexType::Integer))) {
 				constexpr std::array hintEffects{"by-value", "advance-at-boundary", "retreat-at-boundary"};
 				out << " array-hint=" << hintEffects[unsigned(op.store.arrayLength)];
 			}

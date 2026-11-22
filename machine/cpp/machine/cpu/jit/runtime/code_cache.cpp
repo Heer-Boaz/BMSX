@@ -42,6 +42,11 @@ bool NativeCodeCache::tryInstall(NativeCodeRegion& region, std::span<DecodedInst
 	return true;
 }
 
+void NativeCodeCache::clear() {
+	while (m_oldest)
+		m_oldest->m_pages.front()->retireNativeRegion(m_oldest, DecodedInstructionPage::Retirement::SourceChanged);
+}
+
 void NativeCodeCache::withdraw(NativeCodeRegion& region) {
 	if (region.m_older) region.m_older->m_newer = region.m_newer;
 	else m_oldest = region.m_newer;

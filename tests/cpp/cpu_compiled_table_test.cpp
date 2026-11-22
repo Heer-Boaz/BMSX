@@ -4,6 +4,7 @@
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
+#include "machine/runtime/history/ram_history.h"
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
@@ -216,6 +217,73 @@ void inheritedTableFactsAreRecheckedOnCpuEntry() {
 	requireParity(native, scalar);
 	require(native.cpu.readEpcWord() == pc + 3u * INSTRUCTION_BYTES,
 		"a resumed entry rechecks its table fact before the original instruction faults");
+}
+
+void nativeTypedIndexRechecksAnExternalEntry() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETI), 4, 1, 1);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 0, 1);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::SETT), 0, 1, 2);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::GETT), 3, 0, 1);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 5}};
+	CpuMachine native(image), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto key = cpu.createTable(1, 0);
+		key.setInteger(1, valueInteger(22));
+		auto table = cpu.createTable(0, 2);
+		auto& frame = *cpu.activeThread()->currentFrame;
+		frame.registers.set(0, valueTable(table.address()));
+		frame.registers.set(1, valueTable(key.address()));
+		frame.registers.set(2, valueInteger(73));
+		frame.setTop(3);
+	}
+	auto& cpu = native.cpu;
+	const u32 pc = native.rom.textAddress, bodyPc = pc + 3 * INSTRUCTION_BYTES;
+	const auto& execution = *cpu.activeThread()->currentFrame->executionImage;
+	cpu.prepareSystemNativeCode();
+	const auto* page = execution.nativeCodeLookup->find(pc, 0);
+	const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	require(page && page->nativeBlocks && page->nativeBlocks->entries[word]
+		&& page->nativeBlocks->entries[word + 3]
+		&& page->nativeBlocks->entries[word]->region == page->nativeBlocks->entries[word + 3]->region,
+		"the separately admitted indexed stores and reads share the preceding Table proof");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& gate = cpu.nativeGateProfile();
+	const auto& readIndex = gate.exits[static_cast<size_t>(NativeBlockExit::ReadIndex)].entries;
+	const auto& writeIndex = gate.exits[static_cast<size_t>(NativeBlockExit::WriteIndex)].entries;
+	const auto beforeRead = readIndex, beforeWrite = writeIndex;
+#endif
+	const int body = BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + BASE_CYCLES[static_cast<u8>(OpCode::GETT)];
+	const int prefix = BASE_CYCLES[static_cast<u8>(OpCode::GETI)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+	test::runCpuParity(cpu, scalar.cpu, prefix + body);
+	requireParity(native, scalar);
+	const auto table = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+	const Value identity = cpu.readFrameRegister(0, 1);
+	require(cpu.readFrameRegister(0, 3) == valueInteger(73) && table.get(identity) == valueInteger(73),
+		"the typed identity helpers store and read the real mapping");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(readIndex == beforeRead && writeIndex == beforeWrite, "the proved Table key uses returning helpers");
+#endif
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], bodyPc);
+		auto registers = lane.activeThread()->currentFrame->registers;
+		registers.set(1, valueString(lane.stringPool().intern("external")));
+		registers.set(2, valueInteger(89));
+	}
+	test::runCpuParity(cpu, scalar.cpu, body);
+	requireParity(native, scalar);
+	require(cpu.readFrameRegister(0, 3) == valueInteger(89) && table.get(identity) == valueInteger(73)
+		&& table.get(cpu.readFrameRegister(0, 1)) == valueInteger(89),
+		"a different public-entry key tag neither writes nor reads the proved identity arm");
+#endif
 }
 
 void inheritedArrayReads(bool generic) {
@@ -1613,6 +1681,77 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 #endif
 }
 
+void nativeArrayStoresFollowHistorySessions() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(2u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::SETI), 0, 1, 2);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
+	image.functions = {{.firstWord = 0u, .wordCount = 2u, .maxStack = 3u}};
+	CpuMachine machine(image);
+	auto& cpu = machine.cpu;
+	auto& memory = machine.memory;
+	auto& watches = memory.ramWriteWatches();
+	auto table = cpu.createTable(4096, 0);
+	auto& frame = *cpu.activeThread()->currentFrame;
+	frame.registers.set(0, valueTable(table.address()));
+	frame.registers.set(2, valueInteger(101));
+	frame.setTop(3);
+	const u32 pc = machine.rom.textAddress, word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	cpu.prepareSystemNativeCode();
+	const auto& page = *frame.executionImage->nativeCodeLookup->find(pc, 0);
+	const std::weak_ptr<NativeCodeRegion> unrecorded = page.nativeBlocks->entries[word]->region;
+	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::SETI)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& storeExits = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::WriteInteger)].entries;
+	const auto before = storeExits;
+#endif
+	require(cpu.runUntilDepth(0, grant) == RunResult::Yielded && cpu.readFramePc(0) == pc
+		&& table.getInteger(1) == valueInteger(101) && table.lengthHint() == 1,
+		"the published unrecorded store appends within its grant");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(storeExits == before, "the unrecorded append does not exit at a store watch");
+#endif
+	table.setInteger(1, valueNil());
+	RamHistory history;
+	RamHistory::PageMap first, second;
+	history.capture(memory, nullptr, first);
+	cpu.runUntilDepth(0, 0);
+	require(unrecorded.expired() && page.nativeCode[word] == nullptr,
+		"the first checkpoint unpublishes every entry of the unrecorded region before execution");
+	cpu.prepareSystemNativeCode();
+	const std::weak_ptr<NativeCodeRegion> recorded = page.nativeBlocks->entries[word]->region;
+	require(cpu.runUntilDepth(0, grant) == RunResult::Yielded && cpu.readFramePc(0) == pc
+		&& table.getInteger(1) == valueInteger(101) && table.lengthHint() == 1,
+		"the replacement history-aware store appends within the same grant");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(storeExits == before + 1, "the recorded append publishes its first physical writes");
+#endif
+	history.capture(memory, &first, second);
+	cpu.runUntilDepth(0, 0);
+	require(recorded.lock() == page.nativeBlocks->entries[word]->region,
+		"checkpoint re-arming retains the recording-mode native region");
+	history.restore(memory, second, first);
+	require(isNil(table.getInteger(1)) && table.lengthHint() == 0,
+		"rewinding restores the original value lanes and length hint");
+	history.restore(memory, first, second);
+	require(table.getInteger(1) == valueInteger(101) && table.lengthHint() == 1,
+		"forward restoration recovers every lane of the native append");
+	watches.disarmHistoryWrites();
+	cpu.prepareSystemNativeCode();
+	require(recorded.expired() && page.nativeCode[word] != nullptr,
+		"explicit preparation replaces the recording region when history ends");
+	table.setInteger(1, valueNil());
+	require(cpu.runUntilDepth(0, grant) == RunResult::Yielded && cpu.readFramePc(0) == pc
+		&& table.getInteger(1) == valueInteger(101) && table.lengthHint() == 1,
+		"native appends resume without rewind after stopping history");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(storeExits == before + 1, "disabling history restores the unobserved native route");
+#endif
+#endif
+}
+
 void nativeIntegerGrowthReturnsWithinTheGrant() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::Blua32TestImage image;
@@ -2108,6 +2247,7 @@ int main() {
 		observedArithmeticResumesAtItsOwnInstruction();
 		contradictoryOwnFieldProofRetiresItsSource();
 		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); iterationChargeIgnoresVacantCapacity(); allocationChargesRequestedCapacity(); wideAllocationFailure();
+		nativeTypedIndexRechecksAnExternalEntry();
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 
 		nativeFieldOperationsLearnTheDecodedSite();
@@ -2122,6 +2262,7 @@ int main() {
 		negativeIntegerKeysUseHashStorage();
 		nativeDynamicHashProbeReturnsLiveValuesWithinTheGrant();
 		nativeIdentityHashStoreReturnsWithinTheGrant();
+		nativeArrayStoresFollowHistorySessions();
 		nativeIntegerGrowthReturnsWithinTheGrant();
 		nativeFixedStringMissReturnsWithinTheGrant();
 		nativeDynamicStringMissReturnsWithinTheGrant();

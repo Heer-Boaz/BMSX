@@ -16,7 +16,7 @@ struct NativeCodeSourcePage;
 struct NativeCodeBindings {
 	NativeCodeBindings() = default;
 	NativeCodeBindings(Memory& memory, StringPool& strings, CPU* cpu = nullptr,
-		std::span<const NativeCodeSourcePage> sourcePages = {});
+		std::span<const NativeCodeSourcePage> sourcePages = {}, bool historyWriteWatches = true);
 	DecodedInstruction* decodedPageFor(u32 pc) const;
 	u32 ramBytes = 0;
 	u8* ram = nullptr;
@@ -32,6 +32,8 @@ struct NativeCodeBindings {
 	// The worker may embed addresses of source-owned sites but never reads
 	// their live data. Compilation decisions use the copied source rows.
 	std::span<const NativeCodeSourcePage> sourcePages;
+	// Standalone blocks have no owner to retire them when history is armed.
+	bool historyWriteWatches = true;
 };
 
 class NativeCompiler {

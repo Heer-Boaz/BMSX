@@ -239,7 +239,7 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 	std::ranges::sort(calls, {}, &NativeCallProfile::pc);
 	calls.erase(std::ranges::unique(calls, {}, &NativeCallProfile::pc).begin(), calls.end());
 	const auto bindingsPages = std::span(codePages).first(codePageCount);
-	const NativeCodeBindings bindings(m_memory, m_stringPool, this, bindingsPages);
+	const NativeCodeBindings bindings(m_memory, m_stringPool, this, bindingsPages, m_nativeHistoryWrites);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (pending) {
 		pending->image = &image;

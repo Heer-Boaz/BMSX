@@ -123,10 +123,12 @@ sljit_jump* NativeLowering::emitArrayStore(int value, NativeStorePlan plan, Nati
 	auto* unchanged = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Length));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), arrayLength, SLJIT_R1, 0);
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver,
-		SLJIT_IMM, static_cast<u32>(TableHeader::Length));
-	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	emitRamWordWriteWatch(exit, SLJIT_R1, 0, SLJIT_R2, SLJIT_R3, std::nullopt);
+	if (m_bindings.historyWriteWatches) {
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver,
+			SLJIT_IMM, static_cast<u32>(TableHeader::Length));
+		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+		emitRamWordWriteWatch(exit, SLJIT_R1, 0, SLJIT_R2, SLJIT_R3, std::nullopt);
+	}
 	sljit_set_label(unchanged, sljit_emit_label(c));
 
 	emitStoreBarrier(value, plan.barrier, StoreBarrierRecord::Table, exit);
@@ -136,6 +138,24 @@ sljit_jump* NativeLowering::emitArrayStore(int value, NativeStorePlan plan, Nati
 		SLJIT_MEM1(SLJIT_SP), arrayLength);
 	sljit_set_label(keep, sljit_emit_label(c));
 	return outside;
+}
+
+// The index arms share this returning raw hash lookup. Untyped arms
+// already have the checked key tag in R2; typed arms only load its payload.
+void NativeLowering::emitOwnIndexRead(int base, NativeBlockExitSite& exit, std::optional<ValueTag> keyTag) {
+	auto* c = m_compiler;
+	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R0),
+		static_cast<u32>(TableHeader::Metatable), SLJIT_IMM, 0), exit, m_cache.state());
+	if (keyTag)
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, static_cast<u8>(*keyTag));
+	emitValueTransportStore(c, SLJIT_SP, hashOperand, SLJIT_R3, SLJIT_R2);
+	emitPayload(base, SLJIT_R1);
+	m_cache.spillCall(false, 0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+	sljit_get_local_base(c, SLJIT_R2, 0, hashOperand);
+	sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&readNativeTableHash));
+	m_cache.spillCall(true, 0);
+	emitValueTransportLoad(c, SLJIT_SP, hashOperand, SLJIT_R2, SLJIT_R3);
 }
 
 // The key payload is in R3; the receiver precedes the Value transport
@@ -427,16 +447,40 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
 	switch (access.keyKind) {
 	case NativeTableKey::Value: {
-		emitRawLoad(key, SLJIT_R3, SLJIT_R2);
-		auto* string = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
-			SLJIT_IMM, static_cast<u8>(ValueTag::String));
 		const bool hashLeaf = m_bindings.cpu && access.readPlan == NativeTableReadPlan::ProbeHashOrOneHop;
 		const auto hashStore = access.store.hash;
 		const bool identityStore = m_bindings.cpu && (hashStore == NativeHashStore::Identity || hashStore == NativeHashStore::Index);
 		const bool integerStore = m_bindings.cpu && (hashStore == NativeHashStore::Integer || hashStore == NativeHashStore::Index);
-		auto* otherKey = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
-			SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
-		if (!hashLeaf && !identityStore) fault(otherKey, exit, m_cache.state());
+		if (access.indexType == NativeTableIndexType::String) {
+			emitPayload(key, SLJIT_R3);
+			emitStringSlot(load, value, exit, std::nullopt, std::nullopt, access.store, access.readPlan);
+			break;
+		}
+		if (access.indexType == NativeTableIndexType::Table) {
+			if (!hashLeaf && !identityStore) {
+				emitLeave(exit, Charge::Pending);
+				return;
+			}
+			emitPayload(key, SLJIT_R3);
+			if (hashLeaf) emitOwnIndexRead(base, exit, ValueTag::Table);
+			else emitOwnIndexStore(value, access.store.nilValue, exit, NativeHashStore::Identity);
+			break;
+		}
+		// A proven Integer needs the same array path, but no tag load,
+		// String arm, or second key comparison on a hash miss.
+		const bool dynamic = access.indexType == NativeTableIndexType::Dynamic;
+		sljit_jump* string = nullptr;
+		sljit_jump* otherKey = nullptr;
+		if (dynamic) {
+			emitRawLoad(key, SLJIT_R3, SLJIT_R2);
+			string = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+				SLJIT_IMM, static_cast<u8>(ValueTag::String));
+			otherKey = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+				SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
+			if (!hashLeaf && !identityStore) fault(otherKey, exit, m_cache.state());
+		} else {
+			emitPayload(key, SLJIT_R3);
+		}
 		sljit_jump* nonpositive = nullptr;
 		if (!integerStore) {
 			nonpositive = sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0);
@@ -446,44 +490,42 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		// routes zero and negative keys outside the private array extent.
 		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
 		auto* outside = load ? emitArrayRead(exit, hashLeaf) : emitArrayStore(value, access.store, exit, integerStore);
+		if (!dynamic && !hashLeaf && !integerStore) break;
 		auto* joined = sljit_emit_jump(c, SLJIT_JUMP);
 		sljit_jump* hashJoined = nullptr;
 		sljit_jump* integerJoined = nullptr;
 		if (integerStore) {
 			sljit_set_label(outside, sljit_emit_label(c));
 			emitOwnIndexStore(value, access.store.nilValue, exit, NativeHashStore::Integer);
-			integerJoined = sljit_emit_jump(c, SLJIT_JUMP);
+			if (dynamic) integerJoined = sljit_emit_jump(c, SLJIT_JUMP);
 		}
 		if (hashLeaf) {
 			auto* probe = sljit_emit_label(c);
-			for (auto* edge : {otherKey, nonpositive, outside}) sljit_set_label(edge, probe);
-			// These edges still carry the raw key in R3/R2 and the table
-			// header in R0. Never turn an in-array nil into a hash probe.
-			auto* integer = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
-				SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
-			fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
-				SLJIT_IMM, static_cast<u8>(ValueTag::Table)), exit, m_cache.state());
-			sljit_set_label(integer, sljit_emit_label(c));
-			fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R0),
-				static_cast<u32>(TableHeader::Metatable), SLJIT_IMM, 0), exit, m_cache.state());
-			emitValueTransportStore(c, SLJIT_SP, hashOperand, SLJIT_R3, SLJIT_R2);
-			emitPayload(base, SLJIT_R1);
-			m_cache.spillCall(false, 0);
-			sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-			sljit_get_local_base(c, SLJIT_R2, 0, hashOperand);
-			sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&readNativeTableHash));
-			m_cache.spillCall(true, 0);
-			emitValueTransportLoad(c, SLJIT_SP, hashOperand, SLJIT_R2, SLJIT_R3);
-			hashJoined = sljit_emit_jump(c, SLJIT_JUMP);
-		} else if (identityStore) {
+			sljit_set_label(nonpositive, probe);
+			sljit_set_label(outside, probe);
+			// Both range failures still carry the raw key and table header.
+			// Never turn an in-array nil into a hash probe.
+			if (dynamic) {
+				sljit_set_label(otherKey, probe);
+				auto* integer = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+					SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
+				fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+					SLJIT_IMM, static_cast<u8>(ValueTag::Table)), exit, m_cache.state());
+				sljit_set_label(integer, sljit_emit_label(c));
+				emitOwnIndexRead(base, exit);
+				hashJoined = sljit_emit_jump(c, SLJIT_JUMP);
+			} else emitOwnIndexRead(base, exit, ValueTag::Integer);
+		} else if (dynamic && identityStore) {
 			sljit_set_label(otherKey, sljit_emit_label(c));
 			fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 				SLJIT_IMM, static_cast<u8>(ValueTag::Table)), exit, m_cache.state());
 			emitOwnIndexStore(value, access.store.nilValue, exit, NativeHashStore::Identity);
 			hashJoined = sljit_emit_jump(c, SLJIT_JUMP);
 		}
-		sljit_set_label(string, sljit_emit_label(c));
-		emitStringSlot(load, value, exit, std::nullopt, std::nullopt, access.store, access.readPlan);
+		if (dynamic) {
+			sljit_set_label(string, sljit_emit_label(c));
+			emitStringSlot(load, value, exit, std::nullopt, std::nullopt, access.store, access.readPlan);
+		}
 		auto* done = sljit_emit_label(c);
 		sljit_set_label(joined, done);
 		if (hashJoined) sljit_set_label(hashJoined, done);

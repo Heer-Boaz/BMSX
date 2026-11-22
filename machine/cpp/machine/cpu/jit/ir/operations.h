@@ -214,6 +214,9 @@ struct NativeMemoryAccess {
 
 enum class NativeTableMode : u8 { Read, Write, ReadMethod };
 enum class NativeTableKey : u8 { Value, Integer, Field };
+// A Value key remains a selector in the bytecode and in its semantic exit.
+// Its proved representation selects only the reachable lowering arms.
+enum class NativeTableIndexType : u8 { Dynamic, Integer, String, Table };
 // The inherited read requires a variable-cost checkpoint. A checked own
 // slot can instead be used within an admitted fixed-cost segment.
 enum class NativeTableReadPlan : u8 { Checkpoint, OwnSlot, OneHopIndex, ProbeOwnOrOneHop, ProbeHashOrOneHop };
@@ -232,6 +235,7 @@ struct NativeTableAccess {
 	// A cold own-slot site can learn reuse from a peer on the source page.
 	std::optional<u16> reusePeerWord{};
 	NativeTableReadPlan readPlan = NativeTableReadPlan::Checkpoint;
+	NativeTableIndexType indexType = NativeTableIndexType::Dynamic;
 
 	constexpr bool readsFixedField() const { return mode == NativeTableMode::Read && keyKind == NativeTableKey::Field; }
 
