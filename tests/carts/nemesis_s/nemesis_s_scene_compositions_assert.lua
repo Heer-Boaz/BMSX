@@ -3,6 +3,8 @@ local registry<const> = require('cartlib/registry')
 local atlas<const> = require('cartlib/gx/atlas')
 local image<const> = require('cartlib/gx/image')
 local gp0<const> = require('cartlib/gx/gp0')
+local actor_cues<const> = require('stage_actor_cues')
+local world<const> = require('cartlib/world/world')
 local assert_gameplay_textures<const> = function(hud_sources)
 	for _, id in ipairs({ 'gameplay', 'status', 'font' }) do
 		assert(atlas.resolve(id)._allocation ~= nil,
@@ -93,18 +95,26 @@ return {
 				player:finish_dying()
 				assert(player.ox == 88 and player.oy == 68,
 				'respawn discarded the authored start point')
-				assert(stage.actor_spawn_count == 179 and stage.actor_spawns[1].options.position.y == 16,
-				'stage did not consume its YAML-authored actor placements')
-				local first<const> = stage.actor_spawns[1]
-				assert(first.options.formation == stage.actor_spawns[6].options.formation
-				and first.options.formation ~= stage.actor_spawns[7].options.formation,
-				'formation ownership crossed an authored group')
-				first.options.formation.remaining = 1
-				test.formation = first.options.formation
+				local formations<const> = world:active_definition_view(ids_sint_pop_def).objects
+				actor_cues.seek(stage, 33)
+				actor_cues.advance(stage, 33)
+				assert(#formations == 0, 'an encounter spawned before its admission column')
+				actor_cues.advance(stage, 34)
+				assert(#formations == 6, 'the authored first formation was not admitted as a group')
+				local first<const> = formations[1]
+				assert(first.oy == 16 and first.ox == playfield_width
+				and first.formation == formations[6].formation
+				and formations[6].ox == playfield_width + 5 * sint_pop_width,
+					'first formation lost its authored placement or ownership')
+				actor_cues.advance(stage, 50)
+				assert(#formations == 12 and first.formation ~= formations[7].formation,
+					'formation ownership crossed an authored group')
+				first.formation.remaining = 1
+				test.formation = first.formation
 				-- The placed terrain and its collision queries share one origin.
 				stage.total_scroll_px = 128 * 8
 				local solid_x<const> = (150 - 1) * 8 - stage.total_scroll_px
-				local solid_y<const> = 21 * 8
+				local solid_y<const> = 20 * 8
 				assert(stage:is_solid_pixel(solid_x, solid_y), 'fixture must address solid terrain')
 				stage:set_global_position(16, 8)
 				assert(stage:is_solid_pixel(solid_x + 16, solid_y + 8)
@@ -131,8 +141,14 @@ return {
 			local stage<const> = director.gameplay.members.stage
 			assert(registry:get(stage.id) == stage,
 			'restart did not register the replacement stage')
-			assert(stage.actor_spawns[1].options.formation ~= test.formation
-			and stage.actor_spawns[1].options.formation.remaining == 6
+			local formations<const> = world:active_definition_view(ids_sint_pop_def).objects
+			actor_cues.seek(stage, 34)
+			actor_cues.advance(stage, 34)
+			assert(#formations == 0, 'checkpoint re-admitted an encounter at the starting boundary')
+			actor_cues.seek(stage, 33)
+			actor_cues.advance(stage, 34)
+			assert(#formations == 6 and formations[1].formation ~= test.formation
+			and formations[1].formation.remaining == 6
 			and director.players[1].ox == 80 and director.players[1].oy == 60,
 			'new run shared formation progress or modified placement with the previous run')
 

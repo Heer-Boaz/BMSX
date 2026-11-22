@@ -50,7 +50,7 @@ return {
 			local director<const>, stage<const>, player<const> = fixture.start_game(t)
 
 			do
-				stage.actor_spawn_index = stage.actor_spawn_count + 1
+				stage.actor_cue_index = stage.actor_cue_count
 				stage.scrolling = false
 				for row_index = 1, stage.tile_rows do
 					local row<const> = stage.solid_tape[row_index]

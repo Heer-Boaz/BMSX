@@ -29,7 +29,7 @@ return {
 
 			local test<const> = {volley_count = 0, on_small_ray_fired = on_small_ray_fired}
 			do
-				stage.actor_spawn_index = stage.actor_spawn_count + 1
+				stage.actor_cue_index = stage.actor_cue_count
 				stage.scrolling = false
 				stage.state_machines:transition_to('/running/stopped')
 				local boss<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_moon_def, {

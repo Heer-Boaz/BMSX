@@ -12,6 +12,7 @@ require('constants')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
 local stage_tape<const> = require('stage_tape')
+local stage_actor_cues<const> = require('stage_actor_cues')
 local grachtwater<const> = require('grachtwater')
 local havenanimatie<const> = require('havenanimatie')
 
@@ -21,30 +22,6 @@ setmetatable(stage, { __index = object_2d })
 
 local resume_scrolling_event<const> = 'stage.resume_scrolling'
 
--- Actor roles retain their authored meaning independently of bank-cell IDs.
-local stage_char_moon<const> = 39 -- '
-local stage_char_kadekanon<const> = 68 -- D
-local stage_char_kerk<const> = 75 -- K
-local stage_char_mijter_red<const> = 77 -- M
-local stage_char_sneeuwpop<const> = 78 -- N
-local stage_char_sint_pop_down<const> = 80 -- P
-local stage_char_rook_generator<const> = 82 -- R
-local stage_char_schoorsteen_foe<const> = 83 -- S
-local stage_char_molen<const> = 87 -- W
-local stage_char_zak_foe<const> = 90 -- Z
-local stage_char_mijter_blue<const> = 109 -- m
-local stage_char_sint_pop_up<const> = 112 -- p
-local turret_by_symbol<const> = {
-    [66]='blue_floor',[67]='red_floor',[98]='blue_ceiling',[99]='red_ceiling',
-}
-local sint_pop_group_by_symbol<const> = {
-	[stage_char_sint_pop_up] = sint_pop_group_up,
-	[stage_char_sint_pop_down] = sint_pop_group_down,
-}
-local mijter_foe_type_by_symbol<const> = {
-	[stage_char_mijter_blue] = mijter_foe_type_blue,
-	[stage_char_mijter_red] = mijter_foe_type_red,
-}
 local stage_scroll_follower_view
 
 function stage:apply_stage_config(stage_data)
@@ -67,18 +44,6 @@ function stage:advance_music_cues(column)
 		cue = music_cues[cue_index]
 	end
 	self.music_cue_index = cue_index
-end
-
-function stage:advance_actor_spawns(column)
-	local spawns<const> = self.actor_spawns
-	local spawn_count<const> = self.actor_spawn_count
-	local index = self.actor_spawn_index
-	while index <= spawn_count and spawns[index].column <= column do
-		local spawn<const> = spawns[index]
-		self.scene:spawn(spawn.definition_id, spawn.options)
-		index = index + 1
-	end
-	self.actor_spawn_index = index
 end
 
 function stage:build_background(background, tape)
@@ -106,150 +71,9 @@ function stage:build_tape()
 	self.harbor=havenanimatie.new(stage_data.harbor_animation,stage_tiles,self.solid_tape)
 	self.water=grachtwater.new(stage_data.water_animation,tape,stage_tiles)
 
-    local actor_spawns<const> = {}
-	for _, cell in ipairs(stage_data.actor_cells) do
-		local stage_x<const>, stage_y<const>, symbol<const> = cell[1], cell[2], cell[3]
-		local sint_pop_group<const> = sint_pop_group_by_symbol[symbol]
-		if sint_pop_group ~= nil then
-			local column<const> = stage_x - 1
-			local spawn_y<const> = (stage_y - 1) * self.tile_size
-			local formation<const> = { remaining = sint_pop_group_size }
-			for group_index = 0, sint_pop_group_size - 1 do
-				actor_spawns[#actor_spawns + 1] = {
-					column = column,
-					definition_id = ids_sint_pop_def,
-					options = {
-						position = { x = playfield_width + (group_index * sint_pop_width), y = spawn_y },
-						stage = self,
-						formation = formation,
-						group_type = sint_pop_group,
-					},
-				}
-			end
-		else
-			local mijter_foe_type<const> = mijter_foe_type_by_symbol[symbol]
-			if mijter_foe_type ~= nil then
-				actor_spawns[#actor_spawns + 1] = {
-					column = stage_x - 1,
-					definition_id = ids_mijter_foe_def,
-					options = {
-						position = { x = playfield_width, y = (stage_y - 2) * self.tile_size },
-						stage = self,
-						mijter_type = mijter_foe_type,
-					},
-				}
-               elseif turret_by_symbol[symbol] then
-                   actor_spawns[#actor_spawns+1]={
-                       column=stage_x-1,definition_id=ids_havengeschut_def,
-                       options={
-                           position={x=playfield_width-self.tile_size,y=(stage_y-1)*self.tile_size},
-                           stage=self,variant=turret_by_symbol[symbol],spawn_column=stage_x-1,
-                       },
-                   }
-			elseif symbol == stage_char_schoorsteen_foe then
-				-- S/R mark the roof midpoint and supporting roof row. The
-				-- admission columns stay fixed; native body size sets its origin.
-				local spawn<const> = {
-					column = stage_x - 2,
-					definition_id = ids_schoorsteen_foe_def,
-					options = {
-						position = {
-							x = playfield_width - schoorsteen_foe_width // 2,
-							y = (stage_y - 1) * self.tile_size - schoorsteen_foe_height,
-						},
-						stage = self,
-					},
-				}
-				-- A same-column flyer may already precede S in row order.
-				-- Insert this earlier admission before it, keeping ties stable.
-				local insert_at = #actor_spawns + 1
-				while insert_at > 1 and actor_spawns[insert_at - 1].column > spawn.column do
-					actor_spawns[insert_at] = actor_spawns[insert_at - 1]
-					insert_at = insert_at - 1
-				end
-				actor_spawns[insert_at] = spawn
-			elseif symbol == stage_char_kadekanon then
-                   actor_spawns[#actor_spawns + 1] = {
-                       column = stage_x - 1,
-                       definition_id = ids_kadekanon_def,
-                       options = {
-                           position = { x = playfield_width - 12, y = (stage_y - 1) * self.tile_size },
-                           stage = self,
-                       },
-                   }
-			elseif symbol == stage_char_rook_generator then
-				actor_spawns[#actor_spawns + 1] = {
-					column = stage_x - 1,
-					definition_id = ids_rook_generator_def,
-					options = {
-						position = {
-							x = playfield_width - self.tile_size - rook_generator_width // 2,
-							y = (stage_y - 1) * self.tile_size - rook_generator_height,
-						},
-						stage = self,
-					},
-				}
-			elseif symbol == stage_char_zak_foe then
-				actor_spawns[#actor_spawns + 1] = {
-					column = stage_x - 1,
-					definition_id = ids_zak_foe_def,
-					options = {
-						position = { x = playfield_width - self.tile_size, y = (stage_y - 2) * self.tile_size },
-						stage = self,
-						direction = zak_foe_direction_left,
-					},
-				}
-			elseif symbol == stage_char_sneeuwpop then
-				actor_spawns[#actor_spawns + 1] = {
-					column = stage_x - 1,
-					definition_id = ids_sneeuwpop_def,
-					options = {
-						position = { x = playfield_width - self.tile_size, y = (stage_y - 7) * self.tile_size },
-						stage = self,
-					},
-				}
-			elseif symbol == stage_char_molen then
-				actor_spawns[#actor_spawns + 1] = {
-					column = stage_x - 1,
-					definition_id = 'nemesis_s.enemy.molen',
-					options = {
-						position = { x = playfield_width - self.tile_size, y = (stage_y - 1) * self.tile_size },
-						stage = self,
-					},
-				}
-			elseif symbol == stage_char_kerk then
-				local kerk_y<const> = stage_y * self.tile_size - kerk_height
-				actor_spawns[#actor_spawns + 1] = {
-					column = stage_x - 1,
-					definition_id = ids_bel_def,
-					options = {
-						position = { x = playfield_width + 7 - self.tile_size, y = kerk_y + 80 },
-						stage = self,
-					},
-				}
-				actor_spawns[#actor_spawns + 1] = {
-					column = stage_x - 1,
-					definition_id = ids_kerk_def,
-					options = {
-						position = { x = playfield_width - self.tile_size, y = kerk_y },
-						stage = self,
-					},
-				}
-			elseif symbol == stage_char_moon then
-				actor_spawns[#actor_spawns + 1] = {
-					column = stage_x - 1,
-					definition_id = ids_moon_def,
-					options = {
-						position = { x = moon_spawn_x, y = moon_spawn_y },
-						stage = self,
-					},
-				}
-			end
-		end
-	end
-	self.actor_spawns = actor_spawns
-	self.actor_spawn_count = #actor_spawns
-	print('nemesis_s.stage.build.end', os.clock(), self.actor_spawn_count)
+	self.actor_cues = tape.actors
+	self.actor_cue_count = tape.actor_count
+	print('nemesis_s.stage.build.end', os.clock(), self.actor_cue_count)
 end
 
 function stage:reset_runtime()
@@ -282,14 +106,7 @@ function stage:reset_runtime()
 		scroll_stop_index = scroll_stop_index + 1
 	end
 	self.scroll_stop_index = scroll_stop_index
-	local actor_spawn_index = 1
-	local actor_spawns<const> = self.actor_spawns
-	local actor_spawn_count<const> = self.actor_spawn_count
-	while actor_spawn_index <= actor_spawn_count
-	and actor_spawns[actor_spawn_index].column <= current_column do
-		actor_spawn_index = actor_spawn_index + 1
-	end
-	self.actor_spawn_index = actor_spawn_index
+	stage_actor_cues.seek(self, current_column)
 	self.tile_steps = start_column
 	self.total_scroll_px = start_column * self.tile_size
 	self.scroll_gate = 0x01
@@ -347,7 +164,7 @@ function stage:advance_tape()
 		local x<const>, y<const> = owner:get_global_position()
 		owner:set_global_position(x - self.tile_size, y)
 	end
-	self:advance_actor_spawns(column)
+	stage_actor_cues.advance(self, column)
 	self.tile_steps = self.tile_steps + 1
 	self.total_scroll_px = self.tile_steps * self.tile_size
 

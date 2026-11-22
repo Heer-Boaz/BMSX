@@ -6,7 +6,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'scripts/nemesis_s/stadsburg'))
-from stage_map import compile_actor_cells
+from stage_map import compile_actor_cells, compile_actor_cues
 
 
 class StageMapTest(unittest.TestCase):
@@ -30,6 +30,16 @@ class StageMapTest(unittest.TestCase):
             [index + 5, 1, ord(symbol)] for index, symbol in enumerate(markers)
         ])
 
+    def test_encounter_admission_moves_chimneys_earlier_without_reordering_ties(self):
+        # A chimney in the first column is valid; another chimney joins the
+        # first column's ordinary encounters without moving ahead of them.
+        roles = list(map(ord, 'mSpK'))
+        rows = [[2, 3, 2, 4], [1, 2, 4, 0], [3, 1, 0, 0]]
+        self.assertEqual(compile_actor_cues(rows, roles), [
+            (-1, 1, ord('S')), (0, 2, ord('m')), (0, 3, ord('p')),
+            (0, 2, ord('S')), (1, 1, ord('p')), (1, 3, ord('m')),
+            (1, 1, ord('S')), (2, 2, ord('K')), (3, 1, ord('K')),
+        ])
 
 class StageTapeTest(unittest.TestCase):
     def test_sparse_cells_collision_and_water_match_the_authored_map(self):
@@ -39,7 +49,7 @@ class StageTapeTest(unittest.TestCase):
         stage = yaml.safe_load((path / 'nemesis_s_stage.yaml').read_text())
         blob = (path / 'nemesis_s_stage_tape.bin').read_bytes()
         self.assertEqual(blob, compile_stage_tape(stage))
-        width, height, front, back, back_rows, collision, words, water, count, length = struct.unpack_from('<10I', blob)
+        width, height, front, back, back_rows, collision, words, water, count, actors, actor_count, length = struct.unpack_from('<12I', blob)
         self.assertEqual((width, height, length), (len(stage['tile_ids'][0]), len(stage['tile_ids']), len(blob)))
         invisible = set(stage['sky_actor_ids'])
         for y, row in enumerate(stage['tile_ids']):
@@ -59,7 +69,12 @@ class StageTapeTest(unittest.TestCase):
                           for y, row in enumerate(stage['tile_ids']) if y + 1 >= stage['water_animation']['first_row']
                           for x, tile in enumerate(row) if tile and families[tile - 1]]
         self.assertEqual([struct.unpack_from('<HHH', blob, water + i * 6) for i in range(count)], expected_water)
+        self.assertEqual(actors % 4, 0)
+        self.assertEqual(actors + actor_count * 8, length)
+        self.assertEqual([struct.unpack_from('<iHH', blob, actors + i * 8) for i in range(actor_count)],
+                         compile_actor_cues(stage['tile_ids'], stage['tile_roles']))
         self.assertEqual(yaml.safe_load((path / 'nemesis_s_stage_runtime.yaml').read_text()), stage_runtime_config(stage))
+        self.assertNotIn('actor_cells', stage_runtime_config(stage))
 
     def test_collision_roles_and_tree_neighbor_precedence(self):
         from stage_map import compile_collision_words

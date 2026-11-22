@@ -9,6 +9,7 @@ function tape.open(address)
         foreground=address+header[2], background=address+header[3],
         background_rows=header[4], collision=address+header[5],
         collision_words=header[6], water=address+header[7], water_count=header[8],
+        actors=address+header[9], actor_count=header[10],
     }
 end
 

@@ -70,7 +70,7 @@ return {kind='integration',phase_cycles={full_tape_and_repeated_checkpoint_strea
         stage.state_machines:set_enabled(false)
         -- Exercise the real scenery and scrolling, without allocating enemies;
         -- normal enemy admission and retirement are covered by the next case.
-        stage.actor_spawn_index=stage.actor_spawn_count+1
+        stage.actor_cue_index=stage.actor_cue_count
         stage.scroll_stop_count=0
         stage.scrolling=true
         local count<const> = stage.tile_columns+2
@@ -89,7 +89,7 @@ return {kind='integration',phase_cycles={full_tape_and_repeated_checkpoint_strea
         end
         assert(stage.water.phase==0, 'checkpoint did not reset the water')
         local saved_overrides<const> = count_overrides(stage.stage_tiles)
-        stage.actor_spawn_index=stage.actor_spawn_count+1
+        stage.actor_cue_index=stage.actor_cue_count
         stage.scrolling=true
         for column=stage.left_tile+1,last do
             stage:advance_tape()
@@ -102,9 +102,8 @@ return {kind='integration',phase_cycles={full_tape_and_repeated_checkpoint_strea
     natural_enemy_admission_and_retirement=function(t)
         local _,stage<const>,pilot<const> = fixture.start_game(t)
         pilot.body_collider:set_enabled(false)
-        local initial_index<const> = stage.actor_spawn_index
-        local first_definition<const> = stage.actor_spawns[initial_index].definition_id
-        local objects<const> = world:active_definition_view(first_definition).objects
+        local initial_index<const> = stage.actor_cue_index
+        local objects<const> = world:active_definition_view(ids_sint_pop_def).objects
         local seen
         local observed = false
         local retired = false
@@ -116,12 +115,12 @@ return {kind='integration',phase_cycles={full_tape_and_repeated_checkpoint_strea
             if #world._objects>peak_objects then peak_objects=#world._objects end
             if elapsed%250==0 then
                 t:log(string.format('natural|%d|tiles=%d|admitted=%d|objects=%d|peak=%d|overrides=%d',
-                    elapsed,stage.tile_steps,stage.actor_spawn_index-initial_index,#world._objects,
+                    elapsed,stage.tile_steps,stage.actor_cue_index-initial_index,#world._objects,
                     peak_objects,count_overrides(stage.stage_tiles)))
             end
         end
         assert(stage.tile_steps>100, 'natural stage did not scroll through early scenery')
-        assert(stage.actor_spawn_index>initial_index, 'the stage did not admit authored enemies')
+        assert(stage.actor_cue_index>initial_index, 'the stage did not admit authored enemies')
         assert(observed and retired, 'an admitted enemy was not retired during ordinary movement')
     end,
 }}

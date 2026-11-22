@@ -1,4 +1,4 @@
-"""Compile sparse ROM rows, collision words and role indexes from one map."""
+"""Compile sparse ROM rows, collision words and encounter cues from one map."""
 
 import struct
 
@@ -25,9 +25,17 @@ def compile_actor_cells(rows, roles):
     return cells
 
 
+def compile_actor_cues(rows, roles):
+    cues = [(x - (2 if role == ord('S') else 1), y, role)
+            for x, y, role in compile_actor_cells(rows, roles)]
+    # Chimneys enter a column early. Stable sorting preserves source column
+    # and row order between encounters assigned to the same admission column.
+    return sorted(cues, key=lambda cue: cue[0])
+
+
 # Stage-local ROM data, not a machine image format. All offsets are bytes from
 # the asset base; row directories contain (offset, count), then u16 cell pairs.
-TAPE_HEADER_WORDS = 10
+TAPE_HEADER_WORDS = 12
 SOLID_ROLES = {ord(symbol) for symbol in '!#%()+-=@RS^_dsw'}
 
 
@@ -88,16 +96,22 @@ def compile_stage_tape(stage):
             if tile and families[tile - 1]:
                 data.extend(struct.pack('<HHH', x + 1, y + 1, families[tile - 1]))
                 water_count += 1
-    struct.pack_into('<10I', data, 0, width, height, front_offset, back_offset,
+    # The encounter array uses word-aligned (signed column, row, role) records.
+    data.extend(bytes(-len(data) % 4))
+    actor_offset = len(data)
+    actors = compile_actor_cues(rows, stage['tile_roles'])
+    for column, row, role in actors:
+        data.extend(struct.pack('<iHH', column, row, role))
+    struct.pack_into('<12I', data, 0, width, height, front_offset, back_offset,
                      len(background), collision_offset, (width + 31) // 32,
-                     water_offset, water_count, len(data))
+                     water_offset, water_count, actor_offset, len(actors), len(data))
     return bytes(data)
 
 
 def stage_runtime_config(stage):
     """Small control data derived from the same map; no second authored map."""
     config = {key: value for key, value in stage.items() if key not in {
-        'source', 'tile_ids', 'tile_assets', 'tile_roles', 'sky_actor_ids',
+        'source', 'tile_ids', 'tile_assets', 'tile_roles', 'sky_actor_ids', 'actor_cells',
     }}
     config['background'] = {key: value for key, value in stage['background'].items()
                             if key not in {'tile_assets', 'rows'}}

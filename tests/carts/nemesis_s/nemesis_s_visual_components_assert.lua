@@ -27,7 +27,7 @@ return {
 			local director<const>, stage<const>, player<const> = fixture.start_game(t)
 
 			do
-				stage.actor_spawn_index = stage.actor_spawn_count + 1
+				stage.actor_cue_index = stage.actor_cue_count
 				local snowman<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sneeuwpop_def, {
 					stage = stage,
 					position = { x = 100, y = 48 },
