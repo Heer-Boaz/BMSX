@@ -255,45 +255,59 @@ TableRecord::ResizePlan TableRecord::planRehash(Value key, u32 reserve, u32 memb
 	return {arraySize, hashSize, static_cast<u32>(hashKeys), nextWatermark};
 }
 
-int TableRecord::insertHashWithAdmission(Value key, Value value, u32 reserve, u32 members, u32 watermark, int existing) {
+int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, u32 reserve, u32 members, int existing) noexcept {
+	// A new logical frontier does not require new physical storage.
+	const u32 count = hashSlots(), array = arrayCapacity();
+	if (plan.array == array && count != 0u) {
+		const auto body = hashBody(count, array);
+		const u32 home = hashCanonicalTableKey(key) & (count - 1u);
+		const bool vacant = body.vacantHome(home);
+		const int available = existing >= 0 || vacant ? -1 : findFreeIndex(body);
+		if (existing >= 0 || vacant || available >= 0) {
+			const int slot = placeHashMapping(body, home, key, value, existing, available);
+			publishHashMembers(members, plan.members, reserve);
+			publishHashWatermark(plan.watermark);
+			return slot;
+		}
+	}
+	if (const u32 storage = m_heap->arena.allocate(storageBytes(plan.array, plan.hash, reserve), true))
+		return resize(plan, storage, key, value, reserve);
+	return HASH_STORE_DECLINED;
+}
+
+template <bool Returning>
+int TableRecord::insertHashWithAdmission(Value key, Value value, u32 reserve, u32 members, u32 watermark, int existing) noexcept(Returning) {
 	auto& budget = m_heap->budget;
-	const Value owner = valueTable(m_address);
 	auto plan = planRehash(key, reserve, members, watermark);
 	u32 previous = allocationCharge(arrayCapacity(), std::max(reserve, members));
 	u32 requested = allocationCharge(plan.array, std::max(reserve, plan.members));
-	const auto assist = requested > previous ? budget.prepareAllocation(requested - previous, owner, key, value) : LuaAllocationAssist::None;
-	bool replan = assist == LuaAllocationAssist::Full;
-	for (int attempt = assist == LuaAllocationAssist::Full ? 1 : 0; attempt != 2; ++attempt) {
-		if (replan) {
-			members = hashMembers();
-			plan = planRehash(key, reserve, members, watermark);
-			previous = allocationCharge(arrayCapacity(), std::max(reserve, members));
-			requested = allocationCharge(plan.array, std::max(reserve, plan.members));
-		}
-		if (requested <= previous || budget.usedBytes() + requested - previous <= budget.capacity()) {
-			// A new logical frontier does not require new physical storage.
-			const u32 count = hashSlots(), array = arrayCapacity();
-			if (plan.array == array && count != 0u) {
-				const auto body = hashBody(count, array);
-				const u32 home = hashCanonicalTableKey(key) & (count - 1u);
-				const bool vacant = body.vacantHome(home);
-				const int available = existing >= 0 || vacant ? -1 : findFreeIndex(body);
-				if (existing >= 0 || vacant || available >= 0) {
-					const int slot = placeHashMapping(body, home, key, value, existing, available);
-					publishHashMembers(members, plan.members, reserve);
-					publishHashWatermark(plan.watermark);
-					return slot;
-				}
+	if constexpr (Returning) {
+		// The generated body has not published its roots. Even an ordinary
+		// allocation assist must go through the instruction's semantic exit.
+		if (requested > previous && !budget.canAdmitWithoutAssist(requested - previous)) return HASH_STORE_DECLINED;
+		return commitHashPlan(plan, key, value, reserve, members, existing);
+	} else {
+		const Value owner = valueTable(m_address);
+		const auto assist = requested > previous ? budget.prepareAllocation(requested - previous, owner, key, value) : LuaAllocationAssist::None;
+		bool replan = assist == LuaAllocationAssist::Full;
+		for (int attempt = assist == LuaAllocationAssist::Full ? 1 : 0; attempt != 2; ++attempt) {
+			if (replan) {
+				members = hashMembers();
+				plan = planRehash(key, reserve, members, watermark);
+				previous = allocationCharge(arrayCapacity(), std::max(reserve, members));
+				requested = allocationCharge(plan.array, std::max(reserve, plan.members));
 			}
-			if (const u32 storage = m_heap->arena.allocate(storageBytes(plan.array, plan.hash, reserve), true))
-				return resize(plan, storage, key, value, reserve);
+			if (requested <= previous || budget.usedBytes() + requested - previous <= budget.capacity()) {
+				const int slot = commitHashPlan(plan, key, value, reserve, members, existing);
+				if (slot != HASH_STORE_DECLINED) return slot;
+			}
+			if (attempt == 0) {
+				budget.collectRuntime(owner, key, value);
+				replan = true;
+			}
 		}
-		if (attempt == 0) {
-			budget.collectRuntime(owner, key, value);
-			replan = true;
-		}
+		throw LuaOutOfMemorySignal{};
 	}
-	throw LuaOutOfMemorySignal{};
 }
 
 int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value value, u32 reserve) {
@@ -562,9 +576,9 @@ int TableRecord::setHash(u32 array, Value key, Value value, int slot) {
 
 template <TableRecord::HashStore Policy>
 int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, StringId newIndexKey) noexcept(Policy != HashStore::General) {
-	constexpr bool inPlaceOnly = Policy != HashStore::General;
+	constexpr bool returning = Policy != HashStore::General;
 	const auto tag = valueTag(value);
-	const bool erase = Policy == HashStore::FieldInPlace && tag == ValueTag::Nil;
+	const bool erase = Policy == HashStore::ReturningField && tag == ValueTag::Nil;
 	const bool valueHasEdge = valueTagHasGcEdge(tag);
 	const u32 count = hashSlots();
 	const auto body = hashBody(count, array);
@@ -572,8 +586,8 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 	if (nodeIndex == TABLE_HASH_UNPROBED) {
 		nodeIndex = -1;
 		if (count != 0u) {
-			if constexpr (Policy == HashStore::IdentityInPlace) nodeIndex = body.findNode(key, home, true);
-			else if constexpr (Policy == HashStore::FieldInPlace) nodeIndex = body.findString(asStringId(key), home);
+			if constexpr (Policy == HashStore::ReturningIdentity) nodeIndex = body.findNode(key, home, true);
+			else if constexpr (Policy == HashStore::ReturningField) nodeIndex = body.findString(asStringId(key), home);
 			else nodeIndex = valueIsString(key) ? body.findString(asStringId(key), home) : body.findNode(key, home, true);
 		}
 	}
@@ -592,7 +606,7 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 	}
 	// Only an absent own field can trigger __newindex. Keep the probe's
 	// slot (including a tombstone) for the insertion below.
-	if constexpr (Policy == HashStore::FieldInPlace) {
+	if constexpr (Policy == HashStore::ReturningField) {
 		if (!isNil(metatableField(newIndexKey))) return HASH_STORE_DECLINED;
 		if (erase) return -1;
 	}
@@ -608,29 +622,30 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 	}
 	if (placeInCurrent) {
 		if (members >= reserve) {
-			if constexpr (inPlaceOnly) {
+			if constexpr (returning) {
 				if (!m_heap->budget.canAdmitWithoutAssist(kHashMappingBytes)) return HASH_STORE_DECLINED;
 			} else {
 				m_heap->budget.admit(kHashMappingBytes, valueTable(m_address), key, value);
 			}
 		}
 		nodeIndex = placeHashMapping(body, home, key, value, nodeIndex, available);
-		const u32 retained = inPlaceOnly ? members : hashMembers();
+		const u32 retained = returning ? members : hashMembers();
 		publishHashMembers(retained, retained + 1u, reserve);
 	} else {
-		if constexpr (inPlaceOnly) return HASH_STORE_DECLINED;
-		else nodeIndex = insertHashWithAdmission(key, value, reserve, members, watermark, nodeIndex);
+		nodeIndex = insertHashWithAdmission<returning>(key, value, reserve, members, watermark, nodeIndex);
+		if constexpr (returning)
+			if (nodeIndex == HASH_STORE_DECLINED) return nodeIndex;
 	}
-	if (inPlaceOnly || valueTagHasGcEdge(valueTag(key)) || valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+	if (returning || valueTagHasGcEdge(valueTag(key)) || valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 	return nodeIndex;
 }
 
 bool TableRecord::tryAssignIdentityHash(Value key, Value value) noexcept {
-	return assignHash<HashStore::IdentityInPlace>(arrayCapacity(), key, value) >= 0;
+	return assignHash<HashStore::ReturningIdentity>(arrayCapacity(), key, value) >= 0;
 }
 
 int TableRecord::tryAssignStringField(StringId key, Value value, StringId newIndexKey) noexcept {
-	return assignHash<HashStore::FieldInPlace>(arrayCapacity(), valueString(key), value, TABLE_HASH_UNPROBED, newIndexKey);
+	return assignHash<HashStore::ReturningField>(arrayCapacity(), valueString(key), value, TABLE_HASH_UNPROBED, newIndexKey);
 }
 
 Value TableRecord::getInteger(int indexValue) const {

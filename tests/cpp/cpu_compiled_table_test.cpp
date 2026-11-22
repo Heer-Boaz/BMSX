@@ -1568,9 +1568,9 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 		&& receiver.hashSlots() == 8 && receiver.get(grows) == raw && receiver.get(inserted) == grows
 		&& cpu.luaHeap().usedBytes() == bytes + 2 * charge
 		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39),
-		"a full table falls through to semantic growth once and continues with the live registers");
+		"a full table grows and continues with the live native registers");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	require(writeExits == warmExits + 1, "the same warmed site enters its WriteIndex exit on growth");
+	require(writeExits == warmExits, "ordinary growth returns to the native body without WriteIndex");
 #endif
 	requireParity(native, scalar);
 	start(keysSlot + 3, valueNil());
@@ -1781,11 +1781,14 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 		&& full.hashSlots() == 2 && full.getStringKey(field) == raw
 		&& full.getStringKey(*cpu.stringPool().find("resident field")) == valueInteger(31)
 		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39),
-		"a full hash uses semantic growth once and continues with the live prefix");
+		"a full hash grows and returns with the live native prefix");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	require(writeExits == warmExits + 1, "the same warmed WriteField site handles real growth");
+	require(writeExits == warmExits, "fixed field growth returns without the VM handoff");
 #endif
 	requireParity(native, scalar);
+	int grownSlot = -1;
+	require(full.getStringKeyCached(field, grownSlot) == raw && prediction == grownSlot,
+		"feedback names the slot in the new storage, not the retired body");
 	const auto fullStorage = full.storageAddress();
 	const auto beforeFullDelete = cpu.luaHeap().usedBytes();
 	for (int attempt = 0; attempt < 2; ++attempt) {
@@ -1798,7 +1801,7 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 		requireParity(native, scalar);
 	}
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	require(writeExits == warmExits + 1, "deletion and the following tombstone no-op never enter WriteField");
+	require(writeExits == warmExits, "deletion and the following tombstone no-op never enter WriteField");
 #endif
 	start(spareSlot, raw);
 	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded && prediction == insertedSlot,
@@ -1867,6 +1870,28 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(writeExits == beforeKnownNil, "the compiled known-nil lane also avoids WriteField");
 #endif
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		auto receiver = lane.createTable(0, 1);
+		receiver.setStringKey(*lane.stringPool().find("resident field"), valueInteger(37));
+		lane.activeThread()->currentFrame->registers.set(fullSlot, valueTable(receiver.address()));
+		lane.luaHeap().setCollectionTarget(static_cast<u32>(lane.luaHeap().usedBytes()));
+	}
+	start(fullSlot, raw);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto beforeAssist = writeExits;
+#endif
+	auto underPressure = asTable(cpu.readFrameRegister(0, fullSlot), cpu.gcHeap());
+	const auto beforePressure = cpu.luaHeap().usedBytes();
+	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
+		&& underPressure.hashSlots() == 2 && underPressure.getStringKey(field) == raw
+		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39)
+		&& cpu.luaHeap().usedBytes() == beforePressure + charge,
+		"growth requiring collector assistance completes once through the semantic owner and preserves the live suffix");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(writeExits == beforeAssist + 1, "pressure still publishes the activation before collecting");
+#endif
+	requireParity(native, scalar);
 #endif
 }
 } // namespace

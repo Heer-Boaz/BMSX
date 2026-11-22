@@ -55,7 +55,8 @@ public:
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value);
 	// The caller admits an own assignment with a Table key and a non-nil
-	// value. Declining leaves the table and collector unchanged.
+	// value. Growth can return in place of a VM handoff when no collection
+	// is required. Declining leaves the table and collector unchanged.
 	bool tryAssignIdentityHash(Value key, Value value) noexcept;
 	// A field write may complete without a VM handoff. Return the actual
 	// slot (-1 for completed nil), or HASH_STORE_DECLINED before mutation.
@@ -178,7 +179,9 @@ private:
 	int findNextLiveHashIndex(size_t start) const;
 	struct ResizePlan { size_t array, hash; u32 members, watermark; };
 	ResizePlan planRehash(Value key, u32 reserve, u32 members, u32 watermark) const;
-	int insertHashWithAdmission(Value key, Value value, u32 reserve, u32 members, u32 watermark, int existing);
+	template <bool Returning>
+	int insertHashWithAdmission(Value key, Value value, u32 reserve, u32 members, u32 watermark, int existing) noexcept(Returning);
+	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 reserve, u32 members, int existing) noexcept;
 	int resize(const ResizePlan&, u32 storage, Value key, Value value, u32 reserve);
 	void bindStorage(size_t arraySize, size_t hashSize, u32 address);
 	void initializeStorage(size_t retainedArray = 0);
@@ -237,7 +240,7 @@ private:
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
 	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
 	int setHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED);
-	enum class HashStore : u8 { General, IdentityInPlace, FieldInPlace };
+	enum class HashStore : u8 { General, ReturningIdentity, ReturningField };
 	template <HashStore Policy>
 	int assignHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED,
 		StringId newIndexKey = 0) noexcept(Policy != HashStore::General);
