@@ -24,7 +24,8 @@ const MAX_PAGES = (MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE) >>> PAGE_SHIFT;
 
 // Management-area layout, as byte offsets from its base. Every field is a
 // little-endian word in guest RAM; partial-list links store page + 1.
-const SWEEP_PAGE = 0x008;
+// Sweep position: page in the high bits, next slot ordinal in the low bits.
+const SWEEP_CURSOR = 0x008;
 const PARTIAL_HEADS = 0x040;
 const AVAILABLE_PAGES = 0x200;
 const PAGE_ENTRIES = 0x1000;
@@ -165,15 +166,16 @@ export class HeapAllocator {
 	}
 
 	public beginObjectSweep(): void {
-		this.memory.writeRamRecordWord(this.management + SWEEP_PAGE, this.floorPage());
+		this.memory.writeRamRecordWord(this.management + SWEEP_CURSOR, this.floorPage() << PAGE_SHIFT);
 	}
 
 	public objectSweepActive(): boolean {
-		return this.memory.readRamRecordWord(this.management + SWEEP_PAGE) < this.pageLimit;
+		return this.memory.readRamRecordWord(this.management + SWEEP_CURSOR) < (this.pageLimit << PAGE_SHIFT);
 	}
 
 	// The visitor returns charged work, negated when it releases the record.
 	public sweepObjects<Context>(allowance: number, context: Context, visit: (context: Context, address: number) => number): number {
+		if (allowance === 0) return 0;
 		return this.walkObjectPages(allowance, context, visit, true);
 	}
 
@@ -182,18 +184,19 @@ export class HeapAllocator {
 	}
 
 	private walkObjectPages<Context>(allowance: number, context: Context, visit: (context: Context, address: number) => number, sweep: boolean): number {
-		const cursor = this.management + SWEEP_PAGE;
-		let page = sweep ? this.memory.readRamRecordWord(cursor) : 0;
+		const cursor = this.management + SWEEP_CURSOR;
+		const position = sweep ? this.memory.readRamRecordWord(cursor) : 0;
+		let page = position >>> PAGE_SHIFT, slot = position & PAGE_MASK;
 		if (page >= this.pageLimit) return 0;
 		let work = 0;
+		scan:
 		while (page < this.pageLimit && work < allowance) {
 			const pageEntry = this.entry(page);
 			const info = this.memory.readRamRecordWord(pageEntry);
 			const base = RAM_BASE + (page << PAGE_SHIFT);
-			++page;
 			switch (info & 0xff) {
 				case PageKind.ObjectRun:
-					page += Math.min((this.memory.readRamRecordWord(pageEntry + 4) - 1) >>> 0, this.pageLimit - page);
+					page += Math.min((this.memory.readRamRecordWord(pageEntry + 4) - 1) >>> 0, this.pageLimit - page - 1);
 					work += this.memory.readRamRecordByte(base) !== 0 ? Math.abs(visit(context, base)) : 1;
 					break;
 				case PageKind.ObjectSlots: {
@@ -203,8 +206,9 @@ export class HeapAllocator {
 					const stride = HEAP_CLASS_BYTES[classIndex];
 					const end = Math.min((this.memory.readRamRecordWord(pageEntry + 8) & LINK_MASK) << BUMP_SHIFT, HEAP_PAGE_SIZE);
 					let live = info >>> 16;
-					for (let slot = 0; slot + stride <= end; slot += stride) {
-						const address = base + slot;
+					for (let offset = slot * stride; offset + stride <= end; offset += stride, ++slot) {
+						if (work >= allowance) break scan;
+						const address = base + offset;
 						const visited = this.memory.readRamRecordByte(address) !== 0 ? visit(context, address) : 1;
 						work += Math.abs(visited);
 						if (visited < 0 && --live === 0) break;
@@ -212,8 +216,10 @@ export class HeapAllocator {
 					break;
 				}
 			}
+			++page;
+			slot = 0;
 		}
-		if (sweep) this.memory.writeRamRecordWord(cursor, page);
+		if (sweep) this.memory.writeRamRecordWord(cursor, (page << PAGE_SHIFT) | slot);
 		return work;
 	}
 

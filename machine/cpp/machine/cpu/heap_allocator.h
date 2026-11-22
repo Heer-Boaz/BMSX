@@ -78,6 +78,7 @@ public:
 	// Sweep only independently allocated records. Each issued slot is a visit,
 	// including a vacant one. Owned blocks are released by their record.
 	// The visitor returns charged work, negated when it releases the record.
+	// A visit can exhaust the allowance, but no later slot is visited in that step.
 	using SweepVisitor = i32 (*)(void*, u32);
 	void beginObjectSweep();
 	bool objectSweepActive() const;
@@ -85,7 +86,7 @@ public:
 	void visitObjectRecords(void* context, SweepVisitor visit) const;
 
 private:
-	size_t walkObjectPages(u32& page, size_t allowance, void* context, SweepVisitor visit) const;
+	size_t walkObjectPages(u32& position, size_t allowance, void* context, SweepVisitor visit) const;
 	u32 allocateRun(u32 byteCount, bool owned);
 	i32 takeTopPage();
 	i32 takeTopRun(u32 pages);

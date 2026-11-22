@@ -205,20 +205,62 @@ void objectSweepResumesFromRam() {
 		sweep.heap.free(address);
 		return sweep.addresses.size() == 1 ? -5 : -1;
 	};
+	auto inspect = +[](void* context, u32 address) -> i32 {
+		static_cast<std::vector<u32>*>(context)->push_back(address);
+		return 1;
+	};
 
 	heap.beginObjectSweep();
+	const auto beforeZero = memory.captureSaveState().ram;
+	require(heap.sweepObjects(0, &visits, retire) == 0 && visits.addresses.empty()
+		&& memory.captureSaveState().ram == beforeZero, "zero allowance does not advance the sweep or visit a record");
 	require(heap.sweepObjects(1, &visits, retire) == 5 && visits.addresses == std::vector<u32>{run},
 		"an object run contributes the charge of one visit");
-	require(heap.objectSweepActive(), "the sweep still has object pages to visit");
+	visits.addresses.clear();
+	require(heap.sweepObjects(1, &visits, retire) == 5 && visits.addresses == std::vector<u32>{first}
+		&& heap.objectSweepActive(), "the first slot can finish but the sweep stops before the hole and next object");
+	const u32 cursor = heap.managementOffset() + 8u;
+	require(memory.readRamRecordWord(cursor) == ((first - RAM_BASE) | 1u),
+		"the published cursor contains the page and the next slot ordinal");
 	const auto midSweep = memory.captureSaveState();
-	for (int replay = 0; replay < 2; ++replay) {
-		memory.restoreSaveState(midSweep);
+	std::vector<u32> inventory;
+	heap.visitObjectRecords(&inventory, inspect);
+	require(inventory == std::vector<u32>{last} && memory.captureSaveState().ram == midSweep.ram,
+		"cold inventory is independent of the sweep cursor and leaves RAM unchanged");
+
+	RamHistory archive;
+	RamHistory::PageMap paused, finished;
+	archive.capture(memory, nullptr, paused);
+	const auto complete = [&] {
+		require(heap.allocate(32, false) == first, "the swept prefix can immediately receive a new allocation");
+		memory.writeRamRecordWord(first, 2);
 		visits.addresses.clear();
-		require(heap.sweepObjects(1, &visits, retire) == 7 && visits.addresses == std::vector<u32>{first, last},
-			"the current page is indivisible, including its vacant issued slot");
-		require(heap.occupiedBytes() == 2u * HEAP_PAGE_SIZE && memory.readRamRecordWord(owned) == 1
-			&& !heap.objectSweepActive(), "the owner retains its block and the cursor reaches the end");
-	}
+		require(heap.sweepObjects(1, &visits, retire) == 1 && visits.addresses.empty() && heap.objectSweepActive(),
+			"the issued hole consumes exactly one visit without inspecting the next record");
+		require(heap.sweepObjects(1, &visits, retire) == 5 && visits.addresses == std::vector<u32>{last},
+			"the next visit resumes at the last record, not the new allocation in the swept prefix");
+		require(heap.occupiedBytes() == 2u * HEAP_PAGE_SIZE + 32u && memory.readRamRecordWord(owned) == 1
+			&& memory.readRamRecordWord(first) == 2 && !heap.objectSweepActive()
+			&& memory.readRamRecordWord(cursor) == heap.pageLimit() * HEAP_PAGE_SIZE,
+			"the new allocation and owned run survive and the cursor reaches the sentinel");
+	};
+	complete();
+	const auto completedRam = memory.captureSaveState().ram;
+	archive.capture(memory, &paused, finished);
+	archive.restore(memory, finished, paused);
+	require(memory.captureSaveState().ram == midSweep.ram, "rewind restores the partial-page cursor and records");
+	complete();
+	require(memory.captureSaveState().ram == completedRam, "the same resumed sweep reproduces all RAM");
+
+	archive.restore(memory, finished, paused);
+	heap.free(last);
+	const u32 larger = heap.allocate(64, false), largerNext = heap.allocate(64, false);
+	require(larger == first && largerNext == larger + 64, "a released page can be assigned a new size class");
+	memory.writeRamRecordWord(larger, 3);
+	memory.writeRamRecordWord(largerNext, 4);
+	inventory.clear();
+	require(heap.sweepObjects(1, &inventory, inspect) == 1 && inventory == std::vector<u32>{largerNext}
+		&& !heap.objectSweepActive(), "the saved ordinal resumes against the new class stride");
 }
 
 } // namespace

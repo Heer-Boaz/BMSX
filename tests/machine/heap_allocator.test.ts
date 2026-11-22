@@ -126,27 +126,62 @@ test('object sweep resumes from RAM, visits vacant issued slots and skips owned 
 		return visits.length === 1 ? -5 : -1;
 	};
 	heap.beginObjectSweep();
+	const beforeZero = memory.captureSaveState();
+	assert.equal(heap.sweepObjects(0, heap, retire), 0);
+	assert.deepEqual(visits, []);
+	assert.deepEqual(memory.captureSaveState(), beforeZero, 'zero allowance does not advance the sweep');
 	assert.equal(heap.sweepObjects(1, heap, retire), 5, 'the run contributes the charge of one visit');
 	assert.deepEqual(visits, [run]);
+	visits.length = 0;
+	assert.equal(heap.sweepObjects(1, heap, retire), 5, 'the first slot can finish, but cannot start the hole or the next object');
+	assert.deepEqual(visits, [first]);
 	assert.ok(heap.objectSweepActive());
+	const cursor = heap.managementOffset() + 8;
+	assert.equal(memory.readRamRecordWord(cursor), (first - RAM_BASE) | 1, 'the cursor publishes the page and next slot ordinal');
 	const midSweep = memory.captureSaveState();
 
-	// Load-time discovery starts at the bottom of RAM without copying or
-	// advancing an in-progress collector's hardware cursor.
-	const records: number[] = [];
-	heap.visitObjectRecords(records, (records, address) => { records.push(address); return 1; });
-	assert.deepEqual(records, [first, last]);
+	const records: number[] = [], inspect = (records: number[], address: number) => { records.push(address); return 1; };
+	heap.visitObjectRecords(records, inspect);
+	assert.deepEqual(records, [last]);
 	assert.deepEqual(memory.captureSaveState(), midSweep, 'attachment discovery has no RAM writes');
 
-	for (let replay = 0; replay < 2; ++replay) {
-		memory.restoreSaveState(midSweep);
+	const archive = new RamHistory();
+	archive.start(memory);
+	const paused = archive.capture(memory, null);
+	const complete = () => {
+		assert.equal(heap.allocate(32, false), first, 'the swept prefix can immediately receive a new allocation');
+		memory.writeRamRecordWord(first, 2);
 		visits.length = 0;
-		assert.equal(heap.sweepObjects(1, heap, retire), 7, 'sweep finishes the issued slots in the page including the hole');
-		assert.deepEqual(visits, [first, last]);
-		assert.equal(heap.occupiedBytes(), HEAP_PAGE_SIZE * 2);
+		assert.equal(heap.sweepObjects(1, heap, retire), 1, 'the issued hole consumes its own visit');
+		assert.deepEqual(visits, []);
+		assert.ok(heap.objectSweepActive());
+		assert.equal(heap.sweepObjects(1, heap, retire), 5);
+		assert.deepEqual(visits, [last], 'the cursor never revisits the new allocation in the swept prefix');
+		assert.equal(heap.occupiedBytes(), HEAP_PAGE_SIZE * 2 + 32);
 		assert.equal(memory.readRamRecordWord(owned), 1);
+		assert.equal(memory.readRamRecordWord(first), 2);
 		assert.ok(!heap.objectSweepActive());
-	}
+		assert.equal(memory.readRamRecordWord(cursor), heap.managementOffset(), 'the cursor reaches the page-limit sentinel');
+	};
+	complete();
+	const completedRam = memory.captureSaveState().ram;
+	const finished = archive.capture(memory, paused);
+	archive.restore(memory, finished, paused);
+	assert.deepEqual(memory.captureSaveState().ram, midSweep.ram, 'rewind restores the partial-page cursor and records');
+	complete();
+	assert.deepEqual(memory.captureSaveState().ram, completedRam, 'the resumed sweep reproduces all RAM');
+
+	archive.restore(memory, finished, paused);
+	heap.free(last);
+	const larger = heap.allocate(64, false), largerNext = heap.allocate(64, false);
+	assert.equal(larger, first);
+	assert.equal(largerNext, larger + 64, 'a released page can be assigned a new size class');
+	memory.writeRamRecordWord(larger, 3);
+	memory.writeRamRecordWord(largerNext, 4);
+	records.length = 0;
+	assert.equal(heap.sweepObjects(1, records, inspect), 1);
+	assert.deepEqual(records, [largerNext], 'the saved ordinal resumes against the new class stride');
+	assert.ok(!heap.objectSweepActive());
 });
 
 test('releasing a middle partial page preserves allocation order, including after RAM restore', () => {
