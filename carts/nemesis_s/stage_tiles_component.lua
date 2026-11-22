@@ -2,6 +2,7 @@ local gp0<const> = require('cartlib/gx/gp0')
 local command_list<const> = require('cartlib/gx/command_list')
 local tile_layer_row<const> = require('cartlib/component/tile_layer_row')
 local visual_2d_component<const> = require('cartlib/component/visual_2d_component')
+local water_cell_bit<const> = require('grachtwater').cell_bit
 
 local stage_tiles<const> = {}
 stage_tiles.__index = stage_tiles
@@ -20,6 +21,13 @@ local lower_bound<const> = function(address, count, column)
     return first
 end
 
+local tape_source<const> = function(self, selector)
+    if (selector & water_cell_bit) ~= 0 then
+        selector = self.water:art_at(selector & (water_cell_bit - 1))
+    end
+    return self.art:resolve(selector)
+end
+
 function stage_tiles:source_at(column, y)
     local row<const> = self._rows[y]
     local source<const> = row.overrides[column]
@@ -27,7 +35,7 @@ function stage_tiles:source_at(column, y)
     local cells<const>: *u16 = row.tape_address
     local index<const> = lower_bound(cells, row.tape_count, column)
     if index < row.tape_count and cells[index * 2] == column then
-        return self.art:resolve(cells[index * 2 + 1])
+        return tape_source(self, cells[index * 2 + 1])
     end
 end
 
@@ -67,7 +75,7 @@ local rebuild_row<const> = function(self, row, first, last)
     for column = first, last do
         local source = row.overrides[column]
         if index < row.tape_count and cells[index * 2] == column then
-            if source == nil then source = self.art:resolve(cells[index * 2 + 1]) end
+            if source == nil then source = tape_source(self, cells[index * 2 + 1]) end
             index = index + 1
         end
         if source ~= nil then
@@ -108,6 +116,26 @@ function stage_tiles:configure(columns, row_count, tile_size, art)
     self:set_draw_function(stage_tiles.draw_visual)
 end
 
+local visible_slot<const> = function(row, x, capacity)
+    local first, last = row.first_visible_source, row.last_visible_source
+    while first <= last do
+        local middle<const> = (first + last) >> 1
+        local column<const> = row.columns[middle]
+        if column < x then first = middle + 1
+        elseif column > x then last = middle - 1
+        else return middle > capacity and middle - capacity or middle end
+    end
+end
+
+-- The cooker indexed an existing tape cell. A pose refresh changes neither
+-- its membership nor any explicit scenery paint over that cell.
+function stage_tiles:refresh_water_cell(x, y, art)
+    local row<const> = self._rows[y]
+    if row.overrides[x] ~= nil then return end
+    local slot<const> = visible_slot(row, x, self._window_capacity)
+    tile_layer_row.set_source(row, slot, self.art:resolve(art))
+end
+
 -- Scenery changes persist independently of whether their world column is in
 -- the current render window; a visible source updates both ring copies.
 function stage_tiles:set_tile_source(x, y, source)
@@ -122,26 +150,18 @@ function stage_tiles:set_tile_source(x, y, source)
             return
         end
     end
-    local first, last = row.first_visible_source, row.last_visible_source
-    while first <= last do
-        local middle<const> = (first + last) >> 1
-        local column<const> = row.columns[middle]
-        if column < x then first = middle + 1
-        elseif column > x then last = middle - 1
-        else
-            local slot = middle
-            if slot > self._window_capacity then slot = slot - self._window_capacity end
-            tile_layer_row.set_source(row, slot, source)
-            return
-        end
+    local slot<const> = visible_slot(row, x, self._window_capacity)
+    if slot then
+        tile_layer_row.set_source(row, slot, source)
+    else
+        rebuild_row(self, row, self._first_visible_column, self._last_visible_column)
     end
-    rebuild_row(self, row, self._first_visible_column, self._last_visible_column)
 end
 
-function stage_tiles:set_visible_columns(first, count)
+function stage_tiles:set_visible_columns(first, count, sources_changed)
     local last<const> = math.min(first + count - 1, self.columns)
     local old_first<const>, old_last<const> = self._first_visible_column, self._last_visible_column
-    if first == old_first and last == old_last then return end
+    if not sources_changed and first == old_first and last == old_last then return end
     local old_capacity<const> = self._window_capacity
     self._first_visible_column, self._last_visible_column = first, last
     if old_capacity ~= count then
@@ -153,9 +173,9 @@ function stage_tiles:set_visible_columns(first, count)
         self._window_capacity = count
     end
     local capacity<const> = self._window_capacity
-    local forward<const> = old_capacity == count and first == old_first + 1
+    local forward<const> = not sources_changed and old_capacity == count and first == old_first + 1
         and (last == old_last + 1 or last == old_last)
-    local backward<const> = old_capacity == count and first == old_first - 1
+    local backward<const> = not sources_changed and old_capacity == count and first == old_first - 1
         and (last == old_last - 1 or last == old_last)
     for y = 1, self._row_count do
         local row<const> = self._rows[y]

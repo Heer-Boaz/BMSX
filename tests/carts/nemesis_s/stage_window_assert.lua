@@ -3,7 +3,7 @@ local assets<const> = require('bmsx/assets')
 local bin<const> = require('cartlib/bin')
 local gp0<const> = require('cartlib/gx/gp0')
 
-local check_layer<const> = function(tiles, original_rows, assets, invisible, harbor_rest, first, last)
+local check_layer<const> = function(tiles, original_rows, assets, invisible, harbor_rest, water, phase, first, last)
     local background<const> = harbor_rest == nil
     local size<const> = tiles._tile_size
     local domains<const> = tiles._coordinate_domain_columns
@@ -28,7 +28,16 @@ local check_layer<const> = function(tiles, original_rows, assets, invisible, har
             local source = row.overrides[x]
             if source == nil and not background then source = harbor_rest[y][x] end
             if source == nil and id ~= nil and id ~= 0 and not invisible[id] then
-                source = tiles.art:resolve(assets[id])
+                local art = assets[id]
+                if water ~= nil and y >= water.first_row then
+                    local family<const> = water.tile_families[id]
+                    if family ~= 0 then
+                        local strip<const> = (x - 1 - water.origin_column) // 4
+                        local pose<const> = ((phase + water.phase_offsets[(strip & 7) + 1]) & 7) + 1
+                        art = water.frames[family][pose]
+                    end
+                end
+                source = tiles.art:resolve(art)
             end
             if source ~= nil then
                 if slot > row.last_visible_source or row.columns[slot] ~= x then
@@ -72,8 +81,9 @@ return {kind='integration',phase_cycles={bounded_window_preserves_authored_tiles
             local last<const> = math.min(first + count - 1, stage.tape_length_tiles)
             foreground:set_visible_columns(first,count)
             background:set_visible_columns(first,count)
-            check_layer(foreground,original.tile_ids,original.tile_assets,invisible,initial,first,last)
-            check_layer(background,original.background.rows,original.background.tile_assets,visible,nil,first,last)
+            check_layer(foreground,original.tile_ids,original.tile_assets,invisible,initial,
+                original.water_animation,stage.water.phase,first,last)
+            check_layer(background,original.background.rows,original.background.tile_assets,visible,nil,nil,0,first,last)
         end
         for x=1,100 do check(x) end
         for x=99,1,-1 do check(x) end

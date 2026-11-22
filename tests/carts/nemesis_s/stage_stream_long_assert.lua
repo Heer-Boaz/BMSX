@@ -24,7 +24,7 @@ local check_layer<const> = function(tiles, first, count)
         for column=first,last do
             local source = row.overrides[column]
             if index<row.tape_count and cells[index*2]==column then
-                if source==nil then source=tiles.art:resolve(cells[index*2+1]) end
+                if source==nil then source=tiles:source_at(column,y) end
                 index=index+1
             end
             if source~=nil then
@@ -37,33 +37,16 @@ local check_layer<const> = function(tiles, first, count)
     end
 end
 
-local check_water<const> = function(stage, first, count)
-    local water<const>, tiles<const> = stage.water, stage.stage_tiles
-    local last<const> = first+count-1
-    for strip=(first-1-water.origin)//4,(first+count-2-water.origin)//4 do
-        local group<const> = water.groups[strip]
-        if group~=nil then
-            local pose<const> = ((water.phase+group.offset)&7)+1
-            for i=1,#group,3 do
-                local column<const>, y<const> = group[i],group[i+1]
-                if column>=first and column<=last then
-                    assert(tiles:source_at(column,y)==group[i+2][pose],
-                        'visible water source is not at the current phase')
-                end
-            end
-        end
-    end
-end
-
 local check_scenery<const> = function(t,stage,tag)
     local first<const>,count<const> = stage.left_tile,stage.tile_columns+2
     check_layer(stage.stage_tiles,first,count)
     check_layer(stage.background_tiles,first,count)
-    check_water(stage,first,count)
     t:log(string.format('%s|%d|overrides=%d',tag,first,count_overrides(stage.stage_tiles)))
 end
 
-return {kind='integration',phase_cycles={full_tape_and_repeated_checkpoint_streaming=67737600},tests={
+-- This fixture drives two complete 900-column traversals in one guest test
+-- phase, rather than distributing their work over normal display ticks.
+return {kind='integration',phase_cycles={full_tape_and_repeated_checkpoint_streaming=203212800},tests={
     full_tape_and_repeated_checkpoint_streaming=function(t)
         local _,stage<const>,pilot<const> = fixture.start_game(t)
         pilot.body_collider:set_enabled(false)
@@ -78,7 +61,7 @@ return {kind='integration',phase_cycles={full_tape_and_repeated_checkpoint_strea
         check_scenery(t,stage,'start')
         for column=stage.left_tile+1,last do
             stage:advance_tape()
-            for _=1,8 do stage.water:tick(stage.left_tile,count); stage.harbor:tick() end
+            for _=1,8 do stage.water:tick(stage.stage_tiles); stage.harbor:tick() end
             if (column&63)==0 or column==last then check_scenery(t,stage,'forward') end
         end
         assert(stage.left_tile==last, 'stage did not traverse the whole tape')
@@ -93,7 +76,7 @@ return {kind='integration',phase_cycles={full_tape_and_repeated_checkpoint_strea
         stage.scrolling=true
         for column=stage.left_tile+1,last do
             stage:advance_tape()
-            for _=1,8 do stage.water:tick(stage.left_tile,count); stage.harbor:tick() end
+            for _=1,8 do stage.water:tick(stage.stage_tiles); stage.harbor:tick() end
             if (column&63)==0 or column==last then check_scenery(t,stage,'repeat') end
         end
         assert(count_overrides(stage.stage_tiles)==saved_overrides,

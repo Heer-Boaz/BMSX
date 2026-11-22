@@ -49,7 +49,7 @@ class StageTapeTest(unittest.TestCase):
         stage = yaml.safe_load((path / 'nemesis_s_stage.yaml').read_text())
         blob = (path / 'nemesis_s_stage_tape.bin').read_bytes()
         self.assertEqual(blob, compile_stage_tape(stage))
-        width, height, front, back, back_rows, collision, words, water, count, actors, actor_count, _, length = struct.unpack_from('<13I', blob)
+        width, height, front, back, back_rows, collision, words, water, actors, actor_count, _, length = struct.unpack_from('<12I', blob)
         self.assertEqual((width, height, length), (len(stage['tile_ids'][0]), len(stage['tile_ids']), len(blob)))
         invisible = set(stage['sky_actor_ids'])
         harbor = stage['harbor_animation']
@@ -63,11 +63,40 @@ class StageTapeTest(unittest.TestCase):
                 else:
                     continue
                 initial[y - 1][x] = tile
+        spec = stage['water_animation']
+        families = spec['tile_families']
+        origin = spec['origin_column']
+        expected_water = {}
+        for y, row in enumerate(stage['tile_ids'], 1):
+            for x, tile in enumerate(row, 1):
+                if y >= spec['first_row'] and tile and (family := families[tile - 1]):
+                    strip = (x - 1 - origin) // 4
+                    phase = (family - 1) * 8 + spec['phase_offsets'][strip % 8]
+                    expected_water.setdefault(strip, []).append((x, y, phase))
+        directory, cells, poses, first, count, hold = struct.unpack_from('<IIIiHH', blob, water)
+        self.assertEqual(first, origin + min(expected_water) * 4 + 1)
+        self.assertEqual(count, max(expected_water) - min(expected_water) + 1)
+        self.assertEqual(hold, spec['ticks_per_pose'])
+        self.assertEqual([list(struct.unpack_from('<8H', blob, poses + index * 16))
+                          for index in range(len(spec['frames']))], spec['frames'])
+        index = 0
+        selectors = [{} for _ in range(height)]
+        for strip in range(count):
+            begin, end = struct.unpack_from('<HH', blob, directory + strip * 2)
+            expected = expected_water.get(strip + min(expected_water), [])
+            self.assertEqual((begin, end), (index, index + len(expected)))
+            for cell_index, (x, y, _) in enumerate(expected, begin):
+                selectors[y - 1][x] = 0x8000 | cell_index
+            self.assertEqual([struct.unpack_from('<HHH', blob, cells + i * 6)
+                              for i in range(begin, end)], expected)
+            index = end
+
         for y, row in enumerate(stage['tile_ids']):
             offset, size = struct.unpack_from('<II', blob, front + y * 8)
             actual = [struct.unpack_from('<HH', blob, offset + i * 4) for i in range(size)]
             expected = {x + 1: stage['tile_assets'][tile - 1] for x, tile in enumerate(row) if tile and tile not in invisible}
             expected.update(initial[y])
+            expected.update(selectors[y])
             self.assertEqual(actual, sorted(expected.items()))
         self.assertEqual(back_rows, len(stage['background']['rows']))
         for y, row in enumerate(stage['background']['rows']):
@@ -76,11 +105,6 @@ class StageTapeTest(unittest.TestCase):
                              [(row[i], stage['background']['tile_assets'][row[i + 1] - 1]) for i in range(0, len(row), 2)])
         for y, row in enumerate(compile_collision_words(stage['tile_ids'], stage['tile_roles'])):
             self.assertEqual(list(struct.unpack_from('<' + 'I' * words, blob, collision + y * words * 4)), row)
-        families = stage['water_animation']['tile_families']
-        expected_water = [(x + 1, y + 1, families[tile - 1])
-                          for y, row in enumerate(stage['tile_ids']) if y + 1 >= stage['water_animation']['first_row']
-                          for x, tile in enumerate(row) if tile and families[tile - 1]]
-        self.assertEqual([struct.unpack_from('<HHH', blob, water + i * 6) for i in range(count)], expected_water)
         self.assertEqual(actors % 4, 0)
         self.assertEqual(actors + actor_count * 8, length)
         self.assertEqual([struct.unpack_from('<iHH', blob, actors + i * 8) for i in range(actor_count)],
@@ -88,12 +112,13 @@ class StageTapeTest(unittest.TestCase):
         self.assertEqual(yaml.safe_load((path / 'nemesis_s_stage_runtime.yaml').read_text()), stage_runtime_config(stage))
         self.assertNotIn('actor_cells', stage_runtime_config(stage))
         self.assertNotIn('harbor_animation', stage_runtime_config(stage))
+        self.assertNotIn('water_animation', stage_runtime_config(stage))
 
     def test_harbor_tape_matches_authored_pose_collision_and_damage_roles(self):
         path = ROOT / 'carts/nemesis_s/res/data'
         stage = yaml.safe_load((path / 'nemesis_s_stage.yaml').read_text())
         blob = (path / 'nemesis_s_stage_tape.bin').read_bytes()
-        _, height, _, _, _, collision, words, *_, harbor, _ = struct.unpack_from('<13I', blob)
+        _, height, _, _, _, collision, words, *_, harbor, _ = struct.unpack_from('<12I', blob)
         spec = stage['harbor_animation']
         index, count, transparent = struct.unpack_from('<IHH', blob, harbor)
         self.assertEqual((count, transparent), (len(spec['clips']), spec['empty']))

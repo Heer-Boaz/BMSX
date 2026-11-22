@@ -3,6 +3,7 @@
 import struct
 
 from harbor_tape import write_harbor_tape
+from water_tape import WATER_CELL_BIT, write_water_tape
 
 ACTOR_SYMBOLS = {
     'formation_down': 'p', 'formation_up': 'P', 'red_mitre': 'M',
@@ -37,7 +38,7 @@ def compile_actor_cues(rows, roles):
 
 # Stage-local ROM data, not a machine image format. All offsets are bytes from
 # the asset base; row directories contain (offset, count), then u16 cell pairs.
-TAPE_HEADER_WORDS = 13
+TAPE_HEADER_WORDS = 12
 SOLID_ROLES = {ord(symbol) for symbol in '!#%()+-=@RS^_dsw'}
 
 
@@ -72,10 +73,15 @@ def compile_stage_tape(stage):
     collision = compile_collision_words(rows, stage['tile_roles'])
     harbor_offset, initial = write_harbor_tape(data, stage['harbor_animation'], rows, assets, invisible, collision)
     data.extend(bytes(-len(data) % 4))
+    water_offset, water_cells = write_water_tape(data, stage['water_animation'], rows, initial)
+    data.extend(bytes(-len(data) % 4))
     foreground = []
-    for row, poses in zip(rows, initial):
+    for row, poses, water in zip(rows, initial, water_cells):
         cells = {x + 1: assets[tile - 1] for x, tile in enumerate(row) if tile and tile not in invisible}
         cells.update(poses)
+        if any(art >= WATER_CELL_BIT for art in cells.values()):
+            raise ValueError('Foreground art exceeds the stage tape selector range')
+        cells.update(water)
         foreground.append(sorted(cells.items()))
     backdrop = stage['background']
     background = [[(row[i], backdrop['tile_assets'][row[i + 1] - 1])
@@ -95,34 +101,23 @@ def compile_stage_tape(stage):
     collision_offset = len(data)
     for row in collision:
         data.extend(struct.pack('<' + 'I' * len(row), *row))
-    water_offset = len(data)
-    water = stage['water_animation']
-    families = water['tile_families']
-    water_count = 0
-    for y in range(water['first_row'] - 1, height):
-        for x, tile in enumerate(rows[y]):
-            if tile and families[tile - 1]:
-                data.extend(struct.pack('<HHH', x + 1, y + 1, families[tile - 1]))
-                water_count += 1
     # The encounter array uses word-aligned (signed column, row, role) records.
-    data.extend(bytes(-len(data) % 4))
     actor_offset = len(data)
     actors = compile_actor_cues(rows, stage['tile_roles'])
     for column, row, role in actors:
         data.extend(struct.pack('<iHH', column, row, role))
-    struct.pack_into('<13I', data, 0, width, height, front_offset, back_offset,
+    struct.pack_into('<12I', data, 0, width, height, front_offset, back_offset,
                      len(background), collision_offset, (width + 31) // 32,
-                     water_offset, water_count, actor_offset, len(actors), harbor_offset, len(data))
+                     water_offset, actor_offset, len(actors), harbor_offset, len(data))
     return bytes(data)
 
 
 def stage_runtime_config(stage):
     """Small control data derived from the same map; no second authored map."""
     config = {key: value for key, value in stage.items() if key not in {
-        'source', 'tile_ids', 'tile_assets', 'tile_roles', 'sky_actor_ids', 'actor_cells', 'harbor_animation',
+        'source', 'tile_ids', 'tile_assets', 'tile_roles', 'sky_actor_ids', 'actor_cells',
+        'harbor_animation', 'water_animation',
     }}
     config['background'] = {key: value for key, value in stage['background'].items()
                             if key not in {'tile_assets', 'rows'}}
-    config['water_animation'] = {key: value for key, value in stage['water_animation'].items()
-                                if key not in {'tile_families', 'first_row'}}
     return config

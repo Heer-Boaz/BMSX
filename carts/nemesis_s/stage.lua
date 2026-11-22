@@ -69,7 +69,8 @@ function stage:build_tape()
 	stage_tape.bind_rows(tape,tape.foreground,tape.height,stage_tiles)
 	self.solid_tape = stage_tape.collision_rows(tape)
 	self.harbor=havenanimatie.new(tape,stage_tiles,self.solid_tape)
-	self.water=grachtwater.new(stage_data.water_animation,tape,stage_tiles)
+	self.water = grachtwater.new(tape)
+	stage_tiles.water = self.water
 
 	self.actor_cues = tape.actors
 	self.actor_cue_count = tape.actor_count
@@ -83,9 +84,9 @@ function stage:reset_runtime()
 	end
 	local start_column<const> = self.start_column
 	self.left_tile = start_column + 1
-	self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
+	local water_reset<const> = self.water:reset()
+	self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2, water_reset)
 	self.background_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
-	if self.water then self.water:reset(self.left_tile,self.tile_columns+2) end
     if self.harbor then self.harbor:reset(self.left_tile-1) end
 	self.tape_head = self.left_tile + self.tile_columns - 1
 	local current_column<const> = self.tape_head - 1
@@ -152,7 +153,6 @@ function stage:advance_tape()
 	self.left_tile = self.left_tile + 1
 	self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
 	self.background_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
-	if self.water then self.water:show(self.left_tile,self.tile_columns+2) end
     if self.harbor then self.harbor:show(self.left_tile-1) end
 	self.tape_head = self.left_tile + self.tile_columns - 1
 	local column<const> = self.tape_head - 1
@@ -192,7 +192,7 @@ function stage:advance_tape()
 end
 
 function stage:update_scenery()
-    if self.water then self.water:tick(self.left_tile,self.tile_columns+2) end
+    self.water:tick(self.stage_tiles)
     if self.harbor then self.harbor:tick() end
 end
 
