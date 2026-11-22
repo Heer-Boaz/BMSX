@@ -170,6 +170,7 @@ void CPU::reset() {
 	const u32 systemExceptionFunctionAddress = systemBoot.exceptionFunctionAddress;
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	clearCallStack();
+	for (auto& view : m_transferViews) view.select(0u);
 	m_stringIndexTable = valueNil();
 	m_haltedUntilIrqFrameDepth = -1;
 	m_haltedUntilIrqThreadAddress = 0u;

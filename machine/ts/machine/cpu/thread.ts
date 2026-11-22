@@ -15,6 +15,9 @@ export class Thread {
 	public readonly stackRegisters = new ValueSlots(0);
 	public get stackTop(): number { return this.read(ThreadField.StackTop) & FRAME_WINDOW_MASK; }
 	public set stackTop(top: number) { this.write(ThreadField.StackTop, top); }
+	// Only the attached prefix is visible to the CPU and its observers.
+	private lastBoundFrame: CallFrame | null = null;
+	private parkedFrameViews: CallFrame | null = null;
 	private boundFrameOffset = 0;
 	private boundProtectedOffset = 0;
 	private boundFrameCapacity = 0;
@@ -22,11 +25,19 @@ export class Thread {
 	public address = 0;
 	public constructor(private readonly heap: GcHeap) {}
 	public bindAddress(address: number): void {
-		this.detachFrameViews();
+		if (this.lastBoundFrame !== null) {
+			this.lastBoundFrame.next = this.parkedFrameViews;
+			this.parkedFrameViews = this.firstFrame;
+			this.firstFrame = this.lastBoundFrame = null;
+		}
+		this.currentFrame = null;
 		this.stackRegisters.unbind();
+		this.boundFrameOffset = this.boundProtectedOffset = this.boundFrameCapacity = 0;
 		this.address = address;
 		this.recordWordOffset = (address & RAM_RECORD_WORD_MASK) >>> 2;
 	}
+	// Parked host references must not keep retired image catalogs alive.
+	public dropParkedFrameViews(): void { this.parkedFrameViews = null; }
 
 	private read(field: ThreadField): number { return this.heap.memory.ramWords[this.recordWordOffset + (field >>> 2)]; }
 	private write(field: ThreadField, word: number): void { this.heap.memory.writeRamRecordWord(this.address + field, word); }
@@ -179,12 +190,22 @@ export class Thread {
 	}
 
 	private frameNode(previous: CallFrame | null): CallFrame {
-		let frame = previous === null ? this.firstFrame : previous.next;
-		if (frame === null) {
-			frame = new CallFrame(this, previous, this.heap);
-			if (previous === null) this.firstFrame = frame;
-			else previous.next = frame;
-		}
+		const attached = previous === null ? this.firstFrame : previous.next;
+		if (attached !== null) return attached;
+		let frame = this.parkedFrameViews;
+		if (frame !== null) {
+			this.parkedFrameViews = frame.next;
+			frame.next = null;
+			frame.previous = previous;
+			frame.registers.unbind();
+			frame.executionImage = null!;
+			frame.decodedPage = null;
+			frame.decodedPageAddress = 0;
+			frame.compilationEntry = true;
+		} else frame = new CallFrame(this, previous, this.heap);
+		if (previous === null) this.firstFrame = frame;
+		else previous.next = frame;
+		this.lastBoundFrame = frame;
 		return frame;
 	}
 

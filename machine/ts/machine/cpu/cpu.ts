@@ -659,6 +659,7 @@ export class CPU implements MappedPageInvalidator {
 		const systemResetFunctionAddress = systemBoot.startupFunctionAddress;
 		this.clearCompletionValues();
 		this.clearCallStack();
+		for (let index = 1; index < this.threadBanks.length; ++index) this.threadBanks[index].bindAddress(0);
 		this.stringIndexTable = valueNil();
 		this.haltedUntilIrqFrameDepth = -1;
 		this.haltedUntilIrqThread = 0;
@@ -777,6 +778,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private releaseImageData(image: Blua32ExecutionImage): void {
+		for (const bank of this.threadBanks) bank.dropParkedFrameViews();
 		const names = image.globalMapBase, constants = image.constantBase;
 		if (names !== 0) {
 			image.globalMapBase = 0;
@@ -4341,7 +4343,10 @@ export class CPU implements MappedPageInvalidator {
 		this.clearCompletionValues();
 		this.staticClosuresByAddress.clear();
 		this.gc.onRecordRetirement?.(null);
-		for (const bank of this.threadBanks) bank.bindAddress(0);
+		for (const bank of this.threadBanks) {
+			bank.bindAddress(0);
+			bank.dropParkedFrameViews();
+		}
 		this.memory.clearMappedPageWriteWatches();
 		// The allocator scan does not advance a saved in-flight sweep.
 		this.heapAllocator.visitObjectRecords(this, (cpu, address) => {

@@ -1170,6 +1170,78 @@ void sweepCoroutineRecord() {
 	require(sweep() == liveWork, "root Thread keeps the page and a vacant Thread slot still costs one visit");
 }
 
+void sweepUnselectsSuspendedTransferFrames() {
+	constexpr u32 depth = 8u, rootWords = 9u, bodyWords = 4u;
+	test::Blua32TestImage program;
+	program.text.resize((rootWords + bodyWords * depth) * INSTRUCTION_BYTES);
+	const auto emit = [&](u32 word, OpCode op, u32 a = 0u, u32 b = 0u, u32 c = 0u) {
+		writeInstruction(program.text, word, static_cast<u8>(op), a, b, c);
+	};
+	emit(0, OpCode::GETSYS); emit(1, OpCode::WIDE); emit(2, OpCode::CLOSURE, 1);
+	emit(3, OpCode::CALL, 0, 2, 2); emit(4, OpCode::GETSYS, 2, 0, 1); emit(5, OpCode::MOV, 3);
+	emit(6, OpCode::CALL, 2, 2, 3); emit(7, OpCode::HALT); emit(8, OpCode::RET, 0, 1);
+	program.functions.push_back({.firstWord=0, .wordCount=rootWords, .maxStack=8});
+	program.closureRelocations.push_back({2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)});
+	program.systemGlobalNames = {"create", "resume", "yield"};
+	for (u32 i = 0; i < depth; ++i) {
+		const u32 start = rootWords + i * bodyWords;
+		program.functions.push_back({.firstWord=start, .wordCount=bodyWords, .maxStack=2});
+		if (i + 1u < depth) {
+			emit(start, OpCode::WIDE); emit(start + 1, OpCode::CLOSURE);
+			emit(start + 2, OpCode::CALL, 0, 1, 1);
+			program.closureRelocations.push_back({start + 1, test::blua32TestFunctionAddress(RomImageDomain::System, i + 2u)});
+		} else {
+			emit(start, OpCode::GETSYS, 0, 0, 2); emit(start + 1, OpCode::KSMI, 1, 0, 37);
+			emit(start + 2, OpCode::CALL, 0, 2, 1);
+		}
+		emit(start + 3, OpCode::RET, 0, 1);
+	}
+	Machine machine(program); auto& cpu = machine.cpu;
+	const std::array primitives{BuiltinFunctionId::CoroutineCreate, BuiltinFunctionId::CoroutineResume, BuiltinFunctionId::CoroutineYield};
+	for (size_t i = 0; i < primitives.size(); ++i)
+		cpu.setSystemGlobalByKey(cpu.stringPool().intern(program.systemGlobalNames[i]), cpu.createBuiltinFunction(primitives[i]));
+	struct Observation { CPU& cpu; Thread* bank = nullptr; CallFrame* head = nullptr; size_t maxDepth = 0; bool rebound = false; } observation{cpu};
+	cpu.setExecutionHook({+[](void* context, ExecutionDomainId, u32) {
+		auto& out = *static_cast<Observation*>(context);
+		auto* thread = out.cpu.activeThread();
+		if (thread == out.cpu.rootThread()) return false;
+		if (!out.bank) { out.bank = thread; out.head = thread->firstFrame; }
+		if (out.rebound && thread->frameDepth() == 1u) {
+			size_t attached = 0;
+			for (auto* frame = thread->firstFrame; frame; frame = frame->next) ++attached;
+			const u32 reserve = ThreadRecord::count(out.cpu.memory(), thread->address, ThreadField::FrameCapacity);
+			require(thread == out.bank && thread->firstFrame == out.head && attached <= reserve && attached < depth,
+				"a shallow selection reuses the head without attaching the retired deep tail");
+		}
+		out.maxDepth = std::max(out.maxDepth, thread->frameDepth());
+		return false;
+	}, &observation, ALL_EXECUTION_DOMAINS_MASK, 0u});
+	const auto run = [&] {
+		for (int i = 0; i < 16; ++i)
+			if (cpu.runUntilDepth(0, 1000) == RunResult::Halted && cpu.activeThread() == cpu.rootThread()) return;
+		throw std::runtime_error("the real coroutine must yield to its halted resumer");
+	};
+	run();
+	auto& registers = cpu.rootThread()->currentFrame->registers;
+	const auto address = valuePayload(registers.get(0));
+	require(observation.maxDepth == depth && observation.bank->address == address
+		&& registers.get(2) == valueBool(true) && registers.get(3) == valueInteger(37), "a selected deep coroutine is genuinely suspended");
+	registers.set(0, valueNil());
+	do { cpu.gcHeap().step(valueNil(), valueNil(), valueNil()); } while (cpu.collecting());
+	require(cpu.gcHeap().threadRecordAddress(address) == 0u && observation.bank->address == 0u
+		&& !observation.bank->firstFrame && !observation.bank->currentFrame && observation.bank->stack.size() == 0u,
+		"automatic sweeping withdraws the entire borrowed frame view before freeing the record");
+	observation.rebound = true;
+	observation.maxDepth = 0u;
+	cpu.clearHaltUntilIrq();
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
+	run();
+	require(observation.maxDepth == depth && registers.get(2) == valueBool(true) && registers.get(3) == valueInteger(37),
+		"the cached nodes rebind to the new physical call chain and yield normally");
+	cpu.reset();
+	require(observation.bank->address == 0u && !observation.bank->firstFrame, "reset also withdraws cached transfers before replacing images");
+}
+
 void stackShrinkAndAdmission() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto* thread = cpu.rootThread(); auto& frame = *thread->currentFrame;
@@ -1346,7 +1418,7 @@ int main(int argc, char** argv) {
 		weakValuesSkipMarkingStorageWithoutStrongEdges(); incrementalSharedWeakMode();
 		resumesFinalWeakCleanup(); resumesMetatableModeProbe(); resumesWeakTableRemark(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); automaticAssistDefersScopedRoots(); explicitAtomicCreditIgnoresPhysicalWork();
-		collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
+		collectUnattachedThreadRecord(); sweepCoroutineRecord(); sweepUnselectsSuspendedTransferFrames(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
 		return 0;
 	} catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

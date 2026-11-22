@@ -94,6 +94,9 @@ struct Thread {
 	size_t stackCapacity = 0;
 	u8* nativeRecord;
 private:
+	// Only the attached prefix is visible to the CPU and its observers.
+	CallFrame* m_lastBoundFrame = nullptr;
+	CallFrame* m_parkedFrameViews = nullptr;
 	static void releaseFrameView(CallFrame& frame) {
 		frame.registers = {};
 		frame.decodedPage = nullptr;

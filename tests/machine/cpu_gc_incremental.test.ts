@@ -1,5 +1,6 @@
 import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { HEAP_PAGE_SIZE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import assert from 'node:assert/strict';
@@ -268,6 +269,74 @@ test('a suspended Thread scan follows the real CLOSURE, closing JMP and RET life
 	const expected = finish();
 	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
 	assert.deepEqual(finish(), expected);
+});
+
+test('sweeping a suspended coroutine withdraws its borrowed view and rebinds only the needed prefix', () => {
+	const depth = 8, rootWords = 9, bodyWords = 4;
+	const text = new Uint8Array((rootWords + bodyWords * depth) * 4);
+	const emit = (word: number, op: OpCode, a = 0, b = 0, c = 0) => writeInstruction(text, word, op, a, b, c);
+	emit(0, OpCode.GETSYS); emit(1, OpCode.WIDE); emit(2, OpCode.CLOSURE, 1);
+	emit(3, OpCode.CALL, 0, 2, 2); emit(4, OpCode.GETSYS, 2, 0, 1); emit(5, OpCode.MOV, 3);
+	emit(6, OpCode.CALL, 2, 2, 3); emit(7, OpCode.HALT); emit(8, OpCode.RET, 0, 1);
+	const functions = [{ firstWord: 0, wordCount: rootWords, maxStack: 8 }];
+	const closureRelocations = [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }];
+	const systemGlobalNames = ['create', 'resume', 'yield'];
+	for (let i = 0; i < depth; ++i) {
+		const start = rootWords + i * bodyWords;
+		functions.push({ firstWord: start, wordCount: bodyWords, maxStack: 2 });
+		if (i + 1 < depth) {
+			emit(start, OpCode.WIDE); emit(start + 1, OpCode.CLOSURE);
+			emit(start + 2, OpCode.CALL, 0, 1, 1);
+			closureRelocations.push({ wordIndex: start + 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, i + 2) });
+		} else {
+			emit(start, OpCode.GETSYS, 0, 0, 2); emit(start + 1, OpCode.KSMI, 1, 0, 37);
+			emit(start + 2, OpCode.CALL, 0, 2, 1);
+		}
+		emit(start + 3, OpCode.RET, 0, 1);
+	}
+	const rom = linkRawTestSystemBlua32({ text, functions, systemGlobalNames, closureRelocations });
+	const { cpu } = createTestSystemCpu(rom);
+	const primitives = [BuiltinFunctionId.CoroutineCreate, BuiltinFunctionId.CoroutineResume, BuiltinFunctionId.CoroutineYield];
+	for (let i = 0; i < primitives.length; ++i)
+		cpu.setSystemGlobalByKey(cpu.stringPool.intern(systemGlobalNames[i]), valueBuiltinFunction(primitives[i]));
+	const observation: { bank?: typeof cpu.rootThread; head?: typeof cpu.rootThread.firstFrame; maxDepth: number; rebound: boolean } = {
+		maxDepth: 0, rebound: false,
+	};
+	cpu.setExecutionHook(() => {
+		const thread = cpu.activeThread;
+		if (thread === cpu.rootThread) return false;
+		if (observation.bank === undefined) { observation.bank = thread; observation.head = thread.firstFrame; }
+		if (observation.rebound && thread.frameDepth === 1) {
+			assert.equal(thread, observation.bank);
+			assert.equal(thread.firstFrame, observation.head, 'the shallow selection reuses the head');
+			assert.equal(thread.firstFrame!.next, null, 'the old deep tail stays parked');
+		}
+		observation.maxDepth = Math.max(observation.maxDepth, thread.frameDepth);
+		return false;
+	}, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+	const run = () => {
+		for (let i = 0; i < 16; ++i)
+			if (cpu.runUntilDepth(0, 1000) === RunResult.Halted && cpu.activeThread === cpu.rootThread) return;
+		assert.fail('the real coroutine must yield to its halted resumer');
+	};
+	run();
+	const registers = cpu.rootThread.currentFrame!.registers, address = valuePayload(registers.get(0));
+	assert.equal(observation.maxDepth, depth);
+	const bank = observation.bank!;
+	assert.equal(bank.address, address);
+	assert.deepEqual([registers.get(2), registers.get(3)], [valueBool(true), valueInteger(37)]);
+	registers.setNil(0);
+	do { cpu.gc.step(); } while (cpu.gc.active());
+	assert.equal(cpu.gc.threadRecordAddress(address), 0);
+	assert.deepEqual([bank.address, bank.firstFrame, bank.currentFrame, bank.stackRegisters.capacity()], [0, null, null, 0]);
+	observation.rebound = true; observation.maxDepth = 0;
+	cpu.clearHaltUntilIrq();
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.symbols.functionAddresses[0], rom.image.functions[0].codeAddress);
+	run();
+	assert.equal(observation.maxDepth, depth);
+	assert.deepEqual([registers.get(2), registers.get(3)], [valueBool(true), valueInteger(37)]);
+	cpu.reset();
+	assert.deepEqual([bank.address, bank.firstFrame], [0, null], 'reset also withdraws cached transfers before replacing images');
 });
 
 test('primitive hash displacement withdraws a suspended Table mark cursor', () => {

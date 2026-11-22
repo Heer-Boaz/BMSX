@@ -9,6 +9,11 @@ Thread::Thread(GcHeap& heap, u32 address) : address(address),
 	nativeRecord(address != 0u ? heap.memory.ramData() + (address & RAM_RECORD_WORD_MASK) : nullptr), heap(heap) {}
 
 void Thread::select(u32 selected) {
+	if (m_lastBoundFrame) {
+		m_lastBoundFrame->next = m_parkedFrameViews;
+		m_parkedFrameViews = firstFrame;
+		firstFrame = m_lastBoundFrame = nullptr;
+	}
 	address = selected;
 	nativeRecord = selected != 0u ? heap.memory.ramData() + (selected & RAM_RECORD_WORD_MASK) : nullptr;
 	currentFrame = nullptr;
@@ -20,21 +25,6 @@ void Thread::select(u32 selected) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	recordedWriteEpoch = 0;
 #endif
-	for (auto* frame = firstFrame; frame; frame = frame->next) {
-		frame->controlMemory = nullptr;
-		frame->controlOffset = 0;
-		frame->nativeControl = nullptr;
-		frame->registers = {};
-		frame->executionImage = nullptr;
-		frame->decodedPage = nullptr;
-		frame->decodedPageAddress = 0;
-		frame->decodedPageBusSignals = MAPPED_BUS_MASTER_CPU;
-		frame->compilationEntry = true;
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		frame->nativeContinuationCells = {};
-		frame->nativeContinuationPc = 0;
-#endif
-	}
 }
 
 void Thread::write(ThreadField field, u32 word) { heap.memory.writeRamRecordWord(address + static_cast<u32>(field), word); }
@@ -60,10 +50,12 @@ void Thread::setError(Value value) {
 
 
 Thread::~Thread() {
-	while (firstFrame) {
-		auto* next = firstFrame->next;
-		delete firstFrame;
-		firstFrame = next;
+	for (auto* frame : {firstFrame, m_parkedFrameViews}) {
+		while (frame) {
+			auto* next = frame->next;
+			delete frame;
+			frame = next;
+		}
 	}
 }
 
@@ -163,6 +155,10 @@ void Thread::bindFrameControls() {
 	u32 index = 0;
 	for (auto* frame = firstFrame; frame; frame = frame->next, ++index)
 		bindFrameControl(*frame, frameControlAddress(index), index);
+	// Native entries borrow prebound spare nodes, but need none beyond the
+	// incoming Thread's actual frame reservation.
+	for (; index < boundFrameCapacity && m_parkedFrameViews; ++index)
+		bindFrameControl(*frameNode(m_lastBoundFrame), frameControlAddress(index), index);
 }
 
 void Thread::bindFrameControl(CallFrame& frame, u32 address, u32 index) {
@@ -212,11 +208,25 @@ void Thread::reserveFrame(size_t values, Value root, bool exception) {
 
 CallFrame* Thread::frameNode(CallFrame* previous) {
 	CallFrame*& frame = previous ? previous->next : firstFrame;
-	if (!frame) {
+	if (frame) return frame;
+	if (m_parkedFrameViews) {
+		frame = m_parkedFrameViews;
+		m_parkedFrameViews = frame->next;
+		frame->next = nullptr;
+		releaseFrameView(*frame);
+		frame->executionImage = nullptr;
+		frame->decodedPageAddress = 0;
+		frame->decodedPageBusSignals = MAPPED_BUS_MASTER_CPU;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		frame->nativeContinuationCells = {};
+		frame->nativeContinuationPc = 0;
+#endif
+	} else {
 		frame = new CallFrame;
 		frame->thread = this;
-		frame->previous = previous;
 	}
+	frame->previous = previous;
+	m_lastBoundFrame = frame;
 	return frame;
 }
 
