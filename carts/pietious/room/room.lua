@@ -874,6 +874,7 @@ function room_object:rebuild_room_tiles()
 	local tile_rows<const> = self.tile_rows
 	local tile_count<const> = tile_columns * tile_rows
 	local dissolve_step<const> = self.room_dissolve_step
+	print('pietious.room.tiles.begin', os.clock(), self.room_number, tile_count, dissolve_step)
 	local room_tile_layer<const> = self.room_tile_layer
 	room_tile_layer:resize(tile_count, tile_columns)
 
@@ -918,6 +919,7 @@ function room_object:rebuild_room_tiles()
 		self.last_water_surface_frame = 1
 		self.water_tile_layer:resize(0, self.tile_columns)
 		self.water_tile_layer.visible = false
+		print('pietious.room.tiles.end', os.clock(), self.room_number, tile_count, 0)
 		return
 	end
 	local prev_water_surface_tile_count<const> = self.water_surface_tile_count
@@ -956,6 +958,7 @@ function room_object:rebuild_room_tiles()
 	if self.tiles_visible then
 		self.water_tile_layer.visible = true
 	end
+	print('pietious.room.tiles.end', os.clock(), self.room_number, tile_count, water_tile_count)
 end
 
 function room_object:sync_water_surface_frame(water_surface_frame)

@@ -596,6 +596,7 @@ end
 function castle:emit_room_enter()
 	self.room_enter_pending = false
 	local payload<const> = self:create_room_enter_payload()
+	print('pietious.room.enter', os.clock(), self.current_room_number)
 	self.events:emit('room.enter', payload)
 end
 
@@ -624,11 +625,12 @@ function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter
 end
 
 function castle:load_room(room_number)
+	local template<const> = self.level.map.rooms[room_number]
+	print('pietious.room.load.begin', os.clock(), room_number, template.scene_id)
 	local previous<const> = self.room
 	if previous ~= nil then
 		previous.scene:dispose()
 	end
-	local template<const> = self.level.map.rooms[room_number]
 	local instance<const> = scene_library.create(template.scene_id)
 	local room<const> = instance:spawn('room', {
 		space_id = 'main', castle = self, player = self.player,
@@ -636,6 +638,7 @@ function castle:load_room(room_number)
 	})
 	self.room = room
 	self.player.room = room
+	print('pietious.room.load.end', os.clock(), room_number)
 	return room
 end
 

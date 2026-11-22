@@ -64,14 +64,18 @@ end
 local spawn_enemies<const> = function(room)
 	local castle<const> = room.castle
 	local walls<const> = room.wall_instances
+	local enemy_count<const> = #room.enemies
+	print('pietious.room.enemies.begin', os.clock(), room.room_number, enemy_count)
+	local spawned = 0
 	local wall_count = 0
-	for i = 1, #room.enemies do
+	for i = 1, enemy_count do
 		local def<const> = room.enemies[i]
 		local defeated<const> = def.retain_defeat_in_region and progression.get(castle, def.member_id)
 		local matches_conditions<const> = progression.matches(castle, castle.level.filters[def])
 		local should_spawn<const> = not defeated and matches_conditions
 		if should_spawn then
 			local instance<const> = spawn_member(room, def)
+			spawned = spawned + 1
 			if def.blocks_room_collision then
 				wall_count = wall_count + 1
 				walls[wall_count] = instance
@@ -81,6 +85,7 @@ local spawn_enemies<const> = function(room)
 	for i = wall_count + 1, #walls do
 		walls[i] = nil
 	end
+	print('pietious.room.enemies.end', os.clock(), room.room_number, spawned)
 end
 
 local rebuild_wall_instances<const> = function(room)
@@ -176,6 +181,7 @@ local spawn_rock_drops<const> = function(room)
 end
 
 function room_spawner.populate(room)
+	print('pietious.room.populate.begin', os.clock(), room.room_number)
 	spawn_rocks(room)
 	spawn_destroyed_rock_inventory_items(room)
 	spawn_rock_drops(room)
@@ -185,6 +191,7 @@ function room_spawner.populate(room)
 	spawn_world_entrances(room)
 	spawn_items(room)
 	spawn_enemies(room)
+	print('pietious.room.populate.end', os.clock(), room.room_number)
 end
 
 return room_spawner

@@ -3,7 +3,7 @@ local imgdec<const> = require('cartlib/gx/imgdec')
 local rom_dir<const> = require('cartlib/rom_dir')
 local vram<const> = require('cartlib/gx/vram')
 
-local atlas<const> = { placement_revision = 0 }
+local atlas<const> = { placement_revision = 0, trace_uploads = false }
 local atlas_by_id<const> = {}
 local oldest_resident
 local newest_resident
@@ -195,6 +195,11 @@ local load_texture<const> = function(texture, allocation)
 	end
 	if moved and texture._source_count ~= 0 then
 		atlas.placement_revision = atlas.placement_revision + 1
+	end
+	-- Report actual atlas admissions, not draws from already resident textures.
+	if atlas.trace_uploads then
+		print('cartlib.atlas.upload', os.clock(), texture.source_addr,
+			texture.stream_word_count, texture.texture_word_count, texture.clut_word_count)
 	end
 	imgdec.upload(
 		texture.source_addr,

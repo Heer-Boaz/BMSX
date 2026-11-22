@@ -61,6 +61,7 @@ function stage:advance_music_cues(column)
 	local cue_index = self.music_cue_index
 	local cue = music_cues[cue_index]
 	while cue ~= nil and cue.column <= column do
+		print('nemesis_s.music.cue', os.clock(), cue.event, cue.column)
 		self.events:emit(cue.event)
 		cue_index = cue_index + 1
 		cue = music_cues[cue_index]
@@ -89,7 +90,9 @@ function stage:build_background(background, tape)
 end
 
 function stage:build_tape()
+	print('nemesis_s.stage.build.begin', os.clock())
 	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_runtime_addr, stage_asset_id)
+	print('nemesis_s.stage.data.decoded', os.clock())
 	local tape<const> = stage_tape.open(assets.bin_nemesis_s_stage_tape_addr)
 	self:apply_stage_config(stage_data)
 	self.tile_art = tile_art.new(stage_data.tile_banks)
@@ -246,6 +249,7 @@ function stage:build_tape()
 	end
 	self.actor_spawns = actor_spawns
 	self.actor_spawn_count = #actor_spawns
+	print('nemesis_s.stage.build.end', os.clock(), self.actor_spawn_count)
 end
 
 function stage:reset_runtime()
@@ -295,11 +299,14 @@ end
 
 function stage:begin_play()
 	local cue<const> = self.start_music_cue
+	local event
 	if self.restarting then
-		self.events:emit(cue.restart_event)
+		event = cue.restart_event
 	else
-		self.events:emit(cue.event)
+		event = cue.event
 	end
+	print('nemesis_s.music.cue', os.clock(), event, cue.column)
+	self.events:emit(event)
 	self:update_runtime()
 	return '/running/scrolling'
 end

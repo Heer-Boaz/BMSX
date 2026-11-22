@@ -1,6 +1,8 @@
 module<entry>
 local gx_display<const> = require('cartlib/gx/display')
+local apu<const> = require('cartlib/apu')
 local vblank<const> = require('cartlib/gx/vblank')
+apu.trace_commands = true
 gx_display.reset_256x192()
 local input<const> = require('cartlib/input/input')
 local left_stick<const> = input.stick_directions('ls', 0x00008000)

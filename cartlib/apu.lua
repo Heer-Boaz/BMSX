@@ -43,7 +43,7 @@ struct apu_command_registers
 	cmd: word
 end
 
-local apu<const> = {}
+local apu<const> = { trace_commands = false }
 local output_sample_rate_hz<const> = 0x0000ac44
 local output_sample_milliseconds<const> = 1000 / output_sample_rate_hz
 local filter_coefficient_one<const> = 0x00004000
@@ -64,6 +64,9 @@ apu.filter_control_enable = 0x00000001
 apu.filter_coefficient_one = filter_coefficient_one
 
 function apu.upload(source, sample_ram_offset, word_count)
+	if apu.trace_commands then
+		print('cartlib.apu.upload', os.clock(), source, sample_ram_offset, word_count)
+	end
 	*transfer_control = transfer_mode_stop
 	*transfer_address = sample_ram_offset
 	*transfer_control = transfer_mode_dma_write
@@ -145,6 +148,9 @@ function apu.play(source, slot, rate_step_q16, gain_q12, start_sample, filter_co
 	command_registers->generator_kind = 0
 	command_registers->generator_duty_q12 = 0x00001000
 	command_registers->cmd = 0x00000001
+	if apu.trace_commands then
+		print('cartlib.apu.play', os.clock(), slot, source.source_addr, source.source_bytes, start_sample)
+	end
 end
 
 function apu.play_plain(source, slot)
@@ -170,6 +176,9 @@ function apu.play_plain(source, slot)
 	command_registers->generator_kind = 0
 	command_registers->generator_duty_q12 = 0x00001000
 	command_registers->cmd = 0x00000001
+	if apu.trace_commands then
+		print('cartlib.apu.play', os.clock(), slot, source.source_addr, source.source_bytes, 0)
+	end
 end
 
 function apu.stop_slot(slot, fade_samples)

@@ -1,7 +1,10 @@
 module<entry>
 local gx_display<const> = require('cartlib/gx/display')
 local atlas<const> = require('cartlib/gx/atlas')
+local apu<const> = require('cartlib/apu')
 local vblank<const> = require('cartlib/gx/vblank')
+atlas.trace_uploads = true
+apu.trace_commands = true
 gx_display.reset_256x192()
 local input<const> = require('cartlib/input/input')
 input.add_player(1)

@@ -442,6 +442,7 @@ local define_director_fsm<const> = function()
 			['room.switched'] = {
 				emitter = 'pietolon',
 				go = function(self, _state, event)
+					print('pietious.room.switched', os.clock(), event.from, event.to, event.dir)
 					if not room_switch_passthrough_dirs[event.dir] then
 						return '/room_switch_wait'
 					end
@@ -463,6 +464,7 @@ local define_director_fsm<const> = function()
 			-- transition overlay clears its banner, etc.
 			room = {
 				entering_state = function(self)
+					print('pietious.director.room', os.clock())
 					self:set_active_space('main')
 					self.events:emit('room')
 				end,
