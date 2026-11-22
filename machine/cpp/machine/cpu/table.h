@@ -58,6 +58,9 @@ public:
 	// value. Growth can return in place of a VM handoff when no collection
 	// is required. Declining leaves the table and collector unchanged.
 	bool tryAssignIdentityHash(Value key, Value value) noexcept;
+	// The caller admits a non-nil own Integer assignment outside the
+	// current array. A resize may move this key into the new array.
+	bool tryAssignIntegerHash(i32 key, Value value) noexcept;
 	// A field write may complete without a VM handoff. Return the actual
 	// slot (-1 for completed nil), or HASH_STORE_DECLINED before mutation.
 	static constexpr i32 HASH_STORE_DECLINED = -2;
@@ -240,7 +243,7 @@ private:
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
 	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
 	int setHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED);
-	enum class HashStore : u8 { General, ReturningIdentity, ReturningField };
+	enum class HashStore : u8 { General, ReturningIndex, ReturningField };
 	template <HashStore Policy>
 	int assignHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED,
 		StringId newIndexKey = 0) noexcept(Policy != HashStore::General);

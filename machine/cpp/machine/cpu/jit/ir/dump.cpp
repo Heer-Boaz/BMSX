@@ -145,6 +145,8 @@ struct OperationPlan {
 		if (op.mode == NativeTableMode::Write) {
 			constexpr std::array nilPlans{"dynamic", "nil", "present"};
 			out << " barrier=" << barriers[unsigned(op.store.barrier)] << " value=" << nilPlans[unsigned(op.store.nilValue)];
+			if (op.store.hash == NativeHashStore::Index) out << " return-index-hash";
+			if (op.store.hash == NativeHashStore::Integer) out << " return-integer-hash";
 			if (op.store.hash == NativeHashStore::Identity) out << " return-identity-hash";
 			if (op.store.hash == NativeHashStore::FixedField) out << " return-field-hash";
 			if (op.keyKind != NativeTableKey::Field) {

@@ -586,7 +586,7 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 	if (nodeIndex == TABLE_HASH_UNPROBED) {
 		nodeIndex = -1;
 		if (count != 0u) {
-			if constexpr (Policy == HashStore::ReturningIdentity) nodeIndex = body.findNode(key, home, true);
+			if constexpr (Policy == HashStore::ReturningIndex) nodeIndex = body.findNode(key, home, true);
 			else if constexpr (Policy == HashStore::ReturningField) nodeIndex = body.findString(asStringId(key), home);
 			else nodeIndex = valueIsString(key) ? body.findString(asStringId(key), home) : body.findNode(key, home, true);
 		}
@@ -636,12 +636,19 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 		if constexpr (returning)
 			if (nodeIndex == HASH_STORE_DECLINED) return nodeIndex;
 	}
-	if (returning || valueTagHasGcEdge(valueTag(key)) || valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+	if (valueTagHasGcEdge(valueTag(key)) || valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 	return nodeIndex;
 }
 
 bool TableRecord::tryAssignIdentityHash(Value key, Value value) noexcept {
-	return assignHash<HashStore::ReturningIdentity>(arrayCapacity(), key, value) >= 0;
+	return assignHash<HashStore::ReturningIndex>(arrayCapacity(), key, value) != HASH_STORE_DECLINED;
+}
+
+bool TableRecord::tryAssignIntegerHash(i32 key, Value value) noexcept {
+	if (assignHash<HashStore::ReturningIndex>(arrayCapacity(), valueInteger(key), value) == HASH_STORE_DECLINED) return false;
+	const u32 slot = arraySlot(key);
+	if (slot != NO_ARRAY_SLOT) updateLengthHint(slot, true);
+	return true;
 }
 
 int TableRecord::tryAssignStringField(StringId key, Value value, StringId newIndexKey) noexcept {

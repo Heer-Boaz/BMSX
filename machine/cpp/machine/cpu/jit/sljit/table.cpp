@@ -33,6 +33,10 @@ u32 SLJIT_FUNC assignNativeTableIdentity(GcHeap* heap, u32 receiverAddress, u32 
 	return TableRecord(*heap, receiverAddress).tryAssignIdentityHash(valueTable(keyAddress), *value);
 }
 
+u32 SLJIT_FUNC assignNativeTableInteger(GcHeap* heap, u32 receiverAddress, i32 key, const Value* value) noexcept {
+	return TableRecord(*heap, receiverAddress).tryAssignIntegerHash(key, *value);
+}
+
 void SLJIT_FUNC writeTableBarrier(GcHeap* heap, u32 receiver, u32 flags) {
 	heap->writeBarrier(receiver, GC_RECORD_LINK, static_cast<u8>(flags));
 }
@@ -73,10 +77,11 @@ sljit_jump* NativeLowering::emitArrayRead(NativeBlockExitSite& exit, bool routeO
 	return outside;
 }
 
-void NativeLowering::emitArrayStore(int value, NativeStorePlan plan, NativeBlockExitSite& exit) {
+sljit_jump* NativeLowering::emitArrayStore(int value, NativeStorePlan plan, NativeBlockExitSite& exit, bool routeOutside) {
 	auto* c = m_compiler;
-	fault(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
-		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array)), exit, m_cache.state());
+	auto* outside = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
+		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array));
+	if (!routeOutside) fault(outside, exit, m_cache.state());
 
 	for (bool word : {true, false}) {
 		emitTableSlotOffset(c, SLJIT_R3, word);
@@ -134,6 +139,31 @@ void NativeLowering::emitArrayStore(int value, NativeStorePlan plan, NativeBlock
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Length),
 		SLJIT_MEM1(SLJIT_SP), arrayLength);
 	sljit_set_label(keep, sljit_emit_label(c));
+	return outside;
+}
+
+// The key payload is in R3; the receiver precedes the Value transport
+// in the scratch lifetime. The own write cannot call guest code.
+void NativeLowering::emitOwnIndexStore(int value, NativeNilValue nilValue, NativeBlockExitSite& exit, NativeHashStore key) {
+	auto* c = m_compiler;
+	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R0),
+		static_cast<u32>(TableHeader::Metatable), SLJIT_IMM, 0), exit, m_cache.state());
+	emitRawLoad(value, SLJIT_R0, SLJIT_R2);
+	if (nilValue == NativeNilValue::Dynamic)
+		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+			SLJIT_IMM, static_cast<u8>(ValueTag::Nil)), exit, m_cache.state());
+	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver);
+	emitValueTransportStore(c, SLJIT_SP, hashOperand, SLJIT_R0, SLJIT_R2);
+	m_cache.spillCall(false, 0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R3, 0);
+	sljit_get_local_base(c, SLJIT_R3, 0, hashOperand);
+	const auto target = key == NativeHashStore::Integer
+		? SLJIT_FUNC_ADDR(&assignNativeTableInteger) : SLJIT_FUNC_ADDR(&assignNativeTableIdentity);
+	sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4(32, P, 32, 32, P), SLJIT_IMM, target);
+	m_cache.spillCall(true, 0);
+	// Declining has not written anything; execute the semantic exit once.
+	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), exit, m_cache.state());
 }
 
 void NativeLowering::emitTableStoreBarrier(int value, NativeGcBarrier barrier) {
@@ -424,18 +454,29 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		auto* string = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 			SLJIT_IMM, static_cast<u8>(ValueTag::String));
 		const bool hashLeaf = m_bindings.cpu && access.readPlan == NativeTableReadPlan::ProbeHashOrOneHop;
-		const bool identityStore = m_bindings.cpu && access.store.hash == NativeHashStore::Identity;
+		const auto hashStore = access.store.hash;
+		const bool identityStore = m_bindings.cpu && (hashStore == NativeHashStore::Identity || hashStore == NativeHashStore::Index);
+		const bool integerStore = m_bindings.cpu && (hashStore == NativeHashStore::Integer || hashStore == NativeHashStore::Index);
 		auto* otherKey = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 			SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
 		if (!hashLeaf && !identityStore) fault(otherKey, exit, m_cache.state());
-		auto* nonpositive = sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0);
-		if (!hashLeaf) fault(nonpositive, exit, m_cache.state());
+		sljit_jump* nonpositive = nullptr;
+		if (!integerStore) {
+			nonpositive = sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0);
+			if (!hashLeaf) fault(nonpositive, exit, m_cache.state());
+		}
+		// For a returning integer store, the unsigned array check also
+		// routes zero and negative keys outside the private array extent.
 		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
-		sljit_jump* outside = nullptr;
-		if (load) outside = emitArrayRead(exit, hashLeaf);
-		else emitArrayStore(value, access.store, exit);
+		auto* outside = load ? emitArrayRead(exit, hashLeaf) : emitArrayStore(value, access.store, exit, integerStore);
 		auto* joined = sljit_emit_jump(c, SLJIT_JUMP);
 		sljit_jump* hashJoined = nullptr;
+		sljit_jump* integerJoined = nullptr;
+		if (integerStore) {
+			sljit_set_label(outside, sljit_emit_label(c));
+			emitOwnIndexStore(value, access.store.nilValue, exit, NativeHashStore::Integer);
+			integerJoined = sljit_emit_jump(c, SLJIT_JUMP);
+		}
 		if (hashLeaf) {
 			auto* probe = sljit_emit_label(c);
 			for (auto* edge : {otherKey, nonpositive, outside}) sljit_set_label(edge, probe);
@@ -461,24 +502,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 			sljit_set_label(otherKey, sljit_emit_label(c));
 			fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 				SLJIT_IMM, static_cast<u8>(ValueTag::Table)), exit, m_cache.state());
-			fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R0),
-				static_cast<u32>(TableHeader::Metatable), SLJIT_IMM, 0), exit, m_cache.state());
-			emitRawLoad(value, SLJIT_R0, SLJIT_R2);
-			if (access.store.nilValue == NativeNilValue::Dynamic)
-				fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
-					SLJIT_IMM, static_cast<u8>(ValueTag::Nil)), exit, m_cache.state());
-			// Read the receiver before its scratch area is reused to pass the value.
-			sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver);
-			emitValueTransportStore(c, SLJIT_SP, hashOperand, SLJIT_R0, SLJIT_R2);
-			m_cache.spillCall(false, 0);
-			sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R3, 0);
-			sljit_get_local_base(c, SLJIT_R3, 0, hashOperand);
-			sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4(32, P, 32, 32, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&assignNativeTableIdentity));
-			m_cache.spillCall(true, 0);
-			// A declined store has not written anything; charge and execute it
-			// once through the ordinary assignment exit.
-			fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), exit, m_cache.state());
+			emitOwnIndexStore(value, access.store.nilValue, exit, NativeHashStore::Identity);
 			hashJoined = sljit_emit_jump(c, SLJIT_JUMP);
 		}
 		sljit_set_label(string, sljit_emit_label(c));
@@ -486,12 +510,23 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		auto* done = sljit_emit_label(c);
 		sljit_set_label(joined, done);
 		if (hashJoined) sljit_set_label(hashJoined, done);
+		if (integerJoined) sljit_set_label(integerJoined, done);
 		break;
 	}
 	case NativeTableKey::Integer:
 		sljit_emit_op1(c, SLJIT_MOV, SLJIT_R1, 0, SLJIT_IMM, key - 1);
 		if (load) emitArrayRead(exit);
-		else emitArrayStore(value, access.store, exit);
+		else {
+			const bool integerStore = m_bindings.cpu && access.store.hash == NativeHashStore::Integer;
+			auto* outside = emitArrayStore(value, access.store, exit, integerStore);
+			if (integerStore) {
+				auto* inside = sljit_emit_jump(c, SLJIT_JUMP);
+				sljit_set_label(outside, sljit_emit_label(c));
+				sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_IMM, key);
+				emitOwnIndexStore(value, access.store.nilValue, exit, NativeHashStore::Integer);
+				sljit_set_label(inside, sljit_emit_label(c));
+			}
+		}
 		break;
 	case NativeTableKey::Field:
 		emitStringSlot(load, value, exit, static_cast<u16>(key), access.resultTag, access.store,

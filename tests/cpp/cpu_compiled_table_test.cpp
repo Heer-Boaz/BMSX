@@ -1613,6 +1613,90 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 #endif
 }
 
+void nativeIntegerGrowthReturnsWithinTheGrant() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 6, 4, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SETT), 0, 1, 6);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::SETI), 2, 2, 6);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::SETT), 7, 3, 6);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::MOV), 5, 6, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}};
+
+	CpuMachine native(image), scalar(image, true);
+	const Value retained = valueFromTag(ValueTag::False, 37), appended = valueFloatBits(0x7fc01234u);
+	constexpr i32 negativeKey = INT32_MIN + 2;
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto dynamic = cpu.createTable(1, 0), immediate = cpu.createTable(1, 0), signedHash = cpu.createTable(1, 1);
+		for (auto* table : {&dynamic, &immediate, &signedHash}) table->setInteger(1, retained);
+		signedHash.setInteger(-1, valueInteger(73));
+		auto& frame = *cpu.activeThread()->currentFrame;
+		frame.registers.set(0, valueTable(dynamic.address()));
+		frame.registers.set(1, valueInteger(2));
+		frame.registers.set(2, valueTable(immediate.address()));
+		frame.registers.set(3, valueInteger(negativeKey));
+		frame.registers.set(4, appended);
+		frame.registers.set(7, valueTable(signedHash.address()));
+		frame.setTop(8);
+	}
+
+	auto& cpu = native.cpu;
+	const u32 pc = native.rom.textAddress, word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const auto& imageState = *cpu.activeThread()->currentFrame->executionImage;
+	cpu.prepareSystemNativeCode();
+	const auto* page = imageState.nativeCodeLookup->find(pc, 0);
+	require(page && page->nativeBlocks && page->nativeBlocks->entries[word],
+		"the verified integer stores enter an installed native body");
+	const auto* installed = page->nativeBlocks->entries[word].get();
+	auto dynamic = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+	auto immediate = asTable(cpu.readFrameRegister(0, 2), cpu.gcHeap());
+	auto signedHash = asTable(cpu.readFrameRegister(0, 7), cpu.gcHeap());
+	const u32 dynamicStorage = dynamic.storageAddress(), immediateStorage = immediate.storageAddress();
+	require(dynamic.arrayCapacity() == 1 && dynamic.lengthHint() == 1
+		&& immediate.arrayCapacity() == 1 && immediate.lengthHint() == 1 && signedHash.hashSlots() == 1,
+		"the two array parts and the negative-key hash start full");
+	const auto bytes = cpu.luaHeap().usedBytes();
+	const auto delta = 2 * (TableRecord::allocationCharge(2, 0) - TableRecord::allocationCharge(1, 0))
+		+ TableRecord::allocationCharge(1, 2) - TableRecord::allocationCharge(1, 1);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto before = cpu.nativeGateProfile().exits;
+#endif
+	const auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
+	const int grant = 2 * cycles(OpCode::MOV) + 2 * cycles(OpCode::SETT) + cycles(OpCode::SETI) + cycles(OpCode::HALT);
+	require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Halted
+		&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == pc + 6 * INSTRUCTION_BYTES
+		&& cpu.readFrameRegister(0, 5) == appended,
+		"all three returning stores preserve the live native value through the exact grant and suffix");
+	require(dynamic.storageAddress() != dynamicStorage && immediate.storageAddress() != immediateStorage,
+		"register-key and immediate dense appends both physically grow the array");
+	for (const auto* table : {&dynamic, &immediate}) {
+		require(table->arrayCapacity() == 2 && table->hashSlots() == 0 && table->lengthHint() == 2
+			&& table->getInteger(1) == retained && table->getInteger(2) == appended,
+			"array growth preserves the raw prefix, writes the new value, and advances the length hint");
+	}
+	require(signedHash.arrayCapacity() == 1 && signedHash.hashSlots() == 2 && signedHash.lengthHint() == 1
+		&& signedHash.getInteger(1) == retained && signedHash.getInteger(-1) == valueInteger(73)
+		&& signedHash.getInteger(negativeKey) == appended && cpu.luaHeap().usedBytes() == bytes + delta,
+		"a signed out-of-array key grows only the hash and charges only the resulting logical storage");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& after = cpu.nativeGateProfile().exits;
+	const auto halt = static_cast<size_t>(NativeBlockExit::Halt);
+	require(after[halt].entries == before[halt].entries + 1, "generated execution reaches the intended native HALT");
+	for (const auto exit : {NativeBlockExit::WriteIndex, NativeBlockExit::WriteInteger, NativeBlockExit::ScalarBoundary}) {
+		const auto kind = static_cast<size_t>(exit);
+		require(after[kind].entries == before[kind].entries, "ordinary integer growth needs no materialized store or scalar replay");
+	}
+#endif
+	require(page->nativeBlocks->entries[word].get() == installed, "all growth preserves the installed native body");
+	requireParity(native, scalar);
+#endif
+}
+
 void nativeFixedStringMissReturnsWithinTheGrant() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::Blua32TestImage image;
@@ -1916,6 +2000,7 @@ int main() {
 		negativeIntegerKeysUseHashStorage();
 		nativeDynamicHashProbeReturnsLiveValuesWithinTheGrant();
 		nativeIdentityHashStoreReturnsWithinTheGrant();
+		nativeIntegerGrowthReturnsWithinTheGrant();
 		nativeFixedStringMissReturnsWithinTheGrant();
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

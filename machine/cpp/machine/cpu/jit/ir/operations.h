@@ -50,7 +50,7 @@ enum class NativeWordSource : u8 { Dynamic, Integer, Float, Invalid };
 enum class NativeGcBarrier : u8 { Dynamic, None, Reference };
 enum class NativeNilValue : u8 { Dynamic, Nil, Present };
 enum class NativeArrayLengthEffect : u8 { ByValue, AdvanceAtBoundary, RetreatAtBoundary };
-enum class NativeHashStore : u8 { Exit, Identity, FixedField };
+enum class NativeHashStore : u8 { Exit, Index, Integer, Identity, FixedField };
 
 struct NativeStorePlan {
 	NativeGcBarrier barrier = NativeGcBarrier::Dynamic;

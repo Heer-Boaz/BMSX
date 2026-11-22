@@ -81,7 +81,8 @@ private:
 	void emitFloatCanonicalization(sljit_s32 reg);
 	void emitWordOperand(int selector, NativeWordSource source, NativeBlockExitSite& invalid);
 	sljit_jump* emitArrayRead(NativeBlockExitSite&, bool routeOutside = false);
-	void emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&);
+	sljit_jump* emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&, bool routeOutside);
+	void emitOwnIndexStore(int value, NativeNilValue, NativeBlockExitSite&, NativeHashStore key);
 	void emitTableStoreBarrier(int value, NativeGcBarrier);
 	void emitTableStoreBarriers();
 	void assignFieldAddressSpills(std::span<const NativeOwnFieldAddress>);

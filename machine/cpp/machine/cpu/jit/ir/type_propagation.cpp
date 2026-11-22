@@ -238,9 +238,12 @@ struct NativeTypePropagation::Transfer {
 			}
 			if (op.keyKind == NativeTableKey::Field) {
 				op.store.hash = NativeHashStore::FixedField;
-			} else if (op.store.nilValue != NativeNilValue::Nil && op.keyKind == NativeTableKey::Value) {
-				const auto key = input(1);
-				if (!key || key->tag == ValueTag::Table) op.store.hash = NativeHashStore::Identity;
+			} else if (op.store.nilValue != NativeNilValue::Nil) {
+				if (op.keyKind == NativeTableKey::Integer) op.store.hash = NativeHashStore::Integer;
+				else if (const auto key = input(1)) {
+					if (key->tag == ValueTag::Table) op.store.hash = NativeHashStore::Identity;
+					if (key->tag == ValueTag::Integer) op.store.hash = NativeHashStore::Integer;
+				} else op.store.hash = NativeHashStore::Index;
 			}
 			return;
 		}
