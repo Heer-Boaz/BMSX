@@ -91,7 +91,6 @@ inline bool CPU::continueWordStores(CallFrame& frame, u32 address, int source, i
 }
 
 inline void CPU::resumePendingMemoryOperation() {
-	if (m_pendingMemory.kind == PendingMemoryKind::None) return;
 	const PendingMemoryOperation operation = m_pendingMemory;
 	m_pendingMemory.kind = PendingMemoryKind::None;
 	CallFrame& frame = *m_activeThread->currentFrame;

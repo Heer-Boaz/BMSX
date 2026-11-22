@@ -1780,6 +1780,16 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
 
+inline CPU::GrantAdmission CPU::admitGrant(const Thread& thread, int targetDepth, int remainingCycles) const {
+	const int depth = static_cast<int>(thread.frameDepth());
+	if (depth <= targetDepth || m_hardHalted || m_memoryWriteBlocked
+		|| (m_haltedUntilIrqThreadAddress == thread.address && m_haltedUntilIrqFrameDepth == depth))
+		return GrantAdmission::Halted;
+	if (m_yieldRequested) return GrantAdmission::RequestedYield;
+	if (remainingCycles <= 0) return GrantAdmission::OutOfCycles;
+	return GrantAdmission::Admitted;
+}
+
 template <bool RootBoundary, bool Instrumented>
 RunResult CPU::runLoop(
 	int targetDepth,
@@ -1841,29 +1851,18 @@ RunResult CPU::runLoop(
 #endif
 	for (;;) {
 		try {
-			if (static_cast<int>(thread.frameDepth()) > targetDepth && instructionBudgetRemaining > 0
-				&& !m_memoryWriteBlocked && !m_hardHalted && !m_yieldRequested
-				&& !(m_haltedUntilIrqThreadAddress == m_activeThread->address && m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth()))) resumePendingMemoryOperation();
-			if constexpr (RootBoundary) {
-				if (thread.frameDepth() == 0) {
-					return RunResult::Halted;
-				}
-			} else {
-				if (static_cast<int>(thread.frameDepth()) <= targetDepth) {
-					return RunResult::Halted;
-				}
+			auto admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
+			if (admission == GrantAdmission::Admitted && m_pendingMemory.kind != PendingMemoryKind::None) {
+				resumePendingMemoryOperation();
+				admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
 			}
-			if (m_hardHalted
-				|| (m_haltedUntilIrqThreadAddress == m_activeThread->address && m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth()))
-				|| m_memoryWriteBlocked) {
-				return RunResult::Halted;
-			}
-			if (m_yieldRequested) {
-				m_yieldRequested = false;
-				return RunResult::Yielded;
-			}
-			if (instructionBudgetRemaining <= 0) {
-				return RunResult::Yielded;
+			switch (admission) {
+				case GrantAdmission::Admitted: break;
+				case GrantAdmission::Halted: return RunResult::Halted;
+				case GrantAdmission::RequestedYield:
+					m_yieldRequested = false;
+					return RunResult::Yielded;
+				case GrantAdmission::OutOfCycles: return RunResult::Yielded;
 			}
 			frame = thread.currentFrame;
 			image = frame->executionImage;
@@ -2348,7 +2347,11 @@ RunResult CPU::runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBud
 	cpu.publishNativeCompilation();
 #endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	if (auto* image = cpu.m_activeExecutionImage; image && image->nativeWarmup.entryPc) {
+	if (auto* image = cpu.m_activeExecutionImage; image && image->nativeWarmup.entryPc
+		&& cpu.admitGrant(*cpu.m_activeThread, targetDepth, instructionBudget) == GrantAdmission::Admitted
+		&& cpu.m_activeThread->currentFrame->executionImage == image
+		&& cpu.m_pendingMemory.kind == PendingMemoryKind::None
+		&& cpu.peekPendingInterrupt() == AcceptedInterruptKind::None) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 		// Preserve the request until no worker snapshot can overlap it.
 		if (!cpu.m_nativeCompilerWorker || cpu.m_nativeCompilerWorker->idle())

@@ -57,16 +57,19 @@ test::Blua32TestImage cartridgeProgram(const std::string& text) {
 	image.text.resize(3u * MAPPED_PAGE_BYTE_SIZE);
 	image.constants = {text, static_cast<i32>(IO_IRQ_FLAGS)};
 	image.globalNames = {"cartResult"};
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SETGL), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::LOADK), 1, 0, 1);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::LOAD_MEM), 2, 1, static_cast<u8>(MemoryAccessKind::U32LE));
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	// The preparation grant executes one branch, not the load whose operand
+	// the physical-slot cases deliberately observe after socket selection.
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMP), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::SETGL), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::LOADK), 1, 0, 1);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::LOAD_MEM), 2, 1, static_cast<u8>(MemoryAccessKind::U32LE));
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	writeInstruction(image.text, 64, static_cast<u8>(OpCode::KSMI), 0, 0, 11);
 	writeInstruction(image.text, 65, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	writeInstruction(image.text, DECODED_PAGE_WORDS, static_cast<u8>(OpCode::KSMI), 0, 0, 23);
 	writeInstruction(image.text, DECODED_PAGE_WORDS + 1u, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	image.functions = {{.firstWord=0, .wordCount=5, .maxStack=3},
+	image.functions = {{.firstWord=0, .wordCount=6, .maxStack=3},
 		{.firstWord=64, .wordCount=2}, {.firstWord=DECODED_PAGE_WORDS, .wordCount=2}};
 	return image;
 }
@@ -107,10 +110,11 @@ struct Fixture {
 			"EXEC commits without running native preparation inside the guest instruction");
 	}
 
-	void prepareAtGrantBoundary() {
-		require(cpu().runUntilDepth(0, 0) == RunResult::Yielded && cpu().instructionBudgetRemaining == 0
-			&& cpu().readFramePc(0) == cart.textAddress,
-			"a normal grant boundary can prepare the image without executing its first instruction");
+	void prepareAtGrantBoundary(OpCode step = OpCode::JMP) {
+		const u32 successor = cpu().readFramePc(0) + INSTRUCTION_BYTES;
+		require(cpu().runUntilDepth(0, BASE_CYCLES[static_cast<u8>(step)]) == RunResult::Yielded
+			&& cpu().instructionBudgetRemaining == 0 && cpu().readFramePc(0) == successor,
+			"the positive preparation grant executes exactly the fixture's one-word probe");
 	}
 };
 
@@ -120,6 +124,70 @@ const NativeBlock* entryAt(CPU& cpu, u32 pc, u32 slot) {
 	const auto* page = image.nativeCodeLookup->find(pc, slot);
 	return page && page->nativeBlocks
 		? page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get() : nullptr;
+}
+
+void deferredWarmupRequiresAnAdmittedGrant() {
+	auto image = cartridgeProgram("admitted");
+	image.mappedCode = false;
+	writeInstruction(image.text, image.functions.front().wordCount++, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
+	Fixture machine(rom), scalar(rom);
+	auto& cpu = machine.cpu();
+	auto& reference = scalar.cpu();
+	reference.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
+	machine.execute();
+	scalar.execute();
+
+	const auto& cart = *cpu.rootThread()->currentFrame->executionImage;
+	const u32 entry = rom.textAddress, previousPc = cpu.readCurrentInstructionPc(), previousLastPc = cpu.lastPc;
+	const auto before = cpu.readNativeCompilationProfile();
+	const int jumpCycles = BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+	const auto requireColdFrontier = [&] {
+		const auto profile = cpu.readNativeCompilationProfile();
+		require(profile.prepareRequests == before.prepareRequests && profile.regionsPublished == before.regionsPublished
+			&& profile.codeBytes == before.codeBytes && cart.decodedPages.empty() && !entryAt(cpu, entry, 0),
+			"an unadmitted grant must not decode or prepare any of the pending cartridge");
+		require(cpu.readFramePc(0) == entry && cpu.readCurrentInstructionPc() == previousPc
+			&& cpu.lastPc == previousLastPc && machine.reads == 0,
+			"an unadmitted grant leaves the cartridge at its exact EXEC frontier");
+	};
+	require(cpu.runUntilDepth(0, 0) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0,
+		"a zero grant executes nothing");
+	requireColdFrontier();
+	require(cpu.runUntilDepth(1, jumpCycles) == RunResult::Halted && cpu.instructionBudgetRemaining == jumpCycles,
+		"the already reached target depth leaves the positive grant untouched");
+	requireColdFrontier();
+	cpu.haltUntilIrq();
+	require(cpu.runUntilDepth(0, jumpCycles) == RunResult::Halted && cpu.instructionBudgetRemaining == jumpCycles,
+		"the HALT latch leaves the positive grant untouched");
+	requireColdFrontier();
+	cpu.clearHaltUntilIrq();
+	cpu.requestYield();
+	require(cpu.runUntilDepth(0, jumpCycles) == RunResult::Yielded && cpu.instructionBudgetRemaining == jumpCycles,
+		"the requested yield executes nothing and is consumed once");
+	requireColdFrontier();
+
+	cpu.requestNonMaskableInterrupt();
+	reference.requestNonMaskableInterrupt();
+	machine.execute();
+	scalar.execute();
+	requireColdFrontier(); // The NMI handler used this grant, not the pending cartridge.
+
+	require(test::runCpuParity(cpu, reference, jumpCycles) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0
+		&& cpu.readFramePc(0) == entry + INSTRUCTION_BYTES && cpu.readCurrentInstructionPc() == entry && cpu.lastPc == entry,
+		"the first admitted grant executes exactly the cartridge entry jump");
+	const auto* installed = entryAt(cpu, entry, 0);
+	const auto prepared = cpu.readNativeCompilationProfile();
+	require(installed && prepared.prepareRequests > before.prepareRequests && prepared.regionsPublished > before.regionsPublished,
+		"the first admitted grant publishes the retained cartridge warmup request");
+	const int setupCycles = BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)];
+	require(test::runCpuParity(cpu, reference, setupCycles) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0
+		&& entryAt(cpu, entry, 0) == installed && cpu.readNativeCompilationProfile().prepareRequests == prepared.prepareRequests
+		&& cpu.readFrameRegister(0, 0) == cart.constPool.get(0)
+		&& encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime))
+			== encodeRuntimeSaveState(captureRuntimeSaveState(scalar.runtime))
+		&& machine.reads == 0 && scalar.reads == 0,
+		"the next grant uses the same publication with identical guest state and no MMIO");
 }
 
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -134,6 +202,8 @@ void cartridgePreparationFollowsWorkerPublication() {
 	machine.execute();
 	require(!entryAt(machine.cpu(), machine.cart.textAddress, 0), "the exact EXEC grant does not install cartridge code");
 	test::waitForNativeEntry(machine.cpu(), *systemPage, systemWord);
+	require(!entryAt(machine.cpu(), machine.cart.textAddress, 0),
+		"publishing an ordinary worker result on an exhausted grant does not prepare the cartridge");
 	machine.prepareAtGrantBoundary();
 	const auto profile = machine.cpu().readNativeCompilationProfile();
 	require(profile.backgroundCompleted == 1 && profile.backgroundCancelled == 0
@@ -164,7 +234,7 @@ void coldExecPreservesGuestStateAndBanks() {
 			== encodeRuntimeSaveState(captureRuntimeSaveState(ordinary.runtime))
 			&& prepared.reads == 0 && ordinary.reads == 0,
 			"cold compilation adds no guest heap/names/registers, clock, MMIO, fault or scheduler changes to ordinary EXEC");
-		for (const u32 word : {0u, 4u, 64u, static_cast<u32>(DECODED_PAGE_WORDS)}) {
+		for (const u32 word : {0u, 1u, 5u, 64u, static_cast<u32>(DECODED_PAGE_WORDS)}) {
 			require(entryAt(prepared.cpu(), rom.textAddress + word * INSTRUCTION_BYTES, slot),
 					"native preparation publishes cartridge roots and continuations in their physical slot");
 		}
@@ -188,11 +258,12 @@ void coldExecPreservesGuestStateAndBanks() {
 void preparedCodeUsesItsImageConstants() {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}};
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::LOADKR), 1, 2, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::SETI), 3, 1, 63, 7); // RK(C) = K[0].
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 4}};
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMP), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::LOADKR), 1, 2, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::SETI), 3, 1, 63, 7); // RK(C) = K[0].
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
 	int grant = 0;
 	for (const auto op : {OpCode::LOADK, OpCode::LOADKR, OpCode::SETI, OpCode::JMP})
 		grant += BASE_CYCLES[static_cast<u8>(op)];
@@ -208,7 +279,8 @@ void preparedCodeUsesItsImageConstants() {
 		scalar.execute();
 		prepared.prepareAtGrantBoundary();
 		scalar.prepareAtGrantBoundary();
-		require(entryAt(prepared.cpu(), rom.textAddress, 0) && !entryAt(scalar.cpu(), rom.textAddress, 0),
+		const u32 body = rom.textAddress + INSTRUCTION_BYTES;
+		require(entryAt(prepared.cpu(), body, 0) && !entryAt(scalar.cpu(), body, 0),
 			"only the prepared CPU has installed this entry");
 		for (auto* machine : {&prepared, &scalar}) {
 			auto& frame = *machine->cpu().activeThread()->frameAtDepth(0);
@@ -222,7 +294,7 @@ void preparedCodeUsesItsImageConstants() {
 			const auto& frame = *machine->cpu().activeThread()->frameAtDepth(0);
 			const auto table = asTable(frame.registers.get(3), machine->cpu().gcHeap());
 			require(frame.registers.get(0) == value && frame.registers.get(1) == value && table.getInteger(1) == value
-				&& machine->cpu().readFramePc(0) == rom.textAddress && machine->cpu().instructionBudgetRemaining == 0,
+					&& machine->cpu().readFramePc(0) == body && machine->cpu().instructionBudgetRemaining == 0,
 				"LOADK, LOADKR and an RK store preserve the same image value and exact frontier");
 		}
 	}
@@ -231,15 +303,16 @@ void preparedCodeUsesItsImageConstants() {
 void coldExecRecordsNumericFieldFeedback() {
 	test::Blua32TestImage image;
 	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
-	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 5}, {.firstWord = 64, .wordCount = 1}};
+	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 5}, {.firstWord = 65, .wordCount = 1}};
 	image.constants = {std::string("x"), Blua32FloatConstant{0u}};
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 4, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETFIELD), 2, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::SUB), 3, 2, 1);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::LT), 0, 3, 62, 7); // RK(C) = K[1].
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
-	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
-	writeInstruction(image.text, 64, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMP), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 4, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::GETFIELD), 2, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::SUB), 3, 2, 1);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::LT), 0, 3, 62, 7); // RK(C) = K[1].
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
+	writeInstruction(image.text, 65, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 
 	const int readCycles = BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)];
 	const int compareGrant = readCycles + BASE_CYCLES[static_cast<u8>(OpCode::SUB)] + BASE_CYCLES[static_cast<u8>(OpCode::LT)];
@@ -249,7 +322,7 @@ void coldExecRecordsNumericFieldFeedback() {
 		machine.execute();
 		machine.prepareAtGrantBoundary();
 		auto& cpu = machine.cpu();
-		const u32 root = machine.cart.textAddress, pc = root + INSTRUCTION_BYTES;
+		const u32 root = machine.cart.textAddress + INSTRUCTION_BYTES, pc = root + INSTRUCTION_BYTES;
 		const auto* cold = entryAt(cpu, root, 0);
 		require(cold && cold->terminal.currentPc == pc && entryAt(cpu, pc + INSTRUCTION_BYTES, 0)
 			&& entryAt(cpu, root + 64u * INSTRUCTION_BYTES, 0),
@@ -304,7 +377,7 @@ void coldExecRecordsNumericFieldFeedback() {
 		NativeBlockRunState grant{.constants = frame.executionImage->constPool, .heap = &cpu.gcHeap(),
 			.globalValues = {}, .systemGlobalValues = {}, .remainingCycles = prefixCycles + loopCycles};
 		const auto* exit = entry->run(frame.registers, grant);
-		require(exit->nextPc == machine.cart.textAddress && grant.remainingCycles == 0 && frame.registers.get(3) == valueFloat(3.5f),
+		require(exit->nextPc == root && grant.remainingCycles == 0 && frame.registers.get(3) == valueFloat(3.5f),
 			"the warmed Float path executes through the comparison and fused jump at the exact guest cost");
 
 		holder.setStringKey(key, valueFloat(0.25f));
@@ -328,18 +401,20 @@ void coldExecRecordsNumericFieldFeedback() {
 test::Blua32TestRom recordConstructorProgram(std::string firstKey = "castle") {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 6}};
+	image.functions = {{.firstWord = 0, .wordCount = 8, .maxStack = 6}};
 	image.constants = {std::move(firstKey), std::string("room"), std::string("player"),
 		std::string("room_number"), std::string("item_id")};
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::NEWT), 0, 0, 5);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMP), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::NEWT), 0, 0, 5);
 	for (u32 field = 0; field < 5; ++field)
-		writeInstruction(image.text, 1 + field, static_cast<u8>(OpCode::SETFIELD), 0, field, field + 1);
-	writeInstruction(image.text, 6, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		writeInstruction(image.text, 2 + field, static_cast<u8>(OpCode::SETFIELD), 0, field, field + 1);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	return test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
 }
 
 void recordConstructorPreservesGrantAndLayout() {
 	const auto rom = recordConstructorProgram();
+	const u32 start = rom.textAddress + INSTRUCTION_BYTES;
 	const int allocateCycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 2 * 5;
 	const int fieldCycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
 	for (const bool shortGrant : {true, false}) {
@@ -357,7 +432,6 @@ void recordConstructorPreservesGrantAndLayout() {
 			frame.registers.set(5, valueInteger(11));
 			frame.setTop(6);
 		}
-		const u32 start = rom.textAddress;
 		auto* plan = entryAt(prepared.cpu(), start, 0)->terminal.recordConstructor;
 		require(plan && plan->count == 5 && plan->partialMask == 0, "native preparation plans the exact fixed-key recipe");
 		// The final store can overdraw by its own charge. A shorter grant
@@ -418,7 +492,7 @@ void recordConstructorPreservesGrantAndLayout() {
 		scalar.execute();
 		prepared.prepareAtGrantBoundary();
 		scalar.prepareAtGrantBoundary();
-		const auto* recipe = entryAt(prepared.cpu(), rom.textAddress, 0)->terminal.recordConstructor;
+		const auto* recipe = entryAt(prepared.cpu(), start, 0)->terminal.recordConstructor;
 		require(recipe && recipe->continuation[0] && *recipe->continuation[0],
 			"publication binds the completed recipe to its warm successor");
 		const int fullGrant = allocateCycles + 5 * fieldCycles + BASE_CYCLES[static_cast<u8>(OpCode::HALT)] + 1;
@@ -434,7 +508,7 @@ void recordConstructorPreservesGrantAndLayout() {
 		Fixture prepared(rom);
 		prepared.execute();
 		prepared.prepareAtGrantBoundary();
-		const u32 firstFieldPc = rom.textAddress + INSTRUCTION_BYTES;
+		const u32 firstFieldPc = start + INSTRUCTION_BYTES;
 		auto& cpu = prepared.cpu();
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		auto other = cpu.createTable();
@@ -453,23 +527,23 @@ void recordConstructorPreservesGrantAndLayout() {
 		if (lateObserver) {
 			observed.execute();
 			observed.prepareAtGrantBoundary();
-			require(entryAt(observed.cpu(), rom.textAddress, 0)->terminal.recordConstructor,
+			require(entryAt(observed.cpu(), start, 0)->terminal.recordConstructor,
 				"the recipe is installed before replacing the observer");
 		}
 		int storesObserved = 0;
 		InstructionObserverBinding observer;
-		observer.points[1].insert(rom.textAddress + 3 * INSTRUCTION_BYTES);
+		observer.points[1].insert(start + 3 * INSTRUCTION_BYTES);
 		observer.context = &storesObserved;
 		observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) {
 			++*static_cast<int*>(context);
 		};
 		observed.cpu().setInstructionObserver(std::move(observer));
 		if (lateObserver)
-			require(!entryAt(observed.cpu(), rom.textAddress, 0), "a late observer retires the prepared recipe");
+			require(!entryAt(observed.cpu(), start, 0), "a late observer retires the prepared recipe");
 		else {
 			observed.execute();
 			observed.prepareAtGrantBoundary();
-			require(!entryAt(observed.cpu(), rom.textAddress, 0)->terminal.recordConstructor,
+			require(!entryAt(observed.cpu(), start, 0)->terminal.recordConstructor,
 				"constructor preparation cannot cross an observed guest instruction");
 		}
 		observed.cpu().runUntilDepth(0, allocateCycles + 5 * fieldCycles);
@@ -546,7 +620,7 @@ void instrumentedGrantsDoNotPrepareNativeCode() {
 	require(cpu.readNativeCompilationProfile().prepareRequests == 0 && !entryAt(cpu, machine.cart.textAddress, 0),
 		"the instrumented interpreter does not service native startup work");
 	cpu.setExecutionHook({});
-	machine.prepareAtGrantBoundary();
+	machine.prepareAtGrantBoundary(OpCode::LOADK);
 	require(entryAt(cpu, machine.cart.textAddress, 0), "the normal grant boundary owns queued native startup work");
 }
 
@@ -566,11 +640,10 @@ void residentExecDoesNotReopenTheBootHeader() {
 	machine.execute();
 	require(machine.cpu().rootThread()->currentFrame->executionImage == image,
 		"EXEC uses the resident image rather than requiring another boot header");
-	machine.prepareAtGrantBoundary();
+	machine.prepareAtGrantBoundary(OpCode::K1);
 	require(entryAt(machine.cpu(), machine.cart.textAddress, 0),
 		"resident hints select native source from the newly installed physical ROM");
-	require(machine.cpu().runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::K1)]) == RunResult::Yielded
-		&& machine.cpu().readFrameRegister(0, 0) == valueInteger(1),
+	require(machine.cpu().readFrameRegister(0, 0) == valueInteger(1),
 		"the resident image fetches the installed replacement instruction");
 }
 
@@ -606,12 +679,11 @@ void hintsDoNotBoundReachableCode() {
 	image.functions[0].wordCount = 1;
 	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, image));
 	machine.execute();
-	machine.prepareAtGrantBoundary();
-	require(entryAt(machine.cpu(), machine.cart.textAddress + MAPPED_PAGE_BYTE_SIZE, 0),
-		"cold discovery follows backed cross-page branches beyond descriptive function extents");
 	require(machine.cpu().runUntilDepth(0, 1) == RunResult::Yielded
 		&& machine.cpu().readFramePc(0) == machine.cart.textAddress + MAPPED_PAGE_BYTE_SIZE,
 		"the cross-page branch consumes its own grant without fetching its successor");
+	require(entryAt(machine.cpu(), machine.cart.textAddress + MAPPED_PAGE_BYTE_SIZE, 0),
+		"cold discovery follows backed cross-page branches beyond descriptive function extents");
 }
 
 void crossPageWideSourceUsesItsPhysicalSlot() {
@@ -656,8 +728,11 @@ void boundedWarmupLeavesDistantBranchesToHotCompilation() {
 	ordinary.execute();
 	require(prepared.cpu().rootThread()->currentFrame->executionImage->decodedPages.empty(),
 		"EXEC does not decode the target graph");
-	prepared.prepareAtGrantBoundary();
-	ordinary.prepareAtGrantBoundary();
+	const int jumpCycles = BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+	require(test::runCpuParity(prepared.cpu(), ordinary.cpu(), jumpCycles) == RunResult::Yielded
+		&& prepared.cpu().instructionBudgetRemaining == 0
+		&& prepared.cpu().readFramePc(0) == rom.textAddress + MAPPED_PAGE_BYTE_SIZE,
+		"the positive warmup grant executes just the first real cross-page branch");
 	const auto profile = prepared.cpu().readNativeCompilationProfile();
 	const u32 distant = rom.textAddress + (pages - 1u) * MAPPED_PAGE_BYTE_SIZE;
 	require(prepared.cpu().rootThread()->currentFrame->executionImage->decodedPages.size() == NATIVE_IMAGE_WARMUP_MAX_PAGES
@@ -666,9 +741,8 @@ void boundedWarmupLeavesDistantBranchesToHotCompilation() {
 		"startup work is bounded in decoded pages as well as emitted code");
 	require(encodeRuntimeSaveState(captureRuntimeSaveState(prepared.runtime))
 		== encodeRuntimeSaveState(captureRuntimeSaveState(ordinary.runtime)) && prepared.reads == 0,
-		"bounded warmup adds no architectural effects to native EXEC");
-	const int jumpCycles = BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
-	test::runCpuParity(prepared.cpu(), ordinary.cpu(), (pages - 1u) * jumpCycles);
+		"bounded warmup adds no architectural effects to the admitted first branch");
+	test::runCpuParity(prepared.cpu(), ordinary.cpu(), (pages - 2u) * jumpCycles);
 	require(prepared.cpu().readFramePc(0) == distant && !entryAt(prepared.cpu(), distant, 0),
 		"native and ordinary execution reach a target outside the startup batch at the same frontier");
 	test::runCpuParity(prepared.cpu(), ordinary.cpu(), NATIVE_BLOCK_COMPILATION_THRESHOLD * jumpCycles);
@@ -687,7 +761,8 @@ void observationsAndUnusedOperandsStayAtExecution() {
 	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, image));
 	int observations = 0;
 	InstructionObserverBinding observer;
-	observer.points[1].insert(machine.cart.textAddress);
+	const u32 observedPc = machine.cart.textAddress + INSTRUCTION_BYTES;
+	observer.points[1].insert(observedPc);
 	observer.context = &observations;
 	observer.observe = [](void* context, ExecutionDomainId domain, u32, ConstValueSpan) {
 		require(domain == 0, "cartridge observation keeps its execution domain");
@@ -698,7 +773,7 @@ void observationsAndUnusedOperandsStayAtExecution() {
 	machine.execute();
 	machine.prepareAtGrantBoundary();
 	require(observations == 0 && machine.reads == 0 && machine.runtime.machine.memory.readBusFaultSequence() == fault
-		&& !entryAt(machine.cpu(), machine.cart.textAddress, 0)
+		&& !entryAt(machine.cpu(), observedPc, 0)
 		&& entryAt(machine.cpu(), machine.cart.textAddress + 64u * INSTRUCTION_BYTES, 0),
 		"cold preparation cannot observe guest code, raise unused constant/name faults or read MMIO/RAM");
 	require(machine.cpu().runUntilDepth(0, 1) == RunResult::Yielded && observations == 1,
@@ -746,16 +821,20 @@ void warmupAdmitsTheEntryBeforeCompetingFunctionSpans() {
 	put(bootWord, OpCode::K0);
 	put(bootWord + 1u, OpCode::RET);
 	put(bootWord + 2u, OpCode::RET);
-	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::Cartridge, image));
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
+	Fixture machine(rom), ordinary(rom);
+	ordinary.cpu().setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	const u32 entry = machine.cart.textAddress + bootWord * INSTRUCTION_BYTES;
 	const auto grant = BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::MTC0)];
 	auto& cpu = machine.cpu();
-	require(cpu.runUntilDepth(0, grant) == RunResult::Yielded && cpu.readFramePc(0) == entry && !entryAt(cpu, entry, 0),
+	require(test::runCpuParity(cpu, ordinary.cpu(), grant) == RunResult::Yielded
+		&& cpu.readFramePc(0) == entry && ordinary.cpu().readFramePc(0) == entry && !entryAt(cpu, entry, 0),
 		"the exact EXEC grant admits the cartridge entry without preparing it");
-	const auto state = encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime));
-	require(cpu.runUntilDepth(0, 0) == RunResult::Yielded
-		&& encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == state,
-		"physical page admission runs at the grant boundary without guest effects");
+	machine.prepareAtGrantBoundary(OpCode::K0);
+	ordinary.prepareAtGrantBoundary(OpCode::K0);
+	require(encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime))
+		== encodeRuntimeSaveState(captureRuntimeSaveState(ordinary.runtime)),
+		"physical page admission adds no guest effects to the admitted K0 step");
 	const auto* boot = entryAt(cpu, entry, 0);
 	const auto* sibling = entryAt(cpu, entry + 2u * INSTRUCTION_BYTES, 0);
 	require(boot && sibling && boot->region == sibling->region,
@@ -800,8 +879,14 @@ void coldDiscoveryDoesNotFetchAPageBeyondItsWideBudget() {
 	};
 	for (u32 page = 0; page + 1u < NATIVE_IMAGE_WARMUP_MAX_PAGES; ++page) {
 		const u32 word = firstWord + page * DECODED_PAGE_WORDS;
-		image.functions[page] = {.firstWord = word, .wordCount = 1};
-		put(word, OpCode::RET, 1);
+		if (page == 0u) {
+			image.functions[page] = {.firstWord = word, .wordCount = 2};
+			put(word, OpCode::K0);
+			put(word + 1u, OpCode::RET, 1);
+		} else {
+			image.functions[page] = {.firstWord = word, .wordCount = 1};
+			put(word, OpCode::RET, 1);
+		}
 	}
 	const u32 bodyWord = firstWord + NATIVE_IMAGE_WARMUP_MAX_PAGES * DECODED_PAGE_WORDS;
 	const u32 prefixWord = bodyWord - 1u, rootWord = prefixWord - 1u;
@@ -817,8 +902,9 @@ void coldDiscoveryDoesNotFetchAPageBeyondItsWideBudget() {
 	const auto grant = BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::MTC0)];
 	require(cpu.runUntilDepth(0, grant) == RunResult::Yielded && cpu.readFramePc(0) == firstPage,
 		"the real cartridge begins on the first admitted page");
-	require(cpu.runUntilDepth(0, 0) == RunResult::Yielded && cpu.readFramePc(0) == firstPage,
-		"the cold batch is prepared without running any of the cartridge functions");
+	machine.prepareAtGrantBoundary(OpCode::K0);
+	require(cpu.readFramePc(0) == firstPage + INSTRUCTION_BYTES,
+		"the cold batch prepares on the first page without reaching the pending return or WIDE body");
 	const auto& decoded = cpu.rootThread()->currentFrame->executionImage->decodedPages;
 	const u32 root = machine.cart.textAddress + rootWord * INSTRUCTION_BYTES;
 	const u32 body = machine.cart.textAddress + bodyWord * INSTRUCTION_BYTES;
@@ -838,6 +924,7 @@ void coldDiscoveryDoesNotFetchAPageBeyondItsWideBudget() {
 
 int main() {
 	try {
+		deferredWarmupRequiresAnAdmittedGrant();
 		coldExecPreservesGuestStateAndBanks();
 		preparedCodeUsesItsImageConstants();
 		coldExecRecordsNumericFieldFeedback();

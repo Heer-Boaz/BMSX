@@ -404,7 +404,12 @@ void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
 	for (auto* machine : {&native, &scalar}) {
 		if (cartridgeBound) {
 			machine->cpu.runUntilDepth(0, 7);
-			machine->cpu.runUntilDepth(0, 0); // Service startup before profiling hot worker requests.
+			// Admit only KSMI before profiling hot worker requests. The
+			// following cross-page jump still belongs to the tested traversal.
+			require(machine->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::KSMI)]) == RunResult::Yielded
+				&& machine->cpu.instructionBudgetRemaining == 0
+				&& machine->cpu.readFramePc(0) == card0.textAddress + INSTRUCTION_BYTES,
+				"the positive cartridge grant stops before the WIDE RAM jump");
 		}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 		if (machine == &native) machine->cpu.setNativeCompilationProfiling(true);
@@ -492,26 +497,30 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	launcher.exceptionFunctionIndex = 2;
 	launcher.closureRelocations = {{4, record}};
 	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, launcher, test::RAM_CODE_FIXTURE_BYTES);
-	test::Blua32TestImage source; source.text.resize(10 * INSTRUCTION_BYTES);
-	writeInstruction(source.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(source.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
-	writeInstruction(source.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
-	writeInstruction(source.text, 3, static_cast<u8>(OpCode::CALL), 0, 1, 2);
-	writeInstruction(source.text, 4, static_cast<u8>(OpCode::MOV), 3, 0, 0);
-	writeInstruction(source.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
-	writeInstruction(source.text, 6, static_cast<u8>(OpCode::LOADK), 0, 0, 1);
-	writeInstruction(source.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	writeInstruction(source.text, 8, static_cast<u8>(OpCode::LOADK), 0, 0, 2);
-	writeInstruction(source.text, 9, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	source.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8},
-		{.firstWord = 6, .wordCount = 2, .maxStack = 8}, {.firstWord = 8, .wordCount = 2, .maxStack = 8}};
+	constexpr u32 callerWord = 3, calleeWord = 7, alternateWord = 9;
+	test::Blua32TestImage source; source.text.resize(11 * INSTRUCTION_BYTES);
+	// Admit this branch before profiling without creating the closure until
+	// after the physical SELECT write.
+	writeInstruction(source.text, 0, static_cast<u8>(OpCode::JMP), 0, 0, 0);
+	writeInstruction(source.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(source.text, 2, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+	writeInstruction(source.text, callerWord, static_cast<u8>(OpCode::MOV), 0, 4, 0);
+	writeInstruction(source.text, callerWord + 1, static_cast<u8>(OpCode::CALL), 0, 1, 2);
+	writeInstruction(source.text, callerWord + 2, static_cast<u8>(OpCode::MOV), 3, 0, 0);
+	writeInstruction(source.text, callerWord + 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	writeInstruction(source.text, calleeWord, static_cast<u8>(OpCode::LOADK), 0, 0, 1);
+	writeInstruction(source.text, calleeWord + 1, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(source.text, alternateWord, static_cast<u8>(OpCode::LOADK), 0, 0, 2);
+	writeInstruction(source.text, alternateWord + 1, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	source.functions = {{.firstWord = 0, .wordCount = calleeWord, .maxStack = 8},
+		{.firstWord = calleeWord, .wordCount = 2, .maxStack = 8}, {.firstWord = alternateWord, .wordCount = 2, .maxStack = 8}};
 	source.constants = {0, 22, 44};
-	source.closureRelocations = {{1, test::blua32TestFunctionAddress(ramRecord ? RomImageDomain::System : RomImageDomain::Cartridge, 1)}};
+	source.closureRelocations = {{2, test::blua32TestFunctionAddress(ramRecord ? RomImageDomain::System : RomImageDomain::Cartridge, 1)}};
 	const auto card0 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, source, test::RAM_CODE_FIXTURE_BYTES);
 	source.constants = {0, 33, 55};
 	auto card1 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, source, test::RAM_CODE_FIXTURE_BYTES);
 	const u32 otherRecord = card1.functionAddresses[1] - CART_ROM_BASE;
-	writeLE32(card1.bytes.data() + otherRecord + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, card1.textAddress + 8u * INSTRUCTION_BYTES);
+	writeLE32(card1.bytes.data() + otherRecord + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, card1.textAddress + alternateWord * INSTRUCTION_BYTES);
 	writeLE32(card1.bytes.data() + otherRecord + BLUA32_FUNCTION_MAX_STACK_OFFSET, 12);
 	CpuMachine native(system, test::cartridgeSlots(card0.bytes, card1.bytes), false);
 	CpuMachine scalar(system, test::cartridgeSlots(card0.bytes, card1.bytes), true);
@@ -521,9 +530,12 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 		machine->memory.writeBytes(code, launcher.text.data() + 9u * INSTRUCTION_BYTES, 2u * INSTRUCTION_BYTES);
 		require(machine->cpu.runUntilDepth(0, 7) == RunResult::Yielded && machine->cpu.readFrameExecutionDomain(0) == 0,
 			"EXEC establishes socket 0 before SELECT changes");
-		machine->cpu.runUntilDepth(0, 0);
+		require(machine->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::JMP)]) == RunResult::Yielded
+			&& machine->cpu.instructionBudgetRemaining == 0
+			&& machine->cpu.readFramePc(0) == card0.textAddress + INSTRUCTION_BYTES,
+			"the positive cartridge grant leaves the WIDE closure for execution after SELECT");
 		machine->memory.writeMappedWord(IO_CART_SELECT, 1);
-		require(machine->memory.readMappedU32LE(card0.functionAddresses[1]) == card1.textAddress + 8u * INSTRUCTION_BYTES,
+		require(machine->memory.readMappedU32LE(card0.functionAddresses[1]) == card1.textAddress + alternateWord * INSTRUCTION_BYTES,
 			"ordinary data reads see the different record fitted to socket 1");
 	}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -539,14 +551,14 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 		require(native.cpu.getFrameDepth() == targetDepth, "warm execution reaches the active closure chain");
 		const auto* root = native.cpu.rootThread()->frameAtDepth(0);
 		const auto* relay = native.cpu.rootThread()->frameAtDepth(1);
-		const auto* callee = native.cpu.rootThread()->frameAtDepth(targetDepth - 1);
+		const auto* calleeFrame = native.cpu.rootThread()->frameAtDepth(targetDepth - 1);
 		const auto published = [](const CallFrame* frame, u32 pc) {
 			const auto* lookup = frame->executionImage->nativeCodeLookup.get();
 			const auto* page = lookup ? lookup->find(pc, 0) : nullptr;
 			return page && page->nativeBlocks && page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 		};
-		const bool ready = published(root, card0.textAddress + 2u * INSTRUCTION_BYTES)
-			&& published(callee, ramRecord ? code : card0.textAddress + 6u * INSTRUCTION_BYTES)
+		const bool ready = published(root, card0.textAddress + callerWord * INSTRUCTION_BYTES)
+			&& published(calleeFrame, ramRecord ? code : card0.textAddress + calleeWord * INSTRUCTION_BYTES)
 			&& (!ramRecord || published(relay, system.textAddress + 5u * INSTRUCTION_BYTES));
 		if (ready) break;
 		test::runCpuParity(native.cpu, scalar.cpu, 20000);
@@ -554,7 +566,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	test::waitForFixtureWorkerRequests(native.cpu);
 #endif
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
-	const u32 entry = card0.textAddress + 2u * INSTRUCTION_BYTES;
+	const u32 entry = card0.textAddress + callerWord * INSTRUCTION_BYTES;
 	for (auto* machine : {&native, &scalar}) {
 		require(machine->cpu.rootThread()->frameAtDepth(0)->registers.get(3) == valueInteger(ramRecord ? 11 : 22), "the warmed call loop returns the closure-bound constants");
 		machine->cpu.writeFrameExecution(0, 0, card0.functionAddresses[0], entry);
@@ -599,7 +611,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	require(native.cpu.getFrameDepth() == (ramRecord ? 3 : 2), "the grant reaches the selected callee activation");
 	const auto* callee = native.cpu.rootThread()->currentFrame;
 	require(callee->executionImage->executionDomainId == (ramRecord ? SYSTEM_EXECUTION_DOMAIN_ID : 0) && callee->stackCapacity() == 8
-		&& callee->readControl(bmsx::FrameField::Pc) == (ramRecord ? code : card0.textAddress + 6u * INSTRUCTION_BYTES),
+		&& callee->readControl(bmsx::FrameField::Pc) == (ramRecord ? code : card0.textAddress + calleeWord * INSTRUCTION_BYTES),
 		"CALL uses the closure-bound domain and record, not SELECT metadata");
 	require(callee->executionImage->nativeCodeLookup->find(callee->readControl(bmsx::FrameField::Pc), 0)->nativeBlocks->entries[(callee->readControl(bmsx::FrameField::Pc) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES] != nullptr,
 		"the callee body is generated as well as its caller");
@@ -613,7 +625,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	// wins over ordinary SELECT, which points at the other cartridge.
 	const u32 ramCaller = DYNAMIC_RAM_BASE;
 	for (auto* machine : {&native, &scalar}) {
-		machine->memory.writeBytes(ramCaller, source.text.data() + 2u * INSTRUCTION_BYTES, 4u * INSTRUCTION_BYTES);
+		machine->memory.writeBytes(ramCaller, source.text.data() + callerWord * INSTRUCTION_BYTES, 4u * INSTRUCTION_BYTES);
 		machine->cpu.writeFrameExecution(0, 0, card0.functionAddresses[0], ramCaller);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 4000);

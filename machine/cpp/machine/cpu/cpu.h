@@ -308,7 +308,9 @@ private:
 	friend class GcHeap;
 	friend class LuaHeap;
 	using RunUntilDepthEntry = RunResult (*)(CPU&, int, int);
+	enum class GrantAdmission : u8 { Admitted, Halted, RequestedYield, OutOfCycles };
 
+	GrantAdmission admitGrant(const Thread&, int targetDepth, int remainingCycles) const;
 	static RunResult runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBudget);
 	static RunResult runUntilDepthInstrumented(CPU& cpu, int targetDepth, int instructionBudget);
 	template <bool RootBoundary, bool Instrumented>
