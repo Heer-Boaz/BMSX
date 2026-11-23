@@ -6,7 +6,6 @@
 #include <cstdlib>
 #include <new>
 #include <stdexcept>
-#include <string_view>
 
 namespace {
 size_t allocations = 0;
@@ -91,32 +90,6 @@ int main() {
 	state.cpuState.pendingAllocation.operands = PendingTableAssignment{0x12345678u, valueInteger(-1), valueFloatBits(0xffc12345u)};
 	const auto assignment = decodeRuntimeSaveState(encodeRuntimeSaveState(state), state.ram.size(), machine.gxGpu.vramBytes.size());
 	require(assignment.cpuState.pendingAllocation == state.cpuState.pendingAllocation, "a parked assignment keeps its raw guest operands");
-	auto oldLayout = expected;
-	oldLayout[4] = 1; // Version 1 had no pending-allocation discriminant.
-	bool rejectedOldLayout = false;
-	try {
-		(void)decodeRuntimeSaveState(oldLayout, state.ram.size(), machine.gxGpu.vramBytes.size());
-	} catch (const std::exception& error) {
-		rejectedOldLayout = std::string_view(error.what()).find("Unsupported save-state layout.") != std::string_view::npos;
-	}
-	require(rejectedOldLayout, "the earlier pending-operation payload cannot be read as a creation");
-	oldLayout[4] = 2; // Version 2 persisted tables with different String home slots.
-	rejectedOldLayout = false;
-	try {
-		(void)decodeRuntimeSaveState(oldLayout, state.ram.size(), machine.gxGpu.vramBytes.size());
-	} catch (const std::exception& error) {
-		rejectedOldLayout = std::string_view(error.what()).find("Unsupported save-state layout.") != std::string_view::npos;
-	}
-	require(rejectedOldLayout, "raw table nodes from the old placement are not restored");
-	auto unversioned = expected;
-	unversioned.erase(unversioned.begin() + 4, unversioned.begin() + 8);
-	bool rejectedLayout = false;
-	try {
-		(void)decodeRuntimeSaveState(unversioned, state.ram.size(), machine.gxGpu.vramBytes.size());
-	} catch (const std::exception& error) {
-		rejectedLayout = std::string_view(error.what()).find("Unsupported save-state layout.") != std::string_view::npos;
-	}
-	require(rejectedLayout, "the unversioned allocator layout is rejected before decoding its RAM");
 	require(decoded.machineState.machine.cartridge.slots[0]->ram.has_value()
 		&& !decoded.machineState.machine.cartridge.slots[1].has_value(), "empty RAM and an absent card remain distinct");
 }

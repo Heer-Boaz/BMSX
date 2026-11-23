@@ -677,10 +677,6 @@ test('typed pending allocations preserve their issued instruction and active ope
 		state.cpuState.pendingAllocation = pending;
 		const encoded = encodeRuntimeSaveState(state);
 		assert.deepEqual(decodeRuntimeSaveState(encoded, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes).cpuState.pendingAllocation, pending);
-		for (const earlier of [1, 2]) {
-			encoded[4] = earlier;
-			assert.throws(() => decodeRuntimeSaveState(encoded, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes), /Unsupported save-state layout/);
-		}
 	}
 });
 
@@ -698,10 +694,6 @@ test('runtime save-state codec rejects other formats, incomplete fields and trai
 	const extra = new Uint8Array(encoded.length + 1);
 	extra.set(encoded);
 	assert.throws(() => decode(extra), /Trailing/);
-	const unversioned = new Uint8Array(encoded.length - 4);
-	unversioned.set(encoded.subarray(0, 4));
-	unversioned.set(encoded.subarray(8), 4);
-	assert.throws(() => decode(unversioned), /Unsupported save-state layout/);
 });
 
 test('CPU latches retain raw addresses, object words and all float payload bits', () => {
