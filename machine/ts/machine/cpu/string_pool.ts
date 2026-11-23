@@ -31,7 +31,7 @@ const RAM_BUCKET_REHASH = 0x80000000;
 const RAM_BUCKET_SHRINK = 0x40000000;
 const SLOT_BIT = 0x80000000;
 
-function ramAddress(address: number): boolean { return address >= RAM_BASE && address < CART_ROM_BASE; }
+export function isRamStringId(address: StringId): boolean { return address >= RAM_BASE && address < CART_ROM_BASE; }
 function storageOffset(address: number): number {
 	if (address < RAM_BASE) return address & (SYSTEM_ROM_SIZE - 1);
 	if (address < CART_ROM_BASE) return address & (MAIN_RAM_SIZE - 1);
@@ -81,24 +81,24 @@ export class StringPool {
 		return rom === null ? null : rom.bytes;
 	}
 	private readWord(base: number, displacement = 0): number {
-		if (ramAddress(base)) return this.memory.readRamRecordWord(base + displacement);
+		if (isRamStringId(base)) return this.memory.readRamRecordWord(base + displacement);
 		const bytes = this.storage(base);
 		return bytes === null ? 0 : readLE32(bytes, (storageOffset(base) + displacement) >>> 0);
 	}
 
 	public byteLength(id: StringId): number {
 		const count = this.readWord(id, BLUA32_STRING_LENGTH_OFFSET);
-		return ramAddress(id) ? count & RAM_BYTE_MASK : count | 0;
+		return isRamStringId(id) ? count & RAM_BYTE_MASK : count | 0;
 	}
 	public byteAt(id: StringId, index: number): number {
-		if (ramAddress(id)) return this.memory.readRamRecordByte(id + BLUA32_STRING_RECORD_HEADER_SIZE + index);
+		if (isRamStringId(id)) return this.memory.readRamRecordByte(id + BLUA32_STRING_RECORD_HEADER_SIZE + index);
 		return this.storage(id)?.[storageOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE + index] | 0;
 	}
 
 	public bytes(id: StringId): string {
 		const length = this.byteLength(id) >>> 0;
 		if (length === 0) return '';
-		if (ramAddress(id)) {
+		if (isRamStringId(id)) {
 			const source = this.memory.ramData(), offset = (id + BLUA32_STRING_RECORD_HEADER_SIZE) & RAM_BYTE_MASK;
 			const first = Math.min(length, MAIN_RAM_SIZE - offset);
 			const prefix = byteStringFromBytes(source, offset, first);
@@ -115,7 +115,7 @@ export class StringPool {
 	public compare(left: StringId, right: StringId): number {
 		if (left === right) return 0;
 		const a = this.storage(left), b = this.storage(right);
-		const aMask = ramAddress(left) ? RAM_BYTE_MASK : -1, bMask = ramAddress(right) ? RAM_BYTE_MASK : -1;
+		const aMask = isRamStringId(left) ? RAM_BYTE_MASK : -1, bMask = isRamStringId(right) ? RAM_BYTE_MASK : -1;
 		const aOffset = (storageOffset(left) + BLUA32_STRING_RECORD_HEADER_SIZE) & aMask;
 		const bOffset = (storageOffset(right) + BLUA32_STRING_RECORD_HEADER_SIZE) & bMask;
 		const aLength = this.byteLength(left) >>> 0, bLength = this.byteLength(right) >>> 0;
@@ -342,7 +342,7 @@ export class StringPool {
 	}
 
 	public internSlice(id: StringId, first: number, count: number): StringId {
-		const source = this.storage(id), inRam = ramAddress(id);
+		const source = this.storage(id), inRam = isRamStringId(id);
 		const at = storageOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE + first;
 		const start = inRam ? at & RAM_BYTE_MASK : at;
 		const backed = source === null ? 0 : Math.min(count, Math.max(0, source.length - start));
@@ -424,7 +424,7 @@ export class StringPool {
 	}
 
 	private mark(id: StringId): number {
-		if (!ramAddress(id)) return 0;
+		if (!isRamStringId(id)) return 0;
 		const markByte = id + 1, epoch = this.metadata(EPOCH) & STRING_GC_EPOCH_MASK;
 		if ((this.memory.readRamRecordByte(markByte) & STRING_GC_EPOCH_MASK) === epoch) return 0;
 		this.memory.writeRamRecordByte(markByte, epoch);

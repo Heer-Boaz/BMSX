@@ -60,7 +60,7 @@ struct Machine {
 constexpr int bootBytes = 232 + 12 + 15 + 697 + 16 + 2 * 9;
 // Two Thread traces of its header and one active frame, an atomic trace
 // that also clears eight Value slots, two remark visits and a sweep visit.
-constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 3 * 12 + 2 * 17 + 32;
+constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 3 * 6 + 2 * 17 + 32;
 
 void allocationAdmissionUsesLogicalBytes() {
 	Machine machine(image()); auto& cpu = machine.cpu;
@@ -414,10 +414,10 @@ void allActivatedImagesAndUniqueGlobals() {
 	require(cpu.luaHeap().usedBytes() == bootBytes + (20 + 20) + (5 + 16) + 2 * 9,
 		"each card charges its constant bank, name-slot map and new unique global");
 	cpu.instructionBudgetRemaining = 5;
-	// C=3+4+1, S=1, G=3; all activated images remain roots.
-	const size_t work = bootCollectionWork + 3 * (2 * 5 + 3 * 2);
+	// Only the two new globals add work to the three root passes.
+	const size_t work = bootCollectionWork + 3 * (3 * 2);
 	require(cpu.collectHeap() == work && cpu.instructionBudgetRemaining == 5,
-		"work includes three root passes over all resident images");
+		"all resident images omit primitive and ROM-backed constants from the root passes");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
 	require(cpu.collectHeap() == work && cpu.instructionBudgetRemaining == 5,
@@ -547,7 +547,6 @@ void resumesCompletionRootBank() {
 void resumesRootBanksBeforeTracing() {
 	auto program = image();
 	for (int slot = 0; slot < 2200; ++slot) program.globalNames.push_back("root-" + std::to_string(slot));
-	for (int slot = 0; slot < 1600; ++slot) program.constants.emplace_back(slot);
 	Machine machine(program, true);
 	auto& cpu = machine.cpu;
 	auto& heap = cpu.gcHeap();
@@ -556,7 +555,7 @@ void resumesRootBanksBeforeTracing() {
 	const auto weakRoot = cpu.stringPool().intern("root-0");
 	const auto finalRoot = cpu.stringPool().intern("root-1");
 	const auto last = cpu.stringPool().intern(program.globalNames.back());
-	const u32 lastTarget = cpu.createTable().address();
+	const u32 lastTarget = cpu.createTable(GC_STEP_WORDS, 0).address();
 	cpu.setGlobalByKey(last, valueTable(lastTarget));
 	auto weak = cpu.createTable(1, 0), mode = cpu.createTable();
 	mode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
@@ -576,7 +575,7 @@ void resumesRootBanksBeforeTracing() {
 		const u32 late = cpu.createTable().address();
 		cpu.setGlobalByKey(first, valueTable(late));
 		advance();
-		require(heap.isAlive(lastTarget) && !heap.isAlive(late),
+		require(heap.phase() == GcPhase::Mark && heap.isAlive(lastTarget) && !heap.isAlive(late),
 			"resuming scans the untouched suffix without repeating the amended prefix");
 		for (int step = 0; heap.phase() != GcPhase::Atomic && step < 30; ++step) advance();
 		require(heap.phase() == GcPhase::Atomic && !heap.isAlive(weakTarget),

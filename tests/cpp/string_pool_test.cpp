@@ -446,6 +446,39 @@ void reuseDeletedStringKeyId() {
 	require(keys == std::vector<std::string>{"replacement key", "retained key"}, "iteration exposes exactly the new and retained mappings");
 }
 
+void activatedImageRetainsItsRamConstantAcrossRestore() {
+	test::Blua32TestImage image;
+	image.text.resize(INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1}};
+	image.constants = {std::string("system only")};
+	const auto bios = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	constexpr std::string_view text = "RAM spelling of a cart constant";
+	image.constants = {std::string(text), std::string("cart only"), i32{42}};
+	const auto cart = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
+	Memory memory(MemoryInit{bios.bytes, test::cartridgeSlots(cart.bytes)}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory);
+	ExecutionAddressSpace space(memory);
+	CPU cpu(memory, irq, space);
+	cpu.reset();
+
+	auto& pool = cpu.stringPool();
+	const StringId original = pool.intern(text);
+	cpu.writeFrameExecution(0, 0, cart.functionAddresses[0], cart.textAddress);
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, bios.functionAddresses[0], bios.textAddress);
+	cpu.stepHeap(valueNil(), valueNil(), valueNil());
+	const auto savedCpu = cpu.captureRuntimeState();
+	const auto savedMemory = memory.captureSaveState();
+	cpu.collectHeap();
+	require(pool.find(text) == original, "an inactive resident image retains its original RAM String");
+
+	memory.restoreSaveState(savedMemory);
+	cpu.restoreRuntimeState(savedCpu);
+	require(memory.captureSaveState().ram == savedMemory.ram, "restoring the image does not mark or intern its RAM String");
+	cpu.collectHeap();
+	require(pool.find(text) == original, "restored image retains the same RAM String through a fresh epoch");
+}
+
 test::Blua32TestImage externalCallImage() {
 	test::Blua32TestImage image;
 	image.text.resize(4 * INSTRUCTION_BYTES);
@@ -508,6 +541,7 @@ int main() {
 		retainNestedMaterializationRoots();
 		replaySparseAllocationOrder();
 		reuseDeletedStringKeyId();
+		activatedImageRetainsItsRamConstantAcrossRestore();
 		admitExternalArgumentsAcrossStackGrowth(false);
 		admitExternalArgumentsAcrossStackGrowth(true);
 		std::cout << "String pool lifetime tests passed\n";

@@ -30,7 +30,6 @@ constexpr u32 RAM_BUCKET_EXTENT_MASK = 2u * MAX_RAM_RECORDS - 1u;
 constexpr u32 RAM_BUCKET_REHASH = 0x80000000u;
 constexpr u32 RAM_BUCKET_SHRINK = 0x40000000u;
 constexpr u32 SLOT_BIT = 0x80000000u;
-constexpr bool ramAddress(u32 address) { return address >= RAM_BASE && address < CART_ROM_BASE; }
 constexpr u32 romOffset(u32 address) {
 	return address < RAM_BASE ? address & (SYSTEM_ROM_SIZE - 1u)
 		: (address & (SLOT_BIT - 1u)) - CART_ROM_BASE;
@@ -53,7 +52,7 @@ Span<const u8> StringPool::romStorage(u32 address) const {
 }
 
 u32 StringPool::readWord(u32 base, u32 displacement) const {
-	if (ramAddress(base)) return m_memory.readRamRecordWord(base + displacement);
+	if (isRamStringId(base)) return m_memory.readRamRecordWord(base + displacement);
 	const auto rom = romStorage(base);
 	const u32 offset = romOffset(base) + displacement;
 	if (offset >= rom.size()) return 0u;
@@ -65,12 +64,12 @@ u32 StringPool::readWord(u32 base, u32 displacement) const {
 
 int StringPool::byteLength(StringId id) const {
 	const u32 count = readWord(id, BLUA32_STRING_LENGTH_OFFSET);
-	return static_cast<int>(ramAddress(id) ? count & (MAIN_RAM_SIZE - 1u) : count);
+	return static_cast<int>(isRamStringId(id) ? count & (MAIN_RAM_SIZE - 1u) : count);
 }
 
 u32 StringPool::byteAt(StringId id, size_t index) const {
 	const u32 address = id + BLUA32_STRING_RECORD_HEADER_SIZE + static_cast<u32>(index);
-	if (ramAddress(id)) return m_memory.readRamRecordByte(address);
+	if (isRamStringId(id)) return m_memory.readRamRecordByte(address);
 	const auto rom = romStorage(id);
 	const size_t offset = romOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE + index;
 	return offset < rom.size() ? rom[offset] : 0u;
@@ -81,7 +80,7 @@ StringPool::ByteSpan StringPool::readBytes(StringId id) const {
 }
 
 StringPool::ByteSpan StringPool::readBytes(StringId id, size_t start, size_t length) const {
-	if (ramAddress(id)) {
+	if (isRamStringId(id)) {
 		const size_t offset = (id + BLUA32_STRING_RECORD_HEADER_SIZE + start) & (MAIN_RAM_SIZE - 1u);
 		const auto* ram = reinterpret_cast<const char*>(m_memory.ramData());
 		const size_t first = std::min(length, size_t(MAIN_RAM_SIZE - offset));
@@ -398,7 +397,7 @@ StringId StringPool::intern(const ByteSpan& bytes, u32 hash, StringId source) {
 }
 
 bool StringPool::mark(StringId id) {
-	if (!ramAddress(id)) return false;
+	if (!isRamStringId(id)) return false;
 	const u32 markByte = id + 1u;
 	const u8 epoch = static_cast<u8>(metadata(EPOCH) & STRING_GC_EPOCH_MASK);
 	if ((m_memory.readRamRecordByte(markByte) & STRING_GC_EPOCH_MASK) == epoch) return false;

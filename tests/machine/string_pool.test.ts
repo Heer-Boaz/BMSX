@@ -428,9 +428,11 @@ test('activation interns matching bytes across RAM and ROM sockets in activation
 	cpu.gc.step();
 	const checkpoint = cpu.captureRuntimeState(), state = memory.captureSaveState();
 	cpu.gc.collect();
+	assert.equal(pool.find('existing RAM'), ram, 'the resident image owns its original RAM String');
 	memory.restoreSaveState(state);
 	cpu.restoreRuntimeState(checkpoint);
 	assert.deepEqual(memory.captureSaveState(), state);
+	cpu.gc.collect();
+	assert.equal(pool.find('existing RAM'), ram, 'restored image retains the same RAM String through a fresh epoch');
 	assert.equal(pool.intern('two sockets'), socket1);
-	assert.equal(pool.intern('existing RAM'), ram);
 });

@@ -1295,7 +1295,10 @@ another slot or change its occupied-byte charge.
 
 The original constants and String bytes remain in the image. The language pool
 charges the active image's decoded values and name mapping, not the ROM
-records. The collector compares the occupied logical budget plus the new
+records. Only a String constant that resolves to a RAM String retains an
+allocation for collection. Numeric values, booleans, nil and references to
+ROM Strings do not require heap tracing. This does not change the occupied
+budget of the decoded image. The collector compares that budget plus the new
 request with its current assist threshold.
 
 For a full collection, the collector marks retained objects, incrementally

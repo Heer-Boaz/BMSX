@@ -136,6 +136,9 @@ struct Blua32ExecutionImage {
 	u32 staticEnd = 0;
 	u32 constantBase = 0;
 	ConstValueSpan constPool;
+	// Derived from the immutable pool, including during restore. Only a
+	// String resolved to a RAM record is an edge to the language heap.
+	std::vector<StringId> constantStringRoots;
 	u32 globalMapBase = 0;
 	u32 globalNameCount = 0, systemNameCount = 0;
 	Blua32RomFunctionDirectory romFunctions{};

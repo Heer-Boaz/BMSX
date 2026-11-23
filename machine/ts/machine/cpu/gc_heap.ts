@@ -514,8 +514,7 @@ export class GcHeap {
 		for (let kind = cursor >>> TRACE_CURSOR_BITS; kind < GcRootBank.End; ++kind, next = 0) {
 			const end = this.cpu.rootBankSlots(kind);
 			const globals = kind < GcRootBank.SystemConstants;
-			const completion = kind === GcRootBank.Completion;
-			const words = globals ? 3 : completion ? 1 : 2, worst = words + (globals ? 2 : 1);
+			const words = globals ? 3 : 1, worst = words + (globals ? 2 : 1);
 			while (next < end) {
 				if (work >= limit) {
 					this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, (kind << TRACE_CURSOR_BITS) | next);

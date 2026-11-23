@@ -4,7 +4,7 @@ import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operati
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
 import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
-import { StringPool, type StringId } from './string_pool';
+import { isRamStringId, StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
 	type MappedPageBinding,
@@ -951,6 +951,12 @@ export class CPU implements MappedPageInvalidator {
 			this.decodeConstantPool(executionDomainId, constantTableAddress, constTags, constWords);
 			this.memory.invalidateRamWrite(offset, constantCount * 5);
 		}
+		const constantStringRoots: StringId[] = [];
+		for (let slot = 0; slot < constantCount; ++slot) {
+			if (constTags[slot] === ValueTag.String && isRamStringId(constWords[slot])) {
+				constantStringRoots.push(constWords[slot]);
+			}
+		}
 		const image: Blua32ExecutionImage = {
 			executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
@@ -958,6 +964,7 @@ export class CPU implements MappedPageInvalidator {
 			constantBase,
 			constTags,
 			constWords,
+			constantStringRoots,
 			globalMapBase, globalNameCount, systemNameCount: systemGlobalNameCount,
 			romFunctions: header.romFunctions,
 			decodedPages: new Map(),
@@ -4514,11 +4521,6 @@ export class CPU implements MappedPageInvalidator {
 		addSlots(this.systemGlobalBank.slots, this.systemGlobalBank.count);
 		addSlots(this.globalBank.slots, this.globalBank.count);
 		addSlots(this.completionValueSlots, this.completionValueCount);
-		for (const image of this.executionImagesByDomain) {
-			if (image === null) continue;
-			for (let index = 0; index < image.constTags.length; ++index)
-				add(valueFromTag(image.constTags[index], image.constWords[index]));
-		}
 		add(this.stringIndexTable);
 		objects.push(this.rootThread.address, this.activeThread.address);
 		if (this.completionThread !== 0) objects.push(this.completionThread);
@@ -4624,7 +4626,7 @@ export class CPU implements MappedPageInvalidator {
 		if (bank === GcRootBank.Globals) return this.globalBank.count;
 		if (bank === GcRootBank.Completion) return this.completionValueCount;
 		const image = this.executionImagesByDomain[bank - GcRootBank.SystemConstants];
-		return image === null ? 0 : image.constTags.length;
+		return image === null ? 0 : image.constantStringRoots.length;
 	}
 
 	public markRootBank(heap: GcHeap, bank: GcRootBank, first: number, end: number): void {
@@ -4641,7 +4643,7 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		const image = this.executionImagesByDomain[bank - GcRootBank.SystemConstants]!;
-		for (let slot = first; slot < end; ++slot) heap.markValue(valueFromTag(image.constTags[slot], image.constWords[slot]));
+		for (let slot = first; slot < end; ++slot) heap.markString(image.constantStringRoots[slot]);
 	}
 
 	public markRootThreads(heap: GcHeap): void {

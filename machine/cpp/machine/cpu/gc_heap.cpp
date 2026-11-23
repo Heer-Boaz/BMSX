@@ -552,8 +552,7 @@ size_t GcHeap::traceRootBanks(size_t limit, size_t work) {
 		const auto bank = static_cast<GcRootBank>(kind);
 		const size_t end = m_cpu.rootBankSlots(bank);
 		const bool globals = bank < GcRootBank::SystemConstants;
-		const bool completion = bank == GcRootBank::Completion;
-		const size_t words = globals ? 3u : completion ? 1u : 2u, worst = words + (globals ? 2u : 1u);
+		const size_t words = globals ? 3u : 1u, worst = words + (globals ? 2u : 1u);
 		while (next < end) {
 			if (work >= limit) {
 				memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, (kind << TRACE_CURSOR_BITS) | static_cast<u32>(next));

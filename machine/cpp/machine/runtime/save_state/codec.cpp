@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x36534d42u; // BMS6: collector-owned object inventory
+constexpr u32 kSaveStateSignature = 0x37534d42u; // BMS7: image String root cursor
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);

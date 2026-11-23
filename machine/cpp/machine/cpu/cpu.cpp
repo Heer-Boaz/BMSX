@@ -370,6 +370,11 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		const ValueSpan constants(m_memory, image->constantBase, image->constantBase + constantCount * 4u, constantCount);
 		if (!restoring) decodeConstantPool(executionDomainId, constantTableAddress, constants);
 		image->constPool = constants;
+		for (u32 slot = 0; slot < constantCount; ++slot) {
+			if (constants.tag(slot) != ValueTag::String) continue;
+			const StringId id = constants.payload(slot);
+			if (isRamStringId(id)) image->constantStringRoots.push_back(id);
+		}
 	}
 	return image;
 }
@@ -2917,7 +2922,7 @@ size_t CPU::rootBankSlots(GcRootBank bank) const {
 	if (bank == GcRootBank::Globals) return m_globalBank.count();
 	if (bank == GcRootBank::Completion) return m_completionValueCount;
 	const auto& image = m_executionImagesByDomain[static_cast<u32>(bank) - static_cast<u32>(GcRootBank::SystemConstants)];
-	return image ? image->constPool.size() : 0u;
+	return image ? image->constantStringRoots.size() : 0u;
 }
 
 void CPU::markRootBank(GcHeap& heap, GcRootBank bank, size_t first, size_t end) {
@@ -2934,8 +2939,8 @@ void CPU::markRootBank(GcHeap& heap, GcRootBank bank, size_t first, size_t end) 
 		for (size_t slot = first; slot < end; ++slot) heap.markValue(m_completionValues.get(slot));
 		return;
 	}
-	const auto pool = m_executionImagesByDomain[static_cast<u32>(bank) - static_cast<u32>(GcRootBank::SystemConstants)]->constPool;
-	for (size_t slot = first; slot < end; ++slot) heap.markValue(pool.get(slot));
+	const auto& roots = m_executionImagesByDomain[static_cast<u32>(bank) - static_cast<u32>(GcRootBank::SystemConstants)]->constantStringRoots;
+	for (size_t slot = first; slot < end; ++slot) heap.markString(roots[slot]);
 }
 
 void CPU::markRootThreads(GcHeap& heap) {

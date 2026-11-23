@@ -52,7 +52,7 @@ const bootThreadBytes = 80 + 40 + 112;
 const bootBytes = bootThreadBytes + 12 + 15 + 697 + 8 + 2 * 9;
 // Two Thread traces of its header and one active frame, an atomic trace
 // that also clears eight Value slots, two remark visits and one sweep visit.
-const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 3 * 12 + 2 * 17 + 32;
+const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 3 * 6 + 2 * 17 + 32;
 
 test('physical GC work counts canonical scans, reclamation and three unique root passes without a cycle debit', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
@@ -356,7 +356,7 @@ test('collect and step keep the same exact CALL and result-placement cycles acro
 	}
 });
 
-test('all activated image constants and unique namespace slots remain in the physical scan across restore', () => {
+test('ROM constants need no collector visits even with multiple resident images', () => {
 	const system = source();
 	const first = linkRawTestBlua32Pair(system, { ...source(), constants: [null, integerConstant(1), integerConstant(2), 'card0'], globalNames: ['global', 'card0', 'card0'] });
 	const second = linkRawTestBlua32Pair(system, { ...source(), constants: ['card1'], globalNames: ['global', 'card1'] });
@@ -368,8 +368,8 @@ test('all activated image constants and unique namespace slots remain in the phy
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + (20 + 12) + (5 + 12) + 2 * 9, 'each card charges its constant bank, name-slot map and new unique global');
 	cpu.instructionBudgetRemaining = 5;
-	const work = bootCollectionWork + 3 * (2 * 5 + 3 * 2);
-	assert.equal(cpu.gc.collect(), work, 'all three root passes include constants and registered names of both activated cards');
+	const work = bootCollectionWork + 3 * (3 * 2);
+	assert.equal(cpu.gc.collect(), work, 'only the registered namespace slots add root work');
 	assert.equal(cpu.instructionBudgetRemaining, 5);
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
 	assert.equal(cpu.gc.collect(), work);

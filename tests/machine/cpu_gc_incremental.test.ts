@@ -113,12 +113,11 @@ test('initial root marking resumes a large global bank from a RAM snapshot', () 
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
 	const globalNames = Array.from({ length: 2200 }, (_, slot) => `root-${slot}`);
 	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({ text, globalNames,
-		constants: Array.from({ length: 1600 }, (_, slot) => slot),
 		functions: [{ firstWord: 0, wordCount: 1, maxStack: 8 }] }));
 	const gc = cpu.gc;
 	const first = cpu.stringPool.intern(globalNames[0]), last = cpu.stringPool.intern(globalNames[globalNames.length - 1]);
 	const weakRoot = cpu.stringPool.intern(globalNames[1]), finalRoot = cpu.stringPool.intern(globalNames[2]);
-	const lastTarget = cpu.createTable();
+	const lastTarget = cpu.createTable(GC_STEP_WORDS, 0);
 	cpu.setGlobalByKey(last, valueTable(lastTarget));
 	const weak = cpu.createTable(1, 0), mode = cpu.createTable(), weakTarget = cpu.createTable();
 	gc.tables.setStringKey(mode, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
@@ -136,6 +135,7 @@ test('initial root marking resumes a large global bank from a RAM snapshot', () 
 		const late = cpu.createTable();
 		cpu.setGlobalByKey(first, valueTable(late));
 		gc.step();
+		assert.equal(gc.phase(), GcPhase.Mark, 'the final global starts a large first-pass trace, not a remark');
 		assert.equal(gc.isAlive(lastTarget), true);
 		assert.equal(gc.isAlive(late), false, 'the initial scan does not repeat the changed prefix');
 		for (let step = 0; gc.phase() !== GcPhase.Atomic && step < 30; ++step) gc.step();

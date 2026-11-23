@@ -8,10 +8,12 @@
 
 #include "common/primitives.h"
 #include "spec/blua32/execution_domain.h"
+#include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
 
 using StringId = u32;
+inline constexpr bool isRamStringId(StringId address) { return address >= RAM_BASE && address < CART_ROM_BASE; }
 inline constexpr u8 STRING_GC_EPOCH_MASK = 1u;
 class HeapAllocator;
 class LuaHeap;
