@@ -2175,6 +2175,7 @@ export class GxGpu {
 	}
 
 	// disable-next-line single_line_method_pattern -- MMIO read thunk is the Memory-owned device callback ABI for GP0.
+	// TODO: `_addr` is unused and should be removed from the thunk signature for performance reasons..
 	private static readGp0Thunk(context: GxGpu, _addr: number, busSignals: MappedBusSignals): number {
 		return context.readGp0(busSignals);
 	}
@@ -2212,24 +2213,29 @@ export class GxGpu {
 		context.memory.writeIoU32(IO_GX_GPU_GP0, context.gp0Word);
 	}
 
+	// TODO: `_addr` is unused and should be removed from the thunk signature for performance reasons..
 	private static writeGp0Thunk(context: GxGpu, _addr: number, value: number, busSignals: MappedBusSignals): void {
 		context.writeGp0(value, busSignals);
 	}
 
+	// TODO: `_addr` is unused and should be removed from the thunk signature for performance reasons..
 	private static gp0WriteReadyThunk(context: GxGpu, _addr: number, busSignals: MappedBusSignals): boolean {
 		return context.gp0WriteReady(busSignals);
 	}
 
+	// TODO: `_addr` is unused and should be removed from the thunk signature for performance reasons..
 	private static gp1WriteReadyThunk(context: GxGpu, _addr: number): boolean {
 		return !context.supervisorQuiesceRequested;
 	}
 
 	// disable-next-line single_line_method_pattern -- MMIO read thunk is the Memory-owned device callback ABI for GPUSTAT.
+	// TODO: `_addr` is unused and should be removed from the thunk signature for performance reasons..
 	private static readStatusThunk(context: GxGpu, _addr: number): number {
 		return context.readStatus();
 	}
 
 	// disable-next-line single_line_method_pattern -- MMIO write thunk is the Memory-owned device callback ABI for GP1.
+	// TODO: `_addr` is unused and should be removed from the thunk signature for performance reasons..
 	private static writeGp1Thunk(context: GxGpu, _addr: number, value: number): void {
 		context.writeGp1(value);
 	}
