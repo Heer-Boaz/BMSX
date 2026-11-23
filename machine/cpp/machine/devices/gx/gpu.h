@@ -342,6 +342,8 @@ private:
 	u32 m_gp0CommandWordCount = 0u;
 	u32 m_gp0CommandTargetWordCount = 0u;
 	u32 m_gp0ImageLoadWordsRemaining = 0u;
+	// Live only between the two synchronous callbacks of one admitted DMA block.
+	u32 m_gp0DmaImagePrefixWords = 0u;
 	size_t m_gp0ImageLoadCommandWordStart = 0u;
 	u32 m_gp0ImageLoadCommandWordCount = 0u;
 	u8 m_gp0ImageLoadCommandOpcode = 0u;
@@ -414,12 +416,13 @@ private:
 	void flushImageLoadToVram(i64 commandStartCycle);
 	template <size_t Capacity>
 	void consumeImageLoadWords(WordFifo<Capacity>& source, size_t words, i64 commandStartCycle);
+	void commitImageLoadWords(size_t words, i64 commandStartCycle);
 	void consumeGp0PolylinePayloadWord(u32 word, i64 commandStartCycle);
 	void beginPolylinePayload(const GxGpuPacket& packet, i64 commandStartCycle);
 	void recordGp0ProducerWord(u32 word);
 	void rebuildGp0Producer();
 	Gp0WordAdmission acceptGp0Word(u32 word);
-	void processGp0Pipeline(i64 commandStartCycle);
+	void processGp0Pipeline(i64 commandStartCycle, u32 directImageWords = 0u);
 	void consumeGp0Fifo(i64 commandStartCycle);
 	void synchronizeCommandExecution(i64 nowCycles);
 	void copyDrawState(GxGpuDrawState& state) const;

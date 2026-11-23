@@ -164,7 +164,7 @@ void testCpuBuildsHeadersAndDmaSplitsAtAvailableWords() {
 
 void testAdmittedOutputDmaSurvivesQuiesce() {
 	Harness h({});
-	constexpr u32 first = 0x86051234u, last = 0xabcd9087u;
+	constexpr u32 first = 0xc0051234u, last = 0x1f009087u;
 	h.configure(3u, 2u);
 	h.header(0x00200040, 4u | (1u << 16));
 	h.outputDma(2u);
@@ -173,12 +173,27 @@ void testAdmittedOutputDmaSurvivesQuiesce() {
 	for (u32 i = 0; i < 16 && h.machine.dmaController.captureState().activeChannel != 1; ++i) h.pump();
 	const auto admitted = h.machine.dmaController.captureState();
 	require(admitted.activeChannel == 1 && admitted.scheduledBlockWords == 2, "DMA holds both published words");
+	const i64 dmaEdge = h.machine.scheduler.nowCycles() + admitted.scheduledBlockCycles;
 	h.machine.imgDecController.beginSupervisorQuiesce();
+	h.machine.gxGpu.beginSupervisorQuiesce();
 	require((h.memory.readIoU32(IO_IMGDEC_STATUS) & IMGDEC_STATUS_OUTPUT_REQUEST) == 0, "quiesce withdraws the request line");
 	require(h.machine.dmaController.captureState().scheduledBlockCycles == admitted.scheduledBlockCycles, "quiesce keeps the admitted edge");
+	h.machine.scheduler.advanceTo(dmaEdge - 1);
+	const auto before = h.machine.gxGpu.captureState();
+	require(before.commandBuffer.commandCount == 0 && before.commandBuffer.words.size() == 3
+		&& before.gp0Word == (4u | (1u << 16)), "neither upload nor GP0 terminal is visible before delivery");
 	const auto& commands = h.machine.gxGpu.readDeviceOutput().commandBuffer;
 	for (u32 i = 0; i < 16 && commands.commandCount == 0; ++i) h.pump();
-	require(commands.commandCount == 1 && commands.commandWordCount[0] == 5, "the admitted block completes with the request withdrawn");
+	require(h.machine.scheduler.nowCycles() == dmaEdge
+		&& commands.commandCount == 1 && commands.commandWordCount[0] == 5, "the admitted block completes at its original edge");
+	const auto after = h.machine.gxGpu.captureState();
+	require(after.gp0Word == last && after.pendingCommandCycles > 0 && commands.executedCommandCount == 0
+		&& !h.machine.gxGpu.backendServicePending()
+		&& (h.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) == 0, "GP0 latches the terminal payload without executing it as an IRQ");
+	const i64 gpuEdge = dmaEdge + after.pendingCommandCycles;
+	while (h.machine.scheduler.nextDeadline() <= gpuEdge) h.pump();
+	require(h.machine.scheduler.nowCycles() == gpuEdge && commands.executedCommandCount == 1,
+		"the admitted upload still completes at its separate GPU deadline");
 	const u32 start = commands.commandWordStart[0] + 3u;
 	require(commands.words[start] == first && commands.words[start + 1u] == last, "prefix and terminal output are consumed in order");
 	require(h.memory.readIoU32(IO_DMA1_STATUS) == DMA_STATUS_DONE, "DMA completes independently of decoder quiesce");
@@ -186,6 +201,46 @@ void testAdmittedOutputDmaSurvivesQuiesce() {
 	require(h.machine.imgDecController.captureState().outputWordsRead == 2u
 		&& h.memory.readIoU32(IO_IMGDEC_DATA) == last && h.memory.readIoU32(IO_IMGDEC_STATUS) == IMGDEC_STATUS_DONE,
 		"decoder completes without consuming or changing another word after resume");
+}
+
+void testAdmittedImageWaitsForReadback() {
+	constexpr u32 first = 0xc0051234u, last = 0x1f009087u;
+	std::array<std::vector<u32>, 2> uploads;
+	for (bool blocked : {false, true}) {
+		Harness h({1u, first, last});
+		auto& gpu = h.machine.gxGpu;
+		if (blocked) {
+			for (const u32 word : {0xc0000000u, 0u, 0x00010002u}) gpu.writeGp0(word);
+			for (u32 i = 0; i < 16 && !gpu.backendServicePending(); ++i) h.pump();
+			require(gpu.backendServicePending(), "a real C0 fence blocks GP0 execution");
+		}
+		h.configure(3u, 2u);
+		h.header(0x00200040u, 0x00010004u);
+		h.outputDma(2u);
+		h.inputDma();
+		h.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
+		for (u32 i = 0; i < 16 && h.memory.readIoU32(IO_DMA1_STATUS) != DMA_STATUS_DONE; ++i) h.pump();
+		require(h.memory.readIoU32(IO_DMA1_STATUS) == DMA_STATUS_DONE && h.memory.readIoU32(IO_IMGDEC_DATA) == last,
+			"the whole admitted burst is accepted while readback is held");
+		const auto& output = gpu.readDeviceOutput();
+		const auto& commands = output.commandBuffer;
+		if (blocked) {
+			const auto queued = gpu.captureState();
+			require(queued.gp0Word == last && queued.gp0ImageLoadWordsRemaining == 0 && commands.commandCount == 1u
+				&& queued.gp0FifoWords == std::vector<u32>{0xa0000000u, 0x00200040u, 0x00010004u, first, last},
+				"the complete packet waits in the ordinary FIFO, outside the scheduled image");
+			auto& readback = output.readbackPort;
+			require(readback.claimReadback(commands.executedCommandCount), "the backend owns the preceding readback");
+			writeLE32(readback.pixelBytes(), 0x34561234u);
+			readback.completeReadback(readback.token());
+			require(gpu.readGp0() == 0x34561234u, "draining the preceding readback releases the upload");
+		}
+		require(commands.commandCount == (blocked ? 2u : 1u), "a single upload is emitted at the true command boundary");
+		const size_t start = commands.commandWordStart[blocked ? 1u : 0u];
+		uploads[blocked].assign(commands.words.begin() + start, commands.words.begin() + start + 5u);
+		require((h.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) == 0u, "queued and direct data do not execute the payload as IRQ");
+	}
+	require(uploads[0] == uploads[1], "queueing behind readback does not change the image packet");
 }
 
 void testHistoryWrapAndAllRunKinds() {
@@ -305,6 +360,7 @@ int main() {
 	testBlocksPublishOnlyAtCompletion();
 	testCpuBuildsHeadersAndDmaSplitsAtAvailableWords();
 	testAdmittedOutputDmaSurvivesQuiesce();
+	testAdmittedImageWaitsForReadback();
 	testHistoryWrapAndAllRunKinds();
 	testRestoreAndQuiesce();
 	testRestoreAfterHistoryWrap();

@@ -356,6 +356,8 @@ export class GxGpu {
 	private pendingCommandTargetCount = 0;
 	private deviceServiceDeadlineCycle = -1;
 	private gp0ImageLoadWordsRemaining = 0;
+	// Live only between the two synchronous callbacks of one admitted DMA block.
+	private gp0DmaImagePrefixWords = 0;
 	private gp0ImageLoadCommandWordStart = 0;
 	private gp0ImageLoadCommandWordCount = 0;
 	private gp0ImageLoadCommandOpcode = 0;
@@ -1117,9 +1119,15 @@ export class GxGpu {
 		const dmaWrite = (busSignals & MAPPED_BUS_MASTER_DMA) !== 0;
 		const nowCycles = this.scheduler.currentNowCycles();
 		this.synchronizeCommandTiming(nowCycles);
+		let directImageWords = 0;
 		if (dmaWrite) {
 			this.gp0Word = word >>> 0;
-			if (!this.gp0DmaIngress.full()) {
+			if (this.gp0DmaImagePrefixWords !== 0) {
+				this.commandBuffer.words[this.commandBuffer.wordCount + this.gp0DmaImagePrefixWords] = this.gp0Word;
+				this.recordGp0ProducerWord(this.gp0Word);
+				directImageWords = this.gp0DmaImagePrefixWords + 1;
+				this.gp0DmaImagePrefixWords = 0;
+			} else if (!this.gp0DmaIngress.full()) {
 				this.gp0DmaIngress.writeWord(this.gp0Word);
 				this.recordGp0ProducerWord(this.gp0Word);
 			}
@@ -1132,7 +1140,7 @@ export class GxGpu {
 			if (this.acceptGp0Word(this.gp0Word) !== Gp0WordAdmission.Blocked) this.recordGp0ProducerWord(this.gp0Word);
 		}
 		this.memory.writeIoU32(IO_GX_GPU_GP0, this.gp0Word);
-		this.processGp0Pipeline(nowCycles);
+		this.processGp0Pipeline(nowCycles, directImageWords);
 		this.rescheduleDeviceService();
 		if (this.supervisorIngressQuiesceRequested
 			&& this.gp0Ingress.phase === GX_GPU_GP0_INGRESS_COMMAND
@@ -1187,8 +1195,12 @@ export class GxGpu {
 		return Gp0WordAdmission.Queued;
 	}
 
-	private processGp0Pipeline(nowCycles: number): void {
+	private processGp0Pipeline(nowCycles: number, directImageWords = 0): void {
 		this.processingGp0Pipeline = true;
+		if (directImageWords !== 0) {
+			this.gp0Ingress.skipPayloadWords(directImageWords);
+			this.commitImageLoadWords(directImageWords, nowCycles);
+		}
 		while (true) {
 			this.processGp0Fifo(nowCycles);
 			let ingressAdvanced = false;
@@ -1201,8 +1213,7 @@ export class GxGpu {
 					const words = Math.min(this.gp0DmaIngress.count(),
 						consumingImage ? this.gp0ImageLoadWordsRemaining : this.gp0Fifo.free(), this.gp0Ingress.wordsRemaining);
 					if (words === 0) break;
-					this.gp0Ingress.wordsRemaining -= words;
-					if (this.gp0Ingress.wordsRemaining === 0) this.gp0Ingress.phase = GX_GPU_GP0_INGRESS_COMMAND;
+					this.gp0Ingress.skipPayloadWords(words);
 					if (consumingImage) this.consumeImageLoadWords(this.gp0DmaIngress, words, nowCycles);
 					else this.gp0DmaIngress.transferWords(this.gp0Fifo, words);
 				} else {
@@ -1854,6 +1865,10 @@ export class GxGpu {
 
 	private consumeImageLoadWords(source: WordFifo, words: number, nowCycles: number): void {
 		source.readWords(this.commandBuffer.words, this.commandBuffer.wordCount, words);
+		this.commitImageLoadWords(words, nowCycles);
+	}
+
+	private commitImageLoadWords(words: number, nowCycles: number): void {
 		this.commandBuffer.wordCount += words;
 		this.gp0ImageLoadCommandWordCount += words;
 		this.gp0ImageLoadWordsRemaining -= words;
@@ -2170,12 +2185,30 @@ export class GxGpu {
 	private static writeGp0PrefixThunk(context: GxGpu, _address: number, words: Uint32Array, first: number, count: number): void {
 		if (context.supervisorIngressStopped) return;
 		context.synchronizeCommandTiming(context.scheduler.currentNowCycles());
-		const accepted = Math.min(count, context.gp0DmaIngress.free());
-		context.gp0DmaIngress.writeWords(words, first, accepted);
-		for (let index = 0; index < accepted;) {
-			const skipped = context.gp0Producer.skipPayloadWords(accepted - index);
-			if (skipped !== 0) index += skipped;
-			else context.recordGp0ProducerWord(words[first + index++]);
+		// If both FIFOs are empty and the whole burst continues the runnable
+		// image, its final packet can own the payload immediately. Publish it
+		// at block end, after the source device has processed the terminal word.
+		if (context.gp0DmaIngress.empty() && context.gp0Fifo.empty()
+			&& context.gp0Producer.phase === GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD
+			&& context.gp0Producer.wordsRemaining > count
+			&& context.gp0Ingress.phase === GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD
+			&& context.gp0Ingress.wordsRemaining > count
+			&& context.gp0ImageLoadWordsRemaining > count
+			&& context.pendingCommandCompletionCycle === 0
+			&& context.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE) {
+			const destination = context.commandBuffer.words;
+			const start = context.commandBuffer.wordCount;
+			for (let index = 0; index < count; ++index) destination[start + index] = words[first + index];
+			context.gp0Producer.skipPayloadWords(count);
+			context.gp0DmaImagePrefixWords = count;
+		} else {
+			const accepted = Math.min(count, context.gp0DmaIngress.free());
+			context.gp0DmaIngress.writeWords(words, first, accepted);
+			for (let index = 0; index < accepted;) {
+				const skipped = context.gp0Producer.skipPayloadWords(accepted - index);
+				if (skipped !== 0) index += skipped;
+				else context.recordGp0ProducerWord(words[first + index++]);
+			}
 		}
 		context.gp0Word = words[first + count - 1];
 		context.memory.writeIoU32(IO_GX_GPU_GP0, context.gp0Word);

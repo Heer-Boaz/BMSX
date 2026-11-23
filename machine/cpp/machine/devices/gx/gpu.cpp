@@ -600,9 +600,15 @@ void GxGpu::writeGp0(u32 word, MappedBusSignals busSignals) {
 	const bool dmaWrite = (busSignals & MAPPED_BUS_MASTER_DMA) != 0u;
 	const i64 nowCycles = m_scheduler.currentNowCycles();
 	synchronizeCommandExecution(nowCycles);
+	u32 directImageWords = 0u;
 	if (dmaWrite) {
 		m_gp0Word = word;
-		if (!m_gp0DmaIngress.full()) {
+		if (m_gp0DmaImagePrefixWords != 0u) {
+			m_commandBuffer.words[m_commandBuffer.wordCount + m_gp0DmaImagePrefixWords] = word;
+			recordGp0ProducerWord(word);
+			directImageWords = m_gp0DmaImagePrefixWords + 1u;
+			m_gp0DmaImagePrefixWords = 0u;
+		} else if (!m_gp0DmaIngress.full()) {
 			m_gp0DmaIngress.writeWord(word);
 			recordGp0ProducerWord(word);
 		}
@@ -615,7 +621,7 @@ void GxGpu::writeGp0(u32 word, MappedBusSignals busSignals) {
 		if (acceptGp0Word(word) != Gp0WordAdmission::Blocked) recordGp0ProducerWord(word);
 	}
 	m_memory.writeIoU32(IO_GX_GPU_GP0, m_gp0Word);
-	processGp0Pipeline(nowCycles);
+	processGp0Pipeline(nowCycles, directImageWords);
 	rescheduleDeviceService();
 	if (m_supervisorIngressQuiesceRequested
 		&& m_gp0Ingress.phase == GX_GPU_GP0_INGRESS_COMMAND
@@ -666,8 +672,12 @@ Gp0WordAdmission GxGpu::acceptGp0Word(u32 word) {
 	return Gp0WordAdmission::Queued;
 }
 
-void GxGpu::processGp0Pipeline(i64 commandStartCycle) {
+void GxGpu::processGp0Pipeline(i64 commandStartCycle, u32 directImageWords) {
 	m_processingGp0Pipeline = true;
+	if (directImageWords != 0u) {
+		m_gp0Ingress.skipPayloadWords(directImageWords);
+		commitImageLoadWords(directImageWords, commandStartCycle);
+	}
 	while (true) {
 		consumeGp0Fifo(commandStartCycle);
 		bool ingressAdvanced = false;
@@ -681,8 +691,7 @@ void GxGpu::processGp0Pipeline(i64 commandStartCycle) {
 					consumingImage ? static_cast<size_t>(m_gp0ImageLoadWordsRemaining) : m_gp0Fifo.free(),
 					static_cast<size_t>(m_gp0Ingress.wordsRemaining)});
 				if (words == 0u) break;
-				m_gp0Ingress.wordsRemaining -= static_cast<u32>(words);
-				if (m_gp0Ingress.wordsRemaining == 0u) m_gp0Ingress.phase = GX_GPU_GP0_INGRESS_COMMAND;
+				m_gp0Ingress.skipPayloadWords(static_cast<u32>(words));
 				if (consumingImage) consumeImageLoadWords(m_gp0DmaIngress, words, commandStartCycle);
 				else m_gp0DmaIngress.transferWords(m_gp0Fifo, words);
 			} else {
@@ -1308,6 +1317,10 @@ void GxGpu::flushImageLoadToVram(i64 commandStartCycle) {
 template <size_t Capacity>
 void GxGpu::consumeImageLoadWords(WordFifo<Capacity>& source, size_t words, i64 commandStartCycle) {
 	source.readWords(m_commandBuffer.words.data() + m_commandBuffer.wordCount, words);
+	commitImageLoadWords(words, commandStartCycle);
+}
+
+void GxGpu::commitImageLoadWords(size_t words, i64 commandStartCycle) {
 	m_commandBuffer.wordCount += words;
 	m_gp0ImageLoadCommandWordCount += static_cast<u32>(words);
 	m_gp0ImageLoadWordsRemaining -= static_cast<u32>(words);
@@ -1642,12 +1655,28 @@ void GxGpu::writeGp0PrefixThunk(void* context, u32, const u32* words, u32 count,
 	auto& gpu = *static_cast<GxGpu*>(context);
 	if (gpu.m_supervisorIngressStopped) return;
 	gpu.synchronizeCommandExecution(gpu.m_scheduler.currentNowCycles());
-	const size_t accepted = std::min<size_t>(count, gpu.m_gp0DmaIngress.free());
-	gpu.m_gp0DmaIngress.writeWords(words, accepted);
-	for (size_t index = 0u; index < accepted;) {
-		const u32 skipped = gpu.m_gp0Producer.skipPayloadWords(static_cast<u32>(accepted - index));
-		if (skipped != 0u) index += skipped;
-		else gpu.recordGp0ProducerWord(words[index++]);
+	// If both FIFOs are empty and the whole burst continues the runnable
+	// image, its final packet can own the payload immediately. Publish it
+	// at block end, after the source device has processed the terminal word.
+	if (gpu.m_gp0DmaIngress.empty() && gpu.m_gp0Fifo.empty()
+		&& gpu.m_gp0Producer.phase == GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD
+		&& gpu.m_gp0Producer.wordsRemaining > count
+		&& gpu.m_gp0Ingress.phase == GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD
+		&& gpu.m_gp0Ingress.wordsRemaining > count
+		&& gpu.m_gp0ImageLoadWordsRemaining > count
+		&& gpu.m_pendingCommandCompletionCycle == 0
+		&& gpu.m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE) {
+		std::copy_n(words, count, gpu.m_commandBuffer.words.data() + gpu.m_commandBuffer.wordCount);
+		gpu.m_gp0Producer.skipPayloadWords(count);
+		gpu.m_gp0DmaImagePrefixWords = count;
+	} else {
+		const size_t accepted = std::min<size_t>(count, gpu.m_gp0DmaIngress.free());
+		gpu.m_gp0DmaIngress.writeWords(words, accepted);
+		for (size_t index = 0u; index < accepted;) {
+			const u32 skipped = gpu.m_gp0Producer.skipPayloadWords(static_cast<u32>(accepted - index));
+			if (skipped != 0u) index += skipped;
+			else gpu.recordGp0ProducerWord(words[index++]);
+		}
 	}
 	gpu.m_gp0Word = words[count - 1u];
 	gpu.m_memory.writeIoU32(IO_GX_GPU_GP0, gpu.m_gp0Word);
