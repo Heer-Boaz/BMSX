@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/primitives.h"
+#include "common/endian.h"
 
 #include <algorithm>
 #include <array>
@@ -32,6 +32,21 @@ public:
 		const size_t first = std::min(count, Capacity - writeIndex);
 		std::copy_n(source, first, m_words.data() + writeIndex);
 		std::copy_n(source + first, count - first, m_words.data());
+		m_wordCount += count;
+	}
+
+	// A mapped source contains bytes, not live u32 objects. Convert directly
+	// into the owned ring; on little-endian hosts this is one copy per span.
+	void writeLittleEndianWords(const u8* source, size_t count) {
+		const size_t writeIndex = (m_readIndex + m_wordCount) & (Capacity - 1u);
+		const size_t first = std::min(count, Capacity - writeIndex);
+		if constexpr (std::endian::native == std::endian::little) {
+			std::memcpy(m_words.data() + writeIndex, source, first * sizeof(u32));
+			std::memcpy(m_words.data(), source + first * sizeof(u32), (count - first) * sizeof(u32));
+		} else {
+			for (size_t i = 0; i < first; ++i) m_words[writeIndex + i] = readLE32(source + i * sizeof(u32));
+			for (size_t i = first; i < count; ++i) m_words[i - first] = readLE32(source + i * sizeof(u32));
+		}
 		m_wordCount += count;
 	}
 

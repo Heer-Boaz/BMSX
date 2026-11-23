@@ -1,3 +1,5 @@
+import { readLE32 } from '../../common/endian';
+
 export class WordFifo {
 	private readonly words: Uint32Array;
 	private readonly indexMask: number;
@@ -39,6 +41,13 @@ export class WordFifo {
 	public writeWords(source: Uint32Array, offset: number, count: number): void {
 		const writeIndex = this.readIndex + this.wordCount, words = this.words, mask = this.indexMask;
 		for (let i = 0; i < count; ++i) words[(writeIndex + i) & mask] = source[offset + i];
+		this.wordCount += count;
+	}
+
+	/** Decodes a borrowed little-endian span directly into the owned ring. */
+	public writeLittleEndianWords(source: Uint8Array, byteOffset: number, count: number): void {
+		const writeIndex = this.readIndex + this.wordCount, words = this.words, mask = this.indexMask;
+		for (let i = 0; i < count; ++i) words[(writeIndex + i) & mask] = readLE32(source, byteOffset + 4 * i);
 		this.wordCount += count;
 	}
 

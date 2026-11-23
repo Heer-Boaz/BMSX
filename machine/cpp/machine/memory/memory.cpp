@@ -242,13 +242,19 @@ void Memory::mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler, Io
 	IoWriteBinding& binding = m_ioWriteHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)];
 	binding.context = context;
 	binding.handler = handler;
-	if (auto* prefix = findIoDmaPrefix(static_cast<int>((addr - IO_BASE) / IO_WORD_SIZE))) prefix->write = nullptr;
+	if (auto* prefix = findIoDmaPrefix(static_cast<int>((addr - IO_BASE) / IO_WORD_SIZE))) {
+		prefix->write = nullptr;
+		prefix->mappedWrite = nullptr;
+	}
 }
 
 void Memory::mapIoWriteReady(uint32_t addr, IoWriteReadyHandler handler) {
 	const size_t slot = static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE);
 	m_ioWriteHandlers[slot].ready = handler;
-	if (auto* prefix = findIoDmaPrefix(static_cast<int>(slot))) prefix->write = nullptr;
+	if (auto* prefix = findIoDmaPrefix(static_cast<int>(slot))) {
+		prefix->write = nullptr;
+		prefix->mappedWrite = nullptr;
+	}
 }
 
 Memory::IoDmaPrefixBinding* Memory::findIoDmaPrefix(int slot) {
@@ -266,6 +272,12 @@ void Memory::mapIoDmaWritePrefix(u32 address, IoDmaWritePrefixHandler handler) {
 	const int slot = static_cast<int>((address - IO_BASE) / IO_WORD_SIZE);
 	if (auto* prefix = findIoDmaPrefix(slot)) prefix->write = handler;
 	else if (handler != nullptr) m_ioDmaPrefixes.push_back({slot, nullptr, handler});
+}
+
+void Memory::mapIoDmaMappedWritePrefix(u32 address, IoDmaMappedWritePrefixHandler handler) {
+	const int slot = static_cast<int>((address - IO_BASE) / IO_WORD_SIZE);
+	if (auto* prefix = findIoDmaPrefix(slot)) prefix->mappedWrite = handler;
+	else if (handler != nullptr) m_ioDmaPrefixes.push_back({.slot = slot, .mappedWrite = handler});
 }
 
 bool Memory::mappedWriteReady(uint32_t addr) {
@@ -644,33 +656,43 @@ void Memory::transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
 	const int readSlot = readStep == 0u && (readSignals & MAPPED_BUS_DMA_MEMORY) == 0u ? ioAlignedSlot(readAddress) : -1;
 	const int writeSlot = writeStep == 0u && (writeSignals & MAPPED_BUS_DMA_MEMORY) == 0u ? ioAlignedSlot(writeAddress) : -1;
 	auto* writePrefix = wordCount > 1u && writeSlot >= 0 ? findIoDmaPrefix(writeSlot) : nullptr;
-	if (writePrefix != nullptr && writePrefix->write != nullptr
-		&& !kReadOnlyIoSlots[static_cast<size_t>(writeSlot)]) {
-		std::array<u32, DMA_BURST_WORD_CAPACITY> staging;
+	if (writePrefix != nullptr && !kReadOnlyIoSlots[static_cast<size_t>(writeSlot)]) {
 		const u32 prefix = wordCount - 1u;
-		auto* readPrefix = readSlot >= 0 ? findIoDmaPrefix(readSlot) : nullptr;
-		const u32* words = nullptr;
-		if (readPrefix != nullptr && readPrefix->read != nullptr) {
-			words = readPrefix->read(
-				m_ioReadHandlers[static_cast<size_t>(readSlot)].context, readAddress, prefix, readSignals);
-		} else if (readStep == 0u || readStep == IO_WORD_SIZE) {
-			Span<const u8> bytes;
-			const u32 byteCount = readStep == 0u ? IO_WORD_SIZE : prefix * IO_WORD_SIZE;
-			bool bound;
-			if (readAddress >= IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE && isRamRange(readAddress, byteCount)) {
-				bytes.data_ = m_ram.data() + (readAddress - RAM_BASE);
-				bound = true;
-			} else {
-				bound = bindRomByteView(readAddress, byteCount, m_cartridgeController.selectedSlot(readSignals), bytes);
+		void* context = m_ioWriteHandlers[static_cast<size_t>(writeSlot)].context;
+		Span<const u8> bytes;
+		bool accepted = false;
+		if (writePrefix->mappedWrite != nullptr && readStep == IO_WORD_SIZE
+			&& bindMappedReadView(readAddress, prefix * IO_WORD_SIZE, readSignals, bytes)) {
+			writePrefix->mappedWrite(context, bytes);
+			accepted = true;
+		} else if (writePrefix->write != nullptr) {
+			std::array<u32, DMA_BURST_WORD_CAPACITY> staging;
+			auto* readPrefix = readSlot >= 0 ? findIoDmaPrefix(readSlot) : nullptr;
+			const u32* words = nullptr;
+			if (readPrefix != nullptr && readPrefix->read != nullptr) {
+				words = readPrefix->read(
+					m_ioReadHandlers[static_cast<size_t>(readSlot)].context, readAddress, prefix, readSignals);
+			} else if (readStep == 0u || readStep == IO_WORD_SIZE) {
+				Span<const u8> bytes;
+				const u32 byteCount = readStep == 0u ? IO_WORD_SIZE : prefix * IO_WORD_SIZE;
+				bool bound;
+				if (readAddress >= IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE && isRamRange(readAddress, byteCount)) {
+					bytes.data_ = m_ram.data() + (readAddress - RAM_BASE);
+					bound = true;
+				} else {
+					bound = bindRomByteView(readAddress, byteCount, m_cartridgeController.selectedSlot(readSignals), bytes);
+				}
+				if (bound) {
+					for (u32 i = 0u; i < prefix; ++i) staging[i] = readLE32(bytes.data_ + i * readStep);
+					words = staging.data();
+				}
 			}
-			if (bound) {
-				for (u32 i = 0u; i < prefix; ++i) staging[i] = readLE32(bytes.data_ + i * readStep);
-				words = staging.data();
+			if (words) {
+				writePrefix->write(context, writeAddress, words, prefix, writeSignals);
+				accepted = true;
 			}
 		}
-		if (words) {
-			writePrefix->write(
-				m_ioWriteHandlers[static_cast<size_t>(writeSlot)].context, writeAddress, words, prefix, writeSignals);
+		if (accepted) {
 			readAddress += prefix * readStep;
 			wordCount = 1u;
 		}

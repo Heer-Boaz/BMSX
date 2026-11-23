@@ -50,6 +50,7 @@ public:
 	// synchronous sink returns. The sink does not retain the backing.
 	using IoDmaReadPrefixHandler = const u32* (*)(void*, u32 address, u32 count, MappedBusSignals);
 	using IoDmaWritePrefixHandler = void (*)(void*, u32 address, const u32* words, u32 count, MappedBusSignals);
+	using IoDmaMappedWritePrefixHandler = void (*)(void*, Span<const u8> littleEndianBytes);
 
 	Memory(const MemoryInit& init, u32 ramByteCount);
 
@@ -123,6 +124,7 @@ public:
 	}
 	void mapIoDmaReadPrefix(u32 address, IoDmaReadPrefixHandler handler);
 	void mapIoDmaWritePrefix(u32 address, IoDmaWritePrefixHandler handler);
+	void mapIoDmaMappedWritePrefix(u32 address, IoDmaMappedWritePrefixHandler handler);
 	bool mappedWriteReady(uint32_t addr);
 	u32 firstBlockedMappedWordWrite(uint32_t addr, uint32_t wordCount);
 	uint32_t readBusFaultSequence() const { return m_busFaultSequence; }
@@ -189,6 +191,7 @@ private:
 		int slot;
 		IoDmaReadPrefixHandler read = nullptr;
 		IoDmaWritePrefixHandler write = nullptr;
+		IoDmaMappedWritePrefixHandler mappedWrite = nullptr;
 	};
 	// Keep the physical RAM port within ARM's immediate load range. The
 	// MMIO slot table is too large to place before these fields.

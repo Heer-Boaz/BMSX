@@ -485,3 +485,38 @@ test('DMA prefix capabilities are revoked by scalar rebinding and obey read-only
 		} else { assert.equal(trace.ready, 4); assert.equal(trace.writes, 3); assert.deepEqual(trace.writeSignals, [13, 13, 15]); }
 	}
 });
+
+
+test('mapped DMA prefix uses backed bytes only and remains owned by its scalar mapping', () => {
+	const raw = [1, 2, 3, 4, 5, 6, 7, 8];
+	const source = DYNAMIC_RAM_BASE + 1;
+	for (let mode = 0; mode < 5; ++mode) {
+		const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+		for (let i = 0; i < raw.length; ++i) memory.writeMappedU8(source + i, raw[i]);
+		const trace = { ready: 0, words: [] as number[], strobes: [] as number[], mapped: [] as number[] };
+		const target = mode === 3 ? IO_SYS_STATUS : IO_IMGDEC_DATA;
+		const word = (t: typeof trace, _address: number, value: number, signals: number) => {
+			t.words.push(value); t.strobes.push(signals);
+		};
+		const ready = (t: typeof trace) => ++t.ready % 3 !== 0;
+		memory.mapIoWrite(target, trace, word);
+		memory.mapIoWriteReady(target, ready);
+		memory.mapIoDmaMappedWritePrefix<typeof trace>(target, (t, { bytes, byteOffset, byteLength }) => {
+			t.mapped.push(...bytes.subarray(byteOffset, byteOffset + byteLength));
+		});
+		if (mode === 1) memory.mapIoWrite(target, trace, word);
+		if (mode === 2) memory.mapIoWriteReady(target, ready);
+		memory.transferDmaBlock(mode === 4 ? IO_IMGDEC_DATA : source, target, 2, 4, 0,
+			MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY, MAPPED_BUS_MASTER_DMA);
+		const last = MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END;
+		if (mode === 0) {
+			assert.deepEqual(trace, { ready: 1, mapped: raw.slice(0, 4), words: [0x08070605], strobes: [last] });
+		} else if (mode === 3) {
+			assert.deepEqual(trace, { ready: 0, mapped: [], words: [], strobes: [] });
+		} else {
+			assert.deepEqual(trace, { ready: 2, mapped: [], words: mode === 4 ? [0, 0] : [0x04030201, 0x08070605],
+				strobes: [MAPPED_BUS_MASTER_DMA, last] });
+		}
+		assert.equal(memory.readBusFaultSequence(), mode >= 3 ? 2 : 0);
+	}
+});

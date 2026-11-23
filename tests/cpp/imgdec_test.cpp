@@ -28,8 +28,10 @@ struct Harness {
 	Memory memory;
 	Machine machine;
 	std::array<u32, DeviceServiceKindCount> services{};
-	Harness(const std::vector<u32>& stream)
-		: rom(stream.size() * 4), memory(MemoryInit{{}, test::cartridgeSlots(rom)}, PSX_MACHINE_SPEC.ramBytes),
+	Harness(const std::vector<u32>& stream, std::span<const u8> secondSocket = {})
+		: rom(stream.size() * 4),
+		  memory(MemoryInit{{}, secondSocket.empty() ? test::cartridgeSlots(rom)
+		      : test::cartridgeSlots(rom, secondSocket)}, PSX_MACHINE_SPEC.ramBytes),
 		  machine(memory, input, PSX_MACHINE_SPEC) {
 		for (size_t i = 0; i < stream.size(); ++i) writeLE32(rom.data() + i * 4, stream[i]);
 		machine.scheduler.reset();
@@ -103,6 +105,58 @@ void testBlocksPublishOnlyAtCompletion() {
 	require(h.memory.readIoU32(IO_IMGDEC_STATUS) == IMGDEC_STATUS_DONE, "DONE follows the final DATA read");
 	require(h.services[DEVICE_SERVICE_IMGDEC] == 2, "273 output words require exactly two decoder completions");
 	require((h.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_IMGDEC) != 0, "completion raises IMGDEC IRQ");
+}
+
+void testDmaMappedInputAndPaddedTerminalWord() {
+	constexpr u32 inputCount = 256, outputCount = inputCount - 1;
+	std::array<u8, inputCount * sizeof(u32)> slot1{};
+	writeLE32(slot1.data() + 1, outputCount - 1); // One unaligned literal run.
+	std::array<u32, outputCount> expected{};
+	for (u32 i = 0; i < outputCount - 1; ++i) {
+		expected[i] = 0x87654321u ^ (i << 12u);
+		writeLE32(slot1.data() + 1 + (i + 1) * sizeof(u32), expected[i]);
+	}
+	// The prefix is completely backed; the last word is only three bytes.
+	expected.back() = 0x005aa5c3u;
+	slot1[slot1.size() - 3] = 0xc3u;
+	slot1[slot1.size() - 2] = 0xa5u;
+	slot1[slot1.size() - 1] = 0x5au;
+	Harness h({0u, 0u}, slot1);
+	auto& memory = h.memory;
+	auto& dma = h.machine.dmaController;
+	auto& scheduler = h.machine.scheduler;
+	const auto faults = memory.readBusFaultSequence();
+	memory.writeMappedU32LE(IO_CART_SELECT, 0u);
+	require(memory.readMappedU32LE(CART_ROM_BASE + 1) == 0, "CPU selects unrelated socket 0");
+	h.configure(inputCount, outputCount);
+	h.header(0x00200040, (2 * outputCount) | (1u << 16u));
+	h.outputDma(outputCount);
+	memory.writeMappedU32LE(IO_DMA0_READ_ADDR, CART_ROM_BASE + 1);
+	memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, inputCount);
+	memory.writeMappedU32LE(IO_DMA0_CONTROL, DMA_ROUTE_TO_IMGDEC | (1u << DMA_CONTROL_READ_SLOT_SHIFT));
+	memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
+	const auto admitted = dma.captureState();
+	const auto before = scheduler.currentNowCycles();
+	const auto inputEdge = before + admitted.scheduledBlockCycles;
+	require(admitted.activeChannel == 0 && admitted.scheduledBlockWords == inputCount
+		&& admitted.scheduledBlockCycles > 0 && memory.readMappedU32LE(IO_IMGDEC_INPUT_WORDS_RECEIVED) == 0,
+		"START admits the complete input burst without taking a source snapshot");
+	for (u32 i = 0; i < 16 && scheduler.currentNowCycles() < inputEdge; ++i) h.pump();
+	const auto decoder = h.machine.imgDecController.captureState();
+	require(scheduler.currentNowCycles() == inputEdge && decoder.inputWordsReceived == inputCount
+		&& decoder.dataWord == expected.back() && decoder.decodedWordCount == 0
+		&& decoder.blockCyclesRemaining == outputCount * PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord,
+		"only the scalar terminal word starts work and latches the padded cartridge word");
+	require(memory.readIoU32(IO_DMA0_STATUS) == DMA_STATUS_DONE
+		&& memory.readIoU32(IO_DMA1_STATUS) == DMA_STATUS_BUSY
+		&& memory.readIoU32(IO_DMA0_READ_ADDR) == CART_ROM_BASE + 1 + inputCount * sizeof(u32)
+		&& memory.readBusFaultSequence() == faults, "the original route publishes address and DONE without a padding fault");
+	for (u32 i = 0; i < 16 && h.machine.gxGpu.readDeviceOutput().commandBuffer.commandCount == 0; ++i) h.pump();
+	const auto& commands = h.machine.gxGpu.readDeviceOutput().commandBuffer;
+	require(commands.commandCount == 1 && commands.commandWordCount[0] == 3 + outputCount
+		&& std::equal(expected.begin(), expected.end(), commands.words.data() + commands.commandWordStart[0] + 3),
+		"borrowed byte order and terminal padding reach the actual GPU packet from DMA socket 1");
 }
 
 void testCpuBuildsHeadersAndDmaSplitsAtAvailableWords() {
@@ -358,6 +412,7 @@ void testFaultsAndEmptyJob() {
 
 int main() {
 	testBlocksPublishOnlyAtCompletion();
+	testDmaMappedInputAndPaddedTerminalWord();
 	testCpuBuildsHeadersAndDmaSplitsAtAvailableWords();
 	testAdmittedOutputDmaSurvivesQuiesce();
 	testAdmittedImageWaitsForReadback();

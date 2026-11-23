@@ -160,10 +160,12 @@ export type IoWriteReadyHandler<TContext> = (
 export type DmaWordView = { words: Uint32Array; first: number };
 export type IoDmaReadPrefixHandler<T> = (context: T, address: number, view: DmaWordView, count: number, signals: MappedBusSignals) => void;
 export type IoDmaWritePrefixHandler<T> = (context: T, address: number, words: Uint32Array, first: number, count: number, signals: MappedBusSignals) => void;
+export type IoDmaMappedWritePrefixHandler<T> = (context: T, view: Readonly<MemoryByteView>) => void;
 type IoDmaPrefixBinding = {
 	slot: number;
 	read: IoDmaReadPrefixHandler<unknown> | null;
 	write: IoDmaWritePrefixHandler<unknown> | null;
+	mappedWrite: IoDmaMappedWritePrefixHandler<unknown> | null;
 };
 type StoredIoReadHandler = (context: unknown, addr: number, busSignals: MappedBusSignals) => number;
 type StoredIoWriteHandler = (context: unknown, addr: number, value: number, busSignals: MappedBusSignals) => void;
@@ -421,14 +423,20 @@ export class Memory {
 		this.ioWriteContexts[slot] = context;
 		this.ioWriteHandlers[slot] = handler as StoredIoWriteHandler;
 		const prefix = this.findIoDmaPrefix(slot);
-		if (prefix !== null) prefix.write = null;
+		if (prefix !== null) {
+			prefix.write = null;
+			prefix.mappedWrite = null;
+		}
 	}
 
 	public mapIoWriteReady<TContext>(addr: number, handler: IoWriteReadyHandler<TContext>): void {
 		const slot = (addr - IO_BASE) / IO_WORD_SIZE;
 		this.ioWriteReadyHandlers[slot] = handler as StoredIoWriteReadyHandler;
 		const prefix = this.findIoDmaPrefix(slot);
-		if (prefix !== null) prefix.write = null;
+		if (prefix !== null) {
+			prefix.write = null;
+			prefix.mappedWrite = null;
+		}
 	}
 
 	private findIoDmaPrefix(slot: number): IoDmaPrefixBinding | null {
@@ -440,13 +448,19 @@ export class Memory {
 	public mapIoDmaReadPrefix<T>(address: number, handler: IoDmaReadPrefixHandler<T> | null): void {
 		const slot = (address - IO_BASE) / IO_WORD_SIZE, prefix = this.findIoDmaPrefix(slot);
 		if (prefix !== null) prefix.read = handler as IoDmaReadPrefixHandler<unknown>;
-		else if (handler !== null) this.ioDmaPrefixes.push({ slot, read: handler as IoDmaReadPrefixHandler<unknown>, write: null });
+		else if (handler !== null) this.ioDmaPrefixes.push({ slot, read: handler as IoDmaReadPrefixHandler<unknown>, write: null, mappedWrite: null });
 	}
 
 	public mapIoDmaWritePrefix<T>(address: number, handler: IoDmaWritePrefixHandler<T> | null): void {
 		const slot = (address - IO_BASE) / IO_WORD_SIZE, prefix = this.findIoDmaPrefix(slot);
 		if (prefix !== null) prefix.write = handler as IoDmaWritePrefixHandler<unknown>;
-		else if (handler !== null) this.ioDmaPrefixes.push({ slot, read: null, write: handler as IoDmaWritePrefixHandler<unknown> });
+		else if (handler !== null) this.ioDmaPrefixes.push({ slot, read: null, write: handler as IoDmaWritePrefixHandler<unknown>, mappedWrite: null });
+	}
+
+	public mapIoDmaMappedWritePrefix<T>(address: number, handler: IoDmaMappedWritePrefixHandler<T> | null): void {
+		const slot = (address - IO_BASE) / IO_WORD_SIZE, prefix = this.findIoDmaPrefix(slot);
+		if (prefix !== null) prefix.mappedWrite = handler as IoDmaMappedWritePrefixHandler<unknown>;
+		else if (handler !== null) this.ioDmaPrefixes.push({ slot, read: null, write: null, mappedWrite: handler as IoDmaMappedWritePrefixHandler<unknown> });
 	}
 
 	public mappedWriteReady(addr: number): boolean {
@@ -850,30 +864,41 @@ export class Memory {
 		const readSlot = readStep === 0 && (readBusSignals & MAPPED_BUS_DMA_MEMORY) === 0 ? this.ioAlignedSlot(readAddress) : -1;
 		const writeSlot = writeStep === 0 && (writeBusSignals & MAPPED_BUS_DMA_MEMORY) === 0 ? this.ioAlignedSlot(writeAddress) : -1;
 		const writePrefix = wordCount > 1 && writeSlot >= 0 ? this.findIoDmaPrefix(writeSlot) : null;
-		if (writePrefix !== null && writePrefix.write !== null && READ_ONLY_IO_SLOTS[writeSlot] === 0) {
+		if (writePrefix !== null && READ_ONLY_IO_SLOTS[writeSlot] === 0) {
 			const prefix = wordCount - 1;
-			const wordView = this.dmaWordView;
-			const readPrefix = readSlot >= 0 ? this.findIoDmaPrefix(readSlot) : null;
-			let prefixRead = false;
-			if (readPrefix !== null && readPrefix.read !== null) {
-				readPrefix.read(this.ioReadContexts[readSlot], readAddress, wordView, prefix, readBusSignals);
-				prefixRead = true;
-			} else if (readStep === 0 || readStep === IO_WORD_SIZE) {
-				const words = this.dmaPrefixWords;
-				wordView.words = words;
-				wordView.first = 0;
-				const byteCount = readStep === 0 ? IO_WORD_SIZE : prefix * IO_WORD_SIZE;
-				if (readAddress >= IO_BASE + this.ioByteLength && this.isRamRange(readAddress, byteCount)) {
-					for (let i = 0; i < prefix; ++i) words[i] = readLE32(this.ram, readAddress - RAM_BASE + i * readStep);
+			const context = this.ioWriteContexts[writeSlot];
+			let accepted = false;
+			if (writePrefix.mappedWrite !== null && readStep === IO_WORD_SIZE
+				&& this.bindMappedReadView(readAddress, prefix * IO_WORD_SIZE, readBusSignals, this.dmaRomView)) {
+				writePrefix.mappedWrite(context, this.dmaRomView);
+				accepted = true;
+			} else if (writePrefix.write !== null) {
+				const wordView = this.dmaWordView;
+				const readPrefix = readSlot >= 0 ? this.findIoDmaPrefix(readSlot) : null;
+				let prefixRead = false;
+				if (readPrefix !== null && readPrefix.read !== null) {
+					readPrefix.read(this.ioReadContexts[readSlot], readAddress, wordView, prefix, readBusSignals);
 					prefixRead = true;
-				} else if (this.bindRomByteView(readAddress, byteCount, this.cartridgeController.selectedSlot(readBusSignals), this.dmaRomView)) {
-					const view = this.dmaRomView;
-					for (let i = 0; i < prefix; ++i) words[i] = readLE32(view.bytes, view.byteOffset + i * readStep);
-					prefixRead = true;
+				} else if (readStep === 0 || readStep === IO_WORD_SIZE) {
+					const words = this.dmaPrefixWords;
+					wordView.words = words;
+					wordView.first = 0;
+					const byteCount = readStep === 0 ? IO_WORD_SIZE : prefix * IO_WORD_SIZE;
+					if (readAddress >= IO_BASE + this.ioByteLength && this.isRamRange(readAddress, byteCount)) {
+						for (let i = 0; i < prefix; ++i) words[i] = readLE32(this.ram, readAddress - RAM_BASE + i * readStep);
+						prefixRead = true;
+					} else if (this.bindRomByteView(readAddress, byteCount, this.cartridgeController.selectedSlot(readBusSignals), this.dmaRomView)) {
+						const view = this.dmaRomView;
+						for (let i = 0; i < prefix; ++i) words[i] = readLE32(view.bytes, view.byteOffset + i * readStep);
+						prefixRead = true;
+					}
+				}
+				if (prefixRead) {
+					writePrefix.write(context, writeAddress, wordView.words, wordView.first, prefix, writeBusSignals);
+					accepted = true;
 				}
 			}
-			if (prefixRead) {
-				writePrefix.write(this.ioWriteContexts[writeSlot], writeAddress, wordView.words, wordView.first, prefix, writeBusSignals);
+			if (accepted) {
 				readAddress = (readAddress + prefix * readStep) >>> 0;
 				wordCount = 1;
 			}

@@ -37,7 +37,7 @@ ImgDecController::ImgDecController(Memory& memory, CPU& cpu, IrqController& irq,
 	m_memory.mapIoWrite(IO_IMGDEC_DATA, this, &writeDataThunk);
 	m_memory.mapIoWriteReady(IO_IMGDEC_DATA, &dataWriteReadyThunk);
 	m_memory.mapIoDmaReadPrefix(IO_IMGDEC_DATA, &readDataPrefixThunk);
-	m_memory.mapIoDmaWritePrefix(IO_IMGDEC_DATA, &writeDataPrefixThunk);
+	m_memory.mapIoDmaMappedWritePrefix(IO_IMGDEC_DATA, &writeMappedDataPrefixThunk);
 }
 
 void ImgDecController::resetStreamState() {
@@ -302,10 +302,11 @@ const u32* ImgDecController::readDataPrefixThunk(void* context, u32, u32 count, 
 	return words;
 }
 
-void ImgDecController::writeDataPrefixThunk(void* context, u32, const u32* words, u32 count, MappedBusSignals) {
+void ImgDecController::writeMappedDataPrefixThunk(void* context, Span<const u8> bytes) {
 	auto& c = *static_cast<ImgDecController*>(context);
-	c.m_inputFifo.writeWords(words, std::min<size_t>(count, c.m_inputFifo.free()));
-	c.m_dataWord = words[count - 1u];
+	const size_t count = bytes.size() / sizeof(u32);
+	c.m_inputFifo.writeLittleEndianWords(bytes.data(), std::min<size_t>(count, c.m_inputFifo.free()));
+	c.m_dataWord = readLE32(bytes.data() + bytes.size() - sizeof(u32));
 	c.m_inputWordsReceived += count;
 	c.m_memory.writeIoU32(IO_IMGDEC_DATA, c.m_dataWord);
 }

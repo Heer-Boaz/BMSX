@@ -284,6 +284,8 @@ void testIoPermissionsApplyToCpuAndDmaWordWrites() {
 
 struct PrefixMappingTrace {
 	bmsx::u32 reads = 0u, readyCalls = 0u, writes = 0u;
+	std::vector<bmsx::u32> data;
+	std::vector<bmsx::u8> mappedPrefix;
 	std::vector<bmsx::MappedBusSignals> readSignals, writeSignals;
 	static bmsx::u32 read(void* context, bmsx::u32, bmsx::MappedBusSignals signals) {
 		auto& t = *static_cast<PrefixMappingTrace*>(context); t.readSignals.push_back(signals); return ++t.reads;
@@ -291,8 +293,13 @@ struct PrefixMappingTrace {
 	static bool ready(void* context, bmsx::u32, bmsx::MappedBusSignals) {
 		return ++static_cast<PrefixMappingTrace*>(context)->readyCalls % 3u != 0u;
 	}
-	static void write(void* context, bmsx::u32, bmsx::u32, bmsx::MappedBusSignals signals) {
-		auto& t = *static_cast<PrefixMappingTrace*>(context); ++t.writes; t.writeSignals.push_back(signals);
+	static void write(void* context, bmsx::u32, bmsx::u32 word, bmsx::MappedBusSignals signals) {
+		auto& t = *static_cast<PrefixMappingTrace*>(context); ++t.writes;
+		t.writeSignals.push_back(signals); t.data.push_back(word);
+	}
+	static void mappedWritePrefix(void* context, bmsx::Span<const bmsx::u8> bytes) {
+		auto& t = *static_cast<PrefixMappingTrace*>(context);
+		t.mappedPrefix.assign(bytes.data(), bytes.data() + bytes.size());
 	}
 	static const bmsx::u32* readPrefix(void*, bmsx::u32, bmsx::u32, bmsx::MappedBusSignals) { throw std::runtime_error("revoked/readonly prefix read cannot run"); }
 	static void writePrefix(void*, bmsx::u32, const bmsx::u32*, bmsx::u32, bmsx::MappedBusSignals) { throw std::runtime_error("revoked/readonly prefix write cannot run"); }
@@ -358,6 +365,41 @@ void testDmaPrefixesAreRevokedByScalarRebindingAndRespectPermissions() {
 			require(trace.writes == 0u && trace.readyCalls == 0u && memory.readBusFaultSequence() == 4u, "readonly ports fault on every write and never invoke prefixes or gates");
 			require(memory.readIoU32(target) == 0x24681357u, "readonly latch stays intact");
 		} else require(trace.readyCalls == 4u && trace.writes == 3u && trace.writeSignals == std::vector<MappedBusSignals>({13u, 13u, 15u}), "readiness remains per word after rebinding with the final write strobe");
+	}
+}
+
+void testMappedDmaPrefixesRespectPermissionsAndRebinding() {
+	using namespace bmsx;
+	const std::array<u8, 8> raw{1, 2, 3, 4, 5, 6, 7, 8};
+	const u32 source = DYNAMIC_RAM_BASE + 1;
+	for (u32 mode = 0; mode < 5; ++mode) {
+		Memory memory(MemoryInit{{}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+		for (u32 i = 0; i < raw.size(); ++i) memory.writeMappedU8(source + i, raw[i]);
+		PrefixMappingTrace trace;
+		const u32 target = mode == 3 ? IO_SYS_STATUS : IO_IMGDEC_DATA;
+		memory.mapIoWrite(target, &trace, PrefixMappingTrace::write);
+		memory.mapIoWriteReady(target, PrefixMappingTrace::ready);
+		memory.mapIoDmaMappedWritePrefix(target, PrefixMappingTrace::mappedWritePrefix);
+		if (mode == 1) memory.mapIoWrite(target, &trace, PrefixMappingTrace::write);
+		if (mode == 2) memory.mapIoWriteReady(target, PrefixMappingTrace::ready);
+		const u32 start = mode == 4 ? IO_IMGDEC_DATA : source;
+		memory.transferDmaBlock(start, target, 2, 4, 0,
+			MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY, MAPPED_BUS_MASTER_DMA);
+		if (mode == 0) {
+			require(trace.readyCalls == 1 && trace.mappedPrefix == std::vector<u8>({1, 2, 3, 4})
+				&& trace.data == std::vector<u32>{0x08070605u}
+				&& trace.writeSignals == std::vector<MappedBusSignals>{MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END},
+				"only the backed prefix is borrowed and the final write sees the end strobe");
+		} else if (mode == 3) {
+			require(trace.mappedPrefix.empty() && trace.readyCalls == 0 && trace.writes == 0
+				&& memory.readBusFaultSequence() == 2, "read-only mapping passes neither prefix nor scalar readiness");
+		} else {
+			require(trace.mappedPrefix.empty() && trace.readyCalls == 2
+				&& trace.writeSignals == std::vector<MappedBusSignals>{MAPPED_BUS_MASTER_DMA, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END}
+				&& trace.data == (mode == 4 ? std::vector<u32>{0, 0} : std::vector<u32>{0x04030201u, 0x08070605u}),
+				"rebinding or genuine bus faults keep the original scalar word order");
+			require(memory.readBusFaultSequence() == (mode == 4 ? 2u : 0u), "admission alone does not create or suppress faults");
+		}
 	}
 }
 
@@ -511,6 +553,7 @@ int main() {
 	testIoPermissionsApplyToCpuAndDmaWordWrites();
 	testDmaMemoryWordsOverlappingIoFaultBeforeHandlers();
 	testDmaPrefixesAreRevokedByScalarRebindingAndRespectPermissions();
+	testMappedDmaPrefixesRespectPermissionsAndRebinding();
 	testIncrementingDmaIoDoesNotReuseFixedPort();
 	testDmaMemorySpansRetainOrderedWords();
 	testCpuRecordWordsMirrorWithoutUsingTheBus();

@@ -1,3 +1,4 @@
+import { readLE32 } from '../../../common/endian';
 import { DmaEndpoint } from '../dma/endpoints';
 import {
 	IO_IMGDEC_CONFIG_ADDRS,
@@ -18,7 +19,7 @@ import {
 	IMGDEC_TOKEN_KIND_SHIFT, IMGDEC_TOKEN_KIND_ZERO, IMGDEC_TOKEN_RUN_LENGTH_MASK,
 } from '../../../spec/imgdec/stream';
 import type { CPU } from '../../cpu/cpu';
-import type { DmaWordView, Memory } from '../../memory/memory';
+import type { DmaWordView, Memory, MemoryByteView } from '../../memory/memory';
 import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_DMA, type MappedBusSignals } from '../../memory/bus_signals';
 import { DEVICE_SERVICE_IMGDEC, DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
 import type { DmaController } from '../dma/controller';
@@ -90,7 +91,7 @@ export class ImgDecController {
 		memory.mapIoWrite(IO_IMGDEC_DATA, this, ImgDecController.writeDataThunk);
 		memory.mapIoWriteReady(IO_IMGDEC_DATA, ImgDecController.dataWriteReadyThunk);
 		memory.mapIoDmaReadPrefix(IO_IMGDEC_DATA, ImgDecController.readDataPrefixThunk);
-		memory.mapIoDmaWritePrefix(IO_IMGDEC_DATA, ImgDecController.writeDataPrefixThunk);
+		memory.mapIoDmaMappedWritePrefix(IO_IMGDEC_DATA, ImgDecController.writeMappedDataPrefixThunk);
 	}
 
 	private resetStreamState(): void {
@@ -336,9 +337,10 @@ export class ImgDecController {
 		view.first = start;
 	}
 
-	private static writeDataPrefixThunk(c: ImgDecController, _address: number, words: Uint32Array, first: number, count: number): void {
-		c.inputFifo.writeWords(words, first, Math.min(count, c.inputFifo.free()));
-		c.dataWord = words[first + count - 1];
+	private static writeMappedDataPrefixThunk(c: ImgDecController, { bytes, byteOffset, byteLength }: Readonly<MemoryByteView>): void {
+		const count = byteLength >>> 2;
+		c.inputFifo.writeLittleEndianWords(bytes, byteOffset, Math.min(count, c.inputFifo.free()));
+		c.dataWord = readLE32(bytes, byteOffset + byteLength - 4);
 		c.inputWordsReceived = (c.inputWordsReceived + count) >>> 0;
 		c.memory.writeIoU32(IO_IMGDEC_DATA, c.dataWord);
 	}

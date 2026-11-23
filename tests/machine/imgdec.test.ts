@@ -15,10 +15,10 @@ import { captureMachineState, restoreMachineState } from '../../machine/ts/machi
 import { cartridgeSlots } from '../helpers/cartridge';
 import { writeLE32 } from '../../machine/ts/common/endian';
 
-function fixture(stream: number[] = []) {
+function fixture(stream: number[] = [], secondSocket: Uint8Array | null = null) {
 	const rom = new Uint8Array(stream.length * 4);
 	for (let i = 0; i < stream.length; ++i) writeLE32(rom, i * 4, stream[i]);
-	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots(rom) }, PSX_MACHINE_SPEC.ramBytes);
+	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots(rom, secondSocket) }, PSX_MACHINE_SPEC.ramBytes);
 	const machine = new Machine(memory, { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} }, PSX_MACHINE_SPEC);
 	machine.resetDevices();
 	const smode = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
@@ -93,6 +93,52 @@ test('raw IMGDEC publishes whole blocks at completion, without GPU packet or tok
 	assert.equal(h.memory.readIoU32(io.IO_IMGDEC_STATUS), img.IMGDEC_STATUS_DONE);
 	assert.equal(h.services[DEVICE_SERVICE_IMGDEC], 2);
 	assert.notEqual(h.memory.readIoU32(io.IO_IRQ_FLAGS) & io.IRQ_IMGDEC, 0);
+});
+
+test('unaligned socket-1 DMA borrows only backed IMGDEC input and retains the padded scalar terminal word', () => {
+	const inputCount = 256, outputCount = inputCount - 1;
+	const slot1 = new Uint8Array(inputCount * 4), expected = new Uint32Array(outputCount);
+	writeLE32(slot1, 1, outputCount - 1);
+	for (let i = 0; i < outputCount - 1; ++i) {
+		expected[i] = 0x87654321 ^ (i << 12);
+		writeLE32(slot1, 1 + (i + 1) * 4, expected[i]);
+	}
+	expected[outputCount - 1] = 0x005aa5c3;
+	slot1.set([0xc3, 0xa5, 0x5a], slot1.length - 3);
+	const h = fixture([0, 0], slot1), { memory, machine } = h;
+	const { scheduler, dmaController } = machine, faults = memory.readBusFaultSequence();
+	memory.writeMappedU32LE(io.IO_CART_SELECT, 0);
+	assert.equal(memory.readMappedU32LE(CART_ROM_BASE + 1), 0);
+	h.configure(inputCount, outputCount);
+	h.header(0x00200040, (2 * outputCount) | (1 << 16));
+	h.outputDma(outputCount);
+	memory.writeMappedU32LE(io.IO_DMA0_READ_ADDR, CART_ROM_BASE + 1);
+	memory.writeMappedU32LE(io.IO_DMA0_TRANSFER_COUNT, inputCount);
+	memory.writeMappedU32LE(io.IO_DMA0_CONTROL, io.DMA_ROUTE_TO_IMGDEC | (1 << io.DMA_CONTROL_READ_SLOT_SHIFT));
+	memory.writeMappedU32LE(io.IO_DMA0_TRIGGER, io.DMA_TRIGGER_START);
+	memory.writeMappedU32LE(io.IO_IMGDEC_CONTROL, img.IMGDEC_CONTROL_START);
+	const admitted = dmaController.captureState(), inputEdge = scheduler.nowCycles + admitted.scheduledBlockCycles;
+	assert.equal(admitted.activeChannel, 0);
+	assert.equal(admitted.scheduledBlockWords, inputCount);
+	assert.ok(admitted.scheduledBlockCycles > 0);
+	assert.equal(memory.readMappedU32LE(io.IO_IMGDEC_INPUT_WORDS_RECEIVED), 0);
+	for (let i = 0; i < 16 && scheduler.nowCycles < inputEdge; ++i) h.pump();
+	const decoder = machine.imgDecController.captureState();
+	assert.equal(scheduler.nowCycles, inputEdge);
+	assert.equal(decoder.inputWordsReceived, inputCount);
+	assert.equal(decoder.dataWord, expected[outputCount - 1]);
+	assert.equal(decoder.decodedWordCount, 0);
+	assert.equal(decoder.blockCyclesRemaining, outputCount * PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord);
+	assert.equal(memory.readIoU32(io.IO_DMA0_STATUS), io.DMA_STATUS_DONE);
+	assert.equal(memory.readIoU32(io.IO_DMA1_STATUS), io.DMA_STATUS_BUSY);
+	assert.equal(memory.readIoU32(io.IO_DMA0_READ_ADDR), CART_ROM_BASE + 1 + inputCount * 4);
+	assert.equal(memory.readBusFaultSequence(), faults);
+	for (let i = 0; i < 16 && machine.gxGpu.readDeviceOutput().commandBuffer.commandCount === 0; ++i) h.pump();
+	const commands = machine.gxGpu.readDeviceOutput().commandBuffer;
+	assert.equal(commands.commandCount, 1);
+	assert.equal(commands.commandWordCount[0], 3 + outputCount);
+	const first = commands.commandWordStart[0] + 3;
+	assert.deepEqual(commands.words.slice(first, first + outputCount), expected);
 });
 
 test('texture and CLUT DMA preserves ring offsets, latches and completion after restoring an admitted burst', () => {
