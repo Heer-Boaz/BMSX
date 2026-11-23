@@ -50,6 +50,7 @@ private:
 };
 
 bool advanceRuntimeTime(Runtime& runtime, int cycles);
+bool settleAcceptedCpuTime(Runtime& runtime);
 bool runDueRuntimeTimers(Runtime& runtime);
 
 } // namespace bmsx

@@ -8,6 +8,7 @@ export type RuntimeMachineState = {
 	frameScheduler: FrameSchedulerStateSnapshot;
 	frameLoop: FrameLoopStateSnapshot;
 	schedulerNowCycles: number;
+	acceptedCpuCycles: number;
 };
 
 export function captureRuntimeMachineState(runtime: Runtime): RuntimeMachineState {
@@ -16,6 +17,7 @@ export function captureRuntimeMachineState(runtime: Runtime): RuntimeMachineStat
 		frameScheduler: runtime.frameScheduler.captureState(),
 		frameLoop: runtime.frameLoop.captureState(),
 		schedulerNowCycles: runtime.machine.scheduler.currentNowCycles(),
+		acceptedCpuCycles: runtime.machine.scheduler.acceptedCpuCycles,
 	};
 }
 
@@ -24,6 +26,7 @@ export function applyRuntimeMachineState(runtime: Runtime, state: RuntimeMachine
 	runtime.frameLoop.reset();
 	runtime.machine.scheduler.reset();
 	runtime.machine.scheduler.setNowCycles(state.schedulerNowCycles);
+	runtime.machine.scheduler.acceptedCpuCycles = state.acceptedCpuCycles;
 	runtime.vblank.prepareRestore();
 	restoreMachineState(runtime.machine, state.machine);
 	runtime.applyPublishedGxGpuPcrtcTiming(runtime.machine.gxGpu.readDeviceOutput().pcrtcTiming);

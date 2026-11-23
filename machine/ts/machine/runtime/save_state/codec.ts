@@ -1103,6 +1103,7 @@ function writeRuntimeSaveMachineState(writer: BinarySink, state: RuntimeSaveMach
 	writeFrameSchedulerStateSnapshot(writer, state.frameScheduler);
 	writeFrameLoopStateSnapshot(writer, state.frameLoop);
 	writer.i64(state.schedulerNowCycles);
+	writer.i64(state.acceptedCpuCycles);
 }
 
 function readRuntimeSaveMachineState(reader: BinaryReader, gxGpuVramByteCount: number): RuntimeSaveMachineState {
@@ -1111,6 +1112,7 @@ function readRuntimeSaveMachineState(reader: BinaryReader, gxGpuVramByteCount: n
 		frameScheduler: readFrameSchedulerStateSnapshot(reader),
 		frameLoop: readFrameLoopStateSnapshot(reader),
 		schedulerNowCycles: reader.i64(),
+		acceptedCpuCycles: reader.i64(),
 	};
 }
 

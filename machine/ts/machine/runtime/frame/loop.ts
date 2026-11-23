@@ -3,7 +3,7 @@ import {
 	type FrameState,
 } from './state';
 import { Runtime } from '../runtime';
-import { CpuExecutionResult } from '../cpu_executor';
+import { CpuExecutionResult, settleAcceptedCpuTime } from '../cpu_executor';
 
 export type FrameLoopStateSnapshot = {
 	frameState: FrameState;
@@ -166,7 +166,7 @@ export class FrameLoopState {
 		if (!this.frameActive) {
 			return this.runtime.frameScheduler.startScheduledFrame();
 		}
-		if (this.runtime.machine.cpu.allocationReady()) return true;
+		if (this.runtime.machine.scheduler.acceptedCpuCycles !== 0 || this.runtime.machine.cpu.allocationReady()) return true;
 		if (this.frameState.cycleBudgetRemaining <= 0) {
 			return this.runtime.frameScheduler.refillFrameBudget(this.frameState);
 		}
@@ -175,6 +175,12 @@ export class FrameLoopState {
 
 	private runActiveFrameState(): boolean {
 		const runtime = this.runtime;
+		if (runtime.machine.scheduler.acceptedCpuCycles !== 0) {
+			const tickCompleted = settleAcceptedCpuTime(runtime);
+			this.finalizeUpdateSlice();
+			if (tickCompleted || runtime.machine.scheduler.acceptedCpuCycles !== 0
+				|| runtime.machine.gxGpu.backendServiceBlocksMachine() || runtime.machine.cpu.gc.finalMarkPending()) return false;
+		}
 		const state = this.frameState;
 		if (runtime.pendingCall === 'entry') {
 			const executionStopped = this.runUpdatePhase();
@@ -188,6 +194,11 @@ export class FrameLoopState {
 
 	private runActiveFrameInstruction(): InstructionStepResult {
 		const runtime = this.runtime;
+		if (runtime.machine.scheduler.acceptedCpuCycles !== 0) {
+			settleAcceptedCpuTime(runtime);
+			this.finalizeUpdateSlice();
+			return InstructionStepResult.Advanced;
+		}
 		if (runtime.pendingCall !== 'entry') {
 			this.finalizeUpdateSlice();
 			return InstructionStepResult.Advanced;

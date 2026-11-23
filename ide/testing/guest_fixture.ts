@@ -24,7 +24,7 @@ export class GuestFixture {
 	private readonly suiteSlot: string;
 	private readonly stoppedGrant: FrameState = {
 		updateExecuted: false, cycleBudgetRemaining: 0, cycleBudgetGranted: 0,
-		cycleCarryGranted: 0, activeCpuUsedCycles: 0,
+		cycleCarryGranted: 0, activeCpuUsedCycles: 0, deferredAllocationCycles: 0,
 	};
 
 	public constructor(public readonly runtime: Runtime, public readonly program: BuiltTestCartridge) {
@@ -39,6 +39,7 @@ export class GuestFixture {
 	}
 
 	public advanceInitialization(cycles: number): void {
+		if (this.runtime.machine.scheduler.acceptedCpuCycles !== 0) return;
 		if (this.runtime.machine.systemController.cpuHeld()) {
 			this.advanceHeldCpu(cycles);
 			return;
@@ -49,6 +50,7 @@ export class GuestFixture {
 
 	/** Null binds only the module's shared setup/teardown fixture, not a case body. */
 	public bind(caseName: string | null): void {
+		if (!this.runtime.admitExternalCpuMutation()) throw new Error('Guest fixture requires a settled CPU and device frontier.');
 		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
 		this.initialized = true;
 		this.beginCall('bind', [cpu.getGlobalByKey(pool.intern(this.suiteSlot)), caseName === null ? valueNil() : valueString(pool.intern(caseName))]);
@@ -58,6 +60,7 @@ export class GuestFixture {
 	public advance(args: readonly Value[], cycles: number): boolean {
 		const runtime = this.runtime, cpu = runtime.machine.cpu;
 		this.lastCallCycles = 0;
+		if (runtime.machine.scheduler.acceptedCpuCycles !== 0) return false;
 		const before = runtime.machine.scheduler.nowCycles;
 		if (runtime.machine.systemController.cpuHeld()) {
 			this.advanceHeldCpu(cycles);
@@ -71,6 +74,7 @@ export class GuestFixture {
 				this.lastCallCycles = runtime.machine.scheduler.nowCycles - before;
 				return false;
 			}
+			if (!runtime.admitExternalCpuMutation()) return false;
 			this.beginCall('resume', args);
 		}
 		const status = runtime.cpuExecution.runSuspendedUntilDepth(this.returnDepth, cycles, this.returnThread);
@@ -88,6 +92,7 @@ export class GuestFixture {
 	}
 
 	public cancelPhase(phase: string): void {
+		if (!this.runtime.admitExternalCpuMutation()) throw new Error('Guest fixture requires a settled CPU and device frontier.');
 		this.beginCall('cancel', [valueString(this.runtime.machine.cpu.stringPool.intern(phase))]);
 	}
 

@@ -130,6 +130,68 @@ for (const admission of ['quiescent', 'at-stop'] as const) test(`a revoked ${adm
 	assert.equal(cpu.getFrameDepth(), depth);
 });
 
+test('at-stop evaluation cannot publish a new frame before accepted CPU time settles', async () => {
+	const harness = createDebuggerHarness('operation = function() return 42 end\nlocal n = 3\nreturn n -- caller stop', 0);
+	const { runtime, state } = harness, { cpu, scheduler } = runtime.machine;
+	startAtBreakpoint(harness, 3);
+	assert.equal(stoppedSourceLine(harness), 3);
+	const depth = cpu.getFrameDepth(), retainedStop = state.source.stop!;
+	const pc = cpu.readFramePc(depth - 1);
+	const guest = new SuspendedGuestSession(runtime);
+	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
+		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
+	const interval = runtime.timing.cycleBudgetPerFrame;
+	const target = scheduler.nowCycles + 3 * interval;
+	// Other scheduler tests issue a real long CALL. Start at its persisted
+	// continuation here, so this test isolates the workbench admission.
+	scheduler.acceptedCpuCycles = target - scheduler.nowCycles;
+	runtime.frameLoop.beginFrameState(0, 0);
+	const outcomes: boolean[] = [];
+	const request = {
+		admission: 'at-stop' as const, honorUserStops: false, isCurrent: () => true,
+		prepare: () => {
+			assert.equal(scheduler.acceptedCpuCycles, 0);
+			assert.equal(scheduler.nowCycles, target, 'prior work settles before looking up the new closure');
+			assert.equal(cpu.getFrameDepth(), depth);
+			return { domain: -1 as const, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] };
+		},
+	};
+	const initialCycle = scheduler.nowCycles;
+	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, request,
+		() => assert.fail('evaluation starts during the active logical tick'), completed => { outcomes.push(completed); }, assert.fail);
+	assert.deepEqual(outcomes, [false]);
+	assert.equal(scheduler.nowCycles, initialCycle);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(state.plans.controlActive, false);
+	assert.strictEqual(state.source.stop, retainedStop);
+	assert.equal(runtime.frameScheduler.runDevicesToNextLogicalTick(0), true, 'the tick owner settles exactly one logical edge');
+	assert.equal(runtime.frameScheduler.lastTickSequence, 1);
+	assert.ok(scheduler.acceptedCpuCycles > 0);
+	assert.equal(runtime.frameLoop.frameActive, false);
+	const betweenTicks = scheduler.nowCycles;
+	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, request,
+		() => assert.fail('evaluation starts between ticks while the scheduler still owes time'), completed => { outcomes.push(completed); }, assert.fail);
+	assert.deepEqual(outcomes, [false, false]);
+	assert.equal(scheduler.nowCycles, betweenTicks);
+	assert.equal(runtime.frameScheduler.lastTickSequence, 1);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.strictEqual(state.source.stop, retainedStop);
+	for (const sequence of [2, 3]) {
+		assert.equal(runtime.frameScheduler.runDevicesToNextLogicalTick(0), true);
+		assert.equal(runtime.frameScheduler.lastTickSequence, sequence);
+		assert.equal(cpu.readFramePc(depth - 1), pc, 'no guest instruction executes while the scheduler settles accepted time');
+	}
+	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, request,
+		() => assert.equal(cpu.getFrameDepth(), depth + 1), completed => { outcomes.push(completed); }, assert.fail);
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+	didExecuteRuntimeDebuggerPlan(state);
+	assert.deepEqual(outcomes, [false, false, true]);
+	const results: Value[] = [];
+	cpu.readCompletionValues(results);
+	assert.deepEqual(results, [valueInteger(42)]);
+	assert.strictEqual(state.source.stop, retainedStop);
+});
+
 for (const optLevel of [3] as const) for (const pauseInCall of [false, true]) {
 	test(`at-stop call retains the selected IRQ activation and source stop O${optLevel}, nested stop=${pauseInCall}`, async () => {
 		const source = `

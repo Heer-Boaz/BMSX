@@ -14,6 +14,7 @@ struct RuntimeSaveMachineState {
 	FrameSchedulerStateSnapshot frameScheduler;
 	FrameLoopStateSnapshot frameLoop;
 	i64 schedulerNowCycles = 0;
+	i64 acceptedCpuCycles = 0;
 };
 
 RuntimeSaveMachineState captureRuntimeSaveMachineState(Runtime& runtime, RuntimeSaveMachineState storage = {});

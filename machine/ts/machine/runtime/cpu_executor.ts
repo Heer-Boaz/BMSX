@@ -22,6 +22,8 @@ export const enum CpuSuspendedRunResult {
 	ExecutionStopped,
 }
 
+const enum ClockRun { Devices, RetiredCpu, RetainedCpu }
+
 const enum CpuSliceResult {
 	Blocked,
 	Advanced,
@@ -148,6 +150,8 @@ export class CpuExecutionState {
 		const cpu = machine.cpu;
 		const scheduler = machine.scheduler;
 		if (cpu.allocationParked()) return CpuSuspendedRunResult.Halted;
+		// Scheduled work still owes physical edges to the frame owner.
+		if (scheduler.acceptedCpuCycles !== 0) return CpuSuspendedRunResult.Yielded;
 		const endCycle = scheduler.nowCycles + cycleBudget;
 		cpu.gc.finishFinalMark();
 		runDueRuntimeTimers(runtime);
@@ -268,7 +272,8 @@ export class CpuExecutionState {
 			state.deferredAllocationCycles = 0;
 			state.cycleBudgetRemaining -= consumed;
 			state.activeCpuUsedCycles += consumed;
-			advanceRuntimeTime(runtime, consumed);
+			scheduler.acceptedCpuCycles = consumed;
+			settleTime(runtime, scheduler.nowCycles + consumed, ClockRun.RetiredCpu);
 			return cpu.getFrameDepth() !== 0 ? CpuSliceResult.InstructionYielded : CpuSliceResult.InstructionHalted;
 		}
 		let advanced = scheduler.hasDueTimer();
@@ -319,7 +324,12 @@ export class CpuExecutionState {
 				state.cycleBudgetRemaining -= consumed;
 				state.activeCpuUsedCycles += consumed;
 				advanced = true;
-				tickCompleted = advanceRuntimeTime(runtime, consumed);
+				if (consumed > sliceBudget) {
+					scheduler.acceptedCpuCycles = consumed;
+					tickCompleted = settleTime(runtime, scheduler.nowCycles + consumed, ClockRun.RetiredCpu);
+				} else {
+					tickCompleted = advanceRuntimeTime(runtime, consumed);
+				}
 			}
 			if (result === RunResult.ExecutionStopped) {
 				return CpuSliceResult.ExecutionStopped;
@@ -346,19 +356,32 @@ export class CpuExecutionState {
 	}
 }
 
-export function advanceRuntimeTime(runtime: Runtime, cycles: number): boolean {
-	const machine = runtime.machine, scheduler = machine.scheduler;
-	const targetCycle = scheduler.nowCycles + cycles;
-	runDueRuntimeTimers(runtime);
-	// These cycles already elapsed. Holds gate the next CPU slice; device
-	// edges retire before advancing the rest of the completed instruction.
+function settleTime(runtime: Runtime, targetCycle: number, run: ClockRun): boolean {
+	const scheduler = runtime.machine.scheduler;
+	let tickCompleted = runDueRuntimeTimers(runtime);
+	// Device edges retire in absolute clock order, regardless of how much
+	// time an instruction accepted before the next device deadline.
 	while (scheduler.nowCycles < targetCycle) {
-		const deadline = scheduler.nextDeadline();
-		const nextCycle = deadline < targetCycle ? deadline : targetCycle;
-		scheduler.advanceTo(nextCycle);
-		runDueRuntimeTimers(runtime);
+		if (run === ClockRun.RetainedCpu && runtime.machine.gxGpu.backendServiceBlocksMachine()) break;
+		if (run !== ClockRun.Devices && tickCompleted) {
+			// At VBlank the beam publishes the exact spacing to its next
+			// VBlank. The CPU cannot write beam timing during settlement.
+			const interval = runtime.timing.cycleBudgetPerFrame;
+			if (interval > 0 && targetCycle - scheduler.nowCycles >= interval) break;
+		}
+		scheduler.advanceTo(Math.min(scheduler.nextDeadline(), targetCycle));
+		tickCompleted = runDueRuntimeTimers(runtime);
 	}
-	return runtime.vblank.tickCompleted;
+	return tickCompleted;
+}
+
+export function advanceRuntimeTime(runtime: Runtime, cycles: number): boolean {
+	return settleTime(runtime, runtime.machine.scheduler.nowCycles + cycles, ClockRun.Devices);
+}
+
+export function settleAcceptedCpuTime(runtime: Runtime): boolean {
+	const scheduler = runtime.machine.scheduler;
+	return settleTime(runtime, scheduler.nowCycles + scheduler.acceptedCpuCycles, ClockRun.RetainedCpu);
 }
 
 export function runDueRuntimeTimers(runtime: Runtime): boolean {

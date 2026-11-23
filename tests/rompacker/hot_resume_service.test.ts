@@ -19,6 +19,7 @@ import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { HostExecutionControl } from '../../hosts/common/execution_control';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { MAPPED_BUS_INSTRUCTION_FETCH, mappedBusSignalsForCartridgeSlot } from '../../machine/ts/machine/memory/bus_signals';
 import { MAPPED_PAGE_BYTE_MASK, type MappedPageBinding } from '../../machine/ts/machine/memory/mapped_page';
@@ -237,6 +238,32 @@ test('build rejection has a result without poisoning execution; repair can use t
 	assert.equal(f.sources.currentBlua32Media, media);
 	f.model.undo();
 	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
+});
+
+test('Hot Resume with accepted time owes the retained IRQ to the scheduler before changing history', async t => {
+	const f = await fixture(t, `function irq() mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK} end`);
+	const { cpu } = f, { history, machine } = f.runtime;
+	machine.memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK);
+	machine.irqController.raise(IRQ_VBLANK);
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(cpu.isUserMode(), false, 'this caller would otherwise request supervisor return');
+	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+	const media = f.sources.currentBlua32Media, { scheduler } = machine;
+	const clock = scheduler.nowCycles;
+	scheduler.acceptedCpuCycles = f.runtime.timing.cycleBudgetPerFrame;
+	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
+	history.captureCheckpoint();
+
+	const operation = f.service.resume();
+	assert.equal((await operation.admission).status, 'not-admitted');
+	assert.equal((await operation.completion).status, 'rejected');
+	assert.equal(history.mode, HistoryMode.Recording);
+	assert.equal(history.checkpointCount, 1);
+	assert.equal(f.debuggerState.plans.controlActive, false);
+	assert.equal(f.sources.currentBlua32Media, media);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(cpu.readFramePc(depth - 1), pc);
+	assert.equal(scheduler.nowCycles, clock);
 });
 
 test('Hot Resume ends review only after the build is accepted, without recording admission', async t => {

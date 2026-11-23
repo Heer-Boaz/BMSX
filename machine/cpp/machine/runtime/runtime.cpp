@@ -28,11 +28,12 @@ Runtime::Runtime(
 Runtime::~Runtime() = default;
 
 auto Runtime::callClosure(u32 fn, BuiltinArgsView args) -> ConstValueSpan {
-	CPU& cpu = machine.cpu;
-	if (machine.scheduler.isCpuSliceActive()) {
-		throw std::runtime_error("External Lua closure execution requires a suspended CPU.");
+	const auto& scheduler = machine.scheduler;
+	if (scheduler.acceptedCpuCycles() != 0 || scheduler.isCpuSliceActive() || machine.gxGpu.backendServiceBlocksMachine()) {
+		throw std::runtime_error("External Lua closure execution requires a settled CPU and device frontier.");
 	}
 	history.stop();
+	CPU& cpu = machine.cpu;
 	const int depth = cpu.getFrameDepth();
 	cpu.beginCompletionCall(fn, args);
 	cpuExecution.runSuspendedUntilDepth(*this, depth);

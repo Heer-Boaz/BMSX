@@ -30,7 +30,7 @@ export class Runtime {
 
 	public pendingCall: 'entry' | null = null;
 	public get isDrawPending(): boolean {
-		return this.pendingCall === 'entry';
+		return this.pendingCall === 'entry' || this.machine.scheduler.acceptedCpuCycles !== 0;
 	}
 
 	public readonly frameScheduler: FrameSchedulerState;
@@ -89,13 +89,18 @@ export class Runtime {
 		this.onStateReset?.();
 	}
 
+	/** A host call or image change may not consume clock already owned by scheduled ticks. */
+	public admitExternalCpuMutation(): boolean {
+		const { scheduler, gxGpu } = this.machine;
+		return scheduler.acceptedCpuCycles === 0 && !scheduler.isCpuSliceActive() && !gxGpu.backendServiceBlocksMachine();
+	}
+
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */
 	public callClosure(fn: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): ReadonlyArray<Value> {
-		const cpu = this.machine.cpu;
-		const scheduler = this.machine.scheduler;
-		if (scheduler.isCpuSliceActive()) {
-			throw new Error('External Lua closure execution requires a suspended CPU.');
+		if (!this.admitExternalCpuMutation()) {
+			throw new Error('External Lua closure execution requires a settled CPU and device frontier.');
 		}
+		const cpu = this.machine.cpu;
 		this.history.stop();
 		const depth = cpu.getFrameDepth();
 		this.completionValues.length = 0;

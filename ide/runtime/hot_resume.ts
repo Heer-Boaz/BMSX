@@ -295,6 +295,10 @@ export function admitHotResume(
 	report: (event: HotResumeEvent) => void,
 	context: RuntimeDebuggerExecutionContext = 'game',
 ): HotResumeAdmission {
+	if (!runtime.admitExternalCpuMutation()) {
+		report({ kind: 'rejected', error: new Error('Finish the active CPU/device frontier before installing an image revision.') });
+		return 'rejected';
+	}
 	const sourceEditDomains = built === null ? 0 : built.sourceEditDomains;
 	const rebuildSystem = (sourceEditDomains & executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID)) !== 0;
 	const rebuildCartridgeSlot0 = (sourceEditDomains & executionDomainBit(0)) !== 0;
@@ -387,6 +391,10 @@ export function admitHotResume(
 		failedCompletionFrameIndex,
 	};
 	const installation = (): HotResumeAdmission => {
+		if (deferUntilUserExecution && !runtime.admitExternalCpuMutation()) {
+			report({ kind: 'rejected', error: new Error('Finish the active CPU/device frontier before installing an image revision.') });
+			return 'rejected';
+		}
 		const retainedFrameCount = prepared.failedCompletionFrameIndex >= 0
 			? prepared.failedCompletionFrameIndex
 			: cpu.getFrameDepth();

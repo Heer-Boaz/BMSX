@@ -79,7 +79,7 @@ public:
 			? frameLoop.frameState.cycleBudgetGranted
 			: (frameScheduler.lastTickSequence == 0 ? timing.cycleBudgetPerFrame : frameScheduler.lastTickCpuBudgetGranted);
 	}
-	auto isDrawPending() const -> bool { return m_pendingCall == PendingCall::Entry; }
+	auto isDrawPending() const -> bool { return m_pendingCall == PendingCall::Entry || machine.scheduler.acceptedCpuCycles() != 0; }
 	TimingState timing;
 	FrameSchedulerState frameScheduler;
 	CpuExecutionState cpuExecution;

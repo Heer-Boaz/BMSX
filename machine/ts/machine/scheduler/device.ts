@@ -17,6 +17,12 @@ const INACTIVE_TIMER = 0xff;
 
 export class DeviceScheduler {
 	private schedulerNowCycles = 0;
+	// Already charged, not yet committed to device time.
+	private acceptedCpuUntil = 0;
+	public get acceptedCpuCycles(): number {
+		return this.acceptedCpuUntil > this.schedulerNowCycles ? this.acceptedCpuUntil - this.schedulerNowCycles : 0;
+	}
+	public set acceptedCpuCycles(cycles: number) { this.acceptedCpuUntil = this.schedulerNowCycles + cycles; }
 	private schedulerSliceActive = false;
 	private activeSliceBaseCycle = 0;
 	private activeSliceBudgetCycles = 0;
@@ -42,6 +48,7 @@ export class DeviceScheduler {
 		this.timerPrevious.fill(INACTIVE_TIMER);
 		this.timerNext.fill(0);
 		this.schedulerNowCycles = 0;
+		this.acceptedCpuUntil = 0;
 		this.schedulerSliceActive = false;
 		this.activeSliceBaseCycle = 0;
 		this.activeSliceBudgetCycles = 0;

@@ -1,7 +1,7 @@
 import { Runtime } from '../runtime/runtime';
 import { InstructionStepResult } from '../runtime/frame/state';
 import { HistoryMode } from '../runtime/history/history';
-import { advanceRuntimeTime, runDueRuntimeTimers, MAX_CPU_SLICE_CYCLES } from '../runtime/cpu_executor';
+import { advanceRuntimeTime, runDueRuntimeTimers, settleAcceptedCpuTime, MAX_CPU_SLICE_CYCLES } from '../runtime/cpu_executor';
 
 export type TickCompletion = {
 	sequence: number;
@@ -72,10 +72,9 @@ export class FrameSchedulerState {
 
 	private canRunScheduledUpdate(): boolean {
 		const runtime = this.runtime;
-		if (runtime.history.executionPaused || runtime.machine.cpu.gc.finalMarkPending()) return false;
-		if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
-			return false;
-		}
+		if (runtime.history.executionPaused || runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
+		if (runtime.machine.scheduler.acceptedCpuCycles !== 0) return true;
+		if (runtime.machine.cpu.gc.finalMarkPending()) return false;
 		if (runtime.machine.cpu.allocationParked()) return runtime.machine.cpu.allocationReady();
 		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 			|| this.carriedCycleBudget > 0
@@ -100,6 +99,7 @@ export class FrameSchedulerState {
 		this.backendServiceSuspended = backendBlocked;
 		const cpu = runtime.machine.cpu;
 		const heap = cpu.gc;
+		if (runtime.machine.scheduler.acceptedCpuCycles !== 0) return backendBlocked ? Pulse.Blocked : Pulse.Ready;
 		if (cpu.allocationParked() ? cpu.advanceAllocationRecovery() : heap.finalMarkPending()) {
 			// Keep the host grant queued while the guest clock is stopped.
 			if (!cpu.allocationParked()) heap.stepFinalMark();
@@ -213,7 +213,8 @@ export class FrameSchedulerState {
 		const admission = this.beginScheduledExecution(0);
 		if (admission === Pulse.Maintenance) return LogicalTickResult.Maintenance;
 		const parked = runtime.machine.cpu.allocationParked();
-		if ((tickBudget === 0 && !parked) || admission === Pulse.Blocked) return LogicalTickResult.Incomplete;
+		if ((tickBudget === 0 && !parked && runtime.machine.scheduler.acceptedCpuCycles === 0)
+			|| admission === Pulse.Blocked) return LogicalTickResult.Incomplete;
 		if (parked) {
 			if (!this.logicalTickRunPending) {
 				this.logicalTickRunPending = true;
@@ -284,12 +285,13 @@ export class FrameSchedulerState {
 			state.cycleBudgetRemaining += cycleGrant; state.cycleBudgetGranted += cycleGrant;
 		} else {
 			const carry = this.carriedCycleBudget;
-			if (carry === 0 && cycleGrant === 0) return false;
+			if (carry === 0 && cycleGrant === 0 && runtime.machine.scheduler.acceptedCpuCycles === 0) return false;
 			this.beginScheduledFrame(carry + cycleGrant, carry);
 		}
 		if (this.beginScheduledExecution(0) !== Pulse.Ready || runtime.machine.cpu.allocationParked()) return false;
 		const previous = this.lastTickSequence, state = runtime.frameLoop.frameState, scheduler = runtime.machine.scheduler;
-		runDueRuntimeTimers(runtime);
+		if (scheduler.acceptedCpuCycles !== 0) settleAcceptedCpuTime(runtime);
+		else runDueRuntimeTimers(runtime);
 		while (this.lastTickSequence === previous && state.cycleBudgetRemaining > 0 && !runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 			const deadline = scheduler.nextDeadline();
 			if (deadline === Number.MAX_SAFE_INTEGER) break;
@@ -381,7 +383,10 @@ export class FrameSchedulerState {
 		let budget = carry;
 		if (budget === 0) {
 			budget = this.takeScheduledCycleBudget();
-			if (budget <= 0) return false;
+			if (budget <= 0) {
+				if (this.runtime.machine.scheduler.acceptedCpuCycles === 0) return false;
+				budget = 0;
+			}
 		}
 		this.beginScheduledFrame(budget, carry);
 		return true;

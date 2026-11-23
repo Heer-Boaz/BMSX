@@ -115,6 +115,100 @@ void testOneDeadlinePerDevice() {
 		"each service occurs precisely once");
 }
 
+void testAcceptedStringCyclesAcrossVblanks(bool withReadback) {
+	using namespace bmsx;
+	TickRuntimeFixture reference;
+	require(reference.runtime.frameScheduler.runToNextLogicalTick(reference.runtime), "first physical VBlank");
+	const i64 firstVblank = reference.runtime.machine.scheduler.nowCycles();
+	const i32 bytes = 2 * static_cast<i32>(reference.runtime.timing.cycleBudgetPerFrame) + 9;
+	test::Blua32TestImage image;
+	image.text.resize(2u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, 4, 2);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 4}};
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, 0x10000u);
+	TickInputSource input;
+	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
+	runtime.boot();
+	auto& cpu = runtime.machine.cpu;
+	auto& scheduler = runtime.machine.scheduler;
+	auto& frameScheduler = runtime.frameScheduler;
+	const u32 nextPc = cpu.readFramePc(0) + INSTRUCTION_BYTES;
+	const auto id = cpu.stringPool().intern(std::string(bytes, 'q'));
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::StringSlice));
+	frame.registers.set(1, valueString(id));
+	frame.registers.set(2, valueInteger(1));
+	frame.registers.set(3, valueInteger(bytes));
+	frame.setTop(4);
+	cpu.gcHeap().finishFinalMark();
+	runtime.machine.memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK);
+	runtime.machine.memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
+	input.observeSample = [&] {
+		require(cpu.readFramePc(0) == nextPc && cpu.readFrameRegister(0, 0) == valueString(id),
+			"the first device edge sees the accepted CALL result and following PC");
+	};
+	advanceRuntimeTime(runtime, static_cast<int>(firstVblank - 1 - scheduler.nowCycles()));
+	if (withReadback) {
+		auto& gpu = runtime.machine.gxGpu;
+		gpu.writeGp0(0x020000ffu); gpu.writeGp0(0u); gpu.writeGp0(0x00200020u);
+		gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u); gpu.writeGp0(0u); gpu.writeGp0(0x00010001u);
+	}
+	const i64 total = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 2 + bytes + 1;
+	const i64 end = scheduler.nowCycles() + total;
+	require(frameScheduler.advanceLogicalTick(runtime, 1) == LogicalTickResult::Completed,
+		"the call advances at most one physical VBlank and one logical tick");
+	require(scheduler.nowCycles() == firstVblank && scheduler.acceptedCpuCycles() == total - 1
+		&& frameScheduler.lastTickSequence == 1 && frameScheduler.lastTickCpuUsedCycles == total
+		&& frameScheduler.lastTickBudgetRemaining == 1 - total && input.sampleCount == 1,
+		"charge once and retain the accepted time separately from the unused grant");
+	require(runtime.cpuExecution.runSuspendedUntilDepth(runtime, 0, static_cast<int>(total)) == CpuSuspendedRunResult::Yielded
+		&& scheduler.nowCycles() == firstVblank && cpu.readFramePc(0) == nextPc,
+		"suspended execution cannot consume scheduled device time between ticks");
+	const auto saved = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	const auto run = [&] {
+		if (withReadback) {
+			const auto offer = [&] { return frameScheduler.advanceLogicalTick(runtime, 0); };
+			require(offer() == LogicalTickResult::Incomplete && frameScheduler.lastTickSequence == 1,
+				"new GX backend fence interrupts retained time before the second VBlank");
+			const auto fence = scheduler.nowCycles();
+			const auto& output = runtime.machine.gxGpu.readDeviceOutput();
+			auto& readback = output.readbackPort;
+			require(fence > firstVblank && scheduler.acceptedCpuCycles() == end - fence
+				&& readback.claimReadback(output.commandBuffer.executedCommandCount),
+				"the real GPU readback edge retains all unelapsed work");
+			require(offer() == LogicalTickResult::Incomplete && scheduler.nowCycles() == fence,
+				"no accepted clock or guest progress while readback is submitted");
+			readback.completeReadback(readback.token());
+			require(offer() == LogicalTickResult::Completed, "resume the same grant after GX publication");
+		} else {
+			require(frameScheduler.runScheduledToNextLogicalTick(runtime, 100.0),
+				"a paced reoffer reaches the second VBlank");
+		}
+		require(frameScheduler.lastTickSequence == 2 && scheduler.acceptedCpuCycles() > 0,
+			"second VBlank retains its outstanding time");
+		require(cpu.readFramePc(0) == nextPc && (runtime.machine.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK) != 0u
+			&& frameScheduler.lastTickCpuUsedCycles == 0
+			&& frameScheduler.lastTickBudgetRemaining == 1 - total,
+			"no further CPU and no duplicated debit during settlement");
+		require(frameScheduler.advanceLogicalTick(runtime, 0) == LogicalTickResult::Completed
+			&& frameScheduler.lastTickSequence == 3 && scheduler.acceptedCpuCycles() == 0,
+			"zero grant settles the already accepted time through the third VBlank");
+		require(scheduler.nowCycles() == end && cpu.readFrameRegister(0, 0) == valueString(id)
+			&& cpu.readFramePc(0) == nextPc && frameScheduler.lastTickCpuUsedCycles == 0,
+			"one physical edge per tick, full original elapsed time, no extra instruction");
+		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	};
+	run();
+	const auto decoded = decodeRuntimeSaveState(saved, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	applyRuntimeSaveState(runtime, decoded);
+	require(scheduler.acceptedCpuCycles() == total - 1, "save/restore retains accepted CPU time");
+	const auto restored = run();
+	applyRuntimeSaveState(runtime, decoded);
+	require(run() == restored, "two restored runs reproduce exact CPU, device and clock state");
+}
+
 void testParkedNewTableRetiresBeforeVblank(bool native) {
 	using namespace bmsx;
 	TickRuntimeFixture reference;
@@ -2050,6 +2144,8 @@ void testRuntimeResetNotification() {
 }
 
 int main() {
+	testAcceptedStringCyclesAcrossVblanks(false);
+	testAcceptedStringCyclesAcrossVblanks(true);
 	testOneDeadlinePerDevice();
 	testParkedTableWriteExhaustsInProtectedCall();
 	testParkedNewTableRetiresBeforeVblank(false);

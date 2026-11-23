@@ -1764,6 +1764,9 @@ Use the complete instruction charge when calculating a straight-line sequence.
 Use device status and interrupt protocols for synchronization, rather than
 assuming that a device request interrupts a partially executed instruction.
 Instruction costs do not specify one universal request-to-handler delay.
+Device edges still occur at their scheduled times while the CPU uses these
+cycles. An instruction whose charge spans several vertical blanking intervals
+does not suppress any of their display edges or armed input samples.
 
 ### Selected instruction base charges {#sec-memory-selected-instruction-base-charges}
 

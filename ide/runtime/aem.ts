@@ -36,7 +36,7 @@ export type BuiltAemSourceRevision = {
 
 export type AemSourceApplyResult =
 	| { readonly status: 'applied' }
-	| { readonly status: 'not-applied'; readonly reason: 'inactive-domain' | 'installation-replaced' | 'context-not-installed' | 'module-not-installed' | 'asset-not-installed' }
+	| { readonly status: 'not-applied'; readonly reason: 'inactive-domain' | 'installation-replaced' | 'context-not-installed' | 'module-not-installed' | 'asset-not-installed' | 'cpu-time-pending' }
 	| { readonly status: 'failed'; readonly phase: 'build' | 'runtime'; readonly error: unknown };
 
 /** Apply one accepted source snapshot; rejected authoring never enters machine mutation. */
@@ -78,6 +78,10 @@ export async function applyAemSourceRevision(
 			: sources.cartridgeSlots[domain]!.package;
 		if (installedPackage.audioevents[resource.source.resid] === undefined) {
 			result = { status: 'not-applied', reason: 'asset-not-installed' };
+			return;
+		}
+		if (!runtime.admitExternalCpuMutation()) {
+			result = { status: 'not-applied', reason: 'cpu-time-pending' };
 			return;
 		}
 		let built: BuiltAemSourceRevision;

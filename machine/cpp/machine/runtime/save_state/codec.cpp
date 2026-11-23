@@ -1136,6 +1136,7 @@ template<class Writer> void writeRuntimeSaveMachineState(Writer& writer, const R
 	writeFrameSchedulerStateSnapshot(writer, state.frameScheduler);
 	writeFrameLoopStateSnapshot(writer, state.frameLoop);
 	writer.i64(state.schedulerNowCycles);
+	writer.i64(state.acceptedCpuCycles);
 }
 
 RuntimeSaveMachineState readRuntimeSaveMachineState(BinaryReader& reader, size_t gxGpuVramByteCount) {
@@ -1144,6 +1145,7 @@ RuntimeSaveMachineState readRuntimeSaveMachineState(BinaryReader& reader, size_t
 	state.frameScheduler = readFrameSchedulerStateSnapshot(reader);
 	state.frameLoop = readFrameLoopStateSnapshot(reader);
 	state.schedulerNowCycles = reader.i64();
+	state.acceptedCpuCycles = reader.i64();
 	return state;
 }
 

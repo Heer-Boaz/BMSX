@@ -12,6 +12,12 @@
 
 namespace bmsx {
 
+namespace {
+enum class ClockRun { Devices, RetiredCpu, RetainedCpu };
+template<ClockRun Run>
+bool settleTime(Runtime& runtime, i64 targetCycle);
+}
+
 bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) {
 	auto& cpu = runtime.machine.cpu;
 	if (cpu.allocationParked()) return false;
@@ -130,6 +136,8 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	auto& scheduler = machine.scheduler;
 	if (targetThread == 0u) targetThread = cpu.activeThread()->address;
 	if (cpu.allocationParked()) return CpuSuspendedRunResult::Halted;
+	// Scheduled work still owes physical edges to the frame owner.
+	if (scheduler.acceptedCpuCycles() != 0) return CpuSuspendedRunResult::Yielded;
 	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
 	cpu.gcHeap().finishFinalMark();
 	runDueRuntimeTimers(runtime);
@@ -255,7 +263,8 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 		frameState.deferredAllocationCycles = 0;
 		frameState.cycleBudgetRemaining -= consumed;
 		frameState.activeCpuUsedCycles += consumed;
-		advanceRuntimeTime(runtime, consumed);
+		scheduler.setAcceptedCpuCycles(consumed);
+		settleTime<ClockRun::RetiredCpu>(runtime, scheduler.nowCycles() + consumed);
 		return cpu.getFrameDepth() != 0 ? CpuSliceResult::InstructionYielded : CpuSliceResult::InstructionHalted;
 	}
 	bool advanced = scheduler.hasDueTimer();
@@ -309,7 +318,12 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 			frameState.cycleBudgetRemaining -= consumed;
 			frameState.activeCpuUsedCycles += consumed;
 			advanced = true;
-			tickCompleted = advanceRuntimeTime(runtime, consumed);
+			if (consumed > sliceBudget) {
+				scheduler.setAcceptedCpuCycles(consumed);
+				tickCompleted = settleTime<ClockRun::RetiredCpu>(runtime, scheduler.nowCycles() + consumed);
+			} else {
+				tickCompleted = advanceRuntimeTime(runtime, consumed);
+			}
 		}
 		if (result == RunResult::ExecutionStopped) {
 			return CpuSliceResult::ExecutionStopped;
@@ -335,19 +349,39 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 	return advanced ? CpuSliceResult::Advanced : CpuSliceResult::Blocked;
 }
 
-bool advanceRuntimeTime(Runtime& runtime, int cycles) {
-	auto& machine = runtime.machine;
-	auto& scheduler = machine.scheduler;
-	const i64 targetCycle = scheduler.nowCycles() + cycles;
-	runDueRuntimeTimers(runtime);
-	// These cycles already elapsed. Holds gate the next CPU slice; device
-	// edges retire before advancing the rest of the completed instruction.
+namespace {
+template<ClockRun Run>
+bool settleTime(Runtime& runtime, i64 targetCycle) {
+	auto& scheduler = runtime.machine.scheduler;
+	bool tickCompleted = runDueRuntimeTimers(runtime);
+	// Device edges retire in absolute clock order, regardless of how much
+	// time an instruction accepted before the next device deadline.
 	while (scheduler.nowCycles() < targetCycle) {
-		const i64 nextCycle = std::min(scheduler.nextDeadline(), targetCycle);
-		scheduler.advanceTo(nextCycle);
-		runDueRuntimeTimers(runtime);
+		if constexpr (Run == ClockRun::RetainedCpu) {
+			if (runtime.machine.gxGpu.backendServiceBlocksMachine()) break;
+		}
+		if constexpr (Run != ClockRun::Devices) {
+			// At VBlank the beam publishes the exact spacing to its next
+			// VBlank. The CPU cannot write beam timing during settlement.
+			// Keep ordinary sub-frame overshoot, but leave the next VBlank
+			// for another host tick if this accepted time reaches it.
+			const i64 interval = runtime.timing.cycleBudgetPerFrame;
+			if (tickCompleted && interval > 0 && targetCycle - scheduler.nowCycles() >= interval) break;
+		}
+		scheduler.advanceTo(std::min(scheduler.nextDeadline(), targetCycle));
+		tickCompleted = runDueRuntimeTimers(runtime);
 	}
-	return runtime.vblank.tickCompleted();
+	return tickCompleted;
+}
+}
+
+bool advanceRuntimeTime(Runtime& runtime, int cycles) {
+	return settleTime<ClockRun::Devices>(runtime, runtime.machine.scheduler.nowCycles() + cycles);
+}
+
+bool settleAcceptedCpuTime(Runtime& runtime) {
+	auto& scheduler = runtime.machine.scheduler;
+	return settleTime<ClockRun::RetainedCpu>(runtime, scheduler.nowCycles() + scheduler.acceptedCpuCycles());
 }
 
 bool runDueRuntimeTimers(Runtime& runtime) {

@@ -184,35 +184,19 @@ function makeCompletionLatchTestImage(): TestBlua32Image {
 const COMPLETION_LATCH_TEST_IMAGE = makeCompletionLatchTestImage();
 
 function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begin: number; end: number }): Runtime {
-	let cpuSliceActive = false;
-	const beginCpuSlice = (): void => {
-		cpuSliceActive = true;
-		if (sliceStats) {
+	const scheduler = new DeviceScheduler(cpu);
+	if (sliceStats) {
+		const beginCpuSlice = scheduler.beginCpuSlice.bind(scheduler);
+		const endCpuSlice = scheduler.endCpuSlice.bind(scheduler);
+		scheduler.beginCpuSlice = (budget) => {
+			beginCpuSlice(budget);
 			sliceStats.begin += 1;
-		}
-	};
-	const endCpuSlice = (): void => {
-		cpuSliceActive = false;
-		if (sliceStats) {
+		};
+		scheduler.endCpuSlice = () => {
+			endCpuSlice();
 			sliceStats.end += 1;
-		}
-	};
-	const scheduler = {
-		nowCycles: 0,
-		hasDueTimer: () => false,
-		nextDeadline: () => Number.MAX_SAFE_INTEGER,
-		isCpuSliceActive: () => cpuSliceActive,
-		beginCpuSlice,
-		endCpuSlice,
-		runCpuSlice: (targetDepth: number, sliceBudget: number) => {
-			beginCpuSlice();
-			try {
-				return cpu.runUntilDepth(targetDepth, sliceBudget);
-			} finally {
-				endCpuSlice();
-			}
-		},
-	};
+		};
+	}
 	const runtime = {
 		history: { stop: () => {} },
 		machine: {
@@ -226,15 +210,13 @@ function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begi
 				gxGpu: { backendServiceBlocksMachine: () => false },
 			dmaController: { cpuBusHeld: () => false },
 			scheduler,
-			advanceDevices: (cycles: number) => {
-				scheduler.nowCycles += cycles;
-			},
 		},
 		vblank: {
 			tickCompleted: false,
 		},
 		completionValues: [],
 		cpuExecution: null,
+		admitExternalCpuMutation: Runtime.prototype.admitExternalCpuMutation,
 		callClosure: Runtime.prototype.callClosure,
 		readCompletionValues: Runtime.prototype.readCompletionValues,
 		completionCallPending: Runtime.prototype.completionCallPending,
@@ -646,15 +628,7 @@ coroutine.resume(worker)
 
 function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqController; cpuExecution: CpuExecutionState; state: FrameState } {
 	const { cpu, memory, irqController } = makeCompiledCartCpu(CART_LAUNCHER_SYSTEM_LUA_SOURCE, source);
-	const scheduler = {
-		nowCycles: 0,
-		hasDueTimer: () => false,
-		nextDeadline: () => Number.MAX_SAFE_INTEGER,
-		beginCpuSlice: () => {},
-		endCpuSlice: () => {},
-		runCpuSlice: (targetDepth: number, sliceBudget: number) =>
-			cpu.runUntilDepth(targetDepth, sliceBudget),
-	};
+	const scheduler = new DeviceScheduler(cpu);
 	const runtime = {
 		machine: {
 			cpu,
@@ -664,7 +638,6 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 			gxGpu: { backendServiceBlocksMachine: () => false },
 			dmaController: { cpuBusHeld: () => false },
 			scheduler,
-			advanceDevices: (cycles: number) => { scheduler.nowCycles += cycles; },
 		},
 		vblank: { tickCompleted: false, beginTick: () => {}, abandonTick: () => {}, handleGpuRuntimeEdge: () => {} },
 	} as unknown as Runtime;

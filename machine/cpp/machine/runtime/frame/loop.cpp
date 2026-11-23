@@ -56,7 +56,7 @@ bool FrameLoopState::prepareScheduledFrame(Runtime& runtime) {
 	if (!frameActive) {
 		return runtime.frameScheduler.startScheduledFrame(runtime);
 	}
-	if (runtime.machine.cpu.allocationReady()) return true;
+	if (runtime.machine.scheduler.acceptedCpuCycles() != 0 || runtime.machine.cpu.allocationReady()) return true;
 	if (frameState.cycleBudgetRemaining <= 0) {
 		return runtime.frameScheduler.refillFrameBudget(runtime, frameState);
 	}
@@ -71,6 +71,12 @@ void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
 }
 
 bool FrameLoopState::runActiveFrameState(Runtime& runtime) {
+	if (runtime.machine.scheduler.acceptedCpuCycles() != 0) {
+		const bool tickCompleted = settleAcceptedCpuTime(runtime);
+		finalizeUpdateSlice(runtime);
+		if (tickCompleted || runtime.machine.scheduler.acceptedCpuCycles() != 0
+			|| runtime.machine.gxGpu.backendServiceBlocksMachine() || runtime.machine.cpu.gcHeap().finalMarkPending()) return false;
+	}
 	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
 		const bool executionStopped = runUpdatePhase(runtime);
 		frameState.updateExecuted = runtime.m_pendingCall != Runtime::PendingCall::Entry;
@@ -82,6 +88,11 @@ bool FrameLoopState::runActiveFrameState(Runtime& runtime) {
 }
 
 InstructionStepResult FrameLoopState::runActiveFrameInstruction(Runtime& runtime) {
+	if (runtime.machine.scheduler.acceptedCpuCycles() != 0) {
+		settleAcceptedCpuTime(runtime);
+		finalizeUpdateSlice(runtime);
+		return InstructionStepResult::Advanced;
+	}
 	if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
 		finalizeUpdateSlice(runtime);
 		return InstructionStepResult::Advanced;

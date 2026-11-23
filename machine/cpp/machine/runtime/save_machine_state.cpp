@@ -10,6 +10,7 @@ RuntimeSaveMachineState captureRuntimeSaveMachineState(Runtime& runtime, Runtime
 	storage.frameScheduler = runtime.frameScheduler.captureState();
 	storage.frameLoop = runtime.frameLoop.captureState();
 	storage.schedulerNowCycles = runtime.machine.scheduler.currentNowCycles();
+	storage.acceptedCpuCycles = runtime.machine.scheduler.acceptedCpuCycles();
 	return storage;
 }
 
@@ -18,6 +19,7 @@ void applyRuntimeSaveMachineState(Runtime& runtime, const RuntimeSaveMachineStat
 	runtime.frameLoop.reset();
 	runtime.machine.scheduler.reset();
 	runtime.machine.scheduler.setNowCycles(state.schedulerNowCycles);
+	runtime.machine.scheduler.setAcceptedCpuCycles(state.acceptedCpuCycles);
 	runtime.vblank.prepareRestore();
 	restoreMachineSaveState(runtime.machine, state.machine);
 	runtime.applyPublishedGxGpuPcrtcTiming(runtime.machine.gxGpu.readDeviceOutput().pcrtcTiming);

@@ -121,10 +121,10 @@ export function scheduleRuntimeGuestCall(
 		cpu.beginCompletionCall(call.closure, args);
 	};
 	const admitCall = (checkBoundary: boolean): boolean => {
+		if (!request.isCurrent() || !runtime.admitExternalCpuMutation()) { finished(false); return false; }
 		const cpu = runtime.machine.cpu;
 		const roots = cpu.acquireLocalRoots();
 		try {
-			if (!request.isCurrent()) { finished(false); return false; }
 			if (request.admission === 'quiescent') {
 				const exceptionDepth = cpu.readExceptionReturnFrameDepth();
 				if (exceptionDepth !== -1) {

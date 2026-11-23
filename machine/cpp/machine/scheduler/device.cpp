@@ -17,6 +17,7 @@ void DeviceScheduler::setNowCycles(i64 nowCycles) {
 void DeviceScheduler::reset() {
 	m_deviceTimers = {};
 	m_schedulerNowCycles = 0;
+	m_acceptedCpuUntil = 0;
 	m_schedulerSliceActive = false;
 	m_activeSliceBaseCycle = 0;
 	m_activeSliceBudgetCycles = 0;

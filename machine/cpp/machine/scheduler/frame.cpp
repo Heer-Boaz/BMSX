@@ -20,10 +20,9 @@ i64 FrameSchedulerState::remainingCycleBudget(const Runtime& runtime) const {
 }
 
 bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
-	if (runtime.history.executionPaused() || runtime.machine.cpu.gcHeap().finalMarkPending()) return false;
-	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
-		return false;
-	}
+	if (runtime.history.executionPaused() || runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
+	if (runtime.machine.scheduler.acceptedCpuCycles() != 0) return true;
+	if (runtime.machine.cpu.gcHeap().finalMarkPending()) return false;
 	if (runtime.machine.cpu.allocationParked()) return runtime.machine.cpu.allocationReady();
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 		|| m_carriedCycleBudget > 0
@@ -47,6 +46,7 @@ FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime&
 	m_backendServiceSuspended = backendBlocked;
 	auto& cpu = runtime.machine.cpu;
 	auto& heap = cpu.gcHeap();
+	if (runtime.machine.scheduler.acceptedCpuCycles() != 0) return backendBlocked ? Pulse::Blocked : Pulse::Ready;
 	if (cpu.allocationParked() ? cpu.advanceAllocationRecovery() : heap.finalMarkPending()) {
 		// Keep the host grant queued while the guest clock is stopped.
 		if (!cpu.allocationParked()) heap.stepFinalMark();
@@ -173,7 +173,10 @@ bool FrameSchedulerState::startScheduledFrame(Runtime& runtime) {
 	i64 budget = carry;
 	if (budget == 0) {
 		budget = takeScheduledCycleBudget(runtime);
-		if (budget <= 0) return false;
+		if (budget <= 0) {
+			if (runtime.machine.scheduler.acceptedCpuCycles() == 0) return false;
+			budget = 0;
+		}
 	}
 	beginScheduledFrame(runtime, budget, carry);
 	return true;
@@ -207,7 +210,8 @@ LogicalTickResult FrameSchedulerState::advanceLogicalTick(Runtime& runtime, i64 
 	const auto admission = beginScheduledExecution(runtime, 0.0);
 	if (admission == Pulse::Maintenance) return LogicalTickResult::Maintenance;
 	const bool parked = runtime.machine.cpu.allocationParked();
-	if ((tickBudget == 0 && !parked) || admission == Pulse::Blocked) return LogicalTickResult::Incomplete;
+	if ((tickBudget == 0 && !parked && runtime.machine.scheduler.acceptedCpuCycles() == 0)
+		|| admission == Pulse::Blocked) return LogicalTickResult::Incomplete;
 	if (parked) {
 		if (!m_logicalTickRunPending) {
 			m_logicalTickRunPending = true;
@@ -275,14 +279,16 @@ bool FrameSchedulerState::runDevicesToNextLogicalTick(Runtime& runtime, i64 cycl
 		state.cycleBudgetGranted += cycleGrant;
 	} else {
 		const i64 carry = m_carriedCycleBudget;
-		if (carry != 0 || cycleGrant != 0) beginScheduledFrame(runtime, carry + cycleGrant, carry);
+		if (carry != 0 || cycleGrant != 0 || runtime.machine.scheduler.acceptedCpuCycles() != 0)
+			beginScheduledFrame(runtime, carry + cycleGrant, carry);
 	}
 	if (beginScheduledExecution(runtime, 0.0) != Pulse::Ready || !runtime.frameLoop.frameActive
 		|| runtime.machine.cpu.allocationParked()) return false;
 	const i64 previous = lastTickSequence;
 	FrameState& state = runtime.frameLoop.frameState;
 	auto& scheduler = runtime.machine.scheduler;
-	runDueRuntimeTimers(runtime);
+	if (scheduler.acceptedCpuCycles() != 0) settleAcceptedCpuTime(runtime);
+	else runDueRuntimeTimers(runtime);
 	while (lastTickSequence == previous && state.cycleBudgetRemaining > 0 && !runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 		const i64 deadline = scheduler.nextDeadline();
 		if (deadline == std::numeric_limits<i64>::max()) break;

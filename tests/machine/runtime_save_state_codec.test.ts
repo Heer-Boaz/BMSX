@@ -526,6 +526,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				frameActive: true,
 			},
 			schedulerNowCycles: 1234,
+			acceptedCpuCycles: 678,
 			},
 			cpuState: {
 				executionResidencyMask: 3,

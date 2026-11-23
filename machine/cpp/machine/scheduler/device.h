@@ -34,6 +34,10 @@ public:
 	explicit DeviceScheduler(CPU& cpu);
 
 	i64 nowCycles() const { return m_schedulerNowCycles; }
+	i64 acceptedCpuCycles() const {
+		return m_acceptedCpuUntil > m_schedulerNowCycles ? m_acceptedCpuUntil - m_schedulerNowCycles : 0;
+	}
+	void setAcceptedCpuCycles(i64 cycles) { m_acceptedCpuUntil = m_schedulerNowCycles + cycles; }
 	void setNowCycles(i64 nowCycles);
 	void reset();
 	i64 currentNowCycles() const;
@@ -80,6 +84,8 @@ private:
 
 	CPU& m_cpu;
 	i64 m_schedulerNowCycles = 0;
+	// Already charged, not yet committed to device time.
+	i64 m_acceptedCpuUntil = 0;
 	bool m_schedulerSliceActive = false;
 	i64 m_activeSliceBaseCycle = 0;
 	int m_activeSliceBudgetCycles = 0;
