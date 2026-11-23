@@ -2,11 +2,13 @@
 
 #include "common/types.h"
 
+#include <array>
+
 namespace bmsx {
 
 struct ApuBadpDecoderState {
-	i32 predictors[2] = {0, 0};
-	i32 stepIndices[2] = {0, 0};
+	std::array<i32, 2> predictors{};
+	std::array<i32, 2> stepIndices{};
 	size_t nextFrame = 0;
 	size_t blockEnd = 0;
 	size_t blockFrames = 0;

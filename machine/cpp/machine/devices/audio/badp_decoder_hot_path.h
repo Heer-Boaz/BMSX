@@ -179,6 +179,20 @@ inline void readApuBadpFrameAt(const u8* data,
 			decoder = transition.to;
 		} else {
 			transition.from = decoder;
+			// Block headers replace the predictor and step index. A whole
+			// remaining block cannot affect the result if both requested
+			// latches (frame - 1 and frame) belong to later blocks.
+			while (decoder.nextFrame < frame) {
+				if (decoder.blockFrameIndex < decoder.blockFrames) {
+					const size_t nextBlockFrame = decoder.nextFrame + (decoder.blockFrames - decoder.blockFrameIndex);
+					if (nextBlockFrame >= frame) break;
+					decoder.nextFrame = nextBlockFrame;
+					decoder.blockFrameIndex = decoder.blockFrames;
+				}
+				// Load the successor through the ordinary decoder. This also
+				// keeps the interpretation of live sample-RAM headers.
+				decodeNextApuBadpFrame(data, channels, decoder);
+			}
 			while (decoder.nextFrame <= frame) {
 				decodeNextApuBadpFrame(data, channels, decoder);
 			}

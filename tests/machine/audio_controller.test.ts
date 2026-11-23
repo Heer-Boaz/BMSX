@@ -894,6 +894,63 @@ test('BADP repeated loop-boundary transitions preserve decoder state and honor s
 	for (const frame of [0, frameCount - 1, frameCount - 2, 3, 50, 49, 127, 0]) compare(frame);
 });
 
+test('BADP forward jumps skip block payloads and retain the exact interpolation latches', () => {
+	const blocks = [65, 768, 513, 1, 63];
+	const frames = 1410;
+	for (const channels of [1, 2]) {
+		const header = 4 + channels * 4;
+		const blockSizes = blocks.map(count => header + ((count * channels + 1) >> 1));
+		const bytes = new Uint8Array(blockSizes.reduce((sum, size) => sum + size, 0));
+		const payload = new Uint8Array(bytes.length);
+		let beginFrame = 0;
+		let start = 0;
+		for (let block = 0; block < blocks.length; ++block) {
+			writeLE16(bytes, start, blocks[block]);
+			writeLE16(bytes, start + 2, blockSizes[block]);
+			for (let channel = 0; channel < channels; ++channel) {
+				const stateOffset = start + 4 + channel * 4;
+				writeLE16(bytes, stateOffset, -1000 + beginFrame * 3 - channel * 150);
+				bytes[stateOffset + 2] = (beginFrame + channel) % 80;
+			}
+			for (let pos = header; pos < blockSizes[block]; ++pos)
+				bytes[start + pos] = pos * 37 + beginFrame * 13;
+			payload.fill(1, start + header, start + blockSizes[block]);
+			start += blockSizes[block];
+			beginFrame += blocks[block];
+		}
+		let reads = 0;
+		const counted = new Proxy(bytes, { get(target, key) {
+			if (typeof key === 'string' && payload[+key] === 1) ++reads;
+			return Reflect.get(target, key, target);
+		} });
+		const revision = { value: 0 };
+		const makeRecord = (sourceBytes: Uint8Array) => ({
+			sourceBytes, dataOffset: 0, frames, channels, sourceRevision: revision,
+			badpSeekTable: { bytes, byteOffset: 0, entryCount: 0 },
+			badp: createApuBadpDecoderState(), badpTransition: createApuBadpTransition(),
+		});
+		const actual = makeRecord(counted);
+		const reference = makeRecord(bytes);
+		const seekAndCompare = (frame: number) => {
+			resetApuBadpDecoder(actual, 7);
+			resetApuBadpDecoder(reference, 7);
+			let expected = 0;
+			for (let sample = 8; sample <= frame; ++sample) expected = readApuBadpFrameAt(reference, sample);
+			reads = 0;
+			assert.equal(readApuBadpFrameAt(actual, frame), expected);
+			assert.deepEqual(actual.badp, reference.badp);
+			return reads;
+		};
+		for (const frame of [833, 1346, 1347, 1348, 1409]) seekAndCompare(frame);
+		assert.equal(seekAndCompare(1347), 4 * channels, 'jump may step at headers, not decode skipped payloads');
+		const previous = actual.badp.previousDecodedLeft;
+		bytes[bytes.length - blockSizes[4] - 1] ^= 0x77;
+		++revision.value;
+		assert.equal(seekAndCompare(1347), 4 * channels, 'RAM edits to the preceding block are visible in the retained frame');
+		assert.notEqual(actual.badp.previousDecodedLeft, previous);
+	}
+});
+
 test('APU loop cursors preserve PCM for fractional, reverse and multi-loop steps', () => {
 	const source = new Uint8Array([0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0]);
 	for (const { start, step } of [

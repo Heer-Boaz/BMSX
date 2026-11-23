@@ -26,6 +26,7 @@
 #include <array>
 #include <cstdint>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -250,6 +251,42 @@ void testBadpRepeatedLoopBoundaryTransition() {
 	++revision;
 	compare(frameCount - 1u);
 	for (size_t frame : std::array<size_t, 8>{0u, 127u, 126u, 3u, 50u, 49u, 127u, 0u}) compare(frame);
+}
+
+void testBadpFarForwardRetainsBothLatches() {
+	for (bmsx::u32 channels : {1u, 2u}) {
+		std::vector<bmsx::u8> bytes;
+		size_t frameCount = 0;
+		for (const size_t blockFrames : {65u, 768u, 513u, 1u, 63u}) {
+			const size_t start = bytes.size();
+			const size_t header = 4u + channels * 4u;
+			const size_t blockBytes = header + (blockFrames * channels + 1u) / 2u;
+			bytes.resize(start + blockBytes);
+			bmsx::writeLE16(bytes.data() + start, blockFrames);
+			bmsx::writeLE16(bytes.data() + start + 2u, blockBytes);
+			for (bmsx::u32 channel = 0; channel < channels; ++channel) {
+				const size_t stateOffset = start + 4u + channel * 4u;
+				bmsx::writeLE16(bytes.data() + stateOffset, static_cast<bmsx::u16>(-1000 + frameCount * 3u - channel * 150u));
+				bytes[stateOffset + 2u] = static_cast<bmsx::u8>((frameCount + channel) % 80u);
+			}
+			for (size_t pos = header; pos < blockBytes; ++pos)
+				bytes[start + pos] = static_cast<bmsx::u8>(pos * 37u + frameCount * 13u);
+			frameCount += blockFrames;
+		}
+		for (const size_t frame : {833u, 1346u, 1347u, 1348u, 1409u}) {
+			bmsx::ApuBadpDecoderState actual, expected;
+			bmsx::ApuBadpTransition transition;
+			const bmsx::ApuBadpSeekTable seek{};
+			const bmsx::u64 revision = 0;
+			bmsx::resetApuBadpDecoder(bytes.data(), frameCount, channels, seek, expected, 7);
+			actual = expected;
+			while (expected.nextFrame <= frame) bmsx::decodeNextApuBadpFrame(bytes.data(), channels, expected);
+			bmsx::i16 left, right;
+			bmsx::readApuBadpFrameAt(bytes.data(), frameCount, channels, seek, actual, transition, &revision, frame, left, right);
+			require(actual == expected && left == expected.decodedLeft && right == expected.decodedRight,
+				"BADP far forward keeps the sequential decoder and both interpolation latches");
+		}
+	}
 }
 
 void testBadpLoopSourceWritesAndRestore() {
@@ -1341,6 +1378,7 @@ int main() {
 	testMachineCaptureIncludesMaterializedApuEndIrq();
 	testHostSynchronizationExposesEveryElapsedPalSample();
 	testBadpRepeatedLoopBoundaryTransition();
+	testBadpFarForwardRetainsBothLatches();
 	testBadpLoopSourceWritesAndRestore();
 	testBadpInterpolationWindowAndRestore();
 	testSampleTransferEdgeOrdering();

@@ -136,6 +136,17 @@ export function readApuBadpFrameAt(record: ApuBadpDecodeTarget, frame: number): 
 				return (badp.decodedLeft & 0xffff) | ((badp.decodedRight & 0xffff) << 16);
 			}
 			copyDecoderState(transition.from, badp);
+			// Each successor header replaces the predictor and step index.
+			// Keep the block containing frame - 1 for the interpolation latch.
+			while (badp.nextFrame < frame) {
+				if (badp.blockFrameIndex < badp.blockFrames) {
+					const nextBlockFrame = badp.nextFrame + (badp.blockFrames - badp.blockFrameIndex);
+					if (nextBlockFrame >= frame) break;
+					badp.nextFrame = nextBlockFrame;
+					badp.blockFrameIndex = badp.blockFrames;
+				}
+				decodeNextApuBadpFrame(record);
+			}
 			while (badp.nextFrame <= frame) {
 				decodeNextApuBadpFrame(record);
 			}
