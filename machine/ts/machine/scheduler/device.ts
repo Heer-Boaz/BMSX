@@ -13,10 +13,7 @@ export const DEVICE_SERVICE_IMGDEC = 8;
 // This does not determine ownership of any shared data bus.
 const DEVICE_SERVICE_KIND_COUNT = DEVICE_SERVICE_IMGDEC + 1;
 
-function nextTimerGeneration(value: number): number {
-	const next = (value + 1) >>> 0;
-	return next === 0 ? 1 : next;
-}
+const INACTIVE_TIMER = 0xff;
 
 export class DeviceScheduler {
 	private schedulerNowCycles = 0;
@@ -24,12 +21,13 @@ export class DeviceScheduler {
 	private activeSliceBaseCycle = 0;
 	private activeSliceBudgetCycles = 0;
 	private activeSliceTargetCycle = 0;
-	private readonly timerDeadlines: number[] = [];
-	private readonly timerDeviceKinds: number[] = [];
-	private readonly timerGenerations: number[] = [];
-	private readonly deviceServiceTimerGeneration = new Uint32Array(DEVICE_SERVICE_KIND_COUNT);
+	// Index zero anchors the ordered list; each device kind owns one node.
+	private readonly timerDeadlines = new Float64Array(DEVICE_SERVICE_KIND_COUNT);
+	private readonly timerPrevious = new Uint8Array(DEVICE_SERVICE_KIND_COUNT).fill(INACTIVE_TIMER);
+	private readonly timerNext = new Uint8Array(DEVICE_SERVICE_KIND_COUNT);
 
 	public constructor(private readonly cpu: CPU) {
+		this.timerDeadlines[0] = Number.MAX_SAFE_INTEGER;
 	}
 
 	public get nowCycles(): number {
@@ -41,13 +39,13 @@ export class DeviceScheduler {
 	}
 
 	public reset(): void {
-		this.clearTimerHeap();
+		this.timerPrevious.fill(INACTIVE_TIMER);
+		this.timerNext.fill(0);
 		this.schedulerNowCycles = 0;
 		this.schedulerSliceActive = false;
 		this.activeSliceBaseCycle = 0;
 		this.activeSliceBudgetCycles = 0;
 		this.activeSliceTargetCycle = 0;
-		this.deviceServiceTimerGeneration.fill(0);
 	}
 
 	public currentNowCycles(): number {
@@ -86,103 +84,47 @@ export class DeviceScheduler {
 	}
 
 	public nextDeadline(): number {
-		this.discardStaleTopTimers();
-		if (this.timerDeadlines.length === 0) {
-			return Number.MAX_SAFE_INTEGER;
-		}
-		return this.timerDeadlines[0]!;
+		return this.timerDeadlines[this.timerNext[0]];
 	}
 
 	public hasDueTimer(): boolean {
-		this.discardStaleTopTimers();
-		return this.timerDeadlines.length > 0 && this.timerDeadlines[0]! <= this.schedulerNowCycles;
+		const head = this.timerNext[0];
+		return head !== 0 && this.timerDeadlines[head] <= this.schedulerNowCycles;
 	}
 
 	public popDueTimer(): number {
-		const deviceKind = this.timerDeviceKinds[0]!;
-		this.removeTopTimer();
+		const deviceKind = this.timerNext[0];
+		this.cancelDeviceService(deviceKind);
 		return deviceKind;
 	}
 
 	public scheduleDeviceService(deviceKind: number, deadlineCycles: number): void {
-		const generation = nextTimerGeneration(this.deviceServiceTimerGeneration[deviceKind]!);
-		this.deviceServiceTimerGeneration[deviceKind] = generation;
-		this.pushTimer(deadlineCycles, deviceKind, generation);
+		if (this.timerPrevious[deviceKind] === INACTIVE_TIMER || this.timerDeadlines[deviceKind] !== deadlineCycles) {
+			this.cancelDeviceService(deviceKind);
+			let previous = 0;
+			let next = this.timerNext[0];
+			while (next !== 0) {
+				const deadline = this.timerDeadlines[next];
+				if (deadline > deadlineCycles || (deadline === deadlineCycles && next > deviceKind)) break;
+				previous = next;
+				next = this.timerNext[next];
+			}
+			this.timerDeadlines[deviceKind] = deadlineCycles;
+			this.timerPrevious[deviceKind] = previous;
+			this.timerNext[deviceKind] = next;
+			this.timerNext[previous] = deviceKind;
+			this.timerPrevious[next] = deviceKind;
+		}
 		this.requestYieldForEarlierDeadline(deadlineCycles);
 	}
 
 	public cancelDeviceService(deviceKind: number): void {
-		this.deviceServiceTimerGeneration[deviceKind] = nextTimerGeneration(this.deviceServiceTimerGeneration[deviceKind]!);
-	}
-
-	private clearTimerHeap(): void {
-		this.timerDeadlines.length = 0;
-		this.timerDeviceKinds.length = 0;
-		this.timerGenerations.length = 0;
-	}
-
-	// start repeated-sequence-acceptable -- Scheduler heap moves three parallel timer columns inline; helper calls would sit on the timer hot path.
-	private pushTimer(deadline: number, deviceKind: number, generation: number): void {
-		let index = this.timerDeadlines.length;
-		this.timerDeadlines[index] = deadline;
-		this.timerDeviceKinds[index] = deviceKind;
-		this.timerGenerations[index] = generation;
-		while (index > 0) {
-			const parent = (index - 1) >> 1;
-			if (this.timerDeadlines[parent]! < deadline ||
-				(this.timerDeadlines[parent] === deadline && this.timerDeviceKinds[parent]! <= deviceKind)) {
-				break;
-			}
-			this.timerDeadlines[index] = this.timerDeadlines[parent]!;
-			this.timerDeviceKinds[index] = this.timerDeviceKinds[parent]!;
-			this.timerGenerations[index] = this.timerGenerations[parent]!;
-			index = parent;
-		}
-		this.timerDeadlines[index] = deadline;
-		this.timerDeviceKinds[index] = deviceKind;
-		this.timerGenerations[index] = generation;
-	}
-
-	private removeTopTimer(): void {
-		const lastIndex = this.timerDeadlines.length - 1;
-		const deadline = this.timerDeadlines[lastIndex]!;
-		const deviceKind = this.timerDeviceKinds[lastIndex]!;
-		const generation = this.timerGenerations[lastIndex]!;
-		this.timerDeadlines.length = lastIndex;
-		this.timerDeviceKinds.length = lastIndex;
-		this.timerGenerations.length = lastIndex;
-		if (lastIndex === 0) {
-			return;
-		}
-		let index = 0;
-		while (index < (lastIndex >> 1)) {
-			let child = (index << 1) + 1;
-			if (child + 1 < lastIndex && (this.timerDeadlines[child + 1]! < this.timerDeadlines[child]! ||
-				(this.timerDeadlines[child + 1] === this.timerDeadlines[child] && this.timerDeviceKinds[child + 1]! < this.timerDeviceKinds[child]!))) {
-				child += 1;
-			}
-			if (this.timerDeadlines[child]! > deadline ||
-				(this.timerDeadlines[child] === deadline && this.timerDeviceKinds[child]! >= deviceKind)) {
-				break;
-			}
-			this.timerDeadlines[index] = this.timerDeadlines[child]!;
-			this.timerDeviceKinds[index] = this.timerDeviceKinds[child]!;
-			this.timerGenerations[index] = this.timerGenerations[child]!;
-			index = child;
-		}
-		this.timerDeadlines[index] = deadline;
-		this.timerDeviceKinds[index] = deviceKind;
-		this.timerGenerations[index] = generation;
-	}
-	// end repeated-sequence-acceptable
-
-	private discardStaleTopTimers(): void {
-		while (this.timerDeadlines.length > 0) {
-			if (this.timerGenerations[0] === this.deviceServiceTimerGeneration[this.timerDeviceKinds[0]!]) {
-				return;
-			}
-			this.removeTopTimer();
-		}
+		const previous = this.timerPrevious[deviceKind];
+		if (previous === INACTIVE_TIMER) return;
+		const next = this.timerNext[deviceKind];
+		this.timerNext[previous] = next;
+		this.timerPrevious[next] = previous;
+		this.timerPrevious[deviceKind] = INACTIVE_TIMER;
 	}
 
 	public requestYieldForEarlierDeadline(deadlineCycles: number): void {

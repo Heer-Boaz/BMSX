@@ -64,6 +64,9 @@ import { HistoryMode, HistorySeekResult } from '../../machine/ts/machine/runtime
 import {
 	DEVICE_SERVICE_APU,
 	DEVICE_SERVICE_APU_TRANSFER,
+	DEVICE_SERVICE_DMA,
+	DEVICE_SERVICE_GEO,
+	DEVICE_SERVICE_GPU,
 } from '../../machine/ts/machine/scheduler/device';
 import { FrameSchedulerState, LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 
@@ -111,6 +114,29 @@ function cancelAudioServices(runtime: Runtime): void {
 	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU_TRANSFER);
 }
+
+test('replacing and canceling fixed device deadlines preserves their equal-cycle delivery order', () => {
+	const { scheduler } = createTimingRuntime().machine;
+	scheduler.reset();
+	for (let pass = 0; pass < 32; ++pass) {
+		scheduler.scheduleDeviceService(DEVICE_SERVICE_GPU, 10);
+		scheduler.scheduleDeviceService(DEVICE_SERVICE_GPU, 20);
+		scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, 20);
+		scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, 20);
+		scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
+		scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, 20);
+	}
+	scheduler.advanceTo(10);
+	assert.equal(scheduler.hasDueTimer(), false);
+	assert.equal(scheduler.nextDeadline(), 20);
+	scheduler.advanceTo(20);
+	for (const kind of [DEVICE_SERVICE_GEO, DEVICE_SERVICE_DMA, DEVICE_SERVICE_GPU]) {
+		assert.equal(scheduler.hasDueTimer(), true);
+		assert.equal(scheduler.popDueTimer(), kind);
+	}
+	assert.equal(scheduler.hasDueTimer(), false);
+	assert.equal(scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
+});
 
 function runDueAt(runtime: Runtime, cycle: number): boolean {
 	runtime.machine.scheduler.advanceTo(cycle);

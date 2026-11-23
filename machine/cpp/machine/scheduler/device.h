@@ -11,7 +11,7 @@
 
 #include <array>
 #include <cstdint>
-#include <vector>
+#include <limits>
 
 namespace bmsx {
 
@@ -48,8 +48,8 @@ public:
 	void endCpuSlice() { m_schedulerSliceActive = false; }
 	RunResult runCpuSlice(int targetDepth, int sliceBudget, u32 targetThread = 0u, CpuRunKind kind = CpuRunKind::Direct);
 	void advanceTo(i64 nowCycles);
-	i64 nextDeadline();
-	bool hasDueTimer();
+	i64 nextDeadline() const;
+	bool hasDueTimer() const;
 	uint8_t popDueTimer();
 	void scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles);
 	void cancelDeviceService(uint8_t deviceKind);
@@ -71,12 +71,12 @@ public:
 #endif
 
 private:
-	static uint32_t nextTimerGeneration(uint32_t value);
-
-	void clearTimerHeap();
-	void pushTimer(i64 deadline, uint8_t deviceKind, uint32_t generation);
-	void removeTopTimer();
-	void discardStaleTopTimers();
+	static constexpr uint8_t InactiveTimer = 0xff;
+	struct DeviceTimer {
+		i64 deadline = std::numeric_limits<i64>::max();
+		uint8_t previous = InactiveTimer;
+		uint8_t next = 0;
+	};
 
 	CPU& m_cpu;
 	i64 m_schedulerNowCycles = 0;
@@ -84,10 +84,8 @@ private:
 	i64 m_activeSliceBaseCycle = 0;
 	int m_activeSliceBudgetCycles = 0;
 	i64 m_activeSliceTargetCycle = 0;
-	std::vector<i64> m_timerDeadlines;
-	std::vector<uint8_t> m_timerDeviceKinds;
-	std::vector<uint32_t> m_timerGenerations;
-	std::array<uint32_t, static_cast<size_t>(DeviceServiceKindCount)> m_deviceServiceTimerGeneration{};
+	// Index zero anchors the ordered list; each device kind owns one node.
+	std::array<DeviceTimer, DeviceServiceKindCount> m_deviceTimers{};
 };
 
 } // namespace bmsx

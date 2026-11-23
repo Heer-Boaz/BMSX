@@ -28,6 +28,7 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
@@ -89,6 +90,30 @@ struct TickRuntimeFixture {
 		runtime.boot();
 	}
 };
+
+void testOneDeadlinePerDevice() {
+	using namespace bmsx;
+	TickRuntimeFixture fixture;
+	auto& scheduler = fixture.runtime.machine.scheduler;
+	scheduler.reset();
+	for (int pass = 0; pass < 32; ++pass) {
+		scheduler.scheduleDeviceService(DEVICE_SERVICE_GPU, 10);
+		scheduler.scheduleDeviceService(DEVICE_SERVICE_GPU, 20);
+		scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, 20);
+		scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, 20);
+		scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
+		scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, 20);
+	}
+	scheduler.advanceTo(10);
+	require(!scheduler.hasDueTimer() && scheduler.nextDeadline() == 20,
+		"replacing a deadline retires the previous deadline");
+	scheduler.advanceTo(20);
+	for (const auto kind : {DEVICE_SERVICE_GEO, DEVICE_SERVICE_DMA, DEVICE_SERVICE_GPU})
+		require(scheduler.hasDueTimer() && scheduler.popDueTimer() == kind,
+			"equal-cycle device delivery follows kind order after replacement and cancellation");
+	require(!scheduler.hasDueTimer() && scheduler.nextDeadline() == std::numeric_limits<i64>::max(),
+		"each service occurs precisely once");
+}
 
 void testParkedNewTableRetiresBeforeVblank(bool native) {
 	using namespace bmsx;
@@ -2025,6 +2050,7 @@ void testRuntimeResetNotification() {
 }
 
 int main() {
+	testOneDeadlinePerDevice();
 	testParkedTableWriteExhaustsInProtectedCall();
 	testParkedNewTableRetiresBeforeVblank(false);
 	testParkedTableWriteRetiresBeforeVblank(false);

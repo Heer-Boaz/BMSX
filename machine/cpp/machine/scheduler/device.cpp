@@ -3,7 +3,6 @@
 #include "common/scope_exit.h"
 #include "machine/cpu/cpu.h"
 
-#include <limits>
 
 namespace bmsx {
 
@@ -11,23 +10,17 @@ DeviceScheduler::DeviceScheduler(CPU& cpu)
 	: m_cpu(cpu) {
 }
 
-uint32_t DeviceScheduler::nextTimerGeneration(uint32_t value) {
-	const uint32_t next = value + 1u;
-	return next == 0u ? 1u : next;
-}
-
 void DeviceScheduler::setNowCycles(i64 nowCycles) {
 	m_schedulerNowCycles = nowCycles;
 }
 
 void DeviceScheduler::reset() {
-	clearTimerHeap();
+	m_deviceTimers = {};
 	m_schedulerNowCycles = 0;
 	m_schedulerSliceActive = false;
 	m_activeSliceBaseCycle = 0;
 	m_activeSliceBudgetCycles = 0;
 	m_activeSliceTargetCycle = 0;
-	m_deviceServiceTimerGeneration.fill(0);
 }
 
 i64 DeviceScheduler::currentNowCycles() const {
@@ -75,103 +68,46 @@ void DeviceScheduler::advanceTo(i64 nowCycles) {
 	m_schedulerNowCycles = nowCycles;
 }
 
-i64 DeviceScheduler::nextDeadline() {
-	discardStaleTopTimers();
-	if (m_timerDeadlines.empty()) {
-		return std::numeric_limits<i64>::max();
-	}
-	return m_timerDeadlines[0];
+i64 DeviceScheduler::nextDeadline() const {
+	return m_deviceTimers[m_deviceTimers[0].next].deadline;
 }
 
-bool DeviceScheduler::hasDueTimer() {
-	discardStaleTopTimers();
-	return !m_timerDeadlines.empty() && m_timerDeadlines[0] <= m_schedulerNowCycles;
+bool DeviceScheduler::hasDueTimer() const {
+	const uint8_t head = m_deviceTimers[0].next;
+	return head != 0 && m_deviceTimers[head].deadline <= m_schedulerNowCycles;
 }
 
 uint8_t DeviceScheduler::popDueTimer() {
-	const uint8_t deviceKind = m_timerDeviceKinds[0];
-	removeTopTimer();
+	const uint8_t deviceKind = m_deviceTimers[0].next;
+	cancelDeviceService(deviceKind);
 	return deviceKind;
 }
 
 void DeviceScheduler::scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles) {
-	const uint32_t generation = nextTimerGeneration(m_deviceServiceTimerGeneration[deviceKind]);
-	m_deviceServiceTimerGeneration[deviceKind] = generation;
-	pushTimer(deadlineCycles, deviceKind, generation);
+	auto& timer = m_deviceTimers[deviceKind];
+	if (timer.previous == InactiveTimer || timer.deadline != deadlineCycles) {
+		cancelDeviceService(deviceKind);
+		uint8_t previous = 0;
+		uint8_t next = m_deviceTimers[0].next;
+		while (next != 0) {
+			const i64 deadline = m_deviceTimers[next].deadline;
+			if (deadline > deadlineCycles || (deadline == deadlineCycles && next > deviceKind)) break;
+			previous = next;
+			next = m_deviceTimers[next].next;
+		}
+		timer = {deadlineCycles, previous, next};
+		m_deviceTimers[previous].next = deviceKind;
+		m_deviceTimers[next].previous = deviceKind;
+	}
 	requestYieldForEarlierDeadline(deadlineCycles);
 }
 
 void DeviceScheduler::cancelDeviceService(uint8_t deviceKind) {
-	uint32_t& generation = m_deviceServiceTimerGeneration[deviceKind];
-	generation = nextTimerGeneration(generation);
-}
-
-void DeviceScheduler::clearTimerHeap() {
-	m_timerDeadlines.clear();
-	m_timerDeviceKinds.clear();
-	m_timerGenerations.clear();
-}
-
-void DeviceScheduler::pushTimer(i64 deadline, uint8_t deviceKind, uint32_t generation) {
-	size_t index = m_timerDeadlines.size();
-	m_timerDeadlines.push_back(deadline);
-	m_timerDeviceKinds.push_back(deviceKind);
-	m_timerGenerations.push_back(generation);
-	while (index > 0) {
-		const size_t parent = (index - 1u) >> 1u;
-		if (m_timerDeadlines[parent] < deadline ||
-			(m_timerDeadlines[parent] == deadline && m_timerDeviceKinds[parent] <= deviceKind)) {
-			break;
-		}
-		m_timerDeadlines[index] = m_timerDeadlines[parent];
-		m_timerDeviceKinds[index] = m_timerDeviceKinds[parent];
-		m_timerGenerations[index] = m_timerGenerations[parent];
-		index = parent;
-	}
-	m_timerDeadlines[index] = deadline;
-	m_timerDeviceKinds[index] = deviceKind;
-	m_timerGenerations[index] = generation;
-}
-
-void DeviceScheduler::removeTopTimer() {
-	const size_t lastIndex = m_timerDeadlines.size() - 1u;
-	const i64 deadline = m_timerDeadlines[lastIndex];
-	const uint8_t deviceKind = m_timerDeviceKinds[lastIndex];
-	const uint32_t generation = m_timerGenerations[lastIndex];
-	m_timerDeadlines.pop_back();
-	m_timerDeviceKinds.pop_back();
-	m_timerGenerations.pop_back();
-	if (lastIndex == 0u) {
-		return;
-	}
-	size_t index = 0u;
-	while (index < (lastIndex >> 1u)) {
-		size_t child = (index << 1u) + 1u;
-		if (child + 1u < lastIndex && (m_timerDeadlines[child + 1u] < m_timerDeadlines[child] ||
-			(m_timerDeadlines[child + 1u] == m_timerDeadlines[child] && m_timerDeviceKinds[child + 1u] < m_timerDeviceKinds[child]))) {
-			child += 1u;
-		}
-		if (m_timerDeadlines[child] > deadline ||
-			(m_timerDeadlines[child] == deadline && m_timerDeviceKinds[child] >= deviceKind)) {
-			break;
-		}
-		m_timerDeadlines[index] = m_timerDeadlines[child];
-		m_timerDeviceKinds[index] = m_timerDeviceKinds[child];
-		m_timerGenerations[index] = m_timerGenerations[child];
-		index = child;
-	}
-	m_timerDeadlines[index] = deadline;
-	m_timerDeviceKinds[index] = deviceKind;
-	m_timerGenerations[index] = generation;
-}
-
-void DeviceScheduler::discardStaleTopTimers() {
-	while (!m_timerDeadlines.empty()) {
-		if (m_timerGenerations[0] == m_deviceServiceTimerGeneration[m_timerDeviceKinds[0]]) {
-			return;
-		}
-		removeTopTimer();
-	}
+	auto& timer = m_deviceTimers[deviceKind];
+	if (timer.previous == InactiveTimer) return;
+	m_deviceTimers[timer.previous].next = timer.next;
+	m_deviceTimers[timer.next].previous = timer.previous;
+	timer.previous = InactiveTimer;
 }
 
 void DeviceScheduler::requestYieldForEarlierDeadline(i64 deadlineCycles) {
