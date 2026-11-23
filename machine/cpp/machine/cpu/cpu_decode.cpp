@@ -20,6 +20,8 @@ u16 fixedRegisterExtent(const DecodedInstruction& row) {
 		case OpCode::MFC0: case OpCode::MTC0:
 		case OpCode::CLOSURE: case OpCode::CALL:
 			return 0;
+		case OpCode::ITERN:
+			return static_cast<u16>(std::max(row.a + 3, row.b + row.c));
 		case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
 		case OpCode::STORE_MEM_WORDS: case OpCode::STORE_MEM_WORDS_D:
 			// Source values belong to the admitted bus operation, after readiness.
@@ -125,6 +127,9 @@ void CPU::decodeInstructionWords(
 			|| ((rkOperands & RK_OPERAND_C) != 0u
 				&& decoded.c < 0 && static_cast<size_t>(-1 - decoded.c) >= constantCount);
 		switch (static_cast<OpCode>(op)) {
+			case OpCode::ITERN:
+				invalidImageOperand = rawC == 0u;
+				break;
 			case OpCode::GETSYS: case OpCode::SETSYS:
 				invalidImageOperand = decodedBx >= image.systemNameCount;
 				break;

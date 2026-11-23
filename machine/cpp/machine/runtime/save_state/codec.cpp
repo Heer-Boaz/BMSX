@@ -6,8 +6,8 @@
 namespace bmsx {
 namespace {
 
-// One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x37534d42u; // BMS7: image String root cursor
+// One current internal layout, deliberately without a legacy reader. The signature is `BMSX` and is never allowed to change. It is not allowed to be modified, even if the layout changes.
+constexpr u32 kSaveStateSignature = 0x58534d42u; // BMSX: image String root cursor. This is never allowed to change, even if the version or layout changes.
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);

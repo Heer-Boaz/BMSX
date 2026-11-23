@@ -1,17 +1,109 @@
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readLE32 } from '../../machine/ts/common/endian';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { ValueTag, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, asClosure, valueBool, valueBuiltinFunction, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_METATABLE_LOOP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, instructionOpcode, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { integerConstant } from '../../toolchain/ts/lua/number';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
+import { compileLuaSource, materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
+
+test('compiled generic-for preserves next deletion, captured loop locals and ordinary iterator fallback', () => {
+	const source = `
+return function(next)
+local t = { [1] = 10, [3] = 30, [false] = 40 }
+local sum, captures = 0, {}
+for k, v, missing in next, t do
+	if missing ~= nil then return -1 end
+	sum = sum + v
+	t[k] = nil
+	captures[#captures + 1] = function() return v end
+end
+local seeded = 0
+for k, v in next, {11, 22, 33}, 1 do seeded = seeded + v end
+local calls = 0
+local function next(_, control)
+	calls = calls + 1
+	if control == nil then return 1, 9 end
+end
+local custom = 0
+for k, v in next, false do custom = custom + v end
+return sum, captures[1]() + captures[2]() + captures[3](), seeded, custom, calls
+end
+`;
+	for (const level of [0, 3] as const) {
+		const compiled = compileLuaSource(source, 'table-iterator.lua', level);
+		const code = compiled.program.code;
+		let iterations = 0;
+		for (let offset = 0; offset < code.length; offset += INSTRUCTION_BYTES)
+			if (instructionOpcode(readLE32(code, offset)) === OpCode.ITERN) ++iterations;
+		assert.ok(iterations > 0, 'the compiler emits the guarded native iterator for ordinary next');
+		const image = linkTestSystemBlua32(compiled);
+		for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
+			const { cpu } = createTestSystemCpu(image, backend);
+			runGuestToHalt(cpu, 100_000);
+			const [closure] = materializeCpuCompletionValues(cpu);
+			cpu.beginCompletionCall(asClosure(closure, cpu.gc), [valueBuiltinFunction(BuiltinFunctionId.Next)]);
+			runGuestToHalt(cpu, 100_000);
+			assert.deepEqual(materializeCpuCompletionValues(cpu), [80, 80, 55, 9, 2].map(valueInteger));
+		}
+	}
+});
+
+test('compiled ITERN resumes its physical table cursor and preserves its scalar fallback edge', () => {
+	const text = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.ITERN, 0, 4, 3);
+	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.KSMI, 4, 0, 55);
+	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
+	const image = linkRawTestSystemBlua32({ text, verifiedControlFlow: true,
+		functions: [{ firstWord: 0, wordCount: 4, maxStack: 8 }] });
+	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
+		const { cpu } = createTestSystemCpu(image, backend);
+		const frame = cpu.rootThread.frameAtDepth(0), registers = frame.registers;
+		const pc = frame.pc;
+		const table = cpu.createTable(3, 2);
+		registers.setBuiltinFunction(0, BuiltinFunctionId.Next);
+		registers.setTable(1, table);
+		frame.top = 7;
+		const step = () => cpu.runUntilDepth(0, BASE_CYCLES[OpCode.ITERN] + 3);
+		cpu.runUntilDepth(0, 1024 * (BASE_CYCLES[OpCode.ITERN] + 3 + BASE_CYCLES[OpCode.JMP]));
+		if (backend === CpuExecutionBackend.JavaScript) {
+			const entry = frame.decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]!;
+			assert.equal(entry.terminal.exit, CompiledBlockExit.IterateTable);
+			assert.equal(entry.terminal.skippedInstructionWidth, 2);
+		}
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		cpu.gc.tables.setInteger(table, 1, valueBool(false));
+		cpu.gc.tables.setInteger(table, 3, valueInteger(33));
+		cpu.gc.tables.setInteger(table, -4, valueInteger(99));
+		for (const [key, value] of [[valueInteger(1), valueBool(false)], [valueInteger(3), valueInteger(33)],
+			[valueInteger(-4), valueInteger(99)], [valueNil(), valueNil()]] as const) {
+			registers.setInteger(6, -7);
+			step();
+			assert.equal(frame.pc, pc + 3 * INSTRUCTION_BYTES);
+			assert.deepEqual([registers.get(4), registers.get(5), registers.get(6)], [key, value, valueNil()]);
+			if (key === valueInteger(1)) {
+				cpu.gc.tables.setInteger(table, 1, valueNil());
+				assert.equal(registers.getTag(2), ValueTag.Nil);
+				assert.equal(registers.getPayload(2), 1);
+			}
+			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.JMP]);
+		}
+		registers.setInteger(2, 1);
+		cpu.runUntilDepth(0, 1);
+		assert.equal(frame.pc, pc + INSTRUCTION_BYTES);
+		assert.equal(registers.get(4), valueNil());
+	}
+});
 
 test('compiled LOADK, LOADKR and RK stores preserve the owning image literal', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);

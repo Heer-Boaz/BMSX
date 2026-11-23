@@ -248,7 +248,7 @@ test('generated moves retain reference values, string ids, boolean kinds and con
 	writeInstruction(text, 3, OpCode.KFALSE, 7, 0, 0);
 	writeInstruction(text, 4, OpCode.KTRUE, 8, 0, 0);
 	writeInstruction(text, 5, OpCode.K0, 9, 0, 0);
-	writeInstruction(text, 6, OpCode.KM1, 10, 0, 0);
+	writeInstruction(text, 6, OpCode.KSMI, 10, 63, 63, 255);
 	writeInstruction(text, 7, OpCode.KSMI, 11, 63, 62, 255);
 	writeInstruction(text, 8, OpCode.JMP, 0, 63, 55, 255);
 	for (const constant of [null, false, true, 'literal', integerConstant(0), ...[-0, NaN, Infinity].map(numberConstantFromHost)]) {
@@ -334,7 +334,7 @@ test('writes to cached RAM source retire generated functions before the next exe
 	cpu.runUntilDepth(0, 600);
 	assert.ok(compiledEntries(cpu) > 0);
 	const replacement = new Uint8Array(INSTRUCTION_BYTES);
-	writeInstruction(replacement, 0, OpCode.KM1, 0, 0, 0);
+	writeInstruction(replacement, 0, OpCode.KSMI, 0, 63, 63, 255);
 	memory.writeBytes(DYNAMIC_RAM_BASE, replacement);
 	assert.equal(compiledEntries(cpu), 0);
 	cpu.runUntilDepth(0, 6);
@@ -387,7 +387,7 @@ test('dependent generated instructions preserve live values, raw copies and comp
 	const operations = [OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW,
 		OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.SHL, OpCode.SHR, OpCode.UNM, OpCode.BNOT,
 		OpCode.MOV, OpCode.LOADK, OpCode.KNIL, OpCode.KFALSE, OpCode.KTRUE,
-		OpCode.K0, OpCode.K1, OpCode.KM1, OpCode.KSMI, OpCode.NOT];
+		OpCode.K0, OpCode.K1, OpCode.KSMI, OpCode.NOT];
 	const floats = [-0, 0.25, -4294967296, Infinity, NaN];
 	const initialValues = [...floats.map(valueFloat), valueNil(), valueBool(false), valueBool(true)];
 	const constants = [...floats.map(numberConstantFromHost), null, false, true, 'literal'];
@@ -637,7 +637,7 @@ for (const op of [OpCode.JMPIF, OpCode.JMPIFNOT]) test(`generated conditional ${
 	writeInstruction(text, 1, op, 63, 0, 2);
 	writeInstruction(text, 2, OpCode.K1, 3, 0, 0);
 	writeInstruction(text, 3, OpCode.JMP, 0, 0, 1);
-	writeInstruction(text, 4, OpCode.KM1, 3, 0, 0);
+	writeInstruction(text, 4, OpCode.KSMI, 3, 63, 63, 255);
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 64 }] }, RAM_CODE_FIXTURE_BYTES);
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
@@ -727,13 +727,13 @@ test('a generated terminal WIDE instruction can straddle pages and retires when 
 	}
 	const head = cpu.rootThread.frameAtDepth(0).executionImage.decodedPages;
 	assert.ok([...head.values()].some(page => page.compiledBlocks?.entries[255]?.terminal.exit === CompiledBlockExit.Halt));
-	writeInstruction(code, 1, OpCode.KM1, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.KFALSE, 0, 0, 0);
 	memory.writeBytes(pc + INSTRUCTION_BYTES, code.subarray(INSTRUCTION_BYTES));
 	assert.equal(compiledEntries(cpu), 0);
 	cpu.clearHaltUntilIrq();
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-	assert.equal(cpu.readFrameRegister(0, 0), valueInteger(-1));
+	assert.equal(cpu.readFrameRegister(0, 0), valueBool(false));
 });
 
 test('source writes retire overlapping blocks without discarding independent code on the same page', () => {

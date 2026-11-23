@@ -91,6 +91,7 @@ struct NativeTerminalExit {
 	NativeExitPlan operator()(const NativeHalt&) const { return {NativeHalt::terminalExit}; }
 	NativeExitPlan operator()(const NativeExceptionReturn&) const { return {NativeExceptionReturn::terminalExit}; }
 	NativeExitPlan operator()(const NativeCallSite& call) const { return {call.terminalExit, {.call = call}}; }
+	NativeExitPlan operator()(const NativeTableIterator& iterator) const { return {iterator.terminalExit, {.iterator = iterator}}; }
 	NativeExitPlan operator()(const NativeReturnSite& ret) const { return {ret.terminalExit, {.returned = ret}}; }
 	NativeExitPlan operator()(const NativeTableAllocation& table) const { return {table.terminalExit, {.allocation = table}}; }
 	NativeExitPlan operator()(const NativeConcat& concat) const { return {concat.terminalExit, {.concat = concat}}; }
@@ -173,6 +174,9 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 		block.hasFusedJump = skipped->op == static_cast<u8>(OpCode::JMP) && skipped->a == 0
 			&& skipped->dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe);
 		if (block.hasFusedJump) block.fusedJumpCycles = skipped->baseCycles;
+	} else if (auto* iterator = std::get_if<NativeTableIterator>(&operations.back().operation); iterator && skipped) {
+		iterator->skipWidth = skipped->width;
+		block.sourceWords += skipped->width;
 	}
 	const auto [kind, operands] = std::visit(NativeTerminalExit{}, final);
 	const auto* jump = std::get_if<NativeJump>(&final);

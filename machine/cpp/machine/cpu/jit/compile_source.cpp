@@ -211,7 +211,7 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 				cursor = successor;
 			}
 			const DecodedInstruction* skippedInstruction = nullptr;
-			if ((source->verifiedRom || binding.readBytes) && nativeBlockComparison(page.words[cursor].op)) {
+			if ((source->verifiedRom || binding.readBytes) && nativeBlockCanSkip(page.words[cursor].op)) {
 				const u32 successor = cursor + page.words[cursor].width;
 				if (successor < DECODED_PAGE_WORDS && (page.refreshState[successor] & DECODED_REFRESH_DECODE) == 0u
 					&& successor + page.words[successor].width <= DECODED_PAGE_WORDS

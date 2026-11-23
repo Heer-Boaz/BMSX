@@ -164,7 +164,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	// A lookup may finish without a VM observer. Decide from the result, not
 	// from the fact that the generated code needed help locating the value.
 	bool liveFrontier = kind == NativeBlockExit::ReadField || kind == NativeBlockExit::ReadIndex
-		|| kind == NativeBlockExit::ReadInteger;
+		|| kind == NativeBlockExit::ReadInteger || kind == NativeBlockExit::IterateTable;
 	if (!liveFrontier) {
 		cpu.instructionBudgetRemaining = state.remainingCycles;
 		run->publishActivation(exit->nextPc);
@@ -243,6 +243,45 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			cpu.skipNextInstruction(*frame);
 			transition = NativeBlockTransition::Redispatch;
 			break;
+		case NativeBlockExit::IterateTable: {
+			const auto iterator = exit->operands.iterator;
+			const bool advanced = cpu.stepTableIterator(frame->registers, iterator.base, iterator.first, iterator.count);
+			if (advanced) {
+				state.registerTop = std::max(state.registerTop, static_cast<int>(iterator.first) + iterator.count);
+				state.remainingCycles -= iterator.count;
+				if (iterator.skipWidth == 0) {
+					// A mapped skip without an immutable following word still
+					// belongs to the ordinary instruction fetch owner.
+					cpu.instructionBudgetRemaining = state.remainingCycles;
+					run->publishActivation(continuationPc);
+					liveFrontier = false;
+					cpu.skipNextInstruction(*frame);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+					++gateProfile.returns;
+#endif
+					return nullptr;
+				}
+				continuationPc += static_cast<u32>(iterator.skipWidth) * INSTRUCTION_BYTES;
+			}
+			if (state.remainingCycles > 0) {
+				auto* page = NativeCodeLookup::findInRoot(run->codeRoot, continuationPc);
+				if (page && page->nativeBlocks) {
+					const auto& target = page->nativeBlocks->entries[(continuationPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+					if (target) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+						++gateProfile.resumes;
+#endif
+						return target->m_body;
+					}
+				}
+			}
+			cpu.instructionBudgetRemaining = state.remainingCycles;
+			run->publishActivation(continuationPc);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			++gateProfile.returns;
+#endif
+			return nullptr;
+		}
 		case NativeBlockExit::Vararg:
 			cpu.executeVararg(*frame, exit->operands.vararg.first, exit->operands.vararg.requested);
 			break;

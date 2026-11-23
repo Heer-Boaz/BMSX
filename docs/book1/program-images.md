@@ -297,7 +297,7 @@ The remaining header slots identify the program's format, sections and linkage:
 | Image byte offset | Field |
 | --- | --- |
 | `00H` | Magic; declared constant `32334C42H`. |
-| `04H` | Format version; required value 2. |
+| `04H` | Format version; required value 3. |
 | `08H`, `0CH` | Image byte count; flags. |
 | `10H`, `14H` | Function-table address; function count. |
 | `30H`, `34H` | ROM String bucket-table address; bucket count. |

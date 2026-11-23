@@ -40,8 +40,8 @@ import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT
 import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } from '../../../spec/gx/pcrtc';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
-// One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x37534d42; // BMS7: image String root cursor
+// One current internal layout, deliberately without a legacy reader. The signature is `BMSX` and is never allowed to change. It is not allowed to be modified, even if the layout changes.
+const SAVE_STATE_SIGNATURE = 0x58534d42; // BMSX: image String root cursor. This is never allowed to change, even if the version or layout changes.
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);

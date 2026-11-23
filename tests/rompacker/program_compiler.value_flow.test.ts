@@ -11,6 +11,12 @@ import {
 	IO_INP_OUTPUT_PORT,
 } from '../../machine/ts/spec/bmsx/io';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import type { Instruction } from '../../toolchain/ts/lua/compiler/optimizer';
+import {
+	collectInstructionDefs,
+	computeInstructionLivenessAt,
+} from '../../toolchain/ts/lua/compiler/optimizer/liveness';
 import { runCompiledLua } from '../helpers/cpu_test_harness';
 import {
 	disassembleTestBlua32Functions,
@@ -22,6 +28,45 @@ function parseChunk(source: string, path: string = 'value_flow.lua') {
 	const parser = new LuaParser(lexer.scanTokens(), path, source);
 	return parser.parseChunk();
 }
+
+test('ITERN keeps incoming results live on the guard-miss edge', () => {
+	const instructions: Instruction[] = [
+		{ op: OpCode.ITERN, a: 0, b: 4, c: 3, format: 'ABC', rkMask: 0, target: null },
+		{ op: OpCode.RET, a: 6, b: 2, c: 0, format: 'ABC', rkMask: 0, target: null },
+		{ op: OpCode.RET, a: 4, b: 2, c: 0, format: 'ABC', rkMask: 0, target: null },
+	];
+	assert.deepEqual(collectInstructionDefs(instructions[0], 6), [2, 4, 5, 6]);
+	const [live] = computeInstructionLivenessAt(instructions, 6, [0], () => [], 'in');
+	assert.deepEqual(live.slice(0, 3), Uint8Array.of(1, 1, 1));
+	assert.equal(live[6], 1, 'the fallback returns the old value of the third result');
+});
+
+test('ProgramCompiler pairs specialization retains its generic call for a shadowed iterator', () => {
+	const path = 'shadowed_pairs.lua';
+	const source = `
+local calls = 0
+local function pairs(subject)
+	return function(state, key)
+		calls = calls + 1
+		if key == nil then return false, state, 19 end
+	end, subject, nil
+end
+local sum = 0
+for key, value, extra in pairs(7) do
+	if key == false then sum = sum + value + extra end
+end
+return sum, calls
+`;
+	for (const optLevel of [0, 1, 2, 3] as const) {
+		const compiled = compileLuaChunkToProgram(
+			parseChunk(source, path), [], { entrySource: source, optLevel, programDomain: 'system' },
+		);
+		const image = linkTestSystemBlua32(compiled);
+		const disassembly = disassembleTestBlua32Functions(image, image.symbols.functionAddresses);
+		assert.match(disassembly, /\bITERN r\d+, r\d+, 3\n[^\n]*\bJMP /);
+		assert.deepEqual(Array.from(runCompiledLua(source, path, optLevel)), [valueInteger(26), valueInteger(2)]);
+	}
+});
 
 test('ProgramCompiler still emits & expression as a single string-id result expression', () => {
 	const returned = runCompiledLua("return &'left'", 'string_id_return.lua');

@@ -9,7 +9,7 @@ export const OPCODE_NAMES: ReadonlyArray<string> = [
 	'KTRUE',
 	'K0',
 	'K1',
-	'KM1',
+	'ITERN',
 	'KSMI',
 	'STORE_MEM_D',
 	'STORE_MEM_WORDS_D',

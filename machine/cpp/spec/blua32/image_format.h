@@ -5,7 +5,7 @@
 namespace bmsx {
 
 constexpr uint32_t BLUA32_IMAGE_MAGIC = 0x32334c42u;
-constexpr uint32_t BLUA32_IMAGE_VERSION = 2u;
+constexpr uint32_t BLUA32_IMAGE_VERSION = 3u;
 constexpr uint32_t BLUA32_IMAGE_HEADER_SIZE = 96u;
 constexpr uint32_t BLUA32_IMAGE_MAPPED_CODE_FLAG = 1u;
 

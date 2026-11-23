@@ -15,7 +15,8 @@ export const isJump = (instruction: Instruction): boolean =>
 export const isSkipInstruction = (instruction: Instruction): boolean =>
 	instruction.op === OpCode.EQ
 	|| instruction.op === OpCode.LT
-	|| instruction.op === OpCode.LE;
+	|| instruction.op === OpCode.LE
+	|| instruction.op === OpCode.ITERN;
 
 export const getJumpTarget = (instruction: Instruction): number => {
 	if (instruction.target === null) {
@@ -115,6 +116,7 @@ export const buildBasicBlocks = (instructions: Instruction[]): Block[] => {
 			case OpCode.EQ:
 			case OpCode.LT:
 			case OpCode.LE:
+			case OpCode.ITERN:
 				if (next < count) {
 					leaders.add(next);
 				}
@@ -198,6 +200,7 @@ export const buildBlockGraph = (instructions: Instruction[], blocks: Block[]): {
 			case OpCode.EQ:
 			case OpCode.LT:
 			case OpCode.LE:
+			case OpCode.ITERN:
 				addIndexSuccessor(blockIndex, nextIndex);
 				addIndexSuccessor(blockIndex, nextNextIndex);
 				break;

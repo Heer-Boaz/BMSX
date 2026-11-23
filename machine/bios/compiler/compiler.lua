@@ -921,8 +921,6 @@ emit_value = function(
 			bytecode.emit_abc(instruction_words, isa.op_k0, target, 0, 0)
 		elseif immediate_number == 1 then
 			bytecode.emit_abc(instruction_words, isa.op_k1, target, 0, 0)
-		elseif immediate_number == -1 then
-			bytecode.emit_abc(instruction_words, isa.op_km1, target, 0, 0)
 		else
 			bytecode.emit_signed_abx(
 				instruction_words,

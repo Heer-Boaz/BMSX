@@ -347,8 +347,8 @@ const buildInstructionOperands = (
 			return [registerOperand('a', 'dst', a)];
 		case OpCode.K1:
 			return [registerOperand('a', 'dst', a)];
-		case OpCode.KM1:
-			return [registerOperand('a', 'dst', a)];
+		case OpCode.ITERN:
+			return [registerOperand('a', 'iterator base', a), registerOperand('b', 'result base', b), plainOperand('c', 'count', c.toString())];
 		case OpCode.KSMI:
 			return [registerOperand('a', 'dst', a), plainOperand('bx', 'imm', formatInteger(sbx))];
 		case OpCode.LOADK:
@@ -541,8 +541,8 @@ const formatInstruction = (
 			return `K0 r${a}`;
 		case OpCode.K1:
 			return `K1 r${a}`;
-		case OpCode.KM1:
-			return `KM1 r${a}`;
+		case OpCode.ITERN:
+			return `ITERN r${a}, r${b}, ${c}`;
 		case OpCode.KSMI:
 			return `KSMI r${a}, ${formatInteger(sbx)}`;
 		case OpCode.LOADK:

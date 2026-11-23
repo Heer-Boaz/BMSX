@@ -238,7 +238,8 @@ const removeUnreachable = (set: InstructionSet): InstructionSet => {
 			}
 			case OpCode.EQ:
 			case OpCode.LT:
-			case OpCode.LE: {
+			case OpCode.LE:
+			case OpCode.ITERN: {
 				if (index + 1 < count) {
 					worklist.push(index + 1);
 				}
@@ -513,6 +514,10 @@ const computeBlockConstantIn = (
 						clearRegisterRange(constants, instruction.a, null);
 						break;
 					}
+					case OpCode.ITERN:
+						constants.delete(instruction.a + 2);
+						clearRegisterRange(constants, instruction.b, instruction.c);
+						break;
 					default:
 						break;
 				}
@@ -655,6 +660,10 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 					clearRegisterRange(constants, instruction.a, null);
 					break;
 				}
+				case OpCode.ITERN:
+					constants.delete(instruction.a + 2);
+					clearRegisterRange(constants, instruction.b, instruction.c);
+					break;
 				case OpCode.GETSYS:
 			case OpCode.GETGL:
 			case OpCode.LOADKR:
@@ -1059,6 +1068,12 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					clearCopiesTouchingOpenRange(copies, instruction.a);
 					break;
 				}
+				case OpCode.ITERN:
+					killRegister(constants, copies, instruction.a + 2);
+					for (let offset = 0; offset < instruction.c; offset += 1) {
+						killRegister(constants, copies, instruction.b + offset);
+					}
+					break;
 				default:
 					break;
 			}
@@ -1373,13 +1388,16 @@ const applyClosureTransferForInlining = (
 			}
 			return;
 		}
+		case OpCode.ITERN:
+			closures.delete(instruction.a + 2);
+			clearRegisterRange(closures, instruction.b, instruction.c);
+			return;
 		case OpCode.LOADK:
 		case OpCode.KNIL:
 		case OpCode.KFALSE:
 		case OpCode.KTRUE:
 		case OpCode.K0:
 		case OpCode.K1:
-		case OpCode.KM1:
 		case OpCode.KSMI:
 		case OpCode.LOADKR:
 		case OpCode.GETSYS:
@@ -1683,7 +1701,6 @@ const buildInlineExpansion = (
 			case OpCode.KTRUE:
 			case OpCode.K0:
 			case OpCode.K1:
-			case OpCode.KM1:
 			case OpCode.KSMI:
 			case OpCode.LOADK:
 			case OpCode.GETSYS:
@@ -1702,6 +1719,7 @@ const buildInlineExpansion = (
 				mapped.b = mapRegister(mapped.b);
 				break;
 			case OpCode.SELF:
+			case OpCode.ITERN:
 				mapped.a = mapRegister(mapped.a);
 				mapped.b = mapRegister(mapped.b);
 				break;

@@ -35,6 +35,7 @@ struct OperationName {
 	const char* operator()(const NativeClearSlots&) const { return "clear-slots"; }
 	const char* operator()(const NativePoolRead&) const { return "read-pool"; }
 	const char* operator()(const NativeLength&) const { return "length"; }
+	const char* operator()(const NativeTableIterator&) const { return "table-iterator"; }
 	const char* operator()(const NativeGlobalAccess&) const { return "global"; }
 	const char* operator()(const NativeUpvalueAccess&) const { return "capture"; }
 	const char* operator()(const NativeControlAccess&) const { return "control"; }

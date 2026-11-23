@@ -134,6 +134,9 @@ export function visitInstructionUses<T>(
 		case OpCode.CONCATN:
 			visitRegisterRange(state, visitor, instruction.b, instruction.c);
 			break;
+		case OpCode.ITERN:
+			visitRegisterRange(state, visitor, instruction.a, 3);
+			break;
 		case OpCode.CLOSURE:
 			visitInstructionOpenUpvalueRegisters(
 				instruction,
@@ -182,7 +185,6 @@ export function visitInstructionDefs<T>(
 		case OpCode.KTRUE:
 		case OpCode.K0:
 		case OpCode.K1:
-		case OpCode.KM1:
 		case OpCode.KSMI:
 		case OpCode.LOADK:
 		case OpCode.LOADKR:
@@ -219,6 +221,10 @@ export function visitInstructionDefs<T>(
 			break;
 		case OpCode.SELF:
 			visitRegisterRange(state, visitor, instruction.a, 2);
+			break;
+		case OpCode.ITERN:
+			visitRegister(state, visitor, instruction.a + 2);
+			visitRegisterRange(state, visitor, instruction.b, instruction.c);
 			break;
 		case OpCode.LOADNIL:
 			visitRegisterRange(state, visitor, instruction.a, instruction.b);
@@ -316,7 +322,10 @@ export function computeBlockLiveOut(
 				blockState,
 				markBlockUse,
 			);
-			visitInstructionDefs(instructions[index], maxRegister, blockState, markBlockDef);
+			// ITERN can fall through without writing. It never kills a live-in value.
+			if (instructions[index].op !== OpCode.ITERN) {
+				visitInstructionDefs(instructions[index], maxRegister, blockState, markBlockDef);
+			}
 		}
 	}
 
@@ -452,7 +461,7 @@ export function computeInstructionLivenessAt(
 				result[candidateIndex] = live.slice();
 			}
 			const instruction = instructions[index];
-			visitInstructionDefs(instruction, maxRegister, live, clearLiveRegister);
+			if (instruction.op !== OpCode.ITERN) visitInstructionDefs(instruction, maxRegister, live, clearLiveRegister);
 			visitInstructionUses(
 				instruction,
 				maxRegister,

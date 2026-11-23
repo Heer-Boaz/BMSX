@@ -482,6 +482,66 @@ void iterationChargeIgnoresVacantCapacity() {
 	}
 }
 
+void tableIteratorRetainsItsCursorAcrossDeletionAndRestore() {
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(4 * INSTRUCTION_BYTES);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 8}};
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::ITERN), 0, 4, 3);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::KSMI), 4, 0, 55);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	CpuMachine native(image), scalar(image, true);
+	const u32 pc = native.rom.textAddress;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+	const auto* page = native.cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup->find(pc, 0);
+	const auto& entry = page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	require(entry && entry->terminal.exit == NativeBlockExit::IterateTable && entry->terminal.operands.iterator.skipWidth == 2,
+		"native iterator owns the complete WIDE skip");
+#endif
+	for (auto* machine : {&native, &scalar}) {
+		auto table = machine->cpu.createTable(3, 2);
+		table.setInteger(1, valueBool(false));
+		table.setInteger(3, valueInteger(33));
+		table.setInteger(-4, valueInteger(99));
+		auto& frame = *machine->cpu.activeThread()->currentFrame;
+		frame.registers.set(0, valueBuiltinFunction(BuiltinFunctionId::Next));
+		frame.registers.set(1, valueTable(table.address()));
+		frame.registers.set(6, valueInteger(-7));
+		frame.setTop(7);
+	}
+	const std::array<std::pair<Value, Value>, 4> expected{{
+		{valueInteger(1), valueBool(false)}, {valueInteger(3), valueInteger(33)},
+		{valueInteger(-4), valueInteger(99)}, {valueNil(), valueNil()}}};
+	for (const auto& [key, value] : expected) {
+		test::runCpuParity(native.cpu, scalar.cpu, 1);
+		requireParity(native, scalar);
+		require(native.cpu.readFramePc(0) == pc + 3 * INSTRUCTION_BYTES
+			&& native.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::ITERN)] - 3
+			&& native.cpu.readFrameRegister(0, 4) == key && native.cpu.readFrameRegister(0, 5) == value
+			&& native.cpu.readFrameRegister(0, 6) == valueNil(), "iterator skips WIDE and places the exact result count");
+		if (key == valueInteger(1)) {
+			for (auto* machine : {&native, &scalar}) {
+				auto table = asTable(machine->cpu.readFrameRegister(0, 1), machine->cpu.gcHeap());
+				table.setInteger(1, valueNil());
+				const auto state = machine->cpu.captureRuntimeState();
+				const auto ram = machine->memory.captureSaveState();
+				machine->memory.restoreSaveState(ram);
+				machine->cpu.restoreRuntimeState(state);
+				require(valuePayload(machine->cpu.readFrameRegister(0, 2)) == 1, "restored frame retains the iterator position");
+			}
+		}
+		test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::JMP)]);
+	}
+	for (auto* machine : {&native, &scalar}) machine->cpu.activeThread()->currentFrame->registers.set(2, valueInteger(1));
+	test::runCpuParity(native.cpu, scalar.cpu, 1);
+	requireParity(native, scalar);
+	require(native.cpu.readFramePc(0) == pc + INSTRUCTION_BYTES && native.cpu.readFrameRegister(0, 4) == valueNil()
+		&& native.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::ITERN)],
+		"non-nil starting key falls through with no write or placement charge");
+}
+
 void allocationChargesRequestedCapacity() {
 	for (const bool wide : {false, true}) {
 		test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -2248,6 +2308,7 @@ int main() {
 		contradictoryOwnFieldProofRetiresItsSource();
 		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); iterationChargeIgnoresVacantCapacity(); allocationChargesRequestedCapacity(); wideAllocationFailure();
 		nativeTypedIndexRechecksAnExternalEntry();
+		tableIteratorRetainsItsCursorAcrossDeletionAndRestore();
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 
 		nativeFieldOperationsLearnTheDecodedSite();

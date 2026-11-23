@@ -1415,7 +1415,8 @@ export class CPU implements MappedPageInvalidator {
 					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
 				} else {
 					const constantCount = image.constWords.length;
-					if (-page.b[pageOffset] > constantCount || -page.c[pageOffset] > constantCount
+					if ((op === OpCode.ITERN && rawC === 0)
+						|| -page.b[pageOffset] > constantCount || -page.c[pageOffset] > constantCount
 						|| ((op === OpCode.GETFIELD || op === OpCode.SELF)
 							&& (rawC >= constantCount || image.constTags[rawC] !== ValueTag.String))
 						|| (op === OpCode.SETFIELD && (rawB >= constantCount || image.constTags[rawB] !== ValueTag.String))) {
@@ -2789,7 +2790,7 @@ export class CPU implements MappedPageInvalidator {
 			const width = sourcePage.widths[sourceWord], successor = cursor + width, successorPc = pcAt(successor);
 			if (bounded && successor > endWord) continue;
 			available[cursor] = 1;
-			if (compiledBlockComparison(op)) {
+			if (op === OpCode.ITERN || compiledBlockComparison(op)) {
 				if (mayLookAhead && contains(successor)) {
 					const nextPage = pageAt(successor), nextWord = wordAt(successor);
 					if ((nextPage.refreshState[nextWord] & DECODED_REFRESH_DECODE) !== 0 && canDecode(successor)
@@ -2798,7 +2799,7 @@ export class CPU implements MappedPageInvalidator {
 					if ((nextPage.refreshState[nextWord] & DECODED_REFRESH_DECODE) === 0 && successor + skipWidth <= endWord) {
 						skipWidths[cursor] = skipWidth;
 						enqueue(pcAt(successor + skipWidth), true);
-						if (nextPage === sourcePage && nextPage.ops[nextWord] === OpCode.JMP && nextPage.a[nextWord] === 0
+						if (op !== OpCode.ITERN && nextPage === sourcePage && nextPage.ops[nextWord] === OpCode.JMP && nextPage.a[nextWord] === 0
 							&& nextPage.dispatchOps[nextWord] !== DecodedDispatchOp.Observe) {
 							// The fused edge does not need an independent JMP entry.
 							enqueue(nextPage.bx[nextWord], true);
@@ -2928,6 +2929,12 @@ export class CPU implements MappedPageInvalidator {
 					redispatch = !this.executeReturn(frame, exit.exitA, exit.exitB);
 					break;
 				case CompiledBlockExit.SkipInstruction: this.skipNextInstruction(frame); redispatch = true; break;
+				case CompiledBlockExit.IterateTable:
+					if (this.stepTableIterator(frame, exit.exitA, exit.exitB, exit.exitC)) {
+						if (exit.skippedInstructionWidth === 0) { this.skipNextInstruction(frame); redispatch = true; }
+						else frame.pc = (exit.nextPc + exit.skippedInstructionWidth * INSTRUCTION_BYTES) >>> 0;
+					}
+					break;
 				case CompiledBlockExit.Vararg: this.executeVararg(frame, exit.exitA, exit.exitB); break;
 				case CompiledBlockExit.WriteGlobal:
 				case CompiledBlockExit.WriteSystemGlobal: {
@@ -3103,8 +3110,8 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.K1:
 					this.setRegisterIntegerFast(frame, registers, a, 1);
 					return;
-				case OpCode.KM1:
-					this.setRegisterIntegerFast(frame, registers, a, -1);
+				case OpCode.ITERN:
+					if (this.stepTableIterator(frame, a, page.b[pageOffset], page.c[pageOffset])) this.skipNextInstruction(frame);
 					return;
 				case OpCode.KSMI:
 					this.setRegisterIntegerFast(frame, registers, a, page.sbx[pageOffset]);
@@ -4268,6 +4275,20 @@ export class CPU implements MappedPageInvalidator {
 		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ITERATE_NON_TABLE);
 		const address = registers.getPayload(base);
 		this.gc.tables.next(address, args.length > 1 ? registers.get(base + 1) : valueNil(), out, 0);
+	}
+
+	private stepTableIterator(frame: CallFrame, base: number, destination: number, count: number): boolean {
+		const registers = frame.registers, table = base + 1, cursor = base + 2;
+		if (registers.getTag(base) !== ValueTag.BuiltinFunction || registers.getPayload(base) !== BuiltinFunctionId.Next
+			|| registers.getTag(table) !== ValueTag.Table || registers.getTag(cursor) !== ValueTag.Nil) return false;
+		const position = this.gc.tables.nextStoredEntry(registers.getPayload(table),
+			registers.getPayload(cursor), registers, destination, count > 1);
+		const placed = count > 1 && position !== 0 ? 2 : 1;
+		if (count > placed) registers.clear(count - placed, destination + placed);
+		registers.setEncoded(cursor, ValueTag.Nil, position);
+		this.charge(count);
+		this.bumpRegisterTop(frame, destination + count - 1);
+		return true;
 	}
 
 	private runBuiltinType(tag: ValueTag, out: BuiltinResults): void {

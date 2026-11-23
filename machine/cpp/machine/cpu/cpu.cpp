@@ -1553,6 +1553,22 @@ void CPU::runBuiltinNextValue(Value target, Value key, BuiltinResults& out) {
 	if (!isNil(nextKey)) out.push_back(nextValue);
 }
 
+bool CPU::stepTableIterator(ValueSpan registers, int base, int destination, int count) {
+	if (registers.get(base) != valueBuiltinFunction(BuiltinFunctionId::Next)) return false;
+	const Value table = registers.get(base + 1), control = registers.get(base + 2);
+	if (!valueIsTable(table) || !isNil(control)) return false;
+	Value key, value;
+	const u32 cursor = TableRecord(m_heap, valuePayload(table)).nextStoredEntry(valuePayload(control), key, value);
+	registers.set(destination, key);
+	const int placed = count > 1 && cursor != 0 ? 2 : 1;
+	if (placed == 2) registers.set(destination + 1, value);
+	if (count > placed) registers.clear(destination + placed, count - placed);
+	// The language-view of the hidden control slot remains nil. The
+	// payload is a private cursor, carried by the normal frame state.
+	registers.set(base + 2, valueFromTag(ValueTag::Nil, cursor));
+	return true;
+}
+
 void CPU::runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out) {
 	const Value target = args[0];
 	if (!valueIsTable(target) || args.size() < 2) {

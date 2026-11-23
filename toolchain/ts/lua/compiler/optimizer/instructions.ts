@@ -75,7 +75,6 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.KTRUE:
 			case OpCode.K0:
 			case OpCode.K1:
-			case OpCode.KM1:
 			case OpCode.KSMI:
 			case OpCode.LOADK:
 			case OpCode.GETSYS:
@@ -176,6 +175,10 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 				updateMax(instruction.b);
 				updateMax(lastRegisterInRange(instruction.b, instruction.c));
 				break;
+			case OpCode.ITERN:
+				updateMax(instruction.a + 2);
+				updateMax(lastRegisterInRange(instruction.b, instruction.c));
+				break;
 			case OpCode.VARARG:
 				updateMax(instruction.a);
 				updateMax(lastRegisterInRange(instruction.a, decodeValueCount(instruction.b, 0)));
@@ -213,7 +216,6 @@ export const isPureInstruction = (instruction: Instruction): boolean => {
 		case OpCode.KTRUE:
 		case OpCode.K0:
 		case OpCode.K1:
-		case OpCode.KM1:
 		case OpCode.KSMI:
 		case OpCode.LOADK:
 		case OpCode.LOADKR:

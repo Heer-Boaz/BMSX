@@ -350,6 +350,7 @@ private:
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement, const CallArguments&);
 	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out, int resultLimit);
 	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
+	bool stepTableIterator(ValueSpan registers, int base, int destination, int count);
 	bool executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept;
 	void runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out);

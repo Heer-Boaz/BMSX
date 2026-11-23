@@ -73,9 +73,13 @@ DISPATCH_LABEL(K1) {
 	DISPATCH_NEXT();
 }
 
-DISPATCH_LABEL(KM1) {
-	const int a = decoded->a;
-	SET_REGISTER_FAST(a, valueInteger(-1));
+DISPATCH_LABEL(ITERN) {
+	if (stepTableIterator(registers, decoded->a, decoded->b, decoded->c)) {
+		CYCLES_ADD(decoded->c);
+		EXTEND_TOP(decoded->b + decoded->c);
+		SKIP_NEXT_INSTRUCTION();
+		DISPATCH_CONTINUE();
+	}
 	DISPATCH_NEXT();
 }
 

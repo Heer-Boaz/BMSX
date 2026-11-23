@@ -946,7 +946,7 @@ void movesAndLiteralsPreserveRawValues() {
 		block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 		require(registers.get(0) == pool[index] && registers.get(1) == pool[index], "moves preserve every raw tagged and number bit");
 	}
-	for (const auto op : {OpCode::KNIL, OpCode::KFALSE, OpCode::KTRUE, OpCode::K0, OpCode::K1, OpCode::KM1, OpCode::KSMI}) {
+	for (const auto op : {OpCode::KNIL, OpCode::KFALSE, OpCode::KTRUE, OpCode::K0, OpCode::K1, OpCode::KSMI}) {
 		DecodedInstruction load;
 		load.op = static_cast<u8>(op);
 		load.width = 2;
@@ -958,7 +958,7 @@ void movesAndLiteralsPreserveRawValues() {
 		block->run(reg.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 		const Value expected = op == OpCode::KNIL ? valueNil() : op == OpCode::KFALSE ? valueBool(false)
 			: op == OpCode::KTRUE ? valueBool(true) : op == OpCode::K0 ? valueInteger(0)
-			: op == OpCode::K1 ? valueInteger(1) : op == OpCode::KM1 ? valueInteger(-1) : valueInteger(-33554432);
+			: op == OpCode::K1 ? valueInteger(1) : valueInteger(-33554432);
 		require(reg.get(0) == expected && block->terminal.lastPc == 0x1004 && block->terminal.currentPc == 0x1000,
 			"literal blocks retain raw tags and distinguish WIDE prefix and body PCs");
 	}
@@ -1103,7 +1103,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 	const std::array operations{OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::DIV, OpCode::MOD, OpCode::FLOORDIV, OpCode::POW,
 		OpCode::BAND, OpCode::BOR, OpCode::BXOR, OpCode::SHL, OpCode::SHR, OpCode::UNM, OpCode::BNOT,
 		OpCode::MOV, OpCode::LOADK, OpCode::KNIL, OpCode::KFALSE, OpCode::KTRUE,
-		OpCode::K0, OpCode::K1, OpCode::KM1, OpCode::KSMI, OpCode::NOT};
+		OpCode::K0, OpCode::K1, OpCode::KSMI, OpCode::NOT};
 	u32 random = 0x915acd38u;
 	auto next = [&]() {
 		random ^= random << 13u; random ^= random >> 17u; random ^= random << 5u;
@@ -1141,7 +1141,6 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 				case OpCode::KTRUE: expected[instruction.a] = valueBool(true); break;
 				case OpCode::K0: expected[instruction.a] = valueInteger(0); break;
 				case OpCode::K1: expected[instruction.a] = valueInteger(1); break;
-				case OpCode::KM1: expected[instruction.a] = valueInteger(-1); break;
 				case OpCode::KSMI: expected[instruction.a] = valueInteger(instruction.sbx()); break;
 				case OpCode::NOT: expected[instruction.a] = valueBool(!isTruthy(expected[instruction.b])); break;
 				default:

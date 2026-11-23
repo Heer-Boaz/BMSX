@@ -40,7 +40,7 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::KTRUE:
 		case OpCode::K0:
 		case OpCode::K1:
-		case OpCode::KM1:
+		case OpCode::ITERN:
 		case OpCode::KSMI:
 		case OpCode::ADD:
 		case OpCode::SUB:
@@ -93,8 +93,9 @@ inline constexpr bool nativeBlockHasTerminalContinuation(u8 op, int field) {
 	}
 }
 
-inline constexpr bool nativeBlockComparison(u8 op) {
-	return op == static_cast<u8>(OpCode::EQ) || op == static_cast<u8>(OpCode::LT) || op == static_cast<u8>(OpCode::LE);
+inline constexpr bool nativeBlockCanSkip(u8 op) {
+	return op == static_cast<u8>(OpCode::EQ) || op == static_cast<u8>(OpCode::LT)
+		|| op == static_cast<u8>(OpCode::LE) || op == static_cast<u8>(OpCode::ITERN);
 }
 
 inline constexpr auto NATIVE_BLOCK_BOUNDARY_OPS = [] {
@@ -102,7 +103,7 @@ inline constexpr auto NATIVE_BLOCK_BOUNDARY_OPS = [] {
 	std::array<bool, 256> boundaries{};
 	for (const auto op : {OpCode::JMP, OpCode::JMPIF, OpCode::JMPIFNOT, OpCode::HALT,
 		OpCode::CALL, OpCode::RET, OpCode::NEWT, OpCode::CLOSURE, OpCode::CONCAT, OpCode::CONCATN,
-		OpCode::STORE_MEM_WORDS, OpCode::STORE_MEM_WORDS_D, OpCode::RFE, OpCode::EQ, OpCode::LT, OpCode::LE}) {
+		OpCode::STORE_MEM_WORDS, OpCode::STORE_MEM_WORDS_D, OpCode::RFE, OpCode::EQ, OpCode::LT, OpCode::LE, OpCode::ITERN}) {
 		boundaries[static_cast<u8>(op)] = true;
 	}
 	return boundaries;

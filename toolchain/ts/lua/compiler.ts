@@ -3251,8 +3251,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		if (value.kind === 'integer') {
 			const integer = value.word | 0;
-			if (integer === 0 || integer === 1 || integer === -1) {
-				this.emitABC(integer === 0 ? OpCode.K0 : integer === 1 ? OpCode.K1 : OpCode.KM1, target, 0, 0); return;
+			if (integer === 0 || integer === 1) {
+				this.emitABC(integer === 0 ? OpCode.K0 : OpCode.K1, target, 0, 0); return;
 			}
 			if (isSmallSignedImmediate(integer)) { this.emitABx(OpCode.KSMI, target, integer); return; }
 		}
@@ -4518,6 +4518,14 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private compileForGeneric(statement: LuaForGenericStatement): void {
 		const exitTop = this.localCount;
 		const bodyRange = this.semantics.locations.range(statement.block.span);
+		const first = statement.iterators[0];
+		// Predict the ordinary pairs/next spelling, not the value: users can
+		// bind either name differently, and ITERN admits the evaluated triple.
+		const tableIteration = (statement.iterators.length === 1 && first.kind === LuaSyntaxKind.CallExpression
+			&& first.method === null && first.callee.kind === LuaSyntaxKind.IdentifierExpression && first.callee.name === 'pairs')
+			|| (first.kind === LuaSyntaxKind.IdentifierExpression && first.name === 'next'
+				&& (statement.iterators.length === 2 || (statement.iterators.length === 3
+					&& statement.iterators[2].kind === LuaSyntaxKind.NilLiteralExpression)));
 		this.pushScope(bodyRange);
 		const valueTargets: Array<ReadonlyArray<string> | null> = new Array(statement.iterators.length).fill(null);
 		const iteratorValues = this.compileAssignmentValues(statement.iterators, 3, valueTargets);
@@ -4548,21 +4556,34 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const argCount = 2;
 		const callBlockSize = Math.max(resultCount, argCount + 1);
 		const callBase = this.allocTempBlock(callBlockSize);
-		const loopStart = this.code.length;
+		const entryJump = tableIteration ? this.emitJumpPlaceholder() : -1;
+		const genericStart = this.code.length;
 		this.emitABC(OpCode.MOV, callBase, iteratorReg, 0);
 		this.emitABC(OpCode.MOV, callBase + 1, stateReg, 0);
 		this.emitABC(OpCode.MOV, callBase + 2, controlReg, 0);
 		this.emitABC(OpCode.CALL, callBase, encodeFixedValueCount(argCount), encodeFixedValueCount(resultCount));
 
+		let loopStart = genericStart;
+		if (tableIteration) {
+			for (let i = 0; i < resultCount; i += 1) this.emitABC(OpCode.MOV, loopVars[i], callBase + i, 0);
+			this.emitABC(OpCode.MOV, controlReg, loopVars[0], 0);
+			const genericToTest = this.emitJumpPlaceholder();
+			loopStart = this.code.length;
+			this.patchJump(entryJump, loopStart);
+			this.emitABC(OpCode.ITERN, iteratorReg, loopVars[0], resultCount);
+			this.emitAsBx(OpCode.JMP, 0, genericStart - (this.code.length + 1));
+			this.patchJump(genericToTest, this.code.length);
+		}
+
 		const nilConst = this.program.constIndex(null);
 		const nilOperand = this.encodeConstOperand(nilConst);
-		this.emitABC(OpCode.EQ, 1, callBase, nilOperand, RK_B | RK_C);
+		this.emitABC(OpCode.EQ, 1, tableIteration ? loopVars[0] : callBase, nilOperand, RK_B | RK_C);
 		const jumpOut = this.emitJumpPlaceholder();
 
-		for (let i = 0; i < loopVars.length; i += 1) {
-			this.emitABC(OpCode.MOV, loopVars[i], callBase + i, 0);
+		if (!tableIteration) {
+			for (let i = 0; i < resultCount; i += 1) this.emitABC(OpCode.MOV, loopVars[i], callBase + i, 0);
+			this.emitABC(OpCode.MOV, controlReg, loopVars[0], 0);
 		}
-		this.emitABC(OpCode.MOV, controlReg, loopVars[0], 0);
 
 		const ctx: LoopContext = { breakJumps: [], exitTop };
 		this.loopStack.push(ctx);

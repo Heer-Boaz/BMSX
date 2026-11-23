@@ -259,8 +259,8 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "K0 r" + std::to_string(decoded.a);
 		case OpCode::K1:
 			return "K1 r" + std::to_string(decoded.a);
-		case OpCode::KM1:
-			return "KM1 r" + std::to_string(decoded.a);
+		case OpCode::ITERN:
+			return "ITERN r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + std::to_string(decoded.c);
 		case OpCode::KSMI:
 			return "KSMI r" + std::to_string(decoded.a) + ", " + formatInteger(decoded.sbx);
 		case OpCode::LOADK:
@@ -382,8 +382,8 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {registerOperand("dst", decoded.a)};
 		case OpCode::K1:
 			return {registerOperand("dst", decoded.a)};
-		case OpCode::KM1:
-			return {registerOperand("dst", decoded.a)};
+		case OpCode::ITERN:
+			return {registerOperand("iterator", decoded.a), registerOperand("results", decoded.b), plainOperand("count", std::to_string(decoded.c))};
 		case OpCode::KSMI:
 			return {registerOperand("dst", decoded.a), plainOperand("imm", formatInteger(decoded.sbx))};
 		case OpCode::LOADK:

@@ -633,12 +633,12 @@ void nativeTerminalAtPageBoundaryTracksItsBody() {
 	require(head.nativeBlocks && head.nativeBlocks->entries[255]
 		&& head.nativeBlocks->entries[255]->terminal.exit == NativeBlockExit::Halt,
 		"an already decoded cross-page WIDE terminal can execute as generated code");
-	writeInstruction(code, 1, static_cast<u8>(OpCode::KM1), 0, 0, 0);
+	writeInstruction(code, 1, static_cast<u8>(OpCode::KFALSE), 0, 0, 0);
 	machine.memory.writeBytes(pc + INSTRUCTION_BYTES, code.data() + INSTRUCTION_BYTES, INSTRUCTION_BYTES);
 	require(!head.nativeBlocks, "changing a generated terminal body retires the preceding page's native entry");
 	cpu.clearHaltUntilIrq();
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
-	require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFrameRegister(0, 0) == valueInteger(-1),
+	require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFrameRegister(0, 0) == valueBool(false),
 		"the rewritten WIDE body replaces the generated HALT semantics");
 }
 
@@ -1444,7 +1444,7 @@ void cachedFetchCrossesWidePagesAndObservesCodeWrites() {
 				writeInstruction(code, 2, static_cast<u8>(OpCode::KSMI), 1, 1, 15);
 				machine.memory.writeBytes(pc + 2 * INSTRUCTION_BYTES, code.data() + 2 * INSTRUCTION_BYTES, INSTRUCTION_BYTES);
 			} else if (phase == 2) {
-				writeInstruction(code, 0, static_cast<u8>(OpCode::KM1), 0, 0, 0);
+				writeInstruction(code, 0, static_cast<u8>(OpCode::KSMI), 0, 63, 63, 255);
 				machine.memory.writeBytes(pc, code.data(), INSTRUCTION_BYTES);
 			}
 			require(cpu.runUntilDepth(0, 8) == RunResult::Yielded, "two cross-page loops exhaust exactly eight guest cycles");
@@ -1514,12 +1514,12 @@ void partialCodeWritesRetainOtherDecodedStarts() {
 		writeInstruction(code, 0, static_cast<u8>(OpCode::K0), 0, 0, 0);
 		machine.memory.writeMappedU8(pc + 2u, code[2]);
 		require(page.refreshState[0] == DECODED_REFRESH_DECODE && page.refreshState[8] == 0u, "a byte write retires only its decoded dependencies");
-		writeInstruction(code, 8, static_cast<u8>(OpCode::KM1), 1, 0, 0);
+		writeInstruction(code, 8, static_cast<u8>(OpCode::KFALSE), 1, 0, 0);
 		machine.memory.writeMappedU16LE(pc + 8u * INSTRUCTION_BYTES + 2u, readLE16(code.data() + 8u * INSTRUCTION_BYTES + 2u));
 		require(page.refreshState[8] == DECODED_REFRESH_DECODE && page.refreshState[4] == 0u, "a second write before re-decode still invalidates its independent cached instruction");
 		require(page.refreshState[5] == 0u && page.refreshState[6] == 0u && page.refreshState[7] == 0u, "ordinary predecessors do not consume the rewritten instruction's source words");
 		require(cpu.runUntilDepth(0, loopCycles) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "partial code writes preserve exact guest charges");
-		require(cpu.readFrameRegister(0, 0) == valueInteger(0) && cpu.readFrameRegister(0, 1) == valueInteger(-1), "both changed instructions execute, without losing the retained watch");
+		require(cpu.readFrameRegister(0, 0) == valueInteger(0) && cpu.readFrameRegister(0, 1) == valueBool(false), "both changed instructions execute, without losing the retained watch");
 	}
 }
 
@@ -1641,12 +1641,12 @@ void writableCodeWatchesBelongToTheirPhysicalSocket() {
 		writeInstruction(code, 0, static_cast<u8>(OpCode::K0), 0, 0, 0);
 		memory.cartridgeController().writeU8(CART_RAM_BASE + 2u, code[2], mappedBusSignalsForCartridgeSlot(1u));
 		require(pages[0]->refreshState[0] == 0u && pages[1]->refreshState[0] == DECODED_REFRESH_DECODE, "socket-local word invalidation does not retire the other socket's decode");
-		writeInstruction(code, 0, static_cast<u8>(OpCode::KM1), 0, 0, 0);
+		writeInstruction(code, 0, static_cast<u8>(OpCode::KFALSE), 0, 0, 0);
 		memory.cartridgeController().writeU16(CART_RAM_BASE + 2u, readLE16(code.data() + 2u), mappedBusSignalsForCartridgeSlot(0u));
 		for (u32 slot = 0; slot < CARTRIDGE_SLOT_COUNT; ++slot) {
 			memory.writeMappedU32LE(IO_CART_SELECT, slot);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], CART_RAM_BASE);
-			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && cpu.readFrameRegister(0, 0) == valueInteger(slot == 0u ? -1 : 0), "both physical sockets execute their changed instructions");
+			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && cpu.readFrameRegister(0, 0) == (slot == 0u ? valueBool(false) : valueInteger(0)), "both physical sockets execute their changed instructions");
 		}
 	}
 }

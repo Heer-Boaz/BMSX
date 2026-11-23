@@ -35,7 +35,7 @@ export const COMPILED_VERSION_MAX_PAGES = 4;
 export const SCALAR_LOCAL_PC = new Uint8Array(OPCODE_COUNT);
 for (const opcode of [
 	OpCode.LOADK, OpCode.LOADKR, OpCode.LOADNIL, OpCode.KNIL, OpCode.KFALSE, OpCode.KTRUE,
-	OpCode.K0, OpCode.K1, OpCode.KM1, OpCode.KSMI, OpCode.NOT,
+	OpCode.K0, OpCode.K1, OpCode.KSMI, OpCode.NOT,
 	OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.FLOORDIV, OpCode.MOD, OpCode.POW, OpCode.UNM,
 	OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.BNOT, OpCode.SHL, OpCode.SHR,
 	OpCode.GETFIELD, OpCode.SELF,
@@ -117,10 +117,11 @@ function verifyRomControlFlow(directory: Blua32RomFunctionDirectory, code: Uint8
 			}
 			if (op !== OpCode.JMP && op !== OpCode.RET && op !== OpCode.RFE && op <= OpCode.HALT) {
 				if (next >= end) throw new Error('BLua32 function falls through the end of its TEXT extent.');
-				if (op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE) {
+				if (op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE || op === OpCode.ITERN) {
 					const skippedWide = instructionOpcode(readLE32(code, codeOffset + next - textAddress)) === OpCode.WIDE;
 					if (next + (skippedWide ? 2 : 1) * INSTRUCTION_BYTES >= end)
-						throw new Error('BLua32 comparison skips past the end of its function.');
+						throw new Error(op === OpCode.ITERN ? 'BLua32 iterator skips past the end of its function.'
+							: 'BLua32 comparison skips past the end of its function.');
 				}
 			}
 			pc = next;
@@ -251,6 +252,8 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 		// uses a Bx selector wider than the ordinary register fields.
 		case OpCode.CALL: case OpCode.CLOSURE:
 			return 0;
+		case OpCode.ITERN:
+			return Math.max(a + 3, b + c);
 		case OpCode.STORE_MEM: case OpCode.STORE_MEM_D:
 		case OpCode.STORE_MEM_WORDS: case OpCode.STORE_MEM_WORDS_D:
 			// Source values are consumed only after the bus admits the write.

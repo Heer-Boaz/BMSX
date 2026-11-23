@@ -347,6 +347,21 @@ return { read = read }
 	);
 });
 
+test('const module function call targets reject built-in table traversal', () => {
+	const moduleSource = `
+local function count(next, record)
+	local entries = 0
+	for key in next, record do entries = entries + 1 end
+	return entries
+end
+return { count = count }
+`;
+	assert.throws(
+		() => compileWithConstModule('local state<const> = require("state")\nreturn state.count(1, 2)', 'state', moduleSource),
+		/forbidden static opcode ITERN \(table dispatch\)/,
+	);
+});
+
 test('const module function call targets reject runtime closure allocation opcodes', () => {
 	const moduleSource = `
 local function outer()

@@ -13,7 +13,7 @@ const std::array<const char*, OPCODE_COUNT> OPCODE_NAMES{
 	"KTRUE",
 	"K0",
 	"K1",
-	"KM1",
+	"ITERN",
 	"KSMI",
 	"STORE_MEM_D",
 	"STORE_MEM_WORDS_D",

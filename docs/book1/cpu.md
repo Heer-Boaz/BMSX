@@ -332,7 +332,7 @@ string-field key, must name an entry in the active execution image's constant
 pool. A field-key selector must name a String constant. A missing constant or
 a field key of another kind raises `INVALID_ARGUMENT` (10)
 after the nominal instruction charge and before any operand read or result
-write. If a comparison skips the instruction, its encoded width is still used,
+write. If an instruction skips it, its encoded width is still used,
 but the operand fault is not raised.
 
 A frame obtains its entry PC, parameter count and stack allocation
@@ -498,7 +498,7 @@ defines their place in the execution budget.
 ### Constants and copies {#sec-cpu-constants-and-copies}
 
 
-The constant and copy instructions move complete values or create a specific value kind. K0, K1, KM1, and KSMI create Integer Numbers. LOADNIL's B operand is a count: for example, A=4 and B=3 write nil to R4, R5, and R6, not through R7.
+The constant and copy instructions move complete values or create a specific value kind. K0, K1, and KSMI create Integer Numbers. LOADNIL's B operand is a count: for example, A=4 and B=3 write nil to R4, R5, and R6, not through R7.
 
 | Mnemonic | Opcode | Operands and specified domain | Result | Nominal cycles |
 |-------------|-------:|----------------------------|--------------------------------------------|--------:|
@@ -510,7 +510,6 @@ The constant and copy instructions move complete values or create a specific val
 | KTRUE | `07H` | A destination; B and C unused | `R[A] = true` | 2 |
 | K0 | `08H` | A destination; B and C unused | Integer 0 in `R[A]` | 2 |
 | K1 | `09H` | A destination; B and C unused | Number 1 in `R[A]` | 2 |
-| KM1 | `0AH` | A destination; B and C unused | Number −1 in `R[A]` | 2 |
 | KSMI | `0BH` | A destination; signed immediate sBx within the encoding range above | Number equal to sBx in `R[A]` | 2 |
 | LOADKR | `35H` | A destination; B source register; C unused | Convert `R[B]` to unsigned 32-bit index i, then `R[A] = K[i]`, preserving the constant's value kind. An index outside the pool raises `INVALID_ARGUMENT` (10) before the destination is written. B is not an RK operand. | 2 |
 
@@ -719,6 +718,38 @@ Ordering is defined for two Numbers or two Strings. Numbers use numeric less-tha
 | LT | `24H` | RK(B), RK(C); A is expected truth, not a destination | Number less-than or String lexical less-than; false otherwise; skip the next decoded instruction if the predicate differs from `(A≠0)` | 2 |
 | LE | `25H` | RK(B), RK(C); A is expected truth, not a destination | Number less-than-or-equal or String lexical less-than-or-equal; false otherwise; skip the next decoded instruction if the predicate differs from `(A≠0)` | 2 |
 
+
+### Table iteration {#sec-cpu-table-iteration}
+
+An ordinary generic loop can invoke any callable iterator. For a loop that
+may be using the built-in `next`, put the iterator, its state and its
+control value in three consecutive registers. To start a traversal, the
+state is the Table and the control value is nil. Place ITERN immediately
+before a branch to the ordinary iterator call. If ITERN handles the step,
+it skips that branch; otherwise the branch runs with the original inputs.
+Both paths should test the first result for nil before entering the body.
+
+| Mnemonic | Opcode | Operands | Effect | Nominal cycles |
+|---|---:|---|---|---:|
+| ITERN | `0AH` | A first register of iterator/state/control; B first result register; C positive result count | Advance a built-in `next` traversal when the state is a Table and the control value is nil. Skip one decoded instruction on that path; otherwise fall through without writes. | 8 |
+
+For an admitted step, the Table's own entries are visited in the same
+order as `next`. R[B] receives the key, R[B+1] receives its value if
+C is at least two, and any remaining results are nil. Exhaustion places
+nil in all C results and still skips the following instruction. The skip
+includes both words of a WIDE instruction. The CPU writes the results
+before updating R[A+2] and raises the frame top to at least B+C without
+lowering it. The admitted step adds C cycles, including on exhaustion,
+with no additional charge for scanning empty entries. A step not admitted
+has only the nominal charge and does not change the frame top.
+
+R[A+2] remains nil as a language value and carries a traversal position
+between instructions. Keep this slot separate from the visible loop
+variables and preserve it until the next step. Start each new traversal
+with a fresh nil. The Table modification rules for `next`
+(@sec-bios-base-nexttable-key) still apply.
+A zero C or either register range outside the reserved frame raises
+`INVALID_ARGUMENT` (10) before reading or writing any registers.
 
 
 ## Numeric result details {#sec-cpu-numeric-result-details}

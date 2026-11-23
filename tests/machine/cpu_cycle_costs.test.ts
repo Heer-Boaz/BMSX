@@ -21,7 +21,7 @@ import { runGuestToHalt } from '../helpers/cpu_test_harness';
 test('all nominal opcode prices include instruction issue, while WIDE remains free', () => {
 	const expected = [
 		0, 2, 2, 2, 3, 2, 2, 2,
-		2, 2, 2, 2, 3, 3, 16, 16,
+		2, 2, 8, 2, 3, 3, 16, 16,
 		24, 2, 2, 2, 32, 34, 33, 128,
 		2, 2, 2, 2, 2, 2, 3, 2,
 		2, 3, 2, 2, 2, 2, 2, 2,

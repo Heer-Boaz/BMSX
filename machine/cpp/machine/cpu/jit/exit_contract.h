@@ -41,6 +41,7 @@ enum class NativeBlockExit : u8 {
 	WriteGlobal,
 	WriteSystemGlobal,
 	ReadUpvalue,
+	IterateTable,
 	Count,
 };
 
@@ -75,6 +76,7 @@ union NativeExitOperands {
 		u32 sourcePc = 0;
 	} table;
 	struct Length { u16 result, source; } length;
+	struct Iterator { u16 base, first, count; u8 skipWidth{}; } iterator;
 	struct Memory {
 		u32 displacement;
 		u16 slot;

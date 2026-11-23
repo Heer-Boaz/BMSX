@@ -817,31 +817,37 @@ export class TableRecords {
 	public next(record: number, rawAfter: Value, target: ValueWriteTarget, destination: number): void {
 		const after = canonicalTableKey(rawAfter);
 		const arraySize = this.arrayCapacity(record);
-		let arrayStart = 0, hashStart = 0;
+		let position = 0;
 		if (!isNil(after)) {
 			const array = this.getArrayIndex(after);
-			if (array >= 0 && array < arraySize) arrayStart = array + 1;
+			if (array >= 0 && array < arraySize) position = array + 1;
 			else {
 				const index = this.findNodeIndex(record, after, true);
 				if (index < 0) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_NEXT_KEY);
-				arrayStart = arraySize; hashStart = index + 1;
+				position = arraySize + index + 1;
 			}
 		}
-		for (let slot = arrayStart; slot < arraySize; ++slot) {
-			const tag = this.tagAt(record, slot);
+		this.nextStoredEntry(record, position, target, destination, true);
+	}
+	public nextStoredEntry(record: number, position: number, target: ValueWriteTarget, destination: number, wantsValue: boolean): number {
+		const arraySize = this.arrayCapacity(record);
+		for (; position < arraySize; ++position) {
+			const tag = this.tagAt(record, position);
 			if (tag === ValueTag.Nil) continue;
-			target.setEncoded(destination, ValueTag.Integer, slot + 1);
-			target.setEncoded(destination + 1, tag, this.wordAt(record, slot));
-			return;
+			target.setInteger(destination, position + 1);
+			if (wantsValue) target.setEncoded(destination + 1, tag, this.wordAt(record, position));
+			return position + 1;
 		}
-		for (let index = hashStart; index < this.hashSize(record); ++index) {
-			const key = this.hashKeySlot(record, index), value = this.hashValueSlot(record, index);
+		const hashSize = this.hashSize(record);
+		for (let index = position - arraySize; index < hashSize; ++index) {
+			const key = arraySize + index, value = key + hashSize;
 			if (this.tagAt(record, key) === ValueTag.Nil || this.tagAt(record, value) === ValueTag.Nil) continue;
 			target.setEncoded(destination, this.tagAt(record, key), this.wordAt(record, key));
-			target.setEncoded(destination + 1, this.tagAt(record, value), this.wordAt(record, value));
-			return;
+			if (wantsValue) target.setEncoded(destination + 1, this.tagAt(record, value), this.wordAt(record, value));
+			return key + 1;
 		}
 		target.setNil(destination);
+		return 0;
 	}
 	public getTrackedHeapBytes(record: number): number {
 		const bytes = TableRecords.storageBytes(this.arrayCapacity(record), this.hashSize(record), this.hashReserve(record));

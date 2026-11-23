@@ -399,7 +399,7 @@ test('cached fetch crosses WIDE pages and observes code writes between guest gra
 				writeInstruction(code, 2, OpCode.KSMI, 1, 1, 15);
 				memory.writeBytes(pc + 2 * INSTRUCTION_BYTES, code.subarray(2 * INSTRUCTION_BYTES, 3 * INSTRUCTION_BYTES));
 			} else if (phase === 2) {
-				writeInstruction(code, 0, OpCode.KM1, 0, 0, 0);
+				writeInstruction(code, 0, OpCode.KSMI, 0, 63, 63, 255);
 				memory.writeBytes(pc, code.subarray(0, INSTRUCTION_BYTES));
 			}
 			assert.equal(cpu.runUntilDepth(0, 8), RunResult.Yielded);
@@ -470,14 +470,14 @@ test('partial code writes retain unrelated decoded starts and the page watch', (
 		memory.writeMappedU8(pc + 2, code[2]);
 		assert.equal(page.refreshState[0], DECODED_REFRESH_DECODE);
 		assert.equal(page.refreshState[8], 0, 'unrelated cached start remains usable');
-		writeInstruction(code, 8, OpCode.KM1, 1, 0, 0);
+		writeInstruction(code, 8, OpCode.KFALSE, 1, 0, 0);
 		memory.writeMappedU16LE(pc + 8 * INSTRUCTION_BYTES + 2, readLE16(code, 8 * INSTRUCTION_BYTES + 2));
 		assert.equal(page.refreshState[8], DECODED_REFRESH_DECODE, 'second write before re-decode must remain watched');
 		assert.equal(page.refreshState[4], 0);
 		assert.equal(cpu.runUntilDepth(0, 9 * BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP]), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(cpu.readFrameRegister(0, 0), valueInteger(0));
-		assert.equal(cpu.readFrameRegister(0, 1), valueInteger(-1));
+		assert.equal(cpu.readFrameRegister(0, 1), valueBool(false));
 	}
 });
 
@@ -549,13 +549,13 @@ test('writable code watches belong to the physical cartridge socket', () => {
 		memory.cartridgeController.writeU8(CART_RAM_BASE + 2, code[2], mappedBusSignalsForCartridgeSlot(1));
 		assert.equal(pages[0].refreshState[0], 0);
 		assert.equal(pages[1].refreshState[0], DECODED_REFRESH_DECODE);
-		writeInstruction(code, 0, OpCode.KM1, 0, 0, 0);
+		writeInstruction(code, 0, OpCode.KFALSE, 0, 0, 0);
 		memory.cartridgeController.writeU16(CART_RAM_BASE + 2, readLE16(code, 2), mappedBusSignalsForCartridgeSlot(0));
 		for (const slot of [0, 1] as const) {
 			memory.writeMappedU32LE(IO_CART_SELECT, slot);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.symbols.functionAddresses[0], CART_RAM_BASE);
 			assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
-			assert.equal(cpu.readFrameRegister(0, 0), valueInteger(slot === 0 ? -1 : 0));
+			assert.equal(cpu.readFrameRegister(0, 0), slot === 0 ? valueBool(false) : valueInteger(0));
 		}
 	}
 });

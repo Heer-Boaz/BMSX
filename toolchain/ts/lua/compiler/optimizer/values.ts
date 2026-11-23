@@ -49,7 +49,6 @@ export const readImmediateValue = (instruction: Instruction): ProgramConstant | 
 		case OpCode.KTRUE: return true;
 		case OpCode.K0: return integerConstant(0);
 		case OpCode.K1: return integerConstant(1);
-		case OpCode.KM1: return integerConstant(-1);
 		case OpCode.KSMI: return integerConstant(instruction.b);
 		default: return undefined;
 	}
@@ -128,14 +127,6 @@ export const replaceWithConst = (instruction: Instruction, target: number, value
 		}
 		if (integer === 1) {
 			instruction.op = OpCode.K1;
-			instruction.a = target;
-			instruction.b = 0;
-			instruction.c = 0;
-			instruction.format = 'ABC';
-			return constant;
-		}
-		if (integer === -1) {
-			instruction.op = OpCode.KM1;
 			instruction.a = target;
 			instruction.b = 0;
 			instruction.c = 0;

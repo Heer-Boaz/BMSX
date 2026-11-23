@@ -25,7 +25,7 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 	case OpCode::KTRUE: return NativeLiteral{a, valueBool(true)};
 	case OpCode::K0: return NativeLiteral{a, valueInteger(0)};
 	case OpCode::K1: return NativeLiteral{a, valueInteger(1)};
-	case OpCode::KM1: return NativeLiteral{a, valueInteger(-1)};
+	case OpCode::ITERN: return NativeTableIterator{{a, static_cast<u16>(b), static_cast<u16>(c)}};
 	case OpCode::KSMI: return NativeLiteral{a, valueInteger(instruction.sbx())};
 	case OpCode::LOADKR: return NativePoolRead{a, static_cast<u16>(b)};
 	case OpCode::LEN: return NativeLength{a, static_cast<u16>(b)};

@@ -23,6 +23,7 @@ export const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {
 		case OpCode.GETFIELD:
 		case OpCode.SETFIELD:
 		case OpCode.SELF:
+		case OpCode.ITERN:
 			return 'table dispatch';
 		case OpCode.LEN:
 			return 'Lua object length';

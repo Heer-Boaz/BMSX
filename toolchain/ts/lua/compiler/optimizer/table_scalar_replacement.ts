@@ -138,6 +138,10 @@ export function scalarReplacePrivateTables(set: InstructionSet, context: Optimiz
 			state.subject = subject;
 			if (candidates.length !== 0) {
 				visitInstructionUses(instruction, maxRegister, resolveClosure, state, observeTableUse);
+				if (op === OpCode.ITERN) {
+					// On the declining edge, prior results can still escape this block.
+					visitInstructionDefs(instruction, maxRegister, state, observeTableUse);
+				}
 			}
 			if (table !== undefined && !table.escaped) {
 				if (copy) {

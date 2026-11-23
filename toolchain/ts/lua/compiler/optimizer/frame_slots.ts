@@ -75,6 +75,10 @@ export function allocateFrameSlots(
 			case OpCode.SELF:
 				fixed.fill(1, a, a + 2);
 				break;
+			case OpCode.ITERN:
+				fixed.fill(1, a, a + 3);
+				fixed.fill(1, b, b + c);
+				break;
 			case OpCode.CONCATN:
 				fixed[a] = 1;
 				fixed.fill(1, b, b + c);
@@ -133,7 +137,7 @@ export function allocateFrameSlots(
 		} else {
 			// These instructions own an implicit register range. Treat the
 			// destination as busy for the whole operation.
-			if (instruction.op === OpCode.SELF || instruction.op === OpCode.CONCATN) ends.at -= 1;
+			if (instruction.op === OpCode.SELF || instruction.op === OpCode.CONCATN || instruction.op === OpCode.ITERN) ends.at -= 1;
 			visitInstructionDefs(instruction, maxStack - 1, ends, markInterval);
 		}
 		ends.at = index * 2;

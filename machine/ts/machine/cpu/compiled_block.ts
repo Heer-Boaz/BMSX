@@ -54,6 +54,7 @@ export const enum CompiledBlockExit {
 	InvalidOperand,
 	WriteGlobal,
 	WriteSystemGlobal,
+	IterateTable,
 }
 
 const sideExitKinds: (CompiledBlockExit | undefined)[] = [];
@@ -92,6 +93,7 @@ export type CompiledBlockExitSite = {
 	readonly exitB: number;
 	readonly exitC: number;
 	readonly exitBx: number;
+	readonly skippedInstructionWidth: number;
 	readonly exitWord: number;
 	readonly page: DecodedInstructionPage;
 	readonly cycles: number;
@@ -138,9 +140,9 @@ emitters[OpCode.KTRUE] = (p, w, r) => r.writeEncoded(p.a[w], `${ValueTag.True}`,
 emitters[OpCode.NOT] = (p, w, r) => r.writeEncoded(p.a[w], `${r.truthy(p.b[w])}?${ValueTag.False}:${ValueTag.True}`, '0');
 emitters[OpCode.K0] = (p, w, r) => r.writeInteger(p.a[w], '0');
 emitters[OpCode.K1] = (p, w, r) => r.writeInteger(p.a[w], '1');
-emitters[OpCode.KM1] = (p, w, r) => r.writeInteger(p.a[w], '-1');
 emitters[OpCode.KSMI] = (p, w, r) => r.writeInteger(p.a[w], `${p.sbx[w]}`);
 emitters[OpCode.JMP] = () => '';
+emitters[OpCode.ITERN] = emitters[OpCode.JMP];
 emitters[OpCode.JMPIF] = emitters[OpCode.JMP];
 emitters[OpCode.JMPIFNOT] = emitters[OpCode.JMP];
 emitters[OpCode.EQ] = emitters[OpCode.JMP];
@@ -168,7 +170,7 @@ export function compiledBlockSupports(op: number, a: number, c: number): boolean
 const blockBoundaryOps = new Uint8Array(256);
 for (const op of [OpCode.JMP, OpCode.JMPIF, OpCode.JMPIFNOT, OpCode.HALT,
 	OpCode.CALL, OpCode.RET, OpCode.NEWT, OpCode.CLOSURE, OpCode.CONCAT, OpCode.CONCATN,
-	OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D, OpCode.RFE, OpCode.EQ, OpCode.LT, OpCode.LE]) {
+	OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D, OpCode.RFE, OpCode.EQ, OpCode.LT, OpCode.LE, OpCode.ITERN]) {
 	blockBoundaryOps[op] = 1;
 }
 
@@ -264,6 +266,7 @@ export function emitJavaScriptBlock(
 		if (sideExit !== undefined) {
 			exits.push({ exit: sideExit, resumesFrame: compiledBlockExitResumesFrame(sideExit),
 				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitBx: page.bx[word], exitWord: word, page,
+				skippedInstructionWidth: 0,
 				cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
 		}
@@ -275,6 +278,7 @@ export function emitJavaScriptBlock(
 			const faultIndex = exits.length;
 			exits.push({ exit: CompiledBlockExit.InvalidOperand, resumesFrame: false,
 				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitBx: page.bx[word], exitWord: word, page,
+				skippedInstructionWidth: 0,
 				cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
 			numericFault = registers.exit(faultIndex);
@@ -325,6 +329,7 @@ export function emitJavaScriptBlock(
 		case OpCode.HALT: terminalExit = CompiledBlockExit.Halt; break;
 		case OpCode.CALL: terminalExit = CompiledBlockExit.Call; break;
 		case OpCode.RET: terminalExit = CompiledBlockExit.Return; break;
+		case OpCode.ITERN: terminalExit = CompiledBlockExit.IterateTable; sourceWords += skippedInstructionWidth; break;
 		case OpCode.NEWT: terminalExit = CompiledBlockExit.AllocateTable; break;
 		case OpCode.CONCAT: terminalExit = CompiledBlockExit.Concat; break;
 		case OpCode.CONCATN: terminalExit = CompiledBlockExit.ConcatRange; break;
@@ -338,6 +343,7 @@ export function emitJavaScriptBlock(
 		exit: terminalExit,
 		resumesFrame: compiledBlockExitResumesFrame(terminalExit),
 		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord], exitBx: page.bx[finalWord], exitWord: finalWord, page,
+		skippedInstructionWidth,
 		cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 		linkedBlock: null, previousIncoming: null, nextIncoming: null,
 	};

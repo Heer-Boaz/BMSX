@@ -502,7 +502,9 @@ const runSccp = (
 
 	for (let valueId = 0; valueId < valueDef.length; valueId += 1) {
 		const def = valueDef[valueId];
-		if (def.kind === 'instr' && def.index < 0) {
+		// The iterator's multi-slot results and cursor are opaque, including
+		// the old values on its nonwriting edge. Never leave them at bottom.
+		if (def.kind === 'instr' && (def.index < 0 || instructions[def.index].op === OpCode.ITERN)) {
 			valueKind[valueId] = SCCP_OVERDEFINED;
 		}
 	}
@@ -612,6 +614,10 @@ const runSccp = (
 					break;
 				case OpCode.JMP:
 					markReachable(jumpBlock);
+					break;
+				case OpCode.ITERN:
+					markReachable(nextBlock);
+					markReachable(nextNextBlock);
 					break;
 				case OpCode.JMPIF:
 				case OpCode.JMPIFNOT: {
@@ -1018,15 +1024,8 @@ const applyAvailableValueNumbering = (
 };
 
 const isControlFlowInstruction = (instruction: Instruction): boolean => {
-	if (instruction.op === OpCode.RET || instruction.op === OpCode.RFE) {
-		return true;
-	}
-	return instruction.op === OpCode.JMP
-		|| instruction.op === OpCode.JMPIF
-		|| instruction.op === OpCode.JMPIFNOT
-		|| instruction.op === OpCode.EQ
-		|| instruction.op === OpCode.LT
-		|| instruction.op === OpCode.LE;
+	return instruction.op === OpCode.RET || instruction.op === OpCode.RFE
+		|| isJump(instruction) || isSkipInstruction(instruction);
 };
 
 const isHoistableInstruction = (instruction: Instruction): boolean => {
@@ -1038,7 +1037,6 @@ const isHoistableInstruction = (instruction: Instruction): boolean => {
 		case OpCode.KTRUE:
 		case OpCode.K0:
 		case OpCode.K1:
-		case OpCode.KM1:
 		case OpCode.KSMI:
 		case OpCode.LOADK:
 			return instruction.symbolicReloc === undefined;
@@ -1181,6 +1179,7 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet, context: Optimization
 			case OpCode.EQ:
 			case OpCode.LT:
 			case OpCode.LE:
+			case OpCode.ITERN:
 				if (hasNext) {
 					pinnedTargets.add(nextIndex);
 				}

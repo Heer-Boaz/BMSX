@@ -9,7 +9,7 @@ export const enum OpCode {
 	KTRUE,
 	K0,
 	K1,
-	KM1,
+	ITERN,
 	KSMI,
 	STORE_MEM_D,
 	STORE_MEM_WORDS_D,
@@ -81,7 +81,7 @@ export const decodeValueCount = (operand: number, openCount: number): number =>
 // WIDE is a prefix, not a separately executed instruction.
 export const BASE_CYCLES = new Uint8Array([
 	0, 2, 2, 2, 3, 2, 2, 2,
-	2, 2, 2, 2, 3, 3, 16, 16,
+	2, 2, 8, 2, 3, 3, 16, 16,
 	24, 2, 2, 2, 32, 34, 33, 128,
 	2, 2, 2, 2, 2, 2, 3, 2,
 	2, 3, 2, 2, 2, 2, 2, 2,
@@ -131,7 +131,7 @@ export const REGISTER_OPERAND_B = 2;
 export const REGISTER_OPERAND_C = 4;
 export const OPCODE_SCALAR_REGISTER_READS = new Uint8Array([
 	0, 2, 0, 0, 2, 0, 0, 0,
-	0, 0, 0, 0, 3, 2, 6, 7,
+	0, 0, 1, 0, 3, 2, 6, 7,
 	0, 6, 6, 6, 6, 6, 6, 6,
 	6, 6, 6, 6, 6, 6, 0, 2,
 	2, 2, 2, 6, 6, 6, 0, 1,
@@ -141,7 +141,7 @@ export const OPCODE_SCALAR_REGISTER_READS = new Uint8Array([
 ]);
 export const OPCODE_WRITES_REGISTER_A = new Uint8Array([
 	0, 1, 1, 0, 1, 1, 1, 1,
-	1, 1, 1, 1, 0, 0, 1, 0,
+	1, 1, 0, 1, 0, 0, 1, 0,
 	1, 1, 1, 1, 1, 1, 1, 1,
 	1, 1, 1, 1, 1, 1, 1, 1,
 	1, 1, 1, 0, 0, 0, 1, 0,

@@ -1,5 +1,5 @@
 export const BLUA32_IMAGE_MAGIC = 0x32334c42;
-export const BLUA32_IMAGE_VERSION = 2;
+export const BLUA32_IMAGE_VERSION = 3;
 export const BLUA32_IMAGE_HEADER_SIZE = 96;
 
 export const BLUA32_IMAGE_MAGIC_OFFSET = 0;

@@ -1,3 +1,4 @@
+import { OpCode } from '../../../../../machine/ts/spec/blua32/opcode';
 import {
 	buildBasicBlocks,
 	buildBlockGraph,
@@ -106,8 +107,10 @@ export const eliminateDeadStores = (
 				removed += 1;
 				continue;
 			}
-			for (let defIndex = 0; defIndex < defs.length; defIndex += 1) {
-				live[defs[defIndex]] = 0;
+			if (instruction.op !== OpCode.ITERN) {
+				for (let defIndex = 0; defIndex < defs.length; defIndex += 1) {
+					live[defs[defIndex]] = 0;
+				}
 			}
 			const uses = collectInstructionUses(
 				instruction,

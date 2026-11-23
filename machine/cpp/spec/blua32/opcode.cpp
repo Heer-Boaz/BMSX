@@ -14,7 +14,7 @@ const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES{
 	2u, // KTRUE
 	2u, // K0
 	2u, // K1
-	2u, // KM1
+	8u, // ITERN
 	2u, // KSMI
 	3u, // STORE_MEM_D
 	3u, // STORE_MEM_WORDS_D
@@ -81,7 +81,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_BX{
 	0u, // KTRUE
 	0u, // K0
 	0u, // K1
-	0u, // KM1
+	0u, // ITERN
 	1u, // KSMI
 	0u, // STORE_MEM_D
 	0u, // STORE_MEM_WORDS_D
@@ -148,7 +148,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_DISP{
 	0u, // KTRUE
 	0u, // K0
 	0u, // K1
-	0u, // KM1
+	0u, // ITERN
 	0u, // KSMI
 	1u, // STORE_MEM_D
 	1u, // STORE_MEM_WORDS_D
@@ -215,7 +215,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_RK_OPERANDS{
 	0u, // KTRUE
 	0u, // K0
 	0u, // K1
-	0u, // KM1
+	0u, // ITERN
 	0u, // KSMI
 	0u, // STORE_MEM_D
 	0u, // STORE_MEM_WORDS_D
@@ -282,7 +282,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_SCALAR_REGISTER_READS{
 	0u, // KTRUE
 	0u, // K0
 	0u, // K1
-	0u, // KM1
+	1u, // ITERN
 	0u, // KSMI
 	3u, // STORE_MEM_D
 	2u, // STORE_MEM_WORDS_D
@@ -349,7 +349,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_WRITES_REGISTER_A{
 	1u, // KTRUE
 	1u, // K0
 	1u, // K1
-	1u, // KM1
+	0u, // ITERN
 	1u, // KSMI
 	0u, // STORE_MEM_D
 	0u, // STORE_MEM_WORDS_D

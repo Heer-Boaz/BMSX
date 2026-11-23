@@ -147,6 +147,13 @@ struct NativeLength {
 	NativeSlot result, source;
 	constexpr NativeSlotAccess slots() const { return {{static_cast<i16>(source), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}, {result, 1}}; }
 };
+
+struct NativeTableIterator : NativeExitOperands::Iterator {
+	static constexpr auto terminalExit = NativeBlockExit::IterateTable;
+	constexpr NativeSlotAccess slots() const {
+		return {.writes = {first, count}, .readsRange = {base, 3}};
+	}
+};
 struct NativeGlobalAccess {
 	NativeSlot slot;
 	u32 index;
@@ -297,7 +304,7 @@ struct NativeVararg : NativeExitOperands::Vararg {
 using NativeOperation = std::variant<
 	NativeReplay, NativeJump, NativeHalt, NativeInvalidOperand, NativeExceptionReturn, NativeReturnSite, NativeTableAllocation,
 	NativeConcat, NativeConcatRange, NativeClosure, NativeLiteral, NativeConstantLoad, NativeMove, NativeNot, NativeClearSlots, NativePoolRead,
-	NativeLength, NativeGlobalAccess, NativeUpvalueAccess, NativeControlAccess, NativeMemoryAccess,
+	NativeLength, NativeTableIterator, NativeGlobalAccess, NativeUpvalueAccess, NativeControlAccess, NativeMemoryAccess,
 	NativeTableAccess, NativeArithmetic, NativeTruthBranch, NativeComparison, NativeCallSite, NativeVararg>;
 
 struct NativeSlotType {

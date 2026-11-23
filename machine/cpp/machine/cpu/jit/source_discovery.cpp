@@ -43,7 +43,7 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 		const auto op = static_cast<OpCode>(instruction.op);
 		const u32 successor = cursor + instruction.width;
 		const u32 successorPc = pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
-		if (nativeBlockComparison(instruction.op)) {
+		if (nativeBlockCanSkip(instruction.op)) {
 			if ((source.verifiedRom || binding.readBytes) && successor < DECODED_PAGE_WORDS && successorPc <= source.lastPc) {
 				if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) != 0u && successor < DECODED_PAGE_WORDS - 1u
 					&& !decodeBackedInstruction(image, page, successor, successorPc, source.busSignals)) continue;
@@ -51,7 +51,7 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 					&& successor + page.words[successor].width <= DECODED_PAGE_WORDS) {
 					enqueue(successorPc + static_cast<u32>(page.words[successor].width) * INSTRUCTION_BYTES, true);
 					const auto& skipped = page.words[successor];
-					if (skipped.op == static_cast<u8>(OpCode::JMP) && skipped.a == 0
+					if (op != OpCode::ITERN && skipped.op == static_cast<u8>(OpCode::JMP) && skipped.a == 0
 						&& skipped.dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe)) {
 						// This edge executes the fused JMP, not a separate entry.
 						// An independent predecessor can still enqueue the JMP itself.
