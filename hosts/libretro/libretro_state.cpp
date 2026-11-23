@@ -9,7 +9,6 @@
 namespace bmsx {
 namespace {
 
-constexpr u32 kSaveStateMagic = 0x58534d42u; // BMSX: state with physical sweep credit
 constexpr size_t kMediaIdentityOffset = 2u * sizeof(u32);
 constexpr size_t kSaveStateBasePayloadCapacityBytes = 0x01000000u;
 
@@ -33,7 +32,7 @@ bool serializeLibretroState(LibretroContent& content, std::span<u8> envelope) {
 	const size_t payloadBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime),
 		envelope.subspan(LIBRETRO_STATE_HEADER_BYTES, saveStatePayloadCapacityBytes(runtime)));
 	if (payloadBytes == 0) return false;
-	writeLE32(envelope.data(), kSaveStateMagic);
+	writeLE32(envelope.data(), kSaveStateSignature);
 	writeLE32(envelope.data() + 4u, static_cast<u32>(payloadBytes));
 	const auto& identity = content.mediaIdentity();
 	std::memcpy(envelope.data() + kMediaIdentityOffset, identity.data(), identity.size());
@@ -49,7 +48,7 @@ bool unserializeLibretroState(LibretroContent& content, std::span<const u8> enve
 	if (envelope.size() < libretroStateSize(runtime)) {
 		return false;
 	}
-	if (readLE32(envelope.data()) != kSaveStateMagic) {
+	if (readLE32(envelope.data()) != kSaveStateSignature) {
 		return false;
 	}
 	const size_t payloadBytes = readLE32(envelope.data() + 4u);

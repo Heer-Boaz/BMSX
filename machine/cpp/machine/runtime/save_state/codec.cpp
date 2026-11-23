@@ -6,9 +6,6 @@
 namespace bmsx {
 namespace {
 
-// BMSX identifies the container. Only the current payload layout is accepted.
-constexpr u32 kSaveStateSignature = 0x58534d42u;
-
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
 	writer.f64(state.cycleGrantRemainder);

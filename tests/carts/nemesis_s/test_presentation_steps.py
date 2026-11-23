@@ -13,7 +13,6 @@ class PresentationStepCookTest(unittest.TestCase):
         resource = ROOT / 'carts/nemesis_s/res/data/nemesis_s_presentation_steps.bin'
         data = resource.read_bytes()
         self.assertEqual(data, compile_presentation_steps())
-        self.assertEqual(len(unpack_from('<12I', data)), 12)
 
     def test_venom_shared_frame_events_keep_track_order(self):
         data = compile_presentation_steps()

@@ -8,6 +8,9 @@
 
 namespace bmsx {
 
+// BMSX identifies the container. Only the current payload layout is accepted.
+constexpr u32 kSaveStateSignature = 0x58534d42u;
+
 std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state);
 // Returns zero without writing when the output cannot hold the complete state.
 size_t encodeRuntimeSaveState(const RuntimeSaveState& state, std::span<u8> output);
