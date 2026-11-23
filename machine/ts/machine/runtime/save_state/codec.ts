@@ -42,7 +42,6 @@ import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_
 
 // BMSX identifies the container. Only the current payload layout is accepted.
 const SAVE_STATE_SIGNATURE = 0x58534d42;
-const SAVE_STATE_LAYOUT_VERSION = 3; // Table home slots use aligned string identity.
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1303,7 +1302,7 @@ function readApuOutputState(reader: BinaryReader): ApuOutputState {
 
 function writeStateImage(writer: BinarySink, state: RuntimeSaveState): void {
 	writer.u32(SAVE_STATE_SIGNATURE);
-	writer.u32(SAVE_STATE_LAYOUT_VERSION);
+	// Save states are never versioned. Never.
 	writeRuntimeSaveState(writer, state);
 }
 
@@ -1326,7 +1325,7 @@ export function encodeRuntimeSaveState(state: RuntimeSaveState, output?: Uint8Ar
 export function decodeRuntimeSaveState(data: Uint8Array, ramByteCount: number, gxGpuVramByteCount: number): RuntimeSaveState {
 	const reader = new BinaryReader(data);
 	if (reader.u32() !== SAVE_STATE_SIGNATURE) throw new Error('Unrecognized save-state format.');
-	if (reader.u32() !== SAVE_STATE_LAYOUT_VERSION) throw new Error('Unsupported save-state layout.');
+	// if (reader.u32() !== SAVE_STATE_LAYOUT_VERSION) throw new Error('Unsupported save-state layout.'); // Save states are never versioned. Never.
 	const state = readRuntimeSaveState(reader, ramByteCount, gxGpuVramByteCount);
 	reader.finish();
 	return state;

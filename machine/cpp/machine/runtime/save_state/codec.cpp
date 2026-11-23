@@ -8,7 +8,6 @@ namespace {
 
 // BMSX identifies the container. Only the current payload layout is accepted.
 constexpr u32 kSaveStateSignature = 0x58534d42u;
-constexpr u32 kSaveStateLayoutVersion = 3u; // Table home slots use aligned string identity.
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1295,7 +1294,7 @@ RuntimeSaveState readRuntimeSaveState(BinaryReader& reader, size_t ramByteCount,
 
 template<class Writer> void writeStateImage(Writer& writer, const RuntimeSaveState& state) {
 	writer.u32(kSaveStateSignature);
-	writer.u32(kSaveStateLayoutVersion);
+	// Save states are never versioned. Never.
 	writeRuntimeSaveState(writer, state);
 }
 
@@ -1322,7 +1321,7 @@ size_t encodeRuntimeSaveState(const RuntimeSaveState& state, std::span<u8> outpu
 RuntimeSaveState decodeRuntimeSaveState(std::span<const u8> data, size_t ramByteCount, size_t gxGpuVramByteCount) {
 	BinaryReader reader(data);
 	if (reader.u32() != kSaveStateSignature) throw BMSX_RUNTIME_ERROR("Unrecognized save-state format.");
-	if (reader.u32() != kSaveStateLayoutVersion) throw BMSX_RUNTIME_ERROR("Unsupported save-state layout.");
+	// if (reader.u32() != kSaveStateLayoutVersion) throw BMSX_RUNTIME_ERROR("Unsupported save-state layout."); // Save states are never versioned. Never.
 	auto state = readRuntimeSaveState(reader, ramByteCount, gxGpuVramByteCount);
 	reader.finish();
 	return state;
