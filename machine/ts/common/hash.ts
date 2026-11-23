@@ -33,13 +33,13 @@ export function hashText(text: string): number {
 	return hash >>> 0;
 }
 
-export function hashBytes(bytes: Uint8Array | null, offset: number, count: number, first: number, wrapped: number): number {
+// FNV-1a over a complete byte range, optionally split at a storage seam.
+export function hashBytes(bytes: Uint8Array, offset: number, count: number, wrapped = 0): number {
 	let hash = 2166136261;
-	const end = offset + first;
+	const end = offset + count - wrapped;
 	for (; offset < end; ++offset) {
-		hash = Math.imul(hash ^ bytes![offset], 16777619);
+		hash = Math.imul(hash ^ bytes[offset], 16777619);
 	}
-	for (let index = 0; index < wrapped; ++index) hash = Math.imul(hash ^ bytes![index], 16777619);
-	for (let index = first + wrapped; index < count; ++index) hash = Math.imul(hash, 16777619);
+	for (let index = 0; index < wrapped; ++index) hash = Math.imul(hash ^ bytes[index], 16777619);
 	return hash >>> 0;
 }

@@ -98,6 +98,19 @@ void romStringsUseAbsoluteBackingAndDirectorySocket() {
 	require(cpu.readFrameRegister(0, 0) == valueInteger(19),
 		"the absolute global name reuses the existing system spelling's slot");
 
+	const auto savedMemory = memory.captureSaveState();
+	const auto savedCpu = cpu.captureRuntimeState();
+	memory.restoreSaveState(savedMemory);
+	cpu.restoreRuntimeState(savedCpu);
+	const auto restoredString = cpu.activeThread()->currentFrame->executionImage->constPool.get(1);
+	require(restoredString == valueString(local | 0x80000000u),
+		"the restored slot-one constant still carries its published String ID");
+	const StringId slotOneId = asStringId(restoredString);
+	const auto slice = cpu.stringPool().internSlice(slotOneId, 5u, 4u);
+	require(cpu.stringPool().toString(slice) == "one!" && cpu.stringPool().find("one!") == slice
+		&& cpu.stringPool().byteAt(slotOneId, 8u) == '!',
+		"same-media restore preserves the exact published String and its physically backed final byte");
+
 	const auto rejects = [&](auto&& admission, std::string_view message) {
 		try { admission(); }
 		catch (const std::runtime_error& error) { require(error.what() == message, "the ROM owner reports the failed boundary"); return; }

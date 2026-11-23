@@ -31,7 +31,7 @@ constexpr u32 RAM_BUCKET_REHASH = 0x80000000u;
 constexpr u32 RAM_BUCKET_SHRINK = 0x40000000u;
 constexpr u32 SLOT_BIT = 0x80000000u;
 constexpr u32 romOffset(u32 address) {
-	return address < RAM_BASE ? address & (SYSTEM_ROM_SIZE - 1u)
+	return address < RAM_BASE ? address
 		: (address & (SLOT_BIT - 1u)) - CART_ROM_BASE;
 }
 constexpr u32 romStringId(u32 address, u32 cartridgeSlot) {
@@ -47,19 +47,13 @@ void StringPool::writeMetadata(u32 field, u32 word) { m_memory.writeRamRecordWor
 
 Span<const u8> StringPool::romStorage(u32 address) const {
 	if (address < RAM_BASE) return m_memory.systemRomStorage();
-	const auto* rom = m_memory.cartridgeController().romStorage(address >> 31);
-	return rom ? *rom : Span<const u8>{};
+	return *m_memory.cartridgeController().romStorage(address >> 31);
 }
 
 u32 StringPool::readWord(u32 base, u32 displacement) const {
 	if (isRamStringId(base)) return m_memory.readRamRecordWord(base + displacement);
 	const auto rom = romStorage(base);
-	const u32 offset = romOffset(base) + displacement;
-	if (offset >= rom.size()) return 0u;
-	if (rom.size() - offset >= 4u) return readLE32(rom.data() + offset);
-	u32 word = 0;
-	for (u32 i = 0; i < rom.size() - offset; ++i) word |= u32(rom[offset + i]) << (i * 8u);
-	return word;
+	return readLE32(rom.data() + romOffset(base) + displacement);
 }
 
 int StringPool::byteLength(StringId id) const {
@@ -72,7 +66,7 @@ u32 StringPool::byteAt(StringId id, size_t index) const {
 	if (isRamStringId(id)) return m_memory.readRamRecordByte(address);
 	const auto rom = romStorage(id);
 	const size_t offset = romOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE + index;
-	return offset < rom.size() ? rom[offset] : 0u;
+	return rom[offset];
 }
 
 StringPool::ByteSpan StringPool::readBytes(StringId id) const {
@@ -84,19 +78,17 @@ StringPool::ByteSpan StringPool::readBytes(StringId id, size_t start, size_t len
 		const size_t offset = (id + BLUA32_STRING_RECORD_HEADER_SIZE + start) & (MAIN_RAM_SIZE - 1u);
 		const auto* ram = reinterpret_cast<const char*>(m_memory.ramData());
 		const size_t first = std::min(length, size_t(MAIN_RAM_SIZE - offset));
-		return {{ram + offset, first}, {ram, length - first}, length};
+		return {{ram + offset, first}, {ram, length - first}};
 	}
 	const auto rom = romStorage(id);
 	const size_t offset = romOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE + start;
-	if (offset >= rom.size()) return {{}, {}, length};
-	const size_t backed = std::min(length, rom.size() - offset);
-	return {{reinterpret_cast<const char*>(rom.data() + offset), backed}, {}, length};
+	return {{reinterpret_cast<const char*>(rom.data() + offset), length}, {}};
 }
 
 bool StringPool::ByteSpan::equalBytes(const ByteSpan& other) const {
 	const size_t shared = std::min(first.size(), other.first.size());
 	if (shared != 0 && std::memcmp(first.data(), other.first.data(), shared) != 0) return false;
-	for (size_t i = shared, end = std::max(backedLength(), other.backedLength()); i < end; ++i)
+	for (size_t i = shared, end = size(); i < end; ++i)
 		if (byteAt(i) != other.byteAt(i)) return false;
 	return true;
 }
@@ -105,7 +97,6 @@ void StringPool::appendBytes(std::string& target, StringId id) const {
 	const auto bytes = readBytes(id);
 	target.append(bytes.first);
 	target.append(bytes.wrapped);
-	target.append(bytes.length - bytes.backedLength(), '\0');
 }
 
 std::string StringPool::toString(StringId id) const {
@@ -117,18 +108,17 @@ std::string StringPool::toString(StringId id) const {
 int StringPool::compare(StringId left, StringId right) const {
 	if (left == right) return 0;
 	const auto a = readBytes(left), b = readBytes(right);
-	const size_t limit = std::min(a.length, b.length);
+	const size_t limit = std::min(a.size(), b.size());
 	const size_t shared = std::min({limit, a.first.size(), b.first.size()});
 	if (shared != 0) {
 		const int order = std::memcmp(a.first.data(), b.first.data(), shared);
 		if (order != 0) return order;
 	}
-	const size_t remaining = std::min(limit, std::max(a.backedLength(), b.backedLength()));
-	for (size_t i = shared; i < remaining; ++i) {
+	for (size_t i = shared; i < limit; ++i) {
 		const int delta = static_cast<int>(a.byteAt(i)) - static_cast<int>(b.byteAt(i));
 		if (delta != 0) return delta;
 	}
-	return (a.length > b.length) - (a.length < b.length);
+	return (a.size() > b.size()) - (a.size() < b.size());
 }
 
 void StringPool::clearRomTables() {
@@ -177,8 +167,8 @@ u32 StringPool::lookupRamChain(u32 bucket, u32 hash, const ByteSpan& bytes) cons
 	u32 remaining = std::min(metadata(USED), MAX_RAM_RECORDS);
 	while (record != 0u && remaining-- != 0u) {
 		if (m_memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET) == hash
-			&& (m_memory.readRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET) & (MAIN_RAM_SIZE - 1u)) == bytes.length) {
-			if (bytes.equalBytes(readBytes(record, 0, bytes.length))) return record;
+			&& (m_memory.readRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET) & (MAIN_RAM_SIZE - 1u)) == bytes.size()) {
+			if (bytes.equalBytes(readBytes(record, 0, bytes.size()))) return record;
 		}
 		record = m_memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
 	}
@@ -219,14 +209,15 @@ u32 StringPool::lookupRom(u32 directory, u32 hash, const ByteSpan& bytes) const 
 	// The directory owner, not the backing of the directory or preceding
 	// record, selects the socket for every absolute cartridge reference.
 	const u32 cartridgeSlot = directory == 2u ? 1u : 0u;
-	const auto available = m_memory.systemRomStorage().size() + romStorage(romStringId(CART_ROM_BASE, cartridgeSlot)).size();
+	const auto* cart = m_memory.cartridgeController().romStorage(cartridgeSlot);
+	const size_t available = m_memory.systemRomStorage().size() + (cart ? cart->size() : 0u);
 	size_t remaining = available / BLUA32_STRING_RECORD_HEADER_SIZE;
 	while (record != 0u) {
 		if (remaining-- == 0u) throw BMSX_RUNTIME_ERROR("BLua32 ROM String chain is invalid.");
 		const auto header = bindRomStringHeader(record, cartridgeSlot);
 		const u32 length = readLE32(header.data() + BLUA32_STRING_LENGTH_OFFSET);
-		if (readLE32(header.data() + BLUA32_STRING_HASH_OFFSET) == hash && length == bytes.length
-			&& bytes.equalBytes({bindRomStringBytes(record, cartridgeSlot, length), {}, length})) return romStringId(record, cartridgeSlot);
+		if (readLE32(header.data() + BLUA32_STRING_HASH_OFFSET) == hash && length == bytes.size()
+			&& bytes.equalBytes({bindRomStringBytes(record, cartridgeSlot, length), {}})) return romStringId(record, cartridgeSlot);
 		record = readLE32(header.data() + BLUA32_STRING_NEXT_OFFSET);
 	}
 	return 0;
@@ -246,12 +237,12 @@ StringId StringPool::resolveImageRecord(ExecutionDomainId domain, u32 address) {
 	const auto header = bindRomStringHeader(address, cartridgeSlot);
 	const u32 hash = readLE32(header.data() + BLUA32_STRING_HASH_OFFSET);
 	const auto bytes = bindRomStringBytes(address, cartridgeSlot, readLE32(header.data() + BLUA32_STRING_LENGTH_OFFSET));
-	if (const u32 match = lookup(hash, {bytes, {}, bytes.size()})) return retain(match);
+	if (const u32 match = lookup(hash, {bytes, {}})) return retain(match);
 	throw BMSX_RUNTIME_ERROR("BLua32 ROM String is missing from its bucket.");
 }
 
 std::optional<StringId> StringPool::find(std::string_view value) const {
-	const u32 id = lookup(fnv1a32(value), {value, {}, value.size()});
+	const u32 id = lookup(fnv1a32(value), {value, {}});
 	return id == 0 ? std::nullopt : std::optional<StringId>(id);
 }
 
@@ -318,14 +309,12 @@ size_t StringPool::shrinkStep(u32 oldCount, size_t allowance) {
 }
 
 StringId StringPool::intern(std::string_view value) {
-	return intern({value, {}, value.size()}, fnv1a32(value), 0u);
+	return intern({value, {}}, fnv1a32(value), 0u);
 }
 
 StringId StringPool::internSlice(StringId id, size_t offset, size_t count) {
 	const auto bytes = readBytes(id, offset, count);
-	u32 hash = fnv1a32(bytes.wrapped, fnv1a32(bytes.first));
-	for (size_t i = bytes.backedLength(); i < count; ++i) hash *= FNV1A32_PRIME;
-	return intern(bytes, hash, id);
+	return intern(bytes, fnv1a32(bytes.wrapped, fnv1a32(bytes.first)), id);
 }
 
 StringId StringPool::intern(const ByteSpan& bytes, u32 hash, StringId source) {
@@ -358,7 +347,7 @@ StringId StringPool::intern(const ByteSpan& bytes, u32 hash, StringId source) {
 	}
 	// Keep an oversized request in the allocation admission path: the
 	// full-bank request cannot fit, but still clocks the final collection.
-	const u32 size = static_cast<u32>(std::min(bytes.length, size_t(MAIN_RAM_SIZE)));
+	const u32 size = static_cast<u32>(std::min(bytes.size(), size_t(MAIN_RAM_SIZE)));
 	const u32 id = m_heap.allocateRecord(BLUA32_STRING_RECORD_HEADER_SIZE + size, false, 0, 0, root);
 	const u32 currentControl = metadata(CAPACITY), current = currentControl & RAM_BUCKET_EXTENT_MASK;
 	u32 index = hash & (current - 1u);
@@ -387,8 +376,6 @@ StringId StringPool::intern(const ByteSpan& bytes, u32 hash, StringId source) {
 		u8* const target = m_memory.ramData() + offset;
 		if (!bytes.first.empty()) std::memcpy(target, bytes.first.data(), bytes.first.size());
 		if (!bytes.wrapped.empty()) std::memcpy(target + bytes.first.size(), bytes.wrapped.data(), bytes.wrapped.size());
-		const size_t backed = bytes.backedLength();
-		if (backed < size) std::memset(target + backed, 0, size - backed);
 		m_memory.invalidateRamWrite(offset, size);
 	}
 	m_memory.writeRamRecordWord(bucket, id);

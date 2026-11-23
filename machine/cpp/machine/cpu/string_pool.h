@@ -52,14 +52,12 @@ private:
 	struct ByteSpan {
 		std::string_view first;
 		std::string_view wrapped;
-		size_t length;
-		size_t backedLength() const { return first.size() + wrapped.size(); }
+		size_t size() const { return first.size() + wrapped.size(); }
 		// The caller already matched lengths.
 		bool equalBytes(const ByteSpan& other) const;
 		u8 byteAt(size_t index) const {
 			if (index < first.size()) return static_cast<u8>(first[index]);
-			index -= first.size();
-			return index < wrapped.size() ? static_cast<u8>(wrapped[index]) : 0u;
+			return static_cast<u8>(wrapped[index - first.size()]);
 		}
 	};
 	Span<const u8> romStorage(u32 address) const;

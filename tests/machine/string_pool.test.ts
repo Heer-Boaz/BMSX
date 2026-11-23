@@ -6,7 +6,8 @@ import test from 'node:test';
 import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import {
-	BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_RECORD_KIND, BLUA32_STRING_RECORD_ROM_FLAG,
+	BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE,
+	BLUA32_STRING_RECORD_KIND, BLUA32_STRING_RECORD_ROM_FLAG,
 } from '../../machine/ts/spec/blua32/image_format';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag, valuePayload, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
@@ -47,17 +48,30 @@ test('all byte values survive intern, indexing and snapshot restore', () => {
 	}
 });
 
-test('a String slice hashes and copies the logical zero tail of a ROM record', () => {
-	const id = 32, start = id + BLUA32_STRING_RECORD_HEADER_SIZE;
-	const rom = new Uint8Array(start + 2);
-	writeLE32(rom, id, BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG);
-	writeLE32(rom, id + BLUA32_STRING_LENGTH_OFFSET, 6);
-	rom.set([0x41, 0xf7], start);
+test('a ROM String requires a complete payload before publication and preserves installed NUL bytes', () => {
+	const directory = 8, address = 32, start = address + BLUA32_STRING_RECORD_HEADER_SIZE;
+	const payload = 'A\xf7\0\x81Z\0';
+	const rom = new Uint8Array(start + payload.length);
+	writeLE32(rom, directory, address);
+	writeLE32(rom, address, BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG);
+	writeLE32(rom, address + BLUA32_STRING_HASH_OFFSET, hashText(payload));
+	writeLE32(rom, address + BLUA32_STRING_LENGTH_OFFSET, payload.length);
+	rom.set([0x41, 0xf7, 0x00, 0x81, 0x5a, 0x00], start);
+
+	const truncatedMemory = new Memory({ systemRom: rom.subarray(0, -1), cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
+	const truncated = new CPU(truncatedMemory, new IrqController(truncatedMemory), new ExecutionAddressSpace(truncatedMemory)).stringPool;
+	truncated.activateRomTable(SYSTEM_EXECUTION_DOMAIN_ID, directory, 1);
+	assert.throws(() => truncated.resolveImageRecord(SYSTEM_EXECUTION_DOMAIN_ID, address), /ROM String is truncated/);
+	assert.throws(() => truncated.find(payload), /ROM String is truncated/);
+
 	const memory = new Memory({ systemRom: rom, cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
 	const pool = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory)).stringPool;
-	assert.equal(pool.bytes(id), 'A\xf7\0\0\0\0');
+	pool.activateRomTable(SYSTEM_EXECUTION_DOMAIN_ID, directory, 1);
+	const id = pool.resolveImageRecord(SYSTEM_EXECUTION_DOMAIN_ID, address);
+	assert.equal(id, address);
+	assert.equal(pool.bytes(id), payload);
 	for (const [first, length] of [[1, 4], [4, 2]]) {
-		const expected = pool.bytes(id).slice(first, first + length);
+		const expected = payload.slice(first, first + length);
 		const result = pool.internSlice(id, first, length);
 		assert.equal(pool.bytes(result), expected);
 		assert.equal(pool.find(expected), result);

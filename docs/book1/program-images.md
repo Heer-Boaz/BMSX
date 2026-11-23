@@ -423,9 +423,11 @@ with the same bytes in the system program.
 
 The record reference retains the source socket. A record in cartridge
 socket 1 uses bit 31 of the reference to identify that socket; the addresses
-written in a cartridge image itself do not set this bit. String record reads
-select the ROM or language RAM region directly. Missing ROM bytes read as zero;
-these reads do not select I/O or cartridge RAM.
+written in a cartridge image itself do not set this bit. The entire header
+and the declared payload must be present in ROM before the CPU can resolve a
+record to a String value. An incomplete record is invalid; absent bytes do
+not extend the String. String record access uses ROM or language RAM directly,
+not I/O or cartridge RAM.
 
 The two name tables establish separate ordinary-global and system-global
 namespaces. Within each namespace an existing name retains its value and a new
