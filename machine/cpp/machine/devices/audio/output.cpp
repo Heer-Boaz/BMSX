@@ -44,14 +44,8 @@ void ApuOutputMixer::playVoice(
 ) {
 	VoiceRecord& record = m_voices[slot];
 	record.filter.reset();
-	buildVoiceFromData(
-		record,
-		source,
-		sourceBytes,
-		registerWords,
-		static_cast<i64>(registerWords[APU_PARAMETER_START_SAMPLE_INDEX]) * static_cast<i64>(APU_RATE_STEP_Q16_ONE),
-		0
-	);
+	bindVoiceSource(record, source, sourceBytes, registerWords);
+	seekVoice(record, registerWords[APU_PARAMETER_START_SAMPLE_INDEX]);
 	record.gainQ12 = toSignedWord(registerWords[APU_PARAMETER_GAIN_Q12_INDEX]);
 	record.fadeStepQ12 = 0;
 	record.fadeStepRemainder = 0;
@@ -69,14 +63,8 @@ void ApuOutputMixer::replaceVoiceSource(
 	const ApuParameterRegisterWords& registerWords
 ) {
 	VoiceRecord& record = m_voices[slot];
-	buildVoiceFromData(
-		record,
-		source,
-		sourceBytes,
-		registerWords,
-		record.cursorQ16,
-		record.phaseRemainder
-	);
+	bindVoiceSource(record, source, sourceBytes, registerWords);
+	primeVoiceDecoder(record);
 }
 
 void ApuOutputMixer::restoreVoice(
@@ -88,15 +76,10 @@ void ApuOutputMixer::restoreVoice(
 ) {
 	VoiceRecord& record = m_voices[slot];
 	record.filter.reset();
-	buildVoiceFromData(
-		record,
-		source,
-		sourceBytes,
-		registerWords,
-		state.cursorQ16,
-		state.phaseRemainder
-	);
+	bindVoiceSource(record, source, sourceBytes, registerWords);
+	// The saved decoder already owns its block position and interpolation taps.
 	restoreApuOutputVoiceState(record, state);
+	record.badpTransition.target = -1;
 	record.resident = true;
 	record.active = true;
 }
@@ -366,13 +349,11 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 	return endedMask;
 }
 
-void ApuOutputMixer::buildVoiceFromData(
+void ApuOutputMixer::bindVoiceSource(
 	VoiceRecord& record,
 	const ApuAudioSource& source,
 	const ApuSourceByteView& sourceBytes,
-	const ApuParameterRegisterWords& registerWords,
-	i64 cursorQ16,
-	i32 phaseRemainder
+	const ApuParameterRegisterWords& registerWords
 ) {
 	const bool usesBadp = !apuAudioSourceUsesGenerator(source) && source.bitsPerSample == 4u;
 	if (usesBadp) {
@@ -387,13 +368,10 @@ void ApuOutputMixer::buildVoiceFromData(
 	record.bitsPerSample = source.bitsPerSample;
 	record.sourceBytes = sourceBytes.bytes.data();
 	record.sourceRevision = sourceBytes.revision;
-	record.badpTransition.target = -1;
 	record.dataOffset = source.dataOffset;
 	record.frames = source.frameCount;
 	record.generatorKind = source.generatorKind;
 	record.generatorDutyQ12 = source.generatorDutyQ12;
-	record.cursorQ16 = cursorQ16;
-	record.phaseRemainder = phaseRemainder;
 	configurePhaseStep(record, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX], source.sampleRateHz);
 	applyVoiceLoopBounds(record, source);
 	record.filter.configure(
@@ -403,16 +381,6 @@ void ApuOutputMixer::buildVoiceFromData(
 		registerWords[APU_PARAMETER_FILTER_A2_INDEX]
 	);
 	record.usesBadp = usesBadp;
-	if (record.usesBadp) {
-		resetApuBadpDecoder(
-			record.sourceBytes + record.dataOffset,
-			record.frames,
-			record.channels,
-			record.badpSeekTable,
-			record.badp,
-			audioFrameIndex(record.cursorQ16)
-		);
-	}
 }
 
 void ApuOutputMixer::configurePhaseStep(VoiceRecord& record, u32 rateStepQ16Word, u32 sampleRateHz) {
@@ -451,6 +419,10 @@ void ApuOutputMixer::applyVoiceLoopBounds(VoiceRecord& record, const ApuAudioSou
 void ApuOutputMixer::seekVoice(VoiceRecord& record, u32 startFrame) {
 	record.cursorQ16 = static_cast<i64>(startFrame) * static_cast<i64>(APU_RATE_STEP_Q16_ONE);
 	record.phaseRemainder = 0;
+	primeVoiceDecoder(record);
+}
+
+void ApuOutputMixer::primeVoiceDecoder(VoiceRecord& record) {
 	record.badpTransition.target = -1;
 	if (record.usesBadp) {
 		resetApuBadpDecoder(
@@ -459,7 +431,7 @@ void ApuOutputMixer::seekVoice(VoiceRecord& record, u32 startFrame) {
 			record.channels,
 			record.badpSeekTable,
 			record.badp,
-			startFrame
+			audioFrameIndex(record.cursorQ16)
 		);
 	}
 }

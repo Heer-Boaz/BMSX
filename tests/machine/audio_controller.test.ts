@@ -829,28 +829,62 @@ function startConstantSquareVoice(harness: ReturnType<typeof createRealAudioHarn
 	writeApuCommand(harness.memory, harness.audio, APU_CMD_PLAY);
 }
 
-function writeBadpSourceRegisters(memory: Memory, sampleRateHz: number): void {
-	const bytes = new Uint8Array(60);
+function writeBadpSourceRegisters(memory: Memory, sampleRateHz: number, blockCount = 1): void {
+	const frameCount = 8 * blockCount, dataBytes = 12 * blockCount;
+	const bytes = new Uint8Array(48 + dataBytes);
 	bytes.set([0x42, 0x41, 0x44, 0x50], 0);
 	writeLE16(bytes, 4, 1);
 	writeLE16(bytes, 6, 1);
 	writeLE32(bytes, 8, sampleRateHz);
-	writeLE32(bytes, 12, 8);
+	writeLE32(bytes, 12, frameCount);
 	writeLE32(bytes, 36, 48);
-	writeLE16(bytes, 48, 8);
-	writeLE16(bytes, 50, 12);
-	writeLE16(bytes, 52, 0);
-	bytes.set([0x11, 0x11, 0x11, 0x11], 56);
+	for (let block = 0; block < blockCount; ++block) {
+		const offset = 48 + block * 12;
+		writeLE16(bytes, offset, 8);
+		writeLE16(bytes, offset + 2, 12);
+		writeLE16(bytes, offset + 4, (block & 127) * 128);
+		writeLE32(bytes, offset + 8, 0x11111111);
+	}
 	writeSampleRamBytes(memory, bytes);
 	memory.writeMappedWord(IO_APU_SOURCE_ADDR, APU_SAMPLE_RAM_BASE);
 	memory.writeMappedWord(IO_APU_SOURCE_BYTES, bytes.byteLength);
 	memory.writeMappedWord(IO_APU_SOURCE_SAMPLE_RATE_HZ, sampleRateHz);
 	memory.writeMappedWord(IO_APU_SOURCE_CHANNELS, 1);
 	memory.writeMappedWord(IO_APU_SOURCE_BITS_PER_SAMPLE, 4);
-	memory.writeMappedWord(IO_APU_SOURCE_FRAME_COUNT, 8);
+	memory.writeMappedWord(IO_APU_SOURCE_FRAME_COUNT, frameCount);
 	memory.writeMappedWord(IO_APU_SOURCE_DATA_OFFSET, 48);
-	memory.writeMappedWord(IO_APU_SOURCE_DATA_BYTES, 12);
+	memory.writeMappedWord(IO_APU_SOURCE_DATA_BYTES, dataBytes);
 }
+
+test('late BADP restore continues the captured unindexed voice across blocks', () => {
+	const blocks = 1024, start = (blocks - 4) * 8 + 5;
+	const live = createRealAudioHarness();
+	writeBadpSourceRegisters(live.memory, APU_SAMPLE_RATE_HZ / 2, blocks);
+	live.memory.writeMappedWord(IO_APU_START_SAMPLE, start);
+	live.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	live.memory.writeMappedWord(IO_APU_GAIN_Q12, APU_GAIN_Q12_ONE);
+	live.memory.writeMappedWord(IO_APU_SLOT, 1);
+	writeApuCommand(live.memory, live.audio, APU_CMD_PLAY);
+	advanceRealApu(live, 3);
+	const saved = live.audio.captureState();
+	const before = saved.output.voices[0]!;
+	assert.equal(before.cursorQ16, (start + 1.5) * APU_RATE_STEP_Q16_ONE);
+	assert.equal(before.badp.decodedFrame, start + 2);
+	assert.equal(before.badp.previousDecodedFrame, start + 1);
+
+	const restored = restoreRealAudioHarness(saved, 3);
+	live.audioOutput.outputRing.clear();
+	advanceRealApu(live, 28);
+	advanceRealApu(restored, 28);
+	assert.equal(live.audioOutput.outputRing.queuedFrames(), 25);
+	assert.equal(restored.audioOutput.outputRing.queuedFrames(), 25);
+	for (let i = 0; i < 25; ++i) {
+		assert.equal(restored.audioOutput.outputRing.readFramePacked(), live.audioOutput.outputRing.readFramePacked());
+	}
+	const after = live.audio.captureState().output;
+	assert.ok(after.voices[0]!.badp.blockEnd > before.badp.blockEnd);
+	assert.deepEqual(restored.audio.captureState().output, after);
+});
 
 test('BADP repeated loop-boundary transitions preserve decoder state and honor source writes', () => {
 	const frameCount = 128;

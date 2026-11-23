@@ -158,14 +158,8 @@ export class ApuOutputMixer {
 	): void {
 		const record = this.voices[slot]!;
 		record.filter.reset();
-		this.buildVoiceFromData(
-			record,
-			source,
-			sourceBytes,
-			registerWords,
-			registerWords[APU_PARAMETER_START_SAMPLE_INDEX]! * APU_RATE_STEP_Q16_ONE,
-			0,
-		);
+		this.bindVoiceSource(record, source, sourceBytes, registerWords);
+		this.seekVoice(record, registerWords[APU_PARAMETER_START_SAMPLE_INDEX]!);
 		record.gainQ12 = toSignedWord(registerWords[APU_PARAMETER_GAIN_Q12_INDEX]!);
 		record.fadeStepQ12 = 0;
 		record.fadeStepRemainder = 0;
@@ -183,14 +177,8 @@ export class ApuOutputMixer {
 		registerWords: ApuParameterRegisterWords,
 	): void {
 		const record = this.voices[slot]!;
-		this.buildVoiceFromData(
-			record,
-			source,
-			sourceBytes,
-			registerWords,
-			record.cursorQ16,
-			record.phaseRemainder,
-		);
+		this.bindVoiceSource(record, source, sourceBytes, registerWords);
+		this.primeVoiceDecoder(record);
 	}
 
 	public restoreVoice(
@@ -202,8 +190,10 @@ export class ApuOutputMixer {
 	): void {
 		const record = this.voices[slot]!;
 		record.filter.reset();
-		this.buildVoiceFromData(record, source, sourceBytes, registerWords, state.cursorQ16, state.phaseRemainder);
+		this.bindVoiceSource(record, source, sourceBytes, registerWords);
+		// The saved decoder already owns its block position and interpolation taps.
 		restoreApuOutputVoiceState(record, state);
+		record.badpTransition.target = -1;
 		record.resident = true;
 		record.active = true;
 	}
@@ -450,13 +440,11 @@ export class ApuOutputMixer {
 		return endedMask >>> 0;
 	}
 
-	private buildVoiceFromData(
+	private bindVoiceSource(
 		record: ApuOutputVoice,
 		source: ApuAudioSource,
 		sourceBytes: ApuSourceByteView,
 		registerWords: ApuParameterRegisterWords,
-		cursorQ16: number,
-		phaseRemainder: number,
 	): void {
 		record.sourceCartridgeSlot = sourceBytes.cartridgeSlot;
 		record.channels = source.channels;
@@ -475,8 +463,6 @@ export class ApuOutputMixer {
 			record.badpSeekTable.byteOffset = 0;
 			record.badpSeekTable.entryCount = 0;
 		}
-		record.cursorQ16 = cursorQ16;
-		record.phaseRemainder = phaseRemainder;
 		this.configurePhaseStep(record, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]!, source.sampleRateHz);
 		this.applyVoiceLoopBounds(record, source);
 		record.filter.configure(
@@ -486,9 +472,6 @@ export class ApuOutputMixer {
 			registerWords[APU_PARAMETER_FILTER_A2_INDEX]!,
 		);
 		record.usesBadp = usesBadp;
-		if (record.usesBadp) {
-			resetApuBadpDecoder(record, audioFrameIndex(record.cursorQ16));
-		}
 	}
 
 	private configurePhaseStep(record: ApuOutputVoice, rateStepQ16Word: number, sampleRateHz: number): void {
@@ -526,8 +509,12 @@ export class ApuOutputMixer {
 	private seekVoice(record: ApuOutputVoice, startFrame: number): void {
 		record.cursorQ16 = startFrame * APU_RATE_STEP_Q16_ONE;
 		record.phaseRemainder = 0;
+		this.primeVoiceDecoder(record);
+	}
+
+	private primeVoiceDecoder(record: ApuOutputVoice): void {
 		if (record.usesBadp) {
-			resetApuBadpDecoder(record, startFrame);
+			resetApuBadpDecoder(record, audioFrameIndex(record.cursorQ16));
 		}
 	}
 

@@ -94,19 +94,18 @@ private:
 	friend void restoreApuOutputVoiceState(VoiceRecord& record, const ApuOutputVoiceState& state);
 
 	[[nodiscard]] auto renderMachineBatch(size_t frameCount, i64 startSequence) -> u32;
-	void buildVoiceFromData(
+	void bindVoiceSource(
 		VoiceRecord& record,
 		const ApuAudioSource& source,
 		const ApuSourceByteView& sourceBytes,
-		const ApuParameterRegisterWords& registerWords,
-		i64 cursorQ16,
-		i32 phaseRemainder
+		const ApuParameterRegisterWords& registerWords
 	);
 	void configurePhaseStep(VoiceRecord& record, u32 rateStepQ16Word, u32 sampleRateHz);
 	void applyVoiceGainQ12(VoiceRecord& record, u32 gainQ12Word);
 	void configureFade(VoiceRecord& record, u32 fadeSamples);
 	void applyVoiceLoopBounds(VoiceRecord& record, const ApuAudioSource& source);
 	void seekVoice(VoiceRecord& record, u32 startFrame);
+	void primeVoiceDecoder(VoiceRecord& record);
 	void readVoiceFrame(VoiceRecord& record, size_t frame);
 	static auto wrapLoopCursor(i64 cursorQ16, i64 loopStartQ16, i64 loopEndQ16) -> i64;
 

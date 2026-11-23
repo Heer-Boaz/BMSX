@@ -188,8 +188,9 @@ void testHostSynchronizationExposesEveryElapsedPalSample() {
 	}
 }
 
-void programBadpVoice(AudioHarness& harness) {
-	std::array<bmsx::u8, 60> bytes{};
+void programBadpVoice(AudioHarness& harness, bmsx::u32 blockCount = 1u, bmsx::u32 start = 0u) {
+	const bmsx::u32 frameCount = 8u * blockCount, dataBytes = 12u * blockCount;
+	std::vector<bmsx::u8> bytes(48u + dataBytes);
 	bytes[0] = 0x42u;
 	bytes[1] = 0x41u;
 	bytes[2] = 0x44u;
@@ -197,15 +198,15 @@ void programBadpVoice(AudioHarness& harness) {
 	bmsx::writeLE16(bytes.data() + 4u, 1u);
 	bmsx::writeLE16(bytes.data() + 6u, 1u);
 	bmsx::writeLE32(bytes.data() + 8u, bmsx::APU_SAMPLE_RATE_HZ / 2u);
-	bmsx::writeLE32(bytes.data() + 12u, 8u);
+	bmsx::writeLE32(bytes.data() + 12u, frameCount);
 	bmsx::writeLE32(bytes.data() + 36u, 48u);
-	bmsx::writeLE16(bytes.data() + 48u, 8u);
-	bmsx::writeLE16(bytes.data() + 50u, 12u);
-	bmsx::writeLE16(bytes.data() + 52u, 0u);
-	bytes[56] = 0x11u;
-	bytes[57] = 0x11u;
-	bytes[58] = 0x11u;
-	bytes[59] = 0x11u;
+	for (bmsx::u32 block = 0; block < blockCount; ++block) {
+		auto* data = bytes.data() + 48u + block * 12u;
+		bmsx::writeLE16(data, 8u);
+		bmsx::writeLE16(data + 2u, 12u);
+		bmsx::writeLE16(data + 4u, (block & 127u) * 128u);
+		bmsx::writeLE32(data + 8u, 0x11111111u);
+	}
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_MANUAL_WRITE);
 	for (size_t offset = 0u; offset < bytes.size(); offset += bmsx::IO_WORD_SIZE) {
@@ -216,14 +217,53 @@ void programBadpVoice(AudioHarness& harness) {
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ / 2u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_CHANNELS, 1u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BITS_PER_SAMPLE, 4u);
-	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_FRAME_COUNT, 8u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_FRAME_COUNT, frameCount);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_OFFSET, 48u);
-	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_BYTES, 12u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_BYTES, dataBytes);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_START_SAMPLE, start);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, bmsx::APU_RATE_STEP_Q16_ONE);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_GAIN_Q12, bmsx::APU_GAIN_Q12_ONE);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
 	harness.audio.onService(0);
+}
+
+void testBadpLateUnindexedRestore() {
+	using namespace bmsx;
+	constexpr u32 blocks = 1024, start = (blocks - 4u) * 8u + 5u;
+	AudioHarness live;
+	programBadpVoice(live, blocks, start);
+	live.scheduler.advanceTo(3);
+	live.audio.onService(3);
+	const auto saved = live.audio.captureState();
+	const auto& before = saved.output.voices[0];
+	require(before.cursorQ16 == (static_cast<i64>(start + 1u) << 16u) + 32768
+		&& before.badp.decodedFrame == start + 2u && before.badp.previousDecodedFrame == start + 1u,
+		"late checkpoint captures fractional playback and both interpolation latches");
+
+	AudioHarness restored;
+	restored.scheduler.advanceTo(3);
+	restored.audio.restoreState(saved, 3);
+	live.output.outputRing.clear();
+	live.scheduler.advanceTo(28);
+	live.audio.onService(28);
+	restored.scheduler.advanceTo(28);
+	restored.audio.onService(28);
+	require(live.output.outputRing.queuedFrames() == 25u && restored.output.outputRing.queuedFrames() == 25u,
+		"both late voices expose the same continuation length");
+	for (int i = 0; i < 25; ++i) {
+		require(live.output.outputRing.readFramePacked() == restored.output.outputRing.readFramePacked(),
+			"late unindexed restore preserves PCM across subsequent block boundaries");
+	}
+	const auto liveState = live.audio.captureState(), restoredState = restored.audio.captureState();
+	const auto& a = liveState.output.voices[0];
+	const auto& b = restoredState.output.voices[0];
+	require(a.badp.blockEnd > before.badp.blockEnd && a.cursorQ16 == b.cursorQ16 && a.phaseRemainder == b.phaseRemainder
+		&& a.badp.nextFrame == b.badp.nextFrame && a.badp.blockEnd == b.badp.blockEnd
+		&& a.badp.predictors == b.badp.predictors && a.badp.stepIndices == b.badp.stepIndices
+		&& a.badp.decodedFrame == b.badp.decodedFrame && a.badp.decodedLeft == b.badp.decodedLeft
+		&& a.badp.previousDecodedFrame == b.badp.previousDecodedFrame && a.badp.previousDecodedLeft == b.badp.previousDecodedLeft,
+		"restored continuation advances the saved decoder rather than rebuilding its observable state");
 }
 
 void testBadpRepeatedLoopBoundaryTransition() {
@@ -1415,6 +1455,7 @@ int main() {
 	testOutputRingExposesUnsignedHardwareWords();
 	testMachineCaptureIncludesMaterializedApuEndIrq();
 	testHostSynchronizationExposesEveryElapsedPalSample();
+	testBadpLateUnindexedRestore();
 	testBadpRepeatedLoopBoundaryTransition();
 	testBadpFarForwardRetainsBothLatches();
 	testBadpLoopSourceWritesAndRestore();
