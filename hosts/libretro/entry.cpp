@@ -1990,31 +1990,14 @@ unsigned retro_get_region(void) {
 	return RETRO_REGION_PAL;
 }
 
-void* retro_get_memory_data(unsigned id) {
-	switch (id) {
-	case RETRO_MEMORY_SAVE_RAM:
-		return nullptr;
-	case RETRO_MEMORY_SYSTEM_RAM:
-		if (!g_content) {
-			return nullptr;
-		}
-		return g_content->runtime.machine.memory.ramData();
-	default:
-		return nullptr;
-	}
+// A flat writable view bypasses the bus and its code/rewind write watches,
+// and overlaps the language runtime's private records.
+void* retro_get_memory_data(unsigned) {
+	return nullptr;
 }
 
-size_t retro_get_memory_size(unsigned id) {
-	switch (id) {
-	case RETRO_MEMORY_SAVE_RAM:
-		return 0;
-	case RETRO_MEMORY_SYSTEM_RAM:
-		return g_content
-			? g_content->runtime.machine.memory.ramByteCount()
-			: 0u;
-	default:
-		return 0;
-	}
+size_t retro_get_memory_size(unsigned) {
+	return 0;
 }
 
 /* ============================================================================

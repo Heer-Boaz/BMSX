@@ -230,10 +230,13 @@ int main(int argc, char** argv) {
 	}
 
 	const size_t state_size = core.serialize_size();
-	const size_t ram_size = core.get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
-	uint8_t* ram = core.get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
-	if (state_size == 0 || ram_size == 0 || ram == NULL) {
-		fprintf(stderr, "core must expose save states and system RAM\n");
+	if (core.get_memory_size(RETRO_MEMORY_SYSTEM_RAM) != 0 ||
+	    core.get_memory_data(RETRO_MEMORY_SYSTEM_RAM) != NULL) {
+		fprintf(stderr, "core exposed raw writable system RAM\n");
+		return 1;
+	}
+	if (state_size == 0) {
+		fprintf(stderr, "core did not provide a save-state buffer size\n");
 		return 1;
 	}
 	void* state = malloc(state_size);
@@ -241,23 +244,22 @@ int main(int argc, char** argv) {
 		fprintf(stderr, "save-state capture failed\n");
 		return 1;
 	}
-	const uint8_t saved_byte = ram[ram_size - 1];
-	ram[ram_size - 1] ^= 0xff;
-	if (!core.unserialize(state, state_size) || ram[ram_size - 1] != saved_byte) {
-		fprintf(stderr, "save-state load did not restore system RAM\n");
+	core.run();
+	if (!core.unserialize(state, state_size)) {
+		fprintf(stderr, "save-state load failed\n");
 		return 1;
 	}
 	free(state);
 	core.run();
-	if (g_shutdown_requested || g_video_frames != frames + 1) {
+	if (g_shutdown_requested || g_video_frames != frames + 2) {
 		fprintf(stderr, "core did not resume video after loading a save state\n");
 		return 1;
 	}
-	fprintf(stderr, "[snesmini smoke] save/load restored RAM and resumed execution (%zu-byte frontend buffer)\n", state_size);
+	fprintf(stderr, "[snesmini smoke] save/load resumed execution (%zu-byte frontend buffer)\n", state_size);
 
 	core.unload_game();
 	core.deinit();
 	dlclose(core.handle);
-	fprintf(stderr, "[snesmini smoke] completed %u frames, received %u video frames\n", frames + 1, g_video_frames);
+	fprintf(stderr, "[snesmini smoke] completed %u frames, received %u video frames\n", frames + 2, g_video_frames);
 	return 0;
 }
