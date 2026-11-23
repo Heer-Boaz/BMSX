@@ -367,6 +367,76 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	finish();
 }
 
+void testParkedWriteRootsEnterAfterTheAtomicQueueTransfer() {
+	using namespace bmsx;
+	test::Blua32TestImage image;
+	image.text.resize(3u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::NEWT), 3, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SETT), 0, 1, 2);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 4}};
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, 0x10000u);
+	TickInputSource input;
+	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
+	runtime.boot();
+	auto& cpu = runtime.machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& arena = cpu.heapAllocator();
+	auto& budget = cpu.luaHeap();
+	auto& scheduler = runtime.frameScheduler;
+	budget.setCollectionTarget(budget.capacity());
+	auto owner = cpu.createTable(512, 0);
+	auto child = cpu.createTable(1, 0);
+	child.setInteger(1, valueInteger(73));
+	for (int i = 1; i <= 512; ++i) owner.setInteger(i, valueInteger(i));
+	owner.setInteger(1, valueTable(child.address()));
+	auto receiver = cpu.createTable();
+	auto forwarding = cpu.createTable(0, 1);
+	auto mode = cpu.createTable(0, 1);
+	mode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+	forwarding.setMetatableAddress(mode.address());
+	forwarding.setStringKey(cpu.stringPool().intern("__newindex"), valueTable(owner.address()));
+	receiver.setMetatableAddress(forwarding.address());
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(receiver.address()));
+	frame.registers.set(1, valueInteger(513));
+	frame.registers.set(2, valueInteger(23));
+	frame.setTop(3);
+	cpu.createTable(1024, 0); // Release a sufficiently large body during the stopped collection.
+	const u32 spare = arena.allocate(4088u, true);
+	require(spare != 0u, "reserve a small chunk for NEWT");
+	while (arena.allocate(4088u, true)) {}
+	arena.free(spare);
+	require(!arena.allocate(5120u, true), "the replacement cannot allocate before collection");
+
+	for (int step = 0; heap.phase() != GcPhase::MarkAgain && step < 1024; ++step)
+		heap.step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
+	require(heap.phase() == GcPhase::MarkAgain && !heap.isAlive(owner.address()) && !heap.isAlive(child.address()),
+		"the weak __newindex receiver and its only child remain white");
+	budget.setCollectionTarget(0);
+	const u32 writePc = cpu.readFramePc(0) + INSTRUCTION_BYTES;
+	require(!scheduler.runCyclesToNextLogicalTick(runtime, 128) && cpu.tableWriteParked()
+		&& heap.finalMarkPending() && cpu.readFramePc(0) == writePc,
+		"NEWT enters pending Atomic, then the same accepted grant parks SETT before the first final slice");
+	const auto parked = captureRuntimeSaveState(runtime);
+	const auto finish = [&] {
+		for (int step = 0; !cpu.tableWriteReady() && step < 80; ++step)
+			require(scheduler.advanceLogicalTick(runtime, 0) == LogicalTickResult::Maintenance, "the parked writer stops guest execution");
+		require(cpu.tableWriteReady() && heap.tableRecordAddress(child.address()) == child.address()
+			&& owner.getInteger(1) == valueTable(child.address()) && child.getInteger(1) == valueInteger(73),
+			"the parked receiver is traced from the final root head, not lost with its descendants");
+		require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Executed
+			&& owner.getInteger(513) == valueInteger(23), "retry retires the original store into the preserved receiver");
+		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	};
+	finish();
+	applyRuntimeSaveState(runtime, parked);
+	const auto expected = finish();
+	applyRuntimeSaveState(runtime, parked);
+	require(finish() == expected, "restoring the parked operation repeats its final mark and original store");
+}
+
 void testFinalCollectionRetainsTheMachineGrant() {
 	using namespace bmsx;
 	TickRuntimeFixture fixture;
@@ -1835,6 +1905,7 @@ int main() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	testParkedTableWriteRetiresBeforeVblank(true);
 #endif
+	testParkedWriteRootsEnterAfterTheAtomicQueueTransfer();
 	testFinalCollectionRetainsTheMachineGrant();
 	testPhysicalCollectionUsesCompletedVblank();
 	testRuntimeRestoreRearmsCpuGp0Wait();

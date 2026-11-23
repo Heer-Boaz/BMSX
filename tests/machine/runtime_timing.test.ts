@@ -78,6 +78,7 @@ import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/bl
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
+import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 
 const PCRTC_SYNCH2_SLOW_WORD = 0x004f84bc;
 const PCRTC_SYNCV_192_LINE_FIELD_WORD = 0x00a60005;
@@ -482,6 +483,78 @@ test('a physically refused WIDE SETT retires before queued VBlank, even after a 
 		assert.ok(!cpu.tableWriteParked());
 		assert.equal(fs.lastTickSequence, 1);
 		assert.equal(tables.getInteger(owner, 513), valueTable(payload));
+	}
+});
+
+test('a table write parked by the grant that enters Atomic keeps its weak receiver and descendants', () => {
+	const code = new Uint8Array(3 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.NEWT, 3, 0, 0);
+	writeInstruction(code, 1, OpCode.SETT, 0, 1, 2);
+	writeInstruction(code, 2, OpCode.RET, 0, 0, 0);
+	const system = linkRawTestSystemBlua32({
+		text: code, functions: [{ firstWord: 0, wordCount: 3, maxStack: 4 }],
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0,
+	}, 0x10000);
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const runtime = new Runtime({
+			systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(),
+			machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: backend,
+		}, {
+			sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {},
+		});
+		runtime.boot();
+		const { cpu } = runtime.machine;
+		const { gc, heapAllocator: arena, luaHeap: budget } = cpu;
+		const scheduler = runtime.frameScheduler, tables = gc.tables;
+		budget.setCollectionTarget(budget.capacity());
+		const owner = cpu.createTable(512, 0), child = cpu.createTable(1, 0);
+		tables.setInteger(child, 1, valueInteger(73));
+		for (let i = 1; i <= 512; ++i) tables.setInteger(owner, i, valueInteger(i));
+		tables.setInteger(owner, 1, valueTable(child));
+		const receiver = cpu.createTable(), forwarding = cpu.createTable(0, 1), mode = cpu.createTable(0, 1);
+		tables.setStringKey(mode, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
+		tables.setMetatableAddress(forwarding, mode);
+		tables.setStringKey(forwarding, cpu.stringPool.intern('__newindex'), valueTable(owner));
+		tables.setMetatableAddress(receiver, forwarding);
+		const frame = cpu.rootThread.currentFrame!;
+		frame.registers.setTable(0, receiver);
+		frame.registers.setInteger(1, 513);
+		frame.registers.setInteger(2, 23);
+		frame.top = 3;
+		cpu.createTable(1024, 0);
+		const spare = arena.allocate(4088, true);
+		assert.notEqual(spare, 0);
+		while (arena.allocate(4088, true) !== 0) {}
+		arena.free(spare);
+		assert.equal(arena.allocate(5120, true), 0, 'the replacement cannot allocate before collection');
+
+		for (let i = 0; gc.phase() !== GcPhase.MarkAgain && i < 1024; ++i) gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+		assert.equal(gc.phase(), GcPhase.MarkAgain);
+		assert.equal(gc.isAlive(owner), false);
+		assert.equal(gc.isAlive(child), false);
+		budget.setCollectionTarget(0);
+		const writePc = cpu.readFramePc(0) + INSTRUCTION_BYTES;
+		assert.equal(scheduler.runCyclesToNextLogicalTick(128), false);
+		assert.ok(cpu.tableWriteParked() && gc.finalMarkPending(), 'NEWT enters Atomic before SETT parks in the same grant');
+		assert.equal(cpu.readFramePc(0), writePc);
+		const parked = captureRuntimeSaveState(runtime);
+		const finish = () => {
+			for (let i = 0; !cpu.tableWriteReady() && i < 80; ++i)
+				assert.equal(scheduler.advanceLogicalTick(0), LogicalTickResult.Maintenance);
+			assert.ok(cpu.tableWriteReady());
+			assert.equal(gc.tableRecordAddress(child), child, 'the final marking does not lose the weak receiver’s child');
+			assert.equal(tables.getInteger(owner, 1), valueTable(child));
+			assert.equal(tables.getInteger(child, 1), valueInteger(73));
+			assert.equal(scheduler.stepInstruction(0), InstructionStepResult.Executed);
+			assert.equal(tables.getInteger(owner, 513), valueInteger(23));
+			return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+		};
+		finish();
+		applyRuntimeSaveState(runtime, parked);
+		const expected = finish();
+		applyRuntimeSaveState(runtime, parked);
+		assert.equal(Buffer.compare(finish(), expected), 0, 'restoring the parked operation repeats marking and the original store');
 	}
 });
 

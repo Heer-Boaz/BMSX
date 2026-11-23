@@ -104,11 +104,8 @@ bool CPU::parkTableWrite(CallFrame& frame, u32 receiver, Value key, Value value)
 		canonicalTableKey(key), value
 	};
 	frame.writeControl(FrameField::Pc, m_pendingTableWrite.instructionPc);
-	// The final receiver can have come from a weak __newindex chain. It
-	// must become a root before the current scan clears weak entries.
-	const auto phase = m_heap.phase();
-	if (phase == GcPhase::Mark || phase == GcPhase::MarkAgain || phase == GcPhase::Atomic)
-		markPendingTableWriteRoots(m_heap);
+	// The final root head visits parked operands after detaching the
+	// changed queue and before clearing weak references.
 	return true;
 }
 

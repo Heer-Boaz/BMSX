@@ -1,5 +1,5 @@
 import { ValueMoveKind } from '../../spec/blua32/instruction_format';
-import { GcHeap, GcPhase, GcRootBank } from './gc_heap';
+import { GcHeap, GcRootBank } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
@@ -618,7 +618,6 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private parkTableWrite(frame: CallFrame, receiver: number, key: Value, value: Value): boolean {
-		const phase = this.gc.phase();
 		const write = {
 			recovery: this.gc.active() ? TableWriteRecovery.Current : TableWriteRecovery.Fresh,
 			instructionPc: this.currentInstructionPc, lastPc: this.lastPc, nextPc: frame.pc,
@@ -626,8 +625,8 @@ export class CPU implements MappedPageInvalidator {
 		};
 		this.pendingTableWrite = write;
 		frame.pc = write.instructionPc;
-		if (phase === GcPhase.Mark || phase === GcPhase.MarkAgain || phase === GcPhase.Atomic)
-			this.markPendingTableWriteRoots(this.gc, write);
+		// The final root head visits parked operands after detaching the
+		// changed queue and before clearing weak references.
 		return true;
 	}
 
