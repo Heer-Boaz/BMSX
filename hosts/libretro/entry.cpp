@@ -1927,7 +1927,7 @@ bool retro_serialize(void* data, size_t size) {
 		g_video_presenter->backend().captureGxGpuVramSnapshot(
 			g_content->runtime.machine.gxGpu);
 		serialized = bmsx::serializeLibretroState(
-			g_content->runtime,
+			*g_content,
 			std::span<bmsx::u8>(static_cast<bmsx::u8*>(data), size));
 	} catch (const std::exception& error) {
 		logging.log(
@@ -1945,7 +1945,7 @@ bool retro_unserialize(const void* data, size_t size) {
 	bool restored = false;
 	try {
 		restored = bmsx::unserializeLibretroState(
-			g_content->runtime,
+			*g_content,
 			std::span<const bmsx::u8>(
 				static_cast<const bmsx::u8*>(data),
 				size));

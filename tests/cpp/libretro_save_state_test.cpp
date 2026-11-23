@@ -1,6 +1,8 @@
 #include "hid_keys.h"
 #include "input.h"
 #include "common/endian.h"
+#include "common/scope_exit.h"
+#include "content.h"
 #include "libretro_state.h"
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/input/contracts.h"
@@ -15,6 +17,8 @@
 #include <array>
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <optional>
 #include <stdexcept>
 #include <vector>
@@ -35,6 +39,8 @@ bool supervisorRequestLineHigh = false;
 bool RETRO_CALLCONV readSupervisorRequestLine() {
 	return supervisorRequestLineHigh;
 }
+
+void RETRO_CALLCONV discardLog(enum retro_log_level, const char*, ...) {}
 
 std::array<uint16_t, bmsx::INPUT_CONTROLLER_PAD_COUNT> gamepadStates{};
 int16_t pointerX = 0;
@@ -74,49 +80,36 @@ void testLibretroStateEnvelopeRoundTrip() {
 			.title = std::nullopt,
 			.hardware = {bmsx::CartridgeRomDeviceConfig{}},
 		});
-	const bmsx::RomImage systemImage = bmsx::parseSystemRomImage(
-		system.data(),
-		system.size());
-	const bmsx::CartridgePackage cartridgeImage = bmsx::parseCartridgePackage(
-		cartridge.data(),
-		cartridge.size());
-	const bmsx::CartridgePackage romOnlyCartridgeImage = bmsx::parseCartridgePackage(
-		romOnlyCartridge.data(),
-		romOnlyCartridge.size());
-	const bmsx::CartridgeSocketMediaPair cartridgeMedia{{
-		bmsx::CartridgeCardMedia{
-			cartridgeImage.bytes,
-			16u,
-			false,
-		},
-		bmsx::CartridgeCardMedia{
-			romOnlyCartridgeImage.bytes,
-			std::nullopt,
-			false,
-		},
-	}};
-	bmsx::Runtime runtime(
-		bmsx::RuntimeOptions{
-			systemImage.bytes,
-			cartridgeMedia,
-			bmsx::PSX_MACHINE_SPEC,
-		},
-		input);
-	runtime.resetForSystemBoot();
-	runtime.boot();
+	const auto directory = std::filesystem::temp_directory_path() / "bmsx_libretro_save_state_test";
+	std::filesystem::create_directories(directory);
+	bmsx::ScopeExit clean([&] { std::filesystem::remove_all(directory); });
+	const auto writeMedia = [](const auto& path, std::span<const bmsx::u8> bytes) {
+		std::ofstream stream(path, std::ios::binary);
+		stream.exceptions(std::ios::badbit | std::ios::failbit);
+		stream.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+	};
+	const auto slot0 = directory / "cart.rom";
+	const auto slot1 = directory / "rom-only.rom";
+	writeMedia(directory / "bmsx-bios.rom", system);
+	writeMedia(slot0, cartridge);
+	writeMedia(slot1, romOnlyCartridge);
+	auto content = bmsx::loadLibretroContent(directory.string(), {slot0.string(), slot1.string()}, input, {discardLog});
+	require(content != nullptr, "serializer test mounts both cartridge packages and the BIOS");
+	auto& runtime = content->runtime;
 
 	bmsx::Memory& memory = runtime.machine.memory;
+	constexpr auto headerBytes = bmsx::LIBRETRO_STATE_HEADER_BYTES;
 	const size_t stateSize = bmsx::libretroStateSize(runtime);
 	memory.writeMappedU32LE(systemScratch, 0x11223344u);
 	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0x89abcdefu);
 	const auto expected = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
 	std::vector<bmsx::u8> envelope(stateSize + 16u, 0xa5);
 	require(
-		bmsx::serializeLibretroState(runtime, envelope),
+		bmsx::serializeLibretroState(*content, envelope),
 		"libretro envelope should serialize into a caller buffer larger than its fixed size");
 	require(bmsx::readLE32(envelope.data() + 4u) == expected.size(), "direct encoding retains the exact payload extent");
-	require(std::equal(expected.begin(), expected.end(), envelope.begin() + 8u), "direct encoding preserves the shared state format");
-	require(std::all_of(envelope.begin() + 8u + expected.size(), envelope.begin() + stateSize,
+	require(std::equal(expected.begin(), expected.end(), envelope.begin() + headerBytes), "direct encoding preserves the shared state format");
+	require(std::all_of(envelope.begin() + headerBytes + expected.size(), envelope.begin() + stateSize,
 		[](auto byte) { return byte == 0; }), "frontend capacity contains deterministic zero padding");
 	require(std::all_of(envelope.begin() + stateSize, envelope.end(), [](auto byte) { return byte == 0xa5; }),
 		"serialization does not touch bytes outside its announced capacity");
@@ -124,12 +117,12 @@ void testLibretroStateEnvelopeRoundTrip() {
 	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0u);
 	const bmsx::u32 currentFormat = bmsx::readLE32(envelope.data());
 	bmsx::writeLE32(envelope.data(), 0x31534d42u); // BMS1 did not serialize reference slots.
-	require(!bmsx::unserializeLibretroState(runtime, envelope)
+	require(!bmsx::unserializeLibretroState(*content, envelope)
 		&& memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0u,
 		"the previous layout is rejected before changing machine state");
 	bmsx::writeLE32(envelope.data(), currentFormat);
 	require(
-		bmsx::unserializeLibretroState(runtime, envelope),
+		bmsx::unserializeLibretroState(*content, envelope),
 		"libretro envelope should decode its retained payload length");
 	require(
 		memory.readMappedU32LE(systemScratch) == 0x11223344u,
@@ -149,10 +142,10 @@ void testLibretroStateEnvelopeRoundTrip() {
 		bmsx::libretroStateSize(runtime) == stateSize,
 		"libretro envelope size should remain fixed with maximum READY GPUREAD data");
 	require(
-		bmsx::serializeLibretroState(runtime, envelope),
+		bmsx::serializeLibretroState(*content, envelope),
 		"libretro envelope should contain maximum READY GPUREAD data");
 	require(
-		bmsx::unserializeLibretroState(runtime, envelope),
+		bmsx::unserializeLibretroState(*content, envelope),
 		"libretro envelope should restore maximum READY GPUREAD data");
 }
 

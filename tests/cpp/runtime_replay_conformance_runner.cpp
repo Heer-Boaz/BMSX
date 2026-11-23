@@ -1,7 +1,7 @@
 #include "common/mmap_file.h"
 #include "cartridge_media.h"
-#include "libretro_state.h"
 #include "machine/runtime/runtime.h"
+#include "machine/runtime/save_state/codec.h"
 #include "render/backend/backend.h"
 #include "rompack/image.h"
 #include "spec/bmsx/io.h"
@@ -105,8 +105,7 @@ int main(int argc, char** argv) {
 			pendingLookup = pendingLookup->previous;
 		require(pendingLookup != nullptr, "the checkpoint includes a suspended implicit table read");
 		const auto anchor = capture();
-		std::vector<bmsx::u8> envelope(bmsx::libretroStateSize(runtime));
-		require(bmsx::serializeLibretroState(runtime, envelope), "libretro serialize must succeed");
+		const auto payload = bmsx::encodeRuntimeSaveState(anchor);
 		for (int frame = 0; frame < 6; ++frame) tick();
 		const auto forward = observeReplay(runtime);
 		require(forward.background != booted.background, "guest produced a different scanout");
@@ -115,7 +114,8 @@ int main(int argc, char** argv) {
 		bmsx::applyRuntimeSaveState(runtime, anchor);
 		for (int frame = 0; frame < 6; ++frame) tick();
 		require(observeReplay(runtime) == forward, "in-memory restore repeats visible machine behavior");
-		require(bmsx::unserializeLibretroState(runtime, envelope), "libretro unserialize must succeed");
+		bmsx::applyRuntimeSaveState(runtime, bmsx::decodeRuntimeSaveState(
+			payload, runtime.machine.memory.ramByteCount(), gpu.readVramSnapshotBytes().size()));
 		for (int frame = 0; frame < 6; ++frame) tick();
 		require(observeReplay(runtime) == forward, "serialized restore repeats the same behavior");
 

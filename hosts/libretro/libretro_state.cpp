@@ -1,7 +1,7 @@
 #include "libretro_state.h"
 
 #include "common/endian.h"
-#include "machine/runtime/runtime.h"
+#include "content.h"
 #include "machine/runtime/save_state/codec.h"
 
 #include <cstring>
@@ -9,8 +9,8 @@
 namespace bmsx {
 namespace {
 
-constexpr u32 kSaveStateMagic = 0x41534d42u; // BMSA: pending table writes and deferred guest cycles
-constexpr size_t kSaveStateHeaderBytes = 8u;
+constexpr u32 kSaveStateMagic = 0x42534d42u; // BMSB: media-bound state
+constexpr size_t kMediaIdentityOffset = 2u * sizeof(u32);
 constexpr size_t kSaveStateBasePayloadCapacityBytes = 0x01000000u;
 
 size_t saveStatePayloadCapacityBytes(const Runtime& runtime) {
@@ -21,27 +21,31 @@ size_t saveStatePayloadCapacityBytes(const Runtime& runtime) {
 } // namespace
 
 size_t libretroStateSize(const Runtime& runtime) {
-	return kSaveStateHeaderBytes + saveStatePayloadCapacityBytes(runtime);
+	return LIBRETRO_STATE_HEADER_BYTES + saveStatePayloadCapacityBytes(runtime);
 }
 
-bool serializeLibretroState(Runtime& runtime, std::span<u8> envelope) {
+bool serializeLibretroState(LibretroContent& content, std::span<u8> envelope) {
+	auto& runtime = content.runtime;
 	const size_t envelopeBytes = libretroStateSize(runtime);
 	if (envelope.size() < envelopeBytes) {
 		return false;
 	}
 	const size_t payloadBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime),
-		envelope.subspan(kSaveStateHeaderBytes, saveStatePayloadCapacityBytes(runtime)));
+		envelope.subspan(LIBRETRO_STATE_HEADER_BYTES, saveStatePayloadCapacityBytes(runtime)));
 	if (payloadBytes == 0) return false;
 	writeLE32(envelope.data(), kSaveStateMagic);
 	writeLE32(envelope.data() + 4u, static_cast<u32>(payloadBytes));
+	const auto& identity = content.mediaIdentity();
+	std::memcpy(envelope.data() + kMediaIdentityOffset, identity.data(), identity.size());
 	std::memset(
-		envelope.data() + kSaveStateHeaderBytes + payloadBytes,
+		envelope.data() + LIBRETRO_STATE_HEADER_BYTES + payloadBytes,
 		0,
-		envelopeBytes - kSaveStateHeaderBytes - payloadBytes);
+		envelopeBytes - LIBRETRO_STATE_HEADER_BYTES - payloadBytes);
 	return true;
 }
 
-bool unserializeLibretroState(Runtime& runtime, std::span<const u8> envelope) {
+bool unserializeLibretroState(LibretroContent& content, std::span<const u8> envelope) {
+	auto& runtime = content.runtime;
 	if (envelope.size() < libretroStateSize(runtime)) {
 		return false;
 	}
@@ -49,13 +53,15 @@ bool unserializeLibretroState(Runtime& runtime, std::span<const u8> envelope) {
 		return false;
 	}
 	const size_t payloadBytes = readLE32(envelope.data() + 4u);
-	if (payloadBytes > saveStatePayloadCapacityBytes(runtime)) {
+	if (payloadBytes == 0 || payloadBytes > saveStatePayloadCapacityBytes(runtime)) {
 		return false;
 	}
+	const auto& identity = content.mediaIdentity();
+	if (std::memcmp(envelope.data() + kMediaIdentityOffset, identity.data(), identity.size()) != 0) return false;
 	applyRuntimeSaveState(
 		runtime,
 		decodeRuntimeSaveState(
-			envelope.subspan(kSaveStateHeaderBytes, payloadBytes),
+			envelope.subspan(LIBRETRO_STATE_HEADER_BYTES, payloadBytes),
 			runtime.machine.memory.ramByteCount(),
 			runtime.machine.gxGpu.readVramSnapshotBytes().size()));
 	return true;

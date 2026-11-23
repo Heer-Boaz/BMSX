@@ -1,16 +1,19 @@
 #include "bmsx_libretro.h"
 #include "input.h"
+#include "libretro_state.h"
 #include "runtime_error.h"
 #include "video_output.h"
 #include "common/endian.h"
 #include "spec/bmsx/cartridge.h"
 #include "spec/bmsx/io.h"
 #include "spec/gx/pcrtc.h"
+#include "spec/blua32/builtin.h"
 #include "spec/blua32/opcode.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "spec/bmsx/model.h"
 #include "machine/runtime/save_state/codec.h"
 #include "machine/runtime/runtime.h"
+#include "support/blua32_test_rom.h"
 #include "support/boot_rom_fixture.h"
 
 #include <array>
@@ -19,6 +22,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -198,7 +202,7 @@ std::vector<bmsx::u8> makeExpandedPcrtcState() {
 	require(retro_serialize(envelope.data(), envelope.size()), "the core should serialize a state for libretro AV notification validation");
 	const bmsx::u32 payloadBytes = bmsx::readLE32(envelope.data() + 4u);
 	bmsx::RuntimeSaveState state = bmsx::decodeRuntimeSaveState(
-		std::span<const bmsx::u8>(envelope.data() + 8u, payloadBytes),
+		std::span<const bmsx::u8>(envelope.data() + bmsx::LIBRETRO_STATE_HEADER_BYTES, payloadBytes),
 		bmsx::PSX_MACHINE_SPEC.ramBytes,
 		bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 	auto& pcrtc = state.machineState.machine.gxGpu.pcrtc;
@@ -212,8 +216,9 @@ std::vector<bmsx::u8> makeExpandedPcrtcState() {
 	pcrtc.presentWords[bmsx::GX_GPU_PCRTC_SMODE1_LOW] = 0x40206504u;
 	const std::vector<bmsx::u8> expandedPayload = bmsx::encodeRuntimeSaveState(state);
 	bmsx::writeLE32(envelope.data() + 4u, static_cast<bmsx::u32>(expandedPayload.size()));
-	std::memcpy(envelope.data() + 8u, expandedPayload.data(), expandedPayload.size());
-	std::memset(envelope.data() + 8u + expandedPayload.size(), 0, envelope.size() - 8u - expandedPayload.size());
+	auto payload = std::span(envelope).subspan(bmsx::LIBRETRO_STATE_HEADER_BYTES);
+	std::memcpy(payload.data(), expandedPayload.data(), expandedPayload.size());
+	std::memset(payload.data() + expandedPayload.size(), 0, payload.size() - expandedPayload.size());
 	return envelope;
 }
 
@@ -261,6 +266,90 @@ void testAvPublicationPhases() {
 	presenting = false;
 	require(output.publishPendingAvInfo() == bmsx::LibretroAvInfoNotification::System && system == 2u,
 		"timing and geometry changes share a safe system AV publication");
+}
+
+void testStateRequiresInstalledMedia(const std::filesystem::path& testDirectory) {
+	using namespace bmsx;
+	const auto stock = testDirectory / "original";
+	const auto other = testDirectory / "other";
+	std::filesystem::create_directories(stock);
+	std::filesystem::create_directories(other);
+	const CartManifest hardware{.title = std::nullopt, .hardware = {
+		CartridgeRomDeviceConfig{}, CartridgeRamDeviceConfig{16u}, CartridgeMailboxDeviceConfig{},
+	}};
+	const auto writeImage = [](const std::filesystem::path& path, RomImageDomain domain, OpCode load,
+		const CartManifest& manifest) {
+		test::Blua32TestImage code;
+		code.text.resize(2u * INSTRUCTION_BYTES);
+		writeInstruction(code.text, 0u, static_cast<u8>(load), 0u, 0u, 0u);
+		writeInstruction(code.text, 1u, static_cast<u8>(OpCode::HALT), 0u, 0u, 0u);
+		code.functions = {{.firstWord = 0u, .wordCount = 2u}};
+		if (domain == RomImageDomain::System) {
+			for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES)
+				code.systemGlobalNames.emplace_back(primitive.name);
+		}
+		const auto image = test::encodeBlua32TestRom(domain, code, manifest);
+		std::ofstream file(path, std::ios::binary);
+		file.write(reinterpret_cast<const char*>(image.bytes.data()), static_cast<std::streamsize>(image.bytes.size()));
+		return image.bytes.size();
+	};
+	const auto bios = stock / "bmsx-bios.rom";
+	const auto otherBios = other / "bmsx-bios.rom";
+	const size_t biosBytes = writeImage(bios, RomImageDomain::System, OpCode::K0, {});
+	require(writeImage(otherBios, RomImageDomain::System, OpCode::K1, {}) == biosBytes,
+		"both BIOS files have the same installed extent");
+	const auto first = stock / "first.rom";
+	const auto second = stock / "second.rom";
+	const size_t cartBytes = writeImage(first, RomImageDomain::Cartridge, OpCode::K0, hardware);
+	require(writeImage(second, RomImageDomain::Cartridge, OpCode::K1, hardware) == cartBytes,
+		"both physical cartridges have the same ROM extent and device layout");
+
+	const auto load = [](const std::filesystem::path& firmware, const std::filesystem::path& slot0,
+		const std::filesystem::path& slot1) {
+		systemDirectory = firmware.string();
+		retro_init();
+		const std::string path0 = slot0.string(), path1 = slot1.string();
+		const retro_game_info slots[] = {
+			{path0.c_str(), nullptr, 0u, nullptr}, {path1.c_str(), nullptr, 0u, nullptr},
+		};
+		require(retro_load_game_special(BMSX_SUBSYSTEM_DUAL_CARTRIDGE, slots, std::size(slots)),
+			"the frontend admits both valid cartridge configurations");
+	};
+	load(stock, first, second);
+	insideRetroRun = true;
+	retro_run();
+	insideRetroRun = false;
+	std::vector<u8> saved(retro_serialize_size()), before(saved.size()), after(saved.size());
+	require(retro_serialize(saved.data(), saved.size()), "capture an ordinary running machine");
+	BmsxGuestProgressV1 savedProgress{};
+	guestProgress.read_progress(&savedProgress);
+	require(savedProgress.scheduler_cycles > 0, "the saved state is not the initial boot state");
+	retro_deinit();
+
+	const auto rejectsWithoutMutation = [&](const char* message) {
+		require(retro_serialize_size() == saved.size(), "same hardware has the same envelope capacity");
+		require(retro_serialize(before.data(), before.size()), "capture the current boot state");
+		require(!retro_unserialize(saved.data(), saved.size()), message);
+		require(retro_serialize(after.data(), after.size()) && after == before,
+			"a wrong-media restore leaves the running machine unchanged");
+		retro_deinit();
+	};
+	load(other, first, second);
+	rejectsWithoutMutation("identical cartridges cannot load a state from different BIOS bytes");
+	load(stock, second, first);
+	rejectsWithoutMutation("the same pair of cartridges cannot load a state from reversed sockets");
+
+	std::filesystem::copy_file(bios, otherBios, std::filesystem::copy_options::overwrite_existing);
+	std::filesystem::copy_file(first, other / "first-copy.rom", std::filesystem::copy_options::overwrite_existing);
+	std::filesystem::copy_file(second, other / "second-copy.rom", std::filesystem::copy_options::overwrite_existing);
+	load(other, other / "first-copy.rom", other / "second-copy.rom");
+	retro_reset();
+	require(retro_unserialize(saved.data(), saved.size()), "identical bytes load through different paths after reset");
+	BmsxGuestProgressV1 restored{};
+	guestProgress.read_progress(&restored);
+	require(restored.scheduler_cycles == savedProgress.scheduler_cycles
+		&& restored.tick_sequence == savedProgress.tick_sequence, "the same-media restore reinstates saved guest progress");
+	retro_deinit();
 }
 } // namespace
 
@@ -381,7 +470,7 @@ int main() {
 	const bmsx::RuntimeSaveState cartridgeRuntimeState =
 		bmsx::decodeRuntimeSaveState(
 			std::span<const bmsx::u8>(
-				cartridgeState.data() + 8u,
+				cartridgeState.data() + bmsx::LIBRETRO_STATE_HEADER_BYTES,
 				cartridgeStateBytes
 			),
 			bmsx::PSX_MACHINE_SPEC.ramBytes,
@@ -410,9 +499,9 @@ int main() {
 	negativeSchedulerState.machineState.schedulerNowCycles = -INT64_C(9007199254740993);
 	const auto negativePayload = bmsx::encodeRuntimeSaveState(negativeSchedulerState);
 	std::vector<bmsx::u8> negativeEnvelope(cartridgeState.size());
-	std::memcpy(negativeEnvelope.data(), cartridgeState.data(), 4u);
+	std::memcpy(negativeEnvelope.data(), cartridgeState.data(), bmsx::LIBRETRO_STATE_HEADER_BYTES);
 	bmsx::writeLE32(negativeEnvelope.data() + 4u, static_cast<bmsx::u32>(negativePayload.size()));
-	std::memcpy(negativeEnvelope.data() + 8u, negativePayload.data(), negativePayload.size());
+	std::memcpy(negativeEnvelope.data() + bmsx::LIBRETRO_STATE_HEADER_BYTES, negativePayload.data(), negativePayload.size());
 	require(retro_unserialize(negativeEnvelope.data(), negativeEnvelope.size()),
 		"a signed scheduler position can be restored through the existing state interface");
 	executionProfile.read_profile(&repeatedExecutionProfile);
@@ -557,6 +646,7 @@ int main() {
 	);
 	require(pixelFormatRequests == 4u, "malformed content should pass through one framebuffer negotiation before admission");
 	retro_deinit();
+	testStateRequiresInstalledMedia(testDirectory / "state-media");
 	std::filesystem::remove_all(testDirectory);
 
 	return 0;

@@ -2,6 +2,7 @@
 
 #include "bmsx_libretro.h"
 #include "common/mmap_file.h"
+#include "libretro_state.h"
 #include "machine/devices/cartridge/contracts.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/runtime/runtime.h"
@@ -20,11 +21,14 @@ class LibretroContent final {
 private:
 	MmapFile m_systemRomFile;
 	std::array<MmapFile, CARTRIDGE_SLOT_COUNT> m_cartridgePackageFiles;
+	std::optional<LibretroMediaIdentity> m_mediaIdentity;
 
 public:
 	RomImage systemRomImage;
 	std::array<std::optional<CartridgePackage>, CARTRIDGE_SLOT_COUNT> cartridgePackages;
 	Runtime runtime;
+
+	const LibretroMediaIdentity& mediaIdentity();
 
 private:
 	LibretroContent(

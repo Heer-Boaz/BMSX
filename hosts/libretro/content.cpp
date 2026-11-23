@@ -1,14 +1,19 @@
 #include "content.h"
 
 #include "cartridge_media.h"
+#include "common/endian.h"
 #include "mem_snapshot.h"
 #include "spec/bmsx/model.h"
 
+#include <cstring>
 #include <exception>
 #include <utility>
 #if defined(__GLIBC__)
 #include <malloc.h>
 #endif
+
+#define XXH_INLINE_ALL
+#include "../../third_party/xxhash/xxhash.h"
 
 namespace bmsx {
 namespace {
@@ -53,6 +58,30 @@ LibretroContent::LibretroContent(
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	runtime.machine.cpu.prepareSystemNativeCode();
 #endif
+}
+
+const LibretroMediaIdentity& LibretroContent::mediaIdentity() {
+	// The mappings are immutable for the content lifetime. Touch all their
+	// bytes only when the frontend first saves or loads an external state.
+	if (!m_mediaIdentity) {
+		XXH3_state_t hash;
+		XXH3_INITSTATE(&hash);
+		XXH3_128bits_reset(&hash);
+		const auto append = [&](const MmapFile& file) {
+			u8 size[sizeof(u32)];
+			writeLE32(size, static_cast<u32>(file.size()));
+			XXH3_128bits_update(&hash, size, sizeof(size));
+			XXH3_128bits_update(&hash, file.data(), file.size());
+		};
+		append(m_systemRomFile);
+		for (const auto& file : m_cartridgePackageFiles) append(file);
+		XXH128_canonical_t digest;
+		XXH128_canonicalFromHash(&digest, XXH3_128bits_digest(&hash));
+		auto& bytes = m_mediaIdentity.emplace();
+		static_assert(std::tuple_size_v<LibretroMediaIdentity> == sizeof(digest.digest));
+		std::memcpy(bytes.data(), digest.digest, bytes.size());
+	}
+	return *m_mediaIdentity;
 }
 
 std::unique_ptr<LibretroContent> loadLibretroContent(

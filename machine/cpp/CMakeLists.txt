@@ -1535,10 +1535,13 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
 		${BMSX_TEST_ROM_OBJECTS}
 		${BMSX_LIBRETRO_DIR}/input.cpp
+		${BMSX_LIBRETRO_DIR}/cartridge_media.cpp
+		${BMSX_LIBRETRO_DIR}/content.cpp
 		${BMSX_LIBRETRO_DIR}/libretro_state.cpp
+		${BMSX_LIBRETRO_DIR}/mem_snapshot.cpp
 		${BMSX_LIBRETRO_DIR}/host_shortcuts.c
 	)
-	target_link_libraries(bmsx_libretro_save_state_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	target_link_libraries(bmsx_libretro_save_state_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	target_include_directories(bmsx_libretro_save_state_tests PRIVATE
 		${BMSX_LIBRETRO_DIR}
 	)
@@ -1591,7 +1594,6 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/runtime_replay_conformance_runner.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/common/mmap_file.cpp
 		${BMSX_LIBRETRO_DIR}/cartridge_media.cpp
-		${BMSX_LIBRETRO_DIR}/libretro_state.cpp
 	)
 	target_link_libraries(bmsx_runtime_replay_conformance_runner PRIVATE bmsx_host_support bmsx_rom_image)
 	target_include_directories(bmsx_runtime_replay_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR})

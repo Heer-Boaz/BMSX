@@ -1,5 +1,6 @@
 #include "gles_frame_worker.h"
 #include "bmsx_libretro.h"
+#include "libretro_state.h"
 #include "common/endian.h"
 #include "machine/runtime/save_state/codec.h"
 #include "input.h"
@@ -640,7 +641,7 @@ void testLibretroEntry(const test::Blua32TestRom& rom, bool threaded) {
 	std::vector<u8> envelope(retro_serialize_size());
 	mutateFrontendGlState();
 	require(retro_serialize(envelope.data(), envelope.size()), "serialization follows the completed worker barrier");
-	const auto state = decodeRuntimeSaveState(std::span<const u8>(envelope.data() + 8u, readLE32(envelope.data() + 4u)),
+	const auto state = decodeRuntimeSaveState(std::span<const u8>(envelope.data() + LIBRETRO_STATE_HEADER_BYTES, readLE32(envelope.data() + 4u)),
 		PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	require(readLE32(state.ram.data() + (Finished - RAM_BASE)) == 1u,
 		"real threaded libretro executes the guest through readback completion");
@@ -653,7 +654,7 @@ void testLibretroEntry(const test::Blua32TestRom& rom, bool threaded) {
 	std::vector<u8> restoredEnvelope(retro_serialize_size());
 	mutateFrontendGlState();
 	require(retro_serialize(restoredEnvelope.data(), restoredEnvelope.size()), "capture reacquires context ownership after restored execution");
-	const auto restored = decodeRuntimeSaveState(std::span<const u8>(restoredEnvelope.data() + 8u, readLE32(restoredEnvelope.data() + 4u)),
+	const auto restored = decodeRuntimeSaveState(std::span<const u8>(restoredEnvelope.data() + LIBRETRO_STATE_HEADER_BYTES, readLE32(restoredEnvelope.data() + 4u)),
 		PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	require(restored.machineState.machine.gxGpu.vramBytes == state.machineState.machine.gxGpu.vramBytes,
 		"frontend GL writes after a snapshot cannot corrupt the next job's VRAM");
@@ -674,7 +675,7 @@ void testLibretroEntry(const test::Blua32TestRom& rom, bool threaded) {
 	retro_run();
 	retro_run();
 	require(retro_serialize(rebootEnvelope.data(), rebootEnvelope.size()), "capture the replayed guest after frontend GL mutation");
-	const auto rebooted = decodeRuntimeSaveState(std::span<const u8>(rebootEnvelope.data() + 8u, readLE32(rebootEnvelope.data() + 4u)),
+	const auto rebooted = decodeRuntimeSaveState(std::span<const u8>(rebootEnvelope.data() + LIBRETRO_STATE_HEADER_BYTES, readLE32(rebootEnvelope.data() + 4u)),
 		PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	require(rebooted.machineState.machine.gxGpu.vramBytes == state.machineState.machine.gxGpu.vramBytes,
 		"pre-presentation GX draws reacquire a viewport and texture state cached by an earlier external snapshot");
@@ -697,7 +698,7 @@ void testLibretroEntry(const test::Blua32TestRom& rom, bool threaded) {
 		expectedPixels[at] = red * 255u; expectedPixels[at + 1u] = green * 255u;
 		expectedPixels[at + 2u] = blue * 255u; expectedPixels[at + 3u] = 255u;
 	}
-	const size_t sceneBytes = encodeRuntimeSaveState(scene, std::span<u8>(envelope).subspan(8u));
+	const size_t sceneBytes = encodeRuntimeSaveState(scene, std::span<u8>(envelope).subspan(LIBRETRO_STATE_HEADER_BYTES));
 	require(sceneBytes != 0u, "the saved raw scanout fits the existing libretro envelope");
 	writeLE32(envelope.data() + 4u, static_cast<u32>(sceneBytes));
 	{

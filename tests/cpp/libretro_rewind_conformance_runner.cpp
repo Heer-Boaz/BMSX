@@ -1,4 +1,5 @@
 #include "bmsx_libretro.h"
+#include "libretro_state.h"
 #include "common/endian.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/bmsx/model.h"
@@ -137,7 +138,7 @@ std::vector<bmsx::u8> captureBytes() {
 bmsx::RuntimeSaveState capture() {
 	const auto envelope = captureBytes();
 	const auto size = bmsx::readLE32(envelope.data() + 4);
-	return bmsx::decodeRuntimeSaveState(std::span<const bmsx::u8>(envelope.data() + 8, size),
+	return bmsx::decodeRuntimeSaveState(std::span<const bmsx::u8>(envelope.data() + bmsx::LIBRETRO_STATE_HEADER_BYTES, size),
 		bmsx::PSX_MACHINE_SPEC.ramBytes, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 }
 
@@ -206,7 +207,7 @@ void checkPausedExternalRestore() {
 	pcrtc.presentWords[bmsx::GX_GPU_PCRTC_BGCOLOR_LOW] = 0x002a579bu;
 	const auto payload = bmsx::encodeRuntimeSaveState(state);
 	bmsx::writeLE32(envelope.data() + 4u, static_cast<bmsx::u32>(payload.size()));
-	std::memcpy(envelope.data() + 8u, payload.data(), payload.size());
+	std::memcpy(envelope.data() + bmsx::LIBRETRO_STATE_HEADER_BYTES, payload.data(), payload.size());
 	const size_t sample = static_cast<size_t>(height - 8u) * width + 8u;
 	const auto previousPixel = pixels[sample] & 0x00ffffffu;
 	constexpr uint32_t expectedPixel = 0x009b572au;
