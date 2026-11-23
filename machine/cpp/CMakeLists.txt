@@ -417,6 +417,7 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 		machine/cpu/jit/sljit/control.cpp
 		machine/cpu/jit/sljit/edges.cpp
 		machine/cpu/jit/sljit/gate.cpp
+		machine/cpu/jit/sljit/return_gate.cpp
 		machine/cpu/jit/sljit/length.cpp
 		machine/cpu/jit/sljit/lowering.cpp
 		machine/cpu/jit/sljit/memory.cpp

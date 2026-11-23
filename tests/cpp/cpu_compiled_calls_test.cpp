@@ -913,6 +913,29 @@ void nativeCallChainIsRestorableAtBlockedMmio(bool openOuter) {
 		for (const auto& device : devices) require(device.committed == 1, "the resumed write commits once");
 		requireParity(generated, scalar);
 	}
+
+	// Same transient nested call with its selected continuation withdrawn.
+	// An absent cell cannot commit any of the generated frame-pop writes.
+	generated.cpu.prepareSystemNativeCode();
+	auto& thread = *generated.cpu.activeThread();
+	const u32 receivingPc = generated.rom.textAddress + (middle + 1u) * INSTRUCTION_BYTES;
+	auto& code = *thread.currentFrame->executionImage->nativeCodeLookup;
+	auto* page = code.find(receivingPc, 0);
+	const u32 word = (receivingPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	require(page && page->nativeCode && page->nativeCode[word],
+		"the real inner return would resume a published continuation");
+	page->nativeCode[word] = nullptr;
+	page->words[word].dispatchOp = static_cast<u8>(OpCode::RET);
+	auto& retiredLeaf = *thread.currentFrame->next->next;
+	retiredLeaf.writeControl(FrameField::CallSite, inactiveCallSite);
+	restart(DYNAMIC_RAM_BASE);
+	require(test::runCpuParity(generated.cpu, scalar.cpu, 200) == RunResult::Halted
+		&& generated.cpu.readFrameRegister(0, 0) == valueInteger(73)
+		&& thread.currentFrame->next->readControl(FrameField::CallSite)
+			== generated.rom.textAddress + parentCall * INSTRUCTION_BYTES
+		&& retiredLeaf.readControl(FrameField::CallSite) == inactiveCallSite,
+		"the admitted cold RET publishes its still-live parent, not the retired leaf, and places the result once");
+	requireParity(generated, scalar);
 }
 
 void nativeReturnPublishesCallerTopAtMappedObserver() {

@@ -26,6 +26,7 @@ public:
 	void* stringReadProbe;
 	void* tableIteratorScan;
 };
+sljit_label* emitPendingReturn(sljit_compiler*, sljit_label* bindWindow, sljit_label* semanticReturn);
 const NativeBlockGate& nativeBlockGate();
 
 } // namespace bmsx

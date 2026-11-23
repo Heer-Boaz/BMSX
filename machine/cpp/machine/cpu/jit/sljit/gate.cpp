@@ -84,7 +84,8 @@ NativeBlockGate::NativeBlockGate() {
 	auto* callEntry = emitTransfer(&CPU::tryCallNativeFrame);
 	sljit_set_label(call, callEntry);
 	auto* retEntry = emitTransfer(&CPU::tryReturnNativeFrame);
-	sljit_set_label(ret, retEntry);
+	auto* pendingReturn = emitPendingReturn(compiler, bindWindow, retEntry);
+	sljit_set_label(ret, pendingReturn);
 	// Ordinary exits carry the exact outstanding charge and top floor in
 	// their descriptor. Linked edges and scalar boundaries already applied them.
 	auto* publish = sljit_emit_label(compiler);
@@ -124,7 +125,7 @@ NativeBlockGate::NativeBlockGate() {
 	const std::array boundaries{
 		start, sljit_get_label_abs_addr(returned), sljit_get_label_abs_addr(dispatched),
 		sljit_get_label_abs_addr(cold), sljit_get_label_abs_addr(declined), sljit_get_label_abs_addr(callEntry),
-		sljit_get_label_abs_addr(retEntry),
+		sljit_get_label_abs_addr(retEntry), sljit_get_label_abs_addr(pendingReturn),
 		sljit_get_label_abs_addr(publish), sljit_get_label_abs_addr(leave),
 		sljit_get_label_abs_addr(stringProbe),
 		sljit_get_label_abs_addr(iteratorScan),
@@ -133,7 +134,7 @@ NativeBlockGate::NativeBlockGate() {
 	constexpr std::array names{
 		"bmsx_native_gate_entry", "bmsx_native_gate_return_to_cpp", "bmsx_native_gate_dispatch",
 		"bmsx_native_gate_cold_dispatch", "bmsx_native_gate_declined", "bmsx_native_gate_call",
-		"bmsx_native_gate_ret",
+		"bmsx_native_gate_ret", "bmsx_native_gate_pending_return",
 		"bmsx_native_gate_publish", "bmsx_native_gate_leave", "bmsx_native_string_read_probe",
 		"bmsx_native_table_iterator_scan"
 	};
