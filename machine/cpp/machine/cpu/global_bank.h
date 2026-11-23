@@ -2,11 +2,9 @@
 
 #include <optional>
 
-#include "machine/cpu/value_slots.h"
+#include "machine/cpu/gc_heap.h"
 
 namespace bmsx {
-
-class LuaHeap;
 
 struct GlobalBankState {
 	u32 base = 0;
@@ -19,7 +17,7 @@ struct GlobalBankState {
 // Guest bytes are name words, two hash buckets per slot, payloads, then tags.
 class GlobalBank {
 public:
-	GlobalBank(Memory& memory, LuaHeap& heap) : m_memory(memory), m_heap(heap) {}
+	GlobalBank(Memory& memory, GcHeap& heap) : m_memory(memory), m_heap(heap) {}
 
 	Value readSlot(u32 slot) const {
 		const u32 word = m_memory.readRamRecordWord(m_state.base + 12u * m_state.capacity + 4u * slot);
@@ -29,6 +27,7 @@ public:
 	void writeSlot(u32 slot, Value value) {
 		m_memory.writeRamRecordWord(m_state.base + 12u * m_state.capacity + 4u * slot, valuePayload(value));
 		m_memory.writeRamRecordByte(m_state.base + 16u * m_state.capacity + slot, static_cast<u8>(valueTag(value)));
+		if (valueTagHasGcEdge(valueTag(value))) m_heap.markGlobalWrite(value);
 	}
 	u32 capacity() const { return m_state.capacity; }
 	u32 count() const { return m_state.count; }
@@ -48,7 +47,7 @@ private:
 	void grow(u32 base, u32 capacity);
 
 	Memory& m_memory;
-	LuaHeap& m_heap;
+	GcHeap& m_heap;
 	GlobalBankState m_state;
 	ValueSpan m_values;
 };

@@ -284,7 +284,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::WriteGlobal:
 		case NativeBlockExit::WriteSystemGlobal: {
 			auto& bank = exit->exit == NativeBlockExit::WriteGlobal ? cpu.m_globalBank : cpu.m_systemGlobalBank;
-			bank.values().set(exit->operands.global.index, frame->registers.get(exit->operands.global.slot));
+			bank.writeSlot(exit->operands.global.index, frame->registers.get(exit->operands.global.slot));
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		}

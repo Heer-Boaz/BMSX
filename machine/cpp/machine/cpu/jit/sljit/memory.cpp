@@ -20,6 +20,9 @@ void SLJIT_FUNC writeNativeBarrier(GcHeap* heap, u32 address, u32 word, u32 tag)
 	if constexpr (Link == UPVALUE_NEXT) heap->writeBlackClosedValue(address, value);
 	else heap->writeBlackTableValue(address, value);
 }
+void SLJIT_FUNC markNativeGlobalWrite(GcHeap* heap, u32 word, u32 tag) {
+	heap->markGlobalWrite(valueFromTag(static_cast<ValueTag>(tag), word));
+}
 } // namespace
 
 void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 address, sljit_sw addressArg,
@@ -47,33 +50,44 @@ void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 
 }
 
 void NativeLowering::emitStoreBarrier(int source, NativeGcBarrier barrier, StoreBarrierRecord record, NativeBlockExitSite& exit) {
-	if (barrier == NativeGcBarrier::None) return;
+	const bool global = record == StoreBarrierRecord::Global;
+	if (barrier == NativeGcBarrier::None || (global && !m_bindings.gcPhase)) return;
 	auto* c = m_compiler;
 	// A Table already has its raw receiver in the table scratch; a Cell
 	// keeps its private RAM offset in R3 until the cold arm.
 	const bool cell = record == StoreBarrierRecord::ClosedUpvalue;
 	const auto address = cell ? SLJIT_R2 : SLJIT_R0;
-	const auto flags = cell ? SLJIT_R0 : SLJIT_R2;
+	const auto flags = global ? SLJIT_R1 : cell ? SLJIT_R0 : SLJIT_R2;
 	const auto test = cell ? SLJIT_R1 : SLJIT_R3;
 	std::array<sljit_jump*, 2> scalar{};
 	if (barrier == NativeGcBarrier::Dynamic) {
 		// Match valueTagHasGcEdge: BuiltinFunction is not a heap edge.
 		constexpr auto first = static_cast<u8>(ValueTag::String);
-		emitTag(source, flags);
+		// Global stores have just written their tag from R1.
+		if (!global) emitTag(source, flags);
 		sljit_emit_op2(c, SLJIT_SUB32, flags, 0, flags, 0, SLJIT_IMM, first);
 		scalar = {
 			sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, flags, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Thread) - first),
 			sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, flags, 0, SLJIT_IMM, static_cast<u8>(ValueTag::BuiltinFunction) - first),
 		};
 	}
-	sljit_emit_op1(c, SLJIT_MOV_U8, flags, 0, SLJIT_MEM1(address), GC_COLOR_OFFSET);
-	sljit_emit_op2(c, SLJIT_AND32, test, 0, flags, 0, SLJIT_IMM, GC_COLOR_MASK);
-	auto* revisit = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, test, 0, SLJIT_IMM, 3);
+	sljit_jump* mutation;
+	if (global) {
+		sljit_emit_op1(c, SLJIT_MOV_U8, flags, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_bindings.gcPhase));
+		sljit_emit_op2(c, SLJIT_AND32, flags, 0, flags, 0, SLJIT_IMM, 7);
+		sljit_emit_op2(c, SLJIT_SUB32, flags, 0, flags, 0, SLJIT_IMM, static_cast<u8>(GcPhase::Mark));
+		mutation = sljit_emit_cmp(c, SLJIT_LESS_EQUAL | SLJIT_32, flags, 0, SLJIT_IMM,
+			static_cast<u8>(GcPhase::Atomic) - static_cast<u8>(GcPhase::Mark));
+	} else {
+		sljit_emit_op1(c, SLJIT_MOV_U8, flags, 0, SLJIT_MEM1(address), GC_COLOR_OFFSET);
+		sljit_emit_op2(c, SLJIT_AND32, test, 0, flags, 0, SLJIT_IMM, GC_COLOR_MASK);
+		mutation = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, test, 0, SLJIT_IMM, 3);
+	}
 	if (barrier == NativeGcBarrier::Dynamic) {
 		auto* ready = sljit_emit_label(c);
 		for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
 	}
-	m_workspace.storeBarriers.push_back({revisit, m_cache.state(), sljit_emit_label(c), record, &exit, source});
+	m_workspace.storeBarriers.push_back({mutation, m_cache.state(), sljit_emit_label(c), record, &exit, source});
 }
 
 void NativeLowering::emitStoreBarriers() {
@@ -81,6 +95,7 @@ void NativeLowering::emitStoreBarriers() {
 	for (const auto& barrier : m_workspace.storeBarriers) {
 		sljit_set_label(barrier.mutation, sljit_emit_label(c));
 		m_cache.setState(barrier.registers);
+		const bool global = barrier.record == StoreBarrierRecord::Global;
 		const bool cell = barrier.record == StoreBarrierRecord::ClosedUpvalue;
 		const auto savedAddress = cell ? NativeBlockAbi::helperResultOffset : NativeTableScratch::receiver;
 		if (cell) {
@@ -92,18 +107,24 @@ void NativeLowering::emitStoreBarriers() {
 		}
 		// The leaf marks or enqueues the exact input, without tracing,
 		// allocating or inspecting any unpublished activation.
-		emitRawLoad(barrier.source, SLJIT_R2, SLJIT_R3);
+		emitRawLoad(barrier.source, global ? SLJIT_R1 : SLJIT_R2, global ? SLJIT_R2 : SLJIT_R3);
 		m_cache.spillCall(false, 0);
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), savedAddress);
-		const auto target = cell ? SLJIT_FUNC_ADDR(&writeNativeBarrier<UPVALUE_NEXT>)
-			: SLJIT_FUNC_ADDR(&writeNativeBarrier<GC_RECORD_LINK>);
-		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4V(P, 32, 32, 32), SLJIT_IMM, target);
+		if (global) {
+			sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&markNativeGlobalWrite));
+		} else {
+			sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), savedAddress);
+			const auto target = cell ? SLJIT_FUNC_ADDR(&writeNativeBarrier<UPVALUE_NEXT>)
+				: SLJIT_FUNC_ADDR(&writeNativeBarrier<GC_RECORD_LINK>);
+			sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4V(P, 32, 32, 32), SLJIT_IMM, target);
+		}
 		m_cache.spillCall(true, 0);
-		const auto address = cell ? SLJIT_R2 : SLJIT_R0;
-		sljit_emit_op2(c, SLJIT_AND32, address, 0, SLJIT_MEM1(SLJIT_SP), savedAddress, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-		NativeBlockAbi::emitRamAddress(c, address, address);
-		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), barrier.resumeStore);
+		if (!global) {
+			const auto address = cell ? SLJIT_R2 : SLJIT_R0;
+			sljit_emit_op2(c, SLJIT_AND32, address, 0, SLJIT_MEM1(SLJIT_SP), savedAddress, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+			NativeBlockAbi::emitRamAddress(c, address, address);
+		}
+		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), barrier.resume);
 	}
 }
 

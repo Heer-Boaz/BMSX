@@ -93,8 +93,8 @@ CPU::CPU(
 	, m_rootView(m_heap)
 	, m_transferViews{Thread{m_heap}, Thread{m_heap}}
 	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling")))
-	, m_systemGlobalBank(memory, m_luaHeap)
-	, m_globalBank(memory, m_luaHeap) {
+	, m_systemGlobalBank(memory, m_heap)
+	, m_globalBank(memory, m_heap) {
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 	m_luaFaultErrorValues.fill(valueNil());
 	m_luaFaultErrorValues[LUA_FAULT_REASON_UNKNOWN] = valueString(m_stringPool.intern("Attempted to get length of an unsupported value."));
@@ -557,7 +557,7 @@ void CPU::clearExecutionEnvironment() {
 
 void CPU::setGlobalByKey(StringId key, const Value& value) {
 	const u32 slot = m_globalBank.registerName(key, value);
-	m_globalBank.values().set(slot, value);
+	m_globalBank.writeSlot(slot, value);
 }
 
 void CPU::setSystemGlobalByKey(StringId key, const Value& value) {
@@ -565,7 +565,7 @@ void CPU::setSystemGlobalByKey(StringId key, const Value& value) {
 	if (!slot) {
 		throw BMSX_RUNTIME_ERROR("System global '" + m_stringPool.toString(key) + "' has no register slot.");
 	}
-	m_systemGlobalBank.values().set(*slot, value);
+	m_systemGlobalBank.writeSlot(*slot, value);
 }
 
 Value CPU::getSystemGlobalByKey(StringId key) const {

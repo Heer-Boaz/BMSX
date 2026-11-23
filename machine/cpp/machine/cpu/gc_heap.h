@@ -93,8 +93,11 @@ public:
 		Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	void markString(StringId id) { m_stringPool.markReachable(id); }
-	bool markValue(Value value);
-	bool markThread(u32 address);
+	bool markValue(Value value, u32 queue = GC_TRACE_HEAD);
+	bool markThread(u32 address, u32 queue = GC_TRACE_HEAD);
+	// Strong name/value edges from the permanently rooted global banks.
+	void markGlobalWrite(Value reference);
+	const u8* phaseAddress() const { return memory.ramData() + m_controlOffset; }
 	void writeBarrier(u32 address, u32 link) {
 		if (markColor(address) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
 	}
@@ -120,11 +123,11 @@ private:
 		const u32 lane = address + GC_COLOR_OFFSET;
 		memory.writeRamRecordByte(lane, mark);
 	}
-	bool markClosure(u32 address);
+	bool markClosure(u32 address, u32 queue = GC_TRACE_HEAD);
 	void creditBarrierMarks();
 	u8 weakModeBits(Value value);
 	std::pair<int, size_t> probeTableMode(const TableRecord&, size_t limit);
-	bool markTable(u32 address);
+	bool markTable(u32 address, u32 queue = GC_TRACE_HEAD);
 	size_t traceTable(u32 address, size_t limit, bool resumingMode = false);
 	void traceTableEdges(const TableRecord&, u8 mode, u32 first = 0u, u32 end = UINT32_MAX);
 	size_t traceTableEntries(const TableRecord&, u8 mode, u32 next, size_t work, size_t limit);

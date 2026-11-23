@@ -53,9 +53,9 @@ const bootThreadBytes = 80 + 40 + 112;
 const bootBytes = bootThreadBytes + 12 + 15 + 697 + 8 + 2 * 9;
 // Two Thread traces of its header and one active frame, an atomic trace
 // that also clears eight Value slots, two remark visits and one sweep visit.
-const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 3 * 6 + 2 * 17 + 32;
+const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 6 + 2 * 17 + 32;
 
-test('physical GC work counts canonical scans, reclamation and three unique root passes without a cycle debit', () => {
+test('physical GC work counts canonical scans, reclamation and one global bank pass without a cycle debit', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'charge allocated Strings and names, not their indexes');
 	cpu.instructionBudgetRemaining = 7;
@@ -372,7 +372,7 @@ test('ROM constants need no collector visits even with multiple resident images'
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + (20 + 12) + (5 + 12) + 2 * 9, 'each card charges its constant bank, name-slot map and new unique global');
 	cpu.instructionBudgetRemaining = 5;
-	const work = bootCollectionWork + 3 * (3 * 2);
+	const work = bootCollectionWork + 3 * 2;
 	assert.equal(cpu.gc.collect(), work, 'only the registered namespace slots add root work');
 	assert.equal(cpu.instructionBudgetRemaining, 5);
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);

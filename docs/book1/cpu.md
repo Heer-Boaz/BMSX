@@ -1333,14 +1333,17 @@ budget of the decoded image. The collector compares that budget plus the new
 request with its current assist threshold.
 
 For a full collection, the collector marks retained objects, incrementally
-remarks roots and modified objects in a second pass, resolves weak references
-in a final atomic remark, and then reclaims unmarked objects and Strings.
+revisits mutable objects and Thread stacks, resolves weak references in a
+final atomic remark, and then reclaims unmarked objects and Strings. It
+examines the global namespaces during the first pass. Publishing a new
+global name or reference during marking keeps the new reference reachable
+without rescanning the namespaces in the later passes.
 When the second mark pass is underway, writing a strong reference into an
 already scanned Table without a metatable, or into a closed captured-variable
 cell, marks the new reference instead of scanning the allocation again.
 Writes that move Table storage or change its metatable can still require
-another scan, since they affect how existing entries are reached. Roots and
-retained Thread stacks are examined again before reclamation.
+another scan, since they affect how existing entries are reached. Retained
+Thread stacks are examined again before reclamation.
 Allocations created during reclamation
 survive that collection. An object found reachable earlier in the
 cycle may therefore survive until a later collection even if its last

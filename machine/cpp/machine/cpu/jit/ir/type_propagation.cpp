@@ -222,6 +222,14 @@ struct NativeTypePropagation::Transfer {
 
 	void operator()(NativeTruthBranch& op) const { op.sourceTruthy = truth(); }
 
+	void operator()(NativeGlobalAccess& op) const {
+		if (op.access != NativeAccess::Write) return;
+		// An incoming tag proof would buy two cheap tests at the cost of
+		// a new entry admission guard. Only local definitions remove the tests.
+		if (const auto type = input(0); type && type->assumption == 0)
+			op.barrier = valueTagHasGcEdge(type->tag) ? NativeGcBarrier::Reference : NativeGcBarrier::None;
+	}
+
 	void operator()(NativeUpvalueAccess& op) const {
 		if (const auto type = input(0)) {
 			facts.require(type);

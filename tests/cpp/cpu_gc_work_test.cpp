@@ -60,7 +60,7 @@ struct Machine {
 constexpr int bootBytes = 232 + 12 + 15 + 697 + 16 + 2 * 9;
 // Two Thread traces of its header and one active frame, an atomic trace
 // that also clears eight Value slots, two remark visits and a sweep visit.
-constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 3 * 6 + 2 * 17 + 32;
+constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 6 + 2 * 17 + 32;
 
 void allocationAdmissionUsesLogicalBytes() {
 	Machine machine(image()); auto& cpu = machine.cpu;
@@ -426,8 +426,8 @@ void allActivatedImagesAndUniqueGlobals() {
 	require(cpu.luaHeap().usedBytes() == bootBytes + (20 + 20) + (5 + 16) + 2 * 9,
 		"each card charges its constant bank, name-slot map and new unique global");
 	cpu.instructionBudgetRemaining = 5;
-	// Only the two new globals add work to the three root passes.
-	const size_t work = bootCollectionWork + 3 * (3 * 2);
+	// Only the two new globals add work to the initial root pass.
+	const size_t work = bootCollectionWork + 3 * 2;
 	require(cpu.collectHeap() == work && cpu.instructionBudgetRemaining == 5,
 		"all resident images omit primitive and ROM-backed constants from the root passes");
 	const auto state = cpu.captureRuntimeState();
@@ -567,13 +567,17 @@ void resumesRootBanksBeforeTracing() {
 	const auto weakRoot = cpu.stringPool().intern("root-0");
 	const auto finalRoot = cpu.stringPool().intern("root-1");
 	const auto last = cpu.stringPool().intern(program.globalNames.back());
+	constexpr std::string_view appendedName = "name registered after the global scan";
+	const auto appended = cpu.stringPool().intern(appendedName);
 	const u32 lastTarget = cpu.createTable(GC_STEP_WORDS, 0).address();
 	cpu.setGlobalByKey(last, valueTable(lastTarget));
 	auto weak = cpu.createTable(1, 0), mode = cpu.createTable();
 	mode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
 	weak.setMetatableAddress(mode.address());
-	const u32 weakTarget = cpu.createTable().address();
-	weak.setInteger(1, valueTable(weakTarget));
+	auto weakTarget = cpu.createTable(1, 0), child = cpu.createTable(1, 0);
+	weakTarget.setInteger(1, valueTable(child.address()));
+	child.setInteger(1, valueInteger(73));
+	weak.setInteger(1, valueTable(weakTarget.address()));
 	cpu.setGlobalByKey(weakRoot, valueTable(weak.address()));
 	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
@@ -587,19 +591,34 @@ void resumesRootBanksBeforeTracing() {
 		const u32 late = cpu.createTable().address();
 		cpu.setGlobalByKey(first, valueTable(late));
 		advance();
-		require(heap.phase() == GcPhase::Mark && heap.isAlive(lastTarget) && !heap.isAlive(late),
-			"resuming scans the untouched suffix without repeating the amended prefix");
+		require(heap.phase() == GcPhase::Mark && heap.isAlive(lastTarget) && heap.isAlive(late),
+			"resuming scans the suffix; the store has already forwarded the amended prefix");
 		for (int step = 0; heap.phase() != GcPhase::Atomic && step < 30; ++step) advance();
-		require(heap.phase() == GcPhase::Atomic && !heap.isAlive(weakTarget),
+		require(heap.phase() == GcPhase::Atomic && !heap.isAlive(weakTarget.address()) && !heap.isAlive(child.address()),
 			"the last weak value is still unmarked just before the final root pass");
-		cpu.setGlobalByKey(finalRoot, valueTable(weakTarget));
-		for (int step = 0; heap.active() && step < 30; ++step) advance();
-		require(!heap.active() && memory.readRamRecordWord(control + GC_ROOT_CURSOR) == 0u
-			&& heap.tableRecordAddress(late) == late && heap.tableRecordAddress(lastTarget) == lastTarget,
-			"remark preserves a global written behind the initial root cursor");
-		require(heap.tableRecordAddress(weakTarget) == weakTarget && weak.getInteger(1) == valueTable(weakTarget),
-			"the final pass observes a newly rooted existing Table before clearing weak values");
-		return memory.captureSaveState().ram;
+		cpu.setGlobalByKey(finalRoot, valueTable(weakTarget.address()));
+		cpu.setGlobalByKey(appended, valueInteger(41));
+		require(heap.isAlive(weakTarget.address()) && !heap.isAlive(child.address()),
+			"publishing a global only enqueues the new edge");
+		const auto stoppedState = cpu.captureRuntimeState();
+		const auto stoppedRam = memory.captureSaveState();
+		const auto finishStopped = [&] {
+			for (int step = 0; heap.active() && step < 30; ++step) advance();
+			require(!heap.active() && memory.readRamRecordWord(control + GC_ROOT_CURSOR) == 0u
+				&& heap.tableRecordAddress(late) == late && heap.tableRecordAddress(lastTarget) == lastTarget,
+				"remark preserves a global written behind the initial root cursor");
+			require(heap.tableRecordAddress(weakTarget.address()) == weakTarget.address()
+				&& weak.getInteger(1) == valueTable(weakTarget.address()) && heap.tableRecordAddress(child.address()) == child.address()
+				&& child.getInteger(1) == valueInteger(73), "the detached gray parent retains its white child before weak cleanup");
+			require(cpu.stringPool().find(appendedName) == appended && cpu.getGlobalByKey(appended) == valueInteger(41),
+				"a newly registered name is a String root even with a scalar Value");
+			return memory.captureSaveState().ram;
+		};
+		const auto expected = finishStopped();
+		memory.restoreSaveState(stoppedRam);
+		cpu.restoreRuntimeState(stoppedState);
+		require(finishStopped() == expected, "restoring after a root store preserves the detached work");
+		return expected;
 	};
 	const auto expected = finish();
 	memory.restoreSaveState(ram);
@@ -1010,6 +1029,8 @@ void resumesWeakTableRemark() {
 	auto& heap = cpu.gcHeap();
 	auto& memory = machine.memory;
 	constexpr u32 count = GC_STEP_WORDS + 256;
+	const auto globalKey = cpu.stringPool().intern("late remark global");
+	cpu.setGlobalByKey(globalKey, valueNil());
 	auto roots = cpu.createTable(count, 0), changed = cpu.createTable();
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(roots.address()));
@@ -1047,10 +1068,15 @@ void resumesWeakTableRemark() {
 		changed.setInteger(1, valueTable(late.address()));
 		meta.setStringKey(modeKey, valueNil());
 		require(!heap.isAlive(late.address()), "the intervening write is not marked eagerly");
+		auto global = cpu.createTable(1, 0), child = cpu.createTable();
+		global.setInteger(1, valueTable(child.address()));
+		cpu.setGlobalByKey(globalKey, valueTable(global.address()));
+		require(heap.isAlive(global.address()) && !heap.isAlive(child.address()), "the global queues its new parent during visits");
 		for (int step = 0; heap.active() && step < 100; ++step) advance();
 		require(!heap.active() && read(GC_REMARK_VISIT_STATE) == 0u
 			&& heap.tableRecordAddress(watched.address()) == watched.address()
-			&& heap.tableRecordAddress(late.address()) == late.address(),
+			&& heap.tableRecordAddress(late.address()) == late.address()
+			&& heap.tableRecordAddress(child.address()) == child.address(),
 			"remark uses the current weak mode and retains intervening writes");
 		return memory.captureSaveState().ram;
 	};

@@ -390,14 +390,14 @@ export class CPU implements MappedPageInvalidator {
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
 		this.luaHeap = new LuaHeap(this);
-		this.systemGlobalBank = new GlobalBank(memory, this.luaHeap);
-		this.globalBank = new GlobalBank(memory, this.luaHeap);
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
 		this.indexKey = this.stringPool.intern('__index');
 		this.newIndexKey = this.stringPool.intern('__newindex');
 		this.lengthKey = this.stringPool.intern('__len');
 		this.modeKey = this.stringPool.intern('__mode');
 		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator, this.modeKey);
+		this.systemGlobalBank = new GlobalBank(memory, this.gc);
+		this.globalBank = new GlobalBank(memory, this.gc);
 		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling');
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_UNKNOWN] = this.stringPool.intern('Attempted to get length of an unsupported value.');
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_CALL_NON_FUNCTION] = this.stringPool.intern('Attempted to call a non-function value.');
@@ -2343,7 +2343,7 @@ export class CPU implements MappedPageInvalidator {
 		key: StringId, value: Value,
 	): void {
 		const slot = this.globalBank.registerName(key, value);
-		this.globalBank.slots.set(slot, value);
+		this.globalBank.writeSlot(slot, value);
 	}
 
 	public setSystemGlobalByKey(
@@ -2353,7 +2353,7 @@ export class CPU implements MappedPageInvalidator {
 		if (slot === undefined) {
 			throw new Error(`System global '${this.stringPool.toString(key)}' has no register slot.`);
 		}
-		this.systemGlobalBank.slots.set(slot, value);
+		this.systemGlobalBank.writeSlot(slot, value);
 	}
 
 	public getSystemGlobalByKey(key: StringId): Value {
@@ -2938,7 +2938,7 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.WriteGlobal:
 				case CompiledBlockExit.WriteSystemGlobal: {
 					const bank = exit.exit === CompiledBlockExit.WriteGlobal ? this.globalBank : this.systemGlobalBank;
-					bank.slots.copySlotFrom(registers, exit.exitBx, exit.exitA);
+					bank.writeSlot(exit.exitBx, registers.get(exit.exitA));
 					redispatch = true;
 					break;
 				}

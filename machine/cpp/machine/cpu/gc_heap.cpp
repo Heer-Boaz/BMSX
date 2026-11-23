@@ -66,14 +66,14 @@ constexpr u32 TABLE_MODE_PENDING = 4u << TRACE_CURSOR_BITS;
 enum class ThreadTraceStage : u32 { Frames, Protected, Values, Clear };
 constexpr u32 THREAD_TRACE_OPEN_HEAD = 1u; // An open cell's address is aligned.
 }
-bool GcHeap::markValue(Value v) {
+bool GcHeap::markValue(Value v, u32 queue) {
 	switch (valueTag(v)) {
 		case ValueTag::Thread:
-			return markThread(valuePayload(v));
+			return markThread(valuePayload(v), queue);
 		case ValueTag::Table:
-			return markTable(valuePayload(v));
+			return markTable(valuePayload(v), queue);
 		case ValueTag::Closure:
-			return markClosure(valuePayload(v));
+			return markClosure(valuePayload(v), queue);
 		case ValueTag::BuiltinFunction:
 			return false;
 		case ValueTag::String:
@@ -97,6 +97,21 @@ void GcHeap::creditBarrierMarks() {
 	// String marks executed by the mutator must not carry host-only work
 	// across a save or rewind boundary.
 	if (const auto work = m_stringPool.takeMarkWork()) accountEpochWork(work);
+}
+
+void GcHeap::markGlobalWrite(Value reference) {
+	const auto current = phase();
+	if (current < GcPhase::Mark || current > GcPhase::Atomic) return;
+	if (valueTag(reference) == ValueTag::String) {
+		markString(asStringId(reference));
+		creditBarrierMarks();
+		return;
+	}
+	const auto stage = current == GcPhase::MarkAgain ? RemarkStage::Roots : remarkStage();
+	// While remark is visiting owners, Changed has not yet been detached.
+	// A mark in Trace then would be lost at the handoff.
+	const bool beforeDetach = stage <= RemarkStage::Weak && (stage != RemarkStage::None || current == GcPhase::Atomic);
+	markValue(reference, beforeDetach ? GC_CHANGED_HEAD : GC_TRACE_HEAD);
 }
 
 void GcHeap::writeBlackTableValue(u32 table, Value value) {
@@ -232,10 +247,10 @@ u32 GcHeap::threadRecordAddress(u32 address) const {
 	return objectRecordAddress(address, THREAD_RECORD_KIND);
 }
 
-bool GcHeap::markThread(u32 address) {
+bool GcHeap::markThread(u32 address, u32 queue) {
 	const u32 record = threadRecordAddress(address);
 	if (record == 0u || !unmarked(memory.readRamRecordByte(record + GC_COLOR_OFFSET))) return false;
-	enqueue(record, GC_RECORD_LINK, GC_TRACE_HEAD);
+	enqueue(record, GC_RECORD_LINK, queue);
 	return true;
 }
 
@@ -243,10 +258,10 @@ u32 GcHeap::closureRecordAddress(u32 address) const {
 	return objectRecordAddress(address, static_cast<u8>(ValueTag::Closure));
 }
 
-bool GcHeap::markClosure(u32 address) {
+bool GcHeap::markClosure(u32 address, u32 queue) {
 	const u32 record = closureRecordAddress(address);
 	if (record == 0u || !unmarked(memory.readRamRecordByte(record + GC_COLOR_OFFSET))) return false;
-	enqueue(record, GC_RECORD_LINK, GC_TRACE_HEAD);
+	enqueue(record, GC_RECORD_LINK, queue);
 	return true;
 }
 
@@ -263,10 +278,10 @@ u32 GcHeap::openCellAddress(u32 address) const {
 	return cell != 0u && Upvalue::isOpen(memory, cell) ? cell : 0u;
 }
 
-bool GcHeap::markTable(u32 address) {
+bool GcHeap::markTable(u32 address, u32 queue) {
 	const u32 record = tableRecordAddress(address);
 	if (record == 0u || !unmarked(memory.readRamRecordByte(record + GC_COLOR_OFFSET))) return false;
-	enqueue(record, GC_RECORD_LINK, GC_TRACE_HEAD);
+	enqueue(record, GC_RECORD_LINK, queue);
 	return true;
 }
 
@@ -631,7 +646,8 @@ size_t GcHeap::remarkVisits(size_t allowance) {
 		memory.writeRamRecordPair(m_controlOffset + GC_TRACE_HEAD, indexWord(GC_CHANGED_HEAD), 0u);
 		setRemarkStage(RemarkStage::Roots);
 		m_cpu.markRootHead(*this);
-		memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, static_cast<u32>(GcRootBank::SystemGlobals) << TRACE_CURSOR_BITS);
+		// Global banks were scanned once. Their mutation path retains new edges.
+		memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, static_cast<u32>(GcRootBank::SystemConstants) << TRACE_CURSOR_BITS);
 	}
 	return visits;
 }

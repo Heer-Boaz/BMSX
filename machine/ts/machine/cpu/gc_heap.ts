@@ -164,6 +164,22 @@ export class GcHeap {
 		const work = this.cpu.stringPool.takeMarkWork();
 		if (work !== 0) this.accountEpochWork(work);
 	}
+	// A GlobalBank has no weak lanes. Admission already classified this
+	// pair as a collector edge; only a marking epoch needs the insertion.
+	public writeGlobalRoot(tag: ValueTag, word: number): void {
+		const phase = this.phase();
+		if (phase < GcPhase.Mark || phase > GcPhase.Atomic) return;
+		if (tag === ValueTag.String) {
+			this.markString(word);
+			this.creditBarrierMarks();
+			return;
+		}
+		// Before the remark detaches Changed, it replaces (not merges) Trace.
+		const stage = phase === GcPhase.MarkAgain ? RemarkStage.Roots : this.remarkStage();
+		const beforeDetach = stage <= RemarkStage.Weak && (stage !== RemarkStage.None || phase === GcPhase.Atomic);
+		this.markRecord(word, tag === ValueTag.Thread ? THREAD_RECORD_KIND : tag,
+			beforeDetach ? GC_CHANGED_HEAD : GC_TRACE_HEAD);
+	}
 	// During the second pass, trace new strong edges without rescanning their
 	// owner. Metatabled tables still need the collector to resolve weak lanes.
 	// Only an insertion installs the supplied key as a new edge.
@@ -258,10 +274,10 @@ export class GcHeap {
 	private markTable(address: number): boolean {
 		return this.markRecord(address, ValueTag.Table);
 	}
-	private markRecord(address: number, kind: number): boolean {
+	private markRecord(address: number, kind: number, queue = GC_TRACE_HEAD): boolean {
 		const record = this.objectRecordAddress(address, kind);
 		if (record === 0 || !this.unmarked(this.memory.readRamRecordByte(record + GC_COLOR_OFFSET))) return false;
-		this.enqueue(record, GC_RECORD_LINK, GC_TRACE_HEAD);
+		this.enqueue(record, GC_RECORD_LINK, queue);
 		return true;
 	}
 	private markCell(cell: number): number {
@@ -576,7 +592,8 @@ export class GcHeap {
 			this.memory.writeRamRecordPair(this.controlOffset + GC_TRACE_HEAD, this.indexWord(GC_CHANGED_HEAD), 0);
 			this.setRemarkStage(RemarkStage.Roots);
 			this.cpu.markRootHead(this);
-			this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, GcRootBank.SystemGlobals << TRACE_CURSOR_BITS);
+			// Global banks were scanned once; mutation now retains new edges.
+			this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, GcRootBank.SystemConstants << TRACE_CURSOR_BITS);
 		}
 		return visits;
 	}

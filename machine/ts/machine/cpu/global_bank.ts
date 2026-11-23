@@ -1,8 +1,8 @@
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import type { Memory } from '../memory/memory';
-import type { LuaHeap } from './lua_heap';
+import type { GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
-import { hashCanonicalTableKey, valueFromTag, valueInteger, valueNil, valuePayload, valueString, valueTag, type Value } from './value';
+import { hashCanonicalTableKey, valueFromTag, valueInteger, valueNil, valuePayload, valueString, valueTag, valueTagHasGcEdge, ValueTag, type Value } from './value';
 import { ValueSlots } from './value_slots';
 
 export type GlobalBankState = { base: number; capacity: number; count: number };
@@ -16,15 +16,17 @@ export class GlobalBank {
 	public count = 0;
 	public readonly slots = new ValueSlots(0);
 
-	public constructor(private readonly memory: Memory, private readonly heap: LuaHeap) {}
+	public constructor(private readonly memory: Memory, private readonly gc: GcHeap) {}
 	public readSlot(slot: number): Value {
 		const word = this.memory.readRamRecordWord(this.base + 12 * this.capacity + 4 * slot);
 		const tag = this.memory.readRamRecordByte(this.base + 16 * this.capacity + slot);
 		return valueFromTag(tag, word);
 	}
 	public writeSlot(slot: number, value: Value): void {
-		this.memory.writeRamRecordWord(this.base + 12 * this.capacity + 4 * slot, valuePayload(value));
-		this.memory.writeRamRecordByte(this.base + 16 * this.capacity + slot, valueTag(value));
+		const tag = valueTag(value), word = valuePayload(value);
+		this.memory.writeRamRecordWord(this.base + 12 * this.capacity + 4 * slot, word);
+		this.memory.writeRamRecordByte(this.base + 16 * this.capacity + slot, tag);
+		if (valueTagHasGcEdge(tag)) this.gc.writeGlobalRoot(tag, word);
 	}
 	public name(slot: number): StringId { return this.memory.readRamRecordWord(this.base + 4 * slot); }
 	public captureState(): GlobalBankState { return { base: this.base, capacity: this.capacity, count: this.count }; }
@@ -36,7 +38,7 @@ export class GlobalBank {
 	}
 
 	public clear(): void {
-		if (this.base !== 0) this.heap.releaseRecord(this.base, GLOBAL_NAME_BUDGET_BYTES * this.count);
+		if (this.base !== 0) this.gc.budget.releaseRecord(this.base, GLOBAL_NAME_BUDGET_BYTES * this.count);
 		this.base = 0; this.capacity = 0; this.count = 0;
 		this.slots.unbind();
 	}
@@ -80,18 +82,19 @@ export class GlobalBank {
 		let oldBase = 0;
 		if (this.count === this.capacity) {
 			const capacity = this.capacity === 0 ? 8 : 2 * this.capacity;
-			const base = this.heap.reserveBacking(17 * capacity, GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
+			const base = this.gc.budget.reserveBacking(17 * capacity, GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
 			oldBase = this.base;
 			this.grow(base, capacity);
 		} else {
-			this.heap.admit(GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
+			this.gc.budget.admit(GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
 		}
 		const slot = this.count, bucket = this.bucketFor(key);
 		this.memory.writeRamRecordWord(this.base + 4 * slot, key);
 		this.slots.setNil(slot);
 		this.writeBucket(bucket, slot);
 		++this.count;
-		this.heap.replaceRecord(oldBase, 0, GLOBAL_NAME_BUDGET_BYTES);
+		this.gc.budget.replaceRecord(oldBase, 0, GLOBAL_NAME_BUDGET_BYTES);
+		this.gc.writeGlobalRoot(ValueTag.String, key);
 		return slot;
 	}
 }

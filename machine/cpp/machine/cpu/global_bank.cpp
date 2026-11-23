@@ -2,8 +2,6 @@
 
 #include <cstring>
 
-#include "machine/cpu/lua_heap.h"
-
 namespace bmsx {
 
 namespace {
@@ -21,7 +19,7 @@ void GlobalBank::bind(GlobalBankState state) {
 }
 
 void GlobalBank::clear() {
-	if (m_state.base != 0u) m_heap.releaseRecord(m_state.base, GLOBAL_NAME_BUDGET_BYTES * m_state.count);
+	if (m_state.base != 0u) m_heap.budget.releaseRecord(m_state.base, GLOBAL_NAME_BUDGET_BYTES * m_state.count);
 	bind({});
 }
 
@@ -74,11 +72,11 @@ u32 GlobalBank::registerName(StringId key, Value pending) {
 	u32 oldBase = 0u;
 	if (m_state.count == m_state.capacity) {
 		const u32 capacity = m_state.capacity == 0u ? 8u : 2u * m_state.capacity;
-		const u32 base = m_heap.reserveBacking(17u * capacity, GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
+		const u32 base = m_heap.budget.reserveBacking(17u * capacity, GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
 		oldBase = m_state.base;
 		grow(base, capacity);
 	} else {
-		m_heap.admit(GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
+		m_heap.budget.admit(GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
 	}
 	const u32 slot = m_state.count;
 	const u32 bucket = bucketFor(key);
@@ -86,7 +84,8 @@ u32 GlobalBank::registerName(StringId key, Value pending) {
 	m_values.set(slot, valueNil());
 	writeBucket(bucket, slot);
 	++m_state.count;
-	m_heap.replaceRecord(oldBase, 0u, GLOBAL_NAME_BUDGET_BYTES);
+	m_heap.markGlobalWrite(valueString(key));
+	m_heap.budget.replaceRecord(oldBase, 0u, GLOBAL_NAME_BUDGET_BYTES);
 	return slot;
 }
 

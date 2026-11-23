@@ -8,7 +8,8 @@ import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/number';
-import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { DYNAMIC_RAM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
@@ -66,6 +67,49 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	const saved = js.captureRuntimeState();
 	js.restoreRuntimeState(saved);
 	assert.deepEqual(js.captureRuntimeState(), saved, 'retained bank capacity is not serialized as extra globals');
+});
+
+test('generated SETGL and SETSYS forward white referents and keep executing', () => {
+	const text = new Uint8Array(5 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.SETGL, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.SETSYS, 1, 0, 0);
+	writeInstruction(text, 2, OpCode.LOADNIL, 0, 2, 0);
+	writeInstruction(text, 3, OpCode.K1, 2, 0, 0);
+	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }],
+		globalNames: ['cart-slot'], systemGlobalNames: ['system-slot'] });
+	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), gc = cpu.gc;
+	const loopCycles = BASE_CYCLES[OpCode.SETGL] + BASE_CYCLES[OpCode.SETSYS] + BASE_CYCLES[OpCode.LOADNIL] + 2
+		+ BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP];
+	cpu.runUntilDepth(0, 50 * loopCycles);
+	const frame = cpu.rootThread.frameAtDepth(0), page = frame.decodedPage!;
+	const pc = image.image.functions[0].codeAddress, offset = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const block = page.compiledBlocks!.entries[offset]!;
+	assert.equal(block.sourceWords, 5);
+	const cart = cpu.createTable(1, 0), system = cpu.createTable(1, 0), descendant = cpu.createTable();
+	gc.tables.setInteger(cart, 1, valueTable(descendant));
+	gc.tables.setInteger(system, 1, valueTable(descendant));
+	for (let step = 0; step < 256 && gc.phase() !== GcPhase.MarkAgain; ++step) gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+	assert.equal(gc.phase(), GcPhase.MarkAgain);
+	assert.equal(gc.isAlive(cart), false);
+	assert.equal(gc.isAlive(system), false);
+	assert.equal(gc.isAlive(descendant), false);
+	frame.registers.setTable(0, cart); frame.registers.setTable(1, system);
+	const run = { remainingCycles: loopCycles, registerTop: frame.top, memoryAddress: 0 };
+	const exit = block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, run)];
+	assert.equal(exit.nextPc, pc);
+	assert.equal(run.remainingCycles, 0);
+	assert.equal(frame.registers.get(0), valueNil());
+	assert.equal(frame.registers.get(1), valueNil());
+	assert.equal(frame.registers.get(2), valueInteger(1));
+	assert.equal(gc.isAlive(cart), true);
+	assert.equal(gc.isAlive(system), true);
+	assert.equal(gc.isAlive(descendant), false);
+	for (let step = 0; gc.active() && step < 16; ++step) gc.step();
+	assert.equal(gc.phase(), GcPhase.Pause);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('cart-slot')!), valueTable(cart));
+	assert.equal(cpu.getSystemGlobalByKey(cpu.stringPool.find('system-slot')!), valueTable(system));
+	assert.equal(gc.tableRecordAddress(descendant), descendant);
 });
 
 for (const alias of [false, true]) test(`compiled LOADNIL and LOADKR preserve kinds and raw register indexing (alias=${alias})`, () => {

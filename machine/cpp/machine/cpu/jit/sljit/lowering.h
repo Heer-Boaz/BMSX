@@ -87,7 +87,7 @@ private:
 	sljit_jump* emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&, bool routeOutside);
 	void emitOwnIndexRead(int base, NativeBlockExitSite&, std::optional<ValueTag> keyTag = {});
 	void emitOwnIndexStore(int value, NativeNilValue, NativeBlockExitSite&, NativeHashStore key);
-	enum class StoreBarrierRecord : u8 { Table, ClosedUpvalue };
+	enum class StoreBarrierRecord : u8 { Table, ClosedUpvalue, Global };
 	void emitStoreBarrier(int value, NativeGcBarrier, StoreBarrierRecord, NativeBlockExitSite&);
 	void emitStoreBarriers();
 	void assignFieldAddressSpills(std::span<const NativeOwnFieldAddress>);
@@ -151,7 +151,7 @@ private:
 	struct StoreBarrier {
 		sljit_jump* mutation;
 		State registers;
-		sljit_label* resumeStore;
+		sljit_label* resume;
 		StoreBarrierRecord record;
 		NativeBlockExitSite* exit;
 		int source;

@@ -487,6 +487,64 @@ void hotUpvalueAlias() {
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void hotGlobalWritesForwardTheirWhiteChildren() {
+	test::Blua32TestImage image;
+	const std::array ops{OpCode::SETGL, OpCode::SETSYS, OpCode::LOADNIL, OpCode::K1, OpCode::JMP};
+	image.text.resize(ops.size() * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(ops[0]), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(ops[1]), 1, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(ops[2]), 0, 2, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(ops[3]), 2, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(ops[4]), 0, 63, 59, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}};
+	image.globalNames = {"cart-slot"}; image.systemGlobalNames = {"system-slot"};
+	CpuMachine machine(image);
+	auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	int loopCycles = 2; // LOADNIL places two Values in addition to its base cost.
+	for (const auto op : ops) loopCycles += BASE_CYCLES[static_cast<u8>(op)];
+	require(cpu.runUntilDepth(0, loopCycles * NATIVE_WARM_SCALE * 16) == RunResult::Yielded,
+		"the loop exhausts its warm grant");
+	auto& frame = *cpu.rootThread()->currentFrame;
+	require(frame.decodedPage, "the loop binds its real decode page");
+	const auto& page = *frame.decodedPage;
+	const u32 entry = (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(cpu, page, entry);
+	const auto* block = page.nativeBlocks->entries[entry].get();
+	require(block && block->sourceWords == ops.size(), "the actual global setters and their continuation are generated together");
+
+	auto cart = cpu.createTable(1, 0), system = cpu.createTable(1, 0), child = cpu.createTable();
+	cart.setInteger(1, valueTable(child.address()));
+	system.setInteger(1, valueTable(child.address()));
+	for (int step = 0; step < 256 && heap.phase() != GcPhase::MarkAgain; ++step)
+		heap.step(valueNil(), valueNil(), valueNil(), 0u, false, 1);
+	require(heap.phase() == GcPhase::MarkAgain && !heap.isAlive(cart.address()) && !heap.isAlive(system.address())
+		&& !heap.isAlive(child.address()), "the table graphs are genuinely white after the initial global scan");
+	const auto banks = cpu.captureRuntimeState();
+	const auto slots = [&](GlobalBankState bank) {
+		return ValueSpan(machine.memory, bank.base + 12u * bank.capacity, bank.base + 16u * bank.capacity, bank.capacity);
+	};
+	frame.registers.set(0, valueTable(cart.address()));
+	frame.registers.set(1, valueTable(system.address()));
+	NativeBlockRunState state{.frame = &frame, .heap = &heap,
+		.globalValues = slots(banks.globals), .systemGlobalValues = slots(banks.systemGlobals),
+		.remainingCycles = loopCycles, .registerTop = 2, .registerCapacity = frame.registers.size()};
+	const auto& exit = *block->run(frame.registers, state);
+	require((exit.exit == NativeBlockExit::Continue || exit.exit == NativeBlockExit::ScalarBoundary)
+		&& exit.nextPc == machine.rom.textAddress && state.remainingCycles == 0
+		&& frame.registers.get(0) == valueNil() && frame.registers.get(1) == valueNil()
+		&& frame.registers.get(2) == valueInteger(1),
+		"the native barrier resumes the same body without a general semantic exit");
+	require(heap.isAlive(cart.address()) && heap.isAlive(system.address()) && !heap.isAlive(child.address()),
+		"both machine-code stores enqueue exactly the new parents, without tracing inside the mutator");
+	for (int step = 0; heap.active() && step < 16; ++step)
+		heap.step(valueNil(), valueNil(), valueNil());
+	require(!heap.active() && heap.tableRecordAddress(child.address()) == child.address()
+		&& cpu.getGlobalByKey(*cpu.stringPool().find("cart-slot")) == valueTable(cart.address())
+		&& cpu.getSystemGlobalByKey(*cpu.stringPool().find("system-slot")) == valueTable(system.address()),
+		"both namespace stores keep the table graph after their source registers are cleared");
+}
+
 struct ContextBlock {
 	using Payload = DecodedInstruction::Payload;
 	struct Instruction { OpCode op; u16 a = 0; i16 b = 0; i16 c = 0; Payload payload{}; };
@@ -774,6 +832,7 @@ int main() {
 		nativeGenericVarargCallLeavesInactiveControlUntouched();
 		hotConstantTrap(); hotUpvalueAlias(); hotGlobalBanks();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		hotGlobalWritesForwardTheirWhiteChildren();
 		test::Blua32TestImage image; image.text.resize(INSTRUCTION_BYTES);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0); image.functions = {{.firstWord = 0, .wordCount = 1}};
 		CpuMachine machine(image); rawContextValues(machine); varargAliasesAndSideExits(machine);

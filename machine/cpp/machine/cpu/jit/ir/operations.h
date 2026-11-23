@@ -161,6 +161,7 @@ struct NativeGlobalAccess {
 	u32 index;
 	NativeGlobalBank bank;
 	NativeAccess access;
+	NativeGcBarrier barrier = NativeGcBarrier::Dynamic;
 	constexpr NativeSlotAccess slots() const {
 		return access == NativeAccess::Read ? NativeSlotAccess{.writes = {slot, 1}}
 			: NativeSlotAccess{.reads = {static_cast<i16>(slot), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}};
