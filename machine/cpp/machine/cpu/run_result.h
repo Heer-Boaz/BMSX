@@ -8,7 +8,7 @@ enum class RunResult {
 	Halted,
 	Yielded,
 	ExecutionStopped,
-	ParkedTableWrite,
+	ParkedAllocation,
 };
 
 enum class CpuRunKind : uint8_t { Direct, Scheduled };

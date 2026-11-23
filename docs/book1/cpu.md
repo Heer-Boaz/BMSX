@@ -1412,6 +1412,11 @@ earlier scan of the interrupted cycle. A request that still cannot fit raises
 the out-of-memory error without admitting its bytes. Explicit full collection
 always performs the fresh cycle.
 
+Recovery for `NEWT` or for a table insertion can pause execution with the
+console clock stopped. No table or new mapping is visible until the reservation
+succeeds. The instruction completes, or raises its error, before the console
+accepts a following interrupt or device deadline.
+
 An allocation assist, explicit collection or emergency collection can delay
 execution, but none adds guest cycles. An allocation that fails retains the
 ordinary charges for the parts of the instruction it already performed; it

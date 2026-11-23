@@ -1,3 +1,4 @@
+import { AllocationRecovery, PendingAllocationKind, type PendingAllocation } from '../../machine/ts/machine/cpu/cpu';
 import { PendingMemoryKind } from '../../machine/ts/machine/cpu/memory_operation';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import assert from 'node:assert/strict';
@@ -520,7 +521,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					cycleBudgetGranted: 23_456,
 					cycleCarryGranted: 34_567,
 					activeCpuUsedCycles: 45_678,
-					deferredTableWriteCycles: 0,
+					deferredAllocationCycles: 0,
 				},
 				frameActive: true,
 			},
@@ -550,7 +551,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			interruptEventPending: false,
 			memoryWriteBlocked: false,
 			memoryWriteBlockedAddress: 0,
-			pendingTableWrite: null,
+			pendingAllocation: null,
 			pendingMemory: { kind: PendingMemoryKind.WordStores, instructionPc: 0xfffffffc, nextPc: 0, address: 0x12345678, accessKind: MemoryAccessKind.Word, registerIndex: 7, wordCount: 9 },
 			statusWord: CPU_STATUS_CART_ENTRY,
 			causeWord: 0,
@@ -663,6 +664,22 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 
 	assert.deepEqual(decoded.cpuState.globals, state.cpuState.globals);
 	assert.deepEqual(decoded.cpuState.completionValues, state.cpuState.completionValues);
+});
+
+test('typed pending allocations preserve their issued instruction and active operands', () => {
+	const state = createRuntimeSaveState();
+	const frontier = { recovery: AllocationRecovery.RetryCurrent, instructionPc: 0x2000, lastPc: 0x2004, nextPc: 0x2008 };
+	const requests: PendingAllocation[] = [
+		{ ...frontier, kind: PendingAllocationKind.TableCreation, destination: 17, arraySize: 1024, hashSize: 5 },
+		{ ...frontier, kind: PendingAllocationKind.TableAssignment, receiver: 0x12345678, key: valueInteger(-1), value: valueFloatBits(0xffc12345) },
+	];
+	for (const pending of requests) {
+		state.cpuState.pendingAllocation = pending;
+		const encoded = encodeRuntimeSaveState(state);
+		assert.deepEqual(decodeRuntimeSaveState(encoded, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes).cpuState.pendingAllocation, pending);
+		encoded[4] = 1; // The earlier layout has no request tag.
+		assert.throws(() => decodeRuntimeSaveState(encoded, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes), /Unsupported save-state layout/);
+	}
 });
 
 test('runtime save-state codec retains the USER ingress bank', () => {

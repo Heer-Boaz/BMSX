@@ -4,7 +4,7 @@ export type FrameState = {
 	cycleBudgetGranted: number;
 	cycleCarryGranted: number;
 	activeCpuUsedCycles: number;
-	deferredTableWriteCycles: number;
+	deferredAllocationCycles: number;
 };
 
 export const enum InstructionStepResult {

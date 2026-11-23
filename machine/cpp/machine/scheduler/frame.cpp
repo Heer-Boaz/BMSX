@@ -24,7 +24,7 @@ bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 		return false;
 	}
-	if (runtime.machine.cpu.tableWriteParked()) return runtime.machine.cpu.tableWriteReady();
+	if (runtime.machine.cpu.allocationParked()) return runtime.machine.cpu.allocationReady();
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 		|| m_carriedCycleBudget > 0
 		|| m_accumulatedHostTimeMs > 0.0;
@@ -47,9 +47,9 @@ FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime&
 	m_backendServiceSuspended = backendBlocked;
 	auto& cpu = runtime.machine.cpu;
 	auto& heap = cpu.gcHeap();
-	if (cpu.tableWriteParked() ? cpu.advanceTableWriteRecovery() : heap.finalMarkPending()) {
+	if (cpu.allocationParked() ? cpu.advanceAllocationRecovery() : heap.finalMarkPending()) {
 		// Keep the host grant queued while the guest clock is stopped.
-		if (!cpu.tableWriteParked()) heap.stepFinalMark();
+		if (!cpu.allocationParked()) heap.stepFinalMark();
 		++m_maintenancePulseSequence;
 		return Pulse::Maintenance;
 	}
@@ -206,7 +206,7 @@ bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime) {
 LogicalTickResult FrameSchedulerState::advanceLogicalTick(Runtime& runtime, i64 tickBudget) {
 	const auto admission = beginScheduledExecution(runtime, 0.0);
 	if (admission == Pulse::Maintenance) return LogicalTickResult::Maintenance;
-	const bool parked = runtime.machine.cpu.tableWriteParked();
+	const bool parked = runtime.machine.cpu.allocationParked();
 	if ((tickBudget == 0 && !parked) || admission == Pulse::Blocked) return LogicalTickResult::Incomplete;
 	if (parked) {
 		if (!m_logicalTickRunPending) {
@@ -245,7 +245,7 @@ LogicalTickResult FrameSchedulerState::advanceLogicalTick(Runtime& runtime, i64 
 	if (lastTickSequence != targetSequence) {
 		// The attempt itself changed CPU/recovery state, but hasn't
 		// advanced a collector quantum or made its clock debit visible.
-		return runtime.machine.cpu.tableWriteParked() ? LogicalTickResult::DeferredCpu : LogicalTickResult::Incomplete;
+		return runtime.machine.cpu.allocationParked() ? LogicalTickResult::DeferredCpu : LogicalTickResult::Incomplete;
 	}
 	m_logicalTickRunPending = false;
 	m_logicalTickRunTargetSequence = 0;
@@ -278,7 +278,7 @@ bool FrameSchedulerState::runDevicesToNextLogicalTick(Runtime& runtime, i64 cycl
 		if (carry != 0 || cycleGrant != 0) beginScheduledFrame(runtime, carry + cycleGrant, carry);
 	}
 	if (beginScheduledExecution(runtime, 0.0) != Pulse::Ready || !runtime.frameLoop.frameActive
-		|| runtime.machine.cpu.tableWriteParked()) return false;
+		|| runtime.machine.cpu.allocationParked()) return false;
 	const i64 previous = lastTickSequence;
 	FrameState& state = runtime.frameLoop.frameState;
 	auto& scheduler = runtime.machine.scheduler;

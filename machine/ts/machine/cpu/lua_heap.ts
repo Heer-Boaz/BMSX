@@ -14,6 +14,7 @@ const GC_ASSIST_MIN_WORDS = 512;
 export const GC_STEP_WORDS = 4096;
 export const GC_ASSIST_BYTES = 256;
 export const enum LuaAllocationRecovery { CurrentOrFresh, Fresh, Exhausted }
+export const enum LuaAllocationMode { Direct, Scheduled, Retry }
 
 export class LuaHeap {
 	private readonly targetAddress: number;
@@ -68,24 +69,35 @@ export class LuaHeap {
 		return recovery;
 	}
 
-	public allocateRecord(bytes: number, object: boolean, backingBytes: number, backingField: number,
-		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(), backingCharge = backingBytes): number {
-		const charged = bytes + backingCharge;
+	private reserveRecord(bytes: number, object: boolean, backingBytes: number, backingField: number, charged: number): number {
 		const prefix = object ? GC_OBJECT_PREFIX : 0;
-		let recovery = this.admit(charged, root0, root1, root2, 0);
 		const arena = this.cpu.heapAllocator;
+		const base = arena.allocate(bytes + prefix, !object);
+		if (base === 0) return 0;
+		const backing = backingBytes === 0 ? 0 : arena.allocate(backingBytes, true);
+		if (backingBytes !== 0 && backing === 0) {
+			arena.free(base);
+			return 0;
+		}
+		const address = base + prefix;
+		if (backingField !== 0) this.cpu.memory.writeRamRecordWord(address + backingField, backing);
+		this.accountAllocation(charged);
+		return address;
+	}
+
+	public allocateRecord(bytes: number, object: boolean, backingBytes: number, backingField: number,
+		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(), backingCharge = backingBytes,
+		mode = LuaAllocationMode.Direct): number {
+		const charged = bytes + backingCharge;
+		if (mode !== LuaAllocationMode.Direct) {
+			const admitted = mode === LuaAllocationMode.Scheduled ? this.prepareAllocation(charged, root0, root1, root2)
+				: this.usedBytes() + charged <= this.capacity();
+			return admitted ? this.reserveRecord(bytes, object, backingBytes, backingField, charged) : 0;
+		}
+		let recovery = this.admit(charged, root0, root1, root2);
 		for (;;) {
-			const base = arena.allocate(bytes + prefix, !object);
-			if (base !== 0) {
-				const backing = backingBytes === 0 ? 0 : arena.allocate(backingBytes, true);
-				if (backingBytes === 0 || backing !== 0) {
-					const address = base + prefix;
-					if (backingField !== 0) this.cpu.memory.writeRamRecordWord(address + backingField, backing);
-					this.accountAllocation(charged);
-					return address;
-				}
-				arena.free(base);
-			}
+			const address = this.reserveRecord(bytes, object, backingBytes, backingField, charged);
+			if (address !== 0) return address;
 			recovery = this.cpu.gc.recoverAllocation(recovery, root0, root1, root2);
 		}
 	}

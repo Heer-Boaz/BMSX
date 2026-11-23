@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "common/scratchbuffer.h"
@@ -92,12 +93,23 @@ private:
 	BuiltinResults* m_out = nullptr;
 };
 
-enum class TableWriteRecovery : u32 { None, Current, RetryCurrent, Fresh, RetryFresh };
-struct PendingTableWrite {
-	TableWriteRecovery recovery = TableWriteRecovery::None;
-	u32 instructionPc = 0, lastPc = 0, nextPc = 0, receiver = 0;
-	Value key = valueNil(), value = valueNil();
-	bool operator==(const PendingTableWrite&) const = default;
+enum class AllocationRecovery : u32 { None, Current, RetryCurrent, Fresh, RetryFresh };
+enum class PendingAllocationKind : u32 { TableAssignment, TableCreation };
+struct PendingTableAssignment {
+	u32 receiver;
+	Value key, value;
+	bool operator==(const PendingTableAssignment&) const = default;
+};
+struct PendingTableCreation {
+	int destination, arraySize, hashSize;
+	bool operator==(const PendingTableCreation&) const = default;
+};
+struct PendingAllocation {
+	using Operands = std::variant<PendingTableAssignment, PendingTableCreation>;
+	AllocationRecovery recovery = AllocationRecovery::None;
+	u32 instructionPc = 0, lastPc = 0, nextPc = 0;
+	Operands operands{};
+	bool operator==(const PendingAllocation&) const = default;
 };
 
 // Host-only configuration. Registers are borrowed; never retain them or execute guest code.
@@ -138,7 +150,7 @@ struct CpuRuntimeState {
 	bool memoryWriteBlocked = false;
 	uint32_t memoryWriteBlockedAddress = 0;
 	PendingMemoryOperation pendingMemory;
-	PendingTableWrite pendingTableWrite;
+	PendingAllocation pendingAllocation;
 	u32 statusWord = CPU_STATUS_CART_ENTRY;
 	u32 causeWord = 0;
 	u32 epcWord = 0;
@@ -246,13 +258,13 @@ public:
 
 	void setExecutionHook(ExecutionHookBinding binding);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget, u32 target = 0u, CpuRunKind kind = CpuRunKind::Direct);
-	bool tableWriteParked() const { return m_pendingTableWrite.recovery != TableWriteRecovery::None; }
-	bool tableWriteReady() const {
-		return m_pendingTableWrite.recovery == TableWriteRecovery::RetryCurrent
-			|| m_pendingTableWrite.recovery == TableWriteRecovery::RetryFresh;
+	bool allocationParked() const { return m_pendingAllocation.recovery != AllocationRecovery::None; }
+	bool allocationReady() const {
+		return m_pendingAllocation.recovery == AllocationRecovery::RetryCurrent
+			|| m_pendingAllocation.recovery == AllocationRecovery::RetryFresh;
 	}
-	bool advanceTableWriteRecovery();
-	void resumeTableWrite();
+	bool advanceAllocationRecovery();
+	void resumeAllocation();
 	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	size_t stepHeap(Value root0, Value root1, Value root2, u32 growingThread = 0u);
 	bool collecting() const { return m_heap.active(); }
@@ -451,7 +463,11 @@ private:
 	void resolveTableFieldIndexCached(int& predictedSlot, Value base, StringId key, TableLookupResult& result);
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
 	bool parkTableWrite(CallFrame&, u32 receiver, Value key, Value value);
-	void markPendingTableWriteRoots(GcHeap& heap);
+	void parkAllocation(CallFrame&, PendingAllocation::Operands);
+	u32 allocateTable(int arraySize, int hashSize, LuaAllocationMode);
+	u32 reserveNewTable(CallFrame&, int destination, int arraySize, int hashSize);
+	void retireNewTable(CallFrame&, int destination, int arraySize, int hashSize, u32 address);
+	void markPendingAllocationRoots(GcHeap& heap);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
 	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);
 	bool storeTableFieldIndexCached(CallFrame&, int& predictedSlot, Value base, StringId key, Value value);
@@ -548,7 +564,7 @@ private:
 	bool m_memoryWriteBlocked = false;
 	uint32_t m_memoryWriteBlockedAddress = 0;
 	PendingMemoryOperation m_pendingMemory;
-	PendingTableWrite m_pendingTableWrite;
+	PendingAllocation m_pendingAllocation;
 	CpuRunKind m_runKind = CpuRunKind::Direct;
 	u32 m_currentInstructionPc = 0;
 	ExecutionDomainId m_lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;

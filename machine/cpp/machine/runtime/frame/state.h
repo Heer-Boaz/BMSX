@@ -19,8 +19,8 @@ struct FrameState {
 	i64 cycleBudgetGranted = 0;
 	i64 cycleCarryGranted = 0;
 	i64 activeCpuUsedCycles = 0;
-	// CPU cycles consumed up to a parked table store, not yet visible to devices.
-	int deferredTableWriteCycles = 0;
+	// CPU cycles consumed up to a parked allocation, not yet visible to devices.
+	int deferredAllocationCycles = 0;
 };
 
 } // namespace bmsx

@@ -27,7 +27,7 @@ const enum CpuSliceResult {
 	Advanced,
 	InstructionYielded,
 	InstructionHalted,
-	ParkedTableWrite,
+	ParkedAllocation,
 	ExecutionStopped,
 	Halted,
 }
@@ -40,7 +40,7 @@ export class CpuExecutionState {
 		const runtime = this.runtime;
 		const machine = runtime.machine;
 		const cpu = machine.cpu;
-		if (cpu.tableWriteParked()) return false;
+		if (cpu.allocationParked()) return false;
 		const gxGpu = machine.gxGpu;
 		let tickCompleted = runDueRuntimeTimers(runtime);
 		if (gxGpu.backendServiceBlocksMachine()) {
@@ -116,7 +116,7 @@ export class CpuExecutionState {
 					result = CpuExecutionResult.Halted;
 					running = false;
 					continue;
-				case CpuSliceResult.ParkedTableWrite:
+				case CpuSliceResult.ParkedAllocation:
 				case CpuSliceResult.Blocked:
 					running = false;
 					continue;
@@ -135,7 +135,7 @@ export class CpuExecutionState {
 				return InstructionStepResult.Executed;
 			case CpuSliceResult.ExecutionStopped:
 				return InstructionStepResult.ExecutionStopped;
-			case CpuSliceResult.ParkedTableWrite:
+			case CpuSliceResult.ParkedAllocation:
 			case CpuSliceResult.Blocked:
 			case CpuSliceResult.Halted:
 				return InstructionStepResult.Blocked;
@@ -147,7 +147,7 @@ export class CpuExecutionState {
 		const machine = runtime.machine;
 		const cpu = machine.cpu;
 		const scheduler = machine.scheduler;
-		if (cpu.tableWriteParked()) return CpuSuspendedRunResult.Halted;
+		if (cpu.allocationParked()) return CpuSuspendedRunResult.Halted;
 		const endCycle = scheduler.nowCycles + cycleBudget;
 		cpu.gc.finishFinalMark();
 		runDueRuntimeTimers(runtime);
@@ -253,19 +253,19 @@ export class CpuExecutionState {
 		const runtime = this.runtime;
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
-		if (cpu.tableWriteParked()) {
-			if (!cpu.tableWriteReady()) return CpuSliceResult.ParkedTableWrite;
-			const deferred = state.deferredTableWriteCycles;
+		if (cpu.allocationParked()) {
+			if (!cpu.allocationReady()) return CpuSliceResult.ParkedAllocation;
+			const deferred = state.deferredAllocationCycles;
 			cpu.instructionBudgetRemaining = 0;
 			scheduler.beginCpuSlice(deferred);
 			try {
-				cpu.resumeTableWrite();
+				cpu.resumeAllocation();
 			} finally {
 				scheduler.endCpuSlice();
 			}
-			if (cpu.tableWriteParked()) return CpuSliceResult.ParkedTableWrite;
+			if (cpu.allocationParked()) return CpuSliceResult.ParkedAllocation;
 			const consumed = deferred - cpu.instructionBudgetRemaining;
-			state.deferredTableWriteCycles = 0;
+			state.deferredAllocationCycles = 0;
 			state.cycleBudgetRemaining -= consumed;
 			state.activeCpuUsedCycles += consumed;
 			advanceRuntimeTime(runtime, consumed);
@@ -310,9 +310,9 @@ export class CpuExecutionState {
 			}
 			const result = scheduler.runCpuSlice(0, sliceBudget, undefined, CpuRunKind.Scheduled);
 			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
-			if (result === RunResult.ParkedTableWrite) {
-				state.deferredTableWriteCycles = consumed;
-				return CpuSliceResult.ParkedTableWrite;
+			if (result === RunResult.ParkedAllocation) {
+				state.deferredAllocationCycles = consumed;
+				return CpuSliceResult.ParkedAllocation;
 			}
 			if (consumed > 0) {
 				// Device timers publish this frame's remainder at the VBlank edge.

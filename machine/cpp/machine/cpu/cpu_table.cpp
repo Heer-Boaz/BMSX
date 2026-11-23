@@ -87,60 +87,99 @@ bool CPU::finishTableAssignment(CallFrame& frame, Value key, Value value, const 
 	BMSX_UNREACHABLE();
 }
 
-void CPU::markPendingTableWriteRoots(GcHeap& heap) {
-	const auto& write = m_pendingTableWrite;
-	heap.markValue(valueTable(write.receiver));
-	heap.markValue(write.key);
-	heap.markValue(write.value);
+u32 CPU::allocateTable(int arraySize, int hashSize, LuaAllocationMode mode) {
+	const size_t hashCapacity = TableRecord::hashCapacity(hashSize);
+	const auto reserve = static_cast<u32>(hashSize);
+	const u32 address = m_luaHeap.allocateRecord(TableRecord::HEADER_BYTES, true, TableRecord::storageBytes(arraySize, hashCapacity, reserve),
+		static_cast<u32>(TableHeader::Storage), valueNil(), valueNil(), valueNil(), TableRecord::allocationCharge(arraySize, reserve), mode);
+	if (!address) return 0u;
+	TableRecord(m_heap, address).initialize(arraySize, hashCapacity, reserve);
+	m_heap.publishObject(address);
+	trackLocalRoot(valueTable(address));
+	return address;
+}
+
+void CPU::retireNewTable(CallFrame& frame, int destination, int arraySize, int hashSize, u32 address) {
+	frame.registers.set(destination, valueTable(address));
+	frame.extendTop(destination + 1);
+	instructionBudgetRemaining -= arraySize + 2 * hashSize;
+}
+
+u32 CPU::reserveNewTable(CallFrame& frame, int destination, int arraySize, int hashSize) {
+	const auto mode = m_runKind == CpuRunKind::Scheduled ? LuaAllocationMode::Scheduled : LuaAllocationMode::Direct;
+	const u32 address = allocateTable(arraySize, hashSize, mode);
+	if (!address) parkAllocation(frame, PendingTableCreation{destination, arraySize, hashSize});
+	return address;
+}
+
+void CPU::markPendingAllocationRoots(GcHeap& heap) {
+	const auto* assignment = std::get_if<PendingTableAssignment>(&m_pendingAllocation.operands);
+	if (!assignment) return;
+	heap.markValue(valueTable(assignment->receiver));
+	heap.markValue(assignment->key);
+	heap.markValue(assignment->value);
 }
 
 bool CPU::parkTableWrite(CallFrame& frame, u32 receiver, Value key, Value value) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	++m_diagnosticGcProfile.fullCollections;
-#endif
-	m_pendingTableWrite = {
-		m_heap.active() ? TableWriteRecovery::Current : TableWriteRecovery::Fresh,
-		m_currentInstructionPc, lastPc, frame.readControl(FrameField::Pc), receiver,
-		canonicalTableKey(key), value
-	};
-	frame.writeControl(FrameField::Pc, m_pendingTableWrite.instructionPc);
-	// The final root head visits parked operands after detaching the
-	// changed queue and before clearing weak references.
+	parkAllocation(frame, PendingTableAssignment{receiver, canonicalTableKey(key), value});
 	return true;
 }
 
-bool CPU::advanceTableWriteRecovery() {
-	auto& write = m_pendingTableWrite;
+void CPU::parkAllocation(CallFrame& frame, PendingAllocation::Operands operands) {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	++m_diagnosticGcProfile.fullCollections;
+#endif
+	m_pendingAllocation = {
+		m_heap.active() ? AllocationRecovery::Current : AllocationRecovery::Fresh,
+		m_currentInstructionPc, lastPc, frame.readControl(FrameField::Pc), operands
+	};
+	frame.writeControl(FrameField::Pc, m_pendingAllocation.instructionPc);
+	// The final root head visits parked operands after detaching the
+	// changed queue and before clearing weak references.
+}
+
+bool CPU::advanceAllocationRecovery() {
+	auto& write = m_pendingAllocation;
 	switch (write.recovery) {
-		case TableWriteRecovery::RetryCurrent:
-		case TableWriteRecovery::RetryFresh: return false;
-		case TableWriteRecovery::Current:
-		case TableWriteRecovery::Fresh:
+		case AllocationRecovery::RetryCurrent:
+		case AllocationRecovery::RetryFresh: return false;
+		case AllocationRecovery::Current:
+		case AllocationRecovery::Fresh:
 			if (m_heap.finalMarkPending()) m_heap.stepFinalMark();
 			else m_heap.step(valueNil(), valueNil(), valueNil());
-			if (!m_heap.active()) write.recovery = write.recovery == TableWriteRecovery::Current
-				? TableWriteRecovery::RetryCurrent : TableWriteRecovery::RetryFresh;
+			if (!m_heap.active()) write.recovery = write.recovery == AllocationRecovery::Current
+				? AllocationRecovery::RetryCurrent : AllocationRecovery::RetryFresh;
 			return true;
-		case TableWriteRecovery::None: BMSX_UNREACHABLE();
+		case AllocationRecovery::None: BMSX_UNREACHABLE();
 	}
 	BMSX_UNREACHABLE();
 }
 
-void CPU::resumeTableWrite() {
-	const auto write = m_pendingTableWrite;
-	m_currentInstructionPc = write.instructionPc;
-	lastPc = write.lastPc;
-	if (TableRecord(m_heap, write.receiver).resumeAssignment(write.key, write.value)) {
-		m_activeThread->currentFrame->writeControl(FrameField::Pc, write.nextPc);
-		m_pendingTableWrite = {};
+void CPU::resumeAllocation() {
+	const auto& pending = m_pendingAllocation;
+	auto& frame = *m_activeThread->currentFrame;
+	m_currentInstructionPc = pending.instructionPc;
+	lastPc = pending.lastPc;
+	bool retired;
+	if (const auto* assignment = std::get_if<PendingTableAssignment>(&pending.operands)) {
+		retired = TableRecord(m_heap, assignment->receiver).resumeAssignment(assignment->key, assignment->value);
+	} else {
+		const auto& create = std::get<PendingTableCreation>(pending.operands);
+		const u32 address = allocateTable(create.arraySize, create.hashSize, LuaAllocationMode::Retry);
+		retired = address != 0u;
+		if (retired) retireNewTable(frame, create.destination, create.arraySize, create.hashSize, address);
+	}
+	if (retired) {
+		frame.writeControl(FrameField::Pc, pending.nextPc);
+		m_pendingAllocation = {};
 		return;
 	}
-	if (write.recovery == TableWriteRecovery::RetryCurrent) {
-		m_pendingTableWrite.recovery = TableWriteRecovery::Fresh;
+	if (pending.recovery == AllocationRecovery::RetryCurrent) {
+		m_pendingAllocation.recovery = AllocationRecovery::Fresh;
 		return;
 	}
 
-	m_pendingTableWrite = {};
+	m_pendingAllocation = {};
 	const Value error = m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY];
 	if (!handleThreadError(error)) enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, error);
 }

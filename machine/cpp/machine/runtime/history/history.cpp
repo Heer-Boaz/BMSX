@@ -35,7 +35,7 @@ void RuntimeHistory::resetFrameAdmission() {
 	runtime.frameScheduler.reset();
 	// Dropping host pacing must not discard an accepted instruction whose
 	// cycles are still waiting to become visible to the emulated devices.
-	if (!runtime.machine.cpu.tableWriteParked()) runtime.frameLoop.abandonFrameState(runtime);
+	if (!runtime.machine.cpu.allocationParked()) runtime.frameLoop.abandonFrameState(runtime);
 }
 
 void RuntimeHistory::stop() {

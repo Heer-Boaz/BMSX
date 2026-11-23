@@ -89,23 +89,34 @@ LuaAllocationRecovery LuaHeap::admit(size_t byteCount, Value root0, Value root1,
 	return recovery;
 }
 
-u32 LuaHeap::allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField,
-	Value root0, Value root1, Value root2, std::optional<u32> backingCharge) {
-	const u32 charged = bytes + backingCharge.value_or(backingBytes);
+u32 LuaHeap::reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, u32 charged) {
 	const u32 prefix = object ? GC_OBJECT_PREFIX : 0u;
-	auto recovery = admit(charged, root0, root1, root2, 0u);
 	auto& arena = m_cpu.heapAllocator();
+	const u32 block = arena.allocate(bytes + prefix, !object);
+	if (!block) return 0u;
+	const u32 backing = backingBytes ? arena.allocate(backingBytes, true) : 0u;
+	if (backingBytes && !backing) {
+		arena.free(block);
+		return 0u;
+	}
+	const u32 address = block + prefix;
+	if (backingField) m_cpu.memory().writeRamRecordWord(address + backingField, backing);
+	accountAllocation(charged);
+	return address;
+}
+
+u32 LuaHeap::allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField,
+	Value root0, Value root1, Value root2, std::optional<u32> backingCharge, LuaAllocationMode mode) {
+	const u32 charged = bytes + backingCharge.value_or(backingBytes);
+	if (mode != LuaAllocationMode::Direct) {
+		const bool admitted = mode == LuaAllocationMode::Scheduled
+			? prepareAllocation(charged, root0, root1, root2)
+			: usedBytes() + charged <= capacity();
+		return admitted ? reserveRecord(bytes, object, backingBytes, backingField, charged) : 0u;
+	}
+	auto recovery = admit(charged, root0, root1, root2, 0u);
 	for (;;) {
-		if (const u32 block = arena.allocate(bytes + prefix, !object)) {
-			const u32 backing = backingBytes ? arena.allocate(backingBytes, true) : 0u;
-			if (!backingBytes || backing) {
-				const u32 address = block + prefix;
-				if (backingField) m_cpu.memory().writeRamRecordWord(address + backingField, backing);
-				accountAllocation(charged);
-				return address;
-			}
-			arena.free(block);
-		}
+		if (const u32 address = reserveRecord(bytes, object, backingBytes, backingField, charged)) return address;
 		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2);
 	}
 }

@@ -412,6 +412,52 @@ test::Blua32TestRom recordConstructorProgram(std::string firstKey = "castle") {
 	return test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
 }
 
+void refusedRecordConstructorRetiresOnlyAllocation() {
+	const auto rom = recordConstructorProgram();
+	Fixture prepared(rom);
+	prepared.execute();
+	prepared.prepareAtGrantBoundary();
+	auto& cpu = prepared.cpu();
+	const u32 start = rom.textAddress + INSTRUCTION_BYTES;
+	const auto* entry = entryAt(cpu, start, 0);
+	require(entry && entry->terminal.recordConstructor, "this real native NEWT has a fused field recipe");
+	auto& frame = *cpu.activeThread()->frameAtDepth(0);
+	frame.registers.set(0, valueInteger(73));
+	frame.registers.set(1, valueInteger(31));
+	for (int i = 2; i < 6; ++i) frame.registers.set(i, valueInteger(i));
+	frame.setTop(6);
+	const auto key = cpu.stringPool().intern("castle");
+	auto& budget = cpu.luaHeap();
+	auto& arena = cpu.heapAllocator();
+	budget.setCollectionTarget(budget.capacity());
+	cpu.createTable(1024, 0);
+	constexpr u32 header = TableRecord::HEADER_BYTES + GC_OBJECT_PREFIX;
+	const auto spare = arena.allocate(header, true);
+	require(spare != 0u, "a real header can be exclusively reserved before exhausting backing");
+	while (arena.allocate(4088u, true)) {}
+	while (arena.allocate(header, true)) {}
+	arena.free(spare);
+	cpu.gcHeap().step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
+	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 10 +
+		5 * BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
+	require(cpu.runUntilDepth(0, grant, 0, CpuRunKind::Scheduled) == RunResult::ParkedAllocation,
+		"native allocation declines even with enough accepted cycles for all fused fields");
+	require(cpu.readFrameRegister(0, 0) == valueInteger(73) && cpu.readFramePc(0) == start
+		&& cpu.instructionBudgetRemaining == grant - BASE_CYCLES[static_cast<u8>(OpCode::NEWT)],
+		"the exit issues NEWT alone and has no committed result");
+	for (int n = 0; !cpu.allocationReady() && n < 120; ++n)
+		require(cpu.advanceAllocationRecovery(), "collection advances in the same shared maintenance owner");
+	require(cpu.allocationReady(), "the dead backing has been reclaimed");
+	cpu.instructionBudgetRemaining = 0;
+	cpu.resumeAllocation();
+	require(!cpu.allocationParked() && cpu.readFramePc(0) == start + INSTRUCTION_BYTES
+		&& cpu.instructionBudgetRemaining == -10, "the pending allocation retires at the original first store");
+	auto table = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+	require(isNil(table.getStringKey(key)), "retry does not reuse an executable constructor plan");
+	cpu.runUntilDepth(0, 1);
+	require(table.getStringKey(key) == valueInteger(31), "the actual following store publishes the first field");
+}
+
 void recordConstructorPreservesGrantAndLayout() {
 	const auto rom = recordConstructorProgram();
 	const u32 start = rom.textAddress + INSTRUCTION_BYTES;
@@ -928,6 +974,7 @@ int main() {
 		coldExecPreservesGuestStateAndBanks();
 		preparedCodeUsesItsImageConstants();
 		coldExecRecordsNumericFieldFeedback();
+		refusedRecordConstructorRetiresOnlyAllocation();
 		recordConstructorPreservesGrantAndLayout();
 		recordConstructorUsesItsImageKeys();
 		repeatExecAndRestoreHaveDistinctPolicies();

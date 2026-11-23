@@ -12,6 +12,7 @@ namespace bmsx {
 class CPU;
 struct Thread;
 enum class LuaAllocationRecovery { CurrentOrFresh, Fresh, Exhausted };
+enum class LuaAllocationMode { Direct, Scheduled, Retry };
 
 class LuaHeap {
 public:
@@ -34,7 +35,7 @@ public:
 	// A record with optional separately allocated backing. Record and backing
 	// are charged together, after both allocations are admitted.
 	u32 allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, Value root0 = valueNil(), Value root1 = valueNil(),
-		Value root2 = valueNil(), std::optional<u32> backingCharge = {});
+		Value root2 = valueNil(), std::optional<u32> backingCharge = {}, LuaAllocationMode mode = LuaAllocationMode::Direct);
 	// Physical backing can reserve more bytes than the owner's logical increase.
 	// Admission does not commit occupancy; the owner publishes its replacement.
 	u32 reserveBacking(u32 bytes, u32 logicalBytes, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
@@ -56,6 +57,7 @@ public:
 private:
 	enum class LuaAllocationAssist { None, Step, Limit };
 	LuaAllocationAssist allocationAssist(size_t nextBytes) const noexcept;
+	u32 reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, u32 charged);
 	void accountAllocation(u32 bytes);
 	void creditStep();
 	static constexpr size_t MIN_COLLECTION_BYTES = 1024 * 1024;

@@ -95,7 +95,7 @@ export class RuntimeHistory {
 	private resetFrameAdmission(): void {
 		this.runtime.frameScheduler.reset();
 		// Host pacing is discarded, not an accepted instruction's grant.
-		if (!this.runtime.machine.cpu.tableWriteParked()) this.runtime.frameLoop.abandonFrameState();
+		if (!this.runtime.machine.cpu.allocationParked()) this.runtime.frameLoop.abandonFrameState();
 	}
 
 	public stop(): void {

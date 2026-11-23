@@ -70,6 +70,9 @@ int main() {
 	state.cpuState.rootThreadAddress = 0x083fa000u;
 	state.cpuState.activeThreadAddress = 0x083fa040u;
 	state.cpuState.completionValues = {valueInteger(INT32_MIN), valueFloatBits(0xffc12345u), valueBuiltinFunction(BuiltinFunctionId::Next)};
+	state.cpuState.pendingAllocation = {
+		AllocationRecovery::RetryCurrent, 0x2000u, 0x2004u, 0x2008u, PendingTableCreation{17, 1024, 5}
+	};
 	const size_t beforeOwned = allocations;
 	const auto expected = encodeRuntimeSaveState(state);
 	require(allocations == beforeOwned + 1, "owned encoding allocates exactly its final byte buffer, not an object tree");
@@ -84,6 +87,19 @@ int main() {
 	require(std::ranges::all_of(output, [](u8 value) { return value == 0xa5; }), "capacity admission happens before any output writes");
 	const auto decoded = decodeRuntimeSaveState(expected, state.ram.size(), machine.gxGpu.vramBytes.size());
 	require(encodeRuntimeSaveState(decoded) == expected, "every stored bit round-trips through typed state");
+	require(decoded.cpuState.pendingAllocation == state.cpuState.pendingAllocation, "a parked creation stores its exact WIDE instruction and capacities");
+	state.cpuState.pendingAllocation.operands = PendingTableAssignment{0x12345678u, valueInteger(-1), valueFloatBits(0xffc12345u)};
+	const auto assignment = decodeRuntimeSaveState(encodeRuntimeSaveState(state), state.ram.size(), machine.gxGpu.vramBytes.size());
+	require(assignment.cpuState.pendingAllocation == state.cpuState.pendingAllocation, "a parked assignment keeps its raw guest operands");
+	auto oldLayout = expected;
+	oldLayout[4] = 1; // Version 1 had no pending-allocation discriminant.
+	bool rejectedOldLayout = false;
+	try {
+		(void)decodeRuntimeSaveState(oldLayout, state.ram.size(), machine.gxGpu.vramBytes.size());
+	} catch (const std::exception& error) {
+		rejectedOldLayout = std::string_view(error.what()).find("Unsupported save-state layout.") != std::string_view::npos;
+	}
+	require(rejectedOldLayout, "the earlier pending-operation payload cannot be read as a creation");
 	auto unversioned = expected;
 	unversioned.erase(unversioned.begin() + 4, unversioned.begin() + 8);
 	bool rejectedLayout = false;

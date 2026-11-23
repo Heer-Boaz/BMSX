@@ -90,6 +90,131 @@ struct TickRuntimeFixture {
 	}
 };
 
+void testParkedNewTableRetiresBeforeVblank(bool native) {
+	using namespace bmsx;
+	TickRuntimeFixture reference;
+	require(reference.runtime.frameScheduler.runToNextLogicalTick(reference.runtime), "fixture reaches first display edge");
+	const i64 edge = reference.runtime.machine.scheduler.nowCycles();
+	test::Blua32TestImage image;
+	image.text.resize(5u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::NEWT), 0, 0, 2);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::SETFIELD), 0, 0, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::SETFIELD), 0, 1, 2);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 3}};
+	image.constants = {std::string("x"), std::string("y")};
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, 0x10000u);
+	TickInputSource input;
+	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
+	runtime.boot();
+	auto& machine = runtime.machine;
+	auto& cpu = machine.cpu;
+	auto& scheduler = runtime.frameScheduler;
+	const u32 entry = cpu.readFramePc(0);
+	const auto keyX = cpu.stringPool().intern("x"), keyY = cpu.stringPool().intern("y");
+	if (!native) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	if (native) {
+		for (int n = 0; n < 96; ++n) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], entry);
+			cpu.runUntilDepth(0, 1);
+		}
+		const auto& frame = *cpu.rootThread()->currentFrame;
+		const auto* page = frame.decodedPage;
+		const u32 slot = (entry & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		require(page && !cpu.rootThread()->stackRequiresScalar(), "native NEWT has an eligible source");
+		test::waitForNativeEntry(cpu, *page, slot);
+		const auto& block = page->nativeBlocks->entries[slot];
+		require(block->terminal.exit == NativeBlockExit::AllocateTable && block->admissionCycles == 0,
+			"native NEWT owns the allocation exit with an exact one-cycle grant");
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], entry);
+	}
+#endif
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueInteger(73));
+	frame.registers.set(1, valueInteger(31));
+	frame.registers.set(2, valueInteger(57));
+	frame.setTop(3);
+
+	auto& budget = cpu.luaHeap();
+	auto& arena = cpu.heapAllocator();
+	budget.setCollectionTarget(budget.capacity());
+	cpu.createTable(1024, 0); // Its unreachable backing supplies a replacement after collection.
+	constexpr u32 header = TableRecord::HEADER_BYTES + GC_OBJECT_PREFIX;
+	static_assert(header == 40u);
+	const u32 spare = arena.allocate(header, true);
+	require(spare != 0u, "one real temporary header-sized hole");
+	while (arena.allocate(4088u, true)) {}
+	while (arena.allocate(header, true)) {}
+	arena.free(spare);
+	const u32 partial = arena.allocate(header, false);
+	require(partial && arena.allocate(TableRecord::storageBytes(0, TableRecord::hashCapacity(2), 2), true) == 0,
+		"physical NEWT admits the header but declines the initial backing");
+	arena.free(partial);
+	const auto occupied = arena.occupiedBytes();
+	const auto charged = budget.usedBytes();
+	require(charged + TableRecord::HEADER_BYTES + TableRecord::allocationCharge(0, 2) < budget.capacity(),
+		"logical capacity can admit both allocations");
+	cpu.gcHeap().step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
+	machine.memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
+	input.observeSample = [&] {
+		require(valueIsTable(cpu.readFrameRegister(0, 0)), "VBlank samples after the allocation retires");
+	};
+	advanceRuntimeTime(runtime, static_cast<int>(edge - 1 - machine.scheduler.nowCycles()));
+	runtime.frameLoop.beginFrameState(runtime, 1, 0);
+	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.allocationParked(),
+		"backing refusal suspends WIDE NEWT before the device deadline");
+	const auto pending = cpu.captureRuntimeState().pendingAllocation;
+	const auto* creation = std::get_if<PendingTableCreation>(&pending.operands);
+	require(creation && creation->destination == 0 && creation->arraySize == 0 && creation->hashSize == 2
+		&& pending.instructionPc == entry && pending.lastPc == entry + INSTRUCTION_BYTES
+		&& pending.nextPc == entry + 2u * INSTRUCTION_BYTES && pending.recovery == AllocationRecovery::Current,
+		"issued instruction and actual following field are persisted, not a native constructor address");
+	require(arena.occupiedBytes() == occupied && budget.usedBytes() == charged && cpu.readFrameRegister(0, 0) == valueInteger(73),
+		"the staged header was returned and no table, destination or logical byte charge was published");
+	require(runtime.frameLoop.frameState.deferredAllocationCycles == BASE_CYCLES[static_cast<u8>(OpCode::NEWT)],
+		"refusal defers only the base cycle charge");
+	const auto parked = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	const auto finish = [&] {
+		for (int step = 0; !cpu.allocationReady() && step < 120; ++step) {
+			require(scheduler.advanceLogicalTick(runtime, 31) == LogicalTickResult::Maintenance,
+				"the existing collector advances only through maintenance");
+			require(machine.scheduler.nowCycles() == edge - 1 && input.sampleCount == 0
+				&& cpu.readFramePc(0) == entry && cpu.readFrameRegister(0, 0) == valueInteger(73),
+				"scheduled input, PC and destination stay on the original issue frontier");
+		}
+		require(cpu.allocationReady(), "collection makes room for retry");
+		const auto beforeCommit = budget.usedBytes();
+		require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Executed && !cpu.allocationParked(),
+			"the saved operation retires, without re-running NEWT itself");
+		const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 4;
+		const Value result = cpu.readFrameRegister(0, 0);
+		require(valueIsTable(result) && cpu.readFramePc(0) == entry + 2u * INSTRUCTION_BYTES && cpu.lastPc == entry + INSTRUCTION_BYTES
+			&& budget.usedBytes() == beforeCommit + TableRecord::HEADER_BYTES + TableRecord::allocationCharge(0, 2)
+			&& machine.scheduler.nowCycles() == edge - 1 + cycles && scheduler.lastTickCpuUsedCycles == cycles && input.sampleCount == 1,
+			"one complete table, one surcharge and one VBlank sample retire together");
+		auto updated = asTable(result, cpu.gcHeap());
+		require(isNil(updated.getStringKey(keyX)) && isNil(updated.getStringKey(keyY)),
+			"neither following field executes during retry");
+		cpu.runUntilDepth(0, 1);
+		require(updated.getStringKey(keyX) == valueInteger(31) && isNil(updated.getStringKey(keyY)),
+			"the first original field executes at its normal following instruction");
+		cpu.runUntilDepth(0, 1);
+		require(updated.getStringKey(keyY) == valueInteger(57), "the second field executes exactly at its own frontier");
+		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	};
+	finish();
+	const auto decoded = decodeRuntimeSaveState(parked, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	applyRuntimeSaveState(runtime, decoded);
+	input.sampleCount = 0;
+	const auto expected = finish();
+	applyRuntimeSaveState(runtime, decoded);
+	input.sampleCount = 0;
+	require(finish() == expected, "checkpoint decodes and retires the same allocation identically");
+}
+
 void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	using namespace bmsx;
 	TickRuntimeFixture reference;
@@ -178,7 +303,7 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	runtime.frameLoop.beginFrameState(runtime, 1, 0);
 	const u32 oldStorage = owner.storageAddress();
 	const auto beforeWrite = captureRuntimeSaveState(runtime);
-	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.tableWriteParked(),
+	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.allocationParked(),
 		"the physically refused WIDE SETT parks before the scheduled edge");
 	i64 accepted = 1;
 	const auto unchanged = [&] {
@@ -200,14 +325,14 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	unchanged();
 	const auto checkpoint = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const auto finish = [&] {
-		for (int n = 0; n < 120 && !cpu.tableWriteReady(); ++n) {
+		for (int n = 0; n < 120 && !cpu.allocationReady(); ++n) {
 			require(scheduler.advanceLogicalTick(runtime, 31) == LogicalTickResult::Maintenance, "recovery keeps the offered grant unspent");
 			unchanged();
 		}
-		require(cpu.tableWriteReady(), "collector drained before retry");
+		require(cpu.allocationReady(), "collector drained before retry");
 		require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Executed, "a ready retry retires the original instruction");
 		const int charge = BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + TABLE_INDEX_VISIT_CYCLES;
-		require(!cpu.tableWriteParked() && owner.arrayCapacity() == 1024 && owner.storageAddress() != oldStorage
+		require(!cpu.allocationParked() && owner.arrayCapacity() == 1024 && owner.storageAddress() != oldStorage
 			&& owner.getInteger(512) == valueInteger(512) && payload.getInteger(1) == valueInteger(73)
 			&& cpu.readFramePc(0) == entry + 2u * INSTRUCTION_BYTES && cpu.lastPc == entry + INSTRUCTION_BYTES,
 			"only the saved instruction and its one growth retired");
@@ -238,11 +363,11 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	finish();
 	require(history.latestCycles() == edge, "the real parked checkpoint precedes a recorded input boundary");
 	history.beginSeek(edge - 1);
-	require(history.mode == HistoryMode::Reviewing && cpu.tableWriteParked(), "seek restores the pending store with its accepted frame");
+	require(history.mode == HistoryMode::Reviewing && cpu.allocationParked(), "seek restores the pending store with its accepted frame");
 	history.beginPlayback();
 	const int liveSamples = input.sampleCount;
 	for (int n = 0; n < 120 && history.mode == HistoryMode::Replaying; ++n) history.advancePlayback(0.0);
-	require(history.mode == HistoryMode::Reviewing && !cpu.tableWriteParked() && scheduler.lastTickSequence == 1
+	require(history.mode == HistoryMode::Reviewing && !cpu.allocationParked() && scheduler.lastTickSequence == 1
 		&& owner.getInteger(513) == valueTable(payload.address()) && input.sampleCount == liveSamples,
 		"playback retires the retained grant before the recorded edge without polling live input again");
 
@@ -262,17 +387,17 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	applyRuntimeSaveState(runtime, beforeWrite);
 	history.start(options);
 	history.captureCheckpoint();
-	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.tableWriteParked(),
+	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.allocationParked(),
 		"pre-instruction checkpoint goes through actual physical refusal");
 	require(!scheduler.runCyclesToNextLogicalTick(runtime, accepted - 1), "explicit extra raw cycles are retained");
 	finish();
 	history.beginSeek(history.latestCycles());
-	require(history.mode == HistoryMode::Replaying && !cpu.tableWriteParked(), "seek begins before the failed table allocation");
-	require(history.advanceSeek(accepted) == HistorySeekResult::Progressed && cpu.tableWriteParked()
+	require(history.mode == HistoryMode::Replaying && !cpu.allocationParked(), "seek begins before the failed table allocation");
+	require(history.advanceSeek(accepted) == HistorySeekResult::Progressed && cpu.allocationParked()
 		&& machine.scheduler.nowCycles() == edge - 1, "the first deferred CPU result keeps the rewind seek alive");
 	for (int n = 0; n < 120 && history.mode == HistoryMode::Replaying; ++n)
 		require(history.advanceSeek(accepted) != HistorySeekResult::Stopped, "the recovery seek continues to the recorded edge");
-	require(history.mode == HistoryMode::Reviewing && scheduler.lastTickSequence == 1 && !cpu.tableWriteParked()
+	require(history.mode == HistoryMode::Reviewing && scheduler.lastTickSequence == 1 && !cpu.allocationParked()
 		&& owner.getInteger(513) == valueTable(payload.address()), "seek retires the one pending operation exactly once");
 }
 
@@ -328,28 +453,28 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	applyRuntimeSaveState(runtime, before);
 	runtime.frameLoop.beginFrameState(runtime, 1, 0);
 	const i64 clock = runtime.machine.scheduler.nowCycles();
-	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.tableWriteParked(),
+	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.allocationParked(),
 		"physical failure parks rather than exiting the protected frame");
 	const auto drain = [&] {
-		for (int n = 0; n < 80 && !cpu.tableWriteReady(); ++n)
+		for (int n = 0; n < 80 && !cpu.allocationReady(); ++n)
 			require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked,
 				"each maintenance pulse is not an executed guest instruction");
-		require(cpu.tableWriteReady() && cpu.readFramePc(1) == writePc
+		require(cpu.allocationReady() && cpu.readFramePc(1) == writePc
 			&& runtime.machine.scheduler.nowCycles() == clock && runtime.frameLoop.frameState.cycleBudgetRemaining == 1
 			&& owner.arrayCapacity() == 512 && isNil(owner.getInteger(513)), "recovery does not mutate or charge the pending operation");
 	};
 	drain();
-	require(cpu.captureRuntimeState().pendingTableWrite.recovery == TableWriteRecovery::RetryCurrent,
+	require(cpu.captureRuntimeState().pendingAllocation.recovery == AllocationRecovery::RetryCurrent,
 		"try the current epoch before starting a fresh one");
 	require(scheduler.advanceLogicalTick(runtime, 0) == LogicalTickResult::DeferredCpu
-		&& cpu.captureRuntimeState().pendingTableWrite.recovery == TableWriteRecovery::Fresh,
+		&& cpu.captureRuntimeState().pendingAllocation.recovery == AllocationRecovery::Fresh,
 		"a failed retry admits one fresh epoch, not a completed instruction");
 	const auto checkpoint = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const auto finish = [&] {
 		drain();
-		require(cpu.captureRuntimeState().pendingTableWrite.recovery == TableWriteRecovery::RetryFresh,
+		require(cpu.captureRuntimeState().pendingAllocation.recovery == AllocationRecovery::RetryFresh,
 			"the fresh epoch gets its own final reservation");
-		require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Executed && !cpu.tableWriteParked(),
+		require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Executed && !cpu.allocationParked(),
 			"one failed guest instruction is finally retired to pcall");
 		require(cpu.getFrameDepth() == 1 && cpu.rootThread()->protectedDepth() == 0 && cpu.readFramePc(0) == callerPc
 			&& cpu.lastPc == writePc + INSTRUCTION_BYTES && isNil(owner.getInteger(513)),
@@ -416,14 +541,14 @@ void testParkedWriteRootsEnterAfterTheAtomicQueueTransfer() {
 		"the weak __newindex receiver and its only child remain white");
 	budget.setCollectionTarget(0);
 	const u32 writePc = cpu.readFramePc(0) + INSTRUCTION_BYTES;
-	require(!scheduler.runCyclesToNextLogicalTick(runtime, 128) && cpu.tableWriteParked()
+	require(!scheduler.runCyclesToNextLogicalTick(runtime, 128) && cpu.allocationParked()
 		&& heap.finalMarkPending() && cpu.readFramePc(0) == writePc,
 		"NEWT enters pending Atomic, then the same accepted grant parks SETT before the first final slice");
 	const auto parked = captureRuntimeSaveState(runtime);
 	const auto finish = [&] {
-		for (int step = 0; !cpu.tableWriteReady() && step < 80; ++step)
+		for (int step = 0; !cpu.allocationReady() && step < 80; ++step)
 			require(scheduler.advanceLogicalTick(runtime, 0) == LogicalTickResult::Maintenance, "the parked writer stops guest execution");
-		require(cpu.tableWriteReady() && heap.tableRecordAddress(child.address()) == child.address()
+		require(cpu.allocationReady() && heap.tableRecordAddress(child.address()) == child.address()
 			&& owner.getInteger(1) == valueTable(child.address()) && child.getInteger(1) == valueInteger(73),
 			"the parked receiver is traced from the final root head, not lost with its descendants");
 		require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Executed
@@ -1901,8 +2026,10 @@ void testRuntimeResetNotification() {
 
 int main() {
 	testParkedTableWriteExhaustsInProtectedCall();
+	testParkedNewTableRetiresBeforeVblank(false);
 	testParkedTableWriteRetiresBeforeVblank(false);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	testParkedNewTableRetiresBeforeVblank(true);
 	testParkedTableWriteRetiresBeforeVblank(true);
 #endif
 	testParkedWriteRootsEnterAfterTheAtomicQueueTransfer();

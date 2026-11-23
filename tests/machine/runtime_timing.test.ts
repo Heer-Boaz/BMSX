@@ -67,9 +67,9 @@ import {
 } from '../../machine/ts/machine/scheduler/device';
 import { FrameSchedulerState, LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 
-import { TableWriteRecovery } from '../../machine/ts/machine/cpu/cpu';
+import { AllocationRecovery, PendingAllocationKind } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { valueBool, valueBuiltinFunction, valueInteger, valueNil, valuePayload, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueTag, valueBool, valueBuiltinFunction, valueInteger, valueNil, valuePayload, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
@@ -77,6 +77,7 @@ import { InstructionStepResult } from '../../machine/ts/machine/runtime/frame/st
 import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 
@@ -282,7 +283,7 @@ test('CPU timing store crossing a due VBlank differs from a store after service'
 			cycleBudgetGranted: 100,
 			cycleCarryGranted: 0,
 			activeCpuUsedCycles: 0,
-		deferredTableWriteCycles: 0,
+		deferredAllocationCycles: 0,
 		};
 		// The guest arms INPUT and prepares the timing store itself.
 		for (let i = 0; i < 5; i++) runtime.cpuExecution.runInstruction(frame);
@@ -301,6 +302,124 @@ test('CPU timing store crossing a due VBlank differs from a store after service'
 		]);
 	}
 	assert.deepEqual(observed, [[0, 0], [1, IRQ_VBLANK]]);
+});
+
+test('a WIDE NEWT with refused backing retires once before VBlank, including after save and restore', () => {
+	const code = new Uint8Array(5 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.NEWT, 0, 0, 2);
+	writeInstruction(code, 2, OpCode.SETFIELD, 0, 0, 1);
+	writeInstruction(code, 3, OpCode.SETFIELD, 0, 1, 2);
+	writeInstruction(code, 4, OpCode.RET, 0, 0, 0);
+	const system = linkRawTestSystemBlua32({
+		text: code, functions: [{ firstWord: 0, wordCount: 5, maxStack: 3 }],
+		constants: ['x', 'y'],
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0,
+	}, 0x10000);
+	for (const mode of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		let samples = 0;
+		let sample: (() => void) | null = null;
+		const runtime = new Runtime({
+			systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(),
+			machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: mode,
+		}, {
+			sampleInputControllerSnapshot() { ++samples; sample?.(); },
+			supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {},
+		});
+		runtime.boot();
+		const { cpu, scheduler, memory } = runtime.machine;
+		const fs = runtime.frameScheduler;
+		const initial = captureRuntimeSaveState(runtime);
+		assert.ok(fs.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame));
+		const edge = scheduler.nowCycles;
+		applyRuntimeSaveState(runtime, initial);
+		samples = 0;
+		const frame = cpu.rootThread.currentFrame!;
+		const entry = cpu.readFramePc(0), functionAddress = frame.functionAddress;
+		const keyX = cpu.stringPool.intern('x'), keyY = cpu.stringPool.intern('y');
+		const tables = cpu.gc.tables, arena = cpu.heapAllocator, budget = cpu.luaHeap;
+		budget.setCollectionTarget(budget.capacity());
+		const baseCycles = BASE_CYCLES[OpCode.NEWT];
+		if (mode === CpuExecutionBackend.JavaScript) {
+			for (let n = 0; n < 24; ++n) {
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, entry);
+				cpu.runUntilDepth(0, 1);
+			}
+			const page = frame.executionImage!.decodedPages.get(entry & ~MAPPED_PAGE_BYTE_MASK);
+			assert.ok(page?.compiledBlocks?.entries[(entry & MAPPED_PAGE_BYTE_MASK) >>> 2], 'actual JavaScript NEWT block');
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, entry);
+		}
+		frame.registers.setInteger(0, 73);
+		frame.registers.setInteger(1, 31);
+		frame.registers.setInteger(2, 57);
+		frame.top = 3;
+		cpu.createTable(1024, 0); // Leaves collectable backing.
+		const header = TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX;
+		const spare = arena.allocate(header, true);
+		assert.notEqual(spare, 0);
+		while (arena.allocate(4088, true) !== 0) {}
+		while (arena.allocate(header, true) !== 0) {}
+		arena.free(spare);
+		const partial = arena.allocate(header, false);
+		assert.notEqual(partial, 0);
+		assert.equal(arena.allocate(TableRecords.storageBytes(0, TableRecords.hashCapacity(2), 2), true), 0);
+		arena.free(partial);
+		const occupied = arena.occupiedBytes(), charged = budget.usedBytes();
+		const tableCharge = TableRecords.HEADER_BYTES + TableRecords.allocationCharge(0, 2);
+		assert.ok(charged + tableCharge < budget.capacity(), 'the physical rather than logical mechanism refuses storage');
+		cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+		memory.writeMappedU32LE(IO_INP_CTRL, 1);
+		sample = () => assert.equal(valueTag(cpu.readFrameRegister(0, 0)), ValueTag.Table);
+		advanceRuntimeTime(runtime, edge - 1 - scheduler.nowCycles);
+		runtime.frameLoop.beginFrameState(1, 0);
+		assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
+		assert.deepEqual(cpu.captureRuntimeState().pendingAllocation, {
+			kind: PendingAllocationKind.TableCreation, recovery: AllocationRecovery.Current,
+			instructionPc: entry, lastPc: entry + INSTRUCTION_BYTES, nextPc: entry + 2 * INSTRUCTION_BYTES,
+			destination: 0, arraySize: 0, hashSize: 2,
+		});
+		assert.equal(arena.occupiedBytes(), occupied, 'the uncommitted header was returned');
+		assert.equal(budget.usedBytes(), charged);
+		assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, baseCycles);
+		const bytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+		const finish = () => {
+			for (let n = 0; !cpu.allocationReady() && n < 120; ++n) {
+				assert.equal(fs.advanceLogicalTick(31), LogicalTickResult.Maintenance);
+				assert.equal(scheduler.nowCycles, edge - 1);
+				assert.equal(cpu.readFramePc(0), entry);
+				assert.equal(cpu.readFrameRegister(0, 0), valueInteger(73));
+				assert.equal(samples, 0);
+			}
+			assert.ok(cpu.allocationReady());
+			const beforeCommit = budget.usedBytes();
+			assert.equal(fs.stepInstruction(0), InstructionStepResult.Executed);
+			assert.ok(!cpu.allocationParked());
+			const table = valuePayload(cpu.readFrameRegister(0, 0));
+			assert.equal(cpu.readFramePc(0), entry + 2 * INSTRUCTION_BYTES);
+			assert.equal(cpu.lastPc, entry + INSTRUCTION_BYTES);
+			assert.equal(budget.usedBytes(), beforeCommit + tableCharge);
+			assert.equal(scheduler.nowCycles, edge - 1 + baseCycles + 4);
+			assert.equal(fs.lastTickCpuUsedCycles, baseCycles + 4);
+			assert.equal(samples, 1);
+			assert.equal(tables.getStringKey(table, keyX), valueNil());
+			assert.equal(tables.getStringKey(table, keyY), valueNil());
+			cpu.runUntilDepth(0, 1);
+			assert.equal(tables.getStringKey(table, keyX), valueInteger(31));
+			assert.equal(tables.getStringKey(table, keyY), valueNil());
+			cpu.runUntilDepth(0, 1);
+			assert.equal(tables.getStringKey(table, keyY), valueInteger(57));
+			return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+		};
+		finish();
+		const decoded = decodeRuntimeSaveState(bytes, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+		samples = 0;
+		applyRuntimeSaveState(runtime, decoded);
+		const expected = finish();
+		samples = 0;
+		applyRuntimeSaveState(runtime, decoded);
+		assert.deepEqual(finish(), expected);
+	}
 });
 
 test('a physically refused WIDE SETT retires before queued VBlank, even after a checkpoint', () => {
@@ -381,7 +500,7 @@ test('a physically refused WIDE SETT retires before queued VBlank, even after a 
 		const oldStorage = tables.storageAddress(owner);
 		const beforeWrite = captureRuntimeSaveState(runtime);
 		assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
-		assert.ok(cpu.tableWriteParked());
+		assert.ok(cpu.allocationParked());
 		let accepted = 1;
 		const unchanged = () => {
 			assert.equal(scheduler.nowCycles, edge - 1);
@@ -405,13 +524,13 @@ test('a physically refused WIDE SETT retires before queued VBlank, even after a 
 		assert.ok(cpu.gc.finalMarkPending());
 		const checkpoint = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 		const finish = () => {
-			for (let n = 0; n < 120 && !cpu.tableWriteReady(); ++n) {
+			for (let n = 0; n < 120 && !cpu.allocationReady(); ++n) {
 				assert.equal(fs.advanceLogicalTick(31), LogicalTickResult.Maintenance);
 				unchanged();
 			}
-			assert.ok(cpu.tableWriteReady());
+			assert.ok(cpu.allocationReady());
 			assert.equal(fs.stepInstruction(0), InstructionStepResult.Executed);
-			assert.ok(!cpu.tableWriteParked());
+			assert.ok(!cpu.allocationParked());
 			assert.equal(tables.arrayCapacity(owner), 1024);
 			assert.notEqual(tables.storageAddress(owner), oldStorage);
 			assert.equal(tables.getInteger(owner, 512), valueInteger(512));
@@ -444,12 +563,12 @@ test('a physically refused WIDE SETT retires before queued VBlank, even after a 
 		assert.equal(history.latestCycles, edge);
 		history.beginSeek(edge - 1);
 		assert.equal(history.mode, HistoryMode.Reviewing);
-		assert.ok(cpu.tableWriteParked());
+		assert.ok(cpu.allocationParked());
 		history.beginPlayback();
 		const liveSamples = samples;
 		for (let n = 0; n < 120 && history.mode === HistoryMode.Replaying; ++n) history.advancePlayback(0);
 		assert.equal(history.mode, HistoryMode.Reviewing);
-		assert.ok(!cpu.tableWriteParked());
+		assert.ok(!cpu.allocationParked());
 		assert.equal(fs.lastTickSequence, 1);
 		assert.equal(tables.getInteger(owner, 513), valueTable(payload));
 		assert.equal(samples, liveSamples, 'playback uses the recorded input boundary');
@@ -468,19 +587,19 @@ test('a physically refused WIDE SETT retires before queued VBlank, even after a 
 		history.start(options);
 		history.captureCheckpoint();
 		assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
-		assert.ok(cpu.tableWriteParked());
+		assert.ok(cpu.allocationParked());
 		assert.equal(fs.runCyclesToNextLogicalTick(accepted - 1), false);
 		finish();
 		history.beginSeek(history.latestCycles);
 		assert.equal(history.mode, HistoryMode.Replaying);
-		assert.ok(!cpu.tableWriteParked());
+		assert.ok(!cpu.allocationParked());
 		assert.equal(history.advanceSeek(accepted), HistorySeekResult.Progressed);
-		assert.ok(cpu.tableWriteParked(), 'the initial defer is not a stopped seek');
+		assert.ok(cpu.allocationParked(), 'the initial defer is not a stopped seek');
 		assert.equal(scheduler.nowCycles, edge - 1);
 		for (let n = 0; n < 120 && history.mode === HistoryMode.Replaying; ++n)
 			assert.notEqual(history.advanceSeek(accepted), HistorySeekResult.Stopped);
 		assert.equal(history.mode, HistoryMode.Reviewing);
-		assert.ok(!cpu.tableWriteParked());
+		assert.ok(!cpu.allocationParked());
 		assert.equal(fs.lastTickSequence, 1);
 		assert.equal(tables.getInteger(owner, 513), valueTable(payload));
 	}
@@ -536,13 +655,13 @@ test('a table write parked by the grant that enters Atomic keeps its weak receiv
 		budget.setCollectionTarget(0);
 		const writePc = cpu.readFramePc(0) + INSTRUCTION_BYTES;
 		assert.equal(scheduler.runCyclesToNextLogicalTick(128), false);
-		assert.ok(cpu.tableWriteParked() && gc.finalMarkPending(), 'NEWT enters Atomic before SETT parks in the same grant');
+		assert.ok(cpu.allocationParked() && gc.finalMarkPending(), 'NEWT enters Atomic before SETT parks in the same grant');
 		assert.equal(cpu.readFramePc(0), writePc);
 		const parked = captureRuntimeSaveState(runtime);
 		const finish = () => {
-			for (let i = 0; !cpu.tableWriteReady() && i < 80; ++i)
+			for (let i = 0; !cpu.allocationReady() && i < 80; ++i)
 				assert.equal(scheduler.advanceLogicalTick(0), LogicalTickResult.Maintenance);
-			assert.ok(cpu.tableWriteReady());
+			assert.ok(cpu.allocationReady());
 			assert.equal(gc.tableRecordAddress(child), child, 'the final marking does not lose the weak receiver’s child');
 			assert.equal(tables.getInteger(owner, 1), valueTable(child));
 			assert.equal(tables.getInteger(child, 1), valueInteger(73));
@@ -608,11 +727,11 @@ test('parked WIDE SETT resumes the fresh epoch and faults once through pcall', (
 	runtime.frameLoop.beginFrameState(1, 0);
 	const clock = scheduler.nowCycles;
 	assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
-	assert.ok(cpu.tableWriteParked());
+	assert.ok(cpu.allocationParked());
 	const drain = () => {
-		for (let n = 0; n < 80 && !cpu.tableWriteReady(); ++n)
+		for (let n = 0; n < 80 && !cpu.allocationReady(); ++n)
 			assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
-		assert.ok(cpu.tableWriteReady());
+		assert.ok(cpu.allocationReady());
 		assert.equal(cpu.readFramePc(1), writePc);
 		assert.equal(scheduler.nowCycles, clock);
 		assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 1);
@@ -620,15 +739,15 @@ test('parked WIDE SETT resumes the fresh epoch and faults once through pcall', (
 		assert.equal(tables.getInteger(owner, 513), valueNil());
 	};
 	drain();
-	assert.equal(cpu.captureRuntimeState().pendingTableWrite?.recovery, TableWriteRecovery.RetryCurrent);
+	assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.RetryCurrent);
 	assert.equal(fs.advanceLogicalTick(0), LogicalTickResult.DeferredCpu);
-	assert.equal(cpu.captureRuntimeState().pendingTableWrite?.recovery, TableWriteRecovery.Fresh);
+	assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.Fresh);
 	const checkpoint = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const finish = () => {
 		drain();
-		assert.equal(cpu.captureRuntimeState().pendingTableWrite?.recovery, TableWriteRecovery.RetryFresh);
+		assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.RetryFresh);
 		assert.equal(fs.stepInstruction(0), InstructionStepResult.Executed);
-		assert.ok(!cpu.tableWriteParked());
+		assert.ok(!cpu.allocationParked());
 		assert.equal(cpu.getFrameDepth(), 1);
 		assert.equal(cpu.rootThread.protectedDepth, 0);
 		assert.equal(cpu.readFramePc(0), callerPc);
@@ -729,7 +848,7 @@ test('host machine-cycle grants remain exact while PCRTC is stopped', () => {
 		cycleBudgetGranted: 0,
 		cycleCarryGranted: 0,
 		activeCpuUsedCycles: 0,
-		deferredTableWriteCycles: 0,
+		deferredAllocationCycles: 0,
 	};
 	const frameLoop = {
 		frameActive: false,

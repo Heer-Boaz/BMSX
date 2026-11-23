@@ -419,10 +419,12 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			const int a = allocation.result, array = allocation.arraySize;
 			// A ROM recipe stays resident across allocation and watched RAM writes.
 			auto* record = exit->recordConstructor;
-			auto table = cpu.createTable(array, allocation.hashSize);
-			frame->registers.set(a, valueTable(table.address()));
-			cpu.instructionBudgetRemaining -= array + 2 * allocation.hashSize;
-			frame->extendTop(a + 1);
+			const u32 address = cpu.reserveNewTable(*frame, a, array, allocation.hashSize);
+			if (!address) {
+				transition = NativeBlockTransition::Redispatch;
+				break;
+			}
+			cpu.retireNewTable(*frame, a, array, allocation.hashSize, address);
 			if (record) {
 				const int fieldCycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
 				const int fields = static_cast<int>(record->count);
@@ -438,7 +440,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 						present |= static_cast<u32>(!isNil(values[field])) << field;
 					}
 					if (present)
-						table.fillStringRecord(record->layoutFor(present), std::span(record->keys).first(fields),
+						TableRecord(cpu.m_heap, address).fillStringRecord(record->layoutFor(present), std::span(record->keys).first(fields),
 							std::span(values).first(fields));
 					cpu.instructionBudgetRemaining -= fields * fieldCycles;
 					cpu.m_currentInstructionPc = record->lastInstructionPc;
@@ -459,7 +461,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			BMSX_UNREACHABLE();
 		}
 		if (transition == NativeBlockTransition::Redispatch
-			&& (cpu.tableWriteParked() || cpu.m_hardHalted || cpu.m_yieldRequested || cpu.m_threadSwitchRequested || cpu.m_memoryWriteBlocked
+			&& (cpu.allocationParked() || cpu.m_hardHalted || cpu.m_yieldRequested || cpu.m_threadSwitchRequested || cpu.m_memoryWriteBlocked
 				|| cpu.m_nonMaskableInterruptPending
 				|| ((cpu.m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 					&& cpu.m_irqController.hasAssertedMaskableInterruptLine()))) {

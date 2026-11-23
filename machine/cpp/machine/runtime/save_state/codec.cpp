@@ -8,7 +8,7 @@ namespace {
 
 // BMSX identifies the container. Only the current payload layout is accepted.
 constexpr u32 kSaveStateSignature = 0x58534d42u;
-constexpr u32 kSaveStateLayoutVersion = 1u;
+constexpr u32 kSaveStateLayoutVersion = 2u;
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -54,7 +54,7 @@ template<class Writer> void writeFrameState(Writer& writer, const FrameState& st
 	writer.i64(state.cycleBudgetGranted);
 	writer.i64(state.cycleCarryGranted);
 	writer.i64(state.activeCpuUsedCycles);
-	writer.i32(state.deferredTableWriteCycles);
+	writer.i32(state.deferredAllocationCycles);
 }
 
 FrameState readFrameState(BinaryReader& reader) {
@@ -64,7 +64,7 @@ FrameState readFrameState(BinaryReader& reader) {
 	state.cycleBudgetGranted = reader.i64();
 	state.cycleCarryGranted = reader.i64();
 	state.activeCpuUsedCycles = reader.i64();
-	state.deferredTableWriteCycles = reader.i32();
+	state.deferredAllocationCycles = reader.i32();
 	return state;
 }
 
@@ -1181,15 +1181,24 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	writer.u32(static_cast<u32>(state.pendingMemory.accessKind));
 	writer.i32(state.pendingMemory.registerIndex);
 	writer.i32(state.pendingMemory.wordCount);
-	const auto& write = state.pendingTableWrite;
-	writer.u32(static_cast<u32>(write.recovery));
-	if (write.recovery != TableWriteRecovery::None) {
-		writer.u32(write.instructionPc);
-		writer.u32(write.lastPc);
-		writer.u32(write.nextPc);
-		writer.u32(write.receiver);
-		writer.u64(write.key);
-		writer.u64(write.value);
+	const auto& pending = state.pendingAllocation;
+	writer.u32(static_cast<u32>(pending.recovery));
+	if (pending.recovery != AllocationRecovery::None) {
+		writer.u32(pending.instructionPc);
+		writer.u32(pending.lastPc);
+		writer.u32(pending.nextPc);
+		if (const auto* assignment = std::get_if<PendingTableAssignment>(&pending.operands)) {
+			writer.u32(static_cast<u32>(PendingAllocationKind::TableAssignment));
+			writer.u32(assignment->receiver);
+			writer.u64(assignment->key);
+			writer.u64(assignment->value);
+		} else {
+			const auto& create = std::get<PendingTableCreation>(pending.operands);
+			writer.u32(static_cast<u32>(PendingAllocationKind::TableCreation));
+			writer.i32(create.destination);
+			writer.i32(create.arraySize);
+			writer.i32(create.hashSize);
+		}
 	}
 	writer.u32(state.statusWord);
 	writer.u32(state.causeWord);
@@ -1235,15 +1244,22 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.pendingMemory.accessKind = static_cast<MemoryAccessKind>(reader.u32());
 	state.pendingMemory.registerIndex = reader.i32();
 	state.pendingMemory.wordCount = reader.i32();
-	auto& write = state.pendingTableWrite;
-	write.recovery = static_cast<TableWriteRecovery>(reader.u32());
-	if (write.recovery != TableWriteRecovery::None) {
-		write.instructionPc = reader.u32();
-		write.lastPc = reader.u32();
-		write.nextPc = reader.u32();
-		write.receiver = reader.u32();
-		write.key = reader.u64();
-		write.value = reader.u64();
+	auto& pending = state.pendingAllocation;
+	pending.recovery = static_cast<AllocationRecovery>(reader.u32());
+	if (pending.recovery != AllocationRecovery::None) {
+		pending.instructionPc = reader.u32();
+		pending.lastPc = reader.u32();
+		pending.nextPc = reader.u32();
+		switch (static_cast<PendingAllocationKind>(reader.u32())) {
+		case PendingAllocationKind::TableAssignment:
+			pending.operands = PendingTableAssignment{reader.u32(), reader.u64(), reader.u64()};
+			break;
+		case PendingAllocationKind::TableCreation:
+			pending.operands = PendingTableCreation{reader.i32(), reader.i32(), reader.i32()};
+			break;
+		default:
+			throw BMSX_RUNTIME_ERROR("Unsupported pending allocation kind.");
+		}
 	}
 	state.statusWord = reader.u32();
 	state.causeWord = reader.u32();

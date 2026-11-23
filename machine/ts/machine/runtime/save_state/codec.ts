@@ -2,7 +2,7 @@ import type { PendingMemoryKind } from '../../cpu/memory_operation';
 import type { MemoryAccessKind } from '../../../spec/blua32/memory_access_kind';
 import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../../common/serializer/binary_stream';
 import type { MachineSaveState } from '../../save_state';
-import { TableWriteRecovery, type CpuRuntimeState, type PendingTableWrite } from '../../cpu/cpu';
+import { AllocationRecovery, PendingAllocationKind, type CpuRuntimeState, type PendingAllocation } from '../../cpu/cpu';
 import type { Value } from '../../cpu/value';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { CartridgeCardState, CartridgeControllerState, CartridgeMailboxState } from '../../devices/cartridge/contracts';
@@ -42,7 +42,7 @@ import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_
 
 // BMSX identifies the container. Only the current payload layout is accepted.
 const SAVE_STATE_SIGNATURE = 0x58534d42;
-const SAVE_STATE_LAYOUT_VERSION = 1;
+const SAVE_STATE_LAYOUT_VERSION = 2;
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -88,7 +88,7 @@ function writeFrameState(writer: BinarySink, state: FrameState): void {
 	writer.i64(state.cycleBudgetGranted);
 	writer.i64(state.cycleCarryGranted);
 	writer.i64(state.activeCpuUsedCycles);
-	writer.i32(state.deferredTableWriteCycles);
+	writer.i32(state.deferredAllocationCycles);
 }
 
 function readFrameState(reader: BinaryReader): FrameState {
@@ -98,7 +98,7 @@ function readFrameState(reader: BinaryReader): FrameState {
 		cycleBudgetGranted: reader.i64(),
 		cycleCarryGranted: reader.i64(),
 		activeCpuUsedCycles: reader.i64(),
-		deferredTableWriteCycles: reader.i32(),
+		deferredAllocationCycles: reader.i32(),
 	};
 }
 
@@ -1148,15 +1148,22 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.u32(state.pendingMemory.accessKind);
 	writer.i32(state.pendingMemory.registerIndex);
 	writer.i32(state.pendingMemory.wordCount);
-	const write = state.pendingTableWrite;
-	writer.u32(write === null ? TableWriteRecovery.None : write.recovery);
-	if (write !== null) {
-		writer.u32(write.instructionPc);
-		writer.u32(write.lastPc);
-		writer.u32(write.nextPc);
-		writer.u32(write.receiver);
-		writer.u64(write.key);
-		writer.u64(write.value);
+	const pending = state.pendingAllocation;
+	writer.u32(pending === null ? AllocationRecovery.None : pending.recovery);
+	if (pending !== null) {
+		writer.u32(pending.instructionPc);
+		writer.u32(pending.lastPc);
+		writer.u32(pending.nextPc);
+		writer.u32(pending.kind);
+		if (pending.kind === PendingAllocationKind.TableAssignment) {
+			writer.u32(pending.receiver);
+			writer.u64(pending.key);
+			writer.u64(pending.value);
+		} else {
+			writer.i32(pending.destination);
+			writer.i32(pending.arraySize);
+			writer.i32(pending.hashSize);
+		}
 	}
 	writer.u32(state.statusWord);
 	writer.u32(state.causeWord);
@@ -1173,14 +1180,19 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.bool(state.yieldRequested);
 }
 
-function readPendingTableWrite(reader: BinaryReader): PendingTableWrite | null {
-	const recovery = reader.u32() as TableWriteRecovery;
-	if (recovery === TableWriteRecovery.None) return null;
-	return {
-		recovery,
-		instructionPc: reader.u32(), lastPc: reader.u32(), nextPc: reader.u32(),
-		receiver: reader.u32(), key: reader.u64() as Value, value: reader.u64() as Value,
-	};
+function readPendingAllocation(reader: BinaryReader): PendingAllocation | null {
+	const recovery = reader.u32() as AllocationRecovery;
+	if (recovery === AllocationRecovery.None) return null;
+	const instructionPc = reader.u32(), lastPc = reader.u32(), nextPc = reader.u32();
+	const kind = reader.u32() as PendingAllocationKind;
+	switch (kind) {
+		case PendingAllocationKind.TableAssignment:
+			return { recovery, instructionPc, lastPc, nextPc, kind, receiver: reader.u32(), key: reader.u64() as Value, value: reader.u64() as Value };
+		case PendingAllocationKind.TableCreation:
+			return { recovery, instructionPc, lastPc, nextPc, kind, destination: reader.i32(), arraySize: reader.i32(), hashSize: reader.i32() };
+		default:
+			throw new Error('Unsupported pending allocation kind.');
+	}
 }
 
 function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
@@ -1211,7 +1223,7 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 			accessKind: reader.u32() as MemoryAccessKind,
 			registerIndex: reader.i32(), wordCount: reader.i32(),
 		},
-		pendingTableWrite: readPendingTableWrite(reader),
+		pendingAllocation: readPendingAllocation(reader),
 		statusWord: reader.u32(),
 		causeWord: reader.u32(),
 		epcWord: reader.u32(),

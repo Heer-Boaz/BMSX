@@ -149,7 +149,7 @@ DISPATCH_LABEL(SETI) {
 	}
 	PUBLISH_SCALAR_FRONTIER();
 	if (storeTableIntegerIndex(FRAME, tableValue, b, value)) {
-		if (tableWriteParked()) return RunResult::ParkedTableWrite;
+		if (allocationParked()) return RunResult::ParkedAllocation;
 		DISPATCH_CONTINUE();
 	}
 	RESUME_SCALAR_FRONTIER();
@@ -189,7 +189,7 @@ DISPATCH_LABEL(SETFIELD) {
 		DISPATCH_NEXT();
 	PUBLISH_SCALAR_FRONTIER();
 	if (storeTableFieldIndexCached(FRAME, predicted, base, key, value)) {
-		if (tableWriteParked()) return RunResult::ParkedTableWrite;
+		if (allocationParked()) return RunResult::ParkedAllocation;
 		DISPATCH_CONTINUE();
 	}
 	RESUME_SCALAR_FRONTIER();
@@ -237,7 +237,7 @@ DISPATCH_LABEL(SETT) {
 	}
 	PUBLISH_SCALAR_FRONTIER();
 	if (storeTableIndex(FRAME, tableValue, key, value)) {
-		if (tableWriteParked()) return RunResult::ParkedTableWrite;
+		if (allocationParked()) return RunResult::ParkedAllocation;
 		DISPATCH_CONTINUE();
 	}
 	RESUME_SCALAR_FRONTIER();
@@ -253,11 +253,12 @@ DISPATCH_LABEL(NEWT) {
 	const int b = decoded->b;
 	const int c = decoded->c;
 	PUBLISH_SCALAR_FRONTIER();
-	auto table = createTable(b, c);
+	const u32 table = reserveNewTable(FRAME, a, b, c);
+	if (!table) return RunResult::ParkedAllocation;
 	RESUME_SCALAR_FRONTIER();
 	registers = FRAME.registers;
 	CYCLES_ADD(b + 2 * c);
-	SET_REGISTER_FAST(a, valueTable(table.address()));
+	SET_REGISTER_FAST(a, valueTable(table));
 	DISPATCH_NEXT();
 }
 
