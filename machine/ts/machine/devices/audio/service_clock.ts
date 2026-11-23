@@ -16,7 +16,8 @@ import type { DmaController } from '../dma/controller';
 import type { ApuActiveSlots } from './active_slots';
 import type { ApuCommandFifo } from './command_fifo';
 import { APU_SAMPLE_RATE_HZ } from '../../../spec/audio/apu';
-import { ApuOutputMixer } from './output';
+import type { ApuOutputMixer } from './output';
+import { APU_OUTPUT_RING_CAPACITY_FRAMES } from './output_ring';
 import type { ApuSampleMemory } from './sample_memory';
 import type { ApuSampleTransferState } from './save_state';
 import { ApuSampleTransfer } from './sample_transfer';
@@ -135,7 +136,9 @@ export class ApuServiceClock {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles);
 			return;
 		}
-		const serviceFrames = this.audioOutput.samplesUntilNextEvent(ApuOutputMixer.MIX_BATCH_FRAMES);
+		// The mixer can process a full output window in its private batches.
+		// Only an earlier guest-visible end needs to shorten that CPU grant.
+		const serviceFrames = this.audioOutput.samplesUntilNextEvent(APU_OUTPUT_RING_CAPACITY_FRAMES);
 		this.scheduler.scheduleDeviceService(
 			DEVICE_SERVICE_APU,
 			nowCycles + cyclesUntilBudgetUnits(this.cpuHz, APU_SAMPLE_RATE_HZ, this.sampleCarry, serviceFrames),

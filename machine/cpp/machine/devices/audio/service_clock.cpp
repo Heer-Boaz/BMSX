@@ -173,7 +173,9 @@ void ApuServiceClock::scheduleNext(i64 nowCycles) {
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles);
 		return;
 	}
-	const i64 serviceFrames = m_audioOutput.samplesUntilNextEvent(ApuOutputMixer::MIX_BATCH_FRAMES);
+	// The mixer can process a full output window in its private batches.
+	// Only an earlier guest-visible end needs to shorten that CPU grant.
+	const i64 serviceFrames = m_audioOutput.samplesUntilNextEvent(APU_OUTPUT_RING_CAPACITY_FRAMES);
 	m_scheduler.scheduleDeviceService(
 		DEVICE_SERVICE_APU,
 		nowCycles + cyclesUntilBudgetUnits(m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, serviceFrames)

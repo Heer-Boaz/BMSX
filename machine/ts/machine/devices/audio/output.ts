@@ -70,8 +70,17 @@ function audioFrameIndex(cursorQ16: number): number {
 	return (cursorQ16 - (cursorQ16 % APU_RATE_STEP_Q16_ONE)) / APU_RATE_STEP_Q16_ONE;
 }
 
+function sourceEndsBy(record: ApuOutputVoice, frameEndQ16: number, sample: number): boolean {
+	const phase = record.phaseRemainder + record.phaseStepRemainder * sample;
+	const carry = (phase - phase % APU_SAMPLE_RATE_HZ) / APU_SAMPLE_RATE_HZ;
+	// In-range source positions are below 2^48. If the displacement is
+	// large enough to lose integer precision, it is already outside.
+	const cursor = record.cursorQ16 + record.phaseStepQ16 * sample + carry;
+	return cursor < 0 || cursor >= frameEndQ16;
+}
+
 export class ApuOutputMixer {
-	public static readonly MIX_BATCH_FRAMES = 128;
+	private static readonly MIX_BATCH_FRAMES = 128;
 	private static readonly MIX_BATCH_SAMPLES = ApuOutputMixer.MIX_BATCH_FRAMES * 2;
 	public readonly outputRing = new ApuOutputRing();
 	private readonly voices: ApuOutputVoice[] = [];
@@ -279,30 +288,17 @@ export class ApuOutputMixer {
 			if (cursorQ16 < 0 || cursorQ16 >= frameEndQ16) {
 				return 1;
 			}
-			const stepDirection = record.phaseStepQ16 !== 0 ? record.phaseStepQ16 : record.phaseStepRemainder;
-			if (stepDirection === 0) {
+			if (record.phaseStepQ16 === 0 && record.phaseStepRemainder === 0) {
 				continue;
 			}
-			if (stepDirection > 0) {
-				const maximumAdvance = record.phaseStepQ16 + (record.phaseStepRemainder === 0 ? 0 : 1);
-				if (maximumAdvance <= (frameEndQ16 - cursorQ16 - 1) / earliest) {
-					continue;
-				}
-			} else {
-				const maximumRetreat = -record.phaseStepQ16 + (record.phaseStepRemainder === 0 ? 0 : 1);
-				if (maximumRetreat <= cursorQ16 / earliest) {
-					continue;
-				}
-			}
-			for (let sample = 1; sample <= earliest; sample += 1) {
-				const phaseTotal = record.phaseRemainder + record.phaseStepRemainder * sample;
-				const phaseResidual = phaseTotal % APU_SAMPLE_RATE_HZ;
-				const phaseCarry = (phaseTotal - phaseResidual) / APU_SAMPLE_RATE_HZ;
-				const predictedCursorQ16 = cursorQ16 + record.phaseStepQ16 * sample + phaseCarry;
-				if (predictedCursorQ16 < 0 || predictedCursorQ16 >= frameEndQ16) {
-					earliest = sample;
-					break;
-				}
+			// A nonlooping cursor is monotone until the next register write.
+			// Search for its first end while keeping the signed carry.
+			if (!sourceEndsBy(record, frameEndQ16, earliest)) continue;
+			let elapsed = 0;
+			while (earliest - elapsed > 1) {
+				const sample = elapsed + ((earliest - elapsed) >>> 1);
+				if (sourceEndsBy(record, frameEndQ16, sample)) earliest = sample;
+				else elapsed = sample;
 			}
 		}
 		return earliest;

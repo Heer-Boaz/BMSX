@@ -553,15 +553,18 @@ void testSourceEndAndFadeBatchSubdivision() {
 		}
 		AudioHarness event;
 		prepare(event);
+		const bmsx::u32 endCycle = c.count != 0u ? c.count : 1u;
+		require(event.scheduler.nextDeadline() == endCycle,
+			"the scheduler uses the exact end even past an internal mixer batch");
 		if (c.count > 1u) {
 			event.scheduler.advanceTo(c.count - 1u);
-			event.audio.onService(c.count - 1u);
-			require(event.memory.readIoU32(bmsx::IO_APU_EVENT_SEQ) == 0u
+			require(!event.scheduler.hasDueTimer() && event.memory.readIoU32(bmsx::IO_APU_EVENT_SEQ) == 0u
 				&& event.memory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 2u,
 				"source/fade should remain active before its end edge");
 		}
-		const bmsx::u32 endCycle = c.count != 0u ? c.count : 1u;
 		event.scheduler.advanceTo(endCycle);
+		require(event.scheduler.hasDueTimer() && event.scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_APU,
+			"the end edge independently wakes the scheduler");
 		event.audio.onService(endCycle);
 		const auto state = event.audio.captureState();
 		require(state.slotPhases[1] == bmsx::APU_SLOT_PHASE_IDLE, "source/fade END should clear the phase");
@@ -579,6 +582,41 @@ void testSourceEndAndFadeBatchSubdivision() {
 		event.audio.onService(260);
 		require(event.memory.readIoU32(bmsx::IO_APU_EVENT_SEQ) == 1u, "finished source/fade should not emit another END");
 	}
+}
+
+void testSilentOutputDoesNotSplitPalGrant() {
+	AudioHarness harness;
+	constexpr bmsx::i64 palFrames = bmsx::APU_SAMPLE_RATE_HZ / 50u;
+	harness.scheduler.advanceTo(palFrames);
+	require(!harness.scheduler.hasDueTimer(), "silence does not create a mixer-batch deadline");
+	const auto& output = harness.audio.synchronizeOutput();
+	require(output.firstFrameSequence() == 0 && output.queuedFrames() == palFrames,
+		"the host receives every elapsed sample without an intermediate CPU grant");
+}
+
+void testLiveRateReversalReschedulesSourceEnd() {
+	AudioHarness harness;
+	programPcmVoice(harness, bmsx::CART_ROM_BASE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+	constexpr auto selectedRate = bmsx::IO_APU_SELECTED_SLOT_REG0 + bmsx::APU_PARAMETER_RATE_STEP_Q16_INDEX * bmsx::IO_WORD_SIZE;
+	harness.memory.writeMappedU32LE(
+		bmsx::IO_APU_SELECTED_SLOT_REG0 + bmsx::APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX * bmsx::IO_WORD_SIZE, 30000u);
+	harness.memory.writeMappedU32LE(selectedRate, 1u);
+	harness.scheduler.advanceTo(2);
+	harness.memory.writeMappedU32LE(selectedRate, 0xffffffffu);
+	const auto state = harness.audio.captureState();
+	require(state.output.voices[0].cursorQ16 == 1 && state.output.voices[0].phaseRemainder == 15900,
+		"the rate write only changes future steps, not the accumulated phase");
+	require(harness.scheduler.nextDeadline() == 6,
+		"the retained positive remainder delays the reverse end until the fourth sample");
+	harness.scheduler.advanceTo(5);
+	require(!harness.scheduler.hasDueTimer() && harness.memory.readIoU32(bmsx::IO_APU_EVENT_SEQ) == 0u,
+		"zero is still inside the source");
+	harness.scheduler.advanceTo(6);
+	require(harness.scheduler.hasDueTimer() && harness.scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_APU,
+		"the first negative position wakes the device");
+	harness.audio.onService(6);
+	require(harness.memory.readIoU32(bmsx::IO_APU_EVENT_SEQ) == 1u, "the device emits exactly one END");
 }
 
 void testLoopCursorPcmAcrossLargeAndReverseSteps() {
@@ -1392,6 +1430,8 @@ int main() {
 	testPauseResumeRetainsVoiceTransportAcrossRestore();
 	testFixedPointMixerVectors();
 	testSourceEndAndFadeBatchSubdivision();
+	testSilentOutputDoesNotSplitPalGrant();
+	testLiveRateReversalReschedulesSourceEnd();
 	testLoopCursorPcmAcrossLargeAndReverseSteps();
 	testFilterAndFadeRestore();
 	testResamplerChunkContinuityAndUnderrun();

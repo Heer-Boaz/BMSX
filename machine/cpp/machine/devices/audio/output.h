@@ -17,7 +17,6 @@ namespace bmsx {
 
 class ApuOutputMixer final {
 public:
-	static constexpr size_t MIX_BATCH_FRAMES = 128u;
 	ApuOutputMixer();
 	ApuOutputRing outputRing;
 
@@ -56,6 +55,7 @@ public:
 	[[nodiscard]] auto renderMachineFrames(i64 frameCount, i64 startSequence) -> u32;
 
 private:
+	static constexpr size_t MIX_BATCH_FRAMES = 128u;
 	static constexpr size_t MIX_BATCH_SAMPLES = MIX_BATCH_FRAMES * 2u;
 
 	struct VoiceRecord {

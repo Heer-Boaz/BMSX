@@ -187,28 +187,22 @@ i64 ApuOutputMixer::samplesUntilNextEvent(i64 limit) const {
 		if (record.phaseStepQ16 == 0 && record.phaseStepRemainder == 0) {
 			continue;
 		}
-		if (record.phaseStepQ16 > 0 || record.phaseStepRemainder > 0) {
-			const i64 maxAdvance = record.phaseStepQ16 + (record.phaseStepRemainder != 0 ? 1 : 0);
-			const i64 distanceToEnd = frameEndQ16 - cursorQ16;
-			if (maxAdvance <= (distanceToEnd - 1) / earliest) {
-				continue;
-			}
-		} else {
-			const i64 maxRetreat = -record.phaseStepQ16 + (record.phaseStepRemainder != 0 ? 1 : 0);
-			if (maxRetreat <= cursorQ16 / earliest) {
-				continue;
-			}
-		}
-		for (i64 sample = 1; sample <= earliest; sample += 1) {
+		// A nonlooping cursor is monotone until the next register write.
+		// Find the first sample outside the source interval, not each
+		// intervening sample. Retain the signed carry across rate changes.
+		const auto endedBy = [&](i64 sample) {
 			const i64 phaseTotal = static_cast<i64>(record.phaseRemainder)
 				+ static_cast<i64>(record.phaseStepRemainder) * sample;
-			const i64 phaseResidual = phaseTotal % static_cast<i64>(APU_SAMPLE_RATE_HZ);
-			const i64 phaseCarry = (phaseTotal - phaseResidual) / static_cast<i64>(APU_SAMPLE_RATE_HZ);
+			const i64 phaseCarry = phaseTotal / static_cast<i64>(APU_SAMPLE_RATE_HZ);
 			const i64 predictedCursorQ16 = cursorQ16 + record.phaseStepQ16 * sample + phaseCarry;
-			if (predictedCursorQ16 < 0 || predictedCursorQ16 >= frameEndQ16) {
-				earliest = sample;
-				break;
-			}
+			return predictedCursorQ16 < 0 || predictedCursorQ16 >= frameEndQ16;
+		};
+		if (!endedBy(earliest)) continue;
+		i64 elapsed = 0;
+		while (earliest - elapsed > 1) {
+			const i64 sample = elapsed + ((earliest - elapsed) >> 1u);
+			if (endedBy(sample)) earliest = sample;
+			else elapsed = sample;
 		}
 	}
 	return earliest;

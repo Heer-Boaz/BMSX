@@ -25,6 +25,7 @@ import {
 	APU_PARAMETER_GENERATOR_KIND_INDEX,
 	APU_PARAMETER_FILTER_B0_B1_INDEX,
 	APU_PARAMETER_FILTER_CONTROL_INDEX,
+	APU_PARAMETER_RATE_STEP_Q16_INDEX,
 	APU_PARAMETER_REGISTER_COUNT,
 	APU_PARAMETER_GAIN_Q12_INDEX,
 	APU_PARAMETER_START_SAMPLE_INDEX,
@@ -129,7 +130,7 @@ import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { CART_MMIO_BASE, CART_RAM_BASE, CART_ROM_BASE, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { DEVICE_SERVICE_APU_TRANSFER, DEVICE_SERVICE_DMA, DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
+import { DEVICE_SERVICE_APU, DEVICE_SERVICE_APU_TRANSFER, DEVICE_SERVICE_DMA, DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';
 import { AudioOutputResampler } from '../../machine/ts/audio/output_resampler';
 import { Machine } from '../../machine/ts/machine/machine';
@@ -1359,12 +1360,18 @@ test('APU source end and fade completion are independent of mixer batch subdivis
 			}
 		}
 		const event = prepare();
+		const endCycle = c.count || 1;
+		assert.equal(event.scheduler.nextDeadline(), endCycle, `${c.name}: exact end past any mixer batch`);
 		if (c.count > 1) {
-			advanceRealApu(event, c.count - 1);
+			event.scheduler.advanceTo(c.count - 1);
+			assert.equal(event.scheduler.hasDueTimer(), false, c.name);
 			assert.equal(event.memory.readIoU32(IO_APU_EVENT_SEQ), 0, c.name);
 			assert.equal(event.memory.readIoU32(IO_APU_ACTIVE_MASK), 2, c.name);
 		}
-		advanceRealApu(event, c.count || 1);
+		event.scheduler.advanceTo(endCycle);
+		assert.equal(event.scheduler.hasDueTimer(), true, c.name);
+		assert.equal(event.scheduler.popDueTimer(), DEVICE_SERVICE_APU, c.name);
+		event.audio.onService(endCycle);
 		const state = event.audio.captureState();
 		assert.equal(state.slotPhases[1], APU_SLOT_PHASE_IDLE, c.name);
 		assert.deepEqual(state.slotRegisterWords.slice(21, 42), new Array(21).fill(0), c.name);
@@ -1377,6 +1384,42 @@ test('APU source end and fade completion are independent of mixer batch subdivis
 		advanceRealApu(event, 260);
 		assert.equal(event.memory.readIoU32(IO_APU_EVENT_SEQ), 1, c.name);
 	}
+});
+
+test('silent output does not split a PAL CPU grant', () => {
+	const harness = createRealAudioHarness();
+	const palFrames = APU_SAMPLE_RATE_HZ / 50;
+	harness.scheduler.advanceTo(palFrames);
+	assert.equal(harness.scheduler.hasDueTimer(), false);
+	const output = harness.audio.synchronizeOutput();
+	assert.equal(output.firstFrameSequence(), 0);
+	assert.equal(output.queuedFrames(), palFrames);
+});
+
+test('APU live rate reversal reschedules END with the retained signed phase', () => {
+	const harness = createRealAudioHarness();
+	const { memory, audio, scheduler } = harness;
+	writeValidSourceRegisters(memory);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
+	writeApuCommand(memory, audio, APU_CMD_PLAY);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
+	const selectedRate = IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_RATE_STEP_Q16_INDEX * IO_ARG_STRIDE;
+	memory.writeMappedWord(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX * IO_ARG_STRIDE, 30000);
+	memory.writeMappedWord(selectedRate, 1);
+	scheduler.advanceTo(2);
+	memory.writeMappedWord(selectedRate, 0xffffffff);
+	const voice = audio.captureState().output.voices[0]!;
+	assert.equal(voice.cursorQ16, 1);
+	assert.equal(voice.phaseRemainder, 15900);
+	assert.equal(scheduler.nextDeadline(), 6, 'the positive carry delays the reverse end until the fourth sample');
+	scheduler.advanceTo(5);
+	assert.equal(scheduler.hasDueTimer(), false);
+	assert.equal(memory.readIoU32(IO_APU_EVENT_SEQ), 0);
+	scheduler.advanceTo(6);
+	assert.equal(scheduler.hasDueTimer(), true);
+	assert.equal(scheduler.popDueTimer(), DEVICE_SERVICE_APU);
+	audio.onService(6);
+	assert.equal(memory.readIoU32(IO_APU_EVENT_SEQ), 1);
 });
 
 function advanceScheduledApuTo(harness: ReturnType<typeof createRealAudioHarness>, targetCycle: number): void {
