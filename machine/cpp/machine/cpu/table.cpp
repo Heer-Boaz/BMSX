@@ -605,7 +605,6 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 	constexpr bool returning = Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField;
 	const auto tag = valueTag(value);
 	const bool erase = Policy == HashStore::ReturningField && tag == ValueTag::Nil;
-	const bool valueHasEdge = valueTagHasGcEdge(tag);
 	const u32 count = hashSlots();
 	const auto body = hashBody(count, array);
 	const u32 home = hashCanonicalTableKey(key) & (count - 1u);
@@ -665,7 +664,9 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 		nodeIndex = insertHashWithAdmission<Policy>(key, value, reserve, members, watermark, nodeIndex);
 		if constexpr (Policy != HashStore::General)
 			if (nodeIndex == HASH_STORE_DECLINED) return nodeIndex;
-		if (valueTagHasGcEdge(valueTag(key)) || valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+		// Relocation invalidates a suspended collector cursor in resize().
+		// Already visited edges retain their colors; only the insertion is new.
+		m_heap->writeTableEntry(m_address, key, value);
 	}
 	return nodeIndex;
 }

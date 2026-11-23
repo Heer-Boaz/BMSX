@@ -5,9 +5,9 @@ import { CpuExecutionBackend, COMPILED_BLOCK_THRESHOLD } from '../../machine/ts/
 import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
-import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_COLLECTION_TARGET_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { GcPhase, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
+import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { THREAD_INITIAL_FRAMES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { integerConstant } from '../../toolchain/ts/lua/number';
@@ -493,6 +493,43 @@ test('constant loads, compiled operands and checkpoints use the physical bank', 
 		cpu.reset(); cpu.reset();
 		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied, 'reset does not leak the superseded bank');
 	}
+});
+
+test('growing a fully traced strong table publishes just the inserted edges during the second pass', () => {
+	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { gc } = cpu, { tables } = gc;
+	const slots = 8192, table = cpu.createTable(slots), pending = cpu.createTable(slots);
+	const key = cpu.createTable(), value = cpu.createTable();
+	const frame = cpu.rootThread.currentFrame!;
+	frame.registers.setTable(0, table);
+	frame.registers.setTable(1, pending);
+	frame.top = 2;
+	const cursor = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD;
+	const color = (address: number) => memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK;
+	const step = () => gc.step(valueNil(), valueNil(), valueNil(), 0, false, 256);
+	for (let i = 0; i < 256 && (color(pending) !== 3 || memory.readRamRecordWord(cursor) === pending); ++i) step();
+	assert.equal(gc.phase(), GcPhase.Mark);
+	assert.equal(color(pending), 3);
+	tables.set(pending, valueInteger(1), valueTable(table));
+	for (let i = 0; i < 256 && gc.phase() === GcPhase.Mark; ++i) step();
+	assert.equal(gc.phase(), GcPhase.MarkAgain);
+	assert.equal(color(table), 3);
+	assert.equal(gc.isAlive(key), false);
+	assert.equal(gc.isAlive(value), false);
+	const backing = tables.storageAddress(table), changed = memory.readRamRecordWord(gc.changedHeadOffset());
+	tables.set(table, valueTable(key), valueTable(value));
+	assert.notEqual(tables.storageAddress(table), backing, 'the hash insertion replaces physical storage');
+	assert.equal(memory.readRamRecordWord(gc.changedHeadOffset()), changed);
+	assert.equal(gc.isAlive(key), true);
+	assert.equal(gc.isAlive(value), true);
+	for (let i = 0; i < 256 && gc.phase() === GcPhase.MarkAgain; ++i) step();
+	assert.equal(gc.phase(), GcPhase.Atomic);
+	assert.ok(gc.finishFinalMark() < slots, 'the stopped pass does not scan the large table again');
+	for (let i = 0; i < 256 && gc.active(); ++i) step();
+	assert.equal(gc.active(), false);
+	assert.equal(gc.tableRecordAddress(key), key);
+	assert.equal(gc.tableRecordAddress(value), value);
+	assert.equal(tables.get(table, valueTable(key)), valueTable(value));
 });
 
 test('temporary roots survive unbilled admission; unreachable allocations only add physical reclamation work', () => {

@@ -8,7 +8,7 @@ import type { GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
 import {
 	ValueTag, asInteger, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
-	valueIsNaN, valueNil, valuePayload, valueString, valueTable, valueTag, valueTagHasGcEdge, type Value,
+	valueIsNaN, valueNil, valuePayload, valueString, valueTable, valueTag, type Value,
 } from './value';
 import type { ValueWriteTarget } from './value_slots';
 
@@ -529,7 +529,8 @@ export class TableRecords {
 			}
 		}
 		if (index === HASH_STORE_DECLINED) return index;
-		if (valueTagHasGcEdge(keyTag) || valueTagHasGcEdge(tag)) this.heap.writeBarrier(record, GC_RECORD_LINK);
+		// resize() invalidates an outstanding scan; relocated old edges keep their marks.
+		this.heap.writeTableAssignment(record, tag, word, key);
 		return index;
 	}
 	public store(record: number, keyTag: ValueTag, keyWord: number, tag: ValueTag, word: number): void {

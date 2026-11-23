@@ -123,11 +123,15 @@ test('the second mark traces new strong edges without revisiting the table or re
 	for (const child of [onlyClosure, fieldValue, key, cellValue]) assert.equal(gc.isAlive(child), true);
 	assert.equal(memory.readRamRecordWord(gc.changedHeadOffset()), changed, 'forward writes do not enqueue the strong owners again');
 	tables.setInteger(weak, 1, valueTable(weakValue));
-	assert.notEqual(memory.readRamRecordWord(gc.changedHeadOffset()), changed, 'metatabled writes keep the backward barrier');
+	const weakChanged = memory.readRamRecordWord(gc.changedHeadOffset());
+	assert.notEqual(weakChanged, changed, 'metatabled writes keep the backward barrier');
 	assert.equal(gc.isAlive(weakValue), false);
+	const growingStorage = tables.storageAddress(growing);
 	tables.setStringKey(growing, field, valueTable(resizedValue));
-	assert.equal(memory.readRamRecordWord(growing + GC_COLOR_OFFSET) & 3, 2, 'the opaque resize queues the old owner');
-	assert.equal(gc.isAlive(resizedValue), false);
+	assert.notEqual(tables.storageAddress(growing), growingStorage);
+	assert.equal(memory.readRamRecordByte(growing + GC_COLOR_OFFSET) & 3, 3, 'the fully scanned owner stays black after resize');
+	assert.equal(memory.readRamRecordWord(gc.changedHeadOffset()), weakChanged);
+	assert.equal(gc.isAlive(resizedValue), true);
 	const queued = history.capture(memory, before), queuedCpu = cpu.captureRuntimeState();
 	const finish = () => {
 		for (let i = 0; gc.active() && i < 32; ++i) gc.step();

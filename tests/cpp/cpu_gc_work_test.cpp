@@ -1143,13 +1143,13 @@ void secondMarkPassAndCredit() {
 	require(target.getInteger(2) == valueTable(late.address()), "final remark retains writes after the second pass");
 }
 
-void strongWritesLeaveLargeTablesOutOfFinalRemark() {
+void strongWritesLeaveLargeTablesOutOfFinalRemark(bool grows) {
 	Machine machine(image());
 	auto& cpu = machine.cpu;
 	auto& heap = cpu.gcHeap();
 	auto& memory = machine.memory;
 	constexpr u32 slots = 2 * GC_STEP_WORDS;
-	auto table = cpu.createTable(slots, 16);
+	auto table = cpu.createTable(slots, grows ? 0 : 16);
 	auto pending = cpu.createTable(slots);
 	const u32 key = cpu.createTable().address(), value = cpu.createTable().address();
 	const auto text = cpu.stringPool().intern("forward mark across a checkpoint");
@@ -1172,7 +1172,10 @@ void strongWritesLeaveLargeTablesOutOfFinalRemark() {
 		&& !heap.isAlive(key) && !heap.isAlive(value), "isolated writes start in the live second pass");
 
 	const u32 changed = phase(GC_CHANGED_HEAD), work = phase(GC_EPOCH_WORK);
+	const u32 backing = table.storageAddress();
 	table.set(valueTable(key), valueTable(value));
+	require((table.storageAddress() != backing) == grows,
+		"the insertion exercises the intended storage placement path");
 	table.setInteger(1, valueString(text));
 	require(color(table.address()) == 3u && phase(GC_CHANGED_HEAD) == changed
 		&& heap.isAlive(key) && heap.isAlive(value), "both inserted hash edges go to the live trace, not a table rescan");
@@ -1614,7 +1617,7 @@ int main(int argc, char** argv) {
 		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues();
 		weakValuesSkipMarkingStorageWithoutStrongEdges(); incrementalSharedWeakMode();
 		resumesFinalWeakCleanup(); resumesMetatableModeProbe(); resumesWeakTableRemark(); consumesSelfLinkedGrayEdge();
-		secondMarkPassAndCredit(); strongWritesLeaveLargeTablesOutOfFinalRemark();
+		secondMarkPassAndCredit(); strongWritesLeaveLargeTablesOutOfFinalRemark(false); strongWritesLeaveLargeTablesOutOfFinalRemark(true);
 		automaticAssistDefersScopedRoots(); explicitAtomicCreditIgnoresPhysicalWork();
 		collectUnattachedThreadRecord(); sweepCoroutineRecord(); sweepUnselectsSuspendedTransferFrames(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
