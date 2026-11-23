@@ -1,5 +1,6 @@
 #pragma once
 
+#include "machine/cpu/execution_image.h"
 #include "machine/cpu/jit/compiler.h"
 
 namespace bmsx::test {

@@ -75,7 +75,9 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 				}
 			};
 			if (access.readsRange.count != 0 || access.readsRange.open) markRange(access.readsRange, false);
-			if (access.writes.count != 0 && !access.writes.open) markRange(access.writes, true);
+			// A guard miss leaves ITERN's result range untouched.
+			if (access.writes.count != 0 && !access.writes.open
+				&& !std::holds_alternative<NativeTableIterator>(inst.operation)) markRange(access.writes, true);
 		}
 	}
 

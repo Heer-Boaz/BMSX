@@ -91,7 +91,10 @@ struct NativeTerminalExit {
 	NativeExitPlan operator()(const NativeHalt&) const { return {NativeHalt::terminalExit}; }
 	NativeExitPlan operator()(const NativeExceptionReturn&) const { return {NativeExceptionReturn::terminalExit}; }
 	NativeExitPlan operator()(const NativeCallSite& call) const { return {call.terminalExit, {.call = call}}; }
-	NativeExitPlan operator()(const NativeTableIterator& iterator) const { return {iterator.terminalExit, {.iterator = iterator}}; }
+	NativeExitPlan operator()(const NativeTableIterator& iterator) const {
+		return iterator.ownsSkip() ? NativeExitPlan{NativeBlockExit::Continue, {}} :
+			NativeExitPlan{iterator.terminalExit, {.iterator = iterator}};
+	}
 	NativeExitPlan operator()(const NativeReturnSite& ret) const { return {ret.terminalExit, {.returned = ret}}; }
 	NativeExitPlan operator()(const NativeTableAllocation& table) const { return {table.terminalExit, {.allocation = table}}; }
 	NativeExitPlan operator()(const NativeConcat& concat) const { return {concat.terminalExit, {.concat = concat}}; }
@@ -175,7 +178,7 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 			&& skipped->dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe);
 		if (block.hasFusedJump) block.fusedJumpCycles = skipped->baseCycles;
 	} else if (auto* iterator = std::get_if<NativeTableIterator>(&operations.back().operation); iterator && skipped) {
-		iterator->skipWidth = skipped->width;
+		block.skippedWidth = iterator->skipWidth = skipped->width;
 		block.sourceWords += skipped->width;
 	}
 	const auto [kind, operands] = std::visit(NativeTerminalExit{}, final);
@@ -249,7 +252,8 @@ void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block) {
 		const auto& writes = instruction.slots.writes;
 		// A terminal semantic operation owns its result placement.
 		const bool placesResults = &instruction != &block.instructions.back() || block.terminal.exit == NativeBlockExit::Continue;
-		if (placesResults && writes.count != 0 && !writes.open)
+		if (placesResults && writes.count != 0 && !writes.open
+			&& !std::holds_alternative<NativeTableIterator>(instruction.operation))
 			state.registerTop = std::max(state.registerTop, writes.end());
 	}
 
@@ -278,6 +282,13 @@ void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block) {
 		}
 	} else if (const auto* branch = std::get_if<NativeTruthBranch>(&final)) {
 		appendExit(state, block.taken).nextPc = branch->target;
+	} else if (const auto* iterator = std::get_if<NativeTableIterator>(&final); iterator && iterator->ownsSkip()) {
+		// A guard miss executes the untouched generic iterator path at the
+		// following PC. A matching cursor places all results, even at end.
+		auto& taken = appendExit(state, block.taken);
+		taken.registerTop = std::max(taken.registerTop, static_cast<int>(iterator->first) + iterator->count);
+		taken.cycles += iterator->count;
+		taken.nextPc += u32{iterator->skipWidth} * INSTRUCTION_BYTES;
 	}
 	block.terminal.cycles = state.cycles;
 	block.terminal.registerTop = state.registerTop;

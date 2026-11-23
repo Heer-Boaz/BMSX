@@ -38,6 +38,42 @@ u32 SLJIT_FUNC assignNativeTableInteger(GcHeap* heap, u32 receiverAddress, i32 k
 
 } // namespace
 
+void NativeLowering::lowerOperation(const NativeTableIterator& iterator, const NativeInstruction& row) {
+	if (!iterator.ownsSkip()) return; // The semantic owner must fetch its skip.
+	auto* c = m_compiler;
+	const auto state = m_cache.state();
+	const auto table = iterator.base + 1, control = iterator.base + 2;
+
+	// On mismatch the ordinary iterator call at the following PC sees the
+	// original result range and hidden control word.
+	std::array<sljit_jump*, 4> miss;
+	miss[0] = m_cache.guard(iterator.base, ValueTag::BuiltinFunction, SLJIT_R2);
+	emitPayload(iterator.base, SLJIT_R0);
+	miss[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
+		SLJIT_IMM, valuePayload(valueBuiltinFunction(BuiltinFunctionId::Next)));
+	miss[2] = m_cache.guard(table, ValueTag::Table, SLJIT_R2);
+	miss[3] = m_cache.guard(control, ValueTag::Nil, SLJIT_R2);
+	emitPayload(table, SLJIT_R0);
+	emitPayload(control, SLJIT_R1);
+	sljit_emit_ijump(c, SLJIT_FAST_CALL, SLJIT_IMM, reinterpret_cast<sljit_sw>(nativeBlockGate().tableIteratorScan));
+	// The admitted VM stack is already recorded for rewind by the grant.
+	emitRawStore(iterator.first, SLJIT_R2, SLJIT_R0);
+	if (iterator.count > 1) emitRawStore(iterator.first + 1, SLJIT_R3, SLJIT_R1);
+	if (iterator.count > 2)
+		lowerOperation(NativeClearSlots{static_cast<u16>(iterator.first + 2), static_cast<u16>(iterator.count - 2)}, row);
+	// Store the hidden cursor last: result operands can name its slot.
+	m_cache.discardRange(control, control + 1);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::words), control * sizeof(u32),
+		SLJIT_MEM1(SLJIT_SP), NativeTableIteratorScratch::cursor);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(NativeBlockAbi::tags), control, SLJIT_IMM, static_cast<u8>(ValueTag::Nil));
+	emitExit(*sideExit(m_ir[m_current].taken), 1);
+
+	auto* fallthrough = sljit_emit_label(c);
+	for (auto* guard : miss) if (guard) sljit_set_label(guard, fallthrough);
+	m_cache.setState(state);
+	emitExit(m_blocks[m_current]->terminal);
+}
+
 void NativeLowering::admitTableValueWrite(NativeBlockExitSite& exit) {
 	for (const auto address : {wordOffset, tagOffset})
 		emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), address, SLJIT_R2, SLJIT_R3, std::nullopt);

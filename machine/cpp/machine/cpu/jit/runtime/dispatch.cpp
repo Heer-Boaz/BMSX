@@ -245,23 +245,19 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			break;
 		case NativeBlockExit::IterateTable: {
 			const auto iterator = exit->operands.iterator;
-			const bool advanced = cpu.stepTableIterator(frame->registers, iterator.base, iterator.first, iterator.count);
-			if (advanced) {
+			if (cpu.stepTableIterator(frame->registers, iterator.base, iterator.first, iterator.count)) {
 				state.registerTop = std::max(state.registerTop, static_cast<int>(iterator.first) + iterator.count);
 				state.remainingCycles -= iterator.count;
-				if (iterator.skipWidth == 0) {
-					// A mapped skip without an immutable following word still
-					// belongs to the ordinary instruction fetch owner.
-					cpu.instructionBudgetRemaining = state.remainingCycles;
-					run->publishActivation(continuationPc);
-					liveFrontier = false;
-					cpu.skipNextInstruction(*frame);
+				// Only a skip without a compiled following word reaches
+				// this path. The instruction fetch owner resolves it.
+				cpu.instructionBudgetRemaining = state.remainingCycles;
+				run->publishActivation(continuationPc);
+				liveFrontier = false;
+				cpu.skipNextInstruction(*frame);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-					++gateProfile.returns;
+				++gateProfile.returns;
 #endif
-					return nullptr;
-				}
-				continuationPc += static_cast<u32>(iterator.skipWidth) * INSTRUCTION_BYTES;
+				return nullptr;
 			}
 			if (state.remainingCycles > 0) {
 				auto* page = NativeCodeLookup::findInRoot(run->codeRoot, continuationPc);

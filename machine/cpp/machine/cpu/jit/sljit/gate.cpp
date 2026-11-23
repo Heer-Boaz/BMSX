@@ -102,6 +102,7 @@ NativeBlockGate::NativeBlockGate() {
 		offsetof(NativeBlockRunState, remainingCycles), NativeBlockAbi::budget, 0);
 	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, exitCode));
 	auto* stringProbe = emitStringReadProbe(compiler);
+	auto* iteratorScan = emitTableIteratorScan(compiler);
 	entry = sljit_generate_code(compiler, 0, nullptr);
 	if (!entry)
 		throw std::bad_alloc();
@@ -114,6 +115,7 @@ NativeBlockGate::NativeBlockGate() {
 	publishSegment = reinterpret_cast<void*>(sljit_get_label_addr(publish));
 	leaveSegment = reinterpret_cast<void*>(sljit_get_label_addr(leave));
 	stringReadProbe = reinterpret_cast<void*>(sljit_get_label_addr(stringProbe));
+	tableIteratorScan = reinterpret_cast<void*>(sljit_get_label_addr(iteratorScan));
 #if defined(BMSX_NATIVE_PERF_MAP)
 	auto start = static_cast<sljit_uw>(SLJIT_FUNC_ADDR(entry));
 #if defined(SLJIT_CONFIG_ARM_THUMB2) && SLJIT_CONFIG_ARM_THUMB2
@@ -125,13 +127,15 @@ NativeBlockGate::NativeBlockGate() {
 		sljit_get_label_abs_addr(retEntry),
 		sljit_get_label_abs_addr(publish), sljit_get_label_abs_addr(leave),
 		sljit_get_label_abs_addr(stringProbe),
+		sljit_get_label_abs_addr(iteratorScan),
 		start + sljit_get_generated_code_size(compiler)
 	};
 	constexpr std::array names{
 		"bmsx_native_gate_entry", "bmsx_native_gate_return_to_cpp", "bmsx_native_gate_dispatch",
 		"bmsx_native_gate_cold_dispatch", "bmsx_native_gate_declined", "bmsx_native_gate_call",
 		"bmsx_native_gate_ret",
-		"bmsx_native_gate_publish", "bmsx_native_gate_leave", "bmsx_native_string_read_probe"
+		"bmsx_native_gate_publish", "bmsx_native_gate_leave", "bmsx_native_string_read_probe",
+		"bmsx_native_table_iterator_scan"
 	};
 	static_assert(boundaries.size() == names.size() + 1);
 	std::array<NativePerfMapRange, names.size()> ranges;

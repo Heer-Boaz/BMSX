@@ -47,6 +47,7 @@ struct NativeWindowExtent {
 	u32 operator()(const auto& op) const requires requires { op.terminalExit; } { return cpuOwned ? slots.fixedExtent() : 0; }
 	u32 operator()(const NativeReturnSite&) const { return 0; } // Only the receiving placement selects a source.
 	u32 operator()(const NativeClosure&) const { return 0; } // CLOSURE admits its optional Bx register in the owner.
+	u32 operator()(const NativeTableIterator& op) const { return op.ownsSkip() || cpuOwned ? slots.fixedExtent() : 0; }
 	u32 operator()(const NativeVararg&) const { return 0; } // Placement admits its own range.
 	u32 operator()(const NativeControlAccess& op) const {
 		return op.mode == NativeControlMode::WriteSemantic ? 0 : slots.fixedExtent();
@@ -147,7 +148,7 @@ void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeReg
 		if (block.nativeSuccessor) {
 			if (const auto* branch = std::get_if<NativeTruthBranch>(&final.operation))
 				alternate = entryForPc(branch->target);
-			else if (block.skippedWidth != 0 && std::holds_alternative<NativeComparison>(final.operation))
+			else if (block.skippedWidth != 0)
 				alternate = entryForPc(final.pc + (u32{final.width} + block.skippedWidth) * INSTRUCTION_BYTES);
 		}
 		block.successors = {

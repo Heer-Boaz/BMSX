@@ -497,8 +497,14 @@ void tableIteratorRetainsItsCursorAcrossDeletionAndRestore() {
 	native.cpu.prepareSystemNativeCode();
 	const auto* page = native.cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup->find(pc, 0);
 	const auto& entry = page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-	require(entry && entry->terminal.exit == NativeBlockExit::IterateTable && entry->terminal.operands.iterator.skipWidth == 2,
-		"native iterator owns the complete WIDE skip");
+	require(entry && entry->terminal.exit == NativeBlockExit::Continue && entry->terminal.nextPc == pc + INSTRUCTION_BYTES
+		&& entry->sideExits.size() == 1 && entry->sideExits[0].exit == NativeBlockExit::Continue
+		&& entry->sideExits[0].nextPc == pc + 3 * INSTRUCTION_BYTES,
+		"native iterator owns both fallthrough and the complete WIDE skip");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& exits = native.cpu.nativeGateProfile().exits;
+	const auto before = exits[static_cast<size_t>(NativeBlockExit::Continue)].entries;
+#endif
 #endif
 	for (auto* machine : {&native, &scalar}) {
 		auto table = machine->cpu.createTable(3, 2);
@@ -521,6 +527,12 @@ void tableIteratorRetainsItsCursorAcrossDeletionAndRestore() {
 			&& native.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::ITERN)] - 3
 			&& native.cpu.readFrameRegister(0, 4) == key && native.cpu.readFrameRegister(0, 5) == value
 			&& native.cpu.readFrameRegister(0, 6) == valueNil(), "iterator skips WIDE and places the exact result count");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
+		if (key == valueInteger(1))
+			require(exits[static_cast<size_t>(NativeBlockExit::Continue)].entries == before + 1
+				&& exits[static_cast<size_t>(NativeBlockExit::IterateTable)].entries == 0,
+				"the executable cursor pays and publishes only its exhausted grant, without semantic dispatch");
+#endif
 		if (key == valueInteger(1)) {
 			for (auto* machine : {&native, &scalar}) {
 				auto table = asTable(machine->cpu.readFrameRegister(0, 1), machine->cpu.gcHeap());
@@ -540,6 +552,72 @@ void tableIteratorRetainsItsCursorAcrossDeletionAndRestore() {
 	require(native.cpu.readFramePc(0) == pc + INSTRUCTION_BYTES && native.cpu.readFrameRegister(0, 4) == valueNil()
 		&& native.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::ITERN)],
 		"non-nil starting key falls through with no write or placement charge");
+}
+
+void tableIteratorUsesNativeEdgesAndRecordsTheCursor() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	for (const bool nextPage : {false, true}) for (const int guard : {0, 1, 2, 3}) {
+		test::Blua32TestImage image;
+		image.mappedCode = false;
+		image.textAlignment = MAPPED_PAGE_BYTE_SIZE;
+		const u32 first = nextPage ? DECODED_PAGE_WORDS - 2 : 0;
+		image.text.resize((first + 6) * INSTRUCTION_BYTES);
+		image.functions = {{.firstWord = first, .wordCount = 6, .maxStack = 6}};
+		writeInstruction(image.text, first, static_cast<u8>(OpCode::KSMI), 3, 0, 37);
+		writeInstruction(image.text, first + 1, static_cast<u8>(OpCode::ITERN), 0, 2, 2);
+		writeInstruction(image.text, first + 2, static_cast<u8>(OpCode::KSMI), 4, 0, 9);
+		writeInstruction(image.text, first + 3, static_cast<u8>(OpCode::K1), 5, 0, 0);
+		writeInstruction(image.text, first + 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		writeInstruction(image.text, first + 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		CpuMachine native(image), scalar(image, true);
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			const auto table = cpu.createTable(0, 4);
+			TableRecord(cpu.gcHeap(), table.address()).setInteger(-4, valueBool(false));
+			auto& frame = *cpu.activeThread()->currentFrame;
+			frame.registers.set(0, valueBuiltinFunction(guard == 1 ? BuiltinFunctionId::Type : BuiltinFunctionId::Next));
+			frame.registers.set(1, guard == 2 ? valueInteger(3) : valueTable(table.address()));
+			frame.registers.set(2, guard == 3 ? valueInteger(4) : valueNil());
+			frame.registers.set(3, valueInteger(31));
+			frame.setTop(4);
+		}
+		RamHistory history;
+		RamHistory::PageMap before, after;
+		history.capture(native.memory, nullptr, before);
+		native.cpu.prepareSystemNativeCode();
+		const u32 pc = native.rom.textAddress + first * INSTRUCTION_BYTES;
+		const auto* page = native.cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup->find(pc, 0);
+		const auto& entry = page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+		require(entry && entry->terminal.exit == (nextPage ? NativeBlockExit::IterateTable : NativeBlockExit::Continue),
+			"a mapped-page skip without the next word retains the semantic exit");
+		test::runCpuParity(native.cpu, scalar.cpu, 1024);
+		requireParity(native, scalar);
+		require(native.cpu.readFrameRegister(0, 4) == (guard == 0 ? valueNil() : valueInteger(9))
+			&& native.cpu.readFrameRegister(0, 5) == valueInteger(1)
+			&& native.cpu.readFrameRegister(0, 3) == (guard == 0 ? valueBool(false) : valueInteger(37)),
+			"only the admitted cursor skips the next block and replaces the cached result");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto& exits = native.cpu.nativeGateProfile().exits;
+		require(exits[static_cast<size_t>(NativeBlockExit::IterateTable)].entries == (nextPage ? 1u : 0u),
+			"only an unresolved physical skip needs the iterator semantic dispatcher");
+		if (!nextPage)
+			require(exits[static_cast<size_t>(NativeBlockExit::Continue)].entries == 0
+				&& exits[static_cast<size_t>(NativeBlockExit::Halt)].entries == 1,
+				"both admitted and declined cursor edges reach their native successor without dispatch");
+#endif
+		if (!nextPage && guard == 0) {
+			const Value cursor = native.cpu.readFrameRegister(0, 2);
+			require(isNil(cursor) && valuePayload(cursor) != 0, "cursor write wins an overlapping result placement");
+			history.capture(native.memory, &before, after);
+			history.restore(native.memory, after, before);
+			require(native.cpu.readFrameRegister(0, 2) == valueNil() && native.cpu.readFrameRegister(0, 3) == valueInteger(31),
+				"rewind restores both cursor and result");
+			history.restore(native.memory, before, after);
+			require(native.cpu.readFrameRegister(0, 2) == cursor && native.cpu.readFrameRegister(0, 3) == valueBool(false),
+				"forward replay recovers the physical cursor and the generated result");
+		}
+	}
+#endif
 }
 
 void allocationChargesRequestedCapacity() {
@@ -2309,6 +2387,7 @@ int main() {
 		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); iterationChargeIgnoresVacantCapacity(); allocationChargesRequestedCapacity(); wideAllocationFailure();
 		nativeTypedIndexRechecksAnExternalEntry();
 		tableIteratorRetainsItsCursorAcrossDeletionAndRestore();
+		tableIteratorUsesNativeEdgesAndRecordsTheCursor();
 		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 
 		nativeFieldOperationsLearnTheDecodedSite();

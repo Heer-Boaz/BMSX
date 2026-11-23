@@ -40,4 +40,28 @@ void emitHashValueOffsets(sljit_compiler*);
 // A nil tag declines. The caller owns the visit charge and slot feedback.
 sljit_label* emitStringReadProbe(sljit_compiler*);
 
+struct NativeTableIteratorScratch {
+private:
+	struct Layout {
+		u32 cursor, arrayEnd, hashEnd, hashCount, valueTag;
+		sljit_sw words, returnAddress;
+	};
+	static constexpr auto begin = (NativeBlockAbi::helperResultOffset + alignof(Layout) - 1)
+		& ~(alignof(Layout) - 1);
+	static_assert(begin + sizeof(Layout) <= NativeBlockAbi::stackBytes);
+public:
+	static constexpr auto cursor = begin + offsetof(Layout, cursor);
+	static constexpr auto arrayEnd = begin + offsetof(Layout, arrayEnd);
+	static constexpr auto hashEnd = begin + offsetof(Layout, hashEnd);
+	static constexpr auto hashCount = begin + offsetof(Layout, hashCount);
+	static constexpr auto valueTag = begin + offsetof(Layout, valueTag);
+	static constexpr auto words = begin + offsetof(Layout, words);
+	static constexpr auto returnAddress = begin + offsetof(Layout, returnAddress);
+};
+
+// In-frame ITERN leaf. R0 = raw table address, R1 = physical cursor.
+// Returns key/value tags in R0/R1, payloads in R2/R3, and the new cursor
+// in scratch. Exhaustion returns zero payloads, Nil tags and cursor zero.
+sljit_label* emitTableIteratorScan(sljit_compiler*);
+
 } // namespace bmsx

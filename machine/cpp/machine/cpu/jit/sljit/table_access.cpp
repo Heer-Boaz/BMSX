@@ -154,4 +154,88 @@ sljit_label* emitStringReadProbe(sljit_compiler* c) {
 	return entry;
 }
 
+sljit_label* emitTableIteratorScan(sljit_compiler* c) {
+	using Scratch = NativeTableIteratorScratch;
+	auto* entry = sljit_emit_label(c);
+	sljit_emit_op_dst(c, SLJIT_FAST_ENTER, SLJIT_MEM1(SLJIT_SP), Scratch::returnAddress);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), array);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), hash);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Storage));
+	if constexpr (std::endian::native == std::endian::big) {
+		for (const auto reg : {SLJIT_R0, SLJIT_R2, SLJIT_R3})
+			sljit_emit_op1(c, SLJIT_REV32, reg, 0, reg, 0);
+	}
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), Scratch::arrayEnd, SLJIT_R2, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), Scratch::hashCount, SLJIT_R3, 0);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_R3, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), Scratch::hashEnd, SLJIT_R2, 0);
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_R3, 0);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), Scratch::words, SLJIT_R0, 0);
+	sljit_emit_op2(c, SLJIT_SHL, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
+	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R2, 0);
+
+	// R0 is the tag lane, R1 is the logical position. As in LuaJIT ARM
+	// BC_ITERN, scan array holes before hash nodes and retain that position
+	// as the next cursor. The split planes let holes skip payload loads.
+	auto* arrayLoop = sljit_emit_label(c);
+	auto* arrayDone = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
+		SLJIT_MEM1(SLJIT_SP), Scratch::arrayEnd);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R0, SLJIT_R1), 0);
+	auto* arrayHit = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, nilTag);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
+	sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), arrayLoop);
+
+	sljit_set_label(arrayHit, sljit_emit_label(c));
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), Scratch::words);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), Scratch::cursor, SLJIT_R2, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R0, SLJIT_R1), 2);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R3, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_R0, 0);
+	if constexpr (std::endian::native == std::endian::big)
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R3, 0, SLJIT_R3, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
+	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), Scratch::returnAddress);
+
+	auto* hashLoop = sljit_emit_label(c);
+	sljit_set_label(arrayDone, hashLoop);
+	auto* exhausted = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
+		SLJIT_MEM1(SLJIT_SP), Scratch::hashEnd);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM2(SLJIT_R0, SLJIT_R1), 0);
+	auto* missingKey = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, nilTag);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), Scratch::hashCount);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM2(SLJIT_R0, SLJIT_R3), 0);
+	auto* hashHit = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, nilTag);
+	sljit_set_label(missingKey, sljit_emit_label(c));
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
+	sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), hashLoop);
+
+	sljit_set_label(hashHit, sljit_emit_label(c));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), Scratch::valueTag, SLJIT_R2, 0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), Scratch::words);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R2, SLJIT_R3), 2);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R0, SLJIT_R1), 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM2(SLJIT_R2, SLJIT_R1), 2);
+	if constexpr (std::endian::native == std::endian::big) {
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R2, 0, SLJIT_R2, 0);
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R3, 0, SLJIT_R3, 0);
+	}
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), Scratch::cursor, SLJIT_R1, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), Scratch::valueTag);
+	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), Scratch::returnAddress);
+
+	sljit_set_label(exhausted, sljit_emit_label(c));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), Scratch::cursor, SLJIT_IMM, 0);
+	for (const auto reg : {SLJIT_R0, SLJIT_R1, SLJIT_R2, SLJIT_R3})
+		sljit_emit_op1(c, SLJIT_MOV32, reg, 0, SLJIT_IMM, 0);
+	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), Scratch::returnAddress);
+	return entry;
+}
+
 } // namespace bmsx

@@ -99,6 +99,38 @@ void independentEntriesBindTheirOwnValueBanks() {
 	require(helperRegion.expired() && leafRegion.expired(), "independent native bodies retire their own executable allocations");
 }
 
+void standaloneIteratorAdmitsItsFullWindow() {
+	constexpr u32 pc = 0x1000u;
+	constexpr auto itern = static_cast<u8>(OpCode::ITERN);
+	const DecodedInstruction decoded{.b = 4, .c = 2, .op = itern, .width = 1, .baseCycles = BASE_CYCLES[itern]};
+	const DecodedInstruction skipped{.op = static_cast<u8>(OpCode::HALT), .width = 1};
+	const std::array instructions{NativeBlockInstruction{&decoded, pc}};
+	const std::array sources{NativeBlockSource{instructions, &skipped}};
+	const auto blocks = NativeCompiler{}.compile(sources, NativeCodeBindings(memory, cpu.stringPool()));
+	const auto& block = *blocks.front();
+	auto table = cpu.createTable(2, 0);
+	table.setInteger(1, valueBool(false));
+	const std::array initial{valueBuiltinFunction(BuiltinFunctionId::Next), valueTable(table.address()),
+		valueNil(), valueInteger(3), valueInteger(4), valueInteger(5)};
+	for (const size_t capacity : {1u, 5u, 6u}) {
+		auto registers = test::valueBank(initial);
+		NativeBlockRunState state{};
+		state.remainingCycles = 1;
+		state.registerTop = 3;
+		const auto* exit = block.run(registers.view().subspan(0, capacity), state);
+		if (capacity < initial.size())
+			require(exit->exit == NativeBlockExit::ScalarBoundary && exit->nextPc == pc
+				&& state.remainingCycles == 1 && state.registerTop == 3 && test::matchesValues(registers.view(), initial),
+				"short standalone iterator windows admit neither its input reads nor its result writes");
+		else
+			require(exit->exit == NativeBlockExit::Continue && exit->nextPc == pc + 2u * INSTRUCTION_BYTES
+				&& state.remainingCycles == 1 - BASE_CYCLES[itern] - 2 && state.registerTop == 6
+				&& isNil(registers.get(2)) && valuePayload(registers.get(2)) == 1
+				&& registers.get(4) == valueInteger(1) && registers.get(5) == valueBool(false),
+				"the same standalone entry executes directly with a complete window");
+	}
+}
+
 void entryAdmitsOnlyReachableSlots() {
 	constexpr u32 sourcePc = 0x0ff8u, firstPc = 0x1000u, nextPc = 0x1008u, independentPc = 0x1040u, exitPc = 0x2000u;
 	const std::array ops{OpCode::K1, OpCode::JMP, OpCode::K1, OpCode::JMP, OpCode::MOV, OpCode::JMP, OpCode::K1, OpCode::JMP};
@@ -1404,6 +1436,7 @@ int main() {
 		multipleRegisterDefinitionsSurviveCallAndExit();
 		sharedExitMapsPublishRawValuesFromEitherRegisterBank();
 		independentEntriesBindTheirOwnValueBanks();
+		standaloneIteratorAdmitsItsFullWindow();
 		entryAdmitsOnlyReachableSlots();
 		helperContinuationsReloadTheCurrentRegisterMap();
 		residentValuesCrossInternalComparisonBranches();

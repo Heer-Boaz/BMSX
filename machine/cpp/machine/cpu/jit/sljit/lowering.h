@@ -53,6 +53,7 @@ private:
 	void lowerOperation(const NativeMemoryAccess&, const NativeInstruction&);
 	void lowerOperation(const NativeTruthBranch&, const NativeInstruction&);
 	void lowerOperation(const NativeComparison&, const NativeInstruction&);
+	void lowerOperation(const NativeTableIterator&, const NativeInstruction&);
 	void lowerOperation(const NativeCallSite&, const NativeInstruction&);
 	void lowerOperation(const NativeTableAccess&, const NativeInstruction&);
 	void lowerOperation(const NativeVararg&, const NativeInstruction&);

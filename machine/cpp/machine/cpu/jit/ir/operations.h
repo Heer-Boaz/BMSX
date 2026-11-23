@@ -150,6 +150,8 @@ struct NativeLength {
 
 struct NativeTableIterator : NativeExitOperands::Iterator {
 	static constexpr auto terminalExit = NativeBlockExit::IterateTable;
+	u8 skipWidth = 0;
+	constexpr bool ownsSkip() const { return skipWidth != 0; }
 	constexpr NativeSlotAccess slots() const {
 		return {.writes = {first, count}, .readsRange = {base, 3}};
 	}
