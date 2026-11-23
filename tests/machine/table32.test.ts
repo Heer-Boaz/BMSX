@@ -38,6 +38,27 @@ test('Table budget charges Values and mappings rather than physical hash links',
 	cpu.gc.tables.clear(table); assert.equal(cpu.luaHeap.usedBytes() - start, 32);
 });
 
+test('growth for non-array keys preserves sparse reserved slots and their charge', () => {
+	const cpu = machine(), tables = cpu.gc.tables;
+	const mixed = cpu.createTable(8, 0), identity = cpu.createTable();
+	const keys = [v.valueString(cpu.stringPool.intern('hash only')), v.valueInteger(-1), v.valueFloat(0.5), v.valueTable(identity)];
+	const bytes = cpu.luaHeap.usedBytes(), retained = v.valueFloatBits(0xffc01234);
+	tables.setInteger(mixed, 8, retained);
+	for (let i = 0; i < keys.length; ++i) {
+		tables.set(mixed, keys[i], v.valueInteger(i));
+		assert.equal(tables.arrayCapacity(mixed), 8);
+		assert.equal(tables.getInteger(mixed, 8), retained);
+		assert.equal(cpu.luaHeap.usedBytes(), bytes + 10 * (i + 1));
+	}
+	for (let slot = 1; slot < 8; ++slot) tables.setInteger(mixed, slot, v.valueInteger(slot));
+	tables.set(mixed, v.valueFloat(9), retained);
+	assert.equal(tables.arrayCapacity(mixed), 16);
+	assert.equal(tables.hashSize(mixed), 4);
+	assert.equal(tables.getInteger(mixed, 9), retained);
+	assert.equal(cpu.luaHeap.usedBytes(), bytes + 4 * 10 + 8 * 5);
+	for (let i = 0; i < keys.length; ++i) assert.equal(tables.get(mixed, keys[i]), v.valueInteger(i));
+});
+
 test('hash membership and quota are independent of tombstone-driven physical rebuilds', () => {
 	const cpu = machine(), tables = cpu.gc.tables, keys = new Int32Array(16);
 	let assigned = 0, collision = 0;

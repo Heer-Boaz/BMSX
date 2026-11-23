@@ -89,7 +89,7 @@ void tableReplacementAdmitsOnlyItsLogicalIncrease() {
 		auto table = packArrayIntoHash ? cpu.createTable(8, 0) : cpu.createTable(1, 0);
 		auto& frame = *cpu.rootThread()->currentFrame;
 		frame.registers.set(0, valueTable(table.address())); frame.setTop(1);
-		const int residentKey = packArrayIntoHash ? 8 : 1, trigger = packArrayIntoHash ? 0 : 2;
+		const int residentKey = packArrayIntoHash ? 8 : 1, trigger = packArrayIntoHash ? 9 : 2;
 		table.setInteger(residentKey, valueInteger(100 + residentKey));
 		const auto logical = cpu.luaHeap().usedBytes();
 		const auto physical = cpu.heapAllocator().occupiedBytes();

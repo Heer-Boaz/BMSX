@@ -767,6 +767,34 @@ void allocationChargesRequestedCapacity() {
 	}
 }
 
+void hashGrowthKeepsReservedArray() {
+	test::Blua32TestImage image;
+	image.text.resize(INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 1}};
+	CpuMachine machine(image, true);
+	auto& cpu = machine.cpu;
+	auto mixed = cpu.createTable(8, 0), identity = cpu.createTable();
+	const auto text = cpu.stringPool().intern("hash only");
+	const std::array keys{valueString(text), valueInteger(-1), valueFloat(0.5f), valueTable(identity.address())};
+	const auto bytes = cpu.luaHeap().usedBytes();
+	const auto retained = valueFloatBits(0xffc01234u);
+	mixed.setInteger(8, retained);
+	for (size_t i = 0; i < keys.size(); ++i) {
+		mixed.set(keys[i], valueInteger(static_cast<i32>(i)));
+		require(mixed.arrayCapacity() == 8 && mixed.getInteger(8) == retained
+			&& cpu.luaHeap().usedBytes() == bytes + 10u * (i + 1u),
+			"a non-array key never repartitions a sparse reserved array");
+	}
+	for (i32 slot = 1; slot < 8; ++slot) mixed.setInteger(slot, valueInteger(slot));
+	mixed.set(valueFloat(9.f), retained);
+	require(mixed.arrayCapacity() == 16 && mixed.hashSlots() == 4 && mixed.getInteger(9) == retained
+		&& cpu.luaHeap().usedBytes() == bytes + 4u * 10u + 8u * 5u,
+		"a canonical positive integer crossing the same frontier can still grow the array");
+	for (size_t i = 0; i < keys.size(); ++i)
+		require(mixed.get(keys[i]) == valueInteger(static_cast<i32>(i)), "array growth retains all ordinary hash keys");
+}
+
 void wideAllocationFailure() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 7, 0, 0);
@@ -2504,7 +2532,7 @@ int main() {
 		stringReadChainBoundaries();
 		observedArithmeticResumesAtItsOwnInstruction();
 		contradictoryOwnFieldProofRetiresItsSource();
-		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); iterationChargeIgnoresVacantCapacity(); allocationChargesRequestedCapacity(); wideAllocationFailure();
+		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); iterationChargeIgnoresVacantCapacity(); allocationChargesRequestedCapacity(); hashGrowthKeepsReservedArray(); wideAllocationFailure();
 		nativeTypedIndexRechecksAnExternalEntry();
 		tableIteratorRetainsItsCursorAcrossDeletionAndRestore();
 		tableIteratorUsesNativeEdgesAndRecordsTheCursor();

@@ -632,12 +632,15 @@ export class TableRecords {
 	}
 	private planRehash(record: number, key: Value, reserve: number, members: number, watermark: number): void {
 		const plan = this.resizePlan;
-		// Physical tombstones alone do not change the reserved array range.
-		if (members + 1 <= Math.max(reserve, watermark)) {
+		const newMembers = members + 1;
+		const insideLimit = newMembers <= Math.max(reserve, watermark);
+		const added = this.getArrayIndex(key);
+		// Only positive integer insertion can reconsider the reserved array.
+		if (insideLimit || added < 0) {
 			plan.array = this.arrayCapacity(record);
-			plan.hash = TableRecords.hashCapacity(members + 1);
-			plan.members = members + 1;
-			plan.watermark = watermark;
+			plan.hash = TableRecords.hashCapacity(newMembers);
+			plan.members = newMembers;
+			plan.watermark = insideLimit ? watermark : plan.hash;
 			return;
 		}
 		const counts = TableRecords.rehashIntegerCounts;
@@ -656,8 +659,8 @@ export class TableRecords {
 			const integer = memory.readRamRecordWord(words + slot * 4) | 0;
 			if (integer > 0) bins = TableRecords.countIntegerKey(counts, bins, integer);
 		}
-		++totalKeys; const added = this.getArrayIndex(key);
-		if (added >= 0) bins = TableRecords.countIntegerKey(counts, bins, added + 1);
+		++totalKeys;
+		bins = TableRecords.countIntegerKey(counts, bins, added + 1);
 		let arraySize = 0, arrayKeys = 0, total = 0, power = 1;
 		for (let bin = 0; bin < bins; ++bin) {
 			total += counts[bin];

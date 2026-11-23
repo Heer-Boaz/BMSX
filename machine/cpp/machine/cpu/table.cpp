@@ -195,10 +195,15 @@ int TableRecord::findFreeIndex(const HashBody& body) const {
 }
 
 TableRecord::ResizePlan TableRecord::planRehash(Value key, u32 reserve, u32 members, u32 watermark) const {
-	// Physical tombstones can require a fresh layout even when the logical
-	// hash has not reached the occupancy frontier that reconsiders the array.
-	if (members + 1u <= std::max(reserve, watermark))
-		return {arrayCapacity(), hashCapacity(static_cast<int>(members + 1u)), members + 1u, watermark};
+	const u32 newMembers = members + 1u;
+	const bool insideLimit = newMembers <= std::max(reserve, watermark);
+	const u32 added = arraySlot(key);
+	// Only a positive integer insertion can reconsider the array range.
+	// Use the retained live count even when the buckets need rebuilding.
+	if (insideLimit || added == NO_ARRAY_SLOT) {
+		const u32 hash = static_cast<u32>(hashCapacity(static_cast<int>(newMembers)));
+		return {arrayCapacity(), hash, newMembers, insideLimit ? watermark : hash};
+	}
 	const auto body = hashBody(hashSlots(), arrayCapacity());
 	const auto& slots = body.slots;
 	size_t totalKeys = 0;
@@ -231,11 +236,8 @@ TableRecord::ResizePlan TableRecord::planRehash(Value key, u32 reserve, u32 memb
 			}
 		}
 	}
-	if (!isNil(key)) {
-		totalKeys += 1;
-		const u32 index = arraySlot(key);
-		if (index != NO_ARRAY_SLOT) countIntegerKey(index + 1u);
-	}
+	totalKeys += 1;
+	countIntegerKey(added + 1u);
 
 	size_t arraySize = 0;
 	size_t arrayKeys = 0;

@@ -153,7 +153,7 @@ test('table replacement admits just its logical increase, even when both layouts
 		const table = packArrayIntoHash ? cpu.createTable(8, 0) : cpu.createTable(1, 0);
 		const frame = cpu.rootThread.currentFrame!, tables = cpu.gc.tables;
 		frame.registers.setTable(0, table); frame.top = 1;
-		const residentKey = packArrayIntoHash ? 8 : 1, trigger = packArrayIntoHash ? 0 : 2;
+		const residentKey = packArrayIntoHash ? 8 : 1, trigger = packArrayIntoHash ? 9 : 2;
 		tables.setInteger(table, residentKey, valueInteger(100 + residentKey));
 		const arena = cpu.heapAllocator;
 		const logical = cpu.luaHeap.usedBytes(), physical = arena.occupiedBytes();

@@ -109,11 +109,11 @@ void rebuildWork(bool scalar) {
    table.setInteger(1, valueInteger(11)); table.setInteger(3, valueInteger(33)); r.set(1, valueInteger(2));
    capacity = 4;
   } else if (scenario == "array-to-hash") {
-   table.setInteger(8, valueInteger(88)); r.set(1, field);
+   table.setInteger(8, valueInteger(88)); r.set(1, valueInteger(9));
    capacity = 2;
   } else if (scenario == "mixed") {
    table.setInteger(1, valueInteger(11)); table.setInteger(4, valueInteger(44)); table.set(field, valueInteger(55)); table.set(other, valueInteger(66));
-   r.set(1, valueString(cpu.stringPool().intern("third"))); capacity = 5;
+   r.set(1, valueInteger(9)); capacity = 5;
   } else if (scenario == "same-capacity") {
    table.set(field, valueInteger(55)); table.set(other, valueInteger(66)); table.set(other, valueNil());
    r.set(1, valueString(cpu.stringPool().intern("third"))); capacity = 2;

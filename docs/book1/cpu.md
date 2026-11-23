@@ -1262,14 +1262,17 @@ hash reservation. Clearing the Table releases its reservations. Physical
 hash growth can move mappings without changing either the nominal hash
 reservation or the reserved array slots.
 
-An insertion outside the reserved array reconsiders the array range only
-when it takes hash membership above both the prepaid hash request and the
-Table's remembered hash limit. The limit starts at zero. The new array
+Inserting a key that cannot use array storage leaves the reserved array
+range unchanged. When inserting a positive integer key outside that range,
+the processor reconsiders the array only if the insertion takes hash
+membership above both the prepaid hash request and the Table's remembered
+hash limit. The limit starts at zero. When reconsidered, the array
 reserves the largest power-of-two prefix of positive integers for which
 more than half the keys are present, including the inserted key. The other
-mappings remain in the hash. The new limit is the least power of two at or
-above the new hash membership, or zero if that membership is empty.
-Deleting entries or rebuilding physical buckets does not lower the limit.
+mappings remain in the hash. When the insertion crosses both limits, the
+remembered limit becomes the least power of two at or above the resulting
+hash membership, or zero if that membership is empty. Deleting entries or
+rebuilding physical buckets below the limit does not lower it.
 If collection changes the old mappings while admitting the insertion, the
 processor calculates the range and charge from the surviving mappings.
 

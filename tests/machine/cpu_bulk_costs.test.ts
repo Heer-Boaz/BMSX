@@ -237,11 +237,11 @@ return true`, 3);
     cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setInteger(table, 3, valueInteger(33)); r.setInteger(1, 2);
     capacity = 4;
    } else if (scenario === 'array-to-hash') {
-    cpu.gc.tables.setInteger(table, 8, valueInteger(88)); r.set(1, field);
+    cpu.gc.tables.setInteger(table, 8, valueInteger(88)); r.setInteger(1, 9);
     capacity = 2;
    } else if (scenario === 'mixed') {
     cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setInteger(table, 4, valueInteger(44)); cpu.gc.tables.set(table, field, valueInteger(55)); cpu.gc.tables.set(table, other, valueInteger(66));
-    r.set(1, valueString(cpu.stringPool.intern('third')));
+    r.setInteger(1, 9);
     capacity = 5;
    } else if (scenario === 'same-capacity') {
     cpu.gc.tables.set(table, field, valueInteger(55)); cpu.gc.tables.set(table, other, valueInteger(66)); cpu.gc.tables.set(table, other, valueNil());

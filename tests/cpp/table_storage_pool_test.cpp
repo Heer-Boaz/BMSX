@@ -106,14 +106,14 @@ void mixedArrayMigrationPreservesRawValues(bmsx::CPU& cpu) {
 	const u32 largeBody = table.storageAddress();
 	table.setInteger(5, valueNil());
 	table.setInteger(6, valueNil());
-	table.setInteger(-2, valueInteger(22));
+	table.setInteger(16, valueInteger(22));
 	require(table.arrayCapacity() == 4 && table.storageAddress() != largeBody,
 		"repartition shrinks and relocates the sparse array");
 	require(table.getInteger(1) == valueBool(false) && isNil(table.getInteger(2))
 		&& table.getInteger(3) == prefix && table.getInteger(4) == valueBool(true)
 		&& isNil(table.getInteger(5)) && isNil(table.getInteger(6)) && table.getInteger(7) == tail
 		&& table.getInteger(-1) == valueInteger(11) && table.getInteger(-3) == valueInteger(33)
-		&& table.getInteger(-2) == valueInteger(22),
+		&& table.getInteger(16) == valueInteger(22),
 		"shrink preserves the sparse raw prefix and reinserts overflow without losing colliding keys");
 	table.clear();
 }
