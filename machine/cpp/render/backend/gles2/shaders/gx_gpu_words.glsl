@@ -34,6 +34,11 @@ ivec3 decodeRgb555To5(ivec2 word) {
 		(word.y / 4) - (word.y / 128) * 32);
 }
 
+ivec4 rgb555Pixel(ivec2 word) {
+	ivec3 color5 = decodeRgb555To5(word);
+	return ivec4(color5 * 8 + color5 / 4, word.y / 128 != 0 ? 128 : 0);
+}
+
 vec4 encodeRgb555(ivec3 color5, int maskBit) {
 	int low = color5.x + (color5.y - (color5.y / 8) * 8) * 32;
 	int high = color5.y / 8 + color5.z * 4 + maskBit * 128;

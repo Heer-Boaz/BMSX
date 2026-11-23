@@ -112,6 +112,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_transfer.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_scanout.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/software_gx_packed_scanout.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_readback.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_shaders.h.in"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/post/gles2/shaders/fullscreen.vert.glsl"
@@ -183,6 +184,10 @@ file(READ
 	BMSX_GX_GPU_SCANOUT_FRAGMENT_SHADER
 )
 file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/software_gx_packed_scanout.frag.glsl"
+	BMSX_SOFTWARE_GX_PACKED_SCANOUT_FRAGMENT_SHADER
+)
+file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_readback.frag.glsl"
 	BMSX_GX_GPU_READBACK_FRAGMENT_SHADER
 )
@@ -198,7 +203,7 @@ foreach(shader IN ITEMS
 	BMSX_GX_GPU_LINE_VERTEX_SHADER BMSX_GX_GPU_LINE_FRAGMENT_SHADER
 	BMSX_GX_GPU_TEXTURED_VERTEX_SHADER BMSX_GX_GPU_TEXTURED_FRAGMENT_SHADER
 	BMSX_GX_GPU_TRANSFER_FRAGMENT_SHADER BMSX_GX_GPU_SCANOUT_FRAGMENT_SHADER
-	BMSX_GX_GPU_CACHE_COPY_FRAGMENT_SHADER
+	BMSX_GX_GPU_CACHE_COPY_FRAGMENT_SHADER BMSX_SOFTWARE_GX_PACKED_SCANOUT_FRAGMENT_SHADER
 )
 	string(REPLACE "#include \"gx_gpu_words.glsl\"" "${BMSX_GX_GPU_WORD_FUNCTIONS}"
 		${shader} "${${shader}}")

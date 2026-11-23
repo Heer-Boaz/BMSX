@@ -49,6 +49,56 @@ void testPayloadProfile(OpenGLES2Backend& backend) {
 	}
 }
 
+void testPackedGx16Scanout(OpenGLES2Backend& backend) {
+	RenderPassLibrary library(&backend, nullptr);
+	test::GpuOutputFixture fixture;
+	fixture.words = {
+		0x0000ff21u, 0u,
+		(16u << 9u) | (GX_GPU_PSMGX16 << 15u) | 255u, 1022u | (3u << 11u),
+		3u << 23u, 1023u | (255u << 12u), 0u, 0u, 0u, 0u, 0u, 0u,
+		0x40806504u, 7u, 0u, 0u, 0x1fc83030u, 0x0007f5c2u,
+		0x003484bcu, 0u, 0x02101404u, 0x00a90005u,
+	};
+	fixture.timing.update(fixture.words);
+	fixture.scanout.update(fixture.words, fixture.timing);
+	require(!fixture.scanout.interlaced && fixture.scanout.outputWidth == 256u
+		&& fixture.scanout.outputHeight == 256u
+		&& fixture.scanout.compositionPath == GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1,
+		"full progressive GX16 circuit selects the packed upload");
+	// Begin two words before installed VRAM ends, then exhaust all 16-bit
+	// word values in displayed order. The first scanline wraps physically.
+	const u32 wordMask = static_cast<u32>(fixture.vram.size() / 2u - 1u);
+	for (u32 i = 0; i < 65536u; ++i) {
+		const u32 at = ((wordMask - 1u) + i / 256u * 1024u + i % 256u) & wordMask;
+		fixture.vram[at * 2u] = static_cast<u8>(i);
+		fixture.vram[at * 2u + 1u] = static_cast<u8>(i >> 8u);
+	}
+	fixture.output.vramSnapshotSerial = 1u;
+	const auto texture = backend.createTexture(nullptr, 256, 256, RGBA8_LINEAR_TEXTURE_PARAMS);
+	void* framebuffer = backend.createRenderTarget(texture, nullptr);
+	RenderPassStateStorage storage;
+	storage.gxGpu.width = storage.gxGpu.height = 256;
+	backend.executeGxGpuPresentation(fixture.output);
+	if (backend.profilesGxUploads()) backend.beginGxUploadProfileFrame();
+	executeGxGpuPass(&backend, nullptr, framebuffer, storage, nullptr, {fixture.scanout, 1u});
+	GxUploadProfileFrame profile{};
+	if (backend.readGxUploadProfileFrame(0u, profile)) {
+		require(profile.scanoutUploadCalls == 1u && profile.scanoutUploadBytes == 131072u,
+			"the source texture receives two bytes for every packed pixel, in one call");
+	}
+	const auto actual = backend.readColorTexture(texture, 256, 256);
+	for (u32 i = 0; i < 65536u; ++i) {
+		const auto expand = [](u32 color) { return (color << 3u) | (color >> 2u); };
+		require(actual[i * 4u] == expand(i & 31u)
+			&& actual[i * 4u + 1u] == expand((i >> 5u) & 31u)
+			&& actual[i * 4u + 2u] == expand((i >> 10u) & 31u)
+			&& actual[i * 4u + 3u] == ((i >> 15u) << 7u),
+			"packed scanout expands every RGB555/mask word to the exact top-down RGBA result");
+	}
+	backend.destroyRenderTarget(framebuffer);
+	backend.destroyTexture(texture);
+}
+
 void testScanoutImport(OpenGLES2Backend& backend) {
 	test::GpuOutputFixture fixture;
 	fixture.words = {
@@ -76,7 +126,12 @@ void testScanoutImport(OpenGLES2Backend& backend) {
 			fixture.words[GX_GPU_PCRTC_DISPFB1_LOW] = (16u << 9u) | (format << 15u);
 			fixture.words[GX_GPU_PCRTC_DISPLAY1_HIGH] = (state.width * 4u - 1u) | ((state.height - 1u) << 12u);
 			for (u32 frame = 0; frame < 8u; ++frame) {
-				fixture.words[GX_GPU_PCRTC_SMODE2_LOW] = frame < 4u ? 0u : GX_GPU_PCRTC_SMODE2_INT | GX_GPU_PCRTC_SMODE2_FFMD;
+				// Leave and reenter interlace at the same dimensions and
+				// replacement serial. The progressive presentation clears
+				// retained lines before a new pair of fields may accumulate.
+				const bool interlaced = frame == 2u || frame == 3u || frame >= 5u;
+				fixture.words[GX_GPU_PCRTC_SMODE2_LOW] =
+					interlaced ? GX_GPU_PCRTC_SMODE2_INT | GX_GPU_PCRTC_SMODE2_FFMD : 0u;
 				fixture.timing.update(fixture.words);
 				fixture.scanout.update(fixture.words, fixture.timing);
 				fixture.scanout.setField(frame & 1u);
@@ -106,8 +161,13 @@ void testScanoutImport(OpenGLES2Backend& backend) {
 				if (backend.readGxUploadProfileFrame(0u, profile)) {
 					require(profile.commands == 0u && profile.logicalBytes == 0u && profile.hostCalls == 0u,
 						"no CPU-to-VRAM counters are charged for software scanout");
+					const bool packed = !fixture.scanout.interlaced
+						&& fixture.scanout.compositionPath == GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1
+						&& fixture.scanout.outputWidth == static_cast<u32>(state.width)
+						&& fixture.scanout.outputHeight == static_cast<u32>(state.height);
 					require(profile.softwareScanoutPixels == static_cast<u64>(state.width * state.height)
-						&& profile.scanoutUploadCalls == 1u && profile.scanoutUploadBytes == profile.softwareScanoutPixels * sizeof(u32),
+						&& profile.scanoutUploadCalls == 1u
+						&& profile.scanoutUploadBytes == profile.softwareScanoutPixels * (packed ? 2u : 4u),
 						"each scanout materializes and uploads only its actual surface");
 					require(!backend.readGxUploadProfileFrame(profile.renderFrameSerial, profile), "do not expose the same frame twice");
 				} else {
@@ -158,6 +218,7 @@ int main() {
 		for (unsigned epoch = 0; epoch < 2u; ++epoch) {
 			backend.onContextReset();
 			testPayloadProfile(backend);
+			testPackedGx16Scanout(backend);
 			testScanoutImport(backend);
 			backend.onContextDestroy();
 		}

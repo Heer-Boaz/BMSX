@@ -55,11 +55,6 @@ ivec2 rawGx16WordAtAddress(int address) {
 	return scanoutWordAt(ivec2(logicalX, logicalY));
 }
 
-ivec4 rgb555Pixel(ivec2 word) {
-	ivec3 color5 = decodeRgb555To5(word);
-	return ivec4(color5 * 8 + color5 / 4, word.y / 128 != 0 ? 128 : 0);
-}
-
 int localMemoryAddress32(int baseWord, int pagesPerRow, int x, int y) {
 	int page = (y / 32) * pagesPerRow + x / 64;
 	int pageX = wrapPowerOfTwo(x, 64);
