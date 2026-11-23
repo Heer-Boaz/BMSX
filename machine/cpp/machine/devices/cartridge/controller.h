@@ -46,34 +46,36 @@ public:
 	CartridgeControllerState captureState(CartridgeControllerState storage = {}) const;
 	void restoreState(const CartridgeControllerState& state);
 
-	u8 readU8(u32 address, MappedBusSignals busSignals) const {
+	std::optional<u32> readU8(u32 address, MappedBusSignals busSignals) const {
 		const auto& card = m_cards[selectedSlot(busSignals)];
-		return card ? card->readU8(address) : 0u;
+		return card ? card->readU8(address) : std::nullopt;
 	}
-	u32 readU16(u32 address, MappedBusSignals busSignals) const {
+	std::optional<u32> readU16(u32 address, MappedBusSignals busSignals) const {
 		const auto& card = m_cards[selectedSlot(busSignals)];
-		return card ? card->readU16(address) : 0u;
+		return card ? card->readU16(address) : std::nullopt;
 	}
-	u32 readU32(u32 address, MappedBusSignals busSignals) const {
+	std::optional<u32> readU32(u32 address, MappedBusSignals busSignals) const {
 		const auto& card = m_cards[selectedSlot(busSignals)];
-		return card ? card->readU32(address) : 0u;
+		return card ? card->readU32(address) : std::nullopt;
 	}
-	void writeU8(u32 address, u8 value, MappedBusSignals busSignals) {
+	bool writeU8(u32 address, u8 value, MappedBusSignals busSignals) {
 		auto& card = m_cards[selectedSlot(busSignals)];
-		if (card) card->writeU8(address, value);
+		return card && card->writeU8(address, value);
 	}
-	void writeU16(u32 address, u32 value, MappedBusSignals busSignals) {
+	bool writeU16(u32 address, u32 value, MappedBusSignals busSignals) {
 		auto& card = m_cards[selectedSlot(busSignals)];
-		if (card) card->writeU16(address, value);
+		return card && card->writeU16(address, value);
 	}
-	void writeU32(u32 address, u32 value, MappedBusSignals busSignals) {
+	bool writeU32(u32 address, u32 value, MappedBusSignals busSignals) {
 		const u32 slotIndex = selectedSlot(busSignals);
 		auto& card = m_cards[slotIndex];
-		if (!card) return;
-		const u32 effects = card->writeU32(address, value);
-		if (effects != 0u) routeCardEffects(slotIndex, effects);
+		if (!card) return false;
+		const auto effects = card->writeU32(address, value);
+		if (!effects) return false;
+		if (*effects != 0u) routeCardEffects(slotIndex, *effects);
+		return true;
 	}
-	void readBytes(u32 address, u8* out, size_t length) const;
+	bool isReadableRange(u32 address, size_t length) const;
 	bool bindRomByteView(u32 slotIndex, u32 address, size_t length, Span<const u8>& out) const;
 	bool bindMappedReadView(u32 address, size_t length, MappedBusSignals busSignals, Span<const u8>& out) const;
 
@@ -81,6 +83,8 @@ private:
 	static u32 readSelectionThunk(void* context, u32 address, MappedBusSignals busSignals);
 	static void writeSelectionThunk(void* context, u32 address, u32 value, MappedBusSignals busSignals);
 	static u32 readStatusThunk(void* context, u32 address, MappedBusSignals busSignals);
+	static u32 readRomByteCountThunk(void* context, u32 address, MappedBusSignals busSignals);
+	static u32 readRamByteCountThunk(void* context, u32 address, MappedBusSignals busSignals);
 
 	void selectCpuSlot(u32 selection);
 	void routeCardEffects(u32 slotIndex, u32 effects);

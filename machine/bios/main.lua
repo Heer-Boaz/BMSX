@@ -34,6 +34,7 @@ local cart_blua32_image_index<const> = 8
 local cart_blua32_startup_index<const> = 10
 local cart_select<const>: *word = 0x08010420
 local cart_status<const>: *word = 0x08010424
+local cart_rom_byte_count<const>: *word = 0x08010440
 local cart_rom<const>: *word = 0x10000000
 local irq_vblank<const> = 0x0004
 local irq_dma_done<const> = 0x0001
@@ -63,11 +64,14 @@ local scan_cartridges<const> = function()
 		if (status & (1 << slot)) ~= 0 then
 			state = cart_state_invalid
 			*cart_select = slot
-			if cart_rom[cart_rom_magic_index] == cart_rom_magic
+			if *cart_rom_byte_count >= cart_rom_boot_header_size
+				and cart_rom[cart_rom_magic_index] == cart_rom_magic
 				and cart_rom[cart_rom_header_size_index] >= cart_rom_boot_header_size
-				and cart_rom[cart_blua32_image_index] ~= 0
-				and cart_rom[cart_blua32_startup_index] ~= 0 then
-				return cart_state_ready, cart_rom[cart_blua32_startup_index]
+				and cart_rom[cart_blua32_image_index] ~= 0 then
+				local startup<const> = cart_rom[cart_blua32_startup_index]
+				if startup ~= 0 then
+					return cart_state_ready, startup
+				end
 			end
 		end
 	end

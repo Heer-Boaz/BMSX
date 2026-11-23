@@ -231,8 +231,40 @@ test('ROM-only cartridge state contains no synthetic devices', () => {
 		mailboxPresent: false,
 	}, MAPPED_KEY_OFFSET);
 	assert.deepEqual(card.captureState(), { ram: null, mailbox: null });
-	assert.equal(card.readU32(CART_RAM_BASE), 0);
-	assert.equal(card.readU32(CART_MMIO_BASE), 0);
+	assert.equal(card.readU32(CART_RAM_BASE), null);
+	assert.equal(card.readU32(CART_MMIO_BASE), null);
+});
+
+test('complete card storage access is handled, but the missing tail is not', () => {
+	const card = new CartridgeCard({
+		rom: Uint8Array.of(1, 2, 3, 4, 5, 6, 7), ramByteCount: 7, mailboxPresent: false,
+	}, MAPPED_KEY_OFFSET);
+	assert.equal(card.readU32(CART_ROM_BASE), 0x04030201);
+	assert.equal(card.readU8(CART_ROM_BASE + 6), 7);
+	assert.equal(card.readU8(CART_ROM_BASE + 7), null);
+	assert.equal(card.readU16(CART_ROM_BASE + 6), null);
+	assert.equal(card.readU32(CART_ROM_BASE + 4), null);
+	assert.equal(card.writeU32(CART_ROM_BASE, 0xffffffff), 0);
+	assert.equal(card.readU32(CART_ROM_BASE), 0x04030201);
+	assert.equal(card.writeU8(CART_ROM_BASE + 7, 0), false);
+	assert.equal(card.writeU16(CART_ROM_BASE + 6, 0), false);
+	assert.equal(card.writeU32(CART_ROM_BASE + 4, 0), null);
+	assert.equal(card.writeU8(CART_RAM_BASE + 6, 0x67), true);
+	assert.equal(card.writeU16(CART_RAM_BASE + 6, 0), false);
+	assert.equal(card.writeU32(CART_RAM_BASE + 4, 0), null);
+	assert.equal(card.readU8(CART_RAM_BASE + 6), 0x67);
+	assert.equal(card.readU8(CART_RAM_BASE + 7), null);
+	assert.equal(card.readU16(CART_RAM_BASE + 6), null);
+	assert.equal(card.readU32(CART_RAM_BASE + 4), null);
+	assert.equal(card.readU8(CART_MMIO_BASE), null);
+	assert.equal(card.readU16(CART_MMIO_BASE), null);
+	assert.equal(card.readU32(CART_MMIO_BASE), null);
+	assert.equal(card.writeU8(CART_MMIO_BASE, 0), false);
+	assert.equal(card.writeU16(CART_MMIO_BASE, 0), false);
+	assert.equal(card.writeU32(CART_MMIO_BASE, 0), null);
+	const fitted = new CartridgeCard({ rom: null, ramByteCount: null, mailboxPresent: true }, MAPPED_KEY_OFFSET);
+	assert.equal(fitted.readU32(CART_MMIO_BASE + 0x10), 0);
+	assert.equal(fitted.writeU32(CART_MMIO_BASE + 0x10, 123), 0);
 });
 
 test('RAM-only cartridge leaves the ROM aperture unbacked', () => {
@@ -242,7 +274,7 @@ test('RAM-only cartridge leaves the ROM aperture unbacked', () => {
 		mailboxPresent: false,
 	}, MAPPED_KEY_OFFSET);
 	const view = { bytes: new Uint8Array(0), byteOffset: 0, byteLength: 0 };
-	assert.equal(card.readU32(CART_ROM_BASE), 0);
+	assert.equal(card.readU32(CART_ROM_BASE), null);
 	assert.equal(card.bindRomByteView(CART_ROM_BASE, 4, view), false);
 	assert.equal(card.readU32(CART_RAM_BASE), 0);
 });

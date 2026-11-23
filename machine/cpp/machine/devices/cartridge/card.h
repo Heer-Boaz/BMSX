@@ -26,13 +26,13 @@ public:
 	void reset();
 	CartridgeCardState captureState(CartridgeCardState storage = {}) const;
 	void restoreState(const CartridgeCardState& state);
-	u8 readU8(u32 address) const;
-	u32 readU16(u32 address) const;
-	u32 readU32(u32 address) const;
-	void writeU8(u32 address, u8 value);
-	void writeU16(u32 address, u32 value);
-	u32 writeU32(u32 address, u32 value);
-	void readBytes(u32 address, u8* out, size_t length) const;
+	std::optional<u32> readU8(u32 address) const;
+	std::optional<u32> readU16(u32 address) const;
+	std::optional<u32> readU32(u32 address) const;
+	bool writeU8(u32 address, u8 value);
+	bool writeU16(u32 address, u32 value);
+	std::optional<u32> writeU32(u32 address, u32 value);
+	bool hasMailbox() const { return m_mailbox.has_value(); }
 	bool bindRomByteView(u32 address, size_t length, Span<const u8>& out) const;
 	bool bindMappedReadView(u32 address, size_t length, Span<const u8>& out) const;
 	u32 dreqLines() const;
@@ -50,15 +50,8 @@ private:
 		MappedPageWriteWatches pageWriteWatches;
 	};
 
-	static u32 readU16From(Span<const u8> bytes, size_t offset);
-	static u32 readU32From(Span<const u8> bytes, size_t offset);
-	static void readByteRun(
-		Span<const u8> bytes,
-		size_t offset,
-		u8* out,
-		size_t length
-	);
-	u32 readMmioWord(u32 offset) const;
+	template<size_t Width> std::optional<u32> readScalar(u32 address) const;
+	template<size_t Width> bool writeRamScalar(u32 address, u32 value);
 
 	std::optional<RomRegion> m_rom;
 	std::optional<RamRegion> m_ram;

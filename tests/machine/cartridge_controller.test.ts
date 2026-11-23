@@ -8,6 +8,8 @@ import {
 	DMA_CONTROL_READ_SLOT_SHIFT,
 	DMA_ROUTE_COPY,
 	DMA_TRIGGER_START,
+	IO_CART_RAM_BYTE_COUNT,
+	IO_CART_ROM_BYTE_COUNT,
 	IO_CART_SELECT,
 	IO_CART_STATUS,
 	IO_DMA0_CONTROL,
@@ -17,6 +19,9 @@ import {
 	IO_DMA0_WRITE_ADDR,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
+	BUS_FAULT_UNMAPPED,
+	IO_SYS_BUS_FAULT_CODE,
+	IO_SYS_BUS_FAULT_ADDR,
 	IRQ_CARTRIDGE_SLOT0,
 	IRQ_CARTRIDGE_SLOT1,
 } from '../../machine/ts/spec/bmsx/io';
@@ -116,7 +121,37 @@ test('cartridge bus selects one physical socket and retains the raw selection la
 	);
 });
 
-test('an empty physical socket remains absent state and drives zero on the shared aperture', () => {
+test('the byte-count registers expose only the selected socket’s fitted storage', () => {
+	const rom = new Uint8Array(7);
+	const { memory } = createHarness([
+		{ rom, ramByteCount: null, mailboxPresent: false },
+		{ rom: null, ramByteCount: 257, mailboxPresent: true },
+	]);
+	assert.equal(memory.readMappedWord(IO_CART_ROM_BYTE_COUNT), rom.byteLength);
+	assert.equal(memory.readMappedWord(IO_CART_RAM_BYTE_COUNT), 0);
+	const replacement = new Uint8Array(3);
+	memory.cartridgeController.installRom(0, replacement);
+	assert.equal(memory.readMappedWord(IO_CART_ROM_BYTE_COUNT), replacement.byteLength);
+	memory.writeMappedWord(IO_CART_SELECT, 0x80000001);
+	assert.equal(memory.readMappedWord(IO_CART_ROM_BYTE_COUNT), 0);
+	assert.equal(memory.readMappedWord(IO_CART_RAM_BYTE_COUNT), 257);
+	memory.writeMappedWord(IO_CART_ROM_BYTE_COUNT, 123);
+	memory.writeMappedWord(IO_CART_RAM_BYTE_COUNT, 123);
+	assert.equal(memory.readMappedWord(IO_CART_ROM_BYTE_COUNT), 0);
+	assert.equal(memory.readMappedWord(IO_CART_RAM_BYTE_COUNT), 257);
+
+	const saved = memory.cartridgeController.captureState();
+	memory.cartridgeController.reset();
+	assert.equal(memory.readMappedWord(IO_CART_ROM_BYTE_COUNT), replacement.byteLength);
+	memory.cartridgeController.restoreState(saved);
+	assert.equal(memory.readMappedWord(IO_CART_RAM_BYTE_COUNT), 257);
+
+	const empty = createHarness([null, null]).memory;
+	assert.equal(empty.readMappedWord(IO_CART_ROM_BYTE_COUNT), 0);
+	assert.equal(empty.readMappedWord(IO_CART_RAM_BYTE_COUNT), 0);
+});
+
+test('an empty physical socket remains absent state and faults on the shared aperture', () => {
 	const { memory } = createHarness([
 		slot([0x11223344]),
 		null,
@@ -126,9 +161,16 @@ test('an empty physical socket remains absent state and drives zero on the share
 		memory.readMappedU32LE(IO_CART_STATUS),
 		CARTRIDGE_STATUS_SLOT0_PRESENT | CARTRIDGE_STATUS_SELECTED_SLOT1,
 	);
-	assert.equal(memory.readMappedU32LE(CART_ROM_BASE), 0);
-	assert.equal(memory.readMappedU32LE(CART_RAM_BASE), 0);
-	assert.equal(memory.readMappedU32LE(CART_MMIO_BASE), 0);
+	for (const address of [CART_ROM_BASE, CART_RAM_BASE, CART_MMIO_BASE]) {
+		memory.clearBusFault();
+		assert.equal(memory.readMappedU32LE(address), 0);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), address);
+		memory.clearBusFault();
+		memory.writeMappedU32LE(address, 0xffffffff);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), address);
+	}
 	assert.equal(memory.cartridgeController.captureState().slots[1], null);
 });
 

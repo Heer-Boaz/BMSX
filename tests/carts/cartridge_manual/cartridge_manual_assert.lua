@@ -12,7 +12,7 @@ return {
 			assert(result.boot_status == 3)
 			assert(result.selection_word == 0x80000001)
 			assert(result.selected_status == 0x00010003)
-			assert(result.data_card_rom == 0)
+			assert(result.data_card_rom_byte_count == 0)
 			assert(result.ram_words[0] == 0x10203040)
 			assert(result.ram_words[1] == 0x50607080)
 			for slot = 0, 1 do

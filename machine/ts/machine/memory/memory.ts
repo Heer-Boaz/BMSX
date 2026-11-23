@@ -43,6 +43,8 @@ import {
 	IO_APU_FAULT_DETAIL,
 	IO_APU_STATUS,
 	IO_CART_STATUS,
+	IO_CART_ROM_BYTE_COUNT,
+	IO_CART_RAM_BYTE_COUNT,
 	IO_DMA0_STATUS,
 	IO_DMA1_STATUS,
 	IO_GEO_FAULT,
@@ -138,6 +140,8 @@ for (const address of [
 	IO_APU_SELECTED_SOURCE_ADDR,
 	IO_APU_ACTIVE_MASK,
 	IO_CART_STATUS,
+	IO_CART_ROM_BYTE_COUNT,
+	IO_CART_RAM_BYTE_COUNT,
 	IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
 	IO_SYS_SUPERVISOR_FAULT_CAUSE,
 	IO_SYS_SUPERVISOR_FAULT_EPC,
@@ -377,7 +381,7 @@ export class Memory {
 		out.writeWatches = null;
 		out.writeWatchIndex = 0;
 		if (addr < RAM_BASE) {
-			out.cacheable = addr < SYSTEM_ROM_SIZE;
+			out.cacheable = addr + 4 <= this.systemRom.bytes.byteLength;
 			if (addr + MAPPED_PAGE_BYTE_SIZE <= this.systemRom.bytes.byteLength) {
 				out.readBytes = this.systemRom.bytes;
 				out.readByteOffset = addr;
@@ -524,54 +528,17 @@ export class Memory {
 		this.writeBusFaultSlots();
 	}
 
-	private readRomWindowU16LE(bytes: Uint8Array, offset: number): number {
-		if (offset + 2 <= bytes.byteLength) {
-			return readLE16(bytes, offset);
-		}
-		if (offset >= bytes.byteLength) {
-			return 0;
-		}
-		return bytes[offset]!;
-	}
-
-	private readRomWindowU32LE(bytes: Uint8Array, offset: number): number {
-		if (offset + 4 <= bytes.byteLength) {
-			return readLE32(bytes, offset);
-		}
-		if (offset >= bytes.byteLength) {
-			return 0;
-		}
-		let value = bytes[offset]!;
-		const remaining = bytes.byteLength - offset;
-		if (remaining >= 2) {
-			value |= bytes[offset + 1]! << 8;
-		}
-		if (remaining >= 3) {
-			value |= bytes[offset + 2]! << 16;
-		}
-		return value >>> 0;
-	}
-
-	private copyRomWindowInto(bytes: Uint8Array, offset: number, out: Uint8Array, dstOffset: number, length: number): void {
-		const available = offset < bytes.byteLength ? Math.min(length, bytes.byteLength - offset) : 0;
-		out.set(bytes.subarray(offset, offset + available), dstOffset);
-		if (available !== length) {
-			out.fill(0, dstOffset + available, dstOffset + length);
-		}
-	}
-
 	private readMainMemoryU8(addr: number, faultAccess: number): number {
 		if (addr < RAM_BASE) {
-			if (addr < SYSTEM_ROM_SIZE) {
-				return addr < this.systemRom.bytes.byteLength ? this.systemRom.bytes[addr]! : 0;
-			}
+			if (addr < this.systemRom.bytes.byteLength) return this.systemRom.bytes[addr];
 		} else if (addr < CART_ROM_BASE) {
 			const offset = addr - RAM_BASE;
 			if (addr < this.busEnd) {
 				return this.ram[offset];
 			}
 		} else if (addr < CART_BUS_END) {
-			return this.cartridgeController.readU8(addr, MAPPED_BUS_MASTER_CPU);
+			const value = this.cartridgeController.readU8(addr, MAPPED_BUS_MASTER_CPU);
+			if (value !== null) return value;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 		return 0;
@@ -672,8 +639,7 @@ export class Memory {
 				return;
 			}
 		} else if (addr < CART_BUS_END) {
-			this.cartridgeController.writeU8(addr, value, MAPPED_BUS_MASTER_CPU);
-			return;
+			if (this.cartridgeController.writeU8(addr, value, MAPPED_BUS_MASTER_CPU)) return;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U8);
 	}
@@ -688,8 +654,7 @@ export class Memory {
 				return;
 			}
 		} else if (addr < CART_BUS_END) {
-			this.cartridgeController.writeU8(addr, value, MAPPED_BUS_MASTER_CPU);
-			return;
+			if (this.cartridgeController.writeU8(addr, value, MAPPED_BUS_MASTER_CPU)) return;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U8);
 	}
@@ -700,9 +665,9 @@ export class Memory {
 
 	public readU32(addr: number, counters: MemoryWordCounters | null = null): number {
 		if (addr < RAM_BASE) {
-			if (addr <= SYSTEM_ROM_SIZE - 4) {
+			if (addr + 4 <= this.systemRom.bytes.byteLength) {
 				if (counters !== null) counters.systemRomWords = (counters.systemRomWords + 1) >>> 0;
-				return this.readRomWindowU32LE(this.systemRom.bytes, addr);
+				return readLE32(this.systemRom.bytes, addr);
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const offset = addr - RAM_BASE;
@@ -711,8 +676,11 @@ export class Memory {
 				return readLE32(this.ram, offset);
 			}
 		} else if (addr <= CART_BUS_END - 4) {
-			if (counters !== null) counters.cartridgeWords = (counters.cartridgeWords + 1) >>> 0;
-			return this.cartridgeController.readU32(addr, MAPPED_BUS_MASTER_CPU);
+			const value = this.cartridgeController.readU32(addr, MAPPED_BUS_MASTER_CPU);
+			if (value !== null) {
+				if (counters !== null) counters.cartridgeWords = (counters.cartridgeWords + 1) >>> 0;
+				return value;
+			}
 		}
 		if (counters !== null) counters.otherWords = (counters.otherWords + 1) >>> 0;
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
@@ -725,8 +693,8 @@ export class Memory {
 			return 0;
 		}
 		if (addr < RAM_BASE) {
-			if (addr <= SYSTEM_ROM_SIZE - 2) {
-				return this.readRomWindowU16LE(this.systemRom.bytes, addr);
+			if (addr + 2 <= this.systemRom.bytes.byteLength) {
+				return readLE16(this.systemRom.bytes, addr);
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const ramOffset = addr - RAM_BASE;
@@ -734,7 +702,8 @@ export class Memory {
 				return readLE16(this.ram, ramOffset);
 			}
 		} else if (addr <= CART_BUS_END - 2) {
-			return this.cartridgeController.readU16(addr, MAPPED_BUS_MASTER_CPU);
+			const value = this.cartridgeController.readU16(addr, MAPPED_BUS_MASTER_CPU);
+			if (value !== null) return value;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U16);
 		return 0;
@@ -764,8 +733,8 @@ export class Memory {
 			return 0;
 		}
 		if (addr < RAM_BASE) {
-			if (addr <= SYSTEM_ROM_SIZE - 4) {
-				return this.readRomWindowU32LE(this.systemRom.bytes, addr);
+			if (addr + 4 <= this.systemRom.bytes.byteLength) {
+				return readLE32(this.systemRom.bytes, addr);
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const ramOffset = addr - RAM_BASE;
@@ -777,7 +746,8 @@ export class Memory {
 				this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 				return 0;
 			}
-			return this.cartridgeController.readU32(addr, busSignals);
+			const value = this.cartridgeController.readU32(addr, busSignals);
+			if (value !== null) return value;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 		return 0;
@@ -807,8 +777,7 @@ export class Memory {
 				return;
 			}
 		} else if (addr <= CART_BUS_END - 4) {
-			this.cartridgeController.writeU32(addr, value, MAPPED_BUS_MASTER_CPU);
-			return;
+			if (this.cartridgeController.writeU32(addr, value, MAPPED_BUS_MASTER_CPU)) return;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U32);
 	}
@@ -834,8 +803,7 @@ export class Memory {
 				return;
 			}
 		} else if (addr <= CART_BUS_END - 2) {
-			this.cartridgeController.writeU16(addr, value, MAPPED_BUS_MASTER_CPU);
-			return;
+			if (this.cartridgeController.writeU16(addr, value, MAPPED_BUS_MASTER_CPU)) return;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U16);
 	}
@@ -958,8 +926,7 @@ export class Memory {
 				return;
 			}
 		} else if (addr <= CART_BUS_END - 4) {
-			this.cartridgeController.writeU32(addr, value, busSignals);
-			return;
+			if (this.cartridgeController.writeU32(addr, value, busSignals)) return;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 	}
@@ -980,37 +947,19 @@ export class Memory {
 	}
 
 	public readBytesInto(addr: number, out: Uint8Array, length: number, dstOffset = 0): void {
-		if (addr < RAM_BASE) {
-			if (length <= SYSTEM_ROM_SIZE && addr <= SYSTEM_ROM_SIZE - length) {
-				this.copyRomWindowInto(this.systemRom.bytes, addr, out, dstOffset, length);
-				return;
-			}
-		} else if (addr < CART_ROM_BASE) {
-			const offset = addr - RAM_BASE;
-			if (this.isRamRange(addr, length)) {
-				out.set(this.ram.subarray(offset, offset + length), dstOffset);
-				return;
-			}
-		} else if (
-			length <= CART_BUS_END - CART_ROM_BASE
-			&& addr - CART_ROM_BASE <= CART_BUS_END - CART_ROM_BASE - length
-		) {
-			this.cartridgeController.readBytes(addr, out, dstOffset, length);
+		if (length === 0) return;
+		const view = { bytes: out, byteOffset: 0, byteLength: 0 };
+		if (this.bindMappedReadView(addr, length, MAPPED_BUS_MASTER_CPU, view)) {
+			out.set(view.bytes.subarray(view.byteOffset, view.byteOffset + view.byteLength), dstOffset);
 			return;
 		}
-		out.fill(0, dstOffset, dstOffset + length);
-		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
+		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U8);
 	}
 
 	public isReadableMainMemoryRange(addr: number, length: number): boolean {
-		if (addr < RAM_BASE) {
-			return length <= SYSTEM_ROM_SIZE && addr <= SYSTEM_ROM_SIZE - length;
-		}
-		if (addr < CART_ROM_BASE) {
-			return this.isRamRange(addr, length);
-		}
-		return length <= CART_BUS_END - CART_ROM_BASE
-			&& addr - CART_ROM_BASE <= CART_BUS_END - CART_ROM_BASE - length;
+		if (addr < RAM_BASE) return addr + length <= this.systemRom.bytes.byteLength;
+		if (addr < CART_ROM_BASE) return this.isRamRange(addr, length);
+		return addr < CART_BUS_END && this.cartridgeController.isReadableRange(addr, length);
 	}
 
 	public bindRomByteView(addr: number, length: number, cartridgeSlot: number, out: MemoryByteView): boolean {

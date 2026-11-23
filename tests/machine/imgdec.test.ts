@@ -95,16 +95,16 @@ test('raw IMGDEC publishes whole blocks at completion, without GPU packet or tok
 	assert.notEqual(h.memory.readIoU32(io.IO_IRQ_FLAGS) & io.IRQ_IMGDEC, 0);
 });
 
-test('unaligned socket-1 DMA borrows only backed IMGDEC input and retains the padded scalar terminal word', () => {
+test('unaligned socket-1 DMA borrows only backed IMGDEC input and retains the scalar terminal word', () => {
 	const inputCount = 256, outputCount = inputCount - 1;
-	const slot1 = new Uint8Array(inputCount * 4), expected = new Uint32Array(outputCount);
+	const slot1 = new Uint8Array(1 + inputCount * 4), expected = new Uint32Array(outputCount);
 	writeLE32(slot1, 1, outputCount - 1);
 	for (let i = 0; i < outputCount - 1; ++i) {
 		expected[i] = 0x87654321 ^ (i << 12);
 		writeLE32(slot1, 1 + (i + 1) * 4, expected[i]);
 	}
-	expected[outputCount - 1] = 0x005aa5c3;
-	slot1.set([0xc3, 0xa5, 0x5a], slot1.length - 3);
+	expected[outputCount - 1] = 0x6d5aa5c3;
+	writeLE32(slot1, slot1.byteLength - 4, expected[outputCount - 1]);
 	const h = fixture([0, 0], slot1), { memory, machine } = h;
 	const { scheduler, dmaController } = machine, faults = memory.readBusFaultSequence();
 	memory.writeMappedU32LE(io.IO_CART_SELECT, 0);

@@ -507,7 +507,7 @@ test('shared-bus DMA stops instruction execution until serial read/write complet
 	assert.notEqual(frame.pc, pc, 'instruction execution resumes after bus release');
 });
 
-test('warmed generated MMIO starts DMA, yields the bus, and resumes only after real burst completion', () => {
+test('warmed generated MMIO starts DMA, yields the bus, and resumes only after real burst completion', t => {
 	const code = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	for (let word = 0; word < 5; ++word) {
 		writeInstruction(code, word, OpCode.STORE_MEM_D, word, 5, MemoryAccessKind.U32LE, word === 4 ? 5 : word);
@@ -526,29 +526,33 @@ test('warmed generated MMIO starts DMA, yields the bus, and resumes only after r
 	});
 	const source = RAM_BASE + 0x20000, target = RAM_BASE + 0x21000;
 	const entry = system.image.functions[0].codeAddress;
+	const storeCycles = 5 * BASE_CYCLES[OpCode.STORE_MEM_D];
+	const continuationCycles = BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP];
+	const dmaCycles = 514;
 	for (const runtime of runtimes) {
 		const registers = runtime.machine.cpu.activeThread.frameAtDepth(0).registers;
 		[source, target, 256, 0, 1, IO_DMA0_READ_ADDR, 0, 0].forEach((value, index) => registers.setInteger(index, value));
 		for (let word = 0; word < 256; ++word) runtime.machine.memory.writeMappedU32LE(source + word * 4, 0x12340000 + word);
-		// Five MMIO stores, 514 bus cycles, then load/add/backedge.
-		const loopCycles = 5 * BASE_CYCLES[OpCode.STORE_MEM_D] + 514
-			+ BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP];
-		runtime.frameScheduler.runCyclesToNextLogicalTick(16 * loopCycles);
+		runtime.frameScheduler.runCyclesToNextLogicalTick(16 * (storeCycles + dmaCycles + continuationCycles));
 		assert.equal(runtime.machine.cpu.activeThread.frameAtDepth(0).pc, entry);
 		assert.equal(registers.getInteger(6), 16);
 	}
-	const generatedPage = runtimes[0].machine.cpu.activeThread.frameAtDepth(0).decodedPage!;
-	const triggerWord = ((entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2) + 4;
-	const trigger = generatedPage.compiledBlocks!.entries[triggerWord]!;
-	assert.ok(trigger, 'the DMA trigger has a warmed generated entry before the exclusion probes');
-	assert.ok(trigger.exits.some(exit => exit.exit === CompiledBlockExit.WriteMemory && exit.currentPc === entry + 16),
-		'the generated trigger retains the actual MMIO owner exit');
+	const generated = runtimes[0].machine.cpu.activeThread.frameAtDepth(0);
+	const triggerPc = entry + 4 * INSTRUCTION_BYTES;
+	const triggerPage = generated.executionImage.compiledCodeLookup!.find(triggerPc, 0)!;
+	const triggerWord = (triggerPc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const trigger = triggerPage.compiledBlocks!.entries[triggerWord];
+	assert.ok(trigger, 'the warmed trigger is installed on its own source page');
+	const runGenerated = t.mock.method(trigger.region, 'execute');
 	assert.equal(runtimes[1].machine.cpu.activeThread.frameAtDepth(0).decodedPage!.compiledBlocks, null);
 	const run = (grant: number): void => {
 		for (const runtime of runtimes) runtime.frameScheduler.runCyclesToNextLogicalTick(grant);
 		assert.deepEqual(captureRuntimeSaveState(runtimes[0]), captureRuntimeSaveState(runtimes[1]),
 			`generated and scalar machines agree at the DMA boundary after grant ${grant}`);
 	};
+	// Admit the generated continuation, but leave the grant well inside
+	// the DMA hold. A smaller grant can force the trigger onto scalar dispatch.
+	const admittedDmaCycles = continuationCycles + 1;
 	for (let iteration = 0; iteration < 2; ++iteration) {
 		for (const runtime of runtimes) {
 			for (let word = 0; word < 256; ++word) {
@@ -556,14 +560,19 @@ test('warmed generated MMIO starts DMA, yields the bus, and resumes only after r
 				runtime.machine.memory.writeMappedU32LE(target + word * 4, 0);
 			}
 		}
-		run(5 * BASE_CYCLES[OpCode.STORE_MEM_D] + 1); // Leave budget after TRIGGER: its MMIO exit must yield, not execute the load.
+		runGenerated.mock.resetCalls();
+		run(storeCycles + admittedDmaCycles);
+		assert.ok(runGenerated.mock.calls.some(call => {
+			const exit = trigger.region.exits[call.result!];
+			return exit.exit === CompiledBlockExit.WriteMemory && exit.currentPc === triggerPc;
+		}), 'the scheduled generated code took the TRIGGER store exit');
 		const { cpu, memory, dmaController } = runtimes[0].machine;
 		const frame = cpu.activeThread.frameAtDepth(0);
 		assert.equal(frame.pc, entry + 20);
 		assert.equal(frame.registers.getInteger(6), 16 + iteration);
 		assert.equal(dmaController.cpuBusHeld(), true);
-		assert.equal(dmaController.captureState().scheduledBlockCycles, 513);
-		run(512);
+		assert.equal(dmaController.captureState().scheduledBlockCycles, dmaCycles - admittedDmaCycles);
+		run(dmaCycles - admittedDmaCycles - 1);
 		assert.equal(frame.pc, entry + 20);
 		assert.equal(dmaController.cpuBusHeld(), true);
 		for (let word = 0; word < 256; ++word) assert.equal(memory.readMappedU32LE(target + word * 4), 0);
@@ -571,7 +580,7 @@ test('warmed generated MMIO starts DMA, yields the bus, and resumes only after r
 		assert.equal(frame.pc, entry + 20, 'the final DMA cycle cannot also execute the continuation');
 		assert.equal(dmaController.cpuBusHeld(), false);
 		for (let word = 0; word < 256; ++word) assert.equal(memory.readMappedU32LE(target + word * 4), 0x43210000 + iteration * 256 + word);
-		run(BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP]);
+		run(continuationCycles);
 		assert.equal(frame.pc, entry);
 		assert.equal(frame.registers.getInteger(6), 17 + iteration);
 		assert.equal(frame.registers.getInteger(7), 0x43210000 + iteration * 256, 'the resumed load observes DMA output');

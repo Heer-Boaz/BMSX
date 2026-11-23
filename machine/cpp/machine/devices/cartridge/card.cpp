@@ -53,8 +53,8 @@ void CartridgeCard::bindMappedPage(u32 address, MappedPageBinding& out) {
 	out.readBytes = nullptr;
 	out.writeWatch = {};
 	if (address < CART_RAM_BASE) {
-		out.cacheable = true;
 		const size_t offset = static_cast<size_t>(address - CART_ROM_BASE);
+		out.cacheable = m_rom && offset + sizeof(u32) <= m_rom->bytes.size();
 		if (m_rom && offset + MAPPED_PAGE_BYTE_SIZE <= m_rom->bytes.size()) {
 			out.readBytes = m_rom->bytes.data() + offset;
 		}
@@ -113,126 +113,64 @@ void CartridgeCard::restoreState(const CartridgeCardState& state) {
 	}
 }
 
-u8 CartridgeCard::readU8(u32 address) const {
-	if (address < CART_RAM_BASE) {
-		const size_t offset = static_cast<size_t>(address - CART_ROM_BASE);
-		return m_rom && offset < m_rom->bytes.size() ? m_rom->bytes[offset] : 0u;
-	}
+template<size_t Width>
+std::optional<u32> CartridgeCard::readScalar(u32 address) const {
 	if (address < CART_MMIO_BASE) {
-		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
-		return m_ram && offset < m_ram->bytes.size() ? m_ram->bytes[offset] : 0u;
+		Span<const u8> bytes;
+		if (!bindMappedReadView(address, Width, bytes)) return {};
+		if constexpr (Width == 1u) return bytes[0];
+		if constexpr (Width == 2u) return readLE16(bytes.data());
+		return readLE32(bytes.data());
 	}
-	const u32 word = readMmioWord(address - CART_MMIO_BASE);
-	return static_cast<u8>(word >> ((address & 3u) << 3u));
+	if (!m_mailbox) return {};
+	const u32 word = m_mailbox->readWord(address - CART_MMIO_BASE);
+	if constexpr (Width == 1u) return (word >> ((address & 3u) << 3u)) & 0xffu;
+	if constexpr (Width == 2u) return (word >> ((address & 2u) << 3u)) & 0xffffu;
+	return word;
 }
 
-u32 CartridgeCard::readU16(u32 address) const {
-	if (address < CART_RAM_BASE) {
-		return m_rom
-			? readU16From(m_rom->bytes, static_cast<size_t>(address - CART_ROM_BASE))
-			: 0u;
-	}
-	if (address < CART_MMIO_BASE) {
-		return m_ram
-			? readU16From(m_ram->bytes, static_cast<size_t>(address - CART_RAM_BASE))
-			: 0u;
-	}
-	const u32 word = readMmioWord(address - CART_MMIO_BASE);
-	return (word >> ((address & 2u) << 3u)) & 0xffffu;
+std::optional<u32> CartridgeCard::readU8(u32 address) const { return readScalar<1u>(address); }
+std::optional<u32> CartridgeCard::readU16(u32 address) const { return readScalar<2u>(address); }
+std::optional<u32> CartridgeCard::readU32(u32 address) const { return readScalar<4u>(address); }
+
+template<size_t Width>
+bool CartridgeCard::writeRamScalar(u32 address, u32 value) {
+	const size_t offset = address - CART_RAM_BASE;
+	if (!m_ram || offset + Width > m_ram->bytes.size()) return false;
+	auto* bytes = m_ram->bytes.data() + offset;
+	if constexpr (Width == 1u) *bytes = static_cast<u8>(value);
+	else if constexpr (Width == 2u) writeLE16(bytes, static_cast<u16>(value));
+	else writeLE32(bytes, value);
+	m_ram->pageWriteWatches.invalidateWrite(offset, Width, CART_RAM_BASE + m_mappedKeyOffset, m_mappedPageInvalidator);
+	return true;
 }
 
-u32 CartridgeCard::readU32(u32 address) const {
-	if (address < CART_RAM_BASE) {
-		return m_rom
-			? readU32From(m_rom->bytes, static_cast<size_t>(address - CART_ROM_BASE))
-			: 0u;
-	}
-	if (address < CART_MMIO_BASE) {
-		return m_ram
-			? readU32From(m_ram->bytes, static_cast<size_t>(address - CART_RAM_BASE))
-			: 0u;
-	}
-	return readMmioWord(address - CART_MMIO_BASE);
+bool CartridgeCard::writeU8(u32 address, u8 value) {
+	if (address >= CART_MMIO_BASE) return m_mailbox.has_value();
+	if (address >= CART_RAM_BASE) return writeRamScalar<1u>(address, value);
+	Span<const u8> bytes;
+	return bindRomByteView(address, 1u, bytes);
 }
 
-void CartridgeCard::writeU8(u32 address, u8 value) {
-	if (address < CART_RAM_BASE || address >= CART_MMIO_BASE) return;
-	const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
-	if (m_ram && offset < m_ram->bytes.size()) {
-		m_ram->bytes[offset] = value;
-		m_ram->pageWriteWatches.invalidateWrite(
-			offset,
-			1u,
-			CART_RAM_BASE + m_mappedKeyOffset,
-			m_mappedPageInvalidator
-		);
-	}
+bool CartridgeCard::writeU16(u32 address, u32 value) {
+	if (address >= CART_MMIO_BASE) return m_mailbox.has_value();
+	if (address >= CART_RAM_BASE) return writeRamScalar<2u>(address, value);
+	Span<const u8> bytes;
+	return bindRomByteView(address, 2u, bytes);
 }
 
-void CartridgeCard::writeU16(u32 address, u32 value) {
-	if (address < CART_RAM_BASE || address >= CART_MMIO_BASE) return;
-	const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
-	if (m_ram && offset + 2u <= m_ram->bytes.size()) {
-		writeLE16(m_ram->bytes.data() + offset, static_cast<u16>(value));
-		m_ram->pageWriteWatches.invalidateWrite(
-			offset,
-			2u,
-			CART_RAM_BASE + m_mappedKeyOffset,
-			m_mappedPageInvalidator
-		);
-	}
-}
-
-u32 CartridgeCard::writeU32(u32 address, u32 value) {
-	if (address >= CART_RAM_BASE && address < CART_MMIO_BASE) {
-		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
-		if (m_ram && offset + 4u <= m_ram->bytes.size()) {
-			writeLE32(m_ram->bytes.data() + offset, value);
-			m_ram->pageWriteWatches.invalidateWrite(
-				offset,
-				4u,
-				CART_RAM_BASE + m_mappedKeyOffset,
-				m_mappedPageInvalidator
-			);
-		}
-		return 0u;
-	}
-	if (address >= CART_MMIO_BASE && m_mailbox) {
+std::optional<u32> CartridgeCard::writeU32(u32 address, u32 value) {
+	if (address >= CART_MMIO_BASE) {
+		if (!m_mailbox) return {};
 		return m_mailbox->writeWord(address - CART_MMIO_BASE, value);
 	}
+	if (address >= CART_RAM_BASE) {
+		if (!writeRamScalar<4u>(address, value)) return {};
+	} else {
+		Span<const u8> bytes;
+		if (!bindRomByteView(address, 4u, bytes)) return {};
+	}
 	return 0u;
-}
-
-void CartridgeCard::readBytes(u32 address, u8* out, size_t length) const {
-	if (address < CART_RAM_BASE && static_cast<u64>(address) + length <= CART_RAM_BASE) {
-		if (m_rom) {
-			readByteRun(
-				m_rom->bytes,
-				static_cast<size_t>(address - CART_ROM_BASE),
-				out,
-				length
-			);
-		} else {
-			std::memset(out, 0, length);
-		}
-		return;
-	}
-	if (address >= CART_RAM_BASE && static_cast<u64>(address) + length <= CART_MMIO_BASE) {
-		if (m_ram) {
-			readByteRun(
-				m_ram->bytes,
-				static_cast<size_t>(address - CART_RAM_BASE),
-				out,
-				length
-			);
-		} else {
-			std::memset(out, 0, length);
-		}
-		return;
-	}
-	for (size_t index = 0; index < length; ++index) {
-		out[index] = readU8(address + static_cast<u32>(index));
-	}
 }
 
 bool CartridgeCard::bindRomByteView(
@@ -259,41 +197,6 @@ bool CartridgeCard::bindMappedReadView(u32 address, size_t length, Span<const u8
 
 u32 CartridgeCard::dreqLines() const {
 	return m_mailbox ? m_mailbox->dreqLines() : 0u;
-}
-
-u32 CartridgeCard::readMmioWord(u32 offset) const {
-	return m_mailbox ? m_mailbox->readWord(offset) : 0u;
-}
-
-u32 CartridgeCard::readU16From(Span<const u8> bytes, size_t offset) {
-	if (offset + 2u <= bytes.size()) return readLE16(bytes.data() + offset);
-	return offset < bytes.size() ? bytes[offset] : 0u;
-}
-
-u32 CartridgeCard::readU32From(Span<const u8> bytes, size_t offset) {
-	if (offset + 4u <= bytes.size()) return readLE32(bytes.data() + offset);
-	if (offset >= bytes.size()) return 0u;
-	u32 word = bytes[offset];
-	if (offset + 1u < bytes.size()) word |= static_cast<u32>(bytes[offset + 1u]) << 8u;
-	if (offset + 2u < bytes.size()) word |= static_cast<u32>(bytes[offset + 2u]) << 16u;
-	return word;
-}
-
-void CartridgeCard::readByteRun(
-	Span<const u8> bytes,
-	size_t offset,
-	u8* out,
-	size_t length
-) {
-	const size_t available = offset < bytes.size()
-		? std::min(length, bytes.size() - offset)
-		: 0u;
-	if (available != 0u) {
-		std::memcpy(out, bytes.data() + offset, available);
-	}
-	if (available != length) {
-		std::memset(out + available, 0, length - available);
-	}
 }
 
 } // namespace bmsx

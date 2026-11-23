@@ -1,6 +1,7 @@
 import { readLE16, readLE32, writeLE16, writeLE32 } from '../../../common/endian';
 import { RomStorage } from '../../memory/rom_storage';
 import {
+	CART_BUS_END,
 	CART_MMIO_BASE,
 	CART_RAM_BASE,
 	CART_ROM_BASE,
@@ -78,9 +79,9 @@ export class CartridgeCard {
 		out.writeWatches = null;
 		out.writeWatchIndex = 0;
 		if (address < CART_RAM_BASE) {
-			out.cacheable = true;
 			const rom = this.rom;
 			const offset = address - CART_ROM_BASE;
+			out.cacheable = rom !== null && offset + 4 <= rom.bytes.byteLength;
 			if (rom !== null && offset + MAPPED_PAGE_BYTE_SIZE <= rom.bytes.byteLength) {
 				out.readBytes = rom.bytes;
 				out.readByteOffset = offset;
@@ -143,121 +144,61 @@ export class CartridgeCard {
 		}
 	}
 
-	public readU8(address: number): number {
-		if (address < CART_RAM_BASE) {
-			const rom = this.rom;
-			const offset = address - CART_ROM_BASE;
-			return rom !== null && offset < rom.bytes.byteLength ? rom.bytes[offset]! : 0;
-		}
+	private readScalar(address: number, width: 1 | 2 | 4): number | null {
 		if (address < CART_MMIO_BASE) {
-			const ram = this.ram;
-			const offset = address - CART_RAM_BASE;
-			return ram !== null && offset < ram.bytes.byteLength ? ram.bytes[offset]! : 0;
+			const inRom = address < CART_RAM_BASE;
+			const storage = inRom ? this.rom : this.ram;
+			const offset = address - (inRom ? CART_ROM_BASE : CART_RAM_BASE);
+			if (storage === null || offset + width > storage.bytes.byteLength) return null;
+			if (width === 1) return storage.bytes[offset];
+			if (width === 2) return readLE16(storage.bytes, offset);
+			return readLE32(storage.bytes, offset);
 		}
-		const word = this.readMmioWord(address - CART_MMIO_BASE);
-		return (word >>> ((address & 3) << 3)) & 0xff;
+		if (this.mailbox === null) return null;
+		const word = this.mailbox.readWord(address - CART_MMIO_BASE);
+		if (width === 1) return (word >>> ((address & 3) << 3)) & 0xff;
+		if (width === 2) return (word >>> ((address & 2) << 3)) & 0xffff;
+		return word;
 	}
 
-	public readU16(address: number): number {
-		if (address < CART_RAM_BASE) {
-			return this.rom === null
-				? 0
-				: CartridgeCard.readU16From(this.rom.bytes, address - CART_ROM_BASE);
-		}
-		if (address < CART_MMIO_BASE) {
-			return this.ram === null
-				? 0
-				: CartridgeCard.readU16From(this.ram.bytes, address - CART_RAM_BASE);
-		}
-		const word = this.readMmioWord(address - CART_MMIO_BASE);
-		return (word >>> ((address & 2) << 3)) & 0xffff;
-	}
+	public readU8(address: number): number | null { return this.readScalar(address, 1); }
+	public readU16(address: number): number | null { return this.readScalar(address, 2); }
+	public readU32(address: number): number | null { return this.readScalar(address, 4); }
 
-	public readU32(address: number): number {
-		if (address < CART_RAM_BASE) {
-			return this.rom === null
-				? 0
-				: CartridgeCard.readU32From(this.rom.bytes, address - CART_ROM_BASE);
-		}
-		if (address < CART_MMIO_BASE) {
-			return this.ram === null
-				? 0
-				: CartridgeCard.readU32From(this.ram.bytes, address - CART_RAM_BASE);
-		}
-		return this.readMmioWord(address - CART_MMIO_BASE);
-	}
-
-	public writeU8(address: number, value: number): void {
-		if (address < CART_RAM_BASE || address >= CART_MMIO_BASE) return;
+	private writeRamScalar(address: number, value: number, width: 1 | 2 | 4): boolean {
 		const ram = this.ram;
 		const offset = address - CART_RAM_BASE;
-		if (ram !== null && offset < ram.bytes.byteLength) {
-			ram.bytes[offset] = value & 0xff;
-			ram.pageWriteWatches.invalidateWrite(
-				offset,
-				1,
-				CART_RAM_BASE + this.mappedKeyOffset,
-				this.mappedPageInvalidator!,
-			);
-		}
+		if (ram === null || offset + width > ram.bytes.byteLength) return false;
+		if (width === 1) ram.bytes[offset] = value;
+		else if (width === 2) writeLE16(ram.bytes, offset, value);
+		else writeLE32(ram.bytes, offset, value);
+		ram.pageWriteWatches.invalidateWrite(offset, width, CART_RAM_BASE + this.mappedKeyOffset, this.mappedPageInvalidator!);
+		return true;
 	}
 
-	public writeU16(address: number, value: number): void {
-		if (address < CART_RAM_BASE || address >= CART_MMIO_BASE) return;
-		const ram = this.ram;
-		const offset = address - CART_RAM_BASE;
-		if (ram !== null && offset + 2 <= ram.bytes.byteLength) {
-			writeLE16(ram.bytes, offset, value);
-			ram.pageWriteWatches.invalidateWrite(
-				offset,
-				2,
-				CART_RAM_BASE + this.mappedKeyOffset,
-				this.mappedPageInvalidator!,
-			);
-		}
+	public writeU8(address: number, value: number): boolean {
+		if (address >= CART_MMIO_BASE) return this.mailbox !== null;
+		if (address >= CART_RAM_BASE) return this.writeRamScalar(address, value, 1);
+		return this.rom !== null && address - CART_ROM_BASE + 1 <= this.rom.bytes.byteLength;
 	}
 
-	public writeU32(address: number, value: number): number {
-		if (address >= CART_RAM_BASE && address < CART_MMIO_BASE) {
-			const ram = this.ram;
-			const offset = address - CART_RAM_BASE;
-			if (ram !== null && offset + 4 <= ram.bytes.byteLength) {
-				writeLE32(ram.bytes, offset, value);
-				ram.pageWriteWatches.invalidateWrite(
-					offset,
-					4,
-					CART_RAM_BASE + this.mappedKeyOffset,
-					this.mappedPageInvalidator!,
-				);
-			}
-			return 0;
-		}
-		if (address >= CART_MMIO_BASE && this.mailbox !== null) {
-			return this.mailbox.writeWord(address - CART_MMIO_BASE, value >>> 0);
-		}
-		return 0;
+	public writeU16(address: number, value: number): boolean {
+		if (address >= CART_MMIO_BASE) return this.mailbox !== null;
+		if (address >= CART_RAM_BASE) return this.writeRamScalar(address, value, 2);
+		return this.rom !== null && address - CART_ROM_BASE + 2 <= this.rom.bytes.byteLength;
 	}
 
-	public readBytes(address: number, out: Uint8Array, dstOffset: number, length: number): void {
-		if (address < CART_RAM_BASE && address + length <= CART_RAM_BASE) {
-			if (this.rom === null) {
-				out.fill(0, dstOffset, dstOffset + length);
-			} else {
-				CartridgeCard.readByteRun(this.rom.bytes, address - CART_ROM_BASE, out, dstOffset, length);
-			}
-			return;
-		}
-		if (address >= CART_RAM_BASE && address + length <= CART_MMIO_BASE) {
-			if (this.ram === null) {
-				out.fill(0, dstOffset, dstOffset + length);
-			} else {
-				CartridgeCard.readByteRun(this.ram.bytes, address - CART_RAM_BASE, out, dstOffset, length);
-			}
-			return;
-		}
-		for (let index = 0; index < length; index += 1) {
-			out[dstOffset + index] = this.readU8(address + index);
-		}
+	public writeU32(address: number, value: number): number | null {
+		if (address >= CART_MMIO_BASE) return this.mailbox === null ? null : this.mailbox.writeWord(address - CART_MMIO_BASE, value);
+		if (address >= CART_RAM_BASE) return this.writeRamScalar(address, value, 4) ? 0 : null;
+		return this.rom !== null && address - CART_ROM_BASE + 4 <= this.rom.bytes.byteLength ? 0 : null;
+	}
+
+	public isReadableRange(address: number, length: number): boolean {
+		if (address >= CART_MMIO_BASE) return this.mailbox !== null && address + length <= CART_BUS_END;
+		const inRom = address < CART_RAM_BASE;
+		const storage = inRom ? this.rom : this.ram;
+		return length !== 0 && storage !== null && address - (inRom ? CART_ROM_BASE : CART_RAM_BASE) + length <= storage.bytes.byteLength;
 	}
 
 	public bindRomByteView(address: number, length: number, out: CartridgeByteView): boolean {
@@ -286,37 +227,5 @@ export class CartridgeCard {
 
 	public dreqLines(): number {
 		return this.mailbox === null ? 0 : this.mailbox.dreqLines();
-	}
-
-	private readMmioWord(offset: number): number {
-		return this.mailbox === null ? 0 : this.mailbox.readWord(offset);
-	}
-
-	private static readU16From(bytes: Uint8Array, offset: number): number {
-		if (offset + 2 <= bytes.byteLength) return readLE16(bytes, offset);
-		return offset < bytes.byteLength ? bytes[offset]! : 0;
-	}
-
-	private static readByteRun(
-		bytes: Uint8Array,
-		offset: number,
-		out: Uint8Array,
-		dstOffset: number,
-		length: number,
-	): void {
-		const available = offset < bytes.byteLength ? Math.min(length, bytes.byteLength - offset) : 0;
-		out.set(bytes.subarray(offset, offset + available), dstOffset);
-		if (available !== length) {
-			out.fill(0, dstOffset + available, dstOffset + length);
-		}
-	}
-
-	private static readU32From(bytes: Uint8Array, offset: number): number {
-		if (offset + 4 <= bytes.byteLength) return readLE32(bytes, offset);
-		if (offset >= bytes.byteLength) return 0;
-		let word = bytes[offset]!;
-		if (offset + 1 < bytes.byteLength) word |= bytes[offset + 1]! << 8;
-		if (offset + 2 < bytes.byteLength) word |= bytes[offset + 2]! << 16;
-		return word >>> 0;
 	}
 }

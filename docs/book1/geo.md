@@ -677,7 +677,12 @@ remainder rather than rounding each record independently.
 
 These rules also apply to SAT2_BATCH below. For a nonempty indexed span, the byte displacement, base-plus-displacement and span end must not overflow the 32-bit address space. A span end exactly `100000000H` passes this arithmetic check. A zero stride is permitted and repeatedly selects the same address.
 
-Every input span must lie wholly within one readable region: the system-ROM window `00000000H–00FFFFFFH`, installed main RAM beginning at `08000000H`, or the cartridge-bus window `10000000H–30FFFFFFH`. The cartridge window is not a promise of ROM at every address; it includes cartridge RAM and device mappings. System-ROM reads beyond the populated contents, but within its window, return zero. Output spans must lie wholly in installed main RAM. The RAM checks do not exclude its I/O-address window, and these word transfers do not invoke mapped-I/O handling.
+Every input span must lie wholly within one readable region: installed
+system ROM, installed main RAM, or fitted ROM, RAM or a device on the
+selected cartridge. A span outside installed storage faults as a source-range
+error before its first read. Output spans must lie wholly in installed main
+RAM. The main-RAM checks do not exclude its I/O-address window, and these
+main-RAM word transfers do not invoke mapped-I/O handling.
 
 XFORM2_BATCH imposes no separate word-alignment check on these addresses or strides. In particular, the fault name BAD_RECORD_ALIGNMENT must not be read as an additional alignment requirement.
 

@@ -13,7 +13,7 @@ local dma_status<const>: *word = 0x0800001c
 local dma_trigger<const>: *word = 0x08000020
 local cart_select<const>: *word = 0x08010420
 local cart_status<const>: *word = 0x08010424
-local card_rom<const>: *word = 0x10000000
+local cart_rom_byte_count<const>: *word = 0x08010440
 local card_ram<const>: *word = 0x30000000
 local mail_data<const>: *word = 0x30f00000
 local mail_control<const>: *word = 0x30f00004
@@ -32,7 +32,7 @@ result.boot_status = *cart_status
 *cart_select = 0x80000001
 result.selection_word = *cart_select
 result.selected_status = *cart_status
-result.data_card_rom = card_rom[0]
+result.data_card_rom_byte_count = *cart_rom_byte_count
 
 *cart_select = 0
 card_ram[0] = 0x10203040

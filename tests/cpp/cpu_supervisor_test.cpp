@@ -1467,6 +1467,35 @@ void testInstructionFetchExceptionsEnterTheSystemVector() {
 		require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == bodyPc, "WIDE-body fetch retains the physical body address");
 		require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ACCESS) == (bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U32), "WIDE-body fetch retains its physical U32 bus transaction");
 	}
+
+	{
+		CpuTestMachine machine(image);
+		auto rom = machine.systemRom.bytes;
+		const bmsx::u32 instructionPc = (static_cast<bmsx::u32>(rom.size()) + bmsx::INSTRUCTION_BYTES - 1u)
+			& ~(bmsx::INSTRUCTION_BYTES - 1u);
+		const bmsx::u32 prefixPc = instructionPc + bmsx::INSTRUCTION_BYTES;
+		const bmsx::u32 bodyPc = prefixPc + bmsx::INSTRUCTION_BYTES;
+		rom.resize(bodyPc + 3u);
+		auto tail = std::span<bmsx::u8>(rom).subspan(instructionPc);
+		bmsx::writeInstruction(tail, 0, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
+		bmsx::writeInstruction(tail, 1, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
+		machine.memory.installSystemRom(rom);
+		machine.cpu.writeFrameExecution(0, bmsx::SYSTEM_EXECUTION_DOMAIN_ID, machine.systemRom.functionAddresses[0], instructionPc);
+
+		require(machine.cpu.runUntilDepth(0, bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::K1)]) == bmsx::RunResult::Yielded
+			&& machine.cpu.readFrameRegister(0, 0) == bmsx::valueInteger(1)
+			&& machine.memory.readBusFaultSequence() == 0u,
+			"a complete instruction at a short ROM tail retires before the first unbacked fetch");
+		require(machine.cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded
+			&& machine.cpu.readCauseWord() == bmsx::CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR
+			&& machine.cpu.readEpcWord() == prefixPc,
+			"the short ROM WIDE body faults at its instruction head on the next grant");
+		require(machine.memory.readBusFaultSequence() == 1u
+			&& machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_UNMAPPED
+			&& machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == bodyPc
+			&& machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ACCESS) == (bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U32),
+			"the retained physical bus access identifies the incomplete WIDE body, not the complete head");
+	}
 }
 
 void testMappedMemoryAlignmentContract() {

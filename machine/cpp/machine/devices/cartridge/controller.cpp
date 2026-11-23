@@ -44,6 +44,8 @@ void CartridgeController::connect(Memory& memory, IrqController& irq, DmaControl
 	memory.mapIoRead(IO_CART_SELECT, this, &CartridgeController::readSelectionThunk);
 	memory.mapIoWrite(IO_CART_SELECT, this, &CartridgeController::writeSelectionThunk);
 	memory.mapIoRead(IO_CART_STATUS, this, &CartridgeController::readStatusThunk);
+	memory.mapIoRead(IO_CART_ROM_BYTE_COUNT, this, &CartridgeController::readRomByteCountThunk);
+	memory.mapIoRead(IO_CART_RAM_BYTE_COUNT, this, &CartridgeController::readRamByteCountThunk);
 }
 
 void CartridgeController::installRom(u32 slotIndex, std::span<const u8> rom) {
@@ -82,7 +84,7 @@ void CartridgeController::bindMappedPage(
 	out.key = address + (slotIndex == 0u
 		? CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET
 		: CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET);
-	out.cacheable = address < CART_RAM_BASE;
+	out.cacheable = false;
 	out.readBytes = nullptr;
 	out.writeWatch = {};
 }
@@ -132,13 +134,12 @@ void CartridgeController::routeCardEffects(u32 slotIndex, u32 effects) {
 	}
 }
 
-void CartridgeController::readBytes(u32 address, u8* out, size_t length) const {
+bool CartridgeController::isReadableRange(u32 address, size_t length) const {
 	const auto& card = m_cards[selectedSlot()];
-	if (card) {
-		card->readBytes(address, out, length);
-		return;
-	}
-	std::memset(out, 0, length);
+	if (!card) return false;
+	if (address >= CART_MMIO_BASE) return length <= CART_BUS_END - address && card->hasMailbox();
+	Span<const u8> bytes;
+	return card->bindMappedReadView(address, length, bytes);
 }
 
 bool CartridgeController::bindRomByteView(
@@ -183,6 +184,18 @@ void CartridgeController::selectCpuSlot(u32 selection) {
 	const auto* rom = romStorage(selectedSlot());
 	m_cpuRom = rom ? Span<const u8>(rom->data(), std::min<size_t>(rom->size(), CART_ROM_SIZE))
 		: Span<const u8>{};
+}
+
+u32 CartridgeController::readRomByteCountThunk(void* context, u32, MappedBusSignals) {
+	const auto& controller = *static_cast<const CartridgeController*>(context);
+	const auto* rom = controller.romStorage(controller.selectedSlot());
+	return rom ? static_cast<u32>(rom->size()) : 0u;
+}
+
+u32 CartridgeController::readRamByteCountThunk(void* context, u32, MappedBusSignals) {
+	const auto& controller = *static_cast<const CartridgeController*>(context);
+	const auto& card = controller.m_cards[controller.selectedSlot()];
+	return card ? static_cast<u32>(card->ramByteCount()) : 0u;
 }
 
 u32 CartridgeController::readStatusThunk(void* context, u32, MappedBusSignals) {

@@ -68,7 +68,7 @@ The following ranges use an exclusive end: the end address is the first byte out
 | Language heap | Heap floor | `083FC000H` | Remainder of installed RAM |
 | Runtime management area | `083FC000H` | `08400000H` | 16 KiB |
 
-The decoded I/O register aperture ends at `08010440H`, before the end of the declared I/O reservation. This smaller aperture does not make the remainder of the reservation available for cartridge variables or buffers.
+The decoded I/O register aperture ends at `08010448H`, before the end of the declared I/O reservation. This smaller aperture does not make the remainder of the reservation available for cartridge variables or buffers.
 
 `08040000H` is the start of **system DATA**, not a universal cartridge RAM base.
 The installed firmware's BSS follows its DATA. Account for their actual occupied
@@ -209,8 +209,8 @@ storage regardless of the cartridge's chosen initialization routine.
 
 ## I/O register-bank directory {#sec-memory-io-register-bank-directory}
 
-The I/O-slot aperture contains 16656 four-byte slots: 66624 bytes in
-`[08000000H, 08010440H)`. The reservation and allocation boundaries above
+The I/O-slot aperture contains 16658 four-byte slots: 66632 bytes in
+`[08000000H, 08010448H)`. The reservation and allocation boundaries above
 remain separate from that decoded aperture.
 
 The following directory covers the complete I/O aperture in address order. Each word position occupies four bytes; its address is the first byte of that word. The end column is exclusive. Counts include status, snapshot and result words as well as control words: they are **addressed word positions**, not counts of independently writable registers. Access permissions, read side effects, command admission and reset values belong to the individual register descriptions linked in the last column, not to a whole directory range.
@@ -256,12 +256,13 @@ The following directory covers the complete I/O aperture in address order. Each 
 | `080103FCH` | `08010420H` | 9 | [IMGDEC](imgdec.md#sec-imgdec-register-reference) — configuration, status, data, progress and two unassigned words |
 | `08010420H` | `08010428H` | 2 | [[Cartridge controller](../book3/cartridge.md#sec-cartridge-cartridge-controller)]{.content-visible when-format="html"}[Book III, §1.3]{.content-visible when-format="pdf"} — socket selection and status |
 | `08010428H` | `08010440H` | 6 | [SYSTEM](system.md#sec-system-supervisor-fault-registers) — retained supervisor fault report |
+| `08010440H` | `08010448H` | 2 | [[Cartridge controller](../book3/cartridge.md#sec-cartridge-cartridge-controller)]{.content-visible when-format="html"}[Book III, §1.3]{.content-visible when-format="pdf"} — installed storage sizes |
 
-These ranges partition all 16656 word positions without gaps or overlaps. A unit need not occupy one contiguous bank: DMA channel 1 is separate from channel 0; GEO and APU have separate upper fault-acknowledgement banks; GTE PLUS separates PCRTC's composition and timing banks; and SYSTEM has timing, diagnostic, control and fault-report banks. The reserved retained slots are part of the decoded aperture, not an additional device or a payload-transfer protocol.
+These ranges partition all 16658 word positions without gaps or overlaps. A unit need not occupy one contiguous bank: DMA channel 1 is separate from channel 0; GEO and APU have separate upper fault-acknowledgement banks; GTE PLUS separates PCRTC's composition and timing banks; and SYSTEM has timing, diagnostic, control and fault-report banks. The reserved retained slots are part of the decoded aperture, not an additional device or a payload-transfer protocol.
 
 ### Reserved retained words and decoder boundary {#sec-memory-reserved-retained-words-and-decoder-boundary}
 
-Of the 16656 positions, **16385 are reserved retained words** in
+Of the 16658 positions, **16385 are reserved retained words** in
 `[08000204H, 08010208H)`. An aligned word read returns the stored raw word;
 an accepted aligned word write replaces it. These words reset to zero and have
 no command, FIFO, automatic address increment or transfer-completion behavior.
@@ -270,7 +271,7 @@ scratch-buffer allocation. Do not apply this read/write description to other
 directory rows; their unit-specific permissions and side effects still apply.
 
 I/O decoding and the I/O reservation have different limits. Addresses in
-`[08010440H, 08040000H)` reach installed main-RAM bytes rather than register
+`[08010448H, 08040000H)` reach installed main-RAM bytes rather than register
 slots, but remain within the reserved 256 KiB. They are not additional
 registers or newly available cartridge storage.
 
@@ -282,16 +283,16 @@ not permission to bypass ordinary CPU instruction alignment:
 
 | Mapped transfer | Selected path |
 |---|---|
-| U32 at `0801043CH` | Last complete I/O slot: supervisor fault DOMAIN |
-| U32 at `0801043EH` | Four main-RAM bytes spanning the decoder boundary |
-| U16 at `0801043FH` | Two main-RAM bytes spanning the decoder boundary |
-| U32 at `08010440H` | Main RAM within the reservation |
+| U32 at `08010444H` | Last complete I/O slot: cartridge RAM byte count |
+| U32 at `08010446H` | Four main-RAM bytes spanning the decoder boundary |
+| U16 at `08010447H` | Two main-RAM bytes spanning the decoder boundary |
+| U32 at `08010448H` | Main RAM within the reservation |
 
 Ordinary CPU U16 and U32 instructions reject the two unaligned examples before
 reaching the mapped bus. The [scalar-access rules](#sec-memory-scalar-memory-accesses)
 separate that CPU alignment check from I/O decoding. F64 instead consists of
-two word transfers: an aligned F64 access at `0801043CH` reaches the last I/O
-slot first and RAM at `08010440H` second, subject to the ordered fault rules.
+two word transfers: an aligned F64 access at `08010444H` reaches the last I/O
+slot first and RAM at `08010448H` second, subject to the ordered fault rules.
 
 ## Scalar memory accesses {#sec-memory-scalar-memory-accesses}
 
@@ -312,7 +313,11 @@ The CPU checks alignment before making the mapped access. A misaligned ordinary 
 
 ### System-ROM data accesses {#sec-memory-system-rom-data-accesses}
 
-The declared system-ROM window is `00000000H` through `00FFFFFFH` (16 MiB). When the full width of a mapped scalar read fits this window, bytes beyond the installed ROM image are returned as zero. A U16 or U32 read that straddles the installed image's end is zero-filled only for its missing bytes.
+The system-ROM window is `00000000H` through `00FFFFFFH` (16 MiB).
+A byte, halfword or word read succeeds only when its complete width is
+within the installed image. A read past the image, including a read that
+overlaps its end, reports `BUS_FAULT_UNMAPPED`. Instruction words and DMA
+source words also require all four bytes to be installed.
 
 Scalar writes to the system-ROM window report `BUS_FAULT_UNMAPPED` and leave ROM unchanged. They do not report `BUS_FAULT_READ_ONLY`. The CPU alignment check precedes these mapped-access rules. These are system-ROM data-access rules, not cartridge-ROM or instruction-fetch rules.
 

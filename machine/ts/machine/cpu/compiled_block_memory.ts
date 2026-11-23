@@ -40,8 +40,8 @@ export function emitMemoryAccess(page: DecodedInstructionPage, word: number, add
 	const alignment = MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind];
 	if (load) {
 		const read = `v=${kind === MemoryAccessKind.F64LE ? 'fr(' : ''}d.get${viewMethods[kind]}(o${endian})${kind === MemoryAccessKind.F64LE ? ')' : ''};`;
-		const slot0 = memory.cartridgeController.romStorage(0) === null ? 'v=0;' : emitRomStorageRead('c0', read, width, exit);
-		const slot1 = memory.cartridgeController.romStorage(1) === null ? 'v=0;' : emitRomStorageRead('c1', read, width, exit);
+		const slot0 = memory.cartridgeController.romStorage(0) === null ? exit : emitRomStorageRead('c0', read, width, exit);
+		const slot1 = memory.cartridgeController.romStorage(1) === null ? exit : emitRomStorageRead('c1', read, width, exit);
 		const result = kind === MemoryAccessKind.F32LE || kind === MemoryAccessKind.F64LE
 			? registers.writeFloatBits(a, 'v') : registers.writeInteger(a, 'v');
 		return `{const a=${address}; let o=(a-${RAM_BASE})>>>0,v;

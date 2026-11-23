@@ -99,22 +99,27 @@ test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () =
 	}
 });
 
-test('core golden: physical ROM windows zero-fill consistently across memory paths', () => {
+test('core golden: ROM reads require the requested bytes to be installed', () => {
 	const systemRom = new Uint8Array([0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
 	const cartRom = new Uint8Array([0x71, 0x72, 0x73, 0x74, 0x75, 0x76]);
 	const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(cartRom) }, PSX_MACHINE_SPEC.ramBytes);
-	const tailBytes = new Uint8Array(4);
+	const tailBytes = new Uint8Array(4).fill(0x77);
 
 	assert.equal(memory.readU32(SYSTEM_ROM_BASE), 0x44332211);
 	assert.equal(memory.readMappedU32LE(SYSTEM_ROM_BASE), 0x44332211);
-	assert.equal(memory.readMappedU32LE(SYSTEM_ROM_BASE + 4), 0x00006655);
+	assert.equal(memory.readMappedU32LE(SYSTEM_ROM_BASE + 4), 0);
+	assertBusFault(memory, BUS_FAULT_UNMAPPED, SYSTEM_ROM_BASE + 4, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+	clearBusFault(memory);
 	assert.equal(memory.readU8(SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE - 1), 0);
+	assertBusFault(memory, BUS_FAULT_UNMAPPED, SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE - 1, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
+	clearBusFault(memory);
 	memory.readBytesInto(SYSTEM_ROM_BASE + 4, tailBytes, tailBytes.byteLength);
-	assert.deepEqual([...tailBytes], [0x55, 0x66, 0, 0]);
-	assert.equal(memory.readMappedU32LE(SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE - 4), 0);
+	assert.deepEqual([...tailBytes], [0x77, 0x77, 0x77, 0x77]);
+	assertBusFault(memory, BUS_FAULT_UNMAPPED, SYSTEM_ROM_BASE + 4, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
+	clearBusFault(memory);
 	assert.equal(memory.readMappedU32LE(CART_ROM_BASE), 0x74737271);
 	assert.equal(memory.readU8(CART_ROM_BASE + CART_ROM_SIZE - 1), 0);
-	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
+	assertBusFault(memory, BUS_FAULT_UNMAPPED, CART_ROM_BASE + CART_ROM_SIZE - 1, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 });
 
 test('core golden: raw memory byte paths latch bus faults instead of throwing', () => {

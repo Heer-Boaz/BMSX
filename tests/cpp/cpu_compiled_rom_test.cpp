@@ -9,6 +9,7 @@
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 #include "spec/blua32/cop0.h"
+#include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/rom_header.h"
 #include "support/blua32_test_rom.h"
@@ -159,6 +160,7 @@ void directRomLoadsUseCurrentOwners() {
 void romReplacementAndSelectionKeepRamCode() {
 	constexpr u32 data = 0x800u;
 	auto image = loadLoop(MemoryAccessKind::Word);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::RFE), 0, 0, 0);
 	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 	rom.bytes.resize(0x1000);
 	writeLE32(rom.bytes.data() + data, 11);
@@ -195,14 +197,22 @@ void romReplacementAndSelectionKeepRamCode() {
 		if (!scalar) require(page.nativeBlocks->entries[0].get() == block, "cartridge ROM replacement preserves unrelated RAM code");
 		const std::array<u8, 3> tail{0x55, 0x33, 0x11};
 		machine.memory.cartridgeController().installRom(1, tail);
-		cpu.runUntilDepth(0, 9);
-		require(frame.registers.get(0) == valueInteger(0x113355),
-			"existing native code discovers a shortened ROM and preserves its zero-filled tail");
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+		const auto oldTop = frame.readWindow(FrameField::Top);
+		require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)]) == RunResult::Yielded
+			&& cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR && cpu.readEpcWord() == DYNAMIC_RAM_BASE,
+			"existing native code discovers a shortened ROM and takes the data-bus exception at the WIDE head");
+		require(frame.registers.get(0) == valueInteger(55) && frame.readWindow(FrameField::Top) == oldTop
+			&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED
+			&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == CART_ROM_BASE
+			&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS) == (BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD),
+			"the unbacked word is not committed and retains the ordinary physical read address and width");
 		const auto state = machine.memory.cartridgeController().captureState();
-		machine.memory.cartridgeController().reset(); cpu.runUntilDepth(0, 9);
+		machine.memory.cartridgeController().reset();
+		require(cpu.runUntilDepth(1, 20) == RunResult::Halted, "RFE restores the interrupted RAM-code window");
+		cpu.runUntilDepth(0, 9);
 		require(frame.registers.get(0) == valueInteger(22), "reset changes data selection without recreating the native entry");
-		machine.memory.cartridgeController().restoreState(state); cpu.runUntilDepth(0, 9);
-		require(frame.registers.get(0) == valueInteger(0x113355), "restore changes the same selector used by direct reads");
+		machine.memory.cartridgeController().restoreState(state);
 		machine.memory.cartridgeController().installRom(1, std::span<const u8>(replacement).subspan(data, 16));
 		cpu.runUntilDepth(0, 9);
 		require(frame.registers.get(0) == valueInteger(55), "existing native code readmits a complete read after media growth");
@@ -215,6 +225,7 @@ void tailsAndShortBudgetsAgree() {
 	for (int format = 0; format <= 5; ++format) for (const bool displaced : {false, true}) {
 		const auto kind = static_cast<MemoryAccessKind>(format);
 		auto image = loadLoop(kind, displaced);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RFE), 0, 0, 0);
 		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 		rom.bytes.resize(0x803); rom.bytes[0x800] = 0x55; rom.bytes[0x801] = 0x33; rom.bytes[0x802] = 0x11;
 		std::vector<u8> card{0x55, 0x33, 0x11};
@@ -234,38 +245,60 @@ void tailsAndShortBudgetsAgree() {
 			require(native.cpu.readFrameRegister(0, 0) == scalar.cpu.readFrameRegister(0, 0)
 				&& native.cpu.readFrameRegister(0, 5) == scalar.cpu.readFrameRegister(0, 5)
 				&& native.cpu.readFramePc(0) == scalar.cpu.readFramePc(0) && native.cpu.lastPc == scalar.cpu.lastPc,
-				"ROM zero-filled tails, WIDE extents and every short grant agree with scalar execution");
+				"ROM backing faults, WIDE extents and every short grant agree with scalar execution");
+			require(native.memory.readBusFaultSequence() == scalar.memory.readBusFaultSequence()
+				&& native.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == scalar.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR),
+				"executable tiers attempt the same bus accesses");
+			for (auto* machine : {&native, &scalar}) {
+				if (machine->cpu.getFrameDepth() > 1u)
+					require(machine->cpu.runUntilDepth(1, 20) == RunResult::Halted, "each trial returns from its exception");
+				machine->memory.writeMappedWord(IO_SYS_BUS_FAULT_ACK, 1u);
+			}
 		}
 	}
 }
 
-void emptySocketsAndCrossRegionDoubles() {
-	for (bool scalar : {false, true}) {
-		auto image = loadLoop(MemoryAccessKind::F64LE);
-		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
-		CartridgeSocketMediaPair slots{};
-		slots[0] = CartridgeCardMedia{std::nullopt, 8u, false};
-		CpuMachine machine(rom, slots, scalar);
-		auto& frame = *machine.cpu.activeThread()->frameAtDepth(0);
-		frame.registers.set(1, valueInteger(CART_ROM_BASE)); frame.registers.set(2, valueInteger(1));
-		machine.cpu.runUntilDepth(0, 1000);
-		require(frame.registers.get(0) == valueFloat(0), "a present RAM-only card has a zero-valued ROM bus");
-		machine.memory.writeMappedWord(IO_CART_SELECT, 1);
-		frame.registers.set(0, valueInteger(73));
-		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-		machine.cpu.runUntilDepth(0, 11);
-		require(frame.registers.get(0) == valueFloat(0), "an empty socket has a zero-valued ROM bus");
-		machine.memory.writeMappedWord(IO_CART_SELECT, 0);
-		machine.memory.writeMappedWord(CART_RAM_BASE, 0x3ff00000u);
-		frame.registers.set(1, valueInteger(CART_ROM_END - 4u));
-		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-		machine.cpu.runUntilDepth(0, 11);
-		require(frame.registers.get(0) == valueFloat(1), "F64 executes two ordered words across ROM and RAM rather than returning a whole-region zero");
-		frame.registers.set(0, valueInteger(73)); frame.registers.set(1, valueInteger(SYSTEM_ROM_SIZE - 4u)); frame.writeControl(bmsx::FrameField::Top, 0);
-		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-		require(machine.cpu.runUntilDepth(0, 20) == RunResult::Halted && frame.registers.get(0) == valueInteger(73)
-			&& static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 0 && machine.cpu.readEpcWord() == rom.textAddress,
-			"a high-half system-ROM boundary fault preserves the load destination and WIDE prefix EPC");
+void romDoublesFaultAtTheFirstUnbackedWord() {
+	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, loadLoop(MemoryAccessKind::F64LE), test::RAM_CODE_FIXTURE_BYTES);
+	const u32 data = (static_cast<u32>(rom.bytes.size()) + 3u) & ~3u;
+	rom.bytes.resize(data + 7u);
+	writeLE32(rom.bytes.data() + data, 0x12345678u);
+	const std::array<u8, 7> cartridge{1, 2, 3, 4, 5, 6, 7};
+	const CartridgeSocketMediaPair slots{CartridgeCardMedia{cartridge, 7u, false}, std::nullopt};
+	for (const bool scalar : {false, true}) {
+		struct Read { u32 address, slot, failingWord; };
+		for (const auto [address, slot, failingWord] : std::array<Read, 5>{{
+			{data, 0u, data + 4u},
+			{data + 4u, 0u, data + 4u},
+			{CART_ROM_BASE, 0u, CART_ROM_BASE + 4u},
+			{CART_ROM_BASE, 1u, CART_ROM_BASE},
+			{CART_RAM_BASE, 0u, CART_RAM_BASE + 4u},
+		}}) {
+			CpuMachine machine(rom, slots, scalar);
+			auto& cpu = machine.cpu;
+			auto& frame = *cpu.activeThread()->frameAtDepth(0);
+			frame.registers.set(1, valueInteger(DYNAMIC_RAM_BASE));
+			frame.registers.set(2, valueInteger(1));
+			cpu.runUntilDepth(0, 1000);
+			if (!scalar) {
+				const u32 word = (rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+				test::waitForNativeEntry(cpu, *frame.decodedPage, word);
+			}
+			machine.memory.writeMappedWord(IO_CART_SELECT, slot);
+			frame.registers.set(0, valueInteger(73));
+			frame.registers.set(1, valueInteger(address));
+			frame.writeControl(FrameField::Top, 0);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
+			require(cpu.runUntilDepth(0, 20) == RunResult::Halted && frame.registers.get(0) == valueInteger(73)
+				&& frame.readWindow(FrameField::Top) == 0 && cpu.readEpcWord() == rom.textAddress
+				&& cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR,
+				"F64 faults preserve the destination and top at the WIDE head");
+			require(machine.memory.readBusFaultSequence() == 1u
+				&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED
+				&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == failingWord
+				&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS) == (BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_F64),
+				"F64 reports the first unbacked word with its full access kind and stops there");
+		}
 	}
 }
 
@@ -707,7 +740,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 int main() {
 	try {
 		directRomLoadsUseCurrentOwners(); romReplacementAndSelectionKeepRamCode();
-		tailsAndShortBudgetsAgree(); emptySocketsAndCrossRegionDoubles();
+		tailsAndShortBudgetsAgree(); romDoublesFaultAtTheFirstUnbackedWord();
 		dataSelectionDoesNotSelectInstructionFetch();
 		callsUseExecutionSocketAndAmbientImage(false); callsUseExecutionSocketAndAmbientImage(true);
 		sparseCodeLookupPreservesPageOwners(); warmContinuationsFollowInBlockMuxWrites();

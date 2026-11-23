@@ -28,11 +28,11 @@ capacities.
 | Card RAM | Writable data | Card-specific, within the 15-MiB RAM window |
 | Mailbox | Word exchange, interrupt and DMA-request control | DATA and CONTROL words with a local interrupt latch |
 
-The controller's STATUS register reports which sockets are occupied, not the
-devices or capacities fitted to a card. An occupied socket need not contain a
-bootable ROM. The address windows accommodate cards of different capacities;
-locations beyond installed ROM or RAM read as zero rather than repeating the
-smaller memory.
+The controller's STATUS register reports which sockets are occupied. An occupied
+socket need not contain ROM. Read the selected card's storage byte counts to
+determine which ROM and RAM addresses are backed. The address windows
+accommodate cards of different capacities; they do not extend or mirror
+the installed storage.
 
 ## Selection and execution {#sec-cartridge-selection-and-execution}
 
@@ -74,10 +74,10 @@ selector; their encodings and mapped-device request conditions are given under
 
 ## Cartridge controller {#sec-cartridge-cartridge-controller}
 
-The controller has two installed-I/O registers: SELECT chooses the socket for
-ordinary data accesses, and STATUS reports socket occupancy and that selection.
-They are separate from the registers on either card, so both remain accessible
-regardless of which socket is selected.
+SELECT chooses the socket for ordinary data accesses. STATUS reports socket
+occupancy and selection. The two byte-count registers report the fitted storage
+on the selected card, without reading that card's storage. These controller
+registers are always accessible, even when the selected socket is empty.
 
 ### Controller registers {#sec-cartridge-controller-registers}
 
@@ -85,6 +85,8 @@ regardless of which socket is selected.
 |---|---|---|---|
 | `08010420H` | `SELECT` | Read/write | `00000000H` |
 | `08010424H` | `STATUS` | Read-only | Installed-cartridge presence bits; bit 16 clear |
+| `08010440H` | `ROM_BYTE_COUNT` | Read-only | Fitted ROM byte count in socket 0, or zero |
+| `08010444H` | `RAM_BYTE_COUNT` | Read-only | Fitted RAM byte count in socket 0, or zero |
 
 `SELECT` retains the complete 32-bit word written to it. Bit 0 selects the
 socket; bits 31:1 are retained and read back without affecting selection.
@@ -97,15 +99,18 @@ socket; bits 31:1 are retained and read back without affecting selection.
 | `STATUS` | 1 | 1 when socket 1 contains a cartridge. |
 | `STATUS` | 16 | Ordinary selected socket: 0 for socket 0; 1 for socket 1. |
 | `STATUS` | 15:2, 31:17 | Read as zero. |
+| `ROM_BYTE_COUNT` | 31:0 | Number of ROM bytes fitted in the selected socket, or zero if no ROM is present. |
+| `RAM_BYTE_COUNT` | 31:0 | Number of RAM bytes fitted in the selected socket, or zero if no RAM is present. |
 
 ### Accessing a card {#sec-cartridge-programming-route}
 
 For ordinary data access:
 
-1. Read STATUS to determine which sockets are occupied. Use the card's own
-   specification to determine its memory and devices.
+1. Read STATUS to determine which sockets are occupied.
 2. Write 0 or 1 to SELECT for the intended card.
-3. Access the required address within that card's ROM, RAM or MMIO window.
+3. Read ROM_BYTE_COUNT or RAM_BYTE_COUNT to determine the installed extent
+   before accessing storage. Byte offset zero begins at the base of the
+   corresponding window. Consult the card specification for any MMIO device.
 
 For the two-RAM example in @fig-cartridge-selection, these are the complete
 selection and read operations. Both cards are assumed to contain at least
@@ -140,8 +145,8 @@ error before reading the device. This does not prohibit ordinary data reads or
 DMA transfers through the MMIO window.
 
 The presence bits are independent of selection. Selecting an empty socket
-changes STATUS bit 16 while leaving bits 1:0 unchanged. Reads from that socket
-return zero and writes have no effect.
+changes STATUS bit 16 while leaving bits 1:0 unchanged. Both storage counts
+read zero; a memory or device access through that socket reports `UNMAPPED`.
 
 ### Controller reset {#sec-cartridge-controller-reset}
 
@@ -164,28 +169,23 @@ may be smaller than the window.
 | RAM | `30000000H` | `30F00000H` | 15 MiB |
 | MMIO | `30F00000H` | `31000000H` | 1 MiB |
 
-Absent or unpopulated ROM and RAM locations read as zero. Smaller memories
-are not mirrored through the remaining window. ROM writes are ignored; a RAM
-write takes effect only when its complete width fits the installed memory.
+ROM and RAM scalar values are little-endian: the lowest-addressed byte
+occupies bits 7:0. Each byte, halfword or word transfer must fit entirely
+within one installed memory. Missing storage, a read or write that extends
+past installed capacity, and a transfer crossing into another window report
+`UNMAPPED` and do not transfer any of that value's bytes. Writes wholly
+within installed cartridge ROM have no effect. An eight-byte access uses
+two ordered word accesses as specified in the memory chapter.
 
-ROM and RAM scalar values are little-endian: the lowest-addressed byte occupies
-bits 7:0. The starting address of a scalar read selects the region for the
-complete value. If fewer installed bytes remain than the requested width,
-available bytes occupy the low-order lanes and missing high-order lanes read
-as zero. A sequence of individual byte reads instead selects the region at
-each byte's address, so such a sequence can cross into the next window.
-
-| Operation | Width, capacity, tail, or reset behavior |
+| Operation | Behavior |
 | --- | --- |
-| ROM/RAM byte read | Returns the addressed installed byte, otherwise zero. |
-| ROM/RAM 16-bit read | At a one-byte tail, returns that byte in bits 0–7 and zero in bits 8–15. Returns zero beyond capacity. |
-| ROM/RAM 32-bit read | Assembles remaining bytes into successive low-order byte lanes; unavailable high-order lanes are zero. Returns zero beyond capacity. |
-| RAM write | An 8-, 16-, or 32-bit write occurs only when its starting address selects RAM and its entire width fits installed RAM. A partial-width tail write changes nothing. |
-| MMIO 8-/16-bit write | Ignored, including on a card with a mapped device. |
-| MMIO 32-bit write | Writes the complete word at the exact MMIO-relative byte offset. Has no effect when no mapped device is present. |
+| ROM or RAM read | Reads the complete byte, halfword or word. |
+| RAM write | Writes the complete byte, halfword or word. |
+| MMIO 8-/16-bit write | Ignored if the device is fitted. |
+| MMIO 32-bit write | Writes the complete word at the exact MMIO-relative byte offset. |
 | Logical card reset | Resets the mapped device, if present. Retains RAM contents and leaves ROM unchanged. |
 
-MMIO reads return zero when no device is present. Otherwise, the device decodes
+Without a fitted device, MMIO reports `UNMAPPED`. A fitted device decodes
 the byte offset from `30F00000H` without prior rounding to a word boundary.
 An 8-bit read selects the decoded word's byte lane using address bits 1:0.
 A 16-bit read selects its low or high half using address bit 1. A 32-bit read
@@ -197,10 +197,10 @@ Card RAM initially contains zero. A logical card reset retains its contents.
 
 ## Boot selection {#sec-cartridge-boot-selection}
 
-At startup, the BIOS examines socket 0, then socket 1, selecting each present
-card and reading its ROM header. It enters the first card whose ROM passes the
-startup checks. A RAM-only card, or a card whose ROM does not meet those
-requirements, is skipped. This entry establishes the execution socket as
+At startup, the BIOS examines socket 0, then socket 1. It selects each
+present card and checks ROM_BYTE_COUNT before reading a boot header. It skips
+a card with no ROM or insufficient bytes for the header without accessing
+its ROM window. It enters the first card whose ROM passes the startup checks. This entry establishes the execution socket as
 described under [Selection and execution](#sec-cartridge-selection-and-execution).
 
 [[Program images and startup — ROM header fields](../book1/program-images.md#sec-memory-rom-header-fields)]{.content-visible when-format="html"}[Book II, §3.4]{.content-visible when-format="pdf"}
@@ -499,10 +499,10 @@ described above.
 
 The entire access must fit inside the cartridge aperture. Its highest admitted
 starting addresses are `30FFFFFCH` for a word, `30FFFFFEH` for a halfword and
-`30FFFFFFH` for a byte. An access that crosses the final boundary raises
-`UNMAPPED` (1), returning zero or suppressing the store. Within the aperture,
-an absent card returns zero and ignores writes without a fault; ROM writes
-are also ignored.
+`30FFFFFFH` for a byte. These limits do not imply
+that storage or a device is fitted. An access outside its installed region
+reports `UNMAPPED` (1); a faulting read supplies the bus fault value, not
+a value assembled from partial storage.
 
 DMA uses these mapped-access rules, but continues its programmed reads, writes
 and count progression after a fault. Check for new bus faults as well as DONE

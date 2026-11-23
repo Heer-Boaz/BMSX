@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { GeometryXform2Phase, GeometryXform2Unit } from '../../machine/ts/machine/devices/geometry/xform2';
 import type { GeometryJobState } from '../../machine/ts/machine/devices/geometry/job';
 import * as geo from '../../machine/ts/machine/devices/geometry/contracts';
-import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, DYNAMIC_RAM_BASE, IO_WORD_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { Machine } from '../../machine/ts/machine/machine';
@@ -46,6 +46,22 @@ test('XFORM snapshots complete input before any overlapping output and retains t
 	assert.equal(unit.progress().phase, GeometryXform2Phase.Complete);
 	assert.deepEqual([0, 1, 2, 3].map(i => memory.readU32(vertices + 8 + i * 4)), [0x20000, 0x20000, 0x60000, 0x60000]);
 	assert.deepEqual([0, 1, 2, 3].map(i => memory.readU32(bounds + i * 4)), [0x20000, 0x20000, 0x60000, 0x60000]);
+});
+
+test('XFORM needs a physically complete ROM record even when its vertex count is zero', () => {
+	for (const address of [SYSTEM_ROM_BASE, CART_ROM_BASE]) for (const fitted of [false, true]) {
+		const backing = new Uint8Array(geo.GEO_XFORM2_RECORD_BYTES - (fitted ? 0 : 1));
+		const memory = new Memory({ systemRom: backing, cartridgeSlots: cartridgeSlots(backing) }, PSX_MACHINE_SPEC.ramBytes);
+		const job: GeometryJobState = { cmd: 0, src0: address, src1: 0, src2: 0, dst0: 0, dst1: 0,
+			count: 1, param0: 0, param1: 0, stride0: geo.GEO_XFORM2_RECORD_BYTES, stride1: 0, stride2: 0,
+			processed: 0, resultCount: 0, exactPairCount: 0, broadphasePairCount: 0 };
+		const unit = new GeometryXform2Unit(memory);
+		unit.beginJob(); unit.processStep(job);
+		const { pendingFault, pendingMemory } = unit.progress();
+		assert.equal(pendingFault, fitted ? 0 : geo.GEO_FAULT_SRC_RANGE);
+		const words = address === SYSTEM_ROM_BASE ? pendingMemory.systemRomWords : pendingMemory.cartridgeWords;
+		assert.equal(words, fitted ? geo.GEO_XFORM2_RECORD_BYTES / IO_WORD_SIZE : 0, 'short record does not read a partial prefix');
+	}
 });
 
 test('XFORM preserves fault priority and does not read spans for zero vertices', () => {

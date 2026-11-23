@@ -75,7 +75,39 @@ void testPhysicalSocketSelectionAndRawLatch() {
 	);
 }
 
-void testAbsentSocketDrivesZeroAndHasNoState() {
+void testSelectedSocketStorageByteCounts() {
+	using namespace bmsx;
+	const std::array<u8, 7> rom{};
+	const std::array<u8, 3> replacement{};
+	CartridgeSocketMediaPair slots{};
+	slots[0] = CartridgeCardMedia{rom, std::nullopt, false};
+	slots[1] = CartridgeCardMedia{std::nullopt, 257u, true};
+	CartridgeHarness harness(slots);
+	auto& memory = harness.memory;
+	require(memory.readMappedWord(IO_CART_ROM_BYTE_COUNT) == rom.size()
+		&& memory.readMappedWord(IO_CART_RAM_BYTE_COUNT) == 0u, "a partial word of fitted ROM is counted exactly");
+	memory.cartridgeController().installRom(0u, replacement);
+	require(memory.readMappedWord(IO_CART_ROM_BYTE_COUNT) == replacement.size(), "ROM replacement updates the selected extent");
+	memory.writeMappedWord(IO_CART_SELECT, 0x80000001u);
+	require(memory.readMappedWord(IO_CART_ROM_BYTE_COUNT) == 0u
+		&& memory.readMappedWord(IO_CART_RAM_BYTE_COUNT) == 257u, "a data-only card has RAM but no ROM bytes");
+	memory.writeMappedWord(IO_CART_ROM_BYTE_COUNT, 123u);
+	memory.writeMappedWord(IO_CART_RAM_BYTE_COUNT, 123u);
+	require(memory.readMappedWord(IO_CART_ROM_BYTE_COUNT) == 0u
+		&& memory.readMappedWord(IO_CART_RAM_BYTE_COUNT) == 257u, "writes do not change the fitted extent");
+
+	const auto saved = memory.cartridgeController().captureState();
+	memory.cartridgeController().reset();
+	require(memory.readMappedWord(IO_CART_ROM_BYTE_COUNT) == replacement.size(), "reset selects the original socket");
+	memory.cartridgeController().restoreState(saved);
+	require(memory.readMappedWord(IO_CART_RAM_BYTE_COUNT) == 257u, "restore follows the saved selector");
+
+	CartridgeHarness empty({});
+	require(empty.memory.readMappedWord(IO_CART_ROM_BYTE_COUNT) == 0u
+		&& empty.memory.readMappedWord(IO_CART_RAM_BYTE_COUNT) == 0u, "no storage is reported in the empty socket");
+}
+
+void testAbsentSocketFaultsAndHasNoState() {
 	const std::array<bmsx::u8, 4> slot0Rom{{ 0x44u, 0x33u, 0x22u, 0x11u }};
 	bmsx::CartridgeSocketMediaPair slots{};
 	slots[0] = bmsx::CartridgeCardMedia{slot0Rom, std::nullopt, false};
@@ -88,9 +120,16 @@ void testAbsentSocketDrivesZeroAndHasNoState() {
 				| bmsx::CARTRIDGE_STATUS_SELECTED_SLOT1),
 		"status retains selection while reporting the second socket absent"
 	);
-	require(memory.readMappedU32LE(bmsx::CART_ROM_BASE) == 0u, "absent socket drives zero in ROM aperture");
-	require(memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0u, "absent socket drives zero in RAM aperture");
-	require(memory.readMappedU32LE(bmsx::CART_MMIO_BASE) == 0u, "absent socket drives zero in MMIO aperture");
+	for (const auto address : {bmsx::CART_ROM_BASE, bmsx::CART_RAM_BASE, bmsx::CART_MMIO_BASE}) {
+		memory.clearBusFault();
+		require(memory.readMappedU32LE(address) == 0u
+			&& memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_UNMAPPED
+			&& memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == address, "all data regions on the empty socket are unmapped");
+		memory.clearBusFault();
+		memory.writeMappedU32LE(address, 0xffffffffu);
+		require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_UNMAPPED
+			&& memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == address, "absent socket cannot accept a write");
+	}
 	require(!memory.cartridgeController().captureState().slots[1].has_value(), "absent socket has no synthetic state");
 }
 
@@ -223,7 +262,8 @@ void testDmaSocketBitsOverrideCpuChipSelect() {
 
 int main() {
 	testPhysicalSocketSelectionAndRawLatch();
-	testAbsentSocketDrivesZeroAndHasNoState();
+	testSelectedSocketStorageByteCounts();
+	testAbsentSocketFaultsAndHasNoState();
 	testSocketLocalRamMailboxResetAndRestore();
 	testMailboxIrqRaisesOncePerSourceLatchEdge();
 	testDmaSocketBitsOverrideCpuChipSelect();

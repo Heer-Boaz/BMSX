@@ -737,8 +737,8 @@ APU-woorden te verplaatsen:
 
 | Adres | Register | Toegang en functie |
 |---|---|---|
-| `08010440H` | `CHANNEL_LEVEL_LR` | Lezen/schrijven: niveaus voor het volgende vastgelegde commando |
-| `08010444H` | `SLOT_CHANNEL_LEVEL_LR` | Lezen/schrijven: niveaus van de met staging `SLOT` gekozen stem |
+| `08010448H` | `CHANNEL_LEVEL_LR` | Lezen/schrijven: niveaus voor het volgende vastgelegde commando |
+| `0801044CH` | `SLOT_CHANNEL_LEVEL_LR` | Lezen/schrijven: niveaus van de met staging `SLOT` gekozen stem |
 
 Beide registers bevatten één volledig 32-bit woord. Bits 15:0 zijn het
 linkerniveau en bits 31:16 het rechterniveau, elk een signed Q2.14-factor. Alle
@@ -776,10 +776,10 @@ aan de huidige mengregel, ook voor negatieve gain en tijdens een fade.
 
 **Zichtbare compatibiliteitswijziging.** Deze adressen zijn nu geen registers:
 ze bereiken onderliggend hoofd-RAM binnen de gereserveerde 256 KiB. De kandidaat
-vergroot de gedecodeerde I/O-apertuur van `[08000000H, 08010440H)` tot
-`[08000000H, 08010448H)`. Daardoor veranderen mapped CPU-/DMA-toegangen en de
+vergroot de gedecodeerde I/O-apertuur van `[08000000H, 08010448H)` tot
+`[08000000H, 08010450H)`. Daardoor veranderen mapped CPU-/DMA-toegangen en de
 regels voor transfers over de apertuurgrens; bijvoorbeeld wordt de tweede
-woordtoegang van een F64 bij `0801043CH` voortaan het stagingregister in plaats
+woordtoegang van een F64 bij `08010444H` voortaan het stagingregister in plaats
 van RAM. GEO's ruwe RAM-toegang onder I/O blijft afzonderlijk en ongewijzigd.
 De geheugenkaart, breedte-/uitlijnregels en fault-/volgordesemantiek moeten met
 de twee nieuwe registers samen worden uitgewerkt. De keuze is niet vastgesteld;

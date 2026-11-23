@@ -14,8 +14,8 @@ import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_CART_SELECT, IO_GX_GPU_GP0, IO_SLOT_COUNT, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_CART_SELECT, IO_GX_GPU_GP0, IO_SLOT_COUNT, IO_SYS_BUS_FAULT_ACK, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { CART_MMIO_BASE, CART_RAM_SIZE, CART_ROM_BASE, IO_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -161,15 +161,18 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		assert.equal(deviceReads, 0);
 	});
 
-	test(`unbacked ROM and RAM immediately beyond the I/O decoder retain executable reads (${backend})`, () => {
+	test(`unbacked ROM fetch faults while post-I/O RAM remains executable (${backend})`, () => {
 		const { cpu, memory } = machine(backend);
 		for (const pc of [SYSTEM_ROM_SIZE - INSTRUCTION_BYTES, CART_ROM_BASE]) {
 			assert.equal(memory.readMappedBusU32LE(pc, mappedBusSignalsForCartridgeSlot(0) | MAPPED_BUS_INSTRUCTION_FETCH), 0);
-			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), 0, 'unbacked executable ROM reads remain zero');
+			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), pc);
+			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS), BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+			memory.writeMappedWord(IO_SYS_BUS_FAULT_ACK, 1);
 		}
 		const empty = new Memory({ systemRom: system.romBytes, cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
 		assert.equal(empty.readMappedBusU32LE(CART_ROM_BASE, mappedBusSignalsForCartridgeSlot(1) | MAPPED_BUS_INSTRUCTION_FETCH), 0);
-		assert.equal(empty.readIoU32(IO_SYS_BUS_FAULT_CODE), 0, 'an empty socket remains zero-filled');
+		assert.equal(empty.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED, 'an empty socket has no physical instruction word');
 		const pc = IO_BASE + IO_SLOT_COUNT * 4;
 		const code = new Uint8Array(INSTRUCTION_BYTES);
 		writeInstruction(code, 0, OpCode.HALT, 0, 0, 0);
@@ -187,5 +190,28 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD);
 		assert.equal(cpu.readBadAddressWord(), IO_GX_GPU_GP0 + 1);
 		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), 0);
+	});
+}
+
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	test(`a short ROM WIDE body faults only after the preceding backed instruction (${backend})`, () => {
+		const { cpu, memory } = machine(backend);
+		const pc = (system.romBytes.length + 3) & ~3;
+		const prefix = pc + INSTRUCTION_BYTES, body = prefix + INSTRUCTION_BYTES;
+		const rom = new Uint8Array(body + 3);
+		rom.set(system.romBytes);
+		const tail = rom.subarray(pc);
+		writeInstruction(tail, 0, OpCode.K1, 0, 0, 0);
+		writeInstruction(tail, 1, OpCode.WIDE, 0, 0, 0);
+		memory.installSystemRom(rom);
+		jump(cpu, pc);
+
+		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.K1]), RunResult.Yielded);
+		assert.equal(cpu.readFramePc(0), prefix);
+		assert.equal(cpu.rootThread.frameAtDepth(0).registers.getPayload(0), 1);
+		assert.equal(memory.readBusFaultSequence(), 0, 'lookahead cannot publish a fault before the next instruction');
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(memory.readBusFaultSequence(), 1);
+		fault(cpu, memory, prefix, body);
 	});
 }

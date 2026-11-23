@@ -33,6 +33,26 @@ GeometryJobState prepare(Memory& memory, u32 count) {
 	}
 	return job;
 }
+void testXformReadsOnlyFittedRecords() {
+	const std::array<u8, GEO_XFORM2_RECORD_BYTES> bytes{};
+	for (const auto address : {SYSTEM_ROM_BASE, CART_ROM_BASE}) for (const bool fitted : {false, true}) {
+		const auto backing = std::span<const u8>(bytes).first(bytes.size() - (fitted ? 0u : 1u));
+		Memory memory({backing, test::cartridgeSlots(backing)}, PSX_MACHINE_SPEC.ramBytes);
+		GeometryJobState job;
+		job.src0 = address;
+		job.stride0 = GEO_XFORM2_RECORD_BYTES;
+		job.count = 1u;
+		GeometryXform2Unit unit(memory);
+		unit.beginJob();
+		unit.processStep(job);
+		const auto& progress = unit.progress();
+		require(progress.pendingFault == (fitted ? 0u : GEO_FAULT_SRC_RANGE),
+			"GEO requires a complete installed record before reading; padding cannot supply a valid zero-count record");
+		const auto words = address == SYSTEM_ROM_BASE ? progress.pendingMemory.systemRomWords : progress.pendingMemory.cartridgeWords;
+		require(words == (fitted ? GEO_XFORM2_RECORD_BYTES / IO_WORD_SIZE : 0u),
+			"GEO rejects the whole short record without reading the fitted prefix");
+	}
+}
 void testController(u32 count, bool abort) {
 	Memory memory({{}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 	IdleInput input;
@@ -86,6 +106,7 @@ void testController(u32 count, bool abort) {
 }
 }
 int main() {
+	testXformReadsOnlyFittedRecords();
 	testController(2u, false);
 	testController(2u, true);
 	testController(64u, false);

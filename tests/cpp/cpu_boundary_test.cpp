@@ -1408,10 +1408,14 @@ void instructionFetchRejectsCartridgeMmio() {
 	{
 		auto image = returnImage(OpCode::HALT, 0, 0, 0);
 		CpuMachine machine(image);
-		require(machine.memory.readMappedBusU32LE(SYSTEM_ROM_SIZE - INSTRUCTION_BYTES, MAPPED_BUS_MASTER_CPU | MAPPED_BUS_INSTRUCTION_FETCH) == 0u
-			&& machine.memory.readMappedBusU32LE(CART_ROM_BASE, mappedBusSignalsForCartridgeSlot(0) | MAPPED_BUS_INSTRUCTION_FETCH) == 0u
-			&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == 0u,
-			"unbacked system ROM and an empty cartridge socket retain zero-filled executable windows");
+		for (const u32 unbacked : {SYSTEM_ROM_SIZE - INSTRUCTION_BYTES, CART_ROM_BASE}) {
+			require(machine.memory.readMappedBusU32LE(unbacked, mappedBusSignalsForCartridgeSlot(0) | MAPPED_BUS_INSTRUCTION_FETCH) == 0u
+				&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED
+				&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == unbacked
+				&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS) == (BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32),
+				"unbacked firmware and empty sockets fault on an instruction bus read");
+			machine.memory.writeMappedWord(IO_SYS_BUS_FAULT_ACK, 1u);
+		}
 		constexpr u32 pc = IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE;
 		std::array<u8, INSTRUCTION_BYTES> instruction{};
 		writeInstruction(instruction, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);

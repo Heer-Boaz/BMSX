@@ -181,7 +181,7 @@ void testMailboxRegistersSignalsAndState() {
 		bmsx::CART_MMIO_BASE + bmsx::CARTRIDGE_MAILBOX_DATA_OFFSET,
 		0x11223344u
 	);
-	const bmsx::u32 firstEffects = fixture.card.writeU32(
+	const auto firstEffects = fixture.card.writeU32(
 		controlAddress,
 		0x80000000u
 			| bmsx::CARTRIDGE_MAILBOX_CONTROL_DREQ_READ
@@ -240,13 +240,38 @@ void testRomOnlyStateHasNoSyntheticDevices() {
 	require(!state.mailbox.has_value(), "ROM-only card has no synthetic mailbox state");
 }
 
+void testCardStorageRequiresTheWholeAccess() {
+	using namespace bmsx;
+	const std::array<u8, 7> rom{1, 2, 3, 4, 5, 6, 7};
+	CartridgeCard card(CartridgeCardMedia{rom, 7u, false}, MAPPED_KEY_OFFSET);
+	require(card.readU32(CART_ROM_BASE) == 0x04030201u && card.readU8(CART_ROM_BASE + 6) == 7u,
+		"complete ROM reads and its actual final byte remain visible");
+	require(!card.readU8(CART_ROM_BASE + 7) && !card.readU16(CART_ROM_BASE + 6)
+		&& !card.readU32(CART_ROM_BASE + 4), "short ROM transfers are absent, not padded");
+	require(card.writeU32(CART_ROM_BASE, 0xffffffffu) == 0u
+		&& card.readU32(CART_ROM_BASE) == 0x04030201u, "complete ROM store is ignored by the installed device");
+	require(!card.writeU8(CART_ROM_BASE + 7, 0) && !card.writeU16(CART_ROM_BASE + 6, 0)
+		&& !card.writeU32(CART_ROM_BASE + 4, 0), "stores cannot target missing ROM bytes");
+	require(card.writeU8(CART_RAM_BASE + 6, 0x67u) && !card.writeU16(CART_RAM_BASE + 6, 0)
+		&& !card.writeU32(CART_RAM_BASE + 4, 0) && card.readU8(CART_RAM_BASE + 6) == 0x67u,
+		"rejected RAM stores leave the physically existing byte unchanged");
+	require(!card.readU8(CART_RAM_BASE + 7) && !card.readU16(CART_RAM_BASE + 6) && !card.readU32(CART_RAM_BASE + 4),
+		"short RAM reads report absent backing");
+	require(!card.readU8(CART_MMIO_BASE) && !card.readU16(CART_MMIO_BASE) && !card.readU32(CART_MMIO_BASE)
+		&& !card.writeU8(CART_MMIO_BASE, 0) && !card.writeU16(CART_MMIO_BASE, 0) && !card.writeU32(CART_MMIO_BASE, 0),
+		"a missing mailbox supplies no transactions");
+	CartridgeCard fitted(CartridgeCardMedia{std::nullopt, std::nullopt, true}, MAPPED_KEY_OFFSET);
+	require(fitted.readU32(CART_MMIO_BASE + 0x10u) == 0u
+		&& fitted.writeU32(CART_MMIO_BASE + 0x10u, 123u) == 0u, "the fitted device still owns its reserved offsets");
+}
+
 void testRamOnlyCardLeavesRomApertureUnbacked() {
 	const bmsx::CartridgeCard card(
 		bmsx::CartridgeCardMedia{std::nullopt, 16u, false},
 		MAPPED_KEY_OFFSET
 	);
 	bmsx::Span<const bmsx::u8> view;
-	require(card.readU32(bmsx::CART_ROM_BASE) == 0u, "RAM-only card leaves the ROM aperture unbacked");
+	require(!card.readU32(bmsx::CART_ROM_BASE), "RAM-only card leaves the ROM aperture unbacked");
 	require(!card.bindRomByteView(bmsx::CART_ROM_BASE, 4u, view), "RAM-only card has no direct ROM byte view");
 	require(card.readU32(bmsx::CART_RAM_BASE) == 0u, "RAM-only card still owns its RAM aperture");
 }
@@ -261,6 +286,7 @@ int main() {
 	testRomInstallAndRamRestoreInvalidateOwnedRegions();
 	testMailboxRegistersSignalsAndState();
 	testRomOnlyStateHasNoSyntheticDevices();
+	testCardStorageRequiresTheWholeAccess();
 	testRamOnlyCardLeavesRomApertureUnbacked();
 	return 0;
 }

@@ -2,12 +2,11 @@ import { DmaEndpoint } from '../dma/endpoints';
 import {
 	IO_CART_SELECT,
 	IO_CART_STATUS,
+	IO_CART_ROM_BYTE_COUNT,
+	IO_CART_RAM_BYTE_COUNT,
 	IRQ_CARTRIDGE_SLOT0,
 	IRQ_CARTRIDGE_SLOT1,
 } from '../../../spec/bmsx/io';
-import {
-	CART_RAM_BASE,
-} from '../../../spec/bmsx/memory_map';
 import {
 	MAPPED_BUS_CARTRIDGE_SLOT1,
 	MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE,
@@ -69,6 +68,8 @@ export class CartridgeController {
 		memory.mapIoRead(IO_CART_SELECT, this, CartridgeController.readSelectionThunk);
 		memory.mapIoWrite(IO_CART_SELECT, this, CartridgeController.writeSelectionThunk);
 		memory.mapIoRead(IO_CART_STATUS, this, CartridgeController.readStatusThunk);
+		memory.mapIoRead(IO_CART_ROM_BYTE_COUNT, this, CartridgeController.readRomByteCountThunk);
+		memory.mapIoRead(IO_CART_RAM_BYTE_COUNT, this, CartridgeController.readRamByteCountThunk);
 	}
 
 	public selectedSlot(busSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU): CartridgeSlotIndex {
@@ -107,7 +108,7 @@ export class CartridgeController {
 		out.key = address + (slotIndex === 0
 			? CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET
 			: CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET);
-		out.cacheable = address < CART_RAM_BASE;
+		out.cacheable = false;
 		out.readBytes = null;
 		out.readByteOffset = 0;
 		out.writeWatches = null;
@@ -149,51 +150,49 @@ export class CartridgeController {
 		this.publishDreqLines(1);
 	}
 
-	public readU8(address: number, busSignals: MappedBusSignals): number {
+	public readU8(address: number, busSignals: MappedBusSignals): number | null {
 		const card = this.cards[this.selectedSlot(busSignals)];
-		return card === null ? 0 : card.readU8(address);
+		return card === null ? null : card.readU8(address);
 	}
 
-	public readU16(address: number, busSignals: MappedBusSignals): number {
+	public readU16(address: number, busSignals: MappedBusSignals): number | null {
 		const card = this.cards[this.selectedSlot(busSignals)];
-		return card === null ? 0 : card.readU16(address);
+		return card === null ? null : card.readU16(address);
 	}
 
-	public readU32(address: number, busSignals: MappedBusSignals): number {
+	public readU32(address: number, busSignals: MappedBusSignals): number | null {
 		const card = this.cards[this.selectedSlot(busSignals)];
-		return card === null ? 0 : card.readU32(address);
+		return card === null ? null : card.readU32(address);
 	}
 
-	public writeU8(address: number, value: number, busSignals: MappedBusSignals): void {
+	public writeU8(address: number, value: number, busSignals: MappedBusSignals): boolean {
 		const card = this.cards[this.selectedSlot(busSignals)];
-		if (card !== null) card.writeU8(address, value);
+		return card !== null && card.writeU8(address, value);
 	}
 
-	public writeU16(address: number, value: number, busSignals: MappedBusSignals): void {
+	public writeU16(address: number, value: number, busSignals: MappedBusSignals): boolean {
 		const card = this.cards[this.selectedSlot(busSignals)];
-		if (card !== null) card.writeU16(address, value);
+		return card !== null && card.writeU16(address, value);
 	}
 
-	public writeU32(address: number, value: number, busSignals: MappedBusSignals): void {
+	public writeU32(address: number, value: number, busSignals: MappedBusSignals): boolean {
 		const slotIndex = this.selectedSlot(busSignals);
 		const card = this.cards[slotIndex];
-		if (card === null) return;
+		if (card === null) return false;
 		const effects = card.writeU32(address, value);
+		if (effects === null) return false;
 		if ((effects & CARTRIDGE_CARD_EFFECT_IRQ_EDGE) !== 0) {
 			this.irq.raise(slotIndex === 0 ? IRQ_CARTRIDGE_SLOT0 : IRQ_CARTRIDGE_SLOT1);
 		}
 		if ((effects & CARTRIDGE_CARD_EFFECT_DREQ_CHANGED) !== 0) {
 			this.publishDreqLines(slotIndex);
 		}
+		return true;
 	}
 
-	public readBytes(address: number, out: Uint8Array, dstOffset: number, length: number): void {
+	public isReadableRange(address: number, length: number): boolean {
 		const card = this.cards[this.selectedSlot()];
-		if (card === null) {
-			out.fill(0, dstOffset, dstOffset + length);
-			return;
-		}
-		card.readBytes(address, out, dstOffset, length);
+		return card !== null && card.isReadableRange(address, length);
 	}
 
 	public bindRomByteView(slotIndex: number, address: number, length: number, out: CartridgeByteView): boolean {
@@ -221,6 +220,16 @@ export class CartridgeController {
 
 	private static writeSelectionThunk(context: CartridgeController, _address: number, value: number): void {
 		context.selectionWord = value;
+	}
+
+	private static readRomByteCountThunk(context: CartridgeController): number {
+		const rom = context.romStorage(context.selectedSlot());
+		return rom === null ? 0 : rom.bytes.byteLength;
+	}
+
+	private static readRamByteCountThunk(context: CartridgeController): number {
+		const card = context.cards[context.selectedSlot()];
+		return card === null ? 0 : card.ramByteCount();
 	}
 
 	private static readStatusThunk(context: CartridgeController): number {

@@ -17,7 +17,7 @@ import {
 	BUS_FAULT_NONE,
 	IO_SYS_STATUS, IO_IRQ_FLAGS, IO_DMA0_STATUS, IO_DMA1_STATUS,
 	IO_IMGDEC_STATUS, IO_IMGDEC_INPUT_WORDS_RECEIVED, IO_IMGDEC_DECODED_WORD_COUNT,
-	IO_GEO_STATUS, IO_INP_STATUS, IO_APU_EVENT_SEQ, IO_CART_STATUS,
+	IO_GEO_STATUS, IO_INP_STATUS, IO_APU_EVENT_SEQ, IO_CART_STATUS, IO_CART_ROM_BYTE_COUNT, IO_CART_RAM_BYTE_COUNT,
 	IO_SYS_SUPERVISOR_FAULT_DOMAIN, IO_INP_KEYS, IO_INP_OUTPUT_PORT,
 	IO_DMA0_CONTROL, IO_IMGDEC_DATA, IO_GX_GPU_GP0,
 	IO_SYS_BUS_FAULT_ACCESS,
@@ -112,7 +112,7 @@ test('IO word permissions apply to CPU and DMA without changing raw register val
 	for (const dma of [false, true]) {
 		for (const address of [IO_SYS_STATUS, IO_IRQ_FLAGS, IO_DMA0_STATUS, IO_DMA1_STATUS,
 			IO_IMGDEC_STATUS, IO_IMGDEC_INPUT_WORDS_RECEIVED, IO_IMGDEC_DECODED_WORD_COUNT,
-			IO_GEO_STATUS, IO_INP_STATUS, IO_APU_EVENT_SEQ, IO_CART_STATUS,
+			IO_GEO_STATUS, IO_INP_STATUS, IO_APU_EVENT_SEQ, IO_CART_STATUS, IO_CART_ROM_BYTE_COUNT, IO_CART_RAM_BYTE_COUNT,
 			IO_SYS_SUPERVISOR_FAULT_DOMAIN, IO_INP_KEYS, IO_INP_OUTPUT_PORT - IO_WORD_SIZE]) {
 			memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1);
 			memory.writeIoU32(address, 0x81234567);
@@ -194,6 +194,77 @@ test('the live public RAM aperture excludes private records from CPU, fetch and 
 	assert.equal(memory.readMappedU32LE(end), 0); assertBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, end);
 	memory.writeRamRecordWord(end, 0x76543210);
 	assert.equal(memory.readRamRecordWord(end), 0x76543210, 'the physical record port is independent of the public bus end');
+});
+
+test('fitted scalar storage rejects incomplete read and write widths without exposing partial bytes', () => {
+	const rom = Uint8Array.of(1, 2, 3, 4, 5, 6, 7), slots = cartridgeSlots(rom);
+	slots[0]!.ramByteCount = 7;
+	const memory = new Memory({ systemRom: rom, cartridgeSlots: slots }, PSX_MACHINE_SPEC.ramBytes);
+	memory.writeMappedU32LE(CART_RAM_BASE, 0x04030201);
+	memory.writeMappedU16LE(CART_RAM_BASE + 4, 0x0605);
+	memory.writeMappedU8(CART_RAM_BASE + 6, 7);
+	for (const base of [SYSTEM_ROM_BASE, CART_ROM_BASE, CART_RAM_BASE]) {
+		memory.clearBusFault();
+		assert.equal(memory.readMappedU32LE(base), 0x04030201);
+		assert.equal(memory.readMappedU16LE(base + 4), 0x0605);
+		assert.equal(memory.readMappedU8(base + 6), 7);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
+		assert.equal(memory.readMappedU8(base + 7), 0);
+		assertBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8, base + 7);
+		memory.clearBusFault();
+		assert.equal(memory.readMappedU16LE(base + 6), 0);
+		assertBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16, base + 6);
+		memory.clearBusFault();
+		assert.equal(memory.readMappedU32LE(base + 4), 0);
+		assertBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, base + 4);
+		memory.clearBusFault();
+		assert.equal(memory.readMappedF64LE(base), 0);
+		assertBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_F64, base + 4);
+	}
+	for (const base of [CART_ROM_BASE, CART_RAM_BASE]) {
+		memory.clearBusFault();
+		memory.writeMappedU8(base + 7, 0);
+		assertBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8, base + 7);
+		memory.clearBusFault();
+		memory.writeMappedU16LE(base + 6, 0);
+		assertBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16, base + 6);
+		memory.clearBusFault();
+		memory.writeMappedU32LE(base + 4, 0);
+		assertBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, base + 4);
+		assert.equal(memory.readMappedU8(base + 6), 7, 'no partial store');
+	}
+	memory.clearBusFault();
+	memory.writeMappedU32LE(CART_ROM_BASE, 0);
+	assert.equal(memory.readMappedU32LE(CART_ROM_BASE), 0x04030201);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE, 'complete installed ROM stores are ignored');
+	memory.writeMappedF64LE(CART_RAM_BASE, 1);
+	assertBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64, CART_RAM_BASE + 4);
+	assert.equal(memory.readMappedU32LE(CART_RAM_BASE), 0, 'first F64 word stays committed');
+	assert.equal(memory.readMappedU16LE(CART_RAM_BASE + 4), 0x0605, 'incomplete second F64 word never writes');
+});
+
+test('DMA transfers a complete fitted word but faults on source and destination tails', () => {
+	const rom = Uint8Array.of(1, 2, 3, 4, 5, 6, 7), slots = cartridgeSlots(rom);
+	slots[0]!.ramByteCount = 7;
+	const memory = new Memory({ systemRom: rom, cartridgeSlots: slots }, PSX_MACHINE_SPEC.ramBytes);
+	const target = DYNAMIC_RAM_BASE + 0x80, signals = MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY;
+	memory.writeMappedU32LE(CART_RAM_BASE, 0x04030201);
+	memory.writeMappedU8(CART_RAM_BASE + 6, 7);
+	for (const base of [SYSTEM_ROM_BASE, CART_ROM_BASE, CART_RAM_BASE]) {
+		memory.clearBusFault();
+		memory.writeMappedU32LE(target + 4, 0xdeadbeef);
+		memory.transferDmaBlock(base, target, 2, 4, 4, signals, signals);
+		assert.equal(memory.readMappedU32LE(target), 0x04030201);
+		assert.equal(memory.readMappedU32LE(target + 4), 0, 'fault bus value rather than a padded word');
+		assertBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, base + 4);
+	}
+	memory.clearBusFault();
+	memory.writeMappedU32LE(target, 0x87654321);
+	memory.writeMappedU32LE(target + 4, 0xffffffff);
+	memory.transferDmaBlock(target, CART_RAM_BASE, 2, 4, 4, signals, signals);
+	assert.equal(memory.readMappedU32LE(CART_RAM_BASE), 0x87654321);
+	assert.equal(memory.readMappedU8(CART_RAM_BASE + 6), 7, 'no partial destination write');
+	assertBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, CART_RAM_BASE + 4);
 });
 
 test('DMA spans obey the public RAM aperture on both source and destination', () => {

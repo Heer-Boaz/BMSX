@@ -13,7 +13,7 @@ struct cartridge_manual_result
 	coalesced: word[2]
 	rearmed: word[2]
 	after_ack: word[2]
-	data_card_rom: word
+	data_card_rom_byte_count: word
 	seed_address: word
 	dma_selection: word
 	dma_control: word

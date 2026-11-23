@@ -13,6 +13,8 @@ bss transfer_result: word[4]
 local irq_mask<const>: *word = 0x08000008
 local apu_status<const>: *word = 0x08000178
 local cart_select<const>: *word = 0x08010420
+local cart_rom_byte_count<const>: *word = 0x08010440
+local cart_ram_byte_count<const>: *word = 0x08010444
 local cart_status<const>: *word = 0x08010424
 local mailbox_data<const>: *word = 0x30f00000
 local mailbox_control<const>: *word = 0x30f00004
@@ -40,10 +42,11 @@ end)
 
 assert(*cart_status == 0x00010003, 'mixed-socket boot selection mismatch')
 *cart_select = 0
-assert(cart_rom[0] == 0, 'data cartridge exposed its package header as ROM')
-assert(cart_rom[cart_blua32_image_index] == 0, 'data cartridge exposed a BLua32 image')
+assert(*cart_rom_byte_count == 0, 'data cartridge must not expose its package as ROM')
+assert(*cart_ram_byte_count == 256, 'data cartridge RAM capacity mismatch')
 *cart_ram_probe = 0x10203040
 *cart_select = 1
+assert(*cart_rom_byte_count >= 60, 'boot cartridge ROM cannot hold its header')
 assert(cart_rom[cart_blua32_image_index] ~= 0, 'boot cartridge did not expose its BLua32 header')
 *cart_ram_probe = 0x50607080
 *cart_select = 0

@@ -107,20 +107,18 @@ void testBlocksPublishOnlyAtCompletion() {
 	require((h.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_IMGDEC) != 0, "completion raises IMGDEC IRQ");
 }
 
-void testDmaMappedInputAndPaddedTerminalWord() {
+void testDmaMappedInputAndBackedTerminalWord() {
 	constexpr u32 inputCount = 256, outputCount = inputCount - 1;
-	std::array<u8, inputCount * sizeof(u32)> slot1{};
+	std::array<u8, 1u + inputCount * sizeof(u32)> slot1{};
 	writeLE32(slot1.data() + 1, outputCount - 1); // One unaligned literal run.
 	std::array<u32, outputCount> expected{};
 	for (u32 i = 0; i < outputCount - 1; ++i) {
 		expected[i] = 0x87654321u ^ (i << 12u);
 		writeLE32(slot1.data() + 1 + (i + 1) * sizeof(u32), expected[i]);
 	}
-	// The prefix is completely backed; the last word is only three bytes.
-	expected.back() = 0x005aa5c3u;
-	slot1[slot1.size() - 3] = 0xc3u;
-	slot1[slot1.size() - 2] = 0xa5u;
-	slot1[slot1.size() - 1] = 0x5au;
+	// The complete unaligned input span is backed, including its terminal word.
+	expected.back() = 0x6d5aa5c3u;
+	writeLE32(slot1.data() + slot1.size() - sizeof(u32), expected.back());
 	Harness h({0u, 0u}, slot1);
 	auto& memory = h.memory;
 	auto& dma = h.machine.dmaController;
@@ -147,16 +145,16 @@ void testDmaMappedInputAndPaddedTerminalWord() {
 	require(scheduler.currentNowCycles() == inputEdge && decoder.inputWordsReceived == inputCount
 		&& decoder.dataWord == expected.back() && decoder.decodedWordCount == 0
 		&& decoder.blockCyclesRemaining == outputCount * PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord,
-		"only the scalar terminal word starts work and latches the padded cartridge word");
+		"only the scalar terminal word starts work and latches the last backed cartridge word");
 	require(memory.readIoU32(IO_DMA0_STATUS) == DMA_STATUS_DONE
 		&& memory.readIoU32(IO_DMA1_STATUS) == DMA_STATUS_BUSY
 		&& memory.readIoU32(IO_DMA0_READ_ADDR) == CART_ROM_BASE + 1 + inputCount * sizeof(u32)
-		&& memory.readBusFaultSequence() == faults, "the original route publishes address and DONE without a padding fault");
+		&& memory.readBusFaultSequence() == faults, "the original route publishes address and DONE without a bus fault");
 	for (u32 i = 0; i < 16 && h.machine.gxGpu.readDeviceOutput().commandBuffer.commandCount == 0; ++i) h.pump();
 	const auto& commands = h.machine.gxGpu.readDeviceOutput().commandBuffer;
 	require(commands.commandCount == 1 && commands.commandWordCount[0] == 3 + outputCount
 		&& std::equal(expected.begin(), expected.end(), commands.words.data() + commands.commandWordStart[0] + 3),
-		"borrowed byte order and terminal padding reach the actual GPU packet from DMA socket 1");
+		"borrowed byte order and the terminal word reach the actual GPU packet from DMA socket 1");
 }
 
 void testCpuBuildsHeadersAndDmaSplitsAtAvailableWords() {
@@ -412,7 +410,7 @@ void testFaultsAndEmptyJob() {
 
 int main() {
 	testBlocksPublishOnlyAtCompletion();
-	testDmaMappedInputAndPaddedTerminalWord();
+	testDmaMappedInputAndBackedTerminalWord();
 	testCpuBuildsHeadersAndDmaSplitsAtAvailableWords();
 	testAdmittedOutputDmaSurvivesQuiesce();
 	testAdmittedImageWaitsForReadback();

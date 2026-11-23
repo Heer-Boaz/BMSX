@@ -202,6 +202,82 @@ void testDmaPublicRamBusAperture() {
 		"the DMA span fast path uses the current enlarged public aperture");
 }
 
+void testFittedScalarStorageRejectsIncompleteWidths() {
+	using namespace bmsx;
+	const std::array<u8, 7> rom{1, 2, 3, 4, 5, 6, 7};
+	auto slots = test::cartridgeSlots(rom);
+	slots[0]->ramByteCount = 7u;
+	Memory memory(MemoryInit{rom, slots}, PSX_MACHINE_SPEC.ramBytes);
+	memory.writeMappedU32LE(CART_RAM_BASE, 0x04030201u);
+	memory.writeMappedU16LE(CART_RAM_BASE + 4u, 0x0605u);
+	memory.writeMappedU8(CART_RAM_BASE + 6u, 7u);
+
+	for (const u32 base : {SYSTEM_ROM_BASE, CART_ROM_BASE, CART_RAM_BASE}) {
+		memory.clearBusFault();
+		require(memory.readMappedU8(base + 6u) == 7u && memory.readMappedU16LE(base + 4u) == 0x0605u
+			&& memory.readMappedU32LE(base) == 0x04030201u && memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_NONE,
+			"complete reads see exactly installed bytes, including the final byte");
+		require(memory.readMappedU8(base + 7u) == 0u, "an absent byte returns the fault bus value");
+		requireBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8, base + 7u);
+		memory.clearBusFault();
+		require(memory.readMappedU16LE(base + 6u) == 0u, "an incomplete halfword discloses none of its prefix");
+		requireBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16, base + 6u);
+		memory.clearBusFault();
+		require(memory.readMappedU32LE(base + 4u) == 0u, "an incomplete word discloses none of its prefix");
+		requireBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, base + 4u);
+		memory.clearBusFault();
+		require(memory.readMappedF64LE(base) == 0, "an incomplete high word faults the F64 read");
+		requireBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_F64, base + 4u);
+	}
+	for (const u32 base : {CART_ROM_BASE, CART_RAM_BASE}) {
+		memory.clearBusFault();
+		memory.writeMappedU8(base + 7u, 0);
+		requireBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8, base + 7u);
+		memory.clearBusFault();
+		memory.writeMappedU16LE(base + 6u, 0);
+		requireBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16, base + 6u);
+		memory.clearBusFault();
+		memory.writeMappedU32LE(base + 4u, 0);
+		requireBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, base + 4u);
+		require(memory.readMappedU8(base + 6u) == 7u, "a rejected write does not modify its fitted prefix");
+	}
+	memory.clearBusFault();
+	memory.writeMappedU32LE(CART_ROM_BASE, 0);
+	require(memory.readMappedU32LE(CART_ROM_BASE) == 0x04030201u && memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_NONE,
+		"writes to complete installed cartridge ROM remain ignored");
+	memory.writeMappedF64LE(CART_RAM_BASE, 1);
+	requireBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64, CART_RAM_BASE + 4u);
+	require(memory.readMappedU32LE(CART_RAM_BASE) == 0u && memory.readMappedU16LE(CART_RAM_BASE + 4u) == 0x0605u,
+		"the first F64 store remains committed and the partial second word is suppressed");
+}
+
+void testDmaFittedStorageRetainsOnlyCompleteWords() {
+	using namespace bmsx;
+	const std::array<u8, 7> rom{1, 2, 3, 4, 5, 6, 7};
+	auto slots = test::cartridgeSlots(rom);
+	slots[0]->ramByteCount = 7u;
+	Memory memory(MemoryInit{rom, slots}, PSX_MACHINE_SPEC.ramBytes);
+	constexpr u32 target = DYNAMIC_RAM_BASE + 0x80u;
+	constexpr MappedBusSignals signals = MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY;
+	memory.writeMappedU32LE(CART_RAM_BASE, 0x04030201u);
+	memory.writeMappedU8(CART_RAM_BASE + 6u, 7u);
+	for (const u32 base : {SYSTEM_ROM_BASE, CART_ROM_BASE, CART_RAM_BASE}) {
+		memory.clearBusFault();
+		memory.writeMappedU32LE(target + 4u, 0xdeadbeefu);
+		memory.transferDmaBlock(base, target, 2u, 4u, 4u, signals, signals);
+		require(memory.readMappedU32LE(target) == 0x04030201u && memory.readMappedU32LE(target + 4u) == 0,
+			"DMA delivers the accepted word then the failed word's bus value, not a padded word");
+		requireBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, base + 4u);
+	}
+	memory.clearBusFault();
+	memory.writeMappedU32LE(target, 0x87654321u);
+	memory.writeMappedU32LE(target + 4u, 0xffffffffu);
+	memory.transferDmaBlock(target, CART_RAM_BASE, 2u, 4u, 4u, signals, signals);
+	require(memory.readMappedU32LE(CART_RAM_BASE) == 0x87654321u && memory.readMappedU8(CART_RAM_BASE + 6u) == 7u,
+		"DMA preserves the accepted destination word and suppresses a partial destination write");
+	requireBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, CART_RAM_BASE + 4u);
+}
+
 void testFloatingMappedTransactionsKeepTheirBusWidth() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
 	bmsx::Memory memory(
@@ -262,7 +338,7 @@ void testIoPermissionsApplyToCpuAndDmaWordWrites() {
 	for (const bool dma : {false, true}) {
 		for (const u32 address : {IO_SYS_STATUS, IO_IRQ_FLAGS, IO_DMA0_STATUS, IO_DMA1_STATUS,
 			IO_IMGDEC_STATUS, IO_IMGDEC_INPUT_WORDS_RECEIVED, IO_IMGDEC_DECODED_WORD_COUNT,
-			IO_GEO_STATUS, IO_INP_STATUS, IO_APU_EVENT_SEQ, IO_CART_STATUS,
+			IO_GEO_STATUS, IO_INP_STATUS, IO_APU_EVENT_SEQ, IO_CART_STATUS, IO_CART_ROM_BYTE_COUNT, IO_CART_RAM_BYTE_COUNT,
 			IO_SYS_SUPERVISOR_FAULT_DOMAIN, IO_INP_KEYS, IO_INP_OUTPUT_PORT - IO_WORD_SIZE}) {
 			memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1u);
 			memory.writeIoU32(address, 0x81234567u);
@@ -547,6 +623,8 @@ int main() {
 	testMappedReadViewsRespectPhysicalBoundaries();
 	testPublicRamBusAperture();
 	testDmaPublicRamBusAperture();
+	testFittedScalarStorageRejectsIncompleteWidths();
+	testDmaFittedStorageRetainsOnlyCompleteWords();
 	testFloatingMappedTransactionsKeepTheirBusWidth();
 	testMappedWordBurstPreflightStopsWhenBurstCrossesPhysicalIoRegisterfileBoundary();
 	testSystemStatusRejectsMappedWrites();
