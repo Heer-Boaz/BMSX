@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x34534d42u; // BMS4: IMGDEC assembly and readout share history
+constexpr u32 kSaveStateSignature = 0x35534d42u; // BMS5: pending table writes and deferred guest cycles
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -53,6 +53,7 @@ template<class Writer> void writeFrameState(Writer& writer, const FrameState& st
 	writer.i64(state.cycleBudgetGranted);
 	writer.i64(state.cycleCarryGranted);
 	writer.i64(state.activeCpuUsedCycles);
+	writer.i32(state.deferredTableWriteCycles);
 }
 
 FrameState readFrameState(BinaryReader& reader) {
@@ -62,6 +63,7 @@ FrameState readFrameState(BinaryReader& reader) {
 	state.cycleBudgetGranted = reader.i64();
 	state.cycleCarryGranted = reader.i64();
 	state.activeCpuUsedCycles = reader.i64();
+	state.deferredTableWriteCycles = reader.i32();
 	return state;
 }
 
@@ -1178,6 +1180,16 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	writer.u32(static_cast<u32>(state.pendingMemory.accessKind));
 	writer.i32(state.pendingMemory.registerIndex);
 	writer.i32(state.pendingMemory.wordCount);
+	const auto& write = state.pendingTableWrite;
+	writer.u32(static_cast<u32>(write.recovery));
+	if (write.recovery != TableWriteRecovery::None) {
+		writer.u32(write.instructionPc);
+		writer.u32(write.lastPc);
+		writer.u32(write.nextPc);
+		writer.u32(write.receiver);
+		writer.u64(write.key);
+		writer.u64(write.value);
+	}
 	writer.u32(state.statusWord);
 	writer.u32(state.causeWord);
 	writer.u32(state.epcWord);
@@ -1222,6 +1234,16 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.pendingMemory.accessKind = static_cast<MemoryAccessKind>(reader.u32());
 	state.pendingMemory.registerIndex = reader.i32();
 	state.pendingMemory.wordCount = reader.i32();
+	auto& write = state.pendingTableWrite;
+	write.recovery = static_cast<TableWriteRecovery>(reader.u32());
+	if (write.recovery != TableWriteRecovery::None) {
+		write.instructionPc = reader.u32();
+		write.lastPc = reader.u32();
+		write.nextPc = reader.u32();
+		write.receiver = reader.u32();
+		write.key = reader.u64();
+		write.value = reader.u64();
+	}
 	state.statusWord = reader.u32();
 	state.causeWord = reader.u32();
 	state.epcWord = reader.u32();

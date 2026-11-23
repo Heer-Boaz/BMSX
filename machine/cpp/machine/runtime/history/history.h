@@ -55,6 +55,7 @@ public:
 	void advancePlayback(f64 hostDeltaMs);
 	void resumeRecording();
 private:
+	void resetFrameAdmission();
 	struct Checkpoint {
 		i64 id;
 		i64 cycles;

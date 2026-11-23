@@ -144,7 +144,8 @@ test('core golden: budget and fixed16 datapaths match native integer semantics',
 
 test('core golden: the GPU VBlank edge presents and completes the active runtime tick', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const scheduler = new DeviceScheduler(new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory)));
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const scheduler = new DeviceScheduler(cpu);
 	const inputSampleEdges: number[] = [];
 	const completedFrames: unknown[] = [];
 	let raisedIrq = 0;
@@ -155,9 +156,11 @@ test('core golden: the GPU VBlank edge presents and completes the active runtime
 		cycleBudgetGranted: 100,
 		cycleCarryGranted: 0,
 		activeCpuUsedCycles: 80,
+		deferredTableWriteCycles: 0,
 	};
 	const runtime = {
 		machine: {
+			cpu,
 			scheduler,
 			inputController: {
 				cancelSampleArm() { },

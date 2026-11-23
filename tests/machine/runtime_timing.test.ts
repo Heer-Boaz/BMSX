@@ -55,17 +55,28 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { advanceRuntimeTime, runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { BASE_CYCLES, OpCode, TABLE_INDEX_VISIT_CYCLES } from '../../machine/ts/spec/blua32/opcode';
+import { blua32TestFunctionAddress, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';
 import { applyRuntimeMachineState, captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
+import { HistoryMode, HistorySeekResult } from '../../machine/ts/machine/runtime/history/history';
 import {
 	DEVICE_SERVICE_APU,
 	DEVICE_SERVICE_APU_TRANSFER,
 } from '../../machine/ts/machine/scheduler/device';
-import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
+import { FrameSchedulerState, LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
+
+import { TableWriteRecovery } from '../../machine/ts/machine/cpu/cpu';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { valueBool, valueBuiltinFunction, valueInteger, valueNil, valuePayload, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
+import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
+import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
+import { InstructionStepResult } from '../../machine/ts/machine/runtime/frame/state';
+import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 
 const PCRTC_SYNCH2_SLOW_WORD = 0x004f84bc;
 const PCRTC_SYNCV_192_LINE_FIELD_WORD = 0x00a60005;
@@ -269,6 +280,7 @@ test('CPU timing store crossing a due VBlank differs from a store after service'
 			cycleBudgetGranted: 100,
 			cycleCarryGranted: 0,
 			activeCpuUsedCycles: 0,
+		deferredTableWriteCycles: 0,
 		};
 		// The guest arms INPUT and prepares the timing store itself.
 		for (let i = 0; i < 5; i++) runtime.cpuExecution.runInstruction(frame);
@@ -287,6 +299,283 @@ test('CPU timing store crossing a due VBlank differs from a store after service'
 		]);
 	}
 	assert.deepEqual(observed, [[0, 0], [1, IRQ_VBLANK]]);
+});
+
+test('a physically refused WIDE SETT retires before queued VBlank, even after a checkpoint', () => {
+	const code = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.SETT, 0, 1, 2, 0);
+	writeInstruction(code, 2, OpCode.K1, 3, 0, 0, 0);
+	writeInstruction(code, 3, OpCode.RET, 0, 0, 0, 0);
+	const system = linkRawTestSystemBlua32({
+		text: code, functions: [{ firstWord: 0, wordCount: 4, maxStack: 4 }],
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0,
+	}, 0x10000);
+	for (const mode of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		let samples = 0;
+		let observeSample: (() => void) | null = null;
+		const runtime = new Runtime({
+			systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(),
+			machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: mode,
+		}, {
+			sampleInputControllerSnapshot() { ++samples; if (observeSample !== null) observeSample(); },
+			supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {},
+		});
+		runtime.boot();
+		const { cpu, scheduler, memory } = runtime.machine;
+		const fs = runtime.frameScheduler;
+		const initial = captureRuntimeSaveState(runtime);
+		assert.ok(fs.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame));
+		const edge = scheduler.nowCycles;
+		applyRuntimeSaveState(runtime, initial);
+		samples = 0;
+		const frame = cpu.rootThread.currentFrame!;
+		const functionAddress = frame.functionAddress;
+		const entry = DYNAMIC_RAM_BASE + 0x9000 - 2 * INSTRUCTION_BYTES;
+		memory.writeBytes(entry, code);
+		const budget = cpu.luaHeap;
+		budget.setCollectionTarget(budget.capacity());
+		const tables = cpu.gc.tables, arena = cpu.heapAllocator;
+		const owner = cpu.createTable(512, 0);
+		for (let key = 1; key <= 512; ++key) tables.setInteger(owner, key, valueInteger(key));
+		const payload = cpu.createTable(1, 0);
+		tables.setInteger(payload, 1, valueInteger(73));
+		frame.registers.set(0, valueTable(owner));
+		frame.registers.set(1, valueInteger(1));
+		frame.registers.set(2, valueTable(payload));
+		frame.top = 4;
+		if (mode === CpuExecutionBackend.JavaScript) {
+			for (let n = 0; n < 24; ++n) {
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, entry);
+				cpu.runUntilDepth(0, 1);
+			}
+			const page = frame.executionImage!.decodedPages.get(entry & ~MAPPED_PAGE_BYTE_MASK);
+			const block = page?.compiledBlocks?.entries[(entry & MAPPED_PAGE_BYTE_MASK) >>> 2];
+			assert.ok(block && block.admissionCycles === 0, 'the actual generated WIDE SETT admits the one-cycle grant');
+		}
+		tables.setInteger(owner, 1, valueInteger(1));
+		// This weak forwarding path does not itself retain the final receiver.
+		const receiver = cpu.createTable();
+		const forwarding = cpu.createTable(0, 1);
+		const weakMode = cpu.createTable(0, 1);
+		tables.setStringKey(weakMode, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
+		tables.setMetatableAddress(forwarding, weakMode);
+		tables.setStringKey(forwarding, cpu.stringPool.intern('__newindex'), valueTable(owner));
+		tables.setMetatableAddress(receiver, forwarding);
+		frame.registers.set(0, valueTable(receiver));
+		frame.registers.set(1, valueInteger(513));
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, entry);
+		frame.registers.set(3, valueTable(cpu.createTable(225_280, 0)));
+		cpu.createTable(1024, 0); // Unreachable, contiguous two-page backing.
+		const spare = arena.allocate(HEAP_PAGE_SIZE, true);
+		while (arena.allocate(HEAP_PAGE_SIZE, true) !== 0) {}
+		arena.free(spare);
+		assert.equal(arena.availableWholePages(), 1);
+		assert.equal(arena.allocate(5120, true), 0);
+		assert.ok(budget.usedBytes() + 2560 < budget.capacity());
+		cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+		memory.writeMappedU32LE(IO_INP_CTRL, 1);
+		observeSample = () => assert.equal(tables.getInteger(owner, 513), valueTable(payload), 'VBlank samples after the table write');
+		advanceRuntimeTime(runtime, edge - 1 - scheduler.nowCycles);
+		assert.equal(scheduler.nextDeadline(), edge);
+		runtime.frameLoop.beginFrameState(1, 0);
+		const oldStorage = tables.storageAddress(owner);
+		const beforeWrite = captureRuntimeSaveState(runtime);
+		assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
+		assert.ok(cpu.tableWriteParked());
+		let accepted = 1;
+		const unchanged = () => {
+			assert.equal(scheduler.nowCycles, edge - 1);
+			assert.equal(scheduler.nextDeadline(), edge);
+			assert.equal(fs.lastTickSequence, 0);
+			assert.equal(samples, 0);
+			assert.equal(cpu.readFramePc(0), entry);
+			assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, accepted);
+			assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, accepted);
+			assert.equal(runtime.frameLoop.frameState.activeCpuUsedCycles, 0);
+			assert.equal(tables.storageAddress(owner), oldStorage);
+			assert.equal(tables.getInteger(owner, 513), valueNil());
+		};
+		unchanged();
+		assert.equal(fs.runDevicesToNextLogicalTick(0), false);
+		assert.equal(fs.runCyclesToNextLogicalTick(7), false);
+		accepted += 7;
+		unchanged();
+		for (let n = 0; n < 120 && !cpu.gc.finalMarkPending(); ++n)
+			assert.equal(fs.advanceLogicalTick(31), LogicalTickResult.Maintenance);
+		assert.ok(cpu.gc.finalMarkPending());
+		const checkpoint = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+		const finish = () => {
+			for (let n = 0; n < 120 && !cpu.tableWriteReady(); ++n) {
+				assert.equal(fs.advanceLogicalTick(31), LogicalTickResult.Maintenance);
+				unchanged();
+			}
+			assert.ok(cpu.tableWriteReady());
+			assert.equal(fs.stepInstruction(0), InstructionStepResult.Executed);
+			assert.ok(!cpu.tableWriteParked());
+			assert.equal(tables.arrayCapacity(owner), 1024);
+			assert.notEqual(tables.storageAddress(owner), oldStorage);
+			assert.equal(tables.getInteger(owner, 512), valueInteger(512));
+			assert.equal(tables.getInteger(payload, 1), valueInteger(73));
+			assert.equal(cpu.readFramePc(0), entry + 2 * INSTRUCTION_BYTES);
+			assert.equal(cpu.lastPc, entry + INSTRUCTION_BYTES);
+			const charge = BASE_CYCLES[OpCode.SETT] + TABLE_INDEX_VISIT_CYCLES;
+			assert.equal(scheduler.nowCycles, edge - 1 + charge);
+			assert.equal(fs.lastTickSequence, 1);
+			assert.equal(fs.lastTickBudgetGranted, accepted);
+			assert.equal(fs.lastTickCpuUsedCycles, charge);
+			assert.equal(fs.lastTickBudgetRemaining, accepted - charge);
+			assert.equal(samples, 1);
+			assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
+			return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+		};
+		const expected = finish();
+		samples = 0;
+		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(checkpoint, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+		const restored = finish();
+		assert.deepEqual(restored, expected);
+		const history = runtime.history;
+		const options = { checkpointCapacity: 3, inputCapacity: 4, checkpointIntervalCycles: 10_000_000 };
+		const decoded = decodeRuntimeSaveState(checkpoint, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+		samples = 0;
+		applyRuntimeSaveState(runtime, decoded);
+		history.start(options);
+		history.captureCheckpoint();
+		finish();
+		assert.equal(history.latestCycles, edge);
+		history.beginSeek(edge - 1);
+		assert.equal(history.mode, HistoryMode.Reviewing);
+		assert.ok(cpu.tableWriteParked());
+		history.beginPlayback();
+		const liveSamples = samples;
+		for (let n = 0; n < 120 && history.mode === HistoryMode.Replaying; ++n) history.advancePlayback(0);
+		assert.equal(history.mode, HistoryMode.Reviewing);
+		assert.ok(!cpu.tableWriteParked());
+		assert.equal(fs.lastTickSequence, 1);
+		assert.equal(tables.getInteger(owner, 513), valueTable(payload));
+		assert.equal(samples, liveSamples, 'playback uses the recorded input boundary');
+
+		history.beginSeek(edge - 1);
+		history.beginPlayback();
+		history.cancelSeek();
+		history.resumeRecording();
+		assert.ok(runtime.frameLoop.frameActive && history.checkpointPending, 'cancel and branch preserve the parked frame');
+		history.captureCheckpoint();
+		samples = 0;
+		finish();
+
+		samples = 0;
+		applyRuntimeSaveState(runtime, beforeWrite);
+		history.start(options);
+		history.captureCheckpoint();
+		assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
+		assert.ok(cpu.tableWriteParked());
+		assert.equal(fs.runCyclesToNextLogicalTick(accepted - 1), false);
+		finish();
+		history.beginSeek(history.latestCycles);
+		assert.equal(history.mode, HistoryMode.Replaying);
+		assert.ok(!cpu.tableWriteParked());
+		assert.equal(history.advanceSeek(accepted), HistorySeekResult.Progressed);
+		assert.ok(cpu.tableWriteParked(), 'the initial defer is not a stopped seek');
+		assert.equal(scheduler.nowCycles, edge - 1);
+		for (let n = 0; n < 120 && history.mode === HistoryMode.Replaying; ++n)
+			assert.notEqual(history.advanceSeek(accepted), HistorySeekResult.Stopped);
+		assert.equal(history.mode, HistoryMode.Reviewing);
+		assert.ok(!cpu.tableWriteParked());
+		assert.equal(fs.lastTickSequence, 1);
+		assert.equal(tables.getInteger(owner, 513), valueTable(payload));
+	}
+});
+
+test('parked WIDE SETT resumes the fresh epoch and faults once through pcall', () => {
+	const code = new Uint8Array(8 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.GETSYS, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(code, 2, OpCode.CLOSURE, 1, 0, 0);
+	writeInstruction(code, 3, OpCode.CALL, 0, 2, 3);
+	writeInstruction(code, 4, OpCode.RET, 0, 3, 0);
+	writeInstruction(code, 5, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(code, 6, OpCode.SETT, 0, 1, 2);
+	writeInstruction(code, 7, OpCode.RET, 0, 0, 0);
+	const system = linkRawTestSystemBlua32({
+		text: code, functions: [
+			{ firstWord: 0, wordCount: 5, maxStack: 8 },
+			{ firstWord: 5, wordCount: 3, maxStack: 8 },
+		],
+		systemGlobalNames: ['pcall', ...LUA_BOOT_PRIMITIVES.map(primitive => primitive.name).filter(name => name !== 'pcall')],
+		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0,
+		closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }],
+	});
+	const runtime = new Runtime({
+		systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
+	}, new TimingInputSource());
+	runtime.boot();
+	const { cpu, scheduler } = runtime.machine;
+	const fs = runtime.frameScheduler;
+	cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
+	for (let n = 0; n < 3; ++n) cpu.runUntilDepth(0, 1);
+	assert.equal(cpu.getFrameDepth(), 2);
+	assert.equal(cpu.rootThread.protectedDepth, 1);
+	const callerPc = cpu.readFramePc(0), writePc = cpu.readFramePc(1);
+	const callee = cpu.rootThread.currentFrame!;
+	const tables = cpu.gc.tables, budget = cpu.luaHeap, arena = cpu.heapAllocator;
+	budget.setCollectionTarget(budget.capacity());
+	const owner = cpu.createTable(512, 0);
+	for (let i = 1; i <= 512; ++i) tables.setInteger(owner, i, valueInteger(i));
+	callee.registers.set(0, valueTable(owner));
+	callee.registers.set(1, valueInteger(513));
+	callee.registers.set(2, valueInteger(42));
+	callee.top = 3;
+	const spare = arena.allocate(HEAP_PAGE_SIZE, true);
+	while (arena.allocate(HEAP_PAGE_SIZE, true) !== 0) {}
+	arena.free(spare);
+	cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+	const before = captureRuntimeSaveState(runtime);
+	cpu.runUntilDepth(0, 1);
+	const charge = 1 - cpu.instructionBudgetRemaining;
+	assert.equal(cpu.getFrameDepth(), 1, 'direct CPU retains synchronous recovery');
+	assert.equal(charge, BASE_CYCLES[OpCode.SETT] + 2, 'the two pcall results still have their ordinary charges');
+	applyRuntimeSaveState(runtime, before);
+	runtime.frameLoop.beginFrameState(1, 0);
+	const clock = scheduler.nowCycles;
+	assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
+	assert.ok(cpu.tableWriteParked());
+	const drain = () => {
+		for (let n = 0; n < 80 && !cpu.tableWriteReady(); ++n)
+			assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
+		assert.ok(cpu.tableWriteReady());
+		assert.equal(cpu.readFramePc(1), writePc);
+		assert.equal(scheduler.nowCycles, clock);
+		assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 1);
+		assert.equal(tables.arrayCapacity(owner), 512);
+		assert.equal(tables.getInteger(owner, 513), valueNil());
+	};
+	drain();
+	assert.equal(cpu.captureRuntimeState().pendingTableWrite?.recovery, TableWriteRecovery.RetryCurrent);
+	assert.equal(fs.advanceLogicalTick(0), LogicalTickResult.DeferredCpu);
+	assert.equal(cpu.captureRuntimeState().pendingTableWrite?.recovery, TableWriteRecovery.Fresh);
+	const checkpoint = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	const finish = () => {
+		drain();
+		assert.equal(cpu.captureRuntimeState().pendingTableWrite?.recovery, TableWriteRecovery.RetryFresh);
+		assert.equal(fs.stepInstruction(0), InstructionStepResult.Executed);
+		assert.ok(!cpu.tableWriteParked());
+		assert.equal(cpu.getFrameDepth(), 1);
+		assert.equal(cpu.rootThread.protectedDepth, 0);
+		assert.equal(cpu.readFramePc(0), callerPc);
+		assert.equal(cpu.lastPc, writePc + INSTRUCTION_BYTES);
+		assert.equal(tables.getInteger(owner, 513), valueNil());
+		const regs = cpu.rootThread.currentFrame!.registers;
+		assert.equal(regs.get(0), valueBool(false));
+		assert.equal(cpu.stringPool.toString(valuePayload(regs.get(1))), 'Out of memory.');
+		assert.equal(scheduler.nowCycles, clock + charge);
+		assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 1 - charge);
+		assert.equal(runtime.frameLoop.frameState.activeCpuUsedCycles, charge);
+	};
+	finish();
+	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(checkpoint, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+	finish();
 });
 
 test('legacy GP1 display words cannot drive the PCRTC clock', () => {
@@ -372,6 +661,7 @@ test('host machine-cycle grants remain exact while PCRTC is stopped', () => {
 		cycleBudgetGranted: 0,
 		cycleCarryGranted: 0,
 		activeCpuUsedCycles: 0,
+		deferredTableWriteCycles: 0,
 	};
 	const frameLoop = {
 		frameActive: false,

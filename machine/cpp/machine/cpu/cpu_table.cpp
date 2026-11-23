@@ -87,12 +87,76 @@ bool CPU::finishTableAssignment(CallFrame& frame, Value key, Value value, const 
 	BMSX_UNREACHABLE();
 }
 
+void CPU::markPendingTableWriteRoots(GcHeap& heap) {
+	const auto& write = m_pendingTableWrite;
+	heap.markValue(valueTable(write.receiver));
+	heap.markValue(write.key);
+	heap.markValue(write.value);
+}
+
+bool CPU::parkTableWrite(CallFrame& frame, u32 receiver, Value key, Value value) {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	++m_diagnosticGcProfile.fullCollections;
+#endif
+	m_pendingTableWrite = {
+		m_heap.active() ? TableWriteRecovery::Current : TableWriteRecovery::Fresh,
+		m_currentInstructionPc, lastPc, frame.readControl(FrameField::Pc), receiver,
+		canonicalTableKey(key), value
+	};
+	frame.writeControl(FrameField::Pc, m_pendingTableWrite.instructionPc);
+	// The final receiver can have come from a weak __newindex chain. It
+	// must become a root before the current scan clears weak entries.
+	const auto phase = m_heap.phase();
+	if (phase == GcPhase::Mark || phase == GcPhase::MarkAgain || phase == GcPhase::Atomic)
+		markPendingTableWriteRoots(m_heap);
+	return true;
+}
+
+bool CPU::advanceTableWriteRecovery() {
+	auto& write = m_pendingTableWrite;
+	switch (write.recovery) {
+		case TableWriteRecovery::RetryCurrent:
+		case TableWriteRecovery::RetryFresh: return false;
+		case TableWriteRecovery::Current:
+		case TableWriteRecovery::Fresh:
+			if (m_heap.finalMarkPending()) m_heap.stepFinalMark();
+			else m_heap.step(valueNil(), valueNil(), valueNil());
+			if (!m_heap.active()) write.recovery = write.recovery == TableWriteRecovery::Current
+				? TableWriteRecovery::RetryCurrent : TableWriteRecovery::RetryFresh;
+			return true;
+		case TableWriteRecovery::None: BMSX_UNREACHABLE();
+	}
+	BMSX_UNREACHABLE();
+}
+
+void CPU::resumeTableWrite() {
+	const auto write = m_pendingTableWrite;
+	m_currentInstructionPc = write.instructionPc;
+	lastPc = write.lastPc;
+	if (TableRecord(m_heap, write.receiver).resumeAssignment(write.key, write.value)) {
+		m_activeThread->currentFrame->writeControl(FrameField::Pc, write.nextPc);
+		m_pendingTableWrite = {};
+		return;
+	}
+	if (write.recovery == TableWriteRecovery::RetryCurrent) {
+		m_pendingTableWrite.recovery = TableWriteRecovery::Fresh;
+		return;
+	}
+
+	m_pendingTableWrite = {};
+	const Value error = m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY];
+	if (!handleThreadError(error)) enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, error);
+}
+
 bool CPU::storeTableIndex(CallFrame& frame, Value base, Value key, Value value) {
 	if (!valueIsTable(base)) throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	TableLookupResult result;
 	TableRecord(m_heap, valuePayload(base)).resolveAssignment(asStringId(m_newIndexKey), key, result);
 	if (finishTableAssignment(frame, key, value, result)) return true;
-	TableRecord(m_heap, result.receiver).set(key, value);
+	TableRecord table(m_heap, result.receiver);
+	if (m_runKind != CpuRunKind::Scheduled) table.set(key, value);
+	else if (table.assignScheduled(key, value) == TableRecord::HASH_STORE_DECLINED)
+		return parkTableWrite(frame, result.receiver, key, value);
 	return false;
 }
 
@@ -101,7 +165,10 @@ bool CPU::storeTableIntegerIndex(CallFrame& frame, Value base, int index, Value 
 	TableLookupResult result;
 	TableRecord(m_heap, valuePayload(base)).resolveIntegerAssignment(asStringId(m_newIndexKey), index, result);
 	if (finishTableAssignment(frame, valueInteger(index), value, result)) return true;
-	TableRecord(m_heap, result.receiver).setInteger(index, value);
+	TableRecord table(m_heap, result.receiver);
+	if (m_runKind != CpuRunKind::Scheduled) table.setInteger(index, value);
+	else if (table.assignScheduled(valueInteger(index), value) == TableRecord::HASH_STORE_DECLINED)
+		return parkTableWrite(frame, result.receiver, valueInteger(index), value);
 	return false;
 }
 
@@ -110,7 +177,11 @@ bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value
 	TableLookupResult result;
 	TableRecord(m_heap, valuePayload(base)).resolveStringAssignment(asStringId(m_newIndexKey), key, result);
 	if (finishTableAssignment(frame, valueString(key), value, result)) return true;
-	const int slot = TableRecord(m_heap, result.receiver).setStringKey(key, value, result.slot);
+	TableRecord table(m_heap, result.receiver);
+	const int slot = m_runKind == CpuRunKind::Scheduled
+		? table.assignScheduled(valueString(key), value, result.slot)
+		: table.setStringKey(key, value, result.slot);
+	if (slot == TableRecord::HASH_STORE_DECLINED) return parkTableWrite(frame, result.receiver, valueString(key), value);
 	if (result.extraVisits == 0) predictedSlot = slot;
 	return false;
 }

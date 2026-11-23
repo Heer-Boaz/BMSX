@@ -92,12 +92,17 @@ export class RuntimeHistory {
 		this.checkpointPending = true;
 	}
 
+	private resetFrameAdmission(): void {
+		this.runtime.frameScheduler.reset();
+		// Host pacing is discarded, not an accepted instruction's grant.
+		if (!this.runtime.machine.cpu.tableWriteParked()) this.runtime.frameLoop.abandonFrameState();
+	}
+
 	public stop(): void {
 		if (this.mode === HistoryMode.Disabled) return;
 		if (this.mode === HistoryMode.Replaying || this.mode === HistoryMode.Reviewing) {
 			this.onWillEndReview?.();
-			this.runtime.frameScheduler.reset();
-			this.runtime.frameLoop.abandonFrameState();
+			this.resetFrameAdmission();
 		}
 		this.mode = HistoryMode.Disabled;
 		this.checkpointPending = false;
@@ -168,8 +173,7 @@ export class RuntimeHistory {
 		this.ramHistory.restore(this.runtime.machine.memory, this.checkpoints[this.ramBaseSlot]!.ram, checkpoint.ram);
 		this.ramBaseSlot = slot;
 		applyRuntimeCheckpointState(this.runtime, checkpoint.state, RuntimeRestoreOrigin.HistorySeek);
-		this.runtime.frameScheduler.reset();
-		this.runtime.frameLoop.abandonFrameState();
+		this.resetFrameAdmission();
 		this.inputJournal.replaySequence = checkpoint.inputSequence;
 		this.checkpointPending = false;
 		this.mode = this.runtime.frameScheduler.lastTickSequence === this.targetTick ? HistoryMode.Reviewing : HistoryMode.Replaying;
@@ -187,7 +191,8 @@ export class RuntimeHistory {
 			return HistorySeekResult.Complete;
 		}
 		if (runtime.machine.gxGpu.backendServicePending() || runtime.machine.gxGpu.backendServiceBlocksMachine()) return HistorySeekResult.BackendPending;
-		if (result === LogicalTickResult.Maintenance) return HistorySeekResult.Progressed;
+		if (result === LogicalTickResult.Maintenance || result === LogicalTickResult.DeferredCpu)
+			return HistorySeekResult.Progressed;
 		// A grant can pay for an indivisible instruction already executed without advancing the clock.
 		if (runtime.machine.scheduler.currentNowCycles() !== before
 			|| (budgetBefore < 0 && runtime.frameScheduler.remainingCycleBudget() > budgetBefore)) return HistorySeekResult.Progressed;
@@ -202,8 +207,7 @@ export class RuntimeHistory {
 		this.targetCycles = this.endCycles;
 		this.targetTick = checkpoint.state.machineState.frameScheduler.lastTickSequence
 			+ this.inputJournal.endSequence - checkpoint.inputSequence;
-		this.runtime.frameScheduler.reset();
-		this.runtime.frameLoop.abandonFrameState();
+		this.resetFrameAdmission();
 		this.mode = this.runtime.frameScheduler.lastTickSequence === this.targetTick ? HistoryMode.Reviewing : HistoryMode.Replaying;
 	}
 
@@ -234,8 +238,7 @@ export class RuntimeHistory {
 			checkpoint.seekUntilCycles = Math.min(checkpoint.seekUntilCycles, cycles);
 		}
 		this.inputJournal.branch();
-		this.runtime.frameScheduler.reset();
-		this.runtime.frameLoop.abandonFrameState();
+		this.resetFrameAdmission();
 		this.endCycles = cycles;
 		this.mode = HistoryMode.Recording;
 		this.checkpointPending = !rejoiningLatest || cycles >= this.nextCheckpointCycles

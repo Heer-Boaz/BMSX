@@ -54,6 +54,9 @@ public:
 
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value);
+	// A resolved opcode write may suspend only on a physical backing refusal.
+	int assignScheduled(Value key, Value value, int slot = TABLE_HASH_UNPROBED);
+	bool resumeAssignment(Value key, Value value);
 	// The caller admits an own assignment with a Table key and a non-nil
 	// value. Growth can return in place of a VM handoff when no collection
 	// is required. Declining leaves the table and collector unchanged.
@@ -182,8 +185,12 @@ private:
 	int findNextLiveHashIndex(size_t start) const;
 	struct ResizePlan { size_t array, hash; u32 members, watermark; };
 	ResizePlan planRehash(Value key, u32 reserve, u32 members, u32 watermark) const;
-	template <bool Returning>
-	int insertHashWithAdmission(Value key, Value value, u32 reserve, u32 members, u32 watermark, int existing) noexcept(Returning);
+	enum class HashStore : u8 { General, Scheduled, Resume, ReturningIndex, ReturningField };
+	template <HashStore Policy>
+	int insertHashWithAdmission(Value key, Value value, u32 reserve, u32 members, u32 watermark, int existing)
+		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
+	template <HashStore Policy>
+	int setOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED);
 	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 reserve, u32 members, int existing) noexcept;
 	int resize(const ResizePlan&, u32 storage, Value key, Value value, u32 reserve);
 	void bindStorage(size_t arraySize, size_t hashSize, u32 address);
@@ -243,10 +250,10 @@ private:
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
 	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
 	int setHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED);
-	enum class HashStore : u8 { General, ReturningIndex, ReturningField };
 	template <HashStore Policy>
 	int assignHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED,
-		StringId newIndexKey = 0) noexcept(Policy != HashStore::General);
+		StringId newIndexKey = 0)
+		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	void removeFromHash(const Value& key, int slot);
 	void markHashNodeDead(size_t index);
 	Value getCanonical(const Value& key) const;

@@ -422,7 +422,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			BMSX_UNREACHABLE();
 		}
 		if (transition == NativeBlockTransition::Redispatch
-			&& (cpu.m_hardHalted || cpu.m_yieldRequested || cpu.m_threadSwitchRequested || cpu.m_memoryWriteBlocked
+			&& (cpu.tableWriteParked() || cpu.m_hardHalted || cpu.m_yieldRequested || cpu.m_threadSwitchRequested || cpu.m_memoryWriteBlocked
 				|| cpu.m_nonMaskableInterruptPending
 				|| ((cpu.m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 					&& cpu.m_irqController.hasAssertedMaskableInterruptLine()))) {

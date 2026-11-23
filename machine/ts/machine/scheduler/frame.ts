@@ -32,7 +32,7 @@ type BudgetFrameState = {
 	cycleBudgetGranted: number;
 };
 
-export const enum LogicalTickResult { Incomplete, Completed, Maintenance }
+export const enum LogicalTickResult { Incomplete, Completed, Maintenance, DeferredCpu }
 const enum Pulse { Ready, Blocked, Maintenance }
 
 const MAX_CATCH_UP_MS = 1000 / 12;
@@ -76,6 +76,7 @@ export class FrameSchedulerState {
 		if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 			return false;
 		}
+		if (runtime.machine.cpu.tableWriteParked()) return runtime.machine.cpu.tableWriteReady();
 		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 			|| this.carriedCycleBudget > 0
 			|| this.accumulatedHostTimeMs > 0;
@@ -97,10 +98,11 @@ export class FrameSchedulerState {
 		const backendBlocked = runtime.machine.gxGpu.backendServiceBlocksMachine();
 		if (!backendBlocked && !this.backendServiceSuspended) this.accumulateHostTime(hostDeltaMs);
 		this.backendServiceSuspended = backendBlocked;
-		const heap = runtime.machine.cpu.gc;
-		if (heap.finalMarkPending()) {
+		const cpu = runtime.machine.cpu;
+		const heap = cpu.gc;
+		if (cpu.tableWriteParked() ? cpu.advanceTableWriteRecovery() : heap.finalMarkPending()) {
 			// Keep the host grant queued while the guest clock is stopped.
-			heap.stepFinalMark();
+			if (!cpu.tableWriteParked()) heap.stepFinalMark();
 			return Pulse.Maintenance;
 		}
 		return backendBlocked ? Pulse.Blocked : Pulse.Ready;
@@ -210,8 +212,14 @@ export class FrameSchedulerState {
 		const runtime = this.runtime;
 		const admission = this.beginScheduledExecution(0);
 		if (admission === Pulse.Maintenance) return LogicalTickResult.Maintenance;
-		if (tickBudget === 0 || admission === Pulse.Blocked) return LogicalTickResult.Incomplete;
-		if (!this.logicalTickRunPending) {
+		const parked = runtime.machine.cpu.tableWriteParked();
+		if ((tickBudget === 0 && !parked) || admission === Pulse.Blocked) return LogicalTickResult.Incomplete;
+		if (parked) {
+			if (!this.logicalTickRunPending) {
+				this.logicalTickRunPending = true;
+				this.logicalTickRunTargetSequence = this.lastTickSequence + 1;
+			}
+		} else if (!this.logicalTickRunPending) {
 			this.logicalTickRunPending = true;
 			this.logicalTickRunTargetSequence = this.lastTickSequence + 1;
 			if (runtime.frameLoop.frameActive) {
@@ -240,7 +248,9 @@ export class FrameSchedulerState {
 			}
 		}
 		this.synchronizeBackendService();
-		if (this.lastTickSequence !== targetSequence) return LogicalTickResult.Incomplete;
+		if (this.lastTickSequence !== targetSequence) {
+			return runtime.machine.cpu.tableWriteParked() ? LogicalTickResult.DeferredCpu : LogicalTickResult.Incomplete;
+		}
 		this.logicalTickRunPending = false;
 		this.logicalTickRunTargetSequence = 0;
 		return LogicalTickResult.Completed;
@@ -277,7 +287,7 @@ export class FrameSchedulerState {
 			if (carry === 0 && cycleGrant === 0) return false;
 			this.beginScheduledFrame(carry + cycleGrant, carry);
 		}
-		if (this.beginScheduledExecution(0) !== Pulse.Ready) return false;
+		if (this.beginScheduledExecution(0) !== Pulse.Ready || runtime.machine.cpu.tableWriteParked()) return false;
 		const previous = this.lastTickSequence, state = runtime.frameLoop.frameState, scheduler = runtime.machine.scheduler;
 		runDueRuntimeTimers(runtime);
 		while (this.lastTickSequence === previous && state.cycleBudgetRemaining > 0 && !runtime.machine.gxGpu.backendServiceBlocksMachine()) {

@@ -82,7 +82,7 @@ function observe(mode: CpuExecutionBackend, crossing: boolean) {
 	else assert.equal(geoController.captureState().xform.vertices[0], 0, 'non-crossing control samples before the write');
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, frame.functionAddress, entry);
 	frame.registers.setInteger(0, vertex); frame.registers.setInteger(1, 0x10000);
-	const state = { updateExecuted: false, cycleBudgetRemaining: 100, cycleBudgetGranted: 100, cycleCarryGranted: 0, activeCpuUsedCycles: 0 };
+	const state = { updateExecuted: false, cycleBudgetRemaining: 100, cycleBudgetGranted: 100, cycleCarryGranted: 0, activeCpuUsedCycles: 0, deferredTableWriteCycles: 0 };
 	const start = scheduler.nowCycles;
 	assert.equal(runtime.cpuExecution.runInstruction(state), InstructionStepResult.Executed);
 	assert.equal(state.cycleBudgetRemaining, 97, 'the runtime grants one instruction and charges all three cycles');

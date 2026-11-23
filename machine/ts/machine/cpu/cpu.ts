@@ -1,5 +1,5 @@
 import { ValueMoveKind } from '../../spec/blua32/instruction_format';
-import { GcHeap, GcRootBank } from './gc_heap';
+import { GcHeap, GcPhase, GcRootBank } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
@@ -120,13 +120,13 @@ import {
 	EMPTY_CALL_ARGS,
 	ValueTag,
 	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag, valueToByteString,
-	valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueBuiltinFunction, valueString, valueBool, valueThread, asThread,
+	canonicalTableKey, valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueBuiltinFunction, valueString, valueBool, valueThread, asThread,
 	isNil, valueTag, valueToInteger,
 	valueTypeNameForLuaTag,
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { TableRecords, TableHeader, TABLE_INDEX_CHAIN_LIMIT, TableLookupStatus, type TableLookupResult } from './table';
+import { TableRecords, TableHeader, TABLE_INDEX_CHAIN_LIMIT, HASH_STORE_DECLINED, TableLookupStatus, type TableLookupResult } from './table';
 import * as Closure from './closure';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, sameFunctionPrototype, type FunctionPrototype } from './closure';
 import { StaticClosureIndex } from './static_closure_index';
@@ -203,6 +203,7 @@ export type CpuRuntimeState = {
 	memoryWriteBlocked: boolean;
 	memoryWriteBlockedAddress: number;
 	pendingMemory: PendingMemoryOperation;
+	pendingTableWrite: PendingTableWrite | null;
 	statusWord: number;
 	causeWord: number;
 	epcWord: number;
@@ -228,7 +229,22 @@ export const enum RunResult {
 	Halted,
 	Yielded,
 	ExecutionStopped,
+	ParkedTableWrite,
 }
+
+export const enum CpuRunKind { Direct, Scheduled }
+
+export const enum TableWriteRecovery { None, Current, RetryCurrent, Fresh, RetryFresh }
+export type PendingTableWrite = {
+	recovery: TableWriteRecovery;
+	instructionPc: number;
+	lastPc: number;
+	nextPc: number;
+	receiver: number;
+	key: Value;
+	value: Value;
+};
+const TABLE_WRITE_PARKED = Symbol('TableWriteParked');
 
 /** Host-only configuration. Borrowed registers are read-only; never retain them or execute guest code. */
 export type InstructionObserverBinding = {
@@ -268,6 +284,8 @@ export class CPU implements MappedPageInvalidator {
 	private interruptEventPending = false;
 	private memoryWriteBlocked = false;
 	private memoryWriteBlockedAddress = 0;
+	private pendingTableWrite: PendingTableWrite | null = null;
+	private runKind = CpuRunKind.Direct;
 	private readonly pendingMemory: PendingMemoryOperation = { kind: PendingMemoryKind.None, instructionPc: 0, nextPc: 0, address: 0, accessKind: MemoryAccessKind.Word, registerIndex: 0, wordCount: 0 };
 	private currentInstructionPc = 0;
 	private scalarRegisterTop = -1;
@@ -576,17 +594,75 @@ export class CPU implements MappedPageInvalidator {
 	}
 	private storeTableIndex(frame: CallFrame, base: Value, key: Value, value: Value): boolean {
 		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-		const tables = this.gc.tables, record = valuePayload(base);
-		if (tables.metatableAddress(record) === 0) {
-			tables.set(record, key, value);
-			return false;
+		const tables = this.gc.tables;
+		let receiver = valuePayload(base);
+		if (tables.metatableAddress(receiver) !== 0) {
+			const assignment = this.tableLookupResult;
+			tables.resolveAssignment(receiver, this.newIndexKey, key, assignment);
+			if (this.finishTableAssignment(frame, key, value, assignment)) return true;
+			receiver = assignment.receiver;
 		}
-		const assignment = this.tableLookupResult;
-		tables.resolveAssignment(record, this.newIndexKey, key, assignment);
-		if (this.finishTableAssignment(frame, key, value, assignment)) return true;
-		tables.set(assignment.receiver, key, value);
+		if (this.runKind === CpuRunKind.Scheduled) {
+			if (tables.assignScheduled(receiver, key, value) === HASH_STORE_DECLINED)
+				return this.parkTableWrite(frame, receiver, key, value);
+		} else tables.set(receiver, key, value);
 		return false;
 	}
+	public tableWriteParked(): boolean { return this.pendingTableWrite !== null; }
+
+	private markPendingTableWriteRoots(heap: GcHeap, write: PendingTableWrite): void {
+		heap.markValue(valueTable(write.receiver));
+		heap.markValue(write.key);
+		heap.markValue(write.value);
+	}
+
+	private parkTableWrite(frame: CallFrame, receiver: number, key: Value, value: Value): boolean {
+		const phase = this.gc.phase();
+		const write = {
+			recovery: this.gc.active() ? TableWriteRecovery.Current : TableWriteRecovery.Fresh,
+			instructionPc: this.currentInstructionPc, lastPc: this.lastPc, nextPc: frame.pc,
+			receiver, key: canonicalTableKey(key), value,
+		};
+		this.pendingTableWrite = write;
+		frame.pc = write.instructionPc;
+		if (phase === GcPhase.Mark || phase === GcPhase.MarkAgain || phase === GcPhase.Atomic)
+			this.markPendingTableWriteRoots(this.gc, write);
+		return true;
+	}
+
+	public tableWriteReady(): boolean {
+		const recovery = this.pendingTableWrite?.recovery;
+		return recovery === TableWriteRecovery.RetryCurrent || recovery === TableWriteRecovery.RetryFresh;
+	}
+
+	public advanceTableWriteRecovery(): boolean {
+		const write = this.pendingTableWrite!;
+		if (write.recovery === TableWriteRecovery.RetryCurrent || write.recovery === TableWriteRecovery.RetryFresh) return false;
+		if (this.gc.finalMarkPending()) this.gc.stepFinalMark();
+		else this.gc.step(valueNil(), valueNil(), valueNil());
+		if (!this.gc.active()) write.recovery = write.recovery === TableWriteRecovery.Current
+			? TableWriteRecovery.RetryCurrent : TableWriteRecovery.RetryFresh;
+		return true;
+	}
+
+	public resumeTableWrite(): void {
+		const write = this.pendingTableWrite!;
+		this.currentInstructionPc = write.instructionPc;
+		this.lastPc = write.lastPc;
+		if (this.gc.tables.resumeAssignment(write.receiver, write.key, write.value)) {
+			this.activeThread.currentFrame!.pc = write.nextPc;
+			this.pendingTableWrite = null;
+			return;
+		}
+		if (write.recovery === TableWriteRecovery.RetryCurrent) {
+			write.recovery = TableWriteRecovery.Fresh;
+			return;
+		}
+		this.pendingTableWrite = null;
+		const value = valueString(this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY]);
+		if (!this.handleThreadError(value)) this.enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, value);
+	}
+
 	private finishTableAssignment(frame: CallFrame, key: Value, value: Value, assignment: TableLookupResult): boolean {
 		this.charge(assignment.extraVisits * TABLE_INDEX_VISIT_CYCLES);
 		if (assignment.status === TableLookupStatus.Store) return false;
@@ -603,7 +679,10 @@ export class CPU implements MappedPageInvalidator {
 		const assignment = this.tableLookupResult, field = valueString(key);
 		tables.resolveAssignment(record, this.newIndexKey, field, assignment, true);
 		if (this.finishTableAssignment(frame, field, value, assignment)) return true;
-		const slot = tables.storeStringKey(assignment.receiver, key, tag, word, assignment.slot);
+		const slot = this.runKind === CpuRunKind.Scheduled
+			? tables.assignScheduled(assignment.receiver, field, value, assignment.slot)
+			: tables.storeStringKey(assignment.receiver, key, tag, word, assignment.slot);
+		if (slot === HASH_STORE_DECLINED) return this.parkTableWrite(frame, assignment.receiver, field, value);
 		if (assignment.extraVisits === 0) page.tableCacheSlots[pageOffset] = slot;
 		return false;
 	}
@@ -668,6 +747,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
 		this.pendingMemory.kind = PendingMemoryKind.None;
+		this.pendingTableWrite = null;
 		this.hardHalted = false;
 		this.programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_SYSTEM_ENTRY;
@@ -1560,6 +1640,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
 		this.pendingMemory.kind = PendingMemoryKind.None;
+		this.pendingTableWrite = null;
 		this.hardHalted = false;
 		this.yieldRequested = false;
 		const closure = this.staticClosureFromLatch();
@@ -1575,6 +1656,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
+		if (this.pendingTableWrite !== null) throw new Error('A parked table write must retire before replacing code execution.');
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		const roots = this.acquireLocalRoots();
 		this.localRoots.push(valueClosure(closure));
@@ -1597,6 +1679,7 @@ export class CPU implements MappedPageInvalidator {
 		executionDomainId: ExecutionDomainId,
 		functionAddress: number,
 	): void {
+		if (this.pendingTableWrite !== null) throw new Error('A parked table write must retire before replacing code execution.');
 		this.gc.finishFinalMark();
 		if (!this.readFunctionRecord(this.executionImageForDomain(executionDomainId)!, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId))) {
 			this.hardHalt();
@@ -1720,7 +1803,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public enterPendingInterrupt(): boolean {
-		if (this.pendingMemory.kind !== PendingMemoryKind.None) return false;
+		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingTableWrite !== null) return false;
 		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
@@ -1855,7 +1938,12 @@ export class CPU implements MappedPageInvalidator {
 		return this.activeThread.frameDepth;
 	}
 
-	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address): RunResult {
+	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address, kind = CpuRunKind.Direct): RunResult {
+		if (this.pendingTableWrite !== null) {
+			this.instructionBudgetRemaining = instructionBudget;
+			return RunResult.ParkedTableWrite;
+		}
+		this.runKind = kind;
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		for (;;) {
 			const result = this.runUntilDepthEntry(this.activeThread.address === target ? targetDepth : 0, instructionBudget);
@@ -1944,6 +2032,7 @@ export class CPU implements MappedPageInvalidator {
 							rewritten,
 						);
 						if (tableReceiver !== undefined) {
+							if (tableReceiver === TABLE_WRITE_PARKED) return RunResult.ParkedTableWrite;
 							this.publishScalarFrontier(frame, nextPc);
 							scalarFrame = null;
 							this.finishTableRead(frame, page.a[pageOffset], tableReceiver, valueString(image.constWords[page.c[pageOffset]]), this.tableLookupResult);
@@ -2037,13 +2126,13 @@ export class CPU implements MappedPageInvalidator {
 					this.lastExecutionDomainId = image.executionDomainId;
 					this.lastPc = (pc + ((width - 1) * INSTRUCTION_BYTES)) >>> 0;
 					this.instructionBudgetRemaining -= page.dispatchCycles[pageOffset];
-					this.executeInstruction(
+					if (this.executeInstruction(
 						frame,
 						page,
 						pageOffset,
 						op,
 						targetDepth,
-					);
+					) === TABLE_WRITE_PARKED) return RunResult.ParkedTableWrite;
 				}
 			} catch (error) {
 				this.handleRunLoopError(error);
@@ -2216,6 +2305,7 @@ export class CPU implements MappedPageInvalidator {
 		functionAddress: number,
 		pc: number,
 	): void {
+		if (this.pendingTableWrite !== null) throw new Error('A parked table write must retire before replacing code execution.');
 		const image = this.executionImageForDomain(executionDomainId)!;
 		if (!admitsFunctionPc(image.romFunctions, functionAddress, pc)
 			|| !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId)))
@@ -2756,7 +2846,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number, targetDepth: number, rewritten: boolean): void {
+	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number, targetDepth: number, rewritten: boolean): Value | typeof TABLE_WRITE_PARKED | undefined {
 		const cache = page.compiledBlocks!;
 		if (page.dispatchOps[word] === DecodedDispatchOp.CompiledWarm) {
 			if (cache.visits[word] < COMPILED_BLOCK_THRESHOLD) ++cache.visits[word];
@@ -2772,16 +2862,14 @@ export class CPU implements MappedPageInvalidator {
 		let block = cache.entries[word];
 		if (block === null || thread.stackRequiresScalar()) {
 			frame.compilationEntry = rewritten || compiledBlockEndsBlock(page.ops[word], page.b[word]);
-			this.executeInstruction(frame, page, word, page.ops[word], targetDepth);
-			return;
+			return this.executeInstruction(frame, page, word, page.ops[word], targetDepth);
 		}
 		// The first instruction was admitted with positive budget and charged by
 		// dispatch. Execute its bounded segment and return the complete charge.
 		let remaining = this.instructionBudgetRemaining + page.dispatchCycles[word];
 		if (!compiledBlockAdmits(block, frame, remaining)) {
 			frame.compilationEntry = rewritten || compiledBlockEndsBlock(page.ops[word], page.b[word]);
-			this.executeInstruction(frame, page, word, page.ops[word], targetDepth);
-			return;
+			return this.executeInstruction(frame, page, word, page.ops[word], targetDepth);
 		}
 		for (;;) {
 			const registers = frame.registers;
@@ -2886,7 +2974,7 @@ export class CPU implements MappedPageInvalidator {
 					const invoked = valueTag(key) === ValueTag.String
 						? this.storeTableFieldIndexCached(frame, base, exit.page, exit.exitWord, valuePayload(key), value)
 						: this.storeTableIndex(frame, base, key, value);
-					if (invoked) return;
+					if (invoked) return this.pendingTableWrite !== null ? TABLE_WRITE_PARKED : undefined;
 					break;
 				}
 			}
@@ -2936,7 +3024,7 @@ export class CPU implements MappedPageInvalidator {
 		op: number,
 		targetDepth: number,
 		rewritten = false,
-	): Value | undefined {
+	): Value | typeof TABLE_WRITE_PARKED | undefined {
 		const registers = frame.registers;
 		const image = frame.executionImage;
 		const a = page.a[pageOffset];
@@ -2954,15 +3042,13 @@ export class CPU implements MappedPageInvalidator {
 		switch (op) {
 				case DecodedDispatchOp.CompiledWarm:
 				case DecodedDispatchOp.Compiled:
-					this.executeCompiledBlock(frame, page, pageOffset, targetDepth, rewritten);
-					return;
+					return this.executeCompiledBlock(frame, page, pageOffset, targetDepth, rewritten);
 				case DecodedDispatchOp.Observe:
 					frame.compilationEntry = rewritten || compiledBlockEndsBlock(page.ops[pageOffset], page.b[pageOffset]);
 					this.instructionObserver!.observe(image.executionDomainId, this.currentInstructionPc, registers);
 					// Observe has zero base cost; execute and charge the original instruction once.
 					this.instructionBudgetRemaining -= decodedInstructionBaseCycles(page, pageOffset);
-					this.executeInstruction(frame, page, pageOffset, page.ops[pageOffset], targetDepth);
-					return;
+					return this.executeInstruction(frame, page, pageOffset, page.ops[pageOffset], targetDepth);
 				case DecodedDispatchOp.FusedShlBxor:
 				case DecodedDispatchOp.FusedShrBxor:
 				case DecodedDispatchOp.FusedAddShl:
@@ -3045,8 +3131,10 @@ export class CPU implements MappedPageInvalidator {
 				}
 				case OpCode.SETI: {
 					const base = registers.get(a), index = page.b[pageOffset], value = this.readRKValue(frame, page.c[pageOffset]);
-					if (valueTag(base) !== ValueTag.Table || !this.gc.tables.storeIntegerArrayKey(valuePayload(base), index, valueTag(value), valuePayload(value), this.newIndexKey))
-						this.storeTableIndex(frame, base, valueInteger(index), value);
+					if (valueTag(base) !== ValueTag.Table || !this.gc.tables.storeIntegerArrayKey(valuePayload(base), index, valueTag(value), valuePayload(value), this.newIndexKey)) {
+						if (this.storeTableIndex(frame, base, valueInteger(index), value) && this.pendingTableWrite !== null)
+							return TABLE_WRITE_PARKED;
+					}
 					return;
 				}
 				case OpCode.GETFIELD:
@@ -3066,12 +3154,16 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.SETFIELD:
-					this.storeTableFieldIndexCached(frame, registers.get(a), page, pageOffset, image.constWords[page.b[pageOffset]], this.readRKValue(frame, page.c[pageOffset])); return;
+					if (this.storeTableFieldIndexCached(frame, registers.get(a), page, pageOffset, image.constWords[page.b[pageOffset]], this.readRKValue(frame, page.c[pageOffset]))
+						&& this.pendingTableWrite !== null) return TABLE_WRITE_PARKED;
+					return;
 				case OpCode.HALT: this.haltUntilIrq(); return;
 				case OpCode.GETT:
 					this.loadTableIndex(registers.get(page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]), frame, a); return;
 				case OpCode.SETT:
-					this.storeTableIndex(frame, registers.get(a), this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset])); return;
+					if (this.storeTableIndex(frame, registers.get(a), this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))
+						&& this.pendingTableWrite !== null) return TABLE_WRITE_PARKED;
+					return;
 				case OpCode.NEWT: {
 					const arraySize = page.b[pageOffset], hashSize = page.c[pageOffset];
 					const table = this.createTable(arraySize, hashSize);
@@ -4320,6 +4412,7 @@ export class CPU implements MappedPageInvalidator {
 			memoryWriteBlocked: this.memoryWriteBlocked,
 			memoryWriteBlockedAddress: this.memoryWriteBlockedAddress,
 			pendingMemory: { ...this.pendingMemory },
+			pendingTableWrite: this.pendingTableWrite === null ? null : { ...this.pendingTableWrite },
 			statusWord: this.cop0Words[COP0_STATUS],
 			causeWord: this.cop0Words[COP0_CAUSE],
 			epcWord: this.cop0Words[COP0_EPC],
@@ -4382,6 +4475,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memoryWriteBlocked = state.memoryWriteBlocked;
 		this.memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
 		Object.assign(this.pendingMemory, state.pendingMemory);
+		this.pendingTableWrite = state.pendingTableWrite === null ? null : { ...state.pendingTableWrite };
 		this.cop0Words[COP0_STATUS] = state.statusWord;
 		this.cop0Words[COP0_CAUSE] = state.causeWord;
 		this.cop0Words[COP0_EPC] = state.epcWord;
@@ -4512,6 +4606,7 @@ export class CPU implements MappedPageInvalidator {
 		for (let i = 0; i < this.luaFaultErrorStringIds.length; ++i)
 			if (i !== LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(this.luaFaultErrorStringIds[i]);
 		heap.markValue(this.stringIndexTable);
+		if (this.pendingTableWrite !== null) this.markPendingTableWriteRoots(heap, this.pendingTableWrite);
 	}
 
 	public markScopedRoots(heap: GcHeap): void {

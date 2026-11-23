@@ -275,20 +275,28 @@ int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, 
 	return HASH_STORE_DECLINED;
 }
 
-template <bool Returning>
-int TableRecord::insertHashWithAdmission(Value key, Value value, u32 reserve, u32 members, u32 watermark, int existing) noexcept(Returning) {
+template <TableRecord::HashStore Policy>
+int TableRecord::insertHashWithAdmission(Value key, Value value, u32 reserve, u32 members, u32 watermark, int existing)
+	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	auto& budget = m_heap->budget;
 	auto plan = planRehash(key, reserve, members, watermark);
 	u32 previous = allocationCharge(arrayCapacity(), std::max(reserve, members));
 	u32 requested = allocationCharge(plan.array, std::max(reserve, plan.members));
-	if constexpr (Returning) {
+	if constexpr (Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 		// The generated body has not published its roots. Even an ordinary
 		// allocation assist must go through the instruction's semantic exit.
 		if (requested > previous && !budget.canAdmitWithoutAssist(requested - previous)) return HASH_STORE_DECLINED;
 		return commitHashPlan(plan, key, value, reserve, members, existing);
+	} else if constexpr (Policy == HashStore::Resume) {
+		if (requested > previous && budget.usedBytes() + requested - previous > budget.capacity())
+			return HASH_STORE_DECLINED;
+		return commitHashPlan(plan, key, value, reserve, members, existing);
 	} else {
 		const Value owner = valueTable(m_address);
 		bool admitted = requested <= previous || budget.prepareAllocation(requested - previous, owner, key, value);
+		if constexpr (Policy == HashStore::Scheduled) {
+			if (admitted) return commitHashPlan(plan, key, value, reserve, members, existing);
+		}
 		auto recovery = LuaAllocationRecovery::CurrentOrFresh;
 		for (;;) {
 			if (admitted) {
@@ -546,7 +554,20 @@ Value TableRecord::getHash(const Value& key) const {
 	return index < 0 ? valueNil() : body.slots.get(body.array + count + static_cast<u32>(index));
 }
 
-void TableRecord::set(const Value& rawKey, const Value& value) {
+void TableRecord::set(const Value& key, const Value& value) {
+	setOwn<HashStore::General>(key, value);
+}
+
+int TableRecord::assignScheduled(Value key, Value value, int slot) {
+	return setOwn<HashStore::Scheduled>(key, value, slot);
+}
+
+bool TableRecord::resumeAssignment(Value key, Value value) {
+	return setOwn<HashStore::Resume>(key, value) != HASH_STORE_DECLINED;
+}
+
+template <TableRecord::HashStore Policy>
+int TableRecord::setOwn(Value rawKey, Value value, int slot) {
 	if (isNil(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 	if (valueIsNaN(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
 	const Value key = canonicalTableKey(rawKey);
@@ -554,11 +575,19 @@ void TableRecord::set(const Value& rawKey, const Value& value) {
 	const u32 array = arrayCapacity();
 	if (index < array) {
 		setArraySlot(index, value);
-		return;
+		return -1;
 	}
 	const bool present = !isNil(value);
-	setHash(array, key, value);
+	if (!present) {
+		removeFromHash(key, slot);
+		slot = -1;
+	} else {
+		slot = assignHash<Policy>(array, key, value, slot);
+		if constexpr (Policy != HashStore::General)
+			if (slot == HASH_STORE_DECLINED) return slot;
+	}
 	if (index != NO_ARRAY_SLOT) updateLengthHint(index, present);
+	return slot;
 }
 
 int TableRecord::setHash(u32 array, Value key, Value value, int slot) {
@@ -570,8 +599,9 @@ int TableRecord::setHash(u32 array, Value key, Value value, int slot) {
 }
 
 template <TableRecord::HashStore Policy>
-int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, StringId newIndexKey) noexcept(Policy != HashStore::General) {
-	constexpr bool returning = Policy != HashStore::General;
+int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, StringId newIndexKey)
+	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
+	constexpr bool returning = Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField;
 	const auto tag = valueTag(value);
 	const bool erase = Policy == HashStore::ReturningField && tag == ValueTag::Nil;
 	const bool valueHasEdge = valueTagHasGcEdge(tag);
@@ -619,16 +649,19 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 		if (members >= reserve) {
 			if constexpr (returning) {
 				if (!m_heap->budget.canAdmitWithoutAssist(kHashMappingBytes)) return HASH_STORE_DECLINED;
+			} else if constexpr (Policy == HashStore::Resume) {
+				if (m_heap->budget.usedBytes() + kHashMappingBytes > m_heap->budget.capacity())
+					return HASH_STORE_DECLINED;
 			} else {
 				m_heap->budget.admit(kHashMappingBytes, valueTable(m_address), key, value);
 			}
 		}
 		nodeIndex = placeHashMapping(body, home, key, value, nodeIndex, available);
-		const u32 retained = returning ? members : hashMembers();
+		const u32 retained = returning || Policy == HashStore::Resume ? members : hashMembers();
 		publishHashMembers(retained, retained + 1u, reserve);
 	} else {
-		nodeIndex = insertHashWithAdmission<returning>(key, value, reserve, members, watermark, nodeIndex);
-		if constexpr (returning)
+		nodeIndex = insertHashWithAdmission<Policy>(key, value, reserve, members, watermark, nodeIndex);
+		if constexpr (Policy != HashStore::General)
 			if (nodeIndex == HASH_STORE_DECLINED) return nodeIndex;
 	}
 	if (valueTagHasGcEdge(valueTag(key)) || valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);

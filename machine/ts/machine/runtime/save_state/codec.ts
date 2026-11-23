@@ -2,7 +2,7 @@ import type { PendingMemoryKind } from '../../cpu/memory_operation';
 import type { MemoryAccessKind } from '../../../spec/blua32/memory_access_kind';
 import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../../common/serializer/binary_stream';
 import type { MachineSaveState } from '../../save_state';
-import type { CpuRuntimeState } from '../../cpu/cpu';
+import { TableWriteRecovery, type CpuRuntimeState, type PendingTableWrite } from '../../cpu/cpu';
 import type { Value } from '../../cpu/value';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { CartridgeCardState, CartridgeControllerState, CartridgeMailboxState } from '../../devices/cartridge/contracts';
@@ -41,7 +41,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x34534d42; // BMS4: IMGDEC assembly and readout share history
+const SAVE_STATE_SIGNATURE = 0x35534d42; // BMS5: pending table writes and deferred guest cycles
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -87,6 +87,7 @@ function writeFrameState(writer: BinarySink, state: FrameState): void {
 	writer.i64(state.cycleBudgetGranted);
 	writer.i64(state.cycleCarryGranted);
 	writer.i64(state.activeCpuUsedCycles);
+	writer.i32(state.deferredTableWriteCycles);
 }
 
 function readFrameState(reader: BinaryReader): FrameState {
@@ -96,6 +97,7 @@ function readFrameState(reader: BinaryReader): FrameState {
 		cycleBudgetGranted: reader.i64(),
 		cycleCarryGranted: reader.i64(),
 		activeCpuUsedCycles: reader.i64(),
+		deferredTableWriteCycles: reader.i32(),
 	};
 }
 
@@ -1145,6 +1147,16 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.u32(state.pendingMemory.accessKind);
 	writer.i32(state.pendingMemory.registerIndex);
 	writer.i32(state.pendingMemory.wordCount);
+	const write = state.pendingTableWrite;
+	writer.u32(write === null ? TableWriteRecovery.None : write.recovery);
+	if (write !== null) {
+		writer.u32(write.instructionPc);
+		writer.u32(write.lastPc);
+		writer.u32(write.nextPc);
+		writer.u32(write.receiver);
+		writer.u64(write.key);
+		writer.u64(write.value);
+	}
 	writer.u32(state.statusWord);
 	writer.u32(state.causeWord);
 	writer.u32(state.epcWord);
@@ -1158,6 +1170,16 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.u32(state.nmiReturnExceptionDomainWord);
 	writer.bool(state.nonMaskableInterruptPending);
 	writer.bool(state.yieldRequested);
+}
+
+function readPendingTableWrite(reader: BinaryReader): PendingTableWrite | null {
+	const recovery = reader.u32() as TableWriteRecovery;
+	if (recovery === TableWriteRecovery.None) return null;
+	return {
+		recovery,
+		instructionPc: reader.u32(), lastPc: reader.u32(), nextPc: reader.u32(),
+		receiver: reader.u32(), key: reader.u64() as Value, value: reader.u64() as Value,
+	};
 }
 
 function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
@@ -1188,6 +1210,7 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 			accessKind: reader.u32() as MemoryAccessKind,
 			registerIndex: reader.i32(), wordCount: reader.i32(),
 		},
+		pendingTableWrite: readPendingTableWrite(reader),
 		statusWord: reader.u32(),
 		causeWord: reader.u32(),
 		epcWord: reader.u32(),

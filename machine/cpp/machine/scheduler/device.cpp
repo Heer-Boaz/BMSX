@@ -37,7 +37,7 @@ i64 DeviceScheduler::currentNowCycles() const {
 	return m_activeSliceBaseCycle + (m_activeSliceBudgetCycles - m_cpu.instructionBudgetRemaining);
 }
 
-RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget, u32 targetThread) {
+RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget, u32 targetThread, CpuRunKind kind) {
 	beginCpuSlice(sliceBudget);
 	ScopeExit activeSlice([this]() { endCpuSlice(); });
 #if defined(BMSX_DIAGNOSTIC_CPU_TIMING)
@@ -47,7 +47,7 @@ RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget, u32 tar
 	// Same admission/consumption boundary as CpuTopologyDiagnostic::scheduler;
 	// this bounded probe needs the cumulative count/sum, not its histograms.
 	const DiagnosticExecutionProfile before = m_cpu.diagnosticExecutionProfile();
-	const auto result = m_cpu.runUntilDepth(targetDepth, sliceBudget, targetThread);
+	const auto result = m_cpu.runUntilDepth(targetDepth, sliceBudget, targetThread, kind);
 	const auto& after = m_cpu.diagnosticExecutionProfile();
 	const i64 consumed = static_cast<i64>(sliceBudget) - m_cpu.instructionBudgetRemaining;
 	const i64 native = after.nativeOriginCycles - before.nativeOriginCycles;
@@ -67,7 +67,7 @@ RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget, u32 tar
 	diagnosticInterpreterOpcodes.concatn += after.interpreterOpcodes.concatn - before.interpreterOpcodes.concatn;
 	return result;
 #else
-	return m_cpu.runUntilDepth(targetDepth, sliceBudget, targetThread);
+	return m_cpu.runUntilDepth(targetDepth, sliceBudget, targetThread, kind);
 #endif
 }
 

@@ -56,6 +56,7 @@ bool FrameLoopState::prepareScheduledFrame(Runtime& runtime) {
 	if (!frameActive) {
 		return runtime.frameScheduler.startScheduledFrame(runtime);
 	}
+	if (runtime.machine.cpu.tableWriteReady()) return true;
 	if (frameState.cycleBudgetRemaining <= 0) {
 		return runtime.frameScheduler.refillFrameBudget(runtime, frameState);
 	}

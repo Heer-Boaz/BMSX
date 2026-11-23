@@ -7,6 +7,7 @@
 #endif
 
 #include "common/primitives.h"
+#include "machine/cpu/run_result.h"
 
 #include <array>
 #include <cstdint>
@@ -15,7 +16,6 @@
 namespace bmsx {
 
 class CPU;
-enum class RunResult;
 
 constexpr uint8_t DEVICE_SERVICE_GEO = 1;
 constexpr uint8_t DEVICE_SERVICE_DMA = 2;
@@ -46,7 +46,7 @@ public:
 		m_activeSliceTargetCycle = m_schedulerNowCycles + sliceBudget;
 	}
 	void endCpuSlice() { m_schedulerSliceActive = false; }
-	RunResult runCpuSlice(int targetDepth, int sliceBudget, u32 targetThread = 0u);
+	RunResult runCpuSlice(int targetDepth, int sliceBudget, u32 targetThread = 0u, CpuRunKind kind = CpuRunKind::Direct);
 	void advanceTo(i64 nowCycles);
 	i64 nextDeadline();
 	bool hasDueTimer();

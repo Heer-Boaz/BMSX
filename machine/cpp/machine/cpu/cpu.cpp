@@ -178,6 +178,7 @@ void CPU::reset() {
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
 	m_pendingMemory.kind = PendingMemoryKind::None;
+	m_pendingTableWrite = {};
 	m_hardHalted = false;
 	m_programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_SYSTEM_ENTRY;
@@ -882,6 +883,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
 	m_pendingMemory.kind = PendingMemoryKind::None;
+	m_pendingTableWrite = {};
 	m_hardHalted = false;
 	m_yieldRequested = false;
 	u32 closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
@@ -895,6 +897,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 }
 
 void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
+	if (tableWriteParked()) throw BMSX_RUNTIME_ERROR("A parked table write must retire before replacing code execution.");
 	if (m_unpublishedRomMask != 0u)
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
 	auto roots = acquireLocalRoots();
@@ -916,6 +919,7 @@ void CPU::beginCompletionCallInExecutionDomain(
 	ExecutionDomainId executionDomainId,
 	u32 functionAddress
 ) {
+	if (tableWriteParked()) throw BMSX_RUNTIME_ERROR("A parked table write must retire before replacing code execution.");
 	m_heap.finishFinalMark();
 	if (!readFunctionRecord(*executionImageForDomain(executionDomainId), functionAddress, executionBusSignalsForDomain(executionDomainId))) {
 		hardHalt();
@@ -954,6 +958,7 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 	state.memoryWriteBlocked = m_memoryWriteBlocked;
 	state.memoryWriteBlockedAddress = m_memoryWriteBlockedAddress;
 	state.pendingMemory = m_pendingMemory;
+	state.pendingTableWrite = m_pendingTableWrite;
 	state.statusWord = m_cop0Words[COP0_STATUS];
 	state.causeWord = m_cop0Words[COP0_CAUSE];
 	state.epcWord = m_cop0Words[COP0_EPC];
@@ -1032,6 +1037,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_memoryWriteBlocked = state.memoryWriteBlocked;
 	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
 	m_pendingMemory = state.pendingMemory;
+	m_pendingTableWrite = state.pendingTableWrite;
 	m_cop0Words[COP0_STATUS] = state.statusWord;
 	m_cop0Words[COP0_CAUSE] = state.causeWord;
 	m_cop0Words[COP0_EPC] = state.epcWord;
@@ -1647,7 +1653,7 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 }
 
 bool CPU::enterPendingInterrupt() {
-	if (m_pendingMemory.kind != PendingMemoryKind::None) return false;
+	if (m_pendingMemory.kind != PendingMemoryKind::None || tableWriteParked()) return false;
 	if (m_nonMaskableInterruptPending) {
 		m_nonMaskableInterruptPending = false;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
@@ -2235,6 +2241,7 @@ dispatch_native_block: {
 				total.concatn += counts.concatn;
 #endif
 				if (nativeState.error) std::rethrow_exception(std::exchange(nativeState.error, {}));
+				if (tableWriteParked()) return RunResult::ParkedTableWrite;
 				DISPATCH_CONTINUE();
 			}
 #endif
@@ -2338,7 +2345,12 @@ dispatch_continue:
 #undef PUBLISH_SCALAR_FRONTIER
 #undef OBSERVE_SCALAR_ARITHMETIC
 
-RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target) {
+RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target, CpuRunKind kind) {
+	if (tableWriteParked()) {
+		instructionBudgetRemaining = instructionBudget;
+		return RunResult::ParkedTableWrite;
+	}
+	m_runKind = kind;
 	if (m_unpublishedRomMask != 0u)
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
 	if (target == 0u) target = m_rootView.address;
@@ -2562,6 +2574,7 @@ void CPU::writeFrameExecution(
 	u32 functionAddress,
 	u32 pc
 ) {
+	if (tableWriteParked()) throw BMSX_RUNTIME_ERROR("A parked table write must retire before replacing code execution.");
 	Blua32ExecutionImage& image = *executionImageForDomain(executionDomainId);
 	if (!image.admitsFunctionPc(functionAddress, pc)
 		|| !readFunctionRecord(image, functionAddress, executionBusSignalsForDomain(executionDomainId)))
@@ -2884,6 +2897,7 @@ void CPU::markRootHead(GcHeap& heap) {
 	heap.markValue(m_errorInErrorHandlingValue);
 	for (const Value value : m_luaFaultErrorValues) heap.markValue(value);
 	heap.markValue(m_stringIndexTable);
+	if (tableWriteParked()) markPendingTableWriteRoots(heap);
 }
 
 void CPU::markScopedRoots(GcHeap& heap) {

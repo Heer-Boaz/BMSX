@@ -23,6 +23,8 @@ const TABLE_HASH_MAPPING_BYTES = 10;
 // A fixed-string Store carries an unprobed, absent (-1), or matched hash node,
 // including a matched tombstone.
 export const TABLE_HASH_UNPROBED = -2;
+export const HASH_STORE_DECLINED = -3;
+const enum HashStore { General, Scheduled, Resume }
 export const TABLE_INDEX_CHAIN_LIMIT = 32;
 export const enum TableLookupStatus { Resolved, ChainExhausted, Invoke, Forward, Store }
 type TableLookupSlot = { value: Value; slot: number };
@@ -458,7 +460,16 @@ export class TableRecords {
 		}
 		result.slot = -1; result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
 	}
-	public set(record: number, rawKey: Value, value: Value): void {
+	public set(record: number, key: Value, value: Value): void {
+		this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.General);
+	}
+	public assignScheduled(record: number, key: Value, value: Value, slot = TABLE_HASH_UNPROBED): number {
+		return this.setOwn(record, key, value, slot, HashStore.Scheduled);
+	}
+	public resumeAssignment(record: number, key: Value, value: Value): boolean {
+		return this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.Resume) !== HASH_STORE_DECLINED;
+	}
+	private setOwn(record: number, rawKey: Value, value: Value, resolved: number, policy: HashStore): number {
 		if (isNil(rawKey)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		if (valueIsNaN(rawKey)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
 		const key = canonicalTableKey(rawKey);
@@ -466,12 +477,13 @@ export class TableRecords {
 		const slot = this.getArrayIndex(key), array = this.arrayCapacity(record);
 		if (slot >= 0 && slot < array) {
 			this.heap.writeValueBarrier(record, GC_RECORD_LINK, tag);
-			this.setEncoded(record, slot, tag, valuePayload(value)); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return;
+			this.setEncoded(record, slot, tag, valuePayload(value)); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return -1;
 		}
-		this.setHash(record, array, key, value);
-		if (slot >= 0) this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
+		const node = this.setHash(record, array, key, value, resolved, policy);
+		if (node !== HASH_STORE_DECLINED && slot >= 0) this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
+		return node;
 	}
-	private setHash(record: number, array: number, key: Value, value: Value, resolved = TABLE_HASH_UNPROBED): number {
+	private setHash(record: number, array: number, key: Value, value: Value, resolved = TABLE_HASH_UNPROBED, policy = HashStore.General): number {
 		const tag = valueTag(value), word = valuePayload(value);
 		if (tag === ValueTag.Nil) { this.removeFromHash(record, key, resolved); return -1; }
 		const keyTag = valueTag(key), keyWord = valuePayload(key);
@@ -496,19 +508,25 @@ export class TableRecords {
 		const reserve = this.hashReserve(record), members = this.hashMembers(record), watermark = this.hashWatermark(record);
 		const repartition = members + 1 > Math.max(reserve, watermark);
 		if (repartition || hash === 0) {
-			index = this.insertHashWithAdmission(record, key, value, reserve, members, watermark, index);
+			index = this.insertHashWithAdmission(record, key, value, reserve, members, watermark, index, policy);
 		} else {
 			const useHome = this.vacantHome(home, array, hash, tags);
 			const available = index >= 0 || useHome ? -1 : this.findFreeIndex(record, array, hash, tags);
 			if (index < 0 && !useHome && available < 0) {
-				index = this.insertHashWithAdmission(record, key, value, reserve, members, watermark, index);
+				index = this.insertHashWithAdmission(record, key, value, reserve, members, watermark, index, policy);
 			} else {
-				if (members >= reserve) this.heap.budget.admit(TABLE_HASH_MAPPING_BYTES, valueTable(record), key, value);
+				if (members >= reserve) {
+					const budget = this.heap.budget;
+					if (policy === HashStore.Resume) {
+						if (budget.usedBytes() + TABLE_HASH_MAPPING_BYTES > budget.capacity()) return HASH_STORE_DECLINED;
+					} else budget.admit(TABLE_HASH_MAPPING_BYTES, valueTable(record), key, value);
+				}
 				index = this.placeHashMapping(record, home, key, value, array, hash, words, tags, index, available);
 				const retained = this.hashMembers(record);
 				this.publishHashMembers(record, retained, retained + 1, reserve);
 			}
 		}
+		if (index === HASH_STORE_DECLINED) return index;
 		if (keyHasEdge || valueHasEdge) this.heap.writeBarrier(record, GC_RECORD_LINK);
 		return index;
 	}
@@ -649,12 +667,15 @@ export class TableRecords {
 		plan.hash = TableRecords.hashCapacity(hashKeys);
 		plan.watermark = arraySize === oldArray ? TableRecords.hashCapacity(members + 1) : plan.hash;
 	}
-	private insertHashWithAdmission(record: number, key: Value, value: Value, reserve: number, members: number, watermark: number, existing: number): number {
+	private insertHashWithAdmission(record: number, key: Value, value: Value, reserve: number, members: number, watermark: number, existing: number, policy: HashStore): number {
 		const budget = this.heap.budget, owner = valueTable(record), plan = this.resizePlan;
 		this.planRehash(record, key, reserve, members, watermark);
 		let previous = TableRecords.allocationCharge(this.arrayCapacity(record), Math.max(reserve, members));
 		let requested = TableRecords.allocationCharge(plan.array, Math.max(reserve, plan.members));
-		let admitted = requested <= previous || budget.prepareAllocation(requested - previous, owner, key, value);
+		let admitted = requested <= previous || (policy === HashStore.Resume
+			? budget.usedBytes() + requested - previous <= budget.capacity()
+			: budget.prepareAllocation(requested - previous, owner, key, value));
+		const parkOnRefusal = policy === HashStore.Resume || (policy === HashStore.Scheduled && admitted);
 		let recovery = LuaAllocationRecovery.CurrentOrFresh;
 		for (;;) {
 			if (admitted) {
@@ -674,6 +695,7 @@ export class TableRecords {
 				const storage = this.heap.arena.allocate(TableRecords.storageBytes(plan.array, plan.hash, reserve), true);
 				if (storage !== 0) return this.resize(record, storage, key, value, reserve, previous, requested);
 			}
+			if (parkOnRefusal) return HASH_STORE_DECLINED;
 			recovery = this.heap.recoverAllocation(recovery, owner, key, value);
 			members = this.hashMembers(record);
 			this.planRehash(record, key, reserve, members, watermark);

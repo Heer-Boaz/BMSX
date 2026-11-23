@@ -31,12 +31,18 @@ void RuntimeHistory::start(const HistoryOptions& options) {
 	checkpointPending = true;
 }
 
+void RuntimeHistory::resetFrameAdmission() {
+	runtime.frameScheduler.reset();
+	// Dropping host pacing must not discard an accepted instruction whose
+	// cycles are still waiting to become visible to the emulated devices.
+	if (!runtime.machine.cpu.tableWriteParked()) runtime.frameLoop.abandonFrameState(runtime);
+}
+
 void RuntimeHistory::stop() {
 	if (mode == HistoryMode::Disabled) return;
 	if (mode == HistoryMode::Replaying || mode == HistoryMode::Reviewing) {
 		if (onWillEndReview) onWillEndReview();
-		runtime.frameScheduler.reset();
-		runtime.frameLoop.abandonFrameState(runtime);
+		resetFrameAdmission();
 	}
 	mode = HistoryMode::Disabled;
 	checkpointPending = false;
@@ -102,8 +108,7 @@ void RuntimeHistory::beginSeek(i64 cycles) {
 	ramHistory.restore(runtime.machine.memory, checkpoints[*ramBaseSlot]->ram, checkpoint.ram);
 	ramBaseSlot = slot;
 	applyRuntimeCheckpointState(runtime, checkpoint.state, RuntimeRestoreOrigin::HistorySeek);
-	runtime.frameScheduler.reset();
-	runtime.frameLoop.abandonFrameState(runtime);
+	resetFrameAdmission();
 	inputJournal.replaySequence = checkpoint.inputSequence;
 	checkpointPending = false;
 	mode = runtime.frameScheduler.lastTickSequence == targetTick ? HistoryMode::Reviewing : HistoryMode::Replaying;
@@ -119,7 +124,8 @@ HistorySeekResult RuntimeHistory::advanceSeek(i64 cycleGrant) {
 		return HistorySeekResult::Complete;
 	}
 	if (runtime.machine.gxGpu.backendServicePending() || runtime.machine.gxGpu.backendServiceBlocksMachine()) return HistorySeekResult::BackendPending;
-	if (result == LogicalTickResult::Maintenance) return HistorySeekResult::Progressed;
+	if (result == LogicalTickResult::Maintenance || result == LogicalTickResult::DeferredCpu)
+		return HistorySeekResult::Progressed;
 	// A grant can pay for an indivisible instruction already executed without advancing the clock.
 	if (runtime.machine.scheduler.currentNowCycles() != before
 		|| (budgetBefore < 0 && runtime.frameScheduler.remainingCycleBudget(runtime) > budgetBefore)) return HistorySeekResult::Progressed;
@@ -131,8 +137,7 @@ void RuntimeHistory::beginPlayback() {
 	targetCycles = endCycles;
 	targetTick = checkpoint.state.machineState.frameScheduler.lastTickSequence
 		+ inputJournal.endSequence - checkpoint.inputSequence;
-	runtime.frameScheduler.reset();
-	runtime.frameLoop.abandonFrameState(runtime);
+	resetFrameAdmission();
 	mode = runtime.frameScheduler.lastTickSequence == targetTick ? HistoryMode::Reviewing : HistoryMode::Replaying;
 }
 
@@ -161,8 +166,7 @@ void RuntimeHistory::resumeRecording() {
 		checkpoint.seekUntilCycles = std::min(checkpoint.seekUntilCycles, cycles);
 	}
 	inputJournal.branch();
-	runtime.frameScheduler.reset();
-	runtime.frameLoop.abandonFrameState(runtime);
+	resetFrameAdmission();
 	endCycles = cycles;
 	mode = HistoryMode::Recording;
 	checkpointPending = !rejoiningLatest || cycles >= nextCheckpointCycles

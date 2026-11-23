@@ -1,4 +1,4 @@
-import type { CPU, RunResult } from '../cpu/cpu';
+import { CpuRunKind, type CPU, type RunResult } from '../cpu/cpu';
 
 export const DEVICE_SERVICE_GEO = 1;
 export const DEVICE_SERVICE_DMA = 2;
@@ -72,10 +72,10 @@ export class DeviceScheduler {
 		this.schedulerSliceActive = false;
 	}
 
-	public runCpuSlice(targetDepth: number, sliceBudget: number, targetThread: number = this.cpu.rootThread.address): RunResult {
+	public runCpuSlice(targetDepth: number, sliceBudget: number, targetThread: number = this.cpu.rootThread.address, kind = CpuRunKind.Direct): RunResult {
 		this.beginCpuSlice(sliceBudget);
 		try {
-			return this.cpu.runUntilDepth(targetDepth, sliceBudget, targetThread);
+			return this.cpu.runUntilDepth(targetDepth, sliceBudget, targetThread, kind);
 		} finally {
 			this.endCpuSlice();
 		}

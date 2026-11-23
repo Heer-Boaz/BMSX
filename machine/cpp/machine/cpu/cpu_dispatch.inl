@@ -144,7 +144,10 @@ DISPATCH_LABEL(SETI) {
 		DISPATCH_NEXT();
 	}
 	PUBLISH_SCALAR_FRONTIER();
-	if (storeTableIntegerIndex(FRAME, tableValue, b, value)) DISPATCH_CONTINUE();
+	if (storeTableIntegerIndex(FRAME, tableValue, b, value)) {
+		if (tableWriteParked()) return RunResult::ParkedTableWrite;
+		DISPATCH_CONTINUE();
+	}
 	RESUME_SCALAR_FRONTIER();
 	registers = FRAME.registers;
 	DISPATCH_NEXT();
@@ -181,7 +184,10 @@ DISPATCH_LABEL(SETFIELD) {
 	if (valueIsTable(base) && TableRecord(m_heap, valuePayload(base)).storePredictedStringKey(key, value, predicted))
 		DISPATCH_NEXT();
 	PUBLISH_SCALAR_FRONTIER();
-	if (storeTableFieldIndexCached(FRAME, predicted, base, key, value)) DISPATCH_CONTINUE();
+	if (storeTableFieldIndexCached(FRAME, predicted, base, key, value)) {
+		if (tableWriteParked()) return RunResult::ParkedTableWrite;
+		DISPATCH_CONTINUE();
+	}
 	RESUME_SCALAR_FRONTIER();
 	registers = FRAME.registers;
 	DISPATCH_NEXT();
@@ -226,7 +232,10 @@ DISPATCH_LABEL(SETT) {
 		DISPATCH_NEXT();
 	}
 	PUBLISH_SCALAR_FRONTIER();
-	if (storeTableIndex(FRAME, tableValue, key, value)) DISPATCH_CONTINUE();
+	if (storeTableIndex(FRAME, tableValue, key, value)) {
+		if (tableWriteParked()) return RunResult::ParkedTableWrite;
+		DISPATCH_CONTINUE();
+	}
 	RESUME_SCALAR_FRONTIER();
 	registers = FRAME.registers;
 	DISPATCH_NEXT();

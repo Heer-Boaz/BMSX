@@ -17,6 +17,7 @@ export class FrameLoopState {
 		cycleBudgetGranted: 0,
 		cycleCarryGranted: 0,
 		activeCpuUsedCycles: 0,
+		deferredTableWriteCycles: 0,
 	};
 	public frameActive = false;
 
@@ -36,6 +37,7 @@ export class FrameLoopState {
 		state.cycleBudgetGranted = 0;
 		state.cycleCarryGranted = 0;
 		state.activeCpuUsedCycles = 0;
+		state.deferredTableWriteCycles = 0;
 	}
 
 	public captureState(): FrameLoopStateSnapshot {
@@ -53,6 +55,7 @@ export class FrameLoopState {
 		state.cycleBudgetGranted = snapshot.frameState.cycleBudgetGranted;
 		state.cycleCarryGranted = snapshot.frameState.cycleCarryGranted;
 		state.activeCpuUsedCycles = snapshot.frameState.activeCpuUsedCycles;
+		state.deferredTableWriteCycles = snapshot.frameState.deferredTableWriteCycles;
 		this.frameActive = snapshot.frameActive;
 	}
 
@@ -73,6 +76,7 @@ export class FrameLoopState {
 		state.cycleBudgetGranted = budget;
 		state.cycleCarryGranted = carry;
 		state.activeCpuUsedCycles = 0;
+		state.deferredTableWriteCycles = 0;
 		runtime.vblank.beginTick();
 		this.frameActive = true;
 		return state;
@@ -162,6 +166,7 @@ export class FrameLoopState {
 		if (!this.frameActive) {
 			return this.runtime.frameScheduler.startScheduledFrame();
 		}
+		if (this.runtime.machine.cpu.tableWriteReady()) return true;
 		if (this.frameState.cycleBudgetRemaining <= 0) {
 			return this.runtime.frameScheduler.refillFrameBudget(this.frameState);
 		}

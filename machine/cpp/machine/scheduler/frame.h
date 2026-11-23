@@ -31,7 +31,7 @@ struct FrameSchedulerStateSnapshot {
 	i64 lastTickConsumedSequence = 0;
 };
 
-enum class LogicalTickResult { Incomplete, Completed, Maintenance };
+enum class LogicalTickResult { Incomplete, Completed, Maintenance, DeferredCpu };
 
 class FrameSchedulerState {
 public:

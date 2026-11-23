@@ -1,6 +1,7 @@
 #include "machine/runtime/cpu_executor.h"
 
 #include "common/compiler.h"
+#include "common/scope_exit.h"
 
 #include "machine/runtime/runtime.h"
 #include "machine/scheduler/device.h"
@@ -13,6 +14,7 @@ namespace bmsx {
 
 bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) {
 	auto& cpu = runtime.machine.cpu;
+	if (cpu.tableWriteParked()) return false;
 	auto& gxGpu = runtime.machine.gxGpu;
 	auto& system = runtime.machine.systemController;
 	bool tickCompleted = runDueRuntimeTimers(runtime);
@@ -90,6 +92,7 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 				result = CpuExecutionResult::Halted;
 				running = false;
 				continue;
+			case CpuSliceResult::ParkedTableWrite:
 			case CpuSliceResult::Blocked:
 				running = false;
 				continue;
@@ -108,6 +111,7 @@ InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameS
 			return InstructionStepResult::Executed;
 		case CpuSliceResult::ExecutionStopped:
 			return InstructionStepResult::ExecutionStopped;
+		case CpuSliceResult::ParkedTableWrite:
 		case CpuSliceResult::Blocked:
 		case CpuSliceResult::Halted:
 			return InstructionStepResult::Blocked;
@@ -125,6 +129,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	auto& cpu = machine.cpu;
 	auto& scheduler = machine.scheduler;
 	if (targetThread == 0u) targetThread = cpu.activeThread()->address;
+	if (cpu.tableWriteParked()) return CpuSuspendedRunResult::Halted;
 	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
 	cpu.gcHeap().finishFinalMark();
 	runDueRuntimeTimers(runtime);
@@ -235,6 +240,24 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 	auto& machine = runtime.machine;
 	auto& scheduler = machine.scheduler;
 	auto& cpu = machine.cpu;
+	if (cpu.tableWriteParked()) {
+		if (!cpu.tableWriteReady()) return CpuSliceResult::ParkedTableWrite;
+		// Late fault handling observes the same effective clock as the original slice.
+		const int deferred = frameState.deferredTableWriteCycles;
+		cpu.instructionBudgetRemaining = 0;
+		{
+			scheduler.beginCpuSlice(deferred);
+			ScopeExit activeSlice([&scheduler]() { scheduler.endCpuSlice(); });
+			cpu.resumeTableWrite();
+		}
+		if (cpu.tableWriteParked()) return CpuSliceResult::ParkedTableWrite;
+		const int consumed = deferred - cpu.instructionBudgetRemaining;
+		frameState.deferredTableWriteCycles = 0;
+		frameState.cycleBudgetRemaining -= consumed;
+		frameState.activeCpuUsedCycles += consumed;
+		advanceRuntimeTime(runtime, consumed);
+		return cpu.getFrameDepth() != 0 ? CpuSliceResult::InstructionYielded : CpuSliceResult::InstructionHalted;
+	}
 	bool advanced = scheduler.hasDueTimer();
 	bool tickCompleted = runDueRuntimeTimers(runtime);
 	while (frameState.cycleBudgetRemaining > 0
@@ -275,8 +298,12 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 				sliceBudget = static_cast<int>(deadlineBudget);
 			}
 		}
-		const RunResult result = scheduler.runCpuSlice(0, sliceBudget);
+		const RunResult result = scheduler.runCpuSlice(0, sliceBudget, 0u, CpuRunKind::Scheduled);
 		const int consumed = sliceBudget - cpu.instructionBudgetRemaining;
+		if (result == RunResult::ParkedTableWrite) {
+			frameState.deferredTableWriteCycles = consumed;
+			return CpuSliceResult::ParkedTableWrite;
+		}
 		if (consumed > 0) {
 			// Device timers publish this frame's remainder at the VBlank edge.
 			frameState.cycleBudgetRemaining -= consumed;
