@@ -17,6 +17,31 @@ void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
 
+void alignedStringHomesDisplaceOnlyCollisions(CPU& cpu) {
+	auto table = cpu.createTable(0, 8);
+	std::array<std::array<StringId, 2>, 8> keys{};
+	for (int i = 10; i < 90; ++i) {
+		const auto key = cpu.stringPool().intern("table-home-key-" + std::to_string(i));
+		const auto home = (key >> BLUA32_STRING_RECORD_ALIGNMENT_SHIFT) & 7u;
+		require(table.beginStringProbe(key).node == static_cast<int>(home),
+			"an aligned String record supplies its identity bits, not zero byte-offset bits");
+		if (!keys[home][0]) keys[home][0] = key;
+		else if (!keys[home][1]) keys[home][1] = key;
+	}
+	for (const auto& group : keys) require(group[0] && group[1], "the interned records exercise all eight homes");
+	const auto resident = keys[0][0], collided = keys[0][1];
+	require(table.setStringKey(resident, valueInteger(11)) == 0, "the original home is used");
+	const int slot = table.setStringKey(collided, valueInteger(22));
+	require(slot > 0 && slot < 8, "a genuine same-home collision uses a free node");
+	const auto incoming = keys[slot][0];
+	require(table.setStringKey(incoming, valueInteger(33)) == slot && table.hashSlots() == 8,
+		"an incoming home displaces the chain member without growing the body");
+	auto probe = table.beginStringProbe(collided);
+	require(table.advanceStringProbe(collided, probe, 8) == 2 && probe.value == valueInteger(22)
+		&& table.getStringKey(resident) == valueInteger(11) && table.getStringKey(incoming) == valueInteger(33),
+		"displacement preserves the original chain and each full String identity");
+}
+
 void collisionAndMutationParity(CPU& cpu) {
 	std::array<StringId, 16> keys{};
 	size_t count = 0;
@@ -140,8 +165,9 @@ void collisionAndMutationParity(CPU& cpu) {
 void preparedLayoutMatchesAllMasks(CPU& cpu, Memory& memory) {
 	// These opaque ROM addresses hash to five home-0 keys followed by
 	// a home-4 key. In the full record, the latter displaces a chain node.
-	constexpr std::array<StringId, 6> keys{CART_ROM_BASE, CART_ROM_BASE + 8, CART_ROM_BASE + 16,
-		CART_ROM_BASE + 24, CART_ROM_BASE + 32, CART_ROM_BASE + 4};
+	constexpr auto step = BLUA32_STRING_RECORD_ALIGNMENT;
+	constexpr std::array<StringId, 6> keys{CART_ROM_BASE, CART_ROM_BASE + 8 * step, CART_ROM_BASE + 16 * step,
+		CART_ROM_BASE + 24 * step, CART_ROM_BASE + 32 * step, CART_ROM_BASE + 4 * step};
 	for (u32 mask = 0; mask < (1u << keys.size()); ++mask) {
 		auto scalar = cpu.createTable(0, keys.size());
 		auto prepared = cpu.createTable(0, keys.size());
@@ -235,6 +261,7 @@ int main() {
 		IrqController irq(memory);
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
+		alignedStringHomesDisplaceOnlyCollisions(cpu);
 		collisionAndMutationParity(cpu);
 		preparedLayoutMatchesAllMasks(cpu, memory);
 		inheritedAndFullWordKeys(cpu, memory);

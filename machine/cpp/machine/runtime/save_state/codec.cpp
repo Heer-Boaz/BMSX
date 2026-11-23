@@ -8,7 +8,7 @@ namespace {
 
 // BMSX identifies the container. Only the current payload layout is accepted.
 constexpr u32 kSaveStateSignature = 0x58534d42u;
-constexpr u32 kSaveStateLayoutVersion = 2u;
+constexpr u32 kSaveStateLayoutVersion = 3u; // Table home slots use aligned string identity.
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);

@@ -50,8 +50,8 @@ void readTableSlot(sljit_compiler* c, sljit_s32 result, bool word) {
 sljit_jump* emitReceiverStringSearch(sljit_compiler* c) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	auto* empty = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0);
-	sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::keyWord,
-		SLJIT_IMM, STRING_VALUE_HASH_MULTIPLIER);
+	sljit_emit_op2(c, SLJIT_LSHR32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::keyWord,
+		SLJIT_IMM, BLUA32_STRING_RECORD_ALIGNMENT_SHIFT);
 	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
 	// The owner's signed chain cursor does not enter a negative home.

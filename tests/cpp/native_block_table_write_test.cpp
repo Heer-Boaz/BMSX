@@ -184,9 +184,13 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	firstMeta.setStringKey(indexKey, valueTable(holder.address()));
 	read(valueInteger(41), 1);
 	read(valueInteger(41), 1);
-	const auto neighbor = cpu.stringPool().intern("colliding receiver key");
-	require((hashCanonicalTableKey(valueString(neighbor)) & 3u) == (hashCanonicalTableKey(valueString(key)) & 3u),
-		"the receiver override must be displaced through a real hash link");
+	const auto home = root.beginStringProbe(key).node;
+	StringId neighbor = 0;
+	for (int i = 0; i < 64 && !neighbor; ++i) {
+		const auto candidate = cpu.stringPool().intern("colliding receiver key " + std::to_string(i));
+		if (root.beginStringProbe(candidate).node == home) neighbor = candidate;
+	}
+	require(neighbor != 0u, "the receiver override must be displaced through a real hash link");
 	root.setStringKey(neighbor, valueInteger(99));
 	const auto ownSlot = root.setStringKey(key, valueBool(false));
 	block->sideExits[0].tableRead.own.standalone = -1;
@@ -230,7 +234,10 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	secondMeta.setStringKey(indexKey, valueNil());
 	cpu.collectHeap(receiver, valueString(key));
 	require(cpu.gcHeap().tableRecordAddress(holder.address()) == 0, "the old holder really retired");
-	auto reused = cpu.createTable(2, 4);
+	// Request only object headers: backing allocations are a different owner
+	// and could occupy the freed address before an object can reuse it.
+	auto reused = cpu.createTable();
+	for (int i = 0; i < 8 && reused.address() != holder.address(); ++i) reused = cpu.createTable();
 	require(reused.address() == holder.address(), "the probe actually reuses the old owner's guest address");
 	reused.setStringKey(key, valueInteger(44));
 	read(valueNil(), 1);
@@ -401,9 +408,12 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 	const auto key = cpu.stringPool().intern("bounded lookup");
 	const auto indexKey = cpu.stringPool().intern("__index");
 	const u32 home = hashCanonicalTableKey(valueString(key)) & 1u;
-	auto collision = cpu.stringPool().intern("bounded collision a");
-	if ((hashCanonicalTableKey(valueString(collision)) & 1u) != home)
-		collision = cpu.stringPool().intern("bounded collision b");
+	StringId collision = 0;
+	for (int i = 0; i < 64 && !collision; ++i) {
+		const auto candidate = cpu.stringPool().intern("bounded collision " + std::to_string(i));
+		if ((hashCanonicalTableKey(valueString(candidate)) & 1u) == home) collision = candidate;
+	}
+	require(collision != 0u, "a real live chain shares the lookup home");
 	ValueSlots constants(1);
 	constants.set(0, valueString(key));
 	const auto firstResult = valueFloatBits(0xffa12345u), secondResult = valueFromTag(ValueTag::False, 73);

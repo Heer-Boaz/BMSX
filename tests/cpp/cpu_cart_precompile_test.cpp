@@ -401,14 +401,18 @@ void coldExecRecordsNumericFieldFeedback() {
 test::Blua32TestRom recordConstructorProgram(std::string firstKey = "castle") {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	image.functions = {{.firstWord = 0, .wordCount = 8, .maxStack = 6}};
-	image.constants = {std::move(firstKey), std::string("room"), std::string("player"),
-		std::string("room_number"), std::string("item_id")};
+	image.functions = {{.firstWord = 0, .wordCount = 9, .maxStack = 6}};
+	image.constants = {std::move(firstKey), std::string("room"), std::string("player"), std::string("room_number")};
+	constexpr u32 wideKey = 1u << BASE_OPERAND_BC_BITS;
+	image.constants.resize(wideKey + 1u);
+	image.constants[wideKey] = std::string("item_id");
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMP), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::NEWT), 0, 0, 5);
-	for (u32 field = 0; field < 5; ++field)
+	for (u32 field = 0; field < 4; ++field)
 		writeInstruction(image.text, 2 + field, static_cast<u8>(OpCode::SETFIELD), 0, field, field + 1);
-	writeInstruction(image.text, 7, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::WIDE), 0, 1, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::SETFIELD), 0, 0, 5);
+	writeInstruction(image.text, 8, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	return test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
 }
 
@@ -479,11 +483,12 @@ void recordConstructorPreservesGrantAndLayout() {
 			frame.setTop(6);
 		}
 		auto* plan = entryAt(prepared.cpu(), start, 0)->terminal.recordConstructor;
-		require(plan && plan->count == 5 && plan->partialMask == 0, "native preparation plans the exact fixed-key recipe");
+		require(plan && plan->count == 5 && plan->partialMask == 0 && plan->keySelectors[4] == (1u << BASE_OPERAND_BC_BITS),
+			"native preparation plans the exact fixed-key recipe including the extended WIDE constant");
 		// The final store can overdraw by its own charge. A shorter grant
 		// must still expose the original instruction frontier and table state.
 		const int grant = allocateCycles + (shortGrant ? 2 * fieldCycles : 4 * fieldCycles + 1);
-		const u32 expectedPc = start + (shortGrant ? 3u : 6u) * INSTRUCTION_BYTES;
+		const u32 expectedPc = start + (shortGrant ? 3u : 7u) * INSTRUCTION_BYTES;
 		for (auto* machine : {&prepared, &scalar}) {
 			const size_t before = machine->cpu().luaHeap().usedBytes();
 			require(machine->cpu().runUntilDepth(0, grant) == RunResult::Yielded
@@ -507,7 +512,7 @@ void recordConstructorPreservesGrantAndLayout() {
 		if (shortGrant) {
 			for (auto* machine : {&prepared, &scalar}) {
 				require(machine->cpu().runUntilDepth(0, 3 * fieldCycles) == RunResult::Yielded
-					&& machine->cpu().readFramePc(0) == start + 6 * INSTRUCTION_BYTES,
+					&& machine->cpu().readFramePc(0) == start + 7 * INSTRUCTION_BYTES,
 					"the original stores resume at the short-grant frontier");
 			}
 		}

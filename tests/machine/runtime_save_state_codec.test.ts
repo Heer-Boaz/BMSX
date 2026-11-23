@@ -677,8 +677,10 @@ test('typed pending allocations preserve their issued instruction and active ope
 		state.cpuState.pendingAllocation = pending;
 		const encoded = encodeRuntimeSaveState(state);
 		assert.deepEqual(decodeRuntimeSaveState(encoded, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes).cpuState.pendingAllocation, pending);
-		encoded[4] = 1; // The earlier layout has no request tag.
-		assert.throws(() => decodeRuntimeSaveState(encoded, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes), /Unsupported save-state layout/);
+		for (const earlier of [1, 2]) {
+			encoded[4] = earlier;
+			assert.throws(() => decodeRuntimeSaveState(encoded, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes), /Unsupported save-state layout/);
+		}
 	}
 });
 

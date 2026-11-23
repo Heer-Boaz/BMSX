@@ -2,6 +2,7 @@ import { formatInteger, formatFloat } from '../../common/number_format';
 import { f32BitsToNumber } from '../../common/float32';
 import { luaCompareIntegerFloat, luaFloatResultBits, luaFloatToInteger, luaFloatToWord, NumericOrder } from '../../spec/blua32/numeric';
 import { BuiltinFunctionId } from '../../spec/blua32/builtin';
+import { BLUA32_STRING_RECORD_ALIGNMENT_SHIFT } from '../../spec/blua32/image_format';
 import type { StringId, StringPool } from './string_pool';
 import type { GcHeap } from './gc_heap';
 
@@ -97,7 +98,8 @@ export function hashCanonicalTableKey(value: Value): number {
 		case ValueTag.Nil: return 0x27d4eb2d;
 		case ValueTag.False: return 0x85ebca6b;
 		case ValueTag.True: return 0x9e3779b9;
-		case ValueTag.String: return Math.imul(valuePayload(value), 2654435761) >>> 0;
+		// Use the aligned interned record identity, not its byte address.
+		case ValueTag.String: return valuePayload(value) >>> BLUA32_STRING_RECORD_ALIGNMENT_SHIFT;
 		case ValueTag.BuiltinFunction: return Math.imul(valuePayload(value) + 1, 0x27d4eb2d) >>> 0;
 		default: throw new Error('Internal table metadata is not a table key.');
 	}

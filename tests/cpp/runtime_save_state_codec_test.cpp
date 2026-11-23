@@ -100,6 +100,14 @@ int main() {
 		rejectedOldLayout = std::string_view(error.what()).find("Unsupported save-state layout.") != std::string_view::npos;
 	}
 	require(rejectedOldLayout, "the earlier pending-operation payload cannot be read as a creation");
+	oldLayout[4] = 2; // Version 2 persisted tables with different String home slots.
+	rejectedOldLayout = false;
+	try {
+		(void)decodeRuntimeSaveState(oldLayout, state.ram.size(), machine.gxGpu.vramBytes.size());
+	} catch (const std::exception& error) {
+		rejectedOldLayout = std::string_view(error.what()).find("Unsupported save-state layout.") != std::string_view::npos;
+	}
+	require(rejectedOldLayout, "raw table nodes from the old placement are not restored");
 	auto unversioned = expected;
 	unversioned.erase(unversioned.begin() + 4, unversioned.begin() + 8);
 	bool rejectedLayout = false;

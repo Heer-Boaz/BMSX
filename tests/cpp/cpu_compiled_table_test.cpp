@@ -1065,17 +1065,22 @@ void nativeFieldCacheMissReturnsOwnValueAndTrainsTheSameSite() {
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 11}};
-	image.constants = {std::string("changing own slot"), std::string("colliding field")};
+	image.constants = {std::string("changing own slot")};
 
 	CpuMachine native(image), scalar(image, true);
 	const Value linkedValue = valueFloatBits(0x7fc01234u), singletonValue = valueFromTag(ValueTag::False, 37);
 	int linkedSlot = -1;
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu;
-		const auto key = *cpu.stringPool().find("changing own slot"), collider = *cpu.stringPool().find("colliding field");
+		const auto key = *cpu.stringPool().find("changing own slot");
 		auto linked = cpu.createTable(3, 4), singleton = cpu.createTable(2, 1), missing = cpu.createTable(0, 1);
 		const auto home = linked.beginStringProbe(key).node;
-		require(linked.beginStringProbe(collider).node == home && linked.setStringKey(collider, valueInteger(19)) == home,
+		StringId collider = 0;
+		for (int i = 0; i < 64 && !collider; ++i) {
+			const auto candidate = cpu.stringPool().intern("colliding field " + std::to_string(i));
+			if (linked.beginStringProbe(candidate).node == home) collider = candidate;
+		}
+		require(collider && linked.setStringKey(collider, valueInteger(19)) == home,
 			"the two persistent keys share the current receiver home");
 		const int slot = linked.setStringKey(key, linkedValue);
 		require(slot > 0 && slot != home && singleton.setStringKey(key, singletonValue) == 0,
@@ -1275,12 +1280,14 @@ void warmInheritedFieldReadsProveCollisionChainAbsence() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 1);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETFIELD), 3, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 4, 3, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	image.constants = {std::string("inherited collision field")};
+	constexpr u32 wideKey = 1u << BASE_OPERAND_BC_BITS;
+	image.constants.resize(wideKey + 1u);
+	image.constants[wideKey] = std::string("inherited collision field");
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 5}};
 
 	CpuMachine native(image), scalar(image, true);
@@ -1295,6 +1302,7 @@ void warmInheritedFieldReadsProveCollisionChainAbsence() {
 		meta.setStringKey(index, valueTable(holder.address()));
 		receiver.setMetatableAddress(meta.address());
 		const auto home = receiver.beginStringProbe(key).node;
+		require(home != 0, "the WIDE field must start at a nonzero home in its real receiver");
 		std::array<StringId, 2> colliders;
 		size_t found = 0;
 		for (unsigned n = 0; n < 64 && found < colliders.size(); ++n) {

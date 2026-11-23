@@ -42,7 +42,7 @@ import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_
 
 // BMSX identifies the container. Only the current payload layout is accepted.
 const SAVE_STATE_SIGNATURE = 0x58534d42;
-const SAVE_STATE_LAYOUT_VERSION = 2;
+const SAVE_STATE_LAYOUT_VERSION = 3; // Table home slots use aligned string identity.
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);

@@ -2,15 +2,44 @@ import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { ValueTag, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valueTable, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { hashCanonicalTableKey, ValueTag, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valueTable, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { TABLE_HASH_UNPROBED, TableLookupStatus, type TableLookupResult } from '../../machine/ts/machine/cpu/table';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { BLUA32_STRING_RECORD_ALIGNMENT_SHIFT } from '../../machine/ts/spec/blua32/image_format';
 import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
+
+test('aligned String identities distribute home slots and preserve displaced collision chains', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const tables = cpu.gc.tables, table = cpu.createTable(0, 8);
+	const keys: number[][] = Array.from({ length: 8 }, () => []);
+	const probe = { node: -1, remaining: 0, value: valueNil() };
+	for (let i = 10; i < 90; ++i) {
+		const key = cpu.stringPool.intern(`table-home-key-${i}`);
+		const home = (key >>> BLUA32_STRING_RECORD_ALIGNMENT_SHIFT) & 7;
+		tables.beginStringProbe(table, key, probe);
+		assert.equal(probe.node, home, 'use record identity bits, not zero byte-offset bits');
+		keys[home].push(key);
+	}
+	assert.ok(keys.every(group => group.length >= 2), 'the interned records exercise all eight homes');
+	const [resident, collided] = keys[0];
+	assert.equal(tables.storeStringKey(table, resident, ValueTag.Integer, 11), 0);
+	const slot = tables.storeStringKey(table, collided, ValueTag.Integer, 22);
+	assert.ok(slot > 0 && slot < 8, 'a genuine same-home collision uses a free node');
+	const incoming = keys[slot][0];
+	assert.equal(tables.storeStringKey(table, incoming, ValueTag.Integer, 33), slot,
+		'an incoming home displaces the chain member');
+	tables.beginStringProbe(table, collided, probe);
+	assert.equal(tables.advanceStringProbe(table, collided, probe, 8), 2);
+	assert.equal(probe.value, valueInteger(22));
+	assert.equal(tables.getStringKey(table, resident), valueInteger(11));
+	assert.equal(tables.getStringKey(table, incoming), valueInteger(33));
+});
 
 test('known string chains preserve mixed-key collisions, cached updates, tombstones and rehash order', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
@@ -18,7 +47,7 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 	const keys: number[] = [];
 	for (let n = 0; keys.length < 16; n += 1) {
 		const key = cpu.stringPool.intern(`collision_${n}`);
-		if ((Math.imul(key, 2654435761) & 31) === 0) keys.push(key);
+		if ((hashCanonicalTableKey(valueString(key)) & 31) === 0) keys.push(key);
 	}
 	const generic = cpu.createTable(0, 4);
 	const strings = cpu.createTable(0, 4);
