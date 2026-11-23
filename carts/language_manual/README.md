@@ -23,7 +23,7 @@ The program demonstrates:
 
 Static packets, registers and payloads remain raw typed storage. The example
 adds no encoder, string-pointer ABI, language wrapper, allocator or runtime API.
-The existing BIOS function/typed-view and `string/mapped.lua` producers are the
+The existing BIOS function/typed-view and `string.from_bytes` producers are the
 programming precedents. Dynamic objects are created only for the one-time
 language observations; the final loop halts without recreating them.
 

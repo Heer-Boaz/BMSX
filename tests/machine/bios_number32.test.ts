@@ -11,7 +11,7 @@ import { parseHexFloat32Bits } from '../../machine/ts/common/parse_float32';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import * as v from '../../machine/ts/machine/cpu/value';
 
-const paths = ['base', 'number/decimal', 'number/parse', 'table', 'string/base', 'string/mapped',
+const paths = ['base', 'number/decimal', 'number/parse', 'table', 'string/base',
 	'compiler/api', 'compiler/arena', 'compiler/bytecode', 'compiler/compiler', 'compiler/lexer',
 	'compiler/linker', 'compiler/load', 'compiler/parser', 'compiler/semantic', 'compiler/syntax', 'compiler/syntax_factory', 'compiler/token'];
 const modules = paths.map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }));

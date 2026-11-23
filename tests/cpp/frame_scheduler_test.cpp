@@ -115,6 +115,52 @@ void testOneDeadlinePerDevice() {
 		"each service occurs precisely once");
 }
 
+void testMappedStringCompletesBeforeVblank() {
+	using namespace bmsx;
+	TickRuntimeFixture reference;
+	require(reference.runtime.frameScheduler.runToNextLogicalTick(reference.runtime), "fixture reaches first display edge");
+	const i64 edge = reference.runtime.machine.scheduler.nowCycles();
+	test::Blua32TestImage image;
+	image.text.resize(2u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, 3, 2);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 3}};
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, 0x10000u);
+	TickInputSource input;
+	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
+	runtime.boot();
+	auto& machine = runtime.machine;
+	auto& cpu = machine.cpu;
+	const u32 entry = cpu.readFramePc(0);
+	constexpr u32 source = RAM_BASE + 0x20000u;
+	constexpr std::string_view bytes("ab\0\xffz", 5);
+	for (u32 i = 0; i < bytes.size(); ++i) machine.memory.writeMappedU8(source + i, static_cast<u8>(bytes[i]));
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::StringFromBytes));
+	frame.registers.set(1, valueInteger(static_cast<i32>(source)));
+	frame.registers.set(2, valueInteger(bytes.size()));
+	frame.setTop(3);
+	machine.memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
+	input.observeSample = [&] {
+		const auto value = cpu.readFrameRegister(0, 0);
+		require(machine.scheduler.nowCycles() == edge && cpu.readFramePc(0) == entry + INSTRUCTION_BYTES && valueIsString(value)
+			&& cpu.stringPool().toString(asStringId(value)) == bytes, "the observer at VBlank sees the complete call before another instruction");
+		machine.memory.writeMappedU8(source, 0);
+	};
+	advanceRuntimeTime(runtime, static_cast<int>(edge - 1 - machine.scheduler.nowCycles()));
+	require(runtime.frameScheduler.advanceLogicalTick(runtime, 1) == LogicalTickResult::Completed
+		&& input.sampleCount == 1, "the completed String is published to the real input sample at VBlank");
+	const auto result = cpu.readFrameRegister(0, 0);
+	require(valueIsString(result) && cpu.stringPool().toString(asStringId(result)) == bytes,
+		"the result does not alias source storage modified at the observation edge");
+	const auto cycles = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 2 + bytes.size() + 1;
+	require(machine.scheduler.nowCycles() == edge - 1 + static_cast<i64>(cycles)
+		&& machine.scheduler.acceptedCpuCycles() == 0
+		&& runtime.frameScheduler.lastTickCpuUsedCycles == static_cast<i64>(cycles),
+		"the scheduler charges the full completed call once and settles ordinary sub-frame overshoot");
+}
+
 void testAcceptedStringCyclesAcrossVblanks(bool withReadback) {
 	using namespace bmsx;
 	TickRuntimeFixture reference;
@@ -2144,6 +2190,7 @@ void testRuntimeResetNotification() {
 }
 
 int main() {
+	testMappedStringCompletesBeforeVblank();
 	testAcceptedStringCyclesAcrossVblanks(false);
 	testAcceptedStringCyclesAcrossVblanks(true);
 	testOneDeadlinePerDevice();

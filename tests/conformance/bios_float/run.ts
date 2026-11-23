@@ -12,7 +12,7 @@ import { runSystemCaseRom } from '../../helpers/system_case_rom';
 
 const nativeRunner = nativeConformanceRunner('bmsx_frame_evaluation_runner', { parallel: '2' });
 
-const modules = ['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/mapped', 'string/pack', 'string/float/encode', 'string/float/decode'].map(path => {
+const modules = ['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/pack', 'string/float/encode', 'string/float/decode'].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 	return { path, source, chunk: parseLuaChunk(source, `${path}.lua`) };
 });

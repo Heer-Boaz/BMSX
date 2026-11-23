@@ -43,9 +43,10 @@ enum class BuiltinFunctionId : uint8_t {
 	SetMetatable = 30,
 	StringSlice = 31,
 	TableCopy = 32,
+	StringFromBytes = 33,
 };
 
-constexpr size_t BUILTIN_FUNCTION_COUNT = 33u;
+constexpr size_t BUILTIN_FUNCTION_COUNT = 34u;
 
 enum class GarbageCollectionOperation : int32_t { Collect = 0, Count = 1, Step = 2 };
 
@@ -88,6 +89,7 @@ inline constexpr std::array<LuaBootPrimitive, BUILTIN_FUNCTION_COUNT> LUA_BOOT_P
 	{ "__bmsx_tointeger", BuiltinFunctionId::ToInteger },
 	{ "__bmsx_string_slice", BuiltinFunctionId::StringSlice },
 	{ "__bmsx_table_copy", BuiltinFunctionId::TableCopy },
+	{ "__bmsx_string_from_bytes", BuiltinFunctionId::StringFromBytes },
 }};
 
 } // namespace bmsx

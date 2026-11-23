@@ -341,6 +341,10 @@ export class StringPool {
 		return this.internSource(hashText(value), value, 0, value.length);
 	}
 
+	public internBytes({ bytes, byteOffset, byteLength }: MemoryByteView): StringId {
+		return this.internSource(hashBytes(bytes, byteOffset, byteLength, byteLength, 0), bytes, byteOffset, byteLength);
+	}
+
 	public internSlice(id: StringId, first: number, count: number): StringId {
 		const source = this.storage(id), inRam = isRamStringId(id);
 		const at = storageOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE + first;

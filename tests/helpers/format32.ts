@@ -127,4 +127,4 @@ end)
 `;
 
 export const FORMAT32_MODULES = ['base', 'number/parse', 'number/decimal', 'number/format',
-	'table', 'math', 'math/trig', 'math/trig/reduce', 'string/base', 'string/mapped', 'string/format'];
+	'table', 'math', 'math/trig', 'math/trig/reduce', 'string/base', 'string/format'];

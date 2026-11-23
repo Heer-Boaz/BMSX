@@ -8,7 +8,7 @@ import {createTestSystemCpu,linkTestSystemBlua32} from '../helpers/blua32';
 import {CpuExecutionBackend} from '../../machine/ts/machine/cpu/compiled_block';
 import {RunResult} from '../../machine/ts/machine/cpu/cpu';
 import * as v from '../../machine/ts/machine/cpu/value';
-const paths=['base','number/decimal','number/parse','table','string/base','string/mapped','string/pack','string/float/encode','string/float/decode'];
+const paths=['base','number/decimal','number/parse','table','string/base','string/pack','string/float/encode','string/float/decode'];
 const modules=paths.map(path=>{const source=readFileSync(`machine/bios/${path}.lua`,'utf8');return{path,source,chunk:parseLuaChunk(source,path+'.lua').chunk};});
 const consoleSource='return {write=function() end,end_line=function() end}';modules.push({path:'tty/console',source:consoleSource,chunk:parseLuaChunk(consoleSource,'tty/console.lua').chunk});
 const budget=1000000;

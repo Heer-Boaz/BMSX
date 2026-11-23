@@ -42,7 +42,7 @@ return probe_target(41)`;
 const assets = [
 	{ path: 'diagnostic_probe', source },
 	...BASE_FIRMWARE_MODULES,
-	...['table', 'string/base', 'string/mapped', 'debug/scopes', 'shell/source_location'].map(path => ({
+	...['table', 'string/base', 'debug/scopes', 'shell/source_location'].map(path => ({
 		path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
 	})),
 	{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },

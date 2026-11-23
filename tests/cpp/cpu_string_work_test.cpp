@@ -2,6 +2,8 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/devices/irq/controller.h"
+#include "machine/devices/dma/controller.h"
+#include "machine/scheduler/device.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/model.h"
@@ -23,9 +25,9 @@ struct CpuMachine {
 	IrqController irq;
 	ExecutionAddressSpace addresses;
 	CPU cpu;
-	CpuMachine(const test::Blua32TestImage& image, bool scalar)
+	CpuMachine(const test::Blua32TestImage& image, bool scalar, CartridgeSocketMediaPair slots = {})
 		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image))
-		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
+		, memory(MemoryInit{rom.bytes, slots}, PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
 		cpu.reset();
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
@@ -214,10 +216,97 @@ void stringSlice(bool wide) {
 			"StringSlice rejects invalid or non-integral endpoints even when its result is discarded");
 	}
 }
+void mappedStringCopiesStorage() {
+	test::Blua32TestImage image;
+	image.text.resize(2 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, 3, 2);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 4}};
+	constexpr std::array<u8, 2> slot0{0x81u, 0x4bu}, slot1{0x22u, 0x5au};
+	CartridgeSocketMediaPair slots{};
+	slots[0] = CartridgeCardMedia{slot0, 2u, false};
+	slots[1] = CartridgeCardMedia{slot1, std::nullopt, false};
+	CpuMachine machine(image, true, slots);
+	auto& cpu = machine.cpu;
+	auto& memory = machine.memory;
+	DeviceScheduler scheduler(cpu);
+	DmaController dma(memory, cpu, machine.irq, scheduler);
+	memory.cartridgeController().connect(memory, machine.irq, dma);
+	constexpr u32 source = RAM_BASE + 0x20000u;
+	const std::string bytes = std::string(255, 'm') + std::string("\0\xffK", 3);
+	for (u32 i = 0; i < bytes.size(); ++i) memory.writeMappedU8(source + i, static_cast<u8>(bytes[i]));
+
+	const auto call = [](CpuMachine& owner, u32 address, i32 count) -> CallFrame& {
+		auto& cpu = owner.cpu;
+		auto& frame = owner.restart();
+		frame.registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::StringFromBytes));
+		frame.registers.set(1, valueInteger(static_cast<i32>(address)));
+		frame.registers.set(2, valueInteger(count));
+		frame.setTop(3);
+		cpu.runUntilDepth(0, 1);
+		return frame;
+	};
+	const auto id = asStringId(call(machine, source, static_cast<i32>(bytes.size())).registers.get(0));
+	require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)] - 2 - static_cast<i32>(bytes.size()) - 1,
+		"mapped String work pays for the admitted byte span and exactly one result");
+	require(cpu.stringPool().toString(id) == bytes && id == cpu.stringPool().intern(bytes), "mapped and ordinary copies intern identical raw bytes");
+	require(asStringId(call(machine, source, static_cast<i32>(bytes.size())).registers.get(0)) == id, "a repeated range reuses its String identity");
+	require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)] - 2 - static_cast<i32>(bytes.size()) - 1,
+		"the byte charge does not depend on an intern hit");
+	memory.writeMappedU8(source + 255, 42);
+	require(cpu.stringPool().toString(id) == bytes, "the result owns its storage");
+
+	const auto copy = [&](u32 address, i32 count) {
+		return asStringId(call(machine, address, count).registers.get(0));
+	};
+	const u32 systemTail = static_cast<u32>(machine.rom.bytes.size() - 1u);
+	const auto lastSystemByte = static_cast<char>(memory.readMappedU8(systemTail));
+	require(cpu.stringPool().toString(copy(systemTail, 1)) == std::string(1, lastSystemByte),
+		"the last installed system ROM byte is readable");
+	require(cpu.stringPool().toString(copy(CART_ROM_BASE, 2)) == std::string("\x81\x4b", 2),
+		"read installed ROM bytes from the selected physical socket");
+	memory.writeMappedU8(CART_RAM_BASE + 1u, 0xfeu);
+	const auto cartRam = copy(CART_RAM_BASE + 1u, 1);
+	memory.writeMappedU8(CART_RAM_BASE + 1u, 0x11u);
+	require(cpu.stringPool().toString(cartRam) == std::string("\xfe", 1), "copy does not borrow selected cartridge RAM");
+	memory.writeMappedU32LE(IO_CART_SELECT, 1u);
+	require(cpu.stringPool().toString(copy(CART_ROM_BASE, 2)) == std::string("\x22\x5a", 2),
+		"changing physical sockets changes the admitted bytes");
+
+	int ioReads = 0;
+	memory.mapIoRead(IO_IRQ_FLAGS, &ioReads, [](void* context, u32, MappedBusSignals) -> u32 {
+		++*static_cast<int*>(context);
+		return 67u;
+	});
+	require(cpu.stringPool().toString(asStringId(call(machine, IO_IRQ_FLAGS, 0).registers.get(0))).empty(), "zero count touches no device");
+	for (const auto& [address, count] : std::array{
+		std::pair{IO_IRQ_FLAGS, 1}, std::pair{memory.ramBusEnd() - 1, 2},
+		std::pair{0x0fffffffu, 1}, std::pair{IO_BASE - 1u, 2}, std::pair{source, -1},
+		std::pair{systemTail, 2}, std::pair{CART_ROM_BASE + 1u, 2},
+		std::pair{CART_ROM_BASE, static_cast<i32>(CART_ROM_SIZE)}, std::pair{CART_RAM_BASE + 1u, 2},
+		std::pair{SYSTEM_ROM_SIZE - 1u, 2}, std::pair{CART_RAM_BASE - 1u, 2},
+		std::pair{CART_MMIO_BASE - 1u, 2}, std::pair{CART_MMIO_BASE, 1},
+	}) {
+		CpuMachine rejected(image, true, slots);
+		rejected.memory.mapIoRead(IO_IRQ_FLAGS, &ioReads, [](void* context, u32, MappedBusSignals) -> u32 {
+			++*static_cast<int*>(context);
+			return 67u;
+		});
+		call(rejected, address, count);
+		require(rejected.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT,
+			"invalid storage read faults at its owning builtin");
+	}
+	require(ioReads == 0, "mapped String admission never reads an IO register");
+	call(machine, CART_RAM_BASE, 1);
+	require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT,
+		"the selected ROM-only card has no RAM source");
+}
+
 } // namespace
 int main() {
 	try {
 		ramStringPorts();
+		mappedStringCopiesStorage();
 		for (const bool scalar : {true, false}) {
 			for (const auto op : {OpCode::CONCAT, OpCode::CONCATN, OpCode::LT, OpCode::LE, OpCode::EQ}) logicalStringWork(scalar, op);
 			selectAndChar(scalar);

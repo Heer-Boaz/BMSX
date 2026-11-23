@@ -32,9 +32,10 @@ export const enum BuiltinFunctionId {
 	SetMetatable = 30,
 	StringSlice = 31,
 	TableCopy = 32,
+	StringFromBytes = 33,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 33;
+export const BUILTIN_FUNCTION_COUNT = 34;
 
 export const enum GarbageCollectionOperation { Collect = 0, Count = 1, Step = 2 }
 
@@ -77,4 +78,5 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_tointeger', id: BuiltinFunctionId.ToInteger },
 	{ name: '__bmsx_string_slice', id: BuiltinFunctionId.StringSlice },
 	{ name: '__bmsx_table_copy', id: BuiltinFunctionId.TableCopy },
+	{ name: '__bmsx_string_from_bytes', id: BuiltinFunctionId.StringFromBytes },
 ];

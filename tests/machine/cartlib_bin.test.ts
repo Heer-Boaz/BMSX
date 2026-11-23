@@ -22,7 +22,7 @@ function(addr)
 end, fixture_bytes`;
 	const modules = [
 		{ path: 'bootstrap', source: "require('base')\ntable = require('table')\nstring = require('string/base')" },
-		...['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/mapped', 'string/float/decode'].map(path => ({
+		...['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/float/decode'].map(path => ({
 			path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
 		})),
 		...['cartlib/memory', 'cartlib/bin'].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })),

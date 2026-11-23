@@ -56,6 +56,7 @@ inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN
 	{ 2, 0, 0 }, // SetMetatable
 	{ 2, 0, 0 }, // StringSlice
 	{ 2, 0, 0 }, // TableCopy
+	{ 2, 0, 0 }, // StringFromBytes
 }};
 
 // Builtins consume compact register windows or temporary complete-value

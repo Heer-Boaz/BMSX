@@ -57,11 +57,26 @@ including every NUL byte. It is not a Unicode character count.
 
 ### `string.from_bytes(address, byte_count)` {#sec-bios-string-stringfrom_utf8address-byte_count}
 
-Copies the supplied number of bytes from mapped memory into a String. A zero
-count gives the empty String. The source is read in byte order beginning at
-the supplied address. Only those bytes are read; no terminator is needed, and
-no byte triggers a continuation read. Once the call returns, reuse of the
-source memory does not alter the String.
+Copies a contiguous storage range into a String. Supply a 32-bit Integer
+address and a nonnegative Integer byte count. An exactly integral Number in
+range is also accepted for either argument. A zero count returns the empty
+String without accessing memory. Otherwise, all requested bytes must exist in
+one contiguous range of System ROM, program-accessible main RAM,
+or ROM or RAM on the currently selected cartridge. Bytes beyond the end of
+installed storage are not copied or filled with zeros. The operation does not
+read I/O registers, private language storage, or across storage regions.
+A bad argument or range faults with `Invalid argument.` before reading;
+use the specified access width to read device registers. An admitted String
+that cannot be stored is a memory error.
+
+The bytes are copied in address order; no terminator is needed. Reuse of the
+source memory does not alter the String. The copy completes or faults before
+another guest instruction or interrupt is accepted; it does not yield between
+bytes.
+
+The operation adds two base cycles to the call cost. If the range is admitted,
+it also adds one cycle per byte, even when the same String already exists or
+an allocation fails. Result placement is charged separately.
 
 #### Text projection {#sec-memory-text-codepoints-and-utf-8-bytes}
 

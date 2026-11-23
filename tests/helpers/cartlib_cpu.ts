@@ -27,7 +27,6 @@ type CartlibProgramOptions = {
 const SYSTEM_MODULE_FILES = [
 	['table', 'machine/bios/table.lua'],
 	['string/base', 'machine/bios/string/base.lua'],
-	['string/mapped', 'machine/bios/string/mapped.lua'],
 	['utf8', 'machine/bios/utf8.lua'],
 	['string/pattern', 'machine/bios/string/pattern.lua'],
 	['compiler/api', 'machine/bios/compiler/api.lua'],

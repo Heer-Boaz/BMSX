@@ -50,6 +50,7 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 	{ id: BuiltinFunctionId.SetMetatable, cost: BUILTIN_COST_TIER2 },
 	{ id: BuiltinFunctionId.StringSlice, cost: BUILTIN_COST_TIER2 },
 	{ id: BuiltinFunctionId.TableCopy, cost: BUILTIN_COST_TIER2 },
+	{ id: BuiltinFunctionId.StringFromBytes, cost: BUILTIN_COST_TIER2 },
 ];
 
 // Borrowed argument windows and reusable return transport belong to builtin

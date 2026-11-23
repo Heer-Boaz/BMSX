@@ -4,7 +4,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { BuiltinResults } from '../../machine/ts/machine/cpu/builtin_values';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
+import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
+import { Memory } from '../../machine/ts/machine/memory/memory';
+import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueBool, valueFloat, valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
@@ -15,7 +20,9 @@ import {
 	BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_NEXT_OFFSET,
 	BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_RECORD_KIND,
 } from '../../machine/ts/spec/blua32/image_format';
-import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_MMIO_BASE, CART_RAM_BASE, CART_ROM_BASE, CART_ROM_SIZE, IO_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { IO_CART_SELECT, IO_IRQ_FLAGS } from '../../machine/ts/spec/bmsx/io';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
@@ -177,6 +184,77 @@ for (const wide of [false, true]) {
 		}
 	});
 }
+
+test('mapped byte String copies RAM, charges by span, and never reads an inadmissible device or region', () => {
+	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.CALL, 0, 3, 2);
+	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 4 }] });
+	const makeOwner = () => {
+		const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: [
+			{ rom: Uint8Array.of(0x81, 0x4b), ramByteCount: 2, mailboxPresent: false },
+			{ rom: Uint8Array.of(0x22, 0x5a), ramByteCount: null, mailboxPresent: false },
+		] }, PSX_MACHINE_SPEC.ramBytes);
+		const irq = new IrqController(memory);
+		const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory), CpuExecutionBackend.Interpreter);
+		const dma = new DmaController(memory, cpu, irq, new DeviceScheduler(cpu));
+		memory.cartridgeController.connect(memory, irq, dma);
+		cpu.reset();
+		return cpu;
+	};
+	const cpu = makeOwner(), memory = cpu.memory;
+	const source = RAM_BASE + 0x20000;
+	const bytes = 'm'.repeat(255) + '\x00\xffK';
+	for (let i = 0; i < bytes.length; ++i) memory.writeMappedU8(source + i, bytes.charCodeAt(i));
+
+	function call(owner: typeof cpu, target: number, count: number) {
+		owner.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
+		const frame = owner.rootThread.currentFrame!;
+		frame.registers.setBuiltinFunction(0, BuiltinFunctionId.StringFromBytes);
+		frame.registers.setInteger(1, target);
+		frame.registers.setInteger(2, count);
+		frame.top = 3;
+		owner.runUntilDepth(0, 1);
+		return frame;
+	}
+
+	const frame = call(cpu, source, bytes.length), id = frame.registers.getStringId(0);
+	assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - bytes.length - 1);
+	assert.equal(cpu.stringPool.bytes(id), bytes);
+	assert.equal(id, cpu.stringPool.intern(bytes));
+	assert.equal(call(cpu, source, bytes.length).registers.getStringId(0), id, 'repeat direct interning returns the same string');
+	assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - bytes.length - 1);
+	memory.writeMappedU8(source + 255, 42);
+	assert.equal(cpu.stringPool.bytes(id), bytes, 'result does not retain a live mapping');
+
+	const copy = (address: number, count: number) => call(cpu, address, count).registers.getStringId(0);
+	const systemTail = image.romBytes.byteLength - 1;
+	assert.equal(cpu.stringPool.bytes(copy(systemTail, 1)), String.fromCharCode(memory.readMappedU8(systemTail)));
+	assert.equal(cpu.stringPool.bytes(copy(CART_ROM_BASE, 2)), '\x81K');
+	memory.writeMappedU8(CART_RAM_BASE + 1, 0xfe);
+	const cartRam = copy(CART_RAM_BASE + 1, 1);
+	memory.writeMappedU8(CART_RAM_BASE + 1, 0x11);
+	assert.equal(cpu.stringPool.bytes(cartRam), '\xfe');
+	memory.writeMappedU32LE(IO_CART_SELECT, 1);
+	assert.equal(cpu.stringPool.bytes(copy(CART_ROM_BASE, 2)), '\x22Z');
+
+	let reads = 0;
+	memory.mapIoRead(IO_IRQ_FLAGS, null, () => { ++reads; return 67; });
+	assert.equal(cpu.stringPool.bytes(call(cpu, IO_IRQ_FLAGS, 0).registers.getStringId(0)), '');
+	for (const [address, count] of [
+		[IO_IRQ_FLAGS, 1], [memory.ramBusEnd() - 1, 2], [0x0fffffff, 1], [IO_BASE - 1, 2], [source, -1],
+		[systemTail, 2], [CART_ROM_BASE + 1, 2], [CART_ROM_BASE, CART_ROM_SIZE], [CART_RAM_BASE + 1, 2],
+		[SYSTEM_ROM_SIZE - 1, 2], [CART_RAM_BASE - 1, 2], [CART_MMIO_BASE - 1, 2], [CART_MMIO_BASE, 1],
+	]) {
+		const rejected = makeOwner();
+		rejected.memory.mapIoRead(IO_IRQ_FLAGS, null, () => { ++reads; return 67; });
+		call(rejected, address, count);
+		assert.equal(rejected.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+	}
+	assert.equal(reads, 0);
+	call(cpu, CART_RAM_BASE, 1);
+	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT, 'the selected ROM-only card has no RAM source');
+});
 
 test('BIOS string.sub normalizes inclusive byte bounds without decoding the input', () => {
 	const { cpu } = createCartlibProgramHarness(`

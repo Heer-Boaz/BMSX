@@ -8,7 +8,7 @@ import { systemCaseSource } from './system_case_rom';
 /** Actual firmware compiler/REPL and the production packed diagnostic directory. */
 function compileFrameEvaluationProgram(execution: string, optLevel: 0 | 3, includeDiagnostics = true) {
 	const modules = [
-		...['base', 'number/parse', 'number/decimal', 'table', 'coroutine', 'string/base', 'string/mapped', 'string/pattern', 'debug/scopes', 'debug/frame_scopes', 'debug/frame', 'shell/repl'],
+		...['base', 'number/parse', 'number/decimal', 'table', 'coroutine', 'string/base', 'string/pattern', 'debug/scopes', 'debug/frame_scopes', 'debug/frame', 'shell/repl'],
 		...readdirSync('machine/bios/compiler').filter(name => name.endsWith('.lua')).sort().map(name => `compiler/${name.slice(0, -4)}`),
 	].map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }));
 	modules.push({ path: 'bmsx/blua32', source: BLUA32_FIRMWARE_MODULE_SOURCE },
