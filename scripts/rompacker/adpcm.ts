@@ -6,7 +6,6 @@ const ADPCM_MAGIC = 'BADP';
 const ADPCM_VERSION = 1;
 const ADPCM_HEADER_SIZE = 48;
 const ADPCM_NO_LOOP = 0xffffffff;
-const ADPCM_SEEK_INTERVAL_SEC = 5;
 const DEFAULT_BLOCK_FRAMES = 512;
 const MIN_BLOCK_FRAMES = 128;
 const MAX_BLOCK_FRAMES = 768;
@@ -379,15 +378,11 @@ export async function encodeAudioAssetToAdpcm(input: Buffer, meta: AudioMeta): P
 
 	const channels = decoded.channels;
 	const sampleRate = decoded.sampleRate;
-	const seekStrideFrames = sampleRate * ADPCM_SEEK_INTERVAL_SEC;
-	const seekFrames: number[] = [];
-	const seekOffsets: number[] = [];
 	const statesPredictor = new Int32Array(channels);
 	const statesStepIndex = new Int32Array(channels);
 	const dataParts: Buffer[] = [];
 	let dataSize = 0;
 	let frameStart = 0;
-	let nextSeekAt = 0;
 
 	while (frameStart < totalFrames) {
 		const blockFrames = chooseBlockFrames(trimmedSamples, channels, frameStart, totalFrames);
@@ -425,18 +420,14 @@ export async function encodeAudioAssetToAdpcm(input: Buffer, meta: AudioMeta): P
 			}
 		}
 
-		if (seekFrames.length === 0 || frameStart >= nextSeekAt) {
-			seekFrames.push(frameStart);
-			seekOffsets.push(dataSize);
-			nextSeekAt = frameStart + seekStrideFrames;
-		}
-
 		dataParts.push(block);
 		dataSize += blockBytes;
 		frameStart += blockFrames;
 	}
 
-	const seekEntryCount = seekFrames.length;
+	// Every block is independently decodable. Index its exact frame and
+	// compressed offset so a seek does not walk intervening block headers.
+	const seekEntryCount = dataParts.length;
 	const seekTableSize = seekEntryCount * 8;
 	const dataOffset = ADPCM_HEADER_SIZE + seekTableSize;
 	const result = Buffer.alloc(dataOffset + dataSize);
@@ -449,24 +440,23 @@ export async function encodeAudioAssetToAdpcm(input: Buffer, meta: AudioMeta): P
 	const loopEndFrame = loopFrames ? loopFrames.end : ADPCM_NO_LOOP;
 	result.writeUInt32LE(loopStartFrame, 16);
 	result.writeUInt32LE(loopEndFrame, 20);
-	result.writeUInt32LE(seekStrideFrames, 24);
+	result.writeUInt32LE(MAX_BLOCK_FRAMES, 24);
 	result.writeUInt32LE(seekEntryCount, 28);
 	result.writeUInt32LE(ADPCM_HEADER_SIZE, 32);
 	result.writeUInt32LE(dataOffset, 36);
 	result.writeUInt32LE(0, 40);
 	result.writeUInt32LE(0, 44);
 
-	let cursor = ADPCM_HEADER_SIZE;
-	for (let index = 0; index < seekEntryCount; index += 1) {
-		result.writeUInt32LE(seekFrames[index], cursor + 0);
-		result.writeUInt32LE(seekOffsets[index], cursor + 4);
-		cursor += 8;
-	}
-	cursor = dataOffset;
-	for (let index = 0; index < dataParts.length; index += 1) {
-		const part = dataParts[index];
-		part.copy(result, cursor);
-		cursor += part.length;
+	let seekCursor = ADPCM_HEADER_SIZE;
+	let dataCursor = dataOffset;
+	frameStart = 0;
+	for (const part of dataParts) {
+		result.writeUInt32LE(frameStart, seekCursor);
+		result.writeUInt32LE(dataCursor - dataOffset, seekCursor + 4);
+		part.copy(result, dataCursor);
+		frameStart += part.readUInt16LE(0);
+		seekCursor += 8;
+		dataCursor += part.length;
 	}
 
 	return {
