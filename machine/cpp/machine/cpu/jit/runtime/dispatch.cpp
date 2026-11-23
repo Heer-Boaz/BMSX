@@ -493,6 +493,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			state.frame = frame;
 			state.frameDepth = depth;
 			run->nativeStackCapacity = thread.stackCapacity;
+			run->nativeFrameLimit = thread.retainedFrameLimit();
 			run->haltedCallDepth = cpu.m_haltedUntilIrqThreadAddress == thread.address ? cpu.m_haltedUntilIrqFrameDepth : -1;
 		}
 		// Read-only helpers preserve the admitted window. Other same-frame

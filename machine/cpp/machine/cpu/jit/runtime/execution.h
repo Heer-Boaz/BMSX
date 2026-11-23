@@ -40,6 +40,7 @@ struct NativeCpuRunState {
 	u32 cartridgeSlot = 0;
 	u32 frameBank = 0;
 	size_t nativeStackCapacity = 0;
+	u32 nativeFrameLimit = 0;
 	i32 haltedCallDepth = -1;
 	u32 closureDomain = 0;
 	CallFrame* firstPendingFrame = nullptr;

@@ -2222,6 +2222,7 @@ dispatch_native_block: {
 				thread.recordNativeWrites(m_memory.ramWriteWatches());
 				nativeState.frameBank = frameBankWord(IMAGE.executionDomainId);
 				nativeState.nativeStackCapacity = thread.stackCapacity;
+				nativeState.nativeFrameLimit = thread.retainedFrameLimit();
 				nativeState.haltedCallDepth = m_haltedUntilIrqThreadAddress == thread.address ? m_haltedUntilIrqFrameDepth : -1;
 			nativeState.closureDomain = ClosureRecord::domainBits(IMAGE.executionDomainId);
 				nativeState.cartridgeSlot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);

@@ -34,8 +34,10 @@ struct Thread {
 	u32 stackByteLength() const { return static_cast<u32>(stack.size()) * THREAD_STACK_SLOT_BYTES; }
 	bool stackRequiresScalar() const;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	// A regular activation leaves the final control slot for exception entry.
+	u32 retainedFrameLimit() const { return boundFrameCapacity; }
 	CallFrame* retainedFrameForEntry(const CallFrame& caller, u32 nextDepth) const {
-		return nextDepth < boundFrameCapacity ? caller.next : nullptr;
+		return nextDepth < retainedFrameLimit() ? caller.next : nullptr;
 	}
 	void publishAdmittedFrame(CallFrame& frame, u32 depth, i32 top) {
 		currentFrame = &frame;

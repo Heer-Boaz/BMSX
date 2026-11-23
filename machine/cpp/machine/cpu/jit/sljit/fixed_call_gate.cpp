@@ -82,6 +82,8 @@ sljit_label* emitFixedResidentCall(sljit_compiler* c, sljit_label* bindWindow, s
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM1(saved), offsetof(CallFrame, nativeControl),
 		SLJIT_IMM, 0), semanticCall);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_MEM1(state), depth, SLJIT_IMM, 1);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R3, 0,
+		SLJIT_MEM1(state), offsetof(NativeCpuRunState, nativeFrameLimit)), semanticCall);
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0,
 		SLJIT_MEM1(state), offsetof(NativeCpuRunState, haltedCallDepth)), semanticCall);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), callDepth, SLJIT_R3, 0);
