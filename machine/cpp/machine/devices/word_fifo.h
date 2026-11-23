@@ -42,7 +42,9 @@ public:
 		const size_t first = std::min(count, Capacity - writeIndex);
 		if constexpr (std::endian::native == std::endian::little) {
 			std::memcpy(m_words.data() + writeIndex, source, first * sizeof(u32));
-			std::memcpy(m_words.data(), source + first * sizeof(u32), (count - first) * sizeof(u32));
+			if (first != count) {
+				std::memcpy(m_words.data(), source + first * sizeof(u32), (count - first) * sizeof(u32));
+			}
 		} else {
 			for (size_t i = 0; i < first; ++i) m_words[writeIndex + i] = readLE32(source + i * sizeof(u32));
 			for (size_t i = first; i < count; ++i) m_words[i - first] = readLE32(source + i * sizeof(u32));
