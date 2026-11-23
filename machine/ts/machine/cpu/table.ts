@@ -4,7 +4,7 @@ import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
 import { LuaAllocationRecovery } from './lua_heap';
-import type { GcHeap } from './gc_heap';
+import { GcPhase, type GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
 import {
 	ValueTag, asInteger, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
@@ -698,7 +698,9 @@ export class TableRecords {
 						return slot;
 					}
 				}
-				const storage = this.heap.arena.allocate(TableRecords.storageBytes(plan.array, plan.hash, reserve), true);
+				const bytes = TableRecords.storageBytes(plan.array, plan.hash, reserve);
+				if (policy !== HashStore.Resume && this.heap.phase() >= GcPhase.Sweep) this.heap.assistSweepBeforeReservation(bytes);
+				const storage = this.heap.arena.allocate(bytes, true);
 				if (storage !== 0) return this.resize(record, storage, key, value, reserve, previous, requested);
 			}
 			if (parkOnRefusal) return HASH_STORE_DECLINED;

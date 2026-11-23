@@ -1332,8 +1332,8 @@ charges the active image's decoded values and name mapping, not the ROM
 records. Only a String constant that resolves to a RAM String retains an
 allocation for collection. Numeric values, booleans, nil and references to
 ROM Strings do not require heap tracing. This does not change the occupied
-budget of the decoded image. The collector compares that budget plus the new
-request with its current assist threshold.
+budget of the decoded image. The collector compares total occupied language
+budget with the assist threshold when starting and advancing marking.
 
 For a full collection, the collector marks retained objects, incrementally
 revisits mutable objects and Thread stacks, resolves weak references in a
@@ -1377,7 +1377,7 @@ reservation shrinks, the released space leaves the occupied budget. Existing
 frame and captured-variable references retain their meaning.
 
 The initial collection threshold is **1 MiB of occupied budget**. A request for
-`R` bytes starts or assists collection when `B + R` exceeds the current
+`R` bytes starts collection or assists marking when `B + R` exceeds the current
 threshold, where `B` is the occupied budget before admitting the request. The
 amount above the threshold is allocation debt. Each ordinary assist does a
 bounded amount of collector work, then credits that work against the debt.
@@ -1396,6 +1396,13 @@ $$
 
 The headroom term starts collection before a heavily retained pool fills.
 It does not reserve extra capacity or guarantee that new allocations will fit.
+After the final mark, reclamation assists follow growth in physical occupancy.
+Before reserving storage, the collector can do a bounded amount of sweep work
+in proportion to the outstanding reclamation work and the available space.
+Reclamation already done by a display-tick assist counts toward this work.
+A logical charge without a physical reservation does not by itself advance
+reclamation. Logical capacity still applies throughout the collection.
+
 The collector also compares unoccupied physical heap space with recent
 growth in physical occupancy and the remaining collection work. At a
 completed display tick, physical pressure can advance marking or reclamation

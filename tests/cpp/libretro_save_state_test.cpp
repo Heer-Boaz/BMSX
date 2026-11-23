@@ -116,7 +116,7 @@ void testLibretroStateEnvelopeRoundTrip() {
 	memory.writeMappedU32LE(systemScratch, 0xaabbccddu);
 	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0u);
 	const bmsx::u32 currentFormat = bmsx::readLE32(envelope.data());
-	bmsx::writeLE32(envelope.data(), 0x31534d42u); // BMS1 did not serialize reference slots.
+	bmsx::writeLE32(envelope.data(), 0x42534d42u); // BMSB had no sweep-credit fields.
 	require(!bmsx::unserializeLibretroState(*content, envelope)
 		&& memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0u,
 		"the previous layout is rejected before changing machine state");

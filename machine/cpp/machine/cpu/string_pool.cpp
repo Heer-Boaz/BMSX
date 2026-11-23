@@ -414,6 +414,15 @@ void StringPool::beginSweep() {
 }
 bool StringPool::sweeping() const { return metadata(SWEEP) != 0; }
 
+u32 StringPool::estimateSweepWork() const {
+	const u32 control = metadata(CAPACITY);
+	const u32 count = control & RAM_BUCKET_EXTENT_MASK;
+	const u32 records = metadata(USED);
+	// Include a possible second visit during a pending directory migration.
+	if ((control & RAM_BUCKET_REHASH) != 0u) return 3u * count + 2u * records;
+	return count >= MIN_SHRINK_BUCKETS ? count + count / 2u + 2u * records + 1u : count + records;
+}
+
 size_t StringPool::sweepStep(size_t allowance) {
 	const u32 cursor = metadata(SWEEP), control = metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
 	if (cursor == SWEEP_SHRINK) return shrinkStep(count, allowance);

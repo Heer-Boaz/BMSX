@@ -1,4 +1,4 @@
-import { RAM_BASE } from '../../spec/bmsx/memory_map';
+import { MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import { HEAP_GC_CONTROL_OFFSET, type HeapAllocator } from './heap_allocator';
@@ -13,7 +13,7 @@ import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFro
 import type { ValueSlots } from './value_slots';
 import { GC_STEP_WORDS, LuaAllocationRecovery, type LuaHeap } from './lua_heap';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
-import { ceilDiv4 } from '../common/numeric';
+import { ceilDiv4, toSignedWord } from '../common/numeric';
 import type { GcDiagnostics } from './gc_diagnostics';
 
 export const GC_TRACE_HEAD = 4;
@@ -40,7 +40,13 @@ const GC_LAST_EPOCH_WORK = GC_EPOCH_WORK + 4;
 const GC_PHYSICAL_OCCUPIED_AT_TICK = GC_LAST_EPOCH_WORK + 4;
 const GC_PHYSICAL_ASSIST = GC_PHYSICAL_OCCUPIED_AT_TICK + 4;
 const GC_OBJECT_HEAD = GC_PHYSICAL_ASSIST + 4;
-const GC_SWEEP_LINK = GC_OBJECT_HEAD + 4;
+const GC_OBJECT_COUNT = GC_OBJECT_HEAD + 4;
+const GC_SWEEP_LINK = GC_OBJECT_COUNT + 4;
+const GC_SWEEP_BASIS = GC_SWEEP_LINK + 4;
+const GC_SWEEP_ESTIMATE = GC_SWEEP_BASIS + 4;
+const GC_SWEEP_RUNWAY = GC_SWEEP_ESTIMATE + 4;
+const GC_SWEEP_PAID = GC_SWEEP_RUNWAY + 4;
+const GC_SWEEP_PAY_AT = GC_SWEEP_PAID + 4;
 // Capture lanes use four bytes each and Table entries require a separate tag.
 const TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1;
 const TRACE_CURSOR_MASK = (1 << TRACE_CURSOR_BITS) - 1;
@@ -57,6 +63,9 @@ export const enum GcRootBank { None, SystemGlobals, Globals, SystemConstants, Ca
 // Two unconnected selector inputs do not clock the collector.
 const GC_PHASE_SELECTOR = [GcPhase.Pause, GcPhase.Mark, GcPhase.MarkAgain, GcPhase.Atomic,
 	GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause, GcPhase.Pause];
+export function decodeGcPhase(word: number): GcPhase {
+	return GC_PHASE_SELECTOR[word & 7];
+}
 export class GcHeap {
 	public diagnostics: GcDiagnostics | null = null;
 	// An inspector may end the lifetimes it observed; allocation never
@@ -64,7 +73,7 @@ export class GcHeap {
 	public onRecordRetirement: ((address: number | null) => void) | null = null;
 	private readonly controlOffset: number;
 	public phase(): GcPhase {
-		return GC_PHASE_SELECTOR[this.memory.readRamRecordByte(this.controlOffset) & 7];
+		return decodeGcPhase(this.memory.readRamRecordByte(this.controlOffset));
 	}
 	public white(): number { return this.memory.readRamRecordByte(this.controlOffset + 1) & 1; }
 	private setPhase(phase: GcPhase): void { this.memory.writeRamRecordByte(this.controlOffset, phase); }
@@ -103,8 +112,12 @@ export class GcHeap {
 	private readonly threadLayout = new ThreadLayout();
 	public publishObject(address: number): void {
 		const head = this.controlOffset + GC_OBJECT_HEAD;
-		this.memory.writeRamRecordWord(address - GC_OBJECT_LINK_BEFORE, this.memory.readRamRecordWord(head));
-		this.memory.writeRamRecordWord(head, address);
+		const link = address - GC_OBJECT_LINK_BEFORE;
+		this.memory.writeRamRecordWord(link, this.memory.readRamRecordWord(head));
+		// A new object is already current-white. Keep the sweep frontier on the old list.
+		const sweep = this.controlOffset + GC_SWEEP_LINK;
+		if (this.memory.readRamRecordWord(sweep) === head) this.memory.writeRamRecordWord(sweep, link);
+		this.memory.writeRamRecordPair(head, address, this.memory.readRamRecordWord(head + 4) + 1);
 	}
 	public visitObjectRecords<Context>(context: Context, visit: (context: Context, address: number) => void): void {
 		for (let address = this.memory.readRamRecordWord(this.controlOffset + GC_OBJECT_HEAD);
@@ -665,6 +678,12 @@ export class GcHeap {
 		this.memory.writeRamRecordByte(this.controlOffset + 1, this.white() ^ 1);
 		this.memory.writeRamRecordWord(this.controlOffset + GC_SWEEP_LINK, this.controlOffset + GC_OBJECT_HEAD);
 		this.setRemarkStage(RemarkStage.None);
+		const occupied = this.arena.occupiedBytes();
+		const estimate = this.memory.readRamRecordWord(this.controlOffset + GC_OBJECT_COUNT) + this.cpu.stringPool.estimateSweepWork();
+		const runway = Math.max(this.arena.capacityBytes() - occupied, 1);
+		this.memory.writeRamRecordWord(this.controlOffset + GC_SWEEP_ESTIMATE, estimate);
+		this.memory.writeRamRecordWord(this.controlOffset + GC_SWEEP_RUNWAY, runway);
+		this.updateSweepCredit(occupied, 0, estimate, runway);
 		this.setPhase(GcPhase.Sweep);
 		return work;
 	}
@@ -714,6 +733,7 @@ export class GcHeap {
 		let address = memory.readRamRecordWord(link);
 		const white = this.white();
 		let work = 0;
+		let removed = 0;
 		while (address !== 0 && work < allowance) {
 			// The cursor owns the link to the next record, not the record
 			// being freed. Never retain an address into discarded storage.
@@ -721,10 +741,16 @@ export class GcHeap {
 			const next = memory.readRamRecordWord(nextLink);
 			const header = memory.readRamRecordWord(address);
 			const garbage = ((header >>> 8) & GC_COLOR_MASK) === (white ^ 1);
-			if (garbage) memory.writeRamRecordWord(link, next);
-			else link = nextLink;
+			if (garbage) {
+				memory.writeRamRecordWord(link, next);
+				++removed;
+			} else link = nextLink;
 			work += this.sweepRecord(address, header, garbage, white, growingThread, compactThreads);
 			address = next;
+		}
+		if (removed !== 0) {
+			const count = this.controlOffset + GC_OBJECT_COUNT;
+			memory.writeRamRecordWord(count, memory.readRamRecordWord(count) - removed);
 		}
 		memory.writeRamRecordWord(cursor, address !== 0 ? link : 0);
 		return work;
@@ -797,12 +823,51 @@ export class GcHeap {
 		this.step();
 	}
 
+	private updateSweepCredit(basis: number, paid: number, estimate: number, runway: number): void {
+		// As on the native core, compute the next whole batch threshold
+		// only when the collector changes the frontier.
+		const batch = paid < estimate ? Math.min(512, estimate - paid) : 512;
+		const product = (paid + batch) * runway;
+		const next = toSignedWord(basis) + Math.trunc((product + estimate - 1) / estimate);
+		this.memory.writeRamRecordWord(this.controlOffset + GC_SWEEP_BASIS, basis);
+		this.memory.writeRamRecordWord(this.controlOffset + GC_SWEEP_PAID, paid);
+		this.memory.writeRamRecordWord(this.controlOffset + GC_SWEEP_PAY_AT, Math.min(MAIN_RAM_SIZE, Math.max(0, next)));
+	}
+
+	public assistSweepBeforeReservation(requested: number): void {
+		const occupiedAfterRequest = this.arena.occupiedBytes() + requested;
+		const capacity = this.arena.capacityBytes();
+		if (occupiedAfterRequest < this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_PAY_AT)
+			&& occupiedAfterRequest < capacity) return;
+		let allowance = GC_STEP_WORDS;
+		if (occupiedAfterRequest < capacity) {
+			const growth = occupiedAfterRequest - toSignedWord(this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_BASIS));
+			const work = growth * this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_ESTIMATE);
+			const paid = this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_PAID);
+			const runway = this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_RUNWAY);
+			allowance = Math.min(GC_STEP_WORDS, Math.trunc(work / runway) - paid);
+		}
+		this.step(valueNil(), valueNil(), valueNil(), 0, false, allowance);
+	}
+
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false,
 		limit = GC_STEP_WORDS): number {
 		// Explicit and space-exhausted collection can finish the final pass synchronously.
 		if (this.finalMarkPending()) return this.finishFinalMark(t0, t1, t2);
 		this.diagnostics?.beginStep();
-		try { return this.accountEpochWork(this.stepWork(t0, t1, t2, growingThread, compactThreads, limit)); }
+		try {
+			if (this.phase() < GcPhase.Sweep) return this.accountEpochWork(this.stepWork(t0, t1, t2, growingThread, compactThreads, limit));
+			const occupied = this.arena.occupiedBytes();
+			const work = this.stepWork(t0, t1, t2, growingThread, compactThreads, limit);
+			if (this.active()) {
+				const basis = this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_BASIS);
+				const paid = this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_PAID);
+				this.updateSweepCredit(basis + this.arena.occupiedBytes() - occupied, paid + work,
+					this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_ESTIMATE),
+					this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_RUNWAY));
+			}
+			return this.accountEpochWork(work);
+		}
 		finally { this.diagnostics?.endStep(); }
 	}
 	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number, compactThreads: boolean, limit: number): number {

@@ -9,7 +9,7 @@
 namespace bmsx {
 namespace {
 
-constexpr u32 kSaveStateMagic = 0x42534d42u; // BMSB: media-bound state
+constexpr u32 kSaveStateMagic = 0x58534d42u; // BMSX: state with physical sweep credit
 constexpr size_t kMediaIdentityOffset = 2u * sizeof(u32);
 constexpr size_t kSaveStateBasePayloadCapacityBytes = 0x01000000u;
 

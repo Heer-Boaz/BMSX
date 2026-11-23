@@ -258,7 +258,9 @@ TableRecord::ResizePlan TableRecord::planRehash(Value key, u32 reserve, u32 memb
 	return {arraySize, hashSize, static_cast<u32>(hashKeys), nextWatermark};
 }
 
-int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, u32 reserve, u32 members, int existing) noexcept {
+template <TableRecord::HashStore Policy>
+int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, u32 reserve, u32 members, int existing)
+	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	// A new logical frontier does not require new physical storage.
 	const u32 count = hashSlots(), array = arrayCapacity();
 	if (plan.array == array && count != 0u) {
@@ -273,7 +275,13 @@ int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, 
 			return slot;
 		}
 	}
-	if (const u32 storage = m_heap->arena.allocate(storageBytes(plan.array, plan.hash, reserve), true))
+	const u32 bytes = storageBytes(plan.array, plan.hash, reserve);
+	if constexpr (Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
+		if (m_heap->sweepDueForReservation(bytes)) return HASH_STORE_DECLINED;
+	} else if constexpr (Policy != HashStore::Resume) {
+		if (m_heap->phase() >= GcPhase::Sweep) m_heap->assistSweepBeforeReservation(bytes);
+	}
+	if (const u32 storage = m_heap->arena.allocate(bytes, true))
 		return resize(plan, storage, key, value, reserve);
 	return HASH_STORE_DECLINED;
 }
@@ -289,21 +297,21 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u32 reserve, u3
 		// The generated body has not published its roots. Even an ordinary
 		// allocation assist must go through the instruction's semantic exit.
 		if (requested > previous && !budget.canAdmitWithoutAssist(requested - previous)) return HASH_STORE_DECLINED;
-		return commitHashPlan(plan, key, value, reserve, members, existing);
+		return commitHashPlan<Policy>(plan, key, value, reserve, members, existing);
 	} else if constexpr (Policy == HashStore::Resume) {
 		if (requested > previous && budget.usedBytes() + requested - previous > budget.capacity())
 			return HASH_STORE_DECLINED;
-		return commitHashPlan(plan, key, value, reserve, members, existing);
+		return commitHashPlan<Policy>(plan, key, value, reserve, members, existing);
 	} else {
 		const Value owner = valueTable(m_address);
 		bool admitted = requested <= previous || budget.prepareAllocation(requested - previous, owner, key, value);
 		if constexpr (Policy == HashStore::Scheduled) {
-			if (admitted) return commitHashPlan(plan, key, value, reserve, members, existing);
+			if (admitted) return commitHashPlan<Policy>(plan, key, value, reserve, members, existing);
 		}
 		auto recovery = LuaAllocationRecovery::CurrentOrFresh;
 		for (;;) {
 			if (admitted) {
-				const int slot = commitHashPlan(plan, key, value, reserve, members, existing);
+				const int slot = commitHashPlan<Policy>(plan, key, value, reserve, members, existing);
 				if (slot != HASH_STORE_DECLINED) return slot;
 			}
 			recovery = m_heap->recoverAllocation(recovery, owner, key, value);

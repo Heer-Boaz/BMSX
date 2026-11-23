@@ -45,6 +45,7 @@ public:
 	void markLocalRoots();
 	size_t takeMarkWork();
 	void beginSweep();
+	u32 estimateSweepWork() const;
 	size_t sweepStep(size_t allowance);
 	bool sweeping() const;
 

@@ -448,6 +448,14 @@ export class StringPool {
 		this.memory.writeRamRecordPair(this.metadataOffset + SWEEP_LINK, 0, 0);
 	}
 	public sweeping(): boolean { return this.metadata(SWEEP) !== 0; }
+	public estimateSweepWork(): number {
+		const control = this.metadata(CAPACITY);
+		const count = control & RAM_BUCKET_EXTENT_MASK;
+		const records = this.metadata(USED);
+		// Include a possible second visit during a pending directory migration.
+		if ((control & RAM_BUCKET_REHASH) !== 0) return 3 * count + 2 * records;
+		return count >= MIN_SHRINK_BUCKETS ? count + (count >>> 1) + 2 * records + 1 : count + records;
+	}
 	public sweepStep(allowance: number): number {
 		const cursor = this.metadata(SWEEP), control = this.metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
 		if (cursor === SWEEP_SHRINK) return this.shrinkStep(count, allowance);

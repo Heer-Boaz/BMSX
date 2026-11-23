@@ -192,7 +192,9 @@ private:
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	template <HashStore Policy>
 	int setOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED);
-	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 reserve, u32 members, int existing) noexcept;
+	template <HashStore Policy>
+	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 reserve, u32 members, int existing)
+		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	int resize(const ResizePlan&, u32 storage, Value key, Value value, u32 reserve);
 	void bindStorage(size_t arraySize, size_t hashSize, u32 address);
 	void initializeStorage(size_t retainedArray = 0);

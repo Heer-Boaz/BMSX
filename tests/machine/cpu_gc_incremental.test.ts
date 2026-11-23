@@ -1,4 +1,4 @@
-import { allocatedObjectRecords } from '../helpers/cpu_execution';
+import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
@@ -740,6 +740,70 @@ test('consuming a gray record also consumes a self-linked mark edge', () => {
 	assert.equal(cpu.gc.memory.readRamRecordByte(rooted + GC_COLOR_OFFSET), 3);
 	while (gc.active()) gc.step();
 	assert.equal(gc.tableRecordAddress(rooted), rooted);
+});
+
+test('physical allocations advance reclamation and replay from a checkpoint with pending sweep credit', () => {
+	const cpu = machine(), { gc, luaHeap, heapAllocator, stringPool } = cpu;
+	const diagnostics = gc.diagnostics = new GcDiagnostics(() => 0);
+	const frame = cpu.rootThread.currentFrame!, tables = gc.tables;
+	luaHeap.setCollectionTarget(luaHeap.capacity());
+	const owner = cpu.createTable(0, 3);
+	frame.registers.setTable(0, owner); frame.top = 1;
+	for (let key = -1; key >= -3; --key) tables.setInteger(owner, key, valueInteger(-key));
+	const text = 'borrowed from RAM while the previous collection sweeps';
+	const expectedSlice = text.slice(9, 30);
+	const source = stringPool.intern(text);
+	for (let i = 0; i < 2048; ++i) cpu.createTable(1, 0);
+
+	for (let i = 0; i < 64 && !gc.finalMarkPending(); ++i) gc.step();
+	assert.equal(gc.phase(), GcPhase.Atomic);
+	for (let i = 0; i < 64 && gc.finalMarkPending(); ++i) gc.stepFinalMark();
+	assert.equal(gc.phase(), GcPhase.Sweep);
+
+	luaHeap.setCollectionTarget(0);
+	const logical = luaHeap.usedBytes(), physical = heapAllocator.occupiedBytes();
+	const storage = tables.storageAddress(owner), steps = diagnostics.steps;
+	// Three reserved mappings leave one unused node in the four-node backing.
+	tables.setInteger(owner, -4, valueInteger(4));
+	assert.equal(tables.getInteger(owner, -4), valueInteger(4));
+	assert.equal(tables.storageAddress(owner), storage);
+	assert.equal(luaHeap.usedBytes(), logical + TableRecords.allocationCharge(0, 1));
+	assert.equal(heapAllocator.occupiedBytes(), physical);
+	assert.equal(diagnostics.steps, steps, 'a logical-only charge does not consume a reclamation step');
+
+	cpu.createTable();
+	assert.ok(heapAllocator.occupiedBytes() > physical);
+	assert.equal(diagnostics.steps, steps, 'a small reservation accumulates before a sweep step is due');
+	const pending = captureCpuCheckpoint(cpu);
+	const tryReservations = () => {
+		const before = allocatedObjectRecords(cpu).length;
+		let seen = diagnostics.steps;
+		const borrowed = stringPool.internSlice(source, 9, 21);
+		for (let requests = 1; requests <= 256; ++requests) {
+			const allocated = cpu.createTable(1024, 0);
+			if (diagnostics.steps === seen) continue;
+			seen = diagnostics.steps;
+			if (allocatedObjectRecords(cpu).length === before + requests) continue;
+			assert.equal(stringPool.bytes(borrowed), expectedSlice);
+			return { requests, allocated, borrowed, phase: gc.phase(), checkpoint: captureCpuCheckpoint(cpu) };
+		}
+		assert.fail('real allocations did not trigger reclamation');
+	};
+	const first = tryReservations();
+	restoreCpuCheckpoint(cpu, pending);
+	const replay = tryReservations();
+	assert.equal(replay.requests, first.requests);
+	assert.equal(replay.allocated, first.allocated);
+	assert.equal(replay.borrowed, first.borrowed);
+	assert.equal(replay.phase, first.phase);
+	assert.deepEqual(replay.checkpoint.cpu, first.checkpoint.cpu);
+	assert.equal(Buffer.compare(replay.checkpoint.memory.ram, first.checkpoint.memory.ram), 0,
+		'snapshot restore reproduces the sweep cursor, credit and raw allocation state');
+
+	for (let i = 0; i < 64 && gc.active(); ++i) gc.step();
+	assert.equal(gc.phase(), GcPhase.Pause);
+	assert.equal(stringPool.find(text), source, 'the borrowed RAM String survived reclamation');
+	assert.equal(stringPool.find(expectedSlice), replay.borrowed);
 });
 
 test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing dead graph edges', () => {

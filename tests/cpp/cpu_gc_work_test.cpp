@@ -217,6 +217,70 @@ void physicalPressurePacesLargeLiveHeap() {
 		"the table grow needs no synchronous epoch and leaves the guest charge unchanged");
 }
 
+void physicalReservationsPaySweepWork(GcPhase phase) {
+	Machine machine(image()); auto& cpu = machine.cpu;
+	auto& heap = cpu.luaHeap(); auto& gc = cpu.gcHeap();
+	constexpr int slots = 8192;
+	const auto beforeLive = heap.usedBytes();
+	auto live = cpu.createTable(slots, 0);
+	const auto reservationCharge = heap.usedBytes() - beforeLive;
+	live.setInteger(1, valueInteger(73));
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(live.address()));
+	frame.setTop(1);
+
+	// Keep enough distinct garbage for more than one reservation assist in
+	// each phase, without having to force a physical allocation failure.
+	for (int i = 0; i < 8192; ++i) {
+		if (phase == GcPhase::Sweep) cpu.createTable();
+		else cpu.stringPool().intern("unrooted-sweep-fixture-" + std::to_string(i));
+	}
+	for (int steps = 0; gc.phase() != phase; ++steps) {
+		require(steps < 128, "reach the requested reclamation phase");
+		if (gc.finalMarkPending()) gc.stepFinalMark();
+		else gc.step(valueNil(), valueNil(), valueNil(), 0u, false, gc.phase() == GcPhase::Sweep ? 1u : GC_STEP_WORDS);
+	}
+	require(heap.usedBytes() + reservationCharge < heap.capacity(),
+		"logical admission alone fits without allocation recovery");
+	heap.setCollectionTarget(0u);
+	cpu.instructionBudgetRemaining = 43;
+	const auto beforeAdmission = machine.memory.captureSaveState();
+	const auto beforeAdmissionCpu = cpu.captureRuntimeState();
+	heap.admit(reservationCharge);
+	require(cpu.captureRuntimeState() == beforeAdmissionCpu
+		&& machine.memory.captureSaveState().ram == beforeAdmission.ram,
+		"projecting a logical charge does not perform any Sweep or String work");
+
+	const auto reserveUntilReclaimed = [&] {
+		for (int requests = 1; requests <= 32; ++requests) {
+			const auto before = heap.usedBytes();
+			auto table = cpu.createTable(slots, 0);
+			table.setInteger(1, valueInteger(requests));
+			if (heap.usedBytes() < before + reservationCharge)
+				return std::pair{requests, table.address()};
+		}
+		throw std::runtime_error("physical reservations do not advance reclamation");
+	};
+	const auto white = gc.white();
+	reserveUntilReclaimed();
+	require(gc.phase() == phase && gc.white() == white,
+		"real reservations reclaim garbage without completing or restarting the epoch");
+	const auto midRam = machine.memory.captureSaveState();
+	const auto midCpu = cpu.captureRuntimeState();
+	const auto firstProgress = reserveUntilReclaimed();
+	const auto afterRam = machine.memory.captureSaveState();
+	const auto afterCpu = cpu.captureRuntimeState();
+	machine.memory.restoreSaveState(midRam);
+	cpu.restoreRuntimeState(midCpu);
+	require(reserveUntilReclaimed() == firstProgress && cpu.captureRuntimeState() == afterCpu
+		&& machine.memory.captureSaveState().ram == afterRam.ram,
+		"restoring mid-sweep reproduces allocation, reclamation and the next physical progress point");
+	require(gc.white() == white && cpu.instructionBudgetRemaining == 43
+		&& cpu.readFrameRegister(0, 0) == valueTable(live.address())
+		&& live.getInteger(1) == valueInteger(73),
+		"allocation assists neither debit the guest grant nor reclaim live Values");
+}
+
 void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	require(cpu.luaHeap().usedBytes() == bootBytes, "boot pool is the literal canonical allocation sum, not host object sizes");
@@ -1608,6 +1672,8 @@ int main(int argc, char** argv) {
 		allocationAdmissionUsesLogicalBytes(); tableReplacementAdmitsOnlyItsLogicalIncrease();
 		tableBackingRecoveryRetriesEachEpoch();
 		physicalPressurePacesLargeLiveHeap();
+		physicalReservationsPaySweepWork(GcPhase::Sweep);
+		physicalReservationsPaySweepWork(GcPhase::Strings);
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); collectionPrimitiveCyclesIgnoreHeapShape();

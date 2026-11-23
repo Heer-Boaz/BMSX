@@ -1,6 +1,7 @@
 import { closureRecordBytes } from './closure';
 import { UPVALUE_HEAP_BYTES, initialize as initializeCell } from './upvalue';
-import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from './heap_allocator';
+import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from './heap_allocator';
+import { decodeGcPhase, GcPhase } from './gc_heap';
 import { GC_OBJECT_PREFIX } from './gc_object';
 import type { CPU } from './cpu';
 import { valueClosure, valueNil, type Value } from './value';
@@ -19,11 +20,13 @@ export const enum LuaAllocationMode { Direct, Scheduled, Retry }
 export class LuaHeap {
 	private readonly targetAddress: number;
 	private readonly occupiedAddress: number;
+	private readonly gcControlAddress: number;
 
 	public constructor(private readonly cpu: CPU) {
 		const management = cpu.heapAllocator.managementOffset();
 		this.targetAddress = management + HEAP_COLLECTION_TARGET_OFFSET;
 		this.occupiedAddress = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
+		this.gcControlAddress = management + HEAP_GC_CONTROL_OFFSET;
 		this.setCollectionTarget(MIN_COLLECTION_BYTES);
 	}
 
@@ -42,8 +45,8 @@ export class LuaHeap {
 		if (nextBytes > capacity) return false;
 		const target = this.collectionTarget();
 		if (nextBytes <= target) return true;
+		if (decodeGcPhase(this.cpu.memory.readRamRecordByte(this.gcControlAddress)) >= GcPhase.Atomic) return true;
 		const gc = this.cpu.gc;
-		if (gc.finalMarkPending()) return true;
 		const reserve = capacity - (capacity >>> COLLECTION_RESERVE_SHIFT);
 		const pressure = nextBytes > reserve;
 		const debt = nextBytes - target;
@@ -69,6 +72,14 @@ export class LuaHeap {
 		return recovery;
 	}
 
+	private assistSweepBeforeReservation(requested: number): void {
+		// BIOS String keys precede the collector view, but not the RAM
+		// phase latch owned by the language arena.
+		if (decodeGcPhase(this.cpu.memory.readRamRecordByte(this.gcControlAddress)) >= GcPhase.Sweep) {
+			this.cpu.gc.assistSweepBeforeReservation(requested);
+		}
+	}
+
 	private reserveRecord(bytes: number, object: boolean, backingBytes: number, backingField: number, charged: number): number {
 		const prefix = object ? GC_OBJECT_PREFIX : 0;
 		const arena = this.cpu.heapAllocator;
@@ -92,9 +103,12 @@ export class LuaHeap {
 		if (mode !== LuaAllocationMode.Direct) {
 			const admitted = mode === LuaAllocationMode.Scheduled ? this.prepareAllocation(charged, root0, root1, root2)
 				: this.usedBytes() + charged <= this.capacity();
-			return admitted ? this.reserveRecord(bytes, object, backingBytes, backingField, charged) : 0;
+			if (!admitted) return 0;
+			if (mode === LuaAllocationMode.Scheduled) this.assistSweepBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0) + backingBytes);
+			return this.reserveRecord(bytes, object, backingBytes, backingField, charged);
 		}
 		let recovery = this.admit(charged, root0, root1, root2);
+		this.assistSweepBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0) + backingBytes);
 		for (;;) {
 			const address = this.reserveRecord(bytes, object, backingBytes, backingField, charged);
 			if (address !== 0) return address;
@@ -105,6 +119,7 @@ export class LuaHeap {
 	/** Admit the owner's logical increase, then reserve backing without committing occupancy. */
 	public reserveBacking(bytes: number, logicalBytes: number, root0 = valueNil(), root1 = valueNil(), root2 = valueNil(), growingThread = 0): number {
 		let recovery = logicalBytes !== 0 ? this.admit(logicalBytes, root0, root1, root2, growingThread) : LuaAllocationRecovery.CurrentOrFresh;
+		this.assistSweepBeforeReservation(bytes);
 		for (;;) {
 			const block = this.cpu.heapAllocator.allocate(bytes, true);
 			if (block !== 0) return block;
@@ -118,6 +133,7 @@ export class LuaHeap {
 		const charged = THREAD_HEAP_BYTES + valueBytes + frameBytes;
 		const root = entry === 0 ? valueNil() : valueClosure(entry);
 		let recovery = this.admit(charged, root);
+		this.assistSweepBeforeReservation(charged + GC_OBJECT_PREFIX);
 		const arena = this.cpu.heapAllocator;
 		for (;;) {
 			const base = arena.allocate(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX, false);
@@ -152,6 +168,7 @@ export class LuaHeap {
 		let recovery = requested > previous
 			? this.admit(requested - previous, root, valueNil(), valueNil(), address)
 			: LuaAllocationRecovery.CurrentOrFresh;
+		this.assistSweepBeforeReservation(requested);
 		const arena = this.cpu.heapAllocator;
 		for (;;) {
 			const values = valueBytes === 0 ? 0 : arena.allocate(valueBytes, true);
@@ -174,6 +191,7 @@ export class LuaHeap {
 		const bytes = closureRecordBytes(captures, latched);
 		const charged = bytes + newCount * UPVALUE_HEAP_BYTES;
 		let recovery = this.admit(charged, valueNil(), valueNil(), valueNil(), 0);
+		this.assistSweepBeforeReservation(charged + GC_OBJECT_PREFIX * (1 + newCount));
 		const arena = this.cpu.heapAllocator;
 		for (;;) {
 			const closure = arena.allocate(bytes + GC_OBJECT_PREFIX, false);
