@@ -62,7 +62,7 @@ bool CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunc
 			m_memory.bindMappedPage(address, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 			if (!binding.cacheable || binding.writeWatch.groups || (!verified && !binding.readBytes)) return nullptr;
 			if (requested && !requested->include(address)) return nullptr;
-			auto& page = decodedPageForAddress(image, binding);
+			auto& page = image.decodedPages.bind(binding);
 			source.emplace(page, binding, address, busSignals, slot, verified);
 			source->firstPc = firstPc;
 			source->lastPc = endPc - INSTRUCTION_BYTES;
@@ -160,7 +160,7 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 		m_memory.bindMappedPage(pagePc, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 		if (!binding.cacheable || (functions.mappedCode && !binding.readBytes)) return nullptr;
 		if (!warmup.requested.include(pagePc)) return nullptr;
-		auto& decoded = decodedPageForAddress(image, binding);
+		auto& decoded = image.decodedPages.bind(binding);
 		const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		if (decoded.nativeBlocks && decoded.nativeBlocks->entries[word]) return nullptr;
 		const auto [entry, added] = pages.try_emplace(binding.key,

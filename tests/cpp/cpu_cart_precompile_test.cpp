@@ -145,7 +145,7 @@ void deferredWarmupRequiresAnAdmittedGrant() {
 	const auto requireColdFrontier = [&] {
 		const auto profile = cpu.readNativeCompilationProfile();
 		require(profile.prepareRequests == before.prepareRequests && profile.regionsPublished == before.regionsPublished
-			&& profile.codeBytes == before.codeBytes && cart.decodedPages.empty() && !entryAt(cpu, entry, 0),
+			&& profile.codeBytes == before.codeBytes && cart.decodedPages.entries().empty() && !entryAt(cpu, entry, 0),
 			"an unadmitted grant must not decode or prepare any of the pending cartridge");
 		require(cpu.readFramePc(0) == entry && cpu.readCurrentInstructionPc() == previousPc
 			&& cpu.lastPc == previousLastPc && machine.reads == 0,
@@ -726,7 +726,7 @@ void boundedWarmupLeavesDistantBranchesToHotCompilation() {
 	require(biosEntry, "EXEC is entered through actual prepared system code");
 	prepared.execute();
 	ordinary.execute();
-	require(prepared.cpu().rootThread()->currentFrame->executionImage->decodedPages.empty(),
+	require(prepared.cpu().rootThread()->currentFrame->executionImage->decodedPages.entries().empty(),
 		"EXEC does not decode the target graph");
 	const int jumpCycles = BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
 	require(test::runCpuParity(prepared.cpu(), ordinary.cpu(), jumpCycles) == RunResult::Yielded
@@ -735,7 +735,7 @@ void boundedWarmupLeavesDistantBranchesToHotCompilation() {
 		"the positive warmup grant executes just the first real cross-page branch");
 	const auto profile = prepared.cpu().readNativeCompilationProfile();
 	const u32 distant = rom.textAddress + (pages - 1u) * MAPPED_PAGE_BYTE_SIZE;
-	require(prepared.cpu().rootThread()->currentFrame->executionImage->decodedPages.size() == NATIVE_IMAGE_WARMUP_MAX_PAGES
+	require(prepared.cpu().rootThread()->currentFrame->executionImage->decodedPages.entries().size() == NATIVE_IMAGE_WARMUP_MAX_PAGES
 		&& entryAt(prepared.cpu(), rom.textAddress, 0) && !entryAt(prepared.cpu(), distant, 0)
 		&& profile.capacityEvictedRegions == 0u,
 		"startup work is bounded in decoded pages as well as emitted code");
@@ -857,12 +857,12 @@ void warmupAdmitsTheEntryBeforeCompetingFunctionSpans() {
 		if (index < admittedSparse) {
 			MappedPageBinding unreachable;
 			machine.runtime.machine.memory.bindMappedPage(pc + MAPPED_PAGE_BYTE_SIZE, MAPPED_BUS_INSTRUCTION_FETCH, unreachable);
-			require(entryAt(cpu, pc, 0) && !decoded.contains(unreachable.key),
+			require(entryAt(cpu, pc, 0) && !decoded.find(unreachable.key),
 				"unreachable function body pages neither create decoded source nor consume warmup allowance");
-		} else require(!entryAt(cpu, pc, 0) && !decoded.contains(page.key),
+		} else require(!entryAt(cpu, pc, 0) && !decoded.find(page.key),
 				"the WIDE body page still belongs to the dependency allowance when no entry was published in it");
 	}
-	require(decoded.size() == NATIVE_IMAGE_WARMUP_MAX_PAGES && cpu.readNativeCompilationProfile().capacityEvictedRegions == 0,
+	require(decoded.entries().size() == NATIVE_IMAGE_WARMUP_MAX_PAGES && cpu.readNativeCompilationProfile().capacityEvictedRegions == 0,
 		"prepared code stays within the unchanged physical page allowance");
 }
 
@@ -910,14 +910,14 @@ void coldDiscoveryDoesNotFetchAPageBeyondItsWideBudget() {
 	const u32 body = machine.cart.textAddress + bodyWord * INSTRUCTION_BYTES;
 	MappedPageBinding bodyPage;
 	machine.runtime.machine.memory.bindMappedPage(body, MAPPED_BUS_INSTRUCTION_FETCH, bodyPage);
-	require(decoded.size() == NATIVE_IMAGE_WARMUP_MAX_PAGES && !decoded.contains(bodyPage.key),
+	require(decoded.entries().size() == NATIVE_IMAGE_WARMUP_MAX_PAGES && !decoded.find(bodyPage.key),
 		"the crossing WIDE body cannot decode a 33rd physical page during warmup");
 	const auto* entry = entryAt(cpu, root, 0);
 	require(entry && entry->sourceWords == 1u && !entryAt(cpu, root + INSTRUCTION_BYTES, 0),
 		"the useful prefix still publishes and leaves the complete WIDE for ordinary execution");
 	cpu.beginCompletionCallInExecutionDomain(0, machine.cart.functionAddresses.back());
 	require(cpu.runUntilDepth(1, 1024) == RunResult::Halted && cpu.readCompletionValues().get(0) == valueInteger(7)
-		&& decoded.contains(bodyPage.key), "ordinary execution fetches the body and returns after the native prefix");
+		&& decoded.find(bodyPage.key), "ordinary execution fetches the body and returns after the native prefix");
 }
 
 } // namespace

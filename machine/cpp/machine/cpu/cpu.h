@@ -383,10 +383,6 @@ private:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	void clearNativeContinuationBindings();
 #endif
-	DecodedInstructionPage& decodedPageForAddress(
-		Blua32ExecutionImage& image,
-		const MappedPageBinding& binding
-	);
 	void invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord);
 	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, u32 pc);
 	bool decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);

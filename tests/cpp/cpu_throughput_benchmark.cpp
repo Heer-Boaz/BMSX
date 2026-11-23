@@ -304,7 +304,8 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	size_t nativeCodeBytes = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool arithmeticReturn = false;
-	for (const auto& [key, page] : cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) {
+	for (const auto& decodedEntry : cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.entries()) {
+		auto& page = decodedEntry->page;
 		if (!page.nativeBlocks) continue;
 		std::unordered_set<const NativeCodeRegion*> codeRegions;
 		for (const auto& block : page.nativeBlocks->entries) {

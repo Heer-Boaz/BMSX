@@ -578,18 +578,6 @@ Value CPU::getGlobalByKey(StringId key) const {
 }
 
 
-DecodedInstructionPage& CPU::decodedPageForAddress(
-	Blua32ExecutionImage& image,
-	const MappedPageBinding& binding
-) {
-	auto it = image.decodedPages.try_emplace(
-		binding.key,
-		binding.cacheable,
-		binding.writeWatch
-	).first;
-	return it->second;
-}
-
 void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (m_nativeCompilerWorker && !m_nativeCompilerWorker->idle()
@@ -604,9 +592,8 @@ void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 		if (!image) {
 			continue;
 		}
-		auto page = image->decodedPages.find(key);
-		if (page != image->decodedPages.end()) {
-			auto& decodedPage = page->second;
+		if (auto* page = image->decodedPages.find(key)) {
+			auto& decodedPage = *page;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			decodedPage.retireNativeBlocks(firstWord, endWord);
 #endif
@@ -715,7 +702,8 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 			image->nativeRomCallBindings.fill({});
 		}
 #endif
-		for (auto& [key, page] : image->decodedPages) {
+		for (const auto& entry : image->decodedPages.entries()) {
+			auto& [key, page] = *entry;
 			if (key >= invalidationStart && key < endKey) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 				page.retireNativeBlocks();
@@ -735,10 +723,7 @@ DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 	}
 	MappedPageBinding binding;
 	m_memory.bindMappedPage(pageAddress, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
-	DecodedInstructionPage& page = decodedPageForAddress(
-		*frame.executionImage,
-		binding
-	);
+	DecodedInstructionPage& page = frame.executionImage->decodedPages.bind(binding);
 	frame.decodedPage = &page;
 	frame.decodedPageAddress = pageAddress;
 	frame.decodedPageBusSignals = busSignals;
@@ -2415,7 +2400,8 @@ void CPU::setInstructionObserver(InstructionObserverBinding binding) {
 	// Predecessors may have fused across a newly observed PC.
 	for (auto& image : m_executionImagesByDomain) {
 		if (!image) continue;
-		for (auto& [key, page] : image->decodedPages) {
+		for (const auto& entry : image->decodedPages.entries()) {
+			auto& page = entry->page;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			page.retireNativeBlocks();
 #endif

@@ -11,6 +11,17 @@
 
 namespace bmsx {
 
+DecodedInstructionPage& DecodedPageDirectory::bind(const MappedPageBinding& binding) {
+	auto& group = m_groups[binding.key >> GROUP_SHIFT];
+	if (!group) group = std::make_unique<Group>();
+	auto& page = (*group)[pageIndex(binding.key)];
+	if (!page) {
+		m_entries.push_back(std::make_unique<Entry>(binding));
+		page = &m_entries.back()->page;
+	}
+	return *page;
+}
+
 Blua32RomFunctionDirectory Blua32RomFunctionDirectory::read(const Memory& memory,
 	ExecutionDomainId domain, const u8* header) {
 	Blua32RomFunctionDirectory result;

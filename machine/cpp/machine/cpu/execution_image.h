@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <unordered_map>
+#include <span>
 #include <vector>
 
 #include "common/primitives.h"
@@ -15,6 +15,7 @@
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/mapped_page.h"
 #include "spec/blua32/execution_domain.h"
+#include "spec/bmsx/cartridge.h"
 #include "spec/bmsx/memory_map.h"
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -130,6 +131,39 @@ struct DecodedInstructionPage {
 #endif
 };
 
+// Physical source pages, including separate cartridge apertures. Decoded
+// words have stable addresses across later fetches and native publication.
+class DecodedPageDirectory {
+public:
+	struct Entry {
+		explicit Entry(const MappedPageBinding& binding)
+			: key(binding.key), page(binding.cacheable, binding.writeWatch) {}
+		const u64 key;
+		DecodedInstructionPage page;
+	};
+
+	DecodedInstructionPage* find(u64 key) const {
+		const auto& group = m_groups[key >> GROUP_SHIFT];
+		return group ? (*group)[pageIndex(key)] : nullptr;
+	}
+	DecodedInstructionPage& bind(const MappedPageBinding&);
+	std::span<const std::unique_ptr<Entry>> entries() const { return m_entries; }
+
+private:
+	static constexpr u32 GROUP_PAGE_BITS = 12u;
+	static constexpr u32 GROUP_PAGES = 1u << GROUP_PAGE_BITS;
+	static constexpr u32 GROUP_SHIFT = MAPPED_PAGE_BYTE_SHIFT + GROUP_PAGE_BITS;
+	static constexpr u32 GROUPS_PER_APERTURE = 1u << (ADDRESS_BITS - GROUP_SHIFT);
+	using Group = std::array<DecodedInstructionPage*, GROUP_PAGES>;
+	static constexpr u32 pageIndex(u64 key) {
+		return (static_cast<u32>(key) >> MAPPED_PAGE_BYTE_SHIFT) & (GROUP_PAGES - 1u);
+	}
+
+	std::array<std::unique_ptr<Group>, (1u + CARTRIDGE_SLOT_COUNT) * GROUPS_PER_APERTURE> m_groups{};
+	// Invalidate all published pages without walking empty directory slots.
+	std::vector<std::unique_ptr<Entry>> m_entries;
+};
+
 struct Blua32ExecutionImage {
 	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
@@ -150,7 +184,7 @@ struct Blua32ExecutionImage {
 	std::unique_ptr<NativeCodeLookup> nativeCodeLookup;
 	std::array<NativeRomCallBinding, NativeRomCallBinding::slotCount> nativeRomCallBindings{};
 #endif
-	std::unordered_map<u64, DecodedInstructionPage> decodedPages;
+	DecodedPageDirectory decodedPages;
 };
 
 } // namespace bmsx

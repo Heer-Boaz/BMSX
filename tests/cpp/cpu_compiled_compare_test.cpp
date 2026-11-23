@@ -504,7 +504,7 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 							machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE + entryWord * INSTRUCTION_BYTES);
 						test::runCpuParity(native.cpu, scalar.cpu, 1);
 					}
-					const auto& decodedPredecessor = native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(
+					const auto& decodedPredecessor = *native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.find(
 						(DYNAMIC_RAM_BASE + entryWord * INSTRUCTION_BYTES) & ~MAPPED_PAGE_BYTE_MASK);
 					test::waitForNativeEntry(native.cpu, decodedPredecessor, entryWord % crossPageWord);
 #endif
@@ -637,8 +637,8 @@ void pairedJumpLinksAcrossPages() {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	test::waitForFixtureWorkerRequests(native.cpu);
 	auto& pages = native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages;
-	auto& sourcePage = pages.at(DYNAMIC_RAM_BASE);
-	auto& targetPage = pages.at(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE);
+	auto& sourcePage = *pages.find(DYNAMIC_RAM_BASE);
+	auto& targetPage = *pages.find(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE);
 	for (int pass = 0; pass < 4 && (!sourcePage.nativeBlocks || !sourcePage.nativeBlocks->entries[0]
 		|| !targetPage.nativeBlocks || !targetPage.nativeBlocks->entries[0]); ++pass) {
 		test::runCpuParity(native.cpu, scalar.cpu, 2048);

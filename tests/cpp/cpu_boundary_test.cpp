@@ -229,7 +229,8 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->frameAtDepth(0)->decodedPage,
 		(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u);
 	bool read = false, write = false;
-	for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) {
+	for (const auto& decodedEntry : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.entries()) {
+		auto& page = decodedEntry->page;
 		if (!page.nativeBlocks) continue;
 		for (const auto& block : page.nativeBlocks->entries) if (block) {
 			for (const auto& exit : block->sideExits) { read |= exit.exit == NativeBlockExit::ReadField; write |= exit.exit == NativeBlockExit::WriteField; }
@@ -405,7 +406,7 @@ void nativeCodeWarmsWithinOneCpuSlice() {
 #endif
 		require(machine.cpu.runUntilDepth(0, 10000) == RunResult::Yielded, "a long runnable slice completes its grant");
 		const auto& pages = machine.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages;
-		const auto& page = pages.at(target & ~MAPPED_PAGE_BYTE_MASK);
+		const auto& page = *pages.find(target & ~MAPPED_PAGE_BYTE_MASK);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 		const u32 word = (target & MAPPED_PAGE_BYTE_MASK) >> 2u;
 		require(page.nativeVisits[word] == NATIVE_BLOCK_COMPILATION_THRESHOLD
@@ -621,7 +622,7 @@ void nativeTerminalAtPageBoundaryTracksItsBody() {
 		require(cpu.runUntilDepth(0, 1) == RunResult::Halted && cpu.readFramePc(0) == pc + 2u * INSTRUCTION_BYTES,
 			"a terminal WIDE instruction at the page boundary retains its full extent");
 	}
-	auto& head = cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
+	auto& head = *cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.find(pc & ~MAPPED_PAGE_BYTE_MASK);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	cpu.clearHaltUntilIrq();
 	test::waitForNativeEntry(cpu, head, 255);
@@ -705,9 +706,13 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 			test::waitForFixtureWorkerRequests(native.cpu);
 			const auto& decoded = native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages;
 			bool hasCall = false, hasReturn = false;
-			for (const auto& [key, page] : decoded) if (page.nativeBlocks) for (const auto& block : page.nativeBlocks->entries) if (block) {
-				hasCall |= block->terminal.exit == NativeBlockExit::Call;
-				hasReturn |= block->terminal.exit == NativeBlockExit::Return;
+			for (const auto& decodedEntry : decoded.entries()) {
+				auto& page = decodedEntry->page;
+				if (!page.nativeBlocks) continue;
+				for (const auto& block : page.nativeBlocks->entries) if (block) {
+					hasCall |= block->terminal.exit == NativeBlockExit::Call;
+					hasReturn |= block->terminal.exit == NativeBlockExit::Return;
+				}
 			}
 			if (hasCall && hasReturn) break;
 			require(test::runCpuParity(native.cpu, scalar.cpu, 10001) == RunResult::Yielded,
@@ -716,7 +721,8 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 		test::waitForFixtureWorkerRequests(native.cpu);
 #endif
 		bool compiledCall = false, compiledReturn = false;
-		for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) {
+		for (const auto& decodedEntry : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.entries()) {
+			auto& page = decodedEntry->page;
 			if (!page.nativeBlocks) continue;
 			for (const auto& block : page.nativeBlocks->entries) {
 				if (!block) continue;
@@ -1557,13 +1563,13 @@ void sourceAndFusionDependenciesRemainSeparate() {
 				machine.memory.writeBytes(pc, code.data(), code.size());
 			} else {
 				machine.memory.writeMappedU8(pc + bodyWord * INSTRUCTION_BYTES + 2u, code[bodyWord * INSTRUCTION_BYTES + 2u]);
-				const auto& page = cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
+				const auto& page = *cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.find(pc & ~MAPPED_PAGE_BYTE_MASK);
 				require(page.refreshState[DECODED_PAGE_WORDS - headWords] == DECODED_REFRESH_FUSION, "successor writes dirty fusion eligibility, not the unchanged head's source decode");
 			}
 			require(cpu.runUntilDepth(0, 6) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "WIDE and narrow pairs retain their six-cycle loop budget");
 			require(cpu.readFramePc(0) == pc && cpu.readFrameRegister(0, 4) == valueInteger(results[phase]), "negative and positive fusion decisions observe the rewritten successor");
 			if (!instrumented) {
-				const auto& page = cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
+				const auto& page = *cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.find(pc & ~MAPPED_PAGE_BYTE_MASK);
 				const u8 expected = phase == 1 ? static_cast<u8>(DecodedDispatchOp::FusedAddShl) : static_cast<u8>(OpCode::ADD);
 				require(page.words[DECODED_PAGE_WORDS - headWords].dispatchOp == expected, "source writes create and retire the cached fusion across pages");
 			}
@@ -1592,7 +1598,7 @@ void changedWideFusionBodyInvalidatesItsCrossPageHead() {
 		cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueInteger(1));
 		require(cpu.runUntilDepth(0, 6) == RunResult::Yielded && cpu.readFrameRegister(0, 4) == valueInteger(10), "two WIDE instructions execute across a page boundary");
 		if (!instrumented) {
-			const auto& page = cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
+			const auto& page = *cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.find(pc & ~MAPPED_PAGE_BYTE_MASK);
 			require(page.words[DECODED_PAGE_WORDS - 2u].dispatchOp == static_cast<u8>(DecodedDispatchOp::FusedAddShl), "normal execution actually cached the four-word fusion");
 		}
 		writeInstruction(code, 3, static_cast<u8>(OpCode::BXOR), 4, 3, 2);

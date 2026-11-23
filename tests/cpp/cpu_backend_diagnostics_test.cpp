@@ -49,8 +49,8 @@ struct Fixture {
 			const auto* frame = runtime.machine.cpu.rootThread()->frameAtDepth(0);
 			const auto& pages = frame->executionImage->decodedPages;
 			const auto page = pages.find(rom.textAddress & ~MAPPED_PAGE_BYTE_MASK);
-			require(page != pages.end() && page->second.nativeBlocks
-				&& page->second.nativeBlocks->entries[(rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES],
+			require(page && page->nativeBlocks
+				&& page->nativeBlocks->entries[(rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES],
 				"the diagnostic native case must execute an actually published native entry");
 		}
 #else
@@ -356,7 +356,7 @@ void lazyCompilation() {
 	runPair(generated,scalar,8192);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& cpu=generated.runtime.machine.cpu;
-	auto& page=cpu.rootThread()->frameAtDepth(0)->executionImage->decodedPages.at(generated.rom.textAddress & ~MAPPED_PAGE_BYTE_MASK);
+	auto& page=*cpu.rootThread()->frameAtDepth(0)->executionImage->decodedPages.find(generated.rom.textAddress & ~MAPPED_PAGE_BYTE_MASK);
 	test::waitForNativeEntry(cpu,page,(generated.rom.textAddress & MAPPED_PAGE_BYTE_MASK)/INSTRUCTION_BYTES);
 	require(cpu.readNativeCompilationProfile().prepareRequests>0,"the ordinary lazy/worker producer prepared real code");
 #endif

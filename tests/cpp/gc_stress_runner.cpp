@@ -61,7 +61,7 @@ void exercisePressure(bmsx::CPU& cpu, bool compiled) {
 		const auto prototype = cpu.readClosureBinding(valuePayload(global(name)));
 		MappedPageBinding binding{};
 		memory.bindMappedPage(prototype.entry.codeAddress & ~MAPPED_PAGE_BYTE_MASK, MAPPED_BUS_MASTER_CPU, binding);
-		auto& page = cpu.rootThread()->currentFrame->executionImage->decodedPages.at(binding.key);
+		auto& page = *cpu.rootThread()->currentFrame->executionImage->decodedPages.find(binding.key);
 		const u32 word = (prototype.entry.codeAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		require(page.nativeBlocks && page.nativeBlocks->entries[word], "both mutations execute a real native entry");
 	}

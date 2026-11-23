@@ -330,7 +330,7 @@ bool CPU::decodeBackedInstruction(
 			if (requested && !requested->include(bodyPc)) return false;
 			if (bodyBinding.readBytes) bodyWord = readLE32(bodyBinding.readBytes);
 			else if (!readPublishedWord(bodyPc, bodyWord)) return false;
-			bodyPage = &decodedPageForAddress(image, bodyBinding);
+			bodyPage = &image.decodedPages.bind(bodyBinding);
 		} else if (binding.readBytes) bodyWord = readLE32(binding.readBytes + (pageOffset + 1u) * INSTRUCTION_BYTES);
 		else if (!readPublishedWord(pc + INSTRUCTION_BYTES, bodyWord)) return false;
 	}

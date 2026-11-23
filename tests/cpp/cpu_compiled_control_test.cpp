@@ -255,7 +255,9 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
 	for (;;) {
 		bool compiled = false, returned = false;
-		for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks) {
+		for (const auto& decodedEntry : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.entries()) {
+			auto& page = decodedEntry->page;
+			if (!page.nativeBlocks) continue;
 			for (const auto& block : page.nativeBlocks->entries) if (block) {
 				compiled |= block->sideExits.size() != 0 && block->sideExits[0].currentPc == native.rom.textAddress + 2u * INSTRUCTION_BYTES;
 				returned |= block->terminal.exit == NativeBlockExit::ExceptionReturn && block->sourceWords == 2;
@@ -306,7 +308,7 @@ void execReplacesFramesAfterNativeReturn() {
 	requireParity(native, scalar);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	test::waitForFixtureWorkerRequests(native.cpu);
-	const auto& decoded = native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(
+	const auto& decoded = *native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.find(
 		native.rom.textAddress & ~MAPPED_PAGE_BYTE_MASK);
 	const u32 entry = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	for (int pass = 0; pass < 4 && (!decoded.nativeBlocks || !decoded.nativeBlocks->entries[entry]); ++pass) {
@@ -316,7 +318,9 @@ void execReplacesFramesAfterNativeReturn() {
 #endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool generated = false;
-	for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks) {
+	for (const auto& decodedEntry : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.entries()) {
+		auto& page = decodedEntry->page;
+		if (!page.nativeBlocks) continue;
 		const auto& block = page.nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 		generated |= block && block->terminal.exit == NativeBlockExit::WriteControl && block->terminal.operands.control.field == COP0_EXEC && block->terminal.currentPc == native.rom.textAddress + INSTRUCTION_BYTES;
 	}
@@ -381,7 +385,9 @@ void nmiReturnsRetainedWordsAndUsesActiveEpc() {
 #endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool generated = false;
-	for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks) {
+	for (const auto& decodedEntry : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.entries()) {
+		auto& page = decodedEntry->page;
+		if (!page.nativeBlocks) continue;
 		const auto& block = page.nativeBlocks->entries[((native.rom.textAddress + 16u * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 		generated |= block && block->terminal.exit == NativeBlockExit::ExceptionReturn && block->sourceWords == 3;
 	}

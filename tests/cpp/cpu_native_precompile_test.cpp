@@ -89,8 +89,8 @@ test::Blua32TestImage program() {
 const NativeBlock* entryAt(CPU& cpu, u32 pc) {
 	const auto& pages = cpu.rootThread()->frameAtDepth(0)->executionImage->decodedPages;
 	const auto page = pages.find(pc & ~MAPPED_PAGE_BYTE_MASK);
-	if (page == pages.end() || !page->second.nativeBlocks) return nullptr;
-	return page->second.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+	if (!page || !page->nativeBlocks) return nullptr;
+	return page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
 }
 
 void replacementAdmitsRetainedCoroutinesAndClosures() {
@@ -495,7 +495,7 @@ void crossPageWideDependenciesRemainOwned() {
 			"adaptive executions keep the same WIDE and return result");
 	}
 	warmed.runUntilDepth(0, 0);
-	const auto& page = warmed.rootThread()->frameAtDepth(0)->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
+	const auto& page = *warmed.rootThread()->frameAtDepth(0)->executionImage->decodedPages.find(pc & ~MAPPED_PAGE_BYTE_MASK);
 	test::waitForNativeEntry(warmed, page, (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto* continuation = entryAt(warmed, pc + 2u * INSTRUCTION_BYTES);
 	require(continuation && continuation->region == entryAt(warmed, pc)->region,
@@ -527,7 +527,7 @@ void verifiedSinglePagePreparationSharesTheColdBatch() {
 		require(warmed.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::K0)]) == RunResult::Yielded,
 			"the first instruction keeps its exact grant while becoming warm");
 	}
-	const auto& page = warmed.rootThread()->currentFrame->executionImage->decodedPages.at(root & ~MAPPED_PAGE_BYTE_MASK);
+	const auto& page = *warmed.rootThread()->currentFrame->executionImage->decodedPages.find(root & ~MAPPED_PAGE_BYTE_MASK);
 	test::waitForNativeEntry(warmed, page, (root & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	require(!entryAt(warmed, sibling), "adaptive preparation does not absorb the neighboring function");
 }
@@ -569,7 +569,7 @@ void wideFunctionUsesDemandedBoundedRegions() {
 			test::runCpuParity(cpu, reference, BASE_CYCLES[static_cast<u8>(op)]);
 			require(cpu.readFramePc(0) == next, "external edges and WIDE retire at their precise PC and grant");
 		}
-		const auto& page = cpu.rootThread()->currentFrame->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
+		const auto& page = *cpu.rootThread()->currentFrame->executionImage->decodedPages.find(pc & ~MAPPED_PAGE_BYTE_MASK);
 		test::waitForNativeEntry(cpu, page, (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	};
 	warm(root, OpCode::JMP, wide);
@@ -577,7 +577,7 @@ void wideFunctionUsesDemandedBoundedRegions() {
 	require(start && !entryAt(cpu, wide) && !entryAt(cpu, boundary),
 		"the first demand window cannot absorb a WIDE prefix with its body outside the window");
 	const auto& decoded = cpu.rootThread()->currentFrame->executionImage->decodedPages;
-	require(!decoded.contains((root & ~MAPPED_PAGE_BYTE_MASK) + MAPPED_PAGE_BYTE_SIZE),
+	require(!decoded.find((root & ~MAPPED_PAGE_BYTE_MASK) + MAPPED_PAGE_BYTE_SIZE),
 		"a page wholly bypassed by the root jump acquires no decoded workspace");
 
 	warm(wide, OpCode::KSMI, tail);
@@ -624,7 +624,7 @@ void verifiedStartupReachabilityOutranksDescriptiveHints() {
 	require(entryAt(cpu, root) && entryAt(cpu, tail),
 		"the verified startup and its reachable fifth page are prepared before unrelated one-page hints");
 	const auto& decoded = cpu.rootThread()->currentFrame->executionImage->decodedPages;
-	require(!decoded.contains(root + lastHintWord * INSTRUCTION_BYTES),
+	require(!decoded.find(root + lastHintWord * INSTRUCTION_BYTES),
 		"unrelated hints do not expand the cold source-page budget");
 	require(encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == before,
 		"prioritizing reachable startup code does not execute it");

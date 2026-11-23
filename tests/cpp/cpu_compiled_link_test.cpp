@@ -255,8 +255,8 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	test::waitForFixtureWorkerRequests(native.cpu);
 	auto& decodedPages = native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages;
-	auto& sourceDecoded = decodedPages.at(DYNAMIC_RAM_BASE);
-	auto& targetDecoded = decodedPages.at(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE);
+	auto& sourceDecoded = *decodedPages.find(DYNAMIC_RAM_BASE);
+	auto& targetDecoded = *decodedPages.find(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE);
 	for (int pass = 0; pass < 4 && (!sourceDecoded.nativeBlocks || !sourceDecoded.nativeBlocks->entries[0]
 		|| !targetDecoded.nativeBlocks || !targetDecoded.nativeBlocks->entries[0]); ++pass) {
 		test::runCpuParity(native.cpu, scalar.cpu, 2048);

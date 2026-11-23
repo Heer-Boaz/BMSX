@@ -1508,7 +1508,7 @@ void rewriteActiveReturnAddress() {
 	test::runCpuParity(native.cpu, scalar.cpu, 4096);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& pages = native.cpu.activeThread()->firstFrame->executionImage->decodedPages;
-	const auto& ramPage = pages.at(callerPc);
+	const auto& ramPage = *pages.find(callerPc);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	// Publish each submitted job before expecting the next hot RAM entry.
 	// A zero-grant publication poll alone cannot submit a deferred suffix.
@@ -1522,7 +1522,7 @@ void rewriteActiveReturnAddress() {
 	require(ramPage.nativeBlocks && ramPage.nativeBlocks->entries[2] && ramPage.nativeBlocks->entries[4],
 		"the writable caller and continuation both have translations before suspending the caller");
 	const u32 calleePc = native.rom.textAddress + 6 * INSTRUCTION_BYTES;
-	const auto& romPage = pages.at(calleePc & ~MAPPED_PAGE_BYTE_MASK);
+	const auto& romPage = *pages.find(calleePc & ~MAPPED_PAGE_BYTE_MASK);
 	require(romPage.nativeBlocks != nullptr, "the full backed ROM page publishes the planned callee");
 	const auto& calleeEntry = romPage.nativeBlocks->entries[(calleePc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(calleeEntry && calleeEntry->terminal.exit == NativeBlockExit::Return,
@@ -1591,7 +1591,9 @@ void crossPageCalls(bool open, u32 recordOffset) {
 	for (int pass = 0; pass < 4; ++pass) {
 		test::waitForFixtureWorkerRequests(native.cpu);
 		bool call = false, ret = false;
-		for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks)
+		for (const auto& decodedEntry : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.entries()) {
+			auto& page = decodedEntry->page;
+			if (!page.nativeBlocks) continue;
 			for (const auto& block : page.nativeBlocks->entries) if (block) {
 				call |= block->terminal.exit == NativeBlockExit::Call;
 				ret |= block->terminal.exit == NativeBlockExit::Return;
@@ -1604,7 +1606,9 @@ void crossPageCalls(bool open, u32 recordOffset) {
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool call = false, ret = false;
-	for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks) {
+	for (const auto& decodedEntry : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.entries()) {
+		auto& page = decodedEntry->page;
+		if (!page.nativeBlocks) continue;
 		for (const auto& block : page.nativeBlocks->entries) if (block) {
 			call |= block->terminal.exit == NativeBlockExit::Call; ret |= block->terminal.exit == NativeBlockExit::Return;
 		}

@@ -66,7 +66,8 @@ int main(int argc, char** argv) {
 		}
 		size_t compiledBlocks = 0, codeBytes = 0, compiledSourceWords = 0, distinctPageSourceWords = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		for (const auto& [key, page] : image->decodedPages) {
+		for (const auto& decodedEntry : image->decodedPages.entries()) {
+			auto& page = decodedEntry->page;
 			if (!page.nativeBlocks) continue;
 			std::unordered_set<const bmsx::NativeCodeRegion*> codeRegions;
 			std::array<bmsx::u8, bmsx::DECODED_PAGE_WORDS> covered{};

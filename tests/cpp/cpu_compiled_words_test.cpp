@@ -108,7 +108,8 @@ void pageTailEntry(int width, bool straddles) {
 		const auto& decoded = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 		test::waitForNativeEntry(native.cpu, decoded, index);
 		DecodedInstructionPage* page = nullptr;
-		for (auto& [key, candidate] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) {
+		for (const auto& decodedEntry : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.entries()) {
+			auto& candidate = decodedEntry->page;
 			if (candidate.nativeBlocks && candidate.nativeBlocks->entries[index]
 				&& candidate.nativeBlocks->entries[index]->firstPc == pc) page = &candidate;
 		}
