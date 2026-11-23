@@ -646,14 +646,13 @@ void Memory::transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
 	auto* writePrefix = wordCount > 1u && writeSlot >= 0 ? findIoDmaPrefix(writeSlot) : nullptr;
 	if (writePrefix != nullptr && writePrefix->write != nullptr
 		&& !kReadOnlyIoSlots[static_cast<size_t>(writeSlot)]) {
-		std::array<u32, DMA_BURST_WORD_CAPACITY> words;
+		std::array<u32, DMA_BURST_WORD_CAPACITY> staging;
 		const u32 prefix = wordCount - 1u;
 		auto* readPrefix = readSlot >= 0 ? findIoDmaPrefix(readSlot) : nullptr;
-		bool prefixRead = false;
+		const u32* words = nullptr;
 		if (readPrefix != nullptr && readPrefix->read != nullptr) {
-			readPrefix->read(
-				m_ioReadHandlers[static_cast<size_t>(readSlot)].context, readAddress, words.data(), prefix, readSignals);
-			prefixRead = true;
+			words = readPrefix->read(
+				m_ioReadHandlers[static_cast<size_t>(readSlot)].context, readAddress, prefix, readSignals);
 		} else if (readStep == 0u || readStep == IO_WORD_SIZE) {
 			Span<const u8> bytes;
 			const u32 byteCount = readStep == 0u ? IO_WORD_SIZE : prefix * IO_WORD_SIZE;
@@ -665,13 +664,13 @@ void Memory::transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
 				bound = bindRomByteView(readAddress, byteCount, m_cartridgeController.selectedSlot(readSignals), bytes);
 			}
 			if (bound) {
-				for (u32 i = 0u; i < prefix; ++i) words[i] = readLE32(bytes.data_ + i * readStep);
-				prefixRead = true;
+				for (u32 i = 0u; i < prefix; ++i) staging[i] = readLE32(bytes.data_ + i * readStep);
+				words = staging.data();
 			}
 		}
-		if (prefixRead) {
+		if (words) {
 			writePrefix->write(
-				m_ioWriteHandlers[static_cast<size_t>(writeSlot)].context, writeAddress, words.data(), prefix, writeSignals);
+				m_ioWriteHandlers[static_cast<size_t>(writeSlot)].context, writeAddress, words, prefix, writeSignals);
 			readAddress += prefix * readStep;
 			wordCount = 1u;
 		}

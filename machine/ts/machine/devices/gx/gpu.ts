@@ -2167,17 +2167,17 @@ export class GxGpu {
 	}
 
 	// disable-next-line single_line_method_pattern -- MMIO write thunk is the Memory-owned device callback ABI for GP0.
-	private static writeGp0PrefixThunk(context: GxGpu, _address: number, words: Uint32Array, count: number): void {
+	private static writeGp0PrefixThunk(context: GxGpu, _address: number, words: Uint32Array, first: number, count: number): void {
 		if (context.supervisorIngressStopped) return;
 		context.synchronizeCommandTiming(context.scheduler.currentNowCycles());
 		const accepted = Math.min(count, context.gp0DmaIngress.free());
-		context.gp0DmaIngress.writeWords(words, 0, accepted);
+		context.gp0DmaIngress.writeWords(words, first, accepted);
 		for (let index = 0; index < accepted;) {
 			const skipped = context.gp0Producer.skipPayloadWords(accepted - index);
 			if (skipped !== 0) index += skipped;
-			else context.recordGp0ProducerWord(words[index++]);
+			else context.recordGp0ProducerWord(words[first + index++]);
 		}
-		context.gp0Word = words[count - 1];
+		context.gp0Word = words[first + count - 1];
 		context.memory.writeIoU32(IO_GX_GPU_GP0, context.gp0Word);
 	}
 

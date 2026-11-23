@@ -46,7 +46,9 @@ public:
 	using IoWriteReadyHandler = bool (*)(void* context, uint32_t addr, MappedBusSignals busSignals);
 	// Prefix callbacks perform only end-silent FIFO/latch/counter operations.
 	// The final word always uses the ordinary read -> ready -> write bus path.
-	using IoDmaReadPrefixHandler = void (*)(void*, u32 address, u32* words, u32 count, MappedBusSignals);
+	// A source lends the contiguous, scheduler-admitted prefix until the
+	// synchronous sink returns. The sink does not retain the backing.
+	using IoDmaReadPrefixHandler = const u32* (*)(void*, u32 address, u32 count, MappedBusSignals);
 	using IoDmaWritePrefixHandler = void (*)(void*, u32 address, const u32* words, u32 count, MappedBusSignals);
 
 	Memory(const MemoryInit& init, u32 ramByteCount);

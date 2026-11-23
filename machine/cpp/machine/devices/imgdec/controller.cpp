@@ -292,13 +292,14 @@ bool ImgDecController::configWriteReadyThunk(void* context, u32, MappedBusSignal
 	return (c.m_statusWord & IMGDEC_STATUS_BUSY) == 0 && !c.m_supervisorQuiesceRequested;
 }
 
-void ImgDecController::readDataPrefixThunk(void* context, u32, u32* words, u32 count, MappedBusSignals) {
+const u32* ImgDecController::readDataPrefixThunk(void* context, u32, u32 count, MappedBusSignals) {
 	auto& c = *static_cast<ImgDecController*>(context);
-	const u32 available = c.m_blockPhase == BlockReady ? std::min(count, c.m_decodedWordCount - c.m_outputWordsRead) : 0;
-	std::copy_n(c.m_history.data() + (c.m_outputWordsRead & IMGDEC_HISTORY_WORD_MASK), available, words);
-	c.m_outputWordsRead += available;
-	if (available != 0) { c.m_dataWord = words[available - 1u]; c.m_memory.writeIoU32(IO_IMGDEC_DATA, c.m_dataWord); }
-	std::fill(words + available, words + count, c.m_dataWord);
+	// DMA reserves published words, which cannot wrap within one ready block.
+	const u32* const words = c.m_history.data() + (c.m_outputWordsRead & IMGDEC_HISTORY_WORD_MASK);
+	c.m_outputWordsRead += count;
+	c.m_dataWord = words[count - 1u];
+	c.m_memory.writeIoU32(IO_IMGDEC_DATA, c.m_dataWord);
+	return words;
 }
 
 void ImgDecController::writeDataPrefixThunk(void* context, u32, const u32* words, u32 count, MappedBusSignals) {

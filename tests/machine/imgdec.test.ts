@@ -95,33 +95,88 @@ test('raw IMGDEC publishes whole blocks at completion, without GPU packet or tok
 	assert.notEqual(h.memory.readIoU32(io.IO_IRQ_FLAGS) & io.IRQ_IMGDEC, 0);
 });
 
-test('CPU-supplied texture and CLUT headers compose with partial DMA bursts across decoder blocks', () => {
-	const stream = [517];
-	for (let i = 0; i < 518; ++i) stream.push((0x80010001 + i * 0x10001) >>> 0);
+test('texture and CLUT DMA preserves ring offsets, latches and completion after restoring an admitted burst', () => {
+	const textureWords = 4200, clutWords = 8, total = textureWords + clutWords;
+	const stream = [total - 1];
+	for (let i = 0; i < total; ++i) stream.push((0x80010001 + i * 0x10001) >>> 0);
 	const h = fixture(stream);
-	h.configure(stream.length, 518);
-	h.header(0x00200040, 30 | (34 << 16));
-	h.outputDma(510);
+	h.configure(stream.length, total);
+	h.header(0x00200040, 84 | (100 << 16));
+	h.outputDma(textureWords);
 	h.inputDma();
 	h.memory.writeMappedU32LE(io.IO_IMGDEC_CONTROL, 1);
-	for (let i = 0; i < 1000 && h.memory.readIoU32(io.IO_DMA1_STATUS) !== io.DMA_STATUS_DONE; ++i) h.pump();
-	assert.equal(h.memory.readIoU32(io.IO_DMA1_STATUS), io.DMA_STATUS_DONE);
-	assert.equal(h.machine.imgDecController.captureState().outputWordsRead, 510);
-	h.header(0x00400100, 16 | (1 << 16));
-	h.outputDma(8);
-	for (let i = 0; i < 1000 && h.memory.readIoU32(io.IO_IMGDEC_STATUS) !== img.IMGDEC_STATUS_DONE; ++i) h.pump();
-	for (let i = 0; i < 1000 && h.machine.gxGpu.readDeviceOutput().commandBuffer.commandCount !== 2; ++i) h.pump();
-	assert.equal(h.memory.readIoU32(io.IO_IMGDEC_STATUS), img.IMGDEC_STATUS_DONE);
-	const commands = h.machine.gxGpu.readDeviceOutput().commandBuffer;
-	assert.equal(commands.commandCount, 2);
-	assert.equal(commands.commandWordCount[0], 513);
-	assert.equal(commands.commandWordCount[1], 11);
-	for (let i = 0; i < 518; ++i) {
-		const command = i < 510 ? 0 : 1, offset = i < 510 ? i : i - 510;
-		assert.equal(commands.words[commands.commandWordStart[command] + 3 + offset], stream[i + 1]);
+	const beforeWrap = IMGDEC_HISTORY_WORD_CAPACITY - img.IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY;
+	for (let i = 0; i < 1000; ++i) {
+		if (h.memory.readIoU32(io.IO_DMA1_TRANSFER_COUNT) === textureWords - beforeWrap
+			&& h.machine.dmaController.captureState().activeChannel === 1) break;
+		h.pump();
 	}
-	assert.equal(h.services[DEVICE_SERVICE_IMGDEC], 3);
-	assert.equal(h.services[DEVICE_SERVICE_DMA], 8);
+	const saved = captureMachineState(h.machine);
+	assert.equal(saved.imgDec.outputWordsRead, beforeWrap);
+	assert.equal(saved.dma.activeChannel, 1);
+	assert.equal(saved.dma.scheduledBlockWords, img.IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY);
+	assert.ok(saved.dma.scheduledBlockCycles > 0);
+	const replay = fixture(stream);
+	replay.machine.scheduler.advanceTo(h.machine.scheduler.currentNowCycles());
+	restoreMachineState(replay.machine, saved);
+
+	const finish = (job: ReturnType<typeof fixture>) => {
+		const decoderEvents = job.services[DEVICE_SERVICE_IMGDEC], dmaEvents = job.services[DEVICE_SERVICE_DMA];
+		for (let i = 0; i < 1000 && job.memory.readIoU32(io.IO_DMA1_STATUS) !== io.DMA_STATUS_DONE; ++i) job.pump();
+		assert.equal(job.memory.readIoU32(io.IO_DMA1_STATUS), io.DMA_STATUS_DONE);
+		assert.equal(job.machine.imgDecController.captureState().outputWordsRead, textureWords);
+		assert.equal(job.machine.gxGpu.captureState().gp0Word, stream[textureWords]);
+		job.header(0x00400100, 16 | (1 << 16));
+		job.outputDma(clutWords);
+		for (let i = 0; i < 1000 && job.memory.readIoU32(io.IO_IMGDEC_STATUS) !== img.IMGDEC_STATUS_DONE; ++i) job.pump();
+		for (let i = 0; i < 1000 && job.machine.gxGpu.readDeviceOutput().commandBuffer.commandCount !== 2; ++i) job.pump();
+		assert.equal(job.memory.readIoU32(io.IO_IMGDEC_STATUS), img.IMGDEC_STATUS_DONE);
+		assert.equal(job.memory.readIoU32(io.IO_DMA1_STATUS), io.DMA_STATUS_DONE);
+		const irqs = io.IRQ_IMGDEC | io.IRQ_DMA0_DONE | io.IRQ_DMA1_DONE;
+		assert.equal(job.memory.readIoU32(io.IO_IRQ_FLAGS) & irqs, irqs);
+		assert.equal(job.memory.readIoU32(io.IO_IMGDEC_DATA), stream[total]);
+		assert.equal(job.machine.gxGpu.captureState().gp0Word, stream[total]);
+		const commands = job.machine.gxGpu.readDeviceOutput().commandBuffer;
+		assert.equal(commands.commandCount, 2);
+		assert.equal(commands.commandWordCount[0], textureWords + 3);
+		assert.equal(commands.commandWordCount[1], clutWords + 3);
+		for (let i = 0; i < total; ++i) {
+			const command = i < textureWords ? 0 : 1, offset = i < textureWords ? i : i - textureWords;
+			assert.equal(commands.words[commands.commandWordStart[command] + 3 + offset], stream[i + 1]);
+		}
+		return [job.services[DEVICE_SERVICE_IMGDEC] - decoderEvents, job.services[DEVICE_SERVICE_DMA] - dmaEvents,
+			job.machine.scheduler.currentNowCycles()];
+	};
+	assert.deepEqual(finish(replay), finish(h), 'published work resumes at the same edges, without saving a borrowed slice');
+	assert.equal(h.services[DEVICE_SERVICE_IMGDEC], 17);
+});
+
+test('withdrawing IMGDEC requests leaves an admitted output burst intact', () => {
+	const first = 0x86051234, last = 0xabcd9087;
+	const h = fixture([1, first, last]);
+	h.configure(3, 2);
+	h.header(0x00200040, 4 | (1 << 16));
+	h.outputDma(2);
+	h.inputDma();
+	h.memory.writeMappedU32LE(io.IO_IMGDEC_CONTROL, img.IMGDEC_CONTROL_START);
+	for (let i = 0; i < 16 && h.machine.dmaController.captureState().activeChannel !== 1; ++i) h.pump();
+	const admitted = h.machine.dmaController.captureState();
+	assert.equal(admitted.activeChannel, 1);
+	assert.equal(admitted.scheduledBlockWords, 2);
+	h.machine.imgDecController.beginSupervisorQuiesce();
+	assert.equal(h.memory.readIoU32(io.IO_IMGDEC_STATUS) & img.IMGDEC_STATUS_OUTPUT_REQUEST, 0);
+	for (let i = 0; i < 16 && h.memory.readIoU32(io.IO_DMA1_STATUS) !== io.DMA_STATUS_DONE; ++i) h.pump();
+	assert.equal(h.memory.readIoU32(io.IO_DMA1_STATUS), io.DMA_STATUS_DONE);
+	assert.equal(h.machine.imgDecController.captureState().outputWordsRead, 2);
+	h.machine.imgDecController.leaveSupervisorContext();
+	const commands = h.machine.gxGpu.readDeviceOutput().commandBuffer;
+	for (let i = 0; i < 16 && commands.commandCount === 0; ++i) h.pump();
+	assert.equal(commands.commandCount, 1);
+	assert.equal(commands.commandWordCount[0], 5);
+	const start = commands.commandWordStart[0] + 3;
+	assert.equal(commands.words[start], first);
+	assert.equal(commands.words[start + 1], last);
+	assert.equal(h.memory.readIoU32(io.IO_IMGDEC_STATUS), img.IMGDEC_STATUS_DONE);
 });
 
 for (let mode = 0; mode < 7; ++mode) test(`run kind/distance ${mode} crosses block and history boundaries exactly`, () => {

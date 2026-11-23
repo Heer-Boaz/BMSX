@@ -18,7 +18,7 @@ import {
 	IMGDEC_TOKEN_KIND_SHIFT, IMGDEC_TOKEN_KIND_ZERO, IMGDEC_TOKEN_RUN_LENGTH_MASK,
 } from '../../../spec/imgdec/stream';
 import type { CPU } from '../../cpu/cpu';
-import type { Memory } from '../../memory/memory';
+import type { DmaWordView, Memory } from '../../memory/memory';
 import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_DMA, type MappedBusSignals } from '../../memory/bus_signals';
 import { DEVICE_SERVICE_IMGDEC, DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
 import type { DmaController } from '../dma/controller';
@@ -326,18 +326,19 @@ export class ImgDecController {
 		return (c.statusWord & IMGDEC_STATUS_BUSY) === 0 && !c.supervisorQuiesceRequested;
 	}
 
-	private static readDataPrefixThunk(c: ImgDecController, _address: number, words: Uint32Array, count: number): void {
-		const available = c.blockPhase === BLOCK_READY ? Math.min(count, c.decodedWordCount - c.outputWordsRead) : 0;
+	private static readDataPrefixThunk(c: ImgDecController, _address: number, view: DmaWordView, count: number): void {
+		// DMA admission reserves words from one contiguous READY block.
 		const start = c.outputWordsRead & IMGDEC_HISTORY_WORD_MASK;
-		for (let i = 0; i < available; ++i) words[i] = c.history[start + i];
-		c.outputWordsRead = (c.outputWordsRead + available) >>> 0;
-		if (available !== 0) { c.dataWord = words[available - 1]; c.memory.writeIoU32(IO_IMGDEC_DATA, c.dataWord); }
-		words.fill(c.dataWord, available, count);
+		c.outputWordsRead = (c.outputWordsRead + count) >>> 0;
+		c.dataWord = c.history[start + count - 1];
+		c.memory.writeIoU32(IO_IMGDEC_DATA, c.dataWord);
+		view.words = c.history;
+		view.first = start;
 	}
 
-	private static writeDataPrefixThunk(c: ImgDecController, _address: number, words: Uint32Array, count: number): void {
-		c.inputFifo.writeWords(words, 0, Math.min(count, c.inputFifo.free()));
-		c.dataWord = words[count - 1];
+	private static writeDataPrefixThunk(c: ImgDecController, _address: number, words: Uint32Array, first: number, count: number): void {
+		c.inputFifo.writeWords(words, first, Math.min(count, c.inputFifo.free()));
+		c.dataWord = words[first + count - 1];
 		c.inputWordsReceived = (c.inputWordsReceived + count) >>> 0;
 		c.memory.writeIoU32(IO_IMGDEC_DATA, c.dataWord);
 	}

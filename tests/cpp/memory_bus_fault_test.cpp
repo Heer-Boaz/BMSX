@@ -294,7 +294,7 @@ struct PrefixMappingTrace {
 	static void write(void* context, bmsx::u32, bmsx::u32, bmsx::MappedBusSignals signals) {
 		auto& t = *static_cast<PrefixMappingTrace*>(context); ++t.writes; t.writeSignals.push_back(signals);
 	}
-	static void readPrefix(void*, bmsx::u32, bmsx::u32*, bmsx::u32, bmsx::MappedBusSignals) { throw std::runtime_error("revoked/readonly prefix read cannot run"); }
+	static const bmsx::u32* readPrefix(void*, bmsx::u32, bmsx::u32, bmsx::MappedBusSignals) { throw std::runtime_error("revoked/readonly prefix read cannot run"); }
 	static void writePrefix(void*, bmsx::u32, const bmsx::u32*, bmsx::u32, bmsx::MappedBusSignals) { throw std::runtime_error("revoked/readonly prefix write cannot run"); }
 };
 

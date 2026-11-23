@@ -1,4 +1,5 @@
 #include "machine/machine.h"
+#include "machine/save_state.h"
 #include "machine/devices/input/contracts.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/memory_map.h"
@@ -105,30 +106,86 @@ void testBlocksPublishOnlyAtCompletion() {
 }
 
 void testCpuBuildsHeadersAndDmaSplitsAtAvailableWords() {
-	std::vector<u32> stream{517};
-	for (u32 i = 0; i < 518; ++i) stream.push_back(0x80010001u + i * 0x00010001u);
+	constexpr u32 textureWords = 4200, clutWords = 8, total = textureWords + clutWords;
+	std::vector<u32> stream{total - 1u};
+	for (u32 i = 0; i < total; ++i) stream.push_back(0x80010001u + i * 0x00010001u);
 	Harness h(stream);
-	h.configure(static_cast<u32>(stream.size()), 518);
-	h.header(0x00200040, 30 | (34 << 16));
-	h.outputDma(510);
+	h.configure(static_cast<u32>(stream.size()), total);
+	h.header(0x00200040, 84u | (100u << 16));
+	h.outputDma(textureWords);
 	h.inputDma();
 	h.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
-	for (u32 i = 0; i < 1000 && h.memory.readIoU32(IO_DMA1_STATUS) != DMA_STATUS_DONE; ++i) h.pump();
-	require(h.memory.readIoU32(IO_DMA1_STATUS) == DMA_STATUS_DONE, "texture subtransfer completes independently of CLUT");
-	require(h.machine.imgDecController.captureState().outputWordsRead == 510, "DMA consumes no CLUT word as texture payload");
-	h.header(0x00400100, 16 | (1 << 16));
-	h.outputDma(8);
-	for (u32 i = 0; i < 1000 && h.memory.readIoU32(IO_IMGDEC_STATUS) != IMGDEC_STATUS_DONE; ++i) h.pump();
-	for (u32 i = 0; i < 1000 && h.machine.gxGpu.readDeviceOutput().commandBuffer.commandCount != 2; ++i) h.pump();
-	require(h.memory.readIoU32(IO_IMGDEC_STATUS) == IMGDEC_STATUS_DONE, "split CLUT transfer drains the final block");
-	const auto& commands = h.machine.gxGpu.readDeviceOutput().commandBuffer;
-	require(commands.commandCount == 2 && commands.commandWordCount[0] == 513 && commands.commandWordCount[1] == 11, "software-supplied headers frame both complete GPU uploads");
-	for (u32 i = 0; i < 518; ++i) {
-		const u32 command = i < 510 ? 0 : 1;
-		const u32 offset = i < 510 ? i : i - 510;
-		require(commands.words[commands.commandWordStart[command] + 3 + offset] == stream[i + 1], "cross-block partial DMA has neither repeated nor dropped words");
+	constexpr u32 beforeWrap = IMGDEC_HISTORY_WORD_CAPACITY - IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY;
+	for (u32 i = 0; i < 1000; ++i) {
+		if (h.memory.readIoU32(IO_DMA1_TRANSFER_COUNT) == textureWords - beforeWrap
+			&& h.machine.dmaController.captureState().activeChannel == 1) break;
+		h.pump();
 	}
-	require(h.services[DEVICE_SERVICE_IMGDEC] == 3 && h.services[DEVICE_SERVICE_DMA] == 8, "bulk transport stops at input, output-block and programmed count boundaries");
+	const auto saved = captureMachineState(h.machine);
+	require(saved.imgDec.outputWordsRead == beforeWrap && saved.dma.activeChannel == 1
+		&& saved.dma.scheduledBlockWords == IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY
+		&& saved.dma.scheduledBlockCycles > 0, "checkpoint retains an admitted burst at the end of decoder history");
+	Harness replay(stream);
+	replay.machine.scheduler.advanceTo(h.machine.scheduler.currentNowCycles());
+	restoreMachineState(replay.machine, saved);
+
+	const auto finish = [&](Harness& job) {
+		const auto decoderEvents = job.services[DEVICE_SERVICE_IMGDEC], dmaEvents = job.services[DEVICE_SERVICE_DMA];
+		for (u32 i = 0; i < 1000 && job.memory.readIoU32(IO_DMA1_STATUS) != DMA_STATUS_DONE; ++i) job.pump();
+		require(job.memory.readIoU32(IO_DMA1_STATUS) == DMA_STATUS_DONE, "texture completes independently of the CLUT");
+		require(job.machine.imgDecController.captureState().outputWordsRead == textureWords, "texture DMA consumes no CLUT word");
+		require(job.machine.gxGpu.captureState().gp0Word == stream[textureWords], "the texture retains its last GP0 word");
+		job.header(0x00400100, 16u | (1u << 16));
+		job.outputDma(clutWords);
+		for (u32 i = 0; i < 1000 && job.memory.readIoU32(IO_IMGDEC_STATUS) != IMGDEC_STATUS_DONE; ++i) job.pump();
+		const auto& commands = job.machine.gxGpu.readDeviceOutput().commandBuffer;
+		for (u32 i = 0; i < 1000 && commands.commandCount != 2; ++i) job.pump();
+		require(job.memory.readIoU32(IO_IMGDEC_STATUS) == IMGDEC_STATUS_DONE
+			&& job.memory.readIoU32(IO_DMA1_STATUS) == DMA_STATUS_DONE, "the CLUT drains the final decoder block");
+		constexpr u32 irqs = IRQ_IMGDEC | IRQ_DMA0_DONE | IRQ_DMA1_DONE;
+		require((job.memory.readIoU32(IO_IRQ_FLAGS) & irqs) == irqs, "both DMA channels and the decoder complete with IRQs");
+		require(job.memory.readIoU32(IO_IMGDEC_DATA) == stream[total]
+			&& job.machine.gxGpu.captureState().gp0Word == stream[total], "both ports retain the last CLUT word");
+		require(commands.commandCount == 2 && commands.commandWordCount[0] == textureWords + 3u
+			&& commands.commandWordCount[1] == clutWords + 3u, "software-supplied headers frame both GPU uploads");
+		for (u32 i = 0; i < total; ++i) {
+			const u32 command = i < textureWords ? 0u : 1u;
+			const u32 offset = i < textureWords ? i : i - textureWords;
+			require(commands.words[commands.commandWordStart[command] + 3u + offset] == stream[i + 1u],
+				"wrapped history and partial DMA neither repeat nor drop words");
+		}
+		return std::array<i64, 3>{job.services[DEVICE_SERVICE_IMGDEC] - decoderEvents,
+			job.services[DEVICE_SERVICE_DMA] - dmaEvents, job.machine.scheduler.currentNowCycles()};
+	};
+	const auto uninterrupted = finish(h);
+	require(finish(replay) == uninterrupted, "restored DMA publishes blocks on identical cycles");
+	require(h.services[DEVICE_SERVICE_IMGDEC] == 17, "decoder event cadence still follows output blocks");
+}
+
+void testAdmittedOutputDmaSurvivesQuiesce() {
+	Harness h({});
+	constexpr u32 first = 0x86051234u, last = 0xabcd9087u;
+	h.configure(3u, 2u);
+	h.header(0x00200040, 4u | (1u << 16));
+	h.outputDma(2u);
+	h.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
+	for (const u32 word : {1u, first, last}) h.memory.writeMappedU32LE(IO_IMGDEC_DATA, word);
+	for (u32 i = 0; i < 16 && h.machine.dmaController.captureState().activeChannel != 1; ++i) h.pump();
+	const auto admitted = h.machine.dmaController.captureState();
+	require(admitted.activeChannel == 1 && admitted.scheduledBlockWords == 2, "DMA holds both published words");
+	h.machine.imgDecController.beginSupervisorQuiesce();
+	require((h.memory.readIoU32(IO_IMGDEC_STATUS) & IMGDEC_STATUS_OUTPUT_REQUEST) == 0, "quiesce withdraws the request line");
+	require(h.machine.dmaController.captureState().scheduledBlockCycles == admitted.scheduledBlockCycles, "quiesce keeps the admitted edge");
+	const auto& commands = h.machine.gxGpu.readDeviceOutput().commandBuffer;
+	for (u32 i = 0; i < 16 && commands.commandCount == 0; ++i) h.pump();
+	require(commands.commandCount == 1 && commands.commandWordCount[0] == 5, "the admitted block completes with the request withdrawn");
+	const u32 start = commands.commandWordStart[0] + 3u;
+	require(commands.words[start] == first && commands.words[start + 1u] == last, "prefix and terminal output are consumed in order");
+	require(h.memory.readIoU32(IO_DMA1_STATUS) == DMA_STATUS_DONE, "DMA completes independently of decoder quiesce");
+	h.machine.imgDecController.leaveSupervisorContext();
+	require(h.machine.imgDecController.captureState().outputWordsRead == 2u
+		&& h.memory.readIoU32(IO_IMGDEC_DATA) == last && h.memory.readIoU32(IO_IMGDEC_STATUS) == IMGDEC_STATUS_DONE,
+		"decoder completes without consuming or changing another word after resume");
 }
 
 void testHistoryWrapAndAllRunKinds() {
@@ -247,6 +304,7 @@ void testFaultsAndEmptyJob() {
 int main() {
 	testBlocksPublishOnlyAtCompletion();
 	testCpuBuildsHeadersAndDmaSplitsAtAvailableWords();
+	testAdmittedOutputDmaSurvivesQuiesce();
 	testHistoryWrapAndAllRunKinds();
 	testRestoreAndQuiesce();
 	testRestoreAfterHistoryWrap();
