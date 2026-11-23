@@ -28,6 +28,7 @@ void copiedSourceAndDeferredPublication() {
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
 	NativeCompilerWorker worker;
+	std::vector<std::unique_ptr<NativeBlock>> retained;
 	for (int iteration = 0; iteration < 64; ++iteration) {
 		std::array<DecodedInstruction, 3> decoded{};
 		const std::array ops{OpCode::KSMI, OpCode::ADD, OpCode::JMP};
@@ -39,7 +40,8 @@ void copiedSourceAndDeferredPublication() {
 		}
 		decoded[0].a = 1; decoded[0].setSbx(iteration);
 		decoded[1].a = 2; decoded[1].b = 0; decoded[1].c = 1;
-		decoded[2].setBx(0x1800u);
+		const u32 exitPc = 0x1800u + iteration * INSTRUCTION_BYTES;
+		decoded[2].setBx(exitPc);
 		// Two entries share one executable allocation and an internal edge.
 		const std::array sources{
 			NativeBlockSource{std::span(instructions.data(), 1)},
@@ -58,11 +60,19 @@ void copiedSourceAndDeferredPublication() {
 		require(blocks[1]->region == blocks[0]->region, "a standalone result owns one shared region");
 		ValueSlots registers(3); registers.set(0, valueInteger(7));
 		NativeBlockRunState state{.remainingCycles = 100};
-		require(blocks.front()->run(registers.view(), state)->nextPc == 0x1800u && registers.get(2) == valueInteger(iteration + 7),
+		require(blocks.front()->run(registers.view(), state)->nextPc == exitPc && registers.get(2) == valueInteger(iteration + 7),
 			"the worker compiles captured instructions and the original internal edge");
+		if (iteration == 0) {
+			retained = std::move(blocks);
+			continue;
+		}
 		blocks.clear();
 		require(region.expired() && cpu.readNativeCompilationProfile().codeBytes == 0,
 			"releasing the standalone entries frees the region without changing CPU residency");
+		state.remainingCycles = 100;
+		const auto* retainedExit = retained.front()->run(registers.view(), state);
+		require(retainedExit == &retained.back()->terminal && retainedExit->nextPc == 0x1800u && registers.get(2) == valueInteger(7),
+			"reusing source, IR and lowering storage cannot replace the live region's exit descriptors or code");
 	}
 }
 
@@ -108,13 +118,20 @@ void rejectedFieldProofIsFrozenForWorker() {
 	NativeFieldProofFeedback sourceProfile;
 	for (int i = 0; i < 3; ++i) sourceProfile.contradict(0, ValueTag::Integer);
 	NativeCompilerWorker worker;
-	worker.submit(sources, NativeCodeBindings(memory, cpu.stringPool(), &cpu), {}, false, sourceProfile.snapshot(pc));
+	sourceProfile.appendSnapshot(pc, worker.specializationsForCapture().rejectedFieldProofs);
+	worker.submit(sources, NativeCodeBindings(memory, cpu.stringPool(), &cpu));
 	sourceProfile.forget(0);
 	worker.wait();
 	auto blocks = worker.take();
 	require(blocks.size() == 2 && blocks.front()->sideExits.front().exit == NativeBlockExit::ReadField
 		&& !blocks.front()->sideExits.front().operands.table.resultProof,
 		"the worker retains the submitted rejection after the source profile drops it");
+	worker.submit(sources, NativeCodeBindings(memory, cpu.stringPool(), &cpu));
+	worker.wait();
+	auto next = worker.take();
+	require(next.size() == 1 && next.front()->sideExits.front().operands.table.resultProof == ValueTag::Integer
+		&& !blocks.front()->sideExits.front().operands.table.resultProof,
+		"the next job starts with empty profile lanes without changing the prior region's proof");
 }
 
 void recordPlanIsReadyBeforePublication() {

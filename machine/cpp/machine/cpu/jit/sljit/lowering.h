@@ -17,7 +17,8 @@ namespace bmsx {
 
 class NativeLowering {
 public:
-	NativeLowering(std::span<const std::unique_ptr<NativeBlock>> blocks,
+	struct Workspace;
+	NativeLowering(Workspace&, std::span<const std::unique_ptr<NativeBlock>> blocks,
 		const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir, std::span<NativeBlockExitSite> replays,
 		NativeRegisterUses& uses, std::span<const NativeImageConstant> constants);
 	~NativeLowering();
@@ -110,6 +111,7 @@ private:
 
 	sljit_compiler* m_compiler;
 	NativeRegisterCache m_cache;
+	Workspace& m_workspace;
 	std::span<const std::unique_ptr<NativeBlock>> m_blocks;
 	const NativeCodeBindings& m_bindings;
 	DecodedInstruction* m_decodedPage = nullptr;
@@ -123,25 +125,20 @@ private:
 		sljit_label* proven = nullptr;
 		bool planned = false;
 	};
-	std::vector<Entry> m_entries;
 	struct Branch {
 		sljit_jump* jump;
 		size_t target;
 	};
-	std::vector<Branch> m_branches;
 	struct ExternalBranch {
 		sljit_jump* jump;
 		sljit_label* coldEntry;
 		NativeBlockLink* link;
 	};
-	std::vector<ExternalBranch> m_external;
 	struct ColdExit {
 		SemanticExit target;
 		State state;
 		sljit_label* label = nullptr;
 	};
-	std::vector<ColdExit> m_coldExits;
-	std::vector<Branch> m_coldBranches;
 	struct RomRead {
 		sljit_jump* ramMiss;
 		sljit_label* result;
@@ -150,7 +147,6 @@ private:
 		u32 width;
 		MemoryAccessKind format;
 	};
-	std::vector<RomRead> m_romReads;
 	struct StoreBarrier {
 		sljit_jump* mutation;
 		State registers;
@@ -158,7 +154,6 @@ private:
 		StoreBarrierRecord record;
 		NativeBlockExitSite* exit;
 	};
-	std::vector<StoreBarrier> m_storeBarriers;
 	struct SingleStringRead {
 		std::array<sljit_jump*, 4> ownMisses;
 		std::optional<StringId> fixedKey;
@@ -167,7 +162,6 @@ private:
 		sljit_label* result;
 		i32* ownPrediction;
 	};
-	std::vector<SingleStringRead> m_singleStringReads;
 	struct StringStoreMiss {
 		std::array<sljit_jump*, 5> misses;
 		State registers;
@@ -176,10 +170,26 @@ private:
 		int value;
 		std::optional<u16> keyIndex;
 	};
-	std::vector<StringStoreMiss> m_stringStoreMisses;
 	std::array<u8, NATIVE_BLOCK_MAX_INSTRUCTIONS> m_fieldAddressSpills;
 	size_t m_current = 0, m_instruction = 0;
 	bool m_terminal = false;
+};
+
+// Compiler-owned relocation and slow-path scratch. Labels and borrowed
+// exit descriptors belong to one emission only; only their capacities persist.
+struct NativeLowering::Workspace {
+	std::vector<Entry> entries;
+	std::vector<Branch> branches;
+	std::vector<ExternalBranch> external;
+	std::vector<ColdExit> coldExits;
+	std::vector<Branch> coldBranches;
+	std::vector<RomRead> romReads;
+	std::vector<StoreBarrier> storeBarriers;
+	std::vector<SingleStringRead> singleStringReads;
+	std::vector<StringStoreMiss> stringStoreMisses;
+
+	void prepare(std::span<const std::unique_ptr<NativeBlock>> blocks);
+	void clear();
 };
 
 } // namespace bmsx

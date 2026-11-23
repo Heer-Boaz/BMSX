@@ -9,19 +9,21 @@
 namespace bmsx {
 
 void NativeTypePropagation::specializeRegion(std::span<NativeIrBlock> blocks,
-	const NativeRegisterUses& uses, NativeSlotValues& values, std::vector<NativeSlotType>& imports) {
+	const NativeRegisterUses& uses, NativeSlotValues& values, std::vector<NativeSlotType>& imports,
+	std::span<const NativeImageConstant> constants, bool observesArithmetic) {
+	m_assumptions.clear();
 	if (blocks.size() == 1) {
-		specialize(blocks.front(), values, blocks.size());
+		specialize(blocks.front(), values, constants, observesArithmetic, blocks.size());
 		return;
 	}
 	// The forward meet proves tags, not identities: two branches can
 	// produce different values with the same tag for one entry slot.
-	struct ImportRange { size_t first = 0, count = 0; bool received = false; };
-	std::vector<ImportRange> ranges(blocks.size());
+	m_importRanges.assign(blocks.size(), {});
+	auto& ranges = m_importRanges;
 	for (size_t index = 0; index < blocks.size(); ++index) {
 		auto& block = blocks[index];
 		const auto& incoming = ranges[index];
-		specialize(block, values, blocks.size(), incoming.first, incoming.count);
+		specialize(block, values, constants, observesArithmetic, blocks.size(), incoming.first, incoming.count);
 		if (!block.nativeSuccessor) continue;
 		for (size_t edge = 0; edge < block.successors.size(); ++edge) {
 			const size_t target = block.successors[edge];
@@ -90,6 +92,7 @@ void NativeTypePropagation::require(Type type) {
 struct NativeTypePropagation::Transfer {
 	NativeTypePropagation& facts;
 	NativeRowValues values;
+	bool observesArithmetic;
 	bool inlineBuiltin;
 	bool invalidOperand = false;
 
@@ -132,7 +135,7 @@ struct NativeTypePropagation::Transfer {
 		plan.guardLeft &= needsLeft;
 		plan.guardRight &= needsRight;
 		if (plan.guardLeft || plan.guardRight) plan.feedbackAssumption = hint.feedback;
-		plan.sampleOperands = facts.m_observesArithmetic && hint.mode == NativeNumericFeedbackMode::Sampling
+		plan.sampleOperands = observesArithmetic && hint.mode == NativeNumericFeedbackMode::Sampling
 			&& plan.action == NativeNumericAction::Kernel;
 		if (plan.guardLeft) facts.define(values.inputs[0], *plan.left);
 		if (plan.guardRight) facts.define(values.inputs[1], *plan.right);
@@ -286,7 +289,7 @@ struct NativeTypePropagation::Transfer {
 };
 
 void NativeTypePropagation::specialize(NativeIrBlock& block, NativeSlotValues& values,
-	size_t noSuccessor, size_t first, size_t count) {
+	std::span<const NativeImageConstant> constants, bool observesArithmetic, size_t noSuccessor, size_t first, size_t count) {
 	values.beginScope();
 	m_facts.clear();
 	for (size_t index = first; index < first + count; ++index) {
@@ -299,11 +302,11 @@ void NativeTypePropagation::specialize(NativeIrBlock& block, NativeSlotValues& v
 		for (size_t operand = 0; operand < instruction.slots.reads.size(); ++operand) {
 			const int selector = instruction.slots.reads[operand];
 			if (selector < 0 && selector != NATIVE_NO_OPERAND) {
-				if (const auto constant = nativeImageConstant(m_constants, -1 - selector))
+				if (const auto constant = nativeImageConstant(constants, -1 - selector))
 					define(rowValues.inputs[operand], valueTag(*constant));
 			}
 		}
-		Transfer transfer{*this, rowValues, block.inlineBuiltin};
+		Transfer transfer{*this, rowValues, observesArithmetic, block.inlineBuiltin};
 		std::visit(transfer, instruction.operation);
 		if (!transfer.invalidOperand) continue;
 		// A proven guest fault pays for the attempted instruction, but no

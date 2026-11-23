@@ -46,8 +46,10 @@
 #include "machine/cpu/diagnostic_execution_profile.h"
 #endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/jit/compiler.h"
 #include "machine/cpu/jit/runtime/code_cache.h"
 #include "machine/cpu/jit/runtime/compilation_profile.h"
+#include "machine/cpu/jit/source.h"
 #endif
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 #include "machine/cpu/jit/runtime/gate_profile.h"
@@ -507,6 +509,8 @@ private:
 	} m_pendingNativeCompilation;
 #endif
 	NativeCodeCache m_nativeCode;
+	NativeCompiler m_nativeCompiler;
+	NativeSourceWorkspace m_nativeSourceWorkspace;
 	bool m_nativeHistoryWrites = false;
 	bool m_nativeCompilationProfiling = false;
 	NativeCompilationProfile m_nativeCompilationProfile;

@@ -2,6 +2,8 @@
 
 #include "machine/cpu/jit/compilation_input.h"
 #include "machine/cpu/jit/ir/operations.h"
+#include "machine/cpu/jit/ir/type_propagation.h"
+#include "machine/cpu/jit/ir/value_flow.h"
 
 #include <limits>
 #include <utility>
@@ -10,7 +12,6 @@
 namespace bmsx {
 
 class NativeRegisterUses;
-class NativeSlotValues;
 
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 enum class NativeAttempt : u8 { None, NewTable, Call, AssignField, Concat, ConcatRange };
@@ -99,7 +100,7 @@ struct NativeFieldAddressUse {
 
 class NativeIrRegion {
 public:
-	NativeIrRegion(std::span<const NativeBlockSource> source, NativeRegisterUses& uses, bool cpuOwned = false,
+	void build(std::span<const NativeBlockSource> source, NativeRegisterUses& uses, bool cpuOwned = false,
 		NativeCompilationOptions options = {}, NativeCompileSpecializations specializations = {});
 	std::span<const NativeIrBlock> blocks() const { return m_blocks; }
 	std::span<const NativeIrExit> sideExits(const NativeIrBlock& block) const {
@@ -110,6 +111,8 @@ public:
 	size_t instructionCount() const { return m_instructions.size(); }
 
 private:
+	NativeSlotValues m_values;
+	NativeTypePropagation m_types;
 	std::vector<NativeInstruction> m_instructions;
 	std::vector<NativeSlotType> m_entryTypes;
 	std::vector<NativeIrBlock> m_blocks;

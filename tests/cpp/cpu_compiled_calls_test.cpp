@@ -1598,6 +1598,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 				call |= block->terminal.exit == NativeBlockExit::Call;
 				ret |= block->terminal.exit == NativeBlockExit::Return;
 			}
+		}
 		if (call && ret) break;
 		test::runCpuParity(native.cpu, scalar.cpu, 20000);
 	}

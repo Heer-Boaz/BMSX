@@ -61,12 +61,22 @@ NativeBlockExitSite materializeExit(const NativeIrExit& exit, const NativeCodeBi
 
 } // namespace
 
+struct NativeCompiler::Workspace {
+	NativeRegisterUses uses;
+	NativeIrRegion ir;
+	NativeLowering::Workspace lowering;
+};
+
+NativeCompiler::NativeCompiler() = default;
+NativeCompiler::~NativeCompiler() = default;
+
 std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 	std::span<const NativeBlockSource> sources,
 	const NativeCodeBindings& bindings, NativeCompilationOptions options, NativeCompileSpecializations specializations
 ) {
-	NativeRegisterUses uses;
-	NativeIrRegion ir(sources, uses, bindings.cpu != nullptr, options, specializations);
+	if (!m_workspace) m_workspace = std::make_unique<Workspace>();
+	auto& [uses, ir, lowering] = *m_workspace;
+	ir.build(sources, uses, bindings.cpu != nullptr, options, specializations);
 	const auto plans = ir.blocks();
 	if (plans.empty()) return {};
 #if defined(BMSX_NATIVE_IR_TRACE)
@@ -102,7 +112,8 @@ std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 	region->m_replaySites.reserve(replays.size());
 	for (const auto& replay : replays)
 		region->m_replaySites.push_back(materializeExit(replay, bindings));
-	NativeLowering compiler(entries, bindings, plans, region->m_replaySites, uses, specializations.imageConstants);
+	lowering.prepare(entries);
+	NativeLowering compiler(lowering, entries, bindings, plans, region->m_replaySites, uses, specializations.imageConstants);
 	for (size_t index = 0; index < plans.size(); ++index) {
 		compiler.beginBlock(index);
 		for (const auto& instruction : plans[index].instructions)

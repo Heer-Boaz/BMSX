@@ -12,7 +12,7 @@ inline std::shared_ptr<NativeBlock> compileNative(
 ) {
 	const std::array runs{NativeBlockSource{instructions}};
 	auto blocks = std::make_shared<std::vector<std::unique_ptr<NativeBlock>>>(
-		NativeCompiler::compile(runs, NativeCodeBindings(memory, strings)));
+		NativeCompiler{}.compile(runs, NativeCodeBindings(memory, strings)));
 	auto* first = blocks->front().get();
 	return {std::move(blocks), first};
 }

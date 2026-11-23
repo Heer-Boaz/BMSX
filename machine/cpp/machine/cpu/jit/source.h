@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "machine/cpu/decoded_instruction.h"
+#include "machine/cpu/jit/compilation_input.h"
 #include "machine/cpu/jit/limits.h"
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/mapped_page.h"
@@ -14,6 +15,14 @@
 namespace bmsx {
 
 struct DecodedInstructionPage;
+
+// CPU-side discovery builds borrowed runs here. A synchronous compile can
+// consume them directly; asynchronous submission snapshots their instructions.
+struct NativeSourceWorkspace {
+	std::vector<NativeBlockInstruction> instructions;
+	std::vector<NativeBlockSource> sources;
+	NativeCompileSpecializationBuffer specializations;
+};
 
 // One immutable image owns one physical page namespace.
 struct NativeWarmupPages {

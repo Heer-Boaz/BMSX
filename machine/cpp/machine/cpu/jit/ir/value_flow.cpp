@@ -15,10 +15,12 @@ bool copiesReceiver(const NativeOperation& operation) {
 
 } // namespace
 
-NativeSlotValues::NativeSlotValues(std::span<const NativeInstruction> instructions) {
+void NativeSlotValues::beginRegion(std::span<const NativeInstruction> instructions) {
 	// A scope can name each region slot once plus up to three transient pool
 	// reads and one fresh result per row. Range-only slots consume no entries.
 	static_assert(5u * DECODED_PAGE_WORDS + 4u * NATIVE_BLOCK_MAX_INSTRUCTIONS < std::numeric_limits<u16>::max());
+	m_slots.clear();
+	m_generation = 0;
 	m_slots.reserve(4u * instructions.size());
 	for (const auto& instruction : instructions) {
 		const auto& access = instruction.slots;

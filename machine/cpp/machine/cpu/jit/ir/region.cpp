@@ -64,15 +64,25 @@ NativeOperationFlow nativeOperationFlow(const NativeOperation& operation) {
 	return std::visit(OperationFlow{}, operation);
 }
 
-NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, NativeRegisterUses& uses, bool cpuOwned,
+void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeRegisterUses& uses, bool cpuOwned,
 	NativeCompilationOptions options, NativeCompileSpecializations specializations) {
+	m_blocks.clear();
+	m_instructions.clear();
+	m_entryTypes.clear();
+	m_sideExits.clear();
+	m_admissionReplays.clear();
+	m_records.clear();
+	m_ownFieldAddresses.clear();
 	size_t instructionCount = 0;
 	for (const auto& source : sources) instructionCount += source.instructions.size();
 	m_instructions.reserve(instructionCount);
 	m_blocks.reserve(sources.size());
+	size_t fixedFieldReads = 0;
 	for (const auto& source : sources) {
 		for (const auto& inst : source.instructions) {
 			auto operation = translateNativeOperation(*inst.decoded);
+			if (const auto* field = std::get_if<NativeTableAccess>(&operation); field && field->readsFixedField())
+				++fixedFieldReads;
 			if (const auto* load = std::get_if<NativeConstantLoad>(&operation)) {
 				if (const auto constant = nativeImageConstant(specializations.imageConstants, load->index))
 					operation = NativeLiteral{load->result, *constant};
@@ -87,14 +97,17 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 			m_instructions.emplace_back(std::move(operation));
 		}
 	}
-	NativeSlotValues values(m_instructions);
+	// Each fixed read can contribute one address definition. Keep the
+	// backing buffer stable while the blocks borrow their address ranges.
+	m_ownFieldAddresses.reserve(fixedFieldReads);
+	m_values.beginRegion(m_instructions);
 	std::array<NativeFieldAddressUse, NATIVE_BLOCK_MAX_INSTRUCTIONS> addressUses;
 	size_t first = 0;
 	for (const auto& source : sources) {
 		const size_t count = source.instructions.size();
 		auto operations = std::span(m_instructions).subspan(first, count);
 		first += count;
-		planNativeFieldReads(operations, source.instructions, values, addressUses, specializations);
+		planNativeFieldReads(operations, source.instructions, m_values, addressUses, specializations);
 
 		const size_t firstEntry = m_blocks.size();
 		size_t segment = 0;
@@ -144,7 +157,7 @@ NativeIrRegion::NativeIrRegion(std::span<const NativeBlockSource> sources, Nativ
 		block.inlineBuiltin &= block.successors[0] != m_blocks.size();
 	}
 	uses.analyze(m_blocks);
-	NativeTypePropagation{specializations.imageConstants, options.observesArithmetic}.specializeRegion(m_blocks, uses, values, m_entryTypes);
+	m_types.specializeRegion(m_blocks, uses, m_values, m_entryTypes, specializations.imageConstants, options.observesArithmetic);
 	for (auto& block : m_blocks) {
 		auto& final = block.instructions.back();
 		if (const auto* branch = std::get_if<NativeTruthBranch>(&final.operation);

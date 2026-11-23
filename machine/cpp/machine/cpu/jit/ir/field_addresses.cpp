@@ -156,7 +156,6 @@ void NativeIrRegion::bindOwnFieldAddresses(NativeIrBlock& block, std::span<const
 		const auto& use = uses[row];
 		const size_t definition = use.definition - firstRow;
 		if (definition == row) {
-			if (m_ownFieldAddresses.capacity() == 0) m_ownFieldAddresses.reserve(m_instructions.capacity());
 			field->ownFieldAddress = static_cast<NativeOwnFieldAddressId>(m_ownFieldAddresses.size() - firstAddress);
 			const auto lastUse = use.lastUse ? std::optional<u8>{static_cast<u8>(*use.lastUse - firstRow)}
 				: std::nullopt;

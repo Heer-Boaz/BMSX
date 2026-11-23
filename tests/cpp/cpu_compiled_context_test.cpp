@@ -503,7 +503,7 @@ struct ContextBlock {
 		}
 		const std::array runs{NativeBlockSource{source}};
 		auto& strings = machine.cpu.stringPool();
-		blocks = NativeCompiler::compile(runs, NativeCodeBindings(machine.memory, strings));
+		blocks = NativeCompiler{}.compile(runs, NativeCodeBindings(machine.memory, strings));
 	}
 };
 

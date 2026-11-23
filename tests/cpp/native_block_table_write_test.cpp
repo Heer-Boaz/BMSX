@@ -818,7 +818,7 @@ void tableFactsAreValidatedAtIndependentRegionEntries(CPU& cpu, Memory& memory) 
 	decoded[8].setBx(0x3008u);
 	const std::array sources{NativeBlockSource{std::span(instructions).first<5>()}, NativeBlockSource{std::span(instructions.data() + 5, 2)},
 		NativeBlockSource{std::span(instructions.data() + 7, 2)}};
-	auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(memory, cpu.stringPool()));
+	auto blocks = NativeCompiler{}.compile(sources, NativeCodeBindings(memory, cpu.stringPool()));
 	constexpr std::array entryIndices{0u, 2u, 5u, 7u};
 	std::array<const NativeBlock*, entryIndices.size()> entries;
 	for (size_t i = 0; i < entries.size(); ++i) {
@@ -884,7 +884,7 @@ void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
 		auto unusedInstructions = instructions;
 		unusedInstructions[4].decoded = &unusedDecoded[4];
 		const std::array unusedSources{NativeBlockSource{std::span(unusedInstructions).first<5>()}};
-		auto blocks = NativeCompiler::compile(unusedSources, NativeCodeBindings(memory, cpu.stringPool()));
+		auto blocks = NativeCompiler{}.compile(unusedSources, NativeCodeBindings(memory, cpu.stringPool()));
 		ValueSlots registers(6);
 		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
 		const auto* exit = blocks[1]->run(registers.view(), state);
@@ -895,7 +895,7 @@ void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
 		const std::array usedSources{NativeBlockSource{std::span(instructions.data(), 2)},
 			NativeBlockSource{std::span(instructions.data() + 2, 2)},
 			NativeBlockSource{std::span(instructions.data() + 4, 2)}};
-		auto blocks = NativeCompiler::compile(usedSources, NativeCodeBindings(memory, cpu.stringPool()));
+		auto blocks = NativeCompiler{}.compile(usedSources, NativeCodeBindings(memory, cpu.stringPool()));
 		ValueSlots registers(6);
 		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
 		const auto* exit = blocks[1]->run(registers.view(), state);
@@ -930,7 +930,7 @@ void logicalFactsDoNotDependOnPhysicalEviction(CPU& cpu, Memory& memory) {
 		decoded[9].a = 3; decoded[9].b = 0; decoded[9].c = 1;
 		decoded[10].setBx(0x8000u); decoded[11].setBx(0x8000u);
 		const std::array sources{NativeBlockSource{std::span(instructions).first<11>()}};
-		auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(memory, cpu.stringPool()));
+		auto blocks = NativeCompiler{}.compile(sources, NativeCodeBindings(memory, cpu.stringPool()));
 		ValueSlots registers(11);
 		for (int operand : {4, 5, 6, 7}) registers.set(operand, valueInteger(0));
 		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};

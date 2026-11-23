@@ -24,10 +24,9 @@ public:
 
 	bool idle() const { return m_state.load(std::memory_order_acquire) == State::Idle; }
 	bool ready() const { return m_state.load(std::memory_order_acquire) == State::Ready; }
+	NativeCompileSpecializationBuffer& specializationsForCapture() { return m_specializations; }
 	void submit(std::span<const NativeBlockSource> sources,
-		const NativeCodeBindings& bindings, NativeCompilationOptions options = {}, bool profile = false,
-		std::vector<NativeRejectedFieldProof> rejectedFieldProofs = {}, std::vector<NativeImageConstant> imageConstants = {},
-		std::vector<NativeCallProfile> calls = {});
+		const NativeCodeBindings& bindings, NativeCompilationOptions options = {}, bool profile = false);
 	void wait();
 	std::vector<std::unique_ptr<NativeBlock>> take();
 	u64 compilationNanoseconds() const { return m_compilationNanoseconds; }
@@ -45,12 +44,11 @@ private:
 	std::vector<DecodedInstruction> m_decoded;
 	std::vector<NativeBlockInstruction> m_instructions;
 	std::vector<NativeBlockSource> m_sources;
-	std::vector<NativeRejectedFieldProof> m_rejectedFieldProofs;
-	std::vector<NativeImageConstant> m_imageConstants;
-	std::vector<NativeCallProfile> m_calls;
+	NativeCompileSpecializationBuffer m_specializations;
 	std::vector<NativeCodeSourcePage> m_sourcePages;
 	NativeCodeBindings m_bindings;
 	NativeCompilationOptions m_options;
+	NativeCompiler m_compiler;
 	std::vector<std::unique_ptr<NativeBlock>> m_blocks;
 	std::exception_ptr m_error;
 	u64 m_compilationNanoseconds = 0;

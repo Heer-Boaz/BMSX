@@ -39,11 +39,9 @@ void NativeFieldProofFeedback::forget(u32 word) {
 	m_sites.erase(sites.begin(), sites.end());
 }
 
-std::vector<NativeRejectedFieldProof> NativeFieldProofFeedback::snapshot(u32 pagePc) const {
-	std::vector<NativeRejectedFieldProof> rejected;
+void NativeFieldProofFeedback::appendSnapshot(u32 pagePc, std::vector<NativeRejectedFieldProof>& rejected) const {
 	for (const auto& site : m_sites)
 		if (site.misses == RETIRE_AFTER) rejected.push_back({pagePc + site.word * INSTRUCTION_BYTES, site.tag});
-	return rejected;
 }
 
 } // namespace bmsx

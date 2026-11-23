@@ -12,7 +12,7 @@ class NativeFieldProofFeedback {
 public:
 	bool contradict(u32 word, ValueTag tag);
 	void forget(u32 word);
-	std::vector<NativeRejectedFieldProof> snapshot(u32 pagePc) const;
+	void appendSnapshot(u32 pagePc, std::vector<NativeRejectedFieldProof>& rejected) const;
 
 private:
 	struct Site {

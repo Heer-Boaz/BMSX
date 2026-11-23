@@ -16,10 +16,9 @@ class NativeRegisterUses;
 // slot assignment and spills. Entry facts require an explicit admission proof.
 class NativeTypePropagation {
 public:
-	NativeTypePropagation(std::span<const NativeImageConstant> constants, bool observesArithmetic)
-		: m_constants(constants), m_observesArithmetic(observesArithmetic) {}
 	void specializeRegion(std::span<NativeIrBlock> blocks,
-		const NativeRegisterUses& uses, NativeSlotValues& values, std::vector<NativeSlotType>& imports);
+		const NativeRegisterUses& uses, NativeSlotValues& values, std::vector<NativeSlotType>& imports,
+		std::span<const NativeImageConstant> constants, bool observesArithmetic);
 private:
 	struct Transfer;
 	struct Fact {
@@ -32,18 +31,19 @@ private:
 		u32 alternate = 0;
 		bool required = false;
 	};
+	struct ImportRange { size_t first = 0, count = 0; bool received = false; };
 
 	using Type = std::optional<Fact>;
 	Type type(NativeValueId value) const;
 	void define(NativeValueId value, Fact fact);
 	void define(NativeValueId value, ValueTag tag) { define(value, Fact{tag}); }
 	void require(Type type);
-	void specialize(NativeIrBlock&, NativeSlotValues& values, size_t noSuccessor, size_t first = 0, size_t count = 0);
+	void specialize(NativeIrBlock&, NativeSlotValues& values, std::span<const NativeImageConstant> constants,
+		bool observesArithmetic, size_t noSuccessor, size_t first = 0, size_t count = 0);
 
-	std::span<const NativeImageConstant> m_constants;
-	bool m_observesArithmetic;
 	std::vector<Type> m_facts;
 	std::vector<Assumption> m_assumptions;
+	std::vector<ImportRange> m_importRanges;
 };
 
 } // namespace bmsx

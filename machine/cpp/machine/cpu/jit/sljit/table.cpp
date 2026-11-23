@@ -266,7 +266,7 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
 		auto* erase = sljit_emit_jump(c, SLJIT_JUMP);
 		if (returnMiss)
-			m_stringStoreMisses.push_back({{erase}, missState, &exit, sljit_emit_label(c), value, keyIndex});
+			m_workspace.stringStoreMisses.push_back({{erase}, missState, &exit, sljit_emit_label(c), value, keyIndex});
 		else fault(erase, exit, missState);
 		return;
 	}
@@ -297,7 +297,7 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 		auto* ownPrediction = readPlan == NativeTableReadPlan::ProbeOwnOrOneHop && m_bindings.cpu
 			? exit.tableRead.own.decoded : nullptr;
 		emitStringPayload();
-		m_singleStringReads.push_back({{address[0], address[1], address[2], valueFailure}, fixedKey,
+		m_workspace.singleStringReads.push_back({{address[0], address[1], address[2], valueFailure}, fixedKey,
 			m_cache.state(), &exit, sljit_emit_label(c), ownPrediction});
 		return;
 	}
@@ -324,13 +324,13 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	emitStoreBarrier(value, plan.barrier, StoreBarrierRecord::Table, exit);
 	emitTableValueWrite(value);
 	if (returnMiss)
-		m_stringStoreMisses.push_back({{address[0], address[1], address[2], valueFailure, erase},
+		m_workspace.stringStoreMisses.push_back({{address[0], address[1], address[2], valueFailure, erase},
 			missState, &exit, sljit_emit_label(c), value, keyIndex});
 }
 
 void NativeLowering::emitStringStoreMisses() {
 	auto* c = m_compiler;
-	for (const auto& store : m_stringStoreMisses) {
+	for (const auto& store : m_workspace.stringStoreMisses) {
 		auto* entry = sljit_emit_label(c);
 		for (auto* miss : store.misses)
 			if (miss) sljit_set_label(miss, entry);
@@ -355,7 +355,7 @@ void NativeLowering::emitStringStoreMisses() {
 
 void NativeLowering::emitSingleStringReads() {
 	auto* c = m_compiler;
-	for (const auto& read : m_singleStringReads) {
+	for (const auto& read : m_workspace.singleStringReads) {
 		auto* entry = sljit_emit_label(c);
 		for (auto* miss : read.ownMisses) sljit_set_label(miss, entry);
 		m_cache.setState(read.registers);

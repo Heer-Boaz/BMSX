@@ -33,7 +33,7 @@ struct NativeRowValues {
 // identities to incoming slots, even if a preceding source run copied them.
 class NativeSlotValues {
 public:
-	explicit NativeSlotValues(std::span<const NativeInstruction> instructions);
+	void beginRegion(std::span<const NativeInstruction> instructions);
 	void beginScope();
 	NativeRowValues advance(const NativeInstruction& instruction, u16 row);
 	NativeValueId slot(NativeSlot slot);

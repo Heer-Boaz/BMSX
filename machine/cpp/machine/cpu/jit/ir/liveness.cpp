@@ -50,9 +50,9 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 	m_entryLive.assign(blocks.size() * m_liveWordCount, 0);
 	if (m_liveWordCount == 0)
 		return;
-	std::vector<u64> local(m_entryLive.size() * 2u, 0);
-	const auto uses = std::span(local).first(m_entryLive.size());
-	const auto definitions = std::span(local).last(m_entryLive.size());
+	m_localLive.assign(m_entryLive.size() * 2u, 0);
+	const auto uses = std::span(m_localLive).first(m_entryLive.size());
+	const auto definitions = std::span(m_localLive).last(m_entryLive.size());
 	for (size_t i = 0; i < blocks.size(); ++i) {
 		const size_t base = i * m_liveWordCount;
 		for (const auto& inst : blocks[i].instructions) {

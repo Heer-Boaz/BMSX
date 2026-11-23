@@ -38,10 +38,19 @@ struct NativeCodeBindings {
 
 class NativeCompiler {
 public:
+	NativeCompiler();
+	~NativeCompiler();
+	NativeCompiler(const NativeCompiler&) = delete;
+	NativeCompiler& operator=(const NativeCompiler&) = delete;
+
 	// Each source run is bounded by a decoded page; region edges may cross them.
-	static std::vector<std::unique_ptr<NativeBlock>> compile(
+	std::vector<std::unique_ptr<NativeBlock>> compile(
 		std::span<const NativeBlockSource> sources,
 		const NativeCodeBindings& bindings, NativeCompilationOptions options = {}, NativeCompileSpecializations specializations = {});
+
+private:
+	struct Workspace;
+	std::unique_ptr<Workspace> m_workspace;
 };
 
 } // namespace bmsx

@@ -121,7 +121,7 @@ void entryAdmitsOnlyReachableSlots() {
 	const std::span rows(source);
 	const std::array plans{NativeBlockSource{rows.subspan(2, 2)}, NativeBlockSource{rows.subspan(4, 2)},
 		NativeBlockSource{rows.subspan(6, 2)}};
-	auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
+	auto blocks = NativeCompiler{}.compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
 	auto predecessor = test::compileNative(rows.first(2), memory, cpu.stringPool());
 	blocks[0]->linkFrom(predecessor->terminal);
 	for (const bool linked : {false, true}) for (const size_t capacity : {7u, 8u}) {
@@ -172,7 +172,7 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 	const Value payload = valueInteger(0x13574201);
 	std::weak_ptr<NativeCodeRegion> region;
 	{
-		auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
+		auto blocks = NativeCompiler{}.compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
 		region = blocks[0]->region;
 		require(blocks[0]->region == blocks[1]->region && blocks[1]->region == blocks[2]->region,
 			"helper continuations are entries of one executable allocation");
@@ -267,7 +267,7 @@ void residentValuesCrossInternalComparisonBranches() {
 		valueFloatBits(0x7fc0002au)};
 	for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (bool expected : {false, true}) {
 		decoded[1].op = static_cast<u8>(op); decoded[1].a = expected ? 1 : 0;
-		auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
+		auto blocks = NativeCompiler{}.compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
 		const int throughCompare = decoded[0].baseCycles + decoded[1].baseCycles;
 		for (bool predicate : {false, true}) for (auto value : values) for (int grant : {1, throughCompare, 32, 63, 128, 257}) {
 			ValueSlots registers(11);
@@ -329,7 +329,7 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 	for (const auto& permutation : permutations) for (bool helper : {false, true}) {
 		for (int index = 0; index < 4; ++index) decoded[index + 6].b = permutation[index];
 		decoded[10].op = static_cast<u8>(helper ? OpCode::POW : OpCode::ADD);
-		auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
+		auto blocks = NativeCompiler{}.compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
 		for (int grant : {1, 6, 7, 12, 100}) {
 			ValueSlots registers(10);
 			NativeBlockRunState run{.constants = constantsBank.view(), .remainingCycles = grant};
@@ -387,7 +387,7 @@ void admissionReplayPublishesOnlyThePaidPrefix() {
 	const std::array target{NativeBlockInstruction{&decoded[2], targetPc}, NativeBlockInstruction{&decoded[3], targetPc + 4}};
 	const std::array back{NativeBlockInstruction{&decoded[4], backPc}, NativeBlockInstruction{&decoded[1], backPc + 4}};
 	const std::array sources{NativeBlockSource{first}, NativeBlockSource{target}, NativeBlockSource{back}};
-	const auto blocks = NativeCompiler::compile(sources, NativeCodeBindings(memory, cpu.stringPool()));
+	const auto blocks = NativeCompiler{}.compile(sources, NativeCodeBindings(memory, cpu.stringPool()));
 	const int predecessorCharge = decoded[0].baseCycles + decoded[1].baseCycles;
 	const int targetPrefix = decoded[2].baseCycles;
 	const auto stop = [&](size_t entry, int grant, int charge, u32 predecessorPc) {
@@ -443,7 +443,7 @@ void sparseRegionSuccessorsPreserveExactPcIdentity() {
 		for (const u32 target : {page, page + MAPPED_PAGE_BYTE_SIZE, page - MAPPED_PAGE_BYTE_SIZE,
 			page + 1u, page + INSTRUCTION_BYTES}) {
 			decoded[2].setBx(target);
-			auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
+			auto blocks = NativeCompiler{}.compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
 			require(blocks[0]->terminal.link.patchAddress != 0 && blocks[0]->sideExits.back().link.patchAddress == 0,
 				"a sparse conditional leaves its missing fallthrough external but binds its last-word target internally");
 			require((blocks[1]->terminal.link.patchAddress == 0) == (target == page),
@@ -511,7 +511,7 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 		// A forward branch directly into the inherited continuation cannot
 		// borrow the values or dirty state of its linear helper predecessor.
 		decoded[9].setBx(instructions[bypassHelper ? 18 : 15].pc);
-		auto blocks = NativeCompiler::compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
+		auto blocks = NativeCompiler{}.compile(plans, NativeCodeBindings(memory, cpu.stringPool()));
 		for (size_t entry = 0; entry < plans.size(); ++entry) for (const bool arm : {false, true})
 		for (const bool loop : {false, true}) for (const int grant : {1, 4, 5, 6, 9, 10, 11, 14, 20, 31, 64, 257}) {
 			std::array<Value, 16> initial{constants[2], constants[3], constants[4], constants[5],

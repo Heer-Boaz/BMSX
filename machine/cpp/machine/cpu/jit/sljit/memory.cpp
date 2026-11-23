@@ -71,12 +71,12 @@ void NativeLowering::emitStoreBarrier(int source, NativeGcBarrier barrier, Store
 		auto* ready = sljit_emit_label(c);
 		for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
 	}
-	m_storeBarriers.push_back({revisit, m_cache.state(), sljit_emit_label(c), record, &exit});
+	m_workspace.storeBarriers.push_back({revisit, m_cache.state(), sljit_emit_label(c), record, &exit});
 }
 
 void NativeLowering::emitStoreBarriers() {
 	auto* c = m_compiler;
-	for (const auto& barrier : m_storeBarriers) {
+	for (const auto& barrier : m_workspace.storeBarriers) {
 		sljit_set_label(barrier.mutation, sljit_emit_label(c));
 		m_cache.setState(barrier.registers);
 		const bool cell = barrier.record == StoreBarrierRecord::ClosedUpvalue;
@@ -138,7 +138,7 @@ void NativeLowering::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {
 
 void NativeLowering::emitRomReads() {
 	auto* c = m_compiler;
-	for (const auto& read : m_romReads) {
+	for (const auto& read : m_workspace.romReads) {
 		using Rom = Span<const u8>;
 		sljit_set_label(read.ramMiss, sljit_emit_label(c));
 		auto* system = sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, CART_ROM_BASE);
@@ -252,7 +252,7 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 	const auto move = kind == MemoryAccessKind::U8 ? SLJIT_MOV32_U8 : kind == MemoryAccessKind::U16LE ? SLJIT_MOV32_U16 : SLJIT_MOV32;
 	if (load) {
 		emitBackingLoad(kind, false);
-		m_romReads.push_back({ramMiss, sljit_emit_label(m_compiler), &slow, m_cache.state(), width, kind});
+		m_workspace.romReads.push_back({ramMiss, sljit_emit_label(m_compiler), &slow, m_cache.state(), width, kind});
 		if (kind != MemoryAccessKind::F64LE) {
 			const auto target = m_cache.write(access.slot, kind == MemoryAccessKind::F32LE ? ValueTag::Float : ValueTag::Integer);
 			if (target.tag == ValueTag::Float)

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <optional>
 #include <span>
+#include <vector>
 
 #include "machine/cpu/jit/limits.h"
 #include "machine/cpu/jit/exit_contract.h"
@@ -37,6 +38,23 @@ struct NativeCompileSpecializations {
 	std::span<const NativeRejectedFieldProof> rejectedFieldProofs{}; // sorted by PC
 	std::span<const NativeImageConstant> imageConstants{}; // sorted by index
 	std::span<const NativeCallProfile> calls{}; // sorted by PC; no fixed plan means observe
+};
+
+// Mutable capture storage stays with the active compiler lane. In the worker
+// lane the CPU fills it while Idle and the worker reads it while Compiling.
+struct NativeCompileSpecializationBuffer {
+	std::vector<NativeRejectedFieldProof> rejectedFieldProofs;
+	std::vector<NativeImageConstant> imageConstants;
+	std::vector<NativeCallProfile> calls;
+
+	void clear() {
+		rejectedFieldProofs.clear();
+		imageConstants.clear();
+		calls.clear();
+	}
+	NativeCompileSpecializations view() const {
+		return {rejectedFieldProofs, imageConstants, calls};
+	}
 };
 
 inline std::optional<Value> nativeImageConstant(std::span<const NativeImageConstant> constants, u32 index) {

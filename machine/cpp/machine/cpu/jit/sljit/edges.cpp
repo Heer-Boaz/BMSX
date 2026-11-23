@@ -10,7 +10,7 @@ void NativeLowering::beginBlock(size_t index) {
 	m_instruction = 0;
 	m_uses.beginBlock(m_ir[index].instructions);
 	m_terminal = false;
-	auto& entry = m_entries[index];
+	auto& entry = m_workspace.entries[index];
 	entry.planned = true;
 	const auto& ir = m_ir[index];
 	m_decodedPage = m_bindings.decodedPageFor(ir.firstPc);
@@ -91,7 +91,7 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, sljit_labe
 			fault(sljit_emit_jump(m_compiler, SLJIT_SIG_LESS_EQUAL),
 				exit, source, Charge::Paid);
 		}
-		auto& entry = m_entries[target];
+		auto& entry = m_workspace.entries[target];
 		const auto& successor = m_ir[target];
 		if (const auto replayId = block.edgeReplay[edge]) {
 			auto& replay = m_admissionReplays[*replayId];
@@ -123,7 +123,7 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, sljit_labe
 			}
 		}
 		m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2);
-		m_branches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), target});
+		m_workspace.branches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), target});
 		m_terminal = true;
 		return;
 	}
@@ -151,7 +151,7 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, sljit_labe
 	auto* jump = sljit_emit_jump(m_compiler, SLJIT_SIG_GREATER | SLJIT_REWRITABLE_JUMP);
 	auto* coldEntry = sljit_emit_label(m_compiler);
 	sljit_set_label(jump, coldEntry);
-	m_external.push_back({jump, coldEntry, &exit.link});
+	m_workspace.external.push_back({jump, coldEntry, &exit.link});
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&exit));
 	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM, reinterpret_cast<sljit_sw>(nativeBlockGate().leaveSegment));
 	m_terminal = true;

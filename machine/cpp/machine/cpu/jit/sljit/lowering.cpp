@@ -8,26 +8,44 @@
 
 namespace bmsx {
 
-NativeLowering::NativeLowering(std::span<const std::unique_ptr<NativeBlock>> blocks,
+NativeLowering::NativeLowering(Workspace& workspace, std::span<const std::unique_ptr<NativeBlock>> blocks,
 	const NativeCodeBindings& bindings, std::span<const NativeIrBlock> ir,
 	std::span<NativeBlockExitSite> replays, NativeRegisterUses& uses, std::span<const NativeImageConstant> constants)
 	: m_compiler(sljit_create_compiler(nullptr)), m_cache(m_compiler, NativeBlockAbi::words, NativeBlockAbi::tags,
 													  NativeBlockAbi::wordRegisters, NativeBlockAbi::floatRegisters),
-	  m_blocks(blocks), m_bindings(bindings), m_ir(ir), m_admissionReplays(replays), m_uses(uses),
-	  m_constants(constants), m_entries(blocks.size()) {
+	  m_workspace(workspace), m_blocks(blocks), m_bindings(bindings), m_ir(ir), m_admissionReplays(replays), m_uses(uses),
+	  m_constants(constants) {
 	if (!m_compiler)
 		throw std::bad_alloc();
 	sljit_set_context(m_compiler, 0, NativeBlockAbi::signature, NativeBlockAbi::scratches, NativeBlockAbi::saveds,
 		NativeBlockAbi::stackBytes);
-	m_branches.reserve(blocks.size() * 2);
-	m_external.reserve(blocks.size() * 2);
+}
+
+void NativeLowering::Workspace::prepare(std::span<const std::unique_ptr<NativeBlock>> blocks) {
+	entries.assign(blocks.size(), {});
+	branches.reserve(blocks.size() * 2);
+	external.reserve(blocks.size() * 2);
 	size_t exits = 0;
 	for (const auto& block : blocks)
 		exits += block->sideExits.size();
-	m_coldExits.reserve(exits + blocks.size() * 2);
-	m_coldBranches.reserve(exits * 2 + blocks.size());
+	coldExits.reserve(exits + blocks.size() * 2);
+	coldBranches.reserve(exits * 2 + blocks.size());
 }
+
+void NativeLowering::Workspace::clear() {
+	entries.clear();
+	branches.clear();
+	external.clear();
+	coldExits.clear();
+	coldBranches.clear();
+	romReads.clear();
+	storeBarriers.clear();
+	singleStringReads.clear();
+	stringStoreMisses.clear();
+}
+
 NativeLowering::~NativeLowering() {
+	m_workspace.clear();
 	sljit_free_compiler(m_compiler);
 }
 NativeRegisterCache::Operand NativeLowering::readTyped(
@@ -116,16 +134,16 @@ void NativeLowering::fault(sljit_jump* jump, NativeBlockExitSite& site, const St
 	// Several guards of one guest operation can publish the same state.
 	if (!jump) return;
 	const SemanticExit target{&site, charge};
-	for (size_t i = m_coldExits.size(); i != 0;) {
-		const auto& exit = m_coldExits[--i];
+	for (size_t i = m_workspace.coldExits.size(); i != 0;) {
+		const auto& exit = m_workspace.coldExits[--i];
 		if (exit.target != target) break;
 		if (m_cache.samePublication(exit.state, state)) {
-			m_coldBranches.push_back({jump, i});
+			m_workspace.coldBranches.push_back({jump, i});
 			return;
 		}
 	}
-	m_coldBranches.push_back({jump, m_coldExits.size()});
-	m_coldExits.push_back({target, state});
+	m_workspace.coldBranches.push_back({jump, m_workspace.coldExits.size()});
+	m_workspace.coldExits.push_back({target, state});
 }
 void NativeLowering::lowerOperation(const NativeMove& instruction, const NativeInstruction& row) {
 	const auto mode = instruction.conversion;
@@ -232,23 +250,23 @@ void* NativeLowering::finish(size_t& codeBytes) {
 	emitStoreBarriers();
 	emitSingleStringReads();
 	emitStringStoreMisses();
-	for (auto& exit : m_coldExits) {
+	for (auto& exit : m_workspace.coldExits) {
 		exit.label = sljit_emit_label(m_compiler);
 		m_cache.setState(exit.state);
 		emitLeave(*exit.target.site, exit.target.charge);
 	}
-	for (const auto& branch : m_coldBranches)
-		sljit_set_label(branch.jump, m_coldExits[branch.target].label);
-	for (const auto& branch : m_branches)
-		sljit_set_label(branch.jump, m_entries[branch.target].proven);
+	for (const auto& branch : m_workspace.coldBranches)
+		sljit_set_label(branch.jump, m_workspace.coldExits[branch.target].label);
+	for (const auto& branch : m_workspace.branches)
+		sljit_set_label(branch.jump, m_workspace.entries[branch.target].proven);
 	void* code = sljit_generate_code(m_compiler, 0, nullptr);
 	if (!code)
 		throw std::bad_alloc();
 	codeBytes = sljit_get_generated_code_size(m_compiler);
 	for (size_t index = 0; index < m_blocks.size(); ++index) {
-		m_blocks[index]->m_body = reinterpret_cast<void*>(sljit_get_label_addr(m_entries[index].guarded));
+		m_blocks[index]->m_body = reinterpret_cast<void*>(sljit_get_label_addr(m_workspace.entries[index].guarded));
 	}
-	for (const auto& branch : m_external) {
+	for (const auto& branch : m_workspace.external) {
 		branch.link->patchAddress = sljit_get_jump_addr(branch.jump);
 		branch.link->coldEntry = sljit_get_label_addr(branch.coldEntry);
 		branch.link->executableOffset = sljit_get_executable_offset(m_compiler);

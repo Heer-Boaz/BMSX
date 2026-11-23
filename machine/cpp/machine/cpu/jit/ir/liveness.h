@@ -41,6 +41,7 @@ private:
 
 	std::vector<int> m_entryRegisters;
 	std::vector<u64> m_entryLive;
+	std::vector<u64> m_localLive;
 	std::vector<u16> m_forwardEdges;
 	size_t m_liveWordCount = 0;
 	std::vector<UseBoundary> m_nextUses;

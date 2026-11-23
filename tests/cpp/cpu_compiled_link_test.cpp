@@ -554,7 +554,7 @@ void codeCapacityRetiresOldestCompleteRegion() {
 			NativeBlockInstruction{&jump, origin}, NativeBlockInstruction{&jump, origin + INSTRUCTION_BYTES}};
 		const std::array runs{NativeBlockSource{std::span(source).first(1)},
 			NativeBlockSource{std::span(source).last(1)}};
-		return NativeCompiler::compile(std::span(runs).first(entries),
+		return NativeCompiler{}.compile(std::span(runs).first(entries),
 			NativeCodeBindings(machine.memory, machine.cpu.stringPool()));
 	};
 	auto first = compileJumps(firstPc, secondPc, 2);

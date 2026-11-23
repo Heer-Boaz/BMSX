@@ -19,9 +19,8 @@
 namespace bmsx {
 
 namespace {
-std::vector<NativeImageConstant> captureImageConstants(
-	std::span<const NativeBlockInstruction> instructions, ConstValueSpan pool) {
-	std::vector<NativeImageConstant> constants;
+void captureImageConstants(std::span<const NativeBlockInstruction> instructions, ConstValueSpan pool,
+	std::vector<NativeImageConstant>& constants) {
 	const auto add = [&](u32 index) {
 		if (constants.empty()) constants.reserve(instructions.size());
 		constants.push_back({index, {}});
@@ -41,7 +40,6 @@ std::vector<NativeImageConstant> captureImageConstants(
 	std::ranges::sort(constants, {}, &NativeImageConstant::index);
 	constants.erase(std::ranges::unique(constants, {}, &NativeImageConstant::index).begin(), constants.end());
 	for (auto& constant : constants) constant.value = pool.get(constant.index);
-	return constants;
 }
 
 // Compilation may return early or raise while decoding/generating. This scope
@@ -146,23 +144,26 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 	NativeCompilationMeasurement measurement(profile, image.executionDomainId, first.slot, rootPc);
 	if (!coldImage) discoverNativeSource(image, *pages.front(), nullptr);
 
-	std::array<NativeBlockInstruction, DECODED_PAGE_WORDS> singlePage;
-	std::vector<NativeBlockInstruction> functionInstructions;
-	if (pages.size() > 1u) functionInstructions.resize(pages.size() * DECODED_PAGE_WORDS);
-	const auto instructions = pages.size() == 1u ? std::span<NativeBlockInstruction>(singlePage)
-		: std::span<NativeBlockInstruction>(functionInstructions);
-	std::vector<NativeBlockSource> sources;
+	auto& workspace = m_nativeSourceWorkspace;
+	const size_t maxInstructions = pages.size() * DECODED_PAGE_WORDS;
+	if (workspace.instructions.size() < maxInstructions) workspace.instructions.resize(maxInstructions);
+	const auto instructions = std::span(workspace.instructions);
+	auto& sources = workspace.sources;
+	sources.clear();
 	size_t pendingCount = 0;
 	for (auto* source : pages) pendingCount += source->pendingCount;
 	sources.reserve(pendingCount);
 	std::array<NativeCodeSourcePage, NATIVE_VERSION_REGION_MAX_PAGES> codePages;
 	size_t codePageCount = 0, instructionCount = 0;
 	bool immutableSource = true;
-	std::vector<NativeRejectedFieldProof> rejectedFieldProofs;
-	std::vector<NativeCallProfile> calls;
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	auto* pending = coldImage ? nullptr : &m_pendingNativeCompilation;
+	auto& specializations = pending ? m_nativeCompilerWorker->specializationsForCapture() : workspace.specializations;
+#else
+	auto& specializations = workspace.specializations;
 #endif
+	specializations.clear();
+	auto& calls = specializations.calls;
 	for (auto* source : pages) {
 		auto& page = source->page;
 		const auto& binding = source->binding;
@@ -227,15 +228,13 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 		if (instructionCount != firstInstruction) {
 			codePages[codePageCount++] = {pagePc, &page, binding.key};
 			immutableSource &= immutable;
-			auto rejected = page.fieldProofFeedback.snapshot(pagePc);
-			if (rejectedFieldProofs.empty()) rejectedFieldProofs = std::move(rejected);
-			else rejectedFieldProofs.insert(rejectedFieldProofs.end(), rejected.begin(), rejected.end());
+			page.fieldProofFeedback.appendSnapshot(pagePc, specializations.rejectedFieldProofs);
 		}
 	}
 	if (sources.empty()) return;
 	const NativeCompilationOptions options{.observesArithmetic = true, .immutableSource = immutableSource};
 	// Capture on the CPU thread. Save-state restore does not modify job inputs.
-	auto constants = captureImageConstants(instructions.first(instructionCount), image.constPool);
+	captureImageConstants(instructions.first(instructionCount), image.constPool, specializations.imageConstants);
 	std::ranges::sort(calls, {}, &NativeCallProfile::pc);
 	calls.erase(std::ranges::unique(calls, {}, &NativeCallProfile::pc).begin(), calls.end());
 	const auto bindingsPages = std::span(codePages).first(codePageCount);
@@ -247,14 +246,12 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 		pending->pageCount = static_cast<u32>(codePageCount);
 		pending->slot = first.slot;
 		pending->invalidated = false;
-		m_nativeCompilerWorker->submit(sources, bindings, options, profile != nullptr,
-			std::move(rejectedFieldProofs), std::move(constants), std::move(calls));
+		m_nativeCompilerWorker->submit(sources, bindings, options, profile != nullptr);
 		return;
 	}
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
-	auto blocks = NativeCompiler::compile(sources, bindings, options,
-		{.rejectedFieldProofs = rejectedFieldProofs, .imageConstants = constants, .calls = calls});
+	auto blocks = m_nativeCompiler.compile(sources, bindings, options, specializations.view());
 	if (blocks.empty()) return;
 	measurement.finish();
 	if (!warmup) {
