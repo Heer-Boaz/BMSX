@@ -141,8 +141,6 @@ test('String admission starts its sweep during an uncharged index resize', () =>
 	assert.equal(memory.readRamRecordWord(metadata + 8), capacity);
 	for (let step = 0; gc.phase() !== GcPhase.Sweep && step < 40; ++step) gc.step();
 	assert.equal(gc.phase(), GcPhase.Sweep);
-	gc.step(); gc.step();
-	assert.equal(gc.phase(), GcPhase.Sweep, 'the last object page is reached by the String admission');
 	const ram = memory.captureSaveState(), state = cpu.captureRuntimeState();
 	const finish = () => {
 		cpu.luaHeap.setCollectionTarget(0);

@@ -145,10 +145,11 @@ Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
 TableRecord CPU::createTable(int arraySize, int hashSize) {
 	const size_t hashCapacity = TableRecord::hashCapacity(hashSize);
 	const auto reserve = static_cast<u32>(hashSize);
-	const u32 address = m_luaHeap.allocateRecord(TableRecord::HEADER_BYTES, false, TableRecord::storageBytes(arraySize, hashCapacity, reserve),
+	const u32 address = m_luaHeap.allocateRecord(TableRecord::HEADER_BYTES, true, TableRecord::storageBytes(arraySize, hashCapacity, reserve),
 		static_cast<u32>(TableHeader::Storage), valueNil(), valueNil(), valueNil(), TableRecord::allocationCharge(arraySize, reserve));
 	TableRecord table(m_heap, address);
 	table.initialize(arraySize, hashCapacity, reserve);
+	m_heap.publishObject(address);
 	trackLocalRoot(valueTable(address));
 	return table;
 }
@@ -157,6 +158,7 @@ u32 CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool can
 	const bool latched = !m_functionRecordLatch.romBacked;
 	const u32 address = m_luaHeap.allocateClosureRecord(count, latched, cells);
 	ClosureRecord::initialize(m_memory, address, prototype, m_heap.white(), count, canonical, latched);
+	m_heap.publishObject(address);
 	return address;
 }
 
@@ -355,7 +357,7 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	image->globalNameCount = globalNameCount;
 	image->systemNameCount = systemGlobalNameCount;
 	if (const u32 bytes = image->globalMapBytes()) {
-		image->globalMapBase = restoring ? (*restoredBases)[1] : m_luaHeap.allocateRecord(bytes, true, 0, 0);
+		image->globalMapBase = restoring ? (*restoredBases)[1] : m_luaHeap.allocateRecord(bytes, false, 0, 0);
 		const u32 base = image->globalMapBase;
 		if (!restoring) {
 			registerGlobalNames(executionDomainId, globalNameTableAddress, globalNameCount, m_globalBank, base);
@@ -364,7 +366,7 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		}
 	}
 	if (constantCount != 0u) {
-		image->constantBase = restoring ? (*restoredBases)[0] : m_luaHeap.allocateRecord(constantCount * constantSlotBytes, true, 0, 0);
+		image->constantBase = restoring ? (*restoredBases)[0] : m_luaHeap.allocateRecord(constantCount * constantSlotBytes, false, 0, 0);
 		const ValueSpan constants(m_memory, image->constantBase, image->constantBase + constantCount * 4u, constantCount);
 		if (!restoring) decodeConstantPool(executionDomainId, constantTableAddress, constants);
 		image->constPool = constants;
@@ -383,12 +385,12 @@ void CPU::admitImageReplacement(const Blua32ExecutionImage& image) {
 	} admission{m_memory, m_heap, previous, image};
 	// A dormant coroutine may not have a host Thread view. Walk the allocated
 	// records before changing banks or rebinding any retained frame view.
-	m_heapAllocator.visitObjectRecords(&admission, [](void* context, u32 address) -> i32 {
+	m_heap.visitObjectRecords(&admission, [](void* context, u32 address) {
 		const auto& [memory, heap, previous, image] = *static_cast<const Admission*>(context);
 		const u8 kind = memory.readRamRecordByte(address);
 		if (kind == static_cast<u8>(ValueTag::Closure)) {
 			const ClosureRecord::BindingFlags binding{memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS)};
-			if (binding.latched() || binding.domain() != image.executionDomainId || heap.sweepGarbage(address)) return 1;
+			if (binding.latched() || binding.domain() != image.executionDomainId || heap.sweepGarbage(address)) return;
 			const u32 function = memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
 			const auto* prior = previous && !previous->romFunctions.mappedCode ? previous->romFunctions.find(function) : nullptr;
 			const auto* next = image.romFunctions.find(function);
@@ -417,7 +419,6 @@ void CPU::admitImageReplacement(const Blua32ExecutionImage& image) {
 				}
 			}
 		}
-		return 1;
 	});
 }
 
@@ -989,7 +990,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_activeThread = &m_rootView;
 	m_memory.clearMappedPageWriteWatches();
 	// This scan is independent of the in-flight collector sweep cursor.
-	m_heapAllocator.visitObjectRecords(this, [](void* context, u32 address) -> i32 {
+	m_heap.visitObjectRecords(this, [](void* context, u32 address) {
 		auto& cpu = *static_cast<CPU*>(context);
 		auto& heap = cpu.m_heap;
 		switch (cpu.m_memory.readRamRecordByte(address)) {
@@ -1002,7 +1003,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				break;
 			}
 		}
-		return 1;
 	});
 	for (auto& image : m_executionImagesByDomain) {
 		image.reset();

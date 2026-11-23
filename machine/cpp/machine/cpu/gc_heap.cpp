@@ -58,9 +58,6 @@ private:
 
 constexpr uint8_t kTableWeakKeys = 1, kTableWeakValues = 2;
 constexpr u8 tableRecordKind = static_cast<u8>(ValueTag::Table);
-constexpr u32 tableSlotClass = heapClassIndex(TableRecord::HEADER_BYTES);
-constexpr u32 cellSlotClass = heapClassIndex(UPVALUE_HEAP_BYTES);
-constexpr u32 threadSlotClass = heapClassIndex(THREAD_HEAP_BYTES);
 // Dense capture lanes use four bytes each, and Table entries use at least
 // one Value word plus a tag; both cursors fit one more bit than a gray index.
 constexpr u32 TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1u;
@@ -176,49 +173,53 @@ void GcHeap::requeueVisited(u32 address) {
 	if (markColor(address) == 3u) enqueue(address, GC_RECORD_LINK, GC_CHANGED_HEAD);
 }
 
-u32 GcHeap::threadRecordAddress(u32 address) const {
+void GcHeap::publishObject(u32 address) {
+	const u32 head = m_controlOffset + GC_OBJECTS;
+	memory.writeRamRecordWord(address - GC_OBJECT_LINK_BEFORE, memory.readRamRecordWord(head));
+	memory.writeRamRecordWord(head, address);
+}
+
+void GcHeap::visitObjectRecords(void* context, ObjectVisitor visit) const {
+	for (u32 address = memory.readRamRecordWord(m_controlOffset + GC_OBJECTS); address != 0u;
+		address = memory.readRamRecordWord(address - GC_OBJECT_LINK_BEFORE)) {
+		visit(context, address);
+	}
+}
+
+u32 GcHeap::objectRecordAddress(u32 address, u8 kind) const {
 	const u32 offset = address & GC_RECORD_MASK;
-	return (offset & (HEAP_PAGE_SIZE - 1u)) % THREAD_HEAP_BYTES == 0u && offset < arena.managementOffset()
-		&& memory.readRamRecordByte(offset) == THREAD_RECORD_KIND
-		&& arena.issuedObjectSlotClass(offset) == threadSlotClass ? RAM_BASE + offset : 0u;
+	return memory.readRamRecordByte(offset) == kind
+		&& arena.issuedObjectStart(offset - GC_OBJECT_PREFIX) ? RAM_BASE + offset : 0u;
+}
+
+u32 GcHeap::threadRecordAddress(u32 address) const {
+	return objectRecordAddress(address, THREAD_RECORD_KIND);
 }
 
 bool GcHeap::markThread(u32 address) {
-	const u32 offset = address & GC_RECORD_MASK;
-	if ((offset & (HEAP_PAGE_SIZE - 1u)) % THREAD_HEAP_BYTES != 0u || offset >= arena.managementOffset()) return false;
-	const u32 header = memory.readRamRecordWord(offset);
-	if ((header & 0xffu) != THREAD_RECORD_KIND || !unmarked(static_cast<u8>(header >> 8u))
-		|| arena.issuedObjectSlotClass(offset) != threadSlotClass) return false;
-	enqueue(RAM_BASE + offset, GC_RECORD_LINK, GC_TRACE_HEAD);
+	const u32 record = threadRecordAddress(address);
+	if (record == 0u || !unmarked(memory.readRamRecordByte(record + GC_COLOR_OFFSET))) return false;
+	enqueue(record, GC_RECORD_LINK, GC_TRACE_HEAD);
 	return true;
 }
 
 u32 GcHeap::closureRecordAddress(u32 address) const {
-	const u32 offset = address & GC_RECORD_MASK;
-	return offset < arena.managementOffset() && memory.readRamRecordByte(offset) == static_cast<u8>(ValueTag::Closure)
-		&& arena.issuedObjectStart(offset) ? RAM_BASE + offset : 0u;
+	return objectRecordAddress(address, static_cast<u8>(ValueTag::Closure));
 }
 
 bool GcHeap::markClosure(u32 address) {
-	const u32 offset = address & GC_RECORD_MASK;
-	if (offset >= arena.managementOffset()) return false;
-	const u32 header = memory.readRamRecordWord(offset);
-	if ((header & 0xffu) != static_cast<u8>(ValueTag::Closure) || !unmarked(static_cast<u8>(header >> 8u))
-		|| !arena.issuedObjectStart(offset)) return false;
-	enqueue(RAM_BASE + offset, GC_RECORD_LINK, GC_TRACE_HEAD);
+	const u32 record = closureRecordAddress(address);
+	if (record == 0u || !unmarked(memory.readRamRecordByte(record + GC_COLOR_OFFSET))) return false;
+	enqueue(record, GC_RECORD_LINK, GC_TRACE_HEAD);
 	return true;
 }
 
 u32 GcHeap::tableRecordAddress(u32 address) const {
-	const u32 offset = address & (MAIN_RAM_SIZE - TableRecord::HEADER_BYTES);
-	return arena.issuedObjectSlotClass(offset) == tableSlotClass
-		&& memory.readRamRecordByte(offset) == tableRecordKind ? RAM_BASE + offset : 0u;
+	return objectRecordAddress(address, tableRecordKind);
 }
 
 u32 GcHeap::cellRecordAddress(u32 address) const {
-	const u32 offset = address & UPVALUE_ADDRESS_MASK;
-	return arena.issuedObjectSlotClass(offset) == cellSlotClass
-		&& memory.readRamRecordByte(offset) == UPVALUE_RECORD_KIND ? RAM_BASE + offset : 0u;
+	return objectRecordAddress(address, UPVALUE_RECORD_KIND);
 }
 
 u32 GcHeap::openCellAddress(u32 address) const {
@@ -306,14 +307,11 @@ bool GcHeap::valueIsAlive(Value value) const {
 size_t GcHeap::trace(bool atomic, size_t limit) {
 	const u32 index = indexWord(GC_TRACE_HEAD);
 	const u32 offset = index << GC_RECORD_SHIFT, address = RAM_BASE + offset;
-	const u8 kind = offset < arena.managementOffset() ? memory.readRamRecordByte(address) : 0u;
-	const bool table = kind == tableRecordKind && (offset & (TableRecord::HEADER_BYTES - 1u)) == 0u
-		&& arena.issuedObjectSlotClass(offset) == tableSlotClass;
-	const bool cell = kind == UPVALUE_RECORD_KIND && (offset & (UPVALUE_HEAP_BYTES - 1u)) == 0u
-		&& arena.issuedObjectSlotClass(offset) == cellSlotClass && !Upvalue::isOpen(memory, address);
-	const bool closure = kind == static_cast<u8>(ValueTag::Closure) && arena.issuedObjectStart(offset);
-	const bool thread = kind == THREAD_RECORD_KIND && (offset & (HEAP_PAGE_SIZE - 1u)) % THREAD_HEAP_BYTES == 0u
-		&& arena.issuedObjectSlotClass(offset) == threadSlotClass;
+	const u8 kind = arena.issuedObjectStart(offset - GC_OBJECT_PREFIX) ? memory.readRamRecordByte(address) : 0u;
+	const bool table = kind == tableRecordKind;
+	const bool cell = kind == UPVALUE_RECORD_KIND && !Upvalue::isOpen(memory, address);
+	const bool closure = kind == static_cast<u8>(ValueTag::Closure);
+	const bool thread = kind == THREAD_RECORD_KIND;
 	// A link is clocked only by a queued record. Consuming its color bounds
 	// malformed cycles as well as preventing a duplicate scan.
 	if ((!table && !cell && !closure && !thread) || markColor(address) != 2u) {
@@ -677,7 +675,7 @@ size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2, bool scopedR
 	work += clearWeakQuantum(limit - work);
 	if (memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD) != 0u || indexWord(GC_WEAK_VISITS) != 0u) return work;
 	memory.writeRamRecordByte(m_controlOffset + 1u, white() ^ 1u);
-	arena.beginObjectSweep();
+	memory.writeRamRecordWord(m_controlOffset + GC_SWEEP_LINK, m_controlOffset + GC_OBJECTS);
 	setRemarkStage(RemarkStage::None);
 	setPhase(GcPhase::Sweep);
 	return work;
@@ -732,48 +730,62 @@ size_t GcHeap::clearWeakQuantum(size_t limit) {
 	return work;
 }
 
-i32 GcHeap::sweepRecord(void* context, u32 address) {
-	const auto& sweep = *static_cast<SweepContext*>(context);
-	auto& heap = sweep.heap;
-	const u32 header = heap.memory.readRamRecordWord(address);
-	const u8 kind = static_cast<u8>(header);
-	const bool garbage = ((header >> 8u) & GC_COLOR_MASK) == (sweep.white ^ 1u);
-	if (kind == tableRecordKind || kind == UPVALUE_RECORD_KIND || kind == static_cast<u8>(ValueTag::Closure)) {
-		if (garbage) {
-			if (kind == tableRecordKind) TableRecord(heap, address).freeRecord();
-			else {
-				if (kind == static_cast<u8>(ValueTag::Closure)
-					&& (header & (CLOSURE_CANONICAL << (8u * CLOSURE_BINDING_FLAGS))) != 0u)
-					heap.m_cpu.retireStaticClosure(address);
-				const u32 bytes = kind == UPVALUE_RECORD_KIND ? UPVALUE_HEAP_BYTES
-					: closureRecordBytes(ClosureRecord::captureCount(heap.memory, address),
-						(header & (CLOSURE_LATCHED_PROTOTYPE << (8u * CLOSURE_BINDING_FLAGS))) != 0u);
-				heap.budget.releaseRecord(address, bytes);
-			}
-			return -1;
-		}
-		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
-		return 1;
+size_t GcHeap::sweepObjects(size_t allowance, u32 growingThread, bool compactThreads) {
+	const u32 cursor = m_controlOffset + GC_SWEEP_LINK;
+	u32 link = memory.readRamRecordWord(cursor);
+	if (link == 0u) return 0;
+	u32 address = memory.readRamRecordWord(link);
+	const u8 currentWhite = white();
+	size_t work = 0;
+	while (address != 0u && work < allowance) {
+		// The cursor names the link to the next unvisited object. Unlink
+		// garbage before freeing it, so the cursor always remains live.
+		const u32 nextLink = address - GC_OBJECT_LINK_BEFORE;
+		const u32 next = memory.readRamRecordWord(nextLink);
+		const u32 header = memory.readRamRecordWord(address);
+		const bool garbage = ((header >> 8u) & GC_COLOR_MASK) == (currentWhite ^ 1u);
+		if (garbage) memory.writeRamRecordWord(link, next);
+		else link = nextLink;
+		work += sweepRecord(address, header, garbage, currentWhite, growingThread, compactThreads);
+		address = next;
 	}
-	if (kind != THREAD_RECORD_KIND || heap.threadRecordAddress(address) == 0u) return 1;
+	memory.writeRamRecordWord(cursor, address != 0u ? link : 0u);
+	return work;
+}
+
+size_t GcHeap::sweepRecord(u32 address, u32 header, bool garbage, u8 currentWhite, u32 growingThread, bool compactThreads) {
+	const u8 kind = static_cast<u8>(header);
 	if (!garbage) {
-		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
-		if (!sweep.compactThreads || address == sweep.growingThread) return 1;
-		const auto layout = ThreadRecord::storageLayout(heap.memory, address);
-		const u32 relocated = ThreadRecord::shrinkStack(heap, address, layout);
-		if (relocated != 0u) heap.m_cpu.rebindRelocatedThread(address);
+		memory.writeRamRecordByte(address + GC_COLOR_OFFSET, currentWhite);
+		if (kind != THREAD_RECORD_KIND || !compactThreads || address == growingThread) return 1;
+		const auto layout = ThreadRecord::storageLayout(memory, address);
+		const u32 relocated = ThreadRecord::shrinkStack(*this, address, layout);
+		if (relocated != 0u) m_cpu.rebindRelocatedThread(address);
 		return 1 + 2 * ceilDiv4(relocated);
 	}
-
+	if (kind == tableRecordKind) {
+		TableRecord(*this, address).freeRecord();
+		return 1;
+	}
+	if (kind != THREAD_RECORD_KIND) {
+		if (kind == static_cast<u8>(ValueTag::Closure)
+			&& (header & (CLOSURE_CANONICAL << (8u * CLOSURE_BINDING_FLAGS))) != 0u)
+			m_cpu.retireStaticClosure(address);
+		const u32 bytes = kind == UPVALUE_RECORD_KIND ? UPVALUE_HEAP_BYTES
+			: closureRecordBytes(ClosureRecord::captureCount(memory, address),
+				(header & (CLOSURE_LATCHED_PROTOTYPE << (8u * CLOSURE_BINDING_FLAGS))) != 0u);
+		budget.releaseObject(address, bytes);
+		return 1;
+	}
 	// Clear any selected execution view before its old record or backing can
 	// be reused. View residency does not contribute a root or collector work.
-	const auto layout = ThreadRecord::storageLayout(heap.memory, address);
-	heap.m_cpu.retireThreadView(address);
-	heap.budget.releaseRecord(layout.block, layout.valueBytes());
-	heap.budget.releaseRecord(layout.frameBlock, layout.frameBytes());
-	if (layout.protectedBlock != 0u) heap.budget.releaseRecord(layout.protectedBlock, layout.protectedBytes());
-	heap.budget.releaseRecord(address, THREAD_HEAP_BYTES);
-	return -1;
+	const auto layout = ThreadRecord::storageLayout(memory, address);
+	m_cpu.retireThreadView(address);
+	budget.releaseRecord(layout.block, layout.valueBytes());
+	budget.releaseRecord(layout.frameBlock, layout.frameBytes());
+	if (layout.protectedBlock != 0u) budget.releaseRecord(layout.protectedBlock, layout.protectedBytes());
+	budget.releaseObject(address, THREAD_HEAP_BYTES);
+	return 1;
 }
 
 size_t GcHeap::accountEpochWork(size_t work) {
@@ -874,9 +886,8 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 				GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);
 #endif
-				SweepContext sweep{*this, growingThread, white(), compactThreads};
-				work += arena.sweepObjects(limit - work, &sweep, &GcHeap::sweepRecord);
-				if (work < limit && !arena.objectSweepActive()) {
+				work += sweepObjects(limit - work, growingThread, compactThreads);
+				if (work < limit && memory.readRamRecordWord(m_controlOffset + GC_SWEEP_LINK) == 0u) {
 					memory.writeRamRecordWord(m_controlOffset + GC_CHANGED_HEAD, 0u);
 					setPhase(GcPhase::Strings);
 					m_stringPool.beginSweep();

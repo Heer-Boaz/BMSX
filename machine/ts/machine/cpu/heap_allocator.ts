@@ -18,19 +18,18 @@ export const HEAP_CLASS_BYTES: readonly number[] = [
 	1280, 1536, 1792, 2048,
 ];
 const CLASS_COUNT = 28;
+const SLOT_RECIPROCAL_BITS = 16;
+const CLASS_SLOT_RECIPROCALS = HEAP_CLASS_BYTES.map(bytes => (((1 << SLOT_RECIPROCAL_BITS) + bytes - 1) / bytes) | 0);
 const PAGE_SHIFT = 12;
 const PAGE_MASK = HEAP_PAGE_SIZE - 1;
 const MAX_PAGES = (MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE) >>> PAGE_SHIFT;
 
 // Management-area layout, as byte offsets from its base. Every field is a
 // little-endian word in guest RAM; partial-list links store page + 1.
-// Sweep position: page in the high bits, next slot ordinal in the low bits.
 const AVAILABLE_PAGE_COUNT = 0x000;
 const CLAIMED_PAGE_COUNT = 0x004;
-const SWEEP_CURSOR = 0x008;
 const PARTIAL_HEADS = 0x040;
 const AVAILABLE_PAGES = 0x200;
-const OBJECT_PAGES = 0x280;
 const PAGE_ENTRIES = 0x1000;
 const PAGE_ENTRY_BYTES = 12;
 
@@ -68,7 +67,7 @@ export function heapAllocationBytes(byteCount: number): number {
 }
 
 // Owns the non-moving language-heap allocator whose entire state lives in the
-// private runtime management area. Bitmaps select free and sweepable pages;
+// private runtime management area. A bitmap selects free pages;
 // descriptors belong to slab pages and run heads, not to run interiors.
 export class HeapAllocator {
 	private readonly management: number;
@@ -89,17 +88,6 @@ export class HeapAllocator {
 		return this.management;
 	}
 
-	/** Decode the page class and issued range. The record port selects alignment. */
-	public issuedObjectSlotClass(offset: number): number {
-		const page = offset >>> PAGE_SHIFT;
-		if (page >= this.pageLimit) return 0xff;
-		const descriptor = this.entry(page);
-		const info = this.memory.readRamRecordWord(descriptor);
-		return (info & 0xff) === PageKind.ObjectSlots
-			&& ((offset & PAGE_MASK) >>> BUMP_SHIFT) < (this.memory.readRamRecordWord(descriptor + 8) & LINK_MASK)
-			? (info >>> 8) & 0xff : 0xff;
-	}
-
 	/** Variable-size records begin at an issued slot or a run head. */
 	public issuedObjectStart(offset: number): boolean {
 		const page = offset >>> PAGE_SHIFT;
@@ -113,7 +101,8 @@ export class HeapAllocator {
 		if (kind !== PageKind.ObjectSlots || sizeClass >= CLASS_COUNT) return false;
 		const stride = HEAP_CLASS_BYTES[sizeClass];
 		const issued = (this.memory.readRamRecordWord(descriptor + 8) & LINK_MASK) << BUMP_SHIFT;
-		return within + stride <= issued && within % stride === 0;
+		const slot = (within * CLASS_SLOT_RECIPROCALS[sizeClass]) >>> SLOT_RECIPROCAL_BITS;
+		return within + stride <= issued && within === slot * stride;
 	}
 
 	public reset(floorAddress: number): void {
@@ -176,80 +165,6 @@ export class HeapAllocator {
 		return bytes;
 	}
 
-	public beginObjectSweep(): void {
-		this.memory.writeRamRecordWord(this.management + SWEEP_CURSOR, this.floorPage() << PAGE_SHIFT);
-	}
-
-	public objectSweepActive(): boolean {
-		return this.memory.readRamRecordWord(this.management + SWEEP_CURSOR) < (this.pageLimit << PAGE_SHIFT);
-	}
-
-	// The visitor returns charged work, negated when it releases the record.
-	public sweepObjects<Context>(allowance: number, context: Context, visit: (context: Context, address: number) => number): number {
-		if (allowance === 0) return 0;
-		return this.walkObjectPages(allowance, context, visit, true);
-	}
-
-	public visitObjectRecords<Context>(context: Context, visit: (context: Context, address: number) => number): void {
-		this.walkObjectPages(Infinity, context, visit, false);
-	}
-
-	private walkObjectPages<Context>(allowance: number, context: Context, visit: (context: Context, address: number) => number, sweep: boolean): number {
-		const cursor = this.management + SWEEP_CURSOR;
-		const position = sweep ? this.memory.readRamRecordWord(cursor) : 0;
-		let page = position >>> PAGE_SHIFT, slot = position & PAGE_MASK;
-		if (page >= this.pageLimit) return 0;
-		let work = 0;
-		scan:
-		while (page < this.pageLimit && work < allowance) {
-			const objectPage = this.nextObjectPage(page);
-			if (objectPage !== page) {
-				slot = 0;
-				page = objectPage;
-				if (page === this.pageLimit) break;
-			}
-			const pageEntry = this.entry(page);
-			const info = this.memory.readRamRecordWord(pageEntry);
-			const base = RAM_BASE + (page << PAGE_SHIFT);
-			if ((info & 0xff) === PageKind.ObjectRun) {
-				work += this.memory.readRamRecordByte(base) !== 0 ? Math.abs(visit(context, base)) : 1;
-			} else {
-				const stride = HEAP_CLASS_BYTES[(info >>> 8) & 0xff];
-				const end = (this.memory.readRamRecordWord(pageEntry + 8) & LINK_MASK) << BUMP_SHIFT;
-				let live = info >>> 16;
-				for (let offset = slot * stride; offset + stride <= end; offset += stride, ++slot) {
-					if (work >= allowance) break scan;
-					const address = base + offset;
-					const visited = this.memory.readRamRecordByte(address) !== 0 ? visit(context, address) : 1;
-					work += Math.abs(visited);
-					if (visited < 0 && --live === 0) break;
-				}
-			}
-			++page;
-			slot = 0;
-		}
-		if (sweep) this.memory.writeRamRecordWord(cursor, (page << PAGE_SHIFT) | slot);
-		return work;
-	}
-
-	private nextObjectPage(first: number): number {
-		const wordCount = (this.pageLimit + 31) >>> 5;
-		let mask = -1 << (first & 31);
-		for (let word = first >>> 5; word < wordCount; ++word) {
-			const bits = this.memory.readRamRecordWord(this.management + OBJECT_PAGES + word * 4) & mask;
-			if (bits !== 0) return (word << 5) + 31 - Math.clz32(bits & -bits);
-			mask = -1;
-		}
-		return this.pageLimit;
-	}
-
-	private setObjectPage(page: number, object: boolean): void {
-		const address = this.management + OBJECT_PAGES + (page >>> 5) * 4;
-		const bit = 1 << (page & 31);
-		const word = this.memory.readRamRecordWord(address);
-		this.memory.writeRamRecordWord(address, object ? word | bit : word & ~bit);
-	}
-
 	// Returns the guest address of the allocation, or 0 when no slot or page run fits.
 	public allocate(byteCount: number, owned: boolean): number {
 		if (byteCount > HEAP_SMALL_LIMIT) {
@@ -270,7 +185,6 @@ export class HeapAllocator {
 			this.memory.writeRamRecordWord(entry + 4, 0);
 			this.memory.writeRamRecordWord(entry + 8, 0);
 			this.memory.writeRamRecordWord(head, page + 1);
-			if (!owned) this.setObjectPage(page, true);
 		} else if (page >= this.pageLimit) {
 			return 0;
 		}
@@ -332,7 +246,7 @@ export class HeapAllocator {
 			if ((offset & PAGE_MASK) !== 0 || pages === 0 || pages > this.pageLimit - page) {
 				return;
 			}
-			this.releasePages(page, page + pages, kind === PageKind.ObjectRun);
+			this.releasePages(page, page + pages);
 			return;
 		}
 		const classIndex = (word0 >>> 8) & 0xff;
@@ -356,7 +270,7 @@ export class HeapAllocator {
 			if (!wasFull) {
 				this.unlinkPartial(head, word2);
 			}
-			this.releasePages(page, page + 1, kind === PageKind.ObjectSlots);
+			this.releasePages(page, page + 1);
 			return;
 		}
 		this.memory.writeRamRecordWord(entry, (word0 & 0xffff) | ((live - 1) << 16));
@@ -382,7 +296,6 @@ export class HeapAllocator {
 		this.memory.writeRamRecordWord(head, owned ? PageKind.OwnedRun : PageKind.ObjectRun);
 		this.memory.writeRamRecordWord(head + 4, pages);
 		this.memory.writeRamRecordWord(head + 8, 0);
-		if (!owned) this.setObjectPage(first, true);
 		return RAM_BASE + (first << PAGE_SHIFT);
 	}
 
@@ -436,8 +349,7 @@ export class HeapAllocator {
 		this.memory.writeRamRecordWord(field, (this.memory.readRamRecordWord(field) & ~(LINK_MASK << PREVIOUS_SHIFT)) | (previous << PREVIOUS_SHIFT));
 	}
 
-	private releasePages(first: number, end: number, object: boolean): void {
-		if (object) this.setObjectPage(first, false);
+	private releasePages(first: number, end: number): void {
 		const offset = this.entry(first);
 		this.memory.writeRamRecordWord(offset, 0);
 		this.memory.writeRamRecordWord(offset + 4, 0);

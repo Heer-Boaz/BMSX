@@ -12,7 +12,7 @@
 namespace bmsx {
 
 u32 ThreadStorageLayout::allocationBytes() const {
-	return THREAD_HEAP_BYTES + heapAllocationBytes(valueBytes()) + heapAllocationBytes(frameBytes()) + heapAllocationBytes(protectedBytes());
+	return heapAllocationBytes(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX) + heapAllocationBytes(valueBytes()) + heapAllocationBytes(frameBytes()) + heapAllocationBytes(protectedBytes());
 }
 
 } // namespace bmsx

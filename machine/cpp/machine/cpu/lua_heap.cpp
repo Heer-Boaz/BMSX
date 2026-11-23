@@ -89,21 +89,22 @@ LuaAllocationRecovery LuaHeap::admit(size_t byteCount, Value root0, Value root1,
 	return recovery;
 }
 
-u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField,
+u32 LuaHeap::allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField,
 	Value root0, Value root1, Value root2, std::optional<u32> backingCharge) {
 	const u32 charged = bytes + backingCharge.value_or(backingBytes);
+	const u32 prefix = object ? GC_OBJECT_PREFIX : 0u;
 	auto recovery = admit(charged, root0, root1, root2, 0u);
 	auto& arena = m_cpu.heapAllocator();
 	for (;;) {
-		const u32 address = arena.allocate(bytes, owned);
-		if (address) {
+		if (const u32 block = arena.allocate(bytes + prefix, !object)) {
 			const u32 backing = backingBytes ? arena.allocate(backingBytes, true) : 0u;
 			if (!backingBytes || backing) {
+				const u32 address = block + prefix;
 				if (backingField) m_cpu.memory().writeRamRecordWord(address + backingField, backing);
 				accountAllocation(charged);
 				return address;
 			}
-			arena.free(address);
+			arena.free(block);
 		}
 		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2);
 	}
@@ -125,16 +126,19 @@ u32 LuaHeap::allocateThreadRecord(u32 entry) {
 	auto recovery = admit(charged, root);
 	auto& arena = m_cpu.heapAllocator();
 	for (;;) {
-		if (const u32 address = arena.allocate(THREAD_HEAP_BYTES, false)) {
+		if (const u32 block = arena.allocate(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX, false)) {
 			if (const u32 values = arena.allocate(valueBytes, true)) {
 				if (const u32 frames = arena.allocate(frameBytes, true)) {
-					ThreadRecord::initialize(m_cpu.gcHeap(), address, values, frames, entry);
+					const u32 address = block + GC_OBJECT_PREFIX;
+					auto& gc = m_cpu.gcHeap();
+					ThreadRecord::initialize(gc, address, values, frames, entry);
+					gc.publishObject(address);
 					accountAllocation(charged);
 					return address;
 				}
 				arena.free(values);
 			}
-			arena.free(address);
+			arena.free(block);
 		}
 		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root);
 	}
@@ -172,21 +176,25 @@ u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> ce
 	auto recovery = admit(charged, valueNil(), valueNil(), valueNil(), 0u);
 	auto& arena = m_cpu.heapAllocator();
 	for (;;) {
-		if (const u32 closure = arena.allocate(bytes, false)) {
+		if (const u32 closure = arena.allocate(bytes + GC_OBJECT_PREFIX, false)) {
 			size_t count = 0;
 			for (; count < cells.size(); ++count) {
-				const u32 cell = arena.allocate(UPVALUE_HEAP_BYTES, false);
+				const u32 cell = arena.allocate(UPVALUE_HEAP_BYTES + GC_OBJECT_PREFIX, false);
 				if (!cell) break;
-				cells[count] = cell;
+				cells[count] = cell + GC_OBJECT_PREFIX;
 			}
 			if (count == cells.size()) {
 				auto& memory = m_cpu.memory();
-				const u8 white = m_cpu.gcHeap().white();
-				for (u32 cell : cells) Upvalue::initialize(memory, cell, white);
+				auto& gc = m_cpu.gcHeap();
+				const u8 white = gc.white();
+				for (u32 cell : cells) {
+					Upvalue::initialize(memory, cell, white);
+					gc.publishObject(cell);
+				}
 				accountAllocation(charged);
-				return closure;
+				return closure + GC_OBJECT_PREFIX;
 			}
-			while (count != 0) arena.free(cells[--count]);
+			while (count != 0) arena.free(cells[--count] - GC_OBJECT_PREFIX);
 			arena.free(closure);
 		}
 		recovery = m_cpu.gcHeap().recoverAllocation(recovery);
@@ -212,6 +220,11 @@ void LuaHeap::releaseRecord(u32 address, u32 bytes) {
 	m_cpu.heapAllocator().free(address);
 	auto& memory = m_cpu.memory();
 	memory.writeRamRecordWord(m_occupiedAddress, memory.readRamRecordWord(m_occupiedAddress) - bytes);
+}
+
+void LuaHeap::releaseObject(u32 address, u32 bytes) {
+	m_cpu.memory().writeRamRecordByte(address, 0u);
+	releaseRecord(address - GC_OBJECT_PREFIX, bytes);
 }
 
 void LuaHeap::replaceRecord(u32 oldAddress, u32 oldBytes, u32 newBytes) {

@@ -1,6 +1,6 @@
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { heapAllocationBytes } from './heap_allocator';
-import { GC_RECORD_LINK } from './gc_object';
+import { GC_OBJECT_PREFIX, GC_RECORD_LINK } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
@@ -54,7 +54,7 @@ export class TableRecords {
 		const array = this.arrayCapacity(source), hash = this.hashSize(source);
 		const reserve = Math.max(this.hashReserve(source), this.hashMembers(source));
 		const bytes = TableRecords.storageBytes(array, hash, reserve);
-		const copy = this.heap.budget.allocateRecord(TableRecords.HEADER_BYTES, false, bytes, TableHeader.Storage,
+		const copy = this.heap.budget.allocateRecord(TableRecords.HEADER_BYTES, true, bytes, TableHeader.Storage,
 			valueTable(source), valueNil(), valueNil(), TableRecords.allocationCharge(array, reserve));
 		// The rooted source keeps its layout, but admission can clear weak entries.
 		const memory = this.heap.memory;
@@ -76,6 +76,7 @@ export class TableRecords {
 				memory.writeRamRecordPair(target + metadata, reserve, members);
 			}
 		}
+		this.heap.publishObject(copy);
 		return copy;
 	}
 	public static hashCapacity(size: number): number { return size > 0 ? nextPowerOfTwo(size) : 0; }
@@ -147,7 +148,7 @@ export class TableRecords {
 	}
 	public freeRecord(record: number): void {
 		this.freeStorage(record);
-		this.heap.budget.releaseRecord(record, TableRecords.HEADER_BYTES);
+		this.heap.budget.releaseObject(record, TableRecords.HEADER_BYTES);
 	}
 	private wordAt(record: number, slot: number): number { return this.heap.memory.readRamRecordWord(this.storageAddress(record) + slot * 4); }
 	private tagAt(record: number, slot: number): ValueTag { return this.heap.memory.readRamRecordByte(this.tags(record) + slot); }
@@ -844,6 +845,6 @@ export class TableRecords {
 	}
 	public getTrackedHeapBytes(record: number): number {
 		const bytes = TableRecords.storageBytes(this.arrayCapacity(record), this.hashSize(record), this.hashReserve(record));
-		return TableRecords.HEADER_BYTES + (bytes === 0 ? 0 : heapAllocationBytes(bytes));
+		return heapAllocationBytes(TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX) + heapAllocationBytes(bytes);
 	}
 }

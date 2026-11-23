@@ -6,6 +6,7 @@ import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_COLLECTION_TARGET_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_INITIAL_FRAMES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { integerConstant } from '../../toolchain/ts/lua/number';
@@ -51,13 +52,13 @@ const bootThreadBytes = 80 + 40 + 112;
 const bootBytes = bootThreadBytes + 12 + 15 + 697 + 8 + 2 * 9;
 // Two Thread traces of its header and one active frame, an atomic trace
 // that also clears eight Value slots, two remark visits and one sweep visit.
-const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 3 * 12 + 3 * 17 + 32;
+const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 3 * 12 + 2 * 17 + 32;
 
 test('physical GC work counts canonical scans, reclamation and three unique root passes without a cycle debit', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'charge allocated Strings and names, not their indexes');
 	cpu.instructionBudgetRemaining = 7;
-	assert.equal(cpu.gc.collect(), bootCollectionWork, 'only physical object slots and the RAM intern index are swept');
+	assert.equal(cpu.gc.collect(), bootCollectionWork, 'object records and the RAM intern index are swept separately');
 	assert.equal(cpu.instructionBudgetRemaining, 7);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'read-only ROM Strings are not allocated');
 	const frame = cpu.rootThread.currentFrame!;
@@ -65,7 +66,7 @@ test('physical GC work counts canonical scans, reclamation and three unique root
 	frame.registers.setString(1, cpu.stringPool.intern(textToByteString('é😀'))); //6 canonical UTF8 bytes, not3 UTF16 units.
 	frame.top = 2;
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 72 + 22);
-	assert.equal(cpu.gc.collect(), bootCollectionWork + (8 + 2 + 8 + 1) + 3 + 2 * 3,
+	assert.equal(cpu.gc.collect(), bootCollectionWork + (8 + 2 + 8 + 1) + 2 + 2 * 3,
 		'trace the live Values, scan the Table, mark the String leaf and visit each record');
 	assert.equal(cpu.instructionBudgetRemaining, 7);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 72 + 22);
@@ -138,7 +139,7 @@ test('allocation admission and GC use logical bytes, not size-class slack', () =
 	cpu.createTable(512, 0);
 	assert.equal(cpu.instructionBudgetRemaining, 23, 'the allocations fit at the exact logical threshold');
 	assert.equal(cpu.luaHeap.usedBytes(), logical + logicalCharge);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), physical + 112 + 32 + HEAP_PAGE_SIZE);
+	assert.equal(cpu.heapAllocator.occupiedBytes(), physical + 80 + 2 * heapAllocationBytes(32 + GC_OBJECT_PREFIX) + HEAP_PAGE_SIZE);
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.luaHeap.usedBytes(), logical, 'reclaim the exact charges');
 	assert.equal(cpu.heapAllocator.occupiedBytes(), physical, 'reclaim class extents and whole pages separately');
@@ -500,7 +501,7 @@ test('temporary roots survive unbilled admission; unreachable allocations only a
 	assert.equal(cpu.gc.isAlive(table), true, 'the first mark actually visited the temporary Table');
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 32 + 22); assert.equal(cpu.stringPool.toString(id), 'é😀');
 	while (cpu.gc.active()) cpu.gc.step(valueTable(table), valueString(id));
-	assert.equal(cpu.gc.collect(), bootCollectionWork + 3);
+	assert.equal(cpu.gc.collect(), bootCollectionWork + 2);
 	assert.equal(cpu.instructionBudgetRemaining, 1);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
 });

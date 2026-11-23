@@ -42,7 +42,7 @@ void TableRecord::initialize(size_t array, size_t hash, u32 reserve) {
 TableRecord TableRecord::copyOwn() const {
 	const u32 array = arrayCapacity(), hash = hashSlots();
 	const u32 reserve = std::max(hashReserve(), hashMembers());
-	const u32 target = m_heap->budget.allocateRecord(HEADER_BYTES, false, storageBytes(array, hash, reserve),
+	const u32 target = m_heap->budget.allocateRecord(HEADER_BYTES, true, storageBytes(array, hash, reserve),
 		static_cast<u32>(TableHeader::Storage), valueTable(m_address), valueNil(), valueNil(), allocationCharge(array, reserve));
 	TableRecord copy(*m_heap, target);
 	const u32 storage = copy.storageAddress();
@@ -62,6 +62,7 @@ TableRecord TableRecord::copyOwn() const {
 	copy.writeHeader(TableHeader::Metatable, 0u);
 	m_memory->writeRamRecordPair(target + static_cast<u32>(TableHeader::Array), array, hash);
 	m_memory->writeRamRecordPair(target + static_cast<u32>(TableHeader::Length), lengthHint(), readHeader(TableHeader::Free));
+	m_heap->publishObject(target);
 	return copy;
 }
 
@@ -374,7 +375,7 @@ void TableRecord::freeStorage() {
 
 void TableRecord::freeRecord() {
 	freeStorage();
-	m_heap->budget.releaseRecord(m_address, HEADER_BYTES);
+	m_heap->budget.releaseObject(m_address, HEADER_BYTES);
 }
 
 // Storage redistribution transfers existing edges and leaves the boundary hint alone.
@@ -975,7 +976,7 @@ void TableRecord::nextEntry(const Value& rawAfter, Value& key, Value& value) con
 
 size_t TableRecord::trackedHeapBytes() const {
 	const u32 bytes = storageBytes(arrayCapacity(), hashSlots(), hashReserve());
-	return HEADER_BYTES + (bytes ? heapAllocationBytes(bytes) : 0u);
+	return heapAllocationBytes(HEADER_BYTES + GC_OBJECT_PREFIX) + (bytes ? heapAllocationBytes(bytes) : 0u);
 }
 
 

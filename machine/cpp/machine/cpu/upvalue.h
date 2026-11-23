@@ -1,5 +1,6 @@
 #pragma once
 
+#include "machine/cpu/gc_object.h"
 #include "machine/cpu/value.h"
 #include "spec/bmsx/memory_map.h"
 
@@ -8,7 +9,7 @@ class Memory;
 class GcHeap;
 
 inline constexpr u32 UPVALUE_HEAP_BYTES = 16;
-inline constexpr u32 UPVALUE_ADDRESS_MASK = MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES;
+inline constexpr u32 UPVALUE_ADDRESS_MASK = GC_RECORD_MASK;
 inline constexpr u8 UPVALUE_RECORD_KIND = 11;
 inline constexpr u32 UPVALUE_FLAGS = 2;
 inline constexpr u8 UPVALUE_OPEN = 1;

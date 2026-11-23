@@ -38,7 +38,7 @@ struct Machine {
 };
 
 void checkReferences(CPU& cpu) {
-	cpu.heapAllocator().visitObjectRecords(&cpu, [](void* context, u32 address) -> i32 {
+	cpu.gcHeap().visitObjectRecords(&cpu, [](void* context, u32 address) {
 		auto& cpu = *static_cast<CPU*>(context);
 		auto& heap = cpu.gcHeap();
 		switch (cpu.memory().readRamRecordByte(address)) {
@@ -55,7 +55,6 @@ void checkReferences(CPU& cpu) {
 				require(heap.threadRecordAddress(address) == address, "an issued Thread is decoded by its RAM header");
 				break;
 		}
-		return 1;
 	});
 }
 
@@ -208,13 +207,14 @@ void closedCellLivesInRam() {
 	const auto occupied = cpu.heapAllocator().occupiedBytes();
 	cpu.setGlobalByKey(key, valueNil());
 	cpu.collectHeap();
-	require(cpu.heapAllocator().occupiedBytes() == occupied - heapAllocationBytes(closureRecordBytes(1)) - UPVALUE_HEAP_BYTES,
+	require(cpu.heapAllocator().occupiedBytes() == occupied - heapAllocationBytes(closureRecordBytes(1) + GC_OBJECT_PREFIX)
+		- heapAllocationBytes(UPVALUE_HEAP_BYTES + GC_OBJECT_PREFIX),
 		"collection releases both raw records");
 	require(heap.cellRecordAddress(address) == 0u && memory.readRamRecordByte(address) == 0u,
 		"the freed capture has no live record header");
 }
 
-void closureAndCellPagesChargeVacantSlots() {
+void sweepStopsVisitingReclaimedObjects() {
 	Machine machine;
 	auto& cpu = machine.cpu;
 	auto& heap = cpu.gcHeap();
@@ -231,11 +231,42 @@ void closureAndCellPagesChargeVacantSlots() {
 	};
 	const auto occupied = sweep();
 	frame.registers.set(1, valueNil());
-	require(sweep() == occupied, "reclaiming an issued closure costs one slot visit");
+	require(sweep() == occupied, "reclaiming an object costs the same visit as retaining it");
 	require(heap.closureRecordAddress(closureAddress) == 0u &&
-		cpu.memory().readRamRecordByte(closureAddress) == 0, "allocator sweep retires the closure slot");
+		cpu.memory().readRamRecordByte(closureAddress) == 0, "the sweep retires the closure");
 	require(heap.openCellAddress(cellAddress) == cellAddress, "an open frame still roots the cell");
-	require(sweep() == occupied, "a free closure slot on a surviving object page still costs one visit");
+	require(sweep() + 1 == occupied, "the next sweep does not visit the vacant record");
+}
+
+void sweepResumesAfterPublishingAndRestoring() {
+	Machine machine;
+	auto& cpu = machine.cpu;
+	auto& gc = cpu.gcHeap();
+	const u32 dead = cpu.createTable().address();
+	auto keep = cpu.createTable();
+	cpu.rootThread()->currentFrame->registers.set(0, valueTable(keep.address()));
+	while (gc.phase() != GcPhase::Sweep) gc.step(valueNil(), valueNil(), valueNil());
+
+	require(gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1) == 1
+		&& gc.tableRecordAddress(dead) == dead, "one step stops after the newest retained record");
+
+	const auto oldRam = cpu.memory().captureSaveState();
+	const auto oldState = cpu.captureRuntimeState();
+	const auto finish = [&] {
+		const auto fresh = cpu.createTable().address();
+		require(gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1) == 1
+			&& gc.tableRecordAddress(dead) == 0u, "a new head does not disturb the suspended sweep cursor");
+		while (gc.active()) gc.step(valueNil(), valueNil(), valueNil());
+		require(gc.tableRecordAddress(fresh) == fresh && gc.tableRecordAddress(keep.address()) == keep.address(),
+			"a surviving predecessor and a new allocation both remain in the inventory");
+		return fresh;
+	};
+	const u32 fresh = finish();
+	const auto finishedRam = cpu.memory().captureSaveState();
+	cpu.memory().restoreSaveState(oldRam);
+	cpu.restoreRuntimeState(oldState);
+	require(finish() == fresh && cpu.memory().captureSaveState().ram == finishedRam.ram,
+		"restoring RAM resumes reclamation with the same allocation order and result");
 }
 
 void isolatedHeaps() {
@@ -252,7 +283,8 @@ void isolatedHeaps() {
 int main() {
 	try {
 		liveReferencesAndReuse(); restoreRebindsWithoutRetainingDiscardedFutures(); incrementalRestore();
-		builtinIdentitiesStayOutsideTheGcHeap(); closedCellLivesInRam(); closureAndCellPagesChargeVacantSlots(); isolatedHeaps();
+		builtinIdentitiesStayOutsideTheGcHeap(); closedCellLivesInRam(); sweepStopsVisitingReclaimedObjects();
+		sweepResumesAfterPublishingAndRestoring(); isolatedHeaps();
 		std::cout << "heap reference tests passed\n";
 		return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

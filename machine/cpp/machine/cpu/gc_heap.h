@@ -17,9 +17,6 @@ inline constexpr size_t GC_ASSIST_BYTES = 256;
 enum class GcPhase : u32 { Pause, Mark, MarkAgain, Atomic, Sweep, Strings };
 enum class GcRootBank : u32 { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, Completion, End };
 
-// Physical records start on an eight-byte boundary, including size-class slots.
-inline constexpr u32 GC_RECORD_ALIGNMENT = 1u << GC_RECORD_SHIFT;
-inline constexpr u32 GC_RECORD_MASK = MAIN_RAM_SIZE - GC_RECORD_ALIGNMENT;
 static_assert(GC_GRAY_INDEX_MASK == GC_RECORD_MASK >> GC_RECORD_SHIFT);
 inline constexpr u32 GC_TRACE_HEAD = 4u;
 inline constexpr u32 GC_CHANGED_HEAD = 8u;
@@ -45,6 +42,9 @@ inline constexpr u32 GC_EPOCH_WORK = GC_ROOT_CURSOR + sizeof(u32);
 inline constexpr u32 GC_LAST_EPOCH_WORK = GC_EPOCH_WORK + sizeof(u32);
 inline constexpr u32 GC_PAGE_CLAIMS_AT_TICK = GC_LAST_EPOCH_WORK + sizeof(u32);
 inline constexpr u32 GC_PHYSICAL_ASSIST = GC_PAGE_CLAIMS_AT_TICK + sizeof(u32);
+inline constexpr u32 GC_OBJECTS = GC_PHYSICAL_ASSIST + sizeof(u32);
+inline constexpr u32 GC_SWEEP_LINK = GC_OBJECTS + sizeof(u32);
+static_assert(HEAP_GC_CONTROL_OFFSET + GC_SWEEP_LINK + sizeof(u32) <= HEAP_LOGICAL_OCCUPIED_OFFSET);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD) % (2 * sizeof(u32)) == 0u);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_THREAD_TRACE_OPEN) % (2 * sizeof(u32)) == 0u);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_REMARK_VISIT_INDEX) % (2 * sizeof(u32)) == 0u);
@@ -60,6 +60,9 @@ public:
 	LuaHeap& budget;
 	Memory& memory;
 	HeapAllocator& arena;
+	void publishObject(u32 address);
+	using ObjectVisitor = void (*)(void*, u32);
+	void visitObjectRecords(void* context, ObjectVisitor visit) const;
 	u32 tableRecordAddress(u32 address) const;
 	u32 cellRecordAddress(u32 address) const;
 	u32 closureRecordAddress(u32 address) const;
@@ -147,8 +150,9 @@ private:
 	}
 	void clearWeakRange(TableRecord& table, u8 mode, u32 first, u32 end);
 	size_t clearWeakQuantum(size_t limit);
-	struct SweepContext { GcHeap& heap; u32 growingThread; u8 white; bool compactThreads = false; };
-	static i32 sweepRecord(void* context, u32 address);
+	u32 objectRecordAddress(u32 address, u8 kind) const;
+	size_t sweepObjects(size_t allowance, u32 growingThread, bool compactThreads);
+	size_t sweepRecord(u32 address, u32 header, bool garbage, u8 white, u32 growingThread, bool compactThreads);
 	CPU& m_cpu;
 	void setPhase(GcPhase phase) { memory.writeRamRecordByte(m_controlOffset, static_cast<u8>(phase)); }
 	StringId m_modeKey;

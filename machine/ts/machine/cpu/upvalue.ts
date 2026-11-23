@@ -2,11 +2,12 @@ import { writeLE32 } from '../../common/endian';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import type { Memory } from '../memory/memory';
 import type { GcHeap } from './gc_heap';
+import { GC_RECORD_MASK } from './gc_object';
 import { ThreadField } from './thread_record';
 import { type Value, type ValueTag, valueFromTag, valuePayload, valueTag } from './value';
 
 export const UPVALUE_HEAP_BYTES = 16;
-export const UPVALUE_ADDRESS_MASK = MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES;
+export const UPVALUE_ADDRESS_MASK = GC_RECORD_MASK;
 export const UPVALUE_RECORD_KIND = 11;
 export const UPVALUE_FLAGS = 2;
 export const UPVALUE_OPEN = 1;

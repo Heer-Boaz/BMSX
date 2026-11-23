@@ -254,12 +254,11 @@ void restoreUnrootedCanonicalClosure() {
 	const auto warmRam = cpu.memory().captureSaveState();
 	require(cpu.readFrameRegister(0, 0) == bmsx::valueNil(), "static closure is no longer a guest root");
 	struct Probe { bmsx::Memory& memory; bmsx::u32 function; bmsx::u32 record = 0; } probe{cpu.memory(), address};
-	cpu.heapAllocator().visitObjectRecords(&probe, [](void* context, bmsx::u32 record) -> bmsx::i32 {
+	cpu.gcHeap().visitObjectRecords(&probe, [](void* context, bmsx::u32 record) {
 		auto& probe = *static_cast<Probe*>(context);
 		if (probe.memory.readRamRecordByte(record) == static_cast<bmsx::u8>(bmsx::ValueTag::Closure)
 			&& probe.memory.readRamRecordWord(record + bmsx::CLOSURE_PROTOTYPE_ADDRESS) == probe.function)
 			probe.record = record;
-		return 1;
 	});
 	require(probe.record != 0u, "unrooted canonical closure is still physically allocated");
 	cpu.runUntilDepth(0, 1000);

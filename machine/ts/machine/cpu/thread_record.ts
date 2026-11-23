@@ -16,7 +16,7 @@ import { LuaExecutionError } from './errors';
 import { ValueTag, valueBool, valueInteger } from './value';
 import { integerOperand } from './value_arithmetic';
 
-import { GC_RECORD_LINK } from './gc_object';
+import { GC_OBJECT_PREFIX, GC_RECORD_LINK } from './gc_object';
 
 // Main-RAM Thread header lanes also consumed by the raw capture datapath.
 export const enum ThreadField {
@@ -142,7 +142,7 @@ export class ThreadRecords {
 	public allocationBytes(address: number): number {
 		const layout = this.layout;
 		this.readLayout(address, layout);
-		return THREAD_HEAP_BYTES + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations);
+		return heapAllocationBytes(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX) + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations);
 	}
 	public clearStackRange(layout: ThreadLayout, first: number, end: number): void {
 		const count = end - first;

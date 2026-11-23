@@ -1422,13 +1422,12 @@ void weakCanonicalClosuresAndStaticEntry() {
 		}
 		const auto countVersions = [&]() {
 			struct Probe { Memory& memory; u32 function; size_t count = 0; } probe{machine.memory, record};
-			machine.cpu.heapAllocator().visitObjectRecords(&probe, [](void* context, u32 address) -> i32 {
+			machine.cpu.gcHeap().visitObjectRecords(&probe, [](void* context, u32 address) {
 				auto& probe = *static_cast<Probe*>(context);
 				if (probe.memory.readRamRecordByte(address) == static_cast<u8>(ValueTag::Closure)
 					&& probe.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS) == probe.function
 					&& (probe.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) != 0u)
 					++probe.count;
-				return 1;
 			});
 			return probe.count;
 		};

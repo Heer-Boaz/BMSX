@@ -1,6 +1,3 @@
-import { UPVALUE_RECORD_KIND } from '../../machine/ts/machine/cpu/upvalue';
-import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { CPU, type RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
@@ -44,13 +41,6 @@ export function restoreCpuCheckpoint(cpu: CPU, checkpoint: ReturnType<typeof cap
 
 export function allocatedObjectRecords(cpu: CPU): number[] {
 	const records: number[] = [];
-	cpu.heapAllocator.visitObjectRecords(cpu.memory, (memory, address) => {
-		switch (memory.readRamRecordByte(address)) {
-			case ValueTag.Table: case ValueTag.Closure: case UPVALUE_RECORD_KIND: case THREAD_RECORD_KIND:
-				records.push(address);
-				break;
-		}
-		return 1;
-	});
+	cpu.gc.visitObjectRecords(records, (records, address) => { records.push(address); });
 	return records;
 }

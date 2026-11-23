@@ -56,11 +56,11 @@ struct Machine {
 // Thread232 (80-byte header, 40 Value bytes and two 56-byte frame records)
 // + Closure12, a 15-byte constant bank (three slots), 17 machine Strings charged 697 bytes
 // and two registered globals with a 16-byte image map. Both lookup indexes
-// are uncharged. The collector still visits issued objects and intern buckets.
+// are uncharged. The collector visits allocated objects and intern buckets.
 constexpr int bootBytes = 232 + 12 + 15 + 697 + 16 + 2 * 9;
 // Two Thread traces of its header and one active frame, an atomic trace
 // that also clears eight Value slots, two remark visits and a sweep visit.
-constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 3 * 12 + 3 * 17 + 32;
+constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 3 * 12 + 2 * 17 + 32;
 
 void allocationAdmissionUsesLogicalBytes() {
 	Machine machine(image()); auto& cpu = machine.cpu;
@@ -73,7 +73,7 @@ void allocationAdmissionUsesLogicalBytes() {
 	cpu.createTable(512, 0);
 	require(cpu.instructionBudgetRemaining == 23, "the allocations fit at the exact logical threshold");
 	require(cpu.luaHeap().usedBytes() == logical + logicalCharge, "size-class slack is not charged to the language budget");
-	require(cpu.heapAllocator().occupiedBytes() == physical + 112 + 32 + HEAP_PAGE_SIZE,
+	require(cpu.heapAllocator().occupiedBytes() == physical + 80 + 2 * heapAllocationBytes(TableRecord::HEADER_BYTES + GC_OBJECT_PREFIX) + HEAP_PAGE_SIZE,
 		"physical diagnostics include both size classes and whole pages");
 	cpu.collectHeap();
 	require(cpu.luaHeap().usedBytes() == logical && cpu.heapAllocator().occupiedBytes() == physical,
@@ -217,7 +217,7 @@ void canonicalPoolAndRootRanges() {
 	frame.registers.set(1, valueString(cpu.stringPool().intern("é😀"))); //6 UTF8 bytes.
 	frame.writeControl(bmsx::FrameField::Top, 2);
 	require(cpu.luaHeap().usedBytes() == bootBytes + 72 + 22, "canonical reserved table capacity and UTF8 text bytes agree");
-	require(cpu.collectHeap() == bootCollectionWork + (8 + 2 + 8 + 1) + 3 + 2 * 3
+	require(cpu.collectHeap() == bootCollectionWork + (8 + 2 + 8 + 1) + 2 + 2 * 3
 		&& cpu.instructionBudgetRemaining == 7 && cpu.luaHeap().usedBytes() == bootBytes + 72 + 22,
 		"table scans reserved slots; the String is marked and visited without reading its bytes");
 	const auto threshold = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
@@ -414,11 +414,10 @@ void allActivatedImagesAndUniqueGlobals() {
 	require(cpu.luaHeap().usedBytes() == bootBytes + (20 + 20) + (5 + 16) + 2 * 9,
 		"each card charges its constant bank, name-slot map and new unique global");
 	cpu.instructionBudgetRemaining = 5;
-	// C=3+4+1, S=1, G=3; all activated images remain roots. The two
-	// retired cartridge closure slots still cost one visit each on the system closure's page.
-	const size_t work = bootCollectionWork + 3 * (2 * 5 + 3 * 2) + 2;
+	// C=3+4+1, S=1, G=3; all activated images remain roots.
+	const size_t work = bootCollectionWork + 3 * (2 * 5 + 3 * 2);
 	require(cpu.collectHeap() == work && cpu.instructionBudgetRemaining == 5,
-		"work includes three root passes over all resident images and two vacant closure slots");
+		"work includes three root passes over all resident images");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
 	require(cpu.collectHeap() == work && cpu.instructionBudgetRemaining == 5,
@@ -438,7 +437,7 @@ void temporaryRootsAndUnreachablePool() {
 		&& cpu.gcHeap().isAlive(table.address()) && cpu.stringPool().toString(id) == "é😀",
 		"all reserve temporary roots survive the first unbilled incremental pass");
 	while (cpu.collecting()) cpu.stepHeap(valueTable(table.address()), valueString(id), valueNil());
-	require(cpu.collectHeap() == bootCollectionWork + 3 && cpu.instructionBudgetRemaining == 1
+	require(cpu.collectHeap() == bootCollectionWork + 2 && cpu.instructionBudgetRemaining == 1
 		&& cpu.luaHeap().usedBytes() == bootBytes,
 		"dead Table incurs one block visit, not another mark pass; its String incurs one visit, not a scan of its bytes");
 }
@@ -1195,7 +1194,7 @@ void collectUnattachedThreadRecord() {
 	const size_t bytes = layout.allocationBytes();
 	require(layout.block == block && gc.threadRecordAddress(address) == address && gc.allocationBytes(address) == bytes,
 		"an issued raw Thread has its physical header and backing without an execution view");
-	require(cpu.heapAllocator().occupiedBytes() == baselineBytes + bytes + TableRecord::HEADER_BYTES,
+	require(cpu.heapAllocator().occupiedBytes() == baselineBytes + bytes + heapAllocationBytes(TableRecord::HEADER_BYTES + GC_OBJECT_PREFIX),
 		"the raw Thread and its sole table edge own only their guest allocations");
 	const size_t liveWork = gc.collect(valueThread(address), valueNil(), valueNil(), address);
 	const size_t threadWork = 3 * (20 + 14) + 2 * 2 + capacity * THREAD_STACK_SLOT_BYTES / sizeof(u32) + 2 + 1;
@@ -1214,7 +1213,7 @@ void collectUnattachedThreadRecord() {
 		&& memory.readRamRecordWord(reduced.frameAddress(0) + static_cast<u32>(FrameField::Top)) == 1u,
 		"shrinking relocates the live tagged slot, not its frame control");
 	require(shrinkWork == liveWork + 2 * (reduced.valueBytes() / sizeof(u32))
-		&& cpu.heapAllocator().occupiedBytes() == baselineBytes + reducedBytes + TableRecord::HEADER_BYTES,
+		&& cpu.heapAllocator().occupiedBytes() == baselineBytes + reducedBytes + heapAllocationBytes(TableRecord::HEADER_BYTES + GC_OBJECT_PREFIX),
 		"relocation charges the new physical copy and releases the old backing");
 	size_t deadWork = 0;
 	while (gc.phase() != GcPhase::Sweep) deadWork += gc.step(valueNil(), valueNil(), valueNil());
@@ -1262,12 +1261,12 @@ void sweepCoroutineRecord() {
 	};
 	const auto liveWork = sweep();
 	const auto occupied = cpu.heapAllocator().occupiedBytes();
-	require(gc.threadRecordAddress(address) == address, "reachable coroutine survives a page sweep");
+	require(gc.threadRecordAddress(address) == address, "reachable coroutine survives collection");
 	frame.registers.set(0, valueNil());
-	require(sweep() == liveWork, "an occupied Thread slot has the same visit charge whether retained or released");
+	require(sweep() == liveWork, "a Thread has the same visit charge whether retained or released");
 	require(gc.threadRecordAddress(address) == 0u && cpu.memory().readRamRecordByte(address) == 0
 		&& cpu.heapAllocator().occupiedBytes() == occupied - bytes, "sweep frees both the coroutine slot and its owned stack");
-	require(sweep() == liveWork, "root Thread keeps the page and a vacant Thread slot still costs one visit");
+	require(sweep() + 1 == liveWork, "only the surviving Thread is visited at the next collection");
 }
 
 void sweepUnselectsSuspendedTransferFrames() {

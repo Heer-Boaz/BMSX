@@ -53,7 +53,7 @@ constexpr u32 heapClassIndex(u32 byteCount) {
 u32 heapAllocationBytes(u32 byteCount);
 
 // Owns the non-moving language-heap allocator whose entire state lives in the
-// private runtime management area. Bitmaps select free and sweepable pages;
+// private runtime management area. A bitmap tracks free pages;
 // descriptors belong to slab pages and run heads, not to run interiors.
 class HeapAllocator {
 public:
@@ -70,8 +70,6 @@ public:
 	u32 claimedWholePages() const;
 	// Physical class extents, for diagnostics only.
 	u32 occupiedBytes() const;
-	// Decode the page class and issued range. The record port selects alignment.
-	u32 issuedObjectSlotClass(u32 offset) const;
 	// Variable-size records must begin at an issued slot or a run head.
 	bool issuedObjectStart(u32 offset) const;
 	// Returns the guest address of the allocation, or 0 when no slot or page run fits.
@@ -81,26 +79,13 @@ public:
 	// The retained prefix still occupies a nonempty, whole-page run.
 	void trimOwnedRun(u32 address, u32 retainedBytes);
 
-	// Sweep only independently allocated records. Each issued slot is a visit,
-	// including a vacant one. Owned blocks are released by their record.
-	// The visitor returns charged work, negated when it releases the record.
-	// A visit can exhaust the allowance, but no later slot is visited in that step.
-	using SweepVisitor = i32 (*)(void*, u32);
-	void beginObjectSweep();
-	bool objectSweepActive() const;
-	size_t sweepObjects(size_t allowance, void* context, SweepVisitor visit);
-	void visitObjectRecords(void* context, SweepVisitor visit) const;
-
 private:
-	size_t walkObjectPages(u32& position, size_t allowance, void* context, SweepVisitor visit) const;
-	u32 nextObjectPage(u32 first) const;
-	void setObjectPage(u32 page, bool object);
 	u32 allocateRun(u32 byteCount, bool owned);
 	i32 takeTopPage();
 	i32 takeTopRun(u32 pages);
 	void unlinkPartial(u32 head, u32 links);
 	void setPreviousPartial(u32 pageLink, u32 previous);
-	void releasePages(u32 first, u32 end, bool object);
+	void releasePages(u32 first, u32 end);
 	void setAvailable(u32 first, u32 end, bool available);
 	bool isAvailable(u32 page) const;
 	u32 floorPage() const;

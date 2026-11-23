@@ -66,7 +66,7 @@ inline bool sameActiveLanguageRam(CPU& left, CPU& right) {
 		Memory& memory;
 		std::vector<std::pair<u32, u32>> spans;
 	} inactive{left.memory(), {}};
-	left.heapAllocator().visitObjectRecords(&inactive, [](void* context, u32 address) -> i32 {
+	left.gcHeap().visitObjectRecords(&inactive, [](void* context, u32 address) {
 		auto& [memory, spans] = *static_cast<InactiveFrames*>(context);
 		if (memory.readRamRecordByte(address) == THREAD_RECORD_KIND) {
 			const auto layout = ThreadRecord::storageLayout(memory, address);
@@ -74,7 +74,6 @@ inline bool sameActiveLanguageRam(CPU& left, CPU& right) {
 			if (depth != layout.frameCapacity)
 				spans.emplace_back(layout.frameAddress(depth), layout.frameAddress(layout.frameCapacity));
 		}
-		return 1;
 	});
 	std::sort(inactive.spans.begin(), inactive.spans.end());
 	const auto* a = left.memory().ramData();
@@ -89,7 +88,7 @@ inline bool sameActiveLanguageRam(CPU& left, CPU& right) {
 
 inline u32 allocatedObjectRecords(CPU& cpu) {
 	struct Counter { Memory& memory; u32 count = 0; } records{cpu.memory()};
-	cpu.heapAllocator().visitObjectRecords(&records, [](void* context, u32 address) -> i32 {
+	cpu.gcHeap().visitObjectRecords(&records, [](void* context, u32 address) {
 		auto& records = *static_cast<Counter*>(context);
 		switch (records.memory.readRamRecordByte(address)) {
 			case static_cast<u8>(ValueTag::Table):
@@ -99,7 +98,6 @@ inline u32 allocatedObjectRecords(CPU& cpu) {
 				++records.count;
 				break;
 		}
-		return 1;
 	});
 	return records.count;
 }

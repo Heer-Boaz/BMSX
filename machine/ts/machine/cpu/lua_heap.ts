@@ -1,6 +1,7 @@
 import { closureRecordBytes } from './closure';
 import { UPVALUE_HEAP_BYTES, initialize as initializeCell } from './upvalue';
 import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from './heap_allocator';
+import { GC_OBJECT_PREFIX } from './gc_object';
 import type { CPU } from './cpu';
 import { valueClosure, valueNil, type Value } from './value';
 import { FRAME_CONTROL_BYTES } from './call_state';
@@ -67,21 +68,23 @@ export class LuaHeap {
 		return recovery;
 	}
 
-	public allocateRecord(bytes: number, owned: boolean, backingBytes: number, backingField: number,
+	public allocateRecord(bytes: number, object: boolean, backingBytes: number, backingField: number,
 		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(), backingCharge = backingBytes): number {
 		const charged = bytes + backingCharge;
+		const prefix = object ? GC_OBJECT_PREFIX : 0;
 		let recovery = this.admit(charged, root0, root1, root2, 0);
 		const arena = this.cpu.heapAllocator;
 		for (;;) {
-			const address = arena.allocate(bytes, owned);
-			if (address !== 0) {
+			const base = arena.allocate(bytes + prefix, !object);
+			if (base !== 0) {
 				const backing = backingBytes === 0 ? 0 : arena.allocate(backingBytes, true);
 				if (backingBytes === 0 || backing !== 0) {
+					const address = base + prefix;
 					if (backingField !== 0) this.cpu.memory.writeRamRecordWord(address + backingField, backing);
 					this.accountAllocation(charged);
 					return address;
 				}
-				arena.free(address);
+				arena.free(base);
 			}
 			recovery = this.cpu.gc.recoverAllocation(recovery, root0, root1, root2);
 		}
@@ -105,19 +108,21 @@ export class LuaHeap {
 		let recovery = this.admit(charged, root);
 		const arena = this.cpu.heapAllocator;
 		for (;;) {
-			const address = arena.allocate(THREAD_HEAP_BYTES, false);
-			if (address !== 0) {
+			const base = arena.allocate(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX, false);
+			if (base !== 0) {
 				const values = arena.allocate(valueBytes, true);
 				if (values !== 0) {
 					const frames = arena.allocate(frameBytes, true);
 					if (frames !== 0) {
+						const address = base + GC_OBJECT_PREFIX;
 						this.cpu.gc.threads.initializeRecord(address, values, frames, entry, this.cpu.gc.white());
+						this.cpu.gc.publishObject(address);
 						this.accountAllocation(charged);
 						return address;
 					}
 					arena.free(values);
 				}
-				arena.free(address);
+				arena.free(base);
 			}
 			recovery = this.cpu.gc.recoverAllocation(recovery, root);
 		}
@@ -159,22 +164,26 @@ export class LuaHeap {
 		let recovery = this.admit(charged, valueNil(), valueNil(), valueNil(), 0);
 		const arena = this.cpu.heapAllocator;
 		for (;;) {
-			const closure = arena.allocate(bytes, false);
+			const closure = arena.allocate(bytes + GC_OBJECT_PREFIX, false);
 			if (closure !== 0) {
 				let count = 0;
 				for (; count < newCount; ++count) {
-					const cell = arena.allocate(UPVALUE_HEAP_BYTES, false);
+					const cell = arena.allocate(UPVALUE_HEAP_BYTES + GC_OBJECT_PREFIX, false);
 					if (cell === 0) break;
-					cells[count] = cell;
+					cells[count] = cell + GC_OBJECT_PREFIX;
 				}
 				if (count === newCount) {
 					const memory = this.cpu.memory;
 					const white = this.cpu.gc.white();
-					for (let index = 0; index < newCount; ++index) initializeCell(memory, cells[index], white);
+					for (let index = 0; index < newCount; ++index) {
+						const cell = cells[index];
+						initializeCell(memory, cell, white);
+						this.cpu.gc.publishObject(cell);
+					}
 					this.accountAllocation(charged);
-					return closure;
+					return closure + GC_OBJECT_PREFIX;
 				}
-				while (count !== 0) arena.free(cells[--count]);
+				while (count !== 0) arena.free(cells[--count] - GC_OBJECT_PREFIX);
 				arena.free(closure);
 			}
 			recovery = this.cpu.gc.recoverAllocation(recovery);
@@ -203,6 +212,11 @@ export class LuaHeap {
 		this.cpu.heapAllocator.free(address);
 		const memory = this.cpu.memory;
 		memory.writeRamRecordWord(this.occupiedAddress, memory.readRamRecordWord(this.occupiedAddress) - bytes);
+	}
+
+	public releaseObject(address: number, bytes: number): void {
+		this.cpu.memory.writeRamRecordByte(address, 0);
+		this.releaseRecord(address - GC_OBJECT_PREFIX, bytes);
 	}
 
 	public replaceRecord(oldAddress: number, oldBytes: number, newBytes: number): void {

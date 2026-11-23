@@ -33,7 +33,7 @@ public:
 	bool canAdmitWithoutAssist(size_t byteCount) const noexcept;
 	// A record with optional separately allocated backing. Record and backing
 	// are charged together, after both allocations are admitted.
-	u32 allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField, Value root0 = valueNil(), Value root1 = valueNil(),
+	u32 allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, Value root0 = valueNil(), Value root1 = valueNil(),
 		Value root2 = valueNil(), std::optional<u32> backingCharge = {});
 	// Physical backing can reserve more bytes than the owner's logical increase.
 	// Admission does not commit occupancy; the owner publishes its replacement.
@@ -43,6 +43,7 @@ public:
 	// Admit the closure and its new cells before publishing any frame link.
 	u32 allocateClosureRecord(u32 captures, bool latched = false, std::span<u32> cells = {});
 	void releaseRecord(u32 address, u32 bytes);
+	void releaseObject(u32 address, u32 bytes);
 	void replaceRecord(u32 oldAddress, u32 oldBytes, u32 newBytes);
 	void collectRuntime(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	bool stepRuntime();

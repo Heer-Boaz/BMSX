@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_GC_CONTROL_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
@@ -868,10 +869,10 @@ test('a rooted raw Thread frame retains its table edge and is collected without 
 	memory.writeRamRecordWord(block, child);
 	memory.writeRamRecordByte(block + wide * 4, ValueTag.Table);
 	const frameBytes = heapAllocationBytes(THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES);
-	const bytes = THREAD_HEAP_BYTES + heapAllocationBytes(wideBytes) + frameBytes;
+	const bytes = heapAllocationBytes(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX) + heapAllocationBytes(wideBytes) + frameBytes;
 	assert.equal(gc.threadRecordAddress(address), address);
 	assert.equal(gc.allocationBytes(address), bytes);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), baselineBytes + bytes + TableRecords.HEADER_BYTES);
+	assert.equal(cpu.heapAllocator.occupiedBytes(), baselineBytes + bytes + heapAllocationBytes(TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX));
 	const liveWork = gc.collect(valueThread(address), valueNil(), valueNil(), address);
 	const threadWork = 3 * (20 + 14) + 2 * 2 + ((wide * THREAD_STACK_SLOT_BYTES) >>> 2) + 2 + 1;
 	assert.equal(liveWork, baselineWork + threadWork + (TableRecords.HEADER_BYTES >>> 2) + 1,
@@ -891,9 +892,9 @@ test('a rooted raw Thread frame retains its table edge and is collected without 
 	assert.equal(memory.readRamRecordWord(address + ThreadField.FrameBlock), frame, 'shrinking values leaves the frame allocation in place');
 	assert.equal(memory.readRamRecordWord(frame + FrameField.Top), 1);
 	const reducedBytes = reduced * THREAD_STACK_SLOT_BYTES;
-	const allocationBytes = THREAD_HEAP_BYTES + heapAllocationBytes(reducedBytes) + frameBytes;
+	const allocationBytes = heapAllocationBytes(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX) + heapAllocationBytes(reducedBytes) + frameBytes;
 	assert.equal(shrinkWork, liveWork + 2 * (reducedBytes >>> 2));
-	assert.equal(cpu.heapAllocator.occupiedBytes(), baselineBytes + allocationBytes + TableRecords.HEADER_BYTES);
+	assert.equal(cpu.heapAllocator.occupiedBytes(), baselineBytes + allocationBytes + heapAllocationBytes(TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX));
 	let deadWork = 0;
 	while (gc.phase() !== GcPhase.Sweep) deadWork += gc.step();
 	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
@@ -909,7 +910,7 @@ test('a rooted raw Thread frame retains its table edge and is collected without 
 	assert.equal(cpu.heapAllocator.occupiedBytes(), baselineBytes);
 });
 
-test('a coroutine header is swept with the object page and its stack is released with it', () => {
+test('a collected coroutine releases its object and stack allocations', () => {
 	const text = new Uint8Array(6 * 4);
 	writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
@@ -938,11 +939,11 @@ test('a coroutine header is swept with the object page and its stack is released
 	const liveWork = sweep(), occupied = cpu.heapAllocator.occupiedBytes();
 	assert.equal(gc.threadRecordAddress(address), address);
 	frame.registers.setNil(0);
-	assert.equal(sweep(), liveWork, 'an occupied Thread slot has the same visit charge whether retained or released');
+	assert.equal(sweep(), liveWork, 'a Thread has the same visit charge whether retained or released');
 	assert.equal(gc.threadRecordAddress(address), 0);
 	assert.equal(cpu.memory.readRamRecordByte(address), 0);
 	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - bytes);
-	assert.equal(sweep(), liveWork, 'the root Thread keeps the page, and the vacant slot still costs a visit');
+	assert.equal(sweep() + 1, liveWork, 'only the surviving Thread is visited at the next collection');
 });
 
 test('sweep shrinks cold stacks with hysteresis, preserves caller windows and rebinds views', () => {

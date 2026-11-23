@@ -154,8 +154,6 @@ void stringAdmissionStartsSweepDuringUnchargedRehash() {
 	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
 	for (int step = 0; cpu.gcHeap().phase() != GcPhase::Sweep && step < 40; ++step) advance();
 	require(cpu.gcHeap().phase() == GcPhase::Sweep, "objects must be swept before String reclamation");
-	advance(); advance();
-	require(cpu.gcHeap().phase() == GcPhase::Sweep, "String admission will reach the last object page");
 	const auto state = cpu.captureRuntimeState();
 	const auto ram = memory.captureSaveState();
 	const auto finish = [&] {

@@ -8,6 +8,7 @@ import { asClosure, valueFloatBits, valueInteger, valueNil } from '../../machine
 import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { test } from 'node:test';
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
+import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
@@ -193,12 +194,13 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	const occupied = cpu.heapAllocator.occupiedBytes();
 	cpu.setGlobalByKey(key, valueNil());
 	cpu.collectTrackedHeapBytes();
-	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - heapAllocationBytes(closureRecordBytes(1)) - UPVALUE_HEAP_BYTES);
+	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - heapAllocationBytes(closureRecordBytes(1) + GC_OBJECT_PREFIX)
+		- heapAllocationBytes(UPVALUE_HEAP_BYTES + GC_OBJECT_PREFIX));
 	assert.equal(cpu.gc.cellRecordAddress(address), 0, 'a retired capture has no issued header');
 	assert.equal(memory.readRamRecordByte(address), 0);
 });
 
-test('a vacant closure slot costs a visit while its object page remains in use', () => {
+test('reclaimed closures are not visited by the next sweep', () => {
 	const cpu = machine(), { gc } = cpu, frame = cpu.rootThread.currentFrame!;
 	const closure = frame.registers.getClosure(1, gc);
 	const cellAddress = ClosureRecord.captureAddress(cpu.memory, closure, 0);
@@ -210,9 +212,34 @@ test('a vacant closure slot costs a visit while its object page remains in use',
 	};
 	const occupied = sweep();
 	frame.registers.setNil(1);
-	assert.equal(sweep(), occupied, 'reclaiming an issued closure costs one visit');
+	assert.equal(sweep(), occupied, 'reclaiming an object costs the same visit as retaining it');
 	assert.equal(cpu.memory.readRamRecordByte(closure), 0);
 	assert.equal(gc.closureRecordAddress(closure), 0);
 	assert.equal(gc.openCellAddress(cellAddress), cellAddress, 'an open frame still roots the cell');
-	assert.equal(sweep(), occupied, 'a free slot still costs one visit');
+	assert.equal(sweep(), occupied - 1, 'only allocated records are visited');
+});
+
+test('restoring a suspended sweep keeps its cursor when a new object is added', () => {
+	const cpu = machine(), { gc } = cpu;
+	const dead = cpu.createTable();
+	const keep = cpu.createTable();
+	cpu.rootThread.currentFrame!.registers.set(0, valueTable(keep));
+	while (gc.phase() !== GcPhase.Sweep) gc.step();
+	assert.equal(gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1), 1);
+	assert.equal(gc.tableRecordAddress(dead), dead);
+	const suspended = captureCpuCheckpoint(cpu);
+	const finish = () => {
+		const fresh = cpu.createTable();
+		assert.equal(gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1), 1);
+		assert.equal(gc.tableRecordAddress(dead), 0, 'a new head does not disturb the suspended cursor');
+		while (gc.active()) gc.step();
+		assert.equal(gc.tableRecordAddress(fresh), fresh);
+		assert.equal(gc.tableRecordAddress(keep), keep);
+		return fresh;
+	};
+	const fresh = finish();
+	const finished = cpu.memory.captureSaveState();
+	restoreCpuCheckpoint(cpu, suspended);
+	assert.equal(finish(), fresh);
+	assert.deepEqual(cpu.memory.ramData(), finished.ram);
 });

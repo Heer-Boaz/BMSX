@@ -423,9 +423,10 @@ export class CPU implements MappedPageInvalidator {
 
 	public createTable(arraySize: number = 0, hashSize: number = 0): number {
 		const hashCapacity = TableRecords.hashCapacity(hashSize);
-		const address = this.luaHeap.allocateRecord(TableRecords.HEADER_BYTES, false, TableRecords.storageBytes(arraySize, hashCapacity, hashSize),
+		const address = this.luaHeap.allocateRecord(TableRecords.HEADER_BYTES, true, TableRecords.storageBytes(arraySize, hashCapacity, hashSize),
 			TableHeader.Storage, valueNil(), valueNil(), valueNil(), TableRecords.allocationCharge(arraySize, hashSize));
 		this.gc.tables.initialize(address, arraySize, hashCapacity, hashSize);
+		this.gc.publishObject(address);
 		if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(address));
 		return address;
 	}
@@ -932,7 +933,7 @@ export class CPU implements MappedPageInvalidator {
 		const restoring = restoredConstantBase !== null;
 		const mapBytes = 4 * (globalNameCount + systemGlobalNameCount);
 		const globalMapBase = restoring ? restoredMapBase : mapBytes === 0 ? 0
-			: this.luaHeap.allocateRecord(mapBytes, true, 0, 0);
+			: this.luaHeap.allocateRecord(mapBytes, false, 0, 0);
 		if (mapBytes !== 0) {
 			if (!restoring) {
 				this.registerGlobalNames(executionDomainId, globalNameTableAddress, globalNameCount, this.globalBank, globalMapBase);
@@ -941,7 +942,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		const constantBase = restoring ? restoredConstantBase : constantCount === 0 ? 0
-			: this.luaHeap.allocateRecord(constantCount * 5, true, 0, 0);
+			: this.luaHeap.allocateRecord(constantCount * 5, false, 0, 0);
 		const offset = constantBase & RAM_RECORD_WORD_MASK;
 		const buffer = this.memory.ramData().buffer;
 		const constWords = new Uint32Array(buffer, offset, constantCount);
@@ -1024,6 +1025,7 @@ export class CPU implements MappedPageInvalidator {
 		const latched = !record.romBacked;
 		const address = this.luaHeap.allocateClosureRecord(0, latched);
 		Closure.initializeRecord(this.memory, address, record, true, this.gc.white(), 0, latched);
+		this.gc.publishObject(address);
 		this.staticClosures.insert(record.functionAddress, address);
 		return address;
 	}
@@ -1040,7 +1042,7 @@ export class CPU implements MappedPageInvalidator {
 	public reindexCanonicalClosures(): void {
 		this.staticClosures.clear();
 		// Inventory does not advance a saved in-flight sweep.
-		this.heapAllocator.visitObjectRecords(this, (cpu, address) => {
+		this.gc.visitObjectRecords(this, (cpu, address) => {
 			const header = cpu.memory.readRamRecordWord(address);
 			if ((header & 0xff) === ValueTag.Closure
 				&& (header & (CLOSURE_CANONICAL << (8 * CLOSURE_BINDING_FLAGS))) !== 0
@@ -1048,7 +1050,6 @@ export class CPU implements MappedPageInvalidator {
 				const functionAddress = cpu.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
 				cpu.staticClosures.insert(functionAddress, address);
 			}
-			return 1;
 		});
 	}
 
@@ -3520,6 +3521,7 @@ export class CPU implements MappedPageInvalidator {
 			this.linkOpenUpvalue(frame, cell, (frame.stackBase + (upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK)) >>> 0);
 			Closure.setCaptureAddress(this.memory, closure, index, cell);
 		}
+		this.gc.publishObject(closure);
 		this.charge(count);
 		return closure;
 	}
