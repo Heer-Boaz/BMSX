@@ -143,8 +143,12 @@ sljit_label* emitStringReadProbe(sljit_compiler* c) {
 	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), array);
 	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 
+	sljit_set_label(ownOnlyAbsent, sljit_emit_label(c));
+	// This one branch has completed the live receiver probe, before any
+	// metamethod or publication. The existing table resolver starts at __index.
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(NativeBlockAbi::state),
+		offsetof(NativeBlockRunState, firstTableOwnProbe), SLJIT_IMM, static_cast<u8>(TableFirstOwnProbe::Absent));
 	auto* decline = sljit_emit_label(c);
-	sljit_set_label(ownOnlyAbsent, decline);
 	sljit_set_label(noMeta, decline);
 	sljit_set_label(shadowed, decline);
 	for (auto* edge : indexMisses) sljit_set_label(edge, decline);

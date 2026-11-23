@@ -6,6 +6,8 @@
 #include "machine/cpu/value.h"
 
 namespace bmsx {
+// The initial raw probe may have completed in generated code already.
+enum class TableFirstOwnProbe : u8 { Required, Absent };
 enum class TableLookupStatus : u32 { Resolved, ChainExhausted, Invoke, Forward, Store };
 inline constexpr i32 TABLE_HASH_UNPROBED = -2;
 

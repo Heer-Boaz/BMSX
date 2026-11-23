@@ -99,7 +99,7 @@ public:
 	void resolveStringIndex(StringId indexKey, StringId key, TableLookupResult& result) const;
 	void resolveStringIndexCached(StringId indexKey, StringId key, int predictedSlot, TableLookupResult& result) const;
 	void resolveStringIndexPath(StringId indexKey, StringId key, int& receiverSlot,
-		TableLookupResult& result, TableStringPathCache& cache) const;
+		TableLookupResult& result, TableStringPathCache& cache, TableFirstOwnProbe firstOwnProbe) const;
 	void resolveAssignment(StringId newIndexKey, Value key, TableLookupResult& result) const;
 	void resolveIntegerAssignment(StringId newIndexKey, int key, TableLookupResult& result) const;
 	void resolveStringAssignment(StringId newIndexKey, StringId key, TableLookupResult& result) const;
@@ -261,7 +261,8 @@ private:
 	Value getHash(const Value& key) const;
 	template <bool Assignment = false, bool RememberPath = false, typename Lookup>
 	void resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup,
-		TableStringPathCache* cache = nullptr, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
+		TableStringPathCache* cache = nullptr, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT,
+		TableFirstOwnProbe firstOwnProbe = TableFirstOwnProbe::Required) const;
 
 	TableValues values() const {
 		const u32 words = storageAddress();

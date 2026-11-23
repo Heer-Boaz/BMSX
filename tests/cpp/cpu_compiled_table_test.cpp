@@ -61,6 +61,117 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	}
 }
 
+void completedOwnStringProbeKeepsLookupSemantics() {
+	enum class Path { NoMetatable, EmptyMetatable, InheritedFalse, Callable, BadForward, Loop, TwoHops };
+	for (const auto op : {OpCode::GETFIELD, OpCode::SELF, OpCode::GETT}) {
+		for (auto path : {Path::NoMetatable, Path::EmptyMetatable, Path::InheritedFalse, Path::Callable,
+			Path::BadForward, Path::Loop, Path::TwoHops}) {
+			test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+			writeInstruction(image.text, 0, static_cast<u8>(op), 2, 0, op == OpCode::GETT ? 1 : 0);
+			writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 4, 2, 0);
+			writeInstruction(image.text, 2, static_cast<u8>(OpCode::GETFIELD), 5, 0, 1);
+			writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+			writeInstruction(image.text, 16, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+			image.functions = {{.firstWord=0, .wordCount=4, .maxStack=6}, {.firstWord=16, .wordCount=1}};
+			image.constants = {std::string("continue own miss"), std::string("second own read")};
+			image.exceptionFunctionIndex = 1;
+			CpuMachine native(image), scalar(image, true);
+			// Both watched and unwatched fixture lanes take the same emitted
+			// completed-probe path with ordinary, independently allocated objects.
+			RamHistory nativeHistory, scalarHistory;
+			RamHistory::PageMap nativeCheckpoint, scalarCheckpoint;
+			if (path == Path::InheritedFalse || path == Path::Callable) {
+				nativeHistory.capture(native.memory, nullptr, nativeCheckpoint);
+				scalarHistory.capture(scalar.memory, nullptr, scalarCheckpoint);
+			}
+			for (auto* machine : {&native, &scalar}) {
+				auto& cpu = machine->cpu;
+				const auto key = cpu.stringPool().intern("continue own miss");
+				auto root = cpu.createTable(0, 4);
+				root.setStringKey(key, valueInteger(93));
+				root.setStringKey(cpu.stringPool().intern("second own read"), valueInteger(39));
+				cpu.activeThread()->currentFrame->registers.set(0, valueTable(root.address()));
+				cpu.activeThread()->currentFrame->registers.set(1, valueString(key));
+			}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			native.cpu.prepareSystemNativeCode();
+#endif
+			const int ownGrant = BASE_CYCLES[static_cast<u8>(op)];
+			require(test::runCpuParity(native.cpu, scalar.cpu, ownGrant) == RunResult::Yielded
+				&& native.cpu.readFrameRegister(0, 2) == valueInteger(93),
+				"a real own hit trains the existing decoded slot");
+			for (auto* machine : {&native, &scalar}) {
+				auto& cpu = machine->cpu;
+				const auto key = cpu.stringPool().intern("continue own miss");
+				const auto index = cpu.stringPool().intern("__index");
+				auto root = asTable(cpu.readFrameRegister(0,0), cpu.gcHeap());
+				auto meta = cpu.createTable(0,1), holder = cpu.createTable(0,1);
+				root.setStringKey(key, valueNil());
+				if (path != Path::NoMetatable) root.setMetatableAddress(meta.address());
+				if (path == Path::InheritedFalse) { meta.setStringKey(index, valueTable(holder.address())); holder.setStringKey(key, valueFromTag(ValueTag::False, 37)); }
+				if (path == Path::Callable) meta.setStringKey(index, valueBuiltinFunction(BuiltinFunctionId::Type));
+				if (path == Path::BadForward) meta.setStringKey(index, valueInteger(47));
+				if (path == Path::Loop) meta.setStringKey(index, valueTable(root.address()));
+				if (path == Path::TwoHops) {
+					auto other = cpu.createTable(0,1), holderMeta = cpu.createTable(0,1);
+					meta.setStringKey(index, valueTable(holder.address()));
+					holder.setMetatableAddress(holderMeta.address());
+					holderMeta.setStringKey(index, valueTable(other.address()));
+					other.setStringKey(key, valueInteger(27));
+				}
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+				cpu.activeThread()->currentFrame->registers.set(4, valueInteger(73));
+			}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (op == OpCode::GETFIELD && path == Path::InheritedFalse) {
+				auto& cpu = native.cpu;
+				auto& frame = *cpu.activeThread()->currentFrame;
+				const u32 pc = native.rom.textAddress;
+				const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+				const auto* page = frame.executionImage->nativeCodeLookup->find(pc, 0);
+				require(page && page->nativeBlocks && page->nativeBlocks->entries[word], "the trained source is still installed");
+				const auto& entry = page->nativeBlocks->entries[word];
+				const auto read = std::ranges::find(entry->sideExits, NativeBlockExit::ReadField, &NativeBlockExitSite::exit);
+				require(read != entry->sideExits.end() && *read->tableRead.own.decoded >= 0,
+					"the published own-slot prediction still points to the formerly present field");
+				ValueSlots registers(6);
+				registers.set(0, frame.registers.get(0));
+				registers.set(2, valueInteger(91));
+				registers.set(4, valueInteger(73));
+				NativeBlockRunState grant{.constants = frame.executionImage->constPool, .frame = &frame, .heap = &cpu.gcHeap(),
+					.globalValues = {}, .systemGlobalValues = {},
+					.tableIndexKey = cpu.stringPool().intern("__index"), .remainingCycles = 0};
+				require(entry->run(registers.view(), grant)->exit == NativeBlockExit::ScalarBoundary
+					&& grant.firstTableOwnProbe == TableFirstOwnProbe::Required,
+					"a short grant does not attest to an unperformed own probe");
+				grant.remainingCycles = ownGrant;
+				require(entry->run(registers.view(), grant) == &*read && grant.remainingCycles == 0
+					&& grant.firstTableOwnProbe == TableFirstOwnProbe::Absent
+					&& registers.get(2) == valueInteger(91) && registers.get(4) == valueInteger(73),
+					"generated code attests to the exhausted own lookup before Lua continuation or result placement");
+			}
+#endif
+			require(test::runCpuParity(native.cpu, scalar.cpu, 2048) == RunResult::Halted,
+				"both outcomes hit the intended HALT");
+			requireParity(native, scalar);
+			const auto result = native.cpu.readFrameRegister(0, 4);
+			if (path == Path::NoMetatable || path == Path::EmptyMetatable) require(result == valueNil(), "an ordinary terminal miss commits nil");
+			if (path == Path::InheritedFalse) require(result == valueFromTag(ValueTag::False,37), "an inherited false is not absence");
+			if (path == Path::Callable) require(result == valueString(*native.cpu.stringPool().find("table")), "the callable sees the original receiver after the own miss");
+			if (path == Path::BadForward) require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INDEX_NON_TABLE && result == valueInteger(73),
+				"an invalid forwarded __index keeps its exact fault and unexecuted suffix");
+			if (path == Path::Loop) require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP && result == valueInteger(73),
+				"the original receiver counts against the exact loop bound");
+			if (path == Path::TwoHops) require(result == valueInteger(27), "later raw probes still read each live chained table");
+			if (path != Path::BadForward && path != Path::Loop)
+				require(native.cpu.readFrameRegister(0, 5) == valueInteger(39),
+					"the completed first miss is consumed before a distinct own read needs its lookup");
+			if (op == OpCode::SELF) require(native.cpu.readFrameRegister(0, 3) == native.cpu.readFrameRegister(0, 0),
+				"SELF retains its original receiver for all outcomes");
+		}
+	}
+}
+
 void stringReadChainBoundaries() {
 	for (const auto op : {OpCode::GETFIELD, OpCode::SELF, OpCode::GETT}) for (const int depth : {1, 2, 32, 33}) {
 		test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -2381,6 +2492,7 @@ void nativeDynamicStringMissReturnsWithinTheGrant() {
 
 int main() {
 	try {
+		completedOwnStringProbeKeepsLookupSemantics();
 		stringReadChainBoundaries();
 		observedArithmeticResumesAtItsOwnInstruction();
 		contradictoryOwnFieldProofRetiresItsSource();

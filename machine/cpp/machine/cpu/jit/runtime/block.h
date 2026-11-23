@@ -64,6 +64,7 @@ struct NativeBlockRunState {
 	// Host base of guest main RAM; the gate pins it for the whole native frame.
 	u8* ram = nullptr;
 	size_t registerCapacity = 0;
+	TableFirstOwnProbe firstTableOwnProbe = TableFirstOwnProbe::Required;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	DiagnosticNativeOpcodeCounts diagnosticOpcodes;
 #endif

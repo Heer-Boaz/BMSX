@@ -761,7 +761,7 @@ Value TableRecord::metatableField(StringId key) const {
 
 template <bool Assignment, bool RememberPath, typename Lookup>
 void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup,
-	TableStringPathCache* cache, u32 visitLimit) const {
+	TableStringPathCache* cache, u32 visitLimit, TableFirstOwnProbe firstOwnProbe) const {
 	TableRecord current = *this;
 	for (u32 depth = 0; depth < visitLimit; ++depth) {
 		const u32 receiver = current.address();
@@ -776,7 +776,10 @@ void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResu
 		if constexpr (RememberPath) {
 			if (depth != 0 && depth == cache->holderDepth) slot = cache->holderSlot;
 		}
-		const auto own = lookup(current, slot);
+		decltype(lookup(current, slot)) own;
+		if constexpr (RememberPath) {
+			own = depth == 0 && firstOwnProbe == TableFirstOwnProbe::Absent ? valueNil() : lookup(current, slot);
+		} else own = lookup(current, slot);
 		if constexpr (Assignment) {
 			if (own) {
 				result = {valueNil(), slot, depth, TableLookupStatus::Store, receiver};
@@ -840,9 +843,9 @@ void TableRecord::resolveStringIndexCached(StringId indexKey, StringId key, int 
 }
 
 void TableRecord::resolveStringIndexPath(StringId indexKey, StringId key, int& receiverSlot,
-	TableLookupResult& result, TableStringPathCache& cache) const {
+	TableLookupResult& result, TableStringPathCache& cache, TableFirstOwnProbe firstOwnProbe) const {
 	resolveIndexChain<false, true>(indexKey, receiverSlot, result,
-		[key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); }, &cache);
+		[key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); }, &cache, TABLE_INDEX_CHAIN_LIMIT, firstOwnProbe);
 	if (result.extraVisits == 0u && result.slot >= 0) receiverSlot = result.slot;
 }
 

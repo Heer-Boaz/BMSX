@@ -176,7 +176,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 			&& grant.remainingCycles == 100 - decoded.baseCycles,
 			"the gate publishes the read boundary before resolving an unproved field");
 		TableLookupResult result;
-		root.resolveStringIndexPath(indexKey, key, hint.own.standalone, result, hint.path);
+		root.resolveStringIndexPath(indexKey, key, hint.own.standalone, result, hint.path, TableFirstOwnProbe::Required);
 		require(result.status == status && result.value == want && result.extraVisits == static_cast<u32>(hops),
 			"the resolver follows live owners, preserves the raw result and counts each actual hop");
 	};
@@ -456,7 +456,7 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 		};
 		run(table, 100, valueNil());
 		TableLookupResult result;
-		table.resolveStringIndexPath(indexKey, key, cache.own.standalone, result, cache.path);
+		table.resolveStringIndexPath(indexKey, key, cache.own.standalone, result, cache.path, TableFirstOwnProbe::Required);
 		require(result.value == firstResult && result.extraVisits == 1 && cache.path.holderDepth == 1,
 			"the semantic lookup trains exactly one hop");
 		for (const int grant : {1, lookup.baseCycles + TABLE_INDEX_VISIT_CYCLES,
@@ -477,11 +477,11 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 		nextMeta.setStringKey(indexKey, valueTable(holder.address()));
 		nextHolder.setMetatableAddress(nextMeta.address());
 		run(other, 100, valueNil());
-		other.resolveStringIndexPath(indexKey, key, cache.own.standalone, result, cache.path);
+		other.resolveStringIndexPath(indexKey, key, cache.own.standalone, result, cache.path, TableFirstOwnProbe::Required);
 		require(result.value == firstResult && result.extraVisits == 2,
 			"the bounded native read leaves a longer path to the semantic owner");
 		meta.setStringKey(indexKey, valueTable(holder.address()));
-		other.resolveStringIndexPath(indexKey, key, cache.own.standalone, result, cache.path);
+		other.resolveStringIndexPath(indexKey, key, cache.own.standalone, result, cache.path, TableFirstOwnProbe::Required);
 		run(other, 100, firstResult);
 		meta.setStringKey(indexKey, valueBool(false));
 		run(other, 100, valueNil());

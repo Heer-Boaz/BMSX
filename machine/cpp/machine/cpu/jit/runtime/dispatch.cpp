@@ -320,7 +320,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			const TableRecord table(cpu.m_heap, cpu.tableIndexAddress(base));
 			TableLookupResult result;
 			if (stringKey) {
-				table.resolveStringIndexPath(index, asStringId(key), *exit->tableRead.own.decoded, result, exit->tableRead.path);
+				const auto firstOwnProbe = std::exchange(state.firstTableOwnProbe, TableFirstOwnProbe::Required);
+				table.resolveStringIndexPath(index, asStringId(key), *exit->tableRead.own.decoded, result,
+				    exit->tableRead.path, firstOwnProbe);
 			} else if (kind == NativeBlockExit::ReadInteger) {
 				table.resolveIntegerIndex(index, access.key, result);
 			} else table.resolveIndex(index, key, result);
