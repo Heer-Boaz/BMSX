@@ -5,7 +5,7 @@ import { clamp } from '../../machine/ts/common/clamp.ts';
 import { readLE16, readLE32, writeLE16, writeLE32 } from '../../machine/ts/common/endian.ts';
 import { shiftRightSigned } from '../../machine/ts/machine/common/numeric.ts';
 import {
-    createApuBadpDecoderState, readApuBadpFrameAt, resetApuBadpDecoder,
+    createApuBadpDecoderState, createApuBadpTransition, readApuBadpFrameAt, resetApuBadpDecoder,
     type ApuBadpDecodeTarget,
 } from '../../machine/ts/machine/devices/audio/badp_decoder_hot_path.ts';
 import type { ApuBadpDecoderState } from '../../machine/ts/machine/devices/audio/badp_decoder.ts';
@@ -24,10 +24,12 @@ export function emitBadpStepVectors(): void {
     const bytes = new Uint8Array(16);
     writeLE16(bytes, 0, 1);
     writeLE16(bytes, 2, 13);
+    const sourceRevision = { value: 0 };
     const record: ApuBadpDecodeTarget = {
         sourceBytes: bytes, dataOffset: 0, frames: 1, channels: 2,
         badpSeekTable: { bytes, byteOffset: 0, entryCount: 0 },
         badp: createApuBadpDecoderState(),
+        badpTransition: createApuBadpTransition(), sourceRevision,
     };
     process.stdout.write(`${89 * 16 * predictors.length}\n`);
     for (let index = 0; index < 89; ++index) for (let code = 0; code < 16; ++code) {
@@ -41,6 +43,7 @@ export function emitBadpStepVectors(): void {
             writeLE16(bytes, 8, right);
             bytes[10] = rightIndex;
             bytes[12] = packed;
+            ++sourceRevision.value;
             resetApuBadpDecoder(record, 0);
             process.stdout.write(`${left} ${right} ${index} ${rightIndex} ${packed} ${record.badp.decodedLeft} ${record.badp.decodedRight} ${record.badp.stepIndices[0]} ${record.badp.stepIndices[1]}\n`);
         }
@@ -202,6 +205,7 @@ export function emitBadpRequestVectors(makeFixture: (spec: Case) => Fixture, bas
         const { spec } = item;
         const data = item.fixture === undefined ? makeFixture(spec) : item.fixture;
         const image = new Uint8Array(data.stride * 8 + 256);
+        const sourceRevision = { value: 0 };
         assert.ok(image.length <= 0x80000);
         const voices: ApuBadpDecodeTarget[] = [];
         const descriptors: number[][] = [];
@@ -229,6 +233,7 @@ export function emitBadpRequestVectors(makeFixture: (spec: Case) => Fixture, bas
                     byteOffset: sourceBase + readLE32(image, sourceBase + 32),
                     entryCount: readLE32(image, sourceBase + 28) },
                 badp: createApuBadpDecoderState(),
+                badpTransition: createApuBadpTransition(), sourceRevision,
             };
             voices.push(target);
             // voice, source baseABS, data offsetREL, frames, channels, seek
@@ -248,7 +253,7 @@ export function emitBadpRequestVectors(makeFixture: (spec: Case) => Fixture, bas
                 generatorKind: 0, generatorDutyQ12: 0,
             };
             sources.push(source);
-            mixer.playVoice(voice, source, { bytes: image, byteOffset: sourceBase,
+            mixer.playVoice(voice, source, { revision: sourceRevision, bytes: image, byteOffset: sourceBase,
                 byteLength: data.bytes.length - spec.offset, cartridgeSlot: 0 }, registers);
         }
         const initialImage = image.slice();
@@ -261,6 +266,7 @@ export function emitBadpRequestVectors(makeFixture: (spec: Case) => Fixture, bas
                 for (let byte = 0; byte < 4; ++byte)
                     if ((mutation.byteMask & (1 << byte)) !== 0)
                         image[address + byte] = mutation.word >>> (byte * 8);
+                ++sourceRevision.value;
                 events.push([3, epoch, mutation.voice, address, mutation.byteMask, mutation.word,
                     0, 0, ...decoderFields(voices[mutation.voice].badp)]);
             }

@@ -41,8 +41,10 @@ int main() {
         source.loopStartSample = loopStart;
         source.loopEndSample = loopEnd;
         std::vector<std::vector<u8>> buffers(voices, original);
+        u64 revision = 0;
         for (u32 voice = 0; voice < voices; ++voice) {
-            const ApuSourceByteView view{Span<const u8>(buffers[voice].data() + offset, byteCount - offset), 0u};
+            const ApuSourceByteView view{.revision = &revision,
+                .bytes = Span<const u8>(buffers[voice].data() + offset, byteCount - offset)};
             source.sourceAddr = 0x40000000u + offset + voice * ((byteCount + 3u) & ~3u);
             mixer.playVoice(voice, source, view, registers);
         }
@@ -58,6 +60,7 @@ int main() {
                     const size_t address = offset + dataOffset + (bits == 4u ? 4u + channels * 4u : 0u);
                     writeLE16(bytes.data() + address, 0x2abcu);
                 }
+                ++revision;
             }
             endedMask |= mixer.renderMachineFrames(1, static_cast<i64>(frame));
             checksum = (checksum ^ mixer.outputRing.readFramePacked()) * 0x01000193u;

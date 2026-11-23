@@ -19,7 +19,7 @@ int main(){
    u32 frame,next,fraction,gain,reset,control,b01,b2a1,a2,clear;
    std::cin>>std::dec>>frame>>next>>fraction>>std::hex>>gain>>std::dec>>reset>>std::hex>>control>>b01>>b2a1>>a2>>std::dec>>clear;
    auto&r=regs[v];r[APU_PARAMETER_GAIN_Q12_INDEX]=gain;r[APU_PARAMETER_FILTER_CONTROL_INDEX]=control;r[APU_PARAMETER_FILTER_B0_B1_INDEX]=b01;r[APU_PARAMETER_FILTER_B2_A1_INDEX]=b2a1;r[APU_PARAMETER_FILTER_A2_INDEX]=a2;
-   if(clear){ApuSourceByteView view{Span<const u8>(bytes.data()+v*128,sources[v].sourceBytes),0};mixer.playVoice(v,sources[v],view,r);}
+   if(clear){ApuSourceByteView view{.bytes=Span<const u8>(bytes.data()+v*128,sources[v].sourceBytes)};mixer.playVoice(v,sources[v],view,r);}
    else if(reset){r[APU_PARAMETER_START_SAMPLE_INDEX]=3;mixer.writeSlotRegisterWord(v,sources[v],r,APU_PARAMETER_START_SAMPLE_INDEX);}
    mixer.writeSlotRegisterWord(v,sources[v],r,APU_PARAMETER_FILTER_CONTROL_INDEX);
   }

@@ -216,11 +216,13 @@ function run(data: Fixture) {
         generatorKind: 0, generatorDutyQ12: 0,
     };
     const epoch = new AccessEpoch();
+    const revision = { value: 0 };
     const buffers: Uint8Array[] = [];
     for (let voice = 0; voice < spec.voices; ++voice) {
         const bytes = data.bytes.slice();
         buffers.push(bytes);
         mixer.playVoice(voice, { ...source, sourceAddr: source.sourceAddr + voice * data.stride }, {
+            revision,
             bytes: epoch.view(data, bytes, voice * data.stride),
             byteOffset: spec.offset, byteLength: bytes.length - spec.offset,
             cartridgeSlot: 0,
@@ -250,6 +252,7 @@ function run(data: Fixture) {
                 const address = spec.offset + data.dataOffset + (spec.bits === 4 ? 4 + spec.channels * 4 : 0);
                 writeLE16(bytes, address, 0x2abc);
             }
+            ++revision.value;
         }
         endedMask |= mixer.renderMachineFrames(1, frame);
         const packed = mixer.outputRing.readFramePacked();

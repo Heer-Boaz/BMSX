@@ -18,7 +18,7 @@ int main() {
   ApuAudioSource source;source.sourceAddr=0x40000000+v*128;source.sourceBytes=76+8*channels;
   source.sampleRateHz=44100;source.channels=channels;source.bitsPerSample=4;source.frameCount=8;
   source.dataOffset=72;source.dataBytes=4+8*channels;source.loopStartSample=1;source.loopEndSample=7;
-  ApuSourceByteView view{Span<const u8>(bytes.data()+v*128,source.sourceBytes),0};mixer.playVoice(v,source,view,regs);
+  ApuSourceByteView view{.bytes=Span<const u8>(bytes.data()+v*128,source.sourceBytes)};mixer.playVoice(v,source,view,regs);
  }
  for(unsigned epoch=0;epoch<frames;++epoch) {
   for(unsigned v=0;v<voices;++v) {u32 frame,next,fraction,gain,reset;std::cin>>std::dec>>frame>>next>>fraction>>std::hex>>gain>>std::dec>>reset;}

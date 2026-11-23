@@ -1,6 +1,7 @@
 // The actual TS APU mixer supplies complete BADP/filter/mix expected frames.
 import { writeLE16,writeLE32,readLE32 } from '../../machine/ts/common/endian';
 import { ApuOutputMixer } from '../../machine/ts/machine/devices/audio/output';
+import { APU_ROM_SOURCE_REVISION } from '../../machine/ts/machine/devices/audio/source';
 import { APU_PARAMETER_REGISTER_COUNT,APU_PARAMETER_GAIN_Q12_INDEX,APU_PARAMETER_RATE_STEP_Q16_INDEX,
  APU_PARAMETER_START_SAMPLE_INDEX,APU_PARAMETER_FILTER_CONTROL_INDEX,APU_PARAMETER_FILTER_B0_B1_INDEX,
  APU_PARAMETER_FILTER_B2_A1_INDEX,APU_PARAMETER_FILTER_A2_INDEX } from '../../machine/ts/spec/audio/apu';
@@ -19,7 +20,7 @@ for(let v=0;v<voices;v++){
  r[APU_PARAMETER_FILTER_B2_A1_INDEX]=[0,0x80004000,0,0xf0000800,0,0x20004000,0x80000000,0][v]>>>0;
  r[APU_PARAMETER_FILTER_A2_INDEX]=[0,0x8000,0,0x1000,0,0x4000,0,0][v];
  const source={sourceAddr:0x40000000+base,sourceBytes,sampleRateHz:44100,channels,bitsPerSample:4,frameCount:8,dataOffset:72,dataBytes:blockBytes,loopStartSample:1,loopEndSample:7,generatorKind:0,generatorDutyQ12:0};
- const view={bytes,byteOffset:base,byteLength:sourceBytes,cartridgeSlot:0};regs.push(r);sources.push(source);views.push(view);mixer.playVoice(v,source,view,r);
+ const view={revision:APU_ROM_SOURCE_REVISION,bytes,byteOffset:base,byteLength:sourceBytes,cartridgeSlot:0};regs.push(r);sources.push(source);views.push(view);mixer.playVoice(v,source,view,r);
 }
 process.stdout.write(`${frames} ${voices} ${bytes.length/4} ${channels}\n`);
 for(let off=0;off<bytes.length;off+=4)process.stdout.write(`${readLE32(bytes,off).toString(16).padStart(8,'0')}\n`);

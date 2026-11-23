@@ -5,9 +5,10 @@
 import assert from 'node:assert/strict';
 import { writeLE16, writeLE32 } from '../../machine/ts/common/endian.ts';
 import {
-  createApuBadpDecoderState, readApuBadpFrameAt, resetApuBadpDecoder,
+  createApuBadpDecoderState, createApuBadpTransition, readApuBadpFrameAt, resetApuBadpDecoder,
   type ApuBadpDecodeTarget,
 } from '../../machine/ts/machine/devices/audio/badp_decoder_hot_path.ts';
+import { APU_ROM_SOURCE_REVISION } from '../../machine/ts/machine/devices/audio/source.ts';
 
 const BLOCK_FRAMES = 32, BLOCK_BYTES = 44, BLOCKS = 4;
 let checkedEpochs = 0, worstReads = 0, exercisedWraps = 0;
@@ -43,11 +44,13 @@ for (let residue = 0; residue < 4; ++residue) {
         sourceBytes: data, dataOffset: residue, frames: BLOCKS * BLOCK_FRAMES,
         channels: 2, badpSeekTable: { bytes: table, byteOffset: 0, entryCount: 0 },
         badp: createApuBadpDecoderState(),
+        badpTransition: createApuBadpTransition(), sourceRevision: APU_ROM_SOURCE_REVISION,
       };
       const candidate: ApuBadpDecodeTarget = {
         sourceBytes: counted, dataOffset: residue, frames: BLOCKS * BLOCK_FRAMES,
         channels: 2, badpSeekTable: { bytes: table, byteOffset: 0, entryCount: table.length / 8 },
         badp: createApuBadpDecoderState(),
+        badpTransition: createApuBadpTransition(), sourceRevision: APU_ROM_SOURCE_REVISION,
       };
       // Preparation is outside the output-period budget under investigation.
       resetApuBadpDecoder(reference, loopStart);

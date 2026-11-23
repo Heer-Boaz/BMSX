@@ -3,6 +3,7 @@
 // playback with a six-frame loop, and distinct per-slot signed gain words.
 import { writeLE16, writeLE32, readLE32 } from '../../machine/ts/common/endian.ts';
 import { ApuOutputMixer } from '../../machine/ts/machine/devices/audio/output.ts';
+import { APU_ROM_SOURCE_REVISION } from '../../machine/ts/machine/devices/audio/source.ts';
 import { APU_PARAMETER_REGISTER_COUNT, APU_PARAMETER_GAIN_Q12_INDEX,
     APU_PARAMETER_RATE_STEP_Q16_INDEX, APU_PARAMETER_START_SAMPLE_INDEX } from '../../machine/ts/spec/audio/apu.ts';
 const frames=48, voices=process.argv.includes('--voices=16') ? 16 : 8, stride=128;
@@ -26,7 +27,7 @@ for(let voice=0;voice<voices;voice++) {
  mixer.playVoice(voice,{sourceAddr:0x40000000+base,sourceBytes,sampleRateHz:44100,
   channels,bitsPerSample:4,frameCount:8,dataOffset:72,dataBytes:blockBytes,
   loopStartSample:1,loopEndSample:7,generatorKind:0,generatorDutyQ12:0},
-  {bytes,byteOffset:base,byteLength:sourceBytes,cartridgeSlot:0},regs);
+  {revision:APU_ROM_SOURCE_REVISION,bytes,byteOffset:base,byteLength:sourceBytes,cartridgeSlot:0},regs);
 }
 process.stdout.write(`${frames} ${voices} ${bytes.length/4} ${channels}\n`);
 for(let offset=0;offset<bytes.length;offset+=4) process.stdout.write(`${readLE32(bytes,offset).toString(16).padStart(8,'0')}\n`);

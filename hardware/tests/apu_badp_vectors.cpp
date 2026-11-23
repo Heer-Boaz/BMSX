@@ -19,6 +19,7 @@ int main() {
         u32 channels = 0;
         ApuBadpSeekTable seek;
         ApuBadpDecoderState decoder;
+        ApuBadpTransition transition;
     };
     size_t scenarioCount;
     std::cin >> scenarioCount;
@@ -37,6 +38,7 @@ int main() {
         }
         std::cin >> std::dec;
         std::vector<Voice> voices(voiceCount);
+        u64 revision = 0;
         for (size_t descriptor = 0; descriptor < voiceCount; ++descriptor) {
             u32 voice, sourceBase, dataOffset, frames, channels, seekBase, seekCount, loopStart, loopEnd;
             std::cin >> voice >> sourceBase >> dataOffset >> frames >> channels
@@ -59,6 +61,7 @@ int main() {
             Voice& target = voices[voice];
             switch (op) {
                 case 0:
+                    target.transition.target = -1;
                     resetApuBadpDecoder(target.data, target.frames, target.channels, target.seek,
                         target.decoder, arg0);
                     ++resets;
@@ -67,7 +70,7 @@ int main() {
                 case 2: {
                     i16 left, right;
                     readApuBadpFrameAt(target.data, target.frames, target.channels, target.seek,
-                        target.decoder, arg0, left, right);
+                        target.decoder, target.transition, &revision, arg0, left, right);
                     u32 sample = static_cast<u32>(static_cast<u16>(left))
                         | (static_cast<u32>(static_cast<u16>(right)) << 16);
                     if (sample != expectedCurrent) {
@@ -78,7 +81,7 @@ int main() {
                     ++operands;
                     if (op == 2 && arg1 != arg0) {
                         readApuBadpFrameAt(target.data, target.frames, target.channels, target.seek,
-                            target.decoder, arg1, left, right);
+                            target.decoder, target.transition, &revision, arg1, left, right);
                         sample = static_cast<u32>(static_cast<u16>(left))
                             | (static_cast<u32>(static_cast<u16>(right)) << 16);
                         if (sample != expectedNeighbor) {
@@ -100,6 +103,7 @@ int main() {
                     for (u32 lane = 0; lane < 4; ++lane)
                         if ((arg1 & (1u << lane)) != 0)
                             image[arg0 + lane] = static_cast<u8>(arg2 >> (lane * 8));
+                    ++revision;
                     ++writes;
                     break;
                 default:
