@@ -228,12 +228,12 @@ bool core_session_environment(unsigned command, void* data) {
 			*(bool*)data = session->single_guest_tick;
 			session->single_guest_tick_bound = true;
 			return true;
-		case BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V1:
+		case BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V2:
 			if (!session->accept_gx_upload_profile_interface) {
 				return false;
 			}
 			session->gx_upload_profile =
-					*(const BmsxGxUploadProfileInterfaceV1*)data;
+					*(const BmsxGxUploadProfileInterfaceV2*)data;
 			session->gx_upload_profile_interface_set = true;
 			return true;
 		case BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE_V1:

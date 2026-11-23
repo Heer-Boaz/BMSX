@@ -19,6 +19,36 @@ using namespace bmsx;
 namespace {
 void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
 
+void testPayloadProfile(OpenGLES2Backend& backend) {
+	RenderPassLibrary library(&backend, nullptr);
+	test::GpuOutputFixture fixture;
+	fixture.commands.reset();
+	const std::array<u32, 5> words{0xa0000000u, 0u, 0x00010003u, 0x00020001u, 0x99990003u};
+	const size_t start = fixture.commands.appendWords(words.data(), words.size());
+	fixture.commands.pushCommand(GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, 0xa0u, start, words.size(),
+		0u, 0u, 0u, 0u, 0u, 0u, 0u, GX_GPU_SKIPPED_LINE_NONE);
+	if (backend.profilesGxUploads()) backend.beginGxUploadProfileFrame();
+	// The same accepted prefix can be consumed through the packet route and
+	// then revisited by presentation; VRAM and profile both execute it once.
+	fixture.commands.completeCommandExecution(1u);
+	fixture.commands.sealCommandsForPresentation();
+	backend.executeGxGpuCommands(fixture.commands);
+	backend.executeGxGpuPresentation(fixture.output);
+	std::array<u8, 6> pixels{};
+	backend.readGxGpuVram({0u, 0u, 3u, 1u, 0u}, pixels.data());
+	require(pixels == std::array<u8, 6>{1u, 0u, 2u, 0u, 3u, 0u}, "CPU-to-VRAM writes three raw pixels");
+	GxUploadProfileFrame profile{};
+	const bool reported = backend.readGxUploadProfileFrame(0u, profile);
+	require(reported == backend.profilesGxUploads(), "GX profile remains opt-in");
+	if (reported) {
+		require(profile.commands == 1u && profile.logicalBytes == 6u
+			&& profile.elapsedNanoseconds == profile.maxCommandNanoseconds,
+			"profile counts only the three executed pixels, not the prefix revisit or packed padding");
+		require(profile.hostCalls == 0u && profile.hostBytes == 0u && profile.scanoutUploadCalls == 0u,
+			"software VRAM payload does not issue a GL transfer");
+	}
+}
+
 void testScanoutImport(OpenGLES2Backend& backend) {
 	test::GpuOutputFixture fixture;
 	fixture.words = {
@@ -70,7 +100,19 @@ void testScanoutImport(OpenGLES2Backend& backend) {
 				// Exercise both direct device ownership and immutable packet restore.
 				if ((frame & 1u) == 0u) backend.executeGxGpuPresentation(fixture.output);
 				else backend.replaceGxGpuVramSnapshot(fixture.vram, fixture.output.vramSnapshotSerial);
+				if (backend.profilesGxUploads()) backend.beginGxUploadProfileFrame();
 				executeGxGpuPass(&backend, nullptr, framebuffer, storage, nullptr, {fixture.scanout, fixture.output.vramReplacementSerial});
+				GxUploadProfileFrame profile{};
+				if (backend.readGxUploadProfileFrame(0u, profile)) {
+					require(profile.commands == 0u && profile.logicalBytes == 0u && profile.hostCalls == 0u,
+						"no CPU-to-VRAM counters are charged for software scanout");
+					require(profile.softwareScanoutPixels == static_cast<u64>(state.width * state.height)
+						&& profile.scanoutUploadCalls == 1u && profile.scanoutUploadBytes == profile.softwareScanoutPixels * sizeof(u32),
+						"each scanout materializes and uploads only its actual surface");
+					require(!backend.readGxUploadProfileFrame(profile.renderFrameSerial, profile), "do not expose the same frame twice");
+				} else {
+					require(!backend.profilesGxUploads(), "scanout exposes each opted-in profile frame");
+				}
 				const auto actual = backend.readColorTexture(texture, state.width, state.height);
 				for (i32 y = 0; y < state.height; ++y) for (i32 x = 0; x < state.width; ++x) {
 					const u32 pixel = expected[y * (state.width + 3) + x];
@@ -110,16 +152,17 @@ int main() {
 	const EGLint contextAttributes[]{EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
 	const EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttributes);
 	require(eglMakeCurrent(display, surface, surface, context), "make current");
-	{
-		OpenGLES2Backend backend(32, 32, false, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	for (const bool profiling : {false, true}) {
+		OpenGLES2Backend backend(32, 32, profiling, PSX_MACHINE_SPEC.gxGpuVramBytes);
 		backend.setContextCallbacks([]() -> uintptr_t { return 0; }, eglGetProcAddress);
 		for (unsigned epoch = 0; epoch < 2u; ++epoch) {
 			backend.onContextReset();
+			testPayloadProfile(backend);
 			testScanoutImport(backend);
 			backend.onContextDestroy();
 		}
 	}
 	eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 	eglDestroyContext(display, context); eglDestroySurface(display, surface); eglTerminate(display);
-	std::cout << "SOFTWARE-GX-GLES2:PASS import, raw readback, resize, field history and context reset\n";
+	std::cout << "SOFTWARE-GX-GLES2:PASS import, raw readback, opt-in profile, resize, field history and context reset\n";
 }

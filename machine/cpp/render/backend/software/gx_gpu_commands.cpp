@@ -2,10 +2,12 @@
 
 #include "machine/devices/gx/gpu_command_storage.h"
 #include "render/backend/gx_gpu_render_rules.h"
+#include "render/backend/gx_gpu_upload_profile.h"
 #include "render/backend/software/gx_gpu_rasterizer.h"
 #include "render/backend/software/gx_gpu_vram.h"
 
 #include <bit>
+#include <chrono>
 #include <cstring>
 
 namespace bmsx {
@@ -40,7 +42,7 @@ void executeFillRectangle(
 	}
 }
 
-void executeCpuToVram(
+u32 executeCpuToVram(
 	GxGpuSoftwareState& software,
 	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
@@ -92,6 +94,7 @@ void executeCpuToVram(
 			emittedPixel += 1u;
 		}
 	}
+	return emittedPixels;
 }
 
 void copyVramArea(
@@ -256,13 +259,13 @@ void executeDrawPolyline(
 	}
 }
 
-} // namespace
-
-size_t executeGxGpuSoftwareCommands(
+template<bool Profile>
+size_t executeCommands(
 	GxGpuSoftwareState& software,
 	const GxGpuCommandStorage& commandBuffer,
 	size_t processedCommandCount,
-	size_t commandLimit) {
+	size_t commandLimit,
+	GxUploadProfileFrame* profile) {
 	for (size_t commandIndex = processedCommandCount; commandIndex < commandLimit; commandIndex += 1u) {
 		switch (commandBuffer.commandKind[commandIndex]) {
 			case GX_GPU_COMMAND_DRAW_POLYGON:
@@ -284,11 +287,33 @@ size_t executeGxGpuSoftwareCommands(
 				executeVramToVram(software, commandBuffer, commandIndex);
 				break;
 			case GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM:
-				executeCpuToVram(software, commandBuffer, commandIndex);
+				if constexpr (Profile) {
+					const auto start = std::chrono::steady_clock::now();
+					const u32 pixels = executeCpuToVram(software, commandBuffer, commandIndex);
+					const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+						std::chrono::steady_clock::now() - start).count();
+					profile->recordCpuToVram(static_cast<u64>(pixels) * sizeof(u16), 0u, 0u, static_cast<u64>(elapsed));
+				} else {
+					executeCpuToVram(software, commandBuffer, commandIndex);
+				}
 				break;
 		}
 	}
 	return processedCommandCount < commandLimit ? commandLimit : processedCommandCount;
+}
+
+} // namespace
+
+size_t executeGxGpuSoftwareCommands(
+	GxGpuSoftwareState& software,
+	const GxGpuCommandStorage& commandBuffer,
+	size_t processedCommandCount,
+	size_t commandLimit,
+	GxUploadProfileFrame* profile) {
+	if (profile != nullptr) {
+		return executeCommands<true>(software, commandBuffer, processedCommandCount, commandLimit, profile);
+	}
+	return executeCommands<false>(software, commandBuffer, processedCommandCount, commandLimit, nullptr);
 }
 
 } // namespace bmsx

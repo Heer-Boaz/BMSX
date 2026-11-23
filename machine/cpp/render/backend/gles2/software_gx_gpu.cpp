@@ -11,6 +11,7 @@
 
 #include <array>
 #include <bit>
+#include <chrono>
 #include <vector>
 
 namespace bmsx {
@@ -93,13 +94,31 @@ void executeGxGpuPass(GPUBackend* backend, VideoPresenter*, void* fbo,
 	auto& gles = *static_cast<OpenGLES2Backend*>(backend);
 	auto& gx = *gles.m_gx_gpu;
 	const auto& state = stateStorage.gxGpu;
-	gx.scanoutPixels.resize(static_cast<size_t>(state.width) * state.height);
+	const size_t pixels = static_cast<size_t>(state.width) * state.height;
+	auto* profile = gles.gxUploadProfile();
+	using Clock = std::chrono::steady_clock;
+	Clock::time_point scanoutStart;
+	if (profile != nullptr) scanoutStart = Clock::now();
+	gx.scanoutPixels.resize(pixels);
 	scanoutGxGpuSoftwareVram(gx.software, gx.scanoutPixels.data(), state.width,
 		state, output.pcrtcScanout, output.vramReplacementSerial);
+	if (profile != nullptr) {
+		const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - scanoutStart).count();
+		profile->softwareScanoutNanoseconds += static_cast<u64>(elapsed);
+		profile->softwareScanoutPixels += pixels;
+	}
 	const TextureHandle upload = gx.uploads[gx.nextUpload];
 	gx.nextUpload = (gx.nextUpload + 1u) % gx.uploads.size();
+	Clock::time_point uploadStart;
+	if (profile != nullptr) uploadStart = Clock::now();
 	gles.updateTexture(upload, reinterpret_cast<const u8*>(gx.scanoutPixels.data()),
 		state.width, state.height, RGBA8_LINEAR_TEXTURE_PARAMS);
+	if (profile != nullptr) {
+		const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - uploadStart).count();
+		profile->scanoutUploadNanoseconds += static_cast<u64>(elapsed);
+		profile->scanoutUploadCalls += 1u;
+		profile->scanoutUploadBytes += pixels * sizeof(u32);
+	}
 	gles.setRenderTarget(gles.framebufferName(fbo), state.width, state.height);
 	auto& draw = gles.drawState;
 	draw.disable(GLES2Capability::Blend);
@@ -120,11 +139,11 @@ void executeGxGpuPass(GPUBackend* backend, VideoPresenter*, void* fbo,
 
 void OpenGLES2Backend::executeGxGpuPresentation(const GxGpuDeviceOutput& output) {
 	invalidateContextState();
-	executeGxGpuSoftwareVramCommands(m_gx_gpu->software, output, output.commandBuffer.presentCommandCount);
+	executeGxGpuSoftwareVramCommands(m_gx_gpu->software, output, output.commandBuffer.presentCommandCount, gxUploadProfile());
 }
 
 void OpenGLES2Backend::executeGxGpuCommands(const GxGpuCommandStorage& commands) {
-	executeGxGpuSoftwareCommandPrefix(m_gx_gpu->software, commands, commands.executedCommandCount);
+	executeGxGpuSoftwareCommandPrefix(m_gx_gpu->software, commands, commands.executedCommandCount, gxUploadProfile());
 }
 
 void OpenGLES2Backend::replaceGxGpuVramSnapshot(std::span<const u8> bytes, u64 serial) {
@@ -137,12 +156,12 @@ void OpenGLES2Backend::readGxGpuVram(const GxGpuReadbackRequest& request, u8* pi
 
 void OpenGLES2Backend::executeGxGpuReadback(GxGpu& gxGpu) {
 	const auto& output = gxGpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(m_gx_gpu->software, output, output.readbackPort.fenceCommandCount());
+	executeGxGpuSoftwareVramCommands(m_gx_gpu->software, output, output.readbackPort.fenceCommandCount(), gxUploadProfile());
 }
 
 void OpenGLES2Backend::executeGxGpuCommandDrain(GxGpu& gxGpu) {
 	const auto& output = gxGpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(m_gx_gpu->software, output, output.commandBuffer.executedCommandCount);
+	executeGxGpuSoftwareVramCommands(m_gx_gpu->software, output, output.commandBuffer.executedCommandCount, gxUploadProfile());
 	gxGpu.retireExecutedCommands();
 }
 
@@ -151,7 +170,7 @@ void OpenGLES2Backend::finishGxGpuReadbacks() {
 }
 
 void OpenGLES2Backend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
-	captureGxGpuSoftwareVramSnapshot(m_gx_gpu->software, gxGpu);
+	captureGxGpuSoftwareVramSnapshot(m_gx_gpu->software, gxGpu, gxUploadProfile());
 }
 
 void registerGxGpuPass(RenderPassLibrary& registry) {

@@ -53,7 +53,7 @@ typedef struct BmsxCoreSession {
 	struct retro_frame_time_callback frame_time;
 	uint64_t frame_period_usec;
 	uint64_t frame_period_ns;
-	BmsxGxUploadProfileInterfaceV1 gx_upload_profile;
+	BmsxGxUploadProfileInterfaceV2 gx_upload_profile;
 	BmsxNativeCompilationProfileInterfaceV1 native_compilation_profile_v1;
 	BmsxNativeCompilationProfileInterfaceV2 native_compilation_profile_v2;
 	BmsxExecutionProfileInterface execution_profile;

@@ -21,8 +21,12 @@ typedef struct BmsxFrameTimingOutlier {
 	uint64_t run_ns;
 	uint64_t core_without_present_ns;
 	uint64_t period_ns;
+	uint64_t final_blit_ns;
+	uint64_t swap_ns;
 	bool missed_deadline;
+	bool has_gx_upload;
 	BmsxGuestProgressInterval guest;
+	BmsxGxUploadProfileFrameV2 gx_upload;
 } BmsxFrameTimingOutlier;
 
 typedef struct BmsxSlowFrameSample {
@@ -36,7 +40,7 @@ typedef struct BmsxSlowFrameSample {
 	bool dropped;
 	bool presented;
 	bool has_gx_upload;
-	BmsxGxUploadProfileFrameV1 gx_upload;
+	BmsxGxUploadProfileFrameV2 gx_upload;
 	bool has_native_compilation;
 	BmsxNativeCompilationProfileV2 native_compilation;
 	bool has_execution;
@@ -74,9 +78,14 @@ typedef struct BmsxFrameTimingReport {
 	uint64_t gx_logical_bytes;
 	uint64_t gx_host_calls;
 	uint64_t gx_host_bytes;
-	uint64_t gx_cpu_nanoseconds;
+	uint64_t gx_elapsed_nanoseconds;
 	uint64_t gx_max_frame_nanoseconds;
 	uint64_t gx_max_command_nanoseconds;
+	uint64_t gx_software_scanout_pixels;
+	uint64_t gx_software_scanout_nanoseconds;
+	uint64_t gx_scanout_upload_calls;
+	uint64_t gx_scanout_upload_bytes;
+	uint64_t gx_scanout_upload_nanoseconds;
 	BmsxSlowFrameSample slow_frames[BMSX_FRAME_TIMING_SLOW_FRAME_COUNT];
 	unsigned slow_frame_count;
 	BmsxFrameTimingOutlier* outliers;
@@ -108,7 +117,7 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		bool swap_ran,
 		bool dropped,
 		bool presented,
-		const BmsxGxUploadProfileFrameV1* gx_upload,
+		const BmsxGxUploadProfileFrameV2* gx_upload,
 		const BmsxNativeCompilationProfileV2* native_compilation,
 		const BmsxExecutionProfileInterval* execution,
 		uint64_t host_main_thread_cpu_ns,
@@ -116,7 +125,7 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		const BmsxGuestProgressInterval* guest);
 void bmsx_frame_timing_record_gx_upload(
 	BmsxFrameTimingReport* report,
-	const BmsxGxUploadProfileFrameV1* frame);
+	const BmsxGxUploadProfileFrameV2* frame);
 uint64_t bmsx_frame_timing_percentile_ms(const BmsxFrameTimingHistogram* histogram, uint64_t numerator);
 void bmsx_frame_timing_print(
 	const BmsxFrameTimingReport* report,

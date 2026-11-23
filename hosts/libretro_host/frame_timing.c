@@ -4,6 +4,23 @@
 #include <stddef.h>
 #include <stdio.h>
 
+static void print_gx_upload_fields(const BmsxGxUploadProfileFrameV2* frame) {
+	fprintf(stderr,
+		" render_frame=%llu upload_commands=%llu upload_bytes=%llu upload_elapsed_ns=%llu upload_host_calls=%llu upload_host_bytes=%llu"
+		" gx_software_scanout_pixels=%llu gx_software_scanout_ns=%llu gx_scanout_upload_calls=%llu gx_scanout_upload_bytes=%llu gx_scanout_upload_ns=%llu",
+		(unsigned long long)frame->render_frame_serial,
+		(unsigned long long)frame->cpu_to_vram_commands,
+		(unsigned long long)frame->logical_bytes,
+		(unsigned long long)frame->elapsed_nanoseconds,
+		(unsigned long long)frame->host_calls,
+		(unsigned long long)frame->host_bytes,
+		(unsigned long long)frame->software_scanout_pixels,
+		(unsigned long long)frame->software_scanout_nanoseconds,
+		(unsigned long long)frame->scanout_upload_calls,
+		(unsigned long long)frame->scanout_upload_bytes,
+		(unsigned long long)frame->scanout_upload_nanoseconds);
+}
+
 static void record_histogram(BmsxFrameTimingHistogram* histogram, uint64_t elapsed_ns) {
 	uint64_t bucket = elapsed_ns / 1000000ull;
 	if (bucket >= BMSX_FRAME_TIMING_BUCKET_COUNT) {
@@ -72,7 +89,7 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		bool swap_ran,
 		bool dropped,
 		bool presented,
-		const BmsxGxUploadProfileFrameV1* gx_upload,
+		const BmsxGxUploadProfileFrameV2* gx_upload,
 		const BmsxNativeCompilationProfileV2* native_compilation,
 		const BmsxExecutionProfileInterval* execution,
 		uint64_t host_main_thread_cpu_ns,
@@ -109,9 +126,13 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 			.run_ns = retro_run_ns,
 			.core_without_present_ns = core_without_present_ns,
 			.period_ns = period_ns,
+			.final_blit_ns = final_blit_ns,
+			.swap_ns = swap_ns,
 			.missed_deadline = missed_deadline,
+			.has_gx_upload = gx_upload != NULL,
 		};
 		if (guest != NULL) sample->guest = *guest;
+		if (gx_upload != NULL) sample->gx_upload = *gx_upload;
 	}
 	if (final_blit_ran) {
 		record_histogram(&report->final_blit, final_blit_ns);
@@ -157,15 +178,20 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 
 void bmsx_frame_timing_record_gx_upload(
 		BmsxFrameTimingReport* report,
-		const BmsxGxUploadProfileFrameV1* frame) {
+		const BmsxGxUploadProfileFrameV2* frame) {
 	report->gx_profiled_frames += 1u;
 	report->gx_cpu_to_vram_commands += frame->cpu_to_vram_commands;
 	report->gx_logical_bytes += frame->logical_bytes;
 	report->gx_host_calls += frame->host_calls;
 	report->gx_host_bytes += frame->host_bytes;
-	report->gx_cpu_nanoseconds += frame->cpu_nanoseconds;
-	if (report->gx_max_frame_nanoseconds < frame->cpu_nanoseconds) {
-		report->gx_max_frame_nanoseconds = frame->cpu_nanoseconds;
+	report->gx_elapsed_nanoseconds += frame->elapsed_nanoseconds;
+	report->gx_software_scanout_pixels += frame->software_scanout_pixels;
+	report->gx_software_scanout_nanoseconds += frame->software_scanout_nanoseconds;
+	report->gx_scanout_upload_calls += frame->scanout_upload_calls;
+	report->gx_scanout_upload_bytes += frame->scanout_upload_bytes;
+	report->gx_scanout_upload_nanoseconds += frame->scanout_upload_nanoseconds;
+	if (report->gx_max_frame_nanoseconds < frame->elapsed_nanoseconds) {
+		report->gx_max_frame_nanoseconds = frame->elapsed_nanoseconds;
 	}
 	if (report->gx_max_command_nanoseconds < frame->max_command_nanoseconds) {
 		report->gx_max_command_nanoseconds = frame->max_command_nanoseconds;
@@ -205,29 +231,27 @@ void bmsx_frame_timing_print(
 		fprintf(stderr, "[libretro-host][timing] over_15ms=%zu\n", report->outlier_count);
 		for (size_t index = 0; index < report->outlier_count; ++index) {
 			const BmsxFrameTimingOutlier* sample = &report->outliers[index];
-			fprintf(stderr, "[libretro-host][over-15ms] host_frame=%llu run_ns=%llu core_without_present_ns=%llu period_ns=%llu missed_deadline=%u",
+			fprintf(stderr, "[libretro-host][over-15ms] host_frame=%llu run_ns=%llu core_without_present_ns=%llu period_ns=%llu missed_deadline=%u blit_ns=%llu swap_ns=%llu",
 				(unsigned long long)sample->host_frame, (unsigned long long)sample->run_ns,
 				(unsigned long long)sample->core_without_present_ns, (unsigned long long)sample->period_ns,
-				(unsigned)sample->missed_deadline);
+				(unsigned)sample->missed_deadline,
+				(unsigned long long)sample->final_blit_ns, (unsigned long long)sample->swap_ns);
 			if (report->guest_progress_runs != 0u) {
 				fprintf(stderr, " tick_before=%lld tick_after=%lld cycle_before=%lld cycle_after=%lld",
 					(long long)sample->guest.before.tick_sequence, (long long)sample->guest.after.tick_sequence,
 					(long long)sample->guest.before.scheduler_cycles, (long long)sample->guest.after.scheduler_cycles);
 			}
+			if (sample->has_gx_upload) print_gx_upload_fields(&sample->gx_upload);
 			fputc('\n', stderr);
 		}
 	}
 	for (unsigned index = 0u; index < report->slow_frame_count; ++index) {
 		const BmsxSlowFrameSample* sample = &report->slow_frames[index];
 		fprintf(stderr,
-			"[libretro-host][slow-frame] host_frame=%llu run_ms=%.3f blit_ms=%.3f swap_ms=%.3f presented=%u dropped=%u gx_profile=%u render_frame=%llu upload_commands=%llu upload_bytes=%llu upload_ms=%.3f native_profile=%u prepares=%llu prepare_ms=%.3f discovery_ms=%.3f retirement_ms=%.3f compilation_ms=%.3f merged_regions=%llu live_code_bytes=%llu execution_profile=%u native_profile_version=%u",
+			"[libretro-host][slow-frame] host_frame=%llu run_ms=%.3f blit_ms=%.3f swap_ms=%.3f presented=%u dropped=%u gx_profile=%u native_profile=%u prepares=%llu prepare_ms=%.3f discovery_ms=%.3f retirement_ms=%.3f compilation_ms=%.3f merged_regions=%llu live_code_bytes=%llu execution_profile=%u native_profile_version=%u",
 			(unsigned long long)sample->host_frame, (double)sample->retro_run_ns / 1000000.0,
 			(double)sample->final_blit_ns / 1000000.0, (double)sample->swap_ns / 1000000.0,
 			(unsigned)sample->presented, (unsigned)sample->dropped, (unsigned)sample->has_gx_upload,
-			(unsigned long long)sample->gx_upload.render_frame_serial,
-			(unsigned long long)sample->gx_upload.cpu_to_vram_commands,
-			(unsigned long long)sample->gx_upload.logical_bytes,
-			(double)sample->gx_upload.cpu_nanoseconds / 1000000.0,
 			(unsigned)sample->has_native_compilation,
 			(unsigned long long)sample->native_compilation.counters.prepare_requests,
 			(double)sample->native_compilation.counters.prepare_nanoseconds / 1000000.0,
@@ -237,6 +261,7 @@ void bmsx_frame_timing_print(
 			(unsigned long long)sample->native_compilation.counters.merged_regions,
 			(unsigned long long)sample->native_compilation.counters.code_bytes,
 			(unsigned)sample->has_execution, sample->has_native_compilation ? native_profile_version : 0u);
+		if (sample->has_gx_upload) print_gx_upload_fields(&sample->gx_upload);
 		if (sample->has_native_compilation)
 			bmsx_native_compilation_profile_print_versioned_fields(stderr, native_profile_version, &sample->native_compilation);
 		if (sample->has_execution) bmsx_execution_profile_print(stderr, &sample->execution);
@@ -254,20 +279,26 @@ void bmsx_frame_timing_print(
 	}
 	const double gx_average_frame_ms = report->gx_profiled_frames == 0u
 		? 0.0
-		: (double)report->gx_cpu_nanoseconds / (double)report->gx_profiled_frames / 1000000.0;
+		: (double)report->gx_elapsed_nanoseconds / (double)report->gx_profiled_frames / 1000000.0;
 	const double gx_average_command_ms = report->gx_cpu_to_vram_commands == 0u
 		? 0.0
-		: (double)report->gx_cpu_nanoseconds / (double)report->gx_cpu_to_vram_commands / 1000000.0;
+		: (double)report->gx_elapsed_nanoseconds / (double)report->gx_cpu_to_vram_commands / 1000000.0;
 	fprintf(stderr,
-			"[libretro-host][gx-upload] frames=%llu commands=%llu logical_bytes=%llu host_calls=%llu host_bytes=%llu total_cpu_ms=%.3f avg_frame_ms=%.3f avg_command_ms=%.3f max_frame_ms=%.3f max_command_ms=%.3f\n",
+			"[libretro-host][gx-upload] frames=%llu commands=%llu logical_bytes=%llu host_calls=%llu host_bytes=%llu total_elapsed_ms=%.3f avg_frame_ms=%.3f avg_command_ms=%.3f max_frame_ms=%.3f max_command_ms=%.3f"
+			" gx_software_scanout_pixels=%llu gx_software_scanout_ns=%llu gx_scanout_upload_calls=%llu gx_scanout_upload_bytes=%llu gx_scanout_upload_ns=%llu\n",
 			(unsigned long long)report->gx_profiled_frames,
 			(unsigned long long)report->gx_cpu_to_vram_commands,
 			(unsigned long long)report->gx_logical_bytes,
 			(unsigned long long)report->gx_host_calls,
 			(unsigned long long)report->gx_host_bytes,
-			(double)report->gx_cpu_nanoseconds / 1000000.0,
+			(double)report->gx_elapsed_nanoseconds / 1000000.0,
 			gx_average_frame_ms,
 			gx_average_command_ms,
 			(double)report->gx_max_frame_nanoseconds / 1000000.0,
-			(double)report->gx_max_command_nanoseconds / 1000000.0);
+			(double)report->gx_max_command_nanoseconds / 1000000.0,
+			(unsigned long long)report->gx_software_scanout_pixels,
+			(unsigned long long)report->gx_software_scanout_nanoseconds,
+			(unsigned long long)report->gx_scanout_upload_calls,
+			(unsigned long long)report->gx_scanout_upload_bytes,
+			(unsigned long long)report->gx_scanout_upload_nanoseconds);
 }

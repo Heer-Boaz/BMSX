@@ -710,7 +710,7 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	const bool gles = presenter.backend().type() == BackendType::OpenGLES2;
 	const bool profiling = gles && static_cast<OpenGLES2Backend&>(presenter.backend()).profilesGxUploads();
 	const bool cachedUploads = gles && static_cast<OpenGLES2Backend&>(presenter.backend()).gxGpuDrawTargetMode() != GxGpuDrawTargetMode::FullVram;
-	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxCpuToVramProfileFrame();
+	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxUploadProfileFrame();
 	for (const u32 word : {
 		0xe1000118u, 0x65808080u, (180u << 16u), 0u, 0x00010100u,
 		0xa0000000u, 0x01000200u, 0x00010001u, 0x00007fffu,
@@ -729,13 +729,13 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	}
 	if (profiling) {
 		auto& backend = static_cast<OpenGLES2Backend&>(presenter.backend());
-		GxCpuToVramProfileFrame profile;
-		require(backend.readGxCpuToVramProfileFrame(0u, profile)
+		GxUploadProfileFrame profile;
+		require(backend.readGxUploadProfileFrame(0u, profile)
 			&& profile.commands == 1u && profile.logicalBytes == 2u,
 			"uploads in a pre-presentation command drain remain in the host-call profile");
 		const u64 previousSerial = profile.renderFrameSerial;
-		backend.beginGxCpuToVramProfileFrame();
-		require(backend.readGxCpuToVramProfileFrame(previousSerial, profile)
+		backend.beginGxUploadProfileFrame();
+		require(backend.readGxUploadProfileFrame(previousSerial, profile)
 			&& profile.commands == 0u && profile.logicalBytes == 0u,
 			"a new host-call profile retires the previous upload counters");
 	}
@@ -1060,7 +1060,7 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	require(std::equal(saved.vramBytes.begin(), saved.vramBytes.end(), restored.begin()), "a restored snapshot invalidates newer cached drawing words");
 	// Adjacent odd-pixel payloads share one staging update, while each draw
 	// retains its own mask state and observes earlier writes to the same area.
-	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxCpuToVramProfileFrame();
+	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxUploadProfileFrame();
 	std::vector<u32> adjacent{0xe6000000u, 0xa0000000u, (900u << 16u) | 700u, (3u << 16u) | 13u};
 	for (u32 pair = 0u; pair < 20u; ++pair) adjacent.push_back(0x03e0801fu);
 	for (const u32 word : {0xe6000002u, 0xa0000000u, (900u << 16u) | 700u, (3u << 16u) | 13u}) adjacent.push_back(word);
@@ -1081,8 +1081,8 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	}
 	if (profiling) {
 		auto& backend = static_cast<OpenGLES2Backend&>(presenter.backend());
-		GxCpuToVramProfileFrame profile;
-		require(backend.readGxCpuToVramProfileFrame(0u, profile) && profile.commands == 3u && profile.logicalBytes == 168u,
+		GxUploadProfileFrame profile;
+		require(backend.readGxUploadProfileFrame(0u, profile) && profile.commands == 3u && profile.logicalBytes == 168u,
 			"a staged batch retains all logical upload commands and excludes odd-pixel padding");
 		if (backend.gxGpuDrawTargetMode() != GxGpuDrawTargetMode::FullVram)
 			require(profile.hostCalls == 1u && profile.hostBytes == 168u, "adjacent payloads are uploaded before any sampling draw");
@@ -1200,7 +1200,7 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	// Interleaved atlas/CLUT changes are source preparation, not permission to
 	// reorder VRAM writes. Nine uploads cross more than a full staging-ring turn
 	// in the old route; every dependent draw/copy must retain its own palette.
-	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxCpuToVramProfileFrame();
+	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxUploadProfileFrame();
 	for (u32 group = 0u; group < 4u; ++group) {
 		for (const u32 word : {0xe6000000u, 0xe1000005u,
 			0xa0000000u, 320u, 0x00010003u, 0x11111111u, 0xdead1111u}) {
@@ -1249,12 +1249,12 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	if (cachedUploads) require(uploadsPrecedeDraws && generationUploadCalls == 1u && generationUploadBytes == 160u,
 		"all interleaved raw payloads publish once before the first draw, excluding partial/odd padding");
 	if (profiling) {
-		GxCpuToVramProfileFrame profile;
-		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxCpuToVramProfileFrame(0u, profile)
+		GxUploadProfileFrame profile;
+		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxUploadProfileFrame(0u, profile)
 			&& profile.commands == 9u && profile.logicalBytes == 160u,
 			"generation preparation retains every logical command, including an interrupted transfer");
 		if (cachedUploads) require(profile.hostCalls == generationUploadCalls && profile.hostBytes == generationUploadBytes
-			&& profile.cpuNanoseconds != 0u, "preparation host traffic and time remain attributed to the upload profile");
+			&& profile.elapsedNanoseconds != 0u, "preparation host traffic and time remain attributed to the upload profile");
 	}
 	// A second readback extends the same serial without retiring its first
 	// prefix. Only the new interval is prepared; earlier spans are not replayed.
@@ -1271,8 +1271,8 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	require(fixture.gpu.readGp0() == 0x7c007c00u && fixture.gpu.readGp0() == 0x7c007c00u,
 		"a later interval publishes only its own palette update before the dependent draw");
 	if (profiling) {
-		GxCpuToVramProfileFrame profile;
-		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxCpuToVramProfileFrame(0u, profile)
+		GxUploadProfileFrame profile;
+		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxUploadProfileFrame(0u, profile)
 			&& profile.commands == 10u && profile.logicalBytes == 162u,
 			"successive intervals do not reset or duplicate profile attribution");
 		if (cachedUploads) require(profile.hostCalls == 2u && profile.hostBytes == 162u,
@@ -1294,7 +1294,7 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
 	// One tiny payload followed by a maximal command cannot share one page.
 	// The real producer admits both, then requests a drain before another packet.
-	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxCpuToVramProfileFrame();
+	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxUploadProfileFrame();
 	for (const u32 word : {0xa0000000u, (950u << 16u) | 960u, 0x00010003u, 0x03e003e0u, 0xffff03e0u,
 		0x600000ffu, (950u << 16u) | 970u, 0x00010001u}) {
 		fixture.gpu.writeGp0(word);
@@ -1323,8 +1323,8 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	if (cachedUploads) require(generationLastUploadSource == maximalSource,
 		"a single-command page uploads immutable command storage without an extra CPU packing copy");
 	if (profiling) {
-		GxCpuToVramProfileFrame profile;
-		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxCpuToVramProfileFrame(0u, profile)
+		GxUploadProfileFrame profile;
+		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxUploadProfileFrame(0u, profile)
 			&& profile.commands == 2u && profile.logicalBytes == GX_GPU_TRANSFER_MAX_BYTE_COUNT + 6u,
 			"page transitions preserve logical upload accounting");
 		if (cachedUploads) require(profile.hostCalls == 2u && profile.hostBytes == profile.logicalBytes,
@@ -1340,7 +1340,7 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	}
 	// Source preparation stops at execution admission, even if the immutable
 	// command buffer already contains the next upload's complete payload.
-	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxCpuToVramProfileFrame();
+	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxUploadProfileFrame();
 	for (const u32 word : {0xa0000000u, (950u << 16u) | 980u, 0x00010001u, 0x0000001fu})
 		fixture.gpu.writeGp0(word);
 	fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
@@ -1368,8 +1368,8 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	if (cachedUploads) require(generationUploadCalls == 1u && generationUploadBytes == 2u,
 		"repeating an empty drain publishes no additional source pages");
 	if (profiling) {
-		GxCpuToVramProfileFrame profile;
-		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxCpuToVramProfileFrame(0u, profile)
+		GxUploadProfileFrame profile;
+		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxUploadProfileFrame(0u, profile)
 			&& profile.commands == 1u && profile.logicalBytes == 2u,
 			"pending uploads and empty drains do not contribute profile work");
 	}
@@ -1381,8 +1381,8 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	require(completedBytes[admissionPixel] == 0u && completedBytes[admissionPixel + 1u] == 0x7cu,
 		"the deferred upload becomes visible after its actual completion");
 	if (profiling) {
-		GxCpuToVramProfileFrame profile;
-		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxCpuToVramProfileFrame(0u, profile)
+		GxUploadProfileFrame profile;
+		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxUploadProfileFrame(0u, profile)
 			&& profile.commands == 2u && profile.logicalBytes == 4u,
 			"the deferred upload is attributed exactly once after completion");
 	}

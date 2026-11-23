@@ -1602,7 +1602,8 @@ void uploadCpuToVram(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& command
 		preparedTexture = &gx.cpuUploadTextures[page->textureIndex];
 		pixelOffset = span.pixelOffset;
 	}
-	if (!gx.backend->profilesGxUploads()) {
+	auto* frame = gx.backend->gxUploadProfile();
+	if (frame == nullptr) {
 		executeCpuToVramUpload<false>(gx, commandBuffer, commandIndex, nullptr, preparedTexture, pixelOffset);
 		return;
 	}
@@ -1616,13 +1617,13 @@ void uploadCpuToVram(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& command
 	const auto start = std::chrono::steady_clock::now();
 	const u32 uploadedPixels = executeCpuToVramUpload<true>(gx, commandBuffer, commandIndex, &profile,
 		preparedTexture, pixelOffset);
-	const u64 cpuNanoseconds = preparationNanoseconds + static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+	const u64 elapsedNanoseconds = preparationNanoseconds + static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
 		std::chrono::steady_clock::now() - start).count());
-	gx.backend->recordGxCpuToVramUpload(
+	frame->recordCpuToVram(
 		static_cast<u64>(uploadedPixels) * sizeof(u16),
 		profile.hostCalls,
 		profile.hostBytes,
-		cpuNanoseconds);
+		elapsedNanoseconds);
 }
 
 void copyVramToVramArea(OpenGLES2GxGpuState& gx,

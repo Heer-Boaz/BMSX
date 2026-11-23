@@ -8,14 +8,19 @@
 int main(void) {
 	BmsxFrameTimingOutlier outliers[102];
 	BmsxFrameTimingReport report = {.outliers = outliers};
-	const BmsxGxUploadProfileFrameV1 gx_upload = {
+	const BmsxGxUploadProfileFrameV2 gx_upload = {
 		.render_frame_serial = 7u,
 		.cpu_to_vram_commands = 2u,
 		.logical_bytes = 16u,
 		.host_calls = 3u,
 		.host_bytes = 32u,
-		.cpu_nanoseconds = 400u,
+		.elapsed_nanoseconds = 400u,
 		.max_command_nanoseconds = 300u,
+		.software_scanout_pixels = 49152u,
+		.software_scanout_nanoseconds = 500u,
+		.scanout_upload_calls = 1u,
+		.scanout_upload_bytes = 196608u,
+		.scanout_upload_nanoseconds = 600u,
 	};
 	bmsx_frame_timing_record(&report, 500u, UINT64_C(9007199254740997), 10000000u, 20000000u, UINT64_C(9007199264740997), 1000000u, true, 2000000u, true, false, true, &gx_upload, NULL, NULL, UINT64_C(9007199254740993), UINT64_C(18014398509481989), NULL);
 	bmsx_frame_timing_record(&report, 501u, 0u, 5000000000u, 16683333u, 16683333u, 0u, false, 0u, false, true, false, NULL, NULL, NULL, 0u, 0u, NULL);
@@ -36,9 +41,11 @@ int main(void) {
 	CHECK(report.gx_logical_bytes == 16u);
 	CHECK(report.gx_host_calls == 3u);
 	CHECK(report.gx_host_bytes == 32u);
-	CHECK(report.gx_cpu_nanoseconds == 400u);
+	CHECK(report.gx_elapsed_nanoseconds == 400u);
 	CHECK(report.gx_max_frame_nanoseconds == 400u);
 	CHECK(report.gx_max_command_nanoseconds == 300u);
+	CHECK(report.gx_software_scanout_pixels == 49152u && report.gx_software_scanout_nanoseconds == 500u);
+	CHECK(report.gx_scanout_upload_calls == 1u && report.gx_scanout_upload_bytes == 196608u && report.gx_scanout_upload_nanoseconds == 600u);
 	CHECK(bmsx_frame_timing_percentile_ms(&report.retro_run, 99u) == BMSX_FRAME_TIMING_BUCKET_COUNT - 1u);
 	CHECK(report.slow_frame_count == 2u);
 	CHECK(report.slow_frames[0].host_frame == 501u);
@@ -54,7 +61,9 @@ int main(void) {
 	CHECK(report.slow_frames[0].host_process_cpu_ns == 0u);
 	CHECK(report.slow_frames[1].has_gx_upload);
 	CHECK(report.slow_frames[1].gx_upload.render_frame_serial == 7u);
-	CHECK(report.slow_frames[1].gx_upload.cpu_nanoseconds == 400u);
+	CHECK(report.slow_frames[1].gx_upload.elapsed_nanoseconds == 400u);
+	CHECK(report.slow_frames[1].gx_upload.software_scanout_nanoseconds == 500u);
+	CHECK(report.slow_frames[1].gx_upload.scanout_upload_nanoseconds == 600u);
 	CHECK(report.slow_frames[1].final_blit_ns == 1000000u);
 	CHECK(report.slow_frames[1].swap_ns == 2000000u);
 	for (unsigned index = 0u; index < 100u; ++index) {
@@ -281,7 +290,7 @@ int main(void) {
 	bmsx_frame_timing_record(&guest_report, 501, 40000000, 10000000, 20000000u, 60000000u, 0, false, 0, false, false, false,
 		NULL, NULL, NULL, 2000, 6000, &partial);
 	bmsx_frame_timing_record(&guest_report, 502, 60000000, 18000000, 20000000u, 80000000u, 250000, true, 0, false, false, true,
-		NULL, NULL, NULL, 3000, 7000, &completed);
+		&gx_upload, NULL, NULL, 3000, 7000, &completed);
 	CHECK(guest_report.guest_progress_runs == 3u && guest_report.retro_run.count == 3u);
 	CHECK(guest_report.zero_guest_tick_runs == 2u && guest_report.zero_guest_cycle_runs == 1u);
 	CHECK(guest_report.guest.before.tick_sequence == 58 && guest_report.guest.after.tick_sequence == 59);
@@ -292,6 +301,9 @@ int main(void) {
 	CHECK(guest_report.outlier_count == 2u && outliers[0].host_frame == 500u && outliers[1].host_frame == 502u);
 	CHECK(outliers[0].guest.before.scheduler_cycles == first_cycle && outliers[0].guest.after.scheduler_cycles == first_cycle);
 	CHECK(outliers[1].core_without_present_ns == 17750000u && outliers[1].guest.after.tick_sequence == 59);
+	CHECK(outliers[1].final_blit_ns == 250000u && outliers[1].swap_ns == 0u);
+	CHECK(!outliers[0].has_gx_upload && outliers[1].has_gx_upload);
+	CHECK(outliers[1].gx_upload.logical_bytes == 16u && outliers[1].gx_upload.scanout_upload_bytes == 196608u);
 
 	return 0;
 }

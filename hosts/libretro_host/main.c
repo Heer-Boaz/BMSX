@@ -544,8 +544,8 @@ int main(int argc, char** argv) {
 			}
 		}
 		if (frame_timing.record_frame) {
-			BmsxGxUploadProfileFrameV1 gx_upload_frame;
-			const BmsxGxUploadProfileFrameV1* current_gx_upload = NULL;
+			BmsxGxUploadProfileFrameV2 gx_upload_frame;
+			const BmsxGxUploadProfileFrameV2* current_gx_upload = NULL;
 			if (profile_gx_upload) {
 				if (session.gx_upload_profile.read_frame(
 						frame_timing.gx_render_frame_serial,

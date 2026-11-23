@@ -7,6 +7,7 @@
 
 #include "render/backend/backend.h"
 #include "render/backend/gles2/draw_state.h"
+#include "render/backend/gx_gpu_upload_profile.h"
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -42,16 +43,6 @@ class VideoPresenter;
 struct GLES2AttributeBinding {
 	GLuint location;
 	const char* name;
-};
-
-struct GxCpuToVramProfileFrame {
-	u64 renderFrameSerial;
-	u64 commands;
-	u64 logicalBytes;
-	u64 hostCalls;
-	u64 hostBytes;
-	u64 cpuNanoseconds;
-	u64 maxCommandNanoseconds;
 };
 
 class OpenGLES2Backend : public GPUBackend {
@@ -154,9 +145,11 @@ public:
 	u32 contextGeneration() const { return m_context_generation; }
 	bool profilesGxUploads() const { return m_profile_gx_uploads; }
 	u32 gxGpuVramTextureRows() const { return m_gx_gpu_vram_texture_rows; }
-	void beginGxCpuToVramProfileFrame();
-	bool readGxCpuToVramProfileFrame(u64 afterRenderFrameSerial, GxCpuToVramProfileFrame& frame) const;
-	void recordGxCpuToVramUpload(u64 logicalBytes, u64 hostCalls, u64 hostBytes, u64 cpuNanoseconds);
+	void beginGxUploadProfileFrame();
+	bool readGxUploadProfileFrame(u64 afterRenderFrameSerial, GxUploadProfileFrame& frame) const;
+	GxUploadProfileFrame* gxUploadProfile() {
+		return m_profile_gx_uploads ? &m_gx_upload_profile_frame : nullptr;
+	}
 
 	static GLES2Texture* asTexture(TextureHandle handle) { return static_cast<GLES2Texture*>(handle); }
 
@@ -182,7 +175,7 @@ private:
 	bool m_profile_gx_uploads = false;
 	GxGpuDrawTargetMode m_gx_draw_target_mode;
 	u32 m_gx_gpu_vram_texture_rows = 0u;
-	GxCpuToVramProfileFrame m_gx_cpu_to_vram_profile_frame{};
+	GxUploadProfileFrame m_gx_upload_profile_frame{};
 	i32 m_active_texture_unit = -1;
 	std::array<GLuint, kTrackedTextureUnits> m_bound_texture_2d_by_unit{};
 	u32 m_touched_texture_units = 0u;

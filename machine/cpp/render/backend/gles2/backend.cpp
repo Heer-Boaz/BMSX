@@ -545,35 +545,20 @@ void OpenGLES2Backend::beginFrame() {
 	drawState.blendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
 }
 
-void OpenGLES2Backend::beginGxCpuToVramProfileFrame() {
-	const u64 renderFrameSerial = m_gx_cpu_to_vram_profile_frame.renderFrameSerial + 1u;
-	m_gx_cpu_to_vram_profile_frame = GxCpuToVramProfileFrame{};
-	m_gx_cpu_to_vram_profile_frame.renderFrameSerial = renderFrameSerial;
+void OpenGLES2Backend::beginGxUploadProfileFrame() {
+	const u64 renderFrameSerial = m_gx_upload_profile_frame.renderFrameSerial + 1u;
+	m_gx_upload_profile_frame = GxUploadProfileFrame{};
+	m_gx_upload_profile_frame.renderFrameSerial = renderFrameSerial;
 }
 
-bool OpenGLES2Backend::readGxCpuToVramProfileFrame(
+bool OpenGLES2Backend::readGxUploadProfileFrame(
 		u64 afterRenderFrameSerial,
-		GxCpuToVramProfileFrame& frame) const {
-	if (m_gx_cpu_to_vram_profile_frame.renderFrameSerial <= afterRenderFrameSerial) {
+		GxUploadProfileFrame& frame) const {
+	if (m_gx_upload_profile_frame.renderFrameSerial <= afterRenderFrameSerial) {
 		return false;
 	}
-	frame = m_gx_cpu_to_vram_profile_frame;
+	frame = m_gx_upload_profile_frame;
 	return true;
-}
-
-void OpenGLES2Backend::recordGxCpuToVramUpload(
-		u64 logicalBytes,
-		u64 hostCalls,
-		u64 hostBytes,
-		u64 cpuNanoseconds) {
-	m_gx_cpu_to_vram_profile_frame.commands += 1u;
-	m_gx_cpu_to_vram_profile_frame.logicalBytes += logicalBytes;
-	m_gx_cpu_to_vram_profile_frame.hostCalls += hostCalls;
-	m_gx_cpu_to_vram_profile_frame.hostBytes += hostBytes;
-	m_gx_cpu_to_vram_profile_frame.cpuNanoseconds += cpuNanoseconds;
-	if (m_gx_cpu_to_vram_profile_frame.maxCommandNanoseconds < cpuNanoseconds) {
-		m_gx_cpu_to_vram_profile_frame.maxCommandNanoseconds = cpuNanoseconds;
-	}
 }
 
 void OpenGLES2Backend::endFrame() {

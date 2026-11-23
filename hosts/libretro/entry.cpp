@@ -190,21 +190,26 @@ static int64_t g_current_ufps_scaled = bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCA
 #if BMSX_ENABLE_GLES2
 static bool RETRO_CALLCONV read_gx_upload_profile_frame(
 		uint64_t afterRenderFrameSerial,
-	BmsxGxUploadProfileFrameV1* frame) {
+	BmsxGxUploadProfileFrameV2* frame) {
 	auto* backend = &static_cast<bmsx::OpenGLES2Backend&>(
 		g_video_presenter->backend());
-	bmsx::GxCpuToVramProfileFrame profile;
-	if (!backend->readGxCpuToVramProfileFrame(afterRenderFrameSerial, profile)) {
+	bmsx::GxUploadProfileFrame profile;
+	if (!backend->readGxUploadProfileFrame(afterRenderFrameSerial, profile)) {
 		return false;
 	}
-	*frame = BmsxGxUploadProfileFrameV1{
+	*frame = BmsxGxUploadProfileFrameV2{
 		profile.renderFrameSerial,
 		profile.commands,
 		profile.logicalBytes,
 		profile.hostCalls,
 		profile.hostBytes,
-		profile.cpuNanoseconds,
+		profile.elapsedNanoseconds,
 		profile.maxCommandNanoseconds,
+		profile.softwareScanoutPixels,
+		profile.softwareScanoutNanoseconds,
+		profile.scanoutUploadCalls,
+		profile.scanoutUploadBytes,
+		profile.scanoutUploadNanoseconds,
 	};
 	return true;
 }
@@ -716,11 +721,11 @@ static bool isHardwareBackendActive() {
 static bool offerGxUploadProfileInterface(retro_environment_t environment) {
 #if BMSX_ENABLE_GLES2
 	if (isHardwareBackendActive()) {
-		BmsxGxUploadProfileInterfaceV1 gxUploadProfileInterface{
+		BmsxGxUploadProfileInterfaceV2 gxUploadProfileInterface{
 			read_gx_upload_profile_frame,
 		};
 		return environment(
-			BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V1,
+			BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V2,
 			&gxUploadProfileInterface);
 	}
 #else
@@ -1773,7 +1778,7 @@ void retro_run(void) {
 #if BMSX_ENABLE_GLES2
 	if (hardware_frame) {
 		auto& backend = static_cast<bmsx::OpenGLES2Backend&>(g_video_presenter->backend());
-		if (backend.profilesGxUploads()) backend.beginGxCpuToVramProfileFrame();
+		if (backend.profilesGxUploads()) backend.beginGxUploadProfileFrame();
 	}
 #endif
 	const bmsx::f64 deltaTime = g_frame_time_sec;

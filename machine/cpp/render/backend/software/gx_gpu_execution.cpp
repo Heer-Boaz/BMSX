@@ -14,12 +14,14 @@ void replaceGxGpuSoftwareVramSnapshot(GxGpuSoftwareState& software, std::span<co
 	software.vramSnapshotSerial = serial;
 }
 
-void executeGxGpuSoftwareCommandPrefix(GxGpuSoftwareState& software, const GxGpuCommandStorage& commands, size_t limit) {
+void executeGxGpuSoftwareCommandPrefix(GxGpuSoftwareState& software, const GxGpuCommandStorage& commands,
+	size_t limit, GxUploadProfileFrame* profile) {
 	if (software.processedCommandSerial != commands.serial) {
 		software.processedCommandCount = 0u;
 		software.processedCommandSerial = commands.serial;
 	}
-	software.processedCommandCount = executeGxGpuSoftwareCommands(software, commands, software.processedCommandCount, limit);
+	software.processedCommandCount = executeGxGpuSoftwareCommands(
+		software, commands, software.processedCommandCount, limit, profile);
 }
 
 void readGxGpuSoftwareVram(const GxGpuSoftwareState& software, const GxGpuReadbackRequest& request, u8* pixels) {
@@ -36,9 +38,10 @@ void readGxGpuSoftwareVram(const GxGpuSoftwareState& software, const GxGpuReadba
 	}
 }
 
-void executeGxGpuSoftwareVramCommands(GxGpuSoftwareState& software, const GxGpuDeviceOutput& output, size_t limit) {
+void executeGxGpuSoftwareVramCommands(GxGpuSoftwareState& software, const GxGpuDeviceOutput& output,
+	size_t limit, GxUploadProfileFrame* profile) {
 	replaceGxGpuSoftwareVramSnapshot(software, output.vramSnapshotBytes, output.vramSnapshotSerial);
-	executeGxGpuSoftwareCommandPrefix(software, output.commandBuffer, limit);
+	executeGxGpuSoftwareCommandPrefix(software, output.commandBuffer, limit, profile);
 	auto& readback = output.readbackPort;
 	if (readback.claimReadback(limit)) {
 		const u32 token = readback.token();
@@ -48,9 +51,9 @@ void executeGxGpuSoftwareVramCommands(GxGpuSoftwareState& software, const GxGpuD
 	}
 }
 
-void captureGxGpuSoftwareVramSnapshot(GxGpuSoftwareState& software, GxGpu& gxGpu) {
+void captureGxGpuSoftwareVramSnapshot(GxGpuSoftwareState& software, GxGpu& gxGpu, GxUploadProfileFrame* profile) {
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(software, output, output.commandBuffer.executedCommandCount);
+	executeGxGpuSoftwareVramCommands(software, output, output.commandBuffer.executedCommandCount, profile);
 	auto* snapshotBytes = reinterpret_cast<u8*>(software.textureLatchScratch.data());
 	for (size_t wordIndex = 0u; wordIndex < software.vram.size(); ++wordIndex) {
 		const u16 word = software.vram[wordIndex];

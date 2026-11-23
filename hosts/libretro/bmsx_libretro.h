@@ -13,8 +13,8 @@ extern "C" {
 /* BMSX private environment commands use one 16-command family per interface. */
 #define BMSX_ENVIRONMENT_GET_SUPERVISOR_REQUEST_INTERFACE_V1 \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x4251u)
-#define BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V1 \
-	(RETRO_ENVIRONMENT_PRIVATE | 0x4261u)
+#define BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V2 \
+	(RETRO_ENVIRONMENT_PRIVATE | 0x4262u)
 #define BMSX_ENVIRONMENT_SET_EXECUTION_DOMAIN_INTERFACE_V1 \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x4271u)
 #define BMSX_ENVIRONMENT_GET_AUDIO_TRANSPORT_INTERFACE \
@@ -55,23 +55,31 @@ typedef struct BmsxSupervisorRequestInterfaceV1 {
 	bmsx_supervisor_request_line_t request_line_high;
 } BmsxSupervisorRequestInterfaceV1;
 
-typedef struct BmsxGxUploadProfileFrameV1 {
+/* One core run on the active GLES backend. CPU-to-VRAM payload and host GL
+ * transfers are distinct from the hybrid backend's scanout and texture upload.
+ * Times are caller-side elapsed intervals, not GPU completion times. */
+typedef struct BmsxGxUploadProfileFrameV2 {
 	uint64_t render_frame_serial;
 	uint64_t cpu_to_vram_commands;
 	uint64_t logical_bytes;
 	uint64_t host_calls;
 	uint64_t host_bytes;
-	uint64_t cpu_nanoseconds;
+	uint64_t elapsed_nanoseconds;
 	uint64_t max_command_nanoseconds;
-} BmsxGxUploadProfileFrameV1;
+	uint64_t software_scanout_pixels;
+	uint64_t software_scanout_nanoseconds;
+	uint64_t scanout_upload_calls;
+	uint64_t scanout_upload_bytes;
+	uint64_t scanout_upload_nanoseconds;
+} BmsxGxUploadProfileFrameV2;
 
 typedef bool (RETRO_CALLCONV *bmsx_read_gx_upload_profile_frame_t)(
 	uint64_t after_render_frame_serial,
-	BmsxGxUploadProfileFrameV1* frame);
+	BmsxGxUploadProfileFrameV2* frame);
 
-typedef struct BmsxGxUploadProfileInterfaceV1 {
+typedef struct BmsxGxUploadProfileInterfaceV2 {
 	bmsx_read_gx_upload_profile_frame_t read_frame;
-} BmsxGxUploadProfileInterfaceV1;
+} BmsxGxUploadProfileInterfaceV2;
 
 /* Cumulative CPU-lifetime counters, not a per-presentation sample. code_bytes
  * counts published native code bytes, not process RSS. Peak/max fields and
