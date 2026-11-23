@@ -258,6 +258,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.commandCount = 0;
 		this.executedCommandCount = 0;
 		this.presentCommandCount = 0;
+		this.wordHead = 0;
 		this.wordCount = 0;
 		this.drawCount = 0;
 		this.readback.reset();
@@ -267,7 +268,9 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public commandCount = 0;
 	public executedCommandCount = 0;
 	public presentCommandCount = 0;
+	public wordHead = 0;
 	public wordCount = 0;
+	public get wordEnd(): number { return this.wordHead + this.wordCount; }
 	public drawCount = 0;
 	public readonly commandKind = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandOpcode = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
@@ -310,7 +313,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 			}
 			this.commandCount = commandIndex;
 			this.drawCount = this.commandDrawIndex[commandIndex];
-			this.wordCount = this.commandWordStart[commandIndex];
+			this.truncateWords(this.commandWordStart[commandIndex]);
 			if (this.presentCommandCount > commandIndex) {
 				this.presentCommandCount = commandIndex;
 			}
@@ -319,7 +322,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		if (this.readback.phase === GX_GPU_READBACK_PENDING && this.readback.fenceCommandCount !== 0) {
 			this.commandCount = this.readback.fenceCommandCount - 1;
 			this.drawCount = this.commandDrawIndex[this.commandCount];
-			this.wordCount = this.commandWordStart[this.commandCount];
+			this.truncateWords(this.commandWordStart[this.commandCount]);
 			if (this.executedCommandCount > this.commandCount) {
 				this.executedCommandCount = this.commandCount;
 			}
@@ -343,7 +346,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 			wordCount,
 			commandKind: Array.from(this.commandKind.subarray(0, commandCount)),
 			commandOpcode: Array.from(this.commandOpcode.subarray(0, commandCount)),
-			commandWordStart: Array.from(this.commandWordStart.subarray(0, commandCount)),
+			commandWordStart: Array.from(this.commandWordStart.subarray(0, commandCount), (start) => start - this.wordHead),
 			commandWordCount: Array.from(this.commandWordCount.subarray(0, commandCount)),
 			commandDrawModeWord: Array.from(this.commandDrawModeWord.subarray(0, commandCount)),
 			commandVramYAddressExtensionWord: Array.from(this.commandVramYAddressExtensionWord.subarray(0, commandCount)),
@@ -353,7 +356,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 			commandDrawingOffsetWord: Array.from(this.commandDrawingOffsetWord.subarray(0, commandCount)),
 			commandMaskBitModeWord: Array.from(this.commandMaskBitModeWord.subarray(0, commandCount)),
 			commandSkippedLineParity: Array.from(this.commandSkippedLineParity.subarray(0, commandCount)),
-			words: Array.from(this.words.subarray(0, wordCount)),
+			words: Array.from(this.words.subarray(this.wordHead, this.wordEnd)),
 			readbackPhase: this.readback.phase === GX_GPU_READBACK_SUBMITTED ? GX_GPU_READBACK_PENDING : this.readback.phase,
 			readbackFenceCommandCount: this.readback.fenceCommandCount,
 			readbackX: this.readback.x,
@@ -373,6 +376,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.commandCount = state.commandCount;
 		this.executedCommandCount = state.executedCommandCount;
 		this.presentCommandCount = state.presentCommandCount;
+		this.wordHead = 0;
 		this.wordCount = state.wordCount;
 		this.commandKind.set(state.commandKind, 0);
 		this.commandOpcode.set(state.commandOpcode, 0);
@@ -401,19 +405,17 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.readback.token = (this.readback.token + 1) >>> 0;
 	}
 
-	public retireCommandsPreservingVram(retiredCommands: number): number {
+	public retireCommandsPreservingVram(retiredCommands: number): void {
 		if (retiredCommands === 0) {
-			return 0;
+			return;
 		}
 		const oldCommandCount = this.commandCount;
 		const retiredDraws = retiredCommands === oldCommandCount ? this.drawCount : this.commandDrawIndex[retiredCommands];
 		const remainingDraws = this.drawCount - retiredDraws;
-		const oldWordCount = this.wordCount;
-		const retiredWords = retiredCommands === oldCommandCount
+		const nextWordHead = retiredCommands === oldCommandCount
 			? this.commandWordStart[retiredCommands - 1] + this.commandWordCount[retiredCommands - 1]
 			: this.commandWordStart[retiredCommands];
 		const remainingCommands = oldCommandCount - retiredCommands;
-		const remainingWords = oldWordCount - retiredWords;
 		this.commandKind.copyWithin(0, retiredCommands, oldCommandCount);
 		this.commandOpcode.copyWithin(0, retiredCommands, oldCommandCount);
 		this.commandWordStart.copyWithin(0, retiredCommands, oldCommandCount);
@@ -428,7 +430,6 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.commandSkippedLineParity.copyWithin(0, retiredCommands, oldCommandCount);
 		this.commandDrawIndex.copyWithin(0, retiredCommands, oldCommandCount);
 		for (let commandIndex = 0; commandIndex < remainingCommands; commandIndex += 1) {
-			this.commandWordStart[commandIndex] -= retiredWords;
 			this.commandDrawIndex[commandIndex] -= retiredDraws;
 		}
 		if (retiredDraws !== 0) {
@@ -438,18 +439,17 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 			this.drawSizeOffset.copyWithin(0, retiredDraws, this.drawCount);
 		}
 		this.drawCount = remainingDraws;
-		this.words.copyWithin(0, retiredWords, oldWordCount);
+		this.wordCount = this.wordEnd - nextWordHead;
+		this.wordHead = this.wordCount !== 0 ? nextWordHead : 0;
 		this.commandCount = remainingCommands;
 		this.executedCommandCount -= retiredCommands;
 		this.presentCommandCount = retiredCommands < this.presentCommandCount
 			? this.presentCommandCount - retiredCommands
 			: 0;
-		this.wordCount = remainingWords;
 		this.readback.fenceCommandCount = retiredCommands < this.readback.fenceCommandCount
 			? this.readback.fenceCommandCount - retiredCommands
 			: 0;
 		this.publishRevision();
-		return retiredWords;
 	}
 
 	public sealCommandsForPresentation(): void {
@@ -464,17 +464,22 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		return this.presentCommandCount !== 0;
 	}
 
-	public appendWord(word: number): void {
-		this.words[this.wordCount] = word >>> 0;
-		this.wordCount += 1;
+	public truncateWords(end: number): void {
+		this.wordCount = end - this.wordHead;
+		if (this.wordCount === 0) this.wordHead = 0;
 	}
 
-	public appendWords(words: Uint32Array, wordCount: number): number {
-		const wordStart = this.wordCount;
-		for (let index = 0; index < wordCount; index += 1) {
-			this.words[this.wordCount] = words[index];
-			this.wordCount += 1;
+	public appendWords(words: Uint32Array, wordCount: number, incomingPayload = 0): number {
+		// Reclaim the consumed prefix only if the whole admitted packet will
+		// not fit in the physical tail.
+		if (this.wordEnd + wordCount + incomingPayload > GX_GPU_COMMAND_WORD_CAPACITY) {
+			this.words.copyWithin(0, this.wordHead, this.wordEnd);
+			for (let i = 0; i < this.commandCount; ++i) this.commandWordStart[i] -= this.wordHead;
+			this.wordHead = 0;
 		}
+		const wordStart = this.wordEnd;
+		for (let index = 0; index < wordCount; ++index) this.words[wordStart + index] = words[index];
+		this.wordCount += wordCount;
 		return wordStart;
 	}
 

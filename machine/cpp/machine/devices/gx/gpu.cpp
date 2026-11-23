@@ -186,7 +186,8 @@ void GxGpu::storeLiveIngressContext(GxGpuIngressContextBank& context) {
 	context.gp0IngressPolylineWordsPerVertex = m_gp0Ingress.polylineWordsPerVertex;
 	context.gp0IngressPolylinePayloadPhase = m_gp0Ingress.polylinePayloadPhase;
 	context.gp0ImageLoadWordsRemaining = m_gp0ImageLoadWordsRemaining;
-	context.gp0ImageLoadCommandWordStart = m_gp0ImageLoadCommandWordStart;
+	context.gp0ImageLoadCommandWordStart = m_gp0ImageLoadCommandWordCount != 0u
+		? m_gp0ImageLoadCommandWordStart - m_commandBuffer.wordHead : 0u;
 	context.gp0ImageLoadCommandWordCount = m_gp0ImageLoadCommandWordCount;
 	context.gp0ImageLoadCommandOpcode = m_gp0ImageLoadCommandOpcode;
 	context.gp0PolylinePayloadPhase = m_gp0PolylinePayloadPhase;
@@ -195,7 +196,8 @@ void GxGpu::storeLiveIngressContext(GxGpuIngressContextBank& context) {
 	context.gp0PolylinePositionWord = m_gp0PolylinePositionWord;
 	context.gp0PolylineNextColorWord = m_gp0PolylineNextColorWord;
 	context.commandBufferWordCount = m_commandBuffer.wordCount;
-	std::copy(m_commandBuffer.words.begin(), m_commandBuffer.words.begin() + static_cast<std::ptrdiff_t>(m_commandBuffer.wordCount), context.commandBufferWords->begin());
+	std::copy_n(m_commandBuffer.words.begin() + static_cast<std::ptrdiff_t>(m_commandBuffer.wordHead),
+		m_commandBuffer.wordCount, context.commandBufferWords->begin());
 	std::swap(m_gp0Fifo, context.gp0Fifo);
 	std::swap(m_gp0DmaIngress, context.gp0DmaIngress);
 	m_commandBuffer.readback.swapContext(context.readback);
@@ -220,6 +222,7 @@ void GxGpu::loadLiveIngressContext(GxGpuIngressContextBank& context) {
 	m_gp0PolylineColorWord = context.gp0PolylineColorWord;
 	m_gp0PolylinePositionWord = context.gp0PolylinePositionWord;
 	m_gp0PolylineNextColorWord = context.gp0PolylineNextColorWord;
+	m_commandBuffer.wordHead = 0u;
 	m_commandBuffer.wordCount = context.commandBufferWordCount;
 	std::copy(context.commandBufferWords->begin(), context.commandBufferWords->begin() + static_cast<std::ptrdiff_t>(context.commandBufferWordCount), m_commandBuffer.words.begin());
 	std::swap(m_gp0Fifo, context.gp0Fifo);
@@ -363,7 +366,8 @@ GxGpuState GxGpu::captureState() {
 		: m_pendingCommandCompletionCycle - nowCycles;
 	state.pendingCommandTargetCount = m_pendingCommandTargetCount;
 	state.gp0ImageLoadWordsRemaining = m_gp0ImageLoadWordsRemaining;
-	state.gp0ImageLoadCommandWordStart = m_gp0ImageLoadCommandWordStart;
+	state.gp0ImageLoadCommandWordStart = m_gp0ImageLoadCommandWordCount != 0u
+		? m_gp0ImageLoadCommandWordStart - m_commandBuffer.wordHead : 0u;
 	state.gp0ImageLoadCommandWordCount = m_gp0ImageLoadCommandWordCount;
 	state.gp0ImageLoadCommandOpcode = m_gp0ImageLoadCommandOpcode;
 	state.gp0PolylinePayloadPhase = m_gp0PolylinePayloadPhase;
@@ -604,7 +608,7 @@ void GxGpu::writeGp0(u32 word, MappedBusSignals busSignals) {
 	if (dmaWrite) {
 		m_gp0Word = word;
 		if (m_gp0DmaImagePrefixWords != 0u) {
-			m_commandBuffer.words[m_commandBuffer.wordCount + m_gp0DmaImagePrefixWords] = word;
+			m_commandBuffer.words[m_commandBuffer.wordEnd() + m_gp0DmaImagePrefixWords] = word;
 			recordGp0ProducerWord(word);
 			directImageWords = m_gp0DmaImagePrefixWords + 1u;
 			m_gp0DmaImagePrefixWords = 0u;
@@ -1169,14 +1173,9 @@ void GxGpu::retireExecutedCommands() {
 }
 
 void GxGpu::retireCommandPrefix(size_t retiredCommands) {
-	const size_t retiredWords = m_commandBuffer.retireCommandsPreservingVram(retiredCommands);
+	m_commandBuffer.retireCommandsPreservingVram(retiredCommands);
 	if (m_pendingCommandTargetCount != 0u) {
 		m_pendingCommandTargetCount -= retiredCommands;
-	}
-	if (retiredWords != 0u) {
-		if (m_gp0ImageLoadCommandWordCount != 0u) {
-			m_gp0ImageLoadCommandWordStart -= retiredWords;
-		}
 	}
 	processGp0Pipeline(m_scheduler.currentNowCycles());
 	updateDynamicStatusBits();
@@ -1309,14 +1308,14 @@ void GxGpu::flushImageLoadToVram(i64 commandStartCycle) {
 	if (m_gp0ImageLoadCommandWordCount > 3u) {
 		finishImageLoadToVram(commandStartCycle);
 	} else {
-		m_commandBuffer.wordCount = m_gp0ImageLoadCommandWordStart;
+		m_commandBuffer.truncateWords(m_gp0ImageLoadCommandWordStart);
 		clearImageLoadState();
 	}
 }
 
 template <size_t Capacity>
 void GxGpu::consumeImageLoadWords(WordFifo<Capacity>& source, size_t words, i64 commandStartCycle) {
-	source.readWords(m_commandBuffer.words.data() + m_commandBuffer.wordCount, words);
+	source.readWords(m_commandBuffer.words.data() + m_commandBuffer.wordEnd(), words);
 	commitImageLoadWords(words, commandStartCycle);
 }
 
@@ -1428,10 +1427,10 @@ void GxGpu::beginImageLoadToVram(const GxGpuPacket& packet) {
 	const u32 sizeWord = packet.words[2];
 	const u32 width = gxGpuTransferWidth(sizeWord);
 	const u32 height = gxGpuTransferHeight(sizeWord);
-	m_gp0ImageLoadCommandWordStart = m_commandBuffer.appendWords(packet.words.data(), packet.wordCount);
+	m_gp0ImageLoadWordsRemaining = ((width * height) + 1u) >> 1u;
+	m_gp0ImageLoadCommandWordStart = m_commandBuffer.appendWords(packet.words.data(), packet.wordCount, m_gp0ImageLoadWordsRemaining);
 	m_gp0ImageLoadCommandWordCount = packet.wordCount;
 	m_gp0ImageLoadCommandOpcode = packet.opcode;
-	m_gp0ImageLoadWordsRemaining = ((width * height) + 1u) >> 1u;
 }
 
 void GxGpu::writeDrawModeWord(u32 word) {
@@ -1666,7 +1665,7 @@ void GxGpu::writeGp0PrefixThunk(void* context, u32, const u32* words, u32 count,
 		&& gpu.m_gp0ImageLoadWordsRemaining > count
 		&& gpu.m_pendingCommandCompletionCycle == 0
 		&& gpu.m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE) {
-		std::copy_n(words, count, gpu.m_commandBuffer.words.data() + gpu.m_commandBuffer.wordCount);
+		std::copy_n(words, count, gpu.m_commandBuffer.words.data() + gpu.m_commandBuffer.wordEnd());
 		gpu.m_gp0Producer.skipPayloadWords(count);
 		gpu.m_gp0DmaImagePrefixWords = count;
 	} else {

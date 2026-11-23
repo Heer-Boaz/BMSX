@@ -1383,7 +1383,7 @@ test('GX-GPU drains a saturated executed prefix into retained backend VRAM', () 
 	assert.equal(commands.commandCount, 1);
 	assert.equal(commands.executedCommandCount, 0);
 	assert.equal(commands.wordCount, 3);
-	assert.equal(commands.commandWordStart[0], 0);
+	assert.equal(commands.commandWordStart[0], (GX_GPU_COMMAND_CAPACITY - 1) * 3);
 	assert.equal(gpu.backendCommandDrainPending(), false);
 	assert.equal(gpu.backendServiceBlocksMachine(), false);
 
@@ -1469,6 +1469,33 @@ test('GX-GPU reserves one maximal CPU upload and drains it before reusing word s
 		assert.equal(commands.commandCount, 0);
 		assert.equal(commands.wordCount, 0);
 	}
+});
+
+test('GX-GPU reclaims the retired word prefix only when admitting a packet that needs it', () => {
+	const { gpu } = createGpu();
+	const commands = gpu.readDeviceOutput().commandBuffer;
+	const halfUpload = 3 + (GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT - 3) / 2;
+	for (let upload = 0; upload < 2; ++upload) {
+		gpu.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
+		gpu.writeGp0(upload * (256 << 16));
+		gpu.writeGp0((256 << 16) | 1024);
+		const word = upload === 0 ? 0x11111111 : 0x22222222;
+		for (let i = 3; i < halfUpload; ++i) gpu.writeGp0(word);
+		completeGpuCommands(gpu);
+		if (upload === 0) gpu.presentReadyFrameOnVblankEdge();
+	}
+	gpu.retirePresentedCommands();
+	assert.equal(commands.commandWordStart[0], halfUpload);
+	assert.equal(commands.words[halfUpload + 3], 0x22222222);
+	gpu.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0(0);
+	gpu.writeGp0(0x33333333);
+	const state = gpu.captureState();
+	assert.equal(commands.commandWordStart[0], 0);
+	assert.equal(commands.words[halfUpload - 1], 0x22222222);
+	assert.equal(state.gp0ImageLoadCommandWordStart, halfUpload);
+	assert.equal(state.commandBuffer.words.at(-1), 0x33333333);
 });
 
 test('GX-GPU retains active polyline state across saturated command drains', () => {
@@ -1992,8 +2019,13 @@ test('split DMA image payload survives restore before real IRQ and readback comm
 test('partial image survives supervisor restore and queued readback starts at its boundary', () => {
 	const source = createGpu();
 	stopPcrtc(source.memory, source.gpu, source.scheduler);
+	for (const word of [0x02000000, 0, 0x00010001]) source.gpu.writeGp0(word);
+	completeGpuCommands(source.gpu);
+	source.gpu.presentReadyFrameOnVblankEdge();
 	for (const word of [0xa0000000, 0, 0x00020002, 0xc0001234]) source.gpu.writeGp0(word);
 	assert.equal(source.gpu.backendServicePending(), false, 'readback-looking image payload is not a command');
+	source.gpu.retirePresentedCommands();
+	assert.equal(source.gpu.readDeviceOutput().commandBuffer.words[3], 0xa0000000);
 	source.gpu.beginSupervisorQuiesce();
 	assert.equal(source.gpu.supervisorQuiescent(), true);
 	source.gpu.enterSupervisorContext();

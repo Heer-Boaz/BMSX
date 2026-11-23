@@ -213,6 +213,7 @@ private:
 		commandCount = 0u;
 		executedCommandCount = 0u;
 		presentCommandCount = 0u;
+		wordHead = 0u;
 		wordCount = 0u;
 		drawCount = 0u;
 		readback.reset();
@@ -239,7 +240,7 @@ public:
 			}
 			commandCount = commandIndex;
 			drawCount = commandDrawIndex[commandIndex];
-			wordCount = commandWordStart[commandIndex];
+			truncateWords(commandWordStart[commandIndex]);
 			if (presentCommandCount > commandIndex) {
 				presentCommandCount = commandIndex;
 			}
@@ -248,7 +249,7 @@ public:
 		if (readback.m_phase == GX_GPU_READBACK_PENDING && readback.m_fenceCommandCount != 0u) {
 			commandCount = readback.m_fenceCommandCount - 1u;
 			drawCount = commandDrawIndex[commandCount];
-			wordCount = commandWordStart[commandCount];
+			truncateWords(commandWordStart[commandCount]);
 			if (executedCommandCount > commandCount) {
 				executedCommandCount = commandCount;
 			}
@@ -270,7 +271,8 @@ public:
 		state.wordCount = wordCount;
 		state.commandKind.assign(commandKind.begin(), commandKind.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.commandOpcode.assign(commandOpcode.begin(), commandOpcode.begin() + static_cast<std::ptrdiff_t>(commandCount));
-		state.commandWordStart.assign(commandWordStart.begin(), commandWordStart.begin() + static_cast<std::ptrdiff_t>(commandCount));
+		state.commandWordStart.resize(commandCount);
+		for (size_t i = 0u; i < commandCount; ++i) state.commandWordStart[i] = commandWordStart[i] - static_cast<u32>(wordHead);
 		state.commandWordCount.assign(commandWordCount.begin(), commandWordCount.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.commandDrawModeWord.assign(commandDrawModeWord.begin(), commandDrawModeWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.commandVramYAddressExtensionWord.assign(commandVramYAddressExtensionWord.begin(), commandVramYAddressExtensionWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
@@ -280,7 +282,7 @@ public:
 		state.commandDrawingOffsetWord.assign(commandDrawingOffsetWord.begin(), commandDrawingOffsetWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.commandMaskBitModeWord.assign(commandMaskBitModeWord.begin(), commandMaskBitModeWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.commandSkippedLineParity.assign(commandSkippedLineParity.begin(), commandSkippedLineParity.begin() + static_cast<std::ptrdiff_t>(commandCount));
-		state.words.assign(words.begin(), words.begin() + static_cast<std::ptrdiff_t>(wordCount));
+		state.words.assign(words.begin() + static_cast<std::ptrdiff_t>(wordHead), words.begin() + static_cast<std::ptrdiff_t>(wordEnd()));
 		state.readbackPhase = readback.m_phase == GX_GPU_READBACK_SUBMITTED ? GX_GPU_READBACK_PENDING : readback.m_phase;
 		state.readbackFenceCommandCount = readback.m_fenceCommandCount;
 		state.readbackX = readback.m_x;
@@ -301,6 +303,7 @@ public:
 		commandCount = state.commandCount;
 		executedCommandCount = state.executedCommandCount;
 		presentCommandCount = state.presentCommandCount;
+		wordHead = 0u;
 		wordCount = state.wordCount;
 		drawCount = 0u;
 		for (size_t index = 0u; index < commandCount; index += 1u) {
@@ -333,23 +336,23 @@ public:
 		readback.m_token += 1u;
 	}
 
-	size_t retireCommandsPreservingVram(size_t retiredCommands) {
+	void retireCommandsPreservingVram(size_t retiredCommands) {
 		if (retiredCommands == 0u) {
-			return 0u;
+			return;
 		}
 		const size_t oldCommandCount = commandCount;
 		const size_t retiredDraws = retiredCommands == oldCommandCount ? drawCount : commandDrawIndex[retiredCommands];
 		const size_t remainingDraws = drawCount - retiredDraws;
-		const size_t retiredWords = retiredCommands == oldCommandCount
+		const size_t nextWordHead = retiredCommands == oldCommandCount
 			? commandWordStart[retiredCommands - 1u] + commandWordCount[retiredCommands - 1u]
 			: commandWordStart[retiredCommands];
 		const size_t remainingCommands = oldCommandCount - retiredCommands;
-		const size_t remainingWords = wordCount - retiredWords;
+
 		for (size_t commandIndex = 0u; commandIndex < remainingCommands; commandIndex += 1u) {
 			const size_t sourceIndex = retiredCommands + commandIndex;
 			commandKind[commandIndex] = commandKind[sourceIndex];
 			commandOpcode[commandIndex] = commandOpcode[sourceIndex];
-			commandWordStart[commandIndex] = commandWordStart[sourceIndex] - static_cast<u32>(retiredWords);
+			commandWordStart[commandIndex] = commandWordStart[sourceIndex];
 			commandWordCount[commandIndex] = commandWordCount[sourceIndex];
 			commandDrawModeWord[commandIndex] = commandDrawModeWord[sourceIndex];
 			commandVramYAddressExtensionWord[commandIndex] = commandVramYAddressExtensionWord[sourceIndex];
@@ -370,18 +373,17 @@ public:
 			}
 		}
 		drawCount = remainingDraws;
-		std::memmove(words.data(), words.data() + retiredWords, remainingWords * sizeof(u32));
+		wordCount = wordEnd() - nextWordHead;
+		wordHead = wordCount != 0u ? nextWordHead : 0u;
 		commandCount = remainingCommands;
 		executedCommandCount -= retiredCommands;
 		presentCommandCount = retiredCommands < presentCommandCount
 			? presentCommandCount - retiredCommands
 			: 0u;
-		wordCount = remainingWords;
 		readback.m_fenceCommandCount = retiredCommands < readback.m_fenceCommandCount
 			? readback.m_fenceCommandCount - retiredCommands
 			: 0u;
 		publishRevision();
-		return retiredWords;
 	}
 
 	void sealCommandsForPresentation() {
@@ -396,17 +398,23 @@ public:
 		return presentCommandCount != 0u;
 	}
 
-	void appendWord(u32 word) {
-		words[wordCount] = word;
-		wordCount += 1u;
+	void truncateWords(size_t end) {
+		wordCount = end - wordHead;
+		if (wordCount == 0u) wordHead = 0u;
 	}
 
-	size_t appendWords(const u32* sourceWords, size_t sourceWordCount) {
-		for (size_t index = 0u; index < sourceWordCount; index += 1u) {
-			words[wordCount] = sourceWords[index];
-			wordCount += 1u;
+	size_t appendWords(const u32* sourceWords, size_t sourceWordCount, size_t incomingPayload = 0u) {
+		// Admission budgets live words. Reclaim the consumed prefix only if
+		// this whole packet does not fit in the physical tail.
+		if (wordEnd() + sourceWordCount + incomingPayload > GX_GPU_COMMAND_WORD_CAPACITY) {
+			std::memmove(words.data(), words.data() + wordHead, wordCount * sizeof(u32));
+			for (size_t i = 0u; i < commandCount; ++i) commandWordStart[i] -= static_cast<u32>(wordHead);
+			wordHead = 0u;
 		}
-		return wordCount - sourceWordCount;
+		const size_t start = wordEnd();
+		std::copy_n(sourceWords, sourceWordCount, words.data() + start);
+		wordCount += sourceWordCount;
+		return start;
 	}
 
 	void completeCommandExecution(size_t completedCommandCount) {

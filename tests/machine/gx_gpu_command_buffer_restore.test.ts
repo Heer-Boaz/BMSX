@@ -182,11 +182,13 @@ test('GX-GPU command-buffer retire preserves partial payload words after sealed 
 	const commandBuffer = new GxGpuCommandBuffer(commandBufferDma);
 	commandBuffer.reset();
 	pushFillCommand(commandBuffer);
-	commandBuffer.appendWord(0xa0b0c0d0);
+	const pendingWord = commandBuffer.appendWords(new Uint32Array([0xa0b0c0d0]), 1);
 
-	assert.equal(commandBuffer.retireCommandsPreservingVram(commandBuffer.presentCommandCount), 3);
+	commandBuffer.retireCommandsPreservingVram(commandBuffer.presentCommandCount);
 	assert.equal(commandBuffer.commandCount, 0);
 	assert.equal(commandBuffer.presentCommandCount, 0);
 	assert.equal(commandBuffer.wordCount, 1);
-	assert.equal(commandBuffer.words[0], 0xa0b0c0d0);
+	assert.equal(commandBuffer.wordHead, pendingWord);
+	assert.equal(commandBuffer.words[pendingWord], 0xa0b0c0d0);
+	assert.deepEqual(commandBuffer.captureState().words, [0xa0b0c0d0]);
 });

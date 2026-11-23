@@ -26,6 +26,7 @@ struct GxGpuCommandStorage {
 	size_t commandCount = 0u;
 	size_t executedCommandCount = 0u;
 	size_t presentCommandCount = 0u;
+	size_t wordHead = 0u;
 	size_t wordCount = 0u;
 	size_t drawCount = 0u;
 	std::array<u8, GX_GPU_COMMAND_CAPACITY> commandKind{};
@@ -48,6 +49,8 @@ struct GxGpuCommandStorage {
 	std::array<u8, GX_GPU_COMMAND_CAPACITY> drawColorStride{};
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> drawSizeOffset{};
 	std::array<u32, GX_GPU_COMMAND_WORD_CAPACITY> words{};
+
+	size_t wordEnd() const { return wordHead + wordCount; }
 
 	void appendDrawLayout(size_t index) {
 		commandDrawIndex[index] = static_cast<u16>(drawCount);
@@ -75,11 +78,13 @@ struct GxGpuCommandStorage {
 		serial = source.serial;
 		commandCount = executedCommandCount = count;
 		presentCommandCount = std::min(source.presentCommandCount, count);
-		wordCount = count == 0u ? 0u : source.commandWordStart[count - 1u] + source.commandWordCount[count - 1u];
+		wordHead = 0u;
+		wordCount = count == 0u ? 0u
+			: source.commandWordStart[count - 1u] + source.commandWordCount[count - 1u] - source.wordHead;
 		drawCount = count == source.commandCount ? source.drawCount : source.commandDrawIndex[count];
 		std::copy_n(source.commandKind.begin(), count, commandKind.begin());
 		std::copy_n(source.commandOpcode.begin(), count, commandOpcode.begin());
-		std::copy_n(source.commandWordStart.begin(), count, commandWordStart.begin());
+		for (size_t i = 0u; i < count; ++i) commandWordStart[i] = source.commandWordStart[i] - static_cast<u32>(source.wordHead);
 		std::copy_n(source.commandWordCount.begin(), count, commandWordCount.begin());
 		std::copy_n(source.commandDrawModeWord.begin(), count, commandDrawModeWord.begin());
 		std::copy_n(source.commandVramYAddressExtensionWord.begin(), count, commandVramYAddressExtensionWord.begin());
@@ -94,7 +99,7 @@ struct GxGpuCommandStorage {
 		std::copy_n(source.drawPositionStride.begin(), drawCount, drawPositionStride.begin());
 		std::copy_n(source.drawColorStride.begin(), drawCount, drawColorStride.begin());
 		std::copy_n(source.drawSizeOffset.begin(), drawCount, drawSizeOffset.begin());
-		std::copy_n(source.words.begin(), wordCount, words.begin());
+		std::copy_n(source.words.begin() + static_cast<std::ptrdiff_t>(source.wordHead), wordCount, words.begin());
 	}
 };
 

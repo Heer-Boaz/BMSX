@@ -853,7 +853,8 @@ void testSaturatedCommandLogDrainsExecutedPrefixIntoRetainedBackendVram() {
 	require(commands.commandCount == 1u, "GX-GPU command drain retains the active command suffix");
 	require(commands.executedCommandCount == 0u, "GX-GPU command drain rebases the execution frontier");
 	require(commands.wordCount == 3u, "GX-GPU command drain retains the active command words");
-	require(commands.commandWordStart[0] == 0u, "GX-GPU command drain rebases the active command word address");
+	require(commands.commandWordStart[0] == (bmsx::GX_GPU_COMMAND_CAPACITY - 1u) * 3u,
+		"GX-GPU command drain does not move the active packet");
 	require(!gpu.backendCommandDrainPending(), "GX-GPU command drain releases the capacity boundary");
 	require(!gpu.backendServiceBlocksMachine(), "GX-GPU command drain resumes machine execution at the same machine time");
 
@@ -937,6 +938,38 @@ void testCommandWordStorageReservesOneMaximalCpuUpload() {
 		require(commands.commandCount == 0u, "GX-GPU maximal upload drain releases command storage");
 		require(commands.wordCount == 0u, "GX-GPU maximal upload drain releases word storage");
 	}
+}
+
+void testPartialRetirementReservesContiguousUploadStorage() {
+	using namespace bmsx;
+	GpuHarness harness;
+	auto& gpu = harness.gpu;
+	const auto& commands = gpu.readDeviceOutput().commandBuffer;
+	const auto upload = [&](u32 y, u32 height, u32 word) {
+		gpu.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
+		gpu.writeGp0(y << 16u);
+		gpu.writeGp0((height << 16u) | GX_GPU_TRANSFER_MAX_WIDTH);
+		for (size_t i = 0; i < height * GX_GPU_TRANSFER_MAX_WIDTH / 2u; ++i) gpu.writeGp0(word);
+		completeGpuCommands(harness);
+	};
+	constexpr size_t halfUpload = 3u + GX_GPU_TRANSFER_MAX_PIXEL_COUNT / 4u;
+	upload(0u, 256u, 0x11111111u);
+	gpu.presentReadyFrameOnVblankEdge();
+	upload(256u, 256u, 0x22222222u);
+	gpu.retirePresentedCommands();
+	require(commands.wordHead == halfUpload && commands.commandWordStart[0] == halfUpload &&
+		commands.words[halfUpload + 3u] == 0x22222222u,
+		"retiring the old upload leaves the later packet in place");
+
+	gpu.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
+	gpu.writeGp0(0u);
+	gpu.writeGp0(0u);
+	gpu.writeGp0(0x33333333u);
+	const auto state = gpu.captureState();
+	require(commands.wordHead == 0u && commands.commandWordStart[0] == 0u &&
+		commands.words[halfUpload - 1u] == 0x22222222u &&
+		state.gp0ImageLoadCommandWordStart == halfUpload && state.commandBuffer.words.back() == 0x33333333u,
+		"the new full-sized reservation reclaims the prefix and preserves the queued upload and live image");
 }
 
 void testActivePolylineStateSurvivesSaturatedCommandDrain() {
@@ -1415,6 +1448,9 @@ void testSplitDmaPolylinePayloadRestoresBeforeIrqAndReadback() {
 void testSplitDmaImagePayloadRestoresBeforeIrqAndReadback() {
 	GpuHarness source;
 	stopPcrtc(source);
+	for (const bmsx::u32 word : {0x02000000u, 0u, 0x00010001u}) source.gpu.writeGp0(word);
+	completeGpuCommands(source);
+	source.gpu.presentReadyFrameOnVblankEdge();
 	source.dma.setTiming(1, 1, 1, 1, 0, 0);
 	source.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	const bmsx::u32 address = bmsx::DYNAMIC_RAM_BASE + 0x4000u;
@@ -1434,13 +1470,15 @@ void testSplitDmaImagePayloadRestoresBeforeIrqAndReadback() {
 	require(!source.dma.cpuBusHeld(), "first image DMA released CPU");
 	require((source.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "image payload does not raise IRQ");
 	require(!source.gpu.backendServicePending(), "image payload does not start readback");
+	source.gpu.retirePresentedCommands();
 	const auto partial = source.gpu.captureState();
 	require(partial.gp0FifoWords.empty() && partial.gp0DmaIngressWords.empty()
 		&& partial.gp0ImageLoadWordsRemaining == 128u && partial.gp0IngressWordsRemaining == 128u,
 		"published image burst consumes its payload without retaining FIFO credits");
 	const auto& partialCommands = source.gpu.readDeviceOutput().commandBuffer;
 	require(partialCommands.wordCount == firstWords && partialCommands.commandCount == 0u
-		&& std::equal(words.begin(), words.begin() + firstWords, partialCommands.words.begin()),
+		&& partialCommands.wordHead == 3u && partial.gp0ImageLoadCommandWordStart == 0
+		&& std::equal(words.begin(), words.begin() + firstWords, partialCommands.words.begin() + 3),
 		"the whole burst remains raw payload until the remaining image words arrive");
 	const auto saved = source.gpu.captureSaveState();
 	GpuHarness restored;
@@ -1483,8 +1521,13 @@ void testSplitDmaImagePayloadRestoresBeforeIrqAndReadback() {
 void testPartialImageSurvivesSupervisorRestoreAndQueuedReadback() {
 	GpuHarness source;
 	stopPcrtc(source);
+	for (const bmsx::u32 word : {0x02000000u, 0u, 0x00010001u}) source.gpu.writeGp0(word);
+	completeGpuCommands(source);
+	source.gpu.presentReadyFrameOnVblankEdge();
 	for (const bmsx::u32 word : {0xa0000000u, 0u, 0x00020002u, 0xc0001234u}) source.gpu.writeGp0(word);
 	require(!source.gpu.backendServicePending(), "readback-looking payload is not a command");
+	source.gpu.retirePresentedCommands();
+	require(source.gpu.readDeviceOutput().commandBuffer.wordHead == 3u, "supervisor receives a nonzero physical word origin");
 	source.gpu.beginSupervisorQuiesce();
 	require(source.gpu.supervisorQuiescent(), "partial image admits supervisor entry");
 	source.gpu.enterSupervisorContext();
@@ -5125,13 +5168,18 @@ void testCommandBufferRetirePreservesPartialPayloadWords() {
 		3u,
 		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
 		bmsx::GX_GPU_GP0_FILL_RECTANGLE);
-	commandBuffer.appendWord(0xa0b0c0d0u);
+	const bmsx::u32 word = 0xa0b0c0d0u;
+	const size_t pendingWord = commandBuffer.appendWords(&word, 1u);
 
-	require(commandBuffer.retireCommandsPreservingVram(commandBuffer.presentCommandCount) == 3u, "GX-GPU command-buffer retire reports sealed command words");
+	commandBuffer.retireCommandsPreservingVram(commandBuffer.presentCommandCount);
 	require(commandBuffer.commandCount == 0u, "GX-GPU command-buffer retire removes sealed command metadata");
 	require(commandBuffer.presentCommandCount == 0u, "GX-GPU command-buffer retire clears sealed prefix");
 	require(commandBuffer.wordCount == 1u, "GX-GPU command-buffer retire preserves partial payload word");
-	require(commandBuffer.words[0] == 0xa0b0c0d0u, "GX-GPU command-buffer retire moves partial payload to the front");
+	require(commandBuffer.wordHead == pendingWord && commandBuffer.words[pendingWord] == word,
+		"GX-GPU command-buffer retire leaves the partial payload at its original address");
+	const auto captured = commandBuffer.captureState();
+	require(captured.words.size() == 1u && captured.words[0] == word,
+		"GX-GPU capture serializes the live word interval, not retired data");
 }
 
 void testSoftwareScanoutConsumesSolidPrimitives() {
@@ -5655,6 +5703,10 @@ void testDrawOperandLayoutsFollowRestoreAndRetirement() {
 		&& buffer->drawVertexCount[0] == 3u && buffer->drawVertexCount[1] == 1u
 		&& buffer->words[buffer->commandWordStart[0] + 5u] == 0xf0000005u,
 		"retirement compacts record indices without changing raw guest words");
+	prefix->copyPrefix(*buffer, 2u);
+	require(prefix->commandWordStart[0] == 0u && prefix->commandWordStart[1] == 7u
+		&& prefix->words[5] == 0xf0000005u && prefix->wordCount == 10u,
+		"worker copies and rebases the live packet prefix from a nonzero physical origin");
 	const std::array<bmsx::u32, 300> longRectangle{};
 	const size_t start = buffer->appendWords(longRectangle.data(), longRectangle.size());
 	buffer->pushCommand(bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, 0x60u, start, static_cast<bmsx::u32>(longRectangle.size()),
@@ -5818,6 +5870,7 @@ int main() {
 	testSaturatedCommandLogDrainsExecutedPrefixIntoRetainedBackendVram();
 	testRetiringSaturatedCommandPrefixResumesDmaIngress();
 	testCommandWordStorageReservesOneMaximalCpuUpload();
+	testPartialRetirementReservesContiguousUploadStorage();
 	testActivePolylineStateSurvivesSaturatedCommandDrain();
 	testPartialPresentationSnapshotDoesNotExposeQueuedCommands();
 	testRetirePreservesCommandsAppendedAfterSealedVblankSnapshot();

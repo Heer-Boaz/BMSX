@@ -616,7 +616,8 @@ export class GxGpu {
 		context.gp0IngressPolylineWordsPerVertex = this.gp0Ingress.polylineWordsPerVertex;
 		context.gp0IngressPolylinePayloadPhase = this.gp0Ingress.polylinePayloadPhase;
 		context.gp0ImageLoadWordsRemaining = this.gp0ImageLoadWordsRemaining;
-		context.gp0ImageLoadCommandWordStart = this.gp0ImageLoadCommandWordStart;
+		context.gp0ImageLoadCommandWordStart = this.gp0ImageLoadCommandWordCount !== 0
+			? this.gp0ImageLoadCommandWordStart - this.commandBuffer.wordHead : 0;
 		context.gp0ImageLoadCommandWordCount = this.gp0ImageLoadCommandWordCount;
 		context.gp0ImageLoadCommandOpcode = this.gp0ImageLoadCommandOpcode;
 		context.gp0PolylinePayloadPhase = this.gp0PolylinePayloadPhase;
@@ -626,7 +627,7 @@ export class GxGpu {
 		context.gp0PolylineNextColorWord = this.gp0PolylineNextColorWord;
 		context.commandBufferWordCount = this.commandBuffer.wordCount;
 		for (let index = 0; index < this.commandBuffer.wordCount; index += 1) {
-			context.commandBufferWords[index] = this.commandBuffer.words[index];
+			context.commandBufferWords[index] = this.commandBuffer.words[this.commandBuffer.wordHead + index];
 		}
 		const fifo = this.gp0Fifo;
 		this.gp0Fifo = context.gp0Fifo;
@@ -658,6 +659,7 @@ export class GxGpu {
 		this.gp0PolylineColorWord = context.gp0PolylineColorWord;
 		this.gp0PolylinePositionWord = context.gp0PolylinePositionWord;
 		this.gp0PolylineNextColorWord = context.gp0PolylineNextColorWord;
+		this.commandBuffer.wordHead = 0;
 		this.commandBuffer.wordCount = context.commandBufferWordCount;
 		for (let index = 0; index < context.commandBufferWordCount; index += 1) {
 			this.commandBuffer.words[index] = context.commandBufferWords[index];
@@ -870,7 +872,8 @@ export class GxGpu {
 				: this.pendingCommandCompletionCycle - nowCycles,
 			pendingCommandTargetCount: this.pendingCommandTargetCount,
 			gp0ImageLoadWordsRemaining: this.gp0ImageLoadWordsRemaining,
-			gp0ImageLoadCommandWordStart: this.gp0ImageLoadCommandWordStart,
+			gp0ImageLoadCommandWordStart: this.gp0ImageLoadCommandWordCount !== 0
+				? this.gp0ImageLoadCommandWordStart - this.commandBuffer.wordHead : 0,
 			gp0ImageLoadCommandWordCount: this.gp0ImageLoadCommandWordCount,
 			gp0ImageLoadCommandOpcode: this.gp0ImageLoadCommandOpcode,
 			gp0PolylinePayloadPhase: this.gp0PolylinePayloadPhase,
@@ -1123,7 +1126,7 @@ export class GxGpu {
 		if (dmaWrite) {
 			this.gp0Word = word >>> 0;
 			if (this.gp0DmaImagePrefixWords !== 0) {
-				this.commandBuffer.words[this.commandBuffer.wordCount + this.gp0DmaImagePrefixWords] = this.gp0Word;
+				this.commandBuffer.words[this.commandBuffer.wordEnd + this.gp0DmaImagePrefixWords] = this.gp0Word;
 				this.recordGp0ProducerWord(this.gp0Word);
 				directImageWords = this.gp0DmaImagePrefixWords + 1;
 				this.gp0DmaImagePrefixWords = 0;
@@ -1713,14 +1716,9 @@ export class GxGpu {
 	}
 
 	private retireCommandPrefix(retiredCommands: number): void {
-		const retiredWords = this.commandBuffer.retireCommandsPreservingVram(retiredCommands);
+		this.commandBuffer.retireCommandsPreservingVram(retiredCommands);
 		if (this.pendingCommandTargetCount !== 0) {
 			this.pendingCommandTargetCount -= retiredCommands;
-		}
-		if (retiredWords !== 0) {
-			if (this.gp0ImageLoadCommandWordCount !== 0) {
-				this.gp0ImageLoadCommandWordStart -= retiredWords;
-			}
 		}
 		this.processGp0Pipeline(this.scheduler.currentNowCycles());
 		this.updateDynamicStatusBits();
@@ -1858,13 +1856,13 @@ export class GxGpu {
 		if (this.gp0ImageLoadCommandWordCount > 3) {
 			this.finishImageLoadToVram(nowCycles);
 		} else {
-			this.commandBuffer.wordCount = this.gp0ImageLoadCommandWordStart;
+			this.commandBuffer.truncateWords(this.gp0ImageLoadCommandWordStart);
 			this.clearImageLoadState();
 		}
 	}
 
 	private consumeImageLoadWords(source: WordFifo, words: number, nowCycles: number): void {
-		source.readWords(this.commandBuffer.words, this.commandBuffer.wordCount, words);
+		source.readWords(this.commandBuffer.words, this.commandBuffer.wordEnd, words);
 		this.commitImageLoadWords(words, nowCycles);
 	}
 
@@ -1964,10 +1962,10 @@ export class GxGpu {
 		const sizeWord = packet.words[2];
 		const width = gxGpuTransferWidth(sizeWord);
 		const height = gxGpuTransferHeight(sizeWord);
-		this.gp0ImageLoadCommandWordStart = this.commandBuffer.appendWords(packet.words, packet.wordCount);
+		this.gp0ImageLoadWordsRemaining = ((width * height) + 1) >>> 1;
+		this.gp0ImageLoadCommandWordStart = this.commandBuffer.appendWords(packet.words, packet.wordCount, this.gp0ImageLoadWordsRemaining);
 		this.gp0ImageLoadCommandWordCount = packet.wordCount;
 		this.gp0ImageLoadCommandOpcode = packet.opcode;
-		this.gp0ImageLoadWordsRemaining = ((width * height) + 1) >>> 1;
 	}
 
 	private writeDrawModeWord(word: number): void {
@@ -2197,7 +2195,7 @@ export class GxGpu {
 			&& context.pendingCommandCompletionCycle === 0
 			&& context.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE) {
 			const destination = context.commandBuffer.words;
-			const start = context.commandBuffer.wordCount;
+			const start = context.commandBuffer.wordEnd;
 			for (let index = 0; index < count; ++index) destination[start + index] = words[first + index];
 			context.gp0Producer.skipPayloadWords(count);
 			context.gp0DmaImagePrefixWords = count;
