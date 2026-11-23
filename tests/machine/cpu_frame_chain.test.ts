@@ -14,7 +14,7 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
@@ -117,11 +117,15 @@ test('second-lane physical failure does not publish either replacement or charge
 	const fields = [ThreadField.StackBlock, ThreadField.FrameBlock, ThreadField.StackCapacity, ThreadField.FrameCapacity];
 	const before = fields.map(read), used = cpu.luaHeap.usedBytes();
 	const newValues = 16, valueBytes = newValues * THREAD_STACK_SLOT_BYTES;
-	assert.notEqual(arena.allocate(valueBytes, true), 0, 'keep an owned Values size-class page with spare slots');
-	while (arena.allocate(HEAP_PAGE_SIZE, true) !== 0) { /* fixture-owned physical pages */ }
+	const frameBytes = 2 * before[3] * FRAME_CONTROL_BYTES;
+	const spare = arena.allocate(valueBytes, true);
+	assert.notEqual(spare, 0);
+	while (arena.allocate(frameBytes, true) !== 0) {}
+	while (arena.allocate(valueBytes, true) !== 0) {}
+	arena.free(spare);
 	const available = arena.allocate(valueBytes, true);
 	assert.notEqual(available, 0);
-	assert.equal(arena.allocate(2 * before[3] * FRAME_CONTROL_BYTES, true), 0, 'replacement frame controls cannot fit');
+	assert.equal(arena.allocate(frameBytes, true), 0, 'replacement frame controls cannot fit once the Values are reserved');
 	arena.free(available);
 	const occupied = arena.occupiedBytes();
 	assert.throws(() => thread.reserveFrame(newValues), error => error === LUA_OUT_OF_MEMORY_SIGNAL);

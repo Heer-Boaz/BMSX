@@ -205,10 +205,11 @@ void closedCellLivesInRam() {
 		"restore retains the saved capture address and word");
 	cpu.collectHeap();
 	const auto occupied = cpu.heapAllocator().occupiedBytes();
+	const auto closureBytes = cpu.heapAllocator().allocationBytes(closure - GC_OBJECT_PREFIX);
+	const auto cellBytes = cpu.heapAllocator().allocationBytes(address - GC_OBJECT_PREFIX);
 	cpu.setGlobalByKey(key, valueNil());
 	cpu.collectHeap();
-	require(cpu.heapAllocator().occupiedBytes() == occupied - heapAllocationBytes(closureRecordBytes(1) + GC_OBJECT_PREFIX)
-		- heapAllocationBytes(UPVALUE_HEAP_BYTES + GC_OBJECT_PREFIX),
+	require(cpu.heapAllocator().occupiedBytes() == occupied - closureBytes - cellBytes,
 		"collection releases both raw records");
 	require(heap.cellRecordAddress(address) == 0u && memory.readRamRecordByte(address) == 0u,
 		"the freed capture has no live record header");

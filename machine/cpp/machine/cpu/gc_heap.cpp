@@ -243,7 +243,10 @@ size_t GcHeap::markCell(u32 cell) {
 }
 
 size_t GcHeap::allocationBytes(u32 threadAddress) const {
-	return ThreadRecord::storageLayout(memory, threadAddress).allocationBytes();
+	const auto layout = ThreadRecord::storageLayout(memory, threadAddress);
+	return arena.allocationBytes(threadAddress - GC_OBJECT_PREFIX)
+		+ arena.allocationBytes(layout.block) + arena.allocationBytes(layout.frameBlock)
+		+ (layout.protectedBlock != 0u ? arena.allocationBytes(layout.protectedBlock) : 0u);
 }
 u8 GcHeap::weakModeBits(Value modeValue) {
 	if (!valueIsString(modeValue)) {
@@ -799,20 +802,21 @@ size_t GcHeap::accountEpochWork(size_t work) {
 }
 
 void GcHeap::assistPhysicalPressureAtTick() {
-	const u32 claims = arena.claimedWholePages();
-	const u32 demand = claims - memory.readRamRecordWord(m_controlOffset + GC_PAGE_CLAIMS_AT_TICK);
-	if (demand != 0u) memory.writeRamRecordWord(m_controlOffset + GC_PAGE_CLAIMS_AT_TICK, claims);
+	const u32 occupied = arena.occupiedBytes();
+	const u32 previousOccupied = memory.readRamRecordWord(m_controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK);
+	if (occupied != previousOccupied) memory.writeRamRecordWord(m_controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK, occupied);
 	// The existing maintenance boundary owns atomic work.
 	if (finalMarkPending()) return;
 	if (memory.readRamRecordWord(m_controlOffset + GC_PHYSICAL_ASSIST) == 0u) {
-		if (demand == 0u) return;
+		if (occupied <= previousOccupied) return;
+		const u32 demand = occupied - previousOccupied;
 		const u32 completed = memory.readRamRecordWord(m_controlOffset + GC_EPOCH_WORK);
 		const u32 previous = memory.readRamRecordWord(m_controlOffset + GC_LAST_EPOCH_WORK);
 		const u32 remaining = std::max(previous, completed) - completed;
 		// Allow the two phase handoffs at atomic entry and exit, plus the
-		// next interval's claims. This is an estimate, not a reservation.
+		// next interval's growth. This is an estimate, not a reservation.
 		const u64 quanta = remaining / GC_STEP_WORDS + (remaining % GC_STEP_WORDS != 0u) + 3u;
-		if (arena.availableWholePages() > demand * quanta) return;
+		if (arena.unoccupiedBytes() > demand * quanta) return;
 		memory.writeRamRecordWord(m_controlOffset + GC_PHYSICAL_ASSIST, 1u);
 	}
 	step(valueNil(), valueNil(), valueNil());

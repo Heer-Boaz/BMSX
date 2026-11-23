@@ -15,6 +15,7 @@ import {
 	SYSTEM_ROM_SIZE,
 } from '../../spec/bmsx/memory_map';
 import { CartridgeController } from '../devices/cartridge/controller';
+import { bindDlmalloc, DLMALLOC_WASM_PAGE_COUNT, type DlmallocArena } from './dlmalloc_wasm';
 import { RomStorage } from './rom_storage';
 import type { MemoryWordCounters } from './word_counters';
 import type { CartridgeSocketMediaPair } from '../devices/cartridge/contracts';
@@ -196,6 +197,7 @@ export const enum IoWriteStorage { Retained, Device }
 export class Memory {
 	private readonly systemRom: RomStorage;
 	public readonly cartridgeController: CartridgeController;
+	private readonly ramBacking: WebAssembly.Memory;
 	private readonly ram: Uint8Array;
 	private busEnd: number;
 	public readonly ramView: DataView;
@@ -231,12 +233,16 @@ export class Memory {
 		this.systemRom = new RomStorage(init.systemRom);
 		this.dmaRomView = { bytes: init.systemRom, byteOffset: 0, byteLength: 0 };
 		this.cartridgeController = new CartridgeController(init.cartridgeSlots);
-		this.ram = new Uint8Array(ramByteCount);
+		// The allocator and CPU view the same fixed backing. The tail is only
+		// for host write watches and Wasm execution, never part of guest RAM.
+		this.ramBacking = new WebAssembly.Memory({ initial: DLMALLOC_WASM_PAGE_COUNT, maximum: DLMALLOC_WASM_PAGE_COUNT });
+		const buffer = this.ramBacking.buffer;
+		this.ram = new Uint8Array(buffer, 0, ramByteCount);
 		this.busEnd = RAM_BASE + ramByteCount;
-		this.ramView = new DataView(this.ram.buffer);
-		this.ramWords = new Uint32Array(this.ram.buffer, 0, ramByteCount >>> 2);
-		this.ramFloats = new Float32Array(this.ram.buffer, 0, ramByteCount >>> 2);
-		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount);
+		this.ramView = new DataView(buffer, 0, ramByteCount);
+		this.ramWords = new Uint32Array(buffer, 0, ramByteCount >>> 2);
+		this.ramFloats = new Float32Array(buffer, 0, ramByteCount >>> 2);
+		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount, buffer, MAIN_RAM_SIZE);
 		this.ioSlots = new Uint32Array(IO_SLOT_COUNT);
 		this.ioReadContexts = new Array<unknown>(IO_SLOT_COUNT);
 		this.ioWriteContexts = new Array<unknown>(IO_SLOT_COUNT);
@@ -261,6 +267,10 @@ export class Memory {
 
 	public ramByteCount(): number {
 		return this.ram.byteLength;
+	}
+
+	public bindDlmalloc(stateOffset: number): DlmallocArena {
+		return bindDlmalloc(this.ramBacking, stateOffset);
 	}
 
 	public ramWriteWatches(): MappedPageWriteWatches { return this.ramPageWriteWatches; }

@@ -1,3 +1,4 @@
+import { logicalThreadBytes } from '../helpers/guest_kernel';
 import { ValueTag, valueBuiltinFunction, valueInteger, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -128,12 +129,12 @@ test('non-capturing const functions materialize as static proto references', () 
 		'return f',
 	].join('\n'));
 	const before = cpu.collectTrackedHeapBytes();
-	const backingBefore = cpu.gc.allocationBytes(cpu.rootThread.address);
+	const backingBefore = logicalThreadBytes(cpu);
 
 	runGuestToHalt(cpu, 100000);
 
 	assert.equal(cpu.collectTrackedHeapBytes() - before,
-		cpu.gc.allocationBytes(cpu.rootThread.address) - backingBefore);
+		logicalThreadBytes(cpu) - backingBefore);
 });
 
 test('restored static closures reuse the static proto cache', () => {

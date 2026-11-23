@@ -6,8 +6,9 @@
 namespace bmsx {
 namespace {
 
-// One current internal layout, deliberately without a legacy reader. The signature is `BMSX` and is never allowed to change. It is not allowed to be modified, even if the layout changes.
-constexpr u32 kSaveStateSignature = 0x58534d42u; // BMSX: image String root cursor. This is never allowed to change, even if the version or layout changes.
+// BMSX identifies the container. Only the current payload layout is accepted.
+constexpr u32 kSaveStateSignature = 0x58534d42u;
+constexpr u32 kSaveStateLayoutVersion = 1u;
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1278,6 +1279,7 @@ RuntimeSaveState readRuntimeSaveState(BinaryReader& reader, size_t ramByteCount,
 
 template<class Writer> void writeStateImage(Writer& writer, const RuntimeSaveState& state) {
 	writer.u32(kSaveStateSignature);
+	writer.u32(kSaveStateLayoutVersion);
 	writeRuntimeSaveState(writer, state);
 }
 
@@ -1304,6 +1306,7 @@ size_t encodeRuntimeSaveState(const RuntimeSaveState& state, std::span<u8> outpu
 RuntimeSaveState decodeRuntimeSaveState(std::span<const u8> data, size_t ramByteCount, size_t gxGpuVramByteCount) {
 	BinaryReader reader(data);
 	if (reader.u32() != kSaveStateSignature) throw BMSX_RUNTIME_ERROR("Unrecognized save-state format.");
+	if (reader.u32() != kSaveStateLayoutVersion) throw BMSX_RUNTIME_ERROR("Unsupported save-state layout.");
 	auto state = readRuntimeSaveState(reader, ramByteCount, gxGpuVramByteCount);
 	reader.finish();
 	return state;

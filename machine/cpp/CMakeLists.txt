@@ -298,6 +298,7 @@ add_library(bmsx_core STATIC
 	machine/cpu/gc_heap.cpp
 	machine/cpu/global_bank.cpp
 	machine/cpu/heap_allocator.cpp
+	../common/dlmalloc/dlmalloc.c
 	machine/cpu/lua_heap.cpp
 	machine/cpu/table.cpp
 	machine/cpu/value.cpp

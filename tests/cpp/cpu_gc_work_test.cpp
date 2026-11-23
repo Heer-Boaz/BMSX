@@ -69,12 +69,15 @@ void allocationAdmissionUsesLogicalBytes() {
 	constexpr u32 logicalCharge = (32 + 2 * 5 + 3 * 10) + (32 + 512 * 5);
 	cpu.luaHeap().setCollectionTarget(static_cast<u32>(logical) + logicalCharge);
 	cpu.instructionBudgetRemaining = 23;
-	cpu.createTable(2, 3);
-	cpu.createTable(512, 0);
+	const auto hash = cpu.createTable(2, 3);
+	const auto array = cpu.createTable(512, 0);
 	require(cpu.instructionBudgetRemaining == 23, "the allocations fit at the exact logical threshold");
-	require(cpu.luaHeap().usedBytes() == logical + logicalCharge, "size-class slack is not charged to the language budget");
-	require(cpu.heapAllocator().occupiedBytes() == physical + 80 + 2 * heapAllocationBytes(TableRecord::HEADER_BYTES + GC_OBJECT_PREFIX) + HEAP_PAGE_SIZE,
-		"physical diagnostics include both size classes and whole pages");
+	require(cpu.luaHeap().usedBytes() == logical + logicalCharge, "chunk overhead is not charged to the language budget");
+	const auto& arena = cpu.heapAllocator();
+	const auto hashBytes = arena.allocationBytes(hash.address() - GC_OBJECT_PREFIX) + arena.allocationBytes(hash.storageAddress());
+	const auto arrayBytes = arena.allocationBytes(array.address() - GC_OBJECT_PREFIX) + arena.allocationBytes(array.storageAddress());
+	require(arena.occupiedBytes() == physical + hashBytes + arrayBytes && hashBytes + arrayBytes > logicalCharge,
+		"physical diagnostics add the live chunks, including allocator overhead");
 	cpu.collectHeap();
 	require(cpu.luaHeap().usedBytes() == logical && cpu.heapAllocator().occupiedBytes() == physical,
 		"reclamation returns the corresponding charges to both measurements");
@@ -90,6 +93,7 @@ void tableReplacementAdmitsOnlyItsLogicalIncrease() {
 		table.setInteger(residentKey, valueInteger(100 + residentKey));
 		const auto logical = cpu.luaHeap().usedBytes();
 		const auto physical = cpu.heapAllocator().occupiedBytes();
+		const auto oldStorage = cpu.heapAllocator().allocationBytes(table.storageAddress());
 		const auto target = logical + (packArrayIntoHash ? 0u : 5u);
 		cpu.luaHeap().setCollectionTarget(target);
 		table.setInteger(trigger, valueInteger(73));
@@ -97,8 +101,8 @@ void tableReplacementAdmitsOnlyItsLogicalIncrease() {
 			"a resize at the exact growth threshold must not assist collection for the outgoing layout");
 		require(cpu.luaHeap().usedBytes() == (packArrayIntoHash ? logical - 20u : logical + 5u),
 			"the budget commits the resulting capacities only");
-		const u32 oldStorage = packArrayIntoHash ? 40u : 5u, newStorage = packArrayIntoHash ? 40u : 10u;
-		require(cpu.heapAllocator().occupiedBytes() == physical - heapAllocationBytes(oldStorage) + heapAllocationBytes(newStorage),
+		const auto newStorage = cpu.heapAllocator().allocationBytes(table.storageAddress());
+		require(cpu.heapAllocator().occupiedBytes() == physical - oldStorage + newStorage,
 			"the owner physically retires the old layout");
 		require(table.getInteger(residentKey) == valueInteger(100 + residentKey), "redistribution preserves the existing mapping");
 		require(table.getInteger(trigger) == valueInteger(73), "the triggering mapping is written once");
@@ -115,11 +119,12 @@ void tableBackingRecoveryRetriesEachEpoch() {
 		frame.registers.set(0, valueTable(table.address())); frame.setTop(1);
 		for (int key = 1; key <= 512; ++key) table.setInteger(key, valueInteger(key));
 		const u32 garbage = pressure != Pressure::Unavailable ? cpu.createTable(1024, 0).address() : 0u;
-		u32 lastPage = 0u;
-		while (const u32 page = arena.allocate(HEAP_PAGE_SIZE, true)) lastPage = page;
-		arena.free(lastPage);
+		const u32 spare = arena.allocate(4088u, true);
+		require(spare != 0u, "the pressure fixture reserves a live chunk");
+		while (arena.allocate(4088u, true) != 0u) {}
+		arena.free(spare);
 		require(arena.allocate(5 * 1024, true) == 0u && cpu.luaHeap().usedBytes() + 2560u < cpu.luaHeap().capacity(),
-			"the replacement is admitted logically but needs a contiguous two-page run before it can replace one page");
+			"the replacement is admitted logically but its physical chunk cannot fit");
 
 		const u8 white = gc.white();
 		const Value initialRoot = pressure == Pressure::Floating || pressure == Pressure::Explicit ? valueTable(garbage) : valueNil();
@@ -165,20 +170,24 @@ void physicalPressurePacesLargeLiveHeap() {
 	frame.registers.set(1, valueTable(cpu.createTable(225280, 0).address())); frame.setTop(2);
 	const u32 garbage = cpu.createTable(65536, 0).address();
 	frame.registers.set(2, valueTable(garbage)); frame.setTop(3);
-	constexpr u32 initialFree = 140u;
-	while (arena.availableWholePages() > initialFree) {
-		const u32 free = arena.availableWholePages(), claims = arena.claimedWholePages();
-		require(arena.allocate(HEAP_PAGE_SIZE, true) != 0u && arena.availableWholePages() == free - 1u
-			&& arena.claimedWholePages() == claims + 1u, "another physical page was actually claimed");
-	}
+	// With its header the request occupies 4096 bytes, so the workload
+	// consumes headroom without stranding a smaller hole per chunk.
+	constexpr u32 initialIntervals = 140u, pressureBytes = 4088u;
+	u32 ballast;
+	do {
+		const u32 before = arena.occupiedBytes();
+		ballast = arena.allocate(pressureBytes, true);
+		require(ballast != 0u && arena.occupiedBytes() >= before + pressureBytes,
+			"reserve actual allocator storage outside the language budget");
+	} while (arena.unoccupiedBytes() > initialIntervals * pressureBytes);
 	heap.assistPhysicalPressureAtTick();
 	cpu.collectHeap(); // calibrate a completed live epoch, then make the large reserve garbage.
 	frame.setTop(2);
 	const u8 white = heap.white();
 	cpu.instructionBudgetRemaining = 89;
 	u32 physicalSteps = 0u;
-	for (u32 tick = 0; tick + 1u < initialFree; ++tick) {
-		require(arena.allocate(HEAP_PAGE_SIZE, true) != 0u, "claim one whole page per interval");
+	for (u32 tick = 0; tick + 1u < initialIntervals; ++tick) {
+		require(arena.allocate(pressureBytes, true) != 0u, "add physical occupancy each interval");
 		const u32 control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		const u32 before = machine.memory.readRamRecordWord(control + GC_EPOCH_WORK);
 		const bool wasActive = heap.active();
@@ -194,15 +203,18 @@ void physicalPressurePacesLargeLiveHeap() {
 		}
 	}
 	require(physicalSteps >= 50u && !heap.active() && heap.white() == (white ^ 1u)
-		&& heap.tableRecordAddress(garbage) == 0u && arena.availableWholePages() > 2u,
-		"the larger epoch completed before the physical page runway ran out");
+		&& heap.tableRecordAddress(garbage) == 0u && arena.unoccupiedBytes() > 2u * pressureBytes,
+		"the larger epoch completed before the allocator exhausted its byte runway");
 	heap.assistPhysicalPressureAtTick();
-	require(!heap.active(), "without additional page claims an idle collector does not start again");
+	require(!heap.active(), "without additional occupancy an idle collector does not start again");
+	arena.free(ballast);
+	heap.assistPhysicalPressureAtTick();
+	require(!heap.active(), "a net release is not positive allocation pressure");
 	const u8 recoveredWhite = heap.white();
 	owner.setInteger(513, valueInteger(73));
 	require(heap.white() == recoveredWhite && owner.getInteger(512) == valueInteger(512)
 		&& owner.getInteger(513) == valueInteger(73) && cpu.instructionBudgetRemaining == 89,
-		"the two-page table grow needs no synchronous epoch and leaves the guest charge unchanged");
+		"the table grow needs no synchronous epoch and leaves the guest charge unchanged");
 }
 
 void canonicalPoolAndRootRanges() {
@@ -1190,10 +1202,13 @@ void collectUnattachedThreadRecord() {
 	const u32 child = cpu.createTable().address();
 	memory.writeRamRecordWord(block, child);
 	memory.writeRamRecordByte(block + capacity * sizeof(u32), static_cast<u8>(ValueTag::Table));
-	const size_t bytes = layout.allocationBytes();
+	const auto& arena = cpu.heapAllocator();
+	const size_t stackBytes = arena.allocationBytes(block);
+	const size_t bytes = stackBytes + arena.allocationBytes(address - GC_OBJECT_PREFIX) + arena.allocationBytes(layout.frameBlock);
+	const size_t childBytes = arena.allocationBytes(child - GC_OBJECT_PREFIX);
 	require(layout.block == block && gc.threadRecordAddress(address) == address && gc.allocationBytes(address) == bytes,
 		"an issued raw Thread has its physical header and backing without an execution view");
-	require(cpu.heapAllocator().occupiedBytes() == baselineBytes + bytes + heapAllocationBytes(TableRecord::HEADER_BYTES + GC_OBJECT_PREFIX),
+	require(arena.occupiedBytes() == baselineBytes + bytes + childBytes,
 		"the raw Thread and its sole table edge own only their guest allocations");
 	const size_t liveWork = gc.collect(valueThread(address), valueNil(), valueNil(), address);
 	const size_t threadWork = 3 * (20 + 14) + 2 * 2 + capacity * THREAD_STACK_SLOT_BYTES / sizeof(u32) + 2 + 1;
@@ -1206,13 +1221,13 @@ void collectUnattachedThreadRecord() {
 		"repeated collection follows the same RAM frame and charges no host attachment work");
 	const size_t shrinkWork = gc.collect(valueThread(address));
 	const auto reduced = ThreadRecord::storageLayout(memory, address);
-	const size_t reducedBytes = reduced.allocationBytes();
+	const size_t reducedBytes = bytes - stackBytes + arena.allocationBytes(reduced.block);
 	require(reduced.valueCapacity == capacity / 2 && reduced.block != block && reduced.frameBlock == layout.frameBlock
 		&& reduced.slots(memory).get(0) == valueTable(child)
 		&& memory.readRamRecordWord(reduced.frameAddress(0) + static_cast<u32>(FrameField::Top)) == 1u,
 		"shrinking relocates the live tagged slot, not its frame control");
 	require(shrinkWork == liveWork + 2 * (reduced.valueBytes() / sizeof(u32))
-		&& cpu.heapAllocator().occupiedBytes() == baselineBytes + reducedBytes + heapAllocationBytes(TableRecord::HEADER_BYTES + GC_OBJECT_PREFIX),
+		&& arena.occupiedBytes() == baselineBytes + reducedBytes + childBytes,
 		"relocation charges the new physical copy and releases the old backing");
 	size_t deadWork = 0;
 	while (gc.phase() != GcPhase::Sweep) deadWork += gc.step(valueNil(), valueNil(), valueNil());
@@ -1447,12 +1462,15 @@ void failedThreadReplacementLeavesBothOwnedLanes() {
 	const auto before = ThreadRecord::storageLayout(memory, thread.address);
 	const auto used = cpu.luaHeap().usedBytes();
 	constexpr u32 newValues = 16u, valueBytes = newValues * THREAD_STACK_SLOT_BYTES;
-	require(arena.allocate(valueBytes, true) != 0u, "keep an owned Values size-class page with spare slots");
-	while (arena.allocate(HEAP_PAGE_SIZE, true) != 0u) {}
 	const u32 available = arena.allocate(valueBytes, true);
-	require(available != 0u && arena.allocate(2u * before.frameBytes(), true) == 0u,
-		"physical pressure admits the replacement Values but not the frame controls");
+	require(available != 0u && arena.allocate(valueBytes, true) != 0u, "guard one replacement-sized chunk from coalescing");
+	while (arena.allocate(4088u, true) != 0u) {}
+	while (arena.allocate(2u * before.frameBytes(), true) != 0u) {}
 	arena.free(available);
+	const u32 retry = arena.allocate(valueBytes, true);
+	require(retry != 0u && arena.allocate(2u * before.frameBytes(), true) == 0u,
+		"physical pressure admits the replacement Values but not the frame controls");
+	arena.free(retry);
 	const auto occupied = arena.occupiedBytes();
 	bool failed = false;
 	try { thread.reserveFrame(newValues); }

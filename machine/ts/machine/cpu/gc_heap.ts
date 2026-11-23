@@ -37,8 +37,8 @@ const GC_MODE_REMAINING = GC_MODE_NODE + 4;
 export const GC_ROOT_CURSOR = GC_MODE_REMAINING + 4;
 const GC_EPOCH_WORK = GC_ROOT_CURSOR + 4;
 const GC_LAST_EPOCH_WORK = GC_EPOCH_WORK + 4;
-const GC_PAGE_CLAIMS_AT_TICK = GC_LAST_EPOCH_WORK + 4;
-const GC_PHYSICAL_ASSIST = GC_PAGE_CLAIMS_AT_TICK + 4;
+const GC_PHYSICAL_OCCUPIED_AT_TICK = GC_LAST_EPOCH_WORK + 4;
+const GC_PHYSICAL_ASSIST = GC_PHYSICAL_OCCUPIED_AT_TICK + 4;
 const GC_OBJECT_HEAD = GC_PHYSICAL_ASSIST + 4;
 const GC_SWEEP_LINK = GC_OBJECT_HEAD + 4;
 // Capture lanes use four bytes each and Table entries require a separate tag.
@@ -740,18 +740,19 @@ export class GcHeap {
 	}
 
 	public assistPhysicalPressureAtTick(): void {
-		const claims = this.arena.claimedWholePages();
-		const demand = (claims - this.memory.readRamRecordWord(this.controlOffset + GC_PAGE_CLAIMS_AT_TICK)) >>> 0;
-		if (demand !== 0) this.memory.writeRamRecordWord(this.controlOffset + GC_PAGE_CLAIMS_AT_TICK, claims);
+		const occupied = this.arena.occupiedBytes();
+		const previousOccupied = this.memory.readRamRecordWord(this.controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK);
+		if (occupied !== previousOccupied) this.memory.writeRamRecordWord(this.controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK, occupied);
 		if (this.finalMarkPending()) return;
 		if (this.memory.readRamRecordWord(this.controlOffset + GC_PHYSICAL_ASSIST) === 0) {
-			if (demand === 0) return;
+			if (occupied <= previousOccupied) return;
+			const demand = occupied - previousOccupied;
 			const completed = this.memory.readRamRecordWord(this.controlOffset + GC_EPOCH_WORK);
 			const previous = this.memory.readRamRecordWord(this.controlOffset + GC_LAST_EPOCH_WORK);
 			const remaining = Math.max(previous, completed) - completed;
-			// Atomic entry and exit can end a pulse early. Leave room for the next claims.
+			// Atomic entry and exit can end a pulse early. Leave room for the next interval's growth.
 			const quanta = (((remaining + GC_STEP_WORDS - 1) / GC_STEP_WORDS) >>> 0) + 3;
-			if (this.arena.availableWholePages() > demand * quanta) return;
+			if (this.arena.unoccupiedBytes() > demand * quanta) return;
 			this.memory.writeRamRecordWord(this.controlOffset + GC_PHYSICAL_ASSIST, 1);
 		}
 		this.step();

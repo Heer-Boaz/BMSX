@@ -56,10 +56,9 @@ export class MappedPageWriteWatches {
 		return false;
 	}
 
-	public constructor(byteLength: number) {
-		this.values = new Uint32Array(
-			(byteLength + MAPPED_PAGE_BYTE_SIZE - 1) >>> MAPPED_PAGE_BYTE_SHIFT,
-		);
+	public constructor(byteLength: number, groupBuffer?: ArrayBuffer, groupOffset = 0) {
+		const pages = (byteLength + MAPPED_PAGE_BYTE_SIZE - 1) >>> MAPPED_PAGE_BYTE_SHIFT;
+		this.values = groupBuffer === undefined ? new Uint32Array(pages) : new Uint32Array(groupBuffer, groupOffset, pages);
 		this.words = new Uint32Array(this.values.length * MAPPED_PAGE_WATCH_GROUP_COUNT);
 	}
 

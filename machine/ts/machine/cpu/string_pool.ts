@@ -330,7 +330,7 @@ export class StringPool {
 			if (ready !== start) this.writeMetadata(REHASH_READY, ready);
 			return work;
 		}
-		this.arena.trimOwnedRun(base, 4 * half);
+		this.arena.shrinkBacking(base, 4 * half);
 		this.writeMetadata(CAPACITY, half);
 		this.writeMetadata(REHASH_READY, 0);
 		this.writeMetadata(SWEEP, 0);

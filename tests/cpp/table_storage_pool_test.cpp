@@ -131,36 +131,40 @@ int main() {
 		mixedArrayMigrationPreservesRawValues(cpu);
 		const auto key = cpu.stringPool().intern("retired");
 		const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
-		const u32 physicalBefore = cpu.heapAllocator().occupiedBytes();
-		const u32 headerExtent = heapAllocationBytes(TableRecord::HEADER_BYTES + GC_OBJECT_PREFIX);
+		const auto& arena = cpu.heapAllocator();
+		const u32 physicalBefore = arena.occupiedBytes();
 		auto first = cpu.createTable(3, 4);
 
 		const u32 bodyAddress = first.storageAddress();
+		const u32 firstHeader = arena.allocationBytes(first.address() - GC_OBJECT_PREFIX);
 		first.setInteger(3, valueInteger(99));
 		require(memory.readRamRecordWord(bodyAddress + 2 * 4u) == 99u, "array payload lives in guest RAM");
 		memory.writeRamRecordWord(bodyAddress + 2 * 4u, 11u);
 		require(first.getInteger(3) == valueInteger(11), "table reads consume the physical bytes");
-		require(cpu.heapAllocator().occupiedBytes() == physicalBefore + headerExtent + 80u, "the header and body are separate physical allocations");
+		require(arena.occupiedBytes() == physicalBefore + firstHeader + arena.allocationBytes(bodyAddress),
+			"the header and body are separate physical allocations");
 		first.setStringKey(key, valueBool(false));
 		first.clear();
 		require(cpu.luaHeap().usedBytes() == before.first + 32,
 			"cleared tables retain only the table header charge");
-		// Different exact capacities can share one guest size class.
+		require(arena.occupiedBytes() == physicalBefore + firstHeader, "clearing retires the first body");
 		auto second = cpu.createTable(2, 4);
-		require(second.trackedHeapBytes() == headerExtent + 80u && second.storageAddress() == bodyAddress, "the freed guest size class is reused");
+		const u32 secondHeader = arena.allocationBytes(second.address() - GC_OBJECT_PREFIX);
+		require(second.trackedHeapBytes() == secondHeader + arena.allocationBytes(second.storageAddress()),
+			"physical accounting uses the newly owned chunks");
 		for (int index = 1; index <= 2; ++index)
-			require(isNil(second.getInteger(index)), "reused array slots are initialized to nil");
-		require(isNil(second.getStringKey(key)), "reused hash storage does not retain old keys or values");
+			require(isNil(second.getInteger(index)), "new array slots are initialized to nil");
+		require(isNil(second.getStringKey(key)), "new hash storage does not expose retired keys or values");
 		second.setStringKey(key, valueInteger(73));
 		for (int index = 1; index <= 300; ++index) second.setInteger(index, valueInteger(index));
 		for (int index = 1; index <= 300; ++index)
-			require(second.getInteger(index) == valueInteger(index), "growth across the page allocation boundary preserves entries");
+			require(second.getInteger(index) == valueInteger(index), "repeated backing growth preserves entries");
 		require(second.getStringKey(key) == valueInteger(73), "mixed array/hash growth preserves the hash entry");
 		second.clear();
 		first.clear();
 		require(cpu.luaHeap().usedBytes() == before.first + 64,
 			"empty tables keep only their canonical headers, and release both bodies");
-		require(cpu.heapAllocator().occupiedBytes() == physicalBefore + 2u * headerExtent, "only the two physical headers remain");
+		require(arena.occupiedBytes() == physicalBefore + firstHeader + secondHeader, "only the two physical headers remain");
 		require(cpu.luaHeap().collectionTarget() == before.second,
 			"recycling does not reschedule guest collection");
 		std::cout << "Table guest storage tests passed\n";

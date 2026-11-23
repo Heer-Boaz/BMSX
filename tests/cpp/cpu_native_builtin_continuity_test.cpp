@@ -351,7 +351,7 @@ void tableCopyRereadsWeakEntriesAfterAdmission() {
 	metatable.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
 	source.setMetatableAddress(metatable.address());
 	cpu.createTable(1536, 0); // Unreachable backing makes room for exactly this class of request.
-	while (cpu.heapAllocator().allocate(HEAP_PAGE_SIZE, true) != 0u) {}
+	while (cpu.heapAllocator().allocate(4088u, true) != 0u) {}
 
 	const auto copy = source.copyOwn();
 	require(cpu.gcHeap().tableRecordAddress(source.address()) == source.address()

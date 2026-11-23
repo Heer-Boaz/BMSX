@@ -40,7 +40,6 @@ struct ThreadStorageLayout {
 	u32 protectedBytes() const { return protectedCapacity * PROTECTED_CALL_BYTES; }
 	u32 frameAddress(u32 index) const { return (frameBlock & RAM_RECORD_WORD_MASK) + index * FRAME_CONTROL_BYTES; }
 	u32 protectedAddress(u32 index) const { return (protectedBlock & RAM_RECORD_WORD_MASK) + index * PROTECTED_CALL_BYTES; }
-	u32 allocationBytes() const;
 	ValueSpan slots(Memory& memory, bool wideWindow = false) const {
 		const u32 start = offset();
 		return {memory, start, start + valueCapacity * static_cast<u32>(sizeof(u32)), valueCapacity,

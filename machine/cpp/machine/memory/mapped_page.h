@@ -100,6 +100,7 @@ public:
 		}
 		return false;
 	}
+	u32* groupData() { return m_groups.get(); }
 	const u32* groupData() const { return m_groups.get(); }
 	const u32* codeWordMasks() const { return m_words.get(); }
 

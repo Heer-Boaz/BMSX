@@ -1,397 +1,60 @@
-import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../spec/bmsx/memory_map';
+import type { DlmallocArena } from '../memory/dlmalloc_wasm';
 import type { Memory } from '../memory/memory';
 
-// Private management-area ranges not used by the allocator's page index.
+// RAM management ranges owned by the runtime, independent of allocator bins.
 export const HEAP_STRING_METADATA_OFFSET = 0x300;
 export const HEAP_COLLECTION_TARGET_OFFSET = 0x340;
 export const HEAP_GC_CONTROL_OFFSET = 0x344;
 export const HEAP_LOGICAL_OCCUPIED_OFFSET = 0x3f0;
 
-// Requests up to half a page share 4 KB pages of one size class: multiples of
-// 8 bytes through 64, then four classes per doubling. Larger requests take the
-// highest fitting run of whole pages.
-export const HEAP_SMALL_LIMIT = 2048;
-export const HEAP_CLASS_BYTES: readonly number[] = [
-	8, 16, 24, 32, 40, 48, 56, 64,
-	80, 96, 112, 128, 160, 192, 224, 256,
-	320, 384, 448, 512, 640, 768, 896, 1024,
-	1280, 1536, 1792, 2048,
-];
-const CLASS_COUNT = 28;
-const SLOT_RECIPROCAL_BITS = 16;
-const CLASS_SLOT_RECIPROCALS = HEAP_CLASS_BYTES.map(bytes => (((1 << SLOT_RECIPROCAL_BITS) + bytes - 1) / bytes) | 0);
-const PAGE_SHIFT = 12;
 const PAGE_MASK = HEAP_PAGE_SIZE - 1;
-const MAX_PAGES = (MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE) >>> PAGE_SHIFT;
 
-// Management-area layout, as byte offsets from its base. Every field is a
-// little-endian word in guest RAM; partial-list links store page + 1.
-const AVAILABLE_PAGE_COUNT = 0x000;
-const CLAIMED_PAGE_COUNT = 0x004;
-const PARTIAL_HEADS = 0x040;
-const AVAILABLE_PAGES = 0x200;
-const PAGE_ENTRIES = 0x1000;
-const PAGE_ENTRY_BYTES = 12;
-
-// Page entry: word 0 = kind | class << 8 | live << 16; word 1 = free-slot head
-// (guest address) or run length. Word 2 packs the bump in units
-// of 8 bytes, then the previous and next partial-page links, 10 bits each.
-const BUMP_SHIFT = 3;
-const LINK_MASK = 0x3ff;
-const PREVIOUS_SHIFT = 10;
-const NEXT_SHIFT = 20;
-const enum PageKind {
-	Unused = 0,
-	ObjectSlots = 1,
-	OwnedSlots = 2,
-	ObjectRun = 3,
-	OwnedRun = 4,
-}
-
-export function heapClassIndex(byteCount: number): number {
-	if (byteCount <= 64) {
-		return ((byteCount + 7) >>> 3) - 1;
-	}
-	// byteCount lies in (2^(ceilingShift - 1), 2^ceilingShift]; that span has four classes.
-	const ceilingShift = 32 - Math.clz32(byteCount - 1);
-	const stepShift = ceilingShift - 3;
-	const quarter = (byteCount - (1 << (ceilingShift - 1)) + (1 << stepShift) - 1) >>> stepShift;
-	return 8 + (ceilingShift - 7) * 4 + quarter - 1;
-}
-
-export function heapAllocationBytes(byteCount: number): number {
-	if (byteCount === 0) return 0;
-	return byteCount <= HEAP_SMALL_LIMIT
-		? HEAP_CLASS_BYTES[heapClassIndex(byteCount)]
-		: (byteCount + PAGE_MASK) & ~PAGE_MASK;
-}
-
-// Owns the non-moving language-heap allocator whose entire state lives in the
-// private runtime management area. A bitmap selects free pages;
-// descriptors belong to slab pages and run heads, not to run interiors.
 export class HeapAllocator {
 	private readonly management: number;
-	private readonly pageLimit: number;
-	private readonly minimumFloorPage: number;
-	private readonly lastAvailableMask: number;
+	private readonly arena: DlmallocArena;
 
 	public constructor(private readonly memory: Memory) {
 		this.management = (memory.ramByteCount() & ~PAGE_MASK) - RUNTIME_MANAGEMENT_SIZE;
-		this.pageLimit = Math.min(this.management >>> PAGE_SHIFT, MAX_PAGES);
-		this.minimumFloorPage = Math.min((DYNAMIC_RAM_BASE - RAM_BASE) >>> PAGE_SHIFT, this.pageLimit);
-		const tailBits = this.pageLimit & 31;
-		this.lastAvailableMask = tailBits === 0 ? -1 : ~(-1 << tailBits);
+		this.arena = memory.bindDlmalloc(this.management + 0x400);
 		this.reset(DYNAMIC_RAM_BASE);
 	}
 
-	public managementOffset(): number {
-		return this.management;
-	}
-
-	/** Variable-size records begin at an issued slot or a run head. */
-	public issuedObjectStart(offset: number): boolean {
-		const page = offset >>> PAGE_SHIFT;
-		if (page >= this.pageLimit) return false;
-		const descriptor = this.entry(page);
-		const info = this.memory.readRamRecordWord(descriptor);
-		const within = offset & PAGE_MASK;
-		const kind = info & 0xff;
-		if (kind === PageKind.ObjectRun) return within === 0;
-		const sizeClass = (info >>> 8) & 0xff;
-		if (kind !== PageKind.ObjectSlots || sizeClass >= CLASS_COUNT) return false;
-		const stride = HEAP_CLASS_BYTES[sizeClass];
-		const issued = (this.memory.readRamRecordWord(descriptor + 8) & LINK_MASK) << BUMP_SHIFT;
-		const slot = (within * CLASS_SLOT_RECIPROCALS[sizeClass]) >>> SLOT_RECIPROCAL_BITS;
-		return within + stride <= issued && within === slot * stride;
+	public managementOffset(): number { return this.management; }
+	private floorOffset(address: number): number {
+		const offset = Math.min(Math.max(address, DYNAMIC_RAM_BASE) - RAM_BASE, this.management);
+		return (offset + PAGE_MASK) & ~PAGE_MASK;
 	}
 
 	public reset(floorAddress: number): void {
 		this.memory.ramData().fill(0, this.management, this.management + RUNTIME_MANAGEMENT_SIZE);
 		this.memory.invalidateRamWrite(this.management, RUNTIME_MANAGEMENT_SIZE);
-		const floorPage = this.pageForFloor(floorAddress);
-		this.setAvailable(floorPage, this.pageLimit, true);
-		this.memory.setRamBusEnd(RAM_BASE + (floorPage << PAGE_SHIFT));
+		const floor = this.floorOffset(floorAddress);
+		this.arena.reset(floor, this.management);
+		this.memory.setRamBusEnd(RAM_BASE + floor);
 	}
 
-	// Raising the floor is refused while an allocated page lies below it.
 	public setFloor(floorAddress: number): boolean {
-		const current = this.floorPage();
-		const next = this.pageForFloor(floorAddress);
-		if (next > current) {
-			for (let page = current; page < next; page += 1) {
-				if (!this.isAvailable(page)) {
-					return false;
-				}
-			}
-			this.setAvailable(current, next, false);
-		} else if (next < current) {
-			this.setAvailable(next, current, true);
-		}
-		this.memory.setRamBusEnd(RAM_BASE + (next << PAGE_SHIFT));
+		const floor = this.floorOffset(floorAddress);
+		if (this.arena.setFloor(floor) === 0) return false;
+		this.memory.setRamBusEnd(RAM_BASE + floor);
 		return true;
 	}
 
-	public floorAddress(): number {
-		return RAM_BASE + (this.floorPage() << PAGE_SHIFT);
-	}
+	public floorAddress(): number { return this.memory.ramBusEnd(); }
+	public capacityBytes(): number { return RAM_BASE + this.management - this.floorAddress(); }
+	public occupiedBytes(): number { return this.arena.occupiedBytes(); }
+	public unoccupiedBytes(): number { return this.capacityBytes() - this.occupiedBytes(); }
+	public allocationBytes(address: number): number { return this.arena.allocationBytes(address - RAM_BASE); }
+	public issuedObjectStart(offset: number): boolean { return this.arena.isObject(offset) !== 0; }
 
-	public capacityBytes(): number {
-		return (this.pageLimit - this.floorPage()) << PAGE_SHIFT;
-	}
-
-	public availableWholePages(): number {
-		return this.memory.readRamRecordWord(this.management + AVAILABLE_PAGE_COUNT);
-	}
-
-	public claimedWholePages(): number {
-		return this.memory.readRamRecordWord(this.management + CLAIMED_PAGE_COUNT);
-	}
-
-	/** Physical class extents, for diagnostics only. */
-	public occupiedBytes(): number {
-		let bytes = 0;
-		for (let page = this.floorPage(); page < this.pageLimit; ++page) {
-			const entry = this.entry(page);
-			const info = this.memory.readRamRecordWord(entry);
-			const kind = info & 0xff;
-			if (kind === PageKind.ObjectSlots || kind === PageKind.OwnedSlots) {
-				bytes += (info >>> 16) * HEAP_CLASS_BYTES[(info >>> 8) & 0xff];
-			} else if (kind === PageKind.ObjectRun || kind === PageKind.OwnedRun) {
-				const pages = this.memory.readRamRecordWord(entry + 4);
-				bytes += pages << PAGE_SHIFT;
-				page += pages - 1;
-			}
-		}
-		return bytes;
-	}
-
-	// Returns the guest address of the allocation, or 0 when no slot or page run fits.
 	public allocate(byteCount: number, owned: boolean): number {
-		if (byteCount > HEAP_SMALL_LIMIT) {
-			return this.allocateRun(byteCount, owned);
-		}
-		const classIndex = heapClassIndex(byteCount);
-		const size = HEAP_CLASS_BYTES[classIndex];
-		const kindAndClass = (owned ? PageKind.OwnedSlots : PageKind.ObjectSlots) | (classIndex << 8);
-		const head = this.partialHead(owned, classIndex);
-		let page = this.memory.readRamRecordWord(head) - 1;
-		if (page < 0) {
-			page = this.takeTopPage();
-			if (page < 0) {
-				return 0;
-			}
-			const entry = this.entry(page);
-			this.memory.writeRamRecordWord(entry, kindAndClass);
-			this.memory.writeRamRecordWord(entry + 4, 0);
-			this.memory.writeRamRecordWord(entry + 8, 0);
-			this.memory.writeRamRecordWord(head, page + 1);
-		} else if (page >= this.pageLimit) {
-			return 0;
-		}
-		const entry = this.entry(page);
-		const word0 = this.memory.readRamRecordWord(entry);
-		if ((word0 & 0xffff) !== kindAndClass) {
-			return 0;
-		}
-		const pageOffset = page << PAGE_SHIFT;
-		const freeHead = this.memory.readRamRecordWord(entry + 4);
-		const word2 = this.memory.readRamRecordWord(entry + 8);
-		let bump = (word2 & LINK_MASK) << BUMP_SHIFT;
-		let slot: number;
-		let nextFree: number;
-		if (freeHead !== 0) {
-			slot = (freeHead - RAM_BASE) >>> 0;
-			const within = slot - pageOffset;
-			if (within < 0 || within >= bump || within % size !== 0) {
-				return 0;
-			}
-			nextFree = this.memory.readRamRecordWord(slot + 4);
-		} else {
-			if (bump + size > HEAP_PAGE_SIZE) {
-				return 0;
-			}
-			slot = pageOffset + bump;
-			bump += size;
-			nextFree = 0;
-		}
-		const full = nextFree === 0 && bump + size > HEAP_PAGE_SIZE;
-		this.memory.writeRamRecordWord(entry, kindAndClass | (((word0 >>> 16) + 1) << 16));
-		this.memory.writeRamRecordWord(entry + 4, nextFree);
-		this.memory.writeRamRecordWord(entry + 8, (bump >>> BUMP_SHIFT) | (full ? 0 : word2 & ~LINK_MASK));
-		if (full) this.unlinkPartial(head, word2);
-		return RAM_BASE + slot;
+		const offset = this.arena.allocate(byteCount, +!owned);
+		return offset !== 0 ? RAM_BASE + offset : 0;
 	}
 
-	// The owner has depopulated the suffix; the retained whole pages stay put.
-	public trimOwnedRun(address: number, bytes: number): void {
-		const page = (address - RAM_BASE) >>> PAGE_SHIFT;
-		const length = this.entry(page) + 4;
-		const end = page + this.memory.readRamRecordWord(length);
-		const retained = bytes >>> PAGE_SHIFT;
-		this.memory.writeRamRecordWord(length, retained);
-		this.setAvailable(page + retained, end, true);
-	}
-
-	public free(address: number): void {
-		const offset = (address - RAM_BASE) >>> 0;
-		const page = offset >>> PAGE_SHIFT;
-		if (page >= this.pageLimit) {
-			return;
-		}
-		const entry = this.entry(page);
-		const word0 = this.memory.readRamRecordWord(entry);
-		const kind = word0 & 0xff;
-		if (kind === PageKind.ObjectRun || kind === PageKind.OwnedRun) {
-			const pages = this.memory.readRamRecordWord(entry + 4);
-			if ((offset & PAGE_MASK) !== 0 || pages === 0 || pages > this.pageLimit - page) {
-				return;
-			}
-			this.releasePages(page, page + pages);
-			return;
-		}
-		const classIndex = (word0 >>> 8) & 0xff;
-		const live = word0 >>> 16;
-		if ((kind !== PageKind.ObjectSlots && kind !== PageKind.OwnedSlots) || classIndex >= CLASS_COUNT || live === 0) {
-			return;
-		}
-		const size = HEAP_CLASS_BYTES[classIndex];
-		const word2 = this.memory.readRamRecordWord(entry + 8);
-		const bump = (word2 & LINK_MASK) << BUMP_SHIFT;
-		const within = offset & PAGE_MASK;
-		if (within >= bump || within % size !== 0) {
-			return;
-		}
-		const freeHead = this.memory.readRamRecordWord(entry + 4);
-		const wasFull = freeHead === 0 && bump + size > HEAP_PAGE_SIZE;
-		const head = this.partialHead(kind === PageKind.OwnedSlots, classIndex);
-		this.memory.writeRamRecordWord(offset, 0);
-		this.memory.writeRamRecordWord(offset + 4, freeHead);
-		if (live === 1) {
-			if (!wasFull) {
-				this.unlinkPartial(head, word2);
-			}
-			this.releasePages(page, page + 1);
-			return;
-		}
-		this.memory.writeRamRecordWord(entry, (word0 & 0xffff) | ((live - 1) << 16));
-		this.memory.writeRamRecordWord(entry + 4, address);
-		if (wasFull) {
-			const next = this.memory.readRamRecordWord(head) & LINK_MASK;
-			this.memory.writeRamRecordWord(entry + 8, (bump >>> BUMP_SHIFT) | (next << NEXT_SHIFT));
-			if (next !== 0) this.setPreviousPartial(next, page + 1);
-			this.memory.writeRamRecordWord(head, page + 1);
-		}
-	}
-
-	private allocateRun(byteCount: number, owned: boolean): number {
-		const pages = (byteCount >>> PAGE_SHIFT) + ((byteCount & PAGE_MASK) !== 0 ? 1 : 0);
-		if (pages > this.pageLimit) {
-			return 0;
-		}
-		const first = this.takeTopRun(pages);
-		if (first < 0) {
-			return 0;
-		}
-		const head = this.entry(first);
-		this.memory.writeRamRecordWord(head, owned ? PageKind.OwnedRun : PageKind.ObjectRun);
-		this.memory.writeRamRecordWord(head + 4, pages);
-		this.memory.writeRamRecordWord(head + 8, 0);
-		return RAM_BASE + (first << PAGE_SHIFT);
-	}
-
-	private takeTopPage(): number {
-		for (let word = ((this.pageLimit + 31) >>> 5) - 1; word >= 0; word -= 1) {
-			const offset = this.management + AVAILABLE_PAGES + word * 4;
-			const stored = this.memory.readRamRecordWord(offset);
-			const bits = word === ((this.pageLimit - 1) >>> 5) ? stored & this.lastAvailableMask : stored;
-			if (bits !== 0) {
-				const bit = 31 - Math.clz32(bits);
-				this.memory.writeRamRecordWord(offset, stored & ~(1 << bit));
-				this.memory.writeRamRecordPair(this.management + AVAILABLE_PAGE_COUNT,
-					this.availableWholePages() - 1, this.claimedWholePages() + 1);
-				return (word << 5) + bit;
-			}
-		}
-		return -1;
-	}
-
-	private takeTopRun(pages: number): number {
-		let count = 0;
-		for (let page = this.pageLimit - 1; page >= 0; page -= 1) {
-			if (!this.isAvailable(page)) {
-				count = 0;
-				continue;
-			}
-			count += 1;
-			if (count === pages) {
-				this.setAvailable(page, page + pages, false);
-				this.memory.writeRamRecordWord(this.management + CLAIMED_PAGE_COUNT, this.claimedWholePages() + pages);
-				return page;
-			}
-		}
-		return -1;
-	}
-
-	private unlinkPartial(head: number, links: number): void {
-		const previous = (links >>> PREVIOUS_SHIFT) & LINK_MASK;
-		const next = (links >>> NEXT_SHIFT) & LINK_MASK;
-		if (previous === 0) {
-			this.memory.writeRamRecordWord(head, next);
-		} else {
-			const field = this.entry(previous - 1) + 8;
-			this.memory.writeRamRecordWord(field, (this.memory.readRamRecordWord(field) & ~(LINK_MASK << NEXT_SHIFT)) | (next << NEXT_SHIFT));
-		}
-		if (next !== 0) this.setPreviousPartial(next, previous);
-	}
-
-	private setPreviousPartial(pageLink: number, previous: number): void {
-		const field = this.entry(pageLink - 1) + 8;
-		this.memory.writeRamRecordWord(field, (this.memory.readRamRecordWord(field) & ~(LINK_MASK << PREVIOUS_SHIFT)) | (previous << PREVIOUS_SHIFT));
-	}
-
-	private releasePages(first: number, end: number): void {
-		const offset = this.entry(first);
-		this.memory.writeRamRecordWord(offset, 0);
-		this.memory.writeRamRecordWord(offset + 4, 0);
-		this.memory.writeRamRecordWord(offset + 8, 0);
-		this.setAvailable(first, end, true);
-	}
-
-	private setAvailable(first: number, end: number, available: boolean): void {
-		const pages = end - first, previous = this.availableWholePages();
-		this.memory.writeRamRecordWord(this.management + AVAILABLE_PAGE_COUNT, available ? previous + pages : previous - pages);
-		while (first < end) {
-			const word = first >>> 5;
-			const wordEnd = (word + 1) << 5;
-			const mask = (-1 << (first & 31)) & (-1 >>> (wordEnd - Math.min(end, wordEnd)));
-			const offset = this.management + AVAILABLE_PAGES + word * 4;
-			if (mask === -1) this.memory.writeRamRecordWord(offset, available ? -1 : 0);
-			else {
-				const stored = this.memory.readRamRecordWord(offset);
-				this.memory.writeRamRecordWord(offset, available ? stored | mask : stored & ~mask);
-			}
-			first = wordEnd;
-		}
-	}
-
-	private isAvailable(page: number): boolean {
-		return ((this.memory.readRamRecordWord(this.management + AVAILABLE_PAGES + (page >>> 5) * 4) >>> (page & 31)) & 1) !== 0;
-	}
-
-	private floorPage(): number {
-		return (this.memory.ramBusEnd() - RAM_BASE) >>> PAGE_SHIFT;
-	}
-
-	private pageForFloor(address: number): number {
-		const page = Math.ceil(Math.max(address - RAM_BASE, 0) / HEAP_PAGE_SIZE);
-		return Math.min(Math.max(page, this.minimumFloorPage), this.pageLimit);
-	}
-
-	private partialHead(owned: boolean, classIndex: number): number {
-		return this.management + PARTIAL_HEADS + ((owned ? CLASS_COUNT : 0) + classIndex) * 4;
-	}
-
-	private entry(page: number): number {
-		return this.management + PAGE_ENTRIES + page * PAGE_ENTRY_BYTES;
+	public free(address: number): void { this.arena.free(address - RAM_BASE); }
+	public shrinkBacking(address: number, retainedBytes: number): void {
+		this.arena.shrink(address - RAM_BASE, retainedBytes);
 	}
 }

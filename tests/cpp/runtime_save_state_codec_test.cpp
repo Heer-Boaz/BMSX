@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <new>
 #include <stdexcept>
+#include <string_view>
 
 namespace {
 size_t allocations = 0;
@@ -83,6 +84,15 @@ int main() {
 	require(std::ranges::all_of(output, [](u8 value) { return value == 0xa5; }), "capacity admission happens before any output writes");
 	const auto decoded = decodeRuntimeSaveState(expected, state.ram.size(), machine.gxGpu.vramBytes.size());
 	require(encodeRuntimeSaveState(decoded) == expected, "every stored bit round-trips through typed state");
+	auto unversioned = expected;
+	unversioned.erase(unversioned.begin() + 4, unversioned.begin() + 8);
+	bool rejectedLayout = false;
+	try {
+		(void)decodeRuntimeSaveState(unversioned, state.ram.size(), machine.gxGpu.vramBytes.size());
+	} catch (const std::exception& error) {
+		rejectedLayout = std::string_view(error.what()).find("Unsupported save-state layout.") != std::string_view::npos;
+	}
+	require(rejectedLayout, "the unversioned allocator layout is rejected before decoding its RAM");
 	require(decoded.machineState.machine.cartridge.slots[0]->ram.has_value()
 		&& !decoded.machineState.machine.cartridge.slots[1].has_value(), "empty RAM and an absent card remain distinct");
 }

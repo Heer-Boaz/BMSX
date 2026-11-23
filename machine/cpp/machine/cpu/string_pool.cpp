@@ -307,7 +307,7 @@ size_t StringPool::shrinkStep(u32 oldCount, size_t allowance) {
 		++work;
 	}
 	if (ready == half && work < allowance) {
-		m_arena.trimOwnedRun(base, 4u * half);
+		m_arena.shrinkBacking(base, 4u * half);
 		writeMetadata(CAPACITY, half);
 		writeMetadata(REHASH_READY, 0u);
 		writeMetadata(SWEEP, 0u);

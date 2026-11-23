@@ -160,12 +160,13 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], entry);
 
 	frame.registers.set(3, valueTable(cpu.createTable(225280, 0).address()));
-	cpu.createTable(1024, 0); // Unreachable, with a contiguous two-page backing.
+	cpu.createTable(1024, 0); // Unreachable, with room for the replacement backing.
 	auto& arena = cpu.heapAllocator();
-	const u32 spare = arena.allocate(HEAP_PAGE_SIZE, true);
-	while (arena.allocate(HEAP_PAGE_SIZE, true)) {}
+	const u32 spare = arena.allocate(4088u, true);
+	require(spare != 0u, "reserve a smaller chunk before exhausting the arena");
+	while (arena.allocate(4088u, true)) {}
 	arena.free(spare);
-	require(arena.availableWholePages() == 1 && !arena.allocate(5120u, true)
+	require(!arena.allocate(5120u, true)
 		&& budget.usedBytes() + 2560u < budget.capacity(), "real physical miss, not logical exhaustion");
 	cpu.gcHeap().step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
 	machine.memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
@@ -313,9 +314,11 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	callee.registers.set(2, valueInteger(42));
 	callee.setTop(3);
 	auto& arena = cpu.heapAllocator();
-	const u32 spare = arena.allocate(HEAP_PAGE_SIZE, true);
-	while (arena.allocate(HEAP_PAGE_SIZE, true)) {}
+	const u32 spare = arena.allocate(4088u, true);
+	require(spare != 0u, "reserve a smaller chunk before exhausting the arena");
+	while (arena.allocate(4088u, true)) {}
 	arena.free(spare);
+	require(!arena.allocate(5120u, true), "the replacement cannot fit before entering its real recovery path");
 	cpu.gcHeap().step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
 	const auto before = captureRuntimeSaveState(runtime);
 	cpu.runUntilDepth(0, 1); // The direct CPU owner deliberately retains synchronous recovery.
@@ -452,8 +455,8 @@ void testPhysicalCollectionUsesCompletedVblank() {
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(retained.address())); frame.setTop(1);
 	cpu.collectHeap();
-	while (arena.availableWholePages() > 32u)
-		require(arena.allocate(HEAP_PAGE_SIZE, true) != 0u, "the physical pressure fixture reserves real pages");
+	while (arena.unoccupiedBytes() > 32u * HEAP_PAGE_SIZE)
+		require(arena.allocate(4088u, true) != 0u, "the physical pressure fixture reserves live chunks");
 	const u32 workAddress = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_EPOCH_WORK;
 	const auto checkpoint = captureRuntimeSaveState(runtime);
 	const auto pulse = [&] {

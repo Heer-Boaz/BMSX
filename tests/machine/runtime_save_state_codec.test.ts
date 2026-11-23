@@ -679,8 +679,10 @@ test('runtime save-state codec rejects other formats, incomplete fields and trai
 	const extra = new Uint8Array(encoded.length + 1);
 	extra.set(encoded);
 	assert.throws(() => decode(extra), /Trailing/);
-	encoded.set([0x42, 0x4d, 0x53, 0x58]); // Previous BMSX payload had no object-page index.
-	assert.throws(() => decode(encoded), /Unrecognized/);
+	const unversioned = new Uint8Array(encoded.length - 4);
+	unversioned.set(encoded.subarray(0, 4));
+	unversioned.set(encoded.subarray(8), 4);
+	assert.throws(() => decode(unversioned), /Unsupported save-state layout/);
 });
 
 test('CPU latches retain raw addresses, object words and all float payload bits', () => {

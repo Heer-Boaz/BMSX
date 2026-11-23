@@ -134,7 +134,7 @@ void rebuildWork(bool scalar) {
    cpu.collectHeap();
    cpu.luaHeap().setCollectionTarget(cpu.luaHeap().capacity());
    // No contiguous replacement backing even after collection.
-   while (cpu.heapAllocator().allocate(HEAP_PAGE_SIZE, true) != 0) { /* fixture-owned RAM */ }
+   while (cpu.heapAllocator().allocate(4088u, true) != 0) { /* fixture-owned RAM */ }
    capacity = 1024;
   }
   const Value key = r.get(1); machine.restart();

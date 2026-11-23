@@ -1,3 +1,4 @@
+import { logicalThreadBytes } from '../helpers/guest_kernel';
 import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { valueNil, asClosure, valueInteger, valueBool, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
@@ -41,10 +42,10 @@ probe.drop_definition()
 	cpu.collectTrackedHeapBytes();
 	const displaced = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('displaced')!));
 	for (let index = 1; index <= 3; index += 1) assert.equal(cpu.gc.tables.getInteger(displaced, index), valueNil());
-	const retained = cpu.collectTrackedHeapBytes() - cpu.gc.allocationBytes(cpu.rootThread.address);
+	const retained = cpu.collectTrackedHeapBytes() - logicalThreadBytes(cpu);
 	for (let replacement = 0; replacement < 32; replacement += 1) {
 		runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('check_replaced')!), cpu.gc), []);
-		assert.equal(cpu.collectTrackedHeapBytes() - cpu.gc.allocationBytes(cpu.rootThread.address), retained, 're-registration must not grow retained observation history');
+		assert.equal(cpu.collectTrackedHeapBytes() - logicalThreadBytes(cpu), retained, 're-registration must not grow retained observation history');
 	}
 	const anchor = captureCpuCheckpoint(cpu);
 
@@ -287,10 +288,11 @@ test('BT capture costs are cold; retained aliases are not a compiled definition 
 				runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('observe')!), cpu.gc), []);
 			}
 			const before = cpu.collectTrackedHeapBytes();
+			const beforeRetained = before - logicalThreadBytes(cpu);
 			const beforeObjects = allocatedObjectRecords(cpu).length;
 			const compileCycles = runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('compile')!), cpu.gc), [valueInteger(32), valueBool(mode === 'retained')]);
 			const allocation = cpu.luaHeap.usedBytes() - before;
-			const retained = cpu.collectTrackedHeapBytes() - cpu.gc.allocationBytes(cpu.rootThread.address) - before;
+			const retained = cpu.collectTrackedHeapBytes() - logicalThreadBytes(cpu) - beforeRetained;
 			const objects = allocatedObjectRecords(cpu).length - beforeObjects;
 			const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak_inputs')!));
 			assert.equal(cpu.gc.tables.getInteger(weak, 1) === valueNil(), mode !== 'retained');

@@ -40,8 +40,9 @@ import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT
 import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } from '../../../spec/gx/pcrtc';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
-// One current internal layout, deliberately without a legacy reader. The signature is `BMSX` and is never allowed to change. It is not allowed to be modified, even if the layout changes.
-const SAVE_STATE_SIGNATURE = 0x58534d42; // BMSX: image String root cursor. This is never allowed to change, even if the version or layout changes.
+// BMSX identifies the container. Only the current payload layout is accepted.
+const SAVE_STATE_SIGNATURE = 0x58534d42;
+const SAVE_STATE_LAYOUT_VERSION = 1;
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1290,6 +1291,7 @@ function readApuOutputState(reader: BinaryReader): ApuOutputState {
 
 function writeStateImage(writer: BinarySink, state: RuntimeSaveState): void {
 	writer.u32(SAVE_STATE_SIGNATURE);
+	writer.u32(SAVE_STATE_LAYOUT_VERSION);
 	writeRuntimeSaveState(writer, state);
 }
 
@@ -1312,6 +1314,7 @@ export function encodeRuntimeSaveState(state: RuntimeSaveState, output?: Uint8Ar
 export function decodeRuntimeSaveState(data: Uint8Array, ramByteCount: number, gxGpuVramByteCount: number): RuntimeSaveState {
 	const reader = new BinaryReader(data);
 	if (reader.u32() !== SAVE_STATE_SIGNATURE) throw new Error('Unrecognized save-state format.');
+	if (reader.u32() !== SAVE_STATE_LAYOUT_VERSION) throw new Error('Unsupported save-state layout.');
 	const state = readRuntimeSaveState(reader, ramByteCount, gxGpuVramByteCount);
 	reader.finish();
 	return state;

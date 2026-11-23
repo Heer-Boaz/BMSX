@@ -2,7 +2,7 @@ import { asClosure, numberToHost, valueNil, valuePayload } from '../../machine/t
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { profileWarmGuestKernel } from '../helpers/guest_kernel';
+import { logicalThreadBytes, profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
@@ -24,14 +24,14 @@ function probe.clear() clear(map) end
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const map = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('map')!));
 		const clear = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('clear')!), cpu.gc);
-		const next = cpu.gc.tables.next;
+		const next = cpu.gc.tables.nextStoredEntry;
 		let starts = 0, steps = 0;
 		// A destructive clear must advance one physical traversal. Restarting
 		// next(map) for each key repeatedly scans every already-cleared prefix.
-		t.mock.method(cpu.gc.tables, 'next', (record, after, output, outputIndex) => {
+		t.mock.method(cpu.gc.tables, 'nextStoredEntry', (record, position, output, outputIndex, wantsValue) => {
 			steps++;
-			if (after === valueNil()) starts++;
-			return next.call(cpu.gc.tables, record, after, output, outputIndex);
+			if (position === 0) starts++;
+			return next.call(cpu.gc.tables, record, position, output, outputIndex, wantsValue);
 		});
 		runCompletionClosure(cpu, clear, []);
 		assert.equal(starts, 1);
@@ -67,7 +67,7 @@ function probe.clear() clear(map) end
 		for (let cycle = 0; cycle < 3; cycle++) {
 			runCompletionClosure(cpu, seed, []);
 			runCompletionClosure(cpu, clear, []);
-			const heap = cpu.collectTrackedHeapBytes() - cpu.gc.allocationBytes(cpu.rootThread.address);
+			const heap = cpu.collectTrackedHeapBytes() - logicalThreadBytes(cpu);
 			const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
 			for (let index = 1; index <= 64; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil());
 			if (cycle === 0) warmed = heap;

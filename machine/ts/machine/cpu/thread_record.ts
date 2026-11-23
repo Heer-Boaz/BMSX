@@ -1,6 +1,5 @@
 import type { Memory } from '../memory/memory';
 import type { HeapAllocator } from './heap_allocator';
-import { heapAllocationBytes } from './heap_allocator';
 import { FRAME_COMPLETION, FRAME_CONTROL_BYTES, FRAME_EXCEPTION, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, FrameField, frameExecutionBank } from './call_state';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { writeLE32 } from '../../common/endian';
@@ -33,11 +32,6 @@ export const THREAD_INITIAL_VALUES = 8;
 export const THREAD_INITIAL_FRAMES = 2;
 export const THREAD_RECORD_KIND = 4;
 export const THREAD_CONTROL_COUNT_MASK = (1 << 18) - 1;
-export function allocatedThreadBackingBytes(values: number, frames: number, continuations: number): number {
-	return heapAllocationBytes(values * THREAD_STACK_SLOT_BYTES)
-		+ heapAllocationBytes(frames * FRAME_CONTROL_BYTES)
-		+ heapAllocationBytes(continuations * PROTECTED_CALL_BYTES);
-}
 export class ThreadLayout {
 	public block = 0;
 	public offset = 0;
@@ -142,7 +136,9 @@ export class ThreadRecords {
 	public allocationBytes(address: number): number {
 		const layout = this.layout;
 		this.readLayout(address, layout);
-		return heapAllocationBytes(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX) + allocatedThreadBackingBytes(layout.capacity, layout.frames, layout.continuations);
+		return this.arena.allocationBytes(address - GC_OBJECT_PREFIX)
+			+ this.arena.allocationBytes(layout.block) + this.arena.allocationBytes(layout.frameBlock)
+			+ (layout.protectedBlock !== 0 ? this.arena.allocationBytes(layout.protectedBlock) : 0);
 	}
 	public clearStackRange(layout: ThreadLayout, first: number, end: number): void {
 		const count = end - first;

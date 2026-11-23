@@ -147,31 +147,38 @@ void instructionFetchFollowsTheLiveFloor() {
 		"a WIDE body faults across the floor without retiring the prefix");
 }
 
-void execRefusesLivePagesBelowTheFloor() {
+void execRefusesLiveChunksBelowTheFloor() {
 	Machine machine = bootPair();
 	HeapAllocator& heap = machine.cpu.heapAllocator();
 	const u32 floor = heap.floorAddress();
 	const u32 cartFloor = pageRound(CART_BSS + CART_BSS_BYTES);
 	u32 claimed;
-	do { claimed = heap.allocate(HEAP_PAGE_SIZE, true); } while (claimed >= cartFloor);
-	require(claimed >= floor, "the new static region overlaps a live allocation");
-	const u32 marker = CART_BSS - RAM_BASE;
-	writeLE32(machine.memory.ramData() + marker, 0x5eed5eedu);
+	do { claimed = heap.allocate(4088u, true); } while (claimed >= cartFloor);
+	require(claimed >= CART_BSS, "the new static region overlaps a live allocation");
+	machine.memory.writeRamRecordWord(claimed, 0x5eed5eedu);
 	machine.cpu.runUntilDepth(0, 100);
-	require(machine.cpu.captureRuntimeState().hardHalted, "EXEC hard-halts over a live page");
+	require(machine.cpu.captureRuntimeState().hardHalted, "EXEC hard-halts over a live chunk");
 	require(heap.floorAddress() == floor, "the refused floor is not applied");
-	require(readLE32(machine.memory.ramData() + marker) == 0x5eed5eedu, "cartridge BSS stays untouched");
+	require(machine.memory.readRamRecordWord(claimed) == 0x5eed5eedu, "the overlapping BSS payload stays untouched");
 }
 
-void reclaimRunAcrossBitmapAndHistoryPages() {
+void reclaimLargeChunkAcrossHistoryPages() {
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 	HeapAllocator heap(memory);
-	constexpr u32 bytes = 400u * HEAP_PAGE_SIZE;
-	const u32 high = heap.allocate(2u * HEAP_PAGE_SIZE, true);
+	constexpr u32 bytes = 400u * HEAP_PAGE_SIZE - 8;
+	require(heap.setFloor(RAM_BASE + heap.managementOffset() - 404u * HEAP_PAGE_SIZE),
+		"the arena has room for the large chunk and its two smaller companions");
+	const u32 high = heap.allocate(2u * HEAP_PAGE_SIZE - 8u, true);
 	const u32 run = heap.allocate(bytes, false);
-	const u32 low = heap.allocate(HEAP_PAGE_SIZE, true);
-	require(run + bytes == high && low + HEAP_PAGE_SIZE == run && heap.setFloor(low),
-		"the live heap consists of the run and its two neighbors");
+	const u32 low = heap.allocate(4088u, true);
+	require(high && run && low && !heap.allocate(HEAP_PAGE_SIZE, true),
+		"the three live chunks do not leave room for an additional page of payload");
+	memory.writeRamRecordWord(run, 0xe8d1caffu);
+	memory.writeRamRecordWord(run + bytes - sizeof(u32), 0xcabbeedd);
+	memory.writeRamRecordWord(high, 0x11223344u);
+	memory.writeRamRecordWord(low, 0x55667788u);
+	const auto occupied = heap.occupiedBytes();
+	const auto runExtent = heap.allocationBytes(run);
 
 	RamHistory archive;
 	RamHistory::PageMap allocated, freed;
@@ -180,14 +187,17 @@ void reclaimRunAcrossBitmapAndHistoryPages() {
 	const auto releasedRam = memory.captureSaveState().ram;
 	archive.capture(memory, &allocated, freed);
 	archive.restore(memory, freed, allocated);
-	require(heap.occupiedBytes() == bytes + 3u * HEAP_PAGE_SIZE && heap.allocate(HEAP_PAGE_SIZE, true) == 0u,
-		"rewind restores the run and both neighboring allocations");
+	require(heap.occupiedBytes() == occupied && heap.issuedObjectStart(run - RAM_BASE)
+		&& memory.readRamRecordWord(run) == 0xe8d1caffu
+		&& memory.readRamRecordWord(run + bytes - sizeof(u32)) == 0xcabbeedd
+		&& !heap.allocate(HEAP_PAGE_SIZE, true), "rewind restores the live chunk and its payload");
 
 	archive.restore(memory, allocated, freed);
-	require(memory.captureSaveState().ram == releasedRam, "forward history publishes the released head and all returned pages");
-	require(heap.occupiedBytes() == 3u * HEAP_PAGE_SIZE && heap.allocate(bytes + HEAP_PAGE_SIZE, true) == 0u,
-		"reclamation preserves the neighbors in both partial bitmap words");
-	require(heap.allocate(bytes, false) == run, "the same entire run is available again");
+	require(memory.captureSaveState().ram == releasedRam, "forward history reproduces the chunk metadata verbatim");
+	require(heap.occupiedBytes() == occupied - runExtent && !heap.issuedObjectStart(run - RAM_BASE)
+		&& !heap.allocate(bytes + HEAP_PAGE_SIZE, true), "the freed chunk leaves both other allocations in use");
+	require(heap.allocate(bytes, false) != 0 && memory.readRamRecordWord(high) == 0x11223344u
+		&& memory.readRamRecordWord(low) == 0x55667788u, "the large request can reuse free storage without changing either live payload");
 }
 
 } // namespace
@@ -196,8 +206,8 @@ int main() {
 	try {
 		capacityFollowsTheFloorAcrossResetExecAndRestore();
 		instructionFetchFollowsTheLiveFloor();
-		execRefusesLivePagesBelowTheFloor();
-		reclaimRunAcrossBitmapAndHistoryPages();
+		execRefusesLiveChunksBelowTheFloor();
+		reclaimLargeChunkAcrossHistoryPages();
 	} catch (const std::exception& error) {
 		std::cerr << error.what() << '\n';
 		return 1;

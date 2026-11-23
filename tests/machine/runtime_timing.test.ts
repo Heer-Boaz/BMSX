@@ -76,7 +76,8 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts
 import { InstructionStepResult } from '../../machine/ts/machine/runtime/frame/state';
 import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { TableRecords } from '../../machine/ts/machine/cpu/table';
 
 const PCRTC_SYNCH2_SLOW_WORD = 0x004f84bc;
 const PCRTC_SYNCV_192_LINE_FIELD_WORD = 0x00a60005;
@@ -367,12 +368,8 @@ test('a physically refused WIDE SETT retires before queued VBlank, even after a 
 		frame.registers.set(1, valueInteger(513));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, entry);
 		frame.registers.set(3, valueTable(cpu.createTable(225_280, 0)));
-		cpu.createTable(1024, 0); // Unreachable, contiguous two-page backing.
-		const spare = arena.allocate(HEAP_PAGE_SIZE, true);
-		while (arena.allocate(HEAP_PAGE_SIZE, true) !== 0) {}
-		arena.free(spare);
-		assert.equal(arena.availableWholePages(), 1);
-		assert.equal(arena.allocate(5120, true), 0);
+		cpu.createTable(1024, 0); // Unreachable backing that can admit the replacement after collection.
+		while (arena.allocate(TableRecords.storageBytes(1024, 0), true) !== 0) {}
 		assert.ok(budget.usedBytes() + 2560 < budget.capacity());
 		cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 		memory.writeMappedU32LE(IO_INP_CTRL, 1);
@@ -527,9 +524,7 @@ test('parked WIDE SETT resumes the fresh epoch and faults once through pcall', (
 	callee.registers.set(1, valueInteger(513));
 	callee.registers.set(2, valueInteger(42));
 	callee.top = 3;
-	const spare = arena.allocate(HEAP_PAGE_SIZE, true);
-	while (arena.allocate(HEAP_PAGE_SIZE, true) !== 0) {}
-	arena.free(spare);
+	while (arena.allocate(TableRecords.storageBytes(1024, 0), true) !== 0) {}
 	cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 	const before = captureRuntimeSaveState(runtime);
 	cpu.runUntilDepth(0, 1);

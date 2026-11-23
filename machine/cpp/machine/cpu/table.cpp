@@ -979,8 +979,9 @@ u32 TableRecord::nextStoredEntry(u32 position, Value& key, Value& value) const {
 
 
 size_t TableRecord::trackedHeapBytes() const {
-	const u32 bytes = storageBytes(arrayCapacity(), hashSlots(), hashReserve());
-	return heapAllocationBytes(HEADER_BYTES + GC_OBJECT_PREFIX) + (bytes ? heapAllocationBytes(bytes) : 0u);
+	const u32 storage = storageAddress();
+	return m_heap->arena.allocationBytes(m_address - GC_OBJECT_PREFIX)
+		+ (storage != 0u ? m_heap->arena.allocationBytes(storage) : 0u);
 }
 
 

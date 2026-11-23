@@ -124,8 +124,9 @@ from the system image at reset. EXEC sets it from the target image before
 that image's first instruction, and refuses a target whose static storage
 would cover heap storage still in use; see
 [[EXEC](cpu.md#sec-cpu-exec)]{.content-visible when-format="html"}[Book II, §1.13.4]{.content-visible when-format="pdf"}.
-The runtime fills its heap from the top of the range downward, so storage
-near the floor is the last to be used.
+The runtime takes new heap space from the top of the range downward and can
+reuse space freed by collection. Raising the floor requires a contiguous
+range below the retained allocations, not just enough unused bytes in total.
 
 ## Firmware reservation in VRAM {#sec-memory-firmware-reservation-in-vram}
 

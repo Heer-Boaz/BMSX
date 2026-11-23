@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import {
 	CPU,
 } from '../../machine/ts/machine/cpu/cpu';
+import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import {
@@ -168,11 +169,12 @@ test('Table sparse hash boundaries include Integer boundaries up to INT32_MAX wi
 test('table values come directly from the allocator-owned RAM block', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const occupiedBefore = cpu.heapAllocator.occupiedBytes();
+	const arena = cpu.heapAllocator, occupiedBefore = arena.occupiedBytes();
 	const table = cpu.createTable(2, 1);
 	cpu.gc.tables.setInteger(table, 1, valueInteger(71));
 	const base = cpu.gc.tables.storageAddress(table);
-	assert.equal(cpu.heapAllocator.occupiedBytes() - occupiedBefore, 64, 'the 32-byte header and 32-byte body are physical allocations');
+	const headerBytes = arena.allocationBytes(table - GC_OBJECT_PREFIX), backingBytes = arena.allocationBytes(base);
+	assert.equal(arena.occupiedBytes() - occupiedBefore, headerBytes + backingBytes, 'the header and body are separate chunks');
 	assert.equal(memory.readRamRecordWord(base), 71);
 	assert.equal(memory.readRamRecordWord(base + 4 * 4), 0xffffffff, 'the hash-chain word follows the four payload words');
 	const tags = base + 5 * 4;
@@ -188,7 +190,7 @@ test('table values come directly from the allocator-owned RAM block', () => {
 	assert.equal(valueTag(cpu.gc.tables.getInteger(table, 1)), ValueTag.Nil);
 	memory.writeRamRecordWord(backing, base);
 	cpu.gc.tables.clear(table);
-	assert.equal(cpu.heapAllocator.occupiedBytes() - occupiedBefore, 32, 'clearing releases only the owned body');
+	assert.equal(arena.occupiedBytes() - occupiedBefore, headerBytes, 'clearing releases only the owned body');
 });
 
 test('mixed table migration preserves a sparse raw array prefix and hash overflow', () => {

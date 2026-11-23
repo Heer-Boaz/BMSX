@@ -131,21 +131,21 @@ void boundarySearchAndHashMix(bmsx::CPU& cpu) {
 	require(hashCanonicalTableKey(canonicalTableKey(valueFloatBits(0x80000000u))) == hashCanonicalTableKey(valueInteger(0)), "signed zeros share a hash");
 }
 
-void continueAfterDeletedZeroIdentityKey(bmsx::CPU& cpu) {
+void continueAfterDeletedIdentityKey(bmsx::CPU& cpu) {
 	auto object = cpu.createTable();
-
 	const auto objectKey = bmsx::valueTable(object.address());
 	auto table = cpu.createTable(0, 64);
 	table.set(objectKey, bmsx::valueInteger(9));
 	table.set(bmsx::valueBool(true), bmsx::valueInteger(13));
 	bmsx::Value key = bmsx::valueNil(), value = bmsx::valueNil();
 	table.nextEntry(objectKey, key, value);
-	require(!bmsx::isNil(key), "the zero-identity key has a live successor");
 	const auto successor = std::pair{key, value};
 	table.set(objectKey, bmsx::valueNil());
+	key = value = bmsx::valueNil();
+	// Exhaustion is also a valid continuation. Depending on the address,
+	// either key can occupy the last live slot.
 	table.nextEntry(objectKey, key, value);
-	require(!bmsx::isNil(key), "a deleted zero-identity key remains a continuation");
-	require(std::pair{key, value} == successor, "deletion preserves the zero-identity key's successor");
+	require(std::pair{key, value} == successor, "deletion preserves the identity key's continuation");
 }
 
 } // namespace
@@ -159,7 +159,7 @@ int main() {
 		inspectStoredSlots(cpu);
 		refillArrayHashPrefix(cpu);
 		boundarySearchAndHashMix(cpu);
-		continueAfterDeletedZeroIdentityKey(cpu);
+		continueAfterDeletedIdentityKey(cpu);
 		std::cout << "Table inspection tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

@@ -7,7 +7,8 @@ import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_COLLECTION_TARGET_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_COLLECTION_TARGET_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { THREAD_INITIAL_FRAMES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
@@ -27,7 +28,7 @@ import {
 	BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_NEXT_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE,
 } from '../../machine/ts/spec/blua32/image_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { CART_ROM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -119,7 +120,7 @@ test('table copy observes weak clearing during physical allocation retry', () =>
 	tables.setStringKey(metatable, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 	tables.setMetatableAddress(input, metatable);
 	cpu.createTable(1536, 0);
-	while (cpu.heapAllocator.allocate(HEAP_PAGE_SIZE, true) !== 0) { /* exhaust physical backing pages */ }
+	while (cpu.heapAllocator.allocate(TableRecords.storageBytes(1024, 2, 2), true) !== 0) {}
 
 	const copy = tables.copyOwn(input);
 	assert.equal(cpu.gc.tableRecordAddress(input), input, 'the initial request roots the borrowed input');
@@ -129,20 +130,21 @@ test('table copy observes weak clearing during physical allocation retry', () =>
 	assert.equal(tables.getInteger(copy, 1024), valueInteger(64));
 });
 
-test('allocation admission and GC use logical bytes, not size-class slack', () => {
+test('allocation admission and GC use logical bytes, not physical chunk extents', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const logical = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
 	const logicalCharge = (32 + 2 * 5 + 3 * 10) + (32 + 512 * 5);
 	cpu.luaHeap.setCollectionTarget(logical + logicalCharge);
 	cpu.instructionBudgetRemaining = 23;
-	cpu.createTable(2, 3);
-	cpu.createTable(512, 0);
+	const first = cpu.createTable(2, 3), second = cpu.createTable(512, 0);
 	assert.equal(cpu.instructionBudgetRemaining, 23, 'the allocations fit at the exact logical threshold');
 	assert.equal(cpu.luaHeap.usedBytes(), logical + logicalCharge);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), physical + 80 + 2 * heapAllocationBytes(32 + GC_OBJECT_PREFIX) + HEAP_PAGE_SIZE);
+	const arena = cpu.heapAllocator, tables = cpu.gc.tables;
+	const extent = (table: number) => arena.allocationBytes(table - GC_OBJECT_PREFIX) + arena.allocationBytes(tables.storageAddress(table));
+	assert.equal(arena.occupiedBytes(), physical + extent(first) + extent(second));
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.luaHeap.usedBytes(), logical, 'reclaim the exact charges');
-	assert.equal(cpu.heapAllocator.occupiedBytes(), physical, 'reclaim class extents and whole pages separately');
+	assert.equal(arena.occupiedBytes(), physical, 'release both the headers and the backing chunks');
 });
 
 test('table replacement admits just its logical increase, even when both layouts need backing', () => {
@@ -153,15 +155,17 @@ test('table replacement admits just its logical increase, even when both layouts
 		frame.registers.setTable(0, table); frame.top = 1;
 		const residentKey = packArrayIntoHash ? 8 : 1, trigger = packArrayIntoHash ? 0 : 2;
 		tables.setInteger(table, residentKey, valueInteger(100 + residentKey));
-		const logical = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
+		const arena = cpu.heapAllocator;
+		const logical = cpu.luaHeap.usedBytes(), physical = arena.occupiedBytes();
+		const oldStorage = arena.allocationBytes(tables.storageAddress(table));
 		const target = logical + (packArrayIntoHash ? 0 : 5);
 		cpu.luaHeap.setCollectionTarget(target);
 		tables.setInteger(table, trigger, valueInteger(73));
 		assert.equal(cpu.luaHeap.collectionTarget(), target, 'replacing a layout must not cause a gratuitous GC assist');
 		assert.equal(cpu.gc.active(), false);
 		assert.equal(cpu.luaHeap.usedBytes(), logical + (packArrayIntoHash ? -20 : 5));
-		const oldStorage = packArrayIntoHash ? 40 : 5, newStorage = packArrayIntoHash ? 40 : 10;
-		assert.equal(cpu.heapAllocator.occupiedBytes(), physical - heapAllocationBytes(oldStorage) + heapAllocationBytes(newStorage));
+		const newStorage = arena.allocationBytes(tables.storageAddress(table));
+		assert.equal(arena.occupiedBytes(), physical - oldStorage + newStorage);
 		assert.equal(tables.getInteger(table, residentKey), valueInteger(100 + residentKey));
 		assert.equal(tables.getInteger(table, trigger), valueInteger(73));
 	}
@@ -176,12 +180,7 @@ test('table growth retries its actual physical reserve before starting a fresh G
 		frame.registers.setTable(0, table); frame.top = 1;
 		for (let key = 1; key <= 512; ++key) tables.setInteger(table, key, valueInteger(key));
 		const garbage = pressure !== 'unavailable' ? cpu.createTable(1024, 0) : 0;
-		let lastPage: number;
-		for (let page = arena.allocate(HEAP_PAGE_SIZE, true); page !== 0; page = arena.allocate(HEAP_PAGE_SIZE, true)) {
-			lastPage = page;
-		}
-		arena.free(lastPage!);
-		assert.equal(arena.allocate(5 * 1024, true), 0, 'the replacement cannot reserve a two-page run while the old layout is live');
+		while (arena.allocate(TableRecords.storageBytes(1024, 0), true) !== 0) {}
 		assert.ok(cpu.luaHeap.usedBytes() + 2560 < cpu.luaHeap.capacity(), 'the replacement fits the logical budget');
 
 		const white = gc.white();
@@ -214,7 +213,7 @@ test('table growth retries its actual physical reserve before starting a fresh G
 	}
 });
 
-test('whole-page demand advances a large live epoch before a table replacement needs recovery', () => {
+test('physical occupancy advances a large live epoch before a table replacement needs recovery', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const { gc, heapAllocator: arena } = cpu, { tables } = gc;
 	const owner = cpu.createTable(512, 0);
@@ -224,21 +223,23 @@ test('whole-page demand advances a large live epoch before a table replacement n
 	frame.registers.setTable(1, cpu.createTable(225280, 0)); frame.top = 2;
 	const garbage = cpu.createTable(65536, 0);
 	frame.registers.setTable(2, garbage); frame.top = 3;
-	const initialFree = 140;
-	while (arena.availableWholePages() > initialFree) {
-		const free = arena.availableWholePages(), claims = arena.claimedWholePages();
-		assert.notEqual(arena.allocate(HEAP_PAGE_SIZE, true), 0);
-		assert.equal(arena.availableWholePages(), free - 1);
-		assert.equal(arena.claimedWholePages(), claims + 1);
-	}
+	// One 4096-byte chunk, including its header, without stranding a hole.
+	const initialIntervals = 140, pressureBytes = 4088;
+	let ballast: number;
+	do {
+		const before = arena.occupiedBytes();
+		ballast = arena.allocate(pressureBytes, true);
+		assert.notEqual(ballast, 0);
+		assert.ok(arena.occupiedBytes() >= before + pressureBytes, 'reserve actual storage outside the language budget');
+	} while (arena.unoccupiedBytes() > initialIntervals * pressureBytes);
 	gc.assistPhysicalPressureAtTick();
 	gc.collect();
 	frame.top = 2;
 	const white = gc.white();
 	cpu.instructionBudgetRemaining = 89;
 	let physicalSteps = 0;
-	for (let tick = 0; tick + 1 < initialFree; ++tick) {
-		assert.notEqual(arena.allocate(HEAP_PAGE_SIZE, true), 0);
+	for (let tick = 0; tick + 1 < initialIntervals; ++tick) {
+		assert.notEqual(arena.allocate(pressureBytes, true), 0);
 		const wasActive = gc.active();
 		gc.assistPhysicalPressureAtTick();
 		if (wasActive || gc.active()) ++physicalSteps;
@@ -249,9 +250,12 @@ test('whole-page demand advances a large live epoch before a table replacement n
 	}
 	assert.ok(physicalSteps >= 50 && !gc.active() && gc.white() === (white ^ 1));
 	assert.equal(gc.tableRecordAddress(garbage), 0);
-	assert.ok(arena.availableWholePages() > 2);
+	assert.ok(arena.unoccupiedBytes() > 2 * pressureBytes);
 	gc.assistPhysicalPressureAtTick();
-	assert.equal(gc.active(), false, 'no new page claims do not trigger another epoch');
+	assert.equal(gc.active(), false, 'no change in occupancy does not trigger another epoch');
+	arena.free(ballast);
+	gc.assistPhysicalPressureAtTick();
+	assert.equal(gc.active(), false, 'a net release is not positive allocation pressure');
 	const recoveredWhite = gc.white();
 	tables.setInteger(owner, 513, valueInteger(73));
 	assert.equal(gc.white(), recoveredWhite, 'the real backing grow requires no synchronous recovery');

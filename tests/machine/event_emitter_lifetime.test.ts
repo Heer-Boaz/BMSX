@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_FAULT_REASON_CALL_NON_FUNCTION } from '../../machine/ts/spec/blua32/cop0';
 import { createCartlibCaseRom, createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { profileWarmGuestKernel } from '../helpers/guest_kernel';
+import { logicalThreadBytes, profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const setup = `
@@ -268,7 +268,7 @@ return true`, { optLevel });
 				assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 			}
 			assert.equal(result, RunResult.Halted);
-			const retained = cpu.collectTrackedHeapBytes() - cpu.gc.allocationBytes(cpu.rootThread.address);
+			const retained = cpu.collectTrackedHeapBytes() - logicalThreadBytes(cpu);
 			for (let index = 1; index <= 64; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil());
 			if (batch === 0) first = retained;
 			assert.equal(retained, first, 'handled failures grew retained listener storage after warmup');

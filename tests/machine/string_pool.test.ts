@@ -3,7 +3,7 @@ import { writeLE32 } from '../../machine/ts/common/endian';
 import { hashText } from '../../machine/ts/common/hash';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { HEAP_STRING_METADATA_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import {
 	BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_RECORD_KIND, BLUA32_STRING_RECORD_ROM_FLAG,
@@ -181,13 +181,14 @@ test('String rehash splits a collision chain across both planes and replays swee
 	});
 	assert.equal(read(4), capacity);
 	const oldBase = read(0), trigger = collision();
-	const logicalBefore = cpu.luaHeap.usedBytes(), physicalBefore = cpu.heapAllocator.occupiedBytes();
+	const arena = cpu.heapAllocator;
+	const logicalBefore = cpu.luaHeap.usedBytes(), physicalBefore = arena.occupiedBytes();
 	const inserted = pool.intern(trigger);
 	const insertedBytes = BLUA32_STRING_RECORD_HEADER_SIZE + trigger.length;
 	assert.equal(cpu.luaHeap.usedBytes(), logicalBefore + insertedBytes, 'only the String costs budget');
-	assert.equal(cpu.heapAllocator.occupiedBytes(), physicalBefore + heapAllocationBytes(8 * capacity) + heapAllocationBytes(insertedBytes));
 	const nextBase = read(0x38);
 	assert.notEqual(nextBase, 0);
+	assert.equal(arena.occupiedBytes(), physicalBefore + arena.allocationBytes(nextBase) + arena.allocationBytes(inserted));
 	assert.equal(read(0x3c), 1, 'the intern yields inside the first long bucket, not after it');
 	const survivors = [memory.readRamRecordWord(oldBase), memory.readRamRecordWord(nextBase),
 		memory.readRamRecordWord(nextBase + 4 * capacity), inserted];
@@ -195,11 +196,11 @@ test('String rehash splits a collision chain across both planes and replays swee
 	for (let index = 0; index < survivors.length; ++index) gc.tables.setInteger(roots, index + 1, valueString(survivors[index]));
 	for (const { text, id } of entries) assert.equal(pool.find(text), id, 'lookups preserve IDs in each directory');
 
-	let logicalRelease = 0, physicalRelease = heapAllocationBytes(4 * capacity);
+	let logicalRelease = 0, physicalRelease = arena.allocationBytes(oldBase);
 	for (const { text, id } of entries) if (!survivors.includes(id)) {
 		const bytes = BLUA32_STRING_RECORD_HEADER_SIZE + text.length;
 		logicalRelease += bytes;
-		physicalRelease += heapAllocationBytes(bytes);
+		physicalRelease += arena.allocationBytes(id);
 	}
 	const usage = cpu.luaHeap.usedBytes(), occupied = cpu.heapAllocator.occupiedBytes();
 	const archive = new RamHistory(); archive.start(memory);
@@ -239,7 +240,7 @@ test('sparse String buckets shrink in place and rewind an upper chain mid-merge'
 	const names = [0, half, half].map(collision), savedIds = names.map(name => pool.intern(name));
 	const freshNames = [half, 0, half + 1].map(collision);
 	for (let filler = 0; read(4) !== capacity && filler < capacity; ++filler) pool.intern(`shrink filler ${filler}`);
-	assert.equal(read(4), capacity, 'real inserts published two pages of settled buckets');
+	assert.equal(read(4), capacity, 'real inserts published a settled bucket directory');
 	const base = read(0), upper = base + 4 * half, used = read(8);
 	pool.beginReachabilityEpoch();
 	pool.markReachable(pool.intern('__mode'));
@@ -267,11 +268,14 @@ test('sparse String buckets shrink in place and rewind an upper chain mid-merge'
 			for (let i = 0; i < ids.length; ++i) assert.equal(pool.find(namesToCheck[i]), ids[i]);
 		}
 		const logical = cpu.luaHeap.usedBytes(), physical = arena.occupiedBytes();
+		const oldExtent = arena.allocationBytes(base);
 		for (let step = 0; pool.sweeping() && step < half; ++step) assert.ok(pool.sweepStep(3) <= 3);
 		assert.equal(pool.sweeping(), false);
 		assert.equal(read(0), base, 'the lower directory keeps its address');
 		assert.equal(read(4), half);
-		assert.equal(arena.occupiedBytes(), physical - HEAP_PAGE_SIZE, 'only the upper directory page was released');
+		const newExtent = arena.allocationBytes(base);
+		assert.ok(newExtent < oldExtent, 'shrinking returns a chunk suffix to the allocator');
+		assert.equal(arena.occupiedBytes(), physical - oldExtent + newExtent);
 		assert.equal(cpu.luaHeap.usedBytes(), logical);
 		for (const [namesToCheck, ids] of [[names, savedIds], [freshNames, freshIds]] as const) {
 			for (let i = 0; i < ids.length; ++i) assert.equal(pool.find(namesToCheck[i]), ids[i]);
@@ -286,20 +290,21 @@ test('sparse String buckets shrink in place and rewind an upper chain mid-merge'
 	assert.deepEqual(finish(), expected, 'rewinding mid-merge reproduces chain ownership and page release');
 });
 
-test('String growth is optional when a record still fits its existing size-class page', () => {
+test('String index growth is optional when only the requested String fits', () => {
 	const cpu = createCpu(), pool = cpu.stringPool, arena = cpu.heapAllocator;
 	const capacity = HEAP_PAGE_SIZE / 4;
 	const metadata = arena.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const read = (field: number) => cpu.memory.readRamRecordWord(metadata + field);
 	const earlyText = 'unrooted before directory growth', early = pool.intern(earlyText);
-	pool.intern('p'.repeat(60)); // Reserve the pending String's record size class first.
 	for (let filler = 0; read(8) < capacity; ++filler) pool.intern(`directory filler ${filler}`);
 	assert.equal(read(4), capacity);
 	const base = read(0);
-	let reservedPages = 0;
-	while (arena.allocate(HEAP_PAGE_SIZE, true) !== 0) ++reservedPages;
-	assert.ok(reservedPages > 0);
 	const used = cpu.luaHeap.usedBytes(), pending = 'q'.repeat(60);
+	const spare = arena.allocate(BLUA32_STRING_RECORD_HEADER_SIZE + pending.length, true);
+	assert.notEqual(spare, 0);
+	while (arena.allocate(HEAP_PAGE_SIZE, true) !== 0) {}
+	arena.free(spare);
+	assert.equal(arena.allocate(8 * capacity, true), 0, 'the optional replacement directory cannot fit');
 	const id = pool.intern(pending);
 	assert.equal(pool.find(pending), id);
 	assert.equal(pool.find(earlyText), early, 'no emergency collection ran for the optional directory');
@@ -390,7 +395,7 @@ test('long byte strings are reclaimed before an ID is reused', () => {
 	const old = pool.intern(text);
 	const bytes = BLUA32_STRING_RECORD_HEADER_SIZE + text.length;
 	assert.equal(cpu.luaHeap.usedBytes(), baseline + bytes);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), physical + heapAllocationBytes(bytes));
+	assert.equal(cpu.heapAllocator.occupiedBytes(), physical + cpu.heapAllocator.allocationBytes(old));
 	assert.equal(pool.byteAt(old, 128), text.charCodeAt(128));
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.luaHeap.usedBytes(), baseline);

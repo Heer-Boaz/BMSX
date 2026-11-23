@@ -218,11 +218,13 @@ void shrinkStringDirectoryInPlaceAcrossRewind() {
 			&& memory.readRamRecordWord(base + (half + 1u) * sizeof(u32)) == fresh[2],
 			"current-chain inserts go to the destination; untouched upper buckets still own their inserts");
 		const auto occupied = cpu.heapAllocator().occupiedBytes();
+		const auto oldChunk = cpu.heapAllocator().allocationBytes(base);
 		const auto charged = cpu.luaHeap().usedBytes();
 		for (u32 step = 0; pool.sweeping() && step < capacity; ++step)
 			require(pool.sweepStep(1) == 1u, "drain and trim consume one unit at a time");
-		require(!pool.sweeping() && read(4u) == half && read(0u) == base
-			&& occupied - cpu.heapAllocator().occupiedBytes() == HEAP_PAGE_SIZE && cpu.luaHeap().usedBytes() == charged,
+		const auto newChunk = cpu.heapAllocator().allocationBytes(base);
+		require(!pool.sweeping() && read(4u) == half && read(0u) == base && newChunk < oldChunk
+			&& occupied - cpu.heapAllocator().occupiedBytes() == oldChunk - newChunk && cpu.luaHeap().usedBytes() == charged,
 			"the retained prefix keeps its address and only the uncharged suffix returns to the allocator");
 		for (u32 i = 0; i < kept.size(); ++i)
 			require(pool.find(names[i]) == kept[i] && pool.find(names[i + kept.size()]) == fresh[i],
@@ -235,7 +237,7 @@ void shrinkStringDirectoryInPlaceAcrossRewind() {
 	const auto expected = finish();
 	archive.capture(memory, &checkpoint, collected);
 	archive.restore(memory, collected, checkpoint);
-	require(finish() == expected, "rewind restores a partial merge, its links and allocator pages byte-for-byte");
+	require(finish() == expected, "rewind restores a partial merge, its links and allocator metadata byte-for-byte");
 }
 
 void stringDirectoryGrowthDoesNotForceCollection() {
@@ -252,10 +254,13 @@ void stringDirectoryGrowthDoesNotForceCollection() {
 	for (u32 i = 0; i < remaining; ++i) pool.intern("grow filler " + std::to_string(i));
 	require(read(4u) == capacity && read(8u) == capacity, "another String crosses the directory growth threshold");
 	const u32 base = read(0u);
-	while (arena.allocate(HEAP_PAGE_SIZE, true) != 0u) {}
+	const u32 spare = arena.allocate(BLUA32_STRING_RECORD_HEADER_SIZE + static_cast<u32>(text.size()), true);
+	require(spare != 0u, "reserve space for the String record independently of its directory");
+	while (arena.allocate(4088u, true) != 0u) {}
+	arena.free(spare);
+	require(arena.allocate(8u * capacity, true) == 0u, "the replacement directory cannot fit");
 
-	// The existing class still has a slot for this record, but no pages
-	// remain for a larger directory.
+	// The String still fits its own chunk, not a replacement directory.
 	text.back() = 'b';
 	const auto inserted = pool.intern(text);
 	require(read(0u) == base && read(4u) == capacity && read(8u) == capacity + 1u
@@ -297,11 +302,12 @@ void rehashCollisionAcrossSweepAndRewind() {
 	const auto physicalBefore = cpu.heapAllocator().occupiedBytes();
 	const auto inserted = pool.intern(trigger);
 	const u32 insertedBytes = BLUA32_STRING_RECORD_HEADER_SIZE + static_cast<u32>(trigger.size());
-	require(cpu.luaHeap().usedBytes() == logicalBefore + insertedBytes
-		&& cpu.heapAllocator().occupiedBytes() == physicalBefore + heapAllocationBytes(8u * capacity) + heapAllocationBytes(insertedBytes),
-		"the new directory is physically reserved without adding to the String's nominal charge");
 	const u32 nextBase = read(0x38u);
 	require(nextBase != 0u && read(0x3cu) == 1u, "the intern yields inside the first long bucket, not after it");
+	require(cpu.luaHeap().usedBytes() == logicalBefore + insertedBytes
+		&& cpu.heapAllocator().occupiedBytes() == physicalBefore + cpu.heapAllocator().allocationBytes(nextBase)
+			+ cpu.heapAllocator().allocationBytes(inserted),
+		"the new directory is physically reserved without adding to the String's nominal charge");
 	const std::array survivors{memory.readRamRecordWord(oldBase), memory.readRamRecordWord(nextBase),
 		memory.readRamRecordWord(nextBase + 4u * capacity), inserted};
 	for (u32 index = 0; index < survivors.size(); ++index) {
@@ -309,13 +315,13 @@ void rehashCollisionAcrossSweepAndRewind() {
 		roots.setInteger(index + 1u, valueString(survivors[index]));
 	}
 	const auto retained = [&](StringId id) { return std::find(survivors.begin(), survivors.end(), id) != survivors.end(); };
-	u32 logicalRelease = 0u, physicalRelease = heapAllocationBytes(4u * capacity);
+	u32 logicalRelease = 0u, physicalRelease = cpu.heapAllocator().allocationBytes(oldBase);
 	for (const auto& [text, id] : entries) {
 		require(pool.find(text) == id, "lookups preserve IDs in each directory");
 		if (!retained(id)) {
 			const u32 bytes = BLUA32_STRING_RECORD_HEADER_SIZE + static_cast<u32>(text.size());
 			logicalRelease += bytes;
-			physicalRelease += heapAllocationBytes(bytes);
+			physicalRelease += cpu.heapAllocator().allocationBytes(id);
 		}
 	}
 	const auto usage = cpu.luaHeap().usedBytes();
@@ -358,8 +364,8 @@ void reclaimLongByteStrings() {
 	for (int i = 0; i < 23; ++i) text += std::string("β😀A🚀\0é", 14);
 	const auto old = pool.intern(text);
 	const size_t bytes = BLUA32_STRING_RECORD_HEADER_SIZE + text.size();
-	require(cpu.luaHeap().usedBytes() == baseline + bytes, "logical charge includes the header and payload but not class padding");
-	require(cpu.heapAllocator().occupiedBytes() == physical + heapAllocationBytes(bytes), "physical diagnostics include padding");
+	require(cpu.luaHeap().usedBytes() == baseline + bytes, "logical charge includes the record header and payload, not chunk overhead");
+	require(cpu.heapAllocator().occupiedBytes() == physical + cpu.heapAllocator().allocationBytes(old), "physical diagnostics include the actual chunk");
 	require(pool.byteAt(old, 128) == static_cast<u8>(text[128]), "long indexes address the exact byte");
 	cpu.collectHeap();
 	require(cpu.luaHeap().usedBytes() == baseline && cpu.heapAllocator().occupiedBytes() == physical,

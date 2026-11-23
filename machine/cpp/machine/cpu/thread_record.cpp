@@ -9,14 +9,6 @@
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
 
-namespace bmsx {
-
-u32 ThreadStorageLayout::allocationBytes() const {
-	return heapAllocationBytes(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX) + heapAllocationBytes(valueBytes()) + heapAllocationBytes(frameBytes()) + heapAllocationBytes(protectedBytes());
-}
-
-} // namespace bmsx
-
 namespace bmsx::ThreadRecord {
 
 void invokeDiagnostic(GcHeap& heap, BuiltinFunctionId id, BuiltinArgsView args, BuiltinResults& out) {

@@ -1,5 +1,4 @@
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
-import { heapAllocationBytes } from './heap_allocator';
 import { GC_OBJECT_PREFIX, GC_RECORD_LINK } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
@@ -850,7 +849,8 @@ export class TableRecords {
 		return 0;
 	}
 	public getTrackedHeapBytes(record: number): number {
-		const bytes = TableRecords.storageBytes(this.arrayCapacity(record), this.hashSize(record), this.hashReserve(record));
-		return heapAllocationBytes(TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX) + heapAllocationBytes(bytes);
+		const storage = this.storageAddress(record);
+		return this.heap.arena.allocationBytes(record - GC_OBJECT_PREFIX)
+			+ (storage !== 0 ? this.heap.arena.allocationBytes(storage) : 0);
 	}
 }
