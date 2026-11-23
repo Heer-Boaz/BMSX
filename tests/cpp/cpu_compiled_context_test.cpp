@@ -658,6 +658,39 @@ void rawContextValues(CpuMachine& machine) {
 	}
 }
 
+void remarkClosedCaptureForwardsTheCommittedValue(CpuMachine& machine) {
+	auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& memory = machine.memory;
+	auto& frame = *cpu.activeThread()->currentFrame;
+	std::array<u32, 1> cells{};
+	const u32 closure = heap.budget.allocateClosureRecord(1, false, cells);
+	const u32 cell = cells[0];
+	ClosureRecord::initialize(memory, closure, {}, heap.white(), 1, false, false);
+	ClosureRecord::setCaptureAddress(memory, closure, 0, cell);
+	frame.writeControl(FrameField::Closure, closure);
+	const Value child = valueTable(cpu.createTable().address());
+	const auto control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	memory.writeRamRecordByte(control, static_cast<u8>(GcPhase::MarkAgain));
+	memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3u);
+
+	ContextBlock generated(machine, {{OpCode::SETUP, 0}, {OpCode::GETUP, 1}, {OpCode::JMP}});
+	ValueSlots registers(2);
+	registers.set(0, child);
+	NativeBlockRunState state{};
+	state.frame = &frame; state.heap = &heap;
+	for (const auto& row : generated.decoded) state.remainingCycles += row.baseCycles;
+	const auto& exit = *generated.blocks.front()->run(registers.view(), state);
+	require(exit.exit == NativeBlockExit::Continue && exit.currentPc == generated.source.back().pc
+		&& state.remainingCycles == 0 && Upvalue::load(memory, cell) == child && registers.get(1) == child,
+		"the closed-capture barrier returns to native code and the next generated read sees the exact stored Value");
+	require(memory.readRamRecordByte(cell + GC_COLOR_OFFSET) == 3u && memory.readRamRecordWord(cell + UPVALUE_NEXT) == 0u
+		&& memory.readRamRecordWord(heap.changedHeadOffset()) == 0u
+		&& memory.readRamRecordByte(valuePayload(child) + GC_COLOR_OFFSET) == 2u
+		&& memory.readRamRecordWord(control + GC_TRACE_HEAD) == (valuePayload(child) & GC_RECORD_MASK) >> GC_RECORD_SHIFT,
+		"the closed capture keeps its white referent live through the current trace, not a later cell rescan");
+}
+
 void varargAliasesAndSideExits(CpuMachine& machine) {
 	constexpr u32 stackBase = DYNAMIC_RAM_BASE - RAM_BASE + 0x800;
 	ValueSpan stack(machine.memory, stackBase, stackBase + 48 * sizeof(u32), 48);
@@ -744,6 +777,7 @@ int main() {
 		test::Blua32TestImage image; image.text.resize(INSTRUCTION_BYTES);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0); image.functions = {{.firstWord = 0, .wordCount = 1}};
 		CpuMachine machine(image); rawContextValues(machine); varargAliasesAndSideExits(machine);
+		CpuMachine remarkMachine(image); remarkClosedCaptureForwardsTheCommittedValue(remarkMachine);
 #endif
 		std::cout << "Compiled CPU context tests passed\n";
 	} catch (const std::exception& error) {

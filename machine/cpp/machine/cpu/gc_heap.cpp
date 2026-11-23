@@ -93,6 +93,42 @@ void GcHeap::enqueue(u32 address, u32 link, u32 queue) {
 	memory.writeRamRecordWord(m_controlOffset + queue, head);
 }
 
+void GcHeap::creditBarrierMarks() {
+	// String marks executed by the mutator must not carry host-only work
+	// across a save or rewind boundary.
+	if (const auto work = m_stringPool.takeMarkWork()) accountEpochWork(work);
+}
+
+void GcHeap::writeBlackTableValue(u32 table, Value value) {
+	if (phase() == GcPhase::MarkAgain && TableRecord(*this, table).metatableAddress() == 0u) {
+		markValue(value);
+		creditBarrierMarks();
+	} else {
+		enqueue(table, GC_RECORD_LINK, GC_CHANGED_HEAD);
+	}
+}
+
+void GcHeap::writeTableEntry(u32 table, Value key, Value value) {
+	if ((!valueTagHasGcEdge(valueTag(key)) && !valueTagHasGcEdge(valueTag(value))) || markColor(table) != 3u)
+		return;
+	if (phase() == GcPhase::MarkAgain && TableRecord(*this, table).metatableAddress() == 0u) {
+		markValue(key);
+		markValue(value);
+		creditBarrierMarks();
+	} else {
+		enqueue(table, GC_RECORD_LINK, GC_CHANGED_HEAD);
+	}
+}
+
+void GcHeap::writeBlackClosedValue(u32 cell, Value value) {
+	if (phase() == GcPhase::MarkAgain) {
+		markValue(value);
+		creditBarrierMarks();
+	} else {
+		enqueue(cell, UPVALUE_NEXT, GC_CHANGED_HEAD);
+	}
+}
+
 void GcHeap::tableEntriesMoved(u32 address) {
 	const u32 table = memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD);
 	if (table != address && memory.readRamRecordWord(m_controlOffset + GC_MODE_META) != address) return;

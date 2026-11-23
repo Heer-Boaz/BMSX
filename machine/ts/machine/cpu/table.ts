@@ -257,7 +257,7 @@ export class TableRecords {
 		const words = this.storageAddress(record), tags = words + (array + 3 * this.hashSize(record)) * 4;
 		if (this.heap.memory.readRamRecordByte(tags + slot) === ValueTag.Nil
 			&& !isNil(this.metafield(record, newIndexKey))) return false;
-		this.heap.writeValueBarrier(record, GC_RECORD_LINK, tag);
+		this.heap.writeTableAssignment(record, tag, word);
 		this.writeSlot(words, tags, slot, tag, word);
 		this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
 		return true;
@@ -476,8 +476,9 @@ export class TableRecords {
 		const tag = valueTag(value);
 		const slot = this.getArrayIndex(key), array = this.arrayCapacity(record);
 		if (slot >= 0 && slot < array) {
-			this.heap.writeValueBarrier(record, GC_RECORD_LINK, tag);
-			this.setEncoded(record, slot, tag, valuePayload(value)); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return -1;
+			const word = valuePayload(value);
+			this.heap.writeTableAssignment(record, tag, word);
+			this.setEncoded(record, slot, tag, word); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return -1;
 		}
 		const node = this.setHash(record, array, key, value, resolved, policy);
 		if (node !== HASH_STORE_DECLINED && slot >= 0) this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
@@ -487,7 +488,6 @@ export class TableRecords {
 		const tag = valueTag(value), word = valuePayload(value);
 		if (tag === ValueTag.Nil) { this.removeFromHash(record, key, resolved); return -1; }
 		const keyTag = valueTag(key), keyWord = valuePayload(key);
-		const keyHasEdge = valueTagHasGcEdge(keyTag), valueHasEdge = valueTagHasGcEdge(tag);
 		const hash = this.hashSize(record), words = this.storageAddress(record), tags = words + (array + 3 * hash) * 4;
 		const home = hashCanonicalTableKey(key) & (hash - 1);
 		const memory = this.heap.memory;
@@ -500,7 +500,7 @@ export class TableRecords {
 		if (index >= 0) {
 			const valueSlot = array + index + hash, prior = memory.readRamRecordByte(tags + valueSlot);
 			if (prior !== ValueTag.Nil && prior !== ValueTag.DeadKey) {
-				if (valueHasEdge) this.heap.writeBarrier(record, GC_RECORD_LINK);
+				this.heap.writeTableAssignment(record, tag, word);
 				this.writeSlot(words, tags, valueSlot, tag, word);
 				return index;
 			}
@@ -524,10 +524,12 @@ export class TableRecords {
 				index = this.placeHashMapping(record, home, key, value, array, hash, words, tags, index, available);
 				const retained = this.hashMembers(record);
 				this.publishHashMembers(record, retained, retained + 1, reserve);
+				this.heap.writeTableAssignment(record, tag, word, key);
+				return index;
 			}
 		}
 		if (index === HASH_STORE_DECLINED) return index;
-		if (keyHasEdge || valueHasEdge) this.heap.writeBarrier(record, GC_RECORD_LINK);
+		if (valueTagHasGcEdge(keyTag) || valueTagHasGcEdge(tag)) this.heap.writeBarrier(record, GC_RECORD_LINK);
 		return index;
 	}
 	public store(record: number, keyTag: ValueTag, keyWord: number, tag: ValueTag, word: number): void {
@@ -545,7 +547,7 @@ export class TableRecords {
 		const tags = words + (array + 3 * hash) * 4, keySlot = array + predicted, valueSlot = keySlot + hash;
 		if (memory.readRamRecordByte(tags + keySlot) !== ValueTag.String || memory.readRamRecordWord(words + keySlot * 4) !== key
 			|| memory.readRamRecordByte(tags + valueSlot) === ValueTag.Nil) return false;
-		this.heap.writeValueBarrier(record, GC_RECORD_LINK, tag);
+		this.heap.writeTableAssignment(record, tag, word);
 		this.writeSlot(words, tags, valueSlot, tag, word); return true;
 	}
 	private vacantHome(home: number, array: number, hash: number, tags: number): boolean {

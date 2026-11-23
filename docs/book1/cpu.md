@@ -1335,11 +1335,13 @@ request with its current assist threshold.
 For a full collection, the collector marks retained objects, incrementally
 remarks roots and modified objects in a second pass, resolves weak references
 in a final atomic remark, and then reclaims unmarked objects and Strings.
-Adding or replacing a tracked reference in a previously scanned Table or
-closed captured-variable cell makes that allocation eligible for another scan.
-Writing the Table's metatable also makes it eligible, since that can change how
-its existing entries are traced. Roots and retained Thread stacks are
-examined again before reclamation. Allocations created during reclamation
+When the second mark pass is underway, writing a strong reference into an
+already scanned Table without a metatable, or into a closed captured-variable
+cell, marks the new reference instead of scanning the allocation again.
+Writes that move Table storage or change its metatable can still require
+another scan, since they affect how existing entries are reached. Roots and
+retained Thread stacks are examined again before reclamation.
+Allocations created during reclamation
 survive that collection. An object found reachable earlier in the
 cycle may therefore survive until a later collection even if its last
 reference has gone.
@@ -1350,11 +1352,11 @@ or device deadline cannot occur partway through that pause. The CPU resumes
 with its previous cycle budget. Collection work does not advance the machine
 clock, regardless of the number of live objects or entries examined.
 
-Writes to already scanned objects enter a changed-object queue rather than
-immediately restarting their first scan. The second pass revisits Threads
-and weak Tables over successive steps before tracing the detached changed-object
-queue. Later writes wait for the final remark. Repeated writes to an already
-queued object do not add another queue entry.
+When a write requires a rescan, the allocation joins a queue rather than
+immediately restarting the first scan. The second pass revisits Threads
+and weak Tables over successive steps before tracing the detached queue.
+Rescans requested during that second pass wait for the final remark.
+Repeated writes to an already queued object do not add another queue entry.
 
 Incremental collection and allocation recovery do not relocate a surviving
 Thread's storage. A requested full collection can halve a surviving Thread's

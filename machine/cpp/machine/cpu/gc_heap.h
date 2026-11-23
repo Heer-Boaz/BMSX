@@ -95,16 +95,21 @@ public:
 	void markString(StringId id) { m_stringPool.markReachable(id); }
 	bool markValue(Value value);
 	bool markThread(u32 address);
-	void writeValueBarrier(u32 address, u32 link, ValueTag tag) {
-		if (valueTagHasGcEdge(tag)) writeBarrier(address, link);
-	}
 	void writeBarrier(u32 address, u32 link) {
-		writeBarrier(address, link, memory.readRamRecordByte(address + GC_COLOR_OFFSET));
+		if (markColor(address) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
 	}
-	// Native writes may already have latched the collector flags.
-	void writeBarrier(u32 address, u32 link, u8 flags) {
-		if ((flags & GC_COLOR_MASK) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
+	void writeTableValue(u32 table, Value value) {
+		if (valueTagHasGcEdge(valueTag(value)) && markColor(table) == 3u)
+			writeBlackTableValue(table, value);
 	}
+	void writeTableEntry(u32 table, Value key, Value value);
+	void writeClosedValue(u32 cell, Value value) {
+		if (valueTagHasGcEdge(valueTag(value)) && markColor(cell) == 3u)
+			writeBlackClosedValue(cell, value);
+	}
+	// Native stores already checked the color and the presence of an edge.
+	void writeBlackTableValue(u32 table, Value value);
+	void writeBlackClosedValue(u32 cell, Value value);
 	void tableEntriesMoved(u32 address);
 	u32 changedHeadOffset() const { return m_controlOffset + GC_CHANGED_HEAD; }
 private:
@@ -116,6 +121,7 @@ private:
 		memory.writeRamRecordByte(lane, mark);
 	}
 	bool markClosure(u32 address);
+	void creditBarrierMarks();
 	u8 weakModeBits(Value value);
 	std::pair<int, size_t> probeTableMode(const TableRecord&, size_t limit);
 	bool markTable(u32 address);

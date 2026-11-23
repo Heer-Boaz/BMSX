@@ -4,7 +4,7 @@ import type { Memory } from '../memory/memory';
 import type { GcHeap } from './gc_heap';
 import { GC_RECORD_MASK } from './gc_object';
 import { ThreadField } from './thread_record';
-import { type Value, type ValueTag, valueFromTag, valuePayload, valueTag } from './value';
+import { type Value, type ValueTag, valueFromTag, valuePayload, valueTag, valueTagHasGcEdge } from './value';
 
 export const UPVALUE_HEAP_BYTES = 16;
 export const UPVALUE_ADDRESS_MASK = GC_RECORD_MASK;
@@ -47,7 +47,7 @@ export function close(heap: GcHeap, address: number): void {
 	writeLE32(ram, offset + UPVALUE_OWNER, 0);
 	writeLE32(ram, offset + UPVALUE_NEXT, 0);
 	memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
-	heap.writeValueBarrier(offset, UPVALUE_NEXT, tag);
+	if (valueTagHasGcEdge(tag)) heap.writeBarrier(offset, UPVALUE_NEXT);
 }
 
 export function load(memory: Memory, address: number): Value {
@@ -64,7 +64,7 @@ export function store(heap: GcHeap, address: number, tag: ValueTag, word: number
 	const memory = heap.memory;
 	const cell = address & UPVALUE_ADDRESS_MASK;
 	if (!isOpen(memory, cell)) {
-		heap.writeValueBarrier(cell, UPVALUE_NEXT, tag);
+		heap.writeClosedValue(cell, tag, word);
 		memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, word);
 		memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, tag);
 		return;

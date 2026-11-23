@@ -155,11 +155,33 @@ export class GcHeap {
 		this.setColor(address, 2);
 		this.memory.writeRamRecordWord(this.controlOffset + queue, (address & GC_RECORD_MASK) >>> GC_RECORD_SHIFT);
 	}
-	public writeValueBarrier(address: number, link: number, tag: ValueTag): void {
-		if (valueTagHasGcEdge(tag)) this.writeBarrier(address, link);
-	}
 	public writeBarrier(address: number, link: number): void {
 		if (this.markColor(address) === 3) this.enqueue(address, link, GC_CHANGED_HEAD);
+	}
+
+	private creditBarrierMarks(): void {
+		// Account for mutator string marks before save or rewind can observe the heap.
+		const work = this.cpu.stringPool.takeMarkWork();
+		if (work !== 0) this.accountEpochWork(work);
+	}
+	// During the second pass, trace new strong edges without rescanning their
+	// owner. Metatabled tables still need the collector to resolve weak lanes.
+	// Only an insertion installs the supplied key as a new edge.
+	public writeTableAssignment(address: number, tag: ValueTag, word: number, insertedKey?: Value): void {
+		if (!valueTagHasGcEdge(tag) && (insertedKey === undefined || !valueTagHasGcEdge(valueTag(insertedKey)))) return;
+		if (this.markColor(address) !== 3) return;
+		if (this.phase() === GcPhase.MarkAgain && this.tables.metatableAddress(address) === 0) {
+			if (insertedKey !== undefined) this.markValue(insertedKey);
+			this.markValue(valueFromTag(tag, word));
+			this.creditBarrierMarks();
+		} else this.enqueue(address, GC_RECORD_LINK, GC_CHANGED_HEAD);
+	}
+	public writeClosedValue(address: number, tag: ValueTag, word: number): void {
+		if (!valueTagHasGcEdge(tag) || this.markColor(address) !== 3) return;
+		if (this.phase() === GcPhase.MarkAgain) {
+			this.markValue(valueFromTag(tag, word));
+			this.creditBarrierMarks();
+		} else this.enqueue(address, UPVALUE_NEXT, GC_CHANGED_HEAD);
 	}
 	public tableEntriesMoved(address: number): void {
 		const table = this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD);

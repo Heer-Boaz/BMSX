@@ -669,6 +669,60 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 	}
 }
 
+void remarkTableStoresForwardTheCommittedValue() {
+	for (const bool field : {false, true}) {
+		Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
+		auto owner = field ? cpu.createTable(0, 1) : cpu.createTable(2, 0);
+		const Value child = field ? valueThread(cpu.luaHeap().allocateThreadRecord(0u)) : valueTable(cpu.createTable().address());
+		const auto name = cpu.stringPool().intern("remark field");
+		const int prediction = field ? owner.setStringKey(name, valueInteger(17)) : -1;
+		const auto control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+		memory.writeRamRecordByte(control, static_cast<u8>(GcPhase::MarkAgain));
+		memory.writeRamRecordByte(owner.address() + GC_COLOR_OFFSET, 3u);
+		auto& heap = cpu.gcHeap();
+		const auto changed = memory.readRamRecordWord(heap.changedHeadOffset());
+
+		// Exercise a register-source Table append and a trained field
+		// overwrite with a Thread loaded directly from the constant bank.
+		ValueSlots constants(2);
+		constants.set(0, valueString(name)); constants.set(1, child);
+		std::array<DecodedInstruction, 4> decoded{{
+			{.a = 2, .op = static_cast<u8>(OpCode::K1)},
+			{.payload = DecodedInstruction::Payload::tableSlot(prediction), .b = static_cast<i16>(field ? 0 : 1),
+				.c = static_cast<i16>(field ? -2 : 1), .op = static_cast<u8>(field ? OpCode::SETFIELD : OpCode::SETI)},
+			{.a = 3, .b = 2, .op = static_cast<u8>(OpCode::MOV)},
+			{.payload = DecodedInstruction::Payload::bx(0x2000u), .op = static_cast<u8>(OpCode::JMP)},
+		}};
+		std::array<NativeBlockInstruction, decoded.size()> source;
+		for (u32 row = 0; row < decoded.size(); ++row) {
+			decoded[row].width = 1;
+			decoded[row].baseCycles = BASE_CYCLES[decoded[row].op];
+			source[row] = {&decoded[row], 0x1000u + row * INSTRUCTION_BYTES};
+		}
+		const auto block = test::compileNative(source, memory, cpu.stringPool());
+		ValueSlots registers(4);
+		registers.set(0, valueTable(owner.address()));
+		registers.set(1, field ? valueInteger(-19) : child);
+		NativeBlockRunState state{};
+		state.constants = constants.view(); state.heap = &heap;
+		state.remainingCycles = instructionCharge(decoded);
+		const auto* exit = block->run(registers.view(), state);
+		require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source.back().pc
+			&& exit->nextPc == 0x2000u && state.remainingCycles == 0 && registers.get(3) == valueInteger(1),
+			"the black-store helper preserves the native prefix and completes the next native instruction");
+		require((field ? owner.getStringKey(name) : owner.getInteger(1)) == child
+			&& owner.lengthHint() == (field ? 0u : 1u), "the exact input and append effect committed at the original store");
+		const u32 record = valuePayload(child);
+		require(memory.readRamRecordByte(owner.address() + GC_COLOR_OFFSET) == 3u
+			&& memory.readRamRecordWord(heap.changedHeadOffset()) == changed
+			&& memory.readRamRecordByte(record + GC_COLOR_OFFSET) == 2u
+			&& memory.readRamRecordWord(control + GC_TRACE_HEAD) == (record & GC_RECORD_MASK) >> GC_RECORD_SHIFT
+			&& (memory.readRamRecordWord(record + GC_RECORD_LINK) & GC_GRAY_INDEX_MASK) == 0u,
+			"the committed referent joins the live trace once; the strong owner does not join the changed queue");
+	}
+}
+
 void firstPrivateArrayWriteMarksAllHistoryPages(CPU& cpu, Memory& memory) {
 	auto table = cpu.createTable(4096, 0);
 	const u32 words = table.storageAddress(), tags = words + table.arrayCapacity() * sizeof(u32);
@@ -956,6 +1010,7 @@ int main() {
 		numericFieldArithmeticKeepsNativeFrame(cpu, memory);
 		storesRequireAPredictedOverwrite(cpu, memory);
 		compactArraySlots(cpu, memory);
+		remarkTableStoresForwardTheCommittedValue();
 
 		firstPrivateArrayWriteMarksAllHistoryPages(cpu, memory);
 		boundaryLengthRetainsNativeFrame(cpu, memory);

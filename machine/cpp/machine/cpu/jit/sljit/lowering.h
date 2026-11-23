@@ -154,6 +154,7 @@ private:
 		sljit_label* resumeStore;
 		StoreBarrierRecord record;
 		NativeBlockExitSite* exit;
+		int source;
 	};
 	struct SingleStringRead {
 		std::array<sljit_jump*, 4> ownMisses;

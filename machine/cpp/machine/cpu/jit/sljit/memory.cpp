@@ -15,8 +15,10 @@
 namespace bmsx {
 namespace {
 template <u32 Link>
-void SLJIT_FUNC writeNativeBarrier(GcHeap* heap, u32 address, u32 flags) {
-	heap->writeBarrier(address, Link, static_cast<u8>(flags));
+void SLJIT_FUNC writeNativeBarrier(GcHeap* heap, u32 address, u32 word, u32 tag) {
+	const auto value = valueFromTag(static_cast<ValueTag>(tag), word);
+	if constexpr (Link == UPVALUE_NEXT) heap->writeBlackClosedValue(address, value);
+	else heap->writeBlackTableValue(address, value);
 }
 } // namespace
 
@@ -71,7 +73,7 @@ void NativeLowering::emitStoreBarrier(int source, NativeGcBarrier barrier, Store
 		auto* ready = sljit_emit_label(c);
 		for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
 	}
-	m_workspace.storeBarriers.push_back({revisit, m_cache.state(), sljit_emit_label(c), record, &exit});
+	m_workspace.storeBarriers.push_back({revisit, m_cache.state(), sljit_emit_label(c), record, &exit, source});
 }
 
 void NativeLowering::emitStoreBarriers() {
@@ -87,14 +89,16 @@ void NativeLowering::emitStoreBarriers() {
 			emitRamWordWriteWatch(*barrier.exit, SLJIT_R3, 0, SLJIT_R1, SLJIT_R2,
 				1u << (UPVALUE_NEXT / sizeof(u32)));
 			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), savedAddress, SLJIT_R3, 0);
-			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R0, 0);
 		}
+		// The leaf marks or enqueues the exact input, without tracing,
+		// allocating or inspecting any unpublished activation.
+		emitRawLoad(barrier.source, SLJIT_R2, SLJIT_R3);
 		m_cache.spillCall(false, 0);
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
 		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), savedAddress);
 		const auto target = cell ? SLJIT_FUNC_ADDR(&writeNativeBarrier<UPVALUE_NEXT>)
 			: SLJIT_FUNC_ADDR(&writeNativeBarrier<GC_RECORD_LINK>);
-		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, 32), SLJIT_IMM, target);
+		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4V(P, 32, 32, 32), SLJIT_IMM, target);
 		m_cache.spillCall(true, 0);
 		const auto address = cell ? SLJIT_R2 : SLJIT_R0;
 		sljit_emit_op2(c, SLJIT_AND32, address, 0, SLJIT_MEM1(SLJIT_SP), savedAddress, SLJIT_IMM, RAM_RECORD_WORD_MASK);

@@ -50,7 +50,7 @@ void Upvalue::close(GcHeap& heap, u32 address) {
 	writeLE32(record + UPVALUE_OWNER, 0);
 	writeLE32(record + UPVALUE_NEXT, 0);
 	memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
-	heap.writeValueBarrier(offset, UPVALUE_NEXT, valueTag(captured));
+	if (valueTagHasGcEdge(valueTag(captured))) heap.writeBarrier(offset, UPVALUE_NEXT);
 }
 
 Value Upvalue::load(const Memory& memory, u32 address) {
@@ -69,7 +69,7 @@ void Upvalue::store(GcHeap& heap, u32 address, Value value) {
 	if (isOpen(memory, cell)) {
 		ports = openCapturePorts(memory, cell, memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD));
 	} else {
-		heap.writeValueBarrier(cell, UPVALUE_NEXT, valueTag(value));
+		heap.writeClosedValue(cell, value);
 	}
 	memory.writeRamRecordWord(ports.word, valuePayload(value));
 	memory.writeRamRecordByte(ports.tag, static_cast<u8>(valueTag(value)));

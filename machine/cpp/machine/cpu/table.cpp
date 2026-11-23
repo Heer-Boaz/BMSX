@@ -72,7 +72,7 @@ void TableRecord::setMetatableAddress(u32 address) {
 }
 
 void TableRecord::setArraySlot(size_t slot, const Value& value) {
-	m_heap->writeValueBarrier(m_address, GC_RECORD_LINK, valueTag(value));
+	m_heap->writeTableValue(m_address, value);
 	values().set(slot, value);
 	updateLengthHint(slot, !isNil(value));
 }
@@ -625,7 +625,7 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 				markHashNodeDead(nodeIndex);
 				return -1;
 			}
-			if (valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+			m_heap->writeTableValue(m_address, value);
 			body.slots.set(valueSlot, value);
 			return nodeIndex;
 		}
@@ -660,12 +660,13 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 		nodeIndex = placeHashMapping(body, home, key, value, nodeIndex, available);
 		const u32 retained = returning || Policy == HashStore::Resume ? members : hashMembers();
 		publishHashMembers(retained, retained + 1u, reserve);
+		m_heap->writeTableEntry(m_address, key, value);
 	} else {
 		nodeIndex = insertHashWithAdmission<Policy>(key, value, reserve, members, watermark, nodeIndex);
 		if constexpr (Policy != HashStore::General)
 			if (nodeIndex == HASH_STORE_DECLINED) return nodeIndex;
+		if (valueTagHasGcEdge(valueTag(key)) || valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 	}
-	if (valueTagHasGcEdge(valueTag(key)) || valueHasEdge) m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 	return nodeIndex;
 }
 
@@ -878,7 +879,7 @@ bool TableRecord::storePredictedStringKey(StringId key, Value value, int predict
 	const auto body = hashBody(count, arrayCapacity());
 	const u32 node = static_cast<u32>(predicted), valueSlot = body.array + node + count;
 	if (!body.matchesString(node, key) || body.slots.tag(valueSlot) == ValueTag::Nil) return false;
-	m_heap->writeValueBarrier(m_address, GC_RECORD_LINK, valueTag(value));
+	m_heap->writeTableValue(m_address, value);
 	body.slots.set(valueSlot, value);
 	return true;
 }

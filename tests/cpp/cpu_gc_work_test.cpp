@@ -1117,6 +1117,59 @@ void secondMarkPassAndCredit() {
 	require(target.getInteger(2) == valueTable(late.address()), "final remark retains writes after the second pass");
 }
 
+void strongWritesLeaveLargeTablesOutOfFinalRemark() {
+	Machine machine(image());
+	auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& memory = machine.memory;
+	constexpr u32 slots = 2 * GC_STEP_WORDS;
+	auto table = cpu.createTable(slots, 16);
+	auto pending = cpu.createTable(slots);
+	const u32 key = cpu.createTable().address(), value = cpu.createTable().address();
+	const auto text = cpu.stringPool().intern("forward mark across a checkpoint");
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(table.address()));
+	frame.registers.set(1, valueTable(pending.address()));
+	frame.setTop(2);
+	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const auto phase = [&](u32 offset) { return memory.readRamRecordWord(control + offset); };
+	const auto color = [&](u32 record) { return memory.readRamRecordByte(record + GC_COLOR_OFFSET) & GC_COLOR_MASK; };
+	const auto step = [&] { return heap.step(valueNil(), valueNil(), valueNil(), 0u, false, 256u); };
+	// Revisit one large table in the second pass so that there is a live
+	// mutator interval with another large table already completely scanned.
+	for (unsigned i = 0; i < 256
+		&& (color(pending.address()) != 3u || phase(GC_TRACE_RECORD) == pending.address()); ++i) step();
+	require(heap.phase() == GcPhase::Mark && color(pending.address()) == 3u, "first scan leaves a black pending table");
+	pending.setInteger(1, valueTable(table.address()));
+	for (unsigned i = 0; i < 256 && heap.phase() == GcPhase::Mark; ++i) step();
+	require(heap.phase() == GcPhase::MarkAgain && color(table.address()) == 3u
+		&& !heap.isAlive(key) && !heap.isAlive(value), "isolated writes start in the live second pass");
+
+	const u32 changed = phase(GC_CHANGED_HEAD), work = phase(GC_EPOCH_WORK);
+	table.set(valueTable(key), valueTable(value));
+	table.setInteger(1, valueString(text));
+	require(color(table.address()) == 3u && phase(GC_CHANGED_HEAD) == changed
+		&& heap.isAlive(key) && heap.isAlive(value), "both inserted hash edges go to the live trace, not a table rescan");
+	require(phase(GC_EPOCH_WORK) == work + 1u && cpu.stringPool().takeMarkWork() == 0u,
+		"a new String mark is credited before the host can take a checkpoint");
+	const auto snapshot = memory.captureSaveState();
+	const auto state = cpu.captureRuntimeState();
+	const auto finish = [&] {
+		while (heap.phase() == GcPhase::MarkAgain) step();
+		const auto stoppedWork = heap.finishFinalMark();
+		require(stoppedWork < slots, "the stopped pass does not revisit the large table");
+		while (heap.active()) step();
+		require(heap.tableRecordAddress(key) == key && heap.tableRecordAddress(value) == value
+			&& table.get(valueTable(key)) == valueTable(value) && cpu.stringPool().find("forward mark across a checkpoint") == text,
+			"all newly reached objects are retained");
+		return memory.captureSaveState().ram;
+	};
+	const auto expected = finish();
+	memory.restoreSaveState(snapshot);
+	cpu.restoreRuntimeState(state);
+	require(finish() == expected, "late forward marking and accounting replay exactly");
+}
+
 void automaticAssistDefersScopedRoots() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& heap = cpu.gcHeap();
@@ -1535,7 +1588,8 @@ int main(int argc, char** argv) {
 		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues();
 		weakValuesSkipMarkingStorageWithoutStrongEdges(); incrementalSharedWeakMode();
 		resumesFinalWeakCleanup(); resumesMetatableModeProbe(); resumesWeakTableRemark(); consumesSelfLinkedGrayEdge();
-		secondMarkPassAndCredit(); automaticAssistDefersScopedRoots(); explicitAtomicCreditIgnoresPhysicalWork();
+		secondMarkPassAndCredit(); strongWritesLeaveLargeTablesOutOfFinalRemark();
+		automaticAssistDefersScopedRoots(); explicitAtomicCreditIgnoresPhysicalWork();
 		collectUnattachedThreadRecord(); sweepCoroutineRecord(); sweepUnselectsSuspendedTransferFrames(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
 		return 0;
