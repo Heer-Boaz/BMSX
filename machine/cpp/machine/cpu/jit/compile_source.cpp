@@ -130,6 +130,9 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page,
 		source.lastPc = version->endPc - INSTRUCTION_BYTES;
 	}
 	source.enqueue(pc, true, nullptr, true);
+	if (verified && pc != version->entry.codeAddress)
+		// Admit the ROM function head in the same batch as its hot interior.
+		source.enqueue(version->entry.codeAddress, true, nullptr, true);
 	NativeCompilationSource* pages[] = {&source};
 	prepareNativeSources(image, pages);
 }

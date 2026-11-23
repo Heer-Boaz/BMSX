@@ -532,6 +532,48 @@ void verifiedSinglePagePreparationSharesTheColdBatch() {
 	require(!entryAt(warmed, sibling), "adaptive preparation does not absorb the neighboring function");
 }
 
+void verifiedSinglePageHotLoopPublishesItsFunctionEntry() {
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	image.text.resize(6u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K0), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 1, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::ADD), 0, 0, 1);
+	const u32 toLoop = (0u - 3u) & MAX_BASE_BX;
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0,
+		(toLoop >> 6u) & 63u, toLoop & 63u, toLoop >> 12u);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord=0, .wordCount=4, .maxStack=2}, {.firstWord=4, .wordCount=2}};
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	Fixture machine(rom), scalar(rom);
+	auto& cpu = machine.runtime.machine.cpu;
+	auto& reference = scalar.runtime.machine.cpu;
+	reference.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
+	cpu.setNativeCompilationProfiling(true);
+	const u32 root = rom.textAddress;
+	const u32 loop = root + INSTRUCTION_BYTES;
+	const auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
+	const int iterations = NATIVE_BLOCK_COMPILATION_THRESHOLD;
+	const int grant = cycles(OpCode::K0) + iterations * (cycles(OpCode::K1) + cycles(OpCode::ADD) + cycles(OpCode::JMP));
+	require(test::runCpuParity(cpu, reference, grant) == RunResult::Yielded
+		&& cpu.readFramePc(0) == loop && cpu.readFrameRegister(0, 0) == valueInteger(iterations),
+		"the function head runs once while its loop becomes hot");
+	const auto& page = *cpu.rootThread()->currentFrame->executionImage->decodedPages.find(root & ~MAPPED_PAGE_BYTE_MASK);
+	test::waitForNativeEntry(cpu, page, (loop & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+	const auto* functionEntry = entryAt(cpu, root);
+	require(functionEntry && functionEntry->region == entryAt(cpu, loop)->region
+		&& cpu.readNativeCompilationProfile().regionsPublished == 1
+		&& !entryAt(cpu, root + 4u * INSTRUCTION_BYTES),
+		"one adaptive publication covers the loop and its owning function entry, but not a same-page sibling");
+	for (auto* run : {&cpu, &reference})
+		run->writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], root);
+	require(test::runCpuParity(cpu, reference, cycles(OpCode::K0)) == RunResult::Yielded
+		&& cpu.readFramePc(0) == loop && cpu.readFrameRegister(0, 0) == valueInteger(0),
+		"the newly published function entry retains the exact scalar cycle boundary");
+}
+
 void wideFunctionUsesDemandedBoundedRegions() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
@@ -674,6 +716,7 @@ int main() {
 		preparationLeavesFetchFaultsAtExecution();
 		crossPageWideDependenciesRemainOwned();
 		verifiedSinglePagePreparationSharesTheColdBatch();
+		verifiedSinglePageHotLoopPublishesItsFunctionEntry();
 		wideFunctionUsesDemandedBoundedRegions();
 		verifiedStartupReachabilityOutranksDescriptiveHints();
 		descriptiveHintsAreBudgetedBeforeDiscovery();
