@@ -15,7 +15,7 @@ FunctionEntry readEntryTail(const Memory& memory, u32 tail) {
 } // namespace
 
 void initialize(Memory& memory, u32 address, const FunctionPrototype& prototype, u8 white, u32 count, bool canonical, bool latched) {
-	const u32 flags = static_cast<u32>(prototype.executionDomainId + 1)
+	const u32 flags = domainBits(prototype.executionDomainId)
 		| (canonical ? CLOSURE_CANONICAL : 0u) | (latched ? CLOSURE_LATCHED_PROTOTYPE : 0u);
 	memory.writeRamRecordWord(address, static_cast<u32>(ValueTag::Closure) | (static_cast<u32>(white) << 8)
 		| (flags << 16) | ((count >> CLOSURE_COUNT_LOW_BITS) << 24));

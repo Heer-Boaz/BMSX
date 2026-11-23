@@ -492,6 +492,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			frame = thread.currentFrame;
 			state.frame = frame;
 			state.frameDepth = depth;
+			run->nativeStackCapacity = thread.stackCapacity;
+			run->haltedCallDepth = cpu.m_haltedUntilIrqThreadAddress == thread.address ? cpu.m_haltedUntilIrqFrameDepth : -1;
 		}
 		// Read-only helpers preserve the admitted window. Other same-frame
 		// helpers can relocate it but leave the image, bank and globals bound.
@@ -554,6 +556,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		run->codeRoot = lookup->root(slot);
 		run->cartridgeSlot = slot;
 		run->frameBank = frameBankWord(frame->executionImage->executionDomainId);
+	run->closureDomain = ClosureRecord::domainBits(frame->executionImage->executionDomainId);
 		state.globalValues = cpu.m_globalBank.values();
 		state.systemGlobalValues = cpu.m_systemGlobalBank.values();
 		if (!sameFrame) {

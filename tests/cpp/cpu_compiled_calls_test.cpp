@@ -583,7 +583,8 @@ void wideNativeClosureCallResumesAfterItsBody() {
 		&& native.cpu.readFrameRegister(0, 1) == valueInteger(1), "resume executes the instruction after the WIDE body");
 }
 
-void nativeCallProfileKeepsCapturesAndDropsContradictedTarget() {
+void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied) {
+	const int padded = 2 - supplied;
 	test::Blua32TestImage image;
 	image.mappedCode = false;
 	image.text.resize(4 * MAPPED_PAGE_BYTE_SIZE);
@@ -607,7 +608,7 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget() {
 	instruction(2 * DECODED_PAGE_WORDS, OpCode::KSMI, 0, 0, 39);
 	instruction(2 * DECODED_PAGE_WORDS + 1, OpCode::RET, 0, 2);
 	constexpr auto callWord = 3 * DECODED_PAGE_WORDS;
-	instruction(callWord, OpCode::CALL, 4, 2, 2);
+	instruction(callWord, OpCode::CALL, 4, supplied + 1, 2);
 	instruction(callWord + 1, OpCode::HALT);
 	instruction(callWord + 2, OpCode::RET, 0, 1);
 	image.functions = {{.firstWord = 0, .wordCount = 12, .maxStack = 16},
@@ -638,7 +639,7 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget() {
 			auto& registers = machine->cpu.activeThread()->currentFrame->registers;
 			registers.set(4, registers.get(selected));
 			registers.set(5, valueInteger(90));
-			registers.set(6, valueInteger(91)); // Missing argument must nil-pad this slot.
+			registers.set(6, valueInteger(91)); // Only the one-argument case must clear this slot.
 		}
 	};
 	restart(1);
@@ -654,7 +655,7 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget() {
 	require(page->nativeBlocks && page->nativeBlocks->entries[word], "trained source was republished");
 	const auto& fixed = page->nativeBlocks->entries[word]->terminal;
 	require(fixed.operands.call.strategy == NativeCallStrategy::Fixed && fixed.fixedCall.plan.prototype == prototype
-		&& fixed.fixedCall.plan.copied == 1 && fixed.fixedCall.plan.padded == 1
+		&& fixed.fixedCall.plan.copied == supplied && fixed.fixedCall.plan.padded == padded
 		&& fixed.fixedCall.entryCells[0] && *fixed.fixedCall.entryCells[0],
 		"fixed frame layout and a live image-owned entry cell are published");
 	auto& retired = *generated.cpu.activeThread()->currentFrame->next;
@@ -669,8 +670,9 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget() {
 		require(retired.readControl(static_cast<FrameField>(i * sizeof(u32))) == retiredWords[i],
 			"a fully native call never writes its inactive architectural frame record");
 	requireParity(generated, scalar);
-	for (const int grant : {1, BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 1,
-		BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 1 + BASE_CYCLES[static_cast<u8>(OpCode::GETUP)]}) {
+	const int callCycles = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + padded;
+	const int throughGetup = callCycles + BASE_CYCLES[static_cast<u8>(OpCode::GETUP)];
+	for (const int grant : {1, callCycles, throughGetup}) {
 		restart(2);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		const auto& coldCalls = generated.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::Call)].entries;
@@ -678,12 +680,23 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget() {
 #endif
 		require(test::runCpuParity(generated.cpu, scalar.cpu, grant) == RunResult::Yielded, "precise native CALL prefix stops on budget");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-		require(coldCalls == before + static_cast<u64>(grant <= BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 1),
+		require(coldCalls == before + static_cast<u64>(grant <= callCycles),
 			"the known prototype only takes semantic CALL when the grant cannot enter its body");
 #endif
 		requireParity(generated, scalar);
 		const auto& callee = *generated.cpu.activeThread()->currentFrame;
-		require(callee.registers.get(1) == valueNil(), "known fixed arity preserves missing-argument nil");
+		require(callee.registers.get(1) == (padded ? valueNil() : valueInteger(91)),
+			"fixed arity preserves the supplied argument or nil-pads the missing one");
+		if (grant == throughGetup) {
+			require(generated.cpu.readFrameRegister(1, 0) == valueInteger(27),
+				"the materialized callee has the actual closure's capture before RET");
+			const int retCycles = BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1;
+			require(test::runCpuParity(generated.cpu, scalar.cpu, retCycles) == RunResult::Yielded
+				&& generated.cpu.getFrameDepth() == 1 && generated.cpu.readFramePc(0) == pc + INSTRUCTION_BYTES
+				&& generated.cpu.readFrameRegister(0, 4) == valueInteger(27),
+				"an exact grant returns to the caller without executing its continuation");
+			requireParity(generated, scalar);
+		}
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted
 			&& generated.cpu.readFrameRegister(0, 4) == valueInteger(27),
 			"a different closure with the same prototype keeps its own captured value");
@@ -1927,7 +1940,7 @@ int main(int argc, char** argv) {
 		nativeCallRouting(6, 4, false, false, false, false, false, 2);
 		nativeCallRouting(3, 1, false, false, false, false, false, 0);
 		wideNativeClosureCallResumesAfterItsBody();
-		nativeCallProfileKeepsCapturesAndDropsContradictedTarget();
+		for (int supplied : {1, 2}) nativeCallProfileKeepsCapturesAndDropsContradictedTarget(supplied);
 		for (const bool openOuter : {false, true}) nativeCallChainIsRestorableAtBlockedMmio(openOuter);
 		nativeReturnPublishesCallerTopAtMappedObserver();
 		nativeReturnRouting(6, 0, 0, false, true);

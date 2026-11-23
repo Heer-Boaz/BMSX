@@ -61,6 +61,10 @@ inline constexpr u32 closureRecordBytes(u32 captures, bool latched = false) {
 }
 
 namespace ClosureRecord {
+constexpr u32 domainBits(ExecutionDomainId domain) {
+	return static_cast<u32>(domain + 1);
+}
+
 struct BindingFlags {
 	u8 bits;
 	constexpr ExecutionDomainId domain() const {

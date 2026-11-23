@@ -39,6 +39,9 @@ struct NativeCpuRunState {
 	NativeCodeLookup::Group* const* codeRoot = nullptr;
 	u32 cartridgeSlot = 0;
 	u32 frameBank = 0;
+	size_t nativeStackCapacity = 0;
+	i32 haltedCallDepth = -1;
+	u32 closureDomain = 0;
 	CallFrame* firstPendingFrame = nullptr;
 	// MMIO, semantic calls, resumable faults and the end of the grant all
 	// observe real RAM records. Pure compiled transfers do not.
