@@ -4,6 +4,7 @@
 
 #include "machine/cpu/frame_placement.h"
 #include "machine/cpu/jit/runtime/execution.h"
+#include "machine/cpu/jit/sljit/gate.h"
 #include "spec/blua32/instruction_format.h"
 
 namespace bmsx {
@@ -122,6 +123,18 @@ void CPU::observeNativeCallTarget(CallFrame& frame, DecodedInstructionPage& page
 	decoded.setNativeCallTarget(prototype);
 }
 
+void* CPU::enterScalarCallee(NativeCpuRunState& run, const NativeBlockExitSite& exit, u32 entryPc) noexcept {
+	auto& cpu = *run.cpu;
+	cpu.m_currentInstructionPc = exit.currentPc;
+	cpu.lastPc = exit.lastPc;
+	cpu.m_lastExecutionDomainId = run.state.frame->executionImage->executionDomainId;
+	cpu.instructionBudgetRemaining = run.state.remainingCycles;
+	run.publishActivation(entryPc);
+	// The call has committed. Return to instruction dispatch, not the
+	// semantic CALL fallback, which would place the activation a second time.
+	return nativeBlockGate().exit;
+}
+
 void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
 	auto& cpu = *run->cpu;
 	auto& state = run->state;
@@ -190,12 +203,10 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 	if (!entry)
 		entry = NativeCodeLookup::findEntryCellInRoot(run->codeRoot, function->codeAddress);
 	void* const target = entry ? *entry : nullptr;
-	if (!target) return nullptr;
-	if (bindEntry) romBinding->entryCells[run->cartridgeSlot] = entry;
+	if (bindEntry && entry) romBinding->entryCells[run->cartridgeSlot] = entry;
 
-	// All declines precede the frame writes. An ordinary semantic CALL can
-	// still allocate or finish an exhausted grant; this transition only
-	// commits an admitted frame with a live receiving body.
+	// Admission of the activation is independent of code residency. Only
+	// requests that need the semantic CALL path are still unplaced.
 	const auto [copied, padded] = placement.formals;
 	if (placement.relocatesFormals) {
 		thread.stack.placeAdmitted(placement.stackBase, thread.stack, placement.argumentBase, copied, padded);
@@ -205,7 +216,7 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 	}
 	enterNativeActivation(*run, *exit, *callee, closure, placement.stackBase, placement.varargBase,
 		placement.capacity, placement.top(), cycles);
-	return target;
+	return target ? target : enterScalarCallee(*run, *exit, function->codeAddress);
 }
 
 void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
@@ -236,7 +247,6 @@ void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExit
 
 	if (state.remainingCycles <= plan.padded) return nullptr;
 	void* const target = *binding.entryCells[run->cartridgeSlot];
-	if (!target) return nullptr;
 	auto& thread = *caller.thread;
 	const u32 depth = state.frameDepth + 1u;
 	auto* callee = thread.retainedFrameForEntry(caller, depth);
@@ -247,7 +257,7 @@ void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExit
 	const int top = plan.copied + plan.padded;
 	thread.stack.clearAdmitted(stackBase + plan.copied, plan.padded);
 	enterNativeActivation(*run, *exit, *callee, closure, stackBase, stackBase + top, plan.capacity, top, plan.padded);
-	return target;
+	return target ? target : enterScalarCallee(*run, *exit, plan.entryPc);
 }
 
 int CPU::placeNativeVarargs(NativeBlockRunState* state, int first, int requested) noexcept {

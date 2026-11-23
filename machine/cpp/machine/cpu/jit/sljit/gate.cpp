@@ -68,8 +68,9 @@ NativeBlockGate::NativeBlockGate() {
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, NativeBlockAbi::transitionExit, 0);
 	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), cold);
 	// Both helpers run outside the region that just published its cache.
-	// Success has selected a live continuation and installed its frame in
-	// the grant. A null result still belongs to the original exit site.
+	// Success selects either a live continuation (which binds the receiving
+	// frame) or the gate's return label. A null result still owns the
+	// original semantic exit.
 	const auto emitTransfer = [&](auto helper) {
 		auto* label = sljit_emit_label(compiler);
 		sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::transitionExit, 0, SLJIT_R0, 0);

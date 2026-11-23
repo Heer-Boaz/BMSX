@@ -455,14 +455,19 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	const u32 markerWord = (markerPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	require(calleePage->nativeCode && calleePage->nativeCode[word] && alternate->nativeCode && alternate->nativeCode[markerWord],
 		"callee and independent marker have live raw native entries");
-	// A semantic CALL still selects the original RET descriptor. Only the shared
-	// raw CALL gate can follow this independently redirected code word.
+	// A cold body uses the original RET. Only the shared raw CALL gate can
+	// select the independently redirected native body.
 	calleePage->nativeCode[word] = coldTarget ? nullptr : alternate->nativeCode[markerWord];
+	if (coldTarget) calleePage->words[word].dispatchOp = static_cast<u8>(OpCode::RET);
 	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress + 2 * INSTRUCTION_BYTES);
 	const int callerTop = static_cast<bmsx::i32>(caller->readControl(bmsx::FrameField::Top));
 	const int placed = vararg ? params : std::max(params - args, 0);
 	const int callPrefix = BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)];
 	if (grant < 0) grant = callPrefix + placed + 1;
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& fallbackCalls = machine.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::Call)].entries;
+	const auto before = fallbackCalls;
+#endif
 	require(machine.cpu.runUntilDepth(0, grant) == RunResult::Yielded, "CALL placements and its first callee instruction retain grant accounting");
 	if (grant <= BASE_CYCLES[static_cast<u8>(OpCode::MOV)]) {
 		require(machine.cpu.instructionBudgetRemaining == grant - BASE_CYCLES[static_cast<u8>(OpCode::MOV)]
@@ -480,8 +485,13 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		return;
 	}
 	if (coldTarget) {
-		require(machine.cpu.getGlobalByKey(marker) == valueBool(false) && thread->currentFrame == caller,
-			"missing raw target dispatches the original semantic call and return before any native activation writes");
+		const auto result = args == 0 ? valueNil() : payloads.front();
+		require(machine.cpu.getGlobalByKey(marker) == valueBool(false) && thread->currentFrame == caller
+			&& caller->registers.get(base) == result,
+			"the admitted cold call enters the interpreter and returns the first formal to the caller");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		require(fallbackCalls == before, "missing compiled code does not re-enter the semantic CALL dispatcher");
+#endif
 		return;
 	}
 	const Value first = params > 0 ? (args > 0 ? payloads[0] : valueNil()) : valueInteger(63);
@@ -1869,6 +1879,7 @@ int main(int argc, char** argv) {
 		nativeCallRouting(0, 0, false, true, false, false, false);
 		nativeCallRouting(3, 5, true, false, false, true, false);
 		nativeCallRouting(3, 2, false, true, true, false, false);
+		nativeCallRouting(3, 5, true, true, true, false, false);
 		nativeCallRouting(1, 1, false, false, false, false, true);
 		nativeCallRouting(10, 1, false, false, false, false, false, 2);
 		nativeCallRouting(6, 4, false, false, false, false, false, 2);
