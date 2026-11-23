@@ -48,8 +48,8 @@ public:
 	// The final word always uses the ordinary read -> ready -> write bus path.
 	// A source lends the contiguous, scheduler-admitted prefix until the
 	// synchronous sink returns. The sink does not retain the backing.
-	using IoDmaReadPrefixHandler = const u32* (*)(void*, u32 address, u32 count, MappedBusSignals);
-	using IoDmaWritePrefixHandler = void (*)(void*, u32 address, const u32* words, u32 count, MappedBusSignals);
+	using IoDmaReadPrefixHandler = const u32* (*)(void* context, u32 count);
+	using IoDmaWritePrefixHandler = void (*)(void* context, const u32* words, u32 count);
 	using IoDmaMappedWritePrefixHandler = void (*)(void*, Span<const u8> littleEndianBytes);
 
 	Memory(const MemoryInit& init, u32 ramByteCount);

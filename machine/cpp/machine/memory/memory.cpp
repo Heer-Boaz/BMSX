@@ -627,7 +627,7 @@ void Memory::transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
 			const u32* words = nullptr;
 			if (readPrefix != nullptr && readPrefix->read != nullptr) {
 				words = readPrefix->read(
-					m_ioReadHandlers[static_cast<size_t>(readSlot)].context, readAddress, prefix, readSignals);
+					m_ioReadHandlers[static_cast<size_t>(readSlot)].context, prefix);
 			} else if (readStep == 0u || readStep == IO_WORD_SIZE) {
 				Span<const u8> bytes;
 				const u32 byteCount = readStep == 0u ? IO_WORD_SIZE : prefix * IO_WORD_SIZE;
@@ -644,7 +644,7 @@ void Memory::transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
 				}
 			}
 			if (words) {
-				writePrefix->write(context, writeAddress, words, prefix, writeSignals);
+				writePrefix->write(context, words, prefix);
 				accepted = true;
 			}
 		}

@@ -377,8 +377,8 @@ struct PrefixMappingTrace {
 		auto& t = *static_cast<PrefixMappingTrace*>(context);
 		t.mappedPrefix.assign(bytes.data(), bytes.data() + bytes.size());
 	}
-	static const bmsx::u32* readPrefix(void*, bmsx::u32, bmsx::u32, bmsx::MappedBusSignals) { throw std::runtime_error("revoked/readonly prefix read cannot run"); }
-	static void writePrefix(void*, bmsx::u32, const bmsx::u32*, bmsx::u32, bmsx::MappedBusSignals) { throw std::runtime_error("revoked/readonly prefix write cannot run"); }
+	static const bmsx::u32* readPrefix(void*, bmsx::u32) { throw std::runtime_error("revoked/readonly prefix read cannot run"); }
+	static void writePrefix(void*, const bmsx::u32*, bmsx::u32) { throw std::runtime_error("revoked/readonly prefix write cannot run"); }
 };
 
 void testDmaMemoryWordsOverlappingIoFaultBeforeHandlers() {

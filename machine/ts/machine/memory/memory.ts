@@ -162,8 +162,8 @@ export type IoWriteReadyHandler<TContext> = (
 // performs all boundary work. A reader supplies a contiguous range retained
 // through the synchronous prefix write.
 export type DmaWordView = { words: Uint32Array; first: number };
-export type IoDmaReadPrefixHandler<T> = (context: T, address: number, view: DmaWordView, count: number, signals: MappedBusSignals) => void;
-export type IoDmaWritePrefixHandler<T> = (context: T, address: number, words: Uint32Array, first: number, count: number, signals: MappedBusSignals) => void;
+export type IoDmaReadPrefixHandler<T> = (context: T, view: DmaWordView, count: number) => void;
+export type IoDmaWritePrefixHandler<T> = (context: T, words: Uint32Array, first: number, count: number) => void;
 export type IoDmaMappedWritePrefixHandler<T> = (context: T, view: Readonly<MemoryByteView>) => void;
 type IoDmaPrefixBinding = {
 	slot: number;
@@ -845,7 +845,7 @@ export class Memory {
 				const readPrefix = readSlot >= 0 ? this.findIoDmaPrefix(readSlot) : null;
 				let prefixRead = false;
 				if (readPrefix !== null && readPrefix.read !== null) {
-					readPrefix.read(this.ioReadContexts[readSlot], readAddress, wordView, prefix, readBusSignals);
+					readPrefix.read(this.ioReadContexts[readSlot], wordView, prefix);
 					prefixRead = true;
 				} else if (readStep === 0 || readStep === IO_WORD_SIZE) {
 					const words = this.dmaPrefixWords;
@@ -862,7 +862,7 @@ export class Memory {
 					}
 				}
 				if (prefixRead) {
-					writePrefix.write(context, writeAddress, wordView.words, wordView.first, prefix, writeBusSignals);
+					writePrefix.write(context, wordView.words, wordView.first, prefix);
 					accepted = true;
 				}
 			}

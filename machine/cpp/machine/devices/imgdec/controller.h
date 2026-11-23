@@ -63,7 +63,7 @@ private:
 	static u32 readProgressThunk(void*, u32, MappedBusSignals);
 	static void writeConfigThunk(void*, u32, u32, MappedBusSignals);
 	static bool configWriteReadyThunk(void*, u32, MappedBusSignals);
-	static const u32* readDataPrefixThunk(void*, u32, u32, MappedBusSignals);
+	static const u32* readDataPrefixThunk(void*, u32 count);
 	static void writeMappedDataPrefixThunk(void*, Span<const u8>);
 	static u32 readDataThunk(void*, u32, MappedBusSignals);
 	static void writeDataThunk(void*, u32, u32, MappedBusSignals);

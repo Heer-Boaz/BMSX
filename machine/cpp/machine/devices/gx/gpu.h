@@ -452,7 +452,7 @@ private:
 	void writeStatusIo();
 	bool gp0WriteReady(MappedBusSignals busSignals);
 	static u32 readGp0Thunk(void* context, u32 addr, MappedBusSignals busSignals);
-	static void writeGp0PrefixThunk(void*, u32, const u32* words, u32 count, MappedBusSignals);
+	static void writeGp0PrefixThunk(void*, const u32* words, u32 count);
 	static void writeGp0Thunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 	static bool gp0WriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static bool gp1WriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals);

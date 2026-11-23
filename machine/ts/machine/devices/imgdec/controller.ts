@@ -327,7 +327,7 @@ export class ImgDecController {
 		return (c.statusWord & IMGDEC_STATUS_BUSY) === 0 && !c.supervisorQuiesceRequested;
 	}
 
-	private static readDataPrefixThunk(c: ImgDecController, _address: number, view: DmaWordView, count: number): void {
+	private static readDataPrefixThunk(c: ImgDecController, view: DmaWordView, count: number): void {
 		// DMA admission reserves words from one contiguous READY block.
 		const start = c.outputWordsRead & IMGDEC_HISTORY_WORD_MASK;
 		c.outputWordsRead = (c.outputWordsRead + count) >>> 0;

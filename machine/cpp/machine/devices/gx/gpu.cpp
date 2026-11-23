@@ -1650,7 +1650,7 @@ u32 GxGpu::readGp0Thunk(void* context, u32 addr, MappedBusSignals busSignals) {
 	return gpu.readGp0(busSignals);
 }
 
-void GxGpu::writeGp0PrefixThunk(void* context, u32, const u32* words, u32 count, MappedBusSignals) {
+void GxGpu::writeGp0PrefixThunk(void* context, const u32* words, u32 count) {
 	auto& gpu = *static_cast<GxGpu*>(context);
 	if (gpu.m_supervisorIngressStopped) return;
 	gpu.synchronizeCommandExecution(gpu.m_scheduler.currentNowCycles());

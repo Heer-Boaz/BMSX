@@ -292,7 +292,7 @@ bool ImgDecController::configWriteReadyThunk(void* context, u32, MappedBusSignal
 	return (c.m_statusWord & IMGDEC_STATUS_BUSY) == 0 && !c.m_supervisorQuiesceRequested;
 }
 
-const u32* ImgDecController::readDataPrefixThunk(void* context, u32, u32 count, MappedBusSignals) {
+const u32* ImgDecController::readDataPrefixThunk(void* context, u32 count) {
 	auto& c = *static_cast<ImgDecController*>(context);
 	// DMA reserves published words, which cannot wrap within one ready block.
 	const u32* const words = c.m_history.data() + (c.m_outputWordsRead & IMGDEC_HISTORY_WORD_MASK);
