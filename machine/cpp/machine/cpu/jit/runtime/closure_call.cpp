@@ -123,15 +123,17 @@ void CPU::observeNativeCallTarget(CallFrame& frame, DecodedInstructionPage& page
 	decoded.setNativeCallTarget(prototype);
 }
 
-void* CPU::enterScalarCallee(NativeCpuRunState& run, const NativeBlockExitSite& exit, u32 entryPc) noexcept {
+void* CPU::resumeScalarAfterNativeTransfer(NativeCpuRunState& run, const NativeBlockExitSite& exit, u32 pc) noexcept {
 	auto& cpu = *run.cpu;
 	cpu.m_currentInstructionPc = exit.currentPc;
 	cpu.lastPc = exit.lastPc;
-	cpu.m_lastExecutionDomainId = run.state.frame->executionImage->executionDomainId;
+	// Native transfers stay in the currently bound image. Attribute the
+	// executed instruction before publishing the receiving activation.
+	cpu.m_lastExecutionDomainId = cpu.m_activeExecutionDomainId;
 	cpu.instructionBudgetRemaining = run.state.remainingCycles;
-	run.publishActivation(entryPc);
-	// The call has committed. Return to instruction dispatch, not the
-	// semantic CALL fallback, which would place the activation a second time.
+	run.publishActivation(pc);
+	// The transfer is committed. Null instead declines it and runs the
+	// original CALL or RET in the semantic dispatcher.
 	return nativeBlockGate().exit;
 }
 
@@ -216,7 +218,7 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 	}
 	enterNativeActivation(*run, *exit, *callee, closure, placement.stackBase, placement.varargBase,
 		placement.capacity, placement.top(), cycles);
-	return target ? target : enterScalarCallee(*run, *exit, function->codeAddress);
+	return target ? target : resumeScalarAfterNativeTransfer(*run, *exit, function->codeAddress);
 }
 
 void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
@@ -257,7 +259,7 @@ void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExit
 	const int top = plan.copied + plan.padded;
 	thread.stack.clearAdmitted(stackBase + plan.copied, plan.padded);
 	enterNativeActivation(*run, *exit, *callee, closure, stackBase, stackBase + top, plan.capacity, top, plan.padded);
-	return target ? target : enterScalarCallee(*run, *exit, plan.entryPc);
+	return target ? target : resumeScalarAfterNativeTransfer(*run, *exit, plan.entryPc);
 }
 
 int CPU::placeNativeVarargs(NativeBlockRunState* state, int first, int requested) noexcept {

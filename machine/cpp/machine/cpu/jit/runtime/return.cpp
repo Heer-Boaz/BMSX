@@ -51,11 +51,9 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 	if (!cell || (!pending && caller->nativeContinuationPc != pc))
 		cell = NativeCodeLookup::findEntryCellInRoot(run->codeRoot, pc);
 	void* const target = cell ? *cell : nullptr;
-	if (!target)
-		return nullptr;
 
-	// All declines leave the original RET for the CPU dispatcher. From here
-	// the admitted stack needs no growth, bus access or code invalidation.
+	// Place the return once even if the caller's next instruction needs
+	// scalar dispatch. The admitted stack needs no growth or bus access.
 	caller->registers.placeAdmitted(result.base, leaving.registers, source, placement.copied, placement.padded);
 	const int nextTop = result.extendsTop()
 		? result.topAfter(caller->readAdmittedWindow(FrameField::Top), count) : extent;
@@ -73,7 +71,15 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 	state.closure = caller->pendingNativeCall ? caller->pendingNativeClosure : caller->readAdmittedControl(FrameField::Closure);
 	state.stackBase = caller->pendingNativeCall ? caller->pendingNativeStackBase : caller->readAdmittedWindow(FrameField::StackBase);
 	state.remainingCycles -= count;
-	return target;
+	if (target) return target;
+	void* const scalar = resumeScalarAfterNativeTransfer(*run, *exit, pc);
+	caller->compilationEntry = true;
+	if (pending) {
+		// The discarded child never materialized this CALL's continuation.
+		caller->nativeContinuationCells = pending->continuationCells;
+		caller->nativeContinuationPc = pc;
+	}
+	return scalar;
 }
 
 } // namespace bmsx

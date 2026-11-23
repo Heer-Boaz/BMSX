@@ -468,7 +468,7 @@ private:
 	friend class NativeBlockGate;
 	static void* tryCallNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
 	static void* tryCallNativeFixedFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
-	static void* enterScalarCallee(NativeCpuRunState&, const NativeBlockExitSite&, u32 entryPc) noexcept;
+	static void* resumeScalarAfterNativeTransfer(NativeCpuRunState&, const NativeBlockExitSite&, u32 pc) noexcept;
 	std::optional<NativeFixedCallPlan> captureNativeFixedCall(Blua32ExecutionImage&, u32 prototype, int supplied) const;
 	void observeNativeCallTarget(CallFrame&, DecodedInstructionPage&, u32 pc);
 	static void* tryReturnNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;

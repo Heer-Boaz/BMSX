@@ -1040,8 +1040,9 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 		"both ordinary continuation and independent marker have live native dispatch entries");
 	// Redirect only the raw code word, not the descriptor. A C++ RET dispatcher
 	// still selects the ordinary descriptor and cannot execute this marker.
-	// This disposable fixture never resumes or reuses the redirected cache.
+	// A cold successor also switches the decoded entry back to scalar JMP.
 	continuation->nativeCode[word] = coldTarget ? nullptr : alternate->nativeCode[markerWord];
+	if (coldTarget) continuation->words[word].dispatchOp = static_cast<u8>(OpCode::JMP);
 	const int copied = wanted == 0 ? produced : std::min(produced, wanted);
 	const int count = wanted == 0 ? produced : wanted;
 	const bool grows = count != 0 && base + count > caller->stackCapacity();
@@ -1056,6 +1057,11 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 		&& calleePublished->nativeCode[(callee->readControl(bmsx::FrameField::Pc) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES],
 		"the RET under test has a real published native entry before redirecting its caller");
 
+	const u32 callerPc = caller->readControl(bmsx::FrameField::Pc);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& semanticReturns = machine.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::Return)].entries;
+	const auto semanticReturnsBefore = semanticReturns;
+#endif
 	const auto routeResult = machine.cpu.runUntilDepth(0, grant);
 	require(routeResult == RunResult::Yielded && thread->currentFrame == caller
 		&& thread->frameDepth() == 2 && thread->protectedDepth() == 1, "ordinary native return retains its protected parent and exact grant boundary");
@@ -1076,6 +1082,14 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 			"the warm RET places and charges only the selected range before the independent marker runs");
 	if (grant <= returnBase + count) require(machine.cpu.instructionBudgetRemaining == grant - returnBase - count,
 		"native RET charges the receiving range once and cannot execute the next body with an exhausted grant");
+	if (coldTarget && !grows && grant > returnBase + count) {
+		require(caller->readControl(bmsx::FrameField::Pc) == callerPc + INSTRUCTION_BYTES
+			&& machine.cpu.instructionBudgetRemaining == grant - returnBase - count - BASE_CYCLES[static_cast<u8>(OpCode::JMP)],
+			"the admitted return resumes the scalar successor and charges results just once");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		require(semanticReturns == semanticReturnsBefore, "a cold caller does not re-enter the semantic RET dispatcher");
+#endif
+	}
 	require(callee->decodedPage == nullptr && callee->compilationEntry && thread->currentFrame == caller,
 		"native retirement keeps the inactive record out of the live window");
 	machine.cpu.beginCompletionCall(closure);
@@ -1902,6 +1916,9 @@ int main(int argc, char** argv) {
 		nativeReturnRouting(6, 1, 0, false, false, retAndMarker + 1); // one result, discard suffix
 		nativeReturnRouting(6, 2, 11, false, false, retAndMarker + 2); // upward overlap with the callee's source at slot 10
 		nativeReturnRouting(6, 0, 0, true, false);
+		const int returnToScalar = BASE_CYCLES[static_cast<u8>(OpCode::RET)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+		nativeReturnRouting(6, 0, 0, true, false, returnToScalar + 6);
+		nativeReturnRouting(2, 4, 0, true, false, returnToScalar + 4);
 		nativeReturnRouting(6, 0, 6, false, false);
 		nativeReturnRouting(2, 4, 0, false, false, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 4 + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)] + 1);
 		nativeReturnRouting(6, 2, 0, false, false, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 2 + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)] + 1);
