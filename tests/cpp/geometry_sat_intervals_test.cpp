@@ -27,7 +27,7 @@ void testController(bool abort) {
 	IdleInput input;
 	Machine machine(memory, input, PSX_MACHINE_SPEC);
 	machine.resetDevices(); machine.scheduler.reset();
-	machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec, 0);
+	machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec);
 	const u32 record = (DYNAMIC_RAM_BASE + 0x10000u), descriptors = record + 0x100u, vertices = record + 0x200u, result = record + 0x400u;
 	require(machine.cpu.heapAllocator().setFloor(result + GEO_SAT2_RESULT_BYTES),
 		"GEO SAT operands and result occupy public static RAM");
@@ -46,10 +46,10 @@ void testController(bool abort) {
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_SAT2_BATCH);
 	auto& controller = machine.geometryController;
 	const auto step = [&]() {
-		const i64 now = machine.scheduler.nowCycles(), deadline = machine.scheduler.nextDeadline();
+		const i64 deadline = machine.scheduler.nextDeadline();
 		require(deadline != std::numeric_limits<i64>::max(), "scheduled SAT interval");
 		machine.scheduler.advanceTo(deadline);
-		controller.accrueCycles(static_cast<int>(deadline - now), deadline);
+
 		require(machine.scheduler.popDueTimer() == DEVICE_SERVICE_GEO, "GEO timer owns boundary");
 		controller.onService(deadline);
 	};
@@ -69,7 +69,7 @@ void testController(bool abort) {
 	const i64 debt = controller.captureState().pendingCycles, now = machine.scheduler.nowCycles();
 	require(debt == 229, "108 work units and five result words use the installed clock");
 	machine.scheduler.advanceTo(now + debt - 1);
-	controller.accrueCycles(static_cast<int>(debt - 1), now + debt - 1);
+
 	require(memory.readU32(result) == 0xdeadbeefu && memory.readIoU32(IO_GEO_PROCESSED) == 0u && memory.readIoU32(IO_GEO_STATUS) == GEO_STATUS_BUSY, "unpaid result stays private");
 	if (abort) {
 		memory.writeMappedWord(IO_GEO_CTRL, GEO_CTRL_ABORT);

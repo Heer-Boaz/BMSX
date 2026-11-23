@@ -54,7 +54,6 @@ public:
 
 	void resetDevices();
 	void refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles);
-	void advanceDevices(int cycles);
 	u32 runDeviceService(uint8_t deviceKind);
 };
 

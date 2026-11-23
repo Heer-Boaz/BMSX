@@ -59,10 +59,10 @@ test('booted runtime: equal-deadline GEO sampling precedes DMA across a snapshot
 	const advance = (target: number) => {
 			while (machine.scheduler.nextDeadline() <= target) {
 						const deadline = machine.scheduler.nextDeadline();
-						machine.advanceDevices(deadline - machine.scheduler.nowCycles);
+						machine.scheduler.advanceTo(deadline);
 						while (machine.scheduler.hasDueTimer()) machine.runDeviceService(machine.scheduler.popDueTimer());
 			}
-			machine.advanceDevices(target - machine.scheduler.nowCycles);
+			machine.scheduler.advanceTo(target);
 	};
 	advance(6);
 	memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);

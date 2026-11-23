@@ -274,13 +274,13 @@ function advanceGeometryBoundary(machine: Machine): void {
 	const target = scheduler.nowCycles + machine.geometryController.captureState().pendingCycles;
 	assert.ok(target > scheduler.nowCycles, 'GEO has a paid interval before publication');
 	while (scheduler.nextDeadline() < target) {
-		machine.advanceDevices(scheduler.nextDeadline() - scheduler.nowCycles);
+		scheduler.advanceTo(scheduler.nextDeadline());
 		while (scheduler.hasDueTimer()) machine.runDeviceService(scheduler.popDueTimer());
 	}
-	machine.advanceDevices(target - scheduler.nowCycles - 1);
+	scheduler.advanceTo(target - 1);
 	assert.deepEqual([memory.readIoU32(IO_GEO_STATUS), memory.readIoU32(IO_GEO_PROCESSED)], before,
 		'the unpaid final cycle retains status and outer-record progress');
-	machine.advanceDevices(1);
+	machine.scheduler.advanceTo(machine.scheduler.nowCycles + (1));
 	while (scheduler.hasDueTimer()) machine.runDeviceService(scheduler.popDueTimer());
 }
 
@@ -290,7 +290,7 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 	const geometry = machine.geometryController;
 	const jobBase = RAM_BASE;
 
-	geometry.setTiming(1, 1, 0);
+	geometry.setTiming(1, 1);
 	for (let record = 0; record < 3; record += 1) {
 		writeNoopXform2Record(memory, jobBase + record * GEO_XFORM2_RECORD_BYTES);
 	}
@@ -312,7 +312,7 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_DONE);
 
 	restoreMachineSaveState(machine, saved);
-	geometry.setTiming(1, 1, machine.scheduler.nowCycles);
+	geometry.setTiming(1, 1);
 	assert.equal(memory.readIoU32(IO_GEO_CMD), IO_CMD_GEO_XFORM2_BATCH);
 	assert.equal(memory.readIoU32(IO_GEO_COUNT), 1);
 	assert.equal(memory.readIoU32(IO_GEO_PROCESSED), 1);
@@ -342,7 +342,7 @@ test('GEO execution fault ack preserves completed command status', () => {
 	const jobBase = RAM_BASE + 0x600;
 	const executionFaultStatus = GEO_STATUS_DONE | GEO_STATUS_ERROR;
 
-	geometry.setTiming(1, 1, 0);
+	geometry.setTiming(1, 1);
 	writeNoopXform2Record(memory, jobBase);
 	memory.writeU32(jobBase + 0, 1);
 	writeXform2BatchRegisters(memory, jobBase, 1);
@@ -487,12 +487,12 @@ function finishOverlapAtScheduledEdges(machine: Machine, result: number, summary
 			const before = [memory.readIoU32(IO_GEO_STATUS), memory.readIoU32(IO_GEO_PROCESSED),
 				...Array.from({ length: 9 }, (_, i) => memory.readU32(result + i * IO_WORD_SIZE)),
 				...Array.from({ length: 4 }, (_, i) => memory.readU32(summary + i * IO_WORD_SIZE))];
-			machine.advanceDevices(delta - 1);
+			machine.scheduler.advanceTo(machine.scheduler.nowCycles + (delta - 1));
 			assert.deepEqual([memory.readIoU32(IO_GEO_STATUS), memory.readIoU32(IO_GEO_PROCESSED),
 				...Array.from({ length: 9 }, (_, i) => memory.readU32(result + i * IO_WORD_SIZE)),
 				...Array.from({ length: 4 }, (_, i) => memory.readU32(summary + i * IO_WORD_SIZE))], before,
 				'GEO effects stay unpublished until the scheduled edge');
-			machine.advanceDevices(1);
+			machine.scheduler.advanceTo(machine.scheduler.nowCycles + (1));
 		}
 		while (scheduler.hasDueTimer()) machine.runDeviceService(scheduler.popDueTimer());
 	}
@@ -510,10 +510,10 @@ test('GEO overlap2d start consumes register words without submit preflight', () 
 	writeOverlap2dFullPassRegisters(memory, jobBase, 0, jobBase + 0x100, jobBase + 0x300, 1);
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
-	machine.advanceDevices(3);
+	machine.scheduler.advanceTo(machine.scheduler.nowCycles + (3));
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY, 'zero-count launch pays its four summary writes');
 	assert.equal(memory.readU32(summaryBase), 0x12345678, 'launch summary is not published one cycle early');
-	machine.advanceDevices(1);
+	machine.scheduler.advanceTo(machine.scheduler.nowCycles + (1));
 	while (machine.scheduler.hasDueTimer()) machine.runDeviceService(machine.scheduler.popDueTimer());
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
 	assert.deepEqual(Array.from({ length: 4 }, (_, i) => memory.readU32(summaryBase + i * IO_WORD_SIZE)), [0, 0, 0, 0]);

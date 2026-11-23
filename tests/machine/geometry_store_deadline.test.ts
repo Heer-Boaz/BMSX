@@ -24,7 +24,7 @@ const GEO_BUFFERS = DYNAMIC_RAM_BASE + 0x10000;
 // The first record costs six cycles and has no vertices. The second samples
 // the vertex at its own start; this places the competing STORE one cycle
 // before that real device deadline, without assigning an electrical bus phase.
-function observe(mode: CpuExecutionBackend, crossing: boolean) {
+function observe(mode: CpuExecutionBackend, crossing: boolean, doorbell = false) {
 	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.STORE_MEM_D, 1, 0, MemoryAccessKind.U32LE, 0);
 	writeInstruction(code, 1, OpCode.JMP, 0, 63, 62, 255);
@@ -73,6 +73,27 @@ function observe(mode: CpuExecutionBackend, crossing: boolean) {
 		[io.IO_GEO_DST0, output], [io.IO_GEO_COUNT, 2], [io.IO_GEO_STRIDE0, geo.GEO_XFORM2_RECORD_BYTES],
 		[io.IO_GEO_STRIDE1, geo.GEO_VERTEX2_BYTES], [io.IO_GEO_STRIDE2, geo.GEO_XFORM2_MATRIX_BYTES],
 	]) memory.writeMappedWord(address, word);
+	if (doorbell) {
+		memory.writeU32(output, 0xdeadbeef);
+		memory.writeMappedWord(io.IO_GEO_DST1, output);
+		memory.writeMappedWord(io.IO_GEO_COUNT, 0);
+		memory.writeMappedWord(io.IO_GEO_PARAM0, geo.GEO_OVERLAP2D_MODE_FULL_PASS);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, frame.functionAddress, entry);
+		frame.registers.setInteger(0, io.IO_GEO_CMD);
+		frame.registers.setInteger(1, geo.IO_CMD_GEO_OVERLAP2D_PASS);
+		const state = { updateExecuted: false, cycleBudgetRemaining: 100, cycleBudgetGranted: 100, cycleCarryGranted: 0, activeCpuUsedCycles: 0, deferredAllocationCycles: 0 };
+		assert.equal(runtime.cpuExecution.runInstruction(state), InstructionStepResult.Executed);
+		assert.equal(scheduler.nowCycles, 3);
+		assert.equal(geoController.captureState().pendingCycles, 4, 'GEO charge begins at the doorbell, not the start of the CPU grant');
+		advanceRuntimeTime(runtime, 3);
+		assert.equal(memory.readU32(output), 0xdeadbeef);
+		assert.equal(memory.readIoU32(io.IO_GEO_STATUS), geo.GEO_STATUS_BUSY);
+		advanceRuntimeTime(runtime, 1);
+		assert.equal(memory.readU32(output), 0);
+		assert.equal(memory.readIoU32(io.IO_GEO_STATUS), geo.GEO_STATUS_DONE);
+		assert.equal(memory.readIoU32(io.IO_IRQ_FLAGS) & io.IRQ_GEO_DONE, io.IRQ_GEO_DONE);
+		return { sampled: memory.readU32(output), spent: state.activeCpuUsedCycles, elapsed: scheduler.nowCycles };
+	}
 	memory.writeMappedWord(io.IO_GEO_CMD, geo.IO_CMD_GEO_XFORM2_BATCH);
 	runDueRuntimeTimers(runtime);
 	assert.equal(geoController.captureState().pendingCycles, 6, 'empty first record pays its six header words');
@@ -106,4 +127,10 @@ test('STORE across a GEO sampling deadline has the same runtime result in interp
 	// The physical CPU's memory-publication phase is not specified. Report the
 	// observed crossing value without turning it into a hardware expectation.
 	console.log(`GEO_STORE_DEADLINE crossing_sample=0x${observations[0].crossing.sampled.toString(16)} after_service_sample=0`);
+});
+
+test('GEO summary charge starts at an actual CPU doorbell store', () => {
+	for (const mode of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		assert.deepEqual(observe(mode, false, true), { sampled: 0, spent: 3, elapsed: 7 });
+	}
 });

@@ -93,7 +93,7 @@ function controllerCase() {
 	}, PSX_MACHINE_SPEC);
 	machine.resetDevices(); machine.scheduler.reset();
 	assert.ok(machine.cpu.heapAllocator.setFloor(GEO_BUFFERS + 0x1000));
-	machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec, 0);
+	machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec);
 	for (const [address, word] of [
 		[io.IO_GEO_SRC0, f.job.src0], [io.IO_GEO_SRC1, f.job.src1], [io.IO_GEO_SRC2, f.job.src2],
 		[io.IO_GEO_DST0, f.job.dst0], [io.IO_GEO_COUNT, 1],
@@ -101,10 +101,10 @@ function controllerCase() {
 	]) f.memory.writeMappedWord(address, word);
 	f.memory.writeMappedWord(io.IO_GEO_CMD, geo.IO_CMD_GEO_SAT2_BATCH);
 	function step() {
-		const now = machine.scheduler.nowCycles, deadline = machine.scheduler.nextDeadline();
+		const deadline = machine.scheduler.nextDeadline();
 		assert.notEqual(deadline, Number.MAX_SAFE_INTEGER);
 		machine.scheduler.advanceTo(deadline);
-		machine.geometryController.accrueCycles(deadline - now, deadline);
+
 		assert.equal(machine.scheduler.popDueTimer(), DEVICE_SERVICE_GEO);
 		machine.geometryController.onService(deadline);
 	}
@@ -134,7 +134,7 @@ test('SAT2 controller deadlines and restored pending result preserve sampling an
 	assert.equal(debt, 229, '108 work units and five result words use the installed clock');
 	const now = machine.scheduler.nowCycles;
 	machine.scheduler.advanceTo(now + debt - 1);
-	controller.accrueCycles(debt - 1, now + debt - 1);
+
 	assert.equal(memory.readU32(result), 0xdeadbeef);
 	assert.equal(memory.readIoU32(io.IO_GEO_STATUS), geo.GEO_STATUS_BUSY);
 	assert.equal(memory.readIoU32(io.IO_GEO_PROCESSED), 0);

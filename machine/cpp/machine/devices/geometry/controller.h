@@ -26,8 +26,7 @@ public:
 		DeviceScheduler& scheduler
 	);
 
-	void setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles);
-	void accrueCycles(int cycles, int64_t nowCycles);
+	void setTiming(int64_t cpuHz, int64_t workUnitsPerSec);
 	bool hasPendingWork() const;
 	uint32_t getPendingWorkUnits() const;
 	void onService(int64_t nowCycles);
@@ -49,10 +48,10 @@ private:
 	void onCommandDoorbell(int64_t nowCycles, uint32_t command);
 	void onCtrlWrite();
 	void start(int64_t nowCycles, uint32_t command);
-	void scheduleNextService(int64_t nowCycles);
+	void scheduleInterval(i64 deadline);
 	void serviceOverlap(int64_t nowCycles);
 	template<class Unit> void serviceRecords(Unit& unit, u32 completePhase, i64 nowCycles);
-	void chargeInterval(const MemoryWordCounters& memory, i64 workUnits);
+	i64 intervalCycles(const MemoryWordCounters& memory, i64 workUnits);
 	void onFaultAckWrite(u32 value);
 	void completeRecord(GeoJob& job);
 	void finishSuccess(uint32_t processed);
@@ -65,7 +64,7 @@ private:
 	int64_t m_cpuHz = 1;
 	int64_t m_workUnitsPerSec = 1;
 	int64_t m_workCarry = 0;
-	int64_t m_pendingCycles = 0;
+	int64_t m_serviceDeadline = 0;
 	std::array<u32, GEOMETRY_CONTROLLER_REGISTER_COUNT> m_registerWords{};
 	GeometryControllerPhase m_phase = GeometryControllerPhase::Idle;
 	std::optional<GeoJob> m_activeJob;

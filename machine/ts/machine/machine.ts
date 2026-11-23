@@ -123,15 +123,9 @@ export class Machine {
 
 	public refreshDeviceTimings(timing: MachineTiming, nowCycles: number): void {
 		this.systemController.setTiming(timing.cpuHz);
-		this.geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
+		this.geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec);
 		this.audioController.setTiming(timing.cpuHz, nowCycles);
 		this.gxGpu.setTiming(timing.cpuHz, nowCycles);
-	}
-
-	public advanceDevices(cycles: number): void {
-		const nextNow = this.scheduler.nowCycles + cycles;
-		this.geometryController.accrueCycles(cycles, nextNow);
-		this.scheduler.advanceTo(nextNow);
 	}
 
 	public runDeviceService(deviceKind: number): number {

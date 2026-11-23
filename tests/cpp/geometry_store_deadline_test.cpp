@@ -34,7 +34,7 @@ struct Result {
 	u32 sample, memory, pc, processed, phase;
 	i64 now, used, remaining;
 };
-Result runCase(bool native, bool crossing) {
+Result runCase(bool native, bool crossing, bool doorbell = false) {
 	constexpr u32 record = (DYNAMIC_RAM_BASE + 0x10000u) + 0x1000u, vertex = (DYNAMIC_RAM_BASE + 0x10000u) + 0x2000u, matrix = (DYNAMIC_RAM_BASE + 0x10000u) + 0x3000u, output = (DYNAMIC_RAM_BASE + 0x10000u) + 0x4000u;
 	test::Blua32TestImage image;
 	image.text.resize(2u * INSTRUCTION_BYTES);
@@ -42,7 +42,7 @@ Result runCase(bool native, bool crossing) {
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
 	image.functions = {{.firstWord = 0u, .wordCount = 2u, .maxStack = 2u}};
 	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
-	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, output + GEO_VERTEX2_BYTES - DYNAMIC_RAM_BASE);
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, output + GEO_OVERLAP2D_SUMMARY_BYTES - DYNAMIC_RAM_BASE);
 	const u32 entryPc = DYNAMIC_RAM_BASE + 0x8000u + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
 	IdleInput input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
@@ -84,11 +84,32 @@ Result runCase(bool native, bool crossing) {
 	memory.writeU32(record + GEO_XFORM2_RECORD_BYTES + GEO_XFORM2_RECORD_DST1_INDEX_OFFSET, GEO_INDEX_NONE);
 	for (const auto [i, word] : std::array<std::pair<u32, u32>, 6>{{{0, 0x10000u}, {1, 0}, {2, 0}, {3, 0}, {4, 0x10000u}, {5, 0}}}) memory.writeU32(matrix + i * 4u, word);
 	machine.scheduler.reset();
-	machine.geometryController.setTiming(PSX_CPU_FREQ_HZ, PSX_GEO_WORK_UNITS_PER_SEC, 0);
+	machine.geometryController.setTiming(PSX_CPU_FREQ_HZ, PSX_GEO_WORK_UNITS_PER_SEC);
 	for (const auto [addr, word] : std::array<std::pair<u32, u32>, 9>{{
 		{IO_GEO_SRC0, record}, {IO_GEO_SRC1, vertex}, {IO_GEO_SRC2, matrix}, {IO_GEO_DST0, output}, {IO_GEO_DST1, 0},
 		{IO_GEO_COUNT, 2}, {IO_GEO_STRIDE0, GEO_XFORM2_RECORD_BYTES}, {IO_GEO_STRIDE1, GEO_VERTEX2_BYTES}, {IO_GEO_STRIDE2, GEO_XFORM2_MATRIX_BYTES},
 	}}) memory.writeMappedWord(addr, word);
+	if (doorbell) {
+		memory.writeU32(output, 0xdeadbeefu);
+		memory.writeMappedWord(IO_GEO_DST1, output);
+		memory.writeMappedWord(IO_GEO_COUNT, 0u);
+		memory.writeMappedWord(IO_GEO_PARAM0, GEO_OVERLAP2D_MODE_FULL_PASS);
+		frame.registers.set(0, valueInteger(IO_GEO_CMD));
+		frame.registers.set(1, valueInteger(IO_CMD_GEO_OVERLAP2D_PASS));
+		FrameState budget; budget.cycleBudgetRemaining = 100;
+		require(runtime.cpuExecution.runInstruction(runtime, budget) == InstructionStepResult::Executed, "CPU actually rings GEO's doorbell");
+		require(machine.scheduler.nowCycles() == 3, "STORE completes at its charged edge");
+		require(machine.geometryController.captureState().pendingCycles == 4, "GEO charge begins at the doorbell, not the start of the CPU grant");
+		advanceRuntimeTime(runtime, 3);
+		require(memory.readU32(output) == 0xdeadbeefu && memory.readIoU32(IO_GEO_STATUS) == GEO_STATUS_BUSY,
+			"the summary is not published one cycle before the full write charge");
+		advanceRuntimeTime(runtime, 1);
+		require(memory.readU32(output) == 0u && memory.readIoU32(IO_GEO_STATUS) == GEO_STATUS_DONE
+			&& (memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GEO_DONE) != 0u, "the exact paid edge publishes the summary and IRQ");
+		return {memory.readU32(output), memory.readIoU32(IO_GEO_STATUS), frame.readControl(FrameField::Pc),
+			memory.readIoU32(IO_GEO_PROCESSED), machine.geometryController.captureState().overlap.phase,
+			machine.scheduler.nowCycles(), budget.activeCpuUsedCycles, budget.cycleBudgetRemaining};
+	}
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
 	runDueRuntimeTimers(runtime);
 	require(machine.geometryController.captureState().pendingCycles == 6, "first empty record pays six reads");
@@ -108,6 +129,7 @@ int main() {
 #else
 	std::puts("native-enabled=0 (both routes are scalar)");
 #endif
+	for (const bool native : {false, true}) require(runCase(native, false, true).now == 7, "MMIO launch ends after four paid cycles");
 	for (const bool crossing : {false, true}) {
 		const auto scalar = runCase(false, crossing), native = runCase(true, crossing);
 		std::printf("case=%s scalar=%08x native=%08x memory=%08x cycles=%lld/%lld remaining=%lld/%lld geo_phase=%u/%u processed=%u/%u pc=%08x/%08x now=%lld/%lld\n",

@@ -40,7 +40,7 @@ void testController(u32 count, bool abort) {
 	machine.resetDevices(); machine.scheduler.reset();
 	require(machine.cpu.heapAllocator().setFloor(bounds + 4u * IO_WORD_SIZE),
 		"GEO XFORM operands and bounds fit in public static RAM");
-	machine.geometryController.setTiming(PSX_CPU_FREQ_HZ, PSX_GEO_WORK_UNITS_PER_SEC, 0);
+	machine.geometryController.setTiming(PSX_CPU_FREQ_HZ, PSX_GEO_WORK_UNITS_PER_SEC);
 	const auto job = prepare(memory, count);
 	for (const auto [address, word] : std::array<std::pair<u32, u32>, 9>{{
 		{IO_GEO_SRC0, job.src0}, {IO_GEO_SRC1, job.src1}, {IO_GEO_SRC2, job.src2},
@@ -51,10 +51,10 @@ void testController(u32 count, bool abort) {
 	auto& controller = machine.geometryController;
 	u32 events = 0u;
 	const auto step = [&]() {
-		const i64 now = machine.scheduler.nowCycles(), deadline = machine.scheduler.nextDeadline();
+		const i64 deadline = machine.scheduler.nextDeadline();
 		require(deadline != std::numeric_limits<i64>::max(), "scheduled XFORM interval");
 		machine.scheduler.advanceTo(deadline);
-		controller.accrueCycles(static_cast<int>(deadline - now), deadline);
+
 		require(machine.scheduler.popDueTimer() == DEVICE_SERVICE_GEO, "GEO timer owns boundary");
 		controller.onService(deadline);
 		++events;
@@ -67,7 +67,7 @@ void testController(u32 count, bool abort) {
 	if (count == 64u) require(pending.xform.pendingMemory.ramWords == 272u, "bounded 140 input and 132 future output words");
 	const i64 now = machine.scheduler.nowCycles();
 	machine.scheduler.advanceTo(now + pending.pendingCycles - 1);
-	controller.accrueCycles(static_cast<int>(pending.pendingCycles - 1), now + pending.pendingCycles - 1);
+
 	require(memory.readU32(vertices + 8u) == 0x50000u && memory.readIoU32(IO_GEO_PROCESSED) == 0u, "one cycle before deadline no output is visible");
 	if (abort) {
 		memory.writeMappedWord(IO_GEO_CTRL, GEO_CTRL_ABORT);

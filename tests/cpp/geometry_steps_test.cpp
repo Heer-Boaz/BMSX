@@ -129,10 +129,9 @@ int main() {
 		memory.writeMappedWord(IO_GEO_CMD, job.cmd);
 		auto& controller = machine.geometryController;
 		const auto advance = [&](i64 cycles) {
-			machine.advanceDevices(static_cast<int>(cycles));
-			controller.onService(machine.scheduler.nowCycles());
+			machine.scheduler.advanceTo(machine.scheduler.nowCycles() + cycles);
+			while (machine.scheduler.hasDueTimer()) machine.runDeviceService(machine.scheduler.popDueTimer());
 		};
-		controller.onService(0);
 		require(controller.captureState().pendingCycles == 4, "initial summary pays four write cycles before publication");
 		advance(4);
 		require(controller.captureState().pendingCycles == 26, "one bounded read group samples the instance and pair headers");

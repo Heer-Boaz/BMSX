@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
 		machine.scheduler.reset();
 		machine.resetDevices();
 		auto& geometry = machine.geometryController;
-		geometry.setTiming(1, 1, 0);
+		geometry.setTiming(1, 1);
 		for (unsigned i = 0; i < count; i++) {
 			bmsx::u32 address, word;
 			input >> address >> word;
@@ -43,17 +43,17 @@ int main(int argc, char** argv) {
 			if (delta > 0) {
 				const auto status = memory.readMappedWord(bmsx::IO_GEO_STATUS);
 				const auto processed = memory.readMappedWord(bmsx::IO_GEO_PROCESSED);
-				machine.advanceDevices(delta - 1);
+				machine.scheduler.advanceTo(machine.scheduler.nowCycles() + delta - 1);
 				if (memory.readMappedWord(bmsx::IO_GEO_STATUS) != status || memory.readMappedWord(bmsx::IO_GEO_PROCESSED) != processed)
 					throw std::runtime_error("GEO published before its event deadline");
-				machine.advanceDevices(1);
+				machine.scheduler.advanceTo(machine.scheduler.nowCycles() + 1);
 			}
 			while (machine.scheduler.hasDueTimer()) machine.runDeviceService(machine.scheduler.popDueTimer());
 		};
 		bmsx::u32 firstRecordPairs;
 		input >> firstRecordPairs;
 		if (firstRecordPairs != 0u)
-			geometry.setTiming(bmsx::PSX_MACHINE_SPEC.cpuFreqHz, bmsx::PSX_MACHINE_SPEC.geoWorkUnitsPerSec, 0);
+			geometry.setTiming(bmsx::PSX_MACHINE_SPEC.cpuFreqHz, bmsx::PSX_MACHINE_SPEC.geoWorkUnitsPerSec);
 		bmsx::u32 pairCounterSeed;
 		input >> pairCounterSeed;
 		if (pairCounterSeed != 0u) {

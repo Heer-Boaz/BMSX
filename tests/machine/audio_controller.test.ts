@@ -728,7 +728,7 @@ for (const count of [20, 4]) {
 			memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_DMA_READ);
 			const deadlines: number[] = [];
 			while (memory.readIoU32(IO_DMA0_TRANSFER_COUNT) !== 0) {
-				machine.advanceDevices(scheduler.nextDeadline() - scheduler.nowCycles);
+				scheduler.advanceTo(scheduler.nextDeadline());
 				while (scheduler.hasDueTimer()) {
 					const kind = scheduler.popDueTimer();
 					machine.runDeviceService(kind);
@@ -745,7 +745,7 @@ for (const count of [20, 4]) {
 			assert.equal(pending.scheduledWords, 4);
 			const due = scheduler.nowCycles + pending.scheduledCycles;
 			assert.equal(due, count === 20 ? 1194 : 649);
-			machine.advanceDevices(due - (stopBeforeDeadline ? 1 : 0) - scheduler.nowCycles);
+			scheduler.advanceTo(due - (stopBeforeDeadline ? 1 : 0));
 			assert.equal(scheduler.hasDueTimer(), !stopBeforeDeadline);
 			// No capture/status read or timer dispatch: CONTROL itself must service due work.
 			memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, 0);

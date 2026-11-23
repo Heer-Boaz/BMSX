@@ -93,7 +93,7 @@ export class GeometryController {
 	private cpuHz = 1;
 	private workUnitsPerSec = 1;
 	private workCarry = 0;
-	private pendingCycles = 0;
+	private serviceDeadline = 0;
 	private readonly xform2: GeometryXform2Unit;
 	private readonly sat2: GeometrySat2Unit;
 	private readonly overlap2d: GeometryOverlap2dUnit;
@@ -155,22 +155,9 @@ export class GeometryController {
 		}
 	}
 
-	public setTiming(cpuHz: number, workUnitsPerSec: number, nowCycles: number): void {
+	public setTiming(cpuHz: number, workUnitsPerSec: number): void {
 		this.cpuHz = cpuHz;
 		this.workUnitsPerSec = workUnitsPerSec;
-		if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY) {
-			this.workCarry = 0;
-			this.pendingCycles = 0;
-		}
-		this.scheduleNextService(nowCycles);
-	}
-
-	public accrueCycles(cycles: number, nowCycles: number): void {
-		if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY || cycles <= 0) {
-			return;
-		}
-		this.pendingCycles = cycles >= this.pendingCycles ? 0 : this.pendingCycles - cycles;
-		this.scheduleNextService(nowCycles);
 	}
 
 	public hasPendingWork(): boolean {
@@ -186,10 +173,6 @@ export class GeometryController {
 	}
 
 	public onService(nowCycles: number): void {
-		if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY) {
-			this.scheduleNextService(nowCycles);
-			return;
-		}
 		switch (this.activeJob!.cmd) {
 			case IO_CMD_GEO_XFORM2_BATCH: this.serviceRecords(this.xform2, GeometryXform2Phase.Complete, nowCycles); break;
 			case IO_CMD_GEO_SAT2_BATCH: this.serviceRecords(this.sat2, GeometrySat2Phase.Complete, nowCycles); break;
@@ -200,7 +183,7 @@ export class GeometryController {
 
 	private serviceRecords(unit: GeometryXform2Unit | GeometrySat2Unit, completePhase: number, nowCycles: number): void {
 		const job = this.activeJob!;
-		while (this.pendingCycles === 0) {
+		for (;;) {
 			const progress = unit.progress();
 			if (progress.phase === completePhase) {
 				if (progress.pendingFault !== 0) {
@@ -212,29 +195,33 @@ export class GeometryController {
 				unit.beginJob();
 			}
 			unit.processStep(job);
-			this.chargeInterval(progress.pendingMemory, progress.pendingWorkUnits);
+			const cycles = this.intervalCycles(progress.pendingMemory, progress.pendingWorkUnits);
+			if (cycles !== 0) {
+				this.scheduleInterval(nowCycles + cycles);
+				return;
+			}
 		}
-		this.scheduleNextService(nowCycles);
 	}
 
-	private chargeInterval(memory: MemoryWordCounters, workUnits: number): void {
-		this.pendingCycles += memory.ramWords * PSX_DMA_RAM_CYCLES_PER_WORD
+	private intervalCycles(memory: MemoryWordCounters, workUnits: number): number {
+		let interval = memory.ramWords * PSX_DMA_RAM_CYCLES_PER_WORD
 			+ memory.systemRomWords * PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD
 			+ memory.cartridgeWords * PSX_DMA_CART_ROM_CYCLES_PER_WORD + memory.otherWords;
 		if (workUnits !== 0) {
 			const cycles = cyclesUntilBudgetUnits(this.cpuHz, this.workUnitsPerSec, this.workCarry, workUnits);
 			this.workCarry += cycles * this.workUnitsPerSec - workUnits * this.cpuHz;
-			this.pendingCycles += cycles;
+			interval += cycles;
 		}
+		return interval;
 	}
 
 	private serviceOverlap(nowCycles: number): void {
 		const job = this.activeJob!;
-		while (this.pendingCycles === 0) {
+		for (;;) {
 			const initialPhase = this.overlap2d.readProgress().phase;
 			const readingHeaders = initialPhase === GeometryOverlap2dPhase.Record || initialPhase === GeometryOverlap2dPhase.Pair
 				|| initialPhase === GeometryOverlap2dPhase.Initialized;
-			let groupWords = 0;
+			let interval = 0, groupWords = 0;
 			do {
 				const publishing = this.overlap2d.readProgress().phase === GeometryOverlap2dPhase.Publish;
 				const fault = this.overlap2d.processStep(job);
@@ -258,11 +245,14 @@ export class GeometryController {
 				groupWords += memory.ramWords + memory.systemRomWords + memory.cartridgeWords + memory.otherWords;
 				const units = work.axes + work.projectionVertices + work.averageVertices + work.clipVertices
 					+ work.clipEdges + work.squareRoots + work.divisions;
-				this.chargeInterval(memory, units);
+				interval += this.intervalCycles(memory, units);
 			} while (readingHeaders && this.overlap2d.readProgress().phase === GeometryOverlap2dPhase.Pair
 				&& groupWords + GEO_OVERLAP_PAIR_HEADER_WORDS <= DMA_BURST_WORD_CAPACITY);
+			if (interval !== 0) {
+				this.scheduleInterval(nowCycles + interval);
+				return;
+			}
 		}
-		this.scheduleNextService(nowCycles);
 	}
 
 	public reset(): void {
@@ -271,7 +261,6 @@ export class GeometryController {
 		this.overlap2d.reset();
 		this.phase = GEOMETRY_CONTROLLER_PHASE_IDLE;
 		this.workCarry = 0;
-		this.pendingCycles = 0;
 		this.activeJob = null;
 		this.supervisorQuiesceRequested = false;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
@@ -293,7 +282,8 @@ export class GeometryController {
 			sat: this.sat2.captureState(),
 			overlap: this.overlap2d.captureState(),
 			workCarry: this.workCarry,
-			pendingCycles: this.pendingCycles,
+			pendingCycles: this.phase === GEOMETRY_CONTROLLER_PHASE_BUSY
+				? Math.max(0, this.serviceDeadline - this.scheduler.currentNowCycles()) : 0,
 			supervisorQuiesceRequested: this.supervisorQuiesceRequested,
 		};
 	}
@@ -310,9 +300,9 @@ export class GeometryController {
 		this.sat2.restoreState(state.sat);
 		this.overlap2d.restoreState(state.overlap);
 		this.workCarry = state.workCarry;
-		this.pendingCycles = state.pendingCycles;
 		this.supervisorQuiesceRequested = state.supervisorQuiesceRequested;
-		this.scheduleNextService(nowCycles);
+		if (this.phase === GEOMETRY_CONTROLLER_PHASE_BUSY) this.scheduleInterval(nowCycles + state.pendingCycles);
+		else this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 	}
 
 	public beginSupervisorQuiesce(): void {
@@ -404,24 +394,18 @@ export class GeometryController {
 			return;
 		}
 		this.workCarry = 0;
-		this.pendingCycles = 0;
-		if (job.cmd === IO_CMD_GEO_OVERLAP2D_PASS) {
-			const memory = this.overlap2d.readProgress().pendingMemory;
-			this.chargeInterval(memory, 0);
-		}
+		const initialInterval = job.cmd === IO_CMD_GEO_OVERLAP2D_PASS
+			? this.intervalCycles(this.overlap2d.readProgress().pendingMemory, 0) : 0;
 		this.activeJob = job;
 		this.phase = GEOMETRY_CONTROLLER_PHASE_BUSY;
 		this.registerWords[GEO_REGISTER_STATUS] = GEO_STATUS_BUSY;
 		this.memory.writeIoU32(IO_GEO_STATUS, this.registerWords[GEO_REGISTER_STATUS]!);
-		this.scheduleNextService(nowCycles);
+		this.scheduleInterval(nowCycles + initialInterval);
 	}
 
-	private scheduleNextService(nowCycles: number): void {
-		if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY) {
-			this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-			return;
-		}
-		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles + this.pendingCycles);
+	private scheduleInterval(deadline: number): void {
+		this.serviceDeadline = deadline;
+		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, deadline);
 	}
 
 	private completeRecord(job: GeometryJobState): void {
@@ -437,7 +421,6 @@ export class GeometryController {
 		this.phase = GEOMETRY_CONTROLLER_PHASE_DONE;
 		this.activeJob = null;
 		this.workCarry = 0;
-		this.pendingCycles = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.latchResultRegisters(GEO_STATUS_DONE, processed, 0);
 		this.irq.raise(IRQ_GEO_DONE);
@@ -448,7 +431,6 @@ export class GeometryController {
 		this.phase = GEOMETRY_CONTROLLER_PHASE_ERROR;
 		this.activeJob = null;
 		this.workCarry = 0;
-		this.pendingCycles = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.registerWords[GEO_REGISTER_STATUS] = GEO_STATUS_DONE | GEO_STATUS_ERROR;
 		this.registerWords[GEO_REGISTER_FAULT] = packFault(code, recordIndex);
@@ -462,7 +444,6 @@ export class GeometryController {
 		this.phase = GEOMETRY_CONTROLLER_PHASE_REJECTED;
 		this.activeJob = null;
 		this.workCarry = 0;
-		this.pendingCycles = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.latchResultRegisters(
 			GEO_STATUS_REJECTED,

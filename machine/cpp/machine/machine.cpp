@@ -64,15 +64,9 @@ void Machine::resetDevices() {
 
 void Machine::refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles) {
 	systemController.setTiming(timing.cpuHz);
-	geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
+	geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec);
 	audioController.setTiming(timing.cpuHz, nowCycles);
 	gxGpu.setTiming(timing.cpuHz, nowCycles);
-}
-
-void Machine::advanceDevices(int cycles) {
-	const i64 nextNow = scheduler.nowCycles() + cycles;
-	geometryController.accrueCycles(cycles, nextNow);
-	scheduler.advanceTo(nextNow);
 }
 
 u32 Machine::runDeviceService(uint8_t deviceKind) {

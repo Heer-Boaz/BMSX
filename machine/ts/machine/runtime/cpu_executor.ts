@@ -355,7 +355,7 @@ export function advanceRuntimeTime(runtime: Runtime, cycles: number): boolean {
 	while (scheduler.nowCycles < targetCycle) {
 		const deadline = scheduler.nextDeadline();
 		const nextCycle = deadline < targetCycle ? deadline : targetCycle;
-		machine.advanceDevices(nextCycle - scheduler.nowCycles);
+		scheduler.advanceTo(nextCycle);
 		runDueRuntimeTimers(runtime);
 	}
 	return runtime.vblank.tickCompleted;

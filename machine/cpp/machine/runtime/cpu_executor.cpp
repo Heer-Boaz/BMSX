@@ -344,7 +344,7 @@ bool advanceRuntimeTime(Runtime& runtime, int cycles) {
 	// edges retire before advancing the rest of the completed instruction.
 	while (scheduler.nowCycles() < targetCycle) {
 		const i64 nextCycle = std::min(scheduler.nextDeadline(), targetCycle);
-		machine.advanceDevices(static_cast<int>(nextCycle - scheduler.nowCycles()));
+		scheduler.advanceTo(nextCycle);
 		runDueRuntimeTimers(runtime);
 	}
 	return runtime.vblank.tickCompleted();

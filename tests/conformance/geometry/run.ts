@@ -40,10 +40,10 @@ function advanceGeometryEdge(): void {
 	const delta = deadline - scheduler.nowCycles;
 	if (delta > 0) {
 		const status = memory.readMappedWord(IO_GEO_STATUS), processed = memory.readMappedWord(IO_GEO_PROCESSED);
-		machine.advanceDevices(delta - 1);
+		machine.scheduler.advanceTo(machine.scheduler.nowCycles + (delta - 1));
 		assert.equal(memory.readMappedWord(IO_GEO_STATUS), status, 'status is not published before the edge');
 		assert.equal(memory.readMappedWord(IO_GEO_PROCESSED), processed, 'progress is not published before the edge');
-		machine.advanceDevices(1);
+		machine.scheduler.advanceTo(machine.scheduler.nowCycles + (1));
 	}
 	while (scheduler.hasDueTimer()) machine.runDeviceService(scheduler.popDueTimer());
 }
@@ -51,11 +51,11 @@ for (let i = 0; i < vectors.length; i++) {
 	const v = vectors[i];
 	machine.scheduler.reset();
 	machine.resetDevices();
-	machine.geometryController.setTiming(1, 1, 0);
+	machine.geometryController.setTiming(1, 1);
 	for (const [address, word] of v.writes) memory.writeMappedWord(address, word);
 	const counterWords: number[] = [];
 	if (v.firstRecordPairs !== 0) {
-		machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec, 0);
+		machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec);
 	}
 	if (v.pairCounterSeed !== 0) {
 		const state = machine.geometryController.captureState();

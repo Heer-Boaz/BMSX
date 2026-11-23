@@ -122,8 +122,8 @@ function overlapMachine() {
 	return { memory, job, machine, advance(cycles: number) {
 		now += cycles;
 		machine.scheduler.advanceTo(now);
-		machine.geometryController.accrueCycles(cycles, now);
-		machine.geometryController.onService(now);
+
+		while (machine.scheduler.hasDueTimer()) machine.runDeviceService(machine.scheduler.popDueTimer());
 		return now;
 	} };
 }
@@ -131,7 +131,6 @@ function overlapMachine() {
 test('GEO retains BUSY, progress and contact until both compute and output deadlines are paid', () => {
 	const { memory, job, machine, advance } = overlapMachine();
 	const controller = machine.geometryController;
-	controller.onService(0);
 	assert.equal(controller.captureState().pendingCycles, 4, 'initial summary waits for four write cycles');
 	advance(4);
 	assert.equal(controller.captureState().pendingCycles, 26, 'the bounded header group reads the two instances, bounds and shape headers');
@@ -169,7 +168,6 @@ test('GEO retains BUSY, progress and contact until both compute and output deadl
 test('GEO ABORT discards an unpaid contact without publishing its result or progress', () => {
 	const { memory, job, machine, advance } = overlapMachine();
 	const controller = machine.geometryController;
-	controller.onService(0);
 	assert.equal(controller.captureState().pendingCycles, 4, 'initial summary waits for four write cycles');
 	advance(4);
 	advance(controller.captureState().pendingCycles);
@@ -190,7 +188,6 @@ test('GEO defers a piece fault until the already sampled operands have been paid
 	const shapeB = memory.readU32(job.src0 + geo.GEO_OVERLAP2D_INSTANCE_BYTES + geo.GEO_OVERLAP2D_INSTANCE_SHAPE_OFFSET);
 	memory.writeU32(shapeB + geo.GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET, 0x40000000);
 	const controller = machine.geometryController;
-	controller.onService(0);
 	assert.equal(controller.captureState().pendingCycles, 4, 'initial summary waits for four write cycles');
 	advance(4);
 	advance(controller.captureState().pendingCycles);

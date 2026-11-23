@@ -1214,10 +1214,10 @@ void testGeoDmaSameCycleRuntimeRestore() {
 	const auto advance = [&](bmsx::i64 target) {
 		while (machine.scheduler.nextDeadline() <= target) {
 			const auto deadline = machine.scheduler.nextDeadline();
-			machine.advanceDevices(static_cast<int>(deadline - machine.scheduler.nowCycles()));
+			machine.scheduler.advanceTo(deadline);
 			while (machine.scheduler.hasDueTimer()) machine.runDeviceService(machine.scheduler.popDueTimer());
 		}
-		machine.advanceDevices(static_cast<int>(target - machine.scheduler.nowCycles()));
+		machine.scheduler.advanceTo(target);
 	};
 	advance(6);
 	memory.writeMappedWord(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);

@@ -72,7 +72,7 @@ function controllerCase(count = 2) {
 	}, PSX_MACHINE_SPEC);
 	machine.resetDevices(); machine.scheduler.reset();
 	assert.ok(machine.cpu.heapAllocator.setFloor(GEO_BUFFERS + 0x3000));
-	machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec, 0);
+	machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec);
 	for (const [address, word] of [
 		[io.IO_GEO_SRC0, f.job.src0], [io.IO_GEO_SRC1, f.job.src1], [io.IO_GEO_SRC2, f.job.src2],
 		[io.IO_GEO_DST0, f.job.dst0], [io.IO_GEO_DST1, f.job.dst1], [io.IO_GEO_COUNT, 1],
@@ -80,10 +80,10 @@ function controllerCase(count = 2) {
 	]) f.memory.writeMappedWord(address, word);
 	f.memory.writeMappedWord(io.IO_GEO_CMD, geo.IO_CMD_GEO_XFORM2_BATCH);
 	function step() {
-		const now = machine.scheduler.nowCycles, deadline = machine.scheduler.nextDeadline();
+		const deadline = machine.scheduler.nextDeadline();
 		assert.notEqual(deadline, Number.MAX_SAFE_INTEGER);
 		machine.scheduler.advanceTo(deadline);
-		machine.geometryController.accrueCycles(deadline - now, deadline);
+
 		assert.equal(machine.scheduler.popDueTimer(), DEVICE_SERVICE_GEO);
 		machine.geometryController.onService(deadline);
 	}
@@ -98,7 +98,7 @@ test('XFORM controller pays the whole bounded record before publication, includi
 	assert.equal(controller.captureState().pendingCycles, 29);
 	assert.equal(controller.captureState().xform.phase, GeometryXform2Phase.Publish);
 	const now = machine.scheduler.nowCycles;
-	machine.scheduler.advanceTo(now + 28); controller.accrueCycles(28, now + 28);
+	machine.scheduler.advanceTo(now + 28);
 	assert.equal(memory.readU32(vertices + 8), 0x50000);
 	assert.equal(memory.readIoU32(io.IO_GEO_PROCESSED), 0);
 	const checkpoint = controller.captureState(); controller.reset(); controller.restoreState(checkpoint, machine.scheduler.nowCycles);
@@ -113,7 +113,7 @@ test('XFORM controller abort one cycle before publication discards the pending b
 	const { memory, vertices, machine, step } = controllerCase();
 	step();
 	const controller = machine.geometryController, now = machine.scheduler.nowCycles;
-	machine.scheduler.advanceTo(now + 28); controller.accrueCycles(28, now + 28);
+	machine.scheduler.advanceTo(now + 28);
 	memory.writeMappedWord(io.IO_GEO_CTRL, geo.GEO_CTRL_ABORT);
 	assert.equal(memory.readIoU32(io.IO_GEO_STATUS), geo.GEO_STATUS_DONE | geo.GEO_STATUS_ERROR);
 	assert.equal(memory.readIoU32(io.IO_GEO_PROCESSED), 0);

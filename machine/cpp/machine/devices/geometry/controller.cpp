@@ -86,23 +86,9 @@ void GeometryController::onFaultAckWriteThunk(void* context, uint32_t, u32 value
 	controller->onFaultAckWrite(value);
 }
 
-void GeometryController::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles) {
+void GeometryController::setTiming(int64_t cpuHz, int64_t workUnitsPerSec) {
 	m_cpuHz = cpuHz;
 	m_workUnitsPerSec = workUnitsPerSec;
-	if (m_phase != GeometryControllerPhase::Busy) {
-		m_workCarry = 0;
-		m_pendingCycles = 0;
-	}
-	scheduleNextService(nowCycles);
-}
-
-void GeometryController::accrueCycles(int cycles, int64_t nowCycles) {
-	if (m_phase != GeometryControllerPhase::Busy || cycles <= 0) {
-		return;
-	}
-
-	m_pendingCycles = cycles >= m_pendingCycles ? 0 : m_pendingCycles - cycles;
-	scheduleNextService(nowCycles);
 }
 
 bool GeometryController::hasPendingWork() const {
@@ -120,7 +106,6 @@ void GeometryController::reset() {
 	m_xform2.reset();
 	m_sat2.reset();
 	m_overlap2d.reset();
-	m_pendingCycles = 0;
 	m_phase = GeometryControllerPhase::Idle;
 	m_workCarry = 0;
 	m_activeJob.reset();
@@ -174,10 +159,6 @@ void GeometryController::onCommandDoorbell(int64_t nowCycles, uint32_t command) 
 }
 
 void GeometryController::onService(int64_t nowCycles) {
-	if (m_phase != GeometryControllerPhase::Busy) {
-		scheduleNextService(nowCycles);
-		return;
-	}
 	switch (m_activeJob->cmd) {
 	case IO_CMD_GEO_XFORM2_BATCH:
 		serviceRecords(m_xform2, static_cast<u32>(GeometryXform2Phase::Complete), nowCycles);
@@ -196,7 +177,7 @@ void GeometryController::onService(int64_t nowCycles) {
 
 template<class Unit> void GeometryController::serviceRecords(Unit& unit, u32 completePhase, i64 nowCycles) {
 	GeoJob& job = *m_activeJob;
-	while (m_pendingCycles == 0) {
+	for (;;) {
 		const auto& progress = unit.progress();
 		if (progress.phase == completePhase) {
 			if (progress.pendingFault != 0u) {
@@ -208,27 +189,32 @@ template<class Unit> void GeometryController::serviceRecords(Unit& unit, u32 com
 			unit.beginJob();
 		}
 		unit.processStep(job);
-		chargeInterval(progress.pendingMemory, progress.pendingWorkUnits);
+		const i64 cycles = intervalCycles(progress.pendingMemory, progress.pendingWorkUnits);
+		if (cycles != 0) {
+			scheduleInterval(nowCycles + cycles);
+			return;
+		}
 	}
-	scheduleNextService(nowCycles);
 }
 
-void GeometryController::chargeInterval(const MemoryWordCounters& memory, i64 workUnits) {
-	m_pendingCycles += static_cast<i64>(memory.ramWords) * PSX_DMA_RAM_CYCLES_PER_WORD
+i64 GeometryController::intervalCycles(const MemoryWordCounters& memory, i64 workUnits) {
+	i64 interval = static_cast<i64>(memory.ramWords) * PSX_DMA_RAM_CYCLES_PER_WORD
 		+ static_cast<i64>(memory.systemRomWords) * PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD
 		+ static_cast<i64>(memory.cartridgeWords) * PSX_DMA_CART_ROM_CYCLES_PER_WORD + memory.otherWords;
 	if (workUnits != 0) {
 		const i64 cycles = cyclesUntilBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, workUnits);
 		m_workCarry += cycles * m_workUnitsPerSec - workUnits * m_cpuHz;
-		m_pendingCycles += cycles;
+		interval += cycles;
 	}
+	return interval;
 }
 
 void GeometryController::serviceOverlap(i64 nowCycles) {
 	GeoJob& job = *m_activeJob;
-	while (m_pendingCycles == 0) {
+	for (;;) {
 		const u32 initialPhase = m_overlap2d.progress().phase;
 		const bool readingHeaders = initialPhase == 0u || initialPhase == 1u || initialPhase == 5u;
+		i64 interval = 0;
 		u32 groupWords = 0u;
 		do {
 			const bool publishing = m_overlap2d.progress().phase == 4u;
@@ -254,11 +240,14 @@ void GeometryController::serviceOverlap(i64 nowCycles) {
 			groupWords += memory.ramWords + memory.systemRomWords + memory.cartridgeWords + memory.otherWords;
 			const i64 units = static_cast<i64>(work.axes) + work.projectionVertices + work.averageVertices + work.clipVertices
 				+ work.clipEdges + work.squareRoots + work.divisions;
-			chargeInterval(memory, units);
+			interval += intervalCycles(memory, units);
 		} while (readingHeaders && m_overlap2d.progress().phase == 1u
 			&& groupWords + GEO_OVERLAP_PAIR_HEADER_WORDS <= DMA_BURST_WORD_CAPACITY);
+		if (interval != 0) {
+			scheduleInterval(nowCycles + interval);
+			return;
+		}
 	}
-	scheduleNextService(nowCycles);
 }
 
 void GeometryController::start(int64_t nowCycles, uint32_t command) {
@@ -298,16 +287,13 @@ void GeometryController::start(int64_t nowCycles, uint32_t command) {
 		return;
 	}
 	m_workCarry = 0;
-	m_pendingCycles = 0;
-	if (job.cmd == IO_CMD_GEO_OVERLAP2D_PASS) {
-		const auto& words = m_overlap2d.progress().pendingMemory;
-		chargeInterval(words, 0);
-	}
+	const i64 initialInterval = job.cmd == IO_CMD_GEO_OVERLAP2D_PASS
+		? intervalCycles(m_overlap2d.progress().pendingMemory, 0) : 0;
 	m_activeJob = job;
 	m_phase = GeometryControllerPhase::Busy;
 	m_registerWords[GEO_REGISTER_STATUS] = GEO_STATUS_BUSY;
 	m_memory.writeIoU32(IO_GEO_STATUS, m_registerWords[GEO_REGISTER_STATUS]);
-	scheduleNextService(nowCycles);
+	scheduleInterval(nowCycles + initialInterval);
 }
 
 void GeometryController::onFaultAckWrite(u32 value) {
@@ -328,12 +314,9 @@ void GeometryController::onFaultAckWrite(u32 value) {
 	}
 }
 
-void GeometryController::scheduleNextService(int64_t nowCycles) {
-	if (m_phase != GeometryControllerPhase::Busy) {
-		m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-		return;
-	}
-	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles + m_pendingCycles);
+void GeometryController::scheduleInterval(i64 deadline) {
+	m_serviceDeadline = deadline;
+	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, deadline);
 }
 
 void GeometryController::completeRecord(GeoJob& job) {
@@ -346,7 +329,6 @@ void GeometryController::completeRecord(GeoJob& job) {
 }
 
 void GeometryController::finishSuccess(uint32_t processed) {
-	m_pendingCycles = 0;
 	m_phase = GeometryControllerPhase::Done;
 	m_activeJob.reset();
 	m_workCarry = 0;
@@ -357,7 +339,6 @@ void GeometryController::finishSuccess(uint32_t processed) {
 }
 
 void GeometryController::finishError(uint32_t code, uint32_t recordIndex) {
-	m_pendingCycles = 0;
 	m_phase = GeometryControllerPhase::Error;
 	m_activeJob.reset();
 	m_workCarry = 0;
@@ -371,7 +352,6 @@ void GeometryController::finishError(uint32_t code, uint32_t recordIndex) {
 }
 
 void GeometryController::finishRejected(uint32_t code) {
-	m_pendingCycles = 0;
 	m_phase = GeometryControllerPhase::Rejected;
 	m_activeJob.reset();
 	m_workCarry = 0;
