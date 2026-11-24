@@ -86,7 +86,7 @@ private:
 	sljit_jump* emitArrayRead(NativeBlockExitSite&, bool routeOutside = false);
 	sljit_jump* emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&, bool routeOutside);
 	void emitOwnIndexRead(int base, NativeBlockExitSite&, std::optional<ValueTag> keyTag = {});
-	void emitOwnIndexStore(int value, NativeNilValue, NativeBlockExitSite&, NativeHashStore key);
+	void emitOwnIndexStore(int value, NativeBlockExitSite&, NativeHashStore key);
 	enum class StoreBarrierRecord : u8 { Table, ClosedUpvalue, Global };
 	void emitStoreBarrier(int value, NativeGcBarrier, StoreBarrierRecord, NativeBlockExitSite&);
 	void emitStoreBarriers();

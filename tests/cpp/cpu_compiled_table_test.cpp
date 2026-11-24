@@ -1829,6 +1829,7 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 		frame.registers.set(3, valueNil());
 		frame.setTop(receiverSlot + 1);
 		receiver.setInteger(1, valueInteger(61));
+		receiver.setMetatableAddress(lane.createTable(0, 1).address());
 		std::array<Value, 5> keys;
 		for (size_t i = 0; i < keys.size(); ++i) {
 			keys[i] = valueTable(lane.createTable().address());
@@ -1930,13 +1931,19 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
 		&& isNil(receiver.get(inserted)) && receiver.get(grows) == raw && cpu.luaHeap().usedBytes() == bytes + 4 * charge,
 		"a nil value removes the colliding mapping without releasing its reserved slot");
+	start(keysSlot + 3, valueNil());
+	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
+		&& isNil(receiver.get(inserted)) && isNil(cpu.readFrameRegister(0, 9)),
+		"nil to the missing identity returns through the same native suffix");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(writeExits == warmExits, "a setter-free metatable permits insertion, growth, deletion and a missing nil write");
+#endif
 	requireParity(native, scalar);
 
 	for (auto* machine : {&native, &scalar}) {
 		auto& lane = machine->cpu;
-		auto meta = lane.createTable(0, 1);
-		meta.setStringKey(lane.stringPool().intern("__newindex"), lane.readFrameRegister(0, methodSlot));
-		asTable(lane.readFrameRegister(0, receiverSlot), lane.gcHeap()).setMetatableAddress(meta.address());
+		const auto meta = asTable(lane.readFrameRegister(0, receiverSlot), lane.gcHeap()).metatableAddress();
+		TableRecord(lane.gcHeap(), meta).setStringKey(lane.stringPool().intern("__newindex"), lane.readFrameRegister(0, methodSlot));
 	}
 	start(keysSlot + 3, raw);
 	// An implicit call copies its three arguments from outside the shared stack.
@@ -1979,6 +1986,7 @@ void nativeArrayStoresFollowHistorySessions() {
 	auto& memory = machine.memory;
 	auto& watches = memory.ramWriteWatches();
 	auto table = cpu.createTable(4096, 0);
+	table.setMetatableAddress(cpu.createTable().address());
 	auto& frame = *cpu.activeThread()->currentFrame;
 	frame.registers.set(0, valueTable(table.address()));
 	frame.registers.set(2, valueInteger(101));
@@ -2034,6 +2042,16 @@ void nativeArrayStoresFollowHistorySessions() {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(storeExits == before + 1, "disabling history restores the unobserved native route");
 #endif
+	auto meta = TableRecord(cpu.gcHeap(), table.metatableAddress());
+	auto destination = cpu.createTable(1, 0);
+	meta.setStringKey(cpu.stringPool().intern("__newindex"), valueTable(destination.address()));
+	table.setInteger(1, valueNil());
+	require(cpu.runUntilDepth(0, grant + TABLE_INDEX_VISIT_CYCLES) == RunResult::Yielded
+		&& cpu.readFramePc(0) == pc && isNil(table.getInteger(1)) && destination.getInteger(1) == valueInteger(101),
+		"the installed array store sees a newly installed __newindex and forwards the missing element");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(storeExits == before + 2, "installing the setter takes exactly one semantic store exit");
+#endif
 #endif
 }
 
@@ -2057,7 +2075,11 @@ void nativeIntegerGrowthReturnsWithinTheGrant() {
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu;
 		auto dynamic = cpu.createTable(1, 0), immediate = cpu.createTable(1, 0), signedHash = cpu.createTable(1, 1);
-		for (auto* table : {&dynamic, &immediate, &signedHash}) table->setInteger(1, retained);
+		const auto meta = cpu.createTable();
+		for (auto* table : {&dynamic, &immediate, &signedHash}) {
+			table->setInteger(1, retained);
+			table->setMetatableAddress(meta.address());
+		}
 		signedHash.setInteger(-1, valueInteger(73));
 		auto& frame = *cpu.activeThread()->currentFrame;
 		frame.registers.set(0, valueTable(dynamic.address()));

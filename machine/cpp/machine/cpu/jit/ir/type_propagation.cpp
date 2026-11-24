@@ -259,16 +259,15 @@ struct NativeTypePropagation::Transfer {
 					type->tag == ValueTag::Nil ? NativeNilValue::Nil : NativeNilValue::Present,
 					type->tag == ValueTag::Nil ? NativeArrayLengthEffect::RetreatAtBoundary : NativeArrayLengthEffect::AdvanceAtBoundary};
 			}
-			const bool canStoreNonNil = op.store.nilValue != NativeNilValue::Nil;
 			if (op.keyKind == NativeTableKey::Field)
 				op.store.hash = NativeHashStore::String;
 			else if (op.keyKind == NativeTableKey::Integer || op.indexType == NativeTableIndexType::Integer) {
-				if (canStoreNonNil) op.store.hash = NativeHashStore::Integer;
+				op.store.hash = NativeHashStore::Integer;
 			} else if (op.indexType == NativeTableIndexType::String)
 				op.store.hash = NativeHashStore::String;
 			else if (op.indexType == NativeTableIndexType::Table) {
-				if (canStoreNonNil) op.store.hash = NativeHashStore::Identity;
-			} else if (!key) op.store.hash = canStoreNonNil ? NativeHashStore::Index : NativeHashStore::String;
+				op.store.hash = NativeHashStore::Identity;
+			} else if (!key) op.store.hash = NativeHashStore::Index;
 			return;
 		}
 		if (op.resultTag) result(*op.resultTag);

@@ -800,8 +800,8 @@ void tableIndexProofsFollowTheKeyAcrossEntries() {
 		Case{OpCode::GETI, NativeTableIndexType::Table, NativeHashStore::Identity, ValueTag::Table},
 		Case{OpCode::MOV, NativeTableIndexType::Dynamic, NativeHashStore::Index, {}},
 	};
-	const std::array constants{NativeImageConstant{0, valueString(12)}};
-	for (const auto& item : cases) {
+	const std::array constants{NativeImageConstant{0, valueString(12)}, NativeImageConstant{1, valueNil()}};
+	for (const auto& item : cases) for (const bool nil : {false, true}) {
 		std::array decoded{
 			DecodedInstruction{.a = 1, .op = static_cast<u8>(item.definition)},
 			DecodedInstruction{.op = static_cast<u8>(OpCode::JMP)},
@@ -811,6 +811,7 @@ void tableIndexProofsFollowTheKeyAcrossEntries() {
 			DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(-1), .a = 3, .b = 0, .c = 4,
 				.op = static_cast<u8>(OpCode::GETT)},
 		};
+		if (nil) decoded[3].c = -2;
 		if (item.definition == OpCode::LOADK) decoded[0].setBx(0);
 		if (item.definition == OpCode::GETI) {
 			decoded[0].a = 5;
@@ -837,7 +838,7 @@ void tableIndexProofsFollowTheKeyAcrossEntries() {
 				const auto& op = std::get<NativeTableAccess>(row.operation);
 				const bool write = row.pc == joinPc + 4;
 				require(op.keyKind == NativeTableKey::Value && op.key == 4 && op.indexType == item.index
-					&& (!write || op.store.hash == item.store),
+					&& (!write || (op.store.hash == item.store && (!nil || op.store.nilValue == NativeNilValue::Nil))),
 					"both dynamic-key operations select the proved type without changing the key selector");
 				const auto& exit = region.sideExits(block)[*row.slow];
 				require(exit.exit == (write ? NativeBlockExit::WriteIndex : NativeBlockExit::ReadIndex)

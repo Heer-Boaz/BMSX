@@ -581,7 +581,7 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, u8
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	constexpr bool returning = Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField;
 	const auto tag = valueTag(value);
-	const bool erase = Policy == HashStore::ReturningField && tag == ValueTag::Nil;
+	const bool erase = returning && tag == ValueTag::Nil;
 	const u32 count = hashSlots();
 	const auto body = hashBody(count, array);
 	const u32 home = hashCanonicalTableKey(key) & (count - 1u);
@@ -608,7 +608,7 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, u8
 	}
 	// Only an absent own field can trigger __newindex. Keep the probe's
 	// slot (including a tombstone) for the insertion below.
-	if constexpr (Policy == HashStore::ReturningField) {
+	if constexpr (returning) {
 		const u32 meta = newIndexMetatable();
 		if (meta != 0u && !isNil(TableRecord(*m_heap, meta).getStringKey(m_heap->newIndexKey))) return HASH_STORE_DECLINED;
 		if (erase) return -1;
@@ -638,7 +638,7 @@ bool TableRecord::tryAssignIdentityHash(Value key, Value value) noexcept {
 bool TableRecord::tryAssignIntegerHash(i32 key, Value value) noexcept {
 	if (assignHash<HashStore::ReturningIndex>(arrayCapacity(), valueInteger(key), value) == HASH_STORE_DECLINED) return false;
 	const u32 slot = arraySlot(key);
-	if (slot != NO_ARRAY_SLOT) updateLengthHint(slot, true);
+	if (slot != NO_ARRAY_SLOT) updateLengthHint(slot, !isNil(value));
 	return true;
 }
 

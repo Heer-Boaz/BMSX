@@ -59,12 +59,10 @@ public:
 	// A resolved opcode write may suspend only on a physical backing refusal.
 	int assignScheduled(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	bool resumeAssignment(Value key, Value value, u8 extraHashSlots);
-	// The caller admits an own assignment with a Table key and a non-nil
-	// value. Growth can return in place of a VM handoff when no collection
-	// is required. Declining leaves the table and collector unchanged.
+	// The caller supplies a Table key. An absent mapping checks __newindex.
+	// Growth returns in place when no collection is required. Declining leaves the table and collector unchanged.
 	bool tryAssignIdentityHash(Value key, Value value) noexcept;
-	// The caller admits a non-nil own Integer assignment outside the
-	// current array. A resize may move this key into the new array.
+	// The Integer key is outside the current array. Growth can move it into the new array.
 	bool tryAssignIntegerHash(i32 key, Value value) noexcept;
 	// A field write may complete without a VM handoff. Return the actual
 	// slot (-1 for completed nil), or HASH_STORE_DECLINED before mutation.

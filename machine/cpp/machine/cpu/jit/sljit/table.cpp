@@ -121,15 +121,20 @@ sljit_jump* NativeLowering::emitArrayStore(int value, NativeStorePlan plan, Nati
 		emitTableSlotOffset(c, SLJIT_R3, word);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), word ? wordOffset : tagOffset, SLJIT_R3, 0);
 	}
-	// An empty array slot is not an own entry. Only the CPU may select an
-	// inherited assignment when its receiver has a metatable.
-	auto* noMetatable = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32,
-		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Metatable), SLJIT_IMM, 0);
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
-	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
-	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
-		SLJIT_IMM, static_cast<u8>(ValueTag::Nil)), exit, m_cache.state());
-	sljit_set_label(noMetatable, sljit_emit_label(c));
+	// Only an absent own element can dispatch __newindex. For an empty
+	// element, consult the shared metatable's current proof before leaving.
+	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Metatable));
+	auto* noMetatable = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R3, SLJIT_R3);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), 0);
+	auto* own = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Nil));
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), TABLE_NEW_INDEX_ABSENT_BYTE);
+	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 1), exit, m_cache.state());
+	auto* direct = sljit_emit_label(c);
+	sljit_set_label(noMetatable, direct);
+	sljit_set_label(own, direct);
 
 	// Table storage and its descriptor are independent allocations. The
 	// value write cannot change which post-store length effect applies.
@@ -198,14 +203,9 @@ void NativeLowering::emitOwnIndexRead(int base, NativeBlockExitSite& exit, std::
 
 // The key payload is in R3; the receiver precedes the Value transport
 // in the scratch lifetime. The own write cannot call guest code.
-void NativeLowering::emitOwnIndexStore(int value, NativeNilValue nilValue, NativeBlockExitSite& exit, NativeHashStore key) {
+void NativeLowering::emitOwnIndexStore(int value, NativeBlockExitSite& exit, NativeHashStore key) {
 	auto* c = m_compiler;
-	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R0),
-		static_cast<u32>(TableHeader::Metatable), SLJIT_IMM, 0), exit, m_cache.state());
 	emitRawLoad(value, SLJIT_R0, SLJIT_R2);
-	if (nilValue == NativeNilValue::Dynamic)
-		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
-			SLJIT_IMM, static_cast<u8>(ValueTag::Nil)), exit, m_cache.state());
 	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver);
 	emitValueTransportStore(c, SLJIT_SP, hashOperand, SLJIT_R0, SLJIT_R2);
 	m_cache.spillCall(false, 0);
@@ -506,7 +506,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 			}
 			emitPayload(key, SLJIT_R3);
 			if (hashLeaf) emitOwnIndexRead(base, exit, ValueTag::Table);
-			else emitOwnIndexStore(value, access.store.nilValue, exit, NativeHashStore::Identity);
+			else emitOwnIndexStore(value, exit, NativeHashStore::Identity);
 			break;
 		}
 		// A proven Integer needs the same array path, but no tag load,
@@ -539,7 +539,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 		sljit_jump* integerJoined = nullptr;
 		if (integerStore) {
 			sljit_set_label(outside, sljit_emit_label(c));
-			emitOwnIndexStore(value, access.store.nilValue, exit, NativeHashStore::Integer);
+			emitOwnIndexStore(value, exit, NativeHashStore::Integer);
 			if (dynamic) integerJoined = sljit_emit_jump(c, SLJIT_JUMP);
 		}
 		if (hashLeaf) {
@@ -562,7 +562,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 			sljit_set_label(otherKey, sljit_emit_label(c));
 			fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 				SLJIT_IMM, static_cast<u8>(ValueTag::Table)), exit, m_cache.state());
-			emitOwnIndexStore(value, access.store.nilValue, exit, NativeHashStore::Identity);
+			emitOwnIndexStore(value, exit, NativeHashStore::Identity);
 			hashJoined = sljit_emit_jump(c, SLJIT_JUMP);
 		}
 		if (dynamic) {
@@ -585,7 +585,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 				auto* inside = sljit_emit_jump(c, SLJIT_JUMP);
 				sljit_set_label(outside, sljit_emit_label(c));
 				sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_IMM, key);
-				emitOwnIndexStore(value, access.store.nilValue, exit, NativeHashStore::Integer);
+				emitOwnIndexStore(value, exit, NativeHashStore::Integer);
 				sljit_set_label(inside, sljit_emit_label(c));
 			}
 		}
