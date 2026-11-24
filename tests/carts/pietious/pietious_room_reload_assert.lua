@@ -49,6 +49,15 @@ return {
 			castle:commit_room_switch({ from_room_number = 1, to_room_number = 13, direction = 'right' }, 0, 0, 0)
 			assert(room.tiles_visible and room.water_tile_layer == nil and room.timelines == nil,
 				'a dry room must present its terrain without scheduling a water effect')
+			-- Moving within a tile must select the same collision row in ROM.
+			for row = 1, room.tile_rows do
+				for column = 1, room.tile_columns do
+					local px<const>, py<const> = room:tile_to_world(column, row)
+					assert(room:collision_flags_at_world(px + 0.5, py + 0.5, false)
+						== room:collision_flags_at_tile(column, row, false),
+						'subpixel probe selected a different collision tile')
+				end
+			end
 			local tx<const>, ty<const> = 27, 11
 			local x<const>, y<const> = room:tile_to_world(tx, ty)
 			local rock<const> = room.scene.members.rock_013_01
@@ -89,7 +98,7 @@ return {
 				and wet:base_collision_flags_at_tile(32, wet.water.surface_row) == collision_flags_wall,
 				'visible water ignores the compiled collision at the rightmost wall')
 			local floor_x<const>, floor_y<const> = wet:tile_to_world(2, wet.tile_rows)
-			assert(wet:water_kind_at_world(floor_x, floor_y) == water_none
+			assert(wet:water_kind_at_world(floor_x + 0.5, floor_y + 0.5) == water_none
 				and wet:player_water_kind_at_world(floor_x, floor_y) == water_body,
 				'the player water plane changed at the submerged support tile')
 			assert(wet.water_tile_layer.visible and wet.water_surface_tile_count > 0,

@@ -169,8 +169,8 @@ function room_object:select_terrain(variant)
 end
 
 function room_object:world_to_tile(world_x, world_y)
-	local tx<const> = ((world_x - self.tile_origin_x) // self.tile_size) + 1
-	local ty<const> = ((world_y - self.tile_origin_y) // self.tile_size) + 1
+	local tx<const> = (((world_x - self.tile_origin_x) // self.tile_size) | 0) + 1
+	local ty<const> = (((world_y - self.tile_origin_y) // self.tile_size) | 0) + 1
 	return tx, ty
 end
 
