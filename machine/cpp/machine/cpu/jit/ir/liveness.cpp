@@ -10,7 +10,7 @@
 namespace bmsx {
 void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 	m_entryRegisters.clear();
-	bool hasForwardEdge = false;
+	bool hasForwardEdge = false, hasBackEdge = false;
 
 	size_t maxBlockLength = 0;
 	for (size_t i = 0; i < blocks.size(); ++i) {
@@ -19,6 +19,7 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 		hasForwardEdge |= (fallthrough > i && fallthrough < blocks.size())
 			|| (alternate > i && alternate < blocks.size());
 
+		hasBackEdge |= fallthrough <= i || alternate <= i;
 		maxBlockLength = std::max(maxBlockLength, block.instructions.size());
 	}
 	if (maxBlockLength > 1) m_nextUses.reserve(maxBlockLength * 8);
@@ -77,23 +78,58 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 		}
 	}
 
-	bool changed;
-	do {
-		changed = false;
-		for (size_t i = blocks.size(); i-- > 0;) {
-			const auto& block = blocks[i];
-			for (size_t word = 0; word < m_liveWordCount; ++word) {
-				u64 liveOut = 0;
-				for (const size_t successor : block.successors)
-					if (successor != blocks.size())
-						liveOut |= m_entryLive[successor * m_liveWordCount + word];
-				const size_t slot = i * m_liveWordCount + word;
-				const u64 live = uses[slot] | (liveOut & ~definitions[slot]);
-				changed |= m_entryLive[slot] != live;
-				m_entryLive[slot] = live;
+	const auto transfer = [&](size_t i) {
+		const auto [left, right] = blocks[i].successors;
+		bool changed = false;
+		for (size_t word = 0; word < m_liveWordCount; ++word) {
+			u64 liveOut = 0;
+			if (left != blocks.size()) liveOut = m_entryLive[left * m_liveWordCount + word];
+			if (right != blocks.size() && right != left) liveOut |= m_entryLive[right * m_liveWordCount + word];
+			const size_t slot = i * m_liveWordCount + word;
+			const u64 live = uses[slot] | (liveOut & ~definitions[slot]);
+			changed |= m_entryLive[slot] != live;
+			m_entryLive[slot] = live;
+		}
+		return changed;
+	};
+	if (!hasBackEdge) {
+		for (size_t i = blocks.size(); i-- > 0;) transfer(i);
+		return;
+	}
+
+	// Backward dataflow: only predecessors consume a changed live-in set.
+	// Edge indices encode the originating block; duplicate exits need one link.
+	const size_t end = blocks.size() * 2;
+	m_pendingBlocks.resize(blocks.size());
+	m_predecessorLinks.resize(end);
+	m_worklist.resize(blocks.size());
+	for (size_t i = 0; i < blocks.size(); ++i) {
+		m_pendingBlocks[i] = {end, true};
+		m_worklist[i] = i;
+	}
+	for (size_t i = 0; i < blocks.size(); ++i) {
+		const auto successors = blocks[i].successors;
+		for (size_t edge = 0; edge < 2; ++edge) {
+			const auto target = successors[edge];
+			if (target == blocks.size() || (edge && target == successors[0])) continue;
+			const size_t link = i * 2 + edge;
+			m_predecessorLinks[link] = m_pendingBlocks[target].first;
+			m_pendingBlocks[target].first = link;
+		}
+	}
+	while (!m_worklist.empty()) {
+		const size_t i = m_worklist.back();
+		m_worklist.pop_back();
+		m_pendingBlocks[i].queued = false;
+		if (!transfer(i)) continue;
+		for (size_t link = m_pendingBlocks[i].first; link != end; link = m_predecessorLinks[link]) {
+			const size_t pred = link / 2;
+			if (!m_pendingBlocks[pred].queued) {
+				m_worklist.push_back(pred);
+				m_pendingBlocks[pred].queued = true;
 			}
 		}
-	} while (changed);
+	}
 }
 
 bool NativeRegisterUses::entryReads(size_t block, int guest) const {

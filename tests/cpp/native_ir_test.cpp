@@ -1066,6 +1066,16 @@ void registerUses() {
 		&& uses.entryReads(1, 12) && uses.entryReads(3, 10) && !uses.entryReads(3, 11),
 		"entry liveness follows both edges but excludes values overwritten before they are read");
 
+	blocks[3].successors = {0, 0};
+	uses.analyze(blocks);
+	require(uses.entryReads(0, 12) && uses.entryReads(1, 12) && !uses.entryReads(1, 10),
+		"a cyclic diamond propagates reads but not killed definitions");
+	blocks[0].instructions = join;
+	blocks[3].instructions = first;
+	uses.analyze(blocks);
+	require(uses.entryReads(3, 10) && uses.entryReads(3, 12) && !uses.entryReads(1, 10),
+		"an already processed backedge predecessor is revisited when its successor gains live slots");
+
 	std::vector<NativeInstruction> instructions(64, NativeInstruction(NativeLiteral{1, valueInteger(0)}));
 	instructions[0] = NativeInstruction(NativeMove{10, 9, ValueMoveKind::Copy});
 	instructions[2] = NativeInstruction(NativeMove{8, 10, ValueMoveKind::Copy});

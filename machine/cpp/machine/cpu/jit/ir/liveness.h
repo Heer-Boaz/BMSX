@@ -42,6 +42,12 @@ private:
 		u64 instructions;
 	};
 
+	struct PendingBlock {
+		size_t first;
+		bool queued;
+	};
+	std::vector<PendingBlock> m_pendingBlocks;
+	std::vector<size_t> m_predecessorLinks, m_worklist;
 	std::vector<int> m_entryRegisters;
 	std::vector<u64> m_entryLive;
 	std::vector<u64> m_localLive;
