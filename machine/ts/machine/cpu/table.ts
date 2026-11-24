@@ -29,15 +29,18 @@ type StoredValuePredicate = (value: Value) => boolean;
 export interface TableStringProbe { node: number; remaining: number; value: Value }
 
 export const enum TableHeader {
-	Kind = 0, Gray = 4, Metatable = 8, Storage = 12, Array = 16, Hash = 20, Length = 24, Free = 28,
+	Kind = 0, NewIndexAbsent = 2, Gray = 4, Metatable = 8, Storage = 12, Array = 16, Hash = 20, Length = 24, Free = 28,
 }
 export class TableRecords {
 	private readonly resizePlan = { array: 0, hash: 0 };
 	private static readonly rehashIntegerCounts = new Uint32Array(32);
 	static readonly HEADER_BYTES = 32;
-	public constructor(private readonly heap: GcHeap) {}
+	public readonly newIndexKey: Value;
+	public constructor(private readonly heap: GcHeap, newIndexKey: StringId) {
+		this.newIndexKey = valueString(newIndexKey);
+	}
 	public initialize(record: number, array: number, hash: number): void {
-		this.writeHeader(record, TableHeader.Kind, ValueTag.Table | (this.heap.white() << 8));
+		this.writeHeader(record, TableHeader.Kind, ValueTag.Table | (this.heap.white() << 8) | (1 << (8 * TableHeader.NewIndexAbsent)));
 		this.writeHeader(record, TableHeader.Gray, 0);
 		this.writeHeader(record, TableHeader.Metatable, 0);
 		this.writeHeader(record, TableHeader.Length, 0);
@@ -51,7 +54,8 @@ export class TableRecords {
 			valueTable(source), valueNil(), valueNil(), TableRecords.allocationCharge(array, hash));
 		// The rooted source keeps its layout, but admission can clear weak entries.
 		const memory = this.heap.memory;
-		const kind = ValueTag.Table | (this.heap.white() << 8);
+		const absence = memory.readRamRecordByte(source + TableHeader.NewIndexAbsent);
+		const kind = ValueTag.Table | (this.heap.white() << 8) | (absence << (8 * TableHeader.NewIndexAbsent));
 		memory.writeRamRecordPair(copy + TableHeader.Kind, kind, 0);
 		this.writeHeader(copy, TableHeader.Metatable, 0);
 		memory.writeRamRecordPair(copy + TableHeader.Array, array, hash);
@@ -71,6 +75,11 @@ export class TableRecords {
 	private readHeader(record: number, field: TableHeader): number { return this.heap.memory.readRamRecordWord(record + field); }
 	private writeHeader(record: number, field: TableHeader, word: number): void { this.heap.memory.writeRamRecordWord(record + field, word); }
 	public metatableAddress(record: number): number { return this.readHeader(record, TableHeader.Metatable); }
+	// Only the metatable's own mapping matters. Its mutation paths maintain the proof.
+	private newIndexMetatable(record: number): number {
+		const meta = this.metatableAddress(record);
+		return meta !== 0 && this.heap.memory.readRamRecordByte(meta + TableHeader.NewIndexAbsent) === 1 ? 0 : meta;
+	}
 	public setMetatableAddress(record: number, address: number): void {
 		this.heap.writeBarrier(record, GC_RECORD_LINK);
 		this.writeHeader(record, TableHeader.Metatable, address);
@@ -209,12 +218,14 @@ export class TableRecords {
 		if (tag === ValueTag.Nil && this.metatableAddress(record) !== 0) return false;
 		target.setEncoded(destination, tag, memory.readRamRecordWord(words + slot * 4)); return true;
 	}
-	public storeIntegerArrayKey(record: number, index: number, tag: ValueTag, word: number, newIndexKey: StringId): boolean {
+	public storeIntegerArrayKey(record: number, index: number, tag: ValueTag, word: number): boolean {
 		const slot = this.integerArrayIndex(index), array = this.arrayCapacity(record);
 		if (slot < 0 || slot >= array) return false;
 		const words = this.storageAddress(record), tags = words + (array + 3 * this.hashSize(record)) * 4;
-		if (this.heap.memory.readRamRecordByte(tags + slot) === ValueTag.Nil
-			&& !isNil(this.metafield(record, newIndexKey))) return false;
+		if (this.heap.memory.readRamRecordByte(tags + slot) === ValueTag.Nil) {
+			const meta = this.newIndexMetatable(record);
+			if (meta !== 0 && !isNil(this.getStringKey(meta, valuePayload(this.newIndexKey)))) return false;
+		}
 		this.heap.writeTableAssignment(record, tag, word);
 		this.writeSlot(words, tags, slot, tag, word);
 		this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
@@ -378,13 +389,13 @@ export class TableRecords {
 		}
 		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
 	}
-	public resolveAssignment(record: number, newIndexKey: StringId, rawKey: Value, result: TableLookupResult,
+	public resolveAssignment(record: number, rawKey: Value, result: TableLookupResult,
 		fixedString = false): void {
 		const validKey = fixedString || (!isNil(rawKey) && !valueIsNaN(rawKey));
 		const key = fixedString ? rawKey : canonicalTableKey(rawKey);
 		const arrayIndex = fixedString ? -1 : this.getArrayIndex(key);
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
-			const meta = this.metatableAddress(record);
+			const meta = this.newIndexMetatable(record);
 			let slot = meta === 0 ? TABLE_HASH_UNPROBED : -1;
 			let next = valueNil();
 			if (meta !== 0) {
@@ -397,9 +408,9 @@ export class TableRecords {
 						slot = this.findStringNodeIndex(valuePayload(key), hashCanonicalTableKey(key) & (hash - 1), hash, array, words, tags);
 						own = slot >= 0 && this.heap.memory.readRamRecordByte(tags + array + hash + slot) !== ValueTag.Nil;
 					}
-					if (!own) next = this.getStringKey(meta, newIndexKey);
+					if (!own) next = this.getStringKey(meta, valuePayload(this.newIndexKey));
 				} else if (!validKey || isNil(this.getCanonical(record, key, arrayIndex))) {
-					next = this.getStringKey(meta, newIndexKey);
+					next = this.getStringKey(meta, valuePayload(this.newIndexKey));
 				}
 			}
 			const tag = valueTag(next);
@@ -468,12 +479,14 @@ export class TableRecords {
 			const available = index >= 0 || vacant ? -1 : this.findFreeIndex(record, array, hash, tags);
 			if (index >= 0 || vacant || available >= 0) {
 				index = this.placeHashMapping(record, home, key, value, array, hash, words, tags, index, available);
+				if (key === this.newIndexKey) memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
 				this.heap.writeTableAssignment(record, tag, word, key);
 				return index;
 			}
 		}
 		index = this.insertHashWithAdmission(record, key, value, policy);
 		if (index === HASH_STORE_DECLINED) return index;
+		if (key === this.newIndexKey) memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
 		// resize() invalidates an outstanding scan; relocated old edges keep their marks.
 		this.heap.writeTableAssignment(record, tag, word, key);
 		return index;
@@ -567,7 +580,11 @@ export class TableRecords {
 		if (tag === ValueTag.Table || tag === ValueTag.Thread || tag === ValueTag.Closure) {
 			const hashId = this.wordAt(record, keySlot);
 			this.setEncoded(record, keySlot, ValueTag.Nil, tag); this.setEncoded(record, valueSlot, ValueTag.DeadKey, hashId);
-		} else this.setEncoded(record, valueSlot, ValueTag.Nil, 0);
+		} else {
+			this.setEncoded(record, valueSlot, ValueTag.Nil, 0);
+			if (tag === ValueTag.String && this.wordAt(record, keySlot) === valuePayload(this.newIndexKey))
+				this.heap.memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 1);
+		}
 	}
 	private removeFromHash(record: number, key: Value, resolved: number): void {
 		const index = resolved === TABLE_HASH_UNPROBED ? this.findNodeIndex(record, key) : resolved;
@@ -719,6 +736,7 @@ export class TableRecords {
 	public clear(record: number): void {
 		this.heap.tableEntriesMoved(record);
 		this.writeHeader(record, TableHeader.Length, 0);
+		this.heap.memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 1);
 		this.freeStorage(record);
 		this.bindStorage(record, 0, 0, 0);
 

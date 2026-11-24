@@ -127,17 +127,17 @@ void collisionAndMutationParity(CPU& cpu) {
 	holder.setMetatableAddress(holderMeta.address());
 
 	TableLookupResult assignment;
-	source.resolveStringAssignment(newIndex, keys[0], assignment);
+	source.resolveStringAssignment(keys[0], assignment);
 	require(assignment.status == TableLookupStatus::Store && assignment.receiver == holder.address()
-		&& assignment.extraVisits == 1 && assignment.slot == -1,
-		"a terminal scan proves absence without borrowing the source tombstone");
+		&& assignment.extraVisits == 1 && assignment.slot == TABLE_HASH_UNPROBED,
+		"a terminal with no method leaves the sole probe to the mutator");
 	const int holderSlot = holder.setStringKey(keys[0], valueBool(false), assignment.slot);
 	require(holderSlot >= 0 && holderSlot != sourceSlot && holder.hashSlots() == 2
 		&& holder.getStringKey(keys[1]) == valueInteger(22) && isNil(source.getStringKey(keys[0])),
 		"the absent proof inserts at the actual terminal collision slot");
 
 	holderMeta.setStringKey(newIndex, valueTable(source.address()));
-	source.resolveStringAssignment(newIndex, keys[0], assignment);
+	source.resolveStringAssignment(keys[0], assignment);
 	require(assignment.status == TableLookupStatus::Store && assignment.receiver == holder.address()
 		&& assignment.extraVisits == 1 && assignment.slot == holderSlot,
 		"the live false terminal slot wins before its own forwarding method");
@@ -146,17 +146,17 @@ void collisionAndMutationParity(CPU& cpu) {
 		"a warmed owned slot accepts an exact tagged overwrite");
 	holder.setStringKey(keys[0], valueNil(), assignment.slot);
 	holderMeta.setStringKey(newIndex, valueNil());
-	source.resolveStringAssignment(newIndex, keys[0], assignment);
+	source.resolveStringAssignment(keys[0], assignment);
 	require(assignment.status == TableLookupStatus::Store && assignment.receiver == holder.address()
-		&& assignment.extraVisits == 1 && assignment.slot == holderSlot
+		&& assignment.extraVisits == 1 && assignment.slot == TABLE_HASH_UNPROBED
 		&& !holder.storePredictedStringKey(keys[0], valueInteger(47), holderSlot) && isNil(holder.getStringKey(keys[0])),
-		"a terminal tombstone is an exact slot proof but not a live predicted hit");
+		"the removed method leaves reactivation to the mutator without a premature probe");
 	require(holder.setStringKey(keys[0], valueInteger(47), assignment.slot) == holderSlot
 		&& holder.getStringKey(keys[0]) == valueInteger(47) && holder.getInteger(1) == valueInteger(53),
 		"a terminal tombstone can be reactivated without displacing a colliding key or array value");
 
 	holder.setMetatableAddress(0);
-	source.resolveStringAssignment(newIndex, keys[0], assignment);
+	source.resolveStringAssignment(keys[0], assignment);
 	require(assignment.status == TableLookupStatus::Store && assignment.receiver == holder.address()
 		&& assignment.extraVisits == 1 && assignment.slot == TABLE_HASH_UNPROBED,
 		"a metatable-free terminal does not claim to have probed its hash");
@@ -184,6 +184,53 @@ void preparedLayoutMatchesAllMasks(CPU& cpu, Memory& memory) {
 				== memory.readRamRecordByte(prepared.storageAddress() + at),
 				"prepared and scalar constructor layouts agree under collisions and absent values");
 	}
+}
+
+void newIndexAbsenceFollowsTheOwnMapping(CPU& cpu) {
+	const auto newIndex = cpu.stringPool().intern("__newindex");
+	const auto field = cpu.stringPool().intern("unwritten");
+	auto target = cpu.createTable();
+	auto meta = cpu.createTable(0, 1);
+	target.setMetatableAddress(meta.address());
+	TableLookupResult assignment;
+	target.resolveStringAssignment(field, assignment);
+	require(assignment.status == TableLookupStatus::Store && assignment.receiver == target.address(),
+		"an empty metatable leaves the write on the receiver");
+	const std::array keys{newIndex};
+	const std::array values{valueBool(false)};
+	meta.fillStringRecord(TableRecord::planStringRecord(keys, 1), keys, values);
+	target.resolveStringAssignment(field, assignment);
+	require(assignment.status == TableLookupStatus::Forward && assignment.value == valueBool(false),
+		"bulk construction must not hide a non-nil false method");
+	auto copy = meta.copyOwn();
+	target.setMetatableAddress(copy.address());
+	meta.clear();
+	target.resolveStringAssignment(field, assignment);
+	require(assignment.status == TableLookupStatus::Forward && assignment.value == valueBool(false),
+		"the copy owns its copied method after the original is cleared");
+	target.setMetatableAddress(meta.address());
+	target.resolveStringAssignment(field, assignment);
+	require(assignment.status == TableLookupStatus::Store && assignment.receiver == target.address(),
+		"clearing the metatable removes the method");
+	target.setMetatableAddress(copy.address());
+	copy.setStringKey(newIndex, valueNil());
+	target.resolveIntegerAssignment(1, assignment);
+	require(assignment.status == TableLookupStatus::Store && assignment.receiver == target.address(),
+		"raw nil deletion removes the method for integer assignments as well");
+
+	auto weakMode = cpu.createTable(0, 1);
+	weakMode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+	copy.setMetatableAddress(weakMode.address());
+	auto forwarding = cpu.createTable();
+	copy.set(valueString(newIndex), valueTable(forwarding.address()));
+	target.resolveAssignment(valueString(field), assignment);
+	require(assignment.status == TableLookupStatus::Store && assignment.receiver == forwarding.address()
+		&& assignment.extraVisits == 1, "reactivation forwards through the inserted weak value");
+	cpu.gcHeap().collect(valueTable(target.address()));
+	target.resolveAssignment(valueString(field), assignment);
+	require(isNil(copy.getStringKey(newIndex)) && assignment.status == TableLookupStatus::Store
+		&& assignment.receiver == target.address() && assignment.extraVisits == 0,
+		"collector deletion clears the forwarding method without changing the receiver's metatable");
 }
 
 void fullHashGrowsAndRetainsMappings(CPU& cpu) {
@@ -215,19 +262,19 @@ void inheritedAndFullWordKeys(CPU& cpu, Memory& memory) {
 	auto child = cpu.createTable();
 	child.setMetatableAddress(metatable.address());
 	TableLookupResult result;
-	child.resolveStringIndex(indexKey, key, result);
+	child.resolveStringIndex(key, result);
 	require(result.status == TableLookupStatus::Resolved && result.value == valueBool(false), "inherited false is present");
-	child.resolveStringIndexCached(indexKey, key, -1, result);
+	child.resolveStringIndexCached(key, -1, result);
 	require(result.slot >= 0 && result.value == valueBool(false) && result.extraVisits == 1, "inherited cached search returns the same value and semantic work");
 	parent.setStringKey(key, valueNil());
-	child.resolveStringIndexCached(indexKey, key, result.slot, result);
+	child.resolveStringIndexCached(key, result.slot, result);
 	require(result.slot == -1 && isNil(result.value), "deletion invalidates inherited predictions");
 	parent.setStringKey(key, valueFloatBits(0x80000000u));
-	child.resolveStringIndex(indexKey, key, result);
+	child.resolveStringIndex(key, result);
 	require(result.status == TableLookupStatus::Resolved && result.value == valueFloatBits(0x80000000u), "reinsertion preserves negative zero");
 
 	child.setStringKey(key, valueBool(false));
-	child.resolveStringIndexCached(indexKey, key, result.slot, result);
+	child.resolveStringIndexCached(key, result.slot, result);
 	require(result.value == valueBool(false) && result.extraVisits == 0,
 		"an own field stops traversal even when its value is false");
 
@@ -261,6 +308,7 @@ int main() {
 		IrqController irq(memory);
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
+		newIndexAbsenceFollowsTheOwnMapping(cpu);
 		alignedStringHomesDisplaceOnlyCollisions(cpu);
 		collisionAndMutationParity(cpu);
 		preparedLayoutMatchesAllMasks(cpu, memory);

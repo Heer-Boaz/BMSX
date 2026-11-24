@@ -22,6 +22,9 @@ inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
 enum class TableHeader : u32 {
 	Kind = 0, Gray = 4, Metatable = 8, Storage = 12, Array = 16, Hash = 20, Length = 24, Free = 28,
 };
+// Method absence belongs to the table holding the own mapping. Byte +1
+// is the GC color, and byte +3 belongs to the collector visit list.
+inline constexpr u32 TABLE_NEW_INDEX_ABSENT_BYTE = 2u;
 
 struct TableStringProbe {
 	i32 node;
@@ -66,7 +69,7 @@ public:
 	// A field write may complete without a VM handoff. Return the actual
 	// slot (-1 for completed nil), or HASH_STORE_DECLINED before mutation.
 	static constexpr i32 HASH_STORE_DECLINED = -2;
-	int tryAssignStringField(StringId key, Value value, StringId newIndexKey) noexcept;
+	int tryAssignStringField(StringId key, Value value) noexcept;
 	bool getIntegerArrayKey(int key, Value& value) const {
 		return getArraySlot(arraySlot(key), value);
 	}
@@ -93,15 +96,15 @@ public:
 	int setStringKey(StringId key, const Value& value, int slot = TABLE_HASH_UNPROBED);
 	bool storePredictedStringKey(StringId key, Value value, int predicted) noexcept;
 	Value metatableField(StringId key) const;
-	void resolveIndex(StringId indexKey, const Value& key, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
-	void resolveIntegerIndex(StringId indexKey, int key, TableLookupResult& result) const;
-	void resolveStringIndex(StringId indexKey, StringId key, TableLookupResult& result) const;
-	void resolveStringIndexCached(StringId indexKey, StringId key, int predictedSlot, TableLookupResult& result) const;
-	void resolveStringIndexPath(StringId indexKey, StringId key, int& receiverSlot,
+	void resolveIndex(const Value& key, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
+	void resolveIntegerIndex(int key, TableLookupResult& result) const;
+	void resolveStringIndex(StringId key, TableLookupResult& result) const;
+	void resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result) const;
+	void resolveStringIndexPath(StringId key, int& receiverSlot,
 		TableLookupResult& result, TableStringPathCache& cache, TableFirstOwnProbe firstOwnProbe) const;
-	void resolveAssignment(StringId newIndexKey, Value key, TableLookupResult& result) const;
-	void resolveIntegerAssignment(StringId newIndexKey, int key, TableLookupResult& result) const;
-	void resolveStringAssignment(StringId newIndexKey, StringId key, TableLookupResult& result) const;
+	void resolveAssignment(Value key, TableLookupResult& result) const;
+	void resolveIntegerAssignment(int key, TableLookupResult& result) const;
+	void resolveStringAssignment(StringId key, TableLookupResult& result) const;
 	// Find a boundary and remember it after a search.
 	static i32 length(TableRecord* table) noexcept;
 	void clear();
@@ -248,15 +251,16 @@ private:
 	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
 	int setHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED);
 	template <HashStore Policy>
-	int assignHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED,
-		StringId newIndexKey = 0)
+	int assignHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
+	void publishHashInsertion(Value key, Value value);
+	u32 newIndexMetatable() const;
 	void removeFromHash(const Value& key, int slot);
 	void markHashNodeDead(size_t index);
 	Value getCanonical(const Value& key) const;
 	Value getHash(const Value& key) const;
 	template <bool Assignment = false, bool RememberPath = false, typename Lookup>
-	void resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup,
+	void resolveIndexChain(int slot, TableLookupResult& result, Lookup&& lookup,
 		TableStringPathCache* cache = nullptr, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT,
 		TableFirstOwnProbe firstOwnProbe = TableFirstOwnProbe::Required) const;
 

@@ -61,12 +61,13 @@ inline constexpr u8 GC_VISIT_MEMBER = 0x40u;
 
 class GcHeap {
 public:
-	GcHeap(CPU& cpu, LuaHeap& budget, Memory& memory, HeapAllocator& arena, StringPool& strings, StringId modeKey)
-		: budget(budget), memory(memory), arena(arena), m_cpu(cpu), m_modeKey(modeKey), m_stringPool(strings),
-		  m_controlOffset(arena.managementOffset() + HEAP_GC_CONTROL_OFFSET) {}
+	GcHeap(CPU& cpu, LuaHeap& budget, Memory& memory, HeapAllocator& arena, StringPool& strings);
 	LuaHeap& budget;
 	Memory& memory;
 	HeapAllocator& arena;
+	const StringId indexKey;
+	const StringId newIndexKey;
+	const StringId lengthKey;
 	void publishObject(u32 address);
 	using ObjectVisitor = void (*)(void*, u32);
 	void visitObjectRecords(void* context, ObjectVisitor visit) const;

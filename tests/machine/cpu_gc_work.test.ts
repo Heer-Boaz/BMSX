@@ -8,7 +8,7 @@ import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GcPhase, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { TableRecords } from '../../machine/ts/machine/cpu/table';
+import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { THREAD_INITIAL_FRAMES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
@@ -110,12 +110,13 @@ test('inactive frame reserve does not consume automatic GC quanta', () => {
 	assert.deepEqual(collect(THREAD_INITIAL_FRAMES), collect(1024));
 });
 
-test('table copy observes weak clearing during physical allocation retry', () => {
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+test('table copy observes weak clearing of __newindex during physical allocation retry', () => {
+	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const { tables } = cpu.gc;
 	const input = cpu.createTable(1024, 3), metatable = cpu.createTable(), unrooted = cpu.createTable();
-	const key = cpu.stringPool.intern('weak copy member');
+	const key = cpu.stringPool.intern('__newindex');
 	tables.setStringKey(input, key, valueTable(unrooted));
+	assert.equal(memory.readRamRecordByte(input + TableHeader.NewIndexAbsent), 0);
 	tables.setInteger(input, 1024, valueInteger(64));
 	tables.setStringKey(metatable, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 	tables.setMetatableAddress(input, metatable);
@@ -125,6 +126,8 @@ test('table copy observes weak clearing during physical allocation retry', () =>
 	const copy = tables.copyOwn(input);
 	assert.equal(cpu.gc.tableRecordAddress(input), input, 'the initial request roots the borrowed input');
 	assert.equal(tables.getStringKey(input, key), valueNil(), 'failed physical admission cleared the weak source entry');
+	assert.equal(memory.readRamRecordByte(input + TableHeader.NewIndexAbsent), 1);
+	assert.equal(memory.readRamRecordByte(copy + TableHeader.NewIndexAbsent), 1, 'copy carries the proof from after recovery');
 	assert.equal(tables.hashSize(copy), 4, 'the copy preserves the rounded backing capacity even after weak clearing');
 	assert.equal(tables.getStringKey(copy, key), valueNil(), 'only entries after the collection are copied');
 	assert.equal(tables.getInteger(copy, 1024), valueInteger(64));

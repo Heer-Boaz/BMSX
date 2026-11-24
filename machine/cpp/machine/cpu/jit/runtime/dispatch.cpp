@@ -41,7 +41,7 @@ u32 CPU::readNativeLength(GcHeap* heap, const StringPool* strings, Value* operan
 }
 
 i32 CPU::assignNativeTableField(CPU* cpu, u32 receiver, StringId key, const Value* value) noexcept {
-	return TableRecord(cpu->m_heap, receiver).tryAssignStringField(key, *value, asStringId(cpu->m_newIndexKey));
+	return TableRecord(cpu->m_heap, receiver).tryAssignStringField(key, *value);
 }
 
 NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept {
@@ -316,16 +316,15 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				: kind == NativeBlockExit::ReadField ? frame->executionImage->constPool.get(access.key)
 				: readRK(*frame->executionImage, frame->registers, access.key);
 			const bool stringKey = kind == NativeBlockExit::ReadField || valueIsString(key);
-			const StringId index = asStringId(cpu.m_indexKey);
 			const TableRecord table(cpu.m_heap, cpu.tableIndexAddress(base));
 			TableLookupResult result;
 			if (stringKey) {
 				const auto firstOwnProbe = std::exchange(state.firstTableOwnProbe, TableFirstOwnProbe::Required);
-				table.resolveStringIndexPath(index, asStringId(key), *exit->tableRead.own.decoded, result,
+				table.resolveStringIndexPath(asStringId(key), *exit->tableRead.own.decoded, result,
 				    exit->tableRead.path, firstOwnProbe);
 			} else if (kind == NativeBlockExit::ReadInteger) {
-				table.resolveIntegerIndex(index, access.key, result);
-			} else table.resolveIndex(index, key, result);
+				table.resolveIntegerIndex(access.key, result);
+			} else table.resolveIndex(key, result);
 
 			// An inherited result (or a result from the String library) is
 			// not evidence about the receiver's own slot.

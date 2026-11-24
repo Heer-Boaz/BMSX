@@ -278,7 +278,6 @@ export class CPU implements MappedPageInvalidator {
 	public readonly gc: GcHeap;
 	public readonly stringPool: StringPool;
 	private indexKey!: StringId;
-	private newIndexKey!: StringId;
 	private lengthKey!: StringId;
 	private modeKey!: StringId;
 	private haltedUntilIrqFrameDepth = -1;
@@ -394,10 +393,10 @@ export class CPU implements MappedPageInvalidator {
 		this.luaHeap = new LuaHeap(this);
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
 		this.indexKey = this.stringPool.intern('__index');
-		this.newIndexKey = this.stringPool.intern('__newindex');
+		const newIndexKey = this.stringPool.intern('__newindex');
 		this.lengthKey = this.stringPool.intern('__len');
 		this.modeKey = this.stringPool.intern('__mode');
-		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator, this.modeKey);
+		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator, this.modeKey, newIndexKey);
 		this.systemGlobalBank = new GlobalBank(memory, this.gc);
 		this.globalBank = new GlobalBank(memory, this.gc);
 		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling');
@@ -606,7 +605,7 @@ export class CPU implements MappedPageInvalidator {
 		let receiver = valuePayload(base);
 		if (tables.metatableAddress(receiver) !== 0) {
 			const assignment = this.tableLookupResult;
-			tables.resolveAssignment(receiver, this.newIndexKey, key, assignment);
+			tables.resolveAssignment(receiver, key, assignment);
 			if (this.finishTableAssignment(frame, key, value, assignment)) return true;
 			receiver = assignment.receiver;
 		}
@@ -713,7 +712,7 @@ export class CPU implements MappedPageInvalidator {
 		const tag = valueTag(value), word = valuePayload(value);
 		if (tables.storePredictedStringKey(record, key, page.tableCacheSlots[pageOffset], tag, word)) return false;
 		const assignment = this.tableLookupResult, field = valueString(key);
-		tables.resolveAssignment(record, this.newIndexKey, field, assignment, true);
+		tables.resolveAssignment(record, field, assignment, true);
 		if (this.finishTableAssignment(frame, field, value, assignment)) return true;
 		const slot = this.runKind === CpuRunKind.Scheduled
 			? tables.assignScheduled(assignment.receiver, field, value, assignment.slot)
@@ -2875,7 +2874,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		const region = compileJavaScriptRegion(plans, image, this.memory, this.stringPool,
-			this.globalBank.slots, this.systemGlobalBank.slots, this.cop0Words, this.gc, this.newIndexKey);
+			this.globalBank.slots, this.systemGlobalBank.slots, this.cop0Words, this.gc);
 		for (const old of merged) this.compiledCodeCache.retireRegion(old);
 		this.compiledCodeCache.install(region);
 		if (image.compiledCodeLookup === null) image.compiledCodeLookup = new CompiledCodeLookup();
@@ -3177,7 +3176,7 @@ export class CPU implements MappedPageInvalidator {
 				}
 				case OpCode.SETI: {
 					const base = registers.get(a), index = page.b[pageOffset], value = this.readRKValue(frame, page.c[pageOffset]);
-					if (valueTag(base) !== ValueTag.Table || !this.gc.tables.storeIntegerArrayKey(valuePayload(base), index, valueTag(value), valuePayload(value), this.newIndexKey)) {
+					if (valueTag(base) !== ValueTag.Table || !this.gc.tables.storeIntegerArrayKey(valuePayload(base), index, valueTag(value), valuePayload(value))) {
 						if (this.storeTableIndex(frame, base, valueInteger(index), value) && this.pendingAllocation !== null)
 							return ALLOCATION_PARKED;
 					}
@@ -4670,7 +4669,7 @@ export class CPU implements MappedPageInvalidator {
 	public markRootHead(heap: GcHeap): void {
 		heap.markString(this.modeKey);
 		heap.markString(this.indexKey);
-		heap.markString(this.newIndexKey);
+		heap.markValue(this.gc.tables.newIndexKey);
 		heap.markString(this.lengthKey);
 		heap.markString(this.errorInErrorHandlingStringId);
 		for (let i = 0; i < this.luaFaultErrorStringIds.length; ++i)

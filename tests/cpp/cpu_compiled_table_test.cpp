@@ -197,7 +197,7 @@ void stringReadChainBoundaries() {
 			}
 			TableLookupResult scratch{valueInteger(73), -1, 0, TableLookupStatus::Resolved};
 			const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
-			root.resolveStringIndex(indexKey, key, scratch);
+			root.resolveStringIndex(key, scratch);
 			require((depth == 33 ? scratch.status == TableLookupStatus::ChainExhausted : scratch.status == TableLookupStatus::Resolved)
 				&& (depth == 1 ? isNil(scratch.value) : depth == 33 || scratch.value == valueFromTag(ValueTag::False, 37)),
 				"the table resolver preserves nil/false and the exact 32-table chain bound");
@@ -2238,8 +2238,8 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 		&& cpu.luaHeap().usedBytes() == initialBytes,
 		"nil to a missing field returns as a no-op when the metatable has no __newindex");
 	TableLookupResult absent;
-	spare.resolveStringAssignment(*cpu.stringPool().find("__newindex"), field, absent);
-	require(absent.status == TableLookupStatus::Store && absent.slot == -1 && isNil(spare.getStringKey(field)),
+	spare.resolveStringAssignment(field, absent);
+	require(absent.status == TableLookupStatus::Store && absent.slot == TABLE_HASH_UNPROBED && isNil(spare.getStringKey(field)),
 		"the no-op does not create a new hash node or a tombstone");
 	requireParity(native, scalar);
 

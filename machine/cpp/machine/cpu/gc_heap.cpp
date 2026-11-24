@@ -12,6 +12,13 @@
 #endif
 
 namespace bmsx {
+
+GcHeap::GcHeap(CPU& cpu, LuaHeap& budget, Memory& memory, HeapAllocator& arena, StringPool& strings)
+	: budget(budget), memory(memory), arena(arena)
+	, indexKey(strings.intern("__index")), newIndexKey(strings.intern("__newindex")), lengthKey(strings.intern("__len"))
+	, m_cpu(cpu), m_modeKey(strings.intern("__mode")), m_stringPool(strings)
+	, m_controlOffset(arena.managementOffset() + HEAP_GC_CONTROL_OFFSET) {}
+
 namespace {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 using GcProfileClock = std::chrono::steady_clock;

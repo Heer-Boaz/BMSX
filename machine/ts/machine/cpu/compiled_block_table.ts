@@ -30,17 +30,16 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 	const failure = r.exit(exit);
 	const value = load ? '' : `${r.tagOperand(c)},${r.wordOperand(c)}`;
 	const target = load ? `r,${a}` : value;
-	const arrayTarget = load ? target : `${target},nk`;
 	const stringOperation = load ? 'lp' : 'sp';
 	const arrayOperation = load ? 'li' : 'si';
 	let access: string;
 	if (op === OpCode.GETI || op === OpCode.SETI) {
-		access = `if(!tb.${arrayOperation}(A,${key},${arrayTarget})) ${failure}`;
+		access = `if(!tb.${arrayOperation}(A,${key},${target})) ${failure}`;
 	} else if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF) {
 		access = `if(!tb.${stringOperation}(A,k[${key}],${tableCache}[${word}],${target})) ${failure}`;
 	} else {
 		access = `const tag=${r.tagOperand(key)},key=${r.wordOperand(key)};
-			if(tag===${ValueTag.Integer}||tag===${ValueTag.Float}){const i=tag===${ValueTag.Integer}?key|0:fi(key);if(i===null||!tb.${arrayOperation}(A,i,${arrayTarget})) ${failure}}
+			if(tag===${ValueTag.Integer}||tag===${ValueTag.Float}){const i=tag===${ValueTag.Integer}?key|0:fi(key);if(i===null||!tb.${arrayOperation}(A,i,${target})) ${failure}}
 			else if(tag!==${ValueTag.String}) ${failure}
 			else if(!tb.${stringOperation}(A,key,${tableCache}[${word}],${target})) ${failure}`;
 	}

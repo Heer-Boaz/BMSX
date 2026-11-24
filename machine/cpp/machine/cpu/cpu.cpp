@@ -86,10 +86,7 @@ CPU::CPU(
 	, m_heapAllocator(memory)
 	, m_luaHeap(*this)
 	, m_stringPool(m_luaHeap, memory, m_heapAllocator)
-	, m_indexKey(valueString(m_stringPool.intern("__index")))
-	, m_newIndexKey(valueString(m_stringPool.intern("__newindex")))
-	, m_lengthKey(valueString(m_stringPool.intern("__len")))
-	, m_heap(*this, m_luaHeap, m_memory, m_heapAllocator, m_stringPool, m_stringPool.intern("__mode"))
+	, m_heap(*this, m_luaHeap, m_memory, m_heapAllocator, m_stringPool)
 	, m_rootView(m_heap)
 	, m_transferViews{Thread{m_heap}, Thread{m_heap}}
 	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling")))
@@ -2230,7 +2227,7 @@ dispatch_native_block: {
 				nativeState.state = {.constants = IMAGE.constPool, .frame = frame, .heap = &m_heap,
 					.globalValues = m_globalBank.values(), .systemGlobalValues = m_systemGlobalBank.values(),
 					.cop0Words = m_cop0Words.data(),
-					.tableIndexKey = asStringId(m_indexKey),
+					.tableIndexKey = m_heap.indexKey,
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.readWindow(FrameField::Top),
 					.closure = FRAME.closureAddress(), .stackBase = FRAME.stackBase(),
 					.frameDepth = static_cast<u32>(thread.frameDepth()),
@@ -2907,9 +2904,9 @@ void CPU::trackLocalRoot(Value value) {
 
 void CPU::markRootHead(GcHeap& heap) {
 	// Opcode metamethod selectors stay interned independently of guest tables.
-	heap.markValue(m_indexKey);
-	heap.markValue(m_newIndexKey);
-	heap.markValue(m_lengthKey);
+	heap.markString(heap.indexKey);
+	heap.markString(heap.newIndexKey);
+	heap.markString(heap.lengthKey);
 	heap.markValue(m_errorInErrorHandlingValue);
 	for (const Value value : m_luaFaultErrorValues) heap.markValue(value);
 	heap.markValue(m_stringIndexTable);

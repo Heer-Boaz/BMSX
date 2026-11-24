@@ -609,9 +609,6 @@ private:
 	HeapAllocator m_heapAllocator;
 	LuaHeap m_luaHeap;
 	StringPool m_stringPool;
-	Value m_indexKey;
-	Value m_newIndexKey;
-	Value m_lengthKey;
 	GcHeap m_heap;
 	Thread m_rootView;
 	std::array<Thread, 2> m_transferViews;

@@ -5,7 +5,7 @@ import type { GcHeap } from './gc_heap';
 import { ValueSlots } from './value_slots';
 import type { CallFrame } from './call_state';
 import { Memory } from '../memory/memory';
-import type { StringId, StringPool } from './string_pool';
+import type { StringPool } from './string_pool';
 import type { Blua32ExecutionImage, DecodedInstructionPage } from './execution_image';
 import { planRegionRegisters } from './compiled_register_plan';
 import { CompiledExitWriteBacks } from './compiled_block_registers';
@@ -42,7 +42,7 @@ export class CompiledRegion {
 
 export function compileJavaScriptRegion(plans: readonly CompiledBlockSource[],
 	image: Blua32ExecutionImage, memory: Memory, strings: StringPool, globalSlots: ValueSlots,
-	systemGlobalSlots: ValueSlots, cop0Words: Uint32Array, heap: GcHeap, newIndexKey: StringId): CompiledRegion {
+	systemGlobalSlots: ValueSlots, cop0Words: Uint32Array, heap: GcHeap): CompiledRegion {
 	const exits: CompiledBlockExitSite[] = [];
 	const { requiredSlots, requiredCaptures, blocks: registers } = planRegionRegisters(plans), residents = registers.map(plan => plan.entry);
 	const tableCaches = new Map<DecodedInstructionPage, string>();
@@ -129,12 +129,12 @@ export function compileJavaScriptRegion(plans: readonly CompiledBlockSource[],
 	const functionSource = source.join('\n').replace(/\n\s+/g, '\n');
 	const cartridges = memory.cartridgeController;
 	const execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'q', 'kt', 'gl', 'sy',
-		'bf', 'fb', 'fr', 'fi', 'fw', 'imod', 'idiv', 'fmod', 'fdiv', 'shl', 'shr', 'pow', 'cp', 'h', 'x', 'tb', 'nk', ...tableCaches.values(), functionSource)(
+		'bf', 'fb', 'fr', 'fi', 'fw', 'imod', 'idiv', 'fmod', 'fdiv', 'shl', 'shr', 'pow', 'cp', 'h', 'x', 'tb', ...tableCaches.values(), functionSource)(
 		memory.ramView, memory.ramWriteWatches().groupData(), memory.systemRomStorage(), cartridges,
 		cartridges.romStorage(0), cartridges.romStorage(1), strings, image.constTags, globalSlots, systemGlobalSlots,
 		f32BitsToNumber, numberToF32Bits, luaFloatResultBits, luaFloatToInteger, luaFloatToWord,
 		luaIntegerModulo, luaIntegerFloorDivide, luaFloatModuloBits, luaFloatFloorDivideBits,
-		luaShiftLeft, luaShiftRight, luaPow, cop0Words, heap, exits, heap.tables, newIndexKey,
+		luaShiftLeft, luaShiftRight, luaPow, cop0Words, heap, exits, heap.tables,
 		...[...tableCaches.keys()].map(page => page.tableCacheSlots)) as RegionBody;
 	const region = new CompiledRegion(execute, exits, functionSource.length, requiredSlots, requiredCaptures);
 	for (let entry = 0; entry < blocks.length; ++entry) {

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, valueBool, valueBuiltinFunction, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
@@ -183,29 +184,56 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const image = linkRawTestSystemBlua32({ text, functions: [
 			{ firstWord: 0, wordCount: 2, maxStack: 4 }, { firstWord: 2, wordCount: 1 },
 		], exceptionFunctionIndex: 1 });
-		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
+		const { cpu, memory } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
 		const tables = cpu.gc.tables, source = cpu.createTable(2), forwarded = cpu.createTable(2), meta = cpu.createTable();
 		const newIndex = cpu.stringPool.intern('__newindex'), pc = frame.pc;
 		frame.registers.setTable(0, source);
 		frame.registers.setInteger(1, 19);
 		cpu.runUntilDepth(0, (BASE_CYCLES[OpCode.SETI] + BASE_CYCLES[OpCode.JMP]) * 68);
 		tables.setMetatableAddress(source, meta);
+		tables.setInteger(source, 1, valueNil());
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		assert.equal(memory.readRamRecordByte(meta + TableHeader.NewIndexAbsent), 1);
+		const checkpoint = captureCpuCheckpoint(cpu);
+		if (backend === CpuExecutionBackend.JavaScript) {
+			const page = frame.executionImage.decodedPages.get(pc & ~MAPPED_PAGE_BYTE_MASK)!;
+			const block = page.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]!;
+			const run = { remainingCycles: BASE_CYCLES[OpCode.SETI], registerTop: frame.top, memoryAddress: 0 };
+			const exit = block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, run);
+			assert.notEqual(block.region.exits[exit].exit, CompiledBlockExit.WriteInteger,
+				'generated SETI can fill an empty array slot through the absence proof');
+			assert.equal(tables.getInteger(source, 1), valueInteger(19));
+		} else {
+			cpu.runUntilDepth(0, 1);
+			assert.equal(tables.getInteger(source, 1), valueInteger(19));
+		}
 		tables.setStringKey(meta, newIndex, valueTable(forwarded));
+		assert.equal(memory.readRamRecordByte(meta + TableHeader.NewIndexAbsent), 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		frame.registers.setInteger(1, 31);
 		cpu.runUntilDepth(0, 1);
 		assert.equal(tables.getInteger(source, 1), valueInteger(31), 'an own entry is assigned without looking at the hook');
 		assert.equal(tables.getInteger(forwarded, 1), valueNil());
 		tables.setInteger(source, 1, valueNil());
+		const copy = tables.copyOwn(meta);
+		tables.setMetatableAddress(source, copy);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		cpu.runUntilDepth(0, 1);
 		assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.SETI] + TABLE_INDEX_VISIT_CYCLES);
 		assert.equal(tables.getInteger(source, 1), valueNil());
-		assert.equal(tables.getInteger(forwarded, 1), valueInteger(31));
+		assert.equal(tables.getInteger(forwarded, 1), valueInteger(31), 'the copied own method still handles assignments');
+		tables.setMetatableAddress(source, meta);
+		tables.setStringKey(meta, newIndex, valueNil());
+		assert.equal(memory.readRamRecordByte(meta + TableHeader.NewIndexAbsent), 1, 'raw erase restores the absence proof');
 		tables.setStringKey(meta, newIndex, valueBool(false));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 		assert.equal(tables.getInteger(source, 1), valueNil());
+
+		restoreCpuCheckpoint(cpu, checkpoint);
+		assert.equal(memory.readRamRecordByte(meta + TableHeader.NewIndexAbsent), 1);
+		cpu.runUntilDepth(0, 1);
+		assert.equal(tables.getInteger(source, 1), valueInteger(19), 'restore reinstates the grant and its raw metatable proof');
 	});
 }

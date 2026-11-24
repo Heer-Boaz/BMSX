@@ -39,7 +39,7 @@ bool CPU::finishTableRead(CallFrame& frame, int destination, Value base, Value k
 			instructionBudgetRemaining -= (TABLE_INDEX_CHAIN_LIMIT - 1) * TABLE_INDEX_VISIT_CYCLES;
 			throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 		}
-		TableRecord(m_heap, valuePayload(m_stringIndexTable)).resolveIndex(asStringId(m_indexKey), key,
+		TableRecord(m_heap, valuePayload(m_stringIndexTable)).resolveIndex(key,
 			result, TABLE_INDEX_CHAIN_LIMIT - carried);
 	}
 	instructionBudgetRemaining -= static_cast<int>(carried + result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
@@ -56,18 +56,18 @@ bool CPU::finishTableRead(CallFrame& frame, int destination, Value base, Value k
 
 bool CPU::loadTableIndex(CallFrame& frame, int destination, Value base, Value key) {
 	TableLookupResult result;
-	TableRecord(m_heap, tableIndexAddress(base)).resolveIndex(asStringId(m_indexKey), key, result);
+	TableRecord(m_heap, tableIndexAddress(base)).resolveIndex(key, result);
 	return finishTableRead(frame, destination, base, key, result);
 }
 
 bool CPU::loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index) {
 	TableLookupResult result;
-	TableRecord(m_heap, tableIndexAddress(base)).resolveIntegerIndex(asStringId(m_indexKey), index, result);
+	TableRecord(m_heap, tableIndexAddress(base)).resolveIntegerIndex(index, result);
 	return finishTableRead(frame, destination, base, valueInteger(index), result);
 }
 
 void CPU::resolveTableFieldIndexCached(int& predictedSlot, Value base, StringId key, TableLookupResult& result) {
-	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexCached(asStringId(m_indexKey), key, predictedSlot, result);
+	TableRecord(m_heap, tableIndexAddress(base)).resolveStringIndexCached(key, predictedSlot, result);
 	if (result.extraVisits == 0 && result.slot >= 0) predictedSlot = result.slot;
 }
 
@@ -185,7 +185,7 @@ void CPU::resumeAllocation() {
 bool CPU::storeTableIndex(CallFrame& frame, Value base, Value key, Value value) {
 	if (!valueIsTable(base)) throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	TableLookupResult result;
-	TableRecord(m_heap, valuePayload(base)).resolveAssignment(asStringId(m_newIndexKey), key, result);
+	TableRecord(m_heap, valuePayload(base)).resolveAssignment(key, result);
 	if (finishTableAssignment(frame, key, value, result)) return true;
 	TableRecord table(m_heap, result.receiver);
 	if (m_runKind != CpuRunKind::Scheduled) table.set(key, value);
@@ -197,7 +197,7 @@ bool CPU::storeTableIndex(CallFrame& frame, Value base, Value key, Value value) 
 bool CPU::storeTableIntegerIndex(CallFrame& frame, Value base, int index, Value value) {
 	if (!valueIsTable(base)) throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	TableLookupResult result;
-	TableRecord(m_heap, valuePayload(base)).resolveIntegerAssignment(asStringId(m_newIndexKey), index, result);
+	TableRecord(m_heap, valuePayload(base)).resolveIntegerAssignment(index, result);
 	if (finishTableAssignment(frame, valueInteger(index), value, result)) return true;
 	TableRecord table(m_heap, result.receiver);
 	if (m_runKind != CpuRunKind::Scheduled) table.setInteger(index, value);
@@ -209,7 +209,7 @@ bool CPU::storeTableIntegerIndex(CallFrame& frame, Value base, int index, Value 
 bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value base, StringId key, Value value) {
 	if (!valueIsTable(base)) throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	TableLookupResult result;
-	TableRecord(m_heap, valuePayload(base)).resolveStringAssignment(asStringId(m_newIndexKey), key, result);
+	TableRecord(m_heap, valuePayload(base)).resolveStringAssignment(key, result);
 	if (finishTableAssignment(frame, valueString(key), value, result)) return true;
 	TableRecord table(m_heap, result.receiver);
 	const int slot = m_runKind == CpuRunKind::Scheduled
@@ -222,7 +222,7 @@ bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value
 
 bool CPU::executeLength(CallFrame& frame, int destination, Value operand) {
 	if (valueIsTable(operand)) {
-		const Value method = TableRecord(m_heap, valuePayload(operand)).metatableField(asStringId(m_lengthKey));
+		const Value method = TableRecord(m_heap, valuePayload(operand)).metatableField(m_heap.lengthKey);
 		if (!isNil(method)) {
 			const std::array args{operand, operand};
 			invokeImplicit(frame, CallResultPlacement::single(destination), method, args);

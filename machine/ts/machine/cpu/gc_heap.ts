@@ -7,6 +7,7 @@ import * as Closure from './closure';
 import { UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from './upvalue';
 import * as Upvalue from './upvalue';
 import { TableRecords, type TableStringProbe } from './table';
+import type { StringId } from './string_pool';
 import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadLayout, ThreadRecords } from './thread_record';
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
 import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from './value';
@@ -103,11 +104,13 @@ export class GcHeap {
 		if (valueTag(key) === ValueTag.String) this.markString(valuePayload(key));
 		if (valueTag(value) === ValueTag.String) this.markString(valuePayload(value));
 	};
-	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, public readonly memory: Memory, public readonly arena: HeapAllocator, private readonly modeKey: number) {
+	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, public readonly memory: Memory,
+		public readonly arena: HeapAllocator, private readonly modeKey: StringId, newIndexKey: StringId) {
 		this.controlOffset = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		this.threads = new ThreadRecords(memory, arena, budget);
+		this.tables = new TableRecords(this, newIndexKey);
 	}
-	public readonly tables = new TableRecords(this);
+	public readonly tables: TableRecords;
 	public readonly threads: ThreadRecords;
 	private readonly threadLayout = new ThreadLayout();
 	public publishObject(address: number): void {

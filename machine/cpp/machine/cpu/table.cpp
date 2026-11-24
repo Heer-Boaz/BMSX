@@ -22,7 +22,8 @@ TableRecord::TableRecord(GcHeap& heap, u32 address)
 }
 
 void TableRecord::initialize(size_t array, size_t hash) {
-	writeHeader(TableHeader::Kind, static_cast<u32>(ValueTag::Table) | (static_cast<u32>(m_heap->white()) << 8u));
+	writeHeader(TableHeader::Kind, static_cast<u32>(ValueTag::Table) | (static_cast<u32>(m_heap->white()) << 8u)
+		| (1u << (8u * TABLE_NEW_INDEX_ABSENT_BYTE)));
 	writeHeader(TableHeader::Gray, 0);
 	writeHeader(TableHeader::Metatable, 0);
 	writeHeader(TableHeader::Length, 0);
@@ -42,7 +43,9 @@ TableRecord TableRecord::copyOwn() const {
 		std::memcpy(m_memory->ramData() + dst, m_memory->ramData() + src, bytes);
 		m_memory->invalidateRamWrite(dst, bytes);
 	}
-	const u32 kind = static_cast<u32>(ValueTag::Table) | (u32{m_heap->white()} << 8u);
+	const u32 absent = m_memory->readRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE);
+	const u32 kind = static_cast<u32>(ValueTag::Table) | (u32{m_heap->white()} << 8u)
+		| (absent << (8u * TABLE_NEW_INDEX_ABSENT_BYTE));
 	m_memory->writeRamRecordPair(target + static_cast<u32>(TableHeader::Kind), kind, 0u);
 	copy.writeHeader(TableHeader::Metatable, 0u);
 	m_memory->writeRamRecordPair(target + static_cast<u32>(TableHeader::Array), array, hash);
@@ -469,8 +472,10 @@ void TableRecord::fillStringRecord(const TableConstructorLayout& layout, std::sp
 		const auto& node = layout.nodes[slot];
 		if (node.field < 0) continue;
 		const auto field = static_cast<u32>(node.field);
-		body.slots.set(slot, valueString(keys[field]));
+		const StringId key = keys[field];
+		body.slots.set(slot, valueString(key));
 		body.slots.set(slot + body.count, values[field]);
+		if (key == m_heap->newIndexKey) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 0u);
 		if (node.next >= 0) body.setNext(slot, node.next);
 	}
 	if (layout.free != static_cast<i8>(body.count - 1u)) writeHeader(TableHeader::Free, static_cast<u32>(layout.free));
@@ -493,6 +498,7 @@ void TableRecord::markHashNodeDead(size_t index) {
 		values().set(hashValueSlot(index), valueFromTag(ValueTag::DeadKey, hashId));
 	} else {
 		values().set(hashValueSlot(index), valueNil());
+		if (key == valueString(m_heap->newIndexKey)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 1u);
 	}
 }
 
@@ -560,8 +566,13 @@ int TableRecord::setHash(u32 array, Value key, Value value, int slot) {
 	return assignHash<HashStore::General>(array, key, value, slot);
 }
 
+void TableRecord::publishHashInsertion(Value key, Value value) {
+	if (key == valueString(m_heap->newIndexKey)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 0u);
+	m_heap->writeTableEntry(m_address, key, value);
+}
+
 template <TableRecord::HashStore Policy>
-int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, StringId newIndexKey)
+int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	constexpr bool returning = Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField;
 	const auto tag = valueTag(value);
@@ -593,7 +604,8 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 	// Only an absent own field can trigger __newindex. Keep the probe's
 	// slot (including a tombstone) for the insertion below.
 	if constexpr (Policy == HashStore::ReturningField) {
-		if (!isNil(metatableField(newIndexKey))) return HASH_STORE_DECLINED;
+		const u32 meta = newIndexMetatable();
+		if (meta != 0u && !isNil(TableRecord(*m_heap, meta).getStringKey(m_heap->newIndexKey))) return HASH_STORE_DECLINED;
 		if (erase) return -1;
 	}
 	if (count != 0u) {
@@ -601,7 +613,7 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 		const int available = nodeIndex >= 0 || vacant ? -1 : body.findFreeIndex(hashFree());
 		if (nodeIndex >= 0 || vacant || available >= 0) {
 			nodeIndex = placeHashMapping(body, home, key, value, nodeIndex, available);
-			m_heap->writeTableEntry(m_address, key, value);
+			publishHashInsertion(key, value);
 			return nodeIndex;
 		}
 	}
@@ -610,7 +622,7 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 		if (nodeIndex == HASH_STORE_DECLINED) return nodeIndex;
 	// Relocation invalidates a suspended collector cursor in resize().
 	// Already visited edges retain their colors; only the insertion is new.
-	m_heap->writeTableEntry(m_address, key, value);
+	publishHashInsertion(key, value);
 	return nodeIndex;
 }
 
@@ -625,8 +637,8 @@ bool TableRecord::tryAssignIntegerHash(i32 key, Value value) noexcept {
 	return true;
 }
 
-int TableRecord::tryAssignStringField(StringId key, Value value, StringId newIndexKey) noexcept {
-	return assignHash<HashStore::ReturningField>(arrayCapacity(), valueString(key), value, TABLE_HASH_UNPROBED, newIndexKey);
+int TableRecord::tryAssignStringField(StringId key, Value value) noexcept {
+	return assignHash<HashStore::ReturningField>(arrayCapacity(), valueString(key), value);
 }
 
 Value TableRecord::getInteger(int indexValue) const {
@@ -703,15 +715,20 @@ Value TableRecord::metatableField(StringId key) const {
 	return address != 0u ? TableRecord(*m_heap, address).getStringKey(key) : valueNil();
 }
 
+u32 TableRecord::newIndexMetatable() const {
+	const u32 meta = metatableAddress();
+	return meta != 0u && m_memory->readRamRecordByte(meta + TABLE_NEW_INDEX_ABSENT_BYTE) == 1u ? 0u : meta;
+}
+
 template <bool Assignment, bool RememberPath, typename Lookup>
-void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResult& result, Lookup&& lookup,
+void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&& lookup,
 	TableStringPathCache* cache, u32 visitLimit, TableFirstOwnProbe firstOwnProbe) const {
 	TableRecord current = *this;
 	for (u32 depth = 0; depth < visitLimit; ++depth) {
 		const u32 receiver = current.address();
 		u32 metatable;
 		if constexpr (Assignment) {
-			metatable = current.metatableAddress();
+			metatable = current.newIndexMetatable();
 			if (metatable == 0u) {
 				result = {valueNil(), TABLE_HASH_UNPROBED, depth, TableLookupStatus::Store, receiver};
 				return;
@@ -748,10 +765,12 @@ void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResu
 		}
 		current.m_address = metatable;
 		Value parent;
-		if constexpr (RememberPath) {
-			parent = depth < cache->indexSlots.size() ? current.getStringKeyCached(indexKey, cache->indexSlots[depth])
-				: current.getStringKey(indexKey);
-		} else parent = current.getStringKey(indexKey);
+		if constexpr (Assignment) {
+			parent = current.getStringKey(m_heap->newIndexKey);
+		} else if constexpr (RememberPath) {
+			parent = depth < cache->indexSlots.size() ? current.getStringKeyCached(m_heap->indexKey, cache->indexSlots[depth])
+				: current.getStringKey(m_heap->indexKey);
+		} else parent = current.getStringKey(m_heap->indexKey);
 		if (!valueIsTable(parent)) {
 			if (valueIsClosure(parent) || valueIsBuiltinFunction(parent))
 				result = {parent, -1, depth, TableLookupStatus::Invoke, receiver};
@@ -766,47 +785,47 @@ void TableRecord::resolveIndexChain(StringId indexKey, int slot, TableLookupResu
 	result = {valueNil(), -1, visitLimit - 1, TableLookupStatus::ChainExhausted};
 }
 
-void TableRecord::resolveIndex(StringId indexKey, const Value& rawKey, TableLookupResult& result, u32 visitLimit) const {
+void TableRecord::resolveIndex(const Value& rawKey, TableLookupResult& result, u32 visitLimit) const {
 	const Value key = canonicalTableKey(rawKey);
 	const bool miss = isNil(key) || valueIsNaN(key);
-	resolveIndexChain(indexKey, -1, result, [key, miss](const TableRecord& table, int&) {
+	resolveIndexChain(-1, result, [key, miss](const TableRecord& table, int&) {
 		return miss ? valueNil() : table.getCanonical(key);
 	}, nullptr, visitLimit);
 }
 
-void TableRecord::resolveIntegerIndex(StringId indexKey, int key, TableLookupResult& result) const {
-	resolveIndexChain(indexKey, -1, result, [key](const TableRecord& table, int&) { return table.getInteger(key); });
+void TableRecord::resolveIntegerIndex(int key, TableLookupResult& result) const {
+	resolveIndexChain(-1, result, [key](const TableRecord& table, int&) { return table.getInteger(key); });
 }
 
-void TableRecord::resolveStringIndex(StringId indexKey, StringId key, TableLookupResult& result) const {
-	resolveIndexChain(indexKey, -1, result, [key](const TableRecord& table, int&) { return table.getStringKey(key); });
+void TableRecord::resolveStringIndex(StringId key, TableLookupResult& result) const {
+	resolveIndexChain(-1, result, [key](const TableRecord& table, int&) { return table.getStringKey(key); });
 }
 
-void TableRecord::resolveStringIndexCached(StringId indexKey, StringId key, int predictedSlot, TableLookupResult& result) const {
-	resolveIndexChain(indexKey, predictedSlot, result, [key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); });
+void TableRecord::resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result) const {
+	resolveIndexChain(predictedSlot, result, [key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); });
 }
 
-void TableRecord::resolveStringIndexPath(StringId indexKey, StringId key, int& receiverSlot,
+void TableRecord::resolveStringIndexPath(StringId key, int& receiverSlot,
 	TableLookupResult& result, TableStringPathCache& cache, TableFirstOwnProbe firstOwnProbe) const {
-	resolveIndexChain<false, true>(indexKey, receiverSlot, result,
+	resolveIndexChain<false, true>(receiverSlot, result,
 		[key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); }, &cache, TABLE_INDEX_CHAIN_LIMIT, firstOwnProbe);
 	if (result.extraVisits == 0u && result.slot >= 0) receiverSlot = result.slot;
 }
 
-void TableRecord::resolveAssignment(StringId newIndexKey, Value rawKey, TableLookupResult& result) const {
+void TableRecord::resolveAssignment(Value rawKey, TableLookupResult& result) const {
 	const Value key = canonicalTableKey(rawKey);
 	const bool miss = isNil(key) || valueIsNaN(key);
-	resolveIndexChain<true>(newIndexKey, -1, result, [key, miss](const TableRecord& table, int&) {
+	resolveIndexChain<true>(-1, result, [key, miss](const TableRecord& table, int&) {
 		return !miss && !isNil(table.getCanonical(key));
 	});
 }
 
-void TableRecord::resolveIntegerAssignment(StringId newIndexKey, int key, TableLookupResult& result) const {
-	resolveIndexChain<true>(newIndexKey, -1, result, [key](const TableRecord& table, int&) { return !isNil(table.getInteger(key)); });
+void TableRecord::resolveIntegerAssignment(int key, TableLookupResult& result) const {
+	resolveIndexChain<true>(-1, result, [key](const TableRecord& table, int&) { return !isNil(table.getInteger(key)); });
 }
 
-void TableRecord::resolveStringAssignment(StringId newIndexKey, StringId key, TableLookupResult& result) const {
-	resolveIndexChain<true>(newIndexKey, -1, result, [key](const TableRecord& table, int& slot) {
+void TableRecord::resolveStringAssignment(StringId key, TableLookupResult& result) const {
+	resolveIndexChain<true>(-1, result, [key](const TableRecord& table, int& slot) {
 		const u32 count = table.hashSlots();
 		if (count == 0u) return false;
 		const auto body = table.hashBody(count, table.arrayCapacity());
@@ -864,7 +883,7 @@ void TableRecord::clear() {
 	writeHeader(TableHeader::Length, 0);
 	freeStorage();
 	bindStorage(0, 0, 0);
-
+	m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 1u);
 }
 
 bool TableRecord::loadStoredEntry(size_t slot, Value& key, Value& value) const {
