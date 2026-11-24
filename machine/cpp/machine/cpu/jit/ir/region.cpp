@@ -163,7 +163,8 @@ void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeReg
 		};
 		block.inlineBuiltin &= block.successors[0] != m_blocks.size();
 	}
-	uses.analyze(m_blocks);
+	m_flow.reset(m_blocks);
+	uses.analyze(m_blocks, m_flow);
 	m_types.specializeRegion(m_blocks, uses, m_values, m_entryTypes, specializations.imageConstants, options.observesArithmetic);
 	for (auto& block : m_blocks) {
 		auto& final = block.instructions.back();
@@ -192,20 +193,18 @@ void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeReg
 	}
 	// Only local edges inherit a window. Unrelated functions can share an
 	// executable allocation, and semantic continuations bind a fresh window.
-	bool changed;
-	do {
-		changed = false;
-		for (size_t index = m_blocks.size(); index-- > 0;) {
-			auto& block = m_blocks[index];
-			for (const auto target : block.successors) {
-				if (target == m_blocks.size()) continue;
-				const auto& successor = m_blocks[target];
-				changed |= successor.requiredSlots > block.requiredSlots || successor.requiredCaptures > block.requiredCaptures;
-				block.requiredSlots = std::max(block.requiredSlots, successor.requiredSlots);
-				block.requiredCaptures = std::max(block.requiredCaptures, successor.requiredCaptures);
-			}
+	m_flow.solve([&](size_t index) {
+		auto& block = m_blocks[index];
+		const auto slots = block.requiredSlots;
+		const auto captures = block.requiredCaptures;
+		for (const auto target : block.successors) {
+			if (target == m_blocks.size()) continue;
+			const auto& successor = m_blocks[target];
+			block.requiredSlots = std::max(block.requiredSlots, successor.requiredSlots);
+			block.requiredCaptures = std::max(block.requiredCaptures, successor.requiredCaptures);
 		}
-	} while (changed);
+		return slots != block.requiredSlots || captures != block.requiredCaptures;
+	});
 	planAdmissionReplays();
 	if (options.immutableSource) planRecordConstructors(directory);
 }

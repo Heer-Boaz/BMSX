@@ -8,6 +8,7 @@
 
 namespace bmsx {
 
+class NativeBackwardFlow;
 struct NativeInstruction;
 struct NativeIrBlock;
 
@@ -17,7 +18,7 @@ enum class NativeOperandDemand : u8 { None, Tag, Payload, Value };
 // without reference to the host register bank or code-emission state.
 class NativeRegisterUses {
 public:
-	void analyze(std::span<const NativeIrBlock> blocks);
+	void analyze(std::span<const NativeIrBlock> blocks, NativeBackwardFlow& flow);
 
 	bool entryReads(size_t block, int guest) const;
 
@@ -42,12 +43,6 @@ private:
 		u64 instructions;
 	};
 
-	struct PendingBlock {
-		size_t first;
-		bool queued;
-	};
-	std::vector<PendingBlock> m_pendingBlocks;
-	std::vector<size_t> m_predecessorLinks, m_worklist;
 	std::vector<int> m_entryRegisters;
 	std::vector<u64> m_entryLive;
 	std::vector<u64> m_localLive;

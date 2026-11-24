@@ -1061,20 +1061,28 @@ void registerUses() {
 		NativeIrBlock{right, std::nullopt, {3, 4}}, NativeIrBlock{join, std::nullopt, {4, 4}},
 	};
 	NativeRegisterUses uses;
-	uses.analyze(blocks);
+	NativeBackwardFlow flow;
+	flow.reset(blocks);
+	uses.analyze(blocks, flow);
 	require(uses.entryReads(0, 10) && !uses.entryReads(1, 10) && uses.entryReads(2, 10)
 		&& uses.entryReads(1, 12) && uses.entryReads(3, 10) && !uses.entryReads(3, 11),
 		"entry liveness follows both edges but excludes values overwritten before they are read");
 
 	blocks[3].successors = {0, 0};
-	uses.analyze(blocks);
+	flow.reset(blocks);
+	uses.analyze(blocks, flow);
 	require(uses.entryReads(0, 12) && uses.entryReads(1, 12) && !uses.entryReads(1, 10),
 		"a cyclic diamond propagates reads but not killed definitions");
 	blocks[0].instructions = join;
 	blocks[3].instructions = first;
-	uses.analyze(blocks);
+	uses.analyze(blocks, flow);
 	require(uses.entryReads(3, 10) && uses.entryReads(3, 12) && !uses.entryReads(1, 10),
 		"an already processed backedge predecessor is revisited when its successor gains live slots");
+
+	blocks[3].successors = {blocks.size(), blocks.size()};
+	uses.analyze(blocks, flow);
+	require(!uses.entryReads(3, 10) && !uses.entryReads(2, 12),
+		"reusing the predecessor schedule does not import requirements across removed edges");
 
 	std::vector<NativeInstruction> instructions(64, NativeInstruction(NativeLiteral{1, valueInteger(0)}));
 	instructions[0] = NativeInstruction(NativeMove{10, 9, ValueMoveKind::Copy});

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "machine/cpu/jit/compilation_input.h"
+#include "machine/cpu/jit/ir/backward_flow.h"
 #include "machine/cpu/jit/ir/operations.h"
 #include "machine/cpu/jit/ir/type_propagation.h"
 #include "machine/cpu/jit/ir/value_flow.h"
@@ -111,6 +112,7 @@ public:
 	size_t instructionCount() const { return m_instructions.size(); }
 
 private:
+	NativeBackwardFlow m_flow;
 	NativeSlotValues m_values;
 	NativeTypePropagation m_types;
 	std::vector<NativeInstruction> m_instructions;
