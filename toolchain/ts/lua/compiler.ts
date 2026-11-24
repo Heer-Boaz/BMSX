@@ -76,6 +76,7 @@ import { optimizeInstructions, type Instruction, type InstructionSet, type Optim
 import { computeMaxRegister } from './compiler/optimizer/instructions';
 import { allocateFrameSlots } from './compiler/optimizer/frame_slots';
 import { staticLuaTableFieldName } from './syntax/table_fields';
+import { predictTableShapes, type TableShapes } from './compiler/table_shapes';
 import { compactUnusedUpvalues } from './compiler/optimizer/upvalues';
 import {
 	buildModuleCompileContext,
@@ -522,6 +523,7 @@ class ProgramBuilder {
 		public readonly preloadModules: readonly string[],
 		public readonly compiledModulePaths: readonly string[],
 		public readonly types: StructTypes,
+		public readonly tableShapes: TableShapes | undefined,
 		public readonly captureLayout?: LuaCaptureLayout,
 	) {
 		this.constPool = [];
@@ -4881,6 +4883,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	}
 
 	private compileTableConstructor(expression: LuaTableConstructorExpression, target: number): void {
+		if (expression.fields.length === 0) {
+			const shape = this.program.tableShapes?.get(expression);
+			this.emitABC(OpCode.NEWT, target, shape?.array ?? 0, shape?.hash ?? 0);
+			return;
+		}
 		const keys = this.preparedRecordKeys(expression);
 		if (keys !== undefined) {
 			const base = this.allocTempBlock(keys.length);
@@ -6319,6 +6326,11 @@ export function compileLuaChunkToProgram(
 	if (compileErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
+	const tableShapes: TableShapes | undefined = optLevel === 3 ? new Map() : undefined;
+	if (tableShapes !== undefined) {
+		predictTableShapes(chunk, frontend.getFile(chunk.locations.path), tableShapes);
+		for (const module of canonicalModules) predictTableShapes(module.chunk, frontend.getFile(module.path), tableShapes);
+	}
 	const programBuilder = new ProgramBuilder(
 		optLevel,
 		programDomain,
@@ -6326,6 +6338,7 @@ export function compileLuaChunkToProgram(
 		options.preloadModules ?? [],
 		compiledModulePaths,
 		new StructTypes(frontend.snapshot, createCompilerStaticBindings(frontend.snapshot, moduleCompileContext)),
+		tableShapes,
 		options.captureLayout,
 	);
 	if (programDomain === 'cart') {
