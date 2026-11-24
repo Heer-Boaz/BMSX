@@ -89,11 +89,10 @@ bool CPU::finishTableAssignment(CallFrame& frame, Value key, Value value, const 
 
 u32 CPU::allocateTable(int arraySize, int hashSize, LuaAllocationMode mode) {
 	const size_t hashCapacity = TableRecord::hashCapacity(hashSize);
-	const auto reserve = static_cast<u32>(hashSize);
-	const u32 address = m_luaHeap.allocateRecord(TableRecord::HEADER_BYTES, true, TableRecord::storageBytes(arraySize, hashCapacity, reserve),
-		static_cast<u32>(TableHeader::Storage), valueNil(), valueNil(), valueNil(), TableRecord::allocationCharge(arraySize, reserve), mode);
+	const u32 address = m_luaHeap.allocateRecord(TableRecord::HEADER_BYTES, true, TableRecord::storageBytes(arraySize, hashCapacity),
+		static_cast<u32>(TableHeader::Storage), valueNil(), valueNil(), valueNil(), TableRecord::allocationCharge(arraySize, hashCapacity), mode);
 	if (!address) return 0u;
-	TableRecord(m_heap, address).initialize(arraySize, hashCapacity, reserve);
+	TableRecord(m_heap, address).initialize(arraySize, hashCapacity);
 	m_heap.publishObject(address);
 	trackLocalRoot(valueTable(address));
 	return address;

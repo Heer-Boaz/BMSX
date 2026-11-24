@@ -783,7 +783,7 @@ void hashGrowthKeepsReservedArray() {
 	for (size_t i = 0; i < keys.size(); ++i) {
 		mixed.set(keys[i], valueInteger(static_cast<i32>(i)));
 		require(mixed.arrayCapacity() == 8 && mixed.getInteger(8) == retained
-			&& cpu.luaHeap().usedBytes() == bytes + 10u * (i + 1u),
+			&& cpu.luaHeap().usedBytes() == bytes + TableRecord::allocationCharge(0, TableRecord::hashCapacity(static_cast<int>(i + 1u))),
 			"a non-array key never repartitions a sparse reserved array");
 	}
 	for (i32 slot = 1; slot < 8; ++slot) mixed.setInteger(slot, valueInteger(slot));
@@ -1901,14 +1901,14 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 		"an exact grant commits the WIDE store without executing its successor");
 	require(receiver.get(inserted) == raw && receiver.getInteger(1) == valueInteger(61)
 		&& receiver.get(cpu.readFrameRegister(0, keysSlot)) == valueInteger(21)
-		&& receiver.storageAddress() == storage && cpu.luaHeap().usedBytes() == bytes + charge,
-		"colliding identities remain distinct and an unreserved insertion charges exactly one mapping without growth");
+		&& receiver.storageAddress() == storage && cpu.luaHeap().usedBytes() == bytes,
+		"colliding identities remain distinct and insertion reuses paid-for storage");
 	requireParity(native, scalar);
 	start(keysSlot + 3, grows);
 	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
 		&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == pc + 6 * INSTRUCTION_BYTES
 		&& cpu.readFrameRegister(0, 9) == grows && cpu.readFrameRegister(0, 11) == valueInteger(39)
-		&& receiver.get(inserted) == grows && cpu.luaHeap().usedBytes() == bytes + charge,
+		&& receiver.get(inserted) == grows && cpu.luaHeap().usedBytes() == bytes,
 		"a live overwrite at full occupancy returns to the generated suffix, preserving both prefix values");
 	require(page.nativeBlocks->entries[word].get() == installed, "the complete grant reuses the warmed executable");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -1919,7 +1919,7 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 	start(keysSlot + 4, raw);
 	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
 		&& receiver.hashSlots() == 8 && receiver.get(grows) == raw && receiver.get(inserted) == grows
-		&& cpu.luaHeap().usedBytes() == bytes + 2 * charge
+		&& cpu.luaHeap().usedBytes() == bytes + 4 * charge
 		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39),
 		"a full table grows and continues with the live native registers");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -1928,8 +1928,8 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 	requireParity(native, scalar);
 	start(keysSlot + 3, valueNil());
 	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
-		&& isNil(receiver.get(inserted)) && receiver.get(grows) == raw && cpu.luaHeap().usedBytes() == bytes + charge,
-		"a nil value removes the colliding mapping and releases only its charge");
+		&& isNil(receiver.get(inserted)) && receiver.get(grows) == raw && cpu.luaHeap().usedBytes() == bytes + 4 * charge,
+		"a nil value removes the colliding mapping without releasing its reserved slot");
 	requireParity(native, scalar);
 
 	for (auto* machine : {&native, &scalar}) {
@@ -2251,7 +2251,7 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 		"the exact WIDE grant commits the field without executing the suffix");
 	int insertedSlot = -1;
 	require(spare.getStringKeyCached(field, insertedSlot) == raw && prediction == insertedSlot && prediction != originalSlot
-		&& spare.storageAddress() == initialStorage && cpu.luaHeap().usedBytes() == initialBytes + charge
+		&& spare.storageAddress() == initialStorage && cpu.luaHeap().usedBytes() == initialBytes
 		&& spare.getInteger(1) == valueInteger(61),
 		"absent __newindex allows a colliding own insertion and trains its actual slot without touching the array");
 	requireParity(native, scalar);
@@ -2303,7 +2303,7 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 		start(fullSlot, valueNil());
 		require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
 			&& prediction == -1 && isNil(full.getStringKey(field)) && full.getInteger(1) == valueInteger(61)
-			&& full.storageAddress() == fullStorage && cpu.luaHeap().usedBytes() == beforeFullDelete - charge
+			&& full.storageAddress() == fullStorage && cpu.luaHeap().usedBytes() == beforeFullDelete
 			&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == suffixPc,
 			"nil pays no further storage or mapping charge after deleting this field once");
 		requireParity(native, scalar);
@@ -2371,7 +2371,7 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 		require(test::runCpuParity(cpu, scalar.cpu, nilThroughSuffix) == RunResult::Yielded
 			&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == nilPc + 4 * INSTRUCTION_BYTES
 			&& isNil(cpu.readFrameRegister(0, 9)) && isNil(full.getStringKey(field))
-			&& cpu.luaHeap().usedBytes() == beforeKnownDelete - charge && *nilExit->tableStore.decoded == -1,
+			&& cpu.luaHeap().usedBytes() == beforeKnownDelete && *nilExit->tableStore.decoded == -1,
 			"known nil deletes once, then returns from an absent mapping with the same exact charge and suffix");
 		requireParity(native, scalar);
 	}
@@ -2506,7 +2506,7 @@ void nativeDynamicStringMissReturnsWithinTheGrant() {
 	require(test::runCpuParity(cpu, scalar.cpu, nilGrant) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0
 		&& cpu.readFramePc(0) == nilPc + 4u * INSTRUCTION_BYTES && isNil(cpu.readFrameRegister(0, 4))
 		&& isNil(table.getStringKey(growth)) && table.getStringKey(resident) == valueInteger(39)
-		&& cpu.luaHeap().usedBytes() == beforeDelete - TableRecord::allocationCharge(0, 1),
+		&& cpu.luaHeap().usedBytes() == beforeDelete,
 		"a proven nil still passes the live String key to the returning delete");
 	requireParity(native, scalar);
 #if defined(BMSX_NATIVE_GATE_PROFILE)

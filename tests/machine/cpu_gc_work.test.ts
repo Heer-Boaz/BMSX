@@ -63,19 +63,19 @@ test('physical GC work counts canonical scans, reclamation and one global bank p
 	assert.equal(cpu.instructionBudgetRemaining, 7);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'read-only ROM Strings are not allocated');
 	const frame = cpu.rootThread.currentFrame!;
-	frame.registers.setTable(0, cpu.createTable(2, 3)); //32+10+3×10=72 logical bytes.
+	frame.registers.setTable(0, cpu.createTable(2, 3)); //32+10+4×10=82 logical bytes.
 	frame.registers.setString(1, cpu.stringPool.intern(textToByteString('é😀'))); //6 canonical UTF8 bytes, not3 UTF16 units.
 	frame.top = 2;
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 72 + 22);
+	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 82 + 22);
 	assert.equal(cpu.gc.collect(), bootCollectionWork + (8 + 2 + 8 + 1) + 2 + 2 * 3,
 		'trace the live Values, scan the Table, mark the String leaf and visit each record');
 	assert.equal(cpu.instructionBudgetRemaining, 7);
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 72 + 22);
+	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 82 + 22);
 	assert.equal(cpu.luaHeap.collectionTarget(), 1048576);
 	cpu.instructionBudgetRemaining = 123; cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'raw host collection is unbilled');
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
-	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 72 + 22);
+	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 82 + 22);
 	cpu.reset();
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'reset maintenance does not implicitly collect or bill the retained transient grant');
 });
@@ -113,19 +113,19 @@ test('inactive frame reserve does not consume automatic GC quanta', () => {
 test('table copy observes weak clearing during physical allocation retry', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const { tables } = cpu.gc;
-	const input = cpu.createTable(1024, 2), metatable = cpu.createTable(), unrooted = cpu.createTable();
+	const input = cpu.createTable(1024, 3), metatable = cpu.createTable(), unrooted = cpu.createTable();
 	const key = cpu.stringPool.intern('weak copy member');
 	tables.setStringKey(input, key, valueTable(unrooted));
 	tables.setInteger(input, 1024, valueInteger(64));
 	tables.setStringKey(metatable, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 	tables.setMetatableAddress(input, metatable);
 	cpu.createTable(1536, 0);
-	while (cpu.heapAllocator.allocate(TableRecords.storageBytes(1024, 2, 2), true) !== 0) {}
+	while (cpu.heapAllocator.allocate(TableRecords.storageBytes(1024, 4), true) !== 0) {}
 
 	const copy = tables.copyOwn(input);
 	assert.equal(cpu.gc.tableRecordAddress(input), input, 'the initial request roots the borrowed input');
 	assert.equal(tables.getStringKey(input, key), valueNil(), 'failed physical admission cleared the weak source entry');
-	assert.equal(tables.hashReserve(copy), 2, 'the original reservation still applies');
+	assert.equal(tables.hashSize(copy), 4, 'the copy preserves the rounded backing capacity even after weak clearing');
 	assert.equal(tables.getStringKey(copy, key), valueNil(), 'only entries after the collection are copied');
 	assert.equal(tables.getInteger(copy, 1024), valueInteger(64));
 });
@@ -133,7 +133,7 @@ test('table copy observes weak clearing during physical allocation retry', () =>
 test('allocation admission and GC use logical bytes, not physical chunk extents', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const logical = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
-	const logicalCharge = (32 + 2 * 5 + 3 * 10) + (32 + 512 * 5);
+	const logicalCharge = (32 + 2 * 5 + 4 * 10) + (32 + 512 * 5);
 	cpu.luaHeap.setCollectionTarget(logical + logicalCharge);
 	cpu.instructionBudgetRemaining = 23;
 	const first = cpu.createTable(2, 3), second = cpu.createTable(512, 0);

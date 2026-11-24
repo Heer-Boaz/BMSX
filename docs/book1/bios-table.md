@@ -92,12 +92,11 @@ instance.hp = 10
 ```
 
 A missing argument or any argument other than a Table raises
-`INVALID_ARGUMENT`. The copy reserves the source's array capacity. Its hash
-reservation is the larger of the source's hash reservation and its number of
-live hash mappings when the call starts. If allocation clears weak mappings
-from the source, only the remaining mappings are copied. The service costs
-two base cycles plus one per reserved array slot and two per reserved hash
-mapping, in addition to the ordinary call and result placement.
+`INVALID_ARGUMENT`. The copy reserves the same array and hash capacities as
+the source. If allocation clears weak mappings from the source, only the
+remaining mappings are copied. The service costs two base cycles plus one
+per reserved array slot and two per reserved hash slot, in addition to the
+ordinary call and result placement.
 
 ## Packing and reading table ranges {#sec-bios-table-packing-and-reading-table-ranges}
 

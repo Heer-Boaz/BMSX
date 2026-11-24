@@ -66,7 +66,7 @@ void allocationAdmissionUsesLogicalBytes() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	const size_t logical = cpu.luaHeap().usedBytes();
 	const u32 physical = cpu.heapAllocator().occupiedBytes();
-	constexpr u32 logicalCharge = (32 + 2 * 5 + 3 * 10) + (32 + 512 * 5);
+	constexpr u32 logicalCharge = (32 + 2 * 5 + 4 * 10) + (32 + 512 * 5);
 	cpu.luaHeap().setCollectionTarget(static_cast<u32>(logical) + logicalCharge);
 	cpu.instructionBudgetRemaining = 23;
 	const auto hash = cpu.createTable(2, 3);
@@ -289,12 +289,12 @@ void canonicalPoolAndRootRanges() {
 		"physical collection counts object passes, three root passes and String work without a cycle debit");
 	require(cpu.luaHeap().usedBytes() == bootBytes, "readonly ROM String bytes are not charged as allocated text");
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(cpu.createTable(2, 3).address())); //32+10+30=72 logical bytes.
+	frame.registers.set(0, valueTable(cpu.createTable(2, 3).address())); //32+10+40=82 logical bytes.
 	frame.registers.set(1, valueString(cpu.stringPool().intern("é😀"))); //6 UTF8 bytes.
 	frame.writeControl(bmsx::FrameField::Top, 2);
-	require(cpu.luaHeap().usedBytes() == bootBytes + 72 + 22, "canonical reserved table capacity and UTF8 text bytes agree");
+	require(cpu.luaHeap().usedBytes() == bootBytes + 82 + 22, "canonical reserved table capacity and UTF8 text bytes agree");
 	require(cpu.collectHeap() == bootCollectionWork + (8 + 2 + 8 + 1) + 2 + 2 * 3
-		&& cpu.instructionBudgetRemaining == 7 && cpu.luaHeap().usedBytes() == bootBytes + 72 + 22,
+		&& cpu.instructionBudgetRemaining == 7 && cpu.luaHeap().usedBytes() == bootBytes + 82 + 22,
 		"table scans reserved slots; the String is marked and visited without reading its bytes");
 	const auto threshold = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 	require(threshold.second == 1048576, "the existing minimum collection threshold is unchanged");
@@ -303,7 +303,7 @@ void canonicalPoolAndRootRanges() {
 	require(cpu.instructionBudgetRemaining == 123, "host/reset raw collection does not bill guest work");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes + 72 + 22,
+	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes + 82 + 22,
 		"snapshot capture/restore does not collect or bill runtime work and preserves canonical accounting");
 	cpu.reset();
 	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes,
@@ -1537,27 +1537,43 @@ void stackShrinkAndAdmission() {
 }
 
 void weakTableAdmissionReplansAfterCollection() {
-	Machine machine(image()); auto& cpu = machine.cpu; auto& heap = cpu.luaHeap();
-	auto weak = cpu.createTable(0, 4);
-	auto meta = cpu.createTable(0, 1);
-	meta.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
-	weak.setMetatableAddress(meta.address());
-	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(weak.address()));
-	frame.setTop(1);
-	cpu.collectHeap();
-	weak.setInteger(8, valueTable(cpu.createTable().address()));
-	for (int i = 9; i < 16; ++i) weak.setInteger(i, valueInteger(i));
-	require(weak.arrayCapacity() == 0 && weak.hashSlots() == 8,
-		"eight sparse entries fit without reserving an array");
-	// Reserve the rest of the logical budget without filling the physical arena.
-	cpu.memory().writeRamRecordWord(cpu.heapAllocator().managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, static_cast<u32>(heap.capacity()));
-	weak.setInteger(16, valueInteger(16));
-	require(heap.usedBytes() <= heap.capacity(), "reclaimed weak entries must not finance a stale capacity projection");
-	require(weak.arrayCapacity() == 0 && isNil(weak.getInteger(8)) && weak.getInteger(16) == valueInteger(16),
-		"the collected key removes the reason to reserve a sixteen-slot array");
-	require(heap.usedBytes() == heap.capacity() - TableRecord::HEADER_BYTES,
-		"admission spends only the one mapping released by the collector, not a reclaimed array projection");
+	for (const bool reuseHome : {false, true}) {
+		Machine machine(image()); auto& cpu = machine.cpu; auto& heap = cpu.luaHeap();
+		constexpr u32 hash = 8;
+		auto weak = cpu.createTable(0, hash), meta = cpu.createTable(0, 1);
+		meta.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+		weak.setMetatableAddress(meta.address());
+		auto& frame = *cpu.rootThread()->currentFrame;
+		frame.registers.set(0, valueTable(weak.address()));
+		frame.setTop(1);
+		cpu.collectHeap();
+		const i32 weakKey = reuseHome ? 3 : 2, strongKey = reuseHome ? 2 : 3, incoming = 4;
+		const auto home = [](i32 key) { return hashCanonicalTableKey(valueInteger(key)) & (hash - 1u); };
+		require((home(weakKey) == home(incoming)) == reuseHome, "the fixture controls the vacancy at the incoming home");
+		const u32 occupant = cpu.createTable().address();
+		weak.setInteger(weakKey, valueTable(occupant));
+		weak.setInteger(strongKey, valueInteger(strongKey));
+		u32 occupiedHomes = (1u << home(weakKey)) | (1u << home(strongKey));
+		for (i32 key = -1; occupiedHomes != 0xffu; --key) {
+			const u32 bit = 1u << home(key);
+			if ((occupiedHomes & bit) != 0u) continue;
+			weak.setInteger(key, valueInteger(key));
+			occupiedHomes |= bit;
+		}
+		require(weak.arrayCapacity() == 0 && weak.hashSlots() == hash, "distinct homes fill the existing reservation");
+		const auto storage = weak.storageAddress();
+		// The three positive keys would require four array slots as well as
+		// the present hash; the budget has no room for that projection.
+		cpu.memory().writeRamRecordWord(cpu.heapAllocator().managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, static_cast<u32>(heap.capacity()));
+		weak.setInteger(incoming, valueInteger(incoming));
+		require(weak.arrayCapacity() == 0 && weak.hashSlots() == hash
+			&& (weak.storageAddress() == storage) == reuseHome,
+			"retry reuses the incoming home or rebuilds after replanning the surviving entries");
+		require(cpu.gcHeap().tableRecordAddress(occupant) == 0u && isNil(weak.getInteger(weakKey))
+			&& weak.getInteger(strongKey) == valueInteger(strongKey) && weak.getInteger(incoming) == valueInteger(incoming)
+			&& heap.usedBytes() == heap.capacity() - TableRecord::HEADER_BYTES,
+			"retry charges no stale capacity and releases only the collected referent");
+	}
 }
 
 void threadReplacementAdmitsOnlyItsLogicalIncrease() {

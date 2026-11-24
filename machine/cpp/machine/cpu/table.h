@@ -33,16 +33,15 @@ class TableRecord {
 public:
 	TableRecord(GcHeap& heap, u32 address);
 	static constexpr u32 HEADER_BYTES = 32;
-	static u32 storageBytes(size_t arraySize, size_t hashSize, u32 hashReserve = 0u);
-	static u32 allocationCharge(size_t arraySize, u32 hashEntries);
-	void initialize(size_t arrayCapacity, size_t hashCapacity, u32 hashReserve);
+	static u32 storageBytes(size_t arraySize, size_t hashSize);
+	static u32 allocationCharge(size_t arraySize, size_t hashSize);
+	void initialize(size_t arrayCapacity, size_t hashCapacity);
 	TableRecord copyOwn() const;
 	void freeRecord();
 	u32 address() const { return m_address; }
 	u32 storageAddress() const { return readHeader(TableHeader::Storage); }
 	u32 arrayCapacity() const { return readHeader(TableHeader::Array); }
 	u32 hashSlots() const { return readHeader(TableHeader::Hash); }
-	u32 hashReserve() const;
 	u32 lengthHint() const { return readHeader(TableHeader::Length); }
 	i32 hashFree() const { return static_cast<i32>(readHeader(TableHeader::Free)); }
 	static size_t hashCapacity(int hashSize);
@@ -184,26 +183,21 @@ private:
 	bool hasIntegerKey(u32 key) const;
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
 	int findNextLiveHashIndex(size_t start) const;
-	struct ResizePlan { size_t array, hash; u32 members, watermark; };
-	ResizePlan planRehash(Value key, u32 reserve, u32 members, u32 watermark) const;
+	struct ResizePlan { size_t array, hash; };
+	ResizePlan planRehash(Value key) const;
 	enum class HashStore : u8 { General, Scheduled, Resume, ReturningIndex, ReturningField };
 	template <HashStore Policy>
-	int insertHashWithAdmission(Value key, Value value, u32 reserve, u32 members, u32 watermark, int existing)
+	int insertHashWithAdmission(Value key, Value value)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	template <HashStore Policy>
 	int setOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED);
 	template <HashStore Policy>
-	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 reserve, u32 members, int existing)
+	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 previous, u32 requested)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
-	int resize(const ResizePlan&, u32 storage, Value key, Value value, u32 reserve);
+	int resize(const ResizePlan&, u32 storage, Value key, Value value, u32 previous, u32 requested);
 	void bindStorage(size_t arraySize, size_t hashSize, u32 address);
 	void initializeStorage(size_t retainedArray = 0);
 	void freeStorage();
-	u32 hashMetadata() const;
-	u32 hashMembers() const;
-	u32 hashWatermark() const;
-	void publishHashMembers(u32 previous, u32 members, u32 reserve);
-	void publishHashWatermark(u32 watermark);
 	u32 readHeader(TableHeader field) const { return m_memory->readRamRecordWord(m_address + static_cast<u32>(field)); }
 	void writeHeader(TableHeader field, u32 word) { m_memory->writeRamRecordWord(m_address + static_cast<u32>(field), word); }
 	struct TableValues {

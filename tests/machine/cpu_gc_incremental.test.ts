@@ -644,26 +644,43 @@ test('final mark rewinds a partly cleared weak Table without retiring unvisited 
 	assert.deepEqual(finish(), expected);
 });
 
-test('weak Table admission replans its array span after clearing a hash mapping at the quota ceiling', () => {
+for (const reuseHome of [false, true]) test(`weak Table admission uses the surviving mappings at the quota ceiling (reuse home=${reuseHome})`, () => {
 	const cpu = machine(), { gc, luaHeap: heap, stringPool } = cpu;
-	const weak = cpu.createTable(0, 4), meta = cpu.createTable(0, 1);
+	const hash = 8, weak = cpu.createTable(0, hash), meta = cpu.createTable(0, 1);
 	gc.tables.setStringKey(meta, stringPool.intern('__mode'), valueString(stringPool.intern('v')));
 	gc.tables.setMetatableAddress(weak, meta);
 	const frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, weak);
 	frame.top = 1;
 	cpu.collectTrackedHeapBytes();
-	gc.tables.setInteger(weak, 8, valueTable(cpu.createTable()));
-	for (let i = 9; i < 16; ++i) gc.tables.setInteger(weak, i, valueInteger(i));
+	const weakKey = reuseHome ? 3 : 2, strongKey = reuseHome ? 2 : 3, incoming = 4;
+	const home = (key: number) => hashCanonicalTableKey(valueInteger(key)) & (hash - 1);
+	assert.equal(home(weakKey) === home(incoming), reuseHome);
+	const occupant = cpu.createTable();
+	gc.tables.setInteger(weak, weakKey, valueTable(occupant));
+	gc.tables.setInteger(weak, strongKey, valueInteger(strongKey));
+	let occupiedHomes = (1 << home(weakKey)) | (1 << home(strongKey));
+	for (let key = -1; occupiedHomes !== 0xff; --key) {
+		const bit = 1 << home(key);
+		if ((occupiedHomes & bit) !== 0) continue;
+		gc.tables.setInteger(weak, key, valueInteger(key));
+		occupiedHomes |= bit;
+	}
 	assert.equal(gc.tables.arrayCapacity(weak), 0);
-	assert.equal(gc.tables.hashSize(weak), 8);
+	assert.equal(gc.tables.hashSize(weak), hash);
+	const storage = gc.tables.storageAddress(weak);
 	// Hold the rest of the logical budget without filling the physical arena.
+	// Keys 2, 3 and 4 would reserve a four-slot array while keeping eight hash slots.
 	cpu.memory.writeRamRecordWord(cpu.heapAllocator.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, heap.capacity());
-	gc.tables.setInteger(weak, 16, valueInteger(16));
+	gc.tables.setInteger(weak, incoming, valueInteger(incoming));
 	assert.ok(heap.usedBytes() <= heap.capacity(), 'weak removal must not finance a stale capacity projection');
-	assert.equal(gc.tables.arrayCapacity(weak), 0, 'the collected key removes the reason to reserve a sixteen-slot array');
-	assert.equal(gc.tables.getInteger(weak, 8), valueNil());
-	assert.equal(gc.tables.getInteger(weak, 16), valueInteger(16));
+	assert.equal(gc.tables.arrayCapacity(weak), 0, 'only two of four positive keys survive');
+	assert.equal(gc.tables.hashSize(weak), hash);
+	assert.equal(gc.tables.storageAddress(weak) === storage, reuseHome, 'only a vacancy at the incoming home permits an in-place retry');
+	assert.equal(gc.tableRecordAddress(occupant), 0);
+	assert.equal(gc.tables.getInteger(weak, weakKey), valueNil());
+	assert.equal(gc.tables.getInteger(weak, strongKey), valueInteger(strongKey));
+	assert.equal(gc.tables.getInteger(weak, incoming), valueInteger(incoming));
 	assert.equal(heap.usedBytes(), heap.capacity() - TableRecords.HEADER_BYTES);
 });
 
@@ -763,13 +780,13 @@ test('physical allocations advance reclamation and replay from a checkpoint with
 	luaHeap.setCollectionTarget(0);
 	const logical = luaHeap.usedBytes(), physical = heapAllocator.occupiedBytes();
 	const storage = tables.storageAddress(owner), steps = diagnostics.steps;
-	// Three reserved mappings leave one unused node in the four-node backing.
+	// The request of three reserved a four-node backing with one unused node.
 	tables.setInteger(owner, -4, valueInteger(4));
 	assert.equal(tables.getInteger(owner, -4), valueInteger(4));
 	assert.equal(tables.storageAddress(owner), storage);
-	assert.equal(luaHeap.usedBytes(), logical + TableRecords.allocationCharge(0, 1));
+	assert.equal(luaHeap.usedBytes(), logical);
 	assert.equal(heapAllocator.occupiedBytes(), physical);
-	assert.equal(diagnostics.steps, steps, 'a logical-only charge does not consume a reclamation step');
+	assert.equal(diagnostics.steps, steps, 'an insertion into already reserved storage does not advance reclamation');
 
 	cpu.createTable();
 	assert.ok(heapAllocator.occupiedBytes() > physical);

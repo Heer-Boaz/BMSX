@@ -495,8 +495,8 @@ void recordConstructorPreservesGrantAndLayout() {
 				&& machine->cpu().readFramePc(0) == expectedPc
 				&& machine->cpu().instructionBudgetRemaining == (shortGrant ? 0 : 1 - fieldCycles),
 				"constructor publishes the same original PC and exact cycle frontier");
-			require(machine->cpu().luaHeap().usedBytes() - before == 32u + 5u * 10u,
-				"construction reserves five mappings, not all eight physical hash slots");
+			require(machine->cpu().luaHeap().usedBytes() - before == 32u + 8u * 10u,
+				"prepared and scalar construction both pay for all eight reserved slots");
 		}
 		require(plan->partialMask == (shortGrant ? 0u : 29u),
 			"only the admitted full group executes the prepared nil-aware placement");
@@ -530,10 +530,10 @@ void recordConstructorPreservesGrantAndLayout() {
 				&& cpu.luaHeap().usedBytes() == before, "the absent field occupies its prepaid mapping");
 			body.setStringKey(extra, valueInteger(43));
 			require(body.getStringKey(extra) == valueInteger(43) && body.hashSlots() == 8u
-				&& cpu.luaHeap().usedBytes() == before + 10u,
-				"the first additional live field charges ten logical bytes without hash growth");
+				&& cpu.luaHeap().usedBytes() == before,
+				"an additional field can reuse the paid-for hash slots");
 			body.setStringKey(extra, valueNil());
-			require(cpu.luaHeap().usedBytes() == before, "deleting the extra field releases that mapping");
+			require(cpu.luaHeap().usedBytes() == before, "deleting the extra field leaves the slot reservation unchanged");
 		}
 	}
 

@@ -302,7 +302,7 @@ void tableCopyReturnsThroughAllocatingCall() {
 	for (auto* machine : {&native, &scalar}) {
 		machine->seed(BuiltinFunctionId::TableCopy);
 		auto& cpu = machine->cpu;
-		auto source = cpu.createTable(4, 2);
+		auto source = cpu.createTable(4, 3);
 		const auto child = cpu.createTable();
 		source.setInteger(1, valueTable(child.address()));
 		source.setInteger(4, valueInteger(47));
@@ -318,7 +318,7 @@ void tableCopyReturnsThroughAllocatingCall() {
 	preparedCaller(native);
 #endif
 	const int grant = 4 * BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]
-		+ 2 + 4 + 2 * 2 + 1;
+		+ 2 + 4 + 2 * 4 + 1;
 	const auto before = native.cpu.luaHeap().usedBytes();
 	test::runCpuParity(native.cpu, scalar.cpu, grant);
 	parity(native, scalar);
@@ -326,7 +326,7 @@ void tableCopyReturnsThroughAllocatingCall() {
 	require(cpu.collecting() && cpu.instructionBudgetRemaining == 0
 		&& cpu.readFramePc(0) == rom.textAddress + 6 * INSTRUCTION_BYTES,
 		"the allocating builtin completes one WIDE CALL and pays its exact grant");
-	require(cpu.luaHeap().usedBytes() == before + 32 + 4 * 5 + 2 * 10, "the result reserves one complete table");
+	require(cpu.luaHeap().usedBytes() == before + 32 + 4 * 5 + 4 * 10, "the result reserves one complete table");
 	const auto source = asTable(cpu.readFrameRegister(0, 13), cpu.gcHeap());
 	auto copy = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
 	const auto child = source.getInteger(1);
@@ -357,7 +357,7 @@ void tableCopyRereadsWeakEntriesAfterAdmission() {
 	require(cpu.gcHeap().tableRecordAddress(source.address()) == source.address()
 		&& isNil(source.getStringKey(key)),
 		"failed physical admission collects while retaining the borrowed source");
-	require(copy.hashReserve() == 2u && isNil(copy.getStringKey(key)) && copy.getInteger(1024) == valueInteger(64),
+	require(copy.hashSlots() == 2u && isNil(copy.getStringKey(key)) && copy.getInteger(1024) == valueInteger(64),
 		"the planned reservation survives, but the completed copy sees the post-collection entries");
 }
 } // namespace

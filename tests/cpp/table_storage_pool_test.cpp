@@ -14,7 +14,7 @@ void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
 
-void hashBudgetIgnoresPhysicalRebuild(bmsx::CPU& cpu) {
+void hashBudgetFollowsReservedSlots(bmsx::CPU& cpu) {
 	using namespace bmsx;
 	std::array<i32, 16> keys{};
 	u32 assigned = 0u;
@@ -33,9 +33,9 @@ void hashBudgetIgnoresPhysicalRebuild(bmsx::CPU& cpu) {
 	tombstones.setInteger(collision, valueInteger(23));
 	spare.setInteger(collision, valueInteger(23));
 	require(tombstones.storageAddress() != before && tombstones.hashSlots() == 4u && spare.hashSlots() == 16u,
-		"tombstones can rebuild a physical hash below the unchanged logical reservation");
-	require(cpu.luaHeap().usedBytes() == used && tombstones.arrayCapacity() == spare.arrayCapacity(),
-		"different bucket counts leave the same membership charge and array range");
+		"a tombstone rebuild chooses a smaller hash reservation");
+	require(cpu.luaHeap().usedBytes() == used - 12u * 10u && tombstones.arrayCapacity() == spare.arrayCapacity(),
+		"rebuild releases the discarded slots but keeps the array range");
 	for (auto key : {keys[0], keys[1], collision})
 		require(tombstones.getInteger(key) == spare.getInteger(key), "both physical layouts retain the same mappings");
 	tombstones.clear(); spare.clear();
@@ -45,13 +45,13 @@ void hashBudgetIgnoresPhysicalRebuild(bmsx::CPU& cpu) {
 	const u32 backing = table.storageAddress();
 	for (size_t i = 0; i < 4; ++i) table.setInteger(keys[i], valueInteger(29));
 	require(table.hashSlots() == 4u && table.storageAddress() == backing && cpu.luaHeap().usedBytes() == logical + 32u + 40u,
-		"only the fourth mapping exceeds the prepaid three mappings, inside the same physical hash");
+		"a three-slot request reserves and pays for all four slots");
 	table.setInteger(keys[0], valueNil());
-	require(cpu.luaHeap().usedBytes() == logical + 32u + 30u, "removal returns the charge above the floor");
+	require(cpu.luaHeap().usedBytes() == logical + 32u + 40u, "removal does not release reserved storage");
 	table.clear();
 }
 
-void hashWatermarkSurvivesDeletionAndRestore(bmsx::CPU& cpu) {
+void reservedHashSurvivesDeletionAndRestore(bmsx::CPU& cpu) {
 	using namespace bmsx;
 	std::array<i32, 4> keys{};
 	u32 assigned = 0u;
@@ -72,9 +72,9 @@ void hashWatermarkSurvivesDeletionAndRestore(bmsx::CPU& cpu) {
 		for (int step = 0; step < 16; ++step) {
 			table.setInteger(1, valueInteger(29));
 			require(table.storageAddress() == backing && table.arrayCapacity() == 0 && table.hashSlots() == 4
-				&& table.getInteger(1) == valueInteger(29), "refill below the saved watermark reuses its home and keeps the array range");
+				&& table.getInteger(1) == valueInteger(29), "refill reuses its home and keeps the array range");
 			table.setInteger(1, valueNil());
-			require(cpu.luaHeap().usedBytes() == used, "each refill and removal returns to the same nominal charge");
+			require(cpu.luaHeap().usedBytes() == used, "inserts and deletes in existing slots leave the charge unchanged");
 		}
 	}
 	table.clear();
@@ -126,8 +126,8 @@ int main() {
 		IrqController irq(memory);
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
-		hashBudgetIgnoresPhysicalRebuild(cpu);
-		hashWatermarkSurvivesDeletionAndRestore(cpu);
+		hashBudgetFollowsReservedSlots(cpu);
+		reservedHashSurvivesDeletionAndRestore(cpu);
 		mixedArrayMigrationPreservesRawValues(cpu);
 		const auto key = cpu.stringPool().intern("retired");
 		const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};

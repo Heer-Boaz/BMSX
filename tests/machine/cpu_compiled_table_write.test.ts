@@ -39,7 +39,7 @@ test('next charges only the primitive and the receiving range even when traversa
 	}
 });
 
-for (const wide of [false, true]) test(`NEWT charges the requested capacity rather than rounded storage (WIDE=${wide})`, () => {
+for (const wide of [false, true]) test(`NEWT charges request cycles and rounded heap capacity separately (WIDE=${wide})`, () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	let word = 0;
 	if (wide) writeInstruction(text, word++, OpCode.WIDE, 0, 0, 0);
@@ -61,12 +61,15 @@ for (const wide of [false, true]) test(`NEWT charges the requested capacity rath
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		cpu.rootThread.frameAtDepth(0).registers.setNil(1);
 	}
+	const before = generated.luaHeap.usedBytes();
 	assert.equal(runCpuParity(generated, scalar, 1), RunResult.Yielded);
 	assert.equal(generated.instructionBudgetRemaining, 1 - cycles);
 	assert.equal(frame.pc, pc + successor * INSTRUCTION_BYTES);
 	assert.equal(frame.registers.get(1), valueNil());
-	assert.equal(generated.gc.tables.arrayCapacity(frame.registers.getPayload(0)), 2);
-	assert.ok(generated.gc.tables.storedSlotCount(frame.registers.getPayload(0)) > hash + 2);
+	const table = frame.registers.getPayload(0), slots = wide ? 128 : 4;
+	assert.equal(generated.gc.tables.arrayCapacity(table), 2);
+	assert.equal(generated.gc.tables.hashSize(table), slots);
+	assert.equal(generated.luaHeap.usedBytes() - before, 32 + 2 * 5 + slots * 10);
 });
 
 test('ordinary bus writes cannot rebind an array or alter its private elements', () => {

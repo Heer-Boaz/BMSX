@@ -382,14 +382,16 @@ test('a WIDE NEWT with refused backing retires once before VBlank, including aft
 		frame.top = 3;
 		cpu.createTable(1024, 0); // Leaves collectable backing.
 		const header = TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX;
+		const backing = TableRecords.storageBytes(0, TableRecords.hashCapacity(2));
 		const spare = arena.allocate(header, true);
 		assert.notEqual(spare, 0);
 		while (arena.allocate(4088, true) !== 0) {}
 		while (arena.allocate(header, true) !== 0) {}
+		while (arena.allocate(backing, true) !== 0) {}
 		arena.free(spare);
 		const partial = arena.allocate(header, false);
 		assert.notEqual(partial, 0);
-		assert.equal(arena.allocate(TableRecords.storageBytes(0, TableRecords.hashCapacity(2), 2), true), 0);
+		assert.equal(arena.allocate(backing, true), 0);
 		arena.free(partial);
 		const occupied = arena.occupiedBytes(), charged = budget.usedBytes();
 		const tableCharge = TableRecords.HEADER_BYTES + TableRecords.allocationCharge(0, 2);

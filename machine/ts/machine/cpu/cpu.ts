@@ -429,10 +429,10 @@ export class CPU implements MappedPageInvalidator {
 
 	private allocateTable(arraySize: number, hashSize: number, mode: LuaAllocationMode): number {
 		const hashCapacity = TableRecords.hashCapacity(hashSize);
-		const address = this.luaHeap.allocateRecord(TableRecords.HEADER_BYTES, true, TableRecords.storageBytes(arraySize, hashCapacity, hashSize),
-			TableHeader.Storage, valueNil(), valueNil(), valueNil(), TableRecords.allocationCharge(arraySize, hashSize), mode);
+		const address = this.luaHeap.allocateRecord(TableRecords.HEADER_BYTES, true, TableRecords.storageBytes(arraySize, hashCapacity),
+			TableHeader.Storage, valueNil(), valueNil(), valueNil(), TableRecords.allocationCharge(arraySize, hashCapacity), mode);
 		if (address === 0) return 0;
-		this.gc.tables.initialize(address, arraySize, hashCapacity, hashSize);
+		this.gc.tables.initialize(address, arraySize, hashCapacity);
 		this.gc.publishObject(address);
 		if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(address));
 		return address;
@@ -3747,7 +3747,7 @@ export class CPU implements MappedPageInvalidator {
 					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				}
 				const tables = this.gc.tables, copy = tables.copyOwn(registers.getPayload(base));
-				this.charge(tables.arrayCapacity(copy) + 2 * tables.hashReserve(copy));
+				this.charge(tables.arrayCapacity(copy) + 2 * tables.hashSize(copy));
 				out.push(valueTable(copy));
 				break;
 			}

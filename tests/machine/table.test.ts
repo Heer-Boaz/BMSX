@@ -179,8 +179,8 @@ test('table values come directly from the allocator-owned RAM block', () => {
 	assert.equal(memory.readRamRecordWord(base + 4 * 4), 0xffffffff, 'the hash-chain word follows the four payload words');
 	const tags = base + 5 * 4;
 	assert.equal(memory.readRamRecordByte(tags), ValueTag.Integer);
-	assert.equal(memory.readRamRecordWord(base + 24), 1, 'the aligned trailer preserves the nominal hash reservation');
-	assert.equal(memory.readRamRecordWord(base + 28), 0, 'an array write does not change hash membership');
+	assert.equal(memory.readRamRecordWord(table + TableHeader.Hash), 1, 'the table header owns the hash capacity');
+	assert.equal(memory.readRamRecordByte(tags + 3), ValueTag.Nil, 'the spare hash value remains nil');
 	const backing = table + TableHeader.Storage;
 	assert.equal(memory.readRamRecordWord(backing), base);
 	memory.writeRamRecordWord(backing, base + MAIN_RAM_SIZE);

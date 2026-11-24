@@ -14,11 +14,7 @@ import type { ValueWriteTarget } from './value_slots';
 
 const TABLE_HASH_NEXT_END = -1;
 const TABLE_MAX_ARRAY_INDEX = 0x7fffffff;
-// An explicit reservation can outlive its physical hash.
-const TABLE_EXPLICIT_HASH_RESERVE = 1 << 16;
-const TABLE_HASH_WATERMARK_SHIFT = 17;
-const TABLE_HASH_WATERMARK_MASK = 31 << TABLE_HASH_WATERMARK_SHIFT;
-const TABLE_HASH_MAPPING_BYTES = 10;
+const TABLE_HASH_SLOT_BUDGET_BYTES = 10;
 // A fixed-string Store carries an unprobed, absent (-1), or matched hash node,
 // including a matched tombstone.
 export const TABLE_HASH_UNPROBED = -2;
@@ -36,29 +32,26 @@ export const enum TableHeader {
 	Kind = 0, Gray = 4, Metatable = 8, Storage = 12, Array = 16, Hash = 20, Length = 24, Free = 28,
 }
 export class TableRecords {
-	private readonly resizePlan = { array: 0, hash: 0, members: 0, watermark: 0 };
+	private readonly resizePlan = { array: 0, hash: 0 };
 	private static readonly rehashIntegerCounts = new Uint32Array(32);
 	static readonly HEADER_BYTES = 32;
 	public constructor(private readonly heap: GcHeap) {}
-	public initialize(record: number, array: number, hash: number, reserve: number): void {
-		this.writeHeader(record, TableHeader.Kind, ValueTag.Table | (this.heap.white() << 8) | (reserve !== 0 ? TABLE_EXPLICIT_HASH_RESERVE : 0));
+	public initialize(record: number, array: number, hash: number): void {
+		this.writeHeader(record, TableHeader.Kind, ValueTag.Table | (this.heap.white() << 8));
 		this.writeHeader(record, TableHeader.Gray, 0);
 		this.writeHeader(record, TableHeader.Metatable, 0);
 		this.writeHeader(record, TableHeader.Length, 0);
 		this.bindStorage(record, array, hash, this.storageAddress(record));
 		this.initializeStorage(record);
-		if (hash !== 0 || reserve !== 0) this.heap.memory.writeRamRecordPair(this.hashMetadata(record), reserve, 0);
 	}
 	public copyOwn(source: number): number {
 		const array = this.arrayCapacity(source), hash = this.hashSize(source);
-		const reserve = Math.max(this.hashReserve(source), this.hashMembers(source));
-		const bytes = TableRecords.storageBytes(array, hash, reserve);
+		const bytes = TableRecords.storageBytes(array, hash);
 		const copy = this.heap.budget.allocateRecord(TableRecords.HEADER_BYTES, true, bytes, TableHeader.Storage,
-			valueTable(source), valueNil(), valueNil(), TableRecords.allocationCharge(array, reserve));
+			valueTable(source), valueNil(), valueNil(), TableRecords.allocationCharge(array, hash));
 		// The rooted source keeps its layout, but admission can clear weak entries.
 		const memory = this.heap.memory;
-		const watermark = this.readHeader(source, TableHeader.Kind) & TABLE_HASH_WATERMARK_MASK;
-		const kind = ValueTag.Table | (this.heap.white() << 8) | watermark | (reserve !== 0 ? TABLE_EXPLICIT_HASH_RESERVE : 0);
+		const kind = ValueTag.Table | (this.heap.white() << 8);
 		memory.writeRamRecordPair(copy + TableHeader.Kind, kind, 0);
 		this.writeHeader(copy, TableHeader.Metatable, 0);
 		memory.writeRamRecordPair(copy + TableHeader.Array, array, hash);
@@ -66,50 +59,17 @@ export class TableRecords {
 		if (bytes !== 0) {
 			const start = this.storageAddress(source) & RAM_RECORD_WORD_MASK;
 			const target = this.storageAddress(copy) & RAM_RECORD_WORD_MASK;
-			const body = 5 * array + 14 * hash;
-			memory.ramData().copyWithin(target, start, start + body);
-			memory.invalidateRamWrite(target, body);
-			if (hash !== 0 || reserve !== 0) {
-				const metadata = TableRecords.hashMetadataOffset(array, hash);
-				const members = hash !== 0 ? memory.readRamRecordWord(start + metadata + 4) : 0;
-				memory.writeRamRecordPair(target + metadata, reserve, members);
-			}
+			memory.ramData().copyWithin(target, start, start + bytes);
+			memory.invalidateRamWrite(target, bytes);
 		}
 		this.heap.publishObject(copy);
 		return copy;
 	}
 	public static hashCapacity(size: number): number { return size > 0 ? nextPowerOfTwo(size) : 0; }
-	private static hashMetadataOffset(array: number, hash: number): number { return ((5 * array + 14 * hash + 7) & ~7) >>> 0; }
-	public static storageBytes(array: number, hash: number, reserve = 0): number {
-		return hash !== 0 || reserve !== 0 ? TableRecords.hashMetadataOffset(array, hash) + 8 : 5 * array;
-	}
-	public static allocationCharge(array: number, hashEntries: number): number { return 5 * array + TABLE_HASH_MAPPING_BYTES * hashEntries; }
+	public static storageBytes(array: number, hash: number): number { return 5 * array + 14 * hash; }
+	public static allocationCharge(array: number, hash: number): number { return 5 * array + TABLE_HASH_SLOT_BUDGET_BYTES * hash; }
 	private readHeader(record: number, field: TableHeader): number { return this.heap.memory.readRamRecordWord(record + field); }
 	private writeHeader(record: number, field: TableHeader, word: number): void { this.heap.memory.writeRamRecordWord(record + field, word); }
-	private hashMetadata(record: number): number {
-		return this.storageAddress(record) + TableRecords.hashMetadataOffset(this.arrayCapacity(record), this.hashSize(record));
-	}
-	public hashReserve(record: number): number {
-		return (this.readHeader(record, TableHeader.Kind) & TABLE_EXPLICIT_HASH_RESERVE) !== 0
-			? this.heap.memory.readRamRecordWord(this.hashMetadata(record)) : 0;
-	}
-	private hashMembers(record: number): number {
-		return this.hashSize(record) !== 0 ? this.heap.memory.readRamRecordWord(this.hashMetadata(record) + 4) : 0;
-	}
-	private hashWatermark(record: number): number {
-		const exponent = (this.readHeader(record, TableHeader.Kind) & TABLE_HASH_WATERMARK_MASK) >>> TABLE_HASH_WATERMARK_SHIFT;
-		return exponent !== 0 ? 1 << (exponent - 1) : 0;
-	}
-	private publishHashWatermark(record: number, watermark: number): void {
-		const kind = this.readHeader(record, TableHeader.Kind);
-		const next = (kind & ~TABLE_HASH_WATERMARK_MASK) | ((32 - Math.clz32(watermark)) << TABLE_HASH_WATERMARK_SHIFT);
-		if (next !== kind) this.writeHeader(record, TableHeader.Kind, next);
-	}
-	private publishHashMembers(record: number, previous: number, members: number, reserve: number): void {
-		this.heap.memory.writeRamRecordWord(this.hashMetadata(record) + 4, members);
-		this.heap.budget.replaceRecord(0, Math.max(reserve, previous) * TABLE_HASH_MAPPING_BYTES,
-			Math.max(reserve, members) * TABLE_HASH_MAPPING_BYTES);
-	}
 	public metatableAddress(record: number): number { return this.readHeader(record, TableHeader.Metatable); }
 	public setMetatableAddress(record: number, address: number): void {
 		this.heap.writeBarrier(record, GC_RECORD_LINK);
@@ -142,8 +102,7 @@ export class TableRecords {
 	}
 	private freeStorage(record: number): void {
 		const storage = this.storageAddress(record);
-		if (storage !== 0) this.heap.budget.releaseRecord(storage, TableRecords.allocationCharge(this.arrayCapacity(record),
-			Math.max(this.hashReserve(record), this.hashMembers(record))));
+		if (storage !== 0) this.heap.budget.releaseRecord(storage, TableRecords.allocationCharge(this.arrayCapacity(record), this.hashSize(record)));
 	}
 	public freeRecord(record: number): void {
 		this.freeStorage(record);
@@ -505,29 +464,16 @@ export class TableRecords {
 				return index;
 			}
 		}
-		const reserve = this.hashReserve(record), members = this.hashMembers(record), watermark = this.hashWatermark(record);
-		const repartition = members + 1 > Math.max(reserve, watermark);
-		if (repartition || hash === 0) {
-			index = this.insertHashWithAdmission(record, key, value, reserve, members, watermark, index, policy);
-		} else {
-			const useHome = this.vacantHome(home, array, hash, tags);
-			const available = index >= 0 || useHome ? -1 : this.findFreeIndex(record, array, hash, tags);
-			if (index < 0 && !useHome && available < 0) {
-				index = this.insertHashWithAdmission(record, key, value, reserve, members, watermark, index, policy);
-			} else {
-				if (members >= reserve) {
-					const budget = this.heap.budget;
-					if (policy === HashStore.Resume) {
-						if (budget.usedBytes() + TABLE_HASH_MAPPING_BYTES > budget.capacity()) return HASH_STORE_DECLINED;
-					} else budget.admit(TABLE_HASH_MAPPING_BYTES, valueTable(record), key, value);
-				}
+		if (hash !== 0) {
+			const vacant = this.vacantHome(home, array, hash, tags);
+			const available = index >= 0 || vacant ? -1 : this.findFreeIndex(record, array, hash, tags);
+			if (index >= 0 || vacant || available >= 0) {
 				index = this.placeHashMapping(record, home, key, value, array, hash, words, tags, index, available);
-				const retained = this.hashMembers(record);
-				this.publishHashMembers(record, retained, retained + 1, reserve);
 				this.heap.writeTableAssignment(record, tag, word, key);
 				return index;
 			}
 		}
+		index = this.insertHashWithAdmission(record, key, value, policy);
 		if (index === HASH_STORE_DECLINED) return index;
 		// resize() invalidates an outstanding scan; relocated old edges keep their marks.
 		this.heap.writeTableAssignment(record, tag, word, key);
@@ -618,8 +564,6 @@ export class TableRecords {
 		return this.insertHashWithoutGrowth(record, home, key, value, array, hash, words, tags, available, true);
 	}
 	private markHashNodeDead(record: number, index: number): void {
-		const members = this.hashMembers(record);
-		this.publishHashMembers(record, members, members - 1, this.hashReserve(record));
 		const keySlot = this.hashKeySlot(record, index), valueSlot = this.hashValueSlot(record, index), tag = this.tagAt(record, keySlot);
 		if (tag === ValueTag.Table || tag === ValueTag.Thread || tag === ValueTag.Closure) {
 			const hashId = this.wordAt(record, keySlot);
@@ -635,22 +579,23 @@ export class TableRecords {
 		while (bins <= log) counts[bins++] = 0;
 		++counts[log]; return bins;
 	}
-	private planRehash(record: number, key: Value, reserve: number, members: number, watermark: number): void {
+	private planRehash(record: number, key: Value): void {
 		const plan = this.resizePlan;
-		const newMembers = members + 1;
-		const insideLimit = newMembers <= Math.max(reserve, watermark);
-		const added = this.getArrayIndex(key);
-		// Only positive integer insertion can reconsider the reserved array.
-		if (insideLimit || added < 0) {
-			plan.array = this.arrayCapacity(record);
-			plan.hash = TableRecords.hashCapacity(newMembers);
-			plan.members = newMembers;
-			plan.watermark = insideLimit ? watermark : plan.hash;
+		const added = valueTag(key) === ValueTag.Integer ? asInteger(key) - 1 : -1;
+		const memory = this.heap.memory, oldArray = this.arrayCapacity(record), oldHash = this.hashSize(record);
+		const words = this.storageAddress(record), tags = words + (oldArray + 3 * oldHash) * 4;
+		// A hash-only addition never repartitions the reserved array.
+		if (added < 0) {
+			let live = 1;
+			for (let slot = oldArray; slot < oldArray + oldHash; ++slot) {
+				if (memory.readRamRecordByte(tags + slot) !== ValueTag.Nil
+					&& memory.readRamRecordByte(tags + slot + oldHash) !== ValueTag.Nil) ++live;
+			}
+			plan.array = oldArray;
+			plan.hash = nextPowerOfTwo(live);
 			return;
 		}
 		const counts = TableRecords.rehashIntegerCounts;
-		const memory = this.heap.memory, oldArray = this.arrayCapacity(record), oldHash = this.hashSize(record);
-		const words = this.storageAddress(record), tags = words + (oldArray + 3 * oldHash) * 4;
 		let bins = 0, totalKeys = 0;
 		for (let slot = 0; slot < oldArray; ++slot) {
 			if (memory.readRamRecordByte(tags + slot) === ValueTag.Nil) continue;
@@ -674,15 +619,14 @@ export class TableRecords {
 		}
 		const hashKeys = totalKeys - arrayKeys;
 		plan.array = arraySize;
-		plan.members = hashKeys;
 		plan.hash = TableRecords.hashCapacity(hashKeys);
-		plan.watermark = arraySize === oldArray ? TableRecords.hashCapacity(members + 1) : plan.hash;
 	}
-	private insertHashWithAdmission(record: number, key: Value, value: Value, reserve: number, members: number, watermark: number, existing: number, policy: HashStore): number {
+	private insertHashWithAdmission(record: number, key: Value, value: Value, policy: HashStore): number {
 		const budget = this.heap.budget, owner = valueTable(record), plan = this.resizePlan;
-		this.planRehash(record, key, reserve, members, watermark);
-		let previous = TableRecords.allocationCharge(this.arrayCapacity(record), Math.max(reserve, members));
-		let requested = TableRecords.allocationCharge(plan.array, Math.max(reserve, plan.members));
+		this.planRehash(record, key);
+		const array = this.arrayCapacity(record), hash = this.hashSize(record);
+		const previous = TableRecords.allocationCharge(array, hash);
+		let requested = TableRecords.allocationCharge(plan.array, plan.hash);
 		let admitted = requested <= previous || (policy === HashStore.Resume
 			? budget.usedBytes() + requested - previous <= budget.capacity()
 			: budget.prepareAllocation(requested - previous, owner, key, value));
@@ -690,35 +634,30 @@ export class TableRecords {
 		let recovery = LuaAllocationRecovery.CurrentOrFresh;
 		for (;;) {
 			if (admitted) {
-				const array = this.arrayCapacity(record), hash = this.hashSize(record);
-				if (plan.array === array && hash !== 0) {
-					const words = this.storageAddress(record), tags = words + (array + 3 * hash) * 4;
-					const home = hashCanonicalTableKey(key) & (hash - 1);
-					const vacant = this.vacantHome(home, array, hash, tags);
-					const available = existing >= 0 || vacant ? -1 : this.findFreeIndex(record, array, hash, tags);
-					if (existing >= 0 || vacant || available >= 0) {
-						const slot = this.placeHashMapping(record, home, key, value, array, hash, words, tags, existing, available);
-						this.publishHashMembers(record, members, plan.members, reserve);
-						this.publishHashWatermark(record, plan.watermark);
-						return slot;
-					}
-				}
-				const bytes = TableRecords.storageBytes(plan.array, plan.hash, reserve);
+				const bytes = TableRecords.storageBytes(plan.array, plan.hash);
 				if (policy !== HashStore.Resume && this.heap.phase() >= GcPhase.Sweep) this.heap.assistSweepBeforeReservation(bytes);
 				const storage = this.heap.arena.allocate(bytes, true);
-				if (storage !== 0) return this.resize(record, storage, key, value, reserve, previous, requested);
+				if (storage !== 0) return this.resize(record, storage, key, value, previous, requested);
 			}
 			if (parkOnRefusal) return HASH_STORE_DECLINED;
 			recovery = this.heap.recoverAllocation(recovery, owner, key, value);
-			members = this.hashMembers(record);
-			this.planRehash(record, key, reserve, members, watermark);
-			previous = TableRecords.allocationCharge(this.arrayCapacity(record), Math.max(reserve, members));
-			requested = TableRecords.allocationCharge(plan.array, Math.max(reserve, plan.members));
+			// Weak clearing can make the existing reservation fit.
+			if (hash !== 0) {
+				const words = this.storageAddress(record), tags = words + (array + 3 * hash) * 4;
+				const home = hashCanonicalTableKey(key) & (hash - 1);
+				const vacant = this.vacantHome(home, array, hash, tags);
+				const available = vacant ? -1 : this.findFreeIndex(record, array, hash, tags);
+				if (vacant || available >= 0) {
+					return this.insertHashWithoutGrowth(record, home, key, value, array, hash, words, tags, available, false);
+				}
+			}
+			this.planRehash(record, key);
+			requested = TableRecords.allocationCharge(plan.array, plan.hash);
 			admitted = requested <= previous || budget.usedBytes() + requested - previous <= budget.capacity();
 		}
 	}
-	private resize(record: number, storage: number, key: Value, value: Value, reserve: number, previous: number, requested: number): number {
-		const { array, hash, members, watermark } = this.resizePlan;
+	private resize(record: number, storage: number, key: Value, value: Value, previous: number, requested: number): number {
+		const { array, hash } = this.resizePlan;
 		this.heap.tableEntriesMoved(record);
 		const oldWords = this.storageAddress(record), oldTags = this.tags(record);
 		const oldArray = this.arrayCapacity(record), oldHash = this.hashSize(record);
@@ -746,8 +685,6 @@ export class TableRecords {
 				valueFromTag(valueTag, memory.readRamRecordWord(oldWords + oldValue * 4)), array, hash, storage, tags);
 		}
 		const slot = this.reinsertMapping(record, key, value, array, hash, storage, tags);
-		if (hash !== 0 || reserve !== 0) memory.writeRamRecordPair(this.hashMetadata(record), reserve, members);
-		this.publishHashWatermark(record, watermark);
 		this.heap.budget.replaceRecord(oldWords, previous, requested);
 		return slot;
 	}
@@ -784,7 +721,6 @@ export class TableRecords {
 		this.heap.tableEntriesMoved(record);
 		this.writeHeader(record, TableHeader.Length, 0);
 		this.freeStorage(record);
-		this.writeHeader(record, TableHeader.Kind, this.readHeader(record, TableHeader.Kind) & ~(TABLE_EXPLICIT_HASH_RESERVE | TABLE_HASH_WATERMARK_MASK));
 		this.bindStorage(record, 0, 0, 0);
 
 	}

@@ -313,9 +313,11 @@ void testParkedNewTableRetiresBeforeVblank(bool native) {
 	require(spare != 0u, "one real temporary header-sized hole");
 	while (arena.allocate(4088u, true)) {}
 	while (arena.allocate(header, true)) {}
+	const u32 backing = TableRecord::storageBytes(0, TableRecord::hashCapacity(2));
+	while (arena.allocate(backing, true)) {}
 	arena.free(spare);
 	const u32 partial = arena.allocate(header, false);
-	require(partial && arena.allocate(TableRecord::storageBytes(0, TableRecord::hashCapacity(2), 2), true) == 0,
+	require(partial && arena.allocate(backing, true) == 0,
 		"physical NEWT admits the header but declines the initial backing");
 	arena.free(partial);
 	const auto occupied = arena.occupiedBytes();

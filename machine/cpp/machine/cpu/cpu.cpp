@@ -1097,7 +1097,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			const Value source = args[0];
 			if (!valueIsTable(source)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			const auto copy = asTable(source, m_heap).copyOwn();
-			instructionBudgetRemaining -= static_cast<int>(copy.arrayCapacity() + 2u * copy.hashReserve());
+			instructionBudgetRemaining -= static_cast<int>(copy.arrayCapacity() + 2u * copy.hashSlots());
 			out.push_back(valueTable(copy.address()));
 			break;
 		}
