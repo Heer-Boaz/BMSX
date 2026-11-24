@@ -119,3 +119,39 @@ assert(left.states.idle.data.note == nil and right.states.idle.data.note == nil)
 `, { optLevel: 3 });
 	runGuestToHalt(cpu, 10_000_000);
 });
+
+test('Fresh nested machines publish the selected subtree before use; runtime history is instance-local', () => {
+	const { cpu } = createCartlibProgramHarness(`
+local fsm<const> = require('cartlib/fsm/fsm')
+local def<const> = fsm.state_definition.new('nested', {
+	initial = 'branch',
+	states = { branch = { initial = 'leaf', states = {
+		leaf = { update = function() end, data = { ready = false } },
+	} } },
+})
+local publications = 0
+local changed<const> = function(owner, machine, active)
+	assert(owner == machine.target and active)
+	assert(machine.current_state.current_state == machine.states.branch.states.leaf)
+	assert(machine.current_state.current_state.data.ready == false)
+	publications = publications + 1
+end
+local first_owner<const> = { id = 'one' }
+local second_owner<const> = { id = 'two' }
+local first<const> = fsm.state.new(def, first_owner, nil, first_owner, changed)
+local second<const> = fsm.state.new(def, second_owner, nil, second_owner, changed)
+assert(publications == 2)
+local branch<const> = first.current_state
+for i = 1, 12 do branch:push_history(i) end
+local history<const> = branch:get_history_snapshot()
+assert(#history == 10 and history[1] == 3 and history[10] == 12)
+assert(#second.current_state:get_history_snapshot() == 0)
+first.current_state.current_state.data.ready = true
+assert(second.current_state.current_state.data.ready == false)
+first:reset()
+assert(#branch:get_history_snapshot() == 0 and not branch.current_state.data.ready)
+branch:push_history(13)
+assert(branch:get_history_snapshot()[1] == 13)
+`, { optLevel: 3 });
+	runGuestToHalt(cpu, 10_000_000);
+});

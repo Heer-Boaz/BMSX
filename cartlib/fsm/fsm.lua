@@ -540,8 +540,7 @@ function state.new(definition, target, parent, frame_work_owner, frame_work_chan
 		self.frame_work_changed = frame_work_changed
 	end
 	self.id = self:make_id()
-	self.data = {}
-	reset_state_data(self.data, definition.data)
+	self.data = definition.data and table.copy(definition.data) or {}
 	self.states = {}
 	-- Runtime nodes own mutable child instances; their traversal shape remains
 	-- the definition's retained, immutable representation.
@@ -552,10 +551,6 @@ function state.new(definition, target, parent, frame_work_owner, frame_work_chan
 		self.concurrent_states = {}
 	end
 	self.frame_evaluator = definition.frame_evaluator
-	self.current_id = nil
-	-- Current child state is cached directly so the frame hot path does not keep
-	-- reloading states[self.current_id] from the state map on every recursive step.
-	self.current_state = nil
 	self.timeline_bindings = build_timeline_bindings(target, definition.timelines)
 	local timeline_bindings<const> = self.timeline_bindings
 	if timeline_bindings ~= nil then
@@ -574,7 +569,7 @@ function state.new(definition, target, parent, frame_work_owner, frame_work_chan
 		self.transition_queue_count = 0
 		self.critical_section_counter = 0
 	end
-	self._hist = {}
+	if self.state_count ~= 0 then self._hist = {} end
 	self._hist_head = 0
 	self._hist_size = 0
 	-- active_frame_work tracks whether the currently active subtree can do any
@@ -609,7 +604,17 @@ function state.new(definition, target, parent, frame_work_owner, frame_work_chan
 			frame_concurrent_states[i] = states[frame_concurrent_state_ids[i]]
 		end
 	end
-	self:reset(true)
+	-- Children return fully initialized. Select this node's initial child;
+	-- only the root publishes work and tags for the finished machine.
+	self.current_id = definition.initial
+	if self.current_id then
+		self.current_state = states[self.current_id]
+	end
+	if parent == nil then
+		self:refresh_active_frame_work()
+		self:rebuild_active_subtree_tags()
+		self:sync_target_state_tags()
+	end
 	return self
 end
 
@@ -648,6 +653,7 @@ rebind_definition_tree = function(self, definition)
 	local actioneffects_active<const> = self.actioneffects_active
 	local previous_state_ids<const> = self.state_ids
 	local previous_state_count<const> = self.state_count
+	if previous_state_count == 0 and definition.state_count ~= 0 then self._hist = {} end
 	if active then
 		local previous_bindings<const> = self.timeline_bindings
 		if previous_bindings ~= nil then
