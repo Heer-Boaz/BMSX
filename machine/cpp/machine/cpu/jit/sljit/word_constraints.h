@@ -10,6 +10,11 @@ struct NativeWordConstraints {
 
 // Fixed operands and clobbers of the inline sequences, in SLJIT R0..R3
 // order. Calls and unmigrated sequences keep their full ABI scratch set.
+// Plain edges use R1 for the stack top and R2 for guards and parallel moves.
+// R0 becomes the exit descriptor only after dirty values have been published.
+inline constexpr unsigned nativeEdgeWordUses = (1u << 1) | (1u << 2);
+inline unsigned fixedWordUses(const NativeJump&) { return nativeEdgeWordUses; }
+inline unsigned fixedWordUses(const NativeTruthBranch&) { return nativeEdgeWordUses; }
 inline unsigned fixedWordUses(const auto&) { return 0xf; }
 inline unsigned fixedWordUses(const NativeLiteral& op) {
 	return valueTag(op.value) == ValueTag::Float ? 1 : 0;
@@ -34,10 +39,10 @@ inline unsigned fixedWordUses(const NativeArithmetic& op) {
 		| ((!op.unary() && op.right < 0) ? 2u : 0u);
 }
 
-// Distance to the next fixed use, including this instruction. Implicit block exits
-// reserve the bank; explicit transfers have their own fixed operands.
+// Include the outgoing transfer, without assuming anything about its successor.
 inline void planWordConstraints(std::span<const NativeInstruction> rows, std::span<NativeWordConstraints> result) {
 	std::array<u8, 4> distance{};
+	for (unsigned r = 0; r < distance.size(); ++r) distance[r] = !(nativeEdgeWordUses & (1u << r));
 	for (size_t i = rows.size(); i-- > 0;) {
 		unsigned fixed = std::visit([](const auto& op) { return fixedWordUses(op); }, rows[i].operation);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)

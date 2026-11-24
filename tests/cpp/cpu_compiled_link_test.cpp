@@ -585,6 +585,42 @@ void adjacentLocalAndPublicEntryFrontiers() {
 		"public entry imports the current raw payload instead of the predecessor's registers");
 }
 
+void fullWordBankAcrossFallthrough() {
+	test::Blua32TestImage image;
+	image.text.resize(INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1}};
+	CpuMachine machine(image, false);
+	std::array<DecodedInstruction, 16> ops{};
+	std::array<NativeBlockInstruction, 16> rows{};
+	int prefix = 0;
+	for (int i = 0; i < 16; ++i) {
+		auto& op = ops[i];
+		op.op = static_cast<u8>(i < 8 ? OpCode::KSMI : OpCode::MOV);
+		op.a = i;
+		if (i < 8) op.setSbx(i - 4);
+		else op.b = i - 8;
+		op.width = 1;
+		op.baseCycles = BASE_CYCLES[op.op];
+		if (i < 8) prefix += op.baseCycles;
+		rows[i] = {&op, DYNAMIC_RAM_BASE + static_cast<u32>(i) * INSTRUCTION_BYTES};
+	}
+	const std::array runs{NativeBlockSource{std::span(rows).first(8)}, NativeBlockSource{std::span(rows).last(8)}};
+	auto blocks = NativeCompiler{}.compile(runs, NativeCodeBindings(machine.memory, machine.cpu.stringPool()));
+	for (int grant : {prefix, prefix + 1, 128}) {
+		ValueSlots slots(16);
+		for (int i = 0; i < 16; ++i) slots.set(i, valueNil());
+		NativeBlockRunState state{.remainingCycles = grant};
+		const auto* exit = blocks[0]->run(slots.view(), state);
+		require(grant == 128 ? exit == &blocks[1]->terminal : grant == prefix
+			? exit == &blocks[0]->terminal : exit->exit == NativeBlockExit::ScalarBoundary,
+			"fallthrough admission distinguishes a completed prefix, short grant and completed successor");
+		for (int i = 0; i < 8; ++i)
+			require(slots.get(i) == valueInteger(i - 4) && slots.get(i + 8) == (grant == 128 ? slots.get(i) : valueNil()),
+				"both shared words survive local transfer and both cold exits");
+	}
+}
+
 void mergedLocationsDoNotMergeValues() {
 	test::Blua32TestImage image;
 	image.text.resize(INSTRUCTION_BYTES);
@@ -720,6 +756,7 @@ int main() {
 		compilationProfilingIsOptInAndSurvivesReset();
 		adjacentLocalAndPublicEntryFrontiers();
 		mergedLocationsDoNotMergeValues();
+		fullWordBankAcrossFallthrough();
 		codeCapacityRetiresOldestCompleteRegion();
 #endif
 		std::cout << "Compiled block link tests passed\n"; return 0;

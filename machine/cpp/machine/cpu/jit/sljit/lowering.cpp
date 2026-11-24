@@ -243,7 +243,7 @@ void NativeLowering::lower(const NativeInstruction& source) {
 
 void NativeLowering::endBlock() {
 	if (!m_terminal) {
-		m_cache.reserveScratch(0xf);
+		m_cache.reserveScratch(nativeEdgeWordUses);
 		emitExit(m_blocks[m_current]->terminal);
 	}
 }

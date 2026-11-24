@@ -346,8 +346,8 @@ void sharedWordsSurviveTemporaryUse() {
 	NativeRegisterCache cache(code.compiler, SLJIT_S0, SLJIT_S1, bank, floats);
 	// R0 is needed by the following Float literal; R1 remains available.
 	const std::array rows{NativeInstruction(NativeLiteral{4, valueInteger(104)}),
-		NativeInstruction(NativeLiteral{8, valueFloat(0.5f)})};
-	std::array<NativeWordConstraints, 2> constraints;
+		NativeInstruction(NativeLiteral{8, valueFloat(0.5f)}), NativeInstruction(NativeHalt{})};
+	std::array<NativeWordConstraints, 3> constraints;
 	planWordConstraints(rows, constraints);
 	cache.applyConstraints(constraints[0]);
 	for (int i = 0; i < 8; ++i) {
