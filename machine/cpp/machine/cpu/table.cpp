@@ -84,14 +84,6 @@ u32 TableRecord::arraySlot(const Value& key) {
 	return valueToInteger(key, integer) ? arraySlot(integer) : NO_ARRAY_SLOT;
 }
 
-bool TableRecord::hasIntegerKey(u32 key) const {
-	if (key <= arrayCapacity()) {
-		return !isNil(values().get(static_cast<size_t>(key - 1)));
-	}
-	const int nodeIndex = findNodeIndex(valueInteger(static_cast<i32>(key)));
-	return nodeIndex >= 0 && !isNil(values().get(hashValueSlot(static_cast<size_t>(nodeIndex))));
-}
-
 int TableRecord::findNodeIndex(const Value& key, bool matchDead) const {
 	const u32 count = hashSlots();
 	return count == 0u ? -1
@@ -115,15 +107,6 @@ int TableRecord::HashStorage<BulkWrite>::findNode(const Value& key, u32 home, bo
 			if (slots.tag(valueSlot) == ValueTag::DeadKey && slots.word(valueSlot) == payload) return index;
 		}
 		index = next(slot);
-	}
-	return -1;
-}
-
-int TableRecord::findNextLiveHashIndex(size_t start) const {
-	for (size_t index = start; index < hashSlots(); ++index) {
-		if (!isNil(values().get(hashKeySlot(index))) && !isNil(values().get(hashValueSlot(index)))) {
-			return static_cast<int>(index);
-		}
 	}
 	return -1;
 }
@@ -292,19 +275,18 @@ int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value va
 	// Restart any collector scan against the complete, redistributed body.
 	m_heap->tableEntriesMoved(m_address);
 	const u32 oldStorage = storageAddress();
-	const auto oldValues = values();
+	const auto oldValues = hashBodyAt(oldStorage, oldHashSize, oldArraySize).slots;
+	const auto body = hashBodyAt<true>(storage, newHashSize, newArraySize);
 	bindStorage(newArraySize, newHashSize, storage);
 	const size_t retainedArray = std::min(oldArraySize, newArraySize);
 	if (retainedArray != 0) {
-		const auto newValues = values();
-		std::memcpy(newValues.words, oldValues.words, retainedArray * sizeof(u32));
-		std::memcpy(newValues.tags, oldValues.tags, retainedArray);
+		std::memcpy(body.slots.words, oldValues.words, retainedArray * sizeof(u32));
+		std::memcpy(body.slots.tags, oldValues.tags, retainedArray);
 	}
 	initializeStorage(storage, newArraySize, newHashSize, retainedArray);
 
 	// initializeStorage marked every destination page. No guest or collector
 	// execution intervenes before the rebuilt table is complete.
-	const auto body = hashBody<true>(newHashSize, newArraySize);
 	const int firstFree = static_cast<int>(newHashSize) - 1;
 	int nextFree = firstFree;
 	for (size_t i = retainedArray; i < oldArraySize; ++i) {
@@ -839,26 +821,34 @@ bool TableRecord::storePredictedStringKey(StringId key, Value value, int predict
 
 i32 TableRecord::length(TableRecord* table) noexcept {
 	constexpr u32 maxBoundary = 0x7fffffffu;
+	const auto body = table->hashBody(table->hashSlots(), table->arrayCapacity());
+	const auto hasIntegerKey = [&](u32 key) {
+		if (key <= body.array) return body.slots.tag(key - 1u) != ValueTag::Nil;
+		if (body.count == 0) return false;
+		const auto integer = valueInteger(static_cast<i32>(key));
+		const int node = body.findNode(integer, hashCanonicalTableKey(integer) & (body.count - 1u));
+		return node >= 0 && body.slots.tag(body.array + body.count + static_cast<u32>(node)) != ValueTag::Nil;
+	};
 	u32 low = table->lengthHint(), high;
-	if (low != 0 && !table->hasIntegerKey(low)) {
+	if (low != 0 && !hasIntegerKey(low)) {
 		high = low;
 		low = 0;
 	} else if (low == maxBoundary) {
 		return static_cast<i32>(low);
 	} else {
-		if (!table->hasIntegerKey(low + 1)) {
+		if (!hasIntegerKey(low + 1)) {
 			return static_cast<i32>(low);
 		}
 		++low;
 		high = std::min(low * 2, maxBoundary);
-		while (low != maxBoundary && table->hasIntegerKey(high)) {
+		while (low != maxBoundary && hasIntegerKey(high)) {
 			low = high;
 			high = std::min(low * 2, maxBoundary);
 		}
 	}
 	while (high - low > 1) {
 		const u32 middle = low + ((high - low) >> 1);
-		if (table->hasIntegerKey(middle)) low = middle;
+		if (hasIntegerKey(middle)) low = middle;
 		else high = middle;
 	}
 	table->writeHeader(TableHeader::Length, low);
@@ -873,62 +863,58 @@ void TableRecord::clear() {
 	m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 1u);
 }
 
+bool TableRecord::loadHashEntry(const HashBody& body, u32 slot, Value& key, Value& value) {
+	if (body.slots.tag(slot) == ValueTag::Nil || body.slots.tag(slot + body.count) == ValueTag::Nil) return false;
+	key = body.slots.get(slot);
+	value = body.slots.get(slot + body.count);
+	return true;
+}
+
 bool TableRecord::loadStoredEntry(size_t slot, Value& key, Value& value) const {
-	if (slot < arrayCapacity()) {
-		if (isNil(values().get(slot))) return false;
-		key = valueInteger(static_cast<i32>(slot + 1));
-		value = values().get(slot);
-		return true;
-	}
-	const size_t hashIndex = slot - arrayCapacity();
-	if (isNil(values().get(hashKeySlot(hashIndex))) || isNil(values().get(hashValueSlot(hashIndex)))) return false;
-	key = values().get(hashKeySlot(hashIndex));
-	value = values().get(hashValueSlot(hashIndex));
+	const auto body = hashBody(hashSlots(), arrayCapacity());
+	if (slot >= body.array) return loadHashEntry(body, slot, key, value);
+	if (body.slots.tag(slot) == ValueTag::Nil) return false;
+	key = valueInteger(static_cast<i32>(slot + 1));
+	value = body.slots.get(slot);
 	return true;
 }
 
 void TableRecord::nextEntry(const Value& rawAfter, Value& key, Value& value) const {
 	if (valueIsNaN(rawAfter)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_NEXT_KEY);
 	const Value after = canonicalTableKey(rawAfter);
-	const auto arraySize = arrayCapacity();
+	const auto body = hashBody(hashSlots(), arrayCapacity());
 	u32 position = 0;
 	if (!isNil(after)) {
 		const u32 index = arraySlot(after);
-		if (index < arraySize) {
+		if (index < body.array) {
 			position = index + 1u;
 		} else {
-			const int nodeIndex = findNodeIndex(after, true);
+			const int nodeIndex = body.count ? body.findNode(after, hashCanonicalTableKey(after) & (body.count - 1u), true) : -1;
 			if (nodeIndex < 0) {
 				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_NEXT_KEY);
 			}
-			position = arraySize + static_cast<u32>(nodeIndex) + 1u;
+			position = body.array + static_cast<u32>(nodeIndex) + 1u;
 		}
 	}
-	(void)nextStoredEntry(position, key, value);
+	(void)nextStoredEntry(body, position, key, value);
 }
 
 u32 TableRecord::nextStoredEntry(u32 position, Value& key, Value& value) const {
-	const u32 arraySize = arrayCapacity();
-	const auto slots = values();
-	for (; position < arraySize; ++position) {
-		const Value entry = slots.get(position);
-		if (!isNil(entry)) {
-			key = valueInteger(static_cast<i32>(position + 1u));
-			value = entry;
-			return position + 1u;
-		}
+	return nextStoredEntry(hashBody(hashSlots(), arrayCapacity()), position, key, value);
+}
+
+u32 TableRecord::nextStoredEntry(const HashBody& body, u32 position, Value& key, Value& value) {
+	for (; position < body.array; ++position) {
+		if (body.slots.tag(position) == ValueTag::Nil) continue;
+		key = valueInteger(static_cast<i32>(position + 1u));
+		value = body.slots.get(position);
+		return position + 1u;
 	}
-	const int hashIndex = findNextLiveHashIndex(position - arraySize);
-	if (hashIndex >= 0) {
-		const size_t slot = static_cast<size_t>(hashIndex);
-		key = slots.get(hashKeySlot(slot));
-		value = slots.get(hashValueSlot(slot));
-		return arraySize + static_cast<u32>(hashIndex) + 1u;
-	}
+	for (; position < body.array + body.count; ++position)
+		if (loadHashEntry(body, position, key, value)) return position + 1u;
 	key = valueNil();
 	return 0;
 }
-
 
 size_t TableRecord::trackedHeapBytes() const {
 	const u32 storage = storageAddress();

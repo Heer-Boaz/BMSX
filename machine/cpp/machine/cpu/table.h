@@ -179,9 +179,7 @@ private:
 
 	size_t hashKeySlot(size_t index) const { return arrayCapacity() + index; }
 	size_t hashValueSlot(size_t index) const { return arrayCapacity() + hashSlots() + index; }
-	bool hasIntegerKey(u32 key) const;
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
-	int findNextLiveHashIndex(size_t start) const;
 	struct ResizePlan { size_t array, hash; };
 	ResizePlan planRehash(Value key, u8 extraHashSlots) const;
 	enum class HashStore : u8 { General, Scheduled, Resume, ReturningIndex, ReturningField };
@@ -244,10 +242,15 @@ private:
 	using RebuildBody = HashStorage<true>;
 	template<bool BulkWrite = false>
 	HashStorage<BulkWrite> hashBody(u32 count, u32 array) const {
-		const u32 storage = storageAddress();
+		return hashBodyAt<BulkWrite>(storageAddress(), count, array);
+	}
+	template<bool BulkWrite = false>
+	HashStorage<BulkWrite> hashBodyAt(u32 storage, u32 count, u32 array) const {
 		u8* words = m_memory->ramData() + (storage & RAM_RECORD_WORD_MASK);
 		return {{m_memory, words, words + (array + 3u * count) * 4u}, array, count, storage + (array + 2u * count) * 4u};
 	}
+	static bool loadHashEntry(const HashBody& body, u32 slot, Value& key, Value& value);
+	static u32 nextStoredEntry(const HashBody& body, u32 position, Value& key, Value& value);
 	static int reinsertMapping(const RebuildBody& body, int& nextFree, Value key, Value value) noexcept;
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
 	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
