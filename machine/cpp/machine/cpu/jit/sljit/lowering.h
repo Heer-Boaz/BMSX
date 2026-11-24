@@ -102,7 +102,7 @@ private:
 		std::optional<ValueTag> resultTag, NativeStorePlan store, NativeTableReadPlan,
 		std::optional<u8> temporary = {});
 	void emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBlockExitSite&, std::optional<ValueTag> resultTag);
-	void emitFieldResult(int slot, std::optional<ValueTag> resultTag);
+	void emitTableReadResult(int slot, std::optional<ValueTag> resultTag);
 	void emitSingleStringReads();
 	void emitStringStoreMisses();
 	void admitTableValueWrite(NativeBlockExitSite&);

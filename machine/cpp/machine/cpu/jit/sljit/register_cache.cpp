@@ -151,16 +151,24 @@ NativeRegisterCache::Operand NativeRegisterCache::read(int guest, ValueTag tag) 
 	return operand(slot);
 }
 
-NativeRegisterCache::RawResult NativeRegisterCache::writeRaw(int guest) {
+NativeRegisterCache::RawResult NativeRegisterCache::writeRaw(int guest, NativeOperandDemand demand) {
 	// Called at a result definition, after all inputs have been consumed.
 	beginInstruction();
 	discardRange(guest, guest + 1);
-	const int payload = allocate(guest, std::nullopt, false);
-	m_pinned[payload] = true;
-	m_state[payload].dirty = true;
+	RawResult result{SLJIT_MEM1(m_words), SLJIT_MEM1(m_tags), guest * sljit_sw(sizeof(u32)), guest};
+	if (demand == NativeOperandDemand::None) return result;
+	if (demand == NativeOperandDemand::Value) {
+		const int payload = allocate(guest, std::nullopt, false);
+		m_pinned[payload] = true;
+		m_state[payload].dirty = true;
+		result.word = host(payload).reg;
+		result.wordOffset = 0;
+	}
 	const int type = allocate(guest, std::nullopt, false);
 	m_state[type].tagLane = m_state[type].dirty = true;
-	return {host(payload).reg, host(type).reg};
+	result.tag = host(type).reg;
+	result.tagOffset = 0;
+	return result;
 }
 
 NativeRegisterCache::Operand NativeRegisterCache::write(int guest, ValueTag tag) {

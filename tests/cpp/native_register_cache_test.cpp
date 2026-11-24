@@ -282,7 +282,7 @@ void untypedTransfersPublishTagsButKeepPayloads() {
 void dynamicValueAcrossEdge() {
 	Code code;
 	NativeRegisterCache cache(code.compiler, SLJIT_S0, SLJIT_S1, integers, floats);
-	const auto result = cache.writeRaw(1);
+	const auto result = cache.writeRaw(1, NativeOperandDemand::Value);
 	cache.emitWord(0, result.word);
 	cache.emitTag(0, result.tag);
 	auto target = cache.state();
@@ -310,6 +310,30 @@ void dynamicValueAcrossEdge() {
 		require(code.run(slots) == (valueTag(value) != ValueTag::Float), "guard follows the transferred tag");
 		require(slots.get(1) == value && slots.get(2) == valueBool(false),
 			"both planes bypass stale guest storage and publish exactly on the selected exit");
+	}
+}
+
+void tagUseWithRecoverableWord() {
+	Code code;
+	NativeRegisterCache cache(code.compiler, SLJIT_S0, SLJIT_S1, std::span(integers).first(1), floats);
+	const auto result = cache.writeRaw(1, NativeOperandDemand::Tag);
+	cache.emitWord(0, SLJIT_R0);
+	sljit_emit_op1(code.compiler, SLJIT_MOV32, result.word, result.wordOffset, SLJIT_R0, 0);
+	cache.emitTag(0, result.tag);
+	const auto snapshot = cache.state();
+	auto* miss = cache.guard(1, ValueTag::Nil, SLJIT_R0);
+	cache.publish();
+	code.result(0);
+	sljit_set_label(miss, sljit_emit_label(code.compiler));
+	cache.emitState(snapshot);
+	code.result(1);
+	code.finish();
+	for (Value input : {valueNil(), valueInteger(-7), valueFloatBits(0xffa12345u)}) {
+		ValueSlots slots(2);
+		slots.set(0, input);
+		slots.set(1, valueBool(true));
+		require(code.run(slots) == (input != valueNil()) && slots.get(1) == input,
+			"one available word register suffices for a nil comparison and exact recovery on either exit");
 	}
 }
 
@@ -347,7 +371,7 @@ int main() {
 	try {
 		wordsFloatsAndReferences();arithmeticAndBitMoves();futureUseAndPublication();
 		aliasEvictionAndRetagging();preciseGuardSnapshots();
-		selectiveCallSpills();parallelTransfers();untypedTransfersPublishTagsButKeepPayloads();dynamicValueAcrossEdge();loopEdges();
+		selectiveCallSpills();parallelTransfers();untypedTransfersPublishTagsButKeepPayloads();dynamicValueAcrossEdge();tagUseWithRecoverableWord();loopEdges();
 		std::cout<<"Native word/F32 cache, precise exits, selective spills and typed loop transfers passed\n";
 		return 0;
 	} catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}

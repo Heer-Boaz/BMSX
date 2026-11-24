@@ -11,6 +11,8 @@ namespace bmsx {
 struct NativeInstruction;
 struct NativeIrBlock;
 
+enum class NativeOperandDemand : u8 { None, Tag, Value };
+
 // Entry liveness and next-use distances are derived from logical guest slots,
 // without reference to the host register bank or code-emission state.
 class NativeRegisterUses {
@@ -31,7 +33,7 @@ public:
 
 	void beginBlock(std::span<const NativeInstruction> instructions);
 	int nextUse(size_t nextInstruction, int guest) const;
-	bool nextUseReadsOperand(size_t nextInstruction, int guest) const;
+	NativeOperandDemand nextOperandDemand(size_t nextInstruction, int guest) const;
 
 private:
 	struct UseBoundary {

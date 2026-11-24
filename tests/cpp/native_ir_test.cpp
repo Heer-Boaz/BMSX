@@ -1086,6 +1086,20 @@ void registerUses() {
 		"register-address CLOSURE reads the complete Bx slot and independently defines its result");
 	require(uses.nextUse(62, 10) == 1 && uses.nextUse(63, 10) == 0 && uses.nextUse(64, 10) == never,
 		"next use includes the final instruction in a full block");
+
+	const std::array consumers{
+		NativeInstruction(NativeComparison{10, 11, OpCode::EQ, true, NativeTaggedEquality{ValueTag::Nil, true}}),
+		NativeInstruction(NativeNot{11, 11}),
+		NativeInstruction(NativeMove{11, 12, ValueMoveKind::Copy}),
+	};
+	uses.beginBlock(consumers);
+	require(uses.nextOperandDemand(0, 11) == NativeOperandDemand::Tag
+		&& uses.nextOperandDemand(0, 10) == NativeOperandDemand::None,
+		"equality against a proven nil consumes only the other operand's tag");
+	require(uses.nextOperandDemand(1, 11) == NativeOperandDemand::Tag
+		&& uses.nextOperandDemand(2, 11) == NativeOperandDemand::None
+		&& uses.nextOperandDemand(2, 12) == NativeOperandDemand::Value,
+		"an aliased NOT reads its input tag; a copy consumes its input but not the old destination");
 }
 
 void knownFaultEndsOnlyTheNativePath() {

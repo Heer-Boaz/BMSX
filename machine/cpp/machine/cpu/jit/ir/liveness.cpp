@@ -170,11 +170,20 @@ int NativeRegisterUses::nextUse(size_t nextInstruction, int guest) const {
 	return positions != 0 ? std::countr_zero(positions) : std::numeric_limits<int>::max();
 }
 
-bool NativeRegisterUses::nextUseReadsOperand(size_t nextInstruction, int guest) const {
+NativeOperandDemand NativeRegisterUses::nextOperandDemand(size_t nextInstruction, int guest) const {
 	const int distance = nextUse(nextInstruction, guest);
-	if (distance == std::numeric_limits<int>::max()) return false;
-	const auto& reads = m_instructions[nextInstruction + distance].slots.reads;
-	return std::ranges::find(reads, guest) != reads.end();
+	if (distance == std::numeric_limits<int>::max()) return NativeOperandDemand::None;
+	const auto& row = m_instructions[nextInstruction + distance];
+	const auto& reads = row.slots.reads;
+	if (std::ranges::find(reads, guest) == reads.end()) return NativeOperandDemand::None;
+	if (std::holds_alternative<NativeTruthBranch>(row.operation)) return NativeOperandDemand::Tag;
+	if (const auto* op = std::get_if<NativeNot>(&row.operation))
+		return op->sourceTruthy ? NativeOperandDemand::None : NativeOperandDemand::Tag;
+	if (const auto* cmp = std::get_if<NativeComparison>(&row.operation)) {
+		if (const auto* eq = std::get_if<NativeTaggedEquality>(&cmp->strategy); eq && eq->tag <= ValueTag::True)
+			return guest == (eq->knownLeft ? cmp->right : cmp->left) ? NativeOperandDemand::Tag : NativeOperandDemand::None;
+	}
+	return NativeOperandDemand::Value;
 }
 
 } // namespace bmsx

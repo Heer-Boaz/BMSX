@@ -7,6 +7,7 @@
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
+#include "machine/cpu/jit/ir/liveness.h"
 #include "sljitLir.h"
 
 namespace bmsx {
@@ -43,8 +44,8 @@ public:
 	// A read's tag must have been proved by the entry/admission or instruction.
 	// guard emits only the missing proof, not a repeated check of a known tag.
 	sljit_jump* guard(int guest, ValueTag tag, sljit_s32 scratch) const;
-	struct RawResult { sljit_s32 word, tag; };
-	RawResult writeRaw(int guest);
+	struct RawResult { sljit_s32 word, tag; sljit_sw wordOffset, tagOffset; };
+	RawResult writeRaw(int guest, NativeOperandDemand demand);
 	void emitWord(int guest, sljit_s32 destination) const;
 	void emitTag(int guest, sljit_s32 destination) const;
 	Operand read(int guest, ValueTag tag);
