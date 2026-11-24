@@ -1,6 +1,6 @@
 type RockCell = { x: number; y: number };
 
-// Rows are 32-bit wall masks. Run words store the column, row, and width;
+// Rows are 32-bit wall masks;
 // stair words store the column, first row, and exclusive end row in three u8s.
 // All coordinates in the tape are relative to the room, in tiles.
 export function packPietiousCollision(
@@ -29,16 +29,11 @@ export function packPietiousCollision(
 			}
 		}
 		const wallWords = new Uint32Array(rows.length);
-		const runs: number[] = [];
 		const stairs: number[] = [];
 		for (let y = 0; y < rows.length; ++y) {
 			const row = activeRows[y];
-			let x = 0;
-			while (x < width) {
-				if (row[x] !== '#' && row[x] !== '$') { ++x; continue; }
-				const first = x;
-				do { wallWords[y] |= 1 << x++; } while (row[x] === '#' || row[x] === '$');
-				runs.push(first | (y << 8) | ((x - first) << 16));
+			for (let x = 0; x < width; ++x) {
+				if (row[x] === '#' || row[x] === '$') wallWords[y] |= 1 << x;
 			}
 		}
 		for (let x = 0; x + 1 < width; ++x) {
@@ -53,12 +48,10 @@ export function packPietiousCollision(
 				}
 			}
 		}
-		const bytes = Buffer.alloc((2 + rows.length + runs.length + stairs.length) * 4);
-		let at = 0;
-		for (const word of [runs.length, stairs.length, ...wallWords, ...runs, ...stairs]) {
-			bytes.writeUInt32LE(word, at);
-			at += 4;
-		}
+		const bytes = Buffer.alloc((1 + rows.length + stairs.length) * 4);
+		bytes.writeUInt32LE(stairs.length);
+		for (let y = 0; y < rows.length; ++y) bytes.writeUInt32LE(wallWords[y], (1 + y) * 4);
+		for (let i = 0; i < stairs.length; ++i) bytes.writeUInt32LE(stairs[i], (1 + rows.length + i) * 4);
 		variants.writeUInt32LE(appendWords(bytes), mask * 4);
 	}
 	return directory;

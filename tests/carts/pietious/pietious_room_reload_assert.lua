@@ -64,8 +64,8 @@ return {
 			local rock_x<const>, rock_y<const> = rock:get_global_position()
 			assert(rock_x == x and rock_y == y, 'the real rock and collision fixture no longer share a tile')
 			assert(room:base_collision_flags_at_tile(tx + 1, ty + 1) == collision_flags_wall
-				and room:overlaps_solid_rect(x + 15, y + 15, 1, 1)
-				and not room:overlaps_solid_rect(x - 1, y, 1, 1),
+				and room:has_collision_flags_in_rect(x + 15, y + 15, 1, 1, collision_flags_wall, false)
+				and not room:has_collision_flags_in_rect(x - 1, y, 1, 1, collision_flags_wall, false),
 				'live rock has lost its exact 2x2 solid footprint')
 			player:set_global_position(x, y)
 			assert(player:pick_entry_stairs(-1) == nil and player:search_stairs_at_locked_x(x, y) == nil,
@@ -74,7 +74,7 @@ return {
 			rock:begin_break()
 			assert(room.progress.destroyed_rocks.rock_013_01
 				and room:base_collision_flags_at_tile(tx + 1, ty + 1) == collision_flags_none
-				and not room:overlaps_solid_rect(x + 15, y + 15, 1, 1),
+				and not room:has_collision_flags_in_rect(x + 15, y + 15, 1, 1, collision_flags_wall, false),
 				'breaking the rock did not remove the matching collision cells')
 			local stair<const> = player:pick_entry_stairs(-1)
 			assert(stair ~= nil and stair == player:search_stairs_at_locked_x(x, y),

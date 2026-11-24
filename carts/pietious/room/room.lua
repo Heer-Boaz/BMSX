@@ -110,13 +110,9 @@ local bind_room_collision<const> = function(room_state)
 	end
 	local variants<const>: *word = terrain.tape + room_state.terrain.collision
 	local plan<const>: *word = terrain.tape + variants[active_mask]
-	local run_count<const> = plan[0]
-	local runs<const> = plan + (2 + room_state.tile_rows) * sizeof(word)
-	room_state.wall_rows = plan + 2 * sizeof(word)
-	room_state.solid_runs = runs
-	room_state.solid_run_count = run_count
-	room_state.stairs = runs + run_count * sizeof(word)
-	room_state.stair_count = plan[1]
+	room_state.wall_rows = plan + sizeof(word)
+	room_state.stairs = room_state.wall_rows + room_state.tile_rows * sizeof(word)
+	room_state.stair_count = plan[0]
 end
 
 local apply_room_template<const> = function(room_state, template)
@@ -265,22 +261,6 @@ function room_object:overlaps_active_breakable_wall(x, y, w, h)
 	return false
 end
 
-function room_object:overlaps_active_draaideur(x, y, w, h)
-	local draaideuren<const> = self.draaideur_instances
-	local tile_size<const> = self.tile_size
-	local door_height<const> = tile_size * 3
-	for i = 1, #draaideuren do
-		local draaideur<const> = draaideuren[i]
-		local pose_x<const>, pose_y<const> = draaideur:get_global_position()
-		if draaideur.collision_enabled
-		and rect_overlaps(x, y, w, h, pose_x, pose_y, tile_size, door_height)
-		then
-			return true
-		end
-	end
-	return false
-end
-
 function room_object:is_active_draaideur_at_tile(tx, ty)
 	if ty < 1 or ty > self.tile_rows then
 		return false
@@ -340,27 +320,6 @@ function room_object:has_collision_flags_in_rect(x, y, w, h, mask, include_eleva
 	end
 
 	return false
-end
-
-function room_object:overlaps_solid_rect(x, y, w, h)
-	local runs<const>: *word = self.solid_runs
-	for i = 0, self.solid_run_count - 1 do
-		local run<const> = runs[i]
-		local column<const> = run & 0xff
-		local row<const> = (run >> 8) & 0xff
-		local width<const> = run >> 16
-		if rect_overlaps(x, y, w, h, room_tile_origin_x + column * room_tile_size,
-			room_tile_origin_y + row * room_tile_size, width * room_tile_size, room_tile_size) then
-			return true
-		end
-	end
-	if self:overlaps_active_elevator(x, y, w, h) then
-		return true
-	end
-	if self:overlaps_active_draaideur(x, y, w, h) then
-		return true
-	end
-	return self:overlaps_active_breakable_wall(x, y, w, h)
 end
 
 function room_object:find_near_lithograph(player)

@@ -44,7 +44,7 @@ test('Pietious cooks door cutouts, neighbour shadows and authored stage variants
 	};
 	const stairs = rooms[109].terrain;
 	const baseCollision = data.getUint32(stairs.base.collision, true);
-	assert.deepEqual([0, 1, 2, 3].map(row => data.getUint32(baseCollision + 8 + 4 * row, true)), [6, 4, 4, 5]);
+	assert.deepEqual([0, 1, 2, 3].map(row => data.getUint32(baseCollision + 4 + 4 * row, true)), [6, 4, 4, 5]);
 	assert.deepEqual(rowTiles(stairs.base.tape, 2, 3), ['castle_tile_blue_l', 'castle_pillar_blue_l2', 'castle_front_blue_1']);
 	assert.notDeepEqual(rowTiles(stairs.stairs_open.tape, 2, 3), rowTiles(stairs.base.tape, 2, 3),
 		'changed pillar bottom also changes the art selection in its adjacent row');
@@ -52,7 +52,7 @@ test('Pietious cooks door cutouts, neighbour shadows and authored stage variants
 	const seal = rooms[100].terrain;
 	const sealWalls = (layout: { collision: number }) => {
 		const at = data.getUint32(layout.collision, true);
-		return [data.getUint32(at + 8, true), data.getUint32(at + 12, true)];
+		return [data.getUint32(at + 4, true), data.getUint32(at + 8, true)];
 	};
 	assert.deepEqual(sealWalls(seal.base), [3, 2]);
 	assert.deepEqual(sealWalls(seal.seal_cleared), [2, 0]);
@@ -61,7 +61,7 @@ test('Pietious cooks door cutouts, neighbour shadows and authored stage variants
 	assert.deepEqual(rowTiles(seal.seal_cleared.dissolve[6], 1, 2), [null, null]);
 });
 
-test('every authored room variant and rock state cooks exact wall cells, runs and staircase spans', () => {
+test('every authored room variant and rock state cooks exact wall cells and staircase spans', () => {
 	type ObjectCell = { type: string; x: number; y: number };
 	const source = readFileSync('carts/pietious/res/data/castle_map.yaml', 'utf8');
 	const rooms = parseYaml(source) as Record<string, {
@@ -107,25 +107,13 @@ test('every authored room variant and rock state cooks exact wall cells, runs an
 					}
 				});
 				const at = tape.readUInt32LE(directory + state * 4);
-				const runCount = tape.readUInt32LE(at);
-				const stairCount = tape.readUInt32LE(at + 4);
-				const runsAt = at + 8 + rows.length * 4;
-				const stairsAt = runsAt + runCount * 4;
+				const stairCount = tape.readUInt32LE(at);
+				const stairsAt = at + 4 + rows.length * 4;
 				const wall = (x: number, y: number) => rows[y][x] === '#' || rows[y][x] === '$';
-				const covered = rows.map(row => row.map(() => false));
-				for (let i = 0; i < runCount; ++i) {
-					const runAt = runsAt + i * 4;
-					const x = tape[runAt], y = tape[runAt + 1], width = tape[runAt + 2];
-					assert.ok(width > 0 && !wall(x - 1, y) && !wall(x + width, y), context);
-					for (let col = x; col < x + width; ++col) {
-						assert.ok(!covered[y][col], context);
-						covered[y][col] = true;
-					}
-				}
 				for (let y = 0; y < rows.length; ++y) {
-					const word = tape.readUInt32LE(at + 8 + y * 4);
+					const word = tape.readUInt32LE(at + 4 + y * 4);
 					for (let x = 0; x < rows[y].length; ++x)
-						assert.ok(covered[y][x] === wall(x, y) && Boolean((word >>> x) & 1) === wall(x, y), context);
+						assert.ok(Boolean((word >>> x) & 1) === wall(x, y), context);
 				}
 				const stair = (x: number, y: number) =>
 					y >= 0 && y < rows.length && '-_'.includes(rows[y][x]) && '=+'.includes(rows[y][x + 1]);
