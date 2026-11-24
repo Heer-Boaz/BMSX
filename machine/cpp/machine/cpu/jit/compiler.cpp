@@ -86,6 +86,16 @@ std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 	auto region = std::make_shared<NativeCodeRegion>();
 	region->ram = bindings.ram;
 	region->sourceInstructions = static_cast<u32>(ir.instructionCount());
+	// Generated code embeds exit addresses. Finalize the region's contiguous
+	// storage before binding any block view or passing addresses to SLJIT.
+	const auto sideExits = ir.sideExits(), replays = ir.admissionReplays();
+	auto& sites = region->m_exitSites;
+	sites.reserve(sideExits.size() + replays.size());
+	for (const auto& exit : sideExits) sites.push_back(materializeExit(exit, bindings));
+	for (const auto& replay : replays) sites.push_back(materializeExit(replay, bindings));
+	const auto published = std::span(sites);
+	region->m_constructors.reserve(ir.recordPlans().size());
+	for (const auto& record : ir.recordPlans()) region->m_constructors.emplace_back(record);
 	const auto& gate = nativeBlockGate();
 	std::vector<std::unique_ptr<NativeBlock>> entries;
 	entries.reserve(plans.size());
@@ -98,22 +108,16 @@ std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 		block->sourceWords = plan.sourceWords;
 		block->hasFusedJump = plan.hasFusedJump;
 		block->terminal = materializeExit(plan.terminal, bindings);
-		const auto sideExits = ir.sideExits(plan);
-		block->sideExits.reserve(sideExits.size());
-		for (const auto& exit : sideExits) block->sideExits.push_back(materializeExit(exit, bindings));
+		block->sideExits = published.subspan(plan.firstSideExit, plan.sideExitCount);
 		if (const auto* allocation = std::get_if<NativeTableAllocation>(&plan.instructions.back().operation);
 			allocation && allocation->record)
-			block->terminal.recordConstructor = new NativeTableConstructor(ir.recordPlans()[*allocation->record]);
+			block->terminal.recordConstructor = &region->m_constructors[*allocation->record];
 		if (const auto* call = std::get_if<NativeCallSite>(&plan.instructions.back().operation); call && call->fixed)
 			block->terminal.fixedCall = {*call->fixed, {}};
 		entries.push_back(std::move(block));
 	}
-	const auto replays = ir.admissionReplays();
-	region->m_replaySites.reserve(replays.size());
-	for (const auto& replay : replays)
-		region->m_replaySites.push_back(materializeExit(replay, bindings));
 	lowering.prepare(entries);
-	NativeLowering compiler(lowering, entries, bindings, plans, region->m_replaySites, uses, specializations.imageConstants);
+	NativeLowering compiler(lowering, entries, bindings, plans, published.subspan(sideExits.size()), uses, specializations.imageConstants);
 	for (size_t index = 0; index < plans.size(); ++index) {
 		compiler.beginBlock(index);
 		for (const auto& instruction : plans[index].instructions)

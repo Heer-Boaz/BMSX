@@ -459,7 +459,7 @@ void resolvedComparisonLinksBothPaths() {
 	require(root.sourceWords == 2 && !cache.entries[1] && cache.entries[2] && cache.entries[4]
 		&& root.sideExits.back().exit == NativeBlockExit::Continue,
 		"the fused comparison exposes both compiled targets without a dynamic skip");
-	for (const auto* edge : {&root.terminal, &root.sideExits.back()}) {
+	for (const auto* edge : std::array<const NativeBlockExitSite*, 2>{&root.terminal, &root.sideExits.back()}) {
 		const auto& target = cache.entries[(edge->nextPc - DYNAMIC_RAM_BASE) / INSTRUCTION_BYTES];
 		require(target && (target->region == root.region ? !edge->link.target : edge->link.target == target.get()),
 			"each comparison outcome uses an internal edge or an actual link to its independent owner");

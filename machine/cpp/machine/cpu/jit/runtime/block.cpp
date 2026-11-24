@@ -37,6 +37,8 @@ void NativeCodeRegion::recordPerfMap(ExecutionDomainId domain, u32 slot, u32 fir
 }
 #endif
 
+NativeCodeRegion::NativeCodeRegion() = default;
+
 NativeCodeRegion::~NativeCodeRegion() {
 	withdrawFromCache();
 	if (m_code) sljit_free_code(m_code, nullptr);
@@ -44,7 +46,6 @@ NativeCodeRegion::~NativeCodeRegion() {
 
 NativeBlock::~NativeBlock() {
 	if (terminal.exit == NativeBlockExit::Continue) terminal.link.disconnect();
-	else if (terminal.exit == NativeBlockExit::AllocateTable) delete terminal.recordConstructor;
 	for (auto& exit : sideExits)
 		if (exit.exit == NativeBlockExit::Continue) exit.link.disconnect();
 	while (m_incoming) m_incoming->disconnect();

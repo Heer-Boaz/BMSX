@@ -104,6 +104,7 @@ public:
 	void build(std::span<const NativeBlockSource> source, NativeRegisterUses& uses, bool cpuOwned = false,
 		NativeCompilationOptions options = {}, NativeCompileSpecializations specializations = {});
 	std::span<const NativeIrBlock> blocks() const { return m_blocks; }
+	std::span<const NativeIrExit> sideExits() const { return m_sideExits; }
 	std::span<const NativeIrExit> sideExits(const NativeIrBlock& block) const {
 		return std::span(m_sideExits).subspan(block.firstSideExit, block.sideExitCount);
 	}

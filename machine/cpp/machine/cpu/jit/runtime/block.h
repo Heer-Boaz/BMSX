@@ -132,7 +132,7 @@ struct NativeBlockExitSite {
 // every entry which can reach its internal labels before this storage is freed.
 class NativeCodeRegion {
 public:
-	NativeCodeRegion() = default;
+	NativeCodeRegion();
 	// Synchronize on the receiving thread before entering worker-emitted code.
 	void synchronizeInstructionStream() const;
 #if defined(BMSX_NATIVE_PERF_MAP)
@@ -152,7 +152,8 @@ private:
 	friend struct NativeBlockPage;
 	void withdrawFromCache();
 	void* m_code = nullptr;
-	std::vector<NativeBlockExitSite> m_replaySites;
+	std::vector<NativeBlockExitSite> m_exitSites;
+	std::vector<NativeTableConstructor> m_constructors;
 	NativeCodeCache* m_cache = nullptr;
 	std::array<DecodedInstructionPage*, NATIVE_VERSION_REGION_MAX_PAGES> m_pages{};
 	u8 m_pageCount = 0;
@@ -173,7 +174,7 @@ public:
 	u32 firstPc = 0;
 	bool hasFusedJump = false;
 	NativeBlockExitSite terminal;
-	std::vector<NativeBlockExitSite> sideExits;
+	std::span<NativeBlockExitSite> sideExits;
 	int admissionCycles = 0;
 	// Dependency extent includes the linear successors admitted by this entry.
 	u16 sourceWords = 0;
