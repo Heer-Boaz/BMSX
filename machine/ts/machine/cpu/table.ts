@@ -563,7 +563,8 @@ export class TableRecords {
 		}
 		return -1;
 	}
-	private insertHashWithoutGrowth(record: number, main: number, key: Value, value: Value, array: number, hash: number, words: number, tags: number, free: number): number {
+	private insertHashWithoutGrowth(record: number, main: number, key: Value, value: Value, array: number, hash: number, words: number, tags: number,
+		free: number, rebuilding: boolean): number {
 		const memory = this.heap.memory, links = tags - hash * 4;
 		const keySlot = array + main, valueSlot = keySlot + hash;
 		const keyTag = memory.readRamRecordByte(tags + keySlot);
@@ -575,9 +576,9 @@ export class TableRecords {
 		this.writeHeader(record, TableHeader.Free, free >= 0 ? free - 1 : -1);
 		if (free < 0) return -1;
 		const freeKey = array + free, freeValue = freeKey + hash;
-		const occupiedMain = hashCanonicalTableKey(canonicalTableKey(valueFromTag(keyTag, mainWord))) & (hash - 1);
+		const occupiedMain = hashCanonicalTableKey(valueFromTag(keyTag, mainWord)) & (hash - 1);
 		if (occupiedMain !== main) {
-			this.heap.tableEntriesMoved(record);
+			if (!rebuilding) this.heap.tableEntriesMoved(record);
 			this.writeSlot(words, tags, freeKey, keyTag, mainWord);
 			this.writeSlot(words, tags, freeValue, memory.readRamRecordByte(tags + valueSlot), memory.readRamRecordWord(words + valueSlot * 4));
 			memory.writeRamRecordWord(links + free * 4, memory.readRamRecordWord(links + main * 4));
@@ -597,20 +598,24 @@ export class TableRecords {
 	}
 	private placeHashMapping(record: number, home: number, key: Value, value: Value, array: number, hash: number,
 		words: number, tags: number, existing: number, available: number): number {
-		if (existing < 0) return this.insertHashWithoutGrowth(record, home, key, value, array, hash, words, tags, available);
+		if (existing < 0) return this.insertHashWithoutGrowth(record, home, key, value, array, hash, words, tags, available, false);
 		const slot = array + existing;
 		this.writeSlot(words, tags, slot, valueTag(key), valuePayload(key));
 		this.writeSlot(words, tags, slot + hash, valueTag(value), valuePayload(value));
 		return existing;
 	}
-	// Storage relocation transfers existing edges, not new ones.
-	private rawSet(record: number, key: Value, value: Value): number {
-		const slot = this.getArrayIndex(key), array = this.arrayCapacity(record);
-		if (slot >= 0 && slot < array) { this.setValue(record, slot, value); return -1; }
-		const hash = this.hashSize(record), words = this.storageAddress(record), tags = words + (array + 3 * hash) * 4;
+	// The resize supplies the destination layout and already cleared its scan cursor.
+	private reinsertMapping(record: number, key: Value, value: Value, array: number, hash: number, words: number, tags: number): number {
+		if (valueTag(key) === ValueTag.Integer) {
+			const slot = asInteger(key) - 1;
+			if (slot >= 0 && slot < array) {
+				this.writeSlot(words, tags, slot, valueTag(value), valuePayload(value));
+				return -1;
+			}
+		}
 		const home = hashCanonicalTableKey(key) & (hash - 1);
 		const available = this.vacantHome(home, array, hash, tags) ? -1 : this.findFreeIndex(record, array, hash, tags);
-		return this.insertHashWithoutGrowth(record, home, key, value, array, hash, words, tags, available);
+		return this.insertHashWithoutGrowth(record, home, key, value, array, hash, words, tags, available, true);
 	}
 	private markHashNodeDead(record: number, index: number): void {
 		const members = this.hashMembers(record);
@@ -719,26 +724,28 @@ export class TableRecords {
 		const oldArray = this.arrayCapacity(record), oldHash = this.hashSize(record);
 		const memory = this.heap.memory;
 		this.bindStorage(record, array, hash, storage);
+		const tags = storage + (array + 3 * hash) * 4;
 		const retainedArray = Math.min(oldArray, array);
 		if (retainedArray !== 0) {
 			const ram = memory.ramData();
 			const wordSource = oldWords & RAM_RECORD_WORD_MASK, tagSource = oldTags & RAM_RECORD_WORD_MASK;
 			ram.copyWithin(storage & RAM_RECORD_WORD_MASK, wordSource, wordSource + retainedArray * 4);
-			ram.copyWithin(this.tags(record) & RAM_RECORD_WORD_MASK, tagSource, tagSource + retainedArray);
+			ram.copyWithin(tags & RAM_RECORD_WORD_MASK, tagSource, tagSource + retainedArray);
 		}
 		this.initializeStorage(record, retainedArray);
 		for (let slot = retainedArray; slot < oldArray; ++slot) {
 			const tag = memory.readRamRecordByte(oldTags + slot);
-			if (tag !== ValueTag.Nil) this.rawSet(record, valueInteger(slot + 1), valueFromTag(tag, memory.readRamRecordWord(oldWords + slot * 4)));
+			if (tag !== ValueTag.Nil) this.reinsertMapping(record, valueInteger(slot + 1),
+				valueFromTag(tag, memory.readRamRecordWord(oldWords + slot * 4)), array, hash, storage, tags);
 		}
 		for (let index = 0; index < oldHash; ++index) {
 			const oldKey = oldArray + index, oldValue = oldKey + oldHash;
 			const keyTag = memory.readRamRecordByte(oldTags + oldKey), valueTag = memory.readRamRecordByte(oldTags + oldValue);
-			if (keyTag !== ValueTag.Nil && valueTag !== ValueTag.Nil) this.rawSet(record,
+			if (keyTag !== ValueTag.Nil && valueTag !== ValueTag.Nil) this.reinsertMapping(record,
 				valueFromTag(keyTag, memory.readRamRecordWord(oldWords + oldKey * 4)),
-				valueFromTag(valueTag, memory.readRamRecordWord(oldWords + oldValue * 4)));
+				valueFromTag(valueTag, memory.readRamRecordWord(oldWords + oldValue * 4)), array, hash, storage, tags);
 		}
-		const slot = this.rawSet(record, key, value);
+		const slot = this.reinsertMapping(record, key, value, array, hash, storage, tags);
 		if (hash !== 0 || reserve !== 0) memory.writeRamRecordPair(this.hashMetadata(record), reserve, members);
 		this.publishHashWatermark(record, watermark);
 		this.heap.budget.replaceRecord(oldWords, previous, requested);

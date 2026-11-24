@@ -184,10 +184,10 @@ Value TableRecord::HashBody::predictedString(i32 node, StringId key) const {
 	return tag == ValueTag::Nil ? valueNil() : valueFromTag(tag, slots.word(slot));
 }
 
-int TableRecord::findFreeIndex(const HashBody& body) const {
-	for (int i = hashFree(); i >= 0; --i) {
-		const u32 keySlot = body.array + static_cast<u32>(i);
-		if (body.slots.tag(keySlot) == ValueTag::Nil && body.slots.tag(keySlot + body.count) == ValueTag::Nil) {
+int TableRecord::HashBody::findFreeIndex(int first) const {
+	for (int i = first; i >= 0; --i) {
+		const u32 keySlot = array + static_cast<u32>(i);
+		if (slots.tag(keySlot) == ValueTag::Nil && slots.tag(keySlot + count) == ValueTag::Nil) {
 			return i;
 		}
 	}
@@ -267,7 +267,7 @@ int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, 
 		const auto body = hashBody(count, array);
 		const u32 home = hashCanonicalTableKey(key) & (count - 1u);
 		const bool vacant = body.vacantHome(home);
-		const int available = existing >= 0 || vacant ? -1 : findFreeIndex(body);
+		const int available = existing >= 0 || vacant ? -1 : body.findFreeIndex(hashFree());
 		if (existing >= 0 || vacant || available >= 0) {
 			const int slot = placeHashMapping(body, home, key, value, existing, available);
 			publishHashMembers(members, plan.members, reserve);
@@ -343,15 +343,19 @@ int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value va
 	}
 	initializeStorage(retainedArray);
 
+	const auto body = hashBody(newHashSize, newArraySize);
+	const int firstFree = static_cast<int>(newHashSize) - 1;
+	int nextFree = firstFree;
 	for (size_t i = retainedArray; i < oldArraySize; ++i) {
 		const Value prior = oldValues.get(i);
-		if (!isNil(prior)) rawSet(valueInteger(static_cast<i32>(i + 1)), prior);
+		if (!isNil(prior)) reinsertMapping(body, nextFree, valueInteger(static_cast<i32>(i + 1)), prior);
 	}
 	for (size_t i = 0; i < oldHashSize; ++i) {
 		const Value priorKey = oldValues.get(oldArraySize + i), prior = oldValues.get(oldArraySize + oldHashSize + i);
-		if (!isNil(priorKey) && !isNil(prior)) rawSet(priorKey, prior);
+		if (!isNil(priorKey) && !isNil(prior)) reinsertMapping(body, nextFree, priorKey, prior);
 	}
-	const int slot = rawSet(key, value);
+	const int slot = reinsertMapping(body, nextFree, key, value);
+	if (nextFree != firstFree) writeHeader(TableHeader::Free, static_cast<u32>(nextFree));
 	if (newHashSize != 0u || reserve != 0u) m_memory->writeRamRecordPair(hashMetadata(), reserve, wantedMembers);
 	publishHashWatermark(watermark);
 	m_heap->budget.replaceRecord(oldValues.words, retained, allocationCharge(newArraySize, std::max(reserve, wantedMembers)));
@@ -388,19 +392,6 @@ void TableRecord::freeRecord() {
 	m_heap->budget.releaseObject(m_address, HEADER_BYTES);
 }
 
-// Storage redistribution transfers existing edges and leaves the boundary hint alone.
-int TableRecord::rawSet(const Value& key, const Value& value) {
-	const u32 array = arrayCapacity(), count = hashSlots();
-	const auto body = hashBody(count, array);
-	const u32 index = arraySlot(key);
-	if (index < array) {
-		body.slots.set(index, value);
-		return -1;
-	}
-	const u32 home = hashCanonicalTableKey(key) & (count - 1u);
-	return insertHashWithoutGrowth(body, home, key, value, body.vacantHome(home) ? -1 : findFreeIndex(body));
-}
-
 namespace {
 // Lua's chained hash insertion is shared by actual writes and by placing the
 // fixed keys of a future fresh table. Both get exactly the same relocation,
@@ -422,7 +413,7 @@ int insertAbsentHashKey(const Body& body, u32 mainSlot, const Value& key, const 
 	const int freeIndex = takeFree();
 	if (freeIndex < 0) return -1;
 	const u32 freeSlot = static_cast<u32>(freeIndex), freeKey = body.array + freeSlot;
-	const int mainIndexOfOccupied = static_cast<int>(hashCanonicalTableKey(canonicalTableKey(mainKey)) & (count - 1u));
+	const int mainIndexOfOccupied = static_cast<int>(hashCanonicalTableKey(mainKey) & (count - 1u));
 	if (mainIndexOfOccupied != mainIndex) {
 		move();
 		slots.set(freeKey, mainKey);
@@ -464,6 +455,24 @@ struct ConstructorScratch {
 	void setNext(u32 index, i32 next) const { layout.nodes[index].next = static_cast<i8>(next); }
 };
 } // namespace
+
+// The resize owns the destination layout and has already invalidated the
+// collector's scan cursor. Only the triggering assignment installs new edges.
+int TableRecord::reinsertMapping(const HashBody& body, int& nextFree, Value key, Value value) noexcept {
+	if (valueIsInteger(key)) {
+		const u32 index = arraySlot(asInteger(key));
+		if (index < body.array) {
+			body.slots.set(index, value);
+			return -1;
+		}
+	}
+	const u32 home = hashCanonicalTableKey(key) & (body.count - 1u);
+	return insertAbsentHashKey(body, home, key, value, [&] {
+		const int free = body.findFreeIndex(nextFree);
+		nextFree = free - (free >= 0);
+		return free;
+	}, [] {});
+}
 
 int TableRecord::insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept {
 	return insertAbsentHashKey(body, home, key, value, [this, available] {
@@ -651,7 +660,7 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, St
 	if (count != 0u && members + 1u <= std::max(reserve, watermark)) {
 		placeInCurrent = nodeIndex >= 0 || body.vacantHome(home);
 		if (!placeInCurrent) {
-			available = findFreeIndex(body);
+			available = body.findFreeIndex(hashFree());
 			placeInCurrent = available >= 0;
 		}
 	}

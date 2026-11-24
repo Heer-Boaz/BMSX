@@ -227,6 +227,7 @@ private:
 		u32 array, count, links;
 		int findNode(const Value& key, u32 home, bool matchDead = false) const;
 		int findString(StringId key, u32 home) const;
+		int findFreeIndex(int first) const;
 		bool vacantHome(u32 home) const {
 			const u32 slot = array + home;
 			return slots.tag(slot) == ValueTag::Nil || slots.tag(slot + count) == ValueTag::Nil;
@@ -248,8 +249,7 @@ private:
 		const u32 links = words + (array + 2u * count) * 4u;
 		return {{m_memory, words, links + count * 4u}, array, count, links};
 	}
-	int findFreeIndex(const HashBody& body) const;
-	int rawSet(const Value& key, const Value& value);
+	static int reinsertMapping(const HashBody& body, int& nextFree, Value key, Value value) noexcept;
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
 	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
 	int setHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED);

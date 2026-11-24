@@ -217,11 +217,13 @@ test('mixed table migration preserves a sparse raw array prefix and hash overflo
 	const largeBody = tables.storageAddress(table);
 	tables.setInteger(table, 5, valueNil());
 	tables.setInteger(table, 6, valueNil());
-	tables.setInteger(table, -2, valueInteger(22));
+	// A new positive index outside the array makes rehash reconsider its
+	// density. A hash-only key would leave the array partition unchanged.
+	tables.setInteger(table, 9, valueInteger(90));
 	assert.equal(tables.arrayCapacity(table), 4);
 	assert.notEqual(tables.storageAddress(table), largeBody);
-	assert.deepEqual([1, 2, 3, 4, 5, 6, 7, -1, -3, -2].map(key => tables.getInteger(table, key)),
-		[valueBool(false), valueNil(), prefix, valueBool(true), valueNil(), valueNil(), tail, valueInteger(11), valueInteger(33), valueInteger(22)]);
+	assert.deepEqual([1, 2, 3, 4, 5, 6, 7, -1, -3, 9].map(key => tables.getInteger(table, key)),
+		[valueBool(false), valueNil(), prefix, valueBool(true), valueNil(), valueNil(), tail, valueInteger(11), valueInteger(33), valueInteger(90)]);
 });
 
 test('numeric hash mixing distributes negative integral keys and preserves canonical matching', () => {
