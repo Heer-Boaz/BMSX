@@ -1,5 +1,6 @@
 local fixture<const> = require('tests/carts/nemesis_s/fixture')
 local test<const> = {}
+local enemy_bullet<const> = require('enemies/enemy_bullet')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 
 local prefab<const> = require('cartlib/world/prefab')
@@ -46,6 +47,14 @@ prefab.define({
 return {
 	kind = 'integration',
 	tests = {
+		subpixel_enemy_aim = function()
+			assert(enemy_bullet.horizontal_aim_angle(63.75, -15.5) == 6)
+			assert(enemy_bullet.horizontal_aim_angle(-63.75, 15.5) == 122)
+			assert(enemy_bullet.aim_velocity(32.5, 15.75) == nil)
+			local vx<const>, vy<const> = enemy_bullet.aim_velocity(-32.5, 16.25)
+			local expected_x<const>, expected_y<const> = enemy_bullet.aim_velocity(-32, 16)
+			assert(vx == expected_x and vy == expected_y and vx < 0 and vy > 0)
+		end,
 		projectile_reactivation = function(t)
 			local director<const>, stage<const>, player<const> = fixture.start_game(t)
 

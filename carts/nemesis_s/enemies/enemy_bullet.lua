@@ -75,7 +75,9 @@ local new_enemy_bullet_collider<const> = collider_2d_component.factory_for_sprit
 -- The original aiming routine folds the vertical sign for a ground-mounted
 -- barrel: 0 faces right, 64 is vertical, and 128 faces left (p01:65EE).
 function enemy_bullet.horizontal_aim_angle(delta_x,delta_y)
-    local inclination<const> = angle_by_delta[(math.abs(delta_y)&0xf0)+(math.abs(delta_x)>>4)]
+    local abs_x<const> = math.abs(delta_x) // 1
+    local abs_y<const> = math.abs(delta_y) // 1
+    local inclination<const> = angle_by_delta[(abs_y & 0xf0) + (abs_x >> 4)]
     return delta_x<0 and 128-inclination or inclination
 end
 
@@ -83,8 +85,8 @@ end
 -- Otherwise the returned words can be written directly to the fixed-point
 -- movement component used by every enemy bullet.
 function enemy_bullet.aim_velocity(delta_x, delta_y)
-	local abs_x<const> = math.abs(delta_x)
-	local abs_y<const> = math.abs(delta_y)
+	local abs_x<const> = math.abs(delta_x) // 1
+	local abs_y<const> = math.abs(delta_y) // 1
 	local coarse_x<const> = abs_x & 0xf0
 	if coarse_x + abs_y < minimum_aim_distance then
 		return nil
