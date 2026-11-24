@@ -154,13 +154,13 @@ void NativeLowering::lowerOperation(const NativeVararg& placement, const NativeI
 	// On a miss these values still belong to the executed prefix. On a
 	// successful open copy the runtime may write none or only some of them.
 	if (open) m_cache.publishRange(first, end);
-	m_cache.spillCall(false, 0);
+	m_cache.spillCall(false, 0, NativeRegisterCache::FrameSlots::MayChange);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, NativeBlockAbi::state, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, first);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, requested);
 	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, 32, 32),
 		SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::placeNativeVarargs));
-	m_cache.spillCall(true, 0);
+	m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::MayChange);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), growth, m_cache.state());
 	m_cache.discardRange(first, end);
 	// The IR already accounts for fixed placement. Only an open transfer

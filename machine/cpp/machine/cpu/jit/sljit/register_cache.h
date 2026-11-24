@@ -69,7 +69,7 @@ public:
 	void publishRange(int first, int end);
 	void publish();
 	enum class FrameSlots { MayChange, Unchanged };
-	void spillCall(bool reload, sljit_sw stackOffset, FrameSlots slots = FrameSlots::MayChange) const;
+	void spillCall(bool reload, sljit_sw stackOffset, FrameSlots slots) const;
 
 	const State& state() const { return m_state; }
 	const Binding* binding(int guest) const {

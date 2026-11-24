@@ -108,7 +108,7 @@ void NativeLowering::emitStoreBarriers() {
 		// The leaf marks or enqueues the exact input, without tracing,
 		// allocating or inspecting any unpublished activation.
 		emitRawLoad(barrier.source, global ? SLJIT_R1 : SLJIT_R2, global ? SLJIT_R2 : SLJIT_R3);
-		m_cache.spillCall(false, 0);
+		m_cache.spillCall(false, 0, NativeRegisterCache::FrameSlots::Unchanged);
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
 		if (global) {
 			sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&markNativeGlobalWrite));
@@ -118,7 +118,7 @@ void NativeLowering::emitStoreBarriers() {
 				: SLJIT_FUNC_ADDR(&writeNativeBarrier<GC_RECORD_LINK>);
 			sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4V(P, 32, 32, 32), SLJIT_IMM, target);
 		}
-		m_cache.spillCall(true, 0);
+		m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::Unchanged);
 		if (!global) {
 			const auto address = cell ? SLJIT_R2 : SLJIT_R0;
 			sljit_emit_op2(c, SLJIT_AND32, address, 0, SLJIT_MEM1(SLJIT_SP), savedAddress, SLJIT_IMM, RAM_RECORD_WORD_MASK);

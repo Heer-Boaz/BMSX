@@ -89,7 +89,7 @@ void NativeLowering::lowerOperation(const NativeCallSite& site, const NativeInst
 	}
 	m_cache.publishRange(base, base + 1 + site.supplied);
 
-	m_cache.spillCall(false, 0);
+	m_cache.spillCall(false, 0, NativeRegisterCache::FrameSlots::MayChange);
 	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, remainingCycles),
 		NativeBlockAbi::budget, 0, SLJIT_IMM, call.cycles);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.cpu));
@@ -97,7 +97,7 @@ void NativeLowering::lowerOperation(const NativeCallSite& site, const NativeInst
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&call));
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R3, 0, id.reg, 0);
 	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS4(32, P, P, P, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::runNativeBuiltinLeaf));
-	m_cache.spillCall(true, 0);
+	m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::MayChange);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM,
 		static_cast<u32>(NativeBuiltinCallOutcome::Declined)), call, m_cache.state());
 
