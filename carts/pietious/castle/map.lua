@@ -531,7 +531,13 @@ local load_room_templates<const> = function()
 				condition_reveal_events[condition] = event_name
 			end
 		end
+		local stair_rows
+		if room_def.stairs_open_rows then
+			stair_rows = {}
+			for y, row in pairs(room_def.stairs_open_rows) do stair_rows[tonumber(y)] = row end
+		end
 		templates[room_number] = {
+			map_rows = map_rows, stair_rows = stair_rows,
 			room_number = room_number,
 			world_number = room_def.worldnumber or 0, -- Normalized to prevent bugs like indexing with string world numbers for events/progression
 			room_subtype = room_def.subtype,

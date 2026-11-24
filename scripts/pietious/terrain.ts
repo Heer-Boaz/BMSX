@@ -1,6 +1,5 @@
 import { decodeBinary, encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
-import { packPietiousCollision } from './collision';
 
 const TILE_SIZE = 8;
 const SEAL_DISSOLVE_COUNT = 7;
@@ -15,7 +14,7 @@ type RoomSource = {
 	stairs_open_rows?: Record<string, string>;
 };
 
-type BaseTerrain = { tape: number; collision: number; dissolve?: number[] };
+type BaseTerrain = { tape: number; dissolve?: number[] };
 type RoomTerrain = { base: BaseTerrain; stairs_open?: BaseTerrain; seal_cleared?: BaseTerrain };
 
 const checkerTheme = (colour: string) => ({
@@ -162,27 +161,25 @@ export function cookPietiousTerrain(assets: RomAsset[]): void {
 		bodyCapacity = Math.max(bodyCapacity, bodyWords);
 		return start;
 	};
-	const layout = (rows: string[], subtype: string, rocks: RoomObject[], seal: boolean): BaseTerrain => {
+	const layout = (rows: string[], subtype: string, seal: boolean): BaseTerrain => {
 		const tape = packRows(rows, subtype, 0);
-		const collision = packPietiousCollision(rows, rocks, appendWords);
-		if (!seal) return { tape, collision };
+		if (!seal) return { tape };
 		const dissolve = [];
 		for (let phase = 1; phase <= SEAL_DISSOLVE_COUNT; ++phase) dissolve.push(packRows(rows, subtype, phase));
-		return { tape, collision, dissolve };
+		return { tape, dissolve };
 	};
 
 	for (const room of Object.values(rooms)) {
 		const rows = screenRows(room);
-		const rocks = room.objects?.filter(object => object.type === 'rock') ?? [];
 		const seal = room.objects?.some(object => object.type === 'seal') === true;
-		room.terrain = { base: layout(rows, room.subtype, rocks, seal) };
+		room.terrain = { base: layout(rows, room.subtype, seal) };
 		if (room.stairs_open_rows !== undefined) {
 			const opened = rows.slice();
 			for (const [ordinal, row] of Object.entries(room.stairs_open_rows)) opened[Number(ordinal) - 1] = row;
-			room.terrain.stairs_open = layout(opened, room.subtype, rocks, false);
+			room.terrain.stairs_open = layout(opened, room.subtype, false);
 		}
 		if (seal) {
-			room.terrain.seal_cleared = layout(rows.map(row => row.replaceAll('$', '.')), room.subtype, rocks, true);
+			room.terrain.seal_cleared = layout(rows.map(row => row.replaceAll('$', '.')), room.subtype, true);
 		}
 	}
 	mapAsset.buffer = encodeBinary(rooms);

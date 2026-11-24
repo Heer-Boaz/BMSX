@@ -1442,12 +1442,12 @@ end
 
 function player:pick_entry_stairs(direction)
 	local pose_x<const>, pose_y<const> = self:get_global_position()
-	local stairs<const>: *word = self.room.stairs
+	local stairs<const> = self.room.stairs
 	local best = nil
 	local best_dx = 0
 	local best_x = 0
 
-	for i = 0, self.room.stair_count - 1 do
+	for i = 1, self.room.stair_count do
 		local stair<const> = stairs[i]
 		local x<const>, top<const>, bottom<const> = terrain.stair_bounds(stair)
 		if pose_x >= (x - 4) and pose_x <= (x + 8) then
@@ -1474,9 +1474,9 @@ function player:pick_entry_stairs(direction)
 end
 
 function player:search_stairs_at_locked_x(x, y_probe)
-	local stairs<const>: *word = self.room.stairs
+	local stairs<const> = self.room.stairs
 	local y_bottom<const> = y_probe + self.height
-	for i = 0, self.room.stair_count - 1 do
+	for i = 1, self.room.stair_count do
 		local stair<const> = stairs[i]
 		local stair_x<const>, top<const>, bottom<const> = terrain.stair_bounds(stair)
 		if stair_x == x and top <= y_bottom and bottom >= y_probe then

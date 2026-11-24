@@ -8,6 +8,7 @@ local timeline<const> = require('cartlib/timeline/timeline')
 local tile_layer_component<const> = require('cartlib/component/tile_layer_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local visual_2d_component<const> = require('cartlib/component/visual_2d_component')
+local collision_map<const> = require('room/collision')
 local terrain<const> = require('room/terrain')
 
 local room<const> = {}
@@ -71,8 +72,8 @@ local water_kind_at_tile<const> = function(room_state, tx, ty)
 	if tx < 1 or tx > room_state.tile_columns then
 		return water_none
 	end
-	local walls<const>: *word = room_state.wall_rows
-	if (walls[ty - 1] & (1 << (tx - 1))) ~= 0 then
+	local tiles<const>: *u8 = collision_map.tiles
+	if tiles[(ty - 1) * room_state.tile_columns + tx - 1] == collision_map.wall then
 		return water_none
 	end
 	if ty == water.surface_row then
@@ -98,21 +99,6 @@ local player_water_kind_at_tile<const> = function(room_state, tx, ty)
 		return water_surface
 	end
 	return water_body
-end
-
-local bind_room_collision<const> = function(room_state)
-	-- The cooker uses the same rock ordinal order as the room template.
-	local rocks<const> = room_state.rocks
-	local destroyed<const> = room_state.progress.destroyed_rocks
-	local active_mask = 0
-	for i = 1, #rocks do
-		if not destroyed[rocks[i].member_id] then active_mask = active_mask | (1 << (i - 1)) end
-	end
-	local variants<const>: *word = terrain.tape + room_state.terrain.collision
-	local plan<const>: *word = terrain.tape + variants[active_mask]
-	room_state.wall_rows = plan + sizeof(word)
-	room_state.stairs = room_state.wall_rows + room_state.tile_rows * sizeof(word)
-	room_state.stair_count = plan[0]
 end
 
 local apply_room_template<const> = function(room_state, template)
@@ -149,7 +135,7 @@ local apply_room_template<const> = function(room_state, template)
 	room_state.draaideuren = template.draaideuren
 	room_state.room_links = template.room_links
 	room_state.edge_gates = template.edge_gates
-	bind_room_collision(room_state)
+	collision_map.rebuild(room_state)
 end
 
 local room_object<const> = {}
@@ -159,7 +145,7 @@ setmetatable(room_object, { __index = object_2d })
 function room_object:select_terrain(variant)
 	if variant == self.terrain then return false end
 	self.terrain = variant
-	bind_room_collision(self)
+	collision_map.rebuild(self)
 	self:rebuild_room_tiles()
 	return true
 end
@@ -189,8 +175,8 @@ function room_object:base_collision_flags_at_tile(tx, ty)
 		return collision_flags_none
 	end
 	local collision = 0
-	local walls<const>: *word = self.wall_rows
-	if (walls[ty - 1] & (1 << (tx - 1))) ~= 0 then
+	local tiles<const>: *u8 = collision_map.tiles
+	if tiles[(ty - 1) * self.tile_columns + tx - 1] == collision_map.wall then
 		collision = collision | collision_flags_wall
 	end
 	if self:is_active_draaideur_at_tile(tx, ty) then
@@ -204,7 +190,7 @@ end
 
 function room_object:mark_rock_destroyed(rock_id)
 	self.progress.destroyed_rocks[rock_id] = true
-	bind_room_collision(self)
+	collision_map.rebuild(self)
 	self:rebuild_room_tiles()
 end
 
@@ -464,6 +450,7 @@ local water_surface_animation<const> = {
 }
 
 function room_object:ctor()
+	self.stairs = {}
 	self.wall_instances = {}
 	self.draaideur_instances = {}
 	self.lithograph_instances = {}

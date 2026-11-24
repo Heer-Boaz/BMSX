@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { load as parseYaml } from 'js-yaml';
 import { decodeBinary, encodeBinary } from '../../machine/ts/common/serializer/binencoder';
-import { packPietiousCollision } from '../../scripts/pietious/collision';
 import { cookPietiousTerrain } from '../../scripts/pietious/terrain';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 
@@ -43,96 +40,12 @@ test('Pietious cooks door cutouts, neighbour shadows and authored stage variants
 		return result;
 	};
 	const stairs = rooms[109].terrain;
-	const baseCollision = data.getUint32(stairs.base.collision, true);
-	assert.deepEqual([0, 1, 2, 3].map(row => data.getUint32(baseCollision + 4 + 4 * row, true)), [6, 4, 4, 5]);
 	assert.deepEqual(rowTiles(stairs.base.tape, 2, 3), ['castle_tile_blue_l', 'castle_pillar_blue_l2', 'castle_front_blue_1']);
 	assert.notDeepEqual(rowTiles(stairs.stairs_open.tape, 2, 3), rowTiles(stairs.base.tape, 2, 3),
 		'changed pillar bottom also changes the art selection in its adjacent row');
 	assert.deepEqual(rowTiles(stairs.stairs_open.tape, 3, 3), ['castle_stairs_r', 'castle_tile_blue_l', 'castle_tile_blue_r_dark']);
 	const seal = rooms[100].terrain;
-	const sealWalls = (layout: { collision: number }) => {
-		const at = data.getUint32(layout.collision, true);
-		return [data.getUint32(at + 4, true), data.getUint32(at + 8, true)];
-	};
-	assert.deepEqual(sealWalls(seal.base), [3, 2]);
-	assert.deepEqual(sealWalls(seal.seal_cleared), [2, 0]);
 	assert.deepEqual(rowTiles(seal.base.dissolve[0], 0, 2), ['frontworld_l', 'frontworld_l']);
 	assert.deepEqual(rowTiles(seal.base.dissolve[6], 0, 2), [null, 'frontworld_l']);
 	assert.deepEqual(rowTiles(seal.seal_cleared.dissolve[6], 1, 2), [null, null]);
-});
-
-test('every authored room variant and rock state cooks exact wall cells and staircase spans', () => {
-	type ObjectCell = { type: string; x: number; y: number };
-	const source = readFileSync('carts/pietious/res/data/castle_map.yaml', 'utf8');
-	const rooms = parseYaml(source) as Record<string, {
-		map: string[];
-		objects?: ObjectCell[];
-		stairs_open_rows?: Record<string, string>;
-	}>;
-	assert.equal(Object.keys(rooms).length, 24);
-	for (const [number, room] of Object.entries(rooms)) {
-		const base = room.map.map(row => [...row]);
-		const rocks = [];
-		const objects = room.objects ?? [];
-		for (const object of objects) {
-			if (object.type === 'rock') rocks.push(object);
-			if (object.type === 'draaideur_blauw' || object.type === 'draaideur_rood') {
-				for (let row = object.y; row < object.y + 3; ++row) base[row][object.x] = '.';
-			}
-		}
-		const variants = [base];
-		if (room.stairs_open_rows) {
-			const opened = base.slice();
-			for (const [y, row] of Object.entries(room.stairs_open_rows)) opened[Number(y) - 1] = [...row];
-			variants.push(opened);
-		}
-		if (objects.some(object => object.type === 'seal'))
-			variants.push(base.map(row => row.map(cell => cell === '$' ? '.' : cell)));
-		for (const variant of variants) {
-			const chunks: Buffer[] = [];
-			let length = 0;
-			const directory = packPietiousCollision(variant.map(row => row.join('')), rocks, bytes => {
-				const start = length;
-				length += bytes.length;
-				chunks.push(bytes);
-				return start;
-			});
-			const tape = Buffer.concat(chunks);
-			for (let state = 0; state < (1 << rocks.length); ++state) {
-				const context = `room ${number}, variant ${variants.indexOf(variant)}, rock state ${state}`;
-				const rows = variant.map(row => row.slice());
-				rocks.forEach(({ x, y }, ordinal) => {
-					if ((state >>> ordinal) & 1) {
-						rows[y][x] = rows[y][x + 1] = rows[y + 1][x] = rows[y + 1][x + 1] = '#';
-					}
-				});
-				const at = tape.readUInt32LE(directory + state * 4);
-				const stairCount = tape.readUInt32LE(at);
-				const stairsAt = at + 4 + rows.length * 4;
-				const wall = (x: number, y: number) => rows[y][x] === '#' || rows[y][x] === '$';
-				for (let y = 0; y < rows.length; ++y) {
-					const word = tape.readUInt32LE(at + 4 + y * 4);
-					for (let x = 0; x < rows[y].length; ++x)
-						assert.ok(Boolean((word >>> x) & 1) === wall(x, y), context);
-				}
-				const stair = (x: number, y: number) =>
-					y >= 0 && y < rows.length && '-_'.includes(rows[y][x]) && '=+'.includes(rows[y][x + 1]);
-				const stairCells = new Set<number>();
-				let previous = -1;
-				for (let i = 0; i < stairCount; ++i) {
-					const span = stairsAt + i * 4;
-					const x = tape[span], first = tape[span + 1], end = tape[span + 2];
-					assert.ok(x * 256 + first > previous && first < end && !stair(x, first - 1) && !stair(x, end), context);
-					for (let y = first; y < end; ++y) {
-						assert.ok(stair(x, y), context);
-						stairCells.add(x * 256 + y);
-					}
-					previous = x * 256 + first;
-				}
-				for (let y = 0; y < rows.length; ++y) {
-					for (let x = 0; x + 1 < rows[y].length; ++x) assert.equal(stairCells.has(x * 256 + y), stair(x, y), context);
-				}
-			}
-		}
-	}
 });

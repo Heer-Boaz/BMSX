@@ -104,6 +104,19 @@ return {
 			assert(wet.water_tile_layer.visible and wet.water_surface_tile_count > 0,
 				'wet room activation did not publish its water layer')
 		end,
+		door_passage_follows_the_door = function(t)
+			local _, castle<const> = fixture.start_game(t)
+			local room<const> = castle:load_room(107)
+			castle:commit_room_switch({ from_room_number = 1, to_room_number = 107, direction = 'right' }, 0, 0, 0)
+			local door<const> = room.draaideur_instances[1]
+			for y = door.tile_y, door.tile_y + 2 do
+				assert(room:has_collision_flags_at_tile(door.tile_x, y, collision_flags_wall))
+			end
+			door.state_machines:transition_to('/opening_leftward')
+			for y = door.tile_y, door.tile_y + 2 do
+				assert(not room:has_collision_flags_at_tile(door.tile_x, y, collision_flags_wall))
+			end
+		end,
 		room_reload = function(t)
 			t:wait_until('intro director', function() return registry:get('d') ~= nil end, 120)
 			t:at_boundary(world:request_mutation_boundary(), 120)
