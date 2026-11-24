@@ -36,12 +36,18 @@ void alignedStringHomesDisplaceOnlyCollisions(CPU& cpu) {
 	const auto incoming = keys[slot][0];
 	require(table.setStringKey(incoming, valueInteger(33)) == slot && table.hashSlots() == 8,
 		"an incoming home displaces the chain member without growing the body");
-	require(isNil(table.loadPredictedStringKey(collided, slot))
-		&& table.loadPredictedStringKey(incoming, slot) == valueInteger(33),
-		"a displaced slot is a miss for its old key and a hit for its new owner");
+	int prediction = slot;
+	require(table.readOwnStringField(collided, prediction) == valueInteger(22) && prediction != slot,
+		"a displaced own field repairs its site from the live collision chain");
 	table.setStringKey(incoming, valueBool(false), slot);
-	require(table.loadPredictedStringKey(incoming, slot) == valueBool(false),
-		"a false value is an own-slot hit");
+	require(table.readOwnStringField(incoming, prediction) == valueBool(false) && prediction == slot,
+		"a false field repairs the prediction too");
+	const auto absent = keys[1][1];
+	require(table.readOwnStringField(absent, prediction) == valueNil() && prediction == slot,
+		"plain absence resolves to nil without poisoning the prediction");
+	table.setMetatableAddress(cpu.createTable().address());
+	require(!table.readOwnStringField(absent, prediction) && prediction == slot,
+		"absence with a metatable leaves the lookup to __index resolution");
 	auto probe = table.beginStringProbe(collided);
 	require(table.advanceStringProbe(collided, probe, 8) == 2 && probe.value == valueInteger(22)
 		&& table.getStringKey(resident) == valueInteger(11) && table.getStringKey(incoming) == valueBool(false),

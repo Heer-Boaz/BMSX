@@ -6,6 +6,7 @@
 #include <limits>
 #include <memory>
 #include <new>
+#include <optional>
 #include <span>
 
 #include "common/primitives.h"
@@ -91,10 +92,24 @@ public:
 	TableStringProbe beginStringProbe(StringId key) const;
 	size_t advanceStringProbe(StringId key, TableStringProbe& probe, size_t limit) const;
 	Value getStringKeyCached(StringId key, int& predictedSlot) const;
-	Value loadPredictedStringKey(StringId key, int predicted) const {
+	// A plain table resolves even an absent field. An unresolved lookup
+	// must visit the live metatable; it must not train the receiver's slot.
+	std::optional<Value> readOwnStringField(StringId key, int& predicted) const {
 		const u32 count = hashSlots();
-		if (static_cast<u32>(predicted) >= count) return valueNil();
-		return hashBody(count, arrayCapacity()).predictedString(predicted, key);
+		if (count) {
+			const auto body = hashBody(count, arrayCapacity());
+			if (predicted >= 0 && static_cast<u32>(predicted) < count) {
+				const auto own = body.predictedString(predicted, key);
+				if (!isNil(own)) return own;
+			}
+			if (metatableAddress()) return std::nullopt;
+			int slot;
+			const auto own = findStringField(body, key, slot);
+			if (slot >= 0) predicted = slot;
+			return own;
+		}
+		if (metatableAddress()) return std::nullopt;
+		return valueNil();
 	}
 	int setStringKey(StringId key, const Value& value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	bool storePredictedStringKey(StringId key, Value value, int predicted) noexcept;
@@ -257,6 +272,7 @@ private:
 		u8* words = m_memory->ramData() + (storage & RAM_RECORD_WORD_MASK);
 		return {{m_memory, words, words + (array + 3u * count) * 4u}, array, count, storage + (array + 2u * count) * 4u};
 	}
+	static Value findStringField(const HashBody& body, StringId key, int& slot);
 	static bool loadHashEntry(const HashBody& body, u32 slot, Value& key, Value& value);
 	static u32 nextStoredEntry(const HashBody& body, u32 position, Value& key, Value& value);
 	static int reinsertMapping(const RebuildBody& body, int& nextFree, Value key, Value value) noexcept;

@@ -165,12 +165,9 @@ DISPATCH_LABEL(SELF) {
 	if (decoded->op == static_cast<u8>(OpCode::SELF)) SET_REGISTER_FAST(a + 1, base);
 	const TableRecord table(m_heap, tableIndexAddress(base));
 	int& predicted = TABLE_CACHE_SLOT();
-	if (predicted >= 0) {
-		const Value own = table.loadPredictedStringKey(key, predicted);
-		if (!isNil(own)) {
-			SET_REGISTER_FAST(a, own);
-			DISPATCH_NEXT();
-		}
+	if (const auto own = table.readOwnStringField(key, predicted)) {
+		SET_REGISTER_FAST(a, *own);
+		DISPATCH_NEXT();
 	}
 	TableLookupResult result;
 	table.resolveStringIndexCached(key, -1, result);

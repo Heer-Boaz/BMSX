@@ -672,24 +672,28 @@ size_t TableRecord::advanceStringProbe(StringId key, TableStringProbe& probe, si
 	return inspected;
 }
 
+Value TableRecord::findStringField(const HashBody& body, StringId key, int& slot) {
+	const int node = body.findString(key, hashCanonicalTableKey(valueString(key)) & (body.count - 1u));
+	if (node >= 0) {
+		const Value value = body.slots.get(body.array + body.count + static_cast<u32>(node));
+		if (!isNil(value)) {
+			slot = node;
+			return value;
+		}
+	}
+	slot = -1;
+	return valueNil();
+}
+
 Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot) const {
 	const u32 count = hashSlots();
 	if (count != 0u) {
 		const auto body = hashBody(count, arrayCapacity());
-		const auto& slots = body.slots;
 		if (predictedSlot >= 0 && static_cast<u32>(predictedSlot) < count) {
 			const Value predicted = body.predictedString(predictedSlot, key);
 			if (!isNil(predicted)) return predicted;
 		}
-		const int nodeIndex = body.findString(key, hashCanonicalTableKey(valueString(key)) & (count - 1u));
-		if (nodeIndex >= 0) {
-			const u32 valueSlot = body.array + count + static_cast<u32>(nodeIndex);
-			const auto tag = slots.tag(valueSlot);
-			if (tag != ValueTag::Nil) {
-				predictedSlot = nodeIndex;
-				return valueFromTag(tag, slots.word(valueSlot));
-			}
-		}
+		return findStringField(body, key, predictedSlot);
 	}
 	predictedSlot = -1;
 	return valueNil();
