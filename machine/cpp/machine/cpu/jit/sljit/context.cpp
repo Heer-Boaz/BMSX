@@ -70,7 +70,7 @@ void NativeLowering::lowerOperation(const NativePoolRead& read, const NativeInst
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, constants) + ConstValueSpan::tagsOffset());
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R2), 0);
-	emitRawStore(read.result, SLJIT_R0, SLJIT_R1);
+	emitRawStore(read.result, SLJIT_R0, SLJIT_R1, m_uses.nextOperandDemand(m_instruction, read.result));
 }
 
 void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const NativeInstruction& instruction) {
@@ -142,7 +142,7 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 	if constexpr (std::endian::native == std::endian::big)
 		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
 	sljit_set_label(ready, sljit_emit_label(c));
-	emitRawStore(access.slot, SLJIT_R0, SLJIT_R1);
+	emitRawStore(access.slot, SLJIT_R0, SLJIT_R1, m_uses.nextOperandDemand(m_instruction, access.slot));
 }
 
 void NativeLowering::lowerOperation(const NativeVararg& placement, const NativeInstruction& instruction) {

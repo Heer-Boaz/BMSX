@@ -220,11 +220,11 @@ NativeRegisterCache::Operand NativeRegisterCache::read(int guest, ValueTag tag) 
 }
 
 NativeRegisterCache::RawResult NativeRegisterCache::writeRaw(int guest, NativeOperandDemand demand) {
-	// Called at a result definition, after all inputs have been consumed.
-	beginInstruction();
 	discardRange(guest, guest + 1);
 	RawResult result{SLJIT_MEM1(m_words), SLJIT_MEM1(m_tags), guest * sljit_sw(sizeof(u32)), guest};
 	if (demand == NativeOperandDemand::None) return result;
+	// Allocated outputs are defined after the inputs have been consumed.
+	beginInstruction();
 	if (demand == NativeOperandDemand::Value) {
 		const int payload = allocate(guest, std::nullopt, false);
 		m_pinned[payload] = true;

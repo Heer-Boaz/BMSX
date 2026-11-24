@@ -19,6 +19,9 @@ inline unsigned fixedWordUses(const auto&) { return 0xf; }
 inline unsigned fixedWordUses(const NativeLiteral& op) {
 	return valueTag(op.value) == ValueTag::Float ? 1 : 0;
 }
+inline unsigned fixedWordUses(const NativeNot& op) { return op.sourceTruthy ? 0 : 3; }
+inline unsigned fixedWordUses(const NativeConstantLoad&) { return 3; }
+inline unsigned fixedWordUses(const NativePoolRead&) { return 0x7; }
 inline unsigned fixedWordUses(const NativeMove& op) {
 	return op.conversion == ValueMoveKind::Copy && !op.copyTag ? 3 : 1;
 }

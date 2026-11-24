@@ -95,7 +95,7 @@ sljit_jump* NativeLowering::guardTag(int selector, ValueTag tag, sljit_s32 scrat
 void NativeLowering::lowerOperation(const NativeConstantLoad& load, const NativeInstruction&) {
 	emitPoolWord(load.index, SLJIT_R0);
 	emitPoolTag(load.index, SLJIT_R1);
-	emitRawStore(load.result, SLJIT_R0, SLJIT_R1);
+	emitRawStore(load.result, SLJIT_R0, SLJIT_R1, m_uses.nextOperandDemand(m_instruction, load.result));
 }
 
 void NativeLowering::emitPayload(int selector, sljit_s32 word) {
@@ -117,10 +117,10 @@ void NativeLowering::emitRawLoad(int selector, sljit_s32 word, sljit_s32 tag) {
 	emitTag(selector, tag);
 }
 
-void NativeLowering::emitRawStore(int guest, sljit_s32 word, sljit_s32 tag) {
-	m_cache.discardRange(guest, guest + 1);
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::words), guest * sizeof(u32), word, 0);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_MEM1(NativeBlockAbi::tags), guest, tag, 0);
+void NativeLowering::emitRawStore(int guest, sljit_s32 word, sljit_s32 tag, NativeOperandDemand demand) {
+	const auto dest = m_cache.writeRaw(guest, demand);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, dest.word, dest.wordOffset, word, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, dest.tag, dest.tagOffset, tag, 0);
 }
 void NativeLowering::emitConstant(int guest, Value value) {
 	const auto target = m_cache.write(guest, valueTag(value));
@@ -150,7 +150,7 @@ void NativeLowering::lowerOperation(const NativeMove& instruction, const NativeI
 	if (mode == ValueMoveKind::Copy) {
 		if (!instruction.copyTag) {
 			emitRawLoad(instruction.source, SLJIT_R0, SLJIT_R1);
-			emitRawStore(instruction.result, SLJIT_R0, SLJIT_R1);
+			emitRawStore(instruction.result, SLJIT_R0, SLJIT_R1, m_uses.nextOperandDemand(m_instruction, instruction.result));
 			return;
 		}
 		const auto source = readTyped(instruction.source, *instruction.copyTag);
@@ -184,7 +184,7 @@ void NativeLowering::lowerOperation(const NativeNot& instruction, const NativeIn
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, static_cast<u8>(ValueTag::True));
 		sljit_set_label(done, sljit_emit_label(m_compiler));
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, 0);
-		emitRawStore(instruction.result, SLJIT_R0, SLJIT_R1);
+		emitRawStore(instruction.result, SLJIT_R0, SLJIT_R1, m_uses.nextOperandDemand(m_instruction, instruction.result));
 	}
 }
 
