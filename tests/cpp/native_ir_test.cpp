@@ -1093,6 +1093,8 @@ void registerUses() {
 		NativeInstruction(NativeComparison{10, 11, OpCode::EQ, true, NativeTaggedEquality{ValueTag::Nil, true}}),
 		NativeInstruction(NativeNot{11, 11}),
 		NativeInstruction(NativeMove{11, 12, ValueMoveKind::Copy}),
+		NativeInstruction(NativeComparison{10, 11, OpCode::LT, true, NativeComparisonStrategy::LeftInteger}),
+		NativeInstruction(NativeMove{12, 11, ValueMoveKind::Copy, ValueTag::Float}),
 	};
 	uses.beginBlock(consumers);
 	require(uses.nextOperandDemand(0, 11) == NativeOperandDemand::Tag
@@ -1102,6 +1104,10 @@ void registerUses() {
 		&& uses.nextOperandDemand(2, 11) == NativeOperandDemand::None
 		&& uses.nextOperandDemand(2, 12) == NativeOperandDemand::Value,
 		"an aliased NOT reads its input tag; a copy consumes its input but not the old destination");
+	require(uses.nextOperandDemand(3, 10) == NativeOperandDemand::Payload
+		&& uses.nextOperandDemand(3, 11) == NativeOperandDemand::Value
+		&& uses.nextOperandDemand(4, 11) == NativeOperandDemand::Payload,
+		"typed consumers use the payload alone; a mixed comparison still needs the dynamic operand tag");
 }
 
 void knownFaultEndsOnlyTheNativePath() {

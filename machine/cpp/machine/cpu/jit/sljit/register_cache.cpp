@@ -225,13 +225,14 @@ NativeRegisterCache::RawResult NativeRegisterCache::writeRaw(int guest, NativeOp
 	if (demand == NativeOperandDemand::None) return result;
 	// Allocated outputs are defined after the inputs have been consumed.
 	beginInstruction();
-	if (demand == NativeOperandDemand::Value) {
+	if (demand != NativeOperandDemand::Tag) {
 		const int payload = allocate(guest, std::nullopt, false);
 		m_pinned[payload] = true;
 		m_state[payload].dirty = true;
 		result.word = host(payload).reg;
 		result.wordOffset = 0;
 	}
+	if (demand == NativeOperandDemand::Payload) return result;
 	const int type = allocate(guest, std::nullopt, false);
 	m_state[type].tagLane = m_state[type].dirty = true;
 	result.tag = host(type).reg;

@@ -593,13 +593,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 
 void NativeLowering::emitTableReadResult(int slot, std::optional<ValueTag> resultTag) {
 	if (!resultTag) {
-		// The probe has already delivered its pair in fixed scratch registers.
-		// Retain a tag-only consumer's operand; do not reserve a second
-		// register for the word needed only to reconstruct the destination.
-		const auto demand = m_uses.nextOperandDemand(m_instruction, slot);
-		const auto result = m_cache.writeRaw(slot, demand == NativeOperandDemand::Tag ? demand : NativeOperandDemand::None);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, result.word, result.wordOffset, SLJIT_R2, 0);
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, result.tag, result.tagOffset, SLJIT_R3, 0);
+		emitRawStore(slot, SLJIT_R2, SLJIT_R3, m_uses.nextOperandDemand(m_instruction, slot));
 		return;
 	}
 	const auto target = m_cache.write(slot, *resultTag);

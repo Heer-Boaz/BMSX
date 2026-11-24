@@ -11,7 +11,7 @@ namespace bmsx {
 struct NativeInstruction;
 struct NativeIrBlock;
 
-enum class NativeOperandDemand : u8 { None, Tag, Value };
+enum class NativeOperandDemand : u8 { None, Tag, Payload, Value };
 
 // Entry liveness and next-use distances are derived from logical guest slots,
 // without reference to the host register bank or code-emission state.

@@ -192,9 +192,22 @@ NativeOperandDemand NativeRegisterUses::nextOperandDemand(size_t nextInstruction
 	if (std::holds_alternative<NativeTruthBranch>(row.operation)) return NativeOperandDemand::Tag;
 	if (const auto* op = std::get_if<NativeNot>(&row.operation))
 		return op->sourceTruthy ? NativeOperandDemand::None : NativeOperandDemand::Tag;
+	if (const auto* move = std::get_if<NativeMove>(&row.operation)) {
+		if (move->conversion == ValueMoveKind::Copy ? move->copyTag.has_value() : move->conversionCheck == NativeTagCheck::Proved)
+			return NativeOperandDemand::Payload;
+	}
 	if (const auto* cmp = std::get_if<NativeComparison>(&row.operation)) {
-		if (const auto* eq = std::get_if<NativeTaggedEquality>(&cmp->strategy); eq && eq->tag <= ValueTag::True)
-			return guest == (eq->knownLeft ? cmp->right : cmp->left) ? NativeOperandDemand::Tag : NativeOperandDemand::None;
+		if (const auto* eq = std::get_if<NativeTaggedEquality>(&cmp->strategy)) {
+			const bool dynamic = guest == (eq->knownLeft ? cmp->right : cmp->left);
+			if (eq->tag <= ValueTag::True) return dynamic ? NativeOperandDemand::Tag : NativeOperandDemand::None;
+			if (!dynamic) return NativeOperandDemand::Payload;
+		} else {
+			const auto strategy = std::get<NativeComparisonStrategy>(cmp->strategy);
+			if (strategy == NativeComparisonStrategy::Word || strategy == NativeComparisonStrategy::Float
+				|| (strategy == NativeComparisonStrategy::LeftInteger && guest != cmp->right)
+				|| (strategy == NativeComparisonStrategy::RightInteger && guest != cmp->left))
+				return NativeOperandDemand::Payload;
+		}
 	}
 	return NativeOperandDemand::Value;
 }

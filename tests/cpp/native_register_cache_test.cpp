@@ -321,6 +321,32 @@ void dynamicValueAcrossEdge() {
 	}
 }
 
+void payloadUseWithPublishedTag() {
+	Code code;
+	NativeRegisterCache cache(code.compiler, SLJIT_S0, SLJIT_S1, std::span(integers).first(1), floats);
+	const auto result = cache.writeRaw(1, NativeOperandDemand::Payload);
+	cache.emitWord(0, result.word);
+	cache.emitTag(0, SLJIT_R0);
+	sljit_emit_op1(code.compiler, SLJIT_MOV_U8, result.tag, result.tagOffset, SLJIT_R0, 0);
+	const auto snapshot = cache.state();
+	auto* miss = cache.guard(1, ValueTag::Float, SLJIT_R0);
+	cache.beginInstruction();
+	cache.read(1, ValueTag::Float);
+	cache.publish();
+	code.result(0);
+	sljit_set_label(miss, sljit_emit_label(code.compiler));
+	cache.emitState(snapshot);
+	code.result(1);
+	code.finish();
+	for (Value input : {valueInteger(-7), valueFloatBits(0xffa12345u)}) {
+		ValueSlots slots(2);
+		slots.set(0, input);
+		slots.set(1, valueBool(true));
+		require(code.run(slots) == (valueTag(input) != ValueTag::Float) && slots.get(1) == input,
+			"a single payload register and the published tag reconstruct the value on both edges");
+	}
+}
+
 void tagUseWithRecoverableWord() {
 	Code code;
 	NativeRegisterCache cache(code.compiler, SLJIT_S0, SLJIT_S1, std::span(integers).first(1), floats);
@@ -431,7 +457,7 @@ int main() {
 		wordsFloatsAndReferences();arithmeticAndBitMoves();futureUseAndPublication();
 		aliasEvictionAndRetagging();preciseGuardSnapshots();
 		selectiveCallSpills(NativeRegisterCache::FrameSlots::MayChange);
-		selectiveCallSpills(NativeRegisterCache::FrameSlots::Unchanged);parallelTransfers();untypedTransfersPublishTagsButKeepPayloads();dynamicValueAcrossEdge();tagUseWithRecoverableWord();sharedWordsSurviveTemporaryUse();loopEdges();
+		selectiveCallSpills(NativeRegisterCache::FrameSlots::Unchanged);parallelTransfers();untypedTransfersPublishTagsButKeepPayloads();dynamicValueAcrossEdge();payloadUseWithPublishedTag();tagUseWithRecoverableWord();sharedWordsSurviveTemporaryUse();loopEdges();
 		std::cout<<"Native word/F32 cache, precise exits, selective spills and typed loop transfers passed\n";
 		return 0;
 	} catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}
