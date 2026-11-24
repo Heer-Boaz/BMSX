@@ -119,7 +119,6 @@ export class TableRecords {
 		this.heap.memory.writeRamRecordWord(words + slot * 4, word);
 		this.heap.memory.writeRamRecordByte(tags + slot, tag);
 	}
-	private setValue(record: number, slot: number, value: Value): void { this.setEncoded(record, slot, valueTag(value), valuePayload(value)); }
 	private hashKeySlot(record: number, index: number): number { return this.arrayCapacity(record) + index; }
 	private hashValueSlot(record: number, index: number): number { return this.arrayCapacity(record) + this.hashSize(record) + index; }
 	// Callers normalize the key once before lookup/insertion. Integral Float

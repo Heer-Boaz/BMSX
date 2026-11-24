@@ -108,7 +108,7 @@ return true`, 3);
  });
 
  for (const [array, hash, capacity] of [[0, 0, 0], [1, 0, 0], [0, 1, 1], [7, 3, 4], [13, 5, 8], [0, 31, 32], [9, 33, 64], [63, 63, 64]]) {
-  test(`NEWT charges requested capacity (${backend}, ${array}, ${hash})`, () => {
+  test(`NEWT reserves capacity at the base charge (${backend}, ${array}, ${hash})`, () => {
    const text = new Uint8Array(2 * INSTRUCTION_BYTES);
    writeInstruction(text, 0, OpCode.NEWT, 0, array, hash);
    writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
@@ -124,7 +124,7 @@ return true`, 3);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
    const grant = BASE_CYCLES[OpCode.NEWT];
    assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
-   assert.equal(cpu.instructionBudgetRemaining, 0 - (array + 2 * hash));
+   assert.equal(cpu.instructionBudgetRemaining, 0);
    assert.equal(cpu.rootThread.currentFrame!.pc, image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
    assert.equal(cpu.gc.tables.storedSlotCount(cpu.rootThread.currentFrame!.registers.getPayload(0)), array + capacity);
   });

@@ -427,8 +427,8 @@ test('a WIDE NEWT with refused backing retires once before VBlank, including aft
 			assert.equal(cpu.readFramePc(0), entry + 2 * INSTRUCTION_BYTES);
 			assert.equal(cpu.lastPc, entry + INSTRUCTION_BYTES);
 			assert.equal(budget.usedBytes(), beforeCommit + tableCharge);
-			assert.equal(scheduler.nowCycles, edge - 1 + baseCycles + 4);
-			assert.equal(fs.lastTickCpuUsedCycles, baseCycles + 4);
+			assert.equal(scheduler.nowCycles, edge - 1 + baseCycles);
+			assert.equal(fs.lastTickCpuUsedCycles, baseCycles);
 			assert.equal(samples, 1);
 			assert.equal(tables.getStringKey(table, keyX), valueNil());
 			assert.equal(tables.getStringKey(table, keyY), valueNil());

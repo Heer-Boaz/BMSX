@@ -1513,10 +1513,9 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 | `SELF` | `3EH` | `A, B, C` | Preserve original `R(B)` in `R(A+1)`, then set `R(A) = index(original R(B), K(C))`, where `K(C)` supplies the string key. | 17 |
 | `NEWT` | `10H` | `A, B, C` | Put a new table in `R(A)`, with array-capacity request `B` and hash-size request `C`. | 24 |
 
-After successful table construction, `NEWT` adds `B + 2 × C` cycles to its
-base charge. The charge depends only on the capacity requests, not on how
-much space the table actually reserves. A failed construction incurs the
-base charge but not this reservation term.
+`NEWT` costs 24 cycles whether the construction succeeds or fails. The
+capacity requests determine the storage reservation against the
+language-allocation budget, not the instruction's cycle charge.
 
 An insertion may reserve more storage. Its charge does not depend on
 whether the current storage can hold the mapping, or on how entries are
@@ -1785,7 +1784,7 @@ are selected instruction base charges, not a complete timing table:
 | `GETT`, `GETFIELD`, `SETT`, `SETFIELD` | 16 cycles |
 | `GETI`, `SETI` | 8 cycles |
 | `SELF` | 17 cycles |
-| `NEWT` | 24 cycles, plus `B + 2 × C` on success |
+| `NEWT` | 24 cycles |
 | `CLOSURE` | 8 cycles, plus bound upvalue descriptors |
 | `CALL` | 32 cycles, plus placed values |
 | `RET` | 16 cycles, plus placed values and closed captures |

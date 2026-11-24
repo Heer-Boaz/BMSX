@@ -98,10 +98,9 @@ u32 CPU::allocateTable(int arraySize, int hashSize, LuaAllocationMode mode) {
 	return address;
 }
 
-void CPU::retireNewTable(CallFrame& frame, int destination, int arraySize, int hashSize, u32 address) {
+void CPU::retireNewTable(CallFrame& frame, int destination, u32 address) {
 	frame.registers.set(destination, valueTable(address));
 	frame.extendTop(destination + 1);
-	instructionBudgetRemaining -= arraySize + 2 * hashSize;
 }
 
 u32 CPU::reserveNewTable(CallFrame& frame, int destination, int arraySize, int hashSize) {
@@ -166,7 +165,7 @@ void CPU::resumeAllocation() {
 		const auto& create = std::get<PendingTableCreation>(pending.operands);
 		const u32 address = allocateTable(create.arraySize, create.hashSize, LuaAllocationMode::Retry);
 		retired = address != 0u;
-		if (retired) retireNewTable(frame, create.destination, create.arraySize, create.hashSize, address);
+		if (retired) retireNewTable(frame, create.destination, address);
 	}
 	if (retired) {
 		frame.writeControl(FrameField::Pc, pending.nextPc);

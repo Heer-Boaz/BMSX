@@ -290,12 +290,11 @@ int main() {
    }
 #endif
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-   const int surcharge = array + 2 * hash;
    const int grant = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)];
-   if (cpu.runUntilDepth(0, grant) != RunResult::Yielded || cpu.instructionBudgetRemaining != -surcharge)
-    throw std::runtime_error("NEWT must finish its admitted logical initialization charge");
+   if (cpu.runUntilDepth(0, grant) != RunResult::Yielded || cpu.instructionBudgetRemaining != 0)
+    throw std::runtime_error("NEWT must charge its fixed cost independently of the reservation");
    if (cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Pc) != rom.textAddress + INSTRUCTION_BYTES || !valueIsTable(cpu.readFrameRegister(0, 0)))
-    throw std::runtime_error("exhausting initialization must stop before the next instruction");
+    throw std::runtime_error("an exact grant must stop after creating the table and before the next instruction");
    if (asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap()).storedSlotCount() != static_cast<size_t>(array + capacity))
     throw std::runtime_error("NEWT retains the requested array and rounded hash capacity");
   }

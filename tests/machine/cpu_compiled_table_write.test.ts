@@ -39,7 +39,7 @@ test('next charges only the primitive and the receiving range even when traversa
 	}
 });
 
-for (const wide of [false, true]) test(`NEWT charges request cycles and rounded heap capacity separately (WIDE=${wide})`, () => {
+for (const wide of [false, true]) test(`NEWT pays the base cycle charge and reserves rounded heap capacity (WIDE=${wide})`, () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	let word = 0;
 	if (wide) writeInstruction(text, word++, OpCode.WIDE, 0, 0, 0);
@@ -50,8 +50,8 @@ for (const wide of [false, true]) test(`NEWT charges request cycles and rounded 
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: word + 1, maxStack: 2 }] });
 	const { cpu: generated } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 	const { cpu: scalar } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
-	const frame = generated.rootThread.frameAtDepth(0), pc = frame.pc, hash = wide ? 67 : 3;
-	const cycles = BASE_CYCLES[OpCode.NEWT] + 2 + 2 * hash;
+	const frame = generated.rootThread.frameAtDepth(0), pc = frame.pc;
+	const cycles = BASE_CYCLES[OpCode.NEWT];
 	runCpuParity(generated, scalar, (cycles + BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP]) * 68);
 	const entry = frame.decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]!;
 	const state = { remainingCycles: 1, registerTop: frame.top, memoryAddress: 0 };
@@ -62,8 +62,8 @@ for (const wide of [false, true]) test(`NEWT charges request cycles and rounded 
 		cpu.rootThread.frameAtDepth(0).registers.setNil(1);
 	}
 	const before = generated.luaHeap.usedBytes();
-	assert.equal(runCpuParity(generated, scalar, 1), RunResult.Yielded);
-	assert.equal(generated.instructionBudgetRemaining, 1 - cycles);
+	assert.equal(runCpuParity(generated, scalar, cycles), RunResult.Yielded);
+	assert.equal(generated.instructionBudgetRemaining, 0);
 	assert.equal(frame.pc, pc + successor * INSTRUCTION_BYTES);
 	assert.equal(frame.registers.get(1), valueNil());
 	const table = frame.registers.getPayload(0), slots = wide ? 128 : 4;

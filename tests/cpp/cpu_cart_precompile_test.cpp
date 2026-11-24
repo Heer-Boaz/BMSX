@@ -442,7 +442,7 @@ void refusedRecordConstructorRetiresOnlyAllocation() {
 	while (arena.allocate(header, true)) {}
 	arena.free(spare);
 	cpu.gcHeap().step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
-	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 10 +
+	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] +
 		5 * BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
 	require(cpu.runUntilDepth(0, grant, 0, CpuRunKind::Scheduled) == RunResult::ParkedAllocation,
 		"native allocation declines even with enough accepted cycles for all fused fields");
@@ -455,7 +455,7 @@ void refusedRecordConstructorRetiresOnlyAllocation() {
 	cpu.instructionBudgetRemaining = 0;
 	cpu.resumeAllocation();
 	require(!cpu.allocationParked() && cpu.readFramePc(0) == start + INSTRUCTION_BYTES
-		&& cpu.instructionBudgetRemaining == -10, "the pending allocation retires at the original first store");
+		&& cpu.instructionBudgetRemaining == 0, "the pending allocation retires at the original first store without a second charge");
 	auto table = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
 	require(isNil(table.getStringKey(key)), "retry does not reuse an executable constructor plan");
 	cpu.runUntilDepth(0, 1);
@@ -465,7 +465,7 @@ void refusedRecordConstructorRetiresOnlyAllocation() {
 void recordConstructorPreservesGrantAndLayout() {
 	const auto rom = recordConstructorProgram();
 	const u32 start = rom.textAddress + INSTRUCTION_BYTES;
-	const int allocateCycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 2 * 5;
+	const int allocateCycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)];
 	const int fieldCycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
 	for (const bool shortGrant : {true, false}) {
 		Fixture prepared(rom), scalar(withoutHints(rom));
@@ -603,7 +603,7 @@ void recordConstructorPreservesGrantAndLayout() {
 }
 
 void recordConstructorUsesItsImageKeys() {
-	const int allocateCycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 2 * 5;
+	const int allocateCycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)];
 	const int fieldCycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
 	const int grant = allocateCycles + 5 * fieldCycles;
 	for (const char* key : {"castle", "observatory", "room"}) {

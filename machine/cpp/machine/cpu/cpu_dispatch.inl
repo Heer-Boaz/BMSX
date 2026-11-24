@@ -257,7 +257,6 @@ DISPATCH_LABEL(NEWT) {
 	if (!table) return RunResult::ParkedAllocation;
 	RESUME_SCALAR_FRONTIER();
 	registers = FRAME.registers;
-	CYCLES_ADD(b + 2 * c);
 	SET_REGISTER_FAST(a, valueTable(table));
 	DISPATCH_NEXT();
 }

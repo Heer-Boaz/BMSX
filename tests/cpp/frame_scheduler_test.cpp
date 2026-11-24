@@ -342,7 +342,7 @@ void testParkedNewTableRetiresBeforeVblank(bool native) {
 	require(arena.occupiedBytes() == occupied && budget.usedBytes() == charged && cpu.readFrameRegister(0, 0) == valueInteger(73),
 		"the staged header was returned and no table, destination or logical byte charge was published");
 	require(runtime.frameLoop.frameState.deferredAllocationCycles == BASE_CYCLES[static_cast<u8>(OpCode::NEWT)],
-		"refusal defers only the base cycle charge");
+		"refusal defers the fixed cycle charge");
 	const auto parked = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const auto finish = [&] {
 		for (int step = 0; !cpu.allocationReady() && step < 120; ++step) {
@@ -356,12 +356,12 @@ void testParkedNewTableRetiresBeforeVblank(bool native) {
 		const auto beforeCommit = budget.usedBytes();
 		require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Executed && !cpu.allocationParked(),
 			"the saved operation retires, without re-running NEWT itself");
-		const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 4;
+		const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)];
 		const Value result = cpu.readFrameRegister(0, 0);
 		require(valueIsTable(result) && cpu.readFramePc(0) == entry + 2u * INSTRUCTION_BYTES && cpu.lastPc == entry + INSTRUCTION_BYTES
 			&& budget.usedBytes() == beforeCommit + TableRecord::HEADER_BYTES + TableRecord::allocationCharge(0, 2)
 			&& machine.scheduler.nowCycles() == edge - 1 + cycles && scheduler.lastTickCpuUsedCycles == cycles && input.sampleCount == 1,
-			"one complete table, one surcharge and one VBlank sample retire together");
+			"one complete table, one fixed charge and one VBlank sample retire together");
 		auto updated = asTable(result, cpu.gcHeap());
 		require(isNil(updated.getStringKey(keyX)) && isNil(updated.getStringKey(keyY)),
 			"neither following field executes during retry");

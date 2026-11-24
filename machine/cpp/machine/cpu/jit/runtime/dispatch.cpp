@@ -424,7 +424,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				transition = NativeBlockTransition::Redispatch;
 				break;
 			}
-			cpu.retireNewTable(*frame, a, array, allocation.hashSize, address);
+			cpu.retireNewTable(*frame, a, address);
 			if (record) {
 				const int fieldCycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
 				const int fields = static_cast<int>(record->count);

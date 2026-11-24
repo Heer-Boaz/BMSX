@@ -731,7 +731,7 @@ void tableIteratorUsesNativeEdgesAndRecordsTheCursor() {
 #endif
 }
 
-void allocationChargesRequestedCapacity() {
+void allocationChargesFixedCycles() {
 	for (const bool wide : {false, true}) {
 		test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 		u32 word = 0;
@@ -743,7 +743,7 @@ void allocationChargesRequestedCapacity() {
 		image.functions = {{.firstWord = 0, .wordCount = word + 1, .maxStack = 2}};
 		CpuMachine native(image), scalar(image, true);
 		const int hash = wide ? 67 : 3;
-		const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 2 + 2 * hash;
+		const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)];
 		const int loopCycles = cycles + BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
 		test::runCpuParity(native.cpu, scalar.cpu, loopCycles * NATIVE_WARM_SCALE * 34);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -761,7 +761,7 @@ void allocationChargesRequestedCapacity() {
 		requireParity(native, scalar);
 		require(native.cpu.instructionBudgetRemaining == 1 - cycles
 			&& native.cpu.readFramePc(0) == native.rom.textAddress + successor * INSTRUCTION_BYTES
-			&& isNil(native.cpu.readFrameRegister(0, 1)), "successful NEWT charges only the requests and stops before the successor");
+			&& isNil(native.cpu.readFrameRegister(0, 1)), "successful NEWT charges only its fixed cost and stops before the successor");
 		const auto table = asTable(native.cpu.readFrameRegister(0, 0), native.cpu.gcHeap());
 		require(table.arrayCapacity() == 2 && table.hashSlots() > static_cast<u32>(hash), "actual hash storage is rounded independently of the charge");
 	}
@@ -2532,7 +2532,7 @@ int main() {
 		stringReadChainBoundaries();
 		observedArithmeticResumesAtItsOwnInstruction();
 		contradictoryOwnFieldProofRetiresItsSource();
-		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); iterationChargeIgnoresVacantCapacity(); allocationChargesRequestedCapacity(); hashGrowthKeepsReservedArray(); wideAllocationFailure();
+		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); iterationChargeIgnoresVacantCapacity(); allocationChargesFixedCycles(); hashGrowthKeepsReservedArray(); wideAllocationFailure();
 		nativeTypedIndexRechecksAnExternalEntry();
 		tableIteratorRetainsItsCursorAcrossDeletionAndRestore();
 		tableIteratorUsesNativeEdgesAndRecordsTheCursor();

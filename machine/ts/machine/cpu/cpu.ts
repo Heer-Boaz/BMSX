@@ -618,17 +618,16 @@ export class CPU implements MappedPageInvalidator {
 	}
 	public allocationParked(): boolean { return this.pendingAllocation !== null; }
 
-	private retireNewTable(frame: CallFrame, destination: number, arraySize: number, hashSize: number, address: number): void {
+	private retireNewTable(frame: CallFrame, destination: number, address: number): void {
 		frame.registers.setTable(destination, address);
 		this.bumpRegisterTop(frame, destination);
-		this.charge(arraySize + 2 * hashSize);
 	}
 
 	private executeNewTable(frame: CallFrame, destination: number, arraySize: number, hashSize: number): boolean {
 		const mode = this.runKind === CpuRunKind.Scheduled ? LuaAllocationMode.Scheduled : LuaAllocationMode.Direct;
 		const address = this.allocateTable(arraySize, hashSize, mode);
 		if (address !== 0) {
-			this.retireNewTable(frame, destination, arraySize, hashSize, address);
+			this.retireNewTable(frame, destination, address);
 			return true;
 		}
 		this.parkAllocation(frame, { kind: PendingAllocationKind.TableCreation, destination, arraySize, hashSize });
@@ -684,7 +683,7 @@ export class CPU implements MappedPageInvalidator {
 		} else {
 			const address = this.allocateTable(pending.arraySize, pending.hashSize, LuaAllocationMode.Retry);
 			retired = address !== 0;
-			if (retired) this.retireNewTable(frame, pending.destination, pending.arraySize, pending.hashSize, address);
+			if (retired) this.retireNewTable(frame, pending.destination, address);
 		}
 		if (retired) {
 			frame.pc = pending.nextPc;

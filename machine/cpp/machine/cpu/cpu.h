@@ -466,7 +466,7 @@ private:
 	void parkAllocation(CallFrame&, PendingAllocation::Operands);
 	u32 allocateTable(int arraySize, int hashSize, LuaAllocationMode);
 	u32 reserveNewTable(CallFrame&, int destination, int arraySize, int hashSize);
-	void retireNewTable(CallFrame&, int destination, int arraySize, int hashSize, u32 address);
+	void retireNewTable(CallFrame&, int destination, u32 address);
 	void markPendingAllocationRoots(GcHeap& heap);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
 	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);

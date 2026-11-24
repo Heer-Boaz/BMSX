@@ -219,7 +219,7 @@ void scalarBoundaryRetry() {
 	requireCounts(total(shortGrant),{},"a declined native suffix counts no allocating semantic attempt");
 #endif
 	const auto retry=runPair(generated,scalar,1);
-	require(retry.consumed>BASE_CYCLES[static_cast<u8>(OpCode::NEWT)],"the admitted NEWT includes dynamic initialization cycles");
+	require(retry.consumed==BASE_CYCLES[static_cast<u8>(OpCode::NEWT)],"the admitted NEWT pays its fixed cost");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	requireCounts(total(retry),{1,0,0,0,0},"the successor retry admits and counts NEWT exactly once");
 #endif
