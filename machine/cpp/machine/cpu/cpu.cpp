@@ -1070,15 +1070,13 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		}
 		case BuiltinFunctionId::ToInteger:
 		case BuiltinFunctionId::GetMetatable:
+		case BuiltinFunctionId::RawGet:
 		case BuiltinFunctionId::StringByte: {
 			Value result;
 			if (!executeBuiltinLeaf(fn.id, args, result)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			out.push_back(result);
 			break;
 		}
-		case BuiltinFunctionId::RawGet:
-			runBuiltinRawGet(args, out);
-			break;
 		case BuiltinFunctionId::RawSet:
 			runBuiltinRawSet(args, out);
 			break;
@@ -1559,14 +1557,6 @@ bool CPU::stepTableIterator(ValueSpan registers, int base, int destination, int 
 	// payload is a private cursor, carried by the normal frame state.
 	registers.set(base + 2, valueFromTag(ValueTag::Nil, cursor));
 	return true;
-}
-
-void CPU::runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out) {
-	const Value target = args[0];
-	if (!valueIsTable(target) || args.size() < 2) {
-		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	}
-	out.push_back(TableRecord(m_heap, valuePayload(target)).get(args[1]));
 }
 
 void CPU::runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out) {

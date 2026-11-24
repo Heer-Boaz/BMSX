@@ -21,8 +21,10 @@ void NativeLowering::lowerOperation(const NativeCallSite& site, const NativeInst
 	if (site.calleeCheck == NativeTagCheck::Dynamic)
 		fault(m_cache.guard(base, ValueTag::BuiltinFunction, SLJIT_R0), call, m_cache.state());
 	const auto id = readTyped(base, ValueTag::BuiltinFunction);
+	auto* rawGet = sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, id.reg, 0, SLJIT_IMM, static_cast<u32>(BuiltinFunctionId::RawGet));
 	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL | SLJIT_32, id.reg, 0,
 		SLJIT_IMM, NATIVE_BUILTIN_LEAF_LIMIT), call, m_cache.state());
+	sljit_set_label(rawGet, sljit_emit_label(m_compiler));
 	auto& completed = *sideExit(ir.completedCall);
 	auto* c = m_compiler;
 	const auto entry = m_cache.state();

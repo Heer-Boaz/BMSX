@@ -8,6 +8,12 @@ namespace bmsx {
 // code. The ordinary CALL owner handles argument errors and cycle charges.
 bool CPU::executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept {
 	switch (id) {
+	case BuiltinFunctionId::RawGet: {
+		const Value target = args[0];
+		if (!valueIsTable(target) || args.size() < 2) return false;
+		result = TableRecord(m_heap, valuePayload(target)).get(args[1]);
+		return true;
+	}
 	case BuiltinFunctionId::ToInteger: {
 		i32 integer;
 		result = valueToInteger(args[0], integer) ? valueInteger(integer) : valueNil();

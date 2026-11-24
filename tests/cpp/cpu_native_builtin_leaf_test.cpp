@@ -86,6 +86,12 @@ struct Machine {
 			r.set(1, mode == 3 ? valueInteger(17) : valueTable(target->address()));
 			r.set(2, mode == 1 ? valueNil() : mode == 2 ? valueBool(false) : valueTable(meta->address()));
 			expected = id == BuiltinFunctionId::GetMetatable ? valueTable(meta->address()) : valueTable(target->address());
+			if (id == BuiltinFunctionId::RawGet) {
+				const Value key = valueString(cpu.stringPool().intern("field"));
+				if (!mode) target->set(key, valueBool(false));
+				r.set(2, key);
+				expected = mode ? valueNil() : valueBool(false);
+			}
 		}
 	}
 	u32 marker() { return memory.readMappedU32LE(MARKER_ADDRESS); }
@@ -144,7 +150,7 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 			&& machine.memory.readRamRecordWord(machine.cpu.gcHeap().changedHeadOffset())
 				== (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT,
 			"SetMetatable uses ordinary CALL to mutate the header and enqueue the black owner without taking a native leaf continuation");
-		require(machine.cpu.instructionBudgetRemaining == grant - 2 - 32 - 2 - receiving
+		require(machine.cpu.instructionBudgetRemaining == grant - 2 - 32 - BUILTIN_FUNCTION_COSTS[static_cast<size_t>(id)].base - receiving
 			&& frame->readControl(bmsx::FrameField::Pc) == rom.textAddress + 2 * INSTRUCTION_BYTES
 			&& frame->readWindow(bmsx::FrameField::Top) == receiving
 			&& (!receiving || frame->registers.get(0) == machine.expected),
@@ -153,7 +159,7 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	}
 	if (!cold && !interrupt && grant == 64 && id != BuiltinFunctionId::Type) {
 		require(machine.marker() == 99, "one real native gate follows the builtin raw continuation, not C++ CALL redispatch");
-		require(machine.cpu.instructionBudgetRemaining == 64 - 2 - 32 - 2 - receiving - 3 - 2,
+		require(machine.cpu.instructionBudgetRemaining == 64 - 2 - 32 - BUILTIN_FUNCTION_COSTS[static_cast<size_t>(id)].base - receiving - 3 - 2,
 			"prefix, CALL, primitive, receiving slots and marker are each charged once");
 	} else if (id == BuiltinFunctionId::Type) {
 		require(machine.marker() == 0, "Type remains on its allocating ordinary CALL path");
@@ -161,7 +167,7 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	} else {
 		require(machine.marker() == 0 && frame->readControl(bmsx::FrameField::Pc) == rom.textAddress + 2 * INSTRUCTION_BYTES,
 			"cold or exhausted completion commits the successor without executing it");
-		require(run.state.remainingCycles == grant - 2 - 32 - 2 - receiving
+		require(run.state.remainingCycles == grant - 2 - 32 - BUILTIN_FUNCTION_COSTS[static_cast<size_t>(id)].base - receiving
 			&& machine.cpu.instructionBudgetRemaining == run.state.remainingCycles, "both budget owners retain the complete CALL debit");
 		require(static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)) == receiving
 			&& (!receiving || frame->registers.get(0) == machine.expected), "a cold/debt/interrupt exit exposes the completed result before any resume");
@@ -177,7 +183,7 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 #endif
 
 void ordinaryCases() {
-	for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable, BuiltinFunctionId::SetMetatable})
+	for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable, BuiltinFunctionId::RawGet, BuiltinFunctionId::SetMetatable})
 	for (const int results : {0, 1, 2, 3}) for (const bool wide : {false, true}) {
 		const auto rom = image(results, id == BuiltinFunctionId::GetMetatable ? 2 : 3, wide);
 		Machine native(rom, false), scalar(rom, true); native.seed(id); scalar.seed(id);
@@ -231,6 +237,8 @@ int main() {
 		for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable}) for (int results : {0, 1, 2}) {
 			directGate(id, results, 64); directGate(id, results, 9); directGate(id, results, 64, true);
 		}
+		directGate(BuiltinFunctionId::RawGet, 2, 64);
+		directGate(BuiltinFunctionId::RawGet, 2, 64, false, 1);
 		directGate(BuiltinFunctionId::Type, 2, 64);
 #endif
 		#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
