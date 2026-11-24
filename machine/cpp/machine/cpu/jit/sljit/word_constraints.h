@@ -38,6 +38,10 @@ inline unsigned fixedWordUses(const NativeArithmetic& op) {
 	const auto& plan = std::get<NativeNumericPlan>(op.strategy);
 	if (plan.action == NativeNumericAction::Kernel) return plan.sampleOperands ? 0x7 : 0x3;
 	if (plan.action == NativeNumericAction::Float) return 1;
+	if (plan.action == NativeNumericAction::DynamicNumber) {
+		if (plan.result == ValueTag::Float) return 0x3;
+		return 0x3 | (!plan.left ? 4u : 0u) | (op.left != op.right && !plan.right ? 8u : 0u);
+	}
 	if (plan.action != NativeNumericAction::Word) return 0xf;
 	return unsigned(plan.guardLeft || plan.guardRight || op.left < 0)
 		| ((!op.unary() && op.right < 0) ? 2u : 0u);

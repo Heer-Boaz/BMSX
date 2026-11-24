@@ -79,15 +79,15 @@ void NativeLowering::emitNumericKernel(
 	m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::Unchanged);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM,
 		static_cast<u32>(NativeNumericCompletion::InvalidOperand)), *sideExit(instruction.slow), prefix);
-	emitValueTransportLoad(m_compiler, SLJIT_SP, result, SLJIT_R0, SLJIT_R1);
-	if (!plan.result)
-		emitRawStore(arithmetic.result, SLJIT_R0, SLJIT_R1);
-	else {
+	if (!plan.result) {
+		emitValueTransportLoad(m_compiler, SLJIT_SP, result, SLJIT_R0, SLJIT_R1);
+		emitRawStore(arithmetic.result, SLJIT_R0, SLJIT_R1, m_uses.nextOperandDemand(m_instruction, arithmetic.result));
+	} else {
 		const auto target = m_cache.write(arithmetic.result, *plan.result);
 		if (target.tag == ValueTag::Float)
-			sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, target.reg, SLJIT_R0);
+			sljit_emit_fop1(m_compiler, SLJIT_MOV_F32, target.reg, 0, SLJIT_MEM1(SLJIT_SP), result + VALUE_LOW_WORD_BYTE_OFFSET);
 		else
-			sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_R0, 0);
+			sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_MEM1(SLJIT_SP), result + VALUE_LOW_WORD_BYTE_OFFSET);
 	}
 }
 void NativeLowering::emitFloatInput(int selector, ValueTag tag, sljit_s32 destination) {
@@ -163,7 +163,7 @@ void NativeLowering::emitDynamicNumeric(const NativeArithmetic& arithmetic,
 	sljit_emit_fcopy(c, SLJIT_COPY32_FROM_F32, SLJIT_FR0, SLJIT_R0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, floatTag);
 	sljit_set_label(integerDone, sljit_emit_label(c));
-	emitRawStore(arithmetic.result, SLJIT_R0, SLJIT_R1);
+	emitRawStore(arithmetic.result, SLJIT_R0, SLJIT_R1, m_uses.nextOperandDemand(m_instruction, arithmetic.result));
 }
 
 void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const NativeInstruction& instruction) {
