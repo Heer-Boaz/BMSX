@@ -583,8 +583,8 @@ void wideNativeClosureCallResumesAfterItsBody() {
 		&& native.cpu.readFrameRegister(0, 1) == valueInteger(1), "resume executes the instruction after the WIDE body");
 }
 
-void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied) {
-	const int padded = 2 - supplied;
+void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied, u32 formals) {
+	const int padded = static_cast<int>(formals) - supplied;
 	test::Blua32TestImage image;
 	image.mappedCode = false;
 	image.text.resize(4 * MAPPED_PAGE_BYTE_SIZE);
@@ -612,7 +612,7 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied) {
 	instruction(callWord + 1, OpCode::HALT);
 	instruction(callWord + 2, OpCode::RET, 0, 1);
 	image.functions = {{.firstWord = 0, .wordCount = 12, .maxStack = 16},
-		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 2, .numParams = 2, .maxStack = 3,
+		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 2, .numParams = formals, .maxStack = 3,
 			.staticClosure = false, .upvalues = {{true, 0}}},
 		{.firstWord = 2 * DECODED_PAGE_WORDS, .wordCount = 2, .numParams = 2, .maxStack = 3},
 		{.firstWord = callWord, .wordCount = 3, .maxStack = 16}};
@@ -639,7 +639,8 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied) {
 			auto& registers = machine->cpu.activeThread()->currentFrame->registers;
 			registers.set(4, registers.get(selected));
 			registers.set(5, valueInteger(90));
-			registers.set(6, valueInteger(91)); // Only the one-argument case must clear this slot.
+			registers.set(6, valueInteger(91));
+			registers.set(7, valueBool(true));
 		}
 	};
 	restart(1);
@@ -688,6 +689,7 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied) {
 		const auto& callee = *generated.cpu.activeThread()->currentFrame;
 		require(callee.registers.get(1) == (padded ? valueNil() : valueInteger(91)),
 			"fixed arity preserves the supplied argument or nil-pads the missing one");
+		if (formals == 3) require(callee.registers.get(2) == valueNil(), "padding clears every missing tagged slot");
 		if (grant == throughGetup) {
 			require(generated.cpu.readFrameRegister(1, 0) == valueInteger(27),
 				"the materialized callee has the actual closure's capture before RET");
@@ -1945,7 +1947,8 @@ int main(int argc, char** argv) {
 		nativeCallRouting(6, 4, false, false, false, false, false, 2);
 		nativeCallRouting(3, 1, false, false, false, false, false, 0);
 		wideNativeClosureCallResumesAfterItsBody();
-		for (int supplied : {1, 2}) nativeCallProfileKeepsCapturesAndDropsContradictedTarget(supplied);
+		for (int supplied : {1, 2}) nativeCallProfileKeepsCapturesAndDropsContradictedTarget(supplied, 2);
+		nativeCallProfileKeepsCapturesAndDropsContradictedTarget(1, 3);
 		for (const bool openOuter : {false, true}) nativeCallChainIsRestorableAtBlockedMmio(openOuter);
 		nativeReturnPublishesCallerTopAtMappedObserver();
 		nativeReturnRouting(6, 0, 0, false, true);

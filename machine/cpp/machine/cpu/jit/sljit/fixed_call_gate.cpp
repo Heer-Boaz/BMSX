@@ -37,9 +37,8 @@ sljit_label* emitFixedResidentCall(sljit_compiler* c, sljit_label* bindWindow, s
 		operands + offsetof(NativeExitOperands::Call, strategy));
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
 		static_cast<sljit_sw>(NativeCallStrategy::Fixed)), semanticCall);
-	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R0),
-		plan + offsetof(NativeFixedCallPlan, padded), SLJIT_IMM, 0), semanticCall);
-	sljit_set_label(sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, budget, 0, SLJIT_IMM, 0), semanticCall);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, budget, 0,
+		SLJIT_MEM1(SLJIT_R0), plan + offsetof(NativeFixedCallPlan, padded)), semanticCall);
 
 	sljit_emit_op1(c, SLJIT_MOV_U16, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), base);
 	sljit_emit_op1(c, SLJIT_MOV32_U8, SLJIT_R2, 0, SLJIT_MEM2(tags, SLJIT_R1), 0);
@@ -111,6 +110,21 @@ sljit_label* emitFixedResidentCall(sljit_compiler* c, sljit_label* bindWindow, s
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_MEM1(saved), window + ValueSpan::wordsOffset(), words, 0, SLJIT_R1, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(saved), offsetof(CallFrame, pendingNativeCallerTop), SLJIT_MEM1(state), top);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), plan + offsetof(NativeFixedCallPlan, copied));
+	// Initialize only missing formal parameters, in the admitted argument
+	// window. The shared entry reloads the paid grant from the run state.
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), plan + offsetof(NativeFixedCallPlan, padded));
+	auto* noPadding = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
+	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, remainingCycles), budget, 0, SLJIT_R1, 0);
+	sljit_emit_op1(c, SLJIT_MOV_U16, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), base);
+	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_R1, 0);
+	auto* clear = sljit_emit_label(c);
+	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM2(words, SLJIT_R3), 2, SLJIT_IMM, 0);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM2(tags, SLJIT_R3), 0, SLJIT_IMM, 0);
+	sljit_emit_op2(c, SLJIT_SUB32 | SLJIT_SET_Z, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
+	sljit_set_label(sljit_emit_jump(c, SLJIT_NOT_ZERO), clear);
+	sljit_set_label(noPadding, sljit_emit_label(c));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), top, SLJIT_R2, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), callStack);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), stack, SLJIT_R1, 0);
