@@ -1578,29 +1578,30 @@ void CPU::runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out) {
 	out.push_back(target);
 }
 
-void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit) {
-	const Value selector = args[0];
+// Zero selects the argument count; positive offsets select an argument suffix.
+std::optional<int> CPU::selectArgumentStart(Value selector, int count) const {
 	if (valueIsString(selector)) {
-		if (m_stringPool.byteLength(asStringId(selector)) == 1 && m_stringPool.byteAt(asStringId(selector), 0) == '#') {
-			out.push_back(valueInteger(static_cast<i32>(args.size() - 1)));
-			return;
-		}
-		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const auto id = asStringId(selector);
+		if (m_stringPool.byteLength(id) == 1 && m_stringPool.byteAt(id, 0) == '#') return 0;
+		return std::nullopt;
 	}
-	if (!valueIsNumber(selector)) {
-		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	}
+	int start;
+	if (!valueToInteger(selector, start)) return std::nullopt;
+	if (start < 0) start += count + 1;
+	return std::clamp(start, 1, count + 1);
+}
+
+void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit) {
 	const int count = static_cast<int>(args.size()) - 1;
-	int start = integerOperand(selector);
-	if (start < 0) {
-		start = count + start + 1;
+	const auto start = selectArgumentStart(args[0], count);
+	if (!start) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	if (*start == 0) {
+		out.push_back(valueInteger(count));
+		return;
 	}
-	start = std::max(start, 1);
-	const int available = std::max(count - start + 1, 0);
+	const int available = count + 1 - *start;
 	const int produced = resultLimit < 0 ? available : std::min(available, resultLimit);
-	for (int index = 0; index < produced; ++index) {
-		out.push_back(args[static_cast<size_t>(start + index)]);
-	}
+	for (int index = 0; index < produced; ++index) out.push_back(args[*start + index]);
 }
 
 void CPU::runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out) {

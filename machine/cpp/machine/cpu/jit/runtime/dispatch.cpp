@@ -51,24 +51,40 @@ i32 CPU::assignNativeHintedTableField(CPU* cpu, u32 receiver, StringId key, cons
 NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept {
 	const auto& call = exit->operands.call;
 	const int base = call.callee;
-	const int receiving = call.requested == 0 ? 0 : 1;
-	if (call.requested > 1 || (receiving && static_cast<size_t>(base) >= state->frame->registers.size()))
-		return NativeBuiltinCallOutcome::Declined;
+	int receiving;
 	const int count = call.supplied < 0 ? std::max(state->registerTop - base - 1, 0) : call.supplied;
 	auto& frame = *state->frame;
 	auto& registers = frame.registers;
-	BuiltinArgsView args;
+	ConstValueSpan args;
 	if (registers.containsRange(base + 1, count)) {
-		args = BuiltinArgsView(registers.subspan(base + 1, count));
+		args = registers.subspan(base + 1, count);
 	} else {
 		const int first = state->stackBase + base + 1;
 		if (!frame.thread->stack.containsRange(first, count)) return NativeBuiltinCallOutcome::Declined;
-		args = BuiltinArgsView(frame.thread->stack.subspan(first, count));
+		args = frame.thread->stack.subspan(first, count);
 	}
 	const auto& function = cpu->m_builtinFunctions[static_cast<size_t>(static_cast<BuiltinFunctionId>(builtinWord))];
-	Value result;
-	if (!cpu->executeBuiltinLeaf(function.id, args, result)) return NativeBuiltinCallOutcome::Declined;
-	if (receiving) registers.set(base, result);
+	if (function.id == BuiltinFunctionId::Select) {
+		if (!count) return NativeBuiltinCallOutcome::Declined;
+		const auto start = cpu->selectArgumentStart(args.get(0), count - 1);
+		if (!start) return NativeBuiltinCallOutcome::Declined;
+		const int produced = *start ? count - *start : 1;
+		receiving = CallResultPlacement::call(base, call.requested).selected(produced);
+		if (!registers.containsRange(base, receiving)) return NativeBuiltinCallOutcome::Declined;
+		const auto placement = ValuePlacement::fit(produced, receiving);
+		if (*start) {
+			registers.placeAdmitted(base, args, *start, placement.copied, placement.padded);
+		} else {
+			if (placement.copied) registers.setAdmitted(base, valueInteger(count - 1));
+			registers.clearAdmitted(base + placement.copied, placement.padded);
+		}
+	} else {
+		receiving = call.requested == 0 ? 0 : 1;
+		if (call.requested > 1 || !registers.containsRange(base, receiving)) return NativeBuiltinCallOutcome::Declined;
+		Value result;
+		if (!cpu->executeBuiltinLeaf(function.id, BuiltinArgsView(args), result)) return NativeBuiltinCallOutcome::Declined;
+		if (receiving) registers.set(base, result);
+	}
 	state->registerTop = base + receiving;
 	state->remainingCycles -= static_cast<int>(function.cycleBase) + receiving;
 	if (state->remainingCycles <= 0 || cpu->m_runSignals || cpu->canAcceptMaskableInterruptLine()

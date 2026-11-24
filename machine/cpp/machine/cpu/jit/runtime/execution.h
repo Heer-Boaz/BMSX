@@ -14,8 +14,10 @@ namespace bmsx {
 // can retire the source region before the native return address is used.
 inline constexpr u32 NATIVE_BUILTIN_LEAF_LIMIT = static_cast<u32>(BuiltinFunctionId::Next);
 
+// The inline CALL emitter handles the single-result prefix. The shared gate
+// also has the whole argument/result window for the variable-result select.
 constexpr bool nativeBuiltinLeafId(u32 id) {
-	return id < NATIVE_BUILTIN_LEAF_LIMIT;
+	return id < NATIVE_BUILTIN_LEAF_LIMIT || id == static_cast<u32>(BuiltinFunctionId::Select);
 }
 
 // A leaf builtin either leaves CALL untouched for its ordinary semantic path,

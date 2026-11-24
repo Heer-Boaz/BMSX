@@ -369,6 +369,7 @@ private:
 	bool executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept;
 	void runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out);
+	std::optional<int> selectArgumentStart(Value selector, int count) const;
 	void runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit);
 	void runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinError(BuiltinArgsView args);

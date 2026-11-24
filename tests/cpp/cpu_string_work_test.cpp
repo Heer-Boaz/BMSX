@@ -143,6 +143,47 @@ void selectAndChar(bool scalar) {
 	}
 }
 
+void openSelectPlacesAliasedResults(bool scalar) {
+	for (const u8 wanted : {0, 1, 2, 6}) {
+		test::Blua32TestImage image;
+		image.mappedCode = false;
+		image.text.resize(2 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, 0, wanted);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+		image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 8}};
+		CpuMachine machine(image, scalar);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		if (!scalar) machine.cpu.prepareSystemNativeCode();
+#endif
+		const auto number = valueFloat(9.25f);
+		for (const bool countMode : {false, true}) {
+			auto& frame = machine.restart();
+			frame.registers.set(0, machine.cpu.createBuiltinFunction(BuiltinFunctionId::Select));
+			frame.registers.set(1, countMode ? valueString(machine.cpu.stringPool().intern("#")) : valueInteger(-2));
+			frame.registers.set(2, valueBool(true));
+			frame.registers.set(3, number);
+			frame.registers.set(4, valueBool(false));
+			frame.setTop(5);
+			const int produced = countMode ? 1 : 2;
+			const int placed = wanted ? wanted - 1 : produced;
+			const int cost = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] +
+				BUILTIN_FUNCTION_COSTS[static_cast<size_t>(BuiltinFunctionId::Select)].base + placed;
+			require(machine.cpu.runUntilDepth(0, cost) == RunResult::Yielded &&
+				machine.cpu.instructionBudgetRemaining == 0 && machine.cpu.readFramePc(0) == machine.rom.textAddress + INSTRUCTION_BYTES,
+				"select places its results before yielding on its exact grant");
+			require(frame.readWindow(FrameField::Top) == placed, "select publishes the selected top, not the argument top");
+			for (int i = 0; i < placed; ++i) {
+				const Value expected = i >= produced ? valueNil() : countMode ? valueInteger(3) : i == 0 ? number : valueBool(false);
+				require(frame.registers.get(i) == expected, "open select preserves payloads and tags and pads only the requested tail");
+			}
+		}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		if (!scalar) require(machine.cpu.nativeGateProfile().builtinAttempts == 2 &&
+			machine.cpu.nativeGateProfile().builtinDeclines == 0, "both open select calls complete as native leaves");
+#endif
+	}
+}
+
 void stringSlice(bool wide) {
 	const u32 callWord = wide ? 1u : 0u;
 	const u32 base = wide ? 256u : 0u;
@@ -310,6 +351,7 @@ int main() {
 		for (const bool scalar : {true, false}) {
 			for (const auto op : {OpCode::CONCAT, OpCode::CONCATN, OpCode::LT, OpCode::LE, OpCode::EQ}) logicalStringWork(scalar, op);
 			selectAndChar(scalar);
+			openSelectPlacesAliasedResults(scalar);
 		}
 		for (const bool wide : {false, true}) stringSlice(wide);
 		std::cout << "String operation cycles and builtin demand passed\n";
