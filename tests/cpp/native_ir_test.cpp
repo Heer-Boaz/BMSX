@@ -1077,6 +1077,8 @@ void registerUses() {
 	constexpr int never = std::numeric_limits<int>::max();
 	require(uses.nextUse(1, 10) == 1 && uses.nextUse(2, 10) == 0 && uses.nextUse(3, 10) == 1,
 		"next use counts both reads and overwrites");
+	require(uses.nextRead(2, 10) == 0 && uses.nextRead(3, 10) == never && uses.nextRead(5, 17) == 0,
+		"an overwrite kills ordinary uses of the previous definition; a range read consumes it");
 	require(uses.nextUse(3, 11) == 1 && uses.nextUse(3, 12) == never,
 		"LOADNIL overwrites exactly its supplied range");
 	require(uses.nextUse(5, 14) == never && uses.nextUse(5, 15) == 0 && uses.nextUse(5, 16) == 0

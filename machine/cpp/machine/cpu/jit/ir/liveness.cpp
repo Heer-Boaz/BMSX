@@ -170,6 +170,19 @@ int NativeRegisterUses::nextUse(size_t nextInstruction, int guest) const {
 	return positions != 0 ? std::countr_zero(positions) : std::numeric_limits<int>::max();
 }
 
+int NativeRegisterUses::nextRead(size_t nextInstruction, int guest) const {
+	constexpr int never = std::numeric_limits<int>::max();
+	const int distance = nextUse(nextInstruction, guest);
+	if (distance == never) return never;
+	const auto& access = m_instructions[nextInstruction + distance].slots;
+	if (std::ranges::find(access.reads, guest) != access.reads.end()
+		|| (guest >= static_cast<int>(access.readsRange.first) && guest < access.readsRange.end()))
+		return distance;
+	// A pure definition ends the old value's ordinary register uses. It
+	// does not cancel the obligation to reconstruct it on an earlier exit.
+	return never;
+}
+
 NativeOperandDemand NativeRegisterUses::nextOperandDemand(size_t nextInstruction, int guest) const {
 	const int distance = nextUse(nextInstruction, guest);
 	if (distance == std::numeric_limits<int>::max()) return NativeOperandDemand::None;

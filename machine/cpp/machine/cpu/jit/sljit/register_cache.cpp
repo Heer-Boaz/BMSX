@@ -36,11 +36,23 @@ void NativeRegisterCache::reserveScratch(unsigned fixed) {
 		m_reserved[slot] = (fixed & (1u << i)) != 0;
 		auto& value = m_state[slot];
 		if (m_reserved[slot] && value.guest >= 0) {
-			// Rename into an unoccupied GPR before spilling a fixed-register conflict.
-			int to = 0;
-			while (to < first + 4 && (m_state[to].guest >= 0 ||
-				(to >= first && (fixed & (1u << (to - first)))))) ++to;
-			if (to < first + 4) {
+			// Free location first. At a blocked register, compare the
+			// incoming value's next read to the resident's next read and
+			// the destination's next fixed use (V8 AllocateBlockedReg).
+			int to = -1, until = value.nextUse;
+			for (int r = 0; r < first + 4; ++r) {
+				if (r >= first && (fixed & (1u << (r - first)))) continue;
+				const auto& resident = m_state[r];
+				if (resident.guest < 0) { to = r; break; }
+				int available = resident.nextUse;
+				if (m_constraints && r >= first)
+					available = std::min(available, int(m_constraints->freeUntil[r - first]));
+				if (available > until) { to = r; until = available; }
+			}
+			if (to >= 0) {
+				const auto& displaced = m_state[to];
+				if (displaced.guest >= 0)
+					store(to, displaced, displaced.dirty, displaced.immediateTagDirty);
 				movePayload(to, host(slot).reg, false);
 				m_state[to] = value;
 			} else store(slot, value, value.dirty, value.immediateTagDirty);

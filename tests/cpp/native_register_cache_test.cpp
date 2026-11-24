@@ -357,8 +357,10 @@ void sharedWordsSurviveTemporaryUse() {
 		require(value.reg == bank[location].reg, "the shared register needed soonest is assigned last");
 		sljit_emit_op1(code.compiler, SLJIT_MOV32, value.reg, 0, SLJIT_IMM, 100 + i);
 	}
-	cache.beginInstruction([](int guest) { return guest == 7 ? 20 : 1; });
+	cache.beginInstruction([](int guest) { return guest == 3 ? 100 : guest == 7 ? 20 : 1; });
 	cache.reserveScratch(1u << 2);
+	require(cache.state()[3].guest == 5 && !cache.binding(3),
+		"a fixed conflict preserves the earlier read even with no empty GPR");
 	const auto temporary = cache.acquireScratch();
 	require(temporary == SLJIT_R0 && cache.binding(4) && cache.binding(6),
 		"the address temporary takes the distant use, not another still-live fixed or shared operand");

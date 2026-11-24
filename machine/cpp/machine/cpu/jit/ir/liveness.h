@@ -33,6 +33,7 @@ public:
 
 	void beginBlock(std::span<const NativeInstruction> instructions);
 	int nextUse(size_t nextInstruction, int guest) const;
+	int nextRead(size_t nextInstruction, int guest) const;
 	NativeOperandDemand nextOperandDemand(size_t nextInstruction, int guest) const;
 
 private:

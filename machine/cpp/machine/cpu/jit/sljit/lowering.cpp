@@ -218,7 +218,7 @@ void NativeLowering::lower(const NativeInstruction& source) {
 	++m_instruction;
 	if (m_terminal)
 		return;
-	m_cache.beginInstruction([&](int guest) { return m_uses.nextUse(m_instruction, guest); });
+	m_cache.beginInstruction([&](int guest) { return m_uses.nextRead(m_instruction - 1, guest); });
 
 	m_cache.applyConstraints(m_constraints[m_instruction - 1]);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
