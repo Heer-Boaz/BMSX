@@ -538,6 +538,53 @@ void entriesIntoWideBodiesRetainIndependentOwners() {
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void adjacentLocalAndPublicEntryFrontiers() {
+	test::Blua32TestImage image;
+	image.text.resize(INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1}};
+	CpuMachine machine(image, false);
+	constexpr u32 pc = DYNAMIC_RAM_BASE;
+	DecodedInstruction literal{.op = static_cast<u8>(OpCode::KSMI), .width = 1};
+	literal.setSbx(17);
+	DecodedInstruction copy{.a = 1, .c = static_cast<i16>(ValueMoveKind::FloatFromBits), .op = static_cast<u8>(OpCode::MOV), .width = 1};
+	DecodedInstruction again = copy;
+	again.a = 2; again.b = 1; again.c = 0;
+	for (auto* op : {&literal, &copy, &again}) op->baseCycles = BASE_CYCLES[op->op];
+	const std::array rows{NativeBlockInstruction{&literal, pc}, NativeBlockInstruction{&copy, pc + INSTRUCTION_BYTES},
+		NativeBlockInstruction{&again, pc + 2 * INSTRUCTION_BYTES}};
+	const std::array runs{NativeBlockSource{std::span(rows).first(1)}, NativeBlockSource{std::span(rows).subspan(1)}};
+	auto blocks = NativeCompiler{}.compile(runs, NativeCodeBindings(machine.memory, machine.cpu.stringPool()));
+	require(blocks.size() == 2, "both adjacent blocks publish public entries");
+	const std::array initial{valueNil(), valueInteger(4), valueInteger(5)};
+	auto regs = test::valueBank(initial);
+	NativeBlockRunState state{};
+	state.remainingCycles = literal.baseCycles;
+	require(blocks[0]->run(regs.view(), state) == &blocks[0]->terminal && regs.get(0) == valueInteger(17)
+		&& regs.get(1) == initial[1], "an exhausted predecessor does not enter the adjacent body");
+	state.remainingCycles = literal.baseCycles + blocks[1]->admissionCycles;
+	const auto* shortEdge = blocks[0]->run(regs.view(), state);
+	require(shortEdge->exit == NativeBlockExit::ScalarBoundary && shortEdge->nextPc == rows[1].pc
+		&& shortEdge->operands.replay.hasCompletedInstruction && shortEdge->currentPc == pc
+		&& state.remainingCycles == blocks[1]->admissionCycles && regs.get(1) == initial[1],
+		"a positive short grant publishes its completed predecessor and replays only the successor");
+	state.remainingCycles = 64;
+	require(blocks[0]->run(regs.view(), state) == &blocks[1]->terminal && regs.get(2) == valueFloatBits(17),
+		"a local edge carries the produced value into the adjacent body");
+	regs.set(1, initial[1]); regs.set(2, initial[2]);
+	state.remainingCycles = blocks[1]->admissionCycles;
+	const auto* shortEntry = blocks[1]->run(regs.view(), state);
+	require(shortEntry->exit == NativeBlockExit::ScalarBoundary && shortEntry->nextPc == rows[1].pc
+		&& regs.get(1) == initial[1], "a short external grant is rejected at the public successor PC");
+	regs.set(0, valueBool(false)); state.remainingCycles = 64;
+	const auto* rejected = blocks[1]->run(regs.view(), state);
+	require(rejected->exit == NativeBlockExit::ScalarBoundary && regs.get(2) == initial[2],
+		"external entry cannot inherit the predecessor's type proof");
+	regs.set(0, valueInteger(0x7fa12345)); state.remainingCycles = 64;
+	require(blocks[1]->run(regs.view(), state) == &blocks[1]->terminal && regs.get(2) == valueFloatBits(0x7fa12345u),
+		"public entry imports the current raw payload instead of the predecessor's registers");
+}
+
 void codeCapacityRetiresOldestCompleteRegion() {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -638,6 +685,7 @@ int main() {
 		shortGrantsDoNotPromoteSequentialPositions(false); shortGrantsDoNotPromoteSequentialPositions(true);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		compilationProfilingIsOptInAndSurvivesReset();
+		adjacentLocalAndPublicEntryFrontiers();
 		codeCapacityRetiresOldestCompleteRegion();
 #endif
 		std::cout << "Compiled block link tests passed\n"; return 0;

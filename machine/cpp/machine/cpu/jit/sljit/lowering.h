@@ -58,7 +58,9 @@ private:
 	void lowerOperation(const NativeTableAccess&, const NativeInstruction&);
 	void lowerOperation(const NativeVararg&, const NativeInstruction&);
 
-	void emitExit(NativeBlockExitSite& exit, size_t edge = 0, sljit_label** sharedExternal = nullptr);
+	enum class EdgePosition { Tail, BeforeAlternate };
+	void emitExit(NativeBlockExitSite& exit, size_t edge = 0, EdgePosition position = EdgePosition::Tail, sljit_label** sharedExternal = nullptr);
+	void emitPublicEntry(size_t index);
 	void emitTop(int extent);
 	void emitConstant(int guest, Value value);
 	void emitPoolWord(u32 index, sljit_s32 word);
@@ -74,9 +76,10 @@ private:
 	struct SemanticExit {
 		NativeBlockExitSite* site;
 		Charge charge;
+		NativeBlockExitSite* exhausted;
 		bool operator==(const SemanticExit&) const = default;
 	};
-	void fault(sljit_jump* jump, NativeBlockExitSite& site, const State& state, Charge charge = Charge::Pending);
+	void fault(sljit_jump* jump, NativeBlockExitSite& site, const State& state, Charge charge = Charge::Pending, NativeBlockExitSite* exhausted = nullptr);
 	void emitLeave(NativeBlockExitSite& exit, Charge charge);
 	void emitNumericKernel(const NativeArithmetic&, const NativeInstruction&, const NativeNumericPlan&);
 	void emitDynamicNumeric(const NativeArithmetic&, const NativeInstruction&, const NativeNumericPlan&);
@@ -124,7 +127,7 @@ private:
 		State registers{};
 		sljit_label* guarded = nullptr;
 		sljit_label* proven = nullptr;
-		bool planned = false;
+		bool planned = false, fallthrough = false;
 	};
 	struct Branch {
 		sljit_jump* jump;

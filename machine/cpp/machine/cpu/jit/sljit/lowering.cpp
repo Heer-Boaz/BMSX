@@ -130,10 +130,10 @@ void NativeLowering::emitConstant(int guest, Value value) {
 	} else
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_IMM, valuePayload(value));
 }
-void NativeLowering::fault(sljit_jump* jump, NativeBlockExitSite& site, const State& state, Charge charge) {
+void NativeLowering::fault(sljit_jump* jump, NativeBlockExitSite& site, const State& state, Charge charge, NativeBlockExitSite* exhausted) {
 	// Several guards of one guest operation can publish the same state.
 	if (!jump) return;
-	const SemanticExit target{&site, charge};
+	const SemanticExit target{&site, charge, exhausted};
 	for (size_t i = m_workspace.coldExits.size(); i != 0;) {
 		const auto& exit = m_workspace.coldExits[--i];
 		if (exit.target != target) break;
@@ -208,7 +208,7 @@ void NativeLowering::lowerOperation(const NativeTruthBranch& branch, const Nativ
 	auto* falsey = sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::False));
 	const auto state = m_cache.state();
-	emitExit(branch.takeOnTruthy ? *sideExit(block.taken) : terminal, branch.takeOnTruthy);
+	emitExit(branch.takeOnTruthy ? *sideExit(block.taken) : terminal, branch.takeOnTruthy, EdgePosition::BeforeAlternate);
 	sljit_set_label(falsey, sljit_emit_label(m_compiler));
 	m_cache.setState(state);
 	emitExit(branch.takeOnTruthy ? terminal : *sideExit(block.taken), !branch.takeOnTruthy);
@@ -243,6 +243,14 @@ void NativeLowering::endBlock() {
 		emitExit(m_blocks[m_current]->terminal);
 }
 void* NativeLowering::finish(size_t& codeBytes) {
+	// Adjacent native bodies share a fallthrough. Only external callers
+	// execute the public admission and its register imports.
+	for (size_t i = 0; i < m_blocks.size(); ++i) {
+		const auto& entry = m_workspace.entries[i];
+		if (!entry.fallthrough) continue;
+		emitPublicEntry(i);
+		sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), entry.proven);
+	}
 	emitRomReads();
 	emitStoreBarriers();
 	emitSingleStringReads();
@@ -250,6 +258,15 @@ void* NativeLowering::finish(size_t& codeBytes) {
 	for (auto& exit : m_workspace.coldExits) {
 		exit.label = sljit_emit_label(m_compiler);
 		m_cache.setState(exit.state);
+		if (exit.target.exhausted) {
+			// The hot edge already charged its predecessor. Only a positive
+			// short grant replays; an exhausted one ends at the completed edge.
+			m_cache.publish();
+			auto* positive = sljit_emit_cmp(m_compiler, SLJIT_SIG_GREATER | SLJIT_32,
+				NativeBlockAbi::budget, 0, SLJIT_IMM, 0);
+			emitLeave(*exit.target.exhausted, Charge::Paid);
+			sljit_set_label(positive, sljit_emit_label(m_compiler));
+		}
 		emitLeave(*exit.target.site, exit.target.charge);
 	}
 	for (const auto& branch : m_workspace.coldBranches)

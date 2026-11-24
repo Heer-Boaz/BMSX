@@ -61,7 +61,7 @@ void NativeLowering::lowerOperation(const NativeTableIterator& iterator, const N
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::words), control * sizeof(u32),
 		SLJIT_MEM1(SLJIT_SP), NativeTableIteratorScratch::cursor);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(NativeBlockAbi::tags), control, SLJIT_IMM, static_cast<u8>(ValueTag::Nil));
-	emitExit(*sideExit(m_ir[m_current].taken), 1);
+	emitExit(*sideExit(m_ir[m_current].taken), 1, EdgePosition::BeforeAlternate);
 
 	auto* fallthrough = sljit_emit_label(c);
 	for (auto* guard : miss) if (guard) sljit_set_label(guard, fallthrough);

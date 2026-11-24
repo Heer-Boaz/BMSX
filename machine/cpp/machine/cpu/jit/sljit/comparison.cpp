@@ -10,14 +10,14 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 	auto& terminal = m_blocks[m_current]->terminal;
 	const auto op = comparison.operation;
 	std::array<sljit_label*, 2> external{};
-	const auto outcome = [&](bool skip) {
+	const auto outcome = [&](bool skip, EdgePosition position) {
 		if (!skip && ir.beforeFusedJump) {
 			auto& deferred = *sideExit(ir.beforeFusedJump);
 			fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM,
 					  deferred.cycles),
 				deferred, m_cache.state());
 		}
-		emitExit(skip ? taken : terminal, skip, &external[skip]);
+		emitExit(skip ? taken : terminal, skip, position, &external[skip]);
 	};
 	const auto icmp = SLJIT_32 | (op == OpCode::EQ ? SLJIT_EQUAL : op == OpCode::LT ? SLJIT_SIG_LESS : SLJIT_SIG_LESS_EQUAL);
 	const auto fcmp = op == OpCode::EQ ? SLJIT_ORDERED_EQUAL : op == OpCode::LT ? SLJIT_ORDERED_LESS : SLJIT_ORDERED_LESS_EQUAL;
@@ -104,11 +104,11 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 		sljit_set_label(typeMiss, miss);
 	}
 	const auto state = m_cache.state();
-	outcome(!comparison.skipOnMatch);
+	outcome(!comparison.skipOnMatch, EdgePosition::BeforeAlternate);
 	auto* match = sljit_emit_label(m_compiler);
 	sljit_set_label(matched, match);
 	if (integerMatch) sljit_set_label(integerMatch, match);
 	m_cache.setState(state);
-	outcome(comparison.skipOnMatch);
+	outcome(comparison.skipOnMatch, EdgePosition::Tail);
 }
 } // namespace bmsx

@@ -16,6 +16,14 @@ void NativeLowering::beginBlock(size_t index) {
 	m_decodedPage = m_bindings.decodedPageFor(ir.firstPc);
 	if (!ir.ownFieldAddresses.empty())
 		assignFieldAddressSpills(ir.ownFieldAddresses);
+	if (entry.fallthrough) m_cache.setState(entry.registers);
+	else emitPublicEntry(index);
+	entry.proven = sljit_emit_label(m_compiler);
+}
+
+void NativeLowering::emitPublicEntry(size_t index) {
+	auto& entry = m_workspace.entries[index];
+	const auto& ir = m_ir[index];
 	m_cache.setState({});
 	entry.guarded = sljit_emit_label(m_compiler);
 	// Public entries admit their reachable slot window and their own types
@@ -45,7 +53,6 @@ void NativeLowering::beginBlock(size_t index) {
 	for (const auto type : ir.entryTypes)
 		fault(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, m_cache.state());
 	m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2);
-	entry.proven = sljit_emit_label(m_compiler);
 }
 
 void NativeLowering::emitTop(int extent) {
@@ -78,24 +85,32 @@ void NativeLowering::emitLeave(NativeBlockExitSite& exit, Charge charge) {
 	m_terminal = true;
 }
 
-void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, sljit_label** sharedExternal) {
+void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, EdgePosition position, sljit_label** sharedExternal) {
 	const auto& block = m_ir[m_current];
 	const auto target = block.successors[edge];
 	const bool completed = exit.exit == NativeBlockExit::CompletedCall;
 	if (target != m_blocks.size() && (completed || exit.exit == NativeBlockExit::Continue)) {
 		const auto source = m_cache.state();
+		const auto& successor = m_ir[target];
+		const auto replayId = block.edgeReplay[edge];
 		if (!completed) {
 			emitTop(exit.registerTop);
-			sljit_emit_op2(m_compiler, SLJIT_SUB32 | SLJIT_SET_SIG_LESS_EQUAL, NativeBlockAbi::budget, 0,
-				NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
-			fault(sljit_emit_jump(m_compiler, SLJIT_SIG_LESS_EQUAL),
-				exit, source, Charge::Paid);
+			if (successor.admissionCycles != 0) {
+				sljit_emit_op2(m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0,
+					NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
+				fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
+					NativeBlockAbi::budget, 0, SLJIT_IMM, successor.admissionCycles),
+					m_admissionReplays[*replayId], source, Charge::Paid, &exit);
+			} else {
+				sljit_emit_op2(m_compiler, SLJIT_SUB32 | SLJIT_SET_SIG_LESS_EQUAL, NativeBlockAbi::budget, 0,
+					NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
+				fault(sljit_emit_jump(m_compiler, SLJIT_SIG_LESS_EQUAL), exit, source, Charge::Paid);
+			}
 		}
 		auto& entry = m_workspace.entries[target];
-		const auto& successor = m_ir[target];
-		if (const auto replayId = block.edgeReplay[edge]) {
+		if (replayId) {
 			auto& replay = m_admissionReplays[*replayId];
-			if (successor.admissionCycles != 0)
+			if (completed && successor.admissionCycles != 0)
 				fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
 					NativeBlockAbi::budget, 0, SLJIT_IMM, successor.admissionCycles), replay, source);
 			if (!block.provesEntryTo(target))
@@ -125,7 +140,8 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, sljit_labe
 			}
 		}
 		m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2);
-		m_workspace.branches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), target});
+		if (position == EdgePosition::Tail && target == m_current + 1) entry.fallthrough = true;
+		else m_workspace.branches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), target});
 		m_terminal = true;
 		return;
 	}
