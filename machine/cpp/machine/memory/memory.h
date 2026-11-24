@@ -39,6 +39,10 @@ constexpr u32 NO_BLOCKED_MAPPED_WRITE = 0xffffffffu;
 
 enum class IoWriteStorage : u8 { Retained, Device };
 
+// Local handlers only mutate device state: no fault, CPU observation, IRQ, scheduler
+// notification or mapping change. Readiness is checked separately.
+enum class IoWriteEffect : u8 { Machine, DeviceLocal };
+
 class Memory {
 public:
 	using IoReadHandler = u32 (*)(void* context, uint32_t addr, MappedBusSignals busSignals);
@@ -116,16 +120,17 @@ public:
 	void mapIoRead(uint32_t addr, TObject& object) {
 		mapIoRead(addr, &object, &readMember<Method, TObject>);
 	}
-	void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler, IoWriteStorage storage = IoWriteStorage::Retained);
+	void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler, IoWriteStorage storage = IoWriteStorage::Retained, IoWriteEffect effect = IoWriteEffect::Machine);
 	void mapIoWriteReady(uint32_t addr, IoWriteReadyHandler handler);
 	template <auto Method, typename TObject>
-	void mapIoWrite(uint32_t addr, TObject& object) {
-		mapIoWrite(addr, &object, &writeMember<Method, TObject>);
+	void mapIoWrite(uint32_t addr, TObject& object, IoWriteEffect effect = IoWriteEffect::Machine) {
+		mapIoWrite(addr, &object, &writeMember<Method, TObject>, IoWriteStorage::Retained, effect);
 	}
 	void mapIoDmaReadPrefix(u32 address, IoDmaReadPrefixHandler handler);
 	void mapIoDmaWritePrefix(u32 address, IoDmaWritePrefixHandler handler);
 	void mapIoDmaMappedWritePrefix(u32 address, IoDmaMappedWritePrefixHandler handler);
 	bool mappedWriteReady(uint32_t addr);
+	bool tryWriteLocalIoWord(u32 address, u32 value);
 	u32 firstBlockedMappedWordWrite(uint32_t addr, uint32_t wordCount);
 	uint32_t readBusFaultSequence() const { return m_busFaultSequence; }
 
@@ -214,7 +219,8 @@ private:
 	mutable uint32_t m_busFaultAddr = 0;
 	mutable uint32_t m_busFaultAccess = 0;
 	mutable uint32_t m_busFaultSequence = 0;
-	std::array<IoWriteStorage, IO_SLOT_COUNT> m_ioWriteStorage{};
+	struct IoWritePolicy { IoWriteStorage storage : 1; IoWriteEffect effect : 1; };
+	std::array<IoWritePolicy, IO_SLOT_COUNT> m_ioWritePolicy{};
 
 	bool isIoRegionRange(uint32_t addr, size_t length) const;
 	int ioAlignedSlot(uint32_t addr) const {

@@ -197,8 +197,8 @@ void Memory::mapIoRead(uint32_t addr, void* context, IoReadHandler handler) {
 	if (auto* prefix = findIoDmaPrefix(static_cast<int>(slot))) prefix->read = nullptr;
 }
 
-void Memory::mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler, IoWriteStorage storage) {
-	m_ioWriteStorage[(addr - IO_BASE) / IO_WORD_SIZE] = storage;
+void Memory::mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler, IoWriteStorage storage, IoWriteEffect effect) {
+	m_ioWritePolicy[(addr - IO_BASE) / IO_WORD_SIZE] = IoWritePolicy{.storage = storage, .effect = effect};
 	IoWriteBinding& binding = m_ioWriteHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)];
 	binding.context = context;
 	binding.handler = handler;
@@ -238,6 +238,15 @@ void Memory::mapIoDmaMappedWritePrefix(u32 address, IoDmaMappedWritePrefixHandle
 	const int slot = static_cast<int>((address - IO_BASE) / IO_WORD_SIZE);
 	if (auto* prefix = findIoDmaPrefix(slot)) prefix->mappedWrite = handler;
 	else if (handler != nullptr) m_ioDmaPrefixes.push_back({.slot = slot, .mappedWrite = handler});
+}
+
+bool Memory::tryWriteLocalIoWord(u32 address, u32 value) {
+	// The native aperture and word-alignment checks precede this leaf.
+	const u32 slot = (address - IO_BASE) / IO_WORD_SIZE;
+	if (m_ioWritePolicy[slot].effect != IoWriteEffect::DeviceLocal || m_ioWriteHandlers[slot].ready
+		|| kReadOnlyIoSlots[slot]) return false;
+	writeIoSlot(slot, address, value, BUS_ACCESS_WRITE_WORD, MAPPED_BUS_MASTER_CPU);
+	return true;
 }
 
 bool Memory::mappedWriteReady(uint32_t addr) {
@@ -323,7 +332,7 @@ void Memory::writeIoSlot(int slot, uint32_t addr, u32 value, u32 faultAccess, Ma
 	const IoWriteBinding& binding = m_ioWriteHandlers[slotIndex];
 	if ((busSignals & MAPPED_BUS_MASTER_DMA) != 0u && binding.ready != nullptr
 		&& !binding.ready(binding.context, addr, busSignals)) return;
-	if (m_ioWriteStorage[slotIndex] == IoWriteStorage::Retained) m_ioSlots[slotIndex] = value;
+	if (m_ioWritePolicy[slotIndex].storage == IoWriteStorage::Retained) m_ioSlots[slotIndex] = value;
 	if (binding.handler != nullptr) {
 		binding.handler(binding.context, addr, value, busSignals);
 	}

@@ -2,6 +2,7 @@
 
 #include <bit>
 #include <limits>
+#include "machine/cpu/cpu.h"
 #include "machine/cpu/gc_heap.h"
 #include "machine/cpu/gc_object.h"
 #include "machine/cpu/jit/sljit/table_access.h"
@@ -14,6 +15,9 @@
 
 namespace bmsx {
 namespace {
+u32 SLJIT_FUNC writeLocalIoWord(Memory* memory, u32 address, u32 value) {
+	return memory->tryWriteLocalIoWord(address, value);
+}
 template <u32 Link>
 void SLJIT_FUNC writeNativeBarrier(GcHeap* heap, u32 address, u32 word, u32 tag) {
 	const auto value = valueFromTag(static_cast<ValueTag>(tag), word);
@@ -161,6 +165,23 @@ void NativeLowering::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {
 	}
 }
 
+void NativeLowering::emitLocalIoWrites() {
+	auto* c = m_compiler;
+	for (const auto& store : m_workspace.localIoWrites) {
+		sljit_set_label(store.io, sljit_emit_label(c));
+		m_cache.setState(store.registers);
+		if (store.checkTag) fault(guardTag(store.slot, ValueTag::Integer, SLJIT_R2), *store.bus, store.registers);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R0, 0);
+		emitPayload(store.slot, SLJIT_R2);
+		m_cache.spillCall(false, 0, NativeRegisterCache::FrameSlots::Unchanged);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&m_bindings.cpu->memory()));
+		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3(32, P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&writeLocalIoWord));
+		m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::Unchanged);
+		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), *store.bus, store.registers);
+		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), store.resume);
+	}
+}
+
 void NativeLowering::emitRomReads() {
 	auto* c = m_compiler;
 	for (const auto& read : m_workspace.romReads) {
@@ -220,8 +241,9 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 	}
 	// Keep ordinary RAM on the fall-through path. MMIO always goes to the bus.
 	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
-	fault(sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
-		IO_SLOT_COUNT * IO_WORD_SIZE), slow, m_cache.state());
+	auto* io = sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, IO_SLOT_COUNT * IO_WORD_SIZE);
+	const bool localIo = m_bindings.cpu && !load && !words && (kind == MemoryAccessKind::Word || kind == MemoryAccessKind::U32LE);
+	if (!localIo) fault(io, slow, m_cache.state());
 	// The public bus stops at the live heap floor, not at physical RAM's end.
 	// The allocator never publishes a floor below DYNAMIC_RAM_BASE, and even
 	// the full word-count lane cannot borrow when subtracted from that floor.
@@ -345,5 +367,7 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 				sljit_emit_op1(m_compiler, width == 2 ? SLJIT_REV32_U16 : SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
 		sljit_emit_op1(m_compiler, move, SLJIT_MEM1(SLJIT_R2), 0, SLJIT_R0, 0);
 	}
+	if (localIo) m_workspace.localIoWrites.push_back({io, sljit_emit_label(m_compiler), &slow, m_cache.state(),
+		access.slot, access.store == NativeWordSource::Dynamic});
 }
 } // namespace bmsx

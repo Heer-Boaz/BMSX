@@ -114,6 +114,7 @@ private:
 	// R2 is the host address; result is a word in R0 or external binary64 in FR0.
 	void emitBackingLoad(MemoryAccessKind kind, bool unaligned);
 	void emitRomReads();
+	void emitLocalIoWrites();
 
 	sljit_compiler* m_compiler;
 	NativeRegisterCache m_cache;
@@ -144,6 +145,14 @@ private:
 		SemanticExit target;
 		State state;
 		sljit_label* label = nullptr;
+	};
+	struct LocalIoWrite {
+		sljit_jump* io;
+		sljit_label* resume;
+		NativeBlockExitSite* bus;
+		State registers;
+		int slot;
+		bool checkTag;
 	};
 	struct RomRead {
 		sljit_jump* ramMiss;
@@ -193,6 +202,7 @@ struct NativeLowering::Workspace {
 	std::vector<ColdExit> coldExits;
 	std::vector<Branch> coldBranches;
 	std::vector<RomRead> romReads;
+	std::vector<LocalIoWrite> localIoWrites;
 	std::vector<StoreBarrier> storeBarriers;
 	std::vector<SingleStringRead> singleStringReads;
 	std::vector<StringStoreMiss> stringStoreMisses;

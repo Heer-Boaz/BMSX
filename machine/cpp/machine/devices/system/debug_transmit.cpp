@@ -7,8 +7,8 @@ namespace bmsx {
 
 SystemDebugTransmit::SystemDebugTransmit(Memory& memory)
 	: m_memory(memory) {
-	memory.mapIoWrite<&SystemDebugTransmit::writeChar>(IO_SYS_PRINT_CHAR, *this);
-	memory.mapIoWrite<&SystemDebugTransmit::flushLine>(IO_SYS_PRINT_FLUSH, *this);
+	memory.mapIoWrite<&SystemDebugTransmit::writeChar>(IO_SYS_PRINT_CHAR, *this, IoWriteEffect::DeviceLocal);
+	memory.mapIoWrite<&SystemDebugTransmit::flushLine>(IO_SYS_PRINT_FLUSH, *this, IoWriteEffect::DeviceLocal);
 }
 
 void SystemDebugTransmit::reset() {

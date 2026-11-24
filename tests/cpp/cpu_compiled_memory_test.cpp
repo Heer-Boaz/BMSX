@@ -6,6 +6,7 @@
 #include "machine/cpu/table.h"
 #include "machine/cpu/thread_record.h"
 #include "machine/devices/irq/controller.h"
+#include "machine/devices/system/debug_transmit.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
@@ -356,6 +357,45 @@ void coldExitsPreserveAddressOperands() {
 	}
 }
 
+void localIoStoresFollowLivePortBindings() {
+	for (const auto kind : {MemoryAccessKind::Word, MemoryAccessKind::U32LE}) {
+		CpuMachine machine(memoryLoop(OpCode::STORE_MEM, kind));
+		auto& cpu = machine.cpu;
+		SystemDebugTransmit output(machine.memory);
+		auto& frame = *cpu.activeThread()->currentFrame;
+		cpu.prepareSystemNativeCode();
+		const u32 pc = machine.rom.textAddress;
+		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM)];
+		const auto write = [&](u32 port, u32 word) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+			frame.registers.set(0, valueInteger(word));
+			frame.registers.set(1, valueInteger(port));
+			require(cpu.runUntilDepth(0, grant) == RunResult::Yielded && cpu.readFramePc(0) == pc + 3 * INSTRUCTION_BYTES
+				&& cpu.instructionBudgetRemaining == 0, "a local device store consumes its exact grant");
+		};
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto& exits = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::WriteMemory)].entries;
+		const auto before = exits;
+#endif
+		write(IO_SYS_PRINT_CHAR, 0x20acu);
+		require(output.availableByteCount() == 0 && machine.memory.readMappedWord(IO_SYS_PRINT_CHAR) == 0x20acu,
+			"an unflushed local store updates the live device and bus latch");
+		write(IO_SYS_PRINT_FLUSH, 7u);
+		require(output.availableByteCount() == 4 && output.readByte() == 0xe2 && output.readByte() == 0x82
+			&& output.readByte() == 0xac && output.readByte() == '\n', "the device publishes the original UTF-8 bytes once");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		require(exits == before, "device-local stores do not enter CPU write dispatch");
+#endif
+		u32 calls = 0;
+		machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, &calls, [](void* p, u32, u32, MappedBusSignals) { ++*static_cast<u32*>(p); });
+		write(IO_SYS_PRINT_CHAR, 65);
+		require(calls == 1 && output.captureState().charWord == 0x20acu, "already compiled code honors a replacement device binding");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		require(exits == before + 1, "a replacement machine-effect handler uses published CPU state");
+#endif
+	}
+}
+
 void resumedStoreRetainsDecodedOperation() {
 	for (const bool scalar : {false, true}) {
 		const auto image = memoryLoop(OpCode::STORE_MEM, MemoryAccessKind::Word);
@@ -372,7 +412,7 @@ void resumedStoreRetainsDecodedOperation() {
 		struct Device { bool ready = false; std::vector<u32> writes; } device;
 		machine.memory.mapIoWrite(port, &device, [](void* context, u32, u32 word, MappedBusSignals) {
 			static_cast<Device*>(context)->writes.push_back(word);
-		});
+		}, IoWriteStorage::Retained, IoWriteEffect::DeviceLocal);
 		machine.memory.mapIoWriteReady(port, [](void* context, u32, MappedBusSignals) { return static_cast<Device*>(context)->ready; });
 		frame.registers.set(1, valueInteger(port));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], code);
@@ -784,6 +824,7 @@ int main() {
 		generatedMemoryBoundaries();
 		wideTransfersRespectThePublicRamBoundary();
 		generatedBusOrdering();
+		localIoStoresFollowLivePortBindings();
 		resumedStoreRetainsDecodedOperation();
 		externalTakeoverFlushesOnlyTheUnacceptedStore();
 		generatedMemoryMayRetireExecutingSource();
