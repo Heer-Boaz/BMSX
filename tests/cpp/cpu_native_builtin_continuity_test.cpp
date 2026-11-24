@@ -26,7 +26,7 @@ namespace {
 using namespace bmsx;
 void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
 
-test::Blua32TestRom image(int results, int arguments, bool wide = false) {
+test::Blua32TestRom image(int results, int arguments, bool wide = false, bool withRomString = false) {
 	test::Blua32TestImage source; source.text.resize(4 * MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(source.text, 0, static_cast<u8>(OpCode::MOV), 7, 15, 0);
 	writeInstruction(source.text, 1, static_cast<u8>(OpCode::MOV), 0, 12, 0);
@@ -48,6 +48,7 @@ test::Blua32TestRom image(int results, int arguments, bool wide = false) {
 		{.firstWord=2 * DECODED_PAGE_WORDS, .wordCount=1, .maxStack=2},
 		{.firstWord=3 * DECODED_PAGE_WORDS, .wordCount=2, .maxStack=16}};
 	source.exceptionFunctionIndex = source.irqFunctionIndex = 2;
+	if (withRomString) source.constants = {std::string("rom-byte: \xff")};
 	return test::encodeBlua32TestRom(RomImageDomain::System, source);
 }
 
@@ -190,6 +191,7 @@ void completedDebtDoesNotRunTheSuccessor() {
 	for (const int results : {0,1,2}) {
 		const auto rom=image(results,3);Machine machine(rom,false);machine.seed(BuiltinFunctionId::StringByte);
 		auto* frame=machine.cpu.rootThread()->currentFrame;
+		frame->registers.set(14, valueInteger(3));
 		const int prefix=4*BASE_CYCLES[static_cast<u8>(OpCode::MOV)]+BASE_CYCLES[static_cast<u8>(OpCode::CALL)];
 		NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame, .remainingCycles=prefix,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 		const auto* caller=preparedCaller(machine);const auto* exit=caller->run(frame->registers, state);const int receiving=results==1?0:1;
@@ -233,6 +235,7 @@ void inlineInterruptStop(bool nmi, bool wide) {
 		machine.memory.writeMappedU32LE(IO_IRQ_MASK,1);
 	}
 	machine.seed(BuiltinFunctionId::StringByte);auto* frame=machine.cpu.rootThread()->currentFrame;
+	frame->registers.set(14, valueInteger(3));
 	auto* caller=preparedCaller(machine);auto* owner=frame->executionImage;auto* page=owner->nativeCodeLookup->find(rom.textAddress,0);
 	const auto& gate=nativeBlockGate();
 	NativeCpuRunState run{.state={.constants=owner->constPool,.frame=frame, .remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)),
@@ -273,6 +276,59 @@ void unboundStandaloneStillReturnsCall() {
 		"default standalone bindings do not acquire a CPU or execute builtin CALLs");
 }
 #endif
+
+void integerStringByteAtGrantBoundary() {
+	struct Case {
+		int position;
+		Value expected;
+		int results = 2;
+		bool romBacked = false;
+		bool wide = false;
+	};
+	const Case cases[]{
+		{1, valueInteger(65)},
+		{3, valueInteger(169), 0}, // Open result count.
+		{8, valueInteger(0)}, // Embedded NUL is a byte, not nil.
+		{9, valueInteger(90)},
+		{3, valueInteger(169), 1}, // Discard the result.
+		{10, valueNil()},
+		{0, valueNil(), 0, false, true},
+		{-1, valueNil()},
+		{std::numeric_limits<i32>::min(), valueNil()},
+		{11, valueInteger(255), 2, true},
+	};
+	for (const auto& row : cases) {
+		const auto rom = image(row.results, 3, row.wide, row.romBacked);
+		Machine native(rom, false), scalar(rom, true);
+		for (auto* machine : {&native, &scalar}) {
+			machine->seed(BuiltinFunctionId::StringByte);
+			auto& frame = *machine->cpu.rootThread()->currentFrame;
+			if (row.romBacked) frame.registers.set(13, frame.executionImage->constPool.get(0));
+			require(isRamStringId(asStringId(frame.registers.get(13))) != row.romBacked,
+				"the String argument uses the intended RAM or ROM record");
+			frame.registers.set(14, valueInteger(row.position));
+		}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		preparedCaller(native);
+#endif
+		const int receiving = row.results == 1 ? 0 : 1;
+		const int movCycles = BASE_CYCLES[static_cast<u8>(OpCode::MOV)];
+		const int grant = 4 * movCycles + BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 2 + receiving;
+		const u32 successor = rom.textAddress + (row.wide ? 6u : 5u) * INSTRUCTION_BYTES;
+		const Value result = receiving ? row.expected : valueBuiltinFunction(BuiltinFunctionId::StringByte);
+		test::runCpuParity(native.cpu, scalar.cpu, grant);
+		parity(native, scalar);
+		require(native.cpu.readFramePc(0) == successor && native.cpu.instructionBudgetRemaining == 0
+			&& native.cpu.rootThread()->currentFrame->readWindow(bmsx::FrameField::Top) == receiving
+			&& native.cpu.readFrameRegister(0, 0) == result && native.cpu.readFrameRegister(0, 8) == valueInteger(-8),
+			"StringByte commits its result and exact top at the exhausted grant, before its successor");
+		test::runCpuParity(native.cpu, scalar.cpu, movCycles);
+		parity(native, scalar);
+		require(native.cpu.readFramePc(0) == successor + INSTRUCTION_BYTES
+			&& native.cpu.instructionBudgetRemaining == 0 && native.cpu.readFrameRegister(0, 8) == result,
+			"the next grant starts at the committed successor without re-executing StringByte");
+	}
+}
 
 void grantsAndRestore() {
 	for (const bool wide : {false,true}) for (const int results : {0,1,2}) for (int grant=0;grant<=24;++grant) {
@@ -376,6 +432,7 @@ int main() {
 		rawDeclines();completedDebtDoesNotRunTheSuccessor();mutableCalleesUseTheirCurrentIdentity();unboundStandaloneStillReturnsCall();
 		for(const bool nmi:{false,true})for(const bool wide:{false,true})inlineInterruptStop(nmi,wide);
 #endif
+		integerStringByteAtGrantBoundary();
 		grantsAndRestore();
 		tableCopyReturnsThroughAllocatingCall();
 		tableCopyRereadsWeakEntriesAfterAdmission();

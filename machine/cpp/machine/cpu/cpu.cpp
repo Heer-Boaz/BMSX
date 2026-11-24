@@ -166,11 +166,10 @@ void CPU::reset() {
 	m_haltedUntilIrqFrameDepth = -1;
 	m_haltedUntilIrqThreadAddress = 0u;
 	m_interruptEventPending = false;
-	m_memoryWriteBlocked = false;
+	m_runSignals = 0u;
 	m_memoryWriteBlockedAddress = 0u;
 	m_pendingMemory.kind = PendingMemoryKind::None;
 	m_pendingAllocation = {};
-	m_hardHalted = false;
 	m_programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_SYSTEM_ENTRY;
 	m_cop0Words[COP0_CAUSE] = 0u;
@@ -183,8 +182,6 @@ void CPU::reset() {
 	m_nmiReturnBadAddressWord = 0u;
 	m_nmiReturnLuaFaultReasonWord = 0u;
 	m_nmiReturnExceptionDomainWord = 0u;
-	m_nonMaskableInterruptPending = false;
-	m_yieldRequested = false;
 	m_staticClosuresByAddress.clear();
 	m_memory.clearMappedPageWriteWatches();
 	if (!setProgramHeapFloor(systemBoot.staticEnd)) { hardHalt(); return; }
@@ -860,12 +857,10 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_haltedUntilIrqFrameDepth = -1;
 	m_haltedUntilIrqThreadAddress = 0u;
 	m_interruptEventPending = false;
-	m_memoryWriteBlocked = false;
+	m_runSignals &= ~(RunMemoryBlocked | RunHardHalted | RunYield);
 	m_memoryWriteBlockedAddress = 0u;
 	m_pendingMemory.kind = PendingMemoryKind::None;
 	m_pendingAllocation = {};
-	m_hardHalted = false;
-	m_yieldRequested = false;
 	u32 closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
 	pushFrame(closure, {}, {});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -891,7 +886,7 @@ void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
 	args = BuiltinArgsView(m_localRoots.data() + m_localRoots.size() - args.size(), args.size());
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	m_completionThreadAddress = m_activeThread->address;
-	m_yieldRequested = false;
+	m_runSignals &= ~RunYield;
 	pushFrame(closure, args, {}, FRAME_COMPLETION);
 }
 
@@ -930,12 +925,12 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 			state.globalMapBases[index] = m_executionImagesByDomain[index]->globalMapBase;
 		}
 	}
-	state.hardHalted = m_hardHalted;
+	state.hardHalted = (m_runSignals & RunHardHalted) != 0u;
 	state.lastExecutionDomainId = m_lastExecutionDomainId;
 	state.lastPc = lastPc;
 	state.haltedUntilIrqFrameDepth = m_haltedUntilIrqFrameDepth;
 	state.interruptEventPending = m_interruptEventPending;
-	state.memoryWriteBlocked = m_memoryWriteBlocked;
+	state.memoryWriteBlocked = (m_runSignals & RunMemoryBlocked) != 0u;
 	state.memoryWriteBlockedAddress = m_memoryWriteBlockedAddress;
 	state.pendingMemory = m_pendingMemory;
 	state.pendingAllocation = m_pendingAllocation;
@@ -950,8 +945,8 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 	state.nmiReturnBadAddressWord = m_nmiReturnBadAddressWord;
 	state.nmiReturnLuaFaultReasonWord = m_nmiReturnLuaFaultReasonWord;
 	state.nmiReturnExceptionDomainWord = m_nmiReturnExceptionDomainWord;
-	state.nonMaskableInterruptPending = m_nonMaskableInterruptPending;
-	state.yieldRequested = m_yieldRequested;
+	state.nonMaskableInterruptPending = (m_runSignals & RunNonMaskableInterrupt) != 0u;
+	state.yieldRequested = (m_runSignals & RunYield) != 0u;
 	return state;
 }
 
@@ -1002,7 +997,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_activeThread = &bindThread(state.activeThreadAddress);
 	if (auto* current = m_activeThread->currentFrame) current->executionImage = m_activeExecutionImage;
 	m_completionThreadAddress = state.completionThreadAddress;
-	m_threadSwitchRequested = false;
 
 	m_stringIndexTable = state.stringIndexTable;
 	m_completionValues.reserveCapacity(state.completionValues.size());
@@ -1013,7 +1007,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_haltedUntilIrqFrameDepth = state.haltedUntilIrqFrameDepth;
 	m_haltedUntilIrqThreadAddress = state.haltedUntilIrqThreadAddress;
 	m_interruptEventPending = state.interruptEventPending;
-	m_memoryWriteBlocked = state.memoryWriteBlocked;
 	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
 	m_pendingMemory = state.pendingMemory;
 	m_pendingAllocation = state.pendingAllocation;
@@ -1028,13 +1021,14 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_nmiReturnBadAddressWord = state.nmiReturnBadAddressWord;
 	m_nmiReturnLuaFaultReasonWord = state.nmiReturnLuaFaultReasonWord;
 	m_nmiReturnExceptionDomainWord = state.nmiReturnExceptionDomainWord;
-	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
-	m_yieldRequested = state.yieldRequested;
-	m_hardHalted = state.hardHalted;
+	m_runSignals = (state.hardHalted ? RunHardHalted : 0u)
+		| (state.memoryWriteBlocked ? RunMemoryBlocked : 0u)
+		| (state.nonMaskableInterruptPending ? RunNonMaskableInterrupt : 0u)
+		| (state.yieldRequested ? RunYield : 0u);
 }
 
 void CPU::requestYield() {
-	m_yieldRequested = true;
+	m_runSignals |= RunYield;
 }
 
 void CPU::haltUntilIrq() {
@@ -1044,14 +1038,13 @@ void CPU::haltUntilIrq() {
 	}
 	m_haltedUntilIrqFrameDepth = static_cast<int>(m_activeThread->frameDepth());
 	m_haltedUntilIrqThreadAddress = m_activeThread->address;
-	m_yieldRequested = false;
+	m_runSignals &= ~RunYield;
 }
 
 void CPU::hardHalt() {
-	m_hardHalted = true;
+	m_runSignals = (m_runSignals & ~RunYield) | RunHardHalted;
 	m_haltedUntilIrqFrameDepth = -1;
 	m_haltedUntilIrqThreadAddress = 0u;
-	m_yieldRequested = false;
 }
 
 
@@ -1246,8 +1239,7 @@ void CPU::returnToResumer(BuiltinArgsView values, bool succeeded) {
 	}
 	caller.placeResultTop(result, count);
 	thread->setResumer(0u);
-	m_threadSwitchRequested = true;
-	m_yieldRequested = true;
+	m_runSignals |= RunThreadSwitch | RunYield;
 	instructionBudgetRemaining -= count;
 }
 
@@ -1294,8 +1286,7 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResu
 		if (supplied.frame) writeReturnValuesFromRegisters(frame, target->transferResult(), *supplied.frame, supplied.base, supplied.count);
 		else writeReturnValues(frame, target->transferResult(), supplied.values());
 	}
-	m_threadSwitchRequested = true;
-	m_yieldRequested = true;
+	m_runSignals |= RunThreadSwitch | RunYield;
 }
 
 bool CPU::handleThreadError(Value error) {
@@ -1636,13 +1627,13 @@ void CPU::runBuiltinError(BuiltinArgsView args) {
 void CPU::clearHaltUntilIrq() {
 	m_haltedUntilIrqFrameDepth = -1;
 	m_haltedUntilIrqThreadAddress = 0u;
-	m_yieldRequested = false;
+	m_runSignals &= ~RunYield;
 }
 
 void CPU::requestNonMaskableInterrupt() {
 	// NMI is an edge latch and can preempt the supervisor IRQ root reached
 	// immediately before a system-request fence.
-	m_nonMaskableInterruptPending = true;
+	m_runSignals |= RunNonMaskableInterrupt;
 }
 
 bool CPU::canAcceptMaskableInterruptLine() const {
@@ -1651,7 +1642,7 @@ bool CPU::canAcceptMaskableInterruptLine() const {
 }
 
 AcceptedInterruptKind CPU::peekPendingInterrupt() const {
-	if (m_nonMaskableInterruptPending) {
+	if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
 		return AcceptedInterruptKind::NonMaskable;
 	}
 	if (canAcceptMaskableInterruptLine()) {
@@ -1662,8 +1653,8 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 
 bool CPU::enterPendingInterrupt() {
 	if (m_pendingMemory.kind != PendingMemoryKind::None || allocationParked()) return false;
-	if (m_nonMaskableInterruptPending) {
-		m_nonMaskableInterruptPending = false;
+	if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
+		m_runSignals &= ~RunNonMaskableInterrupt;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
 		const u32 returnCauseWord = m_cop0Words[COP0_CAUSE];
 		const u32 returnEpcWord = m_cop0Words[COP0_EPC];
@@ -1782,20 +1773,19 @@ CallFrame* CPU::enterException(
 void CPU::clearHaltAfterAcceptedInterrupt() {
 	m_haltedUntilIrqFrameDepth = -1;
 	m_haltedUntilIrqThreadAddress = 0u;
-	m_yieldRequested = false;
+	m_runSignals &= ~RunYield;
 }
 
 void CPU::blockMappedWrite(CallFrame& frame, uint32_t address) {
 	frame.writeControl(FrameField::Pc, m_currentInstructionPc);
-	m_memoryWriteBlocked = true;
+	m_runSignals = (m_runSignals & ~RunYield) | RunMemoryBlocked;
 	m_memoryWriteBlockedAddress = address;
-	m_yieldRequested = false;
 }
 
 void CPU::resumeMemoryWrite(uint32_t address) {
 	// A device-ready edge releases only the instruction stalled on that raw MMIO target.
-	if (m_memoryWriteBlocked && m_memoryWriteBlockedAddress == address) {
-		m_memoryWriteBlocked = false;
+	if ((m_runSignals & RunMemoryBlocked) != 0u && m_memoryWriteBlockedAddress == address) {
+		m_runSignals &= ~RunMemoryBlocked;
 	}
 }
 
@@ -1806,10 +1796,10 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 
 inline CPU::GrantAdmission CPU::admitGrant(const Thread& thread, int targetDepth, int remainingCycles) const {
 	const int depth = static_cast<int>(thread.frameDepth());
-	if (depth <= targetDepth || m_hardHalted || m_memoryWriteBlocked
+	if (depth <= targetDepth || (m_runSignals & (RunHardHalted | RunMemoryBlocked)) != 0u
 		|| (m_haltedUntilIrqThreadAddress == thread.address && m_haltedUntilIrqFrameDepth == depth))
 		return GrantAdmission::Halted;
-	if (m_yieldRequested) return GrantAdmission::RequestedYield;
+	if ((m_runSignals & RunYield) != 0u) return GrantAdmission::RequestedYield;
 	if (remainingCycles <= 0) return GrantAdmission::OutOfCycles;
 	return GrantAdmission::Admitted;
 }
@@ -1884,7 +1874,7 @@ RunResult CPU::runLoop(
 				case GrantAdmission::Admitted: break;
 				case GrantAdmission::Halted: return RunResult::Halted;
 				case GrantAdmission::RequestedYield:
-					m_yieldRequested = false;
+					m_runSignals &= ~RunYield;
 					return RunResult::Yielded;
 				case GrantAdmission::OutOfCycles: return RunResult::Yielded;
 			}
@@ -1893,7 +1883,7 @@ RunResult CPU::runLoop(
 			if (image && image != m_activeExecutionImage) latchActiveExecutionImage(image->executionDomainId, image);
 			registers = frame->registers;
 			if constexpr (Instrumented) {
-				if (m_nonMaskableInterruptPending) {
+				if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
 					enterPendingInterrupt();
 					continue;
 				}
@@ -1913,7 +1903,7 @@ RunResult CPU::runLoop(
 					continue;
 				}
 			} else {
-				if (m_nonMaskableInterruptPending
+				if ((m_runSignals & RunNonMaskableInterrupt) != 0u
 					|| ((m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 						&& m_irqController.hasAssertedMaskableInterruptLine())) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -2368,9 +2358,8 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 	if (target == 0u) target = m_rootView.address;
 	for (;;) {
 		const RunResult result = m_runUntilDepthEntry(*this, m_activeThread->address == target ? targetDepth : 0, instructionBudget);
-		if (!m_threadSwitchRequested) return result;
-		m_threadSwitchRequested = false;
-		m_yieldRequested = false;
+		if ((m_runSignals & RunThreadSwitch) == 0u) return result;
+		m_runSignals &= ~(RunThreadSwitch | RunYield);
 		instructionBudget = instructionBudgetRemaining;
 		if (instructionBudget <= 0) return RunResult::Yielded;
 	}
@@ -2865,7 +2854,7 @@ void CPU::clearCallStack() {
 	}
 	m_rootView.setStatus(ThreadStatus::Running);
 	m_completionThreadAddress = m_rootView.address;
-	m_threadSwitchRequested = false;
+	m_runSignals &= ~RunThreadSwitch;
 }
 
 

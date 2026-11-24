@@ -245,13 +245,13 @@ public:
 		return m_haltedUntilIrqThreadAddress == m_activeThread->address
 			&& m_haltedUntilIrqFrameDepth == static_cast<int>(m_activeThread->frameDepth());
 	}
-	bool isMemoryWriteBlocked() const { return m_memoryWriteBlocked; }
+	bool isMemoryWriteBlocked() const { return (m_runSignals & RunMemoryBlocked) != 0u; }
 	uint32_t stalledMemoryWriteAddress() const { return m_memoryWriteBlockedAddress; }
 	void resumeMemoryWrite(uint32_t address);
-	void abortStalledMemoryWrite() { m_memoryWriteBlocked = false; m_pendingMemory.kind = PendingMemoryKind::None; }
+	void abortStalledMemoryWrite() { m_runSignals &= ~RunMemoryBlocked; m_pendingMemory.kind = PendingMemoryKind::None; }
 	bool isUserMode() const { return (m_cop0Words[COP0_STATUS] & CPU_STATUS_USER_MODE_CURRENT) != 0u; }
 	void requestNonMaskableInterrupt();
-	void cancelNonMaskableInterrupt() { m_nonMaskableInterruptPending = false; }
+	void cancelNonMaskableInterrupt() { m_runSignals &= ~RunNonMaskableInterrupt; }
 	bool canAcceptMaskableInterruptLine() const;
 	AcceptedInterruptKind peekPendingInterrupt() const;
 	bool enterPendingInterrupt();
@@ -563,14 +563,18 @@ private:
 	int m_haltedUntilIrqFrameDepth = -1;
 	u32 m_haltedUntilIrqThreadAddress = 0u;
 	bool m_interruptEventPending = false;
-	bool m_memoryWriteBlocked = false;
+	// One set of live CPU stop signals for the interpreter and native grants.
+	enum RunSignal : u32 {
+		RunMemoryBlocked = 1u << 0, RunHardHalted = 1u << 1, RunNonMaskableInterrupt = 1u << 2,
+		RunYield = 1u << 3, RunThreadSwitch = 1u << 4,
+	};
+	u32 m_runSignals = 0u;
 	uint32_t m_memoryWriteBlockedAddress = 0;
 	PendingMemoryOperation m_pendingMemory;
 	PendingAllocation m_pendingAllocation;
 	CpuRunKind m_runKind = CpuRunKind::Direct;
 	u32 m_currentInstructionPc = 0;
 	ExecutionDomainId m_lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
-	bool m_hardHalted = false;
 	std::array<u32, COP0_EXEC + 1u> m_cop0Words{};
 	u32 m_exceptionDomainWord = 0;
 	u32 m_nmiReturnCauseWord = 0;
@@ -578,10 +582,7 @@ private:
 	u32 m_nmiReturnBadAddressWord = 0;
 	u32 m_nmiReturnLuaFaultReasonWord = 0;
 	u32 m_nmiReturnExceptionDomainWord = 0;
-	bool m_nonMaskableInterruptPending = false;
 	u32 m_systemExceptionFunctionAddress = 0;
-	bool m_yieldRequested = false;
-	bool m_threadSwitchRequested = false;
 	bool m_activeStackRebound = false;
 	Thread* m_activeThread = nullptr;
 	u32 m_completionThreadAddress = 0u;

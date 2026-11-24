@@ -71,10 +71,7 @@ NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState
 	if (receiving) registers.set(base, result);
 	state->registerTop = base + receiving;
 	state->remainingCycles -= static_cast<int>(function.cycleBase) + receiving;
-	if (state->remainingCycles <= 0 || cpu->m_hardHalted || cpu->m_yieldRequested || cpu->m_threadSwitchRequested
-		|| cpu->m_memoryWriteBlocked || cpu->m_nonMaskableInterruptPending
-		|| ((cpu->m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
-			&& cpu->m_irqController.hasAssertedMaskableInterruptLine())
+	if (state->remainingCycles <= 0 || cpu->m_runSignals || cpu->canAcceptMaskableInterruptLine()
 		|| cpu->retargetsHaltedFrame(*frame.thread, static_cast<int>(state->frameDepth)))
 		return NativeBuiltinCallOutcome::CompletedStop;
 	return NativeBuiltinCallOutcome::CompletedResume;
@@ -464,10 +461,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			BMSX_UNREACHABLE();
 		}
 		if (transition == NativeBlockTransition::Redispatch
-			&& (cpu.allocationParked() || cpu.m_hardHalted || cpu.m_yieldRequested || cpu.m_threadSwitchRequested || cpu.m_memoryWriteBlocked
-				|| cpu.m_nonMaskableInterruptPending
-				|| ((cpu.m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
-					&& cpu.m_irqController.hasAssertedMaskableInterruptLine()))) {
+			&& (cpu.allocationParked() || cpu.m_runSignals || cpu.canAcceptMaskableInterruptLine())) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 			++gateProfile.returns;
 #endif

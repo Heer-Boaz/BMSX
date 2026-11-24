@@ -24,6 +24,7 @@ public:
 	void leaveSupervisorContext();
 
 private:
+	friend class NativeLowering; // Generated CPU polls the live interrupt line.
 	static u32 onFlagsReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
 	static void onAckWriteThunk(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
 	static u32 onMaskReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
