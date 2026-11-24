@@ -35,7 +35,7 @@ struct NativeBlockAbi {
 	static constexpr int scratchFloats =
 		3 + std::min(4 - savedFloats, SLJIT_NUMBER_OF_FLOAT_REGISTERS - SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS - 3);
 	static constexpr int floatCount = savedFloats + scratchFloats - 3;
-	static constexpr int registerCacheCapacity = wordCount + floatCount;
+	static constexpr int registerCacheCapacity = wordCount + 4 + floatCount;
 	static constexpr int scratches = (4 + scratchWords) | SLJIT_ENTER_FLOAT(scratchFloats);
 	static constexpr int saveds = (fixedSaved + savedWords) | SLJIT_ENTER_FLOAT(savedFloats);
 	static constexpr int fieldAddressOffset = registerCacheCapacity * sizeof(u32);
@@ -44,9 +44,10 @@ struct NativeBlockAbi {
 	static constexpr int stackBytes = helperResultOffset + 64;
 	static constexpr int signature = SLJIT_ARGS3(P, P, P, P);
 	static constexpr auto wordRegisters = [] {
-		std::array<NativeRegisterHost, wordCount> result{};
+		std::array<NativeRegisterHost, wordCount + 4> result{};
 		for (int i = 0; i < wordCount; ++i)
 			result[i] = {i < savedWords ? SLJIT_S(fixedSaved + i) : SLJIT_R(4 + i - savedWords), i < savedWords};
+		for (int i = 0; i < 4; ++i) result[wordCount + i] = {SLJIT_R(i), false};
 		return result;
 	}();
 	// A transfer can call C++ after materializing the register cache. Keep

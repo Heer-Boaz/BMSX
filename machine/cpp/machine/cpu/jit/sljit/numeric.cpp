@@ -200,6 +200,8 @@ void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const Na
 		emitFloatCanonicalization(target.reg);
 		return;
 	}
+	const bool shift = op == OpCode::SHL || op == OpCode::SHR;
+	const auto shiftCount = shift ? m_cache.acquireScratch() : 0;
 	const auto a = readTyped(arithmetic.left, ValueTag::Integer, SLJIT_R0);
 	if (unary) {
 		const auto target = m_cache.write(arithmetic.result, ValueTag::Integer);
@@ -211,16 +213,16 @@ void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const Na
 	}
 	const auto b = readTyped(arithmetic.right, ValueTag::Integer, SLJIT_R1);
 	const auto target = m_cache.write(arithmetic.result, ValueTag::Integer);
-	if (op == OpCode::SHL || op == OpCode::SHR) {
+	if (shift) {
 		auto* negative = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS | SLJIT_32, b.reg, 0, SLJIT_IMM, 0);
 		auto* zeroPositive = sljit_emit_cmp(m_compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, b.reg, 0, SLJIT_IMM, 32);
 		sljit_emit_op2(m_compiler, op == OpCode::SHL ? SLJIT_SHL32 : SLJIT_LSHR32, target.reg, 0, a.reg, 0, b.reg, 0);
 		auto* positiveDone = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		sljit_set_label(negative, sljit_emit_label(m_compiler));
 		auto* zeroNegative = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, b.reg, 0, SLJIT_IMM, -32);
-		sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_IMM, 0, b.reg, 0);
+		sljit_emit_op2(m_compiler, SLJIT_SUB32, shiftCount, 0, SLJIT_IMM, 0, b.reg, 0);
 		sljit_emit_op2(
-			m_compiler, op == OpCode::SHL ? SLJIT_LSHR32 : SLJIT_SHL32, target.reg, 0, a.reg, 0, SLJIT_R2, 0);
+			m_compiler, op == OpCode::SHL ? SLJIT_LSHR32 : SLJIT_SHL32, target.reg, 0, a.reg, 0, shiftCount, 0);
 		auto* negativeDone = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		auto* zero = sljit_emit_label(m_compiler);
 		sljit_set_label(zeroPositive, zero);

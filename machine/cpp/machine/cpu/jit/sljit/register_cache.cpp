@@ -1,5 +1,7 @@
 #include "machine/cpu/jit/sljit/register_cache.h"
 
+#include "machine/cpu/jit/sljit/word_constraints.h"
+
 #include <algorithm>
 #include <cassert>
 
@@ -22,6 +24,48 @@ int NativeRegisterCache::find(int guest, bool tagLane) const {
 
 void NativeRegisterCache::beginInstruction() {
 	m_pinned.fill(false);
+}
+
+void NativeRegisterCache::reserveScratch(unsigned fixed) {
+	const unsigned changed = m_scratchMask ^ fixed;
+	if (!changed) return;
+	const int first = static_cast<int>(m_integers.size()) - 4;
+	for (int i = 0; i < 4; ++i) {
+		if (!(changed & (1u << i))) continue;
+		const int slot = first + i;
+		m_reserved[slot] = (fixed & (1u << i)) != 0;
+		auto& value = m_state[slot];
+		if (m_reserved[slot] && value.guest >= 0) {
+			// Rename into an unoccupied GPR before spilling a fixed-register conflict.
+			int to = 0;
+			while (to < first + 4 && (m_state[to].guest >= 0 ||
+				(to >= first && (fixed & (1u << (to - first)))))) ++to;
+			if (to < first + 4) {
+				movePayload(to, host(slot).reg, false);
+				m_state[to] = value;
+			} else store(slot, value, value.dirty, value.immediateTagDirty);
+			value = {};
+		}
+	}
+	m_scratchMask = fixed;
+}
+
+void NativeRegisterCache::applyConstraints(const NativeWordConstraints& constraints) {
+	m_constraints = &constraints;
+	reserveScratch(constraints.fixed);
+}
+
+sljit_s32 NativeRegisterCache::acquireScratch() {
+	const int first = static_cast<int>(m_integers.size()) - 4;
+	int selected = -1;
+	for (int i = 0; i < 4; ++i) {
+		if (m_scratchMask & (1u << i)) continue;
+		if (m_state[first + i].guest < 0) { selected = i; break; }
+		if (selected < 0 || m_state[first + i].nextUse > m_state[first + selected].nextUse) selected = i;
+	}
+	assert(selected >= 0);
+	reserveScratch(m_scratchMask | (1u << selected));
+	return host(first + selected).reg;
 }
 
 sljit_jump* NativeRegisterCache::guard(int guest, ValueTag tag, sljit_s32 scratch) const {
@@ -95,14 +139,24 @@ int NativeRegisterCache::allocate(int guest, std::optional<ValueTag> tag, bool d
 	const int first = tag == ValueTag::Float ? static_cast<int>(m_integers.size()) : 0;
 	const int end = tag == ValueTag::Float ? static_cast<int>(m_integers.size() + m_floats.size())
 										   : static_cast<int>(m_integers.size());
+	const int shared = static_cast<int>(m_integers.size()) - 4;
 	int selected = -1;
+	int longest = -1;
 	for (int slot = first; slot < end; ++slot) {
-		if (m_pinned[slot])
+		if (m_pinned[slot] || m_reserved[slot])
 			continue;
 		if (m_state[slot].guest < 0) {
-			selected = slot;
-			break;
+			// V8's free-until choice: never evict for a free register, and
+			// prefer the free location with the latest fixed-use intersection.
+			if (!m_constraints || floating(slot) || slot < shared) {
+				selected = slot;
+				break;
+			}
+			const int available = m_constraints->freeUntil[slot - shared];
+			if (available > longest) { selected = slot; longest = available; }
+			continue;
 		}
+		if (longest >= 0) continue;
 		if (selected < 0 || m_state[slot].nextUse > m_state[selected].nextUse ||
 			(m_state[slot].nextUse == m_state[selected].nextUse &&
 				(m_state[slot].dirty < m_state[selected].dirty ||
@@ -113,11 +167,13 @@ int NativeRegisterCache::allocate(int guest, std::optional<ValueTag> tag, bool d
 	// Three-operand instructions can reuse a pinned input as the destination.
 	// Reads never evict another input still needed by this instruction.
 	if (selected < 0 && destination) {
-		for (int slot = first; slot < end; ++slot)
+		for (int slot = first; slot < end; ++slot) {
+			if (m_reserved[slot]) continue;
 			if (selected < 0 || m_state[slot].nextUse > m_state[selected].nextUse ||
 				(m_state[slot].nextUse == m_state[selected].nextUse &&
 					m_state[slot].lastUse < m_state[selected].lastUse))
 				selected = slot;
+		}
 	}
 	assert(selected >= 0);
 	const auto& old = m_state[selected];

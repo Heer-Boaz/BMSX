@@ -9,6 +9,7 @@ void NativeLowering::beginBlock(size_t index) {
 	m_current = index;
 	m_instruction = 0;
 	m_uses.beginBlock(m_ir[index].instructions);
+	planWordConstraints(m_ir[index].instructions, m_constraints);
 	m_terminal = false;
 	auto& entry = m_workspace.entries[index];
 	entry.planned = true;

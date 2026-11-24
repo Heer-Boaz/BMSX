@@ -220,6 +220,7 @@ void NativeLowering::lower(const NativeInstruction& source) {
 		return;
 	m_cache.beginInstruction([&](int guest) { return m_uses.nextUse(m_instruction, guest); });
 
+	m_cache.applyConstraints(m_constraints[m_instruction - 1]);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	// The translator selects the events; here only emit the actual counter.
 	constexpr std::array<sljit_sw, 6> counters{
@@ -235,12 +236,16 @@ void NativeLowering::lower(const NativeInstruction& source) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state), offset, SLJIT_R0, 0);
 	}
 #endif
-	std::visit([&](const auto& op) { lowerOperation(op, source); }, source.operation);
+	std::visit([&](const auto& op) {
+		lowerOperation(op, source);
+	}, source.operation);
 }
 
 void NativeLowering::endBlock() {
-	if (!m_terminal)
+	if (!m_terminal) {
+		m_cache.reserveScratch(0xf);
 		emitExit(m_blocks[m_current]->terminal);
+	}
 }
 void* NativeLowering::finish(size_t& codeBytes) {
 	// Adjacent native bodies share a fallthrough. Only external callers

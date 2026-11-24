@@ -40,12 +40,13 @@ void NativeLowering::lowerOperation(const NativeGlobalAccess& access, const Nati
 		return;
 	}
 	const auto demand = m_uses.nextOperandDemand(m_instruction, access.slot);
+	const auto address = m_cache.acquireScratch();
 	const auto result = m_cache.writeRaw(access.slot, demand);
-	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), words);
+	sljit_emit_op1(c, SLJIT_MOV_P, address, 0, SLJIT_MEM1(NativeBlockAbi::state), words);
 	constexpr auto loadWord = std::endian::native == std::endian::big ? SLJIT_REV32 : SLJIT_MOV32;
-	sljit_emit_op1(c, loadWord, result.word, result.wordOffset, SLJIT_MEM1(SLJIT_R2), wordOffset);
-	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), tags);
-	sljit_emit_op1(c, SLJIT_MOV_U8, result.tag, result.tagOffset, SLJIT_MEM1(SLJIT_R2), tagOffset);
+	sljit_emit_op1(c, loadWord, result.word, result.wordOffset, SLJIT_MEM1(address), wordOffset);
+	sljit_emit_op1(c, SLJIT_MOV_P, address, 0, SLJIT_MEM1(NativeBlockAbi::state), tags);
+	sljit_emit_op1(c, SLJIT_MOV_U8, result.tag, result.tagOffset, SLJIT_MEM1(address), tagOffset);
 }
 void NativeLowering::lowerOperation(const NativePoolRead& read, const NativeInstruction& instruction) {
 	auto& invalid = *sideExit(instruction.slow);

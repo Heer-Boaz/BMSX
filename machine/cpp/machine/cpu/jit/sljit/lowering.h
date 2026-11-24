@@ -1,5 +1,7 @@
 #pragma once
 
+#include "machine/cpu/jit/sljit/word_constraints.h"
+
 #include <array>
 #include <optional>
 #include <vector>
@@ -175,6 +177,7 @@ private:
 		int value;
 		std::optional<u16> keyIndex;
 	};
+	std::array<NativeWordConstraints, NATIVE_BLOCK_MAX_INSTRUCTIONS> m_constraints;
 	std::array<u8, NATIVE_BLOCK_MAX_INSTRUCTIONS> m_fieldAddressSpills;
 	size_t m_current = 0, m_instruction = 0;
 	bool m_terminal = false;

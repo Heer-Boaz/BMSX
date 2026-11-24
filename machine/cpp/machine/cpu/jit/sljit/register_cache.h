@@ -12,6 +12,8 @@
 
 namespace bmsx {
 
+struct NativeWordConstraints;
+
 struct NativeRegisterHost {
 	sljit_s32 reg;
 	bool calleeSaved;
@@ -41,6 +43,11 @@ public:
 		std::span<const NativeRegisterHost> integers, std::span<const NativeRegisterHost> floats);
 
 	void beginInstruction();
+	// The shared bank is the trailing R0..R3 in the region ABI. A fixed use
+	// displaces only its binding; an unconstrained temp prefers a free register.
+	void reserveScratch(unsigned fixed);
+	void applyConstraints(const NativeWordConstraints& constraints);
+	sljit_s32 acquireScratch();
 	// A read's tag must have been proved by the entry/admission or instruction.
 	// guard emits only the missing proof, not a repeated check of a known tag.
 	sljit_jump* guard(int guest, ValueTag tag, sljit_s32 scratch) const;
@@ -89,7 +96,9 @@ private:
 	sljit_s32 m_words, m_tags;
 	std::span<const NativeRegisterHost> m_integers, m_floats;
 	State m_state{};
-	std::array<bool, capacity> m_pinned{};
+	std::array<bool, capacity> m_pinned{}, m_reserved{};
+	unsigned m_scratchMask = 0;
+	const NativeWordConstraints* m_constraints = nullptr;
 	u32 m_clock = 0;
 };
 

@@ -1,4 +1,5 @@
 #include "machine/cpu/jit/sljit/register_cache.h"
+#include "machine/cpu/jit/sljit/word_constraints.h"
 #include "machine/cpu/value_slots.h"
 
 #include <algorithm>
@@ -22,10 +23,10 @@ constexpr int savedFloats=0;
 struct Code {
 	sljit_compiler* compiler=sljit_create_compiler(nullptr);
 	void* executable=nullptr;
-	Code() {
+	explicit Code(int savedWords = 4) {
 		if (!compiler) throw std::bad_alloc();
 		require(sljit_emit_enter(compiler,0,SLJIT_ARGS2(32,P,P),4 | SLJIT_ENTER_FLOAT(5),
-			4 | SLJIT_ENTER_FLOAT(savedFloats),NativeRegisterCache::capacity*sizeof(u32))==SLJIT_SUCCESS,"native cache test ABI");
+			savedWords | SLJIT_ENTER_FLOAT(savedFloats),NativeRegisterCache::capacity*sizeof(u32))==SLJIT_SUCCESS,"native cache test ABI");
 	}
 	~Code() { if (executable) sljit_free_code(executable,nullptr); sljit_free_compiler(compiler); }
 	void result(u32 word) { sljit_emit_return(compiler,SLJIT_MOV32,SLJIT_IMM,word); }
@@ -337,6 +338,55 @@ void tagUseWithRecoverableWord() {
 	}
 }
 
+void sharedWordsSurviveTemporaryUse() {
+#if SLJIT_NUMBER_OF_SAVED_REGISTERS >= 6 && SLJIT_NUMBER_OF_REGISTERS >= 10
+	Code code(6);
+	constexpr NativeRegisterHost bank[]{{SLJIT_S2,true},{SLJIT_S3,true},{SLJIT_S4,true},{SLJIT_S5,true},
+		{SLJIT_R0,false},{SLJIT_R1,false},{SLJIT_R2,false},{SLJIT_R3,false}};
+	NativeRegisterCache cache(code.compiler, SLJIT_S0, SLJIT_S1, bank, floats);
+	// R0 is needed by the following Float literal; R1 remains available.
+	const std::array rows{NativeInstruction(NativeLiteral{4, valueInteger(104)}),
+		NativeInstruction(NativeLiteral{8, valueFloat(0.5f)})};
+	std::array<NativeWordConstraints, 2> constraints;
+	planWordConstraints(rows, constraints);
+	cache.applyConstraints(constraints[0]);
+	for (int i = 0; i < 8; ++i) {
+		cache.beginInstruction();
+		const auto value = cache.write(i, ValueTag::Integer);
+		const int location = i < 4 ? i : i == 7 ? 4 : i + 1;
+		require(value.reg == bank[location].reg, "the shared register needed soonest is assigned last");
+		sljit_emit_op1(code.compiler, SLJIT_MOV32, value.reg, 0, SLJIT_IMM, 100 + i);
+	}
+	cache.beginInstruction([](int guest) { return guest == 7 ? 20 : 1; });
+	cache.reserveScratch(1u << 2);
+	const auto temporary = cache.acquireScratch();
+	require(temporary == SLJIT_R0 && cache.binding(4) && cache.binding(6),
+		"the address temporary takes the distant use, not another still-live fixed or shared operand");
+	for (auto reg : {temporary, SLJIT_R2})
+		sljit_emit_op1(code.compiler, SLJIT_MOV32, reg, 0, SLJIT_IMM, 0xdead);
+	cache.reserveScratch(0);
+	cache.beginInstruction();
+	const auto a = cache.read(7, ValueTag::Integer);
+	const auto b = cache.read(5, ValueTag::Integer);
+	const auto sum = cache.write(0, ValueTag::Integer);
+	sljit_emit_op2(code.compiler, SLJIT_ADD32, sum.reg, 0, a.reg, 0, b.reg, 0);
+	cache.publishRange(1, 2);
+	cache.discardRange(1, 2); // S3 becomes available for the dirty R1 value.
+	cache.beginInstruction();
+	cache.reserveScratch(1u << 1);
+	require(cache.state()[1].guest == 4 && cache.state()[1].dirty,
+		"a fixed use renames the still-unpublished value into a free register");
+	sljit_emit_op1(code.compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, 0xbeef);
+	cache.publish();
+	code.result(0);
+	code.finish();
+	ValueSlots slots(8);
+	require(code.run(slots) == 0 && slots.get(0) == valueInteger(212), "clobbered shared inputs reload their own values");
+	for (int i = 1; i < 8; ++i)
+		require(slots.get(i) == valueInteger(100 + i), "the final exit reconstructs every shared and saved value");
+#endif
+}
+
 void loopEdges() {
 	Code code;NativeRegisterCache cache(code.compiler,SLJIT_S0,SLJIT_S1,std::span(integers).first(2),floats);
 	cache.beginInstruction();cache.read(0,ValueTag::Integer);cache.read(1,ValueTag::Integer);
@@ -371,7 +421,7 @@ int main() {
 	try {
 		wordsFloatsAndReferences();arithmeticAndBitMoves();futureUseAndPublication();
 		aliasEvictionAndRetagging();preciseGuardSnapshots();
-		selectiveCallSpills();parallelTransfers();untypedTransfersPublishTagsButKeepPayloads();dynamicValueAcrossEdge();tagUseWithRecoverableWord();loopEdges();
+		selectiveCallSpills();parallelTransfers();untypedTransfersPublishTagsButKeepPayloads();dynamicValueAcrossEdge();tagUseWithRecoverableWord();sharedWordsSurviveTemporaryUse();loopEdges();
 		std::cout<<"Native word/F32 cache, precise exits, selective spills and typed loop transfers passed\n";
 		return 0;
 	} catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}
