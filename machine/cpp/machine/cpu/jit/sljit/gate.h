@@ -24,6 +24,7 @@ public:
 	void* publishSegment;
 	void* leaveSegment;
 	void* stringReadProbe;
+	void* indexReadProbe;
 	void* tableIteratorScan;
 };
 sljit_label* emitPendingReturn(sljit_compiler*, sljit_label* bindWindow, sljit_label* semanticReturn);

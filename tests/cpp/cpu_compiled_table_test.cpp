@@ -1706,6 +1706,7 @@ void nativeDynamicHashProbeReturnsLiveValuesWithinTheGrant() {
 		receiver.setInteger(INT32_MIN, indexed);
 		receiver.setInteger(INT32_MAX, valueInteger(-73));
 		receiver.set(valueTable(key.address()), identity);
+		receiver.setInteger(static_cast<i32>(key.address()), valueInteger(203));
 		require(receiver.arrayCapacity() == 2 && receiver.hashSlots() == 4 && key.address() != otherKey.address(),
 			"the signed-extreme keys are outside the array and the two empty tables have distinct identities");
 		auto& frame = *cpu.activeThread()->currentFrame;
@@ -1761,6 +1762,7 @@ void nativeDynamicHashProbeReturnsLiveValuesWithinTheGrant() {
 		read(valueInteger(INT32_MAX), valueInteger(-73), 0, successor);
 		read(valueInteger(INT32_MAX - 1), valueNil(), 0, successor);
 		read(key, identity, 0, successor);
+		read(valueInteger(static_cast<i32>(valuePayload(key))), valueInteger(203), 0, successor);
 		read(otherKey, valueNil(), 0, successor);
 	}
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -1778,7 +1780,7 @@ void nativeDynamicHashProbeReturnsLiveValuesWithinTheGrant() {
 	read(valueInteger(INT32_MIN), indexed);
 	read(otherKey, valueInteger(107), TABLE_INDEX_VISIT_CYCLES);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	require(readExits == originalExits + 2, "a metatable leaves both own and inherited dynamic hash reads to their semantic owner");
+	require(readExits == originalExits + 1, "a live own hash entry stays native; only the inherited miss needs __index");
 #endif
 #endif
 }

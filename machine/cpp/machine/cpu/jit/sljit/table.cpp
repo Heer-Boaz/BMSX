@@ -23,13 +23,6 @@ static_assert(hashOperand + sizeof(Value) <= NativeBlockAbi::stackBytes);
 static_assert(alignof(NativeHintedFieldWrite) == alignof(Value));
 static_assert(hashOperand + sizeof(NativeHintedFieldWrite) <= NativeBlockAbi::stackBytes);
 
-// The caller has established that no metatable can observe this read.
-void SLJIT_FUNC readNativeTableHash(GcHeap* heap, u32 receiverAddress, Value* keyAndResult) noexcept {
-	const TableRecord table(*heap, receiverAddress);
-	const Value key = *keyAndResult;
-	*keyAndResult = valueIsInteger(key) ? table.getInteger(asInteger(key)) : table.get(key);
-}
-
 u32 SLJIT_FUNC assignNativeTableIdentity(GcHeap* heap, u32 receiverAddress, u32 keyAddress, const Value* value) noexcept {
 	return TableRecord(*heap, receiverAddress).tryAssignIdentityHash(valueTable(keyAddress), *value);
 }
@@ -183,22 +176,17 @@ sljit_jump* NativeLowering::emitArrayStore(int value, NativeStorePlan plan, Nati
 	return outside;
 }
 
-// The index arms share this returning raw hash lookup. Untyped arms
-// already have the checked key tag in R2; typed arms only load its payload.
-void NativeLowering::emitOwnIndexRead(int base, NativeBlockExitSite& exit, std::optional<ValueTag> keyTag) {
+// The Integer and Table arms share a generated tagged-key chain walk.
+// Only a missing own mapping can make __index observable.
+void NativeLowering::emitOwnIndexRead(NativeBlockExitSite& exit, std::optional<ValueTag> keyTag) {
 	auto* c = m_compiler;
-	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R0),
-		static_cast<u32>(TableHeader::Metatable), SLJIT_IMM, 0), exit, m_cache.state());
 	if (keyTag)
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, static_cast<u8>(*keyTag));
-	emitValueTransportStore(c, SLJIT_SP, hashOperand, SLJIT_R3, SLJIT_R2);
-	emitPayload(base, SLJIT_R1);
-	m_cache.spillCall(false, 0);
-	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-	sljit_get_local_base(c, SLJIT_R2, 0, hashOperand);
-	sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&readNativeTableHash));
-	m_cache.spillCall(true, 0);
-	emitValueTransportLoad(c, SLJIT_SP, hashOperand, SLJIT_R2, SLJIT_R3);
+	sljit_emit_ijump(c, SLJIT_FAST_CALL, SLJIT_IMM, reinterpret_cast<sljit_sw>(nativeBlockGate().indexReadProbe));
+	auto* own = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Nil));
+	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R0),
+		static_cast<u32>(TableHeader::Metatable), SLJIT_IMM, 0), exit, m_cache.state());
+	sljit_set_label(own, sljit_emit_label(c));
 }
 
 // The key payload is in R3; the receiver precedes the Value transport
@@ -505,7 +493,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 				return;
 			}
 			emitPayload(key, SLJIT_R3);
-			if (hashLeaf) emitOwnIndexRead(base, exit, ValueTag::Table);
+			if (hashLeaf) emitOwnIndexRead(exit, ValueTag::Table);
 			else emitOwnIndexStore(value, exit, NativeHashStore::Identity);
 			break;
 		}
@@ -555,9 +543,9 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 				fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 					SLJIT_IMM, static_cast<u8>(ValueTag::Table)), exit, m_cache.state());
 				sljit_set_label(integer, sljit_emit_label(c));
-				emitOwnIndexRead(base, exit);
+				emitOwnIndexRead(exit);
 				hashJoined = sljit_emit_jump(c, SLJIT_JUMP);
-			} else emitOwnIndexRead(base, exit, ValueTag::Integer);
+			} else emitOwnIndexRead(exit, ValueTag::Integer);
 		} else if (dynamic && identityStore) {
 			sljit_set_label(otherKey, sljit_emit_label(c));
 			fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,

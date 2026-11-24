@@ -12,7 +12,8 @@ private:
 		u32 receiver;
 		union { u32 keyWord, arrayLength; };
 		u32 wordOffset, tagOffset;
-		sljit_sw path, returnAddress;
+		union { sljit_sw path; u32 keyTag; };
+		sljit_sw returnAddress;
 	};
 	static constexpr auto begin = (NativeBlockAbi::helperResultOffset + alignof(Layout) - 1)
 		& ~(alignof(Layout) - 1);
@@ -24,6 +25,7 @@ public:
 	static constexpr auto wordOffset = begin + offsetof(Layout, wordOffset);
 	static constexpr auto tagOffset = begin + offsetof(Layout, tagOffset);
 	static constexpr auto path = begin + offsetof(Layout, path);
+	static constexpr auto keyTag = begin + offsetof(Layout, keyTag);
 	static constexpr auto returnAddress = begin + offsetof(Layout, returnAddress);
 };
 
@@ -39,6 +41,10 @@ void emitHashValueOffsets(sljit_compiler*);
 // R2/R3 hold the value and R1 is the own hash slot or -1 for inheritance.
 // A nil tag declines. The caller owns the visit charge and slot feedback.
 sljit_label* emitStringReadProbe(sljit_compiler*);
+
+// R0 = receiver header, R2 = Integer or Table tag, R3 = key payload.
+// Preserves R0 and returns the raw value in R2/R3, or nil on absence.
+sljit_label* emitIndexReadProbe(sljit_compiler*);
 
 struct NativeTableIteratorScratch {
 private:

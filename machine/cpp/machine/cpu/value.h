@@ -106,13 +106,15 @@ struct ValueEq {
 	bool operator()(Value left, Value right) const { return canonicalTableKey(left) == canonicalTableKey(right); }
 };
 // A table operation normalizes its key before selecting the array or hash.
+inline constexpr int TABLE_HASH_ROTATE = 14, TABLE_HASH_SHIFT = 13;
+inline constexpr u32 TABLE_HASH_MULTIPLIER = 0x85ebca6bu;
 inline uint32_t hashCanonicalTableKey(Value value) {
 	switch (valueTag(value)) {
 		case ValueTag::Integer:
 		case ValueTag::Float:
 		case ValueTag::Table: case ValueTag::Closure: case ValueTag::Thread: {
 			uint32_t bits = valuePayload(value);
-			bits ^= std::rotl(bits, 14); bits *= 0x85ebca6bu; bits ^= bits >> 13;
+			bits ^= std::rotl(bits, TABLE_HASH_ROTATE); bits *= TABLE_HASH_MULTIPLIER; bits ^= bits >> TABLE_HASH_SHIFT;
 			return bits;
 		}
 		case ValueTag::Nil: return 0x27d4eb2du;
