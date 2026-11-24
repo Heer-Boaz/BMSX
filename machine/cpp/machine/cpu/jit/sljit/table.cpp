@@ -79,8 +79,7 @@ void NativeLowering::emitTableValueWrite(int value) {
 	emitRawLoad(value, SLJIT_R2, SLJIT_R3);
 	for (bool word : {true, false}) {
 		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), word ? wordOffset : tagOffset);
-		NativeBlockAbi::emitRamAddress(c, SLJIT_R1, SLJIT_R1);
-		sljit_emit_op1(c, word ? SLJIT_MOV32 : SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R1), 0,
+		sljit_emit_op1(c, word ? SLJIT_MOV32 : SLJIT_MOV_U8, NativeBlockAbi::ramOperand(c, SLJIT_R1, SLJIT_R1), 0,
 			word ? SLJIT_R2 : SLJIT_R3, 0);
 	}
 }
@@ -92,10 +91,8 @@ sljit_jump* NativeLowering::emitArrayRead(NativeBlockExitSite& exit, bool routeO
 	if (!routeOutside) fault(outside, exit, m_cache.state());
 	emitTableSlotOffset(c, SLJIT_R2, true);
 	emitTableSlotOffset(c, SLJIT_R3, false);
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R3, SLJIT_R3);
-	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, NativeBlockAbi::ramOperand(c, SLJIT_R2, SLJIT_R2), 0);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R3, 0, NativeBlockAbi::ramOperand(c, SLJIT_R3, SLJIT_R3), 0);
 	auto* own = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::Nil));
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
@@ -118,8 +115,7 @@ sljit_jump* NativeLowering::emitArrayStore(int value, NativeStorePlan plan, Nati
 	// element, consult the shared metatable's current proof before leaving.
 	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Metatable));
 	auto* noMetatable = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R3, SLJIT_R3);
-	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), 0);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R3, 0, NativeBlockAbi::ramOperand(c, SLJIT_R3, SLJIT_R3), 0);
 	auto* own = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Nil));
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
@@ -229,13 +225,11 @@ std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExi
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array));
 	emitTableSlotOffset(c, SLJIT_R3, false);
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
-	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, NativeBlockAbi::ramOperand(c, SLJIT_R2, SLJIT_R3), 0);
 	checks[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::String));
 	emitTableSlotOffset(c, SLJIT_R1, true);
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R1);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, NativeBlockAbi::ramOperand(c, SLJIT_R2, SLJIT_R1), 0);
 	checks[2] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 		fixedKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP), fixedKey ? static_cast<sljit_sw>(*fixedKey) : keyWord);
 
@@ -249,16 +243,14 @@ std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExi
 
 sljit_jump* NativeLowering::emitStringValueTag(bool load, std::optional<ValueTag> resultTag) {
 	auto* c = m_compiler;
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
 	const sljit_s32 valueTagReg = load ? SLJIT_R3 : SLJIT_R2;
-	sljit_emit_op1(c, SLJIT_MOV_U8, valueTagReg, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	sljit_emit_op1(c, SLJIT_MOV_U8, valueTagReg, 0, NativeBlockAbi::ramOperand(c, SLJIT_R2, SLJIT_R3), 0);
 	return sljit_emit_cmp(c, (resultTag ? SLJIT_NOT_EQUAL : SLJIT_EQUAL) | SLJIT_32,
 		valueTagReg, 0, SLJIT_IMM, static_cast<u8>(resultTag.value_or(ValueTag::Nil)));
 }
 
 void NativeLowering::emitStringPayload() {
-	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, NativeBlockAbi::ramOperand(m_compiler, SLJIT_R2, SLJIT_R1), 0);
 }
 
 void NativeLowering::emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBlockExitSite& exit, std::optional<ValueTag> resultTag) {

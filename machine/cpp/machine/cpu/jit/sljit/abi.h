@@ -19,8 +19,11 @@ inline constexpr int nativeWordCacheRegisters(int fixedSaved) {
 // the remaining banks own raw payloads.
 struct NativeBlockAbi {
 	// destination = host address of the main-RAM byte offset in `offset`.
-	// The only way generated code reaches the RAM base.
+	// Materialize only when the pointer itself is required.
 	static void emitRamAddress(sljit_compiler*, sljit_s32 destination, sljit_s32 offset);
+	// SLJIT memory operand for a single access at a mirrored RAM offset.
+	// scratch may alias offset; non-pinned targets then materialize the address.
+	static sljit_s32 ramOperand(sljit_compiler*, sljit_s32 scratch, sljit_s32 offset);
 	static constexpr sljit_s32 words = SLJIT_S0, tags = SLJIT_S1, state = SLJIT_S2, budget = SLJIT_S3;
 	// The main-RAM base is pinned in S4 only where the value cache keeps all of
 	// its word registers (x86-64, AArch64). ARMv7 reads it from the run state at
