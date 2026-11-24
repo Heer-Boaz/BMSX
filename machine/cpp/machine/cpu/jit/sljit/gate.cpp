@@ -117,6 +117,7 @@ NativeBlockGate::NativeBlockGate() {
 	auto* stringProbe = emitStringReadProbe(compiler);
 	auto* ownSlot = emitOwnStringSlotProbe(compiler);
 	auto* indexProbe = emitIndexReadProbe(compiler);
+	auto* lengthProbe = emitTableLengthProbe(compiler);
 	auto* iteratorScan = emitTableIteratorScan(compiler);
 	entry = sljit_generate_code(compiler, 0, nullptr);
 	if (!entry)
@@ -132,6 +133,7 @@ NativeBlockGate::NativeBlockGate() {
 	stringReadProbe = reinterpret_cast<void*>(sljit_get_label_addr(stringProbe));
 	ownStringSlotProbe = reinterpret_cast<void*>(sljit_get_label_addr(ownSlot));
 	indexReadProbe = reinterpret_cast<void*>(sljit_get_label_addr(indexProbe));
+	tableLengthProbe = reinterpret_cast<void*>(sljit_get_label_addr(lengthProbe));
 	tableIteratorScan = reinterpret_cast<void*>(sljit_get_label_addr(iteratorScan));
 #if defined(BMSX_NATIVE_PERF_MAP)
 	auto start = static_cast<sljit_uw>(SLJIT_FUNC_ADDR(entry));
@@ -144,7 +146,7 @@ NativeBlockGate::NativeBlockGate() {
 		sljit_get_label_abs_addr(retEntry), sljit_get_label_abs_addr(pendingReturn), sljit_get_label_abs_addr(fixedResidentCall),
 		sljit_get_label_abs_addr(publish), sljit_get_label_abs_addr(leave),
 		sljit_get_label_abs_addr(stringProbe), sljit_get_label_abs_addr(ownSlot),
-		sljit_get_label_abs_addr(indexProbe), sljit_get_label_abs_addr(iteratorScan),
+		sljit_get_label_abs_addr(indexProbe), sljit_get_label_abs_addr(lengthProbe), sljit_get_label_abs_addr(iteratorScan),
 		start + sljit_get_generated_code_size(compiler)
 	};
 	constexpr std::array names{
@@ -152,7 +154,7 @@ NativeBlockGate::NativeBlockGate() {
 		"bmsx_native_gate_cold_dispatch", "bmsx_native_gate_declined", "bmsx_native_gate_call",
 		"bmsx_native_gate_ret", "bmsx_native_gate_pending_return", "bmsx_native_gate_fixed_resident_call",
 		"bmsx_native_gate_publish", "bmsx_native_gate_leave", "bmsx_native_string_read_probe", "bmsx_native_own_string_slot_probe",
-		"bmsx_native_index_read_probe", "bmsx_native_table_iterator_scan"
+		"bmsx_native_index_read_probe", "bmsx_native_table_length_probe", "bmsx_native_table_iterator_scan"
 	};
 	static_assert(boundaries.size() == names.size() + 1);
 	std::array<NativePerfMapRange, names.size()> ranges;

@@ -26,6 +26,7 @@ public:
 	void* stringReadProbe;
 	void* ownStringSlotProbe;
 	void* indexReadProbe;
+	void* tableLengthProbe;
 	void* tableIteratorScan;
 };
 sljit_label* emitPendingReturn(sljit_compiler*, sljit_label* bindWindow, sljit_label* semanticReturn);

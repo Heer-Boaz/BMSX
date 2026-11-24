@@ -196,6 +196,45 @@ sljit_label* emitIndexReadProbe(sljit_compiler* c) {
 	return entry;
 }
 
+sljit_label* emitTableLengthProbe(sljit_compiler* c) {
+	auto* entry = sljit_emit_label(c);
+	constexpr auto ret = NativeTableScratch::returnAddress;
+	sljit_emit_op_dst(c, SLJIT_FAST_ENTER, SLJIT_MEM1(SLJIT_SP), ret);
+	emitTableHeaderAddress(c);
+	auto* metatable = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R0), meta, SLJIT_IMM, 0);
+	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Length));
+	auto* outside = sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), array);
+
+	// Bind the tag at array[hint]. Neither a cached length nor an empty
+	// array proves a boundary by itself: integer keys can live in the hash.
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0),
+		static_cast<u32>(TableHeader::Storage), SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R3, SLJIT_R3);
+	sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), hash, SLJIT_IMM, 3);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), array);
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
+	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
+	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R1, 0);
+	auto* zero = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), -1);
+	auto* hole = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, nilTag);
+	sljit_set_label(zero, sljit_emit_label(c));
+	auto* inside = sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), array);
+	auto* hashTail = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R0), hash, SLJIT_IMM, 0);
+	auto* end = sljit_emit_jump(c, SLJIT_JUMP);
+	sljit_set_label(inside, sljit_emit_label(c));
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), 0);
+	auto* extends = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, nilTag);
+	sljit_set_label(end, sljit_emit_label(c));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_R1, 0);
+	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), ret);
+	auto* search = sljit_emit_label(c);
+	for (auto* miss : {metatable, outside, hole, hashTail, extends}) sljit_set_label(miss, search);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, -1);
+	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), ret);
+	return entry;
+}
+
 sljit_label* emitTableIteratorScan(sljit_compiler* c) {
 	using Scratch = NativeTableIteratorScratch;
 	auto* entry = sljit_emit_label(c);

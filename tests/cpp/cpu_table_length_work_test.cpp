@@ -16,10 +16,10 @@ namespace {
 using namespace bmsx;
 using namespace std::string_view_literals;
 void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
-enum class Kind { Empty, Ascending, Descending, Stale, Sparse, Terminal };
+enum class Kind { Empty, Ascending, Descending, Stale, Sparse, Terminal, ArrayEnd, HashTail };
 struct Case { Kind kind; i32 boundary; };
 constexpr std::array cases{Case{Kind::Empty,0}, Case{Kind::Ascending,64}, Case{Kind::Descending,4096},
-	Case{Kind::Stale,0}, Case{Kind::Sparse,1 << 30}, Case{Kind::Terminal,INT32_MAX}};
+	Case{Kind::Stale,0}, Case{Kind::Sparse,1 << 30}, Case{Kind::Terminal,INT32_MAX}, Case{Kind::ArrayEnd,2}, Case{Kind::HashTail,3}};
 struct Program {
 	test::Blua32TestImage image;
 	std::array<u32,6> starts;
@@ -47,6 +47,14 @@ struct Machine {
 	}
 };
 TableRecord makeTable(CPU& cpu,Kind kind) {
+	if (kind == Kind::ArrayEnd || kind == Kind::HashTail) {
+		auto table = cpu.createTable(2, kind == Kind::HashTail ? 4 : 0);
+		if (kind == Kind::HashTail) table.setInteger(3, valueBool(false));
+		table.setInteger(1, valueBool(false));
+		table.setInteger(2, valueBool(false));
+		require(table.lengthHint() == 2, "both array ends start with the same hint");
+		return table;
+	}
 	auto table=cpu.createTable(kind==Kind::Sparse||kind==Kind::Terminal?0:4096,128);
 	if (kind==Kind::Ascending) for (int k=1;k<=64;++k) table.setInteger(k,valueBool(false));
 	if (kind==Kind::Descending||kind==Kind::Stale) {

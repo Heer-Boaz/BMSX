@@ -28,7 +28,6 @@ inline unsigned fixedWordUses(const NativeMove& op) {
 // Helper argument/result registers are distinct from the call clobbers
 // handled by spillCall. The unused argument registers remain allocatable.
 inline unsigned fixedWordUses(const NativeComparison&) { return 0x7; }
-inline unsigned fixedWordUses(const NativeLength&) { return 0x7; }
 inline unsigned fixedWordUses(const NativeVararg& op) { return op.requested == 0 ? 0 : 0x7; }
 inline unsigned fixedWordUses(const NativeClearSlots& op) { return op.count == 0 ? 0 : 0x7; }
 inline unsigned fixedWordUses(const NativeGlobalAccess& op) {

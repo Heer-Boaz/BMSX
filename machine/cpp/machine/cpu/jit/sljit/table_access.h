@@ -52,6 +52,9 @@ sljit_label* emitOwnStringSlotProbe(sljit_compiler*);
 // Preserves R0 and returns the raw value in R2/R3, or nil on absence.
 sljit_label* emitIndexReadProbe(sljit_compiler*);
 
+// R0 = table address. Returns its verified array boundary or -1 for semantic lookup.
+sljit_label* emitTableLengthProbe(sljit_compiler*);
+
 struct NativeTableIteratorScratch {
 private:
 	struct Layout {
