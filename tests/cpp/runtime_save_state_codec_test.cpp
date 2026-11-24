@@ -87,9 +87,9 @@ int main() {
 	const auto decoded = decodeRuntimeSaveState(expected, state.ram.size(), machine.gxGpu.vramBytes.size());
 	require(encodeRuntimeSaveState(decoded) == expected, "every stored bit round-trips through typed state");
 	require(decoded.cpuState.pendingAllocation == state.cpuState.pendingAllocation, "a parked creation stores its exact WIDE instruction and capacities");
-	state.cpuState.pendingAllocation.operands = PendingTableAssignment{0x12345678u, valueInteger(-1), valueFloatBits(0xffc12345u)};
+	state.cpuState.pendingAllocation.operands = PendingTableAssignment{0x12345678u, 9u, valueString(0x298u), valueFloatBits(0xffc12345u)};
 	const auto assignment = decodeRuntimeSaveState(encodeRuntimeSaveState(state), state.ram.size(), machine.gxGpu.vramBytes.size());
-	require(assignment.cpuState.pendingAllocation == state.cpuState.pendingAllocation, "a parked assignment keeps its raw guest operands");
+	require(assignment.cpuState.pendingAllocation == state.cpuState.pendingAllocation, "a parked assignment keeps its exact growth hint and raw guest operands");
 	require(decoded.machineState.machine.cartridge.slots[0]->ram.has_value()
 		&& !decoded.machineState.machine.cartridge.slots[1].has_value(), "empty RAM and an absent card remain distinct");
 }

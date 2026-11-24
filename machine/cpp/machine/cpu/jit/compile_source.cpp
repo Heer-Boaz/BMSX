@@ -196,6 +196,10 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 				const auto& instruction = page.words[cursor];
 				const u32 pc = pagePc + cursor * INSTRUCTION_BYTES;
 				instructions[instructionCount++] = {&instruction, pc};
+				if (instruction.op == static_cast<u8>(OpCode::SETFIELD)) {
+					const u8 extraHashSlots = instructionFieldExtraHashSlots(page.sourceWords[cursor], instruction.width);
+					if (extraHashSlots) specializations.fieldGrowth.push_back({pc, extraHashSlots});
+				}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 				if (feedback) (*feedback)[cursor] = true;
 #endif
@@ -240,6 +244,7 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 	captureImageConstants(instructions.first(instructionCount), image.constPool, specializations.imageConstants);
 	std::ranges::sort(calls, {}, &NativeCallProfile::pc);
 	calls.erase(std::ranges::unique(calls, {}, &NativeCallProfile::pc).begin(), calls.end());
+	std::ranges::sort(specializations.fieldGrowth, {}, &NativeFieldGrowth::pc);
 	const auto bindingsPages = std::span(codePages).first(codePageCount);
 	const NativeCodeBindings bindings(m_memory, m_stringPool, this, bindingsPages, m_nativeHistoryWrites);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)

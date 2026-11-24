@@ -39,7 +39,7 @@ import {
 	decodeRuntimeSaveState,
 	encodeRuntimeSaveState,
 } from '../../machine/ts/machine/runtime/save_state/codec';
-import { valueBuiltinFunction, valueFloatBits, valueInteger, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
+import { valueBuiltinFunction, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
 import { DMA_STATUS_BUSY } from '../../machine/ts/spec/bmsx/io';
@@ -672,7 +672,8 @@ test('typed pending allocations preserve their issued instruction and active ope
 	const frontier = { recovery: AllocationRecovery.RetryCurrent, instructionPc: 0x2000, lastPc: 0x2004, nextPc: 0x2008 };
 	const requests: PendingAllocation[] = [
 		{ ...frontier, kind: PendingAllocationKind.TableCreation, destination: 17, arraySize: 1024, hashSize: 5 },
-		{ ...frontier, kind: PendingAllocationKind.TableAssignment, receiver: 0x12345678, key: valueInteger(-1), value: valueFloatBits(0xffc12345) },
+		{ ...frontier, kind: PendingAllocationKind.TableAssignment, receiver: 0x12345678,
+			key: valueString(0x01023458), value: valueFloatBits(0xffc12345), extraHashSlots: 255 },
 	];
 	for (const pending of requests) {
 		state.cpuState.pendingAllocation = pending;

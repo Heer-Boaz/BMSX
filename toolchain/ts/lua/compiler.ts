@@ -1997,7 +1997,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					: splitUnsignedOperand(instr.c, 'C', MAX_OPERAND_BITS, EXT_C_BITS, hasWide);
 				const ext = (aSplit.ext << 6) | (bSplit.ext << 3) | cSplit.ext;
 				if (hasWide) {
-					writeInstruction(code, cursor, OpCode.WIDE, aSplit.wide, bSplit.wide, cSplit.wide);
+					writeInstruction(code, cursor, OpCode.WIDE, aSplit.wide, bSplit.wide, cSplit.wide, instr.fieldGrowthSlots);
 					finalRanges[cursor] = range;
 					cursor += 1;
 				}
@@ -3062,7 +3062,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 	}
 
-	private emitABC(op: OpCode, a: number, b: number, c: number, rkMask: number = 0): void {
+	private emitABC(op: OpCode, a: number, b: number, c: number, rkMask: number = 0, fieldGrowthSlots?: number): void {
 		this.assertStaticCallTargetCanEmit(op);
 		this.code.push({
 			op,
@@ -3071,6 +3071,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			c,
 			format: 'ABC',
 			rkMask,
+			fieldGrowthSlots,
 			target: null,
 			statementRange: this.currentStatementRange,
 			resumeRange: this.currentStatementRange,
@@ -3171,11 +3172,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.emitABC(OpCode.GETT, target, tableReg, this.encodeConstOperand(keyConst), RK_C);
 	}
 
-	private emitTableSetConst(tableReg: number, keyConst: number, valueReg: number): void {
+	private emitTableSetConst(tableReg: number, keyConst: number, valueReg: number, fieldGrowthSlots?: number): void {
 		const keyValue = this.program.constPool[keyConst];
 		if (typeof keyValue === 'string') {
 			if (keyConst <= MAX_SPECIALIZED_TABLE_OPERAND) {
-				this.emitABC(OpCode.SETFIELD, tableReg, keyConst, valueReg, RK_C);
+				this.emitABC(OpCode.SETFIELD, tableReg, keyConst, valueReg, RK_C, fieldGrowthSlots);
 				return;
 			}
 			this.emitABC(OpCode.SETT, tableReg, this.encodeConstOperand(keyConst), valueReg, RK_B | RK_C);
@@ -4004,7 +4005,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				this.applyCompoundAssignment(target, statement.operator, valueReg);
 				continue;
 			}
-			this.assignTarget(target, valueReg);
+			this.assignTarget(target, valueReg, this.program.tableShapes?.growth.get(statement));
 		}
 	}
 
@@ -4172,7 +4173,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		return values;
 	}
 
-	private assignTarget(target: AssignmentTarget, valueReg: number): void {
+	private assignTarget(target: AssignmentTarget, valueReg: number, fieldGrowthSlots?: number): void {
 		switch (target.kind) {
 			case 'local':
 				this.emitABC(OpCode.MOV, target.reg, valueReg, 0);
@@ -4185,7 +4186,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				return;
 			case 'table': {
 				if (target.keyConst !== undefined) {
-					this.emitTableSetConst(target.tableReg, target.keyConst, valueReg);
+					this.emitTableSetConst(target.tableReg, target.keyConst, valueReg, fieldGrowthSlots);
 					return;
 				}
 				this.emitABC(OpCode.SETT, target.tableReg, target.keyReg, valueReg, RK_B | RK_C);
@@ -4884,7 +4885,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 
 	private compileTableConstructor(expression: LuaTableConstructorExpression, target: number): void {
 		if (expression.fields.length === 0) {
-			const shape = this.program.tableShapes?.get(expression);
+			const shape = this.program.tableShapes?.fresh.get(expression);
 			this.emitABC(OpCode.NEWT, target, shape?.array ?? 0, shape?.hash ?? 0);
 			return;
 		}
@@ -6326,7 +6327,7 @@ export function compileLuaChunkToProgram(
 	if (compileErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
-	const tableShapes: TableShapes | undefined = optLevel === 3 ? new Map() : undefined;
+	const tableShapes: TableShapes | undefined = optLevel === 3 ? { fresh: new Map(), growth: new Map() } : undefined;
 	if (tableShapes !== undefined) {
 		predictTableShapes(chunk, frontend.getFile(chunk.locations.path), tableShapes);
 		for (const module of canonicalModules) predictTableShapes(module.chunk, frontend.getFile(module.path), tableShapes);

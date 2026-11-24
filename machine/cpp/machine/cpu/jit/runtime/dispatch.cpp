@@ -44,6 +44,10 @@ i32 CPU::assignNativeTableField(CPU* cpu, u32 receiver, StringId key, const Valu
 	return TableRecord(cpu->m_heap, receiver).tryAssignStringField(key, *value);
 }
 
+i32 CPU::assignNativeHintedTableField(CPU* cpu, u32 receiver, StringId key, const NativeHintedFieldWrite* write) noexcept {
+	return TableRecord(cpu->m_heap, receiver).tryAssignStringField(key, write->value, write->extraHashSlots);
+}
+
 NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept {
 	const auto& call = exit->operands.call;
 	const int base = call.callee;
@@ -388,7 +392,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			if (field || valueIsString(key)) {
 				// The decoder owns this slot even if the write retires the
 				// executable block and destroys its exit descriptor.
-				if (cpu.storeTableFieldIndexCached(*frame, *exit->tableStore.decoded, base, asStringId(key), value))
+				if (cpu.storeTableFieldIndexCached(*frame, *exit->tableStore.decoded, base, asStringId(key), value, access.extraHashSlots))
 					transition = NativeBlockTransition::Redispatch;
 			} else if (cpu.storeTableIndex(*frame, base, key, value)) transition = NativeBlockTransition::Redispatch;
 			break;

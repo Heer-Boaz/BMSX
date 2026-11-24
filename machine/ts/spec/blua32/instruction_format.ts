@@ -18,6 +18,7 @@ export const BASE_BX_BITS = MAX_BX_BITS + EXT_BX_BITS;
 export const MAX_LOW_OPERAND = (1 << MAX_OPERAND_BITS) - 1;
 export const MAX_LOW_BX = (1 << MAX_BX_BITS) - 1;
 export const MAX_WIDE = MAX_LOW_OPERAND;
+export const MAX_FIELD_EXTRA_HASH_SLOTS = 0xff;
 
 export const MAX_BASE_OPERAND_A = (1 << BASE_OPERAND_A_BITS) - 1;
 export const MAX_BASE_OPERAND_BC = (1 << BASE_OPERAND_BC_BITS) - 1;
@@ -49,6 +50,10 @@ export function instructionOpcode(word: number): number {
 
 export function instructionLowB(word: number): number {
 	return (word >>> MAX_OPERAND_BITS) & MAX_LOW_OPERAND;
+}
+
+export function instructionFieldExtraHashSlots(head: number, width: number): number {
+	return width === 2 ? head >>> 24 : 0;
 }
 
 export function instructionBx(body: number, wideB: number): number {

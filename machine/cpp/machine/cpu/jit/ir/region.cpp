@@ -82,8 +82,14 @@ void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeReg
 	for (const auto& source : sources) {
 		for (const auto& inst : source.instructions) {
 			auto operation = translateNativeOperation(*inst.decoded);
-			if (const auto* field = std::get_if<NativeTableAccess>(&operation); field && field->readsFixedField())
-				++fixedFieldReads;
+			if (auto* field = std::get_if<NativeTableAccess>(&operation); field && field->keyKind == NativeTableKey::Field) {
+				if (field->readsFixedField()) ++fixedFieldReads;
+				else if (field->mode == NativeTableMode::Write) {
+					const auto hints = specializations.fieldGrowth;
+					const auto hint = std::ranges::lower_bound(hints, inst.pc, {}, &NativeFieldGrowth::pc);
+					if (hint != hints.end() && hint->pc == inst.pc) field->extraHashSlots = hint->extraHashSlots;
+				}
+			}
 			if (const auto* load = std::get_if<NativeConstantLoad>(&operation)) {
 				if (const auto constant = nativeImageConstant(specializations.imageConstants, load->index))
 					operation = NativeLiteral{load->result, *constant};

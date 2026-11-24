@@ -49,6 +49,7 @@ export type Instruction = {
 	b: number;
 	c: number;
 	disp?: number;
+	fieldGrowthSlots?: number;
 	format: InstructionFormat;
 	rkMask: number;
 	target: number | null;

@@ -8,8 +8,8 @@
 
 namespace bmsx {
 
-// BMSX identifies the container. Only the current payload layout is accepted.
-constexpr u32 kSaveStateSignature = 0x58534d42u;
+// BMS2 identifies the current payload layout.
+constexpr u32 kSaveStateSignature = 0x32534d42u;
 
 std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state);
 // Returns zero without writing when the output cannot hold the complete state.

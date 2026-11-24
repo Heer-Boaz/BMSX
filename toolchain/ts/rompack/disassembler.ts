@@ -1,5 +1,5 @@
 import { extractSourceRangeText } from './source_text';
-import { CLOSURE_ADDRESS_REGISTER_FLAG, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
+import { CLOSURE_ADDRESS_REGISTER_FLAG, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, instructionFieldExtraHashSlots, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, OPCODE_USES_BX, OPCODE_USES_DISP, decodeValueCount } from '../../../machine/ts/spec/blua32/opcode';
 import { OPCODE_NAMES } from '../lua/opcode_metadata';
 import { formatInteger } from '../../../machine/ts/common/number_format';
@@ -36,6 +36,7 @@ export type DecodedInstruction = {
 	rkBitsB: number;
 	rkBitsC: number;
 	disp: number;
+	extraHashSlots: number;
 };
 
 type Blua32DisassemblySource = {
@@ -45,7 +46,7 @@ type Blua32DisassemblySource = {
 	codeAddress: number;
 };
 
-type OperandField = 'a' | 'b' | 'c' | 'bx' | 'sbx' | 'disp' | 'mode';
+type OperandField = 'a' | 'b' | 'c' | 'bx' | 'sbx' | 'disp' | 'mode' | 'hash';
 
 export type InstructionOperandDebugInfo = {
 	field: OperandField;
@@ -212,6 +213,7 @@ const decodeInstruction = (code: Uint8Array, codeAddress: number, pc: number): D
 			rkBitsB,
 			rkBitsC,
 			disp: nextExt,
+			extraHashSlots: nextOp === OpCode.SETFIELD ? instructionFieldExtraHashSlots(word, 2) : 0,
 		};
 	}
 	const usesDisp = OPCODE_USES_DISP[op] !== 0;
@@ -239,6 +241,7 @@ const decodeInstruction = (code: Uint8Array, codeAddress: number, pc: number): D
 		rkBitsB,
 		rkBitsC,
 		disp: ext,
+		extraHashSlots: 0,
 	};
 };
 
@@ -371,8 +374,11 @@ const buildInstructionOperands = (
 			return [registerOperand('a', 'table', a), plainOperand('b', 'index', b.toString()), sourceRkOperand('c', 'value', source, c, decoded.rkBitsC, options)];
 		case OpCode.GETFIELD:
 			return [registerOperand('a', 'dst', a), registerOperand('b', 'table', b), plainOperand('c', 'field', formatSourceConst(source, c, options))];
-		case OpCode.SETFIELD:
-			return [registerOperand('a', 'table', a), plainOperand('b', 'field', formatSourceConst(source, b, options)), sourceRkOperand('c', 'value', source, c, decoded.rkBitsC, options)];
+		case OpCode.SETFIELD: {
+			const operands = [registerOperand('a', 'table', a), plainOperand('b', 'field', formatSourceConst(source, b, options)), sourceRkOperand('c', 'value', source, c, decoded.rkBitsC, options)];
+			if (decoded.extraHashSlots !== 0) operands.push(plainOperand('hash', 'extra hash slots', decoded.extraHashSlots.toString()));
+			return operands;
+		}
 		case OpCode.SELF:
 			return [registerOperand('a', 'fn_dst', a), plainOperand('a', 'self_dst', `r${a + 1}`), registerOperand('b', 'table', b), plainOperand('c', 'field', formatSourceConst(source, c, options))];
 		case OpCode.GETT:
@@ -566,7 +572,8 @@ const formatInstruction = (
 		case OpCode.GETFIELD:
 			return `GETFIELD r${a}, r${b}, ${formatSourceConst(source, c, options)}`;
 		case OpCode.SETFIELD:
-			return `SETFIELD r${a}, ${formatSourceConst(source, b, options)}, ${formatSourceRK(source, c, decoded.rkBitsC, options)}`;
+			return `SETFIELD r${a}, ${formatSourceConst(source, b, options)}, ${formatSourceRK(source, c, decoded.rkBitsC, options)}`
+				+ (decoded.extraHashSlots === 0 ? '' : ` ; +${decoded.extraHashSlots} hash slots`);
 		case OpCode.SELF:
 			return `SELF r${a}, r${a + 1}, r${b}, ${formatSourceConst(source, c, options)}`;
 		case OpCode.GETT:

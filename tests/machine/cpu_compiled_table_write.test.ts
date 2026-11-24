@@ -3,17 +3,18 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CpuRunKind, PendingAllocationKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, packInstructionWord, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode, TABLE_INDEX_VISIT_CYCLES } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
-import { TableHeader } from '../../machine/ts/machine/cpu/table';
+import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
-import { runCpuParity } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runCpuParity } from '../helpers/cpu_execution';
 
 test('next charges only the primitive and the receiving range even when traversal crosses vacant slots', () => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
@@ -70,6 +71,105 @@ for (const wide of [false, true]) test(`NEWT pays the base cycle charge and rese
 	assert.equal(generated.gc.tables.arrayCapacity(table), 2);
 	assert.equal(generated.gc.tables.hashSize(table), slots);
 	assert.equal(generated.luaHeap.usedBytes() - before, 32 + 2 * 5 + slots * 10);
+});
+
+test('a WIDE SETFIELD hint affects only growth at its original table and follows code replacement', () => {
+	const code = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 6);
+	writeInstruction(code, 1, OpCode.SETFIELD, 0, 0, 1);
+	writeInstruction(code, 2, OpCode.JMP, 0, 63, 61, 255);
+	const image = linkRawTestSystemBlua32({ text: code, constants: ['field'], functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }] }, 0x10000);
+	const machines = [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter].map(mode => createTestSystemCpu(image, mode));
+	const pc = DYNAMIC_RAM_BASE, functionAddress = image.symbols.functionAddresses[0], cycles = BASE_CYCLES[OpCode.SETFIELD];
+	for (const { cpu, memory } of machines) {
+		const key = cpu.stringPool.find('field')!, table = cpu.createTable(0, 1);
+		cpu.gc.tables.setStringKey(table, key, valueInteger(9));
+		const frame = cpu.rootThread.frameAtDepth(0);
+		frame.registers.setTable(0, table); frame.registers.setInteger(1, 73);
+		memory.writeBytes(pc, code);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, pc);
+		cpu.runUntilDepth(0, (cycles + BASE_CYCLES[OpCode.JMP]) * 68);
+		assert.equal(cpu.gc.tables.hashSize(table), 1, 'a live overwrite does not change its reservation');
+	}
+	const frame = machines[0].cpu.rootThread.frameAtDepth(0);
+	const decoded = frame.executionImage.decodedPages.get(pc)!;
+	assert.ok(decoded.compiledBlocks!.entries[0], 'the first hinted store has a generated entry before code replacement');
+
+	const assign = (capacity: number, value: number | null, throughMetatable: boolean, expected: number, width: number) => {
+		const cases = machines.map(({ cpu }) => {
+			const tables = cpu.gc.tables, registers = cpu.rootThread.frameAtDepth(0).registers;
+			const table = cpu.createTable(0, capacity), oldKey = cpu.stringPool.intern('before'), key = cpu.stringPool.find('field')!;
+			tables.setStringKey(table, oldKey, valueInteger(9));
+			const source = throughMetatable ? cpu.createTable() : table;
+			if (throughMetatable) {
+				const meta = cpu.createTable(0, 1);
+				tables.setStringKey(meta, cpu.stringPool.intern('__newindex'), valueTable(table));
+				tables.setMetatableAddress(source, meta);
+			}
+			registers.setTable(0, source);
+			registers.set(1, value === null ? valueNil() : valueInteger(value));
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, pc);
+			return { cpu, table, source, oldKey, key };
+		});
+		assert.equal(runCpuParity(cases[0].cpu, cases[1].cpu, 1), RunResult.Yielded);
+		for (const { cpu, table, source, oldKey, key } of cases) {
+			const tables = cpu.gc.tables;
+			assert.equal(cpu.instructionBudgetRemaining, 1 - cycles - (throughMetatable ? TABLE_INDEX_VISIT_CYCLES : 0));
+			assert.equal(cpu.readFramePc(0), pc + width * INSTRUCTION_BYTES);
+			assert.equal(tables.hashSize(table), expected);
+			assert.equal(tables.getStringKey(table, oldKey), valueInteger(9));
+			assert.equal(tables.getStringKey(table, key), value === null ? valueNil() : valueInteger(value));
+			if (throughMetatable) assert.equal(tables.getStringKey(source, key), valueNil());
+		}
+	};
+	assign(2, 73, false, 2, 2); // No growth.
+	assign(1, null, false, 1, 2); // Nil to missing.
+	assign(1, 73, true, 2, 2); // No hint on the forwarded table.
+	assign(1, 73, false, 8, 2); // One existing + one insertion + six more.
+	for (const { memory } of machines) memory.writeU32(pc, packInstructionWord(OpCode.WIDE, 0, 0, 0, 7));
+	assign(1, 73, false, 16, 2); // Only the prefix changed; round 9 up.
+	for (const { memory } of machines) memory.writeU32(pc, packInstructionWord(OpCode.SETFIELD, 0, 0, 1));
+	assign(1, 73, false, 2, 1); // No retained hint after removing WIDE.
+});
+
+test('pending hinted field growth keeps its reservation request across a checkpoint', () => {
+	const code = new Uint8Array(3 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 31);
+	writeInstruction(code, 1, OpCode.SETFIELD, 0, 0, 1);
+	writeInstruction(code, 2, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text: code, constants: ['field'], functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }] }, 0x10000);
+	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const tables = cpu.gc.tables, arena = cpu.heapAllocator, budget = cpu.luaHeap;
+	const table = cpu.createTable(512, 1), beforeKey = cpu.stringPool.intern('before'), field = cpu.stringPool.find('field')!;
+	tables.setStringKey(table, beforeKey, valueInteger(9));
+	const regs = cpu.rootThread.frameAtDepth(0).registers;
+	regs.setTable(0, table); regs.setInteger(1, 73);
+	budget.setCollectionTarget(budget.capacity());
+	const backing = TableRecords.storageBytes(512, 64);
+	cpu.createTable(1024, 0); // Recoverable storage for the hinted growth.
+	while (arena.allocate(backing, true) !== 0) {}
+	const oldStorage = tables.storageAddress(table);
+	const pc = cpu.readFramePc(0);
+	assert.equal(cpu.runUntilDepth(0, 1, cpu.rootThread.address, CpuRunKind.Scheduled), RunResult.ParkedAllocation);
+	assert.equal(tables.storageAddress(table), oldStorage);
+	assert.equal(tables.getStringKey(table, field), valueNil());
+	const pending = cpu.captureRuntimeState().pendingAllocation;
+	assert.ok(pending?.kind === PendingAllocationKind.TableAssignment);
+	assert.equal(pending.extraHashSlots, 31);
+	const checkpoint = captureCpuCheckpoint(cpu);
+	for (let replay = 0; replay < 2; ++replay) {
+		for (let work = 0; work < 512 && !cpu.allocationReady(); ++work) cpu.advanceAllocationRecovery();
+		assert.ok(cpu.allocationReady(), 'the recovery completes with reclaimable backing');
+		cpu.instructionBudgetRemaining = 0;
+		cpu.resumeAllocation();
+		assert.equal(cpu.instructionBudgetRemaining, 0, 'no second charge or execution on resume');
+		assert.ok(!cpu.allocationParked());
+		assert.equal(cpu.readFramePc(0), pc + 2 * INSTRUCTION_BYTES);
+		assert.equal(tables.hashSize(table), 64);
+		assert.equal(tables.getStringKey(table, beforeKey), valueInteger(9));
+		assert.equal(tables.getStringKey(table, field), valueInteger(73));
+		if (replay === 0) restoreCpuCheckpoint(cpu, checkpoint);
+	}
 });
 
 test('ordinary bus writes cannot rebind an array or alter its private elements', () => {

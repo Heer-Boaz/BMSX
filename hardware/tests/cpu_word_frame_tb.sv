@@ -12,7 +12,7 @@ module cpu_word_frame_tb;
  cpu_instruction_decode decode(.clk(clk),.reset_n(reset_n),.req_valid(in_valid),.req_ready(in_ready),
   .req_pc(pc),.req_prefix(prefix),.req_body(body),.req_wide(wide),.rsp_valid(decoded),.rsp_ready(execute_ready),
   .rsp_pc(),.rsp_next_pc(),.rsp_opcode(op),.rsp_a(a),.rsp_b(b),.rsp_c(),.rsp_bx(),.rsp_sbx(),
-  .rsp_rkb(rkb),.rsp_rkc(rkc),.rsp_branch_target(),.rsp_disp(),.rsp_wide(),.rsp_nested_wide(),.rsp_reserved_memory());
+  .rsp_rkb(rkb),.rsp_rkc(rkc),.rsp_branch_target(),.rsp_operand_byte(),.rsp_wide(),.rsp_nested_wide(),.rsp_reserved_memory());
  wire read_valid,read_ready,read_constant,rsp_valid,rsp_ready,rsp_is_number,write_valid;
  wire [14:0] read_index;wire [13:0] write_index;wire [63:0] rsp_payload,write_number;
  reg delayed_valid=0,delayed_is_number=0;reg [63:0] delayed_payload=0;

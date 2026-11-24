@@ -58,6 +58,11 @@ struct NativeFixedCallPlan {
 	int copied, padded;
 };
 
+struct NativeHintedFieldWrite {
+	Value value;
+	u8 extraHashSlots;
+};
+
 // Runtime operands accompany the exit kind. Counts for activation transfers
 // are actual counts; -1 selects the open window. Guest frame words retain
 // the instruction encoding at the frame-control boundary.
@@ -73,7 +78,10 @@ union NativeExitOperands {
 		i16 value, receiver, key;
 		std::optional<ValueTag> resultProof{};
 		std::optional<u16> reusePeerWord{};
-		u32 sourcePc = 0;
+		union {
+			u32 sourcePc = 0; // read feedback
+			u8 extraHashSlots; // write operand
+		};
 	} table;
 	struct Length { u16 result, source; } length;
 	struct Iterator { u16 base, first, count; } iterator;

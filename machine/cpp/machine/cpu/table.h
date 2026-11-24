@@ -57,8 +57,8 @@ public:
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value);
 	// A resolved opcode write may suspend only on a physical backing refusal.
-	int assignScheduled(Value key, Value value, int slot = TABLE_HASH_UNPROBED);
-	bool resumeAssignment(Value key, Value value);
+	int assignScheduled(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
+	bool resumeAssignment(Value key, Value value, u8 extraHashSlots);
 	// The caller admits an own assignment with a Table key and a non-nil
 	// value. Growth can return in place of a VM handoff when no collection
 	// is required. Declining leaves the table and collector unchanged.
@@ -69,7 +69,7 @@ public:
 	// A field write may complete without a VM handoff. Return the actual
 	// slot (-1 for completed nil), or HASH_STORE_DECLINED before mutation.
 	static constexpr i32 HASH_STORE_DECLINED = -2;
-	int tryAssignStringField(StringId key, Value value) noexcept;
+	int tryAssignStringField(StringId key, Value value, u8 extraHashSlots = 0) noexcept;
 	bool getIntegerArrayKey(int key, Value& value) const {
 		return getArraySlot(arraySlot(key), value);
 	}
@@ -93,7 +93,7 @@ public:
 	TableStringProbe beginStringProbe(StringId key) const;
 	size_t advanceStringProbe(StringId key, TableStringProbe& probe, size_t limit) const;
 	Value getStringKeyCached(StringId key, int& predictedSlot) const;
-	int setStringKey(StringId key, const Value& value, int slot = TABLE_HASH_UNPROBED);
+	int setStringKey(StringId key, const Value& value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	bool storePredictedStringKey(StringId key, Value value, int predicted) noexcept;
 	Value metatableField(StringId key) const;
 	void resolveIndex(const Value& key, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
@@ -187,13 +187,13 @@ private:
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
 	int findNextLiveHashIndex(size_t start) const;
 	struct ResizePlan { size_t array, hash; };
-	ResizePlan planRehash(Value key) const;
+	ResizePlan planRehash(Value key, u8 extraHashSlots) const;
 	enum class HashStore : u8 { General, Scheduled, Resume, ReturningIndex, ReturningField };
 	template <HashStore Policy>
-	int insertHashWithAdmission(Value key, Value value)
+	int insertHashWithAdmission(Value key, Value value, u8 extraHashSlots)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	template <HashStore Policy>
-	int setOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED);
+	int setOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	template <HashStore Policy>
 	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 previous, u32 requested)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
@@ -249,9 +249,9 @@ private:
 	static int reinsertMapping(const HashBody& body, int& nextFree, Value key, Value value) noexcept;
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
 	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
-	int setHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED);
+	int setHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	template <HashStore Policy>
-	int assignHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED)
+	int assignHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	void publishHashInsertion(Value key, Value value);
 	u32 newIndexMetatable() const;

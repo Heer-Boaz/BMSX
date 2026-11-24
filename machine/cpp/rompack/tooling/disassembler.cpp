@@ -30,6 +30,7 @@ struct DecodedDebugInstruction {
 	int rkBitsB = 0;
 	int rkBitsC = 0;
 	int disp = 0;
+	int extraHashSlots = 0;
 };
 
 struct RkDebugValue {
@@ -192,6 +193,7 @@ DecodedDebugInstruction decodeInstructionFromStart(const Blua32ImageLayout& imag
 			rkBbits,
 			rkCbits,
 			static_cast<int>(nextExt),
+			nextOp == OpCode::SETFIELD ? instructionFieldExtraHashSlots(word, 2u) : 0,
 		};
 	}
 	const bool usesDisp = OPCODE_USES_DISP[static_cast<size_t>(op)] != 0u;
@@ -284,7 +286,9 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::GETFIELD:
 			return "GETFIELD r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + formatConstValue(image, decoded.c);
 		case OpCode::SETFIELD:
-			return "SETFIELD r" + std::to_string(decoded.a) + ", " + formatConstValue(image, decoded.b) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
+			return "SETFIELD r" + std::to_string(decoded.a) + ", " + formatConstValue(image, decoded.b) + ", "
+				+ describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text
+				+ (decoded.extraHashSlots == 0 ? "" : " ; +" + std::to_string(decoded.extraHashSlots) + " hash slots");
 		case OpCode::SELF:
 			return "SELF r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.a + 1) + ", r" + std::to_string(decoded.b) + ", " + formatConstValue(image, decoded.c);
 		case OpCode::GETT:
@@ -406,8 +410,12 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {registerOperand("table", decoded.a), plainOperand("index", std::to_string(decoded.b)), rkOperand("value", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
 		case OpCode::GETFIELD:
 			return {registerOperand("dst", decoded.a), registerOperand("table", decoded.b), plainOperand("field", formatConstValue(image, decoded.c))};
-		case OpCode::SETFIELD:
-			return {registerOperand("table", decoded.a), plainOperand("field", formatConstValue(image, decoded.b)), rkOperand("value", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
+		case OpCode::SETFIELD: {
+			std::vector operands{registerOperand("table", decoded.a), plainOperand("field", formatConstValue(image, decoded.b)),
+				rkOperand("value", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
+			if (decoded.extraHashSlots != 0) operands.push_back(plainOperand("extra hash slots", std::to_string(decoded.extraHashSlots)));
+			return operands;
+		}
 		case OpCode::SELF:
 			return {registerOperand("fn_dst", decoded.a), plainOperand("self_dst", "r" + std::to_string(decoded.a + 1)), registerOperand("table", decoded.b), plainOperand("field", formatConstValue(image, decoded.c))};
 		case OpCode::GETT:

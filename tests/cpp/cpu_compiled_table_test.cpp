@@ -2121,7 +2121,7 @@ void nativeIntegerGrowthReturnsWithinTheGrant() {
 #endif
 }
 
-void nativeFixedStringMissReturnsWithinTheGrant() {
+void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlots) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::Blua32TestImage image;
 	image.mappedCode = false;
@@ -2134,7 +2134,7 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
 	writeInstruction(image.text, loop, static_cast<u8>(OpCode::MOV), 2, 8, 0);
 	writeInstruction(image.text, loop + 1, static_cast<u8>(OpCode::KSMI), 4, 0, 39);
-	writeInstruction(image.text, loop + 2, static_cast<u8>(OpCode::WIDE), 1, 0, 0);
+	writeInstruction(image.text, loop + 2, static_cast<u8>(OpCode::WIDE), 1, 0, 0, extraHashSlots);
 	writeInstruction(image.text, loop + 3, static_cast<u8>(OpCode::SETFIELD), 0, 0, 2);
 	writeInstruction(image.text, loop + 4, static_cast<u8>(OpCode::MOV), 9, 2, 0);
 	writeInstruction(image.text, loop + 5, static_cast<u8>(OpCode::MOV), 11, 4, 0);
@@ -2142,7 +2142,7 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 	writeInstruction(image.text, method, static_cast<u8>(OpCode::SETI), 0, 1, 2);
 	writeInstruction(image.text, method + 1, static_cast<u8>(OpCode::RET), 0, 1, 0);
 	writeInstruction(image.text, nilLoop, static_cast<u8>(OpCode::KNIL), 2, 0, 0);
-	writeInstruction(image.text, nilLoop + 1, static_cast<u8>(OpCode::WIDE), 1, 0, 0);
+	writeInstruction(image.text, nilLoop + 1, static_cast<u8>(OpCode::WIDE), 1, 0, 0, extraHashSlots);
 	writeInstruction(image.text, nilLoop + 2, static_cast<u8>(OpCode::SETFIELD), 0, 0, 2);
 	writeInstruction(image.text, nilLoop + 3, static_cast<u8>(OpCode::MOV), 9, 2, 0);
 	writeInstruction(image.text, nilLoop + 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
@@ -2210,8 +2210,9 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 	test::waitForNativeEntry(cpu, page, word);
 	const auto* installed = page.nativeBlocks->entries[word].get();
 	const auto exit = std::ranges::find(installed->sideExits, NativeBlockExit::WriteField, &NativeBlockExitSite::exit);
-	require(exit != installed->sideExits.end() && exit->currentPc == storePc && exit->nextPc == suffixPc,
-		"the warmed body contains the WIDE SETFIELD checkpoint");
+	require(exit != installed->sideExits.end() && exit->currentPc == storePc && exit->nextPc == suffixPc
+		&& exit->operands.table.extraHashSlots == extraHashSlots,
+		"the warmed body contains the WIDE SETFIELD checkpoint and its immutable growth operand");
 	auto& prediction = *exit->tableStore.decoded;
 	const auto originalSlot = prediction;
 	require(originalSlot >= 0, "the first receiver trained the actual store site");
@@ -2221,7 +2222,8 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 	auto warm = asTable(cpu.readFrameRegister(0, warmSlot), cpu.gcHeap());
 	auto spare = asTable(cpu.readFrameRegister(0, spareSlot), cpu.gcHeap());
 	auto full = asTable(cpu.readFrameRegister(0, fullSlot), cpu.gcHeap());
-	const auto charge = TableRecord::allocationCharge(0, 1);
+	const auto grownHash = TableRecord::hashCapacity(2 + extraHashSlots);
+	const auto charge = TableRecord::allocationCharge(0, grownHash) - TableRecord::allocationCharge(0, 1);
 	const Value raw = valueFloatBits(0x7fc01234u);
 	const auto initialStorage = spare.storageAddress();
 	const auto initialBytes = cpu.luaHeap().usedBytes();
@@ -2286,7 +2288,7 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 
 	start(fullSlot, raw);
 	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
-		&& full.hashSlots() == 2 && full.getStringKey(field) == raw
+		&& full.hashSlots() == grownHash && full.getStringKey(field) == raw
 		&& full.getStringKey(*cpu.stringPool().find("resident field")) == valueInteger(31)
 		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39),
 		"a full hash grows and returns with the live native prefix");
@@ -2392,7 +2394,7 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 	auto underPressure = asTable(cpu.readFrameRegister(0, fullSlot), cpu.gcHeap());
 	const auto beforePressure = cpu.luaHeap().usedBytes();
 	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
-		&& underPressure.hashSlots() == 2 && underPressure.getStringKey(field) == raw
+		&& underPressure.hashSlots() == grownHash && underPressure.getStringKey(field) == raw
 		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39)
 		&& cpu.luaHeap().usedBytes() == beforePressure + charge,
 		"growth requiring collector assistance completes once through the semantic owner and preserves the live suffix");
@@ -2400,7 +2402,88 @@ void nativeFixedStringMissReturnsWithinTheGrant() {
 	require(writeExits == beforeAssist + 1, "pressure still publishes the activation before collecting");
 #endif
 	requireParity(native, scalar);
+	if (extraHashSlots) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& lane = machine->cpu;
+			auto destination = lane.createTable(0, 1);
+			destination.setStringKey(*lane.stringPool().find("resident field"), valueInteger(41));
+			auto metatable = lane.createTable(0, 1);
+			metatable.setStringKey(lane.stringPool().intern("__newindex"), valueTable(destination.address()));
+			auto receiver = lane.createTable();
+			receiver.setMetatableAddress(metatable.address());
+			auto regs = lane.activeThread()->currentFrame->registers;
+			regs.set(fullSlot, valueTable(receiver.address()));
+			regs.set(spareSlot, valueTable(destination.address()));
+		}
+		start(fullSlot, raw);
+		require(test::runCpuParity(cpu, scalar.cpu, throughSuffix + TABLE_INDEX_VISIT_CYCLES) == RunResult::Yielded
+			&& cpu.instructionBudgetRemaining == 0, "forwarded SETFIELD pays exactly one additional visit");
+		const auto forwarded = asTable(cpu.readFrameRegister(0, spareSlot), cpu.gcHeap());
+		const auto receiver = asTable(cpu.readFrameRegister(0, fullSlot), cpu.gcHeap());
+		require(forwarded.hashSlots() == 2 && forwarded.getStringKey(field) == raw
+			&& receiver.hashSlots() == 0 && isNil(receiver.getStringKey(field)),
+			"a forwarded growth obeys ordinary capacity, not the original receiver's hint");
+		requireParity(native, scalar);
+	}
 #endif
+}
+
+void parkedHintedFieldRetainsItsOperand(bool weak) {
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(3u * INSTRUCTION_BYTES);
+	image.constants = {std::string("new field")};
+	constexpr u8 extraHashSlots = 255;
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0, extraHashSlots);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SETFIELD), 0, 0, 1);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 2}};
+	CpuMachine machine(image, true);
+	auto& cpu = machine.cpu;
+	auto& budget = cpu.luaHeap();
+	budget.setCollectionTarget(static_cast<u32>(budget.capacity()));
+	auto owner = cpu.createTable(0, 1);
+	auto regs = cpu.activeThread()->currentFrame->registers;
+	regs.set(0, valueTable(owner.address()));
+	regs.set(1, valueInteger(91));
+	cpu.activeThread()->currentFrame->setTop(2);
+	const auto field = *cpu.stringPool().find("new field");
+	const auto resident = cpu.stringPool().intern("resident field");
+	if (weak) {
+		auto mode = cpu.createTable(0, 1);
+		mode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+		owner.setMetatableAddress(mode.address());
+		owner.setStringKey(resident, valueTable(cpu.createTable().address()));
+	} else {
+		owner.setStringKey(resident, valueInteger(37));
+	}
+	const u32 originalStorage = owner.storageAddress();
+	cpu.createTable(2048, 0); // Unreachable; completes the refused backing reservation after GC.
+	auto& arena = cpu.heapAllocator();
+	while (arena.allocate(4088u, true)) {}
+	const auto grownHash = TableRecord::hashCapacity(2 + extraHashSlots);
+	require(!arena.allocate(TableRecord::storageBytes(0, grownHash), true), "force a physical refusal of the hinted layout");
+	const auto budgetBefore = budget.usedBytes();
+	const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
+	const u32 pc = machine.rom.textAddress;
+	require(cpu.runUntilDepth(0, cycles, 0u, CpuRunKind::Scheduled) == RunResult::ParkedAllocation,
+		"SETFIELD parks instead of committing a smaller unhinted reservation");
+	const auto pending = cpu.captureRuntimeState().pendingAllocation;
+	const auto assignment = std::get<PendingTableAssignment>(pending.operands);
+	require(pending.instructionPc == pc && pending.lastPc == pc + INSTRUCTION_BYTES && pending.nextPc == pc + 2u * INSTRUCTION_BYTES
+		&& assignment.receiver == owner.address() && assignment.key == valueString(field)
+		&& assignment.value == valueInteger(91) && assignment.extraHashSlots == extraHashSlots
+		&& owner.storageAddress() == originalStorage && budget.usedBytes() == budgetBefore,
+		"the WIDE reservation and canonical operands are parked without publishing the store");
+	for (int step = 0; !cpu.allocationReady() && step < 120; ++step) cpu.advanceAllocationRecovery();
+	require(cpu.allocationReady(), "collection makes the retired decision retryable");
+	cpu.resumeAllocation();
+	require(!cpu.allocationParked() && cpu.readFramePc(0) == pending.nextPc && owner.getStringKey(field) == valueInteger(91),
+		"recovery completes exactly the parked assignment");
+	if (weak) require(owner.hashSlots() == 1 && owner.storageAddress() == originalStorage && isNil(owner.getStringKey(resident)),
+		"weak clearing opens a slot, so the hint does not force unnecessary growth");
+	else require(owner.hashSlots() == grownHash && owner.storageAddress() != originalStorage && owner.getStringKey(resident) == valueInteger(37),
+		"if growth is still required, it retains the exact extra-slot count");
 }
 
 void nativeDynamicStringMissReturnsWithinTheGrant() {
@@ -2552,7 +2635,10 @@ int main() {
 		nativeIdentityHashStoreReturnsWithinTheGrant();
 		nativeArrayStoresFollowHistorySessions();
 		nativeIntegerGrowthReturnsWithinTheGrant();
-		nativeFixedStringMissReturnsWithinTheGrant();
+		nativeFixedStringMissReturnsWithinTheGrant(0);
+		nativeFixedStringMissReturnsWithinTheGrant(7);
+		parkedHintedFieldRetainsItsOperand(false);
+		parkedHintedFieldRetainsItsOperand(true);
 		nativeDynamicStringMissReturnsWithinTheGrant();
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

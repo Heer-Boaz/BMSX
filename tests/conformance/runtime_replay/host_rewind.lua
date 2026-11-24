@@ -26,6 +26,23 @@ for index = 0, 21 do
 	command[index] = tone_words[index]
 end
 
+local function new_color_pattern()
+	return { prefix = 0x40 }
+end
+
+local function complete_color_pattern(make)
+	local pattern<const> = make()
+	pattern.shift = 16
+	pattern.input_mask = 0x7f
+	pattern.tick_mask = 0xff
+	return pattern
+end
+
+local colors<const> = complete_color_pattern(new_color_pattern)
+local blue<const> = colors.prefix << colors.shift
+local input_mask<const> = colors.input_mask
+local tick_mask<const> = colors.tick_mask
+
 display.reset_256x192()
 *pmode = 0
 -- Suspend with an implicit result placement still live in the guest frame.
@@ -37,7 +54,7 @@ local next_frame<const> = setmetatable({}, {
 })
 local frame = 0
 while true do
-	*background = 0x00400000 | ((*pad_buttons & 0x7f) << 8) | (frame & 0xff)
+	*background = blue | ((*pad_buttons & input_mask) << 8) | (frame & tick_mask)
 	*input_control = 1
 	frame = next_frame[frame + 1]
 end

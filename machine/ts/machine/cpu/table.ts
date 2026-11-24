@@ -432,13 +432,13 @@ export class TableRecords {
 	public set(record: number, key: Value, value: Value): void {
 		this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.General);
 	}
-	public assignScheduled(record: number, key: Value, value: Value, slot = TABLE_HASH_UNPROBED): number {
-		return this.setOwn(record, key, value, slot, HashStore.Scheduled);
+	public assignScheduled(record: number, key: Value, value: Value, slot = TABLE_HASH_UNPROBED, extraHashSlots = 0): number {
+		return this.setOwn(record, key, value, slot, HashStore.Scheduled, extraHashSlots);
 	}
-	public resumeAssignment(record: number, key: Value, value: Value): boolean {
-		return this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.Resume) !== HASH_STORE_DECLINED;
+	public resumeAssignment(record: number, key: Value, value: Value, extraHashSlots: number): boolean {
+		return this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.Resume, extraHashSlots) !== HASH_STORE_DECLINED;
 	}
-	private setOwn(record: number, rawKey: Value, value: Value, resolved: number, policy: HashStore): number {
+	private setOwn(record: number, rawKey: Value, value: Value, resolved: number, policy: HashStore, extraHashSlots = 0): number {
 		if (isNil(rawKey)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		if (valueIsNaN(rawKey)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
 		const key = canonicalTableKey(rawKey);
@@ -449,11 +449,12 @@ export class TableRecords {
 			this.heap.writeTableAssignment(record, tag, word);
 			this.setEncoded(record, slot, tag, word); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return -1;
 		}
-		const node = this.setHash(record, array, key, value, resolved, policy);
+		const node = this.setHash(record, array, key, value, resolved, policy, extraHashSlots);
 		if (node !== HASH_STORE_DECLINED && slot >= 0) this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
 		return node;
 	}
-	private setHash(record: number, array: number, key: Value, value: Value, resolved = TABLE_HASH_UNPROBED, policy = HashStore.General): number {
+	private setHash(record: number, array: number, key: Value, value: Value, resolved = TABLE_HASH_UNPROBED,
+		policy = HashStore.General, extraHashSlots = 0): number {
 		const tag = valueTag(value), word = valuePayload(value);
 		if (tag === ValueTag.Nil) { this.removeFromHash(record, key, resolved); return -1; }
 		const keyTag = valueTag(key), keyWord = valuePayload(key);
@@ -484,7 +485,7 @@ export class TableRecords {
 				return index;
 			}
 		}
-		index = this.insertHashWithAdmission(record, key, value, policy);
+		index = this.insertHashWithAdmission(record, key, value, policy, extraHashSlots);
 		if (index === HASH_STORE_DECLINED) return index;
 		if (key === this.newIndexKey) memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
 		// resize() invalidates an outstanding scan; relocated old edges keep their marks.
@@ -495,8 +496,9 @@ export class TableRecords {
 		this.set(record, valueFromTag(keyTag, keyWord), valueFromTag(tag, word));
 	}
 	public setStringKey(record: number, key: StringId, value: Value): void { this.setHash(record, this.arrayCapacity(record), valueString(key), value); }
-	public storeStringKey(record: number, key: StringId, tag: ValueTag, word: number, resolved = TABLE_HASH_UNPROBED): number {
-		return this.setHash(record, this.arrayCapacity(record), valueString(key), valueFromTag(tag, word), resolved);
+	public storeStringKey(record: number, key: StringId, tag: ValueTag, word: number,
+		resolved = TABLE_HASH_UNPROBED, extraHashSlots = 0): number {
+		return this.setHash(record, this.arrayCapacity(record), valueString(key), valueFromTag(tag, word), resolved, HashStore.General, extraHashSlots);
 	}
 	public storePredictedStringKey(record: number, key: StringId, predicted: number, tag: ValueTag, word: number): boolean {
 		if (tag === ValueTag.Nil || predicted < 0) return false;
@@ -595,14 +597,14 @@ export class TableRecords {
 		while (bins <= log) counts[bins++] = 0;
 		++counts[log]; return bins;
 	}
-	private planRehash(record: number, key: Value): void {
+	private planRehash(record: number, key: Value, extraHashSlots: number): void {
 		const plan = this.resizePlan;
 		const added = valueTag(key) === ValueTag.Integer ? asInteger(key) - 1 : -1;
 		const memory = this.heap.memory, oldArray = this.arrayCapacity(record), oldHash = this.hashSize(record);
 		const words = this.storageAddress(record), tags = words + (oldArray + 3 * oldHash) * 4;
 		// A hash-only addition never repartitions the reserved array.
 		if (added < 0) {
-			let live = 1;
+			let live = 1 + extraHashSlots;
 			for (let slot = oldArray; slot < oldArray + oldHash; ++slot) {
 				if (memory.readRamRecordByte(tags + slot) !== ValueTag.Nil
 					&& memory.readRamRecordByte(tags + slot + oldHash) !== ValueTag.Nil) ++live;
@@ -637,9 +639,9 @@ export class TableRecords {
 		plan.array = arraySize;
 		plan.hash = TableRecords.hashCapacity(hashKeys);
 	}
-	private insertHashWithAdmission(record: number, key: Value, value: Value, policy: HashStore): number {
+	private insertHashWithAdmission(record: number, key: Value, value: Value, policy: HashStore, extraHashSlots: number): number {
 		const budget = this.heap.budget, owner = valueTable(record), plan = this.resizePlan;
-		this.planRehash(record, key);
+		this.planRehash(record, key, extraHashSlots);
 		const array = this.arrayCapacity(record), hash = this.hashSize(record);
 		const previous = TableRecords.allocationCharge(array, hash);
 		let requested = TableRecords.allocationCharge(plan.array, plan.hash);
@@ -667,7 +669,7 @@ export class TableRecords {
 					return this.insertHashWithoutGrowth(record, home, key, value, array, hash, words, tags, available, false);
 				}
 			}
-			this.planRehash(record, key);
+			this.planRehash(record, key, extraHashSlots);
 			requested = TableRecords.allocationCharge(plan.array, plan.hash);
 			admitted = requested <= previous || budget.usedBytes() + requested - previous <= budget.capacity();
 		}

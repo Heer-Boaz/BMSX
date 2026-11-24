@@ -97,6 +97,7 @@ enum class AllocationRecovery : u32 { None, Current, RetryCurrent, Fresh, RetryF
 enum class PendingAllocationKind : u32 { TableAssignment, TableCreation };
 struct PendingTableAssignment {
 	u32 receiver;
+	u8 extraHashSlots;
 	Value key, value;
 	bool operator==(const PendingTableAssignment&) const = default;
 };
@@ -462,7 +463,7 @@ private:
 	bool loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index);
 	void resolveTableFieldIndexCached(int& predictedSlot, Value base, StringId key, TableLookupResult& result);
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
-	bool parkTableWrite(CallFrame&, u32 receiver, Value key, Value value);
+	bool parkTableWrite(CallFrame&, u32 receiver, Value key, Value value, u8 extraHashSlots = 0);
 	void parkAllocation(CallFrame&, PendingAllocation::Operands);
 	u32 allocateTable(int arraySize, int hashSize, LuaAllocationMode);
 	u32 reserveNewTable(CallFrame&, int destination, int arraySize, int hashSize);
@@ -470,7 +471,7 @@ private:
 	void markPendingAllocationRoots(GcHeap& heap);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
 	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);
-	bool storeTableFieldIndexCached(CallFrame&, int& predictedSlot, Value base, StringId key, Value value);
+	bool storeTableFieldIndexCached(CallFrame&, int& predictedSlot, Value base, StringId key, Value value, u8 extraHashSlots);
 	bool executeLength(CallFrame& frame, int destination, Value operand);
 
 	void clearCallStack();
@@ -490,6 +491,7 @@ private:
 	static void* tryReturnNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
 	static u32 readNativeLength(GcHeap*, const StringPool*, Value* operand) noexcept;
 	static i32 assignNativeTableField(CPU*, u32 receiver, StringId key, const Value*) noexcept;
+	static i32 assignNativeHintedTableField(CPU*, u32 receiver, StringId key, const NativeHintedFieldWrite*) noexcept;
 	static int placeNativeVarargs(NativeBlockRunState*, int first, int requested) noexcept;
 	friend class NativeLowering;
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;

@@ -41,7 +41,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // BMSX identifies the container. Only the current payload layout is accepted.
-const SAVE_STATE_SIGNATURE = 0x58534d42;
+const SAVE_STATE_SIGNATURE = 0x32534d42;
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1160,6 +1160,7 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 			writer.u32(pending.receiver);
 			writer.u64(pending.key);
 			writer.u64(pending.value);
+			writer.u8(pending.extraHashSlots);
 		} else {
 			writer.i32(pending.destination);
 			writer.i32(pending.arraySize);
@@ -1188,7 +1189,8 @@ function readPendingAllocation(reader: BinaryReader): PendingAllocation | null {
 	const kind = reader.u32() as PendingAllocationKind;
 	switch (kind) {
 		case PendingAllocationKind.TableAssignment:
-			return { recovery, instructionPc, lastPc, nextPc, kind, receiver: reader.u32(), key: reader.u64() as Value, value: reader.u64() as Value };
+			return { recovery, instructionPc, lastPc, nextPc, kind, receiver: reader.u32(),
+				key: reader.u64() as Value, value: reader.u64() as Value, extraHashSlots: reader.u8() };
 		case PendingAllocationKind.TableCreation:
 			return { recovery, instructionPc, lastPc, nextPc, kind, destination: reader.i32(), arraySize: reader.i32(), hashSize: reader.i32() };
 		default:

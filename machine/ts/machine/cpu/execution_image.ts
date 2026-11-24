@@ -288,7 +288,7 @@ export type DecodedInstructionPage = {
 	c: Int16Array;
 	bx: Uint32Array;
 	sbx: Int32Array;
-	disp: Uint8Array;
+	operandByte: Uint8Array; // Word displacement or SETFIELD's additional hash slots.
 	sourceWords: Uint32Array;
 	bodyWords: Uint32Array;
 	tableCacheSlots: Int32Array;
@@ -350,7 +350,7 @@ export function createDecodedInstructionPage(
 		c: new Int16Array(DECODED_PAGE_WORDS),
 		bx,
 		sbx: signedPayload,
-		disp: new Uint8Array(DECODED_PAGE_WORDS),
+		operandByte: new Uint8Array(DECODED_PAGE_WORDS),
 		sourceWords: new Uint32Array(DECODED_PAGE_WORDS),
 		bodyWords: new Uint32Array(DECODED_PAGE_WORDS),
 		tableCacheSlots: signedPayload,

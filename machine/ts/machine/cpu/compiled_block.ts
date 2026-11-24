@@ -300,7 +300,7 @@ export function emitJavaScriptBlock(
 			const selector = page.b[word], tag = registers.tagOperand(selector), payload = registers.wordOperand(selector);
 			const base = `ma${word}`;
 			source.push(`const ${base}=${tag}===${ValueTag.Integer}?${payload}:(${tag}===${ValueTag.Float}?fw(${payload}):null);if(${base}===null) ${numericFault}`);
-			const address = displaced ? `(${base}+${page.disp[word] * 4})>>>0` : base;
+			const address = displaced ? `(${base}+${page.operandByte[word] * 4})>>>0` : base;
 			const memoryExit = `{S.memoryAddress=a;${registers.exit(exitIndex)}}`;
 			if (words) source.push(emitWordStores(page, word, address, memoryExit, numericFault, registers));
 			else source.push(emitMemoryAccess(page, word, address, memoryExit, numericFault, memory, registers));

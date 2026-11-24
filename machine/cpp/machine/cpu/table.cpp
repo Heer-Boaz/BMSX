@@ -154,13 +154,13 @@ int TableRecord::HashBody::findFreeIndex(int first) const {
 	return -1;
 }
 
-TableRecord::ResizePlan TableRecord::planRehash(Value key) const {
+TableRecord::ResizePlan TableRecord::planRehash(Value key, u8 extraHashSlots) const {
 	const auto body = hashBody(hashSlots(), arrayCapacity());
 	const auto& slots = body.slots;
 	const u32 added = valueIsInteger(key) ? arraySlot(asInteger(key)) : NO_ARRAY_SLOT;
 	if (added == NO_ARRAY_SLOT) {
 		// A hash-only addition never repartitions the reserved array.
-		size_t live = 1;
+		size_t live = 1u + extraHashSlots;
 		for (u32 i = body.array; i < body.array + body.count; ++i) {
 			if (slots.tag(i) != ValueTag::Nil && slots.tag(i + body.count) != ValueTag::Nil) ++live;
 		}
@@ -232,10 +232,10 @@ int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, 
 }
 
 template <TableRecord::HashStore Policy>
-int TableRecord::insertHashWithAdmission(Value key, Value value)
+int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlots)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	auto& budget = m_heap->budget;
-	auto plan = planRehash(key);
+	auto plan = planRehash(key, extraHashSlots);
 	const u32 array = arrayCapacity(), hash = hashSlots();
 	const u32 previous = allocationCharge(array, hash);
 	u32 requested = allocationCharge(plan.array, plan.hash);
@@ -270,7 +270,7 @@ int TableRecord::insertHashWithAdmission(Value key, Value value)
 				const int available = vacant ? -1 : body.findFreeIndex(hashFree());
 				if (vacant || available >= 0) return insertHashWithoutGrowth(body, home, key, value, available);
 			}
-			plan = planRehash(key);
+			plan = planRehash(key, extraHashSlots);
 			requested = allocationCharge(plan.array, plan.hash);
 			admitted = requested <= previous || budget.usedBytes() + requested - previous <= budget.capacity();
 		}
@@ -526,16 +526,16 @@ void TableRecord::set(const Value& key, const Value& value) {
 	setOwn<HashStore::General>(key, value);
 }
 
-int TableRecord::assignScheduled(Value key, Value value, int slot) {
-	return setOwn<HashStore::Scheduled>(key, value, slot);
+int TableRecord::assignScheduled(Value key, Value value, int slot, u8 extraHashSlots) {
+	return setOwn<HashStore::Scheduled>(key, value, slot, extraHashSlots);
 }
 
-bool TableRecord::resumeAssignment(Value key, Value value) {
-	return setOwn<HashStore::Resume>(key, value) != HASH_STORE_DECLINED;
+bool TableRecord::resumeAssignment(Value key, Value value, u8 extraHashSlots) {
+	return setOwn<HashStore::Resume>(key, value, TABLE_HASH_UNPROBED, extraHashSlots) != HASH_STORE_DECLINED;
 }
 
 template <TableRecord::HashStore Policy>
-int TableRecord::setOwn(Value rawKey, Value value, int slot) {
+int TableRecord::setOwn(Value rawKey, Value value, int slot, u8 extraHashSlots) {
 	if (isNil(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 	if (valueIsNaN(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
 	const Value key = canonicalTableKey(rawKey);
@@ -550,7 +550,7 @@ int TableRecord::setOwn(Value rawKey, Value value, int slot) {
 		removeFromHash(key, slot);
 		slot = -1;
 	} else {
-		slot = assignHash<Policy>(array, key, value, slot);
+		slot = assignHash<Policy>(array, key, value, slot, extraHashSlots);
 		if constexpr (Policy != HashStore::General)
 			if (slot == HASH_STORE_DECLINED) return slot;
 	}
@@ -558,12 +558,12 @@ int TableRecord::setOwn(Value rawKey, Value value, int slot) {
 	return slot;
 }
 
-int TableRecord::setHash(u32 array, Value key, Value value, int slot) {
+int TableRecord::setHash(u32 array, Value key, Value value, int slot, u8 extraHashSlots) {
 	if (isNil(value)) {
 		removeFromHash(key, slot);
 		return -1;
 	}
-	return assignHash<HashStore::General>(array, key, value, slot);
+	return assignHash<HashStore::General>(array, key, value, slot, extraHashSlots);
 }
 
 void TableRecord::publishHashInsertion(Value key, Value value) {
@@ -572,7 +572,7 @@ void TableRecord::publishHashInsertion(Value key, Value value) {
 }
 
 template <TableRecord::HashStore Policy>
-int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex)
+int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex, u8 extraHashSlots)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	constexpr bool returning = Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField;
 	const auto tag = valueTag(value);
@@ -617,7 +617,7 @@ int TableRecord::assignHash(u32 array, Value key, Value value, int nodeIndex)
 			return nodeIndex;
 		}
 	}
-	nodeIndex = insertHashWithAdmission<Policy>(key, value);
+	nodeIndex = insertHashWithAdmission<Policy>(key, value, extraHashSlots);
 	if constexpr (Policy != HashStore::General)
 		if (nodeIndex == HASH_STORE_DECLINED) return nodeIndex;
 	// Relocation invalidates a suspended collector cursor in resize().
@@ -637,8 +637,8 @@ bool TableRecord::tryAssignIntegerHash(i32 key, Value value) noexcept {
 	return true;
 }
 
-int TableRecord::tryAssignStringField(StringId key, Value value) noexcept {
-	return assignHash<HashStore::ReturningField>(arrayCapacity(), valueString(key), value);
+int TableRecord::tryAssignStringField(StringId key, Value value, u8 extraHashSlots) noexcept {
+	return assignHash<HashStore::ReturningField>(arrayCapacity(), valueString(key), value, TABLE_HASH_UNPROBED, extraHashSlots);
 }
 
 Value TableRecord::getInteger(int indexValue) const {
@@ -834,8 +834,8 @@ void TableRecord::resolveStringAssignment(StringId key, TableLookupResult& resul
 	});
 }
 
-int TableRecord::setStringKey(StringId key, const Value& value, int slot) {
-	return setHash(arrayCapacity(), valueString(key), value, slot);
+int TableRecord::setStringKey(StringId key, const Value& value, int slot, u8 extraHashSlots) {
+	return setHash(arrayCapacity(), valueString(key), value, slot, extraHashSlots);
 }
 
 bool TableRecord::storePredictedStringKey(StringId key, Value value, int predicted) noexcept {

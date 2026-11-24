@@ -17,7 +17,7 @@ module cpu_fetch_decode_word_alu_tb;
  cpu_instruction_decode decode(.clk(clk),.reset_n(reset_n),.req_valid(fetch_rsp_valid && !misaligned && !bus_fault),.req_ready(decode_req_ready),
   .req_pc(fetch_pc),.req_prefix(fetch_prefix),.req_body(fetch_body),.req_wide(fetch_wide),
   .rsp_valid(decode_valid),.rsp_ready(decode_ready),.rsp_pc(),.rsp_next_pc(),.rsp_opcode(opcode),.rsp_a(destination),
-  .rsp_b(),.rsp_c(),.rsp_bx(),.rsp_sbx(),.rsp_rkb(),.rsp_rkc(),.rsp_branch_target(),.rsp_disp(),.rsp_wide(),.rsp_nested_wide(),.rsp_reserved_memory());
+  .rsp_b(),.rsp_c(),.rsp_bx(),.rsp_sbx(),.rsp_rkb(),.rsp_rkc(),.rsp_branch_target(),.rsp_operand_byte(),.rsp_wide(),.rsp_nested_wide(),.rsp_reserved_memory());
  wire [5:0] operations={opcode==34,opcode==28,opcode==27,opcode==26,opcode==25,opcode==24};
  wire alu_valid;wire [13:0] alu_dest;wire [63:0] alu_result;
  cpu_word_alu alu(.clk(clk),.reset_n(reset_n),.req_valid(decode_valid),.req_ready(decode_ready),.req_operations(operations),.req_destination(destination),

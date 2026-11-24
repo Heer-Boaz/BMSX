@@ -52,6 +52,10 @@ constexpr uint8_t instructionOpcode(uint32_t word) {
 	return static_cast<uint8_t>((word >> (3 * MAX_OPERAND_BITS)) & ((1 << MAX_OP_BITS) - 1));
 }
 
+constexpr uint8_t instructionFieldExtraHashSlots(uint32_t head, uint8_t width) {
+	return width == 2u ? static_cast<uint8_t>(head >> 24u) : 0u;
+}
+
 constexpr uint32_t instructionLowB(uint32_t word) {
 	return (word >> MAX_OPERAND_BITS) & MAX_LOW_OPERAND;
 }

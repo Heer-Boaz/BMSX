@@ -188,7 +188,8 @@ DISPATCH_LABEL(SETFIELD) {
 	if (valueIsTable(base) && TableRecord(m_heap, valuePayload(base)).storePredictedStringKey(key, value, predicted))
 		DISPATCH_NEXT();
 	PUBLISH_SCALAR_FRONTIER();
-	if (storeTableFieldIndexCached(FRAME, predicted, base, key, value)) {
+	const u8 extraHashSlots = instructionFieldExtraHashSlots(decodedPage->sourceWords[pageOffset], decoded->width);
+	if (storeTableFieldIndexCached(FRAME, predicted, base, key, value, extraHashSlots)) {
 		if (allocationParked()) return RunResult::ParkedAllocation;
 		DISPATCH_CONTINUE();
 	}

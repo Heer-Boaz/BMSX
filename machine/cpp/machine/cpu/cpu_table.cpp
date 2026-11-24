@@ -118,8 +118,8 @@ void CPU::markPendingAllocationRoots(GcHeap& heap) {
 	heap.markValue(assignment->value);
 }
 
-bool CPU::parkTableWrite(CallFrame& frame, u32 receiver, Value key, Value value) {
-	parkAllocation(frame, PendingTableAssignment{receiver, canonicalTableKey(key), value});
+bool CPU::parkTableWrite(CallFrame& frame, u32 receiver, Value key, Value value, u8 extraHashSlots) {
+	parkAllocation(frame, PendingTableAssignment{receiver, extraHashSlots, canonicalTableKey(key), value});
 	return true;
 }
 
@@ -160,7 +160,8 @@ void CPU::resumeAllocation() {
 	lastPc = pending.lastPc;
 	bool retired;
 	if (const auto* assignment = std::get_if<PendingTableAssignment>(&pending.operands)) {
-		retired = TableRecord(m_heap, assignment->receiver).resumeAssignment(assignment->key, assignment->value);
+		retired = TableRecord(m_heap, assignment->receiver).resumeAssignment(
+			assignment->key, assignment->value, assignment->extraHashSlots);
 	} else {
 		const auto& create = std::get<PendingTableCreation>(pending.operands);
 		const u32 address = allocateTable(create.arraySize, create.hashSize, LuaAllocationMode::Retry);
@@ -206,16 +207,18 @@ bool CPU::storeTableIntegerIndex(CallFrame& frame, Value base, int index, Value 
 	return false;
 }
 
-bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value base, StringId key, Value value) {
+bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value base, StringId key, Value value, u8 extraHashSlots) {
 	if (!valueIsTable(base)) throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	TableLookupResult result;
 	TableRecord(m_heap, valuePayload(base)).resolveStringAssignment(key, result);
 	if (finishTableAssignment(frame, valueString(key), value, result)) return true;
+	if (result.extraVisits != 0u) extraHashSlots = 0;
 	TableRecord table(m_heap, result.receiver);
 	const int slot = m_runKind == CpuRunKind::Scheduled
-		? table.assignScheduled(valueString(key), value, result.slot)
-		: table.setStringKey(key, value, result.slot);
-	if (slot == TableRecord::HASH_STORE_DECLINED) return parkTableWrite(frame, result.receiver, valueString(key), value);
+		? table.assignScheduled(valueString(key), value, result.slot, extraHashSlots)
+		: table.setStringKey(key, value, result.slot, extraHashSlots);
+	if (slot == TableRecord::HASH_STORE_DECLINED)
+		return parkTableWrite(frame, result.receiver, valueString(key), value, extraHashSlots);
 	if (result.extraVisits == 0) predictedSlot = slot;
 	return false;
 }

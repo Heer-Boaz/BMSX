@@ -60,7 +60,7 @@ import {
 } from '../../spec/blua32/cop0';
 import {
 	BASE_OPERAND_A_BITS, BASE_OPERAND_BC_BITS, CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, MAX_OPERAND_BITS,
-	instructionBranchTarget, instructionBx, instructionLowB, instructionOpcode, instructionSignedBx, signExtend,
+	instructionBranchTarget, instructionBx, instructionFieldExtraHashSlots, instructionLowB, instructionOpcode, instructionSignedBx, signExtend,
 } from '../../spec/blua32/instruction_format';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET,
@@ -237,7 +237,7 @@ export const enum CpuRunKind { Direct, Scheduled }
 export const enum AllocationRecovery { None, Current, RetryCurrent, Fresh, RetryFresh }
 export const enum PendingAllocationKind { TableAssignment, TableCreation }
 type PendingAllocationOperands =
-	| { kind: PendingAllocationKind.TableAssignment; receiver: number; key: Value; value: Value }
+	| { kind: PendingAllocationKind.TableAssignment; receiver: number; key: Value; value: Value; extraHashSlots: number }
 	| { kind: PendingAllocationKind.TableCreation; destination: number; arraySize: number; hashSize: number };
 
 export type PendingAllocation = PendingAllocationOperands & {
@@ -611,7 +611,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		if (this.runKind === CpuRunKind.Scheduled) {
 			if (tables.assignScheduled(receiver, key, value) === HASH_STORE_DECLINED)
-				return this.parkTableWrite(frame, receiver, key, value);
+				return this.parkTableWrite(frame, receiver, key, value, 0);
 		} else tables.set(receiver, key, value);
 		return false;
 	}
@@ -640,8 +640,8 @@ export class CPU implements MappedPageInvalidator {
 		heap.markValue(pending.value);
 	}
 
-	private parkTableWrite(frame: CallFrame, receiver: number, key: Value, value: Value): boolean {
-		this.parkAllocation(frame, { kind: PendingAllocationKind.TableAssignment, receiver, key: canonicalTableKey(key), value });
+	private parkTableWrite(frame: CallFrame, receiver: number, key: Value, value: Value, extraHashSlots: number): boolean {
+		this.parkAllocation(frame, { kind: PendingAllocationKind.TableAssignment, receiver, key: canonicalTableKey(key), value, extraHashSlots });
 		return true;
 	}
 
@@ -678,7 +678,7 @@ export class CPU implements MappedPageInvalidator {
 		this.lastPc = pending.lastPc;
 		let retired: boolean;
 		if (pending.kind === PendingAllocationKind.TableAssignment) {
-			retired = this.gc.tables.resumeAssignment(pending.receiver, pending.key, pending.value);
+			retired = this.gc.tables.resumeAssignment(pending.receiver, pending.key, pending.value, pending.extraHashSlots);
 		} else {
 			const address = this.allocateTable(pending.arraySize, pending.hashSize, LuaAllocationMode.Retry);
 			retired = address !== 0;
@@ -714,10 +714,11 @@ export class CPU implements MappedPageInvalidator {
 		const assignment = this.tableLookupResult, field = valueString(key);
 		tables.resolveAssignment(record, field, assignment, true);
 		if (this.finishTableAssignment(frame, field, value, assignment)) return true;
+		const extraHashSlots = assignment.extraVisits === 0 ? page.operandByte[pageOffset] : 0;
 		const slot = this.runKind === CpuRunKind.Scheduled
-			? tables.assignScheduled(assignment.receiver, field, value, assignment.slot)
-			: tables.storeStringKey(assignment.receiver, key, tag, word, assignment.slot);
-		if (slot === HASH_STORE_DECLINED) return this.parkTableWrite(frame, assignment.receiver, field, value);
+			? tables.assignScheduled(assignment.receiver, field, value, assignment.slot, extraHashSlots)
+			: tables.storeStringKey(assignment.receiver, key, tag, word, assignment.slot, extraHashSlots);
+		if (slot === HASH_STORE_DECLINED) return this.parkTableWrite(frame, assignment.receiver, field, value, extraHashSlots);
 		if (assignment.extraVisits === 0) page.tableCacheSlots[pageOffset] = slot;
 		return false;
 	}
@@ -1407,7 +1408,7 @@ export class CPU implements MappedPageInvalidator {
 				page.a[pageOffset] = (wideA << MAX_OPERAND_BITS) | aLow;
 				page.b[pageOffset] = (wideB << MAX_OPERAND_BITS) | bLow;
 				page.c[pageOffset] = (wideC << MAX_OPERAND_BITS) | cLow;
-				page.disp[pageOffset] = ext;
+				page.operandByte[pageOffset] = ext;
 				if (page.c[pageOffset] > MemoryAccessKind.F64LE
 					&& (op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D)) {
 					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
@@ -1444,6 +1445,7 @@ export class CPU implements MappedPageInvalidator {
 					? signExtend(rawC, BASE_OPERAND_BC_BITS + ((width - 1) * MAX_OPERAND_BITS)) : rawC;
 				if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF || op === OpCode.GETT || op === OpCode.SETT) {
 					page.tableCacheSlots[pageOffset] = -1;
+					page.operandByte[pageOffset] = op === OpCode.SETFIELD ? instructionFieldExtraHashSlots(sourceWord, width) : 0;
 				}
 				if (rawC > MemoryAccessKind.F64LE && (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM)) {
 					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
@@ -3401,7 +3403,7 @@ export class CPU implements MappedPageInvalidator {
 					const c = page.c[pageOffset] as MemoryAccessKind;
 					if (c === MemoryAccessKind.F64LE) this.instructionBudgetRemaining -= 2;
 					const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D;
-					const addr = displaced ? (wordOperand(registers.get(b)) + (page.disp[pageOffset] << 2)) >>> 0
+					const addr = displaced ? (wordOperand(registers.get(b)) + (page.operandByte[pageOffset] << 2)) >>> 0
 						: wordOperand(this.readRKValue(frame, b));
 					if (op === OpCode.LOAD_MEM_D || op === OpCode.LOAD_MEM) this.executeMemoryLoad(frame, a, c, addr);
 					else this.executeMemoryStore(frame, a, c, addr);
@@ -3411,7 +3413,7 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.STORE_MEM_WORDS: {
 					const b = page.b[pageOffset];
 					const address = op === OpCode.STORE_MEM_WORDS_D
-						? (wordOperand(registers.get(b)) + (page.disp[pageOffset] << 2)) >>> 0
+						? (wordOperand(registers.get(b)) + (page.operandByte[pageOffset] << 2)) >>> 0
 						: wordOperand(this.readRKValue(frame, b));
 					this.executeWordStores(frame, address, a, page.c[pageOffset]);
 					return;

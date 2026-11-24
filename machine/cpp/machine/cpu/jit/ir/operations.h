@@ -246,6 +246,7 @@ struct NativeTableAccess {
 	std::optional<u16> reusePeerWord{};
 	NativeTableReadPlan readPlan = NativeTableReadPlan::Checkpoint;
 	NativeTableIndexType indexType = NativeTableIndexType::Dynamic;
+	u8 extraHashSlots = 0;
 
 	constexpr bool readsFixedField() const { return mode == NativeTableMode::Read && keyKind == NativeTableKey::Field; }
 

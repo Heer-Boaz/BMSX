@@ -17,6 +17,7 @@ export const cloneInstruction = (instruction: Instruction): Instruction => ({
 	b: instruction.b,
 	c: instruction.c,
 	disp: instruction.disp,
+	fieldGrowthSlots: instruction.fieldGrowthSlots,
 	format: instruction.format,
 	rkMask: instruction.rkMask,
 	target: instruction.target,

@@ -225,7 +225,9 @@ A WIDE word contributes its six-bit A/B/C fields above the body fields. For ABC,
 its A bits begin at decoded A bit 8, and its B/C bits begin at decoded B/C bit 9.
 For displacement, all three prefix fields begin at bit 6. For Bx, prefix A begins
 at A bit 6 and prefix B supplies Bx bits 25:20. Prefix C does not contribute to
-Bx. The prefix's own EXT byte is ignored.
+Bx. For `SETFIELD`, the prefix's own EXT byte requests 0 to 255
+additional hash slots when the assignment needs new table storage.
+For other instructions that byte is ignored.
 
 Exactly one following word is decoded as the body. This is one eight-byte
 instruction, not a separately executed zero-cycle prefix followed by another
@@ -260,7 +262,8 @@ two's-complement pattern in **20 bits without WIDE or 26 bits with WIDE**.
 Similarly, encode a negative RK operand in 9 or 15 bits before splitting its
 raw B/C field. Merely adding a zero-filled prefix to a narrow negative operand
 does not preserve its sign. A prefix word uses opcode zero, its `a/b/c` fields
-are `pA/pB/pC`, and its ignored extension byte can be zero.
+are `pA/pB/pC`. Use zero for an ordinary prefix, or the additional
+hash-slot request for a prefixed `SETFIELD`.
 
 The [two loads above](#sec-cpu-from-stored-bytes-to-a-frame-value) use ABC with
 opcode `31H`. Their operands fit the low fields, so EXT is zero and no WIDE
@@ -1269,6 +1272,21 @@ reserves the least power of two that holds the remaining entries, or zero
 slots if there are none. If allocation recovery clears weak entries,
 the insertion can reuse an available slot or retry with a new reservation.
 
+A prefixed `SETFIELD` can reserve space for following field insertions.
+Its request applies only when a new non-nil own mapping on the original
+receiver needs replacement storage. It adds the prefix's unsigned EXT
+value to the number of live hash entries, including the new entry,
+before rounding up to a power of two. The array reservation is unchanged.
+For example, eight live hash entries, a new field, and an EXT value of
+28 request room for 37 entries, so the replacement reserves 64 hash
+slots. An overwrite, deletion, insertion into available storage, or
+assignment through `__newindex` does not use the request.
+
+The requested replacement must fit the language-allocation budget, even
+if a smaller replacement would fit. If allocation recovery makes an
+existing slot available, the insertion can use that slot without
+replacing the storage. No later field is written by this instruction.
+
 A Table's slots and links occupy one block in the language heap. A Thread
 keeps its Value slots, frame controls and protected continuations in separate
 allocations. Growing one allocation does not move either of the others.
@@ -1519,7 +1537,8 @@ language-allocation budget, not the instruction's cycle charge.
 
 An insertion may reserve more storage. Its charge does not depend on
 whether the current storage can hold the mapping, or on how entries are
-arranged or moved. Storage growth counts against the language-allocation
+arranged or moved. A `SETFIELD` prefix request does not change this charge.
+Storage growth counts against the language-allocation
 budget. A metamethod invocation pays its ordinary call charge separately.
 Collection does not add to the instruction's cycle charge. An insertion that
 fails to reserve storage leaves the requested mapping unmodified.

@@ -6,12 +6,13 @@
 using namespace bmsx;
 int main(){unsigned count;std::cin>>count;
  for(unsigned i=0;i<count;i++){
-  u32 pc,source,body,wide,op,a,b,c,bx,sbx,rkb,rkc,target,disp,reserved,nested;
-  std::cin>>std::hex>>pc>>source>>body>>wide>>op>>a>>b>>c>>bx>>sbx>>rkb>>rkc>>target>>disp>>reserved>>nested;
+  u32 pc,source,body,wide,op,a,b,c,bx,sbx,rkb,rkc,target,operandByte,reserved,nested;
+  std::cin>>std::hex>>pc>>source>>body>>wide>>op>>a>>b>>c>>bx>>sbx>>rkb>>rkc>>target>>operandByte>>reserved>>nested;
   std::array<u8,8> bytes{};writeInstructionWord(bytes,0,source);writeInstructionWord(bytes,1,body);
   Blua32ImageLayout image;image.address=0;image.bytes=bytes;image.header.textAddress=0;image.header.textByteCount=8;
   const auto d=decodeInstructionFromStart(image,0);
-  if(static_cast<u32>(d.op)!=op||static_cast<u32>(d.a)!=a||static_cast<u32>(d.b)!=b||static_cast<u32>(d.c)!=c||static_cast<u32>(d.bx)!=bx||static_cast<u32>(d.sbx)!=sbx||static_cast<u32>(d.disp)!=disp){std::cerr<<"mismatch "<<std::dec<<i<<'\n';return 1;}
+  const auto decodedByte=OPCODE_USES_DISP[static_cast<size_t>(d.op)] ? d.disp : d.extraHashSlots;
+  if(static_cast<u32>(d.op)!=op||static_cast<u32>(d.a)!=a||static_cast<u32>(d.b)!=b||static_cast<u32>(d.c)!=c||static_cast<u32>(d.bx)!=bx||static_cast<u32>(d.sbx)!=sbx||static_cast<u32>(decodedByte)!=operandByte){std::cerr<<"mismatch "<<std::dec<<i<<'\n';return 1;}
  }
  std::cout<<"PASS "<<std::dec<<count<<" instruction decodes vs actual TS CPU and C++ disassembler owners\n";
 }

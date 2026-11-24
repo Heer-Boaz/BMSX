@@ -1190,6 +1190,7 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 			writer.u32(assignment->receiver);
 			writer.u64(assignment->key);
 			writer.u64(assignment->value);
+			writer.u8(assignment->extraHashSlots);
 		} else {
 			const auto& create = std::get<PendingTableCreation>(pending.operands);
 			writer.u32(static_cast<u32>(PendingAllocationKind::TableCreation));
@@ -1249,9 +1250,12 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 		pending.lastPc = reader.u32();
 		pending.nextPc = reader.u32();
 		switch (static_cast<PendingAllocationKind>(reader.u32())) {
-		case PendingAllocationKind::TableAssignment:
-			pending.operands = PendingTableAssignment{reader.u32(), reader.u64(), reader.u64()};
+		case PendingAllocationKind::TableAssignment: {
+			const u32 receiver = reader.u32();
+			const Value key = reader.u64(), value = reader.u64();
+			pending.operands = PendingTableAssignment{receiver, reader.u8(), key, value};
 			break;
+		}
 		case PendingAllocationKind::TableCreation:
 			pending.operands = PendingTableCreation{reader.i32(), reader.i32(), reader.i32()};
 			break;
