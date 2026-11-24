@@ -85,8 +85,6 @@ import {
 	BLUA32_IMAGE_HEADER_SIZE,
 	BLUA32_IMAGE_MAGIC,
 	BLUA32_IMAGE_MAGIC_OFFSET,
-	BLUA32_IMAGE_VERSION,
-	BLUA32_IMAGE_VERSION_OFFSET,
 	BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET,
 	BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
@@ -927,9 +925,8 @@ export class CPU implements MappedPageInvalidator {
 			this.executionReadView,
 		);
 		const { bytes, byteOffset } = this.executionReadView;
-		if (readLE32(bytes, byteOffset + BLUA32_IMAGE_MAGIC_OFFSET) !== BLUA32_IMAGE_MAGIC
-			|| readLE32(bytes, byteOffset + BLUA32_IMAGE_VERSION_OFFSET) !== BLUA32_IMAGE_VERSION) {
-			throw new Error('BLua32 image format is unsupported.');
+		if (readLE32(bytes, byteOffset + BLUA32_IMAGE_MAGIC_OFFSET) !== BLUA32_IMAGE_MAGIC) {
+			throw new Error('BLua32 image magic is invalid.');
 		}
 		const constantCount = readLE32(bytes, byteOffset + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET);
 		const globalNameCount = readLE32(bytes, byteOffset + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET);

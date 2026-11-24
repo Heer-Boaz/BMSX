@@ -121,7 +121,7 @@ Blua32RomFunctionDirectory Blua32RomFunctionDirectory::read(const Memory& memory
 				if (op == OpCode::EQ || op == OpCode::LT || op == OpCode::LE || op == OpCode::ITERN) {
 					const u32 skipped = instructionOpcode(read(next)) == static_cast<u8>(OpCode::WIDE) ? 2 : 1;
 					if (!version.contains(next + skipped * INSTRUCTION_BYTES))
-						throw BMSX_RUNTIME_ERROR(op == OpCode::ITERN ? "BLua32 iterator skips past the end of its function."
+						throw BMSX_RUNTIME_ERROR(op == OpCode::ITERN ? "Invalid BLua32 program in ROM: ITERN skips past the end of its function."
 							: "BLua32 comparison skips past the end of its function.");
 				}
 			}

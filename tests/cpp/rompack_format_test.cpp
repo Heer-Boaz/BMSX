@@ -293,25 +293,6 @@ int main() {
 		}
 	}
 
-	std::array<bmsx::u8, bmsx::BLUA32_IMAGE_HEADER_SIZE> unsupportedBlua32{};
-	bmsx::writeLE32(
-		unsupportedBlua32.data() + bmsx::BLUA32_IMAGE_MAGIC_OFFSET,
-		bmsx::BLUA32_IMAGE_MAGIC
-	);
-	bmsx::writeLE32(
-		unsupportedBlua32.data() + bmsx::BLUA32_IMAGE_VERSION_OFFSET,
-		bmsx::BLUA32_IMAGE_VERSION + 1u
-	);
-	bool unsupportedRejected = false;
-	try {
-		bmsx::decodeBlua32Image(unsupportedBlua32, bmsx::SYSTEM_ROM_BASE);
-	} catch (const std::runtime_error&) {
-		unsupportedRejected = true;
-	}
-	if (!unsupportedRejected) {
-		throw std::runtime_error("Unsupported BLua32 image version was accepted");
-	}
-
 	bmsx::test::Blua32TestImage functionRangeSource;
 	functionRangeSource.text.resize(bmsx::INSTRUCTION_BYTES);
 	functionRangeSource.functions = {{.firstWord = 0u, .wordCount = 1u}};
@@ -323,6 +304,9 @@ int main() {
 		functionRangeRom.bytes.data() + bmsx::test::BLUA32_TEST_IMAGE_OFFSET,
 		functionRangeRom.boot.imageByteCount
 	);
+	if (bmsx::readLE32(functionRangeImage.data() + 4u) != functionRangeImage.size()) {
+		throw std::runtime_error("BLua32 image byte count must follow the signature");
+	}
 	const bmsx::u32 functionRecordOffset = functionRangeRom.functionAddresses[0]
 		- (bmsx::SYSTEM_ROM_BASE + bmsx::test::BLUA32_TEST_IMAGE_OFFSET);
 	bmsx::writeLE32(

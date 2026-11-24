@@ -50,8 +50,6 @@ import {
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_TEXT_ADDRESS_OFFSET,
 	BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
-	BLUA32_IMAGE_VERSION,
-	BLUA32_IMAGE_VERSION_OFFSET,
 	BLUA32_UPVALUE_INDEX_MASK,
 	BLUA32_UPVALUE_IN_STACK_MASK,
 	BLUA32_UPVALUE_RECORD_SIZE,
@@ -196,9 +194,6 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 	}
 	if (readLE32(bytes, BLUA32_IMAGE_MAGIC_OFFSET) !== BLUA32_IMAGE_MAGIC) {
 		throw new Error('BLua32 image magic is invalid.');
-	}
-	if (readLE32(bytes, BLUA32_IMAGE_VERSION_OFFSET) !== BLUA32_IMAGE_VERSION) {
-		throw new Error('BLua32 image version is unsupported.');
 	}
 	const header: Blua32ImageHeader = {
 		imageByteCount: readLE32(bytes, BLUA32_IMAGE_BYTE_COUNT_OFFSET),

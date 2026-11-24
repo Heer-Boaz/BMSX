@@ -146,7 +146,6 @@ auto encodeImage(
 
 	std::vector<u8> bytes(imageByteCount);
 	writeLE32(bytes.data() + BLUA32_IMAGE_MAGIC_OFFSET, BLUA32_IMAGE_MAGIC);
-	writeLE32(bytes.data() + BLUA32_IMAGE_VERSION_OFFSET, BLUA32_IMAGE_VERSION);
 	writeLE32(bytes.data() + BLUA32_IMAGE_BYTE_COUNT_OFFSET, imageByteCount);
 	writeLE32(bytes.data() + BLUA32_IMAGE_FLAGS_OFFSET, source.mappedCode ? BLUA32_IMAGE_MAPPED_CODE_FLAG : 0u);
 	writeLE32(

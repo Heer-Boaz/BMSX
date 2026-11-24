@@ -34,7 +34,7 @@ specified in the reference below.
 | ROM base + program-header offset | `10000100H` | Absolute program-header address |
 | Word at ROM base + `28H` | `10001230H` | Absolute startup-function-record address |
 | Word at function record + `00H` | `10002000H` | Absolute initial instruction address |
-| Word at program header + `18H` | `10000300H` | Absolute constant-table address |
+| Word at program header + `14H` | `10000300H` | Absolute constant-table address |
 
 For a startup record with STATIC set, EXEC receives `10001230H`, reads the
 record and starts its code at `10002000H`. It does not add the program-header
@@ -279,37 +279,36 @@ selection and instruction operation.
 
 ## BLua32 executable image {#sec-memory-blua32-executable-image}
 
-The BLua32 program header occupies **96 bytes** in ROM. Its offsets are relative
+The BLua32 program header occupies **92 bytes** in ROM. Its offsets are relative
 to the program-header address obtained above. The CPU uses these six unsigned
 32-bit little-endian fields to establish the program's constants and name banks:
 
 | Image byte offset | Field | Unit and interpretation |
 | --- | --- | --- |
-| `18H` | Constant-table address | Absolute machine byte address in installed ROM. |
-| `1CH` | Constant count | Number of 12-byte constant records. |
-| `20H` | Global-name-table address | Absolute machine byte address in installed ROM. |
-| `24H` | Global-name count | Number of 4-byte name records. |
-| `28H` | System-global-name-table address | Absolute machine byte address in installed ROM. |
-| `2CH` | System-global-name count | Number of 4-byte name records. |
+| `14H` | Constant-table address | Absolute machine byte address in installed ROM. |
+| `18H` | Constant count | Number of 12-byte constant records. |
+| `1CH` | Global-name-table address | Absolute machine byte address in installed ROM. |
+| `20H` | Global-name count | Number of 4-byte name records. |
+| `24H` | System-global-name-table address | Absolute machine byte address in installed ROM. |
+| `28H` | System-global-name count | Number of 4-byte name records. |
 
 The remaining header slots identify the program's format, sections and linkage:
 
 | Image byte offset | Field |
 | --- | --- |
 | `00H` | Magic; declared constant `32334C42H`. |
-| `04H` | Format version; required value 3. |
-| `08H`, `0CH` | Image byte count; flags. |
-| `10H`, `14H` | Function-table address; function count. |
-| `30H`, `34H` | ROM String bucket-table address; bucket count. |
-| `38H`, `3CH` | RODATA address; RODATA byte count. |
-| `40H`, `44H`, `48H` | DATA load address; DATA byte count; DATA run address. |
-| `4CH`, `50H` | BSS address; BSS byte count. |
-| `54H`, `58H` | TEXT address; TEXT byte count. |
-| `5CH` | Preparation-sequence function-record address; zero when no sequence is present. |
+| `04H`, `08H` | Image byte count; flags. |
+| `0CH`, `10H` | Function-table address; function count. |
+| `2CH`, `30H` | ROM String bucket-table address; bucket count. |
+| `34H`, `38H` | RODATA address; RODATA byte count. |
+| `3CH`, `40H`, `44H` | DATA load address; DATA byte count; DATA run address. |
+| `48H`, `4CH` | BSS address; BSS byte count. |
+| `50H`, `54H` | TEXT address; TEXT byte count. |
+| `58H` | Preparation-sequence function-record address; zero when no sequence is present. |
 
-Provide the complete 96-byte header. Reset and EXEC also read
-the DATA byte count and run address (`44H`, `48H`) and the BSS address and
-byte count (`4CH`, `50H`): the larger of the two section ends sets the
+Provide the complete 92-byte header. Reset and EXEC also read
+the DATA byte count and run address (`40H`, `44H`) and the BSS address and
+byte count (`48H`, `4CH`): the larger of the two section ends sets the
 language-heap floor; see
 [[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}.
 DATA and BSS are initialized by the startup instructions.

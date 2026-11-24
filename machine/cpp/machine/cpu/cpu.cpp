@@ -297,9 +297,8 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		m_executionReadView
 	);
 	const u8* header = m_executionReadView.data();
-	if (readLE32(header + BLUA32_IMAGE_MAGIC_OFFSET) != BLUA32_IMAGE_MAGIC
-		|| readLE32(header + BLUA32_IMAGE_VERSION_OFFSET) != BLUA32_IMAGE_VERSION) {
-		throw BMSX_RUNTIME_ERROR("BLua32 image format is unsupported.");
+	if (readLE32(header + BLUA32_IMAGE_MAGIC_OFFSET) != BLUA32_IMAGE_MAGIC) {
+		throw BMSX_RUNTIME_ERROR("BLua32 image magic is invalid.");
 	}
 	const u32 constantTableAddress = readLE32(
 		header + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET

@@ -106,9 +106,6 @@ auto decodeBlua32Image(std::span<const u8> bytes, u32 imageAddress) -> Blua32Ima
 	if (readLE32(bytes.data() + BLUA32_IMAGE_MAGIC_OFFSET) != BLUA32_IMAGE_MAGIC) {
 		throw BMSX_RUNTIME_ERROR("BLua32 image magic is invalid.");
 	}
-	if (readLE32(bytes.data() + BLUA32_IMAGE_VERSION_OFFSET) != BLUA32_IMAGE_VERSION) {
-		throw BMSX_RUNTIME_ERROR("BLua32 image version is unsupported.");
-	}
 
 	Blua32ImageLayout image;
 	image.address = imageAddress;

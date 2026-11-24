@@ -120,7 +120,7 @@ function verifyRomControlFlow(directory: Blua32RomFunctionDirectory, code: Uint8
 				if (op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE || op === OpCode.ITERN) {
 					const skippedWide = instructionOpcode(readLE32(code, codeOffset + next - textAddress)) === OpCode.WIDE;
 					if (next + (skippedWide ? 2 : 1) * INSTRUCTION_BYTES >= end)
-						throw new Error(op === OpCode.ITERN ? 'BLua32 iterator skips past the end of its function.'
+						throw new Error(op === OpCode.ITERN ? 'Invalid BLua32 program in ROM: ITERN skips past the end of its function.'
 							: 'BLua32 comparison skips past the end of its function.');
 				}
 			}

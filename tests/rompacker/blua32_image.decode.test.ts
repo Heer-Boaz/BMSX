@@ -13,6 +13,14 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 
+test('BLua32 image byte count immediately follows the signature', () => {
+	const { image } = linkRawTestSystemBlua32({
+		text: new Uint8Array(INSTRUCTION_BYTES),
+		functions: [{ firstWord: 0, wordCount: 1 }],
+	});
+	assert.equal(readLE32(image.bytes, 4), image.bytes.byteLength);
+});
+
 test('BLua32 decoder rejects function text above the image text span', () => {
 	const text = new Uint8Array(INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.RET, 0, 0, 0, 0);
