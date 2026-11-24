@@ -18,7 +18,6 @@ public:
 	void analyze(std::span<const NativeIrBlock> blocks);
 
 	bool entryReads(size_t block, int guest) const;
-	bool hasForwardMerge(size_t block) const { return m_forwardEdges[block] > 1; }
 
 	template<class Visit> void forEachEntryRead(size_t block, Visit&& visit) const {
 		const size_t base = block * m_liveWordCount;
@@ -43,7 +42,6 @@ private:
 	std::vector<int> m_entryRegisters;
 	std::vector<u64> m_entryLive;
 	std::vector<u64> m_localLive;
-	std::vector<u16> m_forwardEdges;
 	size_t m_liveWordCount = 0;
 	std::vector<UseBoundary> m_nextUses;
 	std::span<const NativeInstruction> m_instructions;

@@ -585,6 +585,39 @@ void adjacentLocalAndPublicEntryFrontiers() {
 		"public entry imports the current raw payload instead of the predecessor's registers");
 }
 
+void mergedLocationsDoNotMergeValues() {
+	test::Blua32TestImage image;
+	image.text.resize(INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1}};
+	CpuMachine machine(image, false);
+	constexpr u32 firstPc = DYNAMIC_RAM_BASE, otherPc = firstPc + 64, joinPc = otherPc + 64;
+	DecodedInstruction bits{.a = 1, .c = static_cast<i16>(ValueMoveKind::FloatFromBits), .op = static_cast<u8>(OpCode::MOV)};
+	DecodedInstruction integer{.a = 1, .op = static_cast<u8>(OpCode::KSMI)};
+	integer.setSbx(-13);
+	DecodedInstruction jump{.op = static_cast<u8>(OpCode::JMP)};
+	jump.setBx(joinPc);
+	DecodedInstruction copy{.a = 2, .b = 1, .op = static_cast<u8>(OpCode::MOV)};
+	for (auto* op : {&bits, &integer, &jump, &copy}) {
+		op->width = 1;
+		op->baseCycles = BASE_CYCLES[op->op];
+	}
+	const std::array left{NativeBlockInstruction{&bits, firstPc}, NativeBlockInstruction{&jump, firstPc + INSTRUCTION_BYTES}};
+	const std::array right{NativeBlockInstruction{&integer, otherPc}, NativeBlockInstruction{&jump, otherPc + INSTRUCTION_BYTES}};
+	const std::array join{NativeBlockInstruction{&copy, joinPc}};
+	const std::array runs{NativeBlockSource{left}, NativeBlockSource{right}, NativeBlockSource{join}};
+	auto blocks = NativeCompiler{}.compile(runs, NativeCodeBindings(machine.memory, machine.cpu.stringPool()));
+	const std::array initial{valueInteger(0x7fa12345), valueBool(true), valueNil()};
+	for (int entry = 0; entry < 3; ++entry) {
+		const Value expected = entry == 0 ? valueFloatBits(0x7fa12345) : entry == 1 ? valueInteger(-13) : initial[1];
+		auto regs = test::valueBank(initial);
+		NativeBlockRunState state{.remainingCycles = 64};
+		require(blocks[entry]->run(regs.view(), state) == &blocks[2]->terminal
+			&& regs.get(1) == expected && regs.get(2) == expected,
+			"a shared join location carries each predecessor's raw bits and tag, including a direct public import");
+	}
+}
+
 void codeCapacityRetiresOldestCompleteRegion() {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -686,6 +719,7 @@ int main() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		compilationProfilingIsOptInAndSurvivesReset();
 		adjacentLocalAndPublicEntryFrontiers();
+		mergedLocationsDoNotMergeValues();
 		codeCapacityRetiresOldestCompleteRegion();
 #endif
 		std::cout << "Compiled block link tests passed\n"; return 0;

@@ -10,23 +10,19 @@
 namespace bmsx {
 void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks) {
 	m_entryRegisters.clear();
-	m_forwardEdges.assign(blocks.size(), 0);
+	bool hasForwardEdge = false;
 
 	size_t maxBlockLength = 0;
 	for (size_t i = 0; i < blocks.size(); ++i) {
 		const auto& block = blocks[i];
 		const auto [fallthrough, alternate] = block.successors;
-		if (fallthrough > i && fallthrough < blocks.size())
-			++m_forwardEdges[fallthrough];
-		if (alternate > i && alternate < blocks.size() && alternate != fallthrough)
-			++m_forwardEdges[alternate];
+		hasForwardEdge |= (fallthrough > i && fallthrough < blocks.size())
+			|| (alternate > i && alternate < blocks.size());
 
 		maxBlockLength = std::max(maxBlockLength, block.instructions.size());
 	}
 	if (maxBlockLength > 1) m_nextUses.reserve(maxBlockLength * 8);
-	// Forward edges export logical facts even when their successor cannot
-	// borrow a particular predecessor's physical register map.
-	if (std::none_of(m_forwardEdges.begin(), m_forwardEdges.end(), [](u16 edges) { return edges != 0; })) {
+	if (!hasForwardEdge) {
 		m_liveWordCount = 0;
 		m_entryLive.clear();
 		return;

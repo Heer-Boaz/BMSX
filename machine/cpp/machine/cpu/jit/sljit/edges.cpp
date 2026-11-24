@@ -117,7 +117,9 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, EdgePositi
 				for (const auto type : successor.entryTypes)
 					fault(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, source);
 		}
-		if (!entry.planned && !m_uses.hasForwardMerge(target)) {
+		// The first incoming edge fixes the live locations, not their values.
+		// All later predecessors (and the public entry) parallel-move into them.
+		if (!entry.planned) {
 			entry.planned = true;
 			entry.registers = source;
 			// Only the entry contract establishes exact tags. Other live

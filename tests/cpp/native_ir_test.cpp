@@ -1062,14 +1062,9 @@ void registerUses() {
 	};
 	NativeRegisterUses uses;
 	uses.analyze(blocks);
-	require(uses.hasForwardMerge(3) && !uses.hasForwardMerge(1) && !uses.hasForwardMerge(2),
-		"only the diamond join has distinct forward predecessors");
 	require(uses.entryReads(0, 10) && !uses.entryReads(1, 10) && uses.entryReads(2, 10)
 		&& uses.entryReads(1, 12) && uses.entryReads(3, 10) && !uses.entryReads(3, 11),
 		"entry liveness follows both edges but excludes values overwritten before they are read");
-	blocks[2].successors = {4, 4};
-	uses.analyze(blocks);
-	require(!uses.hasForwardMerge(3), "two exits from one predecessor do not form a merge");
 
 	std::vector<NativeInstruction> instructions(64, NativeInstruction(NativeLiteral{1, valueInteger(0)}));
 	instructions[0] = NativeInstruction(NativeMove{10, 9, ValueMoveKind::Copy});
