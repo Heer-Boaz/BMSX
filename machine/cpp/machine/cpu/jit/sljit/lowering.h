@@ -168,6 +168,7 @@ private:
 		NativeBlockExitSite* exit;
 		sljit_label* result;
 		i32* ownPrediction;
+		bool ownOnly;
 	};
 	struct StringStoreMiss {
 		std::array<sljit_jump*, 5> misses;

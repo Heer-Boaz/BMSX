@@ -213,7 +213,7 @@ void NativeLowering::emitOwnIndexStore(int value, NativeBlockExitSite& exit, Nat
 std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExitSite& exit, bool load,
 	std::optional<StringId> fixedKey, std::optional<u8> temporary) {
 	auto* c = m_compiler;
-	auto& slot = load ? exit.tableRead.own : exit.tableStore;
+	auto& slot = load ? exit.tableRead : exit.tableStore;
 	const sljit_sw prediction = reinterpret_cast<sljit_sw>(m_decodedPage ? slot.decoded : &slot.standalone);
 	sljit_sw saved = 0;
 	std::array<sljit_jump*, 3> checks;
@@ -267,7 +267,7 @@ void NativeLowering::emitReusedFieldAddress(u8 temporary, u16 keyIndex, NativeBl
 	// Each callsite can change its own prediction independently. Check
 	// identity before allowing the consumer to use a different site's proof.
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
-		SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_decodedPage ? exit.tableRead.own.decoded : &exit.tableRead.own.standalone),
+		SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_decodedPage ? exit.tableRead.decoded : &exit.tableRead.standalone),
 		SLJIT_MEM1(SLJIT_SP), saved + 2 * sizeof(u32)), exit, m_cache.state());
 	if (!nativeImageConstant(m_constants, keyIndex)) {
 		emitPoolWord(keyIndex, SLJIT_R0);
@@ -303,13 +303,15 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 		else emitPoolWord(*keyIndex, SLJIT_R3);
 	}
 	if (!fixedKey) sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_R3, 0);
+	const bool ownOnly = load && readPlan == NativeTableReadPlan::OwnSlot;
+	auto* retry = ownOnly && (temporary || exit.operands.table.reusePeerWord) ? sljit_emit_label(c) : nullptr;
 	const auto address = emitStringValueAddress(exit, load, fixedKey, temporary);
 	auto* valueFailure = emitStringValueTag(load, resultTag);
 	if (const auto peer = exit.operands.table.reusePeerWord; peer && m_decodedPage) {
 		// A worker can publish this baseline after scalar execution has
 		// already learned both slots. Confirm the actual own hit before
 		// using the semantic continuation to reproject the source.
-		auto* prediction = exit.tableRead.own.decoded;
+		auto* prediction = exit.tableRead.decoded;
 		const auto peerSlot = &m_decodedPage[*peer].tableCacheSlot();
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(prediction));
 		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0,
@@ -317,17 +319,22 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	}
 	// An own-only read can be inside a fixed-cost segment. Only
 	// checkpointed reads can complete a returning variable-cost lookup.
-	if (readPlan == NativeTableReadPlan::OneHopIndex || readPlan == NativeTableReadPlan::ProbeOwnOrOneHop ||
-		readPlan == NativeTableReadPlan::ProbeHashOrOneHop) {
-		// Standalone blocks do not own decoder feedback.
-		auto* ownPrediction = readPlan == NativeTableReadPlan::ProbeOwnOrOneHop && m_bindings.cpu
-			? exit.tableRead.own.decoded : nullptr;
+	if (readPlan == NativeTableReadPlan::StringLookup ||
+		readPlan == NativeTableReadPlan::IndexLookup) {
+		auto* ownPrediction = m_decodedPage ? exit.tableRead.decoded : &exit.tableRead.standalone;
 		emitStringPayload();
 		m_workspace.singleStringReads.push_back({{address[0], address[1], address[2], valueFailure}, fixedKey,
-			m_cache.state(), &exit, sljit_emit_label(c), ownPrediction});
+			m_cache.state(), &exit, sljit_emit_label(c), ownPrediction, false});
 		return;
 	}
-	if (!returnMiss) {
+	if (ownOnly) {
+		fault(valueFailure, exit, missState);
+		emitStringPayload();
+		auto* prediction = m_decodedPage ? exit.tableRead.decoded : &exit.tableRead.standalone;
+		m_workspace.singleStringReads.push_back({{address[0], address[1], address[2], nullptr}, fixedKey,
+			m_cache.state(), &exit, retry ? retry : sljit_emit_label(c), prediction, true});
+		return;
+	} else if (!returnMiss) {
 		for (auto* guard : address) fault(guard, exit, missState);
 		fault(valueFailure, exit, missState);
 	}
@@ -388,44 +395,37 @@ void NativeLowering::emitSingleStringReads() {
 	auto* c = m_compiler;
 	for (const auto& read : m_workspace.singleStringReads) {
 		auto* entry = sljit_emit_label(c);
-		for (auto* miss : read.ownMisses) sljit_set_label(miss, entry);
+		for (auto* miss : read.ownMisses) if (miss) sljit_set_label(miss, entry);
 		m_cache.setState(read.registers);
-		const auto& slots = read.exit->tableRead.path;
-		const bool searchOwn = read.ownPrediction != nullptr;
-		const auto prediction = reinterpret_cast<sljit_sw>(read.ownPrediction);
-		const auto depth = reinterpret_cast<sljit_sw>(&slots.holderDepth);
-		auto* notInherited = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM0(), depth, SLJIT_IMM, 1);
-		if (!searchOwn) fault(notInherited, *read.exit, read.registers);
-		else sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&slots));
-		auto* invoke = sljit_emit_label(c);
 		if (read.fixedKey)
 			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_IMM, *read.fixedKey);
-		if (!searchOwn) sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&slots));
-		// Each own miss leaves the aligned receiver header in R0. The leaf
-		// preserves the guest register cache and returns the live value lanes.
-		// For a nonnil result, R1 is the own slot or -1 for inheritance.
+		if (read.ownOnly) {
+			// Fixed-cost segments may recover the slot, not change their value or
+			// visit-cost proofs. Address reuse still needs the original spill sequence.
+			sljit_emit_ijump(c, SLJIT_FAST_CALL, SLJIT_IMM,
+				reinterpret_cast<sljit_sw>(nativeBlockGate().ownStringSlotProbe));
+			fault(sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0), *read.exit, read.registers);
+			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(read.ownPrediction), SLJIT_R1, 0);
+			if (read.exit->operands.table.resultProof) {
+				fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM,
+					static_cast<u8>(*read.exit->operands.table.resultProof)), *read.exit, read.registers);
+			}
+			sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), read.result);
+			continue;
+		}
 		sljit_emit_ijump(c, SLJIT_FAST_CALL, SLJIT_IMM,
 			reinterpret_cast<sljit_sw>(nativeBlockGate().stringReadProbe));
-		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0,
-			SLJIT_IMM, static_cast<u8>(ValueTag::Nil)), *read.exit, m_cache.state());
-		if (searchOwn) {
-			auto* inherited = sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
-			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM0(), prediction, SLJIT_R1, 0);
-			sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), read.result);
-			sljit_set_label(inherited, sljit_emit_label(c));
+		fault(sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), *read.exit, read.registers);
+		auto* noOwnSlot = sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
+		if (read.exit->operands.table.reusePeerWord) {
+			// Only the publication owner may reproject paired fields.
+			fault(sljit_emit_jump(c, SLJIT_JUMP), *read.exit, read.registers);
+		} else {
+			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(read.ownPrediction), SLJIT_R1, 0);
 		}
-		sljit_emit_op2(c, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, TABLE_INDEX_VISIT_CYCLES);
+		sljit_set_label(noOwnSlot, sljit_emit_label(c));
+		sljit_emit_op2(c, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_R0, 0);
 		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), read.result);
-		if (searchOwn) {
-			// Probe only an already-trained own slot at an untrained inherited depth.
-			sljit_set_label(notInherited, sljit_emit_label(c));
-			fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM0(), depth, SLJIT_IMM, 0),
-				*read.exit, read.registers);
-			fault(sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_MEM0(), prediction, SLJIT_IMM, 0),
-				*read.exit, read.registers);
-			sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, 0);
-			sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), invoke);
-		}
 	}
 }
 
@@ -478,7 +478,7 @@ void NativeLowering::lowerOperation(const NativeTableAccess& access, const Nativ
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
 	switch (access.keyKind) {
 	case NativeTableKey::Value: {
-		const bool hashLeaf = m_bindings.cpu && access.readPlan == NativeTableReadPlan::ProbeHashOrOneHop;
+		const bool hashLeaf = m_bindings.cpu && access.readPlan == NativeTableReadPlan::IndexLookup;
 		const auto hashStore = access.store.hash;
 		const bool identityStore = m_bindings.cpu && (hashStore == NativeHashStore::Identity || hashStore == NativeHashStore::Index);
 		const bool integerStore = m_bindings.cpu && (hashStore == NativeHashStore::Integer || hashStore == NativeHashStore::Index);

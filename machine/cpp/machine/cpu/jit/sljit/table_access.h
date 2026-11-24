@@ -12,7 +12,7 @@ private:
 		u32 receiver;
 		union { u32 keyWord, arrayLength; };
 		u32 wordOffset, tagOffset;
-		union { sljit_sw path; u32 keyTag; };
+		u32 keyTag;
 		sljit_sw returnAddress;
 		sljit_sw words, tags;
 	};
@@ -27,7 +27,8 @@ public:
 	static constexpr auto arrayLength = begin + offsetof(Layout, arrayLength);
 	static constexpr auto wordOffset = begin + offsetof(Layout, wordOffset);
 	static constexpr auto tagOffset = begin + offsetof(Layout, tagOffset);
-	static constexpr auto path = begin + offsetof(Layout, path);
+	static constexpr auto fieldKey = receiver;
+	static constexpr auto visitCost = wordOffset;
 	static constexpr auto keyTag = begin + offsetof(Layout, keyTag);
 	static constexpr auto returnAddress = begin + offsetof(Layout, returnAddress);
 };
@@ -39,11 +40,13 @@ void emitTableSlotOffset(sljit_compiler*, sljit_s32 destination, bool word);
 // (tag) to the corresponding value, clobbering R2.
 void emitHashValueOffsets(sljit_compiler*);
 
-// In-frame leaf: R0 = receiver header, R1 = inherited path or null for
-// an own probe, SP[keyWord] = StringId. Clobbers R0..R3. On success,
-// R2/R3 hold the value and R1 is the own hash slot or -1 for inheritance.
-// A nil tag declines. The caller owns the visit charge and slot feedback.
+// R0 = aligned receiver header, SP[keyWord] = StringId. Returns R0 = visit
+// charge (-1 for semantic exit), R1 = own slot or -1, R2/R3 = value lanes.
 sljit_label* emitStringReadProbe(sljit_compiler*);
+
+// Repair an own-slot hint without entering an inherited path. Preserves the
+// receiver header in R0; returns the nonnil slot or -1 in R1, value in R2/R3.
+sljit_label* emitOwnStringSlotProbe(sljit_compiler*);
 
 // R0 = receiver header, R2 = Integer or Table tag, R3 = key payload.
 // Preserves R0 and returns the raw value in R2/R3, or nil on absence.

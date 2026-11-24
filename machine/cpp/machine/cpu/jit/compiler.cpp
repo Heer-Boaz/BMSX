@@ -38,7 +38,7 @@ NativeBlockExitSite materializeExit(const NativeIrExit& exit, const NativeCodeBi
 	switch (exit.exit) {
 	case NativeBlockExit::ReadField:
 	case NativeBlockExit::ReadIndex:
-		std::construct_at(&site.tableRead, NativeTableReadPrediction{tableSlot(), {-1, 0, {-1, -1, -1}}});
+		std::construct_at(&site.tableRead, tableSlot());
 		break;
 	case NativeBlockExit::WriteField:
 	case NativeBlockExit::WriteIndex:

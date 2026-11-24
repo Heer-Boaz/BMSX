@@ -229,7 +229,7 @@ enum class NativeTableKey : u8 { Value, Integer, Field };
 enum class NativeTableIndexType : u8 { Dynamic, Integer, String, Table };
 // The inherited read requires a variable-cost checkpoint. A checked own
 // slot can instead be used within an admitted fixed-cost segment.
-enum class NativeTableReadPlan : u8 { Checkpoint, OwnSlot, OneHopIndex, ProbeOwnOrOneHop, ProbeHashOrOneHop };
+enum class NativeTableReadPlan : u8 { Checkpoint, OwnSlot, StringLookup, IndexLookup };
 using NativeOwnFieldAddressId = u8;
 struct NativeTableAccess {
 	NativeValueRef value;

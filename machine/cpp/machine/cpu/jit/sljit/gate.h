@@ -24,6 +24,7 @@ public:
 	void* publishSegment;
 	void* leaveSegment;
 	void* stringReadProbe;
+	void* ownStringSlotProbe;
 	void* indexReadProbe;
 	void* tableIteratorScan;
 };

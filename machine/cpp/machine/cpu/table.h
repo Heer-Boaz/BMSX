@@ -98,8 +98,6 @@ public:
 	void resolveIntegerIndex(int key, TableLookupResult& result) const;
 	void resolveStringIndex(StringId key, TableLookupResult& result) const;
 	void resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result) const;
-	void resolveStringIndexPath(StringId key, int& receiverSlot,
-		TableLookupResult& result, TableStringPathCache& cache, TableFirstOwnProbe firstOwnProbe) const;
 	void resolveAssignment(Value key, TableLookupResult& result) const;
 	void resolveIntegerAssignment(int key, TableLookupResult& result) const;
 	void resolveStringAssignment(StringId key, TableLookupResult& result) const;
@@ -263,10 +261,9 @@ private:
 	void markHashNodeDead(size_t index);
 	Value getCanonical(const Value& key) const;
 	Value getHash(const Value& key) const;
-	template <bool Assignment = false, bool RememberPath = false, typename Lookup>
+	template <bool Assignment = false, typename Lookup>
 	void resolveIndexChain(int slot, TableLookupResult& result, Lookup&& lookup,
-		TableStringPathCache* cache = nullptr, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT,
-		TableFirstOwnProbe firstOwnProbe = TableFirstOwnProbe::Required) const;
+		u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
 
 	ValueSlots<false> values() const { return hashBody(hashSlots(), arrayCapacity()).slots; }
 

@@ -729,9 +729,9 @@ u32 TableRecord::newIndexMetatable() const {
 	return meta != 0u && m_memory->readRamRecordByte(meta + TABLE_NEW_INDEX_ABSENT_BYTE) == 1u ? 0u : meta;
 }
 
-template <bool Assignment, bool RememberPath, typename Lookup>
+template <bool Assignment, typename Lookup>
 void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&& lookup,
-	TableStringPathCache* cache, u32 visitLimit, TableFirstOwnProbe firstOwnProbe) const {
+	u32 visitLimit) const {
 	TableRecord current = *this;
 	for (u32 depth = 0; depth < visitLimit; ++depth) {
 		const u32 receiver = current.address();
@@ -743,25 +743,13 @@ void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&
 				return;
 			}
 		}
-		if constexpr (RememberPath) {
-			if (depth != 0 && depth == cache->holderDepth) slot = cache->holderSlot;
-		}
-		decltype(lookup(current, slot)) own;
-		if constexpr (RememberPath) {
-			own = depth == 0 && firstOwnProbe == TableFirstOwnProbe::Absent ? valueNil() : lookup(current, slot);
-		} else own = lookup(current, slot);
+		const auto own = lookup(current, slot);
 		if constexpr (Assignment) {
 			if (own) {
 				result = {valueNil(), slot, depth, TableLookupStatus::Store, receiver};
 				return;
 			}
 		} else if (!isNil(own)) {
-			if constexpr (RememberPath) {
-				if (depth != 0) {
-					cache->holderDepth = depth;
-					cache->holderSlot = slot;
-				}
-			}
 			result = {own, slot, depth, TableLookupStatus::Resolved};
 			return;
 		}
@@ -776,9 +764,6 @@ void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&
 		Value parent;
 		if constexpr (Assignment) {
 			parent = current.getStringKey(m_heap->newIndexKey);
-		} else if constexpr (RememberPath) {
-			parent = depth < cache->indexSlots.size() ? current.getStringKeyCached(m_heap->indexKey, cache->indexSlots[depth])
-				: current.getStringKey(m_heap->indexKey);
 		} else parent = current.getStringKey(m_heap->indexKey);
 		if (!valueIsTable(parent)) {
 			if (valueIsClosure(parent) || valueIsBuiltinFunction(parent))
@@ -799,7 +784,7 @@ void TableRecord::resolveIndex(const Value& rawKey, TableLookupResult& result, u
 	const bool miss = isNil(key) || valueIsNaN(key);
 	resolveIndexChain(-1, result, [key, miss](const TableRecord& table, int&) {
 		return miss ? valueNil() : table.getCanonical(key);
-	}, nullptr, visitLimit);
+	}, visitLimit);
 }
 
 void TableRecord::resolveIntegerIndex(int key, TableLookupResult& result) const {
@@ -812,13 +797,6 @@ void TableRecord::resolveStringIndex(StringId key, TableLookupResult& result) co
 
 void TableRecord::resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result) const {
 	resolveIndexChain(predictedSlot, result, [key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); });
-}
-
-void TableRecord::resolveStringIndexPath(StringId key, int& receiverSlot,
-	TableLookupResult& result, TableStringPathCache& cache, TableFirstOwnProbe firstOwnProbe) const {
-	resolveIndexChain<false, true>(receiverSlot, result,
-		[key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); }, &cache, TABLE_INDEX_CHAIN_LIMIT, firstOwnProbe);
-	if (result.extraVisits == 0u && result.slot >= 0) receiverSlot = result.slot;
 }
 
 void TableRecord::resolveAssignment(Value rawKey, TableLookupResult& result) const {
@@ -952,12 +930,10 @@ u32 TableRecord::nextStoredEntry(u32 position, Value& key, Value& value) const {
 }
 
 
-
 size_t TableRecord::trackedHeapBytes() const {
 	const u32 storage = storageAddress();
 	return m_heap->arena.allocationBytes(m_address - GC_OBJECT_PREFIX)
 		+ (storage != 0u ? m_heap->arena.allocationBytes(storage) : 0u);
 }
-
 
 } // namespace bmsx

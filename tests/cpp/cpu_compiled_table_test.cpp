@@ -132,7 +132,7 @@ void completedOwnStringProbeKeepsLookupSemantics() {
 				require(page && page->nativeBlocks && page->nativeBlocks->entries[word], "the trained source is still installed");
 				const auto& entry = page->nativeBlocks->entries[word];
 				const auto read = std::ranges::find(entry->sideExits, NativeBlockExit::ReadField, &NativeBlockExitSite::exit);
-				require(read != entry->sideExits.end() && *read->tableRead.own.decoded >= 0,
+				require(read != entry->sideExits.end() && *read->tableRead.decoded >= 0,
 					"the published own-slot prediction still points to the formerly present field");
 				ValueSlots registers(6);
 				registers.set(0, frame.registers.get(0));
@@ -141,14 +141,12 @@ void completedOwnStringProbeKeepsLookupSemantics() {
 				NativeBlockRunState grant{.constants = frame.executionImage->constPool, .frame = &frame, .heap = &cpu.gcHeap(),
 					.globalValues = {}, .systemGlobalValues = {},
 					.tableIndexKey = cpu.stringPool().intern("__index"), .remainingCycles = 0};
-				require(entry->run(registers.view(), grant)->exit == NativeBlockExit::ScalarBoundary
-					&& grant.firstTableOwnProbe == TableFirstOwnProbe::Required,
+				require(entry->run(registers.view(), grant)->exit == NativeBlockExit::ScalarBoundary,
 					"a short grant does not attest to an unperformed own probe");
 				grant.remainingCycles = ownGrant;
-				require(entry->run(registers.view(), grant) == &*read && grant.remainingCycles == 0
-					&& grant.firstTableOwnProbe == TableFirstOwnProbe::Absent
-					&& registers.get(2) == valueInteger(91) && registers.get(4) == valueInteger(73),
-					"generated code attests to the exhausted own lookup before Lua continuation or result placement");
+				require(entry->run(registers.view(), grant)->exit == NativeBlockExit::Continue && grant.remainingCycles == -TABLE_INDEX_VISIT_CYCLES
+					&& registers.get(2) == valueFromTag(ValueTag::False,37) && registers.get(4) == valueInteger(73),
+					"the native read publishes inherited false and its visit debt before the suffix");
 			}
 #endif
 			require(test::runCpuParity(native.cpu, scalar.cpu, 2048) == RunResult::Halted,
@@ -1076,7 +1074,7 @@ void nativeFieldOperationsLearnTheDecodedSite() {
 	cpu.prepareSystemNativeCode();
 	const auto& read = page.nativeBlocks->entries[word]->sideExits.front().tableRead;
 	const auto& write = page.nativeBlocks->entries[word + 1]->sideExits.front().tableStore;
-	require(read.own.decoded == &page.words[word].tableCacheSlot()
+	require(read.decoded == &page.words[word].tableCacheSlot()
 		&& write.decoded == &page.words[word + 1].tableCacheSlot(),
 		"recompilation borrows the learned sites instead of creating independent writable seeds");
 #endif
@@ -1132,9 +1130,9 @@ void nativeFieldCacheMissReturnsOwnValueAndTrainsTheSameSite() {
 	require(installed != nullptr, "the fixed-key checkpoint is ready before observing a receiver");
 	const auto region = installed->region;
 	const auto fieldExit = std::ranges::find(installed->sideExits, NativeBlockExit::ReadField, &NativeBlockExitSite::exit);
-	require(fieldExit != installed->sideExits.end() && fieldExit->currentPc == pc && fieldExit->tableRead.path.holderDepth == 0
+	require(fieldExit != installed->sideExits.end() && fieldExit->currentPc == pc
 		&& !fieldExit->operands.table.resultProof && !fieldExit->operands.table.reusePeerWord
-		&& fieldExit->tableRead.own.decoded == &page.words[word].tableCacheSlot() && page.words[word].tableCacheSlot() == -1,
+		&& fieldExit->tableRead.decoded == &page.words[word].tableCacheSlot() && page.words[word].tableCacheSlot() == -1,
 		"the untyped own lookup starts untrained and borrows its one decoded slot");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& fieldExits = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::ReadField)].entries;
@@ -1157,20 +1155,20 @@ void nativeFieldCacheMissReturnsOwnValueAndTrainsTheSameSite() {
 			&& cpu.activeThread()->currentFrame->readWindow(FrameField::Top) == 10,
 			"the fixed read commits the live raw Value and its exact frontier without admitting the suffix");
 		require(page.nativeBlocks->entries[word].get() == installed && installed->region == region
-			&& page.words[word].tableCacheSlot() == prediction && fieldExit->tableRead.path.holderDepth == 0,
+			&& page.words[word].tableCacheSlot() == prediction,
 			"the same installed checkpoint keeps only the live own prediction");
 		requireParity(native, scalar);
 	};
 	read(5, linkedValue, 0, linkedSlot);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	require(fieldExits == initialExits + 1, "the initial receiver teaches its own slot via the ordinary semantic exit");
+	require(fieldExits == initialExits, "the initial receiver teaches its own slot without a semantic exit");
 #endif
 	for (int iteration = 0; iteration < 3; ++iteration) {
 		read(6, singletonValue, 0, 0);
 		read(5, linkedValue, 0, linkedSlot);
 	}
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	require(fieldExits == initialExits + 1, "a trained own miss handles out-of-range and wrong-key slots without a ReadField exit");
+	require(fieldExits == initialExits, "a trained own miss handles out-of-range and wrong-key slots without a ReadField exit");
 #endif
 	read(7, valueNil(), 0, linkedSlot);
 	for (auto* machine : {&native, &scalar}) {
@@ -1182,7 +1180,7 @@ void nativeFieldCacheMissReturnsOwnValueAndTrainsTheSameSite() {
 	}
 	read(7, valueString(*cpu.stringPool().find("table")), 2, linkedSlot);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	require(fieldExits == initialExits + 3, "nil and callable __index still use the semantic owner");
+	require(fieldExits == initialExits + 1, "only callable __index needs the semantic owner");
 #endif
 #endif
 }
@@ -1270,13 +1268,12 @@ void warmInheritedFieldReadsKeepTheirFrame() {
 	native.cpu.prepareSystemNativeCode();
 #endif
 	require(test::runCpuParity(native.cpu, scalar.cpu, total) == RunResult::Yielded
-		&& native.cpu.readFrameRegister(0, 6) == valueInteger(41), "the ordinary inherited read trains its one-hop cache");
+		&& native.cpu.readFrameRegister(0, 6) == valueInteger(41), "the first inherited read follows the live table");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const auto& entry = page.nativeBlocks->entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-	require(entry && entry->admissionCycles == prefix && entry->terminal.currentPc == field
-		&& entry->sideExits[0].tableRead.path.holderDepth == 1,
-		"the installed entry has a trained one-hop proof, not just a generic table exit");
+	require(entry && entry->admissionCycles == prefix && entry->terminal.currentPc == field,
+		"the installed entry admits the prefix separately from its checked field read");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& readExits = native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::ReadField)];
 	const auto initialExits = readExits.entries;
@@ -1375,7 +1372,7 @@ void warmInheritedFieldReadsProveCollisionChainAbsence() {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& readExits = native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::ReadField)];
 	const u64 trained = readExits.entries;
-	require(trained > 0, "the first execution trained the live inherited path through its semantic exit");
+	require(trained == 0, "the first inherited lookup completes without a semantic exit");
 #endif
 	read(valueInteger(41), inherited);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -1456,8 +1453,7 @@ void resolvedFieldKeepsPendingFixedCallsUntilAnObserver() {
 		const auto index = owner.stringPool().intern("__index");
 		auto holder = owner.createTable(0, 1);
 		holder.setStringKey(*owner.stringPool().find("nested inherited field"), valueInteger(41));
-		// Two hops always exercise the runtime resolver, including after the
-		// one-hop generated probe learns that this path has a deeper holder.
+		// Resolve two live table hops before returning across both pending calls.
 		for (int depth = 0; depth < 2; ++depth) {
 			auto receiver = owner.createTable(), meta = owner.createTable(0, 1);
 			meta.setStringKey(index, valueTable(holder.address()));

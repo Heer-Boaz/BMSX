@@ -84,9 +84,6 @@ void selectFieldAddresses(std::span<NativeInstruction> instructions, std::span<c
 			use.definition = static_cast<u8>(firstRow + index);
 		if (field->resultTag || static_cast<int>(index) <= inlineThrough)
 			field->readPlan = NativeTableReadPlan::OwnSlot;
-		else if (field->reusePeerWord)
-			// A recovered own slot must go through the reprojection owner.
-			field->readPlan = NativeTableReadPlan::OneHopIndex;
 	}
 }
 

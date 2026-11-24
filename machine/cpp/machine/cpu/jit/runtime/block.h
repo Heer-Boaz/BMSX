@@ -64,7 +64,6 @@ struct NativeBlockRunState {
 	// Host base of guest main RAM; the gate pins it for the whole native frame.
 	u8* ram = nullptr;
 	size_t registerCapacity = 0;
-	TableFirstOwnProbe firstTableOwnProbe = TableFirstOwnProbe::Required;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	DiagnosticNativeOpcodeCounts diagnosticOpcodes;
 #endif
@@ -93,17 +92,11 @@ union NativeTableSlotBinding {
 	i32 standalone;
 };
 
-struct NativeTableReadPrediction {
-	NativeTableSlotBinding own;
-	TableStringPathCache path;
-};
-
 struct NativeFixedCallBinding {
 	NativeFixedCallPlan plan;
 	std::array<void* const*, CARTRIDGE_SLOT_COUNT> entryCells;
 };
 
-static_assert(sizeof(NativeTableReadPrediction) <= sizeof(NativeBlockLink));
 
 struct NativeBlockExitSite {
 	NativeBlockExit exit = NativeBlockExit::Continue;
@@ -117,7 +110,7 @@ struct NativeBlockExitSite {
 	// exits instead use the same storage for their callsite prediction.
 	union {
 		mutable NativeBlockLink link{};
-		mutable NativeTableReadPrediction tableRead;
+		mutable NativeTableSlotBinding tableRead;
 		mutable NativeTableSlotBinding tableStore;
 		NativeTableConstructor* recordConstructor;
 		NativeFixedCallBinding fixedCall;

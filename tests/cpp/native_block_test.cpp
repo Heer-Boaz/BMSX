@@ -1417,7 +1417,7 @@ void reusedFieldAddressHonorsEachSite() {
 	require(block->run(registers.view(), state) == &block->terminal && registers.get(3) == valueInteger(26),
 		"both VM reads consume the checked address and produce their own results");
 	// The consuming callsite still owns its prediction.
-	block->sideExits[1].tableRead.own.standalone = alternateSlot;
+	block->sideExits[1].tableRead.standalone = alternateSlot;
 	registers.set(2, valueInteger(-3));
 	state.remainingCycles = grant;
 	const auto* mismatch = block->run(registers.view(), state);
