@@ -93,8 +93,8 @@ void futureUseAndPublication() {
 		cache.beginInstruction();const auto input=cache.read(guest,ValueTag::Integer),output=cache.write(guest,ValueTag::Integer);
 		sljit_emit_op2(code.compiler,SLJIT_ADD32,output.reg,0,input.reg,0,SLJIT_IMM,10);
 	}
-	cache.nextUse(0,1);cache.nextUse(1,100);
-	cache.beginInstruction();cache.read(2,ValueTag::Integer);
+	cache.beginInstruction([](int guest) { return guest == 0 ? 1 : 100; });
+	cache.read(2,ValueTag::Integer);
 	for(int guest=0;guest<2;++guest) {
 		sljit_emit_op1(code.compiler,SLJIT_MOV32,SLJIT_R0,0,SLJIT_MEM1(SLJIT_S0),guest*sizeof(u32));
 		sljit_emit_op1(code.compiler,SLJIT_MOV32,SLJIT_MEM1(SLJIT_S0),(guest+4)*sizeof(u32),SLJIT_R0,0);
@@ -152,13 +152,13 @@ void preciseGuardSnapshots() {
 	same[1].guest=3;
 	same[1].tag=ValueTag::String;
 	require(cache.samePublication(snapshot,same),"clean bindings and allocation history do not affect the exit");
-	same[0].wordDirty=false;
+	same[0].dirty=false;
 	require(!cache.samePublication(snapshot,same),"a different payload write cannot share the exit");
 	same=snapshot;
 	same[0].tag=ValueTag::False;
 	require(cache.samePublication(snapshot,same),"the tag of a payload-only write is not published");
 	auto writesTag=snapshot;
-	writesTag[0].tagDirty=same[0].tagDirty=true;
+	writesTag[0].immediateTagDirty=same[0].immediateTagDirty=true;
 	require(!cache.samePublication(writesTag,same),"a different published tag cannot share the exit");
 	same=snapshot;
 	std::swap(same[0],same[1]);
@@ -258,7 +258,7 @@ void untypedTransfersPublishTagsButKeepPayloads() {
 	std::swap(target[0], target[1]);
 	for (auto& binding : std::span(target).first(2)) {
 		binding.tag.reset();
-		binding.tagDirty = false;
+		binding.immediateTagDirty = false;
 	}
 	cache.transferTo(target, SLJIT_R0, SLJIT_FR0);
 
@@ -277,6 +277,40 @@ void untypedTransfersPublishTagsButKeepPayloads() {
 	require(code.run(slots) == 0 && slots.get(0) == valueInteger(0x12345678)
 		&& slots.get(1) == valueFloatBits(0xffa12345u) && slots.get(2) == valueInteger(19),
 		"raw permutations left tags authoritative in memory while carrying both payloads across banks");
+}
+
+void dynamicValueAcrossEdge() {
+	Code code;
+	NativeRegisterCache cache(code.compiler, SLJIT_S0, SLJIT_S1, integers, floats);
+	const auto result = cache.writeRaw(1);
+	cache.emitWord(0, result.word);
+	cache.emitTag(0, result.tag);
+	auto target = cache.state();
+	std::swap(target[0], target[1]); // Parallel copy exchanges payload and tag.
+	cache.transferTo(target, SLJIT_R0, SLJIT_FR0);
+	// Observe the backing planes before either the guard exit or normal publication.
+	sljit_emit_op1(code.compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_S0), sizeof(u32));
+	sljit_emit_op1(code.compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S0), 2 * sizeof(u32), SLJIT_R0, 0);
+	sljit_emit_op1(code.compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_S1), 1);
+	sljit_emit_op1(code.compiler, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_S1), 2, SLJIT_R1, 0);
+	const auto snapshot = cache.state();
+	auto* rejected = cache.guard(1, ValueTag::Float, SLJIT_R0);
+	cache.beginInstruction();
+	cache.read(1, ValueTag::Float);
+	cache.publish();
+	code.result(0);
+	sljit_set_label(rejected, sljit_emit_label(code.compiler));
+	cache.emitState(snapshot);
+	code.result(1);
+	code.finish();
+	for (Value value : {valueFloatBits(0xffa12345u), valueInteger(0xf1234567u), valueBool(true)}) {
+		ValueSlots slots(3);
+		slots.set(0, value);
+		slots.set(1, valueBool(false));
+		require(code.run(slots) == (valueTag(value) != ValueTag::Float), "guard follows the transferred tag");
+		require(slots.get(1) == value && slots.get(2) == valueBool(false),
+			"both planes bypass stale guest storage and publish exactly on the selected exit");
+	}
 }
 
 void loopEdges() {
@@ -313,7 +347,7 @@ int main() {
 	try {
 		wordsFloatsAndReferences();arithmeticAndBitMoves();futureUseAndPublication();
 		aliasEvictionAndRetagging();preciseGuardSnapshots();
-		selectiveCallSpills();parallelTransfers();untypedTransfersPublishTagsButKeepPayloads();loopEdges();
+		selectiveCallSpills();parallelTransfers();untypedTransfersPublishTagsButKeepPayloads();dynamicValueAcrossEdge();loopEdges();
 		std::cout<<"Native word/F32 cache, precise exits, selective spills and typed loop transfers passed\n";
 		return 0;
 	} catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}

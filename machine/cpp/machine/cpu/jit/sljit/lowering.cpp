@@ -218,10 +218,7 @@ void NativeLowering::lower(const NativeInstruction& source) {
 	++m_instruction;
 	if (m_terminal)
 		return;
-	m_cache.beginInstruction();
-	for (const auto& binding : m_cache.state())
-		if (binding.guest >= 0)
-			m_cache.nextUse(binding.guest, m_uses.nextUse(m_instruction, binding.guest));
+	m_cache.beginInstruction([&](int guest) { return m_uses.nextUse(m_instruction, guest); });
 
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	// The translator selects the events; here only emit the actual counter.

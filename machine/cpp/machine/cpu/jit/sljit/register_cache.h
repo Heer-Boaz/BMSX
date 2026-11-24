@@ -16,15 +16,16 @@ struct NativeRegisterHost {
 	bool calleeSaved;
 };
 
-// Host registers hold payloads, not guest values. An exact tag can travel
-// with a binding; a raw binding leaves the tag authoritative in guest memory.
+// A host register holds a payload or a dynamic tag. A proved tag needs
+// no register; exits materialize each dirty plane at its guest address.
 class NativeRegisterCache {
 public:
 	static constexpr int capacity = SLJIT_NUMBER_OF_REGISTERS + SLJIT_NUMBER_OF_FLOAT_REGISTERS;
 	struct Binding {
 		int guest = -1;
 		std::optional<ValueTag> tag;
-		bool wordDirty = false, tagDirty = false;
+		bool dirty = false, immediateTagDirty = false;
+		bool tagLane = false;
 		u32 lastUse = 0;
 		int nextUse = std::numeric_limits<int>::max();
 	};
@@ -42,13 +43,20 @@ public:
 	// A read's tag must have been proved by the entry/admission or instruction.
 	// guard emits only the missing proof, not a repeated check of a known tag.
 	sljit_jump* guard(int guest, ValueTag tag, sljit_s32 scratch) const;
+	struct RawResult { sljit_s32 word, tag; };
+	RawResult writeRaw(int guest);
 	void emitWord(int guest, sljit_s32 destination) const;
 	void emitTag(int guest, sljit_s32 destination) const;
 	Operand read(int guest, ValueTag tag);
 	// Acquire after all inputs: with a full bank the destination may reuse an
 	// input register. The old guest value is published before that overwrite.
 	Operand write(int guest, ValueTag tag);
-	void nextUse(int guest, int distance);
+	template<class NextUse> void beginInstruction(NextUse nextUse) {
+		beginInstruction();
+		const size_t count = m_integers.size() + m_floats.size();
+		for (size_t slot = 0; slot < count; ++slot)
+			if (m_state[slot].guest >= 0) m_state[slot].nextUse = nextUse(m_state[slot].guest);
+	}
 	void discardRange(int first, int end);
 	void publishRange(int first, int end);
 	void publish();
@@ -67,13 +75,13 @@ public:
 	void transferTo(const State& target, sljit_s32 integerScratch, sljit_s32 floatScratch);
 
 private:
-	int find(int guest) const;
-	int allocate(int guest, ValueTag tag, bool destination);
+	int find(int guest, bool tagLane = false) const;
+	int allocate(int guest, std::optional<ValueTag> tag, bool destination);
 	Operand operand(int slot);
 	bool floating(int slot) const { return slot >= static_cast<int>(m_integers.size()); }
 	const NativeRegisterHost& host(int slot) const;
 	void load(int slot, int guest) const;
-	void store(int slot, const Binding& binding, bool word, bool tag) const;
+	void store(int slot, const Binding& binding, bool dirty, bool immediateTag) const;
 	void movePayload(int destination, sljit_s32 source, bool sourceFloat) const;
 
 	sljit_compiler* m_compiler;

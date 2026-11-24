@@ -110,7 +110,7 @@ bool NativeRegisterUses::entryReads(size_t block, int guest) const {
 
 void NativeRegisterUses::beginBlock(std::span<const NativeInstruction> instructions) {
 	static_assert(NATIVE_BLOCK_MAX_INSTRUCTIONS <= std::numeric_limits<u64>::digits);
-	m_currentLength = instructions.size();
+	m_instructions = instructions;
 	m_nextUses.clear();
 	for (size_t i = 0; i < instructions.size(); ++i) {
 		const auto& access = instructions[i].slots;
@@ -166,12 +166,19 @@ void NativeRegisterUses::beginBlock(std::span<const NativeInstruction> instructi
 }
 
 int NativeRegisterUses::nextUse(size_t nextInstruction, int guest) const {
-	if (nextInstruction >= m_currentLength)
+	if (nextInstruction >= m_instructions.size())
 		return std::numeric_limits<int>::max();
 	const auto after = std::upper_bound(m_nextUses.begin(), m_nextUses.end(), guest,
 		[](int slot, const UseBoundary& boundary) { return slot < boundary.guest; });
 	const u64 positions = after == m_nextUses.begin() ? 0 : (after - 1)->instructions >> nextInstruction;
 	return positions != 0 ? std::countr_zero(positions) : std::numeric_limits<int>::max();
+}
+
+bool NativeRegisterUses::nextUseReadsOperand(size_t nextInstruction, int guest) const {
+	const int distance = nextUse(nextInstruction, guest);
+	if (distance == std::numeric_limits<int>::max()) return false;
+	const auto& reads = m_instructions[nextInstruction + distance].slots.reads;
+	return std::ranges::find(reads, guest) != reads.end();
 }
 
 } // namespace bmsx

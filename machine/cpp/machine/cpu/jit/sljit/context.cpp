@@ -39,13 +39,15 @@ void NativeLowering::lowerOperation(const NativeGlobalAccess& access, const Nati
 		emitStoreBarrier(access.slot, access.barrier, StoreBarrierRecord::Global, *watched);
 		return;
 	}
+	const bool consumed = m_uses.nextUseReadsOperand(m_instruction, access.slot);
+	const auto result = consumed ? m_cache.writeRaw(access.slot) : NativeRegisterCache::RawResult{SLJIT_R0, SLJIT_R1};
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), words);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), wordOffset);
+	sljit_emit_op1(c, SLJIT_MOV32, result.word, 0, SLJIT_MEM1(SLJIT_R2), wordOffset);
 	if constexpr (std::endian::native == std::endian::big)
-		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
+		sljit_emit_op1(c, SLJIT_REV32, result.word, 0, result.word, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), tags);
-	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), tagOffset);
-	emitRawStore(access.slot, SLJIT_R0, SLJIT_R1);
+	sljit_emit_op1(c, SLJIT_MOV_U8, result.tag, 0, SLJIT_MEM1(SLJIT_R2), tagOffset);
+	if (!consumed) emitRawStore(access.slot, result.word, result.tag);
 }
 void NativeLowering::lowerOperation(const NativePoolRead& read, const NativeInstruction& instruction) {
 	auto& invalid = *sideExit(instruction.slow);

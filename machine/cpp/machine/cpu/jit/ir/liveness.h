@@ -32,6 +32,7 @@ public:
 
 	void beginBlock(std::span<const NativeInstruction> instructions);
 	int nextUse(size_t nextInstruction, int guest) const;
+	bool nextUseReadsOperand(size_t nextInstruction, int guest) const;
 
 private:
 	struct UseBoundary {
@@ -45,7 +46,7 @@ private:
 	std::vector<u16> m_forwardEdges;
 	size_t m_liveWordCount = 0;
 	std::vector<UseBoundary> m_nextUses;
-	size_t m_currentLength = 0;
+	std::span<const NativeInstruction> m_instructions;
 };
 
 } // namespace bmsx

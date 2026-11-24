@@ -118,8 +118,10 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, sljit_labe
 				const auto type = std::ranges::lower_bound(successor.entryTypes, binding.guest, {}, &NativeSlotType::slot);
 				binding.tag = type != successor.entryTypes.end() && type->slot == binding.guest
 					? std::optional(type->tag) : std::nullopt;
-				binding.wordDirty = true; // Another edge can bring a dirty payload.
-				binding.tagDirty = binding.tag.has_value();
+				binding.dirty = true; // Another edge can bring a dirty payload.
+				if (binding.tagLane) {
+					if (binding.tag) binding = {}; // Entry proof supplies the tag.
+				} else binding.immediateTagDirty = binding.tag.has_value();
 			}
 		}
 		m_cache.transferTo(entry.registers, SLJIT_R2, SLJIT_FR2);
