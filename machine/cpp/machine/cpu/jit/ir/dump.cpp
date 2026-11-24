@@ -134,7 +134,7 @@ struct OperationPlan {
 		out << " target=" << op.target << (op.takeOnTruthy ? " when-truthy" : " when-false");
 	}
 	void operator()(const NativeComparison& op) const {
-		constexpr std::array strategies{"word", "float", "kernel"};
+		constexpr std::array strategies{"word", "float", "kernel", "left-integer", "right-integer"};
 		out << " op=" << unsigned(op.operation) << " strategy=" << strategies[unsigned(op.strategy)]
 			<< (op.skipOnMatch ? " skip-on-match" : " skip-on-miss");
 	}

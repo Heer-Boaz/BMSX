@@ -280,7 +280,7 @@ struct NativeTruthBranch {
 	std::optional<bool> sourceTruthy{};
 	constexpr NativeSlotAccess slots() const { return {.reads = {condition, NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}}; }
 };
-enum class NativeComparisonStrategy : u8 { Word, Float, Kernel };
+enum class NativeComparisonStrategy : u8 { Word, Float, Kernel, LeftInteger, RightInteger };
 struct NativeComparison {
 	NativeValueRef left, right;
 	OpCode operation;

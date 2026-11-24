@@ -19,14 +19,9 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 		}
 		emitExit(skip ? taken : terminal, skip, &external[skip]);
 	};
-	const auto emitOutcomes = [&](sljit_jump* matched) {
-		const auto state = m_cache.state();
-		outcome(!comparison.skipOnMatch);
-		sljit_set_label(matched, sljit_emit_label(m_compiler));
-		m_cache.setState(state);
-		outcome(comparison.skipOnMatch);
-	};
-	sljit_jump* matched;
+	const auto icmp = SLJIT_32 | (op == OpCode::EQ ? SLJIT_EQUAL : op == OpCode::LT ? SLJIT_SIG_LESS : SLJIT_SIG_LESS_EQUAL);
+	const auto fcmp = op == OpCode::EQ ? SLJIT_ORDERED_EQUAL : op == OpCode::LT ? SLJIT_ORDERED_LESS : SLJIT_ORDERED_LESS_EQUAL;
+	sljit_jump *matched, *integerMatch = nullptr, *integerMiss = nullptr, *nonNumber = nullptr;
 	switch (comparison.strategy) {
 	case NativeComparisonStrategy::Word: {
 		const auto word = [&](int selector, sljit_s32 scratch) -> std::pair<sljit_s32, sljit_sw> {
@@ -38,23 +33,34 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 		};
 		const auto [lhs, lhsArg] = word(comparison.left, SLJIT_R0);
 		const auto [rhs, rhsArg] = word(comparison.right, SLJIT_R1);
-		matched = sljit_emit_cmp(m_compiler,
-			(op == OpCode::EQ	   ? SLJIT_EQUAL
-				: op == OpCode::LT ? SLJIT_SIG_LESS
-								   : SLJIT_SIG_LESS_EQUAL) |
-				SLJIT_32,
-			lhs, lhsArg, rhs, rhsArg);
+		matched = sljit_emit_cmp(m_compiler, icmp, lhs, lhsArg, rhs, rhsArg);
 		break;
 	}
 	case NativeComparisonStrategy::Float: {
 		const auto left = readTyped(comparison.left, ValueTag::Float, SLJIT_R0, SLJIT_FR0),
 				   right = readTyped(comparison.right, ValueTag::Float, SLJIT_R1, SLJIT_FR1);
-		matched = sljit_emit_fcmp(m_compiler,
-			(op == OpCode::EQ	   ? SLJIT_ORDERED_EQUAL
-				: op == OpCode::LT ? SLJIT_ORDERED_LESS
-								   : SLJIT_ORDERED_LESS_EQUAL) |
-				SLJIT_32,
-			left.reg, 0, right.reg, 0);
+		matched = sljit_emit_fcmp(m_compiler, fcmp | SLJIT_32, left.reg, 0, right.reg, 0);
+		break;
+	}
+	case NativeComparisonStrategy::LeftInteger: case NativeComparisonStrategy::RightInteger: {
+		auto* c = m_compiler;
+		const bool left = comparison.strategy == NativeComparisonStrategy::LeftInteger;
+		const auto dynamic = left ? comparison.right : comparison.left;
+		emitPayload(left ? comparison.left : comparison.right, SLJIT_R0);
+		emitRawLoad(dynamic, SLJIT_R1, SLJIT_R2);
+		auto* notInteger = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+			SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
+		integerMatch = sljit_emit_cmp(c, icmp, left ? SLJIT_R0 : SLJIT_R1, 0, left ? SLJIT_R1 : SLJIT_R0, 0);
+		integerMiss = sljit_emit_jump(c, SLJIT_JUMP);
+		sljit_set_label(notInteger, sljit_emit_label(c));
+		nonNumber = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+			SLJIT_IMM, static_cast<u8>(ValueTag::Float));
+		// Binary64 represents both the signed word and every binary32 number
+		// exactly. Never round an Integer to binary32 to compare it.
+		sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_S32, SLJIT_FR0, 0, SLJIT_R0, 0);
+		sljit_emit_fcopy(c, SLJIT_COPY32_TO_F32, SLJIT_FR1, SLJIT_R1);
+		sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_F32, SLJIT_FR1, 0, SLJIT_FR1, 0);
+		matched = sljit_emit_fcmp(c, fcmp, left ? SLJIT_FR0 : SLJIT_FR1, 0, left ? SLJIT_FR1 : SLJIT_FR0, 0);
 		break;
 	}
 	case NativeComparisonStrategy::Kernel: {
@@ -81,6 +87,17 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 	}
 	default: BMSX_UNREACHABLE();
 	}
-	emitOutcomes(matched);
+	if (integerMiss) {
+		auto* miss = sljit_emit_label(m_compiler);
+		sljit_set_label(integerMiss, miss);
+		sljit_set_label(nonNumber, miss);
+	}
+	const auto state = m_cache.state();
+	outcome(!comparison.skipOnMatch);
+	auto* match = sljit_emit_label(m_compiler);
+	sljit_set_label(matched, match);
+	if (integerMatch) sljit_set_label(integerMatch, match);
+	m_cache.setState(state);
+	outcome(comparison.skipOnMatch);
 }
 } // namespace bmsx

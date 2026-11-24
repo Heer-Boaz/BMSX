@@ -1171,13 +1171,15 @@ void imageLiteralsProveNativeComparisonTypes() {
 		const auto instructions = region.blocks().front().instructions;
 		require(std::get<NativeComparison>(instructions[1].operation).strategy == expected,
 			"only the owning image's literal tags establish a direct native comparison");
-		if (!constants.empty())
-			require(std::get<NativeLiteral>(instructions[0].operation).value == constants[1].value,
+		if (const auto loaded = nativeImageConstant(constants, 23))
+			require(std::get<NativeLiteral>(instructions[0].operation).value == *loaded,
 				"a fixed LOADK becomes a literal before lowering");
 	};
 	verify({}, NativeComparisonStrategy::Kernel);
 	const std::array words{NativeImageConstant{0, valueInteger(-9)}, NativeImageConstant{23, valueInteger(-12)}};
 	verify(words, NativeComparisonStrategy::Word);
+	verify(std::span(words).first(1), NativeComparisonStrategy::RightInteger);
+	verify(std::span(words).last(1), NativeComparisonStrategy::LeftInteger);
 	const std::array floats{NativeImageConstant{0, valueFloat(0.5f)}, NativeImageConstant{23, valueFloat(1.5f)}};
 	verify(floats, NativeComparisonStrategy::Float);
 }

@@ -98,6 +98,46 @@ void genericPredicatesAndStringChargeAgree() {
 	}
 }
 
+void compareWithOneIntegerProof() {
+	constexpr std::array ops{OpCode::EQ, OpCode::LT, OpCode::LE};
+	test::Blua32TestImage image;
+	image.constants = {i32{16777217}};
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	for (auto op : ops) for (bool integerLeft : {false, true}) {
+		const u32 word = image.functions.size() * 4u;
+		writeInstruction(image.text, word, static_cast<u8>(OpCode::LOADK), 1, 0, 0);
+		writeInstruction(image.text, word + 1, static_cast<u8>(op), 0, integerLeft, !integerLeft);
+		writeInstruction(image.text, word + 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		writeInstruction(image.text, word + 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions.push_back({.firstWord = word, .wordCount = 4, .maxStack = 2});
+	}
+	CpuMachine native(image, false), scalar(image, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+#endif
+	for (size_t i = 0; i < image.functions.size(); ++i) {
+		const u32 pc = native.rom.textAddress + i * 4u * INSTRUCTION_BYTES;
+		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(ops[i / 2])];
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		const auto& imageState = *native.cpu.activeThread()->currentFrame->executionImage;
+		const auto& page = *imageState.nativeCodeLookup->find(pc, 0);
+		require(page.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES] != nullptr,
+			"the integer-producing prefix is compiled");
+#endif
+		for (auto dynamic : {valueInteger(16777217), valueInteger(-1), valueFloat(16777216.0f),
+			valueFloat(16777218.0f), valueFloatBits(BLUA32_FLOAT_NAN), valueFloatBits(0x7f800000),
+			valueBool(false), valueFromTag(ValueTag::String, 16777217)}) {
+			for (auto* machine : {&native, &scalar}) {
+				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[i], pc);
+				machine->cpu.activeThread()->currentFrame->registers.set(0, dynamic);
+			}
+			test::runCpuParity(native.cpu, scalar.cpu, grant);
+			require(native.cpu.readFramePc(0) == scalar.cpu.readFramePc(0) && native.cpu.instructionBudgetRemaining == 0,
+				"one proven Integer compares exactly across types in either operand position");
+		}
+	}
+}
+
 void stringOrderingKeepsResidentValuesAndExactFrontiers() {
 	for (const auto op : {OpCode::LT, OpCode::LE}) for (const bool expected : {true, false}) {
 		test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -773,6 +813,7 @@ void skipFetchBoundaries() {
 int main() {
 	try {
 		genericPredicatesAndStringChargeAgree();
+		compareWithOneIntegerProof();
 		stringOrderingKeepsResidentValuesAndExactFrontiers();
 		numericRkComparisonsBelongToTheirExecutionImage();
 		changingSkippedBytesRetireResolvedEdges(); maximumLengthSkipDependencyRetires(); resolvedComparisonLinksBothPaths();

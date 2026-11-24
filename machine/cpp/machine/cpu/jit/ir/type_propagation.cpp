@@ -145,7 +145,17 @@ struct NativeTypePropagation::Transfer {
 
 	void operator()(NativeComparison& op) const {
 		const auto left = input(0), right = input(1);
-		if (!left || !right || left->tag != right->tag) return;
+		if (!left || !right) {
+			if (left && left->tag == ValueTag::Integer) {
+				facts.require(left);
+				op.strategy = NativeComparisonStrategy::LeftInteger;
+			} else if (right && right->tag == ValueTag::Integer) {
+				facts.require(right);
+				op.strategy = NativeComparisonStrategy::RightInteger;
+			}
+			return;
+		}
+		if (left->tag != right->tag) return;
 		if (left->tag == ValueTag::Integer) op.strategy = NativeComparisonStrategy::Word;
 		else if (left->tag == ValueTag::Float) op.strategy = NativeComparisonStrategy::Float;
 		else return;
