@@ -36,9 +36,15 @@ void alignedStringHomesDisplaceOnlyCollisions(CPU& cpu) {
 	const auto incoming = keys[slot][0];
 	require(table.setStringKey(incoming, valueInteger(33)) == slot && table.hashSlots() == 8,
 		"an incoming home displaces the chain member without growing the body");
+	require(isNil(table.loadPredictedStringKey(collided, slot))
+		&& table.loadPredictedStringKey(incoming, slot) == valueInteger(33),
+		"a displaced slot is a miss for its old key and a hit for its new owner");
+	table.setStringKey(incoming, valueBool(false), slot);
+	require(table.loadPredictedStringKey(incoming, slot) == valueBool(false),
+		"a false value is an own-slot hit");
 	auto probe = table.beginStringProbe(collided);
 	require(table.advanceStringProbe(collided, probe, 8) == 2 && probe.value == valueInteger(22)
-		&& table.getStringKey(resident) == valueInteger(11) && table.getStringKey(incoming) == valueInteger(33),
+		&& table.getStringKey(resident) == valueInteger(11) && table.getStringKey(incoming) == valueBool(false),
 		"displacement preserves the original chain and each full String identity");
 }
 

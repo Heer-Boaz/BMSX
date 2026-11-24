@@ -461,7 +461,6 @@ private:
 	bool finishTableRead(CallFrame& frame, int destination, Value base, Value key, TableLookupResult& result);
 	bool loadTableIndex(CallFrame& frame, int destination, Value base, Value key);
 	bool loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index);
-	void resolveTableFieldIndexCached(int& predictedSlot, Value base, StringId key, TableLookupResult& result);
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
 	bool parkTableWrite(CallFrame&, u32 receiver, Value key, Value value, u8 extraHashSlots = 0);
 	void parkAllocation(CallFrame&, PendingAllocation::Operands);

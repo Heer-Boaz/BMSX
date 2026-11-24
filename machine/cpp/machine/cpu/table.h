@@ -91,6 +91,11 @@ public:
 	TableStringProbe beginStringProbe(StringId key) const;
 	size_t advanceStringProbe(StringId key, TableStringProbe& probe, size_t limit) const;
 	Value getStringKeyCached(StringId key, int& predictedSlot) const;
+	Value loadPredictedStringKey(StringId key, int predicted) const {
+		const u32 count = hashSlots();
+		if (static_cast<u32>(predicted) >= count) return valueNil();
+		return hashBody(count, arrayCapacity()).predictedString(predicted, key);
+	}
 	int setStringKey(StringId key, const Value& value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	bool storePredictedStringKey(StringId key, Value value, int predicted) noexcept;
 	Value metatableField(StringId key) const;
@@ -236,7 +241,10 @@ private:
 			const u32 slot = array + node;
 			return slots.tag(slot) == ValueTag::String && slots.word(slot) == key;
 		}
-		Value predictedString(i32 node, StringId key) const;
+		Value predictedString(u32 node, StringId key) const {
+			if (!matchesString(node, key)) return valueNil();
+			return slots.get(array + count + node);
+		}
 	};
 	using HashBody = HashStorage<false>;
 	using RebuildBody = HashStorage<true>;

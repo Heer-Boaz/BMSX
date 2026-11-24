@@ -123,14 +123,6 @@ inline int TableRecord::HashStorage<BulkWrite>::findString(StringId key, u32 hom
 }
 
 template<bool BulkWrite>
-Value TableRecord::HashStorage<BulkWrite>::predictedString(i32 node, StringId key) const {
-	if (node < 0 || static_cast<u32>(node) >= count || !matchesString(node, key)) return valueNil();
-	const u32 slot = array + count + static_cast<u32>(node);
-	const auto tag = slots.tag(slot);
-	return tag == ValueTag::Nil ? valueNil() : valueFromTag(tag, slots.word(slot));
-}
-
-template<bool BulkWrite>
 int TableRecord::HashStorage<BulkWrite>::findFreeIndex(int first) const {
 	for (int i = first; i >= 0; --i) {
 		const u32 keySlot = array + static_cast<u32>(i);
@@ -685,8 +677,10 @@ Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot) const {
 	if (count != 0u) {
 		const auto body = hashBody(count, arrayCapacity());
 		const auto& slots = body.slots;
-		const Value predicted = body.predictedString(predictedSlot, key);
-		if (!isNil(predicted)) return predicted;
+		if (predictedSlot >= 0 && static_cast<u32>(predictedSlot) < count) {
+			const Value predicted = body.predictedString(predictedSlot, key);
+			if (!isNil(predicted)) return predicted;
+		}
 		const int nodeIndex = body.findString(key, hashCanonicalTableKey(valueString(key)) & (count - 1u));
 		if (nodeIndex >= 0) {
 			const u32 valueSlot = body.array + count + static_cast<u32>(nodeIndex);

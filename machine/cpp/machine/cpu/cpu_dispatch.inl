@@ -163,8 +163,18 @@ DISPATCH_LABEL(SELF) {
 	const Value base = REG(decoded->b);
 	const StringId key = asStringId(IMAGE.constPool.get(static_cast<size_t>(decoded->c)));
 	if (decoded->op == static_cast<u8>(OpCode::SELF)) SET_REGISTER_FAST(a + 1, base);
+	const TableRecord table(m_heap, tableIndexAddress(base));
+	int& predicted = TABLE_CACHE_SLOT();
+	if (predicted >= 0) {
+		const Value own = table.loadPredictedStringKey(key, predicted);
+		if (!isNil(own)) {
+			SET_REGISTER_FAST(a, own);
+			DISPATCH_NEXT();
+		}
+	}
 	TableLookupResult result;
-	resolveTableFieldIndexCached(TABLE_CACHE_SLOT(), base, key, result);
+	table.resolveStringIndexCached(key, -1, result);
+	if (result.extraVisits == 0 && result.slot >= 0) predicted = result.slot;
 	if (result.status == TableLookupStatus::Resolved) {
 		CYCLES_ADD(static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES);
 		SET_REGISTER_FAST(a, result.value);
