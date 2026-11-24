@@ -130,22 +130,17 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page,
 		source.lastPc = version->endPc - INSTRUCTION_BYTES;
 	}
 	source.enqueue(pc, true, nullptr, true);
-	if (verified && pc != version->entry.codeAddress)
-		// Admit the ROM function head in the same batch as its hot interior.
-		source.enqueue(version->entry.codeAddress, true, nullptr, true);
 	NativeCompilationSource* pages[] = {&source};
-	prepareNativeSources(image, pages);
+	prepareNativeSources(image, pages, pc);
 }
 
-void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeCompilationSource* const> pages, NativeWarmupPages* warmup) {
+void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeCompilationSource* const> pages, u32 rootPc, NativeWarmupPages* warmup) {
 	const bool coldImage = warmup != nullptr;
 	if (coldImage && m_nativeCode.full()) return;
 	const auto& first = *pages.front();
-	const auto firstRoot = std::find(first.roots.begin(), first.roots.end(), u8{1});
-	const u32 rootPc = first.pagePc + static_cast<u32>(firstRoot - first.roots.begin()) * INSTRUCTION_BYTES;
 	auto* profile = m_nativeCompilationProfiling ? &m_nativeCompilationProfile : nullptr;
 	NativeCompilationMeasurement measurement(profile, image.executionDomainId, first.slot, rootPc);
-	if (!coldImage) discoverNativeSource(image, *pages.front(), nullptr);
+	if (!coldImage && !pages.front()->discoveredCount) discoverNativeSource(image, *pages.front(), nullptr);
 
 	auto& workspace = m_nativeSourceWorkspace;
 	const size_t maxInstructions = pages.size() * DECODED_PAGE_WORDS;

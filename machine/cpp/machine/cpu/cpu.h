@@ -507,7 +507,7 @@ private:
 	void prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32> entryPc);
 	void discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing,
 		NativeWarmupPages* requested = nullptr);
-	void prepareNativeSources(Blua32ExecutionImage&, std::span<NativeCompilationSource* const>, NativeWarmupPages* = nullptr);
+	void prepareNativeSources(Blua32ExecutionImage&, std::span<NativeCompilationSource* const>, u32 rootPc, NativeWarmupPages* = nullptr);
 	void synchronizeNativeHistoryWrites();
 	bool installNativeRegion(Blua32ExecutionImage& image, std::span<const NativeCodeSourcePage>, u32 slot,
 		std::vector<std::unique_ptr<NativeBlock>> blocks, NativeCodeAdmission);

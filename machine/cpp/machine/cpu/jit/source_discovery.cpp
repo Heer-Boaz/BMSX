@@ -20,6 +20,11 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 		// Existing entry points retain their region; an edge to one becomes an
 		// ordinary external link. Interior entries compile a separate suffix.
 		if (page.nativeBlocks && page.nativeBlocks->entries[cursor]) continue;
+		// The root has already counted this dispatch. Its successors have
+		// not, so compare against the number of completed warm iterations.
+		if (!requested && !roots[cursor] && (source.leaders[cursor] || binding.writeWatch.groups)
+			&& ((page.refreshState[cursor] & DECODED_REFRESH_DECODE)
+			|| page.nativeVisits[cursor] + 1u < NATIVE_BLOCK_COMPILATION_THRESHOLD)) continue;
 		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u) {
 			if (!decodeBackedInstruction(image, page, cursor, pc, source.busSignals, requested)) continue;
 		} else if (requested && cursor == DECODED_PAGE_WORDS - 1u && page.words[cursor].width == 2u
@@ -37,8 +42,6 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 			const auto& bank = instruction.op <= static_cast<u8>(OpCode::SETSYS) ? m_systemGlobalBank : m_globalBank;
 			if (instruction.bx() >= bank.capacity()) continue; // The general mirror port is scalar.
 		}
-		if (!roots[cursor] && binding.writeWatch.groups
-			&& page.nativeVisits[cursor] + 1u < NATIVE_BLOCK_COMPILATION_THRESHOLD) continue;
 		available[cursor] = 1;
 		const auto op = static_cast<OpCode>(instruction.op);
 		const u32 successor = cursor + instruction.width;

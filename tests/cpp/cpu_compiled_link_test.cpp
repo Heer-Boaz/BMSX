@@ -74,6 +74,10 @@ void grantsAndTargetRetirement(bool inRam) {
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers.set(0, valueInteger(2)); frame.registers.set(1, valueInteger(1)); frame.registers.set(8, valueInteger(0));
 	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	// The direct-entry test below exercises internal links on both sides.
+	if (!inRam) native.cpu.prepareSystemNativeCode();
+#endif
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	// Request the root before either branch can submit a different job.
 	for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) {

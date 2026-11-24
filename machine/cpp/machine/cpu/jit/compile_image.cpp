@@ -77,7 +77,7 @@ bool CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunc
 		&& root->page.nativeBlocks->entries[(rootPc - root->pagePc) / INSTRUCTION_BYTES])) return false;
 	root->enqueue(rootPc, true, nullptr, true);
 	u32 ready = 1u << rootPage;
-	if (version.entry.codeAddress >= firstPc) {
+	if (warmup && version.entry.codeAddress >= firstPc) {
 		if (auto* entry = bindSource(0)) {
 			entry->enqueue(version.entry.codeAddress, true, nullptr, true);
 			ready |= 1u;
@@ -106,7 +106,7 @@ bool CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunc
 		m_nativeCompilationProfile.discoveryNanoseconds += elapsed;
 		m_nativeCompilationProfile.prepareNanoseconds += elapsed;
 	}
-	prepareNativeSources(image, std::span(region).first(sourceCount), warmup ? &warmup->published : nullptr);
+	prepareNativeSources(image, std::span(region).first(sourceCount), rootPc, warmup ? &warmup->published : nullptr);
 	return true;
 }
 
@@ -202,8 +202,11 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, std::optional<u32>
 		m_nativeCompilationProfile.discoveryNanoseconds += elapsed;
 		m_nativeCompilationProfile.prepareNanoseconds += elapsed;
 	}
-	for (size_t index = 0; index < publicationCount; ++index)
-		prepareNativeSources(image, std::span(publicationOrder).subspan(index, 1), &warmup.published);
+	for (size_t index = 0; index < publicationCount; ++index) {
+		const auto& page = *publicationOrder[index];
+		prepareNativeSources(image, std::span(publicationOrder).subspan(index, 1),
+			page.pagePc + page.pending[0] * INSTRUCTION_BYTES, &warmup.published);
+	}
 	for (const auto& version : versions)
 		prepareNativeFunction(image, version, version.entry.codeAddress, busSignals, &warmup);
 }

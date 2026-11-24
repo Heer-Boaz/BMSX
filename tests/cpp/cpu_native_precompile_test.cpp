@@ -532,7 +532,45 @@ void verifiedSinglePagePreparationSharesTheColdBatch() {
 	require(!entryAt(warmed, sibling), "adaptive preparation does not absorb the neighboring function");
 }
 
-void verifiedSinglePageHotLoopPublishesItsFunctionEntry() {
+void adaptiveBranchPublishesItsSideOnlyAfterDemand() {
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	image.text.resize(5u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 0, 0, 2);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K0), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord=0, .wordCount=5, .maxStack=1}};
+	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::System, image));
+	auto& cpu = machine.runtime.machine.cpu;
+	const auto call = [&](bool flag) {
+		cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0]);
+		cpu.activeThread()->currentFrame->registers.set(0, valueBool(flag));
+		require(cpu.runUntilDepth(1, 32) == RunResult::Halted
+			&& cpu.readCompletionValues().get(0) == valueInteger(flag ? 1 : 0),
+			"the native branch and its scalar exit return the selected value");
+	};
+	const u32 pc = machine.rom.textAddress, side = pc + INSTRUCTION_BYTES;
+	const auto wait = [&](u32 address) {
+		cpu.runUntilDepth(0, 0);
+		const auto& page = *cpu.rootThread()->currentFrame->executionImage->decodedPages.find(address & ~MAPPED_PAGE_BYTE_MASK);
+		test::waitForNativeEntry(cpu, page, (address & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+	};
+	for (int visit = 0; visit <= NATIVE_BLOCK_COMPILATION_THRESHOLD; ++visit) call(true);
+	wait(pc);
+	require(entryAt(cpu, pc + 3u * INSTRUCTION_BYTES) && !entryAt(cpu, side),
+		"the first publication includes the hot destination but excludes the untaken side");
+	call(false);
+	require(!entryAt(cpu, side), "one side exit does not trigger publication");
+	for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++visit) call(false);
+	wait(side);
+	require(entryAt(cpu, pc)->region != entryAt(cpu, side)->region,
+		"a newly hot side publishes independently of the original branch");
+}
+
+void verifiedSinglePageHotLoopLeavesItsFunctionEntryScalar() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
 	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
@@ -563,15 +601,15 @@ void verifiedSinglePageHotLoopPublishesItsFunctionEntry() {
 	const auto& page = *cpu.rootThread()->currentFrame->executionImage->decodedPages.find(root & ~MAPPED_PAGE_BYTE_MASK);
 	test::waitForNativeEntry(cpu, page, (loop & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto* functionEntry = entryAt(cpu, root);
-	require(functionEntry && functionEntry->region == entryAt(cpu, loop)->region
+	require(!functionEntry && entryAt(cpu, loop)
 		&& cpu.readNativeCompilationProfile().regionsPublished == 1
 		&& !entryAt(cpu, root + 4u * INSTRUCTION_BYTES),
-		"one adaptive publication covers the loop and its owning function entry, but not a same-page sibling");
+		"one adaptive publication covers the loop, not its cold function head or a same-page sibling");
 	for (auto* run : {&cpu, &reference})
 		run->writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], root);
 	require(test::runCpuParity(cpu, reference, cycles(OpCode::K0)) == RunResult::Yielded
 		&& cpu.readFramePc(0) == loop && cpu.readFrameRegister(0, 0) == valueInteger(0),
-		"the newly published function entry retains the exact scalar cycle boundary");
+		"the scalar head entering native code retains the exact scalar cycle boundary");
 }
 
 void wideFunctionUsesDemandedBoundedRegions() {
@@ -627,11 +665,11 @@ void wideFunctionUsesDemandedBoundedRegions() {
 	const auto* prefixEntry = entryAt(cpu, wide);
 	const auto* continuation = entryAt(cpu, tail);
 	require(prefixEntry && prefixEntry->sourceWords >= 2u && !entryAt(cpu, boundary)
-		&& continuation && continuation->region == prefixEntry->region && prefixEntry->region != start->region,
-		"demand at the prefix owns both words and the next head on the partial fifth page");
+		&& !continuation && prefixEntry->region != start->region,
+		"demand at the prefix owns both words without compiling the unexecuted tail");
 	require(cpu.readFrameRegister(0, 0) == valueInteger(77), "the complete WIDE operand reached the result register");
-	test::runCpuParity(cpu, reference, BASE_CYCLES[static_cast<u8>(OpCode::JMP)]);
-	require(cpu.readFramePc(0) == root, "the separately prepared tail links backward by exact PC");
+	warm(tail, OpCode::JMP, root);
+	require(entryAt(cpu, tail)->region != prefixEntry->region, "the tail publishes independently once hot");
 }
 
 void verifiedStartupReachabilityOutranksDescriptiveHints() {
@@ -716,7 +754,8 @@ int main() {
 		preparationLeavesFetchFaultsAtExecution();
 		crossPageWideDependenciesRemainOwned();
 		verifiedSinglePagePreparationSharesTheColdBatch();
-		verifiedSinglePageHotLoopPublishesItsFunctionEntry();
+		adaptiveBranchPublishesItsSideOnlyAfterDemand();
+		verifiedSinglePageHotLoopLeavesItsFunctionEntryScalar();
 		wideFunctionUsesDemandedBoundedRegions();
 		verifiedStartupReachabilityOutranksDescriptiveHints();
 		descriptiveHintsAreBudgetedBeforeDiscovery();
