@@ -56,10 +56,9 @@ struct Blua32TestRom {
 
 constexpr auto blua32TestFunctionAddress(RomImageDomain domain, u32 functionIndex) -> u32 {
 	const u32 romBase = domain == RomImageDomain::System ? SYSTEM_ROM_BASE : CART_ROM_BASE;
-	return romBase
-		+ BLUA32_TEST_IMAGE_OFFSET
-		+ BLUA32_IMAGE_HEADER_SIZE
-		+ functionIndex * BLUA32_FUNCTION_RECORD_SIZE;
+	const u32 headerEnd = romBase + BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_HEADER_SIZE;
+	const u32 table = (headerEnd + BLUA32_FUNCTION_ALIGNMENT - 1u) & ~(BLUA32_FUNCTION_ALIGNMENT - 1u);
+	return table + functionIndex * BLUA32_FUNCTION_RECORD_SIZE;
 }
 
 auto encodeBlua32TestRom(

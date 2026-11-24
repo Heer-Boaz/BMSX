@@ -62,9 +62,8 @@ auto encodeImage(
 	const u32 romBase = domain == RomImageDomain::System ? SYSTEM_ROM_BASE : CART_ROM_BASE;
 	const u32 imageAddress = romBase + BLUA32_TEST_IMAGE_OFFSET;
 
-	u32 offset = BLUA32_IMAGE_HEADER_SIZE;
-	const u32 functionTableOffset = alignOffset(offset, imageAddress, BLUA32_FUNCTION_ALIGNMENT);
-	offset = functionTableOffset
+	const u32 functionTableOffset = blua32TestFunctionAddress(domain, 0) - imageAddress;
+	u32 offset = functionTableOffset
 		+ static_cast<u32>(source.functions.size()) * BLUA32_FUNCTION_RECORD_SIZE;
 	const u32 upvalueTableOffset = alignOffset(offset, imageAddress, BLUA32_UPVALUE_RECORD_SIZE);
 	u32 upvalueCount = 0;
