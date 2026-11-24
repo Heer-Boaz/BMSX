@@ -280,8 +280,9 @@ function stage:receive_projectile_impact(projectile, screen_x, screen_y, tile_of
     if not self.harbor then return end
     local pose_x<const>,pose_y<const> = self:get_global_position()
     local hit_x<const> = screen_x+tile_offset*self.tile_size
-    local map_x<const> = ((hit_x-pose_x+self.total_scroll_px)//self.tile_size)+1
-    local map_y<const> = ((screen_y-pose_y)//self.tile_size)+1
+    -- Fractional pixel positions produce float quotients; ROM tile indices are integers.
+    local map_x<const> = (((hit_x-pose_x+self.total_scroll_px)//self.tile_size) | 0)+1
+    local map_y<const> = (((screen_y-pose_y)//self.tile_size) | 0)+1
     local health<const> = self.harbor:hit_tile(map_x,map_y,projectile)
     if health == nil then return end
     cargo_hit_feedback(self,health,hit_x,screen_y)
@@ -293,8 +294,8 @@ function stage:receive_projectile_blast(projectile,width,height)
     local pose_x<const>,pose_y<const> = self:get_global_position()
     local left<const> = projectile.x-pose_x+self.total_scroll_px
     local top<const> = projectile.y-pose_y
-    for y=(top//self.tile_size)+1,((top+height-1)//self.tile_size)+1 do
-        for x=(left//self.tile_size)+1,((left+width-1)//self.tile_size)+1 do
+    for y=((top//self.tile_size) | 0)+1,(((top+height-1)//self.tile_size) | 0)+1 do
+        for x=((left//self.tile_size) | 0)+1,(((left+width-1)//self.tile_size) | 0)+1 do
             local health<const> = self.harbor:hit_tile(x,y,projectile)
             if health ~= nil then
                 cargo_hit_feedback(self,health,(x-1)*self.tile_size-self.total_scroll_px+pose_x,

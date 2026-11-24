@@ -48,7 +48,8 @@ return {kind='integration', tests={
         local hits, destructions = 0, 0
         stage.events:on({event = 'enemy.structure.hit', handler = function() hits = hits + 1 end})
         stage.events:on({event = 'enemy.structure.destroyed', handler = function() destructions = destructions + 1 end})
-        local x<const>, y<const> = screen(480, 13)
+        local tile_x<const>, tile_y<const> = screen(480, 13)
+        local x<const>, y<const> = tile_x + 0.5, tile_y + 0.5
         local missile<const> = {x = x, y = y, damage = 1, continuous_damage = true}
         assert(stage:receive_projectile_impact(missile, x, y, 0))
         stage:receive_projectile_blast(missile, size * 2, size)
