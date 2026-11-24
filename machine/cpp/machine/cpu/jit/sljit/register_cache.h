@@ -8,22 +8,17 @@
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
 #include "machine/cpu/jit/ir/liveness.h"
-#include "sljitLir.h"
+#include "machine/cpu/jit/sljit/abi.h"
 
 namespace bmsx {
 
 struct NativeWordConstraints;
 
-struct NativeRegisterHost {
-	sljit_s32 reg;
-	bool calleeSaved;
-};
-
 // A host register holds a payload or a dynamic tag. A proved tag needs
 // no register; exits materialize each dirty plane at its guest address.
 class NativeRegisterCache {
 public:
-	static constexpr int capacity = SLJIT_NUMBER_OF_REGISTERS + SLJIT_NUMBER_OF_FLOAT_REGISTERS;
+	static constexpr int capacity = NativeBlockAbi::registerCacheCapacity;
 	struct Binding {
 		int guest = -1;
 		std::optional<ValueTag> tag;

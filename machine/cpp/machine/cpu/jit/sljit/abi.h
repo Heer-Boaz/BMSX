@@ -3,10 +3,14 @@
 #include <algorithm>
 #include <array>
 #include "machine/cpu/jit/runtime/block.h"
-#include "machine/cpu/jit/sljit/register_cache.h"
 #include "sljitLir.h"
 
 namespace bmsx {
+
+struct NativeRegisterHost {
+	sljit_s32 reg;
+	bool calleeSaved;
+};
 
 // Word registers left for the value cache when `fixedSaved` saved registers are pinned.
 inline constexpr int nativeWordCacheRegisters(int fixedSaved) {

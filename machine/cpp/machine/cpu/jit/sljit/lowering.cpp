@@ -264,17 +264,16 @@ void* NativeLowering::finish(size_t& codeBytes) {
 	emitStringStoreMisses();
 	for (auto& exit : m_workspace.coldExits) {
 		exit.label = sljit_emit_label(m_compiler);
-		m_cache.setState(exit.state);
+		m_cache.emitState(exit.state);
 		if (exit.target.exhausted) {
 			// The hot edge already charged its predecessor. Only a positive
 			// short grant replays; an exhausted one ends at the completed edge.
-			m_cache.publish();
 			auto* positive = sljit_emit_cmp(m_compiler, SLJIT_SIG_GREATER | SLJIT_32,
 				NativeBlockAbi::budget, 0, SLJIT_IMM, 0);
-			emitLeave(*exit.target.exhausted, Charge::Paid);
+			emitPublishedLeave(*exit.target.exhausted, Charge::Paid);
 			sljit_set_label(positive, sljit_emit_label(m_compiler));
 		}
-		emitLeave(*exit.target.site, exit.target.charge);
+		emitPublishedLeave(*exit.target.site, exit.target.charge);
 	}
 	for (const auto& branch : m_workspace.coldBranches)
 		sljit_set_label(branch.jump, m_workspace.coldExits[branch.target].label);

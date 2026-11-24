@@ -301,9 +301,8 @@ bool NativeRegisterCache::samePublication(const State& left, const State& right)
 
 void NativeRegisterCache::setState(const State& state) {
 	m_state = state;
-	m_clock = 0;
-	for (const auto& binding : m_state)
-		m_clock = std::max(m_clock, binding.lastUse);
+	// Use stamps belong to this compilation, not to a control-flow arm.
+	// The next stamp is newer than every binding imported from any arm.
 	beginInstruction();
 }
 

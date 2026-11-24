@@ -71,6 +71,10 @@ void NativeLowering::emitTop(int extent) {
 }
 void NativeLowering::emitLeave(NativeBlockExitSite& exit, Charge charge) {
 	m_cache.publish();
+	emitPublishedLeave(exit, charge);
+}
+
+void NativeLowering::emitPublishedLeave(NativeBlockExitSite& exit, Charge charge) {
 	const auto& gate = nativeBlockGate();
 	void* target = gate.leaveSegment;
 	if (charge == Charge::Pending) {
@@ -94,7 +98,7 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, EdgePositi
 	const auto target = block.successors[edge];
 	const bool completed = exit.exit == NativeBlockExit::CompletedCall;
 	if (target != m_blocks.size() && (completed || exit.exit == NativeBlockExit::Continue)) {
-		const auto source = m_cache.state();
+		const auto& source = m_cache.state();
 		const auto& successor = m_ir[target];
 		const auto replayId = block.edgeReplay[edge];
 		if (!completed) {
