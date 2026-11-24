@@ -1169,7 +1169,7 @@ void imageLiteralsProveNativeComparisonTypes() {
 		NativeIrRegion region;
 		region.build(sources, uses, false, {}, {.imageConstants = constants});
 		const auto instructions = region.blocks().front().instructions;
-		require(std::get<NativeComparison>(instructions[1].operation).strategy == expected,
+		require(std::get<NativeComparisonStrategy>(std::get<NativeComparison>(instructions[1].operation).strategy) == expected,
 			"only the owning image's literal tags establish a direct native comparison");
 		if (const auto loaded = nativeImageConstant(constants, 23))
 			require(std::get<NativeLiteral>(instructions[0].operation).value == *loaded,
@@ -1182,6 +1182,20 @@ void imageLiteralsProveNativeComparisonTypes() {
 	verify(std::span(words).last(1), NativeComparisonStrategy::LeftInteger);
 	const std::array floats{NativeImageConstant{0, valueFloat(0.5f)}, NativeImageConstant{23, valueFloat(1.5f)}};
 	verify(floats, NativeComparisonStrategy::Float);
+	decoded[1].op = static_cast<u8>(OpCode::EQ);
+	decoded[1].baseCycles = BASE_CYCLES[decoded[1].op];
+	for (const auto tag : {ValueTag::Nil, ValueTag::False, ValueTag::True, ValueTag::String,
+			ValueTag::Table, ValueTag::Closure, ValueTag::BuiltinFunction, ValueTag::Thread}) {
+		for (bool knownLeft : {false, true}) {
+			const std::array constant{NativeImageConstant{knownLeft ? 23u : 0u, valueFromTag(tag, 0x1234)}};
+			NativeRegisterUses uses;
+			NativeIrRegion region;
+			region.build(sources, uses, false, {}, {.imageConstants = constant});
+			const auto& op = std::get<NativeComparison>(region.blocks().front().instructions[1].operation);
+			const auto& plan = std::get<NativeTaggedEquality>(op.strategy);
+			require(plan.tag == tag && plan.knownLeft == knownLeft, "equality consumes the proven nonnumeric operand");
+		}
+	}
 }
 
 void fixedWindowCountsOnlyAdmittedAccesses() {

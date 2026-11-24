@@ -281,11 +281,15 @@ struct NativeTruthBranch {
 	constexpr NativeSlotAccess slots() const { return {.reads = {condition, NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}}; }
 };
 enum class NativeComparisonStrategy : u8 { Word, Float, Kernel, LeftInteger, RightInteger };
+struct NativeTaggedEquality {
+	ValueTag tag;
+	bool knownLeft;
+};
 struct NativeComparison {
 	NativeValueRef left, right;
 	OpCode operation;
 	bool skipOnMatch;
-	NativeComparisonStrategy strategy = NativeComparisonStrategy::Kernel;
+	std::variant<NativeComparisonStrategy, NativeTaggedEquality> strategy{NativeComparisonStrategy::Kernel};
 	constexpr NativeSlotAccess slots() const { return {.reads = {left, right, NATIVE_NO_OPERAND}}; }
 };
 

@@ -138,6 +138,50 @@ void compareWithOneIntegerProof() {
 	}
 }
 
+void equalityConsumesOnlyRelevantValuePlanes() {
+	test::Blua32TestImage image;
+	image.constants = {std::monostate{}, false, true, std::string("identity")};
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	for (u8 k = 0; k < 4; ++k) for (bool knownLeft : {false, true}) {
+		const u32 word = image.functions.size() * 4;
+		writeInstruction(image.text, word, static_cast<u8>(OpCode::LOADK), 1, 0, k);
+		writeInstruction(image.text, word + 1, static_cast<u8>(OpCode::EQ), 0, knownLeft, !knownLeft);
+		writeInstruction(image.text, word + 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		writeInstruction(image.text, word + 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions.push_back({.firstWord = word, .wordCount = 4, .maxStack = 2});
+	}
+	CpuMachine native(image, false), scalar(image, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+#endif
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		const Value str = valueString(cpu.stringPool().intern("identity"));
+		const std::array known{valueNil(), valueBool(false), valueBool(true), str};
+		for (unsigned fn = 0; fn < image.functions.size(); ++fn) {
+			const u32 pc = machine->rom.textAddress + fn * 4 * INSTRUCTION_BYTES;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (machine == &native) {
+				const auto& imageState = *cpu.activeThread()->currentFrame->executionImage;
+				const auto& page = *imageState.nativeCodeLookup->find(pc, 0);
+				require(page.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES] != nullptr,
+					"the equality prefix is resident");
+			}
+#endif
+			for (Value other : {valueFromTag(ValueTag::Nil, 17), valueFromTag(ValueTag::True, 42),
+				valueFromTag(ValueTag::False, 9), str, valueString(cpu.stringPool().intern("different")),
+				valueInteger(valuePayload(str)), valueFloatBits(BLUA32_FLOAT_NAN)}) {
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[fn], pc);
+				cpu.activeThread()->currentFrame->registers.set(0, other);
+				const int grant = BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::EQ)];
+				require(cpu.runUntilDepth(0, grant) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0
+					&& cpu.readFramePc(0) == pc + (valuesEqual(known[fn / 2], other) ? 3u : 2u) * INSTRUCTION_BYTES,
+					"primitive payloads are ignored, but reference equality needs both the tag and identity word");
+			}
+		}
+	}
+}
+
 void stringOrderingKeepsResidentValuesAndExactFrontiers() {
 	for (const auto op : {OpCode::LT, OpCode::LE}) for (const bool expected : {true, false}) {
 		test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -814,6 +858,7 @@ int main() {
 	try {
 		genericPredicatesAndStringChargeAgree();
 		compareWithOneIntegerProof();
+		equalityConsumesOnlyRelevantValuePlanes();
 		stringOrderingKeepsResidentValuesAndExactFrontiers();
 		numericRkComparisonsBelongToTheirExecutionImage();
 		changingSkippedBytesRetireResolvedEdges(); maximumLengthSkipDependencyRetires(); resolvedComparisonLinksBothPaths();

@@ -135,8 +135,11 @@ struct OperationPlan {
 	}
 	void operator()(const NativeComparison& op) const {
 		constexpr std::array strategies{"word", "float", "kernel", "left-integer", "right-integer"};
-		out << " op=" << unsigned(op.operation) << " strategy=" << strategies[unsigned(op.strategy)]
-			<< (op.skipOnMatch ? " skip-on-match" : " skip-on-miss");
+		out << " op=" << unsigned(op.operation) << " strategy=";
+		if (const auto* eq = std::get_if<NativeTaggedEquality>(&op.strategy))
+			out << "tagged-equality " << (eq->knownLeft ? "left=" : "right=") << unsigned(eq->tag);
+		else out << strategies[unsigned(std::get<NativeComparisonStrategy>(op.strategy))];
+		out << (op.skipOnMatch ? " skip-on-match" : " skip-on-miss");
 	}
 	void operator()(const NativeTableAccess& op) const {
 		if (op.keyKind == NativeTableKey::Field && (!op.ownFieldAddress || op.receiverCheck == NativeTagCheck::Rejected))

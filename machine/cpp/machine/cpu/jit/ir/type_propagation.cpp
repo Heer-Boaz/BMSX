@@ -145,6 +145,18 @@ struct NativeTypePropagation::Transfer {
 
 	void operator()(NativeComparison& op) const {
 		const auto left = input(0), right = input(1);
+		if (op.operation == OpCode::EQ) {
+			const auto nonnumeric = [](const auto& fact) {
+				return fact && fact->tag != ValueTag::Integer && fact->tag != ValueTag::Float;
+			};
+			const bool knownLeft = nonnumeric(left);
+			if (knownLeft || nonnumeric(right)) {
+				const auto& proof = knownLeft ? left : right;
+				facts.require(proof);
+				op.strategy = NativeTaggedEquality{proof->tag, knownLeft};
+				return;
+			}
+		}
 		if (!left || !right) {
 			if (left && left->tag == ValueTag::Integer) {
 				facts.require(left);
