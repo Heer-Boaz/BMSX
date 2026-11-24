@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as io from '../../machine/ts/spec/bmsx/io';
 import * as img from '../../machine/ts/spec/imgdec/registers';
-import { IMGDEC_HISTORY_WORD_CAPACITY } from '../../machine/ts/spec/imgdec/stream';
+import {
+	IMGDEC_HISTORY_WORD_CAPACITY,
+	IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT, IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH,
+	IMGDEC_TOKEN_KIND_BACK_REFERENCE, IMGDEC_TOKEN_KIND_SHIFT,
+} from '../../machine/ts/spec/imgdec/stream';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { GX_GPU_GP1_DMA_DIRECTION } from '../../machine/ts/spec/gx/gp1';
@@ -309,6 +313,36 @@ for (let mode = 0; mode < 7; ++mode) test(`run kind/distance ${mode} crosses blo
 	h.memory.writeMappedU32LE(io.IO_IMGDEC_CONTROL, 1);
 	assert.deepEqual(h.drain(), expected);
 	assert.deepEqual(h.machine.imgDecController.captureState().historyWords, expected.slice(-4096));
+});
+
+test('distance-one back-reference output and timing survive an in-flight restore', () => {
+	const block = img.IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY, run = block + 17, total = 1 + run;
+	const word = 0xfedcba98;
+	const token = ((IMGDEC_TOKEN_KIND_BACK_REFERENCE << IMGDEC_TOKEN_KIND_SHIFT)
+		| ((run - IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH) << IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT)) >>> 0;
+	const h = fixture();
+	h.configure(3, total);
+	h.memory.writeMappedU32LE(io.IO_IMGDEC_CONTROL, img.IMGDEC_CONTROL_START);
+	for (const input of [0, word, token]) h.memory.writeMappedU32LE(io.IO_IMGDEC_DATA, input);
+	const checkpoint = 113;
+	h.machine.scheduler.advanceTo(checkpoint);
+	const pending = captureMachineState(h.machine);
+	assert.equal(pending.imgDec.assembledWordCount, block);
+	assert.equal(pending.imgDec.decodedWordCount, 0);
+	assert.equal(pending.imgDec.runWordsRemaining, total - block);
+	const cyclesPerWord = PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord;
+	assert.equal(pending.imgDec.blockCyclesRemaining, block * cyclesPerWord - checkpoint);
+
+	const restored = fixture();
+	restored.machine.scheduler.advanceTo(checkpoint);
+	restoreMachineState(restored.machine, pending);
+	const expected = Array<number>(total).fill(word);
+	for (const row of [h, restored]) {
+		assert.deepEqual(row.drain(), expected);
+		assert.equal(row.services[DEVICE_SERVICE_IMGDEC], 2);
+		assert.equal(row.machine.scheduler.currentNowCycles(), total * cyclesPerWord);
+		assert.notEqual(row.memory.readIoU32(io.IO_IRQ_FLAGS) & io.IRQ_IMGDEC, 0);
+	}
 });
 
 test('partial filling, scheduled completion and partly read blocks restore without another output FIFO', () => {

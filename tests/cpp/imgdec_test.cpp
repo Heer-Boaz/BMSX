@@ -391,6 +391,43 @@ void testRestoreAfterHistoryWrap() {
 	require(h.drain() == expected, "chronological history restores both the wrapped dictionary and unread output");
 }
 
+void testDistanceOneBackReferenceContinuesAfterRestore() {
+	constexpr u32 prefix = IMGDEC_HISTORY_WORD_CAPACITY - 5u;
+	constexpr u32 firstSlice = IMGDEC_HISTORY_WORD_CAPACITY - prefix;
+	constexpr u32 run = 2 * IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY + 17u;
+	constexpr u32 filler = 0xd3583001u, word = 0x8765abcdu, tail = 0x12345678u;
+	const std::vector<u32> stream{
+		(IMGDEC_TOKEN_KIND_REPEAT << IMGDEC_TOKEN_KIND_SHIFT) | (prefix - 2u), filler,
+		0u, word,
+		(IMGDEC_TOKEN_KIND_BACK_REFERENCE << IMGDEC_TOKEN_KIND_SHIFT)
+			| ((run - IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH) << IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT),
+		0u, tail,
+	};
+	Harness h(stream);
+	h.configure(static_cast<u32>(stream.size()), prefix + run + 1u);
+	h.inputDma();
+	h.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
+	for (u32 i = 0; i < IMGDEC_HISTORY_WORD_CAPACITY; ++i) {
+		while ((h.memory.readIoU32(IO_IMGDEC_STATUS) & IMGDEC_STATUS_OUTPUT_REQUEST) == 0) h.pump();
+		require(h.memory.readMappedU32LE(IO_IMGDEC_DATA) == (i < prefix - 1u ? filler : word),
+			"the distance-one reference starts with the last literal, not the previous repeat value");
+	}
+	// Draining the first slice starts the next block at the ring wrap.
+	const auto decoding = h.machine.imgDecController.captureState();
+	require(decoding.decodedWordCount == IMGDEC_HISTORY_WORD_CAPACITY
+		&& decoding.assembledWordCount == IMGDEC_HISTORY_WORD_CAPACITY + IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY
+		&& decoding.runWordsRemaining == run - firstSlice - IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY
+		&& decoding.blockCyclesRemaining == IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY * PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord,
+		"the active reference spans the published, decoding and still unassembled blocks");
+	std::vector<u32> expected(run - firstSlice, word);
+	expected.push_back(tail);
+	require(h.drain() == expected, "the active reference crosses the ring and ends before the next literal");
+	h.machine.imgDecController.restoreState(decoding);
+	require(h.machine.imgDecController.captureState().blockCyclesRemaining == decoding.blockCyclesRemaining,
+		"restore preserves the decoding deadline");
+	require(h.drain() == expected, "the restored reference completes without changing the word or run length");
+}
+
 void testFaultsAndEmptyJob() {
 	for (const auto& stream : std::vector<std::vector<u32>>{{(IMGDEC_TOKEN_KIND_BACK_REFERENCE << 30)}, {0}, {(IMGDEC_TOKEN_KIND_REPEAT << 30)}, {(IMGDEC_TOKEN_KIND_ZERO << 30) | 1}, {(IMGDEC_TOKEN_KIND_ZERO << 30), 0}}) {
 		Harness h(stream);
@@ -417,5 +454,6 @@ int main() {
 	testHistoryWrapAndAllRunKinds();
 	testRestoreAndQuiesce();
 	testRestoreAfterHistoryWrap();
+	testDistanceOneBackReferenceContinuesAfterRestore();
 	testFaultsAndEmptyJob();
 }

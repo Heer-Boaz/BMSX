@@ -265,7 +265,12 @@ export class ImgDecController {
 			case DECODE_REPEAT: history.fill(this.repeatWord, start, start + count); break;
 			case DECODE_ZERO: history.fill(0, start, start + count); break;
 			case DECODE_BACK_REFERENCE: {
-				const source = (start - this.backReferenceDistance) & IMGDEC_HISTORY_WORD_MASK;
+				const distance = this.backReferenceDistance;
+				const source = (start - distance) & IMGDEC_HISTORY_WORD_MASK;
+				if (distance === 1) {
+					history.fill(history[source], start, start + count);
+					break;
+				}
 				const first = Math.min(count, IMGDEC_HISTORY_WORD_CAPACITY - source);
 				// Copy forward: the reference can read words emitted by this run.
 				for (let i = 0; i < first; ++i) history[start + i] = history[source + i];

@@ -226,7 +226,12 @@ void ImgDecController::preparePayloadWords(u32 count) {
 	case DecodeRepeat: std::fill_n(output, count, m_repeatWord); break;
 	case DecodeZero: std::fill_n(output, count, 0u); break;
 	case DecodeBackReference: {
-		const size_t source = (start - m_backReferenceDistance) & IMGDEC_HISTORY_WORD_MASK;
+		const size_t distance = m_backReferenceDistance;
+		const size_t source = (start - distance) & IMGDEC_HISTORY_WORD_MASK;
+		if (distance == 1u) {
+			std::fill_n(output, count, m_history[source]);
+			break;
+		}
 		const size_t first = std::min<size_t>(count, IMGDEC_HISTORY_WORD_CAPACITY - source);
 		// Copy forward: the reference can read words emitted by this run.
 		const u32* from = m_history.data() + source;
