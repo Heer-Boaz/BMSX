@@ -641,23 +641,26 @@ export class TableRecords {
 	}
 	private insertHashWithAdmission(record: number, key: Value, value: Value, policy: HashStore, extraHashSlots: number): number {
 		const budget = this.heap.budget, owner = valueTable(record), plan = this.resizePlan;
-		this.planRehash(record, key, extraHashSlots);
 		const array = this.arrayCapacity(record), hash = this.hashSize(record);
 		const previous = TableRecords.allocationCharge(array, hash);
-		let requested = TableRecords.allocationCharge(plan.array, plan.hash);
-		let admitted = requested <= previous || (policy === HashStore.Resume
-			? budget.usedBytes() + requested - previous <= budget.capacity()
-			: budget.prepareAllocation(requested - previous, owner, key, value));
-		const parkOnRefusal = policy === HashStore.Resume || (policy === HashStore.Scheduled && admitted);
 		let recovery = LuaAllocationRecovery.CurrentOrFresh;
 		for (;;) {
+			this.planRehash(record, key, extraHashSlots);
+			const requested = TableRecords.allocationCharge(plan.array, plan.hash);
+			const admitted = requested <= previous || (policy === HashStore.Resume || recovery !== LuaAllocationRecovery.CurrentOrFresh
+				? budget.usedBytes() + requested - previous <= budget.capacity()
+				: budget.prepareAllocation(requested - previous, owner, key, value));
 			if (admitted) {
 				const bytes = TableRecords.storageBytes(plan.array, plan.hash);
 				if (policy !== HashStore.Resume && this.heap.phase() >= GcPhase.Sweep) this.heap.assistSweepBeforeReservation(bytes);
 				const storage = this.heap.arena.allocate(bytes, true);
 				if (storage !== 0) return this.resize(record, storage, key, value, previous, requested);
 			}
-			if (parkOnRefusal) return HASH_STORE_DECLINED;
+			if (extraHashSlots) {
+				extraHashSlots = 0;
+				continue;
+			}
+			if (policy === HashStore.Resume || (policy === HashStore.Scheduled && admitted && recovery === LuaAllocationRecovery.CurrentOrFresh)) return HASH_STORE_DECLINED;
 			recovery = this.heap.recoverAllocation(recovery, owner, key, value);
 			// Weak clearing can make the existing reservation fit.
 			if (hash !== 0) {
@@ -669,9 +672,6 @@ export class TableRecords {
 					return this.insertHashWithoutGrowth(record, home, key, value, array, hash, words, tags, available, false);
 				}
 			}
-			this.planRehash(record, key, extraHashSlots);
-			requested = TableRecords.allocationCharge(plan.array, plan.hash);
-			admitted = requested <= previous || budget.usedBytes() + requested - previous <= budget.capacity();
 		}
 	}
 	private resize(record: number, storage: number, key: Value, value: Value, previous: number, requested: number): number {

@@ -1282,8 +1282,10 @@ For example, eight live hash entries, a new field, and an EXT value of
 slots. An overwrite, deletion, insertion into available storage, or
 assignment through `__newindex` does not use the request.
 
-The requested replacement must fit the language-allocation budget, even
-if a smaller replacement would fit. If allocation recovery makes an
+The extra slots are a preference. If the preferred replacement exceeds
+the language-allocation budget or no free block can hold it, the write
+requests the least power-of-two hash capacity needed for the live entries
+and the new field. Only the installed capacity is charged. If allocation recovery makes an
 existing slot available, the insertion can use that slot without
 replacing the storage. No later field is written by this instruction.
 

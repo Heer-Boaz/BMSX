@@ -2428,7 +2428,9 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 #endif
 }
 
-void parkedHintedFieldRetainsItsOperand(bool weak) {
+enum class FieldPressure { Budget, Fragmented, Exhausted };
+
+void hintedFieldUnderPressure(FieldPressure pressure, bool weak = false) {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
 	image.text.resize(3u * INSTRUCTION_BYTES);
@@ -2460,14 +2462,31 @@ void parkedHintedFieldRetainsItsOperand(bool weak) {
 	const u32 originalStorage = owner.storageAddress();
 	cpu.createTable(2048, 0); // Unreachable; completes the refused backing reservation after GC.
 	auto& arena = cpu.heapAllocator();
-	while (arena.allocate(4088u, true)) {}
 	const auto grownHash = TableRecord::hashCapacity(2 + extraHashSlots);
-	require(!arena.allocate(TableRecord::storageBytes(0, grownHash), true), "force a physical refusal of the hinted layout");
+	if (pressure == FieldPressure::Budget) {
+		const u32 required = TableRecord::allocationCharge(0, 2) - TableRecord::allocationCharge(0, 1);
+		cpu.memory().writeRamRecordWord(arena.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, budget.capacity() - required);
+	} else {
+		const u32 minimum = TableRecord::storageBytes(0, 2);
+		const u32 hole = arena.allocate(minimum, true);
+		while (arena.allocate(4088u, true)) {}
+		while (arena.allocate(minimum, true)) {}
+		if (pressure == FieldPressure::Fragmented) arena.free(hole);
+		require(!arena.allocate(TableRecord::storageBytes(0, grownHash), true), "force a physical refusal of the preferred layout");
+	}
 	const auto budgetBefore = budget.usedBytes();
 	const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
 	const u32 pc = machine.rom.textAddress;
-	require(cpu.runUntilDepth(0, cycles, 0u, CpuRunKind::Scheduled) == RunResult::ParkedAllocation,
-		"SETFIELD parks instead of committing a smaller unhinted reservation");
+	const auto result = cpu.runUntilDepth(0, cycles, 0u, CpuRunKind::Scheduled);
+	if (pressure != FieldPressure::Exhausted) {
+		require(result == RunResult::Yielded && !cpu.allocationParked() && cpu.readFramePc(0) == pc + 2u * INSTRUCTION_BYTES
+			&& owner.hashSlots() == 2 && owner.getStringKey(field) == valueInteger(91)
+			&& owner.getStringKey(resident) == valueInteger(37)
+			&& budget.usedBytes() - budgetBefore == TableRecord::allocationCharge(0, 2) - TableRecord::allocationCharge(0, 1),
+			"only the minimum reservation fits and is charged; the write completes without parking");
+		return;
+	}
+	require(result == RunResult::ParkedAllocation, "SETFIELD parks when even minimum backing is unavailable");
 	const auto pending = cpu.captureRuntimeState().pendingAllocation;
 	const auto assignment = std::get<PendingTableAssignment>(pending.operands);
 	require(cpu.readFramePc(0) == pc && pending.instructionPc == pc && pending.lastPc == pc + INSTRUCTION_BYTES
@@ -2638,8 +2657,10 @@ int main() {
 		nativeIntegerGrowthReturnsWithinTheGrant();
 		nativeFixedStringMissReturnsWithinTheGrant(0);
 		nativeFixedStringMissReturnsWithinTheGrant(7);
-		parkedHintedFieldRetainsItsOperand(false);
-		parkedHintedFieldRetainsItsOperand(true);
+		hintedFieldUnderPressure(FieldPressure::Budget);
+		hintedFieldUnderPressure(FieldPressure::Fragmented);
+		hintedFieldUnderPressure(FieldPressure::Exhausted);
+		hintedFieldUnderPressure(FieldPressure::Exhausted, true);
 		nativeDynamicStringMissReturnsWithinTheGrant();
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

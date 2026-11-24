@@ -1,3 +1,4 @@
+import { HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -132,7 +133,7 @@ test('a WIDE SETFIELD hint affects only growth at its original table and follows
 	assign(1, 73, false, 2, 1); // No retained hint after removing WIDE.
 });
 
-test('pending hinted field growth keeps its reservation request across a checkpoint', () => {
+for (const pressure of ['budget', 'fragmented', 'exhausted']) test(`hinted SETFIELD under ${pressure} pressure`, () => {
 	const code = new Uint8Array(3 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 31);
 	writeInstruction(code, 1, OpCode.SETFIELD, 0, 0, 1);
@@ -147,10 +148,30 @@ test('pending hinted field growth keeps its reservation request across a checkpo
 	budget.setCollectionTarget(budget.capacity());
 	const backing = TableRecords.storageBytes(512, 64);
 	cpu.createTable(1024, 0); // Recoverable storage for the hinted growth.
-	while (arena.allocate(backing, true) !== 0) {}
+	if (pressure === 'budget') {
+		const required = TableRecords.allocationCharge(512, 2) - TableRecords.allocationCharge(512, 1);
+		cpu.memory.writeRamRecordWord(arena.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, budget.capacity() - required);
+	} else {
+		const minimum = TableRecords.storageBytes(512, 2);
+		const hole = arena.allocate(minimum, true);
+		while (arena.allocate(backing, true) !== 0) {}
+		while (arena.allocate(minimum, true) !== 0) {}
+		if (pressure === 'fragmented') arena.free(hole);
+	}
 	const oldStorage = tables.storageAddress(table);
 	const pc = cpu.readFramePc(0);
-	assert.equal(cpu.runUntilDepth(0, 1, cpu.rootThread.address, CpuRunKind.Scheduled), RunResult.ParkedAllocation);
+	const used = budget.usedBytes();
+	const result = cpu.runUntilDepth(0, 1, cpu.rootThread.address, CpuRunKind.Scheduled);
+	if (pressure !== 'exhausted') {
+		assert.equal(result, RunResult.Yielded);
+		assert.equal(cpu.readFramePc(0), pc + 2 * INSTRUCTION_BYTES);
+		assert.equal(tables.hashSize(table), 2);
+		assert.equal(tables.getStringKey(table, beforeKey), valueInteger(9));
+		assert.equal(tables.getStringKey(table, field), valueInteger(73));
+		assert.equal(budget.usedBytes() - used, TableRecords.allocationCharge(512, 2) - TableRecords.allocationCharge(512, 1));
+		return;
+	}
+	assert.equal(result, RunResult.ParkedAllocation);
 	assert.equal(tables.storageAddress(table), oldStorage);
 	assert.equal(tables.getStringKey(table, field), valueNil());
 	const pending = cpu.captureRuntimeState().pendingAllocation;

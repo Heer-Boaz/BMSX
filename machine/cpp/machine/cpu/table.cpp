@@ -221,9 +221,7 @@ template <TableRecord::HashStore Policy>
 int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, u32 previous, u32 requested)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	const u32 bytes = storageBytes(plan.array, plan.hash);
-	if constexpr (Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
-		if (m_heap->sweepDueForReservation(bytes)) return HASH_STORE_DECLINED;
-	} else if constexpr (Policy != HashStore::Resume) {
+	if constexpr (Policy == HashStore::Scheduled || Policy == HashStore::General) {
 		if (m_heap->phase() >= GcPhase::Sweep) m_heap->assistSweepBeforeReservation(bytes);
 	}
 	if (const u32 storage = m_heap->arena.allocate(bytes, true))
@@ -235,34 +233,44 @@ template <TableRecord::HashStore Policy>
 int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlots)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	auto& budget = m_heap->budget;
-	auto plan = planRehash(key, extraHashSlots);
 	const u32 array = arrayCapacity(), hash = hashSlots();
 	const u32 previous = allocationCharge(array, hash);
-	u32 requested = allocationCharge(plan.array, plan.hash);
-	if constexpr (Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
-		// The generated body has not published its roots. Even an ordinary
-		// allocation assist must go through the instruction's semantic exit.
-		if (requested > previous && !budget.canAdmitWithoutAssist(requested - previous)) return HASH_STORE_DECLINED;
-		return commitHashPlan<Policy>(plan, key, value, previous, requested);
-	} else if constexpr (Policy == HashStore::Resume) {
-		if (requested > previous && budget.usedBytes() + requested - previous > budget.capacity())
-			return HASH_STORE_DECLINED;
-		return commitHashPlan<Policy>(plan, key, value, previous, requested);
-	} else {
-		const Value owner = valueTable(m_address);
-		bool admitted = requested <= previous || budget.prepareAllocation(requested - previous, owner, key, value);
-		if constexpr (Policy == HashStore::Scheduled) {
-			if (admitted) return commitHashPlan<Policy>(plan, key, value, previous, requested);
-		}
-		auto recovery = LuaAllocationRecovery::CurrentOrFresh;
-		for (;;) {
-			if (admitted) {
-				const int slot = commitHashPlan<Policy>(plan, key, value, previous, requested);
-				if (slot != HASH_STORE_DECLINED) return slot;
+	const Value owner = valueTable(m_address);
+	auto recovery = LuaAllocationRecovery::CurrentOrFresh;
+	for (;;) {
+		const auto plan = planRehash(key, extraHashSlots);
+		const u32 requested = allocationCharge(plan.array, plan.hash);
+		bool admitted = true;
+		if constexpr (Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
+			if (requested > previous && !budget.canAdmitWithoutAssist(requested - previous)) {
+				// Only a hard budget refusal rejects the preference. If GC
+				// work is due, the published path decides the same request.
+				if (!extraHashSlots || budget.usedBytes() + requested - previous <= budget.capacity())
+					return HASH_STORE_DECLINED;
+				admitted = false;
 			}
+			if (admitted && m_heap->sweepDueForReservation(storageBytes(plan.array, plan.hash)))
+				return HASH_STORE_DECLINED;
+		} else if (requested > previous) {
+			admitted = Policy == HashStore::Resume || recovery != LuaAllocationRecovery::CurrentOrFresh
+				? budget.usedBytes() + requested - previous <= budget.capacity()
+				: budget.prepareAllocation(requested - previous, owner, key, value);
+		}
+		if (admitted) {
+			const int slot = commitHashPlan<Policy>(plan, key, value, previous, requested);
+			if (slot != HASH_STORE_DECLINED) return slot;
+		}
+		if (extraHashSlots) {
+			extraHashSlots = 0;
+			continue;
+		}
+		if constexpr (Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField || Policy == HashStore::Resume) {
+			return HASH_STORE_DECLINED;
+		} else {
+			if constexpr (Policy == HashStore::Scheduled)
+				if (admitted && recovery == LuaAllocationRecovery::CurrentOrFresh) return HASH_STORE_DECLINED;
 			recovery = m_heap->recoverAllocation(recovery, owner, key, value);
-			// Weak clearing may have freed the home slot without replacing
-			// the body. The existing reservation already pays for it.
+			// Weak clearing can make an existing slot available.
 			if (hash != 0u) {
 				const auto body = hashBody(hash, array);
 				const u32 home = hashCanonicalTableKey(key) & (hash - 1u);
@@ -270,9 +278,6 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 				const int available = vacant ? -1 : body.findFreeIndex(hashFree());
 				if (vacant || available >= 0) return insertHashWithoutGrowth(body, home, key, value, available);
 			}
-			plan = planRehash(key, extraHashSlots);
-			requested = allocationCharge(plan.array, plan.hash);
-			admitted = requested <= previous || budget.usedBytes() + requested - previous <= budget.capacity();
 		}
 	}
 }
