@@ -654,6 +654,7 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied) {
 	generated.cpu.prepareSystemNativeCode();
 	require(page->nativeBlocks && page->nativeBlocks->entries[word], "trained source was republished");
 	const auto& fixed = page->nativeBlocks->entries[word]->terminal;
+	const auto fixedRegion = page->nativeBlocks->entries[word]->region;
 	require(fixed.operands.call.strategy == NativeCallStrategy::Fixed && fixed.fixedCall.plan.prototype == prototype
 		&& fixed.fixedCall.plan.copied == supplied && fixed.fixedCall.plan.padded == padded
 		&& fixed.fixedCall.entryCells[0] && *fixed.fixedCall.entryCells[0],
@@ -704,8 +705,12 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied) {
 	restart(3);
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted
 		&& generated.cpu.readFrameRegister(0, 4) == valueInteger(39), "a new prototype calls the actual semantic target");
+	// The synchronous compiler can republish a generic head when the caller's
+	// continuation reaches the hot retired region in this same grant.
+	const auto* republished = page->nativeBlocks ? page->nativeBlocks->entries[word].get() : nullptr;
 	require(page->words[word].nativeCallTarget() == DecodedInstruction::CALL_TARGET_DISABLED
-		&& (!page->nativeBlocks || !page->nativeBlocks->entries[word]),
+		&& (!republished || (republished->region != fixedRegion
+			&& republished->terminal.operands.call.strategy == NativeCallStrategy::Generic)),
 		"contradicting an actually fixed target disables and retires that site's specialization");
 	generated.cpu.prepareSystemNativeCode();
 	require(page->nativeBlocks && page->nativeBlocks->entries[word]
