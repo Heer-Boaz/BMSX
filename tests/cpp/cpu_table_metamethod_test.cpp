@@ -279,6 +279,75 @@ void fixedFieldAssignmentReusesTheTerminalProof() {
 		"a live false terminal slot takes precedence over its own redirect and preserves the original raw Float");
 }
 
+void coldFieldAssignmentPublishesItsFrontierOnce() {
+	constexpr u32 handler = 72;
+	constexpr u8 extraHashSlots = 7;
+	Program program(OpCode::SETFIELD, true);
+	program.next = 3;
+	program.put(0, OpCode::K1, 10, 0, 0);
+	writeInstruction(program.image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0, extraHashSlots);
+	program.put(2, OpCode::SETFIELD, 0, 0, 2);
+	program.put(3, OpCode::MOV, 8, 0, 0);
+	program.put(4, OpCode::HALT, 0, 0, 0);
+	program.image.functions[0].wordCount = 5;
+	program.put(handler, OpCode::SETI, 0, 1, 2);
+	program.put(handler + 1, OpCode::RET, 0, 1, 0);
+	program.image.functions.push_back({.firstWord=handler, .wordCount=2, .numParams=3, .maxStack=8});
+	Machine machine(program, true); // Skip precompilation; enter ordinary scalar dispatch.
+	auto& cpu = machine.cpu;
+	cpu.setExecutionHook({});
+	cpu.luaHeap().setCollectionTarget(static_cast<u32>(cpu.luaHeap().capacity()));
+	const Value method = machine.bindHandler(handler);
+	auto root = cpu.createTable(1, 0);
+	root.setInteger(1, valueInteger(17));
+	const auto field = *cpu.stringPool().find("field");
+	const unsigned storePc = machine.rom.textAddress + INSTRUCTION_BYTES;
+	const unsigned successor = machine.rom.textAddress + program.next * INSTRUCTION_BYTES;
+	const int throughStore = cycles(OpCode::K1) + cycles(OpCode::SETFIELD);
+	const auto start = [&](Value value) {
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
+		auto* frame = cpu.activeThread()->currentFrame;
+		frame->registers.set(0, valueTable(root.address()));
+		frame->registers.set(2, value);
+		frame->registers.set(8, valueInteger(57));
+		frame->setTop(9);
+	};
+
+	start(valueBool(false));
+	require(cpu.runUntilDepth(0, throughStore) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0
+		&& cpu.readCurrentInstructionPc() == storePc && cpu.lastPc == storePc + INSTRUCTION_BYTES
+		&& cpu.readFramePc(0) == successor && cpu.activeThread()->currentFrame->readWindow(FrameField::Top) == 11
+		&& cpu.readFrameRegister(0, 8) == valueInteger(57) && cpu.readFrameRegister(0, 10) == valueInteger(1),
+		"cold hinted insertion retires WIDE and publishes the preceding live top, not the unexecuted suffix");
+	require(root.hashSlots() == TableRecord::hashCapacity(1 + extraHashSlots)
+		&& root.getStringKey(field) == valueBool(false) && root.getInteger(1) == valueInteger(17),
+		"the first own insertion reserves its requested hash storage without touching the array");
+	const u32 storage = root.storageAddress();
+	auto meta = cpu.createTable(0, 1);
+	meta.setStringKey(cpu.stringPool().intern("__newindex"), method);
+	root.setMetatableAddress(meta.address());
+	start(valueInteger(29));
+	require(cpu.runUntilDepth(0, throughStore) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0
+		&& root.storageAddress() == storage && root.getStringKey(field) == valueInteger(29)
+		&& root.getInteger(1) == valueInteger(17), "the next store updates the own slot in place without a method call");
+
+	root.setStringKey(field, valueNil());
+	start(valueInteger(41));
+	require(cpu.runUntilDepth(0, throughStore) == RunResult::Yielded,
+		"the stale own-slot prediction hands off to the callable method");
+	const auto* child = cpu.activeThread()->currentFrame;
+	require(child->previous && child->readControl(FrameField::CallSite) == storePc
+		&& child->previous->readControl(FrameField::Pc) == successor && child->previous->readWindow(FrameField::Top) == 11
+		&& child->registers.get(0) == valueTable(root.address()) && child->registers.get(1) == valueString(field)
+		&& child->registers.get(2) == valueInteger(41) && isNil(root.getStringKey(field)),
+		"__newindex sees the exact caller frontier and original operands before any store commits");
+	require(cpu.runUntilDepth(0, cycles(OpCode::SETI) + cycles(OpCode::RET) + cycles(OpCode::MOV)) == RunResult::Yielded
+		&& cpu.getFrameDepth() == 1 && cpu.instructionBudgetRemaining == 0
+		&& cpu.readFrameRegister(0, 8) == valueTable(root.address()) && cpu.readFramePc(0) == successor + INSTRUCTION_BYTES
+		&& root.getInteger(1) == valueInteger(41) && isNil(root.getStringKey(field)),
+		"the method and successor finish once without replaying the original assignment");
+}
+
 void callableNewIndexDiscardsAllResults() {
 	constexpr u32 handler = 72;
 	for (const Value key : {valueNil(), valueFloatBits(0xffa01234u)}) {
@@ -349,6 +418,7 @@ int main() {
 		rawKeysAndReadForwarding(); rawBuiltinsDistinguishExplicitKeysFromMissingArguments();
 		stringForwardingUsesLiveStringReceiverAndVisitBound(); tableValuedNewIndexAndOwnOverwrite();
 		fixedFieldAssignmentReusesTheTerminalProof();
+		coldFieldAssignmentPublishesItsFrontierOnce();
 		callableNewIndexDiscardsAllResults(); tableLengthAllowsOrdinaryMetamethodResult();
 	} catch (const std::exception& error) {
 		std::cerr << error.what() << '\n';

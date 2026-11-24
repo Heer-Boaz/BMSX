@@ -2438,7 +2438,7 @@ void parkedHintedFieldRetainsItsOperand(bool weak) {
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SETFIELD), 0, 0, 1);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 2}};
-	CpuMachine machine(image, true);
+	CpuMachine machine(image); // First execution takes the ordinary cold dispatch.
 	auto& cpu = machine.cpu;
 	auto& budget = cpu.luaHeap();
 	budget.setCollectionTarget(static_cast<u32>(budget.capacity()));
@@ -2470,7 +2470,8 @@ void parkedHintedFieldRetainsItsOperand(bool weak) {
 		"SETFIELD parks instead of committing a smaller unhinted reservation");
 	const auto pending = cpu.captureRuntimeState().pendingAllocation;
 	const auto assignment = std::get<PendingTableAssignment>(pending.operands);
-	require(pending.instructionPc == pc && pending.lastPc == pc + INSTRUCTION_BYTES && pending.nextPc == pc + 2u * INSTRUCTION_BYTES
+	require(cpu.readFramePc(0) == pc && pending.instructionPc == pc && pending.lastPc == pc + INSTRUCTION_BYTES
+		&& pending.nextPc == pc + 2u * INSTRUCTION_BYTES
 		&& assignment.receiver == owner.address() && assignment.key == valueString(field)
 		&& assignment.value == valueInteger(91) && assignment.extraHashSlots == extraHashSlots
 		&& owner.storageAddress() == originalStorage && budget.usedBytes() == budgetBefore,

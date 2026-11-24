@@ -185,10 +185,20 @@ DISPATCH_LABEL(SETFIELD) {
 	const Value value = readRK(IMAGE, registers, decoded->c);
 	int& predicted = TABLE_CACHE_SLOT();
 	// An own overwrite and its write barrier do not observe the frame.
-	if (valueIsTable(base) && TableRecord(m_heap, valuePayload(base)).storePredictedStringKey(key, value, predicted))
+	const bool isTable = valueIsTable(base);
+	if (isTable && TableRecord(m_heap, valuePayload(base)).storePredictedStringKey(key, value, predicted))
 		DISPATCH_NEXT();
-	PUBLISH_SCALAR_FRONTIER();
 	const u8 extraHashSlots = instructionFieldExtraHashSlots(decodedPage->sourceWords[pageOffset], decoded->width);
+	if constexpr (!Instrumented) {
+		if (isTable) {
+			const int slot = TableRecord(m_heap, valuePayload(base)).tryAssignStringField(key, value, extraHashSlots);
+			if (slot != TableRecord::HASH_STORE_DECLINED) {
+				predicted = slot;
+				DISPATCH_NEXT();
+			}
+		}
+	}
+	PUBLISH_SCALAR_FRONTIER();
 	if (storeTableFieldIndexCached(FRAME, predicted, base, key, value, extraHashSlots)) {
 		if (allocationParked()) return RunResult::ParkedAllocation;
 		DISPATCH_CONTINUE();
