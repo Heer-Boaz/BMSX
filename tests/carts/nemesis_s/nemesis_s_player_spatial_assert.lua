@@ -13,6 +13,36 @@ bss expected_commands: word[128]
 return {
 	kind = 'integration',
 	tests = {
+		laser_rows_follow_fractional_vessel_poses = function(t)
+			local _director<const>, stage<const>, player<const> = fixture.start_game(t)
+			for row_index = 1, stage.tile_rows do
+				local row<const> = stage.solid_tape[row_index]
+				for column = 1, #row do row[column] = 0 end
+			end
+			local state<const> = player.player_state
+			state.current_powerup_slot = player_state_module.powerup_slot.option
+			assert(state:activate_selected_powerup() == player_state_module.powerup_slot.option)
+			local option<const> = player.options[1]
+			local beam<const> = player.primary_projectiles[1]
+			local option_beam<const> = player.primary_projectiles[2]
+			for _, level in ipairs({1, weapons_laser.extended_level}) do
+				local extended<const> = level == weapons_laser.extended_level
+				player:set_global_position(32, 85.5)
+				option.x, option.y = 32, 93.5
+				player.powerup_levels[player_state_module.powerup_slot.laser] = level
+				player:fire_weapon_salvo()
+				assert(beam.y == (extended and 88 or 91) and option_beam.y == (extended and 96 or 99),
+					'laser spawn snaps each fractional vessel pose to its own row grid')
+				player:set_global_position(32, 99.75)
+				option.y = 103.25
+				player:update_laser(beam)
+				player:update_laser(option_beam)
+				assert(beam.y == (extended and 104 or 105) and option_beam.y == (extended and 104 or 109),
+					'expanding lasers follow the current vessel and option on the same row grid')
+				player:despawn_slot_projectile(beam, 'test')
+				player:despawn_slot_projectile(option_beam, 'test')
+			end
+		end,
 		vessel_batch_and_independent_projectile_pose = function(t)
 			local _director<const>, stage<const>, player<const> = fixture.start_game(t)
 			for row_index = 1, stage.tile_rows do

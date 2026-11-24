@@ -125,8 +125,6 @@ local uplaser_projectile_type_by_level<const> = {
 local laser_state_expand<const> = 0
 local laser_state_travel<const> = 1
 local laser_state_retract<const> = 2
-local laser_source_y_mask<const> = 0xffffffff
-local extended_laser_source_y_mask<const> = 0xfffffff8
 local powerup_slot<const> = player_state_module.powerup_slot
 local powerup_slot_speed<const> = powerup_slot.speed
 local powerup_slot_missile<const> = powerup_slot.missile
@@ -682,10 +680,9 @@ function player:spawn_laser(vessel_id, vessel_x, vessel_y, source_vessel, level)
 	laser.source_vessel = source_vessel
 	laser.x = ((vessel_x + weapons_laser.spawn_offset_x) // weapons_laser.tile_width) *
 		weapons_laser.tile_width
-	laser.source_y_mask = extended
-		and extended_laser_source_y_mask
-		or laser_source_y_mask
-	laser.y = (vessel_y + weapons_laser.spawn_offset_y) & laser.source_y_mask
+	local row_step<const> = level_config.row_step
+	laser.row_step = row_step
+	laser.y = ((vessel_y + weapons_laser.spawn_offset_y) // row_step) * row_step
 	laser.state = laser_state_expand
 	laser.source = extended and weapon_sources.extended_laser or weapon_sources.laser
 	laser.height = level_config.height
@@ -920,7 +917,8 @@ function player:update_laser(laser)
 		end
 		laser.x = ((source_x + weapons_laser.spawn_offset_x) // weapons_laser.tile_width) *
 			weapons_laser.tile_width
-		laser.y = (source_y + weapons_laser.spawn_offset_y) & laser.source_y_mask
+		local row_step<const> = laser.row_step
+		laser.y = ((source_y + weapons_laser.spawn_offset_y) // row_step) * row_step
 		if laser.x >= playfield_width - weapons_laser.tile_width then
 			self:despawn_slot_projectile(laser, 'screen_edge')
 			return

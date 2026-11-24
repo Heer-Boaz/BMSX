@@ -304,9 +304,9 @@ weapons_laser = {
 	collision_retract_tiles = 4,
 	extended_level = 3,
 	levels = {
-		{ length_tiles = 15, expansion_tiles_per_tick = 4, height = 2 },
-		{ length_tiles = 28, expansion_tiles_per_tick = 4, height = 2 },
-		{ length_tiles = 28, expansion_tiles_per_tick = 5, height = 8 },
+		{ length_tiles = 15, expansion_tiles_per_tick = 4, height = 2, row_step = 1 },
+		{ length_tiles = 28, expansion_tiles_per_tick = 4, height = 2, row_step = 1 },
+		{ length_tiles = 28, expansion_tiles_per_tick = 5, height = 8, row_step = 8 },
 	},
 }
 
