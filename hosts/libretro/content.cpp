@@ -156,7 +156,7 @@ std::unique_ptr<LibretroContent> loadLibretroContent(
 	} catch (const std::exception& error) {
 		logging.log(
 			RETRO_LOG_ERROR,
-			"[BMSX] Content admission failed: %s\n",
+			"[BMSX] Cannot load ROM set (BIOS and cartridge media): %s\n",
 			error.what());
 		return {};
 	}

@@ -184,64 +184,97 @@
 			"timeout": 30000,
 		},
 		{
-			"type": "pwa-node",
-			"request": "launch",
 			"name": "LIBRETRO DEBUG: RetroArch",
-			"runtimeExecutable": "npm",
-			"experimentalNetworking": "off",
-			"runtimeArgs": [
-				"run",
-				"run:retroarch",
-				"--",
+			"type": "cppdbg",
+			"request": "launch",
+			"program": "${workspaceFolder}/third_party/retroarch-gles2/retroarch",
+			"args": [
+				"--appendconfig=./scripts/retroarch.local.cfg",
+				"-L",
+				"./dist/libretro_bmsx.so",
 				"./dist/${input:romtobuild}.debug.rom"
 			],
 			"cwd": "${workspaceFolder}",
-			"console": "integratedTerminal"
+			"MIMode": "gdb",
+			"environment": [
+				{
+					"name": "GALLIUM_DRIVER",
+					"value": "d3d12"
+				},
+				{
+					"name": "LIBRETRO_SYSTEM_DIRECTORY",
+					"value": "${workspaceFolder}/dist/system"
+				}
+			]
 		},
 		{
-			"type": "pwa-node",
-			"request": "launch",
 			"name": "LIBRETRO DEBUG: Custom Host (SDL)",
-			"runtimeExecutable": "npm",
-			"experimentalNetworking": "off",
-			"runtimeArgs": [
-				"run",
-				"run:libretro-host:wsl:sdl",
-				"--",
-				"./dist/${input:romtobuild}.debug.rom",
+			"type": "cppdbg",
+			"request": "launch",
+			"program": "${workspaceFolder}/build-libretro-host-wsl/bmsx_libretro_host",
+			"args": [
+				"--core",
+				"./dist/libretro_bmsx.so",
+				"--system-dir",
+				"./dist/system",
+				"--video",
+				"sdl",
+				"--backend",
+				"gles2",
+				"./dist/${input:romtobuild}.debug.rom"
 			],
 			"cwd": "${workspaceFolder}",
-			"console": "integratedTerminal"
+			"MIMode": "gdb",
+			"environment": [
+				{
+					"name": "GALLIUM_DRIVER",
+					"value": "d3d12"
+				}
+			]
 		},
 		{
-			"type": "pwa-node",
-			"request": "launch",
 			"name": "LIBRETRO RELEASE: Custom Host (SDL)",
-			"runtimeExecutable": "npm",
-			"experimentalNetworking": "off",
-			"runtimeArgs": [
-				"run",
-				"run:libretro-host:wsl:sdl",
-				"--",
-				"./dist/${input:romtobuild}.rom",
+			"type": "cppdbg",
+			"request": "launch",
+			"program": "${workspaceFolder}/build-libretro-host-wsl/bmsx_libretro_host",
+			"args": [
+				"--core",
+				"./dist/libretro_bmsx.so",
+				"--system-dir",
+				"./dist/system",
+				"--video",
+				"sdl",
+				"--backend",
+				"gles2",
+				"./dist/${input:romtobuild}.rom"
 			],
 			"cwd": "${workspaceFolder}",
-			"console": "integratedTerminal"
+			"MIMode": "gdb",
+			"environment": [
+				{
+					"name": "GALLIUM_DRIVER",
+					"value": "d3d12"
+				}
+			]
 		},
 		{
-			"type": "pwa-node",
-			"request": "launch",
 			"name": "LIBRETRO DEBUG: Custom Host (FB)",
-			"runtimeExecutable": "npm",
-			"experimentalNetworking": "off",
-			"runtimeArgs": [
-				"run",
-				"run:libretro-host:wsl:fb",
-				"--",
-				"./dist/${input:romtobuild}.debug.rom",
+			"type": "cppdbg",
+			"request": "launch",
+			"program": "${workspaceFolder}/build-libretro-host-wsl/bmsx_libretro_host",
+			"args": [
+				"--core",
+				"./dist/libretro_bmsx.so",
+				"--system-dir",
+				"./dist/system",
+				"--video",
+				"fb",
+				"--backend",
+				"software",
+				"./dist/${input:romtobuild}.debug.rom"
 			],
 			"cwd": "${workspaceFolder}",
-			"console": "integratedTerminal"
+			"MIMode": "gdb"
 		},
 		{
 			"type": "pwa-node",
