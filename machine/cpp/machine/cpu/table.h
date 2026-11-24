@@ -195,7 +195,7 @@ private:
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	int resize(const ResizePlan&, u32 storage, Value key, Value value, u32 previous, u32 requested);
 	void bindStorage(size_t arraySize, size_t hashSize, u32 address);
-	void initializeStorage(size_t retainedArray = 0);
+	void initializeStorage(u32 storage, u32 array, u32 hash, size_t retainedArray = 0);
 	void freeStorage();
 	u32 readHeader(TableHeader field) const { return m_memory->readRamRecordWord(m_address + static_cast<u32>(field)); }
 	void writeHeader(TableHeader field, u32 word) { m_memory->writeRamRecordWord(m_address + static_cast<u32>(field), word); }

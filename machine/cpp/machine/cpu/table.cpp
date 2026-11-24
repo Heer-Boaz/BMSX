@@ -22,13 +22,13 @@ TableRecord::TableRecord(GcHeap& heap, u32 address)
 }
 
 void TableRecord::initialize(size_t array, size_t hash) {
-	writeHeader(TableHeader::Kind, static_cast<u32>(ValueTag::Table) | (static_cast<u32>(m_heap->white()) << 8u)
-		| (1u << (8u * TABLE_NEW_INDEX_ABSENT_BYTE)));
-	writeHeader(TableHeader::Gray, 0);
-	writeHeader(TableHeader::Metatable, 0);
-	writeHeader(TableHeader::Length, 0);
-	bindStorage(array, hash, storageAddress());
-	initializeStorage();
+	const u32 kind = static_cast<u32>(ValueTag::Table) | (static_cast<u32>(m_heap->white()) << 8u)
+		| (1u << (8u * TABLE_NEW_INDEX_ABSENT_BYTE));
+	m_memory->writeRamRecordPair(m_address + static_cast<u32>(TableHeader::Kind), kind, 0u);
+	writeHeader(TableHeader::Metatable, 0u);
+	m_memory->writeRamRecordPair(m_address + static_cast<u32>(TableHeader::Array), array, hash);
+	m_memory->writeRamRecordPair(m_address + static_cast<u32>(TableHeader::Length), 0u, static_cast<u32>(hash) - 1u);
+	if (array || hash) initializeStorage(storageAddress(), array, hash);
 }
 
 TableRecord TableRecord::copyOwn() const {
@@ -300,7 +300,7 @@ int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value va
 		std::memcpy(newValues.words, oldValues.words, retainedArray * sizeof(u32));
 		std::memcpy(newValues.tags, oldValues.tags, retainedArray);
 	}
-	initializeStorage(retainedArray);
+	initializeStorage(storage, newArraySize, newHashSize, retainedArray);
 
 	// initializeStorage marked every destination page. No guest or collector
 	// execution intervenes before the rebuilt table is complete.
@@ -328,12 +328,12 @@ void TableRecord::bindStorage(size_t arraySize, size_t hashSize, u32 address) {
 	writeHeader(TableHeader::Free, static_cast<u32>(hashSize) - 1u);
 }
 
-void TableRecord::initializeStorage(size_t retainedArray) {
-	const u32 bytes = static_cast<u32>(arrayCapacity()) * 5u + static_cast<u32>(hashSlots()) * 14u;
+void TableRecord::initializeStorage(u32 storage, u32 array, u32 hash, size_t retainedArray) {
+	const u32 bytes = storageBytes(array, hash);
 	if (bytes == 0) return;
-	const u32 words = storageAddress() & RAM_RECORD_WORD_MASK;
-	const u32 links = words + (arrayCapacity() + 2u * hashSlots()) * 4u;
-	const u32 tags = links + hashSlots() * 4u;
+	const u32 words = storage & RAM_RECORD_WORD_MASK;
+	const u32 links = words + (array + 2u * hash) * 4u;
+	const u32 tags = links + hash * 4u;
 	u8* ram = m_memory->ramData();
 	std::fill(ram + words + retainedArray * sizeof(u32), ram + links, u8{0});
 	std::fill(ram + links, ram + tags, u8{0xff});
