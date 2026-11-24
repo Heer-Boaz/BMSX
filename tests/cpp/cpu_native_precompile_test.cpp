@@ -562,9 +562,9 @@ void adaptiveBranchPublishesItsSideOnlyAfterDemand() {
 	wait(pc);
 	require(entryAt(cpu, pc + 3u * INSTRUCTION_BYTES) && !entryAt(cpu, side),
 		"the first publication includes the hot destination but excludes the untaken side");
+	for (int visit = 1; visit < NATIVE_SIDE_EXIT_THRESHOLD; ++visit) call(false);
+	require(!entryAt(cpu, side), "an infrequent native exit stays scalar");
 	call(false);
-	require(!entryAt(cpu, side), "one side exit does not trigger publication");
-	for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++visit) call(false);
 	wait(side);
 	require(entryAt(cpu, pc)->region != entryAt(cpu, side)->region,
 		"a newly hot side publishes independently of the original branch");

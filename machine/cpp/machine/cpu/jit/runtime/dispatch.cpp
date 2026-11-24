@@ -161,6 +161,13 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				return target->m_body;
 			}
 		}
+		// Only a taken, positive-budget exit with no native destination
+		// contributes side heat. Linked traversals do not enter this gate.
+		auto& visits = exit->sideExitVisits[run->cartridgeSlot];
+		if (++visits == NATIVE_SIDE_EXIT_THRESHOLD) {
+			visits = 0;
+			run->hotSidePc = exit->nextPc;
+		}
 	}
 	// A lookup may finish without a VM observer. Decide from the result, not
 	// from the fact that the generated code needed help locating the value.

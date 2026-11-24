@@ -100,6 +100,7 @@ struct NativeFixedCallBinding {
 
 struct NativeBlockExitSite {
 	NativeBlockExit exit = NativeBlockExit::Continue;
+	mutable std::array<u8, CARTRIDGE_SLOT_COUNT> sideExitVisits{};
 	NativeExitOperands operands{};
 	int cycles = 0;
 	int registerTop = 0;

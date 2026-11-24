@@ -49,6 +49,7 @@ struct NativeCpuRunState {
 	void publishActivation(u32 pc) noexcept;
 	std::exception_ptr error;
 	std::optional<Replay> replay{};
+	std::optional<u32> hotSidePc{};
 	bool fixedCallMismatch = false;
 };
 

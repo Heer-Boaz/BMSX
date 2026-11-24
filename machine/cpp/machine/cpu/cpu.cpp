@@ -1909,6 +1909,7 @@ RunResult CPU::runLoop(
 					// The next instruction belongs to the interrupt handler; retry admission
 					// for the suspended instruction after RFE instead.
 					nativeState.replay.reset();
+					nativeState.hotSidePc.reset();
 #endif
 					enterPendingInterrupt();
 					continue;
@@ -1937,6 +1938,18 @@ dispatch_fetch:
 			if constexpr (!Instrumented) publishedTop = registerTop = frame->readWindow(FrameField::Top);
 			pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
 			decodedPage = &decodedPageForFrame(*frame, pc);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if constexpr (!Instrumented) {
+				if (nativeState.hotSidePc) {
+					const bool atTarget = *nativeState.hotSidePc == pc;
+					nativeState.hotSidePc.reset();
+					const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+					if (atTarget && !decodedPage->refreshState[word]
+						&& decodedPage->words[word].dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm))
+						prepareNativeBlock(*frame, *decodedPage, pc, m_executionBusSignals);
+				}
+			}
+#endif
 			goto dispatch_decode;
 
 dispatch_decode:

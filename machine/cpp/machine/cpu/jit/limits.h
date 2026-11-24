@@ -7,6 +7,7 @@
 namespace bmsx {
 
 inline constexpr u8 NATIVE_BLOCK_COMPILATION_THRESHOLD = 64u;
+inline constexpr u8 NATIVE_SIDE_EXIT_THRESHOLD = 10u;
 inline constexpr u32 NATIVE_BLOCK_MAX_INSTRUCTIONS = 64u;
 inline constexpr u8 NATIVE_OWN_FIELD_TEMPORARIES = 2u;
 inline constexpr u32 NATIVE_IMAGE_WARMUP_MAX_PAGES = 32u;
