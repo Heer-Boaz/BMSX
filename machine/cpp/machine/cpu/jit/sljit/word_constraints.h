@@ -17,6 +17,12 @@ inline unsigned fixedWordUses(const NativeLiteral& op) {
 inline unsigned fixedWordUses(const NativeMove& op) {
 	return op.conversion == ValueMoveKind::Copy && !op.copyTag ? 3 : 1;
 }
+inline unsigned fixedWordUses(const NativeComparison& op) {
+	// Inline compares and their two local transfers use R0..R2. Only the
+	// generic C helper owns the full argument/clobber bank.
+	const auto* strategy = std::get_if<NativeComparisonStrategy>(&op.strategy);
+	return strategy && *strategy == NativeComparisonStrategy::Kernel ? 0xf : 0x7;
+}
 inline unsigned fixedWordUses(const NativeGlobalAccess& op) {
 	return op.access == NativeAccess::Read ? 0 : 0xf;
 }
@@ -28,8 +34,8 @@ inline unsigned fixedWordUses(const NativeArithmetic& op) {
 		| ((!op.unary() && op.right < 0) ? 2u : 0u);
 }
 
-// Distance to the next fixed use, including this instruction. Block exit
-// takes the entire shared bank; callers never import its temporary bindings.
+// Distance to the next fixed use, including this instruction. Implicit block exits
+// reserve the bank; explicit transfers have their own fixed operands.
 inline void planWordConstraints(std::span<const NativeInstruction> rows, std::span<NativeWordConstraints> result) {
 	std::array<u8, 4> distance{};
 	for (size_t i = rows.size(); i-- > 0;) {

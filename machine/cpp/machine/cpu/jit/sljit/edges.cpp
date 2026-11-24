@@ -8,6 +8,9 @@ namespace bmsx {
 void NativeLowering::beginBlock(size_t index) {
 	m_current = index;
 	m_instruction = 0;
+	// The imported layout is independent of the last physically emitted arm.
+	// Start without reservations so its first operation reconciles every fixed use.
+	m_cache.reserveScratch(0);
 	m_uses.beginBlock(m_ir[index].instructions);
 	planWordConstraints(m_ir[index].instructions, m_constraints);
 	m_terminal = false;
