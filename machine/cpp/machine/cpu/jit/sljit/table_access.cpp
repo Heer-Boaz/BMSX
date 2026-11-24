@@ -40,9 +40,9 @@ constexpr sljit_sw stringTag = static_cast<u8>(ValueTag::String);
 constexpr sljit_sw nilTag = static_cast<u8>(ValueTag::Nil);
 
 void readTableSlot(sljit_compiler* c, sljit_s32 result, bool word) {
-	emitTableSlotOffset(c, SLJIT_R2, word);
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
-	sljit_emit_op1(c, word ? SLJIT_MOV32 : SLJIT_MOV_U8, result, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP),
+		word ? NativeTableScratch::words : NativeTableScratch::tags);
+	sljit_emit_op1(c, word ? SLJIT_MOV32 : SLJIT_MOV_U8, result, 0, SLJIT_MEM2(SLJIT_R2, SLJIT_R1), word ? 2 : 0);
 }
 
 // An own prediction miss is not an absence proof. Follow the live chain,
@@ -50,6 +50,16 @@ void readTableSlot(sljit_compiler* c, sljit_s32 result, bool word) {
 sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	auto* empty = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0);
+	// The chain cannot allocate or re-enter the VM. Bind its two linear
+	// planes once, as for ITERN; no guest cache register is reserved.
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0),
+		static_cast<u32>(TableHeader::Storage), SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R1, SLJIT_R1);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::words, SLJIT_R1, 0);
+	sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R2, 0, SLJIT_R3, 0, SLJIT_IMM, 3);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), array);
+	sljit_emit_op2(c, SLJIT_SHL, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
+	sljit_emit_op2(c, SLJIT_ADD, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::tags, SLJIT_R1, 0, SLJIT_R2, 0);
 	if (stringKey) {
 		sljit_emit_op2(c, SLJIT_LSHR32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::keyWord,
 			SLJIT_IMM, BLUA32_STRING_RECORD_ALIGNMENT_SHIFT);

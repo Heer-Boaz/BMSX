@@ -287,16 +287,14 @@ int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value va
 	const size_t oldArraySize = arrayCapacity(), oldHashSize = hashSlots();
 	// Restart any collector scan against the complete, redistributed body.
 	m_heap->tableEntriesMoved(m_address);
+	const u32 oldStorage = storageAddress();
 	const auto oldValues = values();
 	bindStorage(newArraySize, newHashSize, storage);
 	const size_t retainedArray = std::min(oldArraySize, newArraySize);
 	if (retainedArray != 0) {
 		const auto newValues = values();
-		u8* ram = m_memory->ramData();
-		std::memcpy(ram + (newValues.words & RAM_RECORD_WORD_MASK),
-			ram + (oldValues.words & RAM_RECORD_WORD_MASK), retainedArray * sizeof(u32));
-		std::memcpy(ram + (newValues.tags & RAM_RECORD_WORD_MASK),
-			ram + (oldValues.tags & RAM_RECORD_WORD_MASK), retainedArray);
+		std::memcpy(newValues.words, oldValues.words, retainedArray * sizeof(u32));
+		std::memcpy(newValues.tags, oldValues.tags, retainedArray);
 	}
 	initializeStorage(retainedArray);
 
@@ -313,7 +311,7 @@ int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value va
 	}
 	const int slot = reinsertMapping(body, nextFree, key, value);
 	if (nextFree != firstFree) writeHeader(TableHeader::Free, static_cast<u32>(nextFree));
-	m_heap->budget.replaceRecord(oldValues.words, previous, requested);
+	m_heap->budget.replaceRecord(oldStorage, previous, requested);
 	return slot;
 }
 

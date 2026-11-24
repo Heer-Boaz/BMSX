@@ -94,7 +94,7 @@ public:
 	}
 	// A linear value slot writes one aligned payload word and one tag byte.
 	// Only marked pages need the exact port/aperture and word-watch handling.
-	void invalidateRamValueSlot(const u32* payload, const u8* tag) {
+	void invalidateRamValueSlot(const void* payload, const u8* tag) {
 		const auto* base = m_ram.data();
 		const auto word = static_cast<u32>(reinterpret_cast<const u8*>(payload) - base);
 		const auto byte = static_cast<u32>(tag - base);

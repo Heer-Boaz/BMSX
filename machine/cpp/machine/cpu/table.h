@@ -114,8 +114,8 @@ public:
 	size_t scanSlots() const { return arrayCapacity() + 2u * hashSlots(); }
 	template <typename Fn>
 	void forEachEntry(Fn&& fn, u32 first = 0u, u32 end = UINT32_MAX) const {
-		const u32 array = arrayCapacity(), hash = hashSlots(), words = storageAddress();
-		const TableValues slots{m_memory, words, words + (array + 3u * hash) * 4u};
+		const u32 array = arrayCapacity(), hash = hashSlots();
+		const auto slots = hashBody(hash, array).slots;
 		for (u32 i = first; i < std::min(array, end); ++i) {
 			const Value value = slots.get(i);
 			if (!isNil(value)) fn(valueInteger(static_cast<i32>(i + 1)), value);
@@ -203,18 +203,18 @@ private:
 	void writeHeader(TableHeader field, u32 word) { m_memory->writeRamRecordWord(m_address + static_cast<u32>(field), word); }
 	struct TableValues {
 		Memory* memory;
-		u32 words, tags;
-		ValueTag tag(u32 index) const {
-			return static_cast<ValueTag>(memory->readRamRecordByte(tags + index));
-		}
-		u32 word(u32 index) const { return memory->readRamRecordWord(words + index * 4u); }
+		// Both planes are in the same owned, contiguous allocation.
+		u8 *words, *tags;
+		ValueTag tag(u32 index) const { return static_cast<ValueTag>(tags[index]); }
+		u32 word(u32 index) const { return readLE32(words + index * sizeof(u32)); }
 		Value get(size_t index) const {
-			const auto slot = static_cast<u32>(index);
-			return valueFromTag(tag(slot), word(slot));
+			return valueFromTag(static_cast<ValueTag>(tags[index]), readLE32(words + index * sizeof(u32)));
 		}
 		void set(size_t index, Value value) const {
-			memory->writeRamRecordWord(words + static_cast<u32>(index) * 4u, valuePayload(value));
-			memory->writeRamRecordByte(tags + static_cast<u32>(index), static_cast<u8>(valueTag(value)));
+			u8* payload = words + index * sizeof(u32);
+			writeLE32(payload, valuePayload(value));
+			tags[index] = static_cast<u8>(valueTag(value));
+			memory->invalidateRamValueSlot(payload, tags + index);
 		}
 	};
 	struct HashBody {
@@ -240,9 +240,9 @@ private:
 		}
 	};
 	HashBody hashBody(u32 count, u32 array) const {
-		const u32 words = storageAddress();
-		const u32 links = words + (array + 2u * count) * 4u;
-		return {{m_memory, words, links + count * 4u}, array, count, links};
+		const u32 storage = storageAddress();
+		u8* words = m_memory->ramData() + (storage & RAM_RECORD_WORD_MASK);
+		return {{m_memory, words, words + (array + 3u * count) * 4u}, array, count, storage + (array + 2u * count) * 4u};
 	}
 	static int reinsertMapping(const HashBody& body, int& nextFree, Value key, Value value) noexcept;
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
@@ -262,10 +262,7 @@ private:
 		TableStringPathCache* cache = nullptr, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT,
 		TableFirstOwnProbe firstOwnProbe = TableFirstOwnProbe::Required) const;
 
-	TableValues values() const {
-		const u32 words = storageAddress();
-		return {m_memory, words, words + (arrayCapacity() + 3u * hashSlots()) * 4u};
-	}
+	TableValues values() const { return hashBody(hashSlots(), arrayCapacity()).slots; }
 
 	GcHeap* m_heap;
 	Memory* m_memory;

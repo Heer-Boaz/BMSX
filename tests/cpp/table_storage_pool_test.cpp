@@ -14,6 +14,23 @@ void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
 
+void tableSlotWritesMarkBothHistoryPages(bmsx::CPU& cpu) {
+	using namespace bmsx;
+	constexpr u32 capacity = MAPPED_PAGE_BYTE_SIZE / sizeof(u32);
+	auto table = cpu.createTable(capacity, 0);
+	table.setInteger(1, valueInteger(7));
+	const u32 word = table.storageAddress() & RAM_RECORD_WORD_MASK;
+	const u32 wordPage = word >> MAPPED_PAGE_BYTE_SHIFT;
+	const u32 tagPage = (word + capacity * sizeof(u32)) >> MAPPED_PAGE_BYTE_SHIFT;
+	auto& watches = cpu.memory().ramWriteWatches();
+	watches.armHistoryWrites();
+	table.setInteger(1, valueBool(false));
+	require(watches.historyPageDirty(wordPage, wordPage + 1) && watches.historyPageDirty(tagPage, tagPage + 1),
+		"changing a table value dirties the separate payload and tag pages for rewind");
+	watches.disarmHistoryWrites();
+	table.clear();
+}
+
 void hashBudgetFollowsReservedSlots(bmsx::CPU& cpu) {
 	using namespace bmsx;
 	std::array<i32, 16> keys{};
@@ -126,6 +143,7 @@ int main() {
 		IrqController irq(memory);
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
+		tableSlotWritesMarkBothHistoryPages(cpu);
 		hashBudgetFollowsReservedSlots(cpu);
 		reservedHashSurvivesDeletionAndRestore(cpu);
 		mixedArrayMigrationPreservesRawValues(cpu);

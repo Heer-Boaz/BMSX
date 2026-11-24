@@ -14,11 +14,14 @@ private:
 		u32 wordOffset, tagOffset;
 		union { sljit_sw path; u32 keyTag; };
 		sljit_sw returnAddress;
+		sljit_sw words, tags;
 	};
 	static constexpr auto begin = (NativeBlockAbi::helperResultOffset + alignof(Layout) - 1)
 		& ~(alignof(Layout) - 1);
 	static_assert(begin + sizeof(Layout) <= NativeBlockAbi::stackBytes);
 public:
+	static constexpr auto words = begin + offsetof(Layout, words);
+	static constexpr auto tags = begin + offsetof(Layout, tags);
 	static constexpr auto receiver = begin + offsetof(Layout, receiver);
 	static constexpr auto keyWord = begin + offsetof(Layout, keyWord);
 	static constexpr auto arrayLength = begin + offsetof(Layout, arrayLength);
