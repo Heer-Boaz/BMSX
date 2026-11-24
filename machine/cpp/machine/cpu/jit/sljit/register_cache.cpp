@@ -306,10 +306,20 @@ void NativeRegisterCache::setState(const State& state) {
 	beginInstruction();
 }
 
-void NativeRegisterCache::spillCall(bool reload, sljit_sw stackOffset) const {
+void NativeRegisterCache::spillCall(bool reload, sljit_sw stackOffset, FrameSlots slots) const {
 	for (int slot = 0; slot < static_cast<int>(m_integers.size() + m_floats.size()); ++slot) {
 		if (m_state[slot].guest < 0 || host(slot).calleeSaved)
 			continue;
+		const auto& value = m_state[slot];
+		if (slots == FrameSlots::Unchanged && !value.dirty) {
+			// The guest plane is already a valid spill location for this call.
+			if (reload) {
+				if (value.tagLane)
+					sljit_emit_op1(m_compiler, SLJIT_MOV_U8, host(slot).reg, 0, SLJIT_MEM1(m_tags), value.guest);
+				else load(slot, value.guest);
+			}
+			continue;
+		}
 		const auto offset = stackOffset + slot * sizeof(u32);
 		if (floating(slot))
 			sljit_emit_fop1(m_compiler, SLJIT_MOV_F32, reload ? host(slot).reg : SLJIT_MEM1(SLJIT_SP),

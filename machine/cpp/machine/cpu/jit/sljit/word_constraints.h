@@ -22,17 +22,16 @@ inline unsigned fixedWordUses(const NativeLiteral& op) {
 inline unsigned fixedWordUses(const NativeMove& op) {
 	return op.conversion == ValueMoveKind::Copy && !op.copyTag ? 3 : 1;
 }
-inline unsigned fixedWordUses(const NativeComparison& op) {
-	// Inline compares and their two local transfers use R0..R2. Only the
-	// generic C helper owns the full argument/clobber bank.
-	const auto* strategy = std::get_if<NativeComparisonStrategy>(&op.strategy);
-	return strategy && *strategy == NativeComparisonStrategy::Kernel ? 0xf : 0x7;
-}
+// Helper argument/result registers are distinct from the call clobbers
+// handled by spillCall. The unused argument registers remain allocatable.
+inline unsigned fixedWordUses(const NativeComparison&) { return 0x7; }
+inline unsigned fixedWordUses(const NativeLength&) { return 0x7; }
 inline unsigned fixedWordUses(const NativeGlobalAccess& op) {
 	return op.access == NativeAccess::Read ? 0 : 0xf;
 }
 inline unsigned fixedWordUses(const NativeArithmetic& op) {
 	const auto& plan = std::get<NativeNumericPlan>(op.strategy);
+	if (plan.action == NativeNumericAction::Kernel) return plan.sampleOperands ? 0x7 : 0x3;
 	if (plan.action == NativeNumericAction::Float) return 1;
 	if (plan.action != NativeNumericAction::Word) return 0xf;
 	return unsigned(plan.guardLeft || plan.guardRight || op.left < 0)

@@ -194,20 +194,27 @@ struct Clobber {
 	}
 	~Clobber() { sljit_free_code(executable,nullptr);sljit_free_compiler(compiler); }
 };
-void selectiveCallSpills() {
+void selectiveCallSpills(NativeRegisterCache::FrameSlots frameSlots) {
 	Clobber callee;Code code;
 	NativeRegisterCache cache(code.compiler,SLJIT_S0,SLJIT_S1,integers,floats);
 	for (int guest=0;guest<5;++guest) {cache.beginInstruction();cache.read(guest,guest<3?ValueTag::Integer:ValueTag::Float);}
-	cache.spillCall(false,0);
+	cache.beginInstruction();
+	setFloatWord(code.compiler, cache.write(4, ValueTag::Float).reg, 0x7fa12345);
+	constexpr auto spillOffset = 2 * sizeof(u32);
+	sljit_emit_op1(code.compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), spillOffset, SLJIT_IMM, 37);
+	cache.spillCall(false,0,frameSlots);
 	sljit_emit_icall(code.compiler,SLJIT_CALL,SLJIT_ARGS0V(),SLJIT_IMM,SLJIT_FUNC_ADDR(callee.executable));
-	cache.spillCall(true,0);
+	cache.spillCall(true,0,frameSlots);
+	sljit_emit_op1(code.compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), spillOffset);
+	sljit_emit_op1(code.compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S0), 5 * sizeof(u32), SLJIT_R0, 0);
 	for (int guest=0;guest<5;++guest) {cache.beginInstruction();cache.write(guest,guest<3?ValueTag::Integer:ValueTag::Float);}
 	cache.publish();code.result(0);code.finish();
 	ValueSlots slots(7);for (int guest=0;guest<3;++guest)slots.set(guest,valueInteger(0x1234567+guest));
-	slots.set(3,valueFloatBits(0xffa12345));slots.set(4,valueFloatBits(1));slots.set(6,valueBool(true));
+	slots.set(3,valueFloatBits(0xffa12345));slots.set(4,valueFloatBits(1));slots.set(5,valueInteger(0));slots.set(6,valueBool(true));
 	require(code.run(slots)==0,"native code resumes after an ABI-clobbering call");
 	for (int guest=0;guest<3;++guest) require(slots.get(guest)==valueInteger(0x1234567+guest),"integer caches survive selective call spills");
-	require(slots.get(3)==valueFloatBits(0xffa12345)&&slots.get(4)==valueFloatBits(1),"callee-saved and volatile F32 lanes retain every payload bit");
+	require(slots.get(3)==valueFloatBits(0xffa12345)&&slots.get(4)==valueFloatBits(0x7fa12345),"callee-saved and volatile F32 lanes retain every payload bit");
+	require(slots.get(5)==valueInteger(frameSlots==NativeRegisterCache::FrameSlots::Unchanged ? 37 : 0x1234569),"an unchanged frame supplies the clean payload without a stack spill");
 	require(slots.get(6)==valueBool(true),"helper spill area is not guest storage");
 }
 
@@ -423,7 +430,8 @@ int main() {
 	try {
 		wordsFloatsAndReferences();arithmeticAndBitMoves();futureUseAndPublication();
 		aliasEvictionAndRetagging();preciseGuardSnapshots();
-		selectiveCallSpills();parallelTransfers();untypedTransfersPublishTagsButKeepPayloads();dynamicValueAcrossEdge();tagUseWithRecoverableWord();sharedWordsSurviveTemporaryUse();loopEdges();
+		selectiveCallSpills(NativeRegisterCache::FrameSlots::MayChange);
+		selectiveCallSpills(NativeRegisterCache::FrameSlots::Unchanged);parallelTransfers();untypedTransfersPublishTagsButKeepPayloads();dynamicValueAcrossEdge();tagUseWithRecoverableWord();sharedWordsSurviveTemporaryUse();loopEdges();
 		std::cout<<"Native word/F32 cache, precise exits, selective spills and typed loop transfers passed\n";
 		return 0;
 	} catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}

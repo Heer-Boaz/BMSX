@@ -45,11 +45,11 @@ void NativeLowering::emitWordOperand(int selector, NativeWordSource source, Nati
 	constexpr sljit_sw input = NativeBlockAbi::helperResultOffset, output = input + sizeof(Value);
 	emitValueTransportStore(m_compiler, SLJIT_SP, input, SLJIT_R0, SLJIT_R1);
 	const auto state = m_cache.state();
-	m_cache.spillCall(false, 0);
+	m_cache.spillCall(false, 0, NativeRegisterCache::FrameSlots::Unchanged);
 	sljit_get_local_base(m_compiler, SLJIT_R0, 0, input);
 	sljit_get_local_base(m_compiler, SLJIT_R1, 0, output);
 	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(32, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(nativeWordOperandKernel));
-	m_cache.spillCall(true, 0);
+	m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::Unchanged);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), invalid, state);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), output);
 	if (integer) sljit_set_label(integer, sljit_emit_label(m_compiler));
@@ -66,7 +66,7 @@ void NativeLowering::emitNumericKernel(
 		emitValueTransportStore(m_compiler, SLJIT_SP, args + sizeof(Value), SLJIT_R0, SLJIT_R1);
 	}
 	const auto prefix = m_cache.state();
-	m_cache.spillCall(false, 0);
+	m_cache.spillCall(false, 0, NativeRegisterCache::FrameSlots::Unchanged);
 	sljit_get_local_base(m_compiler, SLJIT_R0, 0, args);
 	sljit_get_local_base(m_compiler, SLJIT_R1, 0, result);
 	if (plan.sampleOperands) {
@@ -76,7 +76,7 @@ void NativeLowering::emitNumericKernel(
 		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(nativeSamplingKernel(op)));
 	} else
 		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(32, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(nativeNumericKernel(op)));
-	m_cache.spillCall(true, 0);
+	m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::Unchanged);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM,
 		static_cast<u32>(NativeNumericCompletion::InvalidOperand)), *sideExit(instruction.slow), prefix);
 	emitValueTransportLoad(m_compiler, SLJIT_SP, result, SLJIT_R0, SLJIT_R1);

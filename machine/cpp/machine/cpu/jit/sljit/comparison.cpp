@@ -80,7 +80,7 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 		emitValueTransportStore(m_compiler, SLJIT_SP, args, SLJIT_R0, SLJIT_R1);
 		emitRawLoad(comparison.right, SLJIT_R0, SLJIT_R1);
 		emitValueTransportStore(m_compiler, SLJIT_SP, args + sizeof(Value), SLJIT_R0, SLJIT_R1);
-		m_cache.spillCall(false, 0);
+		m_cache.spillCall(false, 0, NativeRegisterCache::FrameSlots::Unchanged);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),
 			offsetof(NativeBlockRunState, remainingCycles), NativeBlockAbi::budget, 0);
 		sljit_get_local_base(m_compiler, SLJIT_R0, 0, args);
@@ -90,7 +90,7 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 		const auto kernel = op == OpCode::EQ ? &testValueComparison<OpCode::EQ>
 			: op == OpCode::LT ? &testValueComparison<OpCode::LT> : &testValueComparison<OpCode::LE>;
 		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(kernel));
-		m_cache.spillCall(true, 0);
+		m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::Unchanged);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state),
 			offsetof(NativeBlockRunState, remainingCycles));
 		matched = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
