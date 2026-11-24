@@ -98,7 +98,8 @@ int TableRecord::findNodeIndex(const Value& key, bool matchDead) const {
 		: hashBody(count, arrayCapacity()).findNode(key, hashCanonicalTableKey(key) & (count - 1u), matchDead);
 }
 
-int TableRecord::HashBody::findNode(const Value& key, u32 home, bool matchDead) const {
+template<bool BulkWrite>
+int TableRecord::HashStorage<BulkWrite>::findNode(const Value& key, u32 home, bool matchDead) const {
 	const auto tag = valueTag(key);
 	const u32 payload = valuePayload(key);
 	const bool collectableKey = matchDead && (tag == ValueTag::Table || tag == ValueTag::Closure || tag == ValueTag::Thread);
@@ -127,7 +128,8 @@ int TableRecord::findNextLiveHashIndex(size_t start) const {
 	return -1;
 }
 
-inline int TableRecord::HashBody::findString(StringId key, u32 home) const {
+template<bool BulkWrite>
+inline int TableRecord::HashStorage<BulkWrite>::findString(StringId key, u32 home) const {
 	int index = static_cast<int>(home);
 	for (u32 remaining = count; index >= 0 && remaining != 0u; --remaining) {
 		const u32 slot = static_cast<u32>(index);
@@ -137,14 +139,16 @@ inline int TableRecord::HashBody::findString(StringId key, u32 home) const {
 	return -1;
 }
 
-Value TableRecord::HashBody::predictedString(i32 node, StringId key) const {
+template<bool BulkWrite>
+Value TableRecord::HashStorage<BulkWrite>::predictedString(i32 node, StringId key) const {
 	if (node < 0 || static_cast<u32>(node) >= count || !matchesString(node, key)) return valueNil();
 	const u32 slot = array + count + static_cast<u32>(node);
 	const auto tag = slots.tag(slot);
 	return tag == ValueTag::Nil ? valueNil() : valueFromTag(tag, slots.word(slot));
 }
 
-int TableRecord::HashBody::findFreeIndex(int first) const {
+template<bool BulkWrite>
+int TableRecord::HashStorage<BulkWrite>::findFreeIndex(int first) const {
 	for (int i = first; i >= 0; --i) {
 		const u32 keySlot = array + static_cast<u32>(i);
 		if (slots.tag(keySlot) == ValueTag::Nil && slots.tag(keySlot + count) == ValueTag::Nil) {
@@ -298,7 +302,9 @@ int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value va
 	}
 	initializeStorage(retainedArray);
 
-	const auto body = hashBody(newHashSize, newArraySize);
+	// initializeStorage marked every destination page. No guest or collector
+	// execution intervenes before the rebuilt table is complete.
+	const auto body = hashBody<true>(newHashSize, newArraySize);
 	const int firstFree = static_cast<int>(newHashSize) - 1;
 	int nextFree = firstFree;
 	for (size_t i = retainedArray; i < oldArraySize; ++i) {
@@ -411,7 +417,7 @@ struct ConstructorScratch {
 
 // The resize owns the destination layout and has already invalidated the
 // collector's scan cursor. Only the triggering assignment installs new edges.
-int TableRecord::reinsertMapping(const HashBody& body, int& nextFree, Value key, Value value) noexcept {
+int TableRecord::reinsertMapping(const RebuildBody& body, int& nextFree, Value key, Value value) noexcept {
 	if (valueIsInteger(key)) {
 		const u32 index = arraySlot(asInteger(key));
 		if (index < body.array) {

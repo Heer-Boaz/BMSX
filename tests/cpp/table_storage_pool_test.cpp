@@ -31,6 +31,27 @@ void tableSlotWritesMarkBothHistoryPages(bmsx::CPU& cpu) {
 	table.clear();
 }
 
+void rebuildingHashMarksAllDestinationPages(bmsx::CPU& cpu) {
+	using namespace bmsx;
+	constexpr i32 capacity = 1024;
+	auto table = cpu.createTable(0, capacity);
+	for (i32 i = 1; i <= capacity; ++i) table.setInteger(-i, valueInteger(i));
+	const u32 oldStorage = table.storageAddress();
+	auto& watches = cpu.memory().ramWriteWatches();
+	watches.armHistoryWrites();
+	table.setInteger(-capacity - 1, valueBool(false));
+	require(table.storageAddress() != oldStorage && table.hashSlots() > capacity, "the insertion replaces the full hash");
+	const u32 begin = table.storageAddress() & RAM_RECORD_WORD_MASK;
+	const u32 end = begin + TableRecord::storageBytes(table.arrayCapacity(), table.hashSlots());
+	for (u32 page = begin >> MAPPED_PAGE_BYTE_SHIFT; page <= (end - 1u) >> MAPPED_PAGE_BYTE_SHIFT; ++page)
+		require(watches.historyPageDirty(page, page + 1), "rebuilding marks the full destination for rewind");
+	watches.disarmHistoryWrites();
+	for (i32 i = 1; i <= capacity; ++i)
+		require(table.getInteger(-i) == valueInteger(i), "reinserted hash entries remain reachable through collisions");
+	require(table.getInteger(-capacity - 1) == valueBool(false), "the triggering assignment remains present");
+	table.clear();
+}
+
 void hashBudgetFollowsReservedSlots(bmsx::CPU& cpu) {
 	using namespace bmsx;
 	std::array<i32, 16> keys{};
@@ -144,6 +165,7 @@ int main() {
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
 		tableSlotWritesMarkBothHistoryPages(cpu);
+		rebuildingHashMarksAllDestinationPages(cpu);
 		hashBudgetFollowsReservedSlots(cpu);
 		reservedHashSurvivesDeletionAndRestore(cpu);
 		mixedArrayMigrationPreservesRawValues(cpu);

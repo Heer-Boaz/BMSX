@@ -201,7 +201,7 @@ private:
 	void freeStorage();
 	u32 readHeader(TableHeader field) const { return m_memory->readRamRecordWord(m_address + static_cast<u32>(field)); }
 	void writeHeader(TableHeader field, u32 word) { m_memory->writeRamRecordWord(m_address + static_cast<u32>(field), word); }
-	struct TableValues {
+	template<bool BulkWrite> struct ValueSlots {
 		Memory* memory;
 		// Both planes are in the same owned, contiguous allocation.
 		u8 *words, *tags;
@@ -214,15 +214,24 @@ private:
 			u8* payload = words + index * sizeof(u32);
 			writeLE32(payload, valuePayload(value));
 			tags[index] = static_cast<u8>(valueTag(value));
-			memory->invalidateRamValueSlot(payload, tags + index);
+			if constexpr (!BulkWrite) memory->invalidateRamValueSlot(payload, tags + index);
 		}
 	};
-	struct HashBody {
-		TableValues slots;
+	template<bool BulkWrite> struct HashStorage {
+		ValueSlots<BulkWrite> slots;
 		u32 array, count, links;
+		int findFreeIndex(int first) const;
+		i32 next(u32 index) const {
+			return static_cast<i32>(slots.memory->readRamRecordWord(links + index * 4u));
+		}
+		void setNext(u32 index, i32 next) const {
+			if constexpr (BulkWrite)
+				writeLE32(slots.words + (array + 2u * count + index) * sizeof(u32), static_cast<u32>(next));
+			else
+				slots.memory->writeRamRecordWord(links + index * 4u, static_cast<u32>(next));
+		}
 		int findNode(const Value& key, u32 home, bool matchDead = false) const;
 		int findString(StringId key, u32 home) const;
-		int findFreeIndex(int first) const;
 		bool vacantHome(u32 home) const {
 			const u32 slot = array + home;
 			return slots.tag(slot) == ValueTag::Nil || slots.tag(slot + count) == ValueTag::Nil;
@@ -232,19 +241,16 @@ private:
 			return slots.tag(slot) == ValueTag::String && slots.word(slot) == key;
 		}
 		Value predictedString(i32 node, StringId key) const;
-		i32 next(u32 index) const {
-			return static_cast<i32>(slots.memory->readRamRecordWord(links + index * 4u));
-		}
-		void setNext(u32 index, i32 next) const {
-			slots.memory->writeRamRecordWord(links + index * 4u, static_cast<u32>(next));
-		}
 	};
-	HashBody hashBody(u32 count, u32 array) const {
+	using HashBody = HashStorage<false>;
+	using RebuildBody = HashStorage<true>;
+	template<bool BulkWrite = false>
+	HashStorage<BulkWrite> hashBody(u32 count, u32 array) const {
 		const u32 storage = storageAddress();
 		u8* words = m_memory->ramData() + (storage & RAM_RECORD_WORD_MASK);
 		return {{m_memory, words, words + (array + 3u * count) * 4u}, array, count, storage + (array + 2u * count) * 4u};
 	}
-	static int reinsertMapping(const HashBody& body, int& nextFree, Value key, Value value) noexcept;
+	static int reinsertMapping(const RebuildBody& body, int& nextFree, Value key, Value value) noexcept;
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
 	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
 	int setHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
@@ -262,7 +268,7 @@ private:
 		TableStringPathCache* cache = nullptr, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT,
 		TableFirstOwnProbe firstOwnProbe = TableFirstOwnProbe::Required) const;
 
-	TableValues values() const { return hashBody(hashSlots(), arrayCapacity()).slots; }
+	ValueSlots<false> values() const { return hashBody(hashSlots(), arrayCapacity()).slots; }
 
 	GcHeap* m_heap;
 	Memory* m_memory;
