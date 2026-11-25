@@ -46,7 +46,7 @@ const GC_SWEEP_LINK = GC_OBJECT_COUNT + 4;
 const GC_PACE_BASIS = GC_SWEEP_LINK + 4;
 const GC_PACE_ESTIMATE = GC_PACE_BASIS + 4;
 const GC_PACE_RUNWAY = GC_PACE_ESTIMATE + 4;
-const GC_PACE_PAID = GC_PACE_RUNWAY + 4;
+export const GC_PACE_PAID = GC_PACE_RUNWAY + 4;
 const GC_PACE_PAY_AT = GC_PACE_PAID + 4;
 // Capture lanes use four bytes each and Table entries require a separate tag.
 const TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1;
@@ -870,11 +870,11 @@ export class GcHeap {
 		if (this.finalMarkPending()) return this.finishFinalMark(t0, t1, t2);
 		this.diagnostics?.beginStep();
 		try {
-			if (this.phase() === GcPhase.Pause) return this.accountEpochWork(this.stepWork(t0, t1, t2, growingThread, compactThreads, limit));
 			const occupied = this.arena.occupiedBytes();
 			const work = this.stepWork(t0, t1, t2, growingThread, compactThreads, limit);
 			if (this.active()) {
-				// Every quantum, whichever assist ran it, pays the current pace.
+				// Every quantum, whichever assist ran it, pays the current pace,
+				// including the first one after a cycle priced its runway.
 				const basis = this.memory.readRamRecordWord(this.controlOffset + GC_PACE_BASIS);
 				const paid = this.memory.readRamRecordWord(this.controlOffset + GC_PACE_PAID);
 				this.updatePaceCredit(basis + this.arena.occupiedBytes() - occupied, paid + work,

@@ -5,7 +5,7 @@ import { CpuExecutionBackend, COMPILED_BLOCK_THRESHOLD } from '../../machine/ts/
 import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
-import { GcPhase, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
+import { GcPhase, GC_PACE_PAID, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
@@ -217,7 +217,7 @@ test('table growth retries its actual physical reserve before starting a fresh G
 });
 
 test('physical reservations pace marking while the logical budget is below its threshold', () => {
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const { gc, heapAllocator: arena, luaHeap: heap } = cpu;
 	const frame = cpu.rootThread.currentFrame!;
 	const live = cpu.createTable(131072, 0);
@@ -229,8 +229,11 @@ test('physical reservations pace marking while the logical budget is below its t
 	while (arena.unoccupiedBytes() > runwayRequests * (5 * slots + 64));
 	heap.setCollectionTarget(heap.capacity());
 	const white = gc.white();
-	gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+	const started = gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 	assert.equal(gc.phase(), GcPhase.Mark);
+	assert.ok(started > 0);
+	assert.equal(memory.readRamRecordWord(arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID), started,
+		'the first marking quantum pays the new pace');
 	const runway = arena.unoccupiedBytes();
 	cpu.instructionBudgetRemaining = 29;
 	for (let requests = 0; !gc.finalMarkPending(); ++requests) {

@@ -231,8 +231,10 @@ void physicalReservationsPayMarkWork() {
 	while (arena.unoccupiedBytes() > runwayRequests * (5u * slots + 64u));
 	heap.setCollectionTarget(static_cast<u32>(heap.capacity()));
 	const u8 white = gc.white();
-	gc.step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
-	require(gc.phase() == GcPhase::Mark, "a cycle starts marking");
+	const size_t started = gc.step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
+	require(gc.phase() == GcPhase::Mark && started != 0u
+		&& machine.memory.readRamRecordWord(arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID) == started,
+		"a cycle starts marking and its first quantum pays the new pace");
 	const u32 runway = arena.unoccupiedBytes();
 	cpu.instructionBudgetRemaining = 29;
 	for (u32 requests = 0; !gc.finalMarkPending(); ++requests) {

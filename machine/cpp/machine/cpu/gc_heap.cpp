@@ -947,11 +947,11 @@ void GcHeap::assistBeforeReservation(size_t requested) {
 size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit) {
 	// Only explicit and space-exhausted collection enters a synchronous final pass.
 	if (finalMarkPending()) return finishFinalMark(root0, root1, root2);
-	if (phase() == GcPhase::Pause) return accountEpochWork(stepWork(root0, root1, root2, growingThread, compactThreads, limit));
 	const u32 occupied = arena.occupiedBytes();
 	const size_t work = stepWork(root0, root1, root2, growingThread, compactThreads, limit);
 	if (active()) {
-		// Every quantum, whichever assist ran it, pays the current pace.
+		// Every quantum, whichever assist ran it, pays the current pace,
+		// including the first one after a cycle priced its runway.
 		// Swept bytes are not a refund of allocation work already paid.
 		const u32 basis = memory.readRamRecordWord(m_controlOffset + GC_PACE_BASIS);
 		const u32 paid = memory.readRamRecordWord(m_controlOffset + GC_PACE_PAID);
