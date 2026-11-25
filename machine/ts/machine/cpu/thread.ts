@@ -200,7 +200,6 @@ export class Thread {
 			frame.registers.unbind();
 			frame.executionImage = null!;
 			frame.decodedPage = null;
-			frame.decodedPageAddress = 0;
 			frame.compilationEntry = true;
 		} else frame = new CallFrame(this, previous, this.heap);
 		if (previous === null) this.firstFrame = frame;
@@ -250,7 +249,6 @@ export class Thread {
 		this.publishDepth(this.frameDepth - 1);
 		frame.executionImage = null!;
 		frame.decodedPage = null;
-		frame.decodedPageAddress = 0;
 		frame.compilationEntry = true;
 		frame.registers.unbind();
 	}

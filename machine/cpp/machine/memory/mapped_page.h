@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "common/primitives.h"
+#include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
 
@@ -17,6 +18,11 @@ constexpr u32 MAPPED_PAGE_BYTE_MASK = MAPPED_PAGE_BYTE_SIZE - 1u;
 // The high lane identifies the mapped ROM aperture (system, cartridge 0, cartridge 1).
 constexpr u64 mappedPageDomainKey(u32 imageIndex) { return u64{imageIndex} << 32u; }
 constexpr u32 mappedPageDomainIndex(u64 key) { return static_cast<u32>(key >> 32u); }
+
+constexpr u64 mappedPageAddressKey(u32 address, u32 cartridgeSlot) {
+	return address >= CART_ROM_BASE && address < CART_BUS_END
+		? mappedPageDomainKey(1u + cartridgeSlot) + address : address;
+}
 
 class MappedPageInvalidator {
 public:

@@ -158,8 +158,6 @@ void inactiveFrameMetadata() {
 	auto oldRegisters = spare->registers;
 	const u32 oldClosure = spare->readControl(bmsx::FrameField::Closure);
 	auto* oldImage = spare->executionImage;
-	const u32 oldPageAddress = spare->decodedPageAddress;
-	require(oldPageAddress != 0, "the reused node carries a real nonzero prior decode-page address");
 	test::runCpuParity(generated.cpu, scalar.cpu, 1, 1);
 	for (auto* machine : {&generated, &scalar}) machine->cpu.activeThread()->currentFrame->registers.set(0, valueNil());
 	// Populate the inactive node with its genuine previous activation bits even
@@ -168,7 +166,6 @@ void inactiveFrameMetadata() {
 	spare->executionImage = oldImage;
 	spare->writeControl(bmsx::FrameField::Closure, oldClosure);
 	spare->registers = oldRegisters;
-	spare->decodedPageAddress = oldPageAddress;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto* page = oldImage->nativeCodeLookup->find(generated.rom.textAddress, 0);
 	const u32 word = (generated.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;

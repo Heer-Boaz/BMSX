@@ -1,3 +1,5 @@
+import { CART_ROM_BASE, CART_BUS_END } from '../../spec/bmsx/memory_map';
+
 export const MAPPED_PAGE_BYTE_SHIFT = 10;
 export const MAPPED_PAGE_BYTE_SIZE = 1 << MAPPED_PAGE_BYTE_SHIFT;
 export const MAPPED_PAGE_BYTE_MASK = MAPPED_PAGE_BYTE_SIZE - 1;
@@ -6,6 +8,9 @@ export const MAPPED_PAGE_BYTE_MASK = MAPPED_PAGE_BYTE_SIZE - 1;
 const MAPPED_PAGE_DOMAIN_KEY_STRIDE = 0x100000000;
 export function mappedPageDomainKey(imageIndex: number): number { return imageIndex * MAPPED_PAGE_DOMAIN_KEY_STRIDE; }
 export function mappedPageDomainIndex(key: number): number { return (key / MAPPED_PAGE_DOMAIN_KEY_STRIDE) >>> 0; }
+export function mappedPageAddressKey(address: number, cartridgeSlot: number): number {
+	return address >= CART_ROM_BASE && address < CART_BUS_END ? mappedPageDomainKey(1 + cartridgeSlot) + address : address;
+}
 const MAPPED_PAGE_WATCH_GROUP_COUNT = MAPPED_PAGE_BYTE_SIZE / (4 * 32);
 // Match the native page word: code groups followed by history clean.
 const CODE_GROUPS = (1 << MAPPED_PAGE_WATCH_GROUP_COUNT) - 1;

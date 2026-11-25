@@ -172,8 +172,6 @@ struct CallFrame {
 	void addControlFlags(u32 flags);
 	Blua32ExecutionImage* executionImage = nullptr;
 	DecodedInstructionPage* decodedPage = nullptr;
-	u32 decodedPageAddress = 0;
-	MappedBusSignals decodedPageBusSignals = MAPPED_BUS_MASTER_CPU;
 	// Host translation admission for the next PC; not architectural state.
 	bool compilationEntry = true;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

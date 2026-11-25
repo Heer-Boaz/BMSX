@@ -217,8 +217,6 @@ CallFrame* Thread::frameNode(CallFrame* previous) {
 		frame->next = nullptr;
 		releaseFrameView(*frame);
 		frame->executionImage = nullptr;
-		frame->decodedPageAddress = 0;
-		frame->decodedPageBusSignals = MAPPED_BUS_MASTER_CPU;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		frame->nativeContinuationCells = {};
 		frame->nativeContinuationPc = 0;

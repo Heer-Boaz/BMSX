@@ -110,6 +110,28 @@ test('warmed fused dispatch does not repeat mapped-page binding or instruction r
 	assert.equal(reads, 0);
 });
 
+test('a loop crossing a fetch-page boundary binds each physical page once', () => {
+	const words = MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES;
+	const text = new Uint8Array((words + 2) * INSTRUCTION_BYTES);
+	for (let i = 0; i < words; ++i) writeInstruction(text, i, OpCode.K1, 0, 0, 0, 0);
+	const back = -(words + 1);
+	writeInstruction(text, words, OpCode.JMP, 0, (back >>> 6) & 63, back & 63, (back >>> 12) & 255);
+	writeInstruction(text, words + 1, OpCode.RFE, 0, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({
+		text, functions: [{ firstWord: 0, wordCount: words + 1, maxStack: 1 }, { firstWord: words + 1, wordCount: 1 }],
+		functionIds: ['cross_page_loop', 'interrupt_return'], startupFunctionIndex: 0, irqFunctionIndex: 1, exceptionFunctionIndex: 1,
+	});
+	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const period = words * BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP];
+	assert.equal(cpu.runUntilDepth(0, period), RunResult.Yielded);
+	const bindings: number[] = [];
+	const bind = memory.bindMappedPage.bind(memory);
+	memory.bindMappedPage = (address, signals, out) => { bindings.push(address); bind(address, signals, out); };
+	assert.equal(cpu.runUntilDepth(0, period * 3), RunResult.Yielded);
+	assert.equal(cpu.readFramePc(0), image.image.functions[0].codeAddress);
+	assert.deepEqual(bindings, []);
+});
+
 test('instrumented dispatch observes the second instruction of a normally fused pair', () => {
 	const image = makePairImage();
 	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);

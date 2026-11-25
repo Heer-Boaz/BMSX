@@ -2,7 +2,6 @@ import type { Thread } from './thread';
 import { CLOSURE_CAPTURE_WORDS, captureCount } from './closure';
 import type { Blua32ExecutionImage, DecodedInstructionPage } from './execution_image';
 import { ValueSlots } from './value_slots';
-import { MAPPED_BUS_MASTER_CPU, type MappedBusSignals } from '../memory/bus_signals';
 
 import { writeLE32 } from '../../common/endian';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
@@ -47,8 +46,6 @@ export class CallFrame {
 	public readonly registers = new ValueSlots(0);
 	public executionImage: Blua32ExecutionImage = null!;
 	public decodedPage: DecodedInstructionPage | null = null;
-	public decodedPageAddress = 0;
-	public decodedPageBusSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU;
 	/** Host translation admission for the next PC, not checkpoint state. */
 	public compilationEntry = true;
 	public get stackBase(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.StackBase) & FRAME_WINDOW_MASK; }

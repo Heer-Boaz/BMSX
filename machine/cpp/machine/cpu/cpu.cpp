@@ -451,7 +451,6 @@ void CPU::resumeFrameBank() {
 		if (image != frame->executionImage) {
 			frame->executionImage = image;
 			frame->decodedPage = nullptr;
-			frame->decodedPageAddress = 0;
 			frame->compilationEntry = true;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			frame->nativeContinuationCells = {};
@@ -481,7 +480,6 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 				if (frame->executionImage != previousImage.get()) continue;
 				frame->executionImage = activatedImage;
 				frame->decodedPage = nullptr;
-				frame->decodedPageAddress = 0;
 				frame->compilationEntry = true;
 			}
 		});
@@ -705,19 +703,21 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 
 DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 	const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
-	const auto busSignals = mappedBusSignalsForCartridgeSlot(m_memory.cartridgeController().selectedSlot(m_executionBusSignals));
-	if (frame.decodedPage
-		&& frame.decodedPageAddress == pageAddress && frame.decodedPageBusSignals == busSignals) {
+	const auto slot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
+	const u64 key = mappedPageAddressKey(pageAddress, slot);
+	if (frame.decodedPage && frame.decodedPage->mapping.key == key) {
 		return *frame.decodedPage;
 	}
-	MappedPageBinding binding;
-	m_memory.bindMappedPage(pageAddress, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
-	DecodedInstructionPage& page = frame.executionImage->decodedPages.bind(binding);
-	frame.decodedPage = &page;
-	frame.decodedPageAddress = pageAddress;
-	frame.decodedPageBusSignals = busSignals;
+	auto& directory = frame.executionImage->decodedPages;
+	auto* page = directory.find(key);
+	if (!page) {
+		MappedPageBinding binding;
+		m_memory.bindMappedPage(pageAddress, mappedBusSignalsForCartridgeSlot(slot) | MAPPED_BUS_INSTRUCTION_FETCH, binding);
+		page = &directory.bind(binding);
+	}
+	frame.decodedPage = page;
 	frame.compilationEntry = true;
-	return page;
+	return *page;
 }
 
 
@@ -2631,7 +2631,6 @@ void CPU::writeFrameExecution(
 	frame.saveExecutionBank(executionDomainId);
 	if (&frame == m_activeThread->currentFrame) latchActiveExecutionImage(executionDomainId, frame.executionImage);
 	frame.decodedPage = nullptr;
-	frame.decodedPageAddress = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	frame.nativeContinuationCells = {};
 #endif

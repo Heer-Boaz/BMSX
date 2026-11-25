@@ -788,12 +788,10 @@ test('cached sequential, wide, skip and fused dispatch keep PC as a wrapping wor
 				const { cpu } = createTestSystemCpu(returnImage());
 				if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 				const frame = cpu.rootThread.frameAtDepth(0);
-				const page = createDecodedInstructionPage({ key: 0, cacheable: true, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 });
+				const page = createDecodedInstructionPage({ key: 0xfffffc00, cacheable: true, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 });
 				page.refreshState.fill(0);
 				frame.pc = skip ? 0xfffffff8 : 0xfffffffc;
 				frame.decodedPage = page;
-				frame.decodedPageAddress = 0xfffffc00;
-				frame.decodedPageBusSignals = mappedBusSignalsForCartridgeSlot(0);
 				page.widths[255] = width;
 				page.ops[255] = page.dispatchOps[255] = OpCode.K1;
 				page.dispatchCycles[255] = BASE_CYCLES[OpCode.K1];
@@ -807,13 +805,11 @@ test('cached sequential, wide, skip and fused dispatch keep PC as a wrapping wor
 	}
 	const { cpu } = createTestSystemCpu(returnImage());
 	const frame = cpu.rootThread.frameAtDepth(0);
-	const page = createDecodedInstructionPage({ key: 0, cacheable: true, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 });
+	const page = createDecodedInstructionPage({ key: 0xfffffc00, cacheable: true, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 });
 	page.refreshState.fill(0);
 	frame.pc = 0xfffffff8;
 	frame.registers.setInteger(0, 1);
 	frame.decodedPage = page;
-	frame.decodedPageAddress = 0xfffffc00;
-	frame.decodedPageBusSignals = mappedBusSignalsForCartridgeSlot(0);
 	page.widths[254] = page.widths[255] = 1;
 	page.ops[254] = OpCode.SHL;
 	page.dispatchOps[254] = DecodedDispatchOp.FusedShlBxor;

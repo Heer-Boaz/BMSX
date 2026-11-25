@@ -1950,12 +1950,10 @@ void cachedPcWrapping() {
 				auto& cpu = machine.cpu;
 				if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 				auto& frame = *cpu.activeThread()->frameAtDepth(0);
-				DecodedInstructionPage page(MappedPageBinding{0, true, nullptr, {}});
+				DecodedInstructionPage page(MappedPageBinding{0xfffffc00u, true, nullptr, {}});
 				page.refreshState.fill(0);
 				frame.writeControl(bmsx::FrameField::Pc, skip ? 0xfffffff8u : 0xfffffffcu);
 				frame.decodedPage = &page;
-				frame.decodedPageAddress = 0xfffffc00u;
-				frame.decodedPageBusSignals = mappedBusSignalsForCartridgeSlot(0);
 				page.words[255].width = width;
 				page.words[255].op = page.words[255].dispatchOp = static_cast<u8>(OpCode::K1);
 				page.words[255].baseCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
@@ -1970,13 +1968,11 @@ void cachedPcWrapping() {
 	CpuMachine machine(returnImage());
 	auto& cpu = machine.cpu;
 	auto& frame = *cpu.activeThread()->frameAtDepth(0);
-	DecodedInstructionPage page(MappedPageBinding{0, true, nullptr, {}});
+	DecodedInstructionPage page(MappedPageBinding{0xfffffc00u, true, nullptr, {}});
 	page.refreshState.fill(0);
 	frame.writeControl(bmsx::FrameField::Pc, 0xfffffff8u);
 	frame.registers.set(0, valueInteger(1));
 	frame.decodedPage = &page;
-	frame.decodedPageAddress = 0xfffffc00u;
-	frame.decodedPageBusSignals = mappedBusSignalsForCartridgeSlot(0);
 	page.words[254].width = page.words[255].width = 1;
 	page.words[254].op = static_cast<u8>(OpCode::SHL);
 	page.words[254].dispatchOp = static_cast<u8>(DecodedDispatchOp::FusedShlBxor);

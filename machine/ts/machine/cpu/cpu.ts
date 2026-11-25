@@ -111,7 +111,7 @@ import { luaShiftLeft, luaShiftRight, NumericOrder } from '../../spec/blua32/num
 import {
 	MAPPED_PAGE_BYTE_MASK,
 	MAPPED_PAGE_BYTE_SIZE,
-	mappedPageDomainIndex,
+	mappedPageDomainIndex, mappedPageAddressKey,
 } from '../memory/mapped_page';
 import { BuiltinFunctionId, GarbageCollectionOperation, LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
 import {
@@ -1043,7 +1043,6 @@ export class CPU implements MappedPageInvalidator {
 		if (image !== frame.executionImage) {
 			frame.executionImage = image!;
 			frame.decodedPage = null;
-			frame.decodedPageAddress = 0;
 			frame.compilationEntry = true;
 		}
 		this.latchActiveExecutionImage(domain, image);
@@ -1175,7 +1174,6 @@ export class CPU implements MappedPageInvalidator {
 							if (frame.executionImage !== previous) continue;
 							frame.executionImage = image;
 							frame.decodedPage = null;
-							frame.decodedPageAddress = 0;
 							frame.compilationEntry = true;
 						}
 					}
@@ -1207,12 +1205,14 @@ export class CPU implements MappedPageInvalidator {
 
 	private decodedPageForAddress(
 		image: Blua32ExecutionImage,
-		binding: MappedPageBinding,
+		address: number, key: number, slot: number,
 	): DecodedInstructionPage {
-		const existing = image.decodedPages.get(binding.key);
+		const existing = image.decodedPages.get(key);
 		if (existing !== undefined) {
 			return existing;
 		}
+		const binding = this.mappedPageBinding;
+		this.memory.bindMappedPage(address, mappedBusSignalsForCartridgeSlot(slot) | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 		const page = createDecodedInstructionPage(binding);
 		image.decodedPages.set(binding.key, page);
 		return page;
@@ -1326,18 +1326,14 @@ export class CPU implements MappedPageInvalidator {
 
 	private decodedPageForFrame(frame: CallFrame, pc: number): DecodedInstructionPage {
 		const pageAddress = (pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
-		const busSignals = mappedBusSignalsForCartridgeSlot(this.memory.cartridgeController.selectedSlot(this.executionBusSignals));
+		const slot = this.memory.cartridgeController.selectedSlot(this.executionBusSignals);
+		const key = mappedPageAddressKey(pageAddress, slot);
 		const cached = frame.decodedPage;
-		if (cached !== null
-			&& frame.decodedPageAddress === pageAddress && frame.decodedPageBusSignals === busSignals) {
+		if (cached !== null && cached.key === key) {
 			return cached;
 		}
-		const binding = this.mappedPageBinding;
-		this.memory.bindMappedPage(pageAddress, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
-		const page = this.decodedPageForAddress(frame.executionImage, binding);
+		const page = this.decodedPageForAddress(frame.executionImage, pageAddress, key, slot);
 		frame.decodedPage = page;
-		frame.decodedPageAddress = pageAddress;
-		frame.decodedPageBusSignals = busSignals;
 		frame.compilationEntry = true;
 		return page;
 	}
@@ -2358,7 +2354,6 @@ export class CPU implements MappedPageInvalidator {
 		frame.savedExecutionBank = executionDomainId;
 		if (frame === this.activeThread.currentFrame) this.latchActiveExecutionImage(executionDomainId, image);
 		frame.decodedPage = null;
-		frame.decodedPageAddress = 0;
 		frame.compilationEntry = true;
 		frame.pc = pc;
 	}
@@ -2714,8 +2709,6 @@ export class CPU implements MappedPageInvalidator {
 	private prepareCompiledRegion(frame: CallFrame, page: DecodedInstructionPage, word: number): void {
 		const pc = this.currentInstructionPc, image = frame.executionImage;
 		const pagePc = (pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
-		const binding = this.mappedPageBinding;
-		const fetchSignals = this.executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH;
 		const slot = this.memory.cartridgeController.selectedSlot(this.executionBusSignals);
 		const romView = this.executionReadView, domain = image.executionDomainId;
 		const directory = image.romFunctions;
@@ -2744,10 +2737,7 @@ export class CPU implements MappedPageInvalidator {
 				endWord = (endPc - basePc) / INSTRUCTION_BYTES;
 				for (let address = basePc, index = 0; address < endPc; address += MAPPED_PAGE_BYTE_SIZE, ++index) {
 					if (address === pagePc) pages[index] = page;
-					else {
-						this.memory.bindMappedPage(address, fetchSignals, binding);
-						pages[index] = this.decodedPageForAddress(image, binding);
-					}
+					else pages[index] = this.decodedPageForAddress(image, address, mappedPageAddressKey(address, slot), slot);
 				}
 			}
 		}
@@ -3435,7 +3425,6 @@ export class CPU implements MappedPageInvalidator {
 		this.ensureStackCapacity(stackBase + capacity, valueClosure(closure), true, exception);
 		frame.executionImage = this.executionImageForDomain(functionRecord.executionDomainId)!;
 		frame.decodedPage = null;
-		frame.decodedPageAddress = 0;
 		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc ?? functionRecord.codeAddress, returnToCompletionLatch, functionRecord.executionDomainId,
 			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams, closure, stackBase, capacity);
 		const registers = frame.registers;
@@ -3473,7 +3462,6 @@ export class CPU implements MappedPageInvalidator {
 		this.ensureStackCapacity(stackBase + capacity, valueClosure(closure), true);
 		frame.executionImage = this.executionImageForDomain(functionRecord.executionDomainId)!;
 		frame.decodedPage = null;
-		frame.decodedPageAddress = 0;
 		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc, returnToCompletionLatch, functionRecord.executionDomainId,
 			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams, closure, stackBase, capacity);
 		const registers = frame.registers;
