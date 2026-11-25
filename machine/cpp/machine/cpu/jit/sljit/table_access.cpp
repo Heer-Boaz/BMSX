@@ -39,26 +39,15 @@ constexpr sljit_sw meta = static_cast<u32>(TableHeader::Metatable);
 constexpr sljit_sw stringTag = static_cast<u8>(ValueTag::String);
 constexpr sljit_sw nilTag = static_cast<u8>(ValueTag::Nil);
 
-void readTableSlot(sljit_compiler* c, sljit_s32 result, bool word) {
-	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP),
-		word ? NativeTableScratch::words : NativeTableScratch::tags);
-	sljit_emit_op1(c, word ? SLJIT_MOV32 : SLJIT_MOV_U8, result, 0, SLJIT_MEM2(SLJIT_R2, SLJIT_R1), word ? 2 : 0);
-}
-
 // An own prediction miss is not an absence proof. Follow the live chain,
 // with the signed cursor and visit bound of TableRecord::HashBody.
 sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	auto* empty = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0);
-	// The chain cannot allocate or re-enter the VM. Bind its two linear
-	// planes once, as for ITERN; no guest cache register is reserved.
-	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0),
-		static_cast<u32>(TableHeader::HashStorage), SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R1, SLJIT_R1);
-	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::words, SLJIT_R1, 0);
-	sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R2, 0, SLJIT_R3, 0, SLJIT_IMM, 3);
-	sljit_emit_op2(c, SLJIT_SHL, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
-	sljit_emit_op2(c, SLJIT_ADD, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::tags, SLJIT_R1, 0, SLJIT_R2, 0);
+	// Keep both backing planes live across the chain. Only the receiver
+	// and the signed-cursor traversal budget need spill slots.
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header, SLJIT_R0, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining, SLJIT_R3, 0);
 	if (stringKey) {
 		sljit_emit_op2(c, SLJIT_LSHR32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::keyWord,
 			SLJIT_IMM, BLUA32_STRING_RECORD_ALIGNMENT_SHIFT);
@@ -74,31 +63,41 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey) {
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
 	// The owner's signed chain cursor does not enter a negative home.
 	auto* negativeHome = sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0),
+		static_cast<u32>(TableHeader::HashStorage), SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
+	sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 3);
+	sljit_emit_op2(c, SLJIT_SHL, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 2);
+	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_R3, 0);
 	auto* node = sljit_emit_label(c);
-	readTableSlot(c, SLJIT_R2, false);
-	auto* otherTag = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 0);
+	auto* otherTag = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
 		stringKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP), stringKey ? stringTag : NativeTableScratch::keyTag);
-	readTableSlot(c, SLJIT_R2, true);
-	auto* otherKey = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
+	auto* otherKey = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM2(SLJIT_R2, SLJIT_R1), 2,
 		SLJIT_MEM1(SLJIT_SP), NativeTableScratch::keyWord);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), hash);
-	readTableSlot(c, SLJIT_R2, false);
-	auto* found = stringKey ? sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, nilTag)
-		: sljit_emit_jump(c, SLJIT_JUMP);
-	auto* nilMatch = stringKey ? sljit_emit_jump(c, SLJIT_JUMP) : nullptr;
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 0);
+	auto* nilMatch = stringKey ? sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, nilTag) : nullptr;
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM2(SLJIT_R2, SLJIT_R1), 2);
+	auto* found = sljit_emit_jump(c, SLJIT_JUMP);
 
 	auto* different = sljit_emit_label(c);
 	sljit_set_label(otherTag, different);
 	sljit_set_label(otherKey, different);
-	sljit_emit_op2(c, SLJIT_SUB32 | SLJIT_SET_Z, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
+	sljit_emit_op2(c, SLJIT_SUB32 | SLJIT_SET_Z, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining,
+		SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining, SLJIT_IMM, 1);
 	auto* last = sljit_emit_jump(c, SLJIT_EQUAL);
-	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), hash, SLJIT_IMM, 1);
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
-	readTableSlot(c, SLJIT_R1, true);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), hash, SLJIT_IMM, 1);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R0, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM2(SLJIT_R2, SLJIT_R1), 2);
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0), node);
+	sljit_set_label(last, sljit_emit_label(c));
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
 
 	auto* absent = sljit_emit_label(c);
-	for (auto* edge : {empty, negativeHome, last}) sljit_set_label(edge, absent);
+	for (auto* edge : {empty, negativeHome}) sljit_set_label(edge, absent);
 	if (nilMatch) sljit_set_label(nilMatch, absent);
 	return found;
 }
@@ -134,8 +133,8 @@ sljit_label* emitStringReadProbe(sljit_compiler* c) {
 	auto* noOwnSlot = sljit_emit_jump(c, SLJIT_JUMP);
 
 	sljit_set_label(hasIndex, sljit_emit_label(c));
-	auto* semantic = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Table));
-	readTableSlot(c, SLJIT_R0, true);
+	auto* semantic = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Table));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_R2, 0);
 	emitTableHeaderAddress(c);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), key, SLJIT_MEM1(SLJIT_SP), field);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), cost, SLJIT_IMM, TABLE_INDEX_VISIT_CYCLES);
@@ -149,8 +148,6 @@ sljit_label* emitStringReadProbe(sljit_compiler* c) {
 	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 
 	sljit_set_label(found, sljit_emit_label(c));
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_R2, 0);
-	readTableSlot(c, SLJIT_R2, true);
 	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	auto* own = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_SP), cost, SLJIT_IMM, 0);
 	sljit_set_label(noOwnSlot, sljit_emit_label(c));
@@ -168,8 +165,6 @@ sljit_label* emitOwnStringSlotProbe(sljit_compiler* c) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, -1);
 	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 	sljit_set_label(found, sljit_emit_label(c));
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_R2, 0);
-	readTableSlot(c, SLJIT_R2, true);
 	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 	return entry;
@@ -185,8 +180,6 @@ sljit_label* emitIndexReadProbe(sljit_compiler* c) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_IMM, nilTag);
 	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 	sljit_set_label(found, sljit_emit_label(c));
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_R2, 0);
-	readTableSlot(c, SLJIT_R2, true);
 	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 	return entry;
 }
