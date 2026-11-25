@@ -1046,7 +1046,7 @@ void nativeReturnPublishesCallerTopAtMappedObserver() {
 	}
 }
 
-void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bool exceptionFrame, int grant = -1) {
+void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bool exceptionFrame, int grant = -1, bool extendTop = false) {
 	// The protected target repeatedly calls an ordinary child. A separate live
 	// translation writes a marker without changing top or any frame register.
 	constexpr int callerCapacity = 16;
@@ -1116,6 +1116,12 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	// A cold successor also switches the decoded entry back to scalar JMP.
 	continuation->nativeCode[word] = coldTarget ? nullptr : alternate->nativeCode[markerWord];
 	if (coldTarget) continuation->words[word].dispatchOp = static_cast<u8>(OpCode::JMP);
+	// Bind the suspended caller to the real mutable entry cell. ReturnBase
+	// and the selected width still come from the physical frame, not CALL.
+	caller->nativeContinuationPc = coldTarget ? markerPc : caller->readControl(FrameField::Pc);
+	caller->nativeContinuationCells[0] = coldTarget ? &alternate->nativeCode[markerWord] : &continuation->nativeCode[word];
+	const int oldTop = caller->readWindow(FrameField::Top);
+	if (extendTop) callee->addControlFlags(FRAME_EXTEND_RESULT_TOP);
 	const int copied = wanted == 0 ? produced : std::min(produced, wanted);
 	const int count = wanted == 0 ? produced : wanted;
 	const bool grows = count != 0 && base + count > caller->stackCapacity();
@@ -1138,7 +1144,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	const auto routeResult = machine.cpu.runUntilDepth(0, grant);
 	require(routeResult == RunResult::Yielded && thread->currentFrame == caller
 		&& thread->frameDepth() == 2 && thread->protectedDepth() == 1, "ordinary native return retains its protected parent and exact grant boundary");
-	require(static_cast<bmsx::i32>(caller->readControl(bmsx::FrameField::Top)) == base + count, "fixed, open and empty returns assign exact caller top even after a late cold exit");
+	require(static_cast<bmsx::i32>(caller->readControl(bmsx::FrameField::Top)) == (extendTop ? std::max(oldTop, base + count) : base + count), "fixed, open and empty returns assign exact caller top even after a late cold exit");
 	for (int index = 0; index < copied; ++index) require(caller->registers.get(base + index) == payloads[index],
 		"native and late-cold result movement preserve every raw tagged and numeric bit");
 	for (int index = copied; index < count; ++index) require(caller->registers.get(base + index) == valueNil(), "fixed results nil-pad only the requested suffix");
@@ -1994,6 +2000,7 @@ int main(int argc, char** argv) {
 		nativeReturnRouting(0, 1, 0, false, false, retAndMarker + 1); // one nil, no source
 		nativeReturnRouting(6, 1, 0, false, false, retAndMarker + 1); // one result, discard suffix
 		nativeReturnRouting(6, 2, 11, false, false, retAndMarker + 2); // upward overlap with the callee's source at slot 10
+		nativeReturnRouting(2, 4, 0, false, false, retAndMarker + 4, true);
 		nativeReturnRouting(6, 0, 0, true, false);
 		const int returnToScalar = BASE_CYCLES[static_cast<u8>(OpCode::RET)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
 		nativeReturnRouting(6, 0, 0, true, false, returnToScalar + 6);

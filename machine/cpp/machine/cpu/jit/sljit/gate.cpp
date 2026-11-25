@@ -94,8 +94,8 @@ NativeBlockGate::NativeBlockGate() {
 	auto* callEntry = emitTransfer(&CPU::tryCallNativeFrame);
 
 	auto* retEntry = emitTransfer(&CPU::tryReturnNativeFrame);
-	auto* pendingReturn = emitPendingReturn(compiler, bindWindow, retEntry);
-	sljit_set_label(ret, pendingReturn);
+	auto* nativeReturn = emitNativeReturn(compiler, bindWindow, retEntry);
+	sljit_set_label(ret, nativeReturn);
 	auto* fixedResidentCall = emitFixedResidentCall(compiler, bindWindow, callEntry);
 	sljit_set_label(call, fixedResidentCall);
 	// Ordinary exits carry the exact outstanding charge and top floor in
