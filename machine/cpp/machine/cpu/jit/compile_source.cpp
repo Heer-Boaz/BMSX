@@ -195,8 +195,10 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 		auto* feedback = pending ? &pending->feedbackHeads[codePageCount] : nullptr;
 		if (feedback) feedback->reset();
 #endif
-		available.forEach([&](u32 entry) {
-			if (!leaders[entry]) return;
+		// A length split adds a leader at least one full bitmap group ahead:
+		// the current group's intersection can be consumed in registers.
+		static_assert(NATIVE_BLOCK_MAX_INSTRUCTIONS >= NativePageWords::GROUP_BITS);
+		available.forEachCommon(leaders, [&](u32 entry) {
 			const size_t start = instructionCount;
 			u32 cursor = entry;
 			for (;;) {

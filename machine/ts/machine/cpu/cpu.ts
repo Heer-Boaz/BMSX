@@ -167,11 +167,11 @@ import { LuaAllocationMode, LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
-	COMPILED_BLOCK_MAX_INSTRUCTIONS,
 	compiledBlockSupports, compiledBlockEndsBlock, compiledBlockComparison, compiledBlockHasContinuation, compiledBlockAdmits,
-	type CompiledBlockExitSite, type CompiledBlockSource,
+	type CompiledBlockExitSite,
 } from './compiled_block';
 import { CompiledBlockPage, CompiledCodeCache, linkCompiledBlock } from './compiled_code_cache';
+import { CompiledSourceGraph, SourceWord } from './compiled_source_graph';
 import { compileJavaScriptRegion, type CompiledRegion, type CompiledRegionRunState } from './compiled_region';
 
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
@@ -307,6 +307,7 @@ export class CPU implements MappedPageInvalidator {
 	private executionHookDomainMask: ExecutionDomainMask = 0;
 	private preMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
 	private runUntilDepthEntry = this.runUntilDepthNormal;
+	private compiledSourceGraph: CompiledSourceGraph | null = null;
 	private readonly compiledCodeCache = new CompiledCodeCache();
 	private readonly compiledRunState: CompiledRegionRunState = {
 		remainingCycles: 0, registerTop: 0, memoryAddress: 0,
@@ -2752,45 +2753,27 @@ export class CPU implements MappedPageInvalidator {
 		const wordAt = (index: number) => index & (DECODED_PAGE_WORDS - 1);
 		const contains = (index: number) => index >= firstWord && index < endWord;
 		const canDecode = (index: number) => mayLookAhead && (index + 1 < endWord || finalWordStartsInstruction);
-		const roots = new Uint8Array(endWord), queued = new Uint8Array(endWord);
-		const available = new Uint8Array(endWord), leaders = new Uint8Array(endWord), skipWidths = new Uint8Array(endWord);
-		const pending: number[] = [];
-		const owners = verified ? null : new Array<CompiledRegion | null>(endWord).fill(null);
+		const graph = this.compiledSourceGraph ??= new CompiledSourceGraph();
+		graph.begin(basePc, firstWord, endWord);
+		if (!verified) graph.indexOwners(pages);
 		const merged = new Set<CompiledRegion>();
-		const enqueue = (nextPc: number, leader: boolean): void => {
-			const index = (nextPc - basePc) / INSTRUCTION_BYTES;
-			if (!contains(index)) return;
-			// A WIDE prefix and an independent entry into its body may share
-			// the same sequential successor. Emit that successor only once.
-			if (leader || queued[index] !== 0) leaders[index] = 1;
-			if (queued[index] === 0) { queued[index] = 1; pending.push(index); }
-		};
 		const entryIndex = (pc - basePc) / INSTRUCTION_BYTES;
-		roots[entryIndex] = 1; enqueue(pc, true);
-		for (let index = 0; owners !== null && index < pages.length; ++index) {
-			const cache = pages[index].compiledBlocks;
-			if (cache === null) continue;
-			const base = index * DECODED_PAGE_WORDS, end = Math.min(endWord, base + DECODED_PAGE_WORDS);
-			for (let entry = base; entry < end; ++entry) {
-				const block = cache.entries[entry - base];
-				if (block !== null) owners.fill(block.region, Math.max(firstWord, entry), Math.min(entry + block.sourceWords, end));
-			}
-		}
-		for (let next = 0; next < pending.length; ++next) {
-			const cursor = pending[next], start = pcAt(cursor), sourcePage = pageAt(cursor), sourceWord = wordAt(cursor);
+		graph.enqueue(pc, true, true);
+		for (let next = 0; next < graph.pendingCount; ++next) {
+			const cursor = graph.pending[next], start = pcAt(cursor), sourcePage = pageAt(cursor), sourceWord = wordAt(cursor);
 			// Immutable windows may link to another published entry without
 			// replacing the other window and its continuation roots.
 			if (verified && sourcePage.compiledBlocks?.entries[sourceWord]) continue;
-			const owner = owners === null ? null : owners[cursor];
+			const ownerWord = verified ? 0 : graph.owners[cursor];
+			const owner = ownerWord === 0 ? null : sourcePage.compiledBlocks!.entries[ownerWord - 1]!.region;
 			if (owner !== null && !merged.has(owner)) {
-				merged.add(owner); leaders[cursor] = 1;
+				merged.add(owner); graph.enqueue(start, true);
 				for (const block of owner.entries) {
 					const index = pages.indexOf(block.page);
 					if (index < 0) continue;
 					const entry = index * DECODED_PAGE_WORDS + block.firstWord;
 					if (!contains(entry)) continue;
-					roots[entry] = 1;
-					enqueue(pcAt(entry), true);
+					graph.enqueue(pcAt(entry), true, true);
 				}
 			}
 			if ((sourcePage.refreshState[sourceWord] & DECODED_REFRESH_DECODE) !== 0) {
@@ -2805,10 +2788,10 @@ export class CPU implements MappedPageInvalidator {
 				const bank = op <= OpCode.SETSYS ? this.systemGlobalBank : this.globalBank;
 				if (sourcePage.bx[sourceWord] >= bank.slots.capacity()) continue;
 			}
-			if (roots[cursor] === 0 && watchesWrites && sourcePage.compiledBlocks!.visits[sourceWord] + 1 < COMPILED_BLOCK_THRESHOLD) continue;
+			if (!(graph.flags[cursor] & SourceWord.Root) && watchesWrites && sourcePage.compiledBlocks!.visits[sourceWord] + 1 < COMPILED_BLOCK_THRESHOLD) continue;
 			const width = sourcePage.widths[sourceWord], successor = cursor + width, successorPc = pcAt(successor);
 			if (bounded && successor > endWord) continue;
-			available[cursor] = 1;
+			graph.flags[cursor] |= SourceWord.Available;
 			if (op === OpCode.ITERN || compiledBlockComparison(op)) {
 				if (mayLookAhead && contains(successor)) {
 					const nextPage = pageAt(successor), nextWord = wordAt(successor);
@@ -2816,48 +2799,26 @@ export class CPU implements MappedPageInvalidator {
 						&& !this.decodeInstruction(frame, nextPage, nextWord, successorPc, false)) return;
 					const skipWidth = nextPage.widths[nextWord];
 					if ((nextPage.refreshState[nextWord] & DECODED_REFRESH_DECODE) === 0 && successor + skipWidth <= endWord) {
-						skipWidths[cursor] = skipWidth;
-						enqueue(pcAt(successor + skipWidth), true);
+						graph.skipWidths[cursor] = skipWidth;
+						graph.enqueue(pcAt(successor + skipWidth), true);
 						if (op !== OpCode.ITERN && nextPage === sourcePage && nextPage.ops[nextWord] === OpCode.JMP && nextPage.a[nextWord] === 0
 							&& nextPage.dispatchOps[nextWord] !== DecodedDispatchOp.Observe) {
 							// The fused edge does not need an independent JMP entry.
-							enqueue(nextPage.bx[nextWord], true);
+							graph.enqueue(nextPage.bx[nextWord], true);
 							continue;
 						}
 					}
 				}
-				enqueue(successorPc, true);
+				graph.enqueue(successorPc, true);
 			} else if (op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT) {
-				enqueue(sourcePage.bx[sourceWord], true);
-				if (op !== OpCode.JMP) enqueue(successorPc, true);
+				graph.enqueue(sourcePage.bx[sourceWord], true);
+				if (op !== OpCode.JMP) graph.enqueue(successorPc, true);
 			} else if (!compiledBlockEndsBlock(op, sourcePage.b[sourceWord])) {
-				enqueue(successorPc, sourceWord + width >= DECODED_PAGE_WORDS);
-			} else if (compiledBlockHasContinuation(op, sourcePage.b[sourceWord])) enqueue(successorPc, true);
+				graph.enqueue(successorPc, sourceWord + width >= DECODED_PAGE_WORDS);
+			} else if (compiledBlockHasContinuation(op, sourcePage.b[sourceWord])) graph.enqueue(successorPc, true);
 		}
-		if (available[entryIndex] === 0) { page.dispatchOps[word] = page.ops[word]; return; }
-		const plans: CompiledBlockSource[] = [];
-		for (let entry = firstWord; entry < endWord; ++entry) {
-			if (leaders[entry] === 0 || available[entry] === 0) continue;
-			const sourcePage = pageAt(entry), first = wordAt(entry), base = entry - first;
-			let cursor = first, count = 0;
-			for (;;) {
-				++count;
-				const successor = cursor + sourcePage.widths[cursor];
-				if (compiledBlockEndsBlock(sourcePage.ops[cursor], sourcePage.b[cursor]) || successor >= DECODED_PAGE_WORDS
-					|| base + successor >= endWord || available[base + successor] === 0 || leaders[base + successor] !== 0) break;
-				if (count === COMPILED_BLOCK_MAX_INSTRUCTIONS) { leaders[base + successor] = 1; break; }
-				cursor = successor;
-			}
-			const end = cursor + sourcePage.widths[cursor];
-			let segmentFirst = first;
-			for (let word = first; word < end; word += sourcePage.widths[word]) {
-				const next = word + sourcePage.widths[word], final = next === end;
-				if (!final && !compiledBlockHasContinuation(sourcePage.ops[word], sourcePage.b[word])) continue;
-				plans.push({ page: sourcePage, firstWord: segmentFirst, endWord: next, pc: pcAt(base + segmentFirst),
-					skippedInstructionWidth: final ? skipWidths[base + cursor] : 0, fallthrough: !final });
-				segmentFirst = next;
-			}
-		}
+		if (!(graph.flags[entryIndex] & SourceWord.Available)) { page.dispatchOps[word] = page.ops[word]; return; }
+		const plans = graph.plan(pages);
 		const region = compileJavaScriptRegion(plans, image, this.memory, this.stringPool,
 			this.globalBank.slots, this.systemGlobalBank.slots, this.cop0Words, this.gc);
 		if (!this.compiledCodeCache.install(region, merged)) {

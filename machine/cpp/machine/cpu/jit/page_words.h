@@ -12,6 +12,10 @@ namespace bmsx {
 class NativePageWords {
 public:
 	void set(u32 index) { m_words[index / 32] |= u32{1} << (index % 32); }
+	NativePageWords& operator|=(const NativePageWords& other) {
+		for (size_t group = 0; group < m_words.size(); ++group) m_words[group] |= other.m_words[group];
+		return *this;
+	}
 	void reset(u32 index) { m_words[index / 32] &= ~(u32{1} << (index % 32)); }
 	// First member of [first, end), or end. Restartable after retirement
 	// removes multiple entries from the same physical page.
@@ -24,6 +28,14 @@ public:
 			bits = m_words[group];
 		}
 		return std::min(end, group * 32u + static_cast<u32>(std::countr_zero(bits)));
+	}
+	// Snapshot only the current group. The visitor may discover new
+	// members in later groups before traversal reaches them.
+	static constexpr u32 GROUP_BITS = 32;
+	template<class Visit> void forEachCommon(const NativePageWords& other, Visit&& visit) const {
+		for (u32 i = 0; i < m_words.size(); ++i)
+			for (u32 bits = m_words[i] & other.m_words[i]; bits; bits &= bits - 1u)
+				visit(i * GROUP_BITS + std::countr_zero(bits));
 	}
 	bool operator[](u32 index) const { return (m_words[index / 32] >> (index % 32)) & 1u; }
 	template<class Visit> void forEach(Visit&& visit) const {

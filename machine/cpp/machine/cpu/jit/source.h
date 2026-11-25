@@ -75,7 +75,7 @@ struct NativeCompilationSource {
 	u32 firstPc = 0u, lastPc = ~0u;
 	NativePageWords roots, available;
 	std::bitset<DECODED_PAGE_WORDS> queued;
-	std::bitset<DECODED_PAGE_WORDS> leaders;
+	NativePageWords leaders;
 	std::array<u32, DECODED_PAGE_WORDS> pending;
 	size_t pendingCount = 0, discoveredCount = 0;
 	bool discoveryQueued = false;

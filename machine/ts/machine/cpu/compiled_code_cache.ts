@@ -1,3 +1,4 @@
+import { nextSetBit } from '../../common/bitset';
 import { COMPILED_BLOCK_MAX_INSTRUCTIONS, type CompiledBlock, type CompiledBlockExitSite } from './compiled_block';
 import { DECODED_PAGE_WORDS, DecodedDispatchOp, type DecodedInstructionPage } from './execution_image';
 import type { CompiledRegion } from './compiled_region';
@@ -83,15 +84,10 @@ export class CompiledCodeCache {
 		if (cache === null || cache.entryCount === 0) return;
 		const firstEntry = Math.max(0, firstWord - 2 * (COMPILED_BLOCK_MAX_INSTRUCTIONS + 1));
 		const endEntry = Math.min(DECODED_PAGE_WORDS, endWord);
-		for (let group = firstEntry >>> 5; group * 32 < endEntry; ++group) {
-			let mask = group === (firstEntry >>> 5) ? -1 << (firstEntry & 31) : -1;
-			for (let bits = cache.occupied[group] & mask; bits !== 0; bits = cache.occupied[group] & mask) {
-				const low = bits & -bits, word = group * 32 + 31 - Math.clz32(low);
-				if (word >= endEntry) return;
-				const block = cache.entries[word]!;
-				if (word + block.sourceWords > firstWord) this.retireRegion(block.region);
-				mask &= ~low;
-			}
+		for (let word = nextSetBit(cache.occupied, firstEntry, endEntry); word < endEntry;
+			word = nextSetBit(cache.occupied, word + 1, endEntry)) {
+			const block = cache.entries[word]!;
+			if (word + block.sourceWords > firstWord) this.retireRegion(block.region);
 		}
 	}
 

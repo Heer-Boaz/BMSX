@@ -502,6 +502,31 @@ void crossPageWideDependenciesRemainOwned() {
 		"the adaptive compilation worker also publishes both pages in one region");
 }
 
+void coldPreparationPublishesLengthSplitEntries() {
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
+	image.functions = {{.firstWord=0, .wordCount=1}};
+	const auto initial = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	const u32 first = DECODED_PAGE_WORDS - (initial.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const u32 length = 2u * NATIVE_BLOCK_MAX_INSTRUCTIONS + 1u;
+	image.functions[0] = {.firstWord=first, .wordCount=length};
+	for (u32 word = first; word < first + length - 1u; ++word)
+		writeInstruction(image.text, word, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, first + length - 1u, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::System, image));
+	auto& cpu = machine.runtime.machine.cpu;
+	cpu.prepareSystemNativeCode();
+	const u32 pc = machine.rom.textAddress + first * INSTRUCTION_BYTES;
+	const auto* head = entryAt(cpu, pc);
+	require(head, "cold preparation installs the long straight-line body");
+	for (u32 word = NATIVE_BLOCK_MAX_INSTRUCTIONS; word < length; word += NATIVE_BLOCK_MAX_INSTRUCTIONS) {
+		const auto* split = entryAt(cpu, pc + word * INSTRUCTION_BYTES);
+		require(split && split->region == head->region, "a newly discovered length split is published in the same region");
+	}
+}
+
 void verifiedSinglePagePreparationSharesTheColdBatch() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
@@ -763,6 +788,7 @@ int main() {
 		preparationPreservesConfiguredObservation();
 		preparationLeavesFetchFaultsAtExecution();
 		crossPageWideDependenciesRemainOwned();
+		coldPreparationPublishesLengthSplitEntries();
 		verifiedSinglePagePreparationSharesTheColdBatch();
 		adaptiveBranchSelectsExecutedDestinations(false);
 		adaptiveBranchSelectsExecutedDestinations(true);

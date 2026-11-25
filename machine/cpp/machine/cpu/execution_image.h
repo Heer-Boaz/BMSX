@@ -123,7 +123,7 @@ struct DecodedInstructionPage {
 	std::array<std::bitset<DECODED_PAGE_WORDS>, CARTRIDGE_SLOT_COUNT> queuedNativeRoots;
 #endif
 	// Structural entry points on immutable code outlive a compiled region.
-	std::bitset<DECODED_PAGE_WORDS> nativeSourceLeaders;
+	NativePageWords nativeSourceLeaders;
 	NativeFieldProofFeedback fieldProofFeedback;
 	// Borrowed image-lifetime dispatch cells. Retiring regions zeros entries,
 	// but leaves the cells available to suspended native continuations.
