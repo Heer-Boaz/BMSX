@@ -8,7 +8,7 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { MAPPED_BUS_INSTRUCTION_FETCH, MAPPED_BUS_MASTER_CPU, mappedBusSignalsForCartridgeSlot } from '../../machine/ts/machine/memory/bus_signals';
-import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
+import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
@@ -59,6 +59,26 @@ test('instruction fetch select retains data selector and explicit cartridge sock
 			assert.equal(memory.readMappedBusU32LE(CART_ROM_BASE, signals | MAPPED_BUS_INSTRUCTION_FETCH), slot === 0 ? 0x44332211 : 0x88776655);
 		}
 	}
+});
+
+test('straight-line execution across a page publishes its exact grant before a forbidden successor fetch', () => {
+	const { cpu, memory } = machine(CpuExecutionBackend.Interpreter, CART_RAM_SIZE);
+	const start = CART_MMIO_BASE - MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
+	const count = (CART_MMIO_BASE - start) / INSTRUCTION_BYTES;
+	const code = new Uint8Array(count * INSTRUCTION_BYTES);
+	for (let word = 0; word < count; ++word) {
+		writeInstruction(code, word, OpCode.K1, 0, 0, 0);
+		memory.cartridgeController.writeU32(start + word * INSTRUCTION_BYTES,
+			readLE32(code, word * INSTRUCTION_BYTES), mappedBusSignalsForCartridgeSlot(0));
+	}
+	jump(cpu, start);
+	assert.equal(cpu.runUntilDepth(0, count * BASE_CYCLES[OpCode.K1]), RunResult.Yielded);
+	assert.equal(cpu.rootThread.currentFrame!.pc, CART_MMIO_BASE);
+	assert.equal(cpu.lastPc, CART_MMIO_BASE - INSTRUCTION_BYTES);
+	assert.equal(cpu.instructionBudgetRemaining, 0);
+	assert.equal(cpu.readCauseWord(), 0);
+	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+	fault(cpu, memory, CART_MMIO_BASE, CART_MMIO_BASE);
 });
 
 test('a warmed native comparison faults before fetching its skipped MMIO successor', () => {

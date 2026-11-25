@@ -1899,36 +1899,35 @@ dispatch_bound_page:
 
 dispatch_decode:
 			const u32 pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
-			u8 refreshState = decodedPage->refreshState[pageOffset];
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			[[maybe_unused]] const bool rewritten = (refreshState & DECODED_REFRESH_DECODE) != 0u
-				&& decodedPage->words[pageOffset].width != 0u;
-#endif
-			if ((Instrumented
-					? (refreshState & DECODED_REFRESH_DECODE)
-					: refreshState) != 0u) {
-				PUBLISH_SCALAR_FRONTIER();
-				if (!decodeInstruction(*frame, *decodedPage, pageOffset, pc, !Instrumented)) {
-					continue;
-				}
-				refreshState = decodedPage->refreshState[pageOffset];
-				if constexpr (!Instrumented) publishedTop = registerTop = frame->readWindow(FrameField::Top);
-			}
 			decoded = &decodedPage->words[pageOffset];
+			const u8 refresh = decodedPage->refreshState[pageOffset];
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			[[maybe_unused]] bool rewritten = false;
+#endif
+			if constexpr (!Instrumented) canReuseFrame = true;
+			if ((Instrumented ? (refresh & DECODED_REFRESH_DECODE) : refresh) != 0u) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				rewritten = (refresh & DECODED_REFRESH_DECODE) && decoded->width != 0u;
+#endif
+				PUBLISH_SCALAR_FRONTIER();
+				if (!decodeInstruction(*frame, *decodedPage, pageOffset, pc, !Instrumented)) continue;
+				if constexpr (!Instrumented) {
+					canReuseFrame = !(decodedPage->refreshState[pageOffset] & DECODED_REFRESH_DECODE);
+					publishedTop = registerTop = frame->readWindow(FrameField::Top);
+				}
+			}
 			m_currentInstructionPc = pc;
 			nextPc = pc + static_cast<u32>(decoded->width) * INSTRUCTION_BYTES;
 			if constexpr (Instrumented) frame->writeControl(FrameField::Pc, nextPc);
 			else scalarFrame = frame;
 			m_lastExecutionDomainId = image->executionDomainId;
-			lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
+			lastPc = nextPc - INSTRUCTION_BYTES;
 			uint8_t dispatchOp;
 			if constexpr (Instrumented) {
 				dispatchOp = decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
 					? decoded->dispatchOp : decoded->op;
 			} else {
 				dispatchOp = decoded->dispatchOp;
-				// Cacheable instruction reads cannot raise a device edge during fetch.
-				canReuseFrame = (refreshState & DECODED_REFRESH_DECODE) == 0u;
 			}
 			instructionBudgetRemaining -= decoded->baseCycles;
 

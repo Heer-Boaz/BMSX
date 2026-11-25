@@ -2025,7 +2025,7 @@ export class CPU implements MappedPageInvalidator {
 							this.enterPendingInterrupt();
 							continue;
 						}
-						const pc = scalarFrame === null ? frame.pc : nextPc;
+						let pc = scalarFrame === null ? frame.pc : nextPc;
 						if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) {
 							this.cop0Words[COP0_BAD_ADDRESS] = pc;
 							this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
@@ -2037,42 +2037,50 @@ export class CPU implements MappedPageInvalidator {
 							continue;
 						}
 						const page = this.decodedPageForFrame(frame, pc);
-						const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
-						const refreshState = page.refreshState[pageOffset];
-						const rewritten = (refreshState & DECODED_REFRESH_DECODE) !== 0
-							&& page.widths[pageOffset] !== 0;
-						if (refreshState !== 0) {
+						for (;;) {
+							const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
+							const refreshState = page.refreshState[pageOffset];
+							let rewritten = false, cacheableFetch = true;
+							if (refreshState !== 0) {
+								rewritten = (refreshState & DECODED_REFRESH_DECODE) !== 0 && page.widths[pageOffset] !== 0;
 								if (scalarFrame !== null) { this.publishScalarFrontier(scalarFrame, nextPc); scalarFrame = null; }
-							if (!this.decodeInstruction(frame, page, pageOffset, pc, true)) continue;
-						}
-						const width = page.widths[pageOffset];
-						const dispatchOp = page.dispatchOps[pageOffset];
-						this.currentInstructionPc = pc;
-						nextPc = (pc + width * INSTRUCTION_BYTES) >>> 0;
-						if (SCALAR_LOCAL_PC[dispatchOp] || (dispatchOp === OpCode.MOV && page.c[pageOffset] <= ValueMoveKind.FloatFromBits)) {
+								if (!this.decodeInstruction(frame, page, pageOffset, pc, true)) break;
+								cacheableFetch = (page.refreshState[pageOffset] & DECODED_REFRESH_DECODE) === 0;
+							}
+							const width = page.widths[pageOffset];
+							const dispatchOp = page.dispatchOps[pageOffset];
+							this.currentInstructionPc = pc;
+							nextPc = (pc + width * INSTRUCTION_BYTES) >>> 0;
+							if (SCALAR_LOCAL_PC[dispatchOp] || (dispatchOp === OpCode.MOV && page.c[pageOffset] <= ValueMoveKind.FloatFromBits)) {
 								if (scalarFrame === null) this.scalarRegisterTop = frame.top;
-							scalarFrame = frame;
-						} else {
+								scalarFrame = frame;
+							} else {
 								if (scalarFrame === null) frame.pc = nextPc;
 								else this.publishScalarFrontier(frame, nextPc);
-							scalarFrame = null;
-						}
-						this.lastExecutionDomainId = image.executionDomainId;
-						this.lastPc = (pc + ((width - 1) * INSTRUCTION_BYTES)) >>> 0;
-						this.instructionBudgetRemaining -= page.dispatchCycles[pageOffset];
-						const tableReceiver = this.executeInstruction(
-							frame,
-							page,
-							pageOffset,
-							dispatchOp,
-							targetDepth,
-							rewritten,
-						);
-						if (tableReceiver !== undefined) {
-							if (tableReceiver === ALLOCATION_PARKED) return RunResult.ParkedAllocation;
-							this.publishScalarFrontier(frame, nextPc);
-							scalarFrame = null;
-							this.finishTableRead(frame, page.a[pageOffset], tableReceiver, valueString(image.constWords[page.c[pageOffset]]), this.tableLookupResult);
+								scalarFrame = null;
+							}
+							this.lastExecutionDomainId = image.executionDomainId;
+							this.lastPc = (nextPc - INSTRUCTION_BYTES) >>> 0;
+							this.instructionBudgetRemaining -= page.dispatchCycles[pageOffset];
+							const tableReceiver = this.executeInstruction(
+								frame,
+								page,
+								pageOffset,
+								dispatchOp,
+								targetDepth,
+								rewritten,
+							);
+							if (tableReceiver !== undefined) {
+								if (tableReceiver === ALLOCATION_PARKED) return RunResult.ParkedAllocation;
+								this.publishScalarFrontier(frame, nextPc);
+								scalarFrame = null;
+								this.finishTableRead(frame, page.a[pageOffset], tableReceiver, valueString(image.constWords[page.c[pageOffset]]), this.tableLookupResult);
+							}
+							// Only straight-line scalar operations retain the local frontier.
+							// An uncached bus fetch can itself raise a device edge.
+							if (scalarFrame === null || !cacheableFetch || this.instructionBudgetRemaining <= 0
+								|| ((pc ^ nextPc) & ~MAPPED_PAGE_BYTE_MASK) !== 0) break;
+							pc = nextPc;
 						}
 					}
 				} catch (error) {
