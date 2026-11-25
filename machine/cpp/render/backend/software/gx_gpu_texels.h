@@ -9,6 +9,8 @@
 #if defined(__ARM_NEON)
 #include <arm_neon.h>
 #include <bit>
+#elif defined(__SSE2__)
+#include <emmintrin.h>
 #endif
 
 namespace bmsx {
@@ -88,25 +90,25 @@ struct GxGpuSoftwareRectangleTexture {
 	const GxGpuSoftwareState& software;
 	GxGpuSoftwareTextureSource source;
 	i32 uStep;
-#if defined(__ARM_NEON)
-	// Adjacent pixels read adjacent texels: no X flip and an identity U window.
+	const u16* clutRow;
 	bool adjacentU;
+#if defined(__ARM_NEON)
 	GxGpuSoftwareClut4Lanes clut4;
 #endif
 
 	GxGpuSoftwareRectangleTexture(const GxGpuSoftwareState& software, const GxGpuSoftwareTextureSource& source, i32 uStep)
-		: software(software), source(source), uStep(uStep) {
+		: software(software), source(source), uStep(uStep),
+		  clutRow(source.clutWords + gxGpuSoftwareVramIndex(software, 0, source.clutBaseY)),
+		  adjacentU(uStep == 1 && source.textureWindowAndX == 0xffu && source.textureWindowOrX == 0u) {
 #if defined(__ARM_NEON)
-		adjacentU = uStep == 1 && source.textureWindowAndX == 0xffu && source.textureWindowOrX == 0u;
-		if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE4) {
+		if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE4)
 			clut4 = loadGxGpuSoftwareClut4Lanes(software, source);
-		}
 #endif
 	}
 };
 
 // Texels along one rectangle row: v is fixed and u steps per pixel.
-// operator() is the exact per-pixel fetch. On NEON, fetch8() returns the next
+// operator() is the exact per-pixel fetch. On vector hosts, fetch8() returns the next
 // eight texels at once when they are adjacent in one VRAM row (adjacentU and
 // no U or VRAM X wrap) and otherwise falls back to eight exact fetches; both
 // advance u identically.
@@ -114,27 +116,27 @@ template<u32 TextureMode>
 struct GxGpuSoftwareRectangleTexels {
 	const GxGpuSoftwareRectangleTexture<TextureMode>& texture;
 	i32 u;
-	i32 v;
-#if defined(__ARM_NEON)
 	const u16* row;
-#endif
 
 	GxGpuSoftwareRectangleTexels(const GxGpuSoftwareRectangleTexture<TextureMode>& texture, i32 u, i32 v)
-		: texture(texture), u(u), v(v) {
-#if defined(__ARM_NEON)
-		const GxGpuSoftwareTextureSource& source = texture.source;
+		: texture(texture), u(u) {
+		const auto& source = texture.source;
 		row = source.textureWords + gxGpuSoftwareVramIndex(texture.software, 0,
 			static_cast<i32>(source.pageY + gxGpuSoftwareTextureWindowCoord(v, source.textureWindowAndY, source.textureWindowOrY)));
-#endif
 	}
 
 	u32 operator()() {
-		const GxGpuSoftwareTextureSource& source = texture.source;
-		const u32 sampleWord = sampleGxGpuSoftwareTextureWord<TextureMode>(texture.software, source.textureWords, source.clutWords, u, v,
-			source.pageX, source.pageY, source.textureWindowAndX, source.textureWindowAndY, source.textureWindowOrX, source.textureWindowOrY,
-			source.clutBaseX, source.clutBaseY);
+		const auto& source = texture.source;
+		const u32 coord = gxGpuSoftwareTextureWindowCoord(u, source.textureWindowAndX, source.textureWindowOrX);
 		u += texture.uStep;
-		return sampleWord;
+		constexpr u32 xMask = GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u;
+		if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE4) {
+			const u32 packed = row[(source.pageX + (coord >> 2)) & xMask];
+			return texture.clutRow[(source.clutBaseX + ((packed >> ((coord & 3) * 4)) & 15u)) & xMask];
+		} else if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE8) {
+			const u32 packed = row[(source.pageX + (coord >> 1)) & xMask];
+			return texture.clutRow[(source.clutBaseX + ((packed >> ((coord & 1) * 8)) & 255u)) & xMask];
+		} else return row[(source.pageX + coord) & xMask];
 	}
 
 #if defined(__ARM_NEON)
@@ -175,6 +177,37 @@ struct GxGpuSoftwareRectangleTexels {
 			samples[lane] = static_cast<u16>((*this)());
 		}
 		return vld1q_u16(samples);
+	}
+#elif defined(__SSE2__)
+	__m128i fetch8() {
+		constexpr u32 xMask = GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u;
+		const auto& source = texture.source;
+		const u32 coord = static_cast<u32>(u) & 255u;
+		if (texture.adjacentU && coord <= 248u) {
+			if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE4) {
+				// Eight indices span two or three GX words. Fetch exactly those
+				// words, with independent X wrapping, before gathering the CLUT.
+				const u32 x = source.pageX + (coord >> 2);
+				u32 packed = row[x & xMask] | (static_cast<u32>(row[(x + 1u) & xMask]) << 16);
+				const u32 shift = (coord & 3u) * 4u;
+				if (shift) packed = (packed >> shift) | (static_cast<u32>(row[(x + 2u) & xMask]) << (32u - shift));
+				const u16* palette = texture.clutRow + source.clutBaseX; // CLUT X is 16-word aligned.
+				u += 8;
+				return _mm_setr_epi16(palette[packed & 15], palette[(packed >> 4) & 15],
+					palette[(packed >> 8) & 15], palette[(packed >> 12) & 15],
+					palette[(packed >> 16) & 15], palette[(packed >> 20) & 15],
+					palette[(packed >> 24) & 15], palette[packed >> 28]);
+			} else if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_DIRECT16) {
+				const u32 x = (source.pageX + coord) & xMask;
+				if (x + 7u <= xMask) {
+					u += 8;
+					return _mm_loadu_si128(reinterpret_cast<const __m128i*>(row + x));
+				}
+			}
+		}
+		alignas(16) u16 gathered[8];
+		for (u16& sample : gathered) sample = static_cast<u16>((*this)());
+		return _mm_load_si128(reinterpret_cast<const __m128i*>(gathered));
 	}
 #endif
 };

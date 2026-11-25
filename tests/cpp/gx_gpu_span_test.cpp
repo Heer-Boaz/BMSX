@@ -1,5 +1,5 @@
 // The span writers must store exactly what one scalar pixel write per pixel
-// stores. On NEON builds this compares the vector paths with those scalar
+// stores. On vector builds this compares the vector paths with those scalar
 // oracles; elsewhere it covers run splitting, sampler order and accumulators.
 #include "render/backend/gx_gpu_render_rules.h"
 #include "render/backend/software/gx_gpu_span.h"
@@ -141,7 +141,7 @@ void compareTexturedSpans(const char* name, GxGpuSoftwareState& expected, GxGpuS
 		});
 }
 
-#if defined(__ARM_NEON)
+#if defined(__ARM_NEON) || defined(__SSE2__)
 // fetch8() must return, and advance past, exactly the next eight exact fetches.
 template<u32 TextureMode>
 void compareRectangleTexels(const char* name, GxGpuSoftwareState& software, Random& random, size_t& fetches) {
@@ -161,12 +161,19 @@ void compareRectangleTexels(const char* name, GxGpuSoftwareState& software, Rand
 					for (const i32 v : vs) {
 						for (i32 u = 0; u < 264; u += 1) {
 							GxGpuSoftwareRectangleTexels<TextureMode> vector(texture, u, v);
-							GxGpuSoftwareRectangleTexels<TextureMode> scalar(texture, u, v);
+							i32 expectedU = u;
 							for (int group = 0; group < 3; group += 1) {
 								alignas(16) u16 lanes[8];
+#if defined(__ARM_NEON)
 								vst1q_u16(lanes, vector.fetch8());
+#else
+								_mm_store_si128(reinterpret_cast<__m128i*>(lanes), vector.fetch8());
+#endif
 								for (const u16 lane : lanes) {
-									const u32 expected = scalar();
+									const u32 expected = sampleGxGpuSoftwareTextureWord<TextureMode>(software, source.textureWords, source.clutWords,
+										expectedU, v, source.pageX, source.pageY, window[0], window[1], window[2], window[3],
+										source.clutBaseX, source.clutBaseY);
+									expectedU += uStep;
 									if (lane != expected) {
 										char message[200];
 										std::snprintf(message, sizeof(message),
@@ -175,7 +182,7 @@ void compareRectangleTexels(const char* name, GxGpuSoftwareState& software, Rand
 										throw std::runtime_error(message);
 									}
 								}
-								require(vector.u == scalar.u, std::string(name) + " fetch8 advanced u differently");
+								require(vector.u == expectedU, std::string(name) + " fetch8 advanced u differently");
 								fetches += 8u;
 							}
 						}
@@ -216,12 +223,12 @@ int main() {
 	compareTexturedSpans<false, true, true, false>("modulated gouraud semi", expected, actual, random, spans);
 	compareTexturedSpans<false, false, true, true>("modulated gouraud dither", expected, actual, random, spans);
 	compareTexturedSpans<false, true, true, true>("modulated gouraud dither semi", expected, actual, random, spans);
-#if defined(__ARM_NEON)
+#if defined(__ARM_NEON) || defined(__SSE2__)
 	size_t fetches = 0u;
 	compareRectangleTexels<GX_GPU_TEXTURE_MODE_DIRECT16>("direct16", expected, random, fetches);
 	compareRectangleTexels<GX_GPU_TEXTURE_MODE_PALETTE4>("palette4", expected, random, fetches);
 	compareRectangleTexels<GX_GPU_TEXTURE_MODE_PALETTE8>("palette8", expected, random, fetches);
-	std::printf("gx gpu span tests passed: %zu NEON spans and %zu rectangle texels match the scalar oracle\n", spans, fetches);
+	std::printf("gx gpu span tests passed: %zu vector spans and %zu rectangle texels match the scalar oracle\n", spans, fetches);
 #else
 	std::printf("gx gpu span tests passed: %zu scalar spans\n", spans);
 #endif
