@@ -73,30 +73,12 @@ void NativeCpuRunState::publishActivation(u32 pc) noexcept {
 	firstPendingFrame = nullptr;
 }
 
-NativeRomCallBinding* CPU::bindNativeRomFunction(Blua32ExecutionImage& image, u32 functionAddress) const noexcept {
-	auto& binding = image.nativeRomCallBindings[
-		(functionAddress / BLUA32_FUNCTION_RECORD_SIZE) % NativeRomCallBinding::slotCount];
-	if (binding.functionAddress != functionAddress) {
-		// Cells belong to this immutable prototype and die with the image.
-		// Replacing the prototype drops both of the old bindings.
-		if (!image.romFunctions.mappedCode) {
-			binding = {functionAddress, image.romFunctions.find(functionAddress)->entry, {}};
-		} else {
-			Span<const u8> view;
-			if (!m_memory.bindRomByteView(functionAddress, BLUA32_FUNCTION_RECORD_SIZE, image.executionDomainId == 1, view))
-				return nullptr;
-			binding = {functionAddress, FunctionEntry::fromRom(view.data()), {}};
-		}
-	}
-	return &binding;
-}
-
 std::optional<NativeFixedCallPlan> CPU::captureNativeFixedCall(Blua32ExecutionImage& image, u32 prototype, int supplied) const {
 	const auto version = image.romFunctions.find(prototype);
 	if (!version) return std::nullopt;
 	const FunctionEntry* function = &version->entry;
 	if (image.romFunctions.mappedCode) {
-		const auto* binding = bindNativeRomFunction(image, prototype);
+		const auto* binding = image.bindRomFunction(m_memory, prototype);
 		if (!binding || binding->entry.codeAddress != function->codeAddress) return std::nullopt;
 		function = &binding->entry;
 	}
@@ -161,14 +143,14 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 	if (binding.domain() != image.executionDomainId) return nullptr;
 	const u32 functionAddress = cpu.m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
 
-	NativeRomCallBinding* romBinding = nullptr;
+	RomCallBinding* romBinding = nullptr;
 	FunctionEntry latched;
 	const FunctionEntry* function;
 	if (binding.latched()) {
 		latched = ClosureRecord::readLatchedEntry(cpu.m_memory, closure);
 		function = &latched;
 	} else {
-		romBinding = cpu.bindNativeRomFunction(image, functionAddress);
+		romBinding = image.bindRomFunction(cpu.m_memory, functionAddress);
 		if (!romBinding) return nullptr;
 		function = &romBinding->entry;
 	}

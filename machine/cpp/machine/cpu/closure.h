@@ -79,7 +79,6 @@ struct BindingFlags {
 	constexpr bool latched() const { return (bits & CLOSURE_LATCHED_PROTOTYPE) != 0u; }
 };
 void initialize(Memory&, u32 address, const FunctionPrototype&, u8 white, u32 count, bool canonical, bool latched);
-FunctionCallEntry readCallEntry(const Memory&, u32 address, BindingFlags, const Blua32RomFunctionDirectory&);
 FunctionPrototype readBinding(const Memory&, u32 address, BindingFlags, const Blua32RomFunctionDirectory&);
 FunctionEntry readLatchedEntry(const Memory&, u32 address);
 u32 captureCount(const Memory&, u32 address);

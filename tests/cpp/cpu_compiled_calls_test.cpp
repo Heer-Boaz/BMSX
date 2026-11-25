@@ -1820,7 +1820,7 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 	// slot. The earlier record's entry cell stays published throughout.
 	constexpr size_t replacement = 65;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	static_assert(replacement - 1 == NativeRomCallBinding::slotCount);
+	static_assert(replacement - 1 == RomCallBinding::slotCount);
 #endif
 	test::Blua32TestImage image;
 	image.text.resize(4 * MAPPED_PAGE_BYTE_SIZE);
@@ -1872,8 +1872,8 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 			if (machine == &generated) {
 				const auto* owner = machine->cpu.activeThread()->currentFrame->executionImage;
 				const auto address = machine->rom.functionAddresses[1];
-				const auto& incumbent = owner->nativeRomCallBindings[
-					(address / BLUA32_FUNCTION_RECORD_SIZE) % NativeRomCallBinding::slotCount];
+				const auto& incumbent = owner->romCallBindings[
+					(address / BLUA32_FUNCTION_RECORD_SIZE) % RomCallBinding::slotCount];
 				require(incumbent.functionAddress == address && incumbent.entryCells[0] && *incumbent.entryCells[0],
 					"the incumbent cache entry has a live native target before replacement");
 			}

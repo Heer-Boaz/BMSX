@@ -68,6 +68,16 @@ struct Blua32FunctionRecordLatch {
 	u32 upvalueCount = 0;
 };
 
+// ROM prototype words and image-owned dispatch cell addresses, never a closure or code pointer.
+struct RomCallBinding {
+	static constexpr u32 slotCount = 64u;
+	std::optional<u32> functionAddress;
+	FunctionEntry entry{};
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	std::array<void* const*, CARTRIDGE_SLOT_COUNT> entryCells{};
+#endif
+};
+
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 class NativeBlock;
 class NativeCodeRegion;
@@ -78,14 +88,6 @@ struct NativeCodeSourcePage {
 	DecodedInstructionPage* page;
 	u64 key;
 	bool immutable = false;
-};
-
-// ROM prototype words and image-owned dispatch cell addresses, never a closure or code pointer.
-struct NativeRomCallBinding {
-	static constexpr u32 slotCount = 64u;
-	std::optional<u32> functionAddress;
-	FunctionEntry entry{};
-	std::array<void* const*, CARTRIDGE_SLOT_COUNT> entryCells{};
 };
 
 struct NativeBlockPage {
@@ -177,15 +179,21 @@ struct Blua32ExecutionImage {
 	u32 globalMapBase = 0;
 	u32 globalNameCount = 0, systemNameCount = 0;
 	Blua32RomFunctionDirectory romFunctions{};
+	std::array<RomCallBinding, RomCallBinding::slotCount> romCallBindings{};
+	RomCallBinding* bindRomFunction(const Memory& memory, u32 address) {
+		auto& binding = romCallBindings[(address / BLUA32_FUNCTION_RECORD_SIZE) % RomCallBinding::slotCount];
+		return binding.functionAddress == address ? &binding : loadRomFunction(memory, address, binding);
+	}
 	u32 globalMapBytes() const { return 4u * (globalNameCount + systemNameCount); }
 	bool admitsFunctionPc(u32 record, u32 pc) const;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	NativeImageWarmup nativeWarmup;
 	// Dispatch storage outlives the decoded descriptors which borrow its cells.
 	std::unique_ptr<NativeCodeLookup> nativeCodeLookup;
-	std::array<NativeRomCallBinding, NativeRomCallBinding::slotCount> nativeRomCallBindings{};
 #endif
 	DecodedPageDirectory decodedPages;
+private:
+	RomCallBinding* loadRomFunction(const Memory&, u32 address, RomCallBinding&);
 };
 
 } // namespace bmsx

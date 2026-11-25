@@ -676,14 +676,12 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 		if (!image) {
 			continue;
 		}
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		// The key's low word is the mapped address, even for a socket-specific
 		// ROM install. Any execution image may have used system ROM records.
 		if (address < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE
 			|| (address >= CART_ROM_BASE && address < CART_ROM_END)) {
-			image->nativeRomCallBindings.fill({});
+			image->romCallBindings.fill({});
 		}
-#endif
 		for (const auto& entry : image->decodedPages.entries()) {
 			auto& [key, page] = *entry;
 			if (key >= invalidationStart && key < endKey) {
@@ -2742,7 +2740,11 @@ int CPU::closeUpvalues(CallFrame& frame, u32 firstSlot) {
 CPU::ClosureActivation CPU::resolveClosureActivation(u32 closure) {
 	const ClosureRecord::BindingFlags binding{m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
 	auto* image = executionImageForDomain(binding.domain());
-	return {image, ClosureRecord::readCallEntry(m_memory, closure, binding, image->romFunctions)};
+	const u32 prototype = m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
+	if (binding.latched()) return {image, {prototype, ClosureRecord::readLatchedEntry(m_memory, closure)}};
+	const auto* rom = image->bindRomFunction(m_memory, prototype);
+	// No ROM driver: the sampled entry words are zero.
+	return {image, {prototype, rom ? rom->entry : FunctionEntry{}}};
 }
 
 CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,

@@ -11,6 +11,21 @@
 
 namespace bmsx {
 
+RomCallBinding* Blua32ExecutionImage::loadRomFunction(const Memory& memory, u32 address, RomCallBinding& binding) {
+	FunctionEntry entry;
+	if (romFunctions.mappedCode) {
+		Span<const u8> view;
+		if (!memory.bindRomByteView(address, BLUA32_FUNCTION_RECORD_SIZE, executionDomainId == 1, view))
+			return nullptr;
+		entry = FunctionEntry::fromRom(view.data());
+	} else {
+		entry = romFunctions.find(address)->entry;
+	}
+	// Slot replacement also drops continuation cells belonging to the old prototype.
+	binding = {address, entry};
+	return &binding;
+}
+
 DecodedInstructionPage& DecodedPageDirectory::bind(const MappedPageBinding& binding) {
 	auto& group = m_groups[binding.key >> GROUP_SHIFT];
 	if (!group) group = std::make_unique<Group>();
