@@ -31,6 +31,24 @@ void storageAndFrames() {
 	slots.resize(29); require(slots.byteLength() == 145 && slots.get(28) == valueNil(), "growth zeros only new slots");
 	require(slots.get(1) == valueFloatBits(0xffa12345), "resize does not materialize a Float");
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	// An overlapping return moves its prefix before padding the destination.
+	// Exercise the same placement on a linear frame and across the RAM mirror.
+	for (u32 base : {0x400u, MAIN_RAM_SIZE - 8u}) {
+		ValueSpan window(memory, base, 0x800u, 6);
+		for (int i = 0; i < 6; ++i) window.set(i, valueInteger(i + 1));
+		auto target = window.subspan(1, 4);
+		target.copyFrom(window, 0, 0, 2, 2);
+		require(window.get(0) == valueInteger(1) && window.get(1) == valueInteger(1)
+			&& window.get(2) == valueInteger(2) && window.get(3) == valueNil()
+			&& window.get(4) == valueNil() && window.get(5) == valueInteger(6),
+			"return moves overlapping values and pads only the requested tail");
+	}
+	ValueSpan last(memory, MAIN_RAM_SIZE - 4u, 0x800u, 1);
+	memory.writeRamRecordWord(0, 0x12345678u);
+	memory.writeRamRecordByte(0x801u, static_cast<u8>(ValueTag::Integer));
+	last.copyFrom(nothing, 1, 0, 0, 1);
+	require(memory.readRamRecordWord(0) == 0 && memory.readRamRecordByte(0x801u) == 0,
+		"nil-only placement beyond a linear view uses the physical mirror");
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);

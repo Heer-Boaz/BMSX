@@ -67,9 +67,10 @@ public:
 		return linearPayload(index);
 	}
 	BasicValueSpan subspan(size_t first, size_t count) const {
-		if (m_ram) return BasicValueSpan(*m_ram, wordAddress() + static_cast<u32>(first) * sizeof(u32),
-			tagAddress() + static_cast<u32>(first), count, m_mirrored || first + count > m_size);
-		return first == 0 ? BasicValueSpan(m_words, m_tags, count) : BasicValueSpan(m_words + first, m_tags + first, count);
+		if (m_ram && (m_mirrored || first + count > m_size))
+			return BasicValueSpan(*m_ram, wordAddress() + static_cast<u32>(first) * sizeof(u32),
+				tagAddress() + static_cast<u32>(first), count, true);
+		return linearSubspan(first, count);
 	}
 	void clear(size_t first, size_t count) requires (!Constant) {
 		if (count == 0) return;
@@ -85,10 +86,14 @@ public:
 		clearLinear(first, count);
 		reportWrite(first, count);
 	}
-	void copyFrom(BasicValueSpan<true> source, size_t destination, size_t first, size_t count) requires (!Constant) {
-		if (count == 0) return;
-		if (!m_mirrored && m_ram && destination + count > m_size) {
-			subspan(destination, count).copyFrom(source, 0, first, count);
+	void copyFrom(BasicValueSpan<true> source, size_t destination, size_t first, size_t count, size_t padded = 0) requires (!Constant) {
+		const size_t extent = count + padded;
+		if (!m_mirrored && m_ram && destination + extent > m_size) {
+			subspan(destination, extent).copyFrom(source, 0, first, count, padded);
+			return;
+		}
+		if (count == 0) {
+			clear(destination, padded);
 			return;
 		}
 		if (!source.mirrored() && source.ram() && first + count > source.size()) {
@@ -106,29 +111,32 @@ public:
 				for (size_t i = count; i-- > 0;) set(destination + i, source.get(first + i));
 			else
 				for (size_t i = 0; i < count; ++i) set(destination + i, source.get(first + i));
+			clear(destination + count, padded);
 			return;
 		}
 		if constexpr (std::endian::native == std::endian::big) {
 			if ((m_ram == nullptr) != (source.ram() == nullptr)) {
 				for (size_t i = 0; i < count; ++i) set(destination + i, source.get(first + i));
+				clear(destination + count, padded);
 				return;
 			}
 		}
 		copyLinearFrom(destination, source, first, count);
-		if (count == 1) {
+		if (padded) clearLinear(destination + count, padded);
+		if (extent == 1) {
 			if (m_ram) m_ram->invalidateRamValueSlot(m_words + destination, m_tags + destination);
 			return;
 		}
-		reportWrite(destination, count);
+		reportWrite(destination, extent);
+	}
+	BasicValueSpan linearSubspan(size_t first, size_t count) const {
+		BasicValueSpan result(first ? m_words + first : m_words, first ? m_tags + first : m_tags, count);
+		result.m_ram = m_ram;
+		return result;
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// The CPU grant has already admitted and accounted for the linear RAM
 	// ranges. These operations do not call out to the bus or its observers.
-	BasicValueSpan admittedSubspan(size_t first, size_t count) const {
-		BasicValueSpan result(m_words + first, m_tags + first, count);
-		result.m_ram = m_ram;
-		return result;
-	}
 	u32 admittedPayload(size_t index) const {
 		return readLE32(reinterpret_cast<const u8*>(m_words + index));
 	}

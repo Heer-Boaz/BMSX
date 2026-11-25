@@ -14,7 +14,7 @@ inline void enterNativeActivation(NativeCpuRunState& run, const NativeBlockExitS
 	u32 closure, int stackBase, int varargBase, size_t capacity, int top, int cycles) noexcept {
 	auto& state = run.state;
 	callee.executionImage = state.frame->executionImage;
-	callee.registers = callee.thread->stack.admittedSubspan(stackBase, capacity);
+	callee.registers = callee.thread->stack.linearSubspan(stackBase, capacity);
 	callee.pendingNativeClosure = closure;
 	callee.pendingNativeStackBase = stackBase;
 	callee.pendingNativeVarargBase = varargBase;

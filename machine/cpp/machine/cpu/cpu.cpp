@@ -2765,8 +2765,8 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 	});
 	const auto [copied, padded] = placement.formals;
 	if (placement.relocatesFormals || !sharedStack)
-		frame->registers.copyFrom(caller.thread->stack, 0, callerArgBase, copied);
-	frame->registers.clear(copied, padded);
+		frame->registers.copyFrom(caller.thread->stack, 0, callerArgBase, copied, padded);
+	else frame->registers.clear(copied, padded);
 	if (placement.relocatesFormals) {
 		if (sharedStack)
 			m_activeThread->stack.clear(placement.argumentBase, copied);
@@ -2815,8 +2815,7 @@ void CPU::writeReturnValuesFromRegisters(CallFrame& frame, CallResultPlacement r
 	if (placement.count() > 0) {
 		ValueSpan& registers = ensureRegisterCapacity(frame, base + placement.count() - 1);
 		// Backing growth can relocate both views; their stack offsets stay fixed.
-		registers.copyFrom(source.registers, base, sourceBase, placement.copied);
-		registers.clear(base + placement.copied, placement.padded);
+		registers.copyFrom(source.registers, base, sourceBase, placement.copied, placement.padded);
 	}
 	frame.placeResultTop(result, placement.count());
 	instructionBudgetRemaining -= placement.count();
