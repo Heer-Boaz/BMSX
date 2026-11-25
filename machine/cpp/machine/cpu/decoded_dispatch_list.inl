@@ -1,0 +1,11 @@
+OP(FusedShlBxor)
+OP(FusedAddShl)
+OP(FusedShrBxor)
+OP(Observe)
+OP(ReservedMemory)
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+TIER(NativeWarm)
+TIER(NativeWarmBoundary)
+OP(NativeBlock)
+#endif
+OP(InvalidImageOperand)

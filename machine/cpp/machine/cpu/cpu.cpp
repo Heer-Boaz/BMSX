@@ -2021,7 +2021,9 @@ dispatch_instruction:
 					DISPATCH_CONTINUE();
 				case static_cast<u8>(DecodedDispatchOp::Observe):
 					goto dispatch_observe;
+#define DISPATCH_INTERNAL(name) case static_cast<u8>(DecodedDispatchOp::name):
 #include "machine/cpu/cpu_dispatch.inl"
+#undef DISPATCH_INTERNAL
 				}
 			} else {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -2045,9 +2047,33 @@ dispatch_instruction:
 					}
 				}
 #endif
+				// All selectors here are issued by decode or native publication.
+				// Keep one handler per selector; only the branch mechanism differs.
+#if defined(__GNUC__) && !defined(_MSC_VER)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+				static void* const targets[] = {
+#define OP(name) &&op_##name,
+#include "spec/blua32/opcode_list.inl"
+// Warm selectors resolve above and are never indexed here.
+#define TIER(name) nullptr,
+#include "machine/cpu/decoded_dispatch_list.inl"
+#undef TIER
+#undef OP
+				};
+				static_assert(std::size(targets) == DECODED_DISPATCH_OP_COUNT);
+				goto *targets[dispatchOp];
+#pragma GCC diagnostic pop
+#undef DISPATCH_LABEL
+#define DISPATCH_LABEL(name) op_##name:
+#define DISPATCH_INTERNAL(name) op_##name:
+				{
+#else
+#define DISPATCH_INTERNAL(name) case static_cast<u8>(DecodedDispatchOp::name):
 				switch (dispatchOp) {
+#endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-				case static_cast<u8>(DecodedDispatchOp::NativeBlock): {
+				DISPATCH_INTERNAL(NativeBlock) {
 					// The CPU thread owns code publication and source writes. With no
 					// intervening guest instruction, this is the same published entry;
 					// interrupt entry above cancels the retry before any handler runs.
@@ -2067,14 +2093,14 @@ dispatch_instruction:
 					goto dispatch_native_block;
 				}
 #endif
-				case static_cast<u8>(DecodedDispatchOp::ReservedMemory):
+				DISPATCH_INTERNAL(ReservedMemory)
 					PUBLISH_SCALAR_FRONTIER();
 					enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					DISPATCH_CONTINUE();
-				case static_cast<u8>(DecodedDispatchOp::Observe):
+				DISPATCH_INTERNAL(Observe)
 					goto dispatch_observe;
-				case static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor):
-				case static_cast<uint8_t>(DecodedDispatchOp::FusedShrBxor): {
+				DISPATCH_INTERNAL(FusedShlBxor)
+				DISPATCH_INTERNAL(FusedShrBxor) {
 					if (thread.stackRequiresScalar()) {
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;
@@ -2132,7 +2158,7 @@ dispatch_instruction:
 					PUBLISH_SCALAR_FRONTIER();
 					DISPATCH_CONTINUE();
 				}
-				case static_cast<uint8_t>(DecodedDispatchOp::FusedAddShl): {
+				DISPATCH_INTERNAL(FusedAddShl) {
 					if (thread.stackRequiresScalar()) {
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;
@@ -2186,6 +2212,7 @@ dispatch_instruction:
 					DISPATCH_CONTINUE();
 				}
 #include "machine/cpu/cpu_dispatch.inl"
+#undef DISPATCH_INTERNAL
 				}
 			}
 			goto dispatch_continue;

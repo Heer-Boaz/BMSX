@@ -1,4 +1,4 @@
-case static_cast<u8>(DecodedDispatchOp::InvalidImageOperand):
+DISPATCH_INTERNAL(InvalidImageOperand)
 	throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 
 DISPATCH_LABEL(WIDE) {

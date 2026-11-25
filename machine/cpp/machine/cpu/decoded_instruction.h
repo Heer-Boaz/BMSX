@@ -19,24 +19,15 @@ inline constexpr u8 DECODED_REFRESH_FUSION = 2u;
 inline constexpr u32 DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3u;
 
 enum class DecodedDispatchOp : uint8_t {
-	FusedShlBxor = OPCODE_COUNT,
-	FusedAddShl,
-	FusedShrBxor,
-	Observe,
-	ReservedMemory,
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	NativeWarm,
-	NativeWarmBoundary,
-	NativeBlock,
-#endif
-	InvalidImageOperand,
+	LastGuestOpcode = OPCODE_COUNT - 1u,
+#define OP(name) name,
+#define TIER(name) name,
+#include "machine/cpu/decoded_dispatch_list.inl"
+#undef TIER
+#undef OP
+	Count
 };
-
-inline constexpr size_t DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 6u
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	+ 3u
-#endif
-	;
+inline constexpr size_t DECODED_DISPATCH_OP_COUNT = static_cast<size_t>(DecodedDispatchOp::Count);
 
 inline constexpr bool decodedDispatchCanFuse(uint8_t op) {
 	return op == static_cast<uint8_t>(OpCode::SHL)
