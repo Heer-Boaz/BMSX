@@ -73,6 +73,14 @@ public:
 		if (index >= m_size) return valueNil(); // Missing language arguments are nil.
 		return m_values ? m_values[index] : m_slots.get(index);
 	}
+	void placeInto(ValueSpan& target, size_t base, size_t copied, size_t padded) const {
+		if (!m_values) {
+			target.copyFrom(m_slots, base, 0, copied, padded);
+			return;
+		}
+		for (size_t i = 0; i < copied; ++i) target.set(base + i, m_values[i]);
+		target.clear(base + copied, padded);
+	}
 	BuiltinArgsView tailFrom(size_t index) const noexcept {
 		if (index >= m_size) return {};
 		return m_values ? BuiltinArgsView(m_values + index, m_size - index)

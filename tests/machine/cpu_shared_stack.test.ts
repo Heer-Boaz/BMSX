@@ -31,6 +31,19 @@ test('copies between distinct windows of the same RAM in physical overlap order'
 	assert.equal(memory.ramWords[(offset >>> 2) + 1], 9);
 });
 
+test('overlapping return values move before nil padding, including at the physical RAM mirror', () => {
+	const { memory } = createTestSystemCpu(compileCoroutineTest('return true', 0));
+	const storage = new ValueSlots(0), window = new ValueSlots(0);
+	for (const offset of [DYNAMIC_RAM_BASE - RAM_BASE, MAIN_RAM_SIZE - 8]) {
+		storage.bindRam(memory, offset, 6);
+		for (let i = 0; i < 6; ++i) storage.setInteger(i, i + 1);
+		window.rebind(storage, 1, 4);
+		window.copyRangeFrom(storage, 0, 0, 2, 2);
+		assert.deepEqual(Array.from({ length: 6 }, (_, i) => storage.get(i)),
+			[valueInteger(1), valueInteger(1), valueInteger(2), valueNil(), valueNil(), valueInteger(6)]);
+	}
+});
+
 for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`fixed CALL reuses supplied slots and preserves only its lower caller prefix (${backend})`, () => {
 		const text = new Uint8Array(8 * INSTRUCTION_BYTES);

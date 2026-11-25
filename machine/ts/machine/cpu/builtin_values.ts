@@ -86,21 +86,20 @@ export class BuiltinArgsView {
 	}
 }
 export class BuiltinResults {
-	private readonly values = new ValueSlots(8);
+	public readonly slots = new ValueSlots(8);
 	public length = 0;
-	public clear(): void { this.values.clear(this.length); this.length = 0; }
+	public clear(): void { this.slots.clear(this.length); this.length = 0; }
 	public push(value: Value): void {
-		this.values.reserveCapacity(this.length + 1); this.values.set(this.length++, value);
+		this.slots.reserveCapacity(this.length + 1); this.slots.set(this.length++, value);
 	}
 	public setEncoded(index: number, tag: ValueTag, word: number): void {
-		this.values.reserveCapacity(index + 1); this.values.setEncoded(index, tag, word);
+		this.slots.reserveCapacity(index + 1); this.slots.setEncoded(index, tag, word);
 		if (index >= this.length) this.length = index + 1;
 	}
 	public setInteger(index: number, value: number): void { this.setEncoded(index, ValueTag.Integer, value >>> 0); }
 	public setFloatBits(index: number, bits: number): void { this.setEncoded(index, ValueTag.Float, bits); }
 	public setNil(index: number): void { this.setEncoded(index, ValueTag.Nil, 0); }
-	public copyTo(target: ValueSlots, first: number, count: number): void { target.copyRangeFrom(this.values, first, 0, count); }
-	public get(index: number): Value { return this.values.get(index); }
-	public getTag(index: number): ValueTag { return this.values.getTag(index); }
-	public getPayload(index: number): number { return this.values.getPayload(index); }
+	public get(index: number): Value { return this.slots.get(index); }
+	public getTag(index: number): ValueTag { return this.slots.getTag(index); }
+	public getPayload(index: number): number { return this.slots.getPayload(index); }
 }

@@ -2523,7 +2523,7 @@ export class CPU implements MappedPageInvalidator {
 		this.charge(this.closeUpvalues(frame));
 		const frameIndex = this.activeThread.frameDepth - 1;
 		if (frame.protectedContinuationIndex >= 0) {
-			this.finishProtectedCallFromRegisters(frame.protectedContinuationIndex, registers, a, total);
+			this.finishProtectedCall(frame.protectedContinuationIndex, registers, a, total);
 			frame.thread.leaveFrame();
 			this.resumeFrameBank();
 			return false;
@@ -2581,8 +2581,7 @@ export class CPU implements MappedPageInvalidator {
 		if (count !== 0) {
 			this.ensureRegisterCapacity(frame, a + count - 1);
 			const copied = Math.min(count, frame.varargCount);
-			frame.registers.copyRangeFrom(frame.thread.stackRegisters, a, frame.varargBase, copied);
-			frame.registers.clear(count - copied, a + copied);
+			frame.registers.copyRangeFrom(frame.thread.stackRegisters, a, frame.varargBase, copied, count - copied);
 		}
 		this.charge(count);
 		if (b === 0) frame.top = a + count;
@@ -3434,8 +3433,8 @@ export class CPU implements MappedPageInvalidator {
 		const copied = Math.min(numParams, count);
 		if (fromSlots) {
 			const slots = fromFrame ? args.thread.stackRegisters : args;
-			if (!shared || vararg) frame.registers.copyRangeFrom(slots, 0, first, copied);
-			frame.registers.clear(numParams - copied, copied);
+			if (!shared || vararg) frame.registers.copyRangeFrom(slots, 0, first, copied, numParams - copied);
+			else frame.registers.clear(numParams - copied, copied);
 			if (shared && vararg) thread.stackRegisters.clear(copied, argumentBase);
 			else if (extras !== 0) thread.stackRegisters.copyRangeFrom(slots, varargBase, first + numParams, extras);
 			this.charge(shared ? (vararg ? numParams : numParams - copied) : numParams + extras);
@@ -3540,33 +3539,7 @@ export class CPU implements MappedPageInvalidator {
 		if (targetCount > 0) {
 			const registers = this.ensureRegisterCapacity(frame, base + targetCount - 1);
 			const copiedCount = Math.min(sourceCount, targetCount);
-			if (copiedCount > 0) {
-				registers.copyRangeFrom(source, base, sourceBase, copiedCount);
-			}
-			for (let index = copiedCount; index < targetCount; index += 1) {
-				registers.setNil(base + index);
-			}
-		}
-		frame.setCallResultTop(base + targetCount, count);
-		this.charge(targetCount);
-	}
-
-	private writeReturnValuesFromBuiltinResults(
-		frame: CallFrame,
-		base: number,
-		count: number,
-		values: BuiltinResults,
-	): void {
-		const targetCount = selectedCallResultCount(count, values.length);
-		if (targetCount > 0) {
-			const registers = this.ensureRegisterCapacity(frame, base + targetCount - 1);
-			const copiedCount = Math.min(values.length, targetCount);
-			if (copiedCount > 0) {
-				values.copyTo(registers, base, copiedCount);
-			}
-			for (let index = copiedCount; index < targetCount; index += 1) {
-				registers.setNil(base + index);
-			}
+			registers.copyRangeFrom(source, base, sourceBase, copiedCount, targetCount - copiedCount);
 		}
 		frame.setCallResultTop(base + targetCount, count);
 		this.charge(targetCount);
@@ -3857,9 +3830,11 @@ export class CPU implements MappedPageInvalidator {
 				const registers = this.ensureRegisterCapacity(caller, callBase + count - 1);
 				registers.setBoolean(callBase, source !== null);
 				const copied = Math.min(sourceCount, count - 1);
-				if (source !== null) registers.copyRangeFrom(source, callBase + 1, sourceBase, copied);
-				else if (copied !== 0) registers.set(callBase + 1, thread.error);
-				for (let index = copied + 1; index < count; index += 1) registers.setNil(callBase + index);
+				if (source !== null) registers.copyRangeFrom(source, callBase + 1, sourceBase, copied, count - copied - 1);
+				else {
+					if (copied !== 0) registers.set(callBase + 1, thread.error);
+					registers.clear(count - copied - 1, callBase + copied + 1);
+				}
 			}
 			caller.setCallResultTop(callBase + count, returnCount);
 			thread.resumer = 0;
@@ -3892,7 +3867,7 @@ export class CPU implements MappedPageInvalidator {
 			try {
 				results.push(valueBool(false));
 				results.push(valueString(this.stringPool.intern(exceptionActive ? 'cannot resume coroutine across a hardware exception' : 'cannot resume non-suspended coroutine')));
-				this.writeReturnValuesFromBuiltinResults(caller, callBase, returnCount, results);
+				this.writeReturnValuesFromRegisters(caller, callBase, returnCount, results.slots, 0, results.length);
 			} finally { this.releaseBuiltinResults(results); }
 			return;
 		}
@@ -3962,7 +3937,7 @@ export class CPU implements MappedPageInvalidator {
 			builtinArgs.bind(detached ?? frame.registers, argumentBase, argCount);
 			this.callBuiltinFunction(id, builtinArgs, results, selectedCallResultCount(returnCount, -1));
 			if (this.activeThread.frameDepth > 0 && this.activeThread.currentFrame! === frame) {
-				this.writeReturnValuesFromBuiltinResults(frame, callBase, returnCount, results);
+				this.writeReturnValuesFromRegisters(frame, callBase, returnCount, results.slots, 0, results.length);
 			}
 		} finally {
 			this.releaseRegisterBuiltinArgs(builtinArgs);
@@ -4036,7 +4011,7 @@ export class CPU implements MappedPageInvalidator {
 				try {
 					builtinArgs.bind(detached ?? caller.registers, argumentBase, argumentCount);
 					this.callBuiltinFunction(builtinId, builtinArgs, results, -1);
-					this.finishProtectedCallFromBuiltinResults(continuationIndex, results);
+					this.finishProtectedCall(continuationIndex, results.slots, 0, results.length);
 				} finally {
 					this.releaseRegisterBuiltinArgs(builtinArgs);
 					this.releaseBuiltinResults(results);
@@ -4048,44 +4023,24 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private finishProtectedCallFromBuiltinResults(continuationIndex: number, values: BuiltinResults): void {
+	private finishProtectedCall(continuationIndex: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
 		if ((this.activeThread.protectedWord(continuationIndex, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK) === ProtectedCallKind.XPCallHandler) {
-			if (values.length > 0) {
-				this.finishProtectedCallWithError(
-					continuationIndex,
-					values.get(0),
-				);
-			} else {
-				this.finishProtectedCallWithError(
-					continuationIndex,
-					valueNil(),
-				);
-			}
+			this.finishProtectedCallWithError(continuationIndex, sourceCount > 0 ? source.get(sourceBase) : valueNil());
 			return;
 		}
 		if (this.finishImplicitProtectedHandler(continuationIndex, true)) return;
-		const resultCount = this.writeProtectedResultsFromBuiltinResults(continuationIndex, true, values);
-		this.charge(resultCount);
-		this.finishProtectedContinuation(continuationIndex, resultCount);
-	}
-
-	private finishProtectedCallFromRegisters(continuationIndex: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
-		if ((this.activeThread.protectedWord(continuationIndex, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK) === ProtectedCallKind.XPCallHandler) {
-			if (sourceCount > 0) {
-				this.finishProtectedCallWithError(
-					continuationIndex,
-					source.get(sourceBase),
-				);
-			} else {
-				this.finishProtectedCallWithError(
-					continuationIndex,
-					valueNil(),
-				);
-			}
-			return;
+		const caller = this.protectedCaller(continuationIndex);
+		const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
+		const returnCount = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted) | 0;
+		const resultCount = selectedCallResultCount(returnCount, sourceCount + 1);
+		if (resultCount > 0) {
+			const registers = this.ensureRegisterCapacity(caller, callBase + resultCount - 1);
+			const copiedCount = Math.min(sourceCount, resultCount - 1);
+			registers.copyRangeFrom(source, callBase + 1, sourceBase, copiedCount);
+			registers.setBoolean(callBase, true);
+			registers.clear(resultCount - copiedCount - 1, callBase + copiedCount + 1);
 		}
-		if (this.finishImplicitProtectedHandler(continuationIndex, true)) return;
-		const resultCount = this.writeProtectedResultsFromRegisters(continuationIndex, true, source, sourceBase, sourceCount);
+		caller.setCallResultTop(callBase + resultCount, returnCount);
 		this.charge(resultCount);
 		this.finishProtectedContinuation(continuationIndex, resultCount);
 	}
@@ -4104,9 +4059,7 @@ export class CPU implements MappedPageInvalidator {
 			registers.setBoolean(callBase, false);
 			if (resultCount > 1) {
 				registers.set(callBase + 1, error);
-				for (let index = 2; index < resultCount; index += 1) {
-					registers.setNil(callBase + index);
-				}
+				registers.clear(resultCount - 2, callBase + 2);
 			}
 		}
 		caller.setCallResultTop(callBase + resultCount, returnCount);
@@ -4124,63 +4077,9 @@ export class CPU implements MappedPageInvalidator {
 		const results = this.acquireBuiltinResults();
 		try {
 			results.push(valueBool(succeeded));
-			this.finishProtectedCallFromBuiltinResults(continuationIndex - 1, results);
+			this.finishProtectedCall(continuationIndex - 1, results.slots, 0, results.length);
 		} finally { this.releaseBuiltinResults(results); }
 		return true;
-	}
-
-	private writeProtectedResultsFromBuiltinResults(
-		continuationIndex: number,
-		prefix: boolean,
-		values: BuiltinResults,
-	): number {
-		const caller = this.protectedCaller(continuationIndex);
-		const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
-		const returnCount = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted) | 0;
-		const resultCount = selectedCallResultCount(returnCount, values.length + 1);
-		if (resultCount > 0) {
-			const registers = this.ensureRegisterCapacity(caller, callBase + resultCount - 1);
-			registers.setBoolean(callBase, prefix);
-			const copiedCount = Math.min(values.length, resultCount - 1);
-			if (copiedCount > 0) {
-				values.copyTo(registers, callBase + 1, copiedCount);
-			}
-			for (let index = copiedCount + 1; index < resultCount; index += 1) {
-				registers.setNil(callBase + index);
-			}
-		}
-		caller.setCallResultTop(callBase + resultCount, returnCount);
-		return resultCount;
-	}
-
-	private writeProtectedResultsFromRegisters(
-		continuationIndex: number,
-		prefix: boolean,
-		source: ValueSlots,
-		sourceBase: number,
-		sourceCount: number,
-	): number {
-		const caller = this.protectedCaller(continuationIndex);
-		const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
-		const returnCount = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted) | 0;
-		const resultCount = selectedCallResultCount(returnCount, sourceCount + 1);
-		if (resultCount > 0) {
-			const registers = this.ensureRegisterCapacity(caller, callBase + resultCount - 1);
-			const copiedCount = Math.min(sourceCount, resultCount - 1);
-			if (copiedCount > 0) {
-				if (registers === source) {
-					registers.copyWithin(callBase + 1, sourceBase, copiedCount);
-				} else {
-					registers.copyRangeFrom(source, callBase + 1, sourceBase, copiedCount);
-				}
-			}
-			registers.setBoolean(callBase, prefix);
-			for (let index = copiedCount + 1; index < resultCount; index += 1) {
-				registers.setNil(callBase + index);
-			}
-		}
-		caller.setCallResultTop(callBase + resultCount, returnCount);
-		return resultCount;
 	}
 
 	private protectedCaller(continuationIndex: number): CallFrame {
@@ -4195,7 +4094,7 @@ export class CPU implements MappedPageInvalidator {
 		if ((flags & PROTECTED_CALL_PARENT) !== 0) {
 			const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
 			const caller = this.protectedCaller(continuationIndex);
-			this.finishProtectedCallFromRegisters(continuationIndex - 1, caller.registers, callBase, resultCount);
+			this.finishProtectedCall(continuationIndex - 1, caller.registers, callBase, resultCount);
 		}
 	}
 

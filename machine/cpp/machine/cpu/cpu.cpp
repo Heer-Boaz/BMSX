@@ -1217,7 +1217,7 @@ bool CPU::coroutineYieldable(u32 address) const {
 	return true;
 }
 
-void CPU::returnToResumer(BuiltinArgsView values, bool succeeded) {
+void CPU::returnToResumer(const CallValueSource& source, bool succeeded) {
 	Thread* thread = m_activeThread;
 	auto roots = acquireLocalRoots();
 	trackLocalRoot(valueThread(thread->address));
@@ -1227,14 +1227,13 @@ void CPU::returnToResumer(BuiltinArgsView values, bool succeeded) {
 	resumer->setStatus(ThreadStatus::Running);
 	CallFrame& caller = *resumer->currentFrame;
 	const auto result = resumer->transferResult();
-	const int count = result.selected(static_cast<int>(values.size()) + 1);
+	const int count = result.selected(source.count + 1);
 	if (count > 0) {
 		ensureRegisterCapacity(caller, result.base + count - 1);
+		const auto values = source.values();
 		caller.registers.set(result.base, valueBool(succeeded));
-		const int copied = std::min(static_cast<int>(values.size()), count - 1);
-		for (int i = 0; i < copied; ++i)
-			caller.registers.set(result.base + i + 1, values[i]);
-		for (int i = copied + 1; i < count; ++i) caller.registers.set(result.base + i, valueNil());
+		const int copied = std::min(source.count, count - 1);
+		values.placeInto(caller.registers, result.base + 1, copied, count - 1 - copied);
 	}
 	caller.placeResultTop(result, count);
 	thread->setResumer(0u);
@@ -1242,17 +1241,16 @@ void CPU::returnToResumer(BuiltinArgsView values, bool succeeded) {
 	instructionBudgetRemaining -= count;
 }
 
-void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResultPlacement result, const CallArguments& arguments) {
+void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResultPlacement result, const CallValueSource& arguments) {
 	Thread* thread = m_activeThread;
-	const auto args = arguments.values();
 	if (id == BuiltinFunctionId::CoroutineYield) {
 		if (!coroutineYieldable(thread->address)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		thread->setTransferResult(result);
 		thread->setStatus(ThreadStatus::Suspended);
-		returnToResumer(args, true);
+		returnToResumer(arguments, true);
 		return;
 	}
-	const Value targetValue = args[0];
+	const Value targetValue = arguments.values()[0];
 	if (!valueIsThread(targetValue)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	const u32 targetAddress = asThread(targetValue, m_heap);
 	if (targetAddress == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
@@ -1296,7 +1294,7 @@ bool CPU::handleThreadError(Value error) {
 		if (frame->hasControlFlag(FRAME_EXCEPTION | FRAME_COMPLETION)) return false;
 	thread->setStatus(ThreadStatus::Failed);
 	thread->setError(error);
-	returnToResumer(BuiltinArgsView(&error, 1), false);
+	returnToResumer({nullptr, &error, 0, 1}, false);
 	return true;
 }
 
@@ -1314,7 +1312,7 @@ void CPU::closeThread(Thread& thread) {
 	thread.setStatus(ThreadStatus::Dead);
 }
 
-void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement result, const CallArguments& arguments) {
+void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement result, const CallValueSource& arguments) {
 	instructionBudgetRemaining -= static_cast<int>(fn.cycleBase);
 	if (fn.id == BuiltinFunctionId::PCall || fn.id == BuiltinFunctionId::XPCall) {
 		startProtectedCall(fn.id, result, arguments, false);
@@ -1333,7 +1331,7 @@ void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPl
 }
 
 void CPU::startProtectedCall(BuiltinFunctionId id, CallResultPlacement result,
-	const CallArguments& arguments, bool returnsToProtectedParent) {
+	const CallValueSource& arguments, bool returnsToProtectedParent) {
 	Value handler = valueNil();
 	if (id == BuiltinFunctionId::XPCall) {
 		handler = arguments.values()[1];
@@ -1348,7 +1346,7 @@ void CPU::startProtectedCall(BuiltinFunctionId id, CallResultPlacement result,
 	invokeProtectedTarget(continuationIndex, arguments.values()[0], arguments.tail(targetArgumentOffset));
 }
 
-void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, const CallArguments& arguments) {
+void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, const CallValueSource& arguments) {
 	CallFrame& caller = protectedCaller(continuationIndex);
 	if (valueIsClosure(target)) {
 		u32 closure = asClosure(target, m_heap);
@@ -1371,37 +1369,34 @@ void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, const CallA
 		auto resultsScratch = acquireBuiltinResultScratch();
 		BuiltinResults& results = resultsScratch.get();
 		callBuiltinFunction(builtin, arguments.values(), results, -1);
-		finishProtectedCall(continuationIndex, results.data(), static_cast<int>(results.size()));
+		finishProtectedCall(continuationIndex, {nullptr, results.data(), 0, static_cast<int>(results.size())});
 		return;
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 }
 
-void CPU::finishProtectedCall(u32 continuationIndex, const Value* values, int valueCount) {
+void CPU::finishProtectedCall(u32 continuationIndex, const CallValueSource& source) {
 	if ((m_activeThread->protectedWord(continuationIndex, ProtectedField::Flags) & PROTECTED_CALL_KIND_MASK)
 		== static_cast<u32>(ProtectedCallKind::XPCallHandler)) {
-		finishProtectedCallWithError(continuationIndex, valueCount > 0 ? values[0] : valueNil());
+		finishProtectedCallWithError(continuationIndex, source.values()[0]);
 		return;
 	}
 	if (finishImplicitProtectedHandler(continuationIndex, true)) return;
-	const int resultCount = writeProtectedResults(continuationIndex, true, values, valueCount);
-	instructionBudgetRemaining -= resultCount;
-	finishProtectedContinuation(continuationIndex, resultCount);
-}
-
-void CPU::finishProtectedCall(u32 continuationIndex, CallFrame& source, int sourceBase, int sourceCount) {
-	if ((m_activeThread->protectedWord(continuationIndex, ProtectedField::Flags) & PROTECTED_CALL_KIND_MASK)
-		== static_cast<u32>(ProtectedCallKind::XPCallHandler)) {
-		finishProtectedCallWithError(
-			continuationIndex,
-			sourceCount > 0 ? source.registers.get(static_cast<size_t>(sourceBase)) : valueNil()
-		);
-		return;
+	CallFrame& caller = protectedCaller(continuationIndex);
+	const auto result = m_activeThread->protectedResult(continuationIndex);
+	const int count = result.selected(source.count + 1);
+	if (count > 0) {
+		auto& registers = ensureRegisterCapacity(caller, result.base + count - 1);
+		const int copied = std::min(source.count, count - 1);
+		// A nested continuation may consume the caller's own result window.
+		// Move it before publishing the status over the first source slot.
+		source.values().placeInto(registers, result.base + 1, copied, 0);
+		registers.set(result.base, valueBool(true));
+		registers.clear(result.base + 1 + copied, count - 1 - copied);
 	}
-	if (finishImplicitProtectedHandler(continuationIndex, true)) return;
-	const int resultCount = writeProtectedResults(continuationIndex, true, source, sourceBase, sourceCount);
-	instructionBudgetRemaining -= resultCount;
-	finishProtectedContinuation(continuationIndex, resultCount);
+	caller.placeResultTop(result, count);
+	instructionBudgetRemaining -= count;
+	finishProtectedContinuation(continuationIndex, count);
 }
 
 void CPU::finishProtectedCallWithError(u32 continuationIndex, Value errorValue) {
@@ -1415,9 +1410,7 @@ void CPU::finishProtectedCallWithError(u32 continuationIndex, Value errorValue) 
 		registers.set(static_cast<size_t>(callBase), valueBool(false));
 		if (resultCount > 1) {
 			registers.set(static_cast<size_t>(callBase + 1), errorValue);
-			for (int index = 2; index < resultCount; ++index) {
-				registers.set(static_cast<size_t>(callBase + index), valueNil());
-			}
+			registers.clear(callBase + 2, resultCount - 2);
 		}
 	}
 	caller.placeResultTop(result, resultCount);
@@ -1433,48 +1426,8 @@ bool CPU::finishImplicitProtectedHandler(u32 continuationIndex, bool succeeded) 
 	// it in the caller's live operand window or charging a write not performed.
 	m_activeThread->setProtectedDepth(continuationIndex);
 	const Value status = valueBool(succeeded);
-	finishProtectedCall(continuationIndex - 1u, &status, 1);
+	finishProtectedCall(continuationIndex - 1u, {nullptr, &status, 0, 1});
 	return true;
-}
-
-int CPU::writeProtectedResults(u32 continuationIndex, bool prefix, const Value* values, int valueCount) {
-	CallFrame& caller = protectedCaller(continuationIndex);
-	const auto result = m_activeThread->protectedResult(continuationIndex);
-	const i32 callBase = result.base;
-	const int resultCount = result.selected(valueCount + 1);
-	if (resultCount > 0) {
-		ValueSpan& registers = ensureRegisterCapacity(caller, callBase + resultCount - 1);
-		registers.set(static_cast<size_t>(callBase), valueBool(prefix));
-		const int copiedCount = std::min(valueCount, resultCount - 1);
-		if (copiedCount > 0) {
-			for (int i = 0; i < copiedCount; ++i) registers.set(callBase + 1 + i, values[i]);
-		}
-		for (int index = copiedCount + 1; index < resultCount; ++index) {
-			registers.set(static_cast<size_t>(callBase + index), valueNil());
-		}
-	}
-	caller.placeResultTop(result, resultCount);
-	return resultCount;
-}
-
-int CPU::writeProtectedResults(u32 continuationIndex, bool prefix, CallFrame& source, int sourceBase, int sourceCount) {
-	CallFrame& caller = protectedCaller(continuationIndex);
-	const auto result = m_activeThread->protectedResult(continuationIndex);
-	const i32 callBase = result.base;
-	const int resultCount = result.selected(sourceCount + 1);
-	if (resultCount > 0) {
-		ValueSpan& registers = ensureRegisterCapacity(caller, callBase + resultCount - 1);
-		const int copiedCount = std::min(sourceCount, resultCount - 1);
-		if (copiedCount > 0) {
-			registers.copyFrom(source.registers, callBase + 1, sourceBase, copiedCount);
-		}
-		registers.set(static_cast<size_t>(callBase), valueBool(prefix));
-		for (int index = copiedCount + 1; index < resultCount; ++index) {
-			registers.set(static_cast<size_t>(callBase + index), valueNil());
-		}
-	}
-	caller.placeResultTop(result, resultCount);
-	return resultCount;
 }
 
 CallFrame& CPU::protectedCaller(u32 continuationIndex) {
@@ -1487,7 +1440,7 @@ void CPU::finishProtectedContinuation(u32 continuationIndex, int resultCount) {
 	m_activeThread->setProtectedDepth(continuationIndex);
 	if ((flags & PROTECTED_CALL_PARENT) != 0) {
 		const i32 callBase = static_cast<i32>(m_activeThread->protectedWord(continuationIndex, ProtectedField::Base));
-		finishProtectedCall(continuationIndex - 1, protectedCaller(continuationIndex), callBase, resultCount);
+		finishProtectedCall(continuationIndex - 1, {&protectedCaller(continuationIndex), nullptr, callBase, resultCount});
 	}
 }
 
@@ -2830,12 +2783,7 @@ void CPU::writeReturnValues(CallFrame& frame, CallResultPlacement result, Builti
 	if (targetCount > 0) {
 		ValueSpan& registers = ensureRegisterCapacity(frame, base + targetCount - 1);
 		const int copiedCount = std::min(valueCount, targetCount);
-		for (int i = 0; i < copiedCount; ++i) {
-			registers.set(base + i, values[i]);
-		}
-		for (int i = copiedCount; i < targetCount; ++i) {
-			registers.set(base + i, valueNil());
-		}
+		values.placeInto(registers, base, copiedCount, targetCount - copiedCount);
 	}
 	frame.placeResultTop(result, targetCount);
 	instructionBudgetRemaining -= targetCount;

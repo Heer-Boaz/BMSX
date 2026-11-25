@@ -56,7 +56,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
 			: (flags & PROTECTED_CALL_PARENT) != 0u && result.extendsTop() ? 0
 			: std::clamp(result.selected(count + 1) - 1, 0, count);
 		admitAndClose(copied);
-		finishProtectedCall(continuation, frame, a, count);
+		finishProtectedCall(continuation, {&frame, nullptr, a, count});
 		m_activeThread->leaveFrame();
 		resumeFrameBank();
 		return false;
@@ -79,7 +79,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
 		const int copied = std::clamp(result.selected(count + 1) - 1, 0, count);
 		admitAndClose(copied);
 		thread->setStatus(ThreadStatus::Dead);
-		returnToResumer(copied == 0 ? BuiltinArgsView{} : BuiltinArgsView(frame.registers.subspan(a, copied)), true);
+		returnToResumer({&frame, nullptr, a, copied}, true);
 		thread->setStackTop(0);
 		thread->leaveFrame();
 		return false;

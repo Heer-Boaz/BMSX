@@ -350,7 +350,7 @@ private:
 	);
 	// Ordinary CALL arguments borrow frame slots by index so backing growth can
 	// rebind them. Detached implicit calls carry complete Values until admission.
-	struct CallArguments {
+	struct CallValueSource {
 		CallFrame* frame;
 		const Value* detached;
 		int base, count;
@@ -360,12 +360,12 @@ private:
 				? BuiltinArgsView(frame->thread->stack.subspan(frame->stackBase() + base, count))
 				: BuiltinArgsView(detached, count);
 		}
-		CallArguments tail(int skip) const {
-			return frame ? CallArguments{frame, nullptr, base + skip, std::max(count - skip, 0)}
-				: CallArguments{nullptr, detached + std::min(skip, count), 0, std::max(count - skip, 0)};
+		CallValueSource tail(int skip) const {
+			return frame ? CallValueSource{frame, nullptr, base + skip, std::max(count - skip, 0)}
+				: CallValueSource{nullptr, detached + std::min(skip, count), 0, std::max(count - skip, 0)};
 		}
 	};
-	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement, const CallArguments&);
+	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement, const CallValueSource&);
 	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out, int resultLimit);
 	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
 	bool stepTableIterator(ValueSpan& registers, int base, int destination, int count);
@@ -375,15 +375,12 @@ private:
 	void runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit);
 	void runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinError(BuiltinArgsView args);
-	void startProtectedCall(BuiltinFunctionId id, CallResultPlacement, const CallArguments&, bool returnsToProtectedParent);
-	void invokeProtectedTarget(u32 continuationIndex, Value target, const CallArguments&);
-	void finishProtectedCall(u32 continuationIndex, const Value* values, int valueCount);
-	void finishProtectedCall(u32 continuationIndex, CallFrame& source, int sourceBase, int sourceCount);
+	void startProtectedCall(BuiltinFunctionId id, CallResultPlacement, const CallValueSource&, bool returnsToProtectedParent);
+	void invokeProtectedTarget(u32 continuationIndex, Value target, const CallValueSource&);
+	void finishProtectedCall(u32 continuationIndex, const CallValueSource& source);
 	void finishProtectedCallWithError(u32 continuationIndex, Value errorValue);
 	bool finishImplicitProtectedHandler(u32 continuationIndex, bool succeeded);
 	CallFrame& protectedCaller(u32 continuationIndex);
-	int writeProtectedResults(u32 continuationIndex, bool prefix, const Value* values, int valueCount);
-	int writeProtectedResults(u32 continuationIndex, bool prefix, CallFrame& source, int sourceBase, int sourceCount);
 	void finishProtectedContinuation(u32 continuationIndex, int resultCount);
 	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth, bool chargeCaptures);
@@ -601,8 +598,8 @@ private:
 		for (auto& view : m_transferViews) if (view.address != 0u) visitor(view);
 	}
 	bool coroutineYieldable(u32 address) const;
-	void returnToResumer(BuiltinArgsView values, bool succeeded);
-	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResultPlacement, const CallArguments&);
+	void returnToResumer(const CallValueSource& values, bool succeeded);
+	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResultPlacement, const CallValueSource&);
 	bool handleThreadError(Value error);
 	void closeThread(Thread& thread);
 

@@ -71,8 +71,9 @@ export class ValueSlots implements ValueWriteTarget {
 		this.wordBase = 0; this.tagBase = 0; this.size = 0;
 	}
 	public clear(count: number, offset = 0): void {
+		if (count === 0) return;
 		const word = this.wordBase + offset, tag = this.tagBase + offset;
-		if (this.mirrored) {
+		if (this.mirrored || (this.ram !== null && offset + count > this.size)) {
 			const ram = this.ram!;
 			const words = Math.min(count, MAIN_RAM_SIZE >>> 2), tags = Math.min(count, MAIN_RAM_SIZE);
 			for (let i = 0; i < words; ++i) ram.writeRamRecordWord((word + i) * 4, 0);
@@ -109,10 +110,12 @@ export class ValueSlots implements ValueWriteTarget {
 		this.tags[this.tagBase + destination] = source.tags[source.tagBase + first];
 		this.reportWrite(destination, 1);
 	}
-	public copyRangeFrom(source: ValueSlots, destination: number, first: number, count: number): void {
+	public copyRangeFrom(source: ValueSlots, destination: number, first: number, count: number, padded = 0): void {
+		if (count === 0) { this.clear(padded, destination); return; }
+		const extent = count + padded;
 		const dstWord = this.wordBase + destination, srcWord = source.wordBase + first;
 		const dstTag = this.tagBase + destination, srcTag = source.tagBase + first;
-		const dstPort = this.mirrored || (destination + count > this.size && this.ram !== null);
+		const dstPort = this.mirrored || (destination + extent > this.size && this.ram !== null);
 		const srcPort = source.mirrored || (first + count > source.size && source.ram !== null);
 		if (dstPort || srcPort) {
 			const delta = ((dstWord - srcWord) * 4) & (MAIN_RAM_SIZE - 4);
@@ -125,6 +128,7 @@ export class ValueSlots implements ValueWriteTarget {
 					this.ram!.writeRamRecordByte(dstTag + i, tag);
 				} else this.setEncoded(destination + i, tag, word);
 			}
+			this.clear(padded, destination + count);
 			return;
 		}
 		// Distinct logical windows can overlap in physical RAM.
@@ -136,7 +140,11 @@ export class ValueSlots implements ValueWriteTarget {
 				this.words[dstWord + i] = source.words[srcWord + i]; this.tags[dstTag + i] = source.tags[srcTag + i];
 			}
 		}
-		this.reportWrite(destination, count);
+		if (padded !== 0) {
+			this.words.fill(0, dstWord + count, dstWord + extent);
+			this.tags.fill(ValueTag.Nil, dstTag + count, dstTag + extent);
+		}
+		this.reportWrite(destination, extent);
 	}
 	public copyWithin(destination: number, source: number, count: number): void {
 		this.copyRangeFrom(this, destination, source, count);
