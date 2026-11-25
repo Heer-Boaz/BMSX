@@ -145,11 +145,9 @@ SoftwareBackend::SoftwareBackend(
 	: m_default_framebuffer(nullptr)
 	, m_default_width(width)
 	, m_default_height(height)
-	, m_default_pitch(width * static_cast<i32>(sizeof(u32)))
 	, m_framebuffer(nullptr)
 	, m_width(width)
 	, m_height(height)
-	, m_pitch(width * static_cast<i32>(sizeof(u32)))
 	, m_gx_gpu_software(
 		gxGpuVramByteCount,
 		static_cast<size_t>(width) * static_cast<size_t>(height)) {
@@ -167,11 +165,10 @@ void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerHostOverlayBackendPasses<SoftwareBackend, beginHostOverlaySoftware, renderHost2DEntrySoftware, endHostOverlaySoftware>(registry);
 }
 
-void SoftwareBackend::applyFramebufferTarget(u32* fb, i32 width, i32 height, i32 pitch) {
+void SoftwareBackend::applyFramebufferTarget(u32* fb, i32 width, i32 height) {
 	m_framebuffer = fb;
 	m_width = width;
 	m_height = height;
-	m_pitch = pitch;
 	hostOverlayClip.reset(width, height, width, height);
 }
 
@@ -180,16 +177,13 @@ void SoftwareBackend::resizePresentationTarget(i32 width, i32 height) {
 		static_cast<size_t>(width) * static_cast<size_t>(height));
 	m_presentation_target.m_width = width;
 	m_presentation_target.m_height = height;
-	m_presentation_target.m_pitch = width * static_cast<i32>(sizeof(u32));
 	m_default_framebuffer = m_presentation_target.m_pixels.data();
 	m_default_width = width;
 	m_default_height = height;
-	m_default_pitch = m_presentation_target.m_pitch;
 	applyFramebufferTarget(
 		m_default_framebuffer,
 		m_default_width,
-		m_default_height,
-		m_default_pitch);
+		m_default_height);
 }
 
 TextureHandle SoftwareBackend::createTexture(const u8* data, i32 width, i32 height, const TextureParams& params) {
@@ -299,17 +293,16 @@ void SoftwareBackend::destroyRenderTarget(void* target) {
 
 void SoftwareBackend::activateRenderTarget(void* target, i32 width, i32 height) {
 	auto* texture = static_cast<SoftwareTexture*>(target);
-	applyFramebufferTarget(texture->data.data(), width, height, width * static_cast<i32>(sizeof(u32)));
+	applyFramebufferTarget(texture->data.data(), width, height);
 }
 
 void SoftwareBackend::activateDefaultRenderTarget() {
 	if (m_framebuffer == m_default_framebuffer
 		&& m_width == m_default_width
-		&& m_height == m_default_height
-		&& m_pitch == m_default_pitch) {
+		&& m_height == m_default_height) {
 		return;
 	}
-	applyFramebufferTarget(m_default_framebuffer, m_default_width, m_default_height, m_default_pitch);
+	applyFramebufferTarget(m_default_framebuffer, m_default_width, m_default_height);
 }
 
 
@@ -326,13 +319,8 @@ void SoftwareBackend::destroyTexture(TextureHandle handle) {
 void SoftwareBackend::clear(const std::array<f32, 4>* color, const f32* depth) {
 	if (color && m_framebuffer) {
 		const u32 packed = packLinearColorAsArgb32(*color);
-		i32 pixelsPerRow = m_pitch / sizeof(u32);
-		for (i32 y = 0; y < m_height; ++y) {
-			u32* row = m_framebuffer + y * pixelsPerRow;
-			for (i32 x = 0; x < m_width; ++x) {
-				row[x] = packed;
-			}
-		}
+		// Both owned targets are packed ARGB32 surfaces.
+		std::fill_n(m_framebuffer, static_cast<size_t>(m_width) * m_height, packed);
 	}
 
 	(void)depth;
@@ -411,7 +399,7 @@ void SoftwareBackend::setPixel(i32 x, i32 y, u32 color) {
 	if (x < 0 || x >= m_width || y < 0 || y >= m_height) return;
 	if (!m_framebuffer) return;
 
-	i32 pixelsPerRow = m_pitch / sizeof(u32);
+	i32 pixelsPerRow = m_width;
 	m_framebuffer[y * pixelsPerRow + x] = color;
 }
 
@@ -426,7 +414,7 @@ void SoftwareBackend::blendPixel(i32 x, i32 y, u32 color) {
 	};
 	if (bytes.a == 0u) return;
 
-	i32 pixelsPerRow = m_pitch / sizeof(u32);
+	i32 pixelsPerRow = m_width;
 	i32 idx = y * pixelsPerRow + x;
 
 	if (bytes.a == 255u) {
@@ -471,7 +459,7 @@ void SoftwareBackend::fillRect(i32 x, i32 y, i32 w, i32 h, u32 color) {
 
 	if (x0 >= x1 || y0 >= y1) return;
 
-	i32 pixelsPerRow = m_pitch / sizeof(u32);
+	i32 pixelsPerRow = m_width;
 
 	if (((color >> 24u) & 0xffu) == 255u) {
 		for (i32 py = y0; py < y1; ++py) {
@@ -502,19 +490,7 @@ void SoftwareBackend::drawRect(i32 x, i32 y, i32 w, i32 h, u32 color) {
 void SoftwareBackend::presentTexture(TextureHandle texture) {
 	const auto& source = *static_cast<SoftwareTexture*>(texture);
 	const u32* const sourcePixels = source.data.data();
-	const i32 targetPixelsPerRow = m_pitch / static_cast<i32>(sizeof(u32));
-	if (source.width == m_width && source.height == m_height) {
-		for (i32 y = 0; y < m_height; y += 1) {
-			const u32* sourceRow = sourcePixels + static_cast<size_t>(y) * static_cast<size_t>(source.width);
-			u32* targetRow = m_framebuffer + static_cast<size_t>(y) * static_cast<size_t>(targetPixelsPerRow);
-			for (i32 x = 0; x < m_width; x += 1) {
-				targetRow[x] = sourceRow[x] | 0xff000000u;
-			}
-		}
-		return;
-	}
-
-	blitOpaquePixels(sourcePixels, source.width, source.height, m_framebuffer, targetPixelsPerRow,
+	blitOpaquePixels(sourcePixels, source.width, source.height, m_framebuffer, m_width,
 		0, 0, m_width, m_height, 0, 0, m_width, m_height);
 }
 

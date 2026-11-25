@@ -489,6 +489,7 @@ add_library(bmsx_host_support STATIC
 	common/byte_hex_string.cpp
 	common/mmap_file.cpp
 	audio/output_resampler.cpp
+	render/shared/software_pixels.cpp
 	render/backend/backend.cpp
 	render/backend/software/gx_gpu.cpp
 	render/backend/software/gx_gpu_execution.cpp
@@ -995,6 +996,10 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_video_presenter_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_video_presenter_tests COMMAND bmsx_video_presenter_tests)
+
+	add_executable(bmsx_software_pixels_tests ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/software_pixels_test.cpp)
+	target_link_libraries(bmsx_software_pixels_tests PRIVATE bmsx_host_support)
+	add_test(NAME bmsx_software_pixels_tests COMMAND bmsx_software_pixels_tests)
 
 	add_executable(bmsx_crt_software_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/crt_software_test.cpp

@@ -233,7 +233,7 @@ public:
 	const u32* data() const { return m_pixels.data(); }
 	i32 width() const { return m_width; }
 	i32 height() const { return m_height; }
-	i32 pitch() const { return m_pitch; }
+	i32 pitch() const { return m_width * static_cast<i32>(sizeof(u32)); }
 
 private:
 	friend class SoftwareBackend;
@@ -241,7 +241,6 @@ private:
 	std::vector<u32> m_pixels;
 	i32 m_width = 0;
 	i32 m_height = 0;
-	i32 m_pitch = 0;
 };
 
 class SoftwareBackend : public GPUBackend {
@@ -307,7 +306,7 @@ public:
 	u32* framebuffer() { return m_framebuffer; }
 	i32 width() const { return m_width; }
 	i32 height() const { return m_height; }
-	i32 pitch() const { return m_pitch; }
+	i32 pitch() const { return m_width * static_cast<i32>(sizeof(u32)); }
 	const SoftwarePresentationTarget& presentationTarget() const { return m_presentation_target; }
 
 private:
@@ -320,11 +319,9 @@ private:
 	u32* m_default_framebuffer;
 	i32 m_default_width;
 	i32 m_default_height;
-	i32 m_default_pitch;
 	u32* m_framebuffer;
 	i32 m_width;
 	i32 m_height;
-	i32 m_pitch;  // Bytes per row
 
 	FrameStats m_stats;
 	GxGpuSoftwareState m_gx_gpu_software;
@@ -333,7 +330,7 @@ private:
 	std::vector<std::unique_ptr<SoftwareTexture>> m_textures;
 
 	// Helpers
-	void applyFramebufferTarget(u32* fb, i32 width, i32 height, i32 pitch);
+	void applyFramebufferTarget(u32* fb, i32 width, i32 height);
 	void blendPixel(i32 x, i32 y, u32 color);
 };
 
