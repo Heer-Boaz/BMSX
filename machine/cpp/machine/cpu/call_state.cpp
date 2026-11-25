@@ -21,14 +21,21 @@ void CallFrame::addControlFlags(u32 flags) {
 }
 
 void CallFrame::initializeControl(const FrameEntryControl& entry) {
-	auto* ram = controlMemory->ramData();
-	entry.writeWords([&](FrameField field, u32 word) {
-		writeLE32(ram + ((controlOffset + static_cast<u32>(field)) & RAM_RECORD_WORD_MASK), word);
-	});
 	registers = thread->stack.subspan(entry.stackBase, entry.capacity);
-	const u32 first = std::min(FRAME_CONTROL_BYTES, MAIN_RAM_SIZE - controlOffset);
-	controlMemory->invalidateRamWrite(controlOffset, first);
-	if (first != FRAME_CONTROL_BYTES) controlMemory->invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
+	if (controlOffset <= MAIN_RAM_SIZE - FRAME_CONTROL_BYTES) {
+		entry.writeWords([this](FrameField field, u32 word) {
+			writeLE32(nativeControl + static_cast<u32>(field), word);
+		});
+		controlMemory->invalidateRamWrite(controlOffset, FRAME_CONTROL_BYTES);
+	} else {
+		auto* ram = controlMemory->ramData();
+		entry.writeWords([&](FrameField field, u32 word) {
+			writeLE32(ram + ((controlOffset + static_cast<u32>(field)) & RAM_RECORD_WORD_MASK), word);
+		});
+		const u32 first = MAIN_RAM_SIZE - controlOffset;
+		controlMemory->invalidateRamWrite(controlOffset, first);
+		controlMemory->invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
+	}
 }
 
 void CallFrame::growRegisterWindow(i32 capacity) {

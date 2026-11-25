@@ -478,7 +478,8 @@ private:
 	bool executeLength(CallFrame& frame, int destination, Value operand);
 
 	void clearCallStack();
-	void ensureStackSize(size_t size, Value root = valueNil(), bool frameEntry = false, bool exception = false);
+	struct ClosureActivation { Blua32ExecutionImage* image; FunctionCallEntry function; };
+	ClosureActivation resolveClosureActivation(u32 closure);
 	BuiltinResultsScratchScope acquireBuiltinResultScratch();
 	void releaseLocalRoots(size_t base);
 	void trackLocalRoot(Value value);

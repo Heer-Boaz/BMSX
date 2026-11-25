@@ -48,6 +48,27 @@ void storageAndFrames() {
 	second->registers.set(0, valueInteger(123)); thread.resizeStack(96);
 	require(second->registers.get(0) == valueInteger(123) && first->registers.get(3) == valueFloatBits(0xffc00000), "nested frame windows survive relocation");
 	thread.leaveFrame(); require(thread.currentFrame == first, "ordinary return retains caller");
+	// A frame descriptor may straddle the physical RAM mirror. Its host
+	// register view still belongs to the thread, not to the control record.
+	const FrameEntryControl entry{0x12345000u, 0x12345040u, 0x12340020u, FRAME_BANK_CART,
+		3, 2, CallResultPlacement::single(7), 4, 0x98765430u, 2, 8};
+	const std::array<u32, 14> expected{entry.function, entry.callSite, 0, UINT32_MAX,
+		FRAME_BANK_CART | FRAME_EXTEND_RESULT_TOP, entry.pc, 3, 2, 7, entry.result.countWord(), 4,
+		entry.closure, 2, 8};
+	for (const u32 offset : {MAIN_RAM_SIZE - FRAME_CONTROL_BYTES, MAIN_RAM_SIZE - 12u}) {
+		CallFrame activation;
+		activation.thread = &thread;
+		activation.bindControl(memory, offset);
+		memory.writeRamRecordWord(offset - 4u, 0xaabbccddu);
+		memory.writeRamRecordWord(offset + FRAME_CONTROL_BYTES, 0x11223344u);
+		activation.initializeControl(entry);
+		for (u32 index = 0; index < expected.size(); ++index)
+			require(memory.readRamRecordWord(offset + 4u * index) == expected[index], "frame entry initializes physical words in order");
+		require(memory.readRamRecordWord(offset - 4u) == 0xaabbccddu
+			&& memory.readRamRecordWord(offset + FRAME_CONTROL_BYTES) == 0x11223344u, "frame entry writes only its record");
+		require(activation.registers.words() == thread.stack.words() + 2 && activation.registers.size() == 8,
+			"frame entry binds the receiving register window");
+	}
 	static_assert(closureRecordBytes(2) - closureRecordBytes(1) == sizeof(uint32_t));
 }
 void valuesAndText() {

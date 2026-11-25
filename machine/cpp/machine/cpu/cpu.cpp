@@ -2740,9 +2740,15 @@ int CPU::closeUpvalues(CallFrame& frame, u32 firstSlot) {
 	return closed;
 }
 
+CPU::ClosureActivation CPU::resolveClosureActivation(u32 closure) {
+	const ClosureRecord::BindingFlags binding{m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
+	auto* image = executionImageForDomain(binding.domain());
+	return {image, ClosureRecord::readCallEntry(m_memory, closure, binding, image->romFunctions)};
+}
+
 CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
 	CallResultPlacement result, u32 callSitePc) {
-	const FunctionPrototype functionRecord = readClosureBinding(closure);
+	const auto [image, functionRecord] = resolveClosureActivation(closure);
 	const int callerArgBase = caller.stackBase() + argBase;
 	const bool sharedStack = caller.thread == m_activeThread;
 	const int argumentBase = sharedStack ? callerArgBase : m_activeThread->stackTop();
@@ -2750,11 +2756,11 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 	if (!admitted) throw LuaOutOfMemorySignal{};
 	const auto& placement = *admitted;
 	auto* frame = m_activeThread->acquireFrame();
-	ensureStackSize(placement.stackEnd(), valueClosure(closure), true);
-	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
+	m_activeThread->reserveFrame(placement.stackEnd(), valueClosure(closure));
+	frame->executionImage = image;
 	frame->initializeControl({
 		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc,
-		frameBankWord(functionRecord.executionDomainId),
+		frameBankWord(image->executionDomainId),
 		placement.varargBase, placement.varargCount, result, placement.top(),
 		closure, placement.stackBase, static_cast<int>(placement.capacity),
 	});
@@ -2771,24 +2777,24 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 	instructionBudgetRemaining -= placement.cycles(sharedStack);
 	m_activeThread->setStackTop(static_cast<int>(placement.stackEnd()));
 	m_activeThread->enterFrame(frame);
-	latchActiveExecutionImage(functionRecord.executionDomainId, frame->executionImage);
+	latchActiveExecutionImage(image->executionDomainId, frame->executionImage);
 	return frame;
 }
 
 CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 	CallResultPlacement result, u32 flags, std::optional<u32> callSitePc) {
-	const FunctionPrototype functionRecord = readClosureBinding(closure);
+	const auto [image, functionRecord] = resolveClosureActivation(closure);
 	const size_t argCount = args.size();
 	auto* frame = m_activeThread->acquireFrame();
 	const int argumentBase = m_activeThread->stackTop();
 	const auto admitted = ArgumentPlacement::forEntry(argumentBase, static_cast<int>(argCount), functionRecord.entry);
 	if (!admitted) throw LuaOutOfMemorySignal{};
 	const auto& placement = *admitted;
-	ensureStackSize(placement.stackEnd(), valueClosure(closure), true, (flags & FRAME_EXCEPTION) != 0u);
-	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
+	m_activeThread->reserveFrame(placement.stackEnd(), valueClosure(closure), (flags & FRAME_EXCEPTION) != 0u);
+	frame->executionImage = image;
 	frame->initializeControl({
 		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc.value_or(functionRecord.entry.codeAddress),
-		frameBankWord(functionRecord.executionDomainId) | flags,
+		frameBankWord(image->executionDomainId) | flags,
 		placement.varargBase, placement.varargCount, result, placement.top(),
 		closure, placement.stackBase, static_cast<int>(placement.capacity),
 	});
@@ -2800,7 +2806,7 @@ CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 	if (callSitePc && (flags & FRAME_EXCEPTION) == 0u) instructionBudgetRemaining -= placement.cycles(false);
 	m_activeThread->setStackTop(static_cast<int>(placement.stackEnd()));
 	m_activeThread->enterFrame(frame);
-	latchActiveExecutionImage(functionRecord.executionDomainId, frame->executionImage);
+	latchActiveExecutionImage(image->executionDomainId, frame->executionImage);
 	return frame;
 }
 
@@ -2853,7 +2859,8 @@ ValueSpan& CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 	if (bucket < 8) {
 		bucket = 8;
 	}
-	ensureStackSize(static_cast<size_t>(frame.stackBase()) + bucket);
+	const size_t end = static_cast<size_t>(frame.stackBase()) + bucket;
+	if (end > m_activeThread->stackCapacity) m_activeThread->resizeStack(nextPowerOfTwo(end));
 	frame.growRegisterWindow(static_cast<int>(bucket));
 	return frame.registers;
 }
@@ -2883,17 +2890,6 @@ void CPU::clearCallStack() {
 	m_runSignals &= ~RunThreadSwitch;
 }
 
-
-void CPU::ensureStackSize(size_t size, Value root, bool frameEntry, bool exception) {
-	const size_t current = m_activeThread->stackCapacity;
-	size_t capacity = current;
-	if (size > current) {
-		capacity = 8;
-		while (capacity < size) capacity *= 2;
-	}
-	if (frameEntry) m_activeThread->reserveFrame(capacity, root, exception);
-	else if (capacity != current) m_activeThread->resizeStack(capacity, root);
-}
 
 BuiltinResultsScratchScope CPU::acquireBuiltinResultScratch() {
 	BuiltinResults& out = m_builtinResultScratch.get(m_builtinResultScratchIndex);

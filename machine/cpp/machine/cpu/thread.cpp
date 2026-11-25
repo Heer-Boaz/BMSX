@@ -1,4 +1,5 @@
 #include "machine/cpu/thread.h"
+#include "machine/common/numeric.h"
 #include "machine/cpu/gc_heap.h"
 #include "machine/memory/memory.h"
 
@@ -182,13 +183,14 @@ void Thread::resizeStack(size_t capacity, Value root) {
 #endif
 }
 
-void Thread::reserveFrame(size_t values, Value root, bool exception) {
-	const size_t wanted = frameDepth() + (exception ? 1 : 2);
+void Thread::reserveFrame(size_t valueEnd, Value root, bool exception) {
+	// The last control slot is reserved for an exception activation.
+	const size_t wanted = std::max<size_t>(THREAD_INITIAL_FRAMES, frameDepth() + (exception ? 1u : 2u));
+	if (valueEnd <= stackCapacity && wanted <= boundFrameCapacity) return;
 	u32 frames = std::max(THREAD_INITIAL_FRAMES, boundFrameCapacity);
 	while (frames < wanted) frames *= 2;
-	const u32 valueChange = values == stackCapacity ? 0u : static_cast<u32>(values);
+	const u32 valueChange = valueEnd <= stackCapacity ? 0u : static_cast<u32>(std::max<size_t>(8, nextPowerOfTwo(valueEnd)));
 	const u32 frameChange = frames == boundFrameCapacity ? 0u : frames;
-	if (valueChange == 0u && frameChange == 0u) return;
 	heap.budget.reserveThreadFrameStorage(address, valueChange, frameChange, root);
 	if (frameChange != 0u) {
 		boundFrameCapacity = frameChange;
