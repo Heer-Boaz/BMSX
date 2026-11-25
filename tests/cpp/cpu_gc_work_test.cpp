@@ -1368,13 +1368,13 @@ void collectUnattachedThreadRecord() {
 	const size_t shrinkWork = gc.collect(valueThread(address));
 	const auto reduced = ThreadRecord::storageLayout(memory, address);
 	const size_t reducedBytes = bytes - stackBytes + arena.allocationBytes(reduced.block);
-	require(reduced.valueCapacity == capacity / 2 && reduced.block != block && reduced.frameBlock == layout.frameBlock
+	require(reduced.valueCapacity == capacity / 2 && reduced.block == block && reduced.frameBlock == layout.frameBlock
 		&& reduced.slots(memory).get(0) == valueTable(child)
 		&& memory.readRamRecordWord(reduced.frameAddress(0) + static_cast<u32>(FrameField::Top)) == 1u,
-		"shrinking relocates the live tagged slot, not its frame control");
+		"shrinking retains the payload and frame addresses and moves the live tag");
 	require(shrinkWork == liveWork + 2 * (reduced.valueBytes() / sizeof(u32))
 		&& arena.occupiedBytes() == baselineBytes + reducedBytes + childBytes,
-		"relocation charges the new physical copy and releases the old backing");
+		"compaction charges the retained extent and releases the unused suffix");
 	size_t deadWork = 0;
 	while (gc.phase() != GcPhase::Sweep) deadWork += gc.step(valueNil(), valueNil(), valueNil());
 	const auto state = cpu.captureRuntimeState();
@@ -1615,6 +1615,30 @@ void threadReplacementAdmitsOnlyItsLogicalIncrease() {
 		"standalone Value-window growth admits just the additional slots");
 }
 
+void fullCollectionTrimsWithoutFreeBacking() {
+	Machine machine(image()); auto& cpu = machine.cpu;
+	auto& thread = *cpu.rootThread(); auto& arena = cpu.heapAllocator();
+	auto& memory = cpu.memory(); auto& frame = *thread.currentFrame;
+	cpu.luaHeap().reserveThreadFrameStorage(thread.address, 64, 8, valueNil());
+	thread.bindStack();
+	for (int i = 0; i < 8; ++i)
+		thread.pushProtectedCall(ProtectedCallKind::PCall, false, CallResultPlacement::call(2, 1), valueBuiltinFunction(BuiltinFunctionId::PCall));
+	thread.setProtectedDepth(1);
+	frame.registers.set(0, valueInteger(73)); frame.setTop(1);
+	const auto before = ThreadRecord::storageLayout(memory, thread.address);
+	const auto pc = frame.readControl(FrameField::Pc);
+	while (arena.allocate(4088, true)) {}
+	while (arena.allocate(4 * PROTECTED_CALL_BYTES, true)) {}
+	cpu.collectHeap();
+	const auto after = ThreadRecord::storageLayout(memory, thread.address);
+	require(after.block == before.block && after.frameBlock == before.frameBlock && after.protectedBlock == before.protectedBlock
+		&& after.valueCapacity == 32 && after.frameCapacity == 4 && after.protectedCapacity == 4,
+		"full collection halves all three reservations without a replacement chunk");
+	require(frame.registers.get(0) == valueInteger(73) && frame.readControl(FrameField::Pc) == pc
+		&& thread.protectedResult(0).base == 2, "the live Value, frame and protected continuation survive trimming");
+	require(arena.allocate(4 * PROTECTED_CALL_BYTES, true) != 0, "the released suffix is available for allocation");
+}
+
 void failedThreadReplacementLeavesBothOwnedLanes() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& thread = *cpu.rootThread(); auto& frame = *thread.currentFrame;
@@ -1691,7 +1715,7 @@ int main(int argc, char** argv) {
 		physicalReservationsPaySweepWork(GcPhase::Sweep);
 		physicalReservationsPaySweepWork(GcPhase::Strings);
 		weakTableAdmissionReplansAfterCollection();
-		threadReplacementAdmitsOnlyItsLogicalIncrease(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
+		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); collectionPrimitiveCyclesIgnoreHeapShape();
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();

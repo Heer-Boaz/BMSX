@@ -187,29 +187,41 @@ export class ThreadRecords {
 		memory.writeRamRecordWord(address + capacityField, capacity);
 		this.budget.replaceRecord(oldBlock, oldCapacity * stride, capacity * stride);
 	}
+	private shrinkControls(address: number, field: ThreadField.FrameCapacity | ThreadField.ProtectedCapacity,
+		block: number, capacity: number, depth: number, stride: number): number {
+		if (capacity <= 4 || depth * 3 >= capacity) return 0;
+		const next = capacity >>> 1, bytes = next * stride;
+		const start = block & RAM_RECORD_WORD_MASK, spare = start + depth * stride;
+		this.memory.ramData().fill(0, spare, start + bytes);
+		this.memory.invalidateRamWrite(spare, bytes - depth * stride);
+		this.arena.shrinkBacking(block, bytes);
+		this.memory.writeRamRecordWord(address + field, next);
+		this.budget.resizeRecordCharge(capacity * stride, bytes);
+		return bytes;
+	}
 	public shrinkStack(address: number, layout: ThreadLayout): number {
-		let used = layout.top;
-		for (let index = 0; index < layout.depth; ++index) {
-			const frame = this.frameAddress(layout, index);
-			used = Math.max(used, (this.memory.readRamRecordWord(frame + FrameField.StackBase) & FRAME_WINDOW_MASK)
-				+ (this.memory.readRamRecordWord(frame + FrameField.StackCapacity) & FRAME_WINDOW_MASK));
+		let retained = 0;
+		if (layout.capacity > 16) {
+			let used = layout.top;
+			for (let index = 0; index < layout.depth && used * 3 < layout.capacity; ++index) {
+				const frame = this.frameAddress(layout, index);
+				used = Math.max(used, (this.memory.readRamRecordWord(frame + FrameField.StackBase) & FRAME_WINDOW_MASK)
+					+ (this.memory.readRamRecordWord(frame + FrameField.StackCapacity) & FRAME_WINDOW_MASK));
+			}
+			if (used * 3 < layout.capacity) {
+				const next = layout.capacity >>> 1, bytes = next * THREAD_STACK_SLOT_BYTES;
+				const tags = layout.offset + next * 4, oldTags = layout.offset + layout.capacity * 4;
+				this.memory.ramData().copyWithin(tags, oldTags, oldTags + next);
+				this.memory.invalidateRamWrite(tags, next);
+				this.arena.shrinkBacking(layout.block, bytes);
+				this.memory.writeRamRecordWord(address + ThreadField.StackCapacity, next);
+				this.budget.resizeRecordCharge(layout.capacity * THREAD_STACK_SLOT_BYTES, bytes);
+				retained = bytes;
+			}
 		}
-		const continuations = layout.continuations > 4 && layout.protectedDepth * 3 < layout.continuations ? layout.continuations >>> 1 : layout.continuations;
-		const values = layout.capacity > 16 && used * 3 < layout.capacity ? layout.capacity >>> 1 : layout.capacity;
-		const frames = layout.frames > 4 && layout.depth * 3 < layout.frames ? layout.frames >>> 1 : layout.frames;
-		let copied = 0;
-		if (values !== layout.capacity) {
-			const bytes = values * THREAD_STACK_SLOT_BYTES, block = this.arena.allocate(bytes, true);
-			if (block !== 0) { this.replaceStack(address, block, values); copied += bytes; }
-		}
-		if (frames !== layout.frames) {
-			const bytes = frames * FRAME_CONTROL_BYTES, block = this.arena.allocate(bytes, true);
-			if (block !== 0) { this.replaceControls(address, ThreadField.FrameBlock, block, frames); copied += bytes; }
-		}
-		if (continuations !== layout.continuations) {
-			const bytes = continuations * PROTECTED_CALL_BYTES, block = this.arena.allocate(bytes, true);
-			if (block !== 0) { this.replaceControls(address, ThreadField.ProtectedBlock, block, continuations); copied += bytes; }
-		}
-		return copied;
+		retained += this.shrinkControls(address, ThreadField.FrameCapacity, layout.frameBlock, layout.frames, layout.depth, FRAME_CONTROL_BYTES);
+		retained += this.shrinkControls(address, ThreadField.ProtectedCapacity, layout.protectedBlock, layout.continuations,
+			layout.protectedDepth, PROTECTED_CALL_BYTES);
+		return retained;
 	}
 }

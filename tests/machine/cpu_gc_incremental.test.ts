@@ -1084,7 +1084,7 @@ test('a rooted raw Thread frame retains its table edge and is collected without 
 	const reduced = memory.readRamRecordWord(address + ThreadField.StackCapacity);
 	const reducedBlock = memory.readRamRecordWord(address + ThreadField.StackBlock);
 	assert.equal(reduced, wide / 2);
-	assert.notEqual(reducedBlock, block);
+	assert.equal(reducedBlock, block);
 	assert.equal(memory.readRamRecordWord(reducedBlock), child);
 	assert.equal(memory.readRamRecordByte(reducedBlock + reduced * 4), ValueTag.Table);
 	assert.equal(memory.readRamRecordWord(address + ThreadField.FrameBlock), frame, 'shrinking values leaves the frame allocation in place');

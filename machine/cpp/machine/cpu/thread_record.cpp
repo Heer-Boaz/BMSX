@@ -125,41 +125,48 @@ void replaceControls(GcHeap& heap, u32 address, ThreadField field, u32 block, u3
 	heap.budget.replaceRecord(oldBlock, previous * stride, capacity * stride);
 }
 
+// The occupied control prefix has no capacity-relative fields. Keep it in
+// place, clearing the retained spare records just as on fresh reservation.
+static u32 shrinkControls(GcHeap& heap, u32 address, ThreadField capacityField, u32 block,
+	u32 capacity, u32 depth, u32 stride) {
+	if (capacity <= 4 || depth * 3 >= capacity) return 0;
+	const u32 next = capacity / 2, bytes = next * stride;
+	const u32 spare = (block & RAM_RECORD_WORD_MASK) + depth * stride;
+	std::memset(heap.memory.ramData() + spare, 0, bytes - depth * stride);
+	heap.memory.invalidateRamWrite(spare, bytes - depth * stride);
+	heap.arena.shrinkBacking(block, bytes);
+	heap.memory.writeRamRecordWord(address + static_cast<u32>(capacityField), next);
+	heap.budget.resizeRecordCharge(capacity * stride, bytes);
+	return bytes;
+}
+
 u32 shrinkStack(GcHeap& heap, u32 address, const ThreadStorageLayout& layout) {
-	const auto& memory = heap.memory;
-	u32 used = read(memory, address, ThreadField::StackTop) & FRAME_WINDOW_MASK;
+	auto& memory = heap.memory;
 	const u32 depth = count(memory, address, ThreadField::FrameDepth);
-	for (u32 index = 0; index < depth; ++index) {
-		const u32 frame = layout.frameAddress(index);
-		const u32 base = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackBase)) & FRAME_WINDOW_MASK;
-		const u32 capacity = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackCapacity)) & FRAME_WINDOW_MASK;
-		used = std::max(used, base + capacity);
-	}
-	u32 copied = 0;
-	// Sweeping cannot recursively collect. Each reservation can shrink
-	// independently if the allocator has a replacement for that lane.
-	if (layout.valueCapacity > 16 && static_cast<u64>(used) * 3 < layout.valueCapacity) {
-		const u32 capacity = layout.valueCapacity / 2, bytes = capacity * THREAD_STACK_SLOT_BYTES;
-		if (const u32 block = heap.arena.allocate(bytes, true)) {
-			replaceStack(heap, address, block, capacity);
-			copied += bytes;
+	u32 used = read(memory, address, ThreadField::StackTop) & FRAME_WINDOW_MASK;
+	u32 retained = 0;
+	if (layout.valueCapacity > 16) {
+		for (u32 index = 0; index < depth && static_cast<u64>(used) * 3 < layout.valueCapacity; ++index) {
+			const u32 frame = layout.frameAddress(index);
+			const u32 base = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackBase)) & FRAME_WINDOW_MASK;
+			const u32 capacity = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackCapacity)) & FRAME_WINDOW_MASK;
+			used = std::max(used, base + capacity);
+		}
+		if (static_cast<u64>(used) * 3 < layout.valueCapacity) {
+			const u32 next = layout.valueCapacity / 2, bytes = next * THREAD_STACK_SLOT_BYTES;
+			const u32 tags = layout.offset() + next * sizeof(u32);
+			std::memmove(memory.ramData() + tags, memory.ramData() + layout.offset() + layout.valueCapacity * sizeof(u32), next);
+			memory.invalidateRamWrite(tags, next);
+			heap.arena.shrinkBacking(layout.block, bytes);
+			memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::StackCapacity), next);
+			heap.budget.resizeRecordCharge(layout.valueBytes(), bytes);
+			retained = bytes;
 		}
 	}
-	if (layout.frameCapacity > 4 && depth * 3 < layout.frameCapacity) {
-		const u32 capacity = layout.frameCapacity / 2, bytes = capacity * FRAME_CONTROL_BYTES;
-		if (const u32 block = heap.arena.allocate(bytes, true)) {
-			replaceControls(heap, address, ThreadField::FrameBlock, block, capacity);
-			copied += bytes;
-		}
-	}
-	if (layout.protectedCapacity > 4 && count(memory, address, ThreadField::ProtectedDepth) * 3 < layout.protectedCapacity) {
-		const u32 capacity = layout.protectedCapacity / 2, bytes = capacity * PROTECTED_CALL_BYTES;
-		if (const u32 block = heap.arena.allocate(bytes, true)) {
-			replaceControls(heap, address, ThreadField::ProtectedBlock, block, capacity);
-			copied += bytes;
-		}
-	}
-	return copied;
+	retained += shrinkControls(heap, address, ThreadField::FrameCapacity, layout.frameBlock, layout.frameCapacity, depth, FRAME_CONTROL_BYTES);
+	retained += shrinkControls(heap, address, ThreadField::ProtectedCapacity, layout.protectedBlock, layout.protectedCapacity,
+		count(memory, address, ThreadField::ProtectedDepth), PROTECTED_CALL_BYTES);
+	return retained;
 }
 
 } // namespace bmsx::ThreadRecord

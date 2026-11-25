@@ -842,9 +842,9 @@ size_t GcHeap::sweepRecord(u32 address, u32 header, bool garbage, u8 currentWhit
 		memory.writeRamRecordByte(address + GC_COLOR_OFFSET, currentWhite);
 		if (kind != THREAD_RECORD_KIND || !compactThreads || address == growingThread) return 1;
 		const auto layout = ThreadRecord::storageLayout(memory, address);
-		const u32 relocated = ThreadRecord::shrinkStack(*this, address, layout);
-		if (relocated != 0u) m_cpu.rebindRelocatedThread(address);
-		return 1 + 2 * ceilDiv4(relocated);
+		const u32 retained = ThreadRecord::shrinkStack(*this, address, layout);
+		if (retained != 0u) m_cpu.rebindRelocatedThread(address);
+		return 1 + 2 * ceilDiv4(retained);
 	}
 	if (kind == tableRecordKind) {
 		TableRecord(*this, address).freeRecord();

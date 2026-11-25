@@ -1,8 +1,9 @@
+import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from '../../machine/ts/machine/cpu/gc_object';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ValueTag, valueBool, valueBuiltinFunction, valueInteger, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueBuiltinFunction, valueInteger, valueNil, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
@@ -106,6 +107,39 @@ test('Thread growth at its logical assist threshold admits only the new capacity
 	assert.equal(heap.usedBytes(), target);
 	assert.equal(heap.collectionTarget(), target);
 	assert.equal(cpu.gc.active(), false);
+});
+
+test('full collection trims all three Thread reservations with no replacement space', () => {
+	const { cpu, memory } = createTestSystemCpu(callImage(8, 1));
+	const thread = cpu.rootThread, arena = cpu.heapAllocator, frame = thread.currentFrame!;
+	cpu.luaHeap.reserveThreadFrameStorage(thread.address, 64, 8, valueNil());
+	thread.bindStack();
+	for (let i = 0; i < 8; ++i) thread.pushProtectedCall(ProtectedCallKind.PCall, false, 2, 1, valueBuiltinFunction(BuiltinFunctionId.PCall));
+	thread.protectedDepth = 1;
+	frame.registers.setInteger(0, 73); frame.top = 1;
+	const read = (field: ThreadField) => memory.readRamRecordWord(thread.address + field);
+	const blocks = [ThreadField.StackBlock, ThreadField.FrameBlock, ThreadField.ProtectedBlock];
+	const before = blocks.map(read), pc = frame.pc;
+	while (arena.allocate(4088, true) !== 0) {}
+	while (arena.allocate(4 * PROTECTED_CALL_BYTES, true) !== 0) {}
+	const history = new RamHistory();
+	history.start(memory);
+	const initial = history.capture(memory, null), state = cpu.captureRuntimeState();
+	cpu.collectTrackedHeapBytes();
+	assert.deepEqual(blocks.map(read), before);
+	assert.deepEqual([ThreadField.StackCapacity, ThreadField.FrameCapacity, ThreadField.ProtectedCapacity].map(read), [32, 4, 4]);
+	assert.equal(frame.registers.get(0), valueInteger(73));
+	assert.equal(frame.pc, pc); assert.equal(thread.protectedWord(0, ProtectedField.Base), 2);
+	assert.notEqual(arena.allocate(4 * PROTECTED_CALL_BYTES, true), 0);
+	const expected = memory.captureSaveState().ram;
+	const completed = history.capture(memory, initial);
+	history.restore(memory, completed, initial);
+	cpu.restoreRuntimeState(state);
+	assert.deepEqual([ThreadField.StackCapacity, ThreadField.FrameCapacity, ThreadField.ProtectedCapacity].map(read), [64, 8, 8]);
+	assert.equal(cpu.rootThread.currentFrame!.registers.get(0), valueInteger(73));
+	cpu.collectTrackedHeapBytes();
+	assert.notEqual(arena.allocate(4 * PROTECTED_CALL_BYTES, true), 0);
+	assert.equal(Buffer.compare(memory.captureSaveState().ram, expected), 0, 'rewind restores the tag plane and the allocator suffixes');
 });
 
 test('second-lane physical failure does not publish either replacement or charge', () => {

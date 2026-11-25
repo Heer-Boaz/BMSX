@@ -766,10 +766,10 @@ export class GcHeap {
 			if (kind !== THREAD_RECORD_KIND || !compactThreads || address === growingThread) return 1;
 			const layout = this.threadLayout;
 			this.threads.readLayout(address, layout);
-			const copied = this.threads.shrinkStack(address, layout);
-			// Existing execution views follow raw relocation; they are never GC roots here.
-			if (copied !== 0) this.cpu.rebindRelocatedThread(address);
-			return 1 + 2 * ceilDiv4(copied);
+			const retained = this.threads.shrinkStack(address, layout);
+			// Rebind the tag plane and reservations. Sweep charges retained extents, not host copies.
+			if (retained !== 0) this.cpu.rebindRelocatedThread(address);
+			return 1 + 2 * ceilDiv4(retained);
 		}
 		if (kind === ValueTag.Table) {
 			this.tables.freeRecord(address);
