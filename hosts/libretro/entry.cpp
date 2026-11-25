@@ -1787,6 +1787,11 @@ void retro_run(void) {
 		static_cast<bmsx::i32>(g_video_presenter->displayedViewportSize.y),
 		std::chrono::duration<bmsx::f64, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count());
 	bmsx::Runtime& runtime = g_content->runtime;
+#if defined(BMSX_DIAGNOSTIC_GEO)
+	const auto geoBefore = runtime.machine.geometryController.overlapProfile();
+	const auto tickBefore = runtime.frameScheduler.lastTickSequence;
+	const auto maintenanceBefore = runtime.frameScheduler.maintenancePulseSequence();
+#endif
 	bmsx::LibretroFrameResult frameResult = bmsx::LibretroFrameResult::NotPresented;
 	try {
 		frameResult = bmsx::runLibretroFrame(
@@ -1808,6 +1813,20 @@ void retro_run(void) {
 			g_run_cadence_accepted && !vars_updated && !restoringHardwareContext
 				&& initialAvInfoNotification == bmsx::LibretroAvInfoNotification::None
 		);
+#if defined(BMSX_DIAGNOSTIC_GEO)
+		const auto geo = runtime.machine.geometryController.overlapProfile();
+		logging.log(RETRO_LOG_INFO,
+			"[GEO] tick=%lld->%lld maintenance=%llu passes=%llu instances=%llu services=%llu pairs=%llu mask_pass=%llu exact=%llu service_cpu_ns=%llu\n",
+			static_cast<long long>(tickBefore), static_cast<long long>(runtime.frameScheduler.lastTickSequence),
+			static_cast<unsigned long long>(runtime.frameScheduler.maintenancePulseSequence() - maintenanceBefore),
+			static_cast<unsigned long long>(geo.passes - geoBefore.passes),
+			static_cast<unsigned long long>(geo.instances - geoBefore.instances),
+			static_cast<unsigned long long>(geo.services - geoBefore.services),
+			static_cast<unsigned long long>(geo.visited - geoBefore.visited),
+			static_cast<unsigned long long>(geo.maskPassed - geoBefore.maskPassed),
+			static_cast<unsigned long long>(geo.exact - geoBefore.exact),
+			static_cast<unsigned long long>(geo.threadNs - geoBefore.threadNs));
+#endif
 		switch (frameResult) {
 			case bmsx::LibretroFrameResult::RebootRequested:
 				runtime.rebootSystem();

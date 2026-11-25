@@ -9,6 +9,11 @@
 
 #include <cstddef>
 
+#if defined(BMSX_DIAGNOSTIC_GEO)
+#include "common/scope_exit.h"
+#include <time.h>
+#endif
+
 namespace bmsx {
 namespace {
 
@@ -210,6 +215,16 @@ i64 GeometryController::intervalCycles(const MemoryWordCounters& memory, i64 wor
 }
 
 void GeometryController::serviceOverlap(i64 nowCycles) {
+#if defined(BMSX_DIAGNOSTIC_GEO)
+	timespec start;
+	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
+	++m_overlapProfile.services;
+	ScopeExit measure([&] {
+		timespec end;
+		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
+		m_overlapProfile.threadNs += (end.tv_sec - start.tv_sec) * 1000000000LL + end.tv_nsec - start.tv_nsec;
+	});
+#endif
 	GeoJob& job = *m_activeJob;
 	for (;;) {
 		const u32 initialPhase = m_overlap2d.progress().phase;
@@ -218,7 +233,15 @@ void GeometryController::serviceOverlap(i64 nowCycles) {
 		u32 groupWords = 0u;
 		do {
 			const bool publishing = m_overlap2d.progress().phase == 4u;
+#if defined(BMSX_DIAGNOSTIC_GEO)
+			m_overlapProfile.visited += m_overlap2d.progress().phase == 1u;
+			const u32 broadBefore = job.broadphasePairCount, exactBefore = job.exactPairCount;
+#endif
 			const u32 fault = m_overlap2d.processStep(job);
+#if defined(BMSX_DIAGNOSTIC_GEO)
+			m_overlapProfile.maskPassed += job.broadphasePairCount - broadBefore;
+			m_overlapProfile.exact += job.exactPairCount - exactBefore;
+#endif
 			if (fault != 0u) {
 				finishError(fault, job.processed);
 				return;
@@ -280,6 +303,11 @@ void GeometryController::start(int64_t nowCycles, uint32_t command) {
 		job.resultCount = 0u;
 		job.exactPairCount = 0u;
 		job.broadphasePairCount = 0u;
+#if defined(BMSX_DIAGNOSTIC_GEO)
+		++m_overlapProfile.passes;
+		m_overlapProfile.instances += (job.param0 & GEO_OVERLAP2D_MODE_MASK) == GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS
+			? job.stride2 : job.count;
+#endif
 		m_overlap2d.beginJob(job);
 	}
 	if (job.count == 0u && job.cmd != IO_CMD_GEO_OVERLAP2D_PASS) {

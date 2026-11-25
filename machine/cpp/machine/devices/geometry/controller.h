@@ -26,6 +26,13 @@ public:
 		DeviceScheduler& scheduler
 	);
 
+#if defined(BMSX_DIAGNOSTIC_GEO)
+	// Host diagnostics; never serialized or exposed in the GEO register file.
+	struct OverlapProfile {
+		uint64_t passes, instances, services, visited, maskPassed, exact, threadNs;
+	};
+	OverlapProfile overlapProfile() const { return m_overlapProfile; }
+#endif
 	void setTiming(int64_t cpuHz, int64_t workUnitsPerSec);
 	bool hasPendingWork() const;
 	uint32_t getPendingWorkUnits() const;
@@ -61,6 +68,9 @@ private:
 	void latchResultRegisters(u32 status, u32 processed, u32 fault);
 	void mirrorRegisters();
 
+#if defined(BMSX_DIAGNOSTIC_GEO)
+	OverlapProfile m_overlapProfile{};
+#endif
 	int64_t m_cpuHz = 1;
 	int64_t m_workUnitsPerSec = 1;
 	int64_t m_workCarry = 0;

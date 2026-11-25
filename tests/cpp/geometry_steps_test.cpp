@@ -136,6 +136,12 @@ int main() {
 		advance(4);
 		require(controller.captureState().pendingCycles == 26, "one bounded read group samples the instance and pair headers");
 		advance(26);
+		#if defined(BMSX_DIAGNOSTIC_GEO)
+		const auto profile = controller.overlapProfile();
+		require(profile.passes == 1 && profile.instances == 2 && profile.services == 2
+			&& profile.visited == 1 && profile.maskPassed == 1 && profile.exact == 1,
+			"profile counts submitted instances and actual pipeline stages across scheduler intervals");
+#endif
 		const auto calculated = controller.captureState();
 		require(calculated.overlap.phase == 3u && calculated.pendingCycles > calculated.overlap.pendingMemory.ramWords,
 			"bounded piece math remains private until its work debt is paid");
@@ -171,6 +177,14 @@ int main() {
 			require(memory.readIoU32(IO_GEO_STATUS) == GEO_STATUS_DONE && memory.readIoU32(IO_GEO_PROCESSED) == 2u,
 				"DONE waits for the final paid output boundary");
 			require((memory.readMappedWord(IO_IRQ_FLAGS) & IRQ_GEO_DONE) != 0u, "the completion IRQ follows the output deadline");
+#if defined(BMSX_DIAGNOSTIC_GEO)
+			memory.writeU32(instances + GEO_OVERLAP2D_INSTANCE_MASK_OFFSET, 0u);
+			memory.writeMappedWord(IO_GEO_CMD, job.cmd);
+			while (controller.hasPendingWork()) advance(machine.scheduler.nextDeadline() - machine.scheduler.nowCycles());
+			const auto masked = controller.overlapProfile();
+			require(masked.visited == 2 && masked.maskPassed == 1 && masked.exact == 1,
+				"a layer-rejected pair is visited without reaching broad or exact testing");
+#endif
 		}
 	}
 

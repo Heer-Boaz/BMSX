@@ -20,6 +20,7 @@ option(BMSX_NATIVE_PERF_MAP "Publish generated native-code symbols to Linux perf
 option(BMSX_NATIVE_IR_TRACE "Enable opt-in native compilation IR diagnostics" OFF)
 option(BMSX_NATIVE_GATE_PROFILE "Report materialized native C++ gate transitions per libretro run" OFF)
 option(BMSX_DIAGNOSTIC_CPU_SLICES "Measure CPU-run consumption and GC phases in diagnostic builds" OFF)
+option(BMSX_DIAGNOSTIC_GEO "Report overlap work and thread CPU time per libretro run (Linux)" OFF)
 option(BMSX_DIAGNOSTIC_CPU_TIMING "Measure Linux CPU-slice wall/thread time without opcode probes" OFF)
 option(BMSX_ENABLE_ZLIB "Enable PNG screenshot output" ON)
 set(BMSX_ENABLE_GLES2_DEFAULT ON)
@@ -370,6 +371,12 @@ target_include_directories(bmsx_core PUBLIC
 
 target_link_libraries(bmsx_core PUBLIC bmsx_binary_codec)
 
+if(BMSX_DIAGNOSTIC_GEO)
+	if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		message(FATAL_ERROR "BMSX_DIAGNOSTIC_GEO requires Linux thread CPU clocks")
+	endif()
+	target_compile_definitions(bmsx_core PUBLIC BMSX_DIAGNOSTIC_GEO=1)
+endif()
 if(BMSX_DIAGNOSTIC_CPU_SLICES)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_DIAGNOSTIC_CPU_SLICES=1)
 endif()
