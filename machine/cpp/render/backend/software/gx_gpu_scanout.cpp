@@ -11,6 +11,8 @@
 
 #if defined(__ARM_NEON)
 #include <arm_neon.h>
+#elif defined(__SSE2__)
+#include <emmintrin.h>
 #endif
 
 namespace bmsx {
@@ -122,10 +124,12 @@ void fillBackgroundRows(
 	}
 }
 
-#if defined(__ARM_NEON)
+#if defined(__ARM_NEON) || defined(__SSE2__)
 void writeGx16RgbaRow(const GxGpuSoftwareState& software, u32* output, u32 address, u32 count) {
+#if defined(__ARM_NEON)
 	const uint16x8_t channelMask = vdupq_n_u16(31u);
 	const uint16x8_t alphaMask = vdupq_n_u16(0x8000u);
+#endif
 	// Each contiguous span ends at the installed-VRAM address wrap.
 	while (count != 0u) {
 		const size_t sourceIndex = static_cast<size_t>(address) & software.vramWordMask;
@@ -133,6 +137,7 @@ void writeGx16RgbaRow(const GxGpuSoftwareState& software, u32* output, u32 addre
 		const u16* source = software.vram.data() + sourceIndex;
 		size_t index = 0u;
 		for (; index + 8u <= spanCount; index += 8u) {
+#if defined(__ARM_NEON)
 			const uint16x8_t words = vld1q_u16(source + index);
 			const uint16x8_t red5 = vandq_u16(words, channelMask);
 			const uint16x8_t green5 = vandq_u16(vshrq_n_u16(words, 5), channelMask);
@@ -149,6 +154,21 @@ void writeGx16RgbaRow(const GxGpuSoftwareState& software, u32* output, u32 addre
 				vshlq_n_u32(vmovl_u16(vget_high_u16(ra)), 16));
 			vst1q_u32(output + index, low);
 			vst1q_u32(output + index + 4u, high);
+#else
+			const __m128i words = _mm_loadu_si128(reinterpret_cast<const __m128i*>(source + index));
+			const __m128i mask = _mm_set1_epi16(31);
+			const __m128i r = _mm_and_si128(words, mask);
+			const __m128i g = _mm_and_si128(_mm_srli_epi16(words, 5), mask);
+			const __m128i b = _mm_and_si128(_mm_srli_epi16(words, 10), mask);
+			// Assemble two halfwords per output pixel, then interleave them.
+			const __m128i bg5 = _mm_or_si128(b, _mm_slli_epi16(g, 8));
+			const __m128i bg = _mm_or_si128(_mm_slli_epi16(bg5, 3),
+				_mm_and_si128(_mm_srli_epi16(bg5, 2), _mm_set1_epi16(0x0707)));
+			const __m128i ra = _mm_or_si128(_mm_or_si128(_mm_slli_epi16(r, 3), _mm_srli_epi16(r, 2)),
+				_mm_and_si128(words, _mm_set1_epi16(-32768)));
+			_mm_storeu_si128(reinterpret_cast<__m128i*>(output + index), _mm_unpacklo_epi16(bg, ra));
+			_mm_storeu_si128(reinterpret_cast<__m128i*>(output + index + 4u), _mm_unpackhi_epi16(bg, ra));
+#endif
 		}
 		for (; index < spanCount; ++index) output[index] = outputArgb(GX_GPU_SOFTWARE_RGB555_RGBA[source[index]]);
 		address += static_cast<u32>(spanCount);
@@ -174,7 +194,7 @@ void writeGx16CircuitRows(
 			+ sourceY * circuit.framebufferWidth
 			+ circuit.framebufferX + left - circuit.displayX;
 		u32* output = pixels + static_cast<size_t>(y) * static_cast<size_t>(pixelsPerRow) + left;
-#if defined(__ARM_NEON)
+#if defined(__ARM_NEON) || defined(__SSE2__)
 		if constexpr (Operation == Gx16CircuitOperation::WriteRgba) {
 			writeGx16RgbaRow(software, output, address, right - left);
 		} else
