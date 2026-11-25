@@ -2860,8 +2860,10 @@ export class CPU implements MappedPageInvalidator {
 		}
 		const region = compileJavaScriptRegion(plans, image, this.memory, this.stringPool,
 			this.globalBank.slots, this.systemGlobalBank.slots, this.cop0Words, this.gc);
-		for (const old of merged) this.compiledCodeCache.retireRegion(old);
-		this.compiledCodeCache.install(region);
+		if (!this.compiledCodeCache.install(region, merged)) {
+			page.dispatchOps[word] = page.ops[word];
+			return;
+		}
 		if (image.compiledCodeLookup === null) image.compiledCodeLookup = new CompiledCodeLookup();
 		for (let entry = 0; entry < region.entries.length; ++entry) {
 			const block = region.entries[entry], sourcePage = block.page;
@@ -2879,10 +2881,6 @@ export class CPU implements MappedPageInvalidator {
 		if (page.dispatchOps[word] === DecodedDispatchOp.CompiledWarm) {
 			if (cache.visits[word] < COMPILED_BLOCK_THRESHOLD) ++cache.visits[word];
 			if (frame.compilationEntry && cache.visits[word] === COMPILED_BLOCK_THRESHOLD) {
-				if (this.compiledCodeCache.atCapacity()) {
-					this.compiledCodeCache.retireAll();
-					cache.visits[word] = COMPILED_BLOCK_THRESHOLD;
-				}
 				this.prepareCompiledRegion(frame, page, word);
 			}
 		}

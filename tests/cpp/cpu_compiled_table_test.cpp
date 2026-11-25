@@ -1487,7 +1487,7 @@ void resolvedFieldKeepsPendingFixedCallsUntilAnObserver() {
 		const auto& block = page.nativeBlocks->entries[word];
 		require(block && page.words[word].nativeCallTarget() == native.rom.functionAddresses[function], "the real CALLs have observed fixed targets");
 		const auto region = block->region;
-		page.retireNativeRegion(region.get(), DecodedInstructionPage::Retirement::Capacity);
+		region->retire(NativeRetirement::Capacity);
 	}
 	cpu.prepareSystemNativeCode();
 	for (const u32 instruction : {parent, middle}) {

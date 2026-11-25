@@ -41,37 +41,57 @@ void CPU::synchronizeNativeHistoryWrites() {
 NativeBlockPage::~NativeBlockPage() {
 	// Images can disappear without individual source invalidation. The
 	// region may still be borrowed by an inspector, but is no longer resident.
-	for (const auto& block : entries)
-		if (block) block->region->withdrawFromCache();
+	if (!count) return;
+	occupied.forEach([&](u32 word) { entries[word]->region->withdrawFromCache(); });
 }
 
-void DecodedInstructionPage::retireNativeRegion(const NativeCodeRegion* region, Retirement reason) {
+void DecodedInstructionPage::publishNativeEntry(size_t regionPage, u32 word, std::unique_ptr<NativeBlock> block) {
+	static_assert(DECODED_PAGE_WORDS <= UINT16_MAX);
+	if (!nativeBlocks) nativeBlocks = std::make_unique<NativeBlockPage>();
+	auto& head = block->region->m_pageEntries[regionPage];
+	block->m_nextPageEntry = head;
+	head = static_cast<u16>(word + 1u);
+	nativeCode[word] = block->m_body;
+	nativeBlocks->entries[word] = std::move(block);
+	nativeBlocks->occupied.set(word);
+	++nativeBlocks->count;
+	words[word].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
+	refreshState[word] &= static_cast<u8>(~DECODED_REFRESH_FUSION);
+}
+
+void NativeCodeRegion::retire(NativeRetirement reason) {
 	std::shared_ptr<NativeCodeRegion> retiring;
-	for (auto* page : std::span(region->m_pages).first(region->m_pageCount)) {
-		for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
+	for (u32 index = 0; index < m_pageCount; ++index) {
+		u16 member = std::exchange(m_pageEntries[index], 0u);
+		if (!member) continue;
+		auto* page = m_pages[index];
+		while (member) {
+			const u32 entry = member - 1u;
 			auto& block = page->nativeBlocks->entries[entry];
-			if (!block || block->region.get() != region) continue;
+			member = block->m_nextPageEntry;
 			if (!retiring) retiring = block->region;
 			page->nativeCode[entry] = nullptr;
 			block.reset();
+			page->nativeBlocks->occupied.reset(entry);
 			--page->nativeBlocks->count;
 			page->words[entry].dispatchOp = nativeWarmDispatch(page->words[entry]);
-			page->nativeVisits[entry] = reason == Retirement::Feedback ? NATIVE_BLOCK_COMPILATION_THRESHOLD : 0u;
+			page->nativeVisits[entry] = reason == NativeRetirement::Feedback ? NATIVE_BLOCK_COMPILATION_THRESHOLD : 0u;
 		}
 		if (page->nativeBlocks->count == 0u) page->nativeBlocks.reset();
 	}
 	retiring->withdrawFromCache();
 }
 
-void DecodedInstructionPage::retireNativeBlocks(u32 firstWord, u32 endWord, Retirement reason) {
+void DecodedInstructionPage::retireNativeBlocks(u32 firstWord, u32 endWord, NativeRetirement reason) {
 	if (!nativeBlocks) return;
 	const u32 firstEntry = firstWord > 2u * (NATIVE_BLOCK_MAX_INSTRUCTIONS + 1u)
 		? firstWord - 2u * (NATIVE_BLOCK_MAX_INSTRUCTIONS + 1u) : 0u;
 	const u32 endEntry = endWord < DECODED_PAGE_WORDS ? endWord : DECODED_PAGE_WORDS;
-	for (u32 word = firstEntry; word < endEntry; ++word) {
+	for (u32 word = nativeBlocks->occupied.next(firstEntry, endEntry); word < endEntry;
+		word = nativeBlocks->occupied.next(word + 1u, endEntry)) {
 		const auto& block = nativeBlocks->entries[word];
-		if (!block || word + block->sourceWords <= firstWord) continue;
-		retireNativeRegion(block->region.get(), reason);
+		if (word + block->sourceWords <= firstWord) continue;
+		block->region->retire(reason);
 		if (!nativeBlocks) return;
 	}
 }
@@ -80,7 +100,7 @@ void CPU::retireNativeInstructionUsers(DecodedInstructionPage& page, u32 word) {
 	// This operation is reached outside generated code. Withdraw all source
 	// users (including an independently published suffix) and preserve the
 	// feedback for the next compilation.
-	page.retireNativeBlocks(word, word + 1u, DecodedInstructionPage::Retirement::Feedback);
+	page.retireNativeBlocks(word, word + 1u, NativeRetirement::Feedback);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	auto& pending = m_pendingNativeCompilation;
 	const auto sources = pending.sources();
@@ -143,7 +163,6 @@ bool CPU::installNativeRegion(Blua32ExecutionImage& image, std::span<const Nativ
 	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
 	for (const auto& source : sources) {
 		auto& page = *source.page;
-		if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
 		page.nativeCode = lookup->install(source.pc, slot, page);
 	}
 	// Cartridge execution images pin instruction fetch to their physical bank.
@@ -192,11 +211,7 @@ bool CPU::installNativeRegion(Blua32ExecutionImage& image, std::span<const Nativ
 					side.continuationCells[bank] = lookup->entrySlot(side.nextPc, bank);
 			}
 		}
-		page.nativeBlocks->entries[entry] = std::move(block);
-		page.nativeCode[entry] = page.nativeBlocks->entries[entry]->m_body;
-		++page.nativeBlocks->count;
-		page.words[entry].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
-		page.refreshState[entry] &= static_cast<u8>(~DECODED_REFRESH_FUSION);
+		page.publishNativeEntry(&source - sources.data(), entry, std::move(block));
 	}
 	if (m_nativeCompilationProfiling) {
 		auto& profile = m_nativeCompilationProfile;

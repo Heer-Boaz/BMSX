@@ -28,6 +28,7 @@ class CPU;
 class GcHeap;
 class NativeBlock;
 class NativeBlockGate;
+enum class NativeRetirement : u8;
 class NativeLowering;
 class NativeCompiler;
 class NativeCodeCache;
@@ -137,6 +138,7 @@ public:
 	NativeCodeRegion();
 	// Synchronize on the receiving thread before entering worker-emitted code.
 	void synchronizeInstructionStream() const;
+	void retire(NativeRetirement reason);
 #if defined(BMSX_NATIVE_PERF_MAP)
 	void recordPerfMap(ExecutionDomainId domain, u32 slot, u32 firstPc) const;
 #endif
@@ -158,6 +160,8 @@ private:
 	std::vector<NativeTableConstructor> m_constructors;
 	NativeCodeCache* m_cache = nullptr;
 	std::array<DecodedInstructionPage*, NATIVE_VERSION_REGION_MAX_PAGES> m_pages{};
+	// One-based page-local entry chains; zero is the empty chain.
+	std::array<u16, NATIVE_VERSION_REGION_MAX_PAGES> m_pageEntries{};
 	u8 m_pageCount = 0;
 	NativeCodeRegion* m_older = nullptr;
 	NativeCodeRegion* m_newer = nullptr;
@@ -182,6 +186,9 @@ public:
 	u16 sourceWords = 0;
 
 private:
+	friend struct DecodedInstructionPage;
+	friend class NativeCodeRegion;
+	u16 m_nextPageEntry = 0;
 	friend struct NativeBlockLink;
 	friend class CPU;
 	friend class NativeLowering;

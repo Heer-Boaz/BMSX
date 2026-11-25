@@ -735,7 +735,7 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied, u32 
 	require(newPage->words[word].nativeCallTarget() == prototype && newPage->nativeBlocks
 		&& newPage->nativeBlocks->entries[word].get() == newOriginal && newOriginal->region == newRegion,
 		"learning the replacement target leaves the published body installed");
-	newPage->retireNativeRegion(newRegion.get(), DecodedInstructionPage::Retirement::Capacity);
+	newRegion->retire(NativeRetirement::Capacity);
 	generated.cpu.prepareSystemNativeCode();
 	const auto& newFixed = newPage->nativeBlocks->entries[word]->terminal;
 	require(newFixed.callStrategy == NativeCallStrategy::Fixed && newFixed.fixedCall.plan.entryPc == newEntry
@@ -858,7 +858,7 @@ void nativeCallChainIsRestorableAtBlockedMmio(bool openOuter) {
 	}
 	for (u32 i = 0; i < calls.size(); ++i)
 		if (i == 0 || calls[i].region != calls[0].region)
-			calls[i].page->retireNativeRegion(calls[i].region.get(), DecodedInstructionPage::Retirement::Capacity);
+			calls[i].region->retire(NativeRetirement::Capacity);
 	generated.cpu.prepareSystemNativeCode();
 	for (u32 i = 0; i < calls.size(); ++i) {
 		const auto& call = calls[i];

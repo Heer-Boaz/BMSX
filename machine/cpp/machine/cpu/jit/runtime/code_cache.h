@@ -9,6 +9,7 @@ class NativeCodeRegion;
 struct DecodedInstructionPage;
 struct NativeCompilationProfile;
 
+enum class NativeRetirement : u8 { SourceChanged, Feedback, Capacity };
 enum class NativeCodeAdmission { Warmup, Adaptive };
 
 // CPU-thread residency, in publication order. The cap covers emitted code

@@ -19,7 +19,7 @@ bool NativeCodeCache::tryInstall(NativeCodeRegion& region, std::span<DecodedInst
 		const size_t before = m_codeBytes;
 		do {
 			auto* victim = m_oldest;
-			victim->m_pages.front()->retireNativeRegion(victim, DecodedInstructionPage::Retirement::Capacity);
+			victim->retire(NativeRetirement::Capacity);
 			if (profile) ++profile->capacityEvictedRegions;
 		} while (region.codeBytes > m_capacity - m_codeBytes);
 		if (profile) {
@@ -44,7 +44,7 @@ bool NativeCodeCache::tryInstall(NativeCodeRegion& region, std::span<DecodedInst
 
 void NativeCodeCache::clear() {
 	while (m_oldest)
-		m_oldest->m_pages.front()->retireNativeRegion(m_oldest, DecodedInstructionPage::Retirement::SourceChanged);
+		m_oldest->retire(NativeRetirement::SourceChanged);
 }
 
 void NativeCodeCache::withdraw(NativeCodeRegion& region) {

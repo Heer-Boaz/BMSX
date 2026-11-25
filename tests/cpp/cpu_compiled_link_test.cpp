@@ -664,8 +664,8 @@ void codeCapacityRetiresOldestCompleteRegion() {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 1}};
 	CpuMachine machine(image, false);
-	constexpr u32 firstPc = DYNAMIC_RAM_BASE, secondPc = firstPc + MAPPED_PAGE_BYTE_SIZE;
-	constexpr u32 thirdPc = secondPc + MAPPED_PAGE_BYTE_SIZE;
+	constexpr u32 firstPc = DYNAMIC_RAM_BASE, secondPc = firstPc + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
+	constexpr u32 thirdPc = firstPc + MAPPED_PAGE_BYTE_SIZE;
 	const auto compileJumps = [&](u32 origin, u32 target, size_t entries) {
 		DecodedInstruction jump{.op = static_cast<u8>(OpCode::JMP), .width = 1};
 		jump.setBx(target);
@@ -686,28 +686,23 @@ void codeCapacityRetiresOldestCompleteRegion() {
 
 	NativeCodeCache cache(limit);
 	NativeCompilationProfile profile;
-	DecodedInstructionPage oldest(MappedPageBinding{0, true, nullptr, {}}), survivor(MappedPageBinding{0, true, nullptr, {}});
+	DecodedInstructionPage oldest(MappedPageBinding{0, true, nullptr, {}});
 	std::optional<DecodedInstructionPage> incomingStorage(std::in_place, MappedPageBinding{0, true, nullptr, {}});
 	auto& incoming = *incomingStorage;
-	std::array<void*, DECODED_PAGE_WORDS> oldestCells{}, survivorCells{}, incomingCells{};
+	std::array<void*, DECODED_PAGE_WORDS> oldestCells{}, incomingCells{};
 	oldest.nativeCode = oldestCells.data();
-	survivor.nativeCode = survivorCells.data();
 	incoming.nativeCode = incomingCells.data();
 	const auto install = [](DecodedInstructionPage& page, auto& blocks) {
-		page.nativeBlocks = std::make_unique<NativeBlockPage>();
 		for (auto& block : blocks) {
 			const u32 word = (block->firstPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-			page.nativeBlocks->entries[word] = std::move(block);
-			// The owner clears the cell without interpreting its executable address.
-			page.nativeCode[word] = page.nativeBlocks->entries[word].get();
-			++page.nativeBlocks->count;
+			page.publishNativeEntry(0, word, std::move(block));
 		}
 	};
 	require(cache.tryInstall(*first[0]->region, std::array{&oldest}, NativeCodeAdmission::Warmup, &profile), "first region fits");
 	install(oldest, first);
-	require(cache.tryInstall(*second[0]->region, std::array{&survivor}, NativeCodeAdmission::Adaptive, &profile), "second region fits exactly");
-	install(survivor, second);
-	auto& predecessor = *survivor.nativeBlocks->entries[0];
+	require(cache.tryInstall(*second[0]->region, std::array{&oldest}, NativeCodeAdmission::Adaptive, &profile), "second region fits exactly");
+	install(oldest, second);
+	auto& predecessor = *oldest.nativeBlocks->entries.back();
 	oldest.nativeBlocks->entries[0]->linkFrom(predecessor.terminal);
 	const auto borrowed = oldest.nativeBlocks->entries[0]->region;
 	oldest.nativeSourceLeaders.set(0);
@@ -730,8 +725,8 @@ void codeCapacityRetiresOldestCompleteRegion() {
 		&& profile.capacityEvictedRegions == 1 && profile.capacityRetiredCodeBytes == firstBytes
 		&& profile.prepareNanoseconds == profile.retirementNanoseconds,
 		"capacity accounting counts resident bytes even if a retired region is borrowed");
-	require(!oldest.nativeBlocks && oldestCells[0] == nullptr && oldestCells[1] == nullptr
-		&& oldest.nativeSourceLeaders[0] && survivorCells[0] && incomingCells[0]
+	require(oldest.nativeBlocks->count == 1 && oldestCells[0] == nullptr && oldestCells[1] == nullptr
+		&& oldest.nativeSourceLeaders[0] && oldestCells.back() && incomingCells[0]
 		&& predecessor.terminal.link.target == nullptr,
 		"all victim entries and incoming links are withdrawn, while the source leader and newer regions survive");
 	std::array<Value, 1> values{valueNil()};
@@ -741,7 +736,9 @@ void codeCapacityRetiresOldestCompleteRegion() {
 	require(predecessor.run(regs.view(), state) == &predecessor.terminal,
 		"the surviving predecessor branches through its original cold exit");
 
-	survivor.retireNativeBlocks(0, 1);
+	oldest.retireNativeBlocks(0, DECODED_PAGE_WORDS - 1u);
+	require(oldestCells.back() && cache.codeBytes() == limit, "invalidating the sparse gap leaves the final entry resident");
+	oldest.retireNativeBlocks(DECODED_PAGE_WORDS - 1u, DECODED_PAGE_WORDS);
 	require(cache.codeBytes() == firstBytes && profile.capacityEvictedRegions == 1,
 		"explicit source retirement releases bytes without reporting a capacity eviction");
 	incomingStorage.reset(); // Image teardown also releases residency.

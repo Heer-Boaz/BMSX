@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
+import { CompiledBlockPage, CompiledCodeCache, linkCompiledBlock } from '../../machine/ts/machine/cpu/compiled_code_cache';
+import { compileJavaScriptRegion, type CompiledRegion } from '../../machine/ts/machine/cpu/compiled_region';
+import { createDecodedInstructionPage } from '../../machine/ts/machine/cpu/execution_image';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { ValueTag, valueInteger, valueFloatBits, valueBool, valueTable, valueNil, valueString } from '../../machine/ts/machine/cpu/value';
@@ -518,4 +521,47 @@ test('more than six live-through raw Values remain local across every internal e
 			assert.ok(writes[register] <= 1, `live-through binding ${register} is published only at the cold exit`);
 		}
 	}
+});
+
+test('generated-source capacity admits whole replacements without flushing unrelated entries', () => {
+	const text = new Uint8Array(INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }] });
+	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const page = createDecodedInstructionPage({ key: DYNAMIC_RAM_BASE, cacheable: true, readBytes: null,
+		readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 });
+	const resident = page.compiledBlocks = new CompiledBlockPage();
+	const globals = new ValueSlots(0), cop0 = new Uint32Array(0);
+	const compile = (...words: number[]) => {
+		const plans = words.map(firstWord => {
+			page.ops[firstWord] = OpCode.JMP;
+			page.widths[firstWord] = 1;
+			page.bx[firstWord] = DYNAMIC_RAM_BASE;
+			return { page, firstWord, endWord: firstWord + 1, pc: DYNAMIC_RAM_BASE + firstWord * INSTRUCTION_BYTES,
+				skippedInstructionWidth: 0, fallthrough: false };
+		});
+		return compileJavaScriptRegion(plans, cpu.rootThread.currentFrame!.executionImage, memory,
+			cpu.stringPool, globals, globals, cop0, cpu.gc);
+	};
+	const a = compile(31), b = compile(63), c = compile(95), b2 = compile(63);
+	const cache = new CompiledCodeCache(a.sourceUnits + b.sourceUnits);
+	const none = new Set<CompiledRegion>();
+	assert.ok(cache.install(a, none) && cache.install(b, none));
+	linkCompiledBlock(b.entries[0].terminal, a.entries[0]);
+	assert.equal(cache.install(compile(...Array.from({ length: 128 }, (_, i) => 2 * i + 1)), new Set([a, b])), false);
+	assert.equal(b.entries[0].terminal.linkedBlock, a.entries[0], 'oversize rejection leaves the resident link in place');
+	assert.ok(cache.install(b2, new Set([b])));
+	assert.equal(resident.entries[31], a.entries[0], 'replacing an equal charge needs no eviction');
+	linkCompiledBlock(b2.entries[0].terminal, a.entries[0]);
+	assert.ok(cache.install(c, none));
+	assert.equal(resident.entries[31], null);
+	assert.equal(b2.entries[0].terminal.linkedBlock, null);
+	assert.equal(resident.entries[63], b2.entries[0]);
+	assert.equal(resident.sourceUnits, b2.sourceUnits + c.sourceUnits);
+	cache.retirePage(page, 95, 96);
+	assert.equal(resident.entries[95], null);
+	assert.equal(resident.entries[63], b2.entries[0]);
+	cache.retireAll();
+	assert.equal(resident.entryCount, 0);
+	assert.equal(resident.sourceUnits, 0);
 });

@@ -2,11 +2,7 @@ import { COMPILED_BLOCK_MAX_INSTRUCTIONS, type CompiledBlock, type CompiledBlock
 import { DECODED_PAGE_WORDS, DecodedDispatchOp, type DecodedInstructionPage } from './execution_image';
 import type { CompiledRegion } from './compiled_region';
 
-/**
- * Generated source code units, not executable bytes or an upfront allocation.
- * Retiring every region is a last resort, so the budget holds the hot code of
- * a full game with room to spare.
- */
+// Measured in generated JavaScript source units, not executable bytes.
 const COMPILED_SOURCE_BUDGET = 16 * 1024 * 1024;
 
 function unlinkCompiledExit(exit: CompiledBlockExitSite): void {
@@ -29,6 +25,7 @@ export function linkCompiledBlock(source: CompiledBlockExitSite, target: Compile
 export class CompiledBlockPage {
 	public readonly entries = new Array<CompiledBlock | null>(DECODED_PAGE_WORDS).fill(null);
 	public readonly visits = new Uint8Array(DECODED_PAGE_WORDS);
+	public readonly occupied = new Uint32Array(DECODED_PAGE_WORDS >>> 5);
 	public entryCount = 0;
 	// Each translation is charged only on the page of its first entry.
 	public sourceUnits = 0;
@@ -39,21 +36,33 @@ export class CompiledCodeCache {
 	private readonly regions = new Set<CompiledRegion>();
 	private sourceUnits = 0;
 
-	public atCapacity(): boolean { return this.sourceUnits >= COMPILED_SOURCE_BUDGET; }
+	public constructor(private readonly capacity = COMPILED_SOURCE_BUDGET) {}
 
-	public install(region: CompiledRegion): void {
+	public install(region: CompiledRegion, replaced: ReadonlySet<CompiledRegion>): boolean {
+		if (region.sourceUnits > this.capacity) return false;
+		for (const old of replaced) this.retireRegion(old);
+		const retainedBudget = this.capacity - region.sourceUnits;
+		if (this.sourceUnits > retainedBudget) {
+			// Set iteration is publication order, including when its current item is deleted.
+			for (const oldest of this.regions) {
+				this.retireRegion(oldest);
+				if (this.sourceUnits <= retainedBudget) break;
+			}
+		}
 		for (const block of region.entries) {
 			const page = block.page, cache = page.compiledBlocks!;
 			cache.entries[block.firstWord] = block;
+			cache.occupied[block.firstWord >>> 5] |= 1 << (block.firstWord & 31);
 			++cache.entryCount;
 			page.dispatchOps[block.firstWord] = DecodedDispatchOp.Compiled;
 		}
 		region.entries[0].page.compiledBlocks!.sourceUnits += region.sourceUnits;
 		this.sourceUnits += region.sourceUnits;
 		this.regions.add(region);
+		return true;
 	}
 
-	public retireRegion(region: CompiledRegion): void {
+	private retireRegion(region: CompiledRegion): void {
 		for (const block of region.entries) {
 			const page = block.page, cache = page.compiledBlocks!;
 			for (const exit of block.exits) unlinkCompiledExit(exit);
@@ -61,6 +70,7 @@ export class CompiledCodeCache {
 			page.dispatchOps[block.firstWord] = DecodedDispatchOp.CompiledWarm;
 			cache.entries[block.firstWord] = null;
 			cache.visits[block.firstWord] = 0;
+			cache.occupied[block.firstWord >>> 5] &= ~(1 << (block.firstWord & 31));
 			--cache.entryCount;
 		}
 		region.entries[0].page.compiledBlocks!.sourceUnits -= region.sourceUnits;
@@ -73,9 +83,15 @@ export class CompiledCodeCache {
 		if (cache === null || cache.entryCount === 0) return;
 		const firstEntry = Math.max(0, firstWord - 2 * (COMPILED_BLOCK_MAX_INSTRUCTIONS + 1));
 		const endEntry = Math.min(DECODED_PAGE_WORDS, endWord);
-		for (let word = firstEntry; word < endEntry; ++word) {
-			const block = cache.entries[word];
-			if (block !== null && word + block.sourceWords > firstWord) this.retireRegion(block.region);
+		for (let group = firstEntry >>> 5; group * 32 < endEntry; ++group) {
+			let mask = group === (firstEntry >>> 5) ? -1 << (firstEntry & 31) : -1;
+			for (let bits = cache.occupied[group] & mask; bits !== 0; bits = cache.occupied[group] & mask) {
+				const low = bits & -bits, word = group * 32 + 31 - Math.clz32(low);
+				if (word >= endEntry) return;
+				const block = cache.entries[word]!;
+				if (word + block.sourceWords > firstWord) this.retireRegion(block.region);
+				mask &= ~low;
+			}
 		}
 	}
 

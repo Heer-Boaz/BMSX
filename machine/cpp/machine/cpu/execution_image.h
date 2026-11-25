@@ -21,7 +21,9 @@
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include <bitset>
 
+#include "machine/cpu/jit/page_words.h"
 #include "machine/cpu/jit/runtime/code_lookup.h"
+#include "machine/cpu/jit/runtime/code_cache.h"
 #include "machine/cpu/jit/runtime/field_feedback.h"
 #endif
 
@@ -93,6 +95,7 @@ struct NativeCodeSourcePage {
 struct NativeBlockPage {
 	~NativeBlockPage();
 	std::array<std::unique_ptr<NativeBlock>, DECODED_PAGE_WORDS> entries{};
+	NativePageWords occupied;
 	u32 count = 0;
 };
 
@@ -127,9 +130,8 @@ struct DecodedInstructionPage {
 	void** nativeCode = nullptr;
 	std::unique_ptr<NativeBlockPage> nativeBlocks;
 
-	enum class Retirement : u8 { SourceChanged, Feedback, Capacity };
-	void retireNativeRegion(const NativeCodeRegion*, Retirement);
-	void retireNativeBlocks(u32 firstWord = 0, u32 endWord = DECODED_PAGE_WORDS + 1u, Retirement = Retirement::SourceChanged);
+	void publishNativeEntry(size_t regionPage, u32 word, std::unique_ptr<NativeBlock> block);
+	void retireNativeBlocks(u32 firstWord = 0, u32 endWord = DECODED_PAGE_WORDS + 1u, NativeRetirement = NativeRetirement::SourceChanged);
 
 #endif
 };

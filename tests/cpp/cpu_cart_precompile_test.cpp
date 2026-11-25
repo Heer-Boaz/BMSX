@@ -366,7 +366,7 @@ void coldExecRecordsNumericFieldFeedback() {
 
 		// An independent cache withdrawal, not learning a pair, permits a
 		// later compilation to consume the field and arithmetic feedback.
-		page.retireNativeRegion(coldRegion.get(), DecodedInstructionPage::Retirement::Capacity);
+		coldRegion->retire(NativeRetirement::Capacity);
 		require(cpu.runUntilDepth(0, NATIVE_BLOCK_COMPILATION_THRESHOLD * completeLoop) == RunResult::Yielded,
 			"the live loop reaches readmission after a cache withdrawal");
 		test::waitForNativeEntry(cpu, page, word);

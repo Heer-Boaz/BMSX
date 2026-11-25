@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <bitset>
 #include <span>
 #include <vector>
@@ -10,6 +9,7 @@
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/jit/compilation_input.h"
 #include "machine/cpu/jit/limits.h"
+#include "machine/cpu/jit/page_words.h"
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/mapped_page.h"
 
@@ -45,21 +45,6 @@ struct NativeWarmupAdmission {
 	NativeWarmupPages published;
 };
 
-// Guest instruction heads within one physical page, in increasing PC order.
-class NativeSourceWords {
-public:
-	void set(u32 index) { m_words[index / 32] |= u32{1} << (index % 32); }
-	bool operator[](u32 index) const { return (m_words[index / 32] >> (index % 32)) & 1u; }
-	template<class Visit> void forEach(Visit&& visit) const {
-		for (u32 i = 0; i < m_words.size(); ++i)
-			for (u32 bits = m_words[i]; bits; bits &= bits - 1u)
-				visit(i * 32u + std::countr_zero(bits));
-	}
-
-private:
-	std::array<u32, (DECODED_PAGE_WORDS + 31) / 32> m_words{};
-};
-
 // A physical instruction page and its compilation graph. No running frame,
 // register file, CPU PC latch or device access is needed to discover its source.
 // The lazy compiler keeps this bounded workspace on its stack; the cold image
@@ -88,7 +73,7 @@ struct NativeCompilationSource {
 	u32 slot;
 	bool verifiedRom;
 	u32 firstPc = 0u, lastPc = ~0u;
-	NativeSourceWords roots, available;
+	NativePageWords roots, available;
 	std::bitset<DECODED_PAGE_WORDS> queued;
 	std::bitset<DECODED_PAGE_WORDS> leaders;
 	std::array<u32, DECODED_PAGE_WORDS> pending;
