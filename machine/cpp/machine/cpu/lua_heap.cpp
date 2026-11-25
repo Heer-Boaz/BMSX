@@ -92,11 +92,11 @@ LuaAllocationRecovery LuaHeap::admit(size_t byteCount, Value root0, Value root1,
 	return recovery;
 }
 
-void LuaHeap::assistSweepBeforeReservation(size_t requested) {
+void LuaHeap::assistBeforeReservation(size_t requested) {
 	// BIOS string keys are created before the collector view is bound.
 	// The RAM phase latch already belongs to the initialized heap arena.
-	if (GcHeap::decodePhase(m_cpu.memory().readRamRecordByte(m_gcControlAddress)) >= GcPhase::Sweep)
-		m_cpu.gcHeap().assistSweepBeforeReservation(requested);
+	if (GcHeap::pacedPhase(GcHeap::decodePhase(m_cpu.memory().readRamRecordByte(m_gcControlAddress))))
+		m_cpu.gcHeap().assistBeforeReservation(requested);
 }
 
 u32 LuaHeap::reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, u32 charged, u32 secondBytes, u32 secondField) {
@@ -131,11 +131,11 @@ u32 LuaHeap::allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backin
 			: usedBytes() + charged <= capacity();
 		if (!admitted) return 0u;
 		if (mode == LuaAllocationMode::Scheduled)
-			assistSweepBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0u) + backingBytes + secondBytes);
+			assistBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0u) + backingBytes + secondBytes);
 		return reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField);
 	}
 	auto recovery = admit(charged, root0, root1, root2, 0u);
-	assistSweepBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0u) + backingBytes + secondBytes);
+	assistBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0u) + backingBytes + secondBytes);
 	for (;;) {
 		if (const u32 address = reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField)) return address;
 		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2);
@@ -144,7 +144,7 @@ u32 LuaHeap::allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backin
 
 u32 LuaHeap::reserveBacking(u32 bytes, u32 logicalBytes, Value root0, Value root1, Value root2, u32 growingThread) {
 	auto recovery = logicalBytes != 0u ? admit(logicalBytes, root0, root1, root2, growingThread) : LuaAllocationRecovery::CurrentOrFresh;
-	assistSweepBeforeReservation(bytes);
+	assistBeforeReservation(bytes);
 	for (;;) {
 		if (const u32 block = m_cpu.heapAllocator().allocate(bytes, true)) return block;
 		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2, growingThread);
@@ -157,7 +157,7 @@ u32 LuaHeap::allocateThreadRecord(u32 entry) {
 	const u32 charged = THREAD_HEAP_BYTES + valueBytes + frameBytes;
 	const Value root = entry != 0u ? valueClosure(entry) : valueNil();
 	auto recovery = admit(charged, root);
-	assistSweepBeforeReservation(charged + GC_OBJECT_PREFIX);
+	assistBeforeReservation(charged + GC_OBJECT_PREFIX);
 	auto& arena = m_cpu.heapAllocator();
 	for (;;) {
 		if (const u32 block = arena.allocate(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX, false)) {
@@ -181,7 +181,7 @@ u32 LuaHeap::allocateThreadRecord(u32 entry) {
 u32 LuaHeap::reserveThreadControls(u32 address, ThreadField field, u32 capacity, u32 previous, Value root) {
 	const u32 stride = field == ThreadField::FrameBlock ? FRAME_CONTROL_BYTES : PROTECTED_CALL_BYTES;
 	auto recovery = admit((capacity - previous) * stride, root, valueNil(), valueNil(), address);
-	assistSweepBeforeReservation(capacity * stride);
+	assistBeforeReservation(capacity * stride);
 	for (;;) {
 		if (const u32 block = ThreadRecord::growControls(m_cpu.gcHeap(), address, field, capacity)) return block;
 		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root, valueNil(), valueNil(), address);
@@ -202,7 +202,7 @@ void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 fram
 	auto recovery = requested > previous
 		? admit(requested - previous, root, valueNil(), valueNil(), address)
 		: LuaAllocationRecovery::CurrentOrFresh;
-	assistSweepBeforeReservation(requested);
+	assistBeforeReservation(requested);
 	auto& arena = m_cpu.heapAllocator();
 	for (;;) {
 		// Stage control storage first: a successful realloc can consume the
@@ -223,7 +223,7 @@ u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> ce
 	const u32 bytes = closureRecordBytes(captures, latched);
 	const u32 charged = bytes + static_cast<u32>(cells.size()) * UPVALUE_HEAP_BYTES;
 	auto recovery = admit(charged, valueNil(), valueNil(), valueNil(), 0u);
-	assistSweepBeforeReservation(charged + GC_OBJECT_PREFIX * (1u + cells.size()));
+	assistBeforeReservation(charged + GC_OBJECT_PREFIX * (1u + cells.size()));
 	auto& arena = m_cpu.heapAllocator();
 	for (;;) {
 		if (const u32 closure = arena.allocate(bytes + GC_OBJECT_PREFIX, false)) {

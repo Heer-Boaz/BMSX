@@ -43,11 +43,11 @@ const GC_PHYSICAL_ASSIST = GC_PHYSICAL_OCCUPIED_AT_TICK + 4;
 const GC_OBJECT_HEAD = GC_PHYSICAL_ASSIST + 4;
 const GC_OBJECT_COUNT = GC_OBJECT_HEAD + 4;
 const GC_SWEEP_LINK = GC_OBJECT_COUNT + 4;
-const GC_SWEEP_BASIS = GC_SWEEP_LINK + 4;
-const GC_SWEEP_ESTIMATE = GC_SWEEP_BASIS + 4;
-const GC_SWEEP_RUNWAY = GC_SWEEP_ESTIMATE + 4;
-const GC_SWEEP_PAID = GC_SWEEP_RUNWAY + 4;
-const GC_SWEEP_PAY_AT = GC_SWEEP_PAID + 4;
+const GC_PACE_BASIS = GC_SWEEP_LINK + 4;
+const GC_PACE_ESTIMATE = GC_PACE_BASIS + 4;
+const GC_PACE_RUNWAY = GC_PACE_ESTIMATE + 4;
+const GC_PACE_PAID = GC_PACE_RUNWAY + 4;
+const GC_PACE_PAY_AT = GC_PACE_PAID + 4;
 // Capture lanes use four bytes each and Table entries require a separate tag.
 const TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1;
 const TRACE_CURSOR_MASK = (1 << TRACE_CURSOR_BITS) - 1;
@@ -66,6 +66,11 @@ const GC_PHASE_SELECTOR = [GcPhase.Pause, GcPhase.Mark, GcPhase.MarkAgain, GcPha
 	GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause, GcPhase.Pause];
 export function decodeGcPhase(word: number): GcPhase {
 	return GC_PHASE_SELECTOR[word & 7];
+}
+// Incremental marking and reclamation price physical growth before a
+// reservation. Pause has no cycle and Atomic belongs to the stopped mutator.
+export function gcPacedPhase(phase: GcPhase): boolean {
+	return phase !== GcPhase.Pause && phase !== GcPhase.Atomic;
 }
 export class GcHeap {
 	public diagnostics: GcDiagnostics | null = null;
@@ -681,12 +686,8 @@ export class GcHeap {
 		this.memory.writeRamRecordByte(this.controlOffset + 1, this.white() ^ 1);
 		this.memory.writeRamRecordWord(this.controlOffset + GC_SWEEP_LINK, this.controlOffset + GC_OBJECT_HEAD);
 		this.setRemarkStage(RemarkStage.None);
-		const occupied = this.arena.occupiedBytes();
-		const estimate = this.memory.readRamRecordWord(this.controlOffset + GC_OBJECT_COUNT) + this.cpu.stringPool.estimateSweepWork();
-		const runway = Math.max(this.arena.capacityBytes() - occupied, 1);
-		this.memory.writeRamRecordWord(this.controlOffset + GC_SWEEP_ESTIMATE, estimate);
-		this.memory.writeRamRecordWord(this.controlOffset + GC_SWEEP_RUNWAY, runway);
-		this.updateSweepCredit(occupied, 0, estimate, runway);
+		// Reprice the remaining runway against the post-mark reclamation work.
+		this.beginPaceCredit(this.memory.readRamRecordWord(this.controlOffset + GC_OBJECT_COUNT) + this.cpu.stringPool.estimateSweepWork(), 0);
 		this.setPhase(GcPhase.Sweep);
 		return work;
 	}
@@ -826,28 +827,38 @@ export class GcHeap {
 		this.step();
 	}
 
-	private updateSweepCredit(basis: number, paid: number, estimate: number, runway: number): void {
+	private beginPaceCredit(estimate: number, runwayShift: number): void {
+		// Price real allocation growth against the estimated work and a share
+		// of the physical room at this frontier. This is not a contiguous-space guarantee.
+		const occupied = this.arena.occupiedBytes();
+		const runway = Math.max((this.arena.capacityBytes() - occupied) >>> runwayShift, 1);
+		this.memory.writeRamRecordWord(this.controlOffset + GC_PACE_ESTIMATE, estimate);
+		this.memory.writeRamRecordWord(this.controlOffset + GC_PACE_RUNWAY, runway);
+		this.updatePaceCredit(occupied, 0, estimate, runway);
+	}
+
+	private updatePaceCredit(basis: number, paid: number, estimate: number, runway: number): void {
 		// As on the native core, compute the next whole batch threshold
 		// only when the collector changes the frontier.
 		const batch = paid < estimate ? Math.min(512, estimate - paid) : 512;
 		const product = (paid + batch) * runway;
 		const next = toSignedWord(basis) + Math.trunc((product + estimate - 1) / estimate);
-		this.memory.writeRamRecordWord(this.controlOffset + GC_SWEEP_BASIS, basis);
-		this.memory.writeRamRecordWord(this.controlOffset + GC_SWEEP_PAID, paid);
-		this.memory.writeRamRecordWord(this.controlOffset + GC_SWEEP_PAY_AT, Math.min(MAIN_RAM_SIZE, Math.max(0, next)));
+		this.memory.writeRamRecordWord(this.controlOffset + GC_PACE_BASIS, basis);
+		this.memory.writeRamRecordWord(this.controlOffset + GC_PACE_PAID, paid);
+		this.memory.writeRamRecordWord(this.controlOffset + GC_PACE_PAY_AT, Math.min(MAIN_RAM_SIZE, Math.max(0, next)));
 	}
 
-	public assistSweepBeforeReservation(requested: number): void {
+	public assistBeforeReservation(requested: number): void {
 		const occupiedAfterRequest = this.arena.occupiedBytes() + requested;
 		const capacity = this.arena.capacityBytes();
-		if (occupiedAfterRequest < this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_PAY_AT)
+		if (occupiedAfterRequest < this.memory.readRamRecordWord(this.controlOffset + GC_PACE_PAY_AT)
 			&& occupiedAfterRequest < capacity) return;
 		let allowance = GC_STEP_WORDS;
 		if (occupiedAfterRequest < capacity) {
-			const growth = occupiedAfterRequest - toSignedWord(this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_BASIS));
-			const work = growth * this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_ESTIMATE);
-			const paid = this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_PAID);
-			const runway = this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_RUNWAY);
+			const growth = occupiedAfterRequest - toSignedWord(this.memory.readRamRecordWord(this.controlOffset + GC_PACE_BASIS));
+			const work = growth * this.memory.readRamRecordWord(this.controlOffset + GC_PACE_ESTIMATE);
+			const paid = this.memory.readRamRecordWord(this.controlOffset + GC_PACE_PAID);
+			const runway = this.memory.readRamRecordWord(this.controlOffset + GC_PACE_RUNWAY);
 			allowance = Math.min(GC_STEP_WORDS, Math.trunc(work / runway) - paid);
 		}
 		this.step(valueNil(), valueNil(), valueNil(), 0, false, allowance);
@@ -859,15 +870,16 @@ export class GcHeap {
 		if (this.finalMarkPending()) return this.finishFinalMark(t0, t1, t2);
 		this.diagnostics?.beginStep();
 		try {
-			if (this.phase() < GcPhase.Sweep) return this.accountEpochWork(this.stepWork(t0, t1, t2, growingThread, compactThreads, limit));
+			if (this.phase() === GcPhase.Pause) return this.accountEpochWork(this.stepWork(t0, t1, t2, growingThread, compactThreads, limit));
 			const occupied = this.arena.occupiedBytes();
 			const work = this.stepWork(t0, t1, t2, growingThread, compactThreads, limit);
 			if (this.active()) {
-				const basis = this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_BASIS);
-				const paid = this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_PAID);
-				this.updateSweepCredit(basis + this.arena.occupiedBytes() - occupied, paid + work,
-					this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_ESTIMATE),
-					this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_RUNWAY));
+				// Every quantum, whichever assist ran it, pays the current pace.
+				const basis = this.memory.readRamRecordWord(this.controlOffset + GC_PACE_BASIS);
+				const paid = this.memory.readRamRecordWord(this.controlOffset + GC_PACE_PAID);
+				this.updatePaceCredit(basis + this.arena.occupiedBytes() - occupied, paid + work,
+					this.memory.readRamRecordWord(this.controlOffset + GC_PACE_ESTIMATE),
+					this.memory.readRamRecordWord(this.controlOffset + GC_PACE_RUNWAY));
 			}
 			return this.accountEpochWork(work);
 		}
@@ -887,6 +899,11 @@ export class GcHeap {
 				this.setPhase(GcPhase.Mark); this.cpu.stringPool.beginReachabilityEpoch();
 				this.cpu.markRootHead(this);
 				this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, GcRootBank.SystemGlobals << TRACE_CURSOR_BITS);
+				// Pace the whole cycle by the previous one's work, or one unit per
+				// occupied word before a cycle has completed. Half of the room
+				// stays for growth across the final mark and for reclamation.
+				const previous = this.memory.readRamRecordWord(this.controlOffset + GC_LAST_EPOCH_WORK);
+				this.beginPaceCredit(previous !== 0 ? previous : Math.max(this.arena.occupiedBytes() >>> 2, 1), 1);
 			}
 			if (this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR) !== 0) {
 				work += this.cpu.stringPool.takeMarkWork();

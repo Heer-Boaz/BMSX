@@ -206,7 +206,7 @@ int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, 
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	const u32 bytes = storageBytes(plan.array > arrayCapacity() ? plan.array : 0u, plan.keepHash ? 0u : plan.hash);
 	if constexpr (Policy == HashStore::Scheduled || Policy == HashStore::General) {
-		if (m_heap->phase() >= GcPhase::Sweep) m_heap->assistSweepBeforeReservation(bytes);
+		if (GcHeap::pacedPhase(m_heap->phase())) m_heap->assistBeforeReservation(bytes);
 	}
 	const u32 storage = plan.keepHash ? hashAddress() : plan.hash ? m_heap->arena.allocate(14u * plan.hash, true) : 0u;
 	if (plan.hash && !storage) return HASH_STORE_DECLINED;
@@ -233,7 +233,7 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 					return HASH_STORE_DECLINED;
 				admitted = false;
 			}
-			if (admitted && m_heap->sweepDueForReservation(storageBytes(plan.array > arrayCapacity() ? plan.array : 0u, plan.keepHash ? 0u : plan.hash)))
+			if (admitted && m_heap->reservationAssistDue(storageBytes(plan.array > arrayCapacity() ? plan.array : 0u, plan.keepHash ? 0u : plan.hash)))
 				return HASH_STORE_DECLINED;
 		} else if (requested > previous) {
 			admitted = Policy == HashStore::Resume || recovery != LuaAllocationRecovery::CurrentOrFresh

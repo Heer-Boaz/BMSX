@@ -64,7 +64,7 @@ private:
 	u32 reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, u32 charged, u32 secondBytes, u32 secondField);
 	void accountAllocation(u32 bytes);
 	void creditStep();
-	void assistSweepBeforeReservation(size_t requested);
+	void assistBeforeReservation(size_t requested);
 	static constexpr size_t MIN_COLLECTION_BYTES = 1024 * 1024;
 
 	CPU& m_cpu;

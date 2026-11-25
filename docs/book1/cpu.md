@@ -1352,7 +1352,8 @@ records. Only a String constant that resolves to a RAM String retains an
 allocation for collection. Numeric values, booleans, nil and references to
 ROM Strings do not require heap tracing. This does not change the occupied
 budget of the decoded image. The collector compares total occupied language
-budget with the assist threshold when starting and advancing marking.
+budget with the assist threshold when starting and advancing marking; growth
+in physical occupancy can also advance marking, as described below.
 
 For a full collection, the collector marks retained objects, incrementally
 revisits mutable objects and Thread stacks, resolves weak references in a
@@ -1415,12 +1416,18 @@ $$
 
 The headroom term starts collection before a heavily retained pool fills.
 It does not reserve extra capacity or guarantee that new allocations will fit.
-After the final mark, reclamation assists follow growth in physical occupancy.
-Before reserving storage, the collector can do a bounded amount of sweep work
-in proportion to the outstanding reclamation work and the available space.
-Reclamation already done by a display-tick assist counts toward this work.
-A logical charge without a physical reservation does not by itself advance
-reclamation. Logical capacity still applies throughout the collection.
+Marking and reclamation also follow growth in physical occupancy. Before
+reserving storage while either is underway, the collector can do a bounded
+amount of work in proportion to the outstanding collection work and the
+available space. When marking starts, the work of the previous completed
+collection is the estimate, priced against half of the unoccupied space. The
+other half remains for growth until the final remark and for reclamation.
+After the final remark, the outstanding reclamation work is priced against
+the space that is then unoccupied. Work done by any assist, including a
+display-tick assist, counts toward this pace. Reservations made while the
+final remark is pending do not advance the collection. A logical charge
+without a physical reservation does not by itself advance the collection.
+Logical capacity still applies throughout the collection.
 
 The collector also compares unoccupied physical heap space with recent
 growth in physical occupancy and the remaining collection work. At a

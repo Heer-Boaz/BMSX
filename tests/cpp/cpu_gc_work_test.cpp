@@ -217,6 +217,34 @@ void physicalPressurePacesLargeLiveHeap() {
 		"the table grow needs no synchronous epoch and leaves the guest charge unchanged");
 }
 
+void physicalReservationsPayMarkWork() {
+	Machine machine(image()); auto& cpu = machine.cpu;
+	auto& heap = cpu.luaHeap(); auto& gc = cpu.gcHeap(); auto& arena = cpu.heapAllocator();
+	auto& frame = *cpu.rootThread()->currentFrame;
+	const u32 live = cpu.createTable(131072, 0).address();
+	frame.registers.set(0, valueTable(live)); frame.setTop(1);
+	cpu.collectHeap(); // calibrate a completed epoch with a long mark.
+	// The logical budget stays far below its threshold while physical room
+	// is short: only the physical pace may advance marking.
+	constexpr u32 slots = 1024, runwayRequests = 96u, ballastBytes = 4088u;
+	do require(arena.allocate(ballastBytes, true) != 0u, "reserve storage outside the language budget");
+	while (arena.unoccupiedBytes() > runwayRequests * (5u * slots + 64u));
+	heap.setCollectionTarget(static_cast<u32>(heap.capacity()));
+	const u8 white = gc.white();
+	gc.step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
+	require(gc.phase() == GcPhase::Mark, "a cycle starts marking");
+	const u32 runway = arena.unoccupiedBytes();
+	cpu.instructionBudgetRemaining = 29;
+	for (u32 requests = 0; !gc.finalMarkPending(); ++requests) {
+		require(requests < runwayRequests && gc.white() == white,
+			"reservations reach the final mark before the physical runway is exhausted");
+		cpu.createTable(slots, 0);
+	}
+	require(arena.unoccupiedBytes() >= runway / 4u && heap.collectionTarget() == heap.capacity()
+		&& cpu.instructionBudgetRemaining == 29 && frame.registers.get(0) == valueTable(live),
+		"marking keeps room for the final mark and reclamation without debiting the guest grant");
+}
+
 void physicalReservationsPaySweepWork(GcPhase phase) {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& heap = cpu.luaHeap(); auto& gc = cpu.gcHeap();
@@ -1736,6 +1764,7 @@ int main(int argc, char** argv) {
 		allocationAdmissionUsesLogicalBytes(); tableReplacementAdmitsOnlyItsLogicalIncrease();
 		tableBackingRecoveryRetriesEachEpoch();
 		physicalPressurePacesLargeLiveHeap();
+		physicalReservationsPayMarkWork();
 		physicalReservationsPaySweepWork(GcPhase::Sweep);
 		physicalReservationsPaySweepWork(GcPhase::Strings);
 		weakTableAdmissionReplansAfterCollection();

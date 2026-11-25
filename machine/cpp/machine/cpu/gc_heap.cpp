@@ -744,15 +744,8 @@ size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2, bool scopedR
 	memory.writeRamRecordByte(m_controlOffset + 1u, white() ^ 1u);
 	memory.writeRamRecordWord(m_controlOffset + GC_SWEEP_LINK, m_controlOffset + GC_OBJECTS);
 	setRemarkStage(RemarkStage::None);
-	// Proportional sweeping: price real allocation growth against work
-	// and physical room at the post-mark frontier. This is not a
-	// contiguous-space guarantee.
-	const u32 occupied = arena.occupiedBytes();
-	const u32 estimate = memory.readRamRecordWord(m_controlOffset + GC_OBJECT_COUNT) + m_stringPool.estimateSweepWork();
-	const u32 runway = std::max(arena.capacityBytes() - occupied, 1u);
-	memory.writeRamRecordWord(m_controlOffset + GC_SWEEP_ESTIMATE, estimate);
-	memory.writeRamRecordWord(m_controlOffset + GC_SWEEP_RUNWAY, runway);
-	updateSweepCredit(occupied, 0u, estimate, runway);
+	// Reprice the remaining runway against the post-mark reclamation work.
+	beginPaceCredit(memory.readRamRecordWord(m_controlOffset + GC_OBJECT_COUNT) + m_stringPool.estimateSweepWork(), 0u);
 	setPhase(GcPhase::Sweep);
 	return work;
 }
@@ -903,38 +896,49 @@ void GcHeap::assistPhysicalPressureAtTick() {
 	step(valueNil(), valueNil(), valueNil());
 }
 
-void GcHeap::updateSweepCredit(u32 basis, u32 paid, u32 estimate, u32 runway) {
+void GcHeap::beginPaceCredit(u32 estimate, u32 runwayShift) {
+	// Proportional assists: price real allocation growth against the
+	// estimated work and a share of the physical room at this frontier.
+	// This is not a contiguous-space guarantee.
+	const u32 occupied = arena.occupiedBytes();
+	const u32 runway = std::max((arena.capacityBytes() - occupied) >> runwayShift, 1u);
+	memory.writeRamRecordWord(m_controlOffset + GC_PACE_ESTIMATE, estimate);
+	memory.writeRamRecordWord(m_controlOffset + GC_PACE_RUNWAY, runway);
+	updatePaceCredit(occupied, 0u, estimate, runway);
+}
+
+void GcHeap::updatePaceCredit(u32 basis, u32 paid, u32 estimate, u32 runway) {
 	// Carry fractional debt until there is a batch worth stepping. Keep the
-	// division on the sweeper, not the ordinary reservation path.
+	// division on the collector, not the ordinary reservation path.
 	constexpr u32 minimumBatch = 512;
 	const u32 batch = paid < estimate ? std::min(minimumBatch, estimate - paid) : minimumBatch;
 	const u64 product = static_cast<u64>(paid + batch) * runway;
 	const i64 next = toSignedWord(basis) + static_cast<i64>((product + estimate - 1u) / estimate);
-	memory.writeRamRecordWord(m_controlOffset + GC_SWEEP_BASIS, basis);
-	memory.writeRamRecordWord(m_controlOffset + GC_SWEEP_PAID, paid);
-	memory.writeRamRecordWord(m_controlOffset + GC_SWEEP_PAY_AT, static_cast<u32>(std::clamp<i64>(next, 0, MAIN_RAM_SIZE)));
+	memory.writeRamRecordWord(m_controlOffset + GC_PACE_BASIS, basis);
+	memory.writeRamRecordWord(m_controlOffset + GC_PACE_PAID, paid);
+	memory.writeRamRecordWord(m_controlOffset + GC_PACE_PAY_AT, static_cast<u32>(std::clamp<i64>(next, 0, MAIN_RAM_SIZE)));
 }
 
-bool GcHeap::sweepDueForReservation(size_t requested) const {
-	if (phase() < GcPhase::Sweep) return false;
+bool GcHeap::reservationAssistDue(size_t requested) const {
+	if (!pacedPhase(phase())) return false;
 	const size_t occupiedAfterRequest = arena.occupiedBytes() + requested;
-	return occupiedAfterRequest >= memory.readRamRecordWord(m_controlOffset + GC_SWEEP_PAY_AT)
+	return occupiedAfterRequest >= memory.readRamRecordWord(m_controlOffset + GC_PACE_PAY_AT)
 		|| occupiedAfterRequest >= arena.capacityBytes();
 }
 
-void GcHeap::assistSweepBeforeReservation(size_t requested) {
-	// Only a published mutator reservation in Sweep or Strings reaches here.
+void GcHeap::assistBeforeReservation(size_t requested) {
+	// Only a published mutator reservation in a paced phase reaches here.
 	const size_t occupiedAfterRequest = arena.occupiedBytes() + requested;
 	const size_t capacity = arena.capacityBytes();
-	if (occupiedAfterRequest < memory.readRamRecordWord(m_controlOffset + GC_SWEEP_PAY_AT)
+	if (occupiedAfterRequest < memory.readRamRecordWord(m_controlOffset + GC_PACE_PAY_AT)
 		&& occupiedAfterRequest < capacity) return;
 	size_t allowance = GC_STEP_WORDS;
 	if (occupiedAfterRequest < capacity) {
 		const auto growth = static_cast<i64>(occupiedAfterRequest)
-			- toSignedWord(memory.readRamRecordWord(m_controlOffset + GC_SWEEP_BASIS));
-		const u64 work = static_cast<u64>(growth) * memory.readRamRecordWord(m_controlOffset + GC_SWEEP_ESTIMATE);
-		const u32 paid = memory.readRamRecordWord(m_controlOffset + GC_SWEEP_PAID);
-		const u32 runway = memory.readRamRecordWord(m_controlOffset + GC_SWEEP_RUNWAY);
+			- toSignedWord(memory.readRamRecordWord(m_controlOffset + GC_PACE_BASIS));
+		const u64 work = static_cast<u64>(growth) * memory.readRamRecordWord(m_controlOffset + GC_PACE_ESTIMATE);
+		const u32 paid = memory.readRamRecordWord(m_controlOffset + GC_PACE_PAID);
+		const u32 runway = memory.readRamRecordWord(m_controlOffset + GC_PACE_RUNWAY);
 		allowance = std::min<u64>(GC_STEP_WORDS, work / runway - paid);
 	}
 	step(valueNil(), valueNil(), valueNil(), 0u, false, allowance);
@@ -943,15 +947,16 @@ void GcHeap::assistSweepBeforeReservation(size_t requested) {
 size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit) {
 	// Only explicit and space-exhausted collection enters a synchronous final pass.
 	if (finalMarkPending()) return finishFinalMark(root0, root1, root2);
-	if (phase() < GcPhase::Sweep) return accountEpochWork(stepWork(root0, root1, root2, growingThread, compactThreads, limit));
+	if (phase() == GcPhase::Pause) return accountEpochWork(stepWork(root0, root1, root2, growingThread, compactThreads, limit));
 	const u32 occupied = arena.occupiedBytes();
 	const size_t work = stepWork(root0, root1, root2, growingThread, compactThreads, limit);
 	if (active()) {
+		// Every quantum, whichever assist ran it, pays the current pace.
 		// Swept bytes are not a refund of allocation work already paid.
-		const u32 basis = memory.readRamRecordWord(m_controlOffset + GC_SWEEP_BASIS);
-		const u32 paid = memory.readRamRecordWord(m_controlOffset + GC_SWEEP_PAID);
-		updateSweepCredit(basis + arena.occupiedBytes() - occupied, paid + static_cast<u32>(work),
-			memory.readRamRecordWord(m_controlOffset + GC_SWEEP_ESTIMATE), memory.readRamRecordWord(m_controlOffset + GC_SWEEP_RUNWAY));
+		const u32 basis = memory.readRamRecordWord(m_controlOffset + GC_PACE_BASIS);
+		const u32 paid = memory.readRamRecordWord(m_controlOffset + GC_PACE_PAID);
+		updatePaceCredit(basis + arena.occupiedBytes() - occupied, paid + static_cast<u32>(work),
+			memory.readRamRecordWord(m_controlOffset + GC_PACE_ESTIMATE), memory.readRamRecordWord(m_controlOffset + GC_PACE_RUNWAY));
 	}
 	return accountEpochWork(work);
 }
@@ -980,6 +985,11 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 			m_stringPool.markReachable(m_modeKey);
 			m_cpu.markRootHead(*this);
 			memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, static_cast<u32>(GcRootBank::SystemGlobals) << TRACE_CURSOR_BITS);
+			// Pace the whole cycle by the previous one's work, or one unit per
+			// occupied word before a cycle has completed. Half of the room
+			// stays for growth across the final mark and for reclamation.
+			const u32 previous = memory.readRamRecordWord(m_controlOffset + GC_LAST_EPOCH_WORK);
+			beginPaceCredit(previous != 0u ? previous : std::max(arena.occupiedBytes() >> 2u, 1u), 1u);
 		}
 		if (memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR) != 0u) {
 			work += m_stringPool.takeMarkWork();

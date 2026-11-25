@@ -46,12 +46,12 @@ inline constexpr u32 GC_OBJECTS = GC_PHYSICAL_ASSIST + sizeof(u32);
 inline constexpr u32 GC_OBJECT_COUNT = GC_OBJECTS + sizeof(u32);
 inline constexpr u32 GC_SWEEP_LINK = GC_OBJECT_COUNT + sizeof(u32);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_OBJECTS) % (2 * sizeof(u32)) == 0u);
-inline constexpr u32 GC_SWEEP_BASIS = GC_SWEEP_LINK + sizeof(u32);
-inline constexpr u32 GC_SWEEP_ESTIMATE = GC_SWEEP_BASIS + sizeof(u32);
-inline constexpr u32 GC_SWEEP_RUNWAY = GC_SWEEP_ESTIMATE + sizeof(u32);
-inline constexpr u32 GC_SWEEP_PAID = GC_SWEEP_RUNWAY + sizeof(u32);
-inline constexpr u32 GC_SWEEP_PAY_AT = GC_SWEEP_PAID + sizeof(u32);
-static_assert(HEAP_GC_CONTROL_OFFSET + GC_SWEEP_PAY_AT + sizeof(u32) <= HEAP_LOGICAL_OCCUPIED_OFFSET);
+inline constexpr u32 GC_PACE_BASIS = GC_SWEEP_LINK + sizeof(u32);
+inline constexpr u32 GC_PACE_ESTIMATE = GC_PACE_BASIS + sizeof(u32);
+inline constexpr u32 GC_PACE_RUNWAY = GC_PACE_ESTIMATE + sizeof(u32);
+inline constexpr u32 GC_PACE_PAID = GC_PACE_RUNWAY + sizeof(u32);
+inline constexpr u32 GC_PACE_PAY_AT = GC_PACE_PAID + sizeof(u32);
+static_assert(HEAP_GC_CONTROL_OFFSET + GC_PACE_PAY_AT + sizeof(u32) <= HEAP_LOGICAL_OCCUPIED_OFFSET);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD) % (2 * sizeof(u32)) == 0u);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_THREAD_TRACE_OPEN) % (2 * sizeof(u32)) == 0u);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_REMARK_VISIT_INDEX) % (2 * sizeof(u32)) == 0u);
@@ -82,6 +82,9 @@ public:
 			GcPhase::Sweep, GcPhase::Strings, GcPhase::Pause, GcPhase::Pause};
 		return phases[word & 7u];
 	}
+	// Incremental marking and reclamation price physical growth before a
+	// reservation. Pause has no cycle and Atomic belongs to the stopped mutator.
+	static bool pacedPhase(GcPhase phase) { return phase != GcPhase::Pause && phase != GcPhase::Atomic; }
 	GcPhase phase() const { return decodePhase(memory.readRamRecordByte(m_controlOffset)); }
 	u8 white() const { return memory.readRamRecordByte(m_controlOffset + 1u) & 1u; }
 	bool active() const { return phase() != GcPhase::Pause; }
@@ -94,8 +97,8 @@ public:
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false,
 		size_t limit = GC_STEP_WORDS);
 	void assistPhysicalPressureAtTick();
-	bool sweepDueForReservation(size_t requested) const;
-	void assistSweepBeforeReservation(size_t requested);
+	bool reservationAssistDue(size_t requested) const;
+	void assistBeforeReservation(size_t requested);
 	// Only the stopped mutator may advance the final pass.
 	size_t stepFinalMark();
 	size_t finishFinalMark(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
@@ -172,7 +175,8 @@ private:
 	size_t clearWeakQuantum(size_t limit);
 	u32 objectRecordAddress(u32 address, u8 kind) const;
 	size_t sweepObjects(size_t allowance, u32 growingThread, bool compactThreads);
-	void updateSweepCredit(u32 basis, u32 paid, u32 estimate, u32 runway);
+	void beginPaceCredit(u32 estimate, u32 runwayShift);
+	void updatePaceCredit(u32 basis, u32 paid, u32 estimate, u32 runway);
 	size_t sweepRecord(u32 address, u32 header, bool garbage, u8 white, u32 growingThread, bool compactThreads);
 	CPU& m_cpu;
 	void setPhase(GcPhase phase) { memory.writeRamRecordByte(m_controlOffset, static_cast<u8>(phase)); }

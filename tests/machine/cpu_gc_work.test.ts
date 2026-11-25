@@ -216,6 +216,34 @@ test('table growth retries its actual physical reserve before starting a fresh G
 	}
 });
 
+test('physical reservations pace marking while the logical budget is below its threshold', () => {
+	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { gc, heapAllocator: arena, luaHeap: heap } = cpu;
+	const frame = cpu.rootThread.currentFrame!;
+	const live = cpu.createTable(131072, 0);
+	frame.registers.setTable(0, live); frame.top = 1;
+	gc.collect(); // calibrate a completed epoch with a long mark.
+	// Only the physical pace may advance marking.
+	const slots = 1024, runwayRequests = 96, ballastBytes = 4088;
+	do assert.notEqual(arena.allocate(ballastBytes, true), 0);
+	while (arena.unoccupiedBytes() > runwayRequests * (5 * slots + 64));
+	heap.setCollectionTarget(heap.capacity());
+	const white = gc.white();
+	gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+	assert.equal(gc.phase(), GcPhase.Mark);
+	const runway = arena.unoccupiedBytes();
+	cpu.instructionBudgetRemaining = 29;
+	for (let requests = 0; !gc.finalMarkPending(); ++requests) {
+		assert.ok(requests < runwayRequests && gc.white() === white,
+			'reservations reach the final mark before the physical runway is exhausted');
+		cpu.createTable(slots, 0);
+	}
+	assert.ok(arena.unoccupiedBytes() >= runway / 4, 'marking keeps room for the final mark and reclamation');
+	assert.equal(heap.collectionTarget(), heap.capacity());
+	assert.equal(cpu.instructionBudgetRemaining, 29);
+	assert.equal(frame.registers.get(0), valueTable(live));
+});
+
 test('physical occupancy advances a large live epoch before a table replacement needs recovery', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const { gc, heapAllocator: arena } = cpu, { tables } = gc;
