@@ -12,9 +12,8 @@ import { asClosure, valueTable, valueIsTable, valueFloat, valueFloatBits, valueI
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource } from '../helpers/cpu_test_harness';
 
 for (const [op, name] of [[OpCode.K1, 'constant'], [OpCode.NEWT, 'table']] as const) test(`checkpoint and GC retain a ${name} in the preserved caller prefix after an open-result call`, () => {
@@ -28,7 +27,7 @@ for (const [op, name] of [[OpCode.K1, 'constant'], [OpCode.NEWT, 'table']] as co
 	const image = linkRawTestSystemBlua32({
 		text: code,
 		functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }, { firstWord: 5, wordCount: 1 }],
-		closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }],
+		closureRelocations: [{ wordIndex: 2, functionIndex: 1 }],
 	});
 	const { cpu } = createTestSystemCpu(image);
 	const returnPc = cpu.readFramePc(0) + 4 * INSTRUCTION_BYTES;
@@ -164,12 +163,13 @@ test('a materialized but unrooted canonical closure remains part of the checkpoi
 	writeInstruction(code, 3, OpCode.NEWT, 0, 0, 0);
 	writeInstruction(code, 4, OpCode.RET, 0, 2, 0);
 	writeInstruction(code, 5, OpCode.RET, 0, 0, 0);
-	const address = blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1);
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({
+	const image = linkRawTestSystemBlua32({
 		text: code,
 		functions: [{ firstWord: 0, wordCount: 5 }, { firstWord: 5, wordCount: 1 }],
-		closureRelocations: [{ wordIndex: 1, functionAddress: address }],
-	}));
+		closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
+	});
+	const address = image.symbols.functionAddresses[1];
+	const { cpu } = createTestSystemCpu(image);
 	const entry = cpu.readFramePc(0), functionAddress = cpu.rootThread.frameAtDepth(0).functionAddress;
 	const cold = cpu.captureRuntimeState();
 	const coldRam = cpu.memory.captureSaveState();

@@ -9,7 +9,6 @@
 namespace bmsx {
 
 NativeCompilerWorker::NativeCompilerWorker() {
-	m_sources.reserve(DECODED_PAGE_WORDS);
 	// Build the process-wide entry gate before emission moves to the worker.
 	nativeBlockGate();
 	m_thread = std::thread(&NativeCompilerWorker::run, this);
@@ -24,33 +23,17 @@ NativeCompilerWorker::~NativeCompilerWorker() {
 	m_thread.join();
 }
 
-void NativeCompilerWorker::submit(std::span<const NativeBlockSource> sources,
-	const NativeCodeBindings& bindings, NativeCompilationOptions options, bool profile) {
+NativeSourceWorkspace& NativeCompilerWorker::beginCapture(size_t instructionBound) {
 	assert(idle());
-	m_sources.clear();
-	size_t instructionCount = 0, decodedCount = 0;
-	for (const auto& source : sources) {
-		instructionCount += source.instructions.size();
-		decodedCount += source.instructions.size() + (source.skippedInstruction != nullptr);
-	}
-	if (m_decoded.size() < decodedCount) m_decoded.resize(decodedCount);
-	if (m_instructions.size() < instructionCount) m_instructions.resize(instructionCount);
-	size_t decoded = 0, instruction = 0;
-	for (const auto& source : sources) {
-		const size_t first = instruction;
-		for (const auto& item : source.instructions) {
-			m_decoded[decoded] = *item.decoded;
-			auto& copy = m_instructions[instruction++];
-			copy = item;
-			copy.decoded = &m_decoded[decoded++];
-		}
-		const DecodedInstruction* skipped = nullptr;
-		if (source.skippedInstruction) {
-			m_decoded[decoded] = *source.skippedInstruction;
-			skipped = &m_decoded[decoded++];
-		}
-		m_sources.push_back({std::span(m_instructions.data() + first, instruction - first), skipped});
-	}
+	// Every emitted instruction can reference at most one skipped body.
+	// Reserve before handing out pointers; no source row may move until take().
+	m_decoded.clear();
+	m_decoded.reserve(2 * instructionBound);
+	return m_workspace;
+}
+
+void NativeCompilerWorker::submit(const NativeCodeBindings& bindings, NativeCompilationOptions options, bool profile) {
+	assert(idle());
 	m_sourcePages.assign(bindings.sourcePages.begin(), bindings.sourcePages.end());
 	m_bindings = bindings;
 	m_bindings.sourcePages = m_sourcePages;
@@ -72,7 +55,7 @@ void NativeCompilerWorker::run() {
 		lock.unlock();
 		const auto start = m_profile ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 		try {
-			m_blocks = m_compiler.compile(m_sources, m_bindings, m_options, m_specializations.view());
+			m_blocks = m_compiler.compile(m_workspace.sources, m_bindings, m_options, m_workspace.specializations.view());
 		} catch (...) {
 			// The worker cannot unwind into the CPU. Deliver the original error
 			// when the owner consumes this request; do not silently fall back.
@@ -95,7 +78,7 @@ std::vector<std::unique_ptr<NativeBlock>> NativeCompilerWorker::take() {
 	assert(ready());
 	auto blocks = std::move(m_blocks);
 	auto error = std::move(m_error);
-	m_specializations.clear();
+	m_workspace.specializations.clear();
 	m_state.store(State::Idle, std::memory_order_release);
 	if (error) std::rethrow_exception(error);
 	return blocks;

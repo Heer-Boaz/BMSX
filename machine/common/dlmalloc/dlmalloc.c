@@ -612,6 +612,59 @@ void bmsx_dlmalloc_shrink(bmsx_dlmalloc_arena a, u32 offset, u32 bytes)
   dispose_chunk(a, tail, remainder);
 }
 
+/* try_realloc_chunk for backing storage. Objects retain their issued address.
+ * TOP must keep a nonempty suffix; DV and bins may be consumed completely. */
+u32 bmsx_dlmalloc_resize_backing(bmsx_dlmalloc_arena a, u32 offset, u32 bytes)
+{
+  if (bytes > LIMIT - FLOOR) return 0;
+  const u32 p = offset - 8, old = chunksize(a, p), nb = request2size(bytes);
+  if (nb <= old) {
+    bmsx_dlmalloc_shrink(a, offset, bytes);
+    return offset;
+  }
+  const u32 next = p + old;
+  if (!(HEAD(next) & CINUSE)) {
+    const u32 total = old + chunksize(a, next);
+    if (next == TOP && total > nb) {
+      SET_TOP(p + nb);
+      SET_TOPSIZE(total - nb);
+      SET_HEAD(p + nb, (total - nb) | PINUSE);
+      SET_HEAD(p, nb | (HEAD(p) & PINUSE) | CINUSE);
+      SET_OCCUPIED(OCCUPIED + nb - old);
+      return offset;
+    }
+    if (next != TOP && total >= nb) {
+      const u32 remainder = total - nb;
+      const int is_dv = next == DV;
+      if (!is_dv) unlink_chunk(a, next, total - old);
+      if (remainder >= MIN_CHUNK) {
+        const u32 tail = p + nb;
+        SET_HEAD(p, nb | (HEAD(p) & PINUSE) | CINUSE);
+        free_head(a, tail, remainder);
+        if (is_dv) { SET_DV(tail); SET_DVSIZE(remainder); }
+        else insert_chunk(a, tail, remainder);
+        SET_OCCUPIED(OCCUPIED + nb - old);
+      } else {
+        if (is_dv) { SET_DV(0); SET_DVSIZE(0); }
+        set_inuse(a, p, total);
+        SET_OCCUPIED(OCCUPIED + total - old);
+      }
+      return offset;
+    }
+  }
+  const u32 dest = bmsx_dlmalloc_allocate(a, bytes, 0);
+  if (!dest) return 0;
+  /* The next chunk's prev_foot belongs to this in-use payload. */
+  const u32 retained = old - 4;
+  copy_word((void*)((uintptr_t)a.ram + dest),
+            (const void*)((uintptr_t)a.ram + offset), retained);
+  for (u32 g = dest >> BMSX_DLMALLOC_WATCH_SHIFT;
+       g <= (dest + retained - 1u) >> BMSX_DLMALLOC_WATCH_SHIFT; ++g)
+    a.watched_groups[g] &= ~BMSX_DLMALLOC_HISTORY_CLEAN;
+  bmsx_dlmalloc_free(a, offset);
+  return dest;
+}
+
 u32 bmsx_dlmalloc_allocation_bytes(bmsx_dlmalloc_arena a, u32 offset)
 {
   return chunksize(a, offset - 8);

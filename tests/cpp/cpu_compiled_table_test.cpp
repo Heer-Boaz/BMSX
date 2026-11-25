@@ -1385,7 +1385,7 @@ void warmInheritedFieldReadsProveCollisionChainAbsence() {
 			const auto key = *cpu.stringPool().find("inherited collision field");
 			const auto registers = cpu.activeThread()->currentFrame->registers;
 			auto receiver = asTable(registers.get(0), cpu.gcHeap());
-			const auto storage = receiver.storageAddress();
+			const auto storage = receiver.hashAddress();
 			auto liveProbe = receiver.beginStringProbe(key);
 			const auto priorVisits = receiver.advanceStringProbe(key, liveProbe, liveProbe.remaining);
 			const auto node = receiver.setStringKey(key, own);
@@ -1398,7 +1398,7 @@ void warmInheritedFieldReadsProveCollisionChainAbsence() {
 					"deletion leaves the matched non-home key with a nil value in the chain");
 				TableRecord(cpu.gcHeap(), receiver.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), registers.get(1));
 			}
-			require(receiver.storageAddress() == storage && receiver.hashSlots() == 4, "shadow updates keep the same receiver storage");
+			require(receiver.hashAddress() == storage && receiver.hashSlots() == 4, "shadow updates keep the same receiver storage");
 		}
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		const u64 before = readExits.entries;
@@ -1493,7 +1493,7 @@ void resolvedFieldKeepsPendingFixedCallsUntilAnObserver() {
 	for (const u32 instruction : {parent, middle}) {
 		const u32 pc = text + instruction * INSTRUCTION_BYTES, word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		const auto& block = lookup.find(pc, 0)->nativeBlocks->entries[word];
-		require(block && block->terminal.operands.call.strategy == NativeCallStrategy::Fixed, "both frames can stay pending");
+		require(block && block->terminal.callStrategy == NativeCallStrategy::Fixed, "both frames can stay pending");
 	}
 	const auto& leafBlock = lookup.find(leafPc, 0)->nativeBlocks->entries[(leafPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	const auto fieldExit = std::ranges::find(leafBlock->sideExits, NativeBlockExit::ReadField, &NativeBlockExitSite::exit);
@@ -1879,7 +1879,7 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 	auto receiver = asTable(cpu.readFrameRegister(0, receiverSlot), cpu.gcHeap());
 	const Value inserted = cpu.readFrameRegister(0, keysSlot + 3), grows = cpu.readFrameRegister(0, keysSlot + 4);
 	const Value raw = valueFloatBits(0x7fc01234u);
-	const u32 storage = receiver.storageAddress();
+	const u32 storage = receiver.hashAddress();
 	const auto bytes = cpu.luaHeap().usedBytes();
 	const auto charge = TableRecord::allocationCharge(0, 1);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -1900,7 +1900,7 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 		"an exact grant commits the WIDE store without executing its successor");
 	require(receiver.get(inserted) == raw && receiver.getInteger(1) == valueInteger(61)
 		&& receiver.get(cpu.readFrameRegister(0, keysSlot)) == valueInteger(21)
-		&& receiver.storageAddress() == storage && cpu.luaHeap().usedBytes() == bytes,
+		&& receiver.hashAddress() == storage && cpu.luaHeap().usedBytes() == bytes,
 		"colliding identities remain distinct and insertion reuses paid-for storage");
 	requireParity(native, scalar);
 	start(keysSlot + 3, grows);
@@ -2100,7 +2100,7 @@ void nativeIntegerGrowthReturnsWithinTheGrant() {
 	auto dynamic = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
 	auto immediate = asTable(cpu.readFrameRegister(0, 2), cpu.gcHeap());
 	auto signedHash = asTable(cpu.readFrameRegister(0, 7), cpu.gcHeap());
-	const u32 dynamicStorage = dynamic.storageAddress(), immediateStorage = immediate.storageAddress();
+	const u32 dynamicStorage = dynamic.arrayAddress(), immediateStorage = immediate.arrayAddress();
 	require(dynamic.arrayCapacity() == 1 && dynamic.lengthHint() == 1
 		&& immediate.arrayCapacity() == 1 && immediate.lengthHint() == 1 && signedHash.hashSlots() == 1,
 		"the two array parts and the negative-key hash start full");
@@ -2116,8 +2116,8 @@ void nativeIntegerGrowthReturnsWithinTheGrant() {
 		&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == pc + 6 * INSTRUCTION_BYTES
 		&& cpu.readFrameRegister(0, 5) == appended,
 		"all three returning stores preserve the live native value through the exact grant and suffix");
-	require(dynamic.storageAddress() != dynamicStorage && immediate.storageAddress() != immediateStorage,
-		"register-key and immediate dense appends both physically grow the array");
+	require(dynamic.arrayCapacity() == 2 && immediate.arrayCapacity() == 2 && dynamic.arrayAddress() == dynamicStorage && immediate.arrayAddress() == immediateStorage,
+		"register-key and immediate dense appends both use the capacity of their original chunks");
 	for (const auto* table : {&dynamic, &immediate}) {
 		require(table->arrayCapacity() == 2 && table->hashSlots() == 0 && table->lengthHint() == 2
 			&& table->getInteger(1) == retained && table->getInteger(2) == appended,
@@ -2245,7 +2245,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	const auto grownHash = TableRecord::hashCapacity(2 + extraHashSlots);
 	const auto charge = TableRecord::allocationCharge(0, grownHash) - TableRecord::allocationCharge(0, 1);
 	const Value raw = valueFloatBits(0x7fc01234u);
-	const auto initialStorage = spare.storageAddress();
+	const auto initialStorage = spare.hashAddress();
 	const auto initialBytes = cpu.luaHeap().usedBytes();
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& writeExits = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::WriteField)].entries;
@@ -2256,7 +2256,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
 		&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == pc + 6 * INSTRUCTION_BYTES
 		&& isNil(cpu.readFrameRegister(0, 9)) && cpu.readFrameRegister(0, 11) == valueInteger(39)
-		&& prediction == -1 && spare.storageAddress() == initialStorage && spare.hashFree() == freeBeforeMiss
+		&& prediction == -1 && spare.hashAddress() == initialStorage && spare.hashFree() == freeBeforeMiss
 		&& cpu.luaHeap().usedBytes() == initialBytes,
 		"nil to a missing field returns as a no-op when the metatable has no __newindex");
 	TableLookupResult absent;
@@ -2273,7 +2273,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 		"the exact WIDE grant commits the field without executing the suffix");
 	int insertedSlot = -1;
 	require(spare.getStringKeyCached(field, insertedSlot) == raw && prediction == insertedSlot && prediction != originalSlot
-		&& spare.storageAddress() == initialStorage && cpu.luaHeap().usedBytes() == initialBytes
+		&& spare.hashAddress() == initialStorage && cpu.luaHeap().usedBytes() == initialBytes
 		&& spare.getInteger(1) == valueInteger(61),
 		"absent __newindex allows a colliding own insertion and trains its actual slot without touching the array");
 	requireParity(native, scalar);
@@ -2293,13 +2293,13 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	require(page.nativeBlocks->entries[word].get() == installed, "store feedback keeps the original body");
 	requireParity(native, scalar);
 
-	const auto warmStorage = warm.storageAddress();
+	const auto warmStorage = warm.hashAddress();
 	const auto beforeOwnDelete = cpu.luaHeap().usedBytes();
 	start(warmSlot, valueNil());
 	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
 		&& cpu.instructionBudgetRemaining == 0 && cpu.getFrameDepth() == 1 && cpu.readFramePc(0) == suffixPc
 		&& prediction == -1 && isNil(warm.getStringKey(field)) && warm.getInteger(1) == valueInteger(61)
-		&& warm.storageAddress() == warmStorage && cpu.luaHeap().usedBytes() == beforeOwnDelete,
+		&& warm.hashAddress() == warmStorage && cpu.luaHeap().usedBytes() == beforeOwnDelete,
 		"a live own field deletes before callable __newindex and clears the prediction");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(writeExits == warmExits, "warm insert, overwrite, nil no-op and deletion all return without WriteField");
@@ -2319,13 +2319,13 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	int grownSlot = -1;
 	require(full.getStringKeyCached(field, grownSlot) == raw && prediction == grownSlot,
 		"feedback names the slot in the new storage, not the retired body");
-	const auto fullStorage = full.storageAddress();
+	const auto fullStorage = full.hashAddress();
 	const auto beforeFullDelete = cpu.luaHeap().usedBytes();
 	for (int attempt = 0; attempt < 2; ++attempt) {
 		start(fullSlot, valueNil());
 		require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
 			&& prediction == -1 && isNil(full.getStringKey(field)) && full.getInteger(1) == valueInteger(61)
-			&& full.storageAddress() == fullStorage && cpu.luaHeap().usedBytes() == beforeFullDelete
+			&& full.hashAddress() == fullStorage && cpu.luaHeap().usedBytes() == beforeFullDelete
 			&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == suffixPc,
 			"nil pays no further storage or mapping charge after deleting this field once");
 		requireParity(native, scalar);
@@ -2479,7 +2479,7 @@ void hintedFieldUnderPressure(FieldPressure pressure, bool weak = false) {
 	} else {
 		owner.setStringKey(resident, valueInteger(37));
 	}
-	const u32 originalStorage = owner.storageAddress();
+	const u32 originalStorage = owner.hashAddress();
 	cpu.createTable(2048, 0); // Unreachable; completes the refused backing reservation after GC.
 	auto& arena = cpu.heapAllocator();
 	const auto grownHash = TableRecord::hashCapacity(2 + extraHashSlots);
@@ -2513,16 +2513,16 @@ void hintedFieldUnderPressure(FieldPressure pressure, bool weak = false) {
 		&& pending.nextPc == pc + 2u * INSTRUCTION_BYTES
 		&& assignment.receiver == owner.address() && assignment.key == valueString(field)
 		&& assignment.value == valueInteger(91) && assignment.extraHashSlots == extraHashSlots
-		&& owner.storageAddress() == originalStorage && budget.usedBytes() == budgetBefore,
+		&& owner.hashAddress() == originalStorage && budget.usedBytes() == budgetBefore,
 		"the WIDE reservation and canonical operands are parked without publishing the store");
 	for (int step = 0; !cpu.allocationReady() && step < 120; ++step) cpu.advanceAllocationRecovery();
 	require(cpu.allocationReady(), "collection makes the retired decision retryable");
 	cpu.resumeAllocation();
 	require(!cpu.allocationParked() && cpu.readFramePc(0) == pending.nextPc && owner.getStringKey(field) == valueInteger(91),
 		"recovery completes exactly the parked assignment");
-	if (weak) require(owner.hashSlots() == 1 && owner.storageAddress() == originalStorage && isNil(owner.getStringKey(resident)),
+	if (weak) require(owner.hashSlots() == 1 && owner.hashAddress() == originalStorage && isNil(owner.getStringKey(resident)),
 		"weak clearing opens a slot, so the hint does not force unnecessary growth");
-	else require(owner.hashSlots() == grownHash && owner.storageAddress() != originalStorage && owner.getStringKey(resident) == valueInteger(37),
+	else require(owner.hashSlots() == grownHash && owner.hashAddress() != originalStorage && owner.getStringKey(resident) == valueInteger(37),
 		"if growth is still required, it retains the exact extra-slot count");
 }
 
@@ -2599,17 +2599,17 @@ void nativeDynamicStringMissReturnsWithinTheGrant() {
 	const auto warmExits = writeIndex;
 #endif
 	auto table = asTable(cpu.readFrameRegister(0, ordinary), cpu.gcHeap());
-	const auto storage = table.storageAddress();
+	const auto storage = table.hashAddress();
 	const auto free = table.hashFree();
 	const auto bytes = cpu.luaHeap().usedBytes();
 	run(ordinary, growth, valueNil(), true);
-	require(isNil(table.getStringKey(growth)) && table.hashSlots() == 1 && table.storageAddress() == storage
+	require(isNil(table.getStringKey(growth)) && table.hashSlots() == 1 && table.hashAddress() == storage
 		&& table.hashFree() == free && cpu.luaHeap().usedBytes() == bytes,
 		"nil to a different absent key is a no-op with a metatable but no __newindex");
 	const auto raw = valueFloatBits(0x7fc01234u);
 	run(ordinary, growth, raw, false);
 	require(table.getStringKey(growth) == raw && table.getStringKey(resident) == valueBool(false)
-		&& table.hashSlots() == 2 && table.storageAddress() != storage && table.getInteger(1) == valueInteger(61)
+		&& table.hashSlots() == 2 && table.hashAddress() != storage && table.getInteger(1) == valueInteger(61)
 		&& cpu.luaHeap().usedBytes() == bytes + TableRecord::allocationCharge(0, 1),
 		"the changed dynamic key grows full own storage and preserves both earlier mappings");
 	run(ordinary, resident, valueInteger(39), true);

@@ -190,7 +190,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`the CPU addresses
 	cpu.beginCompletionCall(closure);
 	runGuestToHalt(cpu, 100);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
-	assert.equal(instructionReadCount, 2);
+	assert.equal(instructionReadCount, 0, 'the rewritten instructions come from the live RAM page without decoding the bus address again');
 });
 
 

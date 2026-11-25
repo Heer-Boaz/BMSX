@@ -506,8 +506,8 @@ void recordConstructorPreservesGrantAndLayout() {
 		auto a = table(prepared), b = table(scalar);
 		require(a.hashFree() == b.hashFree(), "the prepared constructor preserves the physical free cursor");
 		for (u32 at = 0; at < TableRecord::storageBytes(0, 8); ++at)
-			require(prepared.runtime.machine.memory.readRamRecordByte(a.storageAddress() + at)
-				== scalar.runtime.machine.memory.readRamRecordByte(b.storageAddress() + at),
+			require(prepared.runtime.machine.memory.readRamRecordByte(a.hashAddress() + at)
+				== scalar.runtime.machine.memory.readRamRecordByte(b.hashAddress() + at),
 				"prepared placement preserves the exact live keys, nils, raw values and hash links");
 		if (shortGrant) {
 			for (auto* machine : {&prepared, &scalar}) {
@@ -629,8 +629,8 @@ void recordConstructorUsesItsImageKeys() {
 			&& a.hashFree() == b.hashFree(),
 			"the image's keys drive the recipe and duplicate keys retain ordered writes");
 		for (u32 at = 0; at < TableRecord::storageBytes(0, 8); ++at)
-			require(prepared.runtime.machine.memory.readRamRecordByte(a.storageAddress() + at)
-				== scalar.runtime.machine.memory.readRamRecordByte(b.storageAddress() + at),
+			require(prepared.runtime.machine.memory.readRamRecordByte(a.hashAddress() + at)
+				== scalar.runtime.machine.memory.readRamRecordByte(b.hashAddress() + at),
 				"the recipe preserves field placement for the image's key set");
 	}
 }

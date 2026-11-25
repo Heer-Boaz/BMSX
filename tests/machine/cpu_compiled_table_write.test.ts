@@ -146,19 +146,19 @@ for (const pressure of ['budget', 'fragmented', 'exhausted']) test(`hinted SETFI
 	const regs = cpu.rootThread.frameAtDepth(0).registers;
 	regs.setTable(0, table); regs.setInteger(1, 73);
 	budget.setCollectionTarget(budget.capacity());
-	const backing = TableRecords.storageBytes(512, 64);
+	const backing = TableRecords.storageBytes(0, 64);
 	cpu.createTable(1024, 0); // Recoverable storage for the hinted growth.
 	if (pressure === 'budget') {
 		const required = TableRecords.allocationCharge(512, 2) - TableRecords.allocationCharge(512, 1);
 		cpu.memory.writeRamRecordWord(arena.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, budget.capacity() - required);
 	} else {
-		const minimum = TableRecords.storageBytes(512, 2);
+		const minimum = TableRecords.storageBytes(0, 2);
 		const hole = arena.allocate(minimum, true);
 		while (arena.allocate(backing, true) !== 0) {}
 		while (arena.allocate(minimum, true) !== 0) {}
 		if (pressure === 'fragmented') arena.free(hole);
 	}
-	const oldStorage = tables.storageAddress(table);
+	const oldStorage = tables.hashAddress(table);
 	const pc = cpu.readFramePc(0);
 	const used = budget.usedBytes();
 	const result = cpu.runUntilDepth(0, 1, cpu.rootThread.address, CpuRunKind.Scheduled);
@@ -172,7 +172,7 @@ for (const pressure of ['budget', 'fragmented', 'exhausted']) test(`hinted SETFI
 		return;
 	}
 	assert.equal(result, RunResult.ParkedAllocation);
-	assert.equal(tables.storageAddress(table), oldStorage);
+	assert.equal(tables.hashAddress(table), oldStorage);
 	assert.equal(tables.getStringKey(table, field), valueNil());
 	const pending = cpu.captureRuntimeState().pendingAllocation;
 	assert.ok(pending?.kind === PendingAllocationKind.TableAssignment);
@@ -213,13 +213,13 @@ test('ordinary bus writes cannot rebind an array or alter its private elements',
 	assert.ok(entry, 'the JavaScript path adopted a compiled table region');
 	for (const { cpu, memory } of [js, scalar]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		const table = r.getPayload(0), storage = cpu.gc.tables.storageAddress(table);
-		for (const address of [table + TableHeader.Storage, storage]) {
+		const table = r.getPayload(0), storage = cpu.gc.tables.arrayAddress(table);
+		for (const address of [table + TableHeader.ArrayStorage, storage]) {
 			memory.clearBusFault();
 			memory.writeU32(address, 0);
 			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
 		}
-		assert.equal(cpu.gc.tables.storageAddress(table), storage);
+		assert.equal(cpu.gc.tables.arrayAddress(table), storage);
 		assert.equal(cpu.gc.tables.getInteger(table, 1), valueInteger(71));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		r.setInteger(1, 89);

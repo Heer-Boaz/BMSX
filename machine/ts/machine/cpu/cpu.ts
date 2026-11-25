@@ -426,8 +426,8 @@ export class CPU implements MappedPageInvalidator {
 
 	private allocateTable(arraySize: number, hashSize: number, mode: LuaAllocationMode): number {
 		const hashCapacity = TableRecords.hashCapacity(hashSize);
-		const address = this.luaHeap.allocateRecord(TableRecords.HEADER_BYTES, true, TableRecords.storageBytes(arraySize, hashCapacity),
-			TableHeader.Storage, valueNil(), valueNil(), valueNil(), TableRecords.allocationCharge(arraySize, hashCapacity), mode);
+		const address = this.luaHeap.allocateRecord(TableRecords.HEADER_BYTES, true, 5 * arraySize,
+			TableHeader.ArrayStorage, valueNil(), valueNil(), valueNil(), TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(arraySize, hashCapacity), mode, 14 * hashCapacity, TableHeader.HashStorage);
 		if (address === 0) return 0;
 		this.gc.tables.initialize(address, arraySize, hashCapacity);
 		this.gc.publishObject(address);
@@ -1213,11 +1213,7 @@ export class CPU implements MappedPageInvalidator {
 		if (existing !== undefined) {
 			return existing;
 		}
-		const page = createDecodedInstructionPage(
-			binding.cacheable,
-			binding.writeWatches,
-			binding.writeWatchIndex,
-		);
+		const page = createDecodedInstructionPage(binding);
 		image.decodedPages.set(binding.key, page);
 		return page;
 	}
@@ -1321,6 +1317,7 @@ export class CPU implements MappedPageInvalidator {
 			for (const [key, page] of image.decodedPages) {
 				if (key >= invalidationStart && key < endKey) {
 					this.compiledCodeCache.retirePage(page);
+					this.memory.bindMappedPage(key >>> 0, mappedBusSignalsForCartridgeSlot(mappedPageDomainIndex(key) === 2 ? 1 : 0) | MAPPED_BUS_INSTRUCTION_FETCH, page);
 					page.refreshState.fill(DECODED_REFRESH_DECODE);
 				}
 			}
@@ -1361,7 +1358,9 @@ export class CPU implements MappedPageInvalidator {
 		let wideA = 0;
 		let wideB = 0;
 		let wideC = 0;
-		const sourceWord = this.memory.readMappedBusU32LE(pc, this.executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH);
+		const sourceWord = page.readBytes !== null
+			? readLE32(page.readBytes, page.readByteOffset + pageOffset * INSTRUCTION_BYTES)
+			: this.memory.readMappedBusU32LE(pc, this.executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH);
 		if (this.memory.readBusFaultSequence() !== faultSequence) {
 			this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 			return false;
@@ -1378,10 +1377,11 @@ export class CPU implements MappedPageInvalidator {
 			wideA = (sourceWord >>> 12) & 0x3f;
 			wideB = instructionLowB(sourceWord);
 			wideC = sourceWord & 0x3f;
-			bodyWord = this.memory.readMappedBusU32LE(
-				(pc + INSTRUCTION_BYTES) >>> 0,
-				this.executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH,
-			);
+			const bodySource = bodyPage ?? page;
+			const bodyPc = (pc + INSTRUCTION_BYTES) >>> 0;
+			bodyWord = bodySource.readBytes !== null
+				? readLE32(bodySource.readBytes, bodySource.readByteOffset + (bodyPc & MAPPED_PAGE_BYTE_MASK))
+				: this.memory.readMappedBusU32LE(bodyPc, this.executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH);
 			if (this.memory.readBusFaultSequence() !== faultSequence) {
 				this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 				return false;
@@ -1517,13 +1517,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			// Lookahead may inspect only fully backed memory, never a faulting bus access.
 			// The last-word exclusion above keeps a WIDE body in that same backing page.
-			const binding = this.mappedPageBinding;
-			this.memory.bindMappedPage(
-				(nextPc & ~MAPPED_PAGE_BYTE_MASK) >>> 0,
-				this.executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH,
-				binding,
-			);
-			if (binding.readBytes === null) {
+			if (nextPage.readBytes === null) {
 				return true;
 			}
 			if (!this.decodeInstruction(
@@ -2758,9 +2752,8 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		if (verified && !bounded) return;
-		this.memory.bindMappedPage(pagePc, fetchSignals, binding);
-		const mayLookAhead = bounded || binding.readBytes !== null;
-		const watchesWrites = binding.writeWatches !== null;
+		const mayLookAhead = bounded || page.readBytes !== null;
+		const watchesWrites = page.writeWatches !== null;
 		const pcAt = (index: number) => (basePc + index * INSTRUCTION_BYTES) >>> 0;
 		const pageAt = (index: number) => pages[index >>> DECODED_PAGE_SHIFT];
 		const wordAt = (index: number) => index & (DECODED_PAGE_WORDS - 1);

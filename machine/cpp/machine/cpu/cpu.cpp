@@ -640,7 +640,6 @@ void CPU::rebindRelocatedThread(u32 address) {
 	visitThreadViews([&](Thread& thread) {
 		if (thread.address != address) return;
 		thread.bindStack();
-		m_activeStackRebound |= &thread == m_activeThread;
 	});
 }
 
@@ -693,6 +692,11 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 				page.retireNativeBlocks();
 #endif
+				// The physical mapping has already changed. Rebind in place:
+				// suspended frames and the native directory retain the page itself.
+				m_memory.bindMappedPage(static_cast<u32>(key),
+					mappedBusSignalsForCartridgeSlot(mappedPageDomainIndex(key) == 2u) | MAPPED_BUS_INSTRUCTION_FETCH,
+					page.mapping);
 				page.refreshState.fill(DECODED_REFRESH_DECODE);
 			}
 		}
@@ -1409,7 +1413,7 @@ void CPU::finishProtectedCallWithError(u32 continuationIndex, Value errorValue) 
 	const i32 callBase = result.base;
 	const int resultCount = result.selected(2);
 	if (resultCount > 0) {
-		ValueSpan registers = ensureRegisterCapacity(caller, callBase + resultCount - 1);
+		ValueSpan& registers = ensureRegisterCapacity(caller, callBase + resultCount - 1);
 		registers.set(static_cast<size_t>(callBase), valueBool(false));
 		if (resultCount > 1) {
 			registers.set(static_cast<size_t>(callBase + 1), errorValue);
@@ -1441,7 +1445,7 @@ int CPU::writeProtectedResults(u32 continuationIndex, bool prefix, const Value* 
 	const i32 callBase = result.base;
 	const int resultCount = result.selected(valueCount + 1);
 	if (resultCount > 0) {
-		ValueSpan registers = ensureRegisterCapacity(caller, callBase + resultCount - 1);
+		ValueSpan& registers = ensureRegisterCapacity(caller, callBase + resultCount - 1);
 		registers.set(static_cast<size_t>(callBase), valueBool(prefix));
 		const int copiedCount = std::min(valueCount, resultCount - 1);
 		if (copiedCount > 0) {
@@ -1461,7 +1465,7 @@ int CPU::writeProtectedResults(u32 continuationIndex, bool prefix, CallFrame& so
 	const i32 callBase = result.base;
 	const int resultCount = result.selected(sourceCount + 1);
 	if (resultCount > 0) {
-		ValueSpan registers = ensureRegisterCapacity(caller, callBase + resultCount - 1);
+		ValueSpan& registers = ensureRegisterCapacity(caller, callBase + resultCount - 1);
 		const int copiedCount = std::min(sourceCount, resultCount - 1);
 		if (copiedCount > 0) {
 			registers.copyFrom(source.registers, callBase + 1, sourceBase, copiedCount);
@@ -1543,7 +1547,7 @@ void CPU::runBuiltinNextValue(Value target, Value key, BuiltinResults& out) {
 	if (!isNil(nextKey)) out.push_back(nextValue);
 }
 
-bool CPU::stepTableIterator(ValueSpan registers, int base, int destination, int count) {
+bool CPU::stepTableIterator(ValueSpan& registers, int base, int destination, int count) {
 	if (registers.get(base) != valueBuiltinFunction(BuiltinFunctionId::Next)) return false;
 	const Value table = registers.get(base + 1), control = registers.get(base + 2);
 	if (!valueIsTable(table) || !isNil(control)) return false;
@@ -1833,13 +1837,11 @@ RunResult CPU::runLoop(
 		scalarFrame = frame; \
 	} \
 } while (0)
-	ValueSpan registers;
 	bool canReuseFrame = false;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const NativeBlock* nativeBlock = nullptr;
 	int nativeFirstDispatchCycles = 0;
-	NativeCpuRunState nativeState{.state = {}, .cpu = this, .targetDepth = targetDepth,
-		.error = {}};
+	NativeCpuRunState nativeState(*this, targetDepth);
 #define OBSERVE_SCALAR_ARITHMETIC(left, right) do { \
 	if constexpr (!Instrumented) { \
 		if (nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic) { \
@@ -1847,7 +1849,7 @@ RunResult CPU::runLoop(
 			nativeState.replay.reset(); \
 			observeNativeArithmeticReplay(*decodedPage, (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES, \
 				assumption, left, right); \
-		} else if (decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm)) { \
+		} else if (isNativeWarmDispatch(decoded->dispatchOp)) { \
 			decoded->observeNativeNumericTypes(left, right); \
 		} \
 	} \
@@ -1871,7 +1873,7 @@ RunResult CPU::runLoop(
 			frame = thread.currentFrame;
 			image = frame->executionImage;
 			if (image && image != m_activeExecutionImage) latchActiveExecutionImage(image->executionDomainId, image);
-			registers = frame->registers;
+
 			if constexpr (Instrumented) {
 				if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
 					enterPendingInterrupt();
@@ -1930,13 +1932,14 @@ dispatch_fetch:
 			pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
 			decodedPage = &decodedPageForFrame(*frame, pc);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+dispatch_bound_page:
 			if constexpr (!Instrumented) {
 				if (nativeState.hotSidePc) {
 					const bool atTarget = *nativeState.hotSidePc == pc;
 					nativeState.hotSidePc.reset();
 					const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 					if (atTarget && !decodedPage->refreshState[word]
-						&& decodedPage->words[word].dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm))
+						&& isNativeWarmDispatch(decodedPage->words[word].dispatchOp))
 						prepareNativeBlock(*frame, *decodedPage, pc, m_executionBusSignals);
 				}
 			}
@@ -1944,11 +1947,6 @@ dispatch_fetch:
 			goto dispatch_decode;
 
 dispatch_decode:
-			if (m_activeStackRebound) {
-				m_activeStackRebound = false;
-				if (frame != thread.currentFrame) continue;
-				registers = frame->registers;
-			}
 			const u32 pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
 			u8 refreshState = decodedPage->refreshState[pageOffset];
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -1985,24 +1983,51 @@ dispatch_decode:
 
 #define FRAME (*frame)
 #define IMAGE (*image)
-#define REG(index) registers.get(static_cast<size_t>(index))
+#define REG(index) frame->registers.get(static_cast<size_t>(index))
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define EXTEND_TOP(extent) do { \
 	if constexpr (Instrumented) FRAME.extendTop(extent); \
 	else registerTop = std::max(registerTop, static_cast<int>(extent)); \
 } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
-	registers.set(static_cast<size_t>(index), (valueExpr)); \
+	frame->registers.set(static_cast<size_t>(index), (valueExpr)); \
 	EXTEND_TOP((index) + 1); \
 } while (0)
 #define SET_NEXT_PC(target) do { \
 	if constexpr (Instrumented) FRAME.writeControl(FrameField::Pc, target); \
 	else nextPc = (target); \
 } while (0)
-#define SKIP_NEXT_INSTRUCTION() do { \
+// A decoded skip changes the local PC, just like a taken JMP. Only an
+// actual fetch of the skipped encoding needs a published frame for faults.
+#define DISPATCH_SKIP_NEXT() do { \
+	if constexpr (!Instrumented) { \
+		if (canReuseFrame && (nextPc & ~MAPPED_PAGE_BYTE_MASK) == pageAddress) { \
+			const u32 skipped = (nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES; \
+			if (!(decodedPage->refreshState[skipped] & DECODED_REFRESH_DECODE)) { \
+				nextPc += decodedPage->words[skipped].width * INSTRUCTION_BYTES; \
+				DISPATCH_NEXT(); \
+			} \
+		} \
+	} \
 	PUBLISH_SCALAR_FRONTIER(); \
 	skipNextInstruction(FRAME); \
+	DISPATCH_CONTINUE(); \
 } while (0)
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+// On fallthrough the comparison owns the paired JMP. A separate incoming
+// edge to that same PC still requests an independent native entry.
+#define COMPARISON_FALLTHROUGH() do { \
+	if constexpr (!Instrumented) { \
+		if ((nextPc & ~MAPPED_PAGE_BYTE_MASK) == pageAddress) { \
+			const u32 word = (nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES; \
+			if (!(decodedPage->refreshState[word] & DECODED_REFRESH_DECODE) \
+				&& nativeComparisonPairsJump(decodedPage->words[word])) FRAME.compilationEntry = false; \
+		} \
+	} \
+} while (0)
+#else
+#define COMPARISON_FALLTHROUGH() ((void)0)
+#endif
 #define TABLE_CACHE_SLOT() (decoded->tableCacheSlot())
 #define DISPATCH_LABEL(name) case static_cast<uint8_t>(OpCode::name):
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
@@ -2024,7 +2049,7 @@ dispatch_decode:
 } while (0)
 
 dispatch_instruction:
-			if (decoded->requiredSlots > registers.size()) {
+			if (decoded->requiredSlots > frame->registers.size()) {
 				if (dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)) goto dispatch_observe;
 				if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) {
 					switch (static_cast<OpCode>(decoded->op)) {
@@ -2049,20 +2074,29 @@ dispatch_instruction:
 #include "machine/cpu/cpu_dispatch.inl"
 				}
 			} else {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				// Warmth selects an execution tier for the admitted instruction.
+				// It is not a guest opcode: dispatch the selected operation once.
+				if (isNativeWarmDispatch(dispatchOp)) {
+					const bool entry = FRAME.compilationEntry;
+					FRAME.compilationEntry = rewritten || dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarmBoundary);
+					dispatchOp = decoded->op;
+					// Mapped source discovery needs per-word heat, including ROM
+					// entered at a previously sequential PC.
+					if (entry || image->romFunctions.mappedCode || decodedPage->mapping.writeWatch.groups) {
+						auto& visits = decodedPage->nativeVisits[pageOffset];
+						if (visits < NATIVE_BLOCK_COMPILATION_THRESHOLD) ++visits;
+						if (entry && visits == NATIVE_BLOCK_COMPILATION_THRESHOLD
+							&& !(nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic)) {
+							prepareNativeBlock(FRAME, *decodedPage, pc, m_executionBusSignals);
+							if (decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock))
+								dispatchOp = decoded->dispatchOp;
+						}
+					}
+				}
+#endif
 				switch (dispatchOp) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-				case static_cast<u8>(DecodedDispatchOp::NativeWarm): {
-					auto& visits = decodedPage->nativeVisits[pageOffset];
-					if (visits < NATIVE_BLOCK_COMPILATION_THRESHOLD) ++visits;
-					if (FRAME.compilationEntry && visits == NATIVE_BLOCK_COMPILATION_THRESHOLD
-						&& !(nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic)) {
-						prepareNativeBlock(FRAME, *decodedPage, pc, m_executionBusSignals);
-					}
-					FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
-					dispatchOp = decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock)
-						? decoded->dispatchOp : decoded->op;
-					goto dispatch_instruction;
-				}
 				case static_cast<u8>(DecodedDispatchOp::NativeBlock): {
 					// The CPU thread owns code publication and source writes. With no
 					// intervening guest instruction, this is the same published entry;
@@ -2098,8 +2132,8 @@ dispatch_instruction:
 					const int a = decoded->a;
 					const int rkB = decoded->b;
 					const int rkC = decoded->c;
-					const Value& shiftLeftValue = readRK(IMAGE, registers, rkB);
-					const Value& shiftRightValue = readRK(IMAGE, registers, rkC);
+					const Value& shiftLeftValue = readRK(IMAGE, frame->registers, rkB);
+					const Value& shiftRightValue = readRK(IMAGE, frame->registers, rkC);
 					const i32 shifted = dispatchOp == static_cast<u8>(DecodedDispatchOp::FusedShlBxor)
 						? luaShiftLeft(integerOperand(shiftLeftValue), integerOperand(shiftRightValue))
 						: luaShiftRight(integerOperand(shiftLeftValue), integerOperand(shiftRightValue));
@@ -2135,9 +2169,9 @@ dispatch_instruction:
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 					instructionBudgetRemaining -= decoded->baseCycles;
-					if (decoded->requiredSlots > registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-					const Value& xorLeftValue = readRK(IMAGE, registers, decoded->b);
-					const Value& xorRightValue = readRK(IMAGE, registers, decoded->c);
+					if (decoded->requiredSlots > frame->registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+					const Value& xorLeftValue = readRK(IMAGE, frame->registers, decoded->b);
+					const Value& xorRightValue = readRK(IMAGE, frame->registers, decoded->c);
 					const int32_t xorResult = static_cast<int32_t>(
 						static_cast<u32>(integerOperand(xorLeftValue)) ^ static_cast<u32>(integerOperand(xorRightValue))
 					);
@@ -2156,8 +2190,8 @@ dispatch_instruction:
 					const int a = decoded->a;
 					const int rkB = decoded->b;
 					const int rkC = decoded->c;
-					const Value& addLeftValue = readRK(IMAGE, registers, rkB);
-					const Value& addRightValue = readRK(IMAGE, registers, rkC);
+					const Value& addLeftValue = readRK(IMAGE, frame->registers, rkB);
+					const Value& addRightValue = readRK(IMAGE, frame->registers, rkC);
 					SET_REGISTER_FAST(
 						a,
 						valueAdd(addLeftValue, addRightValue)
@@ -2190,9 +2224,9 @@ dispatch_instruction:
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 					instructionBudgetRemaining -= decoded->baseCycles;
-					if (decoded->requiredSlots > registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-					const Value& shiftLeftValue = readRK(IMAGE, registers, decoded->b);
-					const Value& shiftRightValue = readRK(IMAGE, registers, decoded->c);
+					if (decoded->requiredSlots > frame->registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+					const Value& shiftLeftValue = readRK(IMAGE, frame->registers, decoded->b);
+					const Value& shiftRightValue = readRK(IMAGE, frame->registers, decoded->c);
 					const i32 shifted = luaShiftLeft(integerOperand(shiftLeftValue), integerOperand(shiftRightValue));
 					SET_REGISTER_FAST(
 						decoded->a,
@@ -2209,26 +2243,7 @@ dispatch_instruction:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_native_block: {
 				PUBLISH_SCALAR_FRONTIER();
-				thread.recordNativeWrites(m_memory.ramWriteWatches());
-				nativeState.frameBank = frameBankWord(IMAGE.executionDomainId);
-				nativeState.nativeStackCapacity = thread.stackCapacity;
-				nativeState.nativeFrameLimit = thread.retainedFrameLimit();
-				nativeState.haltedCallDepth = m_haltedUntilIrqThreadAddress == thread.address ? m_haltedUntilIrqFrameDepth : -1;
-			nativeState.closureDomain = ClosureRecord::domainBits(IMAGE.executionDomainId);
-				nativeState.cartridgeSlot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
-				nativeState.codeRoot = IMAGE.nativeCodeLookup->root(nativeState.cartridgeSlot);
-				nativeState.state = {.constants = IMAGE.constPool, .frame = frame, .heap = &m_heap,
-					.globalValues = m_globalBank.values(), .systemGlobalValues = m_systemGlobalBank.values(),
-					.cop0Words = m_cop0Words.data(),
-					.tableIndexKey = m_heap.indexKey,
-					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.readWindow(FrameField::Top),
-					.closure = FRAME.closureAddress(), .stackBase = FRAME.stackBase(),
-					.frameDepth = static_cast<u32>(thread.frameDepth()),
-					.ram = m_memory.ramData(),
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-					.diagnosticOpcodes = {},
-#endif
-				};
+				nativeState.enterFrame(*frame, instructionBudgetRemaining + nativeFirstDispatchCycles);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 				const int nativeStartBudget = nativeState.state.remainingCycles;
 #endif
@@ -2266,7 +2281,7 @@ dispatch_rebind_frame:
 				image = frame->executionImage;
 				if (!image) goto dispatch_continue;
 				if (image != m_activeExecutionImage) latchActiveExecutionImage(image->executionDomainId, image);
-				registers = frame->registers;
+
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 				pc = frame->readControl(FrameField::Pc);
 				// A function record can supply a raw unaligned code address. Leave
@@ -2281,6 +2296,10 @@ dispatch_rebind_frame:
 							goto dispatch_native_block;
 						}
 					}
+					// The receiving frame and its aligned fetch page are already
+					// bound, even when this entry has no native body.
+					publishedTop = registerTop = FRAME.readWindow(FrameField::Top);
+					goto dispatch_bound_page;
 				}
 #endif
 				goto dispatch_fetch;
@@ -2295,7 +2314,7 @@ dispatch_observe:
 #endif
 			// Observation precedes the original instruction's charge.
 			instructionBudgetRemaining += decoded->baseCycles;
-			m_instructionObserver.observe(m_instructionObserver.context, image->executionDomainId, pc, registers);
+			m_instructionObserver.observe(m_instructionObserver.context, image->executionDomainId, pc, frame->registers);
 			RESUME_SCALAR_FRONTIER();
 			dispatchOp = decoded->op;
 			instructionBudgetRemaining -= decoded->baseCycles;
@@ -2307,7 +2326,8 @@ dispatch_continue:
 #undef DISPATCH_NEXT
 #undef DISPATCH_CONTINUE
 #undef DISPATCH_LABEL
-#undef SKIP_NEXT_INSTRUCTION
+#undef DISPATCH_SKIP_NEXT
+#undef COMPARISON_FALLTHROUGH
 #undef TABLE_CACHE_SLOT
 #undef SET_NEXT_PC
 #undef SET_REGISTER_FAST
@@ -2392,6 +2412,9 @@ RunResult CPU::runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBud
 			warmup.consumed = true;
 		}
 	}
+#endif
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	cpu.serviceNativeDemand();
 #endif
 	if (targetDepth == 0) {
 		return cpu.runLoop<true, false>(targetDepth, instructionBudget);
@@ -2785,7 +2808,7 @@ void CPU::writeReturnValuesFromRegisters(CallFrame& frame, CallResultPlacement r
 	const int base = result.base;
 	const auto placement = ValuePlacement::fit(sourceCount, result.selected(sourceCount));
 	if (placement.count() > 0) {
-		ValueSpan registers = ensureRegisterCapacity(frame, base + placement.count() - 1);
+		ValueSpan& registers = ensureRegisterCapacity(frame, base + placement.count() - 1);
 		// Backing growth can relocate both views; their stack offsets stay fixed.
 		registers.copyFrom(source.registers, base, sourceBase, placement.copied);
 		registers.clear(base + placement.copied, placement.padded);
@@ -2799,7 +2822,7 @@ void CPU::writeReturnValues(CallFrame& frame, CallResultPlacement result, Builti
 	const int valueCount = static_cast<int>(values.size());
 	const int targetCount = result.selected(valueCount);
 	if (targetCount > 0) {
-		ValueSpan registers = ensureRegisterCapacity(frame, base + targetCount - 1);
+		ValueSpan& registers = ensureRegisterCapacity(frame, base + targetCount - 1);
 		const int copiedCount = std::min(valueCount, targetCount);
 		for (int i = 0; i < copiedCount; ++i) {
 			registers.set(base + i, values[i]);
@@ -2813,7 +2836,7 @@ void CPU::writeReturnValues(CallFrame& frame, CallResultPlacement result, Builti
 }
 
 void CPU::setRegister(CallFrame& frame, int index, Value value) {
-	ValueSpan registers = ensureRegisterCapacity(frame, index);
+	ValueSpan& registers = ensureRegisterCapacity(frame, index);
 	registers.set(static_cast<size_t>(index), value);
 	const int nextTop = index + 1;
 	if (nextTop > frame.readWindow(FrameField::Top)) {
@@ -2821,7 +2844,7 @@ void CPU::setRegister(CallFrame& frame, int index, Value value) {
 	}
 }
 
-ValueSpan CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
+ValueSpan& CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 	if (index < frame.stackCapacity()) {
 		return frame.registers;
 	}

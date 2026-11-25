@@ -9,6 +9,7 @@ export interface DlmallocArena {
 	setFloor(floor: number): number;
 	allocate(bytes: number, object: number): number;
 	free(offset: number): void;
+	resizeBacking(offset: number, bytes: number): number;
 	shrink(offset: number, bytes: number): void;
 	allocationBytes(offset: number): number;
 	floor(): number;

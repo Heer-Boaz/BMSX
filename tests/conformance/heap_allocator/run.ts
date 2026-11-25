@@ -106,7 +106,17 @@ function churn(steps: number): void {
 		const band = next(100);
 		if (band < 38 || live.length === 0) allocate(requestBytes());
 		else if (band < 63) free(next(live.length));
-		else if (band < 86) mutate(next(live.length));
+		else if (band < 76) mutate(next(live.length));
+		else if (band < 86) {
+			const index = next(live.length), entry = live[index];
+			if (entry.owned) {
+				const bytes = entry.bytes + requestBytes();
+				script.push(`G ${index} ${bytes}`);
+				const address = allocator.resizeBacking(entry.address, bytes);
+				if (address !== 0) live[index] = { address, bytes, owned: true };
+				expected.push(String(address));
+			} else mutate(index);
+		}
 		else if (band < 94) shrink(next(live.length));
 		else floor(floorChoice());
 		if ((i & 255) === 0) digest();

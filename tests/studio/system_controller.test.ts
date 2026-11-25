@@ -61,7 +61,6 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 import {
-	blua32TestFunctionAddress,
 	linkRawTestBlua32Pair,
 	linkTestBlua32Pair,
 	type TestBlua32Source,
@@ -94,17 +93,18 @@ function createSystemResetRuntime(systemRom: Uint8Array, cartRom: Uint8Array, ca
 }
 
 function makeExecutionSelectorSystemSource(): TestBlua32Source {
-	const text = new Uint8Array(3 * INSTRUCTION_BYTES);
+	const text = new Uint8Array(4 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.MTC0, 0, COP0_EXEC, 0, 0);
-	writeInstruction(text, 2, OpCode.RFE, 0, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.LOAD_MEM, 0, 0, MemoryAccessKind.Word, 0);
+	writeInstruction(text, 2, OpCode.MTC0, 0, COP0_EXEC, 0, 0);
+	writeInstruction(text, 3, OpCode.RFE, 0, 0, 0, 0);
 	return {
 		text,
 		functions: [
-			{ firstWord: 0, wordCount: 2 },
-			{ firstWord: 2, wordCount: 1 },
+			{ firstWord: 0, wordCount: 3 },
+			{ firstWord: 3, wordCount: 1 },
 		],
-		constants: [integerConstant(blua32TestFunctionAddress(CART_ROM_BASE, 0))],
+		constants: [integerConstant(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET)],
 		irqFunctionIndex: 1,
 		exceptionFunctionIndex: 0,
 		systemGlobalNames: LUA_BOOT_PRIMITIVES.map((primitive) => primitive.name),

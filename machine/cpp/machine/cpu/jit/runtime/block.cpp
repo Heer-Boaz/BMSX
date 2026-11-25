@@ -63,7 +63,6 @@ const NativeBlockExitSite* NativeBlock::run(const ValueSpan& registers, NativeBl
 }
 
 void NativeBlock::execute(NativeCpuRunState& state) const {
-	state.state.exitCode = m_gate->dispatch;
 	reinterpret_cast<NativeBlockGate::Entry>(m_gate->entry)(&state.state, m_body, &state.state.frame->registers);
 }
 

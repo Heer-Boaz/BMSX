@@ -107,7 +107,7 @@ inline void CPU::executeVararg(CallFrame& frame, int a, int requested) {
 	const auto placement = ValuePlacement::fit(available, requested < 0 ? available : requested);
 	const int count = placement.count();
 	if (count != 0) {
-		ValueSpan registers = ensureRegisterCapacity(frame, a + count - 1);
+		ValueSpan& registers = ensureRegisterCapacity(frame, a + count - 1);
 		registers.copyFrom(m_activeThread->stack, a, frame.readWindow(FrameField::VarargBase), placement.copied);
 		registers.clear(a + placement.copied, placement.padded);
 	}

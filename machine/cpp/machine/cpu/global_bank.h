@@ -33,7 +33,7 @@ public:
 	u32 count() const { return m_state.count; }
 	StringId name(u32 slot) const { return m_memory.readRamRecordWord(m_state.base + 4u * slot); }
 	ConstValueSpan values() const { return m_values; }
-	ValueSpan values() { return m_values; }
+	const ValueSpan& values() { return m_values; }
 	std::optional<u32> find(StringId key) const;
 	u32 registerName(StringId key, Value pending = valueNil());
 	GlobalBankState captureState() const { return m_state; }

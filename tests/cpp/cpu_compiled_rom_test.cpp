@@ -58,7 +58,7 @@ struct CpuMachine {
 
 void sparseCodeLookupPreservesPageOwners() {
 	NativeCodeLookup lookup;
-	DecodedInstructionPage first(true, {}), second(true, {});
+	DecodedInstructionPage first(MappedPageBinding{0, true, nullptr, {}}), second(MappedPageBinding{0, true, nullptr, {}});
 	for (const u32 address : {0u, 0x003ffc00u, 0x00400000u, DYNAMIC_RAM_BASE, CART_ROM_BASE, 0xfffffc00u}) {
 		require(!lookup.find(address, 0) && !lookup.find(address, 1), "an uncompiled page is absent from both socket banks");
 		lookup.install(address, 0, first);

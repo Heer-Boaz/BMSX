@@ -51,6 +51,9 @@
 #include "machine/cpu/jit/runtime/code_cache.h"
 #include "machine/cpu/jit/runtime/compilation_profile.h"
 #include "machine/cpu/jit/source.h"
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+#include "machine/cpu/jit/demand_queue.h"
+#endif
 #endif
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 #include "machine/cpu/jit/runtime/gate_profile.h"
@@ -365,7 +368,7 @@ private:
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement, const CallArguments&);
 	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out, int resultLimit);
 	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
-	bool stepTableIterator(ValueSpan registers, int base, int destination, int count);
+	bool stepTableIterator(ValueSpan& registers, int base, int destination, int count);
 	bool executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept;
 	void runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out);
 	std::optional<int> selectArgumentStart(Value selector, int count) const;
@@ -401,6 +404,7 @@ private:
 #endif
 	void invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord);
 	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, u32 pc);
+	void refreshDecodedFusion(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc);
 	bool decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);
 	void decodeInstructionWords(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
 		u32 pc, u32 sourceWord, u32 bodyWord, bool instructionCacheable, DecodedInstructionPage* bodyPage);
@@ -444,13 +448,13 @@ private:
 	void writeReturnValuesFromRegisters(CallFrame& frame, CallResultPlacement, const CallFrame& source, int sourceBase, int sourceCount);
 	void writeReturnValues(CallFrame& frame, CallResultPlacement, BuiltinArgsView values);
 	void setRegister(CallFrame& frame, int index, Value value);
-	ValueSpan ensureRegisterCapacity(CallFrame& frame, int index);
+	ValueSpan& ensureRegisterCapacity(CallFrame& frame, int index);
 	bool executeWordStores(CallFrame& frame, u32 address, int source, int count);
 	bool continueWordStores(CallFrame& frame, u32 address, int source, int count);
 	void executeMemoryLoad(CallFrame& frame, int destination, MemoryAccessKind kind, u32 address);
 	bool executeMemoryStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address);
 	bool continueMemoryStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address);
-	static Value readRK(Blua32ExecutionImage& image, ConstValueSpan registers, int rk) {
+	static Value readRK(const Blua32ExecutionImage& image, const ValueSpan& registers, int rk) {
 		if (rk < 0) {
 			return image.constPool.get(static_cast<size_t>(-1 - rk));
 		}
@@ -482,6 +486,7 @@ private:
 	void skipNextInstruction(CallFrame& frame);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	friend class NativeBlockGate;
+	friend struct NativeCpuRunState;
 	static void* tryCallNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
 	static void* tryCallNativeFixedFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
 	static void* resumeScalarAfterNativeTransfer(NativeCpuRunState&, const NativeBlockExitSite&, u32 pc) noexcept;
@@ -497,6 +502,7 @@ private:
 	static NativeBuiltinCallOutcome runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	NativeRomCallBinding* bindNativeRomFunction(Blua32ExecutionImage& image, u32 functionAddress) const noexcept;
 	static void* tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
+	void compileNativeRoot(Blua32ExecutionImage&, u32 functionAddress, DecodedInstructionPage&, u32 pc, MappedBusSignals);
 	void prepareNativeBlock(CallFrame&, DecodedInstructionPage&, u32 pc, MappedBusSignals);
 	bool prepareNativeFunction(Blua32ExecutionImage&, const Blua32RomFunctionVersion&, u32 rootPc,
 		MappedBusSignals, NativeWarmupAdmission* = nullptr);
@@ -512,6 +518,8 @@ private:
 		std::vector<std::unique_ptr<NativeBlock>> blocks, NativeCodeAdmission);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	void publishNativeCompilation();
+	void serviceNativeDemand();
+	NativeDemandQueue m_nativeDemand;
 	void discardNativeCompilation();
 	std::unique_ptr<NativeCompilerWorker> m_nativeCompilerWorker;
 	struct PendingNativeCompilation {
@@ -520,7 +528,7 @@ private:
 		// Feedback belongs to a decoded instruction head, not to all its
 		// backing words or the rest of the physical page.
 		std::array<std::bitset<DECODED_PAGE_WORDS>, NATIVE_VERSION_REGION_MAX_PAGES> feedbackHeads;
-		u32 pageCount = 0, slot = 0;
+		u32 pageCount = 0, slot = 0, rootPc = 0;
 		bool invalidated = false;
 		std::span<const NativeCodeSourcePage> sources() const { return std::span(pages).first(pageCount); }
 	} m_pendingNativeCompilation;
@@ -582,7 +590,6 @@ private:
 	u32 m_nmiReturnLuaFaultReasonWord = 0;
 	u32 m_nmiReturnExceptionDomainWord = 0;
 	u32 m_systemExceptionFunctionAddress = 0;
-	bool m_activeStackRebound = false;
 	Thread* m_activeThread = nullptr;
 	u32 m_completionThreadAddress = 0u;
 	u32 createThread(u32 entry);

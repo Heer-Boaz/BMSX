@@ -296,7 +296,6 @@ struct NativeComparison {
 struct NativeCallSite : NativeExitOperands::Call {
 	static constexpr auto terminalExit = NativeBlockExit::Call;
 	NativeTagCheck calleeCheck = NativeTagCheck::Dynamic;
-	std::optional<NativeFixedCallPlan> fixed{};
 	constexpr NativeSlotAccess slots() const {
 		return {.reads = {static_cast<i16>(callee), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND},
 			.writes = {callee, static_cast<u16>(std::max<int>(requested, 0)), requested < 0},

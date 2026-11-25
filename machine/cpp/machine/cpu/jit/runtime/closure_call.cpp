@@ -142,7 +142,7 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 	auto& state = run->state;
 	auto& caller = *state.frame;
 	const auto& call = exit->operands.call;
-	if (call.strategy == NativeCallStrategy::Fixed) return tryCallNativeFixedFrame(run, exit);
+	if (exit->callStrategy == NativeCallStrategy::Fixed) return tryCallNativeFixedFrame(run, exit);
 	const int base = call.callee;
 	// Run-state frames are bound to the linear value planes of the grant.
 	switch (static_cast<ValueTag>(caller.registers.tags()[base])) {
@@ -173,15 +173,20 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 		function = &romBinding->entry;
 	}
 
-	// Learning the target doesn't invalidate the generic call. This
-	// binding observes the owning decoded site until its first sample.
-	if (call.strategy == NativeCallStrategy::Observe && romBinding && exit->observingCall) {
+	// The shared CALL gate reads the site's binding on every entry. Publish
+	// data on the CPU thread, never rewrite executable bytes or replace a
+	// live region just to use the prototype that this call actually selected.
+	if (exit->callStrategy == NativeCallStrategy::Observe && romBinding) {
 		auto& decoded = *exit->observingCall;
-		if (decoded.nativeCallTarget() != DecodedInstruction::CALL_TARGET_UNSEEN) {
-			exit->observingCall = nullptr;
-		} else if (cpu.captureNativeFixedCall(image, functionAddress, call.supplied)) {
+		const u32 observed = decoded.nativeCallTarget();
+		if (observed != DecodedInstruction::CALL_TARGET_UNSEEN && observed != functionAddress) {
+			decoded.setNativeCallTarget(DecodedInstruction::CALL_TARGET_DISABLED);
+			exit->callStrategy = NativeCallStrategy::Generic;
+		} else if (const auto plan = cpu.captureNativeFixedCall(image, functionAddress, call.supplied)) {
 			decoded.setNativeCallTarget(functionAddress);
-			exit->observingCall = nullptr;
+			std::construct_at(&exit->fixedCall, NativeFixedCallBinding{*plan, romBinding->entryCells});
+			exit->callStrategy = NativeCallStrategy::Fixed;
+			return tryCallNativeFixedFrame(run, exit);
 		}
 	}
 
@@ -226,29 +231,39 @@ void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExit
 	auto& state = run->state;
 	auto& caller = *state.frame;
 	const auto& call = exit->operands.call;
-	const auto& binding = exit->fixedCall;
+	auto& binding = exit->fixedCall;
 	const auto& plan = binding.plan;
 	const int base = call.callee;
+	const auto miss = [&] {
+		// All fixed entries guard their own plan. A mismatch patches only
+		// this site's data and prevents new plans for the same source PC.
+		auto* page = NativeCodeLookup::findInRoot(run->codeRoot, exit->currentPc);
+		const auto word = (exit->currentPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		page->words[word].setNativeCallTarget(DecodedInstruction::CALL_TARGET_DISABLED);
+		exit->callStrategy = NativeCallStrategy::Generic;
+		return tryCallNativeFrame(run, exit);
+	};
 	// A prototype version identifies code and frame layout, never captures.
 	// The actual heap closure remains the owner of every capture slot.
 	if (static_cast<ValueTag>(caller.registers.tags()[base]) != ValueTag::Closure) {
-		run->fixedCallMismatch = true;
-		return nullptr;
+		return miss();
 	}
 	const u32 closure = cpu.m_heap.closureRecordAddress(caller.registers.admittedPayload(base));
 	if (!closure) {
-		run->fixedCallMismatch = true;
-		return nullptr;
+		return miss();
 	}
 	const ClosureRecord::BindingFlags flags{cpu.m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
 	if (flags.latched() || flags.domain() != caller.executionImage->executionDomainId
 		|| cpu.m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) != plan.prototype) {
-		run->fixedCallMismatch = true;
-		return nullptr;
+		return miss();
 	}
 
 	if (state.remainingCycles <= plan.padded) return nullptr;
-	void* const target = *binding.entryCells[run->cartridgeSlot];
+	// An observed callee need not have a native page yet. Once found,
+	// the image-owned cell stays valid across retirement and republication.
+	auto& cell = binding.entryCells[run->cartridgeSlot];
+	if (!cell) cell = NativeCodeLookup::findEntryCellInRoot(run->codeRoot, plan.entryPc);
+	void* const target = cell ? *cell : nullptr;
 	auto& thread = *caller.thread;
 	const u32 depth = state.frameDepth + 1u;
 	auto* callee = thread.retainedFrameForEntry(caller, depth);

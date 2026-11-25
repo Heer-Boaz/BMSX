@@ -32,6 +32,8 @@ enum class NativeBuiltinCallOutcome : u32 {
 // A CPU grant owns this transient native frame. The register/cycle prefix is
 // shared with the standalone block ABI; only the CPU dispatcher uses the tail.
 struct NativeCpuRunState {
+	NativeCpuRunState(CPU& cpu, int targetDepth);
+	void enterFrame(CallFrame& frame, int budget);
 	struct Replay {
 		u32 pc;
 		std::optional<NativeArithmeticFeedback> arithmetic;
@@ -53,7 +55,6 @@ struct NativeCpuRunState {
 	std::exception_ptr error;
 	std::optional<Replay> replay{};
 	std::optional<u32> hotSidePc{};
-	bool fixedCallMismatch = false;
 };
 
 static_assert(std::is_standard_layout_v<NativeCpuRunState>);

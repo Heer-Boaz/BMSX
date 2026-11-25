@@ -1,7 +1,7 @@
 #include "machine/cpu/jit/ir/region.h"
 
 #include <algorithm>
-#include "machine/cpu/decoded_instruction.h"
+#include "machine/cpu/jit/source_policy.h"
 #include "spec/blua32/cop0.h"
 #include "spec/blua32/instruction_format.h"
 
@@ -173,13 +173,12 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 	const auto& final = last.operation;
 	const bool reachesEnd = nativeOperationFlow(final) != NativeOperationFlow::LeavesNative;
 	const auto* call = std::get_if<NativeCallSite>(&final);
-	block.inlineBuiltin = reachesEnd && cpuOwned && call && call->strategy != NativeCallStrategy::Fixed
+	block.inlineBuiltin = reachesEnd && cpuOwned && call
 		&& static_cast<unsigned>(call->supplied) <= 2u && call->requested <= 1;
 	if (std::holds_alternative<NativeComparison>(final) && skipped) {
 		block.skippedWidth = skipped->width;
 		block.sourceWords += skipped->width;
-		block.hasFusedJump = skipped->op == static_cast<u8>(OpCode::JMP) && skipped->a == 0
-			&& skipped->dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe);
+		block.hasFusedJump = nativeComparisonPairsJump(*skipped);
 		if (block.hasFusedJump) block.fusedJumpCycles = skipped->baseCycles;
 	} else if (auto* iterator = std::get_if<NativeTableIterator>(&operations.back().operation); iterator && skipped) {
 		block.skippedWidth = iterator->skipWidth = skipped->width;

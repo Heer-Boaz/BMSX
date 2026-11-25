@@ -89,8 +89,8 @@ sljit_jump* NativeLowering::emitArrayRead(NativeBlockExitSite& exit, bool routeO
 	auto* outside = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array));
 	if (!routeOutside) fault(outside, exit, m_cache.state());
-	emitTableSlotOffset(c, SLJIT_R2, true);
-	emitTableSlotOffset(c, SLJIT_R3, false);
+	emitTableSlotOffset(c, SLJIT_R2, true, TableHeader::ArrayStorage);
+	emitTableSlotOffset(c, SLJIT_R3, false, TableHeader::ArrayStorage);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, NativeBlockAbi::ramOperand(c, SLJIT_R2, SLJIT_R2), 0);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R3, 0, NativeBlockAbi::ramOperand(c, SLJIT_R3, SLJIT_R3), 0);
 	auto* own = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0,
@@ -108,7 +108,7 @@ sljit_jump* NativeLowering::emitArrayStore(int value, NativeStorePlan plan, Nati
 	if (!routeOutside) fault(outside, exit, m_cache.state());
 
 	for (bool word : {true, false}) {
-		emitTableSlotOffset(c, SLJIT_R3, word);
+		emitTableSlotOffset(c, SLJIT_R3, word, TableHeader::ArrayStorage);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), word ? wordOffset : tagOffset, SLJIT_R3, 0);
 	}
 	// Only an absent own element can dispatch __newindex. For an empty
@@ -204,7 +204,7 @@ void NativeLowering::emitOwnIndexStore(int value, NativeBlockExitSite& exit, Nat
 	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), exit, m_cache.state());
 }
 
-// Hash keys start after the array; hash values start after all hash keys.
+// Hash values start after all hash keys in the node allocation.
 // The checked result is the pair of physical offsets in R1 and R3.
 std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExitSite& exit, bool load,
 	std::optional<StringId> fixedKey, std::optional<u8> temporary) {
@@ -222,13 +222,11 @@ std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExi
 		if (!fixedKey)
 			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), saved + 3 * sizeof(u32), SLJIT_MEM1(SLJIT_SP), keyWord);
 	}
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0,
-		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array));
-	emitTableSlotOffset(c, SLJIT_R3, false);
+	emitTableSlotOffset(c, SLJIT_R3, false, TableHeader::HashStorage);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, NativeBlockAbi::ramOperand(c, SLJIT_R2, SLJIT_R3), 0);
 	checks[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::String));
-	emitTableSlotOffset(c, SLJIT_R1, true);
+	emitTableSlotOffset(c, SLJIT_R1, true, TableHeader::HashStorage);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, NativeBlockAbi::ramOperand(c, SLJIT_R2, SLJIT_R1), 0);
 	checks[2] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 		fixedKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP), fixedKey ? static_cast<sljit_sw>(*fixedKey) : keyWord);

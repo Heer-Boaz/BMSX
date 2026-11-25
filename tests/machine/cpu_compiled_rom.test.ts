@@ -32,7 +32,7 @@ import {
 import { CART_RAM_BASE, CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { RAM_CODE_FIXTURE_BYTES, blua32TestFunctionAddress, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -81,14 +81,14 @@ test('the sparse code index preserves page identity, socket banks and unsigned a
 	for (const address of [0, 0x003ffc00, 0x00400000, DYNAMIC_RAM_BASE, CART_ROM_BASE, 0xfffffc00]) {
 		assert.equal(lookup.find(address, 0), null);
 		assert.equal(lookup.find(address, 1), null);
-		const first = createDecodedInstructionPage(true, null, 0);
+		const first = createDecodedInstructionPage({ key: 0, cacheable: true, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 });
 		lookup.install(address, 0, first);
 		assert.equal(lookup.find(address + MAPPED_PAGE_BYTE_SIZE - 4, 0), first);
 		if (address < CART_ROM_BASE) {
 			assert.equal(lookup.find(address, 1), first, 'main memory has no socket-dependent identity');
 		} else {
 			assert.equal(lookup.find(address, 1), null);
-			const second = createDecodedInstructionPage(true, null, 0);
+			const second = createDecodedInstructionPage({ key: 0, cacheable: true, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 });
 			lookup.install(address, 1, second);
 			assert.equal(lookup.find(address, 0), first);
 			assert.equal(lookup.find(address, 1), second);
@@ -529,8 +529,7 @@ for (const ramRecord of [false, true]) {
 		writeInstruction(text, 9, OpCode.RET, 0, 2, 0);
 		const source = { text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 8 },
 			{ firstWord: 6, wordCount: 2, maxStack: 8 }, { firstWord: 8, wordCount: 2, maxStack: 8 }],
-			constants: [integerConstant(0), integerConstant(22), integerConstant(44)], closureRelocations: [{ wordIndex: 1,
-				functionAddress: blua32TestFunctionAddress(ramRecord ? 0 : CART_ROM_BASE, 1) }] };
+			constants: [integerConstant(0), integerConstant(22), integerConstant(44)], closureRelocations: [ramRecord ? { wordIndex: 1, systemFunctionIndex: 1 } : { wordIndex: 1, functionIndex: 1 }] };
 		const pair = linkRawTestBlua32Pair(system, source, RAM_CODE_FIXTURE_BYTES);
 		const other = linkRawTestBlua32Pair(system, { ...source, constants: [integerConstant(0), integerConstant(33), integerConstant(55)] }, RAM_CODE_FIXTURE_BYTES);
 		const otherRecord = other.cartSymbols.functionAddresses[1] - CART_ROM_BASE;

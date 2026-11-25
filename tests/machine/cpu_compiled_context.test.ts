@@ -11,14 +11,14 @@ import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/
 import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { DYNAMIC_RAM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 test('compiled globals use the live banks across growth, keep namespaces distinct and preserve raw value kinds', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -485,7 +485,7 @@ for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil paddi
 	writeInstruction(text, 24, OpCode.RET, 0, 2, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 160 },
 		{ firstWord: 16, wordCount: 9, maxStack: 16, isVararg: true }],
-		closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] });
+		closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		cpu.runUntilDepth(0, 2);

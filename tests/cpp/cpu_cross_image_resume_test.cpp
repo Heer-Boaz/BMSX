@@ -1,6 +1,5 @@
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
@@ -12,6 +11,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/abi.h"
 #include "machine/cpu/jit/runtime/execution.h"
 #endif
@@ -332,20 +332,10 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 		auto* targetPage = targetImage->nativeCodeLookup->find(targetPc, slot);
 		targetPage->retireNativeBlocks();
 	}
-	ValueSlots decoyGlobals(8);
-	std::array<u32, COP0_EXEC + 1> decoyCp0{};
-	decoyCp0[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 	const int grant = exhausted ? BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1 : 100;
 	const auto& gate = nativeBlockGate();
-	NativeCpuRunState run{.state={.constants=sourceImage->constPool, .frame=frame, .heap=&m.cpu.gcHeap(),
-		.globalValues=decoyGlobals.view(), .systemGlobalValues=decoyGlobals.view(), .cop0Words=decoyCp0.data(), .remainingCycles=grant, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)),
-		.closure=frame->closureAddress(), .stackBase=frame->stackBase(), .frameDepth=static_cast<u32>(m.cpu.getFrameDepth()),
-		.exitCode=gate.dispatch, .ram=m.memory.ramData(),
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-		.diagnosticOpcodes={},
-#endif
-		}, .cpu=&m.cpu, .targetDepth=targetDepth, .codeRoot=sourceImage->nativeCodeLookup->root(sourceSlot),
-		.cartridgeSlot=sourceSlot, .frameBank=frameBankWord(sourceImage->executionDomainId), .error={}};
+	NativeCpuRunState run(m.cpu, targetDepth);
+	run.enterFrame(*frame, grant);
 	// No CPU run loop surrounds this call. Only a same-stable-gate resume can
 	// execute the genuine guest marker instructions before the gate returns.
 	reinterpret_cast<NativeBlockGate::Entry>(gate.entry)(&run.state, body, &frame->registers);
@@ -366,12 +356,10 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 		&& run.state.constants.words() == run.state.frame->executionImage->constPool.words()
 		&& run.state.constants.tags() == run.state.frame->executionImage->constPool.tags()
 		&& run.state.constants.size() == run.state.frame->executionImage->constPool.size()
-		&& run.state.globalValues.words() != decoyGlobals.words() && run.state.globalValues.tags() != decoyGlobals.tags()
-		&& run.state.systemGlobalValues.words() != decoyGlobals.words() && run.state.systemGlobalValues.tags() != decoyGlobals.tags()
-		&& run.state.cop0Words != decoyCp0.data() && run.state.cop0Words[COP0_STATUS] == CPU_STATUS_CART_ENTRY
+		&& run.state.cop0Words[COP0_STATUS] == CPU_STATUS_CART_ENTRY
 		&& run.codeRoot == run.state.frame->executionImage->nativeCodeLookup->root(slot)
 		&& run.cartridgeSlot == slot,
-		"the retained native frame rebinds every image/CPU/instruction-socket bank before resuming");
+		"the retained grant uses the receiving image and instruction socket with the live CPU banks");
 }
 #endif
 } // namespace

@@ -686,8 +686,8 @@ void codeCapacityRetiresOldestCompleteRegion() {
 
 	NativeCodeCache cache(limit);
 	NativeCompilationProfile profile;
-	DecodedInstructionPage oldest(true, {}), survivor(true, {});
-	std::optional<DecodedInstructionPage> incomingStorage(std::in_place, true, MappedPageWriteWatch{});
+	DecodedInstructionPage oldest(MappedPageBinding{0, true, nullptr, {}}), survivor(MappedPageBinding{0, true, nullptr, {}});
+	std::optional<DecodedInstructionPage> incomingStorage(std::in_place, MappedPageBinding{0, true, nullptr, {}});
 	auto& incoming = *incomingStorage;
 	std::array<void*, DECODED_PAGE_WORDS> oldestCells{}, survivorCells{}, incomingCells{};
 	oldest.nativeCode = oldestCells.data();

@@ -27,9 +27,9 @@ test('Table budget charges allocated Value and hash slots rather than physical h
 	const table = cpu.createTable(8, 16);
 	assert.equal(cpu.luaHeap.usedBytes() - start, 32 + 5 * 8 + 10 * 16);
 	assert.equal(cpu.heapAllocator.occupiedBytes() - occupied, cpu.gc.tables.getTrackedHeapBytes(table));
-	const base = cpu.gc.tables.storageAddress(table);
-	const links = base + (8 + 2 * 16) * 4;
-	const tags = links + 16 * 4;
+	const base = cpu.gc.tables.arrayAddress(table);
+	const links = cpu.gc.tables.hashAddress(table) + 2 * 16 * 4;
+	const tags = base + 8 * 4;
 	assert.equal(cpu.memory.readRamRecordWord(links), 0xffffffff);
 	cpu.gc.tables.setInteger(table, 3, v.valueFloatBits(0xffa12345));
 	assert.equal(cpu.memory.readRamRecordWord(base + 8), 0xffa12345);
@@ -38,16 +38,29 @@ test('Table budget charges allocated Value and hash slots rather than physical h
 	cpu.gc.tables.clear(table); assert.equal(cpu.luaHeap.usedBytes() - start, 32);
 });
 
+test('array growth keeps a full hash when none of its keys move into the array', () => {
+	const cpu = machine(), tables = cpu.gc.tables, table = cpu.createTable(1, 1);
+	tables.setInteger(table, 1, v.valueBool(false));
+	tables.setInteger(table, -1, v.valueInteger(41));
+	const hash = tables.hashAddress(table);
+	tables.setInteger(table, 2, v.valueInteger(42));
+	assert.equal(tables.arrayCapacity(table), 2);
+	assert.equal(tables.hashAddress(table), hash);
+	assert.equal(tables.getInteger(table, -1), v.valueInteger(41));
+});
+
 test('growth for non-array keys preserves sparse reserved slots and their charge', () => {
 	const cpu = machine(), tables = cpu.gc.tables;
 	const mixed = cpu.createTable(8, 0), identity = cpu.createTable();
 	const keys = [v.valueString(cpu.stringPool.intern('hash only')), v.valueInteger(-1), v.valueFloat(0.5), v.valueTable(identity)];
 	const bytes = cpu.luaHeap.usedBytes(), retained = v.valueFloatBits(0xffc01234);
 	tables.setInteger(mixed, 8, retained);
+	const arrayAddress = tables.arrayAddress(mixed);
 	const slots = [1, 2, 4, 4];
 	for (let i = 0; i < keys.length; ++i) {
 		tables.set(mixed, keys[i], v.valueInteger(i));
 		assert.equal(tables.arrayCapacity(mixed), 8);
+		assert.equal(tables.arrayAddress(mixed), arrayAddress);
 		assert.equal(tables.getInteger(mixed, 8), retained);
 		assert.equal(tables.hashSize(mixed), slots[i]);
 		assert.equal(cpu.luaHeap.usedBytes(), bytes + 10 * slots[i]);
@@ -75,10 +88,10 @@ test('tombstone-driven rebuild returns only retired capacity and preserves live 
 	for (let i = 2; i < keys.length; ++i) tables.setInteger(tombstones, keys[i], v.valueNil());
 	for (let i = 0; i < 2; ++i) tables.setInteger(spare, keys[i], v.valueInteger(17));
 	assert.equal(cpu.luaHeap.usedBytes(), start, 'filling and clearing mappings does not change the reservation');
-	const before = tables.storageAddress(tombstones);
+	const before = tables.hashAddress(tombstones);
 	tables.setInteger(tombstones, collision, v.valueInteger(23));
 	tables.setInteger(spare, collision, v.valueInteger(23));
-	assert.notEqual(tables.storageAddress(tombstones), before);
+	assert.notEqual(tables.hashAddress(tombstones), before);
 	assert.equal(tables.hashSize(tombstones), 4);
 	assert.equal(tables.hashSize(spare), 16);
 	assert.equal(tables.arrayCapacity(tombstones), tables.arrayCapacity(spare));
@@ -86,11 +99,11 @@ test('tombstone-driven rebuild returns only retired capacity and preserves live 
 	for (const id of [keys[0], keys[1], collision]) assert.equal(tables.getInteger(tombstones, id), tables.getInteger(spare, id));
 
 	const logical = cpu.luaHeap.usedBytes(), table = cpu.createTable(0, 3);
-	const backing = tables.storageAddress(table);
+	const backing = tables.hashAddress(table);
 	assert.equal(cpu.luaHeap.usedBytes(), logical + 32 + 40, 'an empty three-slot request immediately charges four slots');
 	for (let i = 0; i < 4; ++i) tables.setInteger(table, keys[i], v.valueInteger(29));
 	assert.equal(tables.hashSize(table), 4);
-	assert.equal(tables.storageAddress(table), backing);
+	assert.equal(tables.hashAddress(table), backing);
 	assert.equal(cpu.luaHeap.usedBytes(), logical + 32 + 40);
 	const ram = cpu.memory.captureSaveState();
 	tables.setInteger(table, keys[0], v.valueNil());
@@ -111,7 +124,7 @@ test('hash deletion and replay retain backing while a hash slot can be reused', 
 	}
 	const table = cpu.createTable();
 	for (const key of keys) tables.setInteger(table, key, v.valueInteger(13));
-	const backing = tables.storageAddress(table), home = v.hashCanonicalTableKey(v.valueInteger(1)) & (keys.length - 1);
+	const backing = tables.hashAddress(table), home = v.hashCanonicalTableKey(v.valueInteger(1)) & (keys.length - 1);
 	tables.setInteger(table, keys[home], v.valueNil());
 	tables.setInteger(table, keys[(home + 1) & (keys.length - 1)], v.valueNil());
 	const used = cpu.luaHeap.usedBytes(), saved = cpu.memory.captureSaveState();
@@ -119,7 +132,7 @@ test('hash deletion and replay retain backing while a hash slot can be reused', 
 		if (replay) cpu.memory.restoreSaveState(saved);
 		for (let step = 0; step < 16; ++step) {
 			tables.setInteger(table, 1, v.valueInteger(29));
-			assert.equal(tables.storageAddress(table), backing);
+			assert.equal(tables.hashAddress(table), backing);
 			assert.equal(tables.arrayCapacity(table), 0, 'placement in an existing hash slot does not repartition live keys');
 			assert.equal(tables.hashSize(table), 4);
 			assert.equal(tables.getInteger(table, 1), v.valueInteger(29));
@@ -131,12 +144,12 @@ test('hash deletion and replay retain backing while a hash slot can be reused', 
 
 test('allocation stress reaches hash backing growth, not writes into existing slots', () => {
 	const cpu = machine(), tables = cpu.gc.tables, table = cpu.createTable(0, 3);
-	const backing = tables.storageAddress(table), stress = installAllocationStress(cpu);
+	const backing = tables.hashAddress(table), stress = installAllocationStress(cpu);
 	for (let i = 1; i <= 4; ++i) tables.setInteger(table, -i, v.valueInteger(i));
 	assert.equal(stress.allocations, 0, 'the four reserved slots need no admission');
-	assert.equal(tables.storageAddress(table), backing);
+	assert.equal(tables.hashAddress(table), backing);
 	tables.setInteger(table, -5, v.valueInteger(5));
-	assert.notEqual(tables.storageAddress(table), backing);
+	assert.notEqual(tables.hashAddress(table), backing);
 	assert.equal(tables.hashSize(table), 8);
 	assert.equal(stress.allocations, 1, 'a full four-slot backing needs one growth admission');
 	assert.ok(cpu.gc.active(), 'the hook actually advanced the collector');
@@ -289,4 +302,25 @@ test('machine snapshots restore table records and their references to a differen
 	assert.equal(v.valuePayload(target.gc.tables.getInteger(restored, 3)), child);
 	assert.equal(target.gc.tables.get(restored, v.valueFloat(1.5)), v.valueFloatBits(0xffc00000));
 	assert.equal(target.gc.tables.getTrackedHeapBytes(restored), source.gc.tables.getTrackedHeapBytes(table));
+});
+
+test('failed array growth releases the provisional hash without changing the live mixed table', () => {
+	const cpu = machine(), { tables } = cpu.gc, arena = cpu.heapAllocator;
+	const table = cpu.createTable(4, 4);
+	for (const key of [1, 3, 4, -1, -3, 5, 6]) tables.setInteger(table, key, v.valueInteger(key));
+	const array = tables.arrayAddress(table), hash = tables.hashAddress(table);
+	// Repartitioning for key 7 needs a 28-byte hash and a 40-byte array.
+	// Isolate one hash-sized hole so the first reservation succeeds and the second cannot.
+	const hole = arena.allocate(28, true);
+	assert.notEqual(arena.allocate(64, true), 0);
+	for (const size of [4096, 256, 8]) while (arena.allocate(size, true) !== 0) {}
+	arena.free(hole);
+	const used = cpu.luaHeap.usedBytes(), occupied = arena.occupiedBytes();
+	assert.equal(tables.resumeAssignment(table, v.valueInteger(7), v.valueBool(true), 0), false);
+	assert.equal(tables.arrayAddress(table), array);
+	assert.equal(tables.hashAddress(table), hash);
+	assert.equal(arena.occupiedBytes(), occupied);
+	assert.equal(cpu.luaHeap.usedBytes(), used);
+	for (const key of [1, 3, 4, -1, -3, 5, 6]) assert.equal(tables.getInteger(table, key), v.valueInteger(key));
+	assert.equal(tables.getInteger(table, 7), v.valueNil());
 });

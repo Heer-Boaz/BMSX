@@ -22,6 +22,25 @@ void require(bool value, const char* message) {
 	if (!value) throw std::runtime_error(message);
 }
 
+// Assemble synthetic runs in the worker lane just as the CPU discovery pass
+// does. The fixture retains its original rows so tests can mutate them.
+NativeCompileSpecializationBuffer& captureRuns(NativeCompilerWorker& worker, std::span<const NativeBlockSource> runs) {
+	size_t count = 0;
+	for (const auto& run : runs) count += run.instructions.size();
+	auto& workspace = worker.beginCapture(count);
+	workspace.instructions.clear();
+	workspace.instructions.reserve(count);
+	workspace.sources.clear();
+	for (const auto& run : runs) {
+		const size_t first = workspace.instructions.size();
+		for (const auto& row : run.instructions)
+			workspace.instructions.push_back({worker.captureInstruction(*row.decoded), row.pc});
+		workspace.sources.push_back({std::span(workspace.instructions).subspan(first),
+			run.skippedInstruction ? worker.captureInstruction(*run.skippedInstruction) : nullptr});
+	}
+	return workspace.specializations;
+}
+
 void copiedSourceAndDeferredPublication() {
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory);
@@ -47,7 +66,8 @@ void copiedSourceAndDeferredPublication() {
 			NativeBlockSource{std::span(instructions.data(), 1)},
 			NativeBlockSource{std::span(instructions.data() + 1, 2)},
 		};
-		worker.submit(sources, NativeCodeBindings(memory, cpu.stringPool()));
+		captureRuns(worker, sources);
+		worker.submit(NativeCodeBindings(memory, cpu.stringPool()));
 		decoded.fill({}); // No live decoded-page references may escape capture.
 		instructions.fill({});
 		worker.wait();
@@ -76,6 +96,28 @@ void copiedSourceAndDeferredPublication() {
 	}
 }
 
+void comparisonCapturesSkippedWideBody() {
+	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory);
+	ExecutionAddressSpace addresses(memory);
+	CPU cpu(memory, irq, addresses);
+	NativeCompilerWorker worker;
+	constexpr u32 pc = 0x1000u;
+	constexpr auto eq = static_cast<u8>(OpCode::EQ);
+	DecodedInstruction comparison{.op = eq, .width = 1, .baseCycles = BASE_CYCLES[eq]};
+	DecodedInstruction skipped{.op = static_cast<u8>(OpCode::KSMI), .width = 2};
+	const std::array instructions{NativeBlockInstruction{&comparison, pc}};
+	const std::array sources{NativeBlockSource{instructions, &skipped}};
+	captureRuns(worker, sources);
+	// Mutate before emission even starts, not after a timing-dependent sleep.
+	skipped.width = 1;
+	worker.submit(NativeCodeBindings(memory, cpu.stringPool()));
+	worker.wait();
+	const auto blocks = worker.take();
+	require(blocks.size() == 1 && blocks.front()->sourceWords == 3,
+		"the worker owns both words of the skipped WIDE instruction's dependency");
+}
+
 void unpublishedCodeCanBeDiscarded() {
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory);
@@ -89,7 +131,8 @@ void unpublishedCodeCanBeDiscarded() {
 	const std::array sources{NativeBlockSource{instructions}};
 	for (int iteration = 0; iteration < 32; ++iteration) {
 		NativeCompilerWorker worker;
-		worker.submit(sources, NativeCodeBindings(memory, cpu.stringPool()));
+		captureRuns(worker, sources);
+		worker.submit(NativeCodeBindings(memory, cpu.stringPool()));
 		if ((iteration & 1) == 0) {
 			worker.wait();
 			worker.take().clear();
@@ -118,15 +161,16 @@ void rejectedFieldProofIsFrozenForWorker() {
 	NativeFieldProofFeedback sourceProfile;
 	for (int i = 0; i < 3; ++i) sourceProfile.contradict(0, ValueTag::Integer);
 	NativeCompilerWorker worker;
-	sourceProfile.appendSnapshot(pc, worker.specializationsForCapture().rejectedFieldProofs);
-	worker.submit(sources, NativeCodeBindings(memory, cpu.stringPool(), &cpu));
+	sourceProfile.appendSnapshot(pc, captureRuns(worker, sources).rejectedFieldProofs);
+	worker.submit(NativeCodeBindings(memory, cpu.stringPool(), &cpu));
 	sourceProfile.forget(0);
 	worker.wait();
 	auto blocks = worker.take();
 	require(blocks.size() == 2 && blocks.front()->sideExits.front().exit == NativeBlockExit::ReadField
 		&& !blocks.front()->sideExits.front().operands.table.resultProof,
 		"the worker retains the submitted rejection after the source profile drops it");
-	worker.submit(sources, NativeCodeBindings(memory, cpu.stringPool(), &cpu));
+	captureRuns(worker, sources);
+	worker.submit(NativeCodeBindings(memory, cpu.stringPool(), &cpu));
 	worker.wait();
 	auto next = worker.take();
 	require(next.size() == 1 && next.front()->sideExits.front().operands.table.resultProof == ValueTag::Integer
@@ -157,7 +201,8 @@ void recordPlanIsReadyBeforePublication() {
 	const std::array sources{NativeBlockSource{std::span(instructions).first<1>()},
 		NativeBlockSource{std::span(instructions).last<2>()}};
 	NativeCompilerWorker worker;
-	worker.submit(sources, NativeCodeBindings(memory, cpu.stringPool(), &cpu), {.immutableSource = true});
+	captureRuns(worker, sources);
+	worker.submit(NativeCodeBindings(memory, cpu.stringPool(), &cpu), {.immutableSource = true});
 	decoded.fill({});
 	worker.wait();
 	auto blocks = worker.take();
@@ -183,6 +228,58 @@ struct CpuMachine {
 		if (reference) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	}
 };
+
+void retainedDemandFollowsPhysicalRoots() {
+	test::Blua32TestImage source;
+	source.text.resize(INSTRUCTION_BYTES);
+	writeInstruction(source.text, 0, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	source.functions = {{.firstWord = 0, .wordCount = 1}};
+	CpuMachine machine(source, false);
+	auto* image = machine.cpu.activeThread()->currentFrame->executionImage;
+	DecodedInstructionPage page(MappedPageBinding{0, true, nullptr, {}});
+	const u32 pc = machine.rom.textAddress, function = machine.rom.functionAddresses[0];
+	NativeDemandQueue queue;
+	queue.enqueue({image, &page, function, pc, 0});
+	queue.enqueue({image, &page, function, pc, 0});
+	queue.enqueue({image, &page, function, pc, 1});
+	queue.enqueue({image, &page, function, pc + INSTRUCTION_BYTES, 0});
+	const auto first = queue.pop();
+	const auto second = queue.pop();
+	require(first.pc == pc && first.slot == 0 && second.pc == pc && second.slot == 1,
+		"repeated demand is coalesced without losing the other socket or changing service order");
+	queue.enqueue(first);
+	require(queue.pop().pc == pc + INSTRUCTION_BYTES, "a resubmission follows older demand");
+	queue.clear();
+	queue.enqueue(first);
+	require(!queue.empty() && queue.pop().pc == pc && queue.empty(),
+		"image retirement releases every queued root marker");
+}
+
+void hotRootsPublishWithoutAnotherGuestVisit() {
+	test::Blua32TestImage source;
+	source.mappedCode = false;
+	source.text.resize(2 * INSTRUCTION_BYTES);
+	for (u32 word = 0; word < 2; ++word) {
+		writeInstruction(source.text, word, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+		source.functions.push_back({.firstWord = word, .wordCount = 1});
+	}
+	CpuMachine machine(source, false);
+	auto& cpu = machine.cpu;
+	for (u32 i = 0; i < NATIVE_BLOCK_COMPILATION_THRESHOLD; ++i) {
+		for (u32 word = 0; word < 2; ++word) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[word],
+				machine.rom.textAddress + word * INSTRUCTION_BYTES);
+			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::JMP)]) == RunResult::Yielded,
+				"each visit executes exactly one guest jump");
+		}
+	}
+	const auto& page = *cpu.activeThread()->currentFrame->decodedPage;
+	const u32 first = (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(cpu, page, first);
+	test::waitForNativeEntry(cpu, page, first + 1);
+	require(cpu.readNativeCompilationProfile().backgroundCompleted == 2,
+		"both independent hot roots publish with exhausted grants and no additional guest visit");
+}
 
 void cpuInvalidationAndLifecycle() {
 	test::Blua32TestImage image;
@@ -282,7 +379,9 @@ void pendingGenericWorkSurvivesFirstCallObservation() {
 		put(1, OpCode::CLOSURE, 1);
 		put(2, OpCode::WIDE);
 		put(3, OpCode::CLOSURE, 2);
-		put(4, OpCode::KFALSE);
+		// R0 starts nil. Enter the loop by a real branch so the root,
+		// rather than its backedge, reaches the threshold first.
+		put(4, OpCode::JMP);
 		put(5, OpCode::JMPIF, 0, 0, 1);
 		put(6, OpCode::JMP, 0, 63, 62, 255);
 		put(7, OpCode::WIDE);
@@ -519,9 +618,12 @@ void independentInteriorEntryRetiresEveryOverlappingOwner(int mutation) {
 int main() {
 	try {
 		copiedSourceAndDeferredPublication();
+		comparisonCapturesSkippedWideBody();
 		rejectedFieldProofIsFrozenForWorker();
 		unpublishedCodeCanBeDiscarded();
 		recordPlanIsReadyBeforePublication();
+		retainedDemandFollowsPhysicalRoots();
+		hotRootsPublishWithoutAnotherGuestVisit();
 		cpuInvalidationAndLifecycle();
 		pendingGenericWorkSurvivesFirstCallObservation();
 		imageReplacementRetiresBorrowedConstants();

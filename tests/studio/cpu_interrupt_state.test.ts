@@ -56,7 +56,7 @@ import { Machine } from '../../machine/ts/machine/machine';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
-import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -76,7 +76,6 @@ import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	RAM_CODE_FIXTURE_BYTES, createTestBlua32PairCpu,
 	createTestSystemCpu,
-	blua32TestFunctionAddress,
 	linkRawTestBlua32Pair,
 	linkRawTestSystemBlua32,
 	linkTestBlua32Pair,
@@ -262,7 +261,7 @@ function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }, 
 				{ firstWord: 3, wordCount: 1 },
 				...(nested ? [{ firstWord: 4, wordCount: 4, maxStack: 1 }, { firstWord: 8, wordCount: 2 }] : [{ firstWord: 4, wordCount: 2 }]),
 			],
-			closureRelocations: nested ? [{ wordIndex: 5, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 3) }] : [],
+			closureRelocations: nested ? [{ wordIndex: 5, functionIndex: 3 }] : [],
 			constants: [integerConstant(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET)],
 			startupFunctionIndex: 0,
 			irqFunctionIndex: 1,
@@ -276,7 +275,7 @@ function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }, 
 			],
 			closureRelocations: [{
 				wordIndex: 1,
-				functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 2),
+				functionIndex: 2,
 			}],
 			startupFunctionIndex: 0,
 			irqFunctionIndex: 1,

@@ -1,5 +1,4 @@
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/model.h"
@@ -9,6 +8,7 @@
 #include "support/cpu_execution_parity.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/gc_object.h"
+#include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/abi.h"
 #include "machine/cpu/jit/runtime/execution.h"
 #endif
@@ -127,14 +127,8 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	void* marker = cold ? nullptr : markerPage->nativeCode[markerWord];
 	caller->terminal.continuationCells[0] = &marker;
 	const auto& gate = nativeBlockGate();
-	NativeCpuRunState run{.state={.constants=owner->constPool, .frame=frame, .heap=&machine.cpu.gcHeap(), .remainingCycles=grant, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)),
-		.closure=frame->closureAddress(), .stackBase=frame->stackBase(), .frameDepth=static_cast<u32>(machine.cpu.getFrameDepth()), .exitCode=gate.dispatch,
-		.ram=machine.memory.ramData(),
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-		.diagnosticOpcodes={},
-#endif
-		}, .cpu=&machine.cpu, .targetDepth=0, .codeRoot=owner->nativeCodeLookup->root(0),
-		.cartridgeSlot=0, .error={}};
+	NativeCpuRunState run(machine.cpu, 0);
+	run.enterFrame(*frame, grant);
 	// The typed gate models an already admitted segment, not outer-loop IRQ admission.
 	if (interrupt) machine.cpu.requestNonMaskableInterrupt();
 	reinterpret_cast<NativeBlockGate::Entry>(gate.entry)(&run.state, page->nativeCode[word], &frame->registers);

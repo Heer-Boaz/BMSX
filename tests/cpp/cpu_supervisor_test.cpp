@@ -1479,13 +1479,16 @@ void testInstructionFetchExceptionsEnterTheSystemVector() {
 		auto tail = std::span<bmsx::u8>(rom).subspan(instructionPc);
 		bmsx::writeInstruction(tail, 0, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
 		bmsx::writeInstruction(tail, 1, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-		machine.memory.installSystemRom(rom);
+		auto full = rom;
+		full.resize((bodyPc | bmsx::MAPPED_PAGE_BYTE_MASK) + 1u);
+		machine.memory.installSystemRom(full);
 		machine.cpu.writeFrameExecution(0, bmsx::SYSTEM_EXECUTION_DOMAIN_ID, machine.systemRom.functionAddresses[0], instructionPc);
 
 		require(machine.cpu.runUntilDepth(0, bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::K1)]) == bmsx::RunResult::Yielded
 			&& machine.cpu.readFrameRegister(0, 0) == bmsx::valueInteger(1)
 			&& machine.memory.readBusFaultSequence() == 0u,
-			"a complete instruction at a short ROM tail retires before the first unbacked fetch");
+			"the retained fetch page executes its first instruction from fully backed ROM");
+		machine.memory.installSystemRom(rom);
 		require(machine.cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded
 			&& machine.cpu.readCauseWord() == bmsx::CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR
 			&& machine.cpu.readEpcWord() == prefixPc,

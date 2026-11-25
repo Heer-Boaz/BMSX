@@ -1,5 +1,4 @@
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/decoded_instruction.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/jit/compiler.h"
@@ -12,6 +11,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/abi.h"
 #include "machine/cpu/jit/runtime/execution.h"
 #endif
@@ -238,12 +238,8 @@ void inlineInterruptStop(bool nmi, bool wide) {
 	frame->registers.set(14, valueInteger(3));
 	auto* caller=preparedCaller(machine);auto* owner=frame->executionImage;auto* page=owner->nativeCodeLookup->find(rom.textAddress,0);
 	const auto& gate=nativeBlockGate();
-	NativeCpuRunState run{.state={.constants=owner->constPool,.frame=frame, .remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)),
-		.closure=frame->closureAddress(), .stackBase=frame->stackBase(), .frameDepth=static_cast<u32>(machine.cpu.getFrameDepth()),
-		.exitCode=gate.dispatch,.ram=machine.memory.ramData()},
-		.cpu=&machine.cpu,.targetDepth=0,.codeRoot=owner->nativeCodeLookup->root(0),
-		.cartridgeSlot=0,.error={}};
-	run.state.frame = frame;
+	NativeCpuRunState run(machine.cpu, 0);
+	run.enterFrame(*frame, 64);
 	// The typed gate is an already-admitted native segment, not a fresh outer
 	// CPU IRQ admission. Its successful CALL must stop at the next instruction.
 	if(nmi) machine.cpu.requestNonMaskableInterrupt();else machine.irq.raise(1);
@@ -386,7 +382,7 @@ void tableCopyReturnsThroughAllocatingCall() {
 	const auto source = asTable(cpu.readFrameRegister(0, 13), cpu.gcHeap());
 	auto copy = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
 	const auto child = source.getInteger(1);
-	require(copy.storageAddress() != source.storageAddress() && copy.metatableAddress() == 0u
+	require(copy.hashAddress() != source.hashAddress() && copy.metatableAddress() == 0u
 		&& copy.getInteger(1) == child && copy.getInteger(4) == valueInteger(47) && isNil(copy.getInteger(2))
 		&& copy.get(child) == valueInteger(17)
 		&& isNil(copy.getStringKey(cpu.stringPool().intern("erased entry"))),

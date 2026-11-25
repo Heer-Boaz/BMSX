@@ -11,8 +11,7 @@ import { LUA_FAULT_REASON_ASSIGN_NON_TABLE, LUA_FAULT_REASON_INDEX_NAN, LUA_FAUL
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode, TABLE_INDEX_VISIT_CYCLES } from '../../machine/ts/spec/blua32/opcode';
-import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
@@ -31,7 +30,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [
 				{ firstWord: 0, wordCount: 7, maxStack: 16 },
 				{ firstWord: 7, wordCount: 1, numParams: length ? 2 : 3, maxStack: 8 },
-			], closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] });
+			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
 			const { cpu } = createTestSystemCpu(image, backend);
 			let frame = cpu.rootThread.currentFrame!;
 			const base = frame.pc, loop = base + 2 * INSTRUCTION_BYTES, opcodePc = base + 3 * INSTRUCTION_BYTES;

@@ -28,11 +28,6 @@ struct NativeImageConstant {
 	Value value;
 };
 
-struct NativeCallProfile {
-	u32 pc;
-	std::optional<NativeFixedCallPlan> fixed;
-};
-
 struct NativeFieldGrowth {
 	u32 pc;
 	u8 extraHashSlots;
@@ -42,7 +37,6 @@ struct NativeFieldGrowth {
 struct NativeCompileSpecializations {
 	std::span<const NativeRejectedFieldProof> rejectedFieldProofs{}; // sorted by PC
 	std::span<const NativeImageConstant> imageConstants{}; // sorted by index
-	std::span<const NativeCallProfile> calls{}; // sorted by PC; no fixed plan means observe
 	std::span<const NativeFieldGrowth> fieldGrowth{}; // sorted by PC; nonzero prefix operands only
 };
 
@@ -51,17 +45,15 @@ struct NativeCompileSpecializations {
 struct NativeCompileSpecializationBuffer {
 	std::vector<NativeRejectedFieldProof> rejectedFieldProofs;
 	std::vector<NativeImageConstant> imageConstants;
-	std::vector<NativeCallProfile> calls;
 	std::vector<NativeFieldGrowth> fieldGrowth;
 
 	void clear() {
 		rejectedFieldProofs.clear();
 		imageConstants.clear();
-		calls.clear();
 		fieldGrowth.clear();
 	}
 	NativeCompileSpecializations view() const {
-		return {rejectedFieldProofs, imageConstants, calls, fieldGrowth};
+		return {rejectedFieldProofs, imageConstants, fieldGrowth};
 	}
 };
 

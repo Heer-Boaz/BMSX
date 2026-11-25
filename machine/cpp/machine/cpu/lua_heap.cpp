@@ -99,7 +99,7 @@ void LuaHeap::assistSweepBeforeReservation(size_t requested) {
 		m_cpu.gcHeap().assistSweepBeforeReservation(requested);
 }
 
-u32 LuaHeap::reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, u32 charged) {
+u32 LuaHeap::reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, u32 charged, u32 secondBytes, u32 secondField) {
 	const u32 prefix = object ? GC_OBJECT_PREFIX : 0u;
 	auto& arena = m_cpu.heapAllocator();
 	const u32 block = arena.allocate(bytes + prefix, !object);
@@ -109,28 +109,35 @@ u32 LuaHeap::reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backing
 		arena.free(block);
 		return 0u;
 	}
+	const u32 second = secondBytes ? arena.allocate(secondBytes, true) : 0u;
+	if (secondBytes && !second) {
+		if (backing) arena.free(backing);
+		arena.free(block);
+		return 0u;
+	}
 	const u32 address = block + prefix;
 	if (backingField) m_cpu.memory().writeRamRecordWord(address + backingField, backing);
+	if (secondField) m_cpu.memory().writeRamRecordWord(address + secondField, second);
 	accountAllocation(charged);
 	return address;
 }
 
 u32 LuaHeap::allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField,
-	Value root0, Value root1, Value root2, std::optional<u32> backingCharge, LuaAllocationMode mode) {
-	const u32 charged = bytes + backingCharge.value_or(backingBytes);
+	Value root0, Value root1, Value root2, std::optional<u32> recordCharge, LuaAllocationMode mode, u32 secondBytes, u32 secondField) {
+	const u32 charged = recordCharge.value_or(bytes + backingBytes + secondBytes);
 	if (mode != LuaAllocationMode::Direct) {
 		const bool admitted = mode == LuaAllocationMode::Scheduled
 			? prepareAllocation(charged, root0, root1, root2)
 			: usedBytes() + charged <= capacity();
 		if (!admitted) return 0u;
 		if (mode == LuaAllocationMode::Scheduled)
-			assistSweepBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0u) + backingBytes);
-		return reserveRecord(bytes, object, backingBytes, backingField, charged);
+			assistSweepBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0u) + backingBytes + secondBytes);
+		return reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField);
 	}
 	auto recovery = admit(charged, root0, root1, root2, 0u);
-	assistSweepBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0u) + backingBytes);
+	assistSweepBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0u) + backingBytes + secondBytes);
 	for (;;) {
-		if (const u32 address = reserveRecord(bytes, object, backingBytes, backingField, charged)) return address;
+		if (const u32 address = reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField)) return address;
 		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2);
 	}
 }
@@ -258,6 +265,10 @@ void LuaHeap::releaseObject(u32 address, u32 bytes) {
 
 void LuaHeap::replaceRecord(u32 oldAddress, u32 oldBytes, u32 newBytes) {
 	if (oldAddress != 0u) m_cpu.heapAllocator().free(oldAddress);
+	resizeRecordCharge(oldBytes, newBytes);
+}
+
+void LuaHeap::resizeRecordCharge(u32 oldBytes, u32 newBytes) {
 	if (oldBytes != newBytes) {
 		auto& memory = m_cpu.memory();
 		memory.writeRamRecordWord(m_occupiedAddress, memory.readRamRecordWord(m_occupiedAddress) - oldBytes + newBytes);

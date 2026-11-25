@@ -1289,7 +1289,13 @@ and the new field. Only the installed capacity is charged. If allocation recover
 existing slot available, the insertion can use that slot without
 replacing the storage. No later field is written by this instruction.
 
-A Table's slots and links occupy one block in the language heap. A Thread
+A Table keeps its array slots in one allocation and its hash entries and
+collision links in another. Either allocation may be absent. Growing the
+hash does not move the array. When the array grows, positive integer keys
+that now fit in it move there from the hash. The Table itself retains its
+address, including when either allocation must move.
+
+A Thread
 keeps its Value slots, frame controls and protected continuations in separate
 allocations. Growing one allocation does not move either of the others.
 If a call needs both more Value slots and another frame control, both

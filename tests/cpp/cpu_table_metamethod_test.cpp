@@ -322,13 +322,13 @@ void coldFieldAssignmentPublishesItsFrontierOnce() {
 	require(root.hashSlots() == TableRecord::hashCapacity(1 + extraHashSlots)
 		&& root.getStringKey(field) == valueBool(false) && root.getInteger(1) == valueInteger(17),
 		"the first own insertion reserves its requested hash storage without touching the array");
-	const u32 storage = root.storageAddress();
+	const u32 storage = root.hashAddress();
 	auto meta = cpu.createTable(0, 1);
 	meta.setStringKey(cpu.stringPool().intern("__newindex"), method);
 	root.setMetatableAddress(meta.address());
 	start(valueInteger(29));
 	require(cpu.runUntilDepth(0, throughStore) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0
-		&& root.storageAddress() == storage && root.getStringKey(field) == valueInteger(29)
+		&& root.hashAddress() == storage && root.getStringKey(field) == valueInteger(29)
 		&& root.getInteger(1) == valueInteger(17), "the next store updates the own slot in place without a method call");
 
 	root.setStringKey(field, valueNil());

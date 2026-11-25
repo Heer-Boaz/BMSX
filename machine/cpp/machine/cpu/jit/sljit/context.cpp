@@ -14,18 +14,20 @@ void NativeLowering::lowerOperation(const NativeGlobalAccess& access, const Nati
 	auto* c = m_compiler;
 	const auto bank = access.bank == NativeGlobalBank::System ? offsetof(NativeBlockRunState, systemGlobalValues)
 		: offsetof(NativeBlockRunState, globalValues);
-	const sljit_sw words = bank + ValueSpan::wordsOffset(), tags = bank + ValueSpan::tagsOffset();
+	const sljit_sw words = ValueSpan::wordsOffset(), tags = ValueSpan::tagsOffset();
 	const sljit_sw wordOffset = access.index * sizeof(u32), tagOffset = access.index;
 	if (access.access == NativeAccess::Write) {
 		// Neither lane can be written until both have passed admission:
 		// either one can invalidate the executing region.
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), words);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), bank);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), words);
 		sljit_emit_op2(c, SLJIT_SUB, SLJIT_R0, 0, SLJIT_R2, 0,
 			SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, ram));
 		// A register operand carries no displacement: form the slot's RAM offset.
 		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, wordOffset);
 		emitRamWordWriteWatch(*watched, SLJIT_R0, 0, SLJIT_R1, SLJIT_R3);
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(NativeBlockAbi::state), tags);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(NativeBlockAbi::state), bank);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), tags);
 		sljit_emit_op2(c, SLJIT_SUB, SLJIT_R0, 0, SLJIT_R3, 0,
 			SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, ram));
 		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, tagOffset);
@@ -34,7 +36,8 @@ void NativeLowering::lowerOperation(const NativeGlobalAccess& access, const Nati
 		if constexpr (std::endian::native == std::endian::big)
 			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), wordOffset, SLJIT_R0, 0);
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(NativeBlockAbi::state), tags);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(NativeBlockAbi::state), bank);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), tags);
 		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R3), tagOffset, SLJIT_R1, 0);
 		emitStoreBarrier(access.slot, access.barrier, StoreBarrierRecord::Global, *watched);
 		return;
@@ -42,10 +45,12 @@ void NativeLowering::lowerOperation(const NativeGlobalAccess& access, const Nati
 	const auto demand = m_uses.nextOperandDemand(m_instruction, access.slot);
 	const auto address = m_cache.acquireScratch();
 	const auto result = m_cache.writeRaw(access.slot, demand);
-	sljit_emit_op1(c, SLJIT_MOV_P, address, 0, SLJIT_MEM1(NativeBlockAbi::state), words);
+	sljit_emit_op1(c, SLJIT_MOV_P, address, 0, SLJIT_MEM1(NativeBlockAbi::state), bank);
+	sljit_emit_op1(c, SLJIT_MOV_P, address, 0, SLJIT_MEM1(address), words);
 	constexpr auto loadWord = std::endian::native == std::endian::big ? SLJIT_REV32 : SLJIT_MOV32;
 	sljit_emit_op1(c, loadWord, result.word, result.wordOffset, SLJIT_MEM1(address), wordOffset);
-	sljit_emit_op1(c, SLJIT_MOV_P, address, 0, SLJIT_MEM1(NativeBlockAbi::state), tags);
+	sljit_emit_op1(c, SLJIT_MOV_P, address, 0, SLJIT_MEM1(NativeBlockAbi::state), bank);
+	sljit_emit_op1(c, SLJIT_MOV_P, address, 0, SLJIT_MEM1(address), tags);
 	sljit_emit_op1(c, SLJIT_MOV_U8, result.tag, result.tagOffset, SLJIT_MEM1(address), tagOffset);
 }
 void NativeLowering::lowerOperation(const NativePoolRead& read, const NativeInstruction& instruction) {

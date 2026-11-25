@@ -5,19 +5,18 @@
 
 namespace bmsx {
 
-void emitTableSlotOffset(sljit_compiler* c, sljit_s32 destination, bool word) {
+void emitTableSlotOffset(sljit_compiler* c, sljit_s32 destination, bool word, TableHeader backing) {
 	if (word) {
 		sljit_emit_op2(c, SLJIT_SHL32, destination, 0, SLJIT_R1, 0, SLJIT_IMM, 2);
 	} else {
-		sljit_emit_op2(c, SLJIT_MUL32, destination, 0, SLJIT_MEM1(SLJIT_R0),
-			static_cast<u32>(TableHeader::Hash), SLJIT_IMM, 3);
-		sljit_emit_op2(c, SLJIT_ADD32, destination, 0, destination, 0, SLJIT_MEM1(SLJIT_R0),
-			static_cast<u32>(TableHeader::Array));
-		sljit_emit_op2(c, SLJIT_SHL32, destination, 0, destination, 0, SLJIT_IMM, 2);
+		if (backing == TableHeader::HashStorage)
+			sljit_emit_op2(c, SLJIT_MUL32, destination, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash), SLJIT_IMM, 12);
+		else
+			sljit_emit_op2(c, SLJIT_SHL32, destination, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array), SLJIT_IMM, 2);
 		sljit_emit_op2(c, SLJIT_ADD32, destination, 0, destination, 0, SLJIT_R1, 0);
 	}
 	sljit_emit_op2(c, SLJIT_ADD32, destination, 0, destination, 0, SLJIT_MEM1(SLJIT_R0),
-		static_cast<u32>(TableHeader::Storage));
+		static_cast<u32>(backing));
 	sljit_emit_op2(c, SLJIT_AND, destination, 0, destination, 0, SLJIT_IMM,
 		word ? RAM_RECORD_WORD_MASK : MAIN_RAM_SIZE - 1u);
 }
@@ -54,11 +53,10 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey) {
 	// The chain cannot allocate or re-enter the VM. Bind its two linear
 	// planes once, as for ITERN; no guest cache register is reserved.
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0),
-		static_cast<u32>(TableHeader::Storage), SLJIT_IMM, RAM_RECORD_WORD_MASK);
+		static_cast<u32>(TableHeader::HashStorage), SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R1, SLJIT_R1);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::words, SLJIT_R1, 0);
 	sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R2, 0, SLJIT_R3, 0, SLJIT_IMM, 3);
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), array);
 	sljit_emit_op2(c, SLJIT_SHL, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::tags, SLJIT_R1, 0, SLJIT_R2, 0);
 	if (stringKey) {
@@ -77,7 +75,6 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey) {
 	// The owner's signed chain cursor does not enter a negative home.
 	auto* negativeHome = sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
 	auto* node = sljit_emit_label(c);
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), array);
 	readTableSlot(c, SLJIT_R2, false);
 	auto* otherTag = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 		stringKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP), stringKey ? stringTag : NativeTableScratch::keyTag);
@@ -155,7 +152,6 @@ sljit_label* emitStringReadProbe(sljit_compiler* c) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_R2, 0);
 	readTableSlot(c, SLJIT_R2, true);
 	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), hash);
-	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), array);
 	auto* own = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_SP), cost, SLJIT_IMM, 0);
 	sljit_set_label(noOwnSlot, sljit_emit_label(c));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, -1);
@@ -175,7 +171,6 @@ sljit_label* emitOwnStringSlotProbe(sljit_compiler* c) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_R2, 0);
 	readTableSlot(c, SLJIT_R2, true);
 	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), hash);
-	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), array);
 	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 	return entry;
 }
@@ -208,11 +203,9 @@ sljit_label* emitTableLengthProbe(sljit_compiler* c) {
 	// Bind the tag at array[hint]. Neither a cached length nor an empty
 	// array proves a boundary by itself: integer keys can live in the hash.
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0),
-		static_cast<u32>(TableHeader::Storage), SLJIT_IMM, RAM_RECORD_WORD_MASK);
+		static_cast<u32>(TableHeader::ArrayStorage), SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R3, SLJIT_R3);
-	sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), hash, SLJIT_IMM, 3);
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), array);
-	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), array, SLJIT_IMM, 2);
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R1, 0);
 	auto* zero = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
@@ -243,17 +236,14 @@ sljit_label* emitTableIteratorScan(sljit_compiler* c) {
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), array);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), hash);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Storage));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), Scratch::hashStorage, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::HashStorage));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::ArrayStorage));
 	if constexpr (std::endian::native == std::endian::big) {
 		for (const auto reg : {SLJIT_R0, SLJIT_R2, SLJIT_R3})
 			sljit_emit_op1(c, SLJIT_REV32, reg, 0, reg, 0);
 	}
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), Scratch::arrayEnd, SLJIT_R2, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), Scratch::hashCount, SLJIT_R3, 0);
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_R3, 0);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), Scratch::hashEnd, SLJIT_R2, 0);
-	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_R3, 0);
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), Scratch::words, SLJIT_R0, 0);
@@ -283,10 +273,19 @@ sljit_label* emitTableIteratorScan(sljit_compiler* c) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
 	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), Scratch::returnAddress);
 
+	sljit_set_label(arrayDone, sljit_emit_label(c));
+	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), Scratch::arrayEnd);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), Scratch::hashStorage);
+	if constexpr (std::endian::native == std::endian::big)
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), Scratch::words, SLJIT_R0, 0);
+	sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), Scratch::hashCount, SLJIT_IMM, 12);
+	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R2, 0);
 	auto* hashLoop = sljit_emit_label(c);
-	sljit_set_label(arrayDone, hashLoop);
 	auto* exhausted = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
-		SLJIT_MEM1(SLJIT_SP), Scratch::hashEnd);
+		SLJIT_MEM1(SLJIT_SP), Scratch::hashCount);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM2(SLJIT_R0, SLJIT_R1), 0);
 	auto* missingKey = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, nilTag);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), Scratch::hashCount);
@@ -307,7 +306,7 @@ sljit_label* emitTableIteratorScan(sljit_compiler* c) {
 		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R3, 0, SLJIT_R3, 0);
 	}
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), Scratch::cursor, SLJIT_R1, 0);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_MEM1(SLJIT_SP), Scratch::cursor, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), Scratch::arrayEnd);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), Scratch::valueTag);
 	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), Scratch::returnAddress);
 

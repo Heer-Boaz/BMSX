@@ -532,7 +532,7 @@ void verifiedSinglePagePreparationSharesTheColdBatch() {
 	require(!entryAt(warmed, sibling), "adaptive preparation does not absorb the neighboring function");
 }
 
-void adaptiveBranchPublishesItsSideOnlyAfterDemand() {
+void adaptiveBranchSelectsExecutedDestinations(bool bothArms) {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
 	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
@@ -558,8 +558,17 @@ void adaptiveBranchPublishesItsSideOnlyAfterDemand() {
 		const auto& page = *cpu.rootThread()->currentFrame->executionImage->decodedPages.find(address & ~MAPPED_PAGE_BYTE_MASK);
 		test::waitForNativeEntry(cpu, page, (address & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	};
-	for (int visit = 0; visit <= NATIVE_BLOCK_COMPILATION_THRESHOLD; ++visit) call(true);
+	for (int visit = 0; visit <= NATIVE_BLOCK_COMPILATION_THRESHOLD; ++visit) call(!bothArms || (visit & 1));
 	wait(pc);
+	if (bothArms) {
+		const auto* first = entryAt(cpu, side);
+		const auto* second = entryAt(cpu, pc + 3u * INSTRUCTION_BYTES);
+		require(first && second && first->region == entryAt(cpu, pc)->region && second->region == first->region,
+			"one hot branch publishes both executed arms even when neither is independently hot");
+		call(false);
+		call(true);
+		return;
+	}
 	require(entryAt(cpu, pc + 3u * INSTRUCTION_BYTES) && !entryAt(cpu, side),
 		"the first publication includes the hot destination but excludes the untaken side");
 	for (int visit = 1; visit < NATIVE_SIDE_EXIT_THRESHOLD; ++visit) call(false);
@@ -593,7 +602,8 @@ void verifiedSinglePageHotLoopLeavesItsFunctionEntryScalar() {
 	const u32 root = rom.textAddress;
 	const u32 loop = root + INSTRUCTION_BYTES;
 	const auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
-	const int iterations = NATIVE_BLOCK_COMPILATION_THRESHOLD;
+	// The first iteration is sequential fallthrough, not an incoming loop edge.
+	const int iterations = 1 + NATIVE_BLOCK_COMPILATION_THRESHOLD;
 	const int grant = cycles(OpCode::K0) + iterations * (cycles(OpCode::K1) + cycles(OpCode::ADD) + cycles(OpCode::JMP));
 	require(test::runCpuParity(cpu, reference, grant) == RunResult::Yielded
 		&& cpu.readFramePc(0) == loop && cpu.readFrameRegister(0, 0) == valueInteger(iterations),
@@ -754,7 +764,8 @@ int main() {
 		preparationLeavesFetchFaultsAtExecution();
 		crossPageWideDependenciesRemainOwned();
 		verifiedSinglePagePreparationSharesTheColdBatch();
-		adaptiveBranchPublishesItsSideOnlyAfterDemand();
+		adaptiveBranchSelectsExecutedDestinations(false);
+		adaptiveBranchSelectsExecutedDestinations(true);
 		verifiedSinglePageHotLoopLeavesItsFunctionEntryScalar();
 		wideFunctionUsesDemandedBoundedRegions();
 		verifiedStartupReachabilityOutranksDescriptiveHints();

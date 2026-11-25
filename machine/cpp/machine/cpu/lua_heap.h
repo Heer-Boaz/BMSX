@@ -32,10 +32,11 @@ public:
 	// Admit a positive logical increase without running the collector. The
 	// owner commits the increase with its storage mutation.
 	bool canAdmitWithoutAssist(size_t byteCount) const noexcept;
-	// A record with optional separately allocated backing. Record and backing
-	// are charged together, after both allocations are admitted.
+	// A record may own two independently allocated backing blocks. They
+	// are charged together with the record after the last reservation succeeds.
 	u32 allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, Value root0 = valueNil(), Value root1 = valueNil(),
-		Value root2 = valueNil(), std::optional<u32> backingCharge = {}, LuaAllocationMode mode = LuaAllocationMode::Direct);
+		Value root2 = valueNil(), std::optional<u32> recordCharge = {}, LuaAllocationMode mode = LuaAllocationMode::Direct,
+		u32 secondBytes = 0, u32 secondField = 0);
 	// Physical backing can reserve more bytes than the owner's logical increase.
 	// Admission does not commit occupancy; the owner publishes its replacement.
 	u32 reserveBacking(u32 bytes, u32 logicalBytes, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
@@ -45,6 +46,7 @@ public:
 	u32 allocateClosureRecord(u32 captures, bool latched = false, std::span<u32> cells = {});
 	void releaseRecord(u32 address, u32 bytes);
 	void releaseObject(u32 address, u32 bytes);
+	void resizeRecordCharge(u32 oldBytes, u32 newBytes);
 	void replaceRecord(u32 oldAddress, u32 oldBytes, u32 newBytes);
 	void collectRuntime(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	bool stepRuntime();
@@ -57,7 +59,7 @@ public:
 private:
 	enum class LuaAllocationAssist { None, Step, Limit };
 	LuaAllocationAssist allocationAssist(size_t nextBytes) const noexcept;
-	u32 reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, u32 charged);
+	u32 reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, u32 charged, u32 secondBytes, u32 secondField);
 	void accountAllocation(u32 bytes);
 	void creditStep();
 	void assistSweepBeforeReservation(size_t requested);

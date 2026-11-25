@@ -80,7 +80,7 @@ export class LuaHeap {
 		}
 	}
 
-	private reserveRecord(bytes: number, object: boolean, backingBytes: number, backingField: number, charged: number): number {
+	private reserveRecord(bytes: number, object: boolean, backingBytes: number, backingField: number, charged: number, secondBytes: number, secondField: number): number {
 		const prefix = object ? GC_OBJECT_PREFIX : 0;
 		const arena = this.cpu.heapAllocator;
 		const base = arena.allocate(bytes + prefix, !object);
@@ -90,27 +90,34 @@ export class LuaHeap {
 			arena.free(base);
 			return 0;
 		}
+		const second = secondBytes === 0 ? 0 : arena.allocate(secondBytes, true);
+		if (secondBytes !== 0 && second === 0) {
+			if (backing !== 0) arena.free(backing);
+			arena.free(base);
+			return 0;
+		}
 		const address = base + prefix;
 		if (backingField !== 0) this.cpu.memory.writeRamRecordWord(address + backingField, backing);
+		if (secondField !== 0) this.cpu.memory.writeRamRecordWord(address + secondField, second);
 		this.accountAllocation(charged);
 		return address;
 	}
 
 	public allocateRecord(bytes: number, object: boolean, backingBytes: number, backingField: number,
-		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(), backingCharge = backingBytes,
-		mode = LuaAllocationMode.Direct): number {
-		const charged = bytes + backingCharge;
+		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(), recordCharge: number | undefined = undefined,
+		mode = LuaAllocationMode.Direct, secondBytes = 0, secondField = 0): number {
+		const charged = recordCharge ?? (bytes + backingBytes + secondBytes);
 		if (mode !== LuaAllocationMode.Direct) {
 			const admitted = mode === LuaAllocationMode.Scheduled ? this.prepareAllocation(charged, root0, root1, root2)
 				: this.usedBytes() + charged <= this.capacity();
 			if (!admitted) return 0;
-			if (mode === LuaAllocationMode.Scheduled) this.assistSweepBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0) + backingBytes);
-			return this.reserveRecord(bytes, object, backingBytes, backingField, charged);
+			if (mode === LuaAllocationMode.Scheduled) this.assistSweepBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0) + backingBytes + secondBytes);
+			return this.reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField);
 		}
 		let recovery = this.admit(charged, root0, root1, root2);
-		this.assistSweepBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0) + backingBytes);
+		this.assistSweepBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0) + backingBytes + secondBytes);
 		for (;;) {
-			const address = this.reserveRecord(bytes, object, backingBytes, backingField, charged);
+			const address = this.reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField);
 			if (address !== 0) return address;
 			recovery = this.cpu.gc.recoverAllocation(recovery, root0, root1, root2);
 		}
@@ -251,6 +258,10 @@ export class LuaHeap {
 
 	public replaceRecord(oldAddress: number, oldBytes: number, newBytes: number): void {
 		if (oldAddress !== 0) this.cpu.heapAllocator.free(oldAddress);
+		this.resizeRecordCharge(oldBytes, newBytes);
+	}
+
+	public resizeRecordCharge(oldBytes: number, newBytes: number): void {
 		if (oldBytes !== newBytes) this.accountAllocation(newBytes - oldBytes);
 	}
 

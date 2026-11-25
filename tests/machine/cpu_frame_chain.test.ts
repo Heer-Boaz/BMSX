@@ -14,9 +14,9 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 function callImage(maxStack: number, returns: number, base = 0) {
 	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
@@ -31,7 +31,7 @@ function callImage(maxStack: number, returns: number, base = 0) {
 		{ firstWord: 4, wordCount: 1, maxStack },
 		{ firstWord: 5, wordCount: 1, maxStack: 8 },
 	], exceptionFunctionIndex: 2,
-	closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] });
+	closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
 }
 
 test('thread growth relocates only the required storage lane', () => {
@@ -302,8 +302,8 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			{ firstWord: 5, wordCount: 4, maxStack: 8 },
 			{ firstWord: 9, wordCount: 2, maxStack: 8 },
 		], constants: [integerConstant(7)], systemGlobalNames: ['pcall'], closureRelocations: [
-			{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) },
-			{ wordIndex: 6, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 2) },
+			{ wordIndex: 2, functionIndex: 1 },
+			{ wordIndex: 6, functionIndex: 2 },
 		] });
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));

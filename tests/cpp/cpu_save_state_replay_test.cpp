@@ -474,7 +474,8 @@ void diagnosticGcPhasesDoNotBecomeMachineState() {
 	weak.setInteger(1, bmsx::valueTable(cpu.createTable(64, 0).address()));
 	cpu.setGlobalByKey(weakKey, bmsx::valueTable(weak.address()));
 	strings.intern("unrooted diagnostic text");
-	const auto anchor = bmsx::captureRuntimeSaveState(machine.runtime);
+	const auto anchor = cpu.captureRuntimeState();
+	const auto anchorRam = cpu.memory().captureSaveState();
 	const auto before = cpu.diagnosticGcProfile();
 	cpu.collectHeap();
 	const auto after = cpu.diagnosticGcProfile();
@@ -490,8 +491,8 @@ void diagnosticGcPhasesDoNotBecomeMachineState() {
 		&& after.totalNanoseconds - before.totalNanoseconds >= phaseNanoseconds,
 		"the complete collection interval encloses every disjoint phase and final accounting");
 	const auto expected = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime));
-	strings.restoreState(anchor.machineState.machine.stringPool);
-	cpu.restoreRuntimeState(anchor.cpuState);
+	cpu.memory().restoreSaveState(anchorRam);
+	cpu.restoreRuntimeState(anchor);
 	require(cpu.diagnosticGcProfile().collections == after.collections
 		&& cpu.diagnosticGcProfile().totalNanoseconds == after.totalNanoseconds,
 		"restore-time object retirement is not a guest collection and never rewinds host measurements");

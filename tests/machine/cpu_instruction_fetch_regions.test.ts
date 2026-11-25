@@ -194,7 +194,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
-	test(`a short ROM WIDE body faults only after the preceding backed instruction (${backend})`, () => {
+	test(`a retained fetch page loses its direct backing when replacement ROM truncates a WIDE body (${backend})`, () => {
 		const { cpu, memory } = machine(backend);
 		const pc = (system.romBytes.length + 3) & ~3;
 		const prefix = pc + INSTRUCTION_BYTES, body = prefix + INSTRUCTION_BYTES;
@@ -203,13 +203,16 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const tail = rom.subarray(pc);
 		writeInstruction(tail, 0, OpCode.K1, 0, 0, 0);
 		writeInstruction(tail, 1, OpCode.WIDE, 0, 0, 0);
-		memory.installSystemRom(rom);
+		const full = new Uint8Array((body | MAPPED_PAGE_BYTE_MASK) + 1);
+		full.set(rom);
+		memory.installSystemRom(full);
 		jump(cpu, pc);
 
 		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.K1]), RunResult.Yielded);
 		assert.equal(cpu.readFramePc(0), prefix);
 		assert.equal(cpu.rootThread.frameAtDepth(0).registers.getPayload(0), 1);
-		assert.equal(memory.readBusFaultSequence(), 0, 'lookahead cannot publish a fault before the next instruction');
+		assert.equal(memory.readBusFaultSequence(), 0);
+		memory.installSystemRom(rom);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(memory.readBusFaultSequence(), 1);
 		fault(cpu, memory, prefix, body);

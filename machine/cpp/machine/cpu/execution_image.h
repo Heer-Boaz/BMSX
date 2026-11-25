@@ -77,6 +77,7 @@ struct NativeCodeSourcePage {
 	u32 pc;
 	DecodedInstructionPage* page;
 	u64 key;
+	bool immutable = false;
 };
 
 // ROM prototype words and image-owned dispatch cell addresses, never a closure or code pointer.
@@ -102,9 +103,7 @@ struct NativeImageWarmup {
 #endif
 
 struct DecodedInstructionPage {
-	explicit DecodedInstructionPage(bool isCacheable, MappedPageWriteWatch pageWriteWatch)
-		: cacheable(isCacheable)
-		, writeWatch(pageWriteWatch) {
+	explicit DecodedInstructionPage(const MappedPageBinding& binding) : mapping(binding) {
 		refreshState.fill(DECODED_REFRESH_DECODE);
 	}
 
@@ -112,10 +111,12 @@ struct DecodedInstructionPage {
 	std::array<uint8_t, DECODED_PAGE_WORDS> refreshState{};
 	std::array<uint32_t, DECODED_PAGE_WORDS> sourceWords{};
 	std::array<uint32_t, DECODED_PAGE_WORDS> bodyWords{};
-	bool cacheable;
-	MappedPageWriteWatch writeWatch;
+	MappedPageBinding mapping;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	std::array<u8, DECODED_PAGE_WORDS> nativeVisits{};
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	std::array<std::bitset<DECODED_PAGE_WORDS>, CARTRIDGE_SLOT_COUNT> queuedNativeRoots;
+#endif
 	// Structural entry points on immutable code outlive a compiled region.
 	std::bitset<DECODED_PAGE_WORDS> nativeSourceLeaders;
 	NativeFieldProofFeedback fieldProofFeedback;
@@ -137,7 +138,7 @@ class DecodedPageDirectory {
 public:
 	struct Entry {
 		explicit Entry(const MappedPageBinding& binding)
-			: key(binding.key), page(binding.cacheable, binding.writeWatch) {}
+			: key(binding.key), page(binding) {}
 		const u64 key;
 		DecodedInstructionPage page;
 	};

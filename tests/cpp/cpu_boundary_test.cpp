@@ -452,6 +452,7 @@ void nativeCodeUsesCachedWordsAtPartialRomTails() {
 
 void nativeWarmAdmitsAllocatingBodies() {
 	test::Blua32TestImage image;
+	image.mappedCode = false;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CONCAT), 1, 0, 0);
@@ -468,6 +469,7 @@ void nativeWarmAdmitsAllocatingBodies() {
 	const u32 word = (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u;
 	require(!page.nativeBlocks && page.nativeVisits[word] == NATIVE_BLOCK_COMPILATION_THRESHOLD - 1,
 		"hotness counting never allocates an executable-entry page before code exists");
+	require(page.nativeVisits[word + 1u] == 0, "fallthrough within the warm block does not heat a compilation root");
 	require(cpu.readNativeCompilationProfile().prepareRequests == 0,
 		"no native compilation is requested below the admission threshold");
 	require(cpu.runUntilDepth(0, loopCycles) == RunResult::Yielded,
@@ -1532,9 +1534,6 @@ void partialCodeWritesRetainOtherDecodedStarts() {
 	}
 }
 
-// These fixtures assert the decoded interpreter's fused instructions. Native
-// builds admit the same page tails to generated regions instead.
-#if !defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void sourceAndFusionDependenciesRemainSeparate() {
 	for (u32 first = 0; first < DECODED_DISPATCH_OP_COUNT; ++first) {
 		bool canFuse = false;
@@ -1579,13 +1578,19 @@ void sourceAndFusionDependenciesRemainSeparate() {
 			require(cpu.readFramePc(0) == pc && cpu.readFrameRegister(0, 4) == valueInteger(results[phase]), "negative and positive fusion decisions observe the rewritten successor");
 			if (!instrumented) {
 				const auto& page = *cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.find(pc & ~MAPPED_PAGE_BYTE_MASK);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				require(page.nativeVisits[DECODED_PAGE_WORDS - headWords] == phase + 1,
+					"rewriting a successor preserves execution feedback for the unchanged head");
+#else
 				const u8 expected = phase == 1 ? static_cast<u8>(DecodedDispatchOp::FusedAddShl) : static_cast<u8>(OpCode::ADD);
 				require(page.words[DECODED_PAGE_WORDS - headWords].dispatchOp == expected, "source writes create and retire the cached fusion across pages");
+#endif
 			}
 		}
 	}
 }
 
+#if !defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void changedWideFusionBodyInvalidatesItsCrossPageHead() {
 	for (const bool instrumented : {false, true}) {
 		auto image = returnImage();
@@ -1945,7 +1950,7 @@ void cachedPcWrapping() {
 				auto& cpu = machine.cpu;
 				if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 				auto& frame = *cpu.activeThread()->frameAtDepth(0);
-				DecodedInstructionPage page(true, {});
+				DecodedInstructionPage page(MappedPageBinding{0, true, nullptr, {}});
 				page.refreshState.fill(0);
 				frame.writeControl(bmsx::FrameField::Pc, skip ? 0xfffffff8u : 0xfffffffcu);
 				frame.decodedPage = &page;
@@ -1965,7 +1970,7 @@ void cachedPcWrapping() {
 	CpuMachine machine(returnImage());
 	auto& cpu = machine.cpu;
 	auto& frame = *cpu.activeThread()->frameAtDepth(0);
-	DecodedInstructionPage page(true, {});
+	DecodedInstructionPage page(MappedPageBinding{0, true, nullptr, {}});
 	page.refreshState.fill(0);
 	frame.writeControl(bmsx::FrameField::Pc, 0xfffffff8u);
 	frame.registers.set(0, valueInteger(1));
@@ -2068,8 +2073,9 @@ int main() {
 		cachedFetchCrossesWidePagesAndObservesCodeWrites();
 		rewrittenInstructionRetainsItsOwnCycleCharge();
 		partialCodeWritesRetainOtherDecodedStarts();
+		sourceAndFusionDependenciesRemainSeparate();
 #if !defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		sourceAndFusionDependenciesRemainSeparate(); changedWideFusionBodyInvalidatesItsCrossPageHead();
+		changedWideFusionBodyInvalidatesItsCrossPageHead();
 #endif
 		writableCodeWatchesBelongToTheirPhysicalSocket();
 		cachedInstructionBindingsFollowThePhysicalSelector();

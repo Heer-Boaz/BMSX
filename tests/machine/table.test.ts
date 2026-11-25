@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import {
 	CPU,
 } from '../../machine/ts/machine/cpu/cpu';
+import { LuaAllocationMode } from '../../machine/ts/machine/cpu/lua_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
@@ -172,16 +173,16 @@ test('table values come directly from the allocator-owned RAM block', () => {
 	const arena = cpu.heapAllocator, occupiedBefore = arena.occupiedBytes();
 	const table = cpu.createTable(2, 1);
 	cpu.gc.tables.setInteger(table, 1, valueInteger(71));
-	const base = cpu.gc.tables.storageAddress(table);
+	const base = cpu.gc.tables.arrayAddress(table), hash = cpu.gc.tables.hashAddress(table);
 	const headerBytes = arena.allocationBytes(table - GC_OBJECT_PREFIX), backingBytes = arena.allocationBytes(base);
-	assert.equal(arena.occupiedBytes() - occupiedBefore, headerBytes + backingBytes, 'the header and body are separate chunks');
+	assert.equal(arena.occupiedBytes() - occupiedBefore, headerBytes + backingBytes + arena.allocationBytes(hash), 'the header and body are separate chunks');
 	assert.equal(memory.readRamRecordWord(base), 71);
-	assert.equal(memory.readRamRecordWord(base + 4 * 4), 0xffffffff, 'the hash-chain word follows the four payload words');
-	const tags = base + 5 * 4;
+	assert.equal(memory.readRamRecordWord(hash + 2 * 4), 0xffffffff, 'the hash-chain word follows the four payload words');
+	const tags = base + 2 * 4;
 	assert.equal(memory.readRamRecordByte(tags), ValueTag.Integer);
 	assert.equal(memory.readRamRecordWord(table + TableHeader.Hash), 1, 'the table header owns the hash capacity');
-	assert.equal(memory.readRamRecordByte(tags + 3), ValueTag.Nil, 'the spare hash value remains nil');
-	const backing = table + TableHeader.Storage;
+	assert.equal(memory.readRamRecordByte(hash + 12 + 1), ValueTag.Nil, 'the spare hash value remains nil');
+	const backing = table + TableHeader.ArrayStorage;
 	assert.equal(memory.readRamRecordWord(backing), base);
 	memory.writeRamRecordWord(backing, base + MAIN_RAM_SIZE);
 	memory.writeRamRecordWord(base, 94);
@@ -207,21 +208,21 @@ test('mixed table migration preserves a sparse raw array prefix and hash overflo
 	tables.setInteger(table, 5, valueInteger(50));
 	tables.setInteger(table, 6, valueInteger(60));
 	assert.equal(tables.arrayCapacity(table), 4, 'entries 5 and 6 start in the hash');
-	const smallBody = tables.storageAddress(table);
+	const smallBody = tables.hashAddress(table);
 	tables.setInteger(table, 7, tail);
 	assert.equal(tables.arrayCapacity(table), 8);
-	assert.notEqual(tables.storageAddress(table), smallBody);
+	assert.notEqual(tables.hashAddress(table), smallBody);
 	assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8, -1, -3].map(key => tables.getInteger(table, key)),
 		[valueBool(false), valueNil(), prefix, valueBool(true), valueInteger(50), valueInteger(60), tail, valueNil(), valueInteger(11), valueInteger(33)]);
 
-	const largeBody = tables.storageAddress(table);
+	const largeBody = tables.hashAddress(table);
 	tables.setInteger(table, 5, valueNil());
 	tables.setInteger(table, 6, valueNil());
 	// A new positive index outside the array makes rehash reconsider its
 	// density. A hash-only key would leave the array partition unchanged.
 	tables.setInteger(table, 9, valueInteger(90));
 	assert.equal(tables.arrayCapacity(table), 4);
-	assert.notEqual(tables.storageAddress(table), largeBody);
+	assert.notEqual(tables.hashAddress(table), largeBody);
 	assert.deepEqual([1, 2, 3, 4, 5, 6, 7, -1, -3, 9].map(key => tables.getInteger(table, key)),
 		[valueBool(false), valueNil(), prefix, valueBool(true), valueNil(), valueNil(), tail, valueInteger(11), valueInteger(33), valueInteger(90)]);
 });
@@ -231,7 +232,7 @@ test('numeric hash mixing distributes negative integral keys and preserves canon
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 1024);
 	for (let key = -1; key >= -1024; key--) cpu.gc.tables.setInteger(table, key, valueInteger(key));
-	const links = cpu.gc.tables.storageAddress(table) + 1024 * 2 * 4;
+	const links = cpu.gc.tables.hashAddress(table) + 1024 * 2 * 4;
 	for (let slot = 0; slot < 1024; slot++) {
 		let count = 0;
 		for (let next = slot; next !== -1; next = (memory.readRamRecordWord(links + next * 4) | 0)) {
@@ -297,4 +298,43 @@ test('physical table inspection preserves Lua iteration order and tagged values 
 	const previous = [values.get(1), values.get(2)];
 	assert.equal(cpu.gc.tables.loadStoredEntry(table, 1, values, 1), false);
 	assert.deepEqual([values.get(1), values.get(2)], previous);
+});
+
+test('dense array growth reuses a fitting backing and preserves the tagged prefix', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const table = cpu.createTable(1, 0), tables = cpu.gc.tables;
+	const first = tables.arrayAddress(table);
+	tables.set(table, valueInteger(1), valueBool(false));
+	tables.set(table, valueInteger(2), valueInteger(0x12345678));
+	assert.equal(tables.arrayAddress(table), first);
+	tables.set(table, valueInteger(3), valueBool(true));
+	assert.equal(tables.get(table, valueInteger(1)), valueBool(false));
+	assert.equal(tables.get(table, valueInteger(2)), valueInteger(0x12345678));
+	assert.equal(tables.get(table, valueInteger(3)), valueBool(true));
+	assert.equal(tables.get(table, valueInteger(4)), valueNil());
+});
+
+test('record admission charges both storage blocks together and frees unissued allocations on OOM', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const budget = cpu.gc.budget, arena = cpu.heapAllocator;
+	const used = budget.usedBytes(), occupied = arena.occupiedBytes();
+	const nil = valueNil();
+	assert.equal(budget.allocateRecord(16, true, 64, 4, nil, nil, nil, 64, LuaAllocationMode.Retry,
+		arena.capacityBytes() + 1, 8), 0);
+	assert.equal(budget.usedBytes(), used);
+	assert.equal(arena.occupiedBytes(), occupied);
+	const record = budget.allocateRecord(16, true, 64, 4, nil, nil, nil, undefined, LuaAllocationMode.Retry, 128, 8);
+	assert.notEqual(record, 0);
+	const first = memory.readRamRecordWord(record + 4), second = memory.readRamRecordWord(record + 8);
+	assert.notEqual(first, 0);
+	assert.notEqual(second, 0);
+	assert.notEqual(first, second);
+	assert.equal(budget.usedBytes(), used + 16 + 64 + 128);
+	budget.releaseRecord(first, 64);
+	budget.releaseRecord(second, 128);
+	budget.releaseObject(record, 16);
+	assert.equal(budget.usedBytes(), used);
+	assert.equal(arena.occupiedBytes(), occupied);
 });

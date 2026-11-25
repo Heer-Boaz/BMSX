@@ -192,8 +192,8 @@ void preparedLayoutMatchesAllMasks(CPU& cpu, Memory& memory) {
 		if (mask) prepared.fillStringRecord(layout, keys, values);
 		require(scalar.hashFree() == prepared.hashFree(), "the prepared placement preserves the free cursor");
 		for (u32 at = 0; at < TableRecord::storageBytes(0, 8); ++at)
-			require(memory.readRamRecordByte(scalar.storageAddress() + at)
-				== memory.readRamRecordByte(prepared.storageAddress() + at),
+			require(memory.readRamRecordByte(scalar.hashAddress() + at)
+				== memory.readRamRecordByte(prepared.hashAddress() + at),
 				"prepared and scalar constructor layouts agree under collisions and absent values");
 	}
 }
@@ -306,7 +306,7 @@ void inheritedAndFullWordKeys(CPU& cpu, Memory& memory) {
 	require(isNil(raw.getStringKey(key)), "a known StringId does not match a different high payload bit during chain search");
 	raw.setStringKey(key, valueInteger(42));
 	require(raw.get(highBitKey) == valueInteger(21) && raw.getStringKey(key) == valueInteger(42), "known string updates preserve distinct raw payloads");
-	memory.writeRamRecordWord(raw.address() + static_cast<u32>(TableHeader::Storage), raw.storageAddress() + MAIN_RAM_SIZE);
+	memory.writeRamRecordWord(raw.address() + static_cast<u32>(TableHeader::HashStorage), raw.hashAddress() + MAIN_RAM_SIZE);
 	int predicted = -1;
 	require(raw.get(highBitKey) == valueInteger(21) && raw.getStringKeyCached(key, predicted) == valueInteger(42)
 		&& predicted >= 0 && raw.getStringKeyCached(key, predicted) == valueInteger(42),

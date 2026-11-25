@@ -137,3 +137,36 @@ test('shrinking backing releases its suffix without moving or erasing the retain
 		assert.equal(heap.occupiedBytes(), bytes);
 	}
 });
+
+test('backing growth retains its prefix in place, moves across a live neighbor, and leaves it live on failure', () => {
+	const { heap, memory } = fixture();
+	assert.ok(heap.setFloor(MANAGEMENT - 3 * HEAP_PAGE_SIZE));
+	const body = heap.allocate(60, true);
+	assert.equal(heap.resizeBacking(body, 61), body, 'the top chunk supplies in-place growth');
+	const next = heap.allocate(128, true);
+	const blocker = heap.allocate(64, false);
+	heap.free(next);
+	assert.equal(heap.resizeBacking(body, 144), body, 'a free successor can be split');
+	assert.equal(heap.resizeBacking(body, 200), body, 'a small remainder is consumed');
+	const extent = heap.allocationBytes(body);
+	const prefix = Uint8Array.from({ length: extent - 4 }, (_, i) => i * 17);
+	for (let i = 0; i < prefix.length; ++i) memory.writeRamRecordByte(body + i, prefix[i]);
+	const used = heap.occupiedBytes();
+	assert.equal(heap.resizeBacking(body, heap.capacityBytes() + 1), 0);
+	assert.equal(heap.occupiedBytes(), used);
+	const history = new RamHistory();
+	history.start(memory);
+	const before = history.capture(memory, null);
+	const moved = heap.resizeBacking(body, 6000);
+	assert.notEqual(moved, 0);
+	assert.notEqual(moved, body);
+	assert.deepEqual(memory.ramData().slice(moved - RAM_BASE, moved - RAM_BASE + prefix.length), prefix);
+	assert.equal(heap.occupiedBytes(), used - extent + heap.allocationBytes(moved));
+	const after = history.capture(memory, before);
+	history.restore(memory, after, before);
+	assert.deepEqual(memory.ramData().slice(body - RAM_BASE, body - RAM_BASE + prefix.length), prefix);
+	assert.equal(heap.resizeBacking(body, 6000), moved);
+	heap.free(moved);
+	heap.free(blocker);
+	assert.equal(heap.occupiedBytes(), 0);
+});

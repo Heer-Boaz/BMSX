@@ -21,7 +21,7 @@ const output = mkdtempSync(join(tmpdir(), 'bmsx-dlmalloc-wasm-'));
 try {
 	const wasm = join(output, 'dlmalloc.wasm');
 	execFileSync(clang, [
-		'--target=wasm32', '-std=c11', '-nostdlib', '-ffreestanding', '-O3', '-flto',
+		'--target=wasm32', '-std=c11', '-nostdlib', '-ffreestanding', '-mbulk-memory', '-O3', '-flto',
 		'-fno-delete-null-pointer-checks',
 		`-Wl,--no-entry,--import-memory,--global-base=${globalBase},--initial-memory=${memoryBytes},--max-memory=${memoryBytes}`,
 		`-Wl,-z,stack-size=${stackBytes},--strip-all`,

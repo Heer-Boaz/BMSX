@@ -21,7 +21,7 @@ class GcHeap;
 inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
 
 enum class TableHeader : u32 {
-	Kind = 0, Gray = 4, Metatable = 8, Storage = 12, Array = 16, Hash = 20, Length = 24, Free = 28,
+	Kind = 0, Gray = 4, Metatable = 8, HashStorage = 12, Array = 16, Hash = 20, Length = 24, Free = 28, ArrayStorage = 32,
 };
 // Method absence belongs to the table holding the own mapping. Byte +1
 // is the GC color, and byte +3 belongs to the collector visit list.
@@ -36,14 +36,15 @@ struct TableStringProbe {
 class TableRecord {
 public:
 	TableRecord(GcHeap& heap, u32 address);
-	static constexpr u32 HEADER_BYTES = 32;
+	static constexpr u32 HEADER_BYTES = 36, HEADER_CHARGE = 32;
 	static u32 storageBytes(size_t arraySize, size_t hashSize);
 	static u32 allocationCharge(size_t arraySize, size_t hashSize);
 	void initialize(size_t arrayCapacity, size_t hashCapacity);
 	TableRecord copyOwn() const;
 	void freeRecord();
 	u32 address() const { return m_address; }
-	u32 storageAddress() const { return readHeader(TableHeader::Storage); }
+	u32 hashAddress() const { return readHeader(TableHeader::HashStorage); }
+	u32 arrayAddress() const { return readHeader(TableHeader::ArrayStorage); }
 	u32 arrayCapacity() const { return readHeader(TableHeader::Array); }
 	u32 hashSlots() const { return readHeader(TableHeader::Hash); }
 	u32 lengthHint() const { return readHeader(TableHeader::Length); }
@@ -97,7 +98,7 @@ public:
 	std::optional<Value> readOwnStringField(StringId key, int& predicted) const {
 		const u32 count = hashSlots();
 		if (count) {
-			const auto body = hashBody(count, arrayCapacity());
+			const auto body = hashBody(count);
 			if (predicted >= 0 && static_cast<u32>(predicted) < count) {
 				const auto own = body.predictedString(predicted, key);
 				if (!isNil(own)) return own;
@@ -133,15 +134,16 @@ public:
 	template <typename Fn>
 	void forEachEntry(Fn&& fn, u32 first = 0u, u32 end = UINT32_MAX) const {
 		const u32 array = arrayCapacity(), hash = hashSlots();
-		const auto slots = hashBody(hash, array).slots;
+		const auto arrayValues = values();
+		const auto slots = hashBody(hash).slots;
 		for (u32 i = first; i < std::min(array, end); ++i) {
-			const Value value = slots.get(i);
+			const Value value = arrayValues.get(i);
 			if (!isNil(value)) fn(valueInteger(static_cast<i32>(i + 1)), value);
 		}
 		for (u32 i = std::max(first, array); i < std::min(array + hash, end); ++i) {
-			const Value key = slots.get(i);
+			const Value key = slots.get(i - array);
 			if (isNil(key)) continue;
-			const Value value = slots.get(i + hash);
+			const Value value = slots.get(i - array + hash);
 			if (!isNil(value)) fn(key, value);
 		}
 	}
@@ -156,9 +158,10 @@ public:
 				if (!isNil(value) && !valueIsAlive(value)) slots.set(slot, valueNil());
 			}
 		}
+		const auto nodes = hashBody(hash).slots;
 		for (u32 slot = std::max(first, array); slot < std::min(array + hash, end); ++slot) {
-			const Value key = slots.get(slot);
-			const Value value = slots.get(slot + hash);
+			const Value key = nodes.get(slot - array);
+			const Value value = nodes.get(slot - array + hash);
 			if (isNil(key) || isNil(value)) {
 				continue;
 			}
@@ -197,10 +200,10 @@ private:
 	}
 	void setArraySlot(size_t slot, const Value& value);
 
-	size_t hashKeySlot(size_t index) const { return arrayCapacity() + index; }
-	size_t hashValueSlot(size_t index) const { return arrayCapacity() + hashSlots() + index; }
+
+	size_t hashValueSlot(size_t index) const { return hashSlots() + index; }
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
-	struct ResizePlan { size_t array, hash; };
+	struct ResizePlan { size_t array, hash; bool keepHash; };
 	ResizePlan planRehash(Value key, u8 extraHashSlots) const;
 	enum class HashStore : u8 { General, Scheduled, Resume, ReturningIndex, ReturningField };
 	template <HashStore Policy>
@@ -212,8 +215,9 @@ private:
 	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 previous, u32 requested)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	int resize(const ResizePlan&, u32 storage, Value key, Value value, u32 previous, u32 requested);
-	void bindStorage(size_t arraySize, size_t hashSize, u32 address);
-	void initializeStorage(u32 storage, u32 array, u32 hash, size_t retainedArray = 0);
+	void bindHash(size_t hashSize, u32 address);
+	void initializeArray(u32 address, u32 capacity, u32 retained);
+	void initializeHash(u32 address, u32 count);
 	void freeStorage();
 	u32 readHeader(TableHeader field) const { return m_memory->readRamRecordWord(m_address + static_cast<u32>(field)); }
 	void writeHeader(TableHeader field, u32 word) { m_memory->writeRamRecordWord(m_address + static_cast<u32>(field), word); }
@@ -235,52 +239,52 @@ private:
 	};
 	template<bool BulkWrite> struct HashStorage {
 		ValueSlots<BulkWrite> slots;
-		u32 array, count, links;
+		u32 count, links;
 		int findFreeIndex(int first) const;
 		i32 next(u32 index) const {
 			return static_cast<i32>(slots.memory->readRamRecordWord(links + index * 4u));
 		}
 		void setNext(u32 index, i32 next) const {
 			if constexpr (BulkWrite)
-				writeLE32(slots.words + (array + 2u * count + index) * sizeof(u32), static_cast<u32>(next));
+				writeLE32(slots.words + (2u * count + index) * sizeof(u32), static_cast<u32>(next));
 			else
 				slots.memory->writeRamRecordWord(links + index * 4u, static_cast<u32>(next));
 		}
 		int findNode(const Value& key, u32 home, bool matchDead = false) const;
 		int findString(StringId key, u32 home) const;
 		bool vacantHome(u32 home) const {
-			const u32 slot = array + home;
+			const u32 slot = home;
 			return slots.tag(slot) == ValueTag::Nil || slots.tag(slot + count) == ValueTag::Nil;
 		}
 		bool matchesString(u32 node, StringId key) const {
-			const u32 slot = array + node;
+			const u32 slot = node;
 			return slots.tag(slot) == ValueTag::String && slots.word(slot) == key;
 		}
 		Value predictedString(u32 node, StringId key) const {
 			if (!matchesString(node, key)) return valueNil();
-			return slots.get(array + count + node);
+			return slots.get(count + node);
 		}
 	};
 	using HashBody = HashStorage<false>;
 	using RebuildBody = HashStorage<true>;
 	template<bool BulkWrite = false>
-	HashStorage<BulkWrite> hashBody(u32 count, u32 array) const {
-		return hashBodyAt<BulkWrite>(storageAddress(), count, array);
+	HashStorage<BulkWrite> hashBody(u32 count) const {
+		return hashBodyAt<BulkWrite>(hashAddress(), count);
 	}
 	template<bool BulkWrite = false>
-	HashStorage<BulkWrite> hashBodyAt(u32 storage, u32 count, u32 array) const {
+	HashStorage<BulkWrite> hashBodyAt(u32 storage, u32 count) const {
 		u8* words = m_memory->ramData() + (storage & RAM_RECORD_WORD_MASK);
-		return {{m_memory, words, words + (array + 3u * count) * 4u}, array, count, storage + (array + 2u * count) * 4u};
+		return {{m_memory, words, words + 12u * count}, count, storage + 8u * count};
 	}
 	static Value findStringField(const HashBody& body, StringId key, int& slot);
 	static bool loadHashEntry(const HashBody& body, u32 slot, Value& key, Value& value);
-	static u32 nextStoredEntry(const HashBody& body, u32 position, Value& key, Value& value);
-	static int reinsertMapping(const RebuildBody& body, int& nextFree, Value key, Value value) noexcept;
+	u32 nextStoredEntry(const HashBody& body, u32 position, Value& key, Value& value) const;
+	int reinsertMapping(const RebuildBody& body, int& nextFree, Value key, Value value) noexcept;
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
 	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
-	int setHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
+	int setHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	template <HashStore Policy>
-	int assignHash(u32 array, Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0)
+	int assignHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	void publishHashInsertion(Value key, Value value);
 	u32 newIndexMetatable() const;
@@ -292,7 +296,8 @@ private:
 	void resolveIndexChain(int slot, TableLookupResult& result, Lookup&& lookup,
 		u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
 
-	ValueSlots<false> values() const { return hashBody(hashSlots(), arrayCapacity()).slots; }
+	ValueSlots<false> values() const { u8* words = m_memory->ramData() + (arrayAddress() & RAM_RECORD_WORD_MASK);
+		return {m_memory, words, words + arrayCapacity() * 4u}; }
 
 	GcHeap* m_heap;
 	Memory* m_memory;

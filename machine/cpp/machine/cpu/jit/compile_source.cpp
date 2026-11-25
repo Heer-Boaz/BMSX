@@ -105,10 +105,26 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page,
 	const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	if (page.nativeBlocks && page.nativeBlocks->entries[word]) return;
 	if (!m_nativeCompilerWorker) m_nativeCompilerWorker = std::make_unique<NativeCompilerWorker>();
-	if (!m_nativeCompilerWorker->idle()) return;
+	if (!m_nativeDemand.empty() || !m_nativeCompilerWorker->idle()) {
+		const auto& job = m_pendingNativeCompilation;
+		const u32 slot = m_memory.cartridgeController().selectedSlot(busSignals);
+		// A changed dependency must be eligible for a fresh capture even
+		// when the original root is still being compiled.
+		if (!(job.pageCount && !job.invalidated
+			&& job.image == frame.executionImage && job.rootPc == pc
+			&& job.slot == slot)) {
+			m_nativeDemand.enqueue({frame.executionImage, &page, frame.readControl(FrameField::Function), pc, slot});
+		}
+		serviceNativeDemand();
+		return;
+	}
 #endif
-	auto& image = *frame.executionImage;
-	const auto* version = image.romFunctions.find(frame.readControl(FrameField::Function));
+	compileNativeRoot(*frame.executionImage, frame.readControl(FrameField::Function), page, pc, busSignals);
+}
+
+void CPU::compileNativeRoot(Blua32ExecutionImage& image, u32 functionAddress, DecodedInstructionPage& page,
+	u32 pc, MappedBusSignals busSignals) {
+	const auto* version = image.romFunctions.find(functionAddress);
 	const bool verified = version && !image.romFunctions.mappedCode;
 	const u32 pagePc = pc & ~MAPPED_PAGE_BYTE_MASK;
 	if (version) {
@@ -121,9 +137,7 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page,
 			if (verified) return;
 		}
 	}
-	MappedPageBinding binding;
-	m_memory.bindMappedPage(pagePc, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
-	NativeCompilationSource source(page, binding, pagePc, busSignals,
+	NativeCompilationSource source(page, pagePc, busSignals,
 		m_memory.cartridgeController().selectedSlot(busSignals), verified);
 	if (verified) {
 		source.firstPc = version->entry.codeAddress;
@@ -142,29 +156,27 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 	NativeCompilationMeasurement measurement(profile, image.executionDomainId, first.slot, rootPc);
 	if (!coldImage && !pages.front()->discoveredCount) discoverNativeSource(image, *pages.front(), nullptr);
 
+	size_t pendingCount = 0;
+	for (auto* source : pages) pendingCount += source->pendingCount;
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	auto* pending = coldImage ? nullptr : &m_pendingNativeCompilation;
+	auto& workspace = pending ? m_nativeCompilerWorker->beginCapture(pendingCount) : m_nativeSourceWorkspace;
+#else
 	auto& workspace = m_nativeSourceWorkspace;
-	const size_t maxInstructions = pages.size() * DECODED_PAGE_WORDS;
-	if (workspace.instructions.size() < maxInstructions) workspace.instructions.resize(maxInstructions);
+#endif
+	if (workspace.instructions.size() < pendingCount) workspace.instructions.resize(pendingCount);
 	const auto instructions = std::span(workspace.instructions);
 	auto& sources = workspace.sources;
 	sources.clear();
-	size_t pendingCount = 0;
-	for (auto* source : pages) pendingCount += source->pendingCount;
 	sources.reserve(pendingCount);
 	std::array<NativeCodeSourcePage, NATIVE_VERSION_REGION_MAX_PAGES> codePages;
 	size_t codePageCount = 0, instructionCount = 0;
 	bool immutableSource = true;
-#if defined(BMSX_NATIVE_COMPILER_WORKER)
-	auto* pending = coldImage ? nullptr : &m_pendingNativeCompilation;
-	auto& specializations = pending ? m_nativeCompilerWorker->specializationsForCapture() : workspace.specializations;
-#else
 	auto& specializations = workspace.specializations;
-#endif
 	specializations.clear();
-	auto& calls = specializations.calls;
 	for (auto* source : pages) {
 		auto& page = source->page;
-		const auto& binding = source->binding;
+		const auto& binding = page.mapping;
 		const u32 pagePc = source->pagePc;
 		const auto& available = source->available;
 		auto& leaders = source->leaders;
@@ -173,24 +185,28 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 			leaders |= page.nativeSourceLeaders;
 			page.nativeSourceLeaders = leaders;
 		}
-		for (u32 word = 0; word < DECODED_PAGE_WORDS; ++word) {
-			if (source->roots[word] && !available[word]
-				&& page.words[word].dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm))
+		source->roots.forEach([&](u32 word) {
+			if (!available[word]
+				&& isNativeWarmDispatch(page.words[word].dispatchOp))
 				page.words[word].dispatchOp = page.words[word].op;
-		}
+		});
 		const auto firstInstruction = instructionCount;
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 		auto* feedback = pending ? &pending->feedbackHeads[codePageCount] : nullptr;
 		if (feedback) feedback->reset();
 #endif
-		for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
-			if (!leaders[entry] || !available[entry]) continue;
+		available.forEach([&](u32 entry) {
+			if (!leaders[entry]) return;
 			const size_t start = instructionCount;
 			u32 cursor = entry;
 			for (;;) {
 				const auto& instruction = page.words[cursor];
 				const u32 pc = pagePc + cursor * INSTRUCTION_BYTES;
-				instructions[instructionCount++] = {&instruction, pc};
+				const DecodedInstruction* row = &instruction;
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+				if (pending) row = m_nativeCompilerWorker->captureInstruction(instruction);
+#endif
+				instructions[instructionCount++] = {row, pc};
 				if (instruction.op == static_cast<u8>(OpCode::SETFIELD)) {
 					const u8 extraHashSlots = instructionFieldExtraHashSlots(page.sourceWords[cursor], instruction.width);
 					if (extraHashSlots) specializations.fieldGrowth.push_back({pc, extraHashSlots});
@@ -198,15 +214,6 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 				if (feedback) (*feedback)[cursor] = true;
 #endif
-				if (immutable && instruction.op == static_cast<u8>(OpCode::CALL)
-					&& instruction.b != 0 && Blua32RomFunctionDirectory::ownsAddress(image.executionDomainId, pc)) {
-					const auto prototype = instruction.nativeCallTarget();
-					if (prototype == DecodedInstruction::CALL_TARGET_UNSEEN) calls.push_back({pc, std::nullopt});
-					else if (prototype != DecodedInstruction::CALL_TARGET_DISABLED) {
-						if (const auto plan = captureNativeFixedCall(image, prototype, decodeValueCount(instruction.b, -1)))
-							calls.push_back({pc, plan});
-					}
-				}
 				const u32 successor = cursor + instruction.width;
 				if (nativeBlockEndsBlock(instruction.op, instruction.b) || successor >= DECODED_PAGE_WORDS
 					|| !available[successor] || leaders[successor]) break;
@@ -221,14 +228,17 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 					&& pagePc + (successor + page.words[successor].width - 1u) * INSTRUCTION_BYTES <= source->lastPc) {
 					skippedInstruction = &page.words[successor];
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
-					if (feedback) (*feedback)[successor] = true;
+					if (feedback) {
+						(*feedback)[successor] = true;
+						skippedInstruction = m_nativeCompilerWorker->captureInstruction(*skippedInstruction);
+					}
 #endif
 				}
 			}
 			sources.push_back({instructions.subspan(start, instructionCount - start), skippedInstruction});
-		}
+		});
 		if (instructionCount != firstInstruction) {
-			codePages[codePageCount++] = {pagePc, &page, binding.key};
+			codePages[codePageCount++] = {pagePc, &page, binding.key, immutable};
 			immutableSource &= immutable;
 			page.fieldProofFeedback.appendSnapshot(pagePc, specializations.rejectedFieldProofs);
 		}
@@ -237,19 +247,18 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 	const NativeCompilationOptions options{.observesArithmetic = true, .immutableSource = immutableSource};
 	// Capture on the CPU thread. Save-state restore does not modify job inputs.
 	captureImageConstants(instructions.first(instructionCount), image.constPool, specializations.imageConstants);
-	std::ranges::sort(calls, {}, &NativeCallProfile::pc);
-	calls.erase(std::ranges::unique(calls, {}, &NativeCallProfile::pc).begin(), calls.end());
 	std::ranges::sort(specializations.fieldGrowth, {}, &NativeFieldGrowth::pc);
 	const auto bindingsPages = std::span(codePages).first(codePageCount);
 	const NativeCodeBindings bindings(m_memory, m_stringPool, this, bindingsPages, m_nativeHistoryWrites);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (pending) {
 		pending->image = &image;
+		pending->rootPc = rootPc;
 		std::ranges::copy(bindingsPages, pending->pages.begin());
 		pending->pageCount = static_cast<u32>(codePageCount);
 		pending->slot = first.slot;
 		pending->invalidated = false;
-		m_nativeCompilerWorker->submit(sources, bindings, options, profile != nullptr);
+		m_nativeCompilerWorker->submit(bindings, options, profile != nullptr);
 		return;
 	}
 #endif

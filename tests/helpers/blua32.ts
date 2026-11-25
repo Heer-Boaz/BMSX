@@ -18,9 +18,7 @@ import type {
 	Blua32ImageLayout,
 } from '../../toolchain/ts/rompack/blua32_image';
 import {
-	BLUA32_FUNCTION_RECORD_SIZE,
 	BLUA32_IMAGE_FLAGS_OFFSET,
-	BLUA32_IMAGE_HEADER_SIZE,
 	BLUA32_IMAGE_MAPPED_CODE_FLAG,
 } from '../../machine/ts/spec/blua32/image_format';
 import {
@@ -36,9 +34,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { describeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
 import {
-	BASE_BX_BITS,
 	INSTRUCTION_BYTES,
-	MAX_BX_BITS,
 	readInstructionWord,
 	writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
@@ -50,6 +46,7 @@ import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memor
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import {
+	rewriteResolvedABx,
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
 	type LinkedBlua32Image,
@@ -62,13 +59,6 @@ const TEST_EXECUTABLE_OFFSET = 0x100;
 // Reserve BSS in fixtures that execute code generated in main RAM.
 export const RAM_CODE_FIXTURE_BYTES = 0x10000;
 const LINK_TARGET_RAM_BYTES = PSX_MACHINE_SPEC.ramBytes;
-
-export function blua32TestFunctionAddress(romBaseAddress: number, functionIndex: number): number {
-	return romBaseAddress
-		+ TEST_EXECUTABLE_OFFSET
-		+ BLUA32_IMAGE_HEADER_SIZE
-		+ functionIndex * BLUA32_FUNCTION_RECORD_SIZE;
-}
 
 type TestBlua32Vectors = {
 	startupFunctionAddress: number;
@@ -126,10 +116,7 @@ export type TestBlua32Source = {
 	startupFunctionIndex?: number;
 	irqFunctionIndex?: number;
 	exceptionFunctionIndex?: number;
-	closureRelocations?: ReadonlyArray<{
-		wordIndex: number;
-		functionAddress: number;
-	}>;
+	closureRelocations?: ReadonlyArray<{ wordIndex: number; functionIndex: number } | { wordIndex: number; functionAddress: number } | { wordIndex: number; systemFunctionIndex: number }>;
 };
 
 type RawTestSystemBlua32Object = {
@@ -257,6 +244,11 @@ function createRawTestBlua32Object(
 		lexicalDeclarations: [],
 		upvalueBindingsByProto: functions.map(() => []),
 	};
+	const code = source.closureRelocations ? source.text.slice() : source.text;
+	for (const relocation of source.closureRelocations ?? []) {
+		if ('functionIndex' in relocation)
+			rewriteResolvedABx(code, relocation.wordIndex, OpCode.CLOSURE, relocation.functionIndex);
+	}
 	const objectBase = {
 		vectors: {
 			resetProtoIndex: source.startupFunctionIndex ?? 0,
@@ -267,7 +259,7 @@ function createRawTestBlua32Object(
 		},
 		sections: {
 			text: {
-				code: source.text,
+				code,
 				protos: functions,
 			},
 			rodata: {
@@ -325,7 +317,7 @@ function rawTestVectors(source: TestBlua32Source, linked: LinkedBlua32Image): Te
 	};
 }
 
-function prepareRawTestImage(linked: LinkedBlua32Image, source: TestBlua32Source): void {
+function prepareRawTestImage(linked: LinkedBlua32Image, source: TestBlua32Source, system: LinkedSystemBlua32Image): void {
 	if (!source.verifiedControlFlow) {
 		linked.layout.header.flags = BLUA32_IMAGE_MAPPED_CODE_FLAG;
 		writeLE32(linked.bytes, BLUA32_IMAGE_FLAGS_OFFSET, BLUA32_IMAGE_MAPPED_CODE_FLAG);
@@ -336,26 +328,9 @@ function prepareRawTestImage(linked: LinkedBlua32Image, source: TestBlua32Source
 	}
 	for (let index = 0; index < relocations.length; index += 1) {
 		const relocation = relocations[index];
-		const word = readInstructionWord(text, relocation.wordIndex);
-		const wideWord = readInstructionWord(text, relocation.wordIndex - 1);
-		const functionOperand = relocation.functionAddress >> 4;
-		writeInstruction(
-			text,
-			relocation.wordIndex - 1,
-			OpCode.WIDE,
-			(wideWord >>> 12) & 0x3f,
-			functionOperand >> BASE_BX_BITS,
-			wideWord & 0x3f,
-		);
-		writeInstruction(
-			text,
-			relocation.wordIndex,
-			OpCode.CLOSURE,
-			(word >>> 12) & 0x3f,
-			(functionOperand >>> 6) & 0x3f,
-			functionOperand & 0x3f,
-			functionOperand >> MAX_BX_BITS,
-		);
+		if ('functionIndex' in relocation) continue;
+		const address = 'functionAddress' in relocation ? relocation.functionAddress : system.symbols.functionAddresses[relocation.systemFunctionIndex];
+		rewriteResolvedABx(text, relocation.wordIndex, OpCode.CLOSURE, address >>> 4);
 	}
 }
 
@@ -368,7 +343,7 @@ export function linkRawTestSystemBlua32(source: TestBlua32Source, bssByteCount =
 		LINK_TARGET_RAM_BYTES,
 		[],
 	);
-	prepareRawTestImage(linked, source);
+	prepareRawTestImage(linked, source, linked);
 	return testImage(linked, rawTestVectors(source, linked));
 }
 
@@ -385,7 +360,7 @@ export function linkRawTestBlua32Pair(
 		LINK_TARGET_RAM_BYTES,
 		[],
 	);
-	prepareRawTestImage(system, systemSource);
+	prepareRawTestImage(system, systemSource, system);
 	const cartRaw = createRawTestBlua32Object(cartSource, 'cart', bssByteCount);
 	const cart = linkCartBlua32Image(
 		system.biosImports,
@@ -394,7 +369,7 @@ export function linkRawTestBlua32Pair(
 		CART_ROM_BASE + TEST_EXECUTABLE_OFFSET,
 		LINK_TARGET_RAM_BYTES,
 	);
-	prepareRawTestImage(cart, cartSource);
+	prepareRawTestImage(cart, cartSource, system);
 	return {
 		systemImage: system.layout,
 		systemSymbols: system.symbols,

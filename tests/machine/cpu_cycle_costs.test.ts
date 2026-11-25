@@ -14,7 +14,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { valueBool, valueBuiltinFunction, valueInteger, valueNil, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -142,7 +142,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(17), integerConstant(29)], functions: [
 				{ firstWord: 0, wordCount: 7, maxStack: 16 },
 				{ firstWord: 7, wordCount: 1, numParams: 2, maxStack: 2 },
-			], closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
 			const { cpu } = createTestSystemCpu(image, backend);
 			cpu.runUntilDepth(0, 1000);
 			const produced = producedOperand === 0 ? 2 : producedOperand - 1;
@@ -188,7 +188,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			writeInstruction(text, 6, OpCode.RET, 0, 3, 0);
 			const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['pcall'], functions: [
 				{ firstWord: 0, wordCount: 6, maxStack: 8 }, { firstWord: 6, wordCount: 1, maxStack: 2 },
-			], closureRelocations: [{ wordIndex: 3, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+			], closureRelocations: [{ wordIndex: 3, functionIndex: 1 }] });
 			const { cpu } = createTestSystemCpu(image, backend);
 			cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
 			while (cpu.getFrameDepth() !== 2) cpu.runUntilDepth(0, 1);
@@ -223,7 +223,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		writeInstruction(text, 8, OpCode.RET, 0, 3, 0);
 		const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['create', 'resume'], functions: [
 			{ firstWord: 0, wordCount: 8, maxStack: 12 }, { firstWord: 8, wordCount: 1, maxStack: 2 },
-		], closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+		], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
@@ -268,7 +268,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		writeInstruction(text, 11, OpCode.RET, 0, 2, 0);
 		const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(17)], systemGlobalNames: ['xpcall', 'error'], functions: [
 			{ firstWord: 0, wordCount: 7, maxStack: 8 }, { firstWord: 7, wordCount: 4, maxStack: 4 }, { firstWord: 11, wordCount: 1, numParams: 1, maxStack: 1 },
-		], closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(0, 1) }, { wordIndex: 4, functionAddress: blua32TestFunctionAddress(0, 2) }] });
+		], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }, { wordIndex: 4, functionIndex: 2 }] });
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('xpcall'), valueBuiltinFunction(BuiltinFunctionId.XPCall));
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('error'), valueBuiltinFunction(BuiltinFunctionId.Error));
@@ -288,7 +288,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`completion-latch 
 	writeInstruction(text, 3, OpCode.RET, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 3, maxStack: 8 }, { firstWord: 3, wordCount: 1, numParams: 2, maxStack: 2 },
-	], closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+	], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
 	const { cpu } = createTestSystemCpu(image, backend);
 	cpu.runUntilDepth(0, 1);
 	const closure = cpu.rootThread.currentFrame!.registers.getClosure(0, cpu.gc);

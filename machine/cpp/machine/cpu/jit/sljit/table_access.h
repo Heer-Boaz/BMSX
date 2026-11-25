@@ -3,6 +3,7 @@
 #include "machine/cpu/jit/sljit/abi.h"
 
 namespace bmsx {
+enum class TableHeader : u32;
 
 // Shared scratch layout for string-table callers and the in-frame leaf.
 // These are host temporaries, not table records or callsite feedback.
@@ -35,7 +36,7 @@ public:
 
 // Inputs: R0 points to the aligned table header; R1 is a logical slot
 // (including links in the word lane). Returns the physical RAM offset.
-void emitTableSlotOffset(sljit_compiler*, sljit_s32 destination, bool word);
+void emitTableSlotOffset(sljit_compiler*, sljit_s32 destination, bool word, TableHeader backing);
 // With the header in R0, advance the key offsets in R1 (word) and R3
 // (tag) to the corresponding value, clobbering R2.
 void emitHashValueOffsets(sljit_compiler*);
@@ -58,7 +59,7 @@ sljit_label* emitTableLengthProbe(sljit_compiler*);
 struct NativeTableIteratorScratch {
 private:
 	struct Layout {
-		u32 cursor, arrayEnd, hashEnd, hashCount, valueTag;
+		u32 cursor, arrayEnd, hashStorage, hashCount, valueTag;
 		sljit_sw words, returnAddress;
 	};
 	static constexpr auto begin = (NativeBlockAbi::helperResultOffset + alignof(Layout) - 1)
@@ -67,7 +68,7 @@ private:
 public:
 	static constexpr auto cursor = begin + offsetof(Layout, cursor);
 	static constexpr auto arrayEnd = begin + offsetof(Layout, arrayEnd);
-	static constexpr auto hashEnd = begin + offsetof(Layout, hashEnd);
+	static constexpr auto hashStorage = begin + offsetof(Layout, hashStorage);
 	static constexpr auto hashCount = begin + offsetof(Layout, hashCount);
 	static constexpr auto valueTag = begin + offsetof(Layout, valueTag);
 	static constexpr auto words = begin + offsetof(Layout, words);

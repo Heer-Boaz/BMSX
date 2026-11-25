@@ -555,7 +555,7 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 		full.setStringKey(resident, valueInteger(71));
 		require(full.hashSlots() == 1 && full.hashFree() == 0, "the full hash still has a live free cursor");
 		const size_t header = full.address() & RAM_RECORD_WORD_MASK;
-		const size_t backing = full.storageAddress() & RAM_RECORD_WORD_MASK;
+		const size_t backing = full.hashAddress() & RAM_RECORD_WORD_MASK;
 		std::array<u8, TableRecord::HEADER_BYTES> oldHeader;
 		std::array<u8, 14> oldBacking;
 		std::copy_n(memory.ramData() + header, oldHeader.size(), oldHeader.begin());
@@ -720,7 +720,7 @@ void remarkTableStoresForwardTheCommittedValue() {
 
 void firstPrivateArrayWriteMarksAllHistoryPages(CPU& cpu, Memory& memory) {
 	auto table = cpu.createTable(4096, 0);
-	const u32 words = table.storageAddress(), tags = words + table.arrayCapacity() * sizeof(u32);
+	const u32 words = table.arrayAddress(), tags = words + table.arrayCapacity() * sizeof(u32);
 	const u32 hint = table.address() + static_cast<u32>(TableHeader::Length);
 	const std::array pages{(words & RAM_RECORD_WORD_MASK) >> MAPPED_PAGE_BYTE_SHIFT,
 		(tags & RAM_RECORD_WORD_MASK) >> MAPPED_PAGE_BYTE_SHIFT, (hint & RAM_RECORD_WORD_MASK) >> MAPPED_PAGE_BYTE_SHIFT};

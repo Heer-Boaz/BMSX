@@ -395,7 +395,7 @@ function resolveConstValues(
 	return resolved;
 }
 
-function rewriteResolvedABx(code: Uint8Array, wordIndex: number, op: OpCode, value: number): void {
+export function rewriteResolvedABx(code: Uint8Array, wordIndex: number, op: OpCode, value: number): void {
 	const word = readInstructionWord(code, wordIndex);
 	const wideWord = readInstructionWord(code, wordIndex - 1);
 	if (((wideWord >>> 18) & 0x3f) !== OpCode.WIDE) {

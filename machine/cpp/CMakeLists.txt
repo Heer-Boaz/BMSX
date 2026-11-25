@@ -435,6 +435,7 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 		machine/cpu/jit/runtime/block.cpp
 		machine/cpu/jit/runtime/code_cache.cpp
 		machine/cpu/jit/runtime/closure_call.cpp
+		machine/cpu/jit/runtime/execution.cpp
 		machine/cpu/jit/runtime/dispatch.cpp
 		machine/cpu/jit/runtime/feedback.cpp
 		machine/cpu/jit/runtime/numeric_kernel.cpp

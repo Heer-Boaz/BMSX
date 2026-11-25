@@ -54,6 +54,10 @@ export class HeapAllocator {
 	}
 
 	public free(address: number): void { this.arena.free(address - RAM_BASE); }
+	public resizeBacking(address: number, bytes: number): number {
+		const offset = this.arena.resizeBacking(address - RAM_BASE, bytes);
+		return offset !== 0 ? RAM_BASE + offset : 0;
+	}
 	public shrinkBacking(address: number, retainedBytes: number): void {
 		this.arena.shrink(address - RAM_BASE, retainedBytes);
 	}

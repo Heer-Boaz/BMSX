@@ -627,7 +627,7 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied, u32 
 	const auto* owner = generated.cpu.activeThread()->currentFrame->executionImage;
 	auto* page = owner->nativeCodeLookup->find(pc, 0);
 	require(page && page->nativeBlocks && page->nativeBlocks->entries[word]
-		&& page->nativeBlocks->entries[word]->terminal.operands.call.strategy == NativeCallStrategy::Observe
+		&& page->nativeBlocks->entries[word]->terminal.callStrategy == NativeCallStrategy::Observe
 		&& page->words[word].nativeCallTarget() == DecodedInstruction::CALL_TARGET_UNSEEN,
 		"cold generated CALL has no invented target identity");
 	const auto* original = page->nativeBlocks->entries[word].get();
@@ -651,15 +651,12 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied, u32 
 	require(page->words[word].nativeCallTarget() == prototype && page->nativeBlocks
 		&& page->nativeBlocks->entries[word].get() == original && original->region == originalRegion,
 		"compiled execution records the installed prototype without replacing its own valid body");
-	page->retireNativeRegion(originalRegion.get(), DecodedInstructionPage::Retirement::Capacity);
-	generated.cpu.prepareSystemNativeCode();
-	require(page->nativeBlocks && page->nativeBlocks->entries[word], "trained source was republished");
 	const auto& fixed = page->nativeBlocks->entries[word]->terminal;
 	const auto fixedRegion = page->nativeBlocks->entries[word]->region;
-	require(fixed.operands.call.strategy == NativeCallStrategy::Fixed && fixed.fixedCall.plan.prototype == prototype
+	require(fixed.callStrategy == NativeCallStrategy::Fixed && fixed.fixedCall.plan.prototype == prototype
 		&& fixed.fixedCall.plan.copied == supplied && fixed.fixedCall.plan.padded == padded
 		&& fixed.fixedCall.entryCells[0] && *fixed.fixedCall.entryCells[0],
-		"fixed frame layout and a live image-owned entry cell are published");
+		"the installed call learns its guarded layout and entry cell without eviction or recompilation");
 	auto& retired = *generated.cpu.activeThread()->currentFrame->next;
 	std::array<u32, FRAME_CONTROL_BYTES / sizeof(u32)> retiredWords;
 	for (size_t i = 0; i < retiredWords.size(); ++i)
@@ -707,17 +704,10 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied, u32 
 	restart(3);
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted
 		&& generated.cpu.readFrameRegister(0, 4) == valueInteger(39), "a new prototype calls the actual semantic target");
-	// The synchronous compiler can republish a generic head when the caller's
-	// continuation reaches the hot retired region in this same grant.
-	const auto* republished = page->nativeBlocks ? page->nativeBlocks->entries[word].get() : nullptr;
 	require(page->words[word].nativeCallTarget() == DecodedInstruction::CALL_TARGET_DISABLED
-		&& (!republished || (republished->region != fixedRegion
-			&& republished->terminal.operands.call.strategy == NativeCallStrategy::Generic)),
-		"contradicting an actually fixed target disables and retires that site's specialization");
-	generated.cpu.prepareSystemNativeCode();
-	require(page->nativeBlocks && page->nativeBlocks->entries[word]
-		&& page->nativeBlocks->entries[word]->terminal.operands.call.strategy == NativeCallStrategy::Generic,
-		"the contradicted call resumes without a recurring profile or guard");
+		&& page->nativeBlocks->entries[word].get() == original && original->region == fixedRegion
+		&& fixed.callStrategy == NativeCallStrategy::Generic,
+		"a different prototype removes the call guard without retiring or recompiling the region");
 
 	auto replacement = generated.rom.bytes;
 	const u32 newEntry = generated.rom.textAddress + 2u * MAPPED_PAGE_BYTE_SIZE;
@@ -745,11 +735,11 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied, u32 
 		&& generated.cpu.readFrameRegister(0, 4) == valueInteger(39), "the same live closure calls the replacement code");
 	require(newPage->words[word].nativeCallTarget() == prototype && newPage->nativeBlocks
 		&& newPage->nativeBlocks->entries[word].get() == newOriginal && newOriginal->region == newRegion,
-		"learning the replacement target leaves its new generic body installed");
+		"learning the replacement target leaves the published body installed");
 	newPage->retireNativeRegion(newRegion.get(), DecodedInstructionPage::Retirement::Capacity);
 	generated.cpu.prepareSystemNativeCode();
 	const auto& newFixed = newPage->nativeBlocks->entries[word]->terminal;
-	require(newFixed.operands.call.strategy == NativeCallStrategy::Fixed && newFixed.fixedCall.plan.entryPc == newEntry
+	require(newFixed.callStrategy == NativeCallStrategy::Fixed && newFixed.fixedCall.plan.entryPc == newEntry
 		&& newFixed.fixedCall.plan.capacity == 7u && newFixed.fixedCall.plan.padded == 0,
 		"replacement invalidates old feedback, code cells and specialized argument placement");
 }
@@ -855,7 +845,7 @@ void nativeCallChainIsRestorableAtBlockedMmio(bool openOuter) {
 		auto* page = lookup.find(pc, 0);
 		const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		const auto* block = page->nativeBlocks->entries[word].get();
-		require(block && block->terminal.operands.call.strategy == (openOuter && i == 0
+		require(block && block->terminal.callStrategy == (openOuter && i == 0
 			? NativeCallStrategy::Generic : NativeCallStrategy::Observe), "open arguments cannot specialize their placement");
 		calls[i] = {page, word, generated.rom.functionAddresses[i + 1u], block, block->region};
 	}
@@ -874,7 +864,7 @@ void nativeCallChainIsRestorableAtBlockedMmio(bool openOuter) {
 	for (u32 i = 0; i < calls.size(); ++i) {
 		const auto& call = calls[i];
 		const auto& block = call.page->nativeBlocks->entries[call.word];
-		require(block && block->terminal.operands.call.strategy == (openOuter && i == 0
+		require(block && block->terminal.callStrategy == (openOuter && i == 0
 			? NativeCallStrategy::Generic : NativeCallStrategy::Fixed),
 			"the inner call is fixed, even when the open outer call remains generic");
 	}

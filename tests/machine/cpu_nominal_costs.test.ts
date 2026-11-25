@@ -8,7 +8,7 @@ import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/m
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [false, true]) {
 	test(`nominal work classes retain every admitted effect, prefix and debt (${backend}, WIDE=${wide})`, () => {
@@ -79,7 +79,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		}
 		const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(17), integerConstant(29)], functions: [{ firstWord: 0, wordCount: rootWords, maxStack: 8 },
 			{ firstWord: 32, wordCount: word - 32, maxStack: 4, staticClosure: false, upvalueDescs: [{ inStack: true, index: 4 }] }],
-			closureRelocations: [{ wordIndex: closureBody, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+			closureRelocations: [{ wordIndex: closureBody, functionIndex: 1 }] });
 		const { cpu } = createTestSystemCpu(image, backend), root = cpu.rootThread.currentFrame!, base = root.pc;
 		const charges = [2, 9, 32, 3, 2, 4, 16, 2, 2]; // CLOSURE8 + one bound descriptor; RET16 + zero receiving slots.
 		const total = charges.reduce((a, b) => a + b, 0);
@@ -122,7 +122,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		writeInstruction(text, 32, OpCode.RET, 0, 1, 0);
 		const image = linkRawTestSystemBlua32({ text, constants: ['field'], globalNames: ['value'], systemGlobalNames: ['value'],
 			functions: [{ firstWord: 0, wordCount: word, maxStack: 8 }, { firstWord: 32, wordCount: 1 }],
-			closureRelocations: op === OpCode.CLOSURE ? [{ wordIndex: body, functionAddress: blua32TestFunctionAddress(0, 1) }] : [] });
+			closureRelocations: op === OpCode.CLOSURE ? [{ wordIndex: body, functionIndex: 1 }] : [] });
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, base = frame.pc;
 		frame.registers.setInteger(4, 1); cpu.runUntilDepth(0, 96);
 		if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);

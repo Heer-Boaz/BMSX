@@ -74,8 +74,8 @@ void allocationAdmissionUsesLogicalBytes() {
 	require(cpu.instructionBudgetRemaining == 23, "the allocations fit at the exact logical threshold");
 	require(cpu.luaHeap().usedBytes() == logical + logicalCharge, "chunk overhead is not charged to the language budget");
 	const auto& arena = cpu.heapAllocator();
-	const auto hashBytes = arena.allocationBytes(hash.address() - GC_OBJECT_PREFIX) + arena.allocationBytes(hash.storageAddress());
-	const auto arrayBytes = arena.allocationBytes(array.address() - GC_OBJECT_PREFIX) + arena.allocationBytes(array.storageAddress());
+	const auto hashBytes = arena.allocationBytes(hash.address() - GC_OBJECT_PREFIX) + arena.allocationBytes(hash.hashAddress()) + arena.allocationBytes(hash.arrayAddress());
+	const auto arrayBytes = arena.allocationBytes(array.address() - GC_OBJECT_PREFIX) + arena.allocationBytes(array.arrayAddress());
 	require(arena.occupiedBytes() == physical + hashBytes + arrayBytes && hashBytes + arrayBytes > logicalCharge,
 		"physical diagnostics add the live chunks, including allocator overhead");
 	cpu.collectHeap();
@@ -93,7 +93,7 @@ void tableReplacementAdmitsOnlyItsLogicalIncrease() {
 		table.setInteger(residentKey, valueInteger(100 + residentKey));
 		const auto logical = cpu.luaHeap().usedBytes();
 		const auto physical = cpu.heapAllocator().occupiedBytes();
-		const auto oldStorage = cpu.heapAllocator().allocationBytes(table.storageAddress());
+		const auto oldStorage = cpu.heapAllocator().allocationBytes(table.arrayAddress());
 		const auto target = logical + (packArrayIntoHash ? 0u : 5u);
 		cpu.luaHeap().setCollectionTarget(target);
 		table.setInteger(trigger, valueInteger(73));
@@ -101,7 +101,7 @@ void tableReplacementAdmitsOnlyItsLogicalIncrease() {
 			"a resize at the exact growth threshold must not assist collection for the outgoing layout");
 		require(cpu.luaHeap().usedBytes() == (packArrayIntoHash ? logical - 20u : logical + 5u),
 			"the budget commits the resulting capacities only");
-		const auto newStorage = cpu.heapAllocator().allocationBytes(table.storageAddress());
+		const auto newStorage = cpu.heapAllocator().allocationBytes(packArrayIntoHash ? table.hashAddress() : table.arrayAddress());
 		require(cpu.heapAllocator().occupiedBytes() == physical - oldStorage + newStorage,
 			"the owner physically retires the old layout");
 		require(table.getInteger(residentKey) == valueInteger(100 + residentKey), "redistribution preserves the existing mapping");
@@ -293,7 +293,7 @@ void canonicalPoolAndRootRanges() {
 	frame.registers.set(1, valueString(cpu.stringPool().intern("é😀"))); //6 UTF8 bytes.
 	frame.writeControl(bmsx::FrameField::Top, 2);
 	require(cpu.luaHeap().usedBytes() == bootBytes + 82 + 22, "canonical reserved table capacity and UTF8 text bytes agree");
-	require(cpu.collectHeap() == bootCollectionWork + (8 + 2 + 8 + 1) + 2 + 2 * 3
+	require(cpu.collectHeap() == bootCollectionWork + (9 + 2 + 8 + 1) + 2 + 2 * 3
 		&& cpu.instructionBudgetRemaining == 7 && cpu.luaHeap().usedBytes() == bootBytes + 82 + 22,
 		"table scans reserved slots; the String is marked and visited without reading its bytes");
 	const auto threshold = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
@@ -1236,9 +1236,9 @@ void strongWritesLeaveLargeTablesOutOfFinalRemark(bool grows) {
 		&& !heap.isAlive(key) && !heap.isAlive(value), "isolated writes start in the live second pass");
 
 	const u32 changed = phase(GC_CHANGED_HEAD), work = phase(GC_EPOCH_WORK);
-	const u32 backing = table.storageAddress();
+	const u32 backing = table.hashAddress();
 	table.set(valueTable(key), valueTable(value));
-	require((table.storageAddress() != backing) == grows,
+	require((table.hashAddress() != backing) == grows,
 		"the insertion exercises the intended storage placement path");
 	table.setInteger(1, valueString(text));
 	require(color(table.address()) == 3u && phase(GC_CHANGED_HEAD) == changed
@@ -1561,17 +1561,17 @@ void weakTableAdmissionReplansAfterCollection() {
 			occupiedHomes |= bit;
 		}
 		require(weak.arrayCapacity() == 0 && weak.hashSlots() == hash, "distinct homes fill the existing reservation");
-		const auto storage = weak.storageAddress();
+		const auto storage = weak.hashAddress();
 		// The three positive keys would require four array slots as well as
 		// the present hash; the budget has no room for that projection.
 		cpu.memory().writeRamRecordWord(cpu.heapAllocator().managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, static_cast<u32>(heap.capacity()));
 		weak.setInteger(incoming, valueInteger(incoming));
 		require(weak.arrayCapacity() == 0 && weak.hashSlots() == hash
-			&& (weak.storageAddress() == storage) == reuseHome,
+			&& (weak.hashAddress() == storage) == reuseHome,
 			"retry reuses the incoming home or rebuilds after replanning the surviving entries");
 		require(cpu.gcHeap().tableRecordAddress(occupant) == 0u && isNil(weak.getInteger(weakKey))
 			&& weak.getInteger(strongKey) == valueInteger(strongKey) && weak.getInteger(incoming) == valueInteger(incoming)
-			&& heap.usedBytes() == heap.capacity() - TableRecord::HEADER_BYTES,
+			&& heap.usedBytes() == heap.capacity() - TableRecord::HEADER_CHARGE,
 			"retry charges no stale capacity and releases only the collected referent");
 	}
 }

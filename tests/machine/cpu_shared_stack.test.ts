@@ -13,7 +13,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
-import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { compileCoroutineTest } from '../helpers/coroutine';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -45,7 +45,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const image = linkRawTestSystemBlua32({ text, functions: [
 			{ firstWord: 0, wordCount: 6, maxStack: 128 },
 			{ firstWord: 6, wordCount: 2, numParams: 2, maxStack: 8 },
-		], constants: [integerConstant(37)], closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+		], constants: [integerConstant(37)], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
 		const { cpu } = createTestSystemCpu(image, backend);
 		const calleePc = image.image.functions[1].codeAddress;
 		cpu.setExecutionHook((_domain, pc) => pc === calleePc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
@@ -98,9 +98,9 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			{ firstWord: 14, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 5 }] },
 			{ firstWord: 16, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
 		], globalNames: ['outer_read', 'inner_read'], closureRelocations: [
-			{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(0, 2) },
-			{ wordIndex: 5, functionAddress: blua32TestFunctionAddress(0, 1) },
-			{ wordIndex: 10, functionAddress: blua32TestFunctionAddress(0, 3) },
+			{ wordIndex: 2, functionIndex: 2 },
+			{ wordIndex: 5, functionIndex: 1 },
+			{ wordIndex: 10, functionIndex: 3 },
 		] });
 		const { cpu } = createTestSystemCpu(image, backend);
 		runGuestToHalt(cpu, 1000);
@@ -180,7 +180,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const top of [0, 3
 		const image = linkRawTestSystemBlua32({ text, functions: [
 			{ firstWord: 0, wordCount: 6, maxStack: 4, isVararg: true },
 			{ firstWord: 6, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 2 }] },
-		], globalNames: ['read'], closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+		], globalNames: ['read'], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.setExecutionHook((_domain, pc) => pc === image.image.functions[0].codeAddress + 5 * INSTRUCTION_BYTES, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);

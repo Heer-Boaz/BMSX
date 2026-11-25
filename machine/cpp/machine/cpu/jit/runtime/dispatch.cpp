@@ -210,13 +210,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::Call: {
-			const auto call = exit->operands.call; // Feedback can withdraw the descriptor.
-			if (std::exchange(run->fixedCallMismatch, false)) {
-				auto& page = *NativeCodeLookup::findInRoot(run->codeRoot, exit->currentPc);
-				const u32 word = (exit->currentPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-				page.words[word].setNativeCallTarget(DecodedInstruction::CALL_TARGET_DISABLED);
-				cpu.retireNativeInstructionUsers(page, word);
-			}
+			const auto call = exit->operands.call;
 			transition = cpu.executeCall(*frame, call.callee, call.supplied, call.requested)
 				? NativeBlockTransition::RebindFrame : NativeBlockTransition::Redispatch;
 			break;
@@ -577,12 +571,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		run->codeRoot = lookup->root(slot);
 		run->cartridgeSlot = slot;
 		run->frameBank = frameBankWord(frame->executionImage->executionDomainId);
-	run->closureDomain = ClosureRecord::domainBits(frame->executionImage->executionDomainId);
-		state.globalValues = cpu.m_globalBank.values();
-		state.systemGlobalValues = cpu.m_systemGlobalBank.values();
+		run->closureDomain = ClosureRecord::domainBits(frame->executionImage->executionDomainId);
 		if (!sameFrame) {
 			state.constants = frame->executionImage->constPool;
-			state.cop0Words = cpu.m_cop0Words.data();
 			state.closure = frame->closureAddress();
 			state.stackBase = frame->stackBase();
 		}

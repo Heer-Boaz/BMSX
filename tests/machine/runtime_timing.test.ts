@@ -56,7 +56,7 @@ import { advanceRuntimeTime, runDueRuntimeTimers } from '../../machine/ts/machin
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode, TABLE_INDEX_VISIT_CYCLES } from '../../machine/ts/spec/blua32/opcode';
-import { blua32TestFunctionAddress, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';
 import { applyRuntimeMachineState, captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -79,7 +79,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts
 import { InstructionStepResult } from '../../machine/ts/machine/runtime/frame/state';
 import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
@@ -394,7 +394,7 @@ test('a WIDE NEWT with refused backing retires once before VBlank, including aft
 		assert.equal(arena.allocate(backing, true), 0);
 		arena.free(partial);
 		const occupied = arena.occupiedBytes(), charged = budget.usedBytes();
-		const tableCharge = TableRecords.HEADER_BYTES + TableRecords.allocationCharge(0, 2);
+		const tableCharge = TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(0, 2);
 		assert.ok(charged + tableCharge < budget.capacity(), 'the physical rather than logical mechanism refuses storage');
 		cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 		memory.writeMappedU32LE(IO_INP_CTRL, 1);
@@ -525,7 +525,7 @@ test('a physically refused WIDE SETT retires before queued VBlank, even after a 
 		advanceRuntimeTime(runtime, edge - 1 - scheduler.nowCycles);
 		assert.equal(scheduler.nextDeadline(), edge);
 		runtime.frameLoop.beginFrameState(1, 0);
-		const oldStorage = tables.storageAddress(owner);
+		const oldStorage = tables.arrayAddress(owner);
 		const beforeWrite = captureRuntimeSaveState(runtime);
 		assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
 		assert.ok(cpu.allocationParked());
@@ -539,7 +539,7 @@ test('a physically refused WIDE SETT retires before queued VBlank, even after a 
 			assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, accepted);
 			assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, accepted);
 			assert.equal(runtime.frameLoop.frameState.activeCpuUsedCycles, 0);
-			assert.equal(tables.storageAddress(owner), oldStorage);
+			assert.equal(tables.arrayAddress(owner), oldStorage);
 			assert.equal(tables.getInteger(owner, 513), valueNil());
 		};
 		unchanged();
@@ -560,7 +560,7 @@ test('a physically refused WIDE SETT retires before queued VBlank, even after a 
 			assert.equal(fs.stepInstruction(0), InstructionStepResult.Executed);
 			assert.ok(!cpu.allocationParked());
 			assert.equal(tables.arrayCapacity(owner), 1024);
-			assert.notEqual(tables.storageAddress(owner), oldStorage);
+			assert.notEqual(tables.arrayAddress(owner), oldStorage);
 			assert.equal(tables.getInteger(owner, 512), valueInteger(512));
 			assert.equal(tables.getInteger(payload, 1), valueInteger(73));
 			assert.equal(cpu.readFramePc(0), entry + 2 * INSTRUCTION_BYTES);
@@ -722,7 +722,7 @@ test('parked WIDE SETT resumes the fresh epoch and faults once through pcall', (
 		],
 		systemGlobalNames: ['pcall', ...LUA_BOOT_PRIMITIVES.map(primitive => primitive.name).filter(name => name !== 'pcall')],
 		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0,
-		closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }],
+		closureRelocations: [{ wordIndex: 2, functionIndex: 1 }],
 	});
 	const runtime = new Runtime({
 		systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,

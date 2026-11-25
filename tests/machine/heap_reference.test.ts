@@ -1,5 +1,5 @@
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
-import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { CLOSURE_CAPTURE_WORDS } from '../../machine/ts/machine/cpu/closure';
@@ -16,7 +16,7 @@ import { ValueStorage } from '../../machine/ts/machine/cpu/value_storage';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function machine(): CPU {
@@ -28,7 +28,7 @@ function machine(): CPU {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 3, maxStack: 8 },
 		{ firstWord: 3, wordCount: 1, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
-	], closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] }));
+	], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] }));
 	runGuestToHalt(cpu, 1000);
 	return cpu;
 }

@@ -5,6 +5,7 @@
 
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/jit/compiler.h"
+#include "machine/cpu/jit/source_policy.h"
 #include "machine/memory/memory.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/cpu/jit/runtime/record_constructor.h"
@@ -54,7 +55,7 @@ void DecodedInstructionPage::retireNativeRegion(const NativeCodeRegion* region, 
 			page->nativeCode[entry] = nullptr;
 			block.reset();
 			--page->nativeBlocks->count;
-			page->words[entry].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
+			page->words[entry].dispatchOp = nativeWarmDispatch(page->words[entry]);
 			page->nativeVisits[entry] = reason == Retirement::Feedback ? NATIVE_BLOCK_COMPILATION_THRESHOLD : 0u;
 		}
 		if (page->nativeBlocks->count == 0u) page->nativeBlocks.reset();
@@ -103,7 +104,19 @@ void CPU::publishNativeCompilation() {
 	job.pageCount = 0u;
 }
 
+void CPU::serviceNativeDemand() {
+	if (m_nativeDemand.empty() || !m_nativeCompilerWorker->idle()) return;
+	// At most one discovery per polling point. Other regions may already
+	// have covered this root; mutable code must still be a decoded warm head.
+	const auto demand = m_nativeDemand.pop();
+	const u32 word = (demand.pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	if (!(demand.page->refreshState[word] & DECODED_REFRESH_DECODE)
+		&& isNativeWarmDispatch(demand.page->words[word].dispatchOp))
+		compileNativeRoot(*demand.image, demand.functionAddress, *demand.page, demand.pc, mappedBusSignalsForCartridgeSlot(demand.slot));
+}
+
 void CPU::discardNativeCompilation() {
+	m_nativeDemand.clear();
 	if (!m_nativeCompilerWorker || m_nativeCompilerWorker->idle()) return;
 	m_nativeCompilerWorker->wait();
 	// Retire unpublished code and surface compiler errors on the owning thread.
@@ -142,7 +155,8 @@ bool CPU::installNativeRegion(Blua32ExecutionImage& image, std::span<const Nativ
 #endif
 	for (auto& block : blocks) {
 		const u32 pagePc = block->firstPc & ~MAPPED_PAGE_BYTE_MASK;
-		auto& page = *std::ranges::lower_bound(sources, pagePc, {}, &NativeCodeSourcePage::pc)->page;
+		const auto& source = *std::ranges::lower_bound(sources, pagePc, {}, &NativeCodeSourcePage::pc);
+		auto& page = *source.page;
 		const u32 entry = (block->firstPc - pagePc) / INSTRUCTION_BYTES;
 		auto& exit = block->terminal;
 		if (exit.exit == NativeBlockExit::AllocateTable && exit.recordConstructor) {
@@ -154,9 +168,23 @@ bool CPU::installNativeRegion(Blua32ExecutionImage& image, std::span<const Nativ
 			for (u32 bank = firstBank; bank < endBank; ++bank)
 				exit.continuationCells[bank] = lookup->entrySlot(exit.nextPc, bank);
 		}
-		if (exit.exit == NativeBlockExit::Call && exit.operands.call.strategy == NativeCallStrategy::Fixed) {
-			for (u32 bank = firstBank; bank < endBank; ++bank)
-				exit.fixedCall.entryCells[bank] = lookup->entrySlot(exit.fixedCall.plan.entryPc, bank);
+		if (exit.exit == NativeBlockExit::Call && exit.operands.call.supplied >= 0 && source.immutable
+			&& Blua32RomFunctionDirectory::ownsAddress(image.executionDomainId, exit.currentPc)) {
+			// Only the CPU reads live call feedback. A worker may have emitted
+			// this body before the first observation, or before a contradiction.
+			auto& decoded = page.words[(exit.currentPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+			const auto prototype = decoded.nativeCallTarget();
+			if (prototype == DecodedInstruction::CALL_TARGET_UNSEEN) {
+				exit.observingCall = &decoded;
+				exit.callStrategy = NativeCallStrategy::Observe;
+			} else if (prototype != DecodedInstruction::CALL_TARGET_DISABLED) {
+				if (const auto plan = captureNativeFixedCall(image, prototype, exit.operands.call.supplied)) {
+					std::construct_at(&exit.fixedCall, NativeFixedCallBinding{*plan, {}});
+					for (u32 bank = firstBank; bank < endBank; ++bank)
+						exit.fixedCall.entryCells[bank] = lookup->entrySlot(plan->entryPc, bank);
+					exit.callStrategy = NativeCallStrategy::Fixed;
+				}
+			}
 		}
 		for (auto& side : block->sideExits) {
 			if (side.exit == NativeBlockExit::Call || nativeBlockExitResumesFrame(side.exit)) {

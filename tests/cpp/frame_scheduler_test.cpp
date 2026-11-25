@@ -322,7 +322,7 @@ void testParkedNewTableRetiresBeforeVblank(bool native) {
 	arena.free(partial);
 	const auto occupied = arena.occupiedBytes();
 	const auto charged = budget.usedBytes();
-	require(charged + TableRecord::HEADER_BYTES + TableRecord::allocationCharge(0, 2) < budget.capacity(),
+	require(charged + TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(0, 2) < budget.capacity(),
 		"logical capacity can admit both allocations");
 	cpu.gcHeap().step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
 	machine.memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
@@ -359,7 +359,7 @@ void testParkedNewTableRetiresBeforeVblank(bool native) {
 		const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)];
 		const Value result = cpu.readFrameRegister(0, 0);
 		require(valueIsTable(result) && cpu.readFramePc(0) == entry + 2u * INSTRUCTION_BYTES && cpu.lastPc == entry + INSTRUCTION_BYTES
-			&& budget.usedBytes() == beforeCommit + TableRecord::HEADER_BYTES + TableRecord::allocationCharge(0, 2)
+			&& budget.usedBytes() == beforeCommit + TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(0, 2)
 			&& machine.scheduler.nowCycles() == edge - 1 + cycles && scheduler.lastTickCpuUsedCycles == cycles && input.sampleCount == 1,
 			"one complete table, one fixed charge and one VBlank sample retire together");
 		auto updated = asTable(result, cpu.gcHeap());
@@ -468,7 +468,7 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	advanceRuntimeTime(runtime, static_cast<int>(edge - 1 - machine.scheduler.nowCycles()));
 	require(machine.scheduler.nextDeadline() == edge, "a real queued VBlank lands inside WIDE SETT");
 	runtime.frameLoop.beginFrameState(runtime, 1, 0);
-	const u32 oldStorage = owner.storageAddress();
+	const u32 oldStorage = owner.arrayAddress();
 	const auto beforeWrite = captureRuntimeSaveState(runtime);
 	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.allocationParked(),
 		"the physically refused WIDE SETT parks before the scheduled edge");
@@ -477,7 +477,7 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 		require(machine.scheduler.nowCycles() == edge - 1 && machine.scheduler.nextDeadline() == edge
 			&& scheduler.lastTickSequence == 0 && input.sampleCount == 0 && cpu.readFramePc(0) == entry
 			&& runtime.frameLoop.frameState.cycleBudgetRemaining == accepted && runtime.frameLoop.frameState.cycleBudgetGranted == accepted
-			&& runtime.frameLoop.frameState.activeCpuUsedCycles == 0 && owner.storageAddress() == oldStorage
+			&& runtime.frameLoop.frameState.activeCpuUsedCycles == 0 && owner.arrayAddress() == oldStorage
 			&& isNil(owner.getInteger(513)), "pending write, accepted grant and device frontier are unchanged");
 	};
 	unchanged();
@@ -499,7 +499,7 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 		require(cpu.allocationReady(), "collector drained before retry");
 		require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Executed, "a ready retry retires the original instruction");
 		const int charge = BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + TABLE_INDEX_VISIT_CYCLES;
-		require(!cpu.allocationParked() && owner.arrayCapacity() == 1024 && owner.storageAddress() != oldStorage
+		require(!cpu.allocationParked() && owner.arrayCapacity() == 1024 && owner.arrayAddress() != oldStorage
 			&& owner.getInteger(512) == valueInteger(512) && payload.getInteger(1) == valueInteger(73)
 			&& cpu.readFramePc(0) == entry + 2u * INSTRUCTION_BYTES && cpu.lastPc == entry + INSTRUCTION_BYTES,
 			"only the saved instruction and its one growth retired");

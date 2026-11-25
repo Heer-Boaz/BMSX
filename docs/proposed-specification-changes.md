@@ -2063,7 +2063,7 @@ runtime-eigendom met een gereserveerde indeling.
 
 | Object | Indeling | Bezette bytes |
 |---|---|---|
-| Table | Kop van 32 bytes: kopwoord, grijze link, metatable, onderdelenblok, arraycapaciteit `A`, hashcapaciteit `H`, lengtehint, `hashFree`. Onderdelenblok: `A + 2H` payloadwoorden, `H` ketenwoorden en `A + 2H` tagbytes | `32 + S(5A + 14H)`; het blok vervalt bij `A = H = 0` |
+| Table | Kop van 36 bytes: kopwoord, grijze link, metatable, hashadres, arraycapaciteit `A`, hashcapaciteit `H`, lengtehint, `hashFree`, arrayadres. De array bevat payloadwoorden en tags; de hash bevat sleutels, waarden, ketenwoorden en tags | Afzonderlijke reserveringen voor kop, `5A` en `14H` bytes. Een deel met nul slots vraagt geen opslagblok. |
 | Closure (O5) | Kopwoord (byte 3 = `U`; vlaggen met domein), grijze link, adres van het functieprototype, daarna `U` celreferenties | `S(12 + 4U)` |
 | Captured-variable-cel | Kopwoord (open/gesloten, tag van de gesloten waarde); payloadwoord bij gesloten, of stackindex bij open; thread-referentie bij open; volgende open cel | `16` |
 | Thread | Kop van 64 bytes: status, grijze link, resumer, entry, stackblok, capaciteit `V`, stacktop, framegegevens, fout, kop van de open cellen. Stackblok: `V` woorden, `V` tagbytes en het framegebied | `64 + S(stackblok)`; framerecords in de fase van threads en frames |
@@ -2418,9 +2418,8 @@ al "outside reserved storage". Het heapgebied valt onder die regel zodra
 3. **GEO-reservering weg — uitgevoerd.** Geheugenkaart, linker, `cartlib`,
    de bare-metal-demo en de handleidingen gebruiken programma-eigen buffers.
    `K` is opnieuw bepaald uit de gebouwde ROM’s (12.11).
-4. **Tabellen.** `K` is de capaciteit. De payload-, tag- en hashvlakken
-   staan samen in één toegewezen RAM-blok; hun bezetting gebruikt size
-   classes. De tabelkop staat ook in RAM. Markeren en weak passes rekenen
+4. **Tabellen.** `K` is de capaciteit. Array en hash hebben onafhankelijke RAM-blokken met eigen payload-
+   en tagvlakken. De ketenwoorden horen bij de hash. De tabelkop staat ook in RAM. Markeren en weak passes rekenen
    waardeslots, niet de afgeronde bytebezetting; de sweep bezoekt objectblokken
    op allocatorpagina’s. Table-payloads bevatten gastadressen; tabelopcodes
    lezen de records rechtstreeks. Meet de gameplaypiek met de nieuwe

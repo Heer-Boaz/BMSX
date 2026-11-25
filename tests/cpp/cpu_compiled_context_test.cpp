@@ -234,7 +234,7 @@ void nativeGenericVarargCallLeavesInactiveControlUntouched() {
 	};
 	const auto& call = entry(callPc).terminal;
 	const auto& vararg = entry(calleePc);
-	require(call.exit == NativeBlockExit::Call && call.operands.call.strategy == NativeCallStrategy::Generic
+	require(call.exit == NativeBlockExit::Call && call.callStrategy == NativeCallStrategy::Generic
 		&& vararg.terminal.exit == NativeBlockExit::Continue
 		&& std::ranges::any_of(vararg.sideExits, [](const auto& exit) { return exit.exit == NativeBlockExit::Vararg; })
 		&& entry(calleePc + INSTRUCTION_BYTES).terminal.exit == NativeBlockExit::Return,
@@ -526,8 +526,9 @@ void hotGlobalWritesForwardTheirWhiteChildren() {
 	};
 	frame.registers.set(0, valueTable(cart.address()));
 	frame.registers.set(1, valueTable(system.address()));
+	const auto globals = slots(banks.globals), systemGlobals = slots(banks.systemGlobals);
 	NativeBlockRunState state{.frame = &frame, .heap = &heap,
-		.globalValues = slots(banks.globals), .systemGlobalValues = slots(banks.systemGlobals),
+		.globalValues = &globals, .systemGlobalValues = &systemGlobals,
 		.remainingCycles = loopCycles, .registerTop = 2, .registerCapacity = frame.registers.size()};
 	const auto& exit = *block->run(frame.registers, state);
 	require((exit.exit == NativeBlockExit::Continue || exit.exit == NativeBlockExit::ScalarBoundary)
@@ -578,19 +579,29 @@ void rawContextValues(CpuMachine& machine) {
 	ValueSpan ordinary(machine.memory, 0x1000u, 0x1008u, 2), system(machine.memory, 0x1040u, 0x1048u, 2);
 	for (const auto value : values) {
 		registers.clear(0, registers.capacity()); ordinary.clear(0, ordinary.size()); system.clear(0, system.size()); registers.set(12, value);
-		NativeBlockRunState state{.globalValues = ordinary, .systemGlobalValues = system, .remainingCycles = 100};
+		NativeBlockRunState state{.globalValues = &ordinary, .systemGlobalValues = &system, .remainingCycles = 100};
 		const auto& exit = *globals.blocks.front()->run(registers.view(), state);
 		require(exit.exit == NativeBlockExit::Continue && exit.currentPc == globals.source.back().pc && exit.nextPc == 0
 			&& registers.get(0) == value && registers.get(1) == value
 			&& ordinary.get(1) == value && system.get(1) == value && ordinary.get(0) == valueInteger(1) && system.get(0) == valueNil()
 			&& state.registerTop == 3, "raw global banks preserve every kind, cached definitions and namespace without a source-top write");
 	}
+	// Growth rebinds a bank descriptor without replacing the bank itself.
+	// A retained grant must use the new lanes, even for an already emitted body.
+	NativeBlockRunState retained{.globalValues = &ordinary, .systemGlobalValues = &system, .remainingCycles = 100};
+	const auto oldOrdinary = ordinary;
+	ordinary = ValueSpan(machine.memory, 0x1080u, 0x1088u, 2);
+	registers.set(12, valueInteger(73));
+	globals.blocks.front()->run(registers.view(), retained);
+	require(ordinary.get(1) == valueInteger(73) && system.get(1) == valueInteger(73)
+		&& oldOrdinary.get(1) == values.back(), "a retained grant follows bank relocation without touching the old lanes");
+	ordinary = oldOrdinary;
 	// Arm only the destination tag word. The payload must not change
 	// until the checked store, even though the payload has no watch.
 	registers.set(12, valueFloatBits(0xffa12345));
 	ordinary.set(1, valueInteger(99));
 	machine.memory.ramWriteWatches().armCodeRange(0x1008u, 4u);
-	NativeBlockRunState watchedGlobal{.globalValues = ordinary, .systemGlobalValues = system, .remainingCycles = 100};
+	NativeBlockRunState watchedGlobal{.globalValues = &ordinary, .systemGlobalValues = &system, .remainingCycles = 100};
 	const auto& globalExit = *globals.blocks.front()->run(registers.view(), watchedGlobal);
 	require(globalExit.exit == NativeBlockExit::WriteGlobal && globalExit.currentPc == globals.source[0].pc
 		&& globalExit.nextPc == globals.source[1].pc && watchedGlobal.remainingCycles == 100 - BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]

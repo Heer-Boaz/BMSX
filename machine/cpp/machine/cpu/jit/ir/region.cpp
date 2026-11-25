@@ -94,13 +94,6 @@ void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeReg
 				if (const auto constant = nativeImageConstant(specializations.imageConstants, load->index))
 					operation = NativeLiteral{load->result, *constant};
 			}
-			if (auto* call = std::get_if<NativeCallSite>(&operation); call && cpuOwned) {
-				const auto profile = std::ranges::lower_bound(specializations.calls, inst.pc, {}, &NativeCallProfile::pc);
-				if (profile != specializations.calls.end() && profile->pc == inst.pc) {
-					call->fixed = profile->fixed;
-					call->strategy = call->fixed ? NativeCallStrategy::Fixed : NativeCallStrategy::Observe;
-				}
-			}
 			m_instructions.emplace_back(std::move(operation));
 		}
 	}

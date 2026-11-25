@@ -163,7 +163,7 @@ test('known string lookup follows changing inherited fields and preserves false 
 	cpu.gc.tables.set(raw, highBitKey, valueInteger(21));
 	assert.equal(cpu.gc.tables.getStringKey(raw, key), valueNil(), 'String keys use the entire payload');
 	cpu.gc.tables.setStringKey(raw, key, valueInteger(42));
-	memory.writeRamRecordWord(raw + TableHeader.Storage, cpu.gc.tables.storageAddress(raw) + MAIN_RAM_SIZE);
+	memory.writeRamRecordWord(raw + TableHeader.HashStorage, cpu.gc.tables.hashAddress(raw) + MAIN_RAM_SIZE);
 	assert.equal(cpu.gc.tables.get(raw, highBitKey), valueInteger(21));
 	cpu.gc.tables.getStringKeyCached(raw, key, -1, result);
 	prediction = result.slot;
@@ -179,10 +179,10 @@ test('deleting a string mapping allows its reserved hash placement to be reused'
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 1), present = cpu.stringPool.intern('full'), missing = cpu.stringPool.intern('new');
 	cpu.gc.tables.setStringKey(table, present, valueInteger(73));
-	const storage = cpu.gc.tables.storageAddress(table), used = cpu.luaHeap.usedBytes();
+	const storage = cpu.gc.tables.hashAddress(table), used = cpu.luaHeap.usedBytes();
 	cpu.gc.tables.setStringKey(table, present, valueNil());
 	assert.equal(cpu.gc.tables.storeStringKey(table, missing, ValueTag.Integer, 19), 0);
-	assert.equal(cpu.gc.tables.storageAddress(table), storage);
+	assert.equal(cpu.gc.tables.hashAddress(table), storage);
 	assert.equal(cpu.luaHeap.usedBytes(), used, 'the pre-paid mapping is reused');
 	assert.equal(cpu.gc.tables.getStringKey(table, missing), valueInteger(19));
 });

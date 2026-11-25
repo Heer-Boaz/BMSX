@@ -67,7 +67,7 @@ test('physical GC work counts canonical scans, reclamation and one global bank p
 	frame.registers.setString(1, cpu.stringPool.intern(textToByteString('é😀'))); //6 canonical UTF8 bytes, not3 UTF16 units.
 	frame.top = 2;
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 82 + 22);
-	assert.equal(cpu.gc.collect(), bootCollectionWork + (8 + 2 + 8 + 1) + 2 + 2 * 3,
+	assert.equal(cpu.gc.collect(), bootCollectionWork + (9 + 2 + 8 + 1) + 2 + 2 * 3,
 		'trace the live Values, scan the Table, mark the String leaf and visit each record');
 	assert.equal(cpu.instructionBudgetRemaining, 7);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 82 + 22);
@@ -143,7 +143,7 @@ test('allocation admission and GC use logical bytes, not physical chunk extents'
 	assert.equal(cpu.instructionBudgetRemaining, 23, 'the allocations fit at the exact logical threshold');
 	assert.equal(cpu.luaHeap.usedBytes(), logical + logicalCharge);
 	const arena = cpu.heapAllocator, tables = cpu.gc.tables;
-	const extent = (table: number) => arena.allocationBytes(table - GC_OBJECT_PREFIX) + arena.allocationBytes(tables.storageAddress(table));
+	const extent = (table: number) => arena.allocationBytes(table - GC_OBJECT_PREFIX) + arena.allocationBytes(tables.arrayAddress(table)) + (tables.hashAddress(table) ? arena.allocationBytes(tables.hashAddress(table)) : 0);
 	assert.equal(arena.occupiedBytes(), physical + extent(first) + extent(second));
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.luaHeap.usedBytes(), logical, 'reclaim the exact charges');
@@ -160,14 +160,14 @@ test('table replacement admits just its logical increase, even when both layouts
 		tables.setInteger(table, residentKey, valueInteger(100 + residentKey));
 		const arena = cpu.heapAllocator;
 		const logical = cpu.luaHeap.usedBytes(), physical = arena.occupiedBytes();
-		const oldStorage = arena.allocationBytes(tables.storageAddress(table));
+		const oldStorage = arena.allocationBytes(tables.arrayAddress(table));
 		const target = logical + (packArrayIntoHash ? 0 : 5);
 		cpu.luaHeap.setCollectionTarget(target);
 		tables.setInteger(table, trigger, valueInteger(73));
 		assert.equal(cpu.luaHeap.collectionTarget(), target, 'replacing a layout must not cause a gratuitous GC assist');
 		assert.equal(cpu.gc.active(), false);
 		assert.equal(cpu.luaHeap.usedBytes(), logical + (packArrayIntoHash ? -20 : 5));
-		const newStorage = arena.allocationBytes(tables.storageAddress(table));
+		const newStorage = arena.allocationBytes(packArrayIntoHash ? tables.hashAddress(table) : tables.arrayAddress(table));
 		assert.equal(arena.occupiedBytes(), physical - oldStorage + newStorage);
 		assert.equal(tables.getInteger(table, residentKey), valueInteger(100 + residentKey));
 		assert.equal(tables.getInteger(table, trigger), valueInteger(73));
@@ -519,9 +519,9 @@ test('growing a fully traced strong table publishes just the inserted edges duri
 	assert.equal(color(table), 3);
 	assert.equal(gc.isAlive(key), false);
 	assert.equal(gc.isAlive(value), false);
-	const backing = tables.storageAddress(table), changed = memory.readRamRecordWord(gc.changedHeadOffset());
+	const backing = tables.hashAddress(table), changed = memory.readRamRecordWord(gc.changedHeadOffset());
 	tables.set(table, valueTable(key), valueTable(value));
-	assert.notEqual(tables.storageAddress(table), backing, 'the hash insertion replaces physical storage');
+	assert.notEqual(tables.hashAddress(table), backing, 'the hash insertion replaces physical storage');
 	assert.equal(memory.readRamRecordWord(gc.changedHeadOffset()), changed);
 	assert.equal(gc.isAlive(key), true);
 	assert.equal(gc.isAlive(value), true);

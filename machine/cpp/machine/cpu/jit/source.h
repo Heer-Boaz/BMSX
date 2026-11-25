@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <bitset>
 #include <span>
 #include <vector>
@@ -44,14 +45,29 @@ struct NativeWarmupAdmission {
 	NativeWarmupPages published;
 };
 
+// Guest instruction heads within one physical page, in increasing PC order.
+class NativeSourceWords {
+public:
+	void set(u32 index) { m_words[index / 32] |= u32{1} << (index % 32); }
+	bool operator[](u32 index) const { return (m_words[index / 32] >> (index % 32)) & 1u; }
+	template<class Visit> void forEach(Visit&& visit) const {
+		for (u32 i = 0; i < m_words.size(); ++i)
+			for (u32 bits = m_words[i]; bits; bits &= bits - 1u)
+				visit(i * 32u + std::countr_zero(bits));
+	}
+
+private:
+	std::array<u32, (DECODED_PAGE_WORDS + 31) / 32> m_words{};
+};
+
 // A physical instruction page and its compilation graph. No running frame,
 // register file, CPU PC latch or device access is needed to discover its source.
 // The lazy compiler keeps this bounded workspace on its stack; the cold image
 // preparation pass retains one per page until all incoming roots are discovered.
 struct NativeCompilationSource {
 	NativeCompilationSource(DecodedInstructionPage& page,
-		MappedPageBinding binding, u32 pagePc, MappedBusSignals busSignals, u32 slot, bool verifiedRom = false)
-		: page(page), binding(binding), pagePc(pagePc), busSignals(busSignals), slot(slot), verifiedRom(verifiedRom) {}
+		u32 pagePc, MappedBusSignals busSignals, u32 slot, bool verifiedRom = false)
+		: page(page), pagePc(pagePc), busSignals(busSignals), slot(slot), verifiedRom(verifiedRom) {}
 
 	void enqueue(u32 pc, bool leader, std::vector<u32>* outgoing = nullptr, bool root = false) {
 		if (pc < firstPc || pc > lastPc) return;
@@ -61,21 +77,21 @@ struct NativeCompilationSource {
 			return;
 		}
 		const u32 word = offset / INSTRUCTION_BYTES;
-		if (root) roots[word] = 1;
+		if (root) roots.set(word);
 		if (leader || queued[word]) leaders.set(word);
 		if (!queued[word]) { queued[word] = 1; pending[pendingCount++] = word; }
 	}
 
 	DecodedInstructionPage& page;
-	MappedPageBinding binding;
 	u32 pagePc;
 	MappedBusSignals busSignals;
 	u32 slot;
 	bool verifiedRom;
 	u32 firstPc = 0u, lastPc = ~0u;
-	std::array<u8, DECODED_PAGE_WORDS> roots{}, queued{}, available{};
+	NativeSourceWords roots, available;
+	std::bitset<DECODED_PAGE_WORDS> queued;
 	std::bitset<DECODED_PAGE_WORDS> leaders;
-	std::array<u32, DECODED_PAGE_WORDS> pending{};
+	std::array<u32, DECODED_PAGE_WORDS> pending;
 	size_t pendingCount = 0, discoveredCount = 0;
 	bool discoveryQueued = false;
 };

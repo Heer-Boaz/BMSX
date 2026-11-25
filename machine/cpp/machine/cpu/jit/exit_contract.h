@@ -51,13 +51,6 @@ struct NativeArithmeticFeedback {
 	bool operator==(const NativeArithmeticFeedback&) const = default;
 };
 
-enum class NativeCallStrategy : u8 { Generic, Observe, Fixed };
-
-struct NativeFixedCallPlan {
-	u32 prototype, entryPc, capacity;
-	int copied, padded;
-};
-
 struct NativeHintedFieldWrite {
 	Value value;
 	u8 extraHashSlots;
@@ -71,7 +64,7 @@ union NativeExitOperands {
 		bool hasCompletedInstruction;
 		std::optional<NativeArithmeticFeedback> arithmetic{};
 	} replay;
-	struct Call { u16 callee; i16 supplied, requested; NativeCallStrategy strategy{}; } call;
+	struct Call { u16 callee; i16 supplied, requested; } call;
 	struct Return { u16 first; i16 produced; } returned;
 	struct Vararg { u16 first; i16 requested; } vararg;
 	struct Table {

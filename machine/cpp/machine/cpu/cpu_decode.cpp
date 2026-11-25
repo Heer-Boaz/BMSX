@@ -194,12 +194,12 @@ void CPU::decodeInstructionWords(
 	}
 	decoded.dispatchOp = decoded.op;
 	page.refreshState[pageOffset] = instructionCacheable ? 0u : DECODED_REFRESH_DECODE;
-	if (instructionCacheable && page.writeWatch.groups) {
-		page.writeWatch.armWord(pageOffset);
-		if (width == 2 && !bodyPage) page.writeWatch.armWord(pageOffset + 1u);
+	if (instructionCacheable && page.mapping.writeWatch.groups) {
+		page.mapping.writeWatch.armWord(pageOffset);
+		if (width == 2 && !bodyPage) page.mapping.writeWatch.armWord(pageOffset + 1u);
 	}
-	if (instructionCacheable && bodyPage && bodyPage->writeWatch.groups) {
-		bodyPage->writeWatch.armWord(0u);
+	if (instructionCacheable && bodyPage && bodyPage->mapping.writeWatch.groups) {
+		bodyPage->mapping.writeWatch.armWord(0u);
 	}
 	const auto& observed = m_instructionObserver.points[static_cast<size_t>(image.executionDomainId + 1)];
 	if (observed.contains(pc)) {
@@ -209,7 +209,7 @@ void CPU::decodeInstructionWords(
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	if (instructionCacheable && nativeBlockSupports(decoded.op)
 		&& (decoded.op != static_cast<u8>(OpCode::JMP) || decoded.a == 0)) {
-		decoded.dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
+		decoded.dispatchOp = nativeWarmDispatch(decoded);
 		page.nativeVisits[pageOffset] = 0;
 	}
 #endif
@@ -218,86 +218,80 @@ void CPU::decodeInstructionWords(
 bool CPU::decodeInstruction(
 	CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion
 ) {
+	if (page.refreshState[pageOffset] == DECODED_REFRESH_FUSION) {
+		refreshDecodedFusion(frame, page, pageOffset, pc);
+		return true;
+	}
 	DecodedInstruction& decoded = page.words[pageOffset];
-	bool instructionCacheable = page.cacheable;
+	bool instructionCacheable = page.mapping.cacheable;
 	DecodedInstructionPage* bodyPage = nullptr;
-	int width = 1;
-	const u32 faultSequence = m_memory.readBusFaultSequence();
-	const uint32_t sourceWord = m_memory.readMappedBusU32LE(pc, m_executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH);
-	if (m_memory.readBusFaultSequence() != faultSequence) {
+	const auto fetchWord = [&](const DecodedInstructionPage& source, u32 address, u32& word) {
+		if (const auto* bytes = source.mapping.readBytes) {
+			word = readLE32(bytes + (address & MAPPED_PAGE_BYTE_MASK));
+			return true;
+		}
+		const auto sequence = m_memory.readBusFaultSequence();
+		word = m_memory.readMappedBusU32LE(address, m_executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH);
+		if (m_memory.readBusFaultSequence() == sequence) return true;
 		enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 		return false;
-	}
-	uint32_t bodyWord = sourceWord;
+	};
+	u32 sourceWord;
+	if (!fetchWord(page, pc, sourceWord)) return false;
+	u32 bodyWord = sourceWord;
 	if (instructionOpcode(sourceWord) == static_cast<u8>(OpCode::WIDE)) {
-		width = 2;
+		const u32 bodyPc = pc + INSTRUCTION_BYTES;
 		if (pageOffset == DECODED_PAGE_WORDS - 1u) {
-			bodyPage = &decodedPageForFrame(
-				frame,
-				pc + INSTRUCTION_BYTES
-			);
-			instructionCacheable = instructionCacheable && bodyPage->cacheable;
+			bodyPage = &decodedPageForFrame(frame, bodyPc);
+			instructionCacheable &= bodyPage->mapping.cacheable;
 		}
-		bodyWord = m_memory.readMappedBusU32LE(
-			pc + INSTRUCTION_BYTES,
-			m_executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH
-		);
-		if (m_memory.readBusFaultSequence() != faultSequence) {
-			enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
-			return false;
-		}
+		if (!fetchWord(bodyPage ? *bodyPage : page, bodyPc, bodyWord)) return false;
 	}
 	decodeInstructionWords(*frame.executionImage, page, pageOffset, pc,
 		sourceWord, bodyWord, instructionCacheable, bodyPage);
-	if (decoded.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)) return true;
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	if (decoded.dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarm)) return true;
-#endif
-	const auto& observed = m_instructionObserver.points[static_cast<size_t>(frame.executionImage->executionDomainId + 1)];
-	const bool fusionCandidate = decodedDispatchCanFuse(decoded.op);
-	if (!allowFusion) {
-		if (fusionCandidate && instructionCacheable) {
-			page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
-		}
-		return true;
+	if (instructionCacheable && decoded.dispatchOp == decoded.op && decodedDispatchCanFuse(decoded.op)) {
+		page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
+		if (allowFusion) refreshDecodedFusion(frame, page, pageOffset, pc);
 	}
-	if (!fusionCandidate || !instructionCacheable) {
-		return true;
-	}
-	const u32 nextPc = pc + static_cast<u32>(width) * INSTRUCTION_BYTES;
-	if (observed.contains(nextPc)) return true;
-	DecodedInstructionPage& nextPage = decodedPageForFrame(frame, nextPc);
-	if (!nextPage.cacheable) {
-		return true;
-	}
-	const u32 nextOffset = (nextPc & MAPPED_PAGE_BYTE_MASK) >> 2;
-	const u8 nextRefreshState = nextPage.refreshState[nextOffset];
-	if ((nextRefreshState & DECODED_REFRESH_DECODE) != 0u) {
-		if (nextOffset == DECODED_PAGE_WORDS - 1u) {
-			page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
-			return true;
-		}
-		// Lookahead may inspect only fully backed memory, never a faulting bus access.
-		// The last-word exclusion above keeps a WIDE body in that same backing page.
-		MappedPageBinding binding;
-		m_memory.bindMappedPage(
-			nextPc & ~MAPPED_PAGE_BYTE_MASK,
-			m_executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH,
-			binding
-		);
-		if (!binding.readBytes) {
-			return true;
-		}
-		if (!decodeInstruction(frame, nextPage, nextOffset, nextPc, false)) {
-			return false;
-		}
-		if ((nextPage.refreshState[nextOffset] & DECODED_REFRESH_DECODE) != 0u) {
-			return true;
-		}
-	}
-	const DecodedInstruction& successor = nextPage.words[nextOffset];
-	decoded.dispatchOp = decodedDispatchOp(decoded.op, successor.op);
 	return true;
+}
+
+// Fusion is dispatch metadata, not an instruction fetch. Use a cached
+// successor or inspect a fully backed encoding without touching the bus.
+void CPU::refreshDecodedFusion(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc) {
+	auto& head = page.words[pageOffset];
+	page.refreshState[pageOffset] = 0;
+	if (head.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)) return;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	if (isNativeWarmDispatch(head.dispatchOp)
+		|| head.dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock)) return;
+#endif
+	head.dispatchOp = head.op;
+	auto& image = *frame.executionImage;
+	const u32 nextPc = pc + head.width * INSTRUCTION_BYTES;
+	if (m_instructionObserver.points[static_cast<size_t>(image.executionDomainId + 1)].contains(nextPc)) return;
+	const u32 nextOffset = (nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	auto& nextPage = nextOffset > pageOffset ? page : decodedPageForFrame(frame, nextPc);
+	if (!nextPage.mapping.cacheable) return;
+	if (nextPage.refreshState[nextOffset] & DECODED_REFRESH_DECODE) {
+		const auto& binding = nextPage.mapping;
+		if (!binding.readBytes) return;
+		const auto* bytes = binding.readBytes + nextOffset * INSTRUCTION_BYTES;
+		const u32 source = readLE32(bytes);
+		u32 body = source;
+		if (instructionOpcode(source) == static_cast<u8>(OpCode::WIDE)) {
+			if (nextOffset + 1u == DECODED_PAGE_WORDS) {
+				page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
+				return;
+			}
+			body = readLE32(bytes + INSTRUCTION_BYTES);
+		}
+		decodeInstructionWords(image, nextPage, nextOffset, nextPc, source, body, true, nullptr);
+		const auto& next = nextPage.words[nextOffset];
+		if (next.dispatchOp == next.op && decodedDispatchCanFuse(next.op))
+			nextPage.refreshState[nextOffset] = DECODED_REFRESH_FUSION;
+	}
+	head.dispatchOp = decodedDispatchOp(head.op, nextPage.words[nextOffset].op);
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -305,8 +299,7 @@ bool CPU::decodeBackedInstruction(
 	Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
 	u32 pc, MappedBusSignals busSignals, NativeWarmupPages* requested
 ) {
-	MappedPageBinding binding;
-	m_memory.bindMappedPage(pc & ~MAPPED_PAGE_BYTE_MASK, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
+	const auto& binding = page.mapping;
 	if (!binding.cacheable) return false;
 	const auto readPublishedWord = [&](u32 address, u32& word) {
 		// The verified publication can end in a partially backed physical

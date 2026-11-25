@@ -15,7 +15,7 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 function assertParity(js: CPU, ref: CPU): void {
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()), 'full values, heap graph, roots, frame extents and control latches');
@@ -119,7 +119,7 @@ for (const closure of [false, true]) test(`compiled allocation publishes moved r
 	writeInstruction(text, 16, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: closure ? 5 : 4, maxStack: 16 },
 		{ firstWord: 16, wordCount: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 7 }] }],
-		closureRelocations: closure ? [{ wordIndex: 3, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] : [] });
+		closureRelocations: closure ? [{ wordIndex: 3, functionIndex: 1 }] : [] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const pc = image.image.functions[0].codeAddress;
 	for (const cpu of [js, ref]) {

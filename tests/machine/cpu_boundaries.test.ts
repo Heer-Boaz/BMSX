@@ -24,10 +24,10 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE, IO_GX_GPU_GP0, IO_IRQ_MASK, IRQ_GPU, IO_CART_SELECT } from '../../machine/ts/spec/bmsx/io';
-import { CART_RAM_BASE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_RAM_BASE, DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { RAM_CODE_FIXTURE_BYTES, blua32TestFunctionAddress, createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { runCpuParity } from '../helpers/cpu_execution';
 
@@ -188,7 +188,7 @@ test('CLOSURE rejects out-of-window descriptors before allocating or opening any
 			// The exception route reuses the existing root closure. Its first
 			// instruction cannot execute after the deliberately short grant.
 			exceptionFunctionIndex: 0,
-			closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }],
+			closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
 		}, RAM_CODE_FIXTURE_BYTES);
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.rootThread.resizeStack(64);
@@ -277,7 +277,7 @@ test('return ranges preserve shifted source slots when growing the caller stack'
 			const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
 				functions: [{ firstWord: 0, wordCount: 4, maxStack: 3 },
 					{ firstWord: 4, wordCount: 1, maxStack: 5 + Math.max(produced, 1) }],
-				closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }],
+				closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
 			}, RAM_CODE_FIXTURE_BYTES));
 			if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 			const table = cpu.createTable(0, 0);
@@ -576,7 +576,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		const image = linkRawTestSystemBlua32({ text,
 			functions: [{ firstWord: 0, wordCount: 5, maxStack: 4 },
 				{ firstWord: 5, wordCount: 2 }, { firstWord: 7, wordCount: 2 }],
-			closureRelocations: [{ wordIndex: 1, functionAddress: edgeKind === 1 ? mappedRecord : blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }], irqFunctionIndex: 2, exceptionFunctionIndex: 2 }, RAM_CODE_FIXTURE_BYTES);
+			closureRelocations: [edgeKind === 1 ? { wordIndex: 1, functionAddress: mappedRecord } : { wordIndex: 1, functionIndex: 1 }], irqFunctionIndex: 2, exceptionFunctionIndex: 2 }, RAM_CODE_FIXTURE_BYTES);
 		const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 		const irq = new IrqController(memory), cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 		cpu.reset();
@@ -788,7 +788,7 @@ test('cached sequential, wide, skip and fused dispatch keep PC as a wrapping wor
 				const { cpu } = createTestSystemCpu(returnImage());
 				if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 				const frame = cpu.rootThread.frameAtDepth(0);
-				const page = createDecodedInstructionPage(true, null, 0);
+				const page = createDecodedInstructionPage({ key: 0, cacheable: true, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 });
 				page.refreshState.fill(0);
 				frame.pc = skip ? 0xfffffff8 : 0xfffffffc;
 				frame.decodedPage = page;
@@ -807,7 +807,7 @@ test('cached sequential, wide, skip and fused dispatch keep PC as a wrapping wor
 	}
 	const { cpu } = createTestSystemCpu(returnImage());
 	const frame = cpu.rootThread.frameAtDepth(0);
-	const page = createDecodedInstructionPage(true, null, 0);
+	const page = createDecodedInstructionPage({ key: 0, cacheable: true, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 });
 	page.refreshState.fill(0);
 	frame.pc = 0xfffffff8;
 	frame.registers.setInteger(0, 1);

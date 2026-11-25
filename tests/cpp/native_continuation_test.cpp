@@ -106,7 +106,7 @@ void stableLookupSlots() {
 	auto* first = lookup.entrySlot(pc, 0);
 	auto* second = lookup.entrySlot(pc, 1);
 	require(first != second && !*first && !*second, "absent cartridge pages have independent stable bank slots");
-	DecodedInstructionPage a(true, {}), b(true, {});
+	DecodedInstructionPage a(MappedPageBinding{0, true, nullptr, {}}), b(MappedPageBinding{0, true, nullptr, {}});
 	a.nativeCode = lookup.install(pc & ~MAPPED_PAGE_BYTE_MASK, 0, a);
 	b.nativeCode = lookup.install(pc & ~MAPPED_PAGE_BYTE_MASK, 1, b);
 	a.nativeCode[0] = &a; b.nativeCode[0] = &b;

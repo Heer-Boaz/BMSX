@@ -26,6 +26,7 @@ enum class DecodedDispatchOp : uint8_t {
 	ReservedMemory,
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	NativeWarm,
+	NativeWarmBoundary,
 	NativeBlock,
 #endif
 	InvalidImageOperand,
@@ -33,7 +34,7 @@ enum class DecodedDispatchOp : uint8_t {
 
 inline constexpr size_t DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 6u
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	+ 2u
+	+ 3u
 #endif
 	;
 

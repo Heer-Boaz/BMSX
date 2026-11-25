@@ -17,7 +17,7 @@ import { cop0FieldImplemented } from '../../spec/blua32/cop0';
 import { INSTRUCTION_BYTES, instructionBranchTarget, instructionBx, instructionLowB, instructionOpcode, ValueMoveKind } from '../../spec/blua32/instruction_format';
 import type { Memory, MemoryByteView } from '../memory/memory';
 import type { MappedBusSignals } from '../memory/bus_signals';
-import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageWriteWatches } from '../memory/mapped_page';
+import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageBinding } from '../memory/mapped_page';
 import type { CompiledBlockPage } from './compiled_code_cache';
 import type { CompiledCodeLookup } from './compiled_code_lookup';
 import type { StringId } from './string_pool';
@@ -276,7 +276,7 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 	return end;
 }
 
-export type DecodedInstructionPage = {
+export type DecodedInstructionPage = MappedPageBinding & {
 	widths: Uint8Array;
 	ops: Uint8Array;
 	dispatchOps: Uint8Array;
@@ -293,9 +293,6 @@ export type DecodedInstructionPage = {
 	bodyWords: Uint32Array;
 	tableCacheSlots: Int32Array;
 	refreshState: Uint8Array;
-	cacheable: boolean;
-	writeWatches: MappedPageWriteWatches | null;
-	writeWatchIndex: number;
 	compiledBlocks: CompiledBlockPage | null;
 };
 
@@ -331,9 +328,7 @@ export type Blua32FunctionRecordLatch = FunctionPrototype & {
 };
 
 export function createDecodedInstructionPage(
-	cacheable: boolean,
-	writeWatches: MappedPageWriteWatches | null,
-	writeWatchIndex: number,
+	binding: MappedPageBinding,
 ): DecodedInstructionPage {
 	// Bx, KSMI's signed immediate and a field instruction's mutable cache slot
 	// are alternative payloads; no opcode consumes more than one.
@@ -355,9 +350,7 @@ export function createDecodedInstructionPage(
 		bodyWords: new Uint32Array(DECODED_PAGE_WORDS),
 		tableCacheSlots: signedPayload,
 		refreshState: new Uint8Array(DECODED_PAGE_WORDS),
-		cacheable,
-		writeWatches,
-		writeWatchIndex,
+		...binding,
 		compiledBlocks: null,
 	};
 	page.refreshState.fill(DECODED_REFRESH_DECODE);

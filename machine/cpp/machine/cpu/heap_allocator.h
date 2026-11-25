@@ -31,6 +31,7 @@ public:
 	// Returns the guest address, or zero if no chunk can fit the request.
 	u32 allocate(u32 byteCount, bool owned);
 	void free(u32 address);
+	u32 resizeBacking(u32 address, u32 bytes);
 	void shrinkBacking(u32 address, u32 retainedBytes);
 
 private:

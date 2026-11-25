@@ -51,8 +51,8 @@ struct NativeBlockRunState {
 	ConstValueSpan constants;
 	CallFrame* frame = nullptr;
 	GcHeap* heap = nullptr;
-	ValueSpan globalValues;
-	ValueSpan systemGlobalValues;
+	const ValueSpan* globalValues = nullptr;
+	const ValueSpan* systemGlobalValues = nullptr;
 	u32* cop0Words = nullptr;
 	StringId tableIndexKey = 0;
 	int remainingCycles = 0;
@@ -92,6 +92,13 @@ union NativeTableSlotBinding {
 	i32 standalone;
 };
 
+enum class NativeCallStrategy : u8 { Generic, Observe, Fixed };
+
+struct NativeFixedCallPlan {
+	u32 prototype, entryPc, capacity;
+	int copied, padded;
+};
+
 struct NativeFixedCallBinding {
 	NativeFixedCallPlan plan;
 	std::array<void* const*, CARTRIDGE_SLOT_COUNT> entryCells;
@@ -101,6 +108,7 @@ struct NativeFixedCallBinding {
 struct NativeBlockExitSite {
 	NativeBlockExit exit = NativeBlockExit::Continue;
 	mutable std::array<u8, CARTRIDGE_SLOT_COUNT> sideExitVisits{};
+	mutable NativeCallStrategy callStrategy = NativeCallStrategy::Generic;
 	NativeExitOperands operands{};
 	int cycles = 0;
 	int registerTop = 0;
@@ -114,8 +122,8 @@ struct NativeBlockExitSite {
 		mutable NativeTableSlotBinding tableRead;
 		mutable NativeTableSlotBinding tableStore;
 		NativeTableConstructor* recordConstructor;
-		NativeFixedCallBinding fixedCall;
-		mutable DecodedInstruction* observingCall;
+		mutable NativeFixedCallBinding fixedCall;
+		DecodedInstruction* observingCall;
 	};
 	// Bound on CPU-side publication for CALL returns and same-frame helpers.
 	// Image-lifetime cells survive retirement of the source or target region.

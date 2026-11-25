@@ -34,7 +34,7 @@ sljit_label* emitFixedResidentCall(sljit_compiler* c, sljit_label* bindWindow, s
 
 	auto* label = sljit_emit_label(c);
 	sljit_emit_op1(c, SLJIT_MOV32_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0),
-		operands + offsetof(NativeExitOperands::Call, strategy));
+		offsetof(NativeBlockExitSite, callStrategy));
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
 		static_cast<sljit_sw>(NativeCallStrategy::Fixed)), semanticCall);
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, budget, 0,

@@ -2,7 +2,7 @@ import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } fr
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
@@ -21,7 +21,7 @@ import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, hashCanonicalTableKey, valueBuiltinFunction, valueClosure, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString, valueThread, type Value } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 function machine() {
 	const text = new Uint8Array(4);
@@ -116,9 +116,9 @@ test('the second mark traces new strong edges without revisiting the table or re
 	tables.setInteger(strong, 1, valueClosure(onlyClosure));
 	tables.setInteger(strong, 2, valueString(stringValue));
 	assert.equal(tables.storePredictedStringKey(strong, field, predicted, ValueTag.Table, fieldValue), true);
-	const storage = tables.storageAddress(strong);
+	const storage = tables.hashAddress(strong);
 	tables.set(strong, valueTable(key), valueInteger(71));
-	assert.equal(tables.storageAddress(strong), storage, 'the key was inserted without a rehash');
+	assert.equal(tables.hashAddress(strong), storage, 'the key was inserted without a rehash');
 	Upvalue.store(gc, cells[0], ValueTag.Table, cellValue);
 	for (const child of [onlyClosure, fieldValue, key, cellValue]) assert.equal(gc.isAlive(child), true);
 	assert.equal(memory.readRamRecordWord(gc.changedHeadOffset()), changed, 'forward writes do not enqueue the strong owners again');
@@ -126,9 +126,9 @@ test('the second mark traces new strong edges without revisiting the table or re
 	const weakChanged = memory.readRamRecordWord(gc.changedHeadOffset());
 	assert.notEqual(weakChanged, changed, 'metatabled writes keep the backward barrier');
 	assert.equal(gc.isAlive(weakValue), false);
-	const growingStorage = tables.storageAddress(growing);
+	const growingStorage = tables.hashAddress(growing);
 	tables.setStringKey(growing, field, valueTable(resizedValue));
-	assert.notEqual(tables.storageAddress(growing), growingStorage);
+	assert.notEqual(tables.hashAddress(growing), growingStorage);
 	assert.equal(memory.readRamRecordByte(growing + GC_COLOR_OFFSET) & 3, 3, 'the fully scanned owner stays black after resize');
 	assert.equal(memory.readRamRecordWord(gc.changedHeadOffset()), weakChanged);
 	assert.equal(gc.isAlive(resizedValue), true);
@@ -164,7 +164,7 @@ test('completion Values form a resumable root range after the real returning fra
 	writeInstruction(text, 4, OpCode.RET, 0, 0, 0);
 	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
 		functions: [{ firstWord: 0, wordCount: 3 }, { firstWord: 3, wordCount: 2, isVararg: true }],
-		closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }],
+		closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
 	}));
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const results: Value[] = [];
@@ -284,8 +284,8 @@ test('major marking resumes large closure captures from a RAM snapshot', () => {
 			{ firstWord: 6, wordCount: 1, upvalueDescs },
 		],
 		closureRelocations: [
-			{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) },
-			{ wordIndex: 3, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 2) },
+			{ wordIndex: 1, functionIndex: 1 },
+			{ wordIndex: 3, functionIndex: 2 },
 		],
 	}));
 	const frame = cpu.rootThread.currentFrame!, gc = cpu.gc;
@@ -344,8 +344,8 @@ test('a suspended Thread scan follows the real CLOSURE, closing JMP and RET life
 			{ firstWord: 8, wordCount: 1, upvalueDescs },
 		],
 		closureRelocations: [
-			{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) },
-			{ wordIndex: 5, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 2) },
+			{ wordIndex: 1, functionIndex: 1 },
+			{ wordIndex: 5, functionIndex: 2 },
 		],
 	}));
 	const frame = cpu.rootThread.currentFrame!, gc = cpu.gc, target = cpu.createTable();
@@ -387,7 +387,7 @@ test('sweeping a suspended coroutine withdraws its borrowed view and rebinds onl
 	emit(3, OpCode.CALL, 0, 2, 2); emit(4, OpCode.GETSYS, 2, 0, 1); emit(5, OpCode.MOV, 3);
 	emit(6, OpCode.CALL, 2, 2, 3); emit(7, OpCode.HALT); emit(8, OpCode.RET, 0, 1);
 	const functions = [{ firstWord: 0, wordCount: rootWords, maxStack: 8 }];
-	const closureRelocations = [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }];
+	const closureRelocations = [{ wordIndex: 2, functionIndex: 1 }];
 	const systemGlobalNames = ['create', 'resume', 'yield'];
 	for (let i = 0; i < depth; ++i) {
 		const start = rootWords + i * bodyWords;
@@ -395,7 +395,7 @@ test('sweeping a suspended coroutine withdraws its borrowed view and rebinds onl
 		if (i + 1 < depth) {
 			emit(start, OpCode.WIDE); emit(start + 1, OpCode.CLOSURE);
 			emit(start + 2, OpCode.CALL, 0, 1, 1);
-			closureRelocations.push({ wordIndex: start + 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, i + 2) });
+			closureRelocations.push({ wordIndex: start + 1, functionIndex: i + 2 });
 		} else {
 			emit(start, OpCode.GETSYS, 0, 0, 2); emit(start + 1, OpCode.KSMI, 1, 0, 37);
 			emit(start + 2, OpCode.CALL, 0, 2, 1);
@@ -668,7 +668,7 @@ for (const reuseHome of [false, true]) test(`weak Table admission uses the survi
 	}
 	assert.equal(gc.tables.arrayCapacity(weak), 0);
 	assert.equal(gc.tables.hashSize(weak), hash);
-	const storage = gc.tables.storageAddress(weak);
+	const storage = gc.tables.hashAddress(weak);
 	// Hold the rest of the logical budget without filling the physical arena.
 	// Keys 2, 3 and 4 would reserve a four-slot array while keeping eight hash slots.
 	cpu.memory.writeRamRecordWord(cpu.heapAllocator.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, heap.capacity());
@@ -676,12 +676,12 @@ for (const reuseHome of [false, true]) test(`weak Table admission uses the survi
 	assert.ok(heap.usedBytes() <= heap.capacity(), 'weak removal must not finance a stale capacity projection');
 	assert.equal(gc.tables.arrayCapacity(weak), 0, 'only two of four positive keys survive');
 	assert.equal(gc.tables.hashSize(weak), hash);
-	assert.equal(gc.tables.storageAddress(weak) === storage, reuseHome, 'only a vacancy at the incoming home permits an in-place retry');
+	assert.equal(gc.tables.hashAddress(weak) === storage, reuseHome, 'only a vacancy at the incoming home permits an in-place retry');
 	assert.equal(gc.tableRecordAddress(occupant), 0);
 	assert.equal(gc.tables.getInteger(weak, weakKey), valueNil());
 	assert.equal(gc.tables.getInteger(weak, strongKey), valueInteger(strongKey));
 	assert.equal(gc.tables.getInteger(weak, incoming), valueInteger(incoming));
-	assert.equal(heap.usedBytes(), heap.capacity() - TableRecords.HEADER_BYTES);
+	assert.equal(heap.usedBytes(), heap.capacity() - TableRecords.HEADER_CHARGE);
 });
 
 test('weak-table remark resumes without consuming list order or losing writes to Changed', () => {
@@ -779,11 +779,11 @@ test('physical allocations advance reclamation and replay from a checkpoint with
 
 	luaHeap.setCollectionTarget(0);
 	const logical = luaHeap.usedBytes(), physical = heapAllocator.occupiedBytes();
-	const storage = tables.storageAddress(owner), steps = diagnostics.steps;
+	const storage = tables.hashAddress(owner), steps = diagnostics.steps;
 	// The request of three reserved a four-node backing with one unused node.
 	tables.setInteger(owner, -4, valueInteger(4));
 	assert.equal(tables.getInteger(owner, -4), valueInteger(4));
-	assert.equal(tables.storageAddress(owner), storage);
+	assert.equal(tables.hashAddress(owner), storage);
 	assert.equal(luaHeap.usedBytes(), logical);
 	assert.equal(heapAllocator.occupiedBytes(), physical);
 	assert.equal(diagnostics.steps, steps, 'an insertion into already reserved storage does not advance reclamation');
@@ -1008,7 +1008,7 @@ test('an ordinary assist keeps debt beyond its bounded quantum and stops credit 
 	const cpu = machine(), { luaHeap: heap, gc } = cpu;
 	heap.setCollectionTarget(heap.capacity());
 	const capacity = heap.capacity(), reserve = capacity - (capacity >>> 3);
-	const slots = ((reserve - heap.usedBytes() - TableRecords.HEADER_BYTES - 512) / 5) | 0;
+	const slots = ((reserve - heap.usedBytes() - TableRecords.HEADER_CHARGE - 512) / 5) | 0;
 	const table = cpu.createTable(slots, 0), frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, table); frame.top = 1;
 	const diagnostics = gc.diagnostics = new GcDiagnostics(() => 0);
@@ -1118,7 +1118,7 @@ test('a collected coroutine releases its object and stack allocations', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({
 		text, systemGlobalNames: ['create'],
 		functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }, { firstWord: 5, wordCount: 1, maxStack: 2 }],
-		closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }],
+		closureRelocations: [{ wordIndex: 2, functionIndex: 1 }],
 	}));
 	cpu.setSystemGlobalByKey(cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
 	cpu.runUntilDepth(0, 1000);

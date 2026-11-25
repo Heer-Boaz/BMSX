@@ -47,12 +47,6 @@ NativeBlockExitSite materializeExit(const NativeIrExit& exit, const NativeCodeBi
 	case NativeBlockExit::AllocateTable:
 		site.recordConstructor = nullptr;
 		break;
-	case NativeBlockExit::Call:
-		if (site.operands.call.strategy == NativeCallStrategy::Observe) {
-			const u32 word = (exit.currentPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-			site.observingCall = &bindings.decodedPageFor(exit.currentPc)[word];
-		}
-		break;
 	default:
 		break;
 	}
@@ -112,8 +106,6 @@ std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 		if (const auto* allocation = std::get_if<NativeTableAllocation>(&plan.instructions.back().operation);
 			allocation && allocation->record)
 			block->terminal.recordConstructor = &region->m_constructors[*allocation->record];
-		if (const auto* call = std::get_if<NativeCallSite>(&plan.instructions.back().operation); call && call->fixed)
-			block->terminal.fixedCall = {*call->fixed, {}};
 		entries.push_back(std::move(block));
 	}
 	lowering.prepare(entries);

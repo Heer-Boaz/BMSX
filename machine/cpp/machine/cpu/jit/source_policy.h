@@ -93,6 +93,11 @@ inline constexpr bool nativeBlockHasTerminalContinuation(u8 op, int field) {
 	}
 }
 
+inline constexpr bool nativeComparisonPairsJump(const DecodedInstruction& skipped) {
+	return skipped.op == static_cast<u8>(OpCode::JMP) && skipped.a == 0
+		&& skipped.dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe);
+}
+
 inline constexpr bool nativeBlockCanSkip(u8 op) {
 	return op == static_cast<u8>(OpCode::EQ) || op == static_cast<u8>(OpCode::LT)
 		|| op == static_cast<u8>(OpCode::LE) || op == static_cast<u8>(OpCode::ITERN);
@@ -113,6 +118,18 @@ inline constexpr bool nativeBlockEndsBlock(u8 op, int field) {
 	return NATIVE_BLOCK_BOUNDARY_OPS[op]
 		|| (op == static_cast<u8>(OpCode::MTC0) && (field == COP0_STATUS || field == COP0_EXEC || !cop0FieldImplemented(field)));
 }
+
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+inline constexpr u8 nativeWarmDispatch(const DecodedInstruction& row) {
+	return static_cast<u8>(nativeBlockEndsBlock(row.op, row.b)
+		? DecodedDispatchOp::NativeWarmBoundary : DecodedDispatchOp::NativeWarm);
+}
+
+inline constexpr bool isNativeWarmDispatch(u8 dispatch) {
+	return dispatch == static_cast<u8>(DecodedDispatchOp::NativeWarm)
+		|| dispatch == static_cast<u8>(DecodedDispatchOp::NativeWarmBoundary);
+}
+#endif
 
 inline bool nativeSourceCanEmit(const DecodedInstruction& instruction) {
 	switch (static_cast<OpCode>(instruction.op)) {

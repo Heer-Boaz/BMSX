@@ -9,7 +9,7 @@ namespace bmsx {
 void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSource& source, std::vector<u32>* outgoing,
 	NativeWarmupPages* requested) {
 	auto& page = source.page;
-	const auto& binding = source.binding;
+	const auto& binding = page.mapping;
 	const u32 pagePc = source.pagePc;
 	auto& roots = source.roots;
 	auto& available = source.available;
@@ -20,11 +20,15 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 		// Existing entry points retain their region; an edge to one becomes an
 		// ordinary external link. Interior entries compile a separate suffix.
 		if (page.nativeBlocks && page.nativeBlocks->entries[cursor]) continue;
-		// The root has already counted this dispatch. Its successors have
-		// not, so compare against the number of completed warm iterations.
-		if (!requested && !roots[cursor] && (source.leaders[cursor] || binding.writeWatch.groups)
-			&& ((page.refreshState[cursor] & DECODED_REFRESH_DECODE)
-			|| page.nativeVisits[cursor] + 1u < NATIVE_BLOCK_COMPILATION_THRESHOLD)) continue;
+		// Hotness triggers a compilation request at its root. Within a
+		// verified body, use executed entries to select the region: two
+		// arms of one hot branch need not independently trigger compilation.
+		// Mapped code lacks that proof; keep its per-word heat requirement.
+		if (!requested && !roots[cursor] && (source.leaders[cursor] || binding.writeWatch.groups)) {
+			if (page.refreshState[cursor] & DECODED_REFRESH_DECODE) continue;
+			const u32 visits = page.nativeVisits[cursor];
+			if (source.verifiedRom ? visits == 0u : visits + 1u < NATIVE_BLOCK_COMPILATION_THRESHOLD) continue;
+		}
 		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u) {
 			if (!decodeBackedInstruction(image, page, cursor, pc, source.busSignals, requested)) continue;
 		} else if (requested && cursor == DECODED_PAGE_WORDS - 1u && page.words[cursor].width == 2u
@@ -42,7 +46,7 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 			const auto& bank = instruction.op <= static_cast<u8>(OpCode::SETSYS) ? m_systemGlobalBank : m_globalBank;
 			if (instruction.bx() >= bank.capacity()) continue; // The general mirror port is scalar.
 		}
-		available[cursor] = 1;
+		available.set(cursor);
 		const auto op = static_cast<OpCode>(instruction.op);
 		const u32 successor = cursor + instruction.width;
 		const u32 successorPc = pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
@@ -54,8 +58,7 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 					&& successor + page.words[successor].width <= DECODED_PAGE_WORDS) {
 					enqueue(successorPc + static_cast<u32>(page.words[successor].width) * INSTRUCTION_BYTES, true);
 					const auto& skipped = page.words[successor];
-					if (op != OpCode::ITERN && skipped.op == static_cast<u8>(OpCode::JMP) && skipped.a == 0
-						&& skipped.dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe)) {
+					if (op != OpCode::ITERN && nativeComparisonPairsJump(skipped)) {
 						// This edge executes the fused JMP, not a separate entry.
 						// An independent predecessor can still enqueue the JMP itself.
 						enqueue(skipped.bx(), true);
