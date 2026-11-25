@@ -148,6 +148,7 @@ import {
 	isRomInstructionHead,
 	readPublishedPrototype,
 	romFunctionVersionLane,
+	RomCallBindings,
 	RomFunctionLane,
 	SCALAR_LOCAL_PC,
 	readRomFunctionDirectory,
@@ -158,7 +159,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, type CallFrame } from './call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
@@ -367,6 +368,7 @@ export class CPU implements MappedPageInvalidator {
 		byteOffset: 0,
 		byteLength: 0,
 	};
+	private readonly latchedCallEntry: Closure.FunctionEntry = { codeAddress: 0, numParams: 0, maxStack: 0, flags: 0 };
 	private readonly canonicalBinding: FunctionPrototype = { functionAddress: 0, codeAddress: 0, numParams: 0, maxStack: 0, flags: 0, upvalueTableAddress: 0, recordUpvalueCount: 0, executionDomainId: SYSTEM_EXECUTION_DOMAIN_ID };
 	private readonly staticClosures = new StaticClosureIndex();
 	private stringIndexTable: Value = valueNil();
@@ -999,6 +1001,7 @@ export class CPU implements MappedPageInvalidator {
 			constantStringRoots,
 			globalMapBase, globalNameCount, systemNameCount: systemGlobalNameCount,
 			romFunctions: header.romFunctions,
+			romCallBindings: new RomCallBindings(),
 			decodedPages: new Map(),
 			compiledCodeLookup: null,
 		};
@@ -1314,6 +1317,8 @@ export class CPU implements MappedPageInvalidator {
 			if (image === null) {
 				continue;
 			}
+			if (address < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE || (address >= CART_ROM_BASE && address < CART_ROM_END))
+				image.romCallBindings.invalidate();
 			for (const [key, page] of image.decodedPages) {
 				if (key >= invalidationStart && key < endKey) {
 					this.compiledCodeCache.retirePage(page);
@@ -2500,17 +2505,8 @@ export class CPU implements MappedPageInvalidator {
 			case ValueTag.Closure: {
 				const closure = this.gc.closureRecordAddress(registers.getPayload(a));
 				if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-				const pushed = this.pushFrameFromCaller(
-					frame,
-					closure,
-					a + 1,
-					argCount,
-					a,
-					c,
-					false,
-					frame.pc - INSTRUCTION_BYTES,
-				);
-				return pushed !== null;
+				this.pushFrame(closure, frame, a, c, false, false, frame.pc - INSTRUCTION_BYTES, a + 1, argCount);
+				return true;
 			}
 			default:
 				throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
@@ -3402,87 +3398,55 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private pushFrame(
-		closure: number,
-		args: ReadonlyArray<Value> | ValueSlots,
-		returnBase: number,
-		returnCount: number,
-		returnToCompletionLatch: boolean,
-		exception = false,
-		callSitePc?: number,
-		argBase = 0,
-		detachedCount = 0,
+		closure: number, args: CallFrame | ValueSlots | ReadonlyArray<Value>,
+		returnBase: number, returnCount: number, returnToCompletionLatch: boolean,
+		exception = false, callSitePc?: number, argBase = 0, supplied = 0,
 	): CallFrame {
-		const functionRecord = this.functionRecordLatch;
-		this.readClosureBinding(closure, this.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS), functionRecord);
-		const frame = this.activeThread.acquireFrame();
-		const argumentBase = this.activeThread.stackTop;
-		const argCount = args instanceof ValueSlots ? detachedCount : args.length;
-		const vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) !== 0;
-		const varargCount = vararg ? Math.max(argCount - functionRecord.numParams, 0) : 0;
-		const stackBase = vararg ? argumentBase + argCount : argumentBase;
-		const capacity = Math.max(functionRecord.maxStack, functionRecord.numParams, 1);
+		const flags = this.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS);
+		const domain = Closure.executionDomain(flags);
+		const image = this.executionImageForDomain(domain)!;
+		const prototype = this.memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
+		let entry: Readonly<Closure.FunctionEntry>;
+		if ((flags & Closure.CLOSURE_LATCHED_PROTOTYPE) !== 0) {
+			Closure.readLatchedEntry(this.memory, closure, this.latchedCallEntry);
+			entry = this.latchedCallEntry;
+		} else entry = image.romCallBindings.bind(this.memory, image, prototype, this.executionReadView);
+		const { codeAddress, numParams, maxStack, flags: functionFlags } = entry;
+		const thread = this.activeThread;
+		const fromFrame = args instanceof CallFrame;
+		const fromSlots = fromFrame || args instanceof ValueSlots;
+		const shared = fromFrame && args.thread === thread;
+		const first = fromFrame ? args.stackBase + argBase : argBase;
+		const count = fromSlots ? supplied : args.length;
+		const argumentBase = shared ? first : thread.stackTop;
+		const vararg = (functionFlags & BLUA32_FUNCTION_VARARG) !== 0;
+		const extras = vararg ? Math.max(count - numParams, 0) : 0;
+		const stackBase = vararg ? argumentBase + count : argumentBase;
+		const capacity = Math.max(1, numParams, maxStack);
+		const frame = thread.acquireFrame();
 		if (stackBase + capacity > MAX_THREAD_VALUE_SLOTS) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		this.ensureStackCapacity(stackBase + capacity, valueClosure(closure), true, exception);
-		frame.executionImage = this.executionImageForDomain(functionRecord.executionDomainId)!;
+		frame.executionImage = image;
 		frame.decodedPage = null;
-		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc ?? functionRecord.codeAddress, returnToCompletionLatch, functionRecord.executionDomainId,
-			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams, closure, stackBase, capacity);
-		const registers = frame.registers;
-		this.activeThread.stackTop = stackBase + capacity;
-
-		const copiedCount = Math.min(functionRecord.numParams, argCount);
-		const varargBase = argumentBase + functionRecord.numParams;
-		if (args instanceof ValueSlots) {
-			registers.copyRangeFrom(args, 0, argBase, copiedCount);
-			this.activeThread.stackRegisters.copyRangeFrom(args, varargBase, argBase + functionRecord.numParams, varargCount);
-			this.charge(functionRecord.numParams + varargCount);
+		const varargBase = argumentBase + numParams;
+		frame.initializeControl(prototype, codeAddress, callSitePc ?? codeAddress, returnToCompletionLatch,
+			domain, varargBase, extras, returnBase, returnCount, numParams, closure, stackBase, capacity);
+		const copied = Math.min(numParams, count);
+		if (fromSlots) {
+			const slots = fromFrame ? args.thread.stackRegisters : args;
+			if (!shared || vararg) frame.registers.copyRangeFrom(slots, 0, first, copied);
+			frame.registers.clear(numParams - copied, copied);
+			if (shared && vararg) thread.stackRegisters.clear(copied, argumentBase);
+			else if (extras !== 0) thread.stackRegisters.copyRangeFrom(slots, varargBase, first + numParams, extras);
+			this.charge(shared ? (vararg ? numParams : numParams - copied) : numParams + extras);
 		} else {
-			for (let index = 0; index < copiedCount; ++index) registers.set(index, args[index]);
-			for (let index = 0; index < varargCount; ++index)
-				this.activeThread.stackRegisters.set(varargBase + index, args[functionRecord.numParams + index]);
+			for (let i = 0; i < copied; ++i) frame.registers.set(i, args[i]);
+			frame.registers.clear(numParams - copied, copied);
+			for (let i = 0; i < extras; ++i) thread.stackRegisters.set(varargBase + i, args[numParams + i]);
 		}
-		registers.clear(functionRecord.numParams - copiedCount, copiedCount);
-		this.activeThread.enterFrame(frame);
-		this.latchActiveExecutionImage(functionRecord.executionDomainId, frame.executionImage);
-		return frame;
-	}
-
-	private pushFrameFromCaller(caller: CallFrame, closure: number, argBase: number, argCount: number, returnBase: number, returnCount: number, returnToCompletionLatch: boolean, callSitePc: number): CallFrame | null {
-		const functionRecord = this.functionRecordLatch;
-		this.readClosureBinding(closure, this.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS), functionRecord);
-		const frame = this.activeThread.acquireFrame();
-		const sharedStack = caller.thread === this.activeThread;
-		const argumentBase = sharedStack ? caller.stackBase + argBase : this.activeThread.stackTop;
-		const vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) !== 0;
-		const varargCount = vararg ? Math.max(argCount - functionRecord.numParams, 0) : 0;
-		const stackBase = vararg ? argumentBase + argCount : argumentBase;
-		const callerRegisters = caller.registers;
-		const capacity = Math.max(functionRecord.maxStack, functionRecord.numParams, 1);
-		if (stackBase + capacity > MAX_THREAD_VALUE_SLOTS) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		this.ensureStackCapacity(stackBase + capacity, valueClosure(closure), true);
-		frame.executionImage = this.executionImageForDomain(functionRecord.executionDomainId)!;
-		frame.decodedPage = null;
-		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc, returnToCompletionLatch, functionRecord.executionDomainId,
-			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams, closure, stackBase, capacity);
-		const registers = frame.registers;
-		this.activeThread.stackTop = stackBase + capacity;
-		const copiedCount = Math.min(functionRecord.numParams, argCount);
-		if (vararg || !sharedStack) {
-			registers.copyRangeFrom(callerRegisters, 0, argBase, copiedCount);
-		}
-		registers.clear(functionRecord.numParams - copiedCount, copiedCount);
-		if (vararg) {
-			if (sharedStack) {
-				this.activeThread.stackRegisters.clear(copiedCount, argumentBase);
-			} else {
-				this.activeThread.stackRegisters.copyRangeFrom(callerRegisters,
-					argumentBase + functionRecord.numParams, argBase + functionRecord.numParams, varargCount);
-			}
-		}
-		this.charge((vararg || !sharedStack ? functionRecord.numParams : functionRecord.numParams - copiedCount)
-			+ (sharedStack ? 0 : varargCount));
-		this.activeThread.enterFrame(frame);
-		this.latchActiveExecutionImage(functionRecord.executionDomainId, frame.executionImage);
+		thread.stackTop = stackBase + capacity;
+		thread.enterFrame(frame);
+		this.latchActiveExecutionImage(domain, image);
 		return frame;
 	}
 
@@ -3941,8 +3905,7 @@ export class CPU implements MappedPageInvalidator {
 		this.activeThread = target;
 		if (fresh) {
 			const closure = this.gc.closureRecordAddress(target.entry);
-			if (detached === undefined) this.pushFrameFromCaller(caller, closure, argumentBase + 1, argCount - 1, 0, 0, false, 0);
-			else this.pushFrame(closure, detached, 0, 0, false, false, 0, argumentBase + 1, argCount - 1);
+			this.pushFrame(closure, detached ?? caller, 0, 0, false, false, 0, argumentBase + 1, argCount - 1);
 			target.entry = 0;
 		} else {
 			this.resumeFrameBank();
@@ -4052,10 +4015,9 @@ export class CPU implements MappedPageInvalidator {
 			case ValueTag.Closure: {
 				const closure = this.gc.closureRecordAddress(valuePayload(target));
 				if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-				const frame = detached === undefined
-					? this.pushFrameFromCaller(caller, closure, argumentBase, argumentCount, 0, 0, false, caller.pc - INSTRUCTION_BYTES)
-					: this.pushFrame(closure, detached, 0, 0, false, false, this.currentInstructionPc, argumentBase, argumentCount);
-				if (frame !== null) frame.protectedContinuationIndex = continuationIndex;
+				const frame = this.pushFrame(closure, detached ?? caller, 0, 0, false, false,
+					detached === undefined ? caller.pc - INSTRUCTION_BYTES : this.currentInstructionPc, argumentBase, argumentCount);
+				frame.protectedContinuationIndex = continuationIndex;
 				return;
 			}
 			case ValueTag.BuiltinFunction: {

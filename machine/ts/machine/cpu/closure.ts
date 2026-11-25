@@ -2,20 +2,22 @@ import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from './gc_object';
 import { ValueTag } from './value';
 import { readLE32 } from '../../common/endian';
 import type { Memory, MemoryByteView } from '../memory/memory';
-import { readPublishedPrototype, romFunctionVersionLane, type Blua32RomFunctionDirectory } from './execution_image';
+import { readRomEntry, readPublishedPrototype, romFunctionVersionLane, type Blua32RomFunctionDirectory } from './execution_image';
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import {
-	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET,
-	BLUA32_FUNCTION_NUM_PARAMS_OFFSET, BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
+	BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 } from '../../spec/blua32/image_format';
 
-export type FunctionPrototype = {
-	functionAddress: number;
+export type FunctionEntry = {
 	codeAddress: number;
 	numParams: number;
 	maxStack: number;
 	flags: number;
+};
+
+export type FunctionPrototype = FunctionEntry & {
+	functionAddress: number;
 	upvalueTableAddress: number;
 	recordUpvalueCount: number;
 	executionDomainId: ExecutionDomainId;
@@ -79,17 +81,22 @@ function writePrototypeWords(memory: Memory, address: number, prototype: Readonl
 		memory.writeRamRecordWord(tail + 20, prototype.recordUpvalueCount);
 	}
 }
-// The caller owns this latch. CALL never allocates a decoded prototype object.
+export function readLatchedEntry(memory: Memory, address: number, target: FunctionEntry): number {
+	const tail = address + CLOSURE_CAPTURE_WORDS + captureCount(memory, address) * 4;
+	target.codeAddress = memory.readRamRecordWord(tail);
+	target.numParams = memory.readRamRecordWord(tail + 4);
+	target.maxStack = memory.readRamRecordWord(tail + 8);
+	target.flags = memory.readRamRecordWord(tail + 12);
+	return tail;
+}
+
+// Inspection and canonicalization also consume the upvalue descriptor words.
 export function readBinding(memory: Memory, address: number, flags: number, directory: Blua32RomFunctionDirectory, view: MemoryByteView, target: FunctionPrototype): void {
 	target.functionAddress = memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
 	const bank = flags & CLOSURE_BINDING_DOMAIN_MASK;
 	target.executionDomainId = executionDomain(flags);
 	if ((flags & CLOSURE_LATCHED_PROTOTYPE) !== 0) {
-		const tail = address + CLOSURE_CAPTURE_WORDS + captureCount(memory, address) * 4;
-		target.codeAddress = memory.readRamRecordWord(tail);
-		target.numParams = memory.readRamRecordWord(tail + 4);
-		target.maxStack = memory.readRamRecordWord(tail + 8);
-		target.flags = memory.readRamRecordWord(tail + 12);
+		const tail = readLatchedEntry(memory, address, target);
 		target.upvalueTableAddress = memory.readRamRecordWord(tail + 16);
 		target.recordUpvalueCount = memory.readRamRecordWord(tail + 20);
 		return;
@@ -104,10 +111,7 @@ export function readBinding(memory: Memory, address: number, flags: number, dire
 		return;
 	}
 	const { bytes, byteOffset } = view;
-	target.codeAddress = readLE32(bytes, byteOffset + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
-	target.numParams = readLE32(bytes, byteOffset + BLUA32_FUNCTION_NUM_PARAMS_OFFSET);
-	target.maxStack = readLE32(bytes, byteOffset + BLUA32_FUNCTION_MAX_STACK_OFFSET);
-	target.flags = readLE32(bytes, byteOffset + BLUA32_FUNCTION_FLAGS_OFFSET);
+	readRomEntry(bytes, byteOffset, target);
 	target.upvalueTableAddress = readLE32(bytes, byteOffset + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET);
 	target.recordUpvalueCount = readLE32(bytes, byteOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET);
 }

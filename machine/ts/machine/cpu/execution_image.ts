@@ -1,4 +1,4 @@
-import type { FunctionPrototype } from './closure';
+import type { FunctionEntry, FunctionPrototype } from './closure';
 import type { FrameExecutionTarget } from './call_state';
 import { readLE32 } from '../../common/endian';
 import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
@@ -201,13 +201,49 @@ export function romFunctionVersionLane(directory: Blua32RomFunctionDirectory, re
 	return lane < directory.versions.length ? lane : -1;
 }
 
-export function readPublishedPrototype(versions: Uint32Array, lane: number, target: FunctionPrototype): void {
+export function readPublishedEntry(versions: Uint32Array, lane: number, target: FunctionEntry): void {
 	target.codeAddress = versions[lane + RomFunctionLane.FirstPc];
 	target.numParams = versions[lane + RomFunctionLane.NumParams];
 	target.maxStack = versions[lane + RomFunctionLane.MaxStack];
 	target.flags = versions[lane + RomFunctionLane.Flags];
+}
+
+export function readPublishedPrototype(versions: Uint32Array, lane: number, target: FunctionPrototype): void {
+	readPublishedEntry(versions, lane, target);
 	target.upvalueTableAddress = versions[lane + RomFunctionLane.UpvalueTable];
 	target.recordUpvalueCount = versions[lane + RomFunctionLane.UpvalueCount];
+}
+
+export function readRomEntry(bytes: Uint8Array, offset: number, target: FunctionEntry): void {
+	target.codeAddress = readLE32(bytes, offset + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
+	target.numParams = readLE32(bytes, offset + BLUA32_FUNCTION_NUM_PARAMS_OFFSET);
+	target.maxStack = readLE32(bytes, offset + BLUA32_FUNCTION_MAX_STACK_OFFSET);
+	target.flags = readLE32(bytes, offset + BLUA32_FUNCTION_FLAGS_OFFSET);
+}
+
+const ROM_CALL_SLOTS = 64;
+const UNDRIVEN_ENTRY: Readonly<FunctionEntry> = { codeAddress: 0, numParams: 0, maxStack: 0, flags: 0 };
+
+export class RomCallBindings {
+	private readonly slots = new Array<FunctionEntry & { address: number }>(ROM_CALL_SLOTS);
+
+	public invalidate(): void {
+		for (const entry of this.slots) if (entry !== undefined) entry.address = -1;
+	}
+
+	public bind(memory: Memory, image: Blua32ExecutionImage, address: number, view: MemoryByteView): Readonly<FunctionEntry> {
+		const index = ((address / BLUA32_FUNCTION_RECORD_SIZE) >>> 0) % ROM_CALL_SLOTS;
+		let entry = this.slots[index];
+		if (entry?.address === address) return entry;
+		const directory = image.romFunctions;
+		if (directory.mappedCode && !memory.bindRomByteView(address, BLUA32_FUNCTION_RECORD_SIZE,
+			image.executionDomainId === 1 ? 1 : 0, view)) return UNDRIVEN_ENTRY;
+		if (entry === undefined) this.slots[index] = entry = { address, codeAddress: 0, numParams: 0, maxStack: 0, flags: 0 };
+		entry.address = address;
+		if (directory.mappedCode) readRomEntry(view.bytes, view.byteOffset, entry);
+		else readPublishedEntry(directory.versions, romFunctionVersionLane(directory, address), entry);
+		return entry;
+	}
 }
 
 export const enum DecodedDispatchOp {
@@ -309,6 +345,7 @@ export type Blua32ExecutionImage = {
 	globalNameCount: number;
 	systemNameCount: number;
 	romFunctions: Blua32RomFunctionDirectory;
+	readonly romCallBindings: RomCallBindings;
 	decodedPages: Map<number, DecodedInstructionPage>;
 	compiledCodeLookup: CompiledCodeLookup | null;
 };

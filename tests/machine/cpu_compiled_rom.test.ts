@@ -59,6 +59,23 @@ function machine(systemRom: Uint8Array, slots: CartridgeSocketMediaPair, backend
 	return { cpu, memory, addresses };
 }
 
+test('a retained closure samples the replaced ROM entry on its next CALL', () => {
+	const image = linkRawTestSystemBlua32(loadSource(MemoryAccessKind.Word), RAM_CODE_FIXTURE_BYTES);
+	const replacement = image.romBytes.slice();
+	writeLE32(replacement, image.vectors.startupFunctionAddress + BLUA32_FUNCTION_MAX_STACK_OFFSET, 29);
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const { cpu, memory } = machine(image.romBytes, cartridgeSlots(), backend);
+		const parent = cpu.rootThread.currentFrame!;
+		const closure = parent.closureAddress;
+		assert.notEqual(parent.stackCapacity, 29);
+		memory.installSystemRom(replacement);
+		cpu.beginCompletionCall(closure);
+		assert.equal(cpu.rootThread.currentFrame!.stackCapacity, 29);
+		assert.equal(cpu.rootThread.currentFrame!.closureAddress, closure);
+		assert.notEqual(parent.stackCapacity, 29, 'the existing activation keeps its reservation');
+	}
+});
+
 test('mapped ROM function hints still require backed extents', () => {
 	const image = linkRawTestSystemBlua32(loadSource(MemoryAccessKind.U32LE), RAM_CODE_FIXTURE_BYTES);
 	const record = image.vectors.startupFunctionAddress;
