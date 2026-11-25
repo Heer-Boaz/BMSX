@@ -97,7 +97,11 @@ function buildLibretroCore(
 		'-DCMAKE_CXX_COMPILER_LAUNCHER=ccache',
 	];
 	if (target === 'libretro-wsl') {
-		configureArguments.push('-DCMAKE_CXX_STANDARD=20', '-DBMSX_NATIVE_COMPILER_WORKER=ON');
+		configureArguments.push(
+			'-DCMAKE_CXX_STANDARD=20',
+			'-DBMSX_NATIVE_COMPILER_WORKER=ON',
+			'-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON',
+		);
 	} else {
 		if (process.platform !== 'win32') {
 			throw new Error('libretro-win requires Windows with MSVC build tools.');
