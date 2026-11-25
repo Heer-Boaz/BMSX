@@ -228,7 +228,7 @@ void GeometryController::serviceOverlap(i64 nowCycles) {
 	GeoJob& job = *m_activeJob;
 	for (;;) {
 		const u32 initialPhase = m_overlap2d.progress().phase;
-		const bool readingHeaders = initialPhase == 0u || initialPhase == 1u || initialPhase == 5u;
+		const bool readingHeaders = initialPhase == 0u || initialPhase == 1u || initialPhase == 5u || initialPhase == 7u;
 		i64 interval = 0;
 		u32 groupWords = 0u;
 		do {
@@ -264,8 +264,9 @@ void GeometryController::serviceOverlap(i64 nowCycles) {
 			const i64 units = static_cast<i64>(work.axes) + work.projectionVertices + work.averageVertices + work.clipVertices
 				+ work.clipEdges + work.squareRoots + work.divisions;
 			interval += intervalCycles(memory, units);
-		} while (readingHeaders && m_overlap2d.progress().phase == 1u
-			&& groupWords + GEO_OVERLAP_PAIR_HEADER_WORDS <= DMA_BURST_WORD_CAPACITY);
+		} while (readingHeaders && ((m_overlap2d.progress().phase == 1u
+			&& groupWords + GEO_OVERLAP_PAIR_HEADER_WORDS <= DMA_BURST_WORD_CAPACITY)
+			|| (m_overlap2d.progress().phase == 7u && groupWords + 64u <= DMA_BURST_WORD_CAPACITY)));
 		if (interval != 0) {
 			scheduleInterval(nowCycles + interval);
 			return;

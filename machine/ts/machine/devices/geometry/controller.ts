@@ -220,7 +220,7 @@ export class GeometryController {
 		for (;;) {
 			const initialPhase = this.overlap2d.readProgress().phase;
 			const readingHeaders = initialPhase === GeometryOverlap2dPhase.Record || initialPhase === GeometryOverlap2dPhase.Pair
-				|| initialPhase === GeometryOverlap2dPhase.Initialized;
+				|| initialPhase === GeometryOverlap2dPhase.Initialized || initialPhase === GeometryOverlap2dPhase.SeekLayerPair;
 			let interval = 0, groupWords = 0;
 			do {
 				const publishing = this.overlap2d.readProgress().phase === GeometryOverlap2dPhase.Publish;
@@ -246,8 +246,10 @@ export class GeometryController {
 				const units = work.axes + work.projectionVertices + work.averageVertices + work.clipVertices
 					+ work.clipEdges + work.squareRoots + work.divisions;
 				interval += this.intervalCycles(memory, units);
-			} while (readingHeaders && this.overlap2d.readProgress().phase === GeometryOverlap2dPhase.Pair
-				&& groupWords + GEO_OVERLAP_PAIR_HEADER_WORDS <= DMA_BURST_WORD_CAPACITY);
+			} while (readingHeaders && ((this.overlap2d.readProgress().phase === GeometryOverlap2dPhase.Pair
+				&& groupWords + GEO_OVERLAP_PAIR_HEADER_WORDS <= DMA_BURST_WORD_CAPACITY)
+				|| (this.overlap2d.readProgress().phase === GeometryOverlap2dPhase.SeekLayerPair
+					&& groupWords + 64 <= DMA_BURST_WORD_CAPACITY)));
 			if (interval !== 0) {
 				this.scheduleInterval(nowCycles + interval);
 				return;

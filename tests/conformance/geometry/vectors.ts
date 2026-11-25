@@ -56,6 +56,30 @@ export function geometryVectors(): GeometryVector[] {
 		const v = vector(`full-pass-selector-${mode}`,
 			cases[0].a.map(numberToF32Bits), cases[0].b.map(numberToF32Bits), false);
 		v.writes.find(([address]) => address === io.IO_GEO_PARAM0)![1] = mode;
+		if (mode === 3) v.writes.find(([address]) => address === io.IO_GEO_SRC1)![1] = GEO_BUFFERS + 0xa00;
+		result.push(v);
+	}
+	for (const mode of [2, 3]) {
+		const v = vector(`layer-boundary-${mode}`, cases[0].a.map(numberToF32Bits), cases[0].b.map(numberToF32Bits), false);
+		const command = v.writes.pop()!;
+		const base = GEO_BUFFERS + 0x1000;
+		v.writes.push([io.IO_GEO_SRC0, base], [io.IO_GEO_SRC1, GEO_BUFFERS + 0xa00], [io.IO_GEO_COUNT, 34], [io.IO_GEO_PARAM0, mode]);
+		for (let i = 0; i < 34; ++i) {
+			const layer = i === 31 ? 0x80000000 : 1;
+			const mask = i === 31 ? 1 : i === 33 ? 0x80000000 : 0;
+			[shapes, 0, 0, layer, mask].forEach((word, j) => v.writes.push([base + i * 20 + j * 4, word]));
+		}
+		v.writes.push(command);
+		result.push(v);
+	}
+	for (const name of ['indexed-workspace-fault', 'indexed-empty', 'indexed-filtered-descriptor']) {
+		const v = vector(name, cases[0].a.map(numberToF32Bits), cases[0].b.map(numberToF32Bits), false);
+		const command = v.writes.pop()!;
+		v.writes.push([io.IO_GEO_PARAM0, geo.GEO_OVERLAP2D_MODE_INDEXED],
+			[io.IO_GEO_SRC1, name === 'indexed-filtered-descriptor' ? GEO_BUFFERS + 0xa00 : 0xffffffff]);
+		if (name === 'indexed-empty') v.writes.push([io.IO_GEO_COUNT, 0]);
+		if (name === 'indexed-filtered-descriptor') v.writes.push([instances, 0xffffffff], [instances + 16, 0]);
+		v.writes.push(command);
 		result.push(v);
 	}
 	// Both dimensions contain equal-depth contacts. Preserve the A/B/feature

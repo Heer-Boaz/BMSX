@@ -6,6 +6,7 @@
 #include "machine/devices/geometry/addressing.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <limits>
 
@@ -34,8 +35,15 @@ uint32_t GeometryOverlap2dUnit::processStep(GeometryJobState& job) {
 	m_pair.pendingWork = {};
 	u32 fault;
 	switch (m_pair.phase) {
-	case 0u:
-	case 5u: fault = beginRecord(job); break;
+	case 6u: fault = buildLayerBlock(job); break;
+	case 7u: fault = seekLayerPair(job); break;
+	case 5u:
+		if ((job.param0 & GEO_OVERLAP2D_MODE_MASK) == GEO_OVERLAP2D_MODE_INDEXED) {
+			fault = buildLayerBlock(job);
+			break;
+		}
+		[[fallthrough]];
+	case 0u: fault = beginRecord(job); break;
 	case 1u: fault = beginPair(job); break;
 	case 2u: fault = processPiece(); break;
 	case 3u: fault = completePiece(job); break;
@@ -55,6 +63,53 @@ void GeometryOverlap2dUnit::writeSummary(const GeometryJobState& job, uint32_t f
 	m_memory.writeU32(job.dst1 + GEO_OVERLAP2D_SUMMARY_EXACT_PAIR_COUNT_OFFSET, job.exactPairCount);
 	m_memory.writeU32(job.dst1 + GEO_OVERLAP2D_SUMMARY_BROADPHASE_PAIR_COUNT_OFFSET, job.broadphasePairCount);
 	m_memory.writeU32(job.dst1 + GEO_OVERLAP2D_SUMMARY_FLAGS_OFFSET, flags);
+}
+
+// SRC1 contains 64 membership words per 32 original indices: layers, then masks.
+uint32_t GeometryOverlap2dUnit::buildLayerBlock(GeoJob& job) {
+	const u32 first = m_pair.instanceBIndex, block = first >> 5;
+	const u32 dst = geometryIndexedAddr(job.src1, block, 256);
+	if (!geometryIndexedSpanFits(job.src1, block, 256, 256) || !m_memory.isRamRange(dst, 256)) return GEO_FAULT_DST_RANGE;
+	std::array<u32, 64> planes{};
+	const u32 count = std::min(32u, job.count - first);
+	for (u32 i = 0; i < count; ++i) {
+		if (!readInstanceAt(job, first + i, m_pair.instanceB)) return GEO_FAULT_SRC_RANGE;
+		for (u32 field = 0; field < 2; ++field)
+			for (u32 bits = m_pair.instanceB[3 + field]; bits; bits &= bits - 1)
+				planes[field * 32 + std::countr_zero(bits)] |= 1u << i;
+	}
+	for (u32 i = 0; i < 64; ++i) {
+		m_memory.countRawWriteU32(dst + i * 4, m_pair.pendingMemory);
+		m_memory.writeU32(dst + i * 4, planes[i]);
+	}
+	m_pair.instanceBIndex += count;
+	m_pair.phase = m_pair.instanceBIndex == job.count ? 0u : 6u;
+	return GEO_FAULT_NONE;
+}
+
+uint32_t GeometryOverlap2dUnit::seekLayerPair(GeoJob& job) {
+	const u32 first = m_pair.instanceBIndex, base = first & ~31u;
+	const u32 address = geometryIndexedAddr(job.src1, first >> 5, 256);
+	u32 hits = ~0u << (first & 31);
+	for (u32 field = 0; field < 2 && hits; ++field) {
+		u32 accepted = 0;
+		for (u32 bits = m_pair.instanceA[4 - field]; bits; bits &= bits - 1)
+			accepted |= m_memory.readCountedU32(address + 4 * (32 * field + std::countr_zero(bits)), m_pair.pendingMemory);
+		hits &= accepted;
+	}
+	const u32 remaining = job.count - base;
+	if (remaining < 32) hits &= (1u << remaining) - 1u;
+	if (hits) {
+		m_pair.instanceBIndex = base + std::countr_zero(hits);
+		m_pair.phase = 1u;
+	} else if (remaining > 32) {
+		m_pair.instanceBIndex = base + 32;
+	} else {
+		m_pair.pendingWriteFlags = 2u;
+		m_pair.afterPublishPhase = 0u;
+		m_pair.phase = 4u;
+	}
+	return GEO_FAULT_NONE;
 }
 
 uint32_t GeometryOverlap2dUnit::beginRecord(GeoJob& job) {
@@ -79,7 +134,7 @@ uint32_t GeometryOverlap2dUnit::beginRecord(GeoJob& job) {
 			return GEO_FAULT_NONE;
 		}
 	}
-	m_pair.phase = 1u;
+	m_pair.phase = mode == GEO_OVERLAP2D_MODE_INDEXED ? 7u : 1u;
 	return GEO_FAULT_NONE;
 }
 
@@ -205,10 +260,10 @@ uint32_t GeometryOverlap2dUnit::finishPair(GeoJob& job) {
 		m_pair.afterPublishPhase = 0u;
 		m_pair.phase = 4u;
 	} else if ((m_pair.pendingWriteFlags & 1u) != 0u) {
-		m_pair.afterPublishPhase = 1u;
+		m_pair.afterPublishPhase = (job.param0 & GEO_OVERLAP2D_MODE_MASK) == GEO_OVERLAP2D_MODE_INDEXED ? 7u : 1u;
 		m_pair.phase = 4u;
 	} else {
-		m_pair.phase = 1u;
+		m_pair.phase = (job.param0 & GEO_OVERLAP2D_MODE_MASK) == GEO_OVERLAP2D_MODE_INDEXED ? 7u : 1u;
 	}
 	return GEO_FAULT_NONE;
 }

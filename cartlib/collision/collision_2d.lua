@@ -6,7 +6,7 @@ local irq<const> = require('cartlib/irq')
 local irq_source<const> = require('cartlib/irq/source')
 
 local geo_overlap_candidate_param0<const> = 0x00000001 | 0x00000000 | 0x00000000 | 0x00000000
-local geo_overlap_full_pass_param0<const> = 0x00000002 | 0x00000004 | 0x00000000 | 0x00000000
+local geo_overlap_full_pass_param0<const> = 0x00000003 | 0x00000004 | 0x00000000 | 0x00000000
 local geo_pair_bytes<const> = 0x0000000c
 local geo_result_bytes<const> = 0x00000024
 local geo_summary_bytes<const> = 0x00000010
@@ -206,7 +206,7 @@ local submit_geo_overlap_full_pass<const> = function(instance_base, result_base,
 	local src<const>: *geo_src_registers = 0x08000024
 	local param<const>: *geo_param_registers = 0x08000048
 	src->instance_base = instance_base
-	src->pair_base = 0
+	src->pair_base = instance_base + instance_count * geo_instance_bytes
 	src->reserved = 0
 	src->result_base = result_base
 	src->summary_base = summary_base
@@ -253,12 +253,13 @@ function collision_2d.collect_overlaps(colliders, collider_count, pairs)
 	if instance_count < 2 then return 0 end
 	local instance_end<const> = instance_base + instance_count * geo_instance_bytes
 	local max_pair_count<const> = (instance_count * (instance_count - 1)) // 2
-	local workspace_result_capacity<const> = (workspace_end - instance_end - geo_summary_bytes) // geo_result_bytes
+	local result_base<const> = instance_end + ((instance_count + 31) >> 5) * 256
+	if result_base + geo_summary_bytes > workspace_end then error('GEO overlap workspace capacity exceeded') end
+	local workspace_result_capacity<const> = (workspace_end - result_base - geo_summary_bytes) // geo_result_bytes
 	local result_capacity = max_pair_count
 	if workspace_result_capacity < result_capacity then
 		result_capacity = workspace_result_capacity
 	end
-	local result_base<const> = instance_end
 	local summary_base<const> = result_base + result_capacity * geo_result_bytes
 	submit_geo_overlap_full_pass(instance_base, result_base, summary_base, instance_count, result_capacity)
 	wait_for_geo_completion('overlap full pass')

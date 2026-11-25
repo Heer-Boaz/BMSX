@@ -20,6 +20,7 @@ import {
 	GEO_OVERLAP2D_INSTANCE_BYTES,
 	GEO_OVERLAP2D_INSTANCE_WORDS,
 	GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS,
+	GEO_OVERLAP2D_MODE_INDEXED,
 	GEO_OVERLAP2D_MODE_MASK,
 	GEO_OVERLAP2D_MAX_CLIP_VERTICES,
 	GEO_OVERLAP2D_MAX_POLY_VERTICES,
@@ -65,7 +66,7 @@ import {
 import { GeometryProjectionSpan } from './projection';
 import type { GeometryJobState } from './job';
 
-export enum GeometryOverlap2dPhase { Record, Pair, Piece, CompletePiece, Publish, Initialized }
+export enum GeometryOverlap2dPhase { Record, Pair, Piece, CompletePiece, Publish, Initialized, BuildLayerBlock, SeekLayerPair }
 
 export type GeometryWork = {
 	axes: number;
@@ -113,6 +114,7 @@ const GEO_FAULT_NONE = 0;
 const GEO_OVERLAP2D_CLIP_COORDS = GEO_OVERLAP2D_MAX_CLIP_VERTICES * 2;
 
 export class GeometryOverlap2dUnit {
+	private readonly planes = new Uint32Array(64);
 	private readonly pair: GeometryOverlap2dProgress = {
 		phase: GeometryOverlap2dPhase.Record, instanceBIndex: 0, pairMeta: 0,
 		shapeAAddr: 0, shapeBAddr: 0, shapeAOffset: 0, shapeBOffset: 0,
@@ -234,8 +236,10 @@ export class GeometryOverlap2dUnit {
 		memory.ramWords = memory.systemRomWords = memory.cartridgeWords = memory.otherWords = 0;
 		let fault: number;
 		switch (pair.phase) {
-			case GeometryOverlap2dPhase.Record:
-			case GeometryOverlap2dPhase.Initialized: fault = this.beginRecord(job); break;
+			case GeometryOverlap2dPhase.Record: fault = this.beginRecord(job); break;
+			case GeometryOverlap2dPhase.Initialized: fault = (job.param0 & GEO_OVERLAP2D_MODE_MASK) === GEO_OVERLAP2D_MODE_INDEXED ? this.buildLayerBlock(job) : this.beginRecord(job); break;
+			case GeometryOverlap2dPhase.BuildLayerBlock: fault = this.buildLayerBlock(job); break;
+			case GeometryOverlap2dPhase.SeekLayerPair: fault = this.seekLayerPair(job); break;
 			case GeometryOverlap2dPhase.Pair: fault = this.beginPair(job); break;
 			case GeometryOverlap2dPhase.Piece: fault = this.processPiece(); break;
 			case GeometryOverlap2dPhase.CompletePiece: fault = this.completePiece(job); break;
@@ -254,6 +258,52 @@ export class GeometryOverlap2dUnit {
 		this.memory.writeU32(geometryByteAddr(job.dst1, GEO_OVERLAP2D_SUMMARY_EXACT_PAIR_COUNT_OFFSET), job.exactPairCount);
 		this.memory.writeU32(geometryByteAddr(job.dst1, GEO_OVERLAP2D_SUMMARY_BROADPHASE_PAIR_COUNT_OFFSET), job.broadphasePairCount);
 		this.memory.writeU32(geometryByteAddr(job.dst1, GEO_OVERLAP2D_SUMMARY_FLAGS_OFFSET), flags >>> 0);
+	}
+
+	private buildLayerBlock(job: GeometryJobState): number {
+		const pair = this.pair, first = pair.instanceBIndex, block = first >>> 5;
+		const dst = geometryIndexedAddr(job.src1, block, 256);
+		if (!geometryIndexedSpanFits(job.src1, block, 256, 256) || !this.memory.isRamRange(dst, 256)) return GEO_FAULT_DST_RANGE;
+		const count = Math.min(32, job.count - first);
+		this.planes.fill(0);
+		for (let i = 0; i < count; ++i) {
+			if (!this.readInstanceAt(job, first + i, pair.instanceB)) return GEO_FAULT_SRC_RANGE;
+			for (let field = 0; field < 2; ++field)
+				for (let bits = pair.instanceB[3 + field]; bits; bits &= bits - 1)
+					this.planes[field * 32 + 31 - Math.clz32(bits & -bits)] |= 1 << i;
+		}
+		for (let i = 0; i < 64; ++i) {
+			this.memory.countRawWriteU32(dst + i * 4, pair.pendingMemory);
+			this.memory.writeU32(dst + i * 4, this.planes[i]);
+		}
+		pair.instanceBIndex += count;
+		pair.phase = pair.instanceBIndex === job.count ? GeometryOverlap2dPhase.Record : GeometryOverlap2dPhase.BuildLayerBlock;
+		return GEO_FAULT_NONE;
+	}
+
+	private seekLayerPair(job: GeometryJobState): number {
+		const pair = this.pair, first = pair.instanceBIndex, base = (first & ~31) >>> 0;
+		const address = geometryIndexedAddr(job.src1, first >>> 5, 256);
+		let hits = -1 << (first & 31);
+		for (let field = 0; field < 2 && hits; ++field) {
+			let accepted = 0;
+			for (let bits = pair.instanceA[4 - field]; bits; bits &= bits - 1)
+				accepted |= this.memory.readU32(address + 4 * (32 * field + 31 - Math.clz32(bits & -bits)), pair.pendingMemory);
+			hits &= accepted;
+		}
+		const remaining = job.count - base;
+		if (remaining < 32) hits &= (1 << remaining) - 1;
+		if (hits) {
+			pair.instanceBIndex = base + 31 - Math.clz32(hits & -hits);
+			pair.phase = GeometryOverlap2dPhase.Pair;
+		} else if (remaining > 32) {
+			pair.instanceBIndex = base + 32;
+		} else {
+			pair.pendingWriteFlags = 2;
+			pair.afterPublishPhase = GeometryOverlap2dPhase.Record;
+			pair.phase = GeometryOverlap2dPhase.Publish;
+		}
+		return GEO_FAULT_NONE;
 	}
 
 	private beginRecord(job: GeometryJobState): number {
@@ -278,7 +328,7 @@ export class GeometryOverlap2dUnit {
 				return GEO_FAULT_NONE;
 			}
 		}
-		pair.phase = GeometryOverlap2dPhase.Pair;
+		pair.phase = (job.param0 & GEO_OVERLAP2D_MODE_MASK) === GEO_OVERLAP2D_MODE_INDEXED ? GeometryOverlap2dPhase.SeekLayerPair : GeometryOverlap2dPhase.Pair;
 		return GEO_FAULT_NONE;
 	}
 
@@ -410,9 +460,9 @@ export class GeometryOverlap2dUnit {
 			pair.afterPublishPhase = GeometryOverlap2dPhase.Record;
 			pair.phase = GeometryOverlap2dPhase.Publish;
 		} else if ((pair.pendingWriteFlags & 1) !== 0) {
-			pair.afterPublishPhase = GeometryOverlap2dPhase.Pair;
+			pair.afterPublishPhase = (job.param0 & GEO_OVERLAP2D_MODE_MASK) === GEO_OVERLAP2D_MODE_INDEXED ? GeometryOverlap2dPhase.SeekLayerPair : GeometryOverlap2dPhase.Pair;
 			pair.phase = GeometryOverlap2dPhase.Publish;
-		} else pair.phase = GeometryOverlap2dPhase.Pair;
+		} else pair.phase = (job.param0 & GEO_OVERLAP2D_MODE_MASK) === GEO_OVERLAP2D_MODE_INDEXED ? GeometryOverlap2dPhase.SeekLayerPair : GeometryOverlap2dPhase.Pair;
 		return GEO_FAULT_NONE;
 	}
 

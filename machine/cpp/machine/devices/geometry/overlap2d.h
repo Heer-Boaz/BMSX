@@ -71,6 +71,8 @@ private:
 	using ClipBuffer = std::array<double, GEO_OVERLAP2D_MAX_CLIP_VERTICES * 2u>;
 
 	void writeSummary(const GeometryJobState& job, uint32_t flags);
+	uint32_t buildLayerBlock(GeoJob& job);
+	uint32_t seekLayerPair(GeoJob& job);
 	uint32_t beginRecord(GeoJob& job);
 	uint32_t beginPair(GeoJob& job);
 	uint32_t processPiece();

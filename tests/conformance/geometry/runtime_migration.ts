@@ -117,6 +117,9 @@ try {
 	const satWrites = geometryVectors().find(entry => entry.name === 'sat-overlap')!.writes.map(([address, value]): [number, number] =>
 		[address, address === io.IO_GEO_DST1 ? scratch + 0x500 : value]);
 	const scenarios = [
+		{ name: 'indexed', writes: geometryVectors().find(v => v.name === 'full-pass-selector-3')!.writes,
+			stages: ['index-built'], processed: 2,
+			result: [0, 0xbf800000, 0x40400000, 0x40200000, 0x40200000, 0, 0, 0, 1], summary: [1, 1, 1, 0] },
 		{ name: 'overlap', writes: overlapWrites, stages: ['init', 'piece', 'publish'], processed: 2,
 			result: [0, 0xbf800000, 0x40400000, 0x40200000, 0x40200000, 0, 0, 0, 1], summary: [1, 1, 1, 0] },
 		{ name: 'sat', writes: satWrites, stages: ['load-a', 'load-b', 'publish'], processed: 1,
@@ -151,7 +154,11 @@ try {
 			if (pending > 1) advanceRuntimeTime(runtime, pending - 1);
 			assert.equal(geo.captureState().pendingCycles, 1);
 		};
-		if (scenario.name === 'overlap') {
+		if (scenario.name === 'indexed') {
+			payAll();
+			assert.equal(geo.captureState().overlap.phase, GeometryOverlap2dPhase.Record);
+			leaveOne(); save('index-built');
+		} else if (scenario.name === 'overlap') {
 			assert.equal(geo.captureState().pendingCycles, 4);
 			leaveOne(); save('init'); payAll();
 			assert.equal(geo.captureState().pendingCycles, 26);

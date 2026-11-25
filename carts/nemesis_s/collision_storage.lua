@@ -64,7 +64,7 @@ bss actor_geometry: word[16384]
 local diagonal_slot_bytes<const> = 32 + (sneeuwpop_ray_max_steps - 1) * sneeuwpop_ray_growth_tiles * 64
 bss diagonal_geometry: word[4096]
 -- GEO overlap passes stage their colliders (24 bytes each) and contacts (36
--- bytes each) here: 32 KiB holds 256 colliders with 739 contacts per pass.
+-- bytes each) here: 32 KiB holds 256 colliders, their layer index and 682 contacts per pass.
 bss geo_overlap_workspace: word[8192]
 collision_2d.use_workspace(geo_overlap_workspace, 8192 * 4)
 

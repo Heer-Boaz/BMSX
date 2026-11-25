@@ -188,4 +188,32 @@ int main() {
 		}
 	}
 
+	{
+		Memory memory({{}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+		IdleInput input;
+		Machine machine(memory, input, PSX_MACHINE_SPEC);
+		machine.resetDevices();
+		machine.scheduler.reset();
+		const u32 workspace = summary + 0x100;
+		require(machine.cpu.heapAllocator().setFloor(workspace + 256), "indexed workspace in static RAM");
+		const auto job = writeCase(memory);
+		memory.writeMappedWord(IO_GEO_SRC0, instances);
+		memory.writeMappedWord(IO_GEO_STRIDE0, job.stride0);
+		memory.writeMappedWord(IO_GEO_SRC1, workspace);
+		memory.writeMappedWord(IO_GEO_DST0, result);
+		memory.writeMappedWord(IO_GEO_DST1, summary);
+		memory.writeMappedWord(IO_GEO_COUNT, 2);
+		memory.writeMappedWord(IO_GEO_PARAM0, GEO_OVERLAP2D_MODE_INDEXED);
+		memory.writeMappedWord(IO_GEO_PARAM1, 1);
+		memory.writeMappedWord(IO_GEO_CMD, job.cmd);
+		machine.scheduler.advanceTo(machine.scheduler.nextDeadline());
+		machine.runDeviceService(machine.scheduler.popDueTimer());
+		require(memory.readU32(workspace) == 3 && machine.geometryController.hasPendingWork(),
+			"the device built the first membership word in caller-owned RAM");
+		memory.writeMappedWord(IO_GEO_CTRL, GEO_CTRL_ABORT);
+		require(!machine.geometryController.hasPendingWork() && memory.readU32(workspace) == 3,
+			"abort stops the pass without undoing visible workspace writes");
+		requireUnpublished(memory);
+	}
+
 }

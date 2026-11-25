@@ -108,6 +108,12 @@ int main(int argc, char** argv) {
 		if (debt > 1) advanceRuntimeTime(runtime, static_cast<int>(debt - 1));
 		require(geo.captureState().pendingCycles == 1, "one cycle remains");
 	};
+	if (scenario == "indexed") {
+		payAll();
+		require(geo.captureState().overlap.phase == 0u, "layer index built before outer iteration");
+		leaveOne(); save("index-built");
+		return 0;
+	}
 	if (scenario == "sat") {
 		require(geo.captureState().sat.phase == 1u && geo.captureState().pendingCycles == 13, "SAT record");
 		payAll();

@@ -888,7 +888,7 @@ The pass uses the configuration captured at launch:
 |---|---|---|
 | `SRC0` | Instance-array address | Instance-array address |
 | `STRIDE0` | Instance stride in bytes | Instance stride in bytes |
-| `SRC1` | Candidate-pair-array address | Unused |
+| `SRC1` | Candidate-pair-array address | Index workspace in indexed mode; otherwise unused |
 | `STRIDE1` | Candidate-pair stride in bytes | Unused |
 | `COUNT` | Number of candidate records | Number of instances |
 | `STRIDE2` | Number of addressable instances | Unused |
@@ -897,7 +897,13 @@ The pass uses the configuration captured at launch:
 | `DST1` | 16-byte summary address | 16-byte summary address |
 | `PARAM1` | Result capacity, in records | Result capacity, in records |
 
-Only `PARAM0 & 3` selects the mode. Selector `1` is candidate mode; selectors `0`, `2`, and `3` are full pass. Thus `2` is the named full-pass encoding, but is not its only accepted encoding.
+Only `PARAM0 & 3` selects the mode. Selector `1` supplies explicit candidate pairs. Selectors `0` and `2` scan the instance array directly. Selector `3` performs an indexed full pass. Use it when many instances have mutually incompatible collision layers.
+
+For an indexed pass, give GEO a word-aligned main-RAM workspace at `SRC1`, with **256 bytes for each group of up to 32 instances** (zero bytes for an empty array). For example, 271 instances require nine groups or 2,304 bytes. The device builds the index; no CPU preparation of the workspace is necessary. Keep it separate from the instance array, all referenced geometry, results and summary. Reserve these buffers until DONE or error; do not edit the inputs, including descriptors, bounds, vertices and child pieces, during the pass. To change a shape concurrently, submit the old shape and edit a different buffer. Reading or writing through an alias is not synchronization.
+
+Indexed mode samples layer membership and acceptance masks in increasing blocks before processing the first outer instance. Each block reads the instance headers and writes a workspace block. For each outer instance it queries the remaining blocks in ascending order, intersecting the membership and acceptance sets before visiting a candidate. Only selected candidates enter the normal pair pipeline, which rereads the current headers and checks descriptors and masks. Consequently an inaccessible descriptor on an excluded pair does not cause a descriptor fault. Changed or aliased bytes are not protected by a lock, copied at launch or rolled back. They can affect later reads; a change does not regenerate an already written block. Do not rely on the private workspace contents. ABORT discards pending computation, not earlier workspace or result writes. Reinitialize the command to rebuild after an abort.
+
+Index construction charges five header reads per instance and 64 RAM writes per completed block. A header interval may admit another block query when at least 64 word transfers remain in its burst. Block queries charge the membership words read for the outer mask, then the acceptance words for its layer if any candidates remain. Subsequent selected pairs follow the ordinary overlap intervals. Contact order, metadata, overflow prefix and outer-record publication retain the same meanings as direct full pass. No space proportional to the number of possible pairs is required.
 
 The pass always uses local-bounds filtering, clipped-feature contact points,
 and stop-on-overflow output. Only the mode field selects behavior. The other
@@ -942,7 +948,7 @@ A candidate record occupies three words, 12 bytes:
 
 These are instance indices, not byte offsets. Records are visited in array order at `SRC1 + recordIndex × STRIDE1`. A self-pair faults before the instance-index bounds check. Otherwise both indices must be less than `STRIDE2`. A is read before B. Repeated and reversed records remain separate operations; neither ordering nor metadata is normalized.
 
-Full pass visits `(0,1), (0,2), …, (1,2), …`, with A index increasing in the outer loop and B running from A+1 to `COUNT−1`. It generates no self-pairs or reversed pairs. Its pair metadata is `((A & 0xFFFF) << 16) | (B & 0xFFFF)`. Only metadata is truncated to 16-bit halves; instance addressing uses the complete indices, with no separate 65,535- or 65,536-instance limit.
+Direct full pass visits `(0,1), (0,2), …, (1,2), …`, with A index increasing in the outer loop and B running from A+1 to `COUNT−1`. It generates no self-pairs or reversed pairs. Its pair metadata is `((A & 0xFFFF) << 16) | (B & 0xFFFF)`. Only metadata is truncated to 16-bit halves; instance addressing uses the complete indices, with no separate 65,535- or 65,536-instance limit.
 
 #### Shape descriptors and bounds {#sec-geo-shape-descriptors-and-bounds}
 
@@ -1030,7 +1036,7 @@ has been paid. A rejected pair can therefore share an interval with other
 rejected pairs. This group is not a DMA burst or a CPU bus hold.
 
 The four initial summary words use the shared word charges. For example, a
-summary in main RAM costs four cycles, even for `COUNT = 0`. In full-pass mode
+summary in main RAM costs four cycles, even for `COUNT = 0`. In direct full-pass mode
 with both instances and both overlapping shape descriptors in main RAM, the
 first group reads five words for A, five for B, ten bounds words and six
 descriptor words. Its charge is 26 cycles, additional to the initial summary
@@ -1115,7 +1121,7 @@ The summary is written initially, after every successful input record, and on ca
 
 The declared alignment fault (`2`) and numeric-overflow fault (`7`) are not emitted by this pass. Reserved parameter bits are not rejected.
 
-In candidate mode, fault checks begin with candidate-record span/readability, then self-pair rejection, instance-index bounds, and the A and B instance-record spans/readability in that order. Full pass first reads/checks its outer A instance, then each B instance.
+In candidate mode, fault checks begin with candidate-record span/readability, then self-pair rejection, instance-index bounds, and the A and B instance-record spans/readability in that order. Direct full pass first reads/checks its outer A instance, then each B instance.
 
 For each reached pair, the order is descriptor readability, mask filtering, A bounds, B bounds, outer-bounds rejection, top-level kind/count checks, exact-count increment, A-piece descriptor/bounds, B-piece descriptor/bounds, piece-bounds rejection, exact A kind/count/data, exact B kind/count/data, contact selection, capacity, and result destination. The first encountered fault stops the record.
 

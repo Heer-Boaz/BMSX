@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { Machine } from '../../../machine/ts/machine/machine';
 import { Memory } from '../../../machine/ts/machine/memory/memory';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { GEO_FAULT_CLIP_CAPACITY, GEO_STATUS_DONE, GEO_STATUS_ERROR } from '../../../machine/ts/machine/devices/geometry/contracts';
+import { GEO_FAULT_DST_RANGE, GEO_FAULT_CLIP_CAPACITY, GEO_STATUS_DONE, GEO_STATUS_ERROR } from '../../../machine/ts/machine/devices/geometry/contracts';
 import { IO_GEO_STATUS, IRQ_GEO_ERROR } from '../../../machine/ts/spec/bmsx/io';
 import { IO_GEO_DST1, IO_GEO_PROCESSED } from '../../../machine/ts/spec/bmsx/io';
 import { cartridgeSlots } from '../../helpers/cartridge';
@@ -96,11 +96,21 @@ for (let i = 0; i < vectors.length; i++) {
 		assert.notDeepEqual(expected.slice(4, 13), Array(9).fill(0xdeadbeef), `${v.name}: earlier contact survives`);
 		assert.deepEqual(expected.slice(13, 22), Array(9).fill(0xdeadbeef), `${v.name}: faulting contact is not written`);
 		assert.deepEqual(expected.slice(22), [0, 0, 0, 0], `${v.name}: failing record does not refresh the summary`);
+	} else if (v.name === 'indexed-workspace-fault') {
+		assert.deepEqual(expected.slice(0, 3), [GEO_STATUS_DONE | GEO_STATUS_ERROR, GEO_FAULT_DST_RANGE << 16, 0]);
+		assert.deepEqual(expected.slice(3, 12), Array(9).fill(0xdeadbeef));
+	} else if (v.name === 'indexed-empty' || v.name === 'indexed-filtered-descriptor') {
+		assert.deepEqual(expected.slice(0, 3), [GEO_STATUS_DONE, 0, v.name === 'indexed-empty' ? 0 : 2]);
+		assert.deepEqual(expected.slice(12), [0, 0, 0, 0]);
 	} else {
 		assert.equal(expected[0], GEO_STATUS_DONE, v.name);
 	}
 	assert.deepEqual(rows[i], [...counterWords, ...expected], `${v.name}: raw result/status words; evidence ${directory}`);
 }
+const boundary = rows[vectors.findIndex(v => v.name === 'layer-boundary-3')];
+assert.deepEqual(boundary, rows[vectors.findIndex(v => v.name === 'layer-boundary-2')]);
+assert.equal(boundary[11], (31 << 16) | 33);
+assert.deepEqual(boundary.slice(12), [1, 1, 1, 0]);
 const compoundTie = rows[vectors.findIndex(vector => vector.name === 'overlap-compound-equal-depth')];
 assert.deepEqual(compoundTie.slice(3, 12), rows[0].slice(3, 12), 'equal-depth compound contacts retain first A/B pieces and feature');
 assert.equal(rows[0][12], 1, 'ordinary overlapping polygons publish a contact');
