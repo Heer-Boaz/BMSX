@@ -1,3 +1,8 @@
+generated: call and return=^bmsx_native_gate_(?:native_return|fixed_resident_call|call|ret)(?:'|$)
+generated: table probes=^bmsx_native_(?:string_read_probe|own_string_slot_probe|index_read_probe|table_length_probe|table_iterator_scan)(?:'|$)
+generated: gate machinery=^bmsx_native_gate_
+generated: guest regions=^bmsx_native_region_
+generated: address reused=^\[overlapping JIT symbols\]
 JIT preparation/compile/publication=CPU::(?:prepareNative|installNativeRegion|compileNativeRoot|publishNative|retireNative)|::retireNativeRegion
 tables: rebuild=TableRecord::resize\(
 tables: other=TableRecord::|GcHeap::allocateTable|CPU::executeNewTable

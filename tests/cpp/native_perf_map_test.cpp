@@ -178,7 +178,7 @@ void gateRanges() {
 	std::cout << '\n';
 #if defined(BMSX_NATIVE_PERF_MAP)
 	const auto ranges = readMap();
-	constexpr std::array names{"entry", "return_to_cpp", "dispatch", "cold_dispatch", "declined", "call", "ret", "publish", "leave"};
+	constexpr std::array names{"entry", "return_to_cpp", "dispatch", "cold_dispatch", "declined", "call", "ret", "native_return", "fixed_resident_call", "publish", "leave"};
 	std::uintptr_t next = base;
 	for (const char* name : names) {
 		const auto symbol = std::string("bmsx_native_gate_") + name;
