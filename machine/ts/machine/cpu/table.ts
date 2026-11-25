@@ -484,10 +484,11 @@ export class TableRecords {
 			}
 		}
 		if (hash !== 0) {
-			const vacant = this.vacantHome(home, hash, tags);
-			const available = index >= 0 || vacant ? -1 : this.findFreeIndex(record, hash, tags);
-			if (index >= 0 || vacant || available >= 0) {
-				index = this.placeHashMapping(record, home, key, value, hash, words, tags, index, available);
+			if (index >= 0) {
+				this.writeSlot(words, tags, index, keyTag, keyWord);
+				this.writeSlot(words, tags, index + hash, tag, word);
+			} else index = this.insertHashWithoutGrowth(record, home, key, value, hash, words, tags, false);
+			if (index >= 0) {
 				if (key === this.newIndexKey) memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
 				this.heap.writeTableAssignment(record, tag, word, key);
 				return index;
@@ -519,10 +520,6 @@ export class TableRecords {
 		this.heap.writeTableAssignment(record, tag, word);
 		this.writeSlot(words, tags, valueSlot, tag, word); return true;
 	}
-	private vacantHome(home: number, hash: number, tags: number): boolean {
-		const memory = this.heap.memory, slot = tags + home;
-		return memory.readRamRecordByte(slot) === ValueTag.Nil || memory.readRamRecordByte(slot + hash) === ValueTag.Nil;
-	}
 	private findFreeIndex(record: number, hash: number, tags: number): number {
 		const memory = this.heap.memory;
 		for (let index = this.hashFree(record); index >= 0; --index) {
@@ -532,7 +529,7 @@ export class TableRecords {
 		return -1;
 	}
 	private insertHashWithoutGrowth(record: number, main: number, key: Value, value: Value, hash: number, words: number, tags: number,
-		free: number, rebuilding: boolean): number {
+		rebuilding: boolean): number {
 		const memory = this.heap.memory, links = tags - hash * 4;
 		const keySlot = main, valueSlot = keySlot + hash;
 		const keyTag = memory.readRamRecordByte(tags + keySlot);
@@ -541,8 +538,9 @@ export class TableRecords {
 			this.writeSlot(words, tags, keySlot, tag, word); this.writeSlot(words, tags, valueSlot, nextTag, nextWord); return main;
 		}
 		const mainWord = memory.readRamRecordWord(words + keySlot * 4);
-		this.writeHeader(record, TableHeader.Free, free >= 0 ? free - 1 : -1);
+		const free = this.findFreeIndex(record, hash, tags);
 		if (free < 0) return -1;
+		this.writeHeader(record, TableHeader.Free, free - 1);
 		const freeKey = free, freeValue = freeKey + hash;
 		const occupiedMain = hashCanonicalTableKey(valueFromTag(keyTag, mainWord)) & (hash - 1);
 		if (occupiedMain !== main) {
@@ -564,14 +562,6 @@ export class TableRecords {
 		memory.writeRamRecordWord(links + free * 4, memory.readRamRecordWord(links + main * 4));
 		memory.writeRamRecordWord(links + main * 4, free); return free;
 	}
-	private placeHashMapping(record: number, home: number, key: Value, value: Value, hash: number,
-		words: number, tags: number, existing: number, available: number): number {
-		if (existing < 0) return this.insertHashWithoutGrowth(record, home, key, value, hash, words, tags, available, false);
-		const slot = existing;
-		this.writeSlot(words, tags, slot, valueTag(key), valuePayload(key));
-		this.writeSlot(words, tags, slot + hash, valueTag(value), valuePayload(value));
-		return existing;
-	}
 	// The resize supplies the destination layout and already cleared its scan cursor.
 	private reinsertMapping(record: number, key: Value, value: Value, array: number, hash: number, words: number, tags: number): number {
 		if (valueTag(key) === ValueTag.Integer) {
@@ -583,8 +573,7 @@ export class TableRecords {
 			}
 		}
 		const home = hashCanonicalTableKey(key) & (hash - 1);
-		const available = this.vacantHome(home, hash, tags) ? -1 : this.findFreeIndex(record, hash, tags);
-		return this.insertHashWithoutGrowth(record, home, key, value, hash, words, tags, available, true);
+		return this.insertHashWithoutGrowth(record, home, key, value, hash, words, tags, true);
 	}
 	private markHashNodeDead(record: number, index: number): void {
 		const keySlot = index, valueSlot = this.hashValueSlot(record, index), tag = this.tagAt(record, keySlot);
@@ -681,11 +670,8 @@ export class TableRecords {
 			if (hash !== 0) {
 				const words = this.hashAddress(record), tags = words + 12 * hash;
 				const home = hashCanonicalTableKey(key) & (hash - 1);
-				const vacant = this.vacantHome(home, hash, tags);
-				const available = vacant ? -1 : this.findFreeIndex(record, hash, tags);
-				if (vacant || available >= 0) {
-					return this.insertHashWithoutGrowth(record, home, key, value, hash, words, tags, available, false);
-				}
+				const slot = this.insertHashWithoutGrowth(record, home, key, value, hash, words, tags, false);
+				if (slot >= 0) return slot;
 			}
 		}
 	}

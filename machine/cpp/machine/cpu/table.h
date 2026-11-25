@@ -252,10 +252,6 @@ private:
 		}
 		int findNode(const Value& key, u32 home, bool matchDead = false) const;
 		int findString(StringId key, u32 home) const;
-		bool vacantHome(u32 home) const {
-			const u32 slot = home;
-			return slots.tag(slot) == ValueTag::Nil || slots.tag(slot + count) == ValueTag::Nil;
-		}
 		bool matchesString(u32 node, StringId key) const {
 			const u32 slot = node;
 			return slots.tag(slot) == ValueTag::String && slots.word(slot) == key;
@@ -280,8 +276,7 @@ private:
 	static bool loadHashEntry(const HashBody& body, u32 slot, Value& key, Value& value);
 	u32 nextStoredEntry(const HashBody& body, u32 position, Value& key, Value& value) const;
 	int reinsertMapping(const RebuildBody& body, int& nextFree, Value key, Value value) noexcept;
-	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept;
-	int placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept;
+	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept;
 	int setHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	template <HashStore Policy>
 	int assignHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0)

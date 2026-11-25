@@ -262,9 +262,8 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 			if (hash != 0u) {
 				const auto body = hashBody(hash);
 				const u32 home = hashCanonicalTableKey(key) & (hash - 1u);
-				const bool vacant = body.vacantHome(home);
-				const int available = vacant ? -1 : body.findFreeIndex(hashFree());
-				if (vacant || available >= 0) return insertHashWithoutGrowth(body, home, key, value, available);
+				const int slot = insertHashWithoutGrowth(body, home, key, value);
+				if (slot >= 0) return slot;
 			}
 		}
 	}
@@ -436,20 +435,13 @@ int TableRecord::reinsertMapping(const RebuildBody& body, int& nextFree, Value k
 	}, [] {});
 }
 
-int TableRecord::insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value, int available) noexcept {
-	return insertAbsentHashKey(body, home, key, value, [this, available] {
-		writeHeader(TableHeader::Free, static_cast<u32>(available - (available >= 0)));
+int TableRecord::insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept {
+	return insertAbsentHashKey(body, home, key, value, [&] {
+		const int available = body.findFreeIndex(hashFree());
+		if (available >= 0) writeHeader(TableHeader::Free, static_cast<u32>(available - 1));
 		return available;
 	},
 		[this] { m_heap->tableEntriesMoved(m_address); });
-}
-
-int TableRecord::placeHashMapping(const HashBody& body, u32 home, Value key, Value value, int existing, int available) noexcept {
-	if (existing < 0) return insertHashWithoutGrowth(body, home, key, value, available);
-	const u32 slot = static_cast<u32>(existing);
-	body.slots.set(slot, key);
-	body.slots.set(slot + body.count, value);
-	return existing;
 }
 
 TableConstructorLayout TableRecord::planStringRecord(std::span<const StringId> keys, u32 present) noexcept {
@@ -621,10 +613,12 @@ int TableRecord::assignHash(Value key, Value value, int nodeIndex, u8 extraHashS
 		if (erase) return -1;
 	}
 	if (count != 0u) {
-		const bool vacant = body.vacantHome(home);
-		const int available = nodeIndex >= 0 || vacant ? -1 : body.findFreeIndex(hashFree());
-		if (nodeIndex >= 0 || vacant || available >= 0) {
-			nodeIndex = placeHashMapping(body, home, key, value, nodeIndex, available);
+		if (nodeIndex >= 0) {
+			const u32 slot = static_cast<u32>(nodeIndex);
+			body.slots.set(slot, key);
+			body.slots.set(slot + count, value);
+		} else nodeIndex = insertHashWithoutGrowth(body, home, key, value);
+		if (nodeIndex >= 0) {
 			publishHashInsertion(key, value);
 			return nodeIndex;
 		}
