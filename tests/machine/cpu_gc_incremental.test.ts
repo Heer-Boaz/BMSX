@@ -1052,10 +1052,9 @@ test('a rooted raw Thread frame retains its table edge and is collected without 
 	const baselineWork = gc.collect(), baselineBytes = cpu.heapAllocator.occupiedBytes();
 	const address = cpu.createThread(0);
 	memory.writeRamRecordWord(address + ThreadField.Status, ThreadStatus.Suspended);
-	const wide = 64, wideBytes = wide * THREAD_STACK_SLOT_BYTES;
-	const block = cpu.heapAllocator.allocate(wideBytes, true);
-	assert.notEqual(block, 0, 'a large unviewed stack fits the test heap');
-	gc.threads.replaceStack(address, block, wide);
+	const wide = 64;
+	cpu.luaHeap.reserveThreadFrameStorage(address, wide, 0, valueNil());
+	const block = memory.readRamRecordWord(address + ThreadField.StackBlock);
 	memory.writeRamRecordWord(address + ThreadField.FrameDepth, 1);
 	memory.writeRamRecordWord(address + ThreadField.StackTop, 1);
 	const frame = memory.readRamRecordWord(address + ThreadField.FrameBlock);

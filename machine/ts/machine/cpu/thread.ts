@@ -1,4 +1,4 @@
-import { ThreadField, ThreadStatus, THREAD_INITIAL_FRAMES, THREAD_STACK_SLOT_BYTES, THREAD_CONTROL_COUNT_MASK } from './thread_record';
+import { ThreadField, ThreadStatus, THREAD_INITIAL_FRAMES, THREAD_CONTROL_COUNT_MASK } from './thread_record';
 export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_RECORD_KIND } from './thread_record';
 import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, PROTECTED_CALL_HANDLER_BUILTIN, ProtectedField, type ProtectedCallKind } from './call_state';
 import type { GcHeap } from './gc_heap';
@@ -153,11 +153,9 @@ export class Thread {
 	public resizeStack(capacity: number, root = valueNil()): void {
 		const previous = this.stackRegisters.capacity();
 		if (capacity === previous) return;
-		const bytes = capacity * THREAD_STACK_SLOT_BYTES;
-		const increase = Math.max(0, capacity - previous) * THREAD_STACK_SLOT_BYTES;
-		const block = this.heap.budget.reserveBacking(bytes, increase, root, valueNil(), valueNil(), this.address);
-		this.heap.threads.replaceStack(this.address, block, capacity);
-		this.stackRegisters.bindRam(this.heap.memory, block & RAM_RECORD_WORD_MASK, capacity);
+		if (capacity < previous) this.heap.threads.resizeStackBacking(this.address, capacity);
+		else this.heap.budget.reserveThreadFrameStorage(this.address, capacity, 0, root);
+		this.stackRegisters.bindRam(this.heap.memory, this.read(ThreadField.StackBlock) & RAM_RECORD_WORD_MASK, capacity);
 		this.rebindFrames();
 	}
 

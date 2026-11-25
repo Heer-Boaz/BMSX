@@ -88,22 +88,31 @@ void initialize(GcHeap& heap, u32 address, u32 valueBlock, u32 frameBlock, u32 e
 	layout.slots(memory).clear(0, THREAD_INITIAL_VALUES);
 }
 
-void replaceStack(GcHeap& heap, u32 address, u32 block, u32 capacity) {
+bool resizeStackBacking(GcHeap& heap, u32 address, u32 capacity) {
 	auto& memory = heap.memory;
-	const u32 oldBlock = read(memory, address, ThreadField::StackBlock);
+	const u32 old = read(memory, address, ThreadField::StackBlock);
 	const u32 previous = read(memory, address, ThreadField::StackCapacity);
+	const u32 bytes = capacity * THREAD_STACK_SLOT_BYTES;
+	u32 block = old;
+	if (capacity > previous) {
+		block = heap.arena.resizeBacking(old, bytes);
+		if (!block) return false;
+	}
 	const u32 offset = block & RAM_RECORD_WORD_MASK;
-	const auto* source = memory.ramData() + (oldBlock & RAM_RECORD_WORD_MASK);
-	auto* words = memory.ramData() + offset;
-	auto* tags = words + capacity * sizeof(u32);
-	const u32 retained = std::min(previous, capacity);
-	std::memcpy(words, source, retained * sizeof(u32));
-	std::memcpy(tags, source + previous * sizeof(u32), retained);
-	std::memset(words + retained * sizeof(u32), 0, (capacity - retained) * sizeof(u32));
-	std::memset(tags + retained, 0, capacity - retained);
-	memory.invalidateRamWrite(offset, capacity * THREAD_STACK_SLOT_BYTES);
+	auto* data = memory.ramData() + offset;
+	const u32 kept = std::min(previous, capacity);
+	// realloc preserves the old planes as bytes. Move tags before clearing
+	// new words on growth, and before releasing the suffix on shrink.
+	std::memmove(data + capacity * sizeof(u32), data + previous * sizeof(u32), kept);
+	if (capacity > previous) {
+		std::memset(data + previous * sizeof(u32), 0, (capacity - previous) * sizeof(u32));
+		std::memset(data + capacity * sizeof(u32) + previous, 0, capacity - previous);
+	}
+	memory.invalidateRamWrite(offset + kept * sizeof(u32), bytes - kept * sizeof(u32));
+	if (capacity < previous) heap.arena.shrinkBacking(old, bytes);
 	memory.writeRamRecordPair(address + static_cast<u32>(ThreadField::StackBlock), block, capacity);
-	heap.budget.replaceRecord(oldBlock, previous * THREAD_STACK_SLOT_BYTES, capacity * THREAD_STACK_SLOT_BYTES);
+	heap.budget.resizeRecordCharge(previous * THREAD_STACK_SLOT_BYTES, bytes);
+	return true;
 }
 
 void replaceControls(GcHeap& heap, u32 address, ThreadField field, u32 block, u32 capacity) {
@@ -154,12 +163,7 @@ u32 shrinkStack(GcHeap& heap, u32 address, const ThreadStorageLayout& layout) {
 		}
 		if (static_cast<u64>(used) * 3 < layout.valueCapacity) {
 			const u32 next = layout.valueCapacity / 2, bytes = next * THREAD_STACK_SLOT_BYTES;
-			const u32 tags = layout.offset() + next * sizeof(u32);
-			std::memmove(memory.ramData() + tags, memory.ramData() + layout.offset() + layout.valueCapacity * sizeof(u32), next);
-			memory.invalidateRamWrite(tags, next);
-			heap.arena.shrinkBacking(layout.block, bytes);
-			memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::StackCapacity), next);
-			heap.budget.resizeRecordCharge(layout.valueBytes(), bytes);
+			resizeStackBacking(heap, address, next);
 			retained = bytes;
 		}
 	}

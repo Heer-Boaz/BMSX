@@ -191,15 +191,15 @@ void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 fram
 	assistSweepBeforeReservation(requested);
 	auto& arena = m_cpu.heapAllocator();
 	for (;;) {
-		const u32 values = valueBytes != 0u ? arena.allocate(valueBytes, true) : 0u;
-		if (valueBytes == 0u || values != 0u) {
-			const u32 frames = frameBytes != 0u ? arena.allocate(frameBytes, true) : 0u;
-			if (frameBytes == 0u || frames != 0u) {
-				if (values != 0u) ThreadRecord::replaceStack(m_cpu.gcHeap(), address, values, valueCapacity);
-				if (frames != 0u) ThreadRecord::replaceControls(m_cpu.gcHeap(), address, ThreadField::FrameBlock, frames, frameCapacity);
+		// Stage control storage first: a successful realloc can consume the
+		// old stack. There must be no fallible reservation after that point.
+		const u32 frames = frameBytes ? arena.allocate(frameBytes, true) : 0u;
+		if (!frameBytes || frames) {
+			if (!valueBytes || ThreadRecord::resizeStackBacking(m_cpu.gcHeap(), address, valueCapacity)) {
+				if (frames) ThreadRecord::replaceControls(m_cpu.gcHeap(), address, ThreadField::FrameBlock, frames, frameCapacity);
 				return;
 			}
-			if (values != 0u) arena.free(values);
+			if (frames) arena.free(frames);
 		}
 		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root, valueNil(), valueNil(), address);
 	}

@@ -233,8 +233,10 @@ void protectedNestedFrames() {
 			&& thread->currentFrame->previous->readControl(FrameField::Protected) == 0, "only the protected target owns its return obligation");
 		const auto state = machine.cpu.captureRuntimeState();
 		const auto ram = machine.cpu.memory().captureSaveState();
+		thread->resizeStack(1024);
+		require(machine.cpu.heapAllocator().allocate(8192, true) != 0, "occupy the stack successor");
 		const auto originalStack = thread->stackOffset();
-		thread->resizeStack(80);
+		thread->resizeStack(2048);
 		require(thread->stackOffset() != originalStack && thread->protectedWord(0, ProtectedField::Wanted) == 3
 			&& thread->protectedWord(0, ProtectedField::Caller) == 0,
 			"a live protected call relocates with its stack");

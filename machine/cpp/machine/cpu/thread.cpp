@@ -170,11 +170,9 @@ void Thread::bindFrameControl(CallFrame& frame, u32 address, u32 index) {
 
 void Thread::resizeStack(size_t capacity, Value root) {
 	if (capacity == stackCapacity) return;
-	const u32 bytes = static_cast<u32>(capacity) * THREAD_STACK_SLOT_BYTES;
-	const u32 increase = static_cast<u32>(capacity - std::min(capacity, stackCapacity)) * THREAD_STACK_SLOT_BYTES;
-	const u32 block = heap.budget.reserveBacking(bytes, increase, root, valueNil(), valueNil(), address);
-	ThreadRecord::replaceStack(heap, address, block, static_cast<u32>(capacity));
-	const u32 offset = block & RAM_RECORD_WORD_MASK;
+	if (capacity < stackCapacity) ThreadRecord::resizeStackBacking(heap, address, static_cast<u32>(capacity));
+	else heap.budget.reserveThreadFrameStorage(address, static_cast<u32>(capacity), 0u, root);
+	const u32 offset = read(ThreadField::StackBlock) & RAM_RECORD_WORD_MASK;
 	stackCapacity = capacity;
 	stack = ValueSpan(heap.memory, offset, offset + static_cast<u32>(capacity) * sizeof(u32), capacity);
 	rebindRegisters();

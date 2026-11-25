@@ -153,22 +153,25 @@ export class ThreadRecords {
 		this.memory.invalidateRamWrite(word, count * 4);
 		this.memory.invalidateRamWrite(tag, count);
 	}
-	public replaceStack(address: number, block: number, capacity: number): void {
-		// Sample the raw owner after allocation admission has completed.
+	public resizeStackBacking(address: number, capacity: number): boolean {
 		const memory = this.memory;
-		const oldBlock = memory.readRamRecordWord(address + ThreadField.StackBlock);
-		const oldCapacity = memory.readRamRecordWord(address + ThreadField.StackCapacity);
-		const old = oldBlock & RAM_RECORD_WORD_MASK;
-		const ram = memory.ramData(), start = block & RAM_RECORD_WORD_MASK;
-		const kept = Math.min(oldCapacity, capacity), tags = start + capacity * 4;
-		const oldTags = old + oldCapacity * 4;
-		ram.copyWithin(start, old, old + kept * 4);
+		const old = memory.readRamRecordWord(address + ThreadField.StackBlock);
+		const previous = memory.readRamRecordWord(address + ThreadField.StackCapacity);
+		const bytes = capacity * THREAD_STACK_SLOT_BYTES;
+		const block = capacity > previous ? this.arena.resizeBacking(old, bytes) : old;
+		if (block === 0) return false;
+		const ram = memory.ramData(), offset = block & RAM_RECORD_WORD_MASK;
+		const oldTags = offset + previous * 4, tags = offset + capacity * 4, kept = Math.min(previous, capacity);
 		ram.copyWithin(tags, oldTags, oldTags + kept);
-		memory.ramWords.fill(0, (start >>> 2) + kept, (start >>> 2) + capacity);
-		ram.fill(0, tags + kept, tags + capacity);
-		memory.invalidateRamWrite(start, capacity * THREAD_STACK_SLOT_BYTES);
+		if (capacity > previous) {
+			ram.fill(0, oldTags, tags);
+			ram.fill(0, tags + previous, offset + bytes);
+		}
+		memory.invalidateRamWrite(offset + kept * 4, bytes - kept * 4);
+		if (capacity < previous) this.arena.shrinkBacking(old, bytes);
 		memory.writeRamRecordPair(address + ThreadField.StackBlock, block, capacity);
-		this.budget.replaceRecord(oldBlock, oldCapacity * THREAD_STACK_SLOT_BYTES, capacity * THREAD_STACK_SLOT_BYTES);
+		this.budget.resizeRecordCharge(previous * THREAD_STACK_SLOT_BYTES, bytes);
+		return true;
 	}
 	public replaceControls(address: number, field: ThreadField.FrameBlock | ThreadField.ProtectedBlock, block: number, capacity: number): void {
 		const memory = this.memory, ram = memory.ramData(), offset = block & RAM_RECORD_WORD_MASK;
@@ -210,12 +213,7 @@ export class ThreadRecords {
 			}
 			if (used * 3 < layout.capacity) {
 				const next = layout.capacity >>> 1, bytes = next * THREAD_STACK_SLOT_BYTES;
-				const tags = layout.offset + next * 4, oldTags = layout.offset + layout.capacity * 4;
-				this.memory.ramData().copyWithin(tags, oldTags, oldTags + next);
-				this.memory.invalidateRamWrite(tags, next);
-				this.arena.shrinkBacking(layout.block, bytes);
-				this.memory.writeRamRecordWord(address + ThreadField.StackCapacity, next);
-				this.budget.resizeRecordCharge(layout.capacity * THREAD_STACK_SLOT_BYTES, bytes);
+				this.resizeStackBacking(address, next);
 				retained = bytes;
 			}
 		}

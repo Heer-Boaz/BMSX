@@ -3,7 +3,7 @@ import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from '../../machine/ts/machine/cpu
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ValueTag, valueBool, valueBuiltinFunction, valueInteger, valueNil, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueFloatBits, valueBool, valueBuiltinFunction, valueInteger, valueNil, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
@@ -142,6 +142,33 @@ test('full collection trims all three Thread reservations with no replacement sp
 	assert.equal(Buffer.compare(memory.captureSaveState().ram, expected), 0, 'rewind restores the tag plane and the allocator suffixes');
 });
 
+test('a stack grows when only its increment fits and rewinds to the old tag plane', () => {
+	const { cpu, memory } = createTestSystemCpu(callImage(8, 1));
+	const thread = cpu.rootThread, arena = cpu.heapAllocator;
+	thread.resizeStack(1536);
+	const base = memory.readRamRecordWord(thread.address + ThreadField.StackBlock);
+	while (arena.allocate(4096, true) !== 0) {}
+	thread.resizeStack(1024);
+	assert.equal(arena.allocate(1536 * THREAD_STACK_SLOT_BYTES, true), 0);
+	const raw = valueFloatBits(0xffa12345);
+	thread.stackRegisters.set(1023, raw);
+	const history = new RamHistory();
+	history.start(memory);
+	const before = history.capture(memory, null), state = cpu.captureRuntimeState();
+	thread.resizeStack(1536);
+	assert.equal(memory.readRamRecordWord(thread.address + ThreadField.StackBlock), base);
+	assert.equal(thread.stackRegisters.get(1023), raw);
+	assert.equal(thread.stackRegisters.get(1024), valueNil());
+	assert.equal(thread.stackRegisters.get(1535), valueNil());
+	const expected = memory.captureSaveState().ram;
+	history.restore(memory, history.capture(memory, before), before);
+	cpu.restoreRuntimeState(state);
+	assert.equal(thread.stackRegisters.capacity(), 1024);
+	assert.equal(thread.stackRegisters.get(1023), raw);
+	thread.resizeStack(1536);
+	assert.equal(Buffer.compare(memory.captureSaveState().ram, expected), 0);
+});
+
 test('second-lane physical failure does not publish either replacement or charge', () => {
 	const { cpu, memory } = createTestSystemCpu(callImage(8, 1));
 	const thread = cpu.rootThread, frame = thread.currentFrame!, arena = cpu.heapAllocator;
@@ -150,16 +177,17 @@ test('second-lane physical failure does not publish either replacement or charge
 	cpu.collectTrackedHeapBytes();
 	const fields = [ThreadField.StackBlock, ThreadField.FrameBlock, ThreadField.StackCapacity, ThreadField.FrameCapacity];
 	const before = fields.map(read), used = cpu.luaHeap.usedBytes();
-	const newValues = 16, valueBytes = newValues * THREAD_STACK_SLOT_BYTES;
+	const newValues = 128, valueBytes = newValues * THREAD_STACK_SLOT_BYTES;
 	const frameBytes = 2 * before[3] * FRAME_CONTROL_BYTES;
-	const spare = arena.allocate(valueBytes, true);
+	const spare = arena.allocate(frameBytes, true);
 	assert.notEqual(spare, 0);
+	assert.notEqual(arena.allocate(frameBytes, true), 0);
+	while (arena.allocate(4088, true) !== 0) {}
 	while (arena.allocate(frameBytes, true) !== 0) {}
-	while (arena.allocate(valueBytes, true) !== 0) {}
 	arena.free(spare);
-	const available = arena.allocate(valueBytes, true);
+	const available = arena.allocate(frameBytes, true);
 	assert.notEqual(available, 0);
-	assert.equal(arena.allocate(frameBytes, true), 0, 'replacement frame controls cannot fit once the Values are reserved');
+	assert.equal(arena.allocate(valueBytes, true), 0, 'after staging the controls no replacement stack fits');
 	arena.free(available);
 	const occupied = arena.occupiedBytes();
 	assert.throws(() => thread.reserveFrame(newValues), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
@@ -349,8 +377,10 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const snapshot = cpu.captureRuntimeState();
 		assert.equal(cpu.rootThread.currentFrame!.previous!.protectedContinuationIndex, 0);
 		const ram = cpu.memory.captureSaveState();
+		cpu.rootThread.resizeStack(1024);
+		assert.notEqual(cpu.heapAllocator.allocate(8192, true), 0); // Block in-place expansion.
 		const oldStack = cpu.rootThread.stackOffset();
-		cpu.rootThread.resizeStack(80);
+		cpu.rootThread.resizeStack(2048);
 		assert.notEqual(cpu.rootThread.stackOffset(), oldStack);
 		assert.equal(cpu.rootThread.protectedWord(0, ProtectedField.Flags), 0);
 		assert.equal(cpu.rootThread.protectedWord(0, ProtectedField.Caller), 0);

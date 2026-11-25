@@ -178,16 +178,14 @@ export class LuaHeap {
 		this.assistSweepBeforeReservation(requested);
 		const arena = this.cpu.heapAllocator;
 		for (;;) {
-			const values = valueBytes === 0 ? 0 : arena.allocate(valueBytes, true);
-			if (valueBytes === 0 || values !== 0) {
-				const frames = frameBytes === 0 ? 0 : arena.allocate(frameBytes, true);
-				if (frameBytes === 0 || frames !== 0) {
-					const threads = this.cpu.gc.threads;
-					if (values !== 0) threads.replaceStack(address, values, valueCapacity);
+			const frames = frameBytes === 0 ? 0 : arena.allocate(frameBytes, true);
+			if (frameBytes === 0 || frames !== 0) {
+				const threads = this.cpu.gc.threads;
+				if (valueBytes === 0 || threads.resizeStackBacking(address, valueCapacity)) {
 					if (frames !== 0) threads.replaceControls(address, ThreadField.FrameBlock, frames, frameCapacity);
 					return;
 				}
-				if (values !== 0) arena.free(values);
+				if (frames !== 0) arena.free(frames);
 			}
 			recovery = this.cpu.gc.recoverAllocation(recovery, root, valueNil(), valueNil(), address);
 		}

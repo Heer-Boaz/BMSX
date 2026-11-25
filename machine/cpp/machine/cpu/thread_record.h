@@ -70,7 +70,7 @@ inline Value error(const Memory& memory, u32 address) {
 }
 void invokeDiagnostic(GcHeap&, BuiltinFunctionId, BuiltinArgsView, BuiltinResults&);
 void initialize(GcHeap&, u32 address, u32 valueBlock, u32 frameBlock, u32 entry);
-void replaceStack(GcHeap&, u32 address, u32 block, u32 capacity);
+bool resizeStackBacking(GcHeap&, u32 address, u32 capacity);
 void replaceControls(GcHeap&, u32 address, ThreadField field, u32 block, u32 capacity);
 u32 shrinkStack(GcHeap&, u32 address, const ThreadStorageLayout& layout);
 }

@@ -1335,9 +1335,8 @@ void collectUnattachedThreadRecord() {
 	const size_t baselineBytes = cpu.heapAllocator().occupiedBytes();
 	const u32 address = cpu.luaHeap().allocateThreadRecord(0u);
 	constexpr u32 capacity = 64u;
-	const u32 block = cpu.heapAllocator().allocate(capacity * THREAD_STACK_SLOT_BYTES, true);
-	require(block != 0u, "a large unviewed stack fits the test heap");
-	ThreadRecord::replaceStack(gc, address, block, capacity);
+	cpu.luaHeap().reserveThreadFrameStorage(address, capacity, 0, valueNil());
+	const u32 block = ThreadRecord::read(memory, address, ThreadField::StackBlock);
 	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::Status), static_cast<u32>(ThreadStatus::Suspended));
 	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::FrameDepth), 1u);
 	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::StackTop), 1u);
@@ -1639,6 +1638,22 @@ void fullCollectionTrimsWithoutFreeBacking() {
 	require(arena.allocate(4 * PROTECTED_CALL_BYTES, true) != 0, "the released suffix is available for allocation");
 }
 
+void valueStackGrowsWithOnlyTheIncrementFree() {
+	Machine machine(image()); auto& cpu = machine.cpu;
+	auto& thread = *cpu.rootThread(); auto& arena = cpu.heapAllocator();
+	thread.resizeStack(1536);
+	const auto base = ThreadRecord::read(cpu.memory(), thread.address, ThreadField::StackBlock);
+	while (arena.allocate(4096, true)) {}
+	thread.resizeStack(1024);
+	require(!arena.allocate(1536 * THREAD_STACK_SLOT_BYTES, true), "no full replacement fits");
+	const auto raw = valueFloatBits(0xffa12345);
+	thread.stack.set(1023, raw);
+	thread.resizeStack(1536);
+	require(ThreadRecord::read(cpu.memory(), thread.address, ThreadField::StackBlock) == base
+		&& thread.stack.get(1023) == raw && thread.stack.get(1024) == valueNil() && thread.stack.get(1535) == valueNil(),
+		"growth consumes only adjacent space, moves retained tags, and clears the extension");
+}
+
 void failedThreadReplacementLeavesBothOwnedLanes() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& thread = *cpu.rootThread(); auto& frame = *thread.currentFrame;
@@ -1647,15 +1662,16 @@ void failedThreadReplacementLeavesBothOwnedLanes() {
 	cpu.collectHeap();
 	const auto before = ThreadRecord::storageLayout(memory, thread.address);
 	const auto used = cpu.luaHeap().usedBytes();
-	constexpr u32 newValues = 16u, valueBytes = newValues * THREAD_STACK_SLOT_BYTES;
-	const u32 available = arena.allocate(valueBytes, true);
-	require(available != 0u && arena.allocate(valueBytes, true) != 0u, "guard one replacement-sized chunk from coalescing");
+	constexpr u32 newValues = 128u, valueBytes = newValues * THREAD_STACK_SLOT_BYTES;
+	const u32 frameBytes = 2u * before.frameBytes();
+	const u32 available = arena.allocate(frameBytes, true);
+	require(available != 0u && arena.allocate(frameBytes, true) != 0u, "guard one control-sized chunk from coalescing");
 	while (arena.allocate(4088u, true) != 0u) {}
-	while (arena.allocate(2u * before.frameBytes(), true) != 0u) {}
+	while (arena.allocate(frameBytes, true) != 0u) {}
 	arena.free(available);
-	const u32 retry = arena.allocate(valueBytes, true);
-	require(retry != 0u && arena.allocate(2u * before.frameBytes(), true) == 0u,
-		"physical pressure admits the replacement Values but not the frame controls");
+	const u32 retry = arena.allocate(frameBytes, true);
+	require(retry != 0u && arena.allocate(valueBytes, true) == 0u,
+		"physical pressure admits the control reservation but not the new Value stack");
 	arena.free(retry);
 	const auto occupied = arena.occupiedBytes();
 	bool failed = false;
@@ -1715,7 +1731,7 @@ int main(int argc, char** argv) {
 		physicalReservationsPaySweepWork(GcPhase::Sweep);
 		physicalReservationsPaySweepWork(GcPhase::Strings);
 		weakTableAdmissionReplansAfterCollection();
-		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
+		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); collectionPrimitiveCyclesIgnoreHeapShape();
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
