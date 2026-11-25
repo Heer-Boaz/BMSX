@@ -1,0 +1,12 @@
+JIT preparation/compile/publication=CPU::(?:prepareNative|installNativeRegion|compileNativeRoot|publishNative|retireNative)|::retireNativeRegion
+tables: rebuild=TableRecord::resize\(
+tables: other=TableRecord::|GcHeap::allocateTable|CPU::executeNewTable
+decode=CPU::(?:decodeInstruction|decodedPageForFrame|refreshDecodedFusion)|DecodedPageDirectory::
+slots=BasicValueSpan<
+call/return/activation=CPU::(?:executeCall|executeReturn|pushFrame|tryCallNativeFrame|tryReturnNativeFrame|writeReturnValues|runNativeBuiltinLeaf)|NativeCpuRunState::(?:publishActivation|enterFrame)
+audio=Apu|AudioOutput|AudioService
+video=GxGpu|GxDevice|SoftwareBackend|blitOpaquePixels|writeGx|video_refresh
+GC and heap=GcHeap::|HeapAllocator::|::markRootBank
+native exit=CPU::dispatchNativeExit
+native execution context=NativeBlock::execute
+remaining runLoop context=CPU::runLoop
