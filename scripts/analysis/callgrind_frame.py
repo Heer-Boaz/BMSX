@@ -10,7 +10,9 @@ to Callgrind, and save /tmp/perf-<pid>.map with the dump. Example:
 Generate cart.asm with inspectrom.sh CART --blua32-asm from the matching ROM.
 A region's first public entry identifies its source, not every instruction in
 the region. JIT self rows are detail, not additional frame costs. Unmatched
-costs stay visible. Inlined work belongs to the enclosing symbol.
+costs stay visible. With debug line tables, --self-lines REGEX breaks down
+matching self symbols by recorded source position, including inline files.
+These rows explain the enclosing symbol, not extra work or literal cycles.
 """
 
 import argparse
@@ -46,8 +48,9 @@ class PerfRanges:
         return self.names[index] if index >= 0 else None
 
 
-def read_costs(lines, perf_map=None, native=None):
-    symbols = {"fn": {}, "ob": {}}
+def read_costs(lines, perf_map=None, native=None, self_lines=None, locations=None):
+    symbols = {"fn": {}, "ob": {}, "fl": {}}
+    source, lineno = "???", 0
     obj = None
     costs = Counter()
     edge = False
@@ -63,22 +66,27 @@ def read_costs(lines, perf_map=None, native=None):
         elif line.startswith("positions:"):
             columns = line.split()[1:]
             positions = len(columns)
+            if self_lines:
+                line_column = columns.index("line")
             if perf_map:
                 instr = columns.index("instr")  # requires --dump-instr=yes
-        elif line.startswith(("fn=", "cfn=", "ob=", "cob=")):
+        elif line.startswith(("fn=", "cfn=", "jfn=", "ob=", "cob=", "fl=", "fi=", "fe=", "cfi=", "cfl=", "jfi=")):
             kind, value = line.rstrip().split("=", 1)
-            table = symbols[kind.removeprefix("c")]
+            file_record = kind in ("fl", "fi", "fe", "cfi", "cfl", "jfi")
+            table = symbols["fl" if file_record else kind.lstrip("cj")]
             encoded = re.fullmatch(r"\((\d+)\)(?: (.*))?", value)
             if encoded:
                 key, name = encoded.groups()
                 if name is not None:
                     table[key] = name
-                if kind in ("fn", "ob"):
+                if kind in ("fn", "ob", "fl", "fi", "fe"):
                     value = table[key]
             if kind == "fn":
                 current = value
             elif kind == "ob":
                 obj = value
+            elif kind in ("fl", "fi", "fe"):
+                source = value
         elif line.startswith(("calls=", "jump=", "jcnd=")):
             edge = True
         elif line[:1] in "0123456789*+-":
@@ -88,6 +96,11 @@ def read_costs(lines, perf_map=None, native=None):
                 if position != "*":
                     value = int(position, 0)
                     address = address + value if position[0] in "+-" else value
+            if self_lines:
+                position = fields[line_column]
+                if position != "*":
+                    value = int(position, 0)
+                    lineno = lineno + value if position[0] in "+-" else value
             if not edge:
                 # The format omits trailing zero event columns.
                 if len(fields) > positions + event:
@@ -101,6 +114,8 @@ def read_costs(lines, perf_map=None, native=None):
                             native[symbol] += count
                             owner = symbol + current[len(current.split("'", 1)[0]):]
                     costs[owner] += count
+                    if self_lines and self_lines.search(owner.partition("'")[0]):
+                        locations[source, lineno] += count
             edge = False
         elif line.startswith("totals:"):
             total = int(line.split()[1 + event])
@@ -139,11 +154,14 @@ def main():
     parser.add_argument("--rom-listing", action="append", default=[], metavar="DOMAIN:SLOT=FILE",
                         help="identify a region entry using rominspector --blua32-asm")
     parser.add_argument("scopes", nargs="+", metavar="NAME=REGEX")
+    parser.add_argument("--self-lines", type=re.compile, metavar="SYMBOL_REGEX",
+                        help="show exclusive source-line costs in matching self symbols (needs debug line tables)")
     args = parser.parse_args()
     scopes = [(name, re.compile(pattern)) for name, pattern in
               (arg.split("=", 1) for arg in args.scopes)]
     native = Counter()
-    costs, total = read_costs(args.part, args.perf_map, native)
+    locations = Counter()
+    costs, total = read_costs(args.part, args.perf_map, native, args.self_lines, locations)
     groups = Counter()
     unmatched = Counter()
     for context, count in costs.items():
@@ -157,6 +175,10 @@ def main():
         print(f"{count:12,d}  {group}")
     print(f"{sum(unmatched.values()):12,d}  unmatched")
     print(f"{total:12,d}  total Ir")
+    if args.self_lines:
+        print(f"{locations.total():12,d}  self Ir matching {args.self_lines.pattern} (detail)")
+        for (source, line), count in locations.most_common():
+            print(f"{count:12,d}    {source}:{line}")
     listings = {}
     for listing in args.rom_listing:
         image, path = listing.split("=", 1)
