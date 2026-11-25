@@ -945,6 +945,49 @@ void nativeCallChainIsRestorableAtBlockedMmio(bool openOuter) {
 	requireParity(generated, scalar);
 }
 
+void pendingReturnPlacement(int produced, int requested, int first) {
+	// CALL's result starts one slot below the arguments. Three actual
+	// parameters make the open RET and the overlapping forward copy observable.
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	const auto put = [&](u32 word, OpCode op, int a, int b, int c) {
+		writeInstruction(image.text, word, static_cast<u8>(op), a, b, c);
+	};
+	put(0, OpCode::WIDE, 0, 0, 0);
+	put(1, OpCode::CLOSURE, 1, 0, 0);
+	put(2, OpCode::KSMI, 2, 0, 23);
+	put(3, OpCode::KFALSE, 3, 0, 0);
+	put(4, OpCode::KTRUE, 4, 0, 0);
+	put(5, OpCode::CALL, 1, 4, requested + 1);
+	put(6, OpCode::HALT, 0, 0, 0);
+	put(7, OpCode::RET, 0, 1, 0);
+	put(8, OpCode::RET, first, produced + 1, 0);
+	image.functions = {{.firstWord=0, .wordCount=8, .maxStack=8},
+		{.firstWord=8, .wordCount=1, .numParams=3, .maxStack=3}};
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	CpuMachine generated(image, false), scalar(image, true);
+	generated.cpu.prepareSystemNativeCode();
+	require(test::runCpuParity(generated.cpu, scalar.cpu, 120) == RunResult::Halted, "warm the actual CALL");
+	auto* child = generated.cpu.activeThread()->currentFrame->next;
+	const u32 inactive = 0x12345678u;
+	child->writeControl(FrameField::CallSite, inactive);
+	for (auto* m : {&generated, &scalar}) {
+		m->cpu.clearHaltUntilIrq();
+		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+	}
+	require(test::runCpuParity(generated.cpu, scalar.cpu, 120) == RunResult::Halted
+		&& child->readControl(FrameField::CallSite) == inactive, "pending RET does not publish an inactive child");
+	const int available = produced < 0 ? std::max(3 - first, 0) : produced;
+	const int count = requested < 0 ? available : requested;
+	const std::array values{valueInteger(23), valueBool(false), valueBool(true)};
+	require(generated.cpu.activeThread()->currentFrame->readWindow(FrameField::Top) == 1 + count,
+		"pending RET assigns precisely the selected result extent");
+	for (int i = 0; i < count; ++i)
+		require(generated.cpu.readFrameRegister(0, 1 + i) == (i < available ? values[first + i] : valueNil()),
+			"pending RET preserves overlapping payload/tag pairs and pads only the requested suffix");
+	requireParity(generated, scalar);
+}
+
 void nativeReturnPublishesCallerTopAtMappedObserver() {
 	constexpr u32 continuation = 5u;
 	test::Blua32TestImage image;
@@ -1937,6 +1980,11 @@ int main(int argc, char** argv) {
 		for (int supplied : {1, 2}) nativeCallProfileKeepsCapturesAndDropsContradictedTarget(supplied, 2);
 		nativeCallProfileKeepsCapturesAndDropsContradictedTarget(1, 3);
 		for (const bool openOuter : {false, true}) nativeCallChainIsRestorableAtBlockedMmio(openOuter);
+		pendingReturnPlacement(-1, -1, 0);
+		pendingReturnPlacement(3, 2, 0);
+		pendingReturnPlacement(-1, 4, 1);
+		pendingReturnPlacement(-1, 2, 5);
+		pendingReturnPlacement(3, 0, 0);
 		nativeReturnPublishesCallerTopAtMappedObserver();
 		nativeReturnRouting(6, 0, 0, false, true);
 		nativeReturnRouting(2, 4, 0, false, false);
