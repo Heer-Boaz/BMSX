@@ -20,11 +20,10 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 		// Existing entry points retain their region; an edge to one becomes an
 		// ordinary external link. Interior entries compile a separate suffix.
 		if (page.nativeBlocks && page.nativeBlocks->entries[cursor]) continue;
-		// Hotness triggers a compilation request at its root. Within a
-		// verified body, use executed entries to select the region: two
-		// arms of one hot branch need not independently trigger compilation.
-		// Mapped code lacks that proof; keep its per-word heat requirement.
-		if (!requested && !roots[cursor] && (source.leaders[cursor] || binding.writeWatch.groups)) {
+		// A hot, bounded ROM prototype owns its reachable CFG. Interior
+		// and window roots are side entries, not requests for an entire
+		// function. They still use observed leaders to select their region.
+		if (!requested && !source.wholePrototype && !roots[cursor] && (source.leaders[cursor] || binding.writeWatch.groups)) {
 			if (page.refreshState[cursor] & DECODED_REFRESH_DECODE) continue;
 			const u32 visits = page.nativeVisits[cursor];
 			if (source.verifiedRom ? visits == 0u : visits + 1u < NATIVE_BLOCK_COMPILATION_THRESHOLD) continue;

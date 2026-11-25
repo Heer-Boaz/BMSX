@@ -140,6 +140,7 @@ void CPU::compileNativeRoot(Blua32ExecutionImage& image, u32 functionAddress, De
 	NativeCompilationSource source(page, pagePc, busSignals,
 		m_memory.cartridgeController().selectedSlot(busSignals), verified);
 	if (verified) {
+		source.wholePrototype = pc == version->entry.codeAddress;
 		source.firstPc = version->entry.codeAddress;
 		source.lastPc = version->endPc - INSTRUCTION_BYTES;
 	}

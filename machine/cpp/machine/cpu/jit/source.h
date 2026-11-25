@@ -87,6 +87,7 @@ struct NativeCompilationSource {
 	MappedBusSignals busSignals;
 	u32 slot;
 	bool verifiedRom;
+	bool wholePrototype = false;
 	u32 firstPc = 0u, lastPc = ~0u;
 	NativeSourceWords roots, available;
 	std::bitset<DECODED_PAGE_WORDS> queued;

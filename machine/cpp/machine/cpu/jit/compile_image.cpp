@@ -64,6 +64,7 @@ bool CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunc
 			if (requested && !requested->include(address)) return nullptr;
 			auto& page = image.decodedPages.bind(binding);
 			source.emplace(page, address, busSignals, slot, verified);
+			source->wholePrototype = verified && rootPc == version.entry.codeAddress && bodyPages <= limit;
 			source->firstPc = firstPc;
 			source->lastPc = endPc - INSTRUCTION_BYTES;
 		}

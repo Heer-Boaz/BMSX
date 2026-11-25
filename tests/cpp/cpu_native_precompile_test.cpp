@@ -532,27 +532,30 @@ void verifiedSinglePagePreparationSharesTheColdBatch() {
 	require(!entryAt(warmed, sibling), "adaptive preparation does not absorb the neighboring function");
 }
 
-void adaptiveBranchSelectsExecutedDestinations(bool bothArms) {
+void adaptiveBranchCoverage(bool interior, bool bothArms) {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
 	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
-	image.text.resize(5u * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 0, 0, 2);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K0), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::K1), 0, 0, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	image.functions = {{.firstWord=0, .wordCount=5, .maxStack=1}};
+	const u32 branch = interior ? 1u : 0u;
+	image.text.resize((branch + 5u) * INSTRUCTION_BYTES);
+	if (interior) writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, branch, static_cast<u8>(OpCode::JMPIF), 0, 0, 2);
+	writeInstruction(image.text, branch + 1u, static_cast<u8>(OpCode::K0), 0, 0, 0);
+	writeInstruction(image.text, branch + 2u, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(image.text, branch + 3u, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, branch + 4u, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord=0, .wordCount=branch + 5u, .maxStack=1}};
 	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::System, image));
 	auto& cpu = machine.runtime.machine.cpu;
+	const u32 pc = machine.rom.textAddress + branch * INSTRUCTION_BYTES, side = pc + INSTRUCTION_BYTES;
 	const auto call = [&](bool flag) {
 		cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0]);
+		if (interior) cpu.writeFrameExecution(1, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
 		cpu.activeThread()->currentFrame->registers.set(0, valueBool(flag));
 		require(cpu.runUntilDepth(1, 32) == RunResult::Halted
 			&& cpu.readCompletionValues().get(0) == valueInteger(flag ? 1 : 0),
 			"the native branch and its scalar exit return the selected value");
 	};
-	const u32 pc = machine.rom.textAddress, side = pc + INSTRUCTION_BYTES;
 	const auto wait = [&](u32 address) {
 		cpu.runUntilDepth(0, 0);
 		const auto& page = *cpu.rootThread()->currentFrame->executionImage->decodedPages.find(address & ~MAPPED_PAGE_BYTE_MASK);
@@ -560,23 +563,22 @@ void adaptiveBranchSelectsExecutedDestinations(bool bothArms) {
 	};
 	for (int visit = 0; visit <= NATIVE_BLOCK_COMPILATION_THRESHOLD; ++visit) call(!bothArms || (visit & 1));
 	wait(pc);
-	if (bothArms) {
-		const auto* first = entryAt(cpu, side);
-		const auto* second = entryAt(cpu, pc + 3u * INSTRUCTION_BYTES);
-		require(first && second && first->region == entryAt(cpu, pc)->region && second->region == first->region,
-			"one hot branch publishes both executed arms even when neither is independently hot");
+	if (interior && !bothArms) {
+		require(entryAt(cpu, pc + 3u * INSTRUCTION_BYTES) && !entryAt(cpu, side),
+			"an interior request covers observed leaders, not the complete prototype");
+		for (int visit = 1; visit < NATIVE_SIDE_EXIT_THRESHOLD; ++visit) call(false);
+		require(!entryAt(cpu, side), "an infrequent native side exit stays scalar");
 		call(false);
-		call(true);
+		wait(side);
+		require(entryAt(cpu, pc)->region != entryAt(cpu, side)->region, "a hot side exit publishes independently");
 		return;
 	}
-	require(entryAt(cpu, pc + 3u * INSTRUCTION_BYTES) && !entryAt(cpu, side),
-		"the first publication includes the hot destination but excludes the untaken side");
-	for (int visit = 1; visit < NATIVE_SIDE_EXIT_THRESHOLD; ++visit) call(false);
-	require(!entryAt(cpu, side), "an infrequent native exit stays scalar");
+	const auto* first = entryAt(cpu, side);
+	const auto* second = entryAt(cpu, pc + 3u * INSTRUCTION_BYTES);
+	require(first && second && first->region == entryAt(cpu, pc)->region && second->region == first->region,
+		"one admitted prototype publishes both reachable arms even if one has never executed");
 	call(false);
-	wait(side);
-	require(entryAt(cpu, pc)->region != entryAt(cpu, side)->region,
-		"a newly hot side publishes independently of the original branch");
+	call(true);
 }
 
 void verifiedSinglePageHotLoopLeavesItsFunctionEntryScalar() {
@@ -764,8 +766,9 @@ int main() {
 		preparationLeavesFetchFaultsAtExecution();
 		crossPageWideDependenciesRemainOwned();
 		verifiedSinglePagePreparationSharesTheColdBatch();
-		adaptiveBranchSelectsExecutedDestinations(false);
-		adaptiveBranchSelectsExecutedDestinations(true);
+		adaptiveBranchCoverage(false, false);
+		adaptiveBranchCoverage(false, true);
+		adaptiveBranchCoverage(true, false);
 		verifiedSinglePageHotLoopLeavesItsFunctionEntryScalar();
 		wideFunctionUsesDemandedBoundedRegions();
 		verifiedStartupReachabilityOutranksDescriptiveHints();
