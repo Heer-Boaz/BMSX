@@ -100,10 +100,7 @@ u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, CallResultPla
 	const u32 reserved = protectedCapacity();
 	if (index == reserved) {
 		const u32 capacity = reserved == 0 ? 1 : reserved * 2;
-		const u32 bytes = capacity * PROTECTED_CALL_BYTES;
-		const u32 increase = (capacity - reserved) * PROTECTED_CALL_BYTES;
-		const u32 block = heap.budget.reserveBacking(bytes, increase, handler, valueNil(), valueNil(), address);
-		ThreadRecord::replaceControls(heap, address, ThreadField::ProtectedBlock, block, capacity);
+		const u32 block = heap.budget.reserveThreadControls(address, ThreadField::ProtectedBlock, capacity, reserved, handler);
 		boundProtectedOffset = block & RAM_RECORD_WORD_MASK;
 	}
 	const u32 addr = protectedAddress(index) & RAM_RECORD_WORD_MASK;

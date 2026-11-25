@@ -11,6 +11,7 @@ namespace bmsx {
 
 class CPU;
 struct Thread;
+enum class ThreadField : u32;
 enum class LuaAllocationRecovery { CurrentOrFresh, Fresh, Exhausted };
 enum class LuaAllocationMode { Direct, Scheduled, Retry };
 
@@ -41,6 +42,7 @@ public:
 	// Admission does not commit occupancy; the owner publishes its replacement.
 	u32 reserveBacking(u32 bytes, u32 logicalBytes, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	u32 allocateThreadRecord(u32 entry);
+	u32 reserveThreadControls(u32 address, ThreadField field, u32 capacity, u32 previous, Value root);
 	void reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 frameCapacity, Value root);
 	// Admit the closure and its new cells before publishing any frame link.
 	u32 allocateClosureRecord(u32 captures, bool latched = false, std::span<u32> cells = {});

@@ -5,7 +5,7 @@ import { decodeGcPhase, GcPhase } from './gc_heap';
 import { GC_OBJECT_PREFIX } from './gc_object';
 import type { CPU } from './cpu';
 import { valueClosure, valueNil, type Value } from './value';
-import { FRAME_CONTROL_BYTES } from './call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES } from './call_state';
 import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadField } from './thread_record';
 
 const NO_NEW_CELLS = new Uint32Array(0);
@@ -164,6 +164,17 @@ export class LuaHeap {
 	}
 
 	/** A call can need both storage lanes. Acquire them before changing either raw descriptor. */
+	public reserveThreadControls(address: number, field: ThreadField.FrameBlock | ThreadField.ProtectedBlock, capacity: number, previous: number, root: Value): number {
+		const stride = field === ThreadField.FrameBlock ? FRAME_CONTROL_BYTES : PROTECTED_CALL_BYTES;
+		let recovery = this.admit((capacity - previous) * stride, root, valueNil(), valueNil(), address);
+		this.assistSweepBeforeReservation(capacity * stride);
+		for (;;) {
+			const block = this.cpu.gc.threads.growControls(address, field, capacity);
+			if (block !== 0) return block;
+			recovery = this.cpu.gc.recoverAllocation(recovery, root, valueNil(), valueNil(), address);
+		}
+	}
+
 	public reserveThreadFrameStorage(address: number, valueCapacity: number, frameCapacity: number, root: Value): void {
 		const valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
 		const frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
@@ -171,6 +182,10 @@ export class LuaHeap {
 		const previousValues = valueCapacity !== 0 ? memory.readRamRecordWord(address + ThreadField.StackCapacity) * THREAD_STACK_SLOT_BYTES : 0;
 		const previousFrames = frameCapacity !== 0
 			? (memory.readRamRecordWord(address + ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK) * FRAME_CONTROL_BYTES : 0;
+		if (valueBytes === 0 && frameBytes !== 0) {
+			this.reserveThreadControls(address, ThreadField.FrameBlock, frameCapacity, previousFrames / FRAME_CONTROL_BYTES, root);
+			return;
+		}
 		const requested = valueBytes + frameBytes, previous = previousValues + previousFrames;
 		let recovery = requested > previous
 			? this.admit(requested - previous, root, valueNil(), valueNil(), address)
@@ -182,7 +197,7 @@ export class LuaHeap {
 			if (frameBytes === 0 || frames !== 0) {
 				const threads = this.cpu.gc.threads;
 				if (valueBytes === 0 || threads.resizeStackBacking(address, valueCapacity)) {
-					if (frames !== 0) threads.replaceControls(address, ThreadField.FrameBlock, frames, frameCapacity);
+					if (frames !== 0) threads.growControls(address, ThreadField.FrameBlock, frameCapacity, frames);
 					return;
 				}
 				if (frames !== 0) arena.free(frames);

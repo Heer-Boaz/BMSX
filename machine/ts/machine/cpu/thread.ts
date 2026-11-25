@@ -96,10 +96,7 @@ export class Thread {
 		const reserved = this.protectedCapacity;
 		if (index === reserved) {
 			const capacity = reserved === 0 ? 1 : reserved * 2;
-			const bytes = capacity * PROTECTED_CALL_BYTES;
-			const increase = (capacity - reserved) * PROTECTED_CALL_BYTES;
-			const block = this.heap.budget.reserveBacking(bytes, increase, handler, valueNil(), valueNil(), this.address);
-			this.heap.threads.replaceControls(this.address, ThreadField.ProtectedBlock, block, capacity);
+			const block = this.heap.budget.reserveThreadControls(this.address, ThreadField.ProtectedBlock, capacity, reserved, handler);
 			this.boundProtectedOffset = block & RAM_RECORD_WORD_MASK;
 		}
 		const address = this.protectedAddress(index) & RAM_RECORD_WORD_MASK;

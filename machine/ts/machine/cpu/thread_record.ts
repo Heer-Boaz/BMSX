@@ -173,22 +173,28 @@ export class ThreadRecords {
 		this.budget.resizeRecordCharge(previous * THREAD_STACK_SLOT_BYTES, bytes);
 		return true;
 	}
-	public replaceControls(address: number, field: ThreadField.FrameBlock | ThreadField.ProtectedBlock, block: number, capacity: number): void {
-		const memory = this.memory, ram = memory.ramData(), offset = block & RAM_RECORD_WORD_MASK;
+	public growControls(address: number, field: ThreadField.FrameBlock | ThreadField.ProtectedBlock, capacity: number, staged = 0): number {
+		const memory = this.memory, ram = memory.ramData();
 		const frames = field === ThreadField.FrameBlock;
 		const stride = frames ? FRAME_CONTROL_BYTES : PROTECTED_CALL_BYTES;
 		const capacityField = frames ? ThreadField.FrameCapacity : ThreadField.ProtectedCapacity;
 		const depthField = frames ? ThreadField.FrameDepth : ThreadField.ProtectedDepth;
 		const oldBlock = memory.readRamRecordWord(address + field);
-		const old = oldBlock & RAM_RECORD_WORD_MASK;
+		const bytes = capacity * stride;
+		const block = staged || (oldBlock !== 0 ? this.arena.resizeBacking(oldBlock, bytes) : this.arena.allocate(bytes, true));
+		if (block === 0) return 0;
+		const offset = block & RAM_RECORD_WORD_MASK, old = oldBlock & RAM_RECORD_WORD_MASK;
 		const oldCapacity = memory.readRamRecordWord(address + capacityField) & THREAD_CONTROL_COUNT_MASK;
 		const occupied = (memory.readRamRecordWord(address + depthField) & THREAD_CONTROL_COUNT_MASK) * stride;
-		ram.copyWithin(offset, old, old + occupied);
+		if (staged !== 0) ram.copyWithin(offset, old, old + occupied);
 		ram.fill(0, offset + occupied, offset + capacity * stride);
-		memory.invalidateRamWrite(offset, capacity * stride);
+		const dirty = staged !== 0 ? 0 : occupied;
+		memory.invalidateRamWrite(offset + dirty, bytes - dirty);
 		memory.writeRamRecordWord(address + field, block);
 		memory.writeRamRecordWord(address + capacityField, capacity);
-		this.budget.replaceRecord(oldBlock, oldCapacity * stride, capacity * stride);
+		if (staged !== 0) this.arena.free(oldBlock);
+		this.budget.resizeRecordCharge(oldCapacity * stride, bytes);
+		return block;
 	}
 	private shrinkControls(address: number, field: ThreadField.FrameCapacity | ThreadField.ProtectedCapacity,
 		block: number, capacity: number, depth: number, stride: number): number {

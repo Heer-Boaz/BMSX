@@ -178,12 +178,26 @@ u32 LuaHeap::allocateThreadRecord(u32 entry) {
 	}
 }
 
+u32 LuaHeap::reserveThreadControls(u32 address, ThreadField field, u32 capacity, u32 previous, Value root) {
+	const u32 stride = field == ThreadField::FrameBlock ? FRAME_CONTROL_BYTES : PROTECTED_CALL_BYTES;
+	auto recovery = admit((capacity - previous) * stride, root, valueNil(), valueNil(), address);
+	assistSweepBeforeReservation(capacity * stride);
+	for (;;) {
+		if (const u32 block = ThreadRecord::growControls(m_cpu.gcHeap(), address, field, capacity)) return block;
+		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root, valueNil(), valueNil(), address);
+	}
+}
+
 void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 frameCapacity, Value root) {
 	const u32 valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
 	const u32 frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
 	const auto& memory = m_cpu.memory();
 	const u32 previousValues = valueCapacity != 0u ? ThreadRecord::read(memory, address, ThreadField::StackCapacity) * THREAD_STACK_SLOT_BYTES : 0u;
 	const u32 previousFrames = frameCapacity != 0u ? ThreadRecord::count(memory, address, ThreadField::FrameCapacity) * FRAME_CONTROL_BYTES : 0u;
+	if (!valueBytes && frameBytes) {
+		reserveThreadControls(address, ThreadField::FrameBlock, frameCapacity, previousFrames / FRAME_CONTROL_BYTES, root);
+		return;
+	}
 	const u32 requested = valueBytes + frameBytes, previous = previousValues + previousFrames;
 	auto recovery = requested > previous
 		? admit(requested - previous, root, valueNil(), valueNil(), address)
@@ -196,7 +210,7 @@ void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 fram
 		const u32 frames = frameBytes ? arena.allocate(frameBytes, true) : 0u;
 		if (!frameBytes || frames) {
 			if (!valueBytes || ThreadRecord::resizeStackBacking(m_cpu.gcHeap(), address, valueCapacity)) {
-				if (frames) ThreadRecord::replaceControls(m_cpu.gcHeap(), address, ThreadField::FrameBlock, frames, frameCapacity);
+				if (frames) ThreadRecord::growControls(m_cpu.gcHeap(), address, ThreadField::FrameBlock, frameCapacity, frames);
 				return;
 			}
 			if (frames) arena.free(frames);

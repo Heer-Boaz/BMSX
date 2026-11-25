@@ -115,7 +115,7 @@ bool resizeStackBacking(GcHeap& heap, u32 address, u32 capacity) {
 	return true;
 }
 
-void replaceControls(GcHeap& heap, u32 address, ThreadField field, u32 block, u32 capacity) {
+u32 growControls(GcHeap& heap, u32 address, ThreadField field, u32 capacity, u32 staged) {
 	auto& memory = heap.memory;
 	const bool frames = field == ThreadField::FrameBlock;
 	const u32 stride = frames ? FRAME_CONTROL_BYTES : PROTECTED_CALL_BYTES;
@@ -123,15 +123,21 @@ void replaceControls(GcHeap& heap, u32 address, ThreadField field, u32 block, u3
 	const auto depthField = frames ? ThreadField::FrameDepth : ThreadField::ProtectedDepth;
 	const u32 previous = count(memory, address, capacityField);
 	const u32 oldBlock = read(memory, address, field);
+	const u32 bytes = capacity * stride;
+	const u32 block = staged ? staged : (oldBlock ? heap.arena.resizeBacking(oldBlock, bytes) : heap.arena.allocate(bytes, true));
+	if (!block) return 0;
 	const u32 offset = block & RAM_RECORD_WORD_MASK;
 	auto* destination = memory.ramData() + offset;
 	const u32 occupied = count(memory, address, depthField) * stride;
-	std::memcpy(destination, memory.ramData() + (oldBlock & RAM_RECORD_WORD_MASK), occupied);
+	if (staged) std::memcpy(destination, memory.ramData() + (oldBlock & RAM_RECORD_WORD_MASK), occupied);
 	std::memset(destination + occupied, 0, capacity * stride - occupied);
-	memory.invalidateRamWrite(offset, capacity * stride);
+	const u32 dirty = staged ? 0u : occupied;
+	memory.invalidateRamWrite(offset + dirty, bytes - dirty);
 	memory.writeRamRecordWord(address + static_cast<u32>(field), block);
 	memory.writeRamRecordWord(address + static_cast<u32>(capacityField), capacity);
-	heap.budget.replaceRecord(oldBlock, previous * stride, capacity * stride);
+	if (staged) heap.arena.free(oldBlock);
+	heap.budget.resizeRecordCharge(previous * stride, bytes);
+	return block;
 }
 
 // The occupied control prefix has no capacity-relative fields. Keep it in

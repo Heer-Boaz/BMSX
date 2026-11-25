@@ -1599,12 +1599,12 @@ void threadReplacementAdmitsOnlyItsLogicalIncrease() {
 	const auto handler = valueBuiltinFunction(BuiltinFunctionId::PCall);
 	heap.setCollectionTarget(target += PROTECTED_CALL_BYTES);
 	thread.pushProtectedCall(ProtectedCallKind::PCall, false, CallResultPlacement::call(0, 2), handler);
-	const auto first = ThreadRecord::storageLayout(memory, thread.address).protectedBlock;
+	require(ThreadRecord::storageLayout(memory, thread.address).protectedCapacity == 1, "first continuation is allocated");
 	heap.setCollectionTarget(target += PROTECTED_CALL_BYTES);
 	thread.pushProtectedCall(ProtectedCallKind::PCall, true, CallResultPlacement::call(1, 5), handler);
-	require(ThreadRecord::storageLayout(memory, thread.address).protectedBlock != first && thread.protectedDepth() == 2u
+	require(ThreadRecord::storageLayout(memory, thread.address).protectedCapacity == 2 && thread.protectedDepth() == 2u
 		&& thread.protectedWord(0, ProtectedField::Wanted) == 3u && thread.protectedWord(1, ProtectedField::Wanted) == 6u,
-		"protected growth replaces only its lane and retains both continuations");
+		"protected growth resizes only its lane and retains both continuations");
 	require(heap.usedBytes() == target && heap.collectionTarget() == target && !cpu.collecting(),
 		"protected growth admits only the one additional continuation");
 
@@ -1635,7 +1635,15 @@ void fullCollectionTrimsWithoutFreeBacking() {
 		"full collection halves all three reservations without a replacement chunk");
 	require(frame.registers.get(0) == valueInteger(73) && frame.readControl(FrameField::Pc) == pc
 		&& thread.protectedResult(0).base == 2, "the live Value, frame and protected continuation survive trimming");
-	require(arena.allocate(4 * PROTECTED_CALL_BYTES, true) != 0, "the released suffix is available for allocation");
+	cpu.luaHeap().reserveThreadFrameStorage(thread.address, 0, 8, valueNil());
+	thread.bindStack();
+	for (int i = 1; i < 5; ++i)
+		thread.pushProtectedCall(ProtectedCallKind::PCall, false, CallResultPlacement::call(i, 1), valueBuiltinFunction(BuiltinFunctionId::PCall));
+	const auto grown = ThreadRecord::storageLayout(memory, thread.address);
+	require(grown.frameBlock == before.frameBlock && grown.protectedBlock == before.protectedBlock
+		&& grown.frameCapacity == 8 && grown.protectedCapacity == 8 && frame.readControl(FrameField::Pc) == pc
+		&& thread.protectedResult(0).base == 2 && thread.protectedResult(4).base == 4,
+		"control stacks reuse their released suffixes and preserve the active prefix");
 }
 
 void valueStackGrowsWithOnlyTheIncrementFree() {

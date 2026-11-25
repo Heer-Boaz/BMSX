@@ -35,33 +35,33 @@ function callImage(maxStack: number, returns: number, base = 0) {
 	closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
 }
 
-test('thread growth relocates only the required storage lane', () => {
+test('thread growth resizes only the required storage lane', () => {
 	const { cpu, memory } = createTestSystemCpu(callImage(8, 1));
 	const thread = cpu.rootThread, frame = thread.currentFrame!;
 	const location = (field: ThreadField) => memory.readRamRecordWord(thread.address + field);
-	const oldStack = location(ThreadField.StackBlock), oldFrames = location(ThreadField.FrameBlock);
+	const oldFrameCapacity = location(ThreadField.FrameCapacity), oldFrames = location(ThreadField.FrameBlock);
 	frame.registers.setInteger(0, 73);
 	const pc = frame.pc;
 
 	thread.resizeStack(64);
 	const stack = location(ThreadField.StackBlock);
-	assert.notEqual(stack, oldStack);
+	assert.equal(location(ThreadField.StackCapacity), 64);
 	assert.equal(location(ThreadField.FrameBlock), oldFrames);
 	assert.equal(location(ThreadField.ProtectedBlock), 0);
 	assert.equal(frame.registers.get(0), valueInteger(73));
 
 	thread.reserveFrame(64);
 	const frames = location(ThreadField.FrameBlock);
-	assert.notEqual(frames, oldFrames);
+	assert.equal(location(ThreadField.FrameCapacity), 2 * oldFrameCapacity);
 	assert.equal(location(ThreadField.StackBlock), stack);
 	assert.equal(location(ThreadField.ProtectedBlock), 0);
 	assert.equal(frame.pc, pc);
 
 	const handler = valueBuiltinFunction(BuiltinFunctionId.PCall);
 	thread.pushProtectedCall(ProtectedCallKind.PCall, false, 0, 3, handler);
-	const oldProtected = location(ThreadField.ProtectedBlock);
+	assert.equal(location(ThreadField.ProtectedCapacity), 1);
 	thread.pushProtectedCall(ProtectedCallKind.PCall, true, 1, 6, handler);
-	assert.notEqual(location(ThreadField.ProtectedBlock), oldProtected);
+	assert.equal(location(ThreadField.ProtectedCapacity), 2);
 	assert.equal(location(ThreadField.FrameBlock), frames);
 	assert.equal(location(ThreadField.StackBlock), stack);
 	assert.equal(thread.protectedWord(0, ProtectedField.Wanted), 3);
@@ -92,10 +92,10 @@ test('Thread growth at its logical assist threshold admits only the new capacity
 	const handler = valueBuiltinFunction(BuiltinFunctionId.PCall);
 	heap.setCollectionTarget(target += PROTECTED_CALL_BYTES);
 	thread.pushProtectedCall(ProtectedCallKind.PCall, false, 0, 3, handler);
-	const first = read(ThreadField.ProtectedBlock);
+	assert.equal(read(ThreadField.ProtectedCapacity), 1);
 	heap.setCollectionTarget(target += PROTECTED_CALL_BYTES);
 	thread.pushProtectedCall(ProtectedCallKind.PCall, true, 1, 6, handler);
-	assert.notEqual(read(ThreadField.ProtectedBlock), first);
+	assert.equal(read(ThreadField.ProtectedCapacity), 2);
 	assert.equal(thread.protectedWord(0, ProtectedField.Wanted), 3);
 	assert.equal(thread.protectedWord(1, ProtectedField.Wanted), 6);
 	assert.equal(heap.usedBytes(), target);
@@ -130,7 +130,16 @@ test('full collection trims all three Thread reservations with no replacement sp
 	assert.deepEqual([ThreadField.StackCapacity, ThreadField.FrameCapacity, ThreadField.ProtectedCapacity].map(read), [32, 4, 4]);
 	assert.equal(frame.registers.get(0), valueInteger(73));
 	assert.equal(frame.pc, pc); assert.equal(thread.protectedWord(0, ProtectedField.Base), 2);
-	assert.notEqual(arena.allocate(4 * PROTECTED_CALL_BYTES, true), 0);
+	const regrow = () => {
+		cpu.luaHeap.reserveThreadFrameStorage(thread.address, 0, 8, valueNil());
+		thread.bindStack();
+		for (let i = 1; i < 5; ++i) thread.pushProtectedCall(ProtectedCallKind.PCall, false, i, 1, valueBuiltinFunction(BuiltinFunctionId.PCall));
+		assert.deepEqual(blocks.map(read), before);
+		assert.equal(frame.pc, pc);
+		assert.equal(thread.protectedWord(0, ProtectedField.Base), 2);
+		assert.equal(thread.protectedWord(4, ProtectedField.Base), 4);
+	};
+	regrow();
 	const expected = memory.captureSaveState().ram;
 	const completed = history.capture(memory, initial);
 	history.restore(memory, completed, initial);
@@ -138,7 +147,7 @@ test('full collection trims all three Thread reservations with no replacement sp
 	assert.deepEqual([ThreadField.StackCapacity, ThreadField.FrameCapacity, ThreadField.ProtectedCapacity].map(read), [64, 8, 8]);
 	assert.equal(cpu.rootThread.currentFrame!.registers.get(0), valueInteger(73));
 	cpu.collectTrackedHeapBytes();
-	assert.notEqual(arena.allocate(4 * PROTECTED_CALL_BYTES, true), 0);
+	regrow();
 	assert.equal(Buffer.compare(memory.captureSaveState().ram, expected), 0, 'rewind restores the tag plane and the allocator suffixes');
 });
 
