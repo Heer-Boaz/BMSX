@@ -39,7 +39,9 @@ void alignedStringHomesDisplaceOnlyCollisions(CPU& cpu) {
 	int prediction = slot;
 	require(table.readOwnStringField(collided, prediction) == valueInteger(22) && prediction != slot,
 		"a displaced own field repairs its site from the live collision chain");
-	table.setStringKey(incoming, valueBool(false), slot);
+	require(table.tryAssignCachedStringField(incoming, valueBool(false), prediction, 0) == slot
+		&& table.getStringKey(collided) == valueInteger(22),
+		"a displaced write hint cannot overwrite a different live key");
 	require(table.readOwnStringField(incoming, prediction) == valueBool(false) && prediction == slot,
 		"a false field repairs the prediction too");
 	const auto absent = keys[1][1];
@@ -48,6 +50,8 @@ void alignedStringHomesDisplaceOnlyCollisions(CPU& cpu) {
 	table.setMetatableAddress(cpu.createTable().address());
 	require(!table.readOwnStringField(absent, prediction) && prediction == slot,
 		"absence with a metatable leaves the lookup to __index resolution");
+	require(table.readOwnStringField(collided, prediction) == valueInteger(22) && prediction != slot,
+		"a cold own field on a metatable-backed receiver resolves without traversing __index");
 	auto probe = table.beginStringProbe(collided);
 	require(table.advanceStringProbe(collided, probe, 8) == 2 && probe.value == valueInteger(22)
 		&& table.getStringKey(resident) == valueInteger(11) && table.getStringKey(incoming) == valueBool(false),
@@ -156,7 +160,9 @@ void collisionAndMutationParity(CPU& cpu) {
 	require(holder.storePredictedStringKey(keys[0], valueFloatBits(0x80000000u), assignment.slot)
 		&& holder.getStringKey(keys[0]) == valueFloatBits(0x80000000u),
 		"a warmed owned slot accepts an exact tagged overwrite");
-	holder.setStringKey(keys[0], valueNil(), assignment.slot);
+	require(holder.tryAssignCachedStringField(keys[0], valueNil(), assignment.slot, 0) == -1
+		&& holder.tryAssignCachedStringField(keys[0], valueInteger(47), holderSlot, 0) == TableRecord::HASH_STORE_DECLINED
+		&& isNil(holder.getStringKey(keys[0])), "deletion makes a matching hint defer to the live __newindex");
 	holderMeta.setStringKey(newIndex, valueNil());
 	source.resolveStringAssignment(keys[0], assignment);
 	require(assignment.status == TableLookupStatus::Store && assignment.receiver == holder.address()
@@ -278,6 +284,11 @@ void inheritedAndFullWordKeys(CPU& cpu, Memory& memory) {
 	require(result.status == TableLookupStatus::Resolved && result.value == valueBool(false), "inherited false is present");
 	child.resolveStringIndexCached(key, -1, result);
 	require(result.slot >= 0 && result.value == valueBool(false) && result.extraVisits == 1, "inherited cached search returns the same value and semantic work");
+	int receiverHint = -1;
+	require(!child.readOwnStringField(key, receiverHint), "an inherited field is not an own slot");
+	child.resolveMissingStringIndex(key, result);
+	require(result.value == valueBool(false) && result.extraVisits == 1 && receiverHint == -1,
+		"continuing after an own miss preserves the inherited false value and charges one visit");
 	parent.setStringKey(key, valueNil());
 	child.resolveStringIndexCached(key, result.slot, result);
 	require(result.slot == -1 && isNil(result.value), "deletion invalidates inherited predictions");

@@ -11,12 +11,12 @@
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
+#include "machine/cpu/gc_heap.h"
 #include "machine/cpu/table_lookup.h"
 #include "machine/cpu/table_constructor_layout.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {
-class GcHeap;
 
 inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
 
@@ -35,7 +35,7 @@ struct TableStringProbe {
 
 class TableRecord {
 public:
-	TableRecord(GcHeap& heap, u32 address);
+	TableRecord(GcHeap& heap, u32 address) : m_heap(&heap), m_memory(&heap.memory), m_address(address) {}
 	static constexpr u32 HEADER_BYTES = 36, HEADER_CHARGE = 32;
 	static u32 storageBytes(size_t arraySize, size_t hashSize);
 	static u32 allocationCharge(size_t arraySize, size_t hashSize);
@@ -70,6 +70,7 @@ public:
 	// slot (-1 for completed nil), or HASH_STORE_DECLINED before mutation.
 	static constexpr i32 HASH_STORE_DECLINED = -2;
 	int tryAssignStringField(StringId key, Value value, u8 extraHashSlots = 0) noexcept;
+	int tryAssignCachedStringField(StringId key, Value value, int predicted, u8 extraHashSlots) noexcept;
 	bool getIntegerArrayKey(int key, Value& value) const {
 		return getArraySlot(arraySlot(key), value);
 	}
@@ -103,11 +104,12 @@ public:
 				const auto own = body.predictedString(predicted, key);
 				if (!isNil(own)) return own;
 			}
-			if (metatableAddress()) return std::nullopt;
 			int slot;
 			const auto own = findStringField(body, key, slot);
-			if (slot >= 0) predicted = slot;
-			return own;
+			if (slot >= 0) {
+				predicted = slot;
+				return own;
+			}
 		}
 		if (metatableAddress()) return std::nullopt;
 		return valueNil();
@@ -118,6 +120,7 @@ public:
 	void resolveIndex(const Value& key, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
 	void resolveIntegerIndex(int key, TableLookupResult& result) const;
 	void resolveStringIndex(StringId key, TableLookupResult& result) const;
+	void resolveMissingStringIndex(StringId key, TableLookupResult& result) const;
 	void resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result) const;
 	void resolveAssignment(Value key, TableLookupResult& result) const;
 	void resolveIntegerAssignment(int key, TableLookupResult& result) const;
@@ -281,13 +284,16 @@ private:
 	template <HashStore Policy>
 	int assignHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
+	template <HashStore Policy>
+	int assignProbedHash(const HashBody& body, u32 home, int nodeIndex, Value key, Value value, u8 extraHashSlots)
+		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	void publishHashInsertion(Value key, Value value);
 	u32 newIndexMetatable() const;
 	void removeFromHash(const Value& key, int slot);
 	void markHashNodeDead(size_t index);
 	Value getCanonical(const Value& key) const;
 	Value getHash(const Value& key) const;
-	template <bool Assignment = false, typename Lookup>
+	template <bool Assignment = false, bool OwnMiss = false, typename Lookup>
 	void resolveIndexChain(int slot, TableLookupResult& result, Lookup&& lookup,
 		u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
 

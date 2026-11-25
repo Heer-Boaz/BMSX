@@ -168,8 +168,7 @@ DISPATCH_LABEL(SELF) {
 		DISPATCH_NEXT();
 	}
 	TableLookupResult result;
-	table.resolveStringIndexCached(key, -1, result);
-	if (result.extraVisits == 0 && result.slot >= 0) predicted = result.slot;
+	table.resolveMissingStringIndex(key, result);
 	if (result.status == TableLookupStatus::Resolved) {
 		CYCLES_ADD(static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES);
 		SET_REGISTER_FAST(a, result.value);
@@ -191,16 +190,17 @@ DISPATCH_LABEL(SETFIELD) {
 	int& predicted = TABLE_CACHE_SLOT();
 	// An own overwrite and its write barrier do not observe the frame.
 	const bool isTable = valueIsTable(base);
-	if (isTable && TableRecord(m_heap, valuePayload(base)).storePredictedStringKey(key, value, predicted))
-		DISPATCH_NEXT();
 	const u8 extraHashSlots = instructionFieldExtraHashSlots(decodedPage->sourceWords[pageOffset], decoded->width);
-	if constexpr (!Instrumented) {
-		if (isTable) {
-			const int slot = TableRecord(m_heap, valuePayload(base)).tryAssignStringField(key, value, extraHashSlots);
+	if (isTable) {
+		TableRecord table(m_heap, valuePayload(base));
+		if constexpr (!Instrumented) {
+			const int slot = table.tryAssignCachedStringField(key, value, predicted, extraHashSlots);
 			if (slot != TableRecord::HASH_STORE_DECLINED) {
 				predicted = slot;
 				DISPATCH_NEXT();
 			}
+		} else if (table.storePredictedStringKey(key, value, predicted)) {
+			DISPATCH_NEXT();
 		}
 	}
 	PUBLISH_SCALAR_FRONTIER();

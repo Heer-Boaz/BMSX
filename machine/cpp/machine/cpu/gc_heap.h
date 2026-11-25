@@ -4,13 +4,13 @@
 
 #include "common/compiler.h"
 #include "machine/cpu/heap_allocator.h"
-#include "machine/cpu/table.h"
 #include "machine/cpu/thread.h"
 #include "machine/cpu/closure.h"
 #include "machine/cpu/lua_heap.h"
 
 namespace bmsx {
 class CPU;
+class TableRecord;
 // Collector work is measured in 32-bit pool words, not host time.
 inline constexpr size_t GC_STEP_WORDS = 4096;
 inline constexpr size_t GC_ASSIST_BYTES = 256;

@@ -1,4 +1,5 @@
 #include "machine/cpu/gc_heap.h"
+#include "machine/cpu/table.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/errors.h"
 #include "machine/cpu/upvalue.h"
