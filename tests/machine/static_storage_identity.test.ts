@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 for (const level of [3] as const) for (const section of ['bss', 'data', 'rodata'] as const) {
 	test(`O${level}: ${section} declarations with equal labels retain their own lexical storage`, () => {
@@ -25,7 +26,7 @@ return *value, mem[inner], value == inner`;
 			if (relocation.kind !== 'link_value') symbolIndices.add(relocation.symbolIndex);
 		}
 		assert.deepEqual([...symbolIndices].sort(), [0, 1]);
-		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
+		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileHeapServiceSystem(source, level, [], 'static_identity')));
 		runGuestToHalt(cpu, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(11), valueInteger(22), valueBool(false)]);
 	});

@@ -10,11 +10,12 @@ import { UPVALUE_NEXT } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueFromTag } from '../../machine/ts/machine/cpu/value';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { CART_ROM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const MARK = 'kernel/gc_mark', PROBE = 'test/gc_mark';
 const entrySource = 'halt_until_irq';
@@ -34,7 +35,7 @@ const modules = [
 ].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) }));
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const object = encodeCompiledProgramObject(compiled), linked = linkTestSystemBlua32(compiled);
 	const entries = new Map<string, number>();
 	for (const { path, exportPathKey, slotName } of object.sections.rodata.moduleExports) {
@@ -46,8 +47,8 @@ function fixture(optLevel: 0 | 3) {
 	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [...entries.values()]);
 	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT);
 	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
-	assert.equal(cpu.runUntilDepth(0, 1024), RunResult.Halted);
-	assert.equal(oracle.runUntilDepth(0, 1024), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000);
+	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
 	const output = management + HEAP_SERVICE_THREAD_OFFSET - 4;

@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
 					trace >> cycles >> mode;
 					const auto result = scheduler.runCpuSlice(0, cycles, 0u, mode == 0 ? CpuRunKind::Direct : CpuRunKind::Scheduled);
 					const auto stage = memory.readRamRecordWord(cpu.heapAllocator().managementOffset()
-						+ HEAP_SERVICE_RECORD_OFFSET + static_cast<u32>(HeapServiceRecordField::Stage));
+						+ HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::Destination));
 					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
 						<< cpu.heapServiceActive() << ' ' << stage << ' ' << cpu.heapAllocator().occupiedBytes()
 						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
@@ -185,7 +185,7 @@ int main(int argc, char** argv) {
 					const auto before = scheduler.nowCycles();
 					const auto result = runtime.cpuExecution.runSuspendedUntilDepth(runtime, 0, cycles);
 					const auto stage = memory.readRamRecordWord(cpu.heapAllocator().managementOffset()
-						+ HEAP_SERVICE_RECORD_OFFSET + static_cast<u32>(HeapServiceRecordField::Stage));
+						+ HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::Destination));
 					std::cout << static_cast<int>(result) << ' ' << scheduler.nowCycles() - before
 						<< ' ' << cpu.heapServiceActive() << ' ' << stage << ' '
 						<< cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
@@ -201,8 +201,6 @@ int main(int argc, char** argv) {
 					const bool growField = opcode == 'F';
 					const auto gate = growField ? NativeBlockExit::WriteField
 						: biosCall ? NativeBlockExit::BiosCall : NativeBlockExit::CreateClosure;
-					const u32 expectedStage = growField ? static_cast<u32>(HeapServiceTableGrowthStage::Scheduled)
-						: static_cast<u32>(HeapServiceRecordStage::Direct);
 					cpu.prepareSystemNativeCode();
 					const auto& allocation = cpu.nativeGateProfile().exits[static_cast<size_t>(gate)];
 					const auto before = allocation;
@@ -213,18 +211,20 @@ int main(int argc, char** argv) {
 					const u32 management = cpu.heapAllocator().managementOffset();
 					const auto stage = memory.readRamRecordWord(management + (growField
 						? HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Stage)
-						: HEAP_SERVICE_RECORD_OFFSET + static_cast<u32>(HeapServiceRecordField::Stage)));
+						: HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::Destination)));
 					const bool issued = memory.readRamRecordWord(management + HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::Destination)) != 0u;
 					if (allocation.entries != before.entries + 1 || allocation.returns != before.returns + 1
 						|| allocation.resumes != before.resumes || allocation.exceptions != before.exceptions)
 						throw std::runtime_error("The generated allocation exit did not hand off exactly once");
+					const u32 caller = cpu.readFramePc(cpu.getFrameDepth() - 1);
+					const bool parked = growField
+						? stage == static_cast<u32>(HeapServiceTableGrowthStage::Scheduled)
+						: stage != 0u;
 					if (result != RunResult::Yielded || !cpu.heapServiceActive()
-						|| (biosCall ? (!issued || cpu.readFramePc(cpu.getFrameDepth() - 1) != cpu.lastPc + 4)
-							: (stage != expectedStage || cpu.readFramePc(cpu.getFrameDepth() - 1) != cpu.readCurrentInstructionPc())))
+						|| (biosCall ? (!issued || caller != cpu.lastPc + 4) : (!parked || caller != cpu.readCurrentInstructionPc())))
 						throw std::runtime_error("The generated allocation did not suspend at its own instruction");
 					std::cout << allocation.entries - before.entries;
 					if (growField) std::cout << ' ' << stage << " 1 " << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes();
-					else if (!biosCall) std::cout << ' ' << stage << ' ' << static_cast<u32>(HeapServiceRecordKind::CanonicalClosure);
 					std::cout << '\n';
 #else
 					throw std::runtime_error("Generated allocation proof requires BMSX_NATIVE_GATE_PROFILE and native blocks");
@@ -253,7 +253,7 @@ int main(int argc, char** argv) {
 					std::cout << result << ' ' << (op == 'k' ? 1 : scheduler.nowCycles() - cycles) << ' ' << (frames.lastTickSequence != before)
 						<< ' ' << cpu.allocationParked() << ' ' << cpu.allocationReady() << ' ' << cpu.heapServiceActive()
 						<< ' ' << static_cast<u32>(cpu.gcHeap().serviceStage())
-						<< ' ' << memory.readRamRecordWord(management + HEAP_SERVICE_RECORD_OFFSET)
+						<< ' ' << memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET)
 						<< ' ' << memory.readIoU32(IO_IRQ_FLAGS)
 						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;

@@ -1,3 +1,4 @@
+import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -5,6 +6,7 @@ import { join } from 'node:path';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_CAPTURE_WORDS, CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/machine/cpu/closure';
+import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { CpuRunKind } from '../../../machine/ts/machine/cpu/cpu';
 import { GC_LAST_EPOCH_WORK, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
@@ -14,14 +16,16 @@ import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_hist
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { INSTRUCTION_BYTES, instructionOpcode } from '../../../machine/ts/spec/blua32/instruction_format';
+import { LUA_BOOT_PRIMITIVES } from '../../../machine/ts/spec/blua32/builtin';
+import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
+import { INSTRUCTION_BYTES, instructionOpcode, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
-	HEAP_SERVICE_RECORD_OFFSET, HeapServiceGcStage, HeapServiceRecordField, HeapServiceRecordStage,
+	HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HeapServiceClosureField, HeapServiceGcStage,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { HEAP_PAGE_SIZE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
@@ -54,19 +58,56 @@ mkdirSync('tmp', { recursive: true });
 const directory = mkdtempSync(join('tmp', 'bmsx-closure-heap-service-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	const code = new Uint8Array(5 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.CLOSURE, 0, 0, 0);
+	writeInstruction(code, 2, OpCode.RET, 0, 2, 0);
+	writeInstruction(code, 3, OpCode.RET, 0, 0, 0);
+	writeInstruction(code, 4, OpCode.HALT, 0, 0, 0);
+	const bare = linkRawTestSystemBlua32({
+		text: code, functions: [{ firstWord: 0, wordCount: 3 }, { firstWord: 3, wordCount: 1 }, { firstWord: 4, wordCount: 1 }],
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
+	});
+	const bareRuntime = new Runtime({
+		systemRomBytes: bare.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
+	}, input);
+	bareRuntime.boot();
+	const { cpu: bareCpu, scheduler: bareScheduler } = bareRuntime.machine;
+	const issuePc = bareCpu.readFramePc(0), original = bareCpu.readFrameRegister(0, 0);
+	const rejected = bareScheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
+	assert.equal(bareCpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+	assert.equal(bareCpu.readEpcWord(), issuePc);
+	assert.equal(bareCpu.heapServiceActive(), false);
+	assert.equal(bareCpu.readFrameRegister(0, 0), original);
+	assert.equal(bareCpu['staticClosures'].find(bare.symbols.functionAddresses[1]), undefined, 'missing BIOS cannot allocate on the host');
+	const bareRom = join(directory, 'no-roster.rom'), bareTrace = join(directory, 'no-roster.txt');
+	writeFileSync(bareRom, bare.romBytes);
+	writeFileSync(bareTrace, 'J 1 1\nZ\n');
+	assert.deepEqual(execFileSync(native, [bareRom, bareTrace, join(directory, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n'), [
+		`${rejected} ${1 - bareCpu.instructionBudgetRemaining} 0 0 ${bareCpu.heapAllocator.occupiedBytes()} ${bareCpu.luaHeap.usedBytes()}`,
+		`${bareCpu.readCauseWord()} 0 ${issuePc}`,
+	]);
 	for (const optLevel of [0, 3] as const) {
 		const system = linkTestSystemBlua32(compileHeapServiceSystem(entry, optLevel, [target]));
-		proveClosure(system, optLevel, false);
-		proveClosure(system, optLevel, true);
+		for (const scenario of ['cache', 'recovery', 'oom'] as const) proveClosure(system, optLevel, scenario);
 	}
-	function proveClosure(system: ReturnType<typeof linkTestSystemBlua32>, optLevel: number, refuse: boolean) {
+	function proveClosure(system: ReturnType<typeof linkTestSystemBlua32>, optLevel: number, scenario: 'cache' | 'recovery' | 'oom') {
+		const refuse = scenario !== 'cache';
 		const configuration = { systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC };
 		const runtime = new Runtime(configuration, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
 		const { gc, heapAllocator: arena, luaHeap: budget } = cpu;
-		const management = arena.managementOffset(), record = management + HEAP_SERVICE_RECORD_OFFSET;
-		const stage = () => memory.readRamRecordWord(record + HeapServiceRecordField.Stage);
+		const management = arena.managementOffset(), record = management + HEAP_SERVICE_CLOSURE_OFFSET;
+		const pending = () => memory.readRamRecordWord(record + HeapServiceClosureField.Destination);
+		const [operation, epoch] = [['allocate_record', 'allocate_record'], ['gc_step', 'finish_epoch']].map(([path, name]) => {
+			const index = system.symbols.metadata.functionIds.findIndex(id =>
+				id.startsWith(`module:kernel/${path}/`) && id.endsWith(`|constant|${name}`));
+			assert.ok(index >= 0);
+			return system.symbols.functionAddresses[index];
+		});
+		const root = management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Function;
 		const allocationCounts = () => [arena.occupiedBytes(), budget.usedBytes()];
 		const head = () => {
 			let first = 0;
@@ -82,7 +123,7 @@ try {
 				: scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const paid = direct ? scheduler.nowCycles - start : cycles - cpu.instructionBudgetRemaining;
 			observe(direct ? `D ${cycles}` : `J ${cycles} 1`,
-				`${result} ${paid} ${+cpu.heapServiceActive()} ${stage()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
+				`${result} ${paid} ${+cpu.heapServiceActive()} ${pending()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
 			return paid;
 		};
 
@@ -102,23 +143,31 @@ try {
 		const deadString = 'canonical-closure-reclaimed'.repeat(32);
 		let disposable = 0;
 		if (refuse) {
-			disposable = cpu.stringPool.intern(deadString);
-			observe(`b ${deadString}`, disposable);
+			if (scenario === 'recovery') {
+				disposable = cpu.stringPool.intern(deadString);
+				observe(`b ${deadString}`, disposable);
+			}
+			if (scenario === 'oom') {
+				// Exhaust a heap that has no dead records from boot to recover.
+				do { observe('y 0', gc.step(valueString(0), valueNil(), valueNil(), 0, false, 1)); } while (gc.active());
+			}
 			const allocate = (bytes: number) => {
 				const address = arena.allocate(bytes, true);
 				observe(`A ${bytes}`, address);
 				return address;
 			};
 			while (allocate(HEAP_PAGE_SIZE - 8)) {}
-			while (allocate(GC_OBJECT_PREFIX + CLOSURE_CAPTURE_WORDS)) {}
-			// Start from a real, already-active epoch to exercise the current-
-			// epoch retry. Native mark inputs differ in RootHead/Trace/Remark
-			// (the firmware preserves both mirror policies), so enter at the
-			// independently reached Sweep frontier, before any reclamation.
-			for (let i = 0; i < 4096 && gc.phase() !== GcPhase.Sweep; ++i)
-				observe('y 0', gc.step(valueString(0), valueNil(), valueNil(), 0, false, 1));
-			assert.equal(gc.phase(), GcPhase.Sweep);
-			assert.equal(cpu.stringPool.find(deadString), disposable);
+			while (allocate(scenario === 'oom' ? 16 : GC_OBJECT_PREFIX + CLOSURE_CAPTURE_WORDS)) {}
+			if (scenario === 'recovery') {
+				// Start from a real, already-active epoch to exercise the current-
+				// epoch retry. Native mark inputs differ in RootHead/Trace/Remark
+				// (the firmware preserves both mirror policies), so enter at the
+				// independently reached Sweep frontier, before any reclamation.
+				for (let i = 0; i < 4096 && gc.phase() !== GcPhase.Sweep; ++i)
+					observe('y 0', gc.step(valueString(0), valueNil(), valueNil(), 0, false, 1));
+				assert.equal(gc.phase(), GcPhase.Sweep);
+				assert.equal(cpu.stringPool.find(deadString), disposable);
+			}
 		}
 		const before = allocationCounts(), oldHead = head();
 		const epochBefore = gc.epochWork();
@@ -126,13 +175,18 @@ try {
 		const allocatorHash = hashBytes(memory.ramData(), allocatorState, allocatorEnd - allocatorState);
 		grant(1, refuse);
 		assert.ok(cpu.heapServiceActive(), 'cache miss executes a private BIOS reservation');
-		assert.equal(stage(), HeapServiceRecordStage.Direct, 'CLOSURE retains its non-parked caller policy');
+		assert.ok(pending() > 0, 'the CLOSURE latch holds only its marked destination');
+		assert.equal(memory.readRamRecordWord(root), operation);
 		assert.equal(cpu.allocationParked(), false);
-		const destination = memory.readRamRecordWord(record + HeapServiceRecordField.Destination);
-		const prototype = memory.readRamRecordWord(record + HeapServiceRecordField.Prototype);
-		const nextPc = memory.readRamRecordWord(record + HeapServiceRecordField.NextPc);
+		const destination = pending() - 1;
+		const prototype = memory.readRamRecordWord(record + HeapServiceClosureField.Prototype);
+		const nextPc = memory.readRamRecordWord(record + HeapServiceClosureField.NextPc);
 		const oldValue = cpu.readFrameRegister(caller, destination);
 		function checkCaller() {
+			assert.equal(pending(), destination + 1);
+			assert.equal(cpu.heapServiceActive(), true);
+			assert.equal(memory.readRamRecordWord(root), operation, 'one record activation owns the request through GC and retry');
+			assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, 'no host collector continuation');
 			assert.equal(cpu.readFramePc(caller), pc);
 			assert.equal(cpu.readFrameRegister(caller, destination), oldValue);
 			assert.equal(cpu.allocationParked(), false);
@@ -142,28 +196,35 @@ try {
 		assert.deepEqual(allocationCounts(), before);
 		assert.equal(allocatorHash, hashBytes(memory.ramData(), allocatorState, allocatorEnd - allocatorState));
 		observeRam(allocatorState, allocatorEnd);
-		observeRam(record, record + HeapServiceRecordField.DirectRecovery + 4);
+		observeRam(record, record + HeapServiceClosureField.NextPc + 4);
 
 		// Persist the admission and stop a second time in the publish-to-RET
 		// window, when restore already sees the object in the inventory.
 		const admitted = captureRuntimeSaveState(runtime);
 		applyRuntimeSaveState(runtime, admitted);
-		if (refuse) {
-			for (let i = 0; i < 4096 && stage() === HeapServiceRecordStage.Direct; ++i) grant(1, true);
-			assert.equal(stage(), HeapServiceRecordStage.DirectRecovery);
-			assert.equal(gc.serviceStage(), HeapServiceGcStage.AllocationRecoveryObjectSweep);
+		if (scenario === 'recovery') {
+			const depth = management + HEAP_SERVICE_THREAD_OFFSET + ThreadField.FrameDepth;
+			const current = () => memory.readRamRecordWord(root + (memory.readRamRecordWord(depth) - 1) * FRAME_CONTROL_BYTES);
+			for (let i = 0; i < 4096 && current() !== epoch; ++i) grant(1, true);
+			assert.equal(current(), epoch, 'the refused allocation entered the guest epoch before any sweep');
+			assert.equal(gc.phase(), GcPhase.Sweep);
 			assert.deepEqual(allocationCounts(), before);
 			assert.equal(head(), oldHead);
 			assert.equal(allocatorHash, hashBytes(memory.ramData(), allocatorState, allocatorEnd - allocatorState));
 			observeRam(allocatorState, allocatorEnd);
 			checkCaller();
-			for (let i = 0; i < 4096 && gc.serviceStage() === HeapServiceGcStage.AllocationRecoveryObjectSweep; ++i) grant(1, true);
-			assert.equal(gc.serviceStage(), HeapServiceGcStage.AllocationRecoveryStringSweep);
-			for (let i = 0; i < 4096 && memory.readRamRecordByte(disposable) !== 0; ++i) grant(1, true);
+			for (let i = 0; i < 8192 && memory.readRamRecordByte(disposable) !== 0; ++i) grant(1, true);
 			assert.equal(memory.readRamRecordByte(disposable), 0, 'stop at real String retirement, before retry');
-			assert.equal(gc.serviceStage(), HeapServiceGcStage.AllocationRecoveryStringSweep);
+			assert.equal(gc.phase(), GcPhase.Strings);
 			const offset = disposable & RAM_RECORD_WORD_MASK;
 			observeRam(offset, offset + 1);
+			checkCaller();
+		} else if (scenario === 'oom') {
+			for (let i = 0; i < 4096 && gc.phase() !== GcPhase.Strings; ++i) {
+				assert.ok(cpu.heapServiceActive());
+				grant(57, true);
+			}
+			assert.equal(gc.phase(), GcPhase.Strings);
 			checkCaller();
 		} else publish(oldHead, before[1], false);
 		const prefix = observations.splice(0);
@@ -173,8 +234,6 @@ try {
 			let paid = 0;
 			for (let i = 0; i < 4096 && head() === previous; ++i) paid += grant(1, direct);
 			assert.ok(paid > 0, 'ordinary CPU grants pay for the actual closure instructions');
-			assert.ok(cpu.heapServiceActive());
-			assert.equal(stage(), HeapServiceRecordStage.Direct);
 			checkCaller();
 			const closure = head();
 			assert.notEqual(closure, previous);
@@ -188,14 +247,25 @@ try {
 
 		function complete() {
 			checkCaller();
+			if (scenario === 'oom') {
+				for (let i = 0; i < 8192 && cpu.heapServiceActive(); ++i) grant(1);
+				assert.equal(cpu.heapServiceActive(), false);
+				assert.equal(pending(), 0);
+				assert.equal(cpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP);
+				assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
+				assert.equal(cpu.readEpcWord(), pc, 'failure reports the issuing WIDE, not a BIOS PC');
+				assert.equal(cpu.readFrameRegister(caller, destination), oldValue);
+				assert.equal(cpu['staticClosures'].find(prototype), undefined);
+				observe('Z', `${cpu.readCauseWord()} ${cpu.readLuaFaultReasonWord()} ${pc}`);
+				observeRam(allocatorState, allocatorEnd);
+				return;
+			}
 			if (refuse) {
-				assert.equal(stage(), HeapServiceRecordStage.DirectRecovery);
-				assert.equal(gc.serviceStage(), HeapServiceGcStage.AllocationRecoveryStringSweep);
+				assert.equal(gc.phase(), GcPhase.Strings);
 				assert.equal(memory.readRamRecordByte(disposable), 0);
 				let paid = 0;
-				for (let i = 0; i < 8192 && stage() === HeapServiceRecordStage.DirectRecovery; ++i) paid += grant(1, true);
+				for (let i = 0; i < 16384 && gc.phase() !== GcPhase.Pause; ++i) paid += grant(1, true);
 				assert.ok(paid > 0, 'the recovery ran BIOS instructions on the ordinary clock');
-				assert.equal(stage(), HeapServiceRecordStage.Direct);
 				assert.equal(gc.phase(), GcPhase.Pause, 'the current epoch completed before the original request was retried');
 				assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle);
 				assert.equal(cpu.stringPool.find(deadString), undefined);
@@ -210,7 +280,7 @@ try {
 			const closure = head();
 			for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) grant(1, refuse);
 			assert.equal(cpu.heapServiceActive(), false);
-			assert.equal(stage(), HeapServiceRecordStage.Idle);
+			assert.equal(pending(), 0);
 			assert.equal(cpu.readFramePc(caller), nextPc);
 			assert.equal(cpu.readFrameRegister(caller, destination), valueClosure(closure));
 			assert.equal(head(), closure);
@@ -236,6 +306,9 @@ try {
 			observe('C', 74);
 			observeRam(allocatorState, allocatorEnd);
 		}
+		cpu.requestNonMaskableInterrupt();
+		assert.equal(cpu.enterPendingInterrupt(), false, 'an interrupt cannot read the uncommitted destination');
+		applyRuntimeSaveState(runtime, checkpoint);
 		complete();
 		const continuation = observations.splice(0);
 
@@ -245,7 +318,7 @@ try {
 		complete();
 		assert.deepEqual(observations.splice(0), continuation);
 
-		const label = `O${optLevel}-${refuse ? 'recovery' : 'cache'}`;
+		const label = `O${optLevel}-${scenario}`;
 		const romPath = join(directory, `system-${label}.rom`), tracePath = join(directory, `trace-${label}.txt`);
 		const statePath = join(directory, `checkpoint-${label}.state`), nativePath = join(directory, `native-${label}.state`);
 		const commands = (steps: typeof observations) => steps.map(step => step.command);
@@ -253,10 +326,10 @@ try {
 		writeFileSync(statePath, encodeRuntimeSaveState(checkpoint));
 		writeFileSync(tracePath, [
 			'l', ...commands(prefix), 's', `x ${nativePath}`, ...commands(continuation),
-			'u', ...commands(continuation), 'X', ...commands(continuation),
+			'u', ...commands(continuation), 'X', 'N', 'I', 'X', ...commands(continuation),
 		].join('\n'));
 		const output = execFileSync(native, [romPath, tracePath, statePath], { encoding: 'utf8' }).trimEnd().split('\n');
-		const expected = [...prefix, ...continuation, ...continuation, ...continuation];
+		const expected = [...prefix, ...continuation, ...continuation, { command: 'I', expected: '0' }, ...continuation];
 		assert.equal(output.length, expected.length);
 		const mismatch = output.findIndex((line, i) => line !== expected[i].expected);
 		assert.equal(mismatch, -1, `${label} first divergent observation ${mismatch}: ${JSON.stringify(expected[mismatch])}, native=${output[mismatch]}`);

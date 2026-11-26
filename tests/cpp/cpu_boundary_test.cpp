@@ -17,6 +17,7 @@
 #include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/rom_header.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 
@@ -405,6 +406,7 @@ void nativeCodeWarmsWithinOneCpuSlice() {
 			image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}};
 		}
 		CpuMachine machine(image);
+		if (calls) test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 		const u32 target = machine.rom.textAddress + (calls ? 5u : 0u) * INSTRUCTION_BYTES;
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 		machine.cpu.setNativeCompilationProfiling(true);
@@ -701,6 +703,9 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 		image.exceptionFunctionIndex = 2;
 		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		CpuMachine native(image), scalar(image);
+		for (auto* machine : {&native, &scalar}) {
+			test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+		}
 		scalar.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
 			nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -878,6 +883,7 @@ void compactAndPaddedRomFunctionRecordsAgree() {
 		cpu.reset();
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 		const u32 record = rom.functionAddresses[1];
+		test::seedTestRomClosure(cpu, record);
 		Span<const u8> recordView;
 		require(memory.bindMappedReadView(record, BLUA32_FUNCTION_RECORD_SIZE, MAPPED_BUS_MASTER_CPU, recordView), "compact and padded ROM both admit the complete function record");
 		const int cycles = BASE_CYCLES[static_cast<size_t>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<size_t>(OpCode::CALL)]
@@ -1119,6 +1125,7 @@ void functionReservationIsAdmittedBeforeActivation() {
 				.maxStack = parameters ? 1u : MAX_THREAD_VALUE_SLOTS + 1u}};
 		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		CpuMachine machine(image);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 		auto& cpu = machine.cpu;
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -1178,6 +1185,7 @@ void returnRangesSurviveCallerStackGrowth() {
 				{.firstWord = 4, .wordCount = 1, .maxStack = static_cast<u32>(5 + std::max<int>(produced, 1))}};
 			image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 			CpuMachine machine(image);
+			test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 			auto& cpu = machine.cpu;
 			if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 			TableRecord table = cpu.createTable(0, 0);
@@ -1714,6 +1722,7 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		image.irqFunctionIndex = image.exceptionFunctionIndex = 2;
 		image.closureRelocations = {{1, edgeKind == 1 ? mappedRecord : test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		CpuMachine machine(image);
+		if (edgeKind != 1) test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 		auto& cpu = machine.cpu;
 		const u32 calleePc = machine.rom.textAddress + 5 * INSTRUCTION_BYTES;
 		struct Edge { IrqController& irq; const u8* record; bool armed = false; int count = 0; }
@@ -1913,6 +1922,8 @@ void zeroStackReuse() {
 	image.functions = {{.firstWord = 0, .wordCount = 7}, {.firstWord = 7, .wordCount = 2}, {.firstWord = 9, .wordCount = 1, .maxStack = 0}};
 	image.closureRelocations = {{1, 0x180}, {4, 0x1a0}};
 	CpuMachine machine(image);
+	test::seedTestRomClosure(machine.cpu, 0x180);
+	test::seedTestRomClosure(machine.cpu, 0x1a0);
 	auto& cpu = machine.cpu;
 	require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "zero-stack call finishes");
 	require(isNil(cpu.readCompletionValues().get(0)), "zero results nil-pad only the requested caller slot");

@@ -15,11 +15,12 @@ import {
 	HeapServiceObjectSweepAction as Action, HeapServiceObjectSweepField as Sweep,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const OBJECT_HEAD = 0x6c, OBJECT_COUNT = 0x70, SWEEP_LINK = 0x74;
 const OBJECTS = 'kernel/gc_objects';
@@ -30,7 +31,7 @@ const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control
 });
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const object = encodeCompiledProgramObject(compiled), linked = linkTestSystemBlua32(compiled);
 	const exported = object.sections.rodata.moduleExports.find(entry => entry.path === OBJECTS && entry.exportPathKey === 'sweep_objects');
 	assert.ok(exported);
@@ -39,8 +40,8 @@ function fixture(optLevel: 0 | 3) {
 	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [entry]);
 	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT);
 	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
-	assert.equal(cpu.runUntilDepth(0, 1024), RunResult.Halted);
-	assert.equal(oracle.runUntilDepth(0, 1024), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000);
+	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 	const context = management + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;

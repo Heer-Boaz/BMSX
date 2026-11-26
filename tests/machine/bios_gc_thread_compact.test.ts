@@ -7,11 +7,12 @@ import { ThreadField, ThreadLayout } from '../../machine/ts/machine/cpu/thread_r
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const PATH = 'kernel/gc_thread_compact';
 const entrySource = 'halt_until_irq';
@@ -58,7 +59,7 @@ function installThread(cpu: CPU, shape: Shape) {
 }
 
 for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physical RAM and resumes in both planes at O${optLevel}`, () => {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const object = encodeCompiledProgramObject(compiled), linked = linkTestSystemBlua32(compiled);
 	const exported = object.sections.rodata.moduleExports.find(entry => entry.path === PATH && entry.exportPathKey === 'shrink_stack');
 	assert.ok(exported);
@@ -68,8 +69,8 @@ for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physica
 	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && stackFrames <= HEAP_SERVICE_FRAME_COUNT);
 	const { cpu, memory } = createTestSystemCpu(linked);
 	const oracle = createTestSystemCpu(linked).cpu;
-	assert.equal(cpu.runUntilDepth(0, 1024), RunResult.Halted);
-	assert.equal(oracle.runUntilDepth(0, 1024), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000);
+	runGuestToHalt(oracle, 10_000);
 	const first = memory.ramBusEnd() - RAM_BASE;
 	const last = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_THREAD_OFFSET;
 	const actual = () => memory.ramData().subarray(first, last);

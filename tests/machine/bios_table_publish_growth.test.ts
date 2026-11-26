@@ -10,14 +10,15 @@ import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_alloca
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const MODULE = 'kernel/table_publish_growth', port = `machine/bios/${MODULE}.lua`, entrySource = 'halt_until_irq';
 const basis = 'f2aac88e703a8d8fe40beb96163224142d11e98a';
@@ -30,7 +31,7 @@ const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control
 const dirty = 0x9d;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'publish_table_growth');
 	assert.ok(symbol);
@@ -39,7 +40,7 @@ function fixture(optLevel: 0 | 3) {
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
 	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
-	for (const target of [cpu, oracle]) assert.equal(target.runUntilDepth(0, 1024), RunResult.Halted);
+	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const first = memory.ramBusEnd() - RAM_BASE, management = cpu.heapAllocator.managementOffset();
 	const last = management + HEAP_SERVICE_THREAD_OFFSET, control = management + HEAP_GC_CONTROL_OFFSET;
 	function same<T>(action: (target: CPU) => T): T {

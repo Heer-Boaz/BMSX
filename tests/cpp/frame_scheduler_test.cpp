@@ -17,6 +17,7 @@
 #include "support/boot_rom_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "spec/blua32/builtin.h"
 #include "spec/blua32/instruction_format.h"
@@ -467,6 +468,7 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
 	runtime.boot();
 	auto& cpu = runtime.machine.cpu;
+	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 	auto& scheduler = runtime.frameScheduler;
 	cpu.setSystemGlobalByKey(cpu.stringPool().intern("pcall"), cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
 	for (int n = 0; n < 3; ++n) cpu.runUntilDepth(0, 1);

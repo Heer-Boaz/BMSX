@@ -11,7 +11,7 @@ import { LUA_FAULT_REASON_ASSIGN_NON_TABLE, LUA_FAULT_REASON_INDEX_NAN, LUA_FAUL
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode, TABLE_INDEX_VISIT_CYCLES } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
@@ -44,6 +44,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			frame.registers.set(2, valueInteger(91));
 			frame.registers.set(12, valueInteger(87));
 			frame.top = 13;
+			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE]);
 			cpu.runUntilDepth(0, (BASE_CYCLES[op] + 6) * 68);
 			if (backend === CpuExecutionBackend.JavaScript)

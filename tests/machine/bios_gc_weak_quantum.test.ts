@@ -9,11 +9,12 @@ import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, hashCanonicalTableKey, valuePayload, valueString } from '../../machine/ts/machine/cpu/value';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceTraceField } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const QUANTUM = 'kernel/gc_weak_quantum', PROBE = 'test/gc_weak_quantum', entrySource = "return 'kv'";
 const probeSource = `module<const>
@@ -36,7 +37,7 @@ const CURSOR_SHIFT = 20, MODE_PENDING = 4 << CURSOR_SHIFT, MODE_REMAINING = GC_M
 const indexOfRecord = (address: number) => (address & GC_RECORD_MASK) >>> GC_RECORD_SHIFT;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 	const { slotName } = object.sections.rodata.moduleExports.find(entry => entry.path === PROBE && entry.exportPathKey === 'invoke')!;
 	const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
@@ -46,8 +47,8 @@ function fixture(optLevel: 0 | 3) {
 	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [index, step]);
 	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
 	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
-	assert.equal(cpu.runUntilDepth(0, 1024), RunResult.Halted);
-	assert.equal(oracle.runUntilDepth(0, 1024), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000);
+	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
 	const quantum = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;

@@ -4,6 +4,7 @@
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/io.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 
@@ -38,6 +39,7 @@ void slidingFixedCall(bool interpreted) {
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
 	cpu.reset();
+	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 	if (interpreted) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	cpu.runUntilDepth(0, 20000);
 	cpu.runUntilDepth(1, 100);
@@ -93,6 +95,7 @@ void slidingVarargCall(bool interpreted, bool open) {
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
 	cpu.reset();
+	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 	if (interpreted) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	cpu.runUntilDepth(0, 20000);
 	cpu.runUntilDepth(1, 100);
@@ -128,6 +131,7 @@ void formalReservationRoots(bool interpreted) {
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses); cpu.reset();
+	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 	if (interpreted) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	auto* parent = cpu.activeThread()->currentFrame;
 	for (int index = 0; index < 6; ++index) parent->registers.set(5 + index, valueInteger(index));

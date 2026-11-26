@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { HeapServiceRecordKind, HeapServiceRecordStage, HeapServiceTableGrowthStage } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HeapServiceTableGrowthStage } from '../../../machine/ts/spec/bmsx/heap_service';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
@@ -20,9 +20,9 @@ try {
 		const image = linkTestSystemBlua32(compileHeapServiceSystem('local t = {120, x = 63}\nreturn t[1] + t.x, t', optLevel));
 		const rom = join(directory, `generated-bioscall-O${optLevel}.rom`);
 		writeFileSync(rom, image.romBytes);
-		for (const [opcode, name, kind, entry, tail] of [
-			['C', 'CLOSURE', HeapServiceRecordKind.CanonicalClosure, HeapServiceRecordStage.Direct, 'J 65536 1\nJ 65536 1\n'],
-			['B', 'BIOSCALL', null, null, ''],
+		for (const [opcode, name, tail] of [
+			['C', 'CLOSURE', 'J 65536 1\nJ 65536 1\n'],
+			['B', 'BIOSCALL', ''],
 		] as const) {
 			// Each case boots a fresh core. The entry wrapper creates its ROM
 			// Closure before the guest function reaches BIOSCALL. K independently
@@ -31,12 +31,12 @@ try {
 			writeFileSync(trace, `K ${opcode}\nJ 65536 1\n${tail}J 65536 1\nC\n`);
 			const lines = execFileSync(runner, [rom, trace, join(directory, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n');
 			assert.equal(lines.length, opcode === 'C' ? 6 : 4);
-			assert.deepEqual(lines[0].split(' ').map(Number), opcode === 'C' ? [1, entry, kind] : [1]);
+			assert.equal(lines[0], '1');
 			const [serviceResult, spent, active, stage] = lines[1].split(' ').map(Number);
 			assert.equal(serviceResult, RunResult.Yielded);
 			assert.ok(spent > 0);
 			assert.equal(active, 0);
-			assert.equal(stage, HeapServiceRecordStage.Idle);
+			assert.equal(stage, 0, 'no Closure destination is pending');
 			assert.equal(Number(lines[lines.length - 2].split(' ', 1)[0]), RunResult.Halted);
 			assert.equal(lines[lines.length - 1], '183');
 			console.log(`BIOS-${name}-NATIVE-GATE:PASS O${optLevel} (one generated allocation exit, ${spent} firmware cycles)`);

@@ -17,6 +17,8 @@ import { decodeBlua32InstructionAtPc, type DecodedInstruction } from '../../tool
 import { describeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
 import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource, parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { runCpuWithinBudget } from '../helpers/cpu_execution';
 
 function body(compiled: CompiledProgram, functionName?: string): DecodedInstruction[] {
 	const index = functionName === undefined ? compiled.entryProtoIndex
@@ -188,7 +190,7 @@ test('a constructor above 4100 locals materializes both tagged capacities in the
 	const locals = Array.from({ length: 4100 }, (_, index) => `v${index}`).join(',');
 	for (const opt of [0, 2, 3] as const) {
 		for (const [fields, array, hash] of [['0,1', 2, 0], ['0,1,0,1,0; x=1,y=0,z=1', 5, 3]] as const) {
-			const compiled = compileLuaSource(`local ${locals}\nreturn {${fields}}`, 'high-bioscall.lua', opt);
+			const compiled = compileHeapServiceSystem(`local ${locals}\nreturn {${fields}}`, opt, [], 'high-bioscall.lua');
 			const proto = compiled.program.protos[compiled.entryProtoIndex];
 			const instructions = body(compiled);
 			const site = instructions.findIndex(instruction => instruction.op === OpCode.BIOSCALL);
@@ -203,7 +205,7 @@ test('a constructor above 4100 locals materializes both tagged capacities in the
 			const pc = fn.codeAddress + (call.pc - proto.entryPC) - INSTRUCTION_BYTES; // WIDE head
 			const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 			cpu.setExecutionHook((_domain, at) => at === pc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-			assert.equal(cpu.runUntilDepth(0, 40_000), RunResult.ExecutionStopped);
+			assert.equal(runCpuWithinBudget(cpu, 40_000), RunResult.ExecutionStopped);
 			const frame = cpu.getFrameDepth() - 1;
 			assert.equal(cpu.readFramePc(frame), pc);
 			assert.equal(cpu.readFrameRegister(frame, call.a + 1), valueInteger(array));

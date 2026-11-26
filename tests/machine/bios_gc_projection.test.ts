@@ -10,11 +10,12 @@ import {
 	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const path = 'test/gc_projection';
 const entrySource = `local projection<const> = require('${path}')\nhalt_until_irq`;
@@ -37,7 +38,7 @@ return {
 }`;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), [{ path, source, chunk: parseLuaChunk(source, path) }],
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), [{ path, source, chunk: parseLuaChunk(source, path) }],
 		{ entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 	const entries = ['transfer', 'store_byte'].map(name => {
@@ -50,7 +51,7 @@ function fixture(optLevel: 0 | 3) {
 		return linked.image.functions[index].address;
 	});
 	const { cpu, memory } = createTestSystemCpu(linked);
-	assert.equal(cpu.runUntilDepth(0, 4096), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000);
 	const management = cpu.heapAllocator.managementOffset();
 	return { cpu, memory, management, entries };
 }

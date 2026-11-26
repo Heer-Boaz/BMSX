@@ -5,6 +5,7 @@
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 
@@ -168,8 +169,11 @@ void creationAndCallWorkOnce() {
 	image.functions = {{.firstWord=0, .wordCount=5, .maxStack=3}, {.firstWord=DECODED_PAGE_WORDS, .wordCount=1, .numParams=1}};
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	Machine call(image, false), callScalar(image, true);
+	for (auto* machine : {&call, &callScalar}) {
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+	}
 	test::runCpuParity(call.cpu, callScalar.cpu, 1);
-	require(call.cpu.instructionBudgetRemaining == -7, "CLOSURE pays literal8 once, including its record allowance, without another six-word charge");
+	require(call.cpu.instructionBudgetRemaining == -7, "a cache-hit CLOSURE pays literal8 once without another record charge");
 	test::runCpuParity(call.cpu, callScalar.cpu, 2);
 	test::runCpuParity(call.cpu, callScalar.cpu, 1);
 	require(call.cpu.instructionBudgetRemaining == -31 && call.cpu.getFrameDepth() == 2,

@@ -19,8 +19,9 @@ import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 test('compiled globals use the live banks across growth, keep namespaces distinct and preserve raw value kinds', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -420,16 +421,16 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 });
 
 test('compiled SETUP forwards a new edge from a black closed cell in the second mark pass', () => {
-	const image = linkTestSystemBlua32(compileLuaSource(`
+	const image = linkTestSystemBlua32(compileHeapServiceSystem(`
 local captured
 function set_captured(value)
 	captured = value
 	return 1
 end
-`));
+`, 0));
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const { cpu, memory } = createTestSystemCpu(image, backend), { gc } = cpu;
-		runGuestToHalt(cpu, 1000);
+		runGuestToHalt(cpu, 10_000);
 		const setter = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('set_captured')!), gc);
 		for (let i = 0; i <= COMPILED_BLOCK_THRESHOLD; ++i)
 			runCompletionClosure(cpu, setter, [valueNil()], 1000);
@@ -456,7 +457,7 @@ end
 				return exit;
 			} });
 		}
-		runGuestToHalt(cpu, 1000);
+		runGuestToHalt(cpu, 10_000);
 		if (backend === CpuExecutionBackend.JavaScript)
 			assert.equal(generatedExit, CompiledBlockExit.Return, 'the generated store did not take a side exit');
 		assert.equal(Upvalue.load(memory, cell), valueTable(child));
@@ -536,6 +537,7 @@ for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil paddi
 		closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.runUntilDepth(0, 2);
 		cpu.rootThread.frameAtDepth(0).top = 1;
 		cpu.runUntilDepth(0, 9002);

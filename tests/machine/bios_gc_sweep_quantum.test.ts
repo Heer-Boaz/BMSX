@@ -10,11 +10,12 @@ import { valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT,
 	HeapServiceObjectSweepAction as Action, HeapServiceObjectSweepField as Sweep } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const MODULE = 'kernel/gc_sweep_quantum', entrySource = 'halt_until_irq';
 const basis = '027fe97a6495926028a4cea6ef8cd15af8f5d191';
@@ -28,7 +29,7 @@ const objectCount = 0x70, sweepLink = 0x74;
 const liveText = 'fused sweep-alive', deadText = 'fused sweep-garbage';
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'sweep_quantum');
 	assert.ok(symbol);
@@ -37,7 +38,7 @@ function fixture(optLevel: 0 | 3) {
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
 	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
-	for (const target of [cpu, oracle]) assert.equal(target.runUntilDepth(0, 1024), RunResult.Halted);
+	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const state = cpu.heapAllocator.managementOffset(), control = state + HEAP_GC_CONTROL_OFFSET;
 	const context = state + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
 	const floor = memory.ramBusEnd() - RAM_BASE, last = state + HEAP_SERVICE_THREAD_OFFSET;

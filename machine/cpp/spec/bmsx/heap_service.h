@@ -16,7 +16,7 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, CreateClosure, ReserveTableGrowth, ResizeTable, InterruptPrelude, Count,
+	RootHead, RootBanks, AllocateRecord, ReserveTableGrowth, ResizeTable, InterruptPrelude, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count) + static_cast<uint32_t>(BiosCall::Count);
 using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;
@@ -47,21 +47,15 @@ constexpr uint32_t HEAP_SERVICE_VALUE_COUNT = 384;
 
 enum class HeapServiceExecStage : uint32_t { Idle, First, Retry };
 
-constexpr uint32_t HEAP_SERVICE_RECORD_OFFSET = 0xf00;
-enum class HeapServiceRecordField : uint32_t {
-	Stage = 0, Destination = 4, ArraySize = 8, HashSize = 12, Prototype = 8, ExecutionDomain = 12,
-	InstructionPc = 16, LastPc = 20, NextPc = 24, DirectRecovery = 28,
-};
-enum class HeapServiceRecordStage : uint32_t {
-	Idle, Direct, Scheduled, RetryCurrent, RetryFresh, DirectRecovery, LogicalAssist, PhysicalAssist, DirectLogicalRecovery,
-};
-
-constexpr uint32_t HEAP_SERVICE_RECORD_CONTROL_OFFSET = 0xf30;
-enum class HeapServiceRecordControlField : uint32_t {
-	Budget = 0, EpochBefore = 4, Debt = 8, Pressure = 12, ReservationStage = 16, Kind = 20,
+// Pinned CLOSURE return frontier. The marked destination is the presence
+// word; all admission/retry locals live only in the guest activation.
+constexpr uint32_t HEAP_SERVICE_CLOSURE_OFFSET = 0xf00;
+enum class HeapServiceClosureField : uint32_t {
+	Destination = 0, Prototype = 4, InstructionPc = 8, LastPc = 12, NextPc = 16,
 };
 
 enum class HeapServiceRecordKind : uint32_t { Table, CanonicalClosure };
+enum class HeapServiceRecordMode : uint32_t { Direct = 1, Scheduled, RetryCurrent, RetryFresh };
 
 constexpr uint32_t HEAP_SERVICE_TABLE_GROWTH_OFFSET = 0xf50u;
 enum class HeapServiceTableGrowthField : uint32_t {

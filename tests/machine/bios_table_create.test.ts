@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
@@ -9,11 +9,12 @@ import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const MODULE = 'kernel/table_create', entrySource = 'halt_until_irq';
 const OBJECT_HEAD = 0x6c, OBJECT_COUNT = 0x70, SWEEP_LINK = 0x74;
@@ -23,7 +24,7 @@ const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control
 });
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const object = encodeCompiledProgramObject(compiled), linked = linkTestSystemBlua32(compiled);
 	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'create_table');
 	assert.ok(symbol);
@@ -32,8 +33,8 @@ function fixture(optLevel: 0 | 3) {
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [entry]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT);
 	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
-	assert.equal(cpu.runUntilDepth(0, 1024), RunResult.Halted);
-	assert.equal(oracle.runUntilDepth(0, 1024), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000);
+	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const first = memory.ramBusEnd() - RAM_BASE, last = management + HEAP_SERVICE_THREAD_OFFSET;
 	function compare() {
@@ -64,19 +65,6 @@ function fixture(optLevel: 0 | 3) {
 	return { cpu, oracle, control, memory, begin, grant, finish, compare };
 }
 
-function dirtyBackings(cpu: CPU, arrayBytes: number, hashBytes: number): void {
-	const arena = cpu.heapAllocator;
-	const record = arena.allocate(TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX, false);
-	const array = arena.allocate(arrayBytes, true), hash = arena.allocate(hashBytes, true);
-	assert.ok(record && array && hash);
-	for (const [address, bytes] of [[record, TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX], [array, arrayBytes], [hash, hashBytes]]) {
-		for (let offset = 0; offset < bytes; ++offset) cpu.memory.writeRamRecordByte(address + offset, 0x9d);
-	}
-	arena.free(hash);
-	arena.free(array);
-	arena.free(record);
-}
-
 for (const optLevel of [0, 3] as const) {
 	test(`BLua table creation initializes all fresh backing layouts and publishes the same object at O${optLevel}`, () => {
 		const { cpu, oracle, control, memory, begin, finish, compare } = fixture(optLevel);
@@ -105,13 +93,14 @@ for (const optLevel of [0, 3] as const) {
 	test(`BLua table creation resumes in the Array and Hash writes before publishing inventory at O${optLevel}`, () => {
 		const { cpu, oracle, control, memory, begin, grant, finish, compare } = fixture(optLevel);
 		const array = 33, hash = 256, hashBytes = TableRecords.hashStorageBytes(hash);
-		dirtyBackings(cpu, array * 5, hashBytes);
-		dirtyBackings(oracle, array * 5, hashBytes);
-		compare();
 		const previous = memory.readRamRecordWord(control + OBJECT_HEAD), count = memory.readRamRecordWord(control + OBJECT_COUNT);
 		const address = oracle.createTable(array, hash);
 		const value = oracle.memory.readRamRecordWord(address + TableHeader.ArrayStorage) + 8;
 		const link = oracle.memory.readRamRecordWord(address + TableHeader.HashStorage) + hash * 10;
+		// The native oracle computed the chosen payload addresses. Seed just
+		// the two adjacent pairs observed by this test, not allocator links.
+		for (const field of [value, value + 4, link, link + 4])
+			memory.writeRamRecordWord(field, 0x9d9d9d9d);
 		const history = new RamHistory();
 		history.start(memory);
 		const baseline = history.capture(memory, null);

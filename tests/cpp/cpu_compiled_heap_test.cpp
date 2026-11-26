@@ -6,6 +6,7 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 
@@ -359,6 +360,7 @@ void closureAddressAlias(int source) {
 		{.firstWord = 16, .wordCount = 1}, {.firstWord = 16, .wordCount = 1, .staticClosure = false}}; image.globalNames = {"target"};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
+		test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[1]);
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(m->rom.functionAddresses[1])); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 400);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

@@ -17,6 +17,8 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from '../helpers/blua32';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { runCpuWithinBudget } from '../helpers/cpu_execution';
 
 const BOOT_SOURCE = `cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 const CART_SOURCE = 'bss level: u8[0x20000]\nlevel[0] = 7\nreturn level[0]';
@@ -26,7 +28,7 @@ function pageRound(address: number): number {
 }
 
 function bootPair(executionBackend?: CpuExecutionBackend) {
-	const bios = compileLuaChunkToProgram(parseLuaChunk(BOOT_SOURCE, 'boot.lua').chunk, [], {
+	const bios = compileTestSystemWithHeap(parseLuaChunk(BOOT_SOURCE, 'boot.lua').chunk, [], {
 		entrySource: BOOT_SOURCE, optLevel: 0, programDomain: 'system',
 	});
 	const cart = compileLuaChunkToProgram(parseLuaChunk(CART_SOURCE, 'cart.lua').chunk, [], { entrySource: CART_SOURCE, optLevel: 0 });
@@ -44,7 +46,7 @@ test('reset, EXEC and restore use the heap capacity of the active image', () => 
 	assert.equal(cpu.luaHeap.capacity(), limit - pageRound(systemEnd));
 	const savedMemory = memory.captureSaveState();
 	const savedCpu = cpu.captureRuntimeState();
-	assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted, 'the cartridge clears its BSS and returns');
+	assert.equal(runCpuWithinBudget(cpu, 1_000_000), RunResult.Halted, 'the cartridge clears its BSS and returns');
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
 	assert.equal(cpu.heapAllocator.floorAddress(), pageRound(cartEnd));
 	assert.equal(cpu.luaHeap.capacity(), limit - pageRound(cartEnd));
@@ -61,7 +63,7 @@ test('EXEC refuses a cartridge whose statics overlap a live heap page before wri
 	assert.ok(live >= pageRound(systemEnd), 'the new static region overlaps a live allocation');
 	const marker = cartEnd - 4 - RAM_BASE;
 	memory.ramView.setUint32(marker & ~3, 0x5eed5eed, true);
-	cpu.runUntilDepth(0, 10000);
+	runCpuWithinBudget(cpu, 100_000);
 	assert.equal(cpu.captureRuntimeState().hardHalted, true);
 	assert.equal(heap.floorAddress(), pageRound(systemEnd));
 	assert.equal(memory.ramView.getUint32(marker & ~3, true), 0x5eed5eed, 'cartridge BSS stays untouched');

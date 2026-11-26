@@ -1,7 +1,7 @@
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
-import { allocatedObjectRecords } from '../helpers/cpu_execution';
+import { allocatedObjectRecords, runCpuWithinBudget } from '../helpers/cpu_execution';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
@@ -13,7 +13,7 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { compileLuaSource, runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -31,6 +31,7 @@ for (const name of ['constant', 'table']) test(`checkpoint and GC retain a ${nam
 		closureRelocations: [{ wordIndex: 2, functionIndex: 1 }],
 	});
 	const { cpu } = createTestSystemCpu(image);
+	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	if (name === 'table') cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.createTable());
 	const returnPc = cpu.readFramePc(0) + 4 * INSTRUCTION_BYTES;
 	cpu.setExecutionHook((_domain, pc) => pc === returnPc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
@@ -158,32 +159,39 @@ test('restore retains weak referents until the original allocation-triggered col
 });
 
 test('a materialized but unrooted canonical closure remains part of the checkpoint', () => {
-	const code = new Uint8Array(6 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(code, 1, OpCode.CLOSURE, 0, 0, 0);
-	writeInstruction(code, 2, OpCode.KNIL, 0, 0, 0);
-	writeInstruction(code, 3, OpCode.K1, 0, 0, 0);
-	writeInstruction(code, 4, OpCode.RET, 0, 2, 0);
-	writeInstruction(code, 5, OpCode.RET, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({
-		text: code,
-		functions: [{ firstWord: 0, wordCount: 5 }, { firstWord: 5, wordCount: 1 }],
-		closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
-	});
-	const address = image.symbols.functionAddresses[1];
+	const image = linkTestSystemBlua32(compileHeapServiceSystem(`
+local target<const> = function() end
+return 1
+`, 0, [], 'snapshot-canonical.lua'));
 	const { cpu } = createTestSystemCpu(image);
-	const entry = cpu.readFramePc(0), functionAddress = cpu.rootThread.frameAtDepth(0).functionAddress;
+	const functionAddress = image.vectors.entryFunctionAddress;
+	const entry = image.image.functions.find(fn => fn.address === functionAddress)!.codeAddress;
+	cpu.setExecutionHook((_domain, at) => at === entry, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+	assert.equal(runCpuWithinBudget(cpu, 10_000), RunResult.ExecutionStopped);
+	cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+	const frame = cpu.getFrameDepth() - 1;
 	const cold = cpu.captureRuntimeState();
 	const coldRam = cpu.memory.captureSaveState();
-	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.KNIL]), RunResult.Yielded);
+	const build = () => {
+		assert.equal(cpu.runUntilDepth(frame, BASE_CYCLES[OpCode.CLOSURE]), RunResult.Yielded);
+		assert.equal(cpu.heapServiceActive(), true, 'a cold canonical Closure enters resident firmware');
+		for (let grant = 0; grant < 32 && cpu.heapServiceActive(); ++grant)
+			assert.equal(cpu.runUntilDepth(frame, 1024), RunResult.Yielded);
+		assert.equal(cpu.heapServiceActive(), false);
+		return cpu.readFrameRegister(frame, 0);
+	};
+	const first = build(), closureAddress = valuePayload(first);
+	assert.notEqual(closureAddress, 0);
+	const address = cpu.captureClosureBinding(closureAddress).functionAddress;
+	cpu.rootThread.frameAtDepth(frame).registers.setNil(0);
+
 	const warm = cpu.captureRuntimeState();
 	const warmRam = cpu.memory.captureSaveState();
-	assert.equal(cpu.readFrameRegister(0, 0), valueNil());
-	const closureAddress = allocatedObjectRecords(cpu).find(record =>
+	assert.equal(cpu.readFrameRegister(frame, 0), valueNil());
+	assert.equal(allocatedObjectRecords(cpu).find(record =>
 		cpu.memory.readRamRecordByte(record) === ValueTag.Closure
 		&& cpu.memory.readRamRecordWord(record + CLOSURE_PROTOTYPE_ADDRESS) === address
-		&& (cpu.memory.readRamRecordByte(record + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0)!;
-	assert.ok(closureAddress);
+		&& (cpu.memory.readRamRecordByte(record + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0), closureAddress);
 	cpu.runUntilDepth(0, 1000);
 	const expected = cpu.captureRuntimeState();
 	cpu.memory.restoreSaveState(coldRam);
@@ -200,16 +208,15 @@ test('a materialized but unrooted canonical closure remains part of the checkpoi
 	while (cpu.gc.phase() !== GcPhase.Sweep) cpu.gc.step();
 	assert.equal(cpu.memory.readRamRecordByte(closureAddress + GC_COLOR_OFFSET), cpu.gc.white() ^ 1);
 	const sweep = cpu.captureRuntimeState(), sweepRam = cpu.memory.captureSaveState();
-	const build = () => {
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, entry);
-		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE]), RunResult.Yielded);
-		return cpu.readFrameRegister(0, 0);
+	const atColdSite = () => {
+		cpu.writeFrameExecution(frame, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, entry);
+		return build();
 	};
-	const replacement = build();
+	const replacement = atColdSite();
 	assert.notEqual(valuePayload(replacement), closureAddress);
 	cpu.memory.restoreSaveState(sweepRam);
 	cpu.restoreRuntimeState(sweep);
-	assert.equal(build(), replacement, 'restore does not republish an already retired closure');
+	assert.equal(atColdSite(), replacement, 'restore does not republish an already retired closure');
 
 });
 
@@ -240,11 +247,11 @@ test('hard-halt is restored independently of the live future CPU latch', () => {
 });
 
 test('CPU capture walks no language records; fresh restore reattaches a graph from RAM', () => {
-	const image = linkTestSystemBlua32(compileLuaSource('return 19, 21', 'snapshot-physical-records.lua'));
+	const image = linkTestSystemBlua32(compileHeapServiceSystem('return 19, 21', 0, [], 'snapshot-physical-records.lua'));
 	const { cpu } = createTestSystemCpu(image);
 	const key = cpu.stringPool.intern('graph');
 	cpu.setGlobalByKey(key, valueNil());
-	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000);
 	const before = cpu.captureRuntimeState();
 	const root = cpu.createTable(1024, 0);
 	const rootValue = valueTable(root);

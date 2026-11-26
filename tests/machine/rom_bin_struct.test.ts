@@ -6,7 +6,7 @@ import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -17,7 +17,7 @@ const BIN_ADDR = RAM_BASE + 0x21000;
 function runStructRead(packedWords: number[], snippet: string): Value[] {
 	const lexer = new LuaLexer(snippet, 'bin_struct.lua');
 	const parser = new LuaParser(lexer.scanTokens(), 'bin_struct.lua', snippet);
-	const compiled = compileLuaChunkToProgram(parser.parseChunk(), [], {
+	const compiled = compileTestSystemWithHeap(parser.parseChunk(), [], {
 		entrySource: snippet,
 		programDomain: 'system',
 	});

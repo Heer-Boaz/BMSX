@@ -30,7 +30,7 @@ import { BASE_CYCLES, OpCode, encodeFixedValueCount } from '../../machine/ts/spe
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
-import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const RAM_FUNCTION_ADDRESS = DYNAMIC_RAM_BASE + 0x1000;
@@ -57,6 +57,7 @@ test('compact and padded ROM calls use admitted record spans with identical cycl
 		romBytes.set(image.romBytes);
 		romBytes.set(image.romBytes.subarray(sourceRecord, sourceRecord + BLUA32_FUNCTION_RECORD_SIZE), record);
 		const { cpu, memory } = createTestSystemCpu({ romBytes });
+		seedTestRomClosure(cpu, record);
 		cpu.rootThread.frameAtDepth(0).registers.setInteger(1, record);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const readWord = memory.readMappedBusU32LE.bind(memory);
@@ -145,6 +146,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`the CPU addresses
 		closureRelocations: [{ wordIndex: 1, functionAddress: RAM_FUNCTION_ADDRESS }],
 	}, RAM_CODE_FIXTURE_BYTES);
 	const { cpu, memory } = createTestSystemCpu(image, backend);
+	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	const romFunctionOperand = image.symbols.functionAddresses[1] >>> 4;
 	const ramCode = new Uint8Array(4 * INSTRUCTION_BYTES);
 	writeInstruction(ramCode, 0, OpCode.WIDE, 0, romFunctionOperand >>> BASE_BX_BITS, 0, 0);

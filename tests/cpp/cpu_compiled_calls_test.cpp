@@ -9,6 +9,7 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 
@@ -227,6 +228,8 @@ void protectedNestedFrames() {
 		{6, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	for (const bool scalar : {false, true}) {
 		CpuMachine machine(image, scalar);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[2]);
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
 		for (int grant = 0; grant < 20 && machine.cpu.getFrameDepth() != 3; ++grant) machine.cpu.runUntilDepth(0, 1);
 		require(machine.cpu.getFrameDepth() == 3, "protected body invokes an ordinary child activation");
@@ -272,6 +275,7 @@ void valueRangePlacementCycles() {
 			{.firstWord = 3, .wordCount = 2, .maxStack = 160, .isVararg = true}};
 		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		CpuMachine machine(image, scalar);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 		machine.cpu.runUntilDepth(0, 1);
 		auto closure = asClosure(machine.cpu.readFrameRegister(0, 0), machine.cpu.gcHeap());
 		const std::array args{valueInteger(17), valueInteger(29), valueInteger(31)};
@@ -359,6 +363,7 @@ void haltedReceivingFrame() {
 	const int ret = BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1; // One result.
 	for (bool scalar : {true, false}) for (bool returning : {false, true}) {
 		CpuMachine machine(image, scalar);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 		auto& cpu = machine.cpu;
 		cpu.runUntilDepth(0, 1); // Bind the closure.
 		if (returning) cpu.runUntilDepth(0, call + BASE_CYCLES[static_cast<u8>(OpCode::K1)]);
@@ -414,6 +419,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	const u32 record = DYNAMIC_RAM_BASE + 0x1ff0u;
 	image.closureRelocations = {{1, ramRecord ? record : test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	CpuMachine machine(image, false);
+	if (!ramRecord) test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 	if (ramRecord) {
 		machine.memory.writeBytes(record, machine.rom.bytes.data() + machine.rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 7);
@@ -533,6 +539,9 @@ void wideNativeClosureCallResumesAfterItsBody() {
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 
 	CpuMachine native(image, false), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+	}
 	native.cpu.prepareSystemNativeCode();
 	require(test::runCpuParity(native.cpu, scalar.cpu, 1000) == RunResult::Halted,
 		"a complete guest call leaves a retained frame and sufficient stack backing");
@@ -621,6 +630,9 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied, u32 
 	image.closureRelocations = {{2, prototype}, {6, prototype},
 		{9, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	CpuMachine generated(image, false), scalar(image, true);
+	for (auto* machine : {&generated, &scalar}) {
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[2]);
+	}
 	generated.cpu.prepareSystemNativeCode();
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted, "ROM constructs both actual closures");
 	const u32 pc = generated.rom.textAddress + callWord * INSTRUCTION_BYTES;
@@ -777,6 +789,10 @@ void nativeCallChainIsRestorableAtBlockedMmio(bool openOuter) {
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
 		{3, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	CpuMachine generated(image, false), scalar(image, true);
+	for (auto* machine : {&generated, &scalar}) {
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[2]);
+	}
 	struct Device {
 		CpuMachine& machine;
 		bool openOuter, ready = true;
@@ -970,6 +986,9 @@ void pendingReturnPlacement(int produced, int requested, int first) {
 		{.firstWord=8, .wordCount=1, .numParams=3, .maxStack=3}};
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	CpuMachine generated(image, false), scalar(image, true);
+	for (auto* machine : {&generated, &scalar}) {
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+	}
 	generated.cpu.prepareSystemNativeCode();
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 120) == RunResult::Halted, "warm the actual CALL");
 	auto* child = generated.cpu.activeThread()->currentFrame->next;
@@ -1009,6 +1028,7 @@ void nativeReturnPublishesCallerTopAtMappedObserver() {
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	for (const bool enough : {false, true}) {
 		CpuMachine machine(image, false);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 		auto& cpu = machine.cpu;
 		const u32 nextPc = machine.rom.textAddress + continuation * INSTRUCTION_BYTES;
 		struct Observer { CPU& cpu; u32 pc; int reads = 0; } observer{cpu, nextPc};
@@ -1079,6 +1099,8 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
 		{17, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	CpuMachine machine(image, false);
+	test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+	test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[2]);
 	// Publish all three real translations without running unrelated guest
 	// loops to make the compiler worker discover the test entry points.
 	machine.cpu.prepareSystemNativeCode();
@@ -1278,6 +1300,7 @@ void returnGrowthCollection() {
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	for (const bool scalar : {false, true}) {
 		CpuMachine machine(image, scalar);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 		while (machine.cpu.activeThread()->frameDepth() != 2) machine.cpu.runUntilDepth(0, 1);
 		auto* caller = machine.cpu.activeThread()->firstFrame;
 		auto* callee = machine.cpu.activeThread()->currentFrame;
@@ -1313,6 +1336,7 @@ void failedCallAdmission() {
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	for (const bool scalar : {false, true}) for (const bool completion : {false, true}) {
 		CpuMachine machine(image, scalar);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 		machine.cpu.runUntilDepth(0, 1);
 		auto* thread = machine.cpu.activeThread();
 		auto* caller = thread->currentFrame;
@@ -1351,6 +1375,7 @@ void returnPlacementCycles() {
 		image.constants = {17, 29};
 		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		CpuMachine machine(image, scalar);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 		machine.cpu.runUntilDepth(0, 1000);
 		const int produced = producedOperand == 0 ? 2 : producedOperand - 1;
 		const int placed = wantedOperand == 0 ? produced : wantedOperand - 1;
@@ -1384,6 +1409,7 @@ void protectedReturnPlacementCycles() {
 		image.systemGlobalNames = {"pcall"};
 		image.closureRelocations = {{3, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		CpuMachine machine(image, scalar);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
 		while (machine.cpu.getFrameDepth() != 2) machine.cpu.runUntilDepth(0, 1);
 		auto* thread = machine.cpu.activeThread();
@@ -1425,6 +1451,7 @@ void coroutineReturnPlacementCycles() {
 		image.systemGlobalNames = {"create", "resume"};
 		image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		CpuMachine machine(image, scalar);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("create"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineCreate));
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("resume"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
 		const u32 root = machine.cpu.activeThread()->address;
@@ -1463,6 +1490,7 @@ void rootReturnPlacementCycles() {
 		image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}, {.firstWord = 3, .wordCount = 1, .numParams = 2, .maxStack = 2}};
 		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		CpuMachine machine(image, scalar);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 		machine.cpu.runUntilDepth(0, 1);
 		auto closure = asClosure(machine.cpu.activeThread()->currentFrame->registers.get(0), machine.cpu.gcHeap());
 		const Value args[]{valueInteger(17), valueInteger(29)};
@@ -1497,6 +1525,8 @@ void errorHandlerReturnPlacementCycles() {
 		image.constants = {17}; image.systemGlobalNames = {"xpcall", "error"};
 		image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}, {4, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 		CpuMachine machine(image, scalar);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[2]);
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("xpcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::XPCall));
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("error"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::Error));
 		while (machine.cpu.activeThread()->currentFrame->readControl(FrameField::Function) != machine.rom.functionAddresses[2]) machine.cpu.runUntilDepth(0, 1);
@@ -1590,6 +1620,9 @@ void rewriteActiveReturnAddress() {
 	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8}, {.firstWord = 6, .wordCount = 2}};
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	CpuMachine native(image, false), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// Precompile the immutable callee. The single warm-up job under test is
 	// the writable caller and its continuation; do not race two submissions.

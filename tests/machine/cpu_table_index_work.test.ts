@@ -13,7 +13,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { LUA_FAULT_REASON_METATABLE_LOOP } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { compileCoroutineTest } from '../helpers/coroutine';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
@@ -48,6 +48,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			frame.registers.setTable(0, table); frame.registers.set(1, key);
 			frame.registers.setInteger(12, 91); frame.top = 13;
 			const readCycles = BASE_CYCLES[op];
+			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE]);
 			cpu.runUntilDepth(0, (readCycles + 6) * 68);
 			if (backend === CpuExecutionBackend.JavaScript)

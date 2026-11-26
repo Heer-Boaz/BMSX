@@ -20,8 +20,9 @@ import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../too
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestBlua32Pair, linkTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const ROOTS = 'kernel/gc_root_banks', PORT = 'test/gc_root_port', entrySource = 'halt_until_irq';
 const modules = ['kernel/dlmalloc', 'kernel/gc_control', 'kernel/gc_strings', 'kernel/gc_mark', ROOTS].map(path => {
@@ -43,7 +44,7 @@ modules.push({ path: PORT, source: portSource, chunk: parseLuaChunk(portSource, 
 
 const CURSOR_BITS = 20;
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 	function entryIndex(path: string, key: string) {
 		const { slotName } = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === key)!;
@@ -65,7 +66,7 @@ function fixture(optLevel: 0 | 3) {
 		const memory = new Memory({ systemRom: linked.romBytes, cartridgeSlots: cartridgeSlots(cart0, cart1) }, PSX_MACHINE_SPEC.ramBytes);
 		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 		cpu.reset();
-		assert.equal(cpu.runUntilDepth(0, 1024), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000);
 		return cpu;
 	}
 	const cpu = makeCpu(), oracle = makeCpu(), memory = cpu.memory;

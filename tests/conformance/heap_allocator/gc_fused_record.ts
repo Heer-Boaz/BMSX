@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
+import { CpuRunKind } from '../../../machine/ts/machine/cpu/cpu';
 import { GC_LAST_EPOCH_WORK, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
@@ -14,28 +14,20 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import {
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_RECORD_OFFSET, HEAP_SERVICE_RESULT_OFFSET, HEAP_SERVICE_VALUE_COUNT,
-	HeapServiceGcStage, HeapServiceRecordField, HeapServiceRecordKind, HeapServiceRecordStage,
+	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_RESULT_OFFSET, HEAP_SERVICE_VALUE_COUNT,
+	HeapServiceGcStage, HeapServiceClosureField, HeapServiceRecordKind, HeapServiceRecordMode,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { HEAP_PAGE_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { parseLuaChunk } from '../../helpers/cpu_test_harness';
+import { runGuestToHalt } from '../../helpers/cpu_execution';
+import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const rootModule = 'kernel/allocate_record', entrySource = 'halt_until_irq';
-const modules = [
-	'dlmalloc', 'dlmalloc_record', 'gc_runtime_layout', 'gc_control', 'gc_strings', 'word_arithmetic', 'gc_pace', 'heap_admission', 'gc_epoch',
-	'gc_mark', 'gc_capture_trace', 'gc_thread_trace', 'gc_table_head', 'gc_table_mode', 'gc_weak_mode', 'gc_table_trace', 'string_record',
-	'gc_trace', 'gc_root_banks', 'gc_remark', 'gc_weak_quantum', 'gc_weak_table', 'gc_mark_quantum', 'gc_atomic_quantum', 'gc_thread_compact',
-	'gc_objects', 'gc_sweep_quantum', 'gc_step', 'closure_create', 'table_create', 'allocate_record',
-].map(name => {
-	const path = `kernel/${name}`, source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
-	return { path, source, chunk: parseLuaChunk(source, path) };
-});
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const weakSlots = 4, requestedArray = 31, requestedHash = 129;
 const garbage = 'physical allocation must reclaim this String '.repeat(144);
@@ -45,7 +37,7 @@ const directory = mkdtempSync(join('tmp', 'bmsx-gc-fused-record-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const optLevel of [0, 3] as const) {
-		const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+		const compiled = compileHeapServiceSystem(entrySource, optLevel);
 		const system = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 		const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === rootModule && entry.exportPathKey === 'allocate_record');
 		assert.ok(symbol);
@@ -58,7 +50,7 @@ try {
 		const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
-		assert.equal(cpu.runUntilDepth(0, 4096), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000);
 		assert.equal(cpu.isHaltedUntilIrq(), true);
 		const { gc, heapAllocator: arena, luaHeap: budget, stringPool: strings } = cpu, { tables } = gc;
 		budget.setCollectionTarget(budget.capacity());
@@ -79,7 +71,7 @@ try {
 		assert.equal(gc.phase(), GcPhase.Pause, 'the record routine owns starting the fresh epoch');
 		const white = gc.white(), occupied = arena.occupiedBytes();
 		const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-		const hostStage = management + HEAP_SERVICE_RECORD_OFFSET + HeapServiceRecordField.Stage;
+		const closureLatch = management + HEAP_SERVICE_CLOSURE_OFFSET + HeapServiceClosureField.Destination;
 		const resultWord = management + HEAP_SERVICE_RESULT_OFFSET, floor = memory.ramBusEnd() - RAM_BASE;
 		const tags = tables.arrayAddress(weak) + 4 * weakSlots;
 		const caller = cpu.getFrameDepth() - 1, waitPc = cpu.readFramePc(caller);
@@ -99,15 +91,15 @@ try {
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const used = cycles - cpu.instructionBudgetRemaining;
-			const stage = memory.readRamRecordWord(hostStage);
+			const stage = memory.readRamRecordWord(closureLatch);
 			assert.ok(used > 0, 'recovery spends ordinary guest instruction cycles');
-			assert.equal(stage, HeapServiceRecordStage.Idle);
+			assert.equal(stage, 0);
 			assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, 'the host does not select the next GC stage');
 			assert.equal(cpu.readFramePc(caller), waitPc);
 			assert.equal(cpu.allocationParked(), false);
 			observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.heapServiceActive()} ${stage} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
 		}
-		const args = [management, HeapServiceRecordKind.Table, requestedArray, requestedHash, HeapServiceRecordStage.Direct, 0];
+		const args = [management, HeapServiceRecordKind.Table, requestedArray, requestedHash, HeapServiceRecordMode.Direct, 0];
 		assert.ok(cpu.beginHeapService(address, args));
 		observe(`B ${address} ${args.length} ${args.join(' ')}`, 1);
 		for (let i = 0; i < 16384 && gc.phase() === GcPhase.Pause; ++i) grant(32);

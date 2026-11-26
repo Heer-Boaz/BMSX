@@ -15,15 +15,18 @@ import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_registe
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { buildRomBlua32Tail } from '../../scripts/rompacker/rombuilder';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
+import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { composeLuaSource } from '../../toolchain/ts/lua/compiler/source_map';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestBlua32PairCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { loadHeapServiceTestModules } from '../helpers/heap_service_system';
 
 for (const optLevel of [3] as const) {
 	test(`public BIOS exports root their module dependencies without an entry require (O${optLevel})`, () => {
+		const firmwarePaths = new Set<string>(HEAP_SERVICE_MODULES);
 		const systemSources = [
 			['entry', `module<entry>
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`],
@@ -34,9 +37,13 @@ return function(value) return value + delta.amount end`],
 			['unused', 'module<const>\nreturn function() return 999 end'],
 		];
 		const system = buildBlua32Image({
-			luaModules: systemSources.map(([path, source]) => ({
-				path, displayPath: `${path}.lua`, source, chunk: parseLuaChunk(source, path),
-			})),
+			luaModules: [
+				...systemSources.map(([path, source]) => ({
+					path, displayPath: `${path}.lua`, source, chunk: parseLuaChunk(source, path),
+				})),
+				...loadHeapServiceTestModules().map(module => ({ ...module, displayPath: `${module.path}.lua` })),
+			],
+			preloadModules: HEAP_SERVICE_MODULES,
 			generatedLuaModules: [],
 			loadAddress: SYSTEM_ROM_BASE + 0x100,
 			ramByteCount: PSX_MACHINE_SPEC.ramBytes,
@@ -46,10 +53,10 @@ return function(value) return value + delta.amount end`],
 			biosExports: [{ path: 'public', exportPathKey: '' }],
 		});
 		assert.ok(!system.object.sections.rodata.moduleExports.some(entry => entry.path === 'unused'));
-		assert.deepEqual(system.linked.symbols.metadata.compiledModulePaths, ['entry', 'dependency', 'public']);
+		assert.deepEqual(system.linked.symbols.metadata.compiledModulePaths.filter(path => !firmwarePaths.has(path)), ['entry', 'dependency', 'public']);
 		assert.equal(system.linked.symbols.moduleFunctions.some(module => module.path === 'dependency'), false,
 			'a const input remains recorded even though it emits no module function');
-		assert.deepEqual([...system.diagnosticSources.keys()], ['entry', 'public', 'dependency']);
+		assert.deepEqual([...system.diagnosticSources.keys()].filter(path => !firmwarePaths.has(path)), ['entry', 'public', 'dependency']);
 		const cartSource = `module<entry>
 local operation<const> = require('public')
 return operation(35)`;

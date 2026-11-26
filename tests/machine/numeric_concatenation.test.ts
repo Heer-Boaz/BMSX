@@ -1,9 +1,10 @@
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { valueInteger, valueString } from '../../machine/ts/machine/cpu/value';
 import { runCompiledTestSystem } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
 const CASES = [
 	{ source: '0', storage: 'word', text: '0' },
@@ -40,7 +41,7 @@ return forward, 'v=' .. *operand,
     numbers, *operand .. 42,
     chain, '[' .. *operand .. ']'
 `;
-			const cpu = runCompiledTestSystem(compileLuaSource(source, 'numeric_concat.lua', optLevel), 100000);
+			const cpu = runCompiledTestSystem(compileHeapServiceSystem(source, optLevel, [], 'numeric_concat.lua'), 100000);
 			const values = materializeCpuCompletionValues(cpu);
 			assert.deepEqual(values, [
 				`v=${sample.text}`, `v=${sample.text}`,
@@ -58,7 +59,7 @@ ${CASES.map(sample => `    '[' .. (${sample.source}) .. ']',`).join('\n')}
 }
 return ${CASES.map((_, index) => `labels[${index}]`).join(', ')}
 `;
-		const cpu = runCompiledTestSystem(compileLuaSource(source, 'numeric_concat_rodata.lua', optLevel), 100000);
+		const cpu = runCompiledTestSystem(compileHeapServiceSystem(source, optLevel, [], 'numeric_concat_rodata.lua'), 100000);
 		const values = materializeCpuCompletionValues(cpu);
 		assert.deepEqual(values, CASES.map(sample => valueString(cpu.stringPool.intern(`[${sample.text}]`))));
 	});
@@ -71,7 +72,7 @@ bss direct${index}: u8[#('[' .. (${sample.source}) .. ']')]
 `).join('\n') + `
 return ${CASES.flatMap((_, index) => [`#via_constant${index}`, `#direct${index}`]).join(', ')}
 `;
-		const cpu = runCompiledTestSystem(compileLuaSource(source, 'numeric_concat_dimensions.lua', optLevel), 100000);
+		const cpu = runCompiledTestSystem(compileHeapServiceSystem(source, optLevel, [], 'numeric_concat_dimensions.lua'), 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), CASES.flatMap(sample => [valueInteger(sample.text.length + 2), valueInteger(sample.text.length + 2)]));
 	});
 }

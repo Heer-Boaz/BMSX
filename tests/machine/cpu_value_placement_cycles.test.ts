@@ -10,7 +10,7 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
@@ -28,6 +28,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 				{ firstWord: 3, wordCount: 2, maxStack: 160, isVararg: true },
 			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
 			const { cpu } = createTestSystemCpu(image, backend);
+			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 			cpu.runUntilDepth(0, 1);
 			const closure = cpu.rootThread.currentFrame!.registers.getClosure(0, cpu.gc);
 			for (let call = 0; call < 20; ++call) {
@@ -54,6 +55,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 				{ firstWord: 5, wordCount: 1, numParams: params, maxStack: 8, isVararg: vararg },
 			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
 			const { cpu } = createTestSystemCpu(image, backend);
+			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 			cpu.runUntilDepth(0, 5000); cpu.runUntilDepth(1, 100);
 			const root = cpu.rootThread.currentFrame!;
 			const placed = vararg ? params : Math.max(params - args, 0);
@@ -137,9 +139,11 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			{ firstWord: 0, wordCount: 8, maxStack: 12 }, { firstWord: 8, wordCount: 5, maxStack: 8 },
 		], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
 		const { cpu } = createTestSystemCpu(image, backend);
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		for (const [name, id] of [['create', BuiltinFunctionId.CoroutineCreate], ['resume', BuiltinFunctionId.CoroutineResume], ['yield', BuiltinFunctionId.CoroutineYield]] as const)
 			cpu.setSystemGlobalByKey(cpu.stringPool.intern(name), valueBuiltinFunction(id));
-		while (cpu.activeThread === cpu.rootThread) cpu.runUntilDepth(0, 1);
+		for (let grant = 0; grant < 32 && (cpu.activeThread === cpu.rootThread); ++grant) cpu.runUntilDepth(0, 1);
+		assert.ok(!(cpu.activeThread === cpu.rootThread), 'fixture reached its measured instruction');
 		const child = cpu.activeThread;
 		cpu.runUntilDepth(0, BASE_CYCLES[OpCode.GETSYS] + 2 * BASE_CYCLES[OpCode.LOADK]);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
@@ -169,9 +173,11 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			{ firstWord: 0, wordCount: 8, maxStack: 16 }, { firstWord: 8, wordCount: 1, numParams: 2, maxStack: 8, isVararg: vararg },
 		], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
 		const { cpu } = createTestSystemCpu(image, backend);
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
-		while (cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 6 * INSTRUCTION_BYTES) cpu.runUntilDepth(0, 1);
+		for (let grant = 0; grant < 32 && (cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 6 * INSTRUCTION_BYTES); ++grant) cpu.runUntilDepth(0, 1);
+		assert.ok(!(cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 6 * INSTRUCTION_BYTES), 'fixture reached its measured instruction');
 		for (let i = 0; i < 3; ++i) cpu.rootThread.currentFrame!.registers.setInteger(6 + i, 17 + i);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 4 - 2 - (vararg ? 1 : 0));
@@ -201,9 +207,11 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			{ firstWord: 11, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
 		], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }, { wordIndex: 6, functionIndex: 2 }] });
 		const { cpu } = createTestSystemCpu(image, backend);
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('error'), valueBuiltinFunction(BuiltinFunctionId.Error));
-		while (cpu.activeThread.currentFrame!.pc !== image.image.functions[1].codeAddress + 4 * INSTRUCTION_BYTES) cpu.runUntilDepth(0, 1);
+		for (let grant = 0; grant < 32 && (cpu.activeThread.currentFrame!.pc !== image.image.functions[1].codeAddress + 4 * INSTRUCTION_BYTES); ++grant) cpu.runUntilDepth(0, 1);
+		assert.ok(!(cpu.activeThread.currentFrame!.pc !== image.image.functions[1].codeAddress + 4 * INSTRUCTION_BYTES), 'fixture reached its measured instruction');
 		const capture = ClosureRecord.captureAddress(cpu.memory, cpu.activeThread.currentFrame!.registers.getClosure(2, cpu.gc), 0);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 1 - 4);
@@ -255,12 +263,15 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`coroutine close c
 		{ firstWord: 16, wordCount: 1, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
 	], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }, { wordIndex: 12, functionIndex: 2 }] });
 	const { cpu } = createTestSystemCpu(image, backend);
+	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	for (const [name, id] of [['create', BuiltinFunctionId.CoroutineCreate], ['resume', BuiltinFunctionId.CoroutineResume],
 		['yield', BuiltinFunctionId.CoroutineYield], ['close', BuiltinFunctionId.CoroutineClose]] as const)
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern(name), valueBuiltinFunction(id));
-	while (cpu.activeThread === cpu.rootThread) cpu.runUntilDepth(0, 1);
+	for (let grant = 0; grant < 32 && (cpu.activeThread === cpu.rootThread); ++grant) cpu.runUntilDepth(0, 1);
+	assert.ok(!(cpu.activeThread === cpu.rootThread), 'fixture reached its measured instruction');
 	const child = cpu.activeThread;
-	while (cpu.activeThread !== cpu.rootThread) cpu.runUntilDepth(0, 1);
+	for (let grant = 0; grant < 32 && (cpu.activeThread !== cpu.rootThread); ++grant) cpu.runUntilDepth(0, 1);
+	assert.ok(!(cpu.activeThread !== cpu.rootThread), 'fixture reached its measured instruction');
 	const capture = ClosureRecord.captureAddress(cpu.memory, child.currentFrame!.registers.getClosure(2, cpu.gc), 0);
 	assert.equal(isOpen(cpu.memory, capture), true);
 	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.GETSYS] + BASE_CYCLES[OpCode.MOV]);

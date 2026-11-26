@@ -12,11 +12,12 @@ import {
 	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceGcArgumentField, HeapServiceTraceField,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const MODULE = 'kernel/gc_atomic_quantum', entrySource = 'return 11, 17, 23';
 const modules = [
@@ -32,7 +33,7 @@ const cursorBits = GC_GRAY_INDEX_BITS + 1;
 const arraySlots = 16;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 	const exported = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'atomic_quantum');
 	assert.ok(exported);
@@ -47,7 +48,7 @@ function fixture(optLevel: 0 | 3) {
 	const beforeWork = control + GC_LAST_EPOCH_WORK - 4;
 	const records: number[][] = [];
 	for (const target of [cpu, oracle]) {
-		assert.equal(target.runUntilDepth(0, 4096), RunResult.Halted);
+		runGuestToHalt(target, 10_000);
 		const { gc, stringPool } = target, modeKey = gc['modeKey'];
 		const weak = target.createTable(arraySlots, 0), meta = target.createTable(0, 2);
 		const firstDead = target.createTable(0, 0), secondDead = target.createTable(0, 0), retained = target.createTable(0, 0);

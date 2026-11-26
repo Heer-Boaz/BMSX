@@ -5,7 +5,7 @@ import { ValueTag, valueFromTag } from '../../machine/ts/machine/cpu/value';
 import { BLUA32_STRING_LENGTH_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { IO_CART_SELECT } from '../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { createGcWeakModeFixture } from '../helpers/gc_weak_mode';
 
 function grant(cpu: CPU, budget: number) {
@@ -44,7 +44,7 @@ function checkRecord(cpu: CPU, [weak, length, byte]: readonly number[], id: numb
 for (const optLevel of [0, 3] as const) {
 	test(`firmware weak-mode reads actual String bodies from both cartridge sockets and System ROM at O${optLevel}`, () => {
 		const { cpu, memory, addresses } = createGcWeakModeFixture(optLevel, true);
-		assert.equal(cpu.runUntilDepth(0, 1024), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000);
 		const cases = [
 			['k', 1, 0], ['kk', 0, 0], ['', 0, 0],
 			['v', 2, 1], ['vv', 0, 1], ['k0v', 0, 1],
@@ -65,7 +65,7 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`firmware weak-mode matches RAM String length masking, aliases, and exact byte pairs at O${optLevel}`, () => {
 		const { cpu, memory, addresses } = createGcWeakModeFixture(optLevel, false);
-		assert.equal(cpu.runUntilDepth(0, 1024), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000);
 		for (const [text, result] of [['k', 1], ['v', 2], ['kv', 3], ['vk', 3], ['kvk', 0], ['kk', 0], ['k\0', 0], ['\xff', 0], ['', 0]] as const) {
 			const id = cpu.stringPool.intern(text);
 			assert.ok(id >= RAM_BASE && id < RAM_BASE + MAIN_RAM_SIZE);

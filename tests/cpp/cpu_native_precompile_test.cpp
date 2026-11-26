@@ -13,6 +13,7 @@
 #include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 
@@ -122,6 +123,7 @@ void replacementAdmitsRetainedCoroutinesAndClosures() {
 		auto fixture = std::make_unique<Fixture>(rom);
 		auto& machine = fixture->runtime.machine;
 		auto& cpu = machine.cpu;
+		test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 		cpu.setSystemGlobalByKey(cpu.stringPool().intern("create"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineCreate));
 		cpu.setSystemGlobalByKey(cpu.stringPool().intern("resume"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
 		cpu.setSystemGlobalByKey(cpu.stringPool().intern("yield"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineYield));
@@ -163,6 +165,7 @@ void replacementAdmitsRetainedCoroutinesAndClosures() {
 	auto fixture = std::make_unique<Fixture>(rom);
 	auto& machine = fixture->runtime.machine;
 	auto& cpu = machine.cpu;
+	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 	cpu.setSystemGlobalByKey(cpu.stringPool().intern("create"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineCreate));
 	for (u32 step = 0; step < 4 && cpu.readFramePc(0) != rom.textAddress + 4u * INSTRUCTION_BYTES; ++step) cpu.runUntilDepth(0, 1);
 	require(cpu.readFramePc(0) == rom.textAddress + 4u * INSTRUCTION_BYTES, "the root reached the continuation of coroutine.create");
@@ -315,6 +318,7 @@ void preparationHasNoGuestEffects() {
 void coldLazyWritesAndRestoreAgree() {
 	const auto image = test::encodeBlua32TestRom(RomImageDomain::System, program());
 	Fixture prepared(image), lazy(image);
+	for (auto* m : {&prepared, &lazy}) test::seedTestRomClosure(m->runtime.machine.cpu, image.functionAddresses[1]);
 	auto& fast = prepared.runtime.machine.cpu;
 	auto& reference = lazy.runtime.machine.cpu;
 	fast.prepareSystemNativeCode();

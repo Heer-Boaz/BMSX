@@ -9,11 +9,12 @@ import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_alloca
 import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
 import { valueNil } from '../../machine/ts/machine/cpu/value';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const MODULE = 'kernel/gc_vblank', entrySource = 'halt_until_irq';
 const basis = '04c10f896545d453bd50fe27ccb619b269966607';
@@ -24,7 +25,7 @@ const modules = ['kernel/dlmalloc', 'kernel/gc_control', 'kernel/word_arithmetic
 const epochWork = GC_LAST_EPOCH_WORK - 4, sample = GC_LAST_EPOCH_WORK + 4, assist = GC_LAST_EPOCH_WORK + 8, fullEpochs = 0x8c;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'admit_vblank_collection');
 	assert.ok(symbol);
@@ -34,7 +35,7 @@ function fixture(optLevel: 0 | 3) {
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
 	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
 	for (const target of [cpu, oracle]) {
-		assert.equal(target.runUntilDepth(0, 1024), RunResult.Halted);
+		runGuestToHalt(target, 10_000);
 		assert.ok(target.heapAllocator.allocate(1024 * 1024, true));
 	}
 	const arena = cpu.heapAllocator, control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;

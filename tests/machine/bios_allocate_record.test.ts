@@ -13,13 +13,14 @@ import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, valueNil } from '../../machine/ts/machine/cpu/value';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import {
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRecordKind as Kind, HeapServiceRecordStage as Mode,
+	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRecordKind as Kind, HeapServiceRecordMode as Mode,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { HEAP_PAGE_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 
 const modulePath = 'kernel/allocate_record', sourcePath = `machine/bios/${modulePath}.lua`;
@@ -34,17 +35,9 @@ end
 return { probe = probe }`;
 
 function fixture(optLevel: 0 | 3) {
-	const modules = [
-		'dlmalloc', 'dlmalloc_record', 'gc_runtime_layout', 'gc_control', 'gc_strings', 'word_arithmetic', 'gc_pace', 'heap_admission', 'gc_epoch',
-		'gc_mark', 'gc_capture_trace', 'gc_thread_trace', 'gc_table_head', 'gc_table_mode', 'gc_weak_mode', 'gc_table_trace', 'string_record',
-		'gc_trace', 'gc_root_banks', 'gc_remark', 'gc_weak_quantum', 'gc_weak_table', 'gc_mark_quantum', 'gc_atomic_quantum', 'gc_thread_compact',
-		'gc_objects', 'gc_sweep_quantum', 'gc_step', 'closure_create', 'table_create', 'allocate_record', 'bios_create_table',
-	].map(name => {
-		const path = `kernel/${name}`, source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
-		return { path, source, chunk: parseLuaChunk(source, path) };
-	});
-	modules.push({ path: 'test/gate_probe', source: gateProbe, chunk: parseLuaChunk(gateProbe, 'test/gate_probe') });
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), [
+		{ path: 'test/gate_probe', source: gateProbe, chunk: parseLuaChunk(gateProbe, 'test/gate_probe') },
+	], { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === modulePath && entry.exportPathKey === 'allocate_record')!;
 	const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
@@ -55,7 +48,7 @@ function fixture(optLevel: 0 | 3) {
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root, gate]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
 	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
-	for (const target of [cpu, oracle]) assert.equal(target.runUntilDepth(0, 1024), RunResult.Halted);
+	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const prototype = linked.image.functions[root].address;

@@ -1,5 +1,5 @@
 import { ValueMoveKind } from '../../spec/blua32/instruction_format';
-import { GcHeap, GcRootBank, gcPacedPhase, GC_WORK_WORD_CYCLES } from './gc_heap';
+import { GcHeap, GcRootBank, GC_WORK_WORD_CYCLES } from './gc_heap';
 import { ConcatAssembly, type ConcatAssemblyState } from './concat_assembly';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
@@ -171,8 +171,7 @@ import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COM
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
-import { GC_STEP_WORDS, LuaAllocationMode, LuaAllocationRecovery, LuaHeap } from './lua_heap';
-import { GC_OBJECT_PREFIX } from './gc_object';
+import { GC_STEP_WORDS, LuaAllocationMode, LuaHeap } from './lua_heap';
 import { HEAP_GC_CONTROL_OFFSET, HeapAllocator } from './heap_allocator';
 import { HeapService } from './heap_service';
 import { BIOS_CALL_ARITY, BIOS_CALL_CONTEXT_WORDS, BiosCall } from '../../spec/bmsx/bios';
@@ -183,10 +182,10 @@ import {
 	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_MASK, HEAP_SERVICE_TRACE_QUANTUM_OFFSET,
-	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceExecStage, HeapServiceGcStage, HeapServiceRecordField, HeapServiceRecordStage, HeapServiceOperation,
+	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceClosureField, HeapServiceExecStage, HeapServiceGcStage, HeapServiceOperation,
 	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField,
 	HeapServiceIrqForwardField,
-	HeapServiceRecordControlField,
+	HeapServiceRecordKind, HeapServiceRecordMode,
 	HeapServiceTableGrowthField, HeapServiceTableGrowthResultField, HeapServiceTableGrowthStage, HeapServiceTableResizeContextField,
 	HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
 	HEAP_SERVICE_ROOT_BANK_SIZE, HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_PORT_BASE,
@@ -436,8 +435,7 @@ export class CPU implements MappedPageInvalidator {
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
 		this.luaHeap = new LuaHeap(this);
-		this.closureArgs = [this.heapAllocator.allocatorStateOffset(), this.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET,
-			this.luaHeap.occupiedOffset, 0, 0];
+		this.closureArgs = [this.heapAllocator.managementOffset(), HeapServiceRecordKind.CanonicalClosure, 0, 0, HeapServiceRecordMode.Direct, 0];
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
 		this.indexKey = this.stringPool.intern('__index');
 		const newIndexKey = this.stringPool.intern('__newindex');
@@ -768,137 +766,34 @@ export class CPU implements MappedPageInvalidator {
 		};
 	}
 
-	// Only canonical ROM Closure cache misses use this direct continuation.
-	private beginRecordReservation(frame: CallFrame, destination: number, prototype: number, domain: number, nextPc: number): void {
-		const charged = Closure.closureRecordBytes(0);
-		const debt = this.luaHeap.allocationDebt(charged);
-		if (debt < 0 && charged > this.luaHeap.capacity()) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		const base = this.heapService.recordAddress, memory = this.memory;
-		memory.writeRamRecordWord(base + HeapServiceRecordField.Destination, destination);
-		memory.writeRamRecordPair(base + HeapServiceRecordField.Prototype, prototype, domain);
-		memory.writeRamRecordWord(base + HeapServiceRecordField.InstructionPc, this.currentInstructionPc);
-		memory.writeRamRecordWord(base + HeapServiceRecordField.LastPc, this.lastPc);
-		memory.writeRamRecordWord(base + HeapServiceRecordField.NextPc, nextPc);
-		memory.writeRamRecordWord(base + HeapServiceRecordField.DirectRecovery, LuaAllocationRecovery.CurrentOrFresh);
+	// The linked allocate_record body owns admission, assistance and retry.
+	private beginClosureReservation(frame: CallFrame, destination: number, prototype: number, domain: number, nextPc: number): void {
+		const base = this.heapService.closureContinuationAddress, memory = this.memory;
+		memory.writeRamRecordPair(base + HeapServiceClosureField.Destination, destination + 1, prototype);
+		memory.writeRamRecordPair(base + HeapServiceClosureField.InstructionPc, this.currentInstructionPc, this.lastPc);
+		memory.writeRamRecordWord(base + HeapServiceClosureField.NextPc, nextPc);
 		frame.pc = this.currentInstructionPc;
-		const budget = Math.max(this.instructionBudgetRemaining, 0);
-		const assist = this.heapService.recordControlAddress;
-		if (debt < 0) {
-			memory.writeRamRecordWord(assist + HeapServiceRecordControlField.Budget, budget);
-			this.beginDirectRecordEpoch(HeapServiceRecordStage.DirectLogicalRecovery);
-		} else if (debt > 0 && budget >= GC_WORK_WORD_CYCLES) {
-			const pressure = this.luaHeap.logicalAssistPressure(charged);
-			memory.writeRamRecordWord(assist + HeapServiceRecordControlField.Budget, budget);
-			memory.writeRamRecordWord(assist + HeapServiceRecordControlField.EpochBefore, this.gc.epochWork());
-			memory.writeRamRecordWord(assist + HeapServiceRecordControlField.Debt, debt);
-			memory.writeRamRecordWord(assist + HeapServiceRecordControlField.Pressure, +pressure);
-			const words = Math.min(this.luaHeap.logicalAssistAllowance(debt, pressure), Math.trunc(budget / GC_WORK_WORD_CYCLES));
-			this.runRecordAssist(HeapServiceRecordStage.LogicalAssist, words);
-		} else {
-			this.reserveRecordAfterAdmission(prototype, domain, budget);
-		}
-	}
-
-	private reserveRecordAfterAdmission(prototype: number, domain: number, budget: number): void {
-		if (budget >= GC_WORK_WORD_CYCLES && gcPacedPhase(this.gc.phase())) {
-			const allowance = this.gc.reservationAssistAllowance(Closure.closureRecordBytes(0) + GC_OBJECT_PREFIX);
-			if (allowance !== null) {
-				this.runRecordAssist(HeapServiceRecordStage.PhysicalAssist, Math.min(allowance, Math.trunc(budget / GC_WORK_WORD_CYCLES)));
-				return;
-			}
-		}
-		this.memory.writeRamRecordWord(this.heapService.recordAddress + HeapServiceRecordField.Stage, HeapServiceRecordStage.Direct);
 		const args = this.closureArgs;
-		args[3] = prototype;
-		args[4] = domain;
-		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.CreateClosure], args);
+		args[2] = prototype;
+		args[3] = domain;
+		args[5] = Math.max(this.instructionBudgetRemaining, 0);
+		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.AllocateRecord], args);
 	}
 
-	private runRecordAssist(stage: HeapServiceRecordStage, words: number): void {
-		this.memory.writeRamRecordWord(this.heapService.recordAddress + HeapServiceRecordField.Stage, stage);
-		this.chargeCollectionWork(this.gc.step(valueNil(), valueNil(), valueNil(), 0, false, words,
-			HeapServiceGcStage.AllocationRecoveryStringSweep, this.systemImage.heapServiceFunctions!));
-		if (!this.heapServiceActive()) this.finishRecordCollection(stage);
-	}
-
-	private finishRecordReservation(): void {
-		const base = this.heapService.recordAddress, memory = this.memory;
-		const stage = memory.readRamRecordWord(base + HeapServiceRecordField.Stage);
-		if (stage === HeapServiceRecordStage.Idle) return;
-		const destination = memory.readRamRecordWord(base + HeapServiceRecordField.Destination);
-		const nextPc = memory.readRamRecordWord(base + HeapServiceRecordField.NextPc);
-		this.currentInstructionPc = memory.readRamRecordWord(base + HeapServiceRecordField.InstructionPc);
-		this.lastPc = memory.readRamRecordWord(base + HeapServiceRecordField.LastPc);
+	private finishClosureReservation(): void {
+		const base = this.heapService.closureContinuationAddress, memory = this.memory;
+		const destination = memory.readRamRecordWord(base + HeapServiceClosureField.Destination);
+		if (destination === 0) return;
+		this.currentInstructionPc = memory.readRamRecordWord(base + HeapServiceClosureField.InstructionPc);
+		this.lastPc = memory.readRamRecordWord(base + HeapServiceClosureField.LastPc);
 		this.lastExecutionDomainId = this.activeExecutionDomainId;
-		const frame = this.activeThread.currentFrame!;
-		memory.writeRamRecordWord(base + HeapServiceRecordField.Stage, HeapServiceRecordStage.Idle);
+		memory.writeRamRecordWord(base + HeapServiceClosureField.Destination, 0);
 		const offset = this.heapServiceResult();
-		if (offset !== 0) {
-			const address = RAM_BASE + offset;
-			this.staticClosures.insert(memory.readRamRecordWord(base + HeapServiceRecordField.Prototype), address);
-			this.setRegisterClosureFast(frame, frame.registers, destination, address);
-			frame.pc = nextPc;
-			return;
-		}
-		this.beginDirectRecordEpoch(HeapServiceRecordStage.DirectRecovery);
-	}
-
-	private beginDirectRecordEpoch(stage: HeapServiceRecordStage): void {
-		const memory = this.memory, base = this.heapService.recordAddress;
-		const recoveryAddress = base + HeapServiceRecordField.DirectRecovery;
-		const next = memory.readRamRecordWord(recoveryAddress) as LuaAllocationRecovery;
-		if (stage === HeapServiceRecordStage.DirectLogicalRecovery && next === LuaAllocationRecovery.Exhausted) {
-			this.currentInstructionPc = memory.readRamRecordWord(base + HeapServiceRecordField.InstructionPc);
-			this.lastPc = memory.readRamRecordWord(base + HeapServiceRecordField.LastPc);
-			this.lastExecutionDomainId = this.activeExecutionDomainId;
-			memory.writeRamRecordWord(base + HeapServiceRecordField.Stage, HeapServiceRecordStage.Idle);
-		}
-		const recovery = this.gc.beginAllocationRecovery(next);
-		memory.writeRamRecordWord(recoveryAddress, recovery);
-		if (stage === HeapServiceRecordStage.DirectLogicalRecovery)
-			memory.writeRamRecordWord(this.heapService.recordControlAddress + HeapServiceRecordControlField.EpochBefore, this.gc.epochWork());
-		memory.writeRamRecordWord(base + HeapServiceRecordField.Stage, stage);
-		this.advanceDirectRecordRecovery();
-	}
-
-	private advanceDirectRecordRecovery(): void {
-		const services = this.systemImage.heapServiceFunctions!;
-		do {
-			const work = this.gc.finalMarkPending()
-				? this.gc.stepFinalMark(GC_STEP_WORDS, HeapServiceGcStage.MaintenanceTrace, services)
-				: this.gc.step(valueNil(), valueNil(), valueNil(), 0, false, GC_STEP_WORDS, HeapServiceGcStage.AllocationRecoveryStringSweep, services);
-			this.chargeCollectionWork(work);
-			// A quantum may spend its entire allowance draining native work
-			// already done before this request. It did not admit firmware.
-		} while (!this.heapServiceActive() && this.gc.active());
-	}
-
-	private finishRecordCollection(stage: HeapServiceRecordStage): void {
-		const directEpoch = stage === HeapServiceRecordStage.DirectRecovery || stage === HeapServiceRecordStage.DirectLogicalRecovery;
-		if (directEpoch && this.gc.active()) {
-			this.advanceDirectRecordRecovery();
-			return;
-		}
-		const base = this.heapService.recordAddress, assist = this.heapService.recordControlAddress, memory = this.memory;
-		const prototype = memory.readRamRecordWord(base + HeapServiceRecordField.Prototype);
-		const domain = memory.readRamRecordWord(base + HeapServiceRecordField.ExecutionDomain) | 0;
-		const charged = Closure.closureRecordBytes(0);
-		let budget = 0;
-		if (stage === HeapServiceRecordStage.LogicalAssist || stage === HeapServiceRecordStage.DirectLogicalRecovery) {
-			const work = this.gc.workSinceEpoch(memory.readRamRecordWord(assist + HeapServiceRecordControlField.EpochBefore));
-			// The original grant still sizes the later physical assist. This
-			// updates only that policy allowance, not the actual CPU clock.
-			budget = Math.max(0, memory.readRamRecordWord(assist + HeapServiceRecordControlField.Budget) - GC_WORK_WORD_CYCLES * work);
-			if (stage === HeapServiceRecordStage.LogicalAssist) {
-				this.luaHeap.creditLogicalAssist(charged, memory.readRamRecordWord(assist + HeapServiceRecordControlField.Debt),
-					memory.readRamRecordWord(assist + HeapServiceRecordControlField.Pressure) !== 0, work);
-			} else if (this.luaHeap.usedBytes() + charged > this.luaHeap.capacity()) {
-				memory.writeRamRecordWord(assist + HeapServiceRecordControlField.Budget, budget);
-				this.beginDirectRecordEpoch(HeapServiceRecordStage.DirectLogicalRecovery);
-				return;
-			}
-		}
-		this.reserveRecordAfterAdmission(prototype, domain, budget);
+		if (offset === 0) throw LUA_OUT_OF_MEMORY_SIGNAL;
+		const address = RAM_BASE + offset, frame = this.activeThread.currentFrame!;
+		this.staticClosures.insert(memory.readRamRecordWord(base + HeapServiceClosureField.Prototype), address);
+		this.setRegisterClosureFast(frame, frame.registers, destination - 1, address);
+		frame.pc = memory.readRamRecordWord(base + HeapServiceClosureField.NextPc);
 	}
 
 	private parkTableWrite(frame: CallFrame, receiver: number, key: Value, value: Value, extraHashSlots: number): boolean {
@@ -2454,26 +2349,23 @@ export class CPU implements MappedPageInvalidator {
 				this.runUntilDepthInstrumented(0, instructionBudget, true);
 				if (!this.heapServiceActive()) {
 					try {
-						const recordStage = gcStage === HeapServiceGcStage.Idle ? HeapServiceRecordStage.Idle
-							: this.memory.readRamRecordWord(this.heapService.recordAddress + HeapServiceRecordField.Stage) as HeapServiceRecordStage;
-						const recordCollection = recordStage >= HeapServiceRecordStage.DirectRecovery;
 						switch (gcStage) {
 							case HeapServiceGcStage.FullTrace:
 							case HeapServiceGcStage.MaintenanceTrace: {
 								const work = this.gc.finishTraceQuantum(this.systemImage.heapServiceFunctions!, gcStage);
-								if (gcStage === HeapServiceGcStage.FullTrace || recordCollection) this.chargeCollectionWork(work);
+								if (gcStage === HeapServiceGcStage.FullTrace) this.chargeCollectionWork(work);
 								break;
 							}
 							case HeapServiceGcStage.FullRemark:
 							case HeapServiceGcStage.MaintenanceRemark: {
 								const work = this.gc.finishRemarkQuantum(this.systemImage.heapServiceFunctions!, gcStage);
-								if (gcStage === HeapServiceGcStage.FullRemark || recordCollection) this.chargeCollectionWork(work);
+								if (gcStage === HeapServiceGcStage.FullRemark) this.chargeCollectionWork(work);
 								break;
 							}
 							case HeapServiceGcStage.FullRootHead:
 							case HeapServiceGcStage.MaintenanceRootHead: {
 								const work = this.gc.finishRootHead(this.systemImage.heapServiceFunctions!, gcStage);
-								if (gcStage === HeapServiceGcStage.FullRootHead || recordCollection) this.chargeCollectionWork(work);
+								if (gcStage === HeapServiceGcStage.FullRootHead) this.chargeCollectionWork(work);
 								break;
 							}
 							case HeapServiceGcStage.FullRootBanks:
@@ -2493,7 +2385,7 @@ export class CPU implements MappedPageInvalidator {
 							case HeapServiceGcStage.FullStringSweep:
 							case HeapServiceGcStage.AllocationRecoveryStringSweep:
 								this.gc.finishStringSweep(gcStage);
-								if (gcStage === HeapServiceGcStage.AllocationRecoveryStringSweep && !recordCollection) this.finishAllocationRecovery();
+								if (gcStage === HeapServiceGcStage.AllocationRecoveryStringSweep) this.finishAllocationRecovery();
 								break;
 							case HeapServiceGcStage.Idle:
 								if (cartLane !== 0) {
@@ -2505,12 +2397,11 @@ export class CPU implements MappedPageInvalidator {
 									this.finishBiosCall(destination);
 								} else {
 									this.finishExecFloorService();
-									this.finishRecordReservation();
+									this.finishClosureReservation();
 									this.finishTableGrowthReservation();
 								}
 								break;
 						}
-						if (recordCollection && !this.heapServiceActive()) this.finishRecordCollection(recordStage);
 					} catch (error) {
 						this.handleRunLoopError(error);
 					}
@@ -3133,8 +3024,12 @@ export class CPU implements MappedPageInvalidator {
 		if ((record.flags & BLUA32_FUNCTION_STATIC) !== 0 && record.recordUpvalueCount === 0) {
 			let closure = this.findStaticClosureFromLatch();
 			if (closure === 0) {
-				if (record.romBacked && this.systemImage.heapServiceFunctions !== null) {
-					this.beginRecordReservation(frame, a, record.functionAddress, record.executionDomainId, frame.pc);
+				if (record.romBacked) {
+					if (this.systemImage.heapServiceFunctions === null) {
+						this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+						return;
+					}
+					this.beginClosureReservation(frame, a, record.functionAddress, record.executionDomainId, frame.pc);
 					this.requestYield();
 					return;
 				}

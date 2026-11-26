@@ -19,6 +19,7 @@
 #include "machine/runtime/save_state/codec.h"
 #include "machine/scheduler/device.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 
 #include <array>
@@ -315,6 +316,7 @@ struct ExternalClosureFixture {
 		)
 		, runtime(system.runtime)
 		, cpu(runtime.machine.cpu) {
+		for (size_t index : {1u, 2u}) bmsx::test::seedTestRomClosure(cpu, system.systemRom.functionAddresses[index]);
 		const int publicationCycles = 2 * (bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::CLOSURE)]
 			+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::SETGL)]);
 		require(cpu.runUntilDepth(0, publicationCycles) == bmsx::RunResult::Yielded, "system firmware publishes external-call test closures");
@@ -735,6 +737,8 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	);
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
+	bmsx::test::seedTestRomClosure(cpu, fixture.cartRom.functionAddresses[1], 0);
+	bmsx::test::seedTestRomClosure(cpu, fixture.cart1Rom.functionAddresses[1], 1);
 	const bmsx::StringId publishedClosureName =
 		cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 	const bmsx::StringId publishedValueName =
@@ -869,6 +873,7 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	);
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
+	bmsx::test::seedTestRomClosure(cpu, fixture.cart1Rom.functionAddresses[1], 1);
 	const bmsx::StringId publishedClosureName =
 		cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 
@@ -939,6 +944,7 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 		makeRuntimeImage(bmsx::OpCode::RET)
 	);
 	bmsx::CPU& cpu = fixture.runtime.machine.cpu;
+	bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
 	bmsx::u32 closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
 	const bmsx::StringId closureKey = cpu.stringPool().intern("completion_call");
@@ -975,6 +981,7 @@ void testCpuAbortsPhysicalCompletionCallAtMarkedRoot() {
 		makeRuntimeImage(bmsx::OpCode::RET)
 	);
 	bmsx::CPU& cpu = fixture.runtime.machine.cpu;
+	bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
 	bmsx::u32 closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
 	const int completionFrameIndex = cpu.getFrameDepth();
@@ -997,6 +1004,7 @@ void testSuspendedCompletionReturnsAtPhysicalCpuHold() {
 	);
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
+	bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
 	bmsx::u32 closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
 	const bmsx::StringId closureKey = cpu.stringPool().intern("held_completion_call");

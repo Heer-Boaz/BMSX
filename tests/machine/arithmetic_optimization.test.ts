@@ -1,20 +1,22 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { runCpuWithinBudget } from '../helpers/cpu_execution';
 
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { asClosure, valueBool, valueFloatBits, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
 
 const expressions = ['x + 0', '0 + x', 'x - 0', '0 - x', 'x * 1', '1 * x', 'x / 1', 'x ^ 1'];
 for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`O3 identities preserve Integer/Float tags, rounding and NaN on backend ${backend}`, () => {
 		const source = `return function(x) return ${expressions.join(', ')} end`;
 		const machines = ([0, 3] as const).map(optLevel => {
-			const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource(source, 'identities.lua', optLevel)), backend);
-			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel, [], 'identities.lua')), backend);
+			assert.equal(runCpuWithinBudget(cpu, 100000), RunResult.Halted);
 			return { cpu, closure: asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc) };
 		});
 		for (const input of [
@@ -37,8 +39,8 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 	});
 	for (const optLevel of [3] as const) test(`identity rewrites do not erase non-Number faults (O${optLevel}, backend ${backend})`, () => {
 		const source = `return ${expressions.map(expr => `function(x) return ${expr} end`).join(', ')}`;
-		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource(source, 'identities.lua', optLevel)), backend);
-		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel, [], 'identities.lua')), backend);
+		assert.equal(runCpuWithinBudget(cpu, 100000), RunResult.Halted);
 		const initial = cpu.captureRuntimeState();
 		const initialRam = cpu.memory.captureSaveState();
 		for (const [index, expr] of expressions.entries()) for (const input of [valueNil(), valueBool(false), valueBool(true)]) {

@@ -514,14 +514,8 @@ private:
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
 	bool parkTableWrite(CallFrame&, u32 receiver, Value key, Value value, u8 extraHashSlots = 0);
 	void finishAllocationRecovery();
-	void beginRecordReservation(CallFrame&, int destination, u32 prototype, u32 domain, u32 nextPc);
-	void startRecordReservation(u32 prototype, u32 domain);
-	void startRecordPhysicalAssist(int budget, u32 prototype, u32 domain);
-	void finishRecordReservation();
-	void stepRecordCollection(size_t words);
-	void startDirectRecordLogicalEpoch();
-	void advanceDirectRecordRecovery();
-	void finishRecordCollection(HeapServiceRecordStage stage);
+	void beginClosureReservation(CallFrame&, int destination, u32 prototype, u32 domain, u32 nextPc);
+	void finishClosureReservation();
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
 	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);
 	bool storeTableFieldIndexCached(CallFrame&, int& predictedSlot, Value base, StringId key, Value value, u8 extraHashSlots);

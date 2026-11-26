@@ -9,10 +9,10 @@ import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_alloca
 import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread_record';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const CONTROL = 0x60004; // Native control offset is four bytes off the pair boundary.
 const MAILBOX = RAM_BASE + 0x61000;
@@ -35,7 +35,7 @@ while true do
 	if op ~= 0 then mailbox[0] = 0 end
 end
 `;
-const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(entrySource),
+const image = linkTestSystemBlua32(compileTestSystemWithHeap(parseLuaChunk(entrySource),
 	[{ path, source, chunk: parseLuaChunk(source, path) }], { entrySource, optLevel: 3, programDomain: 'system' }));
 
 function fixture(backend: CpuExecutionBackend) {

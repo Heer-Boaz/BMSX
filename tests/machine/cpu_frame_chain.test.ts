@@ -17,7 +17,7 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 
 function callImage(maxStack: number, returns: number, base = 0) {
 	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
@@ -255,7 +255,9 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 	});
 
 	test(`RET restores a saved bank even when the selected socket is empty (${backend})`, () => {
-		const { cpu, memory } = createTestSystemCpu(callImage(8, 1), backend);
+		const image = callImage(8, 1);
+		const { cpu, memory } = createTestSystemCpu(image, backend);
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.runUntilDepth(0, 1);
 		const caller = cpu.rootThread.currentFrame!;
 		caller.savedExecutionBank = 1;
@@ -377,6 +379,8 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			{ wordIndex: 6, functionIndex: 2 },
 		] });
 		const { cpu } = createTestSystemCpu(image, backend);
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[2]);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
 		for (let grant = 0; grant < 20 && cpu.getFrameDepth() !== 3; ++grant) cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.getFrameDepth(), 3);
@@ -422,7 +426,9 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 	});
 
 	test(`collection while admitting a callee preserves prepared identity and only active roots (${backend})`, () => {
-		const { cpu } = createTestSystemCpu(callImage(1024, 1, 4), backend), thread = cpu.rootThread;
+		const image = callImage(1024, 1, 4);
+		const { cpu } = createTestSystemCpu(image, backend), thread = cpu.rootThread;
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.runUntilDepth(0, 1);
 		const caller = thread.currentFrame!, prepared = thread.acquireFrame();
 		const live = cpu.stringPool.intern('caller-only-across-admission'); caller.registers.set(0, valueString(live));
@@ -442,8 +448,11 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 	});
 
 	test(`return growth keeps the callee rooted until results have moved (${backend})`, () => {
-		const { cpu } = createTestSystemCpu(callImage(8, 62), backend), thread = cpu.rootThread;
-		while (thread.frameDepth !== 2) cpu.runUntilDepth(0, 1);
+		const image = callImage(8, 62);
+		const { cpu } = createTestSystemCpu(image, backend), thread = cpu.rootThread;
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+		for (let grant = 0; grant < 8 && thread.frameDepth !== 2; ++grant) cpu.runUntilDepth(0, 1);
+		assert.equal(thread.frameDepth, 2);
 		const caller = thread.firstFrame!, callee = thread.currentFrame!;
 		const result = cpu.stringPool.intern('returning-frame-only'); callee.registers.set(0, valueString(result)); callee.top = 1;
 		const trackedBytes = cpu.luaHeap.usedBytes();
@@ -457,7 +466,9 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 	});
 
 	for (const completion of [false, true]) test(`failed call admission leaves no unallocated extent (${backend}, completion=${completion})`, () => {
-		const { cpu } = createTestSystemCpu(callImage(PSX_MACHINE_SPEC.ramBytes, 1), backend), thread = cpu.rootThread;
+		const image = callImage(PSX_MACHINE_SPEC.ramBytes, 1);
+		const { cpu } = createTestSystemCpu(image, backend), thread = cpu.rootThread;
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.runUntilDepth(0, 1);
 		const caller = thread.currentFrame!;
 		if (completion) {

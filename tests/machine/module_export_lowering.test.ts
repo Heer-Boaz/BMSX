@@ -1,4 +1,4 @@
-import { loadHeapServiceTestModules } from '../helpers/heap_service_system';
+import { loadHeapServiceTestModules, compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { valueBool, valueInteger, valueFloat, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
@@ -59,7 +59,7 @@ function compileWithModule(
 ): { compiled: CompiledSystemProgram; disasm: string; constRelocs: ProgramImageConstReloc[] } {
 	const entryChunk = parseSource(entrySource, 'entry.lua');
 	const moduleChunk = parseSource(moduleSource, `${modulePath}.lua`);
-	const compiled = compileLuaChunkToProgram(
+	const compiled = compileTestSystemWithHeap(
 		entryChunk,
 		[
 			...loadHeapServiceTestModules(),
@@ -89,7 +89,7 @@ function compileWithConstModule(
 	const entryChunk = parseSource(entrySource, 'entry.lua');
 	const declaredModuleSource = `module<const>\n${moduleSource}`;
 	const moduleChunk = parseSource(declaredModuleSource, `${modulePath}.lua`);
-	const compiled = compileLuaChunkToProgram(
+	const compiled = compileTestSystemWithHeap(
 		entryChunk,
 		[{ path: modulePath, chunk: moduleChunk, source: declaredModuleSource, linkValues }],
 		{ entrySource, optLevel, programDomain: 'system' },

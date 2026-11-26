@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { BLUA32_FUNCTION_RECORD_SIZE, BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
+import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { CART_ROM_MAGIC } from '../../machine/ts/spec/bmsx/rom_package';
@@ -34,12 +35,14 @@ export function buildPublicBiosFixture(source: string, optLevel: 0 | 3) {
 		...['math/sin', 'string/float/decode', 'gpu/system_vram_region', 'tty/layout'].map(path => ({
 			path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
 		})),
+		...HEAP_SERVICE_MODULES.map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') })),
 		{ path: 'bmsx/system_assets', source: `module<const>
 rodata texture: word[3] = { 0xa0000000, 0x02d002c0, 0x00fc0140 }
 return { bin_gx_system_texture_addr = texture }` },
 	];
 	const built = buildBlua32Image({
 		domain: 'system',
+		preloadModules: HEAP_SERVICE_MODULES,
 		luaModules: sources.map(module => ({
 			...module, displayPath: `${module.path}.lua`, chunk: parseLuaChunk(module.source, module.path),
 		})),

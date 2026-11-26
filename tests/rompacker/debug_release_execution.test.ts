@@ -13,6 +13,7 @@ import { decodeBlua32RomImage } from '../../toolchain/ts/rompack/blua32_image';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
 import { createTestBlua32PairCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource, materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { afterTest } from '../helpers/test_cleanup';
 
 for (const optLevel of [3] as const) test(`packer debug metadata cannot change trace erasure, results or cycles (O${optLevel})`, async t => {
@@ -29,7 +30,7 @@ for i = 1, 100 do
 end
 return count`);
 	const inputs = await prepareRomInputs([root], [entry], { kind: 'filesystem' });
-	const system = linkTestSystemBlua32(compileLuaSource(`cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`));
+	const system = linkTestSystemBlua32(compileHeapServiceSystem(`cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`, optLevel));
 	const builds = [];
 	for (const debug of [false, true]) {
 		await compileCart({ inputs, sourceFiles: [entry], librarySourceFiles: [], testLibraryFiles: [], allLibraryFiles: [], scenarioSourceFiles: [],

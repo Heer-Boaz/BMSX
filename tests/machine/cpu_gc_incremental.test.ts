@@ -21,7 +21,7 @@ import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, hashCanonicalTableKey, valueBuiltinFunction, valueClosure, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString, valueThread, type Value } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 
 function machine() {
 	const text = new Uint8Array(4);
@@ -162,10 +162,12 @@ test('completion Values form a resumable root range after the real returning fra
 	writeInstruction(text, 2, OpCode.RET, 0, 2, 0);
 	writeInstruction(text, 3, OpCode.VARARG, 0, 0, 0);
 	writeInstruction(text, 4, OpCode.RET, 0, 0, 0);
-	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
+	const image = linkRawTestSystemBlua32({ text,
 		functions: [{ firstWord: 0, wordCount: 3 }, { firstWord: 3, wordCount: 2, isVararg: true }],
 		closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
-	}));
+	});
+	const { cpu, memory } = createTestSystemCpu(image);
+	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const results: Value[] = [];
 	cpu.readCompletionValues(results);
@@ -337,7 +339,7 @@ test('a suspended Thread scan follows the real CLOSURE, closing JMP and RET life
 	const capture = { inStack: true, index: 1 };
 	const upvalueDescs = Array<typeof capture>(captures).fill(capture);
 	upvalueDescs[captures - 1] = { inStack: true, index: 0 };
-	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({
+	const image = linkRawTestSystemBlua32({
 		text, functions: [
 			{ firstWord: 0, wordCount: 4, maxStack: 8 },
 			{ firstWord: 4, wordCount: 4, numParams: 1, maxStack: 8 },
@@ -347,7 +349,9 @@ test('a suspended Thread scan follows the real CLOSURE, closing JMP and RET life
 			{ wordIndex: 1, functionIndex: 1 },
 			{ wordIndex: 5, functionIndex: 2 },
 		],
-	}));
+	});
+	const { cpu, memory } = createTestSystemCpu(image);
+	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	const frame = cpu.rootThread.currentFrame!, gc = cpu.gc, target = cpu.createTable();
 	frame.registers.setTable(1, target); frame.top = 2;
 	assert.equal(cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL] + captures), RunResult.Yielded);
@@ -423,6 +427,7 @@ test('sweeping a suspended coroutine withdraws its borrowed view and rebinds onl
 		return false;
 	}, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 	const run = () => {
+		for (const { functionIndex } of closureRelocations) seedTestRomClosure(cpu, rom.symbols.functionAddresses[functionIndex]);
 		for (let i = 0; i < 16; ++i)
 			if (cpu.runUntilDepth(0, 1000) === RunResult.Halted && cpu.activeThread === cpu.rootThread) return;
 		assert.fail('the real coroutine must yield to its halted resumer');
@@ -1133,11 +1138,13 @@ test('a collected coroutine releases its object and stack allocations', () => {
 	writeInstruction(text, 3, OpCode.CALL, 0, 2, 2);
 	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
 	writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({
+	const image = linkRawTestSystemBlua32({
 		text, systemGlobalNames: ['create'],
 		functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }, { firstWord: 5, wordCount: 1, maxStack: 2 }],
 		closureRelocations: [{ wordIndex: 2, functionIndex: 1 }],
-	}));
+	});
+	const { cpu } = createTestSystemCpu(image);
+	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	cpu.setSystemGlobalByKey(cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
 	cpu.runUntilDepth(0, 1000);
 	const { gc } = cpu, frame = cpu.rootThread.currentFrame!;

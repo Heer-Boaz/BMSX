@@ -1,4 +1,4 @@
-import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { compileHeapServiceSystem, compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { numberToHost, type Value, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -21,7 +21,7 @@ import {
 	linkTestBlua32Pair,
 	linkTestSystemBlua32,
 } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -42,7 +42,7 @@ function constModule(path: string, source: string) {
 }
 
 function compileWithConstModule(entrySource: string, modulePath: string, moduleSource: string): CompiledSystemProgram {
-	return compileLuaChunkToProgram(
+	return compileTestSystemWithHeap(
 		parseSource(entrySource, 'entry.lua'),
 		[constModule(modulePath, moduleSource)],
 		{ entrySource, programDomain: 'system' },
@@ -55,18 +55,18 @@ function disassembleEntryFunction(compiled: CompiledSystemProgram): string {
 	return disassembleTestBlua32Functions(image, [image.vectors.entryFunctionAddress]);
 }
 
-function runColdCompiled(compiled: CompiledSystemProgram, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes)): { memory: Memory; values: Value[]; image: ReturnType<typeof linkTestSystemBlua32>['image'] } {
+function runColdCompiled(compiled: CompiledSystemProgram, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes)): { memory: Memory; values: Value[]; image: ReturnType<typeof linkTestSystemBlua32>['image']; symbols: ReturnType<typeof linkTestSystemBlua32>['symbols'] } {
 	const finalized = linkTestSystemBlua32(compiled);
 	memory.installSystemRom(finalized.romBytes);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 	cpu.reset();
 	runGuestToHalt(cpu, 100000);
-	return { memory, values: materializeCpuCompletionValues(cpu), image: finalized.image };
+	return { memory, values: materializeCpuCompletionValues(cpu), image: finalized.image, symbols: finalized.symbols };
 }
 
 function runCold(source: string, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes)): { memory: Memory; values: Value[] } {
-	return runColdCompiled(compileSource(source), memory);
+	return runColdCompiled(compileHeapServiceSystem(source, 0, [], 'section_bss.lua'), memory);
 }
 
 test('BLua .bss declarations emit RAM section symbols and cold startup zeroes them as code', () => {
@@ -94,7 +94,7 @@ return *counter, &counter
 
 for (const optLevel of [3] as const) for (const words of [1, 7, 8, 9, 17, 33, 4133]) test(`section initialization clears ${words} BSS words without touching neighbors (O${optLevel})`, () => {
 	const source = `data prefix: word = 305419896\nbss scratch: word[${words}]\nreturn *prefix`;
-	const compiled = compileLuaChunkToProgram(parseSource(source, 'bulk_bss.lua'), [], {
+	const compiled = compileTestSystemWithHeap(parseSource(source, 'bulk_bss.lua'), [], {
 		entrySource: source, programDomain: 'system', optLevel,
 	});
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
@@ -107,7 +107,7 @@ for (const optLevel of [3] as const) for (const words of [1, 7, 8, 9, 17, 33, 41
 
 for (const optLevel of [3] as const) for (const byteCount of [1, 3, 31, 32, 33]) test(`section initialization clears aligned byte BSS of ${byteCount} bytes (O${optLevel})`, () => {
 	const source = `bss bytes: u8[${byteCount}]\nreturn &bytes`;
-	const compiled = compileLuaChunkToProgram(parseSource(source, 'byte_bss.lua'), [], {
+	const compiled = compileTestSystemWithHeap(parseSource(source, 'byte_bss.lua'), [], {
 		entrySource: source, programDomain: 'system', optLevel,
 	});
 	const words = (byteCount + 3) >>> 2;
@@ -122,7 +122,7 @@ for (const optLevel of [3] as const) for (const byteCount of [1, 3, 31, 32, 33])
 for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) test(`system and cartridge each initialize only their own BSS (O${optLevel}, backend=${backend})`, () => {
 	const launcher = `bss system_scratch: word[9]\ncop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 	const cartridge = `data prefix: word = 305419896\nbss scratch: word[17]\nreturn *prefix`;
-	const system = compileLuaChunkToProgram(parseSource(launcher, 'system_bss.lua'), [], { entrySource: launcher, programDomain: 'system', optLevel });
+	const system = compileTestSystemWithHeap(parseSource(launcher, 'system_bss.lua'), [], { entrySource: launcher, programDomain: 'system', optLevel });
 	const cart = compileLuaChunkToProgram(parseSource(cartridge, 'cart_bss.lua'), [], { entrySource: cartridge, programDomain: 'cart', optLevel });
 	const images = linkTestBlua32Pair(system, cart);
 	const memory = new Memory({ systemRom: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
@@ -457,7 +457,7 @@ return { count = count }
 
 test('const-module function exports remain pack-time link targets', () => {
 	const moduleSource = 'local function read() return 1 end\nreturn { read = read }';
-	const compiled = compileLuaChunkToProgram(
+	const compiled = compileTestSystemWithHeap(
 		parseSource('return require("state").read()', 'entry.lua'),
 		[constModule('state', moduleSource)],
 		{ entrySource: 'return require("state").read()', programDomain: 'system' },
@@ -479,7 +479,7 @@ local bp<const>: *word = b.counter
 *bp = 22
 return *ap, *bp, a.counter, b.counter
 `;
-	const compiled = compileLuaChunkToProgram(
+	const compiled = compileTestSystemWithHeap(
 		parseSource(entrySource, 'entry.lua'),
 		[
 			constModule('state_a', 'bss counter: word\nreturn { counter = counter }'),
@@ -498,7 +498,7 @@ return *ap, *bp, a.counter, b.counter
 
 test('linked system and cart const-module .bss symbols resolve against their own VMA bases', () => {
 	const systemSource = 'local s<const> = require("sys_state")\nreturn s.counter';
-	const systemCompiled = compileLuaChunkToProgram(
+	const systemCompiled = compileTestSystemWithHeap(
 		parseSource(systemSource, 'system.lua'),
 		[constModule('sys_state', 'bss counter: word\nreturn { counter = counter }')],
 		{ entrySource: systemSource, programDomain: 'system' },
@@ -547,7 +547,7 @@ return *counter, &counter
 
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0x11223344);
-	const result = runColdCompiled(compiled, memory);
+	const result = runColdCompiled(compileHeapServiceSystem(source, 0, [], 'section_data.lua'), memory);
 	assert.deepEqual(result.values, [17, DYNAMIC_RAM_BASE].map(valueInteger));
 	assert.equal(result.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 17);
 });
@@ -611,7 +611,7 @@ return before, *counter, state.counter
 
 test('linked system and cart const-module .data symbols resolve VMA and LMA ranges', () => {
 	const systemSource = 'local s<const> = require("sys_data")\nreturn s.value';
-	const systemCompiled = compileLuaChunkToProgram(
+	const systemCompiled = compileTestSystemWithHeap(
 		parseSource(systemSource, 'system.lua'),
 		[constModule('sys_data', 'data value: word = 10\nreturn { value = value }')],
 		{ entrySource: systemSource, programDomain: 'system' },
@@ -665,8 +665,8 @@ return values[0], values[1], values[2], values
 	}]);
 	assert.deepEqual(Array.from(image.sections.rodata.bytes), [11, 0, 0, 0, 22, 0, 0, 0, 33, 0, 0, 0]);
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'rodata_addr' && reloc.symbolIndex === 0), true);
-	const result = runColdCompiled(compiled);
-	assert.deepEqual(result.values, [11, 22, 33, result.image.header.rodataAddress].map(valueInteger));
+	const result = runColdCompiled(compileHeapServiceSystem(source, 0, [], 'section_rodata.lua'));
+	assert.deepEqual(result.values, [11, 22, 33, result.symbols.metadata.staticScopes.declarations.find(decl => decl.name === 'values')!.address].map(valueInteger));
 });
 
 test('BLua .rodata typed storage preserves byte and halfword layout', () => {
@@ -682,8 +682,8 @@ return bytes[0], bytes[1], bytes[2], halves[0], halves[1], bytes, halves
 		{ name: 'module:section_rodata_widths.lua/rodata:bytes', offset: 0, byteCount: 3, alignment: 1 },
 		{ name: 'module:section_rodata_widths.lua/rodata:halves', offset: 4, byteCount: 4, alignment: 2 },
 	]);
-	const result = runColdCompiled(compiled);
-	const bytesAddress = result.image.header.rodataAddress;
+	const result = runColdCompiled(compileHeapServiceSystem(source, 0, [], 'section_rodata_widths.lua'));
+	const bytesAddress = result.symbols.metadata.staticScopes.declarations.find(decl => decl.name === 'bytes')!.address;
 	assert.deepEqual(result.values, [1, 2, 3, 258, 772, bytesAddress, bytesAddress + 4].map(valueInteger));
 });
 
@@ -703,7 +703,7 @@ ${section} record: floating_record = { tag = 7, single = -1.5, double = 2.25 }
 return *scalar, singles[0], singles[1], singles[2],
 	doubles[0], doubles[1], doubles[2], record.tag, record.single, record.double
 `;
-			const compiled = compileLuaSource(source, 'floating_storage.lua', optLevel);
+			const compiled = compileHeapServiceSystem(source, optLevel, [], 'floating_storage.lua');
 			const bytes = encodeCompiledProgramObject(compiled).sections[section].bytes;
 			assert.deepEqual(Array.from({ length: bytes.length / 4 }, (_, index) => readLE32(bytes, index * 4)), [
 				0, 0x80000000,
@@ -752,7 +752,7 @@ test('BLua static storage exposes exported array dimensions to const-module cons
 local storage<const> = require('storage')
 return #storage.scratch + #storage.values + #storage.labels
 `;
-	const compiled = compileLuaChunkToProgram(
+	const compiled = compileTestSystemWithHeap(
 		parseSource(entrySource, 'entry.lua'),
 		[
 			constModule('storage', `
@@ -796,7 +796,7 @@ return #commands, commands[0].name == 'CLS', #commands[1].usage, commands[1].kin
 	const disassembly = disassembleEntryFunction(compiled);
 	assert.match(disassembly, /LOADKR/);
 	assert.doesNotMatch(disassembly, /\bBIOSCALL\b/);
-	assert.deepEqual(runColdCompiled(compiled).values, [valueInteger(2), valueBool(true), valueInteger(25), valueInteger(2), valueInteger(12)]);
+	assert.deepEqual(runColdCompiled(compileHeapServiceSystem(source, 0, [], 'rodata_records.lua')).values, [valueInteger(2), valueBool(true), valueInteger(25), valueInteger(2), valueInteger(12)]);
 });
 
 test('cart linking remaps const references stored in physical cart .rodata', () => {
@@ -808,7 +808,7 @@ rodata labels: label[] = { { text = '${text}' } }
 return labels[0].text
 `;
 	const systemSource = recordSource('SYSTEM');
-	const system = compileLuaChunkToProgram(
+	const system = compileTestSystemWithHeap(
 		parseSource(systemSource, 'system_rodata_record.lua'),
 		[],
 		{ entrySource: systemSource, programDomain: 'system' },

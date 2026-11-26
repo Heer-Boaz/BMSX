@@ -161,7 +161,7 @@ initialize()
 return cold and first, *carried == 16 and *runs == 2 and captured == 6`;
 		const chunk = parseLuaChunk(source, 'entry.lua');
 		const compiled = domain === 'system'
-			? compileLuaChunkToProgram(chunk, [], { entrySource: source, programDomain: 'system', optLevel })
+			? compileTestSystemWithHeap(chunk, [], { entrySource: source, programDomain: 'system', optLevel })
 			: compileLuaChunkToProgram(chunk, [], { entrySource: source, programDomain: 'cart', optLevel });
 		let machine: ReturnType<typeof createTestSystemCpu>;
 		if (compiled.domain === 'system') {

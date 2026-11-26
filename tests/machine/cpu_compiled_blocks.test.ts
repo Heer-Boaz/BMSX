@@ -14,7 +14,6 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { compileCoroutineTest } from '../helpers/coroutine';
 import { luaFloorDivide, luaModulo } from '../../machine/ts/spec/blua32/numeric';
 import { luaPow } from '../../machine/ts/spec/blua32/pow';
@@ -22,6 +21,7 @@ import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import type { Blua32ExecutionImage } from '../../machine/ts/machine/cpu/execution_image';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 function compiledEntries(cpu: CPU): number {
 	let count = 0;
@@ -47,11 +47,11 @@ function loopImage() {
 }
 
 test('an unconfigured Runtime interprets while the selected JavaScript backend generates code at the same guest cost', () => {
-	const image = linkTestSystemBlua32(compileLuaSource(`
+	const image = linkTestSystemBlua32(compileHeapServiceSystem(`
 bss observed: word
 local n = 0
 for i = 1, 256 do n = n + i; *observed = n end
-return n`, 'cpu-default.lua'));
+return n`, 0, [], 'cpu-default.lua'));
 	const address = image.image.header.bssAddress;
 	const rom = new Uint8Array((image.romBytes.length + MAPPED_PAGE_BYTE_SIZE - 1) & -MAPPED_PAGE_BYTE_SIZE);
 	rom.set(image.romBytes);
@@ -552,12 +552,12 @@ test('restore retires warmed cross-page regions and their links before regenerat
 });
 
 test('compiled loops and repeated calls replay the full state through short grants and restore', () => {
-	const image = linkTestSystemBlua32(compileLuaSource(`
+	const image = linkTestSystemBlua32(compileHeapServiceSystem(`
 local function step(x) return ((x << 1) ~ 3) + 1 end
 local n = 1
 for i = 1, 200 do n = step(n) end
 return n
-`, 'generated-calls.lua'));
+`, 0, [], 'generated-calls.lua'));
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	let result = RunResult.Yielded;

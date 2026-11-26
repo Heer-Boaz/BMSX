@@ -1089,9 +1089,12 @@ operand in either case.
 Repeated CLOSURE operations for a STATIC function record with no upvalues may
 return the same function value when they use the same prototype in the same
 execution context. When a STATIC prototype in ROM needs a new captureless
-closure, the resident memory routine reserves and initializes it on ordinary
-CPU cycles. Device time continues while it runs. Interrupt entry and the next
-instruction wait for the destination to be written or the request to fail.
+closure, one BIOS activation handles admission, any collection work and
+retry, and initialization. It uses ordinary CPU cycles while devices
+continue to advance. The new function becomes visible only when its record
+is ready. If the reservation still cannot be made, `CLOSURE` reports
+`OUT_OF_MEMORY` at the issuing instruction. Interrupt entry and the next
+instruction wait for that result.
 An ordinary call uses the closure value; a numeric
 function-record address is supplied to CLOSURE or EXEC under their separate
 operand rules.
@@ -1528,9 +1531,10 @@ partial reservation before collecting and retrying the same request. The
 caller receives a Table only when its storage is ready. Root scanning,
 tracing, final remark, weak-entry removal and sweeping within that call
 execute on ordinary CPU grants while devices continue to advance.
-The instruction's base charge is not repeated on retry. Collection work for
-a new captureless closure from a STATIC ROM prototype or a suspended table
-insertion can also run on ordinary CPU grants. A table insertion
+The instruction's base charge is not repeated on retry. The BIOS uses the
+same admission and recovery procedure for a new captureless closure from
+a STATIC ROM prototype. Collection during a suspended table insertion
+can also run on ordinary CPU grants. A table insertion
 can pause both when its proposed capacity exceeds the remaining logical
 budget and when its backing storage does not fit. After collection, the CPU
 replans the insertion using the surviving mappings. No table or new mapping
@@ -1547,9 +1551,9 @@ observe a partly updated table.
 Logical and physical assists each request at most one work word per three
 remaining cycles of the issuing grant. Fewer than three cycles defer the
 assist, not the reservation. An indivisible scan such as a record header may
-exceed the requested work. The BIOS performs these assists on ordinary CPU grants before reserving
-storage for a new Table. Assists before a new captureless closure from a
-STATIC ROM prototype also use ordinary CPU grants.
+exceed the requested work. The BIOS performs these assists on ordinary CPU
+grants before reserving storage for a new Table or a new captureless closure
+from a STATIC ROM prototype.
 Completed work counts toward the collector's next allowance without a second
 CPU charge. Other assists performed as part of the issuing instruction pay
 **3 cycles per collector work word** actually performed, not per word requested.

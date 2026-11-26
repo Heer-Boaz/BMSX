@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
+import { CpuRunKind } from '../../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { asInteger, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
@@ -13,7 +13,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { instructionOpcode } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_RECORD_OFFSET, HeapServiceBiosCallField, HeapServiceRecordStage } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_CLOSURE_OFFSET, HeapServiceBiosCallField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { CART_ROM_BASE, HEAP_PAGE_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestBlua32Pair } from '../../helpers/blua32';
@@ -44,7 +44,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, gc } = cpu;
 			const management = arena.managementOffset(), call = management + HEAP_SERVICE_BIOS_CALL_OFFSET;
-			const oldStage = management + HEAP_SERVICE_RECORD_OFFSET;
+			const closureLatch = management + HEAP_SERVICE_CLOSURE_OFFSET;
 			const destination = () => memory.readRamRecordWord(call + HeapServiceBiosCallField.Destination);
 			const framePc = () => cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const run = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
@@ -66,8 +66,8 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 			function grant(cycles: number) {
 				const result = run(cycles);
 				const used = cycles - cpu.instructionBudgetRemaining;
-				const stage = memory.readRamRecordWord(oldStage);
-				assert.equal(stage, HeapServiceRecordStage.Idle, 'BIOSCALL does not issue an old reservation continuation');
+				const stage = memory.readRamRecordWord(closureLatch);
+				assert.equal(stage, 0, 'BIOSCALL does not issue a CLOSURE continuation');
 				observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.heapServiceActive()} ${stage} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 				return used;
 			}

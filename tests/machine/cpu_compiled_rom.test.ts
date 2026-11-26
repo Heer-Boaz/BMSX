@@ -32,7 +32,7 @@ import {
 import { CART_RAM_BASE, CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { RAM_CODE_FIXTURE_BYTES, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, linkRawTestBlua32Pair, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -555,6 +555,8 @@ for (const ramRecord of [false, true]) {
 		const machines = [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter].map(backend =>
 			machine(pair.systemRomBytes, cartridgeSlots(pair.cartRomBytes, other.cartRomBytes), backend));
 		for (const { cpu, memory } of machines) {
+			if (ramRecord) seedTestRomClosure(cpu, pair.systemSymbols.functionAddresses[1]);
+			else seedTestRomClosure(cpu, pair.cartSymbols.functionAddresses[1], 0);
 			const template = pair.systemSymbols.functionAddresses[3];
 			memory.writeBytes(record, pair.systemRomBytes.subarray(template, template + BLUA32_FUNCTION_RECORD_SIZE));
 			memory.writeMappedU32LE(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, code);
@@ -632,6 +634,7 @@ test('closure records bind their selected socket and survive cross-domain calls 
 		const closures = [];
 		for (const slot of [0, 1]) {
 			memory.writeMappedWord(IO_CART_SELECT, slot);
+			seedTestRomClosure(cpu, record, slot as 0 | 1);
 			frame.registers.setInteger(1, record);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, pair.systemSymbols.functionAddresses[0], entry);
 			cpu.runUntilDepth(0, 2);

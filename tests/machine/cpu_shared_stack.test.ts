@@ -13,7 +13,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 import { compileCoroutineTest } from '../helpers/coroutine';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -60,6 +60,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			{ firstWord: 6, wordCount: 2, numParams: 2, maxStack: 8 },
 		], constants: [integerConstant(37)], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
 		const { cpu } = createTestSystemCpu(image, backend);
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		const calleePc = image.image.functions[1].codeAddress;
 		cpu.setExecutionHook((_domain, pc) => pc === calleePc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
@@ -116,6 +117,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			{ wordIndex: 10, functionIndex: 3 },
 		] });
 		const { cpu } = createTestSystemCpu(image, backend);
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		runGuestToHalt(cpu, 1000);
 		for (const [name, expected] of [['outer_read', 51], ['inner_read', 42]] as const) {
 			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern(name)), cpu.gc));

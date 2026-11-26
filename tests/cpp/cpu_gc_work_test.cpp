@@ -6,6 +6,7 @@
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 
@@ -726,6 +727,7 @@ void resumesCompletionRootBank() {
 	source.functions = {{.firstWord=0, .wordCount=3}, {.firstWord=3, .wordCount=2, .isVararg=true}};
 	source.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	Machine machine(source, true);
+	test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 	auto& cpu = machine.cpu;
 	auto& heap = cpu.gcHeap();
 	auto& memory = machine.memory;
@@ -909,6 +911,9 @@ void resumesOpenThreadAfterClosingInstruction() {
 	program.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
 		{5, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	Machine generated(program), scalar(program, true);
+	for (auto* machine : {&generated, &scalar}) {
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+	}
 	const auto setup = [](Machine& machine) {
 		const auto target = machine.cpu.createTable().address();
 		auto& frame = *machine.cpu.rootThread()->currentFrame;
@@ -1560,7 +1565,8 @@ void sweepCoroutineRecord() {
 	program.functions = {{.firstWord=0, .wordCount=5, .maxStack=8}, {.firstWord=5, .wordCount=1, .maxStack=2}};
 	program.systemGlobalNames = {"create"};
 	program.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
-	Machine machine(program); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap();
+	Machine machine(program);
+	test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap();
 	cpu.setSystemGlobalByKey(cpu.stringPool().intern("create"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineCreate));
 	require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "coroutine fixture reaches HALT");
 	auto& frame = *cpu.rootThread()->currentFrame;
@@ -1632,6 +1638,7 @@ void sweepUnselectsSuspendedTransferFrames() {
 		return false;
 	}, &observation, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	const auto run = [&] {
+		for (const auto& relocation : program.closureRelocations) test::seedTestRomClosure(cpu, relocation.functionAddress);
 		for (int i = 0; i < 16; ++i)
 			if (cpu.runUntilDepth(0, 1000) == RunResult::Halted && cpu.activeThread() == cpu.rootThread()) return;
 		throw std::runtime_error("the real coroutine must yield to its halted resumer");

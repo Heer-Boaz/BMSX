@@ -27,7 +27,7 @@ import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS
 import { CART_RAM_BASE, DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { runCpuParity } from '../helpers/cpu_execution';
 
@@ -274,11 +274,13 @@ test('return ranges preserve shifted source slots when growing the caller stack'
 			writeInstruction(text, 2, OpCode.CALL, 2, 1, requested === 0 ? 0 : requested + 1);
 			writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
 			writeInstruction(text, 4, OpCode.RET, 5, openReturn ? 0 : produced + 1, 0);
-			const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
+			const image = linkRawTestSystemBlua32({ text,
 				functions: [{ firstWord: 0, wordCount: 4, maxStack: 3 },
 					{ firstWord: 4, wordCount: 1, maxStack: 5 + Math.max(produced, 1) }],
 				closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
-			}, RAM_CODE_FIXTURE_BYTES));
+			}, RAM_CODE_FIXTURE_BYTES);
+			const { cpu } = createTestSystemCpu(image);
+			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 			if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 			const table = cpu.createTable(0, 0);
 			cpu.rootThread.frameAtDepth(0).registers.setInteger(0, 91);
@@ -581,6 +583,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		const irq = new IrqController(memory), cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 		cpu.reset();
 		const record = image.symbols.functionAddresses[1];
+		if (edgeKind !== 1) seedTestRomClosure(cpu, record);
 		const calleePc = image.image.functions[1].codeAddress;
 		let edges = 0, armed = false;
 		if (edgeKind === 1) {
@@ -751,6 +754,8 @@ test('zero-maxStack calls produce true zero results and only requested padding i
 		closureRelocations: [{ wordIndex: 1, functionAddress: 0x180 }, { wordIndex: 4, functionAddress: 0x1a0 }],
 	}, RAM_CODE_FIXTURE_BYTES);
 	const { cpu } = createTestSystemCpu(image);
+	seedTestRomClosure(cpu, 0x180);
+	seedTestRomClosure(cpu, 0x1a0);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const results: Value[] = [];
 	cpu.readCompletionValues(results);

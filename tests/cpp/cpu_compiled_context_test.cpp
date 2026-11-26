@@ -6,6 +6,7 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/value_bank.h"
@@ -113,6 +114,7 @@ void hotVarargFrames(int fixed) {
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
+		test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[1]);
 		m->cpu.runUntilDepth(0, 2); m->cpu.activeThread()->frameAtDepth(0)->writeControl(bmsx::FrameField::Top, 1);
 		m->cpu.runUntilDepth(0, 9002);
 	}
@@ -188,6 +190,7 @@ void nativeGenericVarargCallLeavesInactiveControlUntouched() {
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 
 	CpuMachine generated(image), scalar(image, true);
+	for (auto* m : {&generated, &scalar}) test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[1]);
 	auto& cpu = generated.cpu;
 	const auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
 	require(test::runCpuParity(cpu, scalar.cpu, cycles(OpCode::CLOSURE)) == RunResult::Yielded,

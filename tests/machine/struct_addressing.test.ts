@@ -1,6 +1,7 @@
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
@@ -17,7 +18,7 @@ import {
 	linkRawTestSystemBlua32,
 	linkTestSystemBlua32,
 } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runCompiledLua, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const TEST_RAM_BASE = RAM_BASE + 0x20000;
 
@@ -36,7 +37,7 @@ mem[base + 4] += 2
 local int = 0x08020000
 mem[int + 4.0] += 4
 return a, b, mem[0x08020000], mem[0x08020004]`;
-		const image = linkTestSystemBlua32(compileLuaSource(source, 'rounded-address.lua', optLevel));
+		const image = linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel, [], 'rounded-address.lua'));
 		for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const { cpu } = createTestSystemCpu(image, backend);
 			runGuestToHalt(cpu, 100000);
@@ -52,7 +53,7 @@ return function(index)
 end, function(index)
     return 0 + (index * 2) * 2, 0 + (2 * index) * 2, 0 + (index * 3) * 2, 0 + (index * 0.5) * 2, 0 + (index * 2.0) * 2, 0 + (1073741824 * index) * 2
 end`;
-		const compiled = compileLuaSource(source, 'pointer-scale.lua', optLevel);
+		const compiled = compileHeapServiceSystem(source, optLevel, [], 'pointer-scale.lua');
 		const image = linkTestSystemBlua32(compiled);
 		for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const { cpu } = createTestSystemCpu(image, backend);
@@ -87,7 +88,7 @@ end
 local first = &pointer[value() * 2]
 local second = &pointer[2 * value()]
 return first, second, count`;
-		const image = linkTestSystemBlua32(compileLuaSource(source, 'pointer-effects.lua', optLevel));
+		const image = linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel, [], 'pointer-effects.lua'));
 		const entry = disassembleTestBlua32Functions(image, [image.vectors.entryFunctionAddress]);
 		assert.equal((entry.match(/\bMUL\b/g) ?? []).length, 2, 'one fused Integer stride per selection');
 		for (const backend of [CpuExecutionBackend.Interpreter]) {
@@ -104,7 +105,7 @@ return function(index)
     pointer[index * 2] = 4660
     return pointer[index * 2]
 end`;
-		const image = linkTestSystemBlua32(compileLuaSource(source, 'pointer-wrap.lua', optLevel));
+		const image = linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel, [], 'pointer-wrap.lua'));
 		for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const { cpu, memory } = createTestSystemCpu(image, backend);
 			runGuestToHalt(cpu, 100000);

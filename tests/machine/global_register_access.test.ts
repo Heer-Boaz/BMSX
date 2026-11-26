@@ -6,7 +6,6 @@ import { valueBool, valueInteger, valueIsClosure, valueNil, valueTable } from '.
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource, materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 
 const bootSource = 'getglobal = __bmsx_getglobal; setglobal = __bmsx_setglobal; pcall = __bmsx_pcall';
 const boot = { path: 'boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'boot.lua') };
@@ -51,7 +50,7 @@ local invalid_write = pcall(set, false, 4)
 local missing_name = pcall(set)
 return before, get('irq'), irq(3), invalid_read, invalid_write, missing_name
 `;
-	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaChunkToProgram(
+	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileTestSystemWithHeap(
 		parseLuaChunk(source, 'global-banks.lua'), [boot], { entrySource: source, programDomain: 'system' },
 	)));
 	cpu.installBootPrimitives();

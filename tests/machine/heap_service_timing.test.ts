@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { AllocationRecovery, CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
@@ -19,19 +18,17 @@ import {
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
-import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { INSTRUCTION_BYTES, instructionOpcode } from '../../machine/ts/spec/blua32/instruction_format';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { runCpuWithinBudget, runGuestToHalt } from '../helpers/cpu_execution';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 test('a real VBlank latches its IRQ across allocator service grants and restore', () => {
 	const path = 'kernel/dlmalloc';
-	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 	const entrySource = `local allocator<const> = require('${path}')\nhalt_until_irq`;
-	const { romBytes, symbols } = linkTestSystemBlua32(compileLuaChunkToProgram(
-		parseLuaChunk(entrySource), [{ path, source, chunk: parseLuaChunk(source, path) }],
-		{ entrySource, programDomain: 'system', optLevel: 3 },
-	));
+	const { romBytes, symbols } = linkTestSystemBlua32(compileHeapServiceSystem(entrySource, 3));
 	const resetIndex = symbols.metadata.functionIds.findIndex(id =>
 		id.startsWith(`module:${path}/`) && id.endsWith('|constant|bmsx_dlmalloc_reset'));
 	assert.notEqual(resetIndex, -1);
@@ -45,7 +42,7 @@ test('a real VBlank latches its IRQ across allocator service grants and restore'
 	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
 	const edge = scheduler.nowCycles;
 	applyRuntimeSaveState(runtime, boot);
-	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const callerPc = cpu.readFramePc(cpu.getFrameDepth() - 1);
 	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - 16);
@@ -86,7 +83,8 @@ test('a real VBlank latches its IRQ across allocator service grants and restore'
 		if (attempt === 0) finish = scheduler.nowCycles;
 		else assert.equal(scheduler.nowCycles, finish);
 		assert.ok(finish > start);
-		assert.equal(frames.advanceLogicalTick(0), LogicalTickResult.Maintenance);
+		assert.equal(frames.advanceLogicalTick(0), LogicalTickResult.Incomplete);
+		assert.equal(cpu.gc.phase(), GcPhase.Atomic, "no untimed final mark after a resident service");
 		assert.equal(scheduler.nowCycles, finish, 'independent stopped final mark does not get a timed grant in this synthetic ROM');
 		assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 		if (attempt === 0) applyRuntimeSaveState(runtime, partial);
@@ -108,18 +106,20 @@ test('scheduled BIOSCALL allocates across VBlank and replays its continuation fr
 	applyRuntimeSaveState(runtime, boot);
 	const latch = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
 	const pendingDestination = () => memory.readRamRecordWord(latch + HeapServiceBiosCallField.Destination);
-	// Include the normal startup, not only the entry routine, when positioning the edge.
-	let bootCycles = 0;
-	for (let step = 0; step < 2048 && pendingDestination() === 0; ++step) {
-		scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
-		bootCycles += 1 - cpu.instructionBudgetRemaining;
-	}
-	assert.ok(pendingDestination() !== 0 && cpu.heapServiceActive(), 'actual BIOSCALL is now armed');
-	applyRuntimeSaveState(runtime, boot);
-	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - bootCycles - 32);
-
+	// The startup itself allocates via the same resident BIOS. Retire it
+	// before timing the independently selected constructor at the edge.
+	const entry = system.image.functions.find(fn => fn.address === system.vectors.entryFunctionAddress)!;
+	let issuePc = entry.codeAddress;
+	while (issuePc < entry.codeAddress + entry.codeByteCount
+		&& instructionOpcode(memory.readMappedWord(issuePc)) !== OpCode.BIOSCALL) issuePc += INSTRUCTION_BYTES;
+	assert.ok(issuePc < entry.codeAddress + entry.codeByteCount);
+	cpu.setExecutionHook((_domain, pc) => pc === issuePc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+	assert.equal(runCpuWithinBudget(cpu, 10_000), RunResult.ExecutionStopped);
+	cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 	assert.equal(pendingDestination(), 0);
-	assert.equal(frames.runCyclesToNextLogicalTick(bootCycles + 64), true);
+	assert.equal(cpu.heapServiceActive(), false);
+	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - BASE_CYCLES[OpCode.BIOSCALL] - 32);
+	assert.equal(frames.runCyclesToNextLogicalTick(96), true);
 	assert.ok(scheduler.nowCycles >= edge);
 	assert.ok(frames.lastTickCpuUsedCycles > 0);
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);

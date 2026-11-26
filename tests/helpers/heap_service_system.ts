@@ -21,7 +21,9 @@ export function loadHeapServiceTestModules(): readonly ProgramModule[] {
 /** Compile an executable fixture with the System BIOS operation roster. */
 export function compileTestSystemWithHeap(chunk: LuaChunk, modules: readonly ProgramModule[],
 	options: SystemCompileOptions) {
-	return compileLuaChunkToProgram(chunk, [...loadHeapServiceTestModules(), ...modules], {
+	const fixturePaths = new Set(modules.map(module => module.path));
+	const firmware = loadHeapServiceTestModules().filter(module => !fixturePaths.has(module.path));
+	return compileLuaChunkToProgram(chunk, [...firmware, ...modules], {
 		...options, preloadModules: [...HEAP_SERVICE_MODULES, ...(options.preloadModules ?? [])],
 	});
 }

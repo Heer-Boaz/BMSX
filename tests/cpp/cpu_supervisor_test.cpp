@@ -14,6 +14,7 @@
 #include "spec/bmsx/model.h"
 #include "machine/scheduler/device.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 
 #include <array>
@@ -527,6 +528,7 @@ void testCrossImageCallStackPcsBelongToTheirFrames() {
 	cart.exceptionFunctionIndex = 1u;
 
 	CpuTestMachine machine(std::move(system), std::move(cart));
+	for (size_t index : {0u, 1u}) bmsx::test::seedTestRomClosure(machine.cpu, machine.systemRom.functionAddresses[index]);
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cross-image leaf reaches HALT");
 	const std::optional<bmsx::Blua32ImageLayout> systemLayout =
 		bmsx::decodeBlua32RomImage(machine.systemRom.bytes, bmsx::SYSTEM_ROM_BASE);
@@ -740,6 +742,7 @@ void testMappedRamFunctionExecution() {
 
 	CpuTestMachine machine(std::move(systemImage));
 	bmsx::CPU& cpu = machine.cpu;
+	bmsx::test::seedTestRomClosure(cpu, machine.systemRom.functionAddresses[1]);
 	bmsx::Memory& memory = machine.memory;
 	const bmsx::u32 romFunctionOperand = machine.systemRom.functionAddresses[1] >> 4u;
 	std::array<bmsx::u8, 4u * bmsx::INSTRUCTION_BYTES> ramCode{};
@@ -1027,6 +1030,8 @@ void testUserIrqInSystemCalleeUsesCartVector(bool restore, bool nested, bool sel
 	auto auxiliary = cart;
 	auxiliary.irqFunctionIndex = 0u;
 	CpuTestMachine machine(std::move(system), std::move(cart), std::move(auxiliary));
+	bmsx::test::seedTestRomClosure(machine.cpu, machine.systemRom.functionAddresses[2]);
+	if (nested) bmsx::test::seedTestRomClosure(machine.cpu, machine.systemRom.functionAddresses[3]);
 	require(machine.cpu.runUntilDepth(0, 4) == bmsx::RunResult::Yielded, "system launch reaches the cart entry boundary");
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cart executes HALT inside its system callee");
 	const auto before = machine.cpu.captureRuntimeState();
@@ -1092,6 +1097,7 @@ void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
 	cart.exceptionFunctionIndex = 1u;
 
 	CpuTestMachine machine(std::move(system), std::move(cart));
+	bmsx::test::seedTestRomClosure(machine.cpu, machine.systemRom.functionAddresses[2]);
 	require(machine.cpu.runUntilDepth(0, 4) == bmsx::RunResult::Yielded, "system launch reaches the cart entry boundary");
 	const bmsx::u32 cartEntryPc = machine.cartRom.textAddress;
 	const bmsx::u32 cartCallPc = cartEntryPc + 2u * bmsx::INSTRUCTION_BYTES;
@@ -1677,6 +1683,7 @@ auto makeProtectedCallImage() -> bmsx::test::Blua32TestImage {
 
 void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	CpuTestMachine machine(makeProtectedCallImage());
+	bmsx::test::seedTestRomClosure(machine.cpu, machine.systemRom.functionAddresses[1]);
 	const std::array builtinIds{
 		bmsx::BuiltinFunctionId::PCall,
 		bmsx::BuiltinFunctionId::XPCall,
@@ -1699,18 +1706,21 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 
 	bmsx::test::programBlua32TestResetVector(machine.systemRom, 2u);
 	machine.cpu.reset();
+	for (size_t index : {3u, 4u}) bmsx::test::seedTestRomClosure(machine.cpu, machine.systemRom.functionAddresses[index]);
 	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "xpcall error path should complete");
 	require(machine.cpu.readCompletionValues().size() == 2u && !bmsx::isTruthy(machine.cpu.readCompletionValues().get(0)), "xpcall should return failure");
 	require(machine.cpu.readCompletionValues().get(1) == bmsx::valueInteger(42), "xpcall handler should receive the thrown Lua value");
 
 	bmsx::test::programBlua32TestResetVector(machine.systemRom, 6u);
 	machine.cpu.reset();
+	bmsx::test::seedTestRomClosure(machine.cpu, machine.systemRom.functionAddresses[1]);
 	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "invalid xpcall handler should be caught by the outer pcall");
 	require(machine.cpu.readCompletionValues().size() == 2u && !bmsx::isTruthy(machine.cpu.readCompletionValues().get(0)), "xpcall should validate its handler before running the body");
 	require(bmsx::valueIsString(machine.cpu.readCompletionValues().get(1)), "invalid xpcall handler should return a Lua error value");
 
 	bmsx::test::programBlua32TestResetVector(machine.systemRom, 7u);
 	machine.cpu.reset();
+	bmsx::test::seedTestRomClosure(machine.cpu, machine.systemRom.functionAddresses[3]);
 	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "xpcall handler failure should complete");
 	require(machine.cpu.readCompletionValues().size() == 2u && !bmsx::isTruthy(machine.cpu.readCompletionValues().get(0)), "xpcall handler failure should return failure");
 	require(bmsx::valueIsString(machine.cpu.readCompletionValues().get(1)), "xpcall handler failure should return the Lua error-in-handler value");
@@ -1718,6 +1728,7 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 
 	bmsx::test::programBlua32TestResetVector(machine.systemRom, 5u);
 	machine.cpu.reset();
+	bmsx::test::seedTestRomClosure(machine.cpu, machine.systemRom.functionAddresses[1]);
 	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "nested pcall should complete");
 	require(machine.cpu.readCompletionValues().size() == 4u, "nested pcall should preserve the open result sequence");
 	require(bmsx::isTruthy(machine.cpu.readCompletionValues().get(0)) && bmsx::isTruthy(machine.cpu.readCompletionValues().get(1)), "nested pcall should prefix both success values");

@@ -6,6 +6,7 @@
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 
 #include <algorithm>
 #include <array>
@@ -31,8 +32,8 @@ struct SnapshotMachine {
 	SnapshotInput input;
 	bmsx::Runtime runtime;
 
-	explicit SnapshotMachine(const bmsx::test::Blua32TestImage& image)
-		: rom(bmsx::test::encodeBlua32TestRom(bmsx::RomImageDomain::System, image))
+	explicit SnapshotMachine(const bmsx::test::Blua32TestImage& image, bmsx::u32 bssBytes = 0u)
+		: rom(bmsx::test::encodeBlua32TestRom(bmsx::RomImageDomain::System, image, bssBytes))
 		, runtime(bmsx::RuntimeOptions{rom.bytes, {}, bmsx::PSX_MACHINE_SPEC}, input) {
 		runtime.machine.cpu.reset();
 	}
@@ -63,8 +64,12 @@ bmsx::test::Blua32TestImage allocationImage() {
 }
 
 void replayAllocationIdentities() {
-	SnapshotMachine machine(allocationImage());
+	auto image = allocationImage();
+	image.closureRelocations[0].functionAddress = bmsx::DYNAMIC_RAM_BASE;
+	SnapshotMachine machine(image, bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	auto& cpu = machine.runtime.machine.cpu;
+	cpu.memory().writeBytes(bmsx::DYNAMIC_RAM_BASE, machine.rom.bytes.data() + machine.rom.functionAddresses[1] - bmsx::SYSTEM_ROM_BASE,
+		bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueTable(cpu.createTable().address()));
 	const auto anchor = cpu.captureRuntimeState();
 	const auto anchorRam = cpu.memory().captureSaveState();
@@ -108,6 +113,7 @@ void preserveCallerPrefixAcrossOpenResultCall() {
 		image.closureRelocations = {{2u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u)}};
 		SnapshotMachine machine(image);
 		auto& cpu = machine.runtime.machine.cpu;
+		bmsx::test::seedTestRomClosure(cpu, machine.rom.functionAddresses[1]);
 		if (table) cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueTable(cpu.createTable().address()));
 		auto returnPc = machine.rom.textAddress + 4u * bmsx::INSTRUCTION_BYTES;
 		cpu.setExecutionHook({
@@ -247,11 +253,13 @@ void restoreUnrootedCanonicalClosure() {
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
 	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
-	const auto address = bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u);
+	constexpr auto address = bmsx::DYNAMIC_RAM_BASE;
 	image.closureRelocations = {{1u, address},
 		{4u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 2u)}};
-	SnapshotMachine machine(image);
+	SnapshotMachine machine(image, bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	auto& cpu = machine.runtime.machine.cpu;
+	cpu.memory().writeBytes(address, machine.rom.bytes.data() + machine.rom.functionAddresses[1] - bmsx::SYSTEM_ROM_BASE,
+		bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	const auto cold = cpu.captureRuntimeState();
 	const auto coldRam = cpu.memory().captureSaveState();
 	cpu.runUntilDepth(0, bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE)]

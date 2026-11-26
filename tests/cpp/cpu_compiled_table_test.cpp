@@ -8,6 +8,7 @@
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 
@@ -517,6 +518,10 @@ void methodCallReturnsOriginalReceiver() {
 		{3, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	image.constants = {std::string("method"), std::string("fromParent"), std::string("fromOwn")};
 	CpuMachine native(image), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[2]);
+	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	native.cpu.prepareSystemNativeCode();
 #endif
@@ -1381,6 +1386,10 @@ void resolvedFieldKeepsPendingFixedCallsUntilAnObserver() {
 	image.constants = {std::string("nested inherited field")};
 
 	CpuMachine native(image), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[3]);
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[4]);
+	}
 	auto& cpu = native.cpu;
 	cpu.prepareSystemNativeCode();
 	require(test::runCpuParity(cpu, scalar.cpu, 100) == RunResult::Halted, "boot retains both verified closures");
@@ -1746,6 +1755,9 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 	image.exceptionFunctionIndex = 3;
 
 	CpuMachine native(image), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[2]);
+	}
 	auto& cpu = native.cpu;
 	const auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
 	const int prefix = cycles(OpCode::MOV) + cycles(OpCode::KSMI);
@@ -2109,6 +2121,9 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 
 	CpuMachine native(image), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[2]);
+	}
 	auto& cpu = native.cpu;
 	const auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
 	const int throughStore = cycles(OpCode::MOV) + cycles(OpCode::KSMI) + cycles(OpCode::SETFIELD);

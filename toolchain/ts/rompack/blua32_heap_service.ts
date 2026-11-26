@@ -23,8 +23,9 @@ export const HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH = 'kernel/table_reserve_growt
 export const HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH = 'kernel/table_resize';
 const INTERRUPT_PRELUDE_MODULE = 'kernel/vblank_irq';
 const BIOS_CREATE_TABLE_MODULE = 'kernel/bios_create_table';
+const ALLOCATE_RECORD_MODULE = 'kernel/allocate_record';
 export const HEAP_SERVICE_MODULES = [
-	'kernel/allocate_record', BIOS_CREATE_TABLE_MODULE,
+	ALLOCATE_RECORD_MODULE, BIOS_CREATE_TABLE_MODULE,
 	HEAP_SERVICE_MODULE_PATH, 'kernel/dlmalloc_record', HEAP_SERVICE_STRINGS_MODULE_PATH,
 	'kernel/gc_control', 'kernel/gc_thread_compact', HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TABLE_MODULE_PATH,
 	'kernel/gc_mark', 'kernel/gc_capture_trace', 'kernel/gc_thread_trace', 'kernel/gc_table_head', 'kernel/gc_table_trace',
@@ -57,7 +58,7 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 	[HeapServiceOperation.Remark]: ['remark_visits', 6, HEAP_SERVICE_REMARK_MODULE_PATH],
 	[HeapServiceOperation.RootHead]: ['mark_root_head', 6, HEAP_SERVICE_REMARK_MODULE_PATH],
 	[HeapServiceOperation.RootBanks]: ['trace_root_banks', 8, HEAP_SERVICE_ROOT_BANKS_MODULE_PATH],
-	[HeapServiceOperation.CreateClosure]: ['create_closure', 5, HEAP_SERVICE_CLOSURE_MODULE_PATH],
+	[HeapServiceOperation.AllocateRecord]: ['allocate_record', 6, ALLOCATE_RECORD_MODULE],
 	[HeapServiceOperation.ReserveTableGrowth]: ['reserve_table_growth', 8, HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH],
 	[HeapServiceOperation.ResizeTable]: ['execute_table_resize', 7, HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH],
 	[HeapServiceOperation.InterruptPrelude]: ['before_cart_irq', 3, INTERRUPT_PRELUDE_MODULE],

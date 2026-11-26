@@ -13,6 +13,7 @@
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/rom_header.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 
@@ -576,6 +577,8 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 		machine->memory.writeBytes(code, launcher.text.data() + 9u * INSTRUCTION_BYTES, 2u * INSTRUCTION_BYTES);
 		require(machine->cpu.runUntilDepth(0, 7) == RunResult::Yielded && machine->cpu.readFrameExecutionDomain(0) == 0,
 			"EXEC establishes socket 0 before SELECT changes");
+		test::seedTestRomClosure(machine->cpu, ramRecord ? system.functionAddresses[1] : card0.functionAddresses[1],
+			ramRecord ? SYSTEM_EXECUTION_DOMAIN_ID : ExecutionDomainId{0});
 		require(machine->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::JMP)]) == RunResult::Yielded
 			&& machine->cpu.instructionBudgetRemaining == 0
 			&& machine->cpu.readFramePc(0) == card0.textAddress + INSTRUCTION_BYTES,

@@ -24,9 +24,10 @@ import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
 import { linkTestBlua32Pair } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const MODULE = 'kernel/closure_create', port = `machine/bios/${MODULE}.lua`;
 const basis = 'fdbb99cb46fbf8381dff4e5a065ae765dee1b525';
@@ -39,7 +40,7 @@ const modules = ['kernel/dlmalloc', 'kernel/gc_control', MODULE].map(path => {
 
 function fixture(optLevel: 0 | 3) {
 	const systemSource = 'halt_until_irq', cartSource = 'return 42';
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(systemSource), modules, { entrySource: systemSource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(systemSource), modules, { entrySource: systemSource, optLevel, programDomain: 'system' });
 	const linked = linkTestBlua32Pair(compiled, compileLuaChunkToProgram(parseLuaChunk(cartSource), [], { entrySource: cartSource, optLevel }));
 	const object = encodeCompiledProgramObject(compiled);
 	const { slotName } = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'create_closure')!;
@@ -58,7 +59,7 @@ function fixture(optLevel: 0 | 3) {
 		const memory = new Memory({ systemRom: linked.systemRomBytes, cartridgeSlots: cartridgeSlots(linked.cartRomBytes, linked.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
 		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 		cpu.reset();
-		assert.equal(cpu.runUntilDepth(0, 1024), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000);
 		return cpu;
 	}
 	const cpu = create(), oracle = create(), memory = cpu.memory;

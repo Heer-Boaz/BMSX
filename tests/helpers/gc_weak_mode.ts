@@ -1,5 +1,5 @@
+import { compileTestSystemWithHeap } from './heap_service_system';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -13,17 +13,13 @@ import { cartridgeSlots } from './cartridge';
 import { parseLuaChunk } from './cpu_test_harness';
 
 const stringModule = 'kernel/string_record', weakModule = 'kernel/gc_weak_mode';
-const modules = [stringModule, weakModule].map(path => {
-	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
-	return { path, source, chunk: parseLuaChunk(source, path) };
-});
 const roots = [
 	[weakModule, 'weak_mode_bits'], [stringModule, 'byte_length'], [stringModule, 'byte_at'],
 ] as const;
 
 export function createGcWeakModeFixture(optLevel: 0 | 3, carts: boolean) {
 	const entrySource = carts ? "return 'k', 'kk', ''" : 'halt_until_irq';
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), [], { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 	const entries = roots.map(([path, exportPathKey]) => {
 		const slot = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === exportPathKey);

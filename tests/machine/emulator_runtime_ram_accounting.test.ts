@@ -2,6 +2,7 @@ import { logicalThreadBytes } from '../helpers/guest_kernel';
 import { ValueTag, valueBuiltinFunction, valueInteger, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -22,7 +23,7 @@ const EMPTY_TEST_IMAGE = linkRawTestSystemBlua32({
 });
 
 function createCpuWithProgram(source: string): CPU {
-	const compiled = compileLuaSource(source, 'ram_accounting.lua');
+	const compiled = compileHeapServiceSystem(source, 0, [], 'ram_accounting.lua');
 	const finalized = linkTestSystemBlua32(compiled);
 	return createTestSystemCpu(finalized).cpu;
 }

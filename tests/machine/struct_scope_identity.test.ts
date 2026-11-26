@@ -2,9 +2,9 @@ import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const cases: { name: string; source: string; expected: number[] }[] = [
 	{
@@ -264,7 +264,7 @@ end
 local size<const> = function() return sizeof(record) end
 return { size = size }` },
 	].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk }));
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'entry').chunk, modules, {
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(source, 'entry').chunk, modules, {
 		entrySource: source, programDomain: 'system', optLevel,
 	});
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
@@ -300,7 +300,7 @@ rodata cells: word[] = { 11, 12, 13, 14 }
 return { nested = { count = 3 }, cells = cells }` },
 		{ path: 'other_limits', source: 'module<const>\nreturn { count = 9 }' },
 	].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk }));
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'entry').chunk, modules, {
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(source, 'entry').chunk, modules, {
 		entrySource: source, programDomain: 'system', optLevel,
 	});
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
@@ -320,7 +320,7 @@ for (const optLevel of [3] as const) test(`O${optLevel}: written import aliases 
 		const source = [...imports, "local ordinary<const> = require('foo.lua')",
 			'struct record', '\tfirst: word[exact.count]', '\tsecond: word[prefixed.count]', '\tthird: word[ordinary.count]',
 			'end', 'return sizeof(record), exact.count, prefixed.count, ordinary.count'].join('\n');
-		const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'entry').chunk, modules, {
+		const compiled = compileTestSystemWithHeap(parseLuaChunk(source, 'entry').chunk, modules, {
 			entrySource: source, programDomain: 'system', optLevel,
 		});
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
@@ -347,7 +347,7 @@ for (const comparison of ['1 == limits.cells', 'limits.cells == 1', '1 ~= limits
 		const source = `local limits<const> = require('limits')\nreturn sizeof(word[(${comparison}) and 2 or 3])`;
 		const moduleSource = 'module<const>\nbss cells: word[2]\nreturn { cells = cells }';
 		for (const optLevel of [3] as const) {
-			assert.throws(() => compileLuaChunkToProgram(parseLuaChunk(source, 'entry').chunk, [{
+			assert.throws(() => compileTestSystemWithHeap(parseLuaChunk(source, 'entry').chunk, [{
 				path: 'limits', source: moduleSource, chunk: parseLuaChunk(moduleSource, 'limits').chunk,
 			}], { entrySource: source, programDomain: 'system', optLevel }), /Struct array length must be a positive compile-time integer/);
 		}

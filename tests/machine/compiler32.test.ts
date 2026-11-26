@@ -1,4 +1,4 @@
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileHeapServiceSystem, compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { runGuestToHalt } from '../helpers/cpu_execution';
 import { readLuaNumberLiteral, formatLuaNumberExpression } from '../../toolchain/ts/lua/syntax/number_expression';
 import { readFileSync } from 'node:fs';
@@ -18,6 +18,7 @@ import { applyBlua32LinkValues, linkSystemBlua32Image } from '../../toolchain/ts
 import { writeTestBlua32Rom } from '../helpers/blua32';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import * as v from '../../machine/ts/machine/cpu/value';
+import { runCpuWithinBudget } from '../helpers/cpu_execution';
 
 function compile(source: string, optLevel: 0 | 1 | 2 | 3) {
 	return compileLuaChunkToProgram(parseLuaChunk(source, 'numbers.lua').chunk, [], { entrySource: source, programDomain: 'system', optLevel });
@@ -119,11 +120,11 @@ for (const opt of [3] as const) test(`O${opt}: f32 and external f64 data initial
 for (const opt of [3] as const) test(`O${opt}: late ROM-address relocations update raw Integer/Float records`, () => {
 	const source = "local assets<const> = require('assets')\nreturn assets.start+4,assets.start/2";
 	const moduleSource = 'module<const>\nreturn {start=0}';
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'entry.lua').chunk, [{ path: 'assets', source: moduleSource, chunk: parseLuaChunk(moduleSource, 'assets.lua').chunk, linkValues: new Map([['start', 0x7ffffffc]]) }], { entrySource: source, programDomain: 'system', optLevel: opt });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(source, 'entry.lua').chunk, [{ path: 'assets', source: moduleSource, chunk: parseLuaChunk(moduleSource, 'assets.lua').chunk, linkValues: new Map([['start', 0x7ffffffc]]) }], { entrySource: source, programDomain: 'system', optLevel: opt });
 	const linked = linkSystemBlua32Image(encodeCompiledProgramObject(compiled), compiled.metadata, 0x100, PSX_MACHINE_SPEC.ramBytes, []);
 	for (const address of [0x7ffffffc, 0x1000000, 0xffffffff]) {
 		applyBlua32LinkValues(linked, compiled.constValueRelocs, 'assets', new Map([['start', address]]));
-		const { cpu } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(linked) }); cpu.runUntilDepth(0, 100000);
+		const { cpu } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(linked) }); runGuestToHalt(cpu, 100000);
 		const results: v.Value[] = []; cpu.readCompletionValues(results);
 		assert.deepEqual(results, [v.valueInteger((address + 4) | 0), v.valueFloat(Math.fround(address | 0) / 2)]);
 	}
@@ -137,9 +138,9 @@ for (const opt of [3] as const) for (const backend of [CpuExecutionBackend.Inter
 
 for (const opt of [3] as const) test(`O${opt}: loop unrolling follows wrapping Integer and binary32 additions`, () => {
 	for (const range of ['0x7ffffffe,0x7fffffff,1', '16777216.0,16777218.0,1.0']) {
-		const image = linkTestSystemBlua32(compile(`ticks=0;for i=${range} do ticks=ticks+1 end;return ticks`, opt));
+		const image = linkTestSystemBlua32(compileHeapServiceSystem(`ticks=0;for i=${range} do ticks=ticks+1 end;return ticks`, opt));
 		const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
-		assert.equal(cpu.runUntilDepth(0, 20000), RunResult.Yielded);
+		assert.equal(runCpuWithinBudget(cpu, 20000), RunResult.Yielded);
 		assert.ok(v.asInteger(cpu.getGlobalByKey(cpu.stringPool.find('ticks')!)) > 3);
 	}
 });

@@ -12,6 +12,7 @@
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 
 #include <algorithm>
@@ -842,6 +843,7 @@ void exactCallVarargSweep() {
 	for (int grant = 1; grant <= 64; ++grant) {
 		Machine native(image, false), scalar(image, true);
 		for (auto* machine : {&native, &scalar}) {
+			test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
 			machine->cpu.runUntilDepth(0, 4000);
 			auto* thread = machine->cpu.activeThread();
 			if (thread->frameDepth() > 1) machine->cpu.runUntilDepth(1, 100);

@@ -8,6 +8,7 @@
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/rom_header.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -201,6 +202,7 @@ struct Machine {
 		irq(memory), addresses(memory), cpu(memory, irq, addresses), scheduler(cpu), dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);
 		cpu.reset();
+		test::seedTestRomClosure(cpu, images.system.functionAddresses[1]);
 		memory.writeMappedU32LE(IO_CART_SELECT, slot);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

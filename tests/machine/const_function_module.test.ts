@@ -2,11 +2,12 @@ import { valueBool, valueInteger, valueFloat, numberToHost } from '../../machine
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 import { readLE32 } from '../../machine/ts/common/endian';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
 import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import {
 	disassembleTestBlua32Functions,
@@ -46,7 +47,7 @@ function parseSource(source: string, path: string) {
 }
 
 function compileWithModule(entrySource: string, modulePath: string, moduleSource: string, optLevel: OptimizationLevel = 0): CompiledSystemProgram {
-	return compileLuaChunkToProgram(
+	return compileTestSystemWithHeap(
 		parseSource(entrySource, 'entry.lua'),
 		[{ path: modulePath, chunk: parseSource(moduleSource, `${modulePath}.lua`), source: moduleSource }],
 		{ entrySource, optLevel, programDomain: 'system' },
@@ -245,7 +246,7 @@ test('const-function modules stay call targets without Lua value materialization
 local round_to_nearest<const> = require("${ROUND_TO_NEAREST_PATH}")
 return round_to_nearest(1.6)
 `;
-	const systemCompiled = compileLuaChunkToProgram(
+	const systemCompiled = compileTestSystemWithHeap(
 		parseSource(source, 'cart.lua'),
 		[module],
 		{ entrySource: source, programDomain: 'system' },
@@ -257,7 +258,7 @@ local dynamic = round_to_nearest
 return dynamic(1.6)
 `;
 	assert.throws(
-		() => compileLuaChunkToProgram(
+		() => compileTestSystemWithHeap(
 			parseSource(dynamicSource, 'cart.lua'),
 			[module],
 			{ entrySource: dynamicSource, programDomain: 'system' },
@@ -282,7 +283,7 @@ return { math = { clamp = clamp } }
 local api<const> = require("${modulePath}")
 return api.math.clamp(12, 0, 10)
 `;
-	const systemCompiled = compileLuaChunkToProgram(
+	const systemCompiled = compileTestSystemWithHeap(
 		parseSource(callSource, 'cart.lua'),
 		[module],
 		{ entrySource: callSource, programDomain: 'system' },
@@ -290,7 +291,7 @@ return api.math.clamp(12, 0, 10)
 	assert.deepEqual(runColdCompiled(systemCompiled), [valueInteger(10)]);
 	const rootSource = `return require("${modulePath}")`;
 	assert.throws(
-		() => compileLuaChunkToProgram(
+		() => compileTestSystemWithHeap(
 			parseSource(rootSource, 'cart.lua'),
 			[module],
 			{ entrySource: rootSource, programDomain: 'system' },
@@ -303,7 +304,7 @@ local dynamic = api
 return dynamic
 `;
 	assert.throws(
-		() => compileLuaChunkToProgram(
+		() => compileTestSystemWithHeap(
 			parseSource(aliasSource, 'cart.lua'),
 			[module],
 			{ entrySource: aliasSource, programDomain: 'system' },

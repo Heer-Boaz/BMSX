@@ -19,7 +19,7 @@ import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BiosCall } from '../../machine/ts/spec/bmsx/bios';
 import { HEAP_SERVICE_BIOS_CALL_OFFSET, HeapServiceBiosCallField, HEAP_SERVICE_IMAGE_FLAG } from '../../machine/ts/spec/bmsx/heap_service';
-import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 function assertParity(js: CPU, ref: CPU): void {
@@ -287,6 +287,7 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 		{ firstWord: 16, wordCount: 1 }, { firstWord: 16, wordCount: 1, staticClosure: false }], globalNames: ['target'] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.setGlobalByKey(cpu.stringPool.find('target')!, valueInteger(image.symbols.functionAddresses[1]));
 		cpu.runUntilDepth(0, 400);
 	}

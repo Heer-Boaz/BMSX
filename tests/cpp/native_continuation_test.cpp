@@ -7,6 +7,7 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 
 #include <chrono>
@@ -51,6 +52,7 @@ struct Machine {
 		irq(memory), addresses(memory), cpu(memory, irq, addresses), scheduler(cpu), dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);
 		cpu.reset();
+		test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 		memory.writeBytes(rootPc, rom.bytes.data() + rom.textAddress, MAPPED_PAGE_BYTE_SIZE);
 	}
 	static constexpr u32 rootPc = DYNAMIC_RAM_BASE + 0x4000;
@@ -194,6 +196,7 @@ void cartridgeReturnSelectsLiveBank() {
 		DeviceScheduler scheduler(cpu); DmaController dma(memory, cpu, irq, scheduler);
 		memory.cartridgeController().connect(memory, irq, dma);
 		cpu.reset();
+		test::seedTestRomClosure(cpu, system.functionAddresses[1]);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
 		cpu.runUntilDepth(0, 3);
 		auto* parent = cpu.rootThread()->firstFrame;
@@ -295,6 +298,7 @@ void observationAndLifecycle(int action) {
 		require(machine.cpu.getFrameDepth() == 1, "image replacement and frame rebinding retain return semantics");
 	} else {
 		machine.cpu.reset();
+		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 		require(!machine.cpu.rootThread()->firstFrame->nativeContinuationCells[0], "reset retires all native continuation bindings");
 		machine.cpu.runUntilDepth(0, 100);
 	}

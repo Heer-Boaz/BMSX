@@ -32,6 +32,7 @@ import {
 	CPU,
 	RunResult,
 } from '../../machine/ts/machine/cpu/cpu';
+import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { describeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
@@ -502,6 +503,21 @@ export function createTestBlua32PairCpu(
 	const cpu = new CPU(memory, irqController, executionAddressSpace, executionBackend);
 	cpu.reset();
 	return { cpu, memory, irqController, executionAddressSpace };
+}
+
+/**
+ * Fixture input for hand-addressed MAPPED images: preissue an immutable Closure
+ * without placing a call frame. The test is about using the record, not
+ * allocating it; cache misses in a real executable fixture use resident BIOS.
+ */
+export function seedTestRomClosure(cpu: CPU, address: number, domain: ExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID): number {
+	const image = cpu['executionImageForDomain'](domain);
+	assert.ok(image);
+	assert.ok(cpu['readFunctionRecordOnBus'](image, address, CPU['executionBusSignalsForDomain'](domain)));
+	const prototype = cpu['functionRecordLatch'];
+	assert.equal(prototype.romBacked, true);
+	assert.equal(prototype.recordUpvalueCount, 0);
+	return cpu['staticClosureFromLatch']();
 }
 
 export function runCompiledTestSystem(compiled: CompiledSystemProgram, cycleBudget: number): CPU {

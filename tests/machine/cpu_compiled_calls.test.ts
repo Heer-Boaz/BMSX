@@ -14,7 +14,7 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_CALL_NON_FUNCTION, LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 
 for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 	test(`compiled cross-page calls: open counts ${open}, RAM record offset ${recordOffset}`, () => {
@@ -119,6 +119,9 @@ test('CALL shares supplied argument slots without clearing them', () => {
 		{ firstWord: 6, wordCount: 2, numParams: 1, maxStack: 8 },
 	], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] }, RAM_CODE_FIXTURE_BYTES);
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	for (const { cpu } of machines) {
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
 	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
 	const entry = image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES;
@@ -179,6 +182,10 @@ for (const { numParams, maxStack, argCount } of [
 			{ wordIndex: 4, functionIndex: 1 },
 		] }, RAM_CODE_FIXTURE_BYTES);
 		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+		for (const { cpu } of machines) {
+			seedTestRomClosure(cpu, image.symbols.functionAddresses[2]);
+			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+		}
 		// The first guest call retains backing storage before the raw function
 		// record with parameters beyond maxStack is ever entered.
 		runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
@@ -254,6 +261,9 @@ test('CALL retains varargs below the relocated fixed-parameter window', () => {
 		{ firstWord: 5, wordCount: 2, numParams: 1, maxStack: 4, isVararg: true },
 	], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] }, RAM_CODE_FIXTURE_BYTES);
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	for (const { cpu } of machines) {
+		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
 	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
 	const entry = image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES;
@@ -307,6 +317,7 @@ test('RET admits only the source values the receiver actually reads', () => {
 		], exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
 		for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
 			const { cpu } = createTestSystemCpu(image, backend);
+			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 			const callCycles = BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL];
 			assert.equal(cpu.runUntilDepth(0, callCycles), RunResult.Yielded);
 			const caller = cpu.rootThread.frameAtDepth(0), callee = cpu.rootThread.frameAtDepth(1);
@@ -343,6 +354,7 @@ test('function records that exceed the physical stack or capture capacity fault 
 		writeLE32(image.romBytes, image.symbols.functionAddresses[1] - SYSTEM_ROM_BASE + field, 0xffffffff);
 		for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
 			const { cpu } = createTestSystemCpu(image, backend);
+			if (!captureCount) seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 			if (!captureCount) assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 			const caller = cpu.rootThread.frameAtDepth(0);
 			const value = caller.registers.get(0);
@@ -375,6 +387,8 @@ for (const wide of [false, true]) test(`generated CALL/RET preserve full state a
 	], exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] }, RAM_CODE_FIXTURE_BYTES);
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	seedTestRomClosure(js, image.symbols.functionAddresses[1]);
+	seedTestRomClosure(ref, image.symbols.functionAddresses[1]);
 	assert.equal(runCpuParity(js, ref, 10001), RunResult.Yielded);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	const executionImage = js.rootThread.frameAtDepth(0).executionImage;

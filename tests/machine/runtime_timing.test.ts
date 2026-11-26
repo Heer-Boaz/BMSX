@@ -56,7 +56,7 @@ import { advanceRuntimeTime, runDueRuntimeTimers } from '../../machine/ts/machin
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode, TABLE_INDEX_VISIT_CYCLES } from '../../machine/ts/spec/blua32/opcode';
-import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';
 import { applyRuntimeMachineState, captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -674,6 +674,7 @@ test('parked WIDE SETT resumes the fresh epoch and faults once through pcall', (
 	runtime.boot();
 	const { cpu, scheduler } = runtime.machine;
 	const fs = runtime.frameScheduler;
+	seedTestRomClosure(cpu, system.symbols.functionAddresses[1]);
 	cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
 	for (let n = 0; n < 3; ++n) cpu.runUntilDepth(0, 1);
 	assert.equal(cpu.getFrameDepth(), 2);

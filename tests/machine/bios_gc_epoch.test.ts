@@ -9,11 +9,12 @@ import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machi
 import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT,
 } from '../../machine/ts/spec/bmsx/heap_service';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const EPOCH = 'kernel/gc_epoch', entrySource = 'halt_until_irq';
 const basis = '04c10f896545d453bd50fe27ccb619b269966607';
@@ -25,7 +26,7 @@ const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control
 });
 
 for (const optLevel of [0, 3] as const) test(`BIOS epoch transitions preserve collector cursors and native pacing at O${optLevel}`, () => {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const image = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 	const indices = names.map(name => {
 		const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === EPOCH && entry.exportPathKey === name)!;
@@ -37,7 +38,7 @@ for (const optLevel of [0, 3] as const) test(`BIOS epoch transitions preserve co
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT);
 	const { cpu, memory } = createTestSystemCpu(image);
 	const oracle = createTestSystemCpu(image).cpu;
-	for (const target of [cpu, oracle]) assert.equal(target.runUntilDepth(0, 1024), RunResult.Halted);
+	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const metadata = management + HEAP_STRING_METADATA_OFFSET, state = cpu.heapAllocator.allocatorStateOffset();
 	const capacity = cpu.heapAllocator.capacityBytes();
