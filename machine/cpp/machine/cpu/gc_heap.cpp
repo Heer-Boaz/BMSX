@@ -611,11 +611,11 @@ size_t GcHeap::traceTableEntries(const TableRecord& table, u8 mode, u32 next, si
 	return work;
 }
 
-size_t GcHeap::traceRootBanks(size_t limit, size_t work) {
+size_t GcHeap::traceRootBanks(size_t limit, size_t work, GcRootBank stop) {
 	const u32 cursor = memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR);
 	u32 kind = cursor >> TRACE_CURSOR_BITS;
 	size_t next = cursor & TRACE_CURSOR_MASK;
-	for (; kind < static_cast<u32>(GcRootBank::End); ++kind, next = 0u) {
+	for (; kind < static_cast<u32>(stop); ++kind, next = 0u) {
 		const auto bank = static_cast<GcRootBank>(kind);
 		const size_t end = m_cpu.rootBankSlots(bank);
 		const bool globals = bank < GcRootBank::SystemConstants;
@@ -671,7 +671,9 @@ size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t limit, 
 #endif
 	markValue(root0); markValue(root1); markValue(root2);
 	work += m_stringPool.takeMarkWork();
-	if (work < limit) work = traceRootBanks(limit, work);
+	// Pending String operands have no outgoing edges. Only the stopped final
+	// pass needs their unread suffix before the intern pool can sweep.
+	if (work < limit) work = traceRootBanks(limit, work, final ? GcRootBank::End : GcRootBank::ConcatOperands);
 	if (memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR) == 0u) {
 		setRemarkStage(final ? RemarkStage::Trace : RemarkStage::None);
 		if (!final) setPhase(GcPhase::MarkAgain);
@@ -988,7 +990,7 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 		}
 		if (memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR) != 0u) {
 			work += m_stringPool.takeMarkWork();
-			if (work < limit) work = traceRootBanks(limit, work);
+			if (work < limit) work = traceRootBanks(limit, work, GcRootBank::ConcatOperands);
 		}
 		markValue(root0); markValue(root1); markValue(root2);
 		work += m_stringPool.takeMarkWork();

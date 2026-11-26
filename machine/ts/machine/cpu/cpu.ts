@@ -4610,10 +4610,6 @@ export class CPU implements MappedPageInvalidator {
 			if (i !== LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(this.luaFaultErrorStringIds[i]);
 		heap.markValue(this.stringIndexTable);
 		if (this.stringComparison.remaining !== 0) { heap.markString(this.stringComparison.left); heap.markString(this.stringComparison.right); }
-		if (this.concat.length !== 0) for (let i = this.concat.source; i < this.concat.values.length; ++i) {
-			const v = this.concat.values[i];
-			if (valueTag(v) === ValueTag.String) heap.markString(valuePayload(v));
-		}
 		if (this.pendingAllocation !== null) this.markPendingAllocationRoots(heap, this.pendingAllocation);
 	}
 
@@ -4629,6 +4625,7 @@ export class CPU implements MappedPageInvalidator {
 		if (bank === GcRootBank.SystemGlobals) return this.systemGlobalBank.count;
 		if (bank === GcRootBank.Globals) return this.globalBank.count;
 		if (bank === GcRootBank.Completion) return this.completionValueCount;
+		if (bank === GcRootBank.ConcatOperands) return this.concat.length ? this.concat.values.length - this.concat.source : 0;
 		const image = this.executionImagesByDomain[bank - GcRootBank.SystemConstants];
 		return image === null ? 0 : image.constantStringRoots.length;
 	}
@@ -4644,6 +4641,14 @@ export class CPU implements MappedPageInvalidator {
 		}
 		if (bank === GcRootBank.Completion) {
 			for (let slot = first; slot < end; ++slot) heap.markSlot(this.completionValueSlots, slot);
+			return;
+		}
+		if (bank === GcRootBank.ConcatOperands) {
+			const values = this.concat.values;
+			for (let slot = first; slot < end; ++slot) {
+				const v = values[this.concat.source + slot];
+				if (valueTag(v) === ValueTag.String) heap.markString(valuePayload(v));
+			}
 			return;
 		}
 		const image = this.executionImagesByDomain[bank - GcRootBank.SystemConstants]!;

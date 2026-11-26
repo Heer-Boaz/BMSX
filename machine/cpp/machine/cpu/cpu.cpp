@@ -2939,10 +2939,6 @@ void CPU::markRootHead(GcHeap& heap) {
 	for (const Value value : m_luaFaultErrorValues) heap.markValue(value);
 	heap.markValue(m_stringIndexTable);
 	if (m_stringComparison.remaining) { heap.markString(m_stringComparison.left); heap.markString(m_stringComparison.right); }
-	if (m_concat.length) for (size_t i = m_concat.source; i < m_concat.sources.size(); ++i) {
-		const Value v = m_concat.sources[i].value;
-		if (valueIsString(v)) heap.markString(asStringId(v));
-	}
 	if (allocationParked()) markPendingAllocationRoots(heap);
 }
 
@@ -2962,6 +2958,7 @@ size_t CPU::rootBankSlots(GcRootBank bank) const {
 	if (bank == GcRootBank::SystemGlobals) return m_systemGlobalBank.count();
 	if (bank == GcRootBank::Globals) return m_globalBank.count();
 	if (bank == GcRootBank::Completion) return m_completionValueCount;
+	if (bank == GcRootBank::ConcatOperands) return m_concat.length ? m_concat.sources.size() - m_concat.source : 0u;
 	const auto& image = m_executionImagesByDomain[static_cast<u32>(bank) - static_cast<u32>(GcRootBank::SystemConstants)];
 	return image ? image->constantStringRoots.size() : 0u;
 }
@@ -2978,6 +2975,13 @@ void CPU::markRootBank(GcHeap& heap, GcRootBank bank, size_t first, size_t end) 
 	}
 	if (bank == GcRootBank::Completion) {
 		for (size_t slot = first; slot < end; ++slot) heap.markValue(m_completionValues.get(slot));
+		return;
+	}
+	if (bank == GcRootBank::ConcatOperands) {
+		for (size_t slot = first; slot < end; ++slot) {
+			const Value v = m_concat.sources[m_concat.source + slot].value;
+			if (valueIsString(v)) heap.markString(asStringId(v));
+		}
 		return;
 	}
 	const auto& roots = m_executionImagesByDomain[static_cast<u32>(bank) - static_cast<u32>(GcRootBank::SystemConstants)]->constantStringRoots;

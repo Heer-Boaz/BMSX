@@ -638,9 +638,11 @@ converted non-String values. These charges apply even when an identical String
 already exists. Results of at most 256 bytes are charged at issue. For a
 longer representable result the CPU samples the operand values and their byte
 counts at issue, then assembles one byte per available result cycle. Writes
-to source registers after issue do not replace operands. Writes to String
-payloads cannot change the bytes already sampled. The destination is written
-only after the completed sequence has been interned; interrupts wait for
+to source registers after issue do not replace operands. Until their last byte
+has been sampled, source Strings remain reachable even if the source registers
+are overwritten. The final mark scans unread operands within its normal work
+quanta. Writes to String payloads cannot change bytes already sampled.
+The destination is written only after the completed sequence has been interned; interrupts wait for
 retirement. An allocation fault retains the charge. A concatenation result must fit the
 22-bit byte length of a RAM String. At 4 MiB or more the instruction raises
 out-of-memory without interning the result or collecting. Its byte charge

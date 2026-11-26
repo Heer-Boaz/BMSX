@@ -129,6 +129,54 @@ void grantedStringOrder(bool scalar, bool inclusive) {
 		"a saved first difference survives a change to consumed bytes and controls retirement");
 }
 
+void incrementalConcatRoots() {
+	constexpr int count = 48;
+	test::Blua32TestImage image;
+	image.text.resize(2 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::CONCATN), 0, 1, count);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = count + 1}};
+	CpuMachine m(image, true);
+	auto& cpu = m.cpu; auto& frame = m.restart(); auto& pool = cpu.stringPool(); auto& gc = cpu.gcHeap();
+	std::array<StringId, count> ids;
+	std::string expected;
+	for (int i = 0; i < count; ++i) {
+		const std::string text(16, static_cast<char>(65 + i));
+		ids[i] = pool.intern(text); expected += text; frame.registers.set(i + 1, valueString(ids[i]));
+	}
+	frame.setTop(count + 1);
+	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CONCATN)] + count);
+	for (int i = 0; i <= count; ++i) frame.registers.set(i, valueNil());
+	auto step = [&] {
+		if (gc.finalMarkPending()) gc.stepFinalMark(2);
+		else gc.step(valueNil(), valueNil(), valueNil(), 0, false, 2);
+	};
+	const auto color = m.memory.readRamRecordByte(ids[0] + 1);
+	step(); cpu.runUntilDepth(0, 7 * 16);
+	while (gc.active() && !gc.finalMarkPending()) {
+		require(m.memory.readRamRecordByte(ids[0] + 1) == color, "ordinary marking does not walk the pending operands");
+		step();
+	}
+	require(gc.finalMarkPending(), "the mutator stops before the intern pool sweep");
+	while (m.memory.readRamRecordByte(ids[7] + 1) == color && gc.finalMarkPending()) step();
+	require(m.memory.readRamRecordByte(ids[7] + 1) != color && m.memory.readRamRecordByte(ids[8] + 1) == color,
+		"the stopped collector yields inside the unread operand bank");
+	const auto state = cpu.captureRuntimeState(); const auto ram = m.memory.captureSaveState();
+	for (int grant : {2, 17}) {
+		m.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+		while (gc.active()) {
+			if (gc.finalMarkPending()) gc.stepFinalMark(grant);
+			else step();
+		}
+		for (int i = 0; i < count; ++i) {
+			const auto found = pool.find(std::string_view(expected).substr(i * 16, 16));
+			require(i < 7 ? !found : found == ids[i], "only unread sources retained across restore");
+		}
+		cpu.runUntilDepth(0, (count - 7) * 16);
+		require(pool.toString(asStringId(cpu.rootThread()->currentFrame->registers.get(0))) == expected, "restored concatenation retires");
+	}
+}
+
 void grantedConcat(bool scalar) {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -455,6 +503,7 @@ void mappedStringCopiesStorage() {
 } // namespace
 int main() {
 	try {
+		incrementalConcatRoots();
 		ramStringPorts();
 		mappedStringCopiesStorage();
 		for (const bool scalar : {true, false}) {

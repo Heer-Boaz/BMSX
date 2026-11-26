@@ -342,6 +342,47 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	}
 });
 
+test('incremental collection budgets CONCATN roots while the input frontier advances', () => {
+	const count = 48, code = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.CONCATN, 0, 1, count); writeInstruction(code, 1, OpCode.HALT, 0, 0, 0);
+	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({ text: code,
+		functions: [{ firstWord: 0, wordCount: 2, maxStack: count + 1 }] }), CpuExecutionBackend.Interpreter);
+	const frame = cpu.rootThread.currentFrame!, ids: number[] = [];
+	let expected = '';
+	for (let i = 0; i < count; ++i) {
+		const text = String.fromCharCode(65 + i).repeat(16);
+		const id = cpu.stringPool.intern(text);
+		ids.push(id); expected += text; frame.registers.setString(i + 1, id);
+	}
+	frame.top = count + 1;
+	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CONCATN] + count);
+	frame.registers.clear(count + 1);
+	const step = () => cpu.gc.finalMarkPending() ? cpu.gc.stepFinalMark(2) : cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 2);
+	const color = memory.readRamRecordByte(ids[0] + 1);
+	step();
+	cpu.runUntilDepth(0, 7 * 16);
+	while (cpu.gc.active() && !cpu.gc.finalMarkPending()) {
+		assert.equal(memory.readRamRecordByte(ids[0] + 1), color, 'ordinary marking does not walk the pending operands');
+		step();
+	}
+	assert.ok(cpu.gc.finalMarkPending());
+	while (memory.readRamRecordByte(ids[7] + 1) === color && cpu.gc.finalMarkPending()) step();
+	assert.notEqual(memory.readRamRecordByte(ids[7] + 1), color);
+	assert.equal(memory.readRamRecordByte(ids[8] + 1), color, 'the stopped grant ended inside the operand bank');
+	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	for (const grant of [2, 17]) {
+		memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+		while (cpu.gc.active()) {
+			if (cpu.gc.finalMarkPending()) cpu.gc.stepFinalMark(grant);
+			else step();
+		}
+		for (let i = 0; i < count; ++i)
+			assert.equal(cpu.stringPool.find(expected.slice(i * 16, i * 16 + 16)), i < 7 ? undefined : ids[i]);
+		cpu.runUntilDepth(0, (count - 7) * 16);
+		assert.equal(cpu.stringPool.bytes(cpu.rootThread.currentFrame!.registers.getStringId(0)), expected);
+	}
+});
+
 const portCode = new Uint8Array(INSTRUCTION_BYTES);
 writeInstruction(portCode, 0, OpCode.HALT, 0, 0, 0);
 const portImage = linkRawTestSystemBlua32({ text: portCode, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }] });

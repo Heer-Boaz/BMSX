@@ -62,7 +62,7 @@ export const GC_VISIT_MEMBER = 0x40;
 const VISIT_LINK_LOW_BITS = 32 - GC_GRAY_INDEX_BITS;
 const VISIT_LINK_HIGH_MASK = GC_GRAY_INDEX_MASK >>> VISIT_LINK_LOW_BITS;
 export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
-export const enum GcRootBank { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, Completion, End }
+export const enum GcRootBank { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, Completion, ConcatOperands, End }
 // Two unconnected selector inputs do not clock the collector.
 const GC_PHASE_SELECTOR = [GcPhase.Pause, GcPhase.Mark, GcPhase.MarkAgain, GcPhase.Atomic,
 	GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause, GcPhase.Pause];
@@ -566,11 +566,11 @@ export class GcHeap {
 			next < end ? (mode << TRACE_CURSOR_BITS) | next : 0);
 		return work;
 	}
-	private traceRootBanks(limit: number, work: number): number {
+	private traceRootBanks(limit: number, work: number, stop: GcRootBank): number {
 		const cursor = this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR);
 		let next = cursor & TRACE_CURSOR_MASK;
 		const strings = this.cpu.stringPool;
-		for (let kind = cursor >>> TRACE_CURSOR_BITS; kind < GcRootBank.End; ++kind, next = 0) {
+		for (let kind = cursor >>> TRACE_CURSOR_BITS; kind < stop; ++kind, next = 0) {
 			const end = this.cpu.rootBankSlots(kind);
 			const globals = kind < GcRootBank.SystemConstants;
 			const words = globals ? 3 : 1, worst = words + (globals ? 2 : 1);
@@ -622,7 +622,8 @@ export class GcHeap {
 		this.diagnostics?.phase('rootsNanoseconds');
 		this.markValue(t0); this.markValue(t1); this.markValue(t2);
 		work += this.cpu.stringPool.takeMarkWork();
-		if (work < limit) work = this.traceRootBanks(limit, work);
+		// Pending Strings are leaves; only the stopped final pass needs their unread suffix.
+		if (work < limit) work = this.traceRootBanks(limit, work, final ? GcRootBank.End : GcRootBank.ConcatOperands);
 		if (this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR) === 0) {
 			this.setRemarkStage(final ? RemarkStage.Trace : RemarkStage.None);
 			if (!final) this.setPhase(GcPhase.MarkAgain);
@@ -905,7 +906,7 @@ export class GcHeap {
 			}
 			if (this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR) !== 0) {
 				work += this.cpu.stringPool.takeMarkWork();
-				if (work < limit) work = this.traceRootBanks(limit, work);
+				if (work < limit) work = this.traceRootBanks(limit, work, GcRootBank.ConcatOperands);
 			}
 			this.markValue(t0); this.markValue(t1); this.markValue(t2);
 			work += this.cpu.stringPool.takeMarkWork();
