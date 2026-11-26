@@ -100,9 +100,15 @@ try {
 			}
 			memory.writeRamRecordWord(bss, 0x5eedaa55);
 			trace.push(`W ${bss} ${0x5eedaa55}`);
-			for (let i = 0; i < 256 && !cpu.heapServiceActive(); ++i) step();
-			assert.ok(cpu.heapServiceActive(), 'guest EXEC must enter private BIOS rather than native set_floor');
-			assert.equal(stage(), HeapServiceExecStage.First);
+			// The startup wrapper can reserve a canonical Closure through the
+			// same CPU lane. Follow the EXEC latch, not the shared active bit.
+			for (let i = 0; i < 8192 && stage() === HeapServiceExecStage.Idle; ++i) {
+				assert.notEqual(step(), RunResult.Halted, 'System boot reaches the guest EXEC instruction');
+				assert.equal(memory.ramBusEnd(), oldFloor);
+				assert.equal(cpu.activeCartridgeSlot(), SYSTEM_EXECUTION_DOMAIN_ID);
+			}
+			assert.equal(stage(), HeapServiceExecStage.First, 'guest EXEC must enter private BIOS rather than native set_floor');
+			assert.ok(cpu.heapServiceActive());
 			// The pending transfer belongs to its original cartridge, even
 			// though the same function-record address exists in both sockets.
 			memory.writeMappedWord(IO_CART_SELECT, 1);

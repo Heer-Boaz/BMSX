@@ -64,7 +64,14 @@ try {
 		const nativeObjectPath = join(directory, `object-edge-native-O${optLevel}.state`);
 		writeFileSync(rom, system.romBytes);
 		writeFileSync(seedPath, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
-		assert.equal(scheduler.runCpuSlice(0, 32768, undefined, CpuRunKind.Scheduled), RunResult.Halted);
+		const startup: string[] = [];
+		const bootGrant = 32768;
+		let boot = RunResult.Yielded;
+		for (let i = 0; i < 8 && boot === RunResult.Yielded; ++i) {
+			boot = scheduler.runCpuSlice(0, bootGrant, undefined, CpuRunKind.Scheduled);
+			startup.push(`${boot} ${bootGrant - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${gc.serviceStage()} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+		}
+		assert.equal(boot, RunResult.Halted, 'startup must retire its services and reach guest WAIT');
 		assert.equal(cpu.isHaltedUntilIrq(), true);
 		assert.equal(gc.phase(), GcPhase.Pause);
 		assert.equal(gc.fullEpochs(), 0);
@@ -192,12 +199,14 @@ try {
 		const secondLimit = String(hashBytes(secondEdge.ram, context + HeapServiceTraceField.Limit, 4));
 		const fromTs = run('ts-checkpoint', ['X', 'N', 'I', 'X', `p ${completedTick}`, hLimit, 'P'], partialPath);
 		assert.deepEqual(fromTs, ['0', secondPulse, secondLimit, parkedPc]);
-		const cpp = run('native', ['X', 'L 32768', 'p 0', `p ${completedTick}`, 'd', `p ${completedTick}`, hLimit,
+		const replay = run('native', ['X', ...startup.map(() => `L ${bootGrant}`), 'p 0', `p ${completedTick}`, 'd', `p ${completedTick}`, hLimit,
 			`x ${nativePath}`, `p ${completedTick}`, hEpoch, 'P', ...toObjects, `x ${nativeObjectPath}`, `p ${completedTick}`, 'N', 'I'], seedPath);
-		assert.deepEqual(cpp.slice(1, 3), ['0 0 0 0 0 1', firstPulse]);
-		assert.ok(+cpp[3].split(' ')[1] > 0, 'native instruction step advances the pressure service clock');
-		assert.deepEqual(cpp.slice(4, 9), [secondPulse, secondLimit, thirdPulse, epochHash, parkedPc]);
-		const objectOutput = cpp.slice(9, 9 + objectResults.length);
+		assert.deepEqual(replay.slice(0, startup.length), startup);
+		const cpp = replay.slice(startup.length);
+		assert.deepEqual(cpp.slice(0, 2), ['0 0 0 0 0 1', firstPulse]);
+		assert.ok(+cpp[2].split(' ')[1] > 0, 'native instruction step advances the pressure service clock');
+		assert.deepEqual(cpp.slice(3, 8), [secondPulse, secondLimit, thirdPulse, epochHash, parkedPc]);
+		const objectOutput = cpp.slice(8, 8 + objectResults.length);
 		for (const [index, want] of objectResults.entries()) {
 			if (majorMarkRetired !== -1 && (index === majorMarkRetired || index === objectEdge)) {
 				// Different source mirror opcodes partition the same exact
@@ -211,7 +220,7 @@ try {
 			const elapsed = (rows: string[]) => +rows[majorMarkRetired].split(' ')[1] + +rows[objectEdge].split(' ')[1];
 			assert.equal(elapsed(objectOutput), elapsed(objectResults), 'both cores stop at the same exact next VBlank');
 		}
-		assert.deepEqual(cpp.slice(9 + objectResults.length), [finish, '1']);
+		assert.deepEqual(cpp.slice(8 + objectResults.length), [finish, '1']);
 		const stageOffset = management + HEAP_SERVICE_GC_OFFSET + HeapServiceGcField.Stage;
 		const nativeStrings = run('native-string-handoff', ['X', `j ${stageOffset} ${HeapServiceGcStage.PressureStringSweep}`,
 			`H ${deadOffset} ${deadOffset + 4}`, 'P'], nativeObjectPath);
