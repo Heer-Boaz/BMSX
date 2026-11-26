@@ -46,7 +46,14 @@ enum class HeapServiceNewtField : uint32_t {
 	Stage = 0, Destination = 4, ArraySize = 8, HashSize = 12,
 	InstructionPc = 16, LastPc = 20, NextPc = 24, DirectRecovery = 28,
 };
-enum class HeapServiceNewtStage : uint32_t { Idle, Direct, Scheduled, RetryCurrent, RetryFresh, DirectRecovery };
+enum class HeapServiceNewtStage : uint32_t {
+	Idle, Direct, Scheduled, RetryCurrent, RetryFresh, DirectRecovery, LogicalAssist, PhysicalAssist, DirectLogicalRecovery,
+};
+
+constexpr uint32_t HEAP_SERVICE_NEWT_ASSIST_OFFSET = 0xf30;
+enum class HeapServiceNewtAssistField : uint32_t {
+	Budget = 0, EpochBefore = 4, Debt = 8, Pressure = 12, ReservationStage = 16,
+};
 
 constexpr uint32_t HEAP_SERVICE_GC_OFFSET = 0xf20;
 enum class HeapServiceGcField : uint32_t { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 };

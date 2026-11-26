@@ -4,10 +4,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { AllocationRecovery, CpuRunKind } from '../../../machine/ts/machine/cpu/cpu';
+import { GC_LAST_EPOCH_WORK, GC_PACE_PAID, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
+import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { LuaAllocationMode } from '../../../machine/ts/machine/cpu/lua_heap';
 import { TableHeader, TableRecords } from '../../../machine/ts/machine/cpu/table';
-import { ValueTag, valueInteger, valueNil, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { ValueTag, valueInteger, valueNil, valueString, valueTable, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { advanceRuntimeTime } from '../../../machine/ts/machine/runtime/cpu_executor';
 import { InstructionStepResult } from '../../../machine/ts/machine/runtime/frame/state';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
@@ -18,8 +20,9 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { BLUA32_STRING_RECORD_KIND } from '../../../machine/ts/spec/blua32/image_format';
 import {
-	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_NEWT_OFFSET,
-	HeapServiceGcStage, HeapServiceNewtField, HeapServiceNewtStage,
+	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_NEWT_ASSIST_OFFSET, HEAP_SERVICE_NEWT_OFFSET,
+	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceGcStage, HeapServiceNewtAssistField, HeapServiceNewtField,
+	HeapServiceNewtStage, HeapServiceTraceField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -442,6 +445,202 @@ try {
 			assert.deepEqual(expected.slice(result), results, 'C++ checkpoint resumes the same work and RAM on TS');
 			console.log(`BIOS-NEWT-HEAP-SERVICE:PASS ${label} (${output.length} observations, ${directOom ? 'Direct-recovery' : scenario === 'oom' || scenario === 'recovered' ? 'mid-reclamation' : 'mid-initialization'} rewind and cross-core restore)`);
 		}
+		// The guest executes the same NEWT after a real rooted graph has
+		// accumulated logical debt and a separate proportional pace debt.
+		const configuration = { systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC };
+		const runtime = new Runtime(configuration, runtimeInput), oracle = new Runtime(configuration, runtimeInput);
+		runtime.boot();
+		oracle.boot();
+		const { cpu, memory, scheduler } = runtime.machine;
+		const { gc, heapAllocator: arena, luaHeap: budget } = cpu;
+		for (let i = 0; i < 256 && cpu.readFramePc(cpu.getFrameDepth() - 1) !== newtPc; ++i)
+			scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
+		const caller = cpu.getFrameDepth() - 1;
+		assert.equal(cpu.readFramePc(caller), newtPc);
+		const atNewt = captureRuntimeSaveState(runtime);
+		const retained = cpu.createTable(8192, 0);
+		cpu.setGlobalByKey(cpu.stringPool.intern('newt-assist-live-table'), valueTable(retained));
+		for (const slot of [1, 33, 257, 513, 1025])
+			gc.tables.setInteger(retained, slot, valueString(cpu.stringPool.intern(`newt-assist-young-${slot}`)));
+		gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+		assert.equal(gc.phase(), GcPhase.Mark);
+		const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+		const state = arena.allocatorStateOffset(), stageAddress = management + HEAP_SERVICE_NEWT_OFFSET;
+		const stage = () => memory.readRamRecordWord(stageAddress + HeapServiceNewtField.Stage);
+		const occupied = arena.occupiedBytes(), logical = budget.usedBytes();
+		// Preserve the source pacer relation: with unit slope, pay-at is
+		// basis + 512 at paid = 0. The first 512 logical words cannot
+		// retire the physical growth relative to that basis.
+		const basis = occupied - 2048, ratio = 32768;
+		const paid = control + GC_PACE_PAID, payAt = paid + 4;
+		for (const [address, word] of [[paid - 12, basis], [paid - 8, ratio], [paid - 4, ratio], [paid, 0], [payAt, basis + 512]])
+			memory.writeRamRecordWord(address, word);
+		budget.setCollectionTarget(logical - 128);
+		const seeded = captureRuntimeSaveState(runtime);
+		const seedPath = join(directory, `assist-seed-O${optLevel}.state`);
+		const checkpointPath = join(directory, `assist-physical-O${optLevel}.state`);
+		const nativePath = join(directory, `assist-physical-native-O${optLevel}.state`);
+		writeFileSync(seedPath, encodeRuntimeSaveState(seeded));
+		applyRuntimeSaveState(oracle, seeded);
+		const sourceCpu = oracle.machine.cpu, sourceHeap = sourceCpu.luaHeap, sourceMemory = oracle.machine.memory;
+		const charge = TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(1, 8);
+		const requested = TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX + 5 + TableRecords.hashStorageBytes(8);
+		const epoch = control + GC_LAST_EPOCH_WORK - 4;
+		const policy = () => [sourceHeap.collectionTarget(), ...[epoch, paid, payAt].map(offset => sourceMemory.readRamRecordWord(offset))];
+		// The ample first guest grant does not clamp either source
+		// allowance. The unchanged native policy is the test oracle.
+		assert.equal(sourceHeap.prepareAllocation(charge, valueNil(), valueNil(), valueNil()), true);
+		const logicalPolicy = policy();
+		assert.ok(logicalPolicy[0] > budget.collectionTarget() && logicalPolicy[2] > 0);
+		sourceCpu.gc.assistBeforeReservation(requested);
+		const physicalPolicy = policy();
+		assert.ok(physicalPolicy[2] > logicalPolicy[2] && physicalPolicy[3] > logicalPolicy[3]);
+		assert.equal(physicalPolicy[0], logicalPolicy[0], 'physical pace credit does not change the logical collection target');
+		const allocator = hashBytes(seeded.ram, state, 0x200);
+
+		type Observation = { command: string; result: string; mirrorClock: boolean };
+		const observations: Observation[] = [];
+		function observe(command: string, result: string | number, mirrorClock = false) {
+			observations.push({ command, result: String(result), mirrorClock });
+		}
+		const bulk = 65536;
+		function grant(cycles: number, mirrorClock = false) {
+			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
+			const elapsed = cycles - cpu.instructionBudgetRemaining;
+			observe(`J ${cycles} 1`, `${result} ${elapsed} ${+cpu.heapServiceActive()} ${stage()} ${arena.occupiedBytes()} ${budget.usedBytes()}`, mirrorClock);
+			return elapsed;
+		}
+		function checkBeforeReservation(expected: number[]) {
+			assert.ok(cpu.heapServiceActive());
+			assert.equal(cpu.readFramePc(caller), newtPc);
+			assert.equal(cpu.allocationParked(), false);
+			assert.equal(arena.occupiedBytes(), occupied);
+			assert.equal(budget.usedBytes(), logical);
+			assert.equal(hashBytes(memory.ramData(), state, 0x200), allocator);
+			assert.deepEqual([budget.collectionTarget(), ...[epoch, paid, payAt].map(offset => memory.readRamRecordWord(offset))], expected);
+			observe(`H ${state} ${state + 0x200}`, allocator);
+			observe('P', `${caller + 1} ${newtPc}`);
+			for (const address of [management + HEAP_COLLECTION_TARGET_OFFSET, epoch, paid, payAt])
+				observe(`H ${address} ${address + 4}`, hashBytes(memory.ramData(), address, 4));
+		}
+		const initialPolicy = [logical - 128, ...[epoch, paid, payAt].map(offset => memory.readRamRecordWord(offset))];
+		const issued = grant(bulk);
+		assert.equal(stage(), HeapServiceNewtStage.LogicalAssist);
+		checkBeforeReservation(initialPolicy);
+		const assist = management + HEAP_SERVICE_NEWT_ASSIST_OFFSET;
+		const limit = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET + HeapServiceTraceField.Limit;
+		assert.deepEqual([HeapServiceNewtAssistField.Budget, HeapServiceNewtAssistField.EpochBefore, HeapServiceNewtAssistField.Debt,
+			HeapServiceNewtAssistField.Pressure, HeapServiceNewtAssistField.ReservationStage].map(field => memory.readRamRecordWord(assist + field)),
+			[bulk - issued, initialPolicy[1], charge + 128, 0, HeapServiceNewtStage.Scheduled]);
+		assert.equal(memory.readRamRecordWord(limit), logicalPolicy[2]);
+		observe(`H ${assist} ${assist + 20}`, hashBytes(memory.ramData(), assist, 20));
+		observe(`H ${limit} ${limit + 4}`, hashBytes(memory.ramData(), limit, 4));
+		const logicalEntry = captureRuntimeSaveState(runtime);
+		assert.ok(grant(1) > 0, 'ordinary BIOS instructions execute before any allocation');
+		let paidCycles = 0;
+		for (let i = 0; i < 16 && stage() === HeapServiceNewtStage.LogicalAssist; ++i) paidCycles += grant(bulk, true);
+		assert.ok(paidCycles > 0);
+		assert.equal(stage(), HeapServiceNewtStage.PhysicalAssist);
+		checkBeforeReservation(logicalPolicy);
+		const physicalAllowance = physicalPolicy[2] - logicalPolicy[2];
+		assert.equal(memory.readRamRecordWord(limit), physicalAllowance);
+		observe(`H ${limit} ${limit + 4}`, hashBytes(memory.ramData(), limit, 4));
+		const checkpoint = captureRuntimeSaveState(runtime);
+		writeFileSync(checkpointPath, encodeRuntimeSaveState(checkpoint));
+		const prefix = observations.splice(0);
+		applyRuntimeSaveState(runtime, logicalEntry);
+		for (let i = 0; i < 16384 && stage() === HeapServiceNewtStage.LogicalAssist; ++i)
+			scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
+		assert.equal(stage(), HeapServiceNewtStage.PhysicalAssist, 'retirement on a one-cycle grant still inherits NEWT’s original allowance');
+		assert.equal(memory.readRamRecordWord(limit), physicalAllowance);
+		assert.equal(arena.occupiedBytes(), occupied);
+		applyRuntimeSaveState(runtime, checkpoint);
+
+		function complete() {
+			let paidCycles = 0;
+			for (let i = 0; i < 16 && stage() === HeapServiceNewtStage.PhysicalAssist; ++i) paidCycles += grant(bulk, true);
+			assert.ok(paidCycles > 0);
+			assert.equal(stage(), HeapServiceNewtStage.Scheduled);
+			checkBeforeReservation(physicalPolicy);
+			for (let i = 0; i < 16 && cpu.getFrameDepth() !== 0; ++i) grant(bulk);
+			assert.equal(cpu.getFrameDepth(), 0);
+			assert.equal(cpu.readLuaFaultReasonWord(), 0);
+			assert.equal(runtime.readCompletionValues()[0], valueInteger(183));
+			assert.equal(valueTag(runtime.readCompletionValues()[1]), ValueTag.Table);
+			observe('C', 183);
+			observe(`H ${state} ${state + 0x200}`, hashBytes(memory.ramData(), state, 0x200));
+			return observations.splice(0);
+		}
+		const tail = complete();
+		applyRuntimeSaveState(runtime, checkpoint);
+		assert.deepEqual(complete(), tail);
+		function run(label: string, commands: string[], statePath: string) {
+			const trace = join(directory, `assist-O${optLevel}-${label}.txt`);
+			writeFileSync(trace, commands.join('\n'));
+			return execFileSync(native, [romPath, trace, statePath], { encoding: 'utf8' }).trimEnd().split('\n');
+		}
+		const commands = (rows: Observation[]) => rows.map(row => row.command);
+		const results = (rows: Observation[]) => rows.map(row => row.result);
+		const nativeOutput = run('native', ['X', ...commands(prefix), `x ${nativePath}`, ...commands(tail)], seedPath);
+		const expected = [...prefix, ...tail];
+		assert.equal(nativeOutput.length, expected.length);
+		for (const [index, row] of expected.entries()) {
+			if (!row.mirrorClock) assert.equal(nativeOutput[index], row.result, row.command);
+			else {
+				const actual = nativeOutput[index].split(' '), proposed = row.result.split(' ');
+				assert.ok(+actual[1] > 0);
+				assert.deepEqual([actual[0], ...actual.slice(2)], [proposed[0], ...proposed.slice(2)]);
+			}
+		}
+		// Each originating private frame retains its own operand policy on
+		// restore; the same-origin continuation must match exact cycles.
+		assert.deepEqual(run('ts-checkpoint', ['X', ...commands(tail)], checkpointPath), results(tail));
+		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativePath), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+		assert.deepEqual(results(complete()), nativeOutput.slice(prefix.length));
+		console.log(`BIOS-NEWT-HEAP-SERVICE:PASS O${optLevel}-scheduled-assist (logical and physical native policy, no premature reservation, cross-core restore)`);
+
+		applyRuntimeSaveState(runtime, atNewt);
+		// Exhaust only the test's logical quota. Keep the real allocator
+		// untouched and leave enough excess to deny the request after GC.
+		const quota = budget.capacity() + budget.usedBytes();
+		memory.writeRamRecordWord(budget.occupiedOffset, quota);
+		const quotaSeed = join(directory, `logical-quota-O${optLevel}.state`);
+		const beforeQuota = captureRuntimeSaveState(runtime);
+		writeFileSync(quotaSeed, encodeRuntimeSaveState(beforeQuota));
+		const physicalBeforeQuota = arena.occupiedBytes(), now = scheduler.nowCycles;
+		const issuedQuota = runtime.cpuExecution.runSuspendedUntilDepth(0, 1);
+		const quotaIssue = `${issuedQuota} ${scheduler.nowCycles - now} ${+cpu.heapServiceActive()} ${stage()} ${arena.occupiedBytes()} ${budget.usedBytes()}`;
+		assert.equal(stage(), HeapServiceNewtStage.DirectLogicalRecovery);
+		assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.MaintenanceRootHead);
+		assert.ok(cpu.heapServiceActive());
+		assert.equal(cpu.allocationParked(), false);
+		assert.equal(cpu.readFramePc(caller), newtPc);
+		assert.equal(arena.occupiedBytes(), physicalBeforeQuota);
+		assert.equal(budget.usedBytes(), quota);
+		const quotaArena = hashBytes(beforeQuota.ram, state, 0x200);
+		assert.equal(hashBytes(memory.ramData(), state, 0x200), quotaArena, 'logical refusal is not a physical reservation');
+		const reclaimAt = scheduler.nowCycles;
+		let visited = 0, lastResult = issuedQuota;
+		for (let i = 0; i < 65536 && stage() === HeapServiceNewtStage.DirectLogicalRecovery; ++i) {
+			assert.equal(cpu.readFramePc(caller), newtPc);
+			visited |= 1 << cpu.gc.serviceStage();
+			lastResult = runtime.cpuExecution.runSuspendedUntilDepth(0, 1);
+		}
+		assert.ok(visited & (1 << HeapServiceGcStage.AllocationRecoveryStringSweep), 'the admitted fresh epoch reached reclamation');
+		assert.ok(scheduler.nowCycles > reclaimAt);
+		assert.equal(cpu.heapServiceActive(), false);
+		assert.equal(stage(), HeapServiceNewtStage.Idle);
+		assert.equal(cpu.gc.phase(), GcPhase.Pause);
+		assert.equal(cpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP);
+		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
+		assert.equal(cpu.readEpcWord(), newtPc);
+		const quotaOutput = run('logical-quota', ['X', 'D 1', `H ${state} ${state + 0x200}`, 'P', `q ${HeapServiceNewtStage.Idle} 65536`, 'Z'], quotaSeed);
+		assert.deepEqual(quotaOutput.slice(0, 3), [quotaIssue, String(quotaArena), `${caller + 1} ${newtPc}`]);
+		const [returned, elapsed, active, retiredStage, physical, used, mask] = quotaOutput[3].split(' ').map(Number);
+		assert.ok(elapsed > 0);
+		assert.deepEqual([returned, active, retiredStage, physical, used, mask], [lastResult, 0, HeapServiceNewtStage.Idle, arena.occupiedBytes(), budget.usedBytes(), visited]);
+		assert.equal(quotaOutput[4], `${cpu.readCauseWord()} ${LUA_FAULT_REASON_OUT_OF_MEMORY} ${newtPc}`);
+		console.log(`BIOS-NEWT-HEAP-SERVICE:PASS O${optLevel}-direct-logical-quota (an admitted epoch before original-PC OOM, no premature reservation)`);
 	}
 	rmSync(directory, { recursive: true });
 } catch (error) {

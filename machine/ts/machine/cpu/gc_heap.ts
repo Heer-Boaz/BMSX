@@ -931,11 +931,11 @@ export class GcHeap {
 		this.memory.writeRamRecordWord(this.controlOffset + GC_PACE_PAY_AT, Math.min(MAIN_RAM_SIZE, Math.max(0, next)));
 	}
 
-	public assistBeforeReservation(requested: number, root0 = valueNil(), root1 = valueNil(), root2 = valueNil(), growingThread = 0): void {
+	public reservationAssistAllowance(requested: number): number | null {
 		const occupiedAfterRequest = this.arena.occupiedBytes() + requested;
 		const capacity = this.arena.capacityBytes();
 		if (occupiedAfterRequest < this.memory.readRamRecordWord(this.controlOffset + GC_PACE_PAY_AT)
-			&& occupiedAfterRequest < capacity) return;
+			&& occupiedAfterRequest < capacity) return null;
 		let allowance = GC_STEP_WORDS;
 		if (occupiedAfterRequest < capacity) {
 			const growth = occupiedAfterRequest - toSignedWord(this.memory.readRamRecordWord(this.controlOffset + GC_PACE_BASIS));
@@ -944,7 +944,12 @@ export class GcHeap {
 			const runway = this.memory.readRamRecordWord(this.controlOffset + GC_PACE_RUNWAY);
 			allowance = Math.min(GC_STEP_WORDS, Math.trunc(work / runway) - paid);
 		}
-		this.cpu.assistAllocation(root0, root1, root2, growingThread, allowance);
+		return allowance;
+	}
+
+	public assistBeforeReservation(requested: number, root0 = valueNil(), root1 = valueNil(), root2 = valueNil(), growingThread = 0): void {
+		const allowance = this.reservationAssistAllowance(requested);
+		if (allowance !== null) this.cpu.assistAllocation(root0, root1, root2, growingThread, allowance);
 	}
 
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false,
@@ -1120,6 +1125,11 @@ export class GcHeap {
 	}
 
 	public fullEpochs(): number { return this.memory.readRamRecordByte(this.controlOffset + GC_FULL_EPOCHS); }
+	public epochWork(): number { return this.memory.readRamRecordWord(this.controlOffset + GC_EPOCH_WORK); }
+	public workSinceEpoch(before: number): number {
+		const finished = this.memory.readRamRecordWord(this.controlOffset + (this.active() ? GC_EPOCH_WORK : GC_LAST_EPOCH_WORK));
+		return (finished - before) >>> 0;
+	}
 	public stoppedFinalMarkPending(): boolean { return this.finalMarkPending() && !this.cpu.tableRebuild.record && !this.fullEpochs(); }
 	public requestFullCollection(): void {
 		if (this.diagnostics !== null) ++this.diagnostics.fullCollections;

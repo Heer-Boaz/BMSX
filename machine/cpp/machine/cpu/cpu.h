@@ -522,9 +522,12 @@ private:
 	u32 reserveNewTable(CallFrame&, int destination, int arraySize, int hashSize);
 	bool beginNewTableReservation(CallFrame&, PendingTableCreation, HeapServiceNewtStage, u32 nextPc);
 	void startNewTableReservation(u32 array, u32 hash, u32 arrayBytes, u32 hashBytes, u32 charged);
+	void startNewTablePhysicalAssist(HeapServiceNewtStage stage, int budget, u32 array, u32 hash, u32 arrayBytes, u32 hashBytes, u32 charged);
 	void finishNewTableReservation();
+	void stepNewTableCollection(size_t words);
+	void startDirectNewTableLogicalEpoch();
 	void advanceDirectNewTableRecovery();
-	void finishDirectNewTableRecovery();
+	void finishNewTableCollection(HeapServiceNewtStage stage);
 	void retireNewTable(CallFrame&, int destination, u32 address);
 	void markPendingAllocationRoots(GcHeap& heap);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);

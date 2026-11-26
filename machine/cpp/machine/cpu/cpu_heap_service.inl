@@ -14,7 +14,8 @@ static_assert(HEAP_SERVICE_REMARK_HEAD_OFFSET + static_cast<u32>(HeapServiceRema
 static_assert(HEAP_SERVICE_REMARK_FAULTS_OFFSET + (LUA_FAULT_REASON_INDEX_NAN + 1u) * sizeof(u32) <= HEAP_SERVICE_OBJECT_SWEEP_OFFSET);
 static_assert(HEAP_SERVICE_OBJECT_SWEEP_OFFSET + static_cast<u32>(HeapServiceObjectSweepField::ProtectedCapacity) + sizeof(u32) <= HEAP_SERVICE_TRACE_QUANTUM_OFFSET);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
-static_assert(HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::QuantumLimit) + sizeof(u32) <= RUNTIME_MANAGEMENT_SIZE);
+static_assert(HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::QuantumLimit) + sizeof(u32) <= HEAP_SERVICE_NEWT_ASSIST_OFFSET);
+static_assert(HEAP_SERVICE_NEWT_ASSIST_OFFSET + static_cast<u32>(HeapServiceNewtAssistField::ReservationStage) + sizeof(u32) <= RUNTIME_MANAGEMENT_SIZE);
 
 void CPU::initializeHeapService() {
 	const u32 management = RAM_BASE + m_heapAllocator.managementOffset();

@@ -39,28 +39,45 @@ export class LuaHeap {
 		this.cpu.memory.writeRamRecordWord(this.targetAddress, bytes);
 	}
 
-	public prepareAllocation(byteCount: number, root0: Value, root1: Value,
-		root2: Value, growingThread = 0): boolean {
-		const capacity = this.capacity();
+	public allocationDebt(byteCount: number): number {
 		const nextBytes = this.usedBytes() + byteCount;
-		if (nextBytes > capacity) return false;
+		if (nextBytes > this.capacity()) return -1;
 		const target = this.collectionTarget();
-		if (nextBytes <= target) return true;
-		if (decodeGcPhase(this.cpu.memory.readRamRecordByte(this.gcControlAddress)) >= GcPhase.Atomic) return true;
-		const gc = this.cpu.gc;
-		const reserve = capacity - (capacity >>> COLLECTION_RESERVE_SHIFT);
-		const pressure = nextBytes > reserve;
-		const debt = nextBytes - target;
-		const allowance = pressure ? GC_STEP_WORDS : Math.min(GC_STEP_WORDS, Math.max(GC_ASSIST_MIN_WORDS, (debt + 1) >>> 1));
-		const work = this.cpu.assistAllocation(root0, root1, root2, growingThread, allowance);
-		if (!work || !gc.active()) return true;
+		if (nextBytes <= target) return 0;
+		if (decodeGcPhase(this.cpu.memory.readRamRecordByte(this.gcControlAddress)) >= GcPhase.Atomic) return 0;
+		return nextBytes - target;
+	}
+
+	public logicalAssistPressure(byteCount: number): boolean {
+		const capacity = this.capacity();
+		return this.usedBytes() + byteCount > capacity - (capacity >>> COLLECTION_RESERVE_SHIFT);
+	}
+
+	public logicalAssistAllowance(debt: number, pressure: boolean): number {
+		return pressure ? GC_STEP_WORDS : Math.min(GC_STEP_WORDS, Math.max(GC_ASSIST_MIN_WORDS, (debt + 1) >>> 1));
+	}
+
+	public creditLogicalAssist(byteCount: number, debt: number, pressure: boolean, work: number): void {
+		if (!work || !this.cpu.gc.active()) return;
 		if (pressure) {
 			this.setCollectionTarget(this.usedBytes() + Math.trunc(GC_ASSIST_BYTES * Math.min(work, GC_STEP_WORDS) / GC_STEP_WORDS));
 		} else {
 			// A work unit covers four bytes at a two-times pace. Preserve
 			// unpaid debt and count the pending request in the new frontier.
+			const capacity = this.capacity();
+			const reserve = capacity - (capacity >>> COLLECTION_RESERVE_SHIFT);
 			this.setCollectionTarget(Math.min(reserve, Math.max(0, this.usedBytes() + byteCount + 2 * work - debt)));
 		}
+	}
+
+	public prepareAllocation(byteCount: number, root0: Value, root1: Value,
+		root2: Value, growingThread = 0): boolean {
+		const debt = this.allocationDebt(byteCount);
+		if (debt < 0) return false;
+		if (debt === 0) return true;
+		const pressure = this.logicalAssistPressure(byteCount);
+		const work = this.cpu.assistAllocation(root0, root1, root2, growingThread, this.logicalAssistAllowance(debt, pressure));
+		this.creditLogicalAssist(byteCount, debt, pressure, work);
 		return true;
 	}
 

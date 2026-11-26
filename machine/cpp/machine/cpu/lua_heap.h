@@ -30,6 +30,10 @@ public:
 	// Run an ordinary assist; a false result means the logical request
 	// needs recovery before it can be admitted.
 	bool prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread = 0u);
+	i32 allocationDebt(size_t byteCount) const noexcept;
+	bool logicalAssistPressure(size_t byteCount) const;
+	static size_t logicalAssistAllowance(size_t debt, bool pressure);
+	void creditLogicalAssist(size_t byteCount, size_t debt, bool pressure, size_t work);
 	// Admit a positive logical increase without running the collector. The
 	// owner commits the increase with its storage mutation.
 	bool canAdmitWithoutAssist(size_t byteCount) const noexcept;
@@ -64,8 +68,6 @@ public:
 
 private:
 	bool prepareFixedAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread = 0u);
-	enum class LuaAllocationAssist { None, Step, Limit };
-	LuaAllocationAssist allocationAssist(size_t nextBytes) const noexcept;
 	u32 reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, u32 charged, u32 secondBytes, u32 secondField);
 	void accountAllocation(u32 bytes);
 	void assistBeforeReservation(size_t requested, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);

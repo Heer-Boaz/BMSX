@@ -1531,14 +1531,16 @@ replans the insertion using the surviving mappings. No table or new mapping
 is visible until its reservation succeeds. Interrupt entry and the following
 instruction wait until the request completes or raises its error.
 
-When an instruction assists incremental collection to admit a logical charge
-or reserve physical storage, it pays **3 cycles per collector work word**
-actually performed, not per word requested. Logical and physical
-assists each request at most one word per three remaining grant cycles. Fewer
-than three cycles defer the assist, not the reservation. An indivisible
-scan such as a record header may exceed the requested work. The charge stays
-with the instruction even if the reservation later fails or parks. A retry does not
-repay completed work. An explicit step or full collection also pays 3 cycles per work word,
+Logical and physical assists each request at most one work word per three
+remaining cycles of the issuing grant. Fewer than three cycles defer the
+assist, not the reservation. An indivisible scan such as a record header may
+exceed the requested work. For `NEWT`, the resident memory routine performs
+these assists on ordinary CPU grants before attempting the reservation.
+Completed work counts toward the collector's next allowance without a second
+CPU charge. Other assists performed as part of the issuing instruction pay
+**3 cycles per collector work word** actually performed, not per word requested.
+That charge remains even if a reservation later fails or parks, and a retry
+does not repay completed work. An explicit step or full collection also pays 3 cycles per work word,
 including work to finish an already active cycle, except for the ordinary
 CPU cycles of the resident routine during a full collection. This also applies when
 program replacement requests a collection to free its static region.

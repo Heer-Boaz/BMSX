@@ -38,12 +38,35 @@ size_t LuaHeap::usedBytes() const {
 	return m_cpu.memory().readRamRecordWord(m_occupiedAddress);
 }
 
-LuaHeap::LuaAllocationAssist LuaHeap::allocationAssist(size_t nextBytes) const noexcept {
-	if (nextBytes > capacity()) return LuaAllocationAssist::Limit;
-	if (nextBytes > collectionTarget()
-		&& GcHeap::decodePhase(m_cpu.memory().readRamRecordByte(m_gcControlAddress)) < GcPhase::Atomic)
-		return LuaAllocationAssist::Step;
-	return LuaAllocationAssist::None;
+i32 LuaHeap::allocationDebt(size_t byteCount) const noexcept {
+	const size_t nextBytes = usedBytes() + byteCount;
+	if (nextBytes > capacity()) return -1;
+	const u32 target = collectionTarget();
+	if (nextBytes <= target
+		|| GcHeap::decodePhase(m_cpu.memory().readRamRecordByte(m_gcControlAddress)) >= GcPhase::Atomic)
+		return 0;
+	return static_cast<i32>(nextBytes - target);
+}
+
+bool LuaHeap::logicalAssistPressure(size_t byteCount) const {
+	const size_t limit = capacity();
+	return usedBytes() + byteCount > limit - (limit >> COLLECTION_RESERVE_SHIFT);
+}
+
+size_t LuaHeap::logicalAssistAllowance(size_t debt, bool pressure) {
+	return pressure ? GC_STEP_WORDS : std::min(GC_STEP_WORDS, std::max(GC_ASSIST_MIN_WORDS, (debt + 1u) >> 1u));
+}
+
+void LuaHeap::creditLogicalAssist(size_t byteCount, size_t debt, bool pressure, size_t work) {
+	if (!work || !m_cpu.collecting()) return;
+	if (pressure) {
+		setCollectionTarget(usedBytes() + GC_ASSIST_BYTES * std::min(work, GC_STEP_WORDS) / GC_STEP_WORDS);
+	} else {
+		// Two work bytes per allocation byte, four work bytes per word.
+		const size_t limit = capacity(), reserveEdge = limit - (limit >> COLLECTION_RESERVE_SHIFT);
+		const size_t credited = usedBytes() + byteCount + 2u * work;
+		setCollectionTarget(static_cast<u32>(std::min(reserveEdge, credited > debt ? credited - debt : 0u)));
+	}
 }
 
 bool LuaHeap::canAdmitWithoutAssist(size_t byteCount) const noexcept {
@@ -51,7 +74,7 @@ bool LuaHeap::canAdmitWithoutAssist(size_t byteCount) const noexcept {
 	(void)byteCount;
 	return false;
 #else
-	return allocationAssist(usedBytes() + byteCount) == LuaAllocationAssist::None;
+	return allocationDebt(byteCount) == 0;
 #endif
 }
 
@@ -59,27 +82,13 @@ bool LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Valu
 #if defined(BMSX_GC_STRESS)
 	stressHeapAllocation(*this);
 #endif
-	const size_t nextBytes = usedBytes() + byteCount;
-	const auto assist = allocationAssist(nextBytes);
-	if (assist == LuaAllocationAssist::Limit) return false;
-	if (assist == LuaAllocationAssist::Step) {
-		const size_t limit = capacity();
-		const size_t reserveEdge = limit - (limit >> COLLECTION_RESERVE_SHIFT);
-		if (nextBytes > reserveEdge) {
-			const size_t work = m_cpu.assistAllocation(root0, root1, root2, growingThread, GC_STEP_WORDS);
-			if (work && m_cpu.collecting())
-				setCollectionTarget(usedBytes() + GC_ASSIST_BYTES * std::min(work, GC_STEP_WORDS) / GC_STEP_WORDS);
-		} else {
-			// Lua's allocation debt, credited in actual collector work.
-			// Two work bytes per allocation byte, four work bytes per word.
-			const size_t debt = nextBytes - collectionTarget();
-			const size_t words = std::min(GC_STEP_WORDS, std::max(GC_ASSIST_MIN_WORDS, (debt + 1u) >> 1u));
-			const size_t work = m_cpu.assistAllocation(root0, root1, root2, growingThread, words);
-			if (work && m_cpu.collecting()) {
-				const size_t credited = usedBytes() + byteCount + 2u * work;
-				setCollectionTarget(static_cast<u32>(std::min(reserveEdge, credited > debt ? credited - debt : 0u)));
-			}
-		}
+	const i32 debt = allocationDebt(byteCount);
+	if (debt < 0) return false;
+	if (debt > 0) {
+		const bool pressure = logicalAssistPressure(byteCount);
+		const size_t words = logicalAssistAllowance(debt, pressure);
+		const size_t work = m_cpu.assistAllocation(root0, root1, root2, growingThread, words);
+		creditLogicalAssist(byteCount, debt, pressure, work);
 	}
 	return true;
 }

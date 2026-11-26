@@ -1,5 +1,5 @@
 import { ValueMoveKind } from '../../spec/blua32/instruction_format';
-import { GcHeap, GcRootBank, GC_WORK_WORD_CYCLES } from './gc_heap';
+import { GcHeap, GcRootBank, gcPacedPhase, GC_WORK_WORD_CYCLES } from './gc_heap';
 import { ConcatAssembly, type ConcatAssemblyState } from './concat_assembly';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
@@ -181,6 +181,7 @@ import {
 	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceExecStage, HeapServiceGcStage, HeapServiceNewtField, HeapServiceNewtStage, HeapServiceOperation,
+	HeapServiceNewtAssistField,
 	HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
 	HEAP_SERVICE_ROOT_BANK_SIZE, HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_PORT_BASE,
 	HEAP_SERVICE_ROOT_PORT_BYTES, HEAP_SERVICE_ROOT_PORT_SHIFT, HEAP_SERVICE_ROOT_PORT_STRIDE, HeapServiceRootBankField, HeapServiceRootPlane,
@@ -693,13 +694,17 @@ export class CPU implements MappedPageInvalidator {
 
 	private beginNewTableReservation(frame: CallFrame, destination: number, arraySize: number, hashSize: number,
 		stage: HeapServiceNewtStage, nextPc: number): boolean {
-		const mode = stage === HeapServiceNewtStage.Direct ? LuaAllocationMode.Direct
-			: stage === HeapServiceNewtStage.Scheduled ? LuaAllocationMode.Scheduled : LuaAllocationMode.Retry;
+		const retry = stage === HeapServiceNewtStage.RetryCurrent || stage === HeapServiceNewtStage.RetryFresh;
 		const hashCapacity = TableRecords.hashCapacity(hashSize);
 		const arrayBytes = 5 * arraySize, hashBytes = TableRecords.hashStorageBytes(hashCapacity);
 		const charged = TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(arraySize, hashCapacity);
-		const recovery = this.luaHeap.admitRecordAllocation(charged, TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX + arrayBytes + hashBytes, mode);
-		if (recovery === null) return false;
+		const debt = retry ? 0 : this.luaHeap.allocationDebt(charged);
+		if (retry) {
+			if (this.luaHeap.usedBytes() + charged > this.luaHeap.capacity()) return false;
+		} else if (debt < 0) {
+			if (charged > this.luaHeap.capacity()) throw LUA_OUT_OF_MEMORY_SIGNAL;
+			if (stage === HeapServiceNewtStage.Scheduled) return false;
+		}
 		const base = this.heapService.newTableAddress, memory = this.memory;
 		memory.writeRamRecordWord(base + HeapServiceNewtField.Destination, destination);
 		memory.writeRamRecordWord(base + HeapServiceNewtField.ArraySize, arraySize);
@@ -707,11 +712,46 @@ export class CPU implements MappedPageInvalidator {
 		memory.writeRamRecordWord(base + HeapServiceNewtField.InstructionPc, this.currentInstructionPc);
 		memory.writeRamRecordWord(base + HeapServiceNewtField.LastPc, this.lastPc);
 		memory.writeRamRecordWord(base + HeapServiceNewtField.NextPc, nextPc);
-		memory.writeRamRecordWord(base + HeapServiceNewtField.DirectRecovery, recovery);
-		memory.writeRamRecordWord(base + HeapServiceNewtField.Stage, stage);
+		memory.writeRamRecordWord(base + HeapServiceNewtField.DirectRecovery, LuaAllocationRecovery.CurrentOrFresh);
 		frame.pc = this.currentInstructionPc;
-		this.startNewTableReservation(arraySize, hashCapacity, arrayBytes, hashBytes, charged);
+		const budget = retry ? 0 : Math.max(this.instructionBudgetRemaining, 0);
+		const assist = this.heapService.newTableAssistAddress;
+		if (debt < 0) {
+			memory.writeRamRecordWord(assist + HeapServiceNewtAssistField.Budget, budget);
+			this.beginDirectNewTableEpoch(HeapServiceNewtStage.DirectLogicalRecovery);
+		} else if (debt > 0 && budget >= GC_WORK_WORD_CYCLES) {
+			const pressure = this.luaHeap.logicalAssistPressure(charged);
+			memory.writeRamRecordWord(assist + HeapServiceNewtAssistField.Budget, budget);
+			memory.writeRamRecordWord(assist + HeapServiceNewtAssistField.EpochBefore, this.gc.epochWork());
+			memory.writeRamRecordWord(assist + HeapServiceNewtAssistField.Debt, debt);
+			memory.writeRamRecordWord(assist + HeapServiceNewtAssistField.Pressure, +pressure);
+			const words = Math.min(this.luaHeap.logicalAssistAllowance(debt, pressure), Math.trunc(budget / GC_WORK_WORD_CYCLES));
+			this.runNewTableAssist(HeapServiceNewtStage.LogicalAssist, stage, words);
+		} else {
+			this.reserveNewTableAfterAdmission(stage, arraySize, hashCapacity, arrayBytes, hashBytes, charged, budget);
+		}
 		return true;
+	}
+
+	private reserveNewTableAfterAdmission(stage: HeapServiceNewtStage, array: number, hash: number,
+		arrayBytes: number, hashBytes: number, charged: number, budget: number): void {
+		if (budget >= GC_WORK_WORD_CYCLES && gcPacedPhase(this.gc.phase())) {
+			const allowance = this.gc.reservationAssistAllowance(TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX + arrayBytes + hashBytes);
+			if (allowance !== null) {
+				this.runNewTableAssist(HeapServiceNewtStage.PhysicalAssist, stage, Math.min(allowance, Math.trunc(budget / GC_WORK_WORD_CYCLES)));
+				return;
+			}
+		}
+		this.memory.writeRamRecordWord(this.heapService.newTableAddress + HeapServiceNewtField.Stage, stage);
+		this.startNewTableReservation(array, hash, arrayBytes, hashBytes, charged);
+	}
+
+	private runNewTableAssist(stage: HeapServiceNewtStage, reservation: HeapServiceNewtStage, words: number): void {
+		this.memory.writeRamRecordWord(this.heapService.newTableAssistAddress + HeapServiceNewtAssistField.ReservationStage, reservation);
+		this.memory.writeRamRecordWord(this.heapService.newTableAddress + HeapServiceNewtField.Stage, stage);
+		this.chargeCollectionWork(this.gc.step(valueNil(), valueNil(), valueNil(), 0, false, words,
+			HeapServiceGcStage.AllocationRecoveryStringSweep, this.systemImage.heapServiceFunctions!));
+		if (!this.heapServiceActive()) this.finishNewTableCollection(stage);
 	}
 
 	private startNewTableReservation(array: number, hash: number, arrayBytes: number, hashBytes: number, charged: number): void {
@@ -746,11 +786,7 @@ export class CPU implements MappedPageInvalidator {
 		if (stage === HeapServiceNewtStage.Direct) {
 			// Every partial reservation was released. Publish the original
 			// one-epoch recovery policy before the next BIOS instruction.
-			const recoveryAddress = base + HeapServiceNewtField.DirectRecovery;
-			const recovery = this.gc.beginAllocationRecovery(memory.readRamRecordWord(recoveryAddress) as LuaAllocationRecovery);
-			memory.writeRamRecordWord(recoveryAddress, recovery);
-			memory.writeRamRecordWord(base + HeapServiceNewtField.Stage, HeapServiceNewtStage.DirectRecovery);
-			this.advanceDirectNewTableRecovery();
+			this.beginDirectNewTableEpoch(HeapServiceNewtStage.DirectRecovery);
 			return;
 		}
 		if (stage === HeapServiceNewtStage.RetryFresh) throw LUA_OUT_OF_MEMORY_SIGNAL;
@@ -767,6 +803,24 @@ export class CPU implements MappedPageInvalidator {
 		this.parkAllocation(frame, { kind: PendingAllocationKind.TableCreation, destination, arraySize, hashSize });
 	}
 
+	private beginDirectNewTableEpoch(stage: HeapServiceNewtStage): void {
+		const memory = this.memory, base = this.heapService.newTableAddress;
+		const recoveryAddress = base + HeapServiceNewtField.DirectRecovery;
+		const next = memory.readRamRecordWord(recoveryAddress) as LuaAllocationRecovery;
+		if (stage === HeapServiceNewtStage.DirectLogicalRecovery && next === LuaAllocationRecovery.Exhausted) {
+			this.currentInstructionPc = memory.readRamRecordWord(base + HeapServiceNewtField.InstructionPc);
+			this.lastPc = memory.readRamRecordWord(base + HeapServiceNewtField.LastPc);
+			this.lastExecutionDomainId = this.activeExecutionDomainId;
+			memory.writeRamRecordWord(base + HeapServiceNewtField.Stage, HeapServiceNewtStage.Idle);
+		}
+		const recovery = this.gc.beginAllocationRecovery(next);
+		memory.writeRamRecordWord(recoveryAddress, recovery);
+		if (stage === HeapServiceNewtStage.DirectLogicalRecovery)
+			memory.writeRamRecordWord(this.heapService.newTableAssistAddress + HeapServiceNewtAssistField.EpochBefore, this.gc.epochWork());
+		memory.writeRamRecordWord(base + HeapServiceNewtField.Stage, stage);
+		this.advanceDirectNewTableRecovery();
+	}
+
 	private advanceDirectNewTableRecovery(): void {
 		const services = this.systemImage.heapServiceFunctions!;
 		do {
@@ -779,17 +833,35 @@ export class CPU implements MappedPageInvalidator {
 		} while (!this.heapServiceActive() && this.gc.active());
 	}
 
-	private finishDirectNewTableRecovery(): void {
-		if (this.gc.active()) {
+	private finishNewTableCollection(stage: HeapServiceNewtStage): void {
+		const directEpoch = stage === HeapServiceNewtStage.DirectRecovery || stage === HeapServiceNewtStage.DirectLogicalRecovery;
+		if (directEpoch && this.gc.active()) {
 			this.advanceDirectNewTableRecovery();
 			return;
 		}
-		const base = this.heapService.newTableAddress, memory = this.memory;
+		const base = this.heapService.newTableAddress, assist = this.heapService.newTableAssistAddress, memory = this.memory;
 		const arraySize = memory.readRamRecordWord(base + HeapServiceNewtField.ArraySize);
 		const hashCapacity = TableRecords.hashCapacity(memory.readRamRecordWord(base + HeapServiceNewtField.HashSize));
-		memory.writeRamRecordWord(base + HeapServiceNewtField.Stage, HeapServiceNewtStage.Direct);
-		this.startNewTableReservation(arraySize, hashCapacity, 5 * arraySize, TableRecords.hashStorageBytes(hashCapacity),
-			TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(arraySize, hashCapacity));
+		const charged = TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(arraySize, hashCapacity);
+		const reservation = directEpoch ? HeapServiceNewtStage.Direct
+			: memory.readRamRecordWord(assist + HeapServiceNewtAssistField.ReservationStage) as HeapServiceNewtStage;
+		let budget = 0;
+		if (stage === HeapServiceNewtStage.LogicalAssist || stage === HeapServiceNewtStage.DirectLogicalRecovery) {
+			const work = this.gc.workSinceEpoch(memory.readRamRecordWord(assist + HeapServiceNewtAssistField.EpochBefore));
+			// The original grant still sizes the later physical assist. This
+			// updates only that policy allowance, not the actual CPU clock.
+			budget = Math.max(0, memory.readRamRecordWord(assist + HeapServiceNewtAssistField.Budget) - GC_WORK_WORD_CYCLES * work);
+			if (stage === HeapServiceNewtStage.LogicalAssist) {
+				this.luaHeap.creditLogicalAssist(charged, memory.readRamRecordWord(assist + HeapServiceNewtAssistField.Debt),
+					memory.readRamRecordWord(assist + HeapServiceNewtAssistField.Pressure) !== 0, work);
+			} else if (this.luaHeap.usedBytes() + charged > this.luaHeap.capacity()) {
+				memory.writeRamRecordWord(assist + HeapServiceNewtAssistField.Budget, budget);
+				this.beginDirectNewTableEpoch(HeapServiceNewtStage.DirectLogicalRecovery);
+				return;
+			}
+		}
+		this.reserveNewTableAfterAdmission(reservation, arraySize, hashCapacity, 5 * arraySize,
+			TableRecords.hashStorageBytes(hashCapacity), charged, budget);
 	}
 
 	private markPendingAllocationRoots(heap: GcHeap, pending: PendingAllocation): void {
@@ -2297,25 +2369,26 @@ export class CPU implements MappedPageInvalidator {
 				this.runUntilDepthInstrumented(0, instructionBudget, true);
 				if (!this.heapServiceActive()) {
 					try {
-						const directRecovery = gcStage !== HeapServiceGcStage.Idle
-							&& this.memory.readRamRecordWord(this.heapService.newTableAddress + HeapServiceNewtField.Stage) === HeapServiceNewtStage.DirectRecovery;
+						const newtStage = gcStage === HeapServiceGcStage.Idle ? HeapServiceNewtStage.Idle
+							: this.memory.readRamRecordWord(this.heapService.newTableAddress + HeapServiceNewtField.Stage) as HeapServiceNewtStage;
+						const newtCollection = newtStage >= HeapServiceNewtStage.DirectRecovery;
 						switch (gcStage) {
 							case HeapServiceGcStage.FullTrace:
 							case HeapServiceGcStage.MaintenanceTrace: {
 								const work = this.gc.finishTraceQuantum(this.systemImage.heapServiceFunctions!, gcStage);
-								if (gcStage === HeapServiceGcStage.FullTrace || directRecovery) this.chargeCollectionWork(work);
+								if (gcStage === HeapServiceGcStage.FullTrace || newtCollection) this.chargeCollectionWork(work);
 								break;
 							}
 							case HeapServiceGcStage.FullRemark:
 							case HeapServiceGcStage.MaintenanceRemark: {
 								const work = this.gc.finishRemarkQuantum(this.systemImage.heapServiceFunctions!, gcStage);
-								if (gcStage === HeapServiceGcStage.FullRemark || directRecovery) this.chargeCollectionWork(work);
+								if (gcStage === HeapServiceGcStage.FullRemark || newtCollection) this.chargeCollectionWork(work);
 								break;
 							}
 							case HeapServiceGcStage.FullRootHead:
 							case HeapServiceGcStage.MaintenanceRootHead: {
 								const work = this.gc.finishRootHead(this.systemImage.heapServiceFunctions!, gcStage);
-								if (gcStage === HeapServiceGcStage.FullRootHead || directRecovery) this.chargeCollectionWork(work);
+								if (gcStage === HeapServiceGcStage.FullRootHead || newtCollection) this.chargeCollectionWork(work);
 								break;
 							}
 							case HeapServiceGcStage.FullRootBanks:
@@ -2337,14 +2410,14 @@ export class CPU implements MappedPageInvalidator {
 							case HeapServiceGcStage.PressureStringSweep:
 							case HeapServiceGcStage.AllocationRecoveryStringSweep:
 								this.gc.finishStringSweep(gcStage);
-								if (gcStage === HeapServiceGcStage.AllocationRecoveryStringSweep && !directRecovery) this.finishAllocationRecovery();
+								if (gcStage === HeapServiceGcStage.AllocationRecoveryStringSweep && !newtCollection) this.finishAllocationRecovery();
 								break;
 							case HeapServiceGcStage.Idle:
 								this.finishExecFloorService();
 								this.finishNewTableReservation();
 								break;
 						}
-						if (directRecovery && !this.heapServiceActive()) this.finishDirectNewTableRecovery();
+						if (newtCollection && !this.heapServiceActive()) this.finishNewTableCollection(newtStage);
 					} catch (error) {
 						this.handleRunLoopError(error);
 					}

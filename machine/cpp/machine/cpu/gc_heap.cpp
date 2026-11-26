@@ -905,12 +905,20 @@ size_t GcHeap::sweepRecord(u32 address, u32 header, bool garbage, u8 currentWhit
 	return 1;
 }
 
+u32 GcHeap::epochWork() const {
+	return memory.readRamRecordWord(m_controlOffset + GC_EPOCH_WORK);
+}
+
+u32 GcHeap::workSinceEpoch(u32 before) const {
+	return (active() ? epochWork() : memory.readRamRecordWord(m_controlOffset + GC_LAST_EPOCH_WORK)) - before;
+}
+
 size_t GcHeap::accountEpochWork(size_t work) {
-	const u32 epochWork = memory.readRamRecordWord(m_controlOffset + GC_EPOCH_WORK) + static_cast<u32>(work);
+	const u32 accumulated = epochWork() + static_cast<u32>(work);
 	if (active()) {
-		memory.writeRamRecordWord(m_controlOffset + GC_EPOCH_WORK, epochWork);
+		memory.writeRamRecordWord(m_controlOffset + GC_EPOCH_WORK, accumulated);
 	} else {
-		memory.writeRamRecordPair(m_controlOffset + GC_EPOCH_WORK, 0u, epochWork);
+		memory.writeRamRecordPair(m_controlOffset + GC_EPOCH_WORK, 0u, accumulated);
 		memory.writeRamRecordWord(m_controlOffset + GC_PHYSICAL_ASSIST, 0u);
 	}
 	return work;
@@ -930,7 +938,7 @@ void GcHeap::assistPhysicalPressureAtTick(const HeapServiceFunctions* services) 
 	if (memory.readRamRecordWord(m_controlOffset + GC_PHYSICAL_ASSIST) == 0u) {
 		if (occupied <= previousOccupied) return;
 		const u32 demand = occupied - previousOccupied;
-		const u32 completed = memory.readRamRecordWord(m_controlOffset + GC_EPOCH_WORK);
+		const u32 completed = epochWork();
 		const u32 previous = memory.readRamRecordWord(m_controlOffset + GC_LAST_EPOCH_WORK);
 		const u32 remaining = std::max(previous, completed) - completed;
 		// Allow the two phase handoffs at atomic entry and exit, plus the
@@ -975,22 +983,24 @@ bool GcHeap::reservationAssistDue(size_t requested) const {
 		|| occupiedAfterRequest >= arena.capacityBytes();
 }
 
-void GcHeap::assistBeforeReservation(size_t requested, Value root0, Value root1, Value root2, u32 growingThread) {
+std::optional<size_t> GcHeap::reservationAssistAllowance(size_t requested) const {
 	// Only a published mutator reservation in a paced phase reaches here.
 	const size_t occupiedAfterRequest = arena.occupiedBytes() + requested;
 	const size_t capacity = arena.capacityBytes();
 	if (occupiedAfterRequest < memory.readRamRecordWord(m_controlOffset + GC_PACE_PAY_AT)
-		&& occupiedAfterRequest < capacity) return;
-	size_t allowance = GC_STEP_WORDS;
-	if (occupiedAfterRequest < capacity) {
-		const auto growth = static_cast<i64>(occupiedAfterRequest)
-			- toSignedWord(memory.readRamRecordWord(m_controlOffset + GC_PACE_BASIS));
-		const u64 work = static_cast<u64>(growth) * memory.readRamRecordWord(m_controlOffset + GC_PACE_ESTIMATE);
-		const u32 paid = memory.readRamRecordWord(m_controlOffset + GC_PACE_PAID);
-		const u32 runway = memory.readRamRecordWord(m_controlOffset + GC_PACE_RUNWAY);
-		allowance = std::min<u64>(GC_STEP_WORDS, work / runway - paid);
-	}
-	m_cpu.assistAllocation(root0, root1, root2, growingThread, allowance);
+		&& occupiedAfterRequest < capacity) return std::nullopt;
+	if (occupiedAfterRequest >= capacity) return GC_STEP_WORDS;
+	const auto growth = static_cast<i64>(occupiedAfterRequest)
+		- toSignedWord(memory.readRamRecordWord(m_controlOffset + GC_PACE_BASIS));
+	const u64 work = static_cast<u64>(growth) * memory.readRamRecordWord(m_controlOffset + GC_PACE_ESTIMATE);
+	const u32 paid = memory.readRamRecordWord(m_controlOffset + GC_PACE_PAID);
+	const u32 runway = memory.readRamRecordWord(m_controlOffset + GC_PACE_RUNWAY);
+	return std::min<u64>(GC_STEP_WORDS, work / runway - paid);
+}
+
+void GcHeap::assistBeforeReservation(size_t requested, Value root0, Value root1, Value root2, u32 growingThread) {
+	if (const auto allowance = reservationAssistAllowance(requested))
+		m_cpu.assistAllocation(root0, root1, root2, growingThread, *allowance);
 }
 
 size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads,
