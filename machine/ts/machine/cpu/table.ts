@@ -139,7 +139,6 @@ export class TableRecords {
 	}
 	private wordAt(record: number, slot: number): number { return this.heap.memory.readRamRecordWord(this.hashAddress(record) + slot * 4); }
 	private tagAt(record: number, slot: number): ValueTag { return this.heap.memory.readRamRecordByte(this.tags(record) + slot); }
-	private valueAt(record: number, slot: number): Value { return valueFromTag(this.tagAt(record, slot), this.wordAt(record, slot)); }
 	private setEncoded(record: number, slot: number, tag: ValueTag, word: number): void {
 		const words = this.hashAddress(record), tags = words + 8 * this.hashSize(record);
 		this.writeSlot(words, tags, slot, tag, word);
@@ -181,16 +180,18 @@ export class TableRecords {
 		}
 		return -1;
 	}
-	private findStringNodeIndex(key: StringId, home: number, hash: number, words: number, tags: number): number {
+	private findStringNodeIndex(key: StringId, home: number, hash: number, words: number, tags: number, meterMiss = false): number {
 		const memory = this.heap.memory, links = tags + hash * 2;
 		let index = home;
-		for (let remaining = hash; index >= 0 && remaining !== 0; --remaining) {
+		let remaining = hash;
+		for (; index >= 0 && remaining !== 0; --remaining) {
 			const slot = index;
 			if (memory.readRamRecordByte(tags + slot) === ValueTag.String
 				&& memory.readRamRecordWord(words + slot * 4) === key) return index;
 			index = this.hashNext(links, hash, index);
 		}
-		return -1;
+		// A metered miss returns minus the number of inspected nodes.
+		return meterMiss && remaining !== hash ? remaining - hash : -1;
 	}
 
 	public get(record: number, rawKey: Value): Value {
@@ -319,7 +320,7 @@ export class TableRecords {
 		return true;
 	}
 
-	public getStringKeyCached(record: number, key: StringId, predicted: number, result: TableLookupSlot): void {
+	public getStringKeyCached(record: number, key: StringId, predicted: number, result: TableLookupSlot): number {
 		const hash = this.hashSize(record);
 		if (hash !== 0) {
 			const words = this.hashAddress(record);
@@ -329,23 +330,26 @@ export class TableRecords {
 				if (slot >= 0) {
 					const tag = memory.readRamRecordByte(tags + slot);
 					if (tag !== ValueTag.Nil) {
-						result.value = valueFromTag(tag, memory.readRamRecordWord(words + slot * 4)); result.slot = predicted; return;
+						result.value = valueFromTag(tag, memory.readRamRecordWord(words + slot * 4)); result.slot = predicted; return 0;
 					}
 				}
 			}
-			const index = this.findStringNodeIndex(key, hashCanonicalTableKey(valueString(key)) & (hash - 1), hash, words, tags);
+			const index = this.findStringNodeIndex(key, hashCanonicalTableKey(valueString(key)) & (hash - 1), hash, words, tags, true);
 			if (index >= 0) {
 				const slot = hash + index;
 				const tag = memory.readRamRecordByte(tags + slot);
 				if (tag !== ValueTag.Nil) {
-					result.value = valueFromTag(tag, memory.readRamRecordWord(words + slot * 4)); result.slot = index; return;
+					result.value = valueFromTag(tag, memory.readRamRecordWord(words + slot * 4)); result.slot = index; return 0;
 				}
 			}
+			result.value = valueNil(); result.slot = -1;
+			return index < 0 ? -index - 1 : 0;
 		}
-		result.value = valueNil(); result.slot = -1;
+		result.value = valueNil(); result.slot = -1; return 0;
 	}
 	public resolveIndex(record: number, indexKey: StringId, rawKey: Value, result: TableLookupResult,
-		visitLimit = TABLE_INDEX_CHAIN_LIMIT): void {
+		visitLimit = TABLE_INDEX_CHAIN_LIMIT): number {
+		if (valueTag(rawKey) === ValueTag.String) return this.resolveStringIndexCached(record, indexKey, valuePayload(rawKey), -1, result, visitLimit);
 		const validKey = !isNil(rawKey) && !valueIsNaN(rawKey);
 		const key = canonicalTableKey(rawKey);
 		const arrayIndex = this.getArrayIndex(key);
@@ -353,12 +357,12 @@ export class TableRecords {
 		for (let depth = 0; depth < visitLimit; ++depth) {
 			const own = validKey ? this.getCanonical(current, key, arrayIndex) : valueNil();
 			if (!isNil(own)) {
-				result.value = own; result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
+				result.value = own; result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return 0;
 			}
 			const meta = this.metatableAddress(current);
 			if (meta === 0) {
 				result.value = depth === 0 ? own : valueNil();
-				result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
+				result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return 0;
 			}
 			const next = this.getStringKey(meta, indexKey);
 			const tag = valueTag(next);
@@ -368,11 +372,11 @@ export class TableRecords {
 				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction) {
 					result.receiver = current; result.status = TableLookupStatus.Invoke;
 				} else result.status = tag === ValueTag.Nil ? TableLookupStatus.Resolved : TableLookupStatus.Forward;
-				return;
+				return 0;
 			}
 			current = valuePayload(next);
 		}
-		result.extraVisits = visitLimit - 1; result.status = TableLookupStatus.ChainExhausted;
+		result.extraVisits = visitLimit - 1; result.status = TableLookupStatus.ChainExhausted; return 0;
 	}
 	public resolveIntegerIndex(record: number, indexKey: StringId, key: number, result: TableLookupResult): void {
 		this.resolveIndex(record, indexKey, valueInteger(key), result);
@@ -384,12 +388,12 @@ export class TableRecords {
 		const meta = this.metatableAddress(record);
 		return meta !== 0 ? this.getStringKey(meta, key) : valueNil();
 	}
-	public resolveStringIndexCached(record: number, indexKey: StringId, key: StringId, predicted: number, result: TableLookupResult): void {
-		let current = record;
-		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
-			this.getStringKeyCached(current, key, predicted, result);
+	public resolveStringIndexCached(record: number, indexKey: StringId, key: StringId, predicted: number, result: TableLookupResult, visitLimit = TABLE_INDEX_CHAIN_LIMIT): number {
+		let current = record, links = 0;
+		for (let depth = 0; depth < visitLimit; ++depth) {
+			links += this.getStringKeyCached(current, key, predicted, result);
 			if (result.slot >= 0) {
-				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return;
+				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return links;
 			}
 			const next = this.metafield(current, indexKey);
 			const tag = valueTag(next);
@@ -400,12 +404,12 @@ export class TableRecords {
 				} else if (tag !== ValueTag.Nil) {
 					result.value = next; result.status = TableLookupStatus.Forward;
 				} else result.status = TableLookupStatus.Resolved;
-				return;
+				return links;
 			}
 			predicted = -1;
 			current = valuePayload(next);
 		}
-		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
+		result.extraVisits = visitLimit - 1; result.status = TableLookupStatus.ChainExhausted; return links;
 	}
 	public resolveAssignment(record: number, rawKey: Value, result: TableLookupResult,
 		fixedString = false): void {

@@ -1367,20 +1367,20 @@ void warmInheritedFieldReadsProveCollisionChainAbsence() {
 			cpu.activeThread()->currentFrame->registers.set(4, valueInteger(73));
 		}
 		require(test::runCpuParity(native.cpu, scalar.cpu, cycles) == RunResult::Yielded
-			&& native.cpu.instructionBudgetRemaining == 0, "only the field and any actual inherited visit consume the grant");
+			&& native.cpu.instructionBudgetRemaining == 0, "only the field, exhausted collision links and inherited visits consume the grant");
 		require(native.cpu.readCurrentInstructionPc() == pc && native.cpu.lastPc == pc + INSTRUCTION_BYTES
 			&& native.cpu.readFramePc(0) == pc + 2 * INSTRUCTION_BYTES
 			&& native.cpu.readFrameRegister(0, 3) == expected && native.cpu.readFrameRegister(0, 4) == valueInteger(73),
 			"the WIDE read returns the live value and leaves the following MOV unexecuted");
 		requireParity(native, scalar);
 	};
-	read(valueInteger(41), inherited);
+	read(valueInteger(41), inherited + 1);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& readExits = native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::ReadField)];
 	const u64 trained = readExits.entries;
 	require(trained == 0, "the first inherited lookup completes without a semantic exit");
 #endif
-	read(valueInteger(41), inherited);
+	read(valueInteger(41), inherited + 1);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(readExits.entries == trained, "the trained inherited read proves absence in the actual receiver collision chain");
 #endif

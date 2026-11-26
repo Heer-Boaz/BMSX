@@ -151,6 +151,47 @@ void grantsAndRestore() {
 	}
 }
 
+void exhaustedStringChainCharges() {
+	for (const auto op : {OpCode::GETFIELD, OpCode::GETT, OpCode::SELF}) {
+		Program program(op, false);
+		Machine generated(program.image, false), scalar(program.image, true);
+		for (auto* m : {&generated, &scalar}) {
+			auto& cpu = m->cpu;
+			auto root = cpu.createTable(0, 8);
+			auto key = cpu.stringPool().intern("field");
+			auto r = cpu.activeThread()->currentFrame->registers;
+			r.set(0, valueTable(root.address())); r.set(1, valueString(key));
+			const auto home = root.beginStringProbe(key).node;
+			for (int n = 0, placed = 0; placed < 8; ++n) {
+				const auto candidate = cpu.stringPool().intern("chain" + std::to_string(n));
+				if (root.beginStringProbe(candidate).node == home) root.setStringKey(candidate, valueInteger(++placed));
+			}
+		}
+		const int total = 2 + BASE_CYCLES[static_cast<u8>(op)] + 7;
+		for (int grant : {3, total - 1, total, total + 1}) {
+			for (auto* m : {&generated, &scalar}) {
+				m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+				m->cpu.activeThread()->currentFrame->registers.set(8, valueInteger(91));
+			}
+			test::runCpuParity(generated.cpu, scalar.cpu, grant);
+			const bool marker = grant > total;
+			require(generated.cpu.instructionBudgetRemaining == grant - total - (marker ? 2 : 0)
+				&& isNil(generated.cpu.readFrameRegister(0, 6))
+				&& generated.cpu.readFrameRegister(0, 8) == (marker ? valueNil() : valueInteger(91)),
+				"an eight-node absent String key charges seven cycles before the following instruction");
+		}
+		for (auto* m : {&generated, &scalar}) {
+			auto& cpu = m->cpu;
+			cycle(cpu, asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap()));
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+		}
+		test::runCpuParity(generated.cpu, scalar.cpu, 3);
+		require(generated.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP
+			&& 3 - generated.cpu.instructionBudgetRemaining == total + 31 * (7 + TABLE_INDEX_VISIT_CYCLES),
+			"fault replay pays all 32 searches and 31 inherited visits exactly once");
+	}
+}
+
 void faultsOnce() {
 	for (bool wide : {false, true}) for (const auto [op, kind] : forms) for (bool cyclic : {false, true}) {
 		Program program(op, wide); Machine generated(program.image, false), scalar(program.image, true);
@@ -483,7 +524,7 @@ void stringReceiver() {
 } // namespace
 int main() {
 	try {
-		grantsAndRestore(); faultsOnce(); warmedOneHopUsesLiveMappings();
+		grantsAndRestore(); exhaustedStringChainCharges(); faultsOnce(); warmedOneHopUsesLiveMappings();
 		callableIndexUsesARealDetachedActivation(); builtinIndexPreservesResultAndFaultBoundaries();
 		protectedBuiltinIndexDoesNotUseLiveSlotsForTemporaries(); yieldingBuiltinIndexRestoresItsPlacement(); stringReceiver();
 	}

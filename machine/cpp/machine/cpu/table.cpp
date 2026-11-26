@@ -111,13 +111,15 @@ int TableRecord::HashStorage<BulkWrite>::findNode(const Value& key, u32 home, bo
 }
 
 template<bool BulkWrite>
-inline int TableRecord::HashStorage<BulkWrite>::findString(StringId key, u32 home) const {
+inline int TableRecord::HashStorage<BulkWrite>::findString(StringId key, u32 home, u32* missLinks) const {
 	int index = static_cast<int>(home);
-	for (u32 remaining = count; index >= 0 && remaining != 0u; --remaining) {
+	u32 remaining = count;
+	for (; index >= 0 && remaining != 0u; --remaining) {
 		const u32 slot = static_cast<u32>(index);
 		if (matchesString(slot, key)) return index;
 		index = next(slot);
 	}
+	if (missLinks && remaining != count) *missLinks += count - remaining - 1u;
 	return -1;
 }
 
@@ -717,8 +719,8 @@ size_t TableRecord::advanceStringProbe(StringId key, TableStringProbe& probe, si
 	return inspected;
 }
 
-Value TableRecord::findStringField(const HashBody& body, StringId key, int& slot) {
-	const int node = body.findString(key, hashCanonicalTableKey(valueString(key)) & (body.count - 1u));
+Value TableRecord::findStringField(const HashBody& body, StringId key, int& slot, u32* missLinks) {
+	const int node = body.findString(key, hashCanonicalTableKey(valueString(key)) & (body.count - 1u), missLinks);
 	if (node >= 0) {
 		const Value value = body.slots.get(body.count + static_cast<u32>(node));
 		if (!isNil(value)) {
@@ -730,7 +732,7 @@ Value TableRecord::findStringField(const HashBody& body, StringId key, int& slot
 	return valueNil();
 }
 
-Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot) const {
+Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot, u32* missLinks) const {
 	const u32 count = hashSlots();
 	if (count != 0u) {
 		const auto body = hashBody(count);
@@ -738,7 +740,7 @@ Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot) const {
 			const Value predicted = body.predictedString(predictedSlot, key);
 			if (!isNil(predicted)) return predicted;
 		}
-		return findStringField(body, key, predictedSlot);
+		return findStringField(body, key, predictedSlot, missLinks);
 	}
 	predictedSlot = -1;
 	return valueNil();
@@ -810,12 +812,14 @@ void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&
 	result = {valueNil(), -1, visitLimit - 1, TableLookupStatus::ChainExhausted};
 }
 
-void TableRecord::resolveIndex(const Value& rawKey, TableLookupResult& result, u32 visitLimit) const {
+u32 TableRecord::resolveIndex(const Value& rawKey, TableLookupResult& result, u32 visitLimit) const {
+	if (valueIsString(rawKey)) return resolveStringIndexCached(asStringId(rawKey), -1, result, visitLimit);
 	const Value key = canonicalTableKey(rawKey);
 	const bool miss = isNil(key) || valueIsNaN(key);
 	resolveIndexChain(-1, result, [key, miss](const TableRecord& table, int&) {
 		return miss ? valueNil() : table.getCanonical(key);
 	}, visitLimit);
+	return 0;
 }
 
 void TableRecord::resolveIntegerIndex(int key, TableLookupResult& result) const {
@@ -826,12 +830,16 @@ void TableRecord::resolveStringIndex(StringId key, TableLookupResult& result) co
 	resolveIndexChain(-1, result, [key](const TableRecord& table, int&) { return table.getStringKey(key); });
 }
 
-void TableRecord::resolveMissingStringIndex(StringId key, TableLookupResult& result) const {
-	resolveIndexChain<false, true>(-1, result, [key](const TableRecord& table, int&) { return table.getStringKey(key); });
+u32 TableRecord::resolveMissingStringIndex(StringId key, TableLookupResult& result) const {
+	u32 links = 0;
+	resolveIndexChain<false, true>(-1, result, [&](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot, &links); });
+	return links;
 }
 
-void TableRecord::resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result) const {
-	resolveIndexChain(predictedSlot, result, [key](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot); });
+u32 TableRecord::resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result, u32 visitLimit) const {
+	u32 links = 0;
+	resolveIndexChain(predictedSlot, result, [&](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot, &links); }, visitLimit);
+	return links;
 }
 
 void TableRecord::resolveAssignment(Value rawKey, TableLookupResult& result) const {

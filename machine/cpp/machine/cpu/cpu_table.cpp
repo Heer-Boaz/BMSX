@@ -39,8 +39,8 @@ bool CPU::finishTableRead(CallFrame& frame, int destination, Value base, Value k
 			instructionBudgetRemaining -= (TABLE_INDEX_CHAIN_LIMIT - 1) * TABLE_INDEX_VISIT_CYCLES;
 			throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 		}
-		TableRecord(m_heap, valuePayload(m_stringIndexTable)).resolveIndex(key,
-			result, TABLE_INDEX_CHAIN_LIMIT - carried);
+		instructionBudgetRemaining -= static_cast<int>(TableRecord(m_heap, valuePayload(m_stringIndexTable)).resolveIndex(key,
+			result, TABLE_INDEX_CHAIN_LIMIT - carried));
 	}
 	instructionBudgetRemaining -= static_cast<int>(carried + result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
 	if (result.status == TableLookupStatus::ChainExhausted) throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
@@ -56,7 +56,7 @@ bool CPU::finishTableRead(CallFrame& frame, int destination, Value base, Value k
 
 bool CPU::loadTableIndex(CallFrame& frame, int destination, Value base, Value key) {
 	TableLookupResult result;
-	TableRecord(m_heap, tableIndexAddress(base)).resolveIndex(key, result);
+	instructionBudgetRemaining -= static_cast<int>(TableRecord(m_heap, tableIndexAddress(base)).resolveIndex(key, result));
 	return finishTableRead(frame, destination, base, key, result);
 }
 

@@ -163,12 +163,15 @@ DISPATCH_LABEL(SELF) {
 	if (decoded->op == static_cast<u8>(OpCode::SELF)) SET_REGISTER_FAST(a + 1, base);
 	const TableRecord table(m_heap, tableIndexAddress(base));
 	int& predicted = TABLE_CACHE_SLOT();
-	if (const auto own = table.readOwnStringField(key, predicted)) {
+	u32 links = 0;
+	if (const auto own = table.readOwnStringField(key, predicted, &links)) {
+		CYCLES_ADD(static_cast<int>(links));
 		SET_REGISTER_FAST(a, *own);
 		DISPATCH_NEXT();
 	}
 	TableLookupResult result;
-	table.resolveMissingStringIndex(key, result);
+	links += table.resolveMissingStringIndex(key, result);
+	CYCLES_ADD(static_cast<int>(links));
 	if (result.status == TableLookupStatus::Resolved) {
 		CYCLES_ADD(static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES);
 		SET_REGISTER_FAST(a, result.value);

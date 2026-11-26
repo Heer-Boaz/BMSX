@@ -1165,13 +1165,20 @@ that visit finds a value or continues the lookup. This additional stage selects
 the next target and tests its own mapping; it does not fetch another instruction.
 Count visits, not distinct identities: revisiting one Table through a cycle
 still adds the same work.
-A read that visits 32 Tables before raising `METATABLE_LOOP` adds 248 cycles.
+A read that visits 32 Tables before raising `METATABLE_LOOP` adds 248 traversal cycles.
 An ordinary missing-key result of nil retains the work of its visited Tables.
 The direct `__index` member retrieval is part of that traversal, not another
 visited target. A String receiver begins at the installed String-index Table;
 that first Table is covered by the indexed-read base charge. `SELF` preserves
 its receiver once, not once per visited Table. This surcharge does not count
 hash probes or depend on earlier accesses.
+
+For a String key, each visited target that exhausts its hash search without
+finding the key adds **one cycle per inspected node after the first**. An
+empty hash adds nothing. Finding the key, including a retained key with a nil
+value, does not exhaust the search. This charge applies to the requested
+key, not to retrieval of the metatable member. For example, a missing field
+whose chain contains 64 nodes adds 63 cycles even on a Table with no metatable.
 
 An indexed read writes its destination and extends `top` only after obtaining a result, including an ordinary missing-key result of nil. A failed lookup leaves that destination unchanged. For `SELF`, the preceding receiver copy into `R(A+1)` remains visible even if the lookup fails.
 

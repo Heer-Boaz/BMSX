@@ -5,7 +5,7 @@ import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { ProtectedField } from '../../machine/ts/machine/cpu/call_state';
 
-import { valueBuiltinFunction, valueBool, valueFloat, valueInteger, valueNil, valueTable, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { hashCanonicalTableKey, valueBuiltinFunction, valueBool, valueFloat, valueInteger, valueNil, valueTable, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE, MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -154,6 +154,42 @@ function readProgram(op: OpCode, wide: boolean, stringReceiver = false) {
 	const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [
 		{ firstWord: 0, wordCount: word + 1, maxStack: 24 }, { firstWord: 64, wordCount: 1 }], exceptionFunctionIndex: 1 });
 	return { image, starts };
+}
+
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	test(`an exhausted eight-node String chain charges seven cycles before its successor (${backend})`, () => {
+		for (const op of [OpCode.GETFIELD, OpCode.GETT, OpCode.SELF]) {
+			const { image } = readProgram(op, false), { cpu } = createTestSystemCpu(image, backend);
+			const frame = cpu.rootThread.currentFrame!, start = frame.pc;
+			const key = valueString(cpu.stringPool.intern('field')), root = cpu.createTable(0, 8);
+			frame.registers.setTable(0, root); frame.registers.set(1, key);
+			for (let n = 0, placed = 0; placed < 8; ++n) {
+				const candidate = valueString(cpu.stringPool.intern('chain' + n));
+				if (((hashCanonicalTableKey(candidate) ^ hashCanonicalTableKey(key)) & 7) === 0)
+					cpu.gc.tables.set(root, candidate, valueInteger(++placed));
+			}
+			const total = 2 + BASE_CYCLES[op] + 7;
+			cpu.runUntilDepth(0, (total + 4) * 68);
+			if (backend === CpuExecutionBackend.JavaScript)
+				assert.ok(frame.decodedPage!.compiledBlocks!.entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
+			for (const grant of [3, total - 1, total, total + 1]) {
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
+				frame.registers.setInteger(8, 91);
+				assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
+				const marker = grant > total;
+				assert.equal(cpu.instructionBudgetRemaining, grant - total - (marker ? 2 : 0));
+				assert.equal(frame.registers.get(6), valueNil());
+				assert.equal(frame.registers.get(8), marker ? valueNil() : valueInteger(91));
+			}
+			const meta = cpu.createTable(0, 1);
+			cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(root));
+			cpu.gc.tables.setMetatableAddress(root, meta);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
+			cpu.runUntilDepth(0, 3);
+			assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_METATABLE_LOOP);
+			assert.equal(3 - cpu.instructionBudgetRemaining, total + 31 * (8 + 7));
+		}
+	});
 }
 
 function chain(cpu: CPU, root: number, depth: number, key: Value, value: Value): number {

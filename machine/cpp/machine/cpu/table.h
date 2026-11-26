@@ -95,10 +95,10 @@ public:
 	Value getStringKey(StringId key) const;
 	TableStringProbe beginStringProbe(StringId key) const;
 	size_t advanceStringProbe(StringId key, TableStringProbe& probe, size_t limit) const;
-	Value getStringKeyCached(StringId key, int& predictedSlot) const;
+	Value getStringKeyCached(StringId key, int& predictedSlot, u32* missLinks = nullptr) const;
 	// A plain table resolves even an absent field. An unresolved lookup
 	// must visit the live metatable; it must not train the receiver's slot.
-	std::optional<Value> readOwnStringField(StringId key, int& predicted) const {
+	std::optional<Value> readOwnStringField(StringId key, int& predicted, u32* missLinks = nullptr) const {
 		const u32 count = hashSlots();
 		if (count) {
 			const auto body = hashBody(count);
@@ -107,7 +107,7 @@ public:
 				if (!isNil(own)) return own;
 			}
 			int slot;
-			const auto own = findStringField(body, key, slot);
+			const auto own = findStringField(body, key, slot, missLinks);
 			if (slot >= 0) {
 				predicted = slot;
 				return own;
@@ -119,11 +119,11 @@ public:
 	int setStringKey(StringId key, const Value& value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	bool storePredictedStringKey(StringId key, Value value, int predicted) noexcept;
 	Value metatableField(StringId key) const;
-	void resolveIndex(const Value& key, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
+	u32 resolveIndex(const Value& key, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
 	void resolveIntegerIndex(int key, TableLookupResult& result) const;
 	void resolveStringIndex(StringId key, TableLookupResult& result) const;
-	void resolveMissingStringIndex(StringId key, TableLookupResult& result) const;
-	void resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result) const;
+	u32 resolveMissingStringIndex(StringId key, TableLookupResult& result) const;
+	u32 resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
 	void resolveAssignment(Value key, TableLookupResult& result) const;
 	void resolveIntegerAssignment(int key, TableLookupResult& result) const;
 	void resolveStringAssignment(StringId key, TableLookupResult& result) const;
@@ -261,7 +261,7 @@ private:
 			}
 		}
 		int findNode(const Value& key, u32 home, bool matchDead = false) const;
-		int findString(StringId key, u32 home) const;
+		int findString(StringId key, u32 home, u32* missLinks = nullptr) const;
 		bool matchesString(u32 node, StringId key) const {
 			const u32 slot = node;
 			return slots.tag(slot) == ValueTag::String && slots.word(slot) == key;
@@ -282,7 +282,7 @@ private:
 		u8* words = m_memory->ramData() + (storage & RAM_RECORD_WORD_MASK);
 		return {{m_memory, words, words + 8u * count}, count, storage + 10u * count};
 	}
-	static Value findStringField(const HashBody& body, StringId key, int& slot);
+	static Value findStringField(const HashBody& body, StringId key, int& slot, u32* missLinks);
 	static bool loadHashEntry(const HashBody& body, u32 slot, Value& key, Value& value);
 	u32 nextStoredEntry(const HashBody& body, u32 position, Value& key, Value& value) const;
 	int reinsertMapping(const RebuildBody& body, int& nextFree, Value key, Value value) noexcept;

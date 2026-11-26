@@ -338,7 +338,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			TableLookupResult result;
 			if (stringKey) {
 				auto& slot = *exit->tableRead.decoded;
-				table.resolveStringIndexCached(asStringId(key), slot, result);
+				state.remainingCycles -= static_cast<int>(table.resolveStringIndexCached(asStringId(key), slot, result));
 				if (result.extraVisits == 0u && result.slot >= 0) slot = result.slot;
 			} else if (kind == NativeBlockExit::ReadInteger) {
 				table.resolveIntegerIndex(access.key, result);

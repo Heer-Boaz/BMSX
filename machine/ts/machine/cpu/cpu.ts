@@ -550,7 +550,7 @@ export class CPU implements MappedPageInvalidator {
 			const record = this.tableIndexAddress(base);
 			if (remaining === 0) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 			this.charge(TABLE_INDEX_VISIT_CYCLES);
-			this.gc.tables.resolveIndex(record, this.indexKey, key, result, remaining);
+			this.instructionBudgetRemaining -= this.gc.tables.resolveIndex(record, this.indexKey, key, result, remaining);
 		}
 		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
 		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
@@ -592,12 +592,12 @@ export class CPU implements MappedPageInvalidator {
 	}
 	private loadTableIndex(base: Value, key: Value, frame: CallFrame, targetIndex: number): boolean {
 		const result = this.tableLookupResult;
-		this.gc.tables.resolveIndex(this.tableIndexAddress(base), this.indexKey, key, result);
+		this.instructionBudgetRemaining -= this.gc.tables.resolveIndex(this.tableIndexAddress(base), this.indexKey, key, result);
 		return this.finishTableRead(frame, targetIndex, base, key, result);
 	}
 	private resolveTableFieldIndexCached(base: Value, page: DecodedInstructionPage, pageOffset: number, key: StringId): TableLookupResult {
 		const result = this.tableLookupResult;
-		this.gc.tables.resolveStringIndexCached(this.tableIndexAddress(base), this.indexKey, key, page.tableCacheSlots[pageOffset], result);
+		this.instructionBudgetRemaining -= this.gc.tables.resolveStringIndexCached(this.tableIndexAddress(base), this.indexKey, key, page.tableCacheSlots[pageOffset], result);
 		if (result.extraVisits === 0 && result.slot >= 0) page.tableCacheSlots[pageOffset] = result.slot;
 		return result;
 	}

@@ -31,6 +31,7 @@ public:
 	static constexpr auto tagOffset = begin + offsetof(Layout, tagOffset);
 	static constexpr auto fieldKey = receiver;
 	static constexpr auto visitCost = wordOffset;
+	static constexpr auto missLinks = tagOffset;
 	static constexpr auto keyTag = begin + offsetof(Layout, keyTag);
 	static constexpr auto returnAddress = begin + offsetof(Layout, returnAddress);
 };
